@@ -18,7 +18,7 @@ const MIN_FISH_WEIGHT = 1;
 const MAX_FISH_WEIGHT = 100; // Aumentado para 100kg
 const DIFFICULTY_THRESHOLD = 60; // Peso a partir do qual a dificuldade aumenta
 const FISHING_COOLDOWN = 5;
-const MAX_BAITS = 5; // Máximo de iscas reduzido para 5
+const MAX_BAITS = 1; // Máximo de iscas reduzido para 1
 const BAIT_REGEN_TIME = 90 * 60; // 1 hora e 30 minutos em segundos para regenerar isca
 const SAVE_INTERVAL = 30 * 1000; // 30 segundos em milissegundos
 
