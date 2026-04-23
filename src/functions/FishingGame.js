@@ -8,7 +8,7 @@ const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
 const sdModule = require("./ComfyUICommands");
 const ReturnMessage = require("../models/ReturnMessage");
-const SlotsGame = require("./SlotsGame");
+
 
 const logger = new Logger("fishing-game");
 
@@ -1143,7 +1143,7 @@ async function applyItemEffect(userData, item) {
 					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} iscas adicionadas (${userData.baits}/${MAX_BAITS}).`;
 					break;
 				case "slots_coins":
-					await SlotsGame.addCoins(userData.userId, item.value);
+					await require("./SlotsGame").addCoins(userData.userId, item.value);
 					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} moedinhas adicionadas ao seu saldo do !slots.`;
 					break;
 			}
