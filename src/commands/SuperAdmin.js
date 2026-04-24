@@ -4,6 +4,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
+const LLMService = require("../services/LLMService");
 const { exec } = require("child_process");
 
 /**
@@ -14,6 +15,7 @@ class SuperAdmin {
 		this.logger = new Logger("superadmin");
 		this.adminUtils = AdminUtils.getInstance();
 		this.database = Database.getInstance();
+		this.llmService = LLMService.getInstance();
 		this.dataPath = this.database.databasePath;
 
 		// Lista de superadmins do sistema
@@ -97,6 +99,10 @@ class SuperAdmin {
 			addXingamento: {
 				method: "addXingamentoSticker",
 				description: "Adiciona um sticker de xingamento (use em resposta)"
+			},
+			fixGroupNames: {
+				method: "fixGroupNames",
+				description: "Escaneia e sugere correção para nomes de grupos (dry run)"
 			}
 		};
 
@@ -2807,6 +2813,236 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 		} catch (error) {
 			this.logger.error("Erro no comando blockTudoPessoa:", error);
+
+			return new ReturnMessage({
+				chatId: message.group ?? message.author,
+				content: "❌ Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Escaneia a base de dados e sugere correção para nomes de grupos.
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Objeto da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 */
+	async fixGroupNames(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) return;
+
+			const groups = await this.database.getGroups();
+			const toFixLength = [];
+			const toFixNumeric = [];
+			const allExistingNames = new Set(groups.map((g) => g.name.toLowerCase()));
+
+			for (const group of groups) {
+				const isNumeric = /^\d+$/.test(group.name);
+				if (group.name.length > 15) {
+					toFixLength.push(group);
+				} else if (isNumeric) {
+					toFixNumeric.push(group);
+				}
+			}
+
+			if (toFixLength.length === 0 && toFixNumeric.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "✅ Todos os nomes de grupos estão dentro dos padrões."
+				});
+			}
+
+			let response = "🔍 *Sugestões de Reorganização de Grupos*\n\n";
+			const changes = [];
+
+			const sanitize = (text) => {
+				if (!text) return "";
+				return text
+					.normalize("NFD")
+					.replace(/[\u0300-\u036f]/g, "") // Remove accents
+					.replace(/[^a-zA-Z0-9\s]/g, "") // Remove special chars but keep spaces for TitleCase
+					.trim()
+					.split(/\s+/)
+					.filter((word) => word.length > 0)
+					.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+					.join("");
+			};
+
+			// Handle Numeric Names
+			for (const group of toFixNumeric) {
+				try {
+					let currentTitle = "Desconhecido";
+					try {
+						const chat = await bot.client.getChatById(group.id);
+						currentTitle = chat.name || chat.subject || "";
+					} catch (e) {
+						this.logger.warn(`Não foi possível obter chat para ${group.id}: ${e.message}`);
+					}
+
+					let newName = sanitize(currentTitle);
+
+					if (!newName || newName.length < 3) {
+						newName = sanitize(group.id.split("@")[0]);
+					}
+
+					// Ensure uniqueness
+					const baseName = newName.substring(0, 12);
+					let counter = 1;
+					let finalName = newName.substring(0, 15);
+					while (allExistingNames.has(finalName.toLowerCase())) {
+						finalName = `${baseName}${counter}`.substring(0, 15);
+						counter++;
+					}
+					allExistingNames.add(finalName.toLowerCase());
+
+					changes.push({
+						id: group.id,
+						oldName: group.name,
+						newName: finalName,
+						reason: "Nome numérico",
+						currentTitle
+					});
+				} catch (e) {
+					this.logger.error(`Erro ao processar grupo numérico ${group.id}:`, e);
+				}
+			}
+
+			// Handle Long Names in batch
+			if (toFixLength.length > 0) {
+				const longNamesList = toFixLength.map((g) => `- ${g.name} (${g.id})`).join("\n");
+				const prompt = `Sugira nomes curtos (máximo 15 caracteres) para os seguintes grupos de WhatsApp. 
+Use TitleCase, remova acentos e espaços. Os nomes devem ser únicos e descritivos.
+Se o nome atual já for descritivo, tente apenas encurtá-lo mantendo o sentido.
+
+Grupos:
+${longNamesList}
+
+Retorne no formato JSON rigoroso:
+{
+  "suggestions": [
+    {"id": "group_id", "newName": "Sugestao"}
+  ]
+}`;
+
+				const schema = {
+					type: "json_schema",
+					json_schema: {
+						name: "fix_group_names",
+						schema: {
+							type: "object",
+							properties: {
+								suggestions: {
+									type: "array",
+									items: {
+										type: "object",
+										properties: {
+											id: { type: "string" },
+											newName: { type: "string" }
+										},
+										required: ["id", "newName"]
+									}
+								}
+							},
+							required: ["suggestions"]
+						}
+					}
+				};
+
+				try {
+					const llmResponse = await this.llmService.getCompletion({
+						prompt,
+						response_format: schema,
+						temperature: 0.3,
+						priority: 4
+					});
+
+					const parsed = JSON.parse(llmResponse);
+					if (parsed.suggestions) {
+						for (const sugg of parsed.suggestions) {
+							const group = toFixLength.find((g) => g.id === sugg.id);
+							if (group) {
+								const suggestedName = sanitize(sugg.newName);
+
+								// Ensure uniqueness and length
+								const baseName = suggestedName.substring(0, 12);
+								let counter = 1;
+								let finalName = suggestedName.substring(0, 15);
+								while (allExistingNames.has(finalName.toLowerCase())) {
+									finalName = `${baseName}${counter}`.substring(0, 15);
+									counter++;
+								}
+								allExistingNames.add(finalName.toLowerCase());
+
+								changes.push({
+									id: group.id,
+									oldName: group.name,
+									newName: finalName,
+									reason: "Nome muito longo"
+								});
+							}
+						}
+					}
+				} catch (e) {
+					this.logger.error("Erro ao obter sugestões do LLM:", e);
+					response += "⚠️ _Erro ao obter sugestões do LLM para nomes longos._\n\n";
+				}
+			}
+
+			if (changes.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: response + "Nenhuma alteração sugerida."
+				});
+			}
+
+			const isCommit = args[0] === "commit";
+			const commitResults = [];
+
+			for (const change of changes) {
+				response += `🔹 *${change.oldName}* ➔ *${change.newName}*\n`;
+				response += `   ID: ${change.id}\n`;
+				response += `   Motivo: ${change.reason}\n`;
+				if (change.currentTitle && change.currentTitle !== "Desconhecido") {
+					response += `   Título Atual: ${change.currentTitle}\n`;
+				}
+				response += "\n";
+
+				if (isCommit) {
+					try {
+						const groupData = await this.database.getGroup(change.id);
+						if (groupData) {
+							groupData.name = change.newName;
+							groupData.updatedAt = Date.now();
+							const success = await this.database.saveGroup(groupData);
+							commitResults.push(success);
+						} else {
+							commitResults.push(false);
+						}
+					} catch (e) {
+						this.logger.error(`Erro ao persistir mudança para ${change.id}:`, e);
+						commitResults.push(false);
+					}
+				}
+			}
+
+			if (isCommit) {
+				const successCount = commitResults.filter((r) => r).length;
+				response += `✅ *Commit realizado:* ${successCount} de ${commitResults.length} alterações aplicadas.`;
+				if (successCount > 0) {
+					bot.eventHandler.loadGroups(); // Recarrega os grupos em memória
+				}
+			} else {
+				response +=
+					"_Este é um dry run. Nenhuma alteração foi salva no banco de dados. Use '!sa-fixGroupNames commit' para aplicar._";
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: response
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando fixGroupNames:", error);
 
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
