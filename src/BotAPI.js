@@ -858,6 +858,11 @@ class BotAPI {
 						problematic_score: 0
 					};
 
+					// Calcular média de problematic_score
+					const scores = history.map((h) => h.problematic_score);
+					const avgScore =
+						scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
 					return {
 						id: s.group_id,
 						name: groupNames[s.group_id] || "Grupo Desconhecido",
@@ -865,6 +870,7 @@ class BotAPI {
 						type: latestDossier.type,
 						summary: latestDossier.summary,
 						problematic_score: latestDossier.problematic_score,
+						avg_score: avgScore,
 						total_chars: s.total_length_recorded,
 						pending_chars: s.pending_text ? s.pending_text.length : 0,
 						hasDossier: history.length > 0,
@@ -875,8 +881,8 @@ class BotAPI {
 				// Filtrar apenas grupos que já possuem dossiê
 				const filteredResult = result.filter((r) => r.hasDossier);
 
-				// Ordenar por problematic_score do dossiê MAIS RECENTE
-				filteredResult.sort((a, b) => b.problematic_score - a.problematic_score);
+				// Ordenar por média (avg_score) decrescente
+				filteredResult.sort((a, b) => b.avg_score - a.avg_score);
 
 				res.json(filteredResult);
 			} catch (error) {
