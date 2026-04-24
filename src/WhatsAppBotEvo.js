@@ -1,4 +1,4 @@
-﻿const { Contact, LocalAuth, MessageMedia, Location, Poll } = require("whatsapp-web.js");
+const { Contact, LocalAuth, MessageMedia, Location, Poll } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const qrimg = require("qr-image");
 const { randomBytes } = require("crypto");
@@ -2676,7 +2676,7 @@ class WhatsAppBotEvo {
 	}
 
 	async isUserAdminInGroup(userId, groupId) {
-		return this.adminUtils.isAdmin(userId, { id: groupId }, null, this.client);
+		return this.adminUtils.isAdmin(userId, { id: groupId }, null, this);
 	}
 
 	async fetchAndPrepareBlockedContacts() {

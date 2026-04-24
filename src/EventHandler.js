@@ -1388,7 +1388,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const chat = await message.origin.getChat();
 
 			// Usa o AdminUtils para verificar permissões
-			const isAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot.client);
+			const isAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
 
 			if (!isAdmin) {
 				this.logger.warn(

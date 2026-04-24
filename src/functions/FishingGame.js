@@ -9,7 +9,6 @@ const AdminUtils = require("../utils/AdminUtils");
 const sdModule = require("./ComfyUICommands");
 const ReturnMessage = require("../models/ReturnMessage");
 
-
 const logger = new Logger("fishing-game");
 
 const database = Database.getInstance();
@@ -2697,7 +2696,7 @@ async function resetFishingDataCommand(bot, message, args, group) {
 				content: "❌ Este comando só pode ser usado em grupos."
 			});
 
-		const isAdmin = await bot.adminUtils.isAdmin(message.author, group, null, bot.client);
+		const isAdmin = await bot.adminUtils.isAdmin(message.author, group, null, bot);
 		if (!isAdmin)
 			return new ReturnMessage({
 				chatId: message.group,

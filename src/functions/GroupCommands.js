@@ -1,4 +1,4 @@
-﻿// src/functions/GroupCommands.js
+// src/functions/GroupCommands.js
 
 const path = require("path");
 const Logger = require("../utils/Logger");
@@ -274,7 +274,7 @@ async function apagarMensagem(bot, message, args, group) {
 					// Verifica se quem pediu é admin
 					if (chat.isGroup) {
 						const participants = chat.participants || [];
-						const quemPediuIsAdmin = await adminUtils.isAdmin(quemPediu, group, chat, bot.client);
+						const quemPediuIsAdmin = await adminUtils.isAdmin(quemPediu, group, chat, bot);
 
 						if (quemPediuIsAdmin) {
 							// Bot é admin, pode apagar mensagens de outros

@@ -802,7 +802,7 @@ class WhatsAppBot {
 			}
 
 			// Utiliza o AdminUtils para verificar
-			return await this.adminUtils.isAdmin(userId, group, chat, this.client);
+			return await this.adminUtils.isAdmin(userId, group, chat, this);
 		} catch (error) {
 			this.logger.error(
 				`Erro ao verificar se usuário ${userId} é admin no grupo ${groupId}:`,

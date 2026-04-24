@@ -432,18 +432,6 @@ class CommandHandler {
 		);
 	}
 
-	isComuAdmin(bot, userId) {
-		if (bot.numeroResponsavel) {
-			this.logger.info(
-				`[isComuAdmin] user[${userId}] is bot[${bot.numeroResponsavel}]? ${bot.numeroResponsavel === userId}`
-			);
-			return bot.numeroResponsavel === userId;
-		} else {
-			this.logger.info(`[isComuAdmin] Sem responsavel?`, bot);
-			return false;
-		}
-	}
-
 	/**
 	 * Manipula uma mensagem de comando
 	 * @param {WhatsAppBot} bot - A instância do bot
@@ -461,7 +449,10 @@ class CommandHandler {
 			// Verifica se é um comando de super admin (começa com 'sa-')
 			if (command.startsWith("sa-")) {
 				// Verifica se o usuário é um super admin
-				if (this.superAdmin.isSuperAdmin(message.author) || this.isComuAdmin(bot, message.author)) {
+				if (
+					this.superAdmin.isSuperAdmin(message.author) ||
+					this.adminUtils.isComuAdmin(message.author, bot)
+				) {
 					const saCommand = command.substring(3); // Remove o prefixo 'sa-'
 					const methodName = this.superAdmin.getCommandMethod(saCommand);
 
@@ -558,7 +549,7 @@ class CommandHandler {
 								message.author,
 								targetGroup,
 								false,
-								bot.client
+								bot
 							);
 							if (isUserAdminInTarget) {
 								this.privateManagement[message.author] = targetGroup.id;
@@ -767,7 +758,7 @@ class CommandHandler {
 				message.author,
 				group,
 				chat.isGroup ? chat : null,
-				bot.client
+				bot
 			);
 
 			if (!isUserAdmin) {
@@ -934,7 +925,7 @@ class CommandHandler {
 			// Apenas para adminsitradores
 			if (command.adminOnly) {
 				const chat = await message.origin.getChat();
-				const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot.client);
+				const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
 				if (!isUserAdmin) {
 					message.origin.react("📵");
 					this.logger.debug(`Comando ${command.name} requer administrador, mas o usuário não é`, {
@@ -1178,7 +1169,7 @@ class CommandHandler {
 			// Apenas para adminsitradores
 			if (command.adminOnly) {
 				const chat = await message.origin.getChat();
-				const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot.client);
+				const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
 				if (!isUserAdmin) {
 					this.logger.debug(`Comando ${command.name} requer administrador, mas o usuário não é`);
 

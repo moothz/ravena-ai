@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file Gerencia a lógica do jogo Anagrama para o bot.
  * @author Zacksb
  */
@@ -689,7 +689,7 @@ async function resetCommand(bot, message, args, group) {
 			chatId: message.author,
 			content: "Este comando só funciona em grupos."
 		});
-	const isAdmin = await bot.adminUtils.isAdmin(message.author, group, null, bot.client);
+	const isAdmin = await bot.adminUtils.isAdmin(message.author, group, null, bot);
 	if (!isAdmin)
 		return new ReturnMessage({
 			chatId: groupId,

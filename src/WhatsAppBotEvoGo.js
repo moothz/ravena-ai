@@ -258,7 +258,7 @@ class WhatsAppBotEvoGo {
 	}
 
 	async isUserAdminInGroup(userId, groupId) {
-		return this.adminUtils.isAdmin(userId, { id: groupId }, null, this.client);
+		return this.adminUtils.isAdmin(userId, { id: groupId }, null, this);
 	}
 
 	async recreateInstance() {

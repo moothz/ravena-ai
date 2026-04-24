@@ -2002,7 +2002,7 @@ class Management {
 		try {
 			const chat = await bot.client.getChatById(group.id);
 
-			return await this.adminUtils.isAdmin(bot.phoneNumber, group, chat, bot.client, false);
+			return await this.adminUtils.isAdmin(bot.phoneNumber, group, chat, bot, false);
 		} catch (error) {
 			this.logger.error(`Erro ao verificar se o bot é admin em ${group.id}:`, error);
 			return false;

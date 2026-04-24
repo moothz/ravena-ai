@@ -12,7 +12,7 @@ class AdminUtils {
 	}
 
 	_normalizeId(id, logger) {
-		if (typeof id !== "string" || !id) {
+		if (typeof id !== "string" || (!id && id !== 0)) {
 			return "";
 		}
 
@@ -39,7 +39,7 @@ class AdminUtils {
 	 * @param {Object} client - Instância do cliente WhatsApp (opcional)
 	 * @returns {Promise<boolean>} - True se o usuário for admin
 	 */
-	async isAdmin(userId, group, chat = null, client = null, debug = false) {
+	async isAdmin(userId, group, chat = null, botOrClient = null, debug = false) {
 		try {
 			const normalizedUserId = this._normalizeId(userId);
 
@@ -57,6 +57,12 @@ class AdminUtils {
 				return true;
 			}
 
+			// 2. Verifica se é o responsável (ComuAdmin)
+			if (this.isComuAdmin(normalizedUserId, botOrClient)) {
+				this.logger.debug(`Usuário ${normalizedUserId} é ComuAdmin.`);
+				return true;
+			}
+
 			// 2. Verifica 'additionalAdmins' no objeto de grupo
 			if (group && Array.isArray(group.additionalAdmins)) {
 				const isAdditionalAdmin = group.additionalAdmins
@@ -71,9 +77,17 @@ class AdminUtils {
 
 			// 3. Verifica se é admin no WhatsApp
 			let chatInstance = chat;
+			const client = botOrClient?.client || botOrClient;
 
 			// Se o chat não foi fornecido ou é um pv, tenta buscá-lo usando o cliente
-			if ((!chatInstance && client && group && group.id) || !chat?.isGroup) {
+			if (
+				(!chatInstance &&
+					client &&
+					typeof client.getChatById === "function" &&
+					group &&
+					group.id) ||
+				!chat?.isGroup
+			) {
 				try {
 					chatInstance = await client.getChatById(group.id);
 					//this.logger.debug(`[isAdmin] Sem chat ou PV, buscando: `, {chatInstance});
@@ -135,6 +149,24 @@ class AdminUtils {
 		return (
 			normalizedUserId.length > 10 && this.superAdmins.some((sA) => sA.startsWith(normalizedUserId))
 		);
+	}
+
+	/**
+	 * Verifica se o usuário é o responsável (ComuAdmin) pelo bot
+	 * @param {string} userId - ID do usuário
+	 * @param {Object} botOrClient - Instância do bot ou do cliente
+	 * @returns {boolean} - True se for o responsável
+	 */
+	isComuAdmin(userId, botOrClient) {
+		if (!botOrClient) return false;
+
+		const numeroResponsavel = botOrClient.numeroResponsavel || botOrClient.bot?.numeroResponsavel;
+		if (!numeroResponsavel) return false;
+
+		const normalizedUserId = this._normalizeId(userId);
+		const normalizedResponsavel = this._normalizeId(numeroResponsavel);
+
+		return normalizedUserId === normalizedResponsavel;
 	}
 
 	/**

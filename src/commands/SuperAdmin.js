@@ -123,15 +123,7 @@ class SuperAdmin {
 	}
 
 	isComuAdmin(bot, userId) {
-		if (bot.numeroResponsavel) {
-			this.logger.info(
-				`[isComuAdmin] ${userId} is ${bot.numeroResponsavel}? ${bot.numeroResponsavel === userId}`
-			);
-			return bot.numeroResponsavel === userId;
-		} else {
-			this.logger.info(`[isComuAdmin] Sem responsavel?`, bot);
-			return false;
-		}
+		return this.adminUtils.isComuAdmin(userId, bot);
 	}
 
 	async wakeOnLan(bot, message, args) {
