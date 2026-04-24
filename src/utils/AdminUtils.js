@@ -57,12 +57,6 @@ class AdminUtils {
 				return true;
 			}
 
-			// 2. Verifica se é o responsável (ComuAdmin)
-			if (this.isComuAdmin(normalizedUserId, botOrClient)) {
-				this.logger.debug(`Usuário ${normalizedUserId} é ComuAdmin.`);
-				return true;
-			}
-
 			// 2. Verifica 'additionalAdmins' no objeto de grupo
 			if (group && Array.isArray(group.additionalAdmins)) {
 				const isAdditionalAdmin = group.additionalAdmins
@@ -97,6 +91,40 @@ class AdminUtils {
 						chatError
 					);
 					// A função continua, mas provavelmente retornará false se esta era a única forma de ser admin.
+				}
+			}
+
+			// 2. Verifica se é o responsável (ComuAdmin) - Apenas se o bot estiver no grupo
+			if (this.isComuAdmin(normalizedUserId, botOrClient)) {
+				let botInGroup = true;
+				const botInstance =
+					botOrClient?.bot || (botOrClient?.numeroResponsavel ? botOrClient : null);
+
+				if (botInstance) {
+					const botNumber = botInstance.phoneNumber;
+					if (botNumber && chatInstance && chatInstance.participants) {
+						const normalizedBotNumber = this._normalizeId(botNumber);
+						botInGroup = chatInstance.participants.some(
+							(p) =>
+								this._normalizeId(p.id?._serialized || p.id || p.phoneNumber) ===
+								normalizedBotNumber
+						);
+
+						if (!botInGroup) {
+							this.logger.debug(
+								`Usuário ${normalizedUserId} é ComuAdmin, mas o bot ${normalizedBotNumber} não está no grupo ${group?.id}.`
+							);
+						}
+					} else if (botNumber && (!chatInstance || !chatInstance.participants)) {
+						this.logger.warn(
+							`Não foi possível verificar presença do bot no grupo ${group?.id} (participantes ausentes), assumindo presenca=true para ComuAdmin.`
+						);
+					}
+				}
+
+				if (botInGroup) {
+					this.logger.debug(`Usuário ${normalizedUserId} é ComuAdmin.`);
+					return true;
 				}
 			}
 

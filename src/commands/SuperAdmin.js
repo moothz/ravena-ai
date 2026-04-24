@@ -159,7 +159,7 @@ class SuperAdmin {
 	async botStats(bot, message, args) {
 		const chatId = message.group ?? message.author;
 		try {
-			if (!this.isSuperAdmin(message.author)) return;
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) return;
 
 			const gruposBot = (await bot.listGroups()) ?? [];
 			const groups = await this.database.getGroups();
@@ -167,6 +167,8 @@ class SuperAdmin {
 			const now = Date.now();
 			const periods = {
 				year: now - 365 * 24 * 60 * 60 * 1000,
+				threeMonths: now - 91 * 24 * 60 * 60 * 1000,
+				twoMonths: now - 61 * 24 * 60 * 60 * 1000,
 				month: now - 30 * 24 * 60 * 60 * 1000,
 				week: now - 7 * 24 * 60 * 60 * 1000,
 				day: now - 24 * 60 * 60 * 1000,
@@ -207,12 +209,25 @@ class SuperAdmin {
 
 				// Coleta stats do grupo para cada período
 				const sYear = periodStats.year.byGroup[grupo.JID] ?? 0;
+				const sThreeMonths = periodStats.threeMonths.byGroup[grupo.JID] ?? 0;
+				const sTwoMonths = periodStats.twoMonths.byGroup[grupo.JID] ?? 0;
 				const sMonth = periodStats.month.byGroup[grupo.JID] ?? 0;
 				const sWeek = periodStats.week.byGroup[grupo.JID] ?? 0;
 				const sDay = periodStats.day.byGroup[grupo.JID] ?? 0;
 				const sHour = periodStats.hour.byGroup[grupo.JID] ?? 0;
 
-				return { grupo, name, memberCount, sYear, sMonth, sWeek, sDay, sHour };
+				return {
+					grupo,
+					name,
+					memberCount,
+					sYear,
+					sThreeMonths,
+					sTwoMonths,
+					sMonth,
+					sWeek,
+					sDay,
+					sHour
+				};
 			});
 
 			// Ordena por mensagens: Hoje > Hora > Semana > Mês > Ano
@@ -227,12 +242,44 @@ class SuperAdmin {
 			const listGroups = groupStats
 				.map((item) => {
 					const { grupo, name, memberCount, sYear, sMonth, sWeek, sDay, sHour } = item;
-					return `- [${grupo.JID}] ${grupo.Name} (${name}): _${memberCount} membros_ (${sDay}/hj, ${sHour}/hr, ${sWeek}/s, ${sMonth}/m, ${sYear}/a)`;
+					return `- [${name}] ${grupo.Name}: _${memberCount} membros_ (${sDay}/hj, ${sHour}/hr, ${sWeek}/s, ${sMonth}/m, ${sYear}/a)`;
 				})
 				.join("\n");
 
+			// Categoriza inativos
+			const inactive = {
+				week: [],
+				month: [],
+				twoMonths: [],
+				threeMonths: []
+			};
+
+			groupStats.forEach((item) => {
+				if (item.sThreeMonths === 0) {
+					inactive.threeMonths.push(item);
+				} else if (item.sTwoMonths === 0) {
+					inactive.twoMonths.push(item);
+				} else if (item.sMonth === 0) {
+					inactive.month.push(item);
+				} else if (item.sWeek === 0) {
+					inactive.week.push(item);
+				}
+			});
+
+			const formatInactiveList = (list) =>
+				list.length > 0
+					? list.map((item) => `  • ${item.name} (${item.grupo.Name})`).join("\n")
+					: "  _(nenhum)_";
+
+			const inactiveSection =
+				`🛑 *Grupos Inativos*\n\n` +
+				`*Há +3 meses (${inactive.threeMonths.length}):*\n${formatInactiveList(inactive.threeMonths)}\n\n` +
+				`*Há +2 meses (${inactive.twoMonths.length}):*\n${formatInactiveList(inactive.twoMonths)}\n\n` +
+				`*Há +1 mês (${inactive.month.length}):*\n${formatInactiveList(inactive.month)}\n\n` +
+				`*Há +1 semana (${inactive.week.length}):*\n${formatInactiveList(inactive.week)}`;
+
 			const dadosBot = `${header}\n- *${gruposBot.length} grupos:*
-${listGroups}`;
+${listGroups}\n\n${inactiveSection}`;
 
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
