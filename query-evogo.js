@@ -37,15 +37,23 @@
  *   node query-evogo.js ravenavip getCurrentGroups
  */
 
+// Silencia os logs do dotenv (como "[dotenv@17.2.3] injecting env") se --json estiver ativo
+const _log = console.log;
+if (process.argv.includes("--json")) console.log = () => {};
 require("dotenv").config();
+if (process.argv.includes("--json")) console.log = _log;
 const axios = require("axios");
 
 // ─── Configuração ──────────────────────────────────────────────────────────────
 const BASE_URL = (process.env.EVOLUTION_GO_API_URL || "").replace(/\/$/, "");
 const GLOBAL_KEY = process.env.EVOLUTION_GO_API_KEY;
 
+// Verifica se a opção --json foi passada e a remove dos argumentos
+const isJsonOutput = process.argv.includes("--json");
+const rawArgs = process.argv.filter((arg) => arg !== "--json");
+
 // O nome do bot é o primeiro argumento posicional obrigatório
-const BOT_NAME = process.argv[2];
+const BOT_NAME = rawArgs[2];
 
 const { INST_TOKEN, BOT_NOME } = (() => {
 	try {
@@ -89,11 +97,13 @@ if (!BASE_URL || !GLOBAL_KEY || !INST_TOKEN) {
 	process.exit(1);
 }
 
-console.log(`[EvoGO Debug] Bot: ${BOT_NOME}`);
-console.log(`[EvoGO Debug] Servidor: ${BASE_URL}`);
-console.log(`[EvoGO Debug] GlobalKey: ${GLOBAL_KEY.substring(0, 8)}...`);
-console.log(`[EvoGO Debug] InstToken: ${INST_TOKEN.substring(0, 8)}...`);
-console.log("─".repeat(60));
+if (!isJsonOutput) {
+	console.log(`[EvoGO Debug] Bot: ${BOT_NOME}`);
+	console.log(`[EvoGO Debug] Servidor: ${BASE_URL}`);
+	console.log(`[EvoGO Debug] GlobalKey: ${GLOBAL_KEY.substring(0, 8)}...`);
+	console.log(`[EvoGO Debug] InstToken: ${INST_TOKEN.substring(0, 8)}...`);
+	console.log("─".repeat(60));
+}
 
 // ─── Cliente HTTP ───────────────────────────────────────────────────────────────
 const client = axios.create({ baseURL: BASE_URL });
@@ -127,8 +137,12 @@ async function apiDelete(endpoint, body = {}, useGlobalKey = false) {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 function dump(label, data) {
-	console.log(`\n[${label}]`);
-	console.log(JSON.stringify(data, null, 2));
+	if (isJsonOutput) {
+		console.log(JSON.stringify(data, null, 2));
+	} else {
+		console.log(`\n[${label}]`);
+		console.log(JSON.stringify(data, null, 2));
+	}
 }
 
 function parseError(error) {
@@ -420,8 +434,8 @@ const FUNCTIONS = {
 };
 
 async function main() {
-	// argv[2] = bot name (already consumed above), argv[3] = função, argv[4+] = args
-	const [, , , fnName, ...args] = process.argv;
+	// rawArgs[2] = bot name (already consumed above), rawArgs[3] = função, rawArgs[4+] = args
+	const [, , , fnName, ...args] = rawArgs;
 
 	if (!fnName) {
 		console.log("Funções disponíveis:\n");
