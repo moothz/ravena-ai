@@ -186,6 +186,87 @@ class WhatsAppBotEvoGo {
 
 		this.updateVersions();
 		setInterval(this.updateVersions, 3600000);
+
+		this.scheduleGroupInfoUpdate();
+	}
+
+	scheduleGroupInfoUpdate() {
+		const agora = new Date();
+		const proximaExecucao = new Date(agora);
+		proximaExecucao.setHours(3, 0, 0, 0); // 3 AM
+
+		// Se já passou das 3 AM hoje, agenda para amanhã
+		if (agora > proximaExecucao) {
+			proximaExecucao.setDate(proximaExecucao.getDate() + 1);
+		}
+
+		let tempoAteExecucao = proximaExecucao.getTime() - agora.getTime();
+
+		// Adiciona delay aleatório entre 0 e 30 minutos (0 a 1800000 ms)
+		const delayAleatorio = Math.floor(Math.random() * 1800000);
+		tempoAteExecucao += delayAleatorio;
+
+		this.logger.info(
+			`[scheduleGroupInfoUpdate] Atualização de info de grupos agendada para daqui a ${Math.floor(tempoAteExecucao / 60000)} minutos (com delay aleatório de ${Math.floor(delayAleatorio / 60000)} mins)`
+		);
+
+		setTimeout(async () => {
+			try {
+				await this.updateGroupsInfo();
+			} catch (error) {
+				this.logger.error("[scheduleGroupInfoUpdate] Erro ao executar updateGroupsInfo:", error);
+			} finally {
+				// Reagenda para o próximo dia
+				this.scheduleGroupInfoUpdate();
+			}
+		}, tempoAteExecucao);
+	}
+
+	async updateGroupsInfo() {
+		this.logger.info(
+			"[updateGroupsInfo] Iniciando atualização programada das informações dos grupos..."
+		);
+		try {
+			const groupsData = await this.listGroups();
+			if (!groupsData || !Array.isArray(groupsData)) {
+				this.logger.warn(
+					"[updateGroupsInfo] Não foi possível obter a lista de grupos para atualizar."
+				);
+				return;
+			}
+
+			let updatedCount = 0;
+			for (const entry of groupsData) {
+				const id = entry.JID || entry.id;
+				const name = entry.Name || entry.name || entry.subject || "";
+				const topic = entry.Topic || entry.topic || entry.desc || "";
+
+				if (!id) continue;
+
+				const group = await this.database.getGroup(id);
+				if (group) {
+					let changed = false;
+					if (group.titulo !== name) {
+						group.titulo = name || null;
+						changed = true;
+					}
+					if (group.descricao !== topic) {
+						group.descricao = topic || null;
+						changed = true;
+					}
+
+					if (changed) {
+						await this.database.saveGroup(group);
+						updatedCount++;
+					}
+				}
+			}
+			this.logger.info(
+				`[updateGroupsInfo] Finalizado. ${updatedCount} grupos atualizados (titulo/descricao).`
+			);
+		} catch (e) {
+			this.logger.error("[updateGroupsInfo] Erro na rotina de atualização de grupos:", e);
+		}
 	}
 
 	async getEvoGoInstance(token, name) {

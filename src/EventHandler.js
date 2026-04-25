@@ -778,6 +778,11 @@ class EventHandler extends EventEmitter {
 					.replace(/\s+/g, "") ?? null;
 			const groupData = await this.getOrCreateGroup(data.group.id, nomeGrupo, bot.prefix);
 			const group = groupData.group;
+
+			// Popula titulo e descricao
+			group.titulo = chat.name || null;
+			group.descricao = chat.groupMetadata?.desc || null;
+
 			this.logger.debug(`Informações do grupo: ${JSON.stringify(group)}`);
 
 			if (isBotJoining) {

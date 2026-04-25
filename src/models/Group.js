@@ -13,6 +13,8 @@ class Group {
 		this.name =
 			data.name ??
 			(this.id ? this.id.split("@")[0].toLowerCase().replace(/\s+/g, "").substring(0, 16) : null);
+		this.titulo = data.titulo ?? null;
+		this.descricao = data.descricao ?? null;
 		this.prefix = data.prefix ?? "!";
 		this.customIgnoresPrefix = data.customIgnoresPrefix ?? false;
 		this.inviteCode = data.inviteCode ?? null;
@@ -75,6 +77,8 @@ class Group {
 			addedBy: this.addedBy,
 			removedBy: this.removedBy,
 			name: this.name,
+			titulo: this.titulo,
+			descricao: this.descricao,
 			prefix: this.prefix,
 			customIgnoresPrefix: this.customIgnoresPrefix,
 			inviteCode: this.inviteCode,
@@ -120,6 +124,8 @@ class Group {
 	update(data) {
 		// Atualiza apenas propriedades fornecidas
 		if (data.name) this.name = data.name;
+		if (data.titulo !== undefined) this.titulo = data.titulo;
+		if (data.descricao !== undefined) this.descricao = data.descricao;
 		if (data.prefix) this.prefix = data.prefix;
 		if (data.customIgnoresPrefix) this.customIgnoresPrefix = data.customIgnoresPrefix;
 		if (data.inviteCode) this.inviteCode = data.inviteCode;
