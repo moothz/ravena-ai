@@ -925,7 +925,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							}
 						}
 
-						// Gera e envia uma mensagem com informações sobre o grupo usando LLM
+						// Gera mensagem de boas-vindas e personalidade do bot usando LLM com json_schema
 						try {
 							// Extrai informações do grupo para o LLM
 							const groupInfo = {
@@ -934,23 +934,92 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								memberCount: chat.participants?.length ?? 0
 							};
 
-							const llmPrompt = `Você é um bot de WhatsApp chamado ravenabot e foi adicionado em um grupo de whatsapp chamado '${groupInfo.name}'${llm_inviterInfo}, este grupo é sobre '${groupInfo.description}' e tem '${groupInfo.memberCount}' participantes. Gere uma mensagem agradecendo a confiança e fazendo de conta que entende do assunto do grupo enviando algo relacionado junto pra se enturmar, seja natural. Não coloque coisas placeholder, pois a mensagem que você retornar, vai ser enviada na íntegra e sem ediçoes.`;
+							const groupWelcomeSchema = {
+								type: "json_schema",
+								json_schema: {
+									name: "group_welcome",
+									schema: {
+										type: "object",
+										properties: {
+											welcomeMessage: {
+												type: "string",
+												description:
+													"Mensagem de boas-vindas pronta para enviar no grupo, sem placeholders, sucinta, engraçada e interativa"
+											},
+											botPersonality: {
+												type: "string",
+												description:
+													"Personalidade do bot para este grupo com no máximo 200 caracteres: deve soar como UM MEMBRO do grupo, usando a mesma linguagem, gírias e tom da galera. Se não conseguir definir, retorne string vazia."
+											}
+										},
+										required: ["welcomeMessage", "botPersonality"],
+										additionalProperties: false
+									}
+								}
+							};
+
+							const llmPrompt = `Você é um bot de WhatsApp chamado ravenabot e foi adicionado em um grupo chamado '${groupInfo.name}'${llm_inviterInfo}. Descrição do grupo: '${groupInfo.description}'. Membros: ${groupInfo.memberCount}.
+
+Retorne um JSON com dois campos:
+1. "welcomeMessage": Uma mensagem de boas-vindas PRONTA para ser enviada diretamente no grupo, sem nenhum placeholder como "[foto aqui]" ou "[link]". Deve ser sucinta, engraçada, interativa e direta ao ponto. Use a linguagem e o tom típico desse tipo de grupo.
+2. "botPersonality": Uma personalidade curta (máx 200 caracteres) para o bot neste grupo. O bot deve soar como um MEMBRO do grupo — da mesma tribo, falando a mesma língua, usando as mesmas gírias e referências culturais. Ex para grupo de funk: "Tô no baile, parceiro! Manja de todas as novidades do funk, fala gíria à vontade e tá sempre no clima". Se não conseguir definir, retorne string vazia.`;
 
 							// Obtém conclusão do LLM sem bloquear
 							this.llmService
-								.getCompletion({ prompt: llmPrompt, priority: 5 })
-								.then((groupWelcomeMessage) => {
+								.getCompletion({
+									prompt: llmPrompt,
+									response_format: groupWelcomeSchema,
+									priority: 5
+								})
+								.then(async (llmResponse) => {
+									if (!llmResponse) return;
+
+									let parsed;
+									try {
+										const cleanResponse = llmResponse.replace(/```json|```/g, "").trim();
+										parsed = JSON.parse(cleanResponse);
+									} catch (parseErr) {
+										this.logger.warn(
+											`[groupJoin] Resposta do LLM não é JSON válido, usando como mensagem direta: ${llmResponse}`
+										);
+										// Fallback: usa resposta crua como mensagem de boas-vindas
+										bot.sendMessage(group.id, llmResponse, { delay: 5000 }).catch((error) => {
+											this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
+										});
+										return;
+									}
+
+									const { welcomeMessage, botPersonality } = parsed;
+
 									// Envia a mensagem de boas-vindas gerada
-									if (groupWelcomeMessage) {
-										this.logger.debug(`[groupJoin] LLM Welcome: ${groupWelcomeMessage}`);
-										bot
-											.sendMessage(group.id, groupWelcomeMessage, { delay: 5000 })
-											.catch((error) => {
-												this.logger.error(
-													"Erro ao enviar mensagem de boas-vindas do grupo:",
-													error
-												);
-											});
+									if (welcomeMessage) {
+										this.logger.debug(`[groupJoin] LLM Welcome: ${welcomeMessage}`);
+										bot.sendMessage(group.id, welcomeMessage, { delay: 5000 }).catch((error) => {
+											this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
+										});
+									}
+
+									// Salva personalidade no grupo se for válida
+									if (botPersonality && botPersonality.trim().length > 0) {
+										group.customAIPrompt = botPersonality.trim().slice(0, 200);
+										await this.database.saveGroup(group);
+										this.logger.info(
+											`[groupJoin] Personalidade definida para '${group.name}': ${group.customAIPrompt}`
+										);
+									}
+
+									// Notifica o grupo de logs com os dados gerados
+									if (bot.grupoLogs) {
+										const logMsg = `🤖✨ *Boas-vindas LLM geradas para novo grupo:*
+- 🆔 *ID:* ${group.id}
+- 📃 *Nome:* ${group.name}
+- 💬 *Mensagem de boas-vindas:*
+\`\`\`${welcomeMessage ?? "(nenhuma)"}\`\`\`
+- 🧠 *Personalidade definida:*
+\`\`\`${botPersonality && botPersonality.trim().length > 0 ? botPersonality.trim() : "(nenhuma)"}\`\`\``;
+										bot.sendMessage(bot.grupoLogs, logMsg).catch((error) => {
+											this.logger.error("Erro ao enviar log de boas-vindas:", error);
+										});
 									}
 								})
 								.catch((error) => {
