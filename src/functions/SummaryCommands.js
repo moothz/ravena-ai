@@ -35,6 +35,7 @@ database.getSQLiteDb(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id TEXT,
     dossier_json TEXT,
+    conversation_history TEXT,
     analyzed_at_length INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -455,11 +456,11 @@ ${pendingText}`;
 					newPendingText = currentStatus.pending_text.replace(pendingText, "");
 				}
 
-				// 1. INSere o novo dossiê no histórico
+				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
 				await database.dbRun(
 					DB_NAME,
-					`INSERT INTO group_dossiers (group_id, dossier_json, analyzed_at_length) VALUES (?, ?, ?)`,
-					[chatId, JSON.stringify(parsed), 0] // analyzed_at_length fixo em 0 por enquanto ou total_length
+					`INSERT INTO group_dossiers (group_id, dossier_json, conversation_history, analyzed_at_length) VALUES (?, ?, ?, ?)`,
+					[chatId, JSON.stringify(parsed), parsed.problematic_score > 7 ? pendingText : null, 0]
 				);
 
 				// 2. Limpa o texto analisado da tabela de status
@@ -503,6 +504,15 @@ ${pendingText}`;
 					bot
 						.sendMessage(targetGroup, msgAlert)
 						.catch((e) => logger.error("Erro ao enviar alerta de dossiê:", e));
+
+					if (parsed.problematic_score > 7) {
+						bot
+							.sendMessage(
+								targetGroup,
+								`📝 *Histórico da Conversa que gerou o dossiê:*\n\n${pendingText}`
+							)
+							.catch((e) => logger.error("Erro ao enviar histórico de msgs do dossiê:", e));
+					}
 				}
 			} else {
 				logger.warn(`[${chatId}] JSON da IA incompleto:`, parsed);
