@@ -781,6 +781,29 @@ class EventHandler extends EventEmitter {
 			this.logger.debug(`Informações do grupo: ${JSON.stringify(group)}`);
 
 			if (isBotJoining) {
+				// Adiciona o responsável do bot comunitário como admin adicional
+				/* por enquanto desabilitado
+				if (bot.comunitario && bot.numeroResponsavel) {
+					const respNum = bot.numeroResponsavel.replace(/\D/g, "");
+					if (!group.additionalAdmins) {
+						group.additionalAdmins = [];
+					}
+
+					// Verifica se já existe na lista (independente de formatação)
+					const exists = group.additionalAdmins.some(
+						(admin) => admin.replace(/\D/g, "") === respNum
+					);
+
+					if (!exists) {
+						group.additionalAdmins.push(respNum);
+						await this.database.saveGroup(group);
+						this.logger.info(
+							`[EventHandler] Bot comunitário '${bot.id}' adicionado, administrador ${respNum} foi adicionado aos additionalAdmins do grupo ${group.name}`
+						);
+					}
+				}
+				*/
+
 				const joinSilencioso = bot.joinSilencioso ?? false;
 				// Envia notificação para o grupo de logs
 				if (bot.grupoLogs) {
@@ -1068,6 +1091,26 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 \`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`
 - 👨‍💻 *Raw Data*:
 \`\`\`${JSON.stringify(data.group)}\`\`\``;
+
+						// Remove o responsável do bot comunitário dos admins adicionais
+						/* por enquanto desabilitado
+						if (bot.comunitario && bot.numeroResponsavel) {
+							const respNum = bot.numeroResponsavel.replace(/\D/g, "");
+							if (group.additionalAdmins && Array.isArray(group.additionalAdmins)) {
+								const originalLength = group.additionalAdmins.length;
+								group.additionalAdmins = group.additionalAdmins.filter(
+									(admin) => admin.replace(/\D/g, "") !== respNum
+								);
+
+								if (group.additionalAdmins.length !== originalLength) {
+									await this.database.saveGroup(group);
+									this.logger.info(
+										`[EventHandler] Bot comunitário '${bot.id}' saiu do grupo, administrador ${respNum} foi removido dos additionalAdmins do grupo ${group.name}`
+									);
+								}
+							}
+						}
+						*/
 
 						await this.database.saveGroup(group);
 						bot.sendMessage(bot.grupoLogs, msgLeave).catch((error) => {

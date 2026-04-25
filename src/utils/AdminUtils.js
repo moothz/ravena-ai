@@ -104,15 +104,16 @@ class AdminUtils {
 					const botNumber = botInstance.phoneNumber;
 					if (botNumber && chatInstance && chatInstance.participants) {
 						const normalizedBotNumber = this._normalizeId(botNumber);
-						botInGroup = chatInstance.participants.some(
-							(p) =>
-								this._normalizeId(p.id?._serialized || p.id || p.phoneNumber) ===
-								normalizedBotNumber
+						botInGroup = chatInstance.participants.some((p) =>
+							[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
+								(field) => field && this._normalizeId(field) === normalizedBotNumber
+							)
 						);
 
 						if (!botInGroup) {
 							this.logger.debug(
-								`Usuário ${normalizedUserId} é ComuAdmin, mas o bot ${normalizedBotNumber} não está no grupo ${group?.id} (${group.name}).`, { participants: chatInstance.participants }
+								`Usuário ${normalizedUserId} é ComuAdmin, mas o bot ${normalizedBotNumber} não está no grupo ${group?.id} (${group.name}).`,
+								{ participants: chatInstance.participants }
 							);
 						}
 					} else if (botNumber && (!chatInstance || !chatInstance.participants)) {
@@ -138,8 +139,8 @@ class AdminUtils {
 				}
 
 				const participant = participantes.find((p) =>
-					[p.id?._serialized, p.id, p.phoneNumber].some(
-						(numero) => this._normalizeId(numero) === normalizedUserId
+					[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
+						(numero) => numero && this._normalizeId(numero) === normalizedUserId
 					)
 				);
 
