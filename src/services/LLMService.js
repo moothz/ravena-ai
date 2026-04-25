@@ -821,6 +821,7 @@ class LLMService {
 			.replace(/<\|thought\|>.*?<\|thought_end\|>/gs, "")
 			.replace(/<\/start_of_turn>/g, "")
 			.replace(/<\/end_of_turn>/g, "")
+			.replace(/<\/blockquote>/g, "")
 			.replace(/<\|channel\|>/g, "")
 			.replace(/<channel\|>/g, "")
 			.replace(/<\|turn\|>/g, "")
