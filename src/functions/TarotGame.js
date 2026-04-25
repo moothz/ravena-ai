@@ -243,7 +243,7 @@ Exiba sempre "Situação, Desafio e Caminho"
 		prompt += `O usuário fez a seguinte pergunta ou busca orientação sobre: "${question}"\nLeve isso em conta na sua interpretação e como foco da tiragem.\n\n`;
 	}
 
-	prompt += `Entregue uma interpretação sucinta, resumida, única, fluida e envolvente, conectando situação, desafio e caminho. Use um tom místico, direto e pessoal, como se estivesse captando a energia da pessoa. Não faça perguntas e entregue tudo em uma única mensagem. Ao final, dê uma dica sobre uma área da vida pessoal que o usuário deve cuidar como saúde, amor, profissão, relações, emoções, dinheiro e etc
+	prompt += `Entregue uma interpretação sucinta, resumida, única, fluida e envolvente, conectando situação, desafio e caminho. Use um tom místico, direto e pessoal, como se estivesse captando a energia da pessoa. Não faça perguntas e entregue tudo em uma única mensagem. Ao final, escolha UMA área da vida que MAIS SE RELACIONE com as cartas tiradas (ex: finanças, saúde física, carreira, amizades, espiritualidade, família, autocuidado, etc.) e dê um conselho final curto e inspirador. Seja criativo: evite focar sempre em 'emoções' ou usar frases repetitivas como 'cuide de suas emoções'.
 Responda em PORTUGUÊS BRASIL.`;
 
 	let analysis = "";
