@@ -112,7 +112,7 @@ class AdminUtils {
 
 						if (!botInGroup) {
 							this.logger.debug(
-								`Usuário ${normalizedUserId} é ComuAdmin, mas o bot ${normalizedBotNumber} não está no grupo ${group?.id}.`
+								`Usuário ${normalizedUserId} é ComuAdmin, mas o bot ${normalizedBotNumber} não está no grupo ${group?.id} (${group.name}).`, { participants: chatInstance.participants }
 							);
 						}
 					} else if (botNumber && (!chatInstance || !chatInstance.participants)) {
