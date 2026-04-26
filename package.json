@@ -13,6 +13,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "axios": "^1.13.2",
+    "better-sqlite3": "^12.9.0",
     "canvas": "^3.1.2",
     "cheerio": "^1.0.0",
     "chrono-node": "^2.8.0",
