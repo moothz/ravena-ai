@@ -8,7 +8,8 @@ const DatabaseBackup = require("./DatabaseBackup");
  * Singleton Database class using SQLite backend with JSON storage (Hybrid approach)
  */
 class Database {
-	constructor() {
+	constructor(options = {}) {
+		this.options = options;
 		this.logger = new Logger("database");
 		this.databasePath = path.join(__dirname, "../../data");
 		this.backupPath = path.join(__dirname, "../../data/backups");
@@ -46,12 +47,14 @@ class Database {
 		this.lastScheduledBackup = this.getLastScheduledBackupTime();
 
 		// Fallback: Start backup system after 5 minutes if no write occurred
-		setTimeout(
-			() => {
-				this.triggerBackupStart("timeout");
-			},
-			5 * 60 * 1000
-		);
+		if (!this.options.disableBackup) {
+			setTimeout(
+				() => {
+					this.triggerBackupStart("timeout");
+				},
+				5 * 60 * 1000
+			);
+		}
 	}
 
 	/**
@@ -59,6 +62,7 @@ class Database {
 	 * @param {string} reason - The reason for starting (write or timeout)
 	 */
 	triggerBackupStart(reason = "write") {
+		if (this.options?.disableBackup) return;
 		if (this.backupStarted) return;
 		this.backupStarted = true;
 
@@ -75,9 +79,9 @@ class Database {
 	 * Get Singleton Instance
 	 * @returns {Database}
 	 */
-	static getInstance() {
+	static getInstance(options = {}) {
 		if (!Database.instance) {
-			Database.instance = new Database();
+			Database.instance = new Database(options);
 		}
 		return Database.instance;
 	}
