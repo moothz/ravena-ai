@@ -65,16 +65,23 @@ class DatabaseBackup {
 			`Starting remote backup interval: every ${this.remoteBackupInterval / 60000} minutes.`
 		);
 
-		// Run once on start
-		this.runRemoteBackup().catch((err) => {
-			this.logger.error("Initial remote backup failed:", err);
-		});
+		// Delay the first remote backup by 5 minutes so the bot is fully settled
+		// before hitting the remote server. Writes at startup no longer trigger
+		// an instant sync.
+		const INITIAL_DELAY_MS = 5 * 60 * 1000;
+		this.logger.info(`Remote backup first run in ${INITIAL_DELAY_MS / 60000} minutes.`);
 
-		setInterval(async () => {
-			await this.runRemoteBackup().catch((err) => {
-				this.logger.error("Periodic remote backup failed:", err);
+		setTimeout(() => {
+			this.runRemoteBackup().catch((err) => {
+				this.logger.error("Initial remote backup failed:", err);
 			});
-		}, this.remoteBackupInterval);
+
+			setInterval(async () => {
+				await this.runRemoteBackup().catch((err) => {
+					this.logger.error("Periodic remote backup failed:", err);
+				});
+			}, this.remoteBackupInterval);
+		}, INITIAL_DELAY_MS);
 	}
 
 	backupDirectory(source, target) {
@@ -211,7 +218,6 @@ class DatabaseBackup {
 	async syncCoreDatabase(remoteConn) {
 		const tables = [
 			{ name: "groups", pk: ["id"] },
-			{ name: "custom_commands", pk: ["group_id", "trigger"] },
 			{ name: "donations", pk: ["name"] },
 			{ name: "pending_joins", pk: ["code"] },
 			{ name: "soft_blocks", pk: ["number"] }
@@ -324,12 +330,11 @@ class DatabaseBackup {
 			if (col.type.includes("BLOB")) type = "LONGBLOB";
 
 			if (col.name === "json_data" || col.type === "TEXT" || type === "TEXT") {
-				// MySQL Primary Key columns cannot be BLOB/TEXT without length.
-				// We use VARCHAR(1024) for PKs and LONGTEXT for others.
-				// 1024 is the max safe length for utf8mb4 indexes if InnoDB allows it (3072 bytes total for index).
-				// We'll use 1024 as it should cover most long triggers.
 				if (pks.includes(col.name)) {
-					type = "VARCHAR(1024)";
+					// Single-column PK: VARCHAR(500) → 2000 bytes, well under 3072 limit.
+					// Composite PK: VARCHAR(191) per column → 764 bytes each;
+					// two columns = 1528 bytes, safely under the 3072-byte InnoDB limit.
+					type = pks.length === 1 ? "VARCHAR(500)" : "VARCHAR(191)";
 				} else {
 					type = "LONGTEXT";
 				}
@@ -343,7 +348,19 @@ class DatabaseBackup {
 
 	async upsertToRemote(remoteConn, tableName, rows, pks) {
 		const keys = Object.keys(rows[0]);
-		const values = rows.map((row) => keys.map((k) => row[k]));
+
+		// For composite PKs, truncate TEXT PK values to VARCHAR(191) to prevent
+		// "Data too long" errors on edge-case long values (e.g. long command triggers).
+		const compositePkCols = pks.length > 1 ? new Set(pks) : new Set();
+		const values = rows.map((row) =>
+			keys.map((k) => {
+				const v = row[k];
+				if (compositePkCols.has(k) && typeof v === "string" && v.length > 191) {
+					return v.substring(0, 191);
+				}
+				return v;
+			})
+		);
 
 		const placeholders = rows.map(() => `(${keys.map(() => "?").join(", ")})`).join(", ");
 		const updateClause = keys.map((k) => `\`${k}\` = VALUES(\`${k}\`)`).join(", ");

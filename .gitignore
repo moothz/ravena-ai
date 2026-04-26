@@ -173,3 +173,4 @@ data/services-status.json
 public/code-snippets.json
 /npm-update-testes
 /data/sillies
+/src/utils/db/migrations

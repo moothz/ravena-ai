@@ -3,6 +3,8 @@ const path = require("path");
 const Logger = require("./Logger");
 const sqlite3 = require("sqlite3").verbose();
 const DatabaseBackup = require("./DatabaseBackup");
+const DatabaseMappers = require("./db/DatabaseMappers");
+const CoreRepository = require("./db/repositories/CoreRepository");
 
 /**
  * Singleton Database class using SQLite backend with JSON storage (Hybrid approach)
@@ -21,6 +23,10 @@ class Database {
 
 		this.ensureDirectories();
 		this.initCoreDatabase();
+
+		// --- New layer: better-sqlite3 connection manager + repositories ---
+		this.mappers = new DatabaseMappers(this);
+		this.coreRepo = new CoreRepository(this.mappers);
 
 		// Bot instances for cleanup on exit
 		this.botInstances = [];
@@ -117,15 +123,13 @@ class Database {
 		this.coreDb.run("PRAGMA synchronous = NORMAL");
 		this.coreDb.run("PRAGMA busy_timeout = 5000");
 
-		// Ensure tables exist (redundant if migration ran, but good for safety)
+		// Ensure core tables exist (custom_commands and load_reports have their own .db files)
 		this.coreDb.serialize(() => {
 			const tables = [
 				`CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS custom_commands (group_id TEXT, trigger TEXT, json_data TEXT, PRIMARY KEY (group_id, trigger))`,
 				`CREATE TABLE IF NOT EXISTS donations (name TEXT PRIMARY KEY, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS pending_joins (code TEXT PRIMARY KEY, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS soft_blocks (number TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS load_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, timestamp_end INTEGER, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS blocked_invites (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, jid TEXT, json_data TEXT)`
 			];
 			this.schemas["core"] = tables.join("; ");
@@ -314,106 +318,17 @@ class Database {
 
 	// --- Groups ---
 
-	async getGroups() {
-		try {
-			const rows = await this.all("SELECT json_data FROM groups");
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error in getGroups:", error);
-			return [];
-		}
-	}
-
-	async getGroup(groupId) {
-		try {
-			const row = await this.get("SELECT json_data FROM groups WHERE id = ?", [groupId]);
-			return row ? JSON.parse(row.json_data) : null;
-		} catch (error) {
-			this.logger.error("Error in getGroup:", error);
-			return null;
-		}
-	}
-
-	async getGroupByName(groupName) {
-		try {
-			// Note: This matches exact name. SQLite LIKE could be used for case-insensitive if needed.
-			const row = await this.get("SELECT json_data FROM groups WHERE name = ?", [groupName]);
-			return row ? JSON.parse(row.json_data) : null;
-		} catch (error) {
-			this.logger.error("Error in getGroupByName:", error);
-			return null;
-		}
-	}
-
-	async saveGroup(group) {
-		this.triggerBackupStart();
-		try {
-			await this.run(
-				`INSERT INTO groups (id, name, json_data) VALUES (?, ?, ?) 
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, json_data=excluded.json_data`,
-				[group.id, group.name, JSON.stringify(group)]
-			);
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving group:", error);
-			return false;
-		}
-	}
+	async getGroups() { return this.coreRepo.getGroups(); }
+	async getGroup(groupId) { return this.coreRepo.getGroup(groupId); }
+	async getGroupByName(groupName) { return this.coreRepo.getGroupByName(groupName); }
+	async saveGroup(group) { this.triggerBackupStart(); return this.coreRepo.saveGroup(group); }
 
 	// --- Custom Commands ---
 
-	async getCustomCommands(groupId) {
-		try {
-			const rows = await this.all("SELECT json_data FROM custom_commands WHERE group_id = ?", [
-				groupId
-			]);
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error in getCustomCommands:", error);
-			return [];
-		}
-	}
-
-	async saveCustomCommand(groupId, command) {
-		this.triggerBackupStart();
-		try {
-			await this.run(
-				`INSERT INTO custom_commands (group_id, trigger, json_data) VALUES (?, ?, ?)
-         ON CONFLICT(group_id, trigger) DO UPDATE SET json_data=excluded.json_data`,
-				[groupId, command.startsWith, JSON.stringify(command)]
-			);
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving custom command:", error);
-			return false;
-		}
-	}
-
-	async updateCustomCommand(groupId, command) {
-		// Alias for saveCustomCommand since we use ON CONFLICT UPDATE
-		return this.saveCustomCommand(groupId, command);
-	}
-
-	async deleteCustomCommand(groupId, commandStart) {
-		try {
-			// We implement soft delete as per previous logic
-			const row = await this.get(
-				"SELECT json_data FROM custom_commands WHERE group_id = ? AND trigger = ?",
-				[groupId, commandStart]
-			);
-			if (row) {
-				const command = JSON.parse(row.json_data);
-				command.deleted = true;
-				command.active = false;
-				await this.saveCustomCommand(groupId, command);
-				return true;
-			}
-			return false;
-		} catch (error) {
-			this.logger.error("Error deleting custom command:", error);
-			return false;
-		}
-	}
+	async getCustomCommands(groupId) { return this.coreRepo.getCustomCommands(groupId); }
+	async saveCustomCommand(groupId, command) { this.triggerBackupStart(); return this.coreRepo.saveCustomCommand(groupId, command); }
+	async updateCustomCommand(groupId, command) { return this.coreRepo.updateCustomCommand(groupId, command); }
+	async deleteCustomCommand(groupId, commandStart) { return this.coreRepo.deleteCustomCommand(groupId, commandStart); }
 
 	async getCustomVariables() {
 		try {
@@ -442,429 +357,41 @@ class Database {
 
 	// --- Load Reports ---
 
-	async getLoadReports(since = 0) {
-		try {
-			const rows = await this.all("SELECT json_data FROM load_reports WHERE timestamp_end > ?", [
-				since
-			]);
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error getting load reports:", error);
-			return [];
-		}
-	}
-
-	async saveLoadReports(reports) {
-		this.triggerBackupStart();
-		try {
-			// Start transaction
-			await this.run("BEGIN TRANSACTION");
-			await this.run("DELETE FROM load_reports");
-
-			const stmt = this.coreDb.prepare(
-				"INSERT INTO load_reports (bot_id, timestamp_end, json_data) VALUES (?, ?, ?)"
-			);
-			reports.forEach((report) => {
-				stmt.run(report.botId, report.period?.end || 0, JSON.stringify(report));
-			});
-			stmt.finalize();
-
-			await this.run("COMMIT");
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving load reports:", error);
-			try {
-				await this.run("ROLLBACK");
-			} catch (e) {}
-			return false;
-		}
-	}
-
-	async addLoadReport(report) {
-		this.triggerBackupStart();
-		try {
-			await this.run(
-				"INSERT INTO load_reports (bot_id, timestamp_end, json_data) VALUES (?, ?, ?)",
-				[report.botId, report.period?.end || 0, JSON.stringify(report)]
-			);
-
-			return true;
-		} catch (error) {
-			this.logger.error("Error adding load report:", error);
-			return false;
-		}
-	}
+	async getLoadReports(since = 0) { return this.coreRepo.getLoadReports(since); }
+	async saveLoadReports(reports) { this.triggerBackupStart(); return this.coreRepo.saveLoadReports(reports); }
+	async addLoadReport(report) { this.triggerBackupStart(); return this.coreRepo.addLoadReport(report); }
 
 	// --- Donations ---
 
-	async getDonations() {
-		try {
-			const rows = await this.all("SELECT json_data FROM donations");
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error getting donations:", error);
-			return [];
-		}
-	}
-
-	async saveDonations(donations) {
-		this.triggerBackupStart();
-		try {
-			await this.run("BEGIN TRANSACTION");
-			await this.run("DELETE FROM donations");
-			const stmt = this.coreDb.prepare("INSERT INTO donations (name, json_data) VALUES (?, ?)");
-			donations.forEach((d) => {
-				stmt.run(d.nome, JSON.stringify(d));
-			});
-			stmt.finalize();
-			await this.run("COMMIT");
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving donations:", error);
-			try {
-				await this.run("ROLLBACK");
-			} catch (e) {}
-			return false;
-		}
-	}
-
-	async addDonation(name, amount, numero = undefined) {
-		this.triggerBackupStart();
-		try {
-			const row = await this.get(
-				"SELECT name, json_data FROM donations WHERE name = ? COLLATE NOCASE",
-				[name]
-			);
-
-			let donor;
-			const now = Date.now();
-			const historyEntry = { ts: now, valor: amount };
-			let donationTotal;
-
-			if (row) {
-				donor = JSON.parse(row.json_data);
-				donor.valor += amount;
-				donor.timestamp = now;
-				if (!donor.historico) donor.historico = [];
-				donor.historico.push(historyEntry);
-				if (numero) donor.numero = numero;
-				donationTotal = donor.valor;
-			} else {
-				donor = {
-					nome: name,
-					valor: amount,
-					numero,
-					timestamp: now,
-					historico: [historyEntry]
-				};
-				donationTotal = amount;
-			}
-
-			// Save back
-			await this.run("INSERT OR REPLACE INTO donations (name, json_data) VALUES (?, ?)", [
-				donor.nome,
-				JSON.stringify(donor)
-			]);
-
-			return donationTotal === 0 ? true : donationTotal;
-		} catch (error) {
-			this.logger.error("Error adding donation:", error);
-			return false;
-		}
-	}
-
-	async updateDonorNumber(name, numero) {
-		this.triggerBackupStart();
-		try {
-			const row = await this.get("SELECT json_data FROM donations WHERE name = ? COLLATE NOCASE", [
-				name
-			]);
-			if (!row) {
-				this.logger.warn(`Donor "${name}" not found`);
-				return false;
-			}
-
-			const donor = JSON.parse(row.json_data);
-			donor.numero = numero;
-
-			await this.run("INSERT OR REPLACE INTO donations (name, json_data) VALUES (?, ?)", [
-				donor.nome,
-				JSON.stringify(donor)
-			]);
-			return true;
-		} catch (error) {
-			this.logger.error("Error updating donor number:", error);
-			return false;
-		}
-	}
-
-	async updateDonationAmount(name, amount) {
-		this.triggerBackupStart();
-		try {
-			const row = await this.get("SELECT json_data FROM donations WHERE name = ? COLLATE NOCASE", [
-				name
-			]);
-			let donor;
-			const now = Date.now();
-			const historyEntry = { ts: now, valor: amount };
-
-			if (!row) {
-				if (amount > 0) {
-					donor = {
-						nome: name,
-						valor: amount,
-						timestamp: now,
-						historico: [historyEntry]
-					};
-				} else {
-					return false;
-				}
-			} else {
-				donor = JSON.parse(row.json_data);
-				donor.valor += amount;
-				donor.timestamp = now;
-				if (!donor.historico) donor.historico = [];
-				donor.historico.push(historyEntry);
-			}
-
-			if (donor.valor <= 0) {
-				await this.run("DELETE FROM donations WHERE name = ?", [donor.nome]);
-				this.logger.warn(`Donor "${name}" removed.`);
-			} else {
-				await this.run("INSERT OR REPLACE INTO donations (name, json_data) VALUES (?, ?)", [
-					donor.nome,
-					JSON.stringify(donor)
-				]);
-			}
-
-			return true;
-		} catch (error) {
-			this.logger.error("Error updating donation amount:", error);
-			return false;
-		}
-	}
-
-	async mergeDonors(targetName, sourceName) {
-		this.triggerBackupStart();
-		try {
-			const targetRow = await this.get(
-				"SELECT json_data FROM donations WHERE name = ? COLLATE NOCASE",
-				[targetName]
-			);
-			const sourceRow = await this.get(
-				"SELECT json_data FROM donations WHERE name = ? COLLATE NOCASE",
-				[sourceName]
-			);
-
-			if (!targetRow || !sourceRow) return false;
-
-			const targetDonor = JSON.parse(targetRow.json_data);
-			const sourceDonor = JSON.parse(sourceRow.json_data);
-
-			targetDonor.valor += sourceDonor.valor;
-			const sourceHistory = sourceDonor.historico || [];
-			const targetHistory = targetDonor.historico || [];
-			targetDonor.historico = [...targetHistory, ...sourceHistory].sort((a, b) => a.ts - b.ts);
-
-			if (!targetDonor.numero && sourceDonor.numero) {
-				targetDonor.numero = sourceDonor.numero;
-			}
-
-			if (targetDonor.historico.length > 0) {
-				targetDonor.timestamp = targetDonor.historico[targetDonor.historico.length - 1].ts;
-			} else if (
-				sourceDonor.timestamp &&
-				(!targetDonor.timestamp || sourceDonor.timestamp > targetDonor.timestamp)
-			) {
-				targetDonor.timestamp = sourceDonor.timestamp;
-			}
-
-			await this.run("BEGIN TRANSACTION");
-			await this.run("DELETE FROM donations WHERE name = ?", [sourceDonor.nome]);
-			await this.run("INSERT OR REPLACE INTO donations (name, json_data) VALUES (?, ?)", [
-				targetDonor.nome,
-				JSON.stringify(targetDonor)
-			]);
-			await this.run("COMMIT");
-
-			return true;
-		} catch (error) {
-			this.logger.error("Error merging donors:", error);
-			try {
-				await this.run("ROLLBACK");
-			} catch (e) {}
-			return false;
-		}
-	}
+	async getDonations() { return this.coreRepo.getDonations(); }
+	async saveDonations(donations) { this.triggerBackupStart(); return this.coreRepo.saveDonations(donations); }
+	async addDonation(name, amount, numero = undefined) { this.triggerBackupStart(); return this.coreRepo.addDonation(name, amount, numero); }
+	async updateDonorNumber(name, numero) { this.triggerBackupStart(); return this.coreRepo.updateDonorNumber(name, numero); }
+	async updateDonationAmount(name, amount) { this.triggerBackupStart(); return this.coreRepo.updateDonationAmount(name, amount); }
+	async mergeDonors(targetName, sourceName) { this.triggerBackupStart(); return this.coreRepo.mergeDonors(targetName, sourceName); }
 
 	// --- Pending Joins ---
 
-	async getPendingJoins() {
-		try {
-			const rows = await this.all("SELECT json_data FROM pending_joins");
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error getting pending joins:", error);
-			return [];
-		}
-	}
-
-	async savePendingJoins(joins) {
-		this.triggerBackupStart();
-		try {
-			await this.run("BEGIN TRANSACTION");
-			await this.run("DELETE FROM pending_joins");
-			const stmt = this.coreDb.prepare("INSERT INTO pending_joins (code, json_data) VALUES (?, ?)");
-			joins.forEach((j) => {
-				stmt.run(j.code, JSON.stringify(j));
-			});
-			stmt.finalize();
-			await this.run("COMMIT");
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving pending joins:", error);
-			try {
-				await this.run("ROLLBACK");
-			} catch (e) {}
-			return false;
-		}
-	}
-
-	async savePendingJoin(inviteCode, data) {
-		this.triggerBackupStart();
-		try {
-			// Upsert
-			const joinData = {
-				code: inviteCode,
-				authorId: data.authorId,
-				authorName: data.authorName,
-				timestamp: Date.now()
-			};
-
-			await this.run("INSERT OR REPLACE INTO pending_joins (code, json_data) VALUES (?, ?)", [
-				inviteCode,
-				JSON.stringify(joinData)
-			]);
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving pending join:", error);
-			return false;
-		}
-	}
-
-	async removePendingJoin(inviteCode) {
-		this.triggerBackupStart();
-		try {
-			await this.run("DELETE FROM pending_joins WHERE code = ?", [inviteCode]);
-			return true;
-		} catch (error) {
-			this.logger.error("Error removing pending join:", error);
-			return false;
-		}
-	}
+	async getPendingJoins() { return this.coreRepo.getPendingJoins(); }
+	async savePendingJoins(joins) { this.triggerBackupStart(); return this.coreRepo.savePendingJoins(joins); }
+	async savePendingJoin(inviteCode, data) { this.triggerBackupStart(); return this.coreRepo.savePendingJoin(inviteCode, data); }
+	async removePendingJoin(inviteCode) { this.triggerBackupStart(); return this.coreRepo.removePendingJoin(inviteCode); }
 
 	// --- Soft Blocks ---
 
-	async getSoftblocks() {
-		try {
-			const rows = await this.all("SELECT json_data FROM soft_blocks");
-			return rows.map((row) => JSON.parse(row.json_data));
-		} catch (error) {
-			this.logger.error("Error getting softblocks:", error);
-			return [];
-		}
-	}
+	async getSoftblocks() { return this.coreRepo.getSoftblocks(); }
+	async toggleUserInvites(phoneNumber, block) { this.triggerBackupStart(); return this.coreRepo.toggleUserInvites(phoneNumber, block); }
+	async isUserInviteBlocked(phoneNumber) { return this.coreRepo.isUserInviteBlocked(phoneNumber); }
 
-	async toggleUserInvites(phoneNumber, block) {
-		this.triggerBackupStart();
-		try {
-			const row = await this.get("SELECT json_data FROM soft_blocks WHERE number = ?", [
-				phoneNumber
-			]);
-			let user = row ? JSON.parse(row.json_data) : null;
+	// --- Blocked Invites ---
 
-			if (block) {
-				if (!user) {
-					user = { numero: phoneNumber, invites: true };
-				} else {
-					user.invites = true;
-				}
-				await this.run("INSERT OR REPLACE INTO soft_blocks (number, json_data) VALUES (?, ?)", [
-					phoneNumber,
-					JSON.stringify(user)
-				]);
-			} else {
-				if (user) {
-					await this.run("DELETE FROM soft_blocks WHERE number = ?", [phoneNumber]);
-				}
-			}
-			return true;
-		} catch (error) {
-			this.logger.error("Error toggling user invites:", error);
-			return false;
-		}
-	}
+	async saveBlockedInvite(code, jid) { this.triggerBackupStart(); return this.coreRepo.saveBlockedInvite(code, jid); }
+	async isInviteBlocked(code, jid) { return this.coreRepo.isInviteBlocked(code, jid); }
 
-	async isUserInviteBlocked(phoneNumber) {
-		try {
-			const row = await this.get("SELECT json_data FROM soft_blocks WHERE number = ?", [
-				phoneNumber
-			]);
-			return row ? JSON.parse(row.json_data).invites : false;
-		} catch (error) {
-			this.logger.error("Error checking user invite block:", error);
-			return false;
-		}
-	}
 
-	// --- Blocked Invites (By Code or JID) ---
-
-	async saveBlockedInvite(code, jid) {
-		this.triggerBackupStart();
-		try {
-			// Check if already exists to avoid duplication
-			const existing = await this.get(
-				"SELECT id FROM blocked_invites WHERE (code = ? AND code IS NOT NULL) OR (jid = ? AND jid IS NOT NULL)",
-				[code, jid]
-			);
-
-			if (existing) {
-				await this.run(
-					"UPDATE blocked_invites SET code = COALESCE(?, code), jid = COALESCE(?, jid) WHERE id = ?",
-					[code, jid, existing.id]
-				);
-			} else {
-				await this.run("INSERT INTO blocked_invites (code, jid, json_data) VALUES (?, ?, ?)", [
-					code,
-					jid,
-					JSON.stringify({ timestamp: Date.now() })
-				]);
-			}
-			return true;
-		} catch (error) {
-			this.logger.error("Error saving blocked invite:", error);
-			return false;
-		}
-	}
-
-	async isInviteBlocked(code, jid) {
-		try {
-			if (code) {
-				const row = await this.get("SELECT 1 FROM blocked_invites WHERE code = ?", [code]);
-				if (row) return true;
-			}
-			if (jid) {
-				const row = await this.get("SELECT 1 FROM blocked_invites WHERE jid = ?", [jid]);
-				if (row) return true;
-			}
-			return false;
-		} catch (error) {
-			this.logger.error("Error checking if invite is blocked:", error);
-			return false;
-		}
-	}
 
 	// --- File System Helpers (Legacy/Compatibility) ---
+
 
 	loadJSON(filePath, debug = true) {
 		try {
