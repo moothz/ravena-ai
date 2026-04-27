@@ -221,9 +221,11 @@ class LoadReport {
 				stats.lastReportTimestamp = report.period.end;
 			}
 
-			stats.totalMessages += report.messages.totalReceived + report.messages.totalSent;
-			stats.totalPrivate += report.messages.receivedPrivate + report.messages.sentPrivate;
-			stats.totalGroup += report.messages.receivedGroup + report.messages.sentGroup;
+			stats.totalMessages +=
+				(report.messages?.totalReceived || 0) + (report.messages?.totalSent || 0);
+			stats.totalPrivate +=
+				(report.messages?.receivedPrivate || 0) + (report.messages?.sentPrivate || 0);
+			stats.totalGroup += (report.messages?.receivedGroup || 0) + (report.messages?.sentGroup || 0);
 
 			if (report.groups) {
 				Object.entries(report.groups).forEach(([groupId, count]) => {

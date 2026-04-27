@@ -318,17 +318,35 @@ class Database {
 
 	// --- Groups ---
 
-	async getGroups() { return this.coreRepo.getGroups(); }
-	async getGroup(groupId) { return this.coreRepo.getGroup(groupId); }
-	async getGroupByName(groupName) { return this.coreRepo.getGroupByName(groupName); }
-	async saveGroup(group) { this.triggerBackupStart(); return this.coreRepo.saveGroup(group); }
+	async getGroups() {
+		return this.coreRepo.getGroups();
+	}
+	async getGroup(groupId) {
+		return this.coreRepo.getGroup(groupId);
+	}
+	async getGroupByName(groupName) {
+		return this.coreRepo.getGroupByName(groupName);
+	}
+	async saveGroup(group) {
+		this.triggerBackupStart();
+		return this.coreRepo.saveGroup(group);
+	}
 
 	// --- Custom Commands ---
 
-	async getCustomCommands(groupId) { return this.coreRepo.getCustomCommands(groupId); }
-	async saveCustomCommand(groupId, command) { this.triggerBackupStart(); return this.coreRepo.saveCustomCommand(groupId, command); }
-	async updateCustomCommand(groupId, command) { return this.coreRepo.updateCustomCommand(groupId, command); }
-	async deleteCustomCommand(groupId, commandStart) { return this.coreRepo.deleteCustomCommand(groupId, commandStart); }
+	async getCustomCommands(groupId) {
+		return this.coreRepo.getCustomCommands(groupId);
+	}
+	async saveCustomCommand(groupId, command) {
+		this.triggerBackupStart();
+		return this.coreRepo.saveCustomCommand(groupId, command);
+	}
+	async updateCustomCommand(groupId, command) {
+		return this.coreRepo.updateCustomCommand(groupId, command);
+	}
+	async deleteCustomCommand(groupId, commandStart) {
+		return this.coreRepo.deleteCustomCommand(groupId, commandStart);
+	}
 
 	async getCustomVariables() {
 		try {
@@ -357,41 +375,86 @@ class Database {
 
 	// --- Load Reports ---
 
-	async getLoadReports(since = 0) { return this.coreRepo.getLoadReports(since); }
-	async saveLoadReports(reports) { this.triggerBackupStart(); return this.coreRepo.saveLoadReports(reports); }
-	async addLoadReport(report) { this.triggerBackupStart(); return this.coreRepo.addLoadReport(report); }
+	async getLoadReports(since = 0) {
+		return this.coreRepo.getLoadReports(since);
+	}
+	async saveLoadReports(reports) {
+		this.triggerBackupStart();
+		return this.coreRepo.saveLoadReports(reports);
+	}
+	async addLoadReport(report) {
+		this.triggerBackupStart();
+		return this.coreRepo.addLoadReport(report);
+	}
 
 	// --- Donations ---
 
-	async getDonations() { return this.coreRepo.getDonations(); }
-	async saveDonations(donations) { this.triggerBackupStart(); return this.coreRepo.saveDonations(donations); }
-	async addDonation(name, amount, numero = undefined) { this.triggerBackupStart(); return this.coreRepo.addDonation(name, amount, numero); }
-	async updateDonorNumber(name, numero) { this.triggerBackupStart(); return this.coreRepo.updateDonorNumber(name, numero); }
-	async updateDonationAmount(name, amount) { this.triggerBackupStart(); return this.coreRepo.updateDonationAmount(name, amount); }
-	async mergeDonors(targetName, sourceName) { this.triggerBackupStart(); return this.coreRepo.mergeDonors(targetName, sourceName); }
+	async getDonations() {
+		return this.coreRepo.getDonations();
+	}
+	async saveDonations(donations) {
+		this.triggerBackupStart();
+		return this.coreRepo.saveDonations(donations);
+	}
+	async addDonation(name, amount, numero = undefined) {
+		this.triggerBackupStart();
+		return this.coreRepo.addDonation(name, amount, numero);
+	}
+	async updateDonorNumber(name, numero) {
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonorNumber(name, numero);
+	}
+	async updateDonationAmount(name, amount) {
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonationAmount(name, amount);
+	}
+	async mergeDonors(targetName, sourceName) {
+		this.triggerBackupStart();
+		return this.coreRepo.mergeDonors(targetName, sourceName);
+	}
 
 	// --- Pending Joins ---
 
-	async getPendingJoins() { return this.coreRepo.getPendingJoins(); }
-	async savePendingJoins(joins) { this.triggerBackupStart(); return this.coreRepo.savePendingJoins(joins); }
-	async savePendingJoin(inviteCode, data) { this.triggerBackupStart(); return this.coreRepo.savePendingJoin(inviteCode, data); }
-	async removePendingJoin(inviteCode) { this.triggerBackupStart(); return this.coreRepo.removePendingJoin(inviteCode); }
+	async getPendingJoins() {
+		return this.coreRepo.getPendingJoins();
+	}
+	async savePendingJoins(joins) {
+		this.triggerBackupStart();
+		return this.coreRepo.savePendingJoins(joins);
+	}
+	async savePendingJoin(inviteCode, data) {
+		this.triggerBackupStart();
+		return this.coreRepo.savePendingJoin(inviteCode, data);
+	}
+	async removePendingJoin(inviteCode) {
+		this.triggerBackupStart();
+		return this.coreRepo.removePendingJoin(inviteCode);
+	}
 
 	// --- Soft Blocks ---
 
-	async getSoftblocks() { return this.coreRepo.getSoftblocks(); }
-	async toggleUserInvites(phoneNumber, block) { this.triggerBackupStart(); return this.coreRepo.toggleUserInvites(phoneNumber, block); }
-	async isUserInviteBlocked(phoneNumber) { return this.coreRepo.isUserInviteBlocked(phoneNumber); }
+	async getSoftblocks() {
+		return this.coreRepo.getSoftblocks();
+	}
+	async toggleUserInvites(phoneNumber, block) {
+		this.triggerBackupStart();
+		return this.coreRepo.toggleUserInvites(phoneNumber, block);
+	}
+	async isUserInviteBlocked(phoneNumber) {
+		return this.coreRepo.isUserInviteBlocked(phoneNumber);
+	}
 
 	// --- Blocked Invites ---
 
-	async saveBlockedInvite(code, jid) { this.triggerBackupStart(); return this.coreRepo.saveBlockedInvite(code, jid); }
-	async isInviteBlocked(code, jid) { return this.coreRepo.isInviteBlocked(code, jid); }
-
-
+	async saveBlockedInvite(code, jid) {
+		this.triggerBackupStart();
+		return this.coreRepo.saveBlockedInvite(code, jid);
+	}
+	async isInviteBlocked(code, jid) {
+		return this.coreRepo.isInviteBlocked(code, jid);
+	}
 
 	// --- File System Helpers (Legacy/Compatibility) ---
-
 
 	loadJSON(filePath, debug = true) {
 		try {

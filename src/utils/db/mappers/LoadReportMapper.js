@@ -17,25 +17,43 @@ const LoadReportMapper = {
 	 */
 	fromRow(row) {
 		if (!row) return null;
+
+		// Reconstruct from json_data if available for full fidelity
+		let report = {};
+		if (row.json_data) {
+			try {
+				report = JSON.parse(row.json_data);
+			} catch (e) {
+				// Fallback to column data
+			}
+		}
+
 		return {
-			botId: row.bot_id,
+			...report,
+			botId: row.bot_id || report.botId,
 			period: {
-				start: row.timestamp_start ?? null,
-				end: row.timestamp_end ?? null
+				start: row.timestamp_start ?? (report.period?.start || null),
+				end: row.timestamp_end ?? (report.period?.end || null)
 			},
-			duration: row.duration ?? null,
+			duration: row.duration ?? (report.duration || null),
 			messages: {
-				receivedPrivate: row.recv_private ?? 0,
-				receivedGroup: row.recv_group ?? 0,
-				sentPrivate: row.sent_private ?? 0,
-				sentGroup: row.sent_group ?? 0,
-				messagesPerHour: row.msgs_per_hour ?? 0
+				...(report.messages || {}),
+				receivedPrivate: row.recv_private ?? (report.messages?.receivedPrivate || 0),
+				receivedGroup: row.recv_group ?? (report.messages?.receivedGroup || 0),
+				sentPrivate: row.sent_private ?? (report.messages?.sentPrivate || 0),
+				sentGroup: row.sent_group ?? (report.messages?.sentGroup || 0),
+				messagesPerHour: row.msgs_per_hour ?? (report.messages?.messagesPerHour || 0),
+				totalReceived:
+					report.messages?.totalReceived ?? (row.recv_private || 0) + (row.recv_group || 0),
+				totalSent: report.messages?.totalSent ?? (row.sent_private || 0) + (row.sent_group || 0)
 			},
 			responseTime: {
-				average: row.resp_avg ?? 0,
-				max: row.resp_max ?? 0,
-				count: row.resp_count ?? 0
-			}
+				...(report.responseTime || {}),
+				average: row.resp_avg ?? (report.responseTime?.average || 0),
+				max: row.resp_max ?? (report.responseTime?.max || 0),
+				count: row.resp_count ?? (report.responseTime?.count || 0)
+			},
+			groups: report.groups || {}
 		};
 	},
 

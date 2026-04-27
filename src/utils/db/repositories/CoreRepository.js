@@ -39,7 +39,8 @@ class CoreRepository {
 	/** Ensure schema exists on first open for non-core databases */
 	_initSchemas() {
 		// custom_commands.db
-		this.mappers.exec(this.CMD_DB,
+		this.mappers.exec(
+			this.CMD_DB,
 			`CREATE TABLE IF NOT EXISTS custom_commands (
 				group_id    TEXT,
 				trigger     TEXT,
@@ -58,7 +59,8 @@ class CoreRepository {
 		);
 
 		// load_reports.db
-		this.mappers.exec(this.REPORTS_DB,
+		this.mappers.exec(
+			this.REPORTS_DB,
 			`CREATE TABLE IF NOT EXISTS load_reports (
 				id              INTEGER PRIMARY KEY AUTOINCREMENT,
 				bot_id          TEXT,
@@ -542,9 +544,11 @@ class CoreRepository {
 
 	async isUserInviteBlocked(phoneNumber) {
 		try {
-			const row = this.mappers.get(this.DB, "SELECT block_invites FROM soft_blocks WHERE number = ?", [
-				phoneNumber
-			]);
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT block_invites FROM soft_blocks WHERE number = ?",
+				[phoneNumber]
+			);
 			return row ? !!row.block_invites : false;
 		} catch (error) {
 			this.logger.error("Error checking user invite block:", error);
@@ -586,7 +590,9 @@ class CoreRepository {
 	async isInviteBlocked(code, jid) {
 		try {
 			if (code) {
-				const row = this.mappers.get(this.DB, "SELECT 1 FROM blocked_invites WHERE code = ?", [code]);
+				const row = this.mappers.get(this.DB, "SELECT 1 FROM blocked_invites WHERE code = ?", [
+					code
+				]);
 				if (row) return true;
 			}
 			if (jid) {
