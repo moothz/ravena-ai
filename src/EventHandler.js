@@ -742,6 +742,19 @@ class EventHandler extends EventEmitter {
 		if (bot.removeSkipGroup) {
 			await bot.removeSkipGroup(groupId);
 		}
+
+		if (data.isCommunity || data.group?.isCommunity) {
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em comunidade.`, { data });
+			return;
+		}
+
+		if (data.isAnnounce || data.group?.isAnnounce) {
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel.`, {
+				data
+			});
+			return;
+		}
+
 		this.logger.info(`[processGroupJoin] `, { data });
 
 		if (!isBotJoining) {
@@ -764,6 +777,28 @@ class EventHandler extends EventEmitter {
 		try {
 			// Obtém os dados completos do chat
 			const chat = await data.origin.getChat();
+
+			this.logger.info(`[processGroupJoin] Chat `, { chat });
+			if (chat.isCommunity) {
+				this.logger.debug(
+					`[processGroupJoin][viaChat] Ignorando evento de join em comunidade '${chat.name}'`,
+					{ chat }
+				);
+				return;
+			}
+
+			if (chat.isAnnounce) {
+				this.logger.debug(
+					`[processGroupJoin][viaChat] Ignorando evento de join em Announce Channel '${chat.name}'`,
+					{ chat }
+				);
+				return;
+			}
+
+			this.logger.debug(
+				`[processGroupJoin][${groupId}] Cheguei ate aqui, nao sou announce (data '${data.isAnnounce}' && chat '${chat.isAnnounce}') nem comu (data '${data.isCommunity}' && chat '${chat.isCommunity}')`,
+				{ data, chat }
+			);
 
 			// Verifica se o próprio bot é quem está entrando
 			this.logger.debug(

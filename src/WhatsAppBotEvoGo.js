@@ -1711,6 +1711,9 @@ class WhatsAppBotEvoGo {
 					// Payload: { event: "JoinedGroup", data: { JID: "...", Participants: [...] } }
 					this.logger.info(`[JoinedGroup] `, { payload });
 					const joinedData = payload.data;
+
+					// Neste objeto chat dá pra detectar se é comunidade de 2 maneiras:
+					// IsParent === true ou LinkedParentJID === ''
 					if (joinedData) {
 						this._handleGroupParticipantsUpdate({
 							JID: joinedData.JID,
@@ -1718,6 +1721,8 @@ class WhatsAppBotEvoGo {
 							Sender: joinedData.Sender ?? joinedData.OwnerJID, // Quando é adicionado sem ser por link, não vem o Sender/SenderPN
 							SenderPN: joinedData.SenderPN ?? joinedData.OwnerPN,
 							isBotJoining: true,
+							isCommunity: joinedData.IsParent,
+							isAnnounce: joinedData.IsAnnounce,
 							_raw: joinedData
 						});
 					}
@@ -2246,8 +2251,13 @@ class WhatsAppBotEvoGo {
 						id: groupId,
 						name: groupName,
 						notInGroup: groupDetails.notInGroup,
-						isBotJoining: groupData.isBotJoining
+						isBotJoining: groupData.isBotJoining ?? groupDetails.isBotJoining,
+						isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
+						isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce
 					},
+					isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
+					isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce,
+					isBotJoining: groupData.isBotJoining ?? groupDetails.isBotJoining,
 					user: { id: participant, name: contact?.name ?? participant.split("@")[0] },
 					responsavel: {
 						id: groupData.SenderPN,
@@ -2375,6 +2385,8 @@ class WhatsAppBotEvoGo {
 						id: { _serialized: groupInfo.JID },
 						name: groupInfo.Name ?? chatId,
 						isGroup: true,
+						isCommunity: groupInfo.IsParent,
+						isAnnounce: groupInfo.IsAnnounce,
 						notInGroup: false,
 						groupMetadata: { desc: groupInfo.Topic },
 						participants: groupInfo.Participants.map((p) => ({
