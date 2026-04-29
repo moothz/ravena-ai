@@ -12,6 +12,7 @@ const logger = new Logger("summary-commands");
 const database = Database.getInstance();
 const llmService = LLMService.getInstance();
 const DB_NAME = "summaries";
+const activeAnalyses = new Set();
 
 // Initialize Database
 database.getSQLiteDb(
@@ -349,6 +350,12 @@ ${formattedMessages}`;
  * @param {object} bot - Instância do bot para enviar logs
  */
 async function runGroupAnalysis(chatId, pendingText, bot) {
+	if (activeAnalyses.has(chatId)) {
+		logger.debug(`[${chatId}] Análise de dossiê já em andamento, pulando.`);
+		return;
+	}
+	activeAnalyses.add(chatId);
+
 	try {
 		logger.info(`[${chatId}] Iniciando análise de dossiê (baixa prioridade)...`);
 
@@ -520,6 +527,8 @@ ${pendingText}`;
 		}
 	} catch (error) {
 		logger.error(`[${chatId}] Erro ao processar análise de dossiê:`, error);
+	} finally {
+		activeAnalyses.delete(chatId);
 	}
 }
 
