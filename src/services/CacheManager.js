@@ -38,7 +38,9 @@ class CacheManager {
 		// Database setup
 		this.database = Database.getInstance();
 		this.DB_NAME = "cache";
-		this.isFlushing = false;
+		// Promise-based mutex: if a flush is in progress, _flushingPromise is set.
+		// New callers chain onto it instead of starting a second transaction.
+		this._flushingPromise = null;
 
 		// Initialize Tables
 		this.database.getSQLiteDb(
@@ -213,46 +215,54 @@ class CacheManager {
 		this.unsavedChangesCount++;
 
 		if (this.unsavedChangesCount >= this.FLUSH_THRESHOLD) {
-			this.flushPendingWrites();
+			// Fire-and-forget, but serialized through the mutex inside flushPendingWrites
+			this.flushPendingWrites().catch(() => {});
 		}
 	}
 
-	async flushPendingWrites() {
-		if (this.isFlushing || this.pendingWrites.size === 0) return;
+	flushPendingWrites() {
+		// If a flush is already running, chain onto it so we never start
+		// a second BEGIN TRANSACTION while the first is still open.
+		if (this._flushingPromise) {
+			this._flushingPromise = this._flushingPromise.then(() => this._doFlush());
+		} else {
+			this._flushingPromise = this._doFlush();
+		}
+		// Always clear the reference once the entire chain settles
+		this._flushingPromise = this._flushingPromise.finally(() => {
+			this._flushingPromise = null;
+		});
+		return this._flushingPromise;
+	}
 
-		this.isFlushing = true;
+	async _doFlush() {
+		if (this.pendingWrites.size === 0) return;
+
 		this.logger.debug(`Flushing cache items to disk...`);
 
-		// Clone map for processing
+		// Snapshot the pending writes so new items can accumulate during the flush
 		const writesToProcess = new Map(this.pendingWrites);
 		this.pendingWrites.clear();
 		this.unsavedChangesCount = 0;
 
 		try {
-			await this.database.dbRun(this.DB_NAME, "BEGIN TRANSACTION");
+			await this.database.dbTransaction(this.DB_NAME, async () => {
+				for (const [table, items] of writesToProcess) {
+					const isPushname = table === "pushnames";
+					const keyCol = isPushname ? "id" : "key";
+					const valCol = isPushname ? "pushname" : table === "kv_store" ? "value" : "json_data";
 
-			for (const [table, items] of writesToProcess) {
-				const isPushname = table === "pushnames";
-				const keyCol = isPushname ? "id" : "key";
-				const valCol = isPushname ? "pushname" : table === "kv_store" ? "value" : "json_data";
-
-				for (const [key, data] of items) {
-					await this.database.dbRun(
-						this.DB_NAME,
-						`INSERT OR REPLACE INTO ${table} (${keyCol}, ${valCol}, expires_at) VALUES (?, ?, ?)`,
-						[key, data.value, data.expiresAt]
-					);
+					for (const [key, data] of items) {
+						await this.database.dbRun(
+							this.DB_NAME,
+							`INSERT OR REPLACE INTO ${table} (${keyCol}, ${valCol}, expires_at) VALUES (?, ?, ?)`,
+							[key, data.value, data.expiresAt]
+						);
+					}
 				}
-			}
-
-			await this.database.dbRun(this.DB_NAME, "COMMIT");
+			});
 		} catch (e) {
 			this.logger.error("Error flushing cache to disk:", e);
-			try {
-				await this.database.dbRun(this.DB_NAME, "ROLLBACK");
-			} catch (_) {}
-		} finally {
-			this.isFlushing = false;
 		}
 	}
 
