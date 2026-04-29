@@ -8,8 +8,8 @@ const logger = new Logger("lastfm-commands");
 
 // Inicializa cliente Last.fm
 const lastfm = new LastFmNode({
-	api_key: process.env.LASTFM_APIKEY || "62f5658e810b6148fa70c87de866e73f",
-	secret: process.env.LASTFM_SECRET || "bca8f01839bd4f107edc0670a75e0625",
+	api_key: process.env.LASTFM_APIKEY,
+	secret: process.env.LASTFM_SECRET,
 	useragent: "ravenabot/v1.0"
 });
 

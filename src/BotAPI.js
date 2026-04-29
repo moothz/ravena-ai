@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const Logger = require("./utils/Logger");
 const Database = require("./utils/Database");
@@ -48,6 +49,24 @@ class BotAPI {
 		// Credenciais de autenticação para endpoints protegidos
 		this.apiUser = process.env.BOTAPI_USER ?? "admin";
 		this.apiPassword = process.env.BOTAPI_PASSWORD ?? "senha12345";
+		this.upsApiSecret = process.env.UPS_API_SECRET ?? false;
+
+		// Configura Rate Limiters
+		this.generalLimiter = rateLimit({
+			windowMs: 1 * 60 * 1000, // 1 minuto
+			max: 100, // 100 requisições por IP
+			message: { status: "error", message: "Muitas requisições, tente novamente em 1 minuto." },
+			standardHeaders: true,
+			legacyHeaders: false
+		});
+
+		this.strictLimiter = rateLimit({
+			windowMs: 1 * 60 * 1000, // 1 minuto
+			max: 10, // 10 requisições por IP (para endpoints pesados)
+			message: { status: "error", message: "Limite excedido. Tente novamente em breve." },
+			standardHeaders: true,
+			legacyHeaders: false
+		});
 
 		// Estado da UPS
 		this.lastUpsStatus = null;
@@ -370,8 +389,30 @@ class BotAPI {
 			});
 		};
 
+		// Middleware para autenticar UPS via header secreto
+		const authenticateUPS = (req, res, next) => {
+			if (!this.upsApiSecret) {
+				this.logger.warn("UPS_API_SECRET não configurado. Endpoint UPS desprotegido!");
+				return next();
+			}
+
+			const secret = req.headers["x-ups-secret"];
+			if (secret && secret === this.upsApiSecret) {
+				return next();
+			}
+
+			this.logger.warn(`Tentativa de acesso UPS não autorizado do IP: ${req.ip}`);
+			return res.status(403).json({
+				status: "error",
+				message: "Não autorizado"
+			});
+		};
+
+		// Aplica limiter geral em todas as rotas da API
+		this.app.use("/api/", this.generalLimiter);
+
 		// Novo endpoint para reiniciar um bot específico (requer autenticação)
-		this.app.get("/restart/:botId", authenticateBasic, async (req, res) => {
+		this.app.get("/restart/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
 			try {
 				// Obter parâmetros
 				const { botId } = req.params;
@@ -432,7 +473,7 @@ class BotAPI {
 			}
 		});
 
-		this.app.get("/logout/:botId", authenticateBasic, async (req, res) => {
+		this.app.get("/logout/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
 			const { botId } = req.params;
 			const bot = this.bots.find((b) => b.id === botId);
 			if (!bot) {
@@ -450,7 +491,7 @@ class BotAPI {
 			}
 		});
 
-		this.app.get("/recreate/:botId", authenticateBasic, async (req, res) => {
+		this.app.get("/recreate/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
 			const { botId } = req.params;
 			const bot = this.bots.find((b) => b.id === botId);
 			if (!bot) {
@@ -469,7 +510,7 @@ class BotAPI {
 		});
 
 		// Webhook de doação do Tipa.ai
-		this.app.post("/donate_tipa", async (req, res) => {
+		this.app.post("/donate_tipa", this.strictLimiter, async (req, res) => {
 			try {
 				this.logger.info("Recebido webhook de doação do Tipa.ai");
 
@@ -516,7 +557,7 @@ class BotAPI {
 		});
 
 		// UPS Power Change Endpoint
-		this.app.post("/UPS/powerChange", async (req, res) => {
+		this.app.post("/UPS/powerChange", authenticateUPS, this.strictLimiter, async (req, res) => {
 			try {
 				const { status, data } = req.body;
 				this.logger.info(`UPS power change: ${status}`);
@@ -570,7 +611,7 @@ class BotAPI {
 		});
 
 		// UPS Power Critical Endpoint
-		this.app.post("/UPS/powerCritical", async (req, res) => {
+		this.app.post("/UPS/powerCritical", authenticateUPS, this.strictLimiter, async (req, res) => {
 			try {
 				const { status, level, data } = req.body;
 				this.logger.info(`UPS power CRITICAL: ${level}%`);
@@ -599,7 +640,7 @@ class BotAPI {
 		});
 
 		// Endpoint para estatísticas de LLM
-		this.app.get("/llm-stats", authenticateBasic, async (req, res) => {
+		this.app.get("/llm-stats", authenticateBasic, this.strictLimiter, async (req, res) => {
 			try {
 				const StatsService = require("./services/StatsService");
 				const statsService = new StatsService();
@@ -629,7 +670,7 @@ class BotAPI {
 		});
 
 		// Endpoint para obter relatórios de carga
-		this.app.post("/getLoad", async (req, res) => {
+		this.app.post("/getLoad", this.strictLimiter, async (req, res) => {
 			try {
 				const { timestamp } = req.body;
 
@@ -658,7 +699,7 @@ class BotAPI {
 		});
 
 		// Novo endpoint para obter dados analíticos
-		this.app.get("/analytics", (req, res) => {
+		this.app.get("/analytics", this.strictLimiter, (req, res) => {
 			try {
 				// Obtém parâmetros da requisição
 				const period = req.query.period ?? "today";
@@ -704,7 +745,7 @@ class BotAPI {
 		});
 
 		// Endpoint para estatísticas detalhadas dos bots (tabela)
-		this.app.get("/api/bot-stats", async (req, res) => {
+		this.app.get("/api/bot-stats", this.strictLimiter, async (req, res) => {
 			try {
 				const now = Date.now();
 				// Verifica se o cache é válido
@@ -743,29 +784,8 @@ class BotAPI {
 		});
 
 		// Chat API for AnythingLLM help
-		this.ajudaRateLimit = new Map(); // ip -> { count, lastReset }
-
-		this.app.post("/api/ajuda/chat", async (req, res) => {
+		this.app.post("/api/ajuda/chat", this.strictLimiter, async (req, res) => {
 			const { message, sessionId } = req.body;
-			const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-			// Rate Limit: 5 messages per minute
-			const now = Date.now();
-			const userLimit = this.ajudaRateLimit.get(ip) || { count: 0, lastReset: now };
-
-			if (now - userLimit.lastReset > 60000) {
-				userLimit.count = 0;
-				userLimit.lastReset = now;
-			}
-
-			if (userLimit.count >= 5) {
-				return res.status(429).json({
-					error: "Limite de mensagens atingido (5 por minuto). Aguarde um pouco."
-				});
-			}
-
-			userLimit.count++;
-			this.ajudaRateLimit.set(ip, userLimit);
 
 			if (!message || message.trim().length < 2) {
 				return res.status(400).json({ error: "Mensagem muito curta ou ausente." });
@@ -810,7 +830,7 @@ class BotAPI {
 		});
 
 		// Endpoint para Dossier dos Grupos (API)
-		this.app.get("/api/groups-dossier", authenticateBasic, async (req, res) => {
+		this.app.get("/api/groups-dossier", authenticateBasic, this.strictLimiter, async (req, res) => {
 			try {
 				// 1. Busca os status (contadores) de todos os grupos
 				const statusList = await this.database.dbAll(
@@ -949,28 +969,33 @@ class BotAPI {
 		});
 
 		// API endpoints for Service Providers CRUD
-		this.app.get("/api/service-providers", authenticateBasic, (req, res) => {
+		this.app.get("/api/service-providers", authenticateBasic, this.strictLimiter, (req, res) => {
 			res.json(this.serviceProviderService.getConfig());
 		});
 
-		this.app.post("/api/service-providers", authenticateBasic, async (req, res) => {
-			try {
-				const newConfig = req.body;
-				await this.serviceProviderService.saveConfig(newConfig);
+		this.app.post(
+			"/api/service-providers",
+			authenticateBasic,
+			this.strictLimiter,
+			async (req, res) => {
+				try {
+					const newConfig = req.body;
+					await this.serviceProviderService.saveConfig(newConfig);
 
-				// Reload providers in services if needed
-				const LLMService = require("./services/LLMService");
-				LLMService.getInstance().buildProviders();
+					// Reload providers in services if needed
+					const LLMService = require("./services/LLMService");
+					LLMService.getInstance().buildProviders();
 
-				res.json({ status: "ok", message: "Configuration saved successfully" });
-			} catch (error) {
-				this.logger.error("Error saving service providers via API:", error);
-				res.status(500).json({ status: "error", message: error.message });
+					res.json({ status: "ok", message: "Configuration saved successfully" });
+				} catch (error) {
+					this.logger.error("Error saving service providers via API:", error);
+					res.status(500).json({ status: "error", message: error.message });
+				}
 			}
-		});
+		);
 
 		// API endpoint for LLM Queue status
-		this.app.get("/api/llm/queue", authenticateBasic, (req, res) => {
+		this.app.get("/api/llm/queue", authenticateBasic, this.strictLimiter, (req, res) => {
 			const LLMService = require("./services/LLMService");
 			res.json({
 				status: "ok",
@@ -979,7 +1004,7 @@ class BotAPI {
 		});
 
 		// API endpoint for LLM Stats (last hour by default)
-		this.app.get("/api/llm/stats", authenticateBasic, async (req, res) => {
+		this.app.get("/api/llm/stats", authenticateBasic, this.strictLimiter, async (req, res) => {
 			try {
 				const LLMService = require("./services/LLMService");
 				const timeframe =
@@ -1278,7 +1303,7 @@ class BotAPI {
 		});
 
 		// Update the group data endpoint to use the correct methods
-		this.app.post("/api/update-group", async (req, res) => {
+		this.app.post("/api/update-group", this.strictLimiter, async (req, res) => {
 			const { token, groupId, changes } = req.body;
 
 			if (!token || !groupId || !changes) {
@@ -1377,79 +1402,84 @@ class BotAPI {
 		});
 
 		// Upload media endpoint
-		this.app.post("/api/upload-media", upload.single("file"), async (req, res) => {
-			const { token, groupId, type, name, caption } = req.body;
-			const file = req.file;
+		this.app.post(
+			"/api/upload-media",
+			this.strictLimiter,
+			upload.single("file"),
+			async (req, res) => {
+				const { token, groupId, type, name, caption } = req.body;
+				const file = req.file;
 
-			if (!token || !groupId || !type || !name || !file) {
-				return res.status(400).json({ success: false, message: "Missing required parameters" });
+				if (!token || !groupId || !type || !name || !file) {
+					return res.status(400).json({ success: false, message: "Missing required parameters" });
+				}
+
+				try {
+					const webManagementData = await this.readWebManagementToken(token);
+
+					if (!webManagementData || webManagementData.groupId !== groupId) {
+						return res.status(401).json({ success: false, message: "Unauthorized" });
+					}
+
+					if (new Date() > new Date(webManagementData.expiresAt)) {
+						return res.status(401).json({ success: false, message: "Token expired" });
+					}
+
+					// Get database instance
+					const groupData = await this.database.getGroup(groupId);
+
+					if (!groupData) {
+						return res.status(404).json({ success: false, message: "Group not found" });
+					}
+
+					// Check storage limit
+					await checkGroupLimits(groupId, "storage", { fileSize: file.size });
+
+					// Save file
+					const fileName = `${Date.now()}-${file.originalname}`;
+					const mediaPath = path.join(this.database.databasePath, "media");
+
+					await fs.mkdir(mediaPath, { recursive: true }).catch(() => {});
+
+					const filePath = path.join(mediaPath, fileName);
+					await fs.copyFile(file.path, filePath);
+
+					// Update group data
+					if (!groupData[type]) {
+						groupData[type] = {};
+					}
+
+					groupData[type][name] = {
+						file: fileName,
+						caption: caption ? caption.trim() : undefined,
+						uploadedAt: new Date().toISOString(),
+						uploadedBy: webManagementData.requestNumber
+					};
+
+					// Add update timestamp
+					groupData.lastUpdated = new Date().toISOString();
+
+					// Save the updated group
+					await this.database.saveGroup(groupData);
+
+					this.logger.info(
+						`[management][${token}][${groupId}] Media '${type}' uplodaded: ${fileName}`
+					);
+
+					return res.json({ success: true, fileName });
+				} catch (error) {
+					this.logger.error("Error uploading media:", error);
+					return res.status(500).json({ success: false, message: "Server error" });
+				} finally {
+					// Remove temp file
+					if (req.file) {
+						fs.unlink(req.file.path).catch((error) => {
+							this.logger.error("Error removing temp file:", error);
+						});
+					}
+				}
 			}
-
-			try {
-				const webManagementData = await this.readWebManagementToken(token);
-
-				if (!webManagementData || webManagementData.groupId !== groupId) {
-					return res.status(401).json({ success: false, message: "Unauthorized" });
-				}
-
-				if (new Date() > new Date(webManagementData.expiresAt)) {
-					return res.status(401).json({ success: false, message: "Token expired" });
-				}
-
-				// Get database instance
-				const groupData = await this.database.getGroup(groupId);
-
-				if (!groupData) {
-					return res.status(404).json({ success: false, message: "Group not found" });
-				}
-
-				// Check storage limit
-				await checkGroupLimits(groupId, "storage", { fileSize: file.size });
-
-				// Save file
-				const fileName = `${Date.now()}-${file.originalname}`;
-				const mediaPath = path.join(this.database.databasePath, "media");
-
-				await fs.mkdir(mediaPath, { recursive: true }).catch(() => {});
-
-				const filePath = path.join(mediaPath, fileName);
-				await fs.copyFile(file.path, filePath);
-
-				// Update group data
-				if (!groupData[type]) {
-					groupData[type] = {};
-				}
-
-				groupData[type][name] = {
-					file: fileName,
-					caption: caption ? caption.trim() : undefined,
-					uploadedAt: new Date().toISOString(),
-					uploadedBy: webManagementData.requestNumber
-				};
-
-				// Add update timestamp
-				groupData.lastUpdated = new Date().toISOString();
-
-				// Save the updated group
-				await this.database.saveGroup(groupData);
-
-				this.logger.info(
-					`[management][${token}][${groupId}] Media '${type}' uplodaded: ${fileName}`
-				);
-
-				return res.json({ success: true, fileName });
-			} catch (error) {
-				this.logger.error("Error uploading media:", error);
-				return res.status(500).json({ success: false, message: "Server error" });
-			} finally {
-				// Remove temp file
-				if (req.file) {
-					fs.unlink(req.file.path).catch((error) => {
-						this.logger.error("Error removing temp file:", error);
-					});
-				}
-			}
-		});
+		);
 
 		// Custom Commands CRUD
 

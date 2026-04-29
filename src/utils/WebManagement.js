@@ -18,6 +18,38 @@ class WebManagement {
       );
     `
 		);
+
+		// Cleanup expired tokens periodically (every hour)
+		this.cleanupInterval = setInterval(() => this.cleanupExpiredTokens(), 60 * 60 * 1000);
+		// Initial cleanup after a short delay
+		setTimeout(() => this.cleanupExpiredTokens(), 5000);
+	}
+
+	async cleanupExpiredTokens() {
+		try {
+			const now = new Date().toISOString();
+			const allTokens = await this.database.dbAll(
+				this.DB_NAME,
+				"SELECT token, json_data FROM tokens"
+			);
+
+			let deletedCount = 0;
+			for (const row of allTokens) {
+				const data = JSON.parse(row.json_data);
+				if (data.expiresAt && data.expiresAt < now) {
+					await this.database.dbRun(this.DB_NAME, "DELETE FROM tokens WHERE token = ?", [
+						row.token
+					]);
+					deletedCount++;
+				}
+			}
+
+			if (deletedCount > 0) {
+				this.logger.info(`Cleaned up ${deletedCount} expired tokens.`);
+			}
+		} catch (error) {
+			this.logger.error("Error cleaning up expired tokens:", error);
+		}
 	}
 
 	static getInstance() {
