@@ -107,36 +107,6 @@ class Command {
 	}
 
 	/**
-	 * Verifica se o comando está em cooldown
-	 * @param {string} userId - ID do usuário que acionou o comando
-	 * @returns {Object} - Objeto com status e tempo restante
-	 */
-	checkCooldown(userId) {
-		if (!this.cooldown ?? this.cooldown <= 0) {
-			return { onCooldown: false, timeLeft: 0 };
-		}
-
-		const lastUserUsage = this.metadata.userCooldowns?.[userId] ?? 0;
-		const now = Date.now();
-		const timeSinceLastUse = (now - lastUserUsage) / 1000; // em segundos
-
-		if (timeSinceLastUse < this.cooldown) {
-			return {
-				onCooldown: true,
-				timeLeft: Math.ceil(this.cooldown - timeSinceLastUse)
-			};
-		}
-
-		// Atualiza o último uso para este usuário
-		if (!this.metadata.userCooldowns) {
-			this.metadata.userCooldowns = {};
-		}
-		this.metadata.userCooldowns[userId] = now;
-
-		return { onCooldown: false, timeLeft: 0 };
-	}
-
-	/**
 	 * Converte a instância Command para um objeto simples para serialização
 	 * @returns {Object} - Objeto simples do comando
 	 */

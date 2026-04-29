@@ -187,10 +187,6 @@ async function main() {
 				});
 
 				redisDbAtual++;
-				if (redisDbAtual === 6) {
-					// Skip 6 usado no Evo
-					redisDbAtual = 7;
-				}
 
 				newRBot.initialize();
 				await sleep(500);
@@ -243,10 +239,6 @@ async function main() {
 				});
 
 				redisDbAtual++;
-				if (redisDbAtual === 6) {
-					// Skip 6 usado no Evo
-					redisDbAtual = 7;
-				}
 
 				newRBot.initialize();
 				await sleep(500);
@@ -325,21 +317,6 @@ async function main() {
 		// Inicia servidor da API
 		await botAPI.start();
 		logger.info("Servidor API iniciado");
-
-		// Manipula encerramento do programa
-		process.on("SIGINT", async () => {
-			logger.info("[SIGINT] Desligando bots e servidor API...");
-
-			// Para o servidor API primeiro
-			await botAPI.stop();
-
-			// Destrói todas as instâncias de bot
-			for (const bot of botInstances) {
-				await bot.destroy();
-			}
-
-			process.exit(0);
-		});
 	} catch (error) {
 		logger.error("Erro no processo principal:", error);
 		process.exit(1);

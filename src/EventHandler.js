@@ -77,7 +77,7 @@ class EventHandler extends EventEmitter {
 	 * @param {string} name - O nome do grupo (opcional)
 	 * @returns {Promise<Group>} - O objeto do grupo
 	 */
-	async getOrCreateGroup(groupId, name = null, prefix = "?") {
+	async getOrCreateGroup(groupId, name = null, prefix = "?", addedBy = null) {
 		try {
 			let newGroup = false;
 			if (!this.groups[groupId]) {
@@ -112,7 +112,7 @@ class EventHandler extends EventEmitter {
 						id: groupId,
 						name: displayName,
 						prefix,
-						addedBy: "test@c.us" // Para teste
+						addedBy: addedBy ?? "desconhecido"
 					});
 
 					this.groups[groupId] = group;
@@ -128,7 +128,10 @@ class EventHandler extends EventEmitter {
 		} catch (error) {
 			this.logger.error("Erro em getOrCreateGroup:", error);
 			// Cria um objeto de grupo básico se tudo falhar
-			return new Group({ id: groupId, name: name ?? "grupo-desconhecido" });
+			return {
+				newGroup: false,
+				group: new Group({ id: groupId, name: name ?? "grupo-desconhecido" })
+			};
 		}
 	}
 
@@ -262,7 +265,8 @@ class EventHandler extends EventEmitter {
 				const groupData = await this.getOrCreateGroup(
 					message.guildId ?? message.group,
 					null,
-					bot.prefix
+					bot.prefix,
+					message.author
 				);
 				group = groupData.group;
 
@@ -808,7 +812,12 @@ class EventHandler extends EventEmitter {
 					?.replace(/[^a-zA-Z0-9 ]/g, "")
 					.replace(/(?:^\w|[A-Z]|\b\w)/g, (w, i) => (i === 0 ? w.toLowerCase() : w.toUpperCase()))
 					.replace(/\s+/g, "") ?? null;
-			const groupData = await this.getOrCreateGroup(data.group.id, nomeGrupo, bot.prefix);
+			const groupData = await this.getOrCreateGroup(
+				data.group.id,
+				nomeGrupo,
+				bot.prefix,
+				data.responsavel?.id || data.responsavel
+			);
 			const group = groupData.group;
 
 			// Popula titulo e descricao

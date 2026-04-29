@@ -28,10 +28,10 @@ const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const unlinkAsync = promisify(fs.unlink);
 
-class WhatsAppBotDiscord {
+class DiscordBot {
 	constructor(options) {
 		if (!options.discordToken) {
-			throw new Error("WhatsAppBotDiscord: 'discordToken' is required.");
+			throw new Error("DiscordBot: 'discordToken' is required.");
 		}
 
 		this.id = options.id;
@@ -760,4 +760,4 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 	}
 }
 
-module.exports = WhatsAppBotDiscord;
+module.exports = DiscordBot;

@@ -40,11 +40,13 @@ class BotAPI {
 		});
 
 		// Webhook Server Init
-		this.webhookApp = express();
-		this.webhookLogger = new Logger("group-webhooks");
-		this.webhooksCache = new Map(); // groupId -> [webhooks]
-		this.webhookRateLimits = new Map(); // botId:groupId -> { lastSent, buffer, timeout }
-		this.webhookServer = null;
+		if (process.env.GROUP_WEBHOOKS) {
+			this.webhookApp = express();
+			this.webhookLogger = new Logger("group-webhooks");
+			this.webhooksCache = new Map(); // groupId -> [webhooks]
+			this.webhookRateLimits = new Map(); // botId:groupId -> { lastSent, buffer, timeout }
+			this.webhookServer = null;
+		}
 
 		// Credenciais de autenticação para endpoints protegidos
 		this.apiUser = process.env.BOTAPI_USER ?? "admin";
@@ -2889,6 +2891,7 @@ class BotAPI {
 	 * Reloads webhooks from database to memory
 	 */
 	async reloadWebhooks() {
+		if (!process.env.GROUP_WEBHOOKS) return;
 		try {
 			const groups = await this.database.getGroups();
 			this.webhooksCache.clear();
@@ -2909,6 +2912,7 @@ class BotAPI {
 	 * Starts the webhook server
 	 */
 	startWebhookServer() {
+		if (!process.env.GROUP_WEBHOOKS) return;
 		const port = process.env.GROUP_WEBHOOKS;
 		if (!port) {
 			this.webhookLogger.warn("GROUP_WEBHOOKS port not set. Webhook server disabled.");
