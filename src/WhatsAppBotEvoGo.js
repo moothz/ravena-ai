@@ -2305,6 +2305,39 @@ class WhatsAppBotEvoGo {
 		}
 	}
 
+	async removeFromGroup(groupJid, participants) {
+		try {
+			this.logger.info(
+				`[removeFromGroup][${this.instanceName}] Removendo ${participants.length} do grupo ${groupJid}`
+			);
+			return await this.apiClient.post(`/group/participant`, {
+				groupJid,
+				action: "remove",
+				participants: Array.isArray(participants) ? participants : [participants]
+			});
+		} catch (e) {
+			this.logger.error(
+				`[removeFromGroup][${this.instanceName}] Erro ao remover participantes:`,
+				e
+			);
+		}
+	}
+
+	async removeFromCommunity(communityJid, participants) {
+		try {
+			this.logger.info(
+				`[removeFromCommunity][${this.instanceName}] Removendo ${participants.length} da comunidade ${communityJid}`
+			);
+			// Na Evolution GO, para remover uma PESSOA da comunidade, removemos ela do grupo de anúncios (que tem o JID da comunidade)
+			return await this.removeFromGroup(communityJid, participants);
+		} catch (e) {
+			this.logger.error(
+				`[removeFromCommunity][${this.instanceName}] Erro ao remover da comunidade:`,
+				e
+			);
+		}
+	}
+
 	logMsgToGrupo(msg, extra = false) {
 		if (this.grupoLogs && msg) {
 			this.logger.info(`[logMsgToGrupo] ${msg}`, extra);
@@ -2387,6 +2420,7 @@ class WhatsAppBotEvoGo {
 						isGroup: true,
 						isCommunity: groupInfo.IsParent,
 						isAnnounce: groupInfo.IsAnnounce,
+						linkedParentJid: groupInfo.LinkedParentJID,
 						notInGroup: false,
 						groupMetadata: { desc: groupInfo.Topic },
 						participants: groupInfo.Participants.map((p) => ({

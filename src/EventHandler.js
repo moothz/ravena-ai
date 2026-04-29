@@ -744,18 +744,16 @@ class EventHandler extends EventEmitter {
 		}
 
 		if (data.isCommunity || data.group?.isCommunity) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em comunidade.`, { data });
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em comunidade.`);
 			return;
 		}
 
 		if (data.isAnnounce || data.group?.isAnnounce) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel.`, {
-				data
-			});
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel.`);
 			return;
 		}
 
-		this.logger.info(`[processGroupJoin] `, { data });
+		//this.logger.info(`[processGroupJoin] `, { data });
 
 		if (!isBotJoining) {
 			// Se não for o bot sendo adicionado, coloca pessoa numa lista pra ignorar o join e evitar spam no grupo
@@ -778,7 +776,11 @@ class EventHandler extends EventEmitter {
 			// Obtém os dados completos do chat
 			const chat = await data.origin.getChat();
 
-			this.logger.info(`[processGroupJoin] Chat `, { chat });
+			//this.logger.info(`[processGroupJoin] Chat `, { chat });
+
+			// Verifica se há spammers para banir (63/62) nos grupos fixos
+			await this.checkAutoBanSpammers(bot, chat);
+
 			if (chat.isCommunity) {
 				this.logger.debug(
 					`[processGroupJoin][viaChat] Ignorando evento de join em comunidade '${chat.name}'`,
@@ -794,11 +796,6 @@ class EventHandler extends EventEmitter {
 				);
 				return;
 			}
-
-			this.logger.debug(
-				`[processGroupJoin][${groupId}] Cheguei ate aqui, nao sou announce (data '${data.isAnnounce}' && chat '${chat.isAnnounce}') nem comu (data '${data.isCommunity}' && chat '${chat.isCommunity}')`,
-				{ data, chat }
-			);
 
 			// Verifica se o próprio bot é quem está entrando
 			this.logger.debug(
@@ -818,7 +815,7 @@ class EventHandler extends EventEmitter {
 			group.titulo = chat.name || null;
 			group.descricao = chat.groupMetadata?.desc || null;
 
-			this.logger.debug(`Informações do grupo: ${JSON.stringify(group)}`);
+			//this.logger.debug(`Informações do grupo: ${JSON.stringify(group)}`);
 
 			if (isBotJoining) {
 				// Adiciona o responsável do bot comunitário como admin adicional
@@ -1563,6 +1560,56 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			return false;
 		}
 	}
+	async checkAutoBanSpammers(bot, chat) {
+		const fixedGroups = [
+			process.env.GRUPO_INTERACAO,
+			process.env.GRUPO_PESCA,
+			process.env.GRUPO_DOWNLOADS
+		].filter(Boolean);
+
+		const chatId = chat.id._serialized || chat.id;
+		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { fixedGroups });
+		if (fixedGroups.length === 0) return;
+
+		if (!fixedGroups.includes(chatId)) return;
+
+		const participants = chat.Participants || chat.participants || [];
+
+		const spammers = participants.filter((p) => {
+			const phone = p.phoneNumber || "";
+			return phone.startsWith("63") || phone.startsWith("62");
+		});
+
+		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { participants, spammers });
+
+		if (spammers.length > 0) {
+			const spammersJids = spammers.map((s) => {
+				// Prioritize the phone number JID (@s.whatsapp.net) over LID
+				if (s.phoneNumber) {
+					const cleanPhone = s.phoneNumber.split("@")[0];
+					return `${cleanPhone}@s.whatsapp.net`;
+				}
+				return s.id._serialized || s.id;
+			});
+			this.logger.info(
+				`[checkAutoBanSpammers] Detectados ${spammers.length} spammers no grupo ${chatId}`,
+				{
+					spammersJids
+				}
+			);
+
+			// Remove do grupo
+			await bot.removeFromGroup(chatId, spammersJids);
+
+			// Se for comunidade, remove da comunidade também
+			const communityJid = chat.linkedParentJid;
+			if (communityJid) {
+				this.logger.info(`[checkAutoBanSpammers] Removendo spammers da comunidade ${communityJid}`);
+				await bot.removeFromCommunity(communityJid, spammersJids);
+			}
+		}
+	}
+
 	/**
 	 * Obtém a instância única do EventHandler
 	 * @returns {EventHandler}
