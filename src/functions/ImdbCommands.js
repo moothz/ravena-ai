@@ -1,5 +1,5 @@
 ﻿const axios = require("axios");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -43,7 +43,7 @@ async function buscarImdb(bot, message, args, group) {
 					"Por favor, forneça o nome de um filme ou série para buscar. Exemplo: !imdb Inception",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -72,7 +72,7 @@ async function buscarImdb(bot, message, args, group) {
 				content: `❌ Não foi possível encontrar "${nome}". Verifique se o nome está correto.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -98,7 +98,7 @@ async function buscarImdb(bot, message, args, group) {
 				content: `❌ Erro ao buscar detalhes para "${nome}".`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -182,7 +182,12 @@ async function buscarImdb(bot, message, args, group) {
 				const contentType = imageResponse.headers["content-type"] ?? "image/jpeg";
 
 				// Cria a mídia para o poster
-				const media = new MessageMedia(contentType, base64Image, `${data.imdbID}.jpg`);
+				const media = {
+					mimetype: contentType,
+					data: base64Image,
+					filename: `.jpg`,
+					isMessageMedia: true
+				};
 
 				// Retorna a mensagem com o poster
 				return new ReturnMessage({
@@ -191,7 +196,7 @@ async function buscarImdb(bot, message, args, group) {
 					options: {
 						caption: mensagem,
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			} catch (imageError) {
@@ -202,7 +207,7 @@ async function buscarImdb(bot, message, args, group) {
 					content: mensagem,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -213,7 +218,7 @@ async function buscarImdb(bot, message, args, group) {
 				content: mensagem,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -250,7 +255,7 @@ const commands = [
 		description: "Busca informações sobre filmes ou séries no IMDB",
 		category: "cultura",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎬"
 		},
 		method: buscarImdb

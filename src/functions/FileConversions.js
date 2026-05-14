@@ -1,5 +1,5 @@
-﻿const ReturnMessage = require("../models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
+const ReturnMessage = require("../models/ReturnMessage");
+
 const { toOpus, toMp3 } = require("../utils/Conversions");
 const Command = require("../models/Command");
 const Logger = require("../utils/Logger");
@@ -86,7 +86,7 @@ async function createMediaFromFile(filePath, mimetype) {
 
 	logger.info(`[createMediaFromFile] ${mimetype} -> ${filePath}`);
 
-	return new MessageMedia(mimetype, base64Data, path.basename(filePath));
+	return { mimetype, data: base64Data, filename: path.basename(filePath), isMessageMedia: true };
 }
 
 /**
@@ -141,7 +141,12 @@ async function handleGetAudio(bot, message, args, group) {
 
 		const outputBase64 = await toMp3(quotedMedia.data, { b64: true });
 
-		const outputMedia = new MessageMedia("audio/mp3", outputBase64, "audio.mp3");
+		const outputMedia = {
+			mimetype: "audio/mp3",
+			data: outputBase64,
+			filename: "audio.mp3",
+			isMessageMedia: true
+		};
 
 		return new ReturnMessage({
 			chatId,
@@ -149,7 +154,7 @@ async function handleGetAudio(bot, message, args, group) {
 			options: {
 				sendAudioAsVoice: false,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -199,7 +204,12 @@ async function handleGetVoice(bot, message, args, group) {
 
 		const outputBase64 = await toOpus(quotedMedia.data, { b64: true });
 
-		const outputMedia = new MessageMedia("audio/ogg; codecs=opus", outputBase64, "voice.ogg");
+		const outputMedia = {
+			mimetype: "audio/ogg; codecs=opus",
+			data: outputBase64,
+			filename: "voice.ogg",
+			isMessageMedia: true
+		};
 
 		return new ReturnMessage({
 			chatId,
@@ -207,7 +217,7 @@ async function handleGetVoice(bot, message, args, group) {
 			options: {
 				sendAudioAsVoice: true,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -277,7 +287,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		returnMessages.push(
 			new ReturnMessage({
 				chatId,
-				content: `🌀 Ajustando volume para ${volumeLevel}%...`
+				content: `⌛️ Ajustando volume para ${volumeLevel}%...`
 			})
 		);
 
@@ -311,7 +321,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 				options: {
 					sendAudioAsVoice: mediaType === "voice",
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			})
 		);
@@ -334,7 +344,7 @@ const commands = [
 		description: "Extrai audio do arquivo especificado, em mp3",
 		category: "áudio",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎵",
 			error: "❌"
 		},
@@ -347,7 +357,7 @@ const commands = [
 		description: "Extrai audio do arquivo especificado, como mensagem de voz",
 		category: "áudio",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎤",
 			error: "❌"
 		},
@@ -360,7 +370,7 @@ const commands = [
 		description: "Ajusta o volume da mídia (0-1000)",
 		category: "áudio",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊",
 			error: "❌"
 		},

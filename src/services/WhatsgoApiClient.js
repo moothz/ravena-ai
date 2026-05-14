@@ -1,15 +1,15 @@
 const axios = require("axios");
 
-class EvolutionApiClient {
+class WhatsgoApiClient {
 	/**
-	 * @param {string} baseUrl - The base URL of the Evolution API (e.g., http://localhost:8080)
-	 * @param {string} apiKey - The API key for Evolution API
-	 * @param {string} instanceName - The name of the Evolution API instance
+	 * @param {string} baseUrl - The base URL of the Whatsgo API (e.g., http://localhost:8080)
+	 * @param {string} apiKey - The API key for Whatsgo API
+	 * @param {string} instanceName - The name of the Whatsgo API instance
 	 * @param {object} logger - A logger instance (e.g., from your Logger class)
 	 */
 	constructor(baseUrl, apiKey, instanceName, logger) {
 		if (!baseUrl || !apiKey || !instanceName) {
-			throw new Error("Evolution API Client: baseUrl, apiKey, and instanceName are required.");
+			throw new Error("Whatsgo API Client: baseUrl, apiKey, and instanceName are required.");
 		}
 		this.instanceName = instanceName;
 		this.logger = logger || console; // Fallback to console.log if no logger is provided
@@ -22,7 +22,7 @@ class EvolutionApiClient {
 		});
 
 		this.logger.info(
-			`EvolutionApiClient initialized for instance: ${instanceName}, baseUrl: ${baseUrl}`
+			`WhatsgoApiClient initialized for instance: ${instanceName}, baseUrl: ${baseUrl}`
 		);
 	}
 
@@ -33,7 +33,7 @@ class EvolutionApiClient {
 			return response.data;
 		} catch (error) {
 			this.logger.error(
-				`Evo API GET Error from ${url}:`,
+				`Whatsgo API GET Error from ${url}:`,
 				error.response?.status,
 				error.response?.data || error.message
 			);
@@ -58,7 +58,7 @@ class EvolutionApiClient {
 			return response.data;
 		} catch (error) {
 			this.logger.error(
-				`Evo API POST Error from ${url}:`,
+				`Whatsgo API POST Error from ${url}:`,
 				error.response?.status,
 				error.response?.data || error.message
 			);
@@ -83,7 +83,7 @@ class EvolutionApiClient {
 			return response.data;
 		} catch (error) {
 			this.logger.error(
-				`Evo API PUT Error from ${url}:`,
+				`Whatsgo API PUT Error from ${url}:`,
 				error.response?.status,
 				error.response?.data || error.message
 			);
@@ -101,14 +101,14 @@ class EvolutionApiClient {
 			? endpoint.replace("{instanceName}", this.instanceName) // For endpoints like /instance/webhook/set/{instanceName}
 			: `${endpoint}/${this.instanceName}`;
 
-		//this.logger.debug(`Evo API DELETE: ${url}`, data);
+		//this.logger.debug(`Whatsgo API DELETE: ${url}`, data);
 		try {
 			const response = await this.client.delete(url, { data, params });
-			//this.logger.debug(`Evo API DELETE Response from ${url}:`, response.status, response.data?.status || response.data?.key?.id);
+			//this.logger.debug(`Whatsgo API DELETE Response from ${url}:`, response.status, response.data?.status || response.data?.key?.id);
 			return response.data;
 		} catch (error) {
 			this.logger.error(
-				`Evo API DELETE Error from ${url}:`,
+				`Whatsgo API DELETE Error from ${url}:`,
 				error.response?.status,
 				error.response?.data || error.message
 			);
@@ -122,4 +122,4 @@ class EvolutionApiClient {
 	}
 }
 
-module.exports = EvolutionApiClient;
+module.exports = WhatsgoApiClient;

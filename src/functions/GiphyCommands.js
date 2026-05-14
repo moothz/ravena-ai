@@ -1,5 +1,4 @@
 const axios = require("axios");
-const { MessageMedia } = require("whatsapp-web.js");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -61,7 +60,7 @@ async function enviarGif(bot, message, args, group) {
 					content: "❌ Não foi possível encontrar GIFs populares. Tente novamente mais tarde.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -92,7 +91,7 @@ async function enviarGif(bot, message, args, group) {
 					content: `❌ Nenhum GIF encontrado para "${searchTerm}". Tente outra busca.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -171,7 +170,12 @@ async function enviarGif(bot, message, args, group) {
 		const finalBase64 = finalBuffer.toString("base64");
 
 		// Cria mídia para o GIF/MP4
-		const media = new MessageMedia(finalMimeType, finalBase64, "giphy.mp4");
+		const media = {
+			mimetype: finalMimeType,
+			data: finalBase64,
+			filename: "giphy.mp4",
+			isMessageMedia: true
+		};
 
 		// Prepara a legenda
 		let caption = "";
@@ -211,7 +215,7 @@ async function enviarGif(bot, message, args, group) {
 				sendMediaAsDocument: false,
 				sendVideoAsGif: true, // IMPORTANTE: Define para enviar como GIF animado
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -235,7 +239,7 @@ async function enviarGif(bot, message, args, group) {
 			content: `❌ ${errorMessage}`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -273,7 +277,7 @@ const commands = [
 		description: "Busca e envia um GIF do Giphy",
 		category: "busca",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📱"
 		},
 		method: enviarGif

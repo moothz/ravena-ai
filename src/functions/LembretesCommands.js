@@ -1,7 +1,7 @@
 const fs = require("fs").promises;
 const path = require("path");
 const chrono = require("chrono-node");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
@@ -618,11 +618,12 @@ ${lembrete.mensagem || ""}`;
 				const mediaData = await fs.readFile(mediaPath);
 
 				// Cria objeto de mídia
-				const media = new MessageMedia(
-					lembrete.mediaType || "application/octet-stream",
-					mediaData.toString("base64"),
-					lembrete.mediaPath
-				);
+				const media = {
+					mimetype: lembrete.mediaType || "application/octet-stream",
+					data: mediaData.toString("base64"),
+					filename: lembrete.mediaPath,
+					isMessageMedia: true
+				};
 
 				// Cria ReturnMessage com mídia
 				returnMessage = new ReturnMessage({
@@ -675,7 +676,7 @@ const commands = [
 		description: "Lista os lembretes ativos",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📋"
 		},
 		method: listarLembretes
@@ -685,7 +686,7 @@ const commands = [
 		description: "Configura um lembrete para uma data específica",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "😴"
 		},
 		needsQuotedMsg: true,
@@ -697,7 +698,7 @@ const commands = [
 		description: "Cancela um lembrete por ID",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🗑"
 		},
 		method: cancelarLembrete

@@ -208,7 +208,7 @@ async function tarotCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: `⚖️ *Destino em Pausa* ⏳\n\n*${userName}*, você já consultou as cartas recentemente.\n\nAguarde o ciclo lunar se completar (${daysLeft} dias restantes) para uma nova tiragem profunda.`,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 
@@ -299,7 +299,7 @@ Responda em PORTUGUÊS BRASIL.`;
 						options: {
 							caption: fullContent,
 							quotedMessageId: message.origin.id._serialized,
-							evoReply: message.origin
+							goReply: message.origin
 						}
 					});
 				} else {
@@ -310,7 +310,7 @@ Responda em PORTUGUÊS BRASIL.`;
 							content: media,
 							options: {
 								quotedMessageId: message.origin.id._serialized,
-								evoReply: message.origin
+								goReply: message.origin
 							}
 						}),
 						new ReturnMessage({
@@ -319,7 +319,7 @@ Responda em PORTUGUÊS BRASIL.`;
 							delay: 500,
 							options: {
 								quotedMessageId: message.origin.id._serialized,
-								evoReply: message.origin
+								goReply: message.origin
 							}
 						})
 					];
@@ -333,7 +333,7 @@ Responda em PORTUGUÊS BRASIL.`;
 		return new ReturnMessage({
 			chatId,
 			content: fullContent,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	} else {
 		// Fallback
@@ -349,7 +349,7 @@ Responda em PORTUGUÊS BRASIL.`;
 	return new ReturnMessage({
 		chatId,
 		content: response,
-		options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+		options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 	});
 }
 

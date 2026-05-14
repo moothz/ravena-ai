@@ -1,9 +1,8 @@
-﻿// src/functions/GeoguesserGame.js
+// src/functions/GeoguesserGame.js
 const path = require("path");
 const fs = require("fs").promises;
 const axios = require("axios");
 const crypto = require("crypto");
-const { Location } = require("whatsapp-web.js");
 const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
@@ -429,11 +428,14 @@ async function testeGeo(bot, message, args, group) {
 		[-19.931537169811445, -43.967424288007244]
 	];
 
-	const localFinal1 = new Location(lat, lng, {
+	const localFinal1 = {
+		latitude: lat,
+		longitude: lng,
 		name: `Nova Tentativa de moothz`,
 		address: `🔄 ${lat.toFixed(6)}, ${lng.toFixed(6)} - 324.23 km, 514 pontos`,
-		url: `https://www.google.com/maps/place/${lat},${lng}`
-	});
+		url: `https://www.google.com/maps/place/${lat},${lng}`,
+		isLocation: true
+	};
 
 	const msgs = [];
 	const markers = generateStaticMapUrl([[lat, lng], ...pins], ["F", "A", "B", "C"]);
@@ -498,7 +500,7 @@ async function startGeoguesserGame(bot, message, args, group) {
 		bot.sendReturnMessages(
 			new ReturnMessage({
 				chatId,
-				content: "🌎 *Inicializando _Geoguesser_*, aguarde as imagens! 🌀"
+				content: "🌎 *Inicializando _Geoguesser_*, aguarde as imagens! ⌛️"
 			}),
 			group
 		);
@@ -556,7 +558,7 @@ async function startGeoguesserGame(bot, message, args, group) {
 					content: instructions,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					},
 					delay: 1000
 				})
@@ -724,38 +726,44 @@ async function makeGuess(bot, message, args, group) {
 			if (score > activeGames[groupId].guesses[existingGuessIndex].score) {
 				activeGames[groupId].guesses[existingGuessIndex] = guess;
 
-				const guessLoc = new Location(lat, lng, {
+				const guessLoc = {
+					latitude: lat,
+					longitude: lng,
 					name: `Nova Tentativa de ${userName}`,
 					address: `🔄 ${lat.toFixed(6)}, ${lng.toFixed(6)} - ${(distance / 1000).toFixed(2)} km, ${score} pontos`,
-					url: `https://www.google.com/maps/place/${lat},${lng}`
-				});
+					url: `https://www.google.com/maps/place/${lat},${lng}`,
+					isLocation: true
+				};
 
 				return new ReturnMessage({
 					chatId: groupId,
 					content: guessLoc,
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			} else {
 				return new ReturnMessage({
 					chatId: groupId,
 					content: `⚠️ ${userName}, sua adivinhação anterior de *${(activeGames[groupId].guesses[existingGuessIndex].distance / 1000).toFixed(2)}km* era melhor que esta de _${(distance / 1000).toFixed(2)}km_.`,
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
 		} else {
 			// Adiciona nova adivinhação
 			activeGames[groupId].guesses.push(guess);
 
-			const guessLoc = new Location(lat, lng, {
+			const guessLoc = {
+				latitude: lat,
+				longitude: lng,
 				name: `Tentativa de ${userName}`,
 				address: `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)} - ${(distance / 1000).toFixed(2)} km, ${score} pontos`,
-				url: `https://www.google.com/maps/place/${lat},${lng}`
-			});
+				url: `https://www.google.com/maps/place/${lat},${lng}`,
+				isLocation: true
+			};
 
 			return new ReturnMessage({
 				chatId: groupId,
 				content: guessLoc,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 	} catch (error) {
@@ -948,13 +956,13 @@ async function processLocationMessage(bot, message) {
 				return new ReturnMessage({
 					chatId: groupId,
 					content: `🔄 ${userName} atualizou sua adivinhação usando localização.\nDistância: ${(distance / 1000).toFixed(2)} km\nPontuação: ${score} pontos (melhor que sua tentativa anterior)`,
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			} else {
 				return new ReturnMessage({
 					chatId: groupId,
 					content: `⚠️ ${userName}, sua adivinhação anterior de *${(activeGames[groupId].guesses[existingGuessIndex].distance / 1000).toFixed(2)}km* era melhor que esta de _${(distance / 1000).toFixed(2)}km_.`,
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
 		} else {
@@ -964,7 +972,7 @@ async function processLocationMessage(bot, message) {
 			return new ReturnMessage({
 				chatId: groupId,
 				content: `✅ ${userName} tentou adivinhar.\nDistância: ${(distance / 1000).toFixed(2)} km\nPontuação: ${score} pontos`,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 	} catch (error) {

@@ -207,7 +207,7 @@ async function toggleIgnore(bot, message, args, group) {
 				content: "Você agora será *incluído* nas menções de grupo.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} else {
@@ -223,7 +223,7 @@ async function toggleIgnore(bot, message, args, group) {
 				content: "Você agora será *ignorado* nas menções de grupo.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}

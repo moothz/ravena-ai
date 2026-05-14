@@ -27,7 +27,7 @@ async function pingCommand(bot, message, args, group) {
 		content: `Pong! 🏓 _(${delayMsg}s)_`,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
-			evoReply: message.origin
+			goReply: message.origin
 		}
 	});
 }
@@ -240,7 +240,7 @@ async function apelidoCommand(bot, message, args, group) {
 					content: `Seu apelido atual é: *${userNick}*`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			} else {
@@ -249,7 +249,7 @@ async function apelidoCommand(bot, message, args, group) {
 					content: "Você não tem um apelido definido.\nUse !apelido [apelido] para definir um.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -265,7 +265,7 @@ async function apelidoCommand(bot, message, args, group) {
 				content: "O apelido deve ter pelo menos 2 caracteres.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -279,7 +279,7 @@ async function apelidoCommand(bot, message, args, group) {
 				content: `O apelido foi limitado a 20 caracteres: *${nickname}*`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -311,7 +311,7 @@ async function apelidoCommand(bot, message, args, group) {
 			content: `Apelido definido: *${nickname}*`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -407,6 +407,7 @@ async function statusCommand(bot, message, args, group) {
 			};
 
 			servicesHeader = `📡 *Serviços Externos*\n`;
+			servicesHeader += `\t${getEmoji(servicesData.whatsgoapi)} WhatsGo _(serviço principal)_\n`;
 			servicesHeader += `\t${getEmoji(servicesData.imagine)} Imagine _(geração de imagens)_\n`;
 			servicesHeader += `\t${getEmoji(servicesData.llm)} LLM _(inteligência artificial)_\n`;
 			servicesHeader += `\t${getEmoji(servicesData.whisper)} Whisper _(voz para texto)_\n`;
@@ -467,7 +468,7 @@ const commands = [
 		category: "geral",
 		hidden: "true",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "🍭"
 		},
 		method: pingCommand

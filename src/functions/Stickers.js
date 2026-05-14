@@ -6,7 +6,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const sharp = require("sharp");
 const ffmpeg = require("fluent-ffmpeg");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const CmdUsage = require("../utils/CmdUsage");
 const LLMService = require("../services/LLMService");
 
@@ -534,11 +534,12 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 							});
 
 							const mp4Buffer = await fs.readFile(outputPath);
-							const mp4Media = new MessageMedia(
-								"video/mp4",
-								mp4Buffer.toString("base64"),
-								"sticker.mp4"
-							);
+							const mp4Media = {
+								mimetype: "video/mp4",
+								data: mp4Buffer.toString("base64"),
+								filename: "sticker.mp4",
+								isMessageMedia: true
+							};
 
 							// Limpar arquivos temporários
 							await fs.unlink(inputPath).catch(() => {});
@@ -551,17 +552,18 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 									sendMediaAsSticker: false,
 									caption: "Sticker Animation",
 									quotedMessageId: message.origin.id._serialized,
-									evoReply: message.origin
+									goReply: message.origin
 								}
 							});
 						} else if (metadata.hasAlpha) {
 							// WebP Transparente -> PNG (Documento)
 							const pngBuffer = await image.png().toBuffer();
-							const pngMedia = new MessageMedia(
-								"image/png",
-								pngBuffer.toString("base64"),
-								"sticker.png"
-							);
+							const pngMedia = {
+								mimetype: "image/png",
+								data: pngBuffer.toString("base64"),
+								filename: "sticker.png",
+								isMessageMedia: true
+							};
 
 							return new ReturnMessage({
 								chatId,
@@ -570,7 +572,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 									sendMediaAsDocument: true,
 									caption: "Sticker Transparente",
 									quotedMessageId: message.origin.id._serialized,
-									evoReply: message.origin
+									goReply: message.origin
 								}
 							});
 						}
@@ -588,7 +590,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 						sendMediaAsSticker: false,
 						caption: "Sticker Media",
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			} else if (["image", "video", "gif"].includes(mediaType)) {
@@ -634,7 +636,13 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		await fs.writeFile(tempFilePath, processedBuffer);
 
 		// Usar o método do bot para criar a mídia no formato correto
-		const processedMedia = await MessageMedia.fromFilePath(tempFilePath);
+		const processedFileBuffer = await fs.readFile(tempFilePath);
+		const processedMedia = {
+			mimetype: require("mime-types").lookup(tempFilePath) || "application/octet-stream",
+			data: processedFileBuffer.toString("base64"),
+			filename: require("path").basename(tempFilePath),
+			isMessageMedia: true
+		};
 
 		// Tentar limpar o arquivo temporário (de forma assíncrona, não bloqueia)
 		// fs.unlink(tempFilePath).catch(err => {
@@ -738,7 +746,7 @@ async function processAutoSticker(bot, message, group) {
 				stickerAuthor: "ravena",
 				stickerName,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -766,7 +774,7 @@ const commands = [
 		cooldown: 0,
 		reactions: {
 			trigger: "🖼",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -784,7 +792,7 @@ const commands = [
 		cooldown: 0,
 		reactions: {
 			trigger: "🖼",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -803,7 +811,7 @@ const commands = [
 		cooldown: 0,
 		reactions: {
 			trigger: "🖼",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -821,7 +829,7 @@ const commands = [
 		cooldown: 0,
 		reactions: {
 			trigger: "🖼",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -838,7 +846,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -854,7 +862,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -871,7 +879,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -888,7 +896,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -905,7 +913,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -922,7 +930,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -940,7 +948,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -957,7 +965,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -974,7 +982,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},
@@ -990,7 +998,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
 			error: "❌"
 		},

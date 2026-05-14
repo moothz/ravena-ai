@@ -310,7 +310,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 					chatId,
 					content:
 						"❌ Por favor, digite uma cidade ou responda a uma localização.\nEx: `!clima Santa Maria, RS`",
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
 		} else {
@@ -336,14 +336,14 @@ async function handleWeatherCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: weatherMessage,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	} catch (error) {
 		logger.error("Erro no comando clima:", error);
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Não foi possível obter o clima: ${error.message}`,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 }
@@ -354,7 +354,7 @@ const commands = [
 		description: "Clima e previsão do tempo (Open-Meteo)",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🌤️",
 			error: "❌"
 		},

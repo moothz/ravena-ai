@@ -190,6 +190,7 @@ class CacheManager {
 	}
 
 	_scheduleWrite(key, value, explicitTable = null) {
+		if (process.env.DISABLE_ACTIVITY === "true") return;
 		const config = this.getCacheConfig(key);
 		const table = explicitTable || (config ? config.table : null);
 

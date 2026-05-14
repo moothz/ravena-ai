@@ -79,7 +79,7 @@ async function handleAjuda(bot, message, args, group) {
 			content: "O que você quer saber? Exemplo: !ajuda como adicionar comandos",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -92,7 +92,7 @@ async function handleAjuda(bot, message, args, group) {
 			content: `🤖 *Ajuda (AnythingLLM)*\n\n${answer}`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -101,7 +101,7 @@ async function handleAjuda(bot, message, args, group) {
 			content: `❌ ${error.message}`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -118,7 +118,7 @@ if (process.env.ANYTHINGLLM_API_KEY && process.env.ANYTHINGLLM_HOST) {
 			category: "geral",
 			usage: "!ajuda [sua pergunta]",
 			reactions: {
-				before: process.env.LOADING_EMOJI ?? "🌀",
+				before: process.env.LOADING_EMOJI ?? "⌛️",
 				after: "🤖",
 				error: "❌"
 			},

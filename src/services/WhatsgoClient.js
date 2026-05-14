@@ -1,39 +1,32 @@
 const axios = require("axios");
 
-/**
- * Client wrapper for the EvolutionGO API (whatsmeow).
- * Documentação baseada no Swagger EvoGO_API.json e api-overview.md
- * * ATUALIZAÇÃO DE AUTH:
- * - Global Key: Usada para criar/deletar instâncias.
- * - Instance Token: Usada para todas as outras operações (conectar, enviar mensagens, etc).
- */
-class EvolutionGoClient {
+class WhatsgoClient {
 	/**
 	 * @param {string} baseUrl - A URL raiz da API (ex: http://localhost:4000)
 	 * @param {string} globalApiKey - A API Key GLOBAL (admin)
-	 * @param {string} instanceToken - O Token da Instância (UUID fixo)
+	 * @param {string} instanceName - O Nome da Instância
 	 * @param {object} [logger] - Instância de logger opcional
 	 */
-	constructor(baseUrl, globalApiKey, instanceToken, logger) {
-		if (!baseUrl || !globalApiKey || !instanceToken) {
-			throw new Error("EvolutionGoClient: baseUrl, globalApiKey e instanceToken são obrigatórios.");
+	constructor(baseUrl, globalApiKey, instanceName, logger) {
+		if (!baseUrl || !globalApiKey || !instanceName) {
+			throw new Error("WhatsgoClient: baseUrl, globalApiKey e instanceName são obrigatórios.");
 		}
 
 		this.logger = logger || console;
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.globalApiKey = globalApiKey;
-		this.instanceToken = instanceToken;
+		this.instanceName = instanceName;
 
-		// Cliente padrão usa o TOKEN DA INSTÂNCIA (maioria das operações)
 		this.client = axios.create({
 			baseURL: this.baseUrl,
 			headers: {
-				apikey: this.instanceToken,
+				apikey: this.globalApiKey,
+				instance: this.instanceName,
 				"Content-Type": "application/json"
 			}
 		});
 
-		//this.logger.info(`EvolutionGoClient inicializado em: ${this.baseUrl}`);
+		//this.logger.info(`WhatsgoClient inicializado em: ${this.baseUrl}`);
 	}
 
 	/**
@@ -43,6 +36,7 @@ class EvolutionGoClient {
 		return {
 			headers: {
 				apikey: this.globalApiKey,
+				instance: this.instanceName,
 				"Content-Type": "application/json"
 			}
 		};
@@ -51,7 +45,8 @@ class EvolutionGoClient {
 	get _instanceConfig() {
 		return {
 			headers: {
-				apikey: this.instanceToken,
+				apikey: this.globalApiKey,
+				instance: this.instanceName,
 				"Content-Type": "application/json"
 			}
 		};
@@ -63,7 +58,7 @@ class EvolutionGoClient {
 		const message = data?.message || error.message || "Erro desconhecido";
 
 		// Logs detalhados para debug
-		this.logger.error(`[EvoGO] Erro em ${context}: ${status} - ${message}`, { reqData });
+		this.logger.error(`[GO] Erro em ${context}: ${status} - ${message}`, { reqData });
 		if (data) {
 			this.logger.error(`\tDetalhes:`, JSON.stringify(data).substring(0, 200));
 		}
@@ -136,4 +131,4 @@ class EvolutionGoClient {
 	}
 }
 
-module.exports = EvolutionGoClient;
+module.exports = WhatsgoClient;

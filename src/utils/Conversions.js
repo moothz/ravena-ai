@@ -1,4 +1,3 @@
-const { MessageMedia } = require("whatsapp-web.js");
 const Logger = require("../utils/Logger");
 const ffmpeg = require("fluent-ffmpeg");
 const fs = require("fs").promises;
@@ -107,11 +106,12 @@ async function messageMediaToOpus(messageMedia) {
 
 	try {
 		const opusBase64 = await toOpus(messageMedia.data, { b64: true });
-		const newMedia = new MessageMedia(
-			"audio/ogg; codecs=opus",
-			opusBase64,
-			path.basename(`${filenameWithoutExt}.ogg`)
-		);
+		const newMedia = {
+			mimetype: "audio/ogg; codecs=opus",
+			data: opusBase64,
+			filename: path.basename(`${filenameWithoutExt}.ogg`),
+			isMessageMedia: true
+		};
 
 		logger.info(`[messageMediaToOpus] Conversão concluída. Arquivo: ${newMedia.filename}`);
 		return newMedia;
@@ -217,11 +217,12 @@ async function messageMediaToMp3(messageMedia) {
 
 	try {
 		const mp3Base64 = await toMp3(messageMedia.data, { b64: true });
-		const newMedia = new MessageMedia(
-			"audio/mpeg",
-			mp3Base64,
-			path.basename(`${filenameWithoutExt}.mp3`)
-		);
+		const newMedia = {
+			mimetype: "audio/mpeg",
+			data: mp3Base64,
+			filename: path.basename(`${filenameWithoutExt}.mp3`),
+			isMessageMedia: true
+		};
 
 		logger.info(`[messageMediaToMp3] Conversão concluída. Arquivo: ${newMedia.filename}`);
 		return newMedia;

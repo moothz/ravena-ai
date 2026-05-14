@@ -61,7 +61,7 @@ async function audioCommand(bot, message, args, group) {
 				content: "🔇 Digite o nome do áudio para buscar no site MyInstants\n!audio nome do áudio",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -80,7 +80,7 @@ async function audioCommand(bot, message, args, group) {
 				content: `🔇 Nenhum áudio encontrado para "${query}".`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -92,7 +92,7 @@ async function audioCommand(bot, message, args, group) {
 				content: `🔊 Resultados para "${query}":\n${preview}\n\nUse: !audio ${query} número_do_áudio para enviar o áudio desejado.\n\nExemplo: !audio ${query} 1`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -106,7 +106,7 @@ async function audioCommand(bot, message, args, group) {
 				content: `❌ Número inválido, para '${query}' digite um número entre 1 e ${resultados.length}.\n!audio ${query} n`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -121,7 +121,7 @@ async function audioCommand(bot, message, args, group) {
 				content: `▶️ _${resultado.title}_`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			}),
 			new ReturnMessage({
@@ -150,7 +150,7 @@ const commands = [
 		usage: "!audio <nome_do_áudio> <número>",
 		category: "busca",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊",
 			error: "❌"
 		},
@@ -163,7 +163,7 @@ const commands = [
 		usage: "!audio <nome_do_áudio> <número>",
 		category: "busca",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊",
 			error: "❌"
 		},

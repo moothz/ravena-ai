@@ -1,10 +1,10 @@
 const path = require("path");
 const fs = require("fs").promises;
 const fsSync = require("fs");
+const mime = require("mime-types");
 const Logger = require("./utils/Logger");
 const LLMService = require("./services/LLMService");
 const ReturnMessage = require("./models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
 const Database = require("./utils/Database");
 
 const logger = new Logger("silly-interaction-handler");
@@ -252,7 +252,7 @@ class SillyInteractionHandler {
 				content: response,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 
@@ -279,7 +279,14 @@ class SillyInteractionHandler {
 			const randomFile = stickerFiles[Math.floor(Math.random() * stickerFiles.length)];
 			const filePath = path.join(folder, randomFile);
 
-			const media = await MessageMedia.fromFilePath(filePath);
+			const fileBuffer = await fs.readFile(filePath);
+			const mimeType = mime.lookup(filePath) || "application/octet-stream";
+			const media = {
+				mimetype: mimeType,
+				data: fileBuffer.toString("base64"),
+				filename: path.basename(filePath),
+				isMessageMedia: true
+			};
 
 			const returnMsg = new ReturnMessage({
 				chatId: message.group ?? message.author,
@@ -289,7 +296,7 @@ class SillyInteractionHandler {
 					stickerAuthor: "Ravena",
 					stickerName: "Silly",
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 

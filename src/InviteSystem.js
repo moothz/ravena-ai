@@ -348,7 +348,7 @@ class InviteSystem {
 				console.log(JSON.stringify(infoResponse, null, 2)); // Print raw data to terminal
 
 				if (infoResponse) {
-					inviteInfoData = infoResponse; // Assuming getInviteInfo returns data object directly as implemented in WhatsAppBotEvoGo
+					inviteInfoData = infoResponse;
 
 					// 1. Check Community
 					if (this.isCommunity(inviteInfoData)) {

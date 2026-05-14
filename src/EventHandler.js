@@ -1180,10 +1180,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			// Por enquanto, a única maneira é pegar a info do grupo pra descobrir o LID do bot nele
 			const chatInfo = await bot.getChatDetails(data.group.id);
 
-			// 1° passo: descobrir o lid do bot nesse grupo (obrigado evo 2.3.5)
+			// 1° passo: descobrir o lid do bot nesse grupo (identificado via Whatsgo)
 			const botNumber = bot.getLidFromPn(bot.phoneNumber, chatInfo);
 
-			// notInGroup é solução nova que coloquei da EvoGo, quando falha ao retornar info do grupo pois o bot não participa
+			// notInGroup é solução nova que coloquei da Go, quando falha ao retornar info do grupo pois o bot não participa
 			const isBotLeaving = data.group.notInGroup || data?.user?.id?.startsWith(botNumber);
 
 			//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${botNumber} | not in group? ${data.group.notInGroup}`, { data, chatInfo });
@@ -1381,8 +1381,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						// Verifica se arquivo existe
 						await fs.access(mediaPath);
 
-						const MessageMedia = require("whatsapp-web.js").MessageMedia;
-						const media = MessageMedia.fromFilePath(mediaPath);
+						const fileBuffer = require("fs").readFileSync(mediaPath);
+						const mimeType = require("mime-types").lookup(mediaPath) || "application/octet-stream";
+						const media = {
+							mimetype: mimeType,
+							data: fileBuffer.toString("base64"),
+							filename: require("path").basename(mediaPath),
+							isMessageMedia: true
+						};
 
 						// Processa caption se houver (audio e sticker ignoram caption no envio, mas a gente processa igual)
 						let caption = "";
@@ -1490,8 +1496,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 					try {
 						await fs.access(mediaPath);
-						const MessageMedia = require("whatsapp-web.js").MessageMedia;
-						const media = MessageMedia.fromFilePath(mediaPath);
+						const fileBuffer = require("fs").readFileSync(mediaPath);
+						const mimeType = require("mime-types").lookup(mediaPath) || "application/octet-stream";
+						const media = {
+							mimetype: mimeType,
+							data: fileBuffer.toString("base64"),
+							filename: require("path").basename(mediaPath),
+							isMessageMedia: true
+						};
 
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {

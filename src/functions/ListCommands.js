@@ -891,7 +891,7 @@ const commands = [
 		category: "listas",
 		group: "llistas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "📋"
 		},
 		method: showLists
@@ -903,7 +903,7 @@ const commands = [
 		category: "listas",
 		group: "llistas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "📋"
 		},
 		method: showLists
@@ -914,7 +914,7 @@ const commands = [
 		description: "Cria uma nova lista",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "➕"
 		},
 		method: createList
@@ -925,7 +925,7 @@ const commands = [
 		description: "Cria uma nova lista com título",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "➕"
 		},
 		method: createListWithTitle
@@ -936,7 +936,7 @@ const commands = [
 		description: "Deleta uma lista",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "🧹"
 		},
 		method: deleteList
@@ -947,7 +947,7 @@ const commands = [
 		description: "Entra em uma lista",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "👉"
 		},
 		method: joinList
@@ -958,7 +958,7 @@ const commands = [
 		description: "Sai de uma lista",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "👈"
 		},
 		method: leaveList
@@ -969,7 +969,7 @@ const commands = [
 		description: "Define título de uma lista",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "✏️"
 		},
 		method: setListTitle
@@ -980,7 +980,7 @@ const commands = [
 		description: "Remove um usuário de uma lista (admin only)",
 		category: "listas",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "❌"
 		},
 		method: removeFromList

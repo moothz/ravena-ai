@@ -157,7 +157,7 @@ async function horoscopoCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Data não reconhecida. Tente usar formatos como "hoje", "ontem", "31/10/2025".`,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 
@@ -183,7 +183,7 @@ async function horoscopoCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content: `😴 Nenhum horóscopo encontrado para ${formattedDate}.`,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 
@@ -220,7 +220,7 @@ async function horoscopoCommand(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content: `😴 Nenhum horóscopo encontrado para ${formattedDate}.`,
-					options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
 		}
@@ -228,7 +228,7 @@ async function horoscopoCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: responseText.trim(),
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	} catch (error) {
 		logger.error("Erro ao executar comando horoscopo:", error);
@@ -247,7 +247,7 @@ const commands = [
 		usage: "!horoscopo [signo] [data]",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✨",
 			error: "❌"
 		},
@@ -260,7 +260,7 @@ const commands = [
 		usage: "!horoscopo [signo] [data]",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✨",
 			error: "❌"
 		},
@@ -273,7 +273,7 @@ const commands = [
 		usage: "!horoscopo [signo] [data]",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✨",
 			error: "❌"
 		},

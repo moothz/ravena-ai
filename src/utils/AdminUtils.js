@@ -134,8 +134,8 @@ class AdminUtils {
 			// Toda hora muda essa estrutura.. Considerar várias coisas
 			if (chatInstance && chatInstance.isGroup) {
 				participantes = participantes.concat(chatInstance.participants);
-				if (chatInstance._rawEvoGroup) {
-					participantes = participantes.concat(chatInstance._rawEvoGroup.participants);
+				if (chatInstance._rawGroup) {
+					participantes = participantes.concat(chatInstance._rawGroup.participants);
 				}
 
 				const participant = participantes.find((p) =>

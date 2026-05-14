@@ -557,7 +557,7 @@ const commands = [
 		description: "Baixa conteúdo de várias plataformas de mídia social",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},
@@ -570,7 +570,7 @@ const commands = [
 		description: "Baixa conteúdo do Instagram",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},
@@ -583,7 +583,7 @@ const commands = [
 		description: "Baixa conteúdo do TikTok",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},
@@ -596,7 +596,7 @@ const commands = [
 		description: "Baixa conteúdo do X (Twitter)",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},
@@ -609,7 +609,7 @@ const commands = [
 		description: "Baixa conteúdo do Twitter",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},

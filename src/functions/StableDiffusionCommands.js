@@ -89,7 +89,7 @@ async function generateImage(bot, message, args, group, skipNotify = false) {
 				new ReturnMessage({
 					chatId,
 					content: `📷 Gerando imagem para '${prompt}', isso pode levar alguns segundos...`,
-					reaction: process.env.LOADING_EMOJI ?? "🌀"
+					reaction: process.env.LOADING_EMOJI ?? "⌛️"
 				}),
 				group
 			);
@@ -284,7 +284,7 @@ const commands = [
 		category: "ia",
 		reactions: {
 			trigger: "✨",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✨"
 		},
 		cooldown: 10,

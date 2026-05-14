@@ -199,7 +199,7 @@ async function newsCommand(bot, message, args, group) {
 							content: `❌ Formato de data não reconhecido. Tente usar formatos como "hoje", "ontem", "segunda-feira passada", "19/04/2025" ou "YYYY-MM-DD".\n\n${stringDatasDisponiveis}`,
 							options: {
 								quotedMessageId: message.origin.id._serialized,
-								evoReply: message.origin
+								goReply: message.origin
 							}
 						});
 					}
@@ -224,7 +224,7 @@ async function newsCommand(bot, message, args, group) {
 				reaction: "📰",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} else {
@@ -238,7 +238,7 @@ async function newsCommand(bot, message, args, group) {
 				reaction: "😴",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -261,7 +261,7 @@ const commands = [
 		usage: "!news [YYYY-MM-DD]",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📰",
 			error: "❌"
 		},

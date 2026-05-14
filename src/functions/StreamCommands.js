@@ -847,7 +847,7 @@ const commands = [
 		description: "Lista todos os canais configurados para monitoramento",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📺"
 		},
 		method: listMonitoredChannels
@@ -858,7 +858,7 @@ const commands = [
 		description: "Mostra status dos canais monitorados",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📊"
 		},
 		method: showStreamStatus
@@ -870,7 +870,7 @@ const commands = [
 		description: "Lista todos os streamers atualmente online",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎮"
 		},
 		method: listOnlineStreamers
@@ -880,7 +880,7 @@ const commands = [
 		description: "Mostra informações de uma stream da Twitch",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "💜"
 		},
 		method: showLiveInfo
@@ -891,7 +891,7 @@ const commands = [
 		description: "Mostra informações de uma stream do Kick",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "💚"
 		},
 		method: showLiveKick
@@ -903,7 +903,7 @@ const commands = [
 		description: "Mostra as streams mais populares no momento",
 		category: "streams",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔥"
 		},
 		method: showPopularStreams

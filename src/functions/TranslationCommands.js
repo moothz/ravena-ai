@@ -348,7 +348,7 @@ async function handleTranslation(bot, message, args, group) {
 					"Ou responda a uma mensagem com: !traduzir pt en",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -368,7 +368,7 @@ async function handleTranslation(bot, message, args, group) {
 					"Exemplo de idiomas suportados: en (inglês), es (espanhol), fr (francês), etc.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -381,7 +381,7 @@ async function handleTranslation(bot, message, args, group) {
 					"Exemplo de idiomas suportados: en (inglês), es (espanhol), fr (francês), etc.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -399,7 +399,7 @@ async function handleTranslation(bot, message, args, group) {
 						content: "Por favor, responda a uma mensagem ou forneça um texto para traduzir.",
 						options: {
 							quotedMessageId: message.origin.id._serialized,
-							evoReply: message.origin
+							goReply: message.origin
 						}
 					});
 				}
@@ -414,7 +414,7 @@ async function handleTranslation(bot, message, args, group) {
 					content: "Erro ao obter a mensagem citada. Por favor, tente novamente.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -429,7 +429,7 @@ async function handleTranslation(bot, message, args, group) {
 				content: "Texto vazio. Por favor, forneça um texto para traduzir.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -447,7 +447,7 @@ async function handleTranslation(bot, message, args, group) {
 			content: response,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -497,7 +497,7 @@ async function processTranslationReaction(bot, message, args, group) {
 			content: response,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -515,7 +515,7 @@ const commands = [
 		usage:
 			"!traduzir [idiomaOriginal] [idiomaDesjado] [texto] ou !traduzir [idioma] em resposta a uma mensagem",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🌐",
 			error: "❌"
 		},

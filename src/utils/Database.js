@@ -42,8 +42,8 @@ class Database {
 		// Shared Blocked Contacts (Global by type)
 		this.globalBlockedContacts = {
 			wwebjs: new Set(),
-			evo: new Set(),
-			evogo: new Set()
+			whatsgo: new Set(),
+			whatsgo_go: new Set()
 		};
 
 		// Setup cleanup handlers
@@ -123,21 +123,18 @@ class Database {
 		this.coreDb.run("PRAGMA synchronous = NORMAL");
 		this.coreDb.run("PRAGMA busy_timeout = 5000");
 
-		// Ensure core tables exist (custom_commands and load_reports have their own .db files)
+		// Minimal schema for restoring backups if core.db is missing.
+		// Real schema maintenance is handled by CoreRepository.js using better-sqlite3.
 		this.coreDb.serialize(() => {
 			const tables = [
-				`CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT, json_data TEXT)`,
+				`CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS donations (name TEXT PRIMARY KEY, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS pending_joins (code TEXT PRIMARY KEY, json_data TEXT)`,
 				`CREATE TABLE IF NOT EXISTS soft_blocks (number TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS blocked_invites (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, jid TEXT, json_data TEXT)`
+				`CREATE TABLE IF NOT EXISTS blocked_invites (id INTEGER PRIMARY KEY AUTOINCREMENT, json_data TEXT)`
 			];
 			this.schemas["core"] = tables.join("; ");
 			tables.forEach((sql) => this.coreDb.run(sql));
-			this.coreDb.run(
-				`CREATE INDEX IF NOT EXISTS idx_blocked_invites_code ON blocked_invites(code)`
-			);
-			this.coreDb.run(`CREATE INDEX IF NOT EXISTS idx_blocked_invites_jid ON blocked_invites(jid)`);
 		});
 	}
 

@@ -3,6 +3,7 @@ const fs = require("fs").promises;
 const os = require("os");
 const { exec } = require("child_process");
 const sharp = require("sharp");
+const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const imagemagick = require("imagemagick");
 const util = require("util");
@@ -73,17 +74,36 @@ function saveMediaToTemp(media, extension = "png") {
 		});
 }
 
-// Auxiliar para remover fundo usando backgroundremover
-function removeBackground(inputPath) {
+// Auxiliar para remover fundo usando rembg API (Sidecar)
+async function removeBackground(inputPath) {
 	const outputPath = inputPath.replace(/\.[^/.]+$/, "") + "_nobg.png";
+	const rembgUrl = process.env.REMBG_API_URL || "http://rembg:7000/api/remove";
 
-	// Executa backgroundremover usando Python com Promise
-	return execPromise(`backgroundremover -i "${inputPath}" -o "${outputPath}"`)
-		.then(() => outputPath)
-		.catch((error) => {
-			logger.error("Erro ao remover fundo:", error);
-			throw error;
+	try {
+		const buffer = await fs.readFile(inputPath);
+
+		// Use built-in FormData (Node 20+)
+		const formData = new FormData();
+		const blob = new Blob([buffer], { type: "image/png" });
+		formData.append("file", blob, "image.png");
+
+		const response = await axios.post(rembgUrl, formData, {
+			responseType: "arraybuffer",
+			headers: {
+				"Content-Type": "multipart/form-data"
+			}
 		});
+
+		await fs.writeFile(outputPath, response.data);
+		return outputPath;
+	} catch (error) {
+		logger.error("Erro ao remover fundo via rembg API:", error.message);
+		// Fallback para log detalhado se disponível
+		if (error.response && error.response.data) {
+			logger.error("Detalhes do erro API:", error.response.data.toString());
+		}
+		throw error;
+	}
 }
 
 // Auxiliar para recortar imagem usando sharp
@@ -265,7 +285,7 @@ async function handleJpeg(bot, message, args, group) {
 			options: {
 				caption: "Needs more JPEG!",
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -353,7 +373,7 @@ async function handleRemoveBg(bot, message, args, group) {
 				caption: "Fundo removido e salvo como arquivo",
 				sendMediaAsDocument: true, // Envia como arquivo em vez de imagem
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -442,7 +462,7 @@ async function handleDistort(bot, message, args, group) {
 			options: {
 				caption: `Distorção aplicada (intensidade: ${intensity}%)`,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -532,7 +552,7 @@ async function handleStickerBg(bot, message, args, group) {
 				stickerAuthor: "ravena",
 				stickerName: args.join(" ") || "ravena sticker",
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -616,7 +636,7 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 			options: {
 				caption: `Efeito ${effect} aplicado`,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -645,7 +665,7 @@ const commands = [
 		group: "rremovebg",
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔪",
 			error: "❌"
 		},
@@ -658,8 +678,8 @@ const commands = [
 		category: "midia",
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
-			after: "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "⌛️",
 			error: "❌"
 		},
 		method: handleDistort
@@ -673,7 +693,7 @@ const commands = [
 		aliases: ["sbg"],
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔪",
 			error: "❌"
 		},
@@ -686,7 +706,7 @@ const commands = [
 		group: "stickerbg",
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔪",
 			error: "❌"
 		},
@@ -699,7 +719,7 @@ const commands = [
 		group: "rremovebg",
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔪",
 			error: "❌"
 		},
@@ -711,7 +731,7 @@ const commands = [
 		category: "midia",
 		needsMedia: true,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "💩",
 			error: "❌"
 		},
@@ -729,7 +749,7 @@ const commands = [
 			group: "imageEffect",
 			needsMedia: true,
 			reactions: {
-				before: process.env.LOADING_EMOJI ?? "🌀",
+				before: process.env.LOADING_EMOJI ?? "⌛️",
 				after: "🎨",
 				error: "❌"
 			},

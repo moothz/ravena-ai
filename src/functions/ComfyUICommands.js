@@ -356,13 +356,13 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 				new ReturnMessage({
 					chatId,
 					content: `📷 Gerando imagem para '${prompt}', isso pode levar alguns segundos...`,
-					reaction: process.env.LOADING_EMOJI ?? "🌀"
+					reaction: process.env.LOADING_EMOJI ?? "⌛️"
 				}),
 				group
 			);
 		}
 
-		message.origin.react(process.env.LOADING_EMOJI ?? "🌀");
+		message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
 
 		let safetyMsg = "";
 		if (!options.skipNSFW) {
@@ -587,7 +587,7 @@ const commands = [
 		category: "ia",
 		reactions: {
 			trigger: "✨",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✨"
 		},
 		cooldown: 60,

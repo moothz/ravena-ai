@@ -26,7 +26,9 @@ class LoadReport {
 		};
 
 		// Configura intervalo para relatório (a cada 10 minutos)
-		this.reportInterval = setInterval(() => this.generateReport(), 10 * 60 * 1000);
+		if (process.env.DISABLE_ACTIVITY !== "true") {
+			this.reportInterval = setInterval(() => this.generateReport(), 10 * 60 * 1000);
+		}
 	}
 
 	/**

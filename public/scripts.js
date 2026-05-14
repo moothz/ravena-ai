@@ -1212,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const overlay = document.getElementById('ws-loading-overlay');
         
         // State variables
-        let evolutionStatus = 'unknown'; // 'up', 'down', 'unknown'
+        let whatsgoapiStatus = 'unknown'; // 'up', 'down', 'unknown'
 
         // Status update function for general services
         const updateStatusLight = (elementId, statusData) => {
@@ -1305,7 +1305,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Map activity type to DOM element ID
             const typeMap = {
-                'message': 'service-evolutiongo',
+                'message': 'service-whatsgoapi',
                 'imagine': 'api-imagine',
                 'llm': 'api-llm',
                 'whisper': 'api-whisper',
@@ -1349,9 +1349,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         evtSource.addEventListener('service-status', (e) => {
             const services = JSON.parse(e.data);
-            // Update Evolution Status
-            evolutionStatus = services.evolutiongo;
-            updateStatusLight('service-evolutiongo', services.evolutiongo);
+            // Update WhatsGoAPI Status
+            whatsgoapiStatus = services.whatsgoapi;
+            updateStatusLight('service-whatsgoapi', services.whatsgoapi);
             
             // Update others
             updateStatusLight('api-imagine', services.imagine);

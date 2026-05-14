@@ -8,7 +8,6 @@ const fs = require("fs").promises;
 const fsSync = require("fs");
 const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const Canvas = require("canvas");
@@ -385,7 +384,7 @@ async function startNewRound(bot, message, group, isFirstRound = true) {
 		`🏆 Recorde: ${groupData.record_round}`
 	);
 
-	const media = new MessageMedia("image/png", buffer.toString("base64"));
+	const media = { mimetype: "image/png", data: buffer.toString("base64"), isMessageMedia: true };
 	bot.sendReturnMessages(
 		new ReturnMessage({
 			chatId: groupId,

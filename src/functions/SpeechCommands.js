@@ -50,10 +50,6 @@ database.getSQLiteDb(
 
 const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
 
-const runOn = process.env.WHISPER_USE_GPU ? "" : "--device cpu";
-
-const whisperPath = process.env.WHISPER;
-
 // Definição dos personagens para TTS
 const ttsCharacters = [
 	{ name: "ravena", emoji: ["🗣", "🦇"], voice: "ravena_sample.wav" },
@@ -79,7 +75,7 @@ fs.mkdir(tempDir, { recursive: true })
 		logger.error("Erro ao criar diretório temporário:", error);
 	});
 
-logger.info(`Módulo SpeechCommands carregado, whisperPath: ${whisperPath} ${runOn}`);
+logger.info(`Módulo SpeechCommands carregado`);
 
 /**
  * Helper to get audio duration using ffmpeg
@@ -214,7 +210,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 					"🚫 *Os comandos de áudio (TTS) estão desabilitados temporariamente devido a problemas no servidor.* 🛠️\n\nAcesse o grupo de avisos/comunidade para saber mais! 📢✨",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -235,7 +231,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 				content: "Por favor, forneça texto para converter em voz.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -251,7 +247,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 					content: "🔉 Sintetizando áudio, isso pode levar alguns segundos...",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				}),
 				group
@@ -339,7 +335,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 			options: {
 				sendAudioAsVoice: true,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -377,7 +373,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 			content: "Erro ao gerar voz. Por favor, tente novamente.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -493,8 +489,8 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 	const startProcess = Date.now();
 	const chatId = message.group ?? message.author;
 	let audioPath = null;
-	let wavPath = null;
-	let whisperOutputPath = null;
+	const wavPath = null;
+	const whisperOutputPath = null;
 
 	try {
 		// Obtém mídia da mensagem
@@ -505,7 +501,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				content: "Por favor, forneça um áudio ou mensagem de voz.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -519,7 +515,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				content: "Por favor, forneça um áudio ou mensagem de voz.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -555,7 +551,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 								content: `🔉 Transcrevendo áudio com _${audioDuration}s_, estimativa de _${estimatedTime}s_ até concluir.`,
 								options: {
 									quotedMessageId: message.origin.id._serialized,
-									evoReply: message.origin
+									goReply: message.origin
 								}
 							}),
 							group
@@ -571,38 +567,12 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				transcribedText = "Erro ao transcrever áudio via API. Por favor, tente novamente.";
 			}
 		} else {
-			// Envia mensagem de processamento
-			bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: "Transcrevendo áudio, isso pode levar alguns segundos...",
-					options: {
-						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
-					}
-				}),
-				group
+			// Whisper API not configured in service-providers.json
+			logger.warn(
+				"[speechToText] Nenhum provider de Whisper configurado em service-providers.json"
 			);
-
-			// Existing local Whisper execution logic
-			wavPath = audioPath.replace(/\.[^/.]+$/, "") + ".wav";
-			await execPromise(`"${ffmpegPath}" -i "${audioPath}" -ar 16000 -ac 1 "${wavPath}"`);
-
-			const whisperCommand = `"${whisperPath}" "${wavPath}" --model large-v3-turbo ${runOn} --language pt --output_dir "${tempDir}" --output_format txt`;
-
-			logger.debug(`[speechToText] Executando comando: ${whisperCommand}`);
-
-			await execPromise(whisperCommand);
-
-			whisperOutputPath = wavPath.replace(/\.[^/.]+$/, "") + ".txt";
-
-			logger.debug(`[speechToText] Lendo arquivo de saida: ${whisperOutputPath}`);
-			try {
-				transcribedText = await fs.readFile(whisperOutputPath, "utf8");
-				transcribedText = transcribedText.trim();
-			} catch (readError) {
-				logger.error("[speechToText] Erro ao ler arquivo de transcrição:", readError);
-			}
+			transcribedText =
+				"Serviço de transcrição não configurado. Adicione um provider de Whisper em service-providers.json.";
 		}
 
 		logger.debug(`[speechToText] LIDO arquivo de saida: '${transcribedText}'`);
@@ -616,7 +586,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				content: transcribedText,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 
@@ -644,7 +614,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 			content: cleanupString(transcribedText?.trim() ?? ""),
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -704,8 +674,8 @@ async function processAutoSTT(bot, message, group, opts) {
 	const startProcess = Date.now();
 	const chatId = message.group ?? message.author;
 	let audioPath = null;
-	let wavPath = null;
-	let whisperOutputPath = null;
+	const wavPath = null;
+	const whisperOutputPath = null;
 
 	try {
 		if (!message.group && bot.ignorePV) {
@@ -723,7 +693,7 @@ async function processAutoSTT(bot, message, group, opts) {
 		}
 
 		try {
-			await message.origin.react(process.env.LOADING_EMOJI ?? "🌀");
+			await message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
 		} catch (e) {
 			logger.error(`[processAutoSTT] Erro enviando notificação inicial`);
 		}
@@ -761,25 +731,11 @@ async function processAutoSTT(bot, message, group, opts) {
 				transcribedText = "Erro ao transcrever áudio via API.";
 			}
 		} else {
-			// Existing local Whisper execution logic
-			wavPath = audioPath.replace(/\.[^/.]+$/, "") + ".wav";
-			await execPromise(`"${ffmpegPath}" -i "${audioPath}" -ar 16000 -ac 1 "${wavPath}"`);
-
-			const whisperCommand = `"${whisperPath}" "${wavPath}" --model large-v3-turbo --language pt --output_dir "${tempDir}" --output_format txt`;
-
-			logger.debug(`[processAutoSTT] Executando comando: ${whisperCommand}`);
-
-			await execPromise(whisperCommand);
-
-			whisperOutputPath = wavPath.replace(/\.[^/.]+$/, "") + ".txt";
-
-			logger.debug(`[processAutoSTT] Lendo arquivo de saida: ${whisperOutputPath}`);
-			try {
-				transcribedText = await fs.readFile(whisperOutputPath, "utf8");
-				transcribedText = transcribedText.trim();
-			} catch (readError) {
-				logger.error("[processAutoSTT] Erro ao ler arquivo de transcrição:", readError);
-			}
+			// Whisper API not configured in service-providers.json
+			logger.warn(
+				"[processAutoSTT] Nenhum provider de Whisper configurado em service-providers.json"
+			);
+			transcribedText = "";
 		}
 
 		// Se a transcrição for bem-sucedida, envia-a
@@ -809,7 +765,7 @@ async function processAutoSTT(bot, message, group, opts) {
 				content: contentRetorno,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 
@@ -871,7 +827,7 @@ const commands = [
 		needsMedia: true, // Verificará mídia direta ou mídia de mensagem citada
 		reactions: {
 			trigger: "👂",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "👂"
 		},
 		method: speechToText
@@ -884,7 +840,7 @@ const commands = [
 		needsMedia: true, // Verificará mídia direta ou mídia de mensagem citada
 		reactions: {
 			trigger: "👂",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "👂"
 		},
 		method: speechToText
@@ -896,7 +852,7 @@ const commands = [
 		category: "tts",
 		reactions: {
 			trigger: ["🗣️", "🦇"],
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "ravena")
@@ -909,7 +865,7 @@ const commands = [
 		category: "tts",
 		reactions: {
 			trigger: "👩",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "mulher")
@@ -921,7 +877,7 @@ const commands = [
 		group: "ttsMulher",
 		category: "tts",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "carioca")
@@ -934,7 +890,7 @@ const commands = [
 		group: "ttsHomem",
 		category: "tts",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "carioco")
@@ -948,7 +904,7 @@ const commands = [
 		category: "tts",
 		reactions: {
 			trigger: "💋",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "sensual")
@@ -960,7 +916,7 @@ const commands = [
 		category: "tts",
 		group: "ttsHomem",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "sensuel")
@@ -974,7 +930,7 @@ const commands = [
 		group: "ttsHomem",
 		reactions: {
 			trigger: "👨",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "homem")
@@ -986,7 +942,7 @@ const commands = [
 		category: "tts",
 		group: "ttsHomem",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "clint")
@@ -999,7 +955,7 @@ const commands = [
 		category: "tts",
 		group: "ttsHomem",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "morgan")
@@ -1013,7 +969,7 @@ const commands = [
 		category: "tts",
 		reactions: {
 			trigger: "🎙️",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "narrador")
@@ -1027,7 +983,7 @@ const commands = [
 		category: "tts",
 		reactions: {
 			trigger: "🎙️",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "rubao")

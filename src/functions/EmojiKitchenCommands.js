@@ -1,7 +1,7 @@
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
@@ -160,7 +160,15 @@ async function emojiKitchenCommand(bot, message, args, group) {
 
 			try {
 				// Criar MessageMedia a partir do arquivo em cache
-				const media = MessageMedia.fromFilePath(cachedFilePath);
+				const media = (() => {
+					const buf = require("fs").readFileSync(cachedFilePath);
+					return {
+						mimetype: require("mime-types").lookup(cachedFilePath) || "application/octet-stream",
+						data: buf.toString("base64"),
+						filename: require("path").basename(cachedFilePath),
+						isMessageMedia: true
+					};
+				})();
 
 				// Retorna como sticker
 				return new ReturnMessage({
@@ -171,7 +179,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 						stickerAuthor: "ravena",
 						stickerName: `Emojik: ${emojis[0]}+${emojis[1]}`,
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			} catch (error) {
@@ -195,7 +203,11 @@ async function emojiKitchenCommand(bot, message, args, group) {
 			saveEmojiToCache(emojis[0], emojis[1], imageBuffer);
 
 			// Criar MessageMedia a partir do buffer
-			const media = new MessageMedia("image/png", imageBuffer.toString("base64"));
+			const media = {
+				mimetype: "image/png",
+				data: imageBuffer.toString("base64"),
+				isMessageMedia: true
+			};
 
 			// Retorna como sticker
 			return new ReturnMessage({
@@ -206,7 +218,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 					stickerAuthor: "ravena",
 					stickerName: `Emojik: ${emojis[0]}+${emojis[1]}`,
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} catch (error) {
@@ -237,7 +249,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 5, // 5 segundos entre usos
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🧪",
 			error: "❌"
 		},
@@ -252,7 +264,7 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 5,
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🧪",
 			error: "❌"
 		},

@@ -2,7 +2,7 @@ const { createCanvas, loadImage } = require("canvas");
 const path = require("path");
 const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const CustomVariableProcessor = require("../utils/CustomVariableProcessor");
@@ -202,7 +202,7 @@ async function pix(bot, message, args, group) {
 	if (message.mentions?.length > 0) {
 		// Primeiro argumento é um mention
 		const cttRecebedor = await bot.client.getContactById(
-			message.mentions[0] ?? message.evoMessageData?.sender
+			message.mentions[0] ?? message.goMessageData?.sender
 		);
 		if (cttRecebedor) {
 			logger.debug(`[pix] cttRecebedor `, { cttRecebedor });
@@ -248,14 +248,14 @@ async function pix(bot, message, args, group) {
 
 	const comprovantePNG = await gerarTicket(dadosPix);
 	const dadosb64 = comprovantePNG.split("base64,").at(-1);
-	const comprovante = new MessageMedia("image/png", dadosb64);
+	const comprovante = { mimetype: "image/png", data: dadosb64, isMessageMedia: true };
 
 	const resposta = new ReturnMessage({
 		chatId,
 		content: comprovante,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
-			evoReply: message.origin,
+			goReply: message.origin,
 			...options
 		}
 	});
@@ -283,7 +283,7 @@ async function handleComandoVariavelSimples(bot, message, args, group, variavel)
 		content: fraseFinal,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
-			evoReply: message.origin,
+			goReply: message.origin,
 			...options
 		}
 	});
@@ -305,7 +305,7 @@ async function presente(bot, message, args, group) {
 		content: fraseFinal,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
-			evoReply: message.origin,
+			goReply: message.origin,
 			...options
 		}
 	});

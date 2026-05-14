@@ -338,7 +338,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 						"Por favor, forneça uma cidade ou responda a uma mensagem de localização. Exemplo: !clima São Paulo",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -355,7 +355,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 						"Por favor, forneça uma cidade ou responda a uma mensagem de localização. Exemplo: !clima São Paulo",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -376,7 +376,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 					content: `❌ Não foi possível encontrar a cidade: ${cityName}. Verifique o nome e tente novamente.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -409,7 +409,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 				content: weatherMessage,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			})
 		);
@@ -432,7 +432,7 @@ const commands = [
 		description: "Pesquisa e mostra o clima / previsão do tempo para uma localização",
 		category: "utilidades",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🌞",
 			error: "❌"
 		},

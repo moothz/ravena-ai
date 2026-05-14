@@ -175,3 +175,14 @@ public/code-snippets.json
 /data/sillies
 /src/utils/db/migrations
 /scripts
+
+# whatsgoapi ignores
+/whatsgoapi/build
+/whatsgoapi/files
+/whatsgoapi/.env
+/whatsgoapi/logs/*
+/whatsgoapi/dbdata
+# /whatsgoapi/go.mod
+# /whatsgoapi/go.sum
+data/whatsgoapi/dbdata/main.db
+data/whatsgoapi/dbdata/main.db-journal

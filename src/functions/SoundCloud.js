@@ -23,7 +23,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 			content: "Você precisa me dizer o que buscar! Use: `!sc <nome da música)>`",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -49,7 +49,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 				content: `Não encontrei nenhum resultado para "${searchQuery}" no SoundCloud.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -71,7 +71,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 				content: "Desculpe, não consegui baixar o áudio.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -95,7 +95,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 			content: responseText,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -105,7 +105,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 			options: {
 				caption: selectedTrack.title,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -125,7 +125,7 @@ const commands = [
 		description: "Busca e baixa músicas do SoundCloud.",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔉",
 			error: "❌"
 		},

@@ -3,9 +3,14 @@ The project in this folder is a whatsapp bot, developed using 3rd party APIs
 # Main
 bots.json - defines the bots
 index.js - initialize the bots
-src/WhatsAppBotEvoGo.js - currently used API wrapper
+src/WhatsAppBotGo.js - currently used API wrapper
 src/EventHandler - Handle received events from the multiple APIs
 src/CommandHandler - processes commands and prepares responses
+
+## whatsgoapi (Go / whatsmeow)
+- **CRITICAL:** `whatsgoapi/go.mod` and `whatsgoapi/go.sum` MUST be tracked and NOT ignored. They are essential for the Docker build.
+- If they are missing, the Dockerfile will attempt to initialize them, but it's preferred to keep them in the repo.
+- The module name is `whatsgo` and it uses a `replace` directive for the `whatsmeow-lib` submodule.
 
 # Commands
 ## SuperAdmin

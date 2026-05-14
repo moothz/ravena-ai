@@ -120,7 +120,7 @@ async function anonymousMessage(bot, message, args, group) {
 		if (cooldownCheck.onCooldown) {
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `🌀 Você precisa esperar ${cooldownCheck.timeLeft} hora(s) para enviar outra mensagem anônima.`
+				content: `⌛️ Você precisa esperar ${cooldownCheck.timeLeft} hora(s) para enviar outra mensagem anônima.`
 			});
 		}
 

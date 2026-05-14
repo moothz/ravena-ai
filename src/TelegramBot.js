@@ -50,17 +50,15 @@ class WhatsAppBotTelegram {
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
 
-		// Opções do EVO ignoradas (mantidas para consistência de inicialização)
+		// Opções do Whatsgo ignoradas (mantidas para consistência de inicialização)
 		this.vip = options.vip;
 		this.comunitario = options.comunitario;
 		this.numeroResponsavel = options.numeroResponsavel;
 		this.supportMsg = options.supportMsg;
 		this.phoneNumber = options.telegramBotId;
-		this.useWebsocket = options.useWebsocket;
-		this.evolutionWS = options.evolutionWS;
-		this.evolutionApiUrl = options.evolutionApiUrl;
-		this.evolutionApiKey = options.evolutionApiKey;
-		this.evoInstanceName = options.evoInstanceName;
+		this.whatsgoApiUrl = options.whatsgoApiUrl;
+		this.whatsgoApiKey = options.whatsgoApiKey;
+		this.goInstanceName = options.goInstanceName;
 		this.privado = options.privado ?? false;
 		this.managementUser = options.managementUser ?? "admin";
 		this.managementPW = options.managementPW ?? "batata123";
@@ -99,15 +97,21 @@ class WhatsAppBotTelegram {
 		this.loadReport = new LoadReport(this);
 		// this.inviteSystem = new InviteSystem(this); // Ignorado no Telegram
 		// this.reactionHandler = new ReactionsHandler(); // Ignorado no Telegram
-		this.streamSystem = StreamSystem.getInstance();
-		this.streamSystem.registerBot(this);
-		this.streamSystem.initialize();
+		
+		if (process.env.DISABLE_ACTIVITY !== "true") {
+			this.streamSystem = StreamSystem.getInstance();
+			this.streamSystem.registerBot(this);
+			this.streamSystem.initialize();
+		} else {
+			this.streamSystem = null;
+		}
+
 		this.adminUtils = AdminUtils.getInstance();
 
 		this.webhookApp = null;
 		this.webhookServer = null;
 
-		// Cache (reutilizado do EVO)
+		// Cache (reutilizado do Whatsgo)
 		this.cacheManager = new CacheManager(this.redisURL, this.redisDB, this.redisTTL, 3000);
 
 		// Client Fake para manter compatibilidade
@@ -850,7 +854,7 @@ class WhatsAppBotTelegram {
 				const admins = await this.apiClient.getChatAdministrators(chatId);
 				formattedChat.participants = admins.map((admin) => ({
 					id: { _serialized: String(admin.user.id) },
-					isAdmin: true, // Lógica do wwebjs-evo usa `p.admin?.includes("admin")`
+					isAdmin: true, // Lógica do Whatsgo usa `p.admin?.includes("admin")`
 					admin: "admin"
 				}));
 			}
@@ -914,6 +918,10 @@ class WhatsAppBotTelegram {
 	async registerCommands() {
 		this.logger.info("Registering Telegram commands...");
 		try {
+			if (!this.eventHandler) {
+				this.logger.warn("eventHandler is not defined. Skipping command registration.");
+				return;
+			}
 			// Acessa os comandos da mesma forma que a função sendCommandList
 			const fixedCommands = this.eventHandler.commandHandler.fixedCommands.getAllCommands();
 			const managementCommands =
@@ -958,7 +966,7 @@ class WhatsAppBotTelegram {
 		}
 	}
 
-	// --- Funções do EVO que não se aplicam ao Telegram (stubs) ---
+	// --- Funções do Whatsgo que não se aplicam ao Telegram (stubs) ---
 
 	async recoverMsgFromCache(messageId) {
 		// O ID da mensagem no Telegram é diferente, a lógica de cache pode precisar de ajuste
@@ -1026,6 +1034,7 @@ class WhatsAppBotTelegram {
 		return Promise.resolve(true);
 	}
 	updateProfileStatus(status) {
+		if (process.env.DISABLE_ACTIVITY === "true") return Promise.resolve(true);
 		this.logger.warn(
 			`updateProfileStatus() is not applicable for Telegram Bot, cannot set status: "${status}"`
 		);
@@ -1036,7 +1045,7 @@ class WhatsAppBotTelegram {
 		return Promise.resolve(true);
 	}
 
-	// Fallbacks da evo, só pro teles não dar erro
+	// Fallbacks da Whatsgo, só pro teles não dar erro
 	getCurrentTimestamp() {
 		return Math.round(Date.now() / 1000);
 	}

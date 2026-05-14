@@ -4,7 +4,6 @@ const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const LLMService = require("../services/LLMService");
-const { MessageMedia } = require("whatsapp-web.js");
 
 const logger = new Logger("food-tracker");
 const database = Database.getInstance();
@@ -111,7 +110,7 @@ async function comidaCommand(bot, message, args, group) {
 				"⚠️ *Atenção:* Para analisar uma refeição, envie uma foto com a legenda `!comida` ou responda a uma foto com esse comando.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 		return warningMsg;
@@ -143,7 +142,7 @@ async function comidaCommand(bot, message, args, group) {
 				content: "❌ Ocorreu um erro ao processar a resposta da IA. Tente novamente.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -155,7 +154,7 @@ async function comidaCommand(bot, message, args, group) {
 					"❌ Não consegui identificar comida nesta imagem. Certifique-se de que a foto esteja clara e contenha alimentos.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -194,7 +193,7 @@ async function comidaCommand(bot, message, args, group) {
 			content: responseText,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -204,7 +203,7 @@ async function comidaCommand(bot, message, args, group) {
 			content: "❌ Erro ao analisar a imagem.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -228,7 +227,7 @@ async function comidaInfoCommand(bot, message, args, group) {
 					"📊 Você ainda não tem registros de comida. Use `!comida` enviando uma foto para começar!",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -276,7 +275,7 @@ async function comidaInfoCommand(bot, message, args, group) {
 			content: msg,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -286,7 +285,7 @@ async function comidaInfoCommand(bot, message, args, group) {
 			content: "❌ Erro ao buscar estatísticas.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -315,7 +314,7 @@ async function comidaListaCommand(bot, message, args, group) {
 				content: "❌ Índice inválido.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -331,7 +330,7 @@ async function comidaListaCommand(bot, message, args, group) {
 					content: `✅ Refeição [${args[0]}] deletada com sucesso!`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			} catch (error) {
@@ -341,7 +340,7 @@ async function comidaListaCommand(bot, message, args, group) {
 					content: "❌ Erro ao deletar refeição.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -367,7 +366,7 @@ async function comidaListaCommand(bot, message, args, group) {
 			content: details,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -392,7 +391,7 @@ async function comidaListaCommand(bot, message, args, group) {
 				content: "📭 Nenhuma refeição registrada.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -413,7 +412,7 @@ async function comidaListaCommand(bot, message, args, group) {
 			content: listMsg,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -423,7 +422,7 @@ async function comidaListaCommand(bot, message, args, group) {
 			content: "❌ Erro ao listar refeições.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

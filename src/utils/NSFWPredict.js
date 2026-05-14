@@ -21,6 +21,9 @@ class NSFWPredict {
 	 * @returns {Promise<{isNSFW: boolean, reason: String}>} - Resultado da detecção.
 	 */
 	async detectNSFW(imagesInput) {
+		if (process.env.DISABLE_ACTIVITY === "true") {
+			return { isNSFW: false, reason: "Activity disabled" };
+		}
 		try {
 			const servicesData = await Status.getServicesStatus();
 

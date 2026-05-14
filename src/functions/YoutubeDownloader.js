@@ -119,7 +119,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 
 		// Envia reação de processamento
 		try {
-			message.origin.react(process.env.LOADING_EMOJI ?? "🌀");
+			message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
 		} catch (reactError) {
 			logger.error("Erro ao reagir à mensagem:", reactError);
 		}
@@ -131,7 +131,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 			content: "Baixando vídeo do YouTube...",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 
@@ -147,7 +147,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 					content: `Erro ao baixar vídeo: ${error.message}`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -173,7 +173,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 					options: {
 						caption: result.legenda,
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -193,7 +193,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 					content: "Erro ao enviar vídeo.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -448,7 +448,7 @@ async function ytCommand(bot, message, args, group) {
 				"Por favor, forneça um link do YouTube ou termo de busca. Exemplo: !yt https://youtu.be/dQw4w9WgXcQ ou !yt despacito",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -464,7 +464,7 @@ async function ytCommand(bot, message, args, group) {
 				content: "Ops! 😅 Só é possível baixar vídeos do YouTube com este comando. 🎥",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -480,7 +480,7 @@ async function ytCommand(bot, message, args, group) {
 				content: `🔍 Buscando: "${input}" no YouTube...`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			}),
 			group
@@ -494,7 +494,7 @@ async function ytCommand(bot, message, args, group) {
 				content: `❌ Nenhum vídeo encontrado para: "${input}"`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -514,7 +514,7 @@ async function ytCommand(bot, message, args, group) {
 					content: `Erro ao baixar vídeo: ${error.message}`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -535,7 +535,7 @@ async function ytCommand(bot, message, args, group) {
 					options: {
 						caption: result.legenda + dicaAudio,
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -549,7 +549,7 @@ async function ytCommand(bot, message, args, group) {
 					content: "Erro ao enviar vídeo.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -599,7 +599,7 @@ async function srCommand(bot, message, args, group) {
 				"Por favor, forneça um link do YouTube ou termo de busca. Exemplo: !sr https://youtu.be/dQw4w9WgXcQ ou !sr despacito",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -615,7 +615,7 @@ async function srCommand(bot, message, args, group) {
 				content: "Ops! 😅 Só é possível baixar músicas do YouTube com este comando. 🎵",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -631,7 +631,7 @@ async function srCommand(bot, message, args, group) {
 				content: `🔍 Buscando: "${input}" no YouTube...`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			}),
 			group
@@ -645,7 +645,7 @@ async function srCommand(bot, message, args, group) {
 				content: `❌ Nenhum vídeo encontrado para: "${input}"`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -665,7 +665,7 @@ async function srCommand(bot, message, args, group) {
 					content: `Erro ao baixar áudio: ${error.message}`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -685,7 +685,7 @@ async function srCommand(bot, message, args, group) {
 					options: {
 						caption: result.legenda,
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 
@@ -714,7 +714,7 @@ const commands = [
 		description: "Baixa um vídeo do YouTube",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},
@@ -727,7 +727,7 @@ const commands = [
 		description: "Baixa uma música do YouTube (áudio do vídeo)",
 		category: "downloaders",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "✅",
 			error: "❌"
 		},

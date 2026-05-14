@@ -1,7 +1,7 @@
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const qr = require("qr-image");
 const { createCanvas, loadImage } = require("canvas");
 
@@ -27,7 +27,7 @@ async function qrCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: "❌ Por favor, forneça o texto para o QR Code ou responda a uma mensagem.",
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 
@@ -38,7 +38,12 @@ async function qrCommand(bot, message, args, group) {
 		}
 
 		const qrPng = qr.imageSync(text, { type: "png", margin: 2, size: 10, ec_level: "M" });
-		const media = new MessageMedia("image/png", qrPng.toString("base64"), "qrcode.png");
+		const media = {
+			mimetype: "image/png",
+			data: qrPng.toString("base64"),
+			filename: "qrcode.png",
+			isMessageMedia: true
+		};
 
 		return new ReturnMessage({
 			chatId,
@@ -46,7 +51,7 @@ async function qrCommand(bot, message, args, group) {
 			options: {
 				caption: `✅ QR Code gerado para: _${text.substring(0, 100)}${text.length > 100 ? "..." : ""}_`,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -88,14 +93,19 @@ async function qrWifiCommand(bot, message, args, group) {
 			chatId,
 			content:
 				"❌ Uso correto: !qr-wifi [SSID]\n[Senha]\n[Oculta(opcional)]\n\nOu: !qr-wifi SSID Senha",
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 
 	try {
 		const wifiString = `WIFI:S:${ssid};T:WPA;P:${pass};H:${hidden};;`;
 		const qrPng = qr.imageSync(wifiString, { type: "png", margin: 4, size: 10, ec_level: "M" });
-		const media = new MessageMedia("image/png", qrPng.toString("base64"), "wifi-qr.png");
+		const media = {
+			mimetype: "image/png",
+			data: qrPng.toString("base64"),
+			filename: "wifi-qr.png",
+			isMessageMedia: true
+		};
 
 		return new ReturnMessage({
 			chatId,
@@ -103,7 +113,7 @@ async function qrWifiCommand(bot, message, args, group) {
 			options: {
 				caption: `📶 *WiFi QR Code*\n\n*SSID:* ${ssid}\n*Senha:* ${pass}\n*Oculta:* ${hidden === "true" ? "Sim" : "Não"}`,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -123,7 +133,7 @@ async function qrPixCommand(bot, message, args, group) {
 			chatId,
 			content:
 				"❌ Uso correto: !qr-pix [Chave] [Descrição] [Valor]\n\nApenas a chave é obrigatória.",
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 
@@ -229,7 +239,12 @@ async function qrPixCommand(bot, message, args, group) {
 		});
 
 		const finalBuffer = canvas.toBuffer("image/png");
-		const media = new MessageMedia("image/png", finalBuffer.toString("base64"), "pix-qr.png");
+		const media = {
+			mimetype: "image/png",
+			data: finalBuffer.toString("base64"),
+			filename: "pix-qr.png",
+			isMessageMedia: true
+		};
 
 		return new ReturnMessage({
 			chatId,
@@ -237,7 +252,7 @@ async function qrPixCommand(bot, message, args, group) {
 			options: {
 				caption: `💠 *PIX Gerado*\n\n*Chave:* \`${pixKey}\`\n*Descrição:* ${description}${value ? `\n*Valor:* R$ ${value}` : ""}\n\n*Payload (Copia e Cola):*\n\`${payload}\``,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -303,7 +318,7 @@ const commands = [
 		description: "Gera um QR Code para um texto ou link",
 		category: "utilidades",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "✅"
 		},
 		method: qrCommand
@@ -313,7 +328,7 @@ const commands = [
 		description: "Gera um QR Code para conexão WiFi",
 		category: "utilidades",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "📶"
 		},
 		method: qrWifiCommand
@@ -323,7 +338,7 @@ const commands = [
 		description: "Gera um QR Code para pagamento PIX",
 		category: "utilidades",
 		reactions: {
-			before: "🌀",
+			before: "⌛️",
 			after: "💠"
 		},
 		method: qrPixCommand

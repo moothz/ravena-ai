@@ -27,7 +27,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 				"❌ Por favor, forneça um nome de usuário da PSN.\n\n*Exemplo:* !psn-platinas meu_usuario",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -44,7 +44,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 				content: "❌ Erro: API_KEY_STEAMCOMMAND não configurada!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -66,7 +66,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 				content: "❌ Nenhum resultado encontrado!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -79,7 +79,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 				content: "❌ Usuário não encontrado na PSN!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -94,7 +94,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 				content: "❌ Não foi possível obter o ID da conta!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -140,7 +140,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 			content: resposta,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -165,7 +165,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 			content: errorMessage,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

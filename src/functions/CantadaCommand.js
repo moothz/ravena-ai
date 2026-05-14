@@ -32,7 +32,7 @@ async function cantadaCommand(bot, message, args, group) {
 				content: "❌ Nenhuma cantada disponível no momento.",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -51,7 +51,7 @@ async function cantadaCommand(bot, message, args, group) {
 			content: fraseFinal,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin,
+				goReply: message.origin,
 				...options
 			}
 		});
@@ -62,7 +62,7 @@ async function cantadaCommand(bot, message, args, group) {
 			content: "❌ Algo deu errado ao tentar a cantada. Tente novamente mais tarde.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

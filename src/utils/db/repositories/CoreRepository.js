@@ -36,8 +36,78 @@ class CoreRepository {
 		this._initSchemas();
 	}
 
-	/** Ensure schema exists on first open for non-core databases */
+	/** Ensure schema exists on first open for all databases */
 	_initSchemas() {
+		// core.db — groups, donations, pending_joins, soft_blocks, blocked_invites
+		const coreTables = {
+			groups: `CREATE TABLE IF NOT EXISTS groups (
+				id TEXT PRIMARY KEY,
+				name TEXT,
+				titulo TEXT,
+				descricao TEXT,
+				added_by TEXT,
+				removed_by TEXT,
+				prefix TEXT,
+				custom_ignores_prefix INTEGER,
+				invite_code TEXT,
+				paused INTEGER,
+				additional_admins TEXT,
+				filters TEXT,
+				twitch TEXT,
+				kick TEXT,
+				youtube TEXT,
+				bot_not_in_group TEXT,
+				webhooks TEXT,
+				greetings TEXT,
+				farewells TEXT,
+				interact TEXT,
+				auto_translate_to TEXT,
+				auto_stt INTEGER,
+				ignored_numbers TEXT,
+				ignored_users TEXT,
+				muted_commands TEXT,
+				muted_categories TEXT,
+				nicks TEXT,
+				warnings TEXT,
+				custom_ai_prompt TEXT,
+				created_at INTEGER,
+				updated_at INTEGER,
+				json_data TEXT
+			)`,
+			donations: `CREATE TABLE IF NOT EXISTS donations (
+				name TEXT PRIMARY KEY,
+				valor REAL,
+				numero TEXT,
+				timestamp INTEGER,
+				historico TEXT,
+				json_data TEXT
+			)`,
+			pending_joins: `CREATE TABLE IF NOT EXISTS pending_joins (
+				code TEXT PRIMARY KEY,
+				author_id TEXT,
+				author_name TEXT,
+				timestamp INTEGER,
+				json_data TEXT
+			)`,
+			soft_blocks: `CREATE TABLE IF NOT EXISTS soft_blocks (
+				number TEXT PRIMARY KEY,
+				block_invites INTEGER,
+				json_data TEXT
+			)`,
+			blocked_invites: `CREATE TABLE IF NOT EXISTS blocked_invites (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				code TEXT,
+				jid TEXT,
+				timestamp INTEGER,
+				json_data TEXT
+			)`
+		};
+
+		for (const [tableName, createSql] of Object.entries(coreTables)) {
+			this.mappers.exec(this.DB, createSql);
+			this._ensureTableSchema(this.DB, tableName, createSql);
+		}
+
 		// custom_commands.db
 		this.mappers.exec(
 			this.CMD_DB,
@@ -56,6 +126,11 @@ class CoreRepository {
 				json_data   TEXT,
 				PRIMARY KEY (group_id, trigger)
 			)`
+		);
+		this._ensureTableSchema(
+			this.CMD_DB,
+			"custom_commands",
+			`(group_id TEXT, trigger TEXT, responses TEXT, admin_only INTEGER, active INTEGER, deleted INTEGER, count INTEGER, last_used INTEGER, created_by TEXT, created_at INTEGER, metadata TEXT, json_data TEXT)`
 		);
 
 		// load_reports.db
@@ -78,6 +153,53 @@ class CoreRepository {
 				json_data       TEXT
 			)`
 		);
+		this._ensureTableSchema(
+			this.REPORTS_DB,
+			"load_reports",
+			`(id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, timestamp_start INTEGER, timestamp_end INTEGER, duration REAL, recv_private INTEGER, recv_group INTEGER, sent_private INTEGER, sent_group INTEGER, msgs_per_hour REAL, resp_avg REAL, resp_max REAL, resp_count INTEGER, json_data TEXT)`
+		);
+	}
+
+	/**
+	 * Detect and add missing columns to an existing table (synchronous)
+	 */
+	_ensureTableSchema(dbName, tableName, schemaSql) {
+		const columnMatches = schemaSql.match(/\(([\s\S]*)\)/);
+		if (!columnMatches) return;
+
+		const columns = columnMatches[1]
+			.split(",")
+			.map((c) => c.trim().split(/\s+/)[0])
+			.filter(
+				(c) =>
+					c &&
+					!["PRIMARY", "FOREIGN", "CHECK", "UNIQUE", "CONSTRAINT"].includes(c.toUpperCase()) &&
+					!c.startsWith("(")
+			);
+
+		try {
+			const rows = this.mappers.all(dbName, `PRAGMA table_info(${tableName})`);
+			const existingColumns = rows.map((r) => r.name);
+			const missingColumns = columns.filter((c) => !existingColumns.includes(c));
+
+			if (missingColumns.length > 0) {
+				this.logger.info(
+					`Adding missing columns to ${tableName} in ${dbName}: ${missingColumns.join(", ")}`
+				);
+				for (const col of missingColumns) {
+					// Extract full column definition
+					const colDefMatch = schemaSql.match(new RegExp(`${col}\\s+([^,)]+)`, "i"));
+					const colDef = colDefMatch ? colDefMatch[1] : "TEXT";
+					try {
+						this.mappers.exec(dbName, `ALTER TABLE ${tableName} ADD COLUMN ${col} ${colDef}`);
+					} catch (e) {
+						this.logger.error(`Error adding column ${col} to ${tableName} in ${dbName}:`, e);
+					}
+				}
+			}
+		} catch (error) {
+			this.logger.error(`Error in _ensureTableSchema for ${tableName} in ${dbName}:`, error);
+		}
 	}
 
 	// ===========================================================================

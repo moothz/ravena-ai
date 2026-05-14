@@ -59,7 +59,7 @@ class DiscordBot {
 
 		// --- Caches e Handlers (mantidos para compatibilidade) ---
 		this.redisURL = options.redisURL;
-		this.redisDB = options.redisDB || 1; // Usar um DB diferente do Evo para evitar conflitos
+		this.redisDB = options.redisDB || 1; // Usar um DB diferente do Whatsgo para evitar conflitos
 		this.redisTTL = options.redisTTL || 604800;
 		this.maxCacheSize = 3000;
 
@@ -716,6 +716,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 	}
 
 	async updateProfileStatus(status) {
+		if (process.env.DISABLE_ACTIVITY === "true") return true;
 		try {
 			this.discordClient.user.setActivity(status);
 			return true;

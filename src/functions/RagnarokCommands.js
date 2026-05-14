@@ -144,7 +144,7 @@ Para saber, envie: \`!rag-info\`
 		content: responseText,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
-			evoReply: message.origin
+			goReply: message.origin
 		}
 	});
 }

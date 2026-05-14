@@ -72,7 +72,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 					content: "Formato inválido. Use algo como: d20, 2d6, d8+3, 3d10-2",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -99,7 +99,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 					content: `⚠️ Número máximo de dados é ${MAX_DICE}.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				})
 			);
@@ -113,7 +113,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 					content: `⚠️ Número máximo de faces é ${MAX_SIDES}.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				})
 			);
@@ -208,7 +208,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 				content: resultMessage,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			})
 		);
@@ -225,7 +225,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 			content: "❌ Erro ao rolar dados. Por favor, tente novamente.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -242,7 +242,7 @@ for (const sides of COMMON_DICE) {
 			group: "dices",
 			description: `Rola um dado de X faces`,
 			reactions: {
-				before: process.env.LOADING_EMOJI ?? "🌀",
+				before: process.env.LOADING_EMOJI ?? "⌛️",
 				after: "🎲"
 			},
 			method: async (bot, message, args, group) => await rollDice(bot, message, args, group, sides)
@@ -257,7 +257,7 @@ commands.push(
 		description: "Rola dados com padrão customizado (ex: 2d6+3)",
 		category: "jogos",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎲"
 		},
 		method: async (bot, message, args, group) => await rollDice(bot, message, args, group)

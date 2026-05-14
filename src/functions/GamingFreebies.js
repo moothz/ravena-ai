@@ -42,7 +42,7 @@ async function gamingFreebiesCommand(bot, message, args, group) {
 				content: `❌ Nenhum brinde encontrado${platformArg ? ` para a plataforma *${platformArg}*` : ""}.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -111,7 +111,7 @@ async function gamingFreebiesCommand(bot, message, args, group) {
 			content: response,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -121,7 +121,7 @@ async function gamingFreebiesCommand(bot, message, args, group) {
 			content: "❌ Erro ao buscar brindes de jogos. Tente novamente mais tarde.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

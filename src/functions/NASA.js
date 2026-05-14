@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const chrono = require("chrono-node");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
@@ -117,7 +117,7 @@ async function fetchMedia(url) {
 	const buffer = Buffer.from(response.data, "binary");
 	const base64 = buffer.toString("base64");
 	const mimetype = response.headers["content-type"];
-	return new MessageMedia(mimetype, base64, "nasa_image.jpg");
+	return { mimetype, data: base64, filename: "nasa_image.jpg", isMessageMedia: true };
 }
 
 async function apodCommand(bot, message, args, group) {
@@ -168,7 +168,7 @@ async function apodCommand(bot, message, args, group) {
 			options: {
 				caption,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -180,7 +180,7 @@ async function apodCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: errorMsg,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 }
@@ -208,7 +208,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Nenhuma imagem EPIC encontrada para esta data.`,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 
@@ -249,7 +249,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 			options: {
 				caption,
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -257,7 +257,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Não foi possível buscar a imagem EPIC. Tente novamente.`,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 }

@@ -1,0 +1,3 @@
+[submodule "whatsgoapi"]
+	path = whatsgoapi
+	url = https://github.com/moothz/whatsgoapi

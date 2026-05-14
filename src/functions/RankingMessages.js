@@ -214,7 +214,7 @@ async function faladoresCommand(bot, message, args, group) {
 		// Get participants
 		const participants =
 			message.origin?.groupData?.Participants ??
-			message.evoMessageData?.groupData?.Participants ??
+			message.goMessageData?.groupData?.Participants ??
 			[];
 
 		// Identify missing
@@ -351,13 +351,13 @@ async function faladoresLimpezaCommand(bot, message, args, group) {
 				content: "⛔ Apenas administradores podem realizar a limpeza do ranking.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
 
 		const participants =
-			message.origin?.groupData?.Participants ?? message.evoMessageData?.groupData?.Participants;
+			message.origin?.groupData?.Participants ?? message.goMessageData?.groupData?.Participants;
 
 		if (!participants || participants.length === 0) {
 			return new ReturnMessage({
@@ -435,7 +435,7 @@ async function faladoresResetCommand(bot, message, args, group) {
 				content: "⛔ Apenas administradores podem resetar o ranking.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}

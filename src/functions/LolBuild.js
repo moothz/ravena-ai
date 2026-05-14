@@ -25,7 +25,7 @@ async function lolBuildCommand(bot, message, args, group) {
 				content: "❌ Por favor, informe o nome do campeão.\n\n*Exemplo:* !lol-build aatrox",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -40,7 +40,7 @@ async function lolBuildCommand(bot, message, args, group) {
 				content: "❌ Nome do campeão inválido.",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -55,7 +55,7 @@ async function lolBuildCommand(bot, message, args, group) {
 			content: `🎮 *Build do League of Legends*\n\n*Campeão:* ${campeao.charAt(0).toUpperCase() + campeao.slice(1)}\n*Link:* ${link}`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (err) {
@@ -65,7 +65,7 @@ async function lolBuildCommand(bot, message, args, group) {
 			content: "❌ Algo deu errado ao buscar a build. Tente novamente mais tarde.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

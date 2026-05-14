@@ -30,7 +30,7 @@ async function ocrCommand(bot, message, args, group) {
 				chatId,
 				content:
 					"❌ Por favor, envie uma imagem com o comando ou responda a uma imagem usando !ocr.",
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 
@@ -65,7 +65,7 @@ async function ocrCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content: "⚠️ Não consegui extrair nenhum texto desta imagem.",
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 
@@ -74,7 +74,7 @@ async function ocrCommand(bot, message, args, group) {
 			content: `📝 *Texto Extraído:*\n\n${response.trim()}`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -82,7 +82,7 @@ async function ocrCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: "❌ Ocorreu um erro ao processar o OCR. Tente novamente mais tarde.",
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
 }
@@ -115,7 +115,7 @@ const commands = [
 		category: "utilidades",
 		reactions: {
 			trigger: "🔍",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📝"
 		},
 		cooldown: 20,

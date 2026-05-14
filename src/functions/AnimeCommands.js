@@ -1,6 +1,5 @@
 const axios = require("axios");
 const malScraper = require("mal-scraper");
-const { MessageMedia } = require("whatsapp-web.js");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -28,7 +27,7 @@ async function buscarAnime(bot, message, args, group) {
 				content: "Por favor, forneça o nome de um anime para buscar. Exemplo: !anime Naruto",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -49,7 +48,7 @@ async function buscarAnime(bot, message, args, group) {
 				content: `❌ Não foi possível encontrar informações sobre "${nome}". Verifique se o nome está correto.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -90,7 +89,12 @@ async function buscarAnime(bot, message, args, group) {
 				const base64Image = imageBuffer.toString("base64");
 
 				// Cria mídia a partir da imagem
-				const media = new MessageMedia("image/jpeg", base64Image, "anime.jpg");
+				const media = {
+					mimetype: "image/jpeg",
+					data: base64Image,
+					filename: "anime.jpg",
+					isMessageMedia: true
+				};
 
 				// Retorna a mensagem com mídia
 				return new ReturnMessage({
@@ -98,7 +102,7 @@ async function buscarAnime(bot, message, args, group) {
 					content: media,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin,
+						goReply: message.origin,
 						caption: mensagem
 					}
 				});
@@ -117,7 +121,7 @@ async function buscarAnime(bot, message, args, group) {
 				content: mensagem,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -138,7 +142,7 @@ async function buscarAnime(bot, message, args, group) {
 			content: `❌ ${errorMessage}`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -151,7 +155,7 @@ const commands = [
 		description: "Busca informações sobre um anime no MyAnimeList",
 		category: "cultura",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🗾"
 		},
 		method: buscarAnime

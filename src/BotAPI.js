@@ -143,29 +143,13 @@ class BotAPI {
 	 */
 	async checkServices() {
 		const services = {
-			evolutiongo: "unknown",
+			whatsgoapi: "unknown",
 			imagine: "down",
 			llm: "down",
 			whisper: "down",
 			alltalk: "down",
 			sdwebui: "down"
 		};
-
-		// 1. Check Evolution Go Systemd Service
-		try {
-			await new Promise((resolve) => {
-				exec("systemctl is-active evolution-go", (error, stdout) => {
-					if (!error && stdout && stdout.trim() === "active") {
-						services.evolutiongo = "up";
-					} else {
-						services.evolutiongo = "down";
-					}
-					resolve();
-				});
-			});
-		} catch (e) {
-			services.evolutiongo = "down";
-		}
 
 		const checkUrl = async (url) => {
 			if (!url) return false;
@@ -176,9 +160,19 @@ class BotAPI {
 				});
 				return true;
 			} catch (e) {
+				console.error(`[BotAPI] Error checking URL ${url}:`, e.message);
 				return false;
 			}
 		};
+
+		// 1. Check WhatsgoAPI Health
+		try {
+			const whatsgoUrl = process.env.WHATS_GO_API_URL || "http://whatsgoapi:8080";
+			const whatsgoUp = await checkUrl(`${whatsgoUrl}/server/ok`);
+			services.whatsgoapi = whatsgoUp ? "up" : "down";
+		} catch (e) {
+			services.whatsgoapi = "down";
+		}
 
 		const checkCategoryStatus = async (category) => {
 			const providers = this.serviceProviderService.getProviders(category);
@@ -2059,70 +2053,6 @@ class BotAPI {
 				this.logger.error("Error writing to bots.json:", error);
 				res.status(500).json({ status: "error", message: "Failed to save bots configuration." });
 			}
-		});
-
-		// Dashboard: Restart bot process
-		this.app.post("/api/restart-bot", authenticateBasic, (req, res) => {
-			this.logger.info("Received request to restart bot via API.");
-			exec("pm2 restart ravena-ai", (error, stdout, stderr) => {
-				if (error) {
-					this.logger.error(`Error restarting bot: ${error.message}`);
-					return res
-						.status(500)
-						.json({ status: "error", message: `Failed to restart bot: ${error.message}` });
-				}
-				if (stderr) {
-					this.logger.warn(`Restart command stderr: ${stderr}`);
-				}
-				this.logger.info(`Restart command stdout: ${stdout}`);
-				res.json({ status: "ok", message: "Bot restart command issued.", output: stdout });
-			});
-		});
-
-		// Dashboard: Restart Evolution API
-		this.app.post("/api/restart-evo", authenticateBasic, (req, res) => {
-			this.logger.info("Received request to restart Evolution API via API.");
-			exec("/home/moothz/daily-evo-restart.sh", (error, stdout, stderr) => {
-				if (error) {
-					this.logger.error(`Error restarting Evolution API: ${error.message}`);
-					return res.status(500).json({
-						status: "error",
-						message: `Failed to restart Evolution API: ${error.message}`
-					});
-				}
-				if (stderr) {
-					this.logger.warn(`Evolution API restart command stderr: ${stderr}`);
-				}
-				this.logger.info(`Evolution API restart command stdout: ${stdout}`);
-				res.json({
-					status: "ok",
-					message: "Evolution API restart command issued.",
-					output: stdout
-				});
-			});
-		});
-
-		// Dashboard: Restart Evolution GO API
-		this.app.post("/api/restart-evogo", authenticateBasic, (req, res) => {
-			this.logger.info("Received request to restart Evolution GO API via API.");
-			exec("/home/moothz/daily-evogo-restart.sh", (error, stdout, stderr) => {
-				if (error) {
-					this.logger.error(`Error restarting Evolution GO API: ${error.message}`);
-					return res.status(500).json({
-						status: "error",
-						message: `Failed to restart Evolution GO API: ${error.message}`
-					});
-				}
-				if (stderr) {
-					this.logger.warn(`Evolution GO API restart command stderr: ${stderr}`);
-				}
-				this.logger.info(`Evolution GO API restart command stdout: ${stdout}`);
-				res.json({
-					status: "ok",
-					message: "Evolution GO API restart command issued.",
-					output: stdout
-				});
-			});
 		});
 
 		// Dashboard: Stream logs

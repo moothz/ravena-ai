@@ -288,14 +288,14 @@ class CustomVariableProcessor {
 		if (context.message && context.message.author) {
 			// Tenta obter o nome real ou o apelido do remetente
 			const fromMe =
-				context.message.evoMessageData?.key?.fromMe ??
+				context.message.goMessageData?.key?.fromMe ??
 				context.message.key?.fromMe ??
 				context.message.fromMe ??
 				context.message.origin?.fromMe ??
 				false;
 			const authorName = fromMe
 				? "ravena"
-				: (context.message.evoMessageData?.pushName ??
+				: (context.message.goMessageData?.pushName ??
 					context.message.origin?.pushName ??
 					context.message.name ??
 					context.message.authorName ??

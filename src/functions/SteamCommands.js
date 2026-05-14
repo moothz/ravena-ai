@@ -27,7 +27,7 @@ async function platinaCommand(bot, message, args, group) {
 				"❌ Por favor, forneça um nome de usuário ou SteamID.\n\n*Exemplo:* !platina meu_usuario",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -44,7 +44,7 @@ async function platinaCommand(bot, message, args, group) {
 				content: "❌ Erro: API_KEY_STEAMCOMMAND não configurada!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -66,7 +66,7 @@ async function platinaCommand(bot, message, args, group) {
 				content: "❌ Usuário não encontrado na Steam!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -110,7 +110,7 @@ async function platinaCommand(bot, message, args, group) {
 			content: resposta,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -135,7 +135,7 @@ async function platinaCommand(bot, message, args, group) {
 			content: errorMessage,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}

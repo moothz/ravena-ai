@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs").promises;
 const crypto = require("crypto");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
@@ -386,11 +386,12 @@ async function downloadFile(bot, message, args, group) {
 				try {
 					const physicalPath = info.path || path.join(getBasePath(chatId), folderFilePath);
 					const fileBuffer = await fs.readFile(physicalPath);
-					const media = new MessageMedia(
-						info.type || "application/octet-stream",
-						fileBuffer.toString("base64"),
-						path.basename(folderFilePath)
-					);
+					const media = {
+						mimetype: info.type || "application/octet-stream",
+						data: fileBuffer.toString("base64"),
+						filename: path.basename(folderFilePath),
+						isMessageMedia: true
+					};
 					media.filename = path.basename(folderFilePath);
 
 					returnMessages.push(
@@ -421,11 +422,12 @@ async function downloadFile(bot, message, args, group) {
 			try {
 				const physicalPath = fileInfo.path || path.join(getBasePath(chatId), filePath);
 				const fileBuffer = await fs.readFile(physicalPath);
-				const media = new MessageMedia(
-					fileInfo.type || "application/octet-stream",
-					fileBuffer.toString("base64"),
-					path.basename(filePath)
-				);
+				const media = {
+					mimetype: fileInfo.type || "application/octet-stream",
+					data: fileBuffer.toString("base64"),
+					filename: path.basename(filePath),
+					isMessageMedia: true
+				};
 				return new ReturnMessage({
 					chatId,
 					content: media,
@@ -715,11 +717,12 @@ async function processFileVariable(filePath, bot, chatId) {
 				try {
 					const physicalPath = info.path || path.join(getBasePath(chatId), fPath);
 					const fileBuffer = await fs.readFile(physicalPath);
-					const media = new MessageMedia(
-						info.type || "application/octet-stream",
-						fileBuffer.toString("base64"),
-						path.basename(fPath)
-					);
+					const media = {
+						mimetype: info.type || "application/octet-stream",
+						data: fileBuffer.toString("base64"),
+						filename: path.basename(fPath),
+						isMessageMedia: true
+					};
 					mediaFiles.push({
 						media,
 						caption: `Arquivo: ${fPath} (${formatSize(info.size || fileBuffer.length)})`
@@ -731,11 +734,12 @@ async function processFileVariable(filePath, bot, chatId) {
 			try {
 				const physicalPath = fileInfo.path || path.join(getBasePath(chatId), normalizedPath);
 				const fileBuffer = await fs.readFile(physicalPath);
-				return new MessageMedia(
-					fileInfo.type || "application/octet-stream",
-					fileBuffer.toString("base64"),
-					path.basename(normalizedPath)
-				);
+				return {
+					mimetype: fileInfo.type || "application/octet-stream",
+					data: fileBuffer.toString("base64"),
+					filename: path.basename(normalizedPath),
+					isMessageMedia: true
+				};
 			} catch (e) {
 				return null;
 			}
@@ -761,35 +765,35 @@ const commands = [
 		name: "pastas",
 		category: "arquivos",
 		description: "Lista as pastas e arquivos",
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "📂" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📂" },
 		method: listFiles
 	}),
 	new Command({
 		name: "p-criar",
 		description: "Cria nova pasta",
 		category: "arquivos",
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "📁" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📁" },
 		method: createFolder
 	}),
 	new Command({
 		name: "p-enviar",
 		description: "Envia arquivo para a pasta",
 		category: "arquivos",
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "📤" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📤" },
 		method: uploadFile
 	}),
 	new Command({
 		name: "p-excluir",
 		description: "Apaga arquivo ou pasta",
 		category: "arquivos",
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "🧹" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "🧹" },
 		method: deleteFile
 	}),
 	new Command({
 		name: "p-baixar",
 		description: "Baixa arquivo ou pasta",
 		category: "arquivos",
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "📥" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📥" },
 		method: downloadFile
 	})
 ];

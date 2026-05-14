@@ -13,6 +13,7 @@ const database = Database.getInstance();
 const llmService = LLMService.getInstance();
 const DB_NAME = "summaries";
 const activeAnalyses = new Set();
+const otherAI = [];
 
 // Initialize Database
 database.getSQLiteDb(
@@ -280,12 +281,14 @@ async function interactWithConversation(bot, message, args, group) {
 		// Formata mensagens para prompt
 		const formattedMessages = formatMessagesForPrompt(recentMessages);
 
+		const otherAIsPrompt = "";
+
 		const customPersonalidade =
 			group.customAIPrompt && group.customAIPrompt.length > 0
 				? `\n\n((Sua personalidade: '${group.customAIPrompt}'))\n\n`
 				: "";
 		// Cria prompt para LLM
-		const prompt = `Responda apenas em português do brasil. A seguir anexei uma conversa recente de um grupo de WhatsApp. Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural. ${customPersonalidade}
+		const prompt = `Responda apenas em português do brasil. A seguir anexei uma conversa recente de um grupo de WhatsApp. Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural. ${customPersonalidade}${otherAIsPrompt}
 
 ${formattedMessages}`;
 
@@ -614,14 +617,14 @@ async function storeMessage(message, chatId, bot) {
 		if (textContent) {
 			// Zap/libs mudam tanto que pode vir de qualquer lugar, é foda, haja fallbacks
 			const fromMe =
-				message.evoMessageData?.key?.fromMe ??
+				message.goMessageData?.key?.fromMe ??
 				message.key?.fromMe ??
 				message.fromMe ??
 				message.origin?.fromMe ??
 				false;
 			const authorName = fromMe
 				? "Você (bot)"
-				: (message.evoMessageData?.pushName ??
+				: (message.goMessageData?.pushName ??
 					message.origin?.pushName ??
 					message.name ??
 					message.authorName ??
@@ -738,7 +741,7 @@ const commands = [
 		description: "Resume conversas recentes do grupo",
 		category: "ia",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📋"
 		},
 		cooldown: 300,
@@ -751,7 +754,7 @@ const commands = [
 		category: "ia",
 		reactions: {
 			trigger: "🦜",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "💬"
 		},
 		cooldown: 150,

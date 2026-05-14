@@ -552,7 +552,7 @@ const commands = [
 		description: "Busca perfil de jogador de League of Legends",
 		category: "jogos",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎮",
 			error: "❌"
 		},
@@ -564,7 +564,7 @@ const commands = [
 		description: "Busca perfil de jogador de Valorant",
 		category: "jogos",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔫",
 			error: "❌"
 		},

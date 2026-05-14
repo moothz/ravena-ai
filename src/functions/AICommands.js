@@ -287,7 +287,7 @@ async function aiCommand(bot, message, args, group) {
 				reaction: "👋",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} else {
@@ -297,7 +297,7 @@ async function aiCommand(bot, message, args, group) {
 					"Por favor, forneça uma pergunta ou uma imagem com uma pergunta. Exemplo: !ai Qual é a capital da França?",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -380,7 +380,7 @@ async function aiCommand(bot, message, args, group) {
 
 	// Add user name context
 	const promptAutor =
-		message?.evoMessageData?.key?.pushName ??
+		message?.goMessageData?.key?.pushName ??
 		message?.name ??
 		message?.authorName ??
 		message?.pushname;
@@ -415,7 +415,7 @@ async function aiCommand(bot, message, args, group) {
 			content: processedResponse,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -425,7 +425,7 @@ async function aiCommand(bot, message, args, group) {
 			content: "Desculpe, encontrei um erro ao processar sua solicitação.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -507,7 +507,7 @@ async function handleMediaRequest(
 			return new ReturnMessage({
 				chatId,
 				content: `Ocorreu um erro ao processar o vídeo: ${videoError.message}`,
-				options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
 	} else {
@@ -516,13 +516,13 @@ async function handleMediaRequest(
 			content: `Ainda não processo este tipo de arquivo (${media.mimetype}) 😟 Consigo apenas analisar imagens e vídeos!`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
 
 	const promptAutor =
-		message?.evoMessageData?.key?.pushName ??
+		message?.goMessageData?.key?.pushName ??
 		message?.name ??
 		message?.authorName ??
 		message?.pushname;
@@ -555,7 +555,7 @@ async function handleMediaRequest(
 			content: processedResponse,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -565,7 +565,7 @@ async function handleMediaRequest(
 			content: "Desculpe, encontrei um erro ao processar sua solicitação de mídia.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} finally {
@@ -621,7 +621,7 @@ const commands = [
 		group: "askia",
 		reactions: {
 			trigger: "🤖",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
 		cooldown: 30,
@@ -634,7 +634,7 @@ const commands = [
 		group: "askia",
 		reactions: {
 			trigger: "🤖",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
 		cooldown: 30,
@@ -648,7 +648,7 @@ const commands = [
 		group: "askia",
 		reactions: {
 			trigger: "🤖",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
 		cooldown: 30,
@@ -662,7 +662,7 @@ const commands = [
 		group: "askia",
 		reactions: {
 			trigger: "🤖",
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
 		cooldown: 30,

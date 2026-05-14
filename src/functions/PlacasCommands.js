@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
@@ -122,7 +122,7 @@ async function buscarPlaca(bot, message, args, group) {
 				content: `❌ Não foi possível consultar a placa "${placa}". Tente novamente mais tarde.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} else {
@@ -132,7 +132,7 @@ async function buscarPlaca(bot, message, args, group) {
 					content: resultado.msg,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					},
 					reaction: resultado.react || "🚘"
 				})
@@ -149,7 +149,7 @@ async function buscarPlaca(bot, message, args, group) {
 					content: media,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				})
 			);
@@ -165,7 +165,7 @@ async function buscarPlaca(bot, message, args, group) {
 			content: "❌ Erro ao consultar placa. Tente novamente mais tarde.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -450,7 +450,7 @@ async function consultarSiPt(bot, message, args, group) {
 				content: `❌ Não foi possível consultar a placa "${placa}" no SiPt. Tente novamente mais tarde.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -461,7 +461,7 @@ async function consultarSiPt(bot, message, args, group) {
 			content: resultados[0].msg,
 			options: {
 				quotedMessageId: resultados[0].reply ? message.origin.id._serialized : undefined,
-				evoReply: message.origin
+				goReply: message.origin
 			},
 			reaction: resultados[0].react || "🚘"
 		});
@@ -474,7 +474,7 @@ async function consultarSiPt(bot, message, args, group) {
 			content: "❌ Erro ao consultar placa no SiPt. Tente novamente mais tarde.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -489,7 +489,7 @@ const commands = [
 		category: "busca",
 		usage: "!placa ABC1234",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🚘"
 		},
 		method: buscarPlaca,
@@ -502,7 +502,7 @@ const commands = [
 		usage: "!sipt ABC1234",
 		aliases: ["instasipt"],
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🚘"
 		},
 		method: consultarSiPt

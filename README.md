@@ -1,26 +1,61 @@
 # RavenaBot AI
 
-![Ravenabot AI - img by chatgpt](ravenabanner.png)
+![Ravenabot AI - img by gemini+gpt](ravenabanner.png)
 
-> Novo código da ravena completamente desenvolvido utilizando LLM Claude 3.7 Sonnet e Gemini 2.5 Pro. Esta versão apresenta uma arquitetura modular, suporte a múltiplas instâncias, comandos personalizáveis e integração com plataformas de streaming. Livre para uso, sem garantias. Consulte o arquivo "Prompts" para ver as coisas que eu pedi pro Claude. Leia mais sobre os [design patterns aqui](docs/DesignPatterns.md).
+> Novo código da ravena completamente desenvolvido utilizando LLMs como Claude 3.7, 4.6 Sonnet e Gemini 2.5, 3.1 Pro. Esta versão remove o suporte para o wwebjs e foca em uma API REST com o backend em whatsmeow, tudo via **docker**, _sem perrengues!_.
 
 ## 🔮 Visão Geral
 
-RavenaBot é um bot para WhatsApp que vem sendo desenvolvido há quase 4 anos (desde 2021), apenas como uma brincadeira/hobby. Começou como um bot da twitch (pra aprender um pouco da API deles com python) e depois foi integrado ao WhatsApp (pra aprender sobre nodejs) - virando um _spaghetti code_ absurdo, aí veio a ideia de refazer todo o código do zero, mas com uma ajudinha especial dos LLM (pra ver o estado atual de criação de código assistido por IA).
+RavenaBot é um bot para WhatsApp que vem sendo desenvolvido desde 2021, apenas como uma brincadeira/hobby. Começou como um bot da twitch (pra aprender um pouco da API deles com python) e depois foi integrado ao WhatsApp (pra aprender sobre nodejs) - virando um _spaghetti code_ absurdo, aí veio a ideia de refazer todo o código do zero, mas com uma ajudinha especial dos LLM (pra ver o estado atual de criação de código assistido por IA).
 O foco deste bot é a utilização do mesmo em grupos, onde ele pode notificar status das lives, responder comandos com utilidades (!clima, !gpt, ..,), criar comandos personalizados do grupo (como nightbot, StreamElements, etc.).
 
-Este bot foi implemetado utilizando quatro tecnologias:
-- [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js): Manipula o WhatsAppWeb através de um navegador controlado pelo puppeteer, fácil de configurar, mas com muitas mensagens fica com delay, trava e/ou desconecta. **Recomendo** *muito* utilizar ele, pela facilidade de configurar - o padrão do bot é usar isso, não se preocupe
-- [EvoutionAPI - GO](github.com/EvolutionAPI/evolution-go): Os bots ficam logados no Evolution que utiliza o [Whatsmeow](https://github.com/tulir/whatsmeow), direto no websocket do whatsapp, mas usando Go. Extremamente robusto e rápido e não dá delays, mais difícil de implementar. *Este é como as ravenas oficiais se conectam atualmente.* _Para ativar, é necessário definir no bots.json_
-- [EvoutionAPI](github.com/EvolutionAPI/evolution-api): Os bots ficam logados no Evolution que utiliza o [Baileys](https://github.com/WhiskeySockets/Baileys), direto no websocket do whatsapp. Rápido e não dá muitos delays, mais difícil de implementar. _Para ativar, é necessário definir no bots.json_
-- **Telegram Bot**: Também possuímos suporte para o Telegram, rodando o bot [ravenosabot](https://t.me/ravenosabot) e o grupo da [comunidade](https://t.me/+x242TMlPD4s2OTVh).
+Após muitas versões e adaptações, chegamos na versão atual - tudo concentrado em um docker compose simples de usar e escalável.
 
-Obs.: Eu criei o wrapper pra EvolutionAPI me baseando na implementação do wwebjs, então existem _muitos_ fallbacks, não se assuste.
+⚠️ **Atenção**: Bots deste tipo ***não são permitidos*** no whatsapp, então não use em seu número principal - compre um chip só pra isso.
 
-⚠️ **Atenção**: Bots deste tipo ***não são permitidos***, então não use em seu número principal - compre um chip só pra isso.
+## 🛠️ Dependências e Funcionalidades
+
+### 1. Funções Nativas (Prontas para uso via Docker)
+Tudo isso aqui vem pronto e você não precisa configurar nada externo (utiliza binários pré-instalados como `ffmpeg`, `imagemagick`, `yt-dlp`).
+- **Figurinhas (Stickers):** Criação e conversão de figurinhas estáticas e animadas.
+- **Downloaders:** Baixar vídeos e áudios do YouTube (!yt)
+- **Jogos de Chat:** Pescaria, Pinto, Slots, Anagrama
+- **Utilidades:** Gerador de QRCodes (pixs, wifi, URL), clima, notícias, lembretes
+- **Gestão de Grupos:** Mensagens de boas-vindas, comandos personalizados, filtros de links, imagens NSFW e mais
+- **Conversão de Arquivos:** Áudio (MP3/Opus), Vídeo para GIF e manipulação básica de imagens.
+
+### 2. APIs Self-Hosted (Configuráveis no .env)
+Se você quiser estas funcionalidades no bot, terá que hospedar estes serviços você mesmo e informar a URL nas configurações.
+- **Inteligência Artificial:** Integração com Ollama, LM Studio ou AnythingLLM (Comandos de chat, OCR e resumos). _Dica: Pra pouco uso, é melhor usar uma IA grátis na nuvem como o Gemini Flash._
+- **Voz e Transcrição:** Suporte a Whisper API (Transcrição automática) e AllTalk/XTTS (Sintetização de vozes personalizadas).
+- **Jogos:** Stop, Tarô e outros jogos usam LLM para funcionar
+
+### 3. APIs Externas (Token no .env)
+Pra essas coisas, você vai precisar de cadastrar nos sites e informar sua chave de API (são grátis).
+- **Plataformas:** Telegram e Discord (praticamente zero testes).
+- **IA na Nuvem:** OpenAI, Google Gemini, Anthropic e Groq.
+- **Monitoramento e Social:** Twitch (avisos de live), Last.fm, Giphy e NASA.
+- **Games:** Riot Games (LoL/WR), Steam e PSN.
+- **Utilidades:** IMDb e Rastreio de Correios.
+
+### 4. APIs Estritamente Pagas
+- **Consulta de Veículos:** O comando de consulta de placas (!placa) requer uma API paga específica (apiplacas).
+
+
+## 💾 Docker Stack
+
+A stack é composta por 5 containers:
+
+- **ravena-ai**: O "cérebro" do bot. Aplicação Node.js que processa a lógica, comandos, jogos e integrações - a ravena que você já conhece.
+- **whatsgoapi**: A ponte REST API desenvolvida em Go ([whatsmeow](https://github.com/tulir/whatsmeow)). Responsável pela conexão direta com o WhatsApp, garantindo velocidade e estabilidade sem delays.
+- **rembg**: Serviço de inteligência artificial especializado em remoção de fundo de imagens. Utilizado pelos comandos `!removebg` e `!stickerbg` para gerar PNGs e figurinhas transparentes de alta qualidade instantaneamente.
+- **postgres**: Banco de dados PostgreSQL utilizado para gerenciar as sessões da API e persistência de dados.
+- **minio**: Storage de objetos (S3 compatible) para armazenamento e cache de mídias (imagens, vídeos, áudios).
+- **health-check**: Monitora a saúde dos serviços e reinicia os containers automaticamente em caso de falha.
 
 
 ## 🚀 Recursos Principais
+
 - **Básico de Mídia** - Stickers, stickers sem fundo, baixa vídeos/música do youtube, baixa gifs, imagens, converte formatos, muda volume e mais!
 - **Sistema modular de Comandos** - Comandos fixos implementados por arquivo que todos podem ajudar a expandir + Interpretador comandos personalizados que podem ser cirados em tempo real dentro dos grupos
 - **Plataformas de Streaming** - Monitoramento de Twitch, Kick e YouTube com notificações customizáveis dentro dos grupos
@@ -40,188 +75,170 @@ Obs.: Eu criei o wrapper pra EvolutionAPI me baseando na implementação do wweb
 ## 🐦‍⬛ Quero usar agora!
 
 Se você quer interagir com o bot e testar ele, eu disponibilizo o mesmo _gratuitamente_ em alguns números, você pode conferir o status dos bots [aqui neste link](https://ravena.moothz.win/)
+**Telegram Bot**: Também dou suporte para o Telegram _(mas não muito)_, rodando o bot [ravenosabot](https://t.me/ravenosabot) e o grupo da [comunidade](https://t.me/+x242TMlPD4s2OTVh).
 
 ## 🔧 Como hospedar sua própria ravena
+
 Se você não entende nada de programação ou nunca rodou aplicativos via código fonte, o melhor mesmo é chamar seu amigo da TI pra dar aquele help.
-O programa foi feito para rodar em Windows e Linux (MacOS deve funcionar sem problemas, é claro). Já rodei muito em Raspberry Pi/OrangePi e similares, mas nunca tentei rodar diretamente num Android.
 
-### Requisitos Mínimos
-Sem isso, não vai dar pra rodar o bot.
+> **Requisito único:** [Docker](https://docs.docker.com/engine/install/) e [Docker Compose](https://docs.docker.com/compose/install/) instalados na máquina.
 
-* Um servidor capaz de rodar o nodejs e todas as dependências
-* Um celular com whatsapp ativo (NÃO USE O SEU CHIP PARTICULAR, COMPRE UM SÓ PRA ISSO!)
-* [Node.js](https://nodejs.org/)
-* [Google Chrome](https://www.google.com/chrome/): Para poder enviar vídeos é necessário o Chrome (somente para whatsapp-web.js)
-* [FFmpeg](https://ffmpeg.org/download.html): (para processamento de áudio e vídeo)
-
-### Requisitos Recomendados
-Para funções bastante utilizadas do bot
-
-* [ImageMagick](docs/ImageManipulation.md): Comandos de efeito em imagens
-* [faster-whisper](https://github.com/SYSTRAN/faster-whisper): Para transcrição de áudios _(speech-to-text)_ - fácil de usar, binaries prontos
-* [alltalk_tts](https://github.com/erew123/alltalk_tts/tree/alltalkbeta): Texto pra voz, ferramenta grátis e poderosa (dá até pra copiar voz dos outros!)
-* [API - Gemini](https://ai.google.dev/): Na minha opinião, a melhor LLM Free _(gemini-2.0-flash-exp)_
-* [API - OWM](https://openweathermap.org/api): API grátis de previsão do tempo
-
-### Opcionais e Extras
-* [LM Studio](https://lmstudio.ai/): Caso não queira usar APIs para IA, que podem gerar custos, hospede sua própria. Recomendo utilizar o `google/gemma-3-12b` da google
-* [Ollama](https://github.com/ollama/ollama): Mesmo padrão do LM Studio, use um ou outro, os 2 juntos seria apenas para redundância
-* [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui): Para gerar imagens com IA localmente
-* [API - Giphy](https://developers.giphy.com/): Para busca de GIFs
-* [API - OMDB](https://www.omdbapi.com/apikey.aspx): Para busca de informação de filmes (IMDB Free)
-* [API - Unsplash](https://unsplash.com/developers): Busca de Imagens
-* [API - Last.fm](https://www.last.fm/pt/api): Busca no Last.fm (perfis, infos)
-* [API - RiotGames](https://developer.riotgames.com/): Busca de ELO informações de jogos da Riot
-* [API - Placas](https://apiplacas.com.br/): API paga para busca de placas de carros (não é das melhores, mas é barato!)
-* [EvolutionAPI](https://github.com/EvolutionAPI/evolution-api): Alternativa ao wwebjs que roda no chrome, use _apenas_ se quiser rodar com MUITOS (200+) grupos
-
+---
 
 ### Passo a passo
 
-1. Clone o repositório:
-   ```bash
-   git clone https://github.com/moothz/ravena-ai.git
-   cd ravena-ai
-   ```
-2. Copie o arquivo `.env.example` para `.env`
+#### 1. Clone o repositório (com submódulos)
+```bash
+git clone --recurse-submodules https://github.com/moothz/ravena-ai.git
+cd ravena-ai
+```
 
-3. Configure o arquivo `.env` (veja a seção [Configuração](#-configuração))
+Se tiver feito o clone sem o `recurse-submodules`, inicialize dentro da pasta do projeto manualmente:
+```bash
+git submodule update --init --recursive
+```
 
-4. Copie o arquivo `service-providers.json.example` para `service-providers.json`
 
-5. Configure os provedores de APIs (LLM, Whisper, etc) no `service-providers.json` ou via painel web `/service-providers`
+#### 2. Gere o `.env` com segredos automáticos
+```bash
+make setup
+```
+Isso cria o `.env` a partir do `.env.example` e preenche automaticamente `GLOBAL_API_KEY`, `POSTGRES_PASSWORD` e `MINIO_SECRET_KEY` com valores aleatórios seguros.
 
-6. Copie o arquivo `bots.json.example` para `bots.json`
+#### 3. Configure o `.env`
+Abra o `.env` e preencha pelo menos:
 
-7. Configure o arquivo `bots.json`
+| Variável | O que é |
+|----------|---------|
+| `SUPER_ADMINS` | Seu número do WhatsApp no formato `5511999999999@c.us` |
+| `BOTAPI_USER` / `BOTAPI_PASSWORD` | Credenciais para o painel web de gerenciamento |
+| `DL_FOLDER` | Caminho no **host** para armazenar downloads (YouTube, Stickers, Imagens, etc). Use uma pasta com bastante espaço, por exemplo `/mnt/hd-externo/downloads` |
+| `BOT_DOMAIN` | URL pública do bot (opcional, só necessário se quiser links externos funcionando) |
 
-8. Inicie o bot:
-   ```bash
-   npm start
-   ```
+O resto é opcional — configure apenas as APIs que você quiser usar (Twitch, Gemini, OpenAI, etc).
 
-9. Escaneie o código QR que aparecerá no console usando o WhatsApp no seu celular.
+#### 4. Configure os bots (`bots.json`)
+```bash
+cp bots.json.example bots.json
+```
+Edite o `bots.json` e adicione cada instância de bot que você quer rodar:
 
-## ⚙️ Configuração
-
-Edite o arquivo `bots.json` conforme instruções abaixo:
 ```json
 [
-   {
-    "enabled": true,            // Habilitar ou não essa entrada
-    "nome": "ravenabot",        // Identificador do bot para os logs e EvoAPI
-    "numero": "559912345678",   // Numero do celular do perfil do whatsapp, apenas números
-    "ignorePV": false,          // Ignorar comandos no PV (menos de gerencia)
-    "ignoreInvites": false,     // Não ativar sistema de invites
-    "customPrefix": "!",         // Prefixo padrão dos comandos (os grupos são criados com este prefixo, mas podem alterar depois)
-
-    // Atualmente, eu migrei para a EvolutionAPI pois a ravena recebe mensagens demais que travam o Chrome do wweb.js
-    // Não recomendo configurar nele, é muito trabalho pra ter mais erros
-    "useEvo": false,            // Uso avançado usando a EvolutionAPI. O nome do bot deve ser o mesmo no painel da evo
-    "webhookPort": 3457,        // Apenas para EvolutionAPI, ignore 99% dos casos
-    "useWebsocket": true,       // Apenas para EvolutionAPI, ignore 99% dos casos
-
-    // Também é possível ativar no discord (SUPER EM TESTES, NADA GARANTIDO)
-    "useDiscord": false,
-    "discordToken": "MTQzN...",
-   }
+  {
+    "enabled": true,
+    "nome": "meu-bot",
+    "managementUser": "ravuser",
+    "managementPW": "ravpw",
+    "numero": "5511999999999",
+    "customPrefix": "!",
+    "ignorePV": false,
+    "ignoreInvites": true
+  }
 ]
 ```
 
+> 💡 **Dica:** Editou o `bots.json`?
+> ```bash
+> make restart-bot
+> # ou: docker compose restart ravena-ai
+> ```
 
-Edite o arquivo `.env` conforme instruções abaixo:
+> Editou o `.env`?
+> ```bash
+> make up
+> # ou: docker compose up -d
+> ```
 
-```env
-# Opções Gerais
-DEFAULT_PREFIX=!                # Prefixo padrão de comandos
-SAFE_MODE=false                 # Apenas simula envio de mensagens e printa no terminal
-DEBUG=true                      # Mostra Mensagens de debug mais detalhadas
-HEADLESS_MODE=false             # false = mostra o navegador, true = navegador escondido
-DL_FOLDER=D:/downloads          # Pasta onde serão baixados mídias (youtube, etc)
-NOTIFY_UNKNOWN_COMMANDS=false   # Responder mensagens de "comando não encontrado"
-SUPER_ADMINS=12345@c.us         # Número de pessoas que podem dar comandos de SuperAdmin (padrão ID whats)
-MAX_BACKUPS=10
-CMD_WHITELIST=sa-,anoni     # Comandos pra considerar mesmo que o bot esteja com "ignorar PV" habilitado
+> Editou o código fonte (ex: functions)?
+> ```bash
+> make ravena-ai
+> ```
 
-# API da RavenaBot
-# Completamente opcional, ainda mais pra quem vai rodar o bot particular
-# Eu uso cloudflare pra domínio externo ravena.moothz.win
-BOT_DOMAIN=https://seuhost.com/rv # URL da API 
-BOT_DOMAIN_LOCAL=http://192.168.1.100 # URL LOCAL da API, pra uso com o Evolution e evitar problemas de HTTPS
-API_PORT=5000           # Porta da API
-BOTAPI_USER=admin         # Usuário para comandos remotos
-BOTAPI_PASSWORD=senhaCecreta    # Senha para comandos Remotos
-MANAGEMENT_TOKEN_DURATION=30    # Tempo em minutos de duração da sessão para !g-painel
 
-# Chaves de API Externas
-TWITCH_CLIENT_ID=         # https://dev.twitch.tv/docs/api/
-TWITCH_CLIENT_SECRET=       # 
-KICK_CLIENT_ID=           # https://docs.kick.com/getting-started/kick-apps-setup
-KICK_CLIENT_SECRET=         #
-GOOGLE_API_KEY=           # https://ai.google.dev/ + https://console.cloud.google.com/apis/credentials/key
-GOOGLE_MAPS_API_KEY=        # Habilite as APIs: Generative Language API, Map Static API, Places API, Places API (New), Street View Static API
-DEEPSEEK_API_KEY=         # https://platform.deepseek.com/apiKeys
-OPENAI_API_KEY=           # https://openai.com/api/
-OPENROUTER_API_KEY=         # https://openrouter.ai/docs/api-reference/api-keys/get-api-key
-OPENWEATHER_API_KEY=        # https://openweathermap.org/api
-RIOT_GAMES=             # https://developer.riotgames.com/
-GIPHY_API_KEY=            # https://developers.giphy.com/
-OMDB_API_KEY=           # https://www.omdbapi.com/apikey.aspx
-UNSPLASH_API_KEY=         # https://unsplash.com/developers
-LASTFM_APIKEY=            # https://www.last.fm/pt/api
-LASTFM_SECRET=            # 
-API_PLACAS_COMUM=         # https://apiplacas.com.br/
-API_PLACAS_PREMIUM=         # https://apiplacas.com.br/
-TIPA_TOKEN=             # https://tipa.ai/settings/apps (WEBHOOKS)
-#API_PLACAS_USAR_PREMIUM=TRUE   # Caso tenha comprad uma chave premium
-GRUPOS_PLACA_PREMIUM=grupo1,grupo2  # Nomes de grupos que podem usar a API placa premium
-SOUNDCLOUD_CLIENT_ID=       # Pegar do network no navegador
-SOUNDCLOUD_OAUTH_TOKEN=       # Pegar do network no navegador
-
-# Gerenciamento de Serviços
-# Agora os URLs de APIs (Whisper, ComfyUI, etc) são configurados no arquivo service-providers.json
-# Você pode gerenciar eles pela interface web: https://sua-ravena.win/service-providers
-
-API_TIMEOUT=30000           # Timeout padrão para chamadas de API
-
-# Configuração das doações (provavelmente inútil pra ti que vai rodar o bot particular)
-DONATION_LINK=https://tipa.ai/moothz
-DONATION_GOAL_AMOUNT=1000
-DONATION_GOAL_DESCRIPTION=Pagar o moothz!
-
-# Grupos para Desenvolvimento e debug do bot
-# Completamente opcional, ainda mais pra quem vai rodar o bot particular
-LINK_GRUPO_INTERACAO=https://chat.whatsapp.com/abc123 # Para !grupao
-LINK_GRUPO_AVISOS=https://chat.whatsapp.com/def456    # Para !avisos
-GRUPO_LOGS=1234678901234567890@g.us           # ID WhatsApp de grupos para debug e monitoramento
-GRUPO_ESTABILIDADE=1234678901234567890        # 1. Adicione o bot nos grupos
-GRUPO_INVITES=1234678901234567890@g.us        # 2. Abra o arquivo data/groups.json
-GRUPO_AVISOS=1234678901234567890@g.us         # 3. Pegueo o ID de lá! (pra facilitar, use !g-setName)
-GRUPO_INTERACAO=1234678901234567890@g.us      # 
-
-# Grupos de captura de conteúdo
-GRUPOS_HOROSCOPOS=
-GRUPO_MUNEWS=
-
-# Programas
-# Vou deixar aqui os exemplos como seria em uma máquina Windows
-WHISPER=C:/Apps/Faster-Whisper-XXL/faster-whisper-xxl.exe
-#WHISPER_USE_GPU=                     # Defina pra rodar na GPU ao invés de CPU, caso suporte
-FFMPEG_PATH=C:/Apps/ffmpeg.exe
-CHROME_PATH=C:/Program Files/Google/Chrome/Application/chrome.exe
-
-# EvolutionAPI - Apenas uso avançado, ignore
-#USE_EVOLUTION=         # Usar Evolution ao invés do whatsappweb-js
-#EVOLUTION_API_URL=       # http://localhost:1234
-#EVOLUTION_API_KEY=       # abcd12345*&¨%%
-#EVOLUTION_BOT_TOKEN=     # Não utilizado ainda
-#EVO_WEBHOOK_HOST=        # Prefiro usar websocket, mas se quiser
-#EVO_WEBHOOK_PORT=        # Configure webhook aqui
-
-# Outros
-# Nem todos emojis são suportados na EvoAPI para 'reagir' às mensagens
-LOADING_EMOJI=🌀
+#### 5. Configure os provedores de API (`service-providers.json`)
+```bash
+cp service-providers.json.example service-providers.json
 ```
+Este arquivo define as URLs das APIs self-hosted e externos (Whisper, Ollama, AllTalk, Gemini, OpenAI, etc). Se você não usa nenhuma, pode usar um vazio assim:
+
+```json
+{
+  "llm": [],
+  "whisper": [],
+  "comfyui": [],
+  "sdwebui": [],
+  "alltalk": []
+}
+```
+
+```json
+[
+  { "type": "whisper", "url": "http://meu-servidor:5000" },
+  { "type": "alltalk", "url": "http://meu-servidor:7851" }
+]
+```
+
+> Assim como o `bots.json`, basta `make restart-bot` para recarregar após edições.
+
+#### 6. Suba os containers
+```bash
+make up-build
+```
+Isso constrói as imagens e sobe todos os serviços (`ravena-ai`, `whatsgoapi`, `postgres`, `minio`, `health-check`).
+
+#### 7. Conecte o bot ao WhatsApp
+
+Acesse o painel da `ravenabot` para escanear o QR Code ou gerar um código de pareamento, conforme o nome do seu bot definido no `bots.json`
+
+**URL de exemplo:**
+
+```
+http://localhost:5000/qrcode/meu-bot
+```
+O login e senha são os valores definidos em `managementUser` e `managementPW` no `bots.josn`.
+
+---
+
+### Comandos úteis
+
+```bash
+# Inicialização e Configuração
+make setup         # Configuração inicial (gera .env e segredos)
+make up-build      # Build das imagens e sobe tudo
+make up            # Sobe os containers sem rebuild
+make down          # Para e remove os containers
+
+# Gerenciamento e Update
+make ravena-ai     # Lint + Build + Restart (ideal para quando editar o código)
+make restart-bot   # Reinicia apenas o container do bot (recarrega bots.json)
+make restart-api   # Reinicia apenas o container da API (whatsgoapi)
+make restart       # Reinicia todos os serviços
+
+# Monitoramento e Manutenção
+make logs          # Logs de todos os containers
+make logs-bot      # Logs apenas do bot
+make logs-botapi   # Logs apenas do whatsgoapi
+make ps            # Status dos containers
+make update-allm   # Atualiza comandos na base do AnythingLLM
+make update-ytdl   # Atualiza o binário do yt-dlp (youtube-dl)
+make clean         # Limpa containers parados e imagens órfãs
+```
+
+### APIs Opcionais
+
+Configure as chaves no `.env` conforme precisar:
+
+* [Giphy](https://developers.giphy.com/) — Busca de GIFs (`GIPHY_API_KEY`)
+* [OMDB](https://www.omdbapi.com/apikey.aspx) — Informações de filmes (`OMDB_API_KEY`)
+* [Unsplash](https://unsplash.com/developers) — Busca de imagens (`UNSPLASH_API_KEY`)
+* [Last.fm](https://www.last.fm/pt/api) — Perfis e histórico musical (`LASTFM_APIKEY`)
+* [Riot Games](https://developer.riotgames.com/) — Estatísticas de LoL/WR (`RIOT_GAMES`)
+* [Twitch](https://dev.twitch.tv/docs/api/) — Notificações de live (`TWITCH_CLIENT_ID` + `TWITCH_CLIENT_SECRET`)
+* [Gemini](https://aistudio.google.com/api-keys) — IA na nuvem grátis (`GEMINI_API_KEY`)
+* [OpenRouter](https://openrouter.ai/keys) — Acesso a múltiplos LLMs (`OPENROUTER_API_KEY`)
+
+
 ## 🧩 Contribuindo: Implementandos Novos Comandos
 
 Para contribuir com o bot e adicionar um novo comando fixo, crie um arquivo `.js` na pasta `src/functions/`.
@@ -245,7 +262,7 @@ const commands = [
     name: 'exemplo',
     description: 'Um comando de exemplo',
     reactions: {
-      before: "🌀",  // Emoji mostrado antes da execução
+      before: "⌛️",  // Emoji mostrado antes da execução
       after: "✅"    // Emoji mostrado após a execução
     },
     method: async (bot, message, args, group) => {
@@ -283,7 +300,7 @@ Se estiver fazendo alguma função similar a alguma existente no bot, anexo tamb
 
 Peça para o LLM:
 ```
-Respeitando os padrões de implementação apresentados nos modelos e no exemplo.js desenvolva um novo comando conforme instruções a seguir:
+Respeitando os padrões de implementação apresentados nos modelos e restante do projeto desenvolva um novo comando conforme instruções a seguir:
 - Comando 'soletrar'
 - Recebe como argumento várias palavras
 - Para cada palavra recebida como argumento, separe as letras com hifen

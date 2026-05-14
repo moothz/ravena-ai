@@ -443,7 +443,7 @@ async function startLogicGame(bot, message, args, group) {
 			content: msg,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {

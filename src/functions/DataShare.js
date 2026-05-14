@@ -146,7 +146,7 @@ async function shareVariable(bot, message, args, group) {
 					'Formato incorreto. Use: `!share <variavel> <dado>`\nExemplo: `!share nomes João`\n\nOu apenas "!share nomes" mas marcando a mensagem com os dados',
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -183,7 +183,7 @@ async function shareVariable(bot, message, args, group) {
 					content: "Ocorreu um erro ao ler o arquivo de dados. O arquivo pode estar corrompido.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				});
 			}
@@ -207,7 +207,7 @@ async function shareVariable(bot, message, args, group) {
 			content: response,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -218,7 +218,7 @@ async function shareVariable(bot, message, args, group) {
 			content: "Ocorreu um erro inesperado ao compartilhar estes dados.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -230,7 +230,7 @@ const commands = [
 		description: "Compartilhe dados com a API da ravena",
 		category: "arquivos",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "⬆️"
 		},
 		cooldown: 1,

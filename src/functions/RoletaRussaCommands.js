@@ -203,7 +203,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 				content: `💀 ${userName} já está morto na roleta russa. Ressuscita em ${minutes}m${seconds}s.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -215,7 +215,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 				content: `🔄 ${userName}, espere outra pessoa jogar antes de tentar novamente.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -311,7 +311,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 				content: `💥🔫 *BANG* - *F no chat* ${info}\n\n> _${fraseAleatoria}_`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		} else {
@@ -343,7 +343,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 				content: `💨🔫 *click* - Tá *safe*! \`\`\`${currentTries}\`\`\``,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -466,7 +466,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 					content: "⛔ Apenas administradores podem resetar os dados da roleta russa.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				})
 			];
@@ -487,7 +487,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 					content: "⚠️ Não há dados da roleta russa para este grupo.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
-						evoReply: message.origin
+						goReply: message.origin
 					}
 				})
 			];
@@ -519,7 +519,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 				content: `🔄 *Dados da Roleta Russa Resetados*\n\nForam removidos dados de ${numJogadores} jogadores deste grupo.\n\nO ranking acima mostra como estava antes do reset.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			})
 		];
@@ -555,7 +555,7 @@ async function definirTempoRoleta(bot, message, args, group) {
 				content: "⛔ Apenas administradores podem definir o tempo da roleta russa.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}

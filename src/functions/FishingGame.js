@@ -196,7 +196,7 @@ const RARE_FISH = [
 		chance: 0.000013,
 		monthlyLimit: 1,
 		weightBonus: 5980,
-		emoji: "🌀",
+		emoji: "⌛️",
 		description:
 			"sentient massive whirlpool, rows of sharp teeth inside a vortex, sucking everything in"
 	},
@@ -1751,7 +1751,7 @@ async function fishCommand(bot, message, args, group) {
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					mentions: mentionPessoa,
-					evoReply: message.origin
+					goReply: message.origin
 				}
 			});
 		}
@@ -1863,7 +1863,7 @@ async function fishCommand(bot, message, args, group) {
 					caption: fishMessage,
 					quotedMessageId: message.origin.id._serialized,
 					mentions: mentionPessoa,
-					evoReply: message.origin
+					goReply: message.origin
 				},
 				reaction: "🎣"
 			});
@@ -1876,7 +1876,7 @@ async function fishCommand(bot, message, args, group) {
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				mentions: mentionPessoa,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	} catch (error) {
@@ -2001,7 +2001,7 @@ async function fishingDataCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: msg,
-			options: { quotedMessageId: message.origin.id._serialized, evoReply: message.origin }
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	} catch (error) {
 		logger.error("Erro fishingData:", error);
@@ -2806,7 +2806,7 @@ const commands = [
 		category: "jogos",
 		adminOnly: true,
 		cooldown: 10,
-		reactions: { before: process.env.LOADING_EMOJI ?? "🌀", after: "✅", error: "❌" },
+		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "✅", error: "❌" },
 		method: resetFishingDataCommand
 	}),
 	new Command({

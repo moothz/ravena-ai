@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { MessageMedia } = require("whatsapp-web.js");
+
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -123,11 +123,12 @@ async function buscarWikipedia(bot, message, args, group) {
 					const mimeType = imageResponse.headers["content-type"] || "image/jpeg";
 
 					// Cria mídia para envio
-					const media = new MessageMedia(
-						mimeType,
-						base64Image,
-						`wiki_${pageTitle.replace(/\s+/g, "_")}.jpg`
-					);
+					const media = {
+						mimetype: mimeType,
+						data: base64Image,
+						filename: `wiki_${pageTitle.replace(/\s+/g, "_")}.jpg`,
+						isMessageMedia: true
+					};
 
 					// Retorna a mensagem com mídia
 					return new ReturnMessage({
@@ -199,7 +200,7 @@ const commands = [
 		description: "Busca informações na Wikipedia",
 		category: "busca",
 		reactions: {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "📚"
 		},
 		method: buscarWikipedia

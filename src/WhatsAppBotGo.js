@@ -1,4 +1,3 @@
-const { Contact, LocalAuth, MessageMedia, Location, Poll } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const qrimg = require("qr-image");
 const { randomBytes } = require("crypto");
@@ -12,9 +11,8 @@ const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const WebSocket = require("ws");
 
-const EvolutionGoClient = require("./services/EvolutionGoClient");
+const WhatsgoClient = require("./services/WhatsgoClient");
 const CacheManager = require("./services/CacheManager");
 const ReturnMessage = require("./models/ReturnMessage");
 const ReactionsHandler = require("./ReactionsHandler");
@@ -37,7 +35,7 @@ const readFileAsync = promisify(fs.readFile);
 const unlinkAsync = promisify(fs.unlink);
 const convertAsync = promisify(imagemagick.convert);
 
-class WhatsAppBotEvoGo {
+class WhatsAppBotGo {
 	constructor(options) {
 		this.id = options.id;
 		this.vip = options.vip;
@@ -47,18 +45,19 @@ class WhatsAppBotEvoGo {
 		this.phoneNumber = options.phoneNumber;
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix ?? process.env.DEFAULT_PREFIX ?? "!";
-		this.logger = new Logger(`bot-evo-go-${this.id}`);
-		this.websocket = options.useWebsocket ?? false;
-		this.evolutionWS = options.evolutionWS;
-		this.evolutionApiUrl = options.evolutionApiUrl;
-		this.evolutionApiKey = options.evolutionApiKey; // Global Key
-		this.evolutionInstanceApiKey = options.evolutionInstanceApiKey; // Instance Token
-		this.instanceName = options.evoInstanceName ?? options.id;
-		this.webhookHost = options.webhookHost;
-		this.webhookPort = options.webhookPort ?? process.env.WEBHOOK_PORT_EVO ?? 3000;
+		this.logger = new Logger(`bot-whatsgo-${this.id}`);
+		this.whatsgoApiUrl = options.whatsgoApiUrl;
+		this.whatsgoApiKey = options.whatsgoApiKey; // Global Key
+		this.instanceName = options.goInstanceName ?? options.id;
+		let wh = options.webhookHost;
+		if (wh && !wh.startsWith("http://") && !wh.startsWith("https://")) {
+			wh = "http://" + wh;
+		}
+		this.webhookHost = wh;
+		this.webhookPort = options.webhookPort ?? process.env.WEBHOOK_PORT_WHATSGO ?? 3000;
 		this.notificarDonate = options.notificarDonate;
 		this.pvAI = options.pvAI;
-		this.version = "EvolutionGO";
+		this.version = "WhatsgoGO";
 		this.wwebversion = "0";
 		this.banido = options.banido;
 		this.comandosAudioPV = false; // Futuro talvez? Considerar áudios no PV um comando
@@ -85,29 +84,22 @@ class WhatsAppBotEvoGo {
 			this.maxCacheSize
 		);
 
-		if (
-			!this.evolutionApiUrl ||
-			!this.evolutionApiKey ||
-			!this.evolutionInstanceApiKey ||
-			!this.instanceName ||
-			!this.webhookHost
-		) {
+		if (!this.whatsgoApiUrl || !this.whatsgoApiKey || !this.instanceName || !this.webhookHost) {
 			const errMsg =
-				"WhatsAppBotEvoGo: evolutionApiUrl, evolutionApiKey, evolutionInstanceApiKey, instanceName, and webhookHost are required!";
+				"WhatsAppBotGo: whatsgoApiUrl, whatsgoApiKey, instanceName, and webhookHost are required!";
 			this.logger.error(errMsg, {
-				evolutionApiUrl: !!this.evolutionApiUrl,
-				evolutionApiKey: !!this.evolutionApiKey,
-				evolutionInstanceApiKey: !!this.evolutionInstanceApiKey,
+				whatsgoApiUrl: !!this.whatsgoApiUrl,
+				whatsgoApiKey: !!this.whatsgoApiKey,
 				instanceName: !!this.instanceName,
 				webhookHost: !!this.webhookHost
 			});
 			throw new Error(errMsg);
 		}
 
-		this.apiClient = new EvolutionGoClient(
-			this.evolutionApiUrl,
-			this.evolutionApiKey,
-			this.evolutionInstanceApiKey,
+		this.apiClient = new WhatsgoClient(
+			this.whatsgoApiUrl,
+			this.whatsgoApiKey,
+			this.instanceName,
 			this.logger
 		);
 
@@ -152,7 +144,7 @@ class WhatsAppBotEvoGo {
 
 		this.blockedContacts = [];
 
-		if (!this.streamSystem) {
+		if (process.env.DISABLE_ACTIVITY !== "true" && !this.streamSystem) {
 			this.streamSystem = StreamSystem.getInstance();
 			this.streamSystem.registerBot(this);
 		}
@@ -191,6 +183,7 @@ class WhatsAppBotEvoGo {
 	}
 
 	scheduleGroupInfoUpdate() {
+		if (process.env.DISABLE_ACTIVITY === "true") return;
 		const agora = new Date();
 		const proximaExecucao = new Date(agora);
 		proximaExecucao.setHours(3, 0, 0, 0); // 3 AM
@@ -269,9 +262,9 @@ class WhatsAppBotEvoGo {
 		}
 	}
 
-	async getEvoGoInstance(token, name) {
+	async getGoInstance(name) {
 		const allInstances = await this.apiClient.get(`/instance/all`, {}, true);
-		return allInstances.data?.find((aI) => aI.token === token && aI.name === name);
+		return allInstances.data?.find((aI) => aI.name === name);
 	}
 
 	async logout() {
@@ -281,10 +274,7 @@ class WhatsAppBotEvoGo {
 
 	async deleteInstance() {
 		// Precisa pegar O ID da instancia, que só vem no /all
-		const instanceToDelete = await this.getEvoGoInstance(
-			this.evolutionInstanceApiKey,
-			this.instanceName
-		);
+		const instanceToDelete = await this.getGoInstance(this.instanceName);
 		this.logger.info(`[deleteInstance] Deleting instance ${this.instanceName}`, {
 			instanceToDelete
 		});
@@ -294,8 +284,7 @@ class WhatsAppBotEvoGo {
 		} else {
 			return {
 				erro: "não encontrei a instancia",
-				name: this.instanceName,
-				token: this.evolutionInstanceApiKey
+				name: this.instanceName
 			};
 		}
 	}
@@ -304,8 +293,7 @@ class WhatsAppBotEvoGo {
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`);
 		const payload = {
 			name: this.instanceName,
-			token: this.evolutionInstanceApiKey,
-			webhookUrl: `${process.env.EVOGO_WEBHOOK_HOST}:${this.webhookPort}/webhook/evogo/${this.instanceName}`,
+			webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
 			webhookEvents: [
 				"MESSAGE",
 				"PRESENCE",
@@ -403,10 +391,7 @@ class WhatsAppBotEvoGo {
 		ignoreStatus = true
 	) {
 		// Precisa pegar O ID da instancia, que só vem no /all
-		const instanceToEdit = await this.getEvoGoInstance(
-			this.evolutionInstanceApiKey,
-			this.instanceName
-		);
+		const instanceToEdit = await this.getGoInstance(this.instanceName);
 		this.logger.info(`[instanceAdvSettings] Instance Settings ${this.instanceName}`, {
 			instanceToEdit,
 			alwaysOnline,
@@ -428,8 +413,7 @@ class WhatsAppBotEvoGo {
 			throw new Error(
 				JSON.stringify({
 					erro: "não encontrei a instancia",
-					name: this.instanceName,
-					token: this.evolutionInstanceApiKey
+					name: this.instanceName
 				})
 			);
 		}
@@ -437,7 +421,7 @@ class WhatsAppBotEvoGo {
 
 	async updateVersions() {
 		// TODO: Implementar busca de versão na V3 se disponível
-		this.version = "EvolutionGO";
+		this.version = "WhatsgoGO";
 	}
 
 	async convertToSquareWebPImage(base64ImageContent) {
@@ -973,9 +957,9 @@ class WhatsAppBotEvoGo {
 		}
 	}
 
-	async _downloadMediaFromEvo(messageContent) {
+	async _downloadMediaFromWhatsgo(messageContent) {
 		try {
-			//this.logger.debug(`[_downloadMediaFromEvo] POST /message/downloadmedia`, { message: messageContent });
+			//this.logger.debug(`[_downloadMediaFromWhatsgo] POST /message/downloadmedia`, { message: messageContent });
 			const response = await this.apiClient.post("/message/downloadmedia", {
 				message: messageContent
 			});
@@ -1000,7 +984,7 @@ class WhatsAppBotEvoGo {
 				const filePath = path.join(outputDir, fileName);
 
 				if (extension === "bin") {
-					this.logger.debug(`[_downloadMediaFromEvo] Arquivo bin? Mimetype ${mimetype}`);
+					this.logger.debug(`[_downloadMediaFromWhatsgo] Arquivo bin? Mimetype ${mimetype}`);
 				}
 				await writeFileAsync(filePath, base64Data, "base64");
 
@@ -1015,11 +999,11 @@ class WhatsAppBotEvoGo {
 				const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
 
 				const media = { url: fileUrl, mimetype, filename: fileName, filePath, base64: base64Data };
-				//this.logger.debug(`[_downloadMediaFromEvo] Res: ${fileUrl}`, media);
+				//this.logger.debug(`[_downloadMediaFromWhatsgo] Res: ${fileUrl}`, media);
 				return media;
 			}
 		} catch (error) {
-			this.logger.error(`[${this.id}] Error downloading media from Evo:`, error);
+			this.logger.error(`[${this.id}] Error downloading media from Whatsgo:`, error);
 		}
 		return null;
 	}
@@ -1159,7 +1143,7 @@ class WhatsAppBotEvoGo {
 			//this.logger.info(`[createMediaFromURL] `, media);
 			return media;
 		} catch (error) {
-			this.logger.error(`[${this.id}] Evo: Error creating media from URL ${url}:`, error);
+			this.logger.error(`[${this.id}] Whatsgo: Error creating media from URL ${url}:`, error);
 			throw error;
 		}
 	}
@@ -1258,11 +1242,11 @@ class WhatsAppBotEvoGo {
 				const msg = await this.cacheManager.getGoMessageFromCache(actualId);
 
 				//this.logger.debug(`[recoverMsgFromCache] `, { actualId, msg });
-				if (!msg || !msg.evoMessageData) {
+				if (!msg || !msg.goMessageData) {
 					return msg ?? null;
 				}
 
-				const recovered = await this.formatMessageFromEvo(msg.evoMessageData);
+				const recovered = await this.formatMessageFromGo(msg.goMessageData);
 				//this.logger.debug(`[recoverMsgFromCache] `, { actualId, recovered });
 				if (!recovered) {
 					return msg;
@@ -1296,151 +1280,40 @@ class WhatsAppBotEvoGo {
 		}
 	}
 
-	startConnectionMonitor() {
-		if (!this.websocket) return;
-
-		if (this.connectionMonitorInterval) {
-			clearInterval(this.connectionMonitorInterval);
-		}
-
-		this.logger.info(`[ConnectionMonitor] Starting monitor...`);
-
-		this.connectionMonitorInterval = setInterval(() => {
-			const now = new Date();
-			const hours = now.getHours();
-			const minutes = now.getMinutes();
-			const currentTimeInMinutes = hours * 60 + minutes;
-
-			let thresholdMinutes = 5; // Default 07:31 - 23:59
-
-			// 00:00 - 05:00 (5 * 60 = 300)
-			if (currentTimeInMinutes >= 0 && currentTimeInMinutes <= 300) {
-				thresholdMinutes = 30;
-			}
-			// 05:01 - 07:30 (7 * 60 + 30 = 450)
-			else if (currentTimeInMinutes > 300 && currentTimeInMinutes <= 450) {
-				thresholdMinutes = 10;
-			}
-
-			const timeSinceLastMessage = Date.now() - this.lastMessageReceived;
-			const thresholdMs = thresholdMinutes * 60 * 1000;
-
-			const isDisconnected =
-				!this.isConnected || (this.ws && this.ws.readyState !== WebSocket.OPEN);
-
-			if (isDisconnected) {
-				this.logger.warn(`[ConnectionMonitor] WebSocket disconnected. Reconnecting...`);
-				this._connectWebSocket();
-			} else if (timeSinceLastMessage > thresholdMs) {
-				this.logger.warn(
-					`[ConnectionMonitor] No messages received for ${Math.floor(timeSinceLastMessage / 60000)} minutes (Threshold: ${thresholdMinutes}m). Restarting WebSocket...`
-				);
-				this._connectWebSocket();
-			}
-		}, 60000); // Check every minute
-	}
-
-	async _connectWebSocket() {
-		try {
-			const instanceInfo = await this.getEvoGoInstance(
-				this.evolutionInstanceApiKey,
-				this.instanceName
-			);
-			if (!instanceInfo) {
-				this.logger.error(`[${this.id}] Instance not found for WebSocket connection.`);
-				return;
-			}
-			const wsUrl = `${this.evolutionWS}/ws?token=${this.evolutionApiKey}&instanceId=${instanceInfo?.id}`;
-
-			this.logger.info(`[${this.id}] Connecting to WebSocket: ${wsUrl}`);
-
-			if (this.ws) {
-				try {
-					this.ws.removeAllListeners();
-					this.ws.terminate();
-				} catch (e) {
-					this.logger.error(`[${this.id}] Error closing existing WebSocket:`, e);
-				}
-			}
-
-			this.ws = new WebSocket(wsUrl);
-
-			this.ws.on("open", () => {
-				this.logger.info(`[${this.id}] WebSocket connected.`);
-				this._onInstanceConnected();
-			});
-
-			this.ws.on("message", (rawData) => {
-				try {
-					const data = JSON.parse(rawData);
-					const payload = JSON.parse(data.payload);
-
-					//this.logger.info(`[WebSocket] `, { payload });
-
-					return this._handleWebhook(
-						{ websocket: true, body: payload },
-						{ sendStatus: () => 0 },
-						true
-					);
-				} catch (err) {
-					this.logger.error(`[${this.id}] Error parsing WebSocket message:`, err);
-				}
-			});
-
-			this.ws.on("error", (err) => {
-				this.logger.error(`[${this.id}] WebSocket error:`, err);
-			});
-
-			this.ws.on("close", () => {
-				this.logger.warn(`[${this.id}] WebSocket disconnected.`);
-				this._onInstanceDisconnected("WEBSOCKET_CLOSE");
-			});
-		} catch (error) {
-			this.logger.error(`[${this.id}] Error in _connectWebSocket:`, error);
-		}
-	}
-
 	async initialize() {
 		await this._loadSkipGroupInfo();
 		this.database.registerBotInstance(this);
 		this.startupTime = Date.now();
 		this.lastMessageReceived = Date.now();
 
-		const webhookPath = `/webhook/evogo/${this.instanceName}`;
-		const instanceDesc = this.websocket
-			? `Websocket`
-			: `Webhook on ${this.webhookHost}:${this.webhookPort}${webhookPath}`;
+		const webhookPath = `/webhook/${this.instanceName}`;
+		const instanceDesc = `Webhook on ${this.webhookHost}:${this.webhookPort}${webhookPath}`;
 		this.logger.info(
-			`[${this.startupTime}][${this.id}] Init EvoGoAPI bot instance ${this.instanceName}: ${instanceDesc})`
+			`[${this.startupTime}][${this.id}] Init GoAPI bot instance ${this.instanceName}: ${instanceDesc})`
 		); // , { instanceInfo }
 
 		try {
-			if (this.websocket) {
-				await this._connectWebSocket();
-				this.startConnectionMonitor();
-			} else {
-				// Webhook Setup
-				this.webhookApp = express();
-				this.webhookApp.use(express.json({ limit: "500mb" }));
-				this.webhookApp.use(express.urlencoded({ extended: true, limit: "500mb" }));
+			// Webhook Setup
+			this.webhookApp = express();
+			this.webhookApp.use(express.json({ limit: "500mb" }));
+			this.webhookApp.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
-				this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
-				this.webhookApp.get(webhookPath, this._handleWebhook.bind(this));
+			this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
+			this.webhookApp.get(webhookPath, this._handleWebhook.bind(this));
 
-				await new Promise((resolve, reject) => {
-					this.webhookServer = this.webhookApp
-						.listen(this.webhookPort, () => {
-							resolve();
-						})
-						.on("error", (err) => {
-							this.logger.error(
-								`Failed to start webhook listener for bot ${this.instanceName}:`,
-								err
-							);
-							reject(err);
-						});
-				});
-			}
+			await new Promise((resolve, reject) => {
+				this.webhookServer = this.webhookApp
+					.listen(this.webhookPort, () => {
+						resolve();
+					})
+					.on("error", (err) => {
+						this.logger.error(
+							`Failed to start webhook listener for bot ${this.instanceName}:`,
+							err
+						);
+						reject(err);
+					});
+			});
 		} catch (error) {
 			this.logger.error(`Error during webhook setup for instance ${this.instanceName}:`, error);
 		}
@@ -1474,7 +1347,7 @@ class WhatsAppBotEvoGo {
 
 			const instanceDetails = {
 				version: this.version,
-				tipo: "evogo"
+				tipo: "whatsgoapi"
 			};
 
 			if (this.isConnected) {
@@ -1489,7 +1362,7 @@ class WhatsAppBotEvoGo {
 					const connectResponse = await this.apiClient.post(
 						`/instance/connect`,
 						{
-							webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/evogo/${this.instanceName}`,
+							webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
 							subscribe: [
 								"MESSAGE",
 								"SEND_MESSAGE",
@@ -1503,8 +1376,7 @@ class WhatsAppBotEvoGo {
 								"GROUP",
 								"NEWSLETTER",
 								"QRCODE"
-							],
-							websocketEnable: this.websocket ? "enabled" : ""
+							]
 						},
 						false
 					);
@@ -1555,15 +1427,17 @@ class WhatsAppBotEvoGo {
 	}
 
 	async _onInstanceConnected() {
-		this.streamSystem.initialize();
-		this.streamMonitor = this.streamSystem.streamMonitor;
+		if (this.streamSystem) {
+			this.streamSystem.initialize();
+			this.streamMonitor = this.streamSystem.streamMonitor;
+		}
 
 		this._sendStartupNotifications();
 		this.fetchAndPrepareBlockedContacts();
 
 		if (this.isConnected) return;
 		this.isConnected = true;
-		this.logger.info(`[${this.id}] Successfully connected to WhatsApp via EvolutionGO API.`);
+		this.logger.info(`[${this.id}] Successfully connected to WhatsApp via WhatsgoGO API.`);
 		if (this.eventHandler && typeof this.eventHandler.onConnected === "function") {
 			this.eventHandler.onConnected(this);
 		}
@@ -1659,13 +1533,13 @@ class WhatsAppBotEvoGo {
 							}
 						} else {
 							// Se não for reaction, é qualquer outro tipo de mensagem
-							// Adicionar campos para formatMessageFromEvo
-							const evoMsg = {
+							// Adicionar campos para formatMessageFromGo
+							const whatsgoMsg = {
 								...msgData,
 								event: payload.event
 							};
 
-							this.formatMessageFromEvo(evoMsg)
+							this.formatMessageFromGo(whatsgoMsg)
 								.then((formattedMessage) => {
 									if (
 										formattedMessage &&
@@ -1810,7 +1684,7 @@ class WhatsAppBotEvoGo {
 
 		// Update shared database
 		this.database.addBlockedContacts(
-			"evogo",
+			"whatsgo_go",
 			this.blockedContacts.map((c) => c.id._serialized)
 		);
 
@@ -1824,15 +1698,15 @@ class WhatsAppBotEvoGo {
 		return data;
 	}
 
-	async formatMessageFromEvo(evoMessageData, skipCache = false) {
+	async formatMessageFromGo(goMessageData, skipCache = false) {
 		try {
-			if (!evoMessageData) {
+			if (!goMessageData) {
 				return null;
 			}
 
-			//this.logger.debug(`[formatMessageFromEvo] `, {evoMessageData});
-			const info = evoMessageData.Info;
-			const messageContent = evoMessageData.Message;
+			//this.logger.debug(`[formatMessageFromGo] `, {goMessageData});
+			const info = goMessageData.Info;
+			const messageContent = goMessageData.Message;
 
 			if (!info || !messageContent) {
 				return null;
@@ -1865,7 +1739,7 @@ class WhatsAppBotEvoGo {
 			const quotedMessageId = contextInfo?.quotedMessage ? contextInfo.stanzaID : null;
 			const quotedParticipant = contextInfo?.participant;
 
-			//this.logger.debug(`[formatMessageFromEvo] `, {evoMessageData, contextInfo, quotedMessageId});
+			//this.logger.debug(`[formatMessageFromGo] `, {goMessageData, contextInfo, quotedMessageId});
 
 			const responseTime = Math.max(0, this.getCurrentTimestamp() - timestamp);
 
@@ -1887,58 +1761,58 @@ class WhatsAppBotEvoGo {
 			} else if (messageContent.imageMessage) {
 				type = "image";
 				caption = messageContent.imageMessage.caption;
-				const downloaded = await this._downloadMediaFromEvo(messageContent);
+				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.imageMessage.mimetype,
 					url: downloaded?.url ?? messageContent.imageMessage.url,
 					data: downloaded?.base64,
-					_evoMediaDetails: messageContent.imageMessage
+					_mediaDetails: messageContent.imageMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.videoMessage) {
 				type = "video";
 				caption = messageContent.videoMessage.caption;
-				const downloaded = await this._downloadMediaFromEvo(messageContent);
+				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.videoMessage.mimetype,
 					url: downloaded?.url ?? messageContent.videoMessage.url,
 					data: downloaded?.base64,
 					seconds: messageContent.videoMessage.seconds,
-					_evoMediaDetails: messageContent.videoMessage
+					_mediaDetails: messageContent.videoMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.audioMessage) {
 				type = "audio";
-				const downloaded = await this._downloadMediaFromEvo(messageContent);
+				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.audioMessage.mimetype,
 					url: downloaded?.url ?? messageContent.audioMessage.url,
 					data: downloaded?.base64,
 					seconds: messageContent.audioMessage.seconds,
-					_evoMediaDetails: messageContent.audioMessage
+					_mediaDetails: messageContent.audioMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.stickerMessage) {
 				type = "sticker";
-				const downloaded = await this._downloadMediaFromEvo(messageContent);
+				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.stickerMessage.mimetype,
 					url: downloaded?.url ?? messageContent.stickerMessage.url,
 					data: downloaded?.base64,
-					_evoMediaDetails: messageContent.stickerMessage
+					_mediaDetails: messageContent.stickerMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.documentMessage) {
 				type = "document";
 				caption = messageContent.documentMessage.caption;
-				const downloaded = await this._downloadMediaFromEvo(messageContent);
+				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.documentMessage.mimetype,
 					url: downloaded?.url ?? messageContent.documentMessage.url,
 					data: downloaded?.base64,
 					filename: messageContent.documentMessage.fileName,
 					title: messageContent.documentMessage.title,
-					_evoMediaDetails: messageContent.documentMessage
+					_mediaDetails: messageContent.documentMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.locationMessage) {
@@ -1958,7 +1832,7 @@ class WhatsAppBotEvoGo {
 			}
 
 			const formattedMessage = {
-				evoMessageData,
+				goMessageData,
 				id,
 				fromMe,
 				group: isGroup ? chatId : null,
@@ -1976,7 +1850,7 @@ class WhatsAppBotEvoGo {
 				responseTime,
 				hasMedia: !!mediaInfo,
 				mentions,
-				isQuoted: evoMessageData.isQuoted,
+				isQuoted: goMessageData.isQuoted,
 				isNewsletter: chatId.includes("newsletter"),
 
 				getContact: async () => await this.getContactDetails(sender, pushName),
@@ -1991,7 +1865,7 @@ class WhatsAppBotEvoGo {
 				downloadMedia: async () => {
 					if (mediaInfo) {
 						try {
-							const downloaded = await this._downloadMediaFromEvo(messageContent);
+							const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 							if (downloaded) {
 								return {
 									mimetype: downloaded.mimetype,
@@ -2039,7 +1913,7 @@ class WhatsAppBotEvoGo {
 						participant: senderAlt
 					}),
 				body: content,
-				...evoMessageData
+				...goMessageData
 			};
 
 			if (!skipCache) {
@@ -2048,7 +1922,7 @@ class WhatsAppBotEvoGo {
 
 			return formattedMessage;
 		} catch (error) {
-			this.logger.error(`[${this.id}] Error formatting message from EvolutionGO API:`, error);
+			this.logger.error(`[${this.id}] Error formatting message from WhatsgoGO API:`, error);
 			return null;
 		}
 	}
@@ -2106,11 +1980,9 @@ class WhatsAppBotEvoGo {
 			}
 
 			let endpoint = "";
-			if (
-				content instanceof MessageMedia ||
-				(typeof content === "object" && content?.data && content?.mimetype)
-			)
+			if (typeof content === "object" && content?.data && content?.mimetype) {
 				content.isMessageMedia = true;
+			}
 
 			if (typeof content === "string") {
 				if (this.validURL(content)) {
@@ -2190,7 +2062,9 @@ class WhatsAppBotEvoGo {
 			if (options.mentionAll) {
 				payload.mentionAll = true;
 			} else if (options.mentions) {
-				payload.mentionedJid = options.mentions; // era .join(",")
+				payload.mentionedJid = Array.isArray(options.mentions)
+					? options.mentions.join(",")
+					: options.mentions;
 			}
 
 			//this.logger.debug(`[sendMessage] '${endpoint}'`, { contentType: typeof content, content, payload });
@@ -2328,7 +2202,7 @@ class WhatsAppBotEvoGo {
 			this.logger.info(
 				`[removeFromCommunity][${this.instanceName}] Removendo ${participants.length} da comunidade ${communityJid}`
 			);
-			// Na Evolution GO, para remover uma PESSOA da comunidade, removemos ela do grupo de anúncios (que tem o JID da comunidade)
+			// Na Whatsgo, para remover uma PESSOA da comunidade, removemos ela do grupo de anúncios (que tem o JID da comunidade)
 			return await this.removeFromGroup(communityJid, participants);
 		} catch (e) {
 			this.logger.error(
@@ -2436,9 +2310,7 @@ class WhatsAppBotEvoGo {
 						setSubject: async (title) =>
 							await this.apiClient.post(`/group/name`, { groupJid: chatId, name: title }),
 						fetchMessages: async (limit = 30) => false,
-						setMessagesAdminsOnly: async (adminOnly) =>
-							// TODO evogo
-							false,
+						setMessagesAdminsOnly: async (adminOnly) => false,
 						setPicture: async (picture) => {
 							this.logger.debug(`[chat] setPicture`, { type: "url", url: picture.url });
 
@@ -2713,13 +2585,14 @@ class WhatsAppBotEvoGo {
 	}
 
 	async updateProfileStatus(status) {
+		if (process.env.DISABLE_ACTIVITY === "true") return;
 		try {
 			this.logger.debug(`[updateProfileStatus][${this.instanceName}] '${status}'`);
 			await this.apiClient.post(`/user/profileStatus`, { status });
 		} catch (e) {
 			this.logger.warn(
 				`[updateProfileStatus][${this.instanceName}] Erro definindo status '${status}'`,
-				{ erro: e, token: this.evolutionInstanceApiKey }
+				{ erro: e, token: this.whatsgoInstanceApiKey }
 			);
 		}
 	}
@@ -2772,7 +2645,7 @@ class WhatsAppBotEvoGo {
 
 	async createContact(phoneNumber, name, surname) {
 		this.logger.warn(
-			`[${this.id}] WhatsAppBotEvoGo.createContact is a mock. Fetching real contact instead.`
+			`[${this.id}] WhatsAppBotGo.createContact is a mock. Fetching real contact instead.`
 		);
 		const formattedNumber = phoneNumber.endsWith("@s.whatsapp.net")
 			? phoneNumber
@@ -2786,4 +2659,4 @@ class WhatsAppBotEvoGo {
 	}
 }
 
-module.exports = WhatsAppBotEvoGo;
+module.exports = WhatsAppBotGo;

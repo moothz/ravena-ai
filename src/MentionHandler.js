@@ -10,7 +10,7 @@ class MentionHandler {
 
 		// Emoji de reação padrão para menções
 		this.reactions = {
-			before: process.env.LOADING_EMOJI ?? "🌀",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖",
 			error: "❌"
 		};
@@ -31,7 +31,7 @@ class MentionHandler {
 				// Por enquanto, a única maneira é pegar a info do grupo pra descobrir o LID do bot nele
 				const chatInfo = await bot.getChatDetails(message.group);
 
-				// 1° passo: descobrir o lid do bot nesse grupo (obrigado evo 2.3.5)
+				// 1° passo: descobrir o lid do bot nesse grupo (identificado via Whatsgo)
 				const botNumber = bot.getLidFromPn(bot.phoneNumber, chatInfo);
 
 				const mentionRegexStart = new RegExp(`^\\s*@${botNumber}\\b`, "i");

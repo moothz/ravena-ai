@@ -235,7 +235,7 @@ async function slotsCommand(bot, message, args, group) {
 			content: `❌ Você não tem moedinhas suficientes para jogar! \n\n🪙 Próxima moedinha em: *${waitTime}*`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				evoReply: message.origin
+				goReply: message.origin
 			}
 		});
 	}
@@ -335,7 +335,7 @@ async function slotsCommand(bot, message, args, group) {
 		content: resultMessage,
 		options: {
 			quotedMessageId: message.origin?.id?._serialized,
-			evoReply: message.origin
+			goReply: message.origin
 		}
 	});
 }
