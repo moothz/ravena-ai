@@ -71,11 +71,23 @@ restart: ## Reinicia todos os serviços
 restart-bot: ## Reinicia apenas o bot ravena-ai
 	docker compose restart ravena-ai
 
-ravena-ai: ## Faz lint, build e recarrega o código do bot ravena-ai
-	npm run lint:fix && docker compose up -d --build ravena-ai
-
 restart-api: ## Reinicia apenas o whatsgoapi
 	docker compose restart whatsgoapi
+
+restart-db: ## Reinicia apenas o banco de dados (postgres)
+	docker compose restart postgres
+
+restart-minio: ## Reinicia apenas o storage (minio)
+	docker compose restart minio
+
+restart-rembg: ## Reinicia apenas o serviço rembg
+	docker compose restart rembg
+
+restart-health: ## Reinicia apenas o monitor de saúde
+	docker compose restart health-check
+
+ravena-ai: ## Faz lint, build e recarrega o código do bot ravena-ai
+	npm run lint:fix && docker compose up -d --build ravena-ai
 
 build: ## Constrói todas as imagens Docker
 	docker compose build
@@ -84,13 +96,25 @@ pull: ## Baixa as imagens base mais recentes
 	docker compose pull postgres minio
 
 logs: ## Exibe os logs de todos os serviços
-	docker compose logs -f
+	docker compose logs -f --tail 100
 
 logs-bot: ## Exibe os logs do bot ravena-ai
-	docker compose logs -f ravena-ai
+	docker compose logs -f --tail 100 ravena-ai
 
 logs-api: ## Exibe os logs do whatsgoapi
-	docker compose logs -f whatsgoapi
+	docker compose logs -f --tail 100 whatsgoapi
+
+logs-db: ## Exibe os logs do banco de dados (postgres)
+	docker compose logs -f --tail 100 postgres
+
+logs-minio: ## Exibe os logs do storage (minio)
+	docker compose logs -f --tail 100 minio
+
+logs-rembg: ## Exibe os logs do serviço de remoção de fundo (rembg)
+	docker compose logs -f --tail 100 rembg
+
+logs-health: ## Exibe os logs do monitor de saúde (health-check)
+	docker compose logs -f --tail 100 health-check
 
 ps: ## Mostra o status de todos os containers
 	docker compose ps
