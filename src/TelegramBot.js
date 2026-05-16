@@ -97,7 +97,7 @@ class WhatsAppBotTelegram {
 		this.loadReport = new LoadReport(this);
 		// this.inviteSystem = new InviteSystem(this); // Ignorado no Telegram
 		// this.reactionHandler = new ReactionsHandler(); // Ignorado no Telegram
-		
+
 		if (process.env.DISABLE_ACTIVITY !== "true") {
 			this.streamSystem = StreamSystem.getInstance();
 			this.streamSystem.registerBot(this);

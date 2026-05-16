@@ -190,9 +190,11 @@ async function buscarPlaca(bot, message, args, group) {
 async function getFromFipeApi(endpoint, resetMonthly = false) {
 	const cacheKey = endpoint;
 	try {
-		const row = await database.dbGet("fipe", "SELECT json_data, timestamp FROM fipe_cache WHERE cache_key = ?", [
-			cacheKey
-		]);
+		const row = await database.dbGet(
+			"fipe",
+			"SELECT json_data, timestamp FROM fipe_cache WHERE cache_key = ?",
+			[cacheKey]
+		);
 
 		if (row && row.json_data) {
 			const cached = JSON.parse(row.json_data);
@@ -201,7 +203,10 @@ async function getFromFipeApi(endpoint, resetMonthly = false) {
 
 			if (resetMonthly) {
 				// Verifica se o cache foi criado no mesmo mês e ano atual
-				if (cacheDate.getFullYear() === now.getFullYear() && cacheDate.getMonth() === now.getMonth()) {
+				if (
+					cacheDate.getFullYear() === now.getFullYear() &&
+					cacheDate.getMonth() === now.getMonth()
+				) {
 					logger.info(`[FipeCache] Usando cache mensal para: ${endpoint}`);
 					return cached;
 				} else {
@@ -262,7 +267,11 @@ async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo
 
 	let vehicleType = "cars";
 	const tipoDesc = String(
-		dadosPlaca?.extra?.sub_segmento || dadosPlaca?.sub_segmento || dadosPlaca?.extra?.tipo_veiculo || dadosPlaca?.tipo_veiculo || ""
+		dadosPlaca?.extra?.sub_segmento ||
+			dadosPlaca?.sub_segmento ||
+			dadosPlaca?.extra?.tipo_veiculo ||
+			dadosPlaca?.tipo_veiculo ||
+			""
 	).toLowerCase();
 
 	if (tipoModelo === 2 || tipoDesc.includes("moto")) {
@@ -279,7 +288,9 @@ async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo
 
 	// 2. Encontrar o ano correto correspondente ao anoModelo
 	const anoStr = String(anoModelo).trim();
-	const matchingYears = years.filter((y) => String(y.code).startsWith(anoStr + "-") || String(y.name).startsWith(anoStr));
+	const matchingYears = years.filter(
+		(y) => String(y.code).startsWith(anoStr + "-") || String(y.name).startsWith(anoStr)
+	);
 
 	if (matchingYears.length === 0) {
 		return null;
@@ -291,14 +302,18 @@ async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo
 		const combLower = String(combustivel).toLowerCase();
 		let fuelTerm = "";
 		if (combLower === "g" || combLower.includes("gasolina")) fuelTerm = "gasolina";
-		else if (combLower === "a" || combLower.includes("lcool") || combLower.includes("alcool")) fuelTerm = "álcool";
+		else if (combLower === "a" || combLower.includes("lcool") || combLower.includes("alcool"))
+			fuelTerm = "álcool";
 		else if (combLower === "d" || combLower.includes("diesel")) fuelTerm = "diesel";
-		else if (combLower === "e" || combLower.includes("elétrico") || combLower.includes("eletrico")) fuelTerm = "elétrico";
+		else if (combLower === "e" || combLower.includes("elétrico") || combLower.includes("eletrico"))
+			fuelTerm = "elétrico";
 
 		if (fuelTerm) {
 			const exactMatch =
 				matchingYears.find((y) => String(y.name).toLowerCase().includes(fuelTerm)) ||
-				matchingYears.find((y) => String(y.name).toLowerCase().includes(fuelTerm.replace("á", "a")));
+				matchingYears.find((y) =>
+					String(y.name).toLowerCase().includes(fuelTerm.replace("á", "a"))
+				);
 			if (exactMatch) {
 				targetYearCode = exactMatch.code;
 			}
@@ -306,7 +321,10 @@ async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo
 	}
 
 	// 3. Obter informações da Fipe e histórico (GetFipeInfo / history - reseta mensalmente)
-	const historyData = await getFromFipeApi(`/${vehicleType}/${fipeCode}/years/${targetYearCode}/history`, true);
+	const historyData = await getFromFipeApi(
+		`/${vehicleType}/${fipeCode}/years/${targetYearCode}/history`,
+		true
+	);
 	if (!historyData || !historyData.priceHistory || historyData.priceHistory.length === 0) {
 		return null;
 	}
@@ -369,10 +387,20 @@ async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor 
 		// Dados para busca na nova API FIPE
 		const fipeCode = fipePlacas.codigo_fipe;
 		const anoModelo = fipePlacas.ano_modelo || dados.anoModelo || dados.ano;
-		const combustivel = fipePlacas.sigla_combustivel || fipePlacas.combustivel || dados.extra?.combustivel || dados.combustivel;
+		const combustivel =
+			fipePlacas.sigla_combustivel ||
+			fipePlacas.combustivel ||
+			dados.extra?.combustivel ||
+			dados.combustivel;
 		const tipoModelo = fipePlacas.tipo_modelo;
 
-		const fipeHistory = await consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo, dados);
+		const fipeHistory = await consultarFipeHistory(
+			fipeCode,
+			anoModelo,
+			combustivel,
+			tipoModelo,
+			dados
+		);
 		if (fipeHistory) {
 			fipe = {
 				texto_valor: fipeHistory.texto_valor,
@@ -391,11 +419,17 @@ async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor 
 		}
 	}
 
-	const nomeCarro = (dados.marcamodelo ?? `${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) || "Desconhecido";
+	const nomeCarro =
+		(dados.marcamodelo ??
+			`${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) ||
+		"Desconhecido";
 
 	const chassi = dados.extra?.chassi ?? dados.chassi ?? "-";
 	const motor = dados.extra?.motor ?? dados.motor ?? "-";
-	const renavam = dados.extra?.renavam ?? dados.renavam ? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}` : "";
+	const renavam =
+		(dados.extra?.renavam ?? dados.renavam)
+			? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}`
+			: "";
 	const passageiros = dados.extra?.quantidade_passageiro ?? dados.quantidade_passageiro ?? "-";
 	const cilindradas = dados.extra?.cilindradas ?? dados.cilindradas ?? "-";
 	const combustivel = dados.extra?.combustivel ?? dados.combustivel ?? "-";
@@ -410,9 +444,8 @@ async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor 
 		dados.extra?.restricao_4
 	].filter((r) => r && r !== "-");
 
-	const restricoes = restricoesArr.length > 0
-		? restricoesArr.filter(onlyUnique).join(", ")
-		: situacao;
+	const restricoes =
+		restricoesArr.length > 0 ? restricoesArr.filter(onlyUnique).join(", ") : situacao;
 
 	const ano = parseInt(dados.ano ?? "1970");
 	const municipio = dados.extra?.municipio ?? dados.municipio ?? "-";
@@ -422,10 +455,13 @@ async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor 
 
 	retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${historyStr}${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
 
-	if (!skipSiPt && nomeCarro.toLowerCase().includes("honda civic si") && 2006 <= ano && ano <= 2011) {
-		logger.info(
-			`[formatarRetornoPlaca] Carro buscado é um Civic Si, buscando também no SiPt...`
-		);
+	if (
+		!skipSiPt &&
+		nomeCarro.toLowerCase().includes("honda civic si") &&
+		2006 <= ano &&
+		ano <= 2011
+	) {
+		logger.info(`[formatarRetornoPlaca] Carro buscado é um Civic Si, buscando também no SiPt...`);
 
 		try {
 			// Busca também no SiPt
@@ -433,23 +469,16 @@ async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor 
 
 			if (resSiPt && resSiPt.length > 0) {
 				const respostaSiPt = resSiPt[0].msg.replace("Resultado", "SiPT Resultado");
-				logger.info(
-					`[formatarRetornoPlaca] Resposta Sipt: ${respostaSiPt}`
-				);
+				logger.info(`[formatarRetornoPlaca] Resposta Sipt: ${respostaSiPt}`);
 
 				if (respostaSiPt.includes(" / ")) {
 					// retorno válido
-					logger.info(
-						`[formatarRetornoPlaca] Resposta válida, incluindo!`
-					);
+					logger.info(`[formatarRetornoPlaca] Resposta válida, incluindo!`);
 					retorno.msg += `\n\n${respostaSiPt}`;
 				}
 			}
 		} catch (siPtError) {
-			logger.error(
-				`[formatarRetornoPlaca] Erro ao buscar no SiPt:`,
-				siPtError
-			);
+			logger.error(`[formatarRetornoPlaca] Erro ao buscar no SiPt:`, siPtError);
 		}
 	}
 
@@ -480,13 +509,22 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 			if (now - cached.timestamp < threeMonths) {
 				if (cached.fullData && !cached.fipe_updated) {
 					logger.info(`[apiPlacas_cache] Usando cache para a placa: ${placa}, atualizando FIPE...`);
-					const { retorno, dadosAtualizados } = await formatarRetornoPlaca(cached.fullData, placa, false, `${numeroAutor}`);
+					const { retorno, dadosAtualizados } = await formatarRetornoPlaca(
+						cached.fullData,
+						placa,
+						false,
+						`${numeroAutor}`
+					);
 					cached.data = retorno;
 					cached.fullData = dadosAtualizados;
 					cached.fipe_updated = true;
 					cached.fipe_updated_ts = now;
 					try {
-						await database.dbRun(DB_NAME, "INSERT OR REPLACE INTO placas (placa, json_data) VALUES (?, ?)", [cacheKey, JSON.stringify(cached)]);
+						await database.dbRun(
+							DB_NAME,
+							"INSERT OR REPLACE INTO placas (placa, json_data) VALUES (?, ?)",
+							[cacheKey, JSON.stringify(cached)]
+						);
 					} catch (dbErr) {}
 					callback(retorno);
 					return;
@@ -513,7 +551,12 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 				`[apiPlacas_${premium ? "premium" : "comum"}] ${placa} => ${JSON.stringify(dados, null, "\t")}`
 			);
 
-			const { retorno, dadosAtualizados } = await formatarRetornoPlaca(dados, placa, false, `${numeroAutor}`);
+			const { retorno, dadosAtualizados } = await formatarRetornoPlaca(
+				dados,
+				placa,
+				false,
+				`${numeroAutor}`
+			);
 
 			// Update cache
 			const cacheEntry = {

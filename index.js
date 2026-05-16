@@ -33,7 +33,9 @@ async function main() {
 	try {
 		const disableActivity = process.env.DISABLE_ACTIVITY === "true";
 		if (disableActivity) {
-			logger.warn("!!! ATENÇÃO: DISABLE_ACTIVITY=true. Atividade do bot suspensa. Apenas API ativa.");
+			logger.warn(
+				"!!! ATENÇÃO: DISABLE_ACTIVITY=true. Atividade do bot suspensa. Apenas API ativa."
+			);
 		}
 
 		// Cria manipulador de eventos compartilhado com SingleTon do StabilityMonitor
@@ -138,7 +140,7 @@ async function main() {
 				newRBot.initialize();
 				await sleep(500);
 			} else {
-				if(!rBot.nome){
+				if (!rBot.nome) {
 					logger.debug(`Problema em bot GO`, { rBot });
 					continue;
 				}

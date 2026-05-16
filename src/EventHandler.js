@@ -305,6 +305,63 @@ class EventHandler extends EventEmitter {
 					}
 				}
 
+				// Ajuda com recuperação de grupo
+				if (textContent && textContent.trim().toLowerCase() === "ravena, ajude a recuperar meu grupo!") {
+					try {
+						const chat = await message.origin.getChat();
+						const isAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
+
+						if (isAdmin) {
+							const wasPaused = group.paused;
+							const oldPrefix = group.prefix;
+
+							group.paused = false;
+							group.prefix = "!";
+							await this.database.saveGroup(group);
+
+							let responseText = "🛡️ *Recuperação de Grupo Ativada!*\n\n";
+
+							if (wasPaused) {
+								responseText += "⏸️ O grupo estava pausado e foi *despausado* com sucesso.\n";
+							} else {
+								responseText += "▶️ O status do grupo já estava ativo (não estava pausado).\n";
+							}
+
+							if (oldPrefix !== "!") {
+								responseText += `🔄 O prefixo do grupo foi trocado de "${oldPrefix}" para "!"\n`;
+							} else {
+								responseText += '🔑 O prefixo do grupo já era "!"\n';
+							}
+
+							responseText += `\n🏷️ *Nome de cadastro do grupo:* ${group.name}\n`;
+							responseText += `\n💡 *Dica:* Para gerenciar o grupo ou ver suas configurações de forma fácil na interface web, você pode utilizar:\n`;
+							responseText += `• \`!g-manage ${group.name}\` (em seu chat privado com o bot)\n`;
+							responseText += `• \`!g-painel\` (para acessar o painel web)`;
+
+							const returnMsg = new ReturnMessage({
+								chatId: message.group ?? message.author,
+								content: responseText
+							});
+
+							await bot.sendReturnMessages(returnMsg, group);
+
+							const grupoLogs = bot.grupoLogs || process.env.GRUPO_LOGS;
+							if (grupoLogs) {
+								const logMsg = `🛡️ *Recuperação de Grupo Solicitada*\n- 👤 *Usuário:* ${message.name || "Desconhecido"} (${message.author})\n- 👥 *Grupo:* ${group.titulo || group.name} (${group.id})\n- 🤖 *Bot:* ${bot.id}`;
+								bot
+									.sendMessage(grupoLogs, logMsg)
+									.catch((err) =>
+										this.logger.error("Erro ao notificar grupo de logs sobre recuperação:", err)
+									);
+							}
+
+							return;
+						}
+					} catch (error) {
+						this.logger.error("Erro na ajuda de recuperação de grupo:", error);
+					}
+				}
+
 				// Verifica se o grupo está pausado
 				if (group.paused) {
 					// Verifica se é o comando g-pausar antes de ignorar completamente

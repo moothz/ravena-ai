@@ -27,7 +27,9 @@ async function runUpdate() {
 			if (!row.json_data) continue;
 			try {
 				const parsed = JSON.parse(row.json_data);
-				const jaAtualizado = parsed.fipe_updated === true || (parsed.data?.msg && parsed.data.msg.includes("📊 *Histórico"));
+				const jaAtualizado =
+					parsed.fipe_updated === true ||
+					(parsed.data?.msg && parsed.data.msg.includes("📊 *Histórico"));
 				if (!jaAtualizado) {
 					totalParaAtualizar++;
 					linhasPendentes.push({ row, parsed });
@@ -61,7 +63,10 @@ async function runUpdate() {
 			const placaKey = row.placa;
 			const placaStr = placaKey.split("_")[0].toUpperCase();
 			const fullData = parsed.fullData || {};
-			const nomeVeiculo = (fullData.marcamodelo ?? `${fullData.MARCA ?? fullData.marca ?? ""} ${fullData.MODELO ?? fullData.modelo ?? ""}`.trim()) || "Desconhecido";
+			const nomeVeiculo =
+				(fullData.marcamodelo ??
+					`${fullData.MARCA ?? fullData.marca ?? ""} ${fullData.MODELO ?? fullData.modelo ?? ""}`.trim()) ||
+				"Desconhecido";
 			const progresso = `[${count + 1}/${totalNestaExecucao}]`;
 
 			logger.info(`🔄 ${progresso} Consultando: ${placaStr} 🚘 ${nomeVeiculo}`);
@@ -75,7 +80,11 @@ async function runUpdate() {
 				continue;
 			}
 
-			const { retorno, dadosAtualizados } = await formatarRetornoPlaca(parsed.fullData, placaStr, true);
+			const { retorno, dadosAtualizados } = await formatarRetornoPlaca(
+				parsed.fullData,
+				placaStr,
+				true
+			);
 
 			if (retorno && retorno.msg) {
 				parsed.data = {
@@ -90,7 +99,9 @@ async function runUpdate() {
 				const modeloFipe = fipeObj?.texto_modelo || "?";
 				const mesRef = fipeObj?.mes_referencia || "?";
 
-				logger.info(`✅ ${progresso} ATUALIZADO -> ${placaStr} | FIPE: ${precoStr} (${modeloFipe} - ${mesRef})`);
+				logger.info(
+					`✅ ${progresso} ATUALIZADO -> ${placaStr} | FIPE: ${precoStr} (${modeloFipe} - ${mesRef})`
+				);
 			} else {
 				logger.warn(`❌ ${progresso} FALHA ao formatar ou consultar placa ${placaStr}.`);
 			}
@@ -110,7 +121,9 @@ async function runUpdate() {
 		logger.info(`🎉 Execução concluída com sucesso! ${count} placas atualizadas neste lote.`);
 		const restantes = totalParaAtualizar - count;
 		if (restantes > 0) {
-			logger.info(`⏩ Ainda restam ${restantes} placas no banco. Execute o script novamente para o próximo lote.`);
+			logger.info(
+				`⏩ Ainda restam ${restantes} placas no banco. Execute o script novamente para o próximo lote.`
+			);
 		} else {
 			logger.info("🏁 Todas as placas pendentes foram totalmente atualizadas!");
 		}
