@@ -22,6 +22,17 @@ database.getSQLiteDb(
 `
 );
 
+database.getSQLiteDb(
+	"fipe",
+	`
+  CREATE TABLE IF NOT EXISTS fipe_cache (
+    cache_key TEXT PRIMARY KEY,
+    json_data TEXT,
+    timestamp INTEGER
+  );
+`
+);
+
 /**
  * Valida e normaliza uma placa de carro brasileira
  * @param {string} placa - A placa a ser validada/normalizada
@@ -172,6 +183,162 @@ async function buscarPlaca(bot, message, args, group) {
 }
 
 /**
+ * Busca dados da API FIPE com suporte a cache no SQLite (fipe.db)
+ * @param {string} endpoint - Endpoint da API (ex: /cars/005066-0/years)
+ * @param {boolean} resetMonthly - Se true, o cache reseta no 1º dia de cada mês
+ */
+async function getFromFipeApi(endpoint, resetMonthly = false) {
+	const cacheKey = endpoint;
+	try {
+		const row = await database.dbGet("fipe", "SELECT json_data, timestamp FROM fipe_cache WHERE cache_key = ?", [
+			cacheKey
+		]);
+
+		if (row && row.json_data) {
+			const cached = JSON.parse(row.json_data);
+			const now = new Date();
+			const cacheDate = new Date(row.timestamp);
+
+			if (resetMonthly) {
+				// Verifica se o cache foi criado no mesmo mês e ano atual
+				if (cacheDate.getFullYear() === now.getFullYear() && cacheDate.getMonth() === now.getMonth()) {
+					logger.info(`[FipeCache] Usando cache mensal para: ${endpoint}`);
+					return cached;
+				} else {
+					logger.info(`[FipeCache] Cache mensal expirado para: ${endpoint}`);
+				}
+			} else {
+				// Cache permanente/longo
+				logger.info(`[FipeCache] Usando cache permanente para: ${endpoint}`);
+				return cached;
+			}
+		}
+	} catch (error) {
+		logger.error("Erro ao ler fipe_cache:", error);
+	}
+
+	const url = `https://fipe.parallelum.com.br/api/v2${endpoint}`;
+	const headers = {
+		accept: "application/json",
+		"content-type": "application/json"
+	};
+	if (process.env.FIPE_API_TOKEN) {
+		headers["X-Subscription-Token"] = process.env.FIPE_API_TOKEN;
+	}
+
+	logger.info(`[FipeApi] Consultando endpoint: ${endpoint}`);
+	try {
+		const response = await axios.get(url, { headers, timeout: 15000 });
+		const data = response.data;
+
+		// Salva no cache
+		try {
+			await database.dbRun(
+				"fipe",
+				"INSERT OR REPLACE INTO fipe_cache (cache_key, json_data, timestamp) VALUES (?, ?, ?)",
+				[cacheKey, JSON.stringify(data), Date.now()]
+			);
+		} catch (dbError) {
+			logger.error("Erro ao salvar fipe_cache:", dbError);
+		}
+
+		return data;
+	} catch (error) {
+		logger.error(`[FipeApi] Erro ao consultar ${endpoint}:`, error.message);
+		return null;
+	}
+}
+
+/**
+ * Consulta a tabela FIPE e seu histórico na nova API FIPE
+ * @param {string} fipeCode - Código FIPE (ex: "005066-0")
+ * @param {string|number} anoModelo - Ano do veículo (ex: "1988")
+ * @param {string} combustivel - Combustível (ex: "Gasolina" ou "Alcool")
+ * @param {number} tipoModelo - 1=Carro, 2=Moto, 3=Caminhão
+ * @param {Object} dadosPlaca - Objeto completo retornado da API Placas
+ */
+async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo, dadosPlaca) {
+	if (!fipeCode || fipeCode === "?" || fipeCode === "-") return null;
+
+	let vehicleType = "cars";
+	const tipoDesc = String(
+		dadosPlaca?.extra?.sub_segmento || dadosPlaca?.sub_segmento || dadosPlaca?.extra?.tipo_veiculo || dadosPlaca?.tipo_veiculo || ""
+	).toLowerCase();
+
+	if (tipoModelo === 2 || tipoDesc.includes("moto")) {
+		vehicleType = "motorcycles";
+	} else if (tipoModelo === 3 || tipoDesc.includes("caminh")) {
+		vehicleType = "trucks";
+	}
+
+	// 1. Obter anos disponíveis para este código FIPE (GetYearByModel - reseta mensalmente)
+	const years = await getFromFipeApi(`/${vehicleType}/${fipeCode}/years`, true);
+	if (!years || !Array.isArray(years) || years.length === 0) {
+		return null;
+	}
+
+	// 2. Encontrar o ano correto correspondente ao anoModelo
+	const anoStr = String(anoModelo).trim();
+	const matchingYears = years.filter((y) => String(y.code).startsWith(anoStr + "-") || String(y.name).startsWith(anoStr));
+
+	if (matchingYears.length === 0) {
+		return null;
+	}
+
+	let targetYearCode = matchingYears[0].code;
+
+	if (matchingYears.length > 1 && combustivel) {
+		const combLower = String(combustivel).toLowerCase();
+		let fuelTerm = "";
+		if (combLower === "g" || combLower.includes("gasolina")) fuelTerm = "gasolina";
+		else if (combLower === "a" || combLower.includes("lcool") || combLower.includes("alcool")) fuelTerm = "álcool";
+		else if (combLower === "d" || combLower.includes("diesel")) fuelTerm = "diesel";
+		else if (combLower === "e" || combLower.includes("elétrico") || combLower.includes("eletrico")) fuelTerm = "elétrico";
+
+		if (fuelTerm) {
+			const exactMatch =
+				matchingYears.find((y) => String(y.name).toLowerCase().includes(fuelTerm)) ||
+				matchingYears.find((y) => String(y.name).toLowerCase().includes(fuelTerm.replace("á", "a")));
+			if (exactMatch) {
+				targetYearCode = exactMatch.code;
+			}
+		}
+	}
+
+	// 3. Obter informações da Fipe e histórico (GetFipeInfo / history - reseta mensalmente)
+	const historyData = await getFromFipeApi(`/${vehicleType}/${fipeCode}/years/${targetYearCode}/history`, true);
+	if (!historyData || !historyData.priceHistory || historyData.priceHistory.length === 0) {
+		return null;
+	}
+
+	const currentInfo = historyData.priceHistory[0] || {};
+	const price = historyData.price || currentInfo.price || "?";
+	const month = historyData.referenceMonth || currentInfo.month || "?";
+	const modelName = historyData.model || "?";
+	const codeFipe = historyData.codeFipe || fipeCode;
+
+	let historyText = "";
+	if (Array.isArray(historyData.priceHistory) && historyData.priceHistory.length > 1) {
+		const h1 = historyData.priceHistory[1];
+		const h2 = historyData.priceHistory[2];
+		const parts = [];
+		if (h1 && h1.month && h1.price) parts.push(`${h1.month}: ${h1.price}`);
+		if (h2 && h2.month && h2.price) parts.push(`${h2.month}: ${h2.price}`);
+		if (parts.length > 0) {
+			historyText = `\n   📊 *Histórico (2 meses):* ${parts.join(" | ")}`;
+		}
+	}
+
+	return {
+		texto_valor: price,
+		texto_modelo: modelName,
+		codigo_fipe: codeFipe,
+		mes_referencia: month,
+		historyText
+	};
+}
+
+/**
  * Implementação da função apiPlacas
  * @param {Object} msg - Mensagem original
  * @param {string} numeroAutor - Número do autor
@@ -226,17 +393,35 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 					mes_referencia: "?",
 					texto_modelo: "?"
 				};
-				if (dados.fipe?.dados) {
-					if (Array.isArray(dados.fipe?.dados)) {
-						if (dados.fipe?.dados.length > 0) {
-							dados.fipe.dados.sort((a, b) => b.score - a.score);
-							fipe = dados.fipe?.dados[0];
-						}
+				let historyStr = "";
+
+				if (dados.fipe?.dados && Array.isArray(dados.fipe?.dados) && dados.fipe.dados.length > 0) {
+					dados.fipe.dados.sort((a, b) => b.score - a.score);
+					const fipePlacas = dados.fipe.dados[0];
+
+					// Dados para busca na nova API FIPE
+					const fipeCode = fipePlacas.codigo_fipe;
+					const anoModelo = fipePlacas.ano_modelo || dados.anoModelo || dados.ano;
+					const combustivel = fipePlacas.sigla_combustivel || fipePlacas.combustivel || dados.extra?.combustivel || dados.combustivel;
+					const tipoModelo = fipePlacas.tipo_modelo;
+
+					const fipeHistory = await consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo, dados);
+					if (fipeHistory) {
+						fipe = {
+							texto_valor: fipeHistory.texto_valor,
+							texto_modelo: fipeHistory.texto_modelo,
+							codigo_fipe: fipeHistory.codigo_fipe,
+							mes_referencia: fipeHistory.mes_referencia
+						};
+						historyStr = fipeHistory.historyText || "";
+					} else {
+						// Fallback para a FIPE da API Placas
+						fipe = fipePlacas;
 					}
 				}
 
 				const nomeCarro = (dados.marcamodelo ?? `${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) || "Desconhecido";
-				
+
 				const chassi = dados.extra?.chassi ?? dados.chassi ?? "-";
 				const motor = dados.extra?.motor ?? dados.motor ?? "-";
 				const renavam = dados.extra?.renavam ?? dados.renavam ? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}` : "";
@@ -254,8 +439,8 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 					dados.extra?.restricao_4
 				].filter((r) => r && r !== "-");
 
-				const restricoes = restricoesArr.length > 0 
-					? restricoesArr.filter(onlyUnique).join(", ") 
+				const restricoes = restricoesArr.length > 0
+					? restricoesArr.filter(onlyUnique).join(", ")
 					: situacao;
 
 				const ano = parseInt(dados.ano ?? "1970");
@@ -264,7 +449,7 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 
 				const origem = dados.origem ?? dados.extra?.origem ?? "-";
 
-				retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
+				retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${historyStr}${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
 
 				// Verifica se é um Honda Civic Si entre 2006 e 2011
 				if (nomeCarro.toLowerCase().includes("honda civic si") && 2006 <= ano && ano <= 2011) {
