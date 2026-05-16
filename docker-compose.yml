@@ -1,6 +1,63 @@
 services:
 
   # ───────────────────────────────────────────────────────────
+  # postgres — Database (whatsgoapi + ravena-ai backups)
+  # Internal only
+  # ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    networks:
+      - ravena-net
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-whatsgo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-whatsgo_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whatsgo} -d ${POSTGRES_DB:-whatsgo_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ───────────────────────────────────────────────────────────
+  # minio — Object Storage for media files (whatsgoapi)
+  # Internal only
+  # ───────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio
+    container_name: minio
+    restart: unless-stopped
+    networks:
+      - ravena-net
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ───────────────────────────────────────────────────────────
+  # rembg — Background Removal API (Python / rembg)
+  # Internal only
+  # ───────────────────────────────────────────────────────────
+  rembg:
+    image: danielgatis/rembg
+    container_name: rembg
+    restart: unless-stopped
+    networks:
+      - ravena-net
+    command: s --port 7000
+
+  # ───────────────────────────────────────────────────────────
   # whatsgoapi — WhatsApp REST API (Go / whatsmeow)
   # Internal only: not exposed to host
   # ───────────────────────────────────────────────────────────
@@ -61,7 +118,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
 
   # ───────────────────────────────────────────────────────────
   # ravena-ai — Main WhatsApp Bot (Node.js)
@@ -212,58 +269,8 @@ services:
       - ./bots.json:/app/bots.json
       - ./service-providers.json:/app/service-providers.json
     depends_on:
-      - whatsgoapi
-
-  # ───────────────────────────────────────────────────────────
-  # postgres — Database (whatsgoapi + ravena-ai backups)
-  # Internal only
-  # ───────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres
-    restart: unless-stopped
-    networks:
-      - ravena-net
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-whatsgo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-whatsgo_db}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whatsgo} -d ${POSTGRES_DB:-whatsgo_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ───────────────────────────────────────────────────────────
-  # minio — Object Storage for media files (whatsgoapi)
-  # Internal only
-  # ───────────────────────────────────────────────────────────
-  minio:
-    image: minio/minio
-    container_name: minio
-    restart: unless-stopped
-    networks:
-      - ravena-net
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-data:/data
-
-  # ───────────────────────────────────────────────────────────
-  # rembg — Background Removal API (Python / rembg)
-  # Internal only
-  # ───────────────────────────────────────────────────────────
-  rembg:
-    image: danielgatis/rembg
-    container_name: rembg
-    restart: unless-stopped
-    networks:
-      - ravena-net
-    command: s --port 7000
+      whatsgoapi:
+        condition: service_started
 
   # ───────────────────────────────────────────────────────────
   # health-check — Monitors whatsgoapi and ravena-ai
