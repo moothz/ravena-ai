@@ -1,4 +1,4 @@
-﻿const Database = require("./Database");
+const Database = require("./Database");
 const Logger = require("./Logger");
 const axios = require("axios").default;
 const { processFileVariable } = require("../functions/FileManager");
@@ -30,33 +30,6 @@ class CustomVariableProcessor {
 		this.logger.debug(`[CustomVariableProcessor][process] ${text} <=> ${Object.keys(context)}`);
 
 		try {
-			// Verifica se são variáveis de comando (pode haver múltiplas)
-			const cmdRegex = /\{cmd-(.*?)\}/g;
-			const cmdMatches = text.match(cmdRegex);
-
-			if (cmdMatches && context && context.message && context.bot) {
-				// Verifica se o texto consiste apenas de comandos e espaços/quebras de linha
-				const pureCommandsText = text.replace(cmdRegex, "").trim();
-
-				if (pureCommandsText === "") {
-					// Extrai os comandos, limitando a 10
-					const commands = cmdMatches
-						.slice(0, 10)
-						.map((m) => {
-							const match = m.match(/\{cmd-(.*?)\}/);
-							return match ? match[1].trim() : null;
-						})
-						.filter((cmd) => cmd !== null);
-
-					this.logger.debug(`Detectadas ${commands.length} variáveis de comando`);
-
-					return {
-						type: "embedded-commands",
-						commands
-					};
-				}
-			}
-
 			// Verifica se é uma variável de arquivo
 			const fileMatch = text.match(/^\{file-(.*?)\}$/);
 			if (fileMatch && context && context.message) {
@@ -791,7 +764,7 @@ class CustomVariableProcessor {
 	 * Processa variáveis de comando embutido
 	 * @param {string} text - Texto contendo variáveis
 	 * @param {Object} context - Dados de contexto
-	 * @returns {Promise<string>} - Texto processado
+	 * @returns {Promise<string|Object>} - Texto processado ou objeto com comandos a serem executados
 	 */
 	async processEmbeddedCommands(text, context) {
 		try {
@@ -799,28 +772,48 @@ class CustomVariableProcessor {
 				return text;
 			}
 
-			// Procura por padrões {cmd-!comando arg1 arg2}
-			const cmdMatches = text.match(/{cmd-([^}]+)}/g);
+			const cmdRegex = /\{cmd-(.*?)\}/g;
+			const cmdMatches = text.match(cmdRegex);
+
 			if (!cmdMatches) {
 				return text;
 			}
 
-			// Processa cada ocorrência
+			if (context && context.message && context.bot) {
+				// Verifica se o texto consiste apenas de comandos e espaços/quebras de linha
+				const pureCommandsText = text.replace(cmdRegex, "").trim();
+
+				if (pureCommandsText === "") {
+					// Extrai os comandos, limitando a 10
+					const commands = cmdMatches
+						.slice(0, 10)
+						.map((m) => {
+							const match = m.match(/\{cmd-(.*?)\}/);
+							return match ? match[1].trim() : null;
+						})
+						.filter((cmd) => cmd !== null);
+
+					this.logger.debug(`Detectadas ${commands.length} variáveis de comando embutido`);
+
+					return {
+						type: "embedded-commands",
+						commands
+					};
+				}
+			}
+
+			// Processa cada ocorrência que esteja misturada com texto
 			for (const match of cmdMatches) {
 				try {
-					// Extrai o comando
-					const commandText = match.substring(5, match.length - 1).trim();
+					const matchContent = match.match(/\{cmd-(.*?)\}/);
+					const commandText = matchContent ? matchContent[1].trim() : "";
 
-					this.logger.debug(`Processando comando embutido: ${commandText}`);
+					this.logger.debug(`Processando comando embutido misturado: ${commandText}`);
 
-					// Este processamento é apenas para variáveis incluídas em texto,
-					// não para variáveis que compõem todo o texto (essas são tratadas separadamente)
 					if (!commandText) {
 						continue;
 					}
 
-					// Por simplicidade, só substituímos a variável por uma indicação
-					// A execução real será feita no CommandHandler
 					text = text.replace(match, `[Comando embutido: ${commandText}]`);
 				} catch (cmdError) {
 					this.logger.error(`Erro ao processar comando embutido ${match}:`, cmdError);
