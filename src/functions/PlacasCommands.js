@@ -339,6 +339,124 @@ async function consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo
 }
 
 /**
+ * Formata os dados brutos da placa para gerar a mensagem final e atualiza a FIPE
+ * @param {Object} dados - Dados brutos retornados pela API Placas
+ * @param {string} placa - Número da placa
+ * @param {boolean} skipSiPt - Se true, não faz busca extra no SiPt
+ * @param {string} numeroAutor - Número do autor (para o SiPt)
+ */
+async function formatarRetornoPlaca(dados, placa, skipSiPt = false, numeroAutor = "") {
+	const retorno = { msg: "", react: "🚘" };
+
+	if (dados.message || dados.erro) {
+		const mensagem = dados.message ?? dados.erro;
+		retorno.msg = `🔎 Resultado para *${placa}*\n\n_${mensagem.trim()}_`;
+		return { retorno, dadosAtualizados: dados };
+	}
+
+	let fipe = {
+		texto_valor: "R$ ??,??",
+		codigo_fipe: "?",
+		mes_referencia: "?",
+		texto_modelo: "?"
+	};
+	let historyStr = "";
+
+	if (dados.fipe?.dados && Array.isArray(dados.fipe?.dados) && dados.fipe.dados.length > 0) {
+		dados.fipe.dados.sort((a, b) => b.score - a.score);
+		const fipePlacas = dados.fipe.dados[0];
+
+		// Dados para busca na nova API FIPE
+		const fipeCode = fipePlacas.codigo_fipe;
+		const anoModelo = fipePlacas.ano_modelo || dados.anoModelo || dados.ano;
+		const combustivel = fipePlacas.sigla_combustivel || fipePlacas.combustivel || dados.extra?.combustivel || dados.combustivel;
+		const tipoModelo = fipePlacas.tipo_modelo;
+
+		const fipeHistory = await consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo, dados);
+		if (fipeHistory) {
+			fipe = {
+				texto_valor: fipeHistory.texto_valor,
+				texto_modelo: fipeHistory.texto_modelo,
+				codigo_fipe: fipeHistory.codigo_fipe,
+				mes_referencia: fipeHistory.mes_referencia
+			};
+			historyStr = fipeHistory.historyText || "";
+
+			// Atualiza no fullData se possível
+			fipePlacas.texto_valor = fipe.texto_valor;
+			fipePlacas.mes_referencia = fipe.mes_referencia;
+			fipePlacas.texto_modelo = fipe.texto_modelo;
+		} else {
+			fipe = fipePlacas;
+		}
+	}
+
+	const nomeCarro = (dados.marcamodelo ?? `${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) || "Desconhecido";
+
+	const chassi = dados.extra?.chassi ?? dados.chassi ?? "-";
+	const motor = dados.extra?.motor ?? dados.motor ?? "-";
+	const renavam = dados.extra?.renavam ?? dados.renavam ? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}` : "";
+	const passageiros = dados.extra?.quantidade_passageiro ?? dados.quantidade_passageiro ?? "-";
+	const cilindradas = dados.extra?.cilindradas ?? dados.cilindradas ?? "-";
+	const combustivel = dados.extra?.combustivel ?? dados.combustivel ?? "-";
+	const tipoVeiculo = dados.extra?.tipo_veiculo ?? dados.tipo_veiculo ?? "?";
+	const tipoDoc = dados.extra?.tipo_doc_prop ?? dados.tipo_doc_prop ?? "-";
+	const situacao = dados.situacao ?? dados.extra?.situacao ?? "-";
+
+	const restricoesArr = [
+		dados.extra?.restricao_1,
+		dados.extra?.restricao_2,
+		dados.extra?.restricao_3,
+		dados.extra?.restricao_4
+	].filter((r) => r && r !== "-");
+
+	const restricoes = restricoesArr.length > 0
+		? restricoesArr.filter(onlyUnique).join(", ")
+		: situacao;
+
+	const ano = parseInt(dados.ano ?? "1970");
+	const municipio = dados.extra?.municipio ?? dados.municipio ?? "-";
+	const estado = dados.extra?.uf ?? dados.uf ?? "-";
+
+	const origem = dados.origem ?? dados.extra?.origem ?? "-";
+
+	retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${historyStr}${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
+
+	if (!skipSiPt && nomeCarro.toLowerCase().includes("honda civic si") && 2006 <= ano && ano <= 2011) {
+		logger.info(
+			`[formatarRetornoPlaca] Carro buscado é um Civic Si, buscando também no SiPt...`
+		);
+
+		try {
+			// Busca também no SiPt
+			const resSiPt = await getSiPtPlaca(dados.placa, `${numeroAutor}`);
+
+			if (resSiPt && resSiPt.length > 0) {
+				const respostaSiPt = resSiPt[0].msg.replace("Resultado", "SiPT Resultado");
+				logger.info(
+					`[formatarRetornoPlaca] Resposta Sipt: ${respostaSiPt}`
+				);
+
+				if (respostaSiPt.includes(" / ")) {
+					// retorno válido
+					logger.info(
+						`[formatarRetornoPlaca] Resposta válida, incluindo!`
+					);
+					retorno.msg += `\n\n${respostaSiPt}`;
+				}
+			}
+		} catch (siPtError) {
+			logger.error(
+				`[formatarRetornoPlaca] Erro ao buscar no SiPt:`,
+				siPtError
+			);
+		}
+	}
+
+	return { retorno, dadosAtualizados: dados };
+}
+
+/**
  * Implementação da função apiPlacas
  * @param {Object} msg - Mensagem original
  * @param {string} numeroAutor - Número do autor
@@ -357,12 +475,26 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 			cacheKey
 		]);
 
-		if (row) {
+		if (row && row.json_data) {
 			const cached = JSON.parse(row.json_data);
 			if (now - cached.timestamp < threeMonths) {
-				logger.info(`[apiPlacas_cache] Usando cache para a placa: ${placa}`);
-				callback(cached.data);
-				return;
+				if (cached.fullData && !cached.fipe_updated) {
+					logger.info(`[apiPlacas_cache] Usando cache para a placa: ${placa}, atualizando FIPE...`);
+					const { retorno, dadosAtualizados } = await formatarRetornoPlaca(cached.fullData, placa, false, `${numeroAutor}`);
+					cached.data = retorno;
+					cached.fullData = dadosAtualizados;
+					cached.fipe_updated = true;
+					cached.fipe_updated_ts = now;
+					try {
+						await database.dbRun(DB_NAME, "INSERT OR REPLACE INTO placas (placa, json_data) VALUES (?, ?)", [cacheKey, JSON.stringify(cached)]);
+					} catch (dbErr) {}
+					callback(retorno);
+					return;
+				} else {
+					logger.info(`[apiPlacas_cache] Usando cache para a placa: ${placa}`);
+					callback(cached.data);
+					return;
+				}
 			}
 		}
 	} catch (error) {
@@ -381,114 +513,15 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 				`[apiPlacas_${premium ? "premium" : "comum"}] ${placa} => ${JSON.stringify(dados, null, "\t")}`
 			);
 
-			const retorno = { msg: "", react: "🚘" };
-
-			if (dados.message || dados.erro) {
-				const mensagem = dados.message ?? dados.erro;
-				retorno.msg = `🔎 Resultado para *${placa}*\n\n_${mensagem.trim()}_`;
-			} else {
-				let fipe = {
-					texto_valor: "R$ ??,??",
-					codigo_fipe: "?",
-					mes_referencia: "?",
-					texto_modelo: "?"
-				};
-				let historyStr = "";
-
-				if (dados.fipe?.dados && Array.isArray(dados.fipe?.dados) && dados.fipe.dados.length > 0) {
-					dados.fipe.dados.sort((a, b) => b.score - a.score);
-					const fipePlacas = dados.fipe.dados[0];
-
-					// Dados para busca na nova API FIPE
-					const fipeCode = fipePlacas.codigo_fipe;
-					const anoModelo = fipePlacas.ano_modelo || dados.anoModelo || dados.ano;
-					const combustivel = fipePlacas.sigla_combustivel || fipePlacas.combustivel || dados.extra?.combustivel || dados.combustivel;
-					const tipoModelo = fipePlacas.tipo_modelo;
-
-					const fipeHistory = await consultarFipeHistory(fipeCode, anoModelo, combustivel, tipoModelo, dados);
-					if (fipeHistory) {
-						fipe = {
-							texto_valor: fipeHistory.texto_valor,
-							texto_modelo: fipeHistory.texto_modelo,
-							codigo_fipe: fipeHistory.codigo_fipe,
-							mes_referencia: fipeHistory.mes_referencia
-						};
-						historyStr = fipeHistory.historyText || "";
-					} else {
-						// Fallback para a FIPE da API Placas
-						fipe = fipePlacas;
-					}
-				}
-
-				const nomeCarro = (dados.marcamodelo ?? `${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) || "Desconhecido";
-
-				const chassi = dados.extra?.chassi ?? dados.chassi ?? "-";
-				const motor = dados.extra?.motor ?? dados.motor ?? "-";
-				const renavam = dados.extra?.renavam ?? dados.renavam ? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}` : "";
-				const passageiros = dados.extra?.quantidade_passageiro ?? dados.quantidade_passageiro ?? "-";
-				const cilindradas = dados.extra?.cilindradas ?? dados.cilindradas ?? "-";
-				const combustivel = dados.extra?.combustivel ?? dados.combustivel ?? "-";
-				const tipoVeiculo = dados.extra?.tipo_veiculo ?? dados.tipo_veiculo ?? "?";
-				const tipoDoc = dados.extra?.tipo_doc_prop ?? dados.tipo_doc_prop ?? "-";
-				const situacao = dados.situacao ?? dados.extra?.situacao ?? "-";
-
-				const restricoesArr = [
-					dados.extra?.restricao_1,
-					dados.extra?.restricao_2,
-					dados.extra?.restricao_3,
-					dados.extra?.restricao_4
-				].filter((r) => r && r !== "-");
-
-				const restricoes = restricoesArr.length > 0
-					? restricoesArr.filter(onlyUnique).join(", ")
-					: situacao;
-
-				const ano = parseInt(dados.ano ?? "1970");
-				const municipio = dados.extra?.municipio ?? dados.municipio ?? "-";
-				const estado = dados.extra?.uf ?? dados.uf ?? "-";
-
-				const origem = dados.origem ?? dados.extra?.origem ?? "-";
-
-				retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${historyStr}${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
-
-				// Verifica se é um Honda Civic Si entre 2006 e 2011
-				if (nomeCarro.toLowerCase().includes("honda civic si") && 2006 <= ano && ano <= 2011) {
-					logger.info(
-						`[apiPlacas_${premium ? "premium" : "comum"}] Carro buscado é um Civic Si, buscando também no SiPt...`
-					);
-
-					try {
-						// Busca também no SiPt
-						const resSiPt = await getSiPtPlaca(dados.placa, `${numeroAutor}`);
-
-						if (resSiPt && resSiPt.length > 0) {
-							const respostaSiPt = resSiPt[0].msg.replace("Resultado", "SiPT Resultado");
-							logger.info(
-								`[apiPlacas_${premium ? "premium" : "comum"}] Resposta Sipt: ${respostaSiPt}`
-							);
-
-							if (respostaSiPt.includes(" / ")) {
-								// retorno válido
-								logger.info(
-									`[apiPlacas_${premium ? "premium" : "comum"}] Resposta válida, incluindo!`
-								);
-								retorno.msg += `\n\n${respostaSiPt}`;
-							}
-						}
-					} catch (siPtError) {
-						logger.error(
-							`[apiPlacas_${premium ? "premium" : "comum"}] Erro ao buscar no SiPt:`,
-							siPtError
-						);
-					}
-				}
-			}
+			const { retorno, dadosAtualizados } = await formatarRetornoPlaca(dados, placa, false, `${numeroAutor}`);
 
 			// Update cache
 			const cacheEntry = {
 				timestamp: now,
 				data: retorno,
-				fullData: dados
+				fullData: dadosAtualizados,
+				fipe_updated: true,
+				fipe_updated_ts: now
 			};
 
 			try {
@@ -700,4 +733,4 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+module.exports = { commands, formatarRetornoPlaca, consultarFipeHistory };
