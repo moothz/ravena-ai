@@ -1644,6 +1644,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setupListAdder('add-muted-command', 'new-muted-command', 'mutedCommands');
         setupListAdder('add-additional-admin', 'new-additional-admin', 'additionalAdmins');
 
+        const botPersonalityInput = document.getElementById('bot-personality');
+        if (botPersonalityInput) {
+            botPersonalityInput.addEventListener('input', (e) => {
+                document.getElementById('personality-count').textContent = e.target.value.length;
+            });
+        }
+
         // Sliders
         const chanceSlider = document.getElementById('interaction-chance');
         if(chanceSlider) {

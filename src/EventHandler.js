@@ -1052,7 +1052,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 											botPersonality: {
 												type: "string",
 												description:
-													"Personalidade do bot para este grupo com no máximo 200 caracteres: deve soar como UM MEMBRO do grupo, usando a mesma linguagem, gírias e tom da galera. Se não conseguir definir, retorne string vazia."
+													"Personalidade do bot para este grupo com no máximo 500 caracteres: deve soar como UM MEMBRO do grupo, usando a mesma linguagem, gírias e tom da galera. Se não conseguir definir, retorne string vazia."
 											}
 										},
 										required: ["welcomeMessage", "botPersonality"],
@@ -1065,7 +1065,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 Retorne um JSON com dois campos:
 1. "welcomeMessage": Uma mensagem de boas-vindas PRONTA para ser enviada diretamente no grupo, sem nenhum placeholder como "[foto aqui]" ou "[link]". Deve ser sucinta, engraçada, interativa e direta ao ponto. Use a linguagem e o tom típico desse tipo de grupo.
-2. "botPersonality": Uma personalidade curta (máx 200 caracteres) para o bot neste grupo. O bot deve soar como um MEMBRO do grupo — da mesma tribo, falando a mesma língua, usando as mesmas gírias e referências culturais. Ex para grupo de funk: "Tô no baile, parceiro! Manja de todas as novidades do funk, fala gíria à vontade e tá sempre no clima". Se não conseguir definir, retorne string vazia.`;
+2. "botPersonality": Uma personalidade curta (máx 500 caracteres) para o bot neste grupo. O bot deve soar como um MEMBRO do grupo — da mesma tribo, falando a mesma língua, usando as mesmas gírias e referências culturais. Ex para grupo de funk: "Tô no baile, parceiro! Manja de todas as novidades do funk, fala gíria à vontade e tá sempre no clima". Se não conseguir definir, retorne string vazia.`;
 
 							// Obtém conclusão do LLM sem bloquear
 							this.llmService
@@ -1104,7 +1104,7 @@ Retorne um JSON com dois campos:
 
 									// Salva personalidade no grupo se for válida
 									if (botPersonality && botPersonality.trim().length > 0) {
-										group.customAIPrompt = botPersonality.trim().slice(0, 200);
+										group.customAIPrompt = botPersonality.trim().slice(0, 500);
 										await this.database.saveGroup(group);
 										this.logger.info(
 											`[groupJoin] Personalidade definida para '${group.name}': ${group.customAIPrompt}`
