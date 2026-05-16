@@ -13,14 +13,20 @@ const CommandMapper = {
 
 		const parse = (val, fallback) => {
 			if (val === null || val === undefined) return fallback;
-			try {
-				return JSON.parse(val);
-			} catch {
-				return fallback;
+			if (typeof val === "string") {
+				try {
+					return JSON.parse(val);
+				} catch {
+					return fallback;
+				}
 			}
+			return val;
 		};
 
+		const jsonData = parse(row.json_data, {});
+
 		return {
+			...jsonData,
 			// Core fields used by CommandHandler
 			startsWith: row.trigger,
 			groupId: row.group_id,

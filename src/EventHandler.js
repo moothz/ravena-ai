@@ -306,7 +306,10 @@ class EventHandler extends EventEmitter {
 				}
 
 				// Ajuda com recuperação de grupo
-				if (textContent && textContent.trim().toLowerCase() === "ravena, ajude a recuperar meu grupo!") {
+				if (
+					textContent &&
+					textContent.trim().toLowerCase() === "ravena, ajude a recuperar meu grupo!"
+				) {
 					try {
 						const chat = await message.origin.getChat();
 						const isAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
