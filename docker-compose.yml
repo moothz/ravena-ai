@@ -130,6 +130,9 @@ services:
       dockerfile: Dockerfile
     container_name: ravena-ai
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ravena-net
     ports:

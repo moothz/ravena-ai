@@ -235,30 +235,36 @@ async function apiPlacas(msg, numeroAutor, placa, premium, callback) {
 					}
 				}
 
-				const nomeCarro = `${dados.MARCA} ${dados.MODELO}`;
-				const restricoes = [
-					dados.extra?.restricao_1 ?? "-",
-					dados.extra?.restricao_2 ?? "-",
-					dados.extra?.restricao_3 ?? "-",
-					dados.extra?.restricao_4 ?? "-"
-				]
-					.filter(onlyUnique)
-					.join(", ");
+				const nomeCarro = (dados.marcamodelo ?? `${dados.MARCA ?? dados.marca ?? ""} ${dados.MODELO ?? dados.modelo ?? ""}`.trim()) || "Desconhecido";
+				
+				const chassi = dados.extra?.chassi ?? dados.chassi ?? "-";
+				const motor = dados.extra?.motor ?? dados.motor ?? "-";
+				const renavam = dados.extra?.renavam ?? dados.renavam ? `\n   🪪 *Renavam:* ${dados.extra?.renavam ?? dados.renavam}` : "";
+				const passageiros = dados.extra?.quantidade_passageiro ?? dados.quantidade_passageiro ?? "-";
+				const cilindradas = dados.extra?.cilindradas ?? dados.cilindradas ?? "-";
+				const combustivel = dados.extra?.combustivel ?? dados.combustivel ?? "-";
+				const tipoVeiculo = dados.extra?.tipo_veiculo ?? dados.tipo_veiculo ?? "?";
+				const tipoDoc = dados.extra?.tipo_doc_prop ?? dados.tipo_doc_prop ?? "-";
+				const situacao = dados.situacao ?? dados.extra?.situacao ?? "-";
 
-				const renavam = dados.extra?.renavam ? `\n   🪪 *Renavam:* ${dados.extra.renavam}` : "";
+				const restricoesArr = [
+					dados.extra?.restricao_1,
+					dados.extra?.restricao_2,
+					dados.extra?.restricao_3,
+					dados.extra?.restricao_4
+				].filter((r) => r && r !== "-");
+
+				const restricoes = restricoesArr.length > 0 
+					? restricoesArr.filter(onlyUnique).join(", ") 
+					: situacao;
+
 				const ano = parseInt(dados.ano ?? "1970");
 				const municipio = dados.extra?.municipio ?? dados.municipio ?? "-";
 				const estado = dados.extra?.uf ?? dados.uf ?? "-";
 
-				retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa}* _(${dados.extra?.tipo_veiculo ?? "?"})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})
-   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${dados.origem})
-   📍 *Localidade:* ${municipio} - ${estado}
-   🔢 *Chassi/Motor:* ${dados.extra?.chassi ?? "-"} / ${dados.extra?.motor ?? "-"}
-   🧍 *Passageiros:* ${dados.extra?.quantidade_passageiro ?? "-"}
-   ⚡️ *Performance:* (${dados.extra?.cilindradas ?? "-"} cc) | ${dados.extra?.combustivel ?? "-"}
+				const origem = dados.origem ?? dados.extra?.origem ?? "-";
 
-   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${renavam}
-   ⚠️ *Obs:* ${dados.extra?.tipo_doc_prop ?? "-"}, ${restricoes}`;
+				retorno.msg = `🔎 Resultado para *${dados.placa}/${dados.placa_alternativa ?? dados.placa_modelo_antigo ?? "?"}* _(${tipoVeiculo})_:\n\n   🚘 *Modelo:* ${nomeCarro} (${dados.cor})\n   📅 *Ano:* ${dados.ano} / ${dados.anoModelo} (${origem})\n   📍 *Localidade:* ${municipio} - ${estado}\n   🔢 *Chassi/Motor:* ${chassi} / ${motor}\n   🧍 *Passageiros:* ${passageiros}\n   ⚡️ *Performance:* (${cilindradas} cc) | ${combustivel}\n\n   🪙 *FIPE:* ${fipe.texto_valor} (${fipe.texto_modelo} (${fipe.codigo_fipe}), ${fipe.mes_referencia})${renavam}\n   ⚠️ *Obs:* ${tipoDoc}, ${restricoes}`;
 
 				// Verifica se é um Honda Civic Si entre 2006 e 2011
 				if (nomeCarro.toLowerCase().includes("honda civic si") && 2006 <= ano && ano <= 2011) {
