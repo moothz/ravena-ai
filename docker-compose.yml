@@ -262,6 +262,15 @@ services:
       DONATION_GOAL_AMOUNT: ${DONATION_GOAL_AMOUNT:-}
       DONATION_GOAL_DESCRIPTION: ${DONATION_GOAL_DESCRIPTION:-}
       REMBG_API_URL: http://rembg:7000/api/remove
+      
+      # MinIO Management
+      MINIO_ENABLED: ${MINIO_ENABLED:-true}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-zap-media}
+      MINIO_RETENTION_DAYS: ${MINIO_RETENTION_DAYS:-7}
+      MINIO_STORAGE_LIMIT_GB: ${MINIO_STORAGE_LIMIT_GB:-15}
     volumes:
       # Persistent data — NEVER reset these
       - ./data:/app/data

@@ -10,6 +10,7 @@ const Logger = require("./src/utils/Logger");
 const logCleaner = require("./src/utils/LogsCleaner");
 const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
+const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -22,6 +23,9 @@ const CurrencyConverter = require("./src/utils/CurrencyConverter");
  */
 async function main() {
 	logCleaner.start();
+
+	// Configura políticas de retenção do MinIO (Background)
+	minioSetup.init().catch((err) => console.error("[MinioSetup Error]", err));
 
 	// Atualiza cotação do dólar na inicialização
 	await CurrencyConverter.updateRate();
