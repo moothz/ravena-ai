@@ -1053,7 +1053,7 @@ class CommandHandler {
 				//this.logger.debug(`Comando ${command.name} executado com sucesso, enviando after reaction`);
 
 				// Reage com emoji "depois" (específico do comando ou padrão)
-				if (!silent && command.reactions?.after) {
+				if (!silent && command.reactions?.after && result !== false) {
 					this.delayedReaction(message.origin, command.reactions.after, 1000);
 				}
 

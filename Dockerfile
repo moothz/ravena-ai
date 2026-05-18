@@ -34,6 +34,11 @@ RUN npm ci --omit=dev
 # Copy application source
 COPY . .
 
+# Update yt-dlp to latest nightly during build
+RUN if [ -f "./node_modules/youtube-dl-exec/bin/yt-dlp" ]; then \
+    ./node_modules/youtube-dl-exec/bin/yt-dlp --update-to nightly; \
+    fi
+
 # Persistent data directories (mapped as volumes in docker-compose)
 RUN mkdir -p /app/data /app/public /app/downloads
 

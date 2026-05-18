@@ -11,6 +11,33 @@ const youtubedl = require("youtube-dl-exec");
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
 
+const COMMON_YTDLP_ARGS = {
+	"js-runtimes": "node",
+	"no-check-certificates": true,
+	"no-warnings": true,
+	"extractor-args": "youtube:player_client=android_vr,web_safari",
+	"add-header": [
+		"referer:https://www.google.com/",
+		"user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	]
+};
+
+/**
+ * Executa uma promise com timeout
+ */
+function withTimeout(promise, ms, errorMessage = "Tempo limite excedido") {
+	let timeoutId;
+	const timeoutPromise = new Promise((_, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(new Error(errorMessage));
+		}, ms);
+	});
+
+	return Promise.race([promise, timeoutPromise]).finally(() => {
+		clearTimeout(timeoutId);
+	});
+}
+
 // Sistema de cache para o SocialMediaDownloader
 class SMDCacheManager {
 	constructor(databasePath) {
@@ -227,7 +254,7 @@ async function downloadWithYoutubeDL(url, platform) {
 				? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
 				: {}),
 			ffmpegLocation: process.env.FFMPEG_PATH,
-			"js-runtimes": "node"
+			...COMMON_YTDLP_ARGS
 		};
 
 		// Para outros sites, ajusta as opções conforme necessário
@@ -237,7 +264,11 @@ async function downloadWithYoutubeDL(url, platform) {
 			options.f = "(bestvideo+bestaudio/best)[filesize<55M]";
 		}
 
-		const result = await youtubedl(url, options);
+		const result = await withTimeout(
+			youtubedl(url, options),
+			180000,
+			`Tempo esgotado ao baixar de ${platform}. 😭`
+		);
 		logger.info(`Download concluído: ${result}`);
 
 		// Busca arquivos baixados na pasta de destino
