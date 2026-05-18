@@ -28,13 +28,13 @@ class MinioSetup {
 		}
 
 		// Pequeno delay para garantir que o container minio já subiu e aceita conexões
-		await new Promise(resolve => setTimeout(resolve, 5000));
+		await new Promise((resolve) => setTimeout(resolve, 5000));
 
 		this.logger.info("Verificando políticas do MinIO...");
 
 		try {
 			// Validar se o mc está instalado e funcional
-			await this.execute("mc --version").catch(e => {
+			await this.execute("mc --version").catch((e) => {
 				throw new Error("MinIO Client (mc) não encontrado ou corrompido: " + e.message);
 			});
 
