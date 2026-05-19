@@ -143,22 +143,92 @@ h1 {
 
 /* Circulating border for goal reached (100%) */
 .goal-reached {
-    border: 2px solid #4dff4d !important;
-    box-shadow: 0 0 20px rgba(77, 255, 77, 0.6) !important;
-    overflow: visible !important;
+    border: 3px solid #4dff4d !important;
+    box-shadow: 
+        0 0 20px rgba(77, 255, 77, 0.8),
+        0 0 40px rgba(77, 255, 77, 0.4),
+        inset 0 0 30px rgba(77, 255, 77, 0.6) !important;
+    overflow: hidden !important; /* FIX: Prevents text leaking and scrollbars */
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(135deg, #0a2e0a 0%, #1db954 50%, #0a2e0a 100%) !important;
+    animation: crazy-glow 1.5s infinite alternate ease-in-out;
+}
+
+@keyframes crazy-glow {
+    0% { filter: brightness(1) contrast(1.2); }
+    100% { filter: brightness(1.3) contrast(1.5); box-shadow: 0 0 40px #4dff4d, inset 0 0 40px #fff !important; }
 }
 
 .goal-reached::before {
     content: '';
     position: absolute;
-    top: -5px;
-    left: -5px;
-    right: -5px;
-    bottom: -5px;
-    background: conic-gradient(from 0deg, transparent, #4dff4d, transparent 30%, transparent);
-    border-radius: 12px;
+    top: -150%;
+    left: -150%;
+    right: -150%;
+    bottom: -150%;
+    background: conic-gradient(
+        from 0deg, 
+        transparent, 
+        #4dff4d 5%, 
+        #fff 10%,
+        #4dff4d 15%,
+        transparent 20%, 
+        #fff 25%, 
+        transparent 30%,
+        #4dff4d 35%,
+        #fff 40%,
+        #4dff4d 45%,
+        transparent 50%
+    );
     z-index: -1;
-    animation: rotate-border 2s linear infinite;
+    animation: rotate-border 1s linear infinite;
+}
+
+/* Glitter and Explosions effect */
+.goal-reached::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: 
+        radial-gradient(2px 2px at 15% 25%, #fff, rgba(0,0,0,0)),
+        radial-gradient(3px 3px at 35% 75%, #fff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 55% 15%, #ff0, rgba(0,0,0,0)),
+        radial-gradient(4px 4px at 75% 45%, #fff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 85% 85%, #fff, rgba(0,0,0,0)),
+        radial-gradient(3px 3px at 5% 90%, #ff0, rgba(0,0,0,0)),
+        radial-gradient(5px 5px at 95% 10%, #fff, rgba(0,0,0,0)),
+        radial-gradient(4px 4px at 50% 50%, #fff, rgba(0,0,0,0));
+    background-size: 150% 150%;
+    animation: glitter-rockets 0.8s infinite steps(8);
+}
+
+@keyframes glitter-rockets {
+    0% { background-position: 0% 0%; opacity: 0.2; transform: scale(1); }
+    50% { background-position: 100% 100%; opacity: 1; transform: scale(1.1); }
+    100% { background-position: 0% 100%; opacity: 0.2; transform: scale(1); }
+}
+
+.goal-reached .scrolling-text {
+    text-shadow: 
+        -1px -1px 0 #000,  
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000,
+         0 0 10px #fff, 
+         0 0 20px #4dff4d !important; /* Dark stroke + Glow */
+    font-size: 1.25rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    animation: scroll-left 40s linear infinite, text-pop 0.5s infinite alternate;
+    display: inline-block; /* Ensure transform works correctly */
+}
+
+@keyframes text-pop {
+    from { scale: 1; }
+    to { scale: 1.08; }
 }
 
 @keyframes rotate-border {
