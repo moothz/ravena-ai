@@ -8,6 +8,9 @@ services:
     image: postgres:15-alpine
     container_name: postgres
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ravena-net
     environment:
@@ -31,6 +34,9 @@ services:
     image: minio/minio
     container_name: minio
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ravena-net
     environment:
@@ -53,6 +59,9 @@ services:
     image: danielgatis/rembg
     container_name: rembg
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ravena-net
     command: s --port 7000
@@ -67,6 +76,9 @@ services:
       dockerfile: Dockerfile
     container_name: whatsgoapi
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "${WHATSGOAPI_PORT:-9800}:${SERVER_PORT:-8080}"
     networks:
@@ -292,6 +304,9 @@ services:
     image: alpine:3.20
     container_name: health-check
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ravena-net
     environment:
