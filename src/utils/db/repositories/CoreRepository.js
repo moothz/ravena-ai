@@ -100,6 +100,10 @@ class CoreRepository {
 				jid TEXT,
 				timestamp INTEGER,
 				json_data TEXT
+			)`,
+			local_blocks: `CREATE TABLE IF NOT EXISTS local_blocks (
+				number TEXT PRIMARY KEY,
+				timestamp INTEGER
 			)`
 		};
 
@@ -792,6 +796,54 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error saving load reports:", error);
 			return false;
+		}
+	}
+
+	// --- Local Blocks ---
+
+	async addLocalBlock(phoneNumber) {
+		try {
+			this.mappers.run(
+				this.DB,
+				"INSERT OR REPLACE INTO local_blocks (number, timestamp) VALUES (?, ?)",
+				[phoneNumber, Date.now()]
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error adding local block:", error);
+			return false;
+		}
+	}
+
+	async removeLocalBlock(phoneNumber) {
+		try {
+			this.mappers.run(this.DB, "DELETE FROM local_blocks WHERE number = ?", [phoneNumber]);
+			return true;
+		} catch (error) {
+			this.logger.error("Error removing local block:", error);
+			return false;
+		}
+	}
+
+	async isLocalBlocked(phoneNumber) {
+		try {
+			const row = this.mappers.get(this.DB, "SELECT number FROM local_blocks WHERE number = ?", [
+				phoneNumber
+			]);
+			return !!row;
+		} catch (error) {
+			this.logger.error("Error checking local block:", error);
+			return false;
+		}
+	}
+
+	async getLocalBlocks() {
+		try {
+			const rows = this.mappers.all(this.DB, "SELECT * FROM local_blocks");
+			return rows;
+		} catch (error) {
+			this.logger.error("Error getting local blocks:", error);
+			return [];
 		}
 	}
 }

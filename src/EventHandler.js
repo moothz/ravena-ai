@@ -203,6 +203,31 @@ class EventHandler extends EventEmitter {
 			)
 				return;
 
+			// --- Filtro de Bloqueio Local ---
+			let isLocalBlocked = false;
+
+			// Verifica autor (geralmente PN)
+			if (message.author) {
+				const pn = message.author.split("@")[0];
+				if (await bot.database.isLocalBlocked(pn)) {
+					isLocalBlocked = true;
+				}
+			}
+
+			// Verifica authorAlt (geralmente LID)
+			if (!isLocalBlocked && message.authorAlt) {
+				const lid = message.authorAlt.split("@")[0];
+				if (await bot.database.isLocalBlocked(lid)) {
+					isLocalBlocked = true;
+				}
+			}
+
+			if (isLocalBlocked) {
+				// this.logger.debug(`[EventHandler] Ignorando mensagem de usuário bloqueado: ${message.author} (${message.authorAlt})`);
+				return;
+			}
+			// --------------------------------
+
 			// Newsletter/Canais: Apenas pra detectar jrmunews, horóscopos, etc.
 			if (message.isNewsletter) {
 				//this.logger.debug(`[processMessage] Recebido newsletter`, { message })

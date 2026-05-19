@@ -1172,23 +1172,41 @@ Break down the cost by category and provide a total estimated cost.`;
 					);
 				}
 
-				// Tenta bloquear o contato
-				const contatoBloquear = await bot.client.getContactById(phoneNumber);
-				await contatoBloquear.block();
+				let apiStatus = "";
+				let localStatus = "";
+
+				// 1. Tenta bloquear o contato na API externa
+				try {
+					const contatoBloquear = await bot.client.getContactById(phoneNumber);
+					await contatoBloquear.block();
+					apiStatus = "✅ API (Sucesso)";
+				} catch (blockError) {
+					this.logger.error("Erro ao bloquear contato na API:", blockError);
+					apiStatus = `❌ API (${blockError.message})`;
+				}
+
+				// 2. Tenta bloquear o contato localmente
+				try {
+					const pnClean = phoneNumber.split("@")[0];
+					await this.database.addLocalBlock(pnClean);
+					localStatus = "✅ Local (Sucesso)";
+				} catch (localError) {
+					this.logger.error("Erro ao bloquear contato localmente:", localError);
+					localStatus = `❌ Local (${localError.message})`;
+				}
 
 				// Cria a resposta
-				const responseMessage = `✅ Contato ${phoneNumber} bloqueado com sucesso. ${JSON.stringify(removeResults)}`;
+				const responseMessage = `*Resultado do Bloqueio:*\n- ${apiStatus}\n- ${localStatus}\n\nContato: ${phoneNumber}\n${Object.keys(removeResults).length > 0 ? `Remoções: ${JSON.stringify(removeResults)}` : ""}`;
 
 				return new ReturnMessage({
 					chatId,
 					content: responseMessage
 				});
-			} catch (blockError) {
-				this.logger.error("Erro ao bloquear contato:", blockError);
-
+			} catch (err) {
+				this.logger.error("Erro ao processar bloqueio:", err);
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao bloquear contato: ${blockError.message}`
+					content: `❌ Erro inesperado ao bloquear contato: ${err.message}`
 				});
 			}
 		} catch (error) {
@@ -1237,20 +1255,41 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 
 			try {
-				// Tenta desbloquear o contato
-				const contatoDesbloquear = await bot.client.getContactById(phoneNumber);
-				await contatoDesbloquear.unblock();
+				let apiStatus = "";
+				let localStatus = "";
+
+				// 1. Tenta desbloquear o contato na API externa
+				try {
+					const contatoDesbloquear = await bot.client.getContactById(phoneNumber);
+					await contatoDesbloquear.unblock();
+					apiStatus = "✅ API (Sucesso)";
+				} catch (unblockError) {
+					this.logger.error("Erro ao desbloquear contato na API:", unblockError);
+					apiStatus = `❌ API (${unblockError.message})`;
+				}
+
+				// 2. Tenta desbloquear o contato localmente
+				try {
+					const pnClean = phoneNumber.split("@")[0];
+					await this.database.removeLocalBlock(pnClean);
+					localStatus = "✅ Local (Sucesso)";
+				} catch (localError) {
+					this.logger.error("Erro ao desbloquear contato localmente:", localError);
+					localStatus = `❌ Local (${localError.message})`;
+				}
+
+				// Cria a resposta
+				const responseMessage = `*Resultado do Desbloqueio:*\n- ${apiStatus}\n- ${localStatus}\n\nContato: ${phoneNumber}`;
 
 				return new ReturnMessage({
 					chatId,
-					content: `✅ Contato ${phoneNumber} desbloqueado com sucesso.`
+					content: responseMessage
 				});
-			} catch (unblockError) {
-				this.logger.error("Erro ao desbloquear contato:", unblockError);
-
+			} catch (err) {
+				this.logger.error("Erro ao processar desbloqueio:", err);
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao desbloquear contato: ${unblockError.message}`
+					content: `❌ Erro inesperado ao desbloquear contato: ${err.message}`
 				});
 			}
 		} catch (error) {
@@ -1978,18 +2017,58 @@ Break down the cost by category and provide a total estimated cost.`;
 						specialGroupResults[phoneNumber] = removeResults;
 					}
 
-					// Tenta bloquear o contato
-					const contact = await bot.client.getContactById(phoneNumber);
-					await contact.block();
+					let apiOk = false;
+					let localOk = false;
+					let apiError = "";
+					let localError = "";
 
-					results.push({ id: phoneNumber, status: "Bloqueado", message: "Sucesso" });
-				} catch (blockError) {
-					this.logger.error(`Erro ao bloquear contato ${phoneNumber}:`, blockError);
+					// 1. Tenta bloquear o contato na API externa
+					try {
+						const contact = await bot.client.getContactById(phoneNumber);
+						await contact.block();
+						apiOk = true;
+					} catch (blockError) {
+						this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, blockError);
+						apiError = blockError.message ?? "Erro API";
+					}
+
+					// 2. Tenta bloquear o contato localmente
+					try {
+						const pnClean = phoneNumber.split("@")[0];
+						await this.database.addLocalBlock(pnClean);
+						localOk = true;
+					} catch (dbError) {
+						this.logger.error(`Erro ao bloquear contato ${phoneNumber} localmente:`, dbError);
+						localError = dbError.message ?? "Erro Local";
+					}
+
+					if (apiOk && localOk) {
+						results.push({
+							id: phoneNumber,
+							status: "Bloqueado",
+							message: "Sucesso (API & Local)"
+						});
+					} else {
+						let statusMsg = "";
+						if (apiOk) statusMsg += "API: ✅ ";
+						else statusMsg += `API: ❌ (${apiError}) `;
+
+						if (localOk) statusMsg += "Local: ✅";
+						else statusMsg += `Local: ❌ (${localError})`;
+
+						results.push({
+							id: phoneNumber,
+							status: apiOk || localOk ? "Parcial" : "Erro",
+							message: statusMsg
+						});
+					}
+				} catch (err) {
+					this.logger.error(`Erro ao processar contato ${phoneNumber}:`, err);
 
 					results.push({
 						id: phoneNumber,
 						status: "Erro",
-						message: blockError.message ?? "Erro desconhecido"
+						message: err.message ?? "Erro desconhecido"
 					});
 				}
 			}
@@ -2261,18 +2340,30 @@ Break down the cost by category and provide a total estimated cost.`;
 					// Adiciona os resultados deste contato
 					contactResults.push(results);
 
-					// Tenta bloquear este contato
+					// Tenta bloquear este contato (API e Local)
 					try {
-						await contact.block();
-						this.logger.info(`Contato ${phoneNumber} bloqueado.`);
+						// API
+						try {
+							await contact.block();
+						} catch (apiError) {
+							this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, apiError);
+						}
+						// Local
+						try {
+							const pnClean = phoneNumber.split("@")[0];
+							await this.database.addLocalBlock(pnClean);
+						} catch (localError) {
+							this.logger.error(`Erro ao bloquear contato ${phoneNumber} localmente:`, localError);
+						}
+
+						this.logger.info(`Contato ${phoneNumber} bloqueado (API/Local).`);
 					} catch (blockError) {
-						this.logger.error(`Erro ao bloquear contato ${phoneNumber}:`, blockError);
+						this.logger.error(`Erro ao processar bloqueio de ${phoneNumber}:`, blockError);
 						results.status = "Erro ao bloquear";
 						results.error = blockError.message;
 					}
 				} catch (contactError) {
 					this.logger.error(`Erro ao processar contato ${phoneNumber}:`, contactError);
-
 					contactResults.push({
 						phoneNumber,
 						status: "Erro",
@@ -2286,7 +2377,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			// Converte o conjunto para array para facilitar o processamento
 			const allContacts = Array.from(allContactsSet);
 
-			// Bloqueia todos os contatos coletados dos grupos
+			// Bloqueia todos os contatos coletados dos grupos (API e Local)
 			let blockedCount = 0;
 			let blockErrors = 0;
 
@@ -2301,9 +2392,21 @@ Break down the cost by category and provide a total estimated cost.`;
 						continue;
 					}
 
-					// Tenta bloquear o contato
-					const contactToBlock = await bot.client.getContactById(contactId);
-					await contactToBlock.block();
+					// API
+					try {
+						const contactToBlock = await bot.client.getContactById(contactId);
+						await contactToBlock.block();
+					} catch (apiErr) {
+						this.logger.error(`Erro ao bloquear membro ${contactId} na API:`, apiErr);
+					}
+
+					// Local
+					try {
+						const pnClean = contactId.split("@")[0];
+						await this.database.addLocalBlock(pnClean);
+					} catch (localErr) {
+						this.logger.error(`Erro ao bloquear membro ${contactId} localmente:`, localErr);
+					}
 
 					blockedCount++;
 				} catch (blockError) {
@@ -2417,18 +2520,58 @@ Break down the cost by category and provide a total estimated cost.`;
 				}
 
 				try {
-					// Tenta desbloquear o contato
-					const contact = await bot.client.getContactById(phoneNumber);
-					await contact.unblock();
+					let apiOk = false;
+					let localOk = false;
+					let apiError = "";
+					let localError = "";
 
-					results.push({ id: phoneNumber, status: "Desbloqueado", message: "Sucesso" });
-				} catch (unblockError) {
-					this.logger.error(`Erro ao desbloquear contato ${phoneNumber}:`, unblockError);
+					// 1. Tenta desbloquear o contato na API externa
+					try {
+						const contact = await bot.client.getContactById(phoneNumber);
+						await contact.unblock();
+						apiOk = true;
+					} catch (unblockError) {
+						this.logger.error(`Erro ao desbloquear contato ${phoneNumber} na API:`, unblockError);
+						apiError = unblockError.message ?? "Erro API";
+					}
+
+					// 2. Tenta desbloquear o contato localmente
+					try {
+						const pnClean = phoneNumber.split("@")[0];
+						await this.database.removeLocalBlock(pnClean);
+						localOk = true;
+					} catch (dbError) {
+						this.logger.error(`Erro ao desbloquear contato ${phoneNumber} localmente:`, dbError);
+						localError = dbError.message ?? "Erro Local";
+					}
+
+					if (apiOk && localOk) {
+						results.push({
+							id: phoneNumber,
+							status: "Desbloqueado",
+							message: "Sucesso (API & Local)"
+						});
+					} else {
+						let statusMsg = "";
+						if (apiOk) statusMsg += "API: ✅ ";
+						else statusMsg += `API: ❌ (${apiError}) `;
+
+						if (localOk) statusMsg += "Local: ✅";
+						else statusMsg += `Local: ❌ (${localError})`;
+
+						results.push({
+							id: phoneNumber,
+							status: apiOk || localOk ? "Parcial" : "Erro",
+							message: statusMsg
+						});
+					}
+				} catch (err) {
+					this.logger.error(`Erro ao processar contato ${phoneNumber}:`, err);
 
 					results.push({
 						id: phoneNumber,
 						status: "Erro",
-						message: unblockError.message ?? "Erro desconhecido"
+						message: err.message ?? "Erro desconhecido"
 					});
 				}
 			}
@@ -2735,15 +2878,27 @@ Break down the cost by category and provide a total estimated cost.`;
 
 				results.totalContacts = allContacts.size;
 
-				// Bloqueia todos os contatos coletados dos grupos não-especiais
+				// Bloqueia todos os contatos coletados dos grupos não-especiais (API e Local)
 				for (const contactId of allContacts) {
 					try {
 						// Verifica se não é o próprio usuário ou o contato alvo
 						if (contactId === message.author || contactId === phoneNumber) continue;
 
-						// Tenta bloquear o contato
-						const contactToBlock = await bot.client.getContactById(contactId);
-						await contactToBlock.block();
+						// API
+						try {
+							const contactToBlock = await bot.client.getContactById(contactId);
+							await contactToBlock.block();
+						} catch (apiErr) {
+							this.logger.error(`Erro ao bloquear membro ${contactId} na API:`, apiErr);
+						}
+
+						// Local
+						try {
+							const pnClean = contactId.split("@")[0];
+							await this.database.addLocalBlock(pnClean);
+						} catch (localErr) {
+							this.logger.error(`Erro ao bloquear membro ${contactId} localmente:`, localErr);
+						}
 
 						results.blockedContacts++;
 					} catch (blockError) {
@@ -2752,10 +2907,24 @@ Break down the cost by category and provide a total estimated cost.`;
 					}
 				}
 
-				// Bloqueia o contato alvo por último
+				// Bloqueia o contato alvo por último (API e Local)
 				try {
-					await contact.block();
-					this.logger.info(`Contato alvo ${phoneNumber} bloqueado.`);
+					// API
+					try {
+						await contact.block();
+					} catch (apiErr) {
+						this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber} na API:`, apiErr);
+					}
+
+					// Local
+					try {
+						const pnClean = phoneNumber.split("@")[0];
+						await this.database.addLocalBlock(pnClean);
+					} catch (localErr) {
+						this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber} localmente:`, localErr);
+					}
+
+					this.logger.info(`Contato alvo ${phoneNumber} bloqueado (API/Local).`);
 				} catch (blockTargetError) {
 					this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber}:`, blockTargetError);
 					results.errors++;

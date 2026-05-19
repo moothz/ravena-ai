@@ -139,6 +139,14 @@ Convites ou JIDs banidos permanentemente.
 | `jid` | TEXT | JID banido |
 | `timestamp` | INTEGER | Data do banimento (ms) |
 
+### `local_blocks`
+Números ou LIDs bloqueados localmente que o bot ignora completamente.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `number` | TEXT PK | Número de telefone ou LID (sem @c.us/@s.w.net) |
+| `timestamp` | INTEGER | Data do bloqueio (ms) |
+
 ---
 
 ## 💬 custom_commands.db

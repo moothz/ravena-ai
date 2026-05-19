@@ -441,6 +441,23 @@ class Database {
 		return this.coreRepo.isUserInviteBlocked(phoneNumber);
 	}
 
+	// --- Local Blocks ---
+
+	async addLocalBlock(phoneNumber) {
+		this.triggerBackupStart();
+		return this.coreRepo.addLocalBlock(phoneNumber);
+	}
+	async removeLocalBlock(phoneNumber) {
+		this.triggerBackupStart();
+		return this.coreRepo.removeLocalBlock(phoneNumber);
+	}
+	async isLocalBlocked(phoneNumber) {
+		return this.coreRepo.isLocalBlocked(phoneNumber);
+	}
+	async getLocalBlocks() {
+		return this.coreRepo.getLocalBlocks();
+	}
+
 	// --- Blocked Invites ---
 
 	async saveBlockedInvite(code, jid) {
