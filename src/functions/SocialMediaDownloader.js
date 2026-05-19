@@ -1,651 +1,560 @@
 const path = require("path");
-const { exec } = require("child_process");
+const axios = require("axios");
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
+const { toMp3 } = require("../utils/Conversions");
 const crypto = require("crypto");
-const youtubedl = require("youtube-dl-exec");
+const yts = require("youtube-search-api");
 
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
 
-const COMMON_YTDLP_ARGS = {
-	"js-runtimes": "node",
-	"no-check-certificates": true,
-	"no-warnings": true,
-	"extractor-args": "youtube:player_client=android_vr,web_safari",
-	"add-header": [
-		"referer:https://www.google.com/",
-		"user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-	]
-};
+// Inicializa o banco de dados de cache
+database.getSQLiteDb(
+	"smd_cache",
+	`
+  CREATE TABLE IF NOT EXISTS smd_cache (
+    url TEXT PRIMARY KEY,
+    platform TEXT,
+    json_data TEXT,
+    timestamp INTEGER
+  );
+`
+);
 
 /**
- * Executa uma promise com timeout
+ * Gerenciador de Cache para Downloads
  */
-function withTimeout(promise, ms, errorMessage = "Tempo limite excedido") {
-	let timeoutId;
-	const timeoutPromise = new Promise((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(errorMessage));
-		}, ms);
-	});
-
-	return Promise.race([promise, timeoutPromise]).finally(() => {
-		clearTimeout(timeoutId);
-	});
-}
-
-// Sistema de cache para o SocialMediaDownloader
 class SMDCacheManager {
-	constructor(databasePath) {
-		this.cachePath = path.join(databasePath, "smd-cache.json");
+	constructor() {
+		this.dbName = "smd_cache";
+		this.maxAgeDays = 30;
+		this.maxSizeGB = 30;
 	}
 
-	/**
-	 * Obtém o timestamp atual no formato legível
-	 * @returns {string} Timestamp formatado
-	 */
-	getTimestamp() {
-		const tzoffset = new Date().getTimezoneOffset() * 60000; // Offset em milissegundos
-		const localISOTime = new Date(Date.now() - tzoffset)
-			.toISOString()
-			.replace(/T/, " ")
-			.replace(/\..+/, "");
-		return localISOTime;
-	}
+	async getCache(url) {
+		const row = await database.dbGet(this.dbName, "SELECT json_data FROM smd_cache WHERE url = ?", [
+			url
+		]);
+		if (row) {
+			const data = JSON.parse(row.json_data);
+			// Verifica se os arquivos ainda existem
+			const allFilesExist = await Promise.all(
+				data.files.map(async (f) => {
+					try {
+						await fs.access(f.path);
+						return true;
+					} catch {
+						return false;
+					}
+				})
+			);
 
-	/**
-	 * Lê o arquivo de cache, criando-o se não existir
-	 * @returns {Promise<Object>} Objeto de cache parseado
-	 */
-	async _readCache() {
-		try {
-			const cacheContent = await fs.readFile(this.cachePath, "utf8");
-			return JSON.parse(cacheContent);
-		} catch (error) {
-			// Se o arquivo não existe ou não pode ser lido, retorna um cache vazio
-			logger.error(`[_readCache] Erro, reiniciando cache.`);
-			await this._writeCache({});
-			return {};
-		}
-	}
-
-	/**
-	 * Escreve o cache inteiro no arquivo
-	 * @param {Object} cache - O objeto de cache a ser escrito
-	 */
-	async _writeCache(cache) {
-		try {
-			await fs.writeFile(this.cachePath, JSON.stringify(cache, null, 2), "utf8");
-		} catch (error) {
-			logger.error("Erro ao escrever cache:", error);
-			throw error;
-		}
-	}
-
-	/**
-	 * Verifica se um arquivo existe
-	 * @param {string} filePath - Caminho do arquivo
-	 * @returns {Promise<boolean>} Verdadeiro se o arquivo existir
-	 */
-	async fileExists(filePath) {
-		try {
-			await fs.access(filePath);
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
-	/**
-	 * Armazena informações de download no cache
-	 * @param {string} url - URL do conteúdo baixado
-	 * @param {Array<string>} filePaths - Caminhos dos arquivos baixados
-	 * @param {string} platform - Plataforma de origem (instagram, tiktok, etc)
-	 */
-	async storeDownloadInfo(url, filePaths, platform) {
-		const cache = await this._readCache();
-
-		// Normaliza a URL como chave do cache
-		const normalizedUrl = url.trim().toLowerCase();
-
-		// Armazena os dados no cache
-		cache[normalizedUrl] = {
-			url,
-			platform,
-			files: filePaths,
-			timestamp: this.getTimestamp(),
-			ts: Math.round(+new Date() / 1000)
-		};
-
-		// Salva o cache atualizado
-		await this._writeCache(cache);
-	}
-
-	/**
-	 * Verifica se o conteúdo da URL já foi baixado e ainda existe
-	 * @param {string} url - URL do conteúdo
-	 * @returns {Promise<Object|null>} Informações do cache ou null se não existe
-	 */
-	async getCachedDownload(url) {
-		const cache = await this._readCache();
-		const normalizedUrl = url.trim().toLowerCase();
-
-		if (!cache[normalizedUrl]) {
-			return null;
-		}
-
-		const cacheEntry = cache[normalizedUrl];
-
-		// Verifica se todos os arquivos ainda existem
-		if (cacheEntry.files && Array.isArray(cacheEntry.files)) {
-			for (const filePath of cacheEntry.files) {
-				const fileStillExists = await this.fileExists(filePath);
-				if (!fileStillExists) {
-					// Se algum arquivo não existir, considera o cache inválido
-					logger.info(`[getCachedDownload] Arquivo em cache não encontrado: ${filePath}`);
-					return null;
-				}
+			if (allFilesExist.every((exists) => exists)) {
+				return data;
 			}
-
-			// Todos os arquivos existem, retorna a entrada do cache
-			logger.info(`[getCachedDownload] Cache encontrado para: ${url}`);
-			return {
-				files: cacheEntry.files,
-				platform: cacheEntry.platform,
-				fromCache: true
-			};
+			// Se algum arquivo sumiu, invalida o cache
+			await this.deleteCache(url);
 		}
-
 		return null;
 	}
+
+	async setCache(url, platform, filename, files) {
+		const data = { platform, filename, files, timestamp: Date.now() };
+		await database.dbRun(
+			this.dbName,
+			"INSERT OR REPLACE INTO smd_cache (url, platform, json_data, timestamp) VALUES (?, ?, ?, ?)",
+			[url, platform, JSON.stringify(data), Date.now()]
+		);
+		// Limpeza em background (não aguarda)
+		this.cleanup().catch((e) => logger.error("Erro no cleanup de cache:", e.message));
+	}
+
+	async deleteCache(url) {
+		await database.dbRun(this.dbName, "DELETE FROM smd_cache WHERE url = ?", [url]);
+	}
+
+	async cleanup() {
+		try {
+			// 1. Deleta entradas antigas (30 dias)
+			const thirtyDaysAgo = Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000;
+			const oldEntries = await database.dbAll(
+				this.dbName,
+				"SELECT url, json_data FROM smd_cache WHERE timestamp < ?",
+				[thirtyDaysAgo]
+			);
+
+			for (const entry of oldEntries) {
+				const data = JSON.parse(entry.json_data);
+				for (const file of data.files) {
+					await fs.unlink(file.path).catch(() => {});
+				}
+				await this.deleteCache(entry.url);
+			}
+
+			// 2. Limpeza por tamanho (30GB)
+			const stats = await this.getFolderStats(process.env.DL_FOLDER);
+			const maxSizeBytes = this.maxSizeGB * 1024 * 1024 * 1024;
+
+			if (stats.totalSize > maxSizeBytes) {
+				const targetSize = maxSizeBytes * 0.8;
+				const allEntries = await database.dbAll(
+					this.dbName,
+					"SELECT url, json_data FROM smd_cache ORDER BY timestamp ASC"
+				);
+
+				let currentSize = stats.totalSize;
+				for (const entry of allEntries) {
+					if (currentSize <= targetSize) break;
+					const data = JSON.parse(entry.json_data);
+					for (const file of data.files) {
+						const fileSize = await this.getFileSize(file.path);
+						await fs.unlink(file.path).catch(() => {});
+						currentSize -= fileSize;
+					}
+					await this.deleteCache(entry.url);
+				}
+			}
+		} catch (error) {
+			logger.error("Erro durante o cleanup do cache:", error.message);
+		}
+	}
+
+	async getFolderStats(dirPath) {
+		const files = await fs.readdir(dirPath);
+		let totalSize = 0;
+		for (const file of files) {
+			try {
+				const stats = await fs.stat(path.join(dirPath, file));
+				if (stats.isFile()) totalSize += stats.size;
+			} catch (e) {}
+		}
+		return { totalSize };
+	}
+
+	async getFileSize(filePath) {
+		try {
+			const stats = await fs.stat(filePath);
+			return stats.size;
+		} catch {
+			return 0;
+		}
+	}
 }
 
-// Inicializa o cache manager
-const smdCacheManager = new SMDCacheManager(database.databasePath);
+const cacheManager = new SMDCacheManager();
 
 /**
  * Detecta a plataforma da URL
- * @param {string} url - URL do conteúdo
- * @returns {string|null} - Nome da plataforma ou null se não for reconhecida
  */
 function detectPlatform(url) {
-	if (!url) return null;
-
+	if (!url) return "Desconhecido";
 	const platforms = {
-		"youtube.com": "youtube",
-		"youtu.be": "youtube",
-		"tiktok.com": "tiktok",
-		"instagram.com": "instagram",
-		"facebook.com": "facebook",
-		"fb.watch": "facebook",
-		"twitter.com": "twitter",
-		"x.com": "twitter",
-		"twitch.tv": "twitch",
-		"snapchat.com": "snapchat",
-		"reddit.com": "reddit",
-		"vimeo.com": "vimeo",
-		"streamable.com": "streamable",
-		"pinterest.com": "pinterest",
-		"linkedin.com": "linkedin",
-		"bilibili.com": "bilibili"
+		"youtube.com": "YouTube",
+		"youtu.be": "YouTube",
+		"tiktok.com": "TikTok",
+		"instagram.com": "Instagram",
+		"facebook.com": "Facebook",
+		"fb.watch": "Facebook",
+		"twitter.com": "Twitter",
+		"x.com": "Twitter",
+		"twitch.tv": "Twitch",
+		"snapchat.com": "Snapchat",
+		"reddit.com": "Reddit",
+		"vimeo.com": "Vimeo",
+		"streamable.com": "Streamable",
+		"pinterest.com": "Pinterest",
+		"linkedin.com": "LinkedIn",
+		"bilibili.com": "BiliBili",
+		"soundcloud.com": "SoundCloud"
 	};
 
 	try {
-		const urlObj = new URL(url);
-		const hostname = urlObj.hostname.toLowerCase();
-
+		const hostname = new URL(url).hostname.toLowerCase();
 		for (const [domain, platform] of Object.entries(platforms)) {
-			if (hostname.includes(domain)) {
-				return platform;
-			}
+			if (hostname.includes(domain)) return platform;
+		}
+	} catch (e) {}
+	return "Social Media";
+}
+
+/**
+ * Busca letras de música
+ */
+async function searchLyrics(query) {
+	try {
+		logger.info(`Buscando letra para: ${query}`);
+		const response = await axios.get(`https://lrclib.net/api/search`, {
+			params: { q: query },
+			timeout: 10000
+		});
+		if (response.data && response.data.length > 0) {
+			const bestMatch = response.data[0];
+			return {
+				title: bestMatch.trackName,
+				artist: bestMatch.artistName,
+				lyrics: bestMatch.plainLyrics || bestMatch.syncedLyrics
+			};
 		}
 	} catch (error) {
-		logger.error("Erro ao analisar URL:", error);
+		logger.error("Erro ao buscar letra:", error.message);
 	}
-
 	return null;
 }
 
 /**
- * Lê o conteúdo de arquivos de texto encontrados nos arquivos baixados
- * @param {Array<string>} filePaths - Caminhos dos arquivos baixados
- * @returns {Promise<string|null>} - Conteúdo do arquivo de texto ou null
+ * Faz o download de um arquivo de uma URL
  */
-async function readTextFileContent(filePaths) {
-	const textFiles = filePaths.filter((file) => file.toLowerCase().endsWith(".txt"));
+async function downloadFile(url, filename) {
+	const dlPath = path.join(process.env.DL_FOLDER, filename);
+	const writer = fsSync.createWriteStream(dlPath);
 
-	if (textFiles.length === 0) {
-		return null;
-	}
+	const response = await axios({
+		url,
+		method: "GET",
+		responseType: "stream"
+	});
 
-	try {
-		// Lê apenas o primeiro arquivo de texto encontrado
-		const content = await fs.readFile(textFiles[0], "utf8");
-		return content;
-	} catch (error) {
-		logger.error(`Erro ao ler arquivo de texto: ${error.message}`);
-		return null;
-	}
+	response.data.pipe(writer);
+
+	return new Promise((resolve, reject) => {
+		writer.on("finish", () => resolve(dlPath));
+		writer.on("error", reject);
+	});
 }
 
 /**
- * Download genérico usando youtube-dl-exec
- * @param {string} url - URL do conteúdo
- * @param {string} platform - Plataforma identificada
- * @returns {Promise<Array<string>>} - Array com caminhos dos arquivos baixados
+ * Envia o comando para o Cobalt
  */
-async function downloadWithYoutubeDL(url, platform) {
-	// Gera um nome temporário para o arquivo
-	const hash = crypto.randomBytes(2).toString("hex");
-	const tempName = `smd-${platform}-${hash}`;
-	const outputPath = path.join(process.env.DL_FOLDER, `${tempName}.%(ext)s`);
-
+async function cobaltRequest(url, options = {}) {
+	const cobaltUrl = process.env.COBALT_API_URL || "http://cobalt:9000";
 	try {
-		logger.info(`Baixando de ${platform}: ${url}`);
-
-		const options = {
-			o: outputPath,
-			f: "best",
-			...(process.env.YT_USE_COOKIES === "true"
-				? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
-				: {}),
-			ffmpegLocation: process.env.FFMPEG_PATH,
-			...COMMON_YTDLP_ARGS
-		};
-
-		// Para outros sites, ajusta as opções conforme necessário
-		if (platform === "tiktok") {
-			options.f = "(bestvideo+bestaudio/best)[filesize<55M]";
-		} else if (["facebook", "twitter", "x"].includes(platform)) {
-			options.f = "(bestvideo+bestaudio/best)[filesize<55M]";
-		}
-
-		const result = await withTimeout(
-			youtubedl(url, options),
-			180000,
-			`Tempo esgotado ao baixar de ${platform}. 😭`
+		const response = await axios.post(
+			`${cobaltUrl}/`,
+			{
+				url,
+				...options
+			},
+			{
+				headers: {
+					Accept: "application/json",
+					"Content-Type": "application/json"
+				},
+				timeout: 60000
+			}
 		);
-		logger.info(`Download concluído: ${result}`);
 
-		// Busca arquivos baixados na pasta de destino
-		const dlFolder = process.env.DL_FOLDER;
-		const files = await fs.readdir(dlFolder);
-		const downloadedFiles = files
-			.filter((file) => file.startsWith(`smd-${platform}-${hash}`))
-			.map((file) => path.join(dlFolder, file));
+		const data = response.data;
 
-		return downloadedFiles;
+		// Se o bot estiver rodando fora do docker (localhost), mas o cobalt retornar a URL interna (cobalt:9000),
+		// precisamos trocar para a URL externa configurada para conseguir baixar o arquivo.
+		if (data.url && data.url.includes("://cobalt:9000")) {
+			const externalUrl = process.env.COBALT_EXTERNAL_URL || cobaltUrl;
+			data.url = data.url.replace("http://cobalt:9000", externalUrl);
+		}
+
+		return data;
 	} catch (error) {
-		logger.error(`Erro ao baixar com youtube-dl: ${error.message}`);
-		throw error;
+		const errorData = error.response?.data;
+		logger.error("Erro na API Cobalt:", errorData || error.message);
+		throw new Error(errorData?.text || "O serviço de download não respondeu corretamente.");
 	}
 }
 
 /**
- * Download de conteúdo do Instagram usando instaloader
- * @param {string} url - URL do Instagram
- * @returns {Promise<Array<string>>} - Array com caminhos dos arquivos baixados
+ * Handler principal de downloads
  */
-async function downloadInstagram(url) {
-	try {
-		// Extrai o shortcode da URL
-		let shortcode = "";
-		if (url.includes("/p/")) {
-			shortcode = url.split("/p/")[1].split("/")[0];
-		} else if (url.includes("/reel/")) {
-			shortcode = url.split("/reel/")[1].split("/")[0];
-		} else {
-			// Tenta extrair de qualquer URL
-			const segments = url.split("/").filter((s) => s.length > 0);
-			shortcode = segments[segments.length - 1] || segments[segments.length - 2];
+async function downloadHandler(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const commandName = message.origin.body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
+
+	// Verifica se há URL
+	let url = args.find((arg) => arg.startsWith("http"));
+	if (!url && message.origin.quotedMsg) {
+		const quotedText =
+			message.origin.quotedMsg.body ||
+			message.origin.quotedMsg.caption ||
+			message.origin.quotedMsg.content;
+		if (quotedText) {
+			const match = quotedText.match(/https?:\/\/[^\s]+/);
+			if (match) url = match[0];
 		}
-
-		if (!shortcode) {
-			throw new Error("Não foi possível extrair o ID da postagem do Instagram");
-		}
-
-		logger.info(`Baixando postagem do Instagram ${shortcode}`);
-
-		// Pasta temporária para download
-		const hash = crypto.randomBytes(2).toString("hex");
-		const tempFolder = path.join(process.env.DL_FOLDER, `insta-${hash}`);
-		await fs.mkdir(tempFolder, { recursive: true });
-
-		// Constrói o comando instaloader
-		let instaloaderCmd = `"${process.env.INSTALOADER_PATH}" --dirname-pattern "${tempFolder}" --no-video-thumbnails --no-metadata-json --no-captions`;
-
-		// Adiciona login se disponível
-		if (process.env.INSTA_SESSION) {
-			instaloaderCmd += ` --login "${process.env.INSTA_SESSION}"`;
-		}
-
-		// Adiciona o shortcode
-		instaloaderCmd += ` -- -p ${shortcode}`;
-
-		logger.info(`Executando comando: ${instaloaderCmd}`);
-
-		// Executa o instaloader
-		return new Promise((resolve, reject) => {
-			exec(instaloaderCmd, async (error, stdout, stderr) => {
-				if (error) {
-					logger.error(`Erro ao executar instaloader: ${error.message}`);
-					return reject(error);
-				}
-
-				// Lista arquivos da pasta temporária
-				try {
-					const files = await fs.readdir(tempFolder);
-					const downloadedFiles = files.map((file) => path.join(tempFolder, file));
-
-					logger.info(`Arquivos baixados do Instagram: ${JSON.stringify(downloadedFiles)}`);
-					resolve(downloadedFiles);
-				} catch (fsError) {
-					logger.error(`Erro ao listar arquivos baixados: ${fsError.message}`);
-					reject(fsError);
-				}
-			});
-		});
-	} catch (error) {
-		logger.error(`Erro ao baixar do Instagram: ${error.message}`);
-		throw error;
 	}
-}
 
-/**
- * Baixa conteúdo da URL da mídia social
- * @param {string} url - URL do conteúdo
- * @param {string} userId - ID do usuário que solicitou o download
- * @param {Function} callback - Função callback(error, result)
- */
-async function downloadSocialMedia(url, userId, callback) {
-	try {
-		// Verifica se a URL é válida
-		if (!url || typeof url !== "string") {
-			return callback(new Error("URL inválida"), null);
-		}
-
-		url = url.trim();
-
-		// Verifica se é uma URL
-		try {
-			new URL(url);
-		} catch (e) {
-			return callback(new Error("URL inválida ou mal formatada"), null);
-		}
-
-		// Detecta a plataforma
-		const platform = detectPlatform(url);
-		if (!platform) {
-			return callback(new Error("Plataforma não suportada ou URL não reconhecida"), null);
-		}
-
-		// Redireciona para o YouTube Downloader para links do YouTube
-		if (platform === "youtube") {
-			return callback(new Error("Para baixar vídeos do YouTube, use o comando !yt"), null);
-		}
-
-		logger.info(`Baixando conteúdo de ${platform}: ${url}`);
-
-		// Verifica se já existe no cache
-		const cachedDownload = await smdCacheManager.getCachedDownload(url);
-		if (cachedDownload) {
-			logger.info(`Usando cache para URL: ${url}`);
-
-			// Lê o conteúdo do arquivo de texto, se existir
-			const textContent = await readTextFileContent(cachedDownload.files);
-
-			// Filtra arquivos que não são de texto
-			const mediaFiles = cachedDownload.files.filter(
-				(file) => !file.toLowerCase().endsWith(".txt")
+	if (!url) {
+		const query = args.join(" ");
+		if (query && query.length > 2) {
+			bot.sendReturnMessages(
+				new ReturnMessage({
+					chatId,
+					content: `🔍 Buscando por "*${query}*" no YouTube...`
+				}),
+				group
 			);
 
-			return callback(null, {
-				platform: cachedDownload.platform,
-				url,
-				files: mediaFiles,
-				textContent,
-				fromCache: true
-			});
+			try {
+				const searchResults = await yts.GetListByKeyword(query, false, 5);
+				if (searchResults && searchResults.items && searchResults.items.length > 0) {
+					const count = Math.min(searchResults.items.length, 5);
+					const randomIndex = Math.floor(Math.random() * count);
+					const item = searchResults.items[randomIndex];
+					url = `https://www.youtube.com/watch?v=${item.id}`;
+				}
+			} catch (searchError) {
+				logger.error(`Erro na busca do YouTube: ${searchError.message}`);
+			}
 		}
-
-		// Baixa o conteúdo dependendo da plataforma
-		let files = [];
-
-		if (platform === "instagram") {
-			files = await downloadInstagram(url);
-		} else {
-			files = await downloadWithYoutubeDL(url, platform);
-		}
-
-		logger.info(`Arquivos baixados: ${JSON.stringify(files)}`);
-
-		// Verifica se baixou algum arquivo
-		if (!files || files.length === 0) {
-			return callback(new Error("Não foi possível baixar nenhum arquivo da URL fornecida"), null);
-		}
-
-		// Armazena no cache
-		await smdCacheManager.storeDownloadInfo(url, files, platform);
-
-		// Lê o conteúdo do arquivo de texto, se existir
-		const textContent = await readTextFileContent(files);
-
-		// Filtra arquivos que não são de texto
-		const mediaFiles = files.filter((file) => !file.toLowerCase().endsWith(".txt"));
-
-		// Retorna os resultados
-		callback(null, {
-			platform,
-			url,
-			files: mediaFiles,
-			textContent,
-			fromCache: false
-		});
-	} catch (error) {
-		logger.error(`Erro ao baixar conteúdo: ${error.message}`);
-		callback(error, null);
 	}
-}
 
-/**
- * Comando para baixar conteúdo de mídias sociais
- * @param {WhatsAppBot} bot - Instância do bot
- * @param {Object} message - Dados da mensagem
- * @param {Array} args - Argumentos do comando
- * @param {Object} group - Dados do grupo
- * @returns {Promise<ReturnMessage|Array<ReturnMessage>>} - ReturnMessage ou array de ReturnMessages
- */
-async function downloadCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	const returnMessages = [];
-
-	if (args.length === 0) {
-		// Lista das plataformas suportadas
-		const supportedPlatforms = [
-			"📹 *YouTube* (use !yt)",
-			"📱 *TikTok*",
-			"📸 *Instagram*",
-			"👥 *Facebook*",
-			"🐦 *X (Twitter)*",
-			"🎮 *Twitch*",
-			"👻 *Snapchat*",
-			"🔴 *Reddit*",
-			"🎬 *Vimeo*",
-			"🎥 *Streamable*",
-			"📌 *Pinterest*",
-			"👔 *LinkedIn*",
-			"🌟 *BiliBili*"
-		];
-
+	if (!url) {
 		return new ReturnMessage({
 			chatId,
-			content: `*SocialMediaDownloader*\n\nBaixe vídeos e fotos das suas redes sociais favoritas!\n\nUso: !download [URL]\n\nPlataformas suportadas:\n${supportedPlatforms.join("\n")}\n\nVocê também pode usar atalhos para algumas plataformas:\n!insta, !tiktok, !x ou !twitter`
+			content: `❌ Por favor, forneça uma URL válida ou um texto para busca.\nExemplo: \`${bot.prefix}${commandName} fear of the dark\``
 		});
 	}
 
-	const url = args.join(" ");
+	const platform = detectPlatform(url);
+	const isAudioOnly =
+		commandName.includes("audio") ||
+		commandName.includes("musica") ||
+		commandName === "sr" ||
+		args.includes("-audio") ||
+		args.includes("-musica");
+	const wantLyrics = commandName.includes("musica") || args.includes("-musica");
 
-	// Envia mensagem de processamento
+	// Verifica Cache
+	const cacheKey = `${url}_${isAudioOnly ? "audio" : "video"}`;
+	const cachedData = await cacheManager.getCache(cacheKey);
+
+	if (cachedData) {
+		logger.info(`Cache encontrado para: ${url}`);
+		return await sendProcessedMedia(
+			bot,
+			chatId,
+			group,
+			cachedData.platform,
+			cachedData.filename,
+			cachedData.files,
+			isAudioOnly,
+			wantLyrics,
+			bot.prefix
+		);
+	}
+
+	// Mensagem inicial
+
 	bot.sendReturnMessages(
 		new ReturnMessage({
 			chatId,
-			content: `🔄 Processando download da URL: ${url}\nEste processo pode levar alguns segundos...`
+			content: `⏳ Processando download para *${platform}*...`
 		}),
 		group
 	);
 
-	return new Promise((resolve) => {
-		downloadSocialMedia(url, message.author, async (error, result) => {
-			if (error) {
-				logger.error(`Erro ao baixar conteúdo: ${error.message}`);
+	try {
+		// Solicitação ao Cobalt
+		const cobaltOptions = {
+			videoQuality: "720",
+			filenameStyle: "pretty"
+		};
 
-				const errorMsg = new ReturnMessage({
-					chatId,
-					content: `❌ Erro ao baixar conteúdo: ${error.message}`
+		if (isAudioOnly) {
+			cobaltOptions.downloadMode = "audio";
+			cobaltOptions.audioFormat = "mp3";
+		}
+
+		const result = await cobaltRequest(url, cobaltOptions);
+
+		if (result.status === "error") {
+			throw new Error(result.text || "Erro desconhecido no serviço de download.");
+		}
+
+		// Lista de itens para baixar
+		const items = [];
+		if (result.url) {
+			items.push({
+				url: result.url,
+				filename: result.filename || `download_${crypto.randomBytes(4).toString("hex")}`
+			});
+		} else if (result.picker) {
+			result.picker.forEach((p, index) => {
+				items.push({
+					url: p.url,
+					filename: p.filename || `download_${index}_${crypto.randomBytes(4).toString("hex")}`,
+					type: p.type // 'photo', 'video', etc.
 				});
+			});
+		}
 
-				await bot.sendReturnMessages(errorMsg, group);
-				resolve(returnMessages);
-				return;
+		if (items.length === 0) {
+			throw new Error("Não foi possível obter os links das mídias.");
+		}
+
+		const displayFilename = result.filename || items[0].filename;
+		logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename}`);
+
+		const processedFiles = [];
+		for (const item of items) {
+			// Download local
+			const tempFilename = `${crypto.randomBytes(4).toString("hex")}_${item.filename}`;
+			const filePath = await downloadFile(item.url, tempFilename);
+
+			// Preparação da mídia
+			let finalFilePath = filePath;
+			let finalMime = isAudioOnly ? "audio/mpeg" : "video/mp4";
+
+			// Detecção de tipo (Imagem vs Vídeo)
+			const ext = path.extname(item.filename).toLowerCase();
+			if (
+				item.type === "photo" ||
+				item.type === "image" ||
+				[".jpg", ".jpeg", ".png", ".webp"].includes(ext)
+			) {
+				finalMime = "image/jpeg";
 			}
 
-			try {
-				// Prepara a legenda/mensagem de texto
-				let caption = `*SocialMediaDownloader* - ${result.platform.charAt(0).toUpperCase() + result.platform.slice(1)}\nLink: ${result.url}`;
-
-				if (result.fromCache) {
-					caption += "\n(Conteúdo em cache)";
-				}
-
-				// Se há conteúdo de texto e apenas 1 arquivo de mídia, adiciona o texto na legenda
-				if (result.textContent && result.files.length === 1) {
-					caption += `\n\n${result.textContent}`;
-				}
-
-				// Envia os arquivos de mídia
-				for (const filePath of result.files) {
-					const media = await bot.createMedia(filePath);
-
-					const mediaMsg = new ReturnMessage({
-						chatId,
-						content: media,
-						options: {
-							caption
-						}
-					});
-
-					// Limpa a legenda após o primeiro arquivo para não repetir
-					caption = "";
-
-					await bot.sendReturnMessages(mediaMsg, group);
-				}
-
-				// Se há conteúdo de texto e mais de 1 arquivo de mídia, envia o texto como mensagem separada
-				if (result.textContent && result.files.length > 1) {
-					const textMsg = new ReturnMessage({
-						chatId,
-						content: `*SocialMediaDownloader* - Descrição do conteúdo:\n\n${result.textContent}`
-					});
-
-					await bot.sendReturnMessages(textMsg, group);
-				}
-
-				// Se não houver arquivos de mídia, envia uma mensagem informativa
-				if (result.files.length === 0) {
-					const noMediaMsg = new ReturnMessage({
-						chatId,
-						content: `⚠️ Nenhum arquivo de mídia encontrado na URL: ${result.url}`
-					});
-
-					await bot.sendReturnMessages(noMediaMsg, group);
-				}
-
-				resolve(returnMessages);
-			} catch (sendError) {
-				logger.error(`Erro ao enviar mídia: ${sendError}`);
-
-				const errorMsg = new ReturnMessage({
-					chatId,
-					content: `❌ Erro ao enviar mídia: ${sendError.message}`
-				});
-
-				await bot.sendReturnMessages(errorMsg, group);
-				resolve(returnMessages);
+			// Se pediu áudio mas veio vídeo
+			if (
+				isAudioOnly &&
+				!filePath.endsWith(".mp3") &&
+				!filePath.endsWith(".ogg") &&
+				!filePath.endsWith(".m4a")
+			) {
+				const mp3Path = await toMp3(filePath);
+				finalFilePath = mp3Path;
+				finalMime = "audio/mpeg";
+				fs.unlink(filePath).catch(() => {});
 			}
-		});
-	});
+
+			processedFiles.push({ path: finalFilePath, mimetype: finalMime });
+		}
+
+		// Salva no Cache
+		await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
+
+		// Envia Mídia
+		await sendProcessedMedia(
+			bot,
+			chatId,
+			group,
+			platform,
+			displayFilename,
+			processedFiles,
+			isAudioOnly,
+			wantLyrics,
+			bot.prefix
+		);
+	} catch (error) {
+		logger.error(`Erro no download: ${error.message}`);
+		await bot.sendReturnMessages(
+			new ReturnMessage({
+				chatId,
+				content: `❌ *Erro ao processar download:*\n${error.message}`
+			}),
+			group
+		);
+	}
 }
 
-// Comandos utilizando a classe Command
-const commands = [
-	new Command({
-		name: "download",
-		caseSensitive: false,
-		description: "Baixa conteúdo de várias plataformas de mídia social",
-		category: "downloaders",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: downloadCommand
-	}),
+/**
+ * Função auxiliar para enviar a mídia processada (usada pelo cache e pelo download direto)
+ */
+async function sendProcessedMedia(
+	bot,
+	chatId,
+	group,
+	platform,
+	filename,
+	files,
+	isAudioOnly,
+	wantLyrics,
+	prefix
+) {
+	const returnMessages = [];
+	for (const file of files) {
+		const media = await bot.createMedia(file.path, file.mimetype);
+		returnMessages.push(media);
+	}
 
-	new Command({
-		name: "insta",
-		caseSensitive: false,
-		description: "Baixa conteúdo do Instagram",
-		category: "downloaders",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: downloadCommand
-	}),
+	const caption = `✅ *Download Concluído!*${
+		files.length > 1 ? ` (${files.length} itens)` : ""
+	}\n\n🌐 *Fonte:* ${platform}\n📝 *Título:* ${filename}${
+		!isAudioOnly && !returnMessages[0].mimetype.startsWith("image")
+			? `\n\n> *Dica:* Responda este vídeo com \`${prefix}extractaudio\` para obter apenas o áudio.`
+			: ""
+	}`;
 
-	new Command({
-		name: "tiktok",
-		caseSensitive: false,
-		description: "Baixa conteúdo do TikTok",
-		category: "downloaders",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: downloadCommand
-	}),
+	if (isAudioOnly) {
+		await bot.sendReturnMessages(new ReturnMessage({ chatId, content: caption }), group);
+		for (const media of returnMessages) {
+			await bot.sendReturnMessages(new ReturnMessage({ chatId, content: media }), group);
+		}
+	} else {
+		for (let i = 0; i < returnMessages.length; i++) {
+			await bot.sendReturnMessages(
+				new ReturnMessage({
+					chatId,
+					content: returnMessages[i],
+					options: i === 0 ? { caption } : {}
+				}),
+				group
+			);
+		}
+	}
 
-	new Command({
-		name: "x",
-		caseSensitive: false,
-		description: "Baixa conteúdo do X (Twitter)",
-		category: "downloaders",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: downloadCommand
-	}),
+	if (wantLyrics) {
+		const lyricsData = await searchLyrics(filename.split(".")[0]);
+		if (lyricsData) {
+			await bot.sendReturnMessages(
+				new ReturnMessage({
+					chatId,
+					content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
+				}),
+				group
+			);
+		}
+	}
+}
 
-	new Command({
-		name: "twitter",
-		caseSensitive: false,
-		description: "Baixa conteúdo do Twitter",
-		category: "downloaders",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: downloadCommand
-	})
+// Configuração dos comandos
+const downloadCommands = [
+	"download",
+	"yt",
+	"sr",
+	"x",
+	"twitter",
+	"tiktok",
+	"tk",
+	"insta",
+	"instagram",
+	"fb",
+	"facebook",
+	"download-audio",
+	"download-musica",
+	"yt-audio",
+	"yt-musica",
+	"insta-audio",
+	"tiktok-audio"
 ];
 
-//module.exports = { commands };
+const commands = downloadCommands.map(
+	(name) =>
+		new Command({
+			name,
+			caseSensitive: false,
+			description: `Baixa conteúdo de mídias sociais (${name})`,
+			category: "downloaders",
+			reactions: {
+				before: process.env.LOADING_EMOJI ?? "⌛️",
+				after: "✅",
+				error: "❌"
+			},
+			method: downloadHandler
+		})
+);
+
+module.exports = { commands };

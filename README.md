@@ -16,9 +16,9 @@ Após muitas versões e adaptações, chegamos na versão atual - tudo concentra
 ## 🛠️ Dependências e Funcionalidades
 
 ### 1. Funções Nativas (Prontas para uso via Docker)
-Tudo isso aqui vem pronto e você não precisa configurar nada externo (utiliza binários pré-instalados como `ffmpeg`, `imagemagick`, `yt-dlp`).
+Tudo isso aqui vem pronto e você não precisa configurar nada externo (utiliza binários pré-instalados como `ffmpeg`, `imagemagick`).
 - **Figurinhas (Stickers):** Criação e conversão de figurinhas estáticas e animadas.
-- **Downloaders:** Baixar vídeos e áudios do YouTube (!yt)
+- **Downloaders:** Baixar vídeos e áudios do YouTube, TikTok, Instagram e mais (!download)
 - **Jogos de Chat:** Pescaria, Pinto, Slots, Anagrama
 - **Utilidades:** Gerador de QRCodes (pixs, wifi, URL), clima, notícias, lembretes
 - **Gestão de Grupos:** Mensagens de boas-vindas, comandos personalizados, filtros de links, imagens NSFW e mais
@@ -221,7 +221,8 @@ make logs-bot      # Logs apenas do bot
 make logs-botapi   # Logs apenas do whatsgoapi
 make ps            # Status dos containers
 make update-allm   # Atualiza comandos na base do AnythingLLM
-make update-ytdl   # Atualiza o binário do yt-dlp (youtube-dl)
+
+
 make clean         # Limpa containers parados e imagens órfãs
 ```
 

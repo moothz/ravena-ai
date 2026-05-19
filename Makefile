@@ -1,4 +1,5 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi
+
 
 # Cores usando escape codes literais para garantir compatibilidade
 GREEN  := $(shell printf '\033[0;32m')
@@ -122,8 +123,7 @@ ps: ## Mostra o status de todos os containers
 update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no container
 	docker compose exec ravena-ai node update-allm-cmds.js
 
-update-ytdl: ## Atualiza o binário yt-dlp dentro do container
-	docker compose exec ravena-ai bash update-ytdl.sh
+
 
 update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o container
 	@printf "$(CYAN)Sincronizando submódulo whatsgoapi...$(NC)\n"

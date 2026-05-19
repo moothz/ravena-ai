@@ -157,11 +157,17 @@ services:
       SAFE_MODE: ${SAFE_MODE:-false}
       DEBUG: ${DEBUG:-false}
       DL_FOLDER: /app/downloads
-      YT_USE_COOKIES: ${YT_USE_COOKIES:-false}
+
+
       NOTIFY_UNKNOWN_COMMANDS: ${NOTIFY_UNKNOWN_COMMANDS:-false}
       SUPER_ADMINS: ${SUPER_ADMINS}
       LOADING_EMOJI: ${LOADING_EMOJI:-⌛️}
       CMD_WHITELIST: ${CMD_WHITELIST:-}
+
+      # Cobalt Downloader
+      COBALT_API_URL: ${COBALT_API_URL:-http://cobalt:9000}
+      COBALT_EXTERNAL_URL: ${COBALT_EXTERNAL_URL:-http://cobalt:9000}
+
 
       # External programs — hardcoded inside Docker image, no config needed
       FFMPEG_PATH: /usr/bin/ffmpeg
@@ -324,6 +330,23 @@ services:
     depends_on:
       - whatsgoapi
       - ravena-ai
+
+  # ───────────────────────────────────────────────────────────
+  # cobalt — Media Downloader API
+  # ───────────────────────────────────────────────────────────
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:latest
+    container_name: cobalt
+    restart: unless-stopped
+    networks:
+      - ravena-net
+    ports:
+      - "${COBALT_PORT:-9090}:9000"
+    environment:
+      # Use internal port 9000 as per cobalt default, mapping to 9090 (or .env)
+      - API_URL=http://cobalt:9000/
+      - API_NAME=Ravena-Cobalt
+
 
 # ─────────────────────────────────────────────────────────────
 # VOLUMES — persistent storage

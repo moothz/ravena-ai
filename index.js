@@ -8,7 +8,7 @@ const DiscordBot = require("./src/DiscordBot");
 const EventHandler = require("./src/EventHandler");
 const Logger = require("./src/utils/Logger");
 const logCleaner = require("./src/utils/LogsCleaner");
-const ytdlUpdater = require("./src/utils/YtdlUpdater");
+
 const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
 const minioSetup = require("./src/utils/MinioSetup");
@@ -24,7 +24,6 @@ const CurrencyConverter = require("./src/utils/CurrencyConverter");
  */
 async function main() {
 	logCleaner.start();
-	ytdlUpdater.start();
 
 	// Configura políticas de retenção do MinIO (Background)
 	minioSetup.init().catch((err) => console.error("[MinioSetup Error]", err));
