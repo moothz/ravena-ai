@@ -101,6 +101,7 @@ class LLMService {
 					if (config.temperature !== undefined) options.temperature = config.temperature;
 					if (config.top_k !== undefined) options.top_k = config.top_k;
 					if (config.top_p !== undefined) options.top_p = config.top_p;
+					if (config.apiKey) options.apiKey = config.apiKey;
 					if (config.timeout_multiplier) {
 						options.timeout = options.timeout
 							? options.timeout * config.timeout_multiplier
@@ -135,8 +136,8 @@ class LLMService {
 						case "openai":
 						case "deepseek":
 						case "lmstudio":
-							// Mapping for other types if needed, similar to getCompletionFromSpecificProvider
-							const providerMethod = `${config.type}Completion`;
+							const providerMethod =
+								config.type === "openai" ? "openAICompletion" : `${config.type}Completion`;
 							if (typeof this[providerMethod] === "function") {
 								response = await this[providerMethod]({
 									...completionOptions,
@@ -649,13 +650,22 @@ class LLMService {
 	async openAICompletion(options) {
 		try {
 			// Determina endpoint e chave da API com base em local ou remoto
-			const endpoint = options.useLocal
-				? `${options.customEndpoint ?? this.localEndpoint}/chat/completions`
-				: "https://api.openai.com/v1/chat/completions";
+			let endpoint = "https://api.openai.com/v1/chat/completions";
+			if (options.useLocal) {
+				endpoint = `${options.customEndpoint ?? this.localEndpoint}/chat/completions`;
+			} else if (options.customEndpoint && options.customEndpoint.trim() !== "") {
+				if (options.customEndpoint.endsWith("/chat/completions")) {
+					endpoint = options.customEndpoint;
+				} else {
+					endpoint = `${options.customEndpoint.replace(/\/$/, "")}/chat/completions`;
+				}
+			}
 
-			const apiKey = options.useLocal ? `Basic ${this.LMStudioToken}` : `Bearer ${this.openAIKey}`;
+			const apiKey = options.useLocal
+				? `Basic ${this.LMStudioToken}`
+				: `Bearer ${options.apiKey ?? this.openAIKey}`;
 
-			if (!options.useLocal && !this.openAIKey) {
+			if (!options.useLocal && !options.customEndpoint && !this.openAIKey && !options.apiKey) {
 				this.logger.error("Chave da API OpenAI não configurada");
 				throw new Error("Chave da API OpenAI não configurada");
 			}

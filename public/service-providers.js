@@ -115,6 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
                   <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleProvider('${cat}', ${index})"> Ativo
                 </div>
                 <div class="provider-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="moveProviderUp('${cat}', ${index})" title="Mover para cima"><i class="fas fa-arrow-up"></i></button>
+                    <button class="btn btn-sm btn-secondary" onclick="moveProviderDown('${cat}', ${index})" title="Mover para baixo"><i class="fas fa-arrow-down"></i></button>
                     <button class="btn btn-sm btn-info" onclick="openModal('${cat}', ${index})"><i class="fas fa-edit"></i></button>
                     <button class="btn btn-sm btn-danger" onclick="deleteProvider('${cat}', ${index})"><i class="fas fa-trash"></i></button>
                 </div>
@@ -138,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const p = config[category][index];
             document.getElementById('prov-name').value = p.name || '';
             document.getElementById('prov-url').value = p.url || '';
+            document.getElementById('prov-apiKey').value = p.apiKey || '';
             document.getElementById('prov-enabled').checked = p.enabled !== false;
             
             if (category === 'llm') {
@@ -149,6 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             document.getElementById('prov-name').value = '';
             document.getElementById('prov-url').value = '';
+            document.getElementById('prov-apiKey').value = '';
             document.getElementById('prov-enabled').checked = true;
             document.getElementById('prov-type').value = 'ollama';
             document.getElementById('prov-model').value = '';
@@ -162,6 +166,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.toggleProvider = (category, index) => {
         config[category][index].enabled = !config[category][index].enabled;
         renderCategories();
+    };
+
+    window.moveProviderUp = (category, index) => {
+        if (index > 0) {
+            const arr = config[category];
+            [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+            renderCategories();
+        }
+    };
+
+    window.moveProviderDown = (category, index) => {
+        const arr = config[category];
+        if (index < arr.length - 1) {
+            [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
+            renderCategories();
+        }
     };
 
     window.deleteProvider = (category, index) => {
@@ -178,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const provider = {
             name: document.getElementById('prov-name').value,
             url: document.getElementById('prov-url').value,
+            apiKey: document.getElementById('prov-apiKey').value,
             enabled: document.getElementById('prov-enabled').checked
         };
 
