@@ -1,4 +1,5 @@
 ﻿const path = require("path");
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const ytSearch = require("youtube-search-api");
 const youtubedl = require("youtube-dl-exec");
@@ -561,6 +562,30 @@ async function ytCommand(bot, message, args, group) {
 }
 
 /**
+ * Busca letras de música via LRCLib
+ */
+async function searchLyrics(query) {
+	try {
+		logger.info(`[srCommand] Buscando letra para: ${query}`);
+		const response = await axios.get(`https://lrclib.net/api/search`, {
+			params: { q: query },
+			timeout: 10000
+		});
+		if (response.data && response.data.length > 0) {
+			const bestMatch = response.data[0];
+			return {
+				title: bestMatch.trackName,
+				artist: bestMatch.artistName,
+				lyrics: bestMatch.plainLyrics || bestMatch.syncedLyrics
+			};
+		}
+	} catch (error) {
+		logger.error("[srCommand] Erro ao buscar letra:", error.message);
+	}
+	return null;
+}
+
+/**
  * Comando para baixar música do YouTube
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
@@ -690,6 +715,23 @@ async function srCommand(bot, message, args, group) {
 				});
 
 				await bot.sendReturnMessages(audioMsg, group);
+
+				// Busca e envia letra da música
+				try {
+					const lyricsData = await searchLyrics(result.legenda || "");
+					if (lyricsData) {
+						await bot.sendReturnMessages(
+							new ReturnMessage({
+								chatId,
+								content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
+							}),
+							group
+						);
+					}
+				} catch (lyricsError) {
+					logger.error("Erro ao enviar letra:", lyricsError.message);
+				}
+
 				resolve(returnMessages);
 			} catch (sendError) {
 				logger.error("Erro ao enviar áudio:", sendError);
@@ -738,4 +780,12 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, { commands });
 
-module.exports = { commands, processYoutubeReaction };
+module.exports = {
+	commands,
+	processYoutubeReaction,
+	baixarVideoYoutube,
+	baixarMusicaYoutube,
+	extractYoutubeVideoId,
+	searchYoutubeVideo,
+	extractURLFromString
+};

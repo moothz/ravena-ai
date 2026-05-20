@@ -11,6 +11,15 @@ const crypto = require("crypto");
 const yts = require("youtube-search-api");
 const { pipeline } = require("stream/promises");
 
+// Importa métodos do YoutubeDownloader para roteamento de YouTube
+const {
+	baixarVideoYoutube,
+	baixarMusicaYoutube,
+	extractYoutubeVideoId,
+	searchYoutubeVideo,
+	extractURLFromString
+} = require("./YoutubeDownloader");
+
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
 
@@ -43,7 +52,6 @@ class SMDCacheManager {
 		]);
 		if (row) {
 			const data = JSON.parse(row.json_data);
-			// Verifica se os arquivos ainda existem
 			const allFilesExist = await Promise.all(
 				data.files.map(async (f) => {
 					try {
@@ -58,7 +66,6 @@ class SMDCacheManager {
 			if (allFilesExist.every((exists) => exists)) {
 				return data;
 			}
-			// Se algum arquivo sumiu, invalida o cache
 			await this.deleteCache(url);
 		}
 		return null;
@@ -71,7 +78,6 @@ class SMDCacheManager {
 			"INSERT OR REPLACE INTO smd_cache (url, platform, json_data, timestamp) VALUES (?, ?, ?, ?)",
 			[url, platform, JSON.stringify(data), Date.now()]
 		);
-		// Limpeza em background (não aguarda)
 		this.cleanup().catch((e) => logger.error("Erro no cleanup de cache:", e.message));
 	}
 
@@ -81,7 +87,6 @@ class SMDCacheManager {
 
 	async cleanup() {
 		try {
-			// 1. Deleta entradas antigas (30 dias)
 			const thirtyDaysAgo = Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000;
 			const oldEntries = await database.dbAll(
 				this.dbName,
@@ -97,7 +102,6 @@ class SMDCacheManager {
 				await this.deleteCache(entry.url);
 			}
 
-			// 2. Limpeza por tamanho (30GB)
 			const stats = await this.getFolderStats(process.env.DL_FOLDER || "/app/downloads");
 			const maxSizeBytes = this.maxSizeGB * 1024 * 1024 * 1024;
 
@@ -151,11 +155,13 @@ class SMDCacheManager {
 const cacheManager = new SMDCacheManager();
 
 /**
- * Detecta a plataforma da URL
+ * Detecta a plataforma da URL (incluindo YouTube e SoundCloud)
  */
 function detectPlatform(url) {
 	if (!url) return "Desconhecido";
 	const platforms = {
+		"youtube.com": "YouTube",
+		"youtu.be": "YouTube",
 		"tiktok.com": "TikTok",
 		"instagram.com": "Instagram",
 		"facebook.com": "Facebook",
@@ -180,6 +186,18 @@ function detectPlatform(url) {
 		}
 	} catch (e) {}
 	return "Social Media";
+}
+
+/**
+ * Verifica se a URL é do YouTube
+ */
+function isYoutubeUrl(url) {
+	try {
+		const hostname = new URL(url).hostname.toLowerCase();
+		return hostname.includes("youtube.com") || hostname.includes("youtu.be");
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -233,7 +251,7 @@ async function downloadFile(url, filename) {
 		});
 
 		await pipeline(response.data, writer);
-		await new Promise((r) => setTimeout(r, 1000)); // Sync disk
+		await new Promise((r) => setTimeout(r, 1000));
 
 		const stats = fsSync.statSync(dlPath);
 		logger.info(`[DOWNLOAD] Finalizado: ${stats.size} bytes`);
@@ -292,15 +310,33 @@ async function cobaltRequest(url, options = {}) {
 }
 
 /**
- * Handler principal de downloads
+ * Handler principal de downloads via Cobalt (para redes sociais, SoundCloud, etc.)
+ * YouTube é roteado para os métodos do YoutubeDownloader.
  */
 async function downloadHandler(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 	const body = message.origin?.body || "";
 	const commandName = body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
 
-	// Verifica se há URL
-	let url = args.find((arg) => arg && typeof arg === "string" && arg.startsWith("http"));
+	// --- Extrai input: args ou quotedMsg ---
+	let input = undefined;
+	if (args.length === 0) {
+		// Verifica a quotedMsg (como ytCommand / srCommand fazem)
+		const quotedMsg = await message.origin.getQuotedMessage();
+		if (quotedMsg) {
+			input = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? undefined;
+		}
+	} else {
+		input = args.join(" ");
+	}
+
+	// Tenta extrair uma URL do input
+	let url = null;
+	if (input) {
+		url = extractURLFromString(input);
+	}
+
+	// Se não tinha URL no input, tenta também pela quotedMsg original do message.origin (fallback)
 	if (!url && message.origin?.quotedMsg) {
 		const quotedText =
 			message.origin.quotedMsg.body ||
@@ -312,20 +348,263 @@ async function downloadHandler(bot, message, args, group) {
 		}
 	}
 
-	if (!url) {
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Por favor, forneça uma URL válida.\nExemplo: \`${bot.prefix}${commandName} https://...\``
-		});
-	}
-
-	const platform = detectPlatform(url);
+	// --- Modos de áudio e letra ---
 	const isAudioOnly =
 		commandName.includes("audio") ||
 		commandName.includes("musica") ||
+		commandName === "sr" ||
+		commandName.includes("sc") ||
 		args.includes("-audio") ||
 		args.includes("-musica");
-	const wantLyrics = commandName.includes("musica") || args.includes("-musica");
+	const wantLyrics =
+		commandName.includes("musica") ||
+		args.includes("-musica") ||
+		// Se for SoundCloud e for audio, também busca letra
+		(commandName.includes("sc") && isAudioOnly);
+
+	// ==============================
+	// ROTEAMENTO: YouTube → YoutubeDownloader
+	// ==============================
+	if (url && isYoutubeUrl(url)) {
+		const videoId = extractYoutubeVideoId(url);
+		if (videoId) {
+			logger.info(`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly})`);
+
+			bot.sendReturnMessages(
+				new ReturnMessage({
+					chatId,
+					content: `⏳ Baixando ${isAudioOnly ? "áudio" : "vídeo"} do YouTube...`
+				}),
+				group
+			);
+
+			if (isAudioOnly && typeof baixarMusicaYoutube === "function") {
+				return new Promise((resolve) => {
+					baixarMusicaYoutube(videoId, message.author, async (error, result) => {
+						if (error) {
+							await bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: `❌ Erro ao baixar áudio do YouTube: ${error.message}`
+								}),
+								group
+							);
+							resolve([]);
+							return;
+						}
+						try {
+							const media = await bot.createMedia(result.arquivo, "audio/mp3");
+							await bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: media,
+									options: { caption: result.legenda }
+								}),
+								group
+							);
+
+							if (wantLyrics) {
+								const lyricsData = await searchLyrics(result.legenda || "");
+								if (lyricsData) {
+									await bot.sendReturnMessages(
+										new ReturnMessage({
+											chatId,
+											content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
+										}),
+										group
+									);
+								}
+							}
+						} catch (sendError) {
+							await bot.sendReturnMessages(
+								new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
+								group
+							);
+						}
+						resolve([]);
+					});
+				});
+			} else if (typeof baixarVideoYoutube === "function") {
+				return new Promise((resolve) => {
+					baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
+						if (error) {
+							await bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: `❌ Erro ao baixar vídeo do YouTube: ${error.message}`
+								}),
+								group
+							);
+							resolve([]);
+							return;
+						}
+						try {
+							const media = await bot.createMedia(result.arquivo, "video/mp4");
+							const dicaAudio = `\n\n> *Dica:* Se quiser apenas o áudio, responda esta mensagem com \`${bot.prefix}extractaudio\``;
+							await bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: media,
+									options: { caption: result.legenda + dicaAudio }
+								}),
+								group
+							);
+						} catch (sendError) {
+							await bot.sendReturnMessages(
+								new ReturnMessage({ chatId, content: "Erro ao enviar vídeo." }),
+								group
+							);
+						}
+						resolve([]);
+					});
+				});
+			} else {
+				// Fallback: se os métodos do YoutubeDownloader não estiverem disponíveis,
+				// tenta usar o Cobalt para YouTube também
+				logger.warn("Métodos do YoutubeDownloader indisponíveis, usando Cobalt para YouTube");
+			}
+		}
+	}
+
+	// ==============================
+	// Se não tem URL, tenta busca no YouTube (fallback do .bak)
+	// ==============================
+	if (!url) {
+		const query = input ? input.trim() : "";
+		if (query && query.length > 2) {
+			bot.sendReturnMessages(
+				new ReturnMessage({
+					chatId,
+					content: `🔍 Buscando por "*${query}*" no YouTube...`
+				}),
+				group
+			);
+
+			try {
+				const searchResults = await yts.GetListByKeyword(query, false, 5);
+				if (searchResults && searchResults.items && searchResults.items.length > 0) {
+					const count = Math.min(searchResults.items.length, 5);
+					const randomIndex = Math.floor(Math.random() * count);
+					const item = searchResults.items[randomIndex];
+					url = `https://www.youtube.com/watch?v=${item.id}`;
+
+					// Roteia a URL do YouTube encontrada para o YoutubeDownloader
+					if (isYoutubeUrl(url)) {
+						const videoId = extractYoutubeVideoId(url);
+						if (videoId && isAudioOnly && typeof baixarMusicaYoutube === "function") {
+							bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: `⏳ Baixando áudio do YouTube: *${item.title || videoId}*...`
+								}),
+								group
+							);
+							return new Promise((resolve) => {
+								baixarMusicaYoutube(videoId, message.author, async (error, result) => {
+									if (error) {
+										await bot.sendReturnMessages(
+											new ReturnMessage({
+												chatId,
+												content: `❌ Erro ao baixar áudio: ${error.message}`
+											}),
+											group
+										);
+										resolve([]);
+										return;
+									}
+									try {
+										const media = await bot.createMedia(result.arquivo, "audio/mp3");
+										await bot.sendReturnMessages(
+											new ReturnMessage({
+												chatId,
+												content: media,
+												options: { caption: result.legenda }
+											}),
+											group
+										);
+										if (wantLyrics) {
+											const lyricsData = await searchLyrics(result.legenda || "");
+											if (lyricsData) {
+												await bot.sendReturnMessages(
+													new ReturnMessage({
+														chatId,
+														content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
+													}),
+													group
+												);
+											}
+										}
+									} catch (sendError) {
+										await bot.sendReturnMessages(
+											new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
+											group
+										);
+									}
+									resolve([]);
+								});
+							});
+						} else if (videoId && typeof baixarVideoYoutube === "function") {
+							bot.sendReturnMessages(
+								new ReturnMessage({
+									chatId,
+									content: `⏳ Baixando vídeo do YouTube: *${item.title || videoId}*...`
+								}),
+								group
+							);
+							return new Promise((resolve) => {
+								baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
+									if (error) {
+										await bot.sendReturnMessages(
+											new ReturnMessage({
+												chatId,
+												content: `❌ Erro ao baixar vídeo: ${error.message}`
+											}),
+											group
+										);
+										resolve([]);
+										return;
+									}
+									try {
+										const media = await bot.createMedia(result.arquivo, "video/mp4");
+										const dicaAudio = `\n\n> *Dica:* Se quiser apenas o áudio, responda esta mensagem com \`${bot.prefix}extractaudio\``;
+										await bot.sendReturnMessages(
+											new ReturnMessage({
+												chatId,
+												content: media,
+												options: { caption: result.legenda + dicaAudio }
+											}),
+											group
+										);
+									} catch (sendError) {
+										await bot.sendReturnMessages(
+											new ReturnMessage({ chatId, content: "Erro ao enviar vídeo." }),
+											group
+										);
+									}
+									resolve([]);
+								});
+							});
+						}
+					}
+				}
+			} catch (searchError) {
+				logger.error(`Erro na busca do YouTube: ${searchError.message}`);
+			}
+		}
+	}
+
+	// Se ainda não tem URL, erro
+	if (!url) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Por favor, forneça uma URL válida ou um termo de busca.\nExemplo: \`${bot.prefix}${commandName} https://...\` ou \`${bot.prefix}${commandName} nome da música\``
+		});
+	}
+
+	// ==============================
+	// Cobalt: processa URLs não-YouTube
+	// ==============================
+	const platform = detectPlatform(url);
 
 	// Verifica Cache
 	const cacheKey = `${url}_${isAudioOnly ? "audio" : "video"}`;
@@ -356,7 +635,6 @@ async function downloadHandler(bot, message, args, group) {
 	);
 
 	try {
-		// Solicitação ao Cobalt
 		const cobaltOptions = {
 			videoQuality: "720",
 			filenameStyle: "pretty"
@@ -373,7 +651,6 @@ async function downloadHandler(bot, message, args, group) {
 			throw new Error(result.text || "Erro desconhecido no serviço de download.");
 		}
 
-		// Lista de itens para baixar
 		const items = [];
 		const dlUrl = result.url || (Array.isArray(result.tunnel) ? result.tunnel[0] : result.tunnel);
 
@@ -401,15 +678,12 @@ async function downloadHandler(bot, message, args, group) {
 
 		const processedFiles = [];
 		for (const item of items) {
-			// Download local
 			const tempFilename = `${crypto.randomBytes(4).toString("hex")}_${item.filename}`;
 			const filePath = await downloadFile(item.url, tempFilename);
 
-			// Preparação da mídia
 			let finalFilePath = filePath;
 			let finalMime = isAudioOnly ? "audio/mpeg" : "video/mp4";
 
-			// Detecção de tipo (Imagem vs Vídeo)
 			const ext = path.extname(item.filename).toLowerCase();
 			if (
 				item.type === "photo" ||
@@ -419,7 +693,6 @@ async function downloadHandler(bot, message, args, group) {
 				finalMime = "image/jpeg";
 			}
 
-			// Se pediu áudio mas veio vídeo
 			if (
 				isAudioOnly &&
 				!filePath.endsWith(".mp3") &&
@@ -435,10 +708,8 @@ async function downloadHandler(bot, message, args, group) {
 			processedFiles.push({ path: finalFilePath, mimetype: finalMime });
 		}
 
-		// Salva no Cache
 		await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
 
-		// Envia Mídia
 		await sendProcessedMedia(
 			bot,
 			chatId,
@@ -525,99 +796,61 @@ async function sendProcessedMedia(
 	}
 }
 
+// ==============================
 // Configuração dos comandos
-const commands = [
-	new Command({
-		name: "download",
-		caseSensitive: false,
-		description: "Baixa mídia de algum site",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "ig",
-		caseSensitive: false,
-		description: "Baixa mídia do Instagram",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "instagram",
-		caseSensitive: false,
-		description: "Baixa mídia do Instagram",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "insta",
-		caseSensitive: false,
-		description: "Baixa mídia do Instagram",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "tw",
-		caseSensitive: false,
-		description: "Baixa mídia do Twitter/X",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "twitter",
-		caseSensitive: false,
-		description: "Baixa mídia do Twitter/X",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "x",
-		caseSensitive: false,
-		description: "Baixa mídia do Twitter/X",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "tk",
-		caseSensitive: false,
-		description: "Baixa mídia do TikTok",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "tiktok",
-		caseSensitive: false,
-		description: "Baixa mídia do TikTok",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "fb",
-		caseSensitive: false,
-		description: "Baixa mídia do Facebook",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "facebook",
-		caseSensitive: false,
-		description: "Baixa mídia do Facebook",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "pin",
-		caseSensitive: false,
-		description: "Baixa mídia do Pinterest",
-		category: "utilidades",
-		method: downloadHandler
-	}),
-	new Command({
-		name: "pinterest",
-		caseSensitive: false,
-		description: "Baixa mídia do Pinterest",
-		category: "utilidades",
-		method: downloadHandler
-	})
+// ==============================
+const downloadCommands = [
+	"download",
+	"download-audio",
+	"download-musica",
+	"yt",
+	"yt-audio",
+	"yt-musica",
+	"sr",
+	"x",
+	"twitter",
+	"tiktok",
+	"tk",
+	"tiktok-audio",
+	"insta",
+	"instagram",
+	"insta-audio",
+	"fb",
+	"facebook",
+	"pin",
+	"pinterest",
+	// SoundCloud (via Cobalt se suportar)
+	"sc",
+	"sc-audio",
+	"sc-musica",
+	"soundcloud",
+	"soundcloud-audio",
+	"soundcloud-musica"
 ];
 
-module.exports = { commands };
+const commands = downloadCommands.map(
+	(name) =>
+		new Command({
+			name,
+			caseSensitive: false,
+			description: `Baixa conteúdo de mídias sociais${
+				name.includes("audio") || name.includes("musica") || name === "sr" ? " (apenas áudio)" : ""
+			}`,
+			category: "utilidades",
+			reactions: {
+				before: process.env.LOADING_EMOJI ?? "⌛️",
+				after: "✅",
+				error: "❌"
+			},
+			method: downloadHandler
+		})
+);
+
+// Expõe as funções de extração de URL e detecção de YouTube para outros módulos
+module.exports = {
+	commands,
+	detectPlatform,
+	extractURLFromString,
+	isYoutubeUrl,
+	extractYoutubeVideoId
+};
