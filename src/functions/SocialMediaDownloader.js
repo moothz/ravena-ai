@@ -156,8 +156,6 @@ const cacheManager = new SMDCacheManager();
 function detectPlatform(url) {
 	if (!url) return "Desconhecido";
 	const platforms = {
-		"youtube.com": "YouTube",
-		"youtu.be": "YouTube",
 		"tiktok.com": "TikTok",
 		"instagram.com": "Instagram",
 		"facebook.com": "Facebook",
@@ -222,28 +220,30 @@ async function downloadFile(url, filename) {
 	const writer = fsSync.createWriteStream(dlPath);
 
 	try {
+		logger.info(`[DOWNLOAD] Tentando URL: ${url}`);
 		const response = await axios({
 			url,
 			method: "GET",
 			responseType: "stream",
 			headers: {
 				"User-Agent":
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-				Accept: "*/*",
-				"Accept-Language": "en-US,en;q=0.9"
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 			},
 			timeout: 300000
 		});
 
 		await pipeline(response.data, writer);
-		await new Promise((r) => setTimeout(r, 500)); // Sync disk
+		await new Promise((r) => setTimeout(r, 1000)); // Sync disk
 
 		const stats = fsSync.statSync(dlPath);
+		logger.info(`[DOWNLOAD] Finalizado: ${stats.size} bytes`);
+
 		if (stats.size === 0) throw new Error("Arquivo vazio recebido.");
 
 		return dlPath;
 	} catch (error) {
 		if (fsSync.existsSync(dlPath)) fsSync.unlinkSync(dlPath);
+		logger.error(`[DOWNLOAD] Falha: ${error.message}`);
 		throw error;
 	}
 }
@@ -313,34 +313,9 @@ async function downloadHandler(bot, message, args, group) {
 	}
 
 	if (!url) {
-		const query = args.join(" ");
-		if (query && query.length > 2) {
-			bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: `🔍 Buscando por "*${query}*" no YouTube...`
-				}),
-				group
-			);
-
-			try {
-				const searchResults = await yts.GetListByKeyword(query, false, 5);
-				if (searchResults && searchResults.items && searchResults.items.length > 0) {
-					const count = Math.min(searchResults.items.length, 5);
-					const randomIndex = Math.floor(Math.random() * count);
-					const item = searchResults.items[randomIndex];
-					url = `https://www.youtube.com/watch?v=${item.id}`;
-				}
-			} catch (searchError) {
-				logger.error(`Erro na busca do YouTube: ${searchError.message}`);
-			}
-		}
-	}
-
-	if (!url) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Por favor, forneça uma URL válida ou um texto para busca.\nExemplo: \`${bot.prefix}${commandName} fear of the dark\``
+			content: `❌ Por favor, forneça uma URL válida.\nExemplo: \`${bot.prefix}${commandName} https://...\``
 		});
 	}
 
@@ -348,7 +323,6 @@ async function downloadHandler(bot, message, args, group) {
 	const isAudioOnly =
 		commandName.includes("audio") ||
 		commandName.includes("musica") ||
-		commandName === "sr" ||
 		args.includes("-audio") ||
 		args.includes("-musica");
 	const wantLyrics = commandName.includes("musica") || args.includes("-musica");
@@ -552,40 +526,98 @@ async function sendProcessedMedia(
 }
 
 // Configuração dos comandos
-const downloadCommands = [
-	"download",
-	"yt",
-	"sr",
-	"x",
-	"twitter",
-	"tiktok",
-	"tk",
-	"insta",
-	"instagram",
-	"fb",
-	"facebook",
-	"download-audio",
-	"download-musica",
-	"yt-audio",
-	"yt-musica",
-	"insta-audio",
-	"tiktok-audio"
+const commands = [
+	new Command({
+		name: "download",
+		caseSensitive: false,
+		description: "Baixa mídia de algum site",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "ig",
+		caseSensitive: false,
+		description: "Baixa mídia do Instagram",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "instagram",
+		caseSensitive: false,
+		description: "Baixa mídia do Instagram",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "insta",
+		caseSensitive: false,
+		description: "Baixa mídia do Instagram",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "tw",
+		caseSensitive: false,
+		description: "Baixa mídia do Twitter/X",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "twitter",
+		caseSensitive: false,
+		description: "Baixa mídia do Twitter/X",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "x",
+		caseSensitive: false,
+		description: "Baixa mídia do Twitter/X",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "tk",
+		caseSensitive: false,
+		description: "Baixa mídia do TikTok",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "tiktok",
+		caseSensitive: false,
+		description: "Baixa mídia do TikTok",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "fb",
+		caseSensitive: false,
+		description: "Baixa mídia do Facebook",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "facebook",
+		caseSensitive: false,
+		description: "Baixa mídia do Facebook",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "pin",
+		caseSensitive: false,
+		description: "Baixa mídia do Pinterest",
+		category: "utilidades",
+		method: downloadHandler
+	}),
+	new Command({
+		name: "pinterest",
+		caseSensitive: false,
+		description: "Baixa mídia do Pinterest",
+		category: "utilidades",
+		method: downloadHandler
+	})
 ];
-
-const commands = downloadCommands.map(
-	(name) =>
-		new Command({
-			name,
-			caseSensitive: false,
-			description: `Baixa conteúdo de mídias sociais (${name})`,
-			category: "downloaders",
-			reactions: {
-				before: process.env.LOADING_EMOJI ?? "⌛️",
-				after: "✅",
-				error: "❌"
-			},
-			method: downloadHandler
-		})
-);
 
 module.exports = { commands };

@@ -42,6 +42,7 @@
     "translate": "^3.0.1",
     "uuid": "^13.0.0",
     "xml2js": "^0.6.2",
+    "youtube-dl-exec": "^3.0.30",
     "youtube-search-api": "^2.0.1"
 
   },
