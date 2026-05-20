@@ -36,7 +36,7 @@ const TestRunner = require("./src/testing/TestRunner");
 // "
 // =============================================================================
 const GROUP_ID = process.env.TEST_GROUP_ID ?? "SEU_GROUP_ID_AQUI@g.us";
-const AUTHOR   = process.env.TEST_AUTHOR   ?? "5511999999999@s.whatsapp.net";
+const AUTHOR = process.env.TEST_AUTHOR ?? "5511999999999@s.whatsapp.net";
 
 async function main() {
 	const runner = new TestRunner({
@@ -51,14 +51,14 @@ async function main() {
 	// ===========================================================================
 
 	// Teste básico de ping
-	runner.run("!ping", () =>
-		msgTexto("!ping")
-	);
+	runner.run("!ping", () => msgTexto("!ping"));
 
 	// YouTube — busca texto
-	runner.run("!yt - busca texto", () =>
-		msgTexto("!yt receita pudim")
-	);
+	// Espera 2 mensagens (a de busca e a de mídia) com timeout maior (60s)
+	runner.run("!yt - busca texto", () => msgTexto("!yt receita pudim"), {
+		expectedMessages: 2,
+		timeout: 60000
+	});
 
 	// Sticker de imagem
 	// (requer data/test-image.png)

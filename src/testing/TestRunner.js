@@ -48,9 +48,10 @@ class TestRunner {
 	 * Registra um teste.
 	 * @param {string} label    - Nome/descrição do teste
 	 * @param {Function} msgFn  - Função que retorna um objeto message (pode ser async)
+	 * @param {Object} [opts]   - Opções específicas do teste (ex: { expectedMessages: 2, timeout: 60000 })
 	 */
-	run(label, msgFn) {
-		this.tests.push({ label, msgFn });
+	run(label, msgFn, opts = {}) {
+		this.tests.push({ label, msgFn, opts });
 	}
 
 	/**
@@ -84,7 +85,7 @@ class TestRunner {
 	// ---------------------------------------------------------------------------
 
 	async _executeTest(test, bot, eventHandler) {
-		const { label, msgFn } = test;
+		const { label, msgFn, opts = {} } = test;
 		const startTime = Date.now();
 
 		this._printDivider(label);
@@ -103,27 +104,38 @@ class TestRunner {
 		// Reseta mensagens capturadas antes de cada teste
 		bot.resetCapture();
 
-		// Executa o pipeline com timeout
 		let status = "OK";
 		let error = null;
 
 		try {
-			await Promise.race([
-				eventHandler.processMessage(bot, message),
-				this._timeout(TEST_TIMEOUT_MS)
-			]);
+			// Executa o processMessage (não-bloqueante na maioria das vezes, mas retorna Promise)
+			const processPromise = eventHandler.processMessage(bot, message);
 
-			// Aguarda promises assíncronas soltas no pipeline (fire-and-forget)
-			await this._sleep(ASYNC_SETTLE_MS);
-		} catch (err) {
-			if (err.message === "TEST_TIMEOUT") {
-				status = "TIMEOUT";
-				console.log(`\n⏱️  TIMEOUT após ${TEST_TIMEOUT_MS / 1000}s`);
-			} else {
-				status = "ERROR";
-				error = err.message;
-				this._printError("Erro no pipeline:", err);
+			// Configura o timeout e polling de mensagens
+			const expectedCount = opts.expectedMessages ?? 1;
+			const timeoutMs = opts.timeout ?? (expectedCount > 1 ? 45000 : 3000);
+			const checkInterval = 100;
+			let elapsed = 0;
+
+			// Espera até que a quantidade esperada de mensagens seja capturada
+			// ou que estoure o timeout
+			while (bot.capturedMessages.length < expectedCount && elapsed < timeoutMs) {
+				await this._sleep(checkInterval);
+				elapsed += checkInterval;
 			}
+
+			// Se nenhuma mensagem foi capturada após o timeout
+			if (bot.capturedMessages.length === 0 && expectedCount > 0) {
+				status = "TIMEOUT";
+				error = `Nenhuma mensagem capturada em ${timeoutMs / 1000}s`;
+			}
+
+			// Aguarda resolução final por garantia com timeout curto
+			await Promise.race([processPromise, this._sleep(500)]);
+		} catch (err) {
+			status = "ERROR";
+			error = err.message;
+			this._printError("Erro no pipeline:", err);
 		}
 
 		const durationMs = Date.now() - startTime;
@@ -156,9 +168,10 @@ class TestRunner {
 			type: message.type,
 			group: message.group ?? "(privado)",
 			author: message.author,
-			content: message.type === "text"
-				? message.content
-				: `[${message.type}] legenda: ${message.caption ?? ""}`,
+			content:
+				message.type === "text"
+					? message.content
+					: `[${message.type}] legenda: ${message.caption ?? ""}`,
 			hasQuotedMsg: message.hasQuotedMsg ?? false
 		};
 		console.log(JSON.stringify(summary, null, 2));
@@ -176,15 +189,31 @@ class TestRunner {
 		captured.forEach((msg, i) => {
 			console.log(`\n  [${i + 1}] chatId: ${msg.chatId}`);
 
+			let mediaInfo = null;
+			if (msg.content && typeof msg.content === "object" && msg.content.isMessageMedia) {
+				mediaInfo = msg.content;
+			} else if (msg.options && msg.options.media) {
+				mediaInfo = msg.options.media;
+			}
+
 			if (typeof msg.content === "string") {
 				// Texto — exibe direto
-				const preview = msg.content.length > 300
-					? msg.content.substring(0, 300) + "...[truncado]"
-					: msg.content;
+				const preview =
+					msg.content.length > 300 ? msg.content.substring(0, 300) + "...[truncado]" : msg.content;
 				console.log(`       content: ${preview}`);
-			} else if (msg.content && typeof msg.content === "object") {
-				// Mídia
-				console.log(`       content: [mídia] mimetype=${msg.content.mimetype ?? "?"}, size=${msg.content.data ? Math.round(msg.content.data.length * 0.75 / 1024) + "KB" : "?"}`);
+			}
+
+			if (mediaInfo) {
+				const sizeFmt = mediaInfo.size
+					? `${Math.round(mediaInfo.size / 1024)} KB`
+					: mediaInfo.data
+						? `${Math.round((mediaInfo.data.length * 0.75) / 1024)} KB`
+						: "desconhecido";
+				console.log(`       media:`);
+				console.log(`         - arquivo:  ${mediaInfo.filename ?? "desconhecido"}`);
+				console.log(`         - mimetype: ${mediaInfo.mimetype ?? "desconhecido"}`);
+				console.log(`         - tamanho:  ${sizeFmt}`);
+				console.log(`         - url:      ${mediaInfo.url ?? "nenhuma"}`);
 			}
 
 			if (msg.reaction) console.log(`       reaction: ${msg.reaction}`);
@@ -195,12 +224,20 @@ class TestRunner {
 
 			if (this.verbose) {
 				// Exibe JSON completo (sem o data base64 para não poluir)
-				const verboseMsg = JSON.parse(JSON.stringify(msg, (key, val) =>
-					key === "data" && typeof val === "string" && val.length > 100
-						? `[base64 ${Math.round(val.length * 0.75 / 1024)}KB]`
-						: val
-				));
-				console.log("       JSON completo:", JSON.stringify(verboseMsg, null, 6).split("\n").map(l => "  " + l).join("\n"));
+				const verboseMsg = JSON.parse(
+					JSON.stringify(msg, (key, val) =>
+						key === "data" && typeof val === "string" && val.length > 100
+							? `[base64 ${Math.round((val.length * 0.75) / 1024)}KB]`
+							: val
+					)
+				);
+				console.log(
+					"       JSON completo:",
+					JSON.stringify(verboseMsg, null, 6)
+						.split("\n")
+						.map((l) => "  " + l)
+						.join("\n")
+				);
 			}
 		});
 	}
@@ -212,20 +249,20 @@ class TestRunner {
 
 	_printReport() {
 		const line = "═".repeat(60);
-		const ok = this.results.filter(r => r.status === "OK").length;
-		const errors = this.results.filter(r => r.status === "ERROR").length;
-		const timeouts = this.results.filter(r => r.status === "TIMEOUT").length;
+		const ok = this.results.filter((r) => r.status === "OK").length;
+		const errors = this.results.filter((r) => r.status === "ERROR").length;
+		const timeouts = this.results.filter((r) => r.status === "TIMEOUT").length;
 
 		console.log(`\n${line}`);
 		console.log("  📊 RELATÓRIO FINAL");
 		console.log(line);
 		console.log(`  Total:    ${this.results.length}`);
 		console.log(`  ✅ OK:      ${ok}`);
-		if (errors > 0)   console.log(`  ❌ Erro:    ${errors}`);
+		if (errors > 0) console.log(`  ❌ Erro:    ${errors}`);
 		if (timeouts > 0) console.log(`  ⏱️  Timeout: ${timeouts}`);
 		console.log();
 
-		this.results.forEach(r => {
+		this.results.forEach((r) => {
 			const icon = r.status === "OK" ? "✅" : r.status === "TIMEOUT" ? "⏱️ " : "❌";
 			const msgs = r.capturedCount !== undefined ? ` (${r.capturedCount} msg)` : "";
 			const time = r.durationMs ? ` [${r.durationMs}ms]` : "";
@@ -256,13 +293,11 @@ class TestRunner {
 	}
 
 	_timeout(ms) {
-		return new Promise((_, reject) =>
-			setTimeout(() => reject(new Error("TEST_TIMEOUT")), ms)
-		);
+		return new Promise((_, reject) => setTimeout(() => reject(new Error("TEST_TIMEOUT")), ms));
 	}
 
 	_sleep(ms) {
-		return new Promise(resolve => setTimeout(resolve, ms));
+		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 }
 

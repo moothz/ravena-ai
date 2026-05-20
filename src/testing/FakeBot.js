@@ -8,6 +8,9 @@
  * e acumula as mensagens que seriam enviadas em this.capturedMessages[].
  */
 
+const fs = require("fs");
+const path = require("path");
+const mime = require("mime-types");
 const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 
@@ -96,9 +99,80 @@ class FakeBot {
 		return false;
 	}
 
+	/** Retorna o timestamp atual em segundos */
+	getCurrentTimestamp() {
+		return Math.round(Date.now() / 1000);
+	}
+
+	/**
+	 * Cria um objeto de mídia simulado
+	 * @param {string} filePath
+	 * @param {string|boolean} customMime
+	 */
+	async createMedia(filePath, customMime = false) {
+		try {
+			if (!fs.existsSync(filePath)) {
+				throw new Error(`File not found: ${filePath}`);
+			}
+
+			const stats = fs.statSync(filePath);
+			const size = stats.size;
+			const extension = path.extname(filePath);
+			const filename = path.basename(filePath);
+			let mimetype = customMime ? customMime : mime.lookup(filePath) || "application/octet-stream";
+
+			if (mimetype === "application/mp4") {
+				mimetype = "video/mp4";
+			}
+
+			// Simula leitura base64
+			const data = fs.readFileSync(filePath, { encoding: "base64" });
+
+			return {
+				mimetype,
+				data,
+				filename,
+				source: "file",
+				url: `file://${filePath}`,
+				isMessageMedia: true,
+				size
+			};
+		} catch (error) {
+			this.logger.error(`Error creating media from ${filePath}:`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Cria mídia a partir de URL simulada
+	 */
+	async createMediaFromURL(url, options = {}) {
+		try {
+			const filename = path.basename(new URL(url).pathname) || "media_from_url";
+			const mimetype = options.customMime || mime.lookup(filename) || "application/octet-stream";
+
+			return {
+				mimetype,
+				data: null,
+				filename,
+				source: "url",
+				url,
+				isMessageMedia: true,
+				size: 0
+			};
+		} catch (error) {
+			this.logger.error(`Error creating media from URL ${url}:`, error);
+			throw error;
+		}
+	}
+
 	/** Stubs para resolução LID↔PN usada nos filtros de grupo */
-	getLidFromPn(pn) { return null; }
-	getPnFromLid(lid) { return null; }
+	getLidFromPn(pn) {
+		return null;
+	}
+	getPnFromLid(lid) {
+		return null;
+	}
 
 	/** Compatibilidade com destruição no SIGINT */
 	async destroy() {}

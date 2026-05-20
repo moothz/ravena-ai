@@ -82,7 +82,7 @@ function msgMedia(legenda, filePath, opts = {}) {
 
 	return createMessage({
 		type,
-		content: media,           // objeto { data, mimetype, filename }
+		content: media, // objeto { data, mimetype, filename }
 		caption: legenda,
 		author: opts.author ?? _defaultAuthor,
 		authorName: opts.authorName ?? _defaultAuthorName,

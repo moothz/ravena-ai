@@ -27,7 +27,7 @@ function createMessage(overrides = {}) {
 	// Conteúdo: texto ou mídia
 	const type = overrides.type ?? "text";
 	const content = overrides.content ?? "";
-	const caption = overrides.caption ?? (type !== "text" ? overrides.caption ?? "" : undefined);
+	const caption = overrides.caption ?? (type !== "text" ? (overrides.caption ?? "") : undefined);
 
 	const msgId = `fake-msg-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
@@ -75,7 +75,6 @@ function createMessage(overrides = {}) {
 
 	const message = {
 		// Identidade
-		author,
 		authorName,
 		authorAlt: overrides.authorAlt ?? null,
 		name: authorName,
@@ -83,12 +82,9 @@ function createMessage(overrides = {}) {
 		pushName: authorName,
 
 		// Roteamento
-		from: group ?? author,
-		group: group,
 		guildId: overrides.guildId ?? group,
 
 		// Conteúdo
-		type,
 		content: type === "text" ? content : (overrides.content ?? null),
 		caption: type !== "text" ? (caption ?? "") : undefined,
 
@@ -98,28 +94,26 @@ function createMessage(overrides = {}) {
 		hasQuotedMsg: overrides.hasQuotedMsg ?? false,
 		quotedMsg: overrides.quotedMsg ?? null,
 
-		// Origem (objeto com métodos)
-		origin,
-
 		// Chat do grupo (usado em processManagementCommand via message.groupChat)
 		groupChat: group
 			? {
 					isGroup: true,
 					id: { _serialized: group },
 					participants: []
-			  }
+				}
 			: null,
 
 		// Permite que os testes adicionem campos extras
-		...overrides,
-
-		// Garante que author/group/type/content/origin não sejam sobrescritos acidentalmente
-		// (os overrides já foram aplicados acima nos valores base)
-		author,
-		group,
-		type,
-		origin
+		...overrides
 	};
+
+	// Garante que author/group/type/content/origin não sejam sobrescritos acidentalmente
+	// (os overrides já foram aplicados acima nos valores base)
+	message.author = author;
+	message.group = group;
+	message.type = type;
+	message.origin = origin;
+	message.from = group ?? author;
 
 	return message;
 }

@@ -109,7 +109,9 @@ class Database {
 
 		try {
 			Object.values(this.sqlites).forEach((db) => {
-				try { db.close(); } catch (e) {}
+				try {
+					db.close();
+				} catch (e) {}
 			});
 			this.sqlites = {};
 		} catch (e) {
@@ -120,7 +122,9 @@ class Database {
 			// Close all better-sqlite3 connections in DatabaseMappers
 			if (this.mappers && this.mappers.connections) {
 				Object.keys(this.mappers.connections).forEach((name) => {
-					try { this.mappers.closeConnection(name); } catch (e) {}
+					try {
+						this.mappers.closeConnection(name);
+					} catch (e) {}
 				});
 			}
 		} catch (e) {
@@ -389,11 +393,17 @@ class Database {
 		return this.coreRepo.saveCustomCommand(groupId, command);
 	}
 	async updateCustomCommand(groupId, command) {
-		if (this.testMode) { this.logger.debug("[TestMode] updateCustomCommand() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateCustomCommand() bloqueado");
+			return true;
+		}
 		return this.coreRepo.updateCustomCommand(groupId, command);
 	}
 	async deleteCustomCommand(groupId, commandStart) {
-		if (this.testMode) { this.logger.debug("[TestMode] deleteCustomCommand() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] deleteCustomCommand() bloqueado");
+			return true;
+		}
 		return this.coreRepo.deleteCustomCommand(groupId, commandStart);
 	}
 
@@ -411,7 +421,10 @@ class Database {
 	}
 
 	async saveCustomVariables(variables) {
-		if (this.testMode) { this.logger.debug("[TestMode] saveCustomVariables() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveCustomVariables() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		try {
 			const filePath = path.join(this.databasePath, "custom-variables.json");
@@ -429,12 +442,18 @@ class Database {
 		return this.coreRepo.getLoadReports(since);
 	}
 	async saveLoadReports(reports) {
-		if (this.testMode) { this.logger.debug("[TestMode] saveLoadReports() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveLoadReports() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.saveLoadReports(reports);
 	}
 	async addLoadReport(report) {
-		if (this.testMode) { this.logger.debug("[TestMode] addLoadReport() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addLoadReport() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.addLoadReport(report);
 	}
@@ -445,27 +464,42 @@ class Database {
 		return this.coreRepo.getDonations();
 	}
 	async saveDonations(donations) {
-		if (this.testMode) { this.logger.debug("[TestMode] saveDonations() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveDonations() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.saveDonations(donations);
 	}
 	async addDonation(name, amount, numero = undefined) {
-		if (this.testMode) { this.logger.debug("[TestMode] addDonation() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addDonation() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.addDonation(name, amount, numero);
 	}
 	async updateDonorNumber(name, numero) {
-		if (this.testMode) { this.logger.debug("[TestMode] updateDonorNumber() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonorNumber() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.updateDonorNumber(name, numero);
 	}
 	async updateDonationAmount(name, amount) {
-		if (this.testMode) { this.logger.debug("[TestMode] updateDonationAmount() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonationAmount() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.updateDonationAmount(name, amount);
 	}
 	async mergeDonors(targetName, sourceName) {
-		if (this.testMode) { this.logger.debug("[TestMode] mergeDonors() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] mergeDonors() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.mergeDonors(targetName, sourceName);
 	}
@@ -476,17 +510,26 @@ class Database {
 		return this.coreRepo.getPendingJoins();
 	}
 	async savePendingJoins(joins) {
-		if (this.testMode) { this.logger.debug("[TestMode] savePendingJoins() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] savePendingJoins() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.savePendingJoins(joins);
 	}
 	async savePendingJoin(inviteCode, data) {
-		if (this.testMode) { this.logger.debug("[TestMode] savePendingJoin() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] savePendingJoin() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.savePendingJoin(inviteCode, data);
 	}
 	async removePendingJoin(inviteCode) {
-		if (this.testMode) { this.logger.debug("[TestMode] removePendingJoin() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] removePendingJoin() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.removePendingJoin(inviteCode);
 	}
@@ -497,7 +540,10 @@ class Database {
 		return this.coreRepo.getSoftblocks();
 	}
 	async toggleUserInvites(phoneNumber, block) {
-		if (this.testMode) { this.logger.debug("[TestMode] toggleUserInvites() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] toggleUserInvites() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.toggleUserInvites(phoneNumber, block);
 	}
@@ -508,12 +554,18 @@ class Database {
 	// --- Local Blocks ---
 
 	async addLocalBlock(phoneNumber) {
-		if (this.testMode) { this.logger.debug("[TestMode] addLocalBlock() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addLocalBlock() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.addLocalBlock(phoneNumber);
 	}
 	async removeLocalBlock(phoneNumber) {
-		if (this.testMode) { this.logger.debug("[TestMode] removeLocalBlock() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] removeLocalBlock() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.removeLocalBlock(phoneNumber);
 	}
@@ -527,7 +579,10 @@ class Database {
 	// --- Blocked Invites ---
 
 	async saveBlockedInvite(code, jid) {
-		if (this.testMode) { this.logger.debug("[TestMode] saveBlockedInvite() bloqueado"); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveBlockedInvite() bloqueado");
+			return true;
+		}
 		this.triggerBackupStart();
 		return this.coreRepo.saveBlockedInvite(code, jid);
 	}
@@ -553,7 +608,10 @@ class Database {
 	}
 
 	saveJSONToFile(filePath, data) {
-		if (this.testMode) { this.logger.debug("[TestMode] saveJSONToFile() bloqueado:", filePath); return true; }
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveJSONToFile() bloqueado:", filePath);
+			return true;
+		}
 		this.triggerBackupStart();
 		try {
 			const dir = path.dirname(filePath);
