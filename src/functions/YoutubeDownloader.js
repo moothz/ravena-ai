@@ -748,6 +748,62 @@ async function srCommand(bot, message, args, group) {
 	});
 }
 
+/**
+ * Comando para buscar letra de música
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {Object} message - Dados da mensagem
+ * @param {Array} args - Argumentos do comando
+ * @param {Object} group - Dados do grupo
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>} - ReturnMessage ou array de ReturnMessages
+ */
+async function lyricsCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+
+	if (args.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"Por favor, forneça o nome de uma música para buscar a letra.\nExemplo: `!letra Fear of the Dark`",
+			options: {
+				quotedMessageId: message.origin.id._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	const query = args.join(" ");
+
+	bot.sendReturnMessages(
+		new ReturnMessage({
+			chatId,
+			content: `🔍 Buscando letra para: "${query}"...`
+		}),
+		group
+	);
+
+	const lyricsData = await searchLyrics(query);
+
+	if (!lyricsData) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Não foi possível encontrar a letra para "${query}".`,
+			options: {
+				quotedMessageId: message.origin.id._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	return new ReturnMessage({
+		chatId,
+		content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`,
+		options: {
+			quotedMessageId: message.origin.id._serialized,
+			goReply: message.origin
+		}
+	});
+}
+
 // Comandos utilizando a classe Command
 const commands = [
 	new Command({
@@ -774,6 +830,19 @@ const commands = [
 			error: "❌"
 		},
 		method: srCommand
+	}),
+
+	new Command({
+		name: "letra",
+		caseSensitive: false,
+		description: "Busca a letra de uma música",
+		category: "utilidades",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🎶",
+			error: "❌"
+		},
+		method: lyricsCommand
 	})
 ];
 
