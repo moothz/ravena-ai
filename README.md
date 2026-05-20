@@ -240,6 +240,96 @@ Configure as chaves no `.env` conforme precisar:
 * [OpenRouter](https://openrouter.ai/keys) — Acesso a múltiplos LLMs (`OPENROUTER_API_KEY`)
 
 
+## 🧪 Testando sem WhatsApp
+
+O bot possui um harness de testes que permite executar comandos dentro do container Docker **sem precisar de uma conexão WhatsApp real**. Ideal para desenvolvimento rápido.
+
+### Fluxo de desenvolvimento
+
+```bash
+# 1. Edite o código localmente
+vim src/functions/MeuComando.js
+
+# 2. Copie o arquivo alterado para o container e rode os testes
+make test-quick FILE=src/functions/MeuComando.js
+
+# 3. Para rodar apenas os testes (sem copiar arquivos)
+make test
+```
+
+### Como escrever testes
+
+Edite o arquivo `run-testes.js` na raiz do projeto:
+
+```javascript
+const { msgTexto, msgMedia, msgComQuote, msgCustom } = require("./src/testing/helpers");
+const TestRunner = require("./src/testing/TestRunner");
+
+const GROUP_ID = "SEU_GROUP_ID@g.us"; // ID de um grupo real no banco
+
+async function main() {
+  const runner = new TestRunner({ groupId: GROUP_ID, author: "5511999@s.whatsapp.net" });
+
+  // Mensagem de texto simples
+  runner.run("!ping", () => msgTexto("!ping"));
+
+  // Mensagem com mídia (carrega arquivo do disco)
+  runner.run("!s - imagem", () =>
+    msgMedia("!s", "./data/test-image.png", { type: "image" })
+  );
+
+  // Mensagem que responde outra (quoted)
+  runner.run("!resumo com quoted", async () => {
+    const quoted = msgTexto("Texto longo que precisa ser resumido.");
+    return msgComQuote("!resumo", quoted);
+  });
+
+  // Objeto totalmente customizado
+  runner.run("!help no privado", () =>
+    msgCustom({ content: "!help", type: "text", group: null })
+  );
+
+  await runner.runAll();
+}
+main().catch(console.error);
+```
+
+### Helpers disponíveis
+
+| Helper | Descrição |
+|--------|-----------|
+| `msgTexto(texto, opts?)` | Mensagem de texto simples |
+| `msgMedia(legenda, arquivo, opts?)` | Mensagem com imagem/áudio/vídeo carregado do disco |
+| `msgComQuote(texto, quoted, opts?)` | Mensagem que responde (cita) outra |
+| `msgCustom(overrides)` | Objeto message totalmente customizado |
+
+### Arquivos de mídia para testes
+
+Coloque os arquivos na pasta `data/` com estes nomes:
+- `data/test-image.png` e `data/test-image.jpg`
+- `data/test-audio.mp3`
+- `data/test-video.mp4`
+
+### Como obter o ID do seu grupo
+
+```bash
+docker compose exec ravena-ai node -e "
+  const DB = require('./src/utils/Database');
+  DB.getInstance({ disableBackup: true }).getGroups()
+    .then(gs => gs.forEach(g => console.log(g.name, '→', g.id)))
+    .catch(console.error);
+"
+```
+
+### Comportamento em modo de teste
+
+- **Leituras**: normais — acessa o banco de dados real do container
+- **Escritas**: bloqueadas — nenhum dado é alterado no banco
+- **APIs externas**: ativas — comandos como `!yt`, `!ia`, `!img` fazem requests reais
+- **Saída do processo**: automática — o runner fecha as conexões e encerra ao final
+
+---
+
 ## 🧩 Contribuindo: Implementandos Novos Comandos
 
 Para contribuir com o bot e adicionar um novo comando fixo, crie um arquivo `.js` na pasta `src/functions/`.

@@ -123,6 +123,13 @@ ps: ## Mostra o status de todos os containers
 update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no container
 	docker compose exec ravena-ai node update-allm-cmds.js
 
+test: ## Roda o arquivo run-testes.js dentro do container (sem WhatsApp)
+	docker compose exec ravena-ai node run-testes.js
+
+test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick FILE=src/functions/MinhaFunc.js)
+	@if [ -z "$(FILE)" ]; then printf "$(YELLOW)Uso: make test-quick FILE=caminho/do/arquivo.js$(NC)\n"; exit 1; fi
+	docker cp $(FILE) $$(docker compose ps -q ravena-ai):/app/$(FILE)
+	docker compose exec ravena-ai node run-testes.js
 
 
 update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o container
