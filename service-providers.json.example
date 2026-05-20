@@ -1,20 +1,59 @@
 {
 	"llm": [
 		{
-			"name": "ollama-gemma4:31b",
+			"name": "ollama-local",
 			"type": "ollama",
 			"url": "http://192.168.1.10:11434",
 			"model": "gemma4:31b",
 			"enabled": true,
 			"temperature": 1,
 			"top_k": 64,
-			"top_p": 0.95
+			"top_p": 0.95,
+			"ignoreVideo": false,
+			"textOnly": false,
+			"timeout_multiplier": 1
 		},
 		{
-			"name": "gemini",
-			"type": "gemini",
-			"model": "gemini-2.1-flash",
-			"enabled": true
+			"name": "openai-official",
+			"type": "openai",
+			"url": "https://api.openai.com/v1",
+			"apiKey": "sk-proj-...",
+			"model": "gpt-4o",
+			"enabled": true,
+			"temperature": 0.7,
+			"timeout_multiplier": 2
+		},
+		{
+			"name": "openrouter-default",
+			"type": "openrouter",
+			"url": "https://openrouter.ai/api/v1",
+			"apiKey": "sk-or-v1-...",
+			"model": "google/gemma-3-27b-it",
+			"enabled": true,
+			"temperature": 0.7,
+			"timeout_multiplier": 2,
+			"textOnly": true
+		},
+		{
+			"name": "lmstudio-deepseek",
+			"type": "openai",
+			"url": "http://localhost:1234/v1",
+			"apiKey": "not-needed",
+			"model": "deepseek-coder-v2",
+			"enabled": false,
+			"temperature": 0.3,
+			"textOnly": true
+		},
+		{
+			"name": "deepseek-api",
+			"type": "openai",
+			"url": "https://api.deepseek.com/v1",
+			"apiKey": "sk-...",
+			"model": "deepseek-reasoner",
+			"enabled": false,
+			"temperature": 0.5,
+			"timeout_multiplier": 3,
+			"textOnly": true
 		}
 	],
 	"whisper": [

@@ -147,9 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('prov-type').value = p.type || 'ollama';
                 document.getElementById('prov-model').value = p.model || '';
                 document.getElementById('prov-timeout').value = p.timeout_multiplier || '';
+                document.getElementById('prov-text-only').checked = !!p.textOnly;
                 document.getElementById('prov-ignore-video').checked = !!p.ignoreVideo;
             }
-        } else {
+           } else {
             document.getElementById('prov-name').value = '';
             document.getElementById('prov-url').value = '';
             document.getElementById('prov-apiKey').value = '';
@@ -157,8 +158,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('prov-type').value = 'ollama';
             document.getElementById('prov-model').value = '';
             document.getElementById('prov-timeout').value = '';
+            document.getElementById('prov-text-only').checked = false;
             document.getElementById('prov-ignore-video').checked = false;
-        }
+           }
 
         providerModal.classList.remove('hidden');
     };
@@ -207,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
             provider.model = document.getElementById('prov-model').value;
             const timeout = parseFloat(document.getElementById('prov-timeout').value);
             if (!isNaN(timeout)) provider.timeout_multiplier = timeout;
+            provider.textOnly = document.getElementById('prov-text-only').checked;
             provider.ignoreVideo = document.getElementById('prov-ignore-video').checked;
         }
 
