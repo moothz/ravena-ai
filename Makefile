@@ -124,6 +124,8 @@ update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no cont
 	docker compose exec ravena-ai node update-allm-cmds.js
 
 test: ## Roda o arquivo run-testes.js dentro do container (sem WhatsApp)
+	docker cp run-testes.js $$(docker compose ps -q ravena-ai):/app/run-testes.js
+	docker cp src/testing $$(docker compose ps -q ravena-ai):/app/src/
 	docker compose exec ravena-ai node run-testes.js
 
 test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick FILE=src/functions/MinhaFunc.js)
