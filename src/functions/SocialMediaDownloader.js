@@ -484,8 +484,9 @@ async function downloadHandler(bot, message, args, group) {
 				const searchResults = await yts.GetListByKeyword(query, false, 5);
 				if (searchResults && searchResults.items && searchResults.items.length > 0) {
 					const count = Math.min(searchResults.items.length, 5);
-					const randomIndex = Math.floor(Math.random() * count);
-					const item = searchResults.items[randomIndex];
+					// Para áudio/música, pega o primeiro resultado (mais relevante); para vídeo usa aleatório
+					const selectedIndex = isAudioOnly ? 0 : Math.floor(Math.random() * count);
+					const item = searchResults.items[selectedIndex];
 					url = `https://www.youtube.com/watch?v=${item.id}`;
 
 					// Roteia a URL do YouTube encontrada para o YoutubeDownloader
