@@ -343,10 +343,13 @@ services:
     ports:
       - "${COBALT_PORT:-9090}:9000"
     environment:
-      # Use internal port 9000 as per cobalt default, mapping to 9090 (or .env)
       - API_URL=http://cobalt:9000/
       - API_NAME=Ravena-Cobalt
-
+      - COOKIE_PATH=/app/cookies.json
+      - FORCE_LOCAL_PROCESSING=always
+      - CORS_WILDCARD=1
+    volumes:
+      - ./data/www.youtube.com_cookies.json:/app/cookies.json
 
 # ─────────────────────────────────────────────────────────────
 # VOLUMES — persistent storage

@@ -9,6 +9,7 @@ const Database = require("../utils/Database");
 const { toMp3 } = require("../utils/Conversions");
 const crypto = require("crypto");
 const yts = require("youtube-search-api");
+const { pipeline } = require("stream/promises");
 
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
@@ -97,7 +98,7 @@ class SMDCacheManager {
 			}
 
 			// 2. Limpeza por tamanho (30GB)
-			const stats = await this.getFolderStats(process.env.DL_FOLDER);
+			const stats = await this.getFolderStats(process.env.DL_FOLDER || "/app/downloads");
 			const maxSizeBytes = this.maxSizeGB * 1024 * 1024 * 1024;
 
 			if (stats.totalSize > maxSizeBytes) {
@@ -125,6 +126,7 @@ class SMDCacheManager {
 	}
 
 	async getFolderStats(dirPath) {
+		if (!fsSync.existsSync(dirPath)) return { totalSize: 0 };
 		const files = await fs.readdir(dirPath);
 		let totalSize = 0;
 		for (const file of files) {
@@ -210,25 +212,44 @@ async function searchLyrics(query) {
  * Faz o download de um arquivo de uma URL
  */
 async function downloadFile(url, filename) {
-	const dlPath = path.join(process.env.DL_FOLDER, filename);
+	const dlFolder = process.env.DL_FOLDER || "/app/downloads";
+	const dlPath = path.join(dlFolder, filename);
+
+	if (!fsSync.existsSync(dlFolder)) {
+		fsSync.mkdirSync(dlFolder, { recursive: true });
+	}
+
 	const writer = fsSync.createWriteStream(dlPath);
 
-	const response = await axios({
-		url,
-		method: "GET",
-		responseType: "stream"
-	});
+	try {
+		const response = await axios({
+			url,
+			method: "GET",
+			responseType: "stream",
+			headers: {
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+				Accept: "*/*",
+				"Accept-Language": "en-US,en;q=0.9"
+			},
+			timeout: 300000
+		});
 
-	response.data.pipe(writer);
+		await pipeline(response.data, writer);
+		await new Promise((r) => setTimeout(r, 500)); // Sync disk
 
-	return new Promise((resolve, reject) => {
-		writer.on("finish", () => resolve(dlPath));
-		writer.on("error", reject);
-	});
+		const stats = fsSync.statSync(dlPath);
+		if (stats.size === 0) throw new Error("Arquivo vazio recebido.");
+
+		return dlPath;
+	} catch (error) {
+		if (fsSync.existsSync(dlPath)) fsSync.unlinkSync(dlPath);
+		throw error;
+	}
 }
 
 /**
- * Envia o comando para o Cobalt
+ * Faz requisição para a API Cobalt
  */
 async function cobaltRequest(url, options = {}) {
 	const cobaltUrl = process.env.COBALT_API_URL || "http://cobalt:9000";
@@ -249,12 +270,17 @@ async function cobaltRequest(url, options = {}) {
 		);
 
 		const data = response.data;
+		const externalUrl = process.env.COBALT_EXTERNAL_URL || cobaltUrl;
+		const fixUrl = (u) =>
+			u && u.includes("://cobalt:9000") ? u.replace("http://cobalt:9000", externalUrl) : u;
 
-		// Se o bot estiver rodando fora do docker (localhost), mas o cobalt retornar a URL interna (cobalt:9000),
-		// precisamos trocar para a URL externa configurada para conseguir baixar o arquivo.
-		if (data.url && data.url.includes("://cobalt:9000")) {
-			const externalUrl = process.env.COBALT_EXTERNAL_URL || cobaltUrl;
-			data.url = data.url.replace("http://cobalt:9000", externalUrl);
+		if (data.url) data.url = fixUrl(data.url);
+		if (data.tunnel) {
+			if (Array.isArray(data.tunnel)) data.tunnel = data.tunnel.map(fixUrl);
+			else data.tunnel = fixUrl(data.tunnel);
+		}
+		if (data.picker) {
+			data.picker = data.picker.map((p) => ({ ...p, url: fixUrl(p.url) }));
 		}
 
 		return data;
@@ -270,11 +296,12 @@ async function cobaltRequest(url, options = {}) {
  */
 async function downloadHandler(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
-	const commandName = message.origin.body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
+	const body = message.origin?.body || "";
+	const commandName = body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
 
 	// Verifica se há URL
-	let url = args.find((arg) => arg.startsWith("http"));
-	if (!url && message.origin.quotedMsg) {
+	let url = args.find((arg) => arg && typeof arg === "string" && arg.startsWith("http"));
+	if (!url && message.origin?.quotedMsg) {
 		const quotedText =
 			message.origin.quotedMsg.body ||
 			message.origin.quotedMsg.caption ||
@@ -346,7 +373,6 @@ async function downloadHandler(bot, message, args, group) {
 	}
 
 	// Mensagem inicial
-
 	bot.sendReturnMessages(
 		new ReturnMessage({
 			chatId,
@@ -375,9 +401,11 @@ async function downloadHandler(bot, message, args, group) {
 
 		// Lista de itens para baixar
 		const items = [];
-		if (result.url) {
+		const dlUrl = result.url || (Array.isArray(result.tunnel) ? result.tunnel[0] : result.tunnel);
+
+		if (dlUrl) {
 			items.push({
-				url: result.url,
+				url: dlUrl,
 				filename: result.filename || `download_${crypto.randomBytes(4).toString("hex")}`
 			});
 		} else if (result.picker) {
@@ -385,7 +413,7 @@ async function downloadHandler(bot, message, args, group) {
 				items.push({
 					url: p.url,
 					filename: p.filename || `download_${index}_${crypto.randomBytes(4).toString("hex")}`,
-					type: p.type // 'photo', 'video', etc.
+					type: p.type
 				});
 			});
 		}
@@ -461,7 +489,7 @@ async function downloadHandler(bot, message, args, group) {
 }
 
 /**
- * Função auxiliar para enviar a mídia processada (usada pelo cache e pelo download direto)
+ * Função auxiliar para enviar a mídia processada
  */
 async function sendProcessedMedia(
 	bot,
@@ -483,7 +511,10 @@ async function sendProcessedMedia(
 	const caption = `✅ *Download Concluído!*${
 		files.length > 1 ? ` (${files.length} itens)` : ""
 	}\n\n🌐 *Fonte:* ${platform}\n📝 *Título:* ${filename}${
-		!isAudioOnly && !returnMessages[0].mimetype.startsWith("image")
+		!isAudioOnly &&
+		returnMessages[0] &&
+		returnMessages[0].mimetype &&
+		!returnMessages[0].mimetype.startsWith("image")
 			? `\n\n> *Dica:* Responda este vídeo com \`${prefix}extractaudio\` para obter apenas o áudio.`
 			: ""
 	}`;

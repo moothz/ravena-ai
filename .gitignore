@@ -186,3 +186,6 @@ public/code-snippets.json
 # /whatsgoapi/go.sum
 data/whatsgoapi/dbdata/main.db
 data/whatsgoapi/dbdata/main.db-journal
+/scratch
+data/www.youtube.com_cookies.json
+/scratch
