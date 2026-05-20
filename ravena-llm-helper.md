@@ -88,7 +88,6 @@ Você (AnythingLLM) deve atuar como uma assistente proativa. Siga estas regras:
 - **Logs**: O uso de comandos é registrado em `cmd_usage.db`.
 - **Media**: Arquivos temporários ficam em `data/media/`.
 
-
 ---
 
 # 📚 Referência de Comandos
@@ -452,6 +451,174 @@ Estes comandos podem ser usados por qualquer membro.
 
 ---
 
+### Categoria: utilidades
+#### !correios
+**Descrição:** Rastreia uma encomenda dos Correios
+
+---
+
+#### !correios-lista
+**Descrição:** Lista encomendas sendo rastreadas no chat
+
+---
+
+#### !correios-del
+**Descrição:** Para de rastrear uma encomenda
+
+---
+
+#### !horoscopo
+**Descrição:** Exibe o horóscopo para um signo e/ou data específica.
+
+**Uso:** `!horoscopo !horoscopo [signo] [data]`
+
+**Exemplo:** `!horoscopo !horoscopo [signo] [data]`
+
+---
+
+#### !lembretes
+**Descrição:** Lista os lembretes ativos
+
+---
+
+#### !lembrar
+**Descrição:** Configura um lembrete para uma data específica
+
+---
+
+#### !l-cancelar
+**Descrição:** Cancela um lembrete por ID
+
+---
+
+#### !news
+**Descrição:** Exibe as MuNews para uma data específica (padrão: hoje)
+
+**Uso:** `!news !news [YYYY-MM-DD]`
+
+**Exemplo:** `!news !news [YYYY-MM-DD]`
+
+---
+
+#### !ocr
+**Descrição:** Extrai texto de uma imagem usando IA
+
+---
+
+#### !qr
+**Descrição:** Gera um QR Code para um texto ou link
+
+---
+
+#### !qr-wifi
+**Descrição:** Gera um QR Code para conexão WiFi
+
+---
+
+#### !qr-pix
+**Descrição:** Gera um QR Code para pagamento PIX
+
+---
+
+#### !download
+**Descrição:** Baixa mídia de algum site
+
+---
+
+#### !ig
+**Descrição:** Baixa mídia do Instagram
+
+---
+
+#### !instagram
+**Descrição:** Baixa mídia do Instagram
+
+---
+
+#### !insta
+**Descrição:** Baixa mídia do Instagram
+
+---
+
+#### !tw
+**Descrição:** Baixa mídia do Twitter/X
+
+---
+
+#### !twitter
+**Descrição:** Baixa mídia do Twitter/X
+
+---
+
+#### !x
+**Descrição:** Baixa mídia do Twitter/X
+
+---
+
+#### !tk
+**Descrição:** Baixa mídia do TikTok
+
+---
+
+#### !tiktok
+**Descrição:** Baixa mídia do TikTok
+
+---
+
+#### !fb
+**Descrição:** Baixa mídia do Facebook
+
+---
+
+#### !facebook
+**Descrição:** Baixa mídia do Facebook
+
+---
+
+#### !pin
+**Descrição:** Baixa mídia do Pinterest
+
+---
+
+#### !pinterest
+**Descrição:** Baixa mídia do Pinterest
+
+---
+
+#### !stt
+**Descrição:** Converte voz para texto
+
+---
+
+#### !transcrever
+**Descrição:** Converte voz para texto
+
+---
+
+#### !traduzir
+**Descrição:** Traduz um texto para o idioma especificado
+
+**Uso:** `!traduzir !traduzir [idiomaOriginal] [idiomaDesjado] [texto] ou !traduzir [idioma] em resposta a uma mensagem`
+
+**Exemplo:** `!traduzir !traduzir [idiomaOriginal] [idiomaDesjado] [texto] ou !traduzir [idioma] em resposta a uma mensagem`
+
+---
+
+#### !clima
+**Descrição:** Clima e previsão do tempo (Open-Meteo)
+
+---
+
+#### !yt
+**Descrição:** Baixa um vídeo do YouTube
+
+---
+
+#### !sr
+**Descrição:** Baixa uma música do YouTube (áudio do vídeo)
+
+---
+
 ### Categoria: geral
 #### !doar
 **Descrição:** Mostra informações de doação e link
@@ -785,6 +952,31 @@ Estes comandos podem ser usados por qualquer membro.
 
 ---
 
+#### !apod
+**Descrição:** Foto astronômica do dia (NASA)
+
+---
+
+#### !epic
+**Descrição:** Imagem da Terra pela câmera EPIC (Natural)
+
+---
+
+#### !epic-enhanced
+**Descrição:** Imagem da Terra pela câmera EPIC (Color Enhanced)
+
+---
+
+#### !epic-aerosol
+**Descrição:** Imagem da Terra pela câmera EPIC (Aerosol Index)
+
+---
+
+#### !epic-cloud
+**Descrição:** Imagem da Terra pela câmera EPIC (Cloud Fraction)
+
+---
+
 #### !sipt
 **Descrição:** Consulta informações sobre uma placa no InstaSiPt
 
@@ -811,64 +1003,6 @@ Estes comandos podem ser usados por qualquer membro.
 
 #### !wiki
 **Descrição:** Busca informações na Wikipedia
-
----
-
-### Categoria: utilidades
-#### !horoscopo
-**Descrição:** Exibe o horóscopo para um signo e/ou data específica.
-
-**Uso:** `!horoscopo !horoscopo [signo] [data]`
-
-**Exemplo:** `!horoscopo !horoscopo [signo] [data]`
-
----
-
-#### !lembretes
-**Descrição:** Lista os lembretes ativos
-
----
-
-#### !lembrar
-**Descrição:** Configura um lembrete para uma data específica
-
----
-
-#### !l-cancelar
-**Descrição:** Cancela um lembrete por ID
-
----
-
-#### !news
-**Descrição:** Exibe as MuNews para uma data específica (padrão: hoje)
-
-**Uso:** `!news !news [YYYY-MM-DD]`
-
-**Exemplo:** `!news !news [YYYY-MM-DD]`
-
----
-
-#### !stt
-**Descrição:** Converte voz para texto
-
----
-
-#### !transcrever
-**Descrição:** Converte voz para texto
-
----
-
-#### !traduzir
-**Descrição:** Traduz um texto para o idioma especificado
-
-**Uso:** `!traduzir !traduzir [idiomaOriginal] [idiomaDesjado] [texto] ou !traduzir [idioma] em resposta a uma mensagem`
-
-**Exemplo:** `!traduzir !traduzir [idiomaOriginal] [idiomaDesjado] [texto] ou !traduzir [idioma] em resposta a uma mensagem`
-
----
-
-#### !clima
-**Descrição:** Pesquisa e mostra o clima / previsão do tempo para uma localização
 
 ---
 
@@ -1002,17 +1136,6 @@ Estes comandos podem ser usados por qualquer membro.
 
 #### !topstreams
 **Descrição:** Mostra as streams mais populares no momento
-
----
-
-### Categoria: downloaders
-#### !yt
-**Descrição:** Baixa um vídeo do YouTube
-
----
-
-#### !sr
-**Descrição:** Baixa uma música do YouTube (áudio do vídeo)
 
 ---
 
@@ -1404,6 +1527,11 @@ Começam com `!g-` e são restritos a administradores.
 
 ---
 
+#### !g-dossie
+**Descrição:** Exibe o histórico de dossiês deste grupo
+
+---
+
 ## 👑 Comandos de Super Admin
 Começam com `!sa-` e são exclusivos do dono do bot.
 
@@ -1554,6 +1682,26 @@ Começam com `!sa-` e são exclusivos do dono do bot.
 
 #### !sa-globalStreamRefresh
 **Descrição:** Reseta a lista de bots ativos/ignorados para transmissões em TODOS os grupos
+
+---
+
+#### !sa-dossie
+**Descrição:** Trigga análise de dossiê para um grupo
+
+---
+
+#### !sa-addElogio
+**Descrição:** Adiciona um sticker de elogio (use em resposta)
+
+---
+
+#### !sa-addXingamento
+**Descrição:** Adiciona um sticker de xingamento (use em resposta)
+
+---
+
+#### !sa-fixGroupNames
+**Descrição:** Escaneia e sugere correção para nomes de grupos (dry run)
 
 ---
 
