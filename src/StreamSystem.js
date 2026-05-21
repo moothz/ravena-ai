@@ -138,10 +138,17 @@ class StreamSystem {
 				if (data.groupId) {
 					const bot = await this.findBotForGroup(data.groupId);
 					if (bot) {
-						await bot.sendMessage(
-							data.groupId,
-							`❌ *Canal não encontrado*\n\nO canal do ${data.platform} com o nome *${data.channelName}* não foi encontrado e foi removido do monitoramento. Verifique se o nome está correto e configure-o novamente se necessário.`
-						);
+						const platformName =
+							data.platform === "youtube"
+								? "YouTube"
+								: data.platform === "twitch"
+									? "Twitch"
+									: "Kick";
+
+						const msgAviso = `⚠️ *Canal Temporariamente Pausado*\n\nO canal do *${platformName}* com o nome *${data.channelName}* apresentou erros consecutivos de "não encontrado" e foi pausado por 12 horas. ⚠️ *Verifique se o nome está correto*.\n\n> O monitoramento será reativado automaticamente após esse período.`;
+
+						bot.sendMessage(data.groupId, msgAviso);
+						bot.sendMessage(bot.grupoLogs, msgAviso);
 					}
 				}
 			} catch (error) {
@@ -198,59 +205,77 @@ class StreamSystem {
 				youtube: []
 			};
 
+			const now = new Date();
+
 			// Processa cada grupo
 			for (const group of groups) {
-				// Adiciona canais Twitch
-				if (group.twitch && Array.isArray(group.twitch)) {
-					const channelsToRemove = [];
+				let groupModified = false;
+				const platforms = ["twitch", "kick", "youtube"];
 
-					for (const channel of group.twitch) {
-						if (
-							(!channel.channel.startsWith("xxx_") && !channel.channel.includes("twitchtv")) ||
-							!channel.channel.includes("twitch.tv")
-						) {
-							if (cleanup && this.streamMonitor) {
-								const channelExists = await this.streamMonitor.twitchChannelExists(channel.channel);
-								if (!channelExists) {
-									channelsToRemove.push(channel.channel.toLowerCase());
+				for (const platform of platforms) {
+					if (group[platform] && Array.isArray(group[platform])) {
+						const channelsToRemove = [];
+
+						for (const channelConfig of group[platform]) {
+							// Verifica se o canal está pausado
+							if (channelConfig.pausedUntil) {
+								if (new Date(channelConfig.pausedUntil) > now) {
+									// Pausado, pula o monitoramento
 									continue;
+								} else {
+									// Pausa expirada, reativa
+									this.logger.info(
+										`Reativando canal ${platform}/${channelConfig.channel} no grupo ${group.id} (pausa expirada no carregamento)`
+									);
+									delete channelConfig.pausedUntil;
+									delete channelConfig.pausedReason;
+									groupModified = true;
 								}
-								await sleep(500);
 							}
 
-							if (!subscribedChannels.twitch.includes(channel.channel)) {
-								this.streamMonitor.subscribe(channel.channel, "twitch");
-								subscribedChannels.twitch.push(channel.channel);
+							// Caso específico de limpeza da Twitch
+							if (platform === "twitch") {
+								if (
+									(!channelConfig.channel.startsWith("xxx_") &&
+										!channelConfig.channel.includes("twitchtv")) ||
+									!channelConfig.channel.includes("twitch.tv")
+								) {
+									if (cleanup && this.streamMonitor) {
+										const channelExists = await this.streamMonitor.twitchChannelExists(
+											channelConfig.channel
+										);
+										if (!channelExists) {
+											channelsToRemove.push(channelConfig.channel.toLowerCase());
+											continue;
+										}
+										await sleep(500);
+									}
+
+									if (!subscribedChannels.twitch.includes(channelConfig.channel)) {
+										this.streamMonitor.subscribe(channelConfig.channel, "twitch");
+										subscribedChannels.twitch.push(channelConfig.channel);
+									}
+								}
+							} else {
+								// Kick e YouTube
+								if (!subscribedChannels[platform].includes(channelConfig.channel)) {
+									this.streamMonitor.subscribe(channelConfig.channel, platform);
+									subscribedChannels[platform].push(channelConfig.channel);
+								}
 							}
 						}
-					}
 
-					if (cleanup && channelsToRemove.length > 0) {
-						group.twitch = group.twitch.filter(
-							(c) => !channelsToRemove.includes(c.channel.toLowerCase())
-						);
-						await this.database.saveGroup(group);
+						if (cleanup && platform === "twitch" && channelsToRemove.length > 0) {
+							group.twitch = group.twitch.filter(
+								(c) => !channelsToRemove.includes(c.channel.toLowerCase())
+							);
+							groupModified = true;
+						}
 					}
 				}
 
-				// Adiciona canais Kick
-				if (group.kick && Array.isArray(group.kick)) {
-					for (const channel of group.kick) {
-						if (!subscribedChannels.kick.includes(channel.channel)) {
-							this.streamMonitor.subscribe(channel.channel, "kick");
-							subscribedChannels.kick.push(channel.channel);
-						}
-					}
-				}
-
-				// Adiciona canais YouTube
-				if (group.youtube && Array.isArray(group.youtube)) {
-					for (const channel of group.youtube) {
-						if (!subscribedChannels.youtube.includes(channel.channel)) {
-							this.streamMonitor.subscribe(channel.channel, "youtube");
-							subscribedChannels.youtube.push(channel.channel);
-						}
-					}
+				if (groupModified) {
+					await this.database.saveGroup(group);
 				}
 			}
 

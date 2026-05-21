@@ -1806,6 +1806,10 @@ class Management {
 				for (const channel of twitchChannels) {
 					infoMessage += `- *${channel.channel}*:\n`;
 
+					if (channel.pausedUntil && new Date(channel.pausedUntil) > new Date()) {
+						infoMessage += `  • Status: ⏸️ *PAUSADO* (até ${new Date(channel.pausedUntil).toLocaleString("pt-BR")})\n`;
+					}
+
 					// Tipos de mídia configurados para online/offline
 					const onlineMedia = formatMediaConfig(channel.onConfig);
 					const offlineMedia = formatMediaConfig(channel.offConfig);
@@ -1848,6 +1852,10 @@ class Management {
 				for (const channel of kickChannels) {
 					infoMessage += `- *${channel.channel}*:\n`;
 
+					if (channel.pausedUntil && new Date(channel.pausedUntil) > new Date()) {
+						infoMessage += `  • Status: ⏸️ *PAUSADO* (até ${new Date(channel.pausedUntil).toLocaleString("pt-BR")})\n`;
+					}
+
 					// Tipos de mídia configurados para online/offline
 					const onlineMedia = formatMediaConfig(channel.onConfig);
 					const offlineMedia = formatMediaConfig(channel.offConfig);
@@ -1887,6 +1895,10 @@ class Management {
 
 				for (const channel of youtubeChannels) {
 					infoMessage += `- *${channel.channel}*:\n`;
+
+					if (channel.pausedUntil && new Date(channel.pausedUntil) > new Date()) {
+						infoMessage += `  • Status: ⏸️ *PAUSADO* (até ${new Date(channel.pausedUntil).toLocaleString("pt-BR")})\n`;
+					}
 
 					// Tipos de mídia configurados
 					const mediaConfig = formatMediaConfig(channel.onConfig);
