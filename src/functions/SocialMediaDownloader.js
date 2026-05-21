@@ -155,6 +155,28 @@ class SMDCacheManager {
 const cacheManager = new SMDCacheManager();
 
 /**
+ * Wrapper de retry para operações de download
+ * Tenta executar a função até maxRetries vezes antes de falhar
+ */
+async function withRetry(fn, maxRetries = 2, delayMs = 3000) {
+	let lastError;
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			lastError = error;
+			if (attempt < maxRetries) {
+				logger.warn(
+					`[withRetry] Tentativa ${attempt}/${maxRetries} falhou: ${error.message}. Tentando novamente em ${delayMs}ms...`
+				);
+				await new Promise((r) => setTimeout(r, delayMs));
+			}
+		}
+	}
+	throw lastError;
+}
+
+/**
  * Detecta a plataforma da URL (incluindo YouTube e SoundCloud)
  */
 function detectPlatform(url) {
@@ -247,7 +269,7 @@ async function downloadFile(url, filename) {
 				"User-Agent":
 					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 			},
-			timeout: 300000
+			timeout: 600000
 		});
 
 		await pipeline(response.data, writer);
@@ -283,7 +305,7 @@ async function cobaltRequest(url, options = {}) {
 					Accept: "application/json",
 					"Content-Type": "application/json"
 				},
-				timeout: 60000
+				timeout: 120000
 			}
 		);
 
@@ -636,98 +658,106 @@ async function downloadHandler(bot, message, args, group) {
 	);
 
 	try {
-		const cobaltOptions = {
-			videoQuality: "720",
-			filenameStyle: "pretty"
-		};
+		// Executa todo o fluxo de download com até 3 tentativas (1 original + 2 retries)
+		await withRetry(
+			async () => {
+				const cobaltOptions = {
+					videoQuality: "720",
+					filenameStyle: "pretty"
+				};
 
-		if (isAudioOnly) {
-			cobaltOptions.downloadMode = "audio";
-			cobaltOptions.audioFormat = "mp3";
-		}
+				if (isAudioOnly) {
+					cobaltOptions.downloadMode = "audio";
+					cobaltOptions.audioFormat = "mp3";
+				}
 
-		const result = await cobaltRequest(url, cobaltOptions);
+				const result = await cobaltRequest(url, cobaltOptions);
 
-		if (result.status === "error") {
-			throw new Error(result.text || "Erro desconhecido no serviço de download.");
-		}
+				if (result.status === "error") {
+					throw new Error(result.text || "Erro desconhecido no serviço de download.");
+				}
 
-		const items = [];
-		const dlUrl = result.url || (Array.isArray(result.tunnel) ? result.tunnel[0] : result.tunnel);
+				const items = [];
+				const dlUrl =
+					result.url || (Array.isArray(result.tunnel) ? result.tunnel[0] : result.tunnel);
 
-		if (dlUrl) {
-			items.push({
-				url: dlUrl,
-				filename: result.filename || `download_${crypto.randomBytes(4).toString("hex")}`
-			});
-		} else if (result.picker) {
-			result.picker.forEach((p, index) => {
-				items.push({
-					url: p.url,
-					filename: p.filename || `download_${index}_${crypto.randomBytes(4).toString("hex")}`,
-					type: p.type
-				});
-			});
-		}
+				if (dlUrl) {
+					items.push({
+						url: dlUrl,
+						filename: result.filename || `download_${crypto.randomBytes(4).toString("hex")}`
+					});
+				} else if (result.picker) {
+					result.picker.forEach((p, index) => {
+						items.push({
+							url: p.url,
+							filename: p.filename || `download_${index}_${crypto.randomBytes(4).toString("hex")}`,
+							type: p.type
+						});
+					});
+				}
 
-		if (items.length === 0) {
-			throw new Error("Não foi possível obter os links das mídias.");
-		}
+				if (items.length === 0) {
+					throw new Error("Não foi possível obter os links das mídias.");
+				}
 
-		const displayFilename = result.filename || items[0].filename;
-		logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename}`);
+				const displayFilename = result.filename || items[0].filename;
+				logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename}`);
 
-		const processedFiles = [];
-		for (const item of items) {
-			const tempFilename = `${crypto.randomBytes(4).toString("hex")}_${item.filename}`;
-			const filePath = await downloadFile(item.url, tempFilename);
+				const processedFiles = [];
+				for (const item of items) {
+					const tempFilename = `${crypto.randomBytes(4).toString("hex")}_${item.filename}`;
+					const filePath = await downloadFile(item.url, tempFilename);
 
-			let finalFilePath = filePath;
-			let finalMime = isAudioOnly ? "audio/mpeg" : "video/mp4";
+					let finalFilePath = filePath;
+					let finalMime = isAudioOnly ? "audio/mpeg" : "video/mp4";
 
-			const ext = path.extname(item.filename).toLowerCase();
-			if (
-				item.type === "photo" ||
-				item.type === "image" ||
-				[".jpg", ".jpeg", ".png", ".webp"].includes(ext)
-			) {
-				finalMime = "image/jpeg";
-			}
+					const ext = path.extname(item.filename).toLowerCase();
+					if (
+						item.type === "photo" ||
+						item.type === "image" ||
+						[".jpg", ".jpeg", ".png", ".webp"].includes(ext)
+					) {
+						finalMime = "image/jpeg";
+					}
 
-			if (
-				isAudioOnly &&
-				!filePath.endsWith(".mp3") &&
-				!filePath.endsWith(".ogg") &&
-				!filePath.endsWith(".m4a")
-			) {
-				const mp3Path = await toMp3(filePath);
-				finalFilePath = mp3Path;
-				finalMime = "audio/mpeg";
-				fs.unlink(filePath).catch(() => {});
-			}
+					if (
+						isAudioOnly &&
+						!filePath.endsWith(".mp3") &&
+						!filePath.endsWith(".ogg") &&
+						!filePath.endsWith(".m4a")
+					) {
+						const mp3Path = await toMp3(filePath);
+						finalFilePath = mp3Path;
+						finalMime = "audio/mpeg";
+						fs.unlink(filePath).catch(() => {});
+					}
 
-			processedFiles.push({ path: finalFilePath, mimetype: finalMime });
-		}
+					processedFiles.push({ path: finalFilePath, mimetype: finalMime });
+				}
 
-		await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
+				await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
 
-		await sendProcessedMedia(
-			bot,
-			chatId,
-			group,
-			platform,
-			displayFilename,
-			processedFiles,
-			isAudioOnly,
-			wantLyrics,
-			bot.prefix
-		);
+				await sendProcessedMedia(
+					bot,
+					chatId,
+					group,
+					platform,
+					displayFilename,
+					processedFiles,
+					isAudioOnly,
+					wantLyrics,
+					bot.prefix
+				);
+			},
+			3,
+			5000
+		); // 3 tentativas no total (1 original + 2 retries), 5s de intervalo
 	} catch (error) {
-		logger.error(`Erro no download: ${error.message}`);
+		logger.error(`Erro no download após retries: ${error.message}`);
 		await bot.sendReturnMessages(
 			new ReturnMessage({
 				chatId,
-				content: `❌ *Erro ao processar download:*\n${error.message}`
+				content: `❌ *Erro ao processar download após várias tentativas:*\n${error.message}`
 			}),
 			group
 		);
@@ -847,9 +877,14 @@ const commands = downloadCommands.map(
 		})
 );
 
+
+commands[0].reactions.trigger = "⬇️";
+commands[1].reactions.trigger = "⏬";
+
 // Expõe as funções de extração de URL e detecção de YouTube para outros módulos
 module.exports = {
 	commands,
+	downloadHandler,
 	detectPlatform,
 	extractURLFromString,
 	isYoutubeUrl,

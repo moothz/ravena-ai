@@ -21,6 +21,11 @@ const CorreiosCommands = require("./functions/CorreiosCommands");
 const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
 const EventEmitter = require("events");
+const {
+	downloadHandler,
+	detectPlatform,
+	extractURLFromString
+} = require("./functions/SocialMediaDownloader");
 
 class EventHandler extends EventEmitter {
 	static instance = null;
@@ -524,6 +529,22 @@ class EventHandler extends EventEmitter {
 		}
 
 		const ignorePV = bot.ignorePV && bot.notInWhitelist(message.author) && message.group === null;
+
+		// Auto-download de links de mídias sociais no PV
+		if (!group && !ignorePV && message.type === "text" && bot.autoDownloadPV) {
+			const url = extractURLFromString(message.content);
+			if (url) {
+				const platform = detectPlatform(url);
+				const supportedPlatforms = ["YouTube", "Instagram", "Facebook", "TikTok", "Twitter"];
+				if (supportedPlatforms.includes(platform)) {
+					this.logger.info(
+						`[processNonCommandMessage] Auto-download PV detectado: ${platform} - ${url}`
+					);
+					downloadHandler(bot, message, [url], group);
+					return;
+				}
+			}
+		}
 
 		if (!group && !ignorePV) {
 			const stickerProcessed = await Stickers.processAutoSticker(bot, message, group);

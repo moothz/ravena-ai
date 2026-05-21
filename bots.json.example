@@ -11,7 +11,8 @@
     "numero": "559911223344",
     "ignorePV": false,
     "ignoreInvites": true,
-    "customPrefix": "!"
+    "customPrefix": "!",
+    "autoDownloadPV": false
    },
    {
     "enabled": false,

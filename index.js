@@ -168,6 +168,7 @@ async function main() {
 					userAgent:
 						"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
 					ignorePV: rBot.ignorePV ?? false,
+					autoDownloadPV: rBot.autoDownloadPV ?? false,
 					whitelistPV: whitelistArray,
 					pvAI: rBot.pvAI ?? false,
 					ignoreInvites: rBot.ignoreInvites ?? false,

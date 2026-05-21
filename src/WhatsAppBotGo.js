@@ -110,6 +110,7 @@ class WhatsAppBotGo {
 		this.otherBots = options.otherBots ?? [];
 
 		this.ignorePV = options.ignorePV ?? false;
+		this.autoDownloadPV = options.autoDownloadPV ?? false;
 		this.whitelist = options.whitelistPV ?? [];
 		this.ignoreInvites = options.ignoreInvites ?? false;
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
