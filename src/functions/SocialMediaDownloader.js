@@ -877,7 +877,6 @@ const commands = downloadCommands.map(
 		})
 );
 
-
 commands[0].reactions.trigger = "⬇️";
 commands[1].reactions.trigger = "⏬";
 

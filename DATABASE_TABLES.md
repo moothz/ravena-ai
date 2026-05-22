@@ -246,7 +246,38 @@ Caça-níqueis. Tabelas: `slots_users` (perfil do jogador), `slots_group_stats` 
 Tarot. Tabela: `tarot_users` — histórico de leituras por usuário.
 
 ### `pinto.db`
-Jogo do Pinto. Tabelas: `pinto_users`, `pinto_group_stats`.
+Jogo do Pinto.
+
+#### `pinto_scores`
+Placar atual dos membros do grupo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `group_id` | TEXT PK | JID do grupo |
+| `user_id` | TEXT PK | JID do usuário |
+| `user_name` | TEXT | Nome do usuário |
+| `flaccid` | REAL | Comprimento flácido (cm) |
+| `erect` | REAL | Comprimento ereto (cm) |
+| `girth` | REAL | Circunferência (cm) |
+| `curvature` | REAL | Curvatura (-30 a 30 graus) |
+| `score` | INTEGER | Pontuação final |
+| `last_updated` | INTEGER | Timestamp do último teste (ms) |
+
+#### `pinto_history`
+Histórico de todas as jogadas.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo |
+| `user_id` | TEXT | JID do usuário |
+| `user_name` | TEXT | Nome do usuário |
+| `flaccid` | REAL | Comprimento flácido (cm) |
+| `erect` | REAL | Comprimento ereto (cm) |
+| `girth` | REAL | Circunferência (cm) |
+| `curvature` | REAL | Curvatura (-30 a 30 graus) |
+| `score` | INTEGER | Pontuação final |
+| `timestamp` | INTEGER | Timestamp da jogada (ms) |
 
 ### `anagrama.db`
 Jogo de anagramas. Tabelas: `anagram_game` (partidas ativas), `anagram_scores`.

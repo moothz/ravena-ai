@@ -20,6 +20,7 @@ database.getSQLiteDb(
       flaccid REAL,
       erect REAL,
       girth REAL,
+      curvature REAL,
       score INTEGER,
       last_updated INTEGER,
       PRIMARY KEY (group_id, user_id)
@@ -32,6 +33,7 @@ database.getSQLiteDb(
       flaccid REAL,
       erect REAL,
       girth REAL,
+      curvature REAL,
       score INTEGER,
       timestamp INTEGER
     );
@@ -64,16 +66,20 @@ function generateRandomValue(min, max) {
  * @param {number} flaccid - Comprimento flácido
  * @param {number} erect - Comprimento ereto
  * @param {number} girth - Circunferência
+ * @param {number} curvature - Curvatura em graus (-30 a 30)
  * @returns {number} - Score calculado
  */
-function calculateScore(flaccid, erect, girth) {
+function calculateScore(flaccid, erect, girth, curvature) {
 	// Normaliza os valores (0 a 1)
 	const normFlaccid = (flaccid - MIN_FLACCID) / (MAX_FLACCID - MIN_FLACCID);
 	const normErect = (erect - MIN_ERECT) / (MAX_ERECT - MIN_ERECT);
 	const normGirth = (girth - MIN_GIRTH) / (MAX_GIRTH - MIN_GIRTH);
 
+	// Curvatura: 0 é o maior score, módulo de 30 adiciona 0
+	const normCurvature = 1 - Math.abs(curvature) / 30;
+
 	// Calcula a média ponderada (dando mais peso para o comprimento ereto)
-	const weightedAvg = normFlaccid * 0.3 + normErect * 0.5 + normGirth * 0.2;
+	const weightedAvg = normFlaccid * 0.2 + normErect * 0.5 + normGirth * 0.2 + normCurvature * 0.1;
 
 	// Converte para o score final
 	return Math.round(weightedAvg * MAX_SCORE);
@@ -285,9 +291,10 @@ async function pintoCommand(bot, message, args, group) {
 		const flaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
 		const erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), MAX_ERECT); // Ereto é no mínimo igual ao flácido
 		const girth = generateRandomValue(MIN_GIRTH, MAX_GIRTH);
+		const curvature = generateRandomValue(-30, 30);
 
 		// Calcula o score
-		const score = calculateScore(flaccid, erect, girth);
+		const score = calculateScore(flaccid, erect, girth, curvature);
 
 		// Obtém um comentário baseado no score
 		const comment = getComment(score);
@@ -301,31 +308,43 @@ async function pintoCommand(bot, message, args, group) {
 			await database.dbRun(
 				dbName,
 				`
-        INSERT INTO pinto_scores (group_id, user_id, user_name, flaccid, erect, girth, score, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pinto_scores (group_id, user_id, user_name, flaccid, erect, girth, curvature, score, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(group_id, user_id) DO UPDATE SET
           user_name = excluded.user_name,
           flaccid = excluded.flaccid,
           erect = excluded.erect,
           girth = excluded.girth,
+          curvature = excluded.curvature,
           score = excluded.score,
           last_updated = excluded.last_updated
       `,
-				[groupId, userId, userName, flaccid, erect, girth, score, currentTimestamp]
+				[groupId, userId, userName, flaccid, erect, girth, curvature, score, currentTimestamp]
 			);
 
 			// Adiciona ao histórico geral
 			await database.dbRun(
 				dbName,
 				`
-        INSERT INTO pinto_history (group_id, user_id, user_name, flaccid, erect, girth, score, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pinto_history (group_id, user_id, user_name, flaccid, erect, girth, curvature, score, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-				[groupId, userId, userName, flaccid, erect, girth, score, currentTimestamp]
+				[groupId, userId, userName, flaccid, erect, girth, curvature, score, currentTimestamp]
 			);
 		} catch (dbError) {
 			logger.error("Erro ao salvar dados do jogo:", dbError);
 			throw dbError; // Re-throw para cair no catch principal se falhar o banco
+		}
+
+		// Determina o texto descritivo da curvatura
+		let curvatureText = "";
+		const absCurvature = Math.abs(curvature);
+		if (curvature >= -5 && curvature <= 5) {
+			curvatureText = `${absCurvature.toFixed(1)}°, retinho!`;
+		} else if (curvature < -5) {
+			curvatureText = `${absCurvature.toFixed(1)}°, torto para esquerda`;
+		} else {
+			curvatureText = `${absCurvature.toFixed(1)}°, torto para direita`;
 		}
 
 		// Prepara a mensagem de resposta
@@ -335,6 +354,7 @@ async function pintoCommand(bot, message, args, group) {
 			`• *Comprimento Flácido:* ${flaccid.toFixed(1)} cm\n` +
 			`• *Comprimento Ereto:* ${erect.toFixed(1)} cm\n` +
 			`• *Circunferência:* ${girth.toFixed(1)} cm\n` +
+			`• *Curvatura:* ${curvatureText}\n` +
 			`• *Score:* _${score} pontos_\n\n` +
 			`${comment}\n\n` +
 			`> Você pode voltar daqui a ${COOLDOWN_DAYS} dias para refazermos sua avaliação.`;
