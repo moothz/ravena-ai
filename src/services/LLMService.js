@@ -431,7 +431,7 @@ class LLMService {
 	 * @param {string} [options.customEndpoint] - Endpoint customizado (para APIs compatíveis)
 	 * @returns {Promise<Object>} - A resposta da API
 	 */
-	async openAICompletion(options) {
+	async openaiCompletion(options) {
 		try {
 			// Determina endpoint
 			let endpoint = "https://api.openai.com/v1/chat/completions";
@@ -853,7 +853,7 @@ class LLMService {
 
 			case "openai":
 			default:
-				response = await this.openAICompletion(options);
+				response = await this.openaiCompletion(options);
 				if (
 					!response ||
 					!response.choices ||
