@@ -1633,6 +1633,23 @@ class BotAPI {
 				if (!webManagementData || webManagementData.groupId !== groupId)
 					return res.status(401).json({ message: "Unauthorized" });
 
+				const groupData = await this.database.getGroup(groupId);
+				const prefix = (groupData && groupData.prefix ? groupData.prefix : "!").trim();
+
+				if (command && typeof command.startsWith === "string") {
+					let triggerClean = command.startsWith.trim().toLowerCase();
+					if (triggerClean.startsWith(prefix)) {
+						triggerClean = triggerClean.substring(prefix.length).trim();
+					} else if (prefix !== "!" && triggerClean.startsWith("!")) {
+						triggerClean = triggerClean.substring(1).trim();
+					}
+					command.startsWith = triggerClean;
+				}
+
+				if (!command.startsWith) {
+					return res.status(400).json({ message: "Gatilho de comando inválido" });
+				}
+
 				await checkGroupLimits(groupId, "commands", { isNew: true });
 
 				await this.database.saveCustomCommand(groupId, command);
@@ -1656,10 +1673,22 @@ class BotAPI {
 				if (!webManagementData || webManagementData.groupId !== groupId)
 					return res.status(401).json({ message: "Unauthorized" });
 
-				// Database update usually needs the object.
-				// If the trigger changed, we might need to delete old and save new?
-				// Management.js uses 'updateCustomCommand' which likely matches by 'startsWith'.
-				// If 'startsWith' in 'command' body is different from 'trigger' param, it means rename.
+				const groupData = await this.database.getGroup(groupId);
+				const prefix = (groupData && groupData.prefix ? groupData.prefix : "!").trim();
+
+				if (command && typeof command.startsWith === "string") {
+					let triggerClean = command.startsWith.trim().toLowerCase();
+					if (triggerClean.startsWith(prefix)) {
+						triggerClean = triggerClean.substring(prefix.length).trim();
+					} else if (prefix !== "!" && triggerClean.startsWith("!")) {
+						triggerClean = triggerClean.substring(1).trim();
+					}
+					command.startsWith = triggerClean;
+				}
+
+				if (!command.startsWith) {
+					return res.status(400).json({ message: "Gatilho de comando inválido" });
+				}
 
 				const oldTrigger = decodeURIComponent(trigger);
 				const newTrigger = command.startsWith;

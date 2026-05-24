@@ -555,8 +555,18 @@ class Management {
 			bodyTexto = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? quotedMsg._data.body;
 		}
 
-		if (commandTrigger.startsWith(group.prefix)) {
-			commandTrigger = commandTrigger.replace(group.prefix, "");
+		const prefix = (group.prefix || "!").trim();
+		if (commandTrigger.startsWith(prefix)) {
+			commandTrigger = commandTrigger.substring(prefix.length).trim();
+		} else if (prefix !== "!" && commandTrigger.startsWith("!")) {
+			commandTrigger = commandTrigger.substring(1).trim();
+		}
+
+		if (!commandTrigger) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ Por favor, forneça um gatilho de comando válido."
+			});
 		}
 
 		if (commandTrigger.split(/\s+/).length > 10) {
@@ -731,6 +741,19 @@ class Management {
 			}
 		} else {
 			bodyTexto = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? quotedMsg._data.body;
+		}
+		const prefix = (group.prefix || "!").trim();
+		if (commandTrigger.startsWith(prefix)) {
+			commandTrigger = commandTrigger.substring(prefix.length).trim();
+		} else if (prefix !== "!" && commandTrigger.startsWith("!")) {
+			commandTrigger = commandTrigger.substring(1).trim();
+		}
+
+		if (!commandTrigger) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ Por favor, forneça um gatilho de comando válido."
+			});
 		}
 
 		// MELHORIA: Usa o comando completo como gatilho em vez de apenas a primeira palavra

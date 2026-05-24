@@ -1413,8 +1413,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     els.btnSaveCmd.addEventListener('click', async () => {
-        const trigger = els.cmdTrigger.value.trim().toLowerCase();
+        let trigger = els.cmdTrigger.value.trim().toLowerCase();
         if (!trigger) return await showCustomAlert('O comando precisa de um gatilho');
+
+        const prefix = (groupData.prefix || '!').trim();
+        if (trigger.startsWith(prefix)) {
+            trigger = trigger.substring(prefix.length).trim();
+        } else if (prefix !== '!' && trigger.startsWith('!')) {
+            trigger = trigger.substring(1).trim();
+        }
+
+        if (!trigger) return await showCustomAlert('O comando precisa de um gatilho válido (sem apenas o prefixo)');
 
         const inputs = document.querySelectorAll('.cmd-response-input');
         const responses = Array.from(inputs).map(i => i.value).filter(v => v.trim() !== '');
