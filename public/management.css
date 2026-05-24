@@ -870,3 +870,20 @@ label:has(.help-icon) {
     margin: 0 auto 10px;
     animation: spin 1s linear infinite;
 }
+
+.input-nickname {
+    width: 100%;
+    padding: 6px 10px;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-highlight);
+    font-size: 0.9rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-nickname:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(4, 169, 240, 0.2);
+}

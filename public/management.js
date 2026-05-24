@@ -1487,6 +1487,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = els.memberTableBody;
         tbody.innerHTML = '';
         
+        const actionHeader = document.getElementById('member-action-header');
+        if (actionHeader) {
+            actionHeader.textContent = onMemberSelect ? 'Ação' : 'Apelido';
+        }
+
         const participants = groupData.participants || [];
         const filtered = participants.filter(p => {
             const search = filter.toLowerCase();
@@ -1507,7 +1512,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (onMemberSelect) {
                 actionBtn = `<button class="btn btn-xs btn-success btn-select-member"><i class="fas fa-check"></i> Selecionar</button>`;
             } else {
-                actionBtn = '<span class="text-muted">-</span>';
+                const existingNick = (groupData.nicks || []).find(n => n.numero === p.pn);
+                const currentApelido = existingNick ? existingNick.apelido : '';
+                actionBtn = `<input type="text" class="input-nickname" value="${currentApelido}" data-pn="${p.pn}" placeholder="Definir apelido..." style="width: 100%; min-width: 120px;" />`;
             }
 
             const pn = p.pn ? p.pn.split('@')[0] : '-';
@@ -1524,6 +1531,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     onMemberSelect(p);
                     els.memberModal.classList.add('hidden');
                 };
+            } else {
+                const input = tr.querySelector('.input-nickname');
+                if (input) {
+                    input.onchange = (e) => {
+                        const newNick = e.target.value.trim();
+                        const pn = e.target.dataset.pn;
+                        
+                        if (!groupData.nicks) {
+                            groupData.nicks = [];
+                        }
+                        
+                        const idx = groupData.nicks.findIndex(n => n.numero === pn);
+                        if (idx !== -1) {
+                            if (newNick) {
+                                groupData.nicks[idx].apelido = newNick.substring(0, 20);
+                            } else {
+                                groupData.nicks.splice(idx, 1);
+                            }
+                        } else if (newNick) {
+                            groupData.nicks.push({
+                                numero: pn,
+                                apelido: newNick.substring(0, 20)
+                            });
+                        }
+                        setDirty(true);
+                    };
+                }
             }
 
             tbody.appendChild(tr);
@@ -1533,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.btnViewMembers) {
         els.btnViewMembers.onclick = () => {
             onMemberSelect = null;
-            els.memberModalTitle.textContent = 'Membros do Grupo';
+            els.memberModalTitle.textContent = 'Membros do Grupo & Apelidos';
             els.memberSearch.value = '';
             renderMembers();
             els.memberModal.classList.remove('hidden');

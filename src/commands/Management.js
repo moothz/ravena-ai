@@ -5804,35 +5804,47 @@ class Management {
 				});
 			}
 
-			if (args.length < 2) {
+			// 1. A mensagem deve possuir mentions.length === 1
+			if (!message.mentions || message.mentions.length !== 1) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: "⚠️ Você precisa mencionar exatamente uma pessoa para definir o apelido."
+				});
+			}
+
+			const mentionJid = message.mentions[0];
+			const mentionUserPart = mentionJid.split("@")[0];
+
+			// Resolve phone number from LID if possible
+			let pnUserPart = mentionUserPart;
+			if (bot.getPnFromLid) {
+				const resolvedPn = bot.getPnFromLid(mentionUserPart, message.origin?.groupData);
+				if (resolvedPn) {
+					pnUserPart = resolvedPn.split("@")[0];
+				}
+			}
+
+			// 2. Parse na string para remover o mention da mensagem e pegar a string de texto restante
+			let nickname = args.join(" ");
+			nickname = nickname.replace("@" + mentionUserPart, "");
+			if (pnUserPart !== mentionUserPart) {
+				nickname = nickname.replace("@" + pnUserPart, "");
+			}
+			nickname = nickname.trim();
+
+			if (!nickname) {
 				return new ReturnMessage({
 					chatId: group.id,
 					content:
-						"Por favor, forneça o número do usuário e o apelido. Exemplo: !g-setApelido 5511999999999 Novo Apelido"
+						"⚠️ Por favor, forneça o apelido para a pessoa mencionada. Exemplo:\n!g-setApelido Apelido @pessoa\nou\n!g-setApelido @pessoa Apelido"
 				});
 			}
-
-			// Processa o número do usuário
-			let userNumber = args[0].replace(/\D/g, ""); // Remove não-dígitos
-
-			// Verifica se o número tem pelo menos 8 dígitos
-			if (userNumber.length < 8) {
-				return new ReturnMessage({
-					chatId: group.id,
-					content: "O número deve ter pelo menos 8 dígitos."
-				});
-			}
-
-			if (bot.getPnFromLid) {
-				userNumber = bot.getPnFromLid(userNumber, message.origin.groupData);
-				userNumber = userNumber.split("@")[0];
-			}
-
-			// Obtém o apelido a partir do resto dos argumentos
-			const nickname = args.slice(1).join(" ");
 
 			// Limita o apelido a 20 caracteres
 			const trimmedNickname = nickname.length > 20 ? nickname.substring(0, 20) : nickname;
+
+			// A chave numero em group.nicks é o número de telefone (sem JID)
+			const userNumber = pnUserPart;
 
 			// Inicializa o array de apelidos se não existir
 			if (!group.nicks) {
@@ -5856,16 +5868,12 @@ class Management {
 			// Salva o grupo atualizado
 			await this.database.saveGroup(group);
 
-			// Tenta obter o nome do contato
+			// Tenta obter o nome do contato do target
 			let contactName = "usuário";
 			try {
-				const contact = await bot.client.getContactById(message.authorAlt ?? message.author);
+				const contact = await bot.client.getContactById(mentionJid);
 				this.logger.debug(`[setNickAdmin] `, { contact });
-				contactName =
-					contact.name?.pushName ??
-					contact.pushname ??
-					contact.name ??
-					userNumber.replace("@c.us", "");
+				contactName = contact.name?.pushName ?? contact.pushname ?? contact.name ?? userNumber;
 			} catch (contactError) {
 				this.logger.debug(
 					`Não foi possível obter informações do contato ${userNumber}:`,

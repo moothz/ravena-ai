@@ -83,7 +83,7 @@
                             <label id="lbl-custom-ignores" for="custom-ignores-prefix">Comandos Personalizados sem Prefixo</label>
                         </div>
                         <div class="form-group">
-                            <button type="button" id="btn-view-members" class="btn btn-secondary"><i class="fas fa-users"></i> Ver Membros do Grupo</button>
+                            <button type="button" id="btn-view-members" class="btn btn-secondary"><i class="fas fa-users"></i> Membros do Grupo & Apelidos</button>
                         </div>
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary btn-save-section" data-section="geral">Salvar Geral</button>
@@ -686,7 +686,7 @@
     <div id="member-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="member-modal-title">Membros do Grupo</h2>
+                <h2 id="member-modal-title">Membros do Grupo & Apelidos</h2>
                 <span class="close-member-modal">&times;</span>
             </div>
             <div class="modal-body">
@@ -698,7 +698,7 @@
                             <tr>
                                 <th>Telefone</th>
                                 <th>LID/ID</th>
-                                <th>Ação</th>
+                                <th id="member-action-header">Ação</th>
                             </tr>
                         </thead>
                         <tbody id="member-table-body">
