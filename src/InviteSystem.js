@@ -4,6 +4,33 @@ const path = require("path");
 const fs = require("fs").promises;
 
 /**
+ * Verifica se a string contém caracteres "estranhos" (fontes personalizadas,
+ * zalgo, marcas de combinação, símbolos exóticos/ornamentais)
+ * @param {string} str
+ * @returns {boolean}
+ */
+function hasStrangeCharacters(str) {
+	if (!str) return false;
+
+	// 1. Math Alphanumeric Symbols (e.g. 𝖲, 𝗔, 𝖫, 𝖵, 🄐, 𝕾, 𝗤, 𝔄, 𝓐)
+	const mathAndEnclosed = /[\u{1D400}-\u{1D7FF}\u{2460}-\u{24FF}\u{1F100}-\u{1F1FF}]/u;
+	if (mathAndEnclosed.test(str)) return true;
+	// 2. Combining marks (strikethrough, underline, Zalgo, Arabic combining marks, etc.)
+	/* eslint-disable no-misleading-character-class */
+	const combiningMarks =
+		/[\u0300-\u036F\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F\u0610-\u061A\u064B-\u065F\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06EC]/;
+	/* eslint-enable no-misleading-character-class */
+	if (combiningMarks.test(str)) return true;
+
+	// 3. Specific decorative/exotic symbols commonly used in fancy nickname formatting:
+	const exoticOrOrnamental =
+		/[\u0F00-\u0FFF\u0A00-\u0A7F\u2C80-\u2CFF\u2700-\u27BF\u2500-\u25FF\u2600-\u26FF\u2200-\u22FF\u2300-\u23FF\u{10650}-\u{10660}]/u;
+	if (exoticOrOrnamental.test(str)) return true;
+
+	return false;
+}
+
+/**
  * Gerencia o sistema de convites para o bot
  * * Fluxo de trabalho:
  * 1. Usuário envia um link de convite para o bot em um chat privado
@@ -447,12 +474,40 @@ class InviteSystem {
 			});
 
 			// Envia notificação para o usuário
+			let extraText = "";
+			let addedAny = false;
+
+			if (inviteInfoData?.ParticipantCount !== undefined && inviteInfoData.ParticipantCount <= 2) {
+				extraText +=
+					"\n- 😪 Este parece ser um grupo particular. Lembre-se que a ravena faz tudo no PV, não tem necessidade de criar um grupo com ela! Se quiser só brincar com os comandos, que tal entrar na nossa comunidade? Envie !grupao - temos grupos de downloads, jogos e bate papo.";
+				addedAny = true;
+			}
+
+			if (
+				(inviteInfoData?.Name && hasStrangeCharacters(inviteInfoData.Name)) ||
+				(userName && hasStrangeCharacters(userName))
+			) {
+				extraText +=
+					"\n- ⛔️ *Evito* grupos e pessoas com esses caracteres estranhos, pois geralmente são crianças.";
+				addedAny = true;
+			}
+
+			if (inviteInfoData && this.isCommunity(inviteInfoData)) {
+				extraText +=
+					"\n- 👎 *Não consigo* entrar em comunidade, você vai precisar mandar o convite do grupo em específico que eu devo entrar.";
+				addedAny = true;
+			}
+
+			if (addedAny) {
+				extraText += "\n- 🧾 *!convite* para saber mais.";
+			}
+
 			const invitesPosPath = path.join(this.database.databasePath, "textos", "invites_pos.txt");
 			const posConvite = await fs.readFile(invitesPosPath, "utf8");
 
 			await this.bot.sendMessage(
 				authorId,
-				"Seu convite foi recebido e será analisado." + posConvite
+				"Seu convite foi recebido e será analisado." + extraText + posConvite
 			);
 
 			// Envia notificações para o grupoInvites se configurado
