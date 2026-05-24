@@ -4926,17 +4926,26 @@ class Management {
 		}
 
 		// 2. Se não encontrou na mensagem citada, verifica a mensagem atual
-		if (!mediaData && message.type === "image" && message.content && message.content.data) {
-			const ext = message.content.mimetype.split("/")[1].split(";")[0] || "jpg";
-			const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
-			const mediaDir = path.join(this.dataPath, "media");
-			await fs.mkdir(mediaDir, { recursive: true });
+		if (!mediaData && message.type === "image" && message.content) {
+			let imageData = message.content.data;
+			if (!imageData && typeof message.downloadMedia === "function") {
+				try {
+					const media = await message.downloadMedia();
+					imageData = media?.data;
+				} catch (e) {
+					this.logger.error("Erro ao baixar imagem da mensagem atual:", e);
+				}
+			}
 
-			await fs.writeFile(
-				path.join(mediaDir, fileName),
-				Buffer.from(message.content.data, "base64")
-			);
-			mediaData = fileName;
+			if (imageData) {
+				const ext = message.content.mimetype.split("/")[1].split(";")[0] || "jpg";
+				const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
+				const mediaDir = path.join(this.dataPath, "media");
+				await fs.mkdir(mediaDir, { recursive: true });
+
+				await fs.writeFile(path.join(mediaDir, fileName), Buffer.from(imageData, "base64"));
+				mediaData = fileName;
+			}
 		}
 
 		// Se não há argumentos e não há mídia, remove a configuração de foto

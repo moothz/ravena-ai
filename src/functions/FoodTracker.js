@@ -73,7 +73,19 @@ const foodAnalysisSchema = {
 
 async function getMediaFromMessage(message) {
 	if (message.type === "image") {
-		return message.content || (message.downloadMedia ? await message.downloadMedia() : null);
+		// Lazy loading: verifica se content já tem base64, senão baixa sob demanda
+		if (message.content && message.content.data) {
+			return message.content;
+		}
+		if (typeof message.downloadMedia === "function") {
+			try {
+				return await message.downloadMedia();
+			} catch (e) {
+				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
+				return null;
+			}
+		}
+		return null;
 	}
 
 	try {

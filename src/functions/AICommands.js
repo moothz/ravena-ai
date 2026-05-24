@@ -586,31 +586,34 @@ async function handleMediaRequest(
 }
 
 // Auxiliar para obter mídia da mensagem
-function getMediaFromMessage(message) {
-	return new Promise((resolve, reject) => {
-		// Se a mensagem tem mídia direta
-		if (message.type !== "text") {
-			resolve(message.content);
-			return;
+async function getMediaFromMessage(message) {
+	// Se a mensagem tem mídia direta
+	if (message.type !== "text") {
+		// Lazy loading: content existe mas sem base64 (otimização de RAM)
+		if (message.content && message.content.data) {
+			return message.content;
 		}
+		if (typeof message.downloadMedia === "function") {
+			try {
+				return await message.downloadMedia();
+			} catch (e) {
+				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
+				return null;
+			}
+		}
+		return message.content ?? null;
+	}
 
-		// Tenta obter mídia da mensagem citada
-		message.origin
-			.getQuotedMessage()
-			.then((quotedMsg) => {
-				if (quotedMsg && quotedMsg.hasMedia) {
-					return quotedMsg.downloadMedia();
-				}
-				resolve(null);
-			})
-			.then((media) => {
-				if (media) resolve(media);
-			})
-			.catch((error) => {
-				logger.error("Erro ao obter mídia da mensagem citada:", error);
-				resolve(null);
-			});
-	});
+	// Tenta obter mídia da mensagem citada
+	try {
+		const quotedMsg = await message.origin.getQuotedMessage();
+		if (quotedMsg && quotedMsg.hasMedia) {
+			return await quotedMsg.downloadMedia();
+		}
+	} catch (error) {
+		logger.error("Erro ao obter mídia da mensagem citada:", error);
+	}
+	return null;
 }
 
 const commands = [

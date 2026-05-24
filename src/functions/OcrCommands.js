@@ -92,8 +92,14 @@ async function ocrCommand(bot, message, args, group) {
  */
 async function getMediaFromMessage(message) {
 	// If message has media directly
-	if (message.hasMedia || (message.type !== "text" && message.content && message.content.data)) {
-		return message.content;
+	if (message.hasMedia) {
+		if (message.content && message.content.data) {
+			return message.content;
+		}
+		// Se não tiver dados (lazy loading), tenta baixar
+		if (typeof message.downloadMedia === "function") {
+			return await message.downloadMedia();
+		}
 	}
 
 	// Try to get from quoted message

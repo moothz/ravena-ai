@@ -70,7 +70,7 @@ class WhatsAppBotGo {
 		this.redisURL = options.redisURL;
 		this.redisDB = options.redisDB ?? 0;
 		this.redisTTL = options.redisTTL ?? 604800;
-		this.maxCacheSize = 3000;
+		this.maxCacheSize = 1000;
 
 		this.streamIgnoreGroups = [];
 		this.skipGroupInfo = [];
@@ -1762,55 +1762,47 @@ class WhatsAppBotGo {
 			} else if (messageContent.imageMessage) {
 				type = "image";
 				caption = messageContent.imageMessage.caption;
-				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
+				// Removido download automático para economizar RAM (15+ bots ativos)
+				// A mídia será baixada sob demanda via message.downloadMedia()
 				mediaInfo = {
 					mimetype: messageContent.imageMessage.mimetype,
-					url: downloaded?.url ?? messageContent.imageMessage.url,
-					data: downloaded?.base64,
+					url: messageContent.imageMessage.url,
 					_mediaDetails: messageContent.imageMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.videoMessage) {
 				type = "video";
 				caption = messageContent.videoMessage.caption;
-				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.videoMessage.mimetype,
-					url: downloaded?.url ?? messageContent.videoMessage.url,
-					data: downloaded?.base64,
+					url: messageContent.videoMessage.url,
 					seconds: messageContent.videoMessage.seconds,
 					_mediaDetails: messageContent.videoMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.audioMessage) {
 				type = "audio";
-				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.audioMessage.mimetype,
-					url: downloaded?.url ?? messageContent.audioMessage.url,
-					data: downloaded?.base64,
+					url: messageContent.audioMessage.url,
 					seconds: messageContent.audioMessage.seconds,
 					_mediaDetails: messageContent.audioMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.stickerMessage) {
 				type = "sticker";
-				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.stickerMessage.mimetype,
-					url: downloaded?.url ?? messageContent.stickerMessage.url,
-					data: downloaded?.base64,
+					url: messageContent.stickerMessage.url,
 					_mediaDetails: messageContent.stickerMessage
 				};
 				content = mediaInfo;
 			} else if (messageContent.documentMessage) {
 				type = "document";
 				caption = messageContent.documentMessage.caption;
-				const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
 				mediaInfo = {
 					mimetype: messageContent.documentMessage.mimetype,
-					url: downloaded?.url ?? messageContent.documentMessage.url,
-					data: downloaded?.base64,
+					url: messageContent.documentMessage.url,
 					filename: messageContent.documentMessage.fileName,
 					title: messageContent.documentMessage.title,
 					_mediaDetails: messageContent.documentMessage

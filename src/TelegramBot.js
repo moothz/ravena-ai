@@ -112,7 +112,7 @@ class WhatsAppBotTelegram {
 		this.webhookServer = null;
 
 		// Cache (reutilizado do Whatsgo)
-		this.cacheManager = new CacheManager(this.redisURL, this.redisDB, this.redisTTL, 3000);
+		this.cacheManager = new CacheManager(this.redisURL, this.redisDB, this.redisTTL, 1000);
 
 		// Client Fake para manter compatibilidade
 		this.client = {

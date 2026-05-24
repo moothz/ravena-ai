@@ -152,6 +152,7 @@ services:
       - "${TELEGRAM_WEBHOOK_PORT:-9005}:${TELEGRAM_WEBHOOK_PORT:-9005}"
     environment:
       # General
+      NODE_OPTIONS: "--max-old-space-size=4096"
       DISABLE_ACTIVITY: ${DISABLE_ACTIVITY:-false}
       DEFAULT_PREFIX: ${DEFAULT_PREFIX:-!}
       SAFE_MODE: ${SAFE_MODE:-false}

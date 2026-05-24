@@ -61,7 +61,7 @@ class DiscordBot {
 		this.redisURL = options.redisURL;
 		this.redisDB = options.redisDB || 1; // Usar um DB diferente do Whatsgo para evitar conflitos
 		this.redisTTL = options.redisTTL || 604800;
-		this.maxCacheSize = 3000;
+		this.maxCacheSize = 1000;
 
 		this.messageCache = [];
 		this.contactCache = [];

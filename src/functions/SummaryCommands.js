@@ -565,36 +565,50 @@ async function storeMessage(message, chatId, bot) {
 				!message.caption?.startsWith("!s") &&
 				!message.caption?.startsWith("!ia")
 			) {
-				const completionOptions = {
-					prompt:
-						"Analyze the picture and return a brief description ((in pt-BR, portuguese brazil)) ((try to stay below 200 characters)). Also classify the type (real life, anime, game, etc) and if it contains NSFW content.",
-					systemContext: `You are an expert bot in image processing and analysis`,
-					image: message.content.data,
-					response_format: mediaAnalysisSchema,
-					debugPrompt: false,
-					priority: 1
-				};
+				let imageData = message.content.data;
 
-				//logger.info(`[storeMessage] Prompt: `, completionOptions);
-				const response = await llmService.getCompletion(completionOptions);
-
-				if (
-					response &&
-					!response.includes("Não foi poss") &&
-					!response.includes("Ocorreu um erro")
-				) {
+				// Se não tiver dados (lazy loading), tenta baixar
+				if (!imageData && typeof message.downloadMedia === "function") {
 					try {
-						const parsed = JSON.parse(response);
-						const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
-						const finalString = `Imagem[${parsed.type}|${nsfwTag}|${parsed.description}]`;
-						textContent = message.caption
-							? `${finalString}\nLegenda: ${message.caption}`
-							: finalString;
-						logger.info(`[${chatId}][storeMessage] Imagem interpretada: ${textContent}`);
-					} catch (e) {
-						logger.warn("Falha ao analisar JSON da imagem, retornando cru:", response);
-						// Fallback if not JSON
-						textContent = message.caption ? `${response}\nLegenda: ${message.caption}` : response;
+						const media = await message.downloadMedia();
+						imageData = media?.data;
+					} catch (dlErr) {
+						logger.error("Erro ao baixar imagem para Vision AI:", dlErr);
+					}
+				}
+
+				if (imageData) {
+					const completionOptions = {
+						prompt:
+							"Analyze the picture and return a brief description ((in pt-BR, portuguese brazil)) ((try to stay below 200 characters)). Also classify the type (real life, anime, game, etc) and if it contains NSFW content.",
+						systemContext: `You are an expert bot in image processing and analysis`,
+						image: imageData,
+						response_format: mediaAnalysisSchema,
+						debugPrompt: false,
+						priority: 1
+					};
+
+					//logger.info(`[storeMessage] Prompt: `, completionOptions);
+					const response = await llmService.getCompletion(completionOptions);
+
+					if (
+						response &&
+						!response.includes("Não foi poss") &&
+						!response.includes("Ocorreu um erro")
+					) {
+						try {
+							const parsed = JSON.parse(response);
+							const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
+							const finalString = `Imagem[${parsed.type}|${nsfwTag}|${parsed.description}]`;
+							textContent = message.caption
+								? `${finalString}\nLegenda: ${message.caption}`
+								: finalString;
+							logger.info(`[${chatId}][storeMessage] Imagem interpretada: ${textContent}`);
+						} catch (e) {
+							logger.warn("Falha ao analisar JSON da imagem, retornando cru:", response);
+							// Fallback if not JSON
+							textContent = message.caption ? `${response}\nLegenda: ${message.caption}` : response;
+						}
 					}
 				}
 			}
