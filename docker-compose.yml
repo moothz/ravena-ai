@@ -75,6 +75,7 @@ services:
       context: ./whatsgoapi
       dockerfile: Dockerfile
     container_name: whatsgoapi
+    env_file: .env
     restart: unless-stopped
     dns:
       - 1.1.1.1
@@ -150,146 +151,7 @@ services:
     ports:
       - "${API_PORT:-5000}:5000"
       - "${TELEGRAM_WEBHOOK_PORT:-9005}:${TELEGRAM_WEBHOOK_PORT:-9005}"
-    environment:
-      # General
-      NODE_OPTIONS: "--max-old-space-size=4096"
-      DISABLE_ACTIVITY: ${DISABLE_ACTIVITY:-false}
-      DEFAULT_PREFIX: ${DEFAULT_PREFIX:-!}
-      SAFE_MODE: ${SAFE_MODE:-false}
-      DEBUG: ${DEBUG:-false}
-      DL_FOLDER: /app/downloads
-
-
-      NOTIFY_UNKNOWN_COMMANDS: ${NOTIFY_UNKNOWN_COMMANDS:-false}
-      SUPER_ADMINS: ${SUPER_ADMINS}
-      LOADING_EMOJI: ${LOADING_EMOJI:-⌛️}
-      CMD_WHITELIST: ${CMD_WHITELIST:-}
-
-      # Cobalt Downloader
-      COBALT_API_URL: ${COBALT_API_URL:-http://cobalt:9000}
-      COBALT_EXTERNAL_URL: ${COBALT_EXTERNAL_URL:-http://cobalt:9000}
-
-
-      # External programs — hardcoded inside Docker image, no config needed
-      FFMPEG_PATH: /usr/bin/ffmpeg
-
-      # BotAPI / Management
-      API_PORT: 5000
-      BOT_DOMAIN: ${BOT_DOMAIN:-}
-      BOT_DOMAIN_LOCAL: http://ravena-ai:5000
-      BOTAPI_USER: ${BOTAPI_USER}
-      BOTAPI_PASSWORD: ${BOTAPI_PASSWORD}
-      MANAGEMENT_TOKEN_DURATION: ${MANAGEMENT_TOKEN_DURATION:-30}
-      LIMIT_STORAGE_MB: ${LIMIT_STORAGE_MB:-1024}
-      LIMIT_COMMANDS: ${LIMIT_COMMANDS:-100}
-      LIMIT_STREAMS: ${LIMIT_STREAMS:-20}
-      UPS_API_SECRET: ${UPS_API_SECRET:-}
-      GROUP_WEBHOOKS: ${GROUP_WEBHOOKS:-}
-      GROUP_WEBHOOKS_DOMAIN: ${GROUP_WEBHOOKS_DOMAIN:-}
-
-      # WhatsgoAPI connection (internal network)
-      WHATS_GO_API_URL: http://whatsgoapi:${SERVER_PORT:-8080}
-      WHATS_GO_API_KEY: ${GLOBAL_API_KEY}
-      WHATSGO_WEBHOOK_HOST: ravena-ai
-      WHATSGO_WEBHOOK_PORT: 5000
-
-      # WhatsApp group IDs
-      GRUPO_LOGS: ${GRUPO_LOGS:-}
-      GRUPO_ESTABILIDADE: ${GRUPO_ESTABILIDADE:-}
-      GRUPO_INVITES: ${GRUPO_INVITES:-}
-      GRUPO_AVISOS: ${GRUPO_AVISOS:-}
-      GRUPO_ANUNCIOS: ${GRUPO_ANUNCIOS:-}
-      GRUPO_INTERACAO: ${GRUPO_INTERACAO:-}
-      LINK_GRUPO_INTERACAO: ${LINK_GRUPO_INTERACAO:-}
-      LINK_GRUPO_AVISOS: ${LINK_GRUPO_AVISOS:-}
-      GRUPO_PESCA: ${GRUPO_PESCA:-}
-      GRUPO_DOWNLOADS: ${GRUPO_DOWNLOADS:-}
-      GRUPOS_HOROSCOPOS: ${GRUPOS_HOROSCOPOS:-}
-      GRUPO_MUNEWS: ${GRUPO_MUNEWS:-}
-
-      # Discord
-      GRUPO_LOGS_DISCORD: ${GRUPO_LOGS_DISCORD:-}
-      GRUPO_AVISOS_DISCORD: ${GRUPO_AVISOS_DISCORD:-}
-
-      # Telegram
-      TELEGRAM_WEBHOOK_PORT: ${TELEGRAM_WEBHOOK_PORT:-9005}
-      TELEGRAM_GRUPO_LOGS: ${TELEGRAM_GRUPO_LOGS:-}
-      TELEGRAM_GRUPO_AVISOS: ${TELEGRAM_GRUPO_AVISOS:-}
-
-      # Backup / Database
-      MAX_BACKUPS: ${MAX_BACKUPS:-120}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
-      SCHEDULED_BACKUP_HOURS: ${SCHEDULED_BACKUP_HOURS:-0,6,12,18}
-      SQLITE_REMOTE_BACKUP: ${SQLITE_REMOTE_BACKUP:-false}
-      SQLITE_REMOTE_SERVERS: ${SQLITE_REMOTE_SERVERS:-}
-      REMOTE_BACKUP_INTERVAL_MINUTES: ${REMOTE_BACKUP_INTERVAL_MINUTES:-30}
-
-      # Redis
-      USE_REDIS: ${USE_REDIS:-false}
-      CACHE_REDIS_URI: ${CACHE_REDIS_URI:-}
-      CACHE_REDIS_TTL: ${CACHE_REDIS_TTL:-3600}
-
-      # External APIs (fill in .env only the ones you use)
-      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
-      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
-      KICK_CLIENT_ID: ${KICK_CLIENT_ID:-}
-      KICK_CLIENT_SECRET: ${KICK_CLIENT_SECRET:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
-      RIOT_GAMES: ${RIOT_GAMES:-}
-      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
-      OMDB_API_KEY: ${OMDB_API_KEY:-}
-      UNSPLASH_API_KEY: ${UNSPLASH_API_KEY:-}
-      LASTFM_APIKEY: ${LASTFM_APIKEY:-}
-      LASTFM_SECRET: ${LASTFM_SECRET:-}
-      NASA_API: ${NASA_API:-}
-      API_PLACAS_COMUM: ${API_PLACAS_COMUM:-}
-      API_PLACAS_PREMIUM: ${API_PLACAS_PREMIUM:-}
-      GRUPOS_PLACA_PREMIUM: ${GRUPOS_PLACA_PREMIUM:-}
-      SOUNDCLOUD_CLIENT_ID: ${SOUNDCLOUD_CLIENT_ID:-}
-      SOUNDCLOUD_OAUTH_TOKEN: ${SOUNDCLOUD_OAUTH_TOKEN:-}
-      ANYTHINGLLM_API_KEY: ${ANYTHINGLLM_API_KEY:-}
-      ANYTHINGLLM_HOST: ${ANYTHINGLLM_HOST:-}
-      ANYTHINGLLM_WORKSPACE: ${ANYTHINGLLM_WORKSPACE:-}
-      API_TIMEOUT: ${API_TIMEOUT:-30000}
-      SDWEBUI_TOKEN: ${SDWEBUI_TOKEN:-}
-      SD_width: ${SD_width:-1200}
-      SD_height: ${SD_height:-1200}
-      SD_steps: ${SD_steps:-40}
-      SD_cfg_scale: ${SD_cfg_scale:-2}
-      SD_sampler_name: ${SD_sampler_name:-k_dpmpp_2m_sde}
-      DISABLE_IMAGINE_COMMAND: ${DISABLE_IMAGINE_COMMAND:-false}
-      DISABLE_TTS_COMMAND: ${DISABLE_TTS_COMMAND:-false}
-      PSNCOMMAND_API_URL: ${PSNCOMMAND_API_URL:-}
-      STEAMCOMMAND_API_URL: ${STEAMCOMMAND_API_URL:-}
-      API_KEY_STEAMCOMMAND: ${API_KEY_STEAMCOMMAND:-}
-      SIPT_URL: ${SIPT_URL:-}
-      SIPT_TOKEN: ${SIPT_TOKEN:-}
-      RAGNAROK_URL: ${RAGNAROK_URL:-}
-      RAGNAROK_HOST: ${RAGNAROK_HOST:-}
-      RAGNAROK_USER: ${RAGNAROK_USER:-}
-      RAGNAROK_PASSWORD: ${RAGNAROK_PASSWORD:-}
-      RAGNAROK_DATABASE: ${RAGNAROK_DATABASE:-}
-      POWER_OUTAGE_MIN_TIME: ${POWER_OUTAGE_MIN_TIME:-5}
-      TIPA_TOKEN: ${TIPA_TOKEN:-}
-      DONATION_LINK: ${DONATION_LINK:-}
-      DONATION_GOAL_AMOUNT: ${DONATION_GOAL_AMOUNT:-}
-      DONATION_GOAL_DESCRIPTION: ${DONATION_GOAL_DESCRIPTION:-}
-      REMBG_API_URL: http://rembg:7000/api/remove
-      
-      # MinIO Management
-      MINIO_ENABLED: ${MINIO_ENABLED:-true}
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_BUCKET:-zap-media}
-      MINIO_RETENTION_DAYS: ${MINIO_RETENTION_DAYS:-7}
-      MINIO_STORAGE_LIMIT_GB: ${MINIO_STORAGE_LIMIT_GB:-15}
+    env_file: .env
     volumes:
       # Persistent data — NEVER reset these
       - ./data:/app/data
@@ -302,6 +164,7 @@ services:
     depends_on:
       whatsgoapi:
         condition: service_started
+
 
   # ───────────────────────────────────────────────────────────
   # health-check — Monitors whatsgoapi and ravena-ai
