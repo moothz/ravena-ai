@@ -84,44 +84,6 @@ services:
       - "${WHATSGOAPI_PORT:-9800}:${SERVER_PORT:-8080}"
     networks:
       - ravena-net
-    environment:
-      # Server
-      SERVER_PORT: ${SERVER_PORT:-8080}
-
-      # Authentication
-      GLOBAL_API_KEY: ${GLOBAL_API_KEY}
-
-      # PostgreSQL (populated by compose from .env)
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-whatsgo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-whatsgo_db}
-      DATABASE_SAVE_MESSAGES: ${DATABASE_SAVE_MESSAGES:-false}
-
-      # Behavior
-      CLIENT_NAME: ${CLIENT_NAME:-ravenawhats}
-      OS_NAME: ${OS_NAME:-Ravena WhatsGo}
-      CONNECT_ON_STARTUP: ${CONNECT_ON_STARTUP:-true}
-      WEBHOOK_URL: ${WEBHOOK_URL:-}
-      WEBHOOKFILES: ${WEBHOOKFILES:-true}
-      WADEBUG: ${WADEBUG:-}
-      LOGTYPE: ${LOGTYPE:-console}
-
-      # MinIO
-      MINIO_ENABLED: ${MINIO_ENABLED:-true}
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_BUCKET:-zap-media}
-      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
-
-      # Logs
-      LOG_MAX_SIZE: ${LOG_MAX_SIZE:-100}
-      LOG_MAX_BACKUPS: ${LOG_MAX_BACKUPS:-5}
-      LOG_MAX_AGE: ${LOG_MAX_AGE:-30}
-      LOG_DIRECTORY: /app/logs
-      LOG_COMPRESS: ${LOG_COMPRESS:-true}
     volumes:
       # Persistent: media files, SQLite DB, logs
       - ./data/whatsgoapi/files:/app/files
@@ -142,6 +104,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ravena-ai
+    env_file: .env
     restart: unless-stopped
     dns:
       - 1.1.1.1
@@ -151,7 +114,6 @@ services:
     ports:
       - "${API_PORT:-5000}:5000"
       - "${TELEGRAM_WEBHOOK_PORT:-9005}:${TELEGRAM_WEBHOOK_PORT:-9005}"
-    env_file: .env
     volumes:
       # Persistent data — NEVER reset these
       - ./data:/app/data
