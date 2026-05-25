@@ -120,7 +120,19 @@ async function getAudioDuration(filePath) {
 async function getMediaFromMessage(message) {
 	// Se a mensagem tem mídia direta
 	if (message.type !== "text") {
-		return message.content;
+		// Lazy loading: só usa content direto se já tiver .data (base64)
+		if (message.content && message.content.data) {
+			return message.content;
+		}
+		if (typeof message.downloadMedia === "function") {
+			try {
+				return await message.downloadMedia();
+			} catch (e) {
+				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
+				return null;
+			}
+		}
+		return message.content ?? null;
 	}
 
 	// Tenta obter mídia da mensagem citada
