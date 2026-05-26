@@ -99,7 +99,12 @@ class EventHandler extends EventEmitter {
 				} else {
 					// Cria novo grupo
 					let displayName =
-						name ?? groupId.split("@")[0].toLowerCase().replace(/\s+/g, "").substring(0, 16);
+						name ??
+						groupId
+							.split("@")[0]
+							.toLowerCase()
+							.replace(/[^a-zA-Z0-9_-]/g, "")
+							.substring(0, 15);
 
 					// Verifica se já tem grupo com esse nome antes
 					let grupoExistente = await this.database.getGroupByName(displayName);
@@ -913,11 +918,7 @@ class EventHandler extends EventEmitter {
 			);
 
 			// Obtém ou cria grupo
-			const nomeGrupo =
-				data.group?.name
-					?.replace(/[^a-zA-Z0-9 ]/g, "")
-					.replace(/(?:^\w|[A-Z]|\b\w)/g, (w, i) => (i === 0 ? w.toLowerCase() : w.toUpperCase()))
-					.replace(/\s+/g, "") ?? null;
+			const nomeGrupo = data.group?.name?.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 15) ?? null;
 			const groupData = await this.getOrCreateGroup(
 				data.group.id,
 				nomeGrupo,

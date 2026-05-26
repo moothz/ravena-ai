@@ -472,7 +472,17 @@ class Management {
 			});
 		}
 
-		const newName = args.join(" ");
+		const rawName = args[0]; // Apenas o primeiro argumento (sem espaços)
+
+		// Valida: apenas letras, números, _ e - ; entre 1 e 15 caracteres
+		if (!/^[a-zA-Z0-9_-]{1,15}$/.test(rawName)) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ Nome inválido. O nome deve conter apenas letras, números, _ e -, sem espaços, entre 1 e 15 caracteres. Exemplo: !g-setName meuGrupo_01`
+			});
+		}
+
+		const newName = rawName.toLowerCase();
 
 		const grupoExistente = await this.database.getGroupByName(newName);
 
@@ -488,7 +498,7 @@ class Management {
 		}
 
 		// Atualiza nome do grupo no banco de dados
-		group.name = newName.toLowerCase().replace(/\s+/g, "").substring(0, 21);
+		group.name = newName;
 		await this.database.saveGroup(group);
 
 		return new ReturnMessage({
