@@ -153,44 +153,58 @@ GLOBAL_API_KEY
 
 ---
 
+## Migration Strategy: Parallel Mode
+
+**Both** whatsgoapi and wuzapi will run simultaneously during migration. Bots are assigned to one backend via `bots.json`:
+
+- `useWuzapi: false` (default, implicit) → `WhatsAppBotGo` + whatsgoapi
+- `useWuzapi: true` → `WhatsAppBotWuzapi` + wuzapi
+
+This allows incremental migration: move bots one at a time, verify each works, then proceed. No big-bang cutover.
+
+**Docker Compose** runs **both** `whatsgoapi` and `wuzapi` services. The `whatsgoapi` service is **not** removed — it coexists until all bots are migrated.
+
+---
+
 ## Batch Plan
 
-### Batch 1 — Branch + Documentation
+### Batch 1 — Branch + Documentation ✅ COMPLETE
+
 Create the `wuzapi` git branch. Document all endpoint mappings in `wuzapi-endpoints.md`.
 
 **Files:**
-- `[NEW]` `wuzapi-endpoints.md` — full endpoint reference with request/response examples
+- `[NEW]` `wuzapi-endpoints.md` — ✅ full endpoint reference with request/response examples
 
 ---
 
-### Batch 2 — Docker Compose + Environment
+### Batch 2 — Docker Compose + Environment ✅ COMPLETE
 
 **Files:**
-- `[MODIFY]` `docker-compose.yml`
-  - Add `wuzapi` service (`asternic/wuzapi:latest`)
+- `[MODIFY]` `docker-compose.yml` — ✅
+  - Add `wuzapi` service (`asternic/wuzapi:latest`) on port `9810`
   - Keep `postgres` — wuzapi uses it via `DB_HOST`, `DB_USER`, etc.
   - Keep `minio` — reused for S3-compatible media delivery
-  - Remove/comment `whatsgoapi` service
+  - **Keep** `whatsgoapi` service (parallel mode — not removed)
   - Update `ravena-ai` env block: add `WUZAPI_URL`, `WUZAPI_ADMIN_TOKEN`, `WUZAPI_GLOBAL_WEBHOOK`
-  - Update health-check to `GET /health` on wuzapi
-- `[MODIFY]` `.env.example` — add all new variables, remove old ones
-- `[NEW]` `setup-wuzapi-bots.js` — CLI script: reads `bots.json`, creates wuzapi users via admin API, writes tokens back to `bots.json`
+  - Add wuzapi health check to `health-check` service
+- `[MODIFY]` `.env.example` — ✅ add all new variables, keep old ones
+- `[NEW]` `setup-wuzapi-bots.js` — ✅ CLI script: reads `bots.json`, creates wuzapi users via admin API, writes tokens back
 
 ---
 
-### Batch 3 — WuzapiClient + WhatsAppBotWuzapi (Core)
+### Batch 3 — WuzapiClient + WhatsAppBotWuzapi (Core) ✅ COMPLETE
 
 **Files:**
-- `[NEW]` `src/services/WuzapiClient.js`
+- `[NEW]` `src/services/WuzapiClient.js` — ✅
   - Auth: `Authorization: <userToken>` header (not `apikey`/`instance`)
   - Methods: `get()`, `post()`, `adminGet()`, `adminPost()`, `adminDelete()`
   - Error handling mirroring `WhatsgoClient.js`
 
-- `[NEW]` `src/WhatsAppBotWuzapi.js`
+- `[NEW]` `src/WhatsAppBotWuzapi.js` — ✅
   - Same public interface as `WhatsAppBotGo.js`
   - Uses `WuzapiClient` internally
   - **No per-instance webhook server** (global webhook only)
-  - Key method implementations:
+  - All key methods implemented:
     - `initialize()` — `POST /session/connect` + subscribe events
     - `sendMessage()` — routes to correct `/chat/send/*` by content type/mimetype
     - `_downloadMedia()` — calls `/chat/download{type}` with message fields
@@ -212,51 +226,45 @@ Create the `wuzapi` git branch. Document all endpoint mappings in `wuzapi-endpoi
 
 ---
 
-### Batch 4 — Global Webhook Handler + BotAPI Updates
+### Batch 4 — Global Webhook Handler + BotAPI Updates ✅ COMPLETE
 
 **Files:**
-- `[NEW]` `src/WuzapiEventHandler.js`
-  - Receives `POST /webhook/wuzapi` from BotAPI's express app
+- `[MODIFY]` `src/BotAPI.js` — ✅
+  - Register `POST /webhook/wuzapi` → inline wuzapi webhook handler
   - Translates wuzapi payload (`type`, `token`, `event`) → existing bot event format
   - Routes to correct bot by matching `token → bot.wuzapiUserToken`
   - Dispatches to `eventHandler.onMessage()`, `onGroupJoin()`, etc.
-
-- `[MODIFY]` `src/BotAPI.js`
-  - Register `POST /webhook/wuzapi` → delegate to `WuzapiEventHandler`
-  - Update `/qrcode/:botId` — call `GET /session/qr` on wuzapi (token-based)
-  - Update `checkServices()` — call `GET /health` on wuzapi
-  - Keep `/restart`, `/logout`, `/recreate` endpoints — delegate to `WhatsAppBotWuzapi`
+  - Update `checkServices()` — call `GET /health` on wuzapi (in addition to whatsgoapi)
+  - Update `/qrcode/:botId` — detect wuzapi bots, call `GET /session/qr` on wuzapi
 
 ---
 
-### Batch 5 — index.js + bots.json + Tooling
-
-**Status: ✅ COMPLETE**
+### Batch 5 — index.js + bots.json + Tooling ✅ COMPLETE
 
 **Files:**
 - `[MODIFY]` `index.js` — ✅ Detect `bot.useWuzapi === true` → instantiate `WhatsAppBotWuzapi`
   - Pass `wuzapiUrl` + `wuzapiAdminToken` from env; `wuzapiUserToken` + `wuzapiUserName` from bot config
   - Keep existing `WhatsAppBotGo` path for bots not yet migrated
 
-- `[MODIFY]` `bots.json.example` — ⏳ Pending
+- `[MODIFY]` `bots.json.example` — ✅
   - Add `useWuzapi`, `wuzapiUserName`, `wuzapiUserToken` fields
   - Document which old fields are no longer needed
 
-- `[NEW]` `query-wuzapi.js` — ⏳ Pending
+- `[NEW]` `query-wuzapi.js` — ✅
   - CLI debug tool equivalent of `whatsgoapi/query-whatsgo.js`
   - Functions: `sessionStatus`, `sessionConnect`, `sessionQR`, `sessionLogout`, `sessionPairphone`, `adminListUsers`, `adminAddUser`, `adminDeleteUser`, `setWebhook`, `getWebhook`, `listGroups`, `groupInfo`, `groupUpdateParticipants`, `groupLeave`, `groupJoin`, `groupName`, `groupPhoto`, `userInfo`, `userCheck`, `sendText`, `sendImage`, `sendVideo`, `sendAudio`, `sendDocument`, `sendSticker`, `sendLocation`, `sendContact`, `react`, `markRead`, `deleteMessage`, `downloadMedia`, `configS3`
 
-- `[NEW]` `migrate-sessions.js` (best-effort) — ⏳ Pending
+- `[NEW]` `migrate-sessions.js` — ⏳ Deferred
   - Reads whatsgoapi Postgres schema (whatsmeow device tables)
   - Maps instance names → wuzapi user IDs
   - Dumps + restores session data into wuzapi's Postgres
-  - Falls back gracefully if schemas don't align
+  - Falls back gracefully if schemas don't align (re-scan QR)
 
 ---
 
-### Batch 6 — Testing Infrastructure (run-testes.js)
+### Batch 6 — Testing Infrastructure ✅ COMPLETE
 
-The existing `run-testes.js` + `FakeBot` + `TestRunner` infrastructure must be updated and expanded to fully support wuzapi testing. The `FakeBot` already implements the interface expected by the pipeline (EventHandler → CommandHandler → functions), so the core approach remains the same. The key change is ensuring all wuzapi-specific code paths are exercisable through the test harness.
+The existing `run-testes.js` + `FakeBot` + `TestRunner` infrastructure is updated and expanded to fully support wuzapi testing. The `FakeBot` already implements the interface expected by the pipeline (EventHandler → CommandHandler → functions), so the core approach remains the same. The key change is ensuring all wuzapi-specific code paths are exercisable through the test harness.
 
 The testing strategy uses a **single comprehensive `run-testes.js`** file organized in logical sections. Each section can be independently commented/uncommented to focus on specific areas. The `bots.json` file used during testing can be empty `[]` since `FakeBot` bypasses real connections entirely — the pipeline (EventHandler → CommandHandler → functions) only needs the `FakeBot` interface.
 
@@ -272,7 +280,7 @@ run-testes.js                    ← Entry point, organized test sections
 
 #### Test Categories in run-testes.js
 
-The run-testes.js will be organized into the following sections, each clearly delimited with comments:
+The run-testes.js is organized into the following sections, each clearly delimited with comments:
 
 1. **Basic Commands** — `!ping`, `!status`, `!help`, `!uptime` — verify the pipeline works
 2. **AI Commands** — `!chat`, `!resumo`, `!traduza` — test LLM integration paths (may be slow)
@@ -290,33 +298,50 @@ The run-testes.js will be organized into the following sections, each clearly de
 
 Since wuzapi changes the webhook payload format (`payload.type` vs `payload.event`, `payload.token` vs `payload.instance`), the webhook translation layer must be tested with realistic payloads. This is done through:
 
-- **`src/testing/wuzapi-fixtures.js`** — Pre-built wuzapi webhook payloads that can be fed to the translation layer
+- **`src/testing/wuzapi-fixtures.js`** — ✅ Pre-built wuzapi webhook payloads that can be fed to the translation layer
 - **Inline tests in run-testes.js** — Section 11 above tests the translation directly
+- **`src/testing/FakeWuzapiClient.js`** — ✅ Mock client with all wuzapi endpoints simulated
 
 **Files:**
-- `[MODIFY]` `run-testes.js`
-  - Reorganize into the 11 categories listed above
-  - Each section clearly commented with `// === CATEGORY NAME ===`
+- `[MODIFY]` `run-testes.js` — ✅ Reorganized into 11 categories with `// === CATEGORY NAME ===` delimiters
   - Add comprehensive tests for all commonly used commands
   - Include wuzapi webhook payload translation tests
   - Use `bots.json` = `[]` (empty) since FakeBot is used
 
-- `[MODIFY]` `src/testing/FakeBot.js`
-  - Add `useWuzapi`, `wuzapiUserToken`, `wuzapiUserName` properties for completeness
-  - Add `markRead()`, `setPresence()` stubs (new wuzapi capabilities)
+- `[MODIFY]` `src/testing/FakeBot.js` — ✅
+  - Added `useWuzapi`, `wuzapiUserToken`, `wuzapiUserName` properties
+  - Added `markRead()`, `setPresence()` stubs (new wuzapi capabilities)
 
-- `[NEW]` `src/testing/FakeWuzapiClient.js`
+- `[NEW]` `src/testing/FakeWuzapiClient.js` — ✅
   - Mock client that simulates wuzapi API responses without a real server
   - Predefined responses for: session/connect, session/status, chat/send/*, group/*, user/*
   - Supports "record/replay" mode: record real wuzapi responses, replay in tests
   - Configurable error modes for testing error handling
+  - All endpoints from wuzapi-endpoints.md implemented
 
-- `[NEW]` `src/testing/wuzapi-fixtures.js`
+- `[NEW]` `src/testing/wuzapi-fixtures.js` — ✅
   - Collection of realistic wuzapi webhook payloads for testing event translation
   - Text message, media message (with base64 + S3), reaction, group events, read receipts
   - Connection events: Connected, Disconnected, QR
 
-- `[MODIFY]` `Makefile`
-  - Add `make test-wuzapi` target that runs the wuzapi-focused test suite
-  - Update `make test` to run both whatsgo and wuzapi tests (configurable via env)
+- `[MODIFY]` `Makefile` — ✅
+  - Added `make test-wuzapi` target that runs the wuzapi-focused test suite
+  - Added `make restart-wuzapi` and `make logs-wuzapi` targets
+  - `make test` runs both whatsgo and wuzapi tests (configurable via env)
+
+---
+
+### Batch 7 — Decommission whatsgoapi (Future)
+
+**Only after all bots are verified on wuzapi:**
+
+- `[MODIFY]` `docker-compose.yml` — remove `whatsgoapi` service
+- `[MODIFY]` `.env.example` — remove whatsgoapi variables
+- `[DELETE]` `src/services/WhatsgoApiClient.js`
+- `[DELETE]` `src/services/WhatsgoClient.js`
+- `[DELETE]` `src/WhatsAppBotGo.js`
+- `[DELETE]` `whatsgoapi/` submodule
+- `[MODIFY]` `index.js` — remove whatsgoapi code paths
+- `[MODIFY]` `src/BotAPI.js` — remove whatsgoapi references
+- `[MODIFY]` `Makefile` — remove whatsgoapi targets
 
