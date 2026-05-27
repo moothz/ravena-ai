@@ -47,46 +47,197 @@ async function main() {
 	});
 
 	// ===========================================================================
-	// TESTES — adicione/remova/comente conforme necessário
+	// 1 — COMANDOS BÁSICOS
+	// Verifica se o pipeline básico está funcionando
 	// ===========================================================================
 
-	// Teste básico de ping
 	runner.run("!ping", () => msgTexto("!ping"));
 
-	// YouTube — busca texto
-	// Espera 2 mensagens (a de busca e a de mídia) com timeout maior (60s)
+	runner.run("!status", () => msgTexto("!status"));
+
+	runner.run("!help", () => msgTexto("!help"));
+
+	runner.run("!uptime", () => msgTexto("!uptime"));
+
+	// ===========================================================================
+	// 2 — COMANDOS DE IA (LLM)
+	// Testam a integração com o serviço LLM. Podem ser lentos.
+	// ===========================================================================
+
+	runner.run("!chat - conversa simples", () => msgTexto("!chat Olá, como vai?"), {
+		timeout: 45000
+	});
+
+	runner.run(
+		"!resumo - com quoted",
+		async () => {
+			const quoted = msgTexto(
+				"O rato roeu a roupa do rei de Roma. O rei ficou bravo com o rato. O rato foi embora e nunca mais voltou para o castelo do rei."
+			);
+			return msgComQuote("!resumo", quoted);
+		},
+		{ timeout: 45000 }
+	);
+
+	runner.run(
+		"!traduza - com texto",
+		() => msgTexto("!traduza Hello, how are you? en pt"),
+		{ timeout: 45000 }
+	);
+
+	// ===========================================================================
+	// 3 — COMANDOS DE MÍDIA
+	// Testam download de mídia, geração de stickers, etc.
+	// ===========================================================================
+
+	// YouTube — busca e download (espera 2 mensagens: busca + mídia)
 	runner.run("!yt - busca texto", () => msgTexto("!yt receita pudim"), {
 		expectedMessages: 2,
 		timeout: 60000
 	});
 
-	// Sticker de imagem
-	// (requer data/test-image.png)
-	// runner.run("!s - sticker de imagem", () =>
-	// 	msgMedia("!s", "./data/test-image.png", { type: "image" })
+	// Sticker de imagem (requer data/test-image.png)
+	runner.run("!s - sticker de imagem", () =>
+		msgMedia("!s", "./data/test-image.png", { type: "image" })
+	);
+
+	// Sticker de áudio (requer data/test-audio.mp3)
+	runner.run("!s - sticker de áudio", () =>
+		msgMedia("!s", "./data/test-audio.mp3", { type: "audio" })
+	);
+
+	// ===========================================================================
+	// 4 — MANIPULAÇÃO DE IMAGEM
+	// Testam geração e edição de imagens
+	// ===========================================================================
+
+	// Meme (requer data/test-image.png)
+	runner.run("!meme - sticker meme", () =>
+		msgMedia("!meme Topo:Teste|Baixo:Ravena", "./data/test-image.png", { type: "image" }),
+		{ timeout: 30000 }
+	);
+
+	// ===========================================================================
+	// 5 — COMANDOS DE BUSCA
+	// Testam integrações com APIs externas
+	// ===========================================================================
+
+	runner.run("!google - busca", () => msgTexto("!google Ravena AI"), {
+		timeout: 20000
+	});
+
+	runner.run("!wiki - wikipedia", () => msgTexto("!wiki Brasil"), {
+		timeout: 20000
+	});
+
+	runner.run("!imdb - busca filme", () => msgTexto("!imdb Inception"), {
+		timeout: 20000
+	});
+
+	// ===========================================================================
+	// 6 — COMANDOS DE GRUPO
+	// Testam gerenciamento de grupos (ban, mute, promover, rebaixar)
+	// OBS: alguns comandos só funcionam com permissões reais de admin do grupo
+	// ===========================================================================
+
+	// runner.run("!ban - listar banidos", () =>
+	// 	msgTexto("!ban")
 	// );
 
-	// Sticker de áudio
-	// (requer data/test-audio.mp3)
-	// runner.run("!s - sticker de áudio", () =>
-	// 	msgMedia("!s", "./data/test-audio.mp3", { type: "audio" })
+	// runner.run("!mute - listar mutados", () =>
+	// 	msgTexto("!mute")
 	// );
 
-	// Comando com mensagem quoted
-	// runner.run("!resumo - com quoted", async () => {
-	// 	const quoted = msgTexto("Este é o texto longo que deve ser resumido pelo comando.");
-	// 	return msgComQuote("!resumo", quoted);
-	// });
+	// ===========================================================================
+	// 7 — COMANDOS DE JOGOS
+	// Testam lógica de jogos
+	// ===========================================================================
 
-	// Objeto de mensagem totalmente customizado (autor diferente, sem grupo)
-	// runner.run("!help - no privado", () =>
-	// 	msgCustom({
-	// 		content: "!help",
-	// 		type: "text",
-	// 		group: null,               // null = mensagem privada
-	// 		author: "5511000000001@s.whatsapp.net"
-	// 	})
-	// );
+	runner.run("!dado - rolar dado", () => msgTexto("!dado"));
+
+	runner.run("!roleta - roleta russa", () => msgTexto("!roleta"));
+
+	runner.run("!slot - caça-níqueis", () => msgTexto("!slot"));
+
+	runner.run("!anagrama - iniciar jogo", () => msgTexto("!anagrama"));
+
+	runner.run("!pinto - iniciar jogo", () => msgTexto("!pinto"));
+
+	runner.run("!coringa - carta coringa", () => msgTexto("!coringa"));
+
+	// ===========================================================================
+	// 8 — TESTES DE REAÇÃO
+	// Testam envio de reações via mensagens quoted
+	// ===========================================================================
+
+	runner.run(
+		"!reage - reação com emoji",
+		async () => {
+			const quoted = msgTexto("Mensagem para reagir");
+			return msgComQuote("!reage 👍", quoted);
+		}
+	);
+
+	// ===========================================================================
+	// 9 — TESTES DE MENSAGEM PRIVADA (PV)
+	// Testam comportamento específico de mensagens privadas
+	// (ignorePV, pvAI, whitelist)
+	// ===========================================================================
+
+	runner.run("!help - no privado", () =>
+		msgCustom({
+			content: "!help",
+			type: "text",
+			group: null, // null = mensagem privada
+			author: "5511000000001@s.whatsapp.net"
+		})
+	);
+
+	runner.run("!ping - no privado", () =>
+		msgCustom({
+			content: "!ping",
+			type: "text",
+			group: null,
+			author: AUTHOR
+		})
+	);
+
+	// ===========================================================================
+	// 10 — TRATAMENTO DE ERROS
+	// Testam comandos malformados, mídia ausente, etc.
+	// ===========================================================================
+
+	// Comando inexistente
+	runner.run("comando inexistente", () => msgTexto("!comando_que_nao_existe_12345"));
+
+	// Comando sem parâmetros obrigatórios
+	runner.run("!yt sem parâmetros", () => msgTexto("!yt"));
+
+	// ===========================================================================
+	// 11 — COMANDOS ADICIONAIS
+	// Outros comandos úteis para teste
+	// ===========================================================================
+
+	// Clima
+	runner.run("!tempo - clima", () => msgTexto("!tempo São Paulo"));
+
+	// Moeda
+	runner.run("!moeda - cotação", () => msgTexto("!moeda USD BRL"));
+
+	// QR Code
+	runner.run("!qr - gerar QR code", () => msgTexto("!qr https://exemplo.com"));
+
+	// Biscoito da sorte
+	runner.run("!biscoito - fortune cookie", () => msgTexto("!biscoito"));
+
+	// Horóscopo
+	runner.run("!horoscopo - signo", () => msgTexto("!horoscopo áries"));
+
+	// Dice
+	runner.run("!dice - dado emoji", () => msgTexto("!dice"));
+
+	// Cantada
+	runner.run("!cantada", () => msgTexto("!cantada"));
 
 	// ===========================================================================
 	// Executa e encerra
