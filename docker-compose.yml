@@ -1,7 +1,7 @@
 services:
 
   # ───────────────────────────────────────────────────────────
-  # postgres — Database (whatsgoapi + ravena-ai backups)
+  # postgres — Database (wuzapi + ravena-ai backups)
   # Internal only
   # ───────────────────────────────────────────────────────────
   postgres:
@@ -14,20 +14,20 @@ services:
     networks:
       - ravena-net
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-whatsgo}
+      POSTGRES_USER: ${POSTGRES_USER:-wuzapi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-whatsgo_db}
+      POSTGRES_DB: ${POSTGRES_DB:-wuzapi_db}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whatsgo} -d ${POSTGRES_DB:-whatsgo_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wuzapi} -d ${POSTGRES_DB:-wuzapi_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
 
   # ───────────────────────────────────────────────────────────
-  # minio — Object Storage for media files (whatsgoapi)
+  # minio — Object Storage for media files (wuzapi)
   # Internal only
   # ───────────────────────────────────────────────────────────
   minio:
@@ -67,28 +67,44 @@ services:
     command: s --port 7000
 
   # ───────────────────────────────────────────────────────────
-  # whatsgoapi — WhatsApp REST API (Go / whatsmeow)
+  # wuzapi — WhatsApp REST API (Go / whatsmeow)
   # Internal only: not exposed to host
   # ───────────────────────────────────────────────────────────
-  whatsgoapi:
-    build:
-      context: ./whatsgoapi
-      dockerfile: Dockerfile
-    container_name: whatsgoapi
-    env_file: .env
+  wuzapi:
+    image: asternic/wuzapi:latest
+    container_name: wuzapi
     restart: unless-stopped
     dns:
       - 1.1.1.1
       - 8.8.8.8
     ports:
-      - "${WHATSGOAPI_PORT:-9800}:${SERVER_PORT:-8080}"
+      - "${WUZAPI_PORT:-9810}:8080"
     networks:
       - ravena-net
-    volumes:
-      # Persistent: media files, SQLite DB, logs
-      - ./data/whatsgoapi/files:/app/files
-      - ./data/whatsgoapi/logs:/app/logs
-      - ./data/whatsgoapi/dbdata:/app/dbdata
+    environment:
+      # Database
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-wuzapi}
+      DB_PASS: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-wuzapi_db}
+      # Admin
+      ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN}
+      # Webhook (global)
+      WEBHOOK_URL: ${WUZAPI_GLOBAL_WEBHOOK}
+      WEBHOOK_FORMAT: json
+      # S3 / MinIO
+      S3_ENABLED: "true"
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY}
+      S3_BUCKET: ${MINIO_BUCKET:-zap-media}
+      S3_USE_SSL: "false"
+      S3_REGION: ${MINIO_REGION:-}
+      # Media delivery: base64 + S3 URL
+      MEDIA_DELIVERY: both
+      # Behavior
+      CONNECT_ON_STARTUP: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,12 +140,11 @@ services:
       - ./bots.json:/app/bots.json
       - ./service-providers.json:/app/service-providers.json
     depends_on:
-      whatsgoapi:
+      wuzapi:
         condition: service_started
 
-
   # ───────────────────────────────────────────────────────────
-  # health-check — Monitors whatsgoapi and ravena-ai
+  # health-check — Monitors wuzapi and ravena-ai
   # Restarts containers via Docker socket if they go offline
   # ───────────────────────────────────────────────────────────
   health-check:
@@ -144,8 +159,8 @@ services:
     environment:
       HEALTH_CHECK_TELEGRAM_BOT_TOKEN: ${HEALTH_CHECK_TELEGRAM_BOT_TOKEN:-}
       HEALTH_CHECK_TELEGRAM_CHAT_ID: ${HEALTH_CHECK_TELEGRAM_CHAT_ID:-}
-      GLOBAL_API_KEY: ${GLOBAL_API_KEY}
-      SERVER_PORT: ${SERVER_PORT:-8080}
+      WUZAPI_ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN}
+      WUZAPI_URL: http://wuzapi:8080
       API_PORT: ${API_PORT:-5000}
       HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-60}
     volumes:
@@ -154,7 +169,7 @@ services:
     entrypoint: >
       sh -c "apk add --no-cache curl jq docker-cli && sh /check-health.sh"
     depends_on:
-      - whatsgoapi
+      - wuzapi
       - ravena-ai
 
   # ───────────────────────────────────────────────────────────
