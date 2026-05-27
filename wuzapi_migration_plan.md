@@ -231,21 +231,22 @@ Create the `wuzapi` git branch. Document all endpoint mappings in `wuzapi-endpoi
 
 ### Batch 5 — index.js + bots.json + Tooling
 
+**Status: ✅ COMPLETE**
+
 **Files:**
-- `[MODIFY]` `index.js`
-  - Detect `bot.useWuzapi === true` → instantiate `WhatsAppBotWuzapi`
+- `[MODIFY]` `index.js` — ✅ Detect `bot.useWuzapi === true` → instantiate `WhatsAppBotWuzapi`
   - Pass `wuzapiUrl` + `wuzapiAdminToken` from env; `wuzapiUserToken` + `wuzapiUserName` from bot config
   - Keep existing `WhatsAppBotGo` path for bots not yet migrated
 
-- `[MODIFY]` `bots.json.example`
+- `[MODIFY]` `bots.json.example` — ⏳ Pending
   - Add `useWuzapi`, `wuzapiUserName`, `wuzapiUserToken` fields
   - Document which old fields are no longer needed
 
-- `[NEW]` `query-wuzapi.js`
+- `[NEW]` `query-wuzapi.js` — ⏳ Pending
   - CLI debug tool equivalent of `whatsgoapi/query-whatsgo.js`
   - Functions: `sessionStatus`, `sessionConnect`, `sessionQR`, `sessionLogout`, `sessionPairphone`, `adminListUsers`, `adminAddUser`, `adminDeleteUser`, `setWebhook`, `getWebhook`, `listGroups`, `groupInfo`, `groupUpdateParticipants`, `groupLeave`, `groupJoin`, `groupName`, `groupPhoto`, `userInfo`, `userCheck`, `sendText`, `sendImage`, `sendVideo`, `sendAudio`, `sendDocument`, `sendSticker`, `sendLocation`, `sendContact`, `react`, `markRead`, `deleteMessage`, `downloadMedia`, `configS3`
 
-- `[NEW]` `migrate-sessions.js` (best-effort)
+- `[NEW]` `migrate-sessions.js` (best-effort) — ⏳ Pending
   - Reads whatsgoapi Postgres schema (whatsmeow device tables)
   - Maps instance names → wuzapi user IDs
   - Dumps + restores session data into wuzapi's Postgres
@@ -257,17 +258,52 @@ Create the `wuzapi` git branch. Document all endpoint mappings in `wuzapi-endpoi
 
 The existing `run-testes.js` + `FakeBot` + `TestRunner` infrastructure must be updated and expanded to fully support wuzapi testing. The `FakeBot` already implements the interface expected by the pipeline (EventHandler → CommandHandler → functions), so the core approach remains the same. The key change is ensuring all wuzapi-specific code paths are exercisable through the test harness.
 
+The testing strategy uses a **single comprehensive `run-testes.js`** file organized in logical sections. Each section can be independently commented/uncommented to focus on specific areas. The `bots.json` file used during testing can be empty `[]` since `FakeBot` bypasses real connections entirely — the pipeline (EventHandler → CommandHandler → functions) only needs the `FakeBot` interface.
+
+#### Testing Architecture
+
+```
+run-testes.js                    ← Entry point, organized test sections
+  └── TestRunner.js              ← Executor (already exists, handles polling + timing)
+        └── FakeBot.js           ← Bot stub (already exists, captures ReturnMessages)
+              └── helpers.js     ← Message factory (msgTexto, msgMedia, msgComQuote, msgCustom)
+                    └── FakeMessage.js  ← Message builder (already exists)
+```
+
+#### Test Categories in run-testes.js
+
+The run-testes.js will be organized into the following sections, each clearly delimited with comments:
+
+1. **Basic Commands** — `!ping`, `!status`, `!help`, `!uptime` — verify the pipeline works
+2. **AI Commands** — `!chat`, `!resumo`, `!traduza` — test LLM integration paths (may be slow)
+3. **Media Commands** — `!yt`, `!s` (sticker from image), `!s` (sticker from audio) — test media download + processing
+4. **Image Manipulation** — `!meme`, `!rembg`, `!sd` — test image generation/editing
+5. **Search Commands** — `!google`, `!wiki`, `!imdb` — test external API calls
+6. **Group Commands** — `!ban`, `!unban`, `!mute`, `!unmute`, `!promover`, `!rebaixar` — test group management
+7. **Game Commands** — `!dado`, `!roleta`, `!slot`, `!anagrama` — test game logic
+8. **Reaction Tests** — Test reaction sending via quoted messages
+9. **Private Message Tests** — Test PV-specific behavior (ignorePV, pvAI, whitelist)
+10. **Error Handling** — Test malformed commands, missing media, API failures
+11. **Wuzapi Webhook Payload Tests** — Test wuzapi-specific webhook event translation
+
+#### Wuzapi-Specific Testing
+
+Since wuzapi changes the webhook payload format (`payload.type` vs `payload.event`, `payload.token` vs `payload.instance`), the webhook translation layer must be tested with realistic payloads. This is done through:
+
+- **`src/testing/wuzapi-fixtures.js`** — Pre-built wuzapi webhook payloads that can be fed to the translation layer
+- **Inline tests in run-testes.js** — Section 11 above tests the translation directly
+
 **Files:**
 - `[MODIFY]` `run-testes.js`
-  - Update to include comprehensive test cases covering all wuzapi-migrated functionality
-  - Organize tests into logical groups: basic, AI commands, media, groups, reactions, etc.
-  - Add wuzapi-specific webhook payload tests (see webhook format changes above)
-  - Use `bots.json` with `useWuzapi: true` for wuzapi tests (can be empty array for basic tests)
+  - Reorganize into the 11 categories listed above
+  - Each section clearly commented with `// === CATEGORY NAME ===`
+  - Add comprehensive tests for all commonly used commands
+  - Include wuzapi webhook payload translation tests
+  - Use `bots.json` = `[]` (empty) since FakeBot is used
 
 - `[MODIFY]` `src/testing/FakeBot.js`
-  - Add `useWuzapi`, `wuzapiUserToken`, `wuzapiUserName` properties
-  - Ensure all methods called by `WhatsAppBotWuzapi` are stubbed
-  - Add `markRead`, `setPresence` stubs (new wuzapi capabilities)
+  - Add `useWuzapi`, `wuzapiUserToken`, `wuzapiUserName` properties for completeness
+  - Add `markRead()`, `setPresence()` stubs (new wuzapi capabilities)
 
 - `[NEW]` `src/testing/FakeWuzapiClient.js`
   - Mock client that simulates wuzapi API responses without a real server
