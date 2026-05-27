@@ -50,9 +50,10 @@ generate-secrets: ## Gera o .env a partir do .env.example com segredos e inputs 
 	@MINIO_PASS=$$(openssl rand -hex 16); \
 		sed -i "s|MINIO_SECRET_KEY=minioadmin_password|MINIO_SECRET_KEY=$$MINIO_PASS|g" .env; \
 		printf "$(GREEN)  MINIO_SECRET_KEY gerada$(NC)\n"
-	@printf "\n"
-	@printf "$(YELLOW)⚠️  Arquivo .env criado com suas preferências.$(NC)\n"
-	@printf "$(CYAN)   Lembre-se de editar o .env para preencher outras chaves de API se necessário.$(NC)\n"
+	@WUZAPI_TOKEN=$$(openssl rand -hex 32); \
+		sed -i "s|WUZAPI_ADMIN_TOKEN=SUA_ADMIN_TOKEN|WUZAPI_ADMIN_TOKEN=$$WUZAPI_TOKEN|g" .env; \
+		printf "$(GREEN)  WUZAPI_ADMIN_TOKEN gerado$(NC)\n"
+	@printf "\n$(CYAN)   Lembre-se de editar o .env para preencher outras chaves de API se necessário.$(NC)\n"
 	@printf "\n"
 
 ##@ Docker
