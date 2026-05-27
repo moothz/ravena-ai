@@ -16,6 +16,25 @@
    },
    {
     "enabled": false,
+    "nome": "ravena-whatsapp-wuzapi-exemplo",
+    "managementUser": "ravuser_wuzapi",
+    "managementPW": "ravpw_wuzapi",
+
+    "privado": false,
+    "comunitario": false,
+    "numero": "559911223344",
+    "ignorePV": false,
+    "ignoreInvites": true,
+    "customPrefix": "!",
+    "autoDownloadPV": false,
+
+    "useWuzapi": true,
+    "wuzapiURL": "http://wuzapi:3000",
+    "wuzapiUserToken": "bot-user-token-1",
+    "wuzapiUserName": "ravena-bot"
+   },
+   {
+    "enabled": false,
     "nome": "ravena-discord-exemplo",
     "managementUser": "ravuser_discord",
     "managementPW": "ravpw_discord",
