@@ -252,12 +252,6 @@ Create the `wuzapi` git branch. Document all endpoint mappings in `wuzapi-endpoi
   - CLI debug tool equivalent of `whatsgoapi/query-whatsgo.js`
   - Functions: `sessionStatus`, `sessionConnect`, `sessionQR`, `sessionLogout`, `sessionPairphone`, `adminListUsers`, `adminAddUser`, `adminDeleteUser`, `setWebhook`, `getWebhook`, `listGroups`, `groupInfo`, `groupUpdateParticipants`, `groupLeave`, `groupJoin`, `groupName`, `groupPhoto`, `userInfo`, `userCheck`, `sendText`, `sendImage`, `sendVideo`, `sendAudio`, `sendDocument`, `sendSticker`, `sendLocation`, `sendContact`, `react`, `markRead`, `deleteMessage`, `downloadMedia`, `configS3`
 
-- `[NEW]` `migrate-sessions.js` — ⏳ Deferred
-  - Reads whatsgoapi Postgres schema (whatsmeow device tables)
-  - Maps instance names → wuzapi user IDs
-  - Dumps + restores session data into wuzapi's Postgres
-  - Falls back gracefully if schemas don't align (re-scan QR)
-
 ---
 
 ### Batch 6 — Testing Infrastructure ✅ COMPLETE
@@ -299,6 +293,7 @@ Since wuzapi changes the webhook payload format (`payload.type` vs `payload.even
 - **`src/testing/wuzapi-fixtures.js`** — ✅ Pre-built wuzapi webhook payloads that can be fed to the translation layer
 - **Inline tests in run-testes.js** — Section 11 above tests the translation directly
 - **`src/testing/FakeWuzapiClient.js`** — ✅ Mock client with all wuzapi endpoints simulated
+- **`src/testing/test-wuzapi.js`** — ✅ Unit tests for WuzapiClient, WhatsAppBotWuzapi, FakeWuzapiClient (113/113 passed)
 
 **Files:**
 - `[MODIFY]` `run-testes.js` — ✅ Reorganized into 11 categories with `// === CATEGORY NAME ===` delimiters
@@ -322,6 +317,15 @@ Since wuzapi changes the webhook payload format (`payload.type` vs `payload.even
   - Text message, media message (with base64 + S3), reaction, group events, read receipts
   - Connection events: Connected, Disconnected, QR
 
+- `[NEW]` `src/testing/test-wuzapi.js` — ✅
+  - Unit tests for WuzapiClient interface (57 methods)
+  - Unit tests for WhatsAppBotWuzapi interface (50 methods)
+  - Unit tests for FakeWuzapiClient Admin API (11 endpoints)
+  - Unit tests for FakeWuzapiClient User API (4 endpoints)
+  - Webhook event parsing tests
+  - Error injection tests
+  - 113/113 tests passed
+
 - `[MODIFY]` `Makefile` — ✅
   - Added `make test-wuzapi` target that runs the wuzapi-focused test suite
   - Added `make restart-wuzapi` and `make logs-wuzapi` targets
@@ -329,7 +333,18 @@ Since wuzapi changes the webhook payload format (`payload.type` vs `payload.even
 
 ---
 
-### Batch 7 — Decommission whatsgoapi (Future)
+### Batch 7 — Session Migration (Deferred)
+
+**Files:**
+- `[NEW]` `migrate-sessions.js` — ⏳ Deferred
+  - Reads whatsgoapi Postgres schema (whatsmeow device tables)
+  - Maps instance names → wuzapi user IDs
+  - Dumps + restores session data into wuzapi's Postgres
+  - Falls back gracefully if schemas don't align (re-scan QR)
+
+---
+
+### Batch 8 — Decommission whatsgoapi (Future)
 
 **Only after all bots are verified on wuzapi:**
 
@@ -342,4 +357,3 @@ Since wuzapi changes the webhook payload format (`payload.type` vs `payload.even
 - `[MODIFY]` `index.js` — remove whatsgoapi code paths
 - `[MODIFY]` `src/BotAPI.js` — remove whatsgoapi references
 - `[MODIFY]` `Makefile` — remove whatsgoapi targets
-
