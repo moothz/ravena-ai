@@ -1,4 +1,4 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi test test-wuzapi restart-wuzapi logs-wuzapi
 
 
 # Cores usando escape codes literais para garantir compatibilidade
@@ -75,6 +75,9 @@ restart-bot: ## Reinicia apenas o bot ravena-ai
 restart-api: ## Reinicia apenas o whatsgoapi
 	docker compose restart whatsgoapi
 
+restart-wuzapi: ## Reinicia apenas o wuzapi
+	docker compose restart wuzapi
+
 restart-db: ## Reinicia apenas o banco de dados (postgres)
 	docker compose restart postgres
 
@@ -105,6 +108,9 @@ logs-bot: ## Exibe os logs do bot ravena-ai
 logs-api: ## Exibe os logs do whatsgoapi
 	docker compose logs -f --tail 100 whatsgoapi
 
+logs-wuzapi: ## Exibe os logs do wuzapi
+	docker compose logs -f --tail 100 wuzapi
+
 logs-db: ## Exibe os logs do banco de dados (postgres)
 	docker compose logs -f --tail 100 postgres
 
@@ -127,6 +133,11 @@ test: ## Roda o arquivo run-testes.js dentro do container (sem WhatsApp)
 	docker cp run-testes.js $$(docker compose ps -q ravena-ai):/app/run-testes.js
 	docker cp src/testing $$(docker compose ps -q ravena-ai):/app/src/
 	docker compose exec ravena-ai node run-testes.js
+
+test-wuzapi: ## Roda os testes focados em wuzapi (FakeWuzapiClient)
+	docker cp run-testes.js $$(docker compose ps -q ravena-ai):/app/run-testes.js
+	docker cp src/testing $$(docker compose ps -q ravena-ai):/app/src/
+	docker compose exec ravena-ai node run-testes.js --wuzapi
 
 test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick FILE=src/functions/MinhaFunc.js)
 	@if [ -z "$(FILE)" ]; then printf "$(YELLOW)Uso: make test-quick FILE=caminho/do/arquivo.js$(NC)\n"; exit 1; fi
