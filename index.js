@@ -190,7 +190,7 @@ async function main() {
 					// WuzAPI
 					instanceName: rBot.wuzapiInstance ?? rBot.nome,
 					wuzapiUrl: rBot.wuzapiUrl ?? process.env.WUZAPI_URL,
-					wuzapiToken: rBot.wuzapiToken,
+					wuzapiToken: rBot.wuzapiToken ?? process.env.WUZAPI_ADMIN_TOKEN,
 					redisURL: process.env.CACHE_REDIS_URI,
 					redisTTL: process.env.CACHE_REDIS_TTL,
 					redisDB: redisDbAtual,

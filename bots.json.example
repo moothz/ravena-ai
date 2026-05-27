@@ -14,25 +14,25 @@
     "customPrefix": "!",
     "autoDownloadPV": false
    },
-   {
-    "enabled": false,
-    "nome": "ravena-whatsapp-wuzapi-exemplo",
-    "managementUser": "ravuser_wuzapi",
-    "managementPW": "ravpw_wuzapi",
+    {
+     "enabled": false,
+     "nome": "ravena-whatsapp-wuzapi-exemplo",
+     "managementUser": "ravuser_wuzapi",
+     "managementPW": "ravpw_wuzapi",
 
-    "privado": false,
-    "comunitario": false,
-    "numero": "559911223344",
-    "ignorePV": false,
-    "ignoreInvites": true,
-    "customPrefix": "!",
-    "autoDownloadPV": false,
+     "privado": false,
+     "comunitario": false,
+     "numero": "559911223344",
+     "ignorePV": false,
+     "ignoreInvites": true,
+     "customPrefix": "!",
+     "autoDownloadPV": false,
 
-    "useWuzapi": true,
-    "wuzapiURL": "http://wuzapi:3000",
-    "wuzapiUserToken": "bot-user-token-1",
-    "wuzapiUserName": "ravena-bot"
-   },
+     "useWuzapi": true,
+     "wuzapiInstance": "nome-da-instancia",
+     "wuzapiUrl": "http://wuzapi:8080",
+     "wuzapiToken": "SUA_ADMIN_TOKEN"
+    },
    {
     "enabled": false,
     "nome": "ravena-discord-exemplo",
