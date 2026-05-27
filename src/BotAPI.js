@@ -144,6 +144,7 @@ class BotAPI {
 	async checkServices() {
 		const services = {
 			whatsgoapi: "unknown",
+			wuzapi: "down",
 			imagine: "down",
 			llm: "down",
 			whisper: "down",
@@ -172,6 +173,15 @@ class BotAPI {
 			services.whatsgoapi = whatsgoUp ? "up" : "down";
 		} catch (e) {
 			services.whatsgoapi = "down";
+		}
+
+		// 2. Check WuzAPI Health
+		try {
+			const wuzapiUrl = process.env.WUZAPI_URL || "http://wuzapi:5280";
+			const wuzapiUp = await checkUrl(`${wuzapiUrl}/api/health`);
+			services.wuzapi = wuzapiUp ? "up" : "down";
+		} catch (e) {
+			services.wuzapi = "down";
 		}
 
 		const checkCategoryStatus = async (category) => {
@@ -222,9 +232,69 @@ class BotAPI {
 	}
 
 	/**
+	 * Handler para webhook global do WuzAPI
+	 * Recebe eventos de todas as instâncias e roteia para o bot correto
+	 */
+	async handleWuzapiWebhook(instanceName, body) {
+		this.logger.info(`[WuzAPI Webhook] Evento recebido para instância '${instanceName}'`, {
+			event: body.event,
+			chat: body.chat?.jid
+		});
+
+		// Encontrar o bot pela instância
+		const bot = this.bots.find(
+			(b) => b.instanceName === instanceName || b.id === instanceName
+		);
+
+		if (!bot) {
+			this.logger.warn(
+				`[WuzAPI Webhook] Bot não encontrado para instância '${instanceName}'`
+			);
+			return { error: `Bot not found for instance: ${instanceName}` };
+		}
+
+		if (typeof bot.handleWuzapiEvent !== "function") {
+			this.logger.error(
+				`[WuzAPI Webhook] Bot '${instanceName}' não tem handler handleWuzapiEvent`
+			);
+			return { error: `Bot ${instanceName} does not support WuzAPI events` };
+		}
+
+		try {
+			await bot.handleWuzapiEvent(body);
+			return { ok: true, instance: instanceName };
+		} catch (error) {
+			this.logger.error(
+				`[WuzAPI Webhook] Erro ao processar evento para '${instanceName}':`,
+				error
+			);
+			return { error: error.message };
+		}
+	}
+
+	/**
 	 * Configura rotas da API
 	 */
 	setupRoutes() {
+		// Webhook global do WuzAPI - recebe eventos de todas as instâncias
+		this.app.post(
+			"/wuzapi/webhook/:instanceName",
+			bodyParser.json({ limit: "10mb" }),
+			async (req, res) => {
+				try {
+					const { instanceName } = req.params;
+					const result = await this.handleWuzapiWebhook(instanceName, req.body);
+					if (result.error) {
+						return res.status(404).json(result);
+					}
+					res.json(result);
+				} catch (error) {
+					this.logger.error("[WuzAPI Webhook] Erro no handler:", error);
+					res.status(500).json({ error: error.message });
+				}
+			}
+		);
+
 		// Endpoint SSE para streaming de eventos
 		this.app.get("/api/stream", (req, res) => {
 			// 1. Set Headers
