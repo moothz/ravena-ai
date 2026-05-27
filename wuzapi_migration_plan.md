@@ -99,8 +99,6 @@ Migrates `ravena-ai` from its custom `whatsgoapi` Go submodule to [wuzapi](https
 | Field | whatsgoapi | wuzapi (`WEBHOOK_FORMAT=json`) |
 |---|---|---|
 | Event name | `payload.event` | `payload.type` |
-| Event body | `payload.data` | `payload.event` |
-| Instance ID | `payload.instance` | `payload.token` (user token) |
 
 ### Event type mapping
 

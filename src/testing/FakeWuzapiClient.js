@@ -88,6 +88,169 @@ class FakeWuzapiClient {
 	 * Route to the appropriate handler
 	 */
 	async _route(method, endpoint, body) {
+		// ─── Admin API: /instances/* endpoints (matching WuzapiClient) ───
+
+		// Health
+		if (endpoint === "/health" && method === "GET") {
+			return this._health();
+		}
+
+		// List instances
+		if (endpoint === "/instances" && method === "GET") {
+			return this._adminListInstances();
+		}
+
+		// Create instance
+		if (endpoint === "/instances" && method === "POST") {
+			return this._adminCreateInstance(body);
+		}
+
+		// Instance-level endpoints: /instances/{name}/...
+		const instanceMatch = endpoint.match(/^\/instances\/([^/]+)\/(.+)$/);
+		if (instanceMatch) {
+			const instanceName = decodeURIComponent(instanceMatch[1]);
+			const subPath = instanceMatch[2];
+
+			// Status
+			if (subPath === "status" && method === "GET") {
+				return this._instanceStatus(instanceName);
+			}
+			// Connection status
+			if (subPath === "connection" && method === "GET") {
+				return this._instanceConnection(instanceName);
+			}
+			// Connect
+			if (subPath === "connect" && method === "POST") {
+				return this._instanceConnect(instanceName);
+			}
+			// Disconnect
+			if (subPath === "disconnect" && method === "POST") {
+				return this._instanceDisconnect(instanceName);
+			}
+			// Logout
+			if (subPath === "logout" && method === "POST") {
+				return this._instanceLogout(instanceName);
+			}
+			// QR Code
+			if (subPath === "qrcode" && method === "GET") {
+				return this._instanceQrCode(instanceName);
+			}
+			// Webhook
+			if (subPath === "webhook" && method === "POST") {
+				return this._instanceSetWebhook(instanceName, body);
+			}
+			if (subPath === "webhook" && method === "GET") {
+				return this._instanceGetWebhook(instanceName);
+			}
+			// Send message
+			if (subPath === "sendMessage" && method === "POST") {
+				return this._instanceSendMessage(instanceName, body);
+			}
+			// Send reaction
+			if (subPath === "sendReaction" && method === "POST") {
+				return this._instanceSendReaction(instanceName, body);
+			}
+			// Delete message
+			if (subPath === "deleteMessage" && method === "POST") {
+				return this._instanceDeleteMessage(instanceName, body);
+			}
+			// Edit message
+			if (subPath === "editMessage" && method === "POST") {
+				return this._instanceEditMessage(instanceName, body);
+			}
+			// Forward message
+			if (subPath === "forwardMessage" && method === "POST") {
+				return this._instanceForwardMessage(instanceName, body);
+			}
+			// Read message
+			if (subPath === "readMessage" && method === "POST") {
+				return this._instanceReadMessage(instanceName, body);
+			}
+			// Download media
+			if (subPath === "download" && method === "POST") {
+				return this._instanceDownloadMedia(instanceName, body);
+			}
+			// Profile info
+			if (subPath === "profile" && method === "GET") {
+				return this._instanceProfileInfo(instanceName);
+			}
+			// Profile name
+			if (subPath === "profile/name" && method === "POST") {
+				return this._instanceProfileName(instanceName, body);
+			}
+			// Profile status
+			if (subPath === "profile/status" && method === "POST") {
+				return this._instanceProfileStatus(instanceName, body);
+			}
+			// Profile picture
+			if (subPath === "profile/picture" && method === "POST") {
+				return this._instanceProfilePicture(instanceName, body);
+			}
+			if (subPath === "profile/picture" && method === "DELETE") {
+				return this._instanceRemoveProfilePicture(instanceName);
+			}
+			// Contacts
+			if (subPath === "contacts" && method === "GET") {
+				return this._instanceContacts(instanceName);
+			}
+			// Contact info: /instances/{name}/contacts/{chatId}
+			const contactMatch = subPath.match(/^contacts\/(.+)$/);
+			if (contactMatch && method === "GET") {
+				return this._instanceContactInfo(instanceName, decodeURIComponent(contactMatch[1]));
+			}
+			// Groups
+			if (subPath === "groups" && method === "GET") {
+				return this._instanceGroups(instanceName);
+			}
+			// Group info: /instances/{name}/groups/{groupId}
+			const groupMatch = subPath.match(/^groups\/(.+)$/);
+			if (groupMatch && method === "GET") {
+				return this._instanceGroupInfo(instanceName, decodeURIComponent(groupMatch[1]));
+			}
+			// Leave group: /instances/{name}/groups/{groupId}/leave
+			const leaveMatch = subPath.match(/^groups\/(.+)\/leave$/);
+			if (leaveMatch && method === "POST") {
+				return this._instanceLeaveGroup(instanceName, decodeURIComponent(leaveMatch[1]));
+			}
+			// Join group
+			if (subPath === "groups/join" && method === "POST") {
+				return this._instanceJoinGroup(instanceName, body);
+			}
+			// Create group
+			if (subPath === "groups/create" && method === "POST") {
+				return this._instanceCreateGroup(instanceName, body);
+			}
+			// Invite info
+			const inviteMatch = subPath.match(/^groups\/invite\/(.+)$/);
+			if (inviteMatch && method === "GET") {
+				return this._instanceInviteInfo(instanceName, decodeURIComponent(inviteMatch[1]));
+			}
+			// Presence
+			if (subPath === "presence" && method === "POST") {
+				return this._instancePresence(instanceName, body);
+			}
+			// Block
+			if (subPath === "block" && method === "POST") {
+				return this._instanceBlock(instanceName, body);
+			}
+			// Unblock
+			if (subPath === "unblock" && method === "POST") {
+				return this._instanceUnblock(instanceName, body);
+			}
+			// Reject call
+			if (subPath === "rejectCall" && method === "POST") {
+				return this._instanceRejectCall(instanceName, body);
+			}
+		}
+
+		// Delete instance: /instances/{name}
+		const deleteInstanceMatch = endpoint.match(/^\/instances\/([^/]+)$/);
+		if (deleteInstanceMatch && method === "DELETE") {
+			return this._adminDeleteInstance(decodeURIComponent(deleteInstanceMatch[1]));
+		}
+
+		// ─── User API (original format) ───
+
 		// Session endpoints
 		if (endpoint === "/session/status" && method === "GET") {
 			return this._sessionStatus();
@@ -576,6 +739,248 @@ class FakeWuzapiClient {
 
 	_health() {
 		return { status: "ok", timestamp: new Date().toISOString() };
+	}
+
+	// ─── Admin API: Instances ──────────────────────────────────────────
+
+	_adminListInstances() {
+		return {
+			data: [
+				{ name: this.userName, status: "connected", phoneNumber: this.state.phoneNumber }
+			]
+		};
+	}
+
+	_adminCreateInstance(body) {
+		const name = body?.name || `instance-${Date.now()}`;
+		return {
+			data: { name, status: "created", webhookUrl: body?.webhookUrl || "" }
+		};
+	}
+
+	_adminDeleteInstance(name) {
+		return { data: { deleted: true, name } };
+	}
+
+	_instanceStatus(name) {
+		return {
+			data: { name, status: "connected", phoneNumber: this.state.phoneNumber }
+		};
+	}
+
+	_instanceConnection(name) {
+		return {
+			data: { name, connected: this.state.connected, state: this.state.connected ? "connected" : "disconnected" }
+		};
+	}
+
+	_instanceConnect(name) {
+		this.state.connected = true;
+		return { data: { name, connected: true } };
+	}
+
+	_instanceDisconnect(name) {
+		this.state.connected = false;
+		return { data: { name, disconnected: true } };
+	}
+
+	_instanceLogout(name) {
+		this.state.connected = false;
+		return { data: { name, loggedOut: true } };
+	}
+
+	_instanceQrCode(name) {
+		if (this.state.connected) {
+			return { data: null };
+		}
+		return {
+			data: { name, qr: "data:image/png;base64,fake-qr-code", count: 1 }
+		};
+	}
+
+	_instanceSetWebhook(name, body) {
+		return { data: { name, webhook: body?.url || "", secret: body?.secret || "" } };
+	}
+
+	_instanceGetWebhook(name) {
+		return {
+			data: { name, webhook: "http://ravena-ai:5000/webhook/wuzapi", secret: "" }
+		};
+	}
+
+	_instanceSendMessage(name, body) {
+		const msg = {
+			id: `wuzapi-msg-${Date.now()}`,
+			chatId: body.chatId,
+			type: body.type || "text",
+			content: body.content || {},
+			timestamp: Date.now(),
+			fromMe: true
+		};
+		this.state.messages.push(msg);
+		return { data: msg };
+	}
+
+	_instanceSendReaction(name, body) {
+		return {
+			data: {
+				name,
+				chatId: body.chatId,
+				messageId: body.messageId,
+				emoji: body.emoji
+			}
+		};
+	}
+
+	_instanceDeleteMessage(name, body) {
+		return { data: { name, deleted: true, chatId: body.chatId, messageId: body.messageId } };
+	}
+
+	_instanceEditMessage(name, body) {
+		return {
+			data: { name, edited: true, chatId: body.chatId, messageId: body.messageId, text: body.text }
+		};
+	}
+
+	_instanceForwardMessage(name, body) {
+		return {
+			data: {
+				name,
+				forwarded: true,
+				chatId: body.chatId,
+				messageId: body.messageId,
+				originalChatId: body.originalChatId
+			}
+		};
+	}
+
+	_instanceReadMessage(name, body) {
+		return { data: { name, read: true, chatId: body.chatId, messageId: body.messageId } };
+	}
+
+	_instanceDownloadMedia(name, body) {
+		return {
+			data: {
+				name,
+				base64: "fake-base64-media-data",
+				mimetype: "image/png",
+				filename: "downloaded.png"
+			}
+		};
+	}
+
+	_instanceProfileInfo(name) {
+		return {
+			data: {
+				name,
+				phoneNumber: this.state.phoneNumber,
+				pushName: this.state.pushName,
+				picture: `https://pps.whatsapp.net/profile/${this.state.phoneNumber}`
+			}
+		};
+	}
+
+	_instanceProfileName(name, body) {
+		this.state.pushName = body?.displayName || "";
+		return { data: { name, displayName: body?.displayName } };
+	}
+
+	_instanceProfileStatus(name, body) {
+		return { data: { name, status: body?.status || "" } };
+	}
+
+	_instanceProfilePicture(name, body) {
+		return { data: { name, pictureUpdated: true, url: body?.url || "" } };
+	}
+
+	_instanceRemoveProfilePicture(name) {
+		return { data: { name, pictureRemoved: true } };
+	}
+
+	_instanceContacts(name) {
+		return {
+			data: [
+				{ jid: "5511988888888@s.whatsapp.net", name: "Contato 1" },
+				{ jid: "5511977777777@s.whatsapp.net", name: "Contato 2" }
+			]
+		};
+	}
+
+	_instanceContactInfo(name, chatId) {
+		return {
+			data: {
+				jid: `${chatId}@s.whatsapp.net`,
+				name: `Contact ${chatId}`,
+				status: "Hello!"
+			}
+		};
+	}
+
+	_instanceGroups(name) {
+		return { data: { Groups: this.state.groups } };
+	}
+
+	_instanceGroupInfo(name, groupId) {
+		const group = this.state.groups.find((g) => g.id === groupId);
+		return group ? { data: group } : { error: "Group not found" };
+	}
+
+	_instanceLeaveGroup(name, groupId) {
+		const idx = this.state.groups.findIndex((g) => g.id === groupId);
+		if (idx !== -1) this.state.groups.splice(idx, 1);
+		return { data: { name, left: true, groupId } };
+	}
+
+	_instanceJoinGroup(name, body) {
+		return {
+			data: {
+				name,
+				joined: true,
+				inviteCode: body?.inviteCode,
+				groupId: `120363023456789013@g.us`
+			}
+		};
+	}
+
+	_instanceCreateGroup(name, body) {
+		const newGroup = {
+			id: `1203630234567890${this.state.groups.length + 14}@g.us`,
+			name: body.subject || "",
+			subject: body.subject || "",
+			owner: this.state.phoneNumber + "@s.whatsapp.net",
+			participants: (body.participants || []).map((p) => ({ jid: p, admin: false })),
+			creation: Date.now()
+		};
+		this.state.groups.push(newGroup);
+		return { data: newGroup };
+	}
+
+	_instanceInviteInfo(name, inviteCode) {
+		return {
+			data: {
+				inviteCode,
+				groupName: "Grupo Convidado",
+				participants: 2,
+				creation: Date.now()
+			}
+		};
+	}
+
+	_instancePresence(name, body) {
+		this.state.presence[body.chatId] = body.presence;
+		return { data: { name, chatId: body.chatId, presence: body.presence } };
+	}
+
+	_instanceBlock(name, body) {
+		return { data: { name, blocked: true, chatId: body.chatId } };
+	}
+
+	_instanceUnblock(name, body) {
+		return { data: { name, unblocked: true, chatId: body.chatId } };
+	}
+
+	_instanceRejectCall(name, body) {
+		return { data: { name, rejected: true, callId: body.callId } };
 	}
 
 	// ─── Webhook ───────────────────────────────────────────────────────

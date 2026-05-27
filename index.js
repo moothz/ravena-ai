@@ -3,6 +3,7 @@ require("dotenv").config();
 
 const TelegramBot = require("./src/TelegramBot");
 const WhatsAppBotGo = require("./src/WhatsAppBotGo");
+const WhatsAppBotWuzapi = require("./src/WhatsAppBotWuzapi");
 const DiscordBot = require("./src/DiscordBot");
 
 const EventHandler = require("./src/EventHandler");
@@ -146,7 +147,62 @@ async function main() {
 				redisDbAtual++;
 				newRBot.initialize();
 				await sleep(500);
+			} else if (rBot.useWuzapi) {
+				// WuzAPI bot
+				if (!rBot.nome) {
+					logger.debug(`Problema em bot WuzAPI`, { rBot });
+					continue;
+				}
+				logger.info(`Inicializando '${rBot.nome}' como WuzAPI`);
+				newRBot = new WhatsAppBotWuzapi({
+					id: rBot.nome,
+					banido: rBot.banido ?? false,
+					vip: rBot.vip ?? false,
+					comunitario: rBot.comunitario ?? false,
+					numeroResponsavel: rBot.numeroResponsavel ?? false,
+					phoneNumber: rBot.numero,
+					supportMsg: rBot.msgSuporte ?? false,
+					privado: rBot.privado,
+					eventHandler,
+					prefix: rBot.customPrefix || process.env.DEFAULT_PREFIX || "!",
+					otherBots: rBots.map((rB) => rB.numero),
+					userAgent:
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
+					ignorePV: rBot.ignorePV ?? false,
+					autoDownloadPV: rBot.autoDownloadPV ?? false,
+					whitelistPV: whitelistArray,
+					pvAI: rBot.pvAI ?? false,
+					ignoreInvites: rBot.ignoreInvites ?? false,
+					managementUser: rBot.managementUser ?? process.env.BOTAPI_USER,
+					managementPW: rBot.managementPW ?? process.env.BOTAPI_PASSWORD,
+
+					// IDs dos grupos para notificações
+					grupoEstabilidade: rBot.grupoEstabilidade ?? process.env.GRUPO_ESTABILIDADE,
+					grupoLogs: rBot.grupoLogs ?? process.env.GRUPO_LOGS,
+					grupoInvites: rBot.grupoInvites ?? process.env.GRUPO_INVITES,
+					grupoAvisos: rBot.grupoAvisos ?? process.env.GRUPO_AVISOS,
+					grupoAnuncios: rBot.grupoAnuncios ?? process.env.GRUPO_ANUNCIOS,
+					grupoInteracao: rBot.grupoInteracao ?? process.env.GRUPO_INTERACAO,
+					linkGrupao: rBot.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO,
+					linkAvisos: rBot.linkAvisos ?? process.env.LINK_GRUPO_AVISOS,
+					notificarDonate: rBot.notificarDonate ?? false,
+
+					// WuzAPI
+					instanceName: rBot.wuzapiInstance ?? rBot.nome,
+					wuzapiUrl: rBot.wuzapiUrl ?? process.env.WUZAPI_URL,
+					wuzapiToken: rBot.wuzapiToken,
+					redisURL: process.env.CACHE_REDIS_URI,
+					redisTTL: process.env.CACHE_REDIS_TTL,
+					redisDB: redisDbAtual,
+					webhookUrl: rBot.webhookUrl ?? process.env.WUZAPI_WEBHOOK_URL
+				});
+
+				redisDbAtual++;
+				newRBot.initialize();
+				await sleep(500);
+
 			} else {
+				// Default: WhatsAppBotGo (WhatsgoAPI)
 				if (!rBot.nome) {
 					logger.debug(`Problema em bot GO`, { rBot });
 					continue;
@@ -158,11 +214,10 @@ async function main() {
 					vip: rBot.vip ?? false,
 					comunitario: rBot.comunitario ?? false,
 					numeroResponsavel: rBot.numeroResponsavel ?? false,
-					phoneNumber: rBot.numero, // Número de telefone para solicitar código de pareamento
+					phoneNumber: rBot.numero,
 					supportMsg: rBot.msgSuporte ?? false,
-					privado: rBot.privado, // Número de telefone para solicitar código de pareamento
+					privado: rBot.privado,
 					eventHandler,
-					//stabilityMonitor: stabilityMonitor,
 					prefix: rBot.customPrefix || process.env.DEFAULT_PREFIX || "!",
 					otherBots: rBots.map((rB) => rB.numero),
 					userAgent:
@@ -184,7 +239,7 @@ async function main() {
 					grupoInteracao: rBot.grupoInteracao ?? process.env.GRUPO_INTERACAO,
 					linkGrupao: rBot.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO,
 					linkAvisos: rBot.linkAvisos ?? process.env.LINK_GRUPO_AVISOS,
-					notificarDonate: rBot.notificarDonate ?? false, // Apenas um dos bots deve notificar donate
+					notificarDonate: rBot.notificarDonate ?? false,
 
 					// WhatsgoAPI
 					goInstanceName: rBot.goID ?? rBot.nome,
@@ -198,7 +253,6 @@ async function main() {
 				});
 
 				redisDbAtual++;
-
 				newRBot.initialize();
 				await sleep(500);
 			}
