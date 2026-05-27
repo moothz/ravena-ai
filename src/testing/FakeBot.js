@@ -30,6 +30,11 @@ class FakeBot {
 		this.privado = false;
 		this.userAgent = "FakeBot/1.0";
 
+		// Wuzapi — propriedades para compatibilidade com código wuzapi-aware
+		this.useWuzapi = true;
+		this.wuzapiUserToken = "fake-wuzapi-token";
+		this.wuzapiUserName = "fake-bot";
+
 		// IDs de grupos de notificação — null = desabilitado
 		this.grupoLogs = null;
 		this.grupoAvisos = null;
@@ -182,6 +187,20 @@ class FakeBot {
 	 */
 	resetCapture() {
 		this.capturedMessages = [];
+	}
+
+	// ---------------------------------------------------------------------------
+	// Stubs para métodos wuzapi (novos na migração)
+	// ---------------------------------------------------------------------------
+
+	/** Marca mensagem como lida — no-op no FakeBot */
+	async markRead(chatId, messageKey) {
+		this.logger.debug(`[FakeBot] markRead() → chatId=${chatId}`);
+	}
+
+	/** Define presença (composing/paused) — no-op no FakeBot */
+	async setPresence(chatId, state) {
+		this.logger.debug(`[FakeBot] setPresence() → chatId=${chatId}, state=${state}`);
 	}
 }
 
