@@ -16,7 +16,7 @@ class Status {
 		} catch (error) {
 			// Retorna status default (tudo down) em caso de erro
 			return {
-				whatsgoapi: "unknown",
+				wuzapi: "down",
 				imagine: "down",
 				llm: "down",
 				whisper: "down",
