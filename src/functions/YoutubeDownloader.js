@@ -1,4 +1,4 @@
-﻿const path = require("path");
+const path = require("path");
 const axios = require("axios");
 const Logger = require("../utils/Logger");
 const ytSearch = require("youtube-search-api");
@@ -14,6 +14,55 @@ const fs = require("fs").promises;
 const logger = new Logger("youtube-downloader");
 const database = Database.getInstance();
 const videoCacheManager = new VideoCacheManager(youtubedl, database.databasePath);
+
+// === Rotação de cliente yt-dlp para evitar rate limit ===
+const YT_CLIENTS = ["default", "ios", "android", "mweb"];
+let currentClientIndex = 0;
+
+function getCurrentClientArgs() {
+	const client = YT_CLIENTS[currentClientIndex];
+	return client === "default" ? {} : { extractorArgs: `youtube:player_client=${client}` };
+}
+
+function advanceClient() {
+	const prev = YT_CLIENTS[currentClientIndex];
+	currentClientIndex = (currentClientIndex + 1) % YT_CLIENTS.length;
+	logger.warn(
+		`[clientRotation] Rate limit no cliente '${prev}', tentando '${YT_CLIENTS[currentClientIndex]}'`
+	);
+}
+
+function isRateLimitError(error) {
+	const msg = (error?.message || error?.stderr || String(error)).toLowerCase();
+	return (
+		msg.includes("429") ||
+		msg.includes("too many requests") ||
+		msg.includes("sign in to confirm") ||
+		msg.includes("403")
+	);
+}
+
+async function downloadWithRetry(urlSafe, baseOptions) {
+	let lastError;
+	for (let attempt = 0; attempt < YT_CLIENTS.length; attempt++) {
+		const clientName = YT_CLIENTS[currentClientIndex];
+		const options = { ...baseOptions, ...getCurrentClientArgs() };
+		try {
+			logger.info(
+				`[clientRotation] Download com cliente '${clientName}' (tentativa ${attempt + 1}/${YT_CLIENTS.length})`
+			);
+			return await videoCacheManager.downloadVideoWithCache(urlSafe, options);
+		} catch (err) {
+			if (isRateLimitError(err)) {
+				advanceClient();
+				lastError = err;
+			} else {
+				throw err;
+			}
+		}
+	}
+	throw lastError;
+}
 
 //logger.info('Módulo YoutubeDownloader carregado');
 
@@ -249,19 +298,18 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 						null
 					);
 				} else {
-					videoCacheManager
-						.downloadVideoWithCache(urlSafe, {
-							o: destinoVideo,
-							f: "(bv*[vcodec~='^((he|a)vc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
-							remuxVideo: "mp4",
-							recodeVideo: "mp4",
-							audioFormat: "aac",
-							ffmpegLocation: process.env.FFMPEG_PATH,
-							...(process.env.YT_USE_COOKIES === "true"
-								? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
-								: {}),
-							"js-runtimes": "node"
-						})
+					downloadWithRetry(urlSafe, {
+						o: destinoVideo,
+						f: "(bv*[vcodec~='^((he|a)vc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
+						remuxVideo: "mp4",
+						recodeVideo: "mp4",
+						audioFormat: "aac",
+						ffmpegLocation: process.env.FFMPEG_PATH,
+						...(process.env.YT_USE_COOKIES === "true"
+							? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
+							: {}),
+						"js-runtimes": "node"
+					})
 						.then((output) => {
 							if (output.fromCache) {
 								logger.info(`[baixarVideoYoutube][${nomeVideoTemp}] Estava em cache!`);
@@ -342,8 +390,7 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					"js-runtimes": "node"
 				};
 
-				videoCacheManager
-					.downloadVideoWithCache(urlSafe, downloadOptions)
+				downloadWithRetry(urlSafe, downloadOptions)
 					.then((output) => {
 						let videoToConvertPath;
 						let shouldCleanup = false;
