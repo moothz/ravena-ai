@@ -1411,7 +1411,7 @@ class WhatsAppBotWuzapi {
 						}
 
 						if (reactionData) {
-							if (reactionData.text !== "" && !reactionData.key?.fromMe) {
+							if (reactionData.text !== "" && !info?.IsFromMe) {
 								this.reactionHandler.processReaction(this, {
 									reaction: reactionData.text,
 									senderId: info.Sender,
@@ -1542,6 +1542,11 @@ class WhatsAppBotWuzapi {
 		try {
 			if (!wuzapiMessageData) {
 				return null;
+			}
+
+			// Se a mensagem já estiver formatada, retorna ela mesma diretamente
+			if (wuzapiMessageData.origin && wuzapiMessageData.id) {
+				return wuzapiMessageData;
 			}
 
 			const info = wuzapiMessageData.Info;
