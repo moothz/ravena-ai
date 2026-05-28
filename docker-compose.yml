@@ -89,7 +89,7 @@ services:
       DB_PASS: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB:-wuzapi_db}
       # Admin
-      ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN}
+      WUZAPI_ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN}
       # Webhook (global)
       WEBHOOK_URL: ${WUZAPI_GLOBAL_WEBHOOK}
       WEBHOOK_FORMAT: json

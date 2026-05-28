@@ -87,21 +87,27 @@ const whatsappBots = bots.filter((b) => b.enabled && !b.useDiscord && !b.useTele
 // Cliente HTTP genérico para wuzapi
 // ────────────────────────────────────────────────────────────
 
-function wuzapiRequest(method, endpoint, body = null) {
+function wuzapiRequest(method, endpoint, body = null, token = null) {
 	return new Promise((resolve, reject) => {
 		const url = new URL(endpoint, WUZAPI_URL);
 		const isHttps = url.protocol === "https:";
 		const lib = isHttps ? https : http;
+
+		const headers = {
+			"Content-Type": "application/json"
+		};
+		if (token) {
+			headers["Token"] = token;
+		} else {
+			headers["Authorization"] = WUZAPI_ADMIN_TOKEN;
+		}
 
 		const options = {
 			hostname: url.hostname,
 			port: url.port || (isHttps ? 443 : 80),
 			path: url.pathname + url.search,
 			method,
-			headers: {
-				"X-Auth-Token": WUZAPI_ADMIN_TOKEN,
-				"Content-Type": "application/json"
-			}
+			headers
 		};
 
 		const req = lib.request(options, (res) => {
@@ -150,9 +156,9 @@ async function modeCreate() {
 		console.log(`\n🔹 Instância: ${instanceName}`);
 
 		// Verifica se já existe
-		const check = await wuzapiRequest("GET", "/api/instances").catch(() => null);
-		if (check?.body?.instances) {
-			const exists = check.body.instances.find(
+		const check = await wuzapiRequest("GET", "/admin/users").catch(() => null);
+		if (check?.body && Array.isArray(check.body)) {
+			const exists = check.body.find(
 				(i) => i.name === instanceName || i.Name === instanceName
 			);
 			if (exists) {
@@ -163,8 +169,11 @@ async function modeCreate() {
 
 		// Cria instância
 		console.log("  📡 Criando instância...");
-		const result = await wuzapiRequest("POST", "/api/create-instance", {
-			name: instanceName
+		const result = await wuzapiRequest("POST", "/admin/users", {
+			name: instanceName,
+			token: instanceName,
+			webhook: GLOBAL_WEBHOOK_URL,
+			events: "Message,ReadReceipt,HistorySync,ChatPresence"
 		}).catch((err) => {
 			console.error(`  ❌ Erro ao criar instância:`, err.message);
 			return null;
@@ -195,12 +204,14 @@ async function modeQr() {
 		// Busca QR code
 		const result = await wuzapiRequest(
 			"GET",
-			`/api/get-qr?name=${encodeURIComponent(instanceName)}`
+			"/session/qr",
+			null,
+			instanceName
 		).catch(() => null);
 
-		if (result?.body?.qr) {
+		if (result?.body?.qr || result?.body?.qrcode) {
 			console.log("  📱 QR Code disponível! Escaneie com o WhatsApp:");
-			console.log(`  ${result.body.qr}`);
+			console.log(`  ${result.body.qr || result.body.qrcode}`);
 		} else if (result?.body?.code) {
 			console.log(`  🔑 Código de pareamento: ${result.body.code}`);
 		} else {
@@ -216,27 +227,10 @@ async function modeQr() {
 // ────────────────────────────────────────────────────────────
 
 async function modeWebhook() {
-	console.log("\n🪝 Modo: WEBHOOK — Configurando webhook global\n");
+	console.log("\n🪝 Modo: WEBHOOK — Configurando webhook para cada instância\n");
 	console.log(`  Todas as instâncias usarão a mesma URL:`);
-	console.log(`  ${GLOBAL_WEBHOOK_URL}`);
-	console.log(`  O campo 'instanceName' no payload identifica a instância.\n`);
+	console.log(`  ${GLOBAL_WEBHOOK_URL}\n`);
 
-	// Configura webhook global via wuzapi
-	// Isso define o webhook padrão para todas as instâncias existentes e futuras
-	const result = await wuzapiRequest("POST", "/webhook", {
-		webhookURL: GLOBAL_WEBHOOK_URL
-	}).catch((err) => {
-		console.error(`  ❌ Erro ao configurar webhook global:`, err.message);
-		return null;
-	});
-
-	if (result?.status === 200) {
-		console.log("  ✅ Webhook global configurado!");
-	} else {
-		console.error("  ❌ Falha ao configurar webhook global:", result);
-	}
-
-	// Também configura webhook individual por instância (caso o global não se aplique a instâncias já criadas)
 	for (const bot of whatsappBots) {
 		const instanceName = bot.nome;
 
@@ -245,12 +239,12 @@ async function modeWebhook() {
 		// Configura webhook por instância usando o mesmo endpoint global
 		const result = await wuzapiRequest("POST", "/webhook", {
 			webhookURL: GLOBAL_WEBHOOK_URL
-		}).catch((err) => {
+		}, instanceName).catch((err) => {
 			console.error(`  ❌ Erro ao configurar webhook para '${instanceName}':`, err.message);
 			return null;
 		});
 
-		if (result?.status === 200) {
+		if (result?.status === 200 || result?.status === 201) {
 			console.log(`  ✅ Webhook configurado para '${instanceName}'!`);
 		} else {
 			console.error(`  ❌ Falha ao configurar webhook para '${instanceName}':`, result);

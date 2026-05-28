@@ -216,9 +216,10 @@ class WhatsAppBotWuzapi {
 
 		// Set webhook
 		if (this.webhookHost) {
-			this.logger.info(`Setting webhook for ${this.instanceName} to ${this.webhookHost}...`);
+			const webhookUrl = this._getWebhookUrl();
+			this.logger.info(`Setting webhook for ${this.instanceName} to ${webhookUrl}...`);
 			try {
-				await this.setWebhook(this.webhookHost);
+				await this.setWebhook(webhookUrl);
 			} catch (webhookError) {
 				this.logger.error(`Error setting webhook for ${this.instanceName}:`, webhookError);
 			}
@@ -322,10 +323,33 @@ class WhatsAppBotWuzapi {
 		return await this.apiClient.deleteInstance(this.instanceName);
 	}
 
+	_getWebhookUrl() {
+		let host = this.webhookHost || "";
+		let parsedUrl;
+		try {
+			parsedUrl = new URL(host);
+		} catch (e) {
+			parsedUrl = null;
+		}
+
+		if (parsedUrl) {
+			if (!parsedUrl.port && this.webhookPort && this.webhookPort !== 80 && this.webhookPort !== 443) {
+				parsedUrl.port = this.webhookPort;
+			}
+			host = parsedUrl.toString().replace(/\/$/, "");
+		} else {
+			if (host && !/:[0-9]+$/.test(host)) {
+				host = `${host}:${this.webhookPort}`;
+			}
+		}
+
+		return `${host}/wuzapi/webhook`;
+	}
+
 	async createInstance() {
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`);
 		const payload = {
-			webhookUrl: `${this.webhookHost}:${this.webhookPort}/wuzapi/webhook/${this.instanceName}`
+			webhookUrl: this._getWebhookUrl()
 		};
 		return await this.apiClient.createInstance(this.instanceName, payload);
 	}
@@ -1192,7 +1216,11 @@ class WhatsAppBotWuzapi {
 			}
 
 			const statusData = response?.data;
-			this.isConnected = !!(statusData?.connected || statusData?.Connected);
+			this.isConnected = !!(
+				statusData?.loggedIn ||
+				statusData?.LoggedIn ||
+				(statusData?.connected && statusData?.loggedIn !== false)
+			);
 			const extra = {};
 
 			const instanceDetails = {
@@ -1208,38 +1236,82 @@ class WhatsAppBotWuzapi {
 					this.logger.info(
 						`Instance ${this.instanceName} is not connected. Attempting to connect...`
 					);
-					await this.connect();
+					try {
+						await this.connect();
+					} catch (connectError) {
+						const errStr = typeof connectError === 'string'
+							? connectError
+							: (connectError?.error || connectError?.message || JSON.stringify(connectError) || "");
+						if (errStr.includes("already connected")) {
+							this.logger.info(
+								`Instance ${this.instanceName} is already connected (websocket active). Proceeding to fetch QR.`
+							);
+						} else {
+							throw connectError;
+						}
+					}
 
 					extra.connectData = {};
 
-					try {
-						const qrResponse = await this.getQrCode();
-						const qrData = qrResponse?.data;
-						if (qrData?.qr) {
-							extra.connectData.code = qrData.qr;
-							extra.connectData.qrcode = qrData.qr;
-
-							const qrBase64 = qrData.qr;
-							if (qrBase64 && qrBase64.startsWith("data:image/")) {
-								this.logger.info(`[${this.id}] QR Code received.`);
-								const qrCodeLocal = path.join(
-									this.database.databasePath,
-									"qrcodes",
-									`qrcode_${this.id}.png`
+					let qrData = null;
+					for (let attempt = 1; attempt <= 5; attempt++) {
+						try {
+							const qrResponse = await this.getQrCode();
+							qrData = qrResponse?.data;
+							if (qrData?.qr) {
+								break;
+							}
+						} catch (qrErr) {
+							if (attempt === 5) {
+								this.logger.error(
+									`[_checkInstanceStatusAndConnect] Error getting QR code for ${this.instanceName}`,
+									qrErr
 								);
-								const qrDir = path.dirname(qrCodeLocal);
-								if (!fs.existsSync(qrDir)) {
-									fs.mkdirSync(qrDir, { recursive: true });
-								}
-								const base64Data = qrBase64.replace(/^data:image\/[a-z]+;base64,/, "");
-								fs.writeFileSync(qrCodeLocal, base64Data, "base64");
 							}
 						}
-					} catch (qrErr) {
-						this.logger.error(
-							`[_checkInstanceStatusAndConnect] Error getting QR code for ${this.instanceName}`,
-							qrErr
-						);
+						this.logger.info(`[_checkInstanceStatusAndConnect] QR Code not ready yet, waiting 1s (attempt ${attempt}/5)...`);
+						await sleep(1000);
+					}
+
+					if (qrData?.qr) {
+						extra.connectData.code = qrData.qr;
+						extra.connectData.qrcode = qrData.qr;
+
+						const qrBase64 = qrData.qr;
+						if (qrBase64 && qrBase64.startsWith("data:image/")) {
+							this.logger.info(`[${this.id}] QR Code received.`);
+							const qrCodeLocal = path.join(
+								this.database.databasePath,
+								"qrcodes",
+								`qrcode_${this.id}.png`
+							);
+							const qrDir = path.dirname(qrCodeLocal);
+							if (!fs.existsSync(qrDir)) {
+								fs.mkdirSync(qrDir, { recursive: true });
+							}
+							const base64Data = qrBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+							fs.writeFileSync(qrCodeLocal, base64Data, "base64");
+						}
+					}
+
+					this.logger.info(`[_checkInstanceStatusAndConnect] Checking pairing code. phoneNumber: ${this.phoneNumber}`);
+					if (this.phoneNumber) {
+						try {
+							const pairResponse = await this.apiClient.pairPhone(this.phoneNumber);
+							const pairData = pairResponse?.data;
+							const pairCode = pairData?.LinkingCode || pairData?.linkingCode || pairData?.pairingCode;
+							if (pairCode) {
+								extra.connectData.pairingCode = pairCode;
+								this.logger.info(`[${this.id}] PAIRING CODE: ${pairCode}`);
+							} else {
+								this.logger.warn(`[_checkInstanceStatusAndConnect] No pairingCode/LinkingCode returned in response:`, pairData);
+							}
+						} catch (pairErr) {
+							this.logger.error(
+								`[_checkInstanceStatusAndConnect] Error getting pairing code for ${this.instanceName}`,
+								pairErr
+							);
+						}
 					}
 				}
 			}

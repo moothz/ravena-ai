@@ -409,6 +409,7 @@ class FakeWuzapiClient {
 		return {
 			data: {
 				connected: this.state.connected,
+				loggedIn: this.state.connected,
 				phoneNumber: this.state.phoneNumber,
 				pushName: this.state.pushName
 			}
@@ -417,7 +418,7 @@ class FakeWuzapiClient {
 
 	_sessionConnect(body) {
 		this.state.connected = true;
-		return { data: { connected: true, phoneNumber: this.state.phoneNumber } };
+		return { data: { connected: true, loggedIn: true, phoneNumber: this.state.phoneNumber } };
 	}
 
 	_sessionQR() {
@@ -438,7 +439,7 @@ class FakeWuzapiClient {
 	}
 
 	_sessionPairphone(body) {
-		return { data: { paired: true, phoneNumber: body?.phone || "5511999999999" } };
+		return { data: { LinkingCode: "ABCD-1234", pairingCode: "ABCD-1234", paired: true, phoneNumber: body?.phone || "5511999999999" } };
 	}
 
 	_sessionDisconnect() {
@@ -988,7 +989,7 @@ class FakeWuzapiClient {
 	// ─── Webhook ───────────────────────────────────────────────────────
 
 	_setWebhook(body) {
-		return { data: { webhook: body.url, format: body.format || "json" } };
+		return { data: { webhook: body.webhookURL || body.url || "", events: body.events || [], format: body.format || "json" } };
 	}
 
 	_getWebhook() {

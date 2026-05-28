@@ -9,6 +9,7 @@
  */
 
 const axios = require("axios");
+const crypto = require("crypto");
 
 class WuzapiClient {
 	/**
@@ -26,10 +27,23 @@ class WuzapiClient {
 		this.instanceName = instanceName;
 		this.logger = logger || console;
 
-		this.client = axios.create({
+		// Use the instanceName as the user token
+		this.userToken = this.instanceName || "";
+
+		// Admin client uses Authorization header with the adminToken
+		this.adminClient = axios.create({
 			baseURL: this.baseUrl,
 			headers: {
-				"X-Auth-Token": this.adminToken,
+				"Authorization": this.adminToken,
+				"Content-Type": "application/json"
+			}
+		});
+
+		// User/Bot client uses Token header with the userToken
+		this.userClient = axios.create({
+			baseURL: this.baseUrl,
+			headers: {
+				"Token": this.userToken,
 				"Content-Type": "application/json"
 			}
 		});
@@ -40,12 +54,12 @@ class WuzapiClient {
 	}
 
 	// ──────────────────────────────────────────────────────────
-	// Métodos HTTP genéricos
+	// Métodos HTTP genéricos (User API)
 	// ──────────────────────────────────────────────────────────
 
 	async get(endpoint, params = {}) {
 		try {
-			const response = await this.client.get(endpoint, { params });
+			const response = await this.userClient.get(endpoint, { params });
 			return response.data;
 		} catch (error) {
 			this.logger.error(
@@ -59,7 +73,7 @@ class WuzapiClient {
 
 	async post(endpoint, data = {}, params = {}) {
 		try {
-			const response = await this.client.post(endpoint, data, { params });
+			const response = await this.userClient.post(endpoint, data, { params });
 			return response.data;
 		} catch (error) {
 			this.logger.error(
@@ -73,7 +87,7 @@ class WuzapiClient {
 
 	async put(endpoint, data = {}, params = {}) {
 		try {
-			const response = await this.client.put(endpoint, data, { params });
+			const response = await this.userClient.put(endpoint, data, { params });
 			return response.data;
 		} catch (error) {
 			this.logger.error(
@@ -87,11 +101,57 @@ class WuzapiClient {
 
 	async delete(endpoint, data = {}, params = {}) {
 		try {
-			const response = await this.client.delete(endpoint, { data, params });
+			const response = await this.userClient.delete(endpoint, { data, params });
 			return response.data;
 		} catch (error) {
 			this.logger.error(
 				`Wuzapi DELETE Error ${endpoint}:`,
+				error.response?.status,
+				error.response?.data || error.message
+			);
+			throw error.response?.data || error;
+		}
+	}
+
+	// ──────────────────────────────────────────────────────────
+	// Métodos HTTP genéricos (Admin API)
+	// ──────────────────────────────────────────────────────────
+
+	async adminGet(endpoint, params = {}) {
+		try {
+			const response = await this.adminClient.get(endpoint, { params });
+			return response.data;
+		} catch (error) {
+			this.logger.error(
+				`Wuzapi Admin GET Error ${endpoint}:`,
+				error.response?.status,
+				error.response?.data || error.message
+			);
+			throw error.response?.data || error;
+		}
+	}
+
+	async adminPost(endpoint, data = {}, params = {}) {
+		try {
+			const response = await this.adminClient.post(endpoint, data, { params });
+			return response.data;
+		} catch (error) {
+			this.logger.error(
+				`Wuzapi Admin POST Error ${endpoint}:`,
+				error.response?.status,
+				error.response?.data || error.message
+			);
+			throw error.response?.data || error;
+		}
+	}
+
+	async adminDelete(endpoint, data = {}, params = {}) {
+		try {
+			const response = await this.adminClient.delete(endpoint, { data, params });
+			return response.data;
+		} catch (error) {
+			this.logger.error(
+				`Wuzapi Admin DELETE Error ${endpoint}:`,
 				error.response?.status,
 				error.response?.data || error.message
 			);
@@ -107,7 +167,7 @@ class WuzapiClient {
 	 * Lista todas as instâncias
 	 */
 	async listInstances() {
-		return this.get("/instances");
+		return this.adminGet("/admin/users");
 	}
 
 	/**
@@ -116,7 +176,13 @@ class WuzapiClient {
 	 * @param {object} options - Opções opcionais (webhook, etc)
 	 */
 	async createInstance(name, options = {}) {
-		return this.post("/instances", { name, ...options });
+		const payload = {
+			name: name,
+			token: name, // We use the name itself as the user token
+			webhook: options.webhookUrl || "",
+			events: "Message,ReadReceipt,HistorySync,ChatPresence"
+		};
+		return this.adminPost("/admin/users", payload);
 	}
 
 	/**
@@ -124,7 +190,25 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async deleteInstance(name) {
-		return this.delete(`/instances/${encodeURIComponent(name)}`);
+		try {
+			const users = await this.listInstances();
+			let userList = users;
+			if (users && !Array.isArray(users) && Array.isArray(users.data)) {
+				userList = users.data;
+			}
+			if (userList && Array.isArray(userList)) {
+				const user = userList.find(u => u.name === name || u.Name === name);
+				if (user) {
+					const id = user.id || user.ID;
+					return this.adminDelete(`/admin/users/${id}/full`);
+				}
+			}
+			this.logger.warn(`deleteInstance: Instance ${name} not found in user list`);
+			return { success: false, error: "instance not found" };
+		} catch (error) {
+			this.logger.error(`Error deleting instance ${name}:`, error);
+			throw error;
+		}
 	}
 
 	/**
@@ -132,7 +216,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getInstanceStatus(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/status`);
+		return this.get("/session/status");
 	}
 
 	/**
@@ -140,7 +224,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getConnectionStatus(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/connection`);
+		return this.get("/session/status");
 	}
 
 	/**
@@ -148,7 +232,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async connectInstance(name) {
-		return this.post(`/instances/${encodeURIComponent(name)}/connect`);
+		return this.post("/session/connect");
 	}
 
 	/**
@@ -156,7 +240,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async disconnectInstance(name) {
-		return this.post(`/instances/${encodeURIComponent(name)}/disconnect`);
+		return this.post("/session/disconnect");
 	}
 
 	/**
@@ -164,7 +248,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async logoutInstance(name) {
-		return this.post(`/instances/${encodeURIComponent(name)}/logout`);
+		return this.post("/session/logout");
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -176,7 +260,25 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getQrCode(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/qrcode`);
+		const res = await this.get("/session/qr");
+		// Normalize: ensure both qr and qrcode are present so that the caller can use either
+		if (res) {
+			if (!res.data) res.data = {};
+			res.data.qr = res.data.QRCode || res.data.qrcode || res.data.qr || res.qr || res.qrcode || res.QRCode;
+			res.data.qrcode = res.data.qr;
+		}
+		return res;
+	}
+
+	/**
+	 * Obtém código de pareamento por telefone
+	 * @param {string} phone - Número de telefone para pareamento
+	 */
+	async pairPhone(phone) {
+		const payload = {
+			phone: phone
+		};
+		return this.post("/session/pairphone", payload);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -190,9 +292,9 @@ class WuzapiClient {
 	 * @param {string} secret - Secret para validação (opcional)
 	 */
 	async setWebhook(name, url, secret = "") {
-		return this.post(`/instances/${encodeURIComponent(name)}/webhook`, {
-			url,
-			secret
+		return this.post("/webhook", {
+			webhookURL: url,
+			events: ["Message", "ReadReceipt", "HistorySync", "ChatPresence"]
 		});
 	}
 
@@ -201,12 +303,35 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getWebhook(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/webhook`);
+		return this.get("/webhook");
 	}
 
 	// ──────────────────────────────────────────────────────────
 	// Envio de mensagens
 	// ──────────────────────────────────────────────────────────
+
+	async _getMediaDataURI(media, defaultMime = "application/octet-stream") {
+		if (media.base64) {
+			if (media.base64.startsWith("data:")) return media.base64;
+			return `data:${media.mimetype || defaultMime};base64,${media.base64}`;
+		}
+		if (media.url) {
+			if (media.url.startsWith("http://") || media.url.startsWith("https://")) {
+				const response = await axios.get(media.url, { responseType: "arraybuffer" });
+				const base64 = Buffer.from(response.data, "binary").toString("base64");
+				const mimeType = response.headers["content-type"] || media.mimetype || defaultMime;
+				return `data:${mimeType};base64,${base64}`;
+			} else {
+				const fs = require("fs");
+				if (fs.existsSync(media.url)) {
+					const base64 = fs.readFileSync(media.url, { encoding: "base64" });
+					const mimeType = media.mimetype || defaultMime;
+					return `data:${mimeType};base64,${base64}`;
+				}
+			}
+		}
+		return "";
+	}
 
 	/**
 	 * Envia mensagem de texto
@@ -216,12 +341,18 @@ class WuzapiClient {
 	 * @param {object} options - Opções (replyTo, mention, etc)
 	 */
 	async sendText(name, chatId, text, options = {}) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "text",
-			content: { text },
-			...options
-		});
+		const payload = {
+			Phone: chatId,
+			Body: text,
+			Id: options.id || options.messageId || undefined
+		};
+		if (options.replyTo) {
+			payload.ContextInfo = {
+				StanzaId: options.replyTo,
+				Participant: options.participant || ""
+			};
+		}
+		return this.post("/chat/send/text", payload);
 	}
 
 	/**
@@ -231,10 +362,11 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64, caption }
 	 */
 	async sendImage(name, chatId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "image",
-			content: media
+		const dataUri = await this._getMediaDataURI(media, "image/jpeg");
+		return this.post("/chat/send/image", {
+			Phone: chatId,
+			Image: dataUri,
+			Caption: media.caption || ""
 		});
 	}
 
@@ -245,10 +377,11 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64, caption }
 	 */
 	async sendVideo(name, chatId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "video",
-			content: media
+		const dataUri = await this._getMediaDataURI(media, "video/mp4");
+		return this.post("/chat/send/video", {
+			Phone: chatId,
+			Video: dataUri,
+			Caption: media.caption || ""
 		});
 	}
 
@@ -259,10 +392,10 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64, ptts (boolean) }
 	 */
 	async sendAudio(name, chatId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "audio",
-			content: media
+		const dataUri = await this._getMediaDataURI(media, "audio/ogg");
+		return this.post("/chat/send/audio", {
+			Phone: chatId,
+			Audio: dataUri
 		});
 	}
 
@@ -273,10 +406,11 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64, fileName, caption }
 	 */
 	async sendDocument(name, chatId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "document",
-			content: media
+		const dataUri = await this._getMediaDataURI(media, "application/pdf");
+		return this.post("/chat/send/document", {
+			Phone: chatId,
+			Document: dataUri,
+			FileName: media.fileName || media.filename || "file"
 		});
 	}
 
@@ -287,10 +421,10 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64 }
 	 */
 	async sendSticker(name, chatId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "sticker",
-			content: media
+		const dataUri = await this._getMediaDataURI(media, "image/webp");
+		return this.post("/chat/send/sticker", {
+			Phone: chatId,
+			Sticker: dataUri
 		});
 	}
 
@@ -301,10 +435,11 @@ class WuzapiClient {
 	 * @param {object} location - { latitude, longitude, name, address }
 	 */
 	async sendLocation(name, chatId, location) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "location",
-			content: location
+		return this.post("/chat/send/location", {
+			Phone: chatId,
+			Latitude: location.latitude,
+			Longitude: location.longitude,
+			Name: location.name || ""
 		});
 	}
 
@@ -315,10 +450,10 @@ class WuzapiClient {
 	 * @param {object} message - Objeto completo da mensagem
 	 */
 	async sendMessage(name, chatId, message) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			...message
-		});
+		if (message.text) {
+			return this.sendText(name, chatId, message.text, message);
+		}
+		return this.sendText(name, chatId, JSON.stringify(message), message);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -333,10 +468,10 @@ class WuzapiClient {
 	 * @param {string} emoji - Emoji da reação
 	 */
 	async sendReaction(name, chatId, messageId, emoji) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendReaction`, {
-			chatId,
-			messageId,
-			emoji
+		return this.post("/chat/react", {
+			Phone: chatId,
+			Body: emoji,
+			Id: messageId
 		});
 	}
 
@@ -352,10 +487,10 @@ class WuzapiClient {
 	 * @param {object} options - { deleteAllParticipants (para grupos) }
 	 */
 	async deleteMessage(name, chatId, messageId, options = {}) {
-		return this.post(`/instances/${encodeURIComponent(name)}/deleteMessage`, {
-			chatId,
-			messageId,
-			...options
+		return this.post("/chat/delete", {
+			Phone: chatId,
+			MessageId: messageId,
+			FromMe: options.fromMe !== undefined ? options.fromMe : true
 		});
 	}
 
@@ -367,11 +502,8 @@ class WuzapiClient {
 	 * @param {string} newText - Novo texto
 	 */
 	async editMessage(name, chatId, messageId, newText) {
-		return this.post(`/instances/${encodeURIComponent(name)}/editMessage`, {
-			chatId,
-			messageId,
-			text: newText
-		});
+		this.logger.warn(`editMessage is not natively supported by Wuzapi REST API.`);
+		return { success: false, error: "Not supported" };
 	}
 
 	/**
@@ -382,12 +514,7 @@ class WuzapiClient {
 	 * @param {string} text - Texto da resposta
 	 */
 	async replyMessage(name, chatId, messageId, text) {
-		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
-			chatId,
-			type: "text",
-			content: { text },
-			replyTo: messageId
-		});
+		return this.sendText(name, chatId, text, { replyTo: messageId });
 	}
 
 	/**
@@ -398,11 +525,8 @@ class WuzapiClient {
 	 * @param {string} originalChatId - JID de origem
 	 */
 	async forwardMessage(name, chatId, messageId, originalChatId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/forwardMessage`, {
-			chatId,
-			messageId,
-			originalChatId
-		});
+		this.logger.warn(`forwardMessage is not natively supported by Wuzapi REST API.`);
+		return { success: false, error: "Not supported" };
 	}
 
 	/**
@@ -412,9 +536,10 @@ class WuzapiClient {
 	 * @param {string} messageId - ID da mensagem
 	 */
 	async markMessageRead(name, chatId, messageId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/readMessage`, {
-			chatId,
-			messageId
+		return this.post("/chat/markread", {
+			Id: [messageId],
+			ChatPhone: chatId,
+			SenderPhone: chatId
 		});
 	}
 
@@ -428,9 +553,37 @@ class WuzapiClient {
 	 * @param {object} messageContent - Conteúdo da mensagem (imageMessage, videoMessage, etc)
 	 */
 	async downloadMedia(name, messageContent) {
-		return this.post(`/instances/${encodeURIComponent(name)}/download`, {
-			message: messageContent
-		});
+		let type = "image";
+		let mediaData = null;
+
+		if (messageContent.imageMessage) {
+			type = "image";
+			mediaData = messageContent.imageMessage;
+		} else if (messageContent.videoMessage) {
+			type = "video";
+			mediaData = messageContent.videoMessage;
+		} else if (messageContent.audioMessage) {
+			type = "audio";
+			mediaData = messageContent.audioMessage;
+		} else if (messageContent.documentMessage) {
+			type = "document";
+			mediaData = messageContent.documentMessage;
+		} else if (messageContent.stickerMessage) {
+			type = "sticker";
+			mediaData = messageContent.stickerMessage;
+		} else {
+			mediaData = messageContent;
+		}
+
+		const payload = {
+			Url: mediaData.url || mediaData.Url,
+			MediaKey: mediaData.mediaKey ? (typeof mediaData.mediaKey === "string" ? mediaData.mediaKey : Buffer.from(mediaData.mediaKey).toString("base64")) : mediaData.MediaKey,
+			Mimetype: mediaData.mimetype || mediaData.Mimetype,
+			FileSha256: mediaData.fileSha256 ? (typeof mediaData.fileSha256 === "string" ? mediaData.fileSha256 : Buffer.from(mediaData.fileSha256).toString("base64")) : mediaData.FileSha256,
+			FileLength: mediaData.fileLength !== undefined ? Number(mediaData.fileLength) : (mediaData.FileLength !== undefined ? Number(mediaData.FileLength) : 0)
+		};
+
+		return this.post(`/chat/download${type}`, payload);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -442,7 +595,19 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getProfileInfo(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/profile`);
+		const status = await this.get("/session/status");
+		const phone = status?.phone;
+		if (phone) {
+			const info = await this.post("/user/info", { Phone: [`${phone}@s.whatsapp.net`] });
+			const userDetails = info?.Users?.[`${phone}@s.whatsapp.net`] || {};
+			return {
+				name: name,
+				phoneNumber: phone,
+				pushName: userDetails.VerifiedName || "",
+				status: userDetails.Status || ""
+			};
+		}
+		return { name: name, state: status?.state || "disconnected" };
 	}
 
 	/**
@@ -451,9 +616,8 @@ class WuzapiClient {
 	 * @param {string} displayName - Novo nome de exibição
 	 */
 	async updateProfileName(name, displayName) {
-		return this.post(`/instances/${encodeURIComponent(name)}/profile/name`, {
-			displayName
-		});
+		this.logger.warn(`updateProfileName is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -462,9 +626,7 @@ class WuzapiClient {
 	 * @param {string} status - Novo status
 	 */
 	async updateProfileStatus(name, status) {
-		return this.post(`/instances/${encodeURIComponent(name)}/profile/status`, {
-			status
-		});
+		return this.post("/status/set/text", { Text: status });
 	}
 
 	/**
@@ -473,7 +635,8 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64 }
 	 */
 	async updateProfilePicture(name, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/profile/picture`, media);
+		this.logger.warn(`updateProfilePicture is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -481,7 +644,8 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async removeProfilePicture(name) {
-		return this.delete(`/instances/${encodeURIComponent(name)}/profile/picture`);
+		this.logger.warn(`removeProfilePicture is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -493,7 +657,7 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async getContacts(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/contacts`);
+		return this.get("/user/contacts");
 	}
 
 	/**
@@ -502,9 +666,8 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async getContactInfo(name, chatId) {
-		return this.get(
-			`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}`
-		);
+		const res = await this.post("/user/info", { Phone: [chatId] });
+		return res?.Users?.[chatId] || res;
 	}
 
 	/**
@@ -513,9 +676,7 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async getContactProfile(name, chatId) {
-		return this.get(
-			`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}/profile`
-		);
+		return this.post("/user/avatar", { Phone: chatId.split("@")[0], Preview: true });
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -527,7 +688,8 @@ class WuzapiClient {
 	 * @param {string} name - Nome da instância
 	 */
 	async listGroups(name) {
-		return this.get(`/instances/${encodeURIComponent(name)}/groups`);
+		const res = await this.get("/group/list");
+		return res?.Groups || res;
 	}
 
 	/**
@@ -536,7 +698,12 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async getGroupInfo(name, groupId) {
-		return this.get(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}`);
+		const res = await this.userClient.request({
+			method: "GET",
+			url: "/group/info",
+			data: { GroupJID: groupId }
+		});
+		return res.data;
 	}
 
 	/**
@@ -547,10 +714,9 @@ class WuzapiClient {
 	 * @param {string} description - Descrição do grupo
 	 */
 	async createGroup(name, subject, participants, description = "") {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/create`, {
-			subject,
-			participants,
-			description
+		return this.post("/group/create", {
+			name: subject,
+			participants: participants.map(p => p.split("@")[0])
 		});
 	}
 
@@ -560,9 +726,7 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async leaveGroup(name, groupId) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/leave`
-		);
+		return this.post("/group/leave", { GroupJID: groupId });
 	}
 
 	/**
@@ -571,9 +735,8 @@ class WuzapiClient {
 	 * @param {string} inviteCode - Código do invite
 	 */
 	async joinGroup(name, inviteCode) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/join`, {
-			inviteCode
-		});
+		const code = inviteCode.startsWith("http") ? inviteCode : `https://chat.whatsapp.com/${inviteCode}`;
+		return this.post("/group/join", { Code: code });
 	}
 
 	/**
@@ -582,9 +745,8 @@ class WuzapiClient {
 	 * @param {string} inviteCode - Código do invite
 	 */
 	async getInviteInfo(name, inviteCode) {
-		return this.get(
-			`/instances/${encodeURIComponent(name)}/groups/invite/${encodeURIComponent(inviteCode)}`
-		);
+		const code = inviteCode.startsWith("http") ? inviteCode : `https://chat.whatsapp.com/${inviteCode}`;
+		return this.post("/group/inviteinfo", { Code: code });
 	}
 
 	/**
@@ -594,12 +756,11 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async addGroupParticipants(name, groupId, participants) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/add`,
-			{
-				participants
-			}
-		);
+		return this.post("/group/updateparticipants", {
+			GroupJID: groupId,
+			Phone: participants,
+			Action: "add"
+		});
 	}
 
 	/**
@@ -609,12 +770,11 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async removeGroupParticipants(name, groupId, participants) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/remove`,
-			{
-				participants
-			}
-		);
+		return this.post("/group/updateparticipants", {
+			GroupJID: groupId,
+			Phone: participants,
+			Action: "remove"
+		});
 	}
 
 	/**
@@ -624,12 +784,11 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async promoteParticipants(name, groupId, participants) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/promote`,
-			{
-				participants
-			}
-		);
+		return this.post("/group/updateparticipants", {
+			GroupJID: groupId,
+			Phone: participants,
+			Action: "promote"
+		});
 	}
 
 	/**
@@ -639,12 +798,11 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async demoteParticipants(name, groupId, participants) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/demote`,
-			{
-				participants
-			}
-		);
+		return this.post("/group/updateparticipants", {
+			GroupJID: groupId,
+			Phone: participants,
+			Action: "demote"
+		});
 	}
 
 	/**
@@ -654,12 +812,7 @@ class WuzapiClient {
 	 * @param {string} subject - Novo assunto
 	 */
 	async updateGroupSubject(name, groupId, subject) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/subject`,
-			{
-				subject
-			}
-		);
+		return this.post("/group/name", { GroupJID: groupId, Name: subject });
 	}
 
 	/**
@@ -669,12 +822,7 @@ class WuzapiClient {
 	 * @param {string} description - Nova descrição
 	 */
 	async updateGroupDescription(name, groupId, description) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/description`,
-			{
-				description
-			}
-		);
+		return this.post("/group/topic", { GroupJID: groupId, Topic: description });
 	}
 
 	/**
@@ -684,10 +832,8 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64 }
 	 */
 	async updateGroupPicture(name, groupId, media) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/picture`,
-			media
-		);
+		const dataUri = await this._getMediaDataURI(media, "image/jpeg");
+		return this.post("/group/photo", { GroupJID: groupId, Image: dataUri });
 	}
 
 	/**
@@ -696,9 +842,8 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async getGroupInviteCode(name, groupId) {
-		return this.get(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/invite`
-		);
+		const res = await this.post("/group/invitelink", { GroupJID: groupId });
+		return res?.InviteLink || res;
 	}
 
 	/**
@@ -707,9 +852,8 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async revokeGroupInvite(name, groupId) {
-		return this.post(
-			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/revoke-invite`
-		);
+		this.logger.warn(`revokeGroupInvite is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -723,9 +867,18 @@ class WuzapiClient {
 	 * @param {string} presence - 'available', 'unavailable', 'composing', 'recording', 'paused'
 	 */
 	async setPresence(name, chatId, presence) {
-		return this.post(`/instances/${encodeURIComponent(name)}/presence`, {
-			chatId,
-			presence
+		let state = "paused";
+		let media = "";
+		if (presence === "composing" || presence === "typing") {
+			state = "composing";
+		} else if (presence === "recording") {
+			state = "composing";
+			media = "audio";
+		}
+		return this.post("/chat/presence", {
+			Phone: chatId,
+			State: state,
+			Media: media
 		});
 	}
 
@@ -739,7 +892,8 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async blockContact(name, chatId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/block`, { chatId });
+		this.logger.warn(`blockContact is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -748,7 +902,8 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async unblockContact(name, chatId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/unblock`, { chatId });
+		this.logger.warn(`unblockContact is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -761,7 +916,7 @@ class WuzapiClient {
 	 * @param {string} callId - ID da chamada
 	 */
 	async rejectCall(name, callId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/rejectCall`, { callId });
+		return this.post("/call/reject", { CallID: callId });
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -775,10 +930,8 @@ class WuzapiClient {
 	 * @param {boolean} archive - true = arquivar, false = desarquivar
 	 */
 	async archiveChat(name, chatId, archive = true) {
-		return this.post(`/instances/${encodeURIComponent(name)}/chat/archive`, {
-			chatId,
-			archive
-		});
+		this.logger.warn(`archiveChat is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -788,10 +941,8 @@ class WuzapiClient {
 	 * @param {string} duration - Duração do mute (ex: '1h', '1d', 'always')
 	 */
 	async muteChat(name, chatId, duration) {
-		return this.post(`/instances/${encodeURIComponent(name)}/chat/mute`, {
-			chatId,
-			duration
-		});
+		this.logger.warn(`muteChat is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -800,7 +951,8 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do chat
 	 */
 	async markChatUnread(name, chatId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/chat/unread`, { chatId });
+		this.logger.warn(`markChatUnread is not supported by Wuzapi.`);
+		return { success: false };
 	}
 
 	/**
@@ -810,12 +962,8 @@ class WuzapiClient {
 	 * @param {string} messageId - ID da mensagem
 	 */
 	async getMessage(name, chatId, messageId) {
-		return this.get(
-			`/instances/${encodeURIComponent(name)}/messages/${encodeURIComponent(messageId)}`,
-			{
-				chatId
-			}
-		);
+		this.logger.warn(`getMessage is not supported by Wuzapi.`);
+		return null;
 	}
 }
 

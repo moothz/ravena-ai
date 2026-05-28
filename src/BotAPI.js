@@ -268,7 +268,7 @@ class BotAPI {
 		// Webhook global do WuzAPI - recebe eventos de TODAS as instâncias no mesmo endpoint
 		// Cada instância no wuzapi é configurada com a mesma webhook URL.
 		// O campo 'instanceName' no payload identifica de qual instância veio o evento.
-		this.app.post("/wuzapi/webhook", bodyParser.json({ limit: "10mb" }), async (req, res) => {
+		this.app.post(["/wuzapi/webhook", "/wuzapi/webhook/:botId"], bodyParser.json({ limit: "10mb" }), async (req, res) => {
 			try {
 				const result = await this.handleWuzapiWebhook(req.body);
 				if (result.error) {
@@ -1875,7 +1875,11 @@ class BotAPI {
 				let descQrCode = "Nenhum QRCode disponível";
 
 				if (codigoGerar.length > 200 && !codigoGerar.includes("undefined")) {
-					qrCodeBase64 = qrcode(codigoGerar);
+					if (codigoGerar.startsWith("data:image/")) {
+						qrCodeBase64 = codigoGerar;
+					} else {
+						qrCodeBase64 = qrcode(codigoGerar);
+					}
 					descQrCode = codigoGerar;
 				}
 
