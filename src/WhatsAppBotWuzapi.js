@@ -1385,6 +1385,7 @@ class WhatsAppBotWuzapi {
 					break;
 
 				case "Message": {
+					this.logger.info(`[DEBUG Wuzapi Message Event Payload]`, JSON.stringify(payload, null, 2));
 					this.lastMessageReceived = Date.now();
 					const msgData = payload.event;
 
@@ -1722,6 +1723,10 @@ class WhatsAppBotWuzapi {
 				}
 			};
 
+			if (!skipCache) {
+				await this.cacheMessage(id, formattedMessage);
+			}
+
 			return formattedMessage;
 		} catch (error) {
 			this.logger.error(`[formatMessage] Erro formatando mensagem:`, error);
@@ -1816,6 +1821,40 @@ class WhatsAppBotWuzapi {
 			this.loadReport.trackSentMessage(isGroup);
 
 			const msgId = response?.data?.id || response?.id || `wuzapi-msg-${Date.now()}`;
+			const sentMessageObject = {
+				id: { _serialized: msgId },
+				fromMe: true,
+				chatId,
+				sender: "bot",
+				senderAlt: "bot",
+				pushName: this.name ?? "Bot",
+				timestamp: Math.floor(Date.now() / 1000),
+				type: typeof content === "string" ? "text" : "media",
+				content: typeof content === "string" ? content : (content?.filename || "media"),
+				caption: options.caption || null,
+				mentionedJids: options.mentions || [],
+				isGroup,
+				group: isGroup ? chatId : null,
+				author: "bot",
+				authorAlt: "bot",
+				isMedia: content && typeof content !== "string" && content.isMessageMedia,
+				origin: {
+					react: async (emoji) => await this.sendReaction(chatId, msgId, emoji),
+					reply: async (text) => await this.replyMessage(chatId, msgId, text),
+					id: {
+						_serialized: `${chatId}_true_${msgId}`,
+						fromMe: true,
+						remote: chatId,
+						id: msgId,
+						_serialized_v3: msgId
+					},
+					key: { remoteJid: chatId, fromMe: true, id: msgId },
+					body: typeof content === "string" ? content : (content?.filename || "media"),
+					timestamp: Math.floor(Date.now() / 1000)
+				}
+			};
+			await this.cacheMessage(msgId, sentMessageObject);
+
 			return {
 				id: { _serialized: msgId },
 				ack: 1,
