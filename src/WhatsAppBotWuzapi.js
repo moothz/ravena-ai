@@ -393,12 +393,21 @@ class WhatsAppBotWuzapi {
 	// Normalização
 	// ──────────────────────────────────────────────────────────
 
+	_normalizeRecipientJid(jid) {
+		if (typeof jid !== "string" || !jid) return jid;
+		if (jid.endsWith("@g.us")) return jid;
+		const [userPart, domainPart] = jid.split("@");
+		if (!domainPart) return jid;
+		const cleanUser = userPart.split(":")[0];
+		return `${cleanUser}@${domainPart}`;
+	}
+
 	_normalizeId(id, logger) {
 		if (typeof id !== "string" || !id) return "";
 		const cleanId = id.split("@")[0].split(":")[0];
 		if (cleanId && !/^\d+$/.test(cleanId)) {
 			if (logger && typeof logger.error === "function") {
-				logger.error(`[isAdmin] ID inválido: "${id}" resultou em "${cleanId}"`);
+				logger.error(`[isAdmin] ID inválido: "${id}" resultou in "${cleanId}"`);
 			}
 		}
 		return cleanId;
@@ -413,57 +422,71 @@ class WhatsAppBotWuzapi {
 	// ──────────────────────────────────────────────────────────
 
 	async sendText(chatId, text, options = {}) {
-		const result = await this.apiClient.sendText(this.instanceName, chatId, text, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		const result = await this.apiClient.sendText(this.instanceName, cleanChatId, text, options);
 		return result;
 	}
 
 	async sendImage(chatId, media, options = {}) {
-		const result = await this.apiClient.sendImage(this.instanceName, chatId, media, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		const result = await this.apiClient.sendImage(this.instanceName, cleanChatId, media, options);
 		return result;
 	}
 
 	async sendVideo(chatId, media, options = {}) {
-		return this.apiClient.sendVideo(this.instanceName, chatId, media, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendVideo(this.instanceName, cleanChatId, media, options);
 	}
 
 	async sendAudio(chatId, media, options = {}) {
-		return this.apiClient.sendAudio(this.instanceName, chatId, media, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendAudio(this.instanceName, cleanChatId, media, options);
 	}
 
 	async sendDocument(chatId, media, options = {}) {
-		return this.apiClient.sendDocument(this.instanceName, chatId, media, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendDocument(this.instanceName, cleanChatId, media, options);
 	}
 
 	async sendSticker(chatId, media, options = {}) {
-		return this.apiClient.sendSticker(this.instanceName, chatId, media, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendSticker(this.instanceName, cleanChatId, media, options);
 	}
 
 	async sendLocation(chatId, location, options = {}) {
-		return this.apiClient.sendLocation(this.instanceName, chatId, location, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendLocation(this.instanceName, cleanChatId, location, options);
 	}
 
 	async sendReaction(chatId, messageId, emoji) {
-		return this.apiClient.sendReaction(this.instanceName, chatId, messageId, emoji);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.sendReaction(this.instanceName, cleanChatId, messageId, emoji);
 	}
 
 	async deleteMessage(chatId, messageId, options = {}) {
-		return this.apiClient.deleteMessage(this.instanceName, chatId, messageId, options);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.deleteMessage(this.instanceName, cleanChatId, messageId, options);
 	}
 
 	async editMessage(chatId, messageId, newText) {
-		return this.apiClient.editMessage(this.instanceName, chatId, messageId, newText);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.editMessage(this.instanceName, cleanChatId, messageId, newText);
 	}
 
 	async replyMessage(chatId, messageId, text) {
-		return this.apiClient.replyMessage(this.instanceName, chatId, messageId, text);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.replyMessage(this.instanceName, cleanChatId, messageId, text);
 	}
 
 	async forwardMessage(chatId, messageId, originalChatId) {
-		return this.apiClient.forwardMessage(this.instanceName, chatId, messageId, originalChatId);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		const cleanOriginalChatId = this._normalizeRecipientJid(originalChatId);
+		return this.apiClient.forwardMessage(this.instanceName, cleanChatId, messageId, cleanOriginalChatId);
 	}
 
 	async markMessageRead(chatId, messageId) {
-		return this.apiClient.markMessageRead(this.instanceName, chatId, messageId);
+		const cleanChatId = this._normalizeRecipientJid(chatId);
+		return this.apiClient.markMessageRead(this.instanceName, cleanChatId, messageId);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -1661,7 +1684,32 @@ class WhatsAppBotWuzapi {
 					reactError: async () => await this.sendReaction(chatId, id, "❌"),
 					reactSuccess: async () => await this.sendReaction(chatId, id, "🤖"),
 					reactCross: async () => await this.sendReaction(chatId, id, "✖️"),
-					reactJoin: async () => await this.sendReaction(chatId, id, "🤝")
+					reactJoin: async () => await this.sendReaction(chatId, id, "🤝"),
+					id: {
+						_serialized: `${chatId}_${fromMe}_${id}`,
+						fromMe,
+						remote: chatId,
+						id,
+						_serialized_v3: id
+					},
+					key: { remoteJid: chatId, fromMe, id },
+					author: this._normalizeId(sender ?? chatId),
+					from: chatId,
+					body: content,
+					timestamp,
+					messageTimestamp: timestamp,
+					mentionedIds: mentions,
+					getContact: async () => await this.getContactDetails(sender ?? chatId),
+					getChat: async () => await this.getChatDetails(chatId),
+					getQuotedMessage: async () => {
+						this.logger.debug(`[getQuotedMessage] ${quotedMessageId}`);
+						if (quotedMessageId) {
+							return await this.recoverMsgFromCache(quotedMessageId);
+						}
+						return null;
+					},
+					delete: async () => await this.deleteMessage(chatId, id),
+					wuzapiMessageData
 				},
 				downloadMedia: async () => {
 					try {
