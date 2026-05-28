@@ -190,11 +190,11 @@ async function main() {
 					// WuzAPI
 					instanceName: rBot.wuzapiInstance ?? rBot.nome,
 					wuzapiUrl: rBot.wuzapiUrl ?? process.env.WUZAPI_URL,
-					wuzapiToken: rBot.wuzapiToken ?? process.env.WUZAPI_ADMIN_TOKEN,
+					wuzapiAdminToken: rBot.wuzapiToken ?? process.env.WUZAPI_ADMIN_TOKEN,
 					redisURL: process.env.CACHE_REDIS_URI,
 					redisTTL: process.env.CACHE_REDIS_TTL,
 					redisDB: redisDbAtual,
-					webhookUrl: rBot.webhookUrl ?? process.env.WUZAPI_WEBHOOK_URL
+					webhookHost: rBot.webhookUrl ?? process.env.WUZAPI_GLOBAL_WEBHOOK
 				});
 
 				redisDbAtual++;
