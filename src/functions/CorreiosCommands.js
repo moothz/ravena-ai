@@ -9,6 +9,63 @@ const logger = new Logger("correios-commands");
 const database = Database.getInstance();
 const DB_NAME = "correios";
 
+// Early return if CORREIOS_API is not defined
+if (!process.env.CORREIOS_API) {
+	logger.warn("[Correios] CORREIOS_API não definida no .env. Comandos desativados.");
+	module.exports = {
+		commands: [],
+		inicializarRastreio: async () => {}
+	};
+	return;
+}
+
+const urlAPICorreios = process.env.CORREIOS_API.replace(/\/$/, "");
+
+function getStatusEmoji(status) {
+	const text = (status || "").toLowerCase();
+	if (text.includes("entregue")) return "✅";
+	if (text.includes("saiu para entrega") || text.includes("destinatário")) return "🚚";
+	if (text.includes("transferência") || text.includes("encaminhado")) return "✈️";
+	if (text.includes("postado") || text.includes("recebido")) return "📦";
+	if (text.includes("corretores") || text.includes("fiscalização") || text.includes("tributado"))
+		return "💸";
+	if (text.includes("aguardando retirada") || text.includes("agência")) return "🏪";
+	if (text.includes("não entregue") || text.includes("erro") || text.includes("devolvido"))
+		return "⚠️";
+	return "📌";
+}
+
+function formatEventLocation(unidade) {
+	if (!unidade) return "Não informado";
+	const tipo = unidade.tipo || "";
+	const endereco = unidade.endereco || {};
+	const cidade = endereco.cidade ? endereco.cidade.trim() : "";
+	const uf = endereco.uf ? endereco.uf.trim() : "";
+
+	let loc = "";
+	if (tipo) loc += `*${tipo}*`;
+	if (cidade || uf) {
+		if (loc) loc += " - ";
+		loc += `${cidade}/${uf}`;
+	}
+	return loc || "Não informado";
+}
+
+function formatDate(dateStr) {
+	if (!dateStr) return "-";
+	try {
+		const parts = dateStr.split(" ");
+		const dateParts = parts[0].split("-");
+		if (dateParts.length === 3) {
+			const timeParts = parts[1] ? parts[1].split(":") : [];
+			const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+			const formattedTime = timeParts.length >= 2 ? ` às ${timeParts[0]}:${timeParts[1]}` : "";
+			return `${formattedDate}${formattedTime}`;
+		}
+	} catch (e) {}
+	return dateStr;
+}
+
 /**
  * Initializes the Correios tracking database and background task
  */
@@ -32,9 +89,8 @@ async function inicializarRastreio(bot) {
 			true
 		);
 
-		// Start cron job: every 6 hours
-		// 0 */6 * * *
-		cron.schedule("0 */6 * * *", async () => {
+		// Start cron job: every 15 minutes
+		cron.schedule("*/15 * * * *", async () => {
 			logger.info("[CorreiosCron] Iniciando verificação de pacotes...");
 			await checkAllPackages(bot);
 		});
@@ -56,11 +112,11 @@ async function checkAllPackages(bot) {
 		for (const track of tracks) {
 			try {
 				const result = await trackCode(track.code);
-				if (!result || !result.eventos || result.eventos.length === 0) continue;
+				if (!result || !result.events || result.events.length === 0) continue;
 
-				const lastEvent = result.eventos[0];
-				const currentText = lastEvent.status || lastEvent.mensagem;
-				const currentDate = lastEvent.data + " " + (lastEvent.hora || "");
+				const lastEvent = result.events[0];
+				const currentText = lastEvent.descricao;
+				const currentDate = lastEvent.dtHrCriado.date;
 
 				// If status changed
 				if (currentText !== track.last_event_text || currentDate !== track.last_event_date) {
@@ -76,7 +132,17 @@ async function checkAllPackages(bot) {
 					);
 
 					// Notify user
-					const msg = `📦 *Atualização de Rastreio!*\n\n*Pacote:* ${track.description}\n*Código:* \`${track.code}\`\n\n*Status:* ${currentText}\n*Local:* ${lastEvent.local || "Não informado"}\n*Data:* ${currentDate}`;
+					const statusEmoji = getStatusEmoji(currentText);
+					const locationText = formatEventLocation(lastEvent.unidade);
+					const formattedDate = formatDate(currentDate);
+
+					const msg =
+						`📦 *ATUALIZAÇÃO DE RASTREIO*\n\n` +
+						`📋 *Pacote:* ${track.description}\n` +
+						`🔢 *Código:* \`${track.code}\`\n\n` +
+						`${statusEmoji} *Status:* ${currentText}\n` +
+						`📍 *Local:* ${locationText}\n` +
+						`📅 *Data:* ${formattedDate}`;
 
 					bot
 						.sendMessage(track.chat_id, msg)
@@ -90,7 +156,7 @@ async function checkAllPackages(bot) {
 				}
 
 				// Sleep a bit between requests to avoid rate limit
-				await new Promise((r) => setTimeout(r, 2000));
+				await new Promise((r) => setTimeout(r, 1000));
 			} catch (e) {
 				logger.error(`[CorreiosCron] Erro ao verificar código ${track.code}:`, e.message);
 			}
@@ -101,19 +167,18 @@ async function checkAllPackages(bot) {
 }
 
 /**
- * Tracks a code using Link&Track API (Public)
+ * Tracks a code using the local tracking API
  */
 async function trackCode(code) {
 	try {
-		// Using a well-known public test user/token for Link&Track
-		const user = "test";
-		const token = "1abcd00b2731640e886fb4b8d3a1s5a46x32p1d2";
-		const url = `https://api.linketrack.com/track/json?user=${user}&token=${token}&codigo=${code}`;
-
-		const response = await axios.get(url, { timeout: 10000 });
+		const response = await axios.get(`${urlAPICorreios}/fetch/${code}`, { timeout: 10000 });
 		return response.data;
 	} catch (error) {
-		logger.error(`[CorreiosAPI] Erro ao rastrear ${code}:`, error.message);
+		if (error.response && error.response.status === 404) {
+			logger.warn(`[CorreiosAPI] Código ${code} ainda não possui dados no rastreador (404).`);
+			return { events: [] };
+		}
+		logger.error(`[CorreiosAPI] Erro ao consultar ${code}:`, error.message);
 		return null;
 	}
 }
@@ -138,7 +203,11 @@ async function correiosCommand(bot, message, args, group) {
 	const description = args.slice(1).join(" ") || "Meu Pacote";
 
 	if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(code)) {
-		return "❌ Formato de código inválido. Use o padrão (ex: AA123456789BR).";
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Formato de código inválido. Use o padrão (ex: AA123456789BR).",
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	}
 
 	try {
@@ -149,18 +218,81 @@ async function correiosCommand(bot, message, args, group) {
 			[chatId, code]
 		);
 		if (existing) {
-			return `⚠️ Você já está rastreando o código \`${code}\` neste chat.`;
+			const result = await trackCode(existing.code);
+			let lastText = existing.last_event_text;
+			let lastDate = existing.last_event_date;
+			let statusEmoji = getStatusEmoji(lastText);
+			let locationText = "Fila de rastreamento";
+
+			if (result && result.events && result.events.length > 0) {
+				const lastEvent = result.events[0];
+				const currentText = lastEvent.descricao;
+				const currentDate = lastEvent.dtHrCriado.date;
+
+				if (currentText !== existing.last_event_text || currentDate !== existing.last_event_date) {
+					await database.dbRun(
+						DB_NAME,
+						"UPDATE tracks SET last_event_text = ?, last_event_date = ?, last_check = ? WHERE id = ?",
+						[currentText, currentDate, Date.now(), existing.id]
+					);
+					lastText = currentText;
+					lastDate = currentDate;
+				}
+				statusEmoji = getStatusEmoji(lastText);
+				locationText = formatEventLocation(lastEvent.unidade);
+			}
+
+			if (
+				lastDate === "-" ||
+				lastText === "Aguardando Dados" ||
+				lastText === "Aguardando postagem / Sincronização"
+			) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						`📋 *Pacote:* ${existing.description}\n` +
+						`🔢 *Código:* \`${existing.code}\`\n\n` +
+						`⚠️ Ainda não há dados de rastreamento para este objeto.`,
+					options: { quotedMessageId: message.origin.id._serialized }
+				});
+			}
+
+			const formattedDate = lastDate !== "-" ? formatDate(lastDate) : "-";
+
+			return new ReturnMessage({
+				chatId,
+				content:
+					`📋 *Pacote:* ${existing.description}\n` +
+					`🔢 *Código:* \`${existing.code}\`\n\n` +
+					`${statusEmoji} *Status Atual:* ${lastText}\n` +
+					`📍 *Local:* ${locationText}\n` +
+					`📅 *Última Atualização:* ${formattedDate}`,
+				options: { quotedMessageId: message.origin.id._serialized }
+			});
+		}
+
+		// Register with API
+		let estMinutes = 15;
+		try {
+			const apiRes = await axios.post(`${urlAPICorreios}/track`, { code }, { timeout: 10000 });
+			estMinutes = apiRes.data.estimated_minutes_until_sync || 15;
+		} catch (apiError) {
+			logger.error(`[CorreiosAPI] Erro ao registrar ${code} via POST:`, apiError.message);
 		}
 
 		// Initial lookup
 		const result = await trackCode(code);
-		let lastText = "Aguardando postagem";
+		let lastText = "Aguardando Dados";
 		let lastDate = "-";
+		let statusEmoji = "⏳";
+		let locationText = "Fila de rastreamento";
 
-		if (result && result.eventos && result.eventos.length > 0) {
-			const lastEvent = result.eventos[0];
-			lastText = lastEvent.status || lastEvent.mensagem;
-			lastDate = lastEvent.data + " " + (lastEvent.hora || "");
+		if (result && result.events && result.events.length > 0) {
+			const lastEvent = result.events[0];
+			lastText = lastEvent.descricao;
+			lastDate = lastEvent.dtHrCriado.date;
+			statusEmoji = getStatusEmoji(lastText);
+			locationText = formatEventLocation(lastEvent.unidade);
 		}
 
 		await database.dbRun(
@@ -169,14 +301,28 @@ async function correiosCommand(bot, message, args, group) {
 			[userId, chatId, code, description, lastText, lastDate, Date.now()]
 		);
 
+		const formattedDate = lastDate !== "-" ? formatDate(lastDate) : "-";
+		const timeMsg = estMinutes > 0 ? ` (Sincronização estimada em ~${estMinutes} minutos)` : "";
+
 		return new ReturnMessage({
 			chatId,
-			content: `✅ *Rastreio Adicionado!*\n\n*Pacote:* ${description}\n*Código:* \`${code}\`\n*Status Atual:* ${lastText}\n\nVocê será notificado aqui sempre que o status mudar (verificação a cada 6 horas).`,
+			content:
+				`✅ *Rastreio Adicionado com Sucesso!*\n\n` +
+				`📋 *Pacote:* ${description}\n` +
+				`🔢 *Código:* \`${code}\`\n\n` +
+				`${statusEmoji} *Status Atual:* ${lastText}\n` +
+				`📍 *Local:* ${locationText}\n` +
+				`📅 *Última Atualização:* ${formattedDate}\n\n` +
+				`🔔 Você será notificado neste chat sempre que o status mudar.${timeMsg}`,
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	} catch (error) {
 		logger.error("Error in correiosCommand:", error);
-		return "❌ Erro ao adicionar rastreio.";
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Erro ao adicionar rastreio.",
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	}
 }
 
@@ -192,19 +338,81 @@ async function correiosListaCommand(bot, message, args, group) {
 		]);
 
 		if (tracks.length === 0) {
-			return "📭 Nenhum pacote sendo rastreado neste chat.";
+			return new ReturnMessage({
+				chatId,
+				content: "📭 Nenhum pacote sendo rastreado neste chat.",
+				options: { quotedMessageId: message.origin.id._serialized }
+			});
 		}
 
-		let list = `📦 *Pacotes em Rastreio (${tracks.length}):*\n\n`;
+		let list = `📦 *PACOTES SENDO RASTREADOS (${tracks.length})*\n\n`;
 		for (const track of tracks) {
+			// Query central API on-demand to show the most recent status
+			const result = await trackCode(track.code);
+			let lastText = track.last_event_text;
+			let lastDate = track.last_event_date;
+
+			if (result && result.events && result.events.length > 0) {
+				const lastEvent = result.events[0];
+				const currentText = lastEvent.descricao;
+				const currentDate = lastEvent.dtHrCriado.date;
+
+				if (currentText !== track.last_event_text || currentDate !== track.last_event_date) {
+					// Update local DB to avoid double alerting later
+					await database.dbRun(
+						DB_NAME,
+						"UPDATE tracks SET last_event_text = ?, last_event_date = ?, last_check = ? WHERE id = ?",
+						[currentText, currentDate, Date.now(), track.id]
+					);
+					lastText = currentText;
+					lastDate = currentDate;
+				}
+			}
+
+			let displayStatus = lastText;
+			let statusEmoji = getStatusEmoji(lastText);
+			if (
+				lastDate === "-" ||
+				lastText === "Aguardando Dados" ||
+				lastText === "Aguardando postagem / Sincronização"
+			) {
+				displayStatus = "Sem dados ainda";
+				statusEmoji = "⏳";
+			}
+
+			let locationStr = "";
+			if (result && result.events && result.events.length > 0) {
+				const lastEvent = result.events[0];
+				if (lastEvent.unidade && lastEvent.unidade.endereco) {
+					const cidade = lastEvent.unidade.endereco.cidade
+						? lastEvent.unidade.endereco.cidade.trim()
+						: "";
+					const uf = lastEvent.unidade.endereco.uf ? lastEvent.unidade.endereco.uf.trim() : "";
+					if (cidade && uf) {
+						locationStr = `[${cidade}/${uf}] `;
+					} else if (cidade || uf) {
+						locationStr = `[${cidade || uf}] `;
+					}
+				}
+			}
+
+			const formattedDate = lastDate !== "-" ? formatDate(lastDate) : "-";
 			list += `• \`${track.code}\` - *${track.description}*\n`;
-			list += `  └ _${track.last_event_text}_ (${track.last_event_date})\n\n`;
+			list += `  ${statusEmoji} ${locationStr}_${displayStatus}_ (${formattedDate})\n\n`;
 		}
 
-		return list;
+		return new ReturnMessage({
+			chatId,
+			content: list,
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	} catch (error) {
 		logger.error("Error in correiosListaCommand:", error);
-		return "❌ Erro ao listar pacotes.";
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Erro ao listar pacotes.",
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	}
 }
 
@@ -215,7 +423,11 @@ async function correiosDelCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	if (args.length === 0) {
-		return "❌ Informe o código que deseja remover. Ex: !correios-del NA123456789BR";
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Informe o código que deseja remover. Ex: !correios-del NA123456789BR",
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	}
 
 	const code = args[0].toUpperCase();
@@ -227,15 +439,36 @@ async function correiosDelCommand(bot, message, args, group) {
 			[chatId, code]
 		);
 
-		// result.changes tells how many rows were affected
 		if (result && result.changes > 0) {
-			return `✅ Rastreio do código \`${code}\` removido com sucesso.`;
+			// Check if any other chat is still tracking this code
+			const others = await database.dbGet(DB_NAME, "SELECT id FROM tracks WHERE code = ?", [code]);
+			if (!others) {
+				// No one else is tracking, we can untrack from our Express API!
+				try {
+					await axios.post(`${urlAPICorreios}/untrack`, { code }, { timeout: 5000 });
+				} catch (err) {
+					logger.error(`[CorreiosAPI] Erro ao untrack ${code} na API:`, err.message);
+				}
+			}
+			return new ReturnMessage({
+				chatId,
+				content: `✅ Rastreio do código \`${code}\` removido com sucesso.`,
+				options: { quotedMessageId: message.origin.id._serialized }
+			});
 		} else {
-			return `⚠️ Código \`${code}\` não encontrado no rastreio deste chat.`;
+			return new ReturnMessage({
+				chatId,
+				content: `⚠️ Código \`${code}\` não encontrado no rastreio deste chat.`,
+				options: { quotedMessageId: message.origin.id._serialized }
+			});
 		}
 	} catch (error) {
 		logger.error("Error in correiosDelCommand:", error);
-		return "❌ Erro ao remover rastreio.";
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Erro ao remover rastreio.",
+			options: { quotedMessageId: message.origin.id._serialized }
+		});
 	}
 }
 
