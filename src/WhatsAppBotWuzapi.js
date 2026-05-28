@@ -1027,12 +1027,12 @@ class WhatsAppBotWuzapi {
 		const cached = this.messageCache.find((m) => m.key === messageId);
 		if (cached) return cached.value;
 
-		// Tenta no Redis
+		// Tenta no CacheManager (Redis/SQLite)
 		try {
-			const result = await this.cacheManager.get(messageId);
+			const result = await this.cacheManager.getGoMessageFromCache(messageId);
 			if (result) return result;
 		} catch (e) {
-			this.logger.debug("[recoverMsgFromCache] Redis error:", e.message);
+			this.logger.debug("[recoverMsgFromCache] CacheManager error:", e.message);
 		}
 
 		return null;
@@ -1046,11 +1046,12 @@ class WhatsAppBotWuzapi {
 			this.messageCache.push({ key: messageId, value: messageData });
 		}
 
-		// Redis
+		// Persiste no CacheManager (Redis/SQLite)
 		try {
-			await this.cacheManager.set(messageId, messageData, ttl);
+			const cacheObj = { ...messageData, id: messageId };
+			await this.cacheManager.putGoMessageInCache(cacheObj);
 		} catch (e) {
-			this.logger.debug("[cacheMessage] Redis error:", e.message);
+			this.logger.debug("[cacheMessage] CacheManager error:", e.message);
 		}
 	}
 
@@ -1385,7 +1386,6 @@ class WhatsAppBotWuzapi {
 					break;
 
 				case "Message": {
-					this.logger.info(`[DEBUG Wuzapi Message Event Payload]`, JSON.stringify(payload, null, 2));
 					this.lastMessageReceived = Date.now();
 					const msgData = payload.event;
 
