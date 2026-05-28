@@ -3,6 +3,8 @@ const Database = require("./utils/Database");
 const path = require("path");
 const fs = require("fs").promises;
 
+const MIN_REASON_LENGTH = 15;
+
 /**
  * Verifica se a string contém caracteres "estranhos" (fontes personalizadas,
  * zalgo, marcas de combinação, símbolos exóticos/ornamentais)
@@ -241,11 +243,94 @@ class InviteSystem {
 			const requestData = this.pendingRequests.get(message.author);
 			const { inviteCode, inviteLink, timeout, verificationCode, preConviteContent } = requestData;
 
-			// Limpa o timeout
+			// Limpa o timeout temporariamente
 			clearTimeout(timeout);
+
+			const reason = text.trim();
+
+			// 1. Verifica se enviou o código de verificação
+			if (verificationCode && reason.toLowerCase() === verificationCode.toLowerCase()) {
+				this.pendingRequests.delete(message.author);
+				await this.handleInviteRequest(
+					message.author,
+					inviteCode,
+					inviteLink,
+					text,
+					message,
+					verificationCode,
+					preConviteContent
+				);
+				return true;
+			}
+
+			// 2. Verifica se a justificativa é muito curta
+			if (reason.length < MIN_REASON_LENGTH) {
+				if (!requestData.secondChance) {
+					// Primeira tentativa curta: dá uma segunda chance
+					const secondChanceMsg =
+						`O motivo é apenas um filtro inicial pro criador analisar se seu grupo não vai fazer mau uso do bot. Não precisa ser nada absurdo, mas escreve pelo menos ${MIN_REASON_LENGTH} caracteres aí!\n\n` +
+						"Vou te dar mais uma chance.";
+
+					await this.bot.sendMessage(message.author, secondChanceMsg);
+
+					// Redefine o timeout para mais 5 minutos
+					const timeoutId = setTimeout(
+						() => {
+							this.handleInviteRequest(
+								message.author,
+								inviteCode,
+								inviteLink,
+								"Nenhum motivo fornecido",
+								message
+							);
+						},
+						5 * 60 * 1000
+					);
+
+					// Atualiza a solicitação pendente marcando a segunda chance
+					this.pendingRequests.set(message.author, {
+						...requestData,
+						secondChance: true,
+						timeout: timeoutId
+					});
+
+					return true;
+				} else {
+					// Segunda tentativa curta: ignora e aplica cooldown estendido
+					this.pendingRequests.delete(message.author);
+
+					try {
+						const ignoredPath = path.join(
+							this.database.databasePath,
+							"textos",
+							"invite_ignorado.txt"
+						);
+						const ignoredText = await fs
+							.readFile(ignoredPath, "utf8")
+							.catch(
+								() =>
+									"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
+							);
+						await this.bot.sendMessage(message.author, ignoredText);
+					} catch (err) {
+						await this.bot.sendMessage(
+							message.author,
+							"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
+						);
+					}
+
+					const punishDuration = 10 * this.inviteCooldown * 60 * 1000;
+					const normalDuration = this.inviteCooldown * 60 * 1000;
+					const futureTime = Date.now() + punishDuration - normalDuration;
+					this.userCooldowns.set(message.author, futureTime);
+
+					return true;
+				}
+			}
+
+			// Justificativa válida: deleta a solicitação pendente e processa
 			this.pendingRequests.delete(message.author);
 
-			// Trata o convite com o motivo fornecido
 			await this.handleInviteRequest(
 				message.author,
 				inviteCode,
