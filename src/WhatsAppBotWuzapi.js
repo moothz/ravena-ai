@@ -192,6 +192,37 @@ class WhatsAppBotWuzapi {
 	}
 
 	// ──────────────────────────────────────────────────────────
+	// Initialize
+	// ──────────────────────────────────────────────────────────
+
+	async initialize() {
+		await this._loadSkipGroupInfo();
+		this.database.registerBotInstance(this);
+		this.startupTime = Date.now();
+		this.lastMessageReceived = Date.now();
+
+		this.logger.info(
+			`[${this.startupTime}][${this.id}] Init Wuzapi bot instance ${this.instanceName}`
+		);
+
+		// Stream system registration
+		if (this.streamSystem) {
+			this.streamSystem.registerBot(this);
+			await this.streamSystem.initialize();
+			this.streamMonitor = this.streamSystem.streamMonitor;
+		}
+	}
+
+	async _loadSkipGroupInfo() {
+		try {
+			const skipGroups = new SkipGroups(this.database);
+			this.skipGroupInfo = await skipGroups.getSkipGroupInfo();
+		} catch (error) {
+			this.logger.error("[_loadSkipGroupInfo] Erro:", error);
+		}
+	}
+
+	// ──────────────────────────────────────────────────────────
 	// Scheduling
 	// ──────────────────────────────────────────────────────────
 
