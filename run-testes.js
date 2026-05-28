@@ -79,11 +79,9 @@ async function main() {
 		{ timeout: 45000 }
 	);
 
-	runner.run(
-		"!traduza - com texto",
-		() => msgTexto("!traduza Hello, how are you? en pt"),
-		{ timeout: 45000 }
-	);
+	runner.run("!traduza - com texto", () => msgTexto("!traduza Hello, how are you? en pt"), {
+		timeout: 45000
+	});
 
 	// ===========================================================================
 	// 3 — COMANDOS DE MÍDIA
@@ -112,8 +110,9 @@ async function main() {
 	// ===========================================================================
 
 	// Meme (requer data/test-image.png)
-	runner.run("!meme - sticker meme", () =>
-		msgMedia("!meme Topo:Teste|Baixo:Ravena", "./data/test-image.png", { type: "image" }),
+	runner.run(
+		"!meme - sticker meme",
+		() => msgMedia("!meme Topo:Teste|Baixo:Ravena", "./data/test-image.png", { type: "image" }),
 		{ timeout: 30000 }
 	);
 
@@ -170,13 +169,10 @@ async function main() {
 	// Testam envio de reações via mensagens quoted
 	// ===========================================================================
 
-	runner.run(
-		"!reage - reação com emoji",
-		async () => {
-			const quoted = msgTexto("Mensagem para reagir");
-			return msgComQuote("!reage 👍", quoted);
-		}
-	);
+	runner.run("!reage - reação com emoji", async () => {
+		const quoted = msgTexto("Mensagem para reagir");
+		return msgComQuote("!reage 👍", quoted);
+	});
 
 	// ===========================================================================
 	// 9 — TESTES DE MENSAGEM PRIVADA (PV)
