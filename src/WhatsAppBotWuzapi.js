@@ -507,8 +507,17 @@ class WhatsAppBotWuzapi {
 		try {
 			const response = await this.apiClient.downloadMedia(this.instanceName, messageContent);
 
-			if (response?.base64) {
-				const base64Data = response.base64.replace(/^data:.*?;base64,/, "");
+			// Wuzapi wraps the result in { code, data: { Data: "data:image/jpeg;base64,..." }, success }
+			const base64Raw =
+				response?.data?.Data ||   // Wuzapi standard: { data: { Data: "..." } }
+				response?.data?.data ||   // lowercase variant
+				response?.data?.base64 || // explicit base64 field
+				response?.base64 ||       // flat base64
+				response?.Data ||         // top-level Data
+				null;
+
+			if (base64Raw) {
+				const base64Data = base64Raw.replace(/^data:.*?;base64,/, "");
 
 				const mimetype = [
 					messageContent,
@@ -538,7 +547,15 @@ class WhatsAppBotWuzapi {
 				);
 
 				const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
-				return { url: fileUrl, mimetype, filePath };
+				// Return in MessageMedia-compatible format (.data = pure base64)
+				return {
+					data: base64Data,
+					mimetype,
+					filename: fileName,
+					url: fileUrl,
+					filePath,
+					isMessageMedia: true
+				};
 			}
 
 			throw new Error("Nenhuma mídia encontrada na resposta.");
