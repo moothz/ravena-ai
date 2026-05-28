@@ -268,18 +268,22 @@ class BotAPI {
 		// Webhook global do WuzAPI - recebe eventos de TODAS as instâncias no mesmo endpoint
 		// Cada instância no wuzapi é configurada com a mesma webhook URL.
 		// O campo 'instanceName' no payload identifica de qual instância veio o evento.
-		this.app.post(["/wuzapi/webhook", "/wuzapi/webhook/:botId"], bodyParser.json({ limit: "10mb" }), async (req, res) => {
-			try {
-				const result = await this.handleWuzapiWebhook(req.body);
-				if (result.error) {
-					return res.status(400).json(result);
+		this.app.post(
+			["/wuzapi/webhook", "/wuzapi/webhook/:botId"],
+			bodyParser.json({ limit: "10mb" }),
+			async (req, res) => {
+				try {
+					const result = await this.handleWuzapiWebhook(req.body);
+					if (result.error) {
+						return res.status(400).json(result);
+					}
+					res.json(result);
+				} catch (error) {
+					this.logger.error("[WuzAPI Webhook] Erro no handler:", error);
+					res.status(500).json({ error: error.message });
 				}
-				res.json(result);
-			} catch (error) {
-				this.logger.error("[WuzAPI Webhook] Erro no handler:", error);
-				res.status(500).json({ error: error.message });
 			}
-		});
+		);
 
 		// Endpoint SSE para streaming de eventos
 		this.app.get("/api/stream", (req, res) => {

@@ -333,7 +333,12 @@ class WhatsAppBotWuzapi {
 		}
 
 		if (parsedUrl) {
-			if (!parsedUrl.port && this.webhookPort && this.webhookPort !== 80 && this.webhookPort !== 443) {
+			if (
+				!parsedUrl.port &&
+				this.webhookPort &&
+				this.webhookPort !== 80 &&
+				this.webhookPort !== 443
+			) {
 				parsedUrl.port = this.webhookPort;
 			}
 			host = parsedUrl.toString().replace(/\/$/, "");
@@ -481,7 +486,12 @@ class WhatsAppBotWuzapi {
 	async forwardMessage(chatId, messageId, originalChatId) {
 		const cleanChatId = this._normalizeRecipientJid(chatId);
 		const cleanOriginalChatId = this._normalizeRecipientJid(originalChatId);
-		return this.apiClient.forwardMessage(this.instanceName, cleanChatId, messageId, cleanOriginalChatId);
+		return this.apiClient.forwardMessage(
+			this.instanceName,
+			cleanChatId,
+			messageId,
+			cleanOriginalChatId
+		);
 	}
 
 	async markMessageRead(chatId, messageId) {
@@ -1263,9 +1273,13 @@ class WhatsAppBotWuzapi {
 					try {
 						await this.connect();
 					} catch (connectError) {
-						const errStr = typeof connectError === 'string'
-							? connectError
-							: (connectError?.error || connectError?.message || JSON.stringify(connectError) || "");
+						const errStr =
+							typeof connectError === "string"
+								? connectError
+								: connectError?.error ||
+									connectError?.message ||
+									JSON.stringify(connectError) ||
+									"";
 						if (errStr.includes("already connected")) {
 							this.logger.info(
 								`Instance ${this.instanceName} is already connected (websocket active). Proceeding to fetch QR.`
@@ -1293,7 +1307,9 @@ class WhatsAppBotWuzapi {
 								);
 							}
 						}
-						this.logger.info(`[_checkInstanceStatusAndConnect] QR Code not ready yet, waiting 1s (attempt ${attempt}/5)...`);
+						this.logger.info(
+							`[_checkInstanceStatusAndConnect] QR Code not ready yet, waiting 1s (attempt ${attempt}/5)...`
+						);
 						await sleep(1000);
 					}
 
@@ -1318,17 +1334,23 @@ class WhatsAppBotWuzapi {
 						}
 					}
 
-					this.logger.info(`[_checkInstanceStatusAndConnect] Checking pairing code. phoneNumber: ${this.phoneNumber}`);
+					this.logger.info(
+						`[_checkInstanceStatusAndConnect] Checking pairing code. phoneNumber: ${this.phoneNumber}`
+					);
 					if (this.phoneNumber) {
 						try {
 							const pairResponse = await this.apiClient.pairPhone(this.phoneNumber);
 							const pairData = pairResponse?.data;
-							const pairCode = pairData?.LinkingCode || pairData?.linkingCode || pairData?.pairingCode;
+							const pairCode =
+								pairData?.LinkingCode || pairData?.linkingCode || pairData?.pairingCode;
 							if (pairCode) {
 								extra.connectData.pairingCode = pairCode;
 								this.logger.info(`[${this.id}] PAIRING CODE: ${pairCode}`);
 							} else {
-								this.logger.warn(`[_checkInstanceStatusAndConnect] No pairingCode/LinkingCode returned in response:`, pairData);
+								this.logger.warn(
+									`[_checkInstanceStatusAndConnect] No pairingCode/LinkingCode returned in response:`,
+									pairData
+								);
 							}
 						} catch (pairErr) {
 							this.logger.error(
@@ -1603,8 +1625,8 @@ class WhatsAppBotWuzapi {
 				type = "image";
 				caption = messageContent.imageMessage.caption;
 				mediaInfo = {
-					mimetype: messageContent.imageMessage.mimetype,
-					url: messageContent.imageMessage.url,
+					mimetype: messageContent.imageMessage.mimetype || messageContent.imageMessage.Mimetype,
+					url: messageContent.imageMessage.URL || messageContent.imageMessage.url || messageContent.imageMessage.Url,
 					_mediaDetails: messageContent.imageMessage
 				};
 				content = mediaInfo;
@@ -1612,8 +1634,8 @@ class WhatsAppBotWuzapi {
 				type = "video";
 				caption = messageContent.videoMessage.caption;
 				mediaInfo = {
-					mimetype: messageContent.videoMessage.mimetype,
-					url: messageContent.videoMessage.url,
+					mimetype: messageContent.videoMessage.mimetype || messageContent.videoMessage.Mimetype,
+					url: messageContent.videoMessage.URL || messageContent.videoMessage.url || messageContent.videoMessage.Url,
 					seconds: messageContent.videoMessage.seconds,
 					_mediaDetails: messageContent.videoMessage
 				};
@@ -1621,8 +1643,8 @@ class WhatsAppBotWuzapi {
 			} else if (messageContent.audioMessage) {
 				type = "audio";
 				mediaInfo = {
-					mimetype: messageContent.audioMessage.mimetype,
-					url: messageContent.audioMessage.url,
+					mimetype: messageContent.audioMessage.mimetype || messageContent.audioMessage.Mimetype,
+					url: messageContent.audioMessage.URL || messageContent.audioMessage.url || messageContent.audioMessage.Url,
 					seconds: messageContent.audioMessage.seconds,
 					_mediaDetails: messageContent.audioMessage
 				};
@@ -1630,8 +1652,8 @@ class WhatsAppBotWuzapi {
 			} else if (messageContent.stickerMessage) {
 				type = "sticker";
 				mediaInfo = {
-					mimetype: messageContent.stickerMessage.mimetype,
-					url: messageContent.stickerMessage.url,
+					mimetype: messageContent.stickerMessage.mimetype || messageContent.stickerMessage.Mimetype,
+					url: messageContent.stickerMessage.URL || messageContent.stickerMessage.url || messageContent.stickerMessage.Url,
 					_mediaDetails: messageContent.stickerMessage
 				};
 				content = mediaInfo;
@@ -1639,10 +1661,10 @@ class WhatsAppBotWuzapi {
 				type = "document";
 				caption = messageContent.documentMessage.caption;
 				mediaInfo = {
-					mimetype: messageContent.documentMessage.mimetype,
-					url: messageContent.documentMessage.url,
-					filename: messageContent.documentMessage.fileName,
-					title: messageContent.documentMessage.title,
+					mimetype: messageContent.documentMessage.mimetype || messageContent.documentMessage.Mimetype,
+					url: messageContent.documentMessage.URL || messageContent.documentMessage.url || messageContent.documentMessage.Url,
+					filename: messageContent.documentMessage.fileName || messageContent.documentMessage.filename || messageContent.documentMessage.Filename,
+					title: messageContent.documentMessage.title || messageContent.documentMessage.Title,
 					_mediaDetails: messageContent.documentMessage
 				};
 				content = mediaInfo;
@@ -1835,7 +1857,7 @@ class WhatsAppBotWuzapi {
 				pushName: this.name ?? "Bot",
 				timestamp: Math.floor(Date.now() / 1000),
 				type: typeof content === "string" ? "text" : "media",
-				content: typeof content === "string" ? content : (content?.filename || "media"),
+				content: typeof content === "string" ? content : content?.filename || "media",
 				caption: options.caption || null,
 				mentionedJids: options.mentions || [],
 				isGroup,
@@ -1854,7 +1876,7 @@ class WhatsAppBotWuzapi {
 						_serialized_v3: msgId
 					},
 					key: { remoteJid: chatId, fromMe: true, id: msgId },
-					body: typeof content === "string" ? content : (content?.filename || "media"),
+					body: typeof content === "string" ? content : content?.filename || "media",
 					timestamp: Math.floor(Date.now() / 1000)
 				}
 			};

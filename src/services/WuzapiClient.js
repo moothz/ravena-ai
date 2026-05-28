@@ -34,7 +34,7 @@ class WuzapiClient {
 		this.adminClient = axios.create({
 			baseURL: this.baseUrl,
 			headers: {
-				"Authorization": this.adminToken,
+				Authorization: this.adminToken,
 				"Content-Type": "application/json"
 			}
 		});
@@ -43,7 +43,7 @@ class WuzapiClient {
 		this.userClient = axios.create({
 			baseURL: this.baseUrl,
 			headers: {
-				"Token": this.userToken,
+				Token: this.userToken,
 				"Content-Type": "application/json"
 			}
 		});
@@ -177,7 +177,7 @@ class WuzapiClient {
 	 */
 	async createInstance(name, options = {}) {
 		const payload = {
-			name: name,
+			name,
 			token: name, // We use the name itself as the user token
 			webhook: options.webhookUrl || "",
 			events: "Message,ReadReceipt,HistorySync,ChatPresence"
@@ -197,7 +197,7 @@ class WuzapiClient {
 				userList = users.data;
 			}
 			if (userList && Array.isArray(userList)) {
-				const user = userList.find(u => u.name === name || u.Name === name);
+				const user = userList.find((u) => u.name === name || u.Name === name);
 				if (user) {
 					const id = user.id || user.ID;
 					return this.adminDelete(`/admin/users/${id}/full`);
@@ -264,7 +264,8 @@ class WuzapiClient {
 		// Normalize: ensure both qr and qrcode are present so that the caller can use either
 		if (res) {
 			if (!res.data) res.data = {};
-			res.data.qr = res.data.QRCode || res.data.qrcode || res.data.qr || res.qr || res.qrcode || res.QRCode;
+			res.data.qr =
+				res.data.QRCode || res.data.qrcode || res.data.qr || res.qr || res.qrcode || res.QRCode;
 			res.data.qrcode = res.data.qr;
 		}
 		return res;
@@ -276,7 +277,7 @@ class WuzapiClient {
 	 */
 	async pairPhone(phone) {
 		const payload = {
-			phone: phone
+			phone
 		};
 		return this.post("/session/pairphone", payload);
 	}
@@ -575,12 +576,36 @@ class WuzapiClient {
 			mediaData = messageContent;
 		}
 
+		const getVal = (obj, keys) => {
+			for (const key of keys) {
+				if (obj[key] !== undefined && obj[key] !== null) {
+					return obj[key];
+				}
+			}
+			return undefined;
+		};
+
+		const toBase64 = (val) => {
+			if (!val) return val;
+			if (typeof val === "string") return val;
+			if (Buffer.isBuffer(val)) return val.toString("base64");
+			if (val.data && Array.isArray(val.data)) return Buffer.from(val.data).toString("base64");
+			return val;
+		};
+
+		const fileSha = toBase64(getVal(mediaData, ["fileSHA256", "fileSha256", "FileSha256", "FileSHA256"]));
+		const fileEncSha = toBase64(getVal(mediaData, ["fileEncSHA256", "fileEncSha256", "FileEncSha256", "FileEncSHA256"]));
+
 		const payload = {
-			Url: mediaData.url || mediaData.Url,
-			MediaKey: mediaData.mediaKey ? (typeof mediaData.mediaKey === "string" ? mediaData.mediaKey : Buffer.from(mediaData.mediaKey).toString("base64")) : mediaData.MediaKey,
-			Mimetype: mediaData.mimetype || mediaData.Mimetype,
-			FileSha256: mediaData.fileSha256 ? (typeof mediaData.fileSha256 === "string" ? mediaData.fileSha256 : Buffer.from(mediaData.fileSha256).toString("base64")) : mediaData.FileSha256,
-			FileLength: mediaData.fileLength !== undefined ? Number(mediaData.fileLength) : (mediaData.FileLength !== undefined ? Number(mediaData.FileLength) : 0)
+			Url: getVal(mediaData, ["URL", "url", "Url"]),
+			MediaKey: toBase64(getVal(mediaData, ["mediaKey", "MediaKey"])),
+			Mimetype: getVal(mediaData, ["mimetype", "Mimetype"]),
+			FileSHA256: fileSha,
+			FileSha256: fileSha,
+			FileEncSHA256: fileEncSha,
+			FileEncSha256: fileEncSha,
+			FileLength: Number(getVal(mediaData, ["fileLength", "FileLength"]) || 0),
+			DirectPath: getVal(mediaData, ["directPath", "DirectPath"])
 		};
 
 		return this.post(`/chat/download${type}`, payload);
@@ -601,13 +626,13 @@ class WuzapiClient {
 			const info = await this.post("/user/info", { Phone: [`${phone}@s.whatsapp.net`] });
 			const userDetails = info?.Users?.[`${phone}@s.whatsapp.net`] || {};
 			return {
-				name: name,
+				name,
 				phoneNumber: phone,
 				pushName: userDetails.VerifiedName || "",
 				status: userDetails.Status || ""
 			};
 		}
-		return { name: name, state: status?.state || "disconnected" };
+		return { name, state: status?.state || "disconnected" };
 	}
 
 	/**
@@ -716,7 +741,7 @@ class WuzapiClient {
 	async createGroup(name, subject, participants, description = "") {
 		return this.post("/group/create", {
 			name: subject,
-			participants: participants.map(p => p.split("@")[0])
+			participants: participants.map((p) => p.split("@")[0])
 		});
 	}
 
@@ -735,7 +760,9 @@ class WuzapiClient {
 	 * @param {string} inviteCode - Código do invite
 	 */
 	async joinGroup(name, inviteCode) {
-		const code = inviteCode.startsWith("http") ? inviteCode : `https://chat.whatsapp.com/${inviteCode}`;
+		const code = inviteCode.startsWith("http")
+			? inviteCode
+			: `https://chat.whatsapp.com/${inviteCode}`;
 		return this.post("/group/join", { Code: code });
 	}
 
@@ -745,7 +772,9 @@ class WuzapiClient {
 	 * @param {string} inviteCode - Código do invite
 	 */
 	async getInviteInfo(name, inviteCode) {
-		const code = inviteCode.startsWith("http") ? inviteCode : `https://chat.whatsapp.com/${inviteCode}`;
+		const code = inviteCode.startsWith("http")
+			? inviteCode
+			: `https://chat.whatsapp.com/${inviteCode}`;
 		return this.post("/group/inviteinfo", { Code: code });
 	}
 

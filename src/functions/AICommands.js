@@ -636,7 +636,6 @@ const commands = [
 		category: "ia",
 		group: "askia",
 		reactions: {
-			trigger: "🤖",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
@@ -650,7 +649,6 @@ const commands = [
 		category: "ia",
 		group: "askia",
 		reactions: {
-			trigger: "🤖",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},
@@ -664,7 +662,6 @@ const commands = [
 		category: "ia",
 		group: "askia",
 		reactions: {
-			trigger: "🤖",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🤖"
 		},

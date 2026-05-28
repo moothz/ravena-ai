@@ -158,9 +158,7 @@ async function modeCreate() {
 		// Verifica se já existe
 		const check = await wuzapiRequest("GET", "/admin/users").catch(() => null);
 		if (check?.body && Array.isArray(check.body)) {
-			const exists = check.body.find(
-				(i) => i.name === instanceName || i.Name === instanceName
-			);
+			const exists = check.body.find((i) => i.name === instanceName || i.Name === instanceName);
 			if (exists) {
 				console.log(`  ⏭️  Instância '${instanceName}' já existe. Pulando.`);
 				continue;
@@ -202,12 +200,7 @@ async function modeQr() {
 		console.log(`\n🔹 Instância: ${instanceName}`);
 
 		// Busca QR code
-		const result = await wuzapiRequest(
-			"GET",
-			"/session/qr",
-			null,
-			instanceName
-		).catch(() => null);
+		const result = await wuzapiRequest("GET", "/session/qr", null, instanceName).catch(() => null);
 
 		if (result?.body?.qr || result?.body?.qrcode) {
 			console.log("  📱 QR Code disponível! Escaneie com o WhatsApp:");
@@ -237,9 +230,14 @@ async function modeWebhook() {
 		console.log(`\n🔹 Instância: ${instanceName}`);
 
 		// Configura webhook por instância usando o mesmo endpoint global
-		const result = await wuzapiRequest("POST", "/webhook", {
-			webhookURL: GLOBAL_WEBHOOK_URL
-		}, instanceName).catch((err) => {
+		const result = await wuzapiRequest(
+			"POST",
+			"/webhook",
+			{
+				webhookURL: GLOBAL_WEBHOOK_URL
+			},
+			instanceName
+		).catch((err) => {
 			console.error(`  ❌ Erro ao configurar webhook para '${instanceName}':`, err.message);
 			return null;
 		});
