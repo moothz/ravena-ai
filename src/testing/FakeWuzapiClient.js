@@ -745,9 +745,7 @@ class FakeWuzapiClient {
 
 	_adminListInstances() {
 		return {
-			data: [
-				{ name: this.userName, status: "connected", phoneNumber: this.state.phoneNumber }
-			]
+			data: [{ name: this.userName, status: "connected", phoneNumber: this.state.phoneNumber }]
 		};
 	}
 
@@ -770,7 +768,11 @@ class FakeWuzapiClient {
 
 	_instanceConnection(name) {
 		return {
-			data: { name, connected: this.state.connected, state: this.state.connected ? "connected" : "disconnected" }
+			data: {
+				name,
+				connected: this.state.connected,
+				state: this.state.connected ? "connected" : "disconnected"
+			}
 		};
 	}
 

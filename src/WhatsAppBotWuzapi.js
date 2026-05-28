@@ -211,6 +211,18 @@ class WhatsAppBotWuzapi {
 			await this.streamSystem.initialize();
 			this.streamMonitor = this.streamSystem.streamMonitor;
 		}
+
+		await this._checkInstanceStatusAndConnect(false, true);
+
+		// Set webhook
+		if (this.webhookHost) {
+			this.logger.info(`Setting webhook for ${this.instanceName} to ${this.webhookHost}...`);
+			try {
+				await this.setWebhook(this.webhookHost);
+			} catch (webhookError) {
+				this.logger.error(`Error setting webhook for ${this.instanceName}:`, webhookError);
+			}
+		}
 	}
 
 	async _loadSkipGroupInfo() {
@@ -504,7 +516,8 @@ class WhatsAppBotWuzapi {
 	// ──────────────────────────────────────────────────────────
 
 	async listGroups() {
-		return this.apiClient.listGroups(this.instanceName);
+		const res = await this.apiClient.listGroups(this.instanceName);
+		return res?.data?.Groups || res?.Groups || [];
 	}
 
 	async getGroupInfo(groupId) {
@@ -548,12 +561,89 @@ class WhatsAppBotWuzapi {
 	}
 
 	async getChatDetails(chatId) {
-		// Tenta como grupo primeiro, depois como contato
-		try {
-			return await this.apiClient.getGroupInfo(this.instanceName, chatId);
-		} catch {
-			return await this.apiClient.getContactInfo(this.instanceName, chatId);
+		if (!chatId) return null;
+
+		if (this.skipGroupInfo && this.skipGroupInfo.includes(chatId)) {
+			this.logger.info(
+				`[getChatDetails] Skipping fetch for ${chatId} as it is in skipGroupInfo list.`
+			);
+			return {
+				id: { _serialized: chatId },
+				name: chatId,
+				isGroup: true,
+				notInGroup: true,
+				participants: []
+			};
 		}
+
+		try {
+			if (chatId.includes("@g.us")) {
+				const response = await this.apiClient.getGroupInfo(this.instanceName, chatId);
+				const groupInfo = response?.data || response;
+
+				if (groupInfo) {
+					const participantsList = groupInfo.participants || groupInfo.Participants || [];
+					participantsList.forEach((p) => {
+						const jid = p.jid || p.JID;
+						const lid = p.lid || p.LID;
+						if (lid && jid) {
+							this.cacheManager.putContactInCache({ id: { _serialized: jid }, lid });
+						}
+					});
+
+					return {
+						id: { _serialized: groupInfo.id || groupInfo.JID || chatId },
+						name: groupInfo.name || groupInfo.subject || groupInfo.Name || chatId,
+						isGroup: true,
+						isCommunity: !!(groupInfo.isCommunity || groupInfo.IsParent),
+						isAnnounce: !!(groupInfo.isAnnounce || groupInfo.IsAnnounce),
+						linkedParentJid: groupInfo.linkedParentJid || groupInfo.LinkedParentJID,
+						notInGroup: false,
+						groupMetadata: { desc: groupInfo.desc || groupInfo.topic || groupInfo.Topic || "" },
+						participants: participantsList.map((p) => {
+							const jid = p.jid || p.JID || "";
+							return {
+								id: { _serialized: jid },
+								isAdmin: !!(p.admin || p.isAdmin || p.IsAdmin),
+								isSuperAdmin: !!(p.superAdmin || p.isSuperAdmin || p.IsSuperAdmin),
+								phoneNumber: jid.split("@")[0],
+								lid: p.lid || p.LID
+							};
+						}),
+						_raw: groupInfo
+					};
+				}
+			} else {
+				const response = await this.apiClient.getContactInfo(this.instanceName, chatId);
+				const contactInfo = response?.data || response;
+
+				if (contactInfo) {
+					const name =
+						contactInfo.FullName ||
+						contactInfo.PushName ||
+						contactInfo.FirstName ||
+						chatId.split("@")[0];
+					return {
+						id: { _serialized: contactInfo.JID || contactInfo.jid || chatId },
+						name,
+						isGroup: false,
+						notInGroup: false,
+						participants: [],
+						_raw: contactInfo
+					};
+				}
+			}
+		} catch (e) {
+			this.logger.error(`[getChatDetails] Error fetching ${chatId}`, e);
+		}
+
+		return {
+			id: { _serialized: chatId },
+			name: chatId.split("@")[0],
+			isGroup: chatId.includes("@g.us"),
+			notInGroup: true,
+			participants: []
+		};
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -918,8 +1008,780 @@ class WhatsAppBotWuzapi {
 	}
 
 	// ──────────────────────────────────────────────────────────
-	// Placeholders — métodos a implementar conforme necessário
+	// Helpers e utilitários de mídia/LID
 	// ──────────────────────────────────────────────────────────
+
+	_storeMediaFile(source, extension) {
+		const outputDir = path.join(__dirname, "..", "public", "attachments");
+		if (!fs.existsSync(outputDir)) {
+			fs.mkdirSync(outputDir, { recursive: true });
+		}
+
+		const tempId = randomBytes(8).toString("hex");
+		const outputFileName = `${tempId}${extension}`;
+		const outputFilePath = path.join(outputDir, outputFileName);
+
+		if (Buffer.isBuffer(source)) {
+			fs.writeFileSync(outputFilePath, source);
+		} else if (typeof source === "string" && fs.existsSync(source)) {
+			fs.copyFileSync(source, outputFilePath);
+		} else {
+			throw new Error("Invalid source for _storeMediaFile");
+		}
+
+		setTimeout(
+			(ofp) => {
+				if (fs.existsSync(ofp)) fs.unlinkSync(ofp);
+			},
+			10 * 60 * 1000,
+			outputFilePath
+		);
+
+		return `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${outputFileName}`;
+	}
+
+	validURL(str) {
+		const pattern = new RegExp(
+			"^(https?:\\/\\/)?" + // protocol
+				"((([a-z\\d]([a-z\\d-]*[a-z\\d])?)\\.)+[a-z]{2,}|" + // domain name
+				"((\\d{1,3}\\.){3}\\d{1,3}))" + // OR ip (v4) address
+				"(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // port and path
+				"(\\?[;&a-z\\d%_.~+=-]*)?" + // query string
+				"(\\#[-a-z\\d_]*)?$",
+			"i"
+		);
+		return !!pattern.test(str);
+	}
+
+	getLidFromPn(PN, chat) {
+		const participants = chat?.Participants || chat?.participants || [];
+		const found = participants.find((p) => {
+			const number = p.PhoneNumber || p.phoneNumber || p.id?._serialized || "";
+			return number.startsWith(PN);
+		});
+		return found ? found.LID || found.lid || found.phoneNumber : PN;
+	}
+
+	getPnFromLid(lid, chat) {
+		const participants = chat?.Participants || chat?.participants || [];
+		const found = participants.find(
+			(p) =>
+				p.LID?.startsWith(lid) ||
+				p.lid?.startsWith(lid) ||
+				p.JID?.startsWith(lid) ||
+				p.jid?.startsWith(lid) ||
+				p.id?._serialized?.startsWith(lid)
+		);
+		return found ? found.PhoneNumber || found.phoneNumber : lid;
+	}
+
+	async createMediaFromBase64(base64Data, mimetype, filename) {
+		try {
+			const extension = mime.extension(mimetype) ?? "bin";
+			const buffer = Buffer.from(base64Data, "base64");
+			const size = buffer.length;
+			const url = this._storeMediaFile(buffer, `.${extension}`);
+
+			if (mimetype === "application/mp4") {
+				mimetype = "video/mp4";
+			}
+
+			const media = {
+				mimetype,
+				data: base64Data,
+				filename: filename ?? `file.${extension}`,
+				source: "base64",
+				url,
+				isMessageMedia: true,
+				size
+			};
+			return media;
+		} catch (error) {
+			this.logger.error(`Error in createMediaFromBase64:`, error);
+			throw error;
+		}
+	}
+
+	async createMedia(filePath, customMime = false) {
+		try {
+			if (!fs.existsSync(filePath)) {
+				throw new Error(`File not found: ${filePath}`);
+			}
+
+			const stats = fs.statSync(filePath);
+			const size = stats.size;
+			const extension = path.extname(filePath);
+			const fileUrl = this._storeMediaFile(filePath, extension);
+
+			let data = null;
+			const sizeLimit = 200 * 1024 * 1024; // 200MB
+			if (size < sizeLimit) {
+				data = fs.readFileSync(filePath, { encoding: "base64" });
+			}
+
+			const filename = path.basename(filePath);
+			let mimetype = customMime
+				? customMime
+				: (mime.lookup(filePath) ?? "application/octet-stream");
+
+			if (mimetype === "application/mp4") {
+				mimetype = "video/mp4";
+			}
+
+			const media = {
+				mimetype,
+				data,
+				filename,
+				source: "file",
+				url: fileUrl,
+				isMessageMedia: true,
+				size
+			};
+			return media;
+		} catch (error) {
+			this.logger.error(`Error creating media from ${filePath}:`, error);
+			throw error;
+		}
+	}
+
+	async createMediaFromURL(url, options = { unsafeMime: true, customMime: false }) {
+		try {
+			const filename = path.basename(new URL(url).pathname) ?? "media_from_url";
+			let mimetype =
+				mime.lookup(url.split("?")[0]) ?? (options.unsafeMime ? "application/octet-stream" : null);
+			const size = await this.getFileSizeByURL(url);
+
+			if (!mimetype && options.unsafeMime) {
+				try {
+					const headResponse = await axios.head(url);
+					mimetype = options.customMime
+						? options.customMime
+						: (headResponse.headers["content-type"]?.split(";")[0] ?? "application/octet-stream");
+				} catch (e) {
+					/* ignore */
+				}
+			}
+
+			if (mimetype === "application/mp4") {
+				mimetype = "video/mp4";
+			}
+
+			const media = { url, mimetype, filename, source: "url", isMessageMedia: true, size };
+			return media;
+		} catch (error) {
+			this.logger.error(`Error creating media from URL ${url}:`, error);
+			throw error;
+		}
+	}
+
+	// ──────────────────────────────────────────────────────────
+	// Conexão e ciclo de vida
+	// ──────────────────────────────────────────────────────────
+
+	async _checkInstanceStatusAndConnect(isRetry = false, forceConnect = false) {
+		try {
+			let response;
+			try {
+				response = await this.getConnectionStatus();
+			} catch (e) {
+				this.logger.error(
+					`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`,
+					e
+				);
+				response = { data: { connected: false } };
+			}
+
+			const statusData = response?.data;
+			this.isConnected = !!(statusData?.connected || statusData?.Connected);
+			const extra = {};
+
+			const instanceDetails = {
+				version: "Wuzapi",
+				tipo: "wuzapi"
+			};
+
+			if (this.isConnected) {
+				await this._onInstanceConnected();
+				extra.ok = true;
+			} else {
+				if (forceConnect) {
+					this.logger.info(
+						`Instance ${this.instanceName} is not connected. Attempting to connect...`
+					);
+					await this.connect();
+
+					extra.connectData = {};
+
+					try {
+						const qrResponse = await this.getQrCode();
+						const qrData = qrResponse?.data;
+						if (qrData?.qr) {
+							extra.connectData.code = qrData.qr;
+							extra.connectData.qrcode = qrData.qr;
+
+							const qrBase64 = qrData.qr;
+							if (qrBase64 && qrBase64.startsWith("data:image/")) {
+								this.logger.info(`[${this.id}] QR Code received.`);
+								const qrCodeLocal = path.join(
+									this.database.databasePath,
+									"qrcodes",
+									`qrcode_${this.id}.png`
+								);
+								const qrDir = path.dirname(qrCodeLocal);
+								if (!fs.existsSync(qrDir)) {
+									fs.mkdirSync(qrDir, { recursive: true });
+								}
+								const base64Data = qrBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+								fs.writeFileSync(qrCodeLocal, base64Data, "base64");
+							}
+						}
+					} catch (qrErr) {
+						this.logger.error(
+							`[_checkInstanceStatusAndConnect] Error getting QR code for ${this.instanceName}`,
+							qrErr
+						);
+					}
+				}
+			}
+			return { instanceDetails, extra };
+		} catch (error) {
+			this.logger.error(`Error checking/connecting instance ${this.instanceName}:`, error);
+			return { instanceDetails: {}, error };
+		}
+	}
+
+	async _onInstanceConnected() {
+		if (this.isConnected) {
+			return;
+		}
+		this.logger.info(`Instance ${this.instanceName} connected!`);
+		this.isConnected = true;
+	}
+
+	_onInstanceDisconnected(reason = "Unknown") {
+		this.logger.warn(`Instance ${this.instanceName} disconnected. Reason: ${reason}`);
+		this.isConnected = false;
+	}
+
+	// ──────────────────────────────────────────────────────────
+	// Webhook e Eventos
+	// ──────────────────────────────────────────────────────────
+
+	async handleWuzapiEvent(payload) {
+		this.isConnected = true;
+
+		if (!payload?.type) {
+			this.logger.warn(`[handleWuzapiEvent] Evento sem type recebido`, { payload });
+			return;
+		}
+
+		if (this.shouldDiscardMessage() && payload.type === "Message") {
+			return;
+		}
+
+		try {
+			switch (payload.type) {
+				case "Connected":
+					await this._onInstanceConnected();
+					break;
+
+				case "Disconnected":
+					this._onInstanceDisconnected(payload.reason || "Disconnected event");
+					break;
+
+				case "Message": {
+					this.lastMessageReceived = Date.now();
+					const msgData = payload.event;
+
+					if (msgData) {
+						const info = msgData.Info;
+						const msg = msgData.Message;
+						const reactionData = msg?.reactionMessage;
+
+						if (info?.PushName && info.PushName.length > 0) {
+							if (info.Sender) {
+								this.cacheManager.putPushnameInCache({ id: info.Sender, pushName: info.PushName });
+							}
+						}
+
+						const chatToFilter = info?.Chat;
+						if (
+							chatToFilter === this.grupoLogs ||
+							chatToFilter === this.grupoAnuncios ||
+							chatToFilter === this.grupoInvites ||
+							chatToFilter === this.grupoEstabilidade
+						) {
+							break;
+						}
+
+						if (reactionData) {
+							if (reactionData.text !== "" && !reactionData.key?.fromMe) {
+								this.reactionHandler.processReaction(this, {
+									reaction: reactionData.text,
+									senderId: info.Sender,
+									userName: info.PushName,
+									msgId: { _serialized: reactionData.key.ID }
+								});
+
+								if (this.eventHandler && typeof this.eventHandler.onReaction === "function") {
+									this.eventHandler.onReaction(this, {
+										reaction: reactionData.text,
+										senderId: info.Sender,
+										userName: info.PushName,
+										chatId: info.Chat,
+										msgId: { _serialized: reactionData.key.ID }
+									});
+								}
+							}
+						} else {
+							const formattedMessage = await this.formatMessage(msgData);
+							if (
+								formattedMessage &&
+								this.eventHandler &&
+								typeof this.eventHandler.onMessage === "function"
+							) {
+								if (!formattedMessage.fromMe) {
+									this.eventHandler.onMessage(this, formattedMessage);
+								}
+							}
+						}
+					}
+					break;
+				}
+
+				case "GroupInfo": {
+					const groupInfoData = payload.event;
+					if (groupInfoData) {
+						if (
+							groupInfoData.Join ||
+							groupInfoData.Leave ||
+							groupInfoData.Promote ||
+							groupInfoData.Demote
+						) {
+							await this._handleGroupParticipantsUpdate(groupInfoData);
+						}
+					}
+					break;
+				}
+
+				case "JoinedGroup": {
+					const joinedData = payload.event;
+					if (joinedData) {
+						await this._handleGroupParticipantsUpdate({
+							JID: joinedData.JID,
+							Join: [this.phoneNumber],
+							Sender: joinedData.Sender ?? joinedData.OwnerJID,
+							SenderPN: joinedData.SenderPN ?? joinedData.OwnerPN,
+							isBotJoining: true,
+							isCommunity: joinedData.IsParent,
+							isAnnounce: joinedData.IsAnnounce
+						});
+					}
+					break;
+				}
+
+				default:
+					break;
+			}
+		} catch (error) {
+			this.logger.error(`[handleWuzapiEvent] Erro ao processar evento:`, error);
+		}
+	}
+
+	async _handleGroupParticipantsUpdate(groupData) {
+		const groupId = groupData.JID;
+
+		const processAction = async (groupData, participants, action) => {
+			if (!participants || !participants.length) return;
+
+			const groupDetails = await this.getChatDetails(groupId);
+			const groupName = groupDetails?.name ?? groupId;
+
+			for (const participant of participants) {
+				const contact = await this.getContactDetails(participant);
+				const contactResp =
+					(await this.getContactDetails(groupData.Sender)) ??
+					(await this.getContactDetails(groupData.SenderPN));
+
+				const eventData = {
+					group: {
+						id: groupId,
+						name: groupName,
+						notInGroup: groupDetails?.notInGroup,
+						isBotJoining: groupData.isBotJoining ?? groupDetails?.isBotJoining,
+						isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails?.isCommunity,
+						isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails?.isAnnounce
+					},
+					isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails?.isCommunity,
+					isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails?.isAnnounce,
+					isBotJoining: groupData.isBotJoining ?? groupDetails?.isBotJoining,
+					user: { id: participant, name: contact?.name ?? participant.split("@")[0] },
+					responsavel: {
+						id: groupData.SenderPN,
+						name: contactResp?.name ?? groupData.SenderPN?.split("@")[0]
+					},
+					action,
+					origin: { getChat: async () => await this.getChatDetails(groupId) }
+				};
+
+				if (action === "add" || action === "join") {
+					if (this.eventHandler?.onGroupJoin) this.eventHandler.onGroupJoin(this, eventData);
+				} else if (action === "remove" || action === "leave") {
+					if (this.eventHandler?.onGroupLeave) this.eventHandler.onGroupLeave(this, eventData);
+				} else if (action === "promote") {
+					if (this.eventHandler?.onGroupPromote) this.eventHandler.onGroupPromote(this, eventData);
+				} else if (action === "demote") {
+					if (this.eventHandler?.onGroupDemote) this.eventHandler.onGroupDemote(this, eventData);
+				}
+			}
+		};
+
+		await processAction(groupData, groupData.Join, "add");
+		await processAction(groupData, groupData.Leave, "remove");
+		await processAction(groupData, groupData.Promote, "promote");
+		await processAction(groupData, groupData.Demote, "demote");
+	}
+
+	async formatMessage(wuzapiMessageData, skipCache = false) {
+		try {
+			if (!wuzapiMessageData) {
+				return null;
+			}
+
+			const info = wuzapiMessageData.Info;
+			const messageContent = wuzapiMessageData.Message;
+
+			if (!info || !messageContent) {
+				return null;
+			}
+
+			const chatId = info.Chat;
+			const isGroup = info.IsGroup || chatId.includes("broadcast");
+			const fromMe = info.IsFromMe;
+			const id = info.ID;
+			const timestamp = new Date(info.Timestamp).getTime() / 1000;
+			let pushName = info.PushName;
+			const sender = info.Sender;
+			const senderAlt = info.SenderAlt;
+
+			if (!pushName || pushName?.length < 1) {
+				pushName = (await this.fetchPushNameFromCache(id)) ?? "Usuario";
+			}
+
+			let contextInfo = null;
+			if (messageContent.extendedTextMessage)
+				contextInfo = messageContent.extendedTextMessage.contextInfo;
+			else if (messageContent.imageMessage) contextInfo = messageContent.imageMessage.contextInfo;
+			else if (messageContent.videoMessage) contextInfo = messageContent.videoMessage.contextInfo;
+			else if (messageContent.audioMessage) contextInfo = messageContent.audioMessage.contextInfo;
+			else if (messageContent.stickerMessage)
+				contextInfo = messageContent.stickerMessage.contextInfo;
+
+			const mentions = contextInfo?.mentionedJID ?? [];
+			const quotedMessageId = contextInfo?.quotedMessage ? contextInfo.stanzaID : null;
+			const quotedParticipant = contextInfo?.participant;
+
+			const responseTime = Math.max(0, this.getCurrentTimestamp() - timestamp);
+
+			if (!fromMe) {
+				this.loadReport.trackReceivedMessage(isGroup, responseTime, chatId);
+			}
+
+			let type = "unknown";
+			let content = null;
+			let caption = null;
+			let mediaInfo = null;
+
+			if (messageContent.conversation) {
+				type = "text";
+				content = messageContent.conversation;
+			} else if (messageContent.extendedTextMessage) {
+				type = "text";
+				content = messageContent.extendedTextMessage.text;
+			} else if (messageContent.imageMessage) {
+				type = "image";
+				caption = messageContent.imageMessage.caption;
+				mediaInfo = {
+					mimetype: messageContent.imageMessage.mimetype,
+					url: messageContent.imageMessage.url,
+					_mediaDetails: messageContent.imageMessage
+				};
+				content = mediaInfo;
+			} else if (messageContent.videoMessage) {
+				type = "video";
+				caption = messageContent.videoMessage.caption;
+				mediaInfo = {
+					mimetype: messageContent.videoMessage.mimetype,
+					url: messageContent.videoMessage.url,
+					seconds: messageContent.videoMessage.seconds,
+					_mediaDetails: messageContent.videoMessage
+				};
+				content = mediaInfo;
+			} else if (messageContent.audioMessage) {
+				type = "audio";
+				mediaInfo = {
+					mimetype: messageContent.audioMessage.mimetype,
+					url: messageContent.audioMessage.url,
+					seconds: messageContent.audioMessage.seconds,
+					_mediaDetails: messageContent.audioMessage
+				};
+				content = mediaInfo;
+			} else if (messageContent.stickerMessage) {
+				type = "sticker";
+				mediaInfo = {
+					mimetype: messageContent.stickerMessage.mimetype,
+					url: messageContent.stickerMessage.url,
+					_mediaDetails: messageContent.stickerMessage
+				};
+				content = mediaInfo;
+			} else if (messageContent.documentMessage) {
+				type = "document";
+				caption = messageContent.documentMessage.caption;
+				mediaInfo = {
+					mimetype: messageContent.documentMessage.mimetype,
+					url: messageContent.documentMessage.url,
+					filename: messageContent.documentMessage.fileName,
+					title: messageContent.documentMessage.title,
+					_mediaDetails: messageContent.documentMessage
+				};
+				content = mediaInfo;
+			} else if (messageContent.locationMessage) {
+				type = "location";
+				content = {
+					latitude: messageContent.locationMessage.degreesLatitude,
+					longitude: messageContent.locationMessage.degreesLongitude,
+					name: messageContent.locationMessage.name,
+					address: messageContent.locationMessage.address
+				};
+			} else if (messageContent.contactMessage) {
+				type = "contact";
+				content = {
+					name: messageContent.contactMessage.displayName,
+					number: messageContent.contactMessage.vcard
+				};
+			}
+
+			const formattedMessage = {
+				id: { _serialized: id },
+				fromMe,
+				chatId,
+				sender: sender ?? chatId,
+				senderAlt: senderAlt ?? sender ?? chatId,
+				pushName,
+				timestamp,
+				type,
+				content,
+				caption,
+				mentionedJids: mentions,
+				quotedMessageId,
+				quotedParticipant,
+				isGroup,
+				group: isGroup ? chatId : null,
+				author: sender ?? chatId,
+				authorAlt: senderAlt ?? sender ?? chatId,
+				isMedia: !!mediaInfo,
+				mediaInfo,
+				origin: {
+					react: async (emoji) => await this.sendReaction(chatId, id, emoji),
+					reply: async (text) => await this.replyMessage(chatId, id, text),
+					reactOk: async () => await this.sendReaction(chatId, id, "✅"),
+					reactWait: async () => await this.sendReaction(chatId, id, "⌛️"),
+					reactError: async () => await this.sendReaction(chatId, id, "❌"),
+					reactSuccess: async () => await this.sendReaction(chatId, id, "🤖"),
+					reactCross: async () => await this.sendReaction(chatId, id, "✖️"),
+					reactJoin: async () => await this.sendReaction(chatId, id, "🤝")
+				},
+				downloadMedia: async () => {
+					try {
+						const downloaded = await this._downloadMediaFromWuzapi(messageContent);
+						return downloaded;
+					} catch (e) {
+						this.logger.error(`[downloadMedia] Failed`, e);
+						return null;
+					}
+				}
+			};
+
+			return formattedMessage;
+		} catch (error) {
+			this.logger.error(`[formatMessage] Erro formatando mensagem:`, error);
+			return null;
+		}
+	}
+
+	async fetchPushNameFromCache(msgId) {
+		return null;
+	}
+
+	getCurrentTimestamp() {
+		return Math.floor(Date.now() / 1000);
+	}
+
+	shouldDiscardMessage() {
+		return false;
+	}
+
+	// ──────────────────────────────────────────────────────────
+	// Envio de Mensagens
+	// ──────────────────────────────────────────────────────────
+
+	async sendMessage(chatId, content, options = {}) {
+		try {
+			let response;
+			const isGroup = chatId.includes("@g.us");
+
+			if (typeof content === "string") {
+				if (this.validURL(content)) {
+					const mimetype = mime.lookup(content.split("?")[0]) ?? "";
+					const mediaType = mimetype.split("/")[0] ?? "document";
+					const filename = path.basename(new URL(content).pathname) ?? "media";
+
+					if (mediaType === "image") {
+						response = await this.sendImage(chatId, { url: content }, options);
+					} else if (mediaType === "video") {
+						response = await this.sendVideo(chatId, { url: content }, options);
+					} else if (mediaType === "audio") {
+						response = await this.sendAudio(chatId, { url: content }, options);
+					} else {
+						response = await this.sendDocument(chatId, { url: content, filename }, options);
+					}
+				} else {
+					response = await this.sendText(chatId, content, options);
+				}
+			} else if (content && (content.isMessageMedia || options.sendMediaAsSticker)) {
+				const mediaData = {
+					url: content.url,
+					base64: content.data,
+					filename: content.filename,
+					caption: options.caption
+				};
+
+				if (options.sendMediaAsSticker) {
+					response = await this.sendSticker(chatId, mediaData, options);
+				} else {
+					let mediaType = content.mimetype ? content.mimetype.split("/")[0] : "image";
+					if (options.sendMediaAsDocument) {
+						mediaType = "document";
+					}
+
+					if (mediaType === "image") {
+						response = await this.sendImage(chatId, mediaData, options);
+					} else if (mediaType === "video") {
+						response = await this.sendVideo(chatId, mediaData, options);
+					} else if (mediaType === "audio") {
+						response = await this.sendAudio(chatId, mediaData, options);
+					} else {
+						response = await this.sendDocument(chatId, mediaData, options);
+					}
+				}
+			} else if (content && content.isLocation) {
+				response = await this.sendLocation(chatId, content, options);
+			} else if (content && content.isContact) {
+				response = await this.sendText(
+					chatId,
+					`Contato: ${content.name} (${content.number})`,
+					options
+				);
+			} else if (content && content.isPoll) {
+				const optionsStr = content.pollOptions.map((o) => `- ${o}`).join("\n");
+				response = await this.sendText(
+					chatId,
+					`📊 Enquete: ${content.name}\nOpções:\n${optionsStr}`,
+					options
+				);
+			} else {
+				throw new Error("Formato de conteúdo de mensagem não suportado.");
+			}
+
+			this.loadReport.trackSentMessage(isGroup);
+
+			const msgId = response?.data?.id || response?.id || `wuzapi-msg-${Date.now()}`;
+			return {
+				id: { _serialized: msgId },
+				ack: 1,
+				timestamp: Math.floor(Date.now() / 1000),
+				_data: response,
+				getInfo: () => ({ delivery: [1], played: [1], read: [1] }),
+				pin: (tempo) => true
+			};
+		} catch (error) {
+			this.logger.error(`[${this.id}] Error sending message:`, error);
+			throw error;
+		}
+	}
+
+	async sendReturnMessages(returnMessages, group = null) {
+		if (!Array.isArray(returnMessages)) {
+			returnMessages = [returnMessages];
+		}
+		const validMessages = returnMessages.filter((msg) => msg && msg.isValid && msg.isValid());
+		if (validMessages.length === 0) {
+			this.logger.warn(`[${this.id}] Sem ReturnMessages válidas pra enviar.`);
+			return [];
+		}
+
+		if (group && group.autoTranslateTo) {
+			for (const message of validMessages) {
+				try {
+					if (message.content && typeof message.content === "string") {
+						message.content = await llmTranslate(
+							message.content,
+							group.autoTranslateTo,
+							this.llmService
+						);
+					}
+					if (message.caption && typeof message.caption === "string") {
+						message.caption = await llmTranslate(
+							message.caption,
+							group.autoTranslateTo,
+							this.llmService
+						);
+					}
+				} catch (e) {
+					this.logger.error(`[sendReturnMessages] Translation error`, e);
+				}
+			}
+		}
+
+		const results = [];
+		for (const message of validMessages) {
+			if (message.delay > 0) {
+				await sleep(message.delay);
+			}
+
+			const contentToSend = message.content;
+			const options = { ...(message.options ?? {}) };
+
+			try {
+				const result = await this.sendMessage(message.chatId, contentToSend, options);
+				results.push(result);
+
+				if (result && result.id?._serialized) {
+					if (message.reaction) {
+						try {
+							await this.sendReaction(message.chatId, result.id._serialized, message.reaction);
+						} catch (reactError) {
+							this.logger.error(
+								`[${this.id}] Erro enviando reaction "${message.reaction}" pra ${result.id._serialized}:`,
+								reactError
+							);
+						}
+					}
+				}
+			} catch (sendError) {
+				this.logger.error(
+					`[${this.id}] Falha enviando ReturnMessages pra ${message.chatId}:`,
+					sendError
+				);
+				results.push({
+					error: sendError,
+					messageContent: message.content,
+					getInfo: () => ({ delivery: [], played: [], read: [] })
+				});
+			}
+		}
+		return results;
+	}
 
 	async updatePrivacySettings(settings) {
 		this.logger.info("[updatePrivacySettings] Not yet implemented for wuzapi.", settings);

@@ -92,7 +92,8 @@ const messageImageWithBase64 = {
 				fileLength: 102400,
 				height: 1080,
 				width: 1920,
-				base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+				base64:
+					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
 				url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/12345_67890.jpg"
 			}
 		},
@@ -396,7 +397,12 @@ const messageForReaction = {
 		messageTimestamp: nowMs(),
 		participant: "5511999999999@s.whatsapp.net",
 		pushName: "Testador",
-		key: makeKey(false, "msg-for-reaction", "120363023456789012@g.us", "5511999999999@s.whatsapp.net")
+		key: makeKey(
+			false,
+			"msg-for-reaction",
+			"120363023456789012@g.us",
+			"5511999999999@s.whatsapp.net"
+		)
 	}
 };
 
@@ -416,11 +422,7 @@ const messagePoll = {
 		message: {
 			pollCreationMessage: {
 				name: "Qual a melhor linguagem?",
-				options: [
-					{ optionName: "JavaScript" },
-					{ optionName: "Python" },
-					{ optionName: "Go" }
-				],
+				options: [{ optionName: "JavaScript" }, { optionName: "Python" }, { optionName: "Go" }],
 				shippingOptionCount: 0,
 				allowMultipleAnswers: false
 			}
