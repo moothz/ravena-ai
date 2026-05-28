@@ -233,30 +233,32 @@ class BotAPI {
 
 	/**
 	 * Handler para webhook global do WuzAPI
-	 * Recebe eventos de todas as instâncias e roteia para o bot correto
+	 * Recebe eventos de TODAS as instâncias no mesmo endpoint.
+	 * A instância é identificada pelo campo 'instanceName' no payload.
 	 */
-	async handleWuzapiWebhook(instanceName, body) {
+	async handleWuzapiWebhook(body) {
+		// Extrair instanceName do payload (não da URL)
+		const instanceName = body.instanceName;
+		if (!instanceName) {
+			this.logger.warn("[WuzAPI Webhook] Evento sem instanceName no payload");
+			return { error: "Missing instanceName in webhook payload" };
+		}
+
 		this.logger.info(`[WuzAPI Webhook] Evento recebido para instância '${instanceName}'`, {
-			event: body.event,
-			chat: body.chat?.jid
+			event: body.type,
+			chat: body.event?.Info?.Chat
 		});
 
 		// Encontrar o bot pela instância
-		const bot = this.bots.find(
-			(b) => b.instanceName === instanceName || b.id === instanceName
-		);
+		const bot = this.bots.find((b) => b.instanceName === instanceName || b.id === instanceName);
 
 		if (!bot) {
-			this.logger.warn(
-				`[WuzAPI Webhook] Bot não encontrado para instância '${instanceName}'`
-			);
+			this.logger.warn(`[WuzAPI Webhook] Bot não encontrado para instância '${instanceName}'`);
 			return { error: `Bot not found for instance: ${instanceName}` };
 		}
 
 		if (typeof bot.handleWuzapiEvent !== "function") {
-			this.logger.error(
-				`[WuzAPI Webhook] Bot '${instanceName}' não tem handler handleWuzapiEvent`
-			);
+			this.logger.error(`[WuzAPI Webhook] Bot '${instanceName}' não tem handler handleWuzapiEvent`);
 			return { error: `Bot ${instanceName} does not support WuzAPI events` };
 		}
 
@@ -264,10 +266,7 @@ class BotAPI {
 			await bot.handleWuzapiEvent(body);
 			return { ok: true, instance: instanceName };
 		} catch (error) {
-			this.logger.error(
-				`[WuzAPI Webhook] Erro ao processar evento para '${instanceName}':`,
-				error
-			);
+			this.logger.error(`[WuzAPI Webhook] Erro ao processar evento para '${instanceName}':`, error);
 			return { error: error.message };
 		}
 	}
@@ -276,16 +275,17 @@ class BotAPI {
 	 * Configura rotas da API
 	 */
 	setupRoutes() {
-		// Webhook global do WuzAPI - recebe eventos de todas as instâncias
+			// Webhook global do WuzAPI - recebe eventos de TODAS as instâncias no mesmo endpoint
+		// Cada instância no wuzapi é configurada com a mesma webhook URL.
+		// O campo 'instanceName' no payload identifica de qual instância veio o evento.
 		this.app.post(
-			"/wuzapi/webhook/:instanceName",
+			"/wuzapi/webhook",
 			bodyParser.json({ limit: "10mb" }),
 			async (req, res) => {
 				try {
-					const { instanceName } = req.params;
-					const result = await this.handleWuzapiWebhook(instanceName, req.body);
+					const result = await this.handleWuzapiWebhook(req.body);
 					if (result.error) {
-						return res.status(404).json(result);
+						return res.status(400).json(result);
 					}
 					res.json(result);
 				} catch (error) {

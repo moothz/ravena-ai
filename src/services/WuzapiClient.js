@@ -30,8 +30,8 @@ class WuzapiClient {
 			baseURL: this.baseUrl,
 			headers: {
 				"X-Auth-Token": this.adminToken,
-				"Content-Type": "application/json",
-			},
+				"Content-Type": "application/json"
+			}
 		});
 
 		this.logger.info(
@@ -192,7 +192,7 @@ class WuzapiClient {
 	async setWebhook(name, url, secret = "") {
 		return this.post(`/instances/${encodeURIComponent(name)}/webhook`, {
 			url,
-			secret,
+			secret
 		});
 	}
 
@@ -220,7 +220,7 @@ class WuzapiClient {
 			chatId,
 			type: "text",
 			content: { text },
-			...options,
+			...options
 		});
 	}
 
@@ -234,7 +234,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "image",
-			content: media,
+			content: media
 		});
 	}
 
@@ -248,7 +248,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "video",
-			content: media,
+			content: media
 		});
 	}
 
@@ -262,7 +262,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "audio",
-			content: media,
+			content: media
 		});
 	}
 
@@ -276,7 +276,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "document",
-			content: media,
+			content: media
 		});
 	}
 
@@ -290,7 +290,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "sticker",
-			content: media,
+			content: media
 		});
 	}
 
@@ -304,7 +304,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
 			type: "location",
-			content: location,
+			content: location
 		});
 	}
 
@@ -317,7 +317,7 @@ class WuzapiClient {
 	async sendMessage(name, chatId, message) {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendMessage`, {
 			chatId,
-			...message,
+			...message
 		});
 	}
 
@@ -336,7 +336,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/sendReaction`, {
 			chatId,
 			messageId,
-			emoji,
+			emoji
 		});
 	}
 
@@ -355,7 +355,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/deleteMessage`, {
 			chatId,
 			messageId,
-			...options,
+			...options
 		});
 	}
 
@@ -370,7 +370,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/editMessage`, {
 			chatId,
 			messageId,
-			text: newText,
+			text: newText
 		});
 	}
 
@@ -386,7 +386,7 @@ class WuzapiClient {
 			chatId,
 			type: "text",
 			content: { text },
-			replyTo: messageId,
+			replyTo: messageId
 		});
 	}
 
@@ -401,7 +401,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/forwardMessage`, {
 			chatId,
 			messageId,
-			originalChatId,
+			originalChatId
 		});
 	}
 
@@ -414,7 +414,7 @@ class WuzapiClient {
 	async markMessageRead(name, chatId, messageId) {
 		return this.post(`/instances/${encodeURIComponent(name)}/readMessage`, {
 			chatId,
-			messageId,
+			messageId
 		});
 	}
 
@@ -429,7 +429,7 @@ class WuzapiClient {
 	 */
 	async downloadMedia(name, messageContent) {
 		return this.post(`/instances/${encodeURIComponent(name)}/download`, {
-			message: messageContent,
+			message: messageContent
 		});
 	}
 
@@ -452,7 +452,7 @@ class WuzapiClient {
 	 */
 	async updateProfileName(name, displayName) {
 		return this.post(`/instances/${encodeURIComponent(name)}/profile/name`, {
-			displayName,
+			displayName
 		});
 	}
 
@@ -463,7 +463,7 @@ class WuzapiClient {
 	 */
 	async updateProfileStatus(name, status) {
 		return this.post(`/instances/${encodeURIComponent(name)}/profile/status`, {
-			status,
+			status
 		});
 	}
 
@@ -502,7 +502,9 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async getContactInfo(name, chatId) {
-		return this.get(`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}`);
+		return this.get(
+			`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}`
+		);
 	}
 
 	/**
@@ -511,7 +513,9 @@ class WuzapiClient {
 	 * @param {string} chatId - JID do contato
 	 */
 	async getContactProfile(name, chatId) {
-		return this.get(`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}/profile`);
+		return this.get(
+			`/instances/${encodeURIComponent(name)}/contacts/${encodeURIComponent(chatId)}/profile`
+		);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -546,7 +550,7 @@ class WuzapiClient {
 		return this.post(`/instances/${encodeURIComponent(name)}/groups/create`, {
 			subject,
 			participants,
-			description,
+			description
 		});
 	}
 
@@ -556,7 +560,9 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async leaveGroup(name, groupId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/leave`);
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/leave`
+		);
 	}
 
 	/**
@@ -566,7 +572,7 @@ class WuzapiClient {
 	 */
 	async joinGroup(name, inviteCode) {
 		return this.post(`/instances/${encodeURIComponent(name)}/groups/join`, {
-			inviteCode,
+			inviteCode
 		});
 	}
 
@@ -576,7 +582,9 @@ class WuzapiClient {
 	 * @param {string} inviteCode - Código do invite
 	 */
 	async getInviteInfo(name, inviteCode) {
-		return this.get(`/instances/${encodeURIComponent(name)}/groups/invite/${encodeURIComponent(inviteCode)}`);
+		return this.get(
+			`/instances/${encodeURIComponent(name)}/groups/invite/${encodeURIComponent(inviteCode)}`
+		);
 	}
 
 	/**
@@ -586,9 +594,12 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async addGroupParticipants(name, groupId, participants) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/add`, {
-			participants,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/add`,
+			{
+				participants
+			}
+		);
 	}
 
 	/**
@@ -598,9 +609,12 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async removeGroupParticipants(name, groupId, participants) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/remove`, {
-			participants,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/remove`,
+			{
+				participants
+			}
+		);
 	}
 
 	/**
@@ -610,9 +624,12 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async promoteParticipants(name, groupId, participants) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/promote`, {
-			participants,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/promote`,
+			{
+				participants
+			}
+		);
 	}
 
 	/**
@@ -622,9 +639,12 @@ class WuzapiClient {
 	 * @param {string[]} participants - Array de JIDs
 	 */
 	async demoteParticipants(name, groupId, participants) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/demote`, {
-			participants,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/demote`,
+			{
+				participants
+			}
+		);
 	}
 
 	/**
@@ -634,9 +654,12 @@ class WuzapiClient {
 	 * @param {string} subject - Novo assunto
 	 */
 	async updateGroupSubject(name, groupId, subject) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/subject`, {
-			subject,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/subject`,
+			{
+				subject
+			}
+		);
 	}
 
 	/**
@@ -646,9 +669,12 @@ class WuzapiClient {
 	 * @param {string} description - Nova descrição
 	 */
 	async updateGroupDescription(name, groupId, description) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/description`, {
-			description,
-		});
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/description`,
+			{
+				description
+			}
+		);
 	}
 
 	/**
@@ -658,7 +684,10 @@ class WuzapiClient {
 	 * @param {object} media - { url, base64 }
 	 */
 	async updateGroupPicture(name, groupId, media) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/picture`, media);
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/picture`,
+			media
+		);
 	}
 
 	/**
@@ -667,7 +696,9 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async getGroupInviteCode(name, groupId) {
-		return this.get(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/invite`);
+		return this.get(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/invite`
+		);
 	}
 
 	/**
@@ -676,7 +707,9 @@ class WuzapiClient {
 	 * @param {string} groupId - JID do grupo
 	 */
 	async revokeGroupInvite(name, groupId) {
-		return this.post(`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/revoke-invite`);
+		return this.post(
+			`/instances/${encodeURIComponent(name)}/groups/${encodeURIComponent(groupId)}/revoke-invite`
+		);
 	}
 
 	// ──────────────────────────────────────────────────────────
@@ -692,7 +725,7 @@ class WuzapiClient {
 	async setPresence(name, chatId, presence) {
 		return this.post(`/instances/${encodeURIComponent(name)}/presence`, {
 			chatId,
-			presence,
+			presence
 		});
 	}
 
@@ -733,7 +766,7 @@ class WuzapiClient {
 
 	// ──────────────────────────────────────────────────────────
 	// Chat
-	 // ──────────────────────────────────────────────────────────
+	// ──────────────────────────────────────────────────────────
 
 	/**
 	 * Arquivar chat
@@ -744,7 +777,7 @@ class WuzapiClient {
 	async archiveChat(name, chatId, archive = true) {
 		return this.post(`/instances/${encodeURIComponent(name)}/chat/archive`, {
 			chatId,
-			archive,
+			archive
 		});
 	}
 
@@ -757,7 +790,7 @@ class WuzapiClient {
 	async muteChat(name, chatId, duration) {
 		return this.post(`/instances/${encodeURIComponent(name)}/chat/mute`, {
 			chatId,
-			duration,
+			duration
 		});
 	}
 
@@ -777,9 +810,12 @@ class WuzapiClient {
 	 * @param {string} messageId - ID da mensagem
 	 */
 	async getMessage(name, chatId, messageId) {
-		return this.get(`/instances/${encodeURIComponent(name)}/messages/${encodeURIComponent(messageId)}`, {
-			chatId,
-		});
+		return this.get(
+			`/instances/${encodeURIComponent(name)}/messages/${encodeURIComponent(messageId)}`,
+			{
+				chatId
+			}
+		);
 	}
 }
 

@@ -200,7 +200,6 @@ async function main() {
 				redisDbAtual++;
 				newRBot.initialize();
 				await sleep(500);
-
 			} else {
 				// Default: WhatsAppBotGo (WhatsgoAPI)
 				if (!rBot.nome) {

@@ -282,7 +282,7 @@ class WhatsAppBotWuzapi {
 	async createInstance() {
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`);
 		const payload = {
-			webhookUrl: `${this.webhookHost}:${this.webhookPort}/wuzapi/webhook/${this.instanceName}`,
+			webhookUrl: `${this.webhookHost}:${this.webhookPort}/wuzapi/webhook/${this.instanceName}`
 		};
 		return await this.apiClient.createInstance(this.instanceName, payload);
 	}
@@ -346,22 +346,12 @@ class WhatsAppBotWuzapi {
 	// ──────────────────────────────────────────────────────────
 
 	async sendText(chatId, text, options = {}) {
-		const result = await this.apiClient.sendText(
-			this.instanceName,
-			chatId,
-			text,
-			options
-		);
+		const result = await this.apiClient.sendText(this.instanceName, chatId, text, options);
 		return result;
 	}
 
 	async sendImage(chatId, media, options = {}) {
-		const result = await this.apiClient.sendImage(
-			this.instanceName,
-			chatId,
-			media,
-			options
-		);
+		const result = await this.apiClient.sendImage(this.instanceName, chatId, media, options);
 		return result;
 	}
 
@@ -415,10 +405,7 @@ class WhatsAppBotWuzapi {
 
 	async _downloadMediaFromWuzapi(messageContent) {
 		try {
-			const response = await this.apiClient.downloadMedia(
-				this.instanceName,
-				messageContent
-			);
+			const response = await this.apiClient.downloadMedia(this.instanceName, messageContent);
 
 			if (response?.base64) {
 				const base64Data = response.base64.replace(/^data:.*?;base64,/, "");
@@ -576,11 +563,16 @@ class WhatsAppBotWuzapi {
 			await new Promise((resolve, reject) => {
 				ffmpeg(inputPath)
 					.outputOptions([
-						"-vf", videoFilter,
-						"-c:v", "libwebp",
-						"-lossless", "0",
-						"-q:v", "80",
-						"-compression_level", "6"
+						"-vf",
+						videoFilter,
+						"-c:v",
+						"libwebp",
+						"-lossless",
+						"0",
+						"-q:v",
+						"80",
+						"-compression_level",
+						"6"
 					])
 					.toFormat("webp")
 					.on("end", resolve)
@@ -629,10 +621,12 @@ class WhatsAppBotWuzapi {
 					background: { r: 0, g: 0, b: 0, alpha: 0 }
 				}
 			})
-				.composite([{
-					input: resizedImageBuffer,
-					gravity: sharp.gravity.center
-				}])
+				.composite([
+					{
+						input: resizedImageBuffer,
+						gravity: sharp.gravity.center
+					}
+				])
 				.png({ compressionLevel: 6, adaptiveFiltering: true })
 				.toBuffer();
 
@@ -657,15 +651,24 @@ class WhatsAppBotWuzapi {
 
 		try {
 			await convertAsync([
-				inputPath, "-coalesce", "-background", "none",
-				"-alpha", "on", "-dispose", "previous", outputPath
+				inputPath,
+				"-coalesce",
+				"-background",
+				"none",
+				"-alpha",
+				"on",
+				"-dispose",
+				"previous",
+				outputPath
 			]);
 			await unlinkAsync(inputPath).catch(() => {});
 
 			const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/gifs/${outputFileName}`;
 
 			if (!keepFile) {
-				setTimeout(() => { fs.unlink(outputPath, () => {}); }, 60000);
+				setTimeout(() => {
+					fs.unlink(outputPath, () => {});
+				}, 60000);
 			}
 
 			return fileUrl;
@@ -686,7 +689,11 @@ class WhatsAppBotWuzapi {
 		const outputPath = path.join(outputDir, outputFileName);
 
 		try {
-			if (inputContent && !inputContent.startsWith("http://") && !inputContent.startsWith("https://")) {
+			if (
+				inputContent &&
+				!inputContent.startsWith("http://") &&
+				!inputContent.startsWith("https://")
+			) {
 				const base64Data = inputContent.includes(",") ? inputContent.split(",")[1] : inputContent;
 				const buffer = Buffer.from(base64Data, "base64");
 				await writeFileAsync(tempInputPath, buffer);
@@ -714,7 +721,9 @@ class WhatsAppBotWuzapi {
 			const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/gifs/${outputFileName}`;
 
 			if (!keepFile) {
-				setTimeout(() => { fs.unlink(outputPath, () => {}); }, 60000);
+				setTimeout(() => {
+					fs.unlink(outputPath, () => {});
+				}, 60000);
 			}
 
 			return fileUrl;
@@ -736,7 +745,11 @@ class WhatsAppBotWuzapi {
 		const tempOutputPath = path.join(os.tmpdir(), `${tempId}_output.webp`);
 
 		try {
-			if (inputContent && !inputContent.startsWith("http://") && !inputContent.startsWith("https://")) {
+			if (
+				inputContent &&
+				!inputContent.startsWith("http://") &&
+				!inputContent.startsWith("https://")
+			) {
 				const base64Data = inputContent.includes(",") ? inputContent.split(",")[1] : inputContent;
 				const buffer = Buffer.from(base64Data, "base64");
 				await writeFileAsync(tempInputPath, buffer);
@@ -750,15 +763,23 @@ class WhatsAppBotWuzapi {
 			await new Promise((resolve, reject) => {
 				ffmpeg(inputPath)
 					.outputOptions([
-						"-vf", videoFilter,
-						"-loop", "0",
-						"-c:v", "libwebp",
-						"-lossless", "0",
-						"-q:v", "75",
-						"-compression_level", "6",
-						"-preset", "default",
+						"-vf",
+						videoFilter,
+						"-loop",
+						"0",
+						"-c:v",
+						"libwebp",
+						"-lossless",
+						"0",
+						"-q:v",
+						"75",
+						"-compression_level",
+						"6",
+						"-preset",
+						"default",
 						"-an",
-						"-vsync", "cfr"
+						"-vsync",
+						"cfr"
 					])
 					.toFormat("webp")
 					.on("end", resolve)
@@ -774,8 +795,7 @@ class WhatsAppBotWuzapi {
 		} finally {
 			if (isTempInputFile && fs.existsSync(tempInputPath))
 				await unlinkAsync(tempInputPath).catch(() => {});
-			if (fs.existsSync(tempOutputPath))
-				await unlinkAsync(tempOutputPath).catch(() => {});
+			if (fs.existsSync(tempOutputPath)) await unlinkAsync(tempOutputPath).catch(() => {});
 		}
 	}
 
@@ -813,8 +833,7 @@ class WhatsAppBotWuzapi {
 		} finally {
 			if (isTempFile && fs.existsSync(tempInputPath))
 				await unlinkAsync(tempInputPath).catch(() => {});
-			if (fs.existsSync(tempOutputPath))
-				await unlinkAsync(tempOutputPath).catch(() => {});
+			if (fs.existsSync(tempOutputPath)) await unlinkAsync(tempOutputPath).catch(() => {});
 		}
 	}
 
