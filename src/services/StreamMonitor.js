@@ -7,6 +7,43 @@ const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Retry helper with exponential backoff for network errors
+async function retryWithBackoff(fn, maxAttempts = 3, baseDelay = 2000) {
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			const isNetworkError =
+				error.code === "EAI_AGAIN" ||
+				error.code === "ETIMEDOUT" ||
+				error.code === "ECONNREFUSED" ||
+				error.code === "ECONNRESET" ||
+				error.code === "ENOTFOUND";
+			if (!isNetworkError) {
+				// Non-network errors (auth, rate limit, etc.) — rethrow immediately
+				throw error;
+			}
+			if (attempt === maxAttempts) {
+				// Exhausted retries — rethrow
+				throw error;
+			}
+			const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+			await sleep(delay);
+		}
+	}
+}
+
+// Check if error is a DNS/network error (not an API/auth error)
+function isNetworkError(error) {
+	return (
+		error.code === "EAI_AGAIN" ||
+		error.code === "ETIMEDOUT" ||
+		error.code === "ECONNREFUSED" ||
+		error.code === "ECONNRESET" ||
+		error.code === "ENOTFOUND"
+	);
+}
+
 class StreamMonitor extends EventEmitter {
 	// Propriedade estática para armazenar a instância única
 	static instance = null;
@@ -823,22 +860,29 @@ class StreamMonitor extends EventEmitter {
 
 		let bAt = 0;
 		const failedBatches = [];
+		const twitchTimeout = 10000; // 10s timeout per request
 		for (const batch of channelBatches) {
 			bAt += 1;
 			//this.logger.info(`[_pollTwitchChannels][${bAt}/${totalBatches}] Polling ${batch.length} channels...`);
 			try {
-				// First get user IDs from login names
-				const userResponse = await axios.get(`https://api.twitch.tv/helix/users`, {
-					headers: {
-						"Client-ID": this.twitchClientId,
-						Authorization: `Bearer ${this.twitchToken}`
-					},
-					params: {
-						login: batch.map((c) =>
-							this.sanitizePlatformChannelName(c.name.toLowerCase(), "twitch")
-						)
-					}
-				});
+				// First get user IDs from login names — with retry + timeout
+				const userResponse = await retryWithBackoff(
+					async () =>
+						await axios.get(`https://api.twitch.tv/helix/users`, {
+							headers: {
+								"Client-ID": this.twitchClientId,
+								Authorization: `Bearer ${this.twitchToken}`
+							},
+							params: {
+								login: batch.map((c) =>
+									this.sanitizePlatformChannelName(c.name.toLowerCase(), "twitch")
+								)
+							},
+							timeout: twitchTimeout
+						}),
+					3,
+					2000
+				);
 
 				const userIds = userResponse.data.data.map((user) => user.id);
 
@@ -870,16 +914,22 @@ class StreamMonitor extends EventEmitter {
 					}
 				}
 
-				// Then get stream status for these users
-				const streamResponse = await axios.get(`https://api.twitch.tv/helix/streams`, {
-					headers: {
-						"Client-ID": this.twitchClientId,
-						Authorization: `Bearer ${this.twitchToken}`
-					},
-					params: {
-						user_id: userIds
-					}
-				});
+				// Then get stream status for these users — with retry + timeout
+				const streamResponse = await retryWithBackoff(
+					async () =>
+						await axios.get(`https://api.twitch.tv/helix/streams`, {
+							headers: {
+								"Client-ID": this.twitchClientId,
+								Authorization: `Bearer ${this.twitchToken}`
+							},
+							params: {
+								user_id: userIds
+							},
+							timeout: twitchTimeout
+						}),
+					3,
+					2000
+				);
 
 				// Process the results
 				const liveStreams = streamResponse.data.data;
@@ -949,10 +999,10 @@ class StreamMonitor extends EventEmitter {
 				} else {
 					failedBatches.push(batch);
 					this.logger.error(
-						"Error polling Twitch channels, adding to failed batch:",
+						`Error polling Twitch batch ${bAt} (${batch.length} channels), adding to failed:`,
 						error.message
 					);
-					this.logErrorToFile(`twitch-batch${bAt}-errors.json`, JSON.stringify(error, null, "\t"));
+					this.logErrorToFile(`twitch-batch${bAt}-errors.json`, JSON.stringify(error, null, "	"));
 				}
 			}
 
@@ -966,11 +1016,144 @@ class StreamMonitor extends EventEmitter {
 				);
 				this.cleanupChannelList(customChannels);
 			} else {
+				// Fallback: try failed channels individually to avoid batch DNS failures
+				const failedChannels = failedBatches.flat();
 				this.logger.warn(
-					`[_pollTwitchChannels] Error polling ${failedBatches.length} batches, trying again.`
+					`[_pollTwitchChannels] Batch failed for ${failedBatches.length} batches (${failedChannels.length} channels). Falling back to per-channel polling.`
 				);
-				this._pollTwitchChannels(failedBatches.flat(1));
+				await this._pollTwitchChannelsIndividual(failedChannels);
 			}
+		}
+	}
+
+	/**
+	 * Poll Twitch channels individually (one-by-one) as fallback when batch fails.
+	 * This avoids DNS failures taking down entire batches.
+	 * @private
+	 */
+	async _pollTwitchChannelsIndividual(channels) {
+		this.logger.info(
+			`[_pollTwitchChannelsIndividual] Polling ${channels.length} channels individually as fallback.`
+		);
+
+		const twitchTimeout = 10000;
+		const individuallyFailed = [];
+
+		for (const channel of channels) {
+			const sanitizedName = this.sanitizePlatformChannelName(channel.name.toLowerCase(), "twitch");
+
+			try {
+				// Get user ID
+				const userResponse = await retryWithBackoff(
+					async () =>
+						await axios.get(`https://api.twitch.tv/helix/users`, {
+							headers: {
+								"Client-ID": this.twitchClientId,
+								Authorization: `Bearer ${this.twitchToken}`
+							},
+							params: { login: [sanitizedName] },
+							timeout: twitchTimeout
+						}),
+					2,
+					1500
+				);
+
+				if (!userResponse.data.data || userResponse.data.data.length === 0) {
+					// Channel not found — track it
+					if (!this.twitchNotFounds[channel.name]) {
+						this.twitchNotFounds[channel.name] = 1;
+						this.logger.warn(`[Individual] Canal da Twitch não encontrado: '${channel.name}'.`);
+					} else {
+						this.twitchNotFounds[channel.name]++;
+						if (this.twitchNotFounds[channel.name] > 50) {
+							await this.pauseChannel(channel.name, "twitch");
+						}
+					}
+					continue;
+				}
+
+				const user = userResponse.data.data[0];
+
+				// Get stream status
+				const streamResponse = await retryWithBackoff(
+					async () =>
+						await axios.get(`https://api.twitch.tv/helix/streams`, {
+							headers: {
+								"Client-ID": this.twitchClientId,
+								Authorization: `Bearer ${this.twitchToken}`
+							},
+							params: { user_id: [user.id] },
+							timeout: twitchTimeout
+						}),
+					2,
+					1500
+				);
+
+				const liveStreams = streamResponse.data.data;
+				const isLiveNow = liveStreams.length > 0;
+				const channelKey = `twitch:${user.login.toLowerCase()}`;
+				const wasLive = this.streamStatuses[channelKey]?.isLive ?? false;
+				const liveStream = liveStreams[0];
+
+				// Update status
+				if (!this.streamStatuses[channelKey]) {
+					this.streamStatuses[channelKey] = {
+						isLive: isLiveNow,
+						lastChecked: new Date().toISOString(),
+						platform: "twitch",
+						channelName: user.login
+					};
+				} else {
+					this.streamStatuses[channelKey].isLive = isLiveNow;
+					this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
+				}
+
+				if (isLiveNow && liveStream) {
+					this.streamStatuses[channelKey].title = liveStream.title;
+					this.streamStatuses[channelKey].thumbnail = liveStream.thumbnail_url
+						.replace("{width}", "640")
+						.replace("{height}", "360");
+					this.streamStatuses[channelKey].viewerCount = liveStream.viewer_count;
+					this.streamStatuses[channelKey].platform = "twitch";
+					this.streamStatuses[channelKey].channelName = user.login;
+					this.streamStatuses[channelKey].startedAt = liveStream.started_at;
+					this.streamStatuses[channelKey].game = liveStream.game_name;
+				}
+
+				// Emit events
+				if (isLiveNow && !wasLive) {
+					await this._emitIfSafe("streamOnline", {
+						platform: "twitch",
+						channelName: user.login,
+						title: liveStream.title,
+						game: liveStream.game_name,
+						thumbnail: liveStream.thumbnail_url
+							.replace("{width}", "640")
+							.replace("{height}", "360"),
+						viewerCount: liveStream.viewer_count,
+						startedAt: liveStream.started_at
+					});
+				} else if (!isLiveNow && wasLive) {
+					await this._emitIfSafe("streamOffline", {
+						platform: "twitch",
+						channelName: user.login
+					});
+				}
+
+				// Update DB
+				await this._updateStatusInDB(channelKey, this.streamStatuses[channelKey]);
+			} catch (error) {
+				individuallyFailed.push(channel);
+				this.logger.error(`[Individual] Failed to poll '${channel.name}':`, error.message);
+			}
+
+			await sleep(500); // Small delay between individual requests
+		}
+
+		if (individuallyFailed.length > 0) {
+			this.logger.warn(
+				`[_pollTwitchChannelsIndividual] ${individuallyFailed.length} channels still failed individually.`
+			);
 		}
 	}
 
@@ -1022,9 +1205,7 @@ class StreamMonitor extends EventEmitter {
 
 				if (response.status === 200 && response.data) {
 					const liveData = new Map(response.data.data.map((ch) => [ch.slug.toLowerCase(), ch]));
-					this.logger.info(
-						`[_pollKickChannels] Response: '${JSON.stringify(liveData, null, "\t")}'`
-					);
+					this.logger.info(`[_pollKickChannels] Response: '${JSON.stringify(liveData, null, "	")}'`);
 
 					// Update status for all channels in the batch
 					for (const channel of batch) {
