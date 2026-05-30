@@ -1013,7 +1013,7 @@ class CommandHandler {
 			if (typeof command.method === "function") {
 				this.updateCooldown(command, groupId, bot.id);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
-				const result = await command.method(bot, message, args, group);
+				let result = await command.method(bot, message, args, group);
 
 				// Log usage
 				this.cmdUsage.logCommand({
@@ -1032,6 +1032,13 @@ class CommandHandler {
 
 				// Verifica se o resultado é um ReturnMessage ou array de ReturnMessages
 				if (result) {
+					if (typeof result === "string") {
+						result = new ReturnMessage({
+							chatId: groupId,
+							content: result,
+							options: { quotedMessageId: message.origin.id._serialized }
+						});
+					}
 					if (
 						result instanceof ReturnMessage ||
 						(Array.isArray(result) && result.length > 0 && result[0] instanceof ReturnMessage)
