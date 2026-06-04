@@ -2,7 +2,5 @@ _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
 🔥 *Novos*:
-- _!ajuda_: Peça ajuda para Ravena, ela sabe tudo sobre ela mesma!
-- _!0800 ou !giveaways_: Lista de joguinhos e coisas grátis!
-- _!tarot_: Consulte a cartomante para uma tiragem mística! (aceita pergunta)
-
+- ⚽️ _!copa_: Comandos da copa (jogos, estádios, times...)
+- 📦 _!correios AA123456789B Nome do Treco_: [Testes] API local que fiz pra rastrear pacotes! Ravena notifica quando movimenta o pacote

@@ -481,15 +481,26 @@ async function fetchStadiums() {
 /** Formata data local a partir de "MM/DD/YYYY HH:mm" (formato da API) */
 function fmtDate(dateStr) {
 	try {
-		// Formato da API: MM/DD/YYYY HH:mm
-		const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-		if (m) {
-			const d = new Date(`${m[3]}-${m[1]}-${m[2]}T00:00:00`);
-			return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
-		}
-		// Fallback ISO
-		const d = new Date(dateStr);
+		const d = parseGameDate(dateStr);
+		if (d.getTime() > 8000000000000000) return dateStr || "TBD";
 		return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+	} catch {
+		return dateStr || "TBD";
+	}
+}
+
+/** Formata data e hora local (ajustada) */
+function fmtFullDate(dateStr) {
+	try {
+		const d = parseGameDate(dateStr);
+		if (d.getTime() > 8000000000000000) return dateStr || "TBD";
+		const date = d.toLocaleDateString("pt-BR", {
+			day: "2-digit",
+			month: "2-digit",
+			year: "numeric"
+		});
+		const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+		return `${date} ${time}h`;
 	} catch {
 		return dateStr || "TBD";
 	}
@@ -507,15 +518,24 @@ function sortStandings(standings) {
 }
 
 /**
- * Converte "MM/DD/YYYY HH:mm" (formato da API) → Date.
+ * Converte "MM/DD/YYYY HH:mm" (formato da API) → Date com ajuste de fuso.
  * Retorna Date muito distante se inválido.
  */
-function parseGameDate(gm) {
-	const raw = gm.local_date || gm.date || "";
+function parseGameDate(gmOrStr) {
+	const raw = typeof gmOrStr === "string" ? gmOrStr : gmOrStr?.local_date || gmOrStr?.date || "";
 	const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
-	if (m) return new Date(`${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00`);
-	const d = new Date(raw);
-	return isNaN(d) ? new Date(8640000000000000) : d;
+	let d;
+	if (m) {
+		d = new Date(`${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00`);
+	} else {
+		d = new Date(raw);
+	}
+
+	if (isNaN(d)) return new Date(8640000000000000);
+
+	// Ajuste de +3 horas para o fuso horário GMT-3 (ajuste solicitado)
+	d.setHours(d.getHours() + 3);
+	return d;
 }
 
 /** Formata um countdown de milissegundos em "Xd Yh Zm" */
@@ -549,7 +569,7 @@ async function copaMenu(bot, message, args, group) {
 			const kickoff = parseGameDate(firstGame);
 			const countdown = fmtCountdown(kickoff - Date.now());
 			if (countdown) {
-				const kickoffStr = fmtDate(firstGame.local_date);
+				const kickoffStr = fmtDate(firstGame);
 				countdownLine = `\n⏳ *Faltam ${countdown} para a Copa!*\n_(1º jogo: ${kickoffStr})_\n`;
 			}
 		}
@@ -840,7 +860,7 @@ async function copaJogos(bot, message, args, group) {
 				const away = teamsMap[gm.away_team_id] || {};
 				const finished = isFinished(gm);
 				const score = finished ? `*${gm.home_score || 0} x ${gm.away_score || 0}*` : "vs";
-				const day = gm.local_date ? fmtDate(gm.local_date) : "";
+				const day = gm.local_date ? fmtDate(gm) : "";
 				const status = finished ? "✅" : "⏳";
 				msg += `${status} ${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}`;
 				if (gm.matchday) msg += ` (Rodada ${gm.matchday})`;
@@ -887,7 +907,11 @@ async function copaJogos(bot, message, args, group) {
 			for (const gm of dayGames) {
 				const home = teamsMap[gm.home_team_id] || {};
 				const away = teamsMap[gm.away_team_id] || {};
-				const time = (gm.local_date || "").split(" ")[1]?.slice(0, 5) || "";
+				const gameDate = parseGameDate(gm);
+				const time =
+					gameDate.getHours().toString().padStart(2, "0") +
+					":" +
+					gameDate.getMinutes().toString().padStart(2, "0");
 				const grp = `[${gm.id}]${gm.group ? `[${gm.group}]` : ""} `;
 				msg += `  ⚽ ${grp}${home.flagEmoji || ""} ${home.namePt || "?"} vs ${away.flagEmoji || ""} ${away.namePt || "?"}`;
 				if (time) msg += ` — ${time}h`;
@@ -949,7 +973,7 @@ async function copaJogo(bot, message, args, group) {
 			`🏆 *Placar:* ${score}\n` +
 			`📌 Grupo: *${game.group || "—"}*\n` +
 			`🔄 Rodada: ${game.matchday || "—"}\n` +
-			`📆 Data: ${game.local_date || "TBD"}\n` +
+			`📆 Data: ${fmtFullDate(game)}\n` +
 			`✅ Finalizado: ${finished ? "Sim 🏁" : "Não ⏳"}\n`;
 
 		if (game.type) msg += `🏅 Fase: ${game.type}\n`;
