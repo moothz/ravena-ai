@@ -283,7 +283,7 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 				...(process.env.YT_USE_COOKIES === "true"
 					? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
 					: {}),
-				"js-runtimes": "node"
+				jsRuntimes: "node"
 			})
 			.then((videoInfo) => {
 				const autorVideo = videoInfo.uploader;
@@ -308,7 +308,7 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 						...(process.env.YT_USE_COOKIES === "true"
 							? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
 							: {}),
-						"js-runtimes": "node"
+						jsRuntimes: "node"
 					})
 						.then((output) => {
 							if (output.fromCache) {
@@ -358,7 +358,7 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 				...(process.env.YT_USE_COOKIES === "true"
 					? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
 					: {}),
-				"js-runtimes": "node"
+				jsRuntimes: "node"
 			})
 			.then((videoInfo) => {
 				const autorVideo = videoInfo.uploader;
@@ -387,7 +387,7 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					...(process.env.YT_USE_COOKIES === "true"
 						? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
 						: {}),
-					"js-runtimes": "node"
+					jsRuntimes: "node"
 				};
 
 				downloadWithRetry(urlSafe, downloadOptions)
