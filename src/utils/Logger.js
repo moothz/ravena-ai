@@ -93,7 +93,21 @@ class Logger {
 		// Adiciona dados se fornecidos
 		if (data) {
 			if (typeof data === "object") {
-				logMessage += "\n" + util.inspect(data, { depth: null, colors: false });
+				// Se for um erro do Axios, simplifica pra não explodir o log
+				if (data.isAxiosError || data.name === "AxiosError") {
+					const simplified = {
+						message: data.message,
+						code: data.code,
+						status: data.response?.status,
+						method: data.config?.method,
+						url: data.config?.url,
+						responseData: data.response?.data
+					};
+					logMessage += "\n" + util.inspect(simplified, { depth: 2, colors: false });
+				} else {
+					// Usa profundidade limitada para evitar logs gigantescos
+					logMessage += "\n" + util.inspect(data, { depth: 3, colors: false });
+				}
 			} else {
 				logMessage += " " + data;
 			}

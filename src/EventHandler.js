@@ -288,7 +288,16 @@ class EventHandler extends EventEmitter {
 			//this.userGreetingManager.processGreeting(bot, message);
 
 			// Obtém conteúdo de texto da mensagem (corpo ou legenda)
-			const textContent = message.type === "text" ? message.content : message.caption;
+			let textContent = message.type === "text" ? message.content : message.caption;
+
+			// Limpa espaços e markup de monospace do WhatsApp (backticks)
+			if (textContent && typeof textContent === "string") {
+				textContent = textContent.trim();
+				// Remove backticks se estiverem no início e fim (ex: `!ping`)
+				if (textContent.startsWith("`") && textContent.endsWith("`")) {
+					textContent = textContent.slice(1, -1).trim();
+				}
+			}
 
 			// Se mensagem de grupo, obtém ou cria o grupo
 			let group = null;
@@ -343,6 +352,7 @@ class EventHandler extends EventEmitter {
 				// Ajuda com recuperação de grupo
 				if (
 					textContent &&
+					typeof textContent === "string" &&
 					textContent.trim().toLowerCase() === "ravena, ajude a recuperar meu grupo!"
 				) {
 					try {
@@ -446,7 +456,7 @@ class EventHandler extends EventEmitter {
 
 			// Se não houver conteúdo de texto, não pode ser um comando ou menção
 			if (!textContent) {
-				return this.processNonCommandMessage(bot, message, group);
+				return this.processNonCommandMessage(bot, message, group, textContent);
 			}
 
 			// Verifica menções ao bot
@@ -467,7 +477,10 @@ class EventHandler extends EventEmitter {
 			if (isCommand) {
 				// Se o prefixo for vazio, usa o texto completo como comando
 				// Se não, remove o prefixo do início
-				const commandText = prefix === "" ? textContent : textContent.substring(prefix.length);
+				let commandText = prefix === "" ? textContent : textContent.substring(prefix.length);
+
+				// Remove espaços extras após o prefixo (ex: "! ping" -> "ping")
+				commandText = commandText.trimStart();
 
 				// IMPORTANTE: Verificação especial para comandos de gerenciamento mesmo com prefixo vazio
 				if (commandText.startsWith("g-")) {
@@ -494,7 +507,7 @@ class EventHandler extends EventEmitter {
 			} else {
 				// Processa mensagem não-comando
 				// Aqui também vai cair quando o grupo tiver a opção customIgnoresPrefix, que os comandos personalizados não precisam de prefixo
-				this.processNonCommandMessage(bot, message, group).catch((error) => {
+				this.processNonCommandMessage(bot, message, group, textContent).catch((error) => {
 					this.logger.error("Erro em processNonCommandMessage:", error);
 				});
 			}
@@ -508,8 +521,9 @@ class EventHandler extends EventEmitter {
 	 * @param {WhatsAppBot} bot - A instância do bot
 	 * @param {Object} message - A mensagem formatada
 	 * @param {Group} group - O objeto do grupo (se em grupo)
+	 * @param {string} textContent - O texto da mensagem (opcional, já limpo)
 	 */
-	async processNonCommandMessage(bot, message, group) {
+	async processNonCommandMessage(bot, message, group, textContent = null) {
 		// Verifica se é uma mensagem de voz para processamento automático de STT
 		const processed = await SpeechCommands.processAutoSTT(bot, message, group, {
 			returnResult: true
@@ -620,7 +634,9 @@ class EventHandler extends EventEmitter {
 			try {
 				// Se o grupo escolheu a opção 'customIgnoresPrefix', pode ser que um comando personalizado esteja sendo executado
 				// Gera um comando e manda pro handleCommand, mas com a flag de ser apenas custom
-				const textContent = message.type === "text" ? message.content : message.caption;
+				if (!textContent) {
+					textContent = message.type === "text" ? message.content : message.caption;
+				}
 
 				if (group.customIgnoresPrefix) {
 					this.commandHandler.processCustomIgnoresPrefix(textContent, bot, message, group);

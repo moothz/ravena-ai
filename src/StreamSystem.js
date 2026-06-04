@@ -383,6 +383,7 @@ class StreamSystem {
 
 			// Tenta enviar com cada bot candidato até conseguir
 			let sentSuccess = false;
+			let titleChanged = false;
 			const notInGroupErrors = [];
 
 			for (const bot of bots) {
@@ -390,11 +391,15 @@ class StreamSystem {
 					const returnMessages = [];
 
 					// Processa alteração de título (se habilitada)
-					this.logger.debug(
-						`[processStreamEvent] ${group.name} -> changeTitleOnEvent '${channelConfig.changeTitleOnEvent}'`
-					);
-					if (channelConfig.changeTitleOnEvent) {
-						await this.changeGroupTitleForStream(bot, group, channelConfig, eventData, eventType);
+					if (channelConfig.changeTitleOnEvent && !titleChanged) {
+						this.logger.debug(`[processStreamEvent] ${group.name} -> changeTitleOnEvent 'true'`);
+						titleChanged = await this.changeGroupTitleForStream(
+							bot,
+							group,
+							channelConfig,
+							eventData,
+							eventType
+						);
 					}
 
 					// Obter menções
@@ -433,12 +438,9 @@ class StreamSystem {
 						const resultados = await bot.sendReturnMessages(returnMessages);
 
 						// Verifica se houve erro de envio específico de "não está no grupo"
-						// Assumindo que sendReturnMessages retorna array de resultados ou objetos de erro
 						let botNotInGroupError = false;
 
 						for (const res of resultados) {
-							// Adaptação para verificar erro na resposta do bot
-							// Exemplo: { status: 500, message: '...', data: { error: "failed to get group members: you're not participating in that group" } }
 							if (res && res.error) {
 								const err = res.error;
 								// Coleta todas as possíveis strings de erro (mensagem, data.error, response.data.error)
@@ -473,7 +475,7 @@ class StreamSystem {
 							continue; // Tenta próximo bot
 						}
 
-						// Sucesso!
+						// Sucesso no envio das mensagens!
 						sentSuccess = true;
 						this.logger.info(
 							`Notificação de ${eventData.platform}/${eventData.channelName} enviada para ${group.name} (${group.id}) via ${bot.id}`
@@ -487,9 +489,13 @@ class StreamSystem {
 						}
 						break; // Sai do loop de bots
 					} else {
-						// Nenhuma mensagem gerada, considera "sucesso" para não tentar outros bots inutilmente
-						sentSuccess = true;
-						break;
+						// Nenhuma mensagem gerada.
+						// Se era pra mudar o título e conseguimos (ou não era pra mudar), consideramos sucesso.
+						if (!channelConfig.changeTitleOnEvent || titleChanged) {
+							sentSuccess = true;
+							break;
+						}
+						// Se falhou em mudar o título e não tinha mensagens, continua tentando com o próximo bot
 					}
 				} catch (err) {
 					this.logger.error(`Erro ao tentar enviar com bot ${bot.id} para grupo ${group.id}:`, err);
@@ -608,7 +614,19 @@ class StreamSystem {
 	async changeGroupTitleForStream(bot, group, channelConfig, eventData, eventType) {
 		try {
 			const chat = await bot.client.getChatById(group.id);
-			if (!chat || !chat.isGroup) return;
+			if (!chat || !chat.isGroup) {
+				//this.logger.debug(`Bot ${bot.id} não conseguiu obter chat para ${group.id}`);
+				return false;
+			}
+
+			if (chat.notInGroup) {
+				this.logger.debug(
+					`Bot ${bot.id} não está no grupo ${group.id}, ignorando mudança de título.`
+				);
+				return false;
+			}
+
+			let success = true;
 
 			if (channelConfig.changeTitleOnEvent) {
 				let newTitle;
@@ -642,10 +660,18 @@ class StreamSystem {
 				}
 
 				try {
-					this.logger.debug(`[changeGroupTitleForStream] Result ${group.name} -> '${newTitle}'`);
-					await chat.setSubject(newTitle);
+					if (chat.name === newTitle) {
+						this.logger.debug(`[changeGroupTitleForStream] Título já está correto: ${newTitle}`);
+					} else if (typeof chat.setSubject === "function") {
+						this.logger.debug(`[changeGroupTitleForStream] Result ${group.name} -> '${newTitle}'`);
+						await chat.setSubject(newTitle);
+					} else {
+						this.logger.warn(`Bot ${bot.id} não possui método setSubject para o grupo ${group.id}`);
+						success = false;
+					}
 				} catch (titleError) {
 					this.logger.error(`Erro ao alterar título do grupo ${group.id}:`, titleError);
+					success = false;
 				}
 			}
 
@@ -655,8 +681,14 @@ class StreamSystem {
 			} else if (eventType === "offline" && channelConfig.groupPhotoOffline) {
 				await this.changeGroupPhoto(bot, chat, channelConfig.groupPhotoOffline);
 			}
+
+			return success;
 		} catch (error) {
-			this.logger.error(`Erro ao alterar título/foto do grupo ${group.id}:`, error);
+			this.logger.error(
+				`Erro ao alterar título/foto do grupo ${group.id} via bot ${bot.id}:`,
+				error
+			);
+			return false;
 		}
 	}
 

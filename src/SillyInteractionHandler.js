@@ -163,8 +163,14 @@ class SillyInteractionHandler {
 			return false;
 		}
 
-		const text = message.content || message.caption;
-		if (!text) return false;
+		let text = message.content || message.caption;
+		if (!text || typeof text !== "string") return false;
+
+		// Limpa espaços e markup de monospace do WhatsApp (backticks)
+		text = text.trim();
+		if (text.startsWith("`") && text.endsWith("`")) {
+			text = text.slice(1, -1).trim();
+		}
 
 		let normalizedText = this.normalize(text).trim();
 
