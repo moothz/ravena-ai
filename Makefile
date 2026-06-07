@@ -133,6 +133,9 @@ test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick 
 	docker cp $(FILE) $$(docker compose ps -q ravena-ai):/app/$(FILE)
 	docker compose exec ravena-ai node run-testes.js
 
+test-providers: ## Testa todos os provedores de IA do service-providers.json
+	@node test-providers.js
+
 
 update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o container
 	@printf "$(CYAN)Sincronizando submódulo whatsgoapi...$(NC)\n"

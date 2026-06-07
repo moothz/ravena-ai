@@ -146,7 +146,7 @@ data/textos/archive.txt
 /src/scripts
 /old
 /.Trash-1000
-test-*
+test-output-*
 *.swp
 
 # Ravena data
