@@ -42,11 +42,19 @@ async function askAnythingLLM(question, sessionId = null) {
 			timeout: 30000
 		});
 
-		return (
+		let answer =
 			response.data.textResponse ||
 			response.data.text ||
-			"Desculpe, não consegui obter uma resposta."
-		);
+			"Desculpe, não consegui obter uma resposta.";
+
+		// Remover tags <think>...</think> (DeepSeek reasoning)
+		// Regex case-insensitive e mais robusta (trata tags não fechadas)
+		const thinkRegex = /<think>[\s\S]*?(?:<\/think>|$)/gi;
+		if (thinkRegex.test(answer)) {
+			answer = answer.replace(thinkRegex, "").trim();
+		}
+
+		return answer;
 	} catch (error) {
 		logger.error("Erro ao consultar AnythingLLM:", error.message);
 

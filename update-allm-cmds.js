@@ -245,6 +245,19 @@ Você (AnythingLLM) deve atuar como uma assistente proativa. Siga estas regras:
 	console.log("✅ Arquivo ravena-llm-helper.md gerado com sucesso!");
 
 	console.log("\n✨ Processo concluído!");
+
+	// Tenta fechar o banco de dados graciosamente, mas força a saída
+	try {
+		const Database = require("./src/utils/Database");
+		const db = Database.getInstance();
+		if (db && typeof db.closeAll === "function") {
+			await db.closeAll();
+		}
+	} catch (e) {
+		// Ignora erros ao fechar
+	}
+
+	process.exit(0);
 }
 
 generateDocs().catch((err) => {
