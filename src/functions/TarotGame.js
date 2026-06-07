@@ -4,7 +4,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const LLMService = require("../services/LLMService");
-const comfyModule = require("./ComfyUICommands");
+const bonsaiModule = require("./BonsaiCommands");
 
 const logger = new Logger("tarot-game");
 const database = Database.getInstance();
@@ -275,7 +275,7 @@ Responda em PORTUGUÊS BRASIL.`;
 		// 4. Try to generate Image
 		try {
 			const imagePrompt = `Mesa de Tarot em uma taverna futurista. Mesa de madeira, mística, neon. Contém 3 cartas de tarot recém selecionadas: ${drawn[0].name}, ${drawn[1].name}, ${drawn[2].name}. Estilo místico, futurista, detalhado, iluminação neon suave.`;
-			const imageResult = await comfyModule.generateImage(bot, message, imagePrompt, group, true, {
+			const imageResult = await bonsaiModule.generateImage(bot, message, imagePrompt, group, true, {
 				skipNSFW: true,
 				isProgrammatic: true
 			});

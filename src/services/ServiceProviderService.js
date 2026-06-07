@@ -124,6 +124,7 @@ class ServiceProviderService {
 			llm: [],
 			whisper: [],
 			comfyui: [],
+			bonsai: [],
 			sdwebui: [],
 			alltalk: []
 		};

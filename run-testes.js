@@ -50,43 +50,11 @@ async function main() {
 	// TESTES — adicione/remova/comente conforme necessário
 	// ===========================================================================
 
-	// Teste básico de ping
-	runner.run("!ping", () => msgTexto("!ping"));
-
-	// YouTube — busca texto
-	// Espera 2 mensagens (a de busca e a de mídia) com timeout maior (60s)
-	runner.run("!yt - busca texto", () => msgTexto("!yt receita pudim"), {
-		expectedMessages: 2,
-		timeout: 60000
+	// Imagine Bonsai
+	runner.run("!imagine - bonsai", () => msgTexto("!imagine a neon bonsai tree"), {
+		expectedMessages: 1,
+		timeout: 120000
 	});
-
-	// Sticker de imagem
-	// (requer data/test-image.png)
-	// runner.run("!s - sticker de imagem", () =>
-	// 	msgMedia("!s", "./data/test-image.png", { type: "image" })
-	// );
-
-	// Sticker de áudio
-	// (requer data/test-audio.mp3)
-	// runner.run("!s - sticker de áudio", () =>
-	// 	msgMedia("!s", "./data/test-audio.mp3", { type: "audio" })
-	// );
-
-	// Comando com mensagem quoted
-	// runner.run("!resumo - com quoted", async () => {
-	// 	const quoted = msgTexto("Este é o texto longo que deve ser resumido pelo comando.");
-	// 	return msgComQuote("!resumo", quoted);
-	// });
-
-	// Objeto de mensagem totalmente customizado (autor diferente, sem grupo)
-	// runner.run("!help - no privado", () =>
-	// 	msgCustom({
-	// 		content: "!help",
-	// 		type: "text",
-	// 		group: null,               // null = mensagem privada
-	// 		author: "5511000000001@s.whatsapp.net"
-	// 	})
-	// );
 
 	// ===========================================================================
 	// Executa e encerra

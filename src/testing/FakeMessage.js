@@ -70,6 +70,11 @@ function createMessage(overrides = {}) {
 				return content;
 			}
 			return null;
+		},
+
+		// getQuotedMessage stub
+		getQuotedMessage: async () => {
+			throw new Error("getQuotedMessage is not available on this message");
 		}
 	};
 

@@ -1,8 +1,6 @@
 const path = require("path");
 const axios = require("axios");
 const fs = require("fs").promises;
-const WebSocket = require("ws");
-const { v4: uuidv4 } = require("uuid");
 const sharp = require("sharp");
 const Logger = require("../utils/Logger");
 const NSFWPredict = require("../utils/NSFWPredict");
@@ -12,7 +10,7 @@ const { translateText } = require("./TranslationCommands");
 const Database = require("../utils/Database");
 const database = Database.getInstance();
 
-const logger = new Logger("comfyui-commands");
+const logger = new Logger("bonsai-commands");
 const nsfwPredict = NSFWPredict.getInstance();
 const LLMService = require("../services/LLMService");
 const ServiceProviderService = require("../services/ServiceProviderService");
@@ -20,43 +18,40 @@ const serviceProviderService = ServiceProviderService.getInstance();
 
 // Initialize Media Stats Database
 database.getSQLiteDb(
-	"media_stats",
+	"bonsai_stats",
 	`
-    CREATE TABLE IF NOT EXISTS comfy_stats (
+    CREATE TABLE IF NOT EXISTS bonsai_stats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp INTEGER,
         resolution TEXT,
         count INTEGER DEFAULT 1,
         model TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_comfy_ts ON comfy_stats(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_bonsai_ts ON bonsai_stats(timestamp);
 `
 );
 
 /**
- * Tracks ComfyUI usage stats
+ * Tracks Bonsai usage stats
  * @param {string} resolution - Image resolution (e.g., "1024x1024")
  * @param {number} count - Number of images generated
  * @param {string} model - Model used
  */
-async function trackComfyStats(resolution, count = 1, model = "unknown") {
+async function trackBonsaiStats(resolution, count = 1, model = "unknown") {
 	try {
 		await database.dbRun(
-			"media_stats",
-			`INSERT INTO comfy_stats (timestamp, resolution, count, model) VALUES (?, ?, ?, ?)`,
+			"bonsai_stats",
+			`INSERT INTO bonsai_stats (timestamp, resolution, count, model) VALUES (?, ?, ?, ?)`,
 			[Date.now(), resolution, count, model]
 		);
 	} catch (e) {
-		logger.error("Error tracking comfy stats:", e);
+		logger.error("Error tracking bonsai stats:", e);
 	}
 }
 
-const samplers = ["dpmpp_sde", "euler_ancestral", "res_multistep"];
-const schedulers = ["simple", "beta"]; // ddim_uniform
-
-function getComfyUIUrl() {
-	const providers = serviceProviderService.getProviders("comfyui");
-	let url = providers[0]?.url || "http://127.0.0.1:8188";
+function getBonsaiUrl() {
+	const providers = serviceProviderService.getProviders("bonsai");
+	let url = providers[0]?.url || "http://192.168.195.212:13434";
 	if (!url.match(/^https?:\/\//)) {
 		url = "http://" + url;
 	}
@@ -65,251 +60,8 @@ function getComfyUIUrl() {
 
 const aesthetic = "\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
 
-function getWsUrl() {
-	const url = getComfyUIUrl();
-	const urlObj = new URL(url);
-	const httpProtocol = urlObj.protocol; // 'http:' or 'https:'
-	const wsProtocol = httpProtocol === "https:" ? "wss:" : "ws:";
-	const host = urlObj.host;
-
-	const httpBaseUrl = `${httpProtocol}//${host}`;
-	const wsUrl = `${wsProtocol}//${host}/ws`;
-	return { httpBaseUrl, wsUrl };
-}
-
-const clientId = uuidv4();
-let ws = null;
-const pendingRequests = new Map();
-
-function connectWebSocket() {
-	if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
-	const { wsUrl } = getWsUrl();
-	logger.info(`Connecting to ComfyUI WebSocket at ${wsUrl}...`);
-	try {
-		ws = new WebSocket(`${wsUrl}?clientId=${clientId}`);
-	} catch (e) {
-		logger.error("Failed to create WebSocket:", e);
-		return;
-	}
-
-	ws.on("open", () => {
-		logger.info("ComfyUI WebSocket connected");
-	});
-
-	ws.on("message", (data) => {
-		try {
-			const messageStr = data.toString();
-			// Handle multiple JSON objects potentially separated by newlines
-			const messages = messageStr
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => {
-					try {
-						return JSON.parse(line);
-					} catch (e) {
-						return null;
-					}
-				})
-				.filter(Boolean);
-
-			for (const message of messages) {
-				if (message.type === "executed") {
-					const promptId = message.data.prompt_id;
-					if (pendingRequests.has(promptId)) {
-						handleExecutionSuccess(promptId);
-					}
-				} else if (message.type === "execution_error") {
-					const promptId = message.data.prompt_id;
-					if (pendingRequests.has(promptId)) {
-						const { reject } = pendingRequests.get(promptId);
-						pendingRequests.delete(promptId);
-						reject(new Error(`ComfyUI Execution Error: ${JSON.stringify(message.data)}`));
-					}
-				}
-			}
-		} catch (err) {
-			logger.error("Error parsing WebSocket message", err);
-		}
-	});
-
-	ws.on("close", () => {
-		logger.warn("ComfyUI WebSocket closed. Reconnecting in 60s...");
-		ws = null;
-		setTimeout(connectWebSocket, 60000);
-	});
-
-	ws.on("error", (err) => {
-		logger.error("ComfyUI WebSocket error:", err);
-	});
-}
-
-// Initialize connection
-connectWebSocket();
-
-async function handleExecutionSuccess(promptId) {
-	const request = pendingRequests.get(promptId);
-	if (!request) return;
-
-	const { resolve, reject } = request;
-	pendingRequests.delete(promptId);
-
-	try {
-		const { httpBaseUrl } = getWsUrl();
-		const historyResponse = await axios.get(`${httpBaseUrl}/history/${promptId}`);
-		const history = historyResponse.data[promptId];
-
-		// Output node ID from the template
-		const outputNodeId = "9";
-
-		if (!history.outputs || !history.outputs[outputNodeId]) {
-			throw new Error("No output found in history for node " + outputNodeId);
-		}
-
-		const images = history.outputs[outputNodeId].images;
-		if (!images || images.length === 0) {
-			throw new Error("No images generated.");
-		}
-
-		// Fetch the first image
-		const image = images[0];
-		const imageResponse = await axios.get(`${httpBaseUrl}/view`, {
-			params: {
-				filename: image.filename,
-				subfolder: image.subfolder,
-				type: image.type
-			},
-			responseType: "arraybuffer"
-		});
-
-		resolve(Buffer.from(imageResponse.data));
-	} catch (error) {
-		reject(error);
-	}
-}
-
-async function queuePrompt(promptText, sampler = "dpmpp_sde", scheduler = "beta") {
-	if (!ws || ws.readyState !== WebSocket.OPEN) {
-		// Attempt immediate reconnect/wait if not open
-		if (!ws || ws.readyState === WebSocket.CLOSED) connectWebSocket();
-
-		// Wait up to 5 seconds for connection
-		let attempts = 0;
-		while ((!ws || ws.readyState !== WebSocket.OPEN) && attempts < 50) {
-			await new Promise((r) => setTimeout(r, 100));
-			attempts++;
-		}
-
-		if (!ws || ws.readyState !== WebSocket.OPEN) {
-			throw new Error("Could not connect to ComfyUI WebSocket.");
-		}
-	}
-
-	const apiPrompt = {
-		3: {
-			class_type: "KSampler",
-			inputs: {
-				model: ["11", 0],
-				positive: ["27", 0],
-				negative: ["33", 0],
-				latent_image: ["13", 0],
-				seed: Math.floor(Math.random() * 999999999999999),
-				steps: 8,
-				cfg: 1,
-				sampler_name: sampler,
-				scheduler,
-				denoise: 1
-			}
-		},
-		8: {
-			class_type: "VAEDecode",
-			inputs: {
-				samples: ["3", 0],
-				vae: ["29", 0]
-			}
-		},
-		9: {
-			class_type: "PreviewImage",
-			inputs: {
-				images: ["8", 0]
-			}
-		},
-		11: {
-			class_type: "ModelSamplingAuraFlow",
-			inputs: {
-				model: ["28", 0],
-				shift: 3
-			}
-		},
-		13: {
-			class_type: "EmptySD3LatentImage",
-			inputs: {
-				width: 1024,
-				height: 1024,
-				batch_size: 1
-			}
-		},
-		27: {
-			class_type: "CLIPTextEncode",
-			inputs: {
-				text: promptText,
-				clip: ["30", 0]
-			}
-		},
-		28: {
-			class_type: "UNETLoader",
-			inputs: {
-				unet_name: "z_image_turbo_bf16.safetensors",
-				weight_dtype: "default"
-			}
-		},
-		29: {
-			class_type: "VAELoader",
-			inputs: {
-				vae_name: "ae.safetensors"
-			}
-		},
-		30: {
-			class_type: "CLIPLoader",
-			inputs: {
-				clip_name: "qwen_3_4b.safetensors",
-				stop_at_clip_layer: -1,
-				clip_skip: 0,
-				type: "lumina2",
-				backend: "default"
-			}
-		},
-		33: {
-			class_type: "ConditioningZeroOut",
-			inputs: {
-				conditioning: ["27", 0]
-			}
-		}
-	};
-
-	const { httpBaseUrl } = getWsUrl();
-	const response = await axios.post(`${httpBaseUrl}/prompt`, {
-		prompt: apiPrompt,
-		client_id: clientId
-	});
-
-	const promptId = response.data.prompt_id;
-
-	return new Promise((resolve, reject) => {
-		pendingRequests.set(promptId, { resolve, reject });
-
-		// Timeout after 3 minutes
-		setTimeout(() => {
-			if (pendingRequests.has(promptId)) {
-				pendingRequests.delete(promptId);
-				reject(new Error("Generation timed out"));
-			}
-		}, 180000);
-	});
-}
-
 /**
- * Gera uma imagem usando ComfyUI
+ * Gera uma imagem usando Bonsai
  */
 async function generateImage(bot, message, args, group, skipNotify = true, options = {}) {
 	const llmService = LLMService.getInstance();
@@ -338,17 +90,11 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		});
 	}
 
-	// Verificar se o servidor ComfyUI está online via WebSocket
-	if (!ws || ws.readyState !== WebSocket.OPEN) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ O servidor de geração de imagens está temporariamente offline. 😔"
-		});
-	}
+	const bonsaiUrl = getBonsaiUrl();
 
 	prompt = await translateText(prompt, "pt", "en");
 
-	logger.info(`Gerando imagem com prompt: '${prompt}'`);
+	logger.info(`Gerando imagem com Bonsai, prompt: '${prompt}'`);
 
 	try {
 		if (!skipNotify) {
@@ -405,16 +151,30 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		// Inicia cronômetro
 		const startTime = Date.now();
 
-		const sampler = samplers[Math.floor(Math.random() * samplers.length)];
-		const scheduler = schedulers[Math.floor(Math.random() * schedulers.length)];
-
-		// Queue Prompt and Wait for Image
 		const EventHandler = require("../EventHandler");
 		EventHandler.getInstance().emit("activity", { type: "imagine" });
-		let imageBuffer = await queuePrompt(prompt + aesthetic, sampler, scheduler);
+
+		// Request to Bonsai API
+		const response = await axios.post(
+			`${bonsaiUrl}/generate`,
+			{
+				prompt: prompt + aesthetic,
+				width: 1024,
+				height: 1024,
+				seed: Math.floor(Math.random() * 9999999),
+				num_inference_steps: 20,
+				guidance_scale: 7.5
+			},
+			{
+				responseType: "arraybuffer",
+				timeout: 60000
+			}
+		);
+
+		let imageBuffer = Buffer.from(response.data);
 
 		// Track stats
-		trackComfyStats("1024x1024", 1, "z-image-turbo-bf16");
+		trackBonsaiStats("1024x1024", 1, "bonsai-ternary");
 
 		// Calcula o tempo de geração
 		const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -479,7 +239,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 			await fs.mkdir(tempDir, { recursive: true });
 		}
 
-		const tempImagePath = path.join(tempDir, `comfy-${Date.now()}.jpg`);
+		const tempImagePath = path.join(tempDir, `bonsai-${Date.now()}.jpg`);
 		await fs.writeFile(tempImagePath, imageBuffer);
 
 		logger.info(`Imagem salva em: ${tempImagePath}`);
@@ -488,9 +248,6 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		let isNSFW = false;
 		if (!options.skipNSFW) {
 			try {
-				// Encode buffer to base64 for NSFW predictor if needed,
-				// but the Predictor usually takes base64 string or path.
-				// StableDiffusionCommands passed base64 string.
 				const imageBase64 = imageBuffer.toString("base64");
 				const nsfwResult = await nsfwPredict.detectNSFW(imageBase64);
 				isNSFW = nsfwResult.isNSFW;
@@ -515,7 +272,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 			tempImagePath
 		);
 
-		const caption = `🎨 *Prompt:* ${prompt}\n📊 *Modelo:* _z-image-turbo-bf16_\n🩻*Sampler&Scheduler*: _${sampler}/${scheduler}_\n🕐 *Tempo:* ${generationTime}s${safetyMsg}`;
+		const caption = `🎨 *Prompt:* ${prompt}\n📊 *Modelo:* _bonsai-ternary_\n🕐 *Tempo:* ${generationTime}s${safetyMsg}`;
 
 		const media = await bot.createMedia(tempImagePath);
 		const filterNSFW = group?.filters?.nsfw ?? false;
@@ -568,7 +325,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		let errorMessage = "Erro ao gerar imagem.";
 		if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
 			errorMessage =
-				"Não foi possível conectar ao servidor ComfyUI. Verifique se ele está rodando e acessível.";
+				"Não foi possível conectar ao servidor Bonsai. Verifique se ele está rodando e acessível.";
 		} else {
 			errorMessage = `Erro: ${error.message}`;
 		}
@@ -604,4 +361,4 @@ const commands = [
 	})
 ];
 
-// module.exports = { commands, generateImage };
+module.exports = { commands, generateImage };

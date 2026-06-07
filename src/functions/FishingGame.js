@@ -6,7 +6,7 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
-const sdModule = require("./ComfyUICommands");
+const bonsaiModule = require("./BonsaiCommands");
 const ReturnMessage = require("../models/ReturnMessage");
 
 const logger = new Logger("fishing-game");
@@ -1331,9 +1331,9 @@ Dynamic, action-ready close-up composition, medium depth-of-field, hyper-detaile
 			}
 		};
 
-		if (!sdModule || !sdModule.generateImage) return null;
+		if (!bonsaiModule || !bonsaiModule.generateImage) return null;
 
-		const result = await sdModule.generateImage(
+		const result = await bonsaiModule.generateImage(
 			bot,
 			mockMessage,
 			prompt,

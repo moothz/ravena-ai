@@ -70,6 +70,13 @@
 			"enabled": true
 		}
 	],
+	"bonsai": [
+		{
+			"name": "primary",
+			"url": "http://192.168.195.212:13434",
+			"enabled": true
+		}
+	],
 	"sdwebui": [
 		{
 			"name": "primary",

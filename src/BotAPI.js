@@ -190,7 +190,7 @@ class BotAPI {
 			return "down";
 		};
 
-		services.imagine = await checkCategoryStatus("comfyui");
+		services.imagine = await checkCategoryStatus("bonsai");
 		const LLMService = require("./services/LLMService");
 		services.llm = LLMService.getInstance().getDetailedStatus();
 		services.whisper = await checkCategoryStatus("whisper");
