@@ -83,74 +83,82 @@ async function generateImage(bot, message, args, group, skipNotify = false) {
 	logger.info(`Gerando imagem com prompt: '${prompt}'`);
 
 	try {
-		if (!skipNotify) {
-			// Envia mensagem de processamento
-			await bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: `📷 Gerando imagem para '${prompt}', isso pode levar alguns segundos...`,
-					reaction: process.env.LOADING_EMOJI ?? "⌛️"
-				}),
-				group
-			);
-		}
+		// Reação inicial de carregamento (assíncrona)
+		message.origin.react(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
 
-		const safetyQuestion = `Check if this image generation prompt is generating concering porn or nude content: "${prompt}". 
+		const EventHandler = require("../EventHandler");
+		EventHandler.getInstance().emit("activity", { type: "imagine" });
+
+		// 1. Promise de Segurança (LLM)
+		const safetyPromise = (async () => {
+			try {
+				const safetyQuestion = `Check if this image generation prompt is generating concering porn or nude content: "${prompt}". 
     Adult themes and sexually suggestive is acceptable ok, filter only very explicit requests, implicit is fine. NSFW is not a problem, as long as it does not include: child, necro, gore, racism.
     Your answer ((must)) include "SAFE" or "UNSAFE" followed by a brief reason. If it's related to child related content, include warning emojis in your reponse.`;
 
-		const safetyResponse = await llmService.getCompletion({
-			prompt: safetyQuestion,
-			systemContext: "You are a content safety filter.",
-			priority: 3
-		});
+				const safetyResponse = await llmService.getCompletion({
+					prompt: safetyQuestion,
+					systemContext: "You are a content safety filter.",
+					priority: 3
+				});
 
-		let safetyMsg = "";
-		// Check if the response indicates unsafe content
-		if (
-			safetyResponse.substring(0, 10).toLowerCase().includes("unsafe") ||
-			prompt.toLowerCase().includes("gore")
-		) {
-			// Log the inappropriate request
-			const reportMessage = `⚠️ INAPPROPRIATE IMAGE REQUEST ⚠️\nUser: ${message.author}\nName: ${message.authorName || "Unknown"}\nPrompt: ${prompt}\nLLM Response: ${safetyResponse}\n\n!sa-block ${message.author}`;
-			bot.sendMessage(process.env.GRUPO_LOGS, reportMessage);
+				// Check if the response indicates unsafe content
+				if (
+					safetyResponse.substring(0, 10).toLowerCase().includes("unsafe") ||
+					prompt.toLowerCase().includes("gore")
+				) {
+					// Log the inappropriate request
+					const reportMessage = `⚠️ INAPPROPRIATE IMAGE REQUEST ⚠️\nUser: ${message.author}\nName: ${
+						message.authorName || "Unknown"
+					}\nPrompt: ${prompt}\nLLM Response: ${safetyResponse}\n\n!sa-block ${message.author}`;
+					bot.sendMessage(process.env.GRUPO_LOGS, reportMessage);
 
-			safetyMsg =
-				"\n\n> ⚠️ *AVISO*: O conteúdo solicitado é duvidoso. Esta solicitação será revisada pelo administrador e pode resultar em suspensão.";
-		}
+					return "\n\n> ⚠️ *AVISO*: O conteúdo solicitado é duvidoso. Esta solicitação será revisada pelo administrador e pode resultar em suspensão.";
+				}
+			} catch (e) {
+				logger.error("Erro na verificação de segurança (LLM):", e);
+			}
+			return "";
+		})();
 
-		// Inicia cronômetro para medir tempo de geração
-		const startTime = Date.now();
+		// 2. Promise de Geração de Imagem
+		const generationPromise = (async () => {
+			const startTime = Date.now();
+			const payload = {
+				prompt,
+				negative_prompt:
+					"bad anatomy, bad hands, text, missing fingers, extra digit, fewer digits, cropped, low-res, worst quality, jpeg artifacts, signature, watermark, username, blurry",
+				...DEFAULT_PARAMS
+			};
 
-		// Parâmetros para a API
-		const payload = {
-			prompt,
-			negative_prompt:
-				"bad anatomy, bad hands, text, missing fingers, extra digit, fewer digits, cropped, low-res, worst quality, jpeg artifacts, signature, watermark, username, blurry",
-			...DEFAULT_PARAMS
-		};
+			const response = await axios.post(`${getApiUrl()}/sdapi/v1/txt2img`, payload, {
+				headers: {
+					Authorization: sdWebUIToken,
+					"Content-Type": "application/json"
+				},
+				timeout: 120000 // 2 minutos de timeout
+			});
 
-		// Faz a requisição à API
-		const response = await axios.post(`${getApiUrl()}/sdapi/v1/txt2img`, payload, {
-			headers: {
-				Authorization: sdWebUIToken,
-				"Content-Type": "application/json"
-			},
-			timeout: 120000 // 2 minutos de timeout
-		});
+			const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-		// Calcula o tempo de geração
-		const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
+			if (!response.data || !response.data.images || response.data.images.length === 0) {
+				throw new Error("A API não retornou imagens");
+			}
 
-		// Verifica se a resposta contém as imagens
-		if (!response.data || !response.data.images || response.data.images.length === 0) {
-			throw new Error("A API não retornou imagens");
-		}
+			const imageBase64 = response.data.images[0];
+			const info = JSON.parse(response.data.info || "{}");
+			const modelName = info.sd_model_name || "Modelo desconhecido";
 
-		// Obtém a primeira imagem (base64) e informações
-		const imageBase64 = response.data.images[0];
-		const info = JSON.parse(response.data.info || "{}");
-		const modelName = info.sd_model_name || "Modelo desconhecido";
+			return {
+				imageBase64,
+				generationTime,
+				modelName
+			};
+		})();
+
+		// Aguarda ambos em paralelo
+		const [safetyMsg, genResult] = await Promise.all([safetyPromise, generationPromise]);
+		const { imageBase64, generationTime, modelName } = genResult;
 
 		// Verificar NSFW antes de enviar
 		// Primeiro, salva a imagem temporariamente para análise

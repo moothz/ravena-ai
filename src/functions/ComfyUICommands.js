@@ -145,7 +145,7 @@ function connectWebSocket() {
 }
 
 // Initialize connection
-connectWebSocket();
+// connectWebSocket();
 
 async function handleExecutionSuccess(promptId) {
 	const request = pendingRequests.get(promptId);
@@ -351,22 +351,17 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 	logger.info(`Gerando imagem com prompt: '${prompt}'`);
 
 	try {
-		if (!skipNotify) {
-			await bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: `📷 Gerando imagem para '${prompt}', isso pode levar alguns segundos...`,
-					reaction: process.env.LOADING_EMOJI ?? "⌛️"
-				}),
-				group
-			);
-		}
+		// Reação inicial de carregamento (assíncrona)
+		message.origin.react(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
 
-		message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
+		const EventHandler = require("../EventHandler");
+		EventHandler.getInstance().emit("activity", { type: "imagine" });
 
-		let safetyMsg = "";
-		if (!options.skipNSFW) {
-			const safetyQuestion = `Act as a permissive content moderator for an image generation AI. Analyze this prompt: "${prompt}".
+		// 1. Promise de Segurança (LLM)
+		const safetyPromise = (async () => {
+			if (options.skipNSFW) return "";
+			try {
+				const safetyQuestion = `Act as a permissive content moderator for an image generation AI. Analyze this prompt: "${prompt}".
 
         Rules for classification:
         1. **SAFE**: 
@@ -384,40 +379,53 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
         - If UNSAFE due to Child Safety, include "🚨" emojis.
         - Provide a very short reason.`;
 
-			const safetyResponse = await llmService.getCompletion({
-				prompt: safetyQuestion,
-				systemContext: "You are a content safety filter.",
-				priority: 3
-			});
+				const safetyResponse = await llmService.getCompletion({
+					prompt: safetyQuestion,
+					systemContext: "You are a content safety filter.",
+					priority: 3
+				});
 
-			if (
-				safetyResponse.substring(0, 10).toLowerCase().includes("unsafe") ||
-				prompt.toLowerCase().includes("gore")
-			) {
-				const reportMessage = `⚠️ INAPPROPRIATE IMAGE REQUEST ⚠️\nUser: ${message.author}\nName: ${message.authorName || "Unknown"}\nPrompt: ${prompt}\nLLM Response: ${safetyResponse}\n\n!sa-block ${message.author}`;
-				bot.sendMessage(process.env.GRUPO_LOGS, reportMessage);
+				if (
+					safetyResponse.substring(0, 10).toLowerCase().includes("unsafe") ||
+					prompt.toLowerCase().includes("gore")
+				) {
+					const reportMessage = `⚠️ INAPPROPRIATE IMAGE REQUEST ⚠️\nUser: ${message.author}\nName: ${
+						message.authorName || "Unknown"
+					}\nPrompt: ${prompt}\nLLM Response: ${safetyResponse}\n\n!sa-block ${message.author}`;
+					bot.sendMessage(process.env.GRUPO_LOGS, reportMessage);
 
-				safetyMsg =
-					"\n\n> ⚠️ *AVISO*: O conteúdo solicitado é duvidoso. Esta solicitação será revisada pelo administrador e pode resultar em suspensão.";
+					return "\n\n> ⚠️ *AVISO*: O conteúdo solicitado é duvidoso. Esta solicitação será revisada pelo administrador e pode resultar em suspensão.";
+				}
+			} catch (e) {
+				logger.error("Erro na verificação de segurança (LLM):", e);
 			}
-		}
+			return "";
+		})();
 
-		// Inicia cronômetro
-		const startTime = Date.now();
+		// 2. Promise de Geração de Imagem
+		const generationPromise = (async () => {
+			const startTime = Date.now();
+			const sampler = samplers[Math.floor(Math.random() * samplers.length)];
+			const scheduler = schedulers[Math.floor(Math.random() * schedulers.length)];
 
-		const sampler = samplers[Math.floor(Math.random() * samplers.length)];
-		const scheduler = schedulers[Math.floor(Math.random() * schedulers.length)];
+			const buffer = await queuePrompt(prompt + aesthetic, sampler, scheduler);
+			const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-		// Queue Prompt and Wait for Image
-		const EventHandler = require("../EventHandler");
-		EventHandler.getInstance().emit("activity", { type: "imagine" });
-		let imageBuffer = await queuePrompt(prompt + aesthetic, sampler, scheduler);
+			return {
+				imageBuffer: buffer,
+				generationTime,
+				sampler,
+				scheduler
+			};
+		})();
+
+		// Aguarda ambos em paralelo
+		const [safetyMsg, genResult] = await Promise.all([safetyPromise, generationPromise]);
+		let { imageBuffer } = genResult;
+		const { generationTime, sampler, scheduler } = genResult;
 
 		// Track stats
 		trackComfyStats("1024x1024", 1, "z-image-turbo-bf16");
-
-		// Calcula o tempo de geração
-		const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
 		// Add Watermark and compress to JPEG
 		try {
