@@ -260,54 +260,54 @@ async function apagarMensagem(bot, message, args, group) {
 		// Verifica se a mensagem citada é do bot
 		const botNumber = bot.client.info.wid._serialized;
 		const quotedSender = quotedMsg.author || quotedMsg.from;
+		const isBotMsg = quotedSender === botNumber;
 
-		if (quotedSender !== botNumber) {
-			logger.info(
-				`[apagarMensagem] Mensagem requisitada não é do bot: ${quotedSender} !== ${botNumber}`
-			);
-			// Se a mensagem não for do bot, verifica se o bot é admin do grupo (e sem quem pediu tb é)
-			if (message.group) {
-				try {
-					// Obtém informações do chat
-					const chat = await message.origin.getChat();
+		// 1. Verificar se o usuário tem permissão para apagar
+		let temPermissao = false;
 
-					// Verifica se quem pediu é admin
-					if (chat.isGroup) {
-						const participants = chat.participants || [];
-						const quemPediuIsAdmin = await adminUtils.isAdmin(quemPediu, group, chat, bot);
+		// A. É admin?
+		if (message.group) {
+			const chat = await message.origin.getChat();
+			if (chat.isGroup) {
+				temPermissao = await adminUtils.isAdmin(quemPediu, group, chat, bot);
+			}
+		} else if (isBotMsg) {
+			// No PV, permite apagar se for mensagem do bot
+			temPermissao = true;
+		}
 
-						if (quemPediuIsAdmin) {
-							// Bot é admin, pode apagar mensagens de outros
-							logger.info(`Tentando apagar mensagem de outro usuário como admin: ${quotedSender}`);
-							await quotedMsg.delete(true);
+		// B. Está mencionado?
+		if (!temPermissao) {
+			const mentions = quotedMsg.mentions || quotedMsg.mentionedIds || [];
+			const normalizedQuemPediu = adminUtils._normalizeId(quemPediu);
+			if (mentions.some((m) => adminUtils._normalizeId(m) === normalizedQuemPediu)) {
+				temPermissao = true;
+			}
+		}
 
-							// Reage com emoji de sucesso
-							try {
-								await message.origin.react("✅");
-							} catch (reactError) {
-								logger.error("Erro ao aplicar reação de sucesso:", reactError);
-							}
-
-							return null;
-						}
-					}
-				} catch (chatError) {
-					logger.error("Erro ao verificar se quem pediu é admin:", chatError);
+		// C. É o autor citado na mensagem? (se a msg citada tiver uma citação interna)
+		if (!temPermissao) {
+			const quotedParticipant = quotedMsg.quotedParticipant;
+			if (quotedParticipant) {
+				const normalizedQuemPediu = adminUtils._normalizeId(quemPediu);
+				if (adminUtils._normalizeId(quotedParticipant) === normalizedQuemPediu) {
+					temPermissao = true;
 				}
 			}
+		}
 
-			// Se chegou aqui, ou não está em grupo ou bot não é admin
+		if (!temPermissao) {
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content:
-					"🗑 Só posso apagar minhas próprias mensagens ou mensagens de outros em grupos (e preciso ser admin)"
+					"🗑 Você não tem permissão para apagar esta mensagem. Você precisa ser admin, estar mencionado nela ou ser o autor citado nela."
 			});
 		}
 
-		// Tenta apagar a mensagem do bot
+		// 2. Tentar apagar
 		try {
 			await quotedMsg.delete(true);
-			logger.info("Mensagem do bot apagada com sucesso");
+			logger.info(`Mensagem apagada com sucesso por solicitação de ${quemPediu}`);
 
 			// Reage com emoji de sucesso
 			try {
@@ -315,17 +315,18 @@ async function apagarMensagem(bot, message, args, group) {
 			} catch (reactError) {
 				logger.error("Erro ao aplicar reação de sucesso:", reactError);
 			}
-
-			// Apaga também o comando !apagar
-			// try {
-			//   await message.origin.delete(true);
-			// } catch (deleteError) {
-			//   logger.error('Erro ao apagar mensagem de comando:', deleteError);
-			// }
-
 			return null;
 		} catch (error) {
 			logger.error("Erro ao apagar mensagem:", error);
+
+			// Se não conseguiu apagar e não é mensagem do bot, provavelmente falta permissão de admin para o bot
+			if (!isBotMsg && message.group) {
+				return new ReturnMessage({
+					chatId: message.group,
+					content:
+						"Não foi possível apagar a mensagem. Verifique se o bot é admin do grupo (necessário para apagar mensagens de terceiros)."
+				});
+			}
 
 			// Reage com emoji de erro
 			try {
@@ -334,13 +335,6 @@ async function apagarMensagem(bot, message, args, group) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
-			// Envia mensagem de erro apenas em grupos (em privado é desnecessário)
-			if (message.group) {
-				return new ReturnMessage({
-					chatId: message.group,
-					content: "Não foi possível apagar a mensagem. Verifique se tenho permissões necessárias."
-				});
-			}
 			return null;
 		}
 	} catch (error) {

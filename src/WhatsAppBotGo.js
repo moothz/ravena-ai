@@ -1843,6 +1843,7 @@ class WhatsAppBotGo {
 				responseTime,
 				hasMedia: !!mediaInfo,
 				mentions,
+				quotedParticipant,
 				isQuoted: goMessageData.isQuoted,
 				isNewsletter: chatId.includes("newsletter"),
 
