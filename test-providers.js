@@ -87,16 +87,20 @@ async function runTests() {
 	for (const [category, providers] of Object.entries(config)) {
 		if (!Array.isArray(providers) || providers.length === 0) continue;
 
-		console.log(`\n${COLORS.bright}${COLORS.cyan}📁 Categoria: ${category.toUpperCase()}${COLORS.reset}`);
+		console.log(
+			`\n${COLORS.bright}${COLORS.cyan}📁 Categoria: ${category.toUpperCase()}${COLORS.reset}`
+		);
 		console.log(`----------------------------------------------------`);
 
 		for (const p of providers) {
 			if (p.enabled === false) {
-				console.log(`${COLORS.yellow}⚪ [OFF] ${p.name.padEnd(25)} | Desativado na configuração${COLORS.reset}`);
+				console.log(
+					`${COLORS.yellow}⚪ [OFF] ${p.name.padEnd(25)} | Desativado na configuração${COLORS.reset}`
+				);
 				continue;
 			}
 
-			let results = [];
+			const results = [];
 
 			if (category === "llm") {
 				// 1. Teste de Texto (Ping)
@@ -108,11 +112,16 @@ async function runTests() {
 						stream: false
 					});
 				} else {
-					textRes = await testUrl(`${p.url}/chat/completions`, "POST", {
-						model: p.model,
-						messages: [{ role: "user", content: "Responda apenas 'PONG'" }],
-						max_tokens: 5
-					}, { Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined });
+					textRes = await testUrl(
+						`${p.url}/chat/completions`,
+						"POST",
+						{
+							model: p.model,
+							messages: [{ role: "user", content: "Responda apenas 'PONG'" }],
+							max_tokens: 5
+						},
+						{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined }
+					);
 				}
 				results.push({ name: "TEXT", ...textRes });
 
@@ -127,19 +136,27 @@ async function runTests() {
 							stream: false
 						});
 					} else {
-						imgRes = await testUrl(`${p.url}/chat/completions`, "POST", {
-							model: p.model,
-							messages: [
-								{
-									role: "user",
-									content: [
-										{ type: "text", text: "O que tem nesta imagem?" },
-										{ type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
-									]
-								}
-							],
-							max_tokens: 20
-						}, { Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined });
+						imgRes = await testUrl(
+							`${p.url}/chat/completions`,
+							"POST",
+							{
+								model: p.model,
+								messages: [
+									{
+										role: "user",
+										content: [
+											{ type: "text", text: "O que tem nesta imagem?" },
+											{
+												type: "image_url",
+												image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
+											}
+										]
+									}
+								],
+								max_tokens: 20
+							},
+							{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined }
+						);
 					}
 					results.push({ name: "VISION", ...imgRes });
 				}
@@ -151,14 +168,19 @@ async function runTests() {
 					});
 					results.push({ name: "TRANSCR", ...transcribeRes });
 				} else {
-					results.push({ name: "PING", ...await testUrl(p.url) });
+					results.push({ name: "PING", ...(await testUrl(p.url)) });
 				}
 			} else if (category === "bonsai") {
-				const genRes = await testUrl(`${p.url}/generate`, "POST", {
-					prompt: "A cute little raven bot, digital art",
-					width: 512,
-					height: 512
-				}, { responseType: "arraybuffer" });
+				const genRes = await testUrl(
+					`${p.url}/generate`,
+					"POST",
+					{
+						prompt: "A cute little raven bot, digital art",
+						width: 512,
+						height: 512
+					},
+					{ responseType: "arraybuffer" }
+				);
 				if (genRes.ok) {
 					const outPath = `test-output-bonsai-${p.name}.png`;
 					fs.writeFileSync(outPath, Buffer.from(genRes.data));
@@ -188,7 +210,7 @@ async function runTests() {
 				}
 				results.push({ name: "TTS", ...ttsRes });
 			} else {
-				results.push({ name: "STATUS", ...await testUrl(p.url) });
+				results.push({ name: "STATUS", ...(await testUrl(p.url)) });
 			}
 
 			// Exibe resultados
@@ -210,21 +232,24 @@ async function runTests() {
 					statusColor += COLORS.red;
 				}
 
-				const timeColor = res.time > 10000 ? COLORS.red : (res.time > 3000 ? COLORS.yellow : COLORS.green);
+				const timeColor =
+					res.time > 10000 ? COLORS.red : res.time > 3000 ? COLORS.yellow : COLORS.green;
 				const subName = `(${res.name})`;
 				const extra = res.fileInfo ? ` | ${COLORS.magenta}${res.fileInfo}${COLORS.reset}` : "";
-				
+
 				console.log(
 					`${statusSymbol} ${p.name.padEnd(20)} ${COLORS.cyan}${subName.padEnd(8)}${COLORS.reset} | ` +
-					`${statusColor}${res.status.toString().padEnd(8)}${COLORS.reset} | ` +
-					`${timeColor}${res.time.toString().padStart(5)}ms${COLORS.reset}${extra}`
+						`${statusColor}${res.status.toString().padEnd(8)}${COLORS.reset} | ` +
+						`${timeColor}${res.time.toString().padStart(5)}ms${COLORS.reset}${extra}`
 				);
-				
+
 				if (!res.reachable && res.error) {
 					console.log(`${COLORS.red}   ┗ Error: ${res.error}${COLORS.reset}`);
 				} else if (res.status !== 200 && !res.ok && res.data) {
-					const errorMsg = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-					console.log(`${COLORS.yellow}   ┗ API Info: ${errorMsg.substring(0, 100)}${errorMsg.length > 100 ? '...' : ''}${COLORS.reset}`);
+					const errorMsg = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+					console.log(
+						`${COLORS.yellow}   ┗ API Info: ${errorMsg.substring(0, 100)}${errorMsg.length > 100 ? "..." : ""}${COLORS.reset}`
+					);
 				}
 			}
 		}
@@ -234,7 +259,7 @@ async function runTests() {
 	console.log(`${COLORS.bright}${COLORS.green}✨ Teste concluído!${COLORS.reset}\n`);
 }
 
-runTests().catch(err => {
+runTests().catch((err) => {
 	console.error(err);
 	process.exit(1);
 });

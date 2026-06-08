@@ -50,10 +50,10 @@ async function main() {
 	// TESTES — adicione/remova/comente conforme necessário
 	// ===========================================================================
 
-	// Imagine Bonsai
-	runner.run("!imagine - bonsai", () => msgTexto("!imagine a neon bonsai tree"), {
+	// Ajuda AnythingLLM
+	runner.run("!ajuda - teste", () => msgTexto("!ajuda como criar comandos"), {
 		expectedMessages: 1,
-		timeout: 120000
+		timeout: 45000
 	});
 
 	// ===========================================================================

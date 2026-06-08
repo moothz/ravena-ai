@@ -73,7 +73,7 @@
 	"bonsai": [
 		{
 			"name": "primary",
-			"url": "http://192.168.195.212:13434",
+			"url": "http://192.168.1.30:1234",
 			"enabled": true
 		}
 	],
