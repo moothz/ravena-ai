@@ -80,7 +80,12 @@ function saveMediaToTemp(media, extension = "png") {
 // Auxiliar para remover fundo usando rembg API (Sidecar)
 async function removeBackground(inputPath) {
 	const outputPath = inputPath.replace(/\.[^/.]+$/, "") + "_nobg.png";
-	const rembgUrl = process.env.REMBG_API_URL || "http://rembg:7000/api/remove";
+
+	// Se a URL do .env não tiver o endpoint, adiciona /api/remove
+	let rembgUrl = process.env.REMBG_API_URL || "http://rembg:7000/api/remove";
+	if (rembgUrl && !rembgUrl.includes("/api/remove") && !rembgUrl.includes("/remove")) {
+		rembgUrl = rembgUrl.replace(/\/$/, "") + "/api/remove";
+	}
 
 	try {
 		const buffer = await fs.readFile(inputPath);
