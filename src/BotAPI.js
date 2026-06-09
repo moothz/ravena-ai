@@ -5,14 +5,20 @@ const Logger = require("./utils/Logger");
 const Database = require("./utils/Database");
 const path = require("path");
 const multer = require("multer");
-const upload = multer({ dest: "uploads/" });
+const ffmpeg = require("fluent-ffmpeg");
+const upload = multer({ 
+	dest: "uploads/",
+	limits: { fileSize: 50 * 1024 * 1024 }
+});
 const fs = require("fs").promises;
 const qrcode = require("qr-base64");
 const { exec, spawn } = require("child_process");
 const axios = require("axios");
 const WebManagement = require("./utils/WebManagement");
+const { v4: uuidv4 } = require("uuid");
 const { CATEGORY_EMOJIS, COMMAND_ORDER } = require("./functions/MenuOrder");
 const ServiceProviderService = require("./services/ServiceProviderService");
+const SpeechCommands = require("./functions/SpeechCommands");
 
 const WEBHOOK_RATE_LIMIT = 120000;
 
@@ -115,6 +121,7 @@ class BotAPI {
 		this.updateAnalyticsCache();
 
 		this.serviceProviderService = ServiceProviderService.getInstance();
+		this.sttJobs = new Map();
 
 		// Configura atualização periódica do cache (a cada 10 minutos)
 		this.cacheUpdateInterval = setInterval(
@@ -124,6 +131,16 @@ class BotAPI {
 
 		// Configura verificação periódica de serviços (a cada 30 segundos)
 		this.checkServicesInterval = setInterval(() => this.checkServices(), 30000);
+
+		// Limpeza periódica de jobs de STT (a cada hora)
+		this.sttCleanupInterval = setInterval(() => {
+			const now = Date.now();
+			for (const [id, job] of this.sttJobs.entries()) {
+				if (now - job.startTime > 3600000) {
+					this.sttJobs.delete(id);
+				}
+			}
+		}, 3600000);
 	}
 
 	/**
@@ -777,6 +794,119 @@ class BotAPI {
 		this.app.get("/ajuda", (req, res) => {
 			const filePath = path.join(__dirname, "../public/ajuda.html");
 			res.sendFile(filePath);
+		});
+
+		// Serve STT page
+		const serveSTT = (req, res) => {
+			const providers = this.serviceProviderService.getProviders("whisper");
+			if (providers.length === 0) {
+				return res
+					.status(503)
+					.send("Serviço de transcrição não disponível (nenhum provider configurado).");
+			}
+			const filePath = path.join(__dirname, "../public/stt.html");
+			res.sendFile(filePath);
+		};
+		this.app.get("/stt", serveSTT);
+		this.app.get("/transcrever", serveSTT);
+
+		// STT API
+		this.app.post(
+			"/api/stt/transcrever",
+			this.strictLimiter,
+			upload.single("audio"),
+			async (req, res) => {
+				if (!req.file) {
+					return res.status(400).json({ error: "Nenhum arquivo enviado." });
+				}
+
+				const providers = this.serviceProviderService.getProviders("whisper");
+				if (
+					providers.length === 0 ||
+					(this.lastServicesStatus && this.lastServicesStatus.whisper === "down")
+				) {
+					return res.status(503).json({ error: "Serviço de transcrição não disponível." });
+				}
+
+				const jobId = uuidv4();
+				const job = {
+					id: jobId,
+					status: "starting",
+					estimatedTime: 0,
+					result: null,
+					error: null,
+					startTime: Date.now()
+				};
+				this.sttJobs.set(jobId, job);
+
+				// Process in background
+				(async () => {
+					let finalPath = req.file.path;
+					const filesToCleanup = [req.file.path];
+
+					try {
+						// Se for vídeo, converte para áudio MP3 (compactado)
+						if (req.file.mimetype.startsWith("video/")) {
+							job.status = "processing";
+							const audioPath = req.file.path + ".mp3";
+							await new Promise((resolve, reject) => {
+								ffmpeg(req.file.path)
+									.toFormat("mp3")
+									.audioBitrate("64k") // Compactado como pedido
+									.on("error", reject)
+									.on("end", resolve)
+									.save(audioPath);
+							});
+							finalPath = audioPath;
+							filesToCleanup.push(audioPath);
+						}
+
+						await SpeechCommands.transcribeViaAPI(
+							finalPath,
+							(duration, estimatedTime) => {
+								job.status = "transcribing";
+								job.estimatedTime = estimatedTime;
+							},
+							(status, executionId, url) => {
+								job.status = status;
+								job.executionId = executionId;
+							}
+						)
+							.then((result) => {
+								job.status = "complete";
+								job.result = result.text;
+							})
+							.catch((err) => {
+								job.status = "error";
+								job.error = err.message;
+							});
+					} catch (err) {
+						this.logger.error("Erro no processamento de STT:", err);
+						job.status = "error";
+						job.error = "Erro ao processar arquivo: " + err.message;
+					} finally {
+						// Limpeza de todos os arquivos temporários
+						for (const f of filesToCleanup) {
+							await fs.unlink(f).catch(() => {});
+						}
+					}
+				})();
+
+				res.json({ jobId });
+			}
+		);
+
+		this.app.get("/api/stt/status/:jobId", (req, res) => {
+			const job = this.sttJobs.get(req.params.jobId);
+			if (!job) {
+				return res.status(404).json({ error: "Job não encontrado." });
+			}
+			res.json(job);
+		});
+
+		// Endpoint para status dos serviços
+		this.app.get("/api/services/status", (req, res) => {
+			res.json(this.lastServicesStatus || { whisper: "unknown" });
 		});
 
 		// Chat API for AnythingLLM help

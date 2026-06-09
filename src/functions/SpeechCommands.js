@@ -395,9 +395,10 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
  * Helper to transcribe audio via Whisper API with failover
  * @param {string} audioPath - Path to audio file
  * @param {function} onEstimation - Callback for estimation (duration, estimatedTime)
+ * @param {function} onStatus - Callback for status updates (status, executionId, url)
  * @returns {Promise<{text: string, duration: number}>}
  */
-async function transcribeViaAPI(audioPath, onEstimation) {
+async function transcribeViaAPI(audioPath, onEstimation, onStatus) {
 	const whisperProviders = serviceProviderService.getProviders("whisper");
 	const urls = whisperProviders.map((p) => p.url);
 
@@ -434,6 +435,10 @@ async function transcribeViaAPI(audioPath, onEstimation) {
 				onEstimation(apiDuration, estimatedTranscriptionTime);
 			}
 
+			if (onStatus) {
+				onStatus("queued", executionId, url);
+			}
+
 			let finalResult = null;
 			let firstCheck = true;
 			// Loop waiting for completion
@@ -447,7 +452,9 @@ async function transcribeViaAPI(audioPath, onEstimation) {
 				});
 				const result = statusResponse.data;
 
-				// logger.debug(`[${new Date().toLocaleTimeString()}] Status atual: ${result.status}`);
+				if (onStatus) {
+					onStatus(result.status, executionId, url);
+				}
 
 				if (result.status === "complete") {
 					finalResult = result;
@@ -1005,3 +1012,4 @@ const commands = [
 // Exporta função para ser usada em EventHandler
 module.exports.commands = commands;
 module.exports.processAutoSTT = processAutoSTT;
+module.exports.transcribeViaAPI = transcribeViaAPI;

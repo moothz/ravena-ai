@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcrição de Áudio - RavenaBot</title>
+    
+    <meta name="description" content="Transcreva seus áudios rapidamente com a RavenaBot!">
+    <meta name="author" content="moothz">
+    
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --background-color: #05060d;
+            --surface-color: #111420; /* Darker navy */
+            --card-color: #1a1d2e;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #2f304d;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .stt-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 30px;
+            background: var(--surface-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid var(--border-color);
+        }
+
+        .upload-section {
+            border: 2px dashed var(--border-color);
+            padding: 50px 30px;
+            text-align: center;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .upload-section:hover {
+            border-color: var(--primary-color);
+            background: rgba(4, 169, 240, 0.05);
+        }
+
+        .upload-section i {
+            font-size: 3.5em;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+
+        #audio-file {
+            display: none;
+        }
+
+        .output-section {
+            display: none;
+            margin-top: 30px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 25px;
+        }
+
+        h3 {
+            color: var(--text-highlight);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        #transcription-output {
+            width: 100%;
+            height: 250px;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #0d0e14;
+            color: #d1d1e0;
+            resize: vertical;
+            white-space: pre-wrap;
+            margin-bottom: 15px;
+            outline: none;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        #transcription-output:focus {
+            border-color: var(--primary-color);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0388c2;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background: #2d3748;
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.6;
+        }
+
+        .btn-secondary {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #4a5568;
+        }
+
+        .status-container {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            background: rgba(4, 169, 240, 0.1);
+            color: var(--primary-color);
+            font-size: 0.95rem;
+            border: 1px solid rgba(4, 169, 240, 0.2);
+        }
+
+        /* Progress Bar Styles */
+        .progress-wrapper {
+            display: none;
+            margin: 20px 0;
+        }
+
+        .progress-label {
+            font-size: 0.85rem;
+            color: var(--text-color);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-weight: 500;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background: #0d0e14;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s linear;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .fill-transcribe {
+            background: linear-gradient(90deg, #04a9f0, #3e0ea7);
+        }
+
+        .fill-upload {
+            background: linear-gradient(90deg, #f6ad55, #dd6b20);
+        }
+
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 20px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+            pointer-events: none;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+        }
+
+        #file-name {
+            margin-top: 15px;
+            font-weight: 500;
+            color: var(--primary-color);
+        }
+
+        #offline-message {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
+                <h1>RavenaBot</h1>
+            </div>
+            <div class="header-title">
+                Transcrição (STT)
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="stt-container">
+                <div class="upload-section" id="drop-zone">
+                    <i class="fas fa-file-video"></i>
+                    <h3>Upload de Áudio ou Vídeo</h3>
+                    <p>Arraste seu arquivo ou clique para selecionar (Máx 50MB)</p>
+                    <input type="file" id="audio-file" accept="audio/*,video/*">
+                    <div id="file-name"></div>
+                </div>
+
+                <div id="offline-message" class="status-container" style="background: rgba(221, 107, 32, 0.1); color: #ed8936; border: 1px solid rgba(221, 107, 32, 0.3);">
+                    <i class="fas fa-exclamation-triangle"></i> Serviço indisponível no momento
+                </div>
+
+                <div class="action-buttons">
+                    <button id="transcribe-btn" class="btn btn-primary" disabled>
+                        <i class="fas fa-play"></i> Iniciar Transcrição
+                    </button>
+                </div>
+
+                <div id="status-box" class="status-container">
+                    <i class="fas fa-spinner fa-spin"></i> <span id="status-text">Aguardando...</span>
+                </div>
+
+                <!-- Upload Progress -->
+                <div class="progress-wrapper" id="upload-progress-section">
+                    <div class="progress-label">
+                        <span><i class="fas fa-upload"></i> Upload do Arquivo</span>
+                        <span id="upload-speed">0 KB/s</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill fill-upload" id="upload-progress-fill"></div>
+                        <div class="progress-text" id="upload-progress-text">0%</div>
+                    </div>
+                </div>
+
+                <!-- Transcription Progress -->
+                <div class="progress-wrapper" id="transcribe-progress-section">
+                    <div class="progress-label">
+                        <span><i class="fas fa-magic"></i> Processamento Whisper</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill fill-transcribe" id="transcribe-progress-fill"></div>
+                        <div class="progress-text" id="transcribe-progress-text">Aguardando ETA...</div>
+                    </div>
+                </div>
+
+                <div class="output-section" id="result-section">
+                    <h3><i class="fas fa-file-alt"></i> Texto Transcrito</h3>
+                    <textarea id="transcription-output" readonly placeholder="O resultado aparecerá aqui..."></textarea>
+                    <div class="action-buttons">
+                        <button id="copy-btn" class="btn btn-secondary">
+                            <i class="fas fa-copy"></i> Copiar Texto
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p class="copyright">RavenaBot © 2026 • v1.2</p>
+        </footer>
+    </div>
+
+    <script src="/stt.js?v=2"></script>
+</body>
+</html>
