@@ -260,10 +260,12 @@ async function apagarMensagem(bot, message, args, group) {
 		// Verifica se a mensagem citada é do bot
 		const botNumber = bot.client.info.wid._serialized;
 		const quotedSender = quotedMsg.author || quotedMsg.from;
-		const isBotMsg = quotedSender === botNumber;
+		const isBotMsg = adminUtils._normalizeId(quotedSender) === adminUtils._normalizeId(botNumber);
 
 		// 1. Verificar se o usuário tem permissão para apagar
 		let temPermissao = false;
+		const normalizedQuemPediu = adminUtils._normalizeId(quemPediu);
+		const normalizedQuotedSender = adminUtils._normalizeId(quotedSender);
 
 		// A. É admin?
 		if (message.group) {
@@ -276,21 +278,28 @@ async function apagarMensagem(bot, message, args, group) {
 			temPermissao = true;
 		}
 
-		// B. Está mencionado?
+		// B. É a própria mensagem de quem pediu?
 		if (!temPermissao) {
-			const mentions = quotedMsg.mentions || quotedMsg.mentionedIds || [];
-			const normalizedQuemPediu = adminUtils._normalizeId(quemPediu);
-			if (mentions.some((m) => adminUtils._normalizeId(m) === normalizedQuemPediu)) {
+			if (normalizedQuemPediu === normalizedQuotedSender) {
 				temPermissao = true;
 			}
 		}
 
-		// C. É o autor citado na mensagem? (se a msg citada tiver uma citação interna)
-		if (!temPermissao) {
-			const quotedParticipant = quotedMsg.quotedParticipant;
-			if (quotedParticipant) {
-				const normalizedQuemPediu = adminUtils._normalizeId(quemPediu);
-				if (adminUtils._normalizeId(quotedParticipant) === normalizedQuemPediu) {
+		// C. Está mencionado ou é o autor citado? (Apenas permitido para mensagens do bot)
+		if (!temPermissao && isBotMsg) {
+			// Mentions
+			const mentions = quotedMsg.mentions || quotedMsg.mentionedIds || [];
+			if (mentions.some((m) => adminUtils._normalizeId(m) === normalizedQuemPediu)) {
+				temPermissao = true;
+			}
+
+			// Quoted Participant (se a msg do bot cita o usuário)
+			if (!temPermissao) {
+				const quotedParticipant = quotedMsg.quotedParticipant;
+				if (
+					quotedParticipant &&
+					adminUtils._normalizeId(quotedParticipant) === normalizedQuemPediu
+				) {
 					temPermissao = true;
 				}
 			}
@@ -300,7 +309,7 @@ async function apagarMensagem(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content:
-					"🗑 Você não tem permissão para apagar esta mensagem. Você precisa ser admin, estar mencionado nela ou ser o autor citado nela."
+					"🗑 Você não tem permissão para apagar esta mensagem. Você precisa ser admin, ou a mensagem deve ser sua, ou deve ser uma mensagem do bot que menciona você."
 			});
 		}
 
