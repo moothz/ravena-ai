@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Voz (TTS) - RavenaBot</title>
+    
+    <meta name="description" content="Converta texto em áudio com a RavenaBot!">
+    <meta name="author" content="moothz">
+    
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --background-color: #05060d;
+            --surface-color: #111420;
+            --card-color: #1a1d2e;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #2f304d;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .tts-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 30px;
+            background: var(--surface-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid var(--border-color);
+        }
+
+        .input-section {
+            border: 2px solid var(--border-color);
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            background: rgba(255, 255, 255, 0.02);
+            transition: border-color 0.3s;
+        }
+
+        .input-section:focus-within {
+            border-color: var(--primary-color);
+        }
+
+        #text-input {
+            width: 100%;
+            height: 150px;
+            background: transparent;
+            border: none;
+            color: var(--text-highlight);
+            font-size: 1.1rem;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+            margin-bottom: 15px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .voice-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .voice-selector label {
+            font-weight: 500;
+            color: var(--text-highlight);
+            font-size: 0.9rem;
+        }
+
+        #voice-select {
+            background: #0d0e14;
+            color: var(--text-highlight);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1rem;
+        }
+
+        #voice-select:focus {
+            border-color: var(--primary-color);
+        }
+
+        .char-count {
+            text-align: right;
+            font-size: 0.8rem;
+            color: var(--text-color);
+        }
+
+        .output-section {
+            display: none;
+            margin-top: 30px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 25px;
+            text-align: center;
+        }
+
+        h3 {
+            color: var(--text-highlight);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .audio-player-container {
+            width: 100%;
+            background: #0d0e14;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        audio {
+            width: 100%;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-primary:hover {
+            background: #0388c2;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background: #2d3748;
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.6;
+        }
+
+        .btn-secondary {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #4a5568;
+        }
+
+        .status-container {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            background: rgba(4, 169, 240, 0.1);
+            color: var(--primary-color);
+            font-size: 0.95rem;
+            border: 1px solid rgba(4, 169, 240, 0.2);
+            text-align: center;
+        }
+
+        #offline-message {
+            margin-top: 10px;
+        }
+
+        .loading-spinner {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
+                <h1>RavenaBot</h1>
+            </div>
+            <div class="header-title">
+                Texto para Voz (TTS)
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="tts-container">
+                <div class="input-section">
+                    <h3>O que a Ravena deve dizer?</h3>
+                    <textarea id="text-input" maxlength="1000" placeholder="Digite o texto aqui para converter em áudio..."></textarea>
+                    
+                    <div class="options-grid">
+                        <div class="voice-selector">
+                            <label for="voice-select">Escolha a Voz:</label>
+                            <select id="voice-select">
+                                <option value="ravena">🗣 Ravena (Padrão)</option>
+                                <option value="mulher">👩 Voz Feminina</option>
+                                <option value="homem">👨 Voz Masculina</option>
+                                <option value="rubao">🤠 Rubão do Pontaço</option>
+                                <option value="carioca">💃 Carioca (Feminino)</option>
+                                <option value="carioco">🕺 Carioco (Masculino)</option>
+                                <option value="sensual">💋 Sensual (Feminino)</option>
+                                <option value="sensuel">🔥 Sensuel (Masculino)</option>
+                                <option value="clint">🎬 Clint Eastwood</option>
+                                <option value="morgan">🎙 Morgan Freeman</option>
+                                <option value="narrador">🎭 Narrador Profissional</option>
+                            </select>
+                        </div>
+                        <div class="char-count"><span id="current-chars">0</span>/1000</div>
+                    </div>
+                </div>
+
+                <div id="offline-message" class="status-container" style="background: rgba(221, 107, 32, 0.1); color: #ed8936; border: 1px solid rgba(221, 107, 32, 0.3);">
+                    <i class="fas fa-exclamation-triangle"></i> Serviço indisponível no momento
+                </div>
+
+                <div class="action-buttons">
+                    <button id="generate-btn" class="btn btn-primary" disabled>
+                        <i class="fas fa-volume-up"></i> Gerar Áudio
+                    </button>
+                </div>
+
+                <div id="status-box" class="status-container">
+                    <div class="loading-spinner">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
+                    <span id="status-text">Aguardando...</span>
+                </div>
+
+                <div class="output-section" id="result-section">
+                    <h3><i class="fas fa-play-circle"></i> Áudio Gerado</h3>
+                    <div class="audio-player-container">
+                        <audio id="audio-player" controls></audio>
+                    </div>
+                    <div class="action-buttons">
+                        <a id="download-btn" class="btn btn-primary" download="ravena-audio.mp3">
+                            <i class="fas fa-download"></i> Baixar Áudio
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p class="copyright">RavenaBot © 2026 • v1.2</p>
+        </footer>
+    </div>
+
+    <script src="/tts.js?v=1"></script>
+</body>
+</html>

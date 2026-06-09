@@ -94,6 +94,28 @@ h1 {
     opacity: 1;
 }
 
+.web-tool-icon {
+    width: 40px;
+    height: 40px;
+    opacity: 0.6;
+    transition: all 0.3s ease;
+    border-radius: 50%;
+    background-color: var(--medium-purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.2rem;
+    margin: 0 auto;
+    border: 1px solid var(--bright-blue);
+}
+
+.web-tool-icon:hover {
+    opacity: 1;
+    transform: translateY(-2px);
+    box-shadow: 0 0 10px var(--bright-blue);
+}
+
 /* Estilos para o banner de doações */
 .scrolling-banner-container {
     width: 100%;

@@ -810,6 +810,31 @@ class BotAPI {
 		this.app.get("/stt", serveSTT);
 		this.app.get("/transcrever", serveSTT);
 
+		// Serve Imagine page
+		const serveImagine = (req, res) => {
+			const providers = this.serviceProviderService.getProviders("bonsai");
+			if (providers.length === 0) {
+				return res
+					.status(503)
+					.send("Serviço de geração de imagens não disponível (nenhum provider configurado).");
+			}
+			const filePath = path.join(__dirname, "../public/imagine.html");
+			res.sendFile(filePath);
+		};
+		this.app.get("/imagine", serveImagine);
+
+		// Serve TTS page
+		const serveTTS = (req, res) => {
+			const providers = this.serviceProviderService.getProviders("f5tts");
+			if (providers.length === 0) {
+				return res.status(503).send("Serviço de TTS não disponível (nenhum provider configurado).");
+			}
+			const filePath = path.join(__dirname, "../public/tts.html");
+			res.sendFile(filePath);
+		};
+		this.app.get("/tts", serveTTS);
+		this.app.get("/falar", serveTTS);
+
 		// STT API
 		this.app.post(
 			"/api/stt/transcrever",
@@ -896,6 +921,109 @@ class BotAPI {
 			}
 		);
 
+		// Imagine API (Proxy)
+		this.app.post("/api/imagine/generate", this.strictLimiter, async (req, res) => {
+			const { prompt } = req.body;
+
+			if (!prompt || prompt.trim().length < 4) {
+				return res.status(400).json({ error: "Prompt muito curto ou ausente." });
+			}
+
+			if (prompt.length > 1000) {
+				return res.status(400).json({ error: "Prompt muito longo (máximo 1000 caracteres)." });
+			}
+
+			const providers = this.serviceProviderService.getProviders("bonsai");
+			if (
+				providers.length === 0 ||
+				(this.lastServicesStatus && this.lastServicesStatus.imagine === "down")
+			) {
+				return res.status(503).json({ error: "Serviço de geração de imagens não disponível." });
+			}
+
+			try {
+				const bonsaiUrl = providers[0].url;
+				const aesthetic = "\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
+
+				this.logger.info(`Web request: Gerando imagem com Bonsai, prompt: '${prompt}'`);
+
+				const response = await axios.post(
+					`${bonsaiUrl}/generate`,
+					{
+						prompt: prompt + aesthetic,
+						width: 1024,
+						height: 1024,
+						seed: Math.floor(Math.random() * 9999999),
+						num_inference_steps: 20,
+						guidance_scale: 7.5
+					},
+					{
+						responseType: "arraybuffer",
+						timeout: 60000
+					}
+				);
+
+				res.set("Content-Type", "image/jpeg");
+				res.send(response.data);
+			} catch (error) {
+				this.logger.error("Erro na API de geração de imagem:", error);
+				res.status(500).json({ error: "Erro ao gerar imagem: " + error.message });
+			}
+		});
+
+		// TTS API (Proxy)
+		this.app.post("/api/tts/generate", this.strictLimiter, async (req, res) => {
+			const { text, voice } = req.body;
+
+			if (!text || text.trim().length < 1) {
+				return res.status(400).json({ error: "Texto ausente." });
+			}
+
+			if (text.length > 1000) {
+				return res.status(400).json({ error: "Texto muito longo (máximo 1000 caracteres)." });
+			}
+
+			const providers = this.serviceProviderService.getProviders("f5tts");
+			if (
+				providers.length === 0 ||
+				(this.lastServicesStatus && this.lastServicesStatus.f5tts === "down")
+			) {
+				return res.status(503).json({ error: "Serviço de TTS não disponível." });
+			}
+
+			try {
+				const f5ttsUrl = providers[0].url || "http://localhost:5050";
+				const f5ttsApiKey = providers[0].apiKey || "";
+				const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
+
+				this.logger.info(
+					`Web request: Gerando TTS com voz ${voice}, texto: '${text.substring(0, 30)}...'`
+				);
+
+				const audioResponse = await axios({
+					method: "post",
+					url: apiUrl,
+					data: {
+						model: "f5-tts",
+						input: text,
+						voice: voice || "ravena",
+						response_format: "mp3"
+					},
+					headers: {
+						"Content-Type": "application/json",
+						...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
+					},
+					responseType: "arraybuffer"
+				});
+
+				res.set("Content-Type", "audio/mpeg");
+				res.send(audioResponse.data);
+			} catch (error) {
+				this.logger.error("Erro na API de TTS:", error);
+				res.status(500).json({ error: "Erro ao gerar áudio: " + error.message });
+			}
+		});
+
 		this.app.get("/api/stt/status/:jobId", (req, res) => {
 			const job = this.sttJobs.get(req.params.jobId);
 			if (!job) {
@@ -906,7 +1034,14 @@ class BotAPI {
 
 		// Endpoint para status dos serviços
 		this.app.get("/api/services/status", (req, res) => {
-			res.json(this.lastServicesStatus || { whisper: "unknown" });
+			res.json(
+				this.lastServicesStatus || {
+					whisper: "unknown",
+					imagine: "unknown",
+					f5tts: "unknown",
+					llm: "unknown"
+				}
+			);
 		});
 
 		// Chat API for AnythingLLM help
