@@ -411,7 +411,7 @@ async function statusCommand(bot, message, args, group) {
 			servicesHeader += `\t${getEmoji(servicesData.imagine)} Imagine _(geração de imagens)_\n`;
 			servicesHeader += `\t${getEmoji(servicesData.llm)} LLM _(inteligência artificial)_\n`;
 			servicesHeader += `\t${getEmoji(servicesData.whisper)} Whisper _(voz para texto)_\n`;
-			servicesHeader += `\t${getEmoji(servicesData.alltalk)} AllTalk _(texto para voz)_\n`;
+			servicesHeader += `\t${getEmoji(servicesData.f5tts)} F5-TTS _(texto para voz)_\n`;
 			servicesHeader += `\n\n`;
 		} catch (e) {
 			// Ignora erro se não conseguir ler arquivo de status

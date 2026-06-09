@@ -6,7 +6,7 @@ const Database = require("./utils/Database");
 const path = require("path");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
-const upload = multer({ 
+const upload = multer({
 	dest: "uploads/",
 	limits: { fileSize: 50 * 1024 * 1024 }
 });
@@ -164,7 +164,7 @@ class BotAPI {
 			imagine: "down",
 			llm: "down",
 			whisper: "down",
-			alltalk: "down",
+			f5tts: "down",
 			sdwebui: "down"
 		};
 
@@ -211,7 +211,7 @@ class BotAPI {
 		const LLMService = require("./services/LLMService");
 		services.llm = LLMService.getInstance().getDetailedStatus();
 		services.whisper = await checkCategoryStatus("whisper");
-		services.alltalk = await checkCategoryStatus("alltalk");
+		services.f5tts = await checkCategoryStatus("f5tts");
 		services.sdwebui = await checkCategoryStatus("sdwebui");
 
 		this.lastServicesStatus = services;

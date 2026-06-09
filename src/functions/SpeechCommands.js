@@ -6,7 +6,6 @@ const { v4: uuidv4 } = require("uuid");
 const os = require("os");
 const axios = require("axios");
 const FormData = require("form-data");
-const { URLSearchParams } = require("url");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const crypto = require("crypto");
@@ -203,7 +202,7 @@ function removeWhatsAppMarkup(text) {
 }
 
 /**
- * Converte texto para voz usando AllTalk API (XTTS)
+ * Converte texto para voz usando F5-TTS API (OpenAI-compatible)
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
  * @param {Array} args - Argumentos do comando
@@ -248,7 +247,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 			});
 		}
 
-		// Limpa as marcações do WhatsApp antes de processar com AllTalk
+		// Limpa as marcações do WhatsApp antes de processar com F5-TTS
 		text = removeWhatsAppMarkup(text);
 
 		const character = ttsCharacters.find((ttsC) => ttsC.name === char);
@@ -268,52 +267,33 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 
 		logger.debug(`Convertendo texto para voz (${JSON.stringify(character)}): ${text}`);
 		const EventHandler = require("../EventHandler");
-		EventHandler.getInstance().emit("activity", { type: "alltalk" });
+		EventHandler.getInstance().emit("activity", { type: "f5tts" });
 
 		// Nome do arquivo temporário
 		const hash = crypto.randomBytes(2).toString("hex");
 		const tempFilename = `tts_audio_${hash}.mp3`;
 		const tempFilePath = path.join(tempDir, tempFilename);
 
-		// Monta a URL para a API do AllTalk
-		const allTalkProviders = serviceProviderService.getProviders("alltalk");
-		const allTalkUrl = allTalkProviders[0]?.url || "http://localhost:7851/";
-		const apiUrl = `${allTalkUrl}/api/tts-generate`;
+		// Monta a URL para a API do F5-TTS
+		const f5ttsProviders = serviceProviderService.getProviders("f5tts");
+		const f5ttsUrl = f5ttsProviders[0]?.url || "http://localhost:5050";
+		const f5ttsApiKey = f5ttsProviders[0]?.apiKey || "";
+		const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
 
-		// Cria os parâmetros para a requisição usando URLSearchParams
-		const params = new URLSearchParams({
-			text_input: text,
-			text_filtering: "standard",
-			character_voice_gen: character.voice,
-			narrator_enabled: "false",
-			language: "pt",
-			output_file_name: `tts_audio_${hash}`,
-			output_file_timestamp: "false"
-		});
-
-		// Faz a requisição para a API
-		const response = await axios({
+		// Faz a requisição para a API F5-TTS (OpenAI-compatible)
+		const audioResponse = await axios({
 			method: "post",
 			url: apiUrl,
-			data: params,
+			data: {
+				model: "f5-tts",
+				input: text,
+				voice: character.name,
+				response_format: "mp3"
+			},
 			headers: {
-				"Content-Type": "application/x-www-form-urlencoded"
-			}
-		});
-
-		if (response.data.status !== "generate-success") {
-			throw new Error(`Falha na geração de voz: ${response.data.status}`);
-		}
-
-		console.log(response.data);
-
-		// Obter o arquivo de áudio da API
-		const urlResultado = `${allTalkUrl}${response.data.output_file_url}`;
-		logger.info(`Baixando mídia de '${urlResultado}'`);
-
-		const audioResponse = await axios({
-			method: "get",
-			url: urlResultado,
+				"Content-Type": "application/json",
+				...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
+			},
 			responseType: "arraybuffer"
 		});
 

@@ -1046,9 +1046,20 @@ class CommandHandler {
 						// Adiciona reação "depois" nas mensagens se não estiver definida
 
 						const messages = Array.isArray(result) ? result : [result];
+						const requesterId = message.authorAlt || message.author;
+
 						messages.forEach((msg) => {
 							if (!msg.reactions && command.reactions?.after) {
 								msg.reaction = command.reactions?.after;
+							}
+
+							// Auto-mention do usuário que pediu o comando (apenas em grupos)
+							if (requesterId && msg instanceof ReturnMessage && message.group) {
+								if (!msg.options) msg.options = {};
+								if (!msg.options.mentions) msg.options.mentions = [];
+								if (!msg.options.mentions.includes(requesterId)) {
+									msg.options.mentions.push(requesterId);
+								}
 							}
 						});
 
@@ -1305,12 +1316,20 @@ class CommandHandler {
 							processedMessage.chatId = message.author; // ou authorAlt?
 						}
 						// Adiciona menções do comando
+						if (!processedMessage.options) processedMessage.options = {};
+						const mentionsSet = new Set(processedMessage.options.mentions || []);
+
 						if (command.mentions && command.mentions.length > 0) {
-							if (!processedMessage.options) processedMessage.options = {};
-							const existing = new Set(processedMessage.options.mentions || []);
-							command.mentions.forEach((m) => existing.add(m));
-							processedMessage.options.mentions = Array.from(existing);
+							command.mentions.forEach((m) => mentionsSet.add(m));
 						}
+
+						// Auto-mention do usuário que pediu o comando (apenas em grupos e se não for resposta privada)
+						if (message.group && !command.replyInPvivate) {
+							const requesterId = message.authorAlt || message.author;
+							if (requesterId) mentionsSet.add(requesterId);
+						}
+
+						processedMessage.options.mentions = Array.from(mentionsSet);
 						returnMessages.push(processedMessage);
 					}
 				}
@@ -1340,12 +1359,20 @@ class CommandHandler {
 						returnMessage.chatId = message.author; // ou authorAlt?
 					}
 					// Adiciona menções do comando
+					if (!returnMessage.options) returnMessage.options = {};
+					const mentionsSet = new Set(returnMessage.options.mentions || []);
+
 					if (command.mentions && command.mentions.length > 0) {
-						if (!returnMessage.options) returnMessage.options = {};
-						const existing = new Set(returnMessage.options.mentions || []);
-						command.mentions.forEach((m) => existing.add(m));
-						returnMessage.options.mentions = Array.from(existing);
+						command.mentions.forEach((m) => mentionsSet.add(m));
 					}
+
+					// Auto-mention do usuário que pediu o comando (apenas em grupos e se não for resposta privada)
+					if (message.group && !command.replyInPvivate) {
+						const requesterId = message.authorAlt || message.author;
+						if (requesterId) mentionsSet.add(requesterId);
+					}
+
+					returnMessage.options.mentions = Array.from(mentionsSet);
 					if (!silent) await bot.sendReturnMessages(returnMessage, group);
 				}
 				finalResult = returnMessage;

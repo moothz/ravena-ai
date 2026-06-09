@@ -27,7 +27,7 @@ Tudo isso aqui vem pronto e você não precisa configurar nada externo (utiliza 
 ### 2. APIs Self-Hosted (Configuráveis no .env)
 Se você quiser estas funcionalidades no bot, terá que hospedar estes serviços você mesmo e informar a URL nas configurações.
 - **Inteligência Artificial:** Integração com Ollama, LM Studio ou AnythingLLM (Comandos de chat, OCR e resumos). _Dica: Pra pouco uso, é melhor usar uma IA grátis na nuvem como o Gemini Flash._
-- **Voz e Transcrição:** Suporte a Whisper API (Transcrição automática) e AllTalk/XTTS (Sintetização de vozes personalizadas).
+- **Voz e Transcrição:** Suporte a Whisper API (Transcrição automática) e [F5-TTS](https://github.com/SWivid/F5-TTS) via [docker moothz/f5-tts](https://github.com/moothz/f5-tts) (Sintetização de vozes personalizadas).
 - **Jogos:** Stop, Tarô e outros jogos usam LLM para funcionar
 
 ### 3. APIs Externas (Token no .env)
@@ -160,7 +160,7 @@ Edite o `bots.json` e adicione cada instância de bot que você quer rodar:
 ```bash
 cp service-providers.json.example service-providers.json
 ```
-Este arquivo define as URLs das APIs self-hosted e externos (Whisper, Ollama, AllTalk, Gemini, OpenAI, etc). Se você não usa nenhuma, pode usar um vazio assim:
+Este arquivo define as URLs das APIs self-hosted e externos (Whisper, Ollama, F5-TTS, Gemini, OpenAI, etc). Se você não usa nenhuma, pode usar um vazio assim:
 
 ```json
 {
@@ -168,14 +168,14 @@ Este arquivo define as URLs das APIs self-hosted e externos (Whisper, Ollama, Al
   "whisper": [],
   "comfyui": [],
   "sdwebui": [],
-  "alltalk": []
+  "f5tts": []
 }
 ```
 
 ```json
 [
   { "type": "whisper", "url": "http://meu-servidor:5000" },
-  { "type": "alltalk", "url": "http://meu-servidor:7851" }
+  { "type": "f5tts", "url": "http://meu-servidor:5050", "apiKey": "sua-chave-aqui" }
 ]
 ```
 

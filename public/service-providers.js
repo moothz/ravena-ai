@@ -8,13 +8,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'whisper', 'comfyui', 'sdwebui', 'alltalk'];
+    const categories = ['llm', 'whisper', 'comfyui', 'sdwebui', 'f5tts'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
         'whisper': 'Transcrição de Áudio (Whisper)',
         'comfyui': 'Geração de Imagens (ComfyUI)',
         'sdwebui': 'Geração de Imagens (SD WebUI)',
-        'alltalk': 'Conversão de Texto em Fala (AllTalk TTS)'
+        'f5tts': 'Conversão de Texto em Fala (F5-TTS)'
     };
 
     // Basic auth is handled by the browser since the page itself is protected.

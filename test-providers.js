@@ -187,28 +187,28 @@ async function runTests() {
 					genRes.fileInfo = getFileSize(outPath);
 				}
 				results.push({ name: "GEN_IMG", ...genRes });
-			} else if (category === "alltalk") {
-				const params = new URLSearchParams({
-					text_input: "Olá, eu sou a Ravena!",
-					text_filtering: "standard",
-					character_voice_gen: "ravena_sample.wav", // Tenta o nome do arquivo direto
-					language: "pt",
-					output_file_name: `test_tts_${p.name}`,
-					output_file_timestamp: "false"
-				});
-				const ttsRes = await testUrl(`${p.url}/api/tts-generate`, "POST", params, {
-					"Content-Type": "application/x-www-form-urlencoded"
-				});
-				if (ttsRes.ok && ttsRes.data.status === "generate-success") {
-					const audioUrl = `${p.url}${ttsRes.data.output_file_url}`;
-					const downloadRes = await testUrl(audioUrl, "GET", null, { responseType: "arraybuffer" });
-					if (downloadRes.ok) {
-						const outPath = `test-output-tts-${p.name}.wav`;
-						fs.writeFileSync(outPath, Buffer.from(downloadRes.data));
-						ttsRes.fileInfo = getFileSize(outPath);
-					}
-				}
-				results.push({ name: "TTS", ...ttsRes });
+			} else if (category === "f5tts") {
+			        const ttsRes = await testUrl(
+			                `${p.url}/v1/audio/speech`,
+			                "POST",
+			                {
+			                        model: "f5-tts",
+			                        input: "Olá, eu sou a Ravena!",
+			                        voice: "ravena",
+			                        response_format: "mp3"
+			                },
+			                {
+			                        "Content-Type": "application/json",
+			                        Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined,
+			                        responseType: "arraybuffer"
+			                }
+			        );
+			        if (ttsRes.ok) {
+			                const outPath = `test-output-f5tts-${p.name}.mp3`;
+			                fs.writeFileSync(outPath, Buffer.from(ttsRes.data));
+			                ttsRes.fileInfo = getFileSize(outPath);
+			        }
+			        results.push({ name: "TTS", ...ttsRes });
 			} else {
 				results.push({ name: "STATUS", ...(await testUrl(p.url)) });
 			}

@@ -84,10 +84,10 @@
 			"enabled": true
 		}
 	],
-	"alltalk": [
+	"f5tts": [
 		{
 			"name": "primary",
-			"url": "http://192.168.1.10:7851",
+			"url": "http://192.168.1.10:5050",
 			"enabled": true
 		}
 	]

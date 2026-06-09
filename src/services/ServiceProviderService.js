@@ -126,7 +126,7 @@ class ServiceProviderService {
 			comfyui: [],
 			bonsai: [],
 			sdwebui: [],
-			alltalk: []
+			f5tts: []
 		};
 	}
 }

@@ -1309,7 +1309,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'imagine': 'api-imagine',
                 'llm': 'api-llm',
                 'whisper': 'api-whisper',
-                'alltalk': 'api-alltalk'
+                'f5tts': 'api-f5tts'
             };
 
             const targetId = typeMap[type];
@@ -1357,7 +1357,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatusLight('api-imagine', services.imagine);
             updateStatusLight('api-llm', services.llm);
             updateStatusLight('api-whisper', services.whisper);
-            updateStatusLight('api-alltalk', services.alltalk);
+            updateStatusLight('api-f5tts', services.f5tts);
         });
         
     } else {

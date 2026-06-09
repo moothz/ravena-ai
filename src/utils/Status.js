@@ -20,7 +20,7 @@ class Status {
 				imagine: "down",
 				llm: "down",
 				whisper: "down",
-				alltalk: "down"
+				f5tts: "down"
 			};
 		}
 	}
