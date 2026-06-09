@@ -38,123 +38,105 @@
 </head>
 <body>
     <canvas id="matrix-bg"></canvas>
-    <div class="container">
-        <header>
-            <h1  class="banner">ravenabot - status</h1>
-            
-            <div class="status-grid-container" style="position: relative; margin-bottom: 20px;">
-                <table class="status-table" style="margin: 0 auto; border-collapse: collapse;">
-                    <tr class="status-lights-row">
-                         <td style="padding: 5px 25px;">
-                            <div id="service-whatsgoapi" class="status-indicator-light tooltip-container">
-                                <span class="tooltip-text">WhatsGo API / Serviço principal do WhatsApp (whatsmeow)</span>
-                            </div>
-                         </td>
-                         <td style="padding: 5px 25px;">
-                            <div id="api-imagine" class="status-indicator-light tooltip-container">
-                                <span class="tooltip-text">!imagine / Servidor IA de Imagens (Bonsai)</span>
-                            </div>
-                         </td>
-                         <td style="padding: 5px 25px;">
-                            <div id="api-llm" class="status-indicator-light tooltip-container">
-                                <span class="tooltip-text">!ia/!resumo/!interagir / Servidor IA de linguagem (LLM)</span>
-                            </div>
-                         </td>
-                         <td style="padding: 5px 25px;">
-                            <div id="api-whisper" class="status-indicator-light tooltip-container">
-                                <span class="tooltip-text">!stt / Servidor conversão de voz para texto (Whisper)</span>
-                            </div>
-                         </td>
-                         <td style="padding: 5px 25px;">
-                            <div id="api-f5tts" class="status-indicator-light tooltip-container">
-                                <span class="tooltip-text">!tts / Servidor conversão de texto para voz (F5-TTS)</span>
-                            </div>
-                         </td>
-                    </tr>
-                    <tr class="status-labels-row" style="color: #b7b7c5; font-size: 0.8rem; text-align: center;">
-                        <td>WhatsGo</td>
-                        <td>Imagine</td>
-                        <td>LLM</td>
-                        <td>Whisper</td>
-                        <td>F5-TTS</td>
-                    </tr>
-                </table>
-                <div id="ws-loading-overlay" class="ws-loading-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 6, 13, 0.8); color: white; display: flex; justify-content: center; align-items: center; z-index: 10;">
-                    <span>Carregando status...</span>
+
+    <!-- ======= TOP-BAR ======= -->
+    <div class="topbar">
+
+        <!-- Esquerda: Título + Status Badges -->
+        <div class="topbar-left">
+            <h1 class="topbar-title">ravenabot <span class="topbar-title-sep">—</span> <span class="topbar-title-dash">dashboard</span></h1>
+
+            <!-- Status badges -->
+            <div class="topbar-status" id="ws-loading-overlay-topbar">
+                <div id="service-whatsgoapi" class="status-indicator-light status-badge tooltip-container">
+                    <span class="status-badge-label">WhatsGo</span>
+                    <span class="tooltip-text">WhatsGo API / Serviço principal do WhatsApp (whatsmeow)</span>
+                </div>
+                <div id="api-imagine" class="status-indicator-light status-badge tooltip-container">
+                    <span class="status-badge-label">Imagine</span>
+                    <span class="tooltip-text">!imagine / Servidor IA de Imagens (Bonsai)</span>
+                </div>
+                <div id="api-llm" class="status-indicator-light status-badge tooltip-container">
+                    <span class="status-badge-label">LLM</span>
+                    <span class="tooltip-text">!ia/!resumo/!interagir / Servidor IA de linguagem (LLM)</span>
+                </div>
+                <div id="api-whisper" class="status-indicator-light status-badge tooltip-container">
+                    <span class="status-badge-label">Whisper</span>
+                    <span class="tooltip-text">!stt / Servidor conversão de voz para texto (Whisper)</span>
+                </div>
+                <div id="api-f5tts" class="status-indicator-light status-badge tooltip-container">
+                    <span class="status-badge-label">F5-TTS</span>
+                    <span class="tooltip-text">!tts / Servidor conversão de texto para voz (F5-TTS)</span>
                 </div>
             </div>
+        </div>
 
-            <!-- Links de Ícones Sociais -->
-            <div class="social-links-container" style="margin-top: 15px;">
-                <table class="social-table" style="margin: 0 auto; border-collapse: collapse;">
-                    <tr class="social-icons-row">
-                        <td style="padding: 5px 25px;">
-                            <a href="https://github.com/moothz/ravena-ai" target="_blank" title="Código da ravena no GitHub">
-                                <img src="github.png" class="social-icon">
-                            </a>
-                        </td>
-                        <td style="padding: 5px 25px;">
-                            <a href="https://tipa.ai/moothz" target="_blank" title="Faça sua doação!">
-                                <img src="tipaai.jpg" class="social-icon" id="donate-icon">
-                            </a>
-                        </td>
-                        <td style="padding: 5px 25px;">
-                            <a href="https://t.me/ravenosabot" target="_blank" title="Você também pode usar a maioria das funcionalidades da ravenabot sem limites no telegram!">
-                                <img src="telegram-ravena-small.jpg" class="social-icon">
-                            </a>
-                        </td>
-                        <td style="padding: 5px 25px;">
-                            <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" title="Canal de Avisos - Fique por dentro das novidades!">
-                                <img src="grupo-avisos-small.jpg" class="social-icon">
-                            </a>
-                        </td>
-                        <td style="padding: 5px 25px;">
-                            <a href="https://chat.whatsapp.com/Cjh9gmf1mo2DGBEOBeKGbw" target="_blank" title="Comuniade da Ravenabot - Interaja com outros usuários, teste a ravena e tire dúvidas!">
-                                <img src="grupo-geral-small.jpg" class="social-icon">
-                            </a>
-                        </td>
-                        <td style="padding: 5px 25px;">
-                            <a href="/ajuda" target="_blank" title="Chatbot de ajuda da ravena!">
-                                <img src="ravena-help-small.jpg" class="social-icon">
-                            </a>
-                        </td>
-                    </tr>
-                    <tr class="social-labels-row" style="color: #b7b7c5; font-size: 0.8rem; text-align: center;">
-                        <td>Código<br>no GitHub</td>
-                        <td>Contribua!<br>(doe dinheirinhos)</td>
-                        <td>ravenabot no<br>telegram</td>
-                        <td>Canal de<br>Avisos</td>
-                        <td>Comunidade<br>ravenabot</td>
-                        <td>Ajuda<br>Chatbot</td>
-                    </tr>
-                    <!-- Web Tools Row -->
-                    <tr class="social-icons-row">
-                        <td style="padding: 20px 25px 5px;">
-                            <a href="/imagine" target="_blank" title="Gerador de Imagens Web!">
-                                <div class="web-tool-icon"><i class="fas fa-magic"></i></div>
-                            </a>
-                        </td>
-                        <td style="padding: 20px 25px 5px;">
-                            <a href="/tts" target="_blank" title="Texto para Voz (TTS) Web!">
-                                <div class="web-tool-icon"><i class="fas fa-volume-up"></i></div>
-                            </a>
-                        </td>
-                        <td style="padding: 20px 25px 5px;">
-                            <a href="/stt" target="_blank" title="Transcrição de Áudio (STT) Web!">
-                                <div class="web-tool-icon"><i class="fas fa-file-audio"></i></div>
-                            </a>
-                        </td>
-                        <td colspan="3"></td>
-                    </tr>
-                    <tr class="social-labels-row" style="color: #b7b7c5; font-size: 0.8rem; text-align: center;">
-                        <td>Gerador de<br>Imagens</td>
-                        <td>Texto para<br>Voz (TTS)</td>
-                        <td>Transcrição<br>(STT)</td>
-                        <td colspan="3"></td>
-                    </tr>
-                </table>
+        <!-- Direita: Social Icons -->
+        <div class="topbar-right">
+
+            <!-- Ícones sempre visíveis -->
+            <div class="topbar-socials-pinned">
+                <!-- Web tools icons -->
+                <a href="/ajuda" target="_blank" title="Chatbot de ajuda da ravena!" class="topbar-social-link topbar-tool-link">
+                    <img src="ravena-help-small.jpg" class="topbar-social-icon topbar-tool-icon">
+                    <span class="topbar-icon-label">Ajuda</span>
+                </a>
+                <a href="/imagine" target="_blank" title="Gerador de Imagens Web!" class="topbar-social-link topbar-tool-link">
+                    <img src="imagine-small.jpg" class="topbar-social-icon topbar-tool-icon">
+                    <span class="topbar-icon-label">Imagens</span>
+                </a>
+                <a href="/tts" target="_blank" title="Texto para Voz (TTS) Web!" class="topbar-social-link topbar-tool-link">
+                    <img src="tts-small.jpg" class="topbar-social-icon topbar-tool-icon">
+                    <span class="topbar-icon-label">TTS</span>
+                </a>
+                <a href="/stt" target="_blank" title="Transcrição de Áudio (STT) Web!" class="topbar-social-link topbar-tool-link">
+                    <img src="stt-small.jpg" class="topbar-social-icon topbar-tool-icon">
+                    <span class="topbar-icon-label">STT</span>
+                </a>
+
+                <div class="topbar-divider"></div>
+
+                <!-- Contribua - sempre visível -->
+                <a href="https://tipa.ai/moothz" target="_blank" title="Faça sua doação!" class="topbar-social-link" id="donate-icon-link">
+                    <img src="tipaai.jpg" class="topbar-social-icon" id="donate-icon">
+                    <span class="topbar-icon-label">Contribua!</span>
+                </a>
+                <!-- Comunidade Ravenabot - sempre visível -->
+                <a href="https://chat.whatsapp.com/Cjh9gmf1mo2DGBEOBeKGbw" target="_blank" title="Comunidade da Ravenabot - Interaja com outros usuários, teste a ravena e tire dúvidas!" class="topbar-social-link">
+                    <img src="grupo-geral-small.jpg" class="topbar-social-icon">
+                    <span class="topbar-icon-label">Comunidade</span>
+                </a>
             </div>
-        </header>
+
+            <!-- Botão de sanfona para overflow -->
+            <button class="topbar-more-btn" id="topbarMoreBtn" title="Ver mais links" aria-expanded="false">
+                <i class="fas fa-ellipsis-h"></i>
+            </button>
+
+            <!-- Menu popup (sanfona) com os demais ícones -->
+            <div class="topbar-overflow-menu" id="topbarOverflowMenu">
+                <a href="https://github.com/moothz/ravena-ai" target="_blank" title="Código da ravena no GitHub" class="topbar-social-link">
+                    <img src="github.png" class="topbar-social-icon">
+                    <span class="topbar-icon-label">GitHub</span>
+                </a>
+                <a href="https://t.me/ravenosabot" target="_blank" title="Você também pode usar a maioria das funcionalidades da ravenabot sem limites no telegram!" class="topbar-social-link">
+                    <img src="telegram-ravena-small.jpg" class="topbar-social-icon">
+                    <span class="topbar-icon-label">Telegram</span>
+                </a>
+                <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" title="Canal de Avisos - Fique por dentro das novidades!" class="topbar-social-link">
+                    <img src="grupo-avisos-small.jpg" class="topbar-social-icon">
+                    <span class="topbar-icon-label">Avisos</span>
+                </a>
+                <a href="/ajuda" target="_blank" title="Chatbot de ajuda da ravena!" class="topbar-social-link" style="display:none">
+                    <img src="ravena-help-small.jpg" class="topbar-social-icon">
+                    <span class="topbar-icon-label">Ajuda</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    <!-- ======= FIM TOP-BAR ======= -->
+
+    <div class="container topbar-offset">
 
         <!-- Banner de Donates Recentes (3 meses) -->
         <div class="scrolling-banner-container recent-donates-banner">
@@ -308,5 +290,26 @@
     <script src="https://code.highcharts.com/modules/accessibility.js"></script>
     <script type="text/javascript" src="scripts.js?v=20"></script>
 
+    <script>
+        // Topbar overflow menu toggle
+        (function() {
+            const btn = document.getElementById('topbarMoreBtn');
+            const menu = document.getElementById('topbarOverflowMenu');
+            if (!btn || !menu) return;
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const isOpen = menu.classList.toggle('open');
+                btn.setAttribute('aria-expanded', isOpen);
+                btn.classList.toggle('active', isOpen);
+            });
+            document.addEventListener('click', function(e) {
+                if (!menu.contains(e.target) && e.target !== btn) {
+                    menu.classList.remove('open');
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.classList.remove('active');
+                }
+            });
+        })();
+    </script>
 </body>
 </html>

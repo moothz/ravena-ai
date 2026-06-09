@@ -40,6 +40,299 @@ body {
     padding: 20px;
 }
 
+/* ======================================
+   TOP-BAR
+   ====================================== */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    width: 100%;
+    background: rgba(5, 6, 13, 0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(4, 169, 240, 0.18);
+    box-shadow: 0 2px 24px rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 20px;
+    min-height: 54px;
+}
+
+.topbar-offset {
+    padding-top: 16px;
+}
+
+/* --- Left side: title + status badges --- */
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.topbar-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--bright-blue);
+    text-shadow: 0 0 10px rgba(4, 169, 240, 0.55);
+    margin: 0;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+}
+
+.topbar-title-sep {
+    color: var(--medium-gray);
+    font-weight: 300;
+}
+
+.topbar-title-dash {
+    color: var(--light-gray);
+    font-weight: 400;
+}
+
+/* Status badges row */
+.topbar-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+/* Status badge pill */
+.status-badge {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px !important;
+    padding: 3px 10px !important;
+    width: auto !important;
+    height: auto !important;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: help;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    transition: box-shadow 0.3s, background-color 0.3s;
+    position: relative;
+    background-color: rgba(35, 6, 109, 0.5); /* default fallback */
+}
+
+/* No dot — background color carries the status */
+
+/* dot states removed — colour is on the badge background */
+
+.status-badge.up,
+.status-badge.green {
+    background-color: rgba(77, 180, 25, 0.18) !important;
+    box-shadow: 0 0 8px rgba(133, 228, 19, 0.3) !important;
+}
+
+.status-badge.down,
+.status-badge.red {
+    background-color: rgba(223, 81, 81, 0.18) !important;
+    box-shadow: 0 0 8px rgba(223, 81, 81, 0.3) !important;
+}
+
+.status-badge.backup,
+.status-badge.yellow {
+    background-color: rgba(223, 216, 107, 0.18) !important;
+    box-shadow: 0 0 8px rgba(223, 216, 107, 0.3) !important;
+}
+
+.status-badge-label {
+    color: #e8e8f0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+    text-shadow:
+        0 1px 3px rgba(0,0,0,0.8),
+        0 0 6px rgba(0,0,0,0.6),
+        1px 1px 0 rgba(0,0,0,0.5),
+        -1px -1px 0 rgba(0,0,0,0.5);
+}
+
+/* Tooltip for topbar badges: show below */
+.topbar-status .tooltip-text {
+    bottom: auto;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    margin-left: 0;
+    z-index: 300;
+    font-size: 0.75rem;
+}
+
+.topbar-status .tooltip-text::after {
+    top: auto;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-color: transparent transparent var(--dark-purple) transparent;
+}
+
+/* Flash override for badge */
+.status-badge.flash {
+    animation: badge-flash 0.2s ease-out;
+}
+
+@keyframes badge-flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* --- Right side: social icons --- */
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.topbar-socials-pinned {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.topbar-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(183, 183, 197, 0.2);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+
+.topbar-social-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
+}
+
+.topbar-social-link:hover {
+    background: rgba(4, 169, 240, 0.1);
+    transform: translateY(-1px);
+}
+
+.topbar-social-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    opacity: 0.75;
+    transition: opacity 0.2s;
+}
+
+.topbar-social-link:hover .topbar-social-icon {
+    opacity: 1;
+}
+
+.topbar-tool-icon {
+    border-radius: 6px;
+}
+
+.topbar-icon-label {
+    font-size: 0.6rem;
+    color: var(--light-gray);
+    white-space: nowrap;
+    line-height: 1;
+    font-weight: 500;
+}
+
+/* More button */
+.topbar-more-btn {
+    background: rgba(62, 14, 167, 0.35);
+    border: 1px solid rgba(4, 169, 240, 0.25);
+    color: var(--light-gray);
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, transform 0.2s;
+    flex-shrink: 0;
+    font-size: 0.9rem;
+    margin-left: 2px;
+}
+
+.topbar-more-btn:hover,
+.topbar-more-btn.active {
+    background: rgba(4, 169, 240, 0.2);
+    color: var(--bright-blue);
+    border-color: var(--bright-blue);
+    transform: scale(1.07);
+}
+
+/* Overflow popup menu */
+.topbar-overflow-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: rgba(17, 10, 45, 0.97);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(4, 169, 240, 0.2);
+    border-radius: 12px;
+    padding: 10px 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+    z-index: 300;
+    flex-direction: row;
+    gap: 4px;
+    align-items: flex-start;
+    min-width: max-content;
+}
+
+.topbar-overflow-menu.open {
+    display: flex;
+    animation: popup-in 0.18s ease;
+}
+
+@keyframes popup-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Responsive topbar */
+@media (max-width: 820px) {
+    .topbar {
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        gap: 8px;
+    }
+    .topbar-title {
+        font-size: 1rem;
+    }
+    .topbar-status {
+        gap: 4px;
+    }
+    .topbar-icon-label {
+        display: none;
+    }
+    .status-badge-label {
+        display: none;
+    }
+    .status-badge {
+        padding: 4px 6px !important;
+        border-radius: 50% !important;
+        width: 22px !important;
+        height: 22px !important;
+        justify-content: center;
+    }
+}
+
+
 header {
     text-align: center;
     padding: 20px 0;
@@ -292,8 +585,8 @@ h1 {
 
 .card-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(315px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
   margin-top: 20px;
 }
 
@@ -326,7 +619,7 @@ h1 {
 .bot-card-content {
     position: relative;
     z-index: 1; /* Content above background */
-    padding: 20px;
+    padding: 12px 16px;
 }
 
 
@@ -459,9 +752,9 @@ h1 {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
     border-bottom: 1px solid var(--medium-gray);
-    padding-bottom: 10px;
+    padding-bottom: 8px;
 }
 
 .bot-title {
@@ -471,7 +764,7 @@ h1 {
 }
 
 .bot-name {
-    font-size: 1.4rem;
+    font-size: 1.1rem;
     font-weight: bold;
     color: var(--bright-blue);
 }
