@@ -53,6 +53,9 @@ class Database {
 		this.backupStarted = false;
 		this.lastScheduledBackup = this.getLastScheduledBackupTime();
 
+		// Queue for transactions to prevent concurrent transactions on the same connection
+		this.transactionQueues = new Map();
+
 		// Fallback: Start backup system after 5 minutes if no write occurred
 		if (!this.options.disableBackup) {
 			setTimeout(
@@ -768,19 +771,54 @@ class Database {
 	 * @param {Function} callback Async function containing database operations
 	 */
 	async dbTransaction(dbName, callback) {
-		try {
-			await this.dbRun(dbName, "BEGIN TRANSACTION");
-			const result = await callback();
-			await this.dbRun(dbName, "COMMIT");
-			return result;
-		} catch (error) {
-			try {
-				await this.dbRun(dbName, "ROLLBACK");
-			} catch (rollbackError) {
-				this.logger.error(`Failed to rollback ${dbName}:`, rollbackError);
-			}
-			throw error;
+		// Initialize queue for this database if it doesn't exist
+		if (!this.transactionQueues.has(dbName)) {
+			this.transactionQueues.set(dbName, Promise.resolve());
 		}
+
+		// Get the current head of the queue
+		const currentQueue = this.transactionQueues.get(dbName);
+
+		// Create the next task in the queue
+		const nextTask = (async () => {
+			// Wait for the previous task to complete
+			await currentQueue;
+
+			let transactionStarted = false;
+			try {
+				await this.dbRun(dbName, "BEGIN TRANSACTION");
+				transactionStarted = true;
+
+				const result = await callback();
+
+				await this.dbRun(dbName, "COMMIT");
+				transactionStarted = false;
+				return result;
+			} catch (error) {
+				if (transactionStarted) {
+					try {
+						await this.dbRun(dbName, "ROLLBACK");
+					} catch (rollbackError) {
+						// Only log if it's not the "no transaction is active" error which is expected if BEGIN failed
+						if (
+							!rollbackError.message ||
+							!rollbackError.message.includes("no transaction is active")
+						) {
+							this.logger.error(`Failed to rollback ${dbName}:`, rollbackError);
+						}
+					}
+				}
+				throw error;
+			}
+		})();
+
+		// Update the queue head (and catch errors so the queue doesn't stay blocked)
+		this.transactionQueues.set(
+			dbName,
+			nextTask.catch(() => {})
+		);
+
+		return nextTask;
 	}
 }
 
