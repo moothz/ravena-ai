@@ -518,14 +518,39 @@ function sortStandings(standings) {
 }
 
 /**
- * Converte "MM/DD/YYYY HH:mm" (formato da API) → Date com ajuste de fuso.
+ * Mapa de offsets de fuso horário por Estádio para o Horário de Brasília (GMT-3).
+ * Baseado nas sedes da Copa 2026 e seus respectivos fusos em Junho/Julho (DST).
+ */
+const STADIUM_OFFSETS = {
+	// EDT (UTC-4) -> BRT (UTC-3) é +1h
+	// Sedes: Atlanta (7), Miami (8), Boston (9), Philadelphia (10), New York/NJ (11), Toronto (12)
+	7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1,
+
+	// CDT (UTC-5) -> BRT (UTC-3) é +2h
+	// Sedes: Dallas (4), Houston (5), Kansas City (6)
+	4: 2, 5: 2, 6: 2,
+
+	// CST/Mexico (UTC-6) -> BRT (UTC-3) é +3h
+	// Sedes: Mexico City (1), Guadalajara (2), Monterrey (3)
+	1: 3, 2: 3, 3: 3,
+
+	// PDT (UTC-7) -> BRT (UTC-3) é +4h
+	// Sedes: Vancouver (13), Seattle (14), San Francisco (15), Los Angeles (16)
+	13: 4, 14: 4, 15: 4, 16: 4
+};
+
+/**
+ * Converte "MM/DD/YYYY HH:mm" (formato da API) → Date com ajuste de fuso por estádio.
  * Retorna Date muito distante se inválido.
  */
 function parseGameDate(gmOrStr) {
 	const raw = typeof gmOrStr === "string" ? gmOrStr : gmOrStr?.local_date || gmOrStr?.date || "";
+	const stadiumId = gmOrStr?.stadium_id;
+
 	const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
 	let d;
 	if (m) {
+		// Criar data no fuso local do servidor (GMT-3)
 		d = new Date(`${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00`);
 	} else {
 		d = new Date(raw);
@@ -533,8 +558,11 @@ function parseGameDate(gmOrStr) {
 
 	if (isNaN(d)) return new Date(8640000000000000);
 
-	// Ajuste de +3 horas para o fuso horário GMT-3 (ajuste solicitado)
-	d.setHours(d.getHours() + 3);
+	// Se for uma string simples sem stadium_id, mantemos o ajuste padrão de +3
+	// Caso contrário, usamos o offset específico do estádio para Brasília
+	const offset = STADIUM_OFFSETS[stadiumId] ?? 3;
+
+	d.setHours(d.getHours() + offset);
 	return d;
 }
 
