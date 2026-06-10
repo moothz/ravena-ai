@@ -205,27 +205,36 @@ O login e senha são os valores definidos em `managementUser` e `managementPW` n
 ### Comandos úteis
 
 ```bash
-# Inicialização e Configuração
+# === Inicialização e Configuração ===
 make setup         # Configuração inicial (gera .env e segredos)
 make up-build      # Build das imagens e sobe tudo
 make up            # Sobe os containers sem rebuild
 make down          # Para e remove os containers
+make validate      # Valida a sintaxe do docker-compose.yml
 
-# Gerenciamento e Update
+# === Gerenciamento e Update ===
 make ravena-ai     # Lint + Build + Restart (ideal para quando editar o código)
 make restart-bot   # Reinicia apenas o container do bot (recarrega bots.json)
 make restart-api   # Reinicia apenas o container da API (whatsgoapi)
-make restart       # Reinicia todos os serviços
+make restart       # Reinicia todos os serviços (todos os containers)
+make update-whatsgoapi # Atualiza o submódulo whatsgoapi e reconstrói o container
 
-# Monitoramento e Manutenção
+# === Monitoramento ===
 make logs          # Logs de todos os containers
 make logs-bot      # Logs apenas do bot
-make logs-botapi   # Logs apenas do whatsgoapi
-make ps            # Status dos containers
+make logs-api      # Logs apenas do whatsgoapi
+make ps            # Status de todos os containers
+
+# === Testes e Desenvolvimento ===
+make test          # Roda o harness de testes dentro do container (sem zap)
+make test-quick FILE=path/to/file.js # Sincroniza um arquivo e roda o teste
+make test-providers # Valida as chaves de API do service-providers.json
+make sync          # Sincroniza arquivos locais com o container em tempo real
+
+# === Manutenção ===
 make update-allm   # Atualiza comandos na base do AnythingLLM
-
-
 make clean         # Limpa containers parados e imagens órfãs
+make clean-all     # PERIGO: Remove tudo (containers, imagens e VOLUMES)
 ```
 
 ### APIs Opcionais
@@ -331,77 +340,6 @@ docker compose exec ravena-ai node -e "
 - **Saída do processo**: automática — o runner fecha as conexões e encerra ao final
 
 ---
-
-## 🧩 Contribuindo: Implementandos Novos Comandos
-
-Para contribuir com o bot e adicionar um novo comando fixo, crie um arquivo `.js` na pasta `src/functions/`.
-
-Alguns comandos que outros usuários criaram:
-- [Listas](src/functions/ListCommands.js)
-- [Busca de Áudios no MyInstants](src/functions/MyInstantsAudioSearch.js)
-- [Jogo: Anagrama](src/functions/AnagramGame.js)
-
-Aqui vai uma boa base pra começar:
-
-```javascript
-const Logger = require('../utils/Logger');
-const Command = require('../models/Command');
-const ReturnMessage = require('../models/ReturnMessage');
-
-const logger = new Logger('meus-comandos');
-
-const commands = [
-  new Command({
-    name: 'exemplo',
-    description: 'Um comando de exemplo',
-    reactions: {
-      before: "⌛️",  // Emoji mostrado antes da execução
-      after: "✅"    // Emoji mostrado após a execução
-    },
-    method: async (bot, message, args, group) => {
-      const chatId = message.group || message.author;
-      logger.debug(`Executando comando exemplo`);
-      
-      // Obtém o primeiro argumento ou usa um valor padrão
-      const nome = args.length > 0 ? args[0] : "mundo";
-      
-      // Envia a resposta
-      return new ReturnMessage({
-        chatId: chatId,
-        content: `Olá, ${nome}!`
-      });
-    }
-  })
-];
-
-// Exporta os comandos
-module.exports = { commands };
-```
-
-### 🤖 Contribuindo: Criar comandos usando IA
-Se você sabe pedir pras LLMs programarem, aqui vai uma dica de como fazer:
-
-Anexe os seguintes arquivos:
-```
-- models/Group.js
-- models/Command.js
-- models/ReturnMessage.js
-- Este código de exemplo acima como exemplo.js
-```
-Se estiver fazendo alguma função similar a alguma existente no bot, anexo também o arquivo JS da pasta functions - por exemplo, se for fazer um comando que retorne Stickers, anexe o `Stickers.js` para a IA saber como tratar ReturnMessage de stickers, etc.
-
-
-Peça para o LLM:
-```
-Respeitando os padrões de implementação apresentados nos modelos e restante do projeto desenvolva um novo comando conforme instruções a seguir:
-- Comando 'soletrar'
-- Recebe como argumento várias palavras
-- Para cada palavra recebida como argumento, separe as letras com hifen
-
-Exemplo:
-- Entrada: !soletrar batata porco
-- Saída: B-A-T-A-T-A | P-O-R-C-O
-```
 
 ## 📝 Licença
 

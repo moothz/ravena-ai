@@ -123,6 +123,9 @@ ps: ## Mostra o status de todos os containers
 update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no container
 	docker compose exec ravena-ai node update-allm-cmds.js
 
+update-donates: ## Atualiza o ranking de doadores no README.md
+	@./update-donates.sh
+
 test: ## Roda o arquivo run-testes.js dentro do container (sem WhatsApp)
 	docker cp run-testes.js $$(docker compose ps -q ravena-ai):/app/run-testes.js
 	docker cp src/testing $$(docker compose ps -q ravena-ai):/app/src/
