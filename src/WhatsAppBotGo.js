@@ -1912,6 +1912,16 @@ class WhatsAppBotGo {
 			};
 
 			if (!skipCache) {
+				// Limpa dados pesados antes de salvar no cache para economizar espaço e I/O
+				if (formattedMessage.goMessageData?.groupData) {
+					delete formattedMessage.goMessageData.groupData.Participants;
+					delete formattedMessage.goMessageData.groupData.Topic;
+				}
+				if (formattedMessage.origin?.groupData) {
+					delete formattedMessage.origin.groupData.Participants;
+					delete formattedMessage.origin.groupData.Topic;
+				}
+
 				this.cacheManager.putGoMessageInCache(formattedMessage);
 			}
 
