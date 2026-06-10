@@ -18,8 +18,9 @@ echo "| Rank | Doador | Valor |" > "$TEMP_FILE"
 echo "|------|--------|-------|" >> "$TEMP_FILE"
 
 # Query SQLite para pegar doadores com valor >= 5
+# Usamos .mode list e um separador simples para evitar aspas automáticas do modo CSV
 sqlite3 "$DB_PATH" <<EOF >> "$TEMP_FILE"
-.mode csv
+.mode list
 .separator " | "
 SELECT 
     (SELECT COUNT(*) FROM donations d2 WHERE d2.valor > d1.valor) + 1 as rank,
@@ -31,8 +32,11 @@ ORDER BY valor DESC;
 EOF
 
 # Formata as linhas do SQLite para o padrão Markdown (adicionando pipes nas extremidades)
-# Ignora as linhas de cabeçalho que já têm pipes
+# Começamos da linha 3 para ignorar o cabeçalho manual que já tem pipes
 sed -i '3,$s/^/| /; 3,$s/$/ |/' "$TEMP_FILE"
+
+# Limpeza: remove aspas duplas que o SQLite pode ter inserido em nomes com caracteres especiais
+sed -i 's/"//g' "$TEMP_FILE"
 
 # Remove o arquivo temporário se algo der errado na query
 if [ ! -s "$TEMP_FILE" ]; then
