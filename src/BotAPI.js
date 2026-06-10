@@ -100,6 +100,7 @@ class BotAPI {
 			data: []
 		};
 
+		this.isUpdatingAnalytics = false;
 		this.sseClients = [];
 
 		if (this.eventHandler) {
@@ -2481,6 +2482,12 @@ class BotAPI {
 	 * @returns {Promise<void>}
 	 */
 	async updateAnalyticsCache() {
+		if (this.isUpdatingAnalytics) {
+			this.logger.warn("Atualização de cache de dados analíticos já em andamento, pulando...");
+			return;
+		}
+
+		this.isUpdatingAnalytics = true;
 		try {
 			this.logger.info("Atualizando cache de dados analíticos...");
 
@@ -2499,41 +2506,49 @@ class BotAPI {
 
 			// Agrupa relatórios por bot
 			const botReports = {};
-			reports.forEach((report) => {
+			let count = 0;
+			for (const report of reports) {
+				if (++count % 2000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				if (!botReports[report.botId]) {
 					botReports[report.botId] = [];
 				}
 				botReports[report.botId].push(report);
-			});
+			}
 
 			// Processa dados para cada bot
-			Object.keys(botReports).forEach((botId) => {
+			for (const botId of Object.keys(botReports)) {
 				// Processa dados diários (por hora)
-				this.analyticsCache.daily[botId] = this.processDailyData(botReports[botId]);
+				this.analyticsCache.daily[botId] = await this.processDailyData(botReports[botId]);
 
 				// Processa dados semanais (por dia da semana)
-				this.analyticsCache.weekly[botId] = this.processWeeklyData(botReports[botId]);
+				this.analyticsCache.weekly[botId] = await this.processWeeklyData(botReports[botId]);
 
 				// Processa dados mensais (por dia do mês)
-				this.analyticsCache.monthly[botId] = this.processMonthlyData(botReports[botId]);
+				this.analyticsCache.monthly[botId] = await this.processMonthlyData(botReports[botId]);
 
 				// Processa dados anuais (por dia)
-				this.analyticsCache.yearly[botId] = this.processYearlyData(botReports[botId]);
-			});
+				this.analyticsCache.yearly[botId] = await this.processYearlyData(botReports[botId]);
+
+				// Pequeno yield entre bots para garantir fluidez
+				await new Promise((resolve) => setImmediate(resolve));
+			}
 
 			// Salva datas comuns para o gráfico anual
 			const yearlyDates = new Set();
-			Object.values(this.analyticsCache.yearly).forEach((data) => {
+			for (const data of Object.values(this.analyticsCache.yearly)) {
 				if (data && data.dates) {
-					data.dates.forEach((date) => yearlyDates.add(date));
+					for (const date of data.dates) {
+						yearlyDates.add(date);
+					}
 				}
-			});
+				await new Promise((resolve) => setImmediate(resolve));
+			}
 
 			// Ordena as datas
 			const sortedDates = Array.from(yearlyDates).sort();
 
 			// Atualiza os dados de cada bot para usar as mesmas datas
-			Object.keys(this.analyticsCache.yearly).forEach((botId) => {
+			for (const botId of Object.keys(this.analyticsCache.yearly)) {
 				const botData = this.analyticsCache.yearly[botId];
 				if (botData) {
 					// Cria novo array de valores baseado nas datas ordenadas
@@ -2544,13 +2559,16 @@ class BotAPI {
 					if (botData.dates && botData.values) {
 						for (let i = 0; i < botData.dates.length; i++) {
 							dateValueMap[botData.dates[i]] = botData.values[i] ?? 0;
+							if (i % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 						}
 					}
 
 					// Preenche o novo array de valores com base nas datas ordenadas
-					sortedDates.forEach((date) => {
+					let i = 0;
+					for (const date of sortedDates) {
 						newValues.push(dateValueMap[date] ?? 0);
-					});
+						if (++i % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
+					}
 
 					// Atualiza o objeto de dados do bot
 					this.analyticsCache.yearly[botId] = {
@@ -2558,26 +2576,31 @@ class BotAPI {
 						values: newValues
 					};
 				}
-			});
+				await new Promise((resolve) => setImmediate(resolve));
+			}
 
 			// Atualiza o timestamp da última atualização
 			this.analyticsCache.lastUpdate = Date.now();
 			this.logger.info("Cache de dados analíticos atualizado com sucesso");
 		} catch (error) {
 			this.logger.error("Erro ao atualizar cache de dados analíticos:", error);
+		} finally {
+			this.isUpdatingAnalytics = false;
 		}
 	}
 
 	/**
 	 * Processa dados diários (por hora)
 	 * @param {Array} reports - Relatórios de carga
-	 * @returns {Object} - Dados processados
+	 * @returns {Promise<Object>} - Dados processados
 	 */
-	processDailyData(reports) {
+	async processDailyData(reports) {
 		try {
 			const hourlyTotalsByDate = {};
+			let count = 0;
 
-			reports.forEach((report) => {
+			for (const report of reports) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				if (report.period && report.period.start && report.messages) {
 					const date = new Date(report.period.start);
 					date.setMinutes(0, 0, 0);
@@ -2588,16 +2611,18 @@ class BotAPI {
 					if (!hourlyTotalsByDate[key]) hourlyTotalsByDate[key] = 0;
 					hourlyTotalsByDate[key] += totalMsgs;
 				}
-			});
+			}
 
 			const hourSums = Array(24).fill(0);
 			const hourCounts = Array(24).fill(0);
 
-			Object.entries(hourlyTotalsByDate).forEach(([key, total]) => {
+			count = 0;
+			for (const [key, total] of Object.entries(hourlyTotalsByDate)) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				const hour = new Date(key).getHours();
 				hourSums[hour] += total;
 				hourCounts[hour]++;
-			});
+			}
 
 			const hourlyAverages = hourSums.map((sum, index) => {
 				const count = hourCounts[index];
@@ -2616,13 +2641,15 @@ class BotAPI {
 	/**
 	 * Processa dados semanais (por dia da semana)
 	 * @param {Array} reports - Relatórios de carga
-	 * @returns {Object} - Dados processados
+	 * @returns {Promise<Object>} - Dados processados
 	 */
-	processWeeklyData(reports) {
+	async processWeeklyData(reports) {
 		try {
 			const dailyTotals = {};
+			let count = 0;
 
-			reports.forEach((report) => {
+			for (const report of reports) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				if (report.period && report.period.start && report.messages) {
 					const dateString = new Date(report.period.start).toISOString().split("T")[0];
 					const totalMsgs = (report.messages.totalReceived ?? 0) + (report.messages.totalSent ?? 0);
@@ -2630,16 +2657,18 @@ class BotAPI {
 					if (!dailyTotals[dateString]) dailyTotals[dateString] = 0;
 					dailyTotals[dateString] += totalMsgs;
 				}
-			});
+			}
 
 			const daySums = Array(7).fill(0);
 			const dayCounts = Array(7).fill(0);
 
-			Object.entries(dailyTotals).forEach(([dateString, total]) => {
+			count = 0;
+			for (const [dateString, total] of Object.entries(dailyTotals)) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				const dayOfWeek = new Date(dateString).getUTCDay();
 				daySums[dayOfWeek] += total;
 				dayCounts[dayOfWeek]++;
-			});
+			}
 
 			const dailyAverages = daySums.map((sum, index) => {
 				const count = dayCounts[index];
@@ -2658,9 +2687,9 @@ class BotAPI {
 	/**
 	 * Processa dados mensais (por dia do mês)
 	 * @param {Array} reports - Relatórios de carga
-	 * @returns {Object} - Dados processados
+	 * @returns {Promise<Object>} - Dados processados
 	 */
-	processMonthlyData(reports) {
+	async processMonthlyData(reports) {
 		try {
 			// Mantido apenas para compatibilidade, mas não será usado no filtro 'monthly'
 			// Inicializa arrays para os 31 dias do mês
@@ -2668,7 +2697,9 @@ class BotAPI {
 			const dayTotals = Array(31).fill(0);
 
 			// Processa cada relatório
-			reports.forEach((report) => {
+			let count = 0;
+			for (const report of reports) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				if (report.period && report.period.start && report.messages) {
 					const date = new Date(report.period.start);
 					const day = date.getDate() - 1; // 0-30
@@ -2680,7 +2711,7 @@ class BotAPI {
 					dayCounts[day]++;
 					dayTotals[day] += totalMsgs;
 				}
-			});
+			}
 
 			// Calcula média por dia do mês
 			const monthlyAverages = dayTotals.map((total, index) => {
@@ -2700,15 +2731,17 @@ class BotAPI {
 	/**
 	 * Processa dados anuais (por dia)
 	 * @param {Array} reports - Relatórios de carga
-	 * @returns {Object} - Dados processados
+	 * @returns {Promise<Object>} - Dados processados
 	 */
-	processYearlyData(reports) {
+	async processYearlyData(reports) {
 		try {
 			// Mapeia totais diários
 			const dailyTotals = {};
 
 			// Processa cada relatório
-			reports.forEach((report) => {
+			let count = 0;
+			for (const report of reports) {
+				if (++count % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 				if (report.period && report.period.start && report.messages) {
 					const date = new Date(report.period.start);
 					const dateString = date.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -2722,7 +2755,7 @@ class BotAPI {
 					}
 					dailyTotals[dateString] += totalMsgs;
 				}
-			});
+			}
 
 			// Converte para arrays ordenados por data
 			const dates = Object.keys(dailyTotals).sort();

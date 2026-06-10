@@ -524,19 +524,31 @@ function sortStandings(standings) {
 const STADIUM_OFFSETS = {
 	// EDT (UTC-4) -> BRT (UTC-3) é +1h
 	// Sedes: Atlanta (7), Miami (8), Boston (9), Philadelphia (10), New York/NJ (11), Toronto (12)
-	7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1,
+	7: 1,
+	8: 1,
+	9: 1,
+	10: 1,
+	11: 1,
+	12: 1,
 
 	// CDT (UTC-5) -> BRT (UTC-3) é +2h
 	// Sedes: Dallas (4), Houston (5), Kansas City (6)
-	4: 2, 5: 2, 6: 2,
+	4: 2,
+	5: 2,
+	6: 2,
 
 	// CST/Mexico (UTC-6) -> BRT (UTC-3) é +3h
 	// Sedes: Mexico City (1), Guadalajara (2), Monterrey (3)
-	1: 3, 2: 3, 3: 3,
+	1: 3,
+	2: 3,
+	3: 3,
 
 	// PDT (UTC-7) -> BRT (UTC-3) é +4h
 	// Sedes: Vancouver (13), Seattle (14), San Francisco (15), Los Angeles (16)
-	13: 4, 14: 4, 15: 4, 16: 4
+	13: 4,
+	14: 4,
+	15: 4,
+	16: 4
 };
 
 /**
