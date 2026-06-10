@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, Partials } = require("discord.js");
 
 /**
  * Wrapper para o cliente Discord.
@@ -18,7 +18,8 @@ class DiscordApiClient {
 				GatewayIntentBits.GuildMessages,
 				GatewayIntentBits.MessageContent,
 				GatewayIntentBits.DirectMessages
-			]
+			],
+			partials: [Partials.Channel]
 		});
 
 		this.token = token;

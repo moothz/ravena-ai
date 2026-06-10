@@ -3,6 +3,7 @@
 */
 const { AttachmentBuilder, PermissionsBitField } = require("discord.js");
 const axios = require("axios");
+const mime = require("mime-types");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -21,6 +22,7 @@ const StreamSystem = require("./StreamSystem");
 const Database = require("./utils/Database");
 const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
+const SkipGroups = require("./utils/SkipGroups");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,9 +61,12 @@ class DiscordBot {
 
 		// --- Caches e Handlers (mantidos para compatibilidade) ---
 		this.redisURL = options.redisURL;
-		this.redisDB = options.redisDB || 1; // Usar um DB diferente do Whatsgo para evitar conflitos
-		this.redisTTL = options.redisTTL || 604800;
+		this.redisDB = options.redisDB ?? 1; // Usar um DB diferente do Whatsgo para evitar conflitos
+		this.redisTTL = options.redisTTL ?? 604800;
 		this.maxCacheSize = 1000;
+
+		this.skipGroupInfo = [];
+		this.streamIgnoreGroups = [];
 
 		this.messageCache = [];
 		this.contactCache = [];
@@ -118,19 +123,20 @@ class DiscordBot {
 		this.logger.info(`[${this.id}] Initializing Discord bot...`);
 		this.database.registerBotInstance(this);
 		this.startupTime = Date.now();
+		this.lastMessageReceived = Date.now();
+
+		await this._loadSkipGroupInfo();
 
 		this.logger.info("Registering Discord event listeners...");
 
 		this.discordClient.on("ready", () => {
-			this.isConnected = true;
 			this.discordBotId = this.discordClient.user.id;
-
+			// Update fake client info now that we have the real user id
+			this.client.info.wid._serialized = this.discordBotId;
 			this.logger.info(
 				`>>> SUCESSO! Bot ${this.id} (${this.discordClient.user.tag}) está conectado ao Discord! (ID: ${this.discordBotId}) <<<`
 			);
-			if (this.eventHandler && typeof this.eventHandler.onConnected === "function") {
-				this.eventHandler.onConnected(this);
-			}
+			this._onInstanceConnected();
 			this._sendStartupNotifications();
 		});
 
@@ -140,6 +146,7 @@ class DiscordBot {
 
 		this.discordClient.on("error", (error) => {
 			this.logger.error("!!! ERRO DO CLIENTE DISCORD !!!", error);
+			this._onInstanceDisconnected("CLIENT_ERROR");
 		});
 		this.discordClient.on("warn", (warning) => {
 			this.logger.warn("!!! AVISO DO CLIENTE DISCORD !!!", warning);
@@ -149,10 +156,28 @@ class DiscordBot {
 			await this.apiClient.connect();
 		} catch (error) {
 			this.logger.error(`Error during Discord login for instance ${this.id}:`, error);
-			this.isConnected = false;
+			this._onInstanceDisconnected("LOGIN_FAILED");
 		}
 
 		return this;
+	}
+
+	_onInstanceConnected() {
+		if (this.isConnected) return;
+		this.isConnected = true;
+		this.logger.info(`[${this.id}] Successfully connected to Discord.`);
+		if (this.eventHandler && typeof this.eventHandler.onConnected === "function") {
+			this.eventHandler.onConnected(this);
+		}
+	}
+
+	_onInstanceDisconnected(reason = "Unknown") {
+		if (!this.isConnected) return;
+		this.isConnected = false;
+		this.logger.info(`[${this.id}] Disconnected from Discord. Reason: ${reason}`);
+		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
+			this.eventHandler.onDisconnected(this, reason);
+		}
 	}
 
 	async _handleMessage(message) {
@@ -233,7 +258,7 @@ class DiscordBot {
 			const isGroup = message.inGuild();
 			const authorId = message.author.id;
 			const channelId = message.channel.id;
-			const guildId = message.guild.id;
+			const guildId = isGroup ? message.guild.id : null; // null in DMs
 			const timestamp = Math.floor(message.createdTimestamp / 1000);
 			const responseTime = Math.max(0, this.getCurrentTimestamp() - timestamp);
 
@@ -313,7 +338,16 @@ class DiscordBot {
 				id: { _serialized: message.id },
 				author: authorId,
 				from: channelId,
-				react: (emoji) => message.react(emoji),
+				react: async (emoji) => {
+					try {
+						for (const r of message.reactions.cache.values()) {
+							if (r.me) {
+								await r.users.remove(this.discordClient.user.id).catch(() => {});
+							}
+						}
+					} catch (_) {}
+					return message.react(emoji);
+				},
 				getContact: formattedMessage.getContact,
 				getChat: formattedMessage.getChat,
 				getQuotedMessage: async () => {
@@ -398,9 +432,30 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			}
 
 			// --- Tratamento de Opções ---
-			if (options.mentions && options.mentions.length > 0) {
-				const mentionStrings = options.mentions.map((id) => `<@${id.split("@")[0]}>`).join(" ");
-				discordPayload.content = `${discordPayload.content || ""} ${mentionStrings}`;
+			// Suppress all pings — Discord mentions are noisy; we show names inline instead.
+			discordPayload.allowed_mentions = { parse: [] };
+
+			if (
+				options.mentions &&
+				options.mentions.length > 0 &&
+				typeof discordPayload.content === "string"
+			) {
+				// Replace @userId occurrences in text with plain "@name" (no ping)
+				for (const id of options.mentions) {
+					const cleanId = id.split("@")[0];
+					// Try to resolve a display name from the Discord client cache
+					let displayName = cleanId;
+					try {
+						const user = this.discordClient.users.cache.get(cleanId);
+						if (user) displayName = user.globalName || user.username || cleanId;
+					} catch (_) {
+						/* ignore */
+					}
+					// Replace any @id or <@id> patterns in the content
+					discordPayload.content = discordPayload.content
+						.replace(new RegExp(`<@!?${cleanId}>`, "g"), `@${displayName}`)
+						.replace(new RegExp(`@${cleanId}\\b`, "g"), `@${displayName}`);
+				}
 			}
 
 			if (options.quotedMsgId) {
@@ -499,8 +554,8 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		const MAX_LENGTH = 4000;
 
 		const validMessages = okMessages.flatMap((msg) => {
-			// If content is short, return the message as-is (in an array)
-			if (msg.content.length <= MAX_LENGTH) {
+			// Only split string content
+			if (typeof msg.content !== "string" || msg.content.length <= MAX_LENGTH) {
 				return [msg];
 			}
 
@@ -550,7 +605,10 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		if (this.discordClient) {
 			await this.discordClient.destroy();
 		}
-		this.isConnected = false;
+		this._onInstanceDisconnected("DESTROYED");
+		if (this.cacheManager && typeof this.cacheManager.stop === "function") {
+			this.cacheManager.stop();
+		}
 		this.logger.info(`[destroy] Bot do Discord ${this.id} foi desligado.`);
 	}
 
@@ -615,17 +673,28 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 	// --- Funções de Mídia (Simuladas) ---
 
-	async createMedia(filePath) {
+	async createMedia(filePath, customMime = false) {
 		const data = await readFileAsync(filePath, { encoding: "base64" });
 		const filename = path.basename(filePath);
-		const mimetype = require("mime-types").lookup(filePath) || "application/octet-stream";
+		const mimetype = customMime || mime.lookup(filePath) || "application/octet-stream";
 		return { mimetype, data, filename, isMessageMedia: true };
 	}
 
 	async createMediaFromURL(url, options = {}) {
 		const filename = path.basename(new URL(url).pathname) || "media_from_url";
-		const mimetype = require("mime-types").lookup(url.split("?")[0]) || "application/octet-stream";
+		const mimetype = mime.lookup(url.split("?")[0]) || "application/octet-stream";
 		return { url, mimetype, filename, isMessageMedia: true };
+	}
+
+	async createMediaFromBase64(base64Data, mimetype, filename) {
+		const extension = mime.extension(mimetype) ?? "bin";
+		return {
+			mimetype,
+			data: base64Data,
+			filename: filename ?? `file.${extension}`,
+			source: "base64",
+			isMessageMedia: true
+		};
 	}
 
 	// --- Funções de Cache (Mantidas) ---
@@ -634,15 +703,57 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		return this.cacheManager.getMessageFromCache(messageId);
 	}
 
+	// --- SkipGroups (compatibilidade) ---
+
+	async _loadSkipGroupInfo() {
+		try {
+			this.skipGroupInfo = await SkipGroups.getInstance().getSkippedGroups(this.id);
+			this.logger.info(
+				`[SkipGroups] Loaded ${this.skipGroupInfo.length} skipped groups for bot ${this.id}.`
+			);
+		} catch (error) {
+			this.logger.error(`[SkipGroups] Error loading skip groups:`, error);
+			this.skipGroupInfo = [];
+		}
+	}
+
+	async _saveSkipGroupInfo() {
+		// Deprecated: saved incrementally
+	}
+
+	async addSkipGroup(groupId) {
+		if (!this.skipGroupInfo.includes(groupId)) {
+			this.skipGroupInfo.push(groupId);
+			await SkipGroups.getInstance().addSkippedGroup(this.id, groupId);
+			this.logger.info(`[SkipGroups] Added ${groupId} to skip list.`);
+		}
+	}
+
+	async removeSkipGroup(groupId) {
+		const initialLength = this.skipGroupInfo.length;
+		this.skipGroupInfo = this.skipGroupInfo.filter((id) => id !== groupId);
+		if (this.skipGroupInfo.length < initialLength) {
+			await SkipGroups.getInstance().removeSkippedGroup(this.id, groupId);
+			this.logger.info(`[SkipGroups] Removed ${groupId} from skip list.`);
+		}
+	}
+
 	// --- Funções de Notificação (Adaptadas) ---
 
-	async _sendStartupNotifications() {
+	_sendStartupNotifications() {
 		if (this.grupoAvisos) {
 			const msg = new ReturnMessage(
 				this.grupoAvisos,
 				`✅ Bot Discord '${this.id}' conectado e operando!`
 			);
 			this.sendReturnMessages(msg);
+		}
+	}
+
+	logMsgToGrupo(msg, extra = false) {
+		if (this.grupoLogs && msg) {
+			this.logger.info(`[logMsgToGrupo] ${msg}`, extra);
+			this.sendMessage(this.grupoLogs, msg);
 		}
 	}
 
@@ -655,17 +766,20 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		return Promise.resolve(true);
 	}
 
-	async logout() {
+	logout() {
 		return this._unimplemented("logout");
 	}
-	async deleteInstance() {
+	deleteInstance() {
 		return this._unimplemented("deleteInstance");
 	}
-	async createInstance() {
+	createInstance() {
 		return this._unimplemented("createInstance");
 	}
-	async recreateInstance() {
+	recreateInstance() {
 		return this._unimplemented("recreateInstance");
+	}
+	updateVersions() {
+		return this._unimplemented("updateVersions");
 	}
 
 	async sendReaction(chatId, messageId, emoji) {
@@ -673,7 +787,11 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			const channel = await this.discordClient.channels.fetch(chatId);
 			const msg = await channel.messages.fetch(messageId);
 
-			this.removeReaction(chatId, messageId, process.env.LOADING_EMOJI);
+			for (const r of msg.reactions.cache.values()) {
+				if (r.me) {
+					await r.users.remove(this.discordClient.user.id).catch(() => {});
+				}
+			}
 
 			await msg.react(emoji);
 
@@ -753,6 +871,60 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 	}
 	async updateProfilePicture(pic) {
 		return this._unimplemented("updateProfilePicture");
+	}
+	deleteMessageByKey(key) {
+		return this._unimplemented("deleteMessageByKey");
+	}
+
+	// --- Compatibilidade com WhatsAppBotGo ---
+
+	_normalizeId(id) {
+		if (typeof id !== "string" || !id) return "";
+		return id.split("@")[0].split(":")[0];
+	}
+
+	async isUserAdminInGroup(userId, groupId) {
+		return this.adminUtils.isAdmin(userId, { id: groupId }, null, this);
+	}
+
+	notInWhitelist(author) {
+		const cleanAuthor = String(author).replace(/\D/g, "");
+		return !this.whitelist.includes(cleanAuthor);
+	}
+
+	validURL(str) {
+		try {
+			new URL(str);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	getLidFromPn(PN, chat) {
+		const participants = chat?.participants || [];
+		const found = participants.find((p) => {
+			const number = p.id?._serialized || "";
+			return number.startsWith(PN);
+		});
+		return found ? found.id._serialized : PN;
+	}
+
+	getPnFromLid(lid, chat) {
+		const participants = chat?.participants || [];
+		const found = participants.find((p) => p.id?._serialized?.startsWith(lid));
+		return found ? found.id._serialized : lid;
+	}
+
+	async fetchPushNameFromCache(id) {
+		return await this.cacheManager.getPushnameFromCache(id);
+	}
+
+	shouldDiscardMessage() {
+		return false;
+	}
+	rndString() {
+		return (Math.random() + 1).toString(36).substring(7);
 	}
 
 	// --- Funções Utilitárias ---

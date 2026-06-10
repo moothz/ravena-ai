@@ -1672,6 +1672,7 @@ class WhatsAppBotGo {
 			this.blockedContacts = [];
 		}
 		for (const bot of this.otherBots) {
+			if (!bot || typeof bot !== "string") continue; // skip null/undefined entries
 			// Assuming otherBots is an array of JID-like strings or bot IDs
 			const botId = bot.endsWith("@c.us") || bot.endsWith("@s.whatsapp.net") ? bot : `${bot}@c.us`; // Basic normalization
 			if (!this.blockedContacts.some((c) => c.id._serialized === botId)) {
