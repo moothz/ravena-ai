@@ -46,6 +46,7 @@ class CacheManager {
 		this.database.getSQLiteDb(
 			this.DB_NAME,
 			`
+      PRAGMA auto_vacuum = INCREMENTAL;
       CREATE TABLE IF NOT EXISTS kv_store (
         key TEXT PRIMARY KEY,
         value TEXT,
@@ -283,6 +284,9 @@ class CacheManager {
 			for (const table of tables) {
 				await this.database.dbRun(this.DB_NAME, `DELETE FROM ${table} WHERE expires_at < ?`, [now]);
 			}
+
+			// Reclaim empty space from deleted records incrementally (1000 pages = ~4MB per hour)
+			await this.database.dbRun(this.DB_NAME, "PRAGMA incremental_vacuum(1000)");
 		} catch (e) {
 			this.logger.error("Error cleaning expired cache:", e);
 		}
