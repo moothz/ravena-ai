@@ -418,6 +418,40 @@ class DiscordBot {
 		}
 	}
 
+	_storePublicAttachment(buffer, filename) {
+		try {
+			const outputDir = path.join(__dirname, "..", "public", "attachments");
+			if (!fs.existsSync(outputDir)) {
+				fs.mkdirSync(outputDir, { recursive: true });
+			}
+
+			const tempId = randomBytes(4).toString("hex");
+			const ext = path.extname(filename) || ".bin";
+			const baseName = path.basename(filename, ext);
+			const outputFileName = `att_${baseName}_${tempId}${ext}`;
+			const outputFilePath = path.join(outputDir, outputFileName);
+
+			fs.writeFileSync(outputFilePath, buffer);
+
+			// Agenda a remoção do arquivo após 30 minutos
+			setTimeout(
+				(ofp) => {
+					if (fs.existsSync(ofp)) {
+						fs.unlinkSync(ofp);
+					}
+				},
+				30 * 60 * 1000,
+				outputFilePath
+			);
+
+			const domain = process.env.BOT_DOMAIN || "http://localhost:5000";
+			return `${domain}/attachments/${outputFileName}`;
+		} catch (error) {
+			this.logger.error("[_storePublicAttachment] Erro ao salvar anexo público:", error);
+			return null;
+		}
+	}
+
 	async sendMessage(chatId, content, options = {}) {
 		this.logger.debug(`[sendMessage] to ${chatId} (Type: ${typeof content})`, options);
 		try {
@@ -506,12 +540,31 @@ class DiscordBot {
 					throw new Error("Media content must have 'data' (base64) or 'url'.");
 				}
 
-				const attachment = new AttachmentBuilder(fileBuffer, {
-					name: content.filename || "file.dat"
-				});
-				discordPayload.files = [attachment];
-				if (options.caption) {
-					discordPayload.content = options.caption;
+				const filename = content.filename || "file.dat";
+				const fileSizeMB = fileBuffer.length / (1024 * 1024);
+
+				// Discord limit for bots is usually 25MB. Using 24MB as safe threshold.
+				if (fileSizeMB > 24) {
+					this.logger.warn(
+						`[sendMessage] Arquivo muito grande (${fileSizeMB.toFixed(2)}MB). Gerando link de fallback.`
+					);
+					const publicUrl = this._storePublicAttachment(fileBuffer, filename);
+
+					if (publicUrl) {
+						let fallbackText = `⚠️ **O arquivo é muito grande para o Discord (${fileSizeMB.toFixed(2)}MB)**\n`;
+						if (options.caption) fallbackText += `\n${options.caption}\n`;
+						fallbackText += `\n🔗 **Link para baixar:** ${publicUrl}\n_(O link expira em 30 minutos)_`;
+
+						discordPayload.content = fallbackText;
+					} else {
+						discordPayload.content = `❌ Erro ao processar arquivo grande (${fileSizeMB.toFixed(2)}MB).`;
+					}
+				} else {
+					const attachment = new AttachmentBuilder(fileBuffer, { name: filename });
+					discordPayload.files = [attachment];
+					if (options.caption) {
+						discordPayload.content = options.caption;
+					}
 				}
 			} else if (content.isLocation) {
 				discordPayload.content = `📍 **Localização**: ${content.description || ""}
