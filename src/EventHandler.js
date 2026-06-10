@@ -8,6 +8,7 @@ const LLMService = require("./services/LLMService");
 const SpeechCommands = require("./functions/SpeechCommands");
 const { aiCommand } = require("./functions/AICommands");
 const SummaryCommands = require("./functions/SummaryCommands");
+const { PermissionsBitField } = require("discord.js");
 const NSFWPredict = require("./utils/NSFWPredict");
 const MuNewsCommands = require("./functions/MuNewsCommands");
 const HoroscopoCommands = require("./functions/HoroscopoCommands");
@@ -80,9 +81,20 @@ class EventHandler extends EventEmitter {
 	 * Obtém grupo por ID, cria se não existir
 	 * @param {string} groupId - O ID do grupo
 	 * @param {string} name - O nome do grupo (opcional)
+	 * @param {string} prefix - O prefixo padrão (opcional)
+	 * @param {string} addedBy - Quem adicionou o bot (opcional)
+	 * @param {Object} bot - Instância do bot (opcional)
+	 * @param {Object} message - Mensagem que disparou a criação (opcional)
 	 * @returns {Promise<Group>} - O objeto do grupo
 	 */
-	async getOrCreateGroup(groupId, name = null, prefix = "?", addedBy = null) {
+	async getOrCreateGroup(
+		groupId,
+		name = null,
+		prefix = "?",
+		addedBy = null,
+		bot = null,
+		message = null
+	) {
 		try {
 			let newGroup = false;
 			if (!this.groups[groupId]) {
@@ -105,6 +117,21 @@ class EventHandler extends EventEmitter {
 							.toLowerCase()
 							.replace(/[^a-zA-Z0-9_-]/g, "")
 							.substring(0, 15);
+
+					// Verifica se é Discord para formatar o nome como solicitado: nome-guild-nome-do-canal
+					if (bot && bot.useDiscord && message && message.guildId) {
+						try {
+							const guild = await bot.discordClient.guilds.fetch(message.guildId);
+							const channel = await bot.discordClient.channels.fetch(message.group);
+							if (guild && channel) {
+								const cleanGuild = guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+								const cleanChannel = channel.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+								displayName = `${cleanGuild}-${cleanChannel}`.toLowerCase();
+							}
+						} catch (discordErr) {
+							this.logger.error("Erro ao buscar nomes no Discord para displayName:", discordErr);
+						}
+					}
 
 					// Verifica se já tem grupo com esse nome antes
 					let grupoExistente = await this.database.getGroupByName(displayName);
@@ -307,10 +334,12 @@ class EventHandler extends EventEmitter {
 				SummaryCommands.storeMessage(message, message.group, bot);
 
 				const groupData = await this.getOrCreateGroup(
-					message.guildId ?? message.group,
+					message.group ?? message.guildId,
 					null,
 					bot.prefix,
-					message.author
+					message.author,
+					bot,
+					message
 				);
 				group = groupData.group;
 
@@ -939,7 +968,8 @@ class EventHandler extends EventEmitter {
 				data.group.id,
 				nomeGrupo,
 				bot.prefix,
-				data.responsavel?.id || data.responsavel
+				data.responsavel?.id || data.responsavel,
+				bot
 			);
 			const group = groupData.group;
 
@@ -1239,7 +1269,43 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 				this.logger.debug(`[groupJoin] botInfoMessage: ${botInfoMessage}`);
 
-				bot.sendMessage(group.id, botInfoMessage).catch((error) => {
+				let targetId = group.id;
+				// Se for Discord, tenta encontrar um canal adequado se o ID do grupo (Guild ID) não for um canal válido
+				if (bot.useDiscord && data.origin) {
+					try {
+						// Append discord.txt if it exists
+						try {
+							const discordTxtPath = path.join(this.database.databasePath, "textos", "discord.txt");
+							const discordTxtContent = await fs.readFile(discordTxtPath, "utf8");
+							if (discordTxtContent && discordTxtContent.trim() !== "") {
+								botInfoMessage += `\n\n${discordTxtContent.trim()}`;
+							}
+						} catch (e) {
+							// Ignora se arquivo não existir
+						}
+
+						const guild = await bot.discordClient.guilds.fetch(data.group.id);
+						const systemChannel = guild.systemChannelId;
+						if (systemChannel) {
+							targetId = systemChannel;
+						} else {
+							// Busca o primeiro canal de texto onde o bot pode falar
+							const channels = await guild.channels.fetch();
+							const firstChannel = channels.find(
+								(c) =>
+									c.isTextBased() &&
+									c
+										.permissionsFor(bot.discordClient.user)
+										.has(PermissionsBitField.Flags.SendMessages)
+							);
+							if (firstChannel) targetId = firstChannel.id;
+						}
+					} catch (e) {
+						this.logger.error("Erro ao definir canal de boas-vindas no Discord:", e);
+					}
+				}
+
+				bot.sendMessage(targetId, botInfoMessage).catch((error) => {
 					this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
 				});
 			} else {
@@ -1316,7 +1382,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				try {
 					if (isBotLeaving) {
 						const groupId = data.group.id;
-						const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix);
+						const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
 						const group = groupData.group;
 
 						if (bot.addSkipGroup) {

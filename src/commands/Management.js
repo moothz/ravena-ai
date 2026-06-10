@@ -1736,7 +1736,7 @@ class Management {
 			// Constrói mensagem informativa
 			let infoMessage = `*📊 Informações do Grupo*\n\n`;
 			infoMessage += `*Nome:* ${group.name}\n`;
-			infoMessage += `*ID WhatsApp:* ${group.id}\n`;
+			infoMessage += `*ID:* ${group.id}\n`;
 			infoMessage += `*Prefixo:* "${group.prefix}"\n`;
 			infoMessage += `*Data de Criação:* ${creationDate}\n`;
 			infoMessage += `*Pausado:* ${group.paused ? "Sim" : "Não"}\n\n`;

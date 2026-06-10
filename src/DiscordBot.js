@@ -96,7 +96,14 @@ class DiscordBot {
 
 		// --- Placeholders para sistemas não aplicáveis ---
 		this.inviteSystem = new InviteSystem(this); // Pode ser adaptado no futuro
-		this.streamSystem = null; // new StreamSystem(this);
+
+		if (process.env.DISABLE_ACTIVITY !== "true") {
+			this.streamSystem = StreamSystem.getInstance();
+			this.streamSystem.registerBot(this);
+			this.streamSystem.initialize();
+		} else {
+			this.streamSystem = null;
+		}
 
 		// --- Client Fake para manter a compatibilidade ---
 		this.client = {
@@ -142,6 +149,7 @@ class DiscordBot {
 
 		this.discordClient.on("messageCreate", this._handleMessage.bind(this));
 		this.discordClient.on("guildCreate", this._handleGroupJoin.bind(this));
+		this.discordClient.on("guildDelete", this._handleGroupLeave.bind(this));
 		this.discordClient.on("guildMemberAdd", this._handleParticipantUpdate.bind(this));
 
 		this.discordClient.on("error", (error) => {
@@ -212,18 +220,54 @@ class DiscordBot {
 		// Simula o evento de entrada em grupo
 		if (this.eventHandler && typeof this.eventHandler.onGroupJoin === "function") {
 			const mockGroupNotification = {
-				id: {
-					server: "g.us", // sufixo de grupo
-					user: guild.ownerId,
-					_serialized: `${guild.id}@g.us`
+				group: {
+					id: guild.id,
+					name: guild.name,
+					isBotJoining: true
 				},
-				body: `Bot foi adicionado ao servidor ${guild.name}`,
-				type: "add",
-				author: guild.ownerId, // Quem adicionou? Não temos essa info, usamos o dono.
-				chatId: guild.id,
-				recipientIds: [this.discordClient.user.id]
+				user: {
+					id: this.discordClient.user.id,
+					name: this.discordClient.user.username
+				},
+				responsavel: {
+					id: guild.ownerId,
+					name: "Guild Owner"
+				},
+				origin: {
+					getChat: async () => ({
+						id: guild.id,
+						name: guild.name,
+						isGroup: true,
+						participants: [],
+						groupMetadata: { desc: guild.description || "" }
+					})
+				}
 			};
 			this.eventHandler.onGroupJoin(this, mockGroupNotification);
+		}
+	}
+
+	async _handleGroupLeave(guild) {
+		this.logger.debug(`_handleGroupLeave`, guild);
+		this.logger.info(`Bot saiu ou foi removido do servidor: ${guild.name} (${guild.id})`);
+		// Simula o evento de saída do grupo
+		if (this.eventHandler && typeof this.eventHandler.onGroupLeave === "function") {
+			const mockGroupNotification = {
+				group: {
+					id: guild.id,
+					name: guild.name,
+					notInGroup: true
+				},
+				user: {
+					id: this.discordClient.user.id,
+					name: this.discordClient.user.username
+				},
+				responsavel: {
+					id: "unknown",
+					name: "Unknown"
+				}
+			};
+			this.eventHandler.onGroupLeave(this, mockGroupNotification);
 		}
 	}
 
@@ -377,8 +421,63 @@ class DiscordBot {
 	async sendMessage(chatId, content, options = {}) {
 		this.logger.debug(`[sendMessage] to ${chatId} (Type: ${typeof content})`, options);
 		try {
-			const isGroup = !!(await this.discordClient.channels.fetch(chatId)).guild;
+			if (!this.isConnected) {
+				throw new Error("Not connected to Discord");
+			}
+
+			let channel;
+			try {
+				channel = await this.discordClient.channels.fetch(chatId);
+			} catch (fetchError) {
+				// Se falhar ao buscar canal, tenta como User ID para abrir DM
+				try {
+					const user = await this.discordClient.users.fetch(chatId);
+					if (user) {
+						channel = await user.createDM();
+					} else {
+						throw fetchError;
+					}
+				} catch (userError) {
+					this.logger.error(
+						`[sendMessage] Não foi possível encontrar canal ou usuário para ${chatId}`
+					);
+					throw fetchError;
+				}
+			}
+
+			if (!channel || !channel.isTextBased()) {
+				throw new Error(`Channel ${chatId} not found or is not a text channel.`);
+			}
+
+			const isGroup = !!channel.guild;
 			this.loadReport.trackSentMessage(isGroup);
+
+			// Verificar permissões se for em um servidor (Guild)
+			if (isGroup) {
+				const permissions = channel.permissionsFor(this.discordClient.user);
+				if (permissions) {
+					if (!permissions.has(PermissionsBitField.Flags.SendMessages)) {
+						throw new Error(`Bot sem permissão SEND_MESSAGES no canal ${channel.name} (${chatId})`);
+					}
+					// Se for enviar mídia, checar ATTACH_FILES
+					const isMedia =
+						content.isMessageMedia || (content.mimetype && (content.data || content.url));
+					if (isMedia && !permissions.has(PermissionsBitField.Flags.AttachFiles)) {
+						throw new Error(`Bot sem permissão ATTACH_FILES no canal ${channel.name} (${chatId})`);
+					}
+					// Se for uma resposta (quotedMsgId), precisa de READ_MESSAGE_HISTORY
+					if (
+						options.quotedMsgId &&
+						!permissions.has(PermissionsBitField.Flags.ReadMessageHistory)
+					) {
+						this.logger.warn(
+							`Bot sem permissão READ_MESSAGE_HISTORY no canal ${channel.name} (${chatId}). A resposta pode falhar ou ser enviada sem citação.`
+						);
+						// Não vou dar throw aqui para tentar enviar mesmo assim,
+						// mas o Discord pode rejeitar se o payload tiver 'reply'
+					}
+				}
+			}
 
 			if (this.safeMode) {
 				this.logger.info(
@@ -389,15 +488,6 @@ class DiscordBot {
 					ack: 0,
 					body: content
 				};
-			}
-
-			if (!this.isConnected) {
-				throw new Error("Not connected to Discord");
-			}
-
-			const channel = await this.discordClient.channels.fetch(chatId);
-			if (!channel || !channel.isTextBased()) {
-				throw new Error(`Channel ${chatId} not found or is not a text channel.`);
 			}
 
 			const discordPayload = {};

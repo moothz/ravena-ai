@@ -158,22 +158,41 @@ class StreamSystem {
 	}
 
 	/**
+	 * Encontra o primeiro bot adequado para enviar mensagem em um grupo
+	 * @param {string} groupId
+	 * @returns {Promise<Object|null>}
+	 */
+	async findBotForGroup(groupId) {
+		const bots = await this.findBotsForGroup(groupId);
+		return bots.length > 0 ? bots[0] : null;
+	}
+
+	/**
 	 * Encontra bots adequados para enviar mensagem em um grupo
 	 * @param {string} groupId
 	 * @returns {Promise<Array<Object>>}
 	 */
 	async findBotsForGroup(groupId) {
 		const candidates = [];
+		const gidStr = groupId.toString();
+
+		const isWhatsAppGroup = gidStr.includes("@");
+		const isTelegramGroup = gidStr.startsWith("-");
+		// IDs do Discord são numéricos e longos (geralmente 18+ caracteres)
+		const isDiscordGroup = !isWhatsAppGroup && !isTelegramGroup && gidStr.length >= 17;
+
 		// Itera sobre os bots registrados para encontrar os que podem participar do grupo
 		for (const bot of this.bots) {
 			try {
 				// Verifica compatibilidade de plataforma
-				const isWhatsAppGroup = groupId.toString().includes("@");
 				if (bot.useTelegram) {
-					// Bot Telegram não pode enviar para grupo WhatsApp
-					if (isWhatsAppGroup) continue;
+					// Bot Telegram não pode enviar para grupo WhatsApp ou Discord
+					if (isWhatsAppGroup || isDiscordGroup) continue;
+				} else if (bot.useDiscord) {
+					// Bot Discord não pode enviar para WhatsApp ou Telegram
+					if (isWhatsAppGroup || isTelegramGroup) continue;
 				} else {
-					// Bot WhatsApp não pode enviar para grupo Telegram (que não tem @)
+					// Bot WhatsApp não pode enviar para Telegram ou Discord (que não tem @)
 					if (!isWhatsAppGroup) continue;
 				}
 
