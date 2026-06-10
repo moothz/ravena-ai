@@ -77,7 +77,7 @@ class WhatsAppBotGo {
 		this.messageCache = [];
 		this.contactCache = [];
 		this.sentMessagesCache = [];
-		this.cacheManager = new CacheManager(
+		this.cacheManager = CacheManager.getInstance(
 			this.redisURL,
 			this.redisDB,
 			this.redisTTL,

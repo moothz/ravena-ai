@@ -2489,47 +2489,45 @@ class BotAPI {
 
 		this.isUpdatingAnalytics = true;
 		try {
-			this.logger.info("Atualizando cache de dados analíticos...");
+			this.logger.info("Atualizando cache de dados analíticos (otimizado)...");
 
-			// Obtém todos os relatórios de carga
-			// Pegamos dados dos últimos 370 dias para análise anual
+			// Obtém dados agregados do banco (muito mais rápido que processar 350k linhas no JS)
 			const yearStart = new Date();
 			yearStart.setDate(yearStart.getDate() - 370);
 
-			const reports = await this.database.getLoadReports(yearStart.getTime());
+			const aggregatedData = await this.database.getAggregatedLoadReports(yearStart.getTime());
 
-			if (!reports || !Array.isArray(reports) || reports.length === 0) {
-				this.logger.warn("Nenhum relatório de carga encontrado para processamento analítico");
+			if (!aggregatedData || aggregatedData.length === 0) {
+				this.logger.warn("Nenhum dado analítico encontrado para processamento");
 				this.analyticsCache.lastUpdate = Date.now();
 				return;
 			}
 
-			// Agrupa relatórios por bot
-			const botReports = {};
-			let count = 0;
-			for (const report of reports) {
-				if (++count % 2000 === 0) await new Promise((resolve) => setImmediate(resolve));
-				if (!botReports[report.botId]) {
-					botReports[report.botId] = [];
+			// Agrupa dados por bot
+			const botDataGroups = {};
+			for (const row of aggregatedData) {
+				if (!botDataGroups[row.botId]) {
+					botDataGroups[row.botId] = [];
 				}
-				botReports[report.botId].push(report);
+				botDataGroups[row.botId].push(row);
 			}
 
 			// Processa dados para cada bot
-			for (const botId of Object.keys(botReports)) {
+			for (const botId of Object.keys(botDataGroups)) {
+				const botRows = botDataGroups[botId];
+
 				// Processa dados diários (por hora)
-				this.analyticsCache.daily[botId] = await this.processDailyData(botReports[botId]);
+				this.analyticsCache.daily[botId] = this.processDailyDataAggregated(botRows);
 
 				// Processa dados semanais (por dia da semana)
-				this.analyticsCache.weekly[botId] = await this.processWeeklyData(botReports[botId]);
+				this.analyticsCache.weekly[botId] = this.processWeeklyDataAggregated(botRows);
 
 				// Processa dados mensais (por dia do mês)
-				this.analyticsCache.monthly[botId] = await this.processMonthlyData(botReports[botId]);
+				this.analyticsCache.monthly[botId] = this.processMonthlyDataAggregated(botRows);
 
 				// Processa dados anuais (por dia)
-				this.analyticsCache.yearly[botId] = await this.processYearlyData(botReports[botId]);
+				this.analyticsCache.yearly[botId] = this.processYearlyDataAggregated(botRows);
 
-				// Pequeno yield entre bots para garantir fluidez
 				await new Promise((resolve) => setImmediate(resolve));
 			}
 
@@ -2541,36 +2539,27 @@ class BotAPI {
 						yearlyDates.add(date);
 					}
 				}
-				await new Promise((resolve) => setImmediate(resolve));
 			}
 
-			// Ordena as datas
 			const sortedDates = Array.from(yearlyDates).sort();
 
-			// Atualiza os dados de cada bot para usar as mesmas datas
+			// Normaliza os dados anuais para usar as mesmas datas (essencial para o frontend)
 			for (const botId of Object.keys(this.analyticsCache.yearly)) {
 				const botData = this.analyticsCache.yearly[botId];
 				if (botData) {
-					// Cria novo array de valores baseado nas datas ordenadas
 					const newValues = [];
 					const dateValueMap = {};
 
-					// Cria um mapa de data para valor
 					if (botData.dates && botData.values) {
 						for (let i = 0; i < botData.dates.length; i++) {
 							dateValueMap[botData.dates[i]] = botData.values[i] ?? 0;
-							if (i % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 						}
 					}
 
-					// Preenche o novo array de valores com base nas datas ordenadas
-					let i = 0;
 					for (const date of sortedDates) {
 						newValues.push(dateValueMap[date] ?? 0);
-						if (++i % 1000 === 0) await new Promise((resolve) => setImmediate(resolve));
 					}
 
-					// Atualiza o objeto de dados do bot
 					this.analyticsCache.yearly[botId] = {
 						dates: sortedDates,
 						values: newValues
@@ -2579,7 +2568,6 @@ class BotAPI {
 				await new Promise((resolve) => setImmediate(resolve));
 			}
 
-			// Atualiza o timestamp da última atualização
 			this.analyticsCache.lastUpdate = Date.now();
 			this.logger.info("Cache de dados analíticos atualizado com sucesso");
 		} catch (error) {
@@ -2587,6 +2575,76 @@ class BotAPI {
 		} finally {
 			this.isUpdatingAnalytics = false;
 		}
+	}
+
+	/**
+	 * Helpers otimizados para dados já agregados por SQL
+	 */
+	processDailyDataAggregated(rows) {
+		const hourSums = Array(24).fill(0);
+		const hourCounts = Array(24).fill(0);
+
+		for (const row of rows) {
+			const hour = new Date(row.hourKey).getHours();
+			hourSums[hour] += row.totalMessages;
+			hourCounts[hour]++;
+		}
+
+		return {
+			values: hourSums.map((sum, i) => (hourCounts[i] > 0 ? Math.round(sum / hourCounts[i]) : 0))
+		};
+	}
+
+	processWeeklyDataAggregated(rows) {
+		// Agrupa por dia primeiro (dateKey)
+		const dailyTotals = {};
+		for (const row of rows) {
+			if (!dailyTotals[row.dateKey]) dailyTotals[row.dateKey] = 0;
+			dailyTotals[row.dateKey] += row.totalMessages;
+		}
+
+		const daySums = Array(7).fill(0);
+		const dayCounts = Array(7).fill(0);
+
+		for (const [dateKey, total] of Object.entries(dailyTotals)) {
+			const dayOfWeek = new Date(dateKey + "T00:00:00Z").getUTCDay();
+			daySums[dayOfWeek] += total;
+			dayCounts[dayOfWeek]++;
+		}
+
+		return {
+			values: daySums.map((sum, i) => (dayCounts[i] > 0 ? Math.round(sum / dayCounts[i]) : 0))
+		};
+	}
+
+	processMonthlyDataAggregated(rows) {
+		const daySums = Array(31).fill(0);
+		const dayCounts = Array(31).fill(0);
+
+		for (const row of rows) {
+			const day = parseInt(row.dayOfMonth) - 1;
+			if (day >= 0 && day < 31) {
+				daySums[day] += row.totalMessages;
+				dayCounts[day]++;
+			}
+		}
+
+		return {
+			values: daySums.map((sum, i) => (dayCounts[i] > 0 ? Math.round(sum / dayCounts[i]) : 0))
+		};
+	}
+
+	processYearlyDataAggregated(rows) {
+		const dailyTotals = {};
+		for (const row of rows) {
+			if (!dailyTotals[row.dateKey]) dailyTotals[row.dateKey] = 0;
+			dailyTotals[row.dateKey] += row.totalMessages;
+		}
+
+		const dates = Object.keys(dailyTotals).sort();
+		const values = dates.map((d) => dailyTotals[d]);
+
+		return { dates, values };
 	}
 
 	/**

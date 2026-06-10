@@ -750,6 +750,32 @@ class CoreRepository {
 		}
 	}
 
+	/**
+	 * Obtém dados agregados de relatórios de carga para analytics
+	 * @param {number} since - Timestamp inicial
+	 * @returns {Promise<Array>} - Dados agregados por bot e dia
+	 */
+	async getAggregatedLoadReports(since = 0) {
+		try {
+			const sql = `
+				SELECT 
+					bot_id as botId,
+					strftime('%Y-%m-%dT%H:00:00.000Z', datetime(timestamp_start/1000, 'unixepoch')) as hourKey,
+					strftime('%Y-%m-%d', datetime(timestamp_start/1000, 'unixepoch')) as dateKey,
+					strftime('%w', datetime(timestamp_start/1000, 'unixepoch')) as dayOfWeek,
+					strftime('%d', datetime(timestamp_start/1000, 'unixepoch')) as dayOfMonth,
+					SUM(recv_private + recv_group + sent_private + sent_group) as totalMessages
+				FROM load_reports 
+				WHERE timestamp_start > ?
+				GROUP BY botId, hourKey
+			`;
+			return this.mappers.all(this.REPORTS_DB, sql, [since]);
+		} catch (error) {
+			this.logger.error("Error getting aggregated load reports:", error);
+			return [];
+		}
+	}
+
 	async addLoadReport(report) {
 		try {
 			const row = LoadReportMapper.toRow(report);

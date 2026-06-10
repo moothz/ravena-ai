@@ -444,6 +444,11 @@ class Database {
 	async getLoadReports(since = 0) {
 		return this.coreRepo.getLoadReports(since);
 	}
+
+	async getAggregatedLoadReports(since = 0) {
+		return this.coreRepo.getAggregatedLoadReports(since);
+	}
+
 	async saveLoadReports(reports) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] saveLoadReports() bloqueado");
@@ -452,6 +457,7 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.saveLoadReports(reports);
 	}
+
 	async addLoadReport(report) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] addLoadReport() bloqueado");

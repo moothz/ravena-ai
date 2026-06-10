@@ -13,6 +13,10 @@ const CACHE_CONFIG = {
 
 class CacheManager {
 	constructor(redisURL, redisDB, redisTTL, maxCacheSize) {
+		if (CacheManager.instance) {
+			return CacheManager.instance;
+		}
+
 		this.useRedis = process.env.USE_REDIS === "true";
 		this.logger = new Logger(`cache-manager`);
 		this.redisURL = redisURL;
@@ -32,8 +36,8 @@ class CacheManager {
 		this.pendingWrites = new Map();
 
 		this.unsavedChangesCount = 0;
-		this.FLUSH_THRESHOLD = 100;
-		this.FLUSH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+		this.FLUSH_THRESHOLD = 500; // Increased threshold for centralized manager
+		this.FLUSH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes flush interval
 
 		// Database setup
 		this.database = Database.getInstance();
@@ -131,6 +135,18 @@ class CacheManager {
 
 		// Setup shutdown hook
 		this.setupShutdown();
+
+		CacheManager.instance = this;
+	}
+
+	/**
+	 * Get Singleton Instance
+	 */
+	static getInstance(redisURL, redisDB, redisTTL, maxCacheSize) {
+		if (!CacheManager.instance) {
+			CacheManager.instance = new CacheManager(redisURL, redisDB, redisTTL, maxCacheSize);
+		}
+		return CacheManager.instance;
 	}
 
 	setupShutdown() {
