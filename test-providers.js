@@ -188,27 +188,27 @@ async function runTests() {
 				}
 				results.push({ name: "GEN_IMG", ...genRes });
 			} else if (category === "f5tts") {
-			        const ttsRes = await testUrl(
-			                `${p.url}/v1/audio/speech`,
-			                "POST",
-			                {
-			                        model: "f5-tts",
-			                        input: "Olá, eu sou a Ravena!",
-			                        voice: "ravena",
-			                        response_format: "mp3"
-			                },
-			                {
-			                        "Content-Type": "application/json",
-			                        Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined,
-			                        responseType: "arraybuffer"
-			                }
-			        );
-			        if (ttsRes.ok) {
-			                const outPath = `test-output-f5tts-${p.name}.mp3`;
-			                fs.writeFileSync(outPath, Buffer.from(ttsRes.data));
-			                ttsRes.fileInfo = getFileSize(outPath);
-			        }
-			        results.push({ name: "TTS", ...ttsRes });
+				const ttsRes = await testUrl(
+					`${p.url}/v1/audio/speech`,
+					"POST",
+					{
+						model: "f5-tts",
+						input: "Olá, eu sou a Ravena!",
+						voice: "ravena",
+						response_format: "mp3"
+					},
+					{
+						"Content-Type": "application/json",
+						Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined,
+						responseType: "arraybuffer"
+					}
+				);
+				if (ttsRes.ok) {
+					const outPath = `test-output-f5tts-${p.name}.mp3`;
+					fs.writeFileSync(outPath, Buffer.from(ttsRes.data));
+					ttsRes.fileInfo = getFileSize(outPath);
+				}
+				results.push({ name: "TTS", ...ttsRes });
 			} else {
 				results.push({ name: "STATUS", ...(await testUrl(p.url)) });
 			}
