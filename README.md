@@ -75,7 +75,9 @@ A stack é composta por 5 containers:
 ## 🐦‍⬛ Quero usar agora!
 
 Se você quer interagir com o bot e testar ele, eu disponibilizo o mesmo _gratuitamente_ em alguns números, você pode conferir o status dos bots [aqui neste link](https://ravena.moothz.win/)
-**Telegram Bot**: Também dou suporte para o Telegram _(mas não muito)_, rodando o bot [ravenosabot](https://t.me/ravenosabot) e o grupo da [comunidade](https://t.me/+x242TMlPD4s2OTVh).
+
+- **Discord Bot**: Adicione a ravena no seu servidor [através deste link](https://discord.com/oauth2/authorize?client_id=1434519453416030369&permissions=5136918325222464&integration_type=0&scope=bot+applications.commands) _(BETA)_.
+- **Telegram Bot**: Também dou suporte para o Telegram _(mas não muito)_, rodando o bot [ravenosabot](https://t.me/ravenosabot) e o grupo da [comunidade](https://t.me/+x242TMlPD4s2OTVh).
 
 ## 🔧 Como hospedar sua própria ravena
 
