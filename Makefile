@@ -136,6 +136,8 @@ test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick 
 test-providers: ## Testa todos os provedores de IA do service-providers.json
 	@node test-providers.js
 
+sync: ## Sincroniza arquivos modificados com o container ravena-ai
+	@./sync-to-docker.sh
 
 update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o container
 	@printf "$(CYAN)Sincronizando submódulo whatsgoapi...$(NC)\n"
