@@ -142,19 +142,28 @@ function getResponseTimeEmoji(seconds) {
 
 // Função para formatar o tempo desde a última mensagem
 function formatTimeSince(minutes) {
-    if (minutes === Infinity) return 'Nunca';
+    if (minutes === Infinity) return 'Sem atividade registrada';
     
-    if (minutes < 1) return 'Agora mesmo';
-    if (minutes === 1) return '1 minuto atrás';
-    if (minutes < 60) return `${minutes} minutos atrás`;
+    if (minutes < 1) return 'Ativa agora ✨';
     
-    const hours = Math.floor(minutes / 60);
-    if (hours === 1) return '1 hora atrás';
-    if (hours < 24) return `${hours} horas atrás`;
-    
-    const days = Math.floor(hours / 24);
-    if (days === 1) return '1 dia atrás';
-    return `${days} dias atrás`;
+    let timeText = '';
+    if (minutes < 60) {
+        timeText = `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`;
+    } else {
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+            timeText = `${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+        } else {
+            const days = Math.floor(hours / 24);
+            timeText = `${days} ${days === 1 ? 'dia' : 'dias'}`;
+        }
+    }
+
+    if (minutes < 15) {
+        return `Ativa há ${timeText}`;
+    } else {
+        return `Sem atividade há ${timeText}`;
+    }
 }
 
 // Função para formatar número de telefone para URL do WhatsApp
@@ -556,10 +565,12 @@ function renderBotCard(botContainer, data, bot){
     let divResponsavel = "";
 
     if(bot.numeroResponsavel){
-        const phoneNumberResponsavel = formatPhoneNumber(extractPhoneFromBotId(bot.numeroResponsavel, [])).replace("+55","").trim();
+        const rawPhoneResponsavel = extractPhoneFromBotId(bot.numeroResponsavel, []);
+        const phoneNumberResponsavel = formatPhoneNumber(rawPhoneResponsavel).replace("+55","").trim();
+        const whatsappUrlResponsavel = formatWhatsAppUrl(rawPhoneResponsavel);
         divResponsavel = `             <div class="detail-item">
-                <span class="detail-label">Responsável:</span>
-                <span class="detail-value">${phoneNumberResponsavel}</span>
+                <span class="detail-label">Resp.:</span>
+                <span class="detail-value"><a href="${whatsappUrlResponsavel}" target="_blank" class="phone-link">${phoneNumberResponsavel}</a></span>
             </div>`;
     }
     
@@ -568,11 +579,10 @@ function renderBotCard(botContainer, data, bot){
         divMsgs = `<div class="detail-item"><span class="detail-label label-banida">BANIDA</span></div>`;
     }
     if(bot.connected && !bot.banido){
-        divMsgs = `<div class="detail-item">
-                <span class="detail-label">Última mensagem:</span>
-                <span class="detail-value tooltip-container">
+        divMsgs = `<div class="detail-item activity-status-row">
+                <span class="activity-phrase tooltip-container">
                     ${formatTimeSince(minutesSinceLastMessage)}
-                    <span class="tooltip-text">Recebida em: ${formatTime(bot.lastMessageReceived)}</span>
+                    <span class="tooltip-text">Última msg recebida em: ${formatTime(bot.lastMessageReceived)}</span>
                 </span>
             </div>
             <div class="detail-item">
@@ -611,8 +621,10 @@ function renderBotCard(botContainer, data, bot){
             </div>
             <div class="bot-details">
                 <div class="detail-item">
-                    <span class="detail-label">Telefone:</span>
-                    <span class="detail-value">${phoneNumber || 'Não disponível'}</span>
+                    <span class="detail-label">Num.:</span>
+                    <span class="detail-value">
+                        <a href="${whatsappUrl}" target="_blank" class="phone-link">${phoneNumber || 'Não disponível'}</a>
+                    </span>
                 </div>
                 ${divResponsavel}
                 ${divMsgs}

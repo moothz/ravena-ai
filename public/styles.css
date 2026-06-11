@@ -587,7 +587,7 @@ h1 {
 
 .card-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
   margin-top: 20px;
 }
@@ -850,6 +850,33 @@ h1 {
 .detail-item {
     display: flex;
     justify-content: space-between;
+}
+
+.activity-status-row {
+    justify-content: center !important;
+    border-top: 1px solid rgba(71, 72, 108, 0.3);
+    border-bottom: 1px solid rgba(71, 72, 108, 0.3);
+    padding-top: 8px;
+    padding-bottom: 8px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.phone-link {
+    color: white;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.phone-link:hover {
+    color: var(--bright-blue);
+}
+
+.activity-phrase {
+    font-weight: bold;
+    color: white;
+    font-size: 0.95rem;
+    text-align: center;
 }
 
 .detail-label {
