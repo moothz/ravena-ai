@@ -32,13 +32,14 @@ class MentionHandler {
 				const chatInfo = await bot.getChatDetails(message.group);
 
 				// 1° passo: descobrir o lid do bot nesse grupo (identificado via Whatsgo)
-				const botNumber = bot.getLidFromPn(bot.phoneNumber, chatInfo);
+				const botNumber = bot.getLidFromPn(bot.phoneNumber || "", chatInfo);
 
-				const mentionRegexStart = new RegExp(`^\\s*@${botNumber}\\b`, "i");
+				// Regex para WhatsApp (@numero) e Discord (<@id> ou <@!id>)
+				const mentionRegexStart = new RegExp(`^\\s*(@${botNumber}|<@!?${botNumber}>)\\b`, "i");
 
 				// OU a frase começa com o @numeroBot ou ele tá no mentions
 				const botMencionado =
-					mentionRegexStart.test(text) || message.mentions.some((m) => m.startsWith(botNumber));
+					mentionRegexStart.test(text) || message.mentions.some((m) => m === botNumber);
 
 				if (!botMencionado) return;
 

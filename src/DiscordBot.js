@@ -1,7 +1,7 @@
 /*
   90% VIBE CODED!!! Apenas pela zuera, tem muita coisa que não faz sentido algum
 */
-const { AttachmentBuilder, PermissionsBitField } = require("discord.js");
+const { AttachmentBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
 const axios = require("axios");
 const mime = require("mime-types");
 const path = require("path");
@@ -48,6 +48,7 @@ class DiscordBot {
 		this.discordClient = this.apiClient.getClient();
 
 		// Opções existentes adaptadas
+		this.phoneNumber = null; // Will be set when ready
 		this.pvAI = options.pvAI !== undefined ? options.pvAI : true;
 		this.ignorePV = options.ignorePV || false;
 		this.grupoLogs = options.grupoLogs; // Espera-se um Channel ID
@@ -138,6 +139,7 @@ class DiscordBot {
 
 		this.discordClient.on("ready", () => {
 			this.discordBotId = this.discordClient.user.id;
+			this.phoneNumber = this.discordBotId;
 			// Update fake client info now that we have the real user id
 			this.client.info.wid._serialized = this.discordBotId;
 			this.logger.info(
@@ -524,7 +526,9 @@ class DiscordBot {
 				};
 			}
 
-			const discordPayload = {};
+			const discordPayload = {
+				flags: [MessageFlags.SuppressEmbeds]
+			};
 
 			// --- Tratamento de Conteúdo ---
 			if (typeof content === "string") {
@@ -623,7 +627,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		}
 	}
 
-	splitContent(text, maxLength = 4000) {
+	splitContent(text, maxLength = 2000) {
 		const chunks = [];
 		if (!(typeof text === "string" || text instanceof String)) return;
 		let remainingText = text?.trim() ?? ""; // Start with trimmed text
@@ -694,7 +698,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		if (okMessages.length === 0) return [];
 
 		// Use flatMap to process the array
-		const MAX_LENGTH = 4000;
+		const MAX_LENGTH = 2000;
 
 		const validMessages = okMessages.flatMap((msg) => {
 			// Only split string content
