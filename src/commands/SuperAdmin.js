@@ -29,6 +29,14 @@ class SuperAdmin {
 			testeMsg: { method: "testeMsg", description: "Testar Retorno msg" },
 			sendMsg: { method: "sendMsg", description: "Envia mensagem para chatId" },
 			joinGrupo: { method: "joinGroup", description: "Entra em um grupo via link de convite" },
+			joinGrupoSilencioso: {
+				method: "joinGroupSilent",
+				description: "Entra em um grupo via link de convite SEM enviar mensagem de boas-vindas"
+			},
+			modoSilencioso: {
+				method: "toggleSilentMode",
+				description: "Toggle do modo silencioso global (sem boas-vindas por 30 min)"
+			},
 			addDonate: { method: "addNewDonate", description: "Adiciona novo donate" },
 			addDonateNumero: { method: "addDonorNumber", description: "Adiciona número de um doador" },
 			addDonateValor: { method: "updateDonationAmount", description: "Atualiza valor de doação" },
@@ -108,6 +116,9 @@ class SuperAdmin {
 
 		// Cache temporário para forçar entrada em grupos bloqueados
 		this.forceJoinCache = new Map();
+
+		// Timer do modo silencioso global
+		this.silentModeTimer = null;
 	}
 
 	/**
@@ -659,6 +670,181 @@ Break down the cost by category and provide a total estimated cost.`;
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content: "❌ Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Entra em um grupo via link de convite, SEM enviar mensagem de boas-vindas
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @returns {Promise<ReturnMessage>} - Retorna mensagem de sucesso ou erro
+	 */
+	async joinGroupSilent(bot, message, args) {
+		try {
+			const chatId = message.group ?? message.author;
+
+			// Verifica se o usuário é um super admin
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Por favor, forneça um código de convite. Exemplo: !sa-joinGrupoSilencioso abcd1234"
+				});
+			}
+
+			const inviteCode = args[0];
+
+			// Inicializa o set de joins silenciosos no bot (se ainda não existir)
+			if (!bot.silentJoinGroups) {
+				bot.silentJoinGroups = new Set();
+			}
+
+			// Busca as informações do grupo via invite code para obter o JID antes de entrar
+			let groupJid = null;
+			try {
+				const info = await bot.inviteInfo(inviteCode);
+				// A resposta tem a estrutura { JID, Name, ... }
+				groupJid = info?.JID ?? info?.data?.JID ?? null;
+				this.logger.info(
+					`[joinGroupSilent] Invite info para '${inviteCode}': JID=${groupJid}, Nome=${info?.Name ?? "?"}`
+				);
+			} catch (infoError) {
+				this.logger.warn(
+					`[joinGroupSilent] Não foi possível obter info do invite '${inviteCode}':`,
+					infoError
+				);
+			}
+
+			if (!groupJid) {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Não foi possível obter o ID do grupo a partir do código de convite '${inviteCode}'. Verifique se o link é válido.`
+				});
+			}
+
+			// Registra o JID na lista de joins silenciosos ANTES de entrar
+			bot.silentJoinGroups.add(groupJid);
+			this.logger.info(
+				`[joinGroupSilent] Grupo ${groupJid} adicionado à lista de silentJoinGroups. Entrando silenciosamente...`
+			);
+
+			try {
+				// Aceita o convite
+				const joinResult = await bot.client.acceptInvite(inviteCode);
+
+				if (joinResult.accepted) {
+					// Remove dos convites pendentes se existir
+					await this.database.removePendingJoin(inviteCode);
+
+					return new ReturnMessage({
+						chatId,
+						content: `✅ Entrou silenciosamente no grupo *${groupJid}* com código de convite ${inviteCode}\n🔇 _Nenhuma mensagem de boas-vindas será enviada._`
+					});
+				} else {
+					// Remove do set pois o join falhou
+					bot.silentJoinGroups.delete(groupJid);
+					const msgErro = joinResult.error ? `\n> ${joinResult.error}` : "";
+					return new ReturnMessage({
+						chatId,
+						content: `❌ Falha ao entrar no grupo com código de convite ${inviteCode}${msgErro}`
+					});
+				}
+			} catch (error) {
+				// Remove do set pois o join falhou
+				bot.silentJoinGroups.delete(groupJid);
+				this.logger.error("Erro ao aceitar convite de grupo (silencioso):", error);
+
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Erro ao entrar no grupo: ${error.message}`
+				});
+			}
+		} catch (error) {
+			this.logger.error("Erro no comando joinGroupSilent:", error);
+
+			return new ReturnMessage({
+				chatId: message.group ?? message.author,
+				content: "❌ Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Toggle do modo silencioso global do bot (sem mensagens de boas-vindas por 30 min)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @returns {Promise<ReturnMessage>} - Retorna mensagem de status
+	 */
+	async toggleSilentMode(bot, message) {
+		const chatId = message.group ?? message.author;
+
+		if (!this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		const SILENT_DURATION_MS = 30 * 60 * 1000; // 30 minutos
+
+		if (bot.joinSilencioso) {
+			// Já está ativo — toggle para OFF
+			bot.joinSilencioso = false;
+			if (this.silentModeTimer) {
+				clearTimeout(this.silentModeTimer);
+				this.silentModeTimer = null;
+			}
+			this.logger.info(
+				`[toggleSilentMode] Modo silencioso global DESATIVADO para o bot '${bot.id}'.`
+			);
+			return new ReturnMessage({
+				chatId,
+				content: `🔊 Modo silencioso *desativado*. O bot voltará a enviar mensagens de boas-vindas normalmente.`
+			});
+		} else {
+			// Estava OFF — ativa por 30 minutos
+			bot.joinSilencioso = true;
+			this.logger.info(
+				`[toggleSilentMode] Modo silencioso global ATIVADO para o bot '${bot.id}' por 30 minutos.`
+			);
+
+			// Cancela timer anterior se houver (não deveria, mas por segurança)
+			if (this.silentModeTimer) {
+				clearTimeout(this.silentModeTimer);
+			}
+
+			this.silentModeTimer = setTimeout(() => {
+				bot.joinSilencioso = false;
+				this.silentModeTimer = null;
+				this.logger.info(
+					`[toggleSilentMode] Modo silencioso global EXPIROU automaticamente para o bot '${bot.id}'.`
+				);
+				// Notifica o chat que o modo expirou
+				bot
+					.sendMessage(
+						chatId,
+						`🔊 Modo silencioso *expirou* automaticamente. O bot voltará a enviar mensagens de boas-vindas normalmente.`
+					)
+					.catch(() => {});
+			}, SILENT_DURATION_MS);
+
+			const expiraEm = new Date(Date.now() + SILENT_DURATION_MS).toLocaleTimeString("pt-BR", {
+				hour: "2-digit",
+				minute: "2-digit"
+			});
+
+			return new ReturnMessage({
+				chatId,
+				content: `🔇 Modo silencioso *ativado* por 30 minutos (expira às ${expiraEm}).\n\nO bot *não* enviará mensagens de boas-vindas ao entrar em grupos. Use o comando novamente para desativar antes do tempo.`
 			});
 		}
 	}
