@@ -634,7 +634,8 @@ async function copaMenu(bot, message, args, group) {
 		`!copa-time <nome> — info de um time\n` +
 		`!copa-grupos — tabela de todos os grupos\n` +
 		`!copa-grupo <letra> — classificação de um grupo\n` +
-		`!copa-estadios — lista os 16 estádios\n\n` +
+		`!copa-estadios — lista os 16 estádios\n` +
+		`!copa-seguir <nome> — receber notificações de um time 🔥\n\n` +
 		`🏟️ *Total:* 48 times | 12 grupos | 104 partidas | 16 estádios`;
 
 	return new ReturnMessage({
@@ -948,7 +949,12 @@ async function copaJogos(bot, message, args, group) {
 		const byDay = {};
 		for (const gm of upcoming) {
 			const d = parseGameDate(gm);
-			const key = d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+			const key = d.toLocaleDateString("pt-BR", {
+				weekday: "long",
+				day: "numeric",
+				month: "long",
+				timeZone: "America/Sao_Paulo"
+			});
 			if (!byDay[key]) byDay[key] = [];
 			byDay[key].push(gm);
 		}
@@ -960,10 +966,11 @@ async function copaJogos(bot, message, args, group) {
 				const away = teamsMap[gm.away_team_id] || {};
 				const isLive = gm.time_elapsed !== "notstarted";
 				const gameDate = parseGameDate(gm);
-				const time =
-					gameDate.getHours().toString().padStart(2, "0") +
-					":" +
-					gameDate.getMinutes().toString().padStart(2, "0");
+				const time = gameDate.toLocaleTimeString("pt-BR", {
+					hour: "2-digit",
+					minute: "2-digit",
+					timeZone: "America/Sao_Paulo"
+				});
 				const grp = `[${gm.id}]${gm.group ? `[${gm.group}]` : ""} `;
 				const status = isLive ? "🔴 " : "⚽ ";
 				msg += `  ${status}${grp}${home.flagEmoji || ""} ${home.namePt || "?"} vs ${away.flagEmoji || ""} ${away.namePt || "?"}`;
