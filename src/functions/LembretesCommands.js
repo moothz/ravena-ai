@@ -148,7 +148,7 @@ function formatarData(data) {
  */
 async function criarLembrete(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 
 		// Verifica se há argumentos
 		if (args.length === 0) {
@@ -306,7 +306,7 @@ async function criarLembrete(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Erro ao criar lembrete:", error);
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao criar lembrete. Por favor, tente novamente."
@@ -324,7 +324,7 @@ async function criarLembrete(bot, message, args, group) {
  */
 async function listarLembretes(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 		const userId = message.author;
 
 		let rows;
@@ -405,7 +405,7 @@ async function listarLembretes(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Erro ao listar lembretes:", error);
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao listar lembretes. Por favor, tente novamente."
@@ -423,7 +423,7 @@ async function listarLembretes(bot, message, args, group) {
  */
 async function cancelarLembrete(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 		const userId = message.author;
 
 		// Verifica se foi fornecido um ID
@@ -475,7 +475,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Erro ao cancelar lembrete:", error);
-		const chatId = message.group ?? message.author;
+		const chatId = message.group ?? message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao cancelar lembrete. Por favor, tente novamente."

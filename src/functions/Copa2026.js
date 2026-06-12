@@ -602,7 +602,7 @@ function fmtCountdown(ms) {
 
 /** !copa — menu principal */
 async function copaMenu(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 
 	// Busca o primeiro jogo para montar countdown
 	let countdownLine = "";
@@ -647,7 +647,7 @@ async function copaMenu(bot, message, args, group) {
 
 /** !copa-times — lista times (todos ou por grupo) */
 async function copaTimes(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		const res = await axios.get(`${API_URL}/get/teams`, { timeout: 8000 });
 		let teams = res.data.teams || [];
@@ -709,7 +709,7 @@ async function copaTimes(bot, message, args, group) {
 
 /** !copa-time <nome> — info de um time */
 async function copaTime(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		if (args.length === 0) {
 			return new ReturnMessage({
@@ -764,7 +764,7 @@ async function copaTime(bot, message, args, group) {
 
 /** !copa-grupos — tabela de todos os grupos */
 async function copaGrupos(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		const [groups, teamsMap] = await Promise.all([fetchGroups(), fetchTeamsMap()]);
 
@@ -802,7 +802,7 @@ async function copaGrupos(bot, message, args, group) {
 
 /** !copa-grupo <letra> — classificação de um grupo específico */
 async function copaGrupo(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		if (args.length === 0) {
 			return new ReturnMessage({
@@ -882,7 +882,7 @@ async function copaGrupo(bot, message, args, group) {
 
 /** !copa-jogos — calendário de jogos (todos ou por grupo) */
 async function copaJogos(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		const [games, teamsMap] = await Promise.all([fetchGames(), fetchTeamsMap()]);
 
@@ -1001,7 +1001,7 @@ async function copaJogos(bot, message, args, group) {
 
 /** !copa-jogo <id> — detalhes de uma partida */
 async function copaJogo(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		if (args.length === 0) {
 			return new ReturnMessage({
@@ -1082,7 +1082,7 @@ async function copaJogo(bot, message, args, group) {
 
 /** !copa-estadios — lista todos os estádios */
 async function copaEstadios(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		const stadiums = await fetchStadiums();
 
@@ -1123,7 +1123,7 @@ async function copaEstadios(bot, message, args, group) {
 
 /** !copa-seguir <nome> — Habilita/Desabilita notificações de um time */
 async function copaSeguir(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId = message.group ?? message.from;
 	try {
 		if (args.length === 0) {
 			return new ReturnMessage({

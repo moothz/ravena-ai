@@ -2408,16 +2408,10 @@ class BotAPI {
 						.json({ status: "error", message: "Payload inválido. Requer 'event' e 'match'." });
 				}
 
-				const bot = this.bots.find((b) => b.isConnected) ?? this.bots[0];
-				if (!bot) {
-					this.logger.warn("[Copa Webhook] No connected bot found to send Copa notifications.");
-					return res
-						.status(503)
-						.json({ status: "error", message: "Nenhum bot conectado disponível." });
+				if (!this.bots || this.bots.length === 0) {
+					this.logger.warn("[Copa Webhook] No bots available to process Copa notifications.");
+					return res.status(503).json({ status: "error", message: "Nenhum bot disponível." });
 				}
-				this.logger.info(
-					`[Copa Webhook] Selected bot: ${bot.botId} (isConnected: ${bot.isConnected})`
-				);
 
 				const CopaHelpers = require("./functions/Copa2026");
 				let teamsMap = {};
@@ -2533,11 +2527,72 @@ class BotAPI {
 
 					if (messageText) {
 						try {
-							this.logger.info(
-								`[Copa Webhook] Sending notification to chat ${chatId}. Message: "${messageText.replace(/\n/g, "\\n")}"`
-							);
-							await bot.sendMessage(chatId, messageText);
-							this.logger.info(`[Copa Webhook] Notification sent successfully to chat ${chatId}`);
+							// Determina o bot correto com base no chatId
+							const isWhatsAppChat =
+								chatId.includes("@") ||
+								(/^\d+$/.test(chatId) && chatId.length >= 10 && chatId.length <= 15);
+
+							if (isWhatsAppChat) {
+								const waBots = this.bots.filter(
+									(b) => b.isConnected && !b.useTelegram && !b.useDiscord
+								);
+								if (waBots.length === 0) {
+									const fallbackWa = this.bots.find((b) => !b.useTelegram && !b.useDiscord);
+									if (fallbackWa) waBots.push(fallbackWa);
+								}
+
+								if (waBots.length === 0) {
+									throw new Error(`Nenhum bot do WhatsApp encontrado para o chat: ${chatId}`);
+								}
+
+								let sent = false;
+								let lastError = null;
+								for (const currentBot of waBots) {
+									try {
+										this.logger.info(
+											`[Copa Webhook] Sending notification to chat ${chatId} using bot ${currentBot.id || currentBot.botId}. Message: "${messageText.replace(/\n/g, "\\n")}"`
+										);
+										await currentBot.sendMessage(chatId, messageText);
+										this.logger.info(
+											`[Copa Webhook] Notification sent successfully to chat ${chatId} using bot ${currentBot.id || currentBot.botId}`
+										);
+										sent = true;
+										break;
+									} catch (err) {
+										lastError = err;
+										this.logger.warn(
+											`[Copa Webhook] Failed to send using bot ${currentBot.id || currentBot.botId}: ${err.message || err}. Trying next WhatsApp bot if available.`
+										);
+									}
+								}
+								if (!sent) {
+									throw (
+										lastError ||
+										new Error("Todos os bots de WhatsApp falharam ao enviar a mensagem.")
+									);
+								}
+							} else {
+								let targetBot = null;
+								if (/^\d{17,20}$/.test(chatId)) {
+									targetBot =
+										this.bots.find((b) => b.useDiscord && b.isConnected) ||
+										this.bots.find((b) => b.useDiscord);
+								} else {
+									targetBot =
+										this.bots.find((b) => b.useTelegram && b.isConnected) ||
+										this.bots.find((b) => b.useTelegram);
+								}
+
+								if (!targetBot) {
+									throw new Error(`Nenhum bot compatível encontrado para o chat: ${chatId}`);
+								}
+
+								this.logger.info(
+									`[Copa Webhook] Sending notification to chat ${chatId} using bot ${targetBot.id || targetBot.botId}. Message: "${messageText.replace(/\n/g, "\\n")}"`
+								);
+								await targetBot.sendMessage(chatId, messageText);
+								this.logger.info(`[Copa Webhook] Notification sent successfully to chat ${chatId}`);
+							}
 						} catch (error) {
 							this.logger.error(
 								`Erro ao enviar notificação da Copa para o chat ${chatId}:`,

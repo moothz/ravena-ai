@@ -1715,7 +1715,7 @@ class WhatsAppBotGo {
 			}
 
 			const chatId = info.Chat;
-			const isGroup = info.IsGroup || chatId.includes("broadcast");
+			const isGroup = info.IsGroup || chatId.includes("@g.us") || chatId.includes("broadcast");
 			const fromMe = info.IsFromMe;
 			const id = info.ID;
 			const timestamp = new Date(info.Timestamp).getTime() / 1000;
