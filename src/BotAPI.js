@@ -2372,6 +2372,139 @@ class BotAPI {
 				logStream.kill();
 			});
 		});
+
+		// Copa 2026 notifications endpoint
+		this.app.post("/copa", this.strictLimiter, async (req, res) => {
+			try {
+				const { event, match, goalDetails } = req.body;
+
+				if (!event || !match) {
+					return res
+						.status(400)
+						.json({ status: "error", message: "Payload inválido. Requer 'event' e 'match'." });
+				}
+
+				const bot = this.bots.find((b) => b.isConnected) ?? this.bots[0];
+				if (!bot) {
+					this.logger.warn("Nenhum bot conectado para enviar notificação da Copa.");
+					return res
+						.status(503)
+						.json({ status: "error", message: "Nenhum bot conectado disponível." });
+				}
+
+				const CopaHelpers = require("./functions/Copa2026");
+				let teamsMap = {};
+				try {
+					teamsMap = await CopaHelpers.fetchTeamsMap();
+				} catch (e) {
+					this.logger.error("Erro ao buscar mapa de times na notificação da Copa:", e.message);
+				}
+
+				const homeTeamId = String(match.home_team_id);
+				const awayTeamId = String(match.away_team_id);
+
+				const followers = await this.database.dbAll(
+					"copa_seguir",
+					"SELECT chat_id, team_id, team_name_pt, fifa_code FROM copa_seguindo WHERE team_id = ? OR team_id = ?",
+					[homeTeamId, awayTeamId]
+				);
+
+				if (!followers || followers.length === 0) {
+					return res.json({ status: "ok", message: "Nenhum chat seguindo estes times." });
+				}
+
+				const chatIds = [...new Set(followers.map((f) => f.chat_id))];
+				const homeTeam = teamsMap[homeTeamId] || {
+					namePt: match.home_team_name_en || "Casa",
+					flagEmoji: CopaHelpers.flag(match.home_fifa_code || "")
+				};
+				const awayTeam = teamsMap[awayTeamId] || {
+					namePt: match.away_team_name_en || "Fora",
+					flagEmoji: CopaHelpers.flag(match.away_fifa_code || "")
+				};
+
+				for (const chatId of chatIds) {
+					const chatFollows = followers.filter((f) => f.chat_id === chatId);
+					const followedNames = chatFollows.map((f) => f.team_name_pt).join(" e ");
+
+					let messageText = "";
+
+					if (event === "match_start") {
+						messageText =
+							`⚽ *A BOLA ROLOU na Copa 2026!* ⚽\n\n` +
+							`🏆 O jogo começou!\n` +
+							`⚔️ ${homeTeam.flagEmoji} *${homeTeam.namePt}* vs ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
+							`📌 Grupo/Fase: *${match.group || match.type || "—"}*\n` +
+							`🏟️ Estádio ID: ${match.stadium_id || "—"}\n\n` +
+							`Acompanhe com a gente! 🔴`;
+					} else if (event === "goal") {
+						const details = goalDetails || {};
+						const scoringTeam = teamsMap[details.scoringTeamId] ||
+							Object.values(teamsMap).find((t) => t.name_en === details.scoringTeamNameEn) || {
+								namePt: details.scoringTeamNameEn || "Autor do Gol",
+								flagEmoji: "⚽"
+							};
+
+						const playerStr = details.player ? ` (${details.player})` : "";
+						const minuteStr = details.minute ? ` aos ${details.minute}` : "";
+
+						messageText =
+							`⚽ *GOOOOL DA COPA 2026!* ⚽\n\n` +
+							`${scoringTeam.flagEmoji} *Gol do(a) ${scoringTeam.namePt}!*${playerStr}${minuteStr}\n\n` +
+							`⚔️ Placar Atual: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${match.home_score} x ${match.away_score} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
+							`⏱️ Tempo de jogo: ${match.time_elapsed || "—"}`;
+					} else if (event === "match_end") {
+						let resultMessage = "";
+						const chatFollowsHome = chatFollows.some((f) => String(f.team_id) === homeTeamId);
+						const chatFollowsAway = chatFollows.some((f) => String(f.team_id) === awayTeamId);
+
+						const homeScore = Number(match.home_score) || 0;
+						const awayScore = Number(match.away_score) || 0;
+
+						if (homeScore === awayScore) {
+							resultMessage = "🤝 Partida terminada em empate!";
+						} else if (chatFollowsHome && !chatFollowsAway) {
+							if (homeScore > awayScore) {
+								resultMessage = `🥳 *Vitória!* O(A) ${homeTeam.flagEmoji} *${homeTeam.namePt}* venceu a partida! 🏆`;
+							} else {
+								resultMessage = `😢 *Derrota.* O(A) ${homeTeam.flagEmoji} *${homeTeam.namePt}* perdeu a partida.`;
+							}
+						} else if (chatFollowsAway && !chatFollowsHome) {
+							if (awayScore > homeScore) {
+								resultMessage = `🥳 *Vitória!* O(A) ${awayTeam.flagEmoji} *${awayTeam.namePt}* venceu a partida! 🏆`;
+							} else {
+								resultMessage = `😢 *Derrota.* O(A) ${awayTeam.flagEmoji} *${awayTeam.namePt}* perdeu a partida.`;
+							}
+						} else {
+							const winner = homeScore > awayScore ? homeTeam : awayTeam;
+							resultMessage = `🏁 Fim de papo! Vitória do(a) ${winner.flagEmoji} *${winner.namePt}*!`;
+						}
+
+						messageText =
+							`🏁 *FIM DE PARTIDA na Copa 2026!* 🏁\n\n` +
+							`O jogo do(a) *${followedNames}* terminou.\n\n` +
+							`⚔️ Placar Final: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${homeScore} x ${awayScore} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
+							`${resultMessage}`;
+					}
+
+					if (messageText) {
+						try {
+							await bot.sendMessage(chatId, messageText);
+						} catch (error) {
+							this.logger.error(
+								`Erro ao enviar notificação da Copa para o chat ${chatId}:`,
+								error.message
+							);
+						}
+					}
+				}
+
+				res.json({ status: "ok", message: "Notificações enviadas." });
+			} catch (error) {
+				this.logger.error("Erro no endpoint /copa:", error);
+				res.status(500).json({ status: "error", message: error.message });
+			}
+		});
 	}
 
 	/**

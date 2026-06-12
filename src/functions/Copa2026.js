@@ -9,12 +9,25 @@ const logger = new Logger("copa2026");
 // URL da API — configurada via .env
 const API_URL = process.env.WDC2026_API_URL;
 
-// Se a URL não estiver configurada, não exporta os comandos
-if (!API_URL) {
-	logger.warn("WDC2026_API_URL não definida — comandos da Copa 2026 desativados.");
-	module.exports = { commands: [] };
-	return;
-}
+const Database = require("../utils/Database");
+const database = Database.getInstance();
+
+// Inicializa o banco de dados da Copa Seguir
+database.getSQLiteDb(
+	"copa_seguir",
+	`
+	CREATE TABLE IF NOT EXISTS copa_seguindo (
+		chat_id       TEXT NOT NULL,
+		team_id       TEXT NOT NULL,
+		team_name_en  TEXT NOT NULL,
+		team_name_pt  TEXT NOT NULL,
+		fifa_code     TEXT NOT NULL,
+		created_at    INTEGER NOT NULL,
+		PRIMARY KEY (chat_id, team_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_copa_seguindo_team ON copa_seguindo(team_id);
+`
+);
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -483,7 +496,12 @@ function fmtDate(dateStr) {
 	try {
 		const d = parseGameDate(dateStr);
 		if (d.getTime() > 8000000000000000) return dateStr || "TBD";
-		return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+		return d.toLocaleDateString("pt-BR", {
+			day: "numeric",
+			month: "long",
+			year: "numeric",
+			timeZone: "America/Sao_Paulo"
+		});
 	} catch {
 		return dateStr || "TBD";
 	}
@@ -497,9 +515,14 @@ function fmtFullDate(dateStr) {
 		const date = d.toLocaleDateString("pt-BR", {
 			day: "2-digit",
 			month: "2-digit",
-			year: "numeric"
+			year: "numeric",
+			timeZone: "America/Sao_Paulo"
 		});
-		const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+		const time = d.toLocaleTimeString("pt-BR", {
+			hour: "2-digit",
+			minute: "2-digit",
+			timeZone: "America/Sao_Paulo"
+		});
 		return `${date} ${time}h`;
 	} catch {
 		return dateStr || "TBD";
@@ -518,37 +541,26 @@ function sortStandings(standings) {
 }
 
 /**
- * Mapa de offsets de fuso horário por Estádio para o Horário de Brasília (GMT-3).
+ * Mapa de offsets de fuso horário (UTC) por Estádio.
  * Baseado nas sedes da Copa 2026 e seus respectivos fusos em Junho/Julho (DST).
  */
-const STADIUM_OFFSETS = {
-	// EDT (UTC-4) -> BRT (UTC-3) é +1h
-	// Sedes: Atlanta (7), Miami (8), Boston (9), Philadelphia (10), New York/NJ (11), Toronto (12)
-	7: 1,
-	8: 1,
-	9: 1,
-	10: 1,
-	11: 1,
-	12: 1,
-
-	// CDT (UTC-5) -> BRT (UTC-3) é +2h
-	// Sedes: Dallas (4), Houston (5), Kansas City (6)
-	4: 2,
-	5: 2,
-	6: 2,
-
-	// CST/Mexico (UTC-6) -> BRT (UTC-3) é +3h
-	// Sedes: Mexico City (1), Guadalajara (2), Monterrey (3)
-	1: 3,
-	2: 3,
-	3: 3,
-
-	// PDT (UTC-7) -> BRT (UTC-3) é +4h
-	// Sedes: Vancouver (13), Seattle (14), San Francisco (15), Los Angeles (16)
-	13: 4,
-	14: 4,
-	15: 4,
-	16: 4
+const STADIUM_UTC_OFFSETS = {
+	1: "-06:00", // Mexico City (CST)
+	2: "-06:00", // Guadalajara (CST)
+	3: "-06:00", // Monterrey (CST)
+	4: "-05:00", // Dallas (CDT)
+	5: "-05:00", // Houston (CDT)
+	6: "-05:00", // Kansas City (CDT)
+	7: "-04:00", // Atlanta (EDT)
+	8: "-04:00", // Miami (EDT)
+	9: "-04:00", // Boston (EDT)
+	10: "-04:00", // Philadelphia (EDT)
+	11: "-04:00", // New York/NJ (EDT)
+	12: "-04:00", // Toronto (EDT)
+	13: "-07:00", // Vancouver (PDT)
+	14: "-07:00", // Seattle (PDT)
+	15: "-07:00", // San Francisco (PDT)
+	16: "-07:00" // Los Angeles (PDT)
 };
 
 /**
@@ -560,21 +572,15 @@ function parseGameDate(gmOrStr) {
 	const stadiumId = gmOrStr?.stadium_id;
 
 	const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
-	let d;
 	if (m) {
-		// Criar data no fuso local do servidor (GMT-3)
-		d = new Date(`${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00`);
-	} else {
-		d = new Date(raw);
+		const offsetStr = STADIUM_UTC_OFFSETS[stadiumId] || "-06:00";
+		const isoStr = `${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00${offsetStr}`;
+		const d = new Date(isoStr);
+		if (!isNaN(d)) return d;
 	}
 
+	const d = new Date(raw);
 	if (isNaN(d)) return new Date(8640000000000000);
-
-	// Se for uma string simples sem stadium_id, mantemos o ajuste padrão de +3
-	// Caso contrário, usamos o offset específico do estádio para Brasília
-	const offset = STADIUM_OFFSETS[stadiumId] ?? 3;
-
-	d.setHours(d.getHours() + offset);
 	return d;
 }
 
@@ -1108,6 +1114,83 @@ async function copaEstadios(bot, message, args, group) {
 	}
 }
 
+/** !copa-seguir <nome> — Habilita/Desabilita notificações de um time */
+async function copaSeguir(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	try {
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"❌ Use: `!copa-seguir <nome>`\nEx: `!copa-seguir brasil`, `!copa-seguir argentina`",
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+			});
+		}
+
+		const rawInput = args.join(" ");
+		const name = resolveTeamName(rawInput);
+		const res = await axios.get(`${API_URL}/get/team/`, {
+			params: { name },
+			timeout: 8000
+		});
+		const team = res.data.team;
+
+		if (!team) {
+			const known = [...new Set(Object.values(TEAM_ALIASES))].sort().join(", ");
+			return new ReturnMessage({
+				chatId,
+				content:
+					`❌ Time "${rawInput}" não encontrado.\n\n` +
+					`💡 Tente com o nome em português ou inglês. Ex: brasil, argentina, franca.`,
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+			});
+		}
+
+		const nameEn = team.name_en;
+		const teamId = String(team.id);
+		const fifaCode = team.fifa_code;
+		const ptName = namePt(team);
+		const emoji = flag(fifaCode);
+
+		const existing = await database.dbGet(
+			"copa_seguir",
+			"SELECT 1 FROM copa_seguindo WHERE chat_id = ? AND team_id = ?",
+			[chatId, teamId]
+		);
+
+		if (existing) {
+			await database.dbRun(
+				"copa_seguir",
+				"DELETE FROM copa_seguindo WHERE chat_id = ? AND team_id = ?",
+				[chatId, teamId]
+			);
+			return new ReturnMessage({
+				chatId,
+				content: `🔔 *Notificações Desativadas!*\n\nVocê deixou de seguir o time: ${emoji} *${ptName}* (${fifaCode}).\nNão enviaremos mais atualizações deste time neste chat.`,
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+			});
+		} else {
+			await database.dbRun(
+				"copa_seguir",
+				"INSERT INTO copa_seguindo (chat_id, team_id, team_name_en, team_name_pt, fifa_code, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+				[chatId, teamId, nameEn, ptName, fifaCode, Date.now()]
+			);
+			return new ReturnMessage({
+				chatId,
+				content: `🔔 *Notificações Ativadas!*\n\nVocê agora está seguindo o time: ${emoji} *${ptName}* (${fifaCode}).\nEnviaremos avisos de início de partida, gols e fim de partida neste chat!`,
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+			});
+		}
+	} catch (error) {
+		logger.error("Erro em copaSeguir:", error);
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Erro ao processar comando: ${error.message}`,
+			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+		});
+	}
+}
+
 // ─── Registro ────────────────────────────────────────────────
 
 const commands = [
@@ -1173,7 +1256,22 @@ const commands = [
 		category: "cultura",
 		reactions: { before: "⌛️", after: "🏟️", error: "❌" },
 		method: copaEstadios
+	}),
+
+	new Command({
+		name: "copa-seguir",
+		description: "Habilita/Desabilita notificações de partidas de um time",
+		category: "cultura",
+		reactions: { before: "⌛️", after: "🔔", error: "❌" },
+		method: copaSeguir
 	})
 ];
 
-module.exports = { commands };
+module.exports = {
+	commands: API_URL ? commands : [],
+	FLAGS,
+	NAMES_PT,
+	flag,
+	namePt,
+	fetchTeamsMap
+};
