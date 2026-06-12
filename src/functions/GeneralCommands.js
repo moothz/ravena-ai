@@ -552,13 +552,24 @@ const commands = [
 
 	new Command({
 		name: "grupao",
-		description: "Grupo de interação ravenabot",
+		description: "Comunidades da ravena!",
 		category: "geral",
 		reactions: {
 			before: "👨‍👨‍👧‍👦"
 		},
 		method: grupaoCommand
 	}),
+	new Command({
+		name: "comunidade",
+		hidden: true,
+		description: "Comunidades da ravena!",
+		category: "geral",
+		reactions: {
+			before: "👨‍👨‍👧‍👦"
+		},
+		method: grupaoCommand
+	}),
+
 	new Command({
 		name: "avisos",
 		description: "Grupo de avisos ravenabot",
