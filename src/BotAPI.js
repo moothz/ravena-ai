@@ -785,6 +785,22 @@ class BotAPI {
 			res.sendFile(filePath);
 		});
 
+		// Redireciona para o convite do Discord
+		this.app.get("/discord", (req, res) => {
+			if (process.env.DISCORD_INVITE_LINK) {
+				return res.redirect(process.env.DISCORD_INVITE_LINK);
+			}
+			res.redirect("/");
+		});
+
+		// Redireciona para o convite do Telegram
+		this.app.get("/telegram", (req, res) => {
+			if (process.env.TELEGRAM_INVITE_LINK) {
+				return res.redirect(process.env.TELEGRAM_INVITE_LINK);
+			}
+			res.redirect("/");
+		});
+
 		// Serve public commands page
 		this.app.get("/cmd", (req, res) => {
 			const filePath = path.join(__dirname, "../public/cmd.html");
@@ -2375,10 +2391,18 @@ class BotAPI {
 
 		// Copa 2026 notifications endpoint
 		this.app.post("/copa", this.strictLimiter, async (req, res) => {
+			this.logger.info("[Copa Webhook] Request received at /copa", {
+				headers: req.headers,
+				body: req.body
+			});
+
 			try {
 				const { event, match, goalDetails } = req.body;
 
 				if (!event || !match) {
+					this.logger.warn("[Copa Webhook] Invalid payload structure. event or match missing.", {
+						body: req.body
+					});
 					return res
 						.status(400)
 						.json({ status: "error", message: "Payload inválido. Requer 'event' e 'match'." });
@@ -2386,22 +2410,31 @@ class BotAPI {
 
 				const bot = this.bots.find((b) => b.isConnected) ?? this.bots[0];
 				if (!bot) {
-					this.logger.warn("Nenhum bot conectado para enviar notificação da Copa.");
+					this.logger.warn("[Copa Webhook] No connected bot found to send Copa notifications.");
 					return res
 						.status(503)
 						.json({ status: "error", message: "Nenhum bot conectado disponível." });
 				}
+				this.logger.info(
+					`[Copa Webhook] Selected bot: ${bot.botId} (isConnected: ${bot.isConnected})`
+				);
 
 				const CopaHelpers = require("./functions/Copa2026");
 				let teamsMap = {};
 				try {
 					teamsMap = await CopaHelpers.fetchTeamsMap();
+					this.logger.info(
+						`[Copa Webhook] Loaded teams map. Total teams: ${Object.keys(teamsMap).length}`
+					);
 				} catch (e) {
 					this.logger.error("Erro ao buscar mapa de times na notificação da Copa:", e.message);
 				}
 
 				const homeTeamId = String(match.home_team_id);
 				const awayTeamId = String(match.away_team_id);
+				this.logger.info(
+					`[Copa Webhook] Event: '${event}', HomeTeamId: ${homeTeamId}, AwayTeamId: ${awayTeamId}`
+				);
 
 				const followers = await this.database.dbAll(
 					"copa_seguir",
@@ -2409,7 +2442,15 @@ class BotAPI {
 					[homeTeamId, awayTeamId]
 				);
 
+				this.logger.info(
+					`[Copa Webhook] Database followers count: ${followers ? followers.length : 0}`,
+					{ followers }
+				);
+
 				if (!followers || followers.length === 0) {
+					this.logger.info(
+						`[Copa Webhook] No chats are following home_team_id ${homeTeamId} or away_team_id ${awayTeamId}`
+					);
 					return res.json({ status: "ok", message: "Nenhum chat seguindo estes times." });
 				}
 
@@ -2422,6 +2463,9 @@ class BotAPI {
 					namePt: match.away_team_name_en || "Fora",
 					flagEmoji: CopaHelpers.flag(match.away_fifa_code || "")
 				};
+				this.logger.info(
+					`[Copa Webhook] Teams resolved. Home: ${homeTeam.namePt} (${homeTeamId}), Away: ${awayTeam.namePt} (${awayTeamId}). Chats to notify: ${chatIds.join(", ")}`
+				);
 
 				for (const chatId of chatIds) {
 					const chatFollows = followers.filter((f) => f.chat_id === chatId);
@@ -2489,13 +2533,21 @@ class BotAPI {
 
 					if (messageText) {
 						try {
+							this.logger.info(
+								`[Copa Webhook] Sending notification to chat ${chatId}. Message: "${messageText.replace(/\n/g, "\\n")}"`
+							);
 							await bot.sendMessage(chatId, messageText);
+							this.logger.info(`[Copa Webhook] Notification sent successfully to chat ${chatId}`);
 						} catch (error) {
 							this.logger.error(
 								`Erro ao enviar notificação da Copa para o chat ${chatId}:`,
 								error.message
 							);
 						}
+					} else {
+						this.logger.warn(
+							`[Copa Webhook] Empty message text generated for event '${event}' to chat ${chatId}`
+						);
 					}
 				}
 

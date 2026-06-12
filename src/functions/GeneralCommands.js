@@ -34,20 +34,30 @@ async function pingCommand(bot, message, args, group) {
 
 async function grupaoCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
-	const grupao = await bot.client.getChatById(bot.grupoInteracao);
 
-	try {
-		const pessoaAdd = message.authorAlt ?? message.author;
-		await grupao.addParticipants([pessoaAdd]);
-	} catch (e) {
-		logger.error(
-			`[grupaoCommand] Não consegui add '${message.author}' no grupão (${bot.grupoInteracao})`
-		);
+	const zapLink = bot.linkGrupao;
+	const telegramLink = process.env.TELEGRAM_COMMUNITY;
+	const discordLink = process.env.DISCORD_COMMUNITY;
+
+	let content = `🌟 *Comunidades da Ravena* 🌟\n\n`;
+
+	if (zapLink) {
+		content += `🟢 *WhatsApp (Grupão)*\n${zapLink}\n_Este é o nosso grupo principal de interação!_\n\n`;
 	}
+
+	if (telegramLink) {
+		content += `🔵 *Telegram*\n${telegramLink}\n\n`;
+	}
+
+	if (discordLink) {
+		content += `🟣 *Discord*\n${discordLink}\n_Atualmente em fase de testes!_\n\n`;
+	}
+
+	content += `_Sinta-se em casa!_ 🐦‍⬛✨`;
 
 	return new ReturnMessage({
 		chatId,
-		content: `Ok! Tentei de adicionar no grupão da ravena. Se não tiver sido adicionado, entre pelo link: ${bot.linkGrupao}`
+		content: content.trim()
 	});
 }
 
@@ -178,6 +188,53 @@ Após o link, siga as instruções do bot, enviando uma mensagem explicando o mo
 			})
 		];
 	}
+}
+
+async function discordCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const invite = process.env.DISCORD_INVITE_LINK;
+	const community = process.env.DISCORD_COMMUNITY;
+
+	if (!invite && !community) {
+		return new ReturnMessage({
+			chatId,
+			content: "A integração com o Discord ainda não está configurada."
+		});
+	}
+
+	let content = `🎮 *Ravena no Discord* 🤖\n\nAgora você pode ter a Ravena no seu servidor do Discord! Aproveite os comandos de IA, gerenciamento e diversão em uma nova plataforma.\n\n`;
+
+	if (invite) content += `🔗 *Adicionar Bot:* ${invite}\n\n`;
+	if (community)
+		content += `🟣 *Comunidade Discord:* ${community}\n_Atualmente em fase de testes!_`;
+
+	return new ReturnMessage({
+		chatId,
+		content: content.trim()
+	});
+}
+
+async function telegramCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const invite = process.env.TELEGRAM_INVITE_LINK;
+	const community = process.env.TELEGRAM_COMMUNITY;
+
+	if (!invite && !community) {
+		return new ReturnMessage({
+			chatId,
+			content: "A integração com o Telegram ainda não está configurada."
+		});
+	}
+
+	let content = `✈️ *Ravena no Telegram* 🤖\n\nA Ravena também está presente no Telegram! Uma experiência rápida e integrada para seus grupos e conversas privadas.\n\n`;
+
+	if (invite) content += `🔗 *Conversar com o Bot:* ${invite}\n\n`;
+	if (community) content += `🔵 *Canal/Comunidade:* ${community}`;
+
+	return new ReturnMessage({
+		chatId,
+		content: content.trim()
+	});
 }
 
 async function diferencasCommand(bot, message, args, group) {
@@ -570,6 +627,24 @@ const commands = [
 			before: "📩"
 		},
 		method: conviteCommand
+	}),
+	new Command({
+		name: "discord",
+		description: "Info sobre a Ravena no Discord",
+		category: "geral",
+		reactions: {
+			before: "🎮"
+		},
+		method: discordCommand
+	}),
+	new Command({
+		name: "telegram",
+		description: "Info sobre a Ravena no Telegram",
+		category: "geral",
+		reactions: {
+			before: "✈️"
+		},
+		method: telegramCommand
 	})
 ];
 

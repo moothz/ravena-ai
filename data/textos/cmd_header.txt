@@ -2,5 +2,5 @@ _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
 🔥 *Novos*:
+- ⚽️ _!copa-seguir brasil_: Segue o seu time favorito! ravena notifica os gols e quando o jogo começar/terminar (em testes) 
 - ⚽️ _!copa_: Comandos da copa (jogos, estádios, times...)
-- 📦 _!correios AA123456789B Nome do Treco_: [Testes] API local que fiz pra rastrear pacotes! Ravena notifica quando movimenta o pacote

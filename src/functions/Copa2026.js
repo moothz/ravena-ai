@@ -1173,7 +1173,7 @@ async function copaSeguir(bot, message, args, group) {
 			);
 			return new ReturnMessage({
 				chatId,
-				content: `🔔 *Notificações Desativadas!*\n\nVocê deixou de seguir o time: ${emoji} *${ptName}* (${fifaCode}).\nNão enviaremos mais atualizações deste time neste chat.`,
+				content: `🔔 *Notificações Desativadas!*\n\nVocê deixou de seguir o time: ${emoji} *${ptName}* (${fifaCode}).\nNão enviarei mais atualizações deste time neste chat.`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		} else {
@@ -1184,7 +1184,7 @@ async function copaSeguir(bot, message, args, group) {
 			);
 			return new ReturnMessage({
 				chatId,
-				content: `🔔 *Notificações Ativadas!*\n\nVocê agora está seguindo o time: ${emoji} *${ptName}* (${fifaCode}).\nEnviaremos avisos de início de partida, gols e fim de partida neste chat!`,
+				content: `🔔 *Notificações Ativadas!*\n\nVocê agora está seguindo o time: ${emoji} *${ptName}* (${fifaCode}).\nEnviarei avisos de início de partida, gols e fim de partida neste chat!`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
