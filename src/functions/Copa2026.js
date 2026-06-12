@@ -848,8 +848,11 @@ async function copaGrupo(bot, message, args, group) {
 			for (const gm of groupGames.slice(0, 4)) {
 				const home = teamsMap[gm.home_team_id] || {};
 				const away = teamsMap[gm.away_team_id] || {};
-				const score = isFinished(gm) ? `${gm.home_score || 0} x ${gm.away_score || 0}` : "vs";
-				msg += `${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}\n`;
+				const finished = isFinished(gm);
+				const isLive = !finished && gm.time_elapsed !== "notstarted";
+				const score = finished || isLive ? `${gm.home_score || 0} x ${gm.away_score || 0}` : "vs";
+				const liveTag = isLive ? " (AO VIVO 🔴)" : "";
+				msg += `${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}${liveTag}\n`;
 			}
 		} catch {
 			// jogos opcionais
@@ -899,10 +902,12 @@ async function copaJogos(bot, message, args, group) {
 				const home = teamsMap[gm.home_team_id] || {};
 				const away = teamsMap[gm.away_team_id] || {};
 				const finished = isFinished(gm);
-				const score = finished ? `*${gm.home_score || 0} x ${gm.away_score || 0}*` : "vs";
+				const isLive = !finished && gm.time_elapsed !== "notstarted";
+				const score = finished || isLive ? `*${gm.home_score || 0} x ${gm.away_score || 0}*` : "vs";
+				const liveTag = isLive ? " (AO VIVO 🔴)" : "";
 				const day = gm.local_date ? fmtDate(gm) : "";
-				const status = finished ? "✅" : "⏳";
-				msg += `${status} ${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}`;
+				const status = finished ? "✅" : isLive ? "🔴" : "⏳";
+				msg += `${status} ${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}${liveTag}`;
 				if (gm.matchday) msg += ` (Rodada ${gm.matchday})`;
 				msg += "\n";
 				if (day) msg += `   📆 ${day}\n`;
@@ -947,14 +952,17 @@ async function copaJogos(bot, message, args, group) {
 			for (const gm of dayGames) {
 				const home = teamsMap[gm.home_team_id] || {};
 				const away = teamsMap[gm.away_team_id] || {};
+				const isLive = gm.time_elapsed !== "notstarted";
 				const gameDate = parseGameDate(gm);
 				const time =
 					gameDate.getHours().toString().padStart(2, "0") +
 					":" +
 					gameDate.getMinutes().toString().padStart(2, "0");
 				const grp = `[${gm.id}]${gm.group ? `[${gm.group}]` : ""} `;
-				msg += `  ⚽ ${grp}${home.flagEmoji || ""} ${home.namePt || "?"} vs ${away.flagEmoji || ""} ${away.namePt || "?"}`;
-				if (time) msg += ` — ${time}h`;
+				const status = isLive ? "🔴 " : "⚽ ";
+				msg += `  ${status}${grp}${home.flagEmoji || ""} ${home.namePt || "?"} vs ${away.flagEmoji || ""} ${away.namePt || "?"}`;
+				if (isLive) msg += ` — *AO VIVO: ${gm.home_score}x${gm.away_score}* (${gm.time_elapsed})`;
+				else if (time) msg += ` — ${time}h`;
 				msg += "\n";
 			}
 			msg += "\n";
@@ -992,7 +1000,7 @@ async function copaJogo(bot, message, args, group) {
 
 		const gameId = String(args[0]);
 		const [games, teamsMap] = await Promise.all([fetchGames(), fetchTeamsMap()]);
-		const game = games.find((g) => g.id === gameId || g._id === gameId);
+		let game = games.find((g) => g.id === gameId || g._id === gameId);
 
 		if (!game) {
 			return new ReturnMessage({
@@ -1002,15 +1010,40 @@ async function copaJogo(bot, message, args, group) {
 			});
 		}
 
+		// Busca detalhes em tempo real se o jogo estiver rolando
+		const isLive = !isFinished(game) && game.time_elapsed !== "notstarted";
+		if (isLive) {
+			try {
+				const res = await axios.get(`${API_URL}/get/game/${game._id}`, { timeout: 5000 });
+				const detail = res.data.game || res.data;
+				if (detail) game = { ...game, ...detail };
+			} catch (e) {
+				logger.error(`Erro ao buscar real-time para jogo ${game.id}:`, e.message);
+			}
+		}
+
 		const home = teamsMap[game.home_team_id] || {};
 		const away = teamsMap[game.away_team_id] || {};
 		const finished = isFinished(game);
-		const score = finished ? `${game.home_score || 0} x ${game.away_score || 0}` : "⚽ A definir";
+		const currentlyLive = !finished && game.time_elapsed !== "notstarted";
+		const score =
+			finished || currentlyLive
+				? `*${game.home_score || 0} x ${game.away_score || 0}*`
+				: "⚽ A definir";
 
 		let msg =
 			`⚽ *Jogo #${game.id}*\n\n` +
 			`${home.flagEmoji || ""} *${home.namePt || game.home_team_name_en || "Casa"}*  vs  ${away.flagEmoji || ""} *${away.namePt || game.away_team_name_en || "Fora"}*\n\n` +
-			`🏆 *Placar:* ${score}\n` +
+			`🏆 *Placar:* ${score}\n`;
+
+		if (currentlyLive) {
+			msg += `🕒 *Tempo:* ${game.time_elapsed}\n`;
+			msg += `🔥 *STATUS:* AO VIVO 🔴\n\n`;
+		} else {
+			msg += `\n`;
+		}
+
+		msg +=
 			`📌 Grupo: *${game.group || "—"}*\n` +
 			`🔄 Rodada: ${game.matchday || "—"}\n` +
 			`📆 Data: ${fmtFullDate(game)}\n` +
