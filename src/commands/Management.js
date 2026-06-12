@@ -194,7 +194,7 @@ class Management {
 			},
 			setPersonalidade: {
 				method: "setPersonalidadeIA",
-				description: "Define uma personalidade para os comandos de IA (max. 500 caracteres)"
+				description: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)"
 			},
 			setApelido: {
 				method: "setUserNicknameAdmin",
@@ -2339,7 +2339,7 @@ class Management {
 			// Zera mensagem
 			group.customAIPrompt = "";
 		} else {
-			group.customAIPrompt = args.join(" ").slice(0, 500);
+			group.customAIPrompt = args.join(" ").slice(0, 1500);
 		}
 
 		// Alterna estado do filtro

@@ -1343,7 +1343,7 @@ Começam com `!g-` e são restritos a administradores.
 ---
 
 #### !g-setPersonalidade
-**Descrição:** Define uma personalidade para os comandos de IA (max. 500 caracteres)
+**Descrição:** Define uma personalidade para os comandos de IA (max. 1500 caracteres)
 
 ---
 
