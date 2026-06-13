@@ -237,19 +237,25 @@ class InviteSystem {
 			// Verifica se o usuário tem uma solicitação pendente
 			if (!this.pendingRequests.has(message.author)) return false;
 
-			const text = message.type === "text" ? message.content : message.caption;
+			// Somente mensagens de texto são consideradas como motivo
+			if (message.type !== "text") return false;
+			const text = message.content;
 			if (!text) return false;
 
 			const requestData = this.pendingRequests.get(message.author);
-			const { inviteCode, inviteLink, timeout, verificationCode, preConviteContent } = requestData;
+			const {
+				inviteCode,
+				inviteLink,
+				timeout,
+				verificationCode,
+				preConviteContent,
+				accumulatedMessages
+			} = requestData;
 
-			// Limpa o timeout temporariamente
-			clearTimeout(timeout);
-
-			const reason = text.trim();
-
-			// 1. Verifica se enviou o código de verificação
-			if (verificationCode && reason.toLowerCase() === verificationCode.toLowerCase()) {
+			// 1. Verifica se enviou o código de verificação — ainda processado imediatamente
+			if (verificationCode && text.trim().toLowerCase() === verificationCode.toLowerCase()) {
+				clearTimeout(timeout);
+				if (requestData.accumulationTimeout) clearTimeout(requestData.accumulationTimeout);
 				this.pendingRequests.delete(message.author);
 				await this.handleInviteRequest(
 					message.author,
@@ -263,89 +269,142 @@ class InviteSystem {
 				return true;
 			}
 
-			// 2. Verifica se a justificativa é muito curta
-			if (reason.length < MIN_REASON_LENGTH) {
-				if (!requestData.secondChance) {
-					// Primeira tentativa curta: dá uma segunda chance
-					const secondChanceMsg =
-						`O motivo é apenas um filtro inicial pro criador analisar se seu grupo não vai fazer mau uso do bot. Não precisa ser nada absurdo, mas escreve pelo menos ${MIN_REASON_LENGTH} caracteres aí!\n\n` +
-						"Vou te dar mais uma chance.";
-
-					await this.bot.sendMessage(message.author, secondChanceMsg);
-
-					// Redefine o timeout para mais 5 minutos
-					const timeoutId = setTimeout(
-						() => {
-							this.handleInviteRequest(
-								message.author,
-								inviteCode,
-								inviteLink,
-								"Nenhum motivo fornecido",
-								message
-							);
-						},
-						5 * 60 * 1000
-					);
-
-					// Atualiza a solicitação pendente marcando a segunda chance
-					this.pendingRequests.set(message.author, {
-						...requestData,
-						secondChance: true,
-						timeout: timeoutId
-					});
-
-					return true;
-				} else {
-					// Segunda tentativa curta: ignora e aplica cooldown estendido
-					this.pendingRequests.delete(message.author);
-
-					try {
-						const ignoredPath = path.join(
-							this.database.databasePath,
-							"textos",
-							"invite_ignorado.txt"
-						);
-						const ignoredText = await fs
-							.readFile(ignoredPath, "utf8")
-							.catch(
-								() =>
-									"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
-							);
-						await this.bot.sendMessage(message.author, ignoredText);
-					} catch (err) {
-						await this.bot.sendMessage(
-							message.author,
-							"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
-						);
-					}
-
-					const punishDuration = 10 * this.inviteCooldown * 60 * 1000;
-					const normalDuration = this.inviteCooldown * 60 * 1000;
-					const futureTime = Date.now() + punishDuration - normalDuration;
-					this.userCooldowns.set(message.author, futureTime);
-
-					return true;
-				}
+			// 2. Se já está acumulando mensagens, apenas adiciona ao buffer
+			if (accumulatedMessages) {
+				accumulatedMessages.push(text.trim());
+				// Atualiza o requestData (array é mutável, mas mantemos a referência)
+				this.pendingRequests.set(message.author, { ...requestData, accumulatedMessages });
+				return true;
 			}
 
-			// Justificativa válida: deleta a solicitação pendente e processa
-			this.pendingRequests.delete(message.author);
+			// 3. Primeira mensagem de motivo: cancela o timeout de 5 min e inicia acumulação de 30s
+			clearTimeout(timeout);
 
-			await this.handleInviteRequest(
-				message.author,
-				inviteCode,
-				inviteLink,
-				text,
-				message,
-				verificationCode,
-				preConviteContent
-			);
+			const newAccumulatedMessages = [text.trim()];
+
+			const accumulationTimeoutId = setTimeout(() => {
+				this._processAccumulatedReason(message.author, message).catch((err) =>
+					this.logger.error("Erro ao processar motivo acumulado:", err)
+				);
+			}, 30 * 1000);
+
+			this.pendingRequests.set(message.author, {
+				...requestData,
+				timeout: null,
+				accumulatedMessages: newAccumulatedMessages,
+				accumulationTimeout: accumulationTimeoutId
+			});
 
 			return true;
 		} catch (error) {
 			this.logger.error("Erro ao processar mensagem de acompanhamento de convite:", error);
 			return false;
 		}
+	}
+
+	/**
+	 * Processa o motivo acumulado após o período de 30 segundos
+	 * @param {string} authorId - ID do usuário
+	 * @param {Object} originalMessage - Objeto da primeira mensagem de motivo
+	 */
+	async _processAccumulatedReason(authorId, originalMessage) {
+		const requestData = this.pendingRequests.get(authorId);
+		if (!requestData) return;
+
+		const {
+			inviteCode,
+			inviteLink,
+			verificationCode,
+			preConviteContent,
+			accumulatedMessages,
+			secondChance
+		} = requestData;
+
+		const reason = (accumulatedMessages || []).join("\n").trim();
+
+		// Sem motivo algum
+		if (!reason) {
+			this.pendingRequests.delete(authorId);
+			await this.handleInviteRequest(
+				authorId,
+				inviteCode,
+				inviteLink,
+				"Nenhum motivo fornecido",
+				originalMessage,
+				verificationCode,
+				preConviteContent
+			);
+			return;
+		}
+
+		// Verifica se o motivo é muito curto
+		if (reason.length < MIN_REASON_LENGTH) {
+			if (!secondChance) {
+				// Primeira tentativa curta: dá segunda chance com nova janela de 30s
+				const secondChanceMsg =
+					`O motivo é apenas um filtro inicial pro criador analisar se seu grupo não vai fazer mau uso do bot. Não precisa ser nada absurdo, mas escreve pelo menos ${MIN_REASON_LENGTH} caracteres aí!\n\n` +
+					"Vou te dar mais uma chance.";
+
+				await this.bot.sendMessage(authorId, secondChanceMsg);
+
+				// Nova janela de acumulação de 30s para a segunda chance
+				const accumulationTimeoutId = setTimeout(() => {
+					this._processAccumulatedReason(authorId, originalMessage).catch((err) =>
+						this.logger.error("Erro ao processar motivo acumulado (2ª chance):", err)
+					);
+				}, 30 * 1000);
+
+				this.pendingRequests.set(authorId, {
+					...requestData,
+					secondChance: true,
+					accumulatedMessages: [],
+					accumulationTimeout: accumulationTimeoutId,
+					timeout: null
+				});
+				return;
+			} else {
+				// Segunda tentativa curta: aplica cooldown estendido e descarta
+				this.pendingRequests.delete(authorId);
+
+				try {
+					const ignoredPath = path.join(
+						this.database.databasePath,
+						"textos",
+						"invite_ignorado.txt"
+					);
+					const ignoredText = await fs
+						.readFile(ignoredPath, "utf8")
+						.catch(
+							() =>
+								"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
+						);
+					await this.bot.sendMessage(authorId, ignoredText);
+				} catch (err) {
+					await this.bot.sendMessage(
+						authorId,
+						"Parece que ler e escrever não é seu forte, né? Seu convite _não foi registrado_ e suas próximas requisições serão ignoradas durante algumas horas."
+					);
+				}
+
+				const punishDuration = 10 * this.inviteCooldown * 60 * 1000;
+				const normalDuration = this.inviteCooldown * 60 * 1000;
+				const futureTime = Date.now() + punishDuration - normalDuration;
+				this.userCooldowns.set(authorId, futureTime);
+				return;
+			}
+		}
+
+		// Motivo válido: processa o convite com todas as mensagens acumuladas
+		this.pendingRequests.delete(authorId);
+		await this.handleInviteRequest(
+			authorId,
+			inviteCode,
+			inviteLink,
+			reason,
+			originalMessage,
+			verificationCode,
+			preConviteContent
+		);
 	}
 
 	/**
@@ -648,6 +707,19 @@ class InviteSystem {
 
 					const ownerMark = ownerMatch ? " ✅" : "";
 
+					// Verifica se o grupo já esteve no bot (JID já existe na base)
+					let wasInGroupBefore = false;
+					if (inviteInfoData?.JID) {
+						try {
+							const existingGroup = await this.database.getGroup(inviteInfoData.JID);
+							if (existingGroup) {
+								wasInGroupBefore = true;
+							}
+						} catch (groupCheckErr) {
+							this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
+						}
+					}
+
 					const infoMessage =
 						infoMessageHeader +
 						`🔗 *Link*: chat.whatsapp.com/${inviteCode}\n` +
@@ -656,6 +728,7 @@ class InviteSystem {
 						(inviteInfoData?.ParticipantCount
 							? `👥 *Membros*: ${inviteInfoData.ParticipantCount}\n`
 							: "") +
+						(wasInGroupBefore ? `⚠️ Já esteve neste grupo\n` : "") +
 						`\n💬 *Motivo:*\n${reason}\n` +
 						botWarning +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);
@@ -687,8 +760,9 @@ class InviteSystem {
 	 */
 	destroy() {
 		// Limpa todos os timeouts pendentes
-		for (const { timeout } of this.pendingRequests.values()) {
+		for (const { timeout, accumulationTimeout } of this.pendingRequests.values()) {
 			clearTimeout(timeout);
+			if (accumulationTimeout) clearTimeout(accumulationTimeout);
 		}
 		this.pendingRequests.clear();
 		this.userCooldowns.clear(); // Limpa também o mapa de cooldowns de usuário
