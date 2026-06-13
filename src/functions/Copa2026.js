@@ -928,10 +928,10 @@ async function copaJogos(bot, message, args, group) {
 			});
 		}
 
-		// ── Modo geral: próximos jogos, ordem cronológica, sem passados ──
+		// ── Modo geral: jogos ativos (ao vivo) e futuros, sem os encerrados ──
 		const now = new Date();
 		const upcoming = games
-			.filter((g) => !isFinished(g) && parseGameDate(g) >= now)
+			.filter((g) => !isFinished(g) && (g.time_elapsed !== "notstarted" || parseGameDate(g) >= now))
 			.sort((a, b) => parseGameDate(a) - parseGameDate(b))
 			.slice(0, 20);
 

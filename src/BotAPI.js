@@ -2465,6 +2465,9 @@ class BotAPI {
 					const chatFollows = followers.filter((f) => f.chat_id === chatId);
 					const followedNames = chatFollows.map((f) => f.team_name_pt).join(" e ");
 
+					// Token aleatório de 8 chars para evitar detecção de spam (mesmo padrão do InviteSystem)
+					const rndToken = () => Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 6);
+
 					let messageText = "";
 
 					if (event === "match_start") {
@@ -2474,7 +2477,8 @@ class BotAPI {
 							`⚔️ ${homeTeam.flagEmoji} *${homeTeam.namePt}* vs ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
 							`📌 Grupo/Fase: *${match.group || match.type || "—"}*\n` +
 							`🏟️ Estádio ID: ${match.stadium_id || "—"}\n\n` +
-							`Acompanhe com a gente! 🔴`;
+							`Acompanhe com a gente! 🔴\n\n` +
+							`_${rndToken()}_`;
 					} else if (event === "goal") {
 						const details = goalDetails || {};
 						const scoringTeam = teamsMap[details.scoringTeamId] ||
@@ -2490,7 +2494,9 @@ class BotAPI {
 							`⚽ *GOOOOL DA COPA 2026!* ⚽\n\n` +
 							`${scoringTeam.flagEmoji} *Gol do(a) ${scoringTeam.namePt}!*${playerStr}${minuteStr}\n\n` +
 							`⚔️ Placar Atual: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${match.home_score} x ${match.away_score} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
-							`⏱️ Tempo de jogo: ${match.time_elapsed || "—"}`;
+							`⏱️ Tempo de jogo: ${match.time_elapsed || "—"}\n\n` +
+							`_${rndToken()}_`;
+
 					} else if (event === "match_end") {
 						let resultMessage = "";
 						const chatFollowsHome = chatFollows.some((f) => String(f.team_id) === homeTeamId);
@@ -2522,7 +2528,9 @@ class BotAPI {
 							`🏁 *FIM DE PARTIDA na Copa 2026!* 🏁\n\n` +
 							`O jogo do(a) *${followedNames}* terminou.\n\n` +
 							`⚔️ Placar Final: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${homeScore} x ${awayScore} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
-							`${resultMessage}`;
+							`${resultMessage}\n\n` +
+							`_${rndToken()}_`;
+
 					}
 
 					if (messageText) {
