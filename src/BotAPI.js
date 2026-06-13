@@ -2487,14 +2487,31 @@ class BotAPI {
 								flagEmoji: "⚽"
 							};
 
-						const playerStr = details.player ? ` (${details.player})` : "";
-						const minuteStr = details.minute ? ` aos ${details.minute}` : "";
+						// Sanitiza nome do jogador — rejeita null, "null", vazio
+						const rawPlayer = details.player;
+						const playerClean = rawPlayer && String(rawPlayer).toLowerCase() !== "null" ? rawPlayer.trim() : "";
+						const playerStr = playerClean ? ` (${playerClean})` : "";
+
+						// Subtrai 3 minutos do tempo exibido para compensar delay de notificação
+						const rawMinute = details.minute || match.time_elapsed || "";
+						const minuteNumMatch = rawMinute.toString().match(/^(\d+)'?$/);
+						const displayMinute = minuteNumMatch
+							? `${Math.max(0, Number(minuteNumMatch[1]) - 3)}'`
+							: rawMinute;
+						const minuteStr = displayMinute ? ` aos ${displayMinute}` : "";
+
+						// Mesmo ajuste de -3min no campo "Tempo de jogo"
+						const rawElapsed = match.time_elapsed || "";
+						const elapsedNumMatch = rawElapsed.toString().match(/^(\d+)'?$/);
+						const displayElapsed = elapsedNumMatch
+							? `${Math.max(0, Number(elapsedNumMatch[1]) - 3)}'`
+							: rawElapsed;
 
 						messageText =
 							`⚽ *GOOOOL DA COPA 2026!* ⚽\n\n` +
 							`${scoringTeam.flagEmoji} *Gol do(a) ${scoringTeam.namePt}!*${playerStr}${minuteStr}\n\n` +
 							`⚔️ Placar Atual: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${match.home_score} x ${match.away_score} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
-							`⏱️ Tempo de jogo: ${match.time_elapsed || "—"}\n\n` +
+							`⏱️ Tempo de jogo: ${displayElapsed || "—"}\n\n` +
 							`_${rndToken()}_`;
 
 					} else if (event === "match_end") {
