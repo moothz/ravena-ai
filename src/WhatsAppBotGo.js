@@ -1849,6 +1849,7 @@ class WhatsAppBotGo {
 				hasMedia: !!mediaInfo,
 				mentions,
 				quotedParticipant,
+				hasQuotedMsg: !!quotedMessageId,
 				isQuoted: goMessageData.isQuoted,
 				isNewsletter: chatId.includes("newsletter"),
 

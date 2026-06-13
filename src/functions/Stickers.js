@@ -489,6 +489,23 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			// Mídia na mensagem citada
 			const quotedMsg = await message.origin.getQuotedMessage();
 
+			// Se não há mensagem citada nem mídia direta
+			if (!quotedMsg) {
+				await message.origin.react("❌");
+				if (message.hasQuotedMsg) {
+					// Havia uma mensagem citada, mas saiu do cache
+					return new ReturnMessage({
+						chatId,
+						content:
+							"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou (isso pode acontecer com stickers animados)."
+					});
+				}
+				return new ReturnMessage({
+					chatId,
+					content: "Envie uma imagem/vídeo com a legenda do comando, ou responda a uma mídia."
+				});
+			}
+
 			// Verificar se o tipo de mídia é suportado
 			const mediaType = quotedMsg.type.toLowerCase();
 

@@ -32,35 +32,41 @@ fs.mkdir(tempDir, { recursive: true })
 		logger.error("Erro ao criar diretório temporário:", error);
 	});
 
-// Auxiliar para obter mídia da mensagem
+// Auxiliar para obter mídia da mensagem.
+// Retorna { media, hadQuoted, quotedHadMedia } para distinguir erros.
 async function getMediaFromMessage(message) {
 	// Se a mensagem tem mídia direta
 	if (message.type !== "text") {
 		// Lazy loading: só usa content direto se já tiver .data (base64)
 		if (message.content && message.content.data) {
-			return message.content;
+			return { media: message.content, hadQuoted: false, quotedHadMedia: false };
 		}
 		if (typeof message.downloadMedia === "function") {
 			try {
-				return await message.downloadMedia();
+				const media = await message.downloadMedia();
+				return { media, hadQuoted: false, quotedHadMedia: false };
 			} catch (e) {
 				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
-				return null;
+				return { media: null, hadQuoted: false, quotedHadMedia: false };
 			}
 		}
-		return message.content ?? null;
+		return { media: message.content ?? null, hadQuoted: false, quotedHadMedia: false };
 	}
+
+	const hadQuoted = !!message.hasQuotedMsg;
 
 	// Tenta obter mídia da mensagem citada
 	try {
 		const quotedMsg = await message.origin.getQuotedMessage();
 		if (quotedMsg && quotedMsg.hasMedia) {
-			return await quotedMsg.downloadMedia();
+			const media = await quotedMsg.downloadMedia();
+			return { media, hadQuoted, quotedHadMedia: true };
 		}
+		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
 	} catch (error) {
 		logger.error("Erro ao obter mídia da mensagem citada:", error);
 	}
-	return null;
+	return { media: null, hadQuoted, quotedHadMedia: null };
 }
 
 // Auxiliar para salvar mídia em arquivo temporário
@@ -246,7 +252,7 @@ async function handleJpeg(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
 			try {
 				await message.origin.react("❌");
@@ -254,6 +260,13 @@ async function handleJpeg(bot, message, args, group) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
@@ -326,7 +339,7 @@ async function handleRemoveBg(bot, message, args, group) {
 
 	// Cadeia de promessas sem bloqueio
 	try {
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
 			// Aplica reação de erro
 			try {
@@ -335,6 +348,13 @@ async function handleRemoveBg(bot, message, args, group) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
@@ -419,7 +439,7 @@ async function handleDistort(bot, message, args, group) {
 	}
 
 	try {
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
 			// Aplica reação de erro
 			try {
@@ -428,6 +448,13 @@ async function handleDistort(bot, message, args, group) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
@@ -502,7 +529,7 @@ async function handleStickerBg(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
 			// Aplica reação de erro
 			try {
@@ -511,6 +538,13 @@ async function handleStickerBg(bot, message, args, group) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
@@ -593,7 +627,7 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
 			// Aplica reação de erro
 			try {
@@ -602,6 +636,13 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
 			}
 
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."

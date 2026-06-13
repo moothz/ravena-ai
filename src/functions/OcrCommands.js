@@ -23,9 +23,18 @@ async function ocrCommand(bot, message, args, group) {
 
 	try {
 		// 1. Get Media (direct or quoted)
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted } = await getMediaFromMessage(message);
 
 		if (!media || !media.mimetype.includes("image")) {
+			// Distinguish: had a quoted message but couldn't recover it vs. no quoted at all
+			if (hadQuoted) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou (isso pode acontecer com stickers animados).",
+					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content:
@@ -88,30 +97,37 @@ async function ocrCommand(bot, message, args, group) {
 }
 
 /**
- * Helper to get media from message or quoted message
+ * Helper to get media from message or quoted message.
+ * Returns { media, hadQuoted } where hadQuoted indicates if there was a quoted message
+ * (even if media recovery failed), allowing callers to show different error messages.
  */
 async function getMediaFromMessage(message) {
 	// If message has media directly
 	if (message.hasMedia) {
 		if (message.content && message.content.data) {
-			return message.content;
+			return { media: message.content, hadQuoted: false };
 		}
 		// Se não tiver dados (lazy loading), tenta baixar
 		if (typeof message.downloadMedia === "function") {
-			return await message.downloadMedia();
+			const media = await message.downloadMedia();
+			return { media, hadQuoted: false };
 		}
 	}
+
+	// Check if this message has a quoted message reference
+	const hadQuoted = !!message.hasQuotedMsg;
 
 	// Try to get from quoted message
 	try {
 		const quotedMsg = await message.origin.getQuotedMessage();
 		if (quotedMsg && quotedMsg.hasMedia) {
-			return await quotedMsg.downloadMedia();
+			const media = await quotedMsg.downloadMedia();
+			return { media, hadQuoted };
 		}
 	} catch (error) {
 		logger.error("Error getting quoted media:", error);
 	}
-	return null;
+	return { media: null, hadQuoted };
 }
 
 const commands = [

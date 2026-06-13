@@ -87,8 +87,8 @@ restart-rembg: ## Reinicia apenas o serviço rembg
 restart-health: ## Reinicia apenas o monitor de saúde
 	docker compose restart health-check
 
-ravena-ai: ## Faz lint, build e recarrega o código do bot ravena-ai
-	npm run lint:fix && docker compose up -d --build ravena-ai
+ravena-ai: ## Faz build e recarrega o código do bot ravena-ai
+	docker compose up -d --build ravena-ai
 
 build: ## Constrói todas as imagens Docker
 	docker compose build

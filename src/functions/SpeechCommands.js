@@ -112,39 +112,45 @@ async function getAudioDuration(filePath) {
 }
 
 /**
- * Obtém mídia da mensagem
+ * Obtém mídia da mensagem.
+ * Retorna { media, hadQuoted, quotedHadMedia } para distinguir erros.
  * @param {Object} message - O objeto da mensagem
- * @returns {Promise<MessageMedia|null>} - O objeto de mídia ou null
+ * @returns {Promise<{media: MessageMedia|null, hadQuoted: boolean, quotedHadMedia: boolean|null}>}
  */
 async function getMediaFromMessage(message) {
 	// Se a mensagem tem mídia direta
 	if (message.type !== "text") {
 		// Lazy loading: só usa content direto se já tiver .data (base64)
 		if (message.content && message.content.data) {
-			return message.content;
+			return { media: message.content, hadQuoted: false, quotedHadMedia: false };
 		}
 		if (typeof message.downloadMedia === "function") {
 			try {
-				return await message.downloadMedia();
+				const media = await message.downloadMedia();
+				return { media, hadQuoted: false, quotedHadMedia: false };
 			} catch (e) {
 				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
-				return null;
+				return { media: null, hadQuoted: false, quotedHadMedia: false };
 			}
 		}
-		return message.content ?? null;
+		return { media: message.content ?? null, hadQuoted: false, quotedHadMedia: false };
 	}
+
+	const hadQuoted = !!message.hasQuotedMsg;
 
 	// Tenta obter mídia da mensagem citada
 	try {
 		const quotedMsg = await message.origin.getQuotedMessage();
 		if (quotedMsg && quotedMsg.hasMedia) {
-			return await quotedMsg.downloadMedia();
+			const media = await quotedMsg.downloadMedia();
+			return { media, hadQuoted, quotedHadMedia: true };
 		}
+		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
 	} catch (error) {
 		logger.error("Erro ao obter mídia da mensagem citada:", error);
 	}
 
-	return null;
+	return { media: null, hadQuoted, quotedHadMedia: null };
 }
 
 /**
@@ -493,8 +499,19 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 
 	try {
 		// Obtém mídia da mensagem
-		const media = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 		if (!media) {
+			if (hadQuoted && quotedHadMedia !== false) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Não foi possível recuperar o áudio da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
+					options: {
+						quotedMessageId: message.origin.id._serialized,
+						goReply: message.origin
+					}
+				});
+			}
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça um áudio ou mensagem de voz.",

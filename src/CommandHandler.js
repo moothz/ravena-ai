@@ -944,8 +944,14 @@ class CommandHandler {
 				// Verifica a mensagem citada para mídia se a mensagem direta não tiver
 				let hasQuotedMedia = false;
 				if (!hasDirectMedia) {
-					const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-					hasQuotedMedia = quotedMsg && quotedMsg.hasMedia;
+					// Se há referência a uma mensagem citada (mesmo que o cache tenha expirado),
+					// passa o comando adiante para que ele possa retornar a mensagem de erro adequada
+					if (message.hasQuotedMsg) {
+						hasQuotedMedia = true; // deixa o comando tratar o caso de cache expirado
+					} else {
+						const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+						hasQuotedMedia = quotedMsg && quotedMsg.hasMedia;
+					}
 				}
 
 				if (!hasDirectMedia && !hasQuotedMedia) {

@@ -272,8 +272,8 @@ async function aiCommand(bot, message, args, group) {
 		}
 	}
 
-	// 3. Check for Media
-	const media = await getMediaFromMessage(message);
+	// 3. Check for Media (direct or from quoted message)
+	const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
 
 	// Validation: No media and short question
 	if (!media && question.length < 5) {
@@ -342,6 +342,20 @@ async function aiCommand(bot, message, args, group) {
 		);
 	}
 
+	// CASE B1: Had a quoted message with media but couldn't recover it (cache expired or download failed)
+	// Only trigger when the quoted message was confirmed to have media (quotedHadMedia=true)
+	// or when the quoted message couldn't be retrieved from cache at all (quotedHadMedia=null)
+	if (hadQuoted && !media && quotedHadMedia !== false) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou (isso pode acontecer com stickers animados).",
+			options: {
+				quotedMessageId: message.origin.id._serialized,
+				goReply: message.origin
+			}
+		});
+	}
 	// CASE C: Text-Only Response (General, Group, Bot-chat)
 	// Build Context based on Classification
 	let systemContext = "";
@@ -585,35 +599,46 @@ async function handleMediaRequest(
 	}
 }
 
-// Auxiliar para obter mídia da mensagem
+// Auxiliar para obter mídia da mensagem.
+// Retorna { media, hadQuoted, quotedHadMedia } onde:
+//   hadQuoted: havia uma mensagem citada (mesmo que não fosse recuperável)
+//   quotedHadMedia: a mensagem citada recuperada tinha mídia (mas o download falhou), ou null se não foi possível recuperar a mensagem citada
 async function getMediaFromMessage(message) {
 	// Se a mensagem tem mídia direta
 	if (message.type !== "text") {
 		// Lazy loading: content existe mas sem base64 (otimização de RAM)
 		if (message.content && message.content.data) {
-			return message.content;
+			return { media: message.content, hadQuoted: false, quotedHadMedia: false };
 		}
 		if (typeof message.downloadMedia === "function") {
 			try {
-				return await message.downloadMedia();
+				const media = await message.downloadMedia();
+				return { media, hadQuoted: false, quotedHadMedia: false };
 			} catch (e) {
 				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
-				return null;
+				return { media: null, hadQuoted: false, quotedHadMedia: false };
 			}
 		}
-		return message.content ?? null;
+		return { media: message.content ?? null, hadQuoted: false, quotedHadMedia: false };
 	}
+
+	// Verifica se havia uma mensagem citada (antes de tentar recuperá-la do cache)
+	const hadQuoted = !!message.hasQuotedMsg;
 
 	// Tenta obter mídia da mensagem citada
 	try {
 		const quotedMsg = await message.origin.getQuotedMessage();
 		if (quotedMsg && quotedMsg.hasMedia) {
-			return await quotedMsg.downloadMedia();
+			const media = await quotedMsg.downloadMedia();
+			// quotedHadMedia=true: a mensagem citada existe e tem mídia (download pode ter falhado)
+			return { media, hadQuoted, quotedHadMedia: true };
 		}
+		// Quoted msg exists but has no media (or couldn't be recovered from cache)
+		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
 	} catch (error) {
 		logger.error("Erro ao obter mídia da mensagem citada:", error);
 	}
-	return null;
+	return { media: null, hadQuoted, quotedHadMedia: null };
 }
 
 const commands = [
