@@ -691,11 +691,13 @@ async function processAutoSTT(bot, message, group, opts) {
 			return false;
 		}
 
+		/* O bot não deve reagir a interações automáticas
 		try {
 			await message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
 		} catch (e) {
 			logger.error(`[processAutoSTT] Erro enviando notificação inicial`);
 		}
+		*/
 
 		logger.debug(`[processAutoSTT] Processamento Auto-STT para mensagem no chat ${chatId}`);
 

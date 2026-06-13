@@ -1197,6 +1197,8 @@ class WhatsAppBotGo {
 				results.push(result);
 
 				if (result && result.id?._serialized) {
+					// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
+					/*
 					if (message.reaction) {
 						// CORRETO: ReturnMessage só tem um reaction
 						try {
@@ -1207,7 +1209,9 @@ class WhatsAppBotGo {
 								reactError
 							);
 						}
-					} else if (message.reactions) {
+					}
+					*/
+					if (message.reactions) {
 						// ERRADO: Apenas Command deveria ter mais de 1 reação, então isso deve ser arrumado
 						// Esse código precisa ser excluído depois de arrumar todas as ReturnMessage erradas
 						this.logger.debug(

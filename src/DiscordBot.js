@@ -724,6 +724,8 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 				const result = await this.sendMessage(message.chatId, message.content, message.options);
 				results.push(result);
 
+				// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
+				/*
 				if (message.reaction && result && result.id?._serialized) {
 					try {
 						const channel = await this.discordClient.channels.fetch(message.chatId);
@@ -736,6 +738,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 						);
 					}
 				}
+				*/
 			} catch (sendError) {
 				this.logger.error(
 					`[sendReturnMessages] Falha enviando ReturnMessages para ${message.chatId}:`,

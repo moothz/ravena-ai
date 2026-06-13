@@ -1417,7 +1417,7 @@ class CommandHandler {
 		if (matchResult) {
 			const { customCommand } = matchResult;
 			this.logger.debug(`[processCustomIgnoresPrefix] `, customCommand);
-			this.executeCustomCommand(bot, message, customCommand, [], group);
+			this.executeCustomCommand(bot, message, customCommand, [], group, true);
 		}
 	}
 
@@ -1732,7 +1732,7 @@ class CommandHandler {
 							const interactCommand = this.fixedCommands.getCommand("interagir");
 							this.logger.info(`[interagir] Acionando LLM-Interagir`);
 
-							this.executeFixedCommand(bot, message, interactCommand, [false], group);
+							this.executeFixedCommand(bot, message, interactCommand, [false], group, true);
 							return;
 						} else {
 							const randomCommand = autoCommands[Math.floor(Math.random() * autoCommands.length)];
@@ -1741,7 +1741,7 @@ class CommandHandler {
 							);
 
 							// Executa o comando
-							this.executeCustomCommand(bot, message, randomCommand, [], group);
+							this.executeCustomCommand(bot, message, randomCommand, [], group, true);
 							return;
 						}
 					}
@@ -1758,7 +1758,7 @@ class CommandHandler {
 				) {
 					this.logger.debug(`Encontrado comando auto-acionado: ${command.startsWith}`);
 					// Executa o comando, mas não espera para evitar bloqueio
-					this.executeCustomCommand(bot, message, command, [], group).catch((error) => {
+					this.executeCustomCommand(bot, message, command, [], group, true).catch((error) => {
 						this.logger.error(
 							`Erro no comando auto-acionado ${command.startsWith}:`,
 							error.message ?? "xxx"
