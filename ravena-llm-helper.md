@@ -1386,6 +1386,11 @@ Começam com `!g-` e são restritos a administradores.
 
 ---
 
+#### !g-cmd-cd
+**Descrição:** Define o cooldown (em segundos) de um comando personalizado. Uso: !g-cmd-cd <comando> <segundos>
+
+---
+
 #### !g-cmd-setHoras
 **Descrição:** Define horários permitidos para um comando
 
