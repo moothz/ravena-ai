@@ -84,11 +84,14 @@ while true; do
             [ -z "$CURRENT_HOUR" ] || [ "$CURRENT_HOUR" = " " ] && CURRENT_HOUR=0
             
             if [ "$CURRENT_HOUR" -ge 1 ] && [ "$CURRENT_HOUR" -lt 7 ]; then
+                LIMIT_MIN=60
+                MAX_INACTIVE=4
+            elif [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_HOUR" -lt 8 ]; then
                 LIMIT_MIN=45
-            elif [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_HOUR" -lt 9 ]; then
-                LIMIT_MIN=20
+                MAX_INACTIVE=3
             else
                 LIMIT_MIN=10
+                MAX_INACTIVE=1
             fi
 
             LIMIT_MS=$((LIMIT_MIN * 60 * 1000))
@@ -100,7 +103,7 @@ while true; do
 
             INACTIVE_COUNT=${INACTIVE_COUNT:-0}
 
-            if [ "$INACTIVE_COUNT" -gt 1 ]; then
+            if [ "$INACTIVE_COUNT" -gt "$MAX_INACTIVE" ]; then
                 RAVENA_FAIL_COUNT=$((RAVENA_FAIL_COUNT + 1))
                 echo "[health-check] ravena-ai unhealthy (${RAVENA_FAIL_COUNT}/${MAX_RETRIES}): ${INACTIVE_COUNT} bots inactive for >${LIMIT_MIN}min."
                 
