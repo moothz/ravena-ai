@@ -519,22 +519,32 @@ class CustomVariableProcessor {
 		}
 
 		// Processa variáveis de menções específicas {mention-NUMERO}
-		const mentionMatches = text.matchAll(/\{mention-(\d+)/g);
+		const mentionMatches = text.matchAll(/\{mention-([^}]+)\}/g);
 		for (const match of Array.from(mentionMatches)) {
 			const userIdToMention = match[1];
+			const userPart = userIdToMention.split("@")[0];
 
-			// Verifica se o ID é válido
-			if (userIdToMention && userIdToMention.length > 8 && userIdToMention.length < 15) {
-				text = text.replace(match[0] + "}", `@${userIdToMention.split("@")[0]}`);
+			// Verifica se o ID/número é válido
+			if (userPart && userPart.length >= 8 && userPart.length <= 25) {
+				let jid = userIdToMention;
+				if (!jid.includes("@")) {
+					jid = `${userPart}@s.whatsapp.net`;
+				} else if (jid.endsWith("@c.us")) {
+					jid = `${userPart}@s.whatsapp.net`;
+				}
+
+				text = text.replace(match[0], `@${userPart}`);
 
 				if (context.options && context.options.mentions) {
-					context.options.mentions.push(userIdToMention);
+					if (!context.options.mentions.includes(jid)) {
+						context.options.mentions.push(jid);
+					}
 				} else if (context.options) {
-					context.options.mentions = [userIdToMention];
+					context.options.mentions = [jid];
 				}
 			} else {
 				// Remove a variável inválida
-				text = text.replace(match[0] + "}", "");
+				text = text.replace(match[0], "");
 			}
 		}
 
