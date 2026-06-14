@@ -1241,8 +1241,9 @@ class CommandHandler {
 				return returnMessage;
 			}
 
-			// Verifica cooldown
-			const cooldownInfo = await this.checkCooldown(command.startsWith, message.group, bot.id);
+			// Verifica cooldown (passa objeto inteiro para que o cooldown personalizado do comando seja respeitado)
+			const cooldownCheckCmd = { name: command.startsWith, cooldown: command.cooldown ?? 0 };
+			const cooldownInfo = await this.checkCooldown(cooldownCheckCmd, message.group, bot.id);
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(

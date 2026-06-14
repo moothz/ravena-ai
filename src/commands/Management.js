@@ -120,6 +120,11 @@ class Management {
 				method: "setCmdInteragir",
 				description: "Define que comando seja usado nas interações aleatórias"
 			},
+			"cmd-cd": {
+				method: "setCmdCooldown",
+				description:
+					"Define o cooldown (em segundos) de um comando personalizado. Uso: !g-cmd-cd <comando> <segundos>"
+			},
 			"cmd-setHoras": {
 				method: "setCmdAllowedHours",
 				description: "Define horários permitidos para um comando"
@@ -2478,6 +2483,92 @@ class Management {
 			return new ReturnMessage({
 				chatId: group.id,
 				content: `Definida reação 'antes' de '${commandName}' para ${emoji}`
+			});
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: `Comando personalizado '${commandName}' não encontrado.${this.help.naoEncontrado}`
+		});
+	}
+
+	/**
+	 * Define o cooldown personalizado de um comando
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async setCmdCooldown(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (args.length < 2) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"Por favor, forneça um nome de comando e o cooldown em segundos. Exemplo: !g-cmd-cd sticker 30"
+			});
+		}
+
+		const commandName = args[0];
+		const cooldownRaw = parseInt(args[1]);
+
+		if (isNaN(cooldownRaw)) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "O cooldown deve ser um número (em segundos). Exemplo: !g-cmd-cd sticker 30"
+			});
+		}
+
+		// Respeita o mínimo (1 segundo) e o máximo (60000 segundos ~16,6h)
+		const MIN_COOLDOWN = 1;
+		const MAX_COOLDOWN = 60000;
+		let cooldown = cooldownRaw;
+		let textoAjuste = "";
+
+		if (cooldown <= 0) {
+			cooldown = 0;
+			textoAjuste = " (cooldown removido)";
+		} else if (cooldown < MIN_COOLDOWN) {
+			cooldown = MIN_COOLDOWN;
+			textoAjuste = ` (mínimo: ${MIN_COOLDOWN}s)`;
+		} else if (cooldown > MAX_COOLDOWN) {
+			cooldown = MAX_COOLDOWN;
+			textoAjuste = ` (máximo: ${MAX_COOLDOWN}s)`;
+		}
+
+		// Verifica se é um comando personalizado
+		const customCommands = await this.database.getCustomCommands(group.id);
+		const customCommand = customCommands.find(
+			(cmd) => cmd.startsWith === commandName && !cmd.deleted
+		);
+
+		if (customCommand) {
+			customCommand.cooldown = cooldown;
+
+			// Atualiza o comando
+			await this.database.updateCustomCommand(group.id, customCommand);
+
+			// Limpa cache de comandos para garantir que o comando atualizado seja carregado
+			this.database.clearCache(`commands:${group.id}`);
+
+			// Recarrega comandos
+			await bot.eventHandler.commandHandler.loadCustomCommandsForGroup(group.id);
+
+			const msgCooldown =
+				cooldown === 0
+					? `Cooldown do comando '${commandName}' removido${textoAjuste}.`
+					: `Cooldown do comando '${commandName}' definido para ${cooldown} segundo(s)${textoAjuste}.`;
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `🕐 ${msgCooldown}`
 			});
 		}
 

@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'lbl-cmd-reply-quote': 'Se o bot deve responder marcando a mensagem original.',
         'lbl-cmd-send-all': '[Ainda não implementado] Se marcado, envia TODAS as respostas definidas (não apenas uma aleatória).',
         'lbl-cmd-emoji': '[Opcional] O bot reagirá à mensagem com este emoji.',
+        'lbl-cmd-cooldown': '[Opcional] Tempo mínimo (em segundos) que os usuários devem esperar entre usos deste comando. Use 0 para sem cooldown. Máximo: 60000s (~16,6 horas).',
         'lbl-cmd-responses': 'O que o bot deve responder. Pode ser texto ou mídia.',
         
         'lbl-stream-channel': 'O nome do canal na plataforma, apenas o nome, sem link.',

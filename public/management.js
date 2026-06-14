@@ -149,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cmdSendAll: document.getElementById('cmd-send-all'),
         cmdAdminOnly: document.getElementById('cmd-admin-only'),
         cmdEmoji: document.getElementById('cmd-emoji'),
+        cmdCooldown: document.getElementById('cmd-cooldown'),
         cmdResponsesList: document.getElementById('cmd-responses-list'),
         btnSaveCmd: document.getElementById('btn-save-cmd'),
         btnDeleteCmd: document.getElementById('btn-delete-cmd'),
@@ -1160,6 +1161,7 @@ document.addEventListener('DOMContentLoaded', () => {
             els.cmdSendAll.checked = !!cmd.sendAllResponses;
             els.cmdAdminOnly.checked = !!cmd.adminOnly;
             els.cmdEmoji.value = cmd.react || '';
+            els.cmdCooldown.value = cmd.cooldown || 0;
             currentCmdMentions = cmd.mentions || [];
             
             if (cmd.responses) {
@@ -1175,6 +1177,7 @@ document.addEventListener('DOMContentLoaded', () => {
             els.cmdSendAll.checked = false;
             els.cmdAdminOnly.checked = false;
             els.cmdEmoji.value = '';
+            els.cmdCooldown.value = 0;
             currentCmdMentions = [];
             addResponseInput('text', '');
             els.cmdMetadata.innerHTML = '';
@@ -1430,11 +1433,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (responses.length === 0) return await showCustomAlert('Adicione pelo menos uma resposta');
 
+        const rawCooldown = parseInt(els.cmdCooldown.value);
+        const cooldownValue = isNaN(rawCooldown) || rawCooldown < 0 ? 0 : Math.min(rawCooldown, 60000);
+
         const newCmd = {
             startsWith: trigger, responses: responses, active: els.cmdActive.checked,
             ignoreInteract: !els.cmdInteract.checked, reply: els.cmdReplyQuote.checked,
             sendAllResponses: els.cmdSendAll.checked, adminOnly: els.cmdAdminOnly.checked,
             react: els.cmdEmoji.value.trim() || null,
+            cooldown: cooldownValue,
             mentions: currentCmdMentions,
             count: currentEditingCmd ? currentEditingCmd.count : 0,
             metadata: currentEditingCmd ? currentEditingCmd.metadata : { createdBy: 'Painel Web', createdAt: Date.now() }
@@ -1706,6 +1713,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if(cooldownSlider) {
             cooldownSlider.addEventListener('input', (e) => {
                 document.getElementById('cooldown-val').textContent = e.target.value;
+            });
+        }
+
+        // Cmd cooldown live label
+        const cmdCooldownInput = document.getElementById('cmd-cooldown');
+        if (cmdCooldownInput) {
+            function formatCooldownSeconds(s) {
+                const val = parseInt(s);
+                if (isNaN(val) || val <= 0) return 'sem cooldown';
+                if (val < 60) return `${val}s`;
+                if (val < 3600) {
+                    const m = Math.floor(val / 60), sec = val % 60;
+                    return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
+                }
+                const h = Math.floor(val / 3600), m = Math.floor((val % 3600) / 60);
+                return m > 0 ? `${h}h ${m}m` : `${h}h`;
+            }
+            cmdCooldownInput.addEventListener('input', (e) => {
+                const lbl = document.getElementById('cmd-cooldown-label');
+                if (lbl) lbl.textContent = `segundos  (${formatCooldownSeconds(e.target.value)})`;
             });
         }
     }

@@ -436,6 +436,15 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label id="lbl-cmd-cooldown">Cooldown <i class="fas fa-info-circle" title="Tempo mínimo entre usos do comando (em segundos). 0 = sem cooldown. Máximo: 60000s (~16,6h)"></i></label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" id="cmd-cooldown" class="form-control" placeholder="0" min="0" max="60000" step="1" style="max-width: 120px;">
+                        <span id="cmd-cooldown-label" class="text-muted" style="font-size: 0.85em;">segundos</span>
+                    </div>
+                </div>
+
+
                 <div class="list-manager-section">
                     <label id="lbl-cmd-tags">Marcar Pessoas <i class="fas fa-info-circle" title="Pessoas que serão marcadas na mensagem. O número é encriptado pelo WhatsApp, por isso parece 'estranho' ( @lids)"></i></label>
                     <div class="input-group">
