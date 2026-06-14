@@ -1965,6 +1965,71 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
+	 * Detecta o status de um canal público (banido, deletado/não encontrado, etc.)
+	 * fazendo uma requisição HTTP simples à página pública da plataforma.
+	 * @param {string} channelName
+	 * @param {string} platform - 'twitch' | 'kick'
+	 * @returns {Promise<'banned'|'deleted'|'unknown'>}
+	 */
+	async detectChannelStatus(channelName, platform) {
+		try {
+			let url;
+			if (platform === "twitch") {
+				url = `https://www.twitch.tv/${channelName}`;
+			} else if (platform === "kick") {
+				url = `https://kick.com/${channelName}`;
+			} else {
+				return "unknown";
+			}
+
+			const response = await axios.get(url, {
+				timeout: 10000,
+				headers: {
+					"User-Agent":
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+					Accept: "text/html,application/xhtml+xml"
+				},
+				validateStatus: () => true // não lança exceção para 4xx/5xx
+			});
+
+			const body = (response.data || "").toString().toLowerCase();
+
+			if (platform === "twitch") {
+				// Twitch retorna 200 mesmo para banidos/deletados, mas com texto distinto
+				if (
+					body.includes("terms of service") ||
+					body.includes("community guidelines") ||
+					body.includes("temporariamente indispon") ||
+					body.includes("temporarily unavailable")
+				) {
+					return "banned";
+				}
+				if (
+					body.includes("máquina do tempo") ||
+					body.includes("time machine") ||
+					body.includes("content is unavailable") ||
+					body.includes("sorry. unless you") ||
+					response.status === 404
+				) {
+					return "deleted";
+				}
+			} else if (platform === "kick") {
+				if (response.status === 404 || body.includes("not found") || body.includes("página não encontrada")) {
+					return "deleted";
+				}
+				if (body.includes("suspended") || body.includes("banned") || body.includes("violat")) {
+					return "banned";
+				}
+			}
+
+			return "unknown";
+		} catch (err) {
+			this.logger.warn(`[detectChannelStatus] Erro ao verificar status de ${platform}/${channelName}: ${err.message}`);
+			return "unknown";
+		}
+	}
+
+	/**
 	 * Pausa um canal por 12 horas devido a erros consecutivos de "não encontrado"
 	 * @param {string} channelName - Nome do canal
 	 * @param {string} platform - Plataforma ('youtube', 'twitch', 'kick')
@@ -2008,11 +2073,19 @@ class StreamMonitor extends EventEmitter {
 						// Salva o grupo
 						await this.database.saveGroup(group);
 
+						// Detecta status do canal (banido vs deletado) — só para Twitch e Kick
+						let channelStatus = "unknown";
+						if (p === "twitch" || p === "kick") {
+							channelStatus = await this.detectChannelStatus(channelName, p);
+							this.logger.info(`[pauseChannel] Status detectado para ${p}/${channelName}: ${channelStatus}`);
+						}
+
 						// Emite evento para notificação
 						this.emit("channelNotFound", {
 							platform: p,
 							channelName,
-							groupId: group.id
+							groupId: group.id,
+							channelStatus
 						});
 					}
 				}

@@ -132,7 +132,7 @@ class StreamSystem {
 		// Evento de canal não encontrado
 		this.streamMonitor.on("channelNotFound", async (data) => {
 			try {
-				this.logger.info(`Evento de canal não encontrado: ${data.platform}/${data.channelName}`);
+				this.logger.info(`Evento de canal não encontrado: ${data.platform}/${data.channelName} (status: ${data.channelStatus ?? "unknown"})`);
 
 				// Envia mensagem para o grupo (usando o primeiro bot capaz)
 				if (data.groupId) {
@@ -145,7 +145,29 @@ class StreamSystem {
 									? "Twitch"
 									: "Kick";
 
-						const msgAviso = `⚠️ *Canal Temporariamente Pausado*\n\nO canal do *${platformName}* com o nome *${data.channelName}* apresentou erros consecutivos de "não encontrado" e foi pausado por 12 horas. ⚠️ *Verifique se o nome está correto*.\n\n> O monitoramento será reativado automaticamente após esse período.`;
+						// Monta o link público do canal
+						let channelLink = "";
+						if (data.platform === "twitch") {
+							channelLink = `https://www.twitch.tv/${data.channelName}`;
+						} else if (data.platform === "kick") {
+							channelLink = `https://kick.com/${data.channelName}`;
+						} else if (data.platform === "youtube") {
+							channelLink = `https://www.youtube.com/@${data.channelName}`;
+						}
+
+						// Personaliza a mensagem com base no status detectado
+						let motivoTexto;
+						if (data.channelStatus === "banned") {
+							motivoTexto = `⛔ O canal parece estar *suspenso/banido* pela plataforma por violação dos Termos de Serviço ou Diretrizes da Comunidade.`;
+						} else if (data.channelStatus === "deleted") {
+							motivoTexto = `❌ O canal parece ter sido *deletado ou trocou de nome*.`;
+						} else {
+							motivoTexto = `⚠️ O canal apresentou erros consecutivos de "não encontrado". *Verifique se o nome está correto.*`;
+						}
+
+						const linkTexto = channelLink ? `\n🔗 ${channelLink}` : "";
+
+						const msgAviso = `⚠️ *Canal Temporariamente Pausado*\n\nO canal *${data.channelName}* (${platformName}) foi pausado por 12 horas.${linkTexto}\n\n${motivoTexto}\n\n> O monitoramento será reativado automaticamente após esse período.`;
 
 						bot.sendMessage(data.groupId, msgAviso);
 						bot.sendMessage(bot.grupoLogs, msgAviso);
