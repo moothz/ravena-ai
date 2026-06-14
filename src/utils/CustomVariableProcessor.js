@@ -87,6 +87,31 @@ class CustomVariableProcessor {
 			// Processa variáveis de comando embutido
 			processedText = await this.processEmbeddedCommands(processedText, context);
 
+			// Processa menções implícitas na mensagem final (ex: @5511999999999 ou @33543761703009)
+			if (context && typeof processedText === "string") {
+				const implicitMentions = processedText.matchAll(/@(\d{8,25})/g);
+				const jidsToMention = [];
+				for (const match of Array.from(implicitMentions)) {
+					const num = match[1];
+					jidsToMention.push(`${num}@s.whatsapp.net`);
+					jidsToMention.push(`${num}@lid`);
+				}
+
+				if (jidsToMention.length > 0) {
+					if (!context.options) {
+						context.options = {};
+					}
+					if (!context.options.mentions) {
+						context.options.mentions = [];
+					}
+					for (const jid of jidsToMention) {
+						if (!context.options.mentions.includes(jid)) {
+							context.options.mentions.push(jid);
+						}
+					}
+				}
+			}
+
 			return processedText;
 		} catch (error) {
 			this.logger.error("Erro ao processar variáveis:", error);
@@ -526,21 +551,32 @@ class CustomVariableProcessor {
 
 			// Verifica se o ID/número é válido
 			if (userPart && userPart.length >= 8 && userPart.length <= 25) {
-				let jid = userIdToMention;
-				if (!jid.includes("@")) {
-					jid = `${userPart}@s.whatsapp.net`;
-				} else if (jid.endsWith("@c.us")) {
-					jid = `${userPart}@s.whatsapp.net`;
+				const jidsToAdd = [];
+				if (userIdToMention.includes("@")) {
+					if (userIdToMention.endsWith("@c.us")) {
+						jidsToAdd.push(`${userPart}@s.whatsapp.net`);
+					} else {
+						jidsToAdd.push(userIdToMention);
+					}
+				} else {
+					// Sem domínio: adiciona ambos para garantir (caso seja LID ou PN)
+					jidsToAdd.push(`${userPart}@s.whatsapp.net`);
+					jidsToAdd.push(`${userPart}@lid`);
 				}
 
 				text = text.replace(match[0], `@${userPart}`);
 
-				if (context.options && context.options.mentions) {
+				if (!context.options) {
+					context.options = {};
+				}
+				if (!context.options.mentions) {
+					context.options.mentions = [];
+				}
+
+				for (const jid of jidsToAdd) {
 					if (!context.options.mentions.includes(jid)) {
 						context.options.mentions.push(jid);
 					}
-				} else if (context.options) {
-					context.options.mentions = [jid];
 				}
 			} else {
 				// Remove a variável inválida

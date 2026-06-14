@@ -157,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modalTitle: document.getElementById('modal-title'),
         btnAddTag: document.getElementById('btn-add-tag'),
         cmdTagsList: document.getElementById('cmd-tags-list'),
+        cmdTagsHelper: document.getElementById('cmd-tags-helper'),
 
         // Member Modal
         memberModalTitle: document.getElementById('member-modal-title'),
@@ -1612,6 +1613,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!currentCmdMentions.includes(id)) {
                     currentCmdMentions.push(id);
                     renderCmdTags();
+                    setDirty(true);
+
+                    // Adiciona a tag {mention-userPart} ao final da resposta de texto
+                    const userPart = id.split('@')[0];
+                    const textareas = document.querySelectorAll('textarea.cmd-response-input');
+                    const lastTextarea = textareas[textareas.length - 1];
+                    if (lastTextarea) {
+                        const space = lastTextarea.value && !lastTextarea.value.endsWith(' ') ? ' ' : '';
+                        lastTextarea.value = lastTextarea.value + space + `{mention-${userPart}}`;
+                        lastTextarea.dispatchEvent(new Event('input'));
+                    }
                 }
             };
             els.memberModalTitle.textContent = 'Selecionar Membro';
@@ -1635,14 +1647,31 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const tag = document.createElement('span');
             tag.className = 'tag';
-            tag.innerHTML = `${displayId} <span class="remove">&times;</span>`;
+            tag.innerHTML = `${displayId} <span class="insert-var" title="Inserir variável no texto da resposta" style="margin-left: 5px; cursor: pointer; color: var(--primary-color, #007bff);"><i class="fas fa-plus"></i></span> <span class="remove">&times;</span>`;
             
+            tag.querySelector('.insert-var').onclick = () => {
+                const userPart = id.split('@')[0];
+                const textareas = document.querySelectorAll('textarea.cmd-response-input');
+                const lastTextarea = textareas[textareas.length - 1];
+                if (lastTextarea) {
+                    const space = lastTextarea.value && !lastTextarea.value.endsWith(' ') ? ' ' : '';
+                    lastTextarea.value = lastTextarea.value + space + `{mention-${userPart}}`;
+                    lastTextarea.dispatchEvent(new Event('input'));
+                    setDirty(true);
+                }
+            };
+
             tag.querySelector('.remove').onclick = () => {
                 currentCmdMentions = currentCmdMentions.filter(m => m !== id);
                 renderCmdTags();
+                setDirty(true);
             };
             container.appendChild(tag);
         });
+
+        if (els.cmdTagsHelper) {
+            els.cmdTagsHelper.classList.toggle('hidden', currentCmdMentions.length === 0);
+        }
     }
 
     function setupEventListeners() {
