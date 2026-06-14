@@ -31,7 +31,7 @@ async function ocrCommand(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou (isso pode acontecer com stickers animados).",
+						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}

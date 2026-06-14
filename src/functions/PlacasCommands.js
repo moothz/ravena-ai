@@ -752,6 +752,7 @@ const commands = [
 	new Command({
 		name: "placa",
 		hidden: true,
+		caseSensitive: false,
 		description: "Consulta informações sobre uma placa de veículo",
 		category: "busca",
 		usage: "!placa ABC1234",
