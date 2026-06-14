@@ -395,8 +395,133 @@ Estes comandos podem ser usados por qualquer membro.
 
 ---
 
+#### !copa
+**Descrição:** Lista todos os comandos da Copa do Mundo 2026
+
+---
+
+#### !copa-times
+**Descrição:** Lista todos os 48 times (ou de um grupo: !copa-times C)
+
+---
+
+#### !copa-time
+**Descrição:** Informações de um time específico
+
+---
+
+#### !copa-grupos
+**Descrição:** Classificação de todos os 12 grupos
+
+---
+
+#### !copa-grupo
+**Descrição:** Classificação detalhada de um grupo (ex: !copa-grupo C)
+
+---
+
+#### !copa-jogos
+**Descrição:** Calendário de jogos (ou de um grupo: !copa-jogos A)
+
+---
+
+#### !copa-jogo
+**Descrição:** Detalhes de uma partida (ex: !copa-jogo 1)
+
+---
+
+#### !copa-estadios
+**Descrição:** Lista todos os 16 estádios da Copa
+
+---
+
+#### !copa-seguir
+**Descrição:** Habilita/Desabilita notificações de partidas de um time
+
+---
+
 #### !imdb
 **Descrição:** Busca informações sobre filmes ou séries no IMDB
+
+---
+
+### Categoria: geral
+#### !ajuda
+**Descrição:** Consulta a base de conhecimento no AnythingLLM
+
+**Uso:** `!ajuda !ajuda [sua pergunta]`
+
+**Exemplo:** `!ajuda !ajuda [sua pergunta]`
+
+---
+
+#### !doar
+**Descrição:** Mostra informações de doação e link
+
+---
+
+#### !doadores
+**Descrição:** Mostra informações de doação e link
+
+---
+
+#### !status
+**Descrição:** Verifica o status dos bots
+
+---
+
+#### !grupao
+**Descrição:** Comunidades da ravena!
+
+---
+
+#### !avisos
+**Descrição:** Grupo de avisos ravenabot
+
+---
+
+#### !codigo
+**Descrição:** Código da ravenabot
+
+---
+
+#### !convite
+**Descrição:** Saiba mas sobre a ravena em grupos
+
+---
+
+#### !discord
+**Descrição:** Info sobre a Ravena no Discord
+
+---
+
+#### !telegram
+**Descrição:** Info sobre a Ravena no Telegram
+
+---
+
+#### !cmd
+**Descrição:** Mostra todos os comandos disponíveis
+
+---
+
+#### !menu
+**Descrição:** Mostra todos os comandos disponíveis
+
+---
+
+#### !cmd-gerenciamento
+**Descrição:** Mostra comandos de gerenciamento do grupo
+
+---
+
+#### !cmd-grupo
+**Descrição:** Mostra comandos personalizados do grupo
+
+---
+
+#### !cmd-categoria
+**Descrição:** Mostra comandos da categoria informada
 
 ---
 
@@ -521,67 +646,127 @@ Estes comandos podem ser usados por qualquer membro.
 ---
 
 #### !download
-**Descrição:** Baixa mídia de algum site
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
-#### !ig
-**Descrição:** Baixa mídia do Instagram
+#### !download-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
-#### !instagram
-**Descrição:** Baixa mídia do Instagram
+#### !download-musica
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
-#### !insta
-**Descrição:** Baixa mídia do Instagram
+#### !yt
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
-#### !tw
-**Descrição:** Baixa mídia do Twitter/X
+#### !yt-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
-#### !twitter
-**Descrição:** Baixa mídia do Twitter/X
+#### !yt-musica
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
+
+---
+
+#### !sr
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
 #### !x
-**Descrição:** Baixa mídia do Twitter/X
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
-#### !tk
-**Descrição:** Baixa mídia do TikTok
+#### !twitter
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
 #### !tiktok
-**Descrição:** Baixa mídia do TikTok
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !tk
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !tiktok-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
+
+---
+
+#### !insta
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !instagram
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !insta-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
 #### !fb
-**Descrição:** Baixa mídia do Facebook
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
 #### !facebook
-**Descrição:** Baixa mídia do Facebook
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
 #### !pin
-**Descrição:** Baixa mídia do Pinterest
+**Descrição:** Baixa conteúdo de mídias sociais
 
 ---
 
 #### !pinterest
-**Descrição:** Baixa mídia do Pinterest
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !sc
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !sc-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
+
+---
+
+#### !sc-musica
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
+
+---
+
+#### !soundcloud
+**Descrição:** Baixa conteúdo de mídias sociais
+
+---
+
+#### !soundcloud-audio
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
+
+---
+
+#### !soundcloud-musica
+**Descrição:** Baixa conteúdo de mídias sociais (apenas áudio)
 
 ---
 
@@ -619,64 +804,8 @@ Estes comandos podem ser usados por qualquer membro.
 
 ---
 
-### Categoria: geral
-#### !doar
-**Descrição:** Mostra informações de doação e link
-
----
-
-#### !doadores
-**Descrição:** Mostra informações de doação e link
-
----
-
-#### !status
-**Descrição:** Verifica o status dos bots
-
----
-
-#### !grupao
-**Descrição:** Grupo de interação ravenabot
-
----
-
-#### !avisos
-**Descrição:** Grupo de avisos ravenabot
-
----
-
-#### !codigo
-**Descrição:** Código da ravenabot
-
----
-
-#### !convite
-**Descrição:** Saiba mas sobre a ravena em grupos
-
----
-
-#### !cmd
-**Descrição:** Mostra todos os comandos disponíveis
-
----
-
-#### !menu
-**Descrição:** Mostra todos os comandos disponíveis
-
----
-
-#### !cmd-gerenciamento
-**Descrição:** Mostra comandos de gerenciamento do grupo
-
----
-
-#### !cmd-grupo
-**Descrição:** Mostra comandos personalizados do grupo
-
----
-
-#### !cmd-categoria
-**Descrição:** Mostra comandos da categoria informada
+#### !letra
+**Descrição:** Busca a letra de uma música
 
 ---
 
@@ -1552,6 +1681,16 @@ Começam com `!sa-` e são exclusivos do dono do bot.
 
 #### !sa-joinGrupo
 **Descrição:** Entra em um grupo via link de convite
+
+---
+
+#### !sa-joinGrupoSilencioso
+**Descrição:** Entra em um grupo via link de convite SEM enviar mensagem de boas-vindas
+
+---
+
+#### !sa-modoSilencioso
+**Descrição:** Toggle do modo silencioso global (sem boas-vindas por 30 min)
 
 ---
 
