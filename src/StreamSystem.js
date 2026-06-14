@@ -169,7 +169,7 @@ class StreamSystem {
 
 						const linkTexto = channelLink ? `\n🔗 ${channelLink}` : "";
 
-						const msgAviso = `⚠️ *Canal Temporariamente Pausado*\n\nO canal *${data.channelName}* (${platformName}) foi pausado por 12 horas.${linkTexto}\n\n${motivoTexto}\n\n> O monitoramento será reativado automaticamente após esse período.`;
+						const msgAviso = `⚠️ *Canal Temporariamente Pausado*\n\nO canal *${data.channelName}* (${platformName}) foi pausado por 12 horas.${linkTexto}\n\n${motivoTexto}\n\n> O monitoramento será reativado automaticamente após esse período.\n\n\`${data.groupName || data.groupId}\``;
 
 						bot.sendMessage(data.groupId, msgAviso);
 						bot.sendMessage(bot.grupoLogs, msgAviso);

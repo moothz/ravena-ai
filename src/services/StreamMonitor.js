@@ -2093,6 +2093,7 @@ class StreamMonitor extends EventEmitter {
 							platform: p,
 							channelName,
 							groupId: group.id,
+							groupName: group.name,
 							channelStatus
 						});
 					}
