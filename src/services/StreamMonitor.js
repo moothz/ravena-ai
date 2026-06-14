@@ -2014,7 +2014,11 @@ class StreamMonitor extends EventEmitter {
 					return "deleted";
 				}
 			} else if (platform === "kick") {
-				if (response.status === 404 || body.includes("not found") || body.includes("página não encontrada")) {
+				if (
+					response.status === 404 ||
+					body.includes("not found") ||
+					body.includes("página não encontrada")
+				) {
 					return "deleted";
 				}
 				if (body.includes("suspended") || body.includes("banned") || body.includes("violat")) {
@@ -2024,7 +2028,9 @@ class StreamMonitor extends EventEmitter {
 
 			return "unknown";
 		} catch (err) {
-			this.logger.warn(`[detectChannelStatus] Erro ao verificar status de ${platform}/${channelName}: ${err.message}`);
+			this.logger.warn(
+				`[detectChannelStatus] Erro ao verificar status de ${platform}/${channelName}: ${err.message}`
+			);
 			return "unknown";
 		}
 	}
@@ -2077,7 +2083,9 @@ class StreamMonitor extends EventEmitter {
 						let channelStatus = "unknown";
 						if (p === "twitch" || p === "kick") {
 							channelStatus = await this.detectChannelStatus(channelName, p);
-							this.logger.info(`[pauseChannel] Status detectado para ${p}/${channelName}: ${channelStatus}`);
+							this.logger.info(
+								`[pauseChannel] Status detectado para ${p}/${channelName}: ${channelStatus}`
+							);
 						}
 
 						// Emite evento para notificação

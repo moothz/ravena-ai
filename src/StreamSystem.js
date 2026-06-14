@@ -132,7 +132,9 @@ class StreamSystem {
 		// Evento de canal não encontrado
 		this.streamMonitor.on("channelNotFound", async (data) => {
 			try {
-				this.logger.info(`Evento de canal não encontrado: ${data.platform}/${data.channelName} (status: ${data.channelStatus ?? "unknown"})`);
+				this.logger.info(
+					`Evento de canal não encontrado: ${data.platform}/${data.channelName} (status: ${data.channelStatus ?? "unknown"})`
+				);
 
 				// Envia mensagem para o grupo (usando o primeiro bot capaz)
 				if (data.groupId) {

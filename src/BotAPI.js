@@ -2466,7 +2466,8 @@ class BotAPI {
 					const followedNames = chatFollows.map((f) => f.team_name_pt).join(" e ");
 
 					// Token aleatório de 8 chars para evitar detecção de spam (mesmo padrão do InviteSystem)
-					const rndToken = () => Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 6);
+					const rndToken = () =>
+						Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 6);
 
 					let messageText = "";
 
@@ -2489,7 +2490,8 @@ class BotAPI {
 
 						// Sanitiza nome do jogador — rejeita null, "null", vazio
 						const rawPlayer = details.player;
-						const playerClean = rawPlayer && String(rawPlayer).toLowerCase() !== "null" ? rawPlayer.trim() : "";
+						const playerClean =
+							rawPlayer && String(rawPlayer).toLowerCase() !== "null" ? rawPlayer.trim() : "";
 						const playerStr = playerClean ? ` (${playerClean})` : "";
 
 						// Subtrai 3 minutos do tempo exibido para compensar delay de notificação
@@ -2513,7 +2515,6 @@ class BotAPI {
 							`⚔️ Placar Atual: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${match.home_score} x ${match.away_score} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
 							`⏱️ Tempo de jogo: ${displayElapsed || "—"}\n\n` +
 							`_${rndToken()}_`;
-
 					} else if (event === "match_end") {
 						let resultMessage = "";
 						const chatFollowsHome = chatFollows.some((f) => String(f.team_id) === homeTeamId);
@@ -2547,7 +2548,6 @@ class BotAPI {
 							`⚔️ Placar Final: ${homeTeam.flagEmoji} *${homeTeam.namePt}* ${homeScore} x ${awayScore} ${awayTeam.flagEmoji} *${awayTeam.namePt}*\n\n` +
 							`${resultMessage}\n\n` +
 							`_${rndToken()}_`;
-
 					}
 
 					if (messageText) {
