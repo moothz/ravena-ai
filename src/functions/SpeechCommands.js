@@ -446,7 +446,7 @@ async function transcribeViaAPI(audioPath, onEstimation, onStatus) {
 					finalResult = result;
 					return { text: result.text, duration: apiDuration };
 				} else if (result.status === "error") {
-					throw new Error(`API Error: ${result.error}`);
+					throw new Error(`API Error: ${result.error || result.message || "Erro desconhecido"}`);
 				}
 				// If processing or queued, continue loop
 			}
@@ -580,7 +580,17 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				logger.info("\n✅ Transcrição Concluída!\n");
 			} catch (apiError) {
 				logger.error("[speechToText] Erro ao usar Whisper API:", apiError);
-				transcribedText = "Erro ao transcrever áudio via API. Por favor, tente novamente.";
+				const isNetworkError = apiError.code === "ETIMEDOUT" || 
+									   apiError.code === "EHOSTUNREACH" || 
+									   apiError.code === "ECONNREFUSED" || 
+									   apiError.code === "ENOTFOUND" || 
+									   apiError.message?.toLowerCase().includes("timeout") || 
+									   apiError.message?.toLowerCase().includes("unreach") ||
+									   apiError.message?.toLowerCase().includes("connect");
+
+				transcribedText = isNetworkError 
+					? "Erro no servidor de transcrição" 
+					: `Erro ao transcrever áudio via API: ${apiError.message || apiError}`;
 			}
 		} else {
 			// Whisper API not configured in service-providers.json
@@ -593,9 +603,11 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 
 		logger.debug(`[speechToText] LIDO arquivo de saida: '${transcribedText}'`);
 
-		if (!transcribedText || transcribedText.includes("Erro ao transcrever áudio")) {
-			transcribedText =
-				"Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+		if (!transcribedText || transcribedText.startsWith("Erro")) {
+			if (transcribedText !== "Erro no servidor de transcrição") {
+				transcribedText =
+					"Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+			}
 
 			const errorMessage = new ReturnMessage({
 				chatId,
@@ -746,7 +758,17 @@ async function processAutoSTT(bot, message, group, opts) {
 				logger.info("✅ Transcrição Concluída!");
 			} catch (apiError) {
 				logger.error("[processAutoSTT] Erro ao usar Whisper API:", apiError);
-				transcribedText = "Erro ao transcrever áudio via API.";
+				const isNetworkError = apiError.code === "ETIMEDOUT" || 
+									   apiError.code === "EHOSTUNREACH" || 
+									   apiError.code === "ECONNREFUSED" || 
+									   apiError.code === "ENOTFOUND" || 
+									   apiError.message?.toLowerCase().includes("timeout") || 
+									   apiError.message?.toLowerCase().includes("unreach") ||
+									   apiError.message?.toLowerCase().includes("connect");
+
+				transcribedText = isNetworkError 
+					? "Erro no servidor de transcrição" 
+					: `Erro ao transcrever áudio via API: ${apiError.message || apiError}`;
 			}
 		} else {
 			// Whisper API not configured in service-providers.json
@@ -758,7 +780,7 @@ async function processAutoSTT(bot, message, group, opts) {
 
 		// Se a transcrição for bem-sucedida, envia-a
 		let contentRetorno = "";
-		if (transcribedText && !transcribedText.includes("Erro ao transcrever áudio")) {
+		if (transcribedText && !transcribedText.startsWith("Erro")) {
 			// Cria ReturnMessage com a transcrição
 			contentRetorno = cleanupString(transcribedText?.trim() ?? "");
 
@@ -804,6 +826,22 @@ async function processAutoSTT(bot, message, group, opts) {
 			});
 		} else {
 			logger.warn(`[processAutoSTT] Transcrição vazia ou com erro para o chat ${chatId}`);
+			// Se for no PV (sem grupo), envia a mensagem de erro correspondente ao !stt
+			if (!group) {
+				let errorText = transcribedText;
+				if (!errorText || (errorText.startsWith("Erro") && errorText !== "Erro no servidor de transcrição")) {
+					errorText = "Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+				}
+				const errorMessage = new ReturnMessage({
+					chatId,
+					content: errorText,
+					options: {
+						quotedMessageId: message.origin.id._serialized,
+						goReply: message.origin
+					}
+				});
+				await bot.sendReturnMessages(errorMessage, group);
+			}
 		}
 
 		if (opts.returnResult) {
