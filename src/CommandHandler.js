@@ -881,7 +881,7 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo (se em grupo)
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeFixedCommand(bot, message, command, args, group, silent = false) {
+	async executeFixedCommand(bot, message, command, args, group, silent = false, silentReaction = false) {
 		try {
 			// this.logger.info(
 			// 	`[${bot.id}][${message.author ?? message.authorAlt}@${group?.name ?? "PV"}] Executando comando fixo '${command.name}'`,
@@ -906,7 +906,7 @@ class CommandHandler {
 			if (group && group.mutedCommands && Array.isArray(group.mutedCommands)) {
 				if (command && group.mutedCommands.includes(command.name)) {
 					this.logger.debug(`Ignorando comando '${command.name}' pois está silenciado no grupo.`);
-					message.origin.react("⛔️");
+					if (!silent && !silentReaction) message.origin.react("⛔️");
 					return null;
 				}
 			}
@@ -927,7 +927,7 @@ class CommandHandler {
 				const chat = await message.origin.getChat();
 				const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
 				if (!isUserAdmin) {
-					message.origin.react("📵");
+					if (!silent && !silentReaction) message.origin.react("📵");
 					this.logger.debug(`Comando ${command.name} requer administrador, mas o usuário não é`, {
 						author: message.author,
 						group,
@@ -975,7 +975,7 @@ class CommandHandler {
 				this.logger.debug(`Comando ${command.name} não está disponível neste horário/dia`);
 
 				// Reage com emoji de relógio
-				if (!silent) {
+				if (!silent && !silentReaction) {
 					try {
 						message.origin.react("🕒");
 					} catch (reactError) {
@@ -1007,7 +1007,7 @@ class CommandHandler {
 			}
 
 			// Reage com emoji "antes" (específico do comando ou padrão)
-			if (!silent && command.reactions?.before) {
+			if (!silent && !silentReaction && command.reactions?.before) {
 				try {
 					message.origin.react(command.reactions?.before);
 				} catch (reactError) {
@@ -1077,7 +1077,7 @@ class CommandHandler {
 				//this.logger.debug(`Comando ${command.name} executado com sucesso, enviando after reaction`);
 
 				// Reage com emoji "depois" (específico do comando ou padrão)
-				if (!silent && command.reactions?.after && result !== false) {
+				if (!silent && !silentReaction && command.reactions?.after && result !== false) {
 					this.delayedReaction(message.origin, command.reactions.after, 1000);
 				}
 
@@ -1087,7 +1087,7 @@ class CommandHandler {
 
 				// Reage com emoji "depois" mesmo para erro
 				const afterEmoji = command.reactions?.after ?? this.defaultReactions.after;
-				if (!silent) {
+				if (!silent && !silentReaction) {
 					try {
 						message.origin.react(afterEmoji);
 					} catch (reactError) {
@@ -1105,7 +1105,7 @@ class CommandHandler {
 			const returnMessage = new ReturnMessage({
 				chatId,
 				content: `Erro ao executar comando: ${command.name}`,
-				reaction: errorEmoji
+				reaction: !silent && !silentReaction ? errorEmoji : undefined
 			});
 			if (!silent) await bot.sendReturnMessages(returnMessage, group);
 			return returnMessage;
@@ -1179,7 +1179,7 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeCustomCommand(bot, message, command, args, group, silent = false) {
+	async executeCustomCommand(bot, message, command, args, group, silent = false, silentReaction = false) {
 		try {
 			//this.logger.info(`Executando comando personalizado: ${command.startsWith}`);
 
@@ -1197,7 +1197,7 @@ class CommandHandler {
 				if (!isUserAdmin) {
 					this.logger.debug(`Comando ${command.name} requer administrador, mas o usuário não é`);
 
-					if (!silent) {
+					if (!silent && !silentReaction) {
 						try {
 							message.origin.react("⛔️");
 						} catch (reactError) {
@@ -1221,7 +1221,7 @@ class CommandHandler {
 				this.logger.debug(`Comando ${command.startsWith} não está disponível neste horário/dia`);
 
 				// Reage com emoji de relógio
-				if (!silent) {
+				if (!silent && !silentReaction) {
 					try {
 						message.origin.react("🕒");
 					} catch (reactError) {
@@ -1261,7 +1261,7 @@ class CommandHandler {
 			}
 
 			// Reage com emoji antes (do comando ou padrão)
-			if (!silent && command.reactions?.before) {
+			if (!silent && !silentReaction && command.reactions?.before) {
 				try {
 					await message.origin.react(command.reactions?.before);
 				} catch (reactError) {
@@ -1289,7 +1289,7 @@ class CommandHandler {
 			});
 
 			// Reage à mensagem se especificado (esta é a reação específica do comando)
-			if (!silent && command.react) {
+			if (!silent && !silentReaction && command.react) {
 				try {
 					this.logger.debug(`Reagindo à mensagem com: ${command.react}`);
 					await message.origin.react(command.react);
@@ -1387,7 +1387,7 @@ class CommandHandler {
 
 			// Reage com emoji depois (do comando ou padrão)
 			const afterEmoji = command.reactions?.after ?? null;
-			if (!silent) {
+			if (!silent && !silentReaction) {
 				try {
 					if (afterEmoji && command.react !== false) {
 						message.origin.react(afterEmoji);
@@ -1408,7 +1408,7 @@ class CommandHandler {
 			const returnMessage = new ReturnMessage({
 				chatId: message.group,
 				content: `Erro ao executar comando personalizado: ${command.startsWith}`,
-				reaction: command.react !== false ? errorEmoji : null
+				reaction: !silent && !silentReaction && command.react !== false ? errorEmoji : null
 			});
 			if (!silent) await bot.sendReturnMessages(returnMessage, group);
 			return returnMessage;
@@ -1422,9 +1422,9 @@ class CommandHandler {
 		const matchResult = this.findCustomCommand(command, this.customCommands[group.id]);
 
 		if (matchResult) {
-			const { customCommand } = matchResult;
+			const { customCommand, newArgs } = matchResult;
 			this.logger.debug(`[processCustomIgnoresPrefix] `, customCommand);
-			this.executeCustomCommand(bot, message, customCommand, [], group, true);
+			this.executeCustomCommand(bot, message, customCommand, newArgs, group);
 		}
 	}
 
@@ -1739,7 +1739,7 @@ class CommandHandler {
 							const interactCommand = this.fixedCommands.getCommand("interagir");
 							this.logger.info(`[interagir] Acionando LLM-Interagir`);
 
-							this.executeFixedCommand(bot, message, interactCommand, [false], group, true);
+							this.executeFixedCommand(bot, message, interactCommand, [false], group, false, true);
 							return;
 						} else {
 							const randomCommand = autoCommands[Math.floor(Math.random() * autoCommands.length)];
@@ -1748,7 +1748,7 @@ class CommandHandler {
 							);
 
 							// Executa o comando
-							this.executeCustomCommand(bot, message, randomCommand, [], group, true);
+							this.executeCustomCommand(bot, message, randomCommand, [], group, false, true);
 							return;
 						}
 					}
@@ -1765,7 +1765,7 @@ class CommandHandler {
 				) {
 					this.logger.debug(`Encontrado comando auto-acionado: ${command.startsWith}`);
 					// Executa o comando, mas não espera para evitar bloqueio
-					this.executeCustomCommand(bot, message, command, [], group, true).catch((error) => {
+					this.executeCustomCommand(bot, message, command, [], group, false, true).catch((error) => {
 						this.logger.error(
 							`Erro no comando auto-acionado ${command.startsWith}:`,
 							error.message ?? "xxx"
