@@ -1917,17 +1917,38 @@ class WhatsAppBotGo {
 			};
 
 			if (!skipCache) {
+				// Para evitar modificar o objeto original in-place, clonamos goMessageData e origin.
+				const cachedMessage = {
+					...formattedMessage,
+					goMessageData: formattedMessage.goMessageData
+						? {
+								...formattedMessage.goMessageData,
+								groupData: formattedMessage.goMessageData.groupData
+									? { ...formattedMessage.goMessageData.groupData }
+									: undefined
+							}
+						: undefined,
+					origin: formattedMessage.origin
+						? {
+								...formattedMessage.origin,
+								groupData: formattedMessage.origin.groupData
+									? { ...formattedMessage.origin.groupData }
+									: undefined
+							}
+						: undefined
+				};
+
 				// Limpa dados pesados antes de salvar no cache para economizar espaço e I/O
-				if (formattedMessage.goMessageData?.groupData) {
-					delete formattedMessage.goMessageData.groupData.Participants;
-					delete formattedMessage.goMessageData.groupData.Topic;
+				if (cachedMessage.goMessageData?.groupData) {
+					delete cachedMessage.goMessageData.groupData.Participants;
+					delete cachedMessage.goMessageData.groupData.Topic;
 				}
-				if (formattedMessage.origin?.groupData) {
-					delete formattedMessage.origin.groupData.Participants;
-					delete formattedMessage.origin.groupData.Topic;
+				if (cachedMessage.origin?.groupData) {
+					delete cachedMessage.origin.groupData.Participants;
+					delete cachedMessage.origin.groupData.Topic;
 				}
 
-				this.cacheManager.putGoMessageInCache(formattedMessage);
+				this.cacheManager.putGoMessageInCache(cachedMessage);
 			}
 
 			return formattedMessage;

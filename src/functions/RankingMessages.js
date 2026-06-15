@@ -186,6 +186,48 @@ function normalizeId(id) {
 }
 
 /**
+ * Obtém a lista de participantes do grupo de forma robusta e normalizada.
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {Object} message - Mensagem
+ * @param {string} chatId - ID do chat
+ * @returns {Promise<Array>} - Array de objetos de participante normalizados
+ */
+async function getGroupParticipants(bot, message, chatId) {
+	let rawParticipants =
+		message.origin?.groupData?.Participants ??
+		message.goMessageData?.groupData?.Participants;
+
+	if (!rawParticipants || rawParticipants.length === 0) {
+		try {
+			const chat = await bot.client.getChatById(chatId);
+			if (chat && chat.participants) {
+				rawParticipants = chat.participants;
+			}
+		} catch (e) {
+			logger.error(`Erro ao obter participantes do chat ${chatId} via API:`, e);
+		}
+	}
+
+	if (!rawParticipants || rawParticipants.length === 0) {
+		return [];
+	}
+
+	return rawParticipants.map((p) => {
+		const jid = p.JID ?? p.id?._serialized ?? p.id;
+		const phoneNumber = p.PhoneNumber ?? p.phoneNumber ?? (jid ? jid.split("@")[0] : null);
+		const lid = p.LID ?? p.lid;
+		const displayName = p.DisplayName ?? p.name ?? "Pessoa";
+
+		return {
+			jid,
+			phoneNumber,
+			lid,
+			displayName
+		};
+	});
+}
+
+/**
  * Exibe o ranking de faladores do grupo
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Mensagem formatada
@@ -212,10 +254,7 @@ async function faladoresCommand(bot, message, args, group) {
 		const ranking = await getMessageRanking(chatId);
 
 		// Get participants
-		const participants =
-			message.origin?.groupData?.Participants ??
-			message.goMessageData?.groupData?.Participants ??
-			[];
+		const participants = await getGroupParticipants(bot, message, chatId);
 
 		// Identify missing
 		const missingParticipants = [];
@@ -225,15 +264,15 @@ async function faladoresCommand(bot, message, args, group) {
 
 			for (const p of participants) {
 				// Try to find the ID
-				const pIds = [p.PhoneNumber, p.LID, p.JID].map((id) => normalizeId(id)).filter((id) => id); // normalize and filter empty
+				const pIds = [p.phoneNumber, p.lid, p.jid].map((id) => normalizeId(id)).filter((id) => id); // normalize and filter empty
 
 				// Check if any of these IDs are in the rankedIds
 				const isRanked = pIds.some((id) => rankedIds.has(id));
 
 				if (!isRanked) {
 					missingParticipants.push({
-						name: p.DisplayName || "Pessoa", // Try to get a name if available, otherwise 'Pessoa'
-						id: p.PhoneNumber // Use PhoneNumber as display ID reference
+						name: p.displayName || "Pessoa", // Try to get a name if available, otherwise 'Pessoa'
+						id: p.phoneNumber || p.jid // Use phoneNumber or jid as reference ID
 					});
 				}
 			}
@@ -356,8 +395,7 @@ async function faladoresLimpezaCommand(bot, message, args, group) {
 			});
 		}
 
-		const participants =
-			message.origin?.groupData?.Participants ?? message.goMessageData?.groupData?.Participants;
+		const participants = await getGroupParticipants(bot, message, chatId);
 
 		if (!participants || participants.length === 0) {
 			return new ReturnMessage({
@@ -373,9 +411,9 @@ async function faladoresLimpezaCommand(bot, message, args, group) {
 		// Build set of current participant IDs (normalized)
 		const currentMemberIds = new Set();
 		participants.forEach((p) => {
-			if (p.PhoneNumber) currentMemberIds.add(normalizeId(p.PhoneNumber));
-			if (p.LID) currentMemberIds.add(normalizeId(p.LID));
-			if (p.JID) currentMemberIds.add(normalizeId(p.JID));
+			if (p.phoneNumber) currentMemberIds.add(normalizeId(p.phoneNumber));
+			if (p.lid) currentMemberIds.add(normalizeId(p.lid));
+			if (p.jid) currentMemberIds.add(normalizeId(p.jid));
 		});
 
 		for (const item of ranking) {
