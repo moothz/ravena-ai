@@ -93,8 +93,10 @@ class CustomVariableProcessor {
 				const jidsToMention = [];
 				for (const match of Array.from(implicitMentions)) {
 					const num = match[1];
-					jidsToMention.push(`${num}@s.whatsapp.net`);
-					jidsToMention.push(`${num}@lid`);
+					const resolved = await this.resolveJids(num, context);
+					for (const r of resolved) {
+						jidsToMention.push(r);
+					}
 				}
 
 				if (jidsToMention.length > 0) {
@@ -117,6 +119,70 @@ class CustomVariableProcessor {
 			this.logger.error("Erro ao processar variáveis:", error);
 			return text; // Retorna o texto original em caso de erro
 		}
+	}
+
+	/**
+	 * Resolve a numeric ID to the correct JID format (LID or PN)
+	 */
+	async resolveJids(num, context) {
+		if (!context) {
+			if (num.startsWith("3") && num.length >= 14) {
+				return [`${num}@lid`];
+			}
+			return [`${num}@s.whatsapp.net`];
+		}
+
+		// 1. Check if the JID already exists in context.options.mentions
+		if (context.options && context.options.mentions && Array.isArray(context.options.mentions)) {
+			const existing = context.options.mentions.find(
+				(jid) => typeof jid === "string" && jid.split("@")[0] === num
+			);
+			if (existing) {
+				return [existing];
+			}
+		}
+
+		// 2. Check if it matches the message author or authorAlt
+		if (context.message) {
+			if (context.message.author === num) {
+				return [`${num}@s.whatsapp.net`];
+			}
+			if (context.message.authorAlt && context.message.authorAlt.split("@")[0] === num) {
+				return [context.message.authorAlt];
+			}
+		}
+
+		// 3. Check if we can find the JID in group participants
+		const groupId = context.message?.group ?? context.group?.id;
+		if (groupId && context.bot && context.bot.client) {
+			try {
+				const chat = await context.bot.client.getChatById(groupId);
+				if (chat && chat.participants) {
+					const found = chat.participants.find((p) => {
+						const pLid = p.lid?.split("@")[0];
+						const pJid = p.id?._serialized?.split("@")[0];
+						return pLid === num || pJid === num;
+					});
+
+					if (found) {
+						if (found.lid && found.lid.split("@")[0] === num) {
+							return [found.lid];
+						}
+						if (found.id?._serialized && found.id._serialized.split("@")[0] === num) {
+							return [found.id._serialized];
+						}
+					}
+				}
+			} catch (e) {
+				this.logger.error("Erro ao obter chat para resolver JID no grupo:", e);
+			}
+		}
+
+		// 4. Fallback: check prefix/length
+		if (num.startsWith("3") && num.length >= 14) {
+			return [`${num}@lid`];
+		}
+		return [`${num}@s.whatsapp.net`];
 	}
 
 	/**
@@ -551,7 +617,7 @@ class CustomVariableProcessor {
 
 			// Verifica se o ID/número é válido
 			if (userPart && userPart.length >= 8 && userPart.length <= 25) {
-				const jidsToAdd = [];
+				let jidsToAdd = [];
 				if (userIdToMention.includes("@")) {
 					if (userIdToMention.endsWith("@c.us")) {
 						jidsToAdd.push(`${userPart}@s.whatsapp.net`);
@@ -559,9 +625,8 @@ class CustomVariableProcessor {
 						jidsToAdd.push(userIdToMention);
 					}
 				} else {
-					// Sem domínio: adiciona ambos para garantir (caso seja LID ou PN)
-					jidsToAdd.push(`${userPart}@s.whatsapp.net`);
-					jidsToAdd.push(`${userPart}@lid`);
+					// Sem domínio: resolve de forma inteligente
+					jidsToAdd = await this.resolveJids(userPart, context);
 				}
 
 				text = text.replace(match[0], `@${userPart}`);

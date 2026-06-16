@@ -194,8 +194,7 @@ function normalizeId(id) {
  */
 async function getGroupParticipants(bot, message, chatId) {
 	let rawParticipants =
-		message.origin?.groupData?.Participants ??
-		message.goMessageData?.groupData?.Participants;
+		message.origin?.groupData?.Participants ?? message.goMessageData?.groupData?.Participants;
 
 	if (!rawParticipants || rawParticipants.length === 0) {
 		try {

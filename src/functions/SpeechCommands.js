@@ -580,16 +580,17 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				logger.info("\n✅ Transcrição Concluída!\n");
 			} catch (apiError) {
 				logger.error("[speechToText] Erro ao usar Whisper API:", apiError);
-				const isNetworkError = apiError.code === "ETIMEDOUT" || 
-									   apiError.code === "EHOSTUNREACH" || 
-									   apiError.code === "ECONNREFUSED" || 
-									   apiError.code === "ENOTFOUND" || 
-									   apiError.message?.toLowerCase().includes("timeout") || 
-									   apiError.message?.toLowerCase().includes("unreach") ||
-									   apiError.message?.toLowerCase().includes("connect");
+				const isNetworkError =
+					apiError.code === "ETIMEDOUT" ||
+					apiError.code === "EHOSTUNREACH" ||
+					apiError.code === "ECONNREFUSED" ||
+					apiError.code === "ENOTFOUND" ||
+					apiError.message?.toLowerCase().includes("timeout") ||
+					apiError.message?.toLowerCase().includes("unreach") ||
+					apiError.message?.toLowerCase().includes("connect");
 
-				transcribedText = isNetworkError 
-					? "Erro no servidor de transcrição" 
+				transcribedText = isNetworkError
+					? "Erro no servidor de transcrição"
 					: `Erro ao transcrever áudio via API: ${apiError.message || apiError}`;
 			}
 		} else {
@@ -758,16 +759,17 @@ async function processAutoSTT(bot, message, group, opts) {
 				logger.info("✅ Transcrição Concluída!");
 			} catch (apiError) {
 				logger.error("[processAutoSTT] Erro ao usar Whisper API:", apiError);
-				const isNetworkError = apiError.code === "ETIMEDOUT" || 
-									   apiError.code === "EHOSTUNREACH" || 
-									   apiError.code === "ECONNREFUSED" || 
-									   apiError.code === "ENOTFOUND" || 
-									   apiError.message?.toLowerCase().includes("timeout") || 
-									   apiError.message?.toLowerCase().includes("unreach") ||
-									   apiError.message?.toLowerCase().includes("connect");
+				const isNetworkError =
+					apiError.code === "ETIMEDOUT" ||
+					apiError.code === "EHOSTUNREACH" ||
+					apiError.code === "ECONNREFUSED" ||
+					apiError.code === "ENOTFOUND" ||
+					apiError.message?.toLowerCase().includes("timeout") ||
+					apiError.message?.toLowerCase().includes("unreach") ||
+					apiError.message?.toLowerCase().includes("connect");
 
-				transcribedText = isNetworkError 
-					? "Erro no servidor de transcrição" 
+				transcribedText = isNetworkError
+					? "Erro no servidor de transcrição"
 					: `Erro ao transcrever áudio via API: ${apiError.message || apiError}`;
 			}
 		} else {
@@ -829,8 +831,12 @@ async function processAutoSTT(bot, message, group, opts) {
 			// Se for no PV (sem grupo), envia a mensagem de erro correspondente ao !stt
 			if (!group) {
 				let errorText = transcribedText;
-				if (!errorText || (errorText.startsWith("Erro") && errorText !== "Erro no servidor de transcrição")) {
-					errorText = "Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+				if (
+					!errorText ||
+					(errorText.startsWith("Erro") && errorText !== "Erro no servidor de transcrição")
+				) {
+					errorText =
+						"Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
 				}
 				const errorMessage = new ReturnMessage({
 					chatId,

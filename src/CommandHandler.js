@@ -881,7 +881,15 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo (se em grupo)
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeFixedCommand(bot, message, command, args, group, silent = false, silentReaction = false) {
+	async executeFixedCommand(
+		bot,
+		message,
+		command,
+		args,
+		group,
+		silent = false,
+		silentReaction = false
+	) {
 		try {
 			// this.logger.info(
 			// 	`[${bot.id}][${message.author ?? message.authorAlt}@${group?.name ?? "PV"}] Executando comando fixo '${command.name}'`,
@@ -1179,7 +1187,15 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeCustomCommand(bot, message, command, args, group, silent = false, silentReaction = false) {
+	async executeCustomCommand(
+		bot,
+		message,
+		command,
+		args,
+		group,
+		silent = false,
+		silentReaction = false
+	) {
 		try {
 			//this.logger.info(`Executando comando personalizado: ${command.startsWith}`);
 
@@ -1765,12 +1781,14 @@ class CommandHandler {
 				) {
 					this.logger.debug(`Encontrado comando auto-acionado: ${command.startsWith}`);
 					// Executa o comando, mas não espera para evitar bloqueio
-					this.executeCustomCommand(bot, message, command, [], group, false, true).catch((error) => {
-						this.logger.error(
-							`Erro no comando auto-acionado ${command.startsWith}:`,
-							error.message ?? "xxx"
-						);
-					});
+					this.executeCustomCommand(bot, message, command, [], group, false, true).catch(
+						(error) => {
+							this.logger.error(
+								`Erro no comando auto-acionado ${command.startsWith}:`,
+								error.message ?? "xxx"
+							);
+						}
+					);
 					break; // Executa apenas o primeiro comando correspondente
 				}
 			}
