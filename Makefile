@@ -1,4 +1,4 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi logs-cobalt
 
 
 # Cores usando escape codes literais para garantir compatibilidade
@@ -101,6 +101,9 @@ logs: ## Exibe os logs de todos os serviços
 
 logs-bot: ## Exibe os logs do bot ravena-ai
 	docker compose logs -f --tail 100 ravena-ai
+
+logs-cobalt: ## Exibe e une os logs do container cobalt e logs relacionados no bot ravena-ai
+	docker compose logs -f --tail 100 cobalt ravena-ai | grep --line-buffered -i cobalt
 
 logs-api: ## Exibe os logs do whatsgoapi
 	docker compose logs -f --tail 100 whatsgoapi

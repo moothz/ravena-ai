@@ -188,17 +188,33 @@ function detectPlatform(url) {
 		"instagram.com": "Instagram",
 		"facebook.com": "Facebook",
 		"fb.watch": "Facebook",
+		"fb.com": "Facebook",
 		"twitter.com": "Twitter",
 		"x.com": "Twitter",
-		"twitch.tv": "Twitch",
+		"twitch.tv": "Twitch Clips",
+		"clips.twitch.tv": "Twitch Clips",
 		"snapchat.com": "Snapchat",
 		"reddit.com": "Reddit",
 		"vimeo.com": "Vimeo",
 		"streamable.com": "Streamable",
 		"pinterest.com": "Pinterest",
+		"pin.it": "Pinterest",
 		"linkedin.com": "LinkedIn",
-		"bilibili.com": "BiliBili",
-		"soundcloud.com": "SoundCloud"
+		"bilibili.com": "Bilibili",
+		"bilibili.tv": "Bilibili",
+		"b.tv": "Bilibili",
+		"soundcloud.com": "SoundCloud",
+		"bsky.app": "Bluesky",
+		"bsky.social": "Bluesky",
+		"dailymotion.com": "Dailymotion",
+		"dai.ly": "Dailymotion",
+		"loom.com": "Loom",
+		"ok.ru": "Ok",
+		"newgrounds.com": "Newgrounds",
+		"rutube.ru": "Rutube",
+		"tumblr.com": "Tumblr",
+		"vk.com": "VK",
+		"vk.ru": "VK"
 	};
 
 	try {
@@ -249,7 +265,7 @@ async function searchLyrics(query) {
 /**
  * Faz o download de um arquivo de uma URL
  */
-async function downloadFile(url, filename) {
+async function downloadFile(url, filename, authorInfo = null) {
 	const dlFolder = process.env.DL_FOLDER || "/app/downloads";
 	const dlPath = path.join(dlFolder, filename);
 
@@ -260,7 +276,7 @@ async function downloadFile(url, filename) {
 	const writer = fsSync.createWriteStream(dlPath);
 
 	try {
-		logger.info(`[DOWNLOAD] Tentando URL: ${url}`);
+		logger.info(`[DOWNLOAD] Tentando URL: ${url}${authorInfo ? ` (Autor: ${authorInfo})` : ""}`);
 		const response = await axios({
 			url,
 			method: "GET",
@@ -276,59 +292,98 @@ async function downloadFile(url, filename) {
 		await new Promise((r) => setTimeout(r, 1000));
 
 		const stats = fsSync.statSync(dlPath);
-		logger.info(`[DOWNLOAD] Finalizado: ${stats.size} bytes`);
+		logger.info(`[DOWNLOAD] Finalizado: ${stats.size} bytes${authorInfo ? ` (Autor: ${authorInfo})` : ""}`);
 
 		if (stats.size === 0) throw new Error("Arquivo vazio recebido.");
 
 		return dlPath;
 	} catch (error) {
 		if (fsSync.existsSync(dlPath)) fsSync.unlinkSync(dlPath);
-		logger.error(`[DOWNLOAD] Falha: ${error.message}`);
+		logger.error(`[DOWNLOAD] Falha: ${error.message}${authorInfo ? ` (Autor: ${authorInfo})` : ""}`);
 		throw error;
 	}
 }
 
 /**
- * Faz requisição para a API Cobalt
+ * Faz requisição para a API Cobalt (com suporte a fallback caso o endpoint principal falhe)
  */
-async function cobaltRequest(url, options = {}) {
-	const cobaltUrl = process.env.COBALT_API_URL || "http://cobalt:9000";
-	try {
-		const response = await axios.post(
-			`${cobaltUrl}/`,
-			{
-				url,
-				...options
-			},
-			{
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json"
+async function cobaltRequest(url, options = {}, authorInfo = null) {
+	const primaryUrl = process.env.COBALT_API_URL || "http://cobalt:9000";
+	const fallbackUrls = ["https://api.cobalt.tools"];
+	const endpoints = [primaryUrl, ...fallbackUrls];
+	let lastError = null;
+
+	const platform = detectPlatform(url);
+
+	for (const endpoint of endpoints) {
+		try {
+			logger.info(
+				`[Cobalt] Tentando baixar ${platform} do link: ${url} (Autor: ${authorInfo || "Desconhecido"}) usando endpoint: ${endpoint}`
+			);
+			const response = await axios.post(
+				`${endpoint}/`,
+				{
+					url,
+					...options
 				},
-				timeout: 120000
+				{
+					headers: {
+						Accept: "application/json",
+						"Content-Type": "application/json"
+					},
+					timeout: 120000
+				}
+			);
+
+			const data = response.data;
+
+			if (data && data.status === "error") {
+				if (endpoint !== endpoints[endpoints.length - 1]) {
+					logger.warn(
+						`[Cobalt] Erro retornado por ${endpoint} (${data.error?.code || data.text || "erro"}) para o link: ${url} (Autor: ${authorInfo || "Desconhecido"}), tentando fallback...`
+					);
+					lastError = new Error(data.error?.code || data.text || "Erro no serviço de download.");
+					continue;
+				}
+				return data;
 			}
-		);
 
-		const data = response.data;
-		const externalUrl = process.env.COBALT_EXTERNAL_URL || cobaltUrl;
-		const fixUrl = (u) =>
-			u && u.includes("://cobalt:9000") ? u.replace("http://cobalt:9000", externalUrl) : u;
+			const externalUrl =
+				endpoint === primaryUrl ? process.env.COBALT_EXTERNAL_URL || primaryUrl : endpoint;
+			const fixUrl = (u) =>
+				u && u.includes("://cobalt:9000") ? u.replace("http://cobalt:9000", externalUrl) : u;
 
-		if (data.url) data.url = fixUrl(data.url);
-		if (data.tunnel) {
-			if (Array.isArray(data.tunnel)) data.tunnel = data.tunnel.map(fixUrl);
-			else data.tunnel = fixUrl(data.tunnel);
+			if (data.url) data.url = fixUrl(data.url);
+			if (data.tunnel) {
+				if (Array.isArray(data.tunnel)) data.tunnel = data.tunnel.map(fixUrl);
+				else data.tunnel = fixUrl(data.tunnel);
+			}
+			if (data.picker) {
+				data.picker = data.picker.map((p) => ({ ...p, url: fixUrl(p.url) }));
+			}
+
+			return data;
+		} catch (error) {
+			const errorData = error.response?.data;
+			logger.warn(
+				`[Cobalt] Erro de rede/API com ${endpoint} para o link: ${url} (Autor: ${authorInfo || "Desconhecido"}):`,
+				errorData || error.message
+			);
+			lastError = error;
+			if (endpoint !== endpoints[endpoints.length - 1]) {
+				continue;
+			}
 		}
-		if (data.picker) {
-			data.picker = data.picker.map((p) => ({ ...p, url: fixUrl(p.url) }));
-		}
-
-		return data;
-	} catch (error) {
-		const errorData = error.response?.data;
-		logger.error("Erro na API Cobalt:", errorData || error.message);
-		throw new Error(errorData?.text || "O serviço de download não respondeu corretamente.");
 	}
+
+	const errorData = lastError?.response?.data;
+	logger.error(
+		`[Cobalt] Todos os endpoints falharam para o link: ${url} (Autor: ${authorInfo || "Desconhecido"}).`,
+		errorData || lastError?.message
+	);
+	throw new Error(
+		errorData?.text || lastError?.message || "O serviço de download não respondeu corretamente."
+	);
 }
 
 /**
@@ -339,6 +394,10 @@ async function downloadHandler(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 	const body = message.origin?.body || "";
 	const commandName = body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
+
+	const authorName = message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Desconhecido";
+	const authorNumber = message.author ?? "Desconhecido";
+	const authorInfo = `${authorName} (${authorNumber})`;
 
 	// --- Extrai input: args ou quotedMsg ---
 	let input = undefined;
@@ -390,7 +449,7 @@ async function downloadHandler(bot, message, args, group) {
 	if (url && isYoutubeUrl(url)) {
 		const videoId = extractYoutubeVideoId(url);
 		if (videoId) {
-			logger.info(`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly})`);
+			logger.info(`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly}) (Autor: ${authorInfo})`);
 
 			bot.sendReturnMessages(
 				new ReturnMessage({
@@ -515,6 +574,7 @@ async function downloadHandler(bot, message, args, group) {
 					if (isYoutubeUrl(url)) {
 						const videoId = extractYoutubeVideoId(url);
 						if (videoId && isAudioOnly && typeof baixarMusicaYoutube === "function") {
+							logger.info(`Roteando busca de YouTube (áudio) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`);
 							bot.sendReturnMessages(
 								new ReturnMessage({
 									chatId,
@@ -567,6 +627,7 @@ async function downloadHandler(bot, message, args, group) {
 								});
 							});
 						} else if (videoId && typeof baixarVideoYoutube === "function") {
+							logger.info(`Roteando busca de YouTube (vídeo) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`);
 							bot.sendReturnMessages(
 								new ReturnMessage({
 									chatId,
@@ -634,7 +695,7 @@ async function downloadHandler(bot, message, args, group) {
 	const cachedData = await cacheManager.getCache(cacheKey);
 
 	if (cachedData) {
-		logger.info(`Cache encontrado para: ${url}`);
+		logger.info(`Cache encontrado para: ${url} (Autor: ${authorInfo})`);
 		return await sendProcessedMedia(
 			bot,
 			chatId,
@@ -671,7 +732,7 @@ async function downloadHandler(bot, message, args, group) {
 					cobaltOptions.audioFormat = "mp3";
 				}
 
-				const result = await cobaltRequest(url, cobaltOptions);
+				const result = await cobaltRequest(url, cobaltOptions, authorInfo);
 
 				if (result.status === "error") {
 					throw new Error(result.text || "Erro desconhecido no serviço de download.");
@@ -701,12 +762,12 @@ async function downloadHandler(bot, message, args, group) {
 				}
 
 				const displayFilename = result.filename || items[0].filename;
-				logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename}`);
+				logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename} (Autor: ${authorInfo})`);
 
 				const processedFiles = [];
 				for (const item of items) {
 					const tempFilename = `${crypto.randomBytes(4).toString("hex")}_${item.filename}`;
-					const filePath = await downloadFile(item.url, tempFilename);
+					const filePath = await downloadFile(item.url, tempFilename, authorInfo);
 
 					let finalFilePath = filePath;
 					let finalMime = isAudioOnly ? "audio/mpeg" : "video/mp4";
@@ -753,7 +814,7 @@ async function downloadHandler(bot, message, args, group) {
 			5000
 		); // 3 tentativas no total (1 original + 2 retries), 5s de intervalo
 	} catch (error) {
-		logger.error(`Erro no download após retries: ${error.message}`);
+		logger.error(`Erro no download após retries para o link: ${url} (Autor: ${authorInfo}): ${error.message}`);
 		await bot.sendReturnMessages(
 			new ReturnMessage({
 				chatId,
@@ -850,13 +911,38 @@ const downloadCommands = [
 	"facebook",
 	"pin",
 	"pinterest",
-	// SoundCloud (via Cobalt se suportar)
+	// SoundCloud
 	"sc",
 	"sc-audio",
 	"sc-musica",
 	"soundcloud",
 	"soundcloud-audio",
-	"soundcloud-musica"
+	"soundcloud-musica",
+	// Novas plataformas Cobalt suportadas
+	"bilibili",
+	"bilibili-audio",
+	"bluesky",
+	"bluesky-audio",
+	"dailymotion",
+	"dailymotion-audio",
+	"loom",
+	"ok",
+	"newgrounds",
+	"reddit",
+	"reddit-audio",
+	"rutube",
+	"rutube-audio",
+	"snapchat",
+	"snapchat-audio",
+	"streamable",
+	"tumblr",
+	"tumblr-audio",
+	"twitch",
+	"twitch-audio",
+	"vimeo",
+	"vimeo-audio",
+	"vk",
+	"vk-audio"
 ];
 
 const commands = downloadCommands.map(
