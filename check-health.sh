@@ -44,6 +44,15 @@ restart_container() {
     docker restart "${container}"
 }
 
+get_ravena_logs() {
+    # Get last 50 lines of ravena-ai container logs
+    LOGS=$(docker logs --tail 50 "${RAVENA_CONTAINER}" 2>&1)
+    if [ -n "$LOGS" ]; then
+        LOGS_ESCAPED=$(printf "%s\n" "$LOGS" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | awk '{printf "%s%%0A", $0}')
+        echo "%0A%0A<b>Last 50 logs of ${RAVENA_CONTAINER}:</b>%0A<pre><code>${LOGS_ESCAPED}</code></pre>"
+    fi
+}
+
 # --- MAIN LOOP ---
 
 echo "[health-check] Starting health monitor (interval: ${CHECK_INTERVAL}s, max retries: ${MAX_RETRIES})"
@@ -64,6 +73,7 @@ while true; do
             echo "[health-check] whatsgoapi DOWN. Restarting..."
             
             MSG="🚨 <b>SERVICE DOWN: ${WHATSGOAPI_CONTAINER}</b>%0A<i>Health check returned: ${HTTP_STATUS} (or connection failed).</i>%0A<i>Initiating Docker restart...</i>"
+            MSG="${MSG}$(get_ravena_logs)"
 
             send_telegram "$MSG"
             restart_container "${WHATSGOAPI_CONTAINER}"
@@ -111,6 +121,7 @@ while true; do
                     echo "[health-check] ravena-ai UNHEALTHY. Restarting..."
 
                     MSG="🚨 <b>SERVICE UNHEALTHY: ${RAVENA_CONTAINER}</b>%0A<i>${INACTIVE_COUNT} bots inactive for > ${LIMIT_MIN} mins.</i>%0A<i>Initiating Docker restart...</i>"
+                    MSG="${MSG}$(get_ravena_logs)"
 
                     send_telegram "$MSG"
                     restart_container "${RAVENA_CONTAINER}"
@@ -129,6 +140,7 @@ while true; do
                 echo "[health-check] ravena-ai DOWN. Restarting..."
 
                 MSG="🚨 <b>SERVICE DOWN: ${RAVENA_CONTAINER}</b>%0A<i>Health check failed to get data from ${RAVENA_URL}.</i>%0A<i>Initiating Docker restart...</i>"
+                MSG="${MSG}$(get_ravena_logs)"
 
                 send_telegram "$MSG"
                 restart_container "${RAVENA_CONTAINER}"
