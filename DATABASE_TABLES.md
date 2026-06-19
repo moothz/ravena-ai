@@ -306,6 +306,7 @@ Informações básicas dos sorteios.
 | `created_at` | INTEGER | Timestamp de criação |
 | `winner_id` | TEXT | JID do vencedor |
 | `winner_name` | TEXT | Nome do vencedor |
+| `creator_id` | TEXT | JID de quem criou o sorteio |
 
 #### `sorteio_participants`
 Participantes inscritos em sorteios ativos.

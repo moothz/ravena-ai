@@ -21,7 +21,8 @@ database.getSQLiteDb(
     status      TEXT DEFAULT 'active',
     created_at  INTEGER,
     winner_id   TEXT,
-    winner_name TEXT
+    winner_name TEXT,
+    creator_id  TEXT
   );
   CREATE TABLE IF NOT EXISTS sorteio_participants (
     sorteio_id  INTEGER NOT NULL,
@@ -33,6 +34,9 @@ database.getSQLiteDb(
   );
 `
 );
+
+// Try adding creator_id column in case table already exists
+database.dbRun(DB_NAME, "ALTER TABLE sorteios ADD COLUMN creator_id TEXT").catch(() => {});
 
 /**
  * Gets clean user name with possible nickname
@@ -132,8 +136,8 @@ async function handleSorteio(bot, message, args, group) {
 			// Save to database
 			await database.dbRun(
 				DB_NAME,
-				"INSERT INTO sorteios (group_id, title, message_id, status, created_at) VALUES (?, ?, ?, 'active', ?)",
-				[message.group, title, messageId, Date.now()]
+				"INSERT INTO sorteios (group_id, title, message_id, status, created_at, creator_id) VALUES (?, ?, ?, 'active', ?, ?)",
+				[message.group, title, messageId, Date.now(), message.author]
 			);
 
 			return null;
@@ -302,6 +306,30 @@ async function handleSortear(bot, message, args, group) {
 			"SELECT * FROM sorteios WHERE group_id = ? AND status = 'active'",
 			[message.group]
 		);
+
+		// Check permissions: creator of the active raffle OR admin
+		const requesterId = message.author;
+		let isAllowed = false;
+
+		if (raffle && raffle.creator_id === requesterId) {
+			isAllowed = true;
+		}
+
+		if (!isAllowed) {
+			const AdminUtils = require("../utils/AdminUtils");
+			const adminUtils = AdminUtils.getInstance();
+			const chat = await message.origin.getChat();
+			const isUserAdmin = await adminUtils.isAdmin(requesterId, group, chat, bot);
+			isAllowed = isUserAdmin;
+		}
+
+		if (!isAllowed) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content:
+					"⚠️ Apenas administradores do grupo ou o criador deste sorteio podem usar o comando *!sortear*."
+			});
+		}
 
 		if (raffle) {
 			// Draw from active raffle participants
