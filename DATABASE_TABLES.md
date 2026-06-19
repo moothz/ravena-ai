@@ -39,6 +39,7 @@ graph TD
         anagram["anagrama.db → anagram_game, anagram_scores"]
         logic["logic_game.db → logic_users"]
         roleta["roleta.db → roleta_users"]
+        sorteios["sorteios.db → sorteios, sorteio_participants"]
     end
 
     subgraph SOCIAL ["📣 Social & Conteúdo"]
@@ -288,6 +289,33 @@ Sequência lógica. Tabela: `logic_users` — pontuações.
 
 ### `roleta.db`
 Roleta Russa. Tabela: `roleta_users` — histórico de sobrevivências.
+
+### `sorteios.db`
+Sorteios ativos e passados.
+
+#### `sorteios`
+Informações básicas dos sorteios.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo (ex: `120363...@g.us`) |
+| `title` | TEXT | Título do sorteio |
+| `message_id` | TEXT | ID da mensagem inicial do sorteio para controle de reações |
+| `status` | TEXT | Status: 'active' ou 'finished' |
+| `created_at` | INTEGER | Timestamp de criação |
+| `winner_id` | TEXT | JID do vencedor |
+| `winner_name` | TEXT | Nome do vencedor |
+
+#### `sorteio_participants`
+Participantes inscritos em sorteios ativos.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `sorteio_id` | INTEGER | ID do sorteio (FK) |
+| `user_id` | TEXT | JID do participante |
+| `user_name` | TEXT | Nome do participante |
+| `joined_at` | INTEGER | Timestamp de inscrição |
 
 ---
 

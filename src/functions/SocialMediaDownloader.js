@@ -292,14 +292,18 @@ async function downloadFile(url, filename, authorInfo = null) {
 		await new Promise((r) => setTimeout(r, 1000));
 
 		const stats = fsSync.statSync(dlPath);
-		logger.info(`[DOWNLOAD] Finalizado: ${stats.size} bytes${authorInfo ? ` (Autor: ${authorInfo})` : ""}`);
+		logger.info(
+			`[DOWNLOAD] Finalizado: ${stats.size} bytes${authorInfo ? ` (Autor: ${authorInfo})` : ""}`
+		);
 
 		if (stats.size === 0) throw new Error("Arquivo vazio recebido.");
 
 		return dlPath;
 	} catch (error) {
 		if (fsSync.existsSync(dlPath)) fsSync.unlinkSync(dlPath);
-		logger.error(`[DOWNLOAD] Falha: ${error.message}${authorInfo ? ` (Autor: ${authorInfo})` : ""}`);
+		logger.error(
+			`[DOWNLOAD] Falha: ${error.message}${authorInfo ? ` (Autor: ${authorInfo})` : ""}`
+		);
 		throw error;
 	}
 }
@@ -395,7 +399,8 @@ async function downloadHandler(bot, message, args, group) {
 	const body = message.origin?.body || "";
 	const commandName = body.split(" ")[0].substring(bot.prefix.length).toLowerCase();
 
-	const authorName = message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Desconhecido";
+	const authorName =
+		message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Desconhecido";
 	const authorNumber = message.author ?? "Desconhecido";
 	const authorInfo = `${authorName} (${authorNumber})`;
 
@@ -449,7 +454,9 @@ async function downloadHandler(bot, message, args, group) {
 	if (url && isYoutubeUrl(url)) {
 		const videoId = extractYoutubeVideoId(url);
 		if (videoId) {
-			logger.info(`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly}) (Autor: ${authorInfo})`);
+			logger.info(
+				`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly}) (Autor: ${authorInfo})`
+			);
 
 			bot.sendReturnMessages(
 				new ReturnMessage({
@@ -574,7 +581,9 @@ async function downloadHandler(bot, message, args, group) {
 					if (isYoutubeUrl(url)) {
 						const videoId = extractYoutubeVideoId(url);
 						if (videoId && isAudioOnly && typeof baixarMusicaYoutube === "function") {
-							logger.info(`Roteando busca de YouTube (áudio) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`);
+							logger.info(
+								`Roteando busca de YouTube (áudio) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`
+							);
 							bot.sendReturnMessages(
 								new ReturnMessage({
 									chatId,
@@ -627,7 +636,9 @@ async function downloadHandler(bot, message, args, group) {
 								});
 							});
 						} else if (videoId && typeof baixarVideoYoutube === "function") {
-							logger.info(`Roteando busca de YouTube (vídeo) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`);
+							logger.info(
+								`Roteando busca de YouTube (vídeo) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`
+							);
 							bot.sendReturnMessages(
 								new ReturnMessage({
 									chatId,
@@ -762,7 +773,9 @@ async function downloadHandler(bot, message, args, group) {
 				}
 
 				const displayFilename = result.filename || items[0].filename;
-				logger.info(`Iniciando transferência de ${items.length} item(ns) para ${displayFilename} (Autor: ${authorInfo})`);
+				logger.info(
+					`Iniciando transferência de ${items.length} item(ns) para ${displayFilename} (Autor: ${authorInfo})`
+				);
 
 				const processedFiles = [];
 				for (const item of items) {
@@ -814,7 +827,9 @@ async function downloadHandler(bot, message, args, group) {
 			5000
 		); // 3 tentativas no total (1 original + 2 retries), 5s de intervalo
 	} catch (error) {
-		logger.error(`Erro no download após retries para o link: ${url} (Autor: ${authorInfo}): ${error.message}`);
+		logger.error(
+			`Erro no download após retries para o link: ${url} (Autor: ${authorInfo}): ${error.message}`
+		);
 		await bot.sendReturnMessages(
 			new ReturnMessage({
 				chatId,
