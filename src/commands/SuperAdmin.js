@@ -111,6 +111,11 @@ class SuperAdmin {
 			fixGroupNames: {
 				method: "fixGroupNames",
 				description: "Escaneia e sugere correção para nomes de grupos (dry run)"
+			},
+			dumpdbs: {
+				method: "dumpDbs",
+				description:
+					"Força o dump em disco (checkpoint WAL) e roda testes de integridade em todos os bancos de dados"
 			}
 		};
 
@@ -3652,6 +3657,112 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro: ${error.message}`
+			});
+		}
+	}
+
+	/**
+	 * Força checkpoint de WAL em disco e valida a integridade de todos os bancos de dados
+	 */
+	async dumpDbs(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) return;
+
+			await bot.sendMessage(
+				chatId,
+				"⏳ Iniciando checkpoint de WAL e verificação de integridade em todos os bancos de dados..."
+			);
+
+			const sqlitesDir = path.join(this.dataPath, "sqlites");
+			if (!require("fs").existsSync(sqlitesDir)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Pasta 'sqlites' não existe localmente."
+				});
+			}
+
+			const files = require("fs").readdirSync(sqlitesDir);
+			const dbFiles = files.filter((f) => f.endsWith(".db") && f !== "cooldowns.db");
+
+			const results = [];
+			const BetterSQLite = require("better-sqlite3");
+
+			for (const dbFile of dbFiles) {
+				const dbName = dbFile.replace(".db", "");
+				const dbPath = path.join(sqlitesDir, dbFile);
+				let conn = null;
+				let wasOpen = false;
+
+				try {
+					// 1. Obter ou abrir conexão
+					if (this.database.mappers && this.database.mappers.connections[dbName]) {
+						conn = this.database.mappers.connections[dbName];
+						wasOpen = true;
+					} else {
+						conn = new BetterSQLite(dbPath);
+						wasOpen = false;
+					}
+
+					// 2. Executar Checkpoint (forçar mesclagem de WAL em disco)
+					conn.pragma("wal_checkpoint(TRUNCATE)");
+
+					// 3. Executar Integrity Check
+					const integrityRows = conn.pragma("integrity_check");
+					const isOk =
+						Array.isArray(integrityRows) &&
+						integrityRows.length === 1 &&
+						integrityRows[0].integrity_check === "ok";
+
+					results.push({
+						name: dbFile,
+						checkpoint: "OK",
+						integrity: isOk ? "SAUDÁVEL" : `CORROMPIDO (${JSON.stringify(integrityRows)})`
+					});
+
+					// Fechar conexão se abrimos temporariamente
+					if (!wasOpen) {
+						conn.close();
+					}
+				} catch (err) {
+					results.push({
+						name: dbFile,
+						checkpoint: "ERRO",
+						integrity: `FALHA AO ABRIR/EXECUTAR (${err.message})`
+					});
+				}
+			}
+
+			// Formata relatório final
+			let response = "📊 *Relatório do Dump de Bancos de Dados*\n\n";
+			let hasError = false;
+
+			results.forEach((res) => {
+				const statusIcon = res.integrity === "SAUDÁVEL" ? "🟢" : "🔴";
+				response += `${statusIcon} *${res.name}*:\n`;
+				response += `  - Checkpoint (WAL): ${res.checkpoint}\n`;
+				response += `  - Integridade: ${res.integrity}\n\n`;
+				if (res.integrity !== "SAUDÁVEL") {
+					hasError = true;
+				}
+			});
+
+			if (hasError) {
+				response +=
+					"⚠️ *Atenção:* Foram detectados problemas de integridade em alguns bancos de dados!";
+			} else {
+				response += "✅ Todos os bancos de dados foram gravados em disco e estão saudáveis!";
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: response
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando dumpDbs:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro geral ao executar dump e verificação: ${error.message}`
 			});
 		}
 	}

@@ -120,6 +120,7 @@ services:
       # Persistent data — NEVER reset these
       - ./data:/app/data
       - ./public:/app/public
+      - ./logs:/app/logs
       # DL_FOLDER: maps the host path you set in .env to the fixed internal path
       - ${DL_FOLDER}:/app/downloads
       # Config files — edit on host and restart the container to apply changes (no rebuild needed)
