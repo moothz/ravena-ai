@@ -223,21 +223,23 @@ async function main() {
 		process.exit(1);
 	}
 
-	// Manipula encerramento do programa - modificar para esta versão:
-	process.on("SIGINT", async () => {
-		logger.info("Desligando bots e servidor API (SIGINT)...");
+	// Manipula encerramento do programa sequencialmente para evitar corrupção de arquivos
+	const shutdown = async (signal) => {
+		logger.info(`Desligando bots e servidor API (${signal})...`);
 
-		// Força a persistência de dados do banco de dados
-		await Database.getInstance().forcePersist();
+		// 1. Para o servidor API primeiro para não aceitar novas conexões
+		if (botAPI) {
+			try {
+				await botAPI.stop();
+			} catch (e) {
+				logger.error("Erro ao parar servidor API:", e);
+			}
+		}
 
-		// Para o servidor API primeiro
-		await botAPI.stop();
-
-		// Destrói todas as instâncias de bot com timeout
+		// 2. Destrói todas as instâncias de bot com timeout
 		const promises = [];
 		for (const bot of botInstances) {
 			promises.push(
-				// Adiciona um timeout para garantir que o processo não fique preso indefinidamente
 				Promise.race([
 					bot.destroy(),
 					new Promise((resolve) =>
@@ -251,42 +253,28 @@ async function main() {
 		}
 
 		await Promise.all(promises);
-		logger.info("Todos os bots destruídos com sucesso. Encerrando...");
+		logger.info("Todos os bots destruídos com sucesso.");
 
-		process.exit(0);
-	});
-
-	process.on("SIGTERM", async () => {
-		logger.info("Desligando bots e servidor API (SIGTERM)...");
-
-		// Força a persistência de dados do banco de dados
-		await Database.getInstance().forcePersist();
-
-		// Para o servidor API primeiro
-		await botAPI.stop();
-
-		// Destrói todas as instâncias de bot com timeout
-		const promises = [];
-		for (const bot of botInstances) {
-			promises.push(
-				// Adiciona um timeout para garantir que o processo não fique preso indefinidamente
-				Promise.race([
-					bot.destroy(),
-					new Promise((resolve) =>
-						setTimeout(() => {
-							logger.warn(`Timeout ao destruir bot ${bot.id}`);
-							resolve();
-						}, 5000)
-					)
-				])
-			);
+		// 3. Força a persistência e fecha todas as conexões SQLite de forma síncrona
+		logger.info("Fechando conexões de banco de dados e gravando alterações pendentes...");
+		try {
+			await Database.getInstance().flushAllToDisk();
+		} catch (e) {
+			logger.error("Erro ao salvar bancos de dados:", e);
 		}
 
-		await Promise.all(promises);
-		logger.info("Todos os bots destruídos com sucesso. Encerrando...");
+		try {
+			Database.getInstance().closeAll();
+		} catch (e) {
+			logger.error("Erro ao fechar conexões de bancos de dados:", e);
+		}
 
+		logger.info("Encerramento limpo concluído. Encerrando processo.");
 		process.exit(0);
-	});
+	};
+
+	process.on("SIGINT", () => shutdown("SIGINT"));
+	process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 	process.on("unhandledRejection", (reason, p) => {
 		logger.warn("---- Rejection não tratada ");

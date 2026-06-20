@@ -1298,20 +1298,6 @@ setInterval(async () => {
 	}
 }, INTERVALO_SALVAMENTO);
 
-// Adicione um handler para salvar dados antes de encerrar o processo
-process.on("SIGINT", async () => {
-	try {
-		if (dadosCache !== null && modificacoesNaoSalvas) {
-			logger.info("Salvando dados do Geoguesser antes de encerrar...");
-			await salvarDadosGeoguesser(dadosCache, true);
-		}
-	} catch (error) {
-		logger.error("Erro ao salvar dados do Geoguesser durante encerramento:", error);
-	} finally {
-		process.exit(0);
-	}
-});
-
 // Criar array de comandos usando a classe Command
 const commands = [
 	new Command({

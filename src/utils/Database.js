@@ -255,31 +255,8 @@ class Database {
 	}
 
 	setupCleanupHandlers() {
-		const cleanup = async () => {
-			this.logger.info("Closing database connections and flushing to disk...");
-			try {
-				await this.flushAllToDisk();
-			} catch (e) {
-				this.logger.error("Error flushing databases on exit:", e);
-			}
-			this.closeAll();
-
-			this.botInstances.forEach((bot) => {
-				try {
-					bot.destroy();
-				} catch (e) {}
-			});
-		};
-
-		process.on("SIGINT", async () => {
-			await cleanup();
-			process.exit(0);
-		});
-
-		process.on("SIGTERM", async () => {
-			await cleanup();
-			process.exit(0);
-		});
+		// Signal listeners removed to prevent duplicate racing handlers.
+		// Main cleanup is now driven sequentially by index.js on shutdown.
 	}
 
 	// --- Backup System ---
