@@ -7,6 +7,79 @@ const DatabaseMappers = require("./db/DatabaseMappers");
 const CoreRepository = require("./db/repositories/CoreRepository");
 
 /**
+ * Mock wrapper that mimics sqlite3 Database API but executes synchronously on Better-SQLite3 connection.
+ * It translates callback-based asynchronous methods to synchronous ones, avoiding dual connection locking.
+ */
+class Sqlite3MockWrapper {
+	constructor(name, mappers) {
+		this.name = name;
+		this.mappers = mappers;
+	}
+
+	run(sql, params, cb) {
+		if (typeof params === "function") {
+			cb = params;
+			params = [];
+		}
+		try {
+			const res = this.mappers.run(this.name, sql, params || []);
+			if (cb) {
+				const ctx = {
+					lastID: res.lastInsertRowid,
+					changes: res.changes
+				};
+				cb.call(ctx, null);
+			}
+		} catch (e) {
+			if (cb) cb(e);
+		}
+	}
+
+	all(sql, params, cb) {
+		if (typeof params === "function") {
+			cb = params;
+			params = [];
+		}
+		try {
+			const rows = this.mappers.all(this.name, sql, params || []);
+			if (cb) cb(null, rows);
+		} catch (e) {
+			if (cb) cb(e);
+		}
+	}
+
+	get(sql, params, cb) {
+		if (typeof params === "function") {
+			cb = params;
+			params = [];
+		}
+		try {
+			const row = this.mappers.get(this.name, sql, params || []);
+			if (cb) cb(null, row);
+		} catch (e) {
+			if (cb) cb(e);
+		}
+	}
+
+	exec(sql, cb) {
+		try {
+			this.mappers.exec(this.name, sql);
+			if (cb) cb(null);
+		} catch (e) {
+			if (cb) cb(e);
+		}
+	}
+
+	serialize(fn) {
+		if (fn) fn();
+	}
+
+	close(cb) {
+		if (cb) cb(null);
+	}
+}
+
+/**
  * Singleton Database class using SQLite backend with JSON storage (Hybrid approach)
  */
 class Database {
@@ -22,12 +95,15 @@ class Database {
 		this.schemas = {}; // Store schemas for restoration
 		this.coreDb = null; // Main database connection
 
-		this.ensureDirectories();
-		this.initCoreDatabase();
+		// Cache for custom variables file
+		this.customVariablesCache = null;
 
 		// --- New layer: better-sqlite3 connection manager + repositories ---
 		this.mappers = new DatabaseMappers(this);
 		this.coreRepo = new CoreRepository(this.mappers);
+
+		this.ensureDirectories();
+		this.initCoreDatabase();
 
 		// Bot instances for cleanup on exit
 		this.botInstances = [];
@@ -49,6 +125,9 @@ class Database {
 
 		// Setup cleanup handlers
 		this.setupCleanupHandlers();
+
+		// Setup hourly flush to disk
+		this.setupHourlyFlush();
 
 		this.backupStarted = false;
 		this.lastScheduledBackup = this.getLastScheduledBackupTime();
@@ -160,34 +239,30 @@ class Database {
 	}
 
 	initCoreDatabase() {
-		const dbPath = path.join(this.databasePath, "sqlites/core.db");
-		this.coreDb = new sqlite3.Database(dbPath);
-
-		// Enable WAL mode for better concurrency and to prevent corruption
-		this.coreDb.run("PRAGMA journal_mode = WAL");
-		this.coreDb.run("PRAGMA synchronous = NORMAL");
-		this.coreDb.run("PRAGMA busy_timeout = 5000");
-
-		// Minimal schema for restoring backups if core.db is missing.
 		// Real schema maintenance is handled by CoreRepository.js using better-sqlite3.
-		this.coreDb.serialize(() => {
-			const tables = [
-				`CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS donations (name TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS pending_joins (code TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS soft_blocks (number TEXT PRIMARY KEY, json_data TEXT)`,
-				`CREATE TABLE IF NOT EXISTS blocked_invites (id INTEGER PRIMARY KEY AUTOINCREMENT, json_data TEXT)`
-			];
-			this.schemas["core"] = tables.join("; ");
-			tables.forEach((sql) => this.coreDb.run(sql));
-		});
+		this.schemas["core"] = [
+			`CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, json_data TEXT)`,
+			`CREATE TABLE IF NOT EXISTS donations (name TEXT PRIMARY KEY, json_data TEXT)`,
+			`CREATE TABLE IF NOT EXISTS pending_joins (code TEXT PRIMARY KEY, json_data TEXT)`,
+			`CREATE TABLE IF NOT EXISTS soft_blocks (number TEXT PRIMARY KEY, json_data TEXT)`,
+			`CREATE TABLE IF NOT EXISTS blocked_invites (id INTEGER PRIMARY KEY AUTOINCREMENT, json_data TEXT)`
+		].join("; ");
+
+		this.coreDb = new Sqlite3MockWrapper("core", this.mappers);
+
+		// Apply core schemas via mappers
+		this.mappers.exec("core", this.schemas["core"]);
 	}
 
 	setupCleanupHandlers() {
-		const cleanup = () => {
-			this.logger.info("Closing database connections...");
-			if (this.coreDb) this.coreDb.close();
-			Object.values(this.sqlites).forEach((db) => db.close());
+		const cleanup = async () => {
+			this.logger.info("Closing database connections and flushing to disk...");
+			try {
+				await this.flushAllToDisk();
+			} catch (e) {
+				this.logger.error("Error flushing databases on exit:", e);
+			}
+			this.closeAll();
 
 			this.botInstances.forEach((bot) => {
 				try {
@@ -196,13 +271,13 @@ class Database {
 			});
 		};
 
-		process.on("SIGINT", () => {
-			cleanup();
+		process.on("SIGINT", async () => {
+			await cleanup();
 			process.exit(0);
 		});
 
-		process.on("SIGTERM", () => {
-			cleanup();
+		process.on("SIGTERM", async () => {
+			await cleanup();
 			process.exit(0);
 		});
 	}
@@ -291,75 +366,30 @@ class Database {
 	/**
 	 * Run a SQL query on the core database
 	 */
-	run(sql, params = []) {
+	/**
+	 * Run a SQL query on the core database
+	 */
+	async run(sql, params = []) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] run() bloqueado");
-			return Promise.resolve({ lastID: 0, changes: 0 });
+			return { lastID: 0, changes: 0 };
 		}
 		this.triggerBackupStart();
-		if (!this.coreDb) {
-			return Promise.reject(new Error("Core Database not initialized or currently restoring."));
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			this.coreDb.run(sql, params, function (err) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						// Async handle corruption
-						self.backupSystem.handleCorruption("core", err).catch((e) => {
-							self.logger.error("Failed to handle corruption:", e);
-						});
-					}
-					reject(err);
-				} else {
-					resolve({ lastID: this.lastID, changes: this.changes });
-				}
-			});
-		});
+		return this.mappers.asyncRun("core", sql, params);
 	}
 
 	/**
 	 * Get all rows from the core database
 	 */
-	all(sql, params = []) {
-		if (!this.coreDb) {
-			return Promise.reject(new Error("Core Database not initialized or currently restoring."));
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			this.coreDb.all(sql, params, function (err, rows) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						self.backupSystem.handleCorruption("core", err).catch((e) => {
-							self.logger.error("Failed to handle corruption:", e);
-						});
-					}
-					reject(err);
-				} else resolve(rows);
-			});
-		});
+	async all(sql, params = []) {
+		return this.mappers.asyncAll("core", sql, params);
 	}
 
 	/**
 	 * Get a single row from the core database
 	 */
-	get(sql, params = []) {
-		if (!this.coreDb) {
-			return Promise.reject(new Error("Core Database not initialized or currently restoring."));
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			this.coreDb.get(sql, params, function (err, row) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						self.backupSystem.handleCorruption("core", err).catch((e) => {
-							self.logger.error("Failed to handle corruption:", e);
-						});
-					}
-					reject(err);
-				} else resolve(row);
-			});
-		});
+	async get(sql, params = []) {
+		return this.mappers.asyncGet("core", sql, params);
 	}
 
 	// --- Groups ---
@@ -411,12 +441,17 @@ class Database {
 	}
 
 	async getCustomVariables() {
+		if (this.customVariablesCache) {
+			return this.customVariablesCache;
+		}
 		try {
 			const filePath = path.join(this.databasePath, "custom-variables.json");
 			if (fs.existsSync(filePath)) {
-				return JSON.parse(fs.readFileSync(filePath, "utf8"));
+				this.customVariablesCache = JSON.parse(fs.readFileSync(filePath, "utf8"));
+				return this.customVariablesCache;
 			}
-			return {};
+			this.customVariablesCache = {};
+			return this.customVariablesCache;
 		} catch (error) {
 			this.logger.error("Error getting custom variables:", error);
 			return {};
@@ -424,6 +459,7 @@ class Database {
 	}
 
 	async saveCustomVariables(variables) {
+		this.customVariablesCache = variables;
 		if (this.testMode) {
 			this.logger.debug("[TestMode] saveCustomVariables() bloqueado");
 			return true;
@@ -652,10 +688,6 @@ class Database {
 	getSQLiteDb(name, schema, noBackup = false) {
 		if (this.backupSystem && this.backupSystem.recoveringDbs.has(name)) {
 			this.logger.warn(`Database '${name}' is currently being restored. Waiting...`);
-			// We could return a Proxy or wait, but simpler for now is to allow it to fail
-			// or we could throw an error that the caller handles.
-			// Actually, if we return null, most callers will fail.
-			// Let's return the connection anyway if it exists, otherwise throw.
 			if (this.sqlites[name]) return this.sqlites[name];
 			throw new Error(`Database '${name}' is currently under restoration.`);
 		}
@@ -671,104 +703,31 @@ class Database {
 				`[database][getSQLiteDb] Loading SQLite DB '${name}' (Backup: ${!noBackup})`
 			);
 
-			const databasesFolder = path.join(this.databasePath, "sqlites");
-			if (!fs.existsSync(databasesFolder)) {
-				fs.mkdirSync(databasesFolder, { recursive: true });
-			}
+			// Initialize database schema in memory via mappers
+			this.mappers.exec(name, schema);
 
-			const dbPath = path.join(databasesFolder, `${name}.db`);
-			this.sqlites[name] = new sqlite3.Database(dbPath);
-
-			// Enable WAL mode for better concurrency and to prevent corruption
-			this.sqlites[name].run("PRAGMA journal_mode = WAL");
-			this.sqlites[name].run("PRAGMA synchronous = NORMAL");
-			this.sqlites[name].run("PRAGMA busy_timeout = 5000");
-
-			// Initialize database structure
-			this.sqlites[name].serialize(() => {
-				this.sqlites[name].exec(schema, (err) => {
-					if (err) {
-						this.logger.error(`Error initializing base ${name}:`, { schema, err });
-					}
-				});
-			});
+			// Return mock wrapper for compatibility
+			this.sqlites[name] = new Sqlite3MockWrapper(name, this.mappers);
 		}
 
 		return this.sqlites[name];
 	}
 
-	dbRun(dbName, sql, params = []) {
+	async dbRun(dbName, sql, params = []) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] dbRun() bloqueado:", dbName);
-			return Promise.resolve({ lastID: 0, changes: 0 });
+			return { lastID: 0, changes: 0 };
 		}
 		this.triggerBackupStart();
-		const db = this.sqlites[dbName];
-		if (!db) {
-			return Promise.reject(
-				new Error(`Database '${dbName}' not initialized or currently restoring.`)
-			);
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			db.run(sql, params, function (err) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						// Async handle corruption
-						self.backupSystem.handleCorruption(dbName, err).catch((e) => {
-							self.logger.error(`Failed to handle corruption for ${dbName}:`, e);
-						});
-					}
-					reject(err);
-				} else {
-					resolve({ lastID: this.lastID, changes: this.changes });
-				}
-			});
-		});
+		return this.mappers.asyncRun(dbName, sql, params);
 	}
 
-	dbAll(dbName, sql, params = []) {
-		const db = this.sqlites[dbName];
-		if (!db) {
-			return Promise.reject(
-				new Error(`Database '${dbName}' not initialized or currently restoring.`)
-			);
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			db.all(sql, params, function (err, rows) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						self.backupSystem.handleCorruption(dbName, err).catch((e) => {
-							self.logger.error(`Failed to handle corruption for ${dbName}:`, e);
-						});
-					}
-					reject(err);
-				} else resolve(rows);
-			});
-		});
+	async dbAll(dbName, sql, params = []) {
+		return this.mappers.asyncAll(dbName, sql, params);
 	}
 
-	dbGet(dbName, sql, params = []) {
-		const db = this.sqlites[dbName];
-		if (!db) {
-			return Promise.reject(
-				new Error(`Database '${dbName}' not initialized or currently restoring.`)
-			);
-		}
-		return new Promise((resolve, reject) => {
-			const self = this;
-			db.get(sql, params, function (err, row) {
-				if (err) {
-					if (err.message && err.message.includes("SQLITE_CORRUPT")) {
-						self.backupSystem.handleCorruption(dbName, err).catch((e) => {
-							self.logger.error(`Failed to handle corruption for ${dbName}:`, e);
-						});
-					}
-					reject(err);
-				} else resolve(row);
-			});
-		});
+	async dbGet(dbName, sql, params = []) {
+		return this.mappers.asyncGet(dbName, sql, params);
 	}
 
 	/**
@@ -826,6 +785,29 @@ class Database {
 
 		return nextTask;
 	}
+
+	setupHourlyFlush() {
+		this.flushInterval = setInterval(
+			async () => {
+				try {
+					await this.flushAllToDisk();
+				} catch (error) {
+					this.logger.error("Error in hourly flush:", error);
+				}
+			},
+			60 * 60 * 1000
+		); // 1 hour
+	}
+
+	async flushAllToDisk() {
+		this.logger.info("Flushing all in-memory databases to disk...");
+		if (this.mappers) {
+			await this.mappers.flushAllToDisk();
+		}
+		this.logger.info("Flush completed.");
+	}
 }
+
+Database.Sqlite3MockWrapper = Sqlite3MockWrapper;
 
 module.exports = Database;

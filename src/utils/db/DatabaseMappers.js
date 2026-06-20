@@ -34,7 +34,8 @@ class DatabaseMappers {
 
 	/**
 	 * Get (or open) a better-sqlite3 connection by name.
-	 * 'core' resolves to core.db; everything else to <name>.db in sqlites/.
+	 * All active connections run on disk directly for reliability and RAM safety,
+	 * except for transient 'cooldowns' database which is kept in memory.
 	 * @param {string} name
 	 * @returns {import('better-sqlite3').Database}
 	 */
@@ -47,15 +48,94 @@ class DatabaseMappers {
 		const dbFile = name === "core" ? "core.db" : `${name}.db`;
 		const dbPath = path.join(sqlitesDir, dbFile);
 
-		this.logger.info(`[DatabaseMappers] Opening '${name}' → ${dbPath}`);
+		this.logger.info(`[DatabaseMappers] Opening better-sqlite3 connection for '${name}' (disk path: ${dbPath})`);
 
-		const conn = new BetterSQLite(dbPath);
-		conn.pragma("journal_mode = WAL");
-		conn.pragma("synchronous = NORMAL");
-		conn.pragma("busy_timeout = 5000");
+		try {
+			const conn = name === "cooldowns"
+				? new BetterSQLite(":memory:")
+				: new BetterSQLite(dbPath);
 
-		this.connections[name] = conn;
-		return conn;
+			conn.pragma("journal_mode = WAL");
+			conn.pragma("synchronous = FULL"); // Use FULL for strong corruption prevention on disk restarts
+			conn.pragma("busy_timeout = 5000");
+
+			// Apply the schema first if we have it in parent Database class
+			const schema = this.db.schemas[name];
+			if (schema) {
+				try {
+					conn.exec(schema);
+				} catch (schemaErr) {
+					// If the schema check fails due to corruption, bubble up to the catch block
+					if (schemaErr && schemaErr.message && (schemaErr.message.includes("SQLITE_CORRUPT") || schemaErr.message.includes("malformed"))) {
+						throw schemaErr;
+					}
+					this.logger.error(`[DatabaseMappers] Error applying schema for '${name}':`, schemaErr);
+				}
+			}
+
+			this.connections[name] = conn;
+			return conn;
+		} catch (err) {
+			const isCorrupt = err && err.message && (err.message.includes("SQLITE_CORRUPT") || err.message.includes("malformed"));
+			if (isCorrupt) {
+				this.logger.error(`[DatabaseMappers] SQLITE_CORRUPT detected on startup for '${name}':`, err);
+
+				// Safely rename the corrupted file to allow fresh initialization and trigger backup restore
+				const corruptPath = `${dbPath}.corrupt-${Date.now()}`;
+				if (fs.existsSync(dbPath)) {
+					try {
+						fs.copyFileSync(dbPath, corruptPath);
+						fs.unlinkSync(dbPath);
+						this.logger.info(`[DatabaseMappers] Saved corrupt file to ${corruptPath} and deleted original.`);
+					} catch (e) {
+						this.logger.error(`[DatabaseMappers] Failed to copy/delete corrupt file: ${e.message}`);
+					}
+				}
+
+				// Delete WAL, SHM, and journal files to ensure a clean restore
+				const walPath = `${dbPath}-wal`;
+				const shmPath = `${dbPath}-shm`;
+				const journalPath = `${dbPath}-journal`;
+				if (fs.existsSync(walPath)) try { fs.unlinkSync(walPath); } catch (e) {}
+				if (fs.existsSync(shmPath)) try { fs.unlinkSync(shmPath); } catch (e) {}
+				if (fs.existsSync(journalPath)) try { fs.unlinkSync(journalPath); } catch (e) {}
+
+				// Trigger background restore
+				if (this.db && this.db.backupSystem) {
+					setImmediate(() => {
+						this.logger.warn(`[DatabaseMappers] Triggering corruption restore for '${name}' in background...`);
+						this.db.backupSystem.handleCorruption(name, err).catch((e) => {
+							this.logger.error(`[DatabaseMappers] Failed recovery for '${name}':`, e);
+						});
+					});
+				}
+
+				// Return a fresh database connection so the bot doesn't crash on boot.
+				// Once the background restore is complete, reinitConnection will re-open it cleanly with the restored file.
+				this.logger.info(`[DatabaseMappers] Initializing fresh temporary database for '${name}' during recovery.`);
+				const freshConn = name === "cooldowns"
+					? new BetterSQLite(":memory:")
+					: new BetterSQLite(dbPath);
+
+				freshConn.pragma("journal_mode = WAL");
+				freshConn.pragma("synchronous = FULL");
+				freshConn.pragma("busy_timeout = 5000");
+
+				const schema = this.db.schemas[name];
+				if (schema) {
+					try {
+						freshConn.exec(schema);
+					} catch (schemaErr) {
+						this.logger.error(`[DatabaseMappers] Error applying schema to fresh database for '${name}':`, schemaErr);
+					}
+				}
+
+				this.connections[name] = freshConn;
+				return freshConn;
+			} else {
+				throw err;
+			}
+		}
 	}
 
 	/**
@@ -80,6 +160,21 @@ class DatabaseMappers {
 	reopenConnection(name) {
 		this.closeConnection(name);
 		return this.getConnection(name);
+	}
+
+	/**
+	 * Flush a single database to its disk file (No-op since we write directly to disk).
+	 * @param {string} name
+	 */
+	async flushToDisk(name) {
+		// No-op since we write directly to disk
+	}
+
+	/**
+	 * Flush all in-memory databases to disk (No-op since we write directly to disk).
+	 */
+	async flushAllToDisk() {
+		// No-op since we write directly to disk
 	}
 
 	// ---------------------------------------------------------------------------
