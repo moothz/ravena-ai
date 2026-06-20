@@ -2,6 +2,7 @@
 const path = require("path");
 const fs = require("fs").promises;
 const fsSync = require("fs");
+const { createCanvas, loadImage, registerFont } = require("canvas");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
@@ -103,6 +104,12 @@ database.getSQLiteDb(
 		await database.dbRun(dbName, "ALTER TABLE fishing_legendary_history ADD COLUMN year INTEGER");
 	} catch (e) {
 		// Ignore if column already exists
+	}
+	try {
+		const fontsDir = path.join(database.databasePath, "fonts");
+		await fs.mkdir(fontsDir, { recursive: true });
+	} catch (e) {
+		// Ignore
 	}
 })();
 
@@ -1302,6 +1309,74 @@ function getCurrentDateTime() {
 	return new Intl.DateTimeFormat("en-GB", options).format(now).replace(",", "");
 }
 
+let fontRegistered = false;
+function registerCustomFont() {
+	if (fontRegistered) return;
+	const fontPath = path.join(database.databasePath, "fonts", "FishingFont.ttf");
+	try {
+		if (fsSync.existsSync(fontPath)) {
+			registerFont(fontPath, { family: "FishingFont" });
+			fontRegistered = true;
+		}
+	} catch (err) {
+		logger.error("Erro ao registrar fonte para peixe raro:", err);
+	}
+}
+
+async function drawTextOnRareFishImage(mediaContent, fishName, fishWeight, dateString) {
+	try {
+		if (!mediaContent || !mediaContent.data) {
+			return mediaContent;
+		}
+
+		registerCustomFont();
+
+		const imgBuffer = Buffer.from(mediaContent.data, "base64");
+		const img = await loadImage(imgBuffer);
+		const width = img.width;
+		const height = img.height;
+
+		const canvas = createCanvas(width, height);
+		const ctx = canvas.getContext("2d");
+
+		ctx.drawImage(img, 0, 0);
+
+		const line1 = `${fishName}, ${fishWeight.toFixed(2)}kg`;
+		const line2 = dateString;
+
+		const fontSize = Math.floor(width * 0.065);
+		const strokeWidth = Math.floor(width * 0.01);
+
+		const fontFamily = fontRegistered ? "FishingFont" : "Impact";
+		ctx.font = `bold ${fontSize}px ${fontFamily}`;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+
+		ctx.strokeStyle = "black";
+		ctx.lineWidth = strokeWidth;
+		ctx.lineJoin = "round";
+		ctx.fillStyle = "white";
+
+		const y1 = Math.floor(height * 0.88);
+		const y2 = Math.floor(height * 0.94);
+
+		ctx.strokeText(line1, width / 2, y1);
+		ctx.fillText(line1, width / 2, y1);
+
+		ctx.strokeText(line2, width / 2, y2);
+		ctx.fillText(line2, width / 2, y2);
+
+		const outputBuffer = canvas.toBuffer("image/jpeg", { quality: 0.9 });
+
+		mediaContent.data = outputBuffer.toString("base64");
+		mediaContent.size = outputBuffer.length;
+		return mediaContent;
+	} catch (error) {
+		logger.error("Erro ao desenhar texto na imagem do peixe raro:", error);
+		return mediaContent;
+	}
+}
+
 async function generateRareFishImage(
 	bot,
 	userName,
@@ -1317,9 +1392,7 @@ Person named '${userName}' fishing an epically rare monstrous creature (fantasy)
 
 Sweat and tears, joy
 Epic scenario, huge boats, creature captured mythical, fantastic, water splashing
-Dynamic, action-ready close-up composition, medium depth-of-field, hyper-detailed photorealistic-anime hybrid style, epic survival and exploration atmosphere.
-
-((Write text in bottom of image centered, bold font, fantasy: ${fishName}, ${fishWeight.toFixed(2)}kg @ ${dateString}))`;
+Dynamic, action-ready close-up composition, medium depth-of-field, hyper-detailed photorealistic-anime hybrid style, epic survival and exploration atmosphere.`;
 
 		const mockMessage = {
 			author: "SYSTEM",
@@ -1341,7 +1414,22 @@ Dynamic, action-ready close-up composition, medium depth-of-field, hyper-detaile
 			true,
 			{ skipNSFW: true, isProgrammatic: true }
 		);
-		return result && result.content && result.content.mimetype ? result.content : null;
+
+		if (!result || !result.content || !result.content.mimetype) return null;
+
+		// Inject the text onto the image
+		try {
+			const processedMedia = await drawTextOnRareFishImage(
+				result.content,
+				fishName,
+				fishWeight,
+				dateString
+			);
+			return processedMedia;
+		} catch (drawError) {
+			logger.error("Erro ao desenhar texto no peixe raro, retornando original:", drawError);
+			return result.content;
+		}
 	} catch (error) {
 		logger.error("Erro ao gerar imagem para peixe raro:", error);
 		return null;
