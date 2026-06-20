@@ -4,16 +4,24 @@
 TELEGRAM_BOT_TOKEN="${HEALTH_CHECK_TELEGRAM_BOT_TOKEN}"
 TELEGRAM_CHAT_ID="${HEALTH_CHECK_TELEGRAM_CHAT_ID}"
 
-# Container names (must match docker-compose.yml service names)
-WHATSGOAPI_CONTAINER="whatsgoapi"
-RAVENA_CONTAINER="ravena-ai"
+# DNS names used for internal network requests (docker network service names)
+WHATSGOAPI_HOST="whatsgoapi"
+RAVENA_HOST="ravena-ai"
+
+# Discover actual container names for docker CLI commands (handles prefixes like dd821e43551f_)
+WHATSGOAPI_CONTAINER=$(docker ps --filter "label=com.docker.compose.service=whatsgoapi" --format "{{.Names}}" | head -n 1)
+RAVENA_CONTAINER=$(docker ps --filter "label=com.docker.compose.service=ravena-ai" --format "{{.Names}}" | head -n 1)
+
+# Fallback to default if empty
+WHATSGOAPI_CONTAINER="${WHATSGOAPI_CONTAINER:-whatsgoapi}"
+RAVENA_CONTAINER="${RAVENA_CONTAINER:-ravena-ai}"
 
 # whatsgoapi health endpoint and API key
-TARGET_URL="http://${WHATSGOAPI_CONTAINER}:${SERVER_PORT:-8080}/instance/all"
+TARGET_URL="http://${WHATSGOAPI_HOST}:${SERVER_PORT:-8080}/instance/all"
 API_KEY="${GLOBAL_API_KEY}"
 
 # ravena-ai health endpoint
-RAVENA_URL="http://${RAVENA_CONTAINER}:${API_PORT:-5000}/health"
+RAVENA_URL="http://${RAVENA_HOST}:${API_PORT:-5000}/health"
 
 # How often to run the health check (seconds)
 CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-60}"
