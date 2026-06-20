@@ -329,8 +329,14 @@ class DatabaseMappers {
 	 * @param {Error} err
 	 */
 	_handleError(name, err) {
-		if (err && err.message && err.message.includes("SQLITE_CORRUPT")) {
-			this.logger.error(`[DatabaseMappers] SQLITE_CORRUPT in '${name}':`, err);
+		const isCorrupt =
+			err &&
+			((err.message &&
+				(err.message.includes("SQLITE_CORRUPT") || err.message.includes("malformed"))) ||
+				err.code === "SQLITE_CORRUPT");
+
+		if (isCorrupt) {
+			this.logger.error(`[DatabaseMappers] SQLITE_CORRUPT/malformed detected in '${name}':`, err);
 			// Forward asynchronously so we don't block the sync call stack
 			if (this.db && this.db.backupSystem) {
 				setImmediate(() => {

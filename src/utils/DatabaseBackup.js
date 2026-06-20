@@ -446,6 +446,11 @@ Error: \`${error.message}\``);
 				});
 			}
 
+			// Ensure underlying better-sqlite3 connection is closed in DatabaseMappers
+			if (this.db.mappers) {
+				this.db.mappers.closeConnection(dbName);
+			}
+
 			const dbFile = dbName === "core" ? "core.db" : `${dbName}.db`;
 			const dbPath = path.join(this.databasePath, "sqlites", dbFile);
 			const corruptPath = `${dbPath}.corrupt-${Date.now()}`;
