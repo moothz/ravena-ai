@@ -46,6 +46,8 @@ class WhatsAppBotTelegram {
 		this.webhookHost = options.webhookHost; // ex: ravena.moothz.win
 		this.webhookPort = options.webhookPort || 9001;
 		this.pollingInterval = null; // Para armazenar o ID do intervalo de polling
+		this.webhookMonitorInterval = null;
+		this.webhookFailures = 0;
 		this.isPolling = false;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
@@ -145,65 +147,45 @@ class WhatsAppBotTelegram {
 			this.logger.info(`Bot ID: ${this.botInfo.id}, Username: @${this.botInfo.username}`);
 
 			if (this.webhookHost) {
-				this.webhookApp = express();
-				this.webhookApp.use(express.json());
+				try {
+					this.webhookApp = express();
+					this.webhookApp.use(express.json());
 
-				const webhookPath = `/webhook/telegram/${this.telegramBotToken}`;
-				this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
+					const webhookPath = `/webhook/telegram/${this.telegramBotToken}`;
+					this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
 
-				await new Promise((resolve, reject) => {
-					this.webhookServer = this.webhookApp
-						.listen(this.webhookPort, () => {
-							this.logger.info(
-								`[telegram-bot] Webhook listener for bot ${this.id} started on port ${this.webhookPort} at ${webhookPath}`
-							);
-							this._onInstanceConnected();
-							resolve();
-						})
-						.on("error", (err) => {
-							this.logger.error(`Failed to start webhook listener for bot ${this.id}:`, err);
-							reject(err);
-						});
-				});
+					await new Promise((resolve, reject) => {
+						this.webhookServer = this.webhookApp
+							.listen(this.webhookPort, () => {
+								this.logger.info(
+									`[telegram-bot] Webhook listener for bot ${this.id} started on port ${this.webhookPort} at ${webhookPath}`
+								);
+								this._onInstanceConnected();
+								resolve();
+							})
+							.on("error", (err) => {
+								this.logger.error(`Failed to start webhook listener for bot ${this.id}:`, err);
+								reject(err);
+							});
+					});
 
-				const webhookUrl = `https://${this.webhookHost}/webhook/telegram/${this.telegramBotToken}`;
-				await this.apiClient.setWebhook(webhookUrl, this.telegramSecretToken);
+					const webhookUrl = `https://${this.webhookHost}/webhook/telegram/${this.telegramBotToken}`;
+					await this.apiClient.setWebhook(webhookUrl, this.telegramSecretToken);
+					this.logger.info(`[${this.id}] Webhook configured successfully: ${webhookUrl}`);
+
+					// Start Webhook monitor/fallback watchdog
+					this._startWebhookMonitor();
+				} catch (webhookError) {
+					this.logger.error(`[${this.id}] Failed to set up webhook, falling back to polling:`, webhookError);
+					await this._fallbackToPolling();
+				}
 			} else {
 				this.logger.info(`[${this.id}] Starting Telegram Bot in polling mode.`);
 				// Certifica-se de que o webhook está desativado
 				await this.apiClient.deleteWebhook();
 
 				this.isPolling = true; // Flag to control the loop
-				const poll = async () => {
-					let offset = 0;
-					this.logger.info(`[${this.id}] Polling loop started.`);
-					while (this.isPolling) {
-						try {
-							const updates = await this.apiClient.getUpdates(offset + 1, 100, 30);
-							if (updates.length > 0) {
-								this.logger.debug(`Received ${updates.length} updates via polling.`);
-								for (const update of updates) {
-									this._processUpdate(update);
-									offset = Math.max(offset, update.update_id);
-								}
-								this.lastMessageReceived = Date.now();
-							}
-							if (!this.isConnected) {
-								this._onInstanceConnected();
-							}
-						} catch (error) {
-							this.logger.error(`Error during polling for bot ${this.id}`);
-							if (this.isConnected) {
-								this._onInstanceDisconnected("POLLING_ERROR");
-							}
-							// Avoid busy-looping on critical errors by waiting before retrying
-							await sleep(5000);
-						}
-					}
-					this.logger.info(`[${this.id}] Polling loop stopped.`);
-				};
-
-				poll(); // Start the polling loop
+				this._startPollingLoop();
 				this._onInstanceConnected(); // Conecta imediatamente no modo polling
 			}
 
@@ -216,6 +198,107 @@ class WhatsAppBotTelegram {
 		}
 
 		return this;
+	}
+
+	async _fallbackToPolling() {
+		if (this.isPolling) return;
+		this.logger.warn(`[${this.id}] Webhook failed or had issues. Falling back to POLLING mode.`);
+
+		// Clean up webhook server if running
+		if (this.webhookServer) {
+			try {
+				this.webhookServer.close();
+				this.logger.info(`[${this.id}] Closed webhook server listener.`);
+			} catch (e) {
+				this.logger.error(`[${this.id}] Error closing webhook server:`, e);
+			}
+		}
+
+		try {
+			await this.apiClient.deleteWebhook();
+		} catch (e) {
+			this.logger.error(`[${this.id}] Error deleting webhook on Telegram API:`, e);
+		}
+
+		this.isPolling = true;
+		this._startPollingLoop();
+
+		// Set connection status
+		if (!this.isConnected) {
+			this._onInstanceConnected();
+		}
+	}
+
+	_startPollingLoop() {
+		const poll = async () => {
+			let offset = 0;
+			this.logger.info(`[${this.id}] Polling loop started.`);
+			while (this.isPolling) {
+				try {
+					const updates = await this.apiClient.getUpdates(offset + 1, 100, 30);
+					if (updates.length > 0) {
+						this.logger.debug(`Received ${updates.length} updates via polling.`);
+						for (const update of updates) {
+							this._processUpdate(update);
+							offset = Math.max(offset, update.update_id);
+						}
+						this.lastMessageReceived = Date.now();
+					}
+					if (!this.isConnected) {
+						this._onInstanceConnected();
+					}
+				} catch (error) {
+					this.logger.error(`Error during polling for bot ${this.id}: ${error.message}`);
+					if (this.isConnected) {
+						this._onInstanceDisconnected("POLLING_ERROR");
+					}
+					// Avoid busy-looping on critical errors by waiting before retrying
+					await sleep(5000);
+				}
+			}
+			this.logger.info(`[${this.id}] Polling loop stopped.`);
+		};
+
+		poll(); // Start the polling loop
+	}
+
+	_startWebhookMonitor() {
+		if (this.webhookMonitorInterval) {
+			clearInterval(this.webhookMonitorInterval);
+		}
+
+		this.webhookFailures = 0;
+		this.webhookMonitorInterval = setInterval(async () => {
+			if (this.isPolling) {
+				clearInterval(this.webhookMonitorInterval);
+				return;
+			}
+
+			try {
+				const webhookInfo = await this.apiClient.bot.getWebHookInfo();
+				if (webhookInfo) {
+					const hasRecentError = webhookInfo.last_error_date && (Date.now() / 1000 - webhookInfo.last_error_date) < 300;
+
+					if (hasRecentError) {
+						this.webhookFailures++;
+						this.logger.warn(
+							`[${this.id}] Webhook delivery issue detected (${this.webhookFailures}/3): "${webhookInfo.last_error_message}". Pending updates: ${webhookInfo.pending_update_count}`
+						);
+
+						if (this.webhookFailures >= 3) {
+							this.logger.error(`[${this.id}] Webhook down for 3 consecutive checks. Switching to Polling mode fallback.`);
+							await this._fallbackToPolling();
+							clearInterval(this.webhookMonitorInterval);
+						}
+					} else {
+						// Reset failure count on success
+						this.webhookFailures = 0;
+					}
+				}
+			} catch (err) {
+				this.logger.error(`[${this.id}] Error checking webhook status:`, err);
+			}
+		}, 120000); // Check every 2 minutes
 	}
 
 	_onInstanceConnected() {
@@ -1063,13 +1146,21 @@ class WhatsAppBotTelegram {
 			clearInterval(this.pollingInterval);
 			this.pollingInterval = null;
 		}
+		if (this.webhookMonitorInterval) {
+			clearInterval(this.webhookMonitorInterval);
+			this.webhookMonitorInterval = null;
+		}
 		if (this.webhookServer) {
 			await new Promise((resolve) => this.webhookServer.close(resolve));
 			this.webhookServer = null;
 		}
 		// Certifica-se de remover o webhook ao desligar, se estiver configurado
 		if (this.webhookHost) {
-			await this.apiClient.deleteWebhook();
+			try {
+				await this.apiClient.deleteWebhook();
+			} catch (e) {
+				this.logger.error(`Error deleting webhook during destroy:`, e);
+			}
 		}
 		this._onInstanceDisconnected("DESTROYED");
 		this.cacheManager.stop();
