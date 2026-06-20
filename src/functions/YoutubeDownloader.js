@@ -851,6 +851,17 @@ async function lyricsCommand(bot, message, args, group) {
 	});
 }
 
+async function downloadsDisabledCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	return new ReturnMessage({
+		chatId,
+		content:
+			"⚠️ *Downloads temporariamente desabilitados!* ⚠️\n\nEsta funcionalidade está em manutenção e voltará em breve. Agradecemos a compreensão! ✨"
+	});
+}
+
+const disableDownloads = process.env.DISABLE_DOWNLOADS && process.env.DISABLE_DOWNLOADS !== "false";
+
 // Comandos utilizando a classe Command
 const commands = [
 	new Command({
@@ -858,12 +869,18 @@ const commands = [
 		caseSensitive: false,
 		description: "Baixa um vídeo do YouTube",
 		category: "utilidades",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: ytCommand
+		reactions: disableDownloads
+			? {
+					before: null,
+					after: "⚠️",
+					error: "❌"
+				}
+			: {
+					before: process.env.LOADING_EMOJI ?? "⌛️",
+					after: "✅",
+					error: "❌"
+				},
+		method: disableDownloads ? downloadsDisabledCommand : ytCommand
 	}),
 
 	new Command({
@@ -871,12 +888,18 @@ const commands = [
 		caseSensitive: false,
 		description: "Baixa uma música do YouTube (áudio do vídeo)",
 		category: "utilidades",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "✅",
-			error: "❌"
-		},
-		method: srCommand
+		reactions: disableDownloads
+			? {
+					before: null,
+					after: "⚠️",
+					error: "❌"
+				}
+			: {
+					before: process.env.LOADING_EMOJI ?? "⌛️",
+					after: "✅",
+					error: "❌"
+				},
+		method: disableDownloads ? downloadsDisabledCommand : srCommand
 	}),
 
 	new Command({
@@ -884,12 +907,18 @@ const commands = [
 		caseSensitive: false,
 		description: "Busca a letra de uma música",
 		category: "utilidades",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🎶",
-			error: "❌"
-		},
-		method: lyricsCommand
+		reactions: disableDownloads
+			? {
+					before: null,
+					after: "⚠️",
+					error: "❌"
+				}
+			: {
+					before: process.env.LOADING_EMOJI ?? "⌛️",
+					after: "🎶",
+					error: "❌"
+				},
+		method: disableDownloads ? downloadsDisabledCommand : lyricsCommand
 	})
 ];
 

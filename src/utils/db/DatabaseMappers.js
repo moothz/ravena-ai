@@ -48,12 +48,12 @@ class DatabaseMappers {
 		const dbFile = name === "core" ? "core.db" : `${name}.db`;
 		const dbPath = path.join(sqlitesDir, dbFile);
 
-		this.logger.info(`[DatabaseMappers] Opening better-sqlite3 connection for '${name}' (disk path: ${dbPath})`);
+		this.logger.info(
+			`[DatabaseMappers] Opening better-sqlite3 connection for '${name}' (disk path: ${dbPath})`
+		);
 
 		try {
-			const conn = name === "cooldowns"
-				? new BetterSQLite(":memory:")
-				: new BetterSQLite(dbPath);
+			const conn = name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
 			conn.pragma("journal_mode = WAL");
 			conn.pragma("synchronous = FULL"); // Use FULL for strong corruption prevention on disk restarts
@@ -66,7 +66,12 @@ class DatabaseMappers {
 					conn.exec(schema);
 				} catch (schemaErr) {
 					// If the schema check fails due to corruption, bubble up to the catch block
-					if (schemaErr && schemaErr.message && (schemaErr.message.includes("SQLITE_CORRUPT") || schemaErr.message.includes("malformed"))) {
+					if (
+						schemaErr &&
+						schemaErr.message &&
+						(schemaErr.message.includes("SQLITE_CORRUPT") ||
+							schemaErr.message.includes("malformed"))
+					) {
 						throw schemaErr;
 					}
 					this.logger.error(`[DatabaseMappers] Error applying schema for '${name}':`, schemaErr);
@@ -76,9 +81,15 @@ class DatabaseMappers {
 			this.connections[name] = conn;
 			return conn;
 		} catch (err) {
-			const isCorrupt = err && err.message && (err.message.includes("SQLITE_CORRUPT") || err.message.includes("malformed"));
+			const isCorrupt =
+				err &&
+				err.message &&
+				(err.message.includes("SQLITE_CORRUPT") || err.message.includes("malformed"));
 			if (isCorrupt) {
-				this.logger.error(`[DatabaseMappers] SQLITE_CORRUPT detected on startup for '${name}':`, err);
+				this.logger.error(
+					`[DatabaseMappers] SQLITE_CORRUPT detected on startup for '${name}':`,
+					err
+				);
 
 				// Safely rename the corrupted file to allow fresh initialization and trigger backup restore
 				const corruptPath = `${dbPath}.corrupt-${Date.now()}`;
@@ -86,7 +97,9 @@ class DatabaseMappers {
 					try {
 						fs.copyFileSync(dbPath, corruptPath);
 						fs.unlinkSync(dbPath);
-						this.logger.info(`[DatabaseMappers] Saved corrupt file to ${corruptPath} and deleted original.`);
+						this.logger.info(
+							`[DatabaseMappers] Saved corrupt file to ${corruptPath} and deleted original.`
+						);
 					} catch (e) {
 						this.logger.error(`[DatabaseMappers] Failed to copy/delete corrupt file: ${e.message}`);
 					}
@@ -96,14 +109,25 @@ class DatabaseMappers {
 				const walPath = `${dbPath}-wal`;
 				const shmPath = `${dbPath}-shm`;
 				const journalPath = `${dbPath}-journal`;
-				if (fs.existsSync(walPath)) try { fs.unlinkSync(walPath); } catch (e) {}
-				if (fs.existsSync(shmPath)) try { fs.unlinkSync(shmPath); } catch (e) {}
-				if (fs.existsSync(journalPath)) try { fs.unlinkSync(journalPath); } catch (e) {}
+				if (fs.existsSync(walPath))
+					try {
+						fs.unlinkSync(walPath);
+					} catch (e) {}
+				if (fs.existsSync(shmPath))
+					try {
+						fs.unlinkSync(shmPath);
+					} catch (e) {}
+				if (fs.existsSync(journalPath))
+					try {
+						fs.unlinkSync(journalPath);
+					} catch (e) {}
 
 				// Trigger background restore
 				if (this.db && this.db.backupSystem) {
 					setImmediate(() => {
-						this.logger.warn(`[DatabaseMappers] Triggering corruption restore for '${name}' in background...`);
+						this.logger.warn(
+							`[DatabaseMappers] Triggering corruption restore for '${name}' in background...`
+						);
 						this.db.backupSystem.handleCorruption(name, err).catch((e) => {
 							this.logger.error(`[DatabaseMappers] Failed recovery for '${name}':`, e);
 						});
@@ -112,10 +136,11 @@ class DatabaseMappers {
 
 				// Return a fresh database connection so the bot doesn't crash on boot.
 				// Once the background restore is complete, reinitConnection will re-open it cleanly with the restored file.
-				this.logger.info(`[DatabaseMappers] Initializing fresh temporary database for '${name}' during recovery.`);
-				const freshConn = name === "cooldowns"
-					? new BetterSQLite(":memory:")
-					: new BetterSQLite(dbPath);
+				this.logger.info(
+					`[DatabaseMappers] Initializing fresh temporary database for '${name}' during recovery.`
+				);
+				const freshConn =
+					name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
 				freshConn.pragma("journal_mode = WAL");
 				freshConn.pragma("synchronous = FULL");
@@ -126,7 +151,10 @@ class DatabaseMappers {
 					try {
 						freshConn.exec(schema);
 					} catch (schemaErr) {
-						this.logger.error(`[DatabaseMappers] Error applying schema to fresh database for '${name}':`, schemaErr);
+						this.logger.error(
+							`[DatabaseMappers] Error applying schema to fresh database for '${name}':`,
+							schemaErr
+						);
 					}
 				}
 

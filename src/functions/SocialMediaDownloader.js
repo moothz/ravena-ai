@@ -960,6 +960,17 @@ const downloadCommands = [
 	"vk-audio"
 ];
 
+async function downloadsDisabledCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	return new ReturnMessage({
+		chatId,
+		content:
+			"⚠️ *Downloads temporariamente desabilitados!* ⚠️\n\nEsta funcionalidade está em manutenção e voltará em breve. Agradecemos a compreensão! ✨"
+	});
+}
+
+const disableDownloads = process.env.DISABLE_DOWNLOADS && process.env.DISABLE_DOWNLOADS !== "false";
+
 const commands = downloadCommands.map(
 	(name) =>
 		new Command({
@@ -969,12 +980,18 @@ const commands = downloadCommands.map(
 				name.includes("audio") || name.includes("musica") || name === "sr" ? " (apenas áudio)" : ""
 			}`,
 			category: "utilidades",
-			reactions: {
-				before: process.env.LOADING_EMOJI ?? "⌛️",
-				after: "✅",
-				error: "❌"
-			},
-			method: downloadHandler
+			reactions: disableDownloads
+				? {
+						before: null,
+						after: "⚠️",
+						error: "❌"
+					}
+				: {
+						before: process.env.LOADING_EMOJI ?? "⌛️",
+						after: "✅",
+						error: "❌"
+					},
+			method: disableDownloads ? downloadsDisabledCommand : downloadHandler
 		})
 );
 
