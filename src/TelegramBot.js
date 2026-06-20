@@ -176,7 +176,10 @@ class WhatsAppBotTelegram {
 					// Start Webhook monitor/fallback watchdog
 					this._startWebhookMonitor();
 				} catch (webhookError) {
-					this.logger.error(`[${this.id}] Failed to set up webhook, falling back to polling:`, webhookError);
+					this.logger.error(
+						`[${this.id}] Failed to set up webhook, falling back to polling:`,
+						webhookError
+					);
 					await this._fallbackToPolling();
 				}
 			} else {
@@ -277,7 +280,8 @@ class WhatsAppBotTelegram {
 			try {
 				const webhookInfo = await this.apiClient.bot.getWebHookInfo();
 				if (webhookInfo) {
-					const hasRecentError = webhookInfo.last_error_date && (Date.now() / 1000 - webhookInfo.last_error_date) < 300;
+					const hasRecentError =
+						webhookInfo.last_error_date && Date.now() / 1000 - webhookInfo.last_error_date < 300;
 
 					if (hasRecentError) {
 						this.webhookFailures++;
@@ -286,7 +290,9 @@ class WhatsAppBotTelegram {
 						);
 
 						if (this.webhookFailures >= 3) {
-							this.logger.error(`[${this.id}] Webhook down for 3 consecutive checks. Switching to Polling mode fallback.`);
+							this.logger.error(
+								`[${this.id}] Webhook down for 3 consecutive checks. Switching to Polling mode fallback.`
+							);
 							await this._fallbackToPolling();
 							clearInterval(this.webhookMonitorInterval);
 						}
