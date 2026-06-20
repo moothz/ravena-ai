@@ -1198,6 +1198,232 @@ async function copaSeguir(bot, message, args, group) {
 	}
 }
 
+// ─── Copa GIF via Newsletter ────────────────────────────────
+
+/** ID fixo do canal de newsletter de gols da Copa 2026 */
+const COPA_NEWSLETTER_ID = "120363424179275833@newsletter";
+
+/**
+ * Set de captions já processadas — evita envio duplicado quando múltiplos
+ * bots rodam no mesmo processo Node e todos recebem a mesma mensagem do canal.
+ */
+const _processedCopaGifCaptions = new Set();
+
+/**
+ * Mapas invertidos: emoji de bandeira → fifa_code  e  nome PT → fifa_code.
+ * Construídos uma única vez na inicialização do módulo.
+ */
+const FLAG_TO_CODE = Object.fromEntries(
+	Object.entries(FLAGS).map(([code, emoji]) => [emoji, code])
+);
+const NAMEPT_TO_CODE = Object.fromEntries(
+	Object.entries(NAMES_PT).map(([code, name]) => [name.toLowerCase(), code])
+);
+
+/**
+ * Extrai os fifa_codes dos times mencionados numa caption de gol da Copa.
+ * Estratégia: 1) detecta emojis de bandeira; 2) detecta nomes PT.
+ * @param {string} caption
+ * @returns {string[]} Array de fifa_codes (únicos)
+ */
+function extractTeamCodesFromCaption(caption) {
+	const found = new Set();
+
+	// 1. Busca por emojis de bandeira conhecidos
+	for (const [emoji, code] of Object.entries(FLAG_TO_CODE)) {
+		if (caption.includes(emoji)) found.add(code);
+	}
+
+	// 2. Busca por nomes PT (case-insensitive)
+	const captionLower = caption.toLowerCase();
+	for (const [nameLower, code] of Object.entries(NAMEPT_TO_CODE)) {
+		if (captionLower.includes(nameLower)) found.add(code);
+	}
+
+	return [...found];
+}
+
+/**
+ * Detecta GIF de gol/placar da Copa via newsletter e encaminha para os
+ * grupos que estão seguindo algum dos times mencionados na caption.
+ *
+ * Critérios de detecção:
+ *  - Mensagem vinda do newsletter COPA_NEWSLETTER_ID
+ *  - content._mediaDetails.gifPlayback === true
+ *  - caption contém padrão \d+x\d+ (placar) e "Copa do Mundo"
+ *
+ * @param {Object} message - Mensagem formatada pelo EventHandler
+ * @param {Object} bot - Bot que recebeu a mensagem (usado para download)
+ * @returns {Promise<boolean>} true se detectado e encaminhado
+ */
+async function detectCopaGif(message, bot) {
+	try {
+		// 1. Valida origem
+		if (message.from !== COPA_NEWSLETTER_ID) return false;
+
+		// 2. Valida que é um GIF (gifPlayback = true)
+		const mediaDetails = message.content?._mediaDetails;
+		if (!mediaDetails?.gifPlayback) return false;
+
+		// 3. Valida caption com placar e contexto da Copa
+		const caption = mediaDetails.caption || "";
+		if (!caption) return false;
+
+		const hasScore = /\d+x\d+/i.test(caption);
+		const hasCopa = /copa do mundo/i.test(caption);
+		if (!hasScore || !hasCopa) return false;
+
+		// 4. Dedup: mesma caption = mesma mensagem (múltiplos bots no mesmo processo)
+		if (_processedCopaGifCaptions.has(caption)) {
+			logger.debug(
+				`[Copa GIF] Caption já processada, ignorando dedup: ${caption.substring(0, 60)}`
+			);
+			return false;
+		}
+		_processedCopaGifCaptions.add(caption);
+
+		// Limpa dedup após 10min para não acumular memória indefinidamente
+		setTimeout(() => _processedCopaGifCaptions.delete(caption), 10 * 60 * 1000);
+
+		logger.info(`[Copa GIF] GIF de gol detectado! Caption: ${caption.substring(0, 80)}`);
+
+		// 5. Detecta times na caption
+		const fifaCodes = extractTeamCodesFromCaption(caption);
+		if (fifaCodes.length === 0) {
+			logger.warn(`[Copa GIF] Nenhum time reconhecido na caption: ${caption.substring(0, 80)}`);
+			return false;
+		}
+		logger.info(`[Copa GIF] Times detectados: ${fifaCodes.join(", ")}`);
+
+		// 6. Busca team_ids pela API para consultar o BD
+		let teamsMap = {};
+		try {
+			teamsMap = await fetchTeamsMap();
+		} catch (e) {
+			logger.error(`[Copa GIF] Erro ao buscar mapa de times: ${e.message}`);
+		}
+
+		// Mapeia fifa_codes → team_ids
+		const teamIds = [];
+		for (const [id, team] of Object.entries(teamsMap)) {
+			if (fifaCodes.includes(team.fifa_code)) teamIds.push(String(id));
+		}
+
+		if (teamIds.length === 0) {
+			logger.warn(`[Copa GIF] Nenhum team_id encontrado para códigos: ${fifaCodes.join(", ")}`);
+			return false;
+		}
+
+		// 7. Consulta BD: grupos seguindo algum desses times
+		const placeholders = teamIds.map(() => "?").join(", ");
+		const followers = await database.dbAll(
+			"copa_seguir",
+			`SELECT DISTINCT chat_id FROM copa_seguindo WHERE team_id IN (${placeholders})`,
+			teamIds
+		);
+
+		if (!followers || followers.length === 0) {
+			logger.info(`[Copa GIF] Nenhum grupo seguindo os times: ${fifaCodes.join(", ")}`);
+			return true; // detectou, mas sem destinatários
+		}
+
+		const chatIds = followers.map((f) => f.chat_id);
+		logger.info(`[Copa GIF] Encaminhando para ${chatIds.length} grupo(s): ${chatIds.join(", ")}`);
+
+		// 8. Baixa a mídia via bot que recebeu a mensagem
+		let media = null;
+		try {
+			media = await message.downloadMedia();
+		} catch (e) {
+			logger.error(`[Copa GIF] Erro ao baixar mídia: ${e.message}`);
+		}
+
+		if (!media) {
+			logger.error(`[Copa GIF] Download da mídia falhou.`);
+			return false;
+		}
+
+		// 9. Prepara token aleatório para anti-spam (mesmo padrão do webhook /copa)
+		const rndToken = () =>
+			Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 6);
+
+		const captionComToken = `${caption}\n\n_${rndToken()}_`;
+
+		// 10. Obtém lista de todos os bots via bot.botApi (injetado pelo BotAPI no init)
+		const allBots = bot?.botApi?.bots || [bot];
+
+		// 11. Envia para cada chatId
+		for (const chatId of chatIds) {
+			try {
+				const isWhatsAppChat =
+					chatId.includes("@") ||
+					(/^\d+$/.test(chatId) && chatId.length >= 10 && chatId.length <= 15);
+
+				if (isWhatsAppChat) {
+					// Tenta todos os bots WA até um conseguir enviar
+					const waBots = allBots.filter((b) => b.isConnected && !b.useTelegram && !b.useDiscord);
+					if (waBots.length === 0) {
+						const fallbackWa = allBots.find((b) => !b.useTelegram && !b.useDiscord);
+						if (fallbackWa) waBots.push(fallbackWa);
+					}
+
+					let sent = false;
+					for (const currentBot of waBots) {
+						try {
+							await currentBot.sendMessage(chatId, media, {
+								caption: captionComToken,
+								sendVideoAsGif: true
+							});
+							logger.info(
+								`[Copa GIF] Enviado para ${chatId} via bot ${currentBot.id || currentBot.botId}`
+							);
+							sent = true;
+							break;
+						} catch (err) {
+							logger.warn(
+								`[Copa GIF] Falhou com bot ${currentBot.id || currentBot.botId}: ${err.message}. Tentando próximo...`
+							);
+						}
+					}
+
+					if (!sent) {
+						logger.error(`[Copa GIF] Todos os bots WA falharam ao enviar para ${chatId}`);
+					}
+				} else {
+					// Telegram ou Discord
+					let targetBot = null;
+					if (/^\d{17,20}$/.test(chatId)) {
+						targetBot =
+							allBots.find((b) => b.useDiscord && b.isConnected) ||
+							allBots.find((b) => b.useDiscord);
+					} else {
+						targetBot =
+							allBots.find((b) => b.useTelegram && b.isConnected) ||
+							allBots.find((b) => b.useTelegram);
+					}
+
+					if (targetBot) {
+						await targetBot.sendMessage(chatId, media, {
+							caption: captionComToken,
+							sendVideoAsGif: true
+						});
+						logger.info(`[Copa GIF] Enviado para ${chatId} via ${targetBot.id}`);
+					} else {
+						logger.error(`[Copa GIF] Nenhum bot compatível para ${chatId}`);
+					}
+				}
+			} catch (err) {
+				logger.error(`[Copa GIF] Erro ao enviar para ${chatId}: ${err.message}`);
+			}
+		}
+
+		return true;
+	} catch (error) {
+		logger.error("[Copa GIF] Erro inesperado em detectCopaGif:", error);
+		return false;
+	}
+}
+
 // ─── Registro ────────────────────────────────────────────────
 
 const commands = [
@@ -1280,5 +1506,6 @@ module.exports = {
 	NAMES_PT,
 	flag,
 	namePt,
-	fetchTeamsMap
+	fetchTeamsMap,
+	detectCopaGif
 };

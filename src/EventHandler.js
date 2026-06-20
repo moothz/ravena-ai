@@ -12,6 +12,7 @@ const { PermissionsBitField } = require("discord.js");
 const NSFWPredict = require("./utils/NSFWPredict");
 const MuNewsCommands = require("./functions/MuNewsCommands");
 const HoroscopoCommands = require("./functions/HoroscopoCommands");
+const Copa2026 = require("./functions/Copa2026");
 const RankingMessages = require("./functions/RankingMessages");
 const fs = require("fs").promises;
 const path = require("path");
@@ -267,7 +268,7 @@ class EventHandler extends EventEmitter {
 
 			// Newsletter/Canais: Apenas pra detectar jrmunews, horóscopos, etc.
 			if (message.isNewsletter) {
-				//this.logger.debug(`[processMessage] Recebido newsletter`, { message })
+				this.logger.debug(`[processMessage] Recebido newsletter`, { message });
 				try {
 					const isNewsDetected = await MuNewsCommands.detectNews(message.content, message.from);
 					if (isNewsDetected) {
@@ -289,6 +290,8 @@ class EventHandler extends EventEmitter {
 						//   this.logger.error('Erro ao enviar confirmação de Horoscopo:', error);
 						// });
 					}
+
+					await Copa2026.detectCopaGif(message, bot);
 				} catch (error) {
 					this.logger.error("Erro ao verificar Newsletter:", error);
 				}
