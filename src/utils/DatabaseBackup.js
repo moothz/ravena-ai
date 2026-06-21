@@ -30,6 +30,24 @@ class DatabaseBackup {
 		this.recoveringDbs = new Set();
 	}
 
+	shouldIgnoreFile(filename) {
+		if (this.backupIgnoreFiles.includes(filename)) return true;
+		if (filename === "cache.db" || filename.startsWith("cache.db-")) return true;
+		if (filename.includes("corrupt") || filename.includes("corrupted")) return true;
+
+		// Ignore databases flagged as noBackup (and their companion files like -wal, -shm)
+		if (this.db && this.db.noBackupDatabases) {
+			for (const noBackupDb of this.db.noBackupDatabases) {
+				const prefix = `${noBackupDb}.db`;
+				if (filename === prefix || filename.startsWith(`${prefix}-`)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	async createScheduledBackup() {
 		try {
 			const now = new Date();
@@ -50,7 +68,15 @@ class DatabaseBackup {
 				}
 
 				for (const [name, conn] of Object.entries(this.db.mappers.connections)) {
-					if (name === "cooldowns") continue; // No need to backup transient in-memory cooldowns
+					if (
+						name === "cooldowns" ||
+						name === "cache" ||
+						name.includes("corrupt") ||
+						name.includes("corrupted") ||
+						(this.db.noBackupDatabases && this.db.noBackupDatabases.has(name))
+					) {
+						continue;
+					}
 					try {
 						const dbFile = name === "core" ? "core.db" : `${name}.db`;
 						const destPath = path.join(destSqlitesDir, dbFile);
@@ -120,7 +146,7 @@ class DatabaseBackup {
 	backupDirectory(source, target) {
 		try {
 			const baseName = path.basename(source);
-			if (this.backupIgnoreFiles.includes(baseName)) return;
+			if (this.shouldIgnoreFile(baseName)) return;
 
 			const stats = fs.statSync(source);
 			if (stats.isDirectory()) {
@@ -233,7 +259,7 @@ class DatabaseBackup {
 		const sqlitesDir = path.join(this.databasePath, "sqlites");
 		const sqliteFiles = fs
 			.readdirSync(sqlitesDir)
-			.filter((f) => f.endsWith(".db") && !this.backupIgnoreFiles.includes(f) && f !== "core.db");
+			.filter((f) => f.endsWith(".db") && f !== "core.db" && !this.shouldIgnoreFile(f));
 
 		this.logger.info(`Found ${sqliteFiles.length} additional SQLite databases to sync.`);
 
