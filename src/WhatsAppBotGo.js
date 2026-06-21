@@ -2024,6 +2024,12 @@ class WhatsAppBotGo {
 						? "video"
 						: (mime.lookup(content.split("?")[0]).split("/")[0] ?? "document");
 
+					// Se sendVideoAsGif estiver ativo e o tipo for vídeo, use "gif" para que a API Go
+					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)
+					if (options.sendVideoAsGif && payload.type === "video") {
+						payload.type = "gif";
+					}
+
 					this.logger.debug(`[sendMessage] Content is URL! `, { endpoint, payload });
 				} else {
 					endpoint = "/send/text";
@@ -2066,6 +2072,12 @@ class WhatsAppBotGo {
 						mediaType = "document";
 						// Se enviar como doc, manda a nossa URL publica junto também
 						payload.caption += `\n\n> Link temporário: ${urlPublica}`;
+					}
+
+					// Se sendVideoAsGif estiver ativo e o tipo for vídeo, use "gif" para que a API Go
+					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)
+					if (options.sendVideoAsGif && mediaType === "video") {
+						mediaType = "gif";
 					}
 
 					payload.type = mediaType.split("/")[0];
