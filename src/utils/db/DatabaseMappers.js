@@ -55,7 +55,7 @@ class DatabaseMappers {
 		try {
 			const conn = name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-			conn.pragma("journal_mode = WAL");
+			conn.pragma("journal_mode = DELETE");
 			conn.pragma("synchronous = FULL"); // Use FULL for strong corruption prevention on disk restarts
 			conn.pragma("busy_timeout = 5000");
 
@@ -142,7 +142,7 @@ class DatabaseMappers {
 				const freshConn =
 					name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-				freshConn.pragma("journal_mode = WAL");
+				freshConn.pragma("journal_mode = DELETE");
 				freshConn.pragma("synchronous = FULL");
 				freshConn.pragma("busy_timeout = 5000");
 

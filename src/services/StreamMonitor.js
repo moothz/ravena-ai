@@ -101,6 +101,11 @@ class StreamMonitor extends EventEmitter {
 		this.isMonitoring = false;
 		this.isReady = false;
 
+		// Cache em disco para controle de duplicatas em caso de reset de DB
+		this.notifiedCache = new Set();
+		this.notifiedCacheFile = path.join(this.database.databasePath, "notified_streams_cache.json");
+		this._loadNotifiedCache();
+
 		this.logger = new Logger("stream-monitor");
 		this.logger.info("Service StreamMonitor carregado (modo singleton - SQLite)");
 
@@ -379,6 +384,33 @@ class StreamMonitor extends EventEmitter {
 			return;
 		}
 
+		// Failsafe: Prevent duplicate notification spam using persistent notifiedCache (even if DB is restored/reset)
+		let notificationKey;
+		if (eventName === "streamOnline") {
+			if (data.platform === "youtube" && data.videoId) {
+				notificationKey = `online:${data.platform}:${data.channelName.toLowerCase()}:${data.videoId}`;
+			} else {
+				const startedAt = data.startedAt || (status && status.startedAt);
+				if (startedAt) {
+					notificationKey = `online:${data.platform}:${data.channelName.toLowerCase()}:${startedAt}`;
+				}
+			}
+		} else if (eventName === "newVideo") {
+			if (data.videoId) {
+				notificationKey = `video:${data.platform}:${data.channelName.toLowerCase()}:${data.videoId}`;
+			}
+		}
+
+		if (notificationKey) {
+			if (this.notifiedCache.has(notificationKey)) {
+				this.logger.info(
+					`[Failsafe] Suppressing duplicate ${eventName} notification for ${channelKey} (Already in notifiedCache: ${notificationKey})`
+				);
+				return;
+			}
+			this._addNotifiedCache(notificationKey);
+		}
+
 		// For 'newVideo', the caller (poll function) handles ID uniqueness check.
 		// We pass it through here to ensure history is updated.
 
@@ -391,6 +423,62 @@ class StreamMonitor extends EventEmitter {
 
 		// Persist the event history immediately
 		await this._updateStatusInDB(channelKey, status);
+	}
+
+	/**
+	 * Carrega o cache de transmissões/vídeos notificados do arquivo JSON
+	 * @private
+	 */
+	_loadNotifiedCache() {
+		try {
+			if (fs.existsSync(this.notifiedCacheFile)) {
+				const data = JSON.parse(fs.readFileSync(this.notifiedCacheFile, "utf8"));
+				if (Array.isArray(data)) {
+					const now = Date.now();
+					const cutoff = now - 48 * 60 * 60 * 1000; // 48 horas de retenção
+
+					data.forEach((entry) => {
+						if (entry && entry.key && entry.timestamp && entry.timestamp > cutoff) {
+							this.notifiedCache.add(entry.key);
+						}
+					});
+					this.logger.info(
+						`Carregado cache de notificações com ${this.notifiedCache.size} chaves ativas.`
+					);
+				}
+			}
+		} catch (error) {
+			this.logger.error("Erro ao carregar cache de notificações:", error);
+		}
+	}
+
+	/**
+	 * Adiciona uma chave ao cache de notificações e persiste em disco
+	 * @private
+	 */
+	_addNotifiedCache(key) {
+		this.notifiedCache.add(key);
+		try {
+			let currentCache = [];
+			if (fs.existsSync(this.notifiedCacheFile)) {
+				try {
+					currentCache = JSON.parse(fs.readFileSync(this.notifiedCacheFile, "utf8")) || [];
+				} catch (e) {}
+			}
+
+			const now = Date.now();
+			const cutoff = now - 48 * 60 * 60 * 1000;
+
+			// Filtra chaves antigas e adiciona a nova
+			currentCache = currentCache.filter(
+				(entry) => entry && entry.timestamp && entry.timestamp > cutoff
+			);
+			currentCache.push({ key, timestamp: now });
+
+			this.database.saveJSONToFile(this.notifiedCacheFile, currentCache);
+		} catch (error) {
+			this.logger.error("Erro ao salvar cache de notificações:", error);
+		}
 	}
 
 	/**
@@ -1471,6 +1559,20 @@ class StreamMonitor extends EventEmitter {
 				// Check if this is a new video
 				const lastVideoId = this.streamStatuses[channelKey]?.lastVideo?.id ?? "";
 				if (videoId !== lastVideoId) {
+					// Failsafe: Only notify if the video was published in the last 24 hours to prevent spam on DB resets/imports
+					const publishedAtStr = latestEntry.published;
+					let isRecent = true;
+					if (publishedAtStr) {
+						const published = new Date(publishedAtStr);
+						const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+						if (published < oneDayAgo) {
+							isRecent = false;
+							this.logger.info(
+								`[Failsafe] Ignoring old YouTube video ${videoId} for ${channel.name} (published at ${publishedAtStr}).`
+							);
+						}
+					}
+
 					// Get more details about the video to determine if it's a livestream
 					const videoResponse = await axios.get(`https://www.youtube.com/watch?v=${videoId}`);
 					const html = videoResponse.data;
@@ -1491,42 +1593,47 @@ class StreamMonitor extends EventEmitter {
 						thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` // Best quality thumbnail
 					};
 
-					// If it's a livestream, update live status
-					const wasLive = this.streamStatuses[channelKey].isLive;
-					if (isLiveNow) {
-						this.streamStatuses[channelKey].isLive = true;
+					if (isRecent) {
+						// If it's a livestream, update live status
+						const wasLive = this.streamStatuses[channelKey].isLive;
+						if (isLiveNow) {
+							this.streamStatuses[channelKey].isLive = true;
 
-						if (!wasLive) {
-							// Emit streamOnline event
-							await this._emitIfSafe("streamOnline", {
+							if (!wasLive) {
+								// Emit streamOnline event
+								await this._emitIfSafe("streamOnline", {
+									platform: "youtube",
+									channelName: channel.name,
+									title: latestEntry.title,
+									thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+									url: videoUrl,
+									videoId
+								});
+							}
+						} else {
+							// If it was live before but not now, emit offline event
+							if (wasLive) {
+								this.streamStatuses[channelKey].isLive = false;
+								await this._emitIfSafe("streamOffline", {
+									platform: "youtube",
+									channelName: channel.name
+								});
+							}
+
+							// Emit new video event
+							await this._emitIfSafe("newVideo", {
 								platform: "youtube",
 								channelName: channel.name,
 								title: latestEntry.title,
 								thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
 								url: videoUrl,
-								videoId
+								videoId,
+								publishedAt: latestEntry.published
 							});
 						}
 					} else {
-						// If it was live before but not now, emit offline event
-						if (wasLive) {
-							this.streamStatuses[channelKey].isLive = false;
-							await this._emitIfSafe("streamOffline", {
-								platform: "youtube",
-								channelName: channel.name
-							});
-						}
-
-						// Emit new video event
-						await this._emitIfSafe("newVideo", {
-							platform: "youtube",
-							channelName: channel.name,
-							title: latestEntry.title,
-							thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-							url: videoUrl,
-							videoId,
-							publishedAt: latestEntry.published
-						});
+						// Just update the live status in memory/DB without emitting notifications
+						this.streamStatuses[channelKey].isLive = !!isLiveNow;
 					}
 				} else {
 					// Check if an existing livestream ended
