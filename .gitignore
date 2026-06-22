@@ -191,3 +191,4 @@ data/www.youtube.com_cookies.json
 /scratch
 /.antigravitycli
 /data/qrcodes
+data/notified_streams_cache.json
