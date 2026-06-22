@@ -101,12 +101,13 @@ class StreamMonitor extends EventEmitter {
 		this.isMonitoring = false;
 		this.isReady = false;
 
+		this.logger = new Logger("stream-monitor");
+
 		// Cache em disco para controle de duplicatas em caso de reset de DB
 		this.notifiedCache = new Set();
 		this.notifiedCacheFile = path.join(this.database.databasePath, "notified_streams_cache.json");
 		this._loadNotifiedCache();
 
-		this.logger = new Logger("stream-monitor");
 		this.logger.info("Service StreamMonitor carregado (modo singleton - SQLite)");
 
 		// Initialize database
