@@ -702,6 +702,12 @@ class InviteSystem {
 						this.logger.error("Erro ao verificar se o autor é doador:", donationError);
 					}
 
+					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
+					if (isDonator) {
+						infoMessageHeader = `💸💸 R$${donateValue} 💸💸\n` + infoMessageHeader;
+					}
+					const ownerMark = ownerMatch ? " ✅" : "";
+
 					// Fetch Invite statistics
 					let wasInGroupBefore = false;
 					if (inviteInfoData?.JID) {
