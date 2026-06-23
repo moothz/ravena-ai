@@ -134,10 +134,22 @@ class CoreRepository {
 		}
 
 		// Create indexes for performance
-		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_author ON invite_history(author_id)");
-		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_code ON invite_history(invite_code)");
-		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_jid ON invite_history(group_jid)");
-		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_group_periods_jid ON group_membership_periods(group_jid)");
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_invite_history_author ON invite_history(author_id)"
+		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_invite_history_code ON invite_history(invite_code)"
+		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_invite_history_jid ON invite_history(group_jid)"
+		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_group_periods_jid ON group_membership_periods(group_jid)"
+		);
 
 		// custom_commands.db
 		this.mappers.exec(
@@ -992,7 +1004,11 @@ class CoreRepository {
 	async recordGroupJoin(groupJid, groupName, timestamp, responsible) {
 		try {
 			const ts = timestamp || Date.now();
-			const respStr = responsible ? (typeof responsible === "object" ? JSON.stringify(responsible) : String(responsible)) : null;
+			const respStr = responsible
+				? typeof responsible === "object"
+					? JSON.stringify(responsible)
+					: String(responsible)
+				: null;
 
 			// Close any existing open periods
 			this.mappers.run(
@@ -1005,7 +1021,13 @@ class CoreRepository {
 			this.mappers.run(
 				this.DB,
 				"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, join_responsible, json_data) VALUES (?, ?, ?, ?, ?)",
-				[groupJid, groupName, ts, respStr, JSON.stringify({ groupJid, groupName, join_timestamp: ts, join_responsible: responsible })]
+				[
+					groupJid,
+					groupName,
+					ts,
+					respStr,
+					JSON.stringify({ groupJid, groupName, join_timestamp: ts, join_responsible: responsible })
+				]
 			);
 			return true;
 		} catch (error) {
@@ -1017,7 +1039,11 @@ class CoreRepository {
 	async recordGroupLeave(groupJid, timestamp, responsible) {
 		try {
 			const ts = timestamp || Date.now();
-			const respStr = responsible ? (typeof responsible === "object" ? JSON.stringify(responsible) : String(responsible)) : null;
+			const respStr = responsible
+				? typeof responsible === "object"
+					? JSON.stringify(responsible)
+					: String(responsible)
+				: null;
 
 			// Find open period
 			const openPeriod = this.mappers.get(
@@ -1038,7 +1064,12 @@ class CoreRepository {
 				this.mappers.run(
 					this.DB,
 					"INSERT INTO group_membership_periods (group_jid, leave_timestamp, leave_responsible, json_data) VALUES (?, ?, ?, ?)",
-					[groupJid, ts, respStr, JSON.stringify({ groupJid, leave_timestamp: ts, leave_responsible: responsible })]
+					[
+						groupJid,
+						ts,
+						respStr,
+						JSON.stringify({ groupJid, leave_timestamp: ts, leave_responsible: responsible })
+					]
 				);
 			}
 			return true;
@@ -1075,8 +1106,16 @@ class CoreRepository {
 						join_timestamp: p.joinTimestamp || null,
 						leave_timestamp: p.leaveTimestamp || null,
 						duration: p.duration || null,
-						join_responsible: p.joinResponsible ? (typeof p.joinResponsible === "object" ? JSON.stringify(p.joinResponsible) : String(p.joinResponsible)) : null,
-						leave_responsible: p.leaveResponsible ? (typeof p.leaveResponsible === "object" ? JSON.stringify(p.leaveResponsible) : String(p.leaveResponsible)) : null,
+						join_responsible: p.joinResponsible
+							? typeof p.joinResponsible === "object"
+								? JSON.stringify(p.joinResponsible)
+								: String(p.joinResponsible)
+							: null,
+						leave_responsible: p.leaveResponsible
+							? typeof p.leaveResponsible === "object"
+								? JSON.stringify(p.leaveResponsible)
+								: String(p.leaveResponsible)
+							: null,
 						json_data: JSON.stringify(p)
 					};
 					stmt.run(row);

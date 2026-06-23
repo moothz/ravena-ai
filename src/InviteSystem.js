@@ -708,6 +708,12 @@ class InviteSystem {
 					}
 					const ownerMark = ownerMatch ? " ✅" : "";
 
+					let botWarning = "";
+					if (otherBotsInGroup.length > 0) {
+						const botsStr = otherBotsInGroup.map((b) => `+${b}`).join(", ");
+						botWarning = `\n⚠️ *Bot ${botsStr} Já está neste grupo!*`;
+					}
+
 					// Fetch Invite statistics
 					let wasInGroupBefore = false;
 					if (inviteInfoData?.JID) {
@@ -734,7 +740,10 @@ class InviteSystem {
 					}
 
 					try {
-						const groupInvites = await this.database.getInviteHistoryByGroup(inviteInfoData?.JID || null, inviteCode);
+						const groupInvites = await this.database.getInviteHistoryByGroup(
+							inviteInfoData?.JID || null,
+							inviteCode
+						);
 						groupInvitesCount = groupInvites.length;
 
 						const otherInvitersMap = new Map();
@@ -748,7 +757,9 @@ class InviteSystem {
 							}
 						}
 						if (otherInvitersMap.size > 0) {
-							const list = Array.from(otherInvitersMap.entries()).map(([num, name]) => `${name} (${num})`);
+							const list = Array.from(otherInvitersMap.entries()).map(
+								([num, name]) => `${name} (${num})`
+							);
 							otherInvitersText = `- 👥 *Outros que já indicaram*: ${list.join(", ")}\n`;
 						}
 					} catch (err) {
@@ -761,16 +772,20 @@ class InviteSystem {
 							if (periods && periods.length > 0) {
 								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
 								periods.forEach((p, idx) => {
-									const joinDate = p.join_timestamp ? new Date(p.join_timestamp).toLocaleString("pt-BR") : "Desconhecido";
-									const leaveDate = p.leave_timestamp ? new Date(p.leave_timestamp).toLocaleString("pt-BR") : "Ainda no grupo";
-									
+									const joinDate = p.join_timestamp
+										? new Date(p.join_timestamp).toLocaleString("pt-BR")
+										: "Desconhecido";
+									const leaveDate = p.leave_timestamp
+										? new Date(p.leave_timestamp).toLocaleString("pt-BR")
+										: "Ainda no grupo";
+
 									let durationText = "";
 									if (p.duration) {
 										const sec = Math.floor(p.duration / 1000);
 										const days = Math.floor(sec / 86400);
 										const hours = Math.floor((sec % 86400) / 3600);
 										const minutes = Math.floor((sec % 3600) / 60);
-										
+
 										const parts = [];
 										if (days > 0) parts.push(`${days}d`);
 										if (hours > 0) parts.push(`${hours}h`);
@@ -780,7 +795,7 @@ class InviteSystem {
 									} else if (p.join_timestamp && p.leave_timestamp) {
 										durationText = " (tempo desconhecido)";
 									}
-									
+
 									membershipHistoryText += `${idx + 1}. 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
 								});
 							}
