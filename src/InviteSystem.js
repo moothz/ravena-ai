@@ -617,6 +617,15 @@ class InviteSystem {
 				authorName: userName
 			});
 
+			await this.database.addInviteHistory({
+				code: inviteCode,
+				groupJid: inviteInfoData?.JID || null,
+				authorId,
+				authorName: userName,
+				timestamp: Date.now(),
+				reason
+			});
+
 			// Envia notificação para o usuário
 			let extraText = "";
 			let addedAny = false;
@@ -693,21 +702,7 @@ class InviteSystem {
 						this.logger.error("Erro ao verificar se o autor é doador:", donationError);
 					}
 
-					// Monta a mensagem final com as infos novas
-					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
-					if (isDonator) {
-						infoMessageHeader = `💸💸 R$${donateValue} 💸💸\n` + infoMessageHeader;
-					}
-
-					let botWarning = "";
-					if (otherBotsInGroup.length > 0) {
-						const botsStr = otherBotsInGroup.map((b) => `+${b}`).join(", ");
-						botWarning = `\n⚠️ *Bot ${botsStr} Já está neste grupo!*`;
-					}
-
-					const ownerMark = ownerMatch ? " ✅" : "";
-
-					// Verifica se o grupo já esteve no bot (JID já existe na base)
+					// Fetch Invite statistics
 					let wasInGroupBefore = false;
 					if (inviteInfoData?.JID) {
 						try {
@@ -720,6 +715,74 @@ class InviteSystem {
 						}
 					}
 
+					let authorInvitesCount = 0;
+					let groupInvitesCount = 0;
+					let otherInvitersText = "";
+					let membershipHistoryText = "";
+
+					try {
+						const authorInvites = await this.database.getInviteHistoryByAuthor(authorId);
+						authorInvitesCount = authorInvites.length;
+					} catch (err) {
+						this.logger.error("Erro ao carregar histórico de convites do autor:", err);
+					}
+
+					try {
+						const groupInvites = await this.database.getInviteHistoryByGroup(inviteInfoData?.JID || null, inviteCode);
+						groupInvitesCount = groupInvites.length;
+
+						const otherInvitersMap = new Map();
+						const cleanCurrentAuthor = authorId.replace(/[^0-9]/g, "");
+						for (const gi of groupInvites) {
+							if (gi.author_id) {
+								const cleanGiAuthor = gi.author_id.replace(/[^0-9]/g, "");
+								if (cleanGiAuthor !== cleanCurrentAuthor) {
+									otherInvitersMap.set(cleanGiAuthor, gi.author_name || "Pessoa");
+								}
+							}
+						}
+						if (otherInvitersMap.size > 0) {
+							const list = Array.from(otherInvitersMap.entries()).map(([num, name]) => `${name} (${num})`);
+							otherInvitersText = `- 👥 *Outros que já indicaram*: ${list.join(", ")}\n`;
+						}
+					} catch (err) {
+						this.logger.error("Erro ao carregar histórico de convites do grupo:", err);
+					}
+
+					if (inviteInfoData?.JID) {
+						try {
+							const periods = await this.database.getGroupMembershipPeriods(inviteInfoData.JID);
+							if (periods && periods.length > 0) {
+								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
+								periods.forEach((p, idx) => {
+									const joinDate = p.join_timestamp ? new Date(p.join_timestamp).toLocaleString("pt-BR") : "Desconhecido";
+									const leaveDate = p.leave_timestamp ? new Date(p.leave_timestamp).toLocaleString("pt-BR") : "Ainda no grupo";
+									
+									let durationText = "";
+									if (p.duration) {
+										const sec = Math.floor(p.duration / 1000);
+										const days = Math.floor(sec / 86400);
+										const hours = Math.floor((sec % 86400) / 3600);
+										const minutes = Math.floor((sec % 3600) / 60);
+										
+										const parts = [];
+										if (days > 0) parts.push(`${days}d`);
+										if (hours > 0) parts.push(`${hours}h`);
+										if (minutes > 0) parts.push(`${minutes}m`);
+										if (parts.length === 0) parts.push("menos de 1m");
+										durationText = ` (${parts.join(" ")})`;
+									} else if (p.join_timestamp && p.leave_timestamp) {
+										durationText = " (tempo desconhecido)";
+									}
+									
+									membershipHistoryText += `${idx + 1}. 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
+								});
+							}
+						} catch (err) {
+							this.logger.error("Erro ao carregar histórico de estadias:", err);
+						}
+					}
+
 					const infoMessage =
 						infoMessageHeader +
 						`🔗 *Link*: chat.whatsapp.com/${inviteCode}\n` +
@@ -729,6 +792,10 @@ class InviteSystem {
 							? `👥 *Membros*: ${inviteInfoData.ParticipantCount}\n`
 							: "") +
 						(wasInGroupBefore ? `⚠️ Já esteve neste grupo\n` : "") +
+						`- 📈 *Convites deste usuário*: ${authorInvitesCount}\n` +
+						`- 📊 *Vezes que este grupo foi indicado*: ${groupInvitesCount}\n` +
+						otherInvitersText +
+						membershipHistoryText +
 						`\n💬 *Motivo:*\n${reason}\n` +
 						botWarning +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);

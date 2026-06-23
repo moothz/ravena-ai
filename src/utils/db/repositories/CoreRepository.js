@@ -104,6 +104,27 @@ class CoreRepository {
 			local_blocks: `CREATE TABLE IF NOT EXISTS local_blocks (
 				number TEXT PRIMARY KEY,
 				timestamp INTEGER
+			)`,
+			invite_history: `CREATE TABLE IF NOT EXISTS invite_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				invite_code TEXT,
+				group_jid TEXT,
+				author_id TEXT,
+				author_name TEXT,
+				timestamp INTEGER,
+				reason TEXT,
+				json_data TEXT
+			)`,
+			group_membership_periods: `CREATE TABLE IF NOT EXISTS group_membership_periods (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_jid TEXT,
+				group_name TEXT,
+				join_timestamp INTEGER,
+				leave_timestamp INTEGER,
+				duration INTEGER,
+				join_responsible TEXT,
+				leave_responsible TEXT,
+				json_data TEXT
 			)`
 		};
 
@@ -111,6 +132,12 @@ class CoreRepository {
 			this.mappers.exec(this.DB, createSql);
 			this._ensureTableSchema(this.DB, tableName, createSql);
 		}
+
+		// Create indexes for performance
+		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_author ON invite_history(author_id)");
+		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_code ON invite_history(invite_code)");
+		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_invite_history_jid ON invite_history(group_jid)");
+		this.mappers.exec(this.DB, "CREATE INDEX IF NOT EXISTS idx_group_periods_jid ON group_membership_periods(group_jid)");
 
 		// custom_commands.db
 		this.mappers.exec(
@@ -870,6 +897,195 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error getting local blocks:", error);
 			return [];
+		}
+	}
+
+	// --- Invite History ---
+
+	async addInviteHistory(invite) {
+		try {
+			const row = {
+				invite_code: invite.code || null,
+				group_jid: invite.groupJid || null,
+				author_id: invite.authorId || null,
+				author_name: invite.authorName || null,
+				timestamp: invite.timestamp || Date.now(),
+				reason: invite.reason || null,
+				json_data: JSON.stringify(invite)
+			};
+			this.mappers.run(
+				this.DB,
+				"INSERT INTO invite_history (invite_code, group_jid, author_id, author_name, timestamp, reason, json_data) VALUES (@invite_code, @group_jid, @author_id, @author_name, @timestamp, @reason, @json_data)",
+				row
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error adding invite history:", error);
+			return false;
+		}
+	}
+
+	async getInviteHistoryByAuthor(authorId) {
+		try {
+			const cleanAuthorId = authorId.replace(/[^0-9]/g, "");
+			return this.mappers.all(
+				this.DB,
+				"SELECT * FROM invite_history WHERE REPLACE(REPLACE(author_id, '@c.us', ''), '@s.whatsapp.net', '') = ?",
+				[cleanAuthorId]
+			);
+		} catch (error) {
+			this.logger.error("Error getting invite history by author:", error);
+			return [];
+		}
+	}
+
+	async getInviteHistoryByGroup(groupJid, inviteCode) {
+		try {
+			let query = "SELECT * FROM invite_history WHERE 1=0";
+			const params = [];
+			if (groupJid && inviteCode) {
+				query = "SELECT * FROM invite_history WHERE group_jid = ? OR invite_code = ?";
+				params.push(groupJid, inviteCode);
+			} else if (groupJid) {
+				query = "SELECT * FROM invite_history WHERE group_jid = ?";
+				params.push(groupJid);
+			} else if (inviteCode) {
+				query = "SELECT * FROM invite_history WHERE invite_code = ?";
+				params.push(inviteCode);
+			}
+			return this.mappers.all(this.DB, query, params);
+		} catch (error) {
+			this.logger.error("Error getting invite history by group:", error);
+			return [];
+		}
+	}
+
+	async saveInviteHistories(invites) {
+		try {
+			this.mappers.transaction(this.DB, () => {
+				const conn = this.mappers.getConnection(this.DB);
+				const stmt = conn.prepare(
+					"INSERT INTO invite_history (invite_code, group_jid, author_id, author_name, timestamp, reason, json_data) VALUES (@invite_code, @group_jid, @author_id, @author_name, @timestamp, @reason, @json_data)"
+				);
+				for (const invite of invites) {
+					const row = {
+						invite_code: invite.code || null,
+						group_jid: invite.groupJid || null,
+						author_id: invite.authorId || null,
+						author_name: invite.authorName || null,
+						timestamp: invite.timestamp || Date.now(),
+						reason: invite.reason || null,
+						json_data: JSON.stringify(invite)
+					};
+					stmt.run(row);
+				}
+			});
+			return true;
+		} catch (error) {
+			this.logger.error("Error saving invite histories in bulk:", error);
+			return false;
+		}
+	}
+
+	// --- Group Membership Periods ---
+
+	async recordGroupJoin(groupJid, groupName, timestamp, responsible) {
+		try {
+			const ts = timestamp || Date.now();
+			const respStr = responsible ? (typeof responsible === "object" ? JSON.stringify(responsible) : String(responsible)) : null;
+
+			// Close any existing open periods
+			this.mappers.run(
+				this.DB,
+				"UPDATE group_membership_periods SET leave_timestamp = ?, duration = ? - join_timestamp WHERE group_jid = ? AND leave_timestamp IS NULL",
+				[ts, ts, groupJid]
+			);
+
+			// Insert new period
+			this.mappers.run(
+				this.DB,
+				"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, join_responsible, json_data) VALUES (?, ?, ?, ?, ?)",
+				[groupJid, groupName, ts, respStr, JSON.stringify({ groupJid, groupName, join_timestamp: ts, join_responsible: responsible })]
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error recording group join:", error);
+			return false;
+		}
+	}
+
+	async recordGroupLeave(groupJid, timestamp, responsible) {
+		try {
+			const ts = timestamp || Date.now();
+			const respStr = responsible ? (typeof responsible === "object" ? JSON.stringify(responsible) : String(responsible)) : null;
+
+			// Find open period
+			const openPeriod = this.mappers.get(
+				this.DB,
+				"SELECT id, join_timestamp FROM group_membership_periods WHERE group_jid = ? AND leave_timestamp IS NULL ORDER BY join_timestamp DESC LIMIT 1",
+				[groupJid]
+			);
+
+			if (openPeriod) {
+				const duration = ts - openPeriod.join_timestamp;
+				this.mappers.run(
+					this.DB,
+					"UPDATE group_membership_periods SET leave_timestamp = ?, duration = ?, leave_responsible = ? WHERE id = ?",
+					[ts, duration, respStr, openPeriod.id]
+				);
+			} else {
+				// No open period, insert a leave-only period
+				this.mappers.run(
+					this.DB,
+					"INSERT INTO group_membership_periods (group_jid, leave_timestamp, leave_responsible, json_data) VALUES (?, ?, ?, ?)",
+					[groupJid, ts, respStr, JSON.stringify({ groupJid, leave_timestamp: ts, leave_responsible: responsible })]
+				);
+			}
+			return true;
+		} catch (error) {
+			this.logger.error("Error recording group leave:", error);
+			return false;
+		}
+	}
+
+	async getGroupMembershipPeriods(groupJid) {
+		try {
+			return this.mappers.all(
+				this.DB,
+				"SELECT * FROM group_membership_periods WHERE group_jid = ? ORDER BY join_timestamp ASC, leave_timestamp ASC",
+				[groupJid]
+			);
+		} catch (error) {
+			this.logger.error("Error getting group membership periods:", error);
+			return [];
+		}
+	}
+
+	async saveGroupMembershipPeriods(periods) {
+		try {
+			this.mappers.transaction(this.DB, () => {
+				const conn = this.mappers.getConnection(this.DB);
+				const stmt = conn.prepare(
+					"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, leave_timestamp, duration, join_responsible, leave_responsible, json_data) VALUES (@group_jid, @group_name, @join_timestamp, @leave_timestamp, @duration, @join_responsible, @leave_responsible, @json_data)"
+				);
+				for (const p of periods) {
+					const row = {
+						group_jid: p.groupJid || null,
+						group_name: p.groupName || null,
+						join_timestamp: p.joinTimestamp || null,
+						leave_timestamp: p.leaveTimestamp || null,
+						duration: p.duration || null,
+						join_responsible: p.joinResponsible ? (typeof p.joinResponsible === "object" ? JSON.stringify(p.joinResponsible) : String(p.joinResponsible)) : null,
+						leave_responsible: p.leaveResponsible ? (typeof p.leaveResponsible === "object" ? JSON.stringify(p.leaveResponsible) : String(p.leaveResponsible)) : null,
+						json_data: JSON.stringify(p)
+					};
+					stmt.run(row);
+				}
+			});
+			return true;
+		} catch (error) {
+			this.logger.error("Error saving group membership periods in bulk:", error);
+			return false;
 		}
 	}
 }

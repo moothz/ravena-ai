@@ -1044,6 +1044,7 @@ class EventHandler extends EventEmitter {
 					`Bot entrou no grupo ${data.group.name} (${nomeGrupo}/${data.group.id}, ${groupData.newGroup ? "novo" : "antigo"})`
 				);
 				group.paused = false; // Sempre que o bot entra no grupo, tira o pause (para grupos em que saiu/foi removido)
+				await this.database.recordGroupJoin(group.id, group.name, Date.now(), data.responsavel);
 				await this.database.saveGroup(group);
 
 				// Busca pendingJoins para ver se esse grupo corresponde a um convite pendente
@@ -1446,6 +1447,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 						*/
 
+						await this.database.recordGroupLeave(groupId, Date.now(), data.responsavel);
 						await this.database.saveGroup(group);
 						bot.sendMessage(bot.grupoLogs, msgLeave).catch((error) => {
 							this.logger.error(

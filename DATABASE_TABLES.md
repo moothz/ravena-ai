@@ -149,6 +149,35 @@ Números ou LIDs bloqueados localmente que o bot ignora completamente.
 | `number` | TEXT PK | Número de telefone ou LID (sem @c.us/@s.w.net) |
 | `timestamp` | INTEGER | Data do bloqueio (ms) |
 
+### `invite_history`
+Histórico completo de convites de grupo recebidos pelo bot.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `invite_code` | TEXT | Código do convite do WhatsApp |
+| `group_jid` | TEXT | JID do grupo associado (pode ser nulo) |
+| `author_id` | TEXT | JID/número do solicitante do convite |
+| `author_name` | TEXT | Nome/pushname do solicitante |
+| `timestamp` | INTEGER | Data em que o convite foi enviado (ms) |
+| `reason` | TEXT | Motivo fornecido para adicionar o bot |
+| `json_data` | TEXT | Objeto JSON completo do convite |
+
+### `group_membership_periods`
+Histórico de estadias (períodos em que o bot entrou e saiu) de grupos.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_jid` | TEXT | JID do grupo associado |
+| `group_name` | TEXT | Nome do grupo associado |
+| `join_timestamp` | INTEGER | Data de entrada no grupo (ms, nulo se desconhecido) |
+| `leave_timestamp` | INTEGER | Data de saída do grupo (ms, nulo se ainda estiver no grupo) |
+| `duration` | INTEGER | Duração da estadia no grupo (ms, nulo se ainda ativo) |
+| `join_responsible` | TEXT | Dados em JSON de quem adicionou o bot (nulo se desconhecido) |
+| `leave_responsible` | TEXT | Dados em JSON de quem removeu o bot (nulo se ativo/desconhecido) |
+| `json_data` | TEXT | Objeto JSON completo do período |
+
 ---
 
 ## 💬 custom_commands.db

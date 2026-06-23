@@ -181,6 +181,10 @@ class Database {
 	 */
 	closeAll() {
 		try {
+			if (this.flushInterval) {
+				clearInterval(this.flushInterval);
+				this.flushInterval = null;
+			}
 			if (this.coreDb) {
 				this.coreDb.close();
 				this.coreDb = null;
@@ -596,6 +600,67 @@ class Database {
 	}
 	async getLocalBlocks() {
 		return this.coreRepo.getLocalBlocks();
+	}
+
+	// --- Invite History ---
+
+	async addInviteHistory(invite) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addInviteHistory() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.addInviteHistory(invite);
+	}
+
+	async getInviteHistoryByAuthor(authorId) {
+		return this.coreRepo.getInviteHistoryByAuthor(authorId);
+	}
+
+	async getInviteHistoryByGroup(groupJid, inviteCode) {
+		return this.coreRepo.getInviteHistoryByGroup(groupJid, inviteCode);
+	}
+
+	async saveInviteHistories(invites) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveInviteHistories() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.saveInviteHistories(invites);
+	}
+
+	// --- Group Membership Periods ---
+
+	async recordGroupJoin(groupJid, groupName, timestamp, responsible) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] recordGroupJoin() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.recordGroupJoin(groupJid, groupName, timestamp, responsible);
+	}
+
+	async recordGroupLeave(groupJid, timestamp, responsible) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] recordGroupLeave() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.recordGroupLeave(groupJid, timestamp, responsible);
+	}
+
+	async getGroupMembershipPeriods(groupJid) {
+		return this.coreRepo.getGroupMembershipPeriods(groupJid);
+	}
+
+	async saveGroupMembershipPeriods(periods) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveGroupMembershipPeriods() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.saveGroupMembershipPeriods(periods);
 	}
 
 	// --- Blocked Invites ---
