@@ -1949,6 +1949,48 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	/**
+	 * Manipula evento de alteração de configuração do grupo (como fechar/abrir)
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} data - Dados do evento
+	 */
+	onGroupSettingsUpdate(bot, data) {
+		this.processGroupSettingsUpdate(bot, data).catch((error) => {
+			this.logger.error("Erro em processGroupSettingsUpdate:", error);
+		});
+	}
+
+	async processGroupSettingsUpdate(bot, data) {
+		const { groupId, announce, sender } = data;
+		const senderPhone = sender ? sender.split("@")[0] : "desconhecido";
+
+		this.logger.info(`[processGroupSettingsUpdate] Grupo ${groupId} atualizado. announce=${announce}, alterado por ${senderPhone}`);
+
+		// Carrega ou obtém o grupo
+		const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
+		const group = groupData.group;
+
+		// Se a alteração foi feita pelo próprio bot (enquanto executa os comandos abir/fechar), não precisamos reenviar notificação
+		const isMe = senderPhone === bot.phoneNumber;
+		if (isMe) {
+			this.logger.debug(`[processGroupSettingsUpdate] Alteração feita pelo próprio bot. Ignorando notificação de repetição.`);
+			return;
+		}
+
+		// Notifica no grupo sobre a alteração
+		const statusMsg = announce
+			? `🔒 *Configuração do grupo alterada!*\nApenas administradores podem enviar mensagens agora.\n(Alterado por: @${senderPhone})`
+			: `🔓 *Configuração do grupo alterada!*\nTodos os participantes podem enviar mensagens agora.\n(Alterado por: @${senderPhone})`;
+
+		const returnMsg = new ReturnMessage({
+			chatId: groupId,
+			content: statusMsg,
+			mentions: sender ? [sender] : []
+		});
+
+		await bot.sendReturnMessages(returnMsg, group);
+	}
+
+	/**
 	 * Obtém a instância única do EventHandler
 	 * @returns {EventHandler}
 	 */

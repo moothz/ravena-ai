@@ -1580,7 +1580,16 @@ class WhatsAppBotGo {
 							this._handleGroupParticipantsUpdate(groupInfoData);
 						}
 
-						// Se mudou de nome, groupInfoData.Name Name: {Name: 'Novo Titulo',NameSetAt: '2025-11-24T16:57:49-03:00',NameSetBy: '123456@lid',NameSetByPN: '5599123456@s.whatsapp.net'}
+						// Evento de mudança de configuração de mensagens (abrir/fechar grupo)
+						if (groupInfoData.Announce) {
+							if (this.eventHandler?.onGroupSettingsUpdate) {
+								this.eventHandler.onGroupSettingsUpdate(this, {
+									groupId: groupInfoData.JID,
+									announce: groupInfoData.Announce.IsAnnounce,
+									sender: groupInfoData.SenderPN || groupInfoData.Sender
+								});
+							}
+						}
 					}
 					break;
 				}
@@ -2375,7 +2384,18 @@ class WhatsAppBotGo {
 						removeParticipants: async (participants) =>
 							await this.removeFromGroup(chatId, participants),
 						fetchMessages: async (limit = 30) => false,
-						setMessagesAdminsOnly: async (adminOnly) => false,
+						setMessagesAdminsOnly: async (adminOnly) => {
+							try {
+								const response = await this.apiClient.post(`/group/announce`, {
+									groupJid: chatId,
+									announce: adminOnly
+								});
+								return response.data;
+							} catch (err) {
+								this.logger.error(`[chat] setMessagesAdminsOnly failed:`, err);
+								throw err;
+							}
+						},
 						setPicture: async (picture) => {
 							this.logger.debug(`[chat] setPicture`, { type: "url", url: picture.url });
 
