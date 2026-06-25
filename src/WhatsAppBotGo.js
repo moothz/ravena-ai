@@ -2240,6 +2240,24 @@ class WhatsAppBotGo {
 		}
 	}
 
+	async addToGroup(groupJid, participants) {
+		try {
+			this.logger.info(
+				`[addToGroup][${this.instanceName}] Adicionando ${participants.length} ao grupo ${groupJid}`
+			);
+			return await this.apiClient.post(`/group/participant`, {
+				groupJid,
+				action: "add",
+				participants: Array.isArray(participants) ? participants : [participants]
+			});
+		} catch (e) {
+			this.logger.error(
+				`[addToGroup][${this.instanceName}] Erro ao adicionar participantes:`,
+				e
+			);
+		}
+	}
+
 	async removeFromCommunity(communityJid, participants) {
 		try {
 			this.logger.info(
@@ -2352,6 +2370,10 @@ class WhatsAppBotGo {
 						// Métodos do wwebjs
 						setSubject: async (title) =>
 							await this.apiClient.post(`/group/name`, { groupJid: chatId, name: title }),
+						addParticipants: async (participants) =>
+							await this.addToGroup(chatId, participants),
+						removeParticipants: async (participants) =>
+							await this.removeFromGroup(chatId, participants),
 						fetchMessages: async (limit = 30) => false,
 						setMessagesAdminsOnly: async (adminOnly) => false,
 						setPicture: async (picture) => {
@@ -2674,12 +2696,13 @@ class WhatsAppBotGo {
 			this.logger.debug(`[setCttBlockStatus][${this.instanceName}] '${ctt}' => '${blockStatus}'`);
 
 			if (ctt.includes("@")) {
-				ctt = ctt.split("@")[0] + "@s.whatsapp.net";
+				const suffix = ctt.endsWith("@lid") ? "@lid" : "@s.whatsapp.net";
+				ctt = ctt.split("@")[0] + suffix;
 			}
 
 			const resp = await this.apiClient.post(`/user/${blockStatus}`, { number: ctt });
 
-			return resp.accepted;
+			return resp && resp.message === "success";
 		} catch (e) {
 			this.logger.warn(`[setCttBlockStatus] Erro setando blockStatus ${blockStatus} para '${ctt}'`);
 			throw e;
