@@ -56,6 +56,8 @@ class EventHandler extends EventEmitter {
 		this.recentlyJoined = [];
 		this.PV_AI_DEBOUNCE_MS = 8000;
 		this.pvDebounce = {};
+		this.activeSpammers = new Set();
+		this.spammerActiveWindowUntil = 0;
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
@@ -240,6 +242,12 @@ class EventHandler extends EventEmitter {
 				message.group?.includes("broadcast")
 			)
 				return;
+
+			// --- Prevenção de Spam Ativo ---
+			if (await this.checkSpammerMessage(bot, message)) {
+				return;
+			}
+			// -------------------------------
 
 			// --- Filtro de Bloqueio Local ---
 			let isLocalBlocked = false;
@@ -922,6 +930,27 @@ class EventHandler extends EventEmitter {
 			// Se não for o bot sendo adicionado, coloca pessoa numa lista pra ignorar o join e evitar spam no grupo
 			//if(this.recentlyJoined.includes(data.user.id)) return;
 			this.recentlyJoined.push(data.user.id);
+
+			const fixedGroups = [
+				process.env.GRUPO_INTERACAO,
+				process.env.GRUPO_PESCA,
+				process.env.GRUPO_DOWNLOADS
+			].filter(Boolean);
+
+			if (data.user && data.user.id && fixedGroups.includes(groupId)) {
+				const userId = data.user.id;
+				const userPhone = userId.split("@")[0];
+				if (userPhone.startsWith("63") || userPhone.startsWith("62")) {
+					this.logger.warn(`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo ${groupId}`);
+					this.activeSpammers.add(userId);
+					this.activeSpammers.add(userPhone);
+					this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000; // Ativa janela de monitoramento por 5 minutos
+					setTimeout(() => {
+						this.activeSpammers.delete(userId);
+						this.activeSpammers.delete(userPhone);
+					}, 5 * 60 * 1000);
+				}
+			}
 		}
 
 		setTimeout(
@@ -1840,6 +1869,22 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			);
 
+			// Ativa a janela de monitoramento intenso por 5 minutos
+			this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000;
+
+			// Adiciona à lista de spammers ativos para deletar mensagens
+			for (const spammer of spammersJids) {
+				this.activeSpammers.add(spammer);
+				const cleanPhone = spammer.split("@")[0];
+				this.activeSpammers.add(cleanPhone);
+				
+				// Remove do set após 5 minutos
+				setTimeout(() => {
+					this.activeSpammers.delete(spammer);
+					this.activeSpammers.delete(cleanPhone);
+				}, 5 * 60 * 1000);
+			}
+
 			// Remove do grupo
 			await bot.removeFromGroup(chatId, spammersJids);
 
@@ -1850,6 +1895,57 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				await bot.removeFromCommunity(communityJid, spammersJids);
 			}
 		}
+	}
+
+	/**
+	 * Verifica se a mensagem recebida é de um spammer durante a janela ativa de prevenção
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @returns {Promise<boolean>} - True se a mensagem for de spammer e foi apagada
+	 */
+	async checkSpammerMessage(bot, message) {
+		const fixedGroups = [
+			process.env.GRUPO_INTERACAO,
+			process.env.GRUPO_PESCA,
+			process.env.GRUPO_DOWNLOADS
+		].filter(Boolean);
+
+		if (!message.group || !fixedGroups.includes(message.group)) {
+			return false;
+		}
+
+		const now = Date.now();
+		const isWindowActive = now < this.spammerActiveWindowUntil;
+
+		// Se a janela ativa estiver desativada e não houver spammers específicos na lista, não faz nada
+		if (!isWindowActive && this.activeSpammers.size === 0) {
+			return false;
+		}
+
+		// Verifica se o autor ou authorAlt é spammer
+		const isSpammer =
+			this.activeSpammers.has(message.author) ||
+			(message.authorAlt && this.activeSpammers.has(message.authorAlt)) ||
+			(isWindowActive &&
+				(message.author?.startsWith("63") ||
+					message.author?.startsWith("62") ||
+					(message.authorAlt &&
+						(message.authorAlt.startsWith("63") ||
+							message.authorAlt.startsWith("62")))));
+
+		if (isSpammer) {
+			this.logger.warn(
+				`[SpamPrevention] Janela ativa: ${isWindowActive ? "SIM" : "NÃO"}. Deletando mensagem de spammer ${message.author} no grupo ${message.group}`
+			);
+			if (message.key) {
+				await bot.deleteMessageByKey(message.key).catch((err) => {
+					this.logger.error("Erro ao deletar mensagem de spammer:", err);
+				});
+			}
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
