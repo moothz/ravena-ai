@@ -1,5 +1,10 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi logs-cobalt
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi logs-cobalt recover_sql
 
+# Suporte para argumentos posicionais no comando make recover_sql
+ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
 
 # Cores usando escape codes literais para garantir compatibilidade
 GREEN  := $(shell printf '\033[0;32m')
@@ -172,3 +177,9 @@ clean-all: ## PERIGO: Remove TODOS os containers, imagens e volumes (perda de da
 
 validate: ## Valida a sintaxe do arquivo docker-compose.yml
 	@docker compose config --quiet && printf "$(GREEN)✅ docker-compose.yml é válido$(NC)\n" || printf "$(YELLOW)❌ docker-compose.yml inválido$(NC)\n"
+
+recover_sql: ## Recupera banco SQLite corrompido (Uso: make recover_sql <banco.db> ou make recover_sql DB=<banco.db>)
+	@DB_PATH="$(RUN_ARGS)"; \
+	if [ -z "$$DB_PATH" ]; then DB_PATH="$(DB)"; fi; \
+	if [ -z "$$DB_PATH" ]; then printf "$(YELLOW)Uso: make recover_sql <caminho/do/banco.db> ou make recover_sql DB=<caminho/do/banco.db>$(NC)\n"; exit 1; fi; \
+	./recover-sqlite.sh "$$DB_PATH"

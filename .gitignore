@@ -148,6 +148,10 @@ data/textos/archive.txt
 /.Trash-1000
 test-output-*
 *.swp
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Ravena data
 bots.json
