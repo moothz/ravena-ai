@@ -116,6 +116,14 @@ class SuperAdmin {
 				method: "dumpDbs",
 				description:
 					"Força o dump em disco (checkpoint WAL) e roda testes de integridade em todos os bancos de dados"
+			},
+			removeUserGp: {
+				method: "removeUserGp",
+				description: "Remove um usuário do grupo: !sa-removeUserGp <grupoJid> <contato>"
+			},
+			addUserGp: {
+				method: "addUserGp",
+				description: "Adiciona um usuário ao grupo: !sa-addUserGp <grupoJid> <contato>"
 			}
 		};
 
@@ -3763,6 +3771,116 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro geral ao executar dump e verificação: ${error.message}`
+			});
+		}
+	}
+
+	async removeUserGp(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content: "Uso incorreto. Exemplo: !sa-removeUserGp 123456789@g.us 55999999999"
+				});
+			}
+
+			let groupJid = args[0].trim();
+			let targetJid = args[1].trim();
+
+			// Normaliza groupJid se necessário
+			if (!groupJid.endsWith("@g.us")) {
+				groupJid = `${groupJid.split("@")[0]}@g.us`;
+			}
+
+			// Normaliza targetJid
+			if (!targetJid.includes("@")) {
+				targetJid = `${targetJid.replace(/\D/g, "")}@s.whatsapp.net`;
+			}
+
+			// Tenta buscar o chat
+			const chat = await bot.client.getChatById(groupJid);
+			if (!chat || chat.notInGroup) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Grupo não encontrado ou o bot não está nele."
+				});
+			}
+
+			// Tenta remover
+			await chat.removeParticipants([targetJid]);
+
+			return new ReturnMessage({
+				chatId,
+				content: `✅ Solicitação de remoção de '${targetJid}' do grupo '${groupJid}' enviada com sucesso.`
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando removeUserGp:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao remover usuário: ${error.message || JSON.stringify(error)}`
+			});
+		}
+	}
+
+	async addUserGp(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content: "Uso incorreto. Exemplo: !sa-addUserGp 123456789@g.us 55999999999"
+				});
+			}
+
+			let groupJid = args[0].trim();
+			let targetJid = args[1].trim();
+
+			// Normaliza groupJid se necessário
+			if (!groupJid.endsWith("@g.us")) {
+				groupJid = `${groupJid.split("@")[0]}@g.us`;
+			}
+
+			// Normaliza targetJid
+			if (!targetJid.includes("@")) {
+				targetJid = `${targetJid.replace(/\D/g, "")}@s.whatsapp.net`;
+			}
+
+			// Tenta buscar o chat
+			const chat = await bot.client.getChatById(groupJid);
+			if (!chat || chat.notInGroup) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Grupo não encontrado ou o bot não está nele."
+				});
+			}
+
+			// Tenta adicionar
+			await chat.addParticipants([targetJid]);
+
+			return new ReturnMessage({
+				chatId,
+				content: `✅ Solicitação de adição de '${targetJid}' no grupo '${groupJid}' enviada com sucesso.`
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando addUserGp:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao adicionar usuário: ${error.message || JSON.stringify(error)}`
 			});
 		}
 	}
