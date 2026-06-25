@@ -558,6 +558,8 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.filters.nsfw = document.getElementById('delete-nsfw').checked;
 
         groupData.autoStt = document.getElementById('auto-stt').checked;
+        groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
+        groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
         if(!groupData.interact) groupData.interact = {};
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
         groupData.interact.chance = parseInt(document.getElementById('interaction-chance').value);
@@ -625,6 +627,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.getElementById('auto-stt').checked = !!groupData.autoStt;
+        document.getElementById('notifica-grupo-fechado').checked = !!groupData.notificaGrupoFechado;
+        document.getElementById('notifica-grupo-aberto').checked = !!groupData.notificaGrupoAberto;
         
         const interact = groupData.interact || {};
         document.getElementById('auto-interaction').checked = !!interact.enabled;

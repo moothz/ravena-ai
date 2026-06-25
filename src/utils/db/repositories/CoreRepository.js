@@ -70,6 +70,8 @@ class CoreRepository {
 				nicks TEXT,
 				warnings TEXT,
 				custom_ai_prompt TEXT,
+				notifica_grupo_fechado INTEGER DEFAULT 0,
+				notifica_grupo_aberto INTEGER DEFAULT 0,
 				created_at INTEGER,
 				updated_at INTEGER,
 				json_data TEXT
@@ -293,14 +295,14 @@ class CoreRepository {
           filters, twitch, kick, youtube, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
           ignored_numbers, ignored_users, muted_commands, muted_categories,
-          nicks, warnings, custom_ai_prompt, created_at, updated_at, json_data
+          nicks, warnings, custom_ai_prompt, notifica_grupo_fechado, notifica_grupo_aberto, created_at, updated_at, json_data
         ) VALUES (
           @id, @name, @titulo, @descricao, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
           @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
           @ignored_numbers, @ignored_users, @muted_commands, @muted_categories,
-          @nicks, @warnings, @custom_ai_prompt, @created_at, @updated_at, @json_data
+          @nicks, @warnings, @custom_ai_prompt, @notifica_grupo_fechado, @notifica_grupo_aberto, @created_at, @updated_at, @json_data
         )
         ON CONFLICT(id) DO UPDATE SET
           name                  = excluded.name,
@@ -331,6 +333,8 @@ class CoreRepository {
           nicks                 = excluded.nicks,
           warnings              = excluded.warnings,
           custom_ai_prompt      = excluded.custom_ai_prompt,
+          notifica_grupo_fechado = excluded.notifica_grupo_fechado,
+          notifica_grupo_aberto  = excluded.notifica_grupo_aberto,
           updated_at            = excluded.updated_at,
           json_data             = excluded.json_data`,
 				{ ...row, json_data: jsonData }

@@ -159,6 +159,8 @@ const COMMAND_ORDER = [
 	"mute",
 	"pausar",
 	"autoStt",
+	"notificar-grupoFechado",
+	"notificar-grupoAberto",
 	"filtro-palavra",
 	"filtro-links",
 	"filtro-nsfw",

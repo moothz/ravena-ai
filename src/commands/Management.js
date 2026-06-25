@@ -197,6 +197,14 @@ class Management {
 				method: "openGroup",
 				description: "Abre o grupo (todos podem envar msgs)"
 			},
+			"notificar-grupoFechado": {
+				method: "toggleNotificaGrupoFechado",
+				description: "Ativa/desativa a notificação quando o grupo é fechado"
+			},
+			"notificar-grupoAberto": {
+				method: "toggleNotificaGrupoAberto",
+				description: "Ativa/desativa a notificação quando o grupo é aberto"
+			},
 			setPersonalidade: {
 				method: "setPersonalidadeIA",
 				description: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)"
@@ -1768,7 +1776,9 @@ class Management {
 			infoMessage += `*Respostas Automáticas:*\n`;
 			infoMessage += `- *Boas-vindas:* \`\`\`${welcomeMessage}\`\`\`\n`;
 			infoMessage += `- *Despedidas:* \`\`\`${farewellMessage}\`\`\`\n`;
-			infoMessage += `- *Auto-STT:* ${group.autoStt ? "Sim" : "Não"}\n\n`;
+			infoMessage += `- *Auto-STT:* ${group.autoStt ? "Sim" : "Não"}\n`;
+			infoMessage += `- *Notificar Fechado:* ${group.notificaGrupoFechado ? "Sim" : "Não"}\n`;
+			infoMessage += `- *Notificar Aberto:* ${group.notificaGrupoAberto ? "Sim" : "Não"}\n\n`;
 
 			if (group.interact) {
 				infoMessage += `*Interações Automáticas:*\n`;
@@ -2604,6 +2614,64 @@ class Management {
 		const statusMsg = group.autoStt
 			? "Conversão automática de voz para texto agora está *ativada* para este grupo."
 			: "Conversão automática de voz para texto agora está *desativada* para este grupo.";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: statusMsg
+		});
+	}
+
+	/**
+	 * Alterna a notificação automática quando o grupo é fechado
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleNotificaGrupoFechado(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		group.notificaGrupoFechado = !group.notificaGrupoFechado;
+		await this.database.saveGroup(group);
+
+		const statusMsg = group.notificaGrupoFechado
+			? "🔔 Notificação automática de *grupo fechado* agora está *ativada*."
+			: "🔕 Notificação automática de *grupo fechado* agora está *desativada*.";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: statusMsg
+		});
+	}
+
+	/**
+	 * Alterna a notificação automática quando o grupo é aberto
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleNotificaGrupoAberto(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		group.notificaGrupoAberto = !group.notificaGrupoAberto;
+		await this.database.saveGroup(group);
+
+		const statusMsg = group.notificaGrupoAberto
+			? "🔔 Notificação automática de *grupo aberto* agora está *ativada*."
+			: "🔕 Notificação automática de *grupo aberto* agora está *desativada*.";
 
 		return new ReturnMessage({
 			chatId: group.id,

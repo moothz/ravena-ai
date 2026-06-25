@@ -64,6 +64,8 @@ const GroupMapper = {
 			nicks: parse(row.nicks, []),
 			warnings: parse(row.warnings, []),
 			customAIPrompt: parse(row.custom_ai_prompt, []),
+			notificaGrupoFechado: !!row.notifica_grupo_fechado,
+			notificaGrupoAberto: !!row.notifica_grupo_aberto,
 			createdAt: row.created_at ?? Date.now(),
 			updatedAt: row.updated_at ?? Date.now()
 		};
@@ -107,6 +109,8 @@ const GroupMapper = {
 			nicks: s(obj.nicks),
 			warnings: s(obj.warnings),
 			custom_ai_prompt: s(obj.customAIPrompt),
+			notifica_grupo_fechado: obj.notificaGrupoFechado ? 1 : 0,
+			notifica_grupo_aberto: obj.notificaGrupoAberto ? 1 : 0,
 			created_at: obj.createdAt ?? Date.now(),
 			updated_at: Date.now()
 		};

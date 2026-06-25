@@ -61,6 +61,8 @@ class Group {
 		this.nicks = data.nicks ?? [];
 		this.warnings = data.warnings ?? [];
 		this.customAIPrompt = data.customAIPrompt ?? [];
+		this.notificaGrupoFechado = data.notificaGrupoFechado ?? false;
+		this.notificaGrupoAberto = data.notificaGrupoAberto ?? false;
 
 		// Metadados
 		this.createdAt = data.createdAt ?? Date.now();
@@ -103,6 +105,8 @@ class Group {
 			nicks: this.nicks,
 			warnings: this.warnings,
 			customAIPrompt: this.customAIPrompt,
+			notificaGrupoFechado: this.notificaGrupoFechado,
+			notificaGrupoAberto: this.notificaGrupoAberto,
 			createdAt: this.createdAt,
 			updatedAt: this.updatedAt
 		};
@@ -184,6 +188,8 @@ class Group {
 		if (data.nicks) this.nicks = data.nicks;
 		if (data.warnings) this.warnings = data.warnings;
 		if (data.customAIPrompt) this.customAIPrompt = data.customAIPrompt;
+		if (typeof data.notificaGrupoFechado === "boolean") this.notificaGrupoFechado = data.notificaGrupoFechado;
+		if (typeof data.notificaGrupoAberto === "boolean") this.notificaGrupoAberto = data.notificaGrupoAberto;
 
 		// Atualiza carimbos de data/hora
 		this.updatedAt = Date.now();

@@ -1976,15 +1976,24 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			return;
 		}
 
-		// Notifica no grupo sobre a alteração
+		// Verifica se a notificação está ativada para o estado correspondente
+		if (announce && !group.notificaGrupoFechado) {
+			this.logger.debug(`[processGroupSettingsUpdate] Notificação de grupo fechado desativada para o grupo ${groupId}.`);
+			return;
+		}
+		if (!announce && !group.notificaGrupoAberto) {
+			this.logger.debug(`[processGroupSettingsUpdate] Notificação de grupo aberto desativada para o grupo ${groupId}.`);
+			return;
+		}
+
+		// Notifica no grupo sobre a alteração (sem expor quem alterou, usando bold no status)
 		const statusMsg = announce
-			? `🔒 *Configuração do grupo alterada!*\nApenas administradores podem enviar mensagens agora.\n(Alterado por: @${senderPhone})`
-			: `🔓 *Configuração do grupo alterada!*\nTodos os participantes podem enviar mensagens agora.\n(Alterado por: @${senderPhone})`;
+			? "🔒 *Grupo fechado.* Apenas administradores podem enviar mensagens agora."
+			: "🔓 *Grupo aberto.* Todos os participantes podem enviar mensagens agora.";
 
 		const returnMsg = new ReturnMessage({
 			chatId: groupId,
-			content: statusMsg,
-			mentions: sender ? [sender] : []
+			content: statusMsg
 		});
 
 		await bot.sendReturnMessages(returnMsg, group);
