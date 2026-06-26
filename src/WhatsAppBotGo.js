@@ -1300,6 +1300,7 @@ class WhatsAppBotGo {
 		try {
 			// Webhook Setup
 			this.webhookApp = express();
+			this.webhookApp.set("trust proxy", true);
 			this.webhookApp.use(express.json({ limit: "500mb" }));
 			this.webhookApp.use(express.urlencoded({ extended: true, limit: "500mb" }));
 

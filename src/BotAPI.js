@@ -39,6 +39,7 @@ class BotAPI {
 		this.logger = new Logger("bot-api");
 		this.database = Database.getInstance();
 		this.app = express();
+		this.app.set("trust proxy", true);
 
 		// Inject botApi reference into bots
 		this.bots.forEach((bot) => {
@@ -48,6 +49,7 @@ class BotAPI {
 		// Webhook Server Init
 		if (process.env.GROUP_WEBHOOKS) {
 			this.webhookApp = express();
+			this.webhookApp.set("trust proxy", true);
 			this.webhookLogger = new Logger("group-webhooks");
 			this.webhooksCache = new Map(); // groupId -> [webhooks]
 			this.webhookRateLimits = new Map(); // botId:groupId -> { lastSent, buffer, timeout }

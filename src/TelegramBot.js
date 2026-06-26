@@ -149,6 +149,7 @@ class WhatsAppBotTelegram {
 			if (this.webhookHost) {
 				try {
 					this.webhookApp = express();
+					this.webhookApp.set("trust proxy", true);
 					this.webhookApp.use(express.json());
 
 					const webhookPath = `/webhook/telegram/${this.telegramBotToken}`;
