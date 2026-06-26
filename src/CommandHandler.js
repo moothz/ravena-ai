@@ -45,6 +45,27 @@ class CommandHandler {
 			error: "❌"
 		};
 
+		// Prevenção de Spam (Debounce e Ban)
+		this.spamLogger = new Logger("spam-prevention");
+		this.cmdDebounceTime = parseInt(process.env.CMD_DEBOUNCE) || 3000;
+		this.debounceBanLimit = parseInt(process.env.DEBOUNCE_BAN) || 10;
+		this.debounceDecayTime = (parseInt(process.env.DEBOUNCE_DECAY) || 60) * 1000;
+		this.userDebounceMap = new Map();
+
+		// Timer para decaimento periódico das tentativas de bypass
+		this.decayInterval = setInterval(() => {
+			const now = Date.now();
+			for (const [userId, record] of this.userDebounceMap.entries()) {
+				if (record.bypassCount > 0) {
+					record.bypassCount--;
+				}
+				// Limpa registros inativos para economizar memória
+				if (record.bypassCount === 0 && (!record.bannedUntil || now >= record.bannedUntil)) {
+					this.userDebounceMap.delete(userId);
+				}
+			}
+		}, this.debounceDecayTime);
+
 		// Inicializa cache de comandos
 		this.loadAllCommands();
 	}
@@ -441,6 +462,87 @@ class CommandHandler {
 	 */
 	async handleCommand(bot, message, commandText, group) {
 		try {
+			const userId = message.author || message.authorAlt || message.from;
+			if (userId) {
+				// Ignorar prevenção de spam para super admins/dono do bot
+				const isSuperAdmin =
+					this.superAdmin.isSuperAdmin(userId) ||
+					(this.adminUtils &&
+						typeof this.adminUtils.isComuAdmin === "function" &&
+						this.adminUtils.isComuAdmin(userId, bot));
+
+				if (!isSuperAdmin) {
+					const now = Date.now();
+					let record = this.userDebounceMap.get(userId);
+
+					if (!record) {
+						record = {
+							lastCommandTime: 0,
+							bypassCount: 0,
+							bannedUntil: 0
+						};
+						this.userDebounceMap.set(userId, record);
+					}
+
+					// Verifica se o usuário está atualmente banido
+					if (record.bannedUntil && now < record.bannedUntil) {
+						this.spamLogger.warn(
+							`[SpamPrevention] Usuário ${userId} tentou executar '${commandText.trim()}' mas está banido por spam até ${new Date(record.bannedUntil).toISOString()}`
+						);
+						return null;
+					}
+
+					// Verifica se passou do tempo mínimo do debounce
+					const elapsed = now - record.lastCommandTime;
+					if (elapsed < this.cmdDebounceTime) {
+						record.bypassCount++;
+						record.lastCommandTime = now; // Reinicia o cronômetro do debounce
+
+						this.spamLogger.warn(
+							`[SpamPrevention] Usuário ${userId} violou o debounce com '${commandText.trim()}' (${elapsed}ms < ${this.cmdDebounceTime}ms). Tentativas de bypass: ${record.bypassCount}/${this.debounceBanLimit}`
+						);
+
+						if (record.bypassCount >= this.debounceBanLimit) {
+							record.bannedUntil = now + 3600000; // Banido por 1 hora
+							this.spamLogger.error(
+								`[SpamPrevention] Usuário ${userId} foi banido de usar comandos por 1 hora (excedeu o limite de bypass: ${record.bypassCount}/${this.debounceBanLimit})`
+							);
+
+							// Reage com o emoji 📵
+							try {
+								if (message.origin && typeof message.origin.react === "function") {
+									await message.origin.react("📵").catch((err) => {
+										this.logger.error("Erro ao reagir com emoji 📵:", err.message ?? "xxx");
+									});
+								}
+							} catch (reactError) {
+								this.logger.error(
+									"Erro ao aplicar reação de banimento:",
+									reactError.message ?? "xxx"
+								);
+							}
+
+							// Notifica no chat apropriado
+							const replyToChat = message.group ?? message.author;
+							const returnMessage = new ReturnMessage({
+								chatId: replyToChat,
+								content: `⚠️ *Prevenção de Spam:* Você foi banido de usar comandos por 1 hora por exceder o limite de spam.`
+							});
+							await bot.sendReturnMessages(returnMessage, group).catch((err) => {
+								this.logger.error(
+									"Erro ao enviar mensagem de banimento por spam:",
+									err.message ?? "xxx"
+								);
+							});
+						}
+						return null; // Interrompe a execução
+					}
+
+					// Se passou no debounce, atualiza o timestamp do último comando executado com sucesso/tentativa
+					record.lastCommandTime = now;
+				}
+			}
+
 			// Obtém a primeira palavra como nome do comando
 			const [command, ...args] = commandText.trim().split(/\s+/);
 
