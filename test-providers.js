@@ -109,6 +109,7 @@ async function runTests() {
 					textRes = await testUrl(`${p.url}/api/generate`, "POST", {
 						model: p.model,
 						prompt: "Responda apenas 'PONG'",
+						options: { num_predict: 5 },
 						stream: false
 					});
 				} else {
@@ -133,6 +134,7 @@ async function runTests() {
 							model: p.model,
 							prompt: "O que tem nesta imagem?",
 							images: [imageBase64],
+							options: { num_predict: 20 },
 							stream: false
 						});
 					} else {

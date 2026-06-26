@@ -119,6 +119,7 @@ async function analyzeVideo(message) {
 			systemContext: `You are an expert bot in video processing and analysis`,
 			images: frames,
 			response_format: mediaAnalysisSchema,
+			maxTokens: 150,
 			debugPrompt: false,
 			timeout: 60000,
 			priority: 0
@@ -584,6 +585,7 @@ async function storeMessage(message, chatId, bot) {
 						systemContext: `You are an expert bot in image processing and analysis`,
 						image: imageData,
 						response_format: mediaAnalysisSchema,
+						maxTokens: 150,
 						debugPrompt: false,
 						priority: 1
 					};

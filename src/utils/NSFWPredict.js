@@ -73,6 +73,7 @@ Return the result in JSON format.`;
 				images: Array.isArray(imagesInput) ? imagesInput : [imagesInput],
 				response_format: nsfwSchema,
 				temperature: 0.2,
+				maxTokens: 100,
 				systemContext: `You are an expert bot in image processing and analysis`,
 				debugPrompt: false,
 				priority: 4
