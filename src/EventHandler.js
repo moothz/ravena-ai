@@ -941,14 +941,19 @@ class EventHandler extends EventEmitter {
 				const userId = data.user.id;
 				const userPhone = userId.split("@")[0];
 				if (userPhone.startsWith("63") || userPhone.startsWith("62")) {
-					this.logger.warn(`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo ${groupId}`);
+					this.logger.warn(
+						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo ${groupId}`
+					);
 					this.activeSpammers.add(userId);
 					this.activeSpammers.add(userPhone);
 					this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000; // Ativa janela de monitoramento por 5 minutos
-					setTimeout(() => {
-						this.activeSpammers.delete(userId);
-						this.activeSpammers.delete(userPhone);
-					}, 5 * 60 * 1000);
+					setTimeout(
+						() => {
+							this.activeSpammers.delete(userId);
+							this.activeSpammers.delete(userPhone);
+						},
+						5 * 60 * 1000
+					);
 				}
 			}
 		}
@@ -1877,12 +1882,15 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				this.activeSpammers.add(spammer);
 				const cleanPhone = spammer.split("@")[0];
 				this.activeSpammers.add(cleanPhone);
-				
+
 				// Remove do set após 5 minutos
-				setTimeout(() => {
-					this.activeSpammers.delete(spammer);
-					this.activeSpammers.delete(cleanPhone);
-				}, 5 * 60 * 1000);
+				setTimeout(
+					() => {
+						this.activeSpammers.delete(spammer);
+						this.activeSpammers.delete(cleanPhone);
+					},
+					5 * 60 * 1000
+				);
 			}
 
 			// Remove do grupo
@@ -1930,8 +1938,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				(message.author?.startsWith("63") ||
 					message.author?.startsWith("62") ||
 					(message.authorAlt &&
-						(message.authorAlt.startsWith("63") ||
-							message.authorAlt.startsWith("62")))));
+						(message.authorAlt.startsWith("63") || message.authorAlt.startsWith("62")))));
 
 		if (isSpammer) {
 			this.logger.warn(
@@ -1963,7 +1970,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		const { groupId, announce, sender } = data;
 		const senderPhone = sender ? sender.split("@")[0] : "desconhecido";
 
-		this.logger.info(`[processGroupSettingsUpdate] Grupo ${groupId} atualizado. announce=${announce}, alterado por ${senderPhone}`);
+		this.logger.info(
+			`[processGroupSettingsUpdate] Grupo ${groupId} atualizado. announce=${announce}, alterado por ${senderPhone}`
+		);
 
 		// Carrega ou obtém o grupo
 		const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
@@ -1972,17 +1981,23 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		// Se a alteração foi feita pelo próprio bot (enquanto executa os comandos abir/fechar), não precisamos reenviar notificação
 		const isMe = senderPhone === bot.phoneNumber;
 		if (isMe) {
-			this.logger.debug(`[processGroupSettingsUpdate] Alteração feita pelo próprio bot. Ignorando notificação de repetição.`);
+			this.logger.debug(
+				`[processGroupSettingsUpdate] Alteração feita pelo próprio bot. Ignorando notificação de repetição.`
+			);
 			return;
 		}
 
 		// Verifica se a notificação está ativada para o estado correspondente
 		if (announce && !group.notificaGrupoFechado) {
-			this.logger.debug(`[processGroupSettingsUpdate] Notificação de grupo fechado desativada para o grupo ${groupId}.`);
+			this.logger.debug(
+				`[processGroupSettingsUpdate] Notificação de grupo fechado desativada para o grupo ${groupId}.`
+			);
 			return;
 		}
 		if (!announce && !group.notificaGrupoAberto) {
-			this.logger.debug(`[processGroupSettingsUpdate] Notificação de grupo aberto desativada para o grupo ${groupId}.`);
+			this.logger.debug(
+				`[processGroupSettingsUpdate] Notificação de grupo aberto desativada para o grupo ${groupId}.`
+			);
 			return;
 		}
 

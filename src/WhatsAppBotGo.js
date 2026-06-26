@@ -2260,10 +2260,7 @@ class WhatsAppBotGo {
 				participants: Array.isArray(participants) ? participants : [participants]
 			});
 		} catch (e) {
-			this.logger.error(
-				`[addToGroup][${this.instanceName}] Erro ao adicionar participantes:`,
-				e
-			);
+			this.logger.error(`[addToGroup][${this.instanceName}] Erro ao adicionar participantes:`, e);
 		}
 	}
 
@@ -2379,8 +2376,7 @@ class WhatsAppBotGo {
 						// Métodos do wwebjs
 						setSubject: async (title) =>
 							await this.apiClient.post(`/group/name`, { groupJid: chatId, name: title }),
-						addParticipants: async (participants) =>
-							await this.addToGroup(chatId, participants),
+						addParticipants: async (participants) => await this.addToGroup(chatId, participants),
 						removeParticipants: async (participants) =>
 							await this.removeFromGroup(chatId, participants),
 						fetchMessages: async (limit = 30) => false,

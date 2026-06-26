@@ -188,8 +188,10 @@ class Group {
 		if (data.nicks) this.nicks = data.nicks;
 		if (data.warnings) this.warnings = data.warnings;
 		if (data.customAIPrompt) this.customAIPrompt = data.customAIPrompt;
-		if (typeof data.notificaGrupoFechado === "boolean") this.notificaGrupoFechado = data.notificaGrupoFechado;
-		if (typeof data.notificaGrupoAberto === "boolean") this.notificaGrupoAberto = data.notificaGrupoAberto;
+		if (typeof data.notificaGrupoFechado === "boolean")
+			this.notificaGrupoFechado = data.notificaGrupoFechado;
+		if (typeof data.notificaGrupoAberto === "boolean")
+			this.notificaGrupoAberto = data.notificaGrupoAberto;
 
 		// Atualiza carimbos de data/hora
 		this.updatedAt = Date.now();
