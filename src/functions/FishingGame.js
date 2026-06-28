@@ -2159,6 +2159,9 @@ async function legendaryFishCommand(bot, message, args, group) {
 			textMessage += `   Data: ${date}\n\n`;
 		}
 
+		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.win";
+		textMessage += `_Veja a galeria completa com imagens em:_\n🔗 ${botDomain}/pesca`;
+
 		const messages = [];
 		messages.push(new ReturnMessage({ chatId, content: textMessage }));
 
@@ -2375,6 +2378,9 @@ async function fishingInfoCommand(bot, message) {
 		if (stats.mostFishCaughtByUser.totalCatches > 0) {
 			infoMessage += `🥇 *Pescador Mais Dedicado:* _${stats.mostFishCaughtByUser.userName}_ com \`${stats.mostFishCaughtByUser.totalCatches}\` peixes pescados\n`;
 		}
+
+		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.win";
+		infoMessage += `\n_Veja a galeria completa em:_\n🔗 ${botDomain}/pesca`;
 
 		return new ReturnMessage({ chatId, content: infoMessage });
 	} catch (error) {

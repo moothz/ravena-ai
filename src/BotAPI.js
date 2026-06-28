@@ -854,6 +854,14 @@ class BotAPI {
 		this.app.get("/tts", serveTTS);
 		this.app.get("/falar", serveTTS);
 
+		// Serve Pesca page
+		const servePesca = (req, res) => {
+			const filePath = path.join(__dirname, "../public/pesca.html");
+			res.sendFile(filePath);
+		};
+		this.app.get("/pesca", servePesca);
+		this.app.get("/fishing", servePesca);
+
 		// STT API
 		this.app.post(
 			"/api/stt/transcrever",
@@ -1061,6 +1069,34 @@ class BotAPI {
 					llm: "unknown"
 				}
 			);
+		});
+
+		// Fishing API
+		this.app.get("/api/fishing/legendary", async (req, res) => {
+			try {
+				const rows = await this.database.dbAll(
+					"fishing",
+					"SELECT * FROM fishing_legendary_history ORDER BY weight DESC;"
+				);
+				res.json(rows);
+			} catch (error) {
+				this.logger.error("Erro ao buscar histórico de pesca:", error);
+				res.status(500).json({ error: "Erro ao buscar histórico de pesca" });
+			}
+		});
+
+		this.app.get("/api/fishing/image/:fileName", async (req, res) => {
+			const { fileName } = req.params;
+			if (fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
+				return res.status(400).send("Nome de arquivo inválido");
+			}
+			const filePath = path.join(this.database.databasePath, "media", fileName);
+			try {
+				await fs.access(filePath);
+				res.sendFile(filePath);
+			} catch (error) {
+				res.status(404).send("Imagem não encontrada");
+			}
 		});
 
 		// Chat API for AnythingLLM help

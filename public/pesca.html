@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mural da Pesca - RavenaBot</title>
+    
+    <meta name="description" content="Veja os peixes lendários e raros pescados na RavenaBot!">
+    <meta name="author" content="moothz">
+    
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --primary-dark: #0388c2;
+            --secondary-color: #3e0ea7;
+            --background-color: #05060d;
+            --surface-color: #111420;
+            --card-color: #1a1d2e;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #2f304d;
+            --accent-gold: #ffd700;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .fishing-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 30px;
+            background: var(--surface-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid var(--border-color);
+        }
+
+        .header-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header-section img {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 3px solid var(--primary-color);
+            object-fit: cover;
+            box-shadow: 0 0 20px rgba(4, 169, 240, 0.4);
+            margin-bottom: 15px;
+        }
+
+        .header-section h2 {
+            color: var(--text-highlight);
+            font-size: 2rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header-section p {
+            color: var(--text-color);
+            font-size: 1.1rem;
+        }
+
+        .controls-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 25px;
+        }
+
+        .sort-label {
+            font-weight: 500;
+            color: var(--text-highlight);
+            margin-right: 10px;
+            font-size: 0.95rem;
+        }
+
+        .btn-sort {
+            padding: 8px 16px;
+            background: #1a1d2e;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-sort:hover {
+            border-color: var(--primary-color);
+            color: var(--text-highlight);
+            background: rgba(4, 169, 240, 0.05);
+        }
+
+        .btn-sort.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        .fishing-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .fishing-item {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--card-color);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .fishing-item:nth-child(even) {
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .fishing-item:hover {
+            border-color: rgba(4, 169, 240, 0.5);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .fishing-item-header {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .fish-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .fish-title-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .fish-title {
+            color: var(--text-highlight);
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .fish-weight {
+            color: var(--accent-gold);
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .fish-meta {
+            font-size: 0.85rem;
+            color: var(--text-color);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .fish-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .fish-meta span i {
+            color: var(--primary-color);
+        }
+
+        .expand-icon {
+            color: var(--text-color);
+            transition: transform 0.3s ease;
+            font-size: 1.2rem;
+            margin-left: 15px;
+        }
+
+        .fishing-item.expanded .expand-icon {
+            transform: rotate(180deg);
+            color: var(--primary-color);
+        }
+
+        .fishing-item-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 0px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .fishing-item.expanded .fishing-item-content {
+            border-top: 1px solid var(--border-color);
+            padding: 20px;
+            max-height: 650px;
+        }
+
+        .image-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 480px;
+            aspect-ratio: 1/1;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            background: #0d0e14;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .fish-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        .image-loader {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            color: var(--primary-color);
+        }
+
+        .image-loader i {
+            font-size: 2rem;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.1rem;
+            color: var(--text-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
+                <h1>RavenaBot</h1>
+            </div>
+            <div class="header-title">
+                Mural da Pesca
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="fishing-container">
+                <div class="header-section">
+                    <img src="/ravena_fishing.png" alt="Mural da Pesca">
+                    <h2>Mural da Pesca Lendária</h2>
+                    <p>Galeria com os maiores seres misticos e peixes lendários fisgados pelos pescadores da Ravena!</p>
+                </div>
+
+                <div class="controls-section">
+                    <span class="sort-label"><i class="fas fa-sort"></i> Ordenar por:</span>
+                    <button class="btn-sort active" data-sort="weight" data-order="desc">
+                        Peso <i class="fas fa-sort-amount-down"></i>
+                    </button>
+                    <button class="btn-sort" data-sort="date" data-order="desc">
+                        Data <i class="fas fa-sort-amount-down"></i>
+                    </button>
+                    <button class="btn-sort" data-sort="name" data-order="asc">
+                        Peixe <i class="fas fa-sort-alpha-down"></i>
+                    </button>
+                    <button class="btn-sort" data-sort="user" data-order="asc">
+                        Pescador <i class="fas fa-sort-alpha-down"></i>
+                    </button>
+                </div>
+
+                <div id="loading-list" class="loading-container">
+                    <div class="loading-spinner"></div>
+                    <p>Carregando registros da pescaria...</p>
+                </div>
+
+                <div id="fishing-list-container" class="fishing-list" style="display: none;">
+                    <!-- Items dynamically rendered -->
+                </div>
+
+                <div id="no-records" class="no-data" style="display: none;">
+                    <i class="fas fa-fish" style="font-size: 3rem; color: var(--border-color); margin-bottom: 15px; display: block;"></i>
+                    Nenhum peixe lendário foi pescado ainda.
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p class="copyright">RavenaBot © 2026</p>
+        </footer>
+    </div>
+
+    <script src="/pesca.js"></script>
+</body>
+</html>
