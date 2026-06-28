@@ -1370,6 +1370,8 @@ async function drawTextOnRareFishImage(mediaContent, fishName, fishWeight, dateS
 
 		mediaContent.data = outputBuffer.toString("base64");
 		mediaContent.size = outputBuffer.length;
+		delete mediaContent.url;
+		mediaContent.source = "base64";
 		return mediaContent;
 	} catch (error) {
 		logger.error("Erro ao desenhar texto na imagem do peixe raro:", error);
