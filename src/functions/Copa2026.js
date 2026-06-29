@@ -859,7 +859,7 @@ async function copaGrupo(bot, message, args, group) {
 				const isLive = !finished && gm.time_elapsed !== "notstarted";
 				const score = finished || isLive ? `${gm.home_score || 0} x ${gm.away_score || 0}` : "vs";
 				const liveTag = isLive ? " (AO VIVO 🔴)" : "";
-				msg += `${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}${liveTag}\n`;
+				msg += `${home.flagEmoji || ""} ${home.namePt || gm.home_team_label || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || gm.away_team_label || "?"}${liveTag}\n`;
 			}
 		} catch {
 			// jogos opcionais
@@ -914,7 +914,7 @@ async function copaJogos(bot, message, args, group) {
 				const liveTag = isLive ? " (AO VIVO 🔴)" : "";
 				const day = gm.local_date ? fmtDate(gm) : "";
 				const status = finished ? "✅" : isLive ? "🔴" : "⏳";
-				msg += `${status} ${home.flagEmoji || ""} ${home.namePt || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || "?"}${liveTag}`;
+				msg += `${status} ${home.flagEmoji || ""} ${home.namePt || gm.home_team_label || "?"} ${score} ${away.flagEmoji || ""} ${away.namePt || gm.away_team_label || "?"}${liveTag}`;
 				if (gm.matchday) msg += ` (Rodada ${gm.matchday})`;
 				msg += "\n";
 				if (day) msg += `   📆 ${day}\n`;
@@ -973,7 +973,7 @@ async function copaJogos(bot, message, args, group) {
 				});
 				const grp = `[${gm.id}]${gm.group ? `[${gm.group}]` : ""} `;
 				const status = isLive ? "🔴 " : "⚽ ";
-				msg += `  ${status}${grp}${home.flagEmoji || ""} ${home.namePt || "?"} vs ${away.flagEmoji || ""} ${away.namePt || "?"}`;
+				msg += `  ${status}${grp}${home.flagEmoji || ""} ${home.namePt || gm.home_team_label || "?"} vs ${away.flagEmoji || ""} ${away.namePt || gm.away_team_label || "?"}`;
 				if (isLive) msg += ` — *AO VIVO: ${gm.home_score}x${gm.away_score}* (${gm.time_elapsed})`;
 				else if (time) msg += ` — ${time}h`;
 				msg += "\n";
@@ -1046,7 +1046,7 @@ async function copaJogo(bot, message, args, group) {
 
 		let msg =
 			`⚽ *Jogo #${game.id}*\n\n` +
-			`${home.flagEmoji || ""} *${home.namePt || game.home_team_name_en || "Casa"}*  vs  ${away.flagEmoji || ""} *${away.namePt || game.away_team_name_en || "Fora"}*\n\n` +
+			`${home.flagEmoji || ""} *${home.namePt || game.home_team_name_en || game.home_team_label || "Casa"}*  vs  ${away.flagEmoji || ""} *${away.namePt || game.away_team_name_en || game.away_team_label || "Fora"}*\n\n` +
 			`🏆 *Placar:* ${score}\n`;
 
 		if (currentlyLive) {
