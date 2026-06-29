@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RavenaBot - Offline</title>
+    <link rel="stylesheet" type="text/css" href="/styles.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <style>
+        body {
+            background-color: #0f0233 !important;
+            color: #1aafbc;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .error-card {
+            background: rgba(15, 2, 51, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(32, 222, 228, 0.25);
+            border-radius: 12px;
+            padding: 35px 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(32, 222, 228, 0.15);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            animation: fadeIn 0.5s ease-out;
+            margin: auto;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .error-image-wrapper {
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid #20dee4;
+            box-shadow: 0 0 25px rgba(32, 222, 228, 0.4);
+            transition: transform 0.3s ease;
+        }
+        .error-image-wrapper:hover {
+            transform: scale(1.03);
+        }
+        .error-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .error-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #20dee4;
+            margin: 10px 0 0 0;
+            text-align: center;
+            text-shadow: 0 0 8px rgba(32, 222, 228, 0.2);
+        }
+        .reason-box {
+            background: rgba(132, 22, 22, 0.18);
+            border: 1px solid rgba(223, 81, 81, 0.35);
+            border-radius: 8px;
+            padding: 15px;
+            width: 100%;
+            text-align: left;
+            box-shadow: inset 0 0 10px rgba(223, 81, 81, 0.05);
+        }
+        .reason-box.no-reason {
+            background: rgba(35, 6, 109, 0.15);
+            border: 1px solid rgba(131, 55, 235, 0.35);
+        }
+        .reason-title {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+            color: #ff8e8e;
+        }
+        .reason-box.no-reason .reason-title {
+            color: #c09fff;
+        }
+        .reason-text {
+            font-size: 0.95rem;
+            line-height: 1.4;
+            color: #20dee4;
+            margin: 0;
+        }
+        .auto-refresh-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: #1aafbc;
+            margin-top: 10px;
+        }
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(32, 222, 228, 0.2);
+            border-top: 2px solid #20dee4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 0.8rem;
+            color: #1aafbc;
+            opacity: 0.7;
+        }
+        
+        /* Ajuste do topbar original se carregado */
+        .topbar {
+            background: rgba(15, 2, 51, 0.85) !important;
+            border-bottom: 1px solid rgba(32, 222, 228, 0.2) !important;
+        }
+        .topbar-title {
+            color: #20dee4 !important;
+            text-shadow: 0 0 10px rgba(32, 222, 228, 0.55) !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- ======= TOP-BAR ======= -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1 class="topbar-title">ravenabot <span class="topbar-title-sep">—</span> <span class="topbar-title-dash" style="color: #1aafbc;">indisponível</span></h1>
+            <div class="topbar-status">
+                <div class="status-badge down" style="cursor: default;">
+                    <span class="status-badge-label">OFFLINE</span>
+                </div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="topbar-socials-pinned">
+                <a href="https://chat.whatsapp.com/Cjh9gmf1mo2DGBEOBeKGbw" target="_blank" title="Comunidade da Ravenabot" class="topbar-social-link">
+                    <img src="/grupo-geral-small.jpg" class="topbar-social-icon">
+                    <span class="topbar-icon-label" style="color: #1aafbc;">Comunidade</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    <!-- ======= FIM TOP-BAR ======= -->
+
+    <div class="error-card">
+        <div class="error-image-wrapper">
+            <img src="/ravena_502.jpg" alt="Erro 502" class="error-image">
+        </div>
+        <h2 class="error-title">A ravena está temporariamente indisponível</h2>
+        
+        {{MOTIVO}}
+
+        <div class="auto-refresh-status">
+            <div class="spinner"></div>
+            <span>Tentando reconectar automaticamente...</span>
+        </div>
+    </div>
+
+    <footer>
+        <p>ravenabot by moothz - 2026</p>
+    </footer>
+
+    <script>
+        // Função para testar conexão com o servidor real do bot
+        async function checkStatus() {
+            try {
+                // Consultamos o healthcheck do bot diretamente via ajax
+                const response = await fetch('/health', { cache: 'no-store' });
+                if (response.ok) {
+                    const data = await response.json();
+                    // Se o status da API real retornou ok, recarregamos a página
+                    if (data && data.status === 'ok') {
+                        console.log('Bot está online! Recarregando...');
+                        window.location.reload();
+                        return;
+                    }
+                }
+            } catch (err) {
+                // Ignora erro de conexão (bot continua offline)
+            }
+            // Agenda a próxima verificação
+            setTimeout(checkStatus, 5000);
+        }
+
+        // Inicia a verificação automática após 5 segundos
+        setTimeout(checkStatus, 5000);
+    </script>
+</body>
+</html>

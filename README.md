@@ -200,6 +200,31 @@ http://localhost:5000/qrcode/meu-bot
 ```
 O login e senha são os valores definidos em `managementUser` e `managementPW` no `bots.josn`.
 
+### 🌐 Fallback Proxy (Evitar erro 502 do Cloudflare)
+
+Quando o bot está reiniciando ou em manutenção, as conexões diretas na porta pública falham e o Cloudflare exibe a tela de erro 502 padrão. Para contornar isso sem precisar de uma conta paga na Cloudflare, foi criado um proxy local em Node.js (gerenciado via **PM2**).
+
+O proxy escuta na porta pública **`5000`** e encaminha o tráfego de forma transparente para a porta **`5001`** (onde o contêiner do bot `ravena-ai` agora roda). Caso o bot caia, o proxy intercepta o erro e renderiza uma página de status estilizada com o motivo da indisponibilidade.
+
+#### Como iniciar o Proxy:
+O proxy roda diretamente no host utilizando o PM2.
+```bash
+# Entre na pasta e inicialize pelo PM2
+cd fallback-proxy
+pm2 start ecosystem.config.json
+
+# Para verificar se está rodando:
+pm2 status
+
+# Para ver os logs:
+pm2 logs ravena-fallback-proxy
+```
+
+#### Motivo Dinâmico de Indisponibilidade:
+* Os scripts do `Makefile` (ex: `make restart-bot`, `make ravena-ai`) escrevem automaticamente o motivo da indisponibilidade em `data/status_motivo.txt`.
+* O **health-check** do Docker também escreve o motivo neste mesmo arquivo caso precise reiniciar o container devido a travamentos ou quedas inesperadas.
+* Assim que o bot inicializa completamente e fica online, ele mesmo limpa o arquivo de motivo. A página do proxy fallback se recarrega sozinha assim que detecta o bot ativo.
+
 ---
 
 ### Comandos úteis

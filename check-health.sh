@@ -48,7 +48,11 @@ send_telegram() {
 
 restart_container() {
     container="$1"
-    echo "[health-check] Restarting container: ${container}"
+    reason="$2"
+    echo "[health-check] Restarting container: ${container} (Reason: ${reason})"
+    if [ -d "/data" ] && [ -n "${reason}" ]; then
+        echo "${reason}" > /data/status_motivo.txt
+    fi
     docker restart "${container}"
 }
 
@@ -84,7 +88,7 @@ while true; do
             MSG="${MSG}$(get_ravena_logs)"
 
             send_telegram "$MSG"
-            restart_container "${WHATSGOAPI_CONTAINER}"
+            restart_container "${WHATSGOAPI_CONTAINER}" "O serviço principal do WhatsApp (whatsgoapi) travou ou ficou inacessível."
             WHATSGO_FAIL_COUNT=0
             sleep 30
         fi
@@ -132,7 +136,7 @@ while true; do
                     MSG="${MSG}$(get_ravena_logs)"
 
                     send_telegram "$MSG"
-                    restart_container "${RAVENA_CONTAINER}"
+                    restart_container "${RAVENA_CONTAINER}" "O bot foi reiniciado automaticamente pelo monitor de saúde devido à inatividade prolongada dos bots."
                     RAVENA_FAIL_COUNT=0
                     sleep 30
                 fi
@@ -151,7 +155,7 @@ while true; do
                 MSG="${MSG}$(get_ravena_logs)"
 
                 send_telegram "$MSG"
-                restart_container "${RAVENA_CONTAINER}"
+                restart_container "${RAVENA_CONTAINER}" "O bot foi reiniciado automaticamente pelo monitor de saúde por não responder ao teste de conectividade."
                 RAVENA_FAIL_COUNT=0
                 sleep 30
             fi

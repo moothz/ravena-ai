@@ -1,5 +1,9 @@
 .PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi logs-cobalt recover_sql
 
+# Habilita o Docker BuildKit por padrão para builds mais rápidas
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 # Suporte para argumentos posicionais no comando make recover_sql
 ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -63,18 +67,23 @@ generate-secrets: ## Gera o .env a partir do .env.example com segredos e inputs 
 ##@ Docker
 
 up: ## Inicia todos os serviços em modo background
+	@mkdir -p data && echo "Iniciando todos os serviços..." > data/status_motivo.txt
 	docker compose up -d
 
 up-build: ## Constrói as imagens e inicia todos os serviços
+	@mkdir -p data && echo "Construindo imagens e iniciando os serviços..." > data/status_motivo.txt
 	docker compose up -d --build
 
 down: ## Para todos os serviços
+	@mkdir -p data && echo "Serviços desligados pelo administrador." > data/status_motivo.txt
 	docker compose down
 
 restart: ## Reinicia todos os serviços
+	@mkdir -p data && echo "Reiniciando todos os serviços..." > data/status_motivo.txt
 	docker compose restart
 
 restart-bot: ## Reinicia apenas o bot ravena-ai
+	@mkdir -p data && echo "Reiniciando o contêiner do bot..." > data/status_motivo.txt
 	docker compose restart ravena-ai
 
 restart-api: ## Reinicia apenas o whatsgoapi
@@ -93,9 +102,12 @@ restart-health: ## Reinicia apenas o monitor de saúde
 	docker compose restart health-check
 
 ravena-ai: ## Faz build e recarrega o código do bot ravena-ai
-	docker compose up -d --build ravena-ai
+	@mkdir -p data && echo "Atualizando código e reiniciando o bot..." > data/status_motivo.txt
+	docker compose build ravena-ai
+	docker compose up -d ravena-ai
 
 build: ## Constrói todas as imagens Docker
+	@mkdir -p data && echo "Reconstruindo imagens Docker..." > data/status_motivo.txt
 	docker compose build
 
 pull: ## Baixa as imagens base mais recentes

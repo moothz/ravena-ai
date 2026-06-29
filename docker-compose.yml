@@ -114,7 +114,7 @@ services:
     networks:
       - ravena-net
     ports:
-      - "${API_PORT:-5000}:5000"
+      - "${API_PORT:-5001}:${API_PORT:-5001}"
       - "${TELEGRAM_WEBHOOK_PORT:-9005}:${TELEGRAM_WEBHOOK_PORT:-9005}"
     volumes:
       # Persistent data — NEVER reset these
@@ -153,11 +153,12 @@ services:
       HEALTH_CHECK_TELEGRAM_CHAT_ID: ${HEALTH_CHECK_TELEGRAM_CHAT_ID:-}
       GLOBAL_API_KEY: ${GLOBAL_API_KEY}
       SERVER_PORT: ${SERVER_PORT:-8080}
-      API_PORT: ${API_PORT:-5000}
+      API_PORT: ${API_PORT:-5001}
       HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-60}
     volumes:
       - ./check-health.sh:/check-health.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
     entrypoint: >
       sh -c "apk add --no-cache curl jq docker-cli && sh /check-health.sh"
     depends_on:

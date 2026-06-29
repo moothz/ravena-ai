@@ -489,6 +489,26 @@ class BotAPI {
 			}
 		});
 
+		// Endpoint para testar o layout da página 502
+		this.app.get("/502", async (req, res) => {
+			try {
+				const fallbackPath = path.join(__dirname, "../fallback-proxy/fallback.html");
+				let html = await fs.readFile(fallbackPath, "utf8");
+				
+				const reasonHtml = `<div class="reason-box">
+					<span class="reason-title"><i class="fas fa-info-circle"></i> Modo de Teste:</span>
+					<p class="reason-text">Esta é uma demonstração do layout da página de indisponibilidade (Erro 502) acionada para testes pelo administrador.</p>
+				</div>`;
+				
+				html = html.replace("{{MOTIVO}}", reasonHtml);
+				res.setHeader("Content-Type", "text/html; charset=utf-8");
+				res.status(200).send(html);
+			} catch (error) {
+				this.logger.error("Erro ao carregar página de teste 502:", error);
+				res.status(500).send("Erro interno ao carregar a página de teste 502.");
+			}
+		});
+
 		this.app.get("/logout/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
 			const { botId } = req.params;
 			const bot = this.bots.find((b) => b.id === botId);
@@ -3707,6 +3727,10 @@ class BotAPI {
 
 					// Realiza uma verificação inicial logo após iniciar
 					this.checkServices();
+
+					// Limpa o arquivo de motivo de indisponibilidade se ele existir
+					const statusMotivoPath = path.join(__dirname, "../data/status_motivo.txt");
+					fs.unlink(statusMotivoPath).catch(() => {});
 
 					resolve();
 				});
