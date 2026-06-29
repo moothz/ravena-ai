@@ -397,3 +397,5 @@ Interações cômicas automáticas do bot.
 | `food_tracker.db` | `food_logs` | Registro alimentar por usuário |
 | `horoscopo.db` | `horoscopo_cache` | Cache de previsões astrológicas |
 | `placas.db` | `placas_cache` | Cache de consultas de placas veiculares |
+| `raffle_cache.db` | `raffle_cache` | Cache de informações e andamento de rifas/ações |
+
