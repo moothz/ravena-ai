@@ -147,6 +147,9 @@ test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick 
 test-providers: ## Testa todos os provedores de IA do service-providers.json
 	@node test-providers.js
 
+regenerate-rarefish: ## Regenera imagens de capturas raras perdidas ou placeholders
+	docker compose exec ravena-ai node regenerate-rarefish.js
+
 sync: ## Sincroniza arquivos modificados com o container ravena-ai
 	@./sync-to-docker.sh
 
