@@ -494,12 +494,12 @@ class BotAPI {
 			try {
 				const fallbackPath = path.join(__dirname, "../fallback-proxy/fallback.html");
 				let html = await fs.readFile(fallbackPath, "utf8");
-				
+
 				const reasonHtml = `<div class="reason-box">
 					<span class="reason-title"><i class="fas fa-info-circle"></i> Modo de Teste:</span>
 					<p class="reason-text">Esta é uma demonstração do layout da página de indisponibilidade (Erro 502) acionada para testes pelo administrador.</p>
 				</div>`;
-				
+
 				html = html.replace("{{MOTIVO}}", reasonHtml);
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
 				res.status(200).send(html);

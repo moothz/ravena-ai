@@ -1453,13 +1453,57 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						if (bot.addSkipGroup) {
 							await bot.addSkipGroup(groupId);
 						}
+
+						await this.database.recordGroupLeave(groupId, Date.now(), data.responsavel);
+						await this.database.saveGroup(group);
+
+						let membershipHistoryText = "";
+						try {
+							const periods = await this.database.getGroupMembershipPeriods(groupId);
+							if (periods && periods.length > 0) {
+								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
+								periods.forEach((p, idx) => {
+									const joinDate = p.join_timestamp
+										? new Date(p.join_timestamp).toLocaleString("pt-BR")
+										: "Desconhecido";
+									const leaveDate = p.leave_timestamp
+										? new Date(p.leave_timestamp).toLocaleString("pt-BR")
+										: "Ainda no grupo";
+
+									let durationText = "";
+									if (p.duration) {
+										const sec = Math.floor(p.duration / 1000);
+										const days = Math.floor(sec / 86400);
+										const hours = Math.floor((sec % 86400) / 3600);
+										const minutes = Math.floor((sec % 3600) / 60);
+
+										const parts = [];
+										if (days > 0) parts.push(`${days}d`);
+										if (hours > 0) parts.push(`${hours}h`);
+										if (minutes > 0) parts.push(`${minutes}m`);
+										if (parts.length === 0) parts.push("menos de 1m");
+										durationText = ` (${parts.join(" ")})`;
+									} else if (p.join_timestamp && p.leave_timestamp) {
+										durationText = " (tempo desconhecido)";
+									}
+
+									membershipHistoryText += `${idx + 1}. 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
+								});
+							}
+						} catch (historyErr) {
+							this.logger.error(
+								"Erro ao carregar histórico de estadias para log de saída:",
+								historyErr
+							);
+						}
+
 						const msgLeave = `🚪🔴 *${bot.id}* saiu do grupo:
 - 🆔 *ID:* \`${group.id}\`
 - 📃 *Nome:* \`${group.name}\`
 - 👷‍♂️ *Responsável:*
 \`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`
 - 👨‍💻 *Raw Data*:
-\`\`\`${JSON.stringify(data.group)}\`\`\``;
+\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}`;
 
 						// Remove o responsável do bot comunitário dos admins adicionais
 						/* por enquanto desabilitado
@@ -1481,8 +1525,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 						*/
 
-						await this.database.recordGroupLeave(groupId, Date.now(), data.responsavel);
-						await this.database.saveGroup(group);
 						bot.sendMessage(bot.grupoLogs, msgLeave).catch((error) => {
 							this.logger.error(
 								"Erro ao enviar notificação de entrada no grupo para o grupo de logs:",
