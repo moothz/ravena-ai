@@ -189,6 +189,10 @@ class Management {
 				method: "setInteractionChance",
 				description: "Define a chance de ocorrer interações automáticas"
 			},
+			"interagir-proporcao": {
+				method: "setInteractionProportion",
+				description: "Define a proporção entre comandos e IA para interações automáticas"
+			},
 			fechar: {
 				method: "closeGroup",
 				description: "Fecha o grupo (apenas admins enviam msgs)"
@@ -1784,7 +1788,9 @@ class Management {
 				infoMessage += `*Interações Automáticas:*\n`;
 				infoMessage += `- *Ativado:* ${group.interact.enabled ? "Sim" : "Não"}\n`;
 				infoMessage += `- *Chance:* ${group.interact.chance / 100}% (${group.interact.chance}/10000)\n`;
-				infoMessage += `- *Cooldown:* ${group.interact.cooldown} minutos\n\n`;
+				infoMessage += `- *Cooldown:* ${group.interact.cooldown} minutos\n`;
+				const proporcao = group.interact.proporcao !== undefined ? group.interact.proporcao : 50;
+				infoMessage += `- *Proporção:* ${proporcao}% IA, ${100 - proporcao}% comandos\n\n`;
 			}
 
 			infoMessage += `*Filtros:*\n`;
@@ -4474,7 +4480,8 @@ class Management {
 				useCmds: true,
 				chance: 100, // Padrão: 1%
 				cooldown: 30, // Padrão: 30 minutos
-				lastInteraction: 0
+				lastInteraction: 0,
+				proporcao: 50
 			};
 		}
 
@@ -4491,8 +4498,11 @@ class Management {
 
 		if (group.interact.enabled) {
 			response += `📊 Chance atual: ${group.interact.chance / 100}%\n`;
-			response += `🕐 Cooldown atual: ${group.interact.cooldown} minutos\n\n`;
-			response += "Use `!g-interagir-chance` e `!g-interagir-cd` para ajustar estes valores.";
+			response += `🕐 Cooldown atual: ${group.interact.cooldown} minutos\n`;
+			const proporcao = group.interact.proporcao !== undefined ? group.interact.proporcao : 50;
+			response += `⚖️ Proporção atual: ${proporcao}% IA, ${100 - proporcao}% comandos\n\n`;
+			response +=
+				"Use `!g-interagir-chance`, `!g-interagir-cd` e `!g-interagir-proporcao` para ajustar estes valores.";
 		}
 
 		return new ReturnMessage({
@@ -4524,7 +4534,8 @@ class Management {
 				useCmds: true,
 				chance: 100, // Padrão: 1%
 				cooldown: 30, // Padrão: 30 minutos
-				lastInteraction: 0
+				lastInteraction: 0,
+				proporcao: 50
 			};
 		}
 
@@ -4568,7 +4579,8 @@ class Management {
 				useCmds: true,
 				chance: 100, // Padrão: 1%
 				cooldown: 30, // Padrão: 30 minutos
-				lastInteraction: 0
+				lastInteraction: 0,
+				proporcao: 50
 			};
 		}
 
@@ -4626,8 +4638,13 @@ class Management {
 				useCmds: true,
 				chance: 100, // Padrão: 1%
 				cooldown: 30, // Padrão: 30 minutos
-				lastInteraction: 0
+				lastInteraction: 0,
+				proporcao: 50
 			};
+		}
+
+		if (group.interact.proporcao === undefined) {
+			group.interact.proporcao = 50;
 		}
 
 		// Verifica se valor de chance foi fornecido
@@ -4656,6 +4673,74 @@ class Management {
 		return new ReturnMessage({
 			chatId: group.id,
 			content: `📊 Chance de interações definida para ${chance / 100}%${textoMaximo}.`
+		});
+	}
+
+	/**
+	 * Define a proporção de interação automática (chance para IA vs comandos)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async setInteractionProportion(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		// Inicializa objeto de interação se não existir
+		if (!group.interact) {
+			group.interact = {
+				enabled: false,
+				useCmds: true,
+				chance: 100, // Padrão: 1%
+				cooldown: 30, // Padrão: 30 minutos
+				lastInteraction: 0,
+				proporcao: 50
+			};
+		}
+
+		if (group.interact.proporcao === undefined) {
+			group.interact.proporcao = 50;
+		}
+
+		const helperText = `Para usar apenas *IA* na interação, envie:\n!g-interagir-proporcao 100\n\nPara usar apenas *comandos* na interação, envie:\n!g-interagir-proporcao 0`;
+
+		// Verifica se valor da proporção foi fornecido
+		if (args.length === 0 || isNaN(parseInt(args[0]))) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `📊 Proporção de interação atual: ${group.interact.proporcao}% para IA e ${100 - group.interact.proporcao}% para comandos.\n\nUse !g-interagir-proporcao [0-100] para alterar.\n\n${helperText}`
+			});
+		}
+
+		// Analisa e valida a proporção
+		let proporcao = parseInt(args[0]);
+		if (proporcao < 0) proporcao = 0;
+		if (proporcao > 100) proporcao = 100;
+
+		// Atualiza proporção
+		group.interact.proporcao = proporcao;
+
+		// Salva mudanças
+		await this.database.saveGroup(group);
+
+		let fraseSimples = "";
+		if (proporcao === 100) {
+			fraseSimples = "Usando apenas *IA* para interagir";
+		} else if (proporcao === 0) {
+			fraseSimples = "Usando apenas *comandos* para interagir";
+		} else {
+			fraseSimples = `${100 - proporcao}% de chance de usar algum comando, ${proporcao}% de chance de usar IA para interagir`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: `📊 Proporção de interação definida para ${proporcao}% IA e ${100 - proporcao}% comandos.\n\n_${fraseSimples}_\n\n${helperText}`
 		});
 	}
 

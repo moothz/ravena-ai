@@ -1852,7 +1852,9 @@ class CommandHandler {
 
 						// 2 tipos de interação: Um usa o !interagir e outro pega comando custom do grupo
 						// Se não tiver custom, sempre usar LLM
-						const interagirLLM = Math.random() > 0.7 || autoCommands.length == 0;
+						const proporcaoVal =
+							group.interact.proporcao !== undefined ? group.interact.proporcao : 50;
+						const interagirLLM = autoCommands.length == 0 || Math.random() * 100 < proporcaoVal;
 						if (interagirLLM) {
 							const interactCommand = this.fixedCommands.getCommand("interagir");
 							this.logger.info(`[interagir] Acionando LLM-Interagir`);

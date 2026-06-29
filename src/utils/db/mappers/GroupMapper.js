@@ -48,13 +48,20 @@ const GroupMapper = {
 			webhooks: parse(row.webhooks, []),
 			greetings: parse(row.greetings, {}),
 			farewells: parse(row.farewells, {}),
-			interact: parse(row.interact, {
-				enabled: true,
-				useCmds: true,
-				lastInteraction: 0,
-				cooldown: 30,
-				chance: 100
-			}),
+			interact: (() => {
+				const parsed = parse(row.interact, {
+					enabled: true,
+					useCmds: true,
+					lastInteraction: 0,
+					cooldown: 30,
+					chance: 100,
+					proporcao: 50
+				});
+				if (parsed && parsed.proporcao === undefined) {
+					parsed.proporcao = 50;
+				}
+				return parsed;
+			})(),
 			autoTranslateTo: row.auto_translate_to ?? false,
 			autoStt: !!row.auto_stt,
 			ignoredNumbers: parse(row.ignored_numbers, []),

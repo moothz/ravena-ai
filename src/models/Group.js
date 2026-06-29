@@ -46,8 +46,12 @@ class Group {
 			useCmds: true,
 			lastInteraction: 0,
 			cooldown: 30,
-			chance: 100
+			chance: 100,
+			proporcao: 50
 		};
+		if (this.interact.proporcao === undefined) {
+			this.interact.proporcao = 50;
+		}
 
 		// Auto translate todas returnMessage
 		this.autoTranslateTo = data.autoTranslateTo ?? false;

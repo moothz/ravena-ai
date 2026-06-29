@@ -564,6 +564,10 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
         groupData.interact.chance = parseInt(document.getElementById('interaction-chance').value);
         groupData.interact.cooldown = parseInt(document.getElementById('interaction-cooldown').value);
+        const proporcaoSlider = document.getElementById('interaction-proporcao');
+        if (proporcaoSlider) {
+            groupData.interact.proporcao = parseInt(proporcaoSlider.value);
+        }
         
         const autoTranslate = document.getElementById('auto-translate').checked;
         const translateLang = document.getElementById('translate-lang').value.trim();
@@ -640,6 +644,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('interaction-cooldown').value = interact.cooldown || 5;
         document.getElementById('cooldown-val').textContent = interact.cooldown || 5;
+
+        const proporcaoVal = interact.proporcao !== undefined ? interact.proporcao : 50;
+        const proporcaoSlider = document.getElementById('interaction-proporcao');
+        if (proporcaoSlider) {
+            proporcaoSlider.value = proporcaoVal;
+            document.getElementById('proporcao-val').textContent = proporcaoVal;
+            const iaChance = proporcaoVal;
+            const cmdChance = 100 - iaChance;
+            const descEl = document.getElementById('proporcao-desc');
+            if (descEl) {
+                if (iaChance === 100) {
+                    descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
+                } else if (iaChance === 0) {
+                    descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
+                } else {
+                    descEl.textContent = `${cmdChance}% de chance de usar algum comando, ${iaChance}% de chance de usar IA para interagir`;
+                }
+            }
+        }
 
         toggleInteractionSettings(!!interact.enabled);
 
@@ -1746,6 +1769,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if(cooldownSlider) {
             cooldownSlider.addEventListener('input', (e) => {
                 document.getElementById('cooldown-val').textContent = e.target.value;
+            });
+        }
+
+        const proporcaoSlider = document.getElementById('interaction-proporcao');
+        if (proporcaoSlider) {
+            proporcaoSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                document.getElementById('proporcao-val').textContent = val;
+                const iaChance = val;
+                const cmdChance = 100 - val;
+                const descEl = document.getElementById('proporcao-desc');
+                if (descEl) {
+                    if (iaChance === 100) {
+                        descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
+                    } else if (iaChance === 0) {
+                        descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
+                    } else {
+                        descEl.textContent = `${cmdChance}% de chance de usar algum comando, ${iaChance}% de chance de usar IA para interagir`;
+                    }
+                }
             });
         }
 
