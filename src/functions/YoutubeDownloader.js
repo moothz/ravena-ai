@@ -42,7 +42,7 @@ function isRateLimitError(error) {
 	);
 }
 
-async function downloadWithRetry(urlSafe, baseOptions) {
+async function downloadWithRetry(urlSafe, baseOptions, type = "video") {
 	let lastError;
 	for (let attempt = 0; attempt < YT_CLIENTS.length; attempt++) {
 		const clientName = YT_CLIENTS[currentClientIndex];
@@ -51,7 +51,11 @@ async function downloadWithRetry(urlSafe, baseOptions) {
 			logger.info(
 				`[clientRotation] Download com cliente '${clientName}' (tentativa ${attempt + 1}/${YT_CLIENTS.length})`
 			);
-			return await videoCacheManager.downloadVideoWithCache(urlSafe, options);
+			if (type === "audio") {
+				return await videoCacheManager.downloadMusicWithCache(urlSafe, options);
+			} else {
+				return await videoCacheManager.downloadVideoWithCache(urlSafe, options);
+			}
 		} catch (err) {
 			if (isRateLimitError(err)) {
 				advanceClient();
@@ -300,9 +304,8 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 				} else {
 					downloadWithRetry(urlSafe, {
 						o: destinoVideo,
-						f: "(bv*[vcodec~='^((he|a)vc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
+						f: "(bv*[vcodec~='^(avc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
 						remuxVideo: "mp4",
-						recodeVideo: "mp4",
 						audioFormat: "aac",
 						ffmpegLocation: process.env.FFMPEG_PATH,
 						...(process.env.YT_USE_COOKIES === "true"
@@ -344,7 +347,6 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 	const hash = crypto.randomBytes(2).toString("hex");
 	const nomeVideoTemp = `ytdlp-${hash}`;
-	const tempVideoPath = path.join(process.env.DL_FOLDER, `${nomeVideoTemp}_v.mp4`);
 
 	try {
 		idVideo = idVideo.replace(/[^a-z0-9_-]/gi, "");
@@ -360,7 +362,7 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					: {}),
 				jsRuntimes: "node"
 			})
-			.then((videoInfo) => {
+			.then(async (videoInfo) => {
 				const autorVideo = videoInfo.uploader;
 				const tituloVideo = videoInfo.title;
 				logger.info(
@@ -374,15 +376,17 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					);
 				}
 
-				logger.info(
-					`[baixarMusicaYoutube][${nomeVideoTemp}] Fazendo download do vídeo para conversão...`
-				);
+				const outputDir = path.join(__dirname, "..", "..", "public", "audios");
+				await fs.mkdir(outputDir, { recursive: true });
+				const outputFileName = `${crypto.randomUUID()}.mp3`;
+				const destinoMp3 = path.join(outputDir, outputFileName);
+
+				logger.info(`[baixarMusicaYoutube][${nomeVideoTemp}] Fazendo download do áudio...`);
 				const downloadOptions = {
-					o: tempVideoPath,
-					f: "(bv*[vcodec~='^((he|a)vc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
-					remuxVideo: "mp4",
-					recodeVideo: "mp4",
-					audioFormat: "aac",
+					o: destinoMp3,
+					f: "ba",
+					extractAudio: true,
+					audioFormat: "mp3",
 					ffmpegLocation: process.env.FFMPEG_PATH,
 					...(process.env.YT_USE_COOKIES === "true"
 						? { cookies: path.join(database.databasePath, "www.youtube.com_cookies.txt") }
@@ -390,51 +394,21 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					jsRuntimes: "node"
 				};
 
-				downloadWithRetry(urlSafe, downloadOptions)
-					.then((output) => {
-						let videoToConvertPath;
-						let shouldCleanup = false;
+				downloadWithRetry(urlSafe, downloadOptions, "audio")
+					.then(async (output) => {
+						let audioFilePath;
 
 						if (output.fromCache) {
 							logger.info(
-								`[baixarMusicaYoutube][${nomeVideoTemp}] Vídeo estava em cache: ${output.lastDownloadLocation}`
+								`[baixarMusicaYoutube][${nomeVideoTemp}] Áudio estava em cache: ${output.lastDownloadLocation}`
 							);
-							videoToConvertPath = output.lastDownloadLocation;
+							audioFilePath = output.lastDownloadLocation;
 						} else {
 							logger.info(
-								`[baixarMusicaYoutube][${nomeVideoTemp}] Vídeo baixado para: ${tempVideoPath}`
+								`[baixarMusicaYoutube][${nomeVideoTemp}] Áudio baixado e convertido para: ${destinoMp3}`
 							);
-							videoToConvertPath = tempVideoPath;
-							shouldCleanup = true;
-							videoCacheManager.setLastDownloadLocation(urlSafe, videoToConvertPath, "video");
-						}
-
-						logger.info(
-							`[baixarMusicaYoutube][${nomeVideoTemp}] Convertendo '${videoToConvertPath}' para MP3...`
-						);
-						return toMp3(videoToConvertPath).then((audioFilePath) => ({
-							audioFilePath,
-							shouldCleanup,
-							videoToConvertPath
-						}));
-					})
-					.then(({ audioFilePath, shouldCleanup, videoToConvertPath }) => {
-						logger.info(
-							`[baixarMusicaYoutube][${nomeVideoTemp}] Conversão para MP3 concluída: ${audioFilePath}`
-						);
-
-						if (shouldCleanup) {
-							fs.unlink(videoToConvertPath)
-								.then(() =>
-									logger.info(
-										`[baixarMusicaYoutube][${nomeVideoTemp}] Arquivo de vídeo temporário removido: ${videoToConvertPath}`
-									)
-								)
-								.catch((err) =>
-									logger.warn(
-										`[baixarMusicaYoutube][${nomeVideoTemp}] Falha ao remover arquivo de vídeo temporário: ${err}`
-									)
-								);
+							audioFilePath = destinoMp3;
+							await videoCacheManager.setLastDownloadLocation(urlSafe, audioFilePath, "audio");
 						}
 
 						const resultado = { legenda: `[${autorVideo}] ${tituloVideo}`, arquivo: audioFilePath };
