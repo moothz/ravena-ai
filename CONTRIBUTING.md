@@ -15,8 +15,8 @@ Abaixo estão os apoiadores do projeto:
 | 3 | @lucascalgaro | R$250.00 |
 | 4 | Bernardo | R$200.00 |
 | 5 | catra1xd | R$195.00 |
-| 6 | Weslley | R$147.00 |
-| 7 | bouken.com.br | R$130.00 |
+| 6 | bouken.com.br | R$150.00 |
+| 7 | Weslley | R$147.00 |
 | 8 | MARLIETE APARECIDA SILVA SANTOS | R$110.00 |
 | 9 | Alino | R$107.00 |
 | 10 | Aasthr | R$106.00 |
@@ -29,48 +29,48 @@ Abaixo estão os apoiadores do projeto:
 | 13 | Williton | R$100.00 |
 | 18 | Shyrako | R$80.00 |
 | 19 | Hati | R$75.00 |
-| 20 | Jean Batista | R$70.00 |
-| 20 | ×LUCAS× | R$70.00 |
-| 22 | FELIPE FERNANDES RODRIGUES | R$63.00 |
-| 23 | TTV/NascimentoCSGO | R$60.00 |
-| 23 | Emerson Kühl | R$60.00 |
-| 25 | Vinícius D. | R$54.32 |
-| 26 | CptWall | R$50.00 |
-| 26 | enay.zuin | R$50.00 |
-| 26 | Sky | R$50.00 |
-| 26 | VictorHC | R$50.00 |
-| 26 | SpeedLess | R$50.00 |
-| 26 | Filipe Teixeira (OCBR) | R$50.00 |
-| 26 | LeOoRamos | R$50.00 |
-| 26 | Audrey Nunes | R$50.00 |
-| 34 | Felipe & Matheus | R$47.00 |
-| 35 | PlayJao | R$43.00 |
-| 36 | Fábio Amaro | R$40.99 |
-| 37 | Álef Alexandre | R$40.00 |
-| 37 | Wescley | R$40.00 |
-| 39 | Hugo | R$35.00 |
-| 39 | Victor Küster | R$35.00 |
-| 41 | Zigudo | R$34.00 |
-| 42 | HardCrazy | R$33.33 |
-| 43 | Enzo | R$30.00 |
-| 43 | Deny Santos | R$30.00 |
-| 43 | rxngel | R$30.00 |
-| 43 | Rhamon Cristian de Souza | R$30.00 |
-| 43 | Vitor Caroba | R$30.00 |
-| 43 | Márcio Ferreira de Souza | R$30.00 |
-| 43 | MARCELO OLIVEIRA | R$30.00 |
-| 43 | Cidonio Jardim | R$30.00 |
-| 43 | Mila Ayleen | R$30.00 |
-| 52 | Gabriel | R$27.00 |
-| 53 | Marcus | R$26.62 |
-| 54 | Matheus Okida | R$25.00 |
-| 54 | João Sales | R$25.00 |
-| 54 | Gustavo Willian | R$25.00 |
-| 54 | WishBoy | R$25.00 |
-| 54 | Paredao Geek | R$25.00 |
-| 54 | Carola | R$25.00 |
-| 54 | Lulu submissa | R$25.00 |
-| 54 | Bill | R$25.00 |
+| 19 | Boteco da Luluzinha | R$75.00 |
+| 21 | Jean Batista | R$70.00 |
+| 21 | ×LUCAS× | R$70.00 |
+| 23 | FELIPE FERNANDES RODRIGUES | R$63.00 |
+| 24 | TTV/NascimentoCSGO | R$60.00 |
+| 24 | Emerson Kühl | R$60.00 |
+| 26 | Vinícius D. | R$54.32 |
+| 27 | CptWall | R$50.00 |
+| 27 | enay.zuin | R$50.00 |
+| 27 | Sky | R$50.00 |
+| 27 | VictorHC | R$50.00 |
+| 27 | SpeedLess | R$50.00 |
+| 27 | Filipe Teixeira (OCBR) | R$50.00 |
+| 27 | LeOoRamos | R$50.00 |
+| 27 | Audrey Nunes | R$50.00 |
+| 35 | Felipe & Matheus | R$47.00 |
+| 36 | PlayJao | R$43.00 |
+| 37 | Fábio Amaro | R$40.99 |
+| 38 | Álef Alexandre | R$40.00 |
+| 38 | Wescley | R$40.00 |
+| 40 | Hugo | R$35.00 |
+| 40 | Victor Küster | R$35.00 |
+| 42 | Zigudo | R$34.00 |
+| 43 | HardCrazy | R$33.33 |
+| 44 | Enzo | R$30.00 |
+| 44 | Deny Santos | R$30.00 |
+| 44 | rxngel | R$30.00 |
+| 44 | Rhamon Cristian de Souza | R$30.00 |
+| 44 | Vitor Caroba | R$30.00 |
+| 44 | Márcio Ferreira de Souza | R$30.00 |
+| 44 | MARCELO OLIVEIRA | R$30.00 |
+| 44 | Cidonio Jardim | R$30.00 |
+| 44 | Mila Ayleen | R$30.00 |
+| 53 | Gabriel | R$27.00 |
+| 54 | Marcus | R$26.62 |
+| 55 | Matheus Okida | R$25.00 |
+| 55 | João Sales | R$25.00 |
+| 55 | Gustavo Willian | R$25.00 |
+| 55 | WishBoy | R$25.00 |
+| 55 | Paredao Geek | R$25.00 |
+| 55 | Carola | R$25.00 |
+| 55 | Bill | R$25.00 |
 | 62 | Mavis | R$24.00 |
 | 63 | Paulinho Filial 41 | R$23.76 |
 | 64 | Ricardo Souza | R$21.00 |
@@ -96,79 +96,79 @@ Abaixo estão os apoiadores do projeto:
 | 67 | Anderson | R$20.00 |
 | 67 | Fly | R$20.00 |
 | 67 | RICARDO DIMAS DA SILVA | R$20.00 |
-| 67 | Luluzinha | R$20.00 |
 | 67 | Victoria Suamy | R$20.00 |
 | 67 | Leandro Carvalho | R$20.00 |
 | 67 | Léo Ferreira | R$20.00 |
-| 91 | @llnsc | R$18.70 |
-| 92 | vladscrul | R$15.00 |
-| 92 | Lusca o Brabo | R$15.00 |
-| 92 | Raoni K | R$15.00 |
-| 92 | Marcello ragazzi | R$15.00 |
-| 92 | @Leozinho | R$15.00 |
-| 92 | Leonardo Ferreira | R$15.00 |
-| 92 | Lucas Nunes | R$15.00 |
-| 92 | bruno Amaral | R$15.00 |
-| 92 | Arthur Motta | R$15.00 |
-| 92 | Mat | R$15.00 |
-| 92 | Lukhaos | R$15.00 |
-| 92 | Lizzesakm | R$15.00 |
-| 92 | Marceloo | R$15.00 |
-| 92 | Ricardo Dimas | R$15.00 |
-| 106 | Alex Abramo Barreto | R$13.33 |
-| 107 | Bortolazzo | R$13.00 |
-| 108 | taiyoakira/bieldiazz | R$12.00 |
-| 108 | Manta | R$12.00 |
-| 110 | Pauledu | R$11.50 |
-| 111 | pafon | R$11.00 |
-| 112 | Francialex | R$10.00 |
-| 112 | adrianzones | R$10.00 |
-| 112 | Kaua | R$10.00 |
-| 112 | Betto | R$10.00 |
-| 112 | Thiago Costa | R$10.00 |
-| 112 | rohdriggo | R$10.00 |
-| 112 | Katekko | R$10.00 |
-| 112 | Vicentinho | R$10.00 |
-| 112 | Luiz Fernando | R$10.00 |
-| 112 | Junior Collins | R$10.00 |
-| 112 | Paulo Henrique | R$10.00 |
-| 112 | Topzeira | R$10.00 |
-| 112 | Gabshow a fera | R$10.00 |
-| 112 | Praga | R$10.00 |
-| 112 | Cronos | R$10.00 |
-| 112 | Gabriel de Oliveira Sousa | R$10.00 |
-| 112 | Joga mais fala menos | R$10.00 |
-| 112 | Cleiton | R$10.00 |
-| 112 | andr | R$10.00 |
-| 112 | GuilhermePikaGrande | R$10.00 |
-| 112 | Rafa Moreno | R$10.00 |
-| 112 | Robson santos | R$10.00 |
-| 112 | Julio C | R$10.00 |
-| 112 | Estevão Gutiere | R$10.00 |
-| 112 | Cigarro🚬 | R$10.00 |
-| 112 | Gustavo Manfredini | R$10.00 |
-| 112 | Marcel ricchitella | R$10.00 |
-| 112 | José Carlos | R$10.00 |
-| 112 | Julio Marcos | R$10.00 |
-| 112 | Isabella | R$10.00 |
-| 112 | Daniel | R$10.00 |
-| 112 | Matheus Muniz | R$10.00 |
-| 112 | Gabriel sants | R$10.00 |
-| 112 | Marcelly | R$10.00 |
-| 112 | Danny ☆♡☆ | R$10.00 |
-| 112 | Pedro Leal | R$10.00 |
-| 112 | Marcio Gomes | R$10.00 |
-| 112 | Pafon22 | R$10.00 |
-| 112 | Isaque | R$10.00 |
-| 112 | Carola_geek | R$10.00 |
-| 112 | ESTEFANIA DE OLIVEIRA MESA | R$10.00 |
-| 112 | João Vitor | R$10.00 |
-| 112 | Pedronha | R$10.00 |
-| 112 | Junio | R$10.00 |
-| 112 | LUIZ FELIPE CARDOZO | R$10.00 |
-| 112 | Shicoriver | R$10.00 |
-| 112 | Sabão | R$10.00 |
-| 112 | Matheus | R$10.00 |
+| 90 | @llnsc | R$18.70 |
+| 91 | vladscrul | R$15.00 |
+| 91 | Lusca o Brabo | R$15.00 |
+| 91 | Raoni K | R$15.00 |
+| 91 | Marcello ragazzi | R$15.00 |
+| 91 | @Leozinho | R$15.00 |
+| 91 | Leonardo Ferreira | R$15.00 |
+| 91 | Lucas Nunes | R$15.00 |
+| 91 | bruno Amaral | R$15.00 |
+| 91 | Arthur Motta | R$15.00 |
+| 91 | Mat | R$15.00 |
+| 91 | Lukhaos | R$15.00 |
+| 91 | Lizzesakm | R$15.00 |
+| 91 | Marceloo | R$15.00 |
+| 91 | Ricardo Dimas | R$15.00 |
+| 105 | Alex Abramo Barreto | R$13.33 |
+| 106 | Bortolazzo | R$13.00 |
+| 107 | taiyoakira/bieldiazz | R$12.00 |
+| 107 | Manta | R$12.00 |
+| 109 | Pauledu | R$11.50 |
+| 110 | pafon | R$11.00 |
+| 111 | Francialex | R$10.00 |
+| 111 | adrianzones | R$10.00 |
+| 111 | Kaua | R$10.00 |
+| 111 | Betto | R$10.00 |
+| 111 | Thiago Costa | R$10.00 |
+| 111 | rohdriggo | R$10.00 |
+| 111 | Katekko | R$10.00 |
+| 111 | Vicentinho | R$10.00 |
+| 111 | Luiz Fernando | R$10.00 |
+| 111 | Junior Collins | R$10.00 |
+| 111 | Paulo Henrique | R$10.00 |
+| 111 | Topzeira | R$10.00 |
+| 111 | Gabshow a fera | R$10.00 |
+| 111 | Praga | R$10.00 |
+| 111 | Cronos | R$10.00 |
+| 111 | Gabriel de Oliveira Sousa | R$10.00 |
+| 111 | Joga mais fala menos | R$10.00 |
+| 111 | Cleiton | R$10.00 |
+| 111 | andr | R$10.00 |
+| 111 | GuilhermePikaGrande | R$10.00 |
+| 111 | Rafa Moreno | R$10.00 |
+| 111 | Robson santos | R$10.00 |
+| 111 | Julio C | R$10.00 |
+| 111 | Estevão Gutiere | R$10.00 |
+| 111 | Cigarro🚬 | R$10.00 |
+| 111 | Gustavo Manfredini | R$10.00 |
+| 111 | Marcel ricchitella | R$10.00 |
+| 111 | José Carlos | R$10.00 |
+| 111 | Julio Marcos | R$10.00 |
+| 111 | Isabella | R$10.00 |
+| 111 | Daniel | R$10.00 |
+| 111 | Matheus Muniz | R$10.00 |
+| 111 | Gabriel sants | R$10.00 |
+| 111 | Marcelly | R$10.00 |
+| 111 | Danny ☆♡☆ | R$10.00 |
+| 111 | Pedro Leal | R$10.00 |
+| 111 | Marcio Gomes | R$10.00 |
+| 111 | Pafon22 | R$10.00 |
+| 111 | Isaque | R$10.00 |
+| 111 | Carola_geek | R$10.00 |
+| 111 | ESTEFANIA DE OLIVEIRA MESA | R$10.00 |
+| 111 | João Vitor | R$10.00 |
+| 111 | Pedronha | R$10.00 |
+| 111 | Junio | R$10.00 |
+| 111 | LUIZ FELIPE CARDOZO | R$10.00 |
+| 111 | Shicoriver | R$10.00 |
+| 111 | Sabão | R$10.00 |
+| 111 | Matheus | R$10.00 |
+| 111 | Yuki | R$10.00 |
 | 160 | NathanF | R$9.99 |
 | 161 | David X | R$8.00 |
 | 161 | Gabriel Rocha | R$8.00 |
@@ -242,6 +242,7 @@ Abaixo estão os apoiadores do projeto:
 | 174 | Serenity | R$5.00 |
 | 174 | Anthonyy | R$5.00 |
 | 174 | manson | R$5.00 |
+| 174 | Bode | R$5.00 |
 <!-- DONORS_LIST_END -->
 
 ---
