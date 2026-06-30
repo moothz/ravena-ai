@@ -59,7 +59,7 @@ async function ragnarokInfoCommand(bot, message, args, group) {
 }
 
 async function ragnarokCommand(bot, message, args, group) {
-	logger.debug(`[ragnarokResetCommand] `, { message, args });
+	logger.debug(`[ragnarokCommand] `, { message, args });
 	const chatId = message.author;
 	const authorId = message.author ?? message.authorAlt;
 	const sanitizedUser = sanitize(authorId.split("@")[0]);

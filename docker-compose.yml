@@ -113,6 +113,8 @@ services:
       - 8.8.8.8
     networks:
       - ravena-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-5001}:${API_PORT:-5001}"
       - "${TELEGRAM_WEBHOOK_PORT:-9005}:${TELEGRAM_WEBHOOK_PORT:-9005}"
