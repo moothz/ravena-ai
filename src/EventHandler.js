@@ -113,13 +113,13 @@ class EventHandler extends EventEmitter {
 					this.groups[groupId] = new Group(existingGroup);
 				} else {
 					// Cria novo grupo
-					let displayName =
-						name ??
-						groupId
-							.split("@")[0]
-							.toLowerCase()
-							.replace(/[^a-zA-Z0-9_-]/g, "")
-							.substring(0, 15);
+					let displayName = name
+						? name.trim()
+						: groupId
+								.split("@")[0]
+								.toLowerCase()
+								.replace(/[^a-zA-Z0-9_\-.]/g, "")
+								.substring(0, 30);
 
 					// Verifica se é Discord para formatar o nome como solicitado: nome-guild-nome-do-canal
 					if (bot && bot.useDiscord && message && message.guildId) {
@@ -127,8 +127,8 @@ class EventHandler extends EventEmitter {
 							const guild = await bot.discordClient.guilds.fetch(message.guildId);
 							const channel = await bot.discordClient.channels.fetch(message.group);
 							if (guild && channel) {
-								const cleanGuild = guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
-								const cleanChannel = channel.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+								const cleanGuild = guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 14);
+								const cleanChannel = channel.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 14);
 								displayName = `${cleanGuild}-${cleanChannel}`.toLowerCase();
 							}
 						} catch (discordErr) {
@@ -1000,7 +1000,7 @@ class EventHandler extends EventEmitter {
 			);
 
 			// Obtém ou cria grupo
-			const nomeGrupo = data.group?.name?.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 15) ?? null;
+			const nomeGrupo = data.group?.name?.replace(/[^a-zA-Z0-9_\-.]/g, "").substring(0, 30) ?? null;
 			const groupData = await this.getOrCreateGroup(
 				data.group.id,
 				nomeGrupo,

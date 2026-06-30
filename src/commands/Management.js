@@ -489,13 +489,13 @@ class Management {
 			});
 		}
 
-		const rawName = args[0]; // Apenas o primeiro argumento (sem espaços)
+		const rawName = args[0].trim(); // Apenas o primeiro argumento (sem espaços) trimmed
 
-		// Valida: apenas letras, números, _ e - ; entre 1 e 15 caracteres
-		if (!/^[a-zA-Z0-9_-]{1,15}$/.test(rawName)) {
+		// Valida: apenas letras, números, _, - e . ; entre 1 e 30 caracteres
+		if (!/^[a-zA-Z0-9_\-.]{1,30}$/.test(rawName)) {
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `❌ Nome inválido. O nome deve conter apenas letras, números, _ e -, sem espaços, entre 1 e 15 caracteres. Exemplo: !g-setName meuGrupo_01`
+				content: `❌ Nome inválido. O nome deve conter apenas letras, números, _, - e ., sem espaços, com no máximo 30 caracteres. Exemplo: !g-setName meuGrupo_01`
 			});
 		}
 

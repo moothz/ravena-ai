@@ -1539,7 +1539,9 @@ Break down the cost by category and provide a total estimated cost.`;
 			} else {
 				// Busca o grupo pelo nome
 				const groups = await this.database.getGroups();
-				const group = groups.find((g) => g.name.toLowerCase() === groupIdentifier.toLowerCase());
+				const group = groups.find(
+					(g) => g.name.trim().toLowerCase() === groupIdentifier.trim().toLowerCase()
+				);
 
 				if (!group) {
 					return new ReturnMessage({
@@ -3206,8 +3208,8 @@ Break down the cost by category and provide a total estimated cost.`;
 			const allExistingNames = new Set(groups.map((g) => g.name.toLowerCase()));
 
 			for (const group of groups) {
-				const isNumeric = /^\d+$/.test(group.name);
-				if (group.name.length > 15) {
+				const isNumeric = /^\d+$/.test(group.name.trim());
+				if (group.name.trim().length > 30) {
 					toFixLength.push(group);
 				} else if (isNumeric) {
 					toFixNumeric.push(group);
@@ -3255,11 +3257,11 @@ Break down the cost by category and provide a total estimated cost.`;
 					}
 
 					// Ensure uniqueness
-					const baseName = newName.substring(0, 12);
+					const baseName = newName.substring(0, 25);
 					let counter = 1;
-					let finalName = newName.substring(0, 15);
+					let finalName = newName.substring(0, 30);
 					while (allExistingNames.has(finalName.toLowerCase())) {
-						finalName = `${baseName}${counter}`.substring(0, 15);
+						finalName = `${baseName}${counter}`.substring(0, 30);
 						counter++;
 					}
 					allExistingNames.add(finalName.toLowerCase());
@@ -3279,7 +3281,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			// Handle Long Names in batch
 			if (toFixLength.length > 0) {
 				const longNamesList = toFixLength.map((g) => `- ${g.name} (${g.id})`).join("\n");
-				const prompt = `Sugira nomes curtos (máximo 15 caracteres) para os seguintes grupos de WhatsApp. 
+				const prompt = `Sugira nomes curtos (máximo 30 caracteres) para os seguintes grupos de WhatsApp. 
 Use TitleCase, remova acentos e espaços. Os nomes devem ser únicos e descritivos.
 Se o nome atual já for descritivo, tente apenas encurtá-lo mantendo o sentido.
 
@@ -3333,11 +3335,11 @@ Retorne no formato JSON rigoroso:
 								const suggestedName = sanitize(sugg.newName);
 
 								// Ensure uniqueness and length
-								const baseName = suggestedName.substring(0, 12);
+								const baseName = suggestedName.substring(0, 25);
 								let counter = 1;
-								let finalName = suggestedName.substring(0, 15);
+								let finalName = suggestedName.substring(0, 30);
 								while (allExistingNames.has(finalName.toLowerCase())) {
-									finalName = `${baseName}${counter}`.substring(0, 15);
+									finalName = `${baseName}${counter}`.substring(0, 30);
 									counter++;
 								}
 								allExistingNames.add(finalName.toLowerCase());
@@ -3447,11 +3449,11 @@ Retorne no formato JSON rigoroso:
 			}
 
 			// Obtém nome do grupo a partir dos argumentos
-			const groupName = args.join(" ").toLowerCase();
+			const groupName = args.join(" ").trim().toLowerCase();
 
 			// Busca o grupo no banco de dados
 			const groups = await this.database.getGroups();
-			const group = groups.find((g) => g.name.toLowerCase() === groupName);
+			const group = groups.find((g) => g.name.trim().toLowerCase() === groupName);
 
 			if (!group) {
 				return new ReturnMessage({

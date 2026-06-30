@@ -313,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             groupId = validation.groupId;
             els.userName.textContent = validation.authorName;
-            els.groupName.textContent = validation.groupName;
+            els.groupName.textContent = (validation.groupName || '').trim();
             expiresAt = new Date(validation.expiresAt);
             startTimer();
 
@@ -534,11 +534,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateGroupDataFromForm() {
         const nameInput = document.getElementById('group-name-input');
-        const nameValue = nameInput.value;
+        const nameValue = nameInput.value.trim();
+        nameInput.value = nameValue;
         
-        // Validation for group name: alphanumeric, no whitespace, 1-15 chars
-        if (!/^[a-zA-Z0-9]{1,15}$/.test(nameValue)) {
-            throw new Error('O nome do grupo deve ser alfanumérico, sem espaços e ter entre 1 e 15 caracteres.');
+        // Validation for group name: alphanumeric, no whitespace, 1-30 chars, allowing -, _, .
+        if (!/^[a-zA-Z0-9_\-.]{1,30}$/.test(nameValue)) {
+            throw new Error('O nome do grupo deve ser alfanumérico (letras e números), sem espaços, com no máximo 30 caracteres e podendo conter apenas _, - e .');
         }
 
         const prefixInput = document.getElementById('group-prefix');
@@ -582,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateFields() {
         document.getElementById('group-id').value = groupData.id;
         document.getElementById('group-created-at').value = new Date(groupData.createdAt).toLocaleDateString();
-        document.getElementById('group-name-input').value = groupData.name || '';
+        document.getElementById('group-name-input').value = (groupData.name || '').trim();
         document.getElementById('group-prefix').value = groupData.prefix || '';
         document.getElementById('bot-enabled').checked = !groupData.paused;
         document.getElementById('bot-personality').value = groupData.customAIPrompt || '';

@@ -113,7 +113,7 @@ async function anonymousMessage(bot, message, args, group) {
 		}
 
 		// Obtém o ID do grupo alvo
-		const targetGroupName = args[0].toLowerCase();
+		const targetGroupName = args[0].trim().toLowerCase();
 
 		// Verifica cooldown
 		const cooldownCheck = await checkUserCooldown(senderIds[0], targetGroupName);
@@ -148,7 +148,7 @@ async function anonymousMessage(bot, message, args, group) {
 		// Encontra o grupo pelo nome ou ID
 		const targetGroup = groups.find(
 			(g) =>
-				(g.name && g.name.toLowerCase() === targetGroupName) ||
+				(g.name && g.name.trim().toLowerCase() === targetGroupName) ||
 				(g.id && g.id.toLowerCase().includes(targetGroupName))
 		);
 

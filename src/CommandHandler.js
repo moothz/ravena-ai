@@ -642,9 +642,9 @@ class CommandHandler {
 				if (command === "g-manage") {
 					if (args.length > 0) {
 						// Tem argumento, está tentando definir um grupo no PV
-						const groupName = args[0].toLowerCase();
+						const groupName = args[0].trim().toLowerCase();
 						const groups = await this.database.getGroups();
-						const targetGroup = groups.find((g) => g.name.toLowerCase() === groupName);
+						const targetGroup = groups.find((g) => g.name.trim().toLowerCase() === groupName);
 
 						if (targetGroup) {
 							const isUserAdminInTarget = await this.adminUtils.isAdmin(
