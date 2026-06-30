@@ -126,6 +126,9 @@ services:
       # Config files — edit on host and restart the container to apply changes (no rebuild needed)
       - ./bots.json:/app/bots.json
       - ./service-providers.json:/app/service-providers.json
+      # Code mounts — uncomment for instant development updates without rebuilds (use 'make restart-bot' to apply changes)
+      # - ./index.js:/app/index.js
+      # - ./src:/app/src
     depends_on:
       whatsgoapi:
         condition: service_started

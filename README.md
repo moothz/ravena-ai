@@ -153,9 +153,19 @@ Edite o `bots.json` e adicione cada instância de bot que você quer rodar:
 > ```
 
 > Editou o código fonte (ex: functions)?
-> ```bash
-> make ravena-ai
-> ```
+> 
+> * **Método com Volumes (Recomendado):** Descomente as linhas de volumes de código em `docker-compose.yml` (`./index.js` e `./src`) para refletir as alterações no container instantaneamente, e aplique com:
+>   ```bash
+>   make restart-bot
+>   ```
+> * **Método Interativo:** Copie arquivos novos/editados para o container sem precisar de volumes e sem rebuild:
+>   ```bash
+>   make sync
+>   ```
+> * **Método Tradicional:** Se alterou dependências (`package.json`) ou deseja recriar a imagem (usando cache de camadas via BuildKit):
+>   ```bash
+>   make ravena-ai
+>   ```
 
 
 #### 5. Configure os provedores de API (`service-providers.json`)
@@ -238,8 +248,9 @@ make down          # Para e remove os containers
 make validate      # Valida a sintaxe do docker-compose.yml
 
 # === Gerenciamento e Update ===
-make ravena-ai     # Lint + Build + Restart (ideal para quando editar o código)
-make restart-bot   # Reinicia apenas o container do bot (recarrega bots.json)
+make restart-bot   # Reinicia o bot (aplicação instantânea com volumes de código ou bots.json)
+make sync          # Sincroniza arquivos locais modificados/não rastreados com o container (sem rebuild)
+make ravena-ai     # Reconstrói a imagem Docker e reinicia o bot (necessário ao mudar package.json ou se não usar volumes)
 make restart-api   # Reinicia apenas o container da API (whatsgoapi)
 make restart       # Reinicia todos os serviços (todos os containers)
 make update-whatsgoapi # Atualiza o submódulo whatsgoapi e reconstrói o container
@@ -252,9 +263,8 @@ make ps            # Status de todos os containers
 
 # === Testes e Desenvolvimento ===
 make test          # Roda o harness de testes dentro do container (sem zap)
-make test-quick FILE=path/to/file.js # Sincroniza um arquivo e roda o teste
+make test-quick FILE=path/to/file.js # Sincroniza um arquivo específico e roda o teste
 make test-providers # Valida as chaves de API do service-providers.json
-make sync          # Sincroniza arquivos locais com o container em tempo real
 
 # === Manutenção ===
 make update-allm   # Atualiza comandos na base do AnythingLLM
