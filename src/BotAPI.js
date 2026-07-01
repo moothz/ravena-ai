@@ -2136,7 +2136,28 @@ class BotAPI {
 			res.sendFile(filePath);
 		});
 
+		this.app.get("/qrcode-status/:botId", authenticateBasic, async (req, res) => {
+			res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+			res.setHeader("Pragma", "no-cache");
+			res.setHeader("Expires", "0");
+			const { botId } = req.params;
+			const bot = this.bots.find((b) => b.id === botId);
+			if (!bot) {
+				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+			}
+			try {
+				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true);
+				res.json(instanceStatus);
+			} catch (e) {
+				this.logger.error("Error checking qrcode status:", e);
+				res.status(500).json({ status: "error", message: e.message });
+			}
+		});
+
 		this.app.get("/qrcode/:botId", authenticateBasic, async (req, res) => {
+			res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+			res.setHeader("Pragma", "no-cache");
+			res.setHeader("Expires", "0");
 			const { botId } = req.params;
 
 			const bot = this.bots.find((b) => b.id === botId);
@@ -2235,17 +2256,11 @@ class BotAPI {
             pre { background-color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; color: #2d3748; text-align: left; }
             button { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background-color: #4299e1; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
             button:hover { background-color: #3182ce; }
-            .container div { margin: 1rem 0; display: flex; justify-content: center; gap: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>${botId} - ${bot.phoneNumber}</h1>
-            <h2>${formattedDate} - ${tipo} ${version}</h2>
-            ${pageContent}
-          </div>
-          <script>
-            const statusBox = document.getElementById('status-box');
+            .container div { margin: 1rem 0; display: flex; justify-co            const statusBox = document.getElementById('status-box');
+            const container = document.querySelector('.container');
+            let currentPasskeyChallenge = ${JSON.stringify(instanceStatus.extra?.lastPasskeyRequest || null)};
+            let passkeyPrompted = false;
+
             async function fetchAndShow(url, action) {
               if (!statusBox) return;
               if (!confirm('Tem certeza que deseja '+action+'?')) return;
@@ -2262,8 +2277,6 @@ class BotAPI {
                 statusBox.textContent = \`Erro: \${error?.message}\\n\${error?.stack}\`;
               }
             }
-
-            const passkeyChallenge = ${JSON.stringify(instanceStatus.extra?.lastPasskeyRequest || null)};
 
             function base64urlToArrayBuffer(base64url) {
               let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -2293,25 +2306,22 @@ class BotAPI {
             async function startPasskeyAuthentication() {
               const msgBox = document.getElementById('passkey-message');
               const btn = document.getElementById('passkey-btn');
-              if (!passkeyChallenge) {
-                msgBox.innerText = 'Nenhuma passkey solicitada no momento.';
-                msgBox.style.color = 'red';
-                return;
-              }
-              btn.disabled = true;
+              if (!currentPasskeyChallenge) return;
+
+              if (btn) btn.disabled = true;
               msgBox.innerText = 'Por favor, siga as instruções na tela do seu dispositivo...';
               msgBox.style.color = '#3182ce';
               try {
                 const requestOptions = {
-                  challenge: base64urlToArrayBuffer(passkeyChallenge.challenge),
-                  rpId: passkeyChallenge.rpId,
-                  allowCredentials: passkeyChallenge.allowCredentials.map(c => ({
+                  challenge: base64urlToArrayBuffer(currentPasskeyChallenge.challenge),
+                  rpId: currentPasskeyChallenge.rpId,
+                  allowCredentials: currentPasskeyChallenge.allowCredentials.map(c => ({
                     id: base64urlToArrayBuffer(c.id),
                     type: c.type,
                     transports: c.transports
                   })),
-                  userVerification: passkeyChallenge.userVerification,
-                  timeout: passkeyChallenge.timeout || 60000
+                  userVerification: currentPasskeyChallenge.userVerification,
+                  timeout: currentPasskeyChallenge.timeout || 60000
                 };
 
                 const assertion = await navigator.credentials.get({ publicKey: requestOptions });
@@ -2340,20 +2350,92 @@ class BotAPI {
 
                 const resJson = await res.json();
                 if (res.ok) {
-                  msgBox.innerText = 'Passkey autenticada com sucesso! Atualizando...';
+                  msgBox.innerText = 'Passkey autenticada com sucesso! Conectando...';
                   msgBox.style.color = 'green';
                   setTimeout(() => window.location.reload(), 2000);
                 } else {
                   msgBox.innerText = 'Erro ao autenticar passkey: ' + (resJson.message || 'Erro desconhecido');
                   msgBox.style.color = 'red';
-                  btn.disabled = false;
+                  if (btn) btn.disabled = false;
                 }
               } catch (e) {
                 console.error(e);
                 msgBox.innerText = 'Erro na autenticação: ' + e.message;
                 msgBox.style.color = 'red';
-                btn.disabled = false;
+                if (btn) btn.disabled = false;
               }
+            }
+
+            async function checkStatus() {
+              try {
+                const response = await fetch(\`/qrcode-status/${botId}\`);
+                if (!response.ok) return;
+                const status = await response.json();
+
+                if (statusBox) {
+                  statusBox.textContent = JSON.stringify(status, null, '\\t');
+                }
+
+                if (status.extra?.ok) {
+                  window.location.reload();
+                  return;
+                }
+
+                const passkeyChallengeFromStatus = status.extra?.lastPasskeyRequest;
+                if (passkeyChallengeFromStatus) {
+                  currentPasskeyChallenge = passkeyChallengeFromStatus;
+                  
+                  let passkeyDiv = document.getElementById('passkey-section');
+                  if (!passkeyDiv) {
+                    passkeyDiv = document.createElement('div');
+                    passkeyDiv.id = 'passkey-section';
+                    passkeyDiv.style = "margin: 1.5rem 0; padding: 1.5rem; border: 2px dashed #4299e1; border-radius: 0.5rem; background-color: #ebf8ff; text-align: center;";
+                    passkeyDiv.innerHTML = \`
+                      <h3 style="margin-top: 0; color: #2b6cb0; font-size: 1.15rem; font-weight: 600;">🔑 Passkey Login Detectado</h3>
+                      <p style="font-size: 0.95rem; color: #4a5568; margin-bottom: 1rem;">WhatsApp solicitou verificação por Passkey para este número.</p>
+                      <button id="passkey-btn" onclick="startPasskeyAuthentication()" style="background-color: #3182ce; padding: 0.75rem 1.5rem; font-size: 1.1rem; width: 100%; border: none; border-radius: 0.375rem; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">
+                        Usar Minha Passkey (Touch ID / Face ID)
+                      </button>
+                      <div id="passkey-message" style="margin-top: 0.75rem; font-weight: bold; color: #2d3748; font-size: 0.9rem;"></div>
+                    \`;
+                    
+                    const qrH2 = container.querySelector('h2');
+                    if (qrH2) {
+                      container.insertBefore(passkeyDiv, qrH2);
+                    } else {
+                      container.appendChild(passkeyDiv);
+                    }
+                  }
+
+                  if (!passkeyPrompted) {
+                    passkeyPrompted = true;
+                    startPasskeyAuthentication();
+                  }
+                }
+
+                const connectData = status.extra?.connectData;
+                if (connectData) {
+                  const qrImg = container.querySelector('img');
+                  if (qrImg && connectData.code && connectData.code.length > 200) {
+                    qrImg.src = \`/qrimg/${botId}?t=\` + Date.now();
+                  }
+                  
+                  const pairingPre = container.querySelector('pre');
+                  if (pairingPre && connectData.pairingCode && pairingPre.textContent !== connectData.pairingCode) {
+                    pairingPre.textContent = connectData.pairingCode.split("] ").join("]");
+                  }
+                }
+
+              } catch (err) {
+                console.error('Erro ao verificar status:', err);
+              }
+            }
+
+            setInterval(checkStatus, 3000);
+
+            if (currentPasskeyChallenge) {
+              passkeyPrompted = true;
+              startPasskeyAuthentication();
             }
           </script>
         </body>
