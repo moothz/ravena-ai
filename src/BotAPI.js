@@ -2255,8 +2255,17 @@ class BotAPI {
             img { max-width: 100%; height: auto; margin: 1.5rem 0; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); }
             pre { background-color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; color: #2d3748; text-align: left; }
             button { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background-color: #4299e1; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
-            button:hover { background-color: #3182ce; }
-            .container div { margin: 1rem 0; display: flex; justify-co            const statusBox = document.getElementById('status-box');
+            .container div { margin: 1rem 0; display: flex; justify-content: center; gap: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>${botId} - ${bot.phoneNumber}</h1>
+            <h2>${formattedDate} - ${tipo} ${version}</h2>
+            ${pageContent}
+          </div>
+          <script>
+            const statusBox = document.getElementById('status-box');
             const container = document.querySelector('.container');
             let currentPasskeyChallenge = ${JSON.stringify(instanceStatus.extra?.lastPasskeyRequest || null)};
             let passkeyPrompted = false;
