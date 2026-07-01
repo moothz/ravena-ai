@@ -842,7 +842,7 @@ const commands = [
 		name: "yt",
 		caseSensitive: false,
 		description: "Baixa um vídeo do YouTube",
-		category: "utilidades",
+		category: "downloaders",
 		reactions: disableDownloads
 			? {
 					before: null,
@@ -861,7 +861,7 @@ const commands = [
 		name: "sr",
 		caseSensitive: false,
 		description: "Baixa uma música do YouTube (áudio do vídeo)",
-		category: "utilidades",
+		category: "downloaders",
 		reactions: disableDownloads
 			? {
 					before: null,
@@ -880,7 +880,7 @@ const commands = [
 		name: "letra",
 		caseSensitive: false,
 		description: "Busca a letra de uma música",
-		category: "utilidades",
+		category: "downloaders",
 		reactions: disableDownloads
 			? {
 					before: null,

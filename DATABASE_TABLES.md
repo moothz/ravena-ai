@@ -398,4 +398,23 @@ Interações cômicas automáticas do bot.
 | `horoscopo.db` | `horoscopo_cache` | Cache de previsões astrológicas |
 | `placas.db` | `placas_cache` | Cache de consultas de placas veiculares |
 | `raffle_cache.db` | `raffle_cache` | Cache de informações e andamento de rifas/ações |
+| `relacionamentos.db` | `relacionamentos` | Histórico e estatísticas de relacionamentos (namoros, casamentos, divórcios, traições e coisas) nos grupos |
 
+### `relacionamentos.db`
+Banco de dados para o módulo de relacionamentos nos grupos do WhatsApp.
+
+#### `relacionamentos`
+Armazena propostas e relacionamentos ativos ou terminados entre os participantes nos grupos.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo (ex: `120363...@g.us`) |
+| `user1` | TEXT | JID do autor / proponente |
+| `user2` | TEXT | JID da pessoa alvo |
+| `tipo` | TEXT | Tipo de relacionamento: 'namoro', 'casamento', ou 'separar' (pedido de separação) |
+| `status` | TEXT | Estado do relacionamento: 'pendente', 'ativo' ou 'terminado' |
+| `criado_em` | INTEGER | Timestamp de criação/ativação do relacionamento |
+| `terminado_em` | INTEGER | Timestamp de término (separação) |
+| `coisas_count` | INTEGER | Contador de quantas vezes o casal coisou |
+| `traicoes_count` | INTEGER | Contador de quantas vezes o autor traiu o cônjuge / parceiros |

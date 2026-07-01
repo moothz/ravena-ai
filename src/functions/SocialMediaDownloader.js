@@ -979,7 +979,7 @@ const commands = downloadCommands.map(
 			description: `Baixa conteúdo de mídias sociais${
 				name.includes("audio") || name.includes("musica") || name === "sr" ? " (apenas áudio)" : ""
 			}`,
-			category: "utilidades",
+			category: "downloaders",
 			reactions: disableDownloads
 				? {
 						before: null,

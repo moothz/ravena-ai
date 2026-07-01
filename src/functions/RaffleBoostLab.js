@@ -413,7 +413,7 @@ const commands = [
 		name: "raffle",
 		aliases: ["rifa", "acao"],
 		description: "Busca informações de uma rifa ou ação.",
-		category: "general",
+		category: "busca",
 		cooldown: 15,
 		needsArgs: true,
 		minArgs: 1,
