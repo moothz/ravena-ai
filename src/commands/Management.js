@@ -360,6 +360,10 @@ class Management {
 			dossie: {
 				method: "runDossieAnalysis",
 				description: "Exibe o histórico de dossiês deste grupo"
+			},
+			copiarCmds: {
+				method: "copyCommands",
+				description: "Copia os comandos do grupoOrigem pro grupoDestino"
 			}
 		};
 
@@ -1632,6 +1636,7 @@ class Management {
   *!g-setDespedida* <mensagem> - Define mensagem de despedida para membros que saem
   *!g-info* - Mostra informações detalhadas do grupo
   *!g-manage* <nomeGrupo> - Gerencia um grupo a partir de chat privado
+  *!g-copiarCmds* <grupoOrigem> <grupoDestino> - Copia comandos personalizados de um grupo para outro (estilo rsync)
 
   *Comandos de Filtro:*
   *!g-filtro-palavra* <palavra> - Adiciona/remove palavra do filtro
@@ -6748,6 +6753,196 @@ class Management {
 			return new ReturnMessage({
 				chatId: group.id,
 				content: "❌ Erro ao buscar histórico de dossiês."
+			});
+		}
+	}
+
+	/**
+	 * Copia comandos personalizados de um grupo para outro
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async copyCommands(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (args.length < 2) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ *Uso incorreto.* Como usar:\n\n*!g-copiarCmds <grupoOrigem> <grupoDestino>*\n\nExemplo: !g-copiarCmds grupoA grupoB"
+			});
+		}
+
+		const fromGroupName = args[0].trim();
+		const toGroupName = args[1].trim();
+
+		try {
+			// Busca os grupos
+			const groups = await this.database.getGroups();
+			const fromGroup = groups.find(
+				(g) => g.name.trim().toLowerCase() === fromGroupName.toLowerCase() || g.id === fromGroupName
+			);
+			const toGroup = groups.find(
+				(g) => g.name.trim().toLowerCase() === toGroupName.toLowerCase() || g.id === toGroupName
+			);
+
+			if (!fromGroup) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ Grupo de origem '${fromGroupName}' não foi encontrado.`
+				});
+			}
+
+			if (!toGroup) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ Grupo de destino '${toGroupName}' não foi encontrado.`
+				});
+			}
+
+			if (fromGroup.id === toGroup.id) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `⚠️ O grupo de origem e o de destino são o mesmo grupo (${fromGroup.name}).`
+				});
+			}
+
+			// Verifica se o remetente é administrador nos 2 grupos
+			const isAdminInFrom = await this.adminUtils.isAdmin(message.author, fromGroup, null, bot);
+			if (!isAdminInFrom) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ Você não é administrador no grupo de origem '${fromGroup.name}'.`
+				});
+			}
+
+			const isAdminInTo = await this.adminUtils.isAdmin(message.author, toGroup, null, bot);
+			if (!isAdminInTo) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ Você não é administrador no grupo de destino '${toGroup.name}'.`
+				});
+			}
+
+			// Carrega os comandos de ambos os grupos
+			const fromCmds = await this.database.getCustomCommands(fromGroup.id);
+			const toCmds = await this.database.getCustomCommands(toGroup.id);
+
+			const originActiveCmds = fromCmds.filter((cmd) => !cmd.deleted);
+			const destMap = new Map(toCmds.map((cmd) => [cmd.startsWith.toLowerCase(), cmd]));
+
+			const newCmdsList = [];
+			const updatedCmdsList = [];
+			let copiedCount = 0;
+			let overwrittenCount = 0;
+
+			const isDifferent = (cmdA, cmdB) => {
+				if (cmdA.active !== cmdB.active) return true;
+				if (cmdA.adminOnly !== cmdB.adminOnly) return true;
+				if (cmdA.cooldown !== cmdB.cooldown) return true;
+				if (cmdA.react !== cmdB.react) return true;
+				if (cmdA.reply !== cmdB.reply) return true;
+				if (cmdA.sendAllResponses !== cmdB.sendAllResponses) return true;
+				if (cmdA.ignoreInteract !== cmdB.ignoreInteract) return true;
+
+				// Compara respostas
+				const respA = cmdA.responses || [];
+				const respB = cmdB.responses || [];
+				if (respA.length !== respB.length) return true;
+				for (let i = 0; i < respA.length; i++) {
+					if (respA[i] !== respB[i]) return true;
+				}
+
+				// Compara menções
+				const mentA = cmdA.mentions || [];
+				const mentB = cmdB.mentions || [];
+				if (mentA.length !== mentB.length) return true;
+				for (let i = 0; i < mentA.length; i++) {
+					if (mentA[i] !== mentB[i]) return true;
+				}
+
+				return false;
+			};
+
+			for (const origCmd of originActiveCmds) {
+				const trigger = origCmd.startsWith.toLowerCase();
+				const destCmd = destMap.get(trigger);
+
+				if (!destCmd || destCmd.deleted) {
+					// Não existe no destino, ou existia e foi deletado
+					const newCmd = {
+						...origCmd,
+						groupId: toGroup.id,
+						metadata: {
+							createdBy: message.author,
+							createdAt: Date.now()
+						}
+					};
+					await this.database.saveCustomCommand(toGroup.id, newCmd);
+					newCmdsList.push(origCmd.startsWith);
+					copiedCount++;
+				} else if (isDifferent(origCmd, destCmd)) {
+					// Existe mas é diferente
+					const updatedCmd = {
+						...origCmd,
+						groupId: toGroup.id,
+						metadata: {
+							createdBy:
+								destCmd.metadata?.createdBy || origCmd.metadata?.createdBy || message.author,
+							createdAt: destCmd.metadata?.createdAt || origCmd.metadata?.createdAt || Date.now(),
+							updatedBy: message.author,
+							updatedAt: Date.now()
+						}
+					};
+					await this.database.saveCustomCommand(toGroup.id, updatedCmd);
+					updatedCmdsList.push(origCmd.startsWith);
+					overwrittenCount++;
+				}
+			}
+
+			if (copiedCount > 0 || overwrittenCount > 0) {
+				this.database.clearCache(`commands:${toGroup.id}`);
+				await bot.eventHandler.commandHandler.loadCustomCommandsForGroup(toGroup.id);
+			}
+
+			const prefix = toGroup.prefix ?? "!";
+			let responseContent = `*Sincronização de comandos concluída com sucesso! (Estilo rsync)*\n\n`;
+			responseContent += `• Origem: *${fromGroup.name}*\n`;
+			responseContent += `• Destino: *${toGroup.name}*\n\n`;
+
+			if (copiedCount > 0) {
+				responseContent += `*Novos comandos copiados (${copiedCount}):*\n`;
+				responseContent += newCmdsList.map((cmd) => `  - ${prefix}${cmd}`).join("\n") + `\n\n`;
+			}
+
+			if (overwrittenCount > 0) {
+				responseContent += `*Comandos atualizados (${overwrittenCount}):*\n`;
+				responseContent += updatedCmdsList.map((cmd) => `  - ${prefix}${cmd}`).join("\n") + `\n\n`;
+			}
+
+			if (copiedCount === 0 && overwrittenCount === 0) {
+				responseContent += `✅ Todos os comandos do grupo destino já estão idênticos aos do grupo de origem (nada a fazer).`;
+			} else {
+				responseContent += `✨ Total analisado: ${originActiveCmds.length} comandos.`;
+			}
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: responseContent
+			});
+		} catch (error) {
+			this.logger.error("Erro ao copiar comandos entre grupos:", error);
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "❌ Erro inesperado ao sincronizar os comandos."
 			});
 		}
 	}
