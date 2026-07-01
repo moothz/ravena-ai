@@ -12,7 +12,9 @@
     "ignorePV": false,
     "ignoreInvites": true,
     "customPrefix": "!",
-    "autoDownloadPV": false
+    "autoDownloadPV": false,
+    "updateStatus": true,
+    "aiPersonality": "Você é um assistente prestativo."
    },
    {
     "enabled": false,

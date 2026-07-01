@@ -40,6 +40,8 @@ class WhatsAppBotTelegram {
 		// Opções compartilhadas utilizadas
 		this.pvAI = options.pvAI ?? true;
 		this.ignorePV = options.ignorePV || false;
+		this.updateStatus = options.updateStatus ?? true;
+		this.aiPersonality = options.aiPersonality ?? "";
 		this.grupoLogs = parseInt(options.grupoLogs || process.env.TELEGRAM_GRUPO_LOGS);
 		this.grupoAvisos = parseInt(options.grupoAvisos || process.env.TELEGRAM_GRUPO_AVISOS);
 		this.notificarDonate = options.notificarDonate;

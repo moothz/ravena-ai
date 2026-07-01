@@ -21,6 +21,8 @@ class FakeBot {
 
 		// Flags lidas pelo EventHandler / CommandHandler
 		this.ignorePV = false;
+		this.updateStatus = options.updateStatus ?? true;
+		this.aiPersonality = options.aiPersonality ?? "";
 		this.pvAI = false;
 		this.ignoreInvites = true;
 		this.whitelistPV = [];

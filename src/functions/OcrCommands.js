@@ -48,15 +48,22 @@ async function ocrCommand(bot, message, args, group) {
 			"Extraia TODO o texto presente nesta imagem. Retorne apenas o texto extraído, preservando a quebra de linhas, sem qualquer comentário, explicação ou introdução adicional.";
 
 		// 3. Get context for images if available
-		const ctxPath = path.join(database.databasePath, "textos", "llm_context_images.txt");
 		let systemContext =
 			"Você é um assistente especializado em OCR (Extração de Texto). Sua única tarefa é ler e transcrever o texto da imagem fornecida com precisão total.";
 
-		try {
-			const baseCtx = await fs.readFile(ctxPath, "utf8");
-			if (baseCtx) systemContext = baseCtx + "\n\n" + systemContext;
-		} catch (e) {
-			// Ignore if context file doesn't exist
+		if (bot.aiPersonality && bot.aiPersonality.trim().length > 0) {
+			const baseCtx =
+				bot.aiPersonality +
+				"\n\nSuas mensagens são processadas e enviadas pelo WhatsApp.\n\nO seu objetivo agora é analisar o conteúdo de imagem recebida, atendendo o que o usuário pediu no prompt (caso exista).";
+			systemContext = baseCtx + "\n\n" + systemContext;
+		} else {
+			const ctxPath = path.join(database.databasePath, "textos", "llm_context_images.txt");
+			try {
+				const baseCtx = await fs.readFile(ctxPath, "utf8");
+				if (baseCtx) systemContext = baseCtx + "\n\n" + systemContext;
+			} catch (e) {
+				// Ignore if context file doesn't exist
+			}
 		}
 
 		// 4. Call LLM Service

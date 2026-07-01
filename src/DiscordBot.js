@@ -51,6 +51,8 @@ class DiscordBot {
 		this.phoneNumber = null; // Will be set when ready
 		this.pvAI = options.pvAI !== undefined ? options.pvAI : true;
 		this.ignorePV = options.ignorePV || false;
+		this.updateStatus = options.updateStatus ?? true;
+		this.aiPersonality = options.aiPersonality ?? "";
 		this.grupoLogs = options.grupoLogs; // Espera-se um Channel ID
 		this.grupoAvisos = options.grupoAvisos; // Espera-se um Channel ID
 		this.notificarDonate = options.notificarDonate;

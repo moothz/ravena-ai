@@ -113,7 +113,11 @@ async function main() {
 					// Configs de cache
 					redisURL: process.env.CACHE_REDIS_URI,
 					redisTTL: process.env.CACHE_REDIS_TTL,
-					redisDB: redisDbAtual
+					redisDB: redisDbAtual,
+
+					// Novas propriedades
+					updateStatus: rBot.updateStatus ?? true,
+					aiPersonality: rBot.aiPersonality ?? ""
 				});
 
 				redisDbAtual++;
@@ -140,7 +144,11 @@ async function main() {
 					// Configs de cache
 					redisURL: process.env.CACHE_REDIS_URI,
 					redisTTL: process.env.CACHE_REDIS_TTL,
-					redisDB: redisDbAtual
+					redisDB: redisDbAtual,
+
+					// Novas propriedades
+					updateStatus: rBot.updateStatus ?? true,
+					aiPersonality: rBot.aiPersonality ?? ""
 				});
 
 				redisDbAtual++;
@@ -194,7 +202,11 @@ async function main() {
 					redisTTL: process.env.CACHE_REDIS_TTL,
 					redisDB: redisDbAtual,
 					webhookHost: process.env.WHATSGO_WEBHOOK_HOST,
-					webhookPort: rBot.webhookPort ?? process.env.WHATSGO_WEBHOOK_PORT
+					webhookPort: rBot.webhookPort ?? process.env.WHATSGO_WEBHOOK_PORT,
+
+					// Novas propriedades
+					updateStatus: rBot.updateStatus ?? true,
+					aiPersonality: rBot.aiPersonality ?? ""
 				});
 
 				redisDbAtual++;

@@ -1,4 +1,4 @@
-﻿const Database = require("./utils/Database");
+const Database = require("./utils/Database");
 const Logger = require("./utils/Logger");
 
 /**
@@ -120,33 +120,35 @@ class LoadReport {
 			// Salva relatório no banco de dados
 			await this.saveReport(report);
 
-			try {
-				// Obtém emoji de carga com base em msgs/h
-				const loadLevels = ["⬜", "🟩", "🟨", "🟧", "🟥", "⬛"];
-				let loadEmoji = loadLevels[0];
+			if (this.bot.updateStatus !== false) {
+				try {
+					// Obtém emoji de carga com base em msgs/h
+					const loadLevels = ["⬜", "🟩", "🟨", "🟧", "🟥", "⬛"];
+					let loadEmoji = loadLevels[0];
 
-				if (report.messages.messagesPerHour > 100) loadEmoji = loadLevels[1];
-				if (report.messages.messagesPerHour > 500) loadEmoji = loadLevels[2];
-				if (report.messages.messagesPerHour > 1000) loadEmoji = loadLevels[3];
-				if (report.messages.messagesPerHour > 1500) loadEmoji = loadLevels[4];
-				if (report.messages.messagesPerHour > 2000) loadEmoji = loadLevels[5];
+					if (report.messages.messagesPerHour > 100) loadEmoji = loadLevels[1];
+					if (report.messages.messagesPerHour > 500) loadEmoji = loadLevels[2];
+					if (report.messages.messagesPerHour > 1000) loadEmoji = loadLevels[3];
+					if (report.messages.messagesPerHour > 1500) loadEmoji = loadLevels[4];
+					if (report.messages.messagesPerHour > 2000) loadEmoji = loadLevels[5];
 
-				// Formata data para status
-				const now = new Date();
-				const dateString = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-				const timeString = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+					// Formata data para status
+					const now = new Date();
+					const dateString = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+					const timeString = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
 
-				// Constrói string de status com informação de atraso médio
-				const msgPv = this.bot.ignorePV ? "PV desabilitado" : "Envie !cmd";
-				const status = `${msgPv} | https://ravena.moothz.win | ${dateString} ${timeString}`;
+					// Constrói string de status com informação de atraso médio
+					const msgPv = this.bot.ignorePV ? "PV desabilitado" : "Envie !cmd";
+					const status = `${msgPv} | https://ravena.moothz.win | ${dateString} ${timeString}`;
 
-				// Atualiza status do bot
-				if (this.bot.client && this.bot.isConnected) {
-					await this.bot.client.setStatus(status);
-					this.logger.info(`Status do bot atualizado: ${status}`);
+					// Atualiza status do bot
+					if (this.bot.client && this.bot.isConnected) {
+						await this.bot.client.setStatus(status);
+						this.logger.info(`Status do bot atualizado: ${status}`);
+					}
+				} catch (statusError) {
+					this.logger.error("Erro ao atualizar status do bot:", statusError);
 				}
-			} catch (statusError) {
-				this.logger.error("Erro ao atualizar status do bot:", statusError);
 			}
 
 			// Envia relatório para o grupo de logs se configurado

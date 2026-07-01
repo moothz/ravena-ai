@@ -255,9 +255,14 @@ async function aiCommand(bot, message, args, group) {
 	const database = Database.getInstance();
 
 	// 1. Get Base Context and Lists
-	const ctxPath = path.join(database.databasePath, "textos", "llm_context.txt");
+	let baseCtxContent;
+	if (bot.aiPersonality && bot.aiPersonality.trim().length > 0) {
+		baseCtxContent = bot.aiPersonality;
+	} else {
+		const ctxPath = path.join(database.databasePath, "textos", "llm_context.txt");
+		baseCtxContent = (await fs.readFile(ctxPath, "utf8")) || "";
+	}
 	const botCtxPath = path.join(database.databasePath, "textos", "llm_bot_context.txt");
-	const baseCtxContent = (await fs.readFile(ctxPath, "utf8")) || "";
 	const botCtxContent = (await fs.readFile(botCtxPath, "utf8")) || "";
 
 	const { cmdSimpleList, cmdGerenciaSimplesList } = getCommandLists(bot, group);
@@ -478,10 +483,16 @@ async function handleMediaRequest(
 		}
 		completionOptions.image = media.data;
 
-		const ctxPath = path.join(database.databasePath, "textos", "llm_context_images.txt");
-		completionOptions.systemContext =
-			(await fs.readFile(ctxPath, "utf8")) ??
-			"Você se chama ravenabot e deve interpretar esta imagem enviada no WhatsApp";
+		if (bot.aiPersonality && bot.aiPersonality.trim().length > 0) {
+			completionOptions.systemContext =
+				bot.aiPersonality +
+				"\n\nSuas mensagens são processadas e enviadas pelo WhatsApp.\n\nO seu objetivo agora é analisar o conteúdo de imagem recebida, atendendo o que o usuário pediu no prompt (caso exista).";
+		} else {
+			const ctxPath = path.join(database.databasePath, "textos", "llm_context_images.txt");
+			completionOptions.systemContext =
+				(await fs.readFile(ctxPath, "utf8")) ??
+				"Você se chama ravenabot e deve interpretar esta imagem enviada no WhatsApp";
+		}
 		completionOptions.systemContext += customPersonalidade;
 	} else if (media.mimetype.includes("video")) {
 		tipoMedia = "Video";
@@ -511,10 +522,16 @@ async function handleMediaRequest(
 			completionOptions.images = frames;
 			completionOptions.timeout = 60000;
 
-			const ctxPath = path.join(database.databasePath, "textos", "llm_context_videos.txt");
-			completionOptions.systemContext =
-				(await fs.readFile(ctxPath, "utf8")) ??
-				"Você se chama ravenabot e deve interpretar este vídeo enviado no WhatsApp";
+			if (bot.aiPersonality && bot.aiPersonality.trim().length > 0) {
+				completionOptions.systemContext =
+					bot.aiPersonality +
+					"\n\nSuas mensagens são processadas e enviadas pelo WhatsApp.\n\nO seu objetivo agora é analisar o conteúdo do vídeo recebido, atendendo o que o usuário pediu no prompt (caso exista).";
+			} else {
+				const ctxPath = path.join(database.databasePath, "textos", "llm_context_videos.txt");
+				completionOptions.systemContext =
+					(await fs.readFile(ctxPath, "utf8")) ??
+					"Você se chama ravenabot e deve interpretar este vídeo enviado no WhatsApp";
+			}
 			completionOptions.systemContext += customPersonalidade;
 		} catch (videoError) {
 			logger.error("[aiCommand] Error processing video:", videoError);
