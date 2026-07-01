@@ -545,6 +545,36 @@ class BotAPI {
 			}
 		});
 
+		this.app.post("/passkey/respond/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
+			const { botId } = req.params;
+			const bot = this.bots.find((b) => b.id === botId);
+			if (!bot) {
+				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+			}
+			try {
+				const response = await bot.apiClient.post("/instance/passkey/respond", req.body);
+				res.json(response.data || response);
+			} catch (e) {
+				this.logger.error(`[API] Error during passkey respond for bot '${botId}':`, e);
+				res.status(500).json({ status: "error", message: e.message, details: e.stack });
+			}
+		});
+
+		this.app.post("/passkey/confirm/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
+			const { botId } = req.params;
+			const bot = this.bots.find((b) => b.id === botId);
+			if (!bot) {
+				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+			}
+			try {
+				const response = await bot.apiClient.post("/instance/passkey/confirm", {});
+				res.json(response.data || response);
+			} catch (e) {
+				this.logger.error(`[API] Error during passkey confirm for bot '${botId}':`, e);
+				res.status(500).json({ status: "error", message: e.message, details: e.stack });
+			}
+		});
+
 		// Webhook de doação do Tipa.ai
 		this.app.post("/donate_tipa", this.strictLimiter, async (req, res) => {
 			try {
@@ -2164,7 +2194,22 @@ class BotAPI {
 					descQrCode = codigoGerar;
 				}
 
+				let passkeySection = "";
+				if (instanceStatus.extra?.lastPasskeyRequest) {
+					passkeySection = `
+            <div id="passkey-section" style="margin: 1.5rem 0; padding: 1.5rem; border: 2px dashed #4299e1; border-radius: 0.5rem; background-color: #ebf8ff; text-align: center;">
+              <h3 style="margin-top: 0; color: #2b6cb0; font-size: 1.15rem; font-weight: 600;">🔑 Passkey Login Detectado</h3>
+              <p style="font-size: 0.95rem; color: #4a5568; margin-bottom: 1rem;">WhatsApp solicitou verificação por Passkey para este número.</p>
+              <button id="passkey-btn" onclick="startPasskeyAuthentication()" style="background-color: #3182ce; padding: 0.75rem 1.5rem; font-size: 1.1rem; width: 100%; border: none; border-radius: 0.375rem; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">
+                Usar Minha Passkey (Touch ID / Face ID)
+              </button>
+              <div id="passkey-message" style="margin-top: 0.75rem; font-weight: bold; color: #2d3748; font-size: 0.9rem;"></div>
+            </div>
+          `;
+				}
+
 				pageContent = `
+          ${passkeySection}
           <h2>QR Code</h2>
           <img src="${qrCodeBase64}" alt="${descQrCode}">
           <h2>Pairing Code</h2>
@@ -2210,11 +2255,104 @@ class BotAPI {
                 const result = await response.json();
                 statusBox.textContent = JSON.stringify(result, null, 2);
                 if (action === 'reload' && response.ok) {
-                  statusBox.textContent += \`\n\nAção concluída. Recarregando em 2 segundos...\`;
+                  statusBox.textContent += \`\\n\\nAção concluída. Recarregando em 2 segundos...\`;
                   setTimeout(() => window.location.reload(), 2000);
                 }
               } catch (error) {
-                statusBox.textContent = \`Erro: \${error?.message}\n\${error?.stack}\`;
+                statusBox.textContent = \`Erro: \${error?.message}\\n\${error?.stack}\`;
+              }
+            }
+
+            const passkeyChallenge = ${JSON.stringify(instanceStatus.extra?.lastPasskeyRequest || null)};
+
+            function base64urlToArrayBuffer(base64url) {
+              let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+              let pad = base64.length % 4;
+              if (pad) {
+                if (pad === 2) base64 += '==';
+                else if (pad === 3) base64 += '=';
+              }
+              let binary = window.atob(base64);
+              let bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+              }
+              return bytes.buffer;
+            }
+
+            function arrayBufferToBase64url(buffer) {
+              let binary = '';
+              let bytes = new Uint8Array(buffer);
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              let base64 = window.btoa(binary);
+              return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
+            }
+
+            async function startPasskeyAuthentication() {
+              const msgBox = document.getElementById('passkey-message');
+              const btn = document.getElementById('passkey-btn');
+              if (!passkeyChallenge) {
+                msgBox.innerText = 'Nenhuma passkey solicitada no momento.';
+                msgBox.style.color = 'red';
+                return;
+              }
+              btn.disabled = true;
+              msgBox.innerText = 'Por favor, siga as instruções na tela do seu dispositivo...';
+              msgBox.style.color = '#3182ce';
+              try {
+                const requestOptions = {
+                  challenge: base64urlToArrayBuffer(passkeyChallenge.challenge),
+                  rpId: passkeyChallenge.rpId,
+                  allowCredentials: passkeyChallenge.allowCredentials.map(c => ({
+                    id: base64urlToArrayBuffer(c.id),
+                    type: c.type,
+                    transports: c.transports
+                  })),
+                  userVerification: passkeyChallenge.userVerification,
+                  timeout: passkeyChallenge.timeout || 60000
+                };
+
+                const assertion = await navigator.credentials.get({ publicKey: requestOptions });
+                const response = {
+                  id: assertion.id,
+                  rawId: arrayBufferToBase64url(assertion.rawId),
+                  type: assertion.type,
+                  response: {
+                    clientDataJSON: arrayBufferToBase64url(assertion.response.clientDataJSON),
+                    authenticatorData: arrayBufferToBase64url(assertion.response.authenticatorData),
+                    signature: arrayBufferToBase64url(assertion.response.signature),
+                    userHandle: assertion.response.userHandle ? arrayBufferToBase64url(assertion.response.userHandle) : null
+                  }
+                };
+
+                msgBox.innerText = 'Enviando assinatura da passkey...';
+                msgBox.style.color = '#3182ce';
+
+                const res = await fetch(\`/passkey/respond/${botId}\`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(response)
+                });
+
+                const resJson = await res.json();
+                if (res.ok) {
+                  msgBox.innerText = 'Passkey autenticada com sucesso! Atualizando...';
+                  msgBox.style.color = 'green';
+                  setTimeout(() => window.location.reload(), 2000);
+                } else {
+                  msgBox.innerText = 'Erro ao autenticar passkey: ' + (resJson.message || 'Erro desconhecido');
+                  msgBox.style.color = 'red';
+                  btn.disabled = false;
+                }
+              } catch (e) {
+                console.error(e);
+                msgBox.innerText = 'Erro na autenticação: ' + e.message;
+                msgBox.style.color = 'red';
+                btn.disabled = false;
               }
             }
           </script>

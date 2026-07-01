@@ -1352,6 +1352,9 @@ class WhatsAppBotGo {
 			this.isConnected = statusData?.Connected && statusData?.LoggedIn;
 			const state = this.isConnected ? "CONNECTED" : "DISCONNECTED";
 			const extra = {};
+			if (statusData?.lastPasskeyRequest) {
+				extra.lastPasskeyRequest = statusData.lastPasskeyRequest;
+			}
 
 			const instanceDetails = {
 				version: this.version,
