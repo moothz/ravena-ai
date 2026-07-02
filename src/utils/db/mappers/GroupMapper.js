@@ -85,17 +85,27 @@ const GroupMapper = {
 	 */
 	toRow(obj) {
 		const s = (val) => JSON.stringify(val ?? null);
+		const asString = (val) => {
+			if (val === null || val === undefined) return null;
+			if (typeof val === "string") return val;
+			if (typeof val === "object") {
+				return val.id || val.name || JSON.stringify(val);
+			}
+			return String(val);
+		};
 
 		return {
-			id: obj.id,
-			name: obj.name ?? null,
-			titulo: obj.titulo ?? null,
-			descricao: obj.descricao ?? null,
-			added_by: obj.addedBy ?? null,
-			removed_by: obj.removedBy ? String(obj.removedBy) : null,
+			id: asString(obj.id),
+			name: obj.name !== undefined && obj.name !== null ? asString(obj.name) : null,
+			titulo: obj.titulo !== undefined && obj.titulo !== null ? asString(obj.titulo) : null,
+			descricao:
+				obj.descricao !== undefined && obj.descricao !== null ? asString(obj.descricao) : null,
+			added_by: obj.addedBy !== undefined && obj.addedBy !== null ? asString(obj.addedBy) : null,
+			removed_by: obj.removedBy && obj.removedBy !== false ? asString(obj.removedBy) : null,
 			prefix: obj.prefix ?? "!",
 			custom_ignores_prefix: obj.customIgnoresPrefix ? 1 : 0,
-			invite_code: obj.inviteCode ?? null,
+			invite_code:
+				obj.inviteCode !== undefined && obj.inviteCode !== null ? asString(obj.inviteCode) : null,
 			paused: obj.paused ? 1 : 0,
 			additional_admins: s(obj.additionalAdmins),
 			filters: s(obj.filters),
@@ -107,7 +117,8 @@ const GroupMapper = {
 			greetings: s(obj.greetings),
 			farewells: s(obj.farewells),
 			interact: s(obj.interact),
-			auto_translate_to: obj.autoTranslateTo ? String(obj.autoTranslateTo) : null,
+			auto_translate_to:
+				obj.autoTranslateTo && obj.autoTranslateTo !== false ? asString(obj.autoTranslateTo) : null,
 			auto_stt: obj.autoStt ? 1 : 0,
 			ignored_numbers: s(obj.ignoredNumbers),
 			ignored_users: s(obj.ignoredUsers),

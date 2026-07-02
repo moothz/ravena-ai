@@ -1005,7 +1005,7 @@ class EventHandler extends EventEmitter {
 				data.group.id,
 				nomeGrupo,
 				bot.prefix,
-				data.responsavel?.id || data.responsavel,
+				data.responsavel?.id || (typeof data.responsavel === "string" ? data.responsavel : null),
 				bot
 			);
 			const group = groupData.group;
