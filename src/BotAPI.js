@@ -2146,7 +2146,7 @@ class BotAPI {
 				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 			}
 			try {
-				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true);
+				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, false);
 				res.json(instanceStatus);
 			} catch (e) {
 				this.logger.error("Error checking qrcode status:", e);
@@ -2203,16 +2203,35 @@ class BotAPI {
           ${statusPre}
         `;
 			} else {
-				const pairingCodeContent = instanceStatus.extra?.connectData?.pairingCode ?? "xxx xxx";
-				const codigoGerar = instanceStatus.extra?.connectData?.code ?? "";
+				const connectData = instanceStatus.extra?.connectData;
+				let pairingCodeContent = connectData?.pairingCode ?? "";
+				let pairingStyle = "text-align: center; font-size: 35pt;";
 
-				// Só gera se for um QRCode válido
+				// Usa a imagem base64 diretamente se disponível, senão tenta gerar do code
 				let qrCodeBase64 = "";
 				let descQrCode = "Nenhum QRCode disponível";
 
-				if (codigoGerar.length > 200 && !codigoGerar.includes("undefined")) {
-					qrCodeBase64 = qrcode(codigoGerar);
-					descQrCode = codigoGerar;
+				if (!connectData || (!connectData.qrCode && !connectData.pairingCode && !connectData.code)) {
+					// Inicializando conexão
+					pairingCodeContent = "Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
+					pairingStyle = "text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
+					descQrCode = "Inicializando conexão...";
+				} else {
+					const qrCodeBase64img = connectData.qrCode ?? "";
+					const codigoGerar = connectData.code ?? "";
+
+					if (qrCodeBase64img) {
+						qrCodeBase64 = qrCodeBase64img; // já é data:image/png;base64,...
+						descQrCode = codigoGerar;
+					} else if (codigoGerar.length > 200 && !codigoGerar.includes("undefined")) {
+						qrCodeBase64 = qrcode(codigoGerar);
+						descQrCode = codigoGerar;
+					}
+
+					if (!pairingCodeContent) {
+						pairingCodeContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
+						pairingStyle = "text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
+					}
 				}
 
 				let passkeySection = "";
@@ -2234,7 +2253,7 @@ class BotAPI {
           <h2>QR Code</h2>
           <img src="${qrCodeBase64}" alt="${descQrCode}">
           <h2>Pairing Code</h2>
-          <pre style="text-align: center;font-size: 35pt;">${pairingCodeContent.split("] ").join("]")}</pre>
+          <pre style="${pairingStyle}">${pairingCodeContent}</pre>
           ${buttons}
           ${statusPre}
         `;
@@ -2256,6 +2275,10 @@ class BotAPI {
             pre { background-color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; color: #2d3748; text-align: left; }
             button { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background-color: #4299e1; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
             .container div { margin: 1rem 0; display: flex; justify-content: center; gap: 10px; }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
           </style>
         </head>
         <body>
@@ -2271,19 +2294,46 @@ class BotAPI {
             let passkeyPrompted = false;
 
             async function fetchAndShow(url, action) {
-              if (!statusBox) return;
+              if (action !== 'recriar' && !statusBox) return;
               if (!confirm('Tem certeza que deseja '+action+'?')) return;
-              statusBox.textContent = 'Executando... Por favor, aguarde.';
-              try {
-                const response = await fetch(url); // Browser should send auth header
-                const result = await response.json();
-                statusBox.textContent = JSON.stringify(result, null, 2);
-                if (action === 'reload' && response.ok) {
-                  statusBox.textContent += \`\\n\\nAção concluída. Recarregando em 2 segundos...\`;
-                  setTimeout(() => window.location.reload(), 2000);
+              
+              if (action === 'recriar') {
+                // Substitui o conteúdo do container pelo spinner
+                container.innerHTML = \`
+                  <div id="recreate-status" style="padding: 2rem; text-align: center;">
+                    <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3182ce; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; margin: 0 auto 1.5rem auto;"></div>
+                    <h2 style="color: #2b6cb0; font-size: 1.3rem; margin-bottom: 0.5rem;">Recriando Instância...</h2>
+                    <p id="recreate-msg" style="color: #4a5568; font-size: 0.95rem;">Por favor, aguarde enquanto a nova sessão é gerada.</p>
+                  </div>
+                \`;
+                try {
+                  const res = await fetch(url);
+                  const result = await res.json();
+                  const msgEl = document.getElementById('recreate-msg');
+                  if (result.status === 'ok') {
+                    if (msgEl) msgEl.textContent = 'Instância recriada! Recarregando em 3s...';
+                    setTimeout(() => window.location.reload(), 3000);
+                  } else {
+                    if (msgEl) msgEl.textContent = 'Erro: ' + JSON.stringify(result);
+                  }
+                } catch(e) {
+                  const msgEl = document.getElementById('recreate-msg');
+                  if (msgEl) msgEl.textContent = 'Erro de rede. Recarregando em 5s...';
+                  setTimeout(() => window.location.reload(), 5000);
                 }
-              } catch (error) {
-                statusBox.textContent = \`Erro: \${error?.message}\\n\${error?.stack}\`;
+              } else {
+                statusBox.textContent = 'Executando... Por favor, aguarde.';
+                try {
+                  const response = await fetch(url);
+                  const result = await response.json();
+                  statusBox.textContent = JSON.stringify(result, null, 2);
+                  if (action === 'reload' && response.ok) {
+                    statusBox.textContent += \`\\n\\nAção concluída. Recarregando em 2 segundos...\`;
+                    setTimeout(() => window.location.reload(), 2000);
+                  }
+                } catch (error) {
+                  statusBox.textContent = \`Erro: \${error?.message}\\n\${error?.stack}\`;
+                }
               }
             }
 
@@ -2425,13 +2475,29 @@ class BotAPI {
                 const connectData = status.extra?.connectData;
                 if (connectData) {
                   const qrImg = container.querySelector('img');
-                  if (qrImg && connectData.code && connectData.code.length > 200) {
-                    qrImg.src = \`/qrimg/${botId}?t=\` + Date.now();
+                  // Atualiza QR: usa base64 diretamente se disponível, senão busca arquivo do servidor
+                  if (qrImg) {
+                    if (connectData.qrCode) {
+                      qrImg.src = connectData.qrCode;
+                    } else if (connectData.code && connectData.code.length > 200) {
+                      qrImg.src = \`/qrimg/${botId}?t=\` + Date.now();
+                    }
                   }
                   
                   const pairingPre = container.querySelector('pre');
-                  if (pairingPre && connectData.pairingCode && pairingPre.textContent !== connectData.pairingCode) {
-                    pairingPre.textContent = connectData.pairingCode.split("] ").join("]");
+                  if (pairingPre) {
+                    if (!connectData.qrCode && !connectData.pairingCode && !connectData.code) {
+                      // Conectando
+                      pairingPre.textContent = "Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
+                      pairingPre.style = "text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
+                    } else if (connectData.pairingCode) {
+                      pairingPre.textContent = connectData.pairingCode.split("] ").join("]");
+                      pairingPre.style = "text-align: center; font-size: 35pt;";
+                    } else {
+                      // QR Code existe mas pairing code veio vazio -> Rate Limit
+                      pairingPre.textContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
+                      pairingPre.style = "text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
+                    }
                   }
                 }
 

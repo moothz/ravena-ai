@@ -1335,108 +1335,139 @@ class WhatsAppBotGo {
 	}
 
 	async _checkInstanceStatusAndConnect(isRetry = false, forceConnect = false) {
-		//this.logger.info(`Checking instance status for ${this.instanceName}...`);
 		try {
 			let response;
 			try {
 				response = await this.apiClient.get(`/instance/status`);
 			} catch (e) {
-				this.logger.error(
-					`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`,
-					e
-				);
+				if (e && e.status === 401) {
+					this.isConnected = false;
+					return {
+						instanceDetails: { version: this.version, tipo: "whatsgoapi" },
+						extra: { connectData: this.connectDataCache?.data || {} }
+					};
+				}
+				this.logger.error(`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`, e);
 				response = { data: { Connected: false, LoggedIn: false } };
 			}
 
 			const statusData = response?.data;
-			this.isConnected = statusData?.Connected && statusData?.LoggedIn;
-			const state = this.isConnected ? "CONNECTED" : "DISCONNECTED";
+			// Connected = websocket WA estabelecido; LoggedIn = sessão autenticada
+			const wsConnected = !!statusData?.Connected;
+			this.isConnected = wsConnected && !!statusData?.LoggedIn;
+
+			const instanceDetails = { version: this.version, tipo: "whatsgoapi" };
 			const extra = {};
+
 			if (statusData?.lastPasskeyRequest) {
 				extra.lastPasskeyRequest = statusData.lastPasskeyRequest;
 			}
 
-			const instanceDetails = {
-				version: this.version,
-				tipo: "whatsgoapi"
-			};
-
+			// Totalmente conectado e logado
 			if (this.isConnected) {
 				this._onInstanceConnected();
 				extra.ok = true;
-			} else {
-				if (forceConnect) {
-					this.logger.info(
-						`Instance ${this.instanceName} is not connected. Attempting to connect...`
-					);
+				this.connectDataCache = null;
+				this._connectingPromise = null;
+				return { instanceDetails, extra };
+			}
 
-					const connectResponse = await this.apiClient.post(
-						`/instance/connect`,
-						{
-							webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
-							subscribe: [
-								"MESSAGE",
-								"SEND_MESSAGE",
-								"READ_RECEIPT",
-								"PRESENCE",
-								"CHAT_PRESENCE",
-								"CALL",
-								"CONNECTION",
-								"LABEL",
-								"CONTACT",
-								"GROUP",
-								"NEWSLETTER",
-								"QRCODE"
-							]
-						},
-						false
-					);
+			// Não logado — busca QR/pairing code se cache expirou
+			{
+				const now = Date.now();
+				const cacheValid = this.connectDataCache && (now - this.connectDataCache.timestamp < 55000);
 
-					extra.connectData = {};
+				if (!cacheValid) {
+					if (this._connectingPromise) {
+						// Já tem uma operação em andamento, espera ela terminar
+						await this._connectingPromise;
+					} else {
+						// Bloqueia requests paralelos imediatamente
+						this.connectDataCache = { timestamp: now, data: {} };
 
-					if (connectResponse.message === "success") {
-						const pairingCodeResponse = await this.apiClient.post(
-							`/instance/pair`,
-							{ phone: this.phoneNumber },
-							false
-						);
-						const qrCodeResponse = await this.apiClient.get(`/instance/qr`, {}, false);
+						this._connectingPromise = (async () => {
+							try {
+								const connectData = {};
 
-						this.logger.debug(`ConnectResponses:`, {
-							phone: this.phoneNumber,
-							pairingCodeResponse,
-							qrCodeResponse
-						});
+								if (!wsConnected) {
+									// WS não estabelecido: precisa conectar primeiro
+									this.logger.info(`[${this.id}] WS desconectado. Chamando /instance/connect...`);
+									const connectResponse = await this.apiClient.post(
+										`/instance/connect`,
+										{
+											webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
+											subscribe: [
+												"MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "PRESENCE",
+												"CHAT_PRESENCE", "CALL", "CONNECTION", "LABEL",
+												"CONTACT", "GROUP", "NEWSLETTER", "QRCODE"
+											]
+										},
+										false
+									);
 
-						extra.connectData.pairingCode = pairingCodeResponse?.data?.PairingCode;
-						extra.connectData.qrCode = qrCodeResponse?.data?.Qrcode; // code é base64, qrcode é a string
-						extra.connectData.code = qrCodeResponse?.data?.Code; // code é base64, qrcode é a string
-					}
+									if (connectResponse.message !== "success") {
+										this.logger.warn(`[${this.id}] Connect retornou: ${connectResponse.message}`);
+										this.connectDataCache = null;
+										return;
+									}
 
-					if (extra.connectData.pairingCode) {
-						this.logger.info(`[${this.id}] PAIRING CODE: ${extra.connectData.pairingCode}`);
-					} else if (extra.connectData.code || extra.connectData.qrcode) {
-						const qrBase64 = extra.connectData.code ?? extra.connectData.qrcode;
-						if (qrBase64) {
-							this.logger.info(`[${this.id}] QR Code received.`);
-							const qrCodeLocal = path.join(
-								this.database.databasePath,
-								"qrcodes",
-								`qrcode_${this.id}.png`
-							);
-							const base64Data = qrBase64.replace(/^data:image\/png;base64,/, "");
-							fs.writeFileSync(qrCodeLocal, base64Data, "base64");
-						}
+									// Aguarda o WS do WA inicializar antes de pedir pair
+									this.logger.info(`[${this.id}] Connect ok. Aguardando 8s para o WA inicializar...`);
+									await new Promise(resolve => setTimeout(resolve, 8000));
+								} else {
+									// WS já está up (Connected=true, LoggedIn=false)
+									// Só precisa buscar pair/qr, sem reconectar
+									this.logger.info(`[${this.id}] WS já conectado. Buscando pair/qr diretamente...`);
+								}
+
+								const pairingCodeResponse = await this.apiClient.post(
+									`/instance/pair`,
+									{ phone: this.phoneNumber },
+									false
+								);
+								const qrCodeResponse = await this.apiClient.get(`/instance/qr`, {}, false);
+
+								connectData.pairingCode = pairingCodeResponse?.data?.PairingCode || "";
+								connectData.qrCode = qrCodeResponse?.data?.Qrcode || "";
+								connectData.code = qrCodeResponse?.data?.Code || "";
+
+								this.logger.info(`[${this.id}] PairingCode: ${connectData.pairingCode || "(vazio)"}, QR: ${connectData.qrCode ? "ok" : "(vazio)"}`);
+
+								this.connectDataCache = {
+									timestamp: connectData.qrCode ? now : (now - 52000),
+									data: connectData
+								};
+
+								if (connectData.qrCode) {
+									const qrCodeLocal = path.join(this.database.databasePath, "qrcodes", `qrcode_${this.id}.png`);
+									const base64Data = connectData.qrCode.replace(/^data:image\/png;base64,/, "");
+									fs.writeFileSync(qrCodeLocal, base64Data, "base64");
+								}
+
+								if (connectData.pairingCode) {
+									this.logger.info(`[${this.id}] PAIRING CODE: ${connectData.pairingCode}`);
+								}
+							} catch (connectErr) {
+								this.logger.error(`[${this.id}] Erro no connect/pair:`, connectErr);
+								this.connectDataCache = null;
+							} finally {
+								this._connectingPromise = null;
+							}
+						})();
+
+						await this._connectingPromise;
 					}
 				}
 			}
+
+			extra.connectData = this.connectDataCache?.data || {};
 			return { instanceDetails, extra };
+
 		} catch (error) {
 			this.logger.error(`Error checking/connecting instance ${this.instanceName}:`, error);
-			return { instanceDetails: {}, error };
+			return { instanceDetails: { version: this.version, tipo: "whatsgoapi" }, extra: {}, error };
 		}
 	}
-
 	async _onInstanceConnected() {
 		if (this.streamSystem) {
 			this.streamSystem.initialize();
