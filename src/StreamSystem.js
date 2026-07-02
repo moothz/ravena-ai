@@ -36,6 +36,8 @@ class StreamSystem {
 		this.dataPath = this.database.databasePath;
 		this.mediaPath = path.join(this.dataPath, "media");
 		this.initialized = false;
+		this.initializing = false;
+		this.initTimeout = null;
 		this.debugNotificacoes = false;
 
 		StreamSystem.instance = this;
@@ -59,10 +61,32 @@ class StreamSystem {
 	/**
 	 * Inicializa o sistema de monitoramento
 	 */
-	async initialize() {
+	async initialize(force = false) {
 		if (this.initialized) return true;
 
+		if (this.initializing && !force) return;
+
+		if (!force) {
+			if (this.initTimeout) return; // already scheduled
+
+			this.initializing = true;
+			this.logger.info(
+				"Agendando inicialização do sistema de monitoramento de streams para 3 minutos após o bot iniciar totalmente..."
+			);
+			this.initTimeout = setTimeout(() => {
+				this.initTimeout = null;
+				this.initialize(true);
+			}, 180000); // 3 minutes
+			return;
+		}
+
+		if (this.initTimeout) {
+			clearTimeout(this.initTimeout);
+			this.initTimeout = null;
+		}
+
 		try {
+			this.initializing = true;
 			// Obtém a instância compartilhada do StreamMonitor
 			// Usa o número de bots registrados ou padrão 50 para max listeners
 			this.streamMonitor = StreamMonitor.getInstance(
@@ -87,9 +111,11 @@ class StreamSystem {
 			});
 
 			this.initialized = true;
+			this.initializing = false;
 			this.logger.info("Sistema de monitoramento de streams inicializado (Singleton)");
 			return true;
 		} catch (error) {
+			this.initializing = false;
 			this.logger.error("Erro ao inicializar sistema de monitoramento de streams:", error);
 			return false;
 		}

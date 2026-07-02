@@ -112,7 +112,7 @@ function avisoStreamSystem(bot, chatId) {
 		logger.warn(
 			"[avisoStreamSystem] Comando de stream usado mas sistema não inicializado, forçando inicialização"
 		);
-		streamSystem.initialize(); // É async mas aqui chamamos fire-and-forget
+		streamSystem.initialize(true); // É async mas aqui chamamos fire-and-forget
 		bot.streamSystem = streamSystem;
 		bot.streamMonitor = streamSystem.streamMonitor;
 
