@@ -2492,7 +2492,7 @@ class BotAPI {
                             <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
                             <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
                           </div>
-                          <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+                          <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">\${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
                         </div>
                         <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
 
@@ -2576,7 +2576,7 @@ class BotAPI {
                       <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
                       <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
                     </div>
-                    <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+                    <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">\${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
                   </div>
                   <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
 
