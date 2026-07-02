@@ -2441,9 +2441,22 @@ class BotAPI {
                   if (btn) btn.disabled = false;
                 }
               } catch (e) {
-                console.error(e);
-                msgBox.innerText = 'Erro na autenticação: ' + e.message;
+                console.error('Erro na autenticação passkey:', e);
+                let friendlyMsg = 'Erro na autenticação: ' + e.message;
+                
+                // Trata erro de SecurityError (mismatch de rpId/origem)
+                if (e.name === 'SecurityError' || e.message?.includes('Relying Party') || e.message?.includes('rpId') || e.message?.includes('origin')) {
+                  friendlyMsg = '⚠️ Limitação de Segurança: O navegador bloqueia a validação de Passkeys do WhatsApp fora do site oficial (whatsapp.com).\n\n👉 Para conectar o bot:\n1. Vá no seu celular em Configurações > Conta > Passkeys e desative a chave temporariamente.\n2. Volte aqui, recrie ou atualize o código de pareamento/QR Code e faça o login.\n3. Assim que o bot conectar com sucesso, você poderá reativar a Passkey no seu celular normalmente!';
+                } else if (e.name === 'NotAllowedError') {
+                  friendlyMsg = '⚠️ A autenticação biométrica foi cancelada ou expirou. Clique no botão abaixo para tentar novamente.';
+                }
+                
+                msgBox.innerText = friendlyMsg;
                 msgBox.style.color = 'red';
+                msgBox.style.whiteSpace = 'pre-wrap';
+                msgBox.style.textAlign = 'left';
+                msgBox.style.marginTop = '1rem';
+                msgBox.style.fontSize = '0.95rem';
                 if (btn) btn.disabled = false;
               }
             }

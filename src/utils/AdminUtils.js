@@ -131,17 +131,20 @@ class AdminUtils {
 
 			let participantes = [];
 
-			// Toda hora muda essa estrutura.. Considerar várias coisas
 			if (chatInstance && chatInstance.isGroup) {
-				participantes = participantes.concat(chatInstance.participants);
-				if (chatInstance._rawGroup) {
+				if (Array.isArray(chatInstance.participants)) {
+					participantes = participantes.concat(chatInstance.participants);
+				}
+				if (chatInstance._rawGroup && Array.isArray(chatInstance._rawGroup.participants)) {
 					participantes = participantes.concat(chatInstance._rawGroup.participants);
 				}
 
-				const participant = participantes.find((p) =>
-					[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
-						(numero) => numero && this._normalizeId(numero) === normalizedUserId
-					)
+				const participant = participantes.find(
+					(p) =>
+						p &&
+						[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
+							(numero) => numero && this._normalizeId(numero) === normalizedUserId
+						)
 				);
 
 				if (debug)

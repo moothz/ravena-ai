@@ -1086,7 +1086,9 @@ class EventHandler extends EventEmitter {
 				let foundInviter = null;
 
 				// Obtém todos os membros do grupo para verificação
-				const members = chat.participants.map((p) => p.id._serialized);
+				const members = (chat.participants || [])
+					.filter((p) => p && p.id)
+					.map((p) => p.id._serialized);
 				const stringifiedData = JSON.stringify(data);
 
 				for (const pendingJoin of pendingJoins) {

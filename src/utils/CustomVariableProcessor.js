@@ -480,7 +480,7 @@ class CustomVariableProcessor {
 							try {
 								// Obtém membros que ainda não foram usados
 								const chat = await context.bot.client.getChatById(context.message.group);
-								if (chat && chat.isGroup) {
+								if (chat && chat.isGroup && Array.isArray(chat.participants)) {
 									// Filtra participantes para excluir o próprio bot e menções já usadas
 									const filteredParticipants = chat.participants.filter(
 										(p) =>
