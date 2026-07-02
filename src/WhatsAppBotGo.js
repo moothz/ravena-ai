@@ -1347,7 +1347,10 @@ class WhatsAppBotGo {
 						extra: { connectData: this.connectDataCache?.data || {} }
 					};
 				}
-				this.logger.error(`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`, e);
+				this.logger.error(
+					`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`,
+					e
+				);
 				response = { data: { Connected: false, LoggedIn: false } };
 			}
 
@@ -1375,7 +1378,7 @@ class WhatsAppBotGo {
 			// Não logado — busca QR/pairing code se cache expirou
 			{
 				const now = Date.now();
-				const cacheValid = this.connectDataCache && (now - this.connectDataCache.timestamp < 55000);
+				const cacheValid = this.connectDataCache && now - this.connectDataCache.timestamp < 55000;
 
 				if (!cacheValid) {
 					if (this._connectingPromise) {
@@ -1397,9 +1400,18 @@ class WhatsAppBotGo {
 										{
 											webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
 											subscribe: [
-												"MESSAGE", "SEND_MESSAGE", "READ_RECEIPT", "PRESENCE",
-												"CHAT_PRESENCE", "CALL", "CONNECTION", "LABEL",
-												"CONTACT", "GROUP", "NEWSLETTER", "QRCODE"
+												"MESSAGE",
+												"SEND_MESSAGE",
+												"READ_RECEIPT",
+												"PRESENCE",
+												"CHAT_PRESENCE",
+												"CALL",
+												"CONNECTION",
+												"LABEL",
+												"CONTACT",
+												"GROUP",
+												"NEWSLETTER",
+												"QRCODE"
 											]
 										},
 										false
@@ -1412,8 +1424,10 @@ class WhatsAppBotGo {
 									}
 
 									// Aguarda o WS do WA inicializar antes de pedir pair
-									this.logger.info(`[${this.id}] Connect ok. Aguardando 8s para o WA inicializar...`);
-									await new Promise(resolve => setTimeout(resolve, 8000));
+									this.logger.info(
+										`[${this.id}] Connect ok. Aguardando 8s para o WA inicializar...`
+									);
+									await new Promise((resolve) => setTimeout(resolve, 8000));
 								} else {
 									// WS já está up (Connected=true, LoggedIn=false)
 									// Só precisa buscar pair/qr, sem reconectar
@@ -1431,15 +1445,21 @@ class WhatsAppBotGo {
 								connectData.qrCode = qrCodeResponse?.data?.Qrcode || "";
 								connectData.code = qrCodeResponse?.data?.Code || "";
 
-								this.logger.info(`[${this.id}] PairingCode: ${connectData.pairingCode || "(vazio)"}, QR: ${connectData.qrCode ? "ok" : "(vazio)"}`);
+								this.logger.info(
+									`[${this.id}] PairingCode: ${connectData.pairingCode || "(vazio)"}, QR: ${connectData.qrCode ? "ok" : "(vazio)"}`
+								);
 
 								this.connectDataCache = {
-									timestamp: connectData.qrCode ? now : (now - 52000),
+									timestamp: connectData.qrCode ? now : now - 52000,
 									data: connectData
 								};
 
 								if (connectData.qrCode) {
-									const qrCodeLocal = path.join(this.database.databasePath, "qrcodes", `qrcode_${this.id}.png`);
+									const qrCodeLocal = path.join(
+										this.database.databasePath,
+										"qrcodes",
+										`qrcode_${this.id}.png`
+									);
 									const base64Data = connectData.qrCode.replace(/^data:image\/png;base64,/, "");
 									fs.writeFileSync(qrCodeLocal, base64Data, "base64");
 								}
@@ -1462,7 +1482,6 @@ class WhatsAppBotGo {
 
 			extra.connectData = this.connectDataCache?.data || {};
 			return { instanceDetails, extra };
-
 		} catch (error) {
 			this.logger.error(`Error checking/connecting instance ${this.instanceName}:`, error);
 			return { instanceDetails: { version: this.version, tipo: "whatsgoapi" }, extra: {}, error };

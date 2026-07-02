@@ -545,35 +545,49 @@ class BotAPI {
 			}
 		});
 
-		this.app.post("/passkey/respond/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
-			const { botId } = req.params;
-			const bot = this.bots.find((b) => b.id === botId);
-			if (!bot) {
-				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+		this.app.post(
+			"/passkey/respond/:botId",
+			authenticateBasic,
+			this.strictLimiter,
+			async (req, res) => {
+				const { botId } = req.params;
+				const bot = this.bots.find((b) => b.id === botId);
+				if (!bot) {
+					return res
+						.status(404)
+						.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+				}
+				try {
+					const response = await bot.apiClient.post("/instance/passkey/respond", req.body);
+					res.json(response.data || response);
+				} catch (e) {
+					this.logger.error(`[API] Error during passkey respond for bot '${botId}':`, e);
+					res.status(500).json({ status: "error", message: e.message, details: e.stack });
+				}
 			}
-			try {
-				const response = await bot.apiClient.post("/instance/passkey/respond", req.body);
-				res.json(response.data || response);
-			} catch (e) {
-				this.logger.error(`[API] Error during passkey respond for bot '${botId}':`, e);
-				res.status(500).json({ status: "error", message: e.message, details: e.stack });
-			}
-		});
+		);
 
-		this.app.post("/passkey/confirm/:botId", authenticateBasic, this.strictLimiter, async (req, res) => {
-			const { botId } = req.params;
-			const bot = this.bots.find((b) => b.id === botId);
-			if (!bot) {
-				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+		this.app.post(
+			"/passkey/confirm/:botId",
+			authenticateBasic,
+			this.strictLimiter,
+			async (req, res) => {
+				const { botId } = req.params;
+				const bot = this.bots.find((b) => b.id === botId);
+				if (!bot) {
+					return res
+						.status(404)
+						.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+				}
+				try {
+					const response = await bot.apiClient.post("/instance/passkey/confirm", {});
+					res.json(response.data || response);
+				} catch (e) {
+					this.logger.error(`[API] Error during passkey confirm for bot '${botId}':`, e);
+					res.status(500).json({ status: "error", message: e.message, details: e.stack });
+				}
 			}
-			try {
-				const response = await bot.apiClient.post("/instance/passkey/confirm", {});
-				res.json(response.data || response);
-			} catch (e) {
-				this.logger.error(`[API] Error during passkey confirm for bot '${botId}':`, e);
-				res.status(500).json({ status: "error", message: e.message, details: e.stack });
-			}
-		});
+		);
 
 		// Webhook de doação do Tipa.ai
 		this.app.post("/donate_tipa", this.strictLimiter, async (req, res) => {
@@ -2143,7 +2157,9 @@ class BotAPI {
 			const { botId } = req.params;
 			const bot = this.bots.find((b) => b.id === botId);
 			if (!bot) {
-				return res.status(404).json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+				return res
+					.status(404)
+					.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 			}
 			try {
 				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, false);
@@ -2211,10 +2227,15 @@ class BotAPI {
 				let qrCodeBase64 = "";
 				let descQrCode = "Nenhum QRCode disponível";
 
-				if (!connectData || (!connectData.qrCode && !connectData.pairingCode && !connectData.code)) {
+				if (
+					!connectData ||
+					(!connectData.qrCode && !connectData.pairingCode && !connectData.code)
+				) {
 					// Inicializando conexão
-					pairingCodeContent = "Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
-					pairingStyle = "text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
+					pairingCodeContent =
+						"Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
+					pairingStyle =
+						"text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
 					descQrCode = "Inicializando conexão...";
 				} else {
 					const qrCodeBase64img = connectData.qrCode ?? "";
@@ -2229,8 +2250,10 @@ class BotAPI {
 					}
 
 					if (!pairingCodeContent) {
-						pairingCodeContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
-						pairingStyle = "text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
+						pairingCodeContent =
+							"WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
+						pairingStyle =
+							"text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
 					}
 				}
 
