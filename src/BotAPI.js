@@ -2385,80 +2385,67 @@ class BotAPI {
               return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
             }
 
-            async function startPasskeyAuthentication() {
+            // Gera o snippet JS que o usuário deve rodar no console do web.whatsapp.com
+            function buildPasskeySnippet(challenge) {
+              const challengeJson = JSON.stringify(challenge);
+              return \`console.log(JSON.stringify((await navigator.credentials.get({\\n  publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(\${challengeJson})\\n})).toJSON()))\`;
+            }
+
+            async function submitPasskeyResponse() {
+              const textarea = document.getElementById('passkey-json-input');
               const msgBox = document.getElementById('passkey-message');
-              const btn = document.getElementById('passkey-btn');
-              if (!currentPasskeyChallenge) return;
+              const btn = document.getElementById('passkey-submit-btn');
+              if (!textarea || !msgBox) return;
+
+              const raw = textarea.value.trim();
+              if (!raw) {
+                msgBox.innerText = '⚠️ Cole o JSON gerado pelo console antes de enviar.';
+                msgBox.style.color = '#c05621';
+                return;
+              }
+
+              let parsed;
+              try {
+                parsed = JSON.parse(raw);
+              } catch(e) {
+                msgBox.innerText = '⚠️ O texto colado não é um JSON válido. Copie apenas o objeto JSON do console.';
+                msgBox.style.color = '#c05621';
+                return;
+              }
 
               if (btn) btn.disabled = true;
-              msgBox.innerText = 'Por favor, siga as instruções na tela do seu dispositivo...';
+              msgBox.innerText = 'Enviando assinatura para o servidor...';
               msgBox.style.color = '#3182ce';
+
               try {
-                const requestOptions = {
-                  challenge: base64urlToArrayBuffer(currentPasskeyChallenge.challenge),
-                  rpId: currentPasskeyChallenge.rpId,
-                  allowCredentials: currentPasskeyChallenge.allowCredentials.map(c => ({
-                    id: base64urlToArrayBuffer(c.id),
-                    type: c.type,
-                    transports: c.transports
-                  })),
-                  userVerification: currentPasskeyChallenge.userVerification,
-                  timeout: currentPasskeyChallenge.timeout || 60000
-                };
-
-                const assertion = await navigator.credentials.get({ publicKey: requestOptions });
-                const response = {
-                  id: assertion.id,
-                  rawId: arrayBufferToBase64url(assertion.rawId),
-                  type: assertion.type,
-                  response: {
-                    clientDataJSON: arrayBufferToBase64url(assertion.response.clientDataJSON),
-                    authenticatorData: arrayBufferToBase64url(assertion.response.authenticatorData),
-                    signature: arrayBufferToBase64url(assertion.response.signature),
-                    userHandle: assertion.response.userHandle ? arrayBufferToBase64url(assertion.response.userHandle) : null
-                  }
-                };
-
-                msgBox.innerText = 'Enviando assinatura da passkey...';
-                msgBox.style.color = '#3182ce';
-
                 const res = await fetch(\`/passkey/respond/${botId}\`, {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify(response)
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(parsed)
                 });
-
                 const resJson = await res.json();
                 if (res.ok) {
-                  msgBox.innerText = 'Passkey autenticada com sucesso! Conectando...';
+                  msgBox.innerText = '✅ Passkey enviada com sucesso! Aguardando confirmação do WhatsApp...';
                   msgBox.style.color = 'green';
-                  setTimeout(() => window.location.reload(), 2000);
+                  setTimeout(() => window.location.reload(), 3000);
                 } else {
-                  msgBox.innerText = 'Erro ao autenticar passkey: ' + (resJson.message || 'Erro desconhecido');
+                  msgBox.innerText = '❌ Erro ao enviar passkey: ' + (resJson.error || resJson.message || 'Erro desconhecido');
                   msgBox.style.color = 'red';
                   if (btn) btn.disabled = false;
                 }
-              } catch (e) {
-                console.error('Erro na autenticação passkey:', e);
-                let friendlyMsg = 'Erro na autenticação: ' + e.message;
-                
-                // Trata erro de SecurityError (mismatch de rpId/origem)
-                if (e.name === 'SecurityError' || e.message?.includes('Relying Party') || e.message?.includes('rpId') || e.message?.includes('origin')) {
-                  friendlyMsg = '⚠️ Limitação de Segurança: O navegador bloqueia a validação de Passkeys do WhatsApp fora do site oficial (whatsapp.com).\n\n👉 Para conectar o bot:\n1. Vá no seu celular em Configurações > Conta > Passkeys e desative a chave temporariamente.\n2. Volte aqui, recrie ou atualize o código de pareamento/QR Code e faça o login.\n3. Assim que o bot conectar com sucesso, você poderá reativar a Passkey no seu celular normalmente!';
-                } else if (e.name === 'NotAllowedError') {
-                  friendlyMsg = '⚠️ A autenticação biométrica foi cancelada ou expirou. Clique no botão abaixo para tentar novamente.';
-                }
-                
-                msgBox.innerText = friendlyMsg;
+              } catch(e) {
+                msgBox.innerText = '❌ Erro de rede: ' + e.message;
                 msgBox.style.color = 'red';
-                msgBox.style.whiteSpace = 'pre-wrap';
-                msgBox.style.textAlign = 'left';
-                msgBox.style.marginTop = '1rem';
-                msgBox.style.fontSize = '0.95rem';
                 if (btn) btn.disabled = false;
               }
+            }
+
+            function copyToClipboard(text, btnEl) {
+              navigator.clipboard.writeText(text).then(() => {
+                const orig = btnEl.textContent;
+                btnEl.textContent = '✅ Copiado!';
+                setTimeout(() => { btnEl.textContent = orig; }, 2000);
+              });
             }
 
             async function checkStatus() {
@@ -2484,14 +2471,39 @@ class BotAPI {
                   if (!passkeyDiv) {
                     passkeyDiv = document.createElement('div');
                     passkeyDiv.id = 'passkey-section';
-                    passkeyDiv.style = "margin: 1.5rem 0; padding: 1.5rem; border: 2px dashed #4299e1; border-radius: 0.5rem; background-color: #ebf8ff; text-align: center;";
+                    const snippet = buildPasskeySnippet(currentPasskeyChallenge);
                     passkeyDiv.innerHTML = \`
-                      <h3 style="margin-top: 0; color: #2b6cb0; font-size: 1.15rem; font-weight: 600;">🔑 Passkey Login Detectado</h3>
-                      <p style="font-size: 0.95rem; color: #4a5568; margin-bottom: 1rem;">WhatsApp solicitou verificação por Passkey para este número.</p>
-                      <button id="passkey-btn" onclick="startPasskeyAuthentication()" style="background-color: #3182ce; padding: 0.75rem 1.5rem; font-size: 1.1rem; width: 100%; border: none; border-radius: 0.375rem; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">
-                        Usar Minha Passkey (Touch ID / Face ID)
-                      </button>
-                      <div id="passkey-message" style="margin-top: 0.75rem; font-weight: bold; color: #2d3748; font-size: 0.9rem;"></div>
+                      <div style="margin: 1.5rem 0; padding: 1.5rem; border: 2px solid #ed8936; border-radius: 0.75rem; background-color: #fffaf0; text-align: left;">
+                        <h3 style="margin: 0 0 0.75rem 0; color: #c05621; font-size: 1.1rem; font-weight: 700; text-align: center;">🔑 Verificação de Passkey Necessária</h3>
+                        <p style="font-size: 0.9rem; color: #4a5568; margin: 0 0 1rem 0;">Sua conta do WhatsApp tem <strong>Passkey</strong> ativada. Para conectar o bot, siga os passos abaixo:</p>
+                        
+                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 1 — Abra o WhatsApp Web</p>
+                          <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Abra <a href="https://web.whatsapp.com" target="_blank" style="color:#63b3ed;">web.whatsapp.com</a> em uma nova aba (não precisa estar logado).</p>
+                        </div>
+
+                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 2 — Abra o Console do Navegador</p>
+                          <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Pressione <kbd style="background:#4a5568;padding:0.15rem 0.4rem;border-radius:0.25rem;font-family:monospace;">F12</kbd> (ou clique com o botão direito → Inspecionar) e vá na aba <strong style="color:#fbd38d;">Console</strong>.</p>
+                        </div>
+
+                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.5rem;">
+                          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                            <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
+                            <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
+                          </div>
+                          <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+                        </div>
+                        <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
+
+                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 4 — Cole o JSON resultante aqui:</p>
+                          <textarea id="passkey-json-input" placeholder='Cole aqui o objeto JSON exibido no console...' style="width:100%;height:100px;background:#1a202c;color:#e2e8f0;border:1px solid #4a5568;border-radius:0.375rem;padding:0.5rem;font-family:monospace;font-size:0.78rem;resize:vertical;box-sizing:border-box;"></textarea>
+                        </div>
+
+                        <button id="passkey-submit-btn" onclick="submitPasskeyResponse()" style="width:100%;background:#48bb78;color:white;border:none;border-radius:0.375rem;padding:0.75rem;font-size:1rem;font-weight:700;cursor:pointer;">✅ Enviar Resposta da Passkey</button>
+                        <div id="passkey-message" style="margin-top:0.75rem;font-weight:bold;font-size:0.9rem;text-align:center;"></div>
+                      </div>
                     \`;
                     
                     const qrH2 = container.querySelector('h2');
@@ -2500,11 +2512,6 @@ class BotAPI {
                     } else {
                       container.appendChild(passkeyDiv);
                     }
-                  }
-
-                  if (!passkeyPrompted) {
-                    passkeyPrompted = true;
-                    startPasskeyAuthentication();
                   }
                 }
 
@@ -2545,8 +2552,46 @@ class BotAPI {
             setInterval(checkStatus, 3000);
 
             if (currentPasskeyChallenge) {
-              passkeyPrompted = true;
-              startPasskeyAuthentication();
+              // Se já há um desafio ao carregar a página, exibe o bloco de instruções imediatamente
+              const snippet = buildPasskeySnippet(currentPasskeyChallenge);
+              const passkeyDiv = document.createElement('div');
+              passkeyDiv.id = 'passkey-section';
+              passkeyDiv.innerHTML = \`
+                <div style="margin: 1.5rem 0; padding: 1.5rem; border: 2px solid #ed8936; border-radius: 0.75rem; background-color: #fffaf0; text-align: left;">
+                  <h3 style="margin: 0 0 0.75rem 0; color: #c05621; font-size: 1.1rem; font-weight: 700; text-align: center;">🔑 Verificação de Passkey Necessária</h3>
+                  <p style="font-size: 0.9rem; color: #4a5568; margin: 0 0 1rem 0;">Sua conta do WhatsApp tem <strong>Passkey</strong> ativada. Para conectar o bot, siga os passos abaixo:</p>
+                  
+                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 1 — Abra o WhatsApp Web</p>
+                    <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Abra <a href="https://web.whatsapp.com" target="_blank" style="color:#63b3ed;">web.whatsapp.com</a> em uma nova aba (não precisa estar logado).</p>
+                  </div>
+
+                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 2 — Abra o Console do Navegador</p>
+                    <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Pressione <kbd style="background:#4a5568;padding:0.15rem 0.4rem;border-radius:0.25rem;font-family:monospace;">F12</kbd> (ou clique com o botão direito → Inspecionar) e vá na aba <strong style="color:#fbd38d;">Console</strong>.</p>
+                  </div>
+
+                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.5rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                      <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
+                      <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
+                    </div>
+                    <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+                  </div>
+                  <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
+
+                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 4 — Cole o JSON resultante aqui:</p>
+                    <textarea id="passkey-json-input" placeholder='Cole aqui o objeto JSON exibido no console...' style="width:100%;height:100px;background:#1a202c;color:#e2e8f0;border:1px solid #4a5568;border-radius:0.375rem;padding:0.5rem;font-family:monospace;font-size:0.78rem;resize:vertical;box-sizing:border-box;"></textarea>
+                  </div>
+
+                  <button id="passkey-submit-btn" onclick="submitPasskeyResponse()" style="width:100%;background:#48bb78;color:white;border:none;border-radius:0.375rem;padding:0.75rem;font-size:1rem;font-weight:700;cursor:pointer;">✅ Enviar Resposta da Passkey</button>
+                  <div id="passkey-message" style="margin-top:0.75rem;font-weight:bold;font-size:0.9rem;text-align:center;"></div>
+                </div>
+              \`;
+              const qrH2 = container.querySelector('h2');
+              if (qrH2) container.insertBefore(passkeyDiv, qrH2);
+              else container.appendChild(passkeyDiv);
             }
           </script>
         </body>
