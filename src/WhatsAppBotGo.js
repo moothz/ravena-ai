@@ -1704,6 +1704,81 @@ class WhatsAppBotGo {
 					}
 					break;
 				}
+				case "QRCode": {
+					// Atualiza o cache local com o QRCode mais recente recebido via webhook
+					const qrData = payload.data;
+					if (qrData) {
+						const qrCodeBase64 = qrData.qrcode || ""; // data:image/png;base64,...
+						const qrCode = qrData.code || "";
+
+						this.connectDataCache = {
+							timestamp: Date.now(),
+							data: {
+								...(this.connectDataCache?.data || {}),
+								qrCode: qrCodeBase64,
+								code: qrCode
+							}
+						};
+
+						this.logger.info(
+							`[${this.id}] QRCode recebido via webhook (count=${qrData.count}/${qrData.maxCount}). Cache atualizado.`
+						);
+
+						// Salva PNG no disco (mesma lógica da rota /instance/qr)
+						if (qrCodeBase64) {
+							try {
+								const qrCodeLocal = path.join(
+									this.database.databasePath,
+									"qrcodes",
+									`qrcode_${this.id}.png`
+								);
+								const base64Data = qrCodeBase64.replace(/^data:image\/png;base64,/, "");
+								fs.mkdirSync(path.dirname(qrCodeLocal), { recursive: true });
+								fs.writeFileSync(qrCodeLocal, base64Data, "base64");
+							} catch (qrSaveErr) {
+								this.logger.warn(`[${this.id}] Falha ao salvar QRCode PNG:`, qrSaveErr);
+							}
+						}
+					}
+					break;
+				}
+
+				case "QRTimeout": {
+					this.connectDataCache = null;
+					this.logger.info(`[${this.id}] QR Code expirado (QRTimeout). Cache limpo.`);
+					break;
+				}
+
+				case "Connected": {
+					this.logger.info(
+						`[${this.id}] Evento de conexão bem sucedida recebido via webhook (Connected).`
+					);
+					break;
+				}
+
+				case "Disconnected":
+				case "ConnectFailure": {
+					const reason = payload.data?.Reason || payload.data?.message || "Desconexão via Webhook";
+					this.logger.warn(
+						`[${this.id}] Evento de desconexão recebido via webhook (${payload.event}). Razão: ${reason}`
+					);
+					break;
+				}
+
+				case "LoggedOut": {
+					this.logger.warn(`[${this.id}] Evento LoggedOut recebido via webhook.`);
+					break;
+				}
+
+				case "CallOffer":
+				case "CallOfferNotice": {
+					const caller = payload.data?.CallCreator || payload.data?.sender || "desconhecido";
+					this.logger.info(
+						`[${this.id}] Recebida notificação de chamada (${payload.event}) de: ${caller}`
+					);
+					break;
+				}
+
 				case "ChatPresence":
 					break;
 				case "Receipt":

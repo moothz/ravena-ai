@@ -468,9 +468,7 @@ class LLMService {
 			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
-				userContent = [
-					{ type: "text", text: options.prompt }
-				];
+				userContent = [{ type: "text", text: options.prompt }];
 				for (const img of imagesToProcess) {
 					let base64;
 					if (img.startsWith("data:image")) {
@@ -567,9 +565,7 @@ class LLMService {
 			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
-				userContent = [
-					{ type: "text", text: options.prompt }
-				];
+				userContent = [{ type: "text", text: options.prompt }];
 				for (const img of imagesToProcess) {
 					if (img.startsWith("data:image")) {
 						userContent.push({

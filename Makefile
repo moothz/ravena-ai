@@ -1,4 +1,4 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-whatsgoapi logs-cobalt recover_sql
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
@@ -142,6 +142,9 @@ ps: ## Mostra o status de todos os containers
 
 update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no container
 	docker compose exec ravena-ai node update-allm-cmds.js
+
+update-ytdl: ## Atualiza o yt-dlp para nightly dentro do container ravena-ai
+	docker compose exec ravena-ai bash update-ytdl.sh
 
 update-donates: ## Atualiza o ranking de doadores no README.md
 	@./update-donates.sh
