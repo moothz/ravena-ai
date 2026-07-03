@@ -57,17 +57,104 @@ const DEFAULT_PARAMS = {
  * @returns {Promise<ReturnMessage|Array<ReturnMessage>>} - ReturnMessage ou array de ReturnMessages
  */
 
+/**
+ * Tenta obter um prompt refinado a partir de uma imagem + modificações do usuário.
+ * Faz duas chamadas LLM:
+ *   1. Descreve a imagem detalhadamente
+ *   2. Reescreve a descrição aplicando as modificações solicitadas pelo usuário
+ * Retorna null silenciosamente em caso de falha.
+ * @param {Object} message - Dados da mensagem
+ * @param {string} userPrompt - Modificações desejadas pelo usuário
+ * @returns {Promise<string|null>}
+ */
+async function getImageDescriptionForPrompt(message, userPrompt) {
+	try {
+		let imageData = null;
+
+		// Caso 1: mensagem atual é uma imagem com caption contendo o comando
+		if (message.type === "image") {
+			if (message.content?.data) {
+				imageData = message.content.data;
+			} else if (typeof message.downloadMedia === "function") {
+				const media = await message.downloadMedia().catch(() => null);
+				imageData = media?.data ?? null;
+			}
+		}
+
+		// Caso 2: mensagem de texto com imagem quoted
+		if (!imageData && message.hasQuotedMsg) {
+			const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+			if (quotedMsg && quotedMsg.type === "image") {
+				const media = await quotedMsg.downloadMedia().catch(() => null);
+				imageData = media?.data ?? null;
+			}
+		}
+
+		if (!imageData) return null;
+
+		// 1ª chamada: descreve a imagem detalhadamente
+		logger.info("[getImageDescriptionForPrompt] 1ª chamada LLM: descrevendo imagem");
+		const description = await llmService.getCompletion({
+			prompt:
+				"Analyze this image and provide a detailed description for use as an image generation prompt. Include: art style (realistic, cartoon, anime, painting, etc.), color palette, main subjects, mood/atmosphere, lighting, background details, and any notable visual elements. Be descriptive and specific. Answer in English.",
+			systemContext:
+				"You are an expert at describing images for AI image generation prompts. Be detailed, specific and visual.",
+			image: imageData,
+			maxTokens: 300,
+			priority: 4
+		});
+
+		if (
+			!description ||
+			description.includes("Não foi poss") ||
+			description.includes("Ocorreu um erro")
+		) {
+			return null;
+		}
+
+		const baseDescription = description.trim();
+		logger.info(
+			`[getImageDescriptionForPrompt] Descrição obtida: ${baseDescription.substring(0, 80)}...`
+		);
+
+		// 2ª chamada: reescreve a descrição aplicando as modificações do usuário
+		logger.info("[getImageDescriptionForPrompt] 2ª chamada LLM: aplicando modificações");
+		const refinedPrompt = await llmService.getCompletion({
+			prompt: `Rewrite the description of this image:\n${baseDescription}\n\nModifications to apply:\n${userPrompt}`,
+			systemContext:
+				"You are an expert at writing image generation prompts. Rewrite the image description incorporating the requested modifications naturally, keeping a cohesive and detailed prompt. Answer in English.",
+			maxTokens: 350,
+			priority: 4
+		});
+
+		if (
+			!refinedPrompt ||
+			refinedPrompt.includes("Não foi poss") ||
+			refinedPrompt.includes("Ocorreu um erro")
+		) {
+			// Fallback: retorna só a descrição base se o refinamento falhar
+			return baseDescription;
+		}
+
+		return refinedPrompt.trim();
+	} catch (e) {
+		logger.warn("[getImageDescriptionForPrompt] Falhou silenciosamente:", e.message);
+		return null;
+	}
+}
+
 async function generateImage(bot, message, args, group, skipNotify = false) {
 	const chatId = message.group ?? message.author;
 	const returnMessages = [];
 
-	const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+	// Prompt vem da caption (se for imagem) ou dos args (se for texto)
 	let prompt = args.join(" ");
-	if (quotedMsg) {
-		const quotedText = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body;
-		if (quotedText) {
-			prompt += " " + quotedText;
-		}
+
+	// Tenta obter prompt refinado a partir de imagem (na msg atual ou na quoted) + modificações do usuário
+	const imageDescription = await getImageDescriptionForPrompt(message, prompt);
+	if (imageDescription) {
+		logger.info("[StableDiffusionCommands] Usando prompt refinado por imagem");
+		prompt = imageDescription;
 	}
 
 	if (prompt.length < 4) {

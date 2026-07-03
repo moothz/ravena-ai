@@ -463,13 +463,47 @@ class LLMService {
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
 
+			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
+			let userContent;
+			const hasImages = !!(options.image || (options.images && options.images.length > 0));
+			if (hasImages) {
+				const imagesToProcess = options.images ? options.images : [options.image];
+				userContent = [
+					{ type: "text", text: options.prompt }
+				];
+				for (const img of imagesToProcess) {
+					let base64;
+					if (img.startsWith("data:image")) {
+						// Já é data URL completo
+						userContent.push({
+							type: "image_url",
+							image_url: { url: img }
+						});
+					} else {
+						// Raw base64 — detectar mime type pelo header ou assumir jpeg
+						base64 = img;
+						let mime = "image/jpeg";
+						if (base64.startsWith("/9j/")) mime = "image/jpeg";
+						else if (base64.startsWith("iVBOR")) mime = "image/png";
+						else if (base64.startsWith("R0lGO")) mime = "image/gif";
+						else if (base64.startsWith("UklGR")) mime = "image/webp";
+						userContent.push({
+							type: "image_url",
+							image_url: { url: `data:${mime};base64,${base64}` }
+						});
+					}
+				}
+			} else {
+				userContent = options.prompt;
+			}
+
 			const response = await axios.post(
 				endpoint,
 				{
 					model,
 					messages: [
 						{ role: "system", content: ctxInclude },
-						{ role: "user", content: options.prompt }
+						{ role: "user", content: userContent }
 					],
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7
@@ -528,13 +562,43 @@ class LLMService {
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
 
+			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
+			let userContent;
+			const hasImages = !!(options.image || (options.images && options.images.length > 0));
+			if (hasImages) {
+				const imagesToProcess = options.images ? options.images : [options.image];
+				userContent = [
+					{ type: "text", text: options.prompt }
+				];
+				for (const img of imagesToProcess) {
+					if (img.startsWith("data:image")) {
+						userContent.push({
+							type: "image_url",
+							image_url: { url: img }
+						});
+					} else {
+						let mime = "image/jpeg";
+						if (img.startsWith("/9j/")) mime = "image/jpeg";
+						else if (img.startsWith("iVBOR")) mime = "image/png";
+						else if (img.startsWith("R0lGO")) mime = "image/gif";
+						else if (img.startsWith("UklGR")) mime = "image/webp";
+						userContent.push({
+							type: "image_url",
+							image_url: { url: `data:${mime};base64,${img}` }
+						});
+					}
+				}
+			} else {
+				userContent = options.prompt;
+			}
+
 			const response = await axios.post(
 				endpoint,
 				{
 					model,
 					messages: [
 						{ role: "system", content: ctxInclude },
-						{ role: "user", content: options.prompt }
+						{ role: "user", content: userContent }
 					],
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7
