@@ -100,7 +100,7 @@ class InviteSystem {
 				if (currentTime - lastNotify > 7 * 24 * 60 * 60 * 1000) {
 					await this.bot.sendMessage(
 						message.author,
-						"🛑 A ravenabot não está mais recebendo convites de seu número, pois você foi bloqueado."
+						`🛑 A ${this.bot.nomeExibir || "ravenabot"} não está mais recebendo convites de seu número, pois você foi bloqueado.`
 					);
 					// if (this.bot.grupoInvites) {
 					// 	await this.bot.sendMessage(
@@ -121,7 +121,7 @@ class InviteSystem {
 				message.origin.react("🛑");
 				await this.bot.sendMessage(
 					message.author,
-					"🛑 A ravenabot não recebe mais convite deste grupo, pois ele foi bloqueado."
+					`🛑 A ${this.bot.nomeExibir || "ravenabot"} não recebe mais convite deste grupo, pois ele foi bloqueado.`
 				);
 
 				// if (this.bot.grupoInvites) {
@@ -560,7 +560,7 @@ class InviteSystem {
 						this.logger.info(`Ignorando convite de JID bloqueado: ${inviteInfoData.JID}`);
 						await this.bot.sendMessage(
 							authorId,
-							"🛑 A ravenabot não recebe mais convite deste grupo, pois ele foi bloqueado."
+							`🛑 A ${this.bot.nomeExibir || "ravenabot"} não recebe mais convite deste grupo, pois ele foi bloqueado.`
 						);
 
 						// if (this.bot.grupoInvites) {
@@ -631,8 +631,8 @@ class InviteSystem {
 			let addedAny = false;
 
 			if (inviteInfoData?.ParticipantCount !== undefined && inviteInfoData.ParticipantCount <= 2) {
-				extraText +=
-					"\n- 😪 Este parece ser um grupo particular. Lembre-se que a ravena faz tudo no PV, não tem necessidade de criar um grupo com ela! Se quiser só brincar com os comandos, que tal entrar na nossa comunidade? Envie !grupao - temos grupos de downloads, jogos e bate papo.";
+				const botName = this.bot.nomeExibir || "ravena";
+				extraText += `\n- 😪 Este parece ser um grupo particular. Lembre-se que a ${botName} faz tudo no PV, não tem necessidade de criar um grupo com ela! Se quiser só brincar com os comandos, que tal entrar na nossa comunidade? Envie !grupao - temos grupos de downloads, jogos e bate papo.`;
 				addedAny = true;
 			}
 

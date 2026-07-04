@@ -285,7 +285,7 @@ async function aiCommand(bot, message, args, group) {
 		if (bot.pvAI) {
 			const greetingPath = path.join(database.databasePath, "textos", "bot-greeting.txt");
 			const greetingContent =
-				(await fs.readFile(greetingPath, "utf8")) ?? "Oi, eu sou a ravenabot!";
+				(await fs.readFile(greetingPath, "utf8")) ?? `Oi, eu sou ${bot.nomeExibir || "ravenabot"}!`;
 			return new ReturnMessage({
 				chatId,
 				content: greetingContent,
@@ -491,7 +491,7 @@ async function handleMediaRequest(
 			const ctxPath = path.join(database.databasePath, "textos", "llm_context_images.txt");
 			completionOptions.systemContext =
 				(await fs.readFile(ctxPath, "utf8")) ??
-				"Você se chama ravenabot e deve interpretar esta imagem enviada no WhatsApp";
+				`Você se chama ${bot.nomeExibir || "ravenabot"} e deve interpretar esta imagem enviada no WhatsApp`;
 		}
 		completionOptions.systemContext += customPersonalidade;
 	} else if (media.mimetype.includes("video")) {
@@ -530,7 +530,7 @@ async function handleMediaRequest(
 				const ctxPath = path.join(database.databasePath, "textos", "llm_context_videos.txt");
 				completionOptions.systemContext =
 					(await fs.readFile(ctxPath, "utf8")) ??
-					"Você se chama ravenabot e deve interpretar este vídeo enviado no WhatsApp";
+					`Você se chama ${bot.nomeExibir || "ravenabot"} e deve interpretar este vídeo enviado no WhatsApp`;
 			}
 			completionOptions.systemContext += customPersonalidade;
 		} catch (videoError) {

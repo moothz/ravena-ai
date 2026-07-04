@@ -176,7 +176,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 					content: media,
 					options: {
 						sendMediaAsSticker: true,
-						stickerAuthor: "ravena",
+						stickerAuthor: bot.nomeExibir || "ravena",
 						stickerName: `Emojik: ${emojis[0]}+${emojis[1]}`,
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -215,7 +215,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 				content: media,
 				options: {
 					sendMediaAsSticker: true,
-					stickerAuthor: "ravena",
+					stickerAuthor: bot.nomeExibir || "ravena",
 					stickerName: `Emojik: ${emojis[0]}+${emojis[1]}`,
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin

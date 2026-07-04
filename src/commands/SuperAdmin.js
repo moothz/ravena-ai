@@ -986,7 +986,7 @@ Break down the cost by category and provide a total estimated cost.`;
 				let cttDonate = await bot.createContact(numero);
 
 				if (!cttDonate) {
-					cttDonate = `${donorName} apoiador ravenabot`;
+					cttDonate = `${donorName} apoiador ${bot.nomeExibir || "ravenabot"}`;
 				}
 
 				this.logger.debug("[cttDonate]", cttDonate);

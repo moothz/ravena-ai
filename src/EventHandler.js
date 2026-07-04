@@ -390,10 +390,11 @@ class EventHandler extends EventEmitter {
 				}
 
 				// Ajuda com recuperação de grupo
+				const botNameRecovery = (bot.nomeExibir || "ravena").toLowerCase();
 				if (
 					textContent &&
 					typeof textContent === "string" &&
-					textContent.trim().toLowerCase() === "ravena, ajude a recuperar meu grupo!"
+					textContent.trim().toLowerCase() === `ravena, ajude a recuperar meu grupo!`
 				) {
 					try {
 						const chat = await message.origin.getChat();
@@ -1110,7 +1111,8 @@ class EventHandler extends EventEmitter {
 				if (groupData.newGroup) {
 					this.logger.debug(`[groupJoin] Novo grupo, enviando toda mensagem de boas vindas`);
 					if (!joinSilencioso) {
-						botInfoMessage = `🦇 Olá, grupo! Eu sou a *ravenabot*, um bot de WhatsApp. Use "${group.prefix}cmd" para ver os comandos disponíveis.`;
+						const botDisplayName = bot.nomeExibir || "ravenabot";
+						botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*, um bot de WhatsApp. Use "${group.prefix}cmd" para ver os comandos disponíveis.`;
 						try {
 							const groupJoinPath = path.join(
 								this.database.databasePath,
@@ -1171,7 +1173,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							if (bot.supportMsg && bot.supportMsg.length > 0) {
 								botInfoMessage += `\n---☭---☭---☭---☭---☭---☭---☭---☭---\n${bot.supportMsg}`;
 							} else {
-								botInfoMessage += `\n\n⭕ Este é um número da ☭ *ravena comunitária* ☭, um chip e celular fornecido por um membro da comunidade da ravena, não o criador oficial. O código, base de dados e servidor é exatamente o mesmo das outras ravenas! ⭕\n_Saiba mais enviando !comunitaria, acessando o site oficial ou no !grupao_`;
+								const genericName = bot.nomeExibir || "ravena";
+								botInfoMessage += `\n\n⭕ Este é um número da ☭ *${genericName} comunitária* ☭, um chip e celular fornecido por um membro da comunidade da ${genericName}, não o criador oficial. O código, base de dados e servidor é exatamente o mesmo das outras ${genericName}s! ⭕\n_Saiba mais enviando !comunitaria, acessando o site oficial ou no !grupao_`;
 							}
 						}
 
@@ -1208,7 +1211,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								}
 							};
 
-							const llmPrompt = `Você é um bot de WhatsApp chamado ravenabot e foi adicionado em um grupo chamado '${groupInfo.name}'${llm_inviterInfo}. Descrição do grupo: '${groupInfo.description}'. Membros: ${groupInfo.memberCount}.
+							const botDisplayName = bot.nomeExibir || "ravenabot";
+							const llmPrompt = `Você é um bot de WhatsApp chamado ${botDisplayName} e foi adicionado em um grupo chamado '${groupInfo.name}'${llm_inviterInfo}. Descrição do grupo: '${groupInfo.description}'. Membros: ${groupInfo.memberCount}.
 
 Retorne um JSON com dois campos:
 1. "welcomeMessage": Uma mensagem de boas-vindas PRONTA para ser enviada diretamente no grupo, sem nenhum placeholder como "[foto aqui]" ou "[link]". Deve ser sucinta, engraçada, interativa e direta ao ponto. Use a linguagem e o tom típico desse tipo de grupo.
@@ -1233,16 +1237,21 @@ Retorne um JSON com dois campos:
 											`[groupJoin] Resposta do LLM não é JSON válido, usando como mensagem direta: ${llmResponse}`
 										);
 										// Fallback: usa resposta crua como mensagem de boas-vindas
-										bot.sendMessage(group.id, llmResponse, { delay: 5000 }).catch((error) => {
-											this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
-										});
+										if (bot.sendJoinInfo !== false) {
+											bot.sendMessage(group.id, llmResponse, { delay: 5000 }).catch((error) => {
+												this.logger.error(
+													"Erro ao enviar mensagem de boas-vindas do grupo:",
+													error
+												);
+											});
+										}
 										return;
 									}
 
 									const { welcomeMessage, botPersonality } = parsed;
 
 									// Envia a mensagem de boas-vindas gerada
-									if (welcomeMessage) {
+									if (welcomeMessage && bot.sendJoinInfo !== false) {
 										this.logger.debug(`[groupJoin] LLM Welcome: ${welcomeMessage}`);
 										bot.sendMessage(group.id, welcomeMessage, { delay: 5000 }).catch((error) => {
 											this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
@@ -1319,7 +1328,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								"Erro ao ler groupJoinExistente.txt, usando mensagem padrão:",
 								readError
 							);
-							botInfoMessage = `🦇 Olá, grupo! Eu sou a *ravenabot*. Já estive aqui neste grupo antes, mas se tiverem dúvidas, é só mandar um *!cmd*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
+							const botDisplayName = bot.nomeExibir || "ravenabot";
+							botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes, mas se tiverem dúvidas, é só mandar um *!cmd*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
 						}
 					}
 
@@ -1365,13 +1375,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 					}
 
-					if (!joinSilencioso && botInfoMessage) {
+					if (!joinSilencioso && botInfoMessage && bot.sendJoinInfo !== false) {
 						bot.sendMessage(targetId, botInfoMessage).catch((error) => {
 							this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
 						});
-					} else if (joinSilencioso) {
+					} else if (joinSilencioso || bot.sendJoinInfo === false) {
 						this.logger.info(
-							`[groupJoin] 🔇 Join silencioso - mensagem de boas-vindas suprimida para ${groupId} (${group.name})`
+							`[groupJoin] 🔇 Join silencioso ou sendJoinInfo desativado - mensagem de boas-vindas suprimida para ${groupId} (${group.name})`
 						);
 					}
 				}

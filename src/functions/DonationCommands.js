@@ -14,14 +14,14 @@ const database = Database.getInstance();
  * Lê o arquivo de cabeçalho dos donates
  * @returns {Promise<string>} - Conteúdo do cabeçalho
  */
-async function readDonationHeader() {
+async function readDonationHeader(bot) {
 	try {
 		const headerPath = path.join(database.databasePath, "textos", "donate_header.txt");
 		const headerContent = await fs.readFile(headerPath, "utf8");
 		return headerContent;
 	} catch (error) {
 		logger.warn("Erro ao ler cabeçalho do donate:", error);
-		return "💖 *Ajuda de custos _ravenabot_!* 🐦‍⬛\n\n";
+		return `💖 *Ajuda de custos _${bot?.nomeExibir || "ravenabot"}_!* 🐦‍⬛\n\n`;
 	}
 }
 
@@ -228,7 +228,7 @@ async function showTopDonors(bot, message, args, group) {
 		const percentage = Math.min(100, Math.floor((totalRecentAmount / goalAmount) * 100));
 
 		// Constrói mensagem
-		let donorsMsg = await readDonationHeader();
+		let donorsMsg = await readDonationHeader(bot);
 
 		// Adiciona as novas seções
 		donorsMsg += `🕙 A última doação foi recebida ${timeSinceLastDonation}${lastDonationInfo}.\n\n`;

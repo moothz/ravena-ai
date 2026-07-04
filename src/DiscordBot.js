@@ -48,6 +48,8 @@ class DiscordBot {
 		this.discordClient = this.apiClient.getClient();
 
 		// Opções existentes adaptadas
+		this.nomeExibir = options.nomeExibir;
+		this.sendJoinInfo = options.sendJoinInfo;
 		this.phoneNumber = null; // Will be set when ready
 		this.pvAI = options.pvAI !== undefined ? options.pvAI : true;
 		this.ignorePV = options.ignorePV || false;

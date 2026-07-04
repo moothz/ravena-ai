@@ -183,7 +183,11 @@ class SillyInteractionHandler {
 		}
 
 		let category = null;
-		const normalizedNomes = nomesBot.map((n) => this.normalize(n));
+		const currentNomes = [...nomesBot];
+		if (bot.nomeExibir) {
+			currentNomes.push(bot.nomeExibir);
+		}
+		const normalizedNomes = currentNomes.map((n) => this.normalize(n));
 
 		const checkMatch = (botAtStartArr, botAtEndArr) => {
 			for (const nome of normalizedNomes) {
@@ -242,7 +246,7 @@ class SillyInteractionHandler {
 		if (category === "xingamentos") {
 			prompt = `Usuário ${nomePessoa} te xingou falando '${msgRecebida}'. Responda xingando ele de volta, mandando ele respeitar ou se colocar no lugar ele, ou ficar bem quieto, ou qualquer outra resposta witty, esperta, seja criativo e engraçado.`;
 		} else {
-			prompt = `Usuário ${nomePessoa} te elogiou falando '${msgRecebida}'. Responda de forma fofa, agradecendo e sendo gentil como a ravena.`;
+			prompt = `Usuário ${nomePessoa} te elogiou falando '${msgRecebida}'. Responda de forma fofa, agradecendo e sendo gentil como a ${bot.nomeExibir || "ravena"}.`;
 		}
 
 		try {
@@ -299,7 +303,7 @@ class SillyInteractionHandler {
 				content: media,
 				options: {
 					sendMediaAsSticker: true,
-					stickerAuthor: "Ravena",
+					stickerAuthor: bot.nomeExibir || "Ravena",
 					stickerName: "Silly",
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin

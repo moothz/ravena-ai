@@ -117,7 +117,9 @@ async function main() {
 
 					// Novas propriedades
 					updateStatus: rBot.updateStatus ?? true,
-					aiPersonality: rBot.aiPersonality ?? ""
+					aiPersonality: rBot.aiPersonality ?? "",
+					nomeExibir: rBot.nomeExibir,
+					sendJoinInfo: rBot.sendJoinInfo
 				});
 
 				redisDbAtual++;
@@ -148,7 +150,9 @@ async function main() {
 
 					// Novas propriedades
 					updateStatus: rBot.updateStatus ?? true,
-					aiPersonality: rBot.aiPersonality ?? ""
+					aiPersonality: rBot.aiPersonality ?? "",
+					nomeExibir: rBot.nomeExibir,
+					sendJoinInfo: rBot.sendJoinInfo
 				});
 
 				redisDbAtual++;
@@ -206,7 +210,9 @@ async function main() {
 
 					// Novas propriedades
 					updateStatus: rBot.updateStatus ?? true,
-					aiPersonality: rBot.aiPersonality ?? ""
+					aiPersonality: rBot.aiPersonality ?? "",
+					nomeExibir: rBot.nomeExibir,
+					sendJoinInfo: rBot.sendJoinInfo
 				});
 
 				redisDbAtual++;

@@ -38,6 +38,8 @@ const convertAsync = promisify(imagemagick.convert);
 class WhatsAppBotGo {
 	constructor(options) {
 		this.id = options.id;
+		this.nomeExibir = options.nomeExibir;
+		this.sendJoinInfo = options.sendJoinInfo;
 		this.vip = options.vip;
 		this.comunitario = options.comunitario;
 		this.numeroResponsavel = options.numeroResponsavel;

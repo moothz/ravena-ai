@@ -38,6 +38,8 @@ class WhatsAppBotTelegram {
 		this.telegramSecretToken = options.telegramSecretToken || "";
 
 		// Opções compartilhadas utilizadas
+		this.nomeExibir = options.nomeExibir;
+		this.sendJoinInfo = options.sendJoinInfo;
 		this.pvAI = options.pvAI ?? true;
 		this.ignorePV = options.ignorePV || false;
 		this.updateStatus = options.updateStatus ?? true;
