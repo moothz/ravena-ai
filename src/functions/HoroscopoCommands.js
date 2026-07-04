@@ -79,6 +79,10 @@ function normalizeSigno(signo) {
  */
 async function detectHoroscopo(msgBody, groupId) {
 	try {
+		if (typeof msgBody !== "string") {
+			logger.info("Newsletter não é horóscopo");
+			return false;
+		}
 		const gruposHoroscopo = (process.env.GRUPOS_HOROSCOPOS ?? "").split(",");
 		if (gruposHoroscopo.includes(groupId) && gruposHoroscopo.length > 0) {
 			logger.info(`Horoscopo detectado em grupo oficial`);
@@ -119,7 +123,7 @@ async function detectHoroscopo(msgBody, groupId) {
 
 		return false;
 	} catch (error) {
-		logger.error("Erro ao detectar horóscopo:", error);
+		logger.info("Newsletter não é horóscopo");
 		return false;
 	}
 }

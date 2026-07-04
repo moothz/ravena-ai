@@ -276,7 +276,7 @@ class EventHandler extends EventEmitter {
 
 			// Newsletter/Canais: Apenas pra detectar jrmunews, horóscopos, etc.
 			if (message.isNewsletter) {
-				this.logger.debug(`[processMessage] Recebido newsletter`, { message });
+				// this.logger.debug(`[processMessage] Recebido newsletter`, { message });
 				try {
 					const isNewsDetected = await MuNewsCommands.detectNews(message.content, message.from);
 					if (isNewsDetected) {

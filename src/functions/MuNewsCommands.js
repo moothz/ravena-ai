@@ -65,7 +65,11 @@ function extractDate(text) {
  */
 async function detectNews(msgBody, groupId) {
 	try {
-		const mensagem = msgBody?.toLowerCase() ?? "";
+		if (typeof msgBody !== "string") {
+			logger.info("Newsletter não é um munews");
+			return false;
+		}
+		const mensagem = msgBody.toLowerCase();
 
 		// Verifica se a mensagem atende aos critérios para ser uma MuNews
 		if (mensagem.length > 5000) {
@@ -110,7 +114,7 @@ async function detectNews(msgBody, groupId) {
 
 		return false;
 	} catch (error) {
-		logger.error("Erro ao detectar MuNews:", error);
+		logger.info("Newsletter não é um munews");
 		return false;
 	}
 }
