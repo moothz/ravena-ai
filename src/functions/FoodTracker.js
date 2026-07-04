@@ -160,7 +160,28 @@ async function comidaCommand(bot, message, args, group) {
 			});
 		}
 
-		if (!analysis.is_food) {
+		// Normalização de chaves do objeto retornado pelo LLM (suporte a EN/PT-BR)
+		const isFood = !!(
+			analysis.is_food ??
+			analysis.comida_detectada ??
+			analysis.food_detected ??
+			analysis.contem_comida
+		);
+		const rawIngredients = analysis.ingredients ?? analysis.ingredientes ?? [];
+		const ingredients = rawIngredients.map((ing) => ({
+			name: ing.name ?? ing.nome ?? "Ingrediente",
+			quantity: ing.quantity ?? ing.quantidade ?? "n/a",
+			calories: Number(ing.calories ?? ing.calorias ?? 0)
+		}));
+
+		const totalCalories = Number(
+			analysis.total_calories ??
+				analysis.calorias_totais ??
+				analysis.calorias ??
+				ingredients.reduce((sum, ing) => sum + ing.calories, 0)
+		);
+
+		if (!isFood) {
 			return new ReturnMessage({
 				chatId,
 				content:
@@ -177,11 +198,11 @@ async function comidaCommand(bot, message, args, group) {
 		const result = await database.dbRun(
 			dbName,
 			"INSERT INTO food_entries (user_id, group_id, timestamp, total_calories) VALUES (?, ?, ?, ?)",
-			[message.author, message.group || null, timestamp, analysis.total_calories]
+			[message.author, message.group || null, timestamp, totalCalories]
 		);
 		const entryId = result.lastID;
 
-		const ingredientInserts = analysis.ingredients.map((ing) =>
+		const ingredientInserts = ingredients.map((ing) =>
 			database.dbRun(
 				dbName,
 				"INSERT INTO food_ingredients (entry_id, name, quantity, calories) VALUES (?, ?, ?, ?)",
@@ -194,11 +215,11 @@ async function comidaCommand(bot, message, args, group) {
 		const dateStr = new Date(timestamp).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 		let responseText = `🍽️ *Análise de Comida*\n📅 ${dateStr}\n\n`;
 
-		analysis.ingredients.forEach((ing) => {
+		ingredients.forEach((ing) => {
 			responseText += `▫️ *${ing.name}*: ${ing.quantity} (~${ing.calories} kcal)\n`;
 		});
 
-		responseText += `\n🔥 *Total Calórico Estimado:* ${analysis.total_calories} kcal\n`;
+		responseText += `\n🔥 *Total Calórico Estimado:* ${totalCalories} kcal\n`;
 		responseText += `\n✅ _Dados salvos com sucesso! Use !comida-info para ver suas estatísticas._`;
 
 		return new ReturnMessage({
