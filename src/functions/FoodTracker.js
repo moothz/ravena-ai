@@ -160,19 +160,47 @@ async function comidaCommand(bot, message, args, group) {
 			});
 		}
 
-		// Normalização de chaves do objeto retornado pelo LLM (suporte a EN/PT-BR)
-		const isFood = !!(
-			analysis.is_food ??
-			analysis.comida_detectada ??
-			analysis.food_detected ??
-			analysis.contem_comida
-		);
-		const rawIngredients = analysis.ingredients ?? analysis.ingredientes ?? [];
-		const ingredients = rawIngredients.map((ing) => ({
-			name: ing.name ?? ing.nome ?? "Ingrediente",
-			quantity: ing.quantity ?? ing.quantidade ?? "n/a",
-			calories: Number(ing.calories ?? ing.calorias ?? 0)
-		}));
+		// Verifica se foi detectado comida (inspeção robusta de chaves e fallbacks)
+		let isFood = false;
+		for (const key of Object.keys(analysis)) {
+			const lowerKey = key.toLowerCase();
+			if (
+				lowerKey.includes("food") ||
+				lowerKey.includes("comida") ||
+				lowerKey.includes("refeicao") ||
+				lowerKey.includes("prato") ||
+				lowerKey.includes("alimento")
+			) {
+				const val = analysis[key];
+				if (
+					val === true ||
+					(typeof val === "string" &&
+						(val.toLowerCase() === "sim" ||
+							val.toLowerCase() === "true" ||
+							val.toLowerCase() === "yes"))
+				) {
+					isFood = true;
+					break;
+				}
+			}
+		}
+
+		const rawIngredients =
+			analysis.ingredients ?? analysis.ingredientes ?? analysis.itens ?? analysis.alimentos ?? [];
+		if (Array.isArray(rawIngredients) && rawIngredients.length > 0) {
+			isFood = true;
+		}
+
+		const ingredients = (Array.isArray(rawIngredients) ? rawIngredients : []).map((ing) => {
+			if (typeof ing === "string") {
+				return { name: ing, quantity: "n/a", calories: 0 };
+			}
+			return {
+				name: ing.name ?? ing.nome ?? ing.item ?? ing.alimento ?? "Ingrediente",
+				quantity: ing.quantity ?? ing.quantidade ?? ing.porcao ?? "n/a",
+				calories: Number(ing.calories ?? ing.calorias ?? ing.kcal ?? 0)
+			};
+		});
 
 		const totalCalories = Number(
 			analysis.total_calories ??
