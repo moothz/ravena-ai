@@ -302,7 +302,12 @@ class DatabaseMappers {
 	 * Async-wrapped run (for Database.js compatibility).
 	 */
 	async asyncRun(name, sql, params = []) {
-		return this.run(name, sql, params);
+		const res = this.run(name, sql, params);
+		return {
+			lastID: res.lastInsertRowid,
+			lastInsertRowid: res.lastInsertRowid,
+			changes: res.changes
+		};
 	}
 
 	/**

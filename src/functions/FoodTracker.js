@@ -228,7 +228,7 @@ async function comidaCommand(bot, message, args, group) {
 			"INSERT INTO food_entries (user_id, group_id, timestamp, total_calories) VALUES (?, ?, ?, ?)",
 			[message.author, message.group || null, timestamp, totalCalories]
 		);
-		const entryId = result.lastID;
+		const entryId = result.lastID ?? result.lastInsertRowid;
 
 		const ingredientInserts = ingredients.map((ing) =>
 			database.dbRun(
