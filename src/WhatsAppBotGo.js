@@ -1870,7 +1870,8 @@ class WhatsAppBotGo {
 			const senderAlt = info.SenderAlt; // geralmente LID
 
 			if (!pushName || pushName?.length < 1) {
-				pushName = (await this.fetchPushNameFromCache(id)) ?? "Usuario";
+				const cacheObj = await this.fetchPushNameFromCache(senderAlt || sender);
+				pushName = cacheObj?.pushName ?? cacheObj ?? "Usuario";
 			}
 
 			// Context Info (Reply/Mentions)
@@ -2675,7 +2676,8 @@ class WhatsAppBotGo {
 
 		let cacheName;
 		try {
-			cacheName = await this.fetchPushNameFromCache(id);
+			const cacheObj = await this.fetchPushNameFromCache(id);
+			cacheName = cacheObj?.pushName ?? cacheObj;
 			returnData.name = cacheName ?? returnData.name;
 		} catch (e) {
 			// Ignore

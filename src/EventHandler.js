@@ -1605,10 +1605,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				numeroPessoas = user.map((u) => `@${u.id.split("@")[0]}` ?? "@123456780").join(", ");
 				quantidadePessoas = user.length;
 				isPlural = quantidadePessoas > 1;
-				baseMentions = user.map((u) => u.id);
+				baseMentions = user.map((u) => `${u.id.split("@")[0]}@s.whatsapp.net`);
 			} else {
 				numeroPessoas = `@${user.id.split("@")[0]}` ?? "@123456780";
-				baseMentions = [user.id];
+				baseMentions = [`${user.id.split("@")[0]}@s.whatsapp.net`];
 			}
 
 			// Filtra tipos de greeting disponíveis
@@ -1758,7 +1758,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			if (availableTypes.length === 0) return [];
 
 			const messagesToSend = [];
-			const baseMentions = [user.id];
+			const baseMentions = [`${user.id.split("@")[0]}@s.whatsapp.net`];
 
 			const processText = async (text) => {
 				if (!text) return { text: "", mentions: [] };

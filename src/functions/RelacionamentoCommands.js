@@ -233,7 +233,7 @@ async function namorarCommand(bot, message, args, group) {
 
 	return new ReturnMessage({
 		chatId,
-		content: `💖 ${getMentionStr(targetJid)}, você foi pedida(o) em namoro pelo(a) ${getMentionStr(authorJid)}!\n\nSe aceita, envie também:\n*!namorar ${getMentionStr(authorJid)}*\n\nSe recusa, envie:\n*!recusar ${getMentionStr(authorJid)}*`,
+		content: `💖 ${getMentionStr(targetJid)}, você foi pedida(o) em namoro pelo(a) ${getMentionStr(authorJid)}!\n\nSe aceita, envie também:\n!namorar ${getMentionStr(authorJid)}\n\nSe recusa, envie:\n!recusar ${getMentionStr(authorJid)}`,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
 			goReply: message.origin,
@@ -424,7 +424,7 @@ async function casarCommand(bot, message, args, group) {
 
 	return new ReturnMessage({
 		chatId,
-		content: `💍 ${getMentionStr(targetJid)}, você foi pedida(o) em casamento pelo(a) ${getMentionStr(authorJid)}!\n\nSe aceita, envie também:\n*!casar ${getMentionStr(authorJid)}*\n\nSe recusa, envie:\n*!recusar ${getMentionStr(authorJid)}*`,
+		content: `💍 ${getMentionStr(targetJid)}, você foi pedida(o) em casamento pelo(a) ${getMentionStr(authorJid)}!\n\nSe aceita, envie também:\n!casar ${getMentionStr(authorJid)}\n\nSe recusa, envie:\n!recusar ${getMentionStr(authorJid)}`,
 		options: {
 			quotedMessageId: message.origin.id._serialized,
 			goReply: message.origin,
