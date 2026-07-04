@@ -109,6 +109,15 @@ function classifyMeal(date) {
 	return "Ceia";
 }
 
+function safeParseInt(val) {
+	if (typeof val === "number") return val;
+	if (typeof val === "string") {
+		const match = val.match(/\d+/);
+		if (match) return parseInt(match[0], 10);
+	}
+	return 0;
+}
+
 // --- Commands ---
 
 async function comidaCommand(bot, message, args, group) {
@@ -139,7 +148,16 @@ async function comidaCommand(bot, message, args, group) {
 		const response = await llmService.getCompletion({
 			prompt: promptText,
 			systemContext:
-				"Você é um nutricionista especialista. Analise a imagem e identifique se há comida. Se houver, liste os ingredientes em Português do Brasil, estime a quantidade e as calorias. Retorne APENAS o JSON conforme o schema.",
+				"Você é um nutricionista especialista. Analise a imagem e identifique se há comida.\n" +
+				"Você deve retornar obrigatoriamente um objeto JSON seguindo exatamente esta estrutura:\n" +
+				"{\n" +
+				'  "is_food": true ou false,\n' +
+				'  "ingredients": [\n' +
+				'    { "name": "nome do ingrediente", "quantity": "quantidade", "calories": 123 }\n' +
+				"  ],\n" +
+				'  "total_calories": 456\n' +
+				"}\n" +
+				"Não inclua nenhum texto de introdução ou conclusão, retorne apenas o objeto JSON puro.",
 			image: media.data, // Assumes media.data is base64
 			response_format: foodAnalysisSchema
 		});
@@ -160,6 +178,18 @@ async function comidaCommand(bot, message, args, group) {
 			});
 		}
 
+		// Se o objeto estiver aninhado dentro de uma chave como "analise" ou "food_analysis"
+		if (analysis && !analysis.ingredients && !analysis.ingredientes) {
+			const keys = Object.keys(analysis);
+			if (
+				keys.length === 1 &&
+				typeof analysis[keys[0]] === "object" &&
+				analysis[keys[0]] !== null
+			) {
+				analysis = analysis[keys[0]];
+			}
+		}
+
 		// Verifica se foi detectado comida (inspeção robusta de chaves e fallbacks)
 		let isFood = false;
 		for (const key of Object.keys(analysis)) {
@@ -169,7 +199,8 @@ async function comidaCommand(bot, message, args, group) {
 				lowerKey.includes("comida") ||
 				lowerKey.includes("refeicao") ||
 				lowerKey.includes("prato") ||
-				lowerKey.includes("alimento")
+				lowerKey.includes("alimento") ||
+				lowerKey.includes("identific")
 			) {
 				const val = analysis[key];
 				if (
@@ -177,7 +208,8 @@ async function comidaCommand(bot, message, args, group) {
 					(typeof val === "string" &&
 						(val.toLowerCase() === "sim" ||
 							val.toLowerCase() === "true" ||
-							val.toLowerCase() === "yes"))
+							val.toLowerCase() === "yes")) ||
+					(typeof val === "string" && val.length > 3) // Se for o nome do prato/alimento
 				) {
 					isFood = true;
 					break;
@@ -185,8 +217,30 @@ async function comidaCommand(bot, message, args, group) {
 			}
 		}
 
-		const rawIngredients =
+		let rawIngredients =
 			analysis.ingredients ?? analysis.ingredientes ?? analysis.itens ?? analysis.alimentos ?? [];
+
+		// Se não houver ingredientes listados, mas temos identificação do prato, adiciona o prato como ingrediente único
+		if (!Array.isArray(rawIngredients) || rawIngredients.length === 0) {
+			const plateName =
+				analysis.nome_prato ??
+				analysis.alimento_identificado ??
+				analysis.identificacao ??
+				analysis.prato ??
+				analysis.alimento;
+			if (plateName && typeof plateName === "string") {
+				rawIngredients = [
+					{
+						name: plateName,
+						quantity: "1 porção",
+						calories: safeParseInt(
+							analysis.total_calories ?? analysis.calorias_totais ?? analysis.calorias
+						)
+					}
+				];
+			}
+		}
+
 		if (Array.isArray(rawIngredients) && rawIngredients.length > 0) {
 			isFood = true;
 		}
@@ -198,11 +252,11 @@ async function comidaCommand(bot, message, args, group) {
 			return {
 				name: ing.name ?? ing.nome ?? ing.item ?? ing.alimento ?? "Ingrediente",
 				quantity: ing.quantity ?? ing.quantidade ?? ing.porcao ?? "n/a",
-				calories: Number(ing.calories ?? ing.calorias ?? ing.kcal ?? 0)
+				calories: safeParseInt(ing.calories ?? ing.calorias ?? ing.kcal)
 			};
 		});
 
-		const totalCalories = Number(
+		const totalCalories = safeParseInt(
 			analysis.total_calories ??
 				analysis.calorias_totais ??
 				analysis.calorias ??
