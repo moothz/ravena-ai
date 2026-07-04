@@ -6254,7 +6254,50 @@ class Management {
 		return this.toggleStreamMentions(bot, message, args, group, "youtube");
 	}
 
-	async generatePainelCommand(bot, message, args, group) {
+	async generatePainelCommand(bot, message, args, group, privateManagement) {
+		let targetGroup = group;
+
+		// Se veio no PV, não há grupo ativo ou o usuário quer acessar outro grupo diretamente por g-painel nomegrupo
+		if (!message.group && args.length > 0) {
+			const groupName = args[0].trim().toLowerCase();
+			const groups = await this.database.getGroups();
+			targetGroup = groups.find((g) => g.name.trim().toLowerCase() === groupName);
+
+			if (targetGroup) {
+				const isUserAdminInTarget = await this.adminUtils.isAdmin(
+					message.author,
+					targetGroup,
+					false,
+					bot
+				);
+				if (isUserAdminInTarget) {
+					if (privateManagement) {
+						privateManagement[message.author] = targetGroup.id;
+					}
+				} else {
+					return new ReturnMessage({
+						chatId: message.author,
+						content: `Você *NÃO É* administrador do grupo '${targetGroup.name}'.`,
+						reaction: "🙅‍♂️"
+					});
+				}
+			} else {
+				return new ReturnMessage({
+					chatId: message.author,
+					content: `Grupo não encontrado: ${groupName}`,
+					reaction: "🙅‍♂️"
+				});
+			}
+		}
+
+		if (!targetGroup) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content:
+					"Você precisa especificar um grupo ou estar em um grupo gerenciado. Exemplo: !g-painel [nomeDoGrupo]"
+			});
+		}
+
 		// Generate token
 		const token = this.generateRandomToken(32);
 		const now = new Date();
@@ -6275,8 +6318,8 @@ class Management {
 			token,
 			requestNumber: message.author,
 			authorName: message.authorName ?? "Unknown",
-			groupName: group.name,
-			groupId: group.id,
+			groupName: targetGroup.name,
+			groupId: targetGroup.id,
 			botId: bot.id,
 			createdAt: now.toISOString(),
 			expiresAt: expiration.toISOString()

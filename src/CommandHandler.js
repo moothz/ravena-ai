@@ -699,8 +699,49 @@ class CommandHandler {
 						if (!silent) await bot.sendReturnMessages(returnMessage, group);
 						return returnMessage;
 					}
+				} else if (command === "g-painel" && args.length > 0) {
+					// Permite !g-painel nomegrupo diretamente no PV
+					const groupName = args[0].trim().toLowerCase();
+					const groups = await this.database.getGroups();
+					const targetGroup = groups.find((g) => g.name.trim().toLowerCase() === groupName);
+
+					if (targetGroup) {
+						const isUserAdminInTarget = await this.adminUtils.isAdmin(
+							message.author,
+							targetGroup,
+							false,
+							bot
+						);
+						if (isUserAdminInTarget) {
+							this.privateManagement[message.author] = targetGroup.id;
+							this.logger.info(
+								`Usuário ${message.author} agora está gerenciando o grupo (via g-painel): ${targetGroup.name} (${targetGroup.id})`
+							);
+							group = targetGroup;
+							replyToChat = message.author;
+							isManagingFromPrivate = true;
+						} else {
+							const returnMessage = new ReturnMessage({
+								chatId: message.author,
+								content: `Você *NÃO É* administrador do grupo '${targetGroup.name}'.`,
+								reaction: "🙅‍♂️"
+							});
+							if (!silent) await bot.sendReturnMessages(returnMessage, group);
+							return returnMessage;
+						}
+					} else {
+						this.logger.warn(`Grupo não encontrado: ${groupName}`);
+
+						const returnMessage = new ReturnMessage({
+							chatId: message.author,
+							content: `Grupo não encontrado: ${groupName}`,
+							reaction: this.defaultReactions.after
+						});
+						if (!silent) await bot.sendReturnMessages(returnMessage, group);
+						return returnMessage;
+					}
 				} else {
-					// Não é g-manage, então verifica se o cara já está gerenciando um pelo PV
+					// Não é g-manage ou g-painel com argumentos, então verifica se o cara já está gerenciando um pelo PV
 
 					if (this.privateManagement[message.author]) {
 						const managedGroupId = this.privateManagement[message.author];
