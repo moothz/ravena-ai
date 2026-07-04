@@ -1124,12 +1124,36 @@ async function copaEstadios(bot, message, args, group) {
 /** !copa-seguir <nome> — Habilita/Desabilita notificações de um time */
 async function copaSeguir(bot, message, args, group) {
 	const chatId = message.group ?? message.from;
+	const stripped = chatId.split("@")[0];
 	try {
 		if (args.length === 0) {
+			let followed = [];
+			try {
+				followed = await database.dbAll(
+					"copa_seguir",
+					"SELECT team_name_pt, fifa_code FROM copa_seguindo WHERE chat_id = ? OR chat_id = ?",
+					[chatId, stripped]
+				);
+			} catch (err) {
+				logger.error("Erro ao buscar times seguidos no banco:", err);
+			}
+
+			let followedListStr = "";
+			if (followed && followed.length > 0) {
+				followedListStr =
+					"\n\n*Times sendo seguidos neste chat:*\n" +
+					followed.map((t) => `${flag(t.fifa_code)} ${t.team_name_pt} (${t.fifa_code})`).join("\n");
+			} else {
+				followedListStr = "\n\nNenhum time está sendo seguido neste chat.";
+			}
+
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Use: `!copa-seguir <nome>`\nEx: `!copa-seguir brasil`, `!copa-seguir argentina`",
+					"❌ Use: `!copa-seguir <nome>`\n" +
+					"Ex: `!copa-seguir brasil`, `!copa-seguir argentina`" +
+					followedListStr +
+					`\n\n> ${chatId}`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -1161,15 +1185,15 @@ async function copaSeguir(bot, message, args, group) {
 
 		const existing = await database.dbGet(
 			"copa_seguir",
-			"SELECT 1 FROM copa_seguindo WHERE chat_id = ? AND team_id = ?",
-			[chatId, teamId]
+			"SELECT 1 FROM copa_seguindo WHERE (chat_id = ? OR chat_id = ?) AND team_id = ?",
+			[chatId, stripped, teamId]
 		);
 
 		if (existing) {
 			await database.dbRun(
 				"copa_seguir",
-				"DELETE FROM copa_seguindo WHERE chat_id = ? AND team_id = ?",
-				[chatId, teamId]
+				"DELETE FROM copa_seguindo WHERE (chat_id = ? OR chat_id = ?) AND team_id = ?",
+				[chatId, stripped, teamId]
 			);
 			return new ReturnMessage({
 				chatId,
