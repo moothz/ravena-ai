@@ -146,7 +146,8 @@ async function comidaCommand(bot, message, args, group) {
 
 		let analysis;
 		try {
-			analysis = JSON.parse(response);
+			const cleanResponse = response.replace(/```json|```/g, "").trim();
+			analysis = JSON.parse(cleanResponse);
 		} catch (e) {
 			logger.error("Failed to parse LLM response:", e);
 			return new ReturnMessage({

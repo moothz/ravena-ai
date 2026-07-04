@@ -495,25 +495,27 @@ class LLMService {
 				userContent = options.prompt;
 			}
 
-			const response = await axios.post(
-				endpoint,
-				{
-					model,
-					messages: [
-						{ role: "system", content: ctxInclude },
-						{ role: "user", content: userContent }
-					],
-					max_tokens: options.maxTokens ?? 5000,
-					temperature: options.temperature ?? 0.7
+			const payload = {
+				model,
+				messages: [
+					{ role: "system", content: ctxInclude },
+					{ role: "user", content: userContent }
+				],
+				max_tokens: options.maxTokens ?? 5000,
+				temperature: options.temperature ?? 0.7
+			};
+
+			if (options.response_format) {
+				payload.response_format = options.response_format;
+			}
+
+			const response = await axios.post(endpoint, payload, {
+				headers: {
+					Authorization: apiKey,
+					"Content-Type": "application/json"
 				},
-				{
-					headers: {
-						Authorization: apiKey,
-						"Content-Type": "application/json"
-					},
-					timeout: options.timeout ?? this.apiTimeout
-				}
-			);
+				timeout: options.timeout ?? this.apiTimeout
+			});
 
 			this._trackUsage("OpenAI", response.data, model, options);
 
@@ -588,27 +590,29 @@ class LLMService {
 				userContent = options.prompt;
 			}
 
-			const response = await axios.post(
-				endpoint,
-				{
-					model,
-					messages: [
-						{ role: "system", content: ctxInclude },
-						{ role: "user", content: userContent }
-					],
-					max_tokens: options.maxTokens ?? 5000,
-					temperature: options.temperature ?? 0.7
+			const payload = {
+				model,
+				messages: [
+					{ role: "system", content: ctxInclude },
+					{ role: "user", content: userContent }
+				],
+				max_tokens: options.maxTokens ?? 5000,
+				temperature: options.temperature ?? 0.7
+			};
+
+			if (options.response_format) {
+				payload.response_format = options.response_format;
+			}
+
+			const response = await axios.post(endpoint, payload, {
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+					"HTTP-Referer": "https://ravena.local",
+					"X-Title": "RavenaBot"
 				},
-				{
-					headers: {
-						Authorization: `Bearer ${apiKey}`,
-						"Content-Type": "application/json",
-						"HTTP-Referer": "https://ravena.local",
-						"X-Title": "RavenaBot"
-					},
-					timeout: options.timeout ?? this.apiTimeout
-				}
-			);
+				timeout: options.timeout ?? this.apiTimeout
+			});
 
 			this._trackUsage("OpenRouter", response.data, model, options);
 
@@ -641,7 +645,7 @@ class LLMService {
 	_cleanResponse(response) {
 		if (typeof response !== "string") return response;
 
-		return response
+		let cleaned = response
 			.replace(/<think>.*?<\/think>/gs, "")
 			.replace(/<\|think\|>.*?<channel\|>/gs, "")
 			.replace(/<\|thought\|>.*?<\|thought_end\|>/gs, "")
@@ -652,8 +656,14 @@ class LLMService {
 			.replace(/<channel\|>/g, "")
 			.replace(/<\|turn\|>/g, "")
 			.replace(/<turn\|>/g, "")
-			.trim()
-			.replace(/^"|"$/g, "");
+			.trim();
+
+		// Remove blocos de código Markdown (por exemplo, ```json ... ``` ou ``` ... ```) se existirem
+		if (cleaned.startsWith("```")) {
+			cleaned = cleaned.replace(/^```(?:json)?\n?|```$/g, "").trim();
+		}
+
+		return cleaned.replace(/^"|"$/g, "");
 	}
 
 	/**
