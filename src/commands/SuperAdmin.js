@@ -1332,16 +1332,25 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			if (args.length === 0) {
+			let mode = "both";
+			let numberArgs = args;
+			if (args[0] === "local" || args[0] === "whats") {
+				mode = args[0];
+				numberArgs = args.slice(1);
+			}
+
+			if (numberArgs.length === 0) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Por favor, forneça um número de telefone para bloquear. Exemplo: !sa-block +5511999999999"
+						"Por favor, forneça um número de telefone para bloquear. Exemplo: !sa-block " +
+						(mode !== "both" ? mode + " " : "") +
+						"+5511999999999"
 				});
 			}
 
 			// Processa o número para formato padrão (apenas dígitos)
-			let phoneNumber = args.join(" ").replace(/\D/g, "");
+			let phoneNumber = numberArgs.join(" ").replace(/\D/g, "");
 
 			// Se o número não tiver o formato @c.us, adicione
 			if (!phoneNumber.includes("@")) {
@@ -1359,7 +1368,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			try {
 				// Tenta remover o contato de grupos especiais primeiro
 				let removeResults = {};
-				if (specialGroups.length > 0) {
+				if (specialGroups.length > 0 && (mode === "both" || mode === "whats")) {
 					removeResults = await this.removeFromSpecialGroups(
 						bot,
 						phoneNumber,
@@ -1375,23 +1384,31 @@ Break down the cost by category and provide a total estimated cost.`;
 				let localStatus = "";
 
 				// 1. Tenta bloquear o contato na API externa
-				try {
-					const contatoBloquear = await bot.client.getContactById(phoneNumber);
-					await contatoBloquear.block();
-					apiStatus = "✅ API (Sucesso)";
-				} catch (blockError) {
-					this.logger.error("Erro ao bloquear contato na API:", blockError);
-					apiStatus = `❌ API (${blockError.message})`;
+				if (mode === "both" || mode === "whats") {
+					try {
+						const contatoBloquear = await bot.client.getContactById(phoneNumber);
+						await contatoBloquear.block();
+						apiStatus = "✅ API (Sucesso)";
+					} catch (blockError) {
+						this.logger.error("Erro ao bloquear contato na API:", blockError);
+						apiStatus = `❌ API (${blockError.message})`;
+					}
+				} else {
+					apiStatus = "⏭️ API (Ignorado)";
 				}
 
 				// 2. Tenta bloquear o contato localmente
-				try {
-					const pnClean = phoneNumber.split("@")[0];
-					await this.database.addLocalBlock(pnClean);
-					localStatus = "✅ Local (Sucesso)";
-				} catch (localError) {
-					this.logger.error("Erro ao bloquear contato localmente:", localError);
-					localStatus = `❌ Local (${localError.message})`;
+				if (mode === "both" || mode === "local") {
+					try {
+						const pnClean = phoneNumber.split("@")[0];
+						await this.database.addLocalBlock(pnClean);
+						localStatus = "✅ Local (Sucesso)";
+					} catch (localError) {
+						this.logger.error("Erro ao bloquear contato localmente:", localError);
+						localStatus = `❌ Local (${localError.message})`;
+					}
+				} else {
+					localStatus = "⏭️ Local (Ignorado)";
 				}
 
 				// Cria a resposta
@@ -1437,16 +1454,25 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			if (args.length === 0) {
+			let mode = "both";
+			let numberArgs = args;
+			if (args[0] === "local" || args[0] === "whats") {
+				mode = args[0];
+				numberArgs = args.slice(1);
+			}
+
+			if (numberArgs.length === 0) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Por favor, forneça um número de telefone para desbloquear. Exemplo: !sa-unblock +5511999999999"
+						"Por favor, forneça um número de telefone para desbloquear. Exemplo: !sa-unblock " +
+						(mode !== "both" ? mode + " " : "") +
+						"+5511999999999"
 				});
 			}
 
 			// Processa o número para formato padrão (apenas dígitos)
-			let phoneNumber = args.join(" ").replace(/\D/g, "");
+			let phoneNumber = numberArgs.join(" ").replace(/\D/g, "");
 
 			// Se o número não tiver o formato @c.us, adicione
 			if (!phoneNumber.includes("@")) {
@@ -1458,23 +1484,43 @@ Break down the cost by category and provide a total estimated cost.`;
 				let localStatus = "";
 
 				// 1. Tenta desbloquear o contato na API externa
-				try {
-					const contatoDesbloquear = await bot.client.getContactById(phoneNumber);
-					await contatoDesbloquear.unblock();
-					apiStatus = "✅ API (Sucesso)";
-				} catch (unblockError) {
-					this.logger.error("Erro ao desbloquear contato na API:", unblockError);
-					apiStatus = `❌ API (${unblockError.message})`;
+				let contact = null;
+				if (mode === "both" || mode === "whats") {
+					try {
+						contact = await bot.client.getContactById(phoneNumber);
+						await contact.unblock();
+						apiStatus = "✅ API (Sucesso)";
+					} catch (unblockError) {
+						this.logger.error("Erro ao desbloquear contato na API:", unblockError);
+						apiStatus = `❌ API (${unblockError.message})`;
+					}
+				} else {
+					apiStatus = "⏭️ API (Ignorado)";
 				}
 
 				// 2. Tenta desbloquear o contato localmente
-				try {
-					const pnClean = phoneNumber.split("@")[0];
-					await this.database.removeLocalBlock(pnClean);
-					localStatus = "✅ Local (Sucesso)";
-				} catch (localError) {
-					this.logger.error("Erro ao desbloquear contato localmente:", localError);
-					localStatus = `❌ Local (${localError.message})`;
+				if (mode === "both" || mode === "local") {
+					try {
+						const pnClean = phoneNumber.split("@")[0];
+						await this.database.removeLocalBlock(pnClean);
+						if (!contact && (mode === "both" || mode === "local")) {
+							try {
+								contact = await bot.client.getContactById(phoneNumber);
+							} catch (e) {}
+						}
+						if (contact && contact.lid) {
+							const lidClean = contact.lid.split("@")[0];
+							if (lidClean && lidClean !== pnClean) {
+								await this.database.removeLocalBlock(lidClean);
+							}
+						}
+						localStatus = "✅ Local (Sucesso)";
+					} catch (localError) {
+						this.logger.error("Erro ao desbloquear contato localmente:", localError);
+						localStatus = `❌ Local (${localError.message})`;
+					}
+				} else {
+					localStatus = "⏭️ Local (Ignorado)";
 				}
 
 				// Cria a resposta
@@ -2156,18 +2202,26 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			// Obtém o texto completo de argumentos e divide por vírgulas
-			const contactsText = args.join(" ");
-			if (!contactsText.trim()) {
+			let mode = "both";
+			let numbersText = args.join(" ");
+
+			if (args[0] === "local" || args[0] === "whats") {
+				mode = args[0];
+				numbersText = args.slice(1).join(" ");
+			}
+
+			if (!numbersText.trim()) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Por favor, forneça uma lista de contatos separados por vírgula. Exemplo: !sa-blockList 5511999999999@c.us, 5511888888888@c.us"
+						"Por favor, forneça uma lista de contatos separados por vírgula. Exemplo: !sa-blockList " +
+						(mode !== "both" ? mode + " " : "") +
+						"5511999999999@c.us, 5511888888888@c.us"
 				});
 			}
 
 			// Divide a lista de contatos por vírgula
-			const contactsList = contactsText.split(",").map((contact) => contact.trim());
+			const contactsList = numbersText.split(",").map((contact) => contact.trim());
 
 			if (contactsList.length === 0) {
 				return new ReturnMessage({
@@ -2208,7 +2262,7 @@ Break down the cost by category and provide a total estimated cost.`;
 
 				try {
 					// Tenta remover o contato de grupos especiais primeiro
-					if (specialGroups.length > 0) {
+					if (specialGroups.length > 0 && (mode === "both" || mode === "whats")) {
 						const removeResults = await this.removeFromSpecialGroups(
 							bot,
 							phoneNumber,
@@ -2224,30 +2278,43 @@ Break down the cost by category and provide a total estimated cost.`;
 					let localError = "";
 
 					// 1. Tenta bloquear o contato na API externa
-					try {
-						const contact = await bot.client.getContactById(phoneNumber);
-						await contact.block();
+					if (mode === "both" || mode === "whats") {
+						try {
+							const contact = await bot.client.getContactById(phoneNumber);
+							await contact.block();
+							apiOk = true;
+						} catch (blockError) {
+							this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, blockError);
+							apiError = blockError.message ?? "Erro API";
+						}
+					} else {
 						apiOk = true;
-					} catch (blockError) {
-						this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, blockError);
-						apiError = blockError.message ?? "Erro API";
 					}
 
 					// 2. Tenta bloquear o contato localmente
-					try {
-						const pnClean = phoneNumber.split("@")[0];
-						await this.database.addLocalBlock(pnClean);
+					if (mode === "both" || mode === "local") {
+						try {
+							const pnClean = phoneNumber.split("@")[0];
+							await this.database.addLocalBlock(pnClean);
+							localOk = true;
+						} catch (dbError) {
+							this.logger.error(`Erro ao bloquear contato ${phoneNumber} localmente:`, dbError);
+							localError = dbError.message ?? "Erro Local";
+						}
+					} else {
 						localOk = true;
-					} catch (dbError) {
-						this.logger.error(`Erro ao bloquear contato ${phoneNumber} localmente:`, dbError);
-						localError = dbError.message ?? "Erro Local";
 					}
 
 					if (apiOk && localOk) {
+						let successMsg = "Sucesso";
+						if (mode === "local") successMsg += " (Local apenas)";
+						else if (mode === "whats") successMsg += " (API apenas)";
+						else successMsg += " (API & Local)";
+
 						results.push({
 							id: phoneNumber,
 							status: "Bloqueado",
-							message: "Sucesso (API & Local)"
+							message: successMsg
 						});
 					} else {
 						let statusMsg = "";
@@ -2439,7 +2506,13 @@ Break down the cost by category and provide a total estimated cost.`;
 							const groupName = chat.name ?? groupId;
 
 							// Verifica se é um grupo especial
-							const isSpecialGroup = specialGroups.includes(groupId);
+							const nameLower = groupName ? groupName.toLowerCase() : "";
+							const isSpecialGroup =
+								specialGroups.includes(groupId) ||
+								(groupName &&
+									(nameLower.includes("gpzuera") ||
+										nameLower.includes("rapescas") ||
+										nameLower.includes("ravdownloads")));
 
 							if (isSpecialGroup) {
 								this.logger.info(
@@ -2679,18 +2752,26 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			// Obtém o texto completo de argumentos e divide por vírgulas
-			const contactsText = args.join(" ");
-			if (!contactsText.trim()) {
+			let mode = "both";
+			let numbersText = args.join(" ");
+
+			if (args[0] === "local" || args[0] === "whats") {
+				mode = args[0];
+				numbersText = args.slice(1).join(" ");
+			}
+
+			if (!numbersText.trim()) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Por favor, forneça uma lista de contatos separados por vírgula. Exemplo: !sa-unblockList 5511999999999@c.us, 5511888888888@c.us"
+						"Por favor, forneça uma lista de contatos separados por vírgula. Exemplo: !sa-unblockList " +
+						(mode !== "both" ? mode + " " : "") +
+						"5511999999999@c.us, 5511888888888@c.us"
 				});
 			}
 
 			// Divide a lista de contatos por vírgula
-			const contactsList = contactsText.split(",").map((contact) => contact.trim());
+			const contactsList = numbersText.split(",").map((contact) => contact.trim());
 
 			if (contactsList.length === 0) {
 				return new ReturnMessage({
@@ -2727,23 +2808,43 @@ Break down the cost by category and provide a total estimated cost.`;
 					let localError = "";
 
 					// 1. Tenta desbloquear o contato na API externa
-					try {
-						const contact = await bot.client.getContactById(phoneNumber);
-						await contact.unblock();
+					let contact = null;
+					if (mode === "both" || mode === "whats") {
+						try {
+							contact = await bot.client.getContactById(phoneNumber);
+							await contact.unblock();
+							apiOk = true;
+						} catch (unblockError) {
+							this.logger.error(`Erro ao desbloquear contato ${phoneNumber} na API:`, unblockError);
+							apiError = unblockError.message ?? "Erro API";
+						}
+					} else {
 						apiOk = true;
-					} catch (unblockError) {
-						this.logger.error(`Erro ao desbloquear contato ${phoneNumber} na API:`, unblockError);
-						apiError = unblockError.message ?? "Erro API";
 					}
 
 					// 2. Tenta desbloquear o contato localmente
-					try {
-						const pnClean = phoneNumber.split("@")[0];
-						await this.database.removeLocalBlock(pnClean);
+					if (mode === "both" || mode === "local") {
+						try {
+							const pnClean = phoneNumber.split("@")[0];
+							await this.database.removeLocalBlock(pnClean);
+							if (!contact && (mode === "both" || mode === "local")) {
+								try {
+									contact = await bot.client.getContactById(phoneNumber);
+								} catch (e) {}
+							}
+							if (contact && contact.lid) {
+								const lidClean = contact.lid.split("@")[0];
+								if (lidClean && lidClean !== pnClean) {
+									await this.database.removeLocalBlock(lidClean);
+								}
+							}
+							localOk = true;
+						} catch (dbError) {
+							this.logger.error(`Erro ao desbloquear contato ${phoneNumber} localmente:`, dbError);
+							localError = dbError.message ?? "Erro Local";
+						}
+					} else {
 						localOk = true;
-					} catch (dbError) {
-						this.logger.error(`Erro ao desbloquear contato ${phoneNumber} localmente:`, dbError);
-						localError = dbError.message ?? "Erro Local";
 					}
 
 					if (apiOk && localOk) {
@@ -2989,7 +3090,13 @@ Break down the cost by category and provide a total estimated cost.`;
 						const groupName = chat.name ?? groupId;
 
 						// Verifica se é um grupo especial
-						const isSpecialGroup = specialGroups.includes(groupId);
+						const nameLower = groupName ? groupName.toLowerCase() : "";
+						const isSpecialGroup =
+							specialGroups.includes(groupId) ||
+							(groupName &&
+								(nameLower.includes("gpzuera") ||
+									nameLower.includes("rapescas") ||
+									nameLower.includes("ravdownloads")));
 
 						if (isSpecialGroup) {
 							this.logger.info(
