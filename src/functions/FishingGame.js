@@ -133,7 +133,7 @@ const weightScaleMsgs = [180, 150, 120, 100, 80, 60];
 const RARE_FISH = [
 	{
 		name: "Cthulhu",
-		chance: 0.000002,
+		chance: 0.000003,
 		monthlyLimit: 1,
 		weightBonus: 26665,
 		emoji: "🐙",
@@ -141,7 +141,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Jörmungandr",
-		chance: 0.000003,
+		chance: 0.000005,
 		monthlyLimit: 1,
 		weightBonus: 17200,
 		emoji: "🌏",
@@ -149,7 +149,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Ryūjin",
-		chance: 0.000007,
+		chance: 0.00001,
 		monthlyLimit: 1,
 		weightBonus: 12050,
 		emoji: "⛩️",
@@ -157,7 +157,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Dai Gum Loong",
-		chance: 0.000008,
+		chance: 0.00001,
 		monthlyLimit: 1,
 		weightBonus: 9100,
 		emoji: "🐲",
@@ -165,7 +165,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Godzilla",
-		chance: 0.000009,
+		chance: 0.00001,
 		monthlyLimit: 1,
 		weightBonus: 8190,
 		emoji: "🦖",
@@ -182,7 +182,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Bakunawa",
-		chance: 0.000011,
+		chance: 0.000015,
 		monthlyLimit: 1,
 		weightBonus: 7020,
 		emoji: "🌑",
@@ -191,7 +191,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Hydra",
-		chance: 0.000012,
+		chance: 0.000015,
 		monthlyLimit: 1,
 		weightBonus: 5005,
 		emoji: "🐍",
@@ -200,7 +200,7 @@ const RARE_FISH = [
 	},
 	{
 		name: "Charybdis",
-		chance: 0.000013,
+		chance: 0.000015,
 		monthlyLimit: 1,
 		weightBonus: 5980,
 		emoji: "⌛️",
@@ -287,7 +287,7 @@ const RARE_FISH = [
 	{
 		name: "Sedna",
 		chance: 0.000045,
-		monthlyLimit: 2,
+		monthlyLimit: 1,
 		weightBonus: 1690,
 		emoji: "🧜‍♀️",
 		description:
@@ -296,7 +296,7 @@ const RARE_FISH = [
 	{
 		name: "Baleia",
 		chance: 0.00005,
-		monthlyLimit: 3,
+		monthlyLimit: 2,
 		weightBonus: 1200,
 		emoji: "🐋",
 		description: "majestic giant blue whale, immense scale, barnacles on skin, graceful movement"
@@ -595,7 +595,7 @@ const DEFAULT_GLOBAL_FACTORS = {
 	trashChance: 1.0,
 	buffChance: 1.0,
 	debuffChance: 0.8,
-	rareFishChance: 1.5,
+	rareFishChance: 1.65,
 	weightFactor: 1.0
 };
 
