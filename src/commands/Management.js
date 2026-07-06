@@ -7053,7 +7053,7 @@ class Management {
 			chatId: group.id,
 			content: response.trim(),
 			options: {
-				mentions: mentions
+				mentions
 			}
 		});
 	}
@@ -7095,7 +7095,7 @@ class Management {
 
 		const removed = [];
 		const failed = [];
-		
+
 		for (const target of mentions) {
 			try {
 				// Resolve o contato para obter o número e o LID correto
@@ -7145,7 +7145,7 @@ class Management {
 			chatId: group.id,
 			content: response.trim(),
 			options: {
-				mentions: mentions
+				mentions
 			}
 		});
 	}

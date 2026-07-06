@@ -930,7 +930,13 @@ class EventHandler extends EventEmitter {
 		// Carrega o grupo para verificar se o usuário que entrou está bloqueado
 		try {
 			const group = await this.database.getGroup(groupId);
-			if (group && group.filters && group.filters.people && Array.isArray(group.filters.people) && group.filters.people.length > 0) {
+			if (
+				group &&
+				group.filters &&
+				group.filters.people &&
+				Array.isArray(group.filters.people) &&
+				group.filters.people.length > 0
+			) {
 				const userId = data.user.id;
 				let userPn = userId.split("@")[0];
 				let userLid = null;
@@ -944,16 +950,21 @@ class EventHandler extends EventEmitter {
 						}
 					}
 				} catch (contactErr) {
-					this.logger.error(`[processGroupJoin] Erro ao obter contato ${userId} para validação de ban:`, contactErr.message);
+					this.logger.error(
+						`[processGroupJoin] Erro ao obter contato ${userId} para validação de ban:`,
+						contactErr.message
+					);
 				}
 
-				const isBlocked = group.filters.people.some(blocked => {
+				const isBlocked = group.filters.people.some((blocked) => {
 					const blockedClean = blocked.split("@")[0];
 					return blockedClean === userPn || (userLid && blockedClean === userLid);
 				});
 
 				if (isBlocked) {
-					this.logger.warn(`[processGroupJoin] Usuário bloqueado detectado ao entrar no grupo: ${userId} (LID: ${userLid}) no grupo ${groupId}. Removendo imediatamente.`);
+					this.logger.warn(
+						`[processGroupJoin] Usuário bloqueado detectado ao entrar no grupo: ${userId} (LID: ${userLid}) no grupo ${groupId}. Removendo imediatamente.`
+					);
 					await bot.removeFromGroup(groupId, [userId]);
 					return;
 				}
