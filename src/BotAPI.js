@@ -2259,16 +2259,7 @@ class BotAPI {
 
 				let passkeySection = "";
 				if (instanceStatus.extra?.lastPasskeyRequest) {
-					passkeySection = `
-            <div id="passkey-section" style="margin: 1.5rem 0; padding: 1.5rem; border: 2px dashed #4299e1; border-radius: 0.5rem; background-color: #ebf8ff; text-align: center;">
-              <h3 style="margin-top: 0; color: #2b6cb0; font-size: 1.15rem; font-weight: 600;">🔑 Passkey Login Detectado</h3>
-              <p style="font-size: 0.95rem; color: #4a5568; margin-bottom: 1rem;">WhatsApp solicitou verificação por Passkey para este número.</p>
-              <button id="passkey-btn" onclick="startPasskeyAuthentication()" style="background-color: #3182ce; padding: 0.75rem 1.5rem; font-size: 1.1rem; width: 100%; border: none; border-radius: 0.375rem; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">
-                Usar Minha Passkey (Touch ID / Face ID)
-              </button>
-              <div id="passkey-message" style="margin-top: 0.75rem; font-weight: bold; color: #2d3748; font-size: 0.9rem;"></div>
-            </div>
-          `;
+					passkeySection = `<div id="passkey-section"></div>`;
 				}
 
 				pageContent = `
@@ -2388,7 +2379,75 @@ class BotAPI {
             // Gera o snippet JS que o usuário deve rodar no console do web.whatsapp.com
             function buildPasskeySnippet(challenge) {
               const challengeJson = JSON.stringify(challenge);
-              return \`console.log(JSON.stringify((await navigator.credentials.get({\\n  publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(\${challengeJson})\\n})).toJSON()))\`;
+              return \`(async () => {
+  const challenge = \${challengeJson};
+
+  function b64uToBuf(value) {
+    var b64 = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function bufToB64u(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
+  }
+
+  const options = {
+    challenge: b64uToBuf(challenge.challenge),
+    timeout: challenge.timeout || 60000,
+    rpId: challenge.rpId || "whatsapp.com",
+    allowCredentials: (challenge.allowCredentials || []).map(function (c) {
+      return {
+        type: c.type || "public-key",
+        id: b64uToBuf(c.id),
+        transports: c.transports
+      };
+    }),
+    userVerification: challenge.userVerification || "required"
+  };
+
+  console.log("🔑 Iniciando verificação de Passkey no navegador... Por favor, confirme no seu celular/dispositivo.");
+  try {
+    const cred = await navigator.credentials.get({ publicKey: options });
+    if (!cred) {
+      console.error("❌ Autenticação retornou vazia.");
+      return;
+    }
+    
+    const r = cred.response;
+    const body = {
+      id: cred.id,
+      rawId: bufToB64u(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON: bufToB64u(r.clientDataJSON),
+        authenticatorData: bufToB64u(r.authenticatorData),
+        signature: bufToB64u(r.signature)
+      }
+    };
+    if (r.userHandle && r.userHandle.byteLength) {
+      body.response.userHandle = bufToB64u(r.userHandle);
+    }
+
+    const jsonStr = JSON.stringify(body);
+    console.log("%c🔑 SUCESSO! Copie o JSON abaixo e cole de volta na página do Bot:", "color: #1fa855; font-weight: bold; font-size: 14px;");
+    console.log(jsonStr);
+    try {
+      await navigator.clipboard.writeText(jsonStr);
+      console.log("%c📋 O JSON foi copiado automaticamente para a sua área de transferência!", "color: #3182ce; font-weight: bold;");
+    } catch (clipErr) {
+      console.log("Copie o JSON acima manualmente.");
+    }
+  } catch (err) {
+    console.error("❌ Erro ao obter credencial:", err);
+  }
+})()\`;
             }
 
             async function submitPasskeyResponse() {
