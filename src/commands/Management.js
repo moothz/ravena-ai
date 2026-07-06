@@ -193,6 +193,16 @@ class Management {
 				method: "setInteractionProportion",
 				description: "Define a proporção entre comandos e IA para interações automáticas"
 			},
+			ban: {
+				method: "banUser",
+				description: "Remove membros mencionados do grupo",
+				hidden: true
+			},
+			block: {
+				method: "blockGroupUser",
+				description: "Remove membros mencionados do grupo e impede reentrada",
+				hidden: true
+			},
 			fechar: {
 				method: "closeGroup",
 				description: "Fecha o grupo (apenas admins enviam msgs)"
@@ -390,6 +400,7 @@ class Management {
 
 		// Constrói objeto de comandos a partir do commandMap
 		for (const [cmdName, cmdData] of Object.entries(this.commandMap)) {
+			if (cmdData.hidden) continue;
 			commands[cmdName] = {
 				description: cmdData.description ?? "Sem descrição disponível",
 				method: cmdData.method
@@ -6988,6 +6999,155 @@ class Management {
 				content: "❌ Erro inesperado ao sincronizar os comandos."
 			});
 		}
+	}
+
+	/**
+	 * Remove membros mencionados do grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async banUser(bot, message, args, group) {
+		if (!group || !bot.privado) return null;
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para remover membros."
+			});
+		}
+
+		const mentions = message.mentions ?? [];
+		if (mentions.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ Por favor, mencione pelo menos uma pessoa para remover."
+			});
+		}
+
+		// Remove cada pessoa mencionada
+		const removed = [];
+		const failed = [];
+		for (const target of mentions) {
+			try {
+				await bot.removeFromGroup(group.id, [target]);
+				removed.push(target.split("@")[0]);
+			} catch (err) {
+				this.logger.error(`Erro ao banir usuário ${target} do grupo ${group.id}:`, err);
+				failed.push(target.split("@")[0]);
+			}
+		}
+
+		let response = "";
+		if (removed.length > 0) {
+			response += `✅ Removido(s) do grupo: @${removed.join(", @")}\n`;
+		}
+		if (failed.length > 0) {
+			response += `❌ Falha ao remover: @${failed.join(", @")}\n`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: response.trim(),
+			options: {
+				mentions: mentions
+			}
+		});
+	}
+
+	/**
+	 * Remove membros mencionados do grupo e os bloqueia no banco de dados
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async blockGroupUser(bot, message, args, group) {
+		if (!group || !bot.privado) return null;
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para remover e bloquear membros."
+			});
+		}
+
+		const mentions = message.mentions ?? [];
+		if (mentions.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "⚠️ Por favor, mencione pelo menos uma pessoa para bloquear."
+			});
+		}
+
+		// Garante que o array filters.people está inicializado
+		if (!group.filters) {
+			group.filters = {};
+		}
+		if (!group.filters.people || !Array.isArray(group.filters.people)) {
+			group.filters.people = [];
+		}
+
+		const removed = [];
+		const failed = [];
+		
+		for (const target of mentions) {
+			try {
+				// Resolve o contato para obter o número e o LID correto
+				let pn = target.split("@")[0];
+				let lid = null;
+				try {
+					const contact = await bot.client.getContactById(target);
+					if (contact) {
+						pn = contact.id._serialized.split("@")[0];
+						if (contact.lid) {
+							lid = contact.lid.split("@")[0];
+						}
+					}
+				} catch (e) {
+					this.logger.error(`Erro ao obter contato para obter LID de ${target}:`, e.message);
+				}
+
+				// Adiciona ao banco de dados (group.filters.people)
+				if (!group.filters.people.includes(pn)) {
+					group.filters.people.push(pn);
+				}
+				if (lid && !group.filters.people.includes(lid) && lid !== pn) {
+					group.filters.people.push(lid);
+				}
+
+				// Remove a pessoa do grupo
+				await bot.removeFromGroup(group.id, [target]);
+				removed.push(pn);
+			} catch (err) {
+				this.logger.error(`Erro ao bloquear/remover usuário ${target} do grupo ${group.id}:`, err);
+				failed.push(target.split("@")[0]);
+			}
+		}
+
+		// Salva o grupo atualizado
+		await this.database.saveGroup(group);
+
+		let response = "";
+		if (removed.length > 0) {
+			response += `🔒 Removido(s) e bloqueado(s) do grupo: @${removed.join(", @")}\n`;
+		}
+		if (failed.length > 0) {
+			response += `❌ Falha ao remover/bloquear: @${failed.join(", @")}\n`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: response.trim(),
+			options: {
+				mentions: mentions
+			}
+		});
 	}
 }
 
