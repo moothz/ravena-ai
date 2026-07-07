@@ -1,16 +1,88 @@
 const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
+const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 
 const logger = new Logger("roblox-commands");
+const database = Database.getInstance();
+const DB_NAME = "roblox";
+
+// Initialize Database Table
+database.getSQLiteDb(
+	DB_NAME,
+	`
+  CREATE TABLE IF NOT EXISTS roblox_cache (
+    username TEXT PRIMARY KEY,
+    json_data TEXT,
+    timestamp INTEGER
+  );
+`
+);
 
 /**
- * Fetch Roblox player data and return formatted message and avatar media
+ * Formata os dados de perfil do Roblox em uma mensagem
+ * @param {Object} data - Dados do usuário Roblox
+ * @returns {string} - Mensagem formatada
+ */
+function formatRobloxProfileMessage(data) {
+	let messageText = `🧱 *Perfil do Roblox - ${data.displayNick}*\n`;
+	messageText += `👤 Nome de usuário: @${data.officialName}\n`;
+	messageText += `🆔 ID: ${data.userId}\n`;
+	if (data.createdDateStr) {
+		messageText += `📅 Criado em: ${data.createdDateStr}\n`;
+	}
+	messageText += `🟢 Status: ${data.statusStr}\n`;
+	if (data.lastLocation && data.lastLocation !== "Website") {
+		messageText += `📍 Localização: ${data.lastLocation}\n`;
+	}
+	if (data.isBanned) {
+		messageText += `⚠️ *Conta Banida*\n`;
+	}
+	if (data.description) {
+		const shortDesc = data.description.length > 150 ? data.description.substring(0, 147) + "..." : data.description;
+		messageText += `\n📝 *Sobre:*\n_"${shortDesc.trim()}"_\n`;
+	}
+	if (data.gamesStr) {
+		messageText += `\n🎮 *Jogos Criados:*\n${data.gamesStr}\n`;
+	}
+	return messageText;
+}
+
+/**
+ * Fetch Roblox player data (utilizando cache do SQLite com fallback)
  * @param {string} username - Roblox username
- * @returns {Promise<{ messageText: string, media: Object|null }>}
+ * @returns {Promise<Object>} - User profile data object
  */
 async function getRobloxPlayerData(username) {
+	const lowerUsername = username.toLowerCase().trim();
+	const now = Date.now();
+
+	// 1. Verificar cache no banco de dados
+	let cachedRow = null;
+	try {
+		cachedRow = await database.dbGet(
+			DB_NAME,
+			"SELECT json_data, timestamp FROM roblox_cache WHERE username = ?",
+			[lowerUsername]
+		);
+	} catch (err) {
+		logger.warn(`Erro ao consultar o cache do banco de dados para ${username}: ${err.message}`);
+	}
+
+	if (cachedRow) {
+		const age = now - cachedRow.timestamp;
+		if (age < 5 * 60 * 1000) { // Cache de 5 minutos
+			logger.debug(`Cache hit para ${username} (idade: ${Math.round(age / 1000)}s)`);
+			try {
+				return JSON.parse(cachedRow.json_data);
+			} catch (parseErr) {
+				logger.error(`Erro ao parsear dados do cache para ${username}:`, parseErr);
+			}
+		}
+	}
+
+	// 2. Buscar dados frescos da API do Roblox
 	try {
 		logger.debug(`Buscando ID do usuário Roblox para o nome: ${username}`);
 		const userSearchResponse = await axios.post(
@@ -32,15 +104,13 @@ async function getRobloxPlayerData(username) {
 		const displayNick = user.displayName;
 		const officialName = user.name;
 
-		// Fetch detailed profile info
+		// Buscar informações do perfil do usuário
 		let description = "";
 		let createdDateStr = "";
 		let isBanned = false;
 
 		try {
-			const profileResponse = await axios.get(`https://users.roblox.com/v1/users/${userId}`, {
-				timeout: 5000
-			});
+			const profileResponse = await axios.get(`https://users.roblox.com/v1/users/${userId}`, { timeout: 5000 });
 			description = profileResponse.data.description || "";
 			isBanned = !!profileResponse.data.isBanned;
 			if (profileResponse.data.created) {
@@ -50,7 +120,7 @@ async function getRobloxPlayerData(username) {
 			logger.warn(`Erro ao buscar detalhes de perfil para o ID ${userId}: ${err.message}`);
 		}
 
-		// Fetch presence (online status)
+		// Buscar presença (status online)
 		let statusStr = "Desconhecido";
 		let lastLocation = "";
 		try {
@@ -76,7 +146,7 @@ async function getRobloxPlayerData(username) {
 			logger.warn(`Erro ao buscar presença para o ID ${userId}: ${err.message}`);
 		}
 
-		// Fetch games created
+		// Buscar jogos criados
 		let gamesStr = "";
 		try {
 			const gamesResponse = await axios.get(
@@ -87,10 +157,7 @@ async function getRobloxPlayerData(username) {
 			if (games.length > 0) {
 				gamesStr = games
 					.slice(0, 3)
-					.map(
-						(g) =>
-							`- *${g.name}* (${g.placeVisits ? g.placeVisits.toLocaleString("pt-BR") : 0} visitas)`
-					)
+					.map(g => `- *${g.name}* (${g.placeVisits ? g.placeVisits.toLocaleString("pt-BR") : 0} visitas)`)
 					.join("\n");
 			} else {
 				gamesStr = "Nenhum jogo público criado.";
@@ -100,57 +167,62 @@ async function getRobloxPlayerData(username) {
 			gamesStr = "Não foi possível carregar os jogos.";
 		}
 
-		// Build the caption/message
-		let messageText = `🧱 *Perfil do Roblox - ${displayNick}*\n`;
-		messageText += `👤 Nome de usuário: @${officialName}\n`;
-		messageText += `🆔 ID: ${userId}\n`;
-		if (createdDateStr) {
-			messageText += `📅 Criado em: ${createdDateStr}\n`;
-		}
-		messageText += `🟢 Status: ${statusStr}\n`;
-		if (lastLocation && lastLocation !== "Website") {
-			messageText += `📍 Localização: ${lastLocation}\n`;
-		}
-		if (isBanned) {
-			messageText += `⚠️ *Conta Banida*\n`;
-		}
-		if (description) {
-			const shortDesc =
-				description.length > 150 ? description.substring(0, 147) + "..." : description;
-			messageText += `\n📝 *Sobre:*\n_"${shortDesc.trim()}"_\n`;
-		}
-		if (gamesStr) {
-			messageText += `\n🎮 *Jogos Criados:*\n${gamesStr}\n`;
-		}
-
-		// Fetch Avatar/Skin Image
-		let media = null;
+		// Buscar link da imagem do Avatar
+		let avatarImageUrl = "";
 		try {
 			const avatarUrl = `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=720x720&format=Png&isCircular=false`;
 			const thumbnailResponse = await axios.get(avatarUrl, { timeout: 5000 });
-			const imageUrl = thumbnailResponse.data?.data?.[0]?.imageUrl;
-			if (imageUrl) {
-				logger.debug(`Baixando skin de avatar do Roblox: ${imageUrl}`);
-				const imageBuffer = await axios.get(imageUrl, {
-					responseType: "arraybuffer",
-					timeout: 8000
-				});
-				const contentType = imageBuffer.headers["content-type"] ?? "image/png";
-				media = {
-					mimetype: contentType,
-					data: Buffer.from(imageBuffer.data).toString("base64"),
-					filename: "avatar.png",
-					isMessageMedia: true
-				};
-			}
+			avatarImageUrl = thumbnailResponse.data?.data?.[0]?.imageUrl || "";
 		} catch (err) {
 			logger.warn(`Erro ao buscar avatar de skin para o ID ${userId}: ${err.message}`);
 		}
 
-		return { messageText, media };
-	} catch (error) {
-		logger.error(`Erro ao buscar dados do Roblox para ${username}:`, error.message);
-		throw new Error(error.message || "Erro desconhecido ao acessar a API do Roblox.");
+		const freshData = {
+			userId,
+			displayNick,
+			officialName,
+			createdDateStr,
+			statusStr,
+			lastLocation,
+			isBanned,
+			description,
+			gamesStr,
+			avatarImageUrl
+		};
+
+		// Gravar no cache (SQLite)
+		try {
+			await database.dbRun(
+				DB_NAME,
+				"REPLACE INTO roblox_cache (username, json_data, timestamp) VALUES (?, ?, ?)",
+				[lowerUsername, JSON.stringify(freshData), now]
+			);
+		} catch (dbErr) {
+			logger.error(`Erro ao salvar cache de Roblox para ${username}:`, dbErr.message);
+		}
+
+		return freshData;
+	} catch (apiError) {
+		logger.warn(`Falha ao acessar as APIs da Roblox para ${username}: ${apiError.message}`);
+
+		// Fallback: tentar retornar o cache antigo/expirado
+		if (cachedRow) {
+			logger.info(`Usando cache expirado de fallback para o usuário: ${username}`);
+			try {
+				return JSON.parse(cachedRow.json_data);
+			} catch (parseErr) {
+				logger.error(`Erro ao parsear dados expirados de fallback para ${username}:`, parseErr);
+			}
+		}
+
+		// Tratamento de erros amigáveis de rede/timeout
+		let friendlyMessage = apiError.message;
+		if (apiError.message.includes("EPIPE") || apiError.message.includes("ECONNRESET")) {
+			friendlyMessage = "Conexão instável com a Roblox. Tente novamente em breve.";
+		} else if (apiError.message.includes("timeout")) {
+			friendlyMessage = "Servidor Roblox demorou muito para responder (Tempo limite excedido).";
+		}
+		throw new Error(friendlyMessage);
 	}
 }
 
@@ -174,16 +246,36 @@ async function handleRobloxCommand(bot, message, args, group) {
 		}
 
 		const username = args.join(" ").trim();
-		const { messageText, media } = await getRobloxPlayerData(username);
+		const data = await getRobloxPlayerData(username);
+		const messageText = formatRobloxProfileMessage(data);
+
+		// Download fresh avatar image (stickers não são cacheados em banco, baixados sob demanda)
+		let media = null;
+		if (data.avatarImageUrl) {
+			try {
+				logger.debug(`Baixando skin de avatar do Roblox: ${data.avatarImageUrl}`);
+				const imageBuffer = await axios.get(data.avatarImageUrl, { responseType: "arraybuffer", timeout: 8000 });
+				const contentType = imageBuffer.headers["content-type"] ?? "image/png";
+				media = {
+					mimetype: contentType,
+					data: Buffer.from(imageBuffer.data).toString("base64"),
+					filename: "avatar.png",
+					isMessageMedia: true
+				};
+			} catch (imageErr) {
+				logger.warn(`Erro ao baixar imagem de avatar para ${username}: ${imageErr.message}`);
+			}
+		}
 
 		if (media) {
+			// Envia o sticker primeiro e o texto em seguida
 			return [
 				new ReturnMessage({
 					chatId,
 					content: media,
 					options: {
 						sendMediaAsSticker: true,
-						stickerName: `Avatar de ${username}`,
+						stickerName: `Avatar de ${data.officialName}`,
 						stickerAuthor: "Ravena Bot"
 					}
 				}),
@@ -193,6 +285,7 @@ async function handleRobloxCommand(bot, message, args, group) {
 				})
 			];
 		} else {
+			// Se o download do avatar falhar, envia apenas o texto com as informações
 			return new ReturnMessage({
 				chatId,
 				content: messageText
