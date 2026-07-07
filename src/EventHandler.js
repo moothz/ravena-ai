@@ -1651,10 +1651,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				numeroPessoas = user.map((u) => `@${u.id.split("@")[0]}` ?? "@123456780").join(", ");
 				quantidadePessoas = user.length;
 				isPlural = quantidadePessoas > 1;
-				baseMentions = user.map((u) => `${u.id.split("@")[0]}@s.whatsapp.net`);
+				baseMentions = user.map((u) => u.id);
 			} else {
 				numeroPessoas = `@${user.id.split("@")[0]}` ?? "@123456780";
-				baseMentions = [`${user.id.split("@")[0]}@s.whatsapp.net`];
+				baseMentions = [user.id];
 			}
 
 			// Filtra tipos de greeting disponíveis
@@ -1665,7 +1665,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const messagesToSend = [];
 
 			// Função auxiliar para processar texto com variáveis
-			const processText = async (text) => {
+			const processText = async (text, mentionsList) => {
 				if (!text) return { text: "", mentions: [] };
 				let message = typeof text === "string" ? text : "";
 
@@ -1702,7 +1702,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 
 				// Processa variáveis
-				const options = {};
+				const options = { mentions: [...mentionsList] };
 				message = await this.variableProcessor.process(message, {
 					message: false,
 					group,
@@ -1719,7 +1719,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 				// Se saudação de texto
 				if (type === "text") {
-					const processed = await processText(greetingData); // greetingData is the string itself for text type
+					const processed = await processText(greetingData, baseMentions); // greetingData is the string itself for text type
 					currentMentions = [...new Set([...currentMentions, ...processed.mentions])];
 
 					messagesToSend.push({
@@ -1748,7 +1748,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						// Processa caption se houver (audio e sticker ignoram caption no envio, mas a gente processa igual)
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							const processedCaption = await processText(greetingData.caption);
+							const processedCaption = await processText(greetingData.caption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];
 						}
@@ -1804,9 +1804,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			if (availableTypes.length === 0) return [];
 
 			const messagesToSend = [];
-			const baseMentions = [`${user.id.split("@")[0]}@s.whatsapp.net`];
+			const baseMentions = [user.id];
 
-			const processText = async (text) => {
+			const processText = async (text, mentionsList) => {
 				if (!text) return { text: "", mentions: [] };
 				let message = typeof text === "string" ? text : "";
 
@@ -1819,7 +1819,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				message = message.replace(/{tituloGrupo}/g, chatData?.name ?? "Grupo");
 
 				// Processa variáveis
-				const options = {};
+				const options = { mentions: [...mentionsList] };
 				message = await this.variableProcessor.process(message, {
 					message: false,
 					group,
@@ -1836,7 +1836,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 				// Se despedida de texto
 				if (type === "text") {
-					const processed = await processText(farewellData);
+					const processed = await processText(farewellData, baseMentions);
 					currentMentions = [...new Set([...currentMentions, ...processed.mentions])];
 
 					messagesToSend.push({
@@ -1862,7 +1862,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							const processedCaption = await processText(farewellData.caption);
+							const processedCaption = await processText(farewellData.caption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];
 						}
