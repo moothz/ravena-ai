@@ -1,4 +1,4 @@
-﻿const axios = require("axios");
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -13,7 +13,65 @@ const RIOT_API_KEY = process.env.RIOT_GAMES;
 const RIOT_BASE_URL = "https://americas.api.riotgames.com/riot";
 const LOL_BASE_URL = "https://br1.api.riotgames.com/lol"; // Default to NA region
 const VALORANT_BASE_URL = "https://br.api.riotgames.com/val";
-const CHAMPIONS_URL = "https://ddragon.leagueoflegends.com/cdn/15.10.1/data/en_US/champion.json";
+
+// Cache for LoL DDragon version
+let cachedVersion = null;
+let lastVersionFetchTime = 0;
+
+/**
+ * Fetch the latest League of Legends patch version from Riot's DDragon
+ * @returns {Promise<string>} - The latest version string (e.g. "16.13.1")
+ */
+async function getLatestLolVersion() {
+	const now = Date.now();
+	// Cache version for 24 hours
+	if (cachedVersion && now - lastVersionFetchTime < 24 * 60 * 60 * 1000) {
+		return cachedVersion;
+	}
+
+	try {
+		const response = await axios.get("https://ddragon.leagueoflegends.com/api/versions.json", {
+			timeout: 5000
+		});
+		if (Array.isArray(response.data) && response.data.length > 0) {
+			cachedVersion = response.data[0];
+			lastVersionFetchTime = now;
+			logger.info(`LoL Data Dragon version updated to: ${cachedVersion}`);
+			return cachedVersion;
+		}
+	} catch (error) {
+		logger.error("Erro ao buscar a versão mais recente do LoL Data Dragon:", error.message);
+	}
+
+	return cachedVersion || "16.13.1"; // Default fallback
+}
+
+/**
+ * Helper to handle Riot API errors and return friendly messages
+ * @param {Error} error - Axios error
+ * @param {string} gameName - Player game name
+ * @param {string} tagLine - Player tag line
+ * @returns {string} - Friendly error message
+ */
+function handleRiotError(error, gameName, tagLine) {
+	if (!RIOT_API_KEY) {
+		return "A chave de API da Riot Games não está configurada nas variáveis de ambiente (RIOT_GAMES).";
+	}
+	if (error.response) {
+		const status = error.response.status;
+		if (status === 401 || status === 403) {
+			return "A chave de API da Riot Games (RIOT_GAMES) configurada está inválida ou expirou.";
+		}
+		if (status === 404) {
+			return `Não foi possível encontrar o jogador "${gameName}#${tagLine}". Verifique se o nome e a tag estão corretos.`;
+		}
+		if (status === 429) {
+			return "O limite de requisições da API da Riot Games foi excedido. Tente novamente mais tarde.";
+		}
+		return `Erro na API da Riot Games (Status: ${status}).`;
+	}
+	return error.message || "Ocorreu um erro desconhecido ao consultar a API da Riot Games.";
+}
 
 // Emoji mapping for ranked tiers
 const RANK_EMOJIS = {
@@ -22,6 +80,7 @@ const RANK_EMOJIS = {
 	SILVER: "🥈",
 	GOLD: "🥇",
 	PLATINUM: "💎",
+	EMERALD: "💚",
 	DIAMOND: "💍",
 	MASTER: "🏆",
 	GRANDMASTER: "👑",
@@ -98,10 +157,16 @@ function formatNumber(num) {
  * @returns {Promise<Object>} - Formatted summoner data
  */
 async function getLolSummonerData(gameName, tagLine) {
+	if (!RIOT_API_KEY) {
+		throw new Error(
+			"A chave de API da Riot Games não está configurada nas variáveis de ambiente (RIOT_GAMES)."
+		);
+	}
+
 	try {
 		// Fetch account by gameName/tagLine
 		const accountResponse = await axios.get(
-			`${RIOT_BASE_URL}/account/v1/accounts/by-riot-id/${gameName}/${tagLine}`,
+			`${RIOT_BASE_URL}/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName.trim())}/${encodeURIComponent(tagLine.trim())}`,
 			{ headers: { "X-Riot-Token": RIOT_API_KEY } }
 		);
 		/*
@@ -120,29 +185,24 @@ async function getLolSummonerData(gameName, tagLine) {
 		const summoner = summonerRequest.data;
 
 		// Fetch ranked data
-		console.log("ranked", `${LOL_BASE_URL}/league/v4/entries/by-puuid/${summoner.puuid}`);
+		logger.debug(`Buscando dados ranqueados para PUUID: ${summoner.puuid}`);
 		const rankedResponse = await axios.get(
 			`${LOL_BASE_URL}/league/v4/entries/by-puuid/${summoner.puuid}`,
 			{ headers: { "X-Riot-Token": RIOT_API_KEY } }
 		);
-		console.log(rankedResponse);
 
 		// Fetch mastery data (top 5 champions)
-		console.log(
-			"champion",
-			`${LOL_BASE_URL}/champion-mastery/v4/champion-masteries/by-puuid/${summoner.puuid}/top?count=5`
-		);
+		logger.debug(`Buscando maestria para PUUID: ${summoner.puuid}`);
 		const masteryResponse = await axios.get(
 			`${LOL_BASE_URL}/champion-mastery/v4/champion-masteries/by-puuid/${summoner.puuid}/top?count=5`,
 			{ headers: { "X-Riot-Token": RIOT_API_KEY } }
 		);
-		console.log(masteryResponse);
 
-		// Get champion data to map champion IDs to names
-		console.log("champion");
-		const championResponse = await axios.get(CHAMPIONS_URL, {
-			headers: { "X-Riot-Token": RIOT_API_KEY }
-		});
+		// Get champion data to map champion IDs to names dynamically based on latest version
+		const version = await getLatestLolVersion();
+		logger.debug(`Buscando dados dos campeões na versão ${version}`);
+		const championsUrl = `https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/champion.json`;
+		const championResponse = await axios.get(championsUrl);
 
 		const championData = championResponse.data.data;
 		const championIdToName = {};
@@ -155,12 +215,12 @@ async function getLolSummonerData(gameName, tagLine) {
 
 		// Process ranked data
 		const soloQueue =
-			rankedResponse.data.find((queue) => queue.queueType === "RANKED_SOLO_5x5") || {};
+			(rankedResponse.data || []).find((queue) => queue.queueType === "RANKED_SOLO_5x5") || {};
 		const flexQueue =
-			rankedResponse.data.find((queue) => queue.queueType === "RANKED_FLEX_SR") || {};
+			(rankedResponse.data || []).find((queue) => queue.queueType === "RANKED_FLEX_SR") || {};
 
 		// Process mastery data
-		const masteryData = masteryResponse.data.map((mastery) => ({
+		const masteryData = (masteryResponse.data || []).map((mastery) => ({
 			championName: championIdToName[mastery.championId] || `Champion #${mastery.championId}`,
 			championLevel: mastery.championLevel,
 			championPoints: mastery.championPoints
@@ -188,9 +248,8 @@ async function getLolSummonerData(gameName, tagLine) {
 		};
 	} catch (error) {
 		logger.error(`Error fetching LoL data for ${gameName}#${tagLine}:`, error.message);
-		throw new Error(
-			`Não foi possível encontrar o invocador "${gameName}#${tagLine}" ou ocorreu um erro durante a busca.`
-		);
+		const friendlyError = handleRiotError(error, gameName, tagLine);
+		throw new Error(friendlyError);
 	}
 }
 
@@ -491,6 +550,59 @@ async function handleLolCommand(bot, message, args, group) {
 }
 
 /**
+ * Get Valorant player rank from third-party APIs
+ * @param {string} gameName - Riot ID name
+ * @param {string} tagLine - Riot ID tag
+ * @param {string|null} server - Optional server region
+ * @returns {Promise<string>} - Formatted message
+ */
+async function getValorantRank(gameName, tagLine, server) {
+	// Try vaccie.pythonanywhere.com first if server is provided
+	if (server) {
+		try {
+			logger.debug(`Buscando Valorant rank no Vaccie API para ${gameName}#${tagLine} (${server})`);
+			const response = await axios.get(
+				`https://vaccie.pythonanywhere.com/mmr/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}/${encodeURIComponent(server.toLowerCase())}`,
+				{ timeout: 6000 }
+			);
+			if (response.data && !response.data.includes("Errore")) {
+				const rank = response.data.split(",")[0];
+				const emojiRank = RANK_EMOJIS_VALORANT[rank] ?? "🏆";
+				return `🔫 *Valorant - ${gameName}#${tagLine} @ ${server.toUpperCase()}*\n\n${emojiRank} ${response.data}`;
+			}
+		} catch (e) {
+			logger.warn(`Vaccie API falhou para ${gameName}#${tagLine}: ${e.message}`);
+		}
+	}
+
+	// Fallback or if no server was specified: Rengar API (region-independent)
+	try {
+		logger.debug(`Buscando Valorant rank no Rengar API para ${gameName}#${tagLine}`);
+		const response = await axios.get(
+			`https://www.reng.ar/api/rank/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
+			{ timeout: 8000 }
+		);
+		const text = response.data;
+		if (text && text.includes(" is ")) {
+			const rankInfo = text.split(" is ")[1];
+			let emojiRank = "🏆";
+			// Match rank name to find emoji
+			for (const key of Object.keys(RANK_EMOJIS_VALORANT)) {
+				if (rankInfo.toLowerCase().includes(key.toLowerCase())) {
+					emojiRank = RANK_EMOJIS_VALORANT[key];
+					break;
+				}
+			}
+			return `🔫 *Valorant - ${gameName}#${tagLine}*\n\n${emojiRank} ${rankInfo}`;
+		}
+		return `🔫 *Valorant - ${gameName}#${tagLine}*\n\n🏆 ${text}`;
+	} catch (e) {
+		logger.error(`Rengar API falhou para ${gameName}#${tagLine}:`, e.message);
+		throw new Error("Não foi possível obter os dados do jogador de Valorant nas APIs disponíveis.");
+	}
+}
+
+/**
  * Handles the Valorant command
  * @param {WhatsAppBot} bot - Bot instance
  * @param {Object} message - Message data
@@ -500,36 +612,27 @@ async function handleLolCommand(bot, message, args, group) {
  */
 async function handleValorantCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
-	const returnMessages = [];
 
 	try {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça um Riot ID com tagline e servidor (ex: !valorant NomeJogador#ABC-NA)"
+					"Por favor, forneça um Riot ID com tagline (ex: !valorant NomeJogador#ABC ou !valorant NomeJogador#ABC-BR)"
 			});
 		}
 
 		// Parse the Riot ID
 		const { gameName, tagLine, server } = parseRiotId(args);
 
-		if (!tagLine || !server) {
+		if (!tagLine) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça um Riot ID completo com tagline e servidor (ex: NomeJogador#ABC-NA)"
+				content: "Por favor, forneça um Riot ID completo com tagline (ex: NomeJogador#ABC)"
 			});
 		}
 
-		// Get player data
-		const playerDataResponse = await axios.get(
-			`https://vaccie.pythonanywhere.com/mmr/${gameName}/${tagLine}/${server}`
-		);
-		const rank = playerDataResponse.data.split(",")[0];
-		const emojiRank = RANK_EMOJIS_VALORANT[rank] ?? "🏆";
-
-		const formattedMessage = `🔫 *Valorant - ${gameName}#${tagLine} @ ${server}*\n\n${emojiRank} ${playerDataResponse.data}`;
+		const formattedMessage = await getValorantRank(gameName, tagLine, server);
 
 		// Send response
 		return new ReturnMessage({
@@ -537,12 +640,29 @@ async function handleValorantCommand(bot, message, args, group) {
 			content: formattedMessage
 		});
 	} catch (error) {
-		logger.error("Erro ao executar comando valorant:");
+		logger.error("Erro ao executar comando valorant:", error);
 		return new ReturnMessage({
 			chatId,
 			content: `Erro: ${error.message || "Ocorreu um erro ao buscar o jogador."}`
 		});
 	}
+}
+
+/**
+ * Handles the Wild Rift command
+ * @param {WhatsAppBot} bot - Bot instance
+ * @param {Object} message - Message data
+ * @param {Array} args - Command arguments
+ * @param {Object} group - Group data
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>} - ReturnMessage
+ */
+async function handleWildRiftCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	return new ReturnMessage({
+		chatId,
+		content:
+			"📱 *Wild Rift (Riot Games)*\n\n❌ Infelizmente, a Riot Games **não disponibiliza uma API pública** para o Wild Rift que permita consultar dados de perfil, histórico ou elo dos jogadores.\n\nCaso a Riot lance a API no futuro, adicionarei a busca aqui! Se você conhece alguma, me chama no !grupao 😉"
+	});
 }
 
 // Define commands using Command class
@@ -563,16 +683,53 @@ const commands = [
 		name: "valorant",
 		description: "Busca perfil de jogador de Valorant",
 		category: "jogos",
+		group: "valorant",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔫",
 			error: "❌"
 		},
 		method: handleValorantCommand
+	}),
+
+	new Command({
+		name: "valo",
+		description: "Busca perfil de jogador de Valorant",
+		category: "jogos",
+		group: "valorant",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🔫",
+			error: "❌"
+		},
+		method: handleValorantCommand
+	}),
+
+	new Command({
+		name: "wildrift",
+		description: "Busca perfil de jogador de Wild Rift",
+		category: "jogos",
+		group: "wildrift",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "📱",
+			error: "❌"
+		},
+		method: handleWildRiftCommand
+	}),
+
+	new Command({
+		name: "wr",
+		description: "Busca perfil de jogador de Wild Rift",
+		category: "jogos",
+		group: "wildrift",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "📱",
+			error: "❌"
+		},
+		method: handleWildRiftCommand
 	})
 ];
-
-// Registra os comandos
-//logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
 module.exports = { commands };
