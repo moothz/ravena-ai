@@ -1876,6 +1876,10 @@ async function fishCommand(bot, message, args, group) {
 
 		fishMessage += `\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
 
+		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
+			fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca`;
+		}
+
 		fishMessage += effectMessage;
 		// Se for peixe raro, tentar gerar imagem e salvar no histórico
 		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
@@ -1924,7 +1928,7 @@ async function fishCommand(bot, message, args, group) {
 			const notificacaoPeixeRaro = new ReturnMessage({
 				content: rareFishImage,
 				options: {
-					caption: `🏆 *${userName}* capturou um(a) _*${caughtFishes[0].name}* LENDÁRIO(A)_ pesando *${caughtFishes[0].weight.toFixed(2)} kg* no grupo "${groupName}"! (${caughtFishes[0].emoji} ${chanceFinal}% de chance)\n\n> ${bot.id}`
+					caption: `🏆 *${userName}* capturou um(a) _*${caughtFishes[0].name}* LENDÁRIO(A)_ pesando *${caughtFishes[0].weight.toFixed(2)} kg* no grupo "${groupName}"! (${caughtFishes[0].emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`
 				}
 			});
 
