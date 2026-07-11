@@ -40,7 +40,8 @@ function formatRobloxProfileMessage(data) {
 		messageText += `⚠️ *Conta Banida*\n`;
 	}
 	if (data.description) {
-		const shortDesc = data.description.length > 150 ? data.description.substring(0, 147) + "..." : data.description;
+		const shortDesc =
+			data.description.length > 150 ? data.description.substring(0, 147) + "..." : data.description;
 		messageText += `\n📝 *Sobre:*\n_"${shortDesc.trim()}"_\n`;
 	}
 	if (data.gamesStr) {
@@ -72,7 +73,8 @@ async function getRobloxPlayerData(username) {
 
 	if (cachedRow) {
 		const age = now - cachedRow.timestamp;
-		if (age < 5 * 60 * 1000) { // Cache de 5 minutos
+		if (age < 5 * 60 * 1000) {
+			// Cache de 5 minutos
 			logger.debug(`Cache hit para ${username} (idade: ${Math.round(age / 1000)}s)`);
 			try {
 				return JSON.parse(cachedRow.json_data);
@@ -110,7 +112,9 @@ async function getRobloxPlayerData(username) {
 		let isBanned = false;
 
 		try {
-			const profileResponse = await axios.get(`https://users.roblox.com/v1/users/${userId}`, { timeout: 5000 });
+			const profileResponse = await axios.get(`https://users.roblox.com/v1/users/${userId}`, {
+				timeout: 5000
+			});
 			description = profileResponse.data.description || "";
 			isBanned = !!profileResponse.data.isBanned;
 			if (profileResponse.data.created) {
@@ -157,7 +161,10 @@ async function getRobloxPlayerData(username) {
 			if (games.length > 0) {
 				gamesStr = games
 					.slice(0, 3)
-					.map(g => `- *${g.name}* (${g.placeVisits ? g.placeVisits.toLocaleString("pt-BR") : 0} visitas)`)
+					.map(
+						(g) =>
+							`- *${g.name}* (${g.placeVisits ? g.placeVisits.toLocaleString("pt-BR") : 0} visitas)`
+					)
 					.join("\n");
 			} else {
 				gamesStr = "Nenhum jogo público criado.";
@@ -254,7 +261,10 @@ async function handleRobloxCommand(bot, message, args, group) {
 		if (data.avatarImageUrl) {
 			try {
 				logger.debug(`Baixando skin de avatar do Roblox: ${data.avatarImageUrl}`);
-				const imageBuffer = await axios.get(data.avatarImageUrl, { responseType: "arraybuffer", timeout: 8000 });
+				const imageBuffer = await axios.get(data.avatarImageUrl, {
+					responseType: "arraybuffer",
+					timeout: 8000
+				});
 				const contentType = imageBuffer.headers["content-type"] ?? "image/png";
 				media = {
 					mimetype: contentType,

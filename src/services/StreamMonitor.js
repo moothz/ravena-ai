@@ -77,6 +77,7 @@ class StreamMonitor extends EventEmitter {
 
 		this.channels = [];
 		this.streamStatuses = {};
+		this.lastPersistedStatuses = {};
 		this.twitchToken = null;
 		this.kickToken = null; // Added for Kick token
 		this.twitchClientId = process.env.TWITCH_CLIENT_ID;
@@ -265,6 +266,15 @@ class StreamMonitor extends EventEmitter {
 					lastEventType,
 					lastEventTime
 				};
+
+				this.lastPersistedStatuses[key] = {
+					isLive: !!row.is_live,
+					title: row.title,
+					game: row.game,
+					lastVideo: lastVideo ? { id: lastVideo.id } : null,
+					lastEventType,
+					lastEventTime
+				};
 			}
 
 			this.logger.info(
@@ -321,6 +331,34 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
+	 * Check if the stream status has changed significantly enough to write to the database.
+	 * Significant changes include platform live state, stream title, game, or last video id/event history.
+	 * Minor details like lastChecked or viewerCount are kept in memory and do not trigger DB writes.
+	 * @param {string} key - The channel key (platform:name)
+	 * @param {Object} newStatus - The new status object
+	 * @returns {boolean} - True if a database write is necessary
+	 * @private
+	 */
+	_shouldUpdateDB(key, newStatus) {
+		const oldStatus = this.lastPersistedStatuses[key];
+		if (!oldStatus) {
+			return true;
+		}
+
+		const newVideoId = newStatus.lastVideo ? newStatus.lastVideo.id : null;
+		const oldVideoId = oldStatus.lastVideo ? oldStatus.lastVideo.id : null;
+
+		return (
+			!!newStatus.isLive !== !!oldStatus.isLive ||
+			newStatus.title !== oldStatus.title ||
+			newStatus.game !== oldStatus.game ||
+			newVideoId !== oldVideoId ||
+			newStatus.lastEventType !== oldStatus.lastEventType ||
+			newStatus.lastEventTime !== oldStatus.lastEventTime
+		);
+	}
+
+	/**
 	 * Update stream status in DB
 	 * @private
 	 */
@@ -329,6 +367,11 @@ class StreamMonitor extends EventEmitter {
 			const [platform, channelName] = key.split(":");
 			const lastVideoData = status.lastVideo ? JSON.stringify(status.lastVideo) : null;
 			const lastVideoId = status.lastVideo ? status.lastVideo.id : null;
+
+			// Check if a database write is actually required
+			if (!this._shouldUpdateDB(key, status)) {
+				return;
+			}
 
 			await this.database.dbRun(
 				this.dbNameMonitor,
@@ -349,10 +392,20 @@ class StreamMonitor extends EventEmitter {
 					status.lastChecked,
 					lastVideoId,
 					lastVideoData,
-					status.lastEventType,
-					status.lastEventTime
+					status.lastEventType || null,
+					status.lastEventTime || null
 				]
 			);
+
+			// Cache the new persisted state
+			this.lastPersistedStatuses[key] = {
+				isLive: !!status.isLive,
+				title: status.title,
+				game: status.game,
+				lastVideo: status.lastVideo ? { id: status.lastVideo.id } : null,
+				lastEventType: status.lastEventType,
+				lastEventTime: status.lastEventTime
+			};
 		} catch (error) {
 			this.logger.error(`Error updating status for ${key} in DB:`, error);
 		}
@@ -624,6 +677,9 @@ class StreamMonitor extends EventEmitter {
 		const channelKey = `${normalizedSource}:${channelName.toLowerCase()}`;
 		if (this.streamStatuses[channelKey]) {
 			delete this.streamStatuses[channelKey];
+		}
+		if (this.lastPersistedStatuses && this.lastPersistedStatuses[channelKey]) {
+			delete this.lastPersistedStatuses[channelKey];
 		}
 
 		// Remove from DB

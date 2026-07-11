@@ -2,4 +2,5 @@ _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
 🔥 *Novos*:
+- 🧱 *!roblox, !rbx*: Mostra dados do perfil do _Roblox_
 - 🪲 *!lol, !valo*: _[em testes]_ Os comandos já tinham, mas atualizei pra voltar a funcionar. WR segue indisponível.
