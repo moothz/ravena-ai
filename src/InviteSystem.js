@@ -812,7 +812,7 @@ class InviteSystem {
 						(inviteInfoData?.ParticipantCount
 							? `👥 *Membros*: ${inviteInfoData.ParticipantCount}\n`
 							: "") +
-						(wasInGroupBefore ? `⚠️ Já esteve neste grupo\n` : "") +
+						(wasInGroupBefore ? `⚠️ Já esteve neste grupo (${inviteInfoData?.JID || ""})\n` : "") +
 						`- 📈 *Convites deste usuário*: ${authorInvitesCount}\n` +
 						`- 📊 *Vezes que este grupo foi indicado*: ${groupInvitesCount}\n` +
 						otherInvitersText +
