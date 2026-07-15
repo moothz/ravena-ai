@@ -730,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getIcon(type) {
-        const map = { image: '🖼️', video: '📹', audio: '🎵', sticker: '🏷️', text: '📝' };
+        const map = { image: '🖼️', video: '📹', gif: '🎬', audio: '🎵', sticker: '🏷️', text: '📝' };
         return map[type] || '📁';
     }
 
@@ -1032,17 +1032,31 @@ document.addEventListener('DOMContentLoaded', () => {
             
             els.captionGroup.classList.remove('hidden');
             els.asStickerGroup.classList.add('hidden');
-            if(type === 'image' || type === 'video') els.asStickerGroup.classList.remove('hidden');
+            if(type === 'image' || type === 'video' || type === 'gif') els.asStickerGroup.classList.remove('hidden');
             
             const existingVarBtn = els.captionGroup.querySelector('.btn-insert-var');
             if(existingVarBtn) existingVarBtn.remove();
-            if(type === 'image' || type === 'video') {
+            if(type === 'image' || type === 'video' || type === 'gif') {
                 const varBtn = document.createElement('button');
                 varBtn.type = 'button';
                 varBtn.className = 'btn-insert-var';
                 varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Variável';
                 varBtn.onclick = () => openVariableModal(els.mediaCaption);
                 els.captionGroup.appendChild(varBtn);
+            }
+
+            if(type === 'image') {
+                els.mediaFileInput.setAttribute('accept', 'image/*');
+            } else if(type === 'video') {
+                els.mediaFileInput.setAttribute('accept', 'video/*');
+            } else if(type === 'audio') {
+                els.mediaFileInput.setAttribute('accept', 'audio/*');
+            } else if(type === 'sticker') {
+                els.mediaFileInput.setAttribute('accept', 'image/*,video/*,image/webp');
+            } else if(type === 'gif') {
+                els.mediaFileInput.setAttribute('accept', 'image/gif,image/webp,video/mp4,video/*');
+            } else {
+                els.mediaFileInput.removeAttribute('accept');
             }
 
             els.uploadModal.classList.remove('hidden');
@@ -1067,17 +1081,31 @@ document.addEventListener('DOMContentLoaded', () => {
             
             els.captionGroup.classList.remove('hidden');
             els.asStickerGroup.classList.add('hidden');
-            if(type === 'image' || type === 'video') els.asStickerGroup.classList.remove('hidden');
+            if(type === 'image' || type === 'video' || type === 'gif') els.asStickerGroup.classList.remove('hidden');
             
             const existingVarBtn = els.captionGroup.querySelector('.btn-insert-var');
             if(existingVarBtn) existingVarBtn.remove();
-            if(type === 'image' || type === 'video') {
+            if(type === 'image' || type === 'video' || type === 'gif') {
                 const varBtn = document.createElement('button');
                 varBtn.type = 'button';
                 varBtn.className = 'btn-insert-var';
                 varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Variável';
                 varBtn.onclick = () => openVariableModal(els.mediaCaption);
                 els.captionGroup.appendChild(varBtn);
+            }
+
+            if(type === 'image') {
+                els.mediaFileInput.setAttribute('accept', 'image/*');
+            } else if(type === 'video') {
+                els.mediaFileInput.setAttribute('accept', 'video/*');
+            } else if(type === 'audio') {
+                els.mediaFileInput.setAttribute('accept', 'audio/*');
+            } else if(type === 'sticker') {
+                els.mediaFileInput.setAttribute('accept', 'image/*,video/*,image/webp');
+            } else if(type === 'gif') {
+                els.mediaFileInput.setAttribute('accept', 'image/gif,image/webp,video/mp4,video/*');
+            } else {
+                els.mediaFileInput.removeAttribute('accept');
             }
 
             els.uploadModal.classList.remove('hidden');
@@ -1310,15 +1338,36 @@ document.addEventListener('DOMContentLoaded', () => {
             textarea.value = value && !isMedia ? value : '';
             div.querySelector('.btn-insert-var').onclick = () => openVariableModal(textarea);
         } else {
+            const isVideo = mediaType === 'video';
+            const convertLinkHtml = isVideo ? ` | <a href="#" class="media-link btn-convert-gif">Converter pra GIF</a>` : '';
             const mediaLink = `/media-direct/${mediaContent}?token=${token}`;
             div.innerHTML = `
                 <div class="media-preview form-control">
-                    ${getIcon(mediaType)} ${mediaType}: <a href="${mediaLink}" target="_blank" class="media-link">Clique para Visualizar</a> 
-                    ${mediaCaption ? `(${mediaCaption})` : ''}
+                    ${getIcon(mediaType)} <span class="media-type-lbl">${mediaType}</span>: <a href="${mediaLink}" target="_blank" class="media-link">Clique para Visualizar</a>${convertLinkHtml} 
+                    ${mediaCaption ? ` (${mediaCaption})` : ''}
                 </div>
                 <input type="hidden" class="cmd-response-input" value="${value}">
                 <button type="button" class="btn btn-xs btn-danger remove-resp"><i class="fas fa-trash"></i></button>
             `;
+
+            if (isVideo) {
+                div.querySelector('.btn-convert-gif').onclick = (e) => {
+                    e.preventDefault();
+                    const newValue = value.replace(/^\{video-/, '{gif-');
+                    div.querySelector('.cmd-response-input').value = newValue;
+                    div.querySelector('.media-type-lbl').textContent = 'gif';
+                    
+                    const previewDiv = div.querySelector('.media-preview');
+                    previewDiv.innerHTML = previewDiv.innerHTML.replace(getIcon('video'), getIcon('gif'));
+                    
+                    const convertBtn = div.querySelector('.btn-convert-gif');
+                    if (convertBtn) {
+                        convertBtn.previousSibling.textContent = '';
+                        convertBtn.remove();
+                    }
+                    setDirty(true);
+                };
+            }
         }
 
         div.querySelector('.remove-resp').onclick = () => div.remove();
@@ -1338,7 +1387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(existingVarBtn) existingVarBtn.remove();
 
         if(type === 'sticker') els.captionGroup.classList.add('hidden');
-        if(type === 'image' || type === 'video') {
+        if(type === 'image' || type === 'video' || type === 'gif') {
             els.asStickerGroup.classList.remove('hidden');
             const varBtn = document.createElement('button');
             varBtn.type = 'button';
@@ -1346,6 +1395,20 @@ document.addEventListener('DOMContentLoaded', () => {
             varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Variável';
             varBtn.onclick = () => openVariableModal(els.mediaCaption);
             els.captionGroup.appendChild(varBtn);
+        }
+
+        if(type === 'image') {
+            els.mediaFileInput.setAttribute('accept', 'image/*');
+        } else if(type === 'video') {
+            els.mediaFileInput.setAttribute('accept', 'video/*');
+        } else if(type === 'audio') {
+            els.mediaFileInput.setAttribute('accept', 'audio/*');
+        } else if(type === 'sticker') {
+            els.mediaFileInput.setAttribute('accept', 'image/*,video/*,image/webp');
+        } else if(type === 'gif') {
+            els.mediaFileInput.setAttribute('accept', 'image/gif,image/webp,video/mp4,video/*');
+        } else {
+            els.mediaFileInput.removeAttribute('accept');
         }
 
         els.uploadModal.classList.remove('hidden');

@@ -637,6 +637,16 @@ class Management {
 					mediaType = "voice";
 				}
 
+				const isGif =
+					quotedMsg.content?._mediaDetails?.gifPlayback === true ||
+					quotedMsg._mediaDetails?.gifPlayback === true ||
+					quotedMsg.isGif === true ||
+					media.mimetype === "image/gif";
+
+				if (isGif) {
+					mediaType = "gif";
+				}
+
 				// 2 casos: sticker animado ou resto
 				// Sticker animado preciso salvar o gif na pasta public pra poder ser enviado
 
@@ -827,6 +837,16 @@ class Management {
 				}
 				if (quotedMsg.type.toLowerCase() == "voice") {
 					mediaType = "voice";
+				}
+
+				const isGif =
+					quotedMsg.content?._mediaDetails?.gifPlayback === true ||
+					quotedMsg._mediaDetails?.gifPlayback === true ||
+					quotedMsg.isGif === true ||
+					media.mimetype === "image/gif";
+
+				if (isGif) {
+					mediaType = "gif";
 				}
 
 				if (media.stickerGif) {

@@ -831,7 +831,7 @@ class StreamSystem {
 						}
 					});
 				}
-			} else if (["image", "video", "audio", "sticker"].includes(mediaItem.type)) {
+			} else if (["image", "video", "gif", "audio", "sticker"].includes(mediaItem.type)) {
 				const mediaPath = path.join(this.mediaPath, mediaItem.content);
 				try {
 					const media = mediaItem.content.startsWith("http")
@@ -846,6 +846,7 @@ class StreamSystem {
 						options: {
 							caption: caption ?? undefined,
 							sendMediaAsSticker: mediaItem.type === "sticker",
+							sendVideoAsGif: mediaItem.type === "gif",
 							mentions: mentions.length > 0 ? mentions : undefined
 						}
 					});

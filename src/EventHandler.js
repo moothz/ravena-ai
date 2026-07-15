@@ -1760,7 +1760,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								caption,
 								mentions: currentMentions,
 								sendAudioAsVoice: type === "audio",
-								sendMediaAsSticker: type === "sticker"
+								sendMediaAsSticker: type === "sticker",
+								sendVideoAsGif: type === "gif"
 							},
 							mentions: currentMentions
 						});
@@ -1873,7 +1874,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								caption,
 								mentions: currentMentions,
 								sendAudioAsVoice: type === "audio",
-								sendMediaAsSticker: type === "sticker"
+								sendMediaAsSticker: type === "sticker",
+								sendVideoAsGif: type === "gif"
 							},
 							mentions: currentMentions
 						});

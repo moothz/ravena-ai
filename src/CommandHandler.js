@@ -1760,7 +1760,7 @@ class CommandHandler {
 
 			// Verifica se é uma resposta de mídia (formato: "{img-filename.png} Legenda\nlegenda 2...")
 			const mediaMatch = processedResponse.match(
-				/^\{(audio|voice|image|video|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
+				/^\{(audio|voice|image|video|gif|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
 			);
 
 			if (mediaMatch) {
@@ -1799,6 +1799,7 @@ class CommandHandler {
 							options: {
 								caption: caption ?? undefined,
 								sendMediaAsSticker: mediaType === "sticker",
+								sendVideoAsGif: mediaType === "gif",
 								quotedMessageId: command.reply ? message.origin.id._serialized : undefined,
 								goReply: message.origin,
 								...options
