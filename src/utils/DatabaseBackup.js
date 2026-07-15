@@ -439,6 +439,36 @@ class DatabaseBackup {
 
 	// --- Corruption Handling & Recovery ---
 
+	/**
+	 * Verify if a SQLite backup file is healthy and readable.
+	 * @param {string} filePath - Path to the SQLite file
+	 * @returns {boolean} - True if healthy
+	 */
+	isBackupFileHealthy(filePath) {
+		const BetterSQLite = require("better-sqlite3");
+		let conn;
+		try {
+			conn = new BetterSQLite(filePath, { readonly: true, timeout: 2000 });
+			const result = conn.pragma("integrity_check");
+			if (Array.isArray(result) && result[0] === "ok") {
+				return true;
+			}
+			if (result === "ok") {
+				return true;
+			}
+			return false;
+		} catch (e) {
+			this.logger.warn(`Integrity check failed for backup file ${filePath}: ${e.message}`);
+			return false;
+		} finally {
+			if (conn) {
+				try {
+					conn.close();
+				} catch (e) {}
+			}
+		}
+	}
+
 	async handleCorruption(dbName, error) {
 		if (this.recoveringDbs.has(dbName)) {
 			this.logger.debug(`Recovery already in progress for ${dbName}. Skipping duplicate call.`);
@@ -481,13 +511,14 @@ Error: \`${error.message}\``);
 			const dbPath = path.join(this.databasePath, "sqlites", dbFile);
 			const corruptPath = `${dbPath}.corrupt-${Date.now()}`;
 
-			// 3. Backup the corrupt file
+			// 3. Backup and delete the corrupt file
 			if (fs.existsSync(dbPath)) {
 				try {
 					fs.copyFileSync(dbPath, corruptPath);
 					this.logger.info(`Corrupt database saved to: ${corruptPath}`);
+					fs.unlinkSync(dbPath); // Delete it so we don't open the corrupt file if restore fails
 				} catch (e) {
-					this.logger.error(`Failed to copy corrupt DB: ${e.message}`);
+					this.logger.error(`Failed to copy/delete corrupt DB: ${e.message}`);
 				}
 			}
 
@@ -521,13 +552,19 @@ Error: \`${error.message}\``);
 				for (const backup of localBackups) {
 					const backupFilePath = path.join(backup.path, "sqlites", dbFile);
 					if (fs.existsSync(backupFilePath)) {
-						try {
-							fs.copyFileSync(backupFilePath, dbPath);
-							restored = true;
-							backupUsed = `file from ${backup.name}`;
-							break;
-						} catch (e) {
-							this.logger.error(`Failed to restore from local backup ${backup.name}: ${e.message}`);
+						if (this.isBackupFileHealthy(backupFilePath)) {
+							try {
+								fs.copyFileSync(backupFilePath, dbPath);
+								restored = true;
+								backupUsed = `file from ${backup.name}`;
+								break;
+							} catch (e) {
+								this.logger.error(
+									`Failed to restore from local backup ${backup.name}: ${e.message}`
+								);
+							}
+						} else {
+							this.logger.warn(`Skipping corrupt local backup: ${backup.name}`);
 						}
 					}
 				}
@@ -544,8 +581,9 @@ Source: \`${backupUsed}\``);
 File restored and data re-read into memory.`);
 			} else {
 				await this.reportToTelegram(`❌ *RESTORE FAILED*
-No valid backup found (cloud or local). Tentando abrir banco original...`);
-				// Re-init anyway to avoid "undefined" errors, even if it might trigger corruption loop
+No valid backup found (cloud or local). A fresh empty database will be initialized.`);
+
+				// Re-init connection. Since the corrupt file was deleted, this will create a fresh one.
 				await this.reinitConnection(dbName);
 			}
 		} catch (err) {
