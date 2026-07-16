@@ -30,25 +30,48 @@ class CustomVariableProcessor {
 		this.logger.debug(`[CustomVariableProcessor][process] ${text} <=> ${Object.keys(context)}`);
 
 		try {
+			const hasFotoPerfil = text.includes("{fotoPerfil}");
+			const hasFotoPerfilMention = text.includes("{fotoPerfilMention}");
+			let targetJid = null;
+
+			if ((hasFotoPerfil || hasFotoPerfilMention) && context && context.message) {
+				if (hasFotoPerfilMention) {
+					const mentions =
+						context.message.origin?.mentionedIds ??
+						context.message.mentionedIds ??
+						context.message.mentions ??
+						[];
+					targetJid =
+						mentions.length > 0 ? mentions[0] : context.message.author || context.message.sender;
+				} else {
+					targetJid = context.message.author || context.message.sender;
+				}
+			}
+
+			let processedText = text;
+			if (hasFotoPerfil || hasFotoPerfilMention) {
+				processedText = processedText
+					.replace(/\{fotoPerfil\}/g, "")
+					.replace(/\{fotoPerfilMention\}/g, "");
+			}
+
 			// Verifica se é uma variável de arquivo
-			const fileMatch = text.match(/^\{file-(.*?)\}$/);
+			const fileMatch = processedText.match(/^\{file-(.*?)\}$/);
 			if (fileMatch && context && context.message) {
 				const chatId = context.message.group ?? context.message.author;
 				const bot = context.bot;
 
 				if (bot) {
 					// Processa variável de arquivo e retorna o MessageMedia
-					const media = await processFileVariable(text, bot, chatId);
+					const media = await processFileVariable(processedText, bot, chatId);
 					if (media) {
 						return media;
 					}
 				}
 			}
 
-			let processedText = text;
-
 			// Verifica se é variável de reddit
-			const redditResult = await this.processRedditVariable(text, context);
+			const redditResult = await this.processRedditVariable(processedText, context);
 
 			if (redditResult) {
 				if (redditResult.type === "media") {
@@ -112,6 +135,21 @@ class CustomVariableProcessor {
 						}
 					}
 				}
+			}
+
+			if (
+				(hasFotoPerfil || hasFotoPerfilMention) &&
+				context &&
+				context.message &&
+				context.bot &&
+				targetJid
+			) {
+				const mediaResult = await this.handleProfilePictureResponse(
+					processedText,
+					targetJid,
+					context
+				);
+				return mediaResult;
 			}
 
 			return processedText;
@@ -1063,6 +1101,50 @@ class CustomVariableProcessor {
 			console.error(`[RedditVariable] Erro ao processar r/${subreddit}:`, error.message);
 			const errorText = `Subreddit r/${subreddit} não foi encontrado.`;
 			return { type: "text", text: text.replace(fullVariable, errorText) };
+		}
+	}
+
+	/**
+	 * Busca a foto de perfil do usuário alvo, e retorna como mídia (legenda <= 1000) ou
+	 * envia a imagem diretamente e retorna o restante do texto (legenda > 1000).
+	 * Em caso de erro, anexa uma mensagem informativa ao final.
+	 */
+	async handleProfilePictureResponse(processedText, targetJid, context) {
+		try {
+			if (typeof context.bot.getProfilePictureUrl !== "function") {
+				throw new Error("Bot não suporta getProfilePictureUrl");
+			}
+
+			const profileUrl = await context.bot.getProfilePictureUrl(targetJid);
+			if (!profileUrl) {
+				throw new Error("Nenhuma URL de imagem de perfil encontrada");
+			}
+
+			const response = await axios.get(profileUrl, { responseType: "arraybuffer" });
+			const buffer = Buffer.from(response.data, "binary");
+			const media = {
+				mimetype: "image/jpeg",
+				data: buffer.toString("base64"),
+				filename: "profile.jpg",
+				isMessageMedia: true
+			};
+
+			if (processedText.length <= 1000) {
+				if (!context.options) {
+					context.options = {};
+				}
+				context.options.caption = processedText;
+				return media;
+			} else {
+				const chatId = context.message.group ?? context.message.author;
+				await context.bot.sendMessage(chatId, media, {
+					goReply: context.message.origin
+				});
+				return processedText;
+			}
+		} catch (error) {
+			this.logger.error(`Erro ao obter foto de perfil para ${targetJid}:`, error.message);
+			return processedText + "\n> não foi possível baixar a foto de perfil deste usuário";
 		}
 	}
 }

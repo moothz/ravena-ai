@@ -2836,6 +2836,28 @@ class WhatsAppBotGo {
 		}
 	}
 
+	async getProfilePictureUrl(number, preview = false) {
+		try {
+			let jid = number;
+			if (!jid.includes("@")) {
+				jid = `${jid}@s.whatsapp.net`;
+			}
+			const response = await this.apiClient.post("/user/avatar", {
+				number: jid,
+				preview
+			});
+			if (response?.data?.data?.url) {
+				return response.data.data.url;
+			}
+		} catch (error) {
+			this.logger.error(
+				`[getProfilePictureUrl] Erro ao buscar foto de perfil para ${number}:`,
+				error.message
+			);
+		}
+		return null;
+	}
+
 	async getCurrentGroups() {
 		const grupos = await this.apiClient.get(`/group/myall`);
 		this.logger.debug(`[getCurrentGroups] `, grupos);
