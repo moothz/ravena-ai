@@ -119,7 +119,8 @@ async function runTests() {
 						{
 							model: p.model,
 							messages: [{ role: "user", content: "Responda apenas 'PONG'" }],
-							max_tokens: 5
+							max_tokens: 5,
+							stream: false
 						},
 						{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined }
 					);
@@ -155,7 +156,8 @@ async function runTests() {
 										]
 									}
 								],
-								max_tokens: 20
+								max_tokens: 20,
+								stream: false
 							},
 							{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined }
 						);

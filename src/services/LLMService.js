@@ -502,7 +502,8 @@ class LLMService {
 					{ role: "user", content: userContent }
 				],
 				max_tokens: options.maxTokens ?? 5000,
-				temperature: options.temperature ?? 0.7
+				temperature: options.temperature ?? 0.7,
+				stream: false
 			};
 
 			if (options.response_format) {
@@ -597,7 +598,8 @@ class LLMService {
 					{ role: "user", content: userContent }
 				],
 				max_tokens: options.maxTokens ?? 5000,
-				temperature: options.temperature ?? 0.7
+				temperature: options.temperature ?? 0.7,
+				stream: false
 			};
 
 			if (options.response_format) {
