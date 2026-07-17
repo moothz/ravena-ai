@@ -2590,14 +2590,14 @@ class BotAPI {
                   if (pairingPre) {
                     if (!connectData.qrCode && !connectData.pairingCode && !connectData.code) {
                       // Conectando
-                      pairingPre.textContent = "Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
+                      pairingPre.textContent = "Gerando códigos de conexão...\\nPor favor, aguarde de 5 a 10 segundos.";
                       pairingPre.style = "text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
                     } else if (connectData.pairingCode) {
                       pairingPre.textContent = connectData.pairingCode.split("] ").join("]");
                       pairingPre.style = "text-align: center; font-size: 35pt;";
                     } else {
                       // QR Code existe mas pairing code veio vazio -> Rate Limit
-                      pairingPre.textContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
+                      pairingPre.textContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\\nPor favor, utilize o QR Code acima para conectar.";
                       pairingPre.style = "text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
                     }
                   }
