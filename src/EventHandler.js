@@ -367,6 +367,11 @@ class EventHandler extends EventEmitter {
 					}
 				}
 
+				// Como o bot recebeu mensagem do grupo, ele está nele. Remove do skip list.
+				if (bot.removeSkipGroup) {
+					await bot.removeSkipGroup(message.group);
+				}
+
 				// Verifica apelido do usuário e atualiza o nome se necessário
 				if (group.nicks && Array.isArray(group.nicks)) {
 					const nickData = group.nicks.find((nick) => nick.numero === message.author);
