@@ -346,6 +346,26 @@ class CoreRepository {
 		}
 	}
 
+	/**
+	 * Persists only the `interact` field of a group (lightweight update).
+	 * Used to save lastInteraction timestamp without writing the whole group.
+	 * @param {string} groupId
+	 * @param {Object} interact - The interact object to persist
+	 */
+	updateGroupInteract(groupId, interact) {
+		try {
+			this.mappers.run(this.DB, "UPDATE groups SET interact = ?, updated_at = ? WHERE id = ?", [
+				JSON.stringify(interact),
+				Date.now(),
+				groupId
+			]);
+			return true;
+		} catch (error) {
+			this.logger.error("Error in updateGroupInteract:", error);
+			return false;
+		}
+	}
+
 	// ===========================================================================
 	// Custom Commands
 	// ===========================================================================

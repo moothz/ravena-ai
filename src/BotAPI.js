@@ -2162,12 +2162,131 @@ class BotAPI {
 					.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 			}
 			try {
+				// Checa apenas o status atual sem forçar reconexão
 				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, false);
-				res.json(instanceStatus);
+				// Verifica se instância existe na whatsgoapi
+				let instanceExists = false;
+				try {
+					const goInstance = await bot.getGoInstance(bot.instanceName);
+					instanceExists = !!goInstance;
+				} catch (e) {
+					instanceExists = false;
+				}
+				res.json({ ...instanceStatus, instanceExists });
 			} catch (e) {
 				this.logger.error("Error checking qrcode status:", e);
 				res.status(500).json({ status: "error", message: e.message });
 			}
+		});
+
+		// Inicia o fluxo de conexão (chamado pela página /qrcode/:botId)
+		this.app.get("/qrcode-initconnect/:botId", authenticateBasic, async (req, res) => {
+			res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+			const { botId } = req.params;
+			const bot = this.bots.find((b) => b.id === botId);
+			if (!bot) {
+				return res.status(404).json({ status: "error", message: `Bot '${botId}' não encontrado` });
+			}
+			try {
+				// Cancela timer de apagar instância (usuário quer conectar)
+				if (bot._disconnectTimer) {
+					clearTimeout(bot._disconnectTimer);
+					bot._disconnectTimer = null;
+				}
+				// Força o fluxo de conexão (connect + pair)
+				const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true);
+				let instanceExists = false;
+				try {
+					const goInstance = await bot.getGoInstance(bot.instanceName);
+					instanceExists = !!goInstance;
+				} catch (e) {
+					instanceExists = false;
+				}
+				res.json({ ...instanceStatus, instanceExists });
+			} catch (e) {
+				this.logger.error("Error initiating connect for bot:", e);
+				res.status(500).json({ status: "error", message: e.message });
+			}
+		});
+
+		// SSE stream de QR code / pairing code para a página /qrcode/:botId
+		this.app.get("/qrcode-stream/:botId", authenticateBasic, (req, res) => {
+			const { botId } = req.params;
+			const bot = this.bots.find((b) => b.id === botId);
+			if (!bot) {
+				return res.status(404).json({ status: "error", message: `Bot '${botId}' não encontrado` });
+			}
+
+			res.setHeader("Content-Type", "text/event-stream");
+			res.setHeader("Cache-Control", "no-cache");
+			res.setHeader("Connection", "keep-alive");
+			res.setHeader("X-Accel-Buffering", "no");
+			res.flushHeaders();
+
+			// Cancela timer de apagar instância enquanto alguém está olhando a página
+			if (bot._disconnectTimer) {
+				clearTimeout(bot._disconnectTimer);
+				bot._disconnectTimer = null;
+				this.logger.info(
+					`[QR SSE] Timer de apagar instância cancelado para ${botId} (usuário abrindo página)`
+				);
+			}
+
+			// Envia dados atuais se já disponíveis
+			if (bot.connectDataCache?.data) {
+				const d = bot.connectDataCache.data;
+				res.write(
+					`data: ${JSON.stringify({ type: "qr_update", qrCode: d.qrCode || "", code: d.code || "", pairingCode: d.pairingCode || "" })}\n\n`
+				);
+			}
+
+			// Heartbeat a cada 20s
+			const heartbeat = setInterval(() => {
+				try {
+					res.write(`: heartbeat\n\n`);
+				} catch (e) {
+					/* ignore */
+				}
+			}, 20000);
+
+			bot.addQRSseClient(res);
+
+			req.on("close", () => {
+				clearInterval(heartbeat);
+				bot.removeQRSseClient(res);
+				this.logger.info(`[QR SSE] Cliente desconectou de ${botId}`);
+
+				// Se ainda desconectado e sem clientes SSE, reagendar timer de apagar instância
+				if (!bot.isConnected && bot.qrSseClients.length === 0 && bot.disconnectedAt) {
+					const elapsed = Date.now() - bot.disconnectedAt;
+					const remaining = 15 * 60 * 1000 - elapsed;
+					if (remaining > 0) {
+						bot._disconnectTimer = setTimeout(async () => {
+							try {
+								this.logger.info(
+									`[${botId}] Timer reagendado: apagando instância após 15 min desconectado.`
+								);
+								await bot.deleteInstance();
+								bot.connectDataCache = null;
+								bot._disconnectTimer = null;
+								bot.broadcastQRUpdate({ type: "instance_deleted", botId: bot.id });
+							} catch (err) {
+								this.logger.error(`[${botId}] Erro ao apagar instância (reagendado):`, err);
+							}
+						}, remaining);
+						this.logger.info(
+							`[QR SSE] Timer reagendado para ${botId}: ${Math.round(remaining / 1000)}s restantes`
+						);
+					} else {
+						// Já passou dos 15 minutos, apagar imediatamente
+						bot
+							.deleteInstance()
+							.catch((err) =>
+								this.logger.error(`[${botId}] Erro ao apagar instância (imediato):`, err)
+							);
+					}
+				}
+			});
 		});
 
 		this.app.get("/qrcode/:botId", authenticateBasic, async (req, res) => {
@@ -2184,7 +2303,7 @@ class BotAPI {
 				});
 			}
 
-			const formattedDate = new Date().toLocaleString("en-US", {
+			const formattedDate = new Date().toLocaleString("pt-BR", {
 				timeZone: "America/Sao_Paulo",
 				hour12: false,
 				year: "numeric",
@@ -2195,467 +2314,271 @@ class BotAPI {
 				second: "2-digit"
 			});
 
-			const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true); // no retry
-			const version = instanceStatus.instanceDetails.version ?? "?";
-			const tipo = instanceStatus.instanceDetails.tipo ?? "?";
+			// Verifica se já está conectado
+			const isConnected = bot.isConnected;
 
-			const buttons = `
-        <div style="margin: 1rem 0; display: flex; justify-content: center; gap: 10px;">
-          <button onclick="window.location.reload()">Atualizar</button>
-          <button onclick="fetchAndShow('/restart/${botId}', 'restart')">Reiniciar</button> <br>
-          <button onclick="fetchAndShow('/logout/${botId}', 'reload')">Logout</button>
-          <button onclick="fetchAndShow('/recreate/${botId}', 'recriar')">Recriar</button>
-        </div>
-      `;
-
-			const statusPre = `<h2>Raw Instance Status</h2><pre id="status-box">${JSON.stringify(instanceStatus, null, "\t")}</pre>`;
-
-			let pageContent = "";
-
-			if (instanceStatus.extra?.ok) {
-				pageContent = `
-          <h2 style='color: green'>Conectado</h2>
-          ${buttons}
-          ${statusPre}
-        `;
-			} else {
-				const connectData = instanceStatus.extra?.connectData;
-				let pairingCodeContent = connectData?.pairingCode ?? "";
-				let pairingStyle = "text-align: center; font-size: 35pt;";
-
-				// Usa a imagem base64 diretamente se disponível, senão tenta gerar do code
-				let qrCodeBase64 = "";
-				let descQrCode = "Nenhum QRCode disponível";
-
-				if (
-					!connectData ||
-					(!connectData.qrCode && !connectData.pairingCode && !connectData.code)
-				) {
-					// Inicializando conexão
-					pairingCodeContent =
-						"Gerando códigos de conexão...\nPor favor, aguarde de 5 a 10 segundos.";
-					pairingStyle =
-						"text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
-					descQrCode = "Inicializando conexão...";
-				} else {
-					const qrCodeBase64img = connectData.qrCode ?? "";
-					const codigoGerar = connectData.code ?? "";
-
-					if (qrCodeBase64img) {
-						qrCodeBase64 = qrCodeBase64img; // já é data:image/png;base64,...
-						descQrCode = codigoGerar;
-					} else if (codigoGerar.length > 200 && !codigoGerar.includes("undefined")) {
-						qrCodeBase64 = qrcode(codigoGerar);
-						descQrCode = codigoGerar;
-					}
-
-					if (!pairingCodeContent) {
-						pairingCodeContent =
-							"WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\nPor favor, utilize o QR Code acima para conectar.";
-						pairingStyle =
-							"text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
-					}
-				}
-
-				let passkeySection = "";
-				if (instanceStatus.extra?.lastPasskeyRequest) {
-					passkeySection = `<div id="passkey-section"></div>`;
-				}
-
-				pageContent = `
-          ${passkeySection}
-          <h2>QR Code</h2>
-          <img src="${qrCodeBase64}" alt="${descQrCode}">
-          <h2>Pairing Code</h2>
-          <pre style="${pairingStyle}">${pairingCodeContent}</pre>
-          ${buttons}
-          ${statusPre}
-        `;
+			// Verifica se instância existe na whatsgoapi
+			let instanceExists = false;
+			try {
+				const instanceInfo = await bot.getGoInstance(bot.instanceName);
+				instanceExists = !!instanceInfo;
+			} catch (e) {
+				instanceExists = false;
 			}
 
-			const htmlResponse = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>${botId} - ${formattedDate}</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; background-color: #f7fafc; padding-top: 2rem; color: #2d3748; }
-            .container { max-width: 400px; margin: 0 auto; padding: 1.5rem; background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-            h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
-            h2 { font-size: 1.25rem; font-weight: 500; margin-bottom: 0.5rem; }
-            img { max-width: 100%; height: auto; margin: 1.5rem 0; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); }
-            pre { background-color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; color: #2d3748; text-align: left; }
-            button { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background-color: #4299e1; color: white; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
-            .container div { margin: 1rem 0; display: flex; justify-content: center; gap: 10px; }
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>${botId} - ${bot.phoneNumber}</h1>
-            <h2>${formattedDate} - ${tipo} ${version}</h2>
-            ${pageContent}
-          </div>
-          <script>
-            const statusBox = document.getElementById('status-box');
-            const container = document.querySelector('.container');
-            let currentPasskeyChallenge = ${JSON.stringify(instanceStatus.extra?.lastPasskeyRequest || null)};
-            let passkeyPrompted = false;
-
-            async function fetchAndShow(url, action) {
-              if (action !== 'recriar' && !statusBox) return;
-              if (!confirm('Tem certeza que deseja '+action+'?')) return;
-              
-              if (action === 'recriar') {
-                // Substitui o conteúdo do container pelo spinner
-                container.innerHTML = \`
-                  <div id="recreate-status" style="padding: 2rem; text-align: center;">
-                    <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3182ce; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; margin: 0 auto 1.5rem auto;"></div>
-                    <h2 style="color: #2b6cb0; font-size: 1.3rem; margin-bottom: 0.5rem;">Recriando Instância...</h2>
-                    <p id="recreate-msg" style="color: #4a5568; font-size: 0.95rem;">Por favor, aguarde enquanto a nova sessão é gerada.</p>
-                  </div>
-                \`;
-                try {
-                  const res = await fetch(url);
-                  const result = await res.json();
-                  const msgEl = document.getElementById('recreate-msg');
-                  if (result.status === 'ok') {
-                    if (msgEl) msgEl.textContent = 'Instância recriada! Recarregando em 3s...';
-                    setTimeout(() => window.location.reload(), 3000);
-                  } else {
-                    if (msgEl) msgEl.textContent = 'Erro: ' + JSON.stringify(result);
-                  }
-                } catch(e) {
-                  const msgEl = document.getElementById('recreate-msg');
-                  if (msgEl) msgEl.textContent = 'Erro de rede. Recarregando em 5s...';
-                  setTimeout(() => window.location.reload(), 5000);
-                }
-              } else {
-                statusBox.textContent = 'Executando... Por favor, aguarde.';
-                try {
-                  const response = await fetch(url);
-                  const result = await response.json();
-                  statusBox.textContent = JSON.stringify(result, null, 2);
-                  if (action === 'reload' && response.ok) {
-                    statusBox.textContent += \`\\n\\nAção concluída. Recarregando em 2 segundos...\`;
-                    setTimeout(() => window.location.reload(), 2000);
-                  }
-                } catch (error) {
-                  statusBox.textContent = \`Erro: \${error?.message}\\n\${error?.stack}\`;
-                }
-              }
-            }
-
-            function base64urlToArrayBuffer(base64url) {
-              let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-              let pad = base64.length % 4;
-              if (pad) {
-                if (pad === 2) base64 += '==';
-                else if (pad === 3) base64 += '=';
-              }
-              let binary = window.atob(base64);
-              let bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) {
-                bytes[i] = binary.charCodeAt(i);
-              }
-              return bytes.buffer;
-            }
-
-            function arrayBufferToBase64url(buffer) {
-              let binary = '';
-              let bytes = new Uint8Array(buffer);
-              for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              let base64 = window.btoa(binary);
-              return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
-            }
-
-            // Gera o snippet JS que o usuário deve rodar no console do web.whatsapp.com
-            function buildPasskeySnippet(challenge) {
-              const challengeJson = JSON.stringify(challenge);
-              return \`(async () => {
-  const challenge = \${challengeJson};
-
-  function b64uToBuf(value) {
-    var b64 = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
-    while (b64.length % 4) b64 += "=";
-    var bin = atob(b64);
-    var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes.buffer;
-  }
-
-  function bufToB64u(buf) {
-    var bytes = new Uint8Array(buf);
-    var bin = "";
-    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
-  }
-
-  const options = {
-    challenge: b64uToBuf(challenge.challenge),
-    timeout: challenge.timeout || 60000,
-    rpId: challenge.rpId || "whatsapp.com",
-    allowCredentials: (challenge.allowCredentials || []).map(function (c) {
-      return {
-        type: c.type || "public-key",
-        id: b64uToBuf(c.id),
-        transports: c.transports
-      };
-    }),
-    userVerification: challenge.userVerification || "required"
-  };
-
-  console.log("🔑 Iniciando verificação de Passkey no navegador... Por favor, confirme no seu celular/dispositivo.");
-  try {
-    const cred = await navigator.credentials.get({ publicKey: options });
-    if (!cred) {
-      console.error("❌ Autenticação retornou vazia.");
-      return;
+			const htmlResponse = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${botId} — Conexão WhatsApp</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2d3149;
+      --text: #e8eaf6; --text-muted: #8892b0; --green: #25d366; --green-dark: #1a9e4b;
+      --yellow: #f6c90e; --red: #ff4d4d; --blue: #4f8ef7; --orange: #f59e42;
     }
-    
-    const r = cred.response;
-    const body = {
-      id: cred.id,
-      rawId: bufToB64u(cred.rawId),
-      type: cred.type,
-      response: {
-        clientDataJSON: bufToB64u(r.clientDataJSON),
-        authenticatorData: bufToB64u(r.authenticatorData),
-        signature: bufToB64u(r.signature)
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 2rem 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 1.25rem; padding: 2rem; max-width: 520px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .bot-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    .bot-icon { width: 48px; height: 48px; background: var(--green); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+    .bot-title h1 { font-size: 1.2rem; font-weight: 700; }
+    .bot-title p { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .status-badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; margin-bottom: 1.25rem; }
+    .status-badge.connected { background: rgba(37,211,102,0.15); color: var(--green); border: 1px solid rgba(37,211,102,0.3); }
+    .status-badge.disconnected { background: rgba(255,77,77,0.15); color: var(--red); border: 1px solid rgba(255,77,77,0.3); }
+    .status-badge.no-instance { background: rgba(245,158,66,0.15); color: var(--orange); border: 1px solid rgba(245,158,66,0.3); }
+    .status-badge.connecting { background: rgba(79,142,247,0.15); color: var(--blue); border: 1px solid rgba(79,142,247,0.3); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+    .dot.pulse { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .info-row { background: var(--surface2); border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: flex-start; gap: 0.6rem; }
+    .info-row strong { color: var(--text); }
+    .qr-section { text-align: center; margin: 1.5rem 0; }
+    .qr-section h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    #qr-img { max-width: 250px; height: auto; border-radius: 0.75rem; border: 3px solid var(--border); background: white; padding: 8px; transition: opacity 0.3s; }
+    #qr-img.refreshing { opacity: 0.4; }
+    .pairing-section h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-align: center; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    #pairing-code { font-family: 'Courier New', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: 0.1em; color: var(--green); text-align: center; padding: 1rem; background: rgba(37,211,102,0.08); border: 1px solid rgba(37,211,102,0.2); border-radius: 0.75rem; min-height: 4rem; display: flex; align-items: center; justify-content: center; }
+    #status-msg { text-align: center; font-size: 0.9rem; color: var(--text-muted); margin: 1rem 0; min-height: 1.5rem; }
+    .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; margin-top: 1.5rem; }
+    button { padding: 0.6rem 1.2rem; border: none; border-radius: 0.5rem; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: var(--green); color: #000; }
+    .btn-primary:hover { background: var(--green-dark); color: #fff; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-danger { background: rgba(255,77,77,0.15); color: var(--red); border: 1px solid rgba(255,77,77,0.3); }
+    .btn-danger:hover { background: var(--red); color: #fff; }
+    .btn-warn { background: rgba(245,158,66,0.15); color: var(--orange); border: 1px solid rgba(245,158,66,0.3); }
+    .btn-warn:hover { background: var(--orange); color: #000; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+    .raw-section summary { cursor: pointer; font-size: 0.82rem; color: var(--text-muted); padding: 0.4rem 0; }
+    pre#status-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; font-size: 0.75rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin-top: 0.5rem; text-align: left; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top: 4px solid var(--blue); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 1.5rem auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .passkey-box { border: 2px solid var(--orange); background: rgba(245,158,66,0.07); border-radius: 0.75rem; padding: 1.25rem; margin: 1rem 0; text-align: left; }
+    .passkey-box h3 { color: var(--orange); font-size: 1rem; margin-bottom: 0.75rem; text-align: center; }
+    .passkey-step { background: #1e2235; border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.65rem; }
+    .passkey-step .step-label { color: var(--yellow); font-size: 0.78rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .passkey-step .step-body { color: #c9d1e9; font-size: 0.85rem; }
+    pre.snippet { background: #11131e; color: #68d391; padding: 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    textarea.passkey-input { width: 100%; height: 90px; background: #11131e; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 0.375rem; padding: 0.5rem; font-family: monospace; font-size: 0.78rem; resize: vertical; }
+    #passkey-msg { margin-top: 0.5rem; font-size: 0.88rem; font-weight: 600; text-align: center; }
+    .qr-count { font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="bot-header">
+      <div class="bot-icon">🤖</div>
+      <div class="bot-title">
+        <h1>${botId}</h1>
+        <p>${bot.phoneNumber || "Número não configurado"} &bull; ${formattedDate}</p>
+      </div>
+    </div>
+
+    <div id="status-badge-container">
+      ${
+				isConnected
+					? `<div class="status-badge connected"><span class="dot"></span> Conectado ao WhatsApp</div>`
+					: !instanceExists
+						? `<div class="status-badge no-instance"><span class="dot pulse"></span> Instância não existe na WhatsGoAPI</div>`
+						: `<div class="status-badge disconnected"><span class="dot pulse"></span> Desconectado — aguardando conexão</div>`
+			}
+    </div>
+
+    <div id="main-content">
+      ${
+				isConnected
+					? `
+      <div class="info-row"><strong>✅ Bot conectado</strong> ao WhatsApp. Nenhuma ação necessária.</div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="window.location.reload()">🔄 Atualizar</button>
+        <button class="btn-danger" onclick="doAction('/logout/${botId}', 'logout')">🚪 Logout</button>
+        <button class="btn-warn" onclick="doAction('/recreate/${botId}', 'recriar')">♻️ Recriar</button>
+      </div>
+      `
+					: !instanceExists
+						? `
+      <div class="info-row">⏳ <div><strong>Aguardando criação da instância na WhatsGoAPI</strong><br>A instância ainda não existe. Clique em "Iniciar Conexão" para criar e conectar.</div></div>
+      <div id="status-msg">Pronto para iniciar</div>
+      <div class="btn-row">
+        <button class="btn-primary" id="btn-start" onclick="startConnect()">⚡ Iniciar Conexão</button>
+        <button class="btn-secondary" onclick="window.location.reload()">🔄 Atualizar</button>
+      </div>
+      `
+						: `
+      <div class="info-row">📱 <div>Escaneie o <strong>QR Code</strong> abaixo com o WhatsApp do celular, ou use o <strong>Código de Pareamento</strong> nas configurações do WhatsApp → Dispositivos Conectados.</div></div>
+      <div id="connect-area">
+        <div id="status-msg"><div class="spinner"></div>Iniciando conexão com o WhatsApp...</div>
+        <div class="qr-section" id="qr-section" style="display:none">
+          <h2>📷 QR Code</h2>
+          <img id="qr-img" src="" alt="QR Code" />
+          <div class="qr-count" id="qr-count"></div>
+        </div>
+        <div class="pairing-section" id="pairing-section" style="display:none">
+          <h2>🔑 Código de Pareamento</h2>
+          <div id="pairing-code">—</div>
+        </div>
+        <div id="passkey-container"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="window.location.reload()">🔄 Atualizar</button>
+        <button class="btn-danger" onclick="doAction('/logout/${botId}', 'logout')">🚪 Logout</button>
+        <button class="btn-warn" onclick="doAction('/recreate/${botId}', 'recriar')">♻️ Recriar</button>
+      </div>
+      `
+			}
+    </div>
+
+    <hr class="divider">
+    <details class="raw-section">
+      <summary>🔧 Status técnico (raw)</summary>
+      <pre id="status-box">Carregando...</pre>
+    </details>
+  </div>
+
+  <script>
+    const botId = ${JSON.stringify(botId)};
+    const isConnected = ${isConnected};
+    const instanceExists = ${instanceExists};
+    const statusMsg = document.getElementById('status-msg');
+    const qrSection = document.getElementById('qr-section');
+    const qrImg = document.getElementById('qr-img');
+    const qrCount = document.getElementById('qr-count');
+    const pairingSection = document.getElementById('pairing-section');
+    const pairingCode = document.getElementById('pairing-code');
+    const statusBox = document.getElementById('status-box');
+    const passkeyCont = document.getElementById('passkey-container');
+    const badgeCont = document.getElementById('status-badge-container');
+    let eventSource = null;
+    let passkeyPrompted = false;
+
+    function setStatus(msg, color) {
+      if (!statusMsg) return;
+      statusMsg.innerHTML = msg;
+      if (color) statusMsg.style.color = color;
+    }
+    function setBadge(type, label) {
+      if (!badgeCont) return;
+      const cls = {connected:'connected',disconnected:'disconnected',noinstance:'no-instance',connecting:'connecting'}[type]||'disconnected';
+      const pulse = type !== 'connected' ? ' pulse' : '';
+      badgeCont.innerHTML = '<div class="status-badge '+cls+'"><span class="dot'+pulse+'"></span> '+label+'</div>';
+    }
+    function applyConnectData(data) {
+      if (data.qrCode) {
+        if (qrSection) qrSection.style.display = '';
+        if (qrImg) { qrImg.classList.add('refreshing'); setTimeout(() => { qrImg.src = data.qrCode; qrImg.classList.remove('refreshing'); }, 100); }
+        if (qrCount && data.count != null) qrCount.textContent = 'QR #'+data.count+(data.maxCount?' de '+data.maxCount:'')+' — expira em ~30s';
       }
-    };
-    if (r.userHandle && r.userHandle.byteLength) {
-      body.response.userHandle = bufToB64u(r.userHandle);
+      if (data.pairingCode) {
+        if (pairingSection) pairingSection.style.display = '';
+        if (pairingCode) pairingCode.textContent = data.pairingCode;
+      }
+      if (!data.qrCode && !data.pairingCode && !data.code) {
+        setStatus('⏳ Gerando códigos de conexão... aguarde alguns segundos.', '#8892b0');
+      } else {
+        setStatus('Escaneie o QR Code ou use o código de pareamento acima.', '#8892b0');
+      }
     }
-
-    const jsonStr = JSON.stringify(body);
-    console.log("%c🔑 SUCESSO! Copie o JSON abaixo e cole de volta na página do Bot:", "color: #1fa855; font-weight: bold; font-size: 14px;");
-    console.log(jsonStr);
-    try {
-      await navigator.clipboard.writeText(jsonStr);
-      console.log("%c📋 O JSON foi copiado automaticamente para a sua área de transferência!", "color: #3182ce; font-weight: bold;");
-    } catch (clipErr) {
-      console.log("Copie o JSON acima manualmente.");
+    function startSSE() {
+      if (eventSource) { eventSource.close(); }
+      eventSource = new EventSource('/qrcode-stream/'+botId);
+      eventSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (statusBox) statusBox.textContent = JSON.stringify(data, null, 2);
+          if (data.type === 'qr_update') { setBadge('connecting', 'Conectando — aguardando escaneamento'); applyConnectData(data); }
+          else if (data.type === 'connected') { setBadge('connected', 'Conectado!'); setStatus('✅ Conectado! Recarregando...', '#25d366'); setTimeout(() => window.location.reload(), 2000); }
+          else if (data.type === 'instance_deleted') { setBadge('noinstance', 'Instância removida'); setStatus('⚠️ Instância apagada após 15 min. Clique em Atualizar.', '#f59e42'); if (eventSource) { eventSource.close(); eventSource = null; } }
+          if (data.lastPasskeyRequest && !passkeyPrompted) renderPasskeySection(data.lastPasskeyRequest);
+        } catch(err) { console.error('[SSE] parse error', err); }
+      };
+      eventSource.onerror = () => { setStatus('⚠️ Conexão SSE perdida. Reconectando...', '#f59e42'); };
     }
-  } catch (err) {
-    console.error("❌ Erro ao obter credencial:", err);
-  }
-})()\`;
-            }
+    async function startConnect() {
+      const btn = document.getElementById('btn-start');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Iniciando...'; }
+      setStatus('<div class="spinner"></div> Criando instância...', '');
+      setBadge('connecting', 'Conectando...');
+      try {
+        const resp = await fetch('/qrcode-initconnect/'+botId);
+        const result = await resp.json();
+        if (statusBox) statusBox.textContent = JSON.stringify(result, null, 2);
+      } catch(e) {
+        setStatus('❌ Erro: ' + (e.message||'Erro desconhecido'), '#ff4d4d');
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Iniciar Conexão'; }
+        return;
+      }
+      startSSE();
+    }
+    async function doAction(url, label) {
+      if (!confirm('Tem certeza que deseja executar: ' + label + '?')) return;
+      if (statusBox) statusBox.textContent = 'Executando ' + label + '...';
+      try {
+        const resp = await fetch(url);
+        const result = await resp.json();
+        if (statusBox) statusBox.textContent = JSON.stringify(result, null, 2);
+        if (label === 'logout' || label === 'recriar') setTimeout(() => window.location.reload(), 2000);
+      } catch(e) { if (statusBox) statusBox.textContent = 'Erro: ' + e.message; }
+    }
+    function buildPasskeySnippet(ch) {
+      const cj = JSON.stringify(ch);
+      return '(async () => {\\n  const ch = '+cj+';\\n  function b(v){var s=String(v||"").replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u.buffer;}\\n  function a(buf){var u=new Uint8Array(buf),s="";for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s).replace(/\\\\+/g,"-").replace(/\\\\//g,"_").replace(/=/g,"");}\\n  const cred=await navigator.credentials.get({publicKey:{challenge:b(ch.challenge),timeout:ch.timeout||60000,rpId:ch.rpId||"whatsapp.com",allowCredentials:(ch.allowCredentials||[]).map(c=>({type:c.type||"public-key",id:b(c.id),transports:c.transports})),userVerification:ch.userVerification||"required"}});\\n  const r=cred.response,body={id:cred.id,rawId:a(cred.rawId),type:cred.type,response:{clientDataJSON:a(r.clientDataJSON),authenticatorData:a(r.authenticatorData),signature:a(r.signature)}};\\n  if(r.userHandle&&r.userHandle.byteLength)body.response.userHandle=a(r.userHandle);\\n  const j=JSON.stringify(body);console.log("%c🔑","color:#1fa855;font-weight:bold");console.log(j);\\n  try{await navigator.clipboard.writeText(j);}catch(e){}\\n})();';
+    }
+    function renderPasskeySection(challenge) {
+      if (!passkeyCont) return;
+      passkeyPrompted = true;
+      const snippet = buildPasskeySnippet(challenge);
+      passkeyCont.innerHTML = '<div class="passkey-box"><h3>🔑 Verificação de Passkey Necessária</h3><div class="passkey-step"><div class="step-label">PASSO 1</div><div class="step-body">Acesse <a href="https://web.whatsapp.com" target="_blank" style="color:#63b3ed">web.whatsapp.com</a></div></div><div class="passkey-step"><div class="step-label">PASSO 2 — Console (F12 → Console)</div></div><div class="passkey-step"><div class="step-label">PASSO 3 — Execute este código:</div><pre class="snippet" id="pk-snippet"></pre><button class="btn-secondary" style="font-size:0.7rem;padding:0.2rem 0.5rem;margin-top:0.3rem" onclick="navigator.clipboard.writeText(document.getElementById(&quot;pk-snippet&quot;).textContent)">📋 Copiar</button></div><div class="passkey-step"><div class="step-label">PASSO 4 — Cole o JSON:</div><textarea class="passkey-input" id="pk-input"></textarea></div><button class="btn-primary" style="width:100%;margin-top:0.5rem" onclick="submitPasskey()">✅ Enviar Passkey</button><div id="passkey-msg"></div></div>';
+      const el = document.getElementById('pk-snippet');
+      if (el) el.textContent = snippet;
+    }
+    async function submitPasskey() {
+      const ta = document.getElementById('pk-input'), msg = document.getElementById('passkey-msg');
+      if (!ta||!msg) return;
+      let parsed;
+      try { parsed = JSON.parse(ta.value.trim()); } catch(e) { msg.textContent='⚠️ JSON inválido.'; msg.style.color='#f59e42'; return; }
+      msg.textContent='Enviando...'; msg.style.color='#4f8ef7';
+      try {
+        const r = await fetch('/passkey/respond/'+botId, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parsed)});
+        const rj = await r.json();
+        if (r.ok) { msg.textContent='✅ Passkey enviada!'; msg.style.color='#25d366'; setTimeout(()=>window.location.reload(),3000); }
+        else { msg.textContent='❌ '+(rj.error||rj.message||'Erro'); msg.style.color='#ff4d4d'; }
+      } catch(e) { msg.textContent='❌ Rede: '+e.message; msg.style.color='#ff4d4d'; }
+    }
+    (function init() {
+      if (isConnected) { if (statusBox) statusBox.textContent = 'Bot conectado.'; return; }
+      if (!instanceExists) { if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI.'; return; }
+      startSSE();
+      fetch('/qrcode-initconnect/'+botId).then(r=>r.json()).then(d=>{ if (statusBox) statusBox.textContent = JSON.stringify(d, null, 2); }).catch(()=>{});
+    })();
+  </script>
+</body>
+</html>`;
 
-            async function submitPasskeyResponse() {
-              const textarea = document.getElementById('passkey-json-input');
-              const msgBox = document.getElementById('passkey-message');
-              const btn = document.getElementById('passkey-submit-btn');
-              if (!textarea || !msgBox) return;
-
-              const raw = textarea.value.trim();
-              if (!raw) {
-                msgBox.innerText = '⚠️ Cole o JSON gerado pelo console antes de enviar.';
-                msgBox.style.color = '#c05621';
-                return;
-              }
-
-              let parsed;
-              try {
-                parsed = JSON.parse(raw);
-              } catch(e) {
-                msgBox.innerText = '⚠️ O texto colado não é um JSON válido. Copie apenas o objeto JSON do console.';
-                msgBox.style.color = '#c05621';
-                return;
-              }
-
-              if (btn) btn.disabled = true;
-              msgBox.innerText = 'Enviando assinatura para o servidor...';
-              msgBox.style.color = '#3182ce';
-
-              try {
-                const res = await fetch(\`/passkey/respond/${botId}\`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(parsed)
-                });
-                const resJson = await res.json();
-                if (res.ok) {
-                  msgBox.innerText = '✅ Passkey enviada com sucesso! Aguardando confirmação do WhatsApp...';
-                  msgBox.style.color = 'green';
-                  setTimeout(() => window.location.reload(), 3000);
-                } else {
-                  msgBox.innerText = '❌ Erro ao enviar passkey: ' + (resJson.error || resJson.message || 'Erro desconhecido');
-                  msgBox.style.color = 'red';
-                  if (btn) btn.disabled = false;
-                }
-              } catch(e) {
-                msgBox.innerText = '❌ Erro de rede: ' + e.message;
-                msgBox.style.color = 'red';
-                if (btn) btn.disabled = false;
-              }
-            }
-
-            function copyToClipboard(text, btnEl) {
-              navigator.clipboard.writeText(text).then(() => {
-                const orig = btnEl.textContent;
-                btnEl.textContent = '✅ Copiado!';
-                setTimeout(() => { btnEl.textContent = orig; }, 2000);
-              });
-            }
-
-            async function checkStatus() {
-              try {
-                const response = await fetch(\`/qrcode-status/${botId}\`);
-                if (!response.ok) return;
-                const status = await response.json();
-
-                if (statusBox) {
-                  statusBox.textContent = JSON.stringify(status, null, '\\t');
-                }
-
-                if (status.extra?.ok) {
-                  window.location.reload();
-                  return;
-                }
-
-                const passkeyChallengeFromStatus = status.extra?.lastPasskeyRequest;
-                if (passkeyChallengeFromStatus) {
-                  currentPasskeyChallenge = passkeyChallengeFromStatus;
-                  
-                  let passkeyDiv = document.getElementById('passkey-section');
-                  if (!passkeyDiv) {
-                    passkeyDiv = document.createElement('div');
-                    passkeyDiv.id = 'passkey-section';
-                    const snippet = buildPasskeySnippet(currentPasskeyChallenge);
-                    passkeyDiv.innerHTML = \`
-                      <div style="margin: 1.5rem 0; padding: 1.5rem; border: 2px solid #ed8936; border-radius: 0.75rem; background-color: #fffaf0; text-align: left;">
-                        <h3 style="margin: 0 0 0.75rem 0; color: #c05621; font-size: 1.1rem; font-weight: 700; text-align: center;">🔑 Verificação de Passkey Necessária</h3>
-                        <p style="font-size: 0.9rem; color: #4a5568; margin: 0 0 1rem 0;">Sua conta do WhatsApp tem <strong>Passkey</strong> ativada. Para conectar o bot, siga os passos abaixo:</p>
-                        
-                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 1 — Abra o WhatsApp Web</p>
-                          <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Abra <a href="https://web.whatsapp.com" target="_blank" style="color:#63b3ed;">web.whatsapp.com</a> em uma nova aba (não precisa estar logado).</p>
-                        </div>
-
-                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 2 — Abra o Console do Navegador</p>
-                          <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Pressione <kbd style="background:#4a5568;padding:0.15rem 0.4rem;border-radius:0.25rem;font-family:monospace;">F12</kbd> (ou clique com o botão direito → Inspecionar) e vá na aba <strong style="color:#fbd38d;">Console</strong>.</p>
-                        </div>
-
-                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.5rem;">
-                          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-                            <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
-                            <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
-                          </div>
-                          <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">\${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
-                        </div>
-                        <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
-
-                        <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                          <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 4 — Cole o JSON resultante aqui:</p>
-                          <textarea id="passkey-json-input" placeholder='Cole aqui o objeto JSON exibido no console...' style="width:100%;height:100px;background:#1a202c;color:#e2e8f0;border:1px solid #4a5568;border-radius:0.375rem;padding:0.5rem;font-family:monospace;font-size:0.78rem;resize:vertical;box-sizing:border-box;"></textarea>
-                        </div>
-
-                        <button id="passkey-submit-btn" onclick="submitPasskeyResponse()" style="width:100%;background:#48bb78;color:white;border:none;border-radius:0.375rem;padding:0.75rem;font-size:1rem;font-weight:700;cursor:pointer;">✅ Enviar Resposta da Passkey</button>
-                        <div id="passkey-message" style="margin-top:0.75rem;font-weight:bold;font-size:0.9rem;text-align:center;"></div>
-                      </div>
-                    \`;
-                    
-                    const qrH2 = container.querySelector('h2');
-                    if (qrH2) {
-                      container.insertBefore(passkeyDiv, qrH2);
-                    } else {
-                      container.appendChild(passkeyDiv);
-                    }
-                  }
-                }
-
-                const connectData = status.extra?.connectData;
-                if (connectData) {
-                  const qrImg = container.querySelector('img');
-                  // Atualiza QR: usa base64 diretamente se disponível, senão busca arquivo do servidor
-                  if (qrImg) {
-                    if (connectData.qrCode) {
-                      qrImg.src = connectData.qrCode;
-                    } else if (connectData.code && connectData.code.length > 200) {
-                      qrImg.src = \`/qrimg/${botId}?t=\` + Date.now();
-                    }
-                  }
-                  
-                  const pairingPre = container.querySelector('pre');
-                  if (pairingPre) {
-                    if (!connectData.qrCode && !connectData.pairingCode && !connectData.code) {
-                      // Conectando
-                      pairingPre.textContent = "Gerando códigos de conexão...\\nPor favor, aguarde de 5 a 10 segundos.";
-                      pairingPre.style = "text-align: center; font-size: 11pt; color: #718096; padding: 1rem; line-height: 1.4;";
-                    } else if (connectData.pairingCode) {
-                      pairingPre.textContent = connectData.pairingCode.split("] ").join("]");
-                      pairingPre.style = "text-align: center; font-size: 35pt;";
-                    } else {
-                      // QR Code existe mas pairing code veio vazio -> Rate Limit
-                      pairingPre.textContent = "WhatsApp limitou a geração de códigos temporariamente (Rate Limit 429).\\nPor favor, utilize o QR Code acima para conectar.";
-                      pairingPre.style = "text-align: center; font-size: 11pt; color: #e53e3e; padding: 1rem; line-height: 1.4;";
-                    }
-                  }
-                }
-
-              } catch (err) {
-                console.error('Erro ao verificar status:', err);
-              }
-            }
-
-            setInterval(checkStatus, 3000);
-
-            if (currentPasskeyChallenge) {
-              // Se já há um desafio ao carregar a página, exibe o bloco de instruções imediatamente
-              const snippet = buildPasskeySnippet(currentPasskeyChallenge);
-              const passkeyDiv = document.createElement('div');
-              passkeyDiv.id = 'passkey-section';
-              passkeyDiv.innerHTML = \`
-                <div style="margin: 1.5rem 0; padding: 1.5rem; border: 2px solid #ed8936; border-radius: 0.75rem; background-color: #fffaf0; text-align: left;">
-                  <h3 style="margin: 0 0 0.75rem 0; color: #c05621; font-size: 1.1rem; font-weight: 700; text-align: center;">🔑 Verificação de Passkey Necessária</h3>
-                  <p style="font-size: 0.9rem; color: #4a5568; margin: 0 0 1rem 0;">Sua conta do WhatsApp tem <strong>Passkey</strong> ativada. Para conectar o bot, siga os passos abaixo:</p>
-                  
-                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 1 — Abra o WhatsApp Web</p>
-                    <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Abra <a href="https://web.whatsapp.com" target="_blank" style="color:#63b3ed;">web.whatsapp.com</a> em uma nova aba (não precisa estar logado).</p>
-                  </div>
-
-                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 2 — Abra o Console do Navegador</p>
-                    <p style="color:#e2e8f0; font-size:0.85rem; margin:0;">Pressione <kbd style="background:#4a5568;padding:0.15rem 0.4rem;border-radius:0.25rem;font-family:monospace;">F12</kbd> (ou clique com o botão direito → Inspecionar) e vá na aba <strong style="color:#fbd38d;">Console</strong>.</p>
-                  </div>
-
-                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.5rem;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-                      <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0;">PASSO 3 — Cole e execute este código no console:</p>
-                      <button id="copy-snippet-btn" onclick="copyToClipboard(document.getElementById('passkey-snippet').textContent, this)" style="background:#4a5568;color:#e2e8f0;border:none;border-radius:0.25rem;padding:0.2rem 0.6rem;font-size:0.75rem;cursor:pointer;">📋 Copiar</button>
-                    </div>
-                    <pre id="passkey-snippet" style="background:#1a202c;color:#68d391;padding:0.75rem;border-radius:0.375rem;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">\${snippet.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
-                  </div>
-                  <p style="color:#718096; font-size:0.8rem; margin:0 0 1rem 0; text-align:center;">O navegador vai pedir sua biometria (Touch ID, Face ID ou PIN). Depois, o console exibirá um objeto JSON.</p>
-
-                  <div style="background:#2d3748; border-radius:0.5rem; padding:0.75rem 1rem; margin-bottom:0.75rem;">
-                    <p style="color:#f6e05e; font-size:0.8rem; font-weight:600; margin:0 0 0.4rem 0;">PASSO 4 — Cole o JSON resultante aqui:</p>
-                    <textarea id="passkey-json-input" placeholder='Cole aqui o objeto JSON exibido no console...' style="width:100%;height:100px;background:#1a202c;color:#e2e8f0;border:1px solid #4a5568;border-radius:0.375rem;padding:0.5rem;font-family:monospace;font-size:0.78rem;resize:vertical;box-sizing:border-box;"></textarea>
-                  </div>
-
-                  <button id="passkey-submit-btn" onclick="submitPasskeyResponse()" style="width:100%;background:#48bb78;color:white;border:none;border-radius:0.375rem;padding:0.75rem;font-size:1rem;font-weight:700;cursor:pointer;">✅ Enviar Resposta da Passkey</button>
-                  <div id="passkey-message" style="margin-top:0.75rem;font-weight:bold;font-size:0.9rem;text-align:center;"></div>
-                </div>
-              \`;
-              const qrH2 = container.querySelector('h2');
-              if (qrH2) container.insertBefore(passkeyDiv, qrH2);
-              else container.appendChild(passkeyDiv);
-            }
-          </script>
-        </body>
-        </html>
-      `;
 			res.send(htmlResponse);
 		});
 

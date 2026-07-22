@@ -393,6 +393,15 @@ class Database {
 		return this.coreRepo.saveGroup(group);
 	}
 
+	/**
+	 * Lightweight update: persists only the `interact` field of a group.
+	 * Synchronous under the hood (better-sqlite3).
+	 */
+	updateGroupInteract(groupId, interact) {
+		if (this.testMode) return true;
+		return this.coreRepo.updateGroupInteract(groupId, interact);
+	}
+
 	// --- Custom Commands ---
 
 	async getCustomCommands(groupId) {

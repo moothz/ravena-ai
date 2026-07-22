@@ -133,6 +133,13 @@ class WhatsAppBotGo {
 		this.lastMessageReceived = 0;
 		this.startupTime = 0;
 
+		// Controle de desconexão
+		this.disconnectedAt = null;
+		this._disconnectTimer = null;
+
+		// SSE clients para streaming de QR code/pairing code na página /qrcode/:botId
+		this.qrSseClients = [];
+
 		this.loadReport = new LoadReport(this);
 		this.inviteSystem = new InviteSystem(this);
 		this.reactionHandler = new ReactionsHandler();
@@ -1490,6 +1497,12 @@ class WhatsAppBotGo {
 		}
 	}
 	async _onInstanceConnected() {
+		if (this._disconnectTimer) {
+			clearTimeout(this._disconnectTimer);
+			this._disconnectTimer = null;
+		}
+		this.disconnectedAt = null;
+
 		if (this.streamSystem) {
 			this.streamSystem.initialize();
 			this.streamMonitor = this.streamSystem.streamMonitor;
@@ -1501,6 +1514,8 @@ class WhatsAppBotGo {
 		if (this.isConnected) return;
 		this.isConnected = true;
 		this.logger.info(`[${this.id}] Successfully connected to WhatsApp via WhatsgoGO API.`);
+		this.broadcastQRUpdate({ type: "connected", botId: this.id });
+
 		if (this.eventHandler && typeof this.eventHandler.onConnected === "function") {
 			this.eventHandler.onConnected(this);
 		}
@@ -1509,11 +1524,62 @@ class WhatsAppBotGo {
 	_onInstanceDisconnected(reason = "Unknown") {
 		if (!this.isConnected && reason !== "INITIALIZING") return;
 		this.isConnected = false;
+		this.disconnectedAt = Date.now();
 		this.logger.info(`[${this.id}] Disconnected from WhatsApp. Reason: ${reason}`);
 		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
 			this.eventHandler.onDisconnected(this, reason);
 		}
-		setTimeout(() => this._checkInstanceStatusAndConnect(), 30000);
+
+		// Limpar timer anterior se existir
+		if (this._disconnectTimer) {
+			clearTimeout(this._disconnectTimer);
+			this._disconnectTimer = null;
+		}
+
+		// Após 15 minutos desconectado, apagar a instância (sem recriar)
+		// O fluxo de conexão só é iniciado quando a página /qrcode/:botId é aberta
+		const DISCONNECT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
+		this._disconnectTimer = setTimeout(async () => {
+			try {
+				this.logger.info(`[${this.id}] 15 minutos desconectado. Apagando instância...`);
+				await this.deleteInstance();
+				this.connectDataCache = null;
+				this._disconnectTimer = null;
+				this.logger.info(`[${this.id}] Instância apagada após timeout de desconexão.`);
+				// Notificar clientes SSE
+				this.broadcastQRUpdate({ type: "instance_deleted", botId: this.id });
+			} catch (err) {
+				this.logger.error(`[${this.id}] Erro ao apagar instância após timeout:`, err);
+			}
+		}, DISCONNECT_TIMEOUT_MS);
+	}
+
+	/**
+	 * Transmite atualização de QR code / pairing code para clientes SSE da página de conexão
+	 */
+	broadcastQRUpdate(data) {
+		const payload = `data: ${JSON.stringify(data)}\n\n`;
+		this.qrSseClients.forEach((res) => {
+			try {
+				res.write(payload);
+			} catch (e) {
+				/* ignore */
+			}
+		});
+	}
+
+	/**
+	 * Adiciona cliente SSE para receber atualizações de QR code
+	 */
+	addQRSseClient(res) {
+		this.qrSseClients.push(res);
+	}
+
+	/**
+	 * Remove cliente SSE da lista
+	 */
+	removeQRSseClient(res) {
+		this.qrSseClients = this.qrSseClients.filter((c) => c !== res);
 	}
 
 	async _handleWebhook(req, res) {
@@ -1741,6 +1807,15 @@ class WhatsAppBotGo {
 								this.logger.warn(`[${this.id}] Falha ao salvar QRCode PNG:`, qrSaveErr);
 							}
 						}
+
+						// Transmitir atualização via SSE para clientes da página /qrcode/:botId
+						this.broadcastQRUpdate({
+							type: "qr_update",
+							qrCode: qrCodeBase64,
+							code: qrCode,
+							count: qrData.count,
+							maxCount: qrData.maxCount
+						});
 					}
 					break;
 				}
@@ -1755,6 +1830,7 @@ class WhatsAppBotGo {
 					this.logger.info(
 						`[${this.id}] Evento de conexão bem sucedida recebido via webhook (Connected).`
 					);
+					this._onInstanceConnected();
 					break;
 				}
 
@@ -1764,6 +1840,7 @@ class WhatsAppBotGo {
 					this.logger.warn(
 						`[${this.id}] Evento de desconexão recebido via webhook (${payload.event}). Razão: ${reason}`
 					);
+					this._onInstanceDisconnected(reason);
 					break;
 				}
 

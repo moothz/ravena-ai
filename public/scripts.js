@@ -574,7 +574,12 @@ function renderBotCard(botContainer, data, bot){
             </div>`;
     }
     
-    let divMsgs = `<div class="detail-item"><span class="detail-label label-desconectado">Desconectado</span></div>`;
+    let divMsgs = `<div class="detail-item"><span class="detail-label label-desconectado">⚠️ Desconectado</span></div>`;
+    if(!bot.connected && !bot.banido && isAdminMode){
+        divMsgs += `<div class="detail-item" style="justify-content:center">
+            <a href="/qrcode/${bot.id}" target="_blank" style="font-size:0.8rem;color:#4f8ef7;text-decoration:none;padding:0.3rem 0.8rem;border:1px solid #4f8ef7;border-radius:0.4rem;display:inline-block">🔗 Reconectar</a>
+        </div>`;
+    }
     if(bot.banido){
         divMsgs = `<div class="detail-item"><span class="detail-label label-banida">BANIDA</span></div>`;
     }

@@ -1882,9 +1882,9 @@ class CommandHandler {
 					//this.logger.debug(`Verificação de interação automática: ${randomValue} <= ${interactionChance}`);
 
 					if (randomValue <= interactionChance) {
-						// Atualiza último tempo de interação
+						// Atualiza último tempo de interação (em memória e no banco)
 						group.interact.lastInteraction = now;
-						//this.database.saveGroup(group);
+						this.database.updateGroupInteract(group.id, group.interact);
 
 						const autoCommands = group.interact.useCmds
 							? customCommandsProcessar.filter(
