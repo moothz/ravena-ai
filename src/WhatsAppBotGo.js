@@ -1353,16 +1353,34 @@ class WhatsAppBotGo {
 			} catch (e) {
 				if (e && e.status === 401) {
 					this.isConnected = false;
-					return {
-						instanceDetails: { version: this.version, tipo: "whatsgoapi" },
-						extra: { connectData: this.connectDataCache?.data || {} }
-					};
+					if (forceConnect) {
+						this.logger.info(
+							`[${this.id}] Instância não existe na WhatsGoAPI (401). Criando instância automaticamente...`
+						);
+						try {
+							await this.createInstance();
+							await this.instanceAdvSettings();
+							response = await this.apiClient.get(`/instance/status`);
+						} catch (createErr) {
+							this.logger.error(`[${this.id}] Erro ao criar instância automaticamente:`, createErr);
+							return {
+								instanceDetails: { version: this.version, tipo: "whatsgoapi" },
+								extra: { connectData: this.connectDataCache?.data || {}, error: createErr.message }
+							};
+						}
+					} else {
+						return {
+							instanceDetails: { version: this.version, tipo: "whatsgoapi" },
+							extra: { connectData: this.connectDataCache?.data || {} }
+						};
+					}
+				} else {
+					this.logger.error(
+						`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`,
+						e
+					);
+					response = { data: { Connected: false, LoggedIn: false } };
 				}
-				this.logger.error(
-					`[_checkInstanceStatusAndConnect] Erro buscando status de ${this.instanceName}`,
-					e
-				);
-				response = { data: { Connected: false, LoggedIn: false } };
 			}
 
 			const statusData = response?.data;
@@ -1412,7 +1430,7 @@ class WhatsAppBotGo {
 								if (!wsConnected) {
 									// WS não estabelecido: precisa conectar primeiro
 									this.logger.info(`[${this.id}] WS desconectado. Chamando /instance/connect...`);
-									const connectResponse = await this.apiClient.post(
+									let connectResponse = await this.apiClient.post(
 										`/instance/connect`,
 										{
 											webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
@@ -1435,9 +1453,41 @@ class WhatsAppBotGo {
 									);
 
 									if (connectResponse.message !== "success") {
-										this.logger.warn(`[${this.id}] Connect retornou: ${connectResponse.message}`);
-										this.connectDataCache = null;
-										return;
+										this.logger.warn(
+											`[${this.id}] Connect retornou: ${connectResponse.message}. Tentando criar instância...`
+										);
+										try {
+											await this.createInstance();
+											await this.instanceAdvSettings();
+											connectResponse = await this.apiClient.post(
+												`/instance/connect`,
+												{
+													webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
+													subscribe: [
+														"MESSAGE",
+														"SEND_MESSAGE",
+														"READ_RECEIPT",
+														"PRESENCE",
+														"CHAT_PRESENCE",
+														"CALL",
+														"CONNECTION",
+														"LABEL",
+														"CONTACT",
+														"GROUP",
+														"NEWSLETTER",
+														"QRCODE"
+													]
+												},
+												false
+											);
+										} catch (errCreate) {
+											this.logger.error(
+												`[${this.id}] Erro criando instância no connect retry:`,
+												errCreate
+											);
+											this.connectDataCache = null;
+											return;
+										}
 									}
 
 									// Aguarda o WS do WA inicializar antes de pedir pair

@@ -2449,11 +2449,24 @@ class BotAPI {
       `
 					: !instanceExists
 						? `
-      <div class="info-row">⏳ <div><strong>Aguardando criação da instância na WhatsGoAPI</strong><br>A instância ainda não existe. Clique em "Iniciar Conexão" para criar e conectar.</div></div>
-      <div id="status-msg">Pronto para iniciar</div>
+      <div class="info-row">⏳ <div><strong>Instância não encontrada na WhatsGoAPI</strong><br>A instância do bot ainda não foi criada. Clique em "Criar Instância" para gerar a sessão e os códigos de conexão.</div></div>
+      <div id="connect-area">
+        <div id="status-msg">Pronto para criar a instância</div>
+        <div class="qr-section" id="qr-section" style="display:none">
+          <h2>📷 QR Code</h2>
+          <img id="qr-img" src="" alt="QR Code" />
+          <div class="qr-count" id="qr-count"></div>
+        </div>
+        <div class="pairing-section" id="pairing-section" style="display:none">
+          <h2>🔑 Código de Pareamento</h2>
+          <div id="pairing-code">—</div>
+        </div>
+        <div id="passkey-container"></div>
+      </div>
       <div class="btn-row">
-        <button class="btn-primary" id="btn-start" onclick="startConnect()">⚡ Iniciar Conexão</button>
+        <button class="btn-primary" id="btn-start" onclick="startConnect()">➕ Criar Instância</button>
         <button class="btn-secondary" onclick="window.location.reload()">🔄 Atualizar</button>
+        <button class="btn-warn" onclick="doAction('/recreate/${botId}', 'recriar')">♻️ Recriar</button>
       </div>
       `
 						: `
@@ -2568,8 +2581,8 @@ class BotAPI {
     }
     async function startConnect() {
       const btn = document.getElementById('btn-start');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Iniciando...'; }
-      setStatus('<div class="spinner"></div> Criando instância...', '');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Criando instância...'; }
+      setStatus('<div class="spinner"></div> Criando instância e iniciando conexão...', '');
       setBadge('connecting', 'Conectando...');
       try {
         const resp = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
@@ -2578,7 +2591,7 @@ class BotAPI {
         if (result && result.extra && result.extra.connectData) { applyConnectData(result.extra.connectData); }
       } catch(e) {
         setStatus('❌ Erro: ' + (e.message||'Erro desconhecido'), '#ff4d4d');
-        if (btn) { btn.disabled = false; btn.textContent = '⚡ Iniciar Conexão'; }
+        if (btn) { btn.disabled = false; btn.textContent = '➕ Criar Instância'; }
         return;
       }
       startSSE();
@@ -2621,7 +2634,7 @@ class BotAPI {
     }
     (function init() {
       if (isConnected) { if (statusBox) statusBox.textContent = 'Bot conectado.'; return; }
-      if (!instanceExists) { if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI.'; return; }
+      if (!instanceExists) { if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI. Clique em "Criar Instância" para criar.'; return; }
       startSSE();
       setInterval(checkStatus, 4000);
       fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' }).then(r=>r.json()).then(d=>{
