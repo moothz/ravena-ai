@@ -190,6 +190,18 @@ class BotAPI {
 			const whatsgoUrl = process.env.WHATS_GO_API_URL || "http://whatsgoapi:8080";
 			const whatsgoUp = await checkUrl(`${whatsgoUrl}/server/ok`);
 			services.whatsgoapi = whatsgoUp ? "up" : "down";
+
+			if (whatsgoUp && this.bots && Array.isArray(this.bots)) {
+				for (const bot of this.bots) {
+					if (typeof bot._checkInstanceStatusAndConnect === "function") {
+						try {
+							await bot._checkInstanceStatusAndConnect(true, false);
+						} catch (err) {
+							// Ignora erro no check silencioso
+						}
+					}
+				}
+			}
 		} catch (e) {
 			services.whatsgoapi = "down";
 		}

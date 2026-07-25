@@ -281,10 +281,12 @@ class WhatsAppBotGo {
 
 	async logout() {
 		this.logger.info(`[logout] Logging out instance ${this.instanceName}`);
+		this._onInstanceDisconnected("Logout");
 		return await this.apiClient.delete("/instance/logout", {}, false);
 	}
 
 	async deleteInstance() {
+		this._onInstanceDisconnected("DeleteInstance");
 		// Precisa pegar O ID da instancia, que só vem no /all
 		const instanceToDelete = await this.getGoInstance(this.instanceName);
 		this.logger.info(`[deleteInstance] Deleting instance ${this.instanceName}`, {
@@ -1384,7 +1386,13 @@ class WhatsAppBotGo {
 				return { instanceDetails, extra };
 			}
 
-			// Não logado — busca QR/pairing code se cache expirou
+			// Se forceConnect for false, apenas retorna o status sem solicitar QR / pairing code
+			if (!forceConnect) {
+				extra.connectData = this.connectDataCache?.data || {};
+				return { instanceDetails, extra };
+			}
+
+			// Não logado — busca QR/pairing code se cache expirou e forceConnect for true
 			{
 				const now = Date.now();
 				const cacheValid = this.connectDataCache && now - this.connectDataCache.timestamp < 55000;
@@ -1583,9 +1591,6 @@ class WhatsAppBotGo {
 	}
 
 	async _handleWebhook(req, res) {
-		// Evitar um bugzinho
-		this.isConnected = true;
-
 		const payload = req.body;
 		// V3 Payload structure: { event: "Message", instance: "...", data: { ... } }
 
@@ -1606,6 +1611,7 @@ class WhatsAppBotGo {
 
 				case "Message": // Mensagens e reactions
 				case "SendMessage": {
+					this.isConnected = true;
 					this.lastMessageReceived = Date.now();
 					const msgData = payload.data;
 
@@ -1774,6 +1780,7 @@ class WhatsAppBotGo {
 				}
 				case "QRCode": {
 					// Atualiza o cache local com o QRCode mais recente recebido via webhook
+					this.isConnected = false;
 					const qrData = payload.data;
 					if (qrData) {
 						const qrCodeBase64 = qrData.qrcode || ""; // data:image/png;base64,...
@@ -1846,6 +1853,7 @@ class WhatsAppBotGo {
 
 				case "LoggedOut": {
 					this.logger.warn(`[${this.id}] Evento LoggedOut recebido via webhook.`);
+					this._onInstanceDisconnected("LoggedOut");
 					break;
 				}
 
