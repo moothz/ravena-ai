@@ -2529,7 +2529,21 @@ class BotAPI {
       const pulse = type !== 'connected' ? ' pulse' : '';
       badgeCont.innerHTML = '<div class="status-badge '+cls+'"><span class="dot'+pulse+'"></span> '+label+'</div>';
     }
+    function updateButtonsForExistingInstance() {
+      const btnStart = document.getElementById('btn-start');
+      if (btnStart) {
+        const btnRow = btnStart.parentElement;
+        if (btnRow) {
+          btnRow.innerHTML = '<button class="btn-secondary" onclick="window.location.reload()">🔄 Atualizar</button>' +
+            '<button class="btn-danger" onclick="doAction(&quot;/logout/' + botId + '&quot;, &quot;logout&quot;)">🚪 Logout</button>' +
+            '<button class="btn-warn" onclick="doAction(&quot;/recreate/' + botId + '&quot;, &quot;recriar&quot;)">♻️ Recriar</button>';
+        }
+      }
+    }
     function applyConnectData(data) {
+      if (data && (data.qrCode || data.pairingCode || data.code)) {
+        updateButtonsForExistingInstance();
+      }
       if (data.qrCode) {
         if (qrSection) qrSection.style.display = '';
         if (qrImg) { qrImg.classList.add('refreshing'); setTimeout(() => { qrImg.src = data.qrCode; qrImg.classList.remove('refreshing'); }, 100); }
@@ -2588,6 +2602,7 @@ class BotAPI {
         const resp = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const result = await resp.json();
         if (statusBox) statusBox.textContent = JSON.stringify(result, null, 2);
+        updateButtonsForExistingInstance();
         if (result && result.extra && result.extra.connectData) { applyConnectData(result.extra.connectData); }
       } catch(e) {
         setStatus('❌ Erro: ' + (e.message||'Erro desconhecido'), '#ff4d4d');
