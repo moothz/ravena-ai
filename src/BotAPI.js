@@ -385,8 +385,14 @@ class BotAPI {
 				}
 			}
 
-			// Verifica se os cabeçalhos de autenticação existem
-			const authHeader = req.headers.authorization;
+			// Verifica se os cabeçalhos ou parâmetro de consulta existem
+			let authHeader = req.headers.authorization;
+			if (!authHeader && req.query.auth) {
+				authHeader = req.query.auth.startsWith("Basic ")
+					? req.query.auth
+					: "Basic " + req.query.auth;
+			}
+
 			if (!authHeader) {
 				res.set("WWW-Authenticate", 'Basic realm="RavenaBot API"');
 				return res.status(401).json({
@@ -2326,6 +2332,15 @@ class BotAPI {
 				second: "2-digit"
 			});
 
+			// Obter credenciais basic auth para passar aos endpoints cliente JS
+			let user = this.apiUser;
+			let pass = this.apiPassword;
+			if (bot.managementUser && bot.managementPW) {
+				user = bot.managementUser;
+				pass = bot.managementPW;
+			}
+			const authRaw = Buffer.from(`${user}:${pass}`).toString("base64");
+
 			// Verifica se já está conectado
 			const isConnected = bot.isConnected;
 
@@ -2466,7 +2481,7 @@ class BotAPI {
     </div>
 
     <hr class="divider">
-    <details class="raw-section">
+    <details class="raw-section" open>
       <summary>🔧 Status técnico (raw)</summary>
       <pre id="status-box">Carregando...</pre>
     </details>
@@ -2474,6 +2489,8 @@ class BotAPI {
 
   <script>
     const botId = ${JSON.stringify(botId)};
+    const authRaw = ${JSON.stringify(authRaw)};
+    const authQuery = '?auth=' + encodeURIComponent(authRaw);
     const isConnected = ${isConnected};
     const instanceExists = ${instanceExists};
     const statusMsg = document.getElementById('status-msg');
@@ -2517,18 +2534,37 @@ class BotAPI {
     }
     function startSSE() {
       if (eventSource) { eventSource.close(); }
-      eventSource = new EventSource('/qrcode-stream/'+botId);
+      eventSource = new EventSource('/qrcode-stream/' + botId + authQuery);
       eventSource.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
           if (statusBox) statusBox.textContent = JSON.stringify(data, null, 2);
           if (data.type === 'qr_update') { setBadge('connecting', 'Conectando — aguardando escaneamento'); applyConnectData(data); }
-          else if (data.type === 'connected') { setBadge('connected', 'Conectado!'); setStatus('✅ Conectado! Recarregando...', '#25d366'); setTimeout(() => window.location.reload(), 2000); }
+          else if (data.type === 'connected') { setBadge('connected', 'Conectado!'); setStatus('✅ Conectado com sucesso ao WhatsApp! Recarregando...', '#25d366'); setTimeout(() => window.location.reload(), 2000); }
           else if (data.type === 'instance_deleted') { setBadge('noinstance', 'Instância removida'); setStatus('⚠️ Instância apagada após 15 min. Clique em Atualizar.', '#f59e42'); if (eventSource) { eventSource.close(); eventSource = null; } }
           if (data.lastPasskeyRequest && !passkeyPrompted) renderPasskeySection(data.lastPasskeyRequest);
         } catch(err) { console.error('[SSE] parse error', err); }
       };
       eventSource.onerror = () => { setStatus('⚠️ Conexão SSE perdida. Reconectando...', '#f59e42'); };
+    }
+    async function checkStatus() {
+      try {
+        const resp = await fetch('/qrcode-status/' + botId + authQuery, { credentials: 'same-origin' });
+        if (!resp.ok) return;
+        const status = await resp.json();
+        if (statusBox && status) statusBox.textContent = JSON.stringify(status, null, 2);
+
+        if (status.extra?.ok || status.isConnected) {
+          setBadge('connected', 'Conectado!');
+          setStatus('✅ Conectado com sucesso ao WhatsApp! Recarregando página em 2 segundos...', '#25d366');
+          setTimeout(() => window.location.reload(), 2000);
+          return;
+        }
+
+        if (status.extra?.connectData) {
+          applyConnectData(status.extra.connectData);
+        }
+      } catch(e) {}
     }
     async function startConnect() {
       const btn = document.getElementById('btn-start');
@@ -2536,9 +2572,10 @@ class BotAPI {
       setStatus('<div class="spinner"></div> Criando instância...', '');
       setBadge('connecting', 'Conectando...');
       try {
-        const resp = await fetch('/qrcode-initconnect/'+botId);
+        const resp = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const result = await resp.json();
         if (statusBox) statusBox.textContent = JSON.stringify(result, null, 2);
+        if (result && result.extra && result.extra.connectData) { applyConnectData(result.extra.connectData); }
       } catch(e) {
         setStatus('❌ Erro: ' + (e.message||'Erro desconhecido'), '#ff4d4d');
         if (btn) { btn.disabled = false; btn.textContent = '⚡ Iniciar Conexão'; }
@@ -2550,7 +2587,8 @@ class BotAPI {
       if (!confirm('Tem certeza que deseja executar: ' + label + '?')) return;
       if (statusBox) statusBox.textContent = 'Executando ' + label + '...';
       try {
-        const resp = await fetch(url);
+        const finalUrl = url + (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(authRaw);
+        const resp = await fetch(finalUrl, { credentials: 'same-origin' });
         const result = await resp.json();
         if (statusBox) statusBox.textContent = JSON.stringify(result, null, 2);
         if (label === 'logout' || label === 'recriar') setTimeout(() => window.location.reload(), 2000);
@@ -2575,7 +2613,7 @@ class BotAPI {
       try { parsed = JSON.parse(ta.value.trim()); } catch(e) { msg.textContent='⚠️ JSON inválido.'; msg.style.color='#f59e42'; return; }
       msg.textContent='Enviando...'; msg.style.color='#4f8ef7';
       try {
-        const r = await fetch('/passkey/respond/'+botId, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parsed)});
+        const r = await fetch('/passkey/respond/' + botId + authQuery, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parsed)});
         const rj = await r.json();
         if (r.ok) { msg.textContent='✅ Passkey enviada!'; msg.style.color='#25d366'; setTimeout(()=>window.location.reload(),3000); }
         else { msg.textContent='❌ '+(rj.error||rj.message||'Erro'); msg.style.color='#ff4d4d'; }
@@ -2585,7 +2623,11 @@ class BotAPI {
       if (isConnected) { if (statusBox) statusBox.textContent = 'Bot conectado.'; return; }
       if (!instanceExists) { if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI.'; return; }
       startSSE();
-      fetch('/qrcode-initconnect/'+botId).then(r=>r.json()).then(d=>{ if (statusBox) statusBox.textContent = JSON.stringify(d, null, 2); }).catch(()=>{});
+      setInterval(checkStatus, 4000);
+      fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' }).then(r=>r.json()).then(d=>{
+        if (statusBox) statusBox.textContent = JSON.stringify(d, null, 2);
+        if (d && d.extra && d.extra.connectData) { applyConnectData(d.extra.connectData); }
+      }).catch(()=>{});
     })();
   </script>
 </body>
