@@ -148,6 +148,7 @@ services:
     image: alpine:3.20
     container_name: health-check
     restart: unless-stopped
+    pid: host
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -164,8 +165,9 @@ services:
       - ./check-health.sh:/check-health.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
+      - ./:/app:ro
     entrypoint: >
-      sh -c "apk add --no-cache curl jq docker-cli && sh /check-health.sh"
+      sh -c "apk add --no-cache curl jq docker-cli procps && sh /check-health.sh"
     depends_on:
       - whatsgoapi
       - ravena-ai
