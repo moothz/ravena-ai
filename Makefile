@@ -1,4 +1,4 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
@@ -100,6 +100,16 @@ restart-rembg: ## Reinicia apenas o serviço rembg
 
 restart-health: ## Reinicia apenas o monitor de saúde
 	docker compose restart health-check
+
+skip-check: ## Alterna (liga/desliga) a pausa da verificação de saúde do health-check
+	@if [ -f SKIP_HEALTH_CHECK ]; then \
+		rm -f SKIP_HEALTH_CHECK; \
+		printf "$(GREEN)✅ SKIP_HEALTH_CHECK removido. Verificação de saúde ATIVADA.$(NC)\n"; \
+	else \
+		touch SKIP_HEALTH_CHECK; \
+		printf "$(YELLOW)⏸️  SKIP_HEALTH_CHECK criado. Verificação de saúde PAUSADA.$(NC)\n"; \
+	fi
+
 
 ravena-ai: ## Faz build e recarrega o código do bot ravena-ai
 	@mkdir -p data && echo "Atualizando código e reiniciando o bot..." > data/status_motivo.txt
