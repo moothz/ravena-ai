@@ -31,6 +31,10 @@ MAX_RETRIES=3
 WHATSGO_FAIL_COUNT=0
 RAVENA_FAIL_COUNT=0
 
+# RAM Alert state tracking
+LAST_RAM_WARN_TIME=0
+RAM_WARN_INTERVAL=900  # 15 minutes cooldown for >80% warning alerts
+
 # --- HELPER FUNCTIONS ---
 
 send_telegram() {
@@ -56,12 +60,72 @@ restart_container() {
     docker restart "${container}"
 }
 
+restart_stack() {
+    reason="$1"
+    echo "[health-check] Restarting full ravena-ai stack (Reason: ${reason})"
+    if [ -d "/data" ] && [ -n "${reason}" ]; then
+        echo "${reason}" > /data/status_motivo.txt
+    fi
+
+    # Discover compose project name or fallback to ravena-ai
+    PROJECT_NAME=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$HOSTNAME" 2>/dev/null)
+    PROJECT_NAME="${PROJECT_NAME:-ravena-ai}"
+
+    # Get all containers in the stack except health-check itself
+    STACK_CONTAINERS=$(docker ps --filter "label=com.docker.compose.project=${PROJECT_NAME}" --format "{{.Names}}" | grep -v "^health-check$")
+
+    if [ -n "${STACK_CONTAINERS}" ]; then
+        echo "[health-check] Restarting stack containers: ${STACK_CONTAINERS}"
+        docker restart ${STACK_CONTAINERS}
+    else
+        echo "[health-check] Fallback: Restarting main containers ${WHATSGOAPI_CONTAINER} and ${RAVENA_CONTAINER}"
+        docker restart "${WHATSGOAPI_CONTAINER}" "${RAVENA_CONTAINER}"
+    fi
+}
+
 get_ravena_logs() {
     # Get last 50 lines of ravena-ai container logs
     LOGS=$(docker logs --tail 50 "${RAVENA_CONTAINER}" 2>&1)
     if [ -n "$LOGS" ]; then
         LOGS_ESCAPED=$(printf "%s\n" "$LOGS" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | awk '{printf "%s%%0A", $0}')
         echo "%0A%0A<b>Last 50 logs of ${RAVENA_CONTAINER}:</b>%0A<pre><code>${LOGS_ESCAPED}</code></pre>"
+    fi
+}
+
+get_top_ram_processes() {
+    TOP_PROCS=""
+    if command -v ps >/dev/null 2>&1; then
+        TOP_PROCS=$(ps -eo rss,comm,args --sort=-rss 2>/dev/null | awk 'NR>1 && NR<=11 {
+            rss=$1 / 1024;
+            comm=$2;
+            $1=""; $2="";
+            sub(/^ +/, "");
+            cmd=($0 != "") ? $0 : comm;
+            gsub(/&/, "\&amp;", cmd);
+            gsub(/</, "\&lt;", cmd);
+            gsub(/>/, "\&gt;", cmd);
+            if (length(cmd) > 60) cmd = substr(cmd, 1, 57) "...";
+            printf "%d. <b>%.1f MB</b> - <code>%s</code>%%0A", NR-1, rss, cmd
+        }')
+    fi
+
+    if [ -z "$TOP_PROCS" ]; then
+        TOP_PROCS=$(docker stats --no-stream --format "{{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null \
+            | sed 's/%//' \
+            | sort -k3 -n -r \
+            | head -n 10 \
+            | awk '{
+                gsub(/&/, "\&amp;", $1);
+                gsub(/</, "\&lt;", $1);
+                gsub(/>/, "\&gt;", $1);
+                printf "%d. <b>%s</b> - %s (<code>%s</code>)%%0A", NR, $2, $1, $3"%"
+            }')
+    fi
+
+    if [ -n "$TOP_PROCS" ]; then
+        echo "%0A%0A<b>Top 10 Processos por Uso de RAM:</b>%0A${TOP_PROCS}"
+    else
+        echo "%0A%0A<i>Não foi possível obter a lista de processos.</i>"
     fi
 }
 
@@ -72,6 +136,58 @@ echo "[health-check] Monitoring: whatsgoapi at ${TARGET_URL}"
 echo "[health-check] Monitoring: ravena-ai at ${RAVENA_URL}"
 
 while true; do
+
+    # ── Check for SKIP_HEALTH_CHECK ─────────────────────────
+    if [ -f "/app/SKIP_HEALTH_CHECK" ] || [ -f "/data/SKIP_HEALTH_CHECK" ] || [ -f "/SKIP_HEALTH_CHECK" ]; then
+        echo "[health-check] Arquivo SKIP_HEALTH_CHECK detectado. Verificação de saúde pausada..."
+        WHATSGO_FAIL_COUNT=0
+        RAVENA_FAIL_COUNT=0
+        sleep "${CHECK_INTERVAL}"
+        continue
+    fi
+
+    # ── 0. Check RAM Usage ────────────────────────────────────
+    if [ -f "/proc/meminfo" ]; then
+        MEM_TOTAL_KB=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)
+        MEM_AVAIL_KB=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null)
+
+        if [ -n "$MEM_TOTAL_KB" ] && [ -n "$MEM_AVAIL_KB" ] && [ "$MEM_TOTAL_KB" -gt 0 ]; then
+            MEM_USED_KB=$((MEM_TOTAL_KB - MEM_AVAIL_KB))
+            RAM_USAGE_PCT=$(( (MEM_USED_KB * 100) / MEM_TOTAL_KB ))
+
+            MEM_TOTAL_GB=$(awk -v t="$MEM_TOTAL_KB" 'BEGIN {printf "%.2f", t/1048576}')
+            MEM_USED_GB=$(awk -v u="$MEM_USED_KB" 'BEGIN {printf "%.2f", u/1048576}')
+
+            CURRENT_TIME=$(date +%s)
+
+            if [ "$RAM_USAGE_PCT" -ge 90 ]; then
+                echo "[health-check] CRITICAL: RAM usage at ${RAM_USAGE_PCT}% (${MEM_USED_GB}GB / ${MEM_TOTAL_GB}GB). Restarting bot stack..."
+
+                TOP_PROCS=$(get_top_ram_processes)
+                MSG="🚨 <b>ALERTA CRÍTICO: RAM em ${RAM_USAGE_PCT}%</b>%0A<i>Uso de memória: ${MEM_USED_GB} GB / ${MEM_TOTAL_GB} GB</i>%0A<i>Reiniciando a stack inteira do bot ravena-ai...</i>${TOP_PROCS}"
+
+                send_telegram "$MSG"
+                restart_stack "Uso excessivo de RAM (${RAM_USAGE_PCT}% ocupado - limite de 90% atingido)."
+
+                LAST_RAM_WARN_TIME=$CURRENT_TIME
+                sleep 30
+                continue
+            elif [ "$RAM_USAGE_PCT" -ge 80 ]; then
+                TIME_DIFF=$((CURRENT_TIME - LAST_RAM_WARN_TIME))
+                if [ "$LAST_RAM_WARN_TIME" -eq 0 ] || [ "$TIME_DIFF" -ge "$RAM_WARN_INTERVAL" ]; then
+                    echo "[health-check] WARNING: RAM usage at ${RAM_USAGE_PCT}% (${MEM_USED_GB}GB / ${MEM_TOTAL_GB}GB). Sending Telegram alert..."
+
+                    TOP_PROCS=$(get_top_ram_processes)
+                    MSG="⚠️ <b>ALERTA: Alto uso de Memória RAM (${RAM_USAGE_PCT}%)</b>%0A<i>Uso de memória: ${MEM_USED_GB} GB / ${MEM_TOTAL_GB} GB</i>${TOP_PROCS}"
+
+                    send_telegram "$MSG"
+                    LAST_RAM_WARN_TIME=$CURRENT_TIME
+                fi
+            else
+                LAST_RAM_WARN_TIME=0
+            fi
+        fi
+    fi
 
     # ── 1. Check whatsgoapi ──────────────────────────────────
     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
