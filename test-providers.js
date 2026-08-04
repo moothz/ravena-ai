@@ -27,7 +27,7 @@ function getFileSize(filePath) {
 	}
 }
 
-async function testUrl(url, method = "GET", data = null, headers = {}) {
+async function testUrl(url, method = "GET", data = null, headers = {}, timeout = 30000) {
 	const start = performance.now();
 	try {
 		const config = {
@@ -35,7 +35,7 @@ async function testUrl(url, method = "GET", data = null, headers = {}) {
 			method,
 			data,
 			headers,
-			timeout: 30000,
+			timeout,
 			validateStatus: () => true
 		};
 		// Se for arraybuffer, axios precisa saber
@@ -192,6 +192,7 @@ async function runTests() {
 				}
 				results.push({ name: "GEN_IMG", ...genRes });
 			} else if (category === "f5tts") {
+				const timeout = (p.timeout || 120000) * (p.timeout_multiplier || 1);
 				const ttsRes = await testUrl(
 					`${p.url}/v1/audio/speech`,
 					"POST",
@@ -205,7 +206,8 @@ async function runTests() {
 						"Content-Type": "application/json",
 						Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined,
 						responseType: "arraybuffer"
-					}
+					},
+					timeout
 				);
 				if (ttsRes.ok) {
 					const outPath = `test-output-f5tts-${p.name}.mp3`;

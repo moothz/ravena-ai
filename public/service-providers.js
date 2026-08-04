@@ -8,11 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'whisper', 'comfyui', 'sdwebui', 'f5tts'];
+    const categories = ['llm', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
         'whisper': 'Transcrição de Áudio (Whisper)',
         'comfyui': 'Geração de Imagens (ComfyUI)',
+        'bonsai': 'Geração de Imagens (Bonsai)',
         'sdwebui': 'Geração de Imagens (SD WebUI)',
         'f5tts': 'Conversão de Texto em Fala (F5-TTS)'
     };

@@ -189,9 +189,10 @@ update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o contain
 
 ##@ Manutenção
 
-clean: ## Remove containers parados e imagens órfãs
+clean: ## Remove containers parados, imagens não utilizadas (>48h) e cache do BuildKit (>24h)
 	docker compose down --remove-orphans
-	docker image prune -f
+	docker image prune -a -f --filter "until=48h"
+	docker builder prune -a -f --filter "until=24h"
 
 clean-all: ## PERIGO: Remove TODOS os containers, imagens e volumes (perda de dados!)
 	@printf "$(YELLOW)⚠️  Isso irá APAGAR todos os volumes de dados. Tem certeza? [y/N]$(NC)\n"
