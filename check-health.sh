@@ -222,7 +222,7 @@ while true; do
             [ -z "$CURRENT_HOUR" ] || [ "$CURRENT_HOUR" = " " ] && CURRENT_HOUR=0
             
             if [ "$CURRENT_HOUR" -ge 1 ] && [ "$CURRENT_HOUR" -lt 7 ]; then
-                LIMIT_MIN=60
+                LIMIT_MIN=90
                 MAX_INACTIVE=4
             elif [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_HOUR" -lt 8 ]; then
                 LIMIT_MIN=45
