@@ -33,7 +33,7 @@ RAVENA_FAIL_COUNT=0
 
 # RAM Alert state tracking
 LAST_RAM_WARN_TIME=0
-RAM_WARN_INTERVAL=900  # 15 minutes cooldown for >75% warning alerts
+RAM_WARN_INTERVAL=900  # 15 minutes cooldown for >70% warning alerts
 
 # --- HELPER FUNCTIONS ---
 
@@ -160,19 +160,19 @@ while true; do
 
             CURRENT_TIME=$(date +%s)
 
-            if [ "$RAM_USAGE_PCT" -ge 85 ]; then
+            if [ "$RAM_USAGE_PCT" -ge 75 ]; then
                 echo "[health-check] CRITICAL: RAM usage at ${RAM_USAGE_PCT}% (${MEM_USED_GB}GB / ${MEM_TOTAL_GB}GB). Restarting bot stack..."
 
                 TOP_PROCS=$(get_top_ram_processes)
                 MSG="🚨 <b>ALERTA CRÍTICO: RAM em ${RAM_USAGE_PCT}%</b>%0A<i>Uso de memória: ${MEM_USED_GB} GB / ${MEM_TOTAL_GB} GB</i>%0A<i>Reiniciando a stack inteira do bot ravena-ai...</i>${TOP_PROCS}"
 
                 send_telegram "$MSG"
-                restart_stack "Uso excessivo de RAM (${RAM_USAGE_PCT}% ocupado - limite de 85% atingido)."
+                restart_stack "Uso excessivo de RAM (${RAM_USAGE_PCT}% ocupado - limite de 75% atingido)."
 
                 LAST_RAM_WARN_TIME=$CURRENT_TIME
                 sleep 30
                 continue
-            elif [ "$RAM_USAGE_PCT" -ge 75 ]; then
+            elif [ "$RAM_USAGE_PCT" -ge 70 ]; then
                 TIME_DIFF=$((CURRENT_TIME - LAST_RAM_WARN_TIME))
                 if [ "$LAST_RAM_WARN_TIME" -eq 0 ] || [ "$TIME_DIFF" -ge "$RAM_WARN_INTERVAL" ]; then
                     echo "[health-check] WARNING: RAM usage at ${RAM_USAGE_PCT}% (${MEM_USED_GB}GB / ${MEM_TOTAL_GB}GB). Sending Telegram alert..."
