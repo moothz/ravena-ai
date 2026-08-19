@@ -11,6 +11,9 @@ const logger = new Logger("lembretes-commands");
 const database = Database.getInstance();
 const dbName = "lembretes";
 
+// Rastreia os temporizadores agendados em memória por (botId + ":" + lembreteId)
+const scheduledTimers = new Set();
+
 // Initialize database
 database.getSQLiteDb(
 	dbName,
@@ -26,10 +29,14 @@ database.getSQLiteDb(
       has_media INTEGER DEFAULT 0,
       media_path TEXT,
       media_type TEXT,
-      media_caption TEXT
+      media_caption TEXT,
+      bot_id TEXT
     );
 `
 );
+
+// Garantir coluna bot_id em bancos de dados já existentes
+database.dbRun(dbName, "ALTER TABLE lembretes ADD COLUMN bot_id TEXT;").catch(() => {});
 
 // Diretório para armazenar mídias dos lembretes
 const LEMBRETES_MEDIA_DIR = path.join(database.databasePath, "lembretes-media");
@@ -39,11 +46,24 @@ const LEMBRETES_MEDIA_DIR = path.join(database.databasePath, "lembretes-media");
  */
 async function garantirDiretorios() {
 	try {
-		// Cria diretório de mídia para lembretes se não existir
 		await fs.mkdir(LEMBRETES_MEDIA_DIR, { recursive: true });
 	} catch (error) {
 		logger.error("Erro ao criar diretórios necessários:", error);
 	}
+}
+
+/**
+ * Extrai texto de mensagem citada de forma segura (evita salvar [object Object])
+ */
+function getQuotedText(quotedMsg) {
+	if (!quotedMsg) return "";
+	if (typeof quotedMsg.caption === "string" && quotedMsg.caption) return quotedMsg.caption;
+	if (typeof quotedMsg.body === "string" && quotedMsg.body) return quotedMsg.body;
+	if (typeof quotedMsg.content === "string" && quotedMsg.content) return quotedMsg.content;
+	if (quotedMsg._data && typeof quotedMsg._data.body === "string" && quotedMsg._data.body) {
+		return quotedMsg._data.body;
+	}
+	return "";
 }
 
 /**
@@ -54,6 +74,7 @@ function dbToLembrete(row) {
 		id: row.id,
 		chatId: row.chat_id,
 		userId: row.user_id,
+		botId: row.bot_id,
 		data: row.data,
 		dataFormatada: formatarData(new Date(row.data)),
 		mensagem: row.mensagem,
@@ -81,17 +102,13 @@ function gerarId() {
  */
 function interpretarData(texto) {
 	try {
-		// Configure o chrono para português brasileiro
 		const customChrono = chrono.pt.casual;
-
-		// Tenta interpretar a data do texto
 		const results = customChrono.parse(texto, { forwardDate: true });
 
 		if (results.length > 0) {
 			const data = results[0].start.date();
-
-			// Se apenas a hora for especificada (sem data), e for antes da hora atual, assume o dia seguinte
 			const agora = new Date();
+
 			if (
 				results[0].start.impliedValues &&
 				results[0].start.impliedValues.day &&
@@ -100,7 +117,6 @@ function interpretarData(texto) {
 				data.setDate(data.getDate() + 1);
 			}
 
-			// Se a data for no passado, retorna null
 			if (data < new Date()) {
 				return null;
 			}
@@ -148,7 +164,8 @@ function formatarData(data) {
  */
 async function criarLembrete(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.from;
+		const botId = bot.id || bot.name || "default";
+		const chatId = message.group || (group && group.id) || message.from;
 
 		// Verifica se há argumentos
 		if (args.length === 0) {
@@ -159,15 +176,8 @@ async function criarLembrete(bot, message, args, group) {
 			});
 		}
 
-		// Obtém a mensagem citada
-		const quotedMsg = await message.origin.getQuotedMessage();
-
-		if (!quotedMsg) {
-			return new ReturnMessage({
-				chatId,
-				content: "Este comando deve ser usado como resposta a uma mensagem."
-			});
-		}
+		// Tenta obter a mensagem citada
+		const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
 
 		// Obtém o texto do argumento para interpretar a data
 		const textoData = args.join(" ");
@@ -185,21 +195,18 @@ async function criarLembrete(bot, message, args, group) {
 					dataLembrete = new Date();
 					dataLembrete.setHours(hora, minuto, 0, 0);
 
-					// Se a hora já passou hoje, define para amanhã
 					if (dataLembrete < new Date()) {
 						dataLembrete.setDate(dataLembrete.getDate() + 1);
 					}
 				}
 			}
 
-			// Se ainda não conseguir, tenta usar 7:00 de amanhã como padrão
 			if (!dataLembrete && textoData.toLowerCase().includes("amanhã")) {
 				dataLembrete = new Date();
 				dataLembrete.setDate(dataLembrete.getDate() + 1);
 				dataLembrete.setHours(7, 0, 0, 0);
 			}
 
-			// Se ainda assim não conseguir, informa o erro
 			if (!dataLembrete) {
 				return new ReturnMessage({
 					chatId,
@@ -209,18 +216,30 @@ async function criarLembrete(bot, message, args, group) {
 			}
 		}
 
-		// Gera um ID único para o lembrete
+		// Extrai mensagem do quotedMsg ou dos argumentos
+		let mensagemTexto = getQuotedText(quotedMsg);
+		if (!mensagemTexto) {
+			const chronoMatch = chrono.pt.casual.parse(textoData, { forwardDate: true });
+			if (chronoMatch && chronoMatch.length > 0) {
+				const matchedText = chronoMatch[0].text;
+				const resto = textoData.replace(matchedText, "").trim();
+				if (resto) {
+					mensagemTexto = resto;
+				}
+			}
+		}
+
+		// Gera ID único para o lembrete
 		const lembreteId = gerarId();
 
-		// Cria o objeto do lembrete (estrutura para uso interno)
 		const lembrete = {
 			id: lembreteId,
 			chatId,
 			userId: message.author,
+			botId,
 			data: dataLembrete.getTime(),
 			dataFormatada: formatarData(dataLembrete),
-			mensagem:
-				quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? quotedMsg._data.body ?? "",
+			mensagem: mensagemTexto,
 			criadoEm: Date.now(),
 			ativo: true,
 			hasMedia: false,
@@ -230,61 +249,52 @@ async function criarLembrete(bot, message, args, group) {
 		};
 
 		// Se a mensagem citada tiver mídia, salva a mídia
-		if (quotedMsg.hasMedia) {
+		if (quotedMsg && quotedMsg.hasMedia) {
 			try {
 				await garantirDiretorios();
-				// Baixa a mídia
 				const media = await quotedMsg.downloadMedia();
 
-				// Define o tipo de mídia
-				let mediaType = media.mimetype.split("/")[0]; // 'image', 'audio', 'video', etc.
-				if (quotedMsg.type === "sticker") mediaType = "sticker";
-				if (quotedMsg.type === "voice") mediaType = "voice";
+				if (media) {
+					let mediaType = media.mimetype ? media.mimetype.split("/")[0] : "media";
+					if (quotedMsg.type === "sticker") mediaType = "sticker";
+					if (quotedMsg.type === "voice") mediaType = "voice";
 
-				// Gera nome de arquivo com extensão apropriada
-				let fileExt = media.mimetype.split("/")[1];
-				if (fileExt && fileExt.includes(";")) {
-					fileExt = fileExt.split(";")[0];
+					let fileExt = media.mimetype ? media.mimetype.split("/")[1] : "bin";
+					if (fileExt && fileExt.includes(";")) {
+						fileExt = fileExt.split(";")[0];
+					}
+
+					const fileName = `${lembreteId}.${fileExt || "bin"}`;
+					const mediaPath = path.join(LEMBRETES_MEDIA_DIR, fileName);
+
+					await fs.writeFile(mediaPath, Buffer.from(media.data, "base64"));
+
+					lembrete.hasMedia = true;
+					lembrete.mediaPath = fileName;
+					lembrete.mediaType = media.mimetype;
+					lembrete.mediaCaption = quotedMsg.caption || "";
+
+					logger.info(`Mídia salva para lembrete: ${mediaPath}`);
 				}
-
-				// Cria nome de arquivo único para a mídia
-				const fileName = `${lembreteId}.${fileExt || "bin"}`;
-				const mediaPath = path.join(LEMBRETES_MEDIA_DIR, fileName);
-
-				// Salva a mídia
-				await fs.writeFile(mediaPath, Buffer.from(media.data, "base64"));
-
-				// Atualiza informações do lembrete
-				lembrete.hasMedia = true;
-				lembrete.mediaPath = fileName;
-				lembrete.mediaType = media.mimetype;
-				lembrete.mediaCaption = quotedMsg.caption || "";
-
-				logger.info(`Mídia salva para lembrete: ${mediaPath}`);
 			} catch (mediaError) {
 				logger.error("Erro ao salvar mídia para lembrete:", mediaError);
-				// Continua criando o lembrete mesmo sem mídia, mas envia aviso
-				return new ReturnMessage({
-					chatId,
-					content:
-						"Não foi possível salvar a mídia para o lembrete. O lembrete será criado apenas com o texto."
-				});
 			}
 		}
 
-		// Salva no banco de dados
+		// Salva no banco de dados incluindo bot_id
 		await database.dbRun(
 			dbName,
 			`
       INSERT INTO lembretes (
-        id, chat_id, user_id, data, mensagem, criado_em, ativo, 
+        id, chat_id, user_id, bot_id, data, mensagem, criado_em, ativo, 
         has_media, media_path, media_type, media_caption
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
 			[
 				lembrete.id,
 				lembrete.chatId,
 				lembrete.userId,
+				lembrete.botId,
 				lembrete.data,
 				lembrete.mensagem,
 				lembrete.criadoEm,
@@ -296,17 +306,16 @@ async function criarLembrete(bot, message, args, group) {
 			]
 		);
 
-		// Inicia o temporizador para este lembrete
+		// Inicia temporizador para esta instância
 		iniciarTemporizador(bot, lembrete);
 
-		// Retorna mensagem de confirmação
 		return new ReturnMessage({
 			chatId,
 			content: `✅ Lembrete configurado para ${lembrete.dataFormatada} (ID: ${lembrete.id})`
 		});
 	} catch (error) {
 		logger.error("Erro ao criar lembrete:", error);
-		const chatId = message.group ?? message.from;
+		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao criar lembrete. Por favor, tente novamente."
@@ -324,8 +333,9 @@ async function criarLembrete(bot, message, args, group) {
  */
 async function listarLembretes(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.from;
+		const chatId = message.group || (group && group.id) || message.from;
 		const userId = message.author;
+		const botId = bot.id || bot.name || "default";
 
 		let rows;
 		if (!message.group) {
@@ -333,13 +343,12 @@ async function listarLembretes(bot, message, args, group) {
 			rows = await database.dbAll(
 				dbName,
 				`
-        SELECT * FROM lembretes WHERE user_id = ? AND ativo = 1 ORDER BY data ASC
+        SELECT * FROM lembretes WHERE user_id = ? AND ativo = 1 AND (bot_id = ? OR bot_id IS NULL OR bot_id = '') ORDER BY data ASC
       `,
-				[userId]
+				[userId, botId]
 			);
 		} else {
-			// Grupo: do grupo (podemos filtrar por usuário também se quisermos, mas a logica original mostrava todos do grupo)
-			// Original: return l.chatId === chatId && l.ativo;
+			// Grupo: do grupo
 			rows = await database.dbAll(
 				dbName,
 				`
@@ -356,16 +365,11 @@ async function listarLembretes(bot, message, args, group) {
 			});
 		}
 
-		// Converte rows para objetos lembrete
 		const lembretesFiltrados = rows.map(dbToLembrete);
 
-		// Constrói a mensagem
-		let mensagem = `📅 *Lembretes Ativos:*
-
-`;
+		let mensagem = `📅 *Lembretes Ativos:*\n\n`;
 
 		for (const lembrete of lembretesFiltrados) {
-			// Calcula tempo restante
 			const agora = Date.now();
 			const tempoRestante = lembrete.data - agora;
 			const dias = Math.floor(tempoRestante / (1000 * 60 * 60 * 24));
@@ -377,24 +381,17 @@ async function listarLembretes(bot, message, args, group) {
 			if (horas > 0) tempoFormatado += `${horas}h `;
 			tempoFormatado += `${minutos}m`;
 
-			// Formata a mensagem do lembrete (limitada a 50 caracteres)
 			const mensagemCurta =
 				lembrete.mensagem && lembrete.mensagem.length > 50
 					? lembrete.mensagem.substring(0, 47) + "..."
 					: lembrete.mensagem || "(sem texto)";
 
-			// Adiciona informação se tem mídia
 			const temMidia = lembrete.hasMedia ? " 📎" : "";
 
-			mensagem += `*ID:* ${lembrete.id}
-`;
-			mensagem += `*Data:* ${lembrete.dataFormatada}
-`;
-			mensagem += `*Tempo restante:* ${tempoFormatado}
-`;
-			mensagem += `*Mensagem:* ${mensagemCurta}${temMidia}
-
-`;
+			mensagem += `*ID:* ${lembrete.id}\n`;
+			mensagem += `*Data:* ${lembrete.dataFormatada}\n`;
+			mensagem += `*Tempo restante:* ${tempoFormatado}\n`;
+			mensagem += `*Mensagem:* ${mensagemCurta}${temMidia}\n\n`;
 		}
 
 		mensagem += `Para cancelar um lembrete, use: !l-cancelar <id>`;
@@ -405,7 +402,7 @@ async function listarLembretes(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Erro ao listar lembretes:", error);
-		const chatId = message.group ?? message.from;
+		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao listar lembretes. Por favor, tente novamente."
@@ -423,10 +420,9 @@ async function listarLembretes(bot, message, args, group) {
  */
 async function cancelarLembrete(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.from;
+		const chatId = message.group || (group && group.id) || message.from;
 		const userId = message.author;
 
-		// Verifica se foi fornecido um ID
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
@@ -436,8 +432,6 @@ async function cancelarLembrete(bot, message, args, group) {
 		}
 
 		const lembreteId = args[0];
-
-		// Busca o lembrete no banco
 		const row = await database.dbGet(dbName, `SELECT * FROM lembretes WHERE id = ?`, [lembreteId]);
 
 		if (!row) {
@@ -449,7 +443,6 @@ async function cancelarLembrete(bot, message, args, group) {
 
 		const lembrete = dbToLembrete(row);
 
-		// Verifica se o usuário tem permissão para cancelar o lembrete
 		if (lembrete.userId !== userId && (!message.group || lembrete.chatId !== chatId)) {
 			return new ReturnMessage({
 				chatId,
@@ -457,10 +450,8 @@ async function cancelarLembrete(bot, message, args, group) {
 			});
 		}
 
-		// Marca como inativo no banco
 		await database.dbRun(dbName, `UPDATE lembretes SET ativo = 0 WHERE id = ?`, [lembreteId]);
 
-		// Se tiver mídia, exclui o arquivo
 		if (lembrete.hasMedia && lembrete.mediaPath) {
 			try {
 				await fs.unlink(path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath));
@@ -475,7 +466,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Erro ao cancelar lembrete:", error);
-		const chatId = message.group ?? message.from;
+		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
 			content: "Erro ao cancelar lembrete. Por favor, tente novamente."
@@ -490,36 +481,43 @@ async function cancelarLembrete(bot, message, args, group) {
  */
 function iniciarTemporizador(bot, lembrete) {
 	try {
-		// Calcula o tempo até o lembrete
-		const agora = Date.now();
-		const tempoPraDisparar = lembrete.data - agora;
+		const botId = bot.id || bot.name || "default";
+		const timerKey = `${botId}:${lembrete.id}`;
 
-		// Se já passou da hora, não agenda (ou poderia disparar imediatamente?)
-		// A lógica original dizia: se já passou, logger warn.
-		if (tempoPraDisparar <= 0) {
-			logger.warn(
-				`Lembrete ${lembrete.id} já expirou (ao iniciar temporizador), será processado na próxima verificação`
-			);
+		if (scheduledTimers.has(timerKey)) {
+			logger.debug(`Temporizador para ${timerKey} já agendado nesta instância.`);
 			return;
 		}
 
-		// Limita o tempo máximo do timer para 24h (JavaScript tem limitações)
-		const MAX_TIMER = 24 * 60 * 60 * 1000; // 24 horas em ms
+		// Se o lembrete pertence a outro bot especificamente, não agende nesta instância
+		if (lembrete.botId && lembrete.botId !== botId) {
+			return;
+		}
+
+		const agora = Date.now();
+		const tempoPraDisparar = lembrete.data - agora;
+
+		if (tempoPraDisparar <= 0) {
+			logger.warn(`Lembrete ${lembrete.id} já expirou (ao iniciar temporizador), desativando`);
+			database.dbRun(dbName, `UPDATE lembretes SET ativo = 0 WHERE id = ?`, [lembrete.id]);
+			return;
+		}
+
+		const MAX_TIMER = 24 * 60 * 60 * 1000;
+		scheduledTimers.add(timerKey);
 
 		if (tempoPraDisparar > MAX_TIMER) {
-			// Agenda um timer para verificar novamente após 24h
-			logger.info(`Lembrete ${lembrete.id} agendado para reavaliação em 24h`);
+			logger.info(`Lembrete ${lembrete.id} agendado para reavaliação em 24h para bot ${botId}`);
 			setTimeout(() => {
-				// Recarrega o lembrete para garantir que ainda está ativo
+				scheduledTimers.delete(timerKey);
 				verificarLembrete(bot, lembrete.id);
 			}, MAX_TIMER);
 		} else {
-			// Agenda para o tempo exato
 			logger.info(
-				`Lembrete ${lembrete.id} agendado para disparar em ${formatarTempoRestante(tempoPraDisparar)}`
+				`Lembrete ${lembrete.id} agendado para disparar em ${formatarTempoRestante(tempoPraDisparar)} para bot ${botId}`
 			);
 			setTimeout(() => {
-				// Dispara o lembrete
+				scheduledTimers.delete(timerKey);
 				dispararLembrete(bot, lembrete.id);
 			}, tempoPraDisparar);
 		}
@@ -557,9 +555,12 @@ function formatarTempoRestante(ms) {
  */
 async function verificarLembrete(bot, lembreteId) {
 	try {
-		const row = await database.dbGet(dbName, `SELECT * FROM lembretes WHERE id = ? AND ativo = 1`, [
-			lembreteId
-		]);
+		const botId = bot.id || bot.name || "default";
+		const row = await database.dbGet(
+			dbName,
+			`SELECT * FROM lembretes WHERE id = ? AND ativo = 1 AND (bot_id = ? OR bot_id IS NULL OR bot_id = '')`,
+			[lembreteId, botId]
+		);
 
 		if (row) {
 			const lembrete = dbToLembrete(row);
@@ -577,12 +578,23 @@ async function verificarLembrete(bot, lembreteId) {
  */
 async function dispararLembrete(bot, lembreteId) {
 	try {
-		const row = await database.dbGet(dbName, `SELECT * FROM lembretes WHERE id = ? AND ativo = 1`, [
-			lembreteId
-		]);
+		const botId = bot.id || bot.name || "default";
 
+		// Atualização atômica: desativa o lembrete antes do envio para evitar disparo duplicado/spam.
+		const result = await database.dbRun(
+			dbName,
+			`UPDATE lembretes SET ativo = 0 WHERE id = ? AND ativo = 1 AND (bot_id = ? OR bot_id IS NULL OR bot_id = '')`,
+			[lembreteId, botId]
+		);
+
+		if (!result || result.changes === 0) {
+			logger.info(`Lembrete ${lembreteId} já foi disparado, desativado ou pertence a outro bot.`);
+			return;
+		}
+
+		const row = await database.dbGet(dbName, `SELECT * FROM lembretes WHERE id = ?`, [lembreteId]);
 		if (!row) {
-			logger.warn(`Lembrete ${lembreteId} não encontrado ou não está ativo`);
+			logger.warn(`Lembrete ${lembreteId} não encontrado após reivindicação.`);
 			return;
 		}
 
@@ -591,33 +603,32 @@ async function dispararLembrete(bot, lembreteId) {
 		// Se o chat for um grupo, verifica se está pausado
 		let group = null;
 		if (lembrete.chatId.endsWith("@g.us")) {
-			// Obtém o grupo do banco de dados (assumindo que existe esse método no Database)
 			group = await database.getGroup(lembrete.chatId);
-
-			// Se o grupo estiver pausado, não envia o lembrete
 			if (group && group.paused) {
 				logger.info(`Ignorando lembrete ${lembreteId} para grupo pausado: ${lembrete.chatId}`);
 				return;
 			}
 		}
 
-		// Formata a mensagem do lembrete
-		const textoLembrete = `😴 *LEMBRETE!*
+		// Se for em grupo, inclui menção ao criador do lembrete
+		let mentionUser = "";
+		const mentions = [];
+		if (lembrete.chatId.endsWith("@g.us") && lembrete.userId) {
+			const numOnly = lembrete.userId.split("@")[0];
+			mentionUser = `@${numOnly} `;
+			mentions.push(lembrete.userId);
+		}
 
-${lembrete.mensagem || ""}`;
+		const textoLembrete = `😴 *LEMBRETE!* ${mentionUser}\n\n${lembrete.mensagem || ""}`;
 
-		// Usa ReturnMessage para enviar
 		let returnMessage;
 
-		// Verifica se tem mídia
 		if (lembrete.hasMedia && lembrete.mediaPath) {
 			try {
 				await garantirDiretorios();
-				// Carrega a mídia
 				const mediaPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
 				const mediaData = await fs.readFile(mediaPath);
 
-				// Cria objeto de mídia
 				const media = {
 					mimetype: lembrete.mediaType || "application/octet-stream",
 					data: mediaData.toString("base64"),
@@ -625,19 +636,17 @@ ${lembrete.mensagem || ""}`;
 					isMessageMedia: true
 				};
 
-				// Cria ReturnMessage com mídia
 				returnMessage = new ReturnMessage({
 					chatId: lembrete.chatId,
 					content: media,
 					options: {
-						caption: textoLembrete
+						caption: textoLembrete,
+						mentions
 					}
 				});
 
-				// Envia a mensagem
 				await bot.sendReturnMessages(returnMessage, group);
 
-				// Exclui o arquivo de mídia após enviar
 				try {
 					await fs.unlink(mediaPath);
 				} catch (unlinkError) {
@@ -645,25 +654,25 @@ ${lembrete.mensagem || ""}`;
 				}
 			} catch (mediaError) {
 				logger.error("Erro ao enviar mídia do lembrete:", mediaError);
-				// Se falhar, envia apenas o texto
 				returnMessage = new ReturnMessage({
 					chatId: lembrete.chatId,
-					content: `${textoLembrete}\n\n_(Não foi possível enviar a mídia)_`
+					content: `${textoLembrete}\n\n_(Não foi possível enviar a mídia)_`,
+					options: { mentions }
 				});
 
 				await bot.sendReturnMessages(returnMessage, group);
 			}
 		} else {
-			// Envia apenas o texto
 			returnMessage = new ReturnMessage({
 				chatId: lembrete.chatId,
-				content: textoLembrete
+				content: textoLembrete,
+				options: { mentions }
 			});
 
 			await bot.sendReturnMessages(returnMessage, group);
 		}
 
-		logger.info(`Lembrete ${lembreteId} disparado com sucesso`);
+		logger.info(`Lembrete ${lembreteId} disparado com sucesso pelo bot ${botId}`);
 	} catch (error) {
 		logger.error(`Erro ao disparar lembrete ${lembreteId}:`, error);
 	}
@@ -689,7 +698,7 @@ const commands = [
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "😴"
 		},
-		needsQuotedMsg: true,
+		needsQuotedMsg: false,
 		method: criarLembrete
 	}),
 
@@ -705,31 +714,39 @@ const commands = [
 	})
 ];
 
-// Ao carregar o módulo, inicia temporizadores para lembretes ativos
-// NOTA: Movido para inicializarLembretes para garantir que o bot esteja pronto e não cause problemas no require
-// Mas se precisarmos de inicialização no require, podemos manter a logica de limpeza
-
 (async () => {
-	// Apenas garante diretórios
 	await garantirDiretorios();
 })();
 
 module.exports = {
 	commands,
-	// Exporta funções úteis para uso externo
 	inicializarLembretes: async (bot) => {
 		try {
 			await garantirDiretorios();
 
-			// Carrega lembretes ativos
-			const rows = await database.dbAll(dbName, `SELECT * FROM lembretes WHERE ativo = 1`);
+			const botId = bot.id || bot.name || "default";
 
-			logger.info(`Inicializando ${rows.length} lembretes para o bot`);
+			// Carrega lembretes ativos para esta instância de bot (ou sem bot_id definido)
+			const rows = await database.dbAll(
+				dbName,
+				`SELECT * FROM lembretes WHERE ativo = 1 AND (bot_id = ? OR bot_id IS NULL OR bot_id = '')`,
+				[botId]
+			);
+
+			logger.info(`Inicializando ${rows.length} lembretes para o bot ${botId}`);
 
 			for (const row of rows) {
+				// Se bot_id estiver nulo no banco, atribui ao primeiro bot que inicializar para evitar duplicidade
+				if (!row.bot_id) {
+					await database.dbRun(dbName, `UPDATE lembretes SET bot_id = ? WHERE id = ?`, [
+						botId,
+						row.id
+					]);
+					row.bot_id = botId;
+				}
+
 				const lembrete = dbToLembrete(row);
 
-				// Verifica se já passou da hora
 				if (lembrete.data <= Date.now()) {
 					logger.info(`Lembrete ${lembrete.id} já expirou, marcando como inativo`);
 					await database.dbRun(dbName, `UPDATE lembretes SET ativo = 0 WHERE id = ?`, [
