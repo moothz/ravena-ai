@@ -2339,9 +2339,10 @@ class WhatsAppBotGo {
 						if (options.sendMediaAsSticker) payload.sticker = media.url;
 					}
 
-					payload.caption = options.caption;
+					payload.caption = typeof options.caption === "string" ? options.caption : "";
 
-					let mediaType = content.mimetype ? content.mimetype.split("/")[0] : "image";
+					let rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
+					let mediaType = rawMime ? rawMime.split("/")[0] : "image";
 					const cttSize = content.size ?? (await this.getFileSizeByURL(content.url)) ?? 0;
 					const urlPublica = process.env.BOT_DOMAIN_LOCAL
 						? payload.url.replace(process.env.BOT_DOMAIN_LOCAL, process.env.BOT_DOMAIN)
@@ -2358,8 +2359,12 @@ class WhatsAppBotGo {
 						mediaType = "gif";
 					}
 
-					payload.type = mediaType.split("/")[0];
-					payload.filename = content.filename;
+					let typeStr = mediaType.split("/")[0];
+					if (!["image", "video", "gif", "audio", "document"].includes(typeStr)) {
+						typeStr = "document";
+					}
+					payload.type = typeStr;
+					payload.filename = typeof content.filename === "string" ? content.filename : "file";
 				}
 			} else if (content.isLocation) {
 				endpoint = "/send/location";

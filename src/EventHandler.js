@@ -925,8 +925,14 @@ class EventHandler extends EventEmitter {
 			return;
 		}
 
-		if (data.isAnnounce || data.group?.isAnnounce) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel.`);
+		// Motivo da alteração: Grupos configurados como "Apenas administradores enviam mensagens" (isAnnounce / modo avisos)
+		// anteriormente tinham todos os eventos de entrada ignorados. Agora, se o grupo possuir mensagem de boas-vindas
+		// ou despedida definida, o evento NÃO é ignorado e a mensagem é enviada normalmente.
+		const initialGroupCheck = this.groups[groupId] ?? (await this.database.getGroup(groupId));
+		const initialHasGreetings = initialGroupCheck?.greetings && Object.keys(initialGroupCheck.greetings).some((k) => initialGroupCheck.greetings[k]);
+		const initialHasFarewells = initialGroupCheck?.farewells && Object.keys(initialGroupCheck.farewells).some((k) => initialGroupCheck.farewells[k]);
+		if ((data.isAnnounce || data.group?.isAnnounce) && !initialHasGreetings && !initialHasFarewells) {
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel (sem boas-vindas/despedida configuradas).`);
 			return;
 		}
 
@@ -1038,19 +1044,6 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 
-			if (chat.isAnnounce) {
-				this.logger.debug(
-					`[processGroupJoin][viaChat] Ignorando evento de join em Announce Channel '${chat.name}'`,
-					{ chat }
-				);
-				return;
-			}
-
-			// Verifica se o próprio bot é quem está entrando
-			this.logger.debug(
-				`[processGroupJoin] isBotJoining (${data.isBotJoining} / ${isBotJoining}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${bot.phoneNumber}`
-			);
-
 			// Obtém ou cria grupo
 			const nomeGrupo = data.group?.name?.replace(/[^a-zA-Z0-9_\-.]/g, "").substring(0, 30) ?? null;
 			const groupData = await this.getOrCreateGroup(
@@ -1061,6 +1054,23 @@ class EventHandler extends EventEmitter {
 				bot
 			);
 			const group = groupData.group;
+
+			// Motivo da alteração: Não ignorar mais o evento de join em grupos em modo Announce (apenas admins enviam mensagens)
+			// caso o grupo possua mensagem de boas-vindas ou despedida configurada.
+			const hasGreetings = group?.greetings && Object.keys(group.greetings).some((k) => group.greetings[k]);
+			const hasFarewells = group?.farewells && Object.keys(group.farewells).some((k) => group.farewells[k]);
+			if (chat.isAnnounce && !hasGreetings && !hasFarewells) {
+				this.logger.debug(
+					`[processGroupJoin][viaChat] Ignorando evento de join em Announce Channel '${chat.name}' sem boas-vindas/despedida configuradas`,
+					{ chat }
+				);
+				return;
+			}
+
+			// Verifica se o próprio bot é quem está entrando
+			this.logger.debug(
+				`[processGroupJoin] isBotJoining (${data.isBotJoining} / ${isBotJoining}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${bot.phoneNumber}`
+			);
 
 			// Popula titulo e descricao
 			group.titulo = chat.name || null;
@@ -1718,12 +1728,20 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				return { text: message, mentions: options.mentions || [] };
 			};
 
+			const hasMediaWithCaption = availableTypes.some(
+				(t) => t !== "text" && (group.greetings[t]?.caption || group.greetings.text)
+			);
+
 			for (const type of availableTypes) {
 				const greetingData = group.greetings[type];
 				let currentMentions = [...baseMentions];
 
 				// Se saudação de texto
 				if (type === "text") {
+					if (hasMediaWithCaption) {
+						// Pula envio do texto avulso pois a legenda já irá junto da mídia
+						continue;
+					}
 					const processed = await processText(greetingData, baseMentions); // greetingData is the string itself for text type
 					currentMentions = [...new Set([...currentMentions, ...processed.mentions])];
 
@@ -1753,7 +1771,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						// Processa caption se houver (audio e sticker ignoram caption no envio, mas a gente processa igual)
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							const processedCaption = await processText(greetingData.caption, baseMentions);
+							let rawCaption = typeof greetingData.caption === "string" ? greetingData.caption : "";
+							if (!rawCaption && typeof group.greetings.text === "string" && group.greetings.text) {
+								rawCaption = group.greetings.text;
+							}
+							const processedCaption = await processText(rawCaption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];
 						}
@@ -1868,7 +1890,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							const processedCaption = await processText(farewellData.caption, baseMentions);
+							const rawCaption = typeof farewellData.caption === "string" ? farewellData.caption : "";
+							const processedCaption = await processText(rawCaption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];
 						}

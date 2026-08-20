@@ -1320,8 +1320,29 @@ class Management {
 
 		// Se tiver mensagem citada
 		if (quotedMsg) {
-			const type = "text";
-			const content = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? "";
+			const prefixo = group.prefix ?? "!";
+			const comandoCompleto = `${prefixo}g-setBoasvindas`;
+			let commandText = "";
+			if (message.origin && message.origin.body) {
+				const bodyStr = message.origin.body;
+				const idx = bodyStr.toLowerCase().indexOf("g-setboasvindas");
+				if (idx !== -1) {
+					commandText = bodyStr.substring(idx + "g-setboasvindas".length).trim();
+				}
+			}
+
+			let content = commandText;
+			if (!content) {
+				if (typeof quotedMsg.caption === "string" && quotedMsg.caption.trim()) {
+					content = quotedMsg.caption.trim();
+				} else if (typeof quotedMsg.body === "string" && quotedMsg.body.trim()) {
+					content = quotedMsg.body.trim();
+				} else if (typeof quotedMsg.content === "string" && quotedMsg.content.trim()) {
+					content = quotedMsg.content.trim();
+				} else if (quotedMsg._data && typeof quotedMsg._data.body === "string" && quotedMsg._data.body.trim()) {
+					content = quotedMsg._data.body.trim();
+				}
+			}
 
 			if (quotedMsg.hasMedia) {
 				try {
@@ -1355,7 +1376,7 @@ class Management {
 					// Define o objeto de mídia
 					group.greetings[mediaType] = {
 						file: fileName,
-						caption: content // legenda original
+						caption: content // legenda original ou texto enviado no comando
 					};
 
 					// Se a legenda tiver texto, atualiza também o texto principal?
@@ -1500,7 +1521,16 @@ class Management {
 
 		// Se tiver mensagem citada
 		if (quotedMsg) {
-			const content = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body ?? "";
+			let content = "";
+			if (typeof quotedMsg.caption === "string") {
+				content = quotedMsg.caption;
+			} else if (typeof quotedMsg.body === "string") {
+				content = quotedMsg.body;
+			} else if (typeof quotedMsg.content === "string") {
+				content = quotedMsg.content;
+			} else if (quotedMsg._data && typeof quotedMsg._data.body === "string") {
+				content = quotedMsg._data.body;
+			}
 
 			if (quotedMsg.hasMedia) {
 				try {
