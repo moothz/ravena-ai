@@ -154,7 +154,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 	try {
 		// Se for imagem (exceto GIF), use sharp
 		if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
-			logger.info(`[makeSquareMedia] Processando imagem ${mimeType}`);
+			// logger.info(`[makeSquareMedia] Processando imagem ${mimeType}`);
 
 			// Carregar a imagem - Converter de base64 para Buffer se necessário
 			let imageBuffer = mediaBuffer;
@@ -167,7 +167,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 			const image = sharp(imageBuffer);
 			const metadata = await image.metadata();
 
-			logger.debug(`Metadata da imagem: ${JSON.stringify(metadata)}`);
+			// logger.debug(`Metadata da imagem: ${JSON.stringify(metadata)}`);
 
 			// Determinar dimensões para corte quadrado
 			const size = Math.min(metadata.width, metadata.height);
@@ -222,7 +222,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 				.resize(400, 400)
 				.toBuffer();
 		} else if (isVideo(mimeType)) {
-			logger.info(`[makeSquareMedia] Processando video ${mimeType}`);
+			// logger.info(`[makeSquareMedia] Processando video ${mimeType}`);
 
 			// Converter de base64 para Buffer se necessário
 			let videoBuffer = mediaBuffer;
@@ -441,7 +441,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
  */
 async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
 	try {
-		logger.info(`Processando mídia para quadrado: ${mimeType}, tipo de corte: ${cropType}`);
+		// logger.info(`Processando mídia para quadrado: ${mimeType}, tipo de corte: ${cropType}`);
 		return await makeSquareMedia(mediaBuffer, mimeType, cropType);
 	} catch (error) {
 		logger.error(`Erro ao processar mídia em formato quadrado (${cropType}):`, error);
@@ -460,7 +460,7 @@ async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
  */
 async function squareStickerCommand(bot, message, args, group, cropType) {
 	const chatId = message.group ?? message.author;
-	logger.debug(`Executando comando sticker quadrado (${cropType}) para ${chatId}`);
+	// logger.debug(`Executando comando sticker quadrado (${cropType}) para ${chatId}`);
 
 	try {
 		let mediaBuffer, mimeType, quotedMessageId;
@@ -468,7 +468,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		// Extrair mídia e informações necessárias da mensagem direta ou citada
 		if (message.type === "image" || message.type === "video" || message.type === "gif") {
 			// Mídia na mensagem atual
-			logger.debug(`Processando mídia da mensagem atual: ${message.type}`);
+			// logger.debug(`Processando mídia da mensagem atual: ${message.type}`);
 
 			// Lazy loading: só usa content direto se já tiver .data (base64)
 			if (message.content && message.content.data) {
@@ -509,7 +509,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			// Verificar se o tipo de mídia é suportado
 			const mediaType = quotedMsg.type.toLowerCase();
 
-			logger.debug(`Processando mídia da mensagem citada, tipo ${mediaType}`);
+			// logger.debug(`Processando mídia da mensagem citada, tipo ${mediaType}`);
 			if (mediaType === "sticker") {
 				// Baixa o sticker original para extrair a mídia
 				const stickerMedia = await quotedMsg.downloadMedia();
@@ -625,8 +625,8 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			}
 		}
 
-		// Log para debug
-		logger.debug(`Mídia obtida: tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}`);
+		// Log unificado do comando sticker
+		logger.info(`Executando comando sticker quadrado (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`);
 
 		// Determinar o tipo de corte final (se for LLM, fazer a query agora)
 		let finalCropType = cropType;

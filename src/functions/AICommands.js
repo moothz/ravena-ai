@@ -312,8 +312,9 @@ async function aiCommand(bot, message, args, group) {
 	// Now we classify FIRST, telling the LLM if there is media attached.
 	const classificationResult = await classifyRequest(question, cmdSimpleList, "", !!media);
 
+	const cleanQuestion = question.replace(/[\r\n]+/g, " ").trim().substring(0, 100);
 	logger.debug(
-		`[aiCommand] Classified request: "${question.substring(0, 100)}" (from ${message.author}, has Media: ${!!media}) -> ${classificationResult.classification ?? "Erro"} ${classificationResult.command ?? ""}`
+		`[aiCommand] Classified request: "${cleanQuestion}" (from ${message.author}, has Media: ${!!media}) -> ${classificationResult.classification ?? "Erro"} ${classificationResult.command ?? ""}`
 	);
 
 	// 5. Handle Classification Results
@@ -415,7 +416,7 @@ async function aiCommand(bot, message, args, group) {
 	};
 
 	try {
-		logger.debug("[aiCommand] Requesting LLM completion");
+		// logger.debug("[aiCommand] Requesting LLM completion");
 		const response = await llmService.getCompletion(completionOptions);
 
 		// Process variables
@@ -563,7 +564,7 @@ async function handleMediaRequest(
 	}
 
 	try {
-		logger.debug("[aiCommand] Requesting LLM completion for media");
+		// logger.debug("[aiCommand] Requesting LLM completion for media");
 		const response = await llmService.getCompletion(completionOptions);
 
 		// Store in history

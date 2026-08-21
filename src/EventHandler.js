@@ -798,7 +798,7 @@ class EventHandler extends EventEmitter {
 			filters.nsfw &&
 			(message.type === "image" || message.type === "sticker" || message.type === "video")
 		) {
-			this.logger.info(`Filtros: ${message.type} - Verificando NSFW`);
+			// this.logger.info(`Filtros: ${message.type} - Verificando NSFW`);
 			// Processa a imagem/vídeo para detecção NSFW
 			try {
 				// Primeiro salvamos a mídia temporariamente
@@ -816,7 +816,7 @@ class EventHandler extends EventEmitter {
 
 				// Se não tiver dados (comum em vídeos), tenta baixar
 				if (!mediaData && typeof message.downloadMedia === "function") {
-					this.logger.debug("Baixando mídia para verificação NSFW...");
+					// this.logger.debug("Baixando mídia para verificação NSFW...");
 					try {
 						const media = await message.downloadMedia();
 						mediaData = media?.data;
@@ -921,7 +921,7 @@ class EventHandler extends EventEmitter {
 		}
 
 		if (data.isCommunity || data.group?.isCommunity) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em comunidade.`);
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em comunidade (${groupId}).`);
 			return;
 		}
 
@@ -932,7 +932,7 @@ class EventHandler extends EventEmitter {
 		const initialHasGreetings = initialGroupCheck?.greetings && Object.keys(initialGroupCheck.greetings).some((k) => initialGroupCheck.greetings[k]);
 		const initialHasFarewells = initialGroupCheck?.farewells && Object.keys(initialGroupCheck.farewells).some((k) => initialGroupCheck.farewells[k]);
 		if ((data.isAnnounce || data.group?.isAnnounce) && !initialHasGreetings && !initialHasFarewells) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel (sem boas-vindas/despedida configuradas).`);
+			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel (${groupId}) (sem boas-vindas/despedida configuradas).`);
 			return;
 		}
 
@@ -1038,7 +1038,7 @@ class EventHandler extends EventEmitter {
 
 			if (chat.isCommunity) {
 				this.logger.debug(
-					`[processGroupJoin][viaChat] Ignorando evento de join em comunidade '${chat.name}'`,
+					`[processGroupJoin][viaChat] IGNORANDO evento de join em comunidade '${chat.name}' (${data.group?.id || chat.id})`,
 					{ chat }
 				);
 				return;
@@ -1061,7 +1061,7 @@ class EventHandler extends EventEmitter {
 			const hasFarewells = group?.farewells && Object.keys(group.farewells).some((k) => group.farewells[k]);
 			if (chat.isAnnounce && !hasGreetings && !hasFarewells) {
 				this.logger.debug(
-					`[processGroupJoin][viaChat] Ignorando evento de join em Announce Channel '${chat.name}' sem boas-vindas/despedida configuradas`,
+					`[processGroupJoin][viaChat] IGNORANDO evento de join em Announce Channel '${chat.name}' (${data.group?.id || chat.id}) sem boas-vindas/despedida configuradas`,
 					{ chat }
 				);
 				return;

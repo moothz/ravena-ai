@@ -2832,7 +2832,7 @@ class WhatsAppBotGo {
 				}
 				const infoResponse = await this.apiClient.post("/user/info", { number: [numberToFetch] });
 				const info = infoResponse.data?.Users?.[numberToFetch];
-				this.logger.debug(`[getContactDetails]`, { numberToFetch, userInfo: info.data ?? "" });
+				// this.logger.debug(`[getContactDetails]`, { numberToFetch, userInfo: info.data ?? "" });
 
 				if (info) {
 					returnData.name = info.VerifiedName ?? returnData.name;

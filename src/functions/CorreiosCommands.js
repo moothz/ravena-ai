@@ -89,11 +89,11 @@ async function inicializarRastreio(bot) {
 			true
 		);
 
-		// Start cron job: every 15 minutes
-		cron.schedule("*/15 * * * *", async () => {
-			logger.info("[CorreiosCron] Iniciando verificação de pacotes...");
-			await checkAllPackages(bot);
-		});
+		// Start cron job: every 15 minutes (DESATIVADO)
+		// cron.schedule("*/15 * * * *", async () => {
+		// 	logger.info("[CorreiosCron] Iniciando verificação de pacotes...");
+		// 	await checkAllPackages(bot);
+		// });
 
 		logger.info("[Correios] Sistema de rastreio inicializado com sucesso.");
 	} catch (error) {
@@ -504,4 +504,8 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, inicializarRastreio };
+// module.exports = { commands, inicializarRastreio };
+module.exports = {
+	commands: [],
+	inicializarRastreio: async () => {}
+};

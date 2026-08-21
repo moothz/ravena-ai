@@ -246,10 +246,6 @@ async function interactWithConversation(bot, message, args, group) {
 			});
 		}
 
-		logger.info(
-			`[${group.id}][interactWithConversation] Gerando interação para o grupo ${message.group}`
-		);
-
 		let recentMessages;
 
 		try {
@@ -263,10 +259,6 @@ async function interactWithConversation(bot, message, args, group) {
 			// Recorre a mensagens armazenadas
 			recentMessages = [];
 		}
-
-		logger.info(
-			`[${group.id}][interactWithConversation] Mensagens recentes: ${recentMessages.length}`
-		);
 
 		if (!recentMessages || recentMessages.length === 0) {
 			if (retornarErro) {
@@ -294,7 +286,7 @@ async function interactWithConversation(bot, message, args, group) {
 ${formattedMessages}`;
 
 		logger.info(
-			`[${group.id}][interactWithConversation] Enviando prompt: ${prompt.substring(0, 500)}`
+			`[${group.id}][interactWithConversation] Gerando interação para o grupo ${message.group} (Msgs recentes: ${recentMessages.length}, Total chars: ${prompt.length})`
 		);
 
 		// Obtém interação do LLM
@@ -355,7 +347,7 @@ ${formattedMessages}`;
  */
 async function runGroupAnalysis(chatId, pendingText, bot) {
 	if (activeAnalyses.has(chatId)) {
-		logger.debug(`[${chatId}] Análise de dossiê já em andamento, pulando.`);
+		// logger.debug(`[${chatId}] Análise de dossiê já em andamento, pulando.`);
 		return;
 	}
 	activeAnalyses.add(chatId);

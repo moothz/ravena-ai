@@ -101,6 +101,7 @@ class LLMService {
 
 					const completionOptions = {
 						customEndpoint: config.url,
+						providerName: config.name,
 						...options
 					};
 
@@ -181,8 +182,10 @@ class LLMService {
 		}
 
 		if (promptTokens > 0 || completionTokens > 0) {
+			const elapsedMs = options._startTime ? Date.now() - options._startTime : null;
+			const timeStr = elapsedMs !== null ? ` | Time: ${elapsedMs}ms` : "";
 			this.logger.info(
-				`[TokenUsage][${provider}] Type: ${requestType} | Model: ${model} | In: ${promptTokens} | Out: ${completionTokens}`
+				`[TokenUsage][${provider}] Type: ${requestType} | Model: ${model} | In: ${promptTokens} | Out: ${completionTokens}${timeStr}`
 			);
 
 			try {
@@ -452,12 +455,12 @@ class LLMService {
 
 			const model = options.model ?? "gpt-3.5-turbo";
 
-			this.logger.debug(`Enviando solicitação para API compatível com OpenAI:`, {
-				endpoint,
-				model,
-				promptLength: options.prompt.length,
-				maxTokens: options.maxTokens ?? 5000
-			});
+			// this.logger.debug(`Enviando solicitação para API compatível com OpenAI:`, {
+			// 	endpoint,
+			// 	model,
+			// 	promptLength: options.prompt.length,
+			// 	maxTokens: options.maxTokens ?? 5000
+			// });
 
 			const ctxInclude =
 				options.systemContext ??
@@ -518,7 +521,7 @@ class LLMService {
 				timeout: options.timeout ?? this.apiTimeout
 			});
 
-			this._trackUsage("OpenAI", response.data, model, options);
+			this._trackUsage(options.providerName || "OpenAI", response.data, model, options);
 
 			return response.data;
 		} catch (error) {
@@ -552,12 +555,12 @@ class LLMService {
 
 			const model = options.model ?? "openai/gpt-3.5-turbo";
 
-			this.logger.debug("Enviando solicitação para API OpenRouter:", {
-				endpoint,
-				model,
-				promptLength: options.prompt.length,
-				maxTokens: options.maxTokens ?? 5000
-			});
+			// this.logger.debug("Enviando solicitação para API OpenRouter:", {
+			// 	endpoint,
+			// 	model,
+			// 	promptLength: options.prompt.length,
+			// 	maxTokens: options.maxTokens ?? 5000
+			// });
 
 			const ctxInclude =
 				options.systemContext ??
@@ -616,7 +619,7 @@ class LLMService {
 				timeout: options.timeout ?? this.apiTimeout
 			});
 
-			this._trackUsage("OpenRouter", response.data, model, options);
+			this._trackUsage(options.providerName || "OpenRouter", response.data, model, options);
 
 			return response.data;
 		} catch (error) {
@@ -755,14 +758,14 @@ class LLMService {
 
 			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
 
-			if (debugPrompt) {
-				this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API", {
-					size: options.prompt.length,
-					prompt: this.summarizeString(options.prompt)
-				});
-			} else {
-				this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API");
-			}
+			// if (debugPrompt) {
+			// 	this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API", {
+			// 		size: options.prompt.length,
+			// 		prompt: this.summarizeString(options.prompt)
+			// 	});
+			// } else {
+			// 	this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API");
+			// }
 
 			const response = await axios.post(endpoint, payload, {
 				headers: {
@@ -771,7 +774,7 @@ class LLMService {
 				timeout: toTime
 			});
 
-			this._trackUsage("Ollama", response.data, payload.model, options);
+			this._trackUsage(options.providerName || "Ollama", response.data, payload.model, options);
 
 			return response.data;
 		} catch (error) {
@@ -799,6 +802,7 @@ class LLMService {
 	async getCompletion(options) {
 		const EventHandler = require("../EventHandler");
 		EventHandler.getInstance().emit("activity", { type: "llm" });
+		options._startTime = options._startTime || Date.now();
 		const priority = options.priority ?? 0;
 		const maxQueueRetries = 10; // Limit times we can send back to queue
 
@@ -806,11 +810,11 @@ class LLMService {
 			try {
 				// Se um provedor específico for solicitado, use-o diretamente
 				if (options.provider) {
-					this.logger.debug("[LLMService] Obtendo completion com opções:", {
-						provider: options.provider,
-						promptLength: options.prompt.length,
-						temperature: options.temperature ?? 0.7
-					});
+					// this.logger.debug("[LLMService] Obtendo completion com opções:", {
+					// 	provider: options.provider,
+					// 	promptLength: options.prompt.length,
+					// 	temperature: options.temperature ?? 0.7
+					// });
 
 					const response = await this.getCompletionFromSpecificProvider(options);
 					return this._cleanResponse(response);
@@ -988,19 +992,19 @@ class LLMService {
 			}
 
 			try {
-				this.logger.debug(`[LLMService] Tentando provedor: ${provider.name}`);
+				// this.logger.debug(`[LLMService] Tentando provedor: ${provider.name}`);
 				const result = await provider.method(options);
 
 				if (!result || typeof result !== "string" || result.trim() === "") {
 					throw new Error("Resposta vazia ou inválida do provedor");
 				}
 
-				if (!result.includes("Imagem[")) {
-					this.logger.debug(
-						`[LLMService] Provedor ${provider.name} retornou resposta com sucesso`,
-						{ result: this.summarizeString(result) }
-					);
-				}
+				// if (!result.includes("Imagem[")) {
+				// 	this.logger.debug(
+				// 		`[LLMService] Provedor ${provider.name} retornou resposta com sucesso`,
+				// 		{ result: this.summarizeString(result) }
+				// 	);
+				// }
 
 				return result;
 			} catch (error) {

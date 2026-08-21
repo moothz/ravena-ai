@@ -1582,7 +1582,7 @@ class CommandHandler {
 
 		if (matchResult) {
 			const { customCommand, newArgs } = matchResult;
-			this.logger.debug(`[processCustomIgnoresPrefix] `, customCommand);
+			// this.logger.debug(`[processCustomIgnoresPrefix] `, customCommand);
 			this.executeCustomCommand(bot, message, customCommand, newArgs, group);
 		}
 	}
