@@ -306,25 +306,38 @@ class LLMService {
 				};
 			}
 
-			// --- Audio Stats (Transcription & Generation) ---
+			// --- Audio & Image Stats ---
 			const speechProvider = "Speech System";
-			const speechParams = timeframeMs ? [Date.now() - timeframeMs] : [];
-			const speechFilter = timeframeMs ? " WHERE timestamp > ?" : "";
+			const mediaParams = timeframeMs ? [Date.now() - timeframeMs] : [];
+			const mediaFilter = timeframeMs ? " WHERE timestamp > ?" : "";
 
 			// ALWAYS query absolute earliest timestamps across all relevant tables
 			// to provide a correct 'since' date for the dashboard.
-			const [llmFirst, sttFirst, ttsFirst] = await Promise.all([
-				this.database.dbGet(this.DB_NAME, "SELECT MIN(timestamp) as ts FROM usage_stats"),
-				this.database.dbGet(
-					"media_stats",
-					"SELECT MIN(timestamp) as ts FROM speech_transcription_stats"
-				),
-				this.database.dbGet(
-					"media_stats",
-					"SELECT MIN(timestamp) as ts FROM speech_generation_stats"
-				)
+			const [llmFirst, sttFirst, ttsFirst, bonsaiFirst, comfyFirst] = await Promise.all([
+				this.database.dbGet(this.DB_NAME, "SELECT MIN(timestamp) as ts FROM usage_stats").catch(() => null),
+				this.database
+					.dbGet(
+						"media_stats",
+						"SELECT MIN(timestamp) as ts FROM speech_transcription_stats"
+					)
+					.catch(() => null),
+				this.database
+					.dbGet("media_stats", "SELECT MIN(timestamp) as ts FROM speech_generation_stats")
+					.catch(() => null),
+				this.database
+					.dbGet("bonsai_stats", "SELECT MIN(timestamp) as ts FROM bonsai_stats")
+					.catch(() => null),
+				this.database
+					.dbGet("media_stats", "SELECT MIN(timestamp) as ts FROM comfy_stats")
+					.catch(() => null)
 			]);
-			const absoluteTimestamps = [llmFirst?.ts, sttFirst?.ts, ttsFirst?.ts].filter((ts) => ts);
+			const absoluteTimestamps = [
+				llmFirst?.ts,
+				sttFirst?.ts,
+				ttsFirst?.ts,
+				bonsaiFirst?.ts,
+				comfyFirst?.ts
+			].filter((ts) => ts);
 			if (absoluteTimestamps.length > 0) {
 				const absoluteMin = Math.min(...absoluteTimestamps);
 				if (!stats.first_record_timestamp || absoluteMin < stats.first_record_timestamp) {
@@ -332,18 +345,119 @@ class LLMService {
 				}
 			}
 
+			// 1. Bonsai Image Generation Stats
+			try {
+				const bonsaiAgg = await this.database.dbGet(
+					"bonsai_stats",
+					`SELECT SUM(CASE WHEN is_success IS NULL OR is_success = 1 THEN count ELSE 0 END) as requests,
+					        SUM(CASE WHEN is_success = 0 THEN count ELSE 0 END) as failures,
+					        MIN(timestamp) as min_ts FROM bonsai_stats${mediaFilter}`,
+					mediaParams
+				);
+
+				if (bonsaiAgg && ((bonsaiAgg.requests || 0) > 0 || (bonsaiAgg.failures || 0) > 0)) {
+					const provider = "Bonsai";
+					if (!stats.by_provider[provider]) {
+						stats.by_provider[provider] = {
+							requests: 0,
+							failures: 0,
+							input_tokens: 0,
+							output_tokens: 0,
+							by_type: {}
+						};
+					}
+
+					const requests = bonsaiAgg.requests || 0;
+					const failures = bonsaiAgg.failures || 0;
+
+					stats.total_requests += requests;
+					stats.total_failures += failures;
+					stats.by_type.image.requests += requests;
+					stats.by_type.image.failures += failures;
+
+					stats.by_provider[provider].requests += requests;
+					stats.by_provider[provider].failures += failures;
+					stats.by_provider[provider].by_type.image = {
+						requests,
+						failures,
+						input_tokens: 0,
+						output_tokens: 0
+					};
+
+					if (
+						bonsaiAgg.min_ts &&
+						(!stats.first_record_timestamp || bonsaiAgg.min_ts < stats.first_record_timestamp)
+					) {
+						stats.first_record_timestamp = bonsaiAgg.min_ts;
+					}
+				}
+			} catch (bonsaiErr) {
+				this.logger.error("Error getting Bonsai stats:", bonsaiErr);
+			}
+
+			// 2. ComfyUI Image Generation Stats
+			try {
+				const comfyAgg = await this.database.dbGet(
+					"media_stats",
+					`SELECT SUM(CASE WHEN is_success IS NULL OR is_success = 1 THEN count ELSE 0 END) as requests,
+					        SUM(CASE WHEN is_success = 0 THEN count ELSE 0 END) as failures,
+					        MIN(timestamp) as min_ts FROM comfy_stats${mediaFilter}`,
+					mediaParams
+				);
+
+				if (comfyAgg && ((comfyAgg.requests || 0) > 0 || (comfyAgg.failures || 0) > 0)) {
+					const provider = "ComfyUI";
+					if (!stats.by_provider[provider]) {
+						stats.by_provider[provider] = {
+							requests: 0,
+							failures: 0,
+							input_tokens: 0,
+							output_tokens: 0,
+							by_type: {}
+						};
+					}
+
+					const requests = comfyAgg.requests || 0;
+					const failures = comfyAgg.failures || 0;
+
+					stats.total_requests += requests;
+					stats.total_failures += failures;
+					stats.by_type.image.requests += requests;
+					stats.by_type.image.failures += failures;
+
+					stats.by_provider[provider].requests += requests;
+					stats.by_provider[provider].failures += failures;
+					stats.by_provider[provider].by_type.image = {
+						requests,
+						failures,
+						input_tokens: 0,
+						output_tokens: 0
+					};
+
+					if (
+						comfyAgg.min_ts &&
+						(!stats.first_record_timestamp || comfyAgg.min_ts < stats.first_record_timestamp)
+					) {
+						stats.first_record_timestamp = comfyAgg.min_ts;
+					}
+				}
+			} catch (comfyErr) {
+				this.logger.error("Error getting ComfyUI stats:", comfyErr);
+			}
+
 			try {
 				// STT Stats
 				const sttAgg = await this.database.dbGet(
 					"media_stats",
-					`SELECT COUNT(*) as requests, SUM(char_count) as input_tokens, SUM(duration_sec) as duration_sec, MIN(timestamp) as min_ts FROM speech_transcription_stats${speechFilter}`,
-					speechParams
+					`SELECT COUNT(*) as requests, SUM(char_count) as input_tokens, SUM(duration_sec) as duration_sec, MIN(timestamp) as min_ts FROM speech_transcription_stats${mediaFilter}`,
+					mediaParams
 				);
 
 				if (sttAgg && sttAgg.requests > 0) {
 					if (!stats.by_provider[speechProvider]) {
 						stats.by_provider[speechProvider] = {
 							requests: 0,
+							failures: 0,
 							input_tokens: 0,
 							output_tokens: 0,
 							by_type: {}
@@ -352,6 +466,7 @@ class LLMService {
 
 					const data = {
 						requests: sttAgg.requests,
+						failures: 0,
 						input_tokens: sttAgg.input_tokens || 0,
 						output_tokens: 0,
 						duration_sec: sttAgg.duration_sec || 0
@@ -377,14 +492,15 @@ class LLMService {
 				// TTS Stats
 				const ttsAgg = await this.database.dbGet(
 					"media_stats",
-					`SELECT COUNT(*) as requests, SUM(char_count) as output_tokens, MIN(timestamp) as min_ts FROM speech_generation_stats${speechFilter}`,
-					speechParams
+					`SELECT COUNT(*) as requests, SUM(char_count) as output_tokens, MIN(timestamp) as min_ts FROM speech_generation_stats${mediaFilter}`,
+					mediaParams
 				);
 
 				if (ttsAgg && ttsAgg.requests > 0) {
 					if (!stats.by_provider[speechProvider]) {
 						stats.by_provider[speechProvider] = {
 							requests: 0,
+							failures: 0,
 							input_tokens: 0,
 							output_tokens: 0,
 							by_type: {}
@@ -393,6 +509,7 @@ class LLMService {
 
 					const data = {
 						requests: ttsAgg.requests,
+						failures: 0,
 						input_tokens: 0,
 						output_tokens: ttsAgg.output_tokens || 0
 					};

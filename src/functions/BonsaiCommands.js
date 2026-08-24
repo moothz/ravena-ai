@@ -25,24 +25,34 @@ database.getSQLiteDb(
         timestamp INTEGER,
         resolution TEXT,
         count INTEGER DEFAULT 1,
-        model TEXT
+        model TEXT,
+        is_success INTEGER DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_bonsai_ts ON bonsai_stats(timestamp);
 `
 );
+
+// Migration for existing databases without is_success column
+database
+	.dbRun(
+		"bonsai_stats",
+		`ALTER TABLE bonsai_stats ADD COLUMN is_success INTEGER DEFAULT 1`
+	)
+	.catch(() => {});
 
 /**
  * Tracks Bonsai usage stats
  * @param {string} resolution - Image resolution (e.g., "1024x1024")
  * @param {number} count - Number of images generated
  * @param {string} model - Model used
+ * @param {boolean} isSuccess - Whether generation succeeded
  */
-async function trackBonsaiStats(resolution, count = 1, model = "unknown") {
+async function trackBonsaiStats(resolution = "1024x1024", count = 1, model = "bonsai-ternary", isSuccess = true) {
 	try {
 		await database.dbRun(
 			"bonsai_stats",
-			`INSERT INTO bonsai_stats (timestamp, resolution, count, model) VALUES (?, ?, ?, ?)`,
-			[Date.now(), resolution, count, model]
+			`INSERT INTO bonsai_stats (timestamp, resolution, count, model, is_success) VALUES (?, ?, ?, ?, ?)`,
+			[Date.now(), resolution, count, model, isSuccess ? 1 : 0]
 		);
 	} catch (e) {
 		logger.error("Error tracking bonsai stats:", e);
@@ -412,6 +422,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		return returnMessages.length === 1 ? returnMessages[0] : returnMessages;
 	} catch (error) {
 		logger.error("Erro ao gerar imagem:", error);
+		trackBonsaiStats("1024x1024", 1, "bonsai-ternary", false);
 
 		let errorMessage = "Erro ao gerar imagem.";
 		if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
@@ -452,4 +463,4 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, generateImage };
+module.exports = { commands, generateImage, trackBonsaiStats };

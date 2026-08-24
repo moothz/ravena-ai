@@ -393,6 +393,7 @@ ${listGroups}\n\n${inactiveSection}`;
 			const minTimestamps = await Promise.all([
 				getMinTs("llm_stats", "usage_stats"),
 				getMinTs("media_stats", "comfy_stats"),
+				getMinTs("bonsai_stats", "bonsai_stats"),
 				getMinTs("media_stats", "speech_generation_stats"),
 				getMinTs("media_stats", "speech_transcription_stats")
 			]);

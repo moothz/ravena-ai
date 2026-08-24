@@ -424,9 +424,10 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.keys(pData.by_type || {}).forEach(type => {
                 const targetType = type === 'video' ? 'text' : type;
                 if (!mergedByType[targetType]) {
-                    mergedByType[targetType] = { requests: 0, input_tokens: 0, output_tokens: 0, duration_sec: 0 };
+                    mergedByType[targetType] = { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, duration_sec: 0 };
                 }
                 mergedByType[targetType].requests += pData.by_type[type].requests;
+                mergedByType[targetType].failures += (pData.by_type[type].failures || 0);
                 mergedByType[targetType].input_tokens += pData.by_type[type].input_tokens;
                 mergedByType[targetType].output_tokens += pData.by_type[type].output_tokens;
                 if (pData.by_type[type].duration_sec) mergedByType[targetType].duration_sec += pData.by_type[type].duration_sec;

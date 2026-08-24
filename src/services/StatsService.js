@@ -207,12 +207,41 @@ class StatsService {
 			this.logger.error("Error getting Speech stats:", e);
 			return {};
 		}
+	async getBonsaiStats() {
+		try {
+			const rows = await this.database.dbAll("bonsai_stats", "SELECT * FROM bonsai_stats");
+
+			const stats = {
+				total_images: 0,
+				by_resolution: {},
+				by_model: {}
+			};
+
+			for (const row of rows) {
+				const count = row.count || 1;
+				stats.total_images += count;
+
+				const res = row.resolution || "unknown";
+				if (!stats.by_resolution[res]) stats.by_resolution[res] = 0;
+				stats.by_resolution[res] += count;
+
+				const model = row.model || "unknown";
+				if (!stats.by_model[model]) stats.by_model[model] = 0;
+				stats.by_model[model] += count;
+			}
+
+			return stats;
+		} catch (e) {
+			this.logger.error("Error getting Bonsai stats:", e);
+			return {};
+		}
 	}
 
 	async getAllStats() {
 		return {
 			llm: await this.getLLMStats(),
 			comfyui: await this.getComfyStats(),
+			bonsai: await this.getBonsaiStats(),
 			speech: await this.getSpeechStats()
 		};
 	}

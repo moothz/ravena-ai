@@ -9,6 +9,7 @@
     { "name": "Gemini 1.5 Pro ($7.00 / $21.00)", "input": 7.00, "output": 21.00 }
   ], 
   "image": [ 
+    { "name": "Bonsai / Local (Grátis - $0.00)", "price": 0.00 },
     { "name": "DALL-E 3 ($0.040/img)", "price": 0.040 },
     { "name": "Midjourney via API ($0.050/img)", "price": 0.050 },
     { "name": "Stability AI Core ($0.030/img)", "price": 0.030 },

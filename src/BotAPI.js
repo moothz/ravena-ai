@@ -1072,10 +1072,15 @@ class BotAPI {
 					}
 				);
 
+				const { trackBonsaiStats } = require("./functions/BonsaiCommands");
+				if (trackBonsaiStats) trackBonsaiStats("1024x1024", 1, "bonsai-ternary", true);
+
 				res.set("Content-Type", "image/jpeg");
 				res.send(response.data);
 			} catch (error) {
 				this.logger.error("Erro na API de geração de imagem:", error);
+				const { trackBonsaiStats } = require("./functions/BonsaiCommands");
+				if (trackBonsaiStats) trackBonsaiStats("1024x1024", 1, "bonsai-ternary", false);
 				res.status(500).json({ error: "Erro ao gerar imagem: " + error.message });
 			}
 		});
