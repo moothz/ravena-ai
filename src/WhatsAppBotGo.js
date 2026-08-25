@@ -189,7 +189,7 @@ class WhatsAppBotGo {
 		};
 
 		this.updateVersions();
-		setInterval(this.updateVersions, 3600000);
+		this.versionUpdateInterval = setInterval(this.updateVersions.bind(this), 3600000);
 
 		this.scheduleGroupInfoUpdate();
 	}
@@ -3033,6 +3033,7 @@ class WhatsAppBotGo {
 	}
 
 	async destroy() {
+		if (this.versionUpdateInterval) clearInterval(this.versionUpdateInterval);
 		if (this.webhookServer) this.webhookServer.close();
 		if (this.loadReport) this.loadReport.destroy();
 	}

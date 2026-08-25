@@ -1287,7 +1287,7 @@ async function showGeoguesserRanking(bot, message, args, group) {
 	}
 }
 
-setInterval(async () => {
+const geoCleanupInterval = setInterval(async () => {
 	try {
 		// Salva periodicamente se houver modificações não salvas
 		if (modificacoesNaoSalvas && Date.now() - ultimoSalvamento > INTERVALO_SALVAMENTO) {
@@ -1379,4 +1379,8 @@ const commands = [
 	})
 ];
 
-//module.exports = { commands, processLocationMessage };
+const cleanup = () => {
+	if (geoCleanupInterval) clearInterval(geoCleanupInterval);
+};
+
+//module.exports = { commands, processLocationMessage, cleanup };
