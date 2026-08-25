@@ -52,8 +52,6 @@ class EventHandler extends EventEmitter {
 			? process.env.CMD_WHITELIST.split(",")
 			: ["sa-", "anoni"];
 
-		this.recentlyLeft = [];
-		this.recentlyJoined = [];
 		this.PV_AI_DEBOUNCE_MS = 8000;
 		this.pvDebounce = {};
 		this.activeSpammers = new Set();
@@ -985,10 +983,6 @@ class EventHandler extends EventEmitter {
 		}
 
 		if (!isBotJoining) {
-			// Se não for o bot sendo adicionado, coloca pessoa numa lista pra ignorar o join e evitar spam no grupo
-			//if(this.recentlyJoined.includes(data.user.id)) return;
-			this.recentlyJoined.push(data.user.id);
-
 			const fixedGroups = [
 				process.env.GRUPO_INTERACAO,
 				process.env.GRUPO_PESCA,
@@ -1015,15 +1009,6 @@ class EventHandler extends EventEmitter {
 				}
 			}
 		}
-
-		setTimeout(
-			(rtlyL, id) => {
-				rtlyL = rtlyL.filter((rt) => rt !== id);
-			},
-			60000,
-			this.recentlyJoined,
-			data.user.id
-		);
 
 		//this.logger.info(`Usuário ${data.user.name} (${data.user.id}) entrou no grupo ${data.group.name} (${data.group.id}). Quem adicionou: ${data.responsavel.name}/${data.responsavel.id}`);
 
@@ -1483,17 +1468,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	 */
 	async processGroupLeave(bot, data) {
 		//this.logger.info(`[processGroupLeave] `, { data });
-
-		//if(this.recentlyLeft.includes(data.user.id)) return;
-		this.recentlyLeft.push(data.user.id);
-		setTimeout(
-			(rtlyL, id) => {
-				rtlyL = rtlyL.filter((rt) => rt !== id);
-			},
-			60000,
-			this.recentlyLeft,
-			data.user.id
-		);
 
 		this.logger.info(
 			`Usuário ${JSON.stringify(data.user.name)} (${data.user.id}) saiu do grupo ${data.group.name} (${data.group.id}). Quem removeu: ${data.responsavel.name}/${data.responsavel.id}`,
