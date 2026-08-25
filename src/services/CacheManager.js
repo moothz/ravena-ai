@@ -324,7 +324,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(data), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		// Memory
@@ -345,7 +347,9 @@ class CacheManager {
 			try {
 				const cached = await this.redisClient.get(redisKey);
 				if (cached) return safeJsonParse(cached);
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		// Memory
@@ -375,7 +379,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(data), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.chatCache.push(data);
@@ -393,7 +399,9 @@ class CacheManager {
 			try {
 				const cached = await this.redisClient.get(redisKey);
 				if (cached) return safeJsonParse(cached);
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const memItem = this.chatCache.find((m) => m.key && m.key.id == id);
@@ -421,7 +429,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(data), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.messageCache.push(data);
@@ -442,7 +452,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(key), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.messageCache.push(key);
@@ -460,7 +472,9 @@ class CacheManager {
 			try {
 				const cached = await this.redisClient.get(redisKey);
 				if (cached) return safeJsonParse(cached);
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const memItem = this.messageCache.find((m) => m.key && m.key.id == id);
@@ -488,7 +502,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(data), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.messageCache.push(data);
@@ -510,7 +526,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(message), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.messageCache.push(message);
@@ -528,7 +546,9 @@ class CacheManager {
 			try {
 				const cached = await this.redisClient.get(redisKey);
 				if (cached) return safeJsonParse(cached);
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const memItem = this.messageCache.find((m) => m.id == id || (m.key && m.key.id == id));
@@ -555,7 +575,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, JSON.stringify(data), "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		this.contactCache.push(data);
@@ -573,7 +595,9 @@ class CacheManager {
 			try {
 				const cached = await this.redisClient.get(redisKey);
 				if (cached) return safeJsonParse(cached);
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const memItem = this.contactCache.find((c) => c.number == id);
@@ -599,7 +623,9 @@ class CacheManager {
 			try {
 				await this.redisClient.set(redisKey, name, "EX", ttl);
 				return;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const existingIndex = this.telegramNameCache.findIndex((i) => i.id === userId);
@@ -621,7 +647,9 @@ class CacheManager {
 			try {
 				const cachedName = await this.redisClient.get(redisKey);
 				if (cachedName) return cachedName;
-			} catch (err) {}
+			} catch (err) {
+				this.logger.debug("Redis operation error:", err.message);
+			}
 		}
 
 		const item = this.telegramNameCache.find((i) => i.id === userId);

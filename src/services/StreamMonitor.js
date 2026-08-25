@@ -249,7 +249,9 @@ class StreamMonitor extends EventEmitter {
 				if (row.last_video_data) {
 					try {
 						lastVideo = JSON.parse(row.last_video_data);
-					} catch (e) {}
+					} catch (e) {
+						this.logger.debug(`[StreamMonitor] Failed to parse last_video_data for ${key}:`, e.message);
+					}
 				}
 
 				// Failsafe: If live but no event history, assume notified at start
@@ -527,7 +529,9 @@ class StreamMonitor extends EventEmitter {
 			if (fs.existsSync(this.notifiedCacheFile)) {
 				try {
 					currentCache = JSON.parse(fs.readFileSync(this.notifiedCacheFile, "utf8")) || [];
-				} catch (e) {}
+				} catch (e) {
+					this.logger.debug("[StreamMonitor] Failed to read notifiedCacheFile:", e.message);
+				}
 			}
 
 			const now = Date.now();
