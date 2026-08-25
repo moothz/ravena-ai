@@ -66,6 +66,16 @@ class CommandHandler {
 			}
 		}, this.debounceDecayTime);
 
+		// Limpeza periódica do cache de mensagens de cooldown para evitar vazamento de memória
+		this.cooldownMsgCleanupInterval = setInterval(() => {
+			const cutoff = Date.now() - 5 * 60 * 1000;
+			for (const key of Object.keys(this.cooldownMessages)) {
+				if (this.cooldownMessages[key] < cutoff) {
+					delete this.cooldownMessages[key];
+				}
+			}
+		}, 5 * 60 * 1000);
+
 		// Inicializa cache de comandos
 		this.loadAllCommands();
 	}
