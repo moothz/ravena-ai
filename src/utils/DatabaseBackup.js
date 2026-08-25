@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
+const BetterSQLite = require("better-sqlite3");
 const Logger = require("./Logger");
-const sqlite3 = require("sqlite3").verbose();
 
 class DatabaseBackup {
 	constructor(databaseInstance) {
@@ -293,12 +293,12 @@ class DatabaseBackup {
 			let db = this.db.sqlites[dbName];
 
 			// If not currently loaded in memory, open it temporarily
-			let temporary = false;
+			let temporaryDb = null;
 			if (!db) {
 				const dbPath = path.join(this.databasePath, "sqlites", `${dbName}.db`);
 				if (!fs.existsSync(dbPath)) return;
-				db = new sqlite3.Database(dbPath);
-				temporary = true;
+				temporaryDb = new BetterSQLite(dbPath, { readonly: true });
+				db = temporaryDb;
 			}
 
 			const tables = await this.getTables(db);
@@ -311,34 +311,50 @@ class DatabaseBackup {
 				await this.syncTable(db, tableName, pks, remoteConn);
 			}
 
-			if (temporary) db.close();
+			if (temporaryDb) temporaryDb.close();
 		} catch (error) {
 			this.logger.error(`Error syncing database ${dbName}:`, error);
 		}
 	}
 
 	async getTables(db) {
-		return new Promise((resolve, reject) => {
-			db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
-				if (err) reject(err);
-				else resolve(rows.map((r) => r.name));
+		if (typeof db.all === "function") {
+			return new Promise((resolve, reject) => {
+				db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
+					if (err) reject(err);
+					else resolve((rows || []).map((r) => r.name));
+				});
 			});
-		});
+		} else if (typeof db.prepare === "function") {
+			const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+			return (rows || []).map((r) => r.name);
+		}
+		return [];
 	}
 
 	async getPrimaryKeys(db, tableName) {
-		return new Promise((resolve, reject) => {
-			db.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
-				if (err) reject(err);
-				else {
-					const pks = rows
-						.filter((r) => r.pk > 0)
-						.sort((a, b) => a.pk - b.pk)
-						.map((r) => r.name);
-					resolve(pks.length > 0 ? pks : ["rowid"]);
-				}
+		if (typeof db.all === "function") {
+			return new Promise((resolve, reject) => {
+				db.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
+					if (err) reject(err);
+					else {
+						const pks = (rows || [])
+							.filter((r) => r.pk > 0)
+							.sort((a, b) => a.pk - b.pk)
+							.map((r) => r.name);
+						resolve(pks.length > 0 ? pks : ["rowid"]);
+					}
+				});
 			});
-		});
+		} else if (typeof db.prepare === "function") {
+			const rows = db.prepare(`PRAGMA table_info(${tableName})`).all();
+			const pks = (rows || [])
+				.filter((r) => r.pk > 0)
+				.sort((a, b) => a.pk - b.pk)
+				.map((r) => r.name);
+			return pks.length > 0 ? pks : ["rowid"];
+		}
+		return ["rowid"];
 	}
 
 	async syncTable(sqliteDb, tableName, pks, remoteConn) {
@@ -346,12 +362,17 @@ class DatabaseBackup {
 			const createSql = await this.getRemoteCreateStatement(sqliteDb, tableName, pks);
 			await remoteConn.execute(createSql);
 
-			const rows = await new Promise((resolve, reject) => {
-				sqliteDb.all(`SELECT * FROM ${tableName}`, (err, rows) => {
-					if (err) reject(err);
-					else resolve(rows);
+			let rows = [];
+			if (typeof sqliteDb.all === "function") {
+				rows = await new Promise((resolve, reject) => {
+					sqliteDb.all(`SELECT * FROM ${tableName}`, (err, resRows) => {
+						if (err) reject(err);
+						else resolve(resRows || []);
+					});
 				});
-			});
+			} else if (typeof sqliteDb.prepare === "function") {
+				rows = sqliteDb.prepare(`SELECT * FROM ${tableName}`).all() || [];
+			}
 
 			if (rows.length === 0) {
 				this.logger.debug(`Table ${tableName}: No rows to sync.`);
@@ -630,23 +651,11 @@ ${err.message}`);
 
 				// Create a new empty SQLite to populate
 				if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
-				newDb = new sqlite3.Database(dbPath);
+				newDb = new BetterSQLite(dbPath);
 
 				// 1. Initialize schema
 				if (schema) {
-					const schemaStatements = schema.split(";").filter((s) => s.trim() !== "");
-					await new Promise((resolve, reject) => {
-						newDb.serialize(() => {
-							for (const stmt of schemaStatements) {
-								newDb.run(stmt, (err) => {
-									if (err) {
-										this.logger.error(`Error initializing schema statement: ${stmt}`, err);
-									}
-								});
-							}
-							resolve();
-						});
-					});
+					newDb.exec(schema);
 				}
 
 				// 2. Identify tables relevant to this DB
@@ -683,14 +692,16 @@ ${err.message}`);
 					}
 				}
 
-				await new Promise((resolve) => newDb.close(() => resolve()));
+				newDb.close();
 				await connection.end();
 				this.logger.info(`Cloud restoration successful for ${dbName} from ${serverUri}`);
 				return true;
 			} catch (e) {
 				this.logger.error(`Cloud restore failed from ${serverUri}:`, e);
 				if (newDb) {
-					await new Promise((resolve) => newDb.close(() => resolve()));
+					try {
+						newDb.close();
+					} catch (err) {}
 				}
 				if (connection) {
 					try {
@@ -708,30 +719,41 @@ ${err.message}`);
 	}
 
 	async populateSQLiteTable(sqliteDb, tableName, rows) {
+		if (!rows || rows.length === 0) return;
 		const keys = Object.keys(rows[0]);
 		const columns = keys.map((k) => `\`${k}\``).join(", ");
 		const placeholders = keys.map(() => "?").join(", ");
 
 		const sql = `INSERT INTO \`${tableName}\` (${columns}) VALUES (${placeholders})`;
 
-		return new Promise((resolve, reject) => {
-			sqliteDb.serialize(() => {
-				sqliteDb.run("BEGIN TRANSACTION");
+		if (typeof sqliteDb.transaction === "function") {
+			const insertMany = sqliteDb.transaction((records) => {
 				const stmt = sqliteDb.prepare(sql);
-				for (const row of rows) {
+				for (const row of records) {
 					stmt.run(keys.map((k) => row[k]));
 				}
-				stmt.finalize();
-				sqliteDb.run("COMMIT", (err) => {
-					if (err) {
-						sqliteDb.run("ROLLBACK");
-						reject(err);
-					} else {
-						resolve();
+			});
+			insertMany(rows);
+		} else if (typeof sqliteDb.serialize === "function") {
+			return new Promise((resolve, reject) => {
+				sqliteDb.serialize(() => {
+					sqliteDb.run("BEGIN TRANSACTION");
+					const stmt = sqliteDb.prepare(sql);
+					for (const row of rows) {
+						stmt.run(keys.map((k) => row[k]));
 					}
+					stmt.finalize();
+					sqliteDb.run("COMMIT", (err) => {
+						if (err) {
+							sqliteDb.run("ROLLBACK");
+							reject(err);
+						} else {
+							resolve();
+						}
+					});
 				});
 			});
-		});
+		}
 	}
 
 	async reinitConnection(dbName) {

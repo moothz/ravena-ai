@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const Logger = require("./Logger");
-const sqlite3 = require("sqlite3").verbose();
 const DatabaseBackup = require("./DatabaseBackup");
 const DatabaseMappers = require("./db/DatabaseMappers");
 const CoreRepository = require("./db/repositories/CoreRepository");
