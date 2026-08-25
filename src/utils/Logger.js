@@ -2,6 +2,70 @@ const fs = require("fs");
 const path = require("path");
 const util = require("util");
 
+const logDir = path.join(__dirname, "../../logs");
+const fileDescriptors = new Map(); // name -> fd
+let rotationTimer = null;
+let currentDay = new Date().toISOString().split("T")[0];
+
+function ensureLogDirectory() {
+	if (!fs.existsSync(logDir)) {
+		fs.mkdirSync(logDir, { recursive: true });
+	}
+}
+
+function getLogFile(name) {
+	if (fileDescriptors.has(name)) {
+		return fileDescriptors.get(name);
+	}
+	ensureLogDirectory();
+	const logFileName = `${currentDay}-${name}.log`;
+	const logFilePath = path.join(logDir, logFileName);
+	try {
+		const fd = fs.openSync(logFilePath, "a");
+		fileDescriptors.set(name, fd);
+		return fd;
+	} catch (error) {
+		console.error(`Erro ao abrir arquivo de log (${name}):`, error);
+		return null;
+	}
+}
+
+function closeAllLogFiles() {
+	for (const [name, fd] of fileDescriptors.entries()) {
+		try {
+			if (fd) fs.closeSync(fd);
+		} catch (error) {
+			console.error(`Erro ao fechar arquivo de log (${name}):`, error);
+		}
+	}
+	fileDescriptors.clear();
+}
+
+function setupGlobalRotation() {
+	if (rotationTimer) return;
+	const now = new Date();
+	const tomorrow = new Date(now);
+	tomorrow.setDate(now.getDate() + 1);
+	tomorrow.setHours(0, 0, 0, 0);
+
+	const timeUntilMidnight = tomorrow - now;
+
+	rotationTimer = setTimeout(() => {
+		currentDay = new Date().toISOString().split("T")[0];
+		closeAllLogFiles();
+		rotationTimer = null;
+		setupGlobalRotation();
+	}, timeUntilMidnight);
+
+	if (rotationTimer.unref) {
+		rotationTimer.unref();
+	}
+}
+
+// Inicializa diretório e agendador global de rotação
+ensureLogDirectory();
+setupGlobalRotation();
+
 /**
  * Utilitário de Logger para registrar mensagens no console e arquivo
  */
@@ -12,72 +76,7 @@ class Logger {
 	 */
 	constructor(name) {
 		this.name = name;
-		this.logDir = path.join(__dirname, "../../logs");
-		this.currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-		this.logFile = null;
 		this.debugMode = process.env.DEBUG === "true";
-
-		// Cria diretório de log se não existir
-		this.ensureLogDirectory();
-
-		// Abre arquivo de log
-		this.openLogFile();
-
-		// Configura rotação à meia-noite
-		this.setupRotation();
-	}
-
-	/**
-	 * Garante que o diretório de log exista
-	 */
-	ensureLogDirectory() {
-		if (!fs.existsSync(this.logDir)) {
-			fs.mkdirSync(this.logDir, { recursive: true });
-		}
-	}
-
-	/**
-	 * Abre arquivo de log
-	 */
-	openLogFile() {
-		const logFileName = `${this.currentDate}-${this.name}.log`;
-		const logFilePath = path.join(this.logDir, logFileName);
-
-		// Fecha arquivo existente se estiver aberto
-		if (this.logFile) {
-			try {
-				fs.closeSync(this.logFile);
-			} catch (error) {
-				console.error("Erro ao fechar arquivo de log:", error);
-			}
-		}
-
-		// Abre novo arquivo para anexar
-		try {
-			this.logFile = fs.openSync(logFilePath, "a");
-		} catch (error) {
-			console.error("Erro ao abrir arquivo de log:", error);
-			this.logFile = null;
-		}
-	}
-
-	/**
-	 * Configura rotação de logs à meia-noite
-	 */
-	setupRotation() {
-		const now = new Date();
-		const tomorrow = new Date(now);
-		tomorrow.setDate(now.getDate() + 1);
-		tomorrow.setHours(0, 0, 0, 0);
-
-		const timeUntilMidnight = tomorrow - now;
-
-		// Define timeout para rotacionar logs à meia-noite
-		setTimeout(() => {
-			this.currentDate = new Date().toISOString().split("T")[0];
-			this.openLogFile();
-			this.setupRotation(); // Configura próxima rotação
-		}, timeUntilMidnight);
 	}
 
 	/**
@@ -118,13 +117,12 @@ class Logger {
 		console[consoleMethod](logMessage);
 
 		// Registra no arquivo
-		if (this.logFile) {
+		const logFd = getLogFile(this.name);
+		if (logFd) {
 			try {
-				fs.writeSync(this.logFile, logMessage + "\n");
+				fs.writeSync(logFd, logMessage + "\n");
 			} catch (error) {
 				console.error("Erro ao escrever no arquivo de log:", error);
-				// Tenta reabrir arquivo de log
-				this.openLogFile();
 			}
 		}
 	}
