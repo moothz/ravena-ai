@@ -164,19 +164,29 @@ class StreamMonitor extends EventEmitter {
         `
 			);
 
-			// Ensure new columns exist (simple migration check)
+			// Ensure new columns exist (migration check)
 			try {
-				await this.database.dbRun(
+				const cols = await this.database.mappers.all(
 					this.dbNameMonitor,
-					"ALTER TABLE stream_status ADD COLUMN last_event_type TEXT"
+					"PRAGMA table_info(stream_status)",
+					[]
 				);
-			} catch (e) {} // Column likely exists
-			try {
-				await this.database.dbRun(
-					this.dbNameMonitor,
-					"ALTER TABLE stream_status ADD COLUMN last_event_time TEXT"
-				);
-			} catch (e) {} // Column likely exists
+				const colNames = new Set((cols || []).map((c) => c.name));
+				if (!colNames.has("last_event_type")) {
+					await this.database.dbRun(
+						this.dbNameMonitor,
+						"ALTER TABLE stream_status ADD COLUMN last_event_type TEXT"
+					);
+				}
+				if (!colNames.has("last_event_time")) {
+					await this.database.dbRun(
+						this.dbNameMonitor,
+						"ALTER TABLE stream_status ADD COLUMN last_event_time TEXT"
+					);
+				}
+			} catch (migrationErr) {
+				this.logger.debug("Migration check notice for stream_status:", migrationErr.message);
+			}
 
 			// YouTube Cache DB
 			await this.database.getSQLiteDb(
