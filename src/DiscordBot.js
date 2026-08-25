@@ -40,6 +40,7 @@ class DiscordBot {
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "!";
 		this.logger = new Logger(`bot-discord-${this.id}`);
+		this.debugEvents = options.debugEvents ?? (process.env.DISCORD_DEBUG_EVENTS === "true");
 
 		// Opções específicas do Discord
 		this.useDiscord = true;
@@ -197,12 +198,16 @@ class DiscordBot {
 	async _handleMessage(message) {
 		if (message.author.bot) return; // Ignorar mensagens de outros bots (e de si mesmo)
 
-		this.logger.debug(`_handleMessage`, message);
+		if (this.debugEvents) {
+			this.logger.debug(`_handleMessage`, message);
+		}
 		this.lastMessageReceived = Date.now();
 
 		// Filtro de grupos do sistema (se configurado)
 		if (message.channel.id === this.grupoLogs) {
-			this.logger.debug(`[${this.id}] Ignoring message from system channel: ${message.channel.id}`);
+			if (this.debugEvents) {
+				this.logger.debug(`[${this.id}] Ignoring message from system channel: ${message.channel.id}`);
+			}
 			return;
 		}
 
@@ -221,7 +226,9 @@ class DiscordBot {
 	}
 
 	async _handleGroupJoin(guild) {
-		this.logger.debug(`_handleGroupJoin`, guild);
+		if (this.debugEvents) {
+			this.logger.debug(`_handleGroupJoin`, guild);
+		}
 		this.logger.info(`Bot foi adicionado a um novo servidor: ${guild.name} (${guild.id})`);
 		// Simula o evento de entrada em grupo
 		if (this.eventHandler && typeof this.eventHandler.onGroupJoin === "function") {
@@ -254,7 +261,9 @@ class DiscordBot {
 	}
 
 	async _handleGroupLeave(guild) {
-		this.logger.debug(`_handleGroupLeave`, guild);
+		if (this.debugEvents) {
+			this.logger.debug(`_handleGroupLeave`, guild);
+		}
 		this.logger.info(`Bot saiu ou foi removido do servidor: ${guild.name} (${guild.id})`);
 		// Simula o evento de saída do grupo
 		if (this.eventHandler && typeof this.eventHandler.onGroupLeave === "function") {
@@ -278,7 +287,9 @@ class DiscordBot {
 	}
 
 	async _handleParticipantUpdate(member) {
-		this.logger.debug(`_handleParticipantUpdate`, member);
+		if (this.debugEvents) {
+			this.logger.debug(`_handleParticipantUpdate`, member);
+		}
 		this.logger.info(`Novo membro '${member.user.tag}' entrou no servidor '${member.guild.name}'`);
 		// Simula a atualização de participantes
 		if (this.eventHandler && typeof this.eventHandler.onParticipantsUpdate === "function") {

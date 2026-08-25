@@ -849,12 +849,16 @@ class CommandHandler {
 		}
 
 		// Nenhum comando encontrado
-		this.logger.debug(
-			`[${gidDebug}][${message.author}/${message.authorName}] Comando desconhecido: '${command}' '${args.join(" ")}'`
-		);
+		// Se o grupo não tem prefixo (vazio), qualquer conversa normal chegaria aqui, então não polui o debug
+		const hasPrefix = group ? group.prefix && group.prefix !== "" : true;
+		if (hasPrefix) {
+			this.logger.debug(
+				`[${gidDebug}][${message.author}/${message.authorName}] Comando desconhecido: '${command}' '${args.join(" ")}'`
+			);
+		}
 
 		// Se em um grupo, podemos querer notificar sobre comando desconhecido (opcional)
-		if (group && process.env.NOTIFY_UNKNOWN_COMMANDS === "true" && !silent) {
+		if (group && group.prefix && group.prefix !== "" && process.env.NOTIFY_UNKNOWN_COMMANDS === "true" && !silent) {
 			const returnMessage = new ReturnMessage({
 				chatId: replyToChat, // Usa o chatId de resposta correto
 				content: `Comando desconhecido: ${command}`
