@@ -2,7 +2,6 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const EventEmitter = require("events");
-const { parse } = require("node-html-parser");
 const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -28,7 +28,6 @@
     "multer": "^2.0.2",
     "mysql2": "^3.16.0",
     "node-cron": "^4.0.7",
-    "node-html-parser": "^7.0.1",
     "node-telegram-bot-api": "^0.67.0",
     "pino": "^9.6.0",
     "qr-base64": "^0.3.0",
