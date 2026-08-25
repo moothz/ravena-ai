@@ -1,6 +1,7 @@
 const Redis = require("ioredis");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
+const { safeJsonParse } = require("../utils/JsonUtils");
 
 const CACHE_CONFIG = {
 	pushName: { ttl: 30 * 24 * 60 * 60, table: "pushnames" }, // 30 days
@@ -197,7 +198,7 @@ class CacheManager {
 					return { id: key, pushName: row[valCol] };
 				}
 
-				return JSON.parse(row[valCol]);
+				return safeJsonParse(row[valCol]);
 			}
 			return null;
 		} catch (e) {
@@ -343,7 +344,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cached = await this.redisClient.get(redisKey);
-				if (cached) return JSON.parse(cached);
+				if (cached) return safeJsonParse(cached);
 			} catch (err) {}
 		}
 
@@ -391,7 +392,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cached = await this.redisClient.get(redisKey);
-				if (cached) return JSON.parse(cached);
+				if (cached) return safeJsonParse(cached);
 			} catch (err) {}
 		}
 
@@ -458,7 +459,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cached = await this.redisClient.get(redisKey);
-				if (cached) return JSON.parse(cached);
+				if (cached) return safeJsonParse(cached);
 			} catch (err) {}
 		}
 
@@ -526,7 +527,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cached = await this.redisClient.get(redisKey);
-				if (cached) return JSON.parse(cached);
+				if (cached) return safeJsonParse(cached);
 			} catch (err) {}
 		}
 
@@ -571,7 +572,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cached = await this.redisClient.get(redisKey);
-				if (cached) return JSON.parse(cached);
+				if (cached) return safeJsonParse(cached);
 			} catch (err) {}
 		}
 
@@ -646,7 +647,7 @@ class CacheManager {
 		if (this.redisClient) {
 			try {
 				const cachedData = await this.redisClient.get(redisKey);
-				if (cachedData) return JSON.parse(cachedData);
+				if (cachedData) return safeJsonParse(cachedData, {});
 			} catch (err) {
 				this.logger.error(`Error retrieving cooldowns from Redis: ${err.message}`);
 			}
