@@ -44,7 +44,6 @@
     "xml2js": "^0.6.2",
     "youtube-dl-exec": "^3.0.30",
     "youtube-search-api": "^2.0.1"
-
   },
   "engines": {
     "node": ">=14.0.0"
@@ -56,5 +55,8 @@
     "eslint-plugin-prettier": "^5.5.5",
     "globals": "^17.0.0",
     "prettier": "^3.7.4"
+  },
+  "overrides": {
+    "form-data": "4.0.6"
   }
 }
