@@ -362,8 +362,7 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 
 		return returnMessage;
 	} catch (error) {
-		logger.error("Erro na conversão de texto para voz:");
-		console.log(error);
+		logger.error("Erro na conversão de texto para voz:", error);
 		const chatId = message.group ?? message.author;
 
 		return new ReturnMessage({

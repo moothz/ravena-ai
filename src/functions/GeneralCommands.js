@@ -19,7 +19,7 @@ async function pingCommand(bot, message, args, group) {
 		message.responseTime ??
 		bot.getCurrentTimestamp() -
 			(message.origin.timestamp ?? message.origin.messageTimestamp ?? bot.getCurrentTimestamp());
-	console.log(message.origin);
+	logger.debug("Message origin:", message.origin);
 	logger.debug(`Executando comando ping para ${chatId}`);
 
 	return new ReturnMessage({

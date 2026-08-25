@@ -307,7 +307,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 		// Aplicar rate limiting à tradução
 		const translateWithRateLimit = wrapWithRateLimit(async (text, options) => {
 			const resp = await translate(text, options);
-			console.log("trate", text, options, resp);
+			logger.debug("Translation response:", { text, options, resp });
 			return resp;
 		});
 

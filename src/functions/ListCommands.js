@@ -1,4 +1,4 @@
-﻿// src/functions/ListCommands.js
+// src/functions/ListCommands.js
 
 const path = require("path");
 const fs = require("fs").promises;
@@ -570,7 +570,7 @@ async function joinList(bot, message, args, group) {
 
 		for (const arg of args) {
 			const listName = arg.trim();
-			console.log({ args, lists, listName });
+			logger.debug("Removendo lista:", { args, lists, listName });
 			// Find the list
 			const list = lists.find((list) => list.name.toLowerCase() === listName.toLowerCase());
 

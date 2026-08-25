@@ -336,7 +336,7 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 				}
 			})
 			.catch((error) => {
-				console.log(error);
+				logger.error("Erro ao obter info do vídeo do YouTube:", error);
 				callback(error, null);
 			});
 	} catch (e) {
@@ -418,12 +418,12 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 						callback(null, resultado);
 					})
 					.catch((error) => {
-						console.log(error);
+						logger.error("Erro ao baixar áudio do YouTube:", error);
 						callback(new Error(`Não consegui baixar este áudio 😭`), null);
 					});
 			})
 			.catch((error) => {
-				console.log(error);
+				logger.error("Erro ao buscar informações do vídeo do YouTube:", error);
 				callback(new Error(`Não consegui pegar informações sobre este vídeo 😭`), null);
 			});
 	} catch (e) {

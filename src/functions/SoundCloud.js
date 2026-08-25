@@ -58,12 +58,12 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 		const selectedTrackIndex = trackIndex > 0 && trackIndex <= tracks.length ? trackIndex - 1 : 0;
 		const selectedTrack = tracks[selectedTrackIndex];
 
-		console.log("baixad");
+		logger.debug("Iniciando download SoundCloud...");
 		const downloadResult = await cacheManager.downloadTrackWithCache(selectedTrack, {
 			path: TEMP_FOLDER
 		});
 
-		console.log("downloadResult", downloadResult);
+		logger.debug("downloadResult", downloadResult);
 
 		if (!downloadResult || !downloadResult.lastDownloadLocation) {
 			return new ReturnMessage({

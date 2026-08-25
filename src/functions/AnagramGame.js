@@ -347,7 +347,7 @@ async function startNewRound(bot, message, group, isFirstRound = true) {
 	clearTimeout(game.timer);
 
 	const word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
-	console.log(`[Anagrama] Grupo: ${groupId}, Palavra: ${word}`);
+	logger.debug(`[Anagrama] Grupo: ${groupId}, Palavra: ${word}`);
 	const scrambledWord = scrambleWord(word);
 
 	// Calcula dicas permitidas: Base + 1 a cada 3 rodadas completas (iniciando do zero ou 1?)

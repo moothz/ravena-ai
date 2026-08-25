@@ -317,30 +317,30 @@ async function getValorantPlayerData(gameName, tagLine) {
 
 		const account = accountResponse.data;
 		const puuid = account.puuid;
-		console.log(account);
+		logger.debug("Valorant account:", account);
 
 		// Get player ranked data
-		console.log(`${VALORANT_BASE_URL}/content/v1/contents`);
+		logger.debug(`Fetching URL: ${VALORANT_BASE_URL}/content/v1/contents`);
 		const rankedResponse = await axios.get(`${VALORANT_BASE_URL}/content/v1/contents`, {
 			headers: { "X-Riot-Token": RIOT_API_KEY }
 		});
-		console.log("rankedResponse", rankedResponse.data);
+		logger.debug("rankedResponse", rankedResponse.data);
 
 		// Get match history
-		console.log(`${VALORANT_BASE_URL}/match/v1/matchlists/by-puuid/${puuid}`);
+		logger.debug(`Fetching URL: ${VALORANT_BASE_URL}/match/v1/matchlists/by-puuid/${puuid}`);
 		const matchlistResponse = await axios.get(
 			`${VALORANT_BASE_URL}/match/v1/matchlists/by-puuid/${puuid}`,
 			{ headers: { "X-Riot-Token": RIOT_API_KEY } }
 		);
-		console.log("matchlistResponse", matchlistResponse.data);
+		logger.debug("matchlistResponse", matchlistResponse.data);
 
 		// Get MMR/ranked data
-		console.log(`${VALORANT_BASE_URL}/ranked/v1/leaderboards/by-puuid/${puuid}`);
+		logger.debug(`Fetching URL: ${VALORANT_BASE_URL}/ranked/v1/leaderboards/by-puuid/${puuid}`);
 		const mmrResponse = await axios.get(
 			`${VALORANT_BASE_URL}/ranked/v1/leaderboards/by-puuid/${puuid}`,
 			{ headers: { "X-Riot-Token": RIOT_API_KEY } }
 		);
-		console.log("mmrResponse", mmrResponse.data);
+		logger.debug("mmrResponse", mmrResponse.data);
 
 		// Process the data from the API responses
 		// Note: The actual structure will depend on the API responses

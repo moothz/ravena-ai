@@ -1747,7 +1747,7 @@ class CommandHandler {
 			}
 
 			// Verifica se a resposta é um objeto MessageMedia (caso de variável {file-...}, api de arquivo como {reddit-})
-			console.log(processedResponse, typeof processedResponse);
+			this.logger.debug("Processed response for command:", processedResponse);
 			if (
 				processedResponse &&
 				typeof processedResponse === "object" &&

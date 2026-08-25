@@ -516,7 +516,7 @@ class InviteSystem {
 
 			try {
 				const infoResponse = await this.bot.client.getInviteInfo(inviteCode);
-				console.log(JSON.stringify(infoResponse, null, 2)); // Print raw data to terminal
+				this.logger.debug("Invite info response:", infoResponse);
 
 				if (infoResponse) {
 					inviteInfoData = infoResponse;
