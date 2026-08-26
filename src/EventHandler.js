@@ -927,10 +927,20 @@ class EventHandler extends EventEmitter {
 		// anteriormente tinham todos os eventos de entrada ignorados. Agora, se o grupo possuir mensagem de boas-vindas
 		// ou despedida definida, o evento NÃO é ignorado e a mensagem é enviada normalmente.
 		const initialGroupCheck = this.groups[groupId] ?? (await this.database.getGroup(groupId));
-		const initialHasGreetings = initialGroupCheck?.greetings && Object.keys(initialGroupCheck.greetings).some((k) => initialGroupCheck.greetings[k]);
-		const initialHasFarewells = initialGroupCheck?.farewells && Object.keys(initialGroupCheck.farewells).some((k) => initialGroupCheck.farewells[k]);
-		if ((data.isAnnounce || data.group?.isAnnounce) && !initialHasGreetings && !initialHasFarewells) {
-			this.logger.debug(`[processGroupJoin] IGNORANDO evento de join em Announce Channel (${groupId}) (sem boas-vindas/despedida configuradas).`);
+		const initialHasGreetings =
+			initialGroupCheck?.greetings &&
+			Object.keys(initialGroupCheck.greetings).some((k) => initialGroupCheck.greetings[k]);
+		const initialHasFarewells =
+			initialGroupCheck?.farewells &&
+			Object.keys(initialGroupCheck.farewells).some((k) => initialGroupCheck.farewells[k]);
+		if (
+			(data.isAnnounce || data.group?.isAnnounce) &&
+			!initialHasGreetings &&
+			!initialHasFarewells
+		) {
+			this.logger.debug(
+				`[processGroupJoin] IGNORANDO evento de join em Announce Channel (${groupId}) (sem boas-vindas/despedida configuradas).`
+			);
 			return;
 		}
 
@@ -1042,8 +1052,10 @@ class EventHandler extends EventEmitter {
 
 			// Motivo da alteração: Não ignorar mais o evento de join em grupos em modo Announce (apenas admins enviam mensagens)
 			// caso o grupo possua mensagem de boas-vindas ou despedida configurada.
-			const hasGreetings = group?.greetings && Object.keys(group.greetings).some((k) => group.greetings[k]);
-			const hasFarewells = group?.farewells && Object.keys(group.farewells).some((k) => group.farewells[k]);
+			const hasGreetings =
+				group?.greetings && Object.keys(group.greetings).some((k) => group.greetings[k]);
+			const hasFarewells =
+				group?.farewells && Object.keys(group.farewells).some((k) => group.farewells[k]);
 			if (chat.isAnnounce && !hasGreetings && !hasFarewells) {
 				this.logger.debug(
 					`[processGroupJoin][viaChat] IGNORANDO evento de join em Announce Channel '${chat.name}' (${data.group?.id || chat.id}) sem boas-vindas/despedida configuradas`,
@@ -1864,7 +1876,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							const rawCaption = typeof farewellData.caption === "string" ? farewellData.caption : "";
+							const rawCaption =
+								typeof farewellData.caption === "string" ? farewellData.caption : "";
 							const processedCaption = await processText(rawCaption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];

@@ -434,7 +434,13 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		});
 	}
 
-	prompt = await translateText(prompt, "pt", "en");
+	if (!options.isProgrammatic) {
+		try {
+			prompt = await translateText(prompt, "pt", "en");
+		} catch (e) {
+			logger.warn(`Erro ao traduzir prompt para ComfyUI (${e.message}), mantendo original.`);
+		}
+	}
 
 	logger.info(`Gerando imagem com prompt: '${prompt}'`);
 

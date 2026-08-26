@@ -1339,7 +1339,11 @@ class Management {
 					content = quotedMsg.body.trim();
 				} else if (typeof quotedMsg.content === "string" && quotedMsg.content.trim()) {
 					content = quotedMsg.content.trim();
-				} else if (quotedMsg._data && typeof quotedMsg._data.body === "string" && quotedMsg._data.body.trim()) {
+				} else if (
+					quotedMsg._data &&
+					typeof quotedMsg._data.body === "string" &&
+					quotedMsg._data.body.trim()
+				) {
 					content = quotedMsg._data.body.trim();
 				}
 			}

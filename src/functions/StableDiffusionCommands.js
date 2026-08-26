@@ -165,7 +165,11 @@ async function generateImage(bot, message, args, group, skipNotify = false) {
 		});
 	}
 
-	prompt = await translateText(prompt, "pt", "en");
+	try {
+		prompt = await translateText(prompt, "pt", "en");
+	} catch (e) {
+		logger.warn(`Erro ao traduzir prompt para Stable Diffusion (${e.message}), mantendo original.`);
+	}
 
 	logger.info(`Gerando imagem com prompt: '${prompt}'`);
 

@@ -67,14 +67,17 @@ class CommandHandler {
 		}, this.debounceDecayTime);
 
 		// Limpeza periódica do cache de mensagens de cooldown para evitar vazamento de memória
-		this.cooldownMsgCleanupInterval = setInterval(() => {
-			const cutoff = Date.now() - 5 * 60 * 1000;
-			for (const key of Object.keys(this.cooldownMessages)) {
-				if (this.cooldownMessages[key] < cutoff) {
-					delete this.cooldownMessages[key];
+		this.cooldownMsgCleanupInterval = setInterval(
+			() => {
+				const cutoff = Date.now() - 5 * 60 * 1000;
+				for (const key of Object.keys(this.cooldownMessages)) {
+					if (this.cooldownMessages[key] < cutoff) {
+						delete this.cooldownMessages[key];
+					}
 				}
-			}
-		}, 5 * 60 * 1000);
+			},
+			5 * 60 * 1000
+		);
 
 		// Inicializa cache de comandos
 		this.loadAllCommands();
@@ -858,7 +861,13 @@ class CommandHandler {
 		}
 
 		// Se em um grupo, podemos querer notificar sobre comando desconhecido (opcional)
-		if (group && group.prefix && group.prefix !== "" && process.env.NOTIFY_UNKNOWN_COMMANDS === "true" && !silent) {
+		if (
+			group &&
+			group.prefix &&
+			group.prefix !== "" &&
+			process.env.NOTIFY_UNKNOWN_COMMANDS === "true" &&
+			!silent
+		) {
 			const returnMessage = new ReturnMessage({
 				chatId: replyToChat, // Usa o chatId de resposta correto
 				content: `Comando desconhecido: ${command}`

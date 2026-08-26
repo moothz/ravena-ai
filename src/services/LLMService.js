@@ -314,12 +314,11 @@ class LLMService {
 			// ALWAYS query absolute earliest timestamps across all relevant tables
 			// to provide a correct 'since' date for the dashboard.
 			const [llmFirst, sttFirst, ttsFirst, bonsaiFirst, comfyFirst] = await Promise.all([
-				this.database.dbGet(this.DB_NAME, "SELECT MIN(timestamp) as ts FROM usage_stats").catch(() => null),
 				this.database
-					.dbGet(
-						"media_stats",
-						"SELECT MIN(timestamp) as ts FROM speech_transcription_stats"
-					)
+					.dbGet(this.DB_NAME, "SELECT MIN(timestamp) as ts FROM usage_stats")
+					.catch(() => null),
+				this.database
+					.dbGet("media_stats", "SELECT MIN(timestamp) as ts FROM speech_transcription_stats")
 					.catch(() => null),
 				this.database
 					.dbGet("media_stats", "SELECT MIN(timestamp) as ts FROM speech_generation_stats")

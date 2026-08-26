@@ -40,7 +40,7 @@ class DiscordBot {
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "!";
 		this.logger = new Logger(`bot-discord-${this.id}`);
-		this.debugEvents = options.debugEvents ?? (process.env.DISCORD_DEBUG_EVENTS === "true");
+		this.debugEvents = options.debugEvents ?? process.env.DISCORD_DEBUG_EVENTS === "true";
 
 		// Opções específicas do Discord
 		this.useDiscord = true;
@@ -206,7 +206,9 @@ class DiscordBot {
 		// Filtro de grupos do sistema (se configurado)
 		if (message.channel.id === this.grupoLogs) {
 			if (this.debugEvents) {
-				this.logger.debug(`[${this.id}] Ignoring message from system channel: ${message.channel.id}`);
+				this.logger.debug(
+					`[${this.id}] Ignoring message from system channel: ${message.channel.id}`
+				);
 			}
 			return;
 		}

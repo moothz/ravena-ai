@@ -2341,7 +2341,7 @@ class WhatsAppBotGo {
 
 					payload.caption = typeof options.caption === "string" ? options.caption : "";
 
-					let rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
+					const rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
 					let mediaType = rawMime ? rawMime.split("/")[0] : "image";
 					const cttSize = content.size ?? (await this.getFileSizeByURL(content.url)) ?? 0;
 					const urlPublica = process.env.BOT_DOMAIN_LOCAL

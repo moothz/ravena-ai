@@ -250,7 +250,10 @@ class StreamMonitor extends EventEmitter {
 					try {
 						lastVideo = JSON.parse(row.last_video_data);
 					} catch (e) {
-						this.logger.debug(`[StreamMonitor] Failed to parse last_video_data for ${key}:`, e.message);
+						this.logger.debug(
+							`[StreamMonitor] Failed to parse last_video_data for ${key}:`,
+							e.message
+						);
 					}
 				}
 

@@ -1,3 +1,4 @@
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -288,39 +289,201 @@ const wrapWithRateLimit = (func, delay = 500, maxRetries = 3) => {
 };
 
 /**
- * Traduz texto para o idioma especificado
- * @param {string} text - Texto a ser traduzido
- * @param {string} targetLanguage - Código do idioma de destino
- * @returns {Promise<string>} - Texto traduzido
+ * 1. Tradução via DeepL API
  */
-async function translateText(text, sourceLanguage, targetLanguage) {
+async function translateWithDeepL(text, sourceLanguage, targetLanguage) {
+	const apiKey = process.env.DEEPL_API_KEY;
+	if (!apiKey || apiKey.trim() === "") return null;
+
 	try {
-		// Importar o módulo 'translate' dinamicamente
-		const translateModule = await import("translate");
-		const translate = translateModule.default;
+		const endpoint = apiKey.endsWith(":fx")
+			? "https://api-free.deepl.com/v2/translate"
+			: "https://api.deepl.com/v2/translate";
 
-		// Configurar o mecanismo de tradução (padrão é 'google')
-		translate.engine = "google";
-		// Se você tiver uma chave API, pode configurá-la assim:
-		// translate.key = process.env.TRANSLATE_API_KEY;
+		let target = (targetLanguage || "en").toUpperCase();
+		if (target === "EN" || target === "EN-US") target = "EN-US";
+		else if (target === "EN-GB") target = "EN-GB";
+		else if (target === "PT" || target === "PT-BR") target = "PT-BR";
+		else if (target === "PT-PT") target = "PT-PT";
 
-		// Aplicar rate limiting à tradução
-		const translateWithRateLimit = wrapWithRateLimit(async (text, options) => {
-			const resp = await translate(text, options);
-			logger.debug("Translation response:", { text, options, resp });
-			return resp;
+		let source = sourceLanguage ? sourceLanguage.toUpperCase() : undefined;
+		if (source === "PT-BR" || source === "PT-PT") source = "PT";
+		if (source === "EN-US" || source === "EN-GB") source = "EN";
+
+		const response = await axios.post(
+			endpoint,
+			{
+				text: [text],
+				target_lang: target,
+				...(source ? { source_lang: source } : {})
+			},
+			{
+				headers: {
+					Authorization: `DeepL-Auth-Key ${apiKey}`,
+					"Content-Type": "application/json"
+				},
+				timeout: 10000
+			}
+		);
+
+		const translated = response.data?.translations?.[0]?.text;
+		if (translated && typeof translated === "string" && translated.trim().length > 0) {
+			logger.debug(`[translateWithDeepL] Tradução concluída com sucesso.`);
+			return translated.trim();
+		}
+	} catch (error) {
+		logger.warn(`[translateWithDeepL] Falha ao traduzir via DeepL: ${error.message}`);
+	}
+	return null;
+}
+
+/**
+ * 2. Tradução via LLM (LLMService)
+ */
+async function translateWithLLM(text, sourceLanguage, targetLanguage) {
+	try {
+		const LLMService = require("../services/LLMService");
+		const llmService = LLMService.getInstance();
+		const sourceLangName = LANGUAGE_NAMES[sourceLanguage] || sourceLanguage || "Portuguese";
+		const targetLangName = LANGUAGE_NAMES[targetLanguage] || targetLanguage || "English";
+
+		const completion = await llmService.getCompletion({
+			prompt: text,
+			systemContext: `You are a professional translator engine.
+Translate the provided text from ${sourceLangName} to ${targetLangName}.
+RULES:
+1. Translate the TEXT CONTENT accurately and naturally.
+2. DO NOT add explanations, conversational filler (e.g. "Here is the translation:"), notes, markdown code fences, or quotes.
+3. Keep emojis, punctuation, and formatting marks (*bold*, _italic_) intact.
+4. Output ONLY the translated text.`,
+			priority: 4
 		});
 
-		// Traduzir o texto
+		if (
+			completion &&
+			typeof completion === "string" &&
+			!completion.toLowerCase().startsWith("erro:") &&
+			!completion.toLowerCase().startsWith("não foi possível")
+		) {
+			const trimmed = completion.trim();
+			if (trimmed.length > 0) {
+				logger.debug(`[translateWithLLM] Tradução concluída com sucesso.`);
+				return trimmed;
+			}
+		}
+	} catch (error) {
+		logger.warn(`[translateWithLLM] Falha ao traduzir via LLM: ${error.message}`);
+	}
+	return null;
+}
+
+/**
+ * 3. Tradução via MyMemory API
+ */
+async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
+	try {
+		const src = (sourceLanguage || "pt").toLowerCase();
+		const tgt = (targetLanguage || "en").toLowerCase();
+
+		const response = await axios.get("https://api.mymemory.translated.net/get", {
+			params: {
+				q: text,
+				langpair: `${src}|${tgt}`
+			},
+			timeout: 10000
+		});
+
+		if (response.data && response.data.responseStatus === 200) {
+			const translated = response.data.responseData?.translatedText;
+			if (
+				translated &&
+				typeof translated === "string" &&
+				!translated.includes("MYMEMORY WARNING:") &&
+				translated.trim().length > 0
+			) {
+				logger.debug(`[translateWithMyMemory] Tradução concluída com sucesso.`);
+				return translated.trim();
+			}
+		}
+	} catch (error) {
+		logger.warn(`[translateWithMyMemory] Falha ao traduzir via MyMemory: ${error.message}`);
+	}
+	return null;
+}
+
+/**
+ * 4. Tradução via Google Translate (translate package)
+ */
+async function translateWithGoogle(text, sourceLanguage, targetLanguage) {
+	try {
+		const translateModule = await import("translate");
+		const translate = translateModule.default;
+		translate.engine = "google";
+
+		const translateWithRateLimit = wrapWithRateLimit(
+			async (txt, options) => await translate(txt, options)
+		);
+
 		const translatedText = await translateWithRateLimit(text, {
 			from: sourceLanguage,
 			to: targetLanguage
 		});
-		return translatedText;
+
+		if (translatedText && typeof translatedText === "string" && !translatedText.startsWith("<")) {
+			logger.debug(`[translateWithGoogle] Tradução concluída com sucesso.`);
+			return translatedText.trim();
+		}
 	} catch (error) {
-		logger.error("Erro ao traduzir texto:", error);
-		throw error;
+		logger.warn(`[translateWithGoogle] Falha ao traduzir via Google: ${error.message}`);
 	}
+	return null;
+}
+
+/**
+ * Traduz texto para o idioma especificado usando a cadeia de provedores:
+ * 1. DeepL
+ * 2. LLM
+ * 3. MyMemory
+ * 4. Google Translate
+ * 5. Fallback (texto original)
+ *
+ * @param {string} text - Texto a ser traduzido
+ * @param {string} sourceLanguage - Código do idioma de origem
+ * @param {string} targetLanguage - Código do idioma de destino
+ * @returns {Promise<string>} - Texto traduzido
+ */
+async function translateText(text, sourceLanguage, targetLanguage) {
+	if (!text || typeof text !== "string" || text.trim() === "") {
+		return text;
+	}
+
+	if (
+		sourceLanguage &&
+		targetLanguage &&
+		sourceLanguage.toLowerCase() === targetLanguage.toLowerCase()
+	) {
+		return text;
+	}
+
+	// 1. DeepL
+	const deeplResult = await translateWithDeepL(text, sourceLanguage, targetLanguage);
+	if (deeplResult) return deeplResult;
+
+	// 2. LLM
+	const llmResult = await translateWithLLM(text, sourceLanguage, targetLanguage);
+	if (llmResult) return llmResult;
+
+	// 3. MyMemory
+	const myMemoryResult = await translateWithMyMemory(text, sourceLanguage, targetLanguage);
+	if (myMemoryResult) return myMemoryResult;
+
+	// 4. Google
+	const googleResult = await translateWithGoogle(text, sourceLanguage, targetLanguage);
+	if (googleResult) return googleResult;
+
+	// 5. Fallback
+	logger.warn("Todos os provedores de tradução falharam, mantendo texto original.");
+	return text;
 }
 
 /**

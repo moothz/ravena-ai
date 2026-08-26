@@ -207,6 +207,8 @@ class StatsService {
 			this.logger.error("Error getting Speech stats:", e);
 			return {};
 		}
+	}
+
 	async getBonsaiStats() {
 		try {
 			const rows = await this.database.dbAll("bonsai_stats", "SELECT * FROM bonsai_stats");

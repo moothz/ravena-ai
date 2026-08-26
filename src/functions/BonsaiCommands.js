@@ -34,10 +34,7 @@ database.getSQLiteDb(
 
 // Migration for existing databases without is_success column
 database
-	.dbRun(
-		"bonsai_stats",
-		`ALTER TABLE bonsai_stats ADD COLUMN is_success INTEGER DEFAULT 1`
-	)
+	.dbRun("bonsai_stats", `ALTER TABLE bonsai_stats ADD COLUMN is_success INTEGER DEFAULT 1`)
 	.catch(() => {});
 
 /**
@@ -47,7 +44,12 @@ database
  * @param {string} model - Model used
  * @param {boolean} isSuccess - Whether generation succeeded
  */
-async function trackBonsaiStats(resolution = "1024x1024", count = 1, model = "bonsai-ternary", isSuccess = true) {
+async function trackBonsaiStats(
+	resolution = "1024x1024",
+	count = 1,
+	model = "bonsai-ternary",
+	isSuccess = true
+) {
 	try {
 		await database.dbRun(
 			"bonsai_stats",
@@ -190,7 +192,13 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 
 	const bonsaiUrl = getBonsaiUrl();
 
-	prompt = await translateText(prompt, "pt", "en");
+	if (!options.isProgrammatic) {
+		try {
+			prompt = await translateText(prompt, "pt", "en");
+		} catch (e) {
+			logger.warn(`Erro ao traduzir prompt para Bonsai (${e.message}), mantendo original.`);
+		}
+	}
 
 	logger.info(`Gerando imagem com Bonsai, prompt: '${prompt}'`);
 

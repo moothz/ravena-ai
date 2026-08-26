@@ -626,7 +626,9 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		}
 
 		// Log unificado do comando sticker
-		logger.info(`Executando comando sticker quadrado (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`);
+		logger.info(
+			`Executando comando sticker quadrado (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`
+		);
 
 		// Determinar o tipo de corte final (se for LLM, fazer a query agora)
 		let finalCropType = cropType;

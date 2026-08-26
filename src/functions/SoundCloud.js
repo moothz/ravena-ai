@@ -4,6 +4,9 @@ const ReturnMessage = require("../models/ReturnMessage");
 const SoundCacheManager = require("../utils/SoundCacheManager");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
+const Logger = require("../utils/Logger");
+
+const logger = new Logger("soundcloud");
 
 const TEMP_FOLDER = process.env.DL_FOLDER ?? "./temp";
 const soundcloud = new SoundCloud.default(
