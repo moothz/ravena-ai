@@ -403,6 +403,26 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 							type: "number",
 							description:
 								"Nota de 0 a 10 (10: ilegal, racismo, gore, extremismo; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores,divulgações; troca de seguidores; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos ou hobbies)"
+						},
+						classified_items: {
+							type: "array",
+							description:
+								"Lista de itens/comportamentos problemáticos ou suspeitos identificados, associando a categoria ou motivo à mensagem/fala exata como evidência",
+							items: {
+								type: "object",
+								properties: {
+									category: {
+										type: "string",
+										description: "Categoria do problema (ex: 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
+									},
+									evidence: {
+										type: "string",
+										description: "Citação exata ou quase exata da mensagem ou fala no formato 'Autor: Mensagem'"
+									}
+								},
+								required: ["category", "evidence"],
+								additionalProperties: false
+							}
 						}
 					},
 					required: ["type", "summary", "problematic_score"],
@@ -415,6 +435,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 - use apenas 1 palavra para 'type'.
 - seja extremamente suscinto no 'summary' (máximo 200 caracteres).
 - 'problematic_score' de 0 a 10.
+- 'classified_items': caso identifique falas problemáticas ou suspeitas (ex: racismo, preconceito, ofensas graves, conteúdo ilegal, nsfw excessivo), liste a categoria e a mensagem exata correspondente (ex: category: 'Teor racista', evidence: 'Thiago: Morra negoney'). Se não houver, deixe a lista vazia [].
 - Uso de bots é permitido e jamais deve ser flagrado como algo ruim
 - Anúncios, ofertas de troca de seguidores, divulgações de canais e conteúdo de NÃO são consinderados problemáticos
 ${historicalContext}
@@ -493,6 +514,15 @@ ${pendingText}`;
 				if (bot && parsed.problematic_score > 7 && (bot.grupoLogs || process.env.GRUPO_LOGS)) {
 					const targetGroup = bot.grupoLogs || process.env.GRUPO_LOGS;
 					const groupData = await bot.database.getGroup(chatId);
+
+					let classifiedText = "";
+					if (Array.isArray(parsed.classified_items) && parsed.classified_items.length > 0) {
+						classifiedText = "\n\n🚩 *Evidências / Mensagens Classificadas:*\n" +
+							parsed.classified_items
+								.map((item) => `• *${item.category}:* "${item.evidence}"`)
+								.join("\n");
+					}
+
 					const msgAlert = `⚠️ *ALERTA DE GRUPO POSSIVELMENTE PROBLEMÁTICO* ⚠️
 					
 📌 *Grupo:* ${groupData ? groupData.name : "N/A"}
@@ -502,7 +532,9 @@ ${pendingText}`;
 📊 *Análise:*
 - *Tipo:* ${parsed.type}
 - *Nota:* ${parsed.problematic_score}/10
-- *Resumo:* ${parsed.summary}`;
+- *Resumo:* ${parsed.summary}${classifiedText}
+
+!sa-leaveGrupo ${chatId}`;
 
 					bot
 						.sendMessage(targetGroup, msgAlert)
@@ -623,6 +655,11 @@ async function storeMessage(message, chatId, bot) {
 		}
 
 		if (textContent) {
+			// Ignora comandos que começam com '!' no histórico de conversas e dossiê
+			if (typeof textContent === "string" && textContent.trim().startsWith("!")) {
+				return;
+			}
+
 			// Zap/libs mudam tanto que pode vir de qualquer lugar, é foda, haja fallbacks
 			const fromMe =
 				message.goMessageData?.key?.fromMe ??
