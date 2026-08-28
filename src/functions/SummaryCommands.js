@@ -413,11 +413,13 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 								properties: {
 									category: {
 										type: "string",
-										description: "Categoria do problema (ex: 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
+										description:
+											"Categoria do problema (ex: 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
 									},
 									evidence: {
 										type: "string",
-										description: "Citação exata ou quase exata da mensagem ou fala no formato 'Autor: Mensagem'"
+										description:
+											"Citação exata ou quase exata da mensagem ou fala no formato 'Autor: Mensagem'"
 									}
 								},
 								required: ["category", "evidence"],
@@ -517,7 +519,8 @@ ${pendingText}`;
 
 					let classifiedText = "";
 					if (Array.isArray(parsed.classified_items) && parsed.classified_items.length > 0) {
-						classifiedText = "\n\n🚩 *Evidências / Mensagens Classificadas:*\n" +
+						classifiedText =
+							"\n\n🚩 *Evidências / Mensagens Classificadas:*\n" +
 							parsed.classified_items
 								.map((item) => `• *${item.category}:* "${item.evidence}"`)
 								.join("\n");

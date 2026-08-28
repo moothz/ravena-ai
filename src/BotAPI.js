@@ -1,4 +1,5 @@
 const express = require("express");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const Logger = require("./utils/Logger");
@@ -40,6 +41,18 @@ class BotAPI {
 		this.database = Database.getInstance();
 		this.app = express();
 		this.app.set("trust proxy", true);
+
+		// Middleware de compressão (Gzip/Deflate) - pula SSE
+		this.app.use(
+			compression({
+				filter: (req, res) => {
+					if (req.headers.accept && req.headers.accept.includes("text/event-stream")) {
+						return false;
+					}
+					return compression.filter(req, res);
+				}
+			})
+		);
 
 		// Inject botApi reference into bots
 		this.bots.forEach((bot) => {
@@ -102,7 +115,12 @@ class BotAPI {
 			data: []
 		};
 
+		// Cache para comandos públicos
+		this.publicCommandsCache = null;
+		this.publicCommandsLastUpdate = 0;
+
 		this.isUpdatingAnalytics = false;
+		this.isUpdatingBotStats = false;
 		this.sseClients = [];
 
 		if (this.eventHandler) {
@@ -118,19 +136,40 @@ class BotAPI {
 		// Configura rotas
 		this.setupRoutes();
 
-		this.app.use(express.static(path.join(__dirname, "../public")));
+		// Entrega de arquivos estáticos com cache de 1 dia e ETag
+		this.app.use(
+			express.static(path.join(__dirname, "../public"), {
+				maxAge: "1d",
+				etag: true
+			})
+		);
 
-		// Carrega dados analíticos em cache ao iniciar
-		this.updateAnalyticsCache();
+		// Carrega caches em segundo plano ao iniciar
+		this.updateAnalyticsCache().catch((err) => {
+			this.logger.error("Erro ao carregar analytics cache inicial:", err);
+		});
+		this.updateBotStatsCache().catch((err) => {
+			this.logger.error("Erro ao carregar bot stats cache inicial:", err);
+		});
+		this.updatePublicCommandsCache();
 
 		this.serviceProviderService = ServiceProviderService.getInstance();
 		this.sttJobs = new Map();
 
-		// Configura atualização periódica do cache (a cada 10 minutos)
-		this.cacheUpdateInterval = setInterval(
-			() => this.updateAnalyticsCache(),
-			this.analyticsCache.cacheTime
-		);
+		// Configura atualização periódica do cache de analytics e comandos públicos (a cada 10 minutos)
+		this.cacheUpdateInterval = setInterval(() => {
+			this.updateAnalyticsCache().catch((err) => {
+				this.logger.error("Erro na atualização periódica de analytics cache:", err);
+			});
+			this.updatePublicCommandsCache();
+		}, this.analyticsCache.cacheTime);
+
+		// Configura atualização periódica do cache de bot stats (a cada 30 minutos)
+		this.botStatsUpdateInterval = setInterval(() => {
+			this.updateBotStatsCache().catch((err) => {
+				this.logger.error("Erro na atualização periódica de bot stats cache:", err);
+			});
+		}, this.botStatsCache.cacheTime);
 
 		// Configura verificação periódica de serviços (a cada 30 segundos)
 		this.checkServicesInterval = setInterval(() => this.checkServices(), 30000);
@@ -813,26 +852,35 @@ class BotAPI {
 					selectedBots = Object.keys(this.analyticsCache.daily);
 				}
 
-				// Verifica se o cache está atualizado
 				const now = Date.now();
-				if (now - this.analyticsCache.lastUpdate > this.analyticsCache.cacheTime) {
-					// Se o cache está desatualizado, atualiza-o
-					this.updateAnalyticsCache()
-						.then(() => {
-							// Após atualizar, envia os dados filtrados
-							res.json(this.filterAnalyticsData(period, selectedBots));
-						})
-						.catch((error) => {
-							this.logger.error("Erro ao atualizar cache para análise:", error);
-							res.status(500).json({
-								status: "error",
-								message: "Erro ao processar dados analíticos"
-							});
-						});
-				} else {
-					// Se o cache está atualizado, envia os dados filtrados diretamente
+				// Se já existe cache (mesmo expirado), responde instantaneamente e atualiza em background
+				if (this.analyticsCache.lastUpdate > 0) {
 					res.json(this.filterAnalyticsData(period, selectedBots));
+
+					// Se expirou, atualiza em segundo plano sem prender a requisição
+					if (
+						now - this.analyticsCache.lastUpdate > this.analyticsCache.cacheTime &&
+						!this.isUpdatingAnalytics
+					) {
+						this.updateAnalyticsCache().catch((error) => {
+							this.logger.error("Erro ao atualizar cache analítico em background:", error);
+						});
+					}
+					return;
 				}
+
+				// Cold start: aguarda primeira geração se ainda não terminou
+				this.updateAnalyticsCache()
+					.then(() => {
+						res.json(this.filterAnalyticsData(period, selectedBots));
+					})
+					.catch((error) => {
+						this.logger.error("Erro ao atualizar cache para análise:", error);
+						res.status(500).json({
+							status: "error",
+							message: "Erro ao processar dados analíticos"
+						});
+					});
 			} catch (error) {
 				this.logger.error("Erro no endpoint de análise:", error);
 				res.status(500).json({
@@ -846,14 +894,23 @@ class BotAPI {
 		this.app.get("/api/bot-stats", this.strictLimiter, async (req, res) => {
 			try {
 				const now = Date.now();
-				// Verifica se o cache é válido
-				if (
-					this.botStatsCache.data.length > 0 &&
-					now - this.botStatsCache.lastUpdate < this.botStatsCache.cacheTime
-				) {
-					return res.json(this.botStatsCache.data);
+				// Se já existe cache (mesmo expirado), responde instantaneamente e atualiza em background
+				if (this.botStatsCache.data.length > 0) {
+					res.json(this.botStatsCache.data);
+
+					// Se expirou, atualiza em segundo plano sem prender a requisição
+					if (
+						now - this.botStatsCache.lastUpdate > this.botStatsCache.cacheTime &&
+						!this.isUpdatingBotStats
+					) {
+						this.updateBotStatsCache().catch((error) => {
+							this.logger.error("Erro ao atualizar bot stats em background:", error);
+						});
+					}
+					return;
 				}
 
+				// Cold start
 				await this.updateBotStatsCache();
 				res.json(this.botStatsCache.data);
 			} catch (error) {
@@ -1421,138 +1478,21 @@ class BotAPI {
 		});
 
 		// Get Public Commands
-		this.app.get("/api/public-commands", async (req, res) => {
-			try {
-				if (this.bots.length === 0) {
-					return res.status(503).json({ error: "No bots available" });
-				}
-
-				const bot = this.bots[0];
-
-				// 1. Get Fixed Commands
-				const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
-
-				// Helper to group commands (duplicated logic from Menu.js to be self-contained)
-				const groupCommandsByCategory = (commands) => {
-					const categories = {};
-					Object.keys(CATEGORY_EMOJIS).forEach((category) => {
-						categories[category] = [];
-					});
-
-					for (const cmd of commands) {
-						if (cmd.hidden) continue;
-						let category = cmd.category?.toLowerCase() ?? "resto";
-						if (category.length < 1) category = "resto";
-						if (!categories[category]) categories[category] = [];
-						categories[category].push(cmd);
-					}
-					return categories;
-				};
-
-				const groupRelatedCommands = (commands) => {
-					const groupedCommands = [];
-					const groups = {};
-					for (const cmd of commands) {
-						if (cmd.group) {
-							if (!groups[cmd.group]) groups[cmd.group] = [];
-							groups[cmd.group].push(cmd);
-						} else {
-							groupedCommands.push([cmd]);
-						}
-					}
-					for (const groupName in groups) {
-						if (groups[groupName].length > 0) {
-							groups[groupName].sort((a, b) => a.name.localeCompare(b.name));
-							groupedCommands.push(groups[groupName]);
-						}
-					}
-					return groupedCommands;
-				};
-
-				const sortCommands = (commands) =>
-					commands.sort((a, b) => {
-						const cmdA = Array.isArray(a) ? a[0] : a;
-						const cmdB = Array.isArray(b) ? b[0] : b;
-						const indexA = COMMAND_ORDER.indexOf(cmdA.name);
-						const indexB = COMMAND_ORDER.indexOf(cmdB.name);
-						if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-						if (indexA !== -1) return -1;
-						if (indexB !== -1) return 1;
-						return cmdA.name.localeCompare(cmdB.name);
-					});
-
-				const categorizedCommands = groupCommandsByCategory(fixedCommands);
-				const finalCategories = [];
-
-				for (const category in CATEGORY_EMOJIS) {
-					const commands = categorizedCommands[category] || [];
-					if (commands.length === 0) continue;
-
-					const grouped = groupRelatedCommands(commands);
-					const sorted = sortCommands(grouped);
-
-					const categoryData = {
-						name: category.charAt(0).toUpperCase() + category.slice(1),
-						emoji: CATEGORY_EMOJIS[category],
-						commands: []
-					};
-
-					if (categoryData.name.length < 4) categoryData.name = categoryData.name.toUpperCase();
-
-					for (const item of sorted) {
-						const cmd = Array.isArray(item) ? item[0] : item;
-						// For groups, we might want to list all aliases or just the main ones
-						// Simplified: take the first one, add aliases from all if grouped?
-						// Menu.js logic: formatCommandGroup joins all names.
-
-						let aliases = [];
-						if (Array.isArray(item)) {
-							// It is a group
-							item.forEach((c) => {
-								if (c.name !== cmd.name) aliases.push(c.name);
-								if (c.aliases) aliases.push(...c.aliases);
-							});
-						} else {
-							if (cmd.aliases) aliases = cmd.aliases;
-						}
-
-						// Remove duplicates
-						aliases = [...new Set(aliases)];
-
-						categoryData.commands.push({
-							name: cmd.name,
-							description: cmd.description,
-							aliases,
-							reaction: cmd.reactions?.trigger
-						});
-					}
-					finalCategories.push(categoryData);
-				}
-
-				// 2. Get Management Commands
-				const managementCommands =
-					bot.eventHandler.commandHandler.management.getManagementCommands();
-				// Sort management commands logic
-				const sortedMgmtKeys = Object.keys(managementCommands).sort((a, b) => {
-					const indexA = COMMAND_ORDER.indexOf(a);
-					const indexB = COMMAND_ORDER.indexOf(b);
-					if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-					if (indexA !== -1) return -1;
-					if (indexB !== -1) return 1;
-					return a.localeCompare(b);
-				});
-
-				const sortedMgmt = {};
-				sortedMgmtKeys.forEach((key) => (sortedMgmt[key] = managementCommands[key]));
-
-				res.json({
-					categories: finalCategories,
-					management: sortedMgmt
-				});
-			} catch (error) {
-				this.logger.error("Error serving public commands:", error);
-				res.status(500).json({ error: "Internal server error" });
+		this.app.get("/api/public-commands", (req, res) => {
+			if (this.publicCommandsCache) {
+				return res.json(this.publicCommandsCache);
 			}
+
+			const data = this.updatePublicCommandsCache();
+			if (data) {
+				return res.json(data);
+			}
+
+			if (this.bots.length === 0) {
+				return res.status(503).json({ error: "No bots available" });
+			}
+
+			res.status(500).json({ error: "Comandos ainda não carregados" });
 		});
 
 		// Validate token endpoint
@@ -3147,103 +3087,246 @@ class BotAPI {
 	 * Atualiza o cache de estatísticas detalhadas dos bots
 	 */
 	async updateBotStatsCache() {
-		this.logger.info("Atualizando cache de estatísticas detalhadas dos bots...");
-		const now = Date.now();
-		const periods = {
-			year: now - 365 * 24 * 60 * 60 * 1000,
-			month: now - 30 * 24 * 60 * 60 * 1000,
-			week: now - 7 * 24 * 60 * 60 * 1000,
-			day: now - 24 * 60 * 60 * 1000,
-			hour: now - 60 * 60 * 1000
-		};
-
-		const statsData = [];
-		const botsAtivos = this.bots.filter((b) => !b.privado && !b.useTelegram && !b.useDiscord);
-
-		// Totais gerais
-		const totalStats = {
-			id: "TOTAL",
-			groupsCount: 0,
-			year: 0,
-			month: 0,
-			week: 0,
-			day: 0,
-			hour: 0
-		};
-
-		for (const bot of botsAtivos) {
-			try {
-				const groups = await bot.listGroups(); // Assume que retorna array de grupos
-				const groupsCount = groups ? groups.length : 0;
-
-				// Busca stats para cada período
-				const periodPromises = Object.entries(periods).map(async ([key, startDate]) => {
-					const stats = await bot.loadReport.getStatistics({
-						startDate,
-						endDate: now,
-						botId: bot.id
-					});
-
-					let finalTotal = stats.totalMessages;
-
-					// Extrapolação para dados anuais se tivermos menos de 365 dias de dados
-					if (key === "year" && stats.totalMessages > 0 && stats.firstReportTimestamp) {
-						const daysAvailable = (now - stats.firstReportTimestamp) / (24 * 60 * 60 * 1000);
-
-						if (daysAvailable > 1 && daysAvailable < 365) {
-							const avgPerDay = stats.totalMessages / daysAvailable;
-							const missingDays = 365 - daysAvailable;
-							const extrapolated = stats.totalMessages + avgPerDay * missingDays * 1.0;
-							finalTotal = Math.round(extrapolated);
-							// this.logger.info(`[Stats] Extrapolated year for ${bot.id}: ${stats.totalMessages} in ${daysAvailable.toFixed(1)}d -> ${finalTotal}`);
-						}
-					}
-
-					return { key, total: finalTotal };
-				});
-
-				const results = await Promise.all(periodPromises);
-				const botStats = {
-					id: bot.id,
-					groupsCount,
-					year: 0,
-					month: 0,
-					week: 0,
-					day: 0,
-					hour: 0
-				};
-
-				results.forEach(({ key, total }) => {
-					botStats[key] = total;
-					totalStats[key] += total;
-				});
-
-				totalStats.groupsCount += groupsCount;
-				statsData.push(botStats);
-			} catch (error) {
-				this.logger.error(`Erro ao processar stats para bot ${bot.id}:`, error);
-				statsData.push({
-					id: bot.id,
-					groupsCount: 0,
-					year: 0,
-					month: 0,
-					week: 0,
-					day: 0,
-					hour: 0
-				});
-			}
+		if (this.isUpdatingBotStats) {
+			this.logger.warn("Atualização de cache de estatísticas de bots já em andamento, pulando...");
+			return;
 		}
 
-		// Adiciona o total ao final
-		statsData.push(totalStats);
+		this.isUpdatingBotStats = true;
+		try {
+			this.logger.info("Atualizando cache de estatísticas detalhadas dos bots...");
+			const now = Date.now();
+			const periods = {
+				year: now - 365 * 24 * 60 * 60 * 1000,
+				month: now - 30 * 24 * 60 * 60 * 1000,
+				week: now - 7 * 24 * 60 * 60 * 1000,
+				day: now - 24 * 60 * 60 * 1000,
+				hour: now - 60 * 60 * 1000
+			};
 
-		this.botStatsCache = {
-			lastUpdate: now,
-			cacheTime: 30 * 60000,
-			data: statsData
-		};
+			const statsData = [];
+			const botsAtivos = this.bots.filter((b) => !b.privado && !b.useTelegram && !b.useDiscord);
 
-		this.logger.info("Cache de estatísticas detalhadas atualizado.");
+			// Totais gerais
+			const totalStats = {
+				id: "TOTAL",
+				groupsCount: 0,
+				year: 0,
+				month: 0,
+				week: 0,
+				day: 0,
+				hour: 0
+			};
+
+			for (const bot of botsAtivos) {
+				try {
+					const groups = await bot.listGroups(); // Assume que retorna array de grupos
+					const groupsCount = groups ? groups.length : 0;
+
+					// Busca stats para cada período
+					const periodPromises = Object.entries(periods).map(async ([key, startDate]) => {
+						const stats = await bot.loadReport.getStatistics({
+							startDate,
+							endDate: now,
+							botId: bot.id
+						});
+
+						let finalTotal = stats.totalMessages;
+
+						// Extrapolação para dados anuais se tivermos menos de 365 dias de dados
+						if (key === "year" && stats.totalMessages > 0 && stats.firstReportTimestamp) {
+							const daysAvailable = (now - stats.firstReportTimestamp) / (24 * 60 * 60 * 1000);
+
+							if (daysAvailable > 1 && daysAvailable < 365) {
+								const avgPerDay = stats.totalMessages / daysAvailable;
+								const missingDays = 365 - daysAvailable;
+								const extrapolated = stats.totalMessages + avgPerDay * missingDays * 1.0;
+								finalTotal = Math.round(extrapolated);
+							}
+						}
+
+						return {
+							period: key,
+							totalMessages: finalTotal
+						};
+					});
+
+					const periodResults = await Promise.all(periodPromises);
+
+					// Organiza resultados em um objeto
+					const botPeriodStats = {};
+					periodResults.forEach((result) => {
+						botPeriodStats[result.period] = result.totalMessages;
+						totalStats[result.period] += result.totalMessages;
+					});
+
+					statsData.push({
+						id: bot.id,
+						groupsCount,
+						year: botPeriodStats.year,
+						month: botPeriodStats.month,
+						week: botPeriodStats.week,
+						day: botPeriodStats.day,
+						hour: botPeriodStats.hour
+					});
+
+					totalStats.groupsCount += groupsCount;
+				} catch (error) {
+					this.logger.error(`Erro ao processar stats para bot ${bot.id}:`, error);
+					statsData.push({
+						id: bot.id,
+						groupsCount: 0,
+						year: 0,
+						month: 0,
+						week: 0,
+						day: 0,
+						hour: 0
+					});
+				}
+			}
+
+			// Adiciona o total ao final
+			statsData.push(totalStats);
+
+			this.botStatsCache = {
+				lastUpdate: now,
+				cacheTime: 30 * 60000,
+				data: statsData
+			};
+
+			this.logger.info("Cache de estatísticas detalhadas atualizado.");
+		} catch (err) {
+			this.logger.error("Erro durante updateBotStatsCache:", err);
+		} finally {
+			this.isUpdatingBotStats = false;
+		}
+	}
+
+	/**
+	 * Atualiza o cache de comandos públicos em memória
+	 */
+	updatePublicCommandsCache() {
+		try {
+			if (!this.bots || this.bots.length === 0) return null;
+			const bot = this.bots[0];
+			if (!bot?.eventHandler?.commandHandler?.fixedCommands) return null;
+
+			const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
+
+			const groupCommandsByCategory = (commands) => {
+				const categories = {};
+				Object.keys(CATEGORY_EMOJIS).forEach((category) => {
+					categories[category] = [];
+				});
+
+				for (const cmd of commands) {
+					if (cmd.hidden) continue;
+					let category = cmd.category?.toLowerCase() ?? "resto";
+					if (category.length < 1) category = "resto";
+					if (!categories[category]) categories[category] = [];
+					categories[category].push(cmd);
+				}
+				return categories;
+			};
+
+			const groupRelatedCommands = (commands) => {
+				const groupedCommands = [];
+				const groups = {};
+				for (const cmd of commands) {
+					if (cmd.group) {
+						if (!groups[cmd.group]) groups[cmd.group] = [];
+						groups[cmd.group].push(cmd);
+					} else {
+						groupedCommands.push([cmd]);
+					}
+				}
+				for (const groupName in groups) {
+					if (groups[groupName].length > 0) {
+						groups[groupName].sort((a, b) => a.name.localeCompare(b.name));
+						groupedCommands.push(groups[groupName]);
+					}
+				}
+				return groupedCommands;
+			};
+
+			const sortCommands = (commands) =>
+				commands.sort((a, b) => {
+					const cmdA = Array.isArray(a) ? a[0] : a;
+					const cmdB = Array.isArray(b) ? b[0] : b;
+					const indexA = COMMAND_ORDER.indexOf(cmdA.name);
+					const indexB = COMMAND_ORDER.indexOf(cmdB.name);
+					if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+					if (indexA !== -1) return -1;
+					if (indexB !== -1) return 1;
+					return cmdA.name.localeCompare(cmdB.name);
+				});
+
+			const categorizedCommands = groupCommandsByCategory(fixedCommands);
+			const finalCategories = [];
+
+			for (const category in CATEGORY_EMOJIS) {
+				const commands = categorizedCommands[category] || [];
+				if (commands.length === 0) continue;
+
+				const grouped = groupRelatedCommands(commands);
+				const sorted = sortCommands(grouped);
+
+				const categoryData = {
+					name: category.charAt(0).toUpperCase() + category.slice(1),
+					emoji: CATEGORY_EMOJIS[category],
+					commands: []
+				};
+
+				if (categoryData.name.length < 4) categoryData.name = categoryData.name.toUpperCase();
+
+				for (const item of sorted) {
+					const cmd = Array.isArray(item) ? item[0] : item;
+					let aliases = [];
+					if (Array.isArray(item)) {
+						item.forEach((c) => {
+							if (c.name !== cmd.name) aliases.push(c.name);
+							if (c.aliases) aliases.push(...c.aliases);
+						});
+					} else {
+						if (cmd.aliases) aliases = cmd.aliases;
+					}
+
+					aliases = [...new Set(aliases)];
+
+					categoryData.commands.push({
+						name: cmd.name,
+						description: cmd.description,
+						aliases,
+						reaction: cmd.reactions?.trigger
+					});
+				}
+				finalCategories.push(categoryData);
+			}
+
+			const managementCommands =
+				bot.eventHandler.commandHandler.management?.getManagementCommands() || {};
+			const sortedMgmtKeys = Object.keys(managementCommands).sort((a, b) => {
+				const indexA = COMMAND_ORDER.indexOf(a);
+				const indexB = COMMAND_ORDER.indexOf(b);
+				if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+				if (indexA !== -1) return -1;
+				if (indexB !== -1) return 1;
+				return a.localeCompare(b);
+			});
+
+			const sortedMgmt = {};
+			sortedMgmtKeys.forEach((key) => (sortedMgmt[key] = managementCommands[key]));
+
+			this.publicCommandsCache = {
+				categories: finalCategories,
+				management: sortedMgmt
+			};
+			this.publicCommandsLastUpdate = Date.now();
+			return this.publicCommandsCache;
+		} catch (error) {
+			this.logger.error("Erro ao atualizar cache de comandos públicos:", error);
+			return null;
+		}
 	}
 
 	/**
@@ -4153,9 +4236,17 @@ class BotAPI {
 			clearInterval(this.cacheUpdateInterval);
 			this.cacheUpdateInterval = null;
 		}
+		if (this.botStatsUpdateInterval) {
+			clearInterval(this.botStatsUpdateInterval);
+			this.botStatsUpdateInterval = null;
+		}
 		if (this.checkServicesInterval) {
 			clearInterval(this.checkServicesInterval);
 			this.checkServicesInterval = null;
+		}
+		if (this.sttCleanupInterval) {
+			clearInterval(this.sttCleanupInterval);
+			this.sttCleanupInterval = null;
 		}
 	}
 
@@ -4170,6 +4261,12 @@ class BotAPI {
 			try {
 				this.server = this.app.listen(this.port, () => {
 					this.logger.info(`Servidor API escutando na porta ${this.port}`);
+
+					// Configura keep-alive para conexões com proxies reversos como Cloudflare Tunnel
+					if (this.server) {
+						this.server.keepAliveTimeout = 65000;
+						this.server.headersTimeout = 66000;
+					}
 
 					// Realiza uma verificação inicial logo após iniciar
 					this.checkServices();
