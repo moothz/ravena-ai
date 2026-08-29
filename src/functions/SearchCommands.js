@@ -120,8 +120,10 @@ async function searchAircraftRAB(bot, message, args, group) {
 	}
 }
 
+const LLMService = require("../services/LLMService");
+
 /**
- * Busca na web usando DuckDuckGo
+ * Busca na web usando DuckDuckGo com fallbacks (Bing e DDG API)
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
  * @param {Array} args - Argumentos do comando
@@ -146,68 +148,8 @@ async function searchWeb(bot, message, args, group) {
 		const query = args.join(" ");
 		logger.info(`Buscando na web por: ${query}`);
 
-		// Usa API DuckDuckGo
-		const response = await axios.get("https://api.duckduckgo.com/", {
-			params: {
-				q: query,
-				format: "json",
-				skip_disambig: 1,
-				no_html: 1,
-				no_redirect: 1
-			},
-			timeout: 10000
-		});
-
-		const data = response.data;
-
-		// Constrói mensagem de resultados da busca
-		let resultsMessage = `🔍 *Resultados para "${query}":*\n\n`;
-
-		// Adiciona resumo se disponível
-		if (data.AbstractText) {
-			resultsMessage += `*${data.AbstractSource}:*\n${decodeHtmlEntities(data.AbstractText)}\n\n`;
-		}
-
-		// Adiciona tópicos relacionados
-		if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-			const topResults = data.RelatedTopics.slice(0, 5);
-			topResults.forEach((result, index) => {
-				if (result.Text) {
-					resultsMessage += `${index + 1}. ${decodeHtmlEntities(result.Text)}\n`;
-					if (result.FirstURL) {
-						resultsMessage += `   🔗 ${result.FirstURL}\n\n`;
-					}
-				}
-			});
-		} else if (data.Results && data.Results.length > 0) {
-			// Alternativa: usa Results se disponível
-			const topResults = data.Results.slice(0, 5);
-			topResults.forEach((result, index) => {
-				if (result.Text) {
-					resultsMessage += `${index + 1}. ${decodeHtmlEntities(result.Text)}\n`;
-					if (result.FirstURL) {
-						resultsMessage += `   🔗 ${result.FirstURL}\n\n`;
-					}
-				}
-			});
-		} else {
-			// Se não houver resultados claros, tenta usar as informações que temos
-			if (data.Infobox && data.Infobox.content) {
-				const infoItems = data.Infobox.content.slice(0, 5);
-				infoItems.forEach((item, index) => {
-					if (item.label && item.value) {
-						resultsMessage += `${item.label}: ${item.value}\n`;
-					}
-				});
-				resultsMessage += "\n";
-			}
-
-			// Se ainda não houver resultados, fornece uma mensagem alternativa
-			if (resultsMessage === `🔍 *Resultados para "${query}":*\n\n`) {
-				resultsMessage += "Não foram encontrados resultados específicos para esta busca.\n\n";
-				resultsMessage += `Tente buscar diretamente: https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-			}
-		}
+		const llmService = LLMService.getInstance();
+		const resultsMessage = await llmService.searchWeb(query);
 
 		logger.info(`Resultados de busca enviados com sucesso para "${query}"`);
 

@@ -81,9 +81,27 @@ class LLMService {
 			{
 				type: "function",
 				function: {
+					name: "web_search",
+					description:
+						"Pesquisa na web por informações atualizadas, notícias, preços, fatos recentes ou respostas para perguntas gerais quando o link exato não for conhecido.",
+					parameters: {
+						type: "object",
+						properties: {
+							query: {
+								type: "string",
+								description: "Termos ou frase de busca (ex: 'peugeot 207 preco tabela fipe hoje')"
+							}
+						},
+						required: ["query"]
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
 					name: "fetch_web_content",
 					description:
-						"Busca e extrai o conteúdo textual ou markdown de uma URL da web para obter informações atualizadas ou consultar links.",
+						"Busca e extrai o conteúdo textual ou markdown de uma URL da web para obter informações detalhadas ou consultar links completos.",
 					parameters: {
 						type: "object",
 						properties: {
@@ -97,6 +115,191 @@ class LLMService {
 				}
 			}
 		];
+	}
+
+	/**
+	 * Decodifica URLs redirecionadas do Bing (formato /ck/a?&u=a1<base64>).
+	 * @param {string} rawUrl - URL bruta do Bing
+	 * @returns {string} - URL real decodificada
+	 * @private
+	 */
+	_decodeBingUrl(rawUrl) {
+		if (!rawUrl) return "";
+		if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+			if (rawUrl.includes("bing.com/ck/a?")) {
+				const uMatch = rawUrl.match(/[?&]u=a1([^&]+)/);
+				if (uMatch) {
+					try {
+						let base64 = uMatch[1].replace(/[-_]/g, (m) => (m === "-" ? "+" : "/"));
+						while (base64.length % 4 !== 0) base64 += "=";
+						return Buffer.from(base64, "base64").toString("utf8");
+					} catch (e) {}
+				}
+			}
+			return rawUrl;
+		}
+		return rawUrl;
+	}
+
+	/**
+	 * Realiza pesquisa na web usando DuckDuckGo com fallbacks para Bing e DDG Instant Answer.
+	 * @param {string} query - Termo de busca
+	 * @returns {Promise<string>} - Resultados formatados ou mensagem amigável
+	 */
+	async searchWeb(query) {
+		if (!query || typeof query !== "string") {
+			return "Nenhum termo de pesquisa fornecido.";
+		}
+
+		const cleanQuery = query.trim();
+		this.logger.info(`[searchWeb] Iniciando busca web para: "${cleanQuery}"`);
+
+		// Tentativa 1: DuckDuckGo HTML
+		try {
+			this.logger.info(`[searchWeb] [Tentativa 1 - DuckDuckGo] Buscando "${cleanQuery}"`);
+			const res = await axios.get("https://html.duckduckgo.com/html/", {
+				params: { q: cleanQuery },
+				headers: {
+					"User-Agent":
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+					Accept:
+						"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+					"Accept-Language": "pt-BR,pt;q=0.8,en-US;q=0.5,en;q=0.3",
+					"Sec-Fetch-Dest": "document",
+					"Sec-Fetch-Mode": "navigate",
+					"Sec-Fetch-Site": "none",
+					"Sec-Fetch-User": "?1",
+					"Upgrade-Insecure-Requests": "1"
+				},
+				timeout: 10000
+			});
+
+			const $ = cheerio.load(res.data);
+			const results = [];
+			$(".result").each((i, el) => {
+				if (results.length >= 5) return;
+				const title = $(el).find(".result__title a").text().trim();
+				let rawUrl = $(el).find(".result__title a").attr("href");
+				const snippet = $(el).find(".result__snippet").text().trim();
+				if (rawUrl && rawUrl.includes("uddg=")) {
+					const match = rawUrl.match(/uddg=([^&]+)/);
+					if (match) rawUrl = decodeURIComponent(match[1]);
+				}
+				if (title && rawUrl) {
+					results.push({ title, url: rawUrl, snippet });
+				}
+			});
+
+			if (results.length > 0) {
+				this.logger.info(
+					`[searchWeb] [Tentativa 1 - DuckDuckGo] Sucesso! ${results.length} resultados encontrados.`
+				);
+				let formatted = `Resultados da busca web para "${cleanQuery}":\n\n`;
+				results.forEach((r, idx) => {
+					formatted += `${idx + 1}. **${r.title}**\n   Link: ${r.url}\n`;
+					if (r.snippet) formatted += `   Resumo: ${r.snippet}\n`;
+					formatted += `\n`;
+				});
+				return formatted.trim();
+			}
+		} catch (ddgErr) {
+			this.logger.warn(
+				`[searchWeb] [Tentativa 1 - DuckDuckGo] Falhou (${ddgErr.message}). Tentando fallback (Bing)...`
+			);
+		}
+
+		// Tentativa 2: Bing
+		try {
+			this.logger.info(`[searchWeb] [Tentativa 2 - Bing] Buscando "${cleanQuery}"`);
+			const res = await axios.get("https://www.bing.com/search", {
+				params: { q: cleanQuery, setlang: "pt-br", setmkt: "pt-BR" },
+				headers: {
+					"User-Agent":
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+					"Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+				},
+				timeout: 10000
+			});
+
+			const $ = cheerio.load(res.data);
+			const results = [];
+			$(".b_algo").each((i, el) => {
+				if (results.length >= 5) return;
+				const title = $(el).find("h2 a").text().trim();
+				const rawUrl = $(el).find("h2 a").attr("href");
+				const url = this._decodeBingUrl(rawUrl);
+				const snippet = $(el).find(".b_caption p, .b_algoSlug, .b_lineclamp2, p").text().trim();
+				if (title && url) {
+					results.push({ title, url, snippet });
+				}
+			});
+
+			if (results.length > 0) {
+				this.logger.info(
+					`[searchWeb] [Tentativa 2 - Bing] Sucesso! ${results.length} resultados encontrados.`
+				);
+				let formatted = `Resultados da busca web para "${cleanQuery}":\n\n`;
+				results.forEach((r, idx) => {
+					formatted += `${idx + 1}. **${r.title}**\n   Link: ${r.url}\n`;
+					if (r.snippet) formatted += `   Resumo: ${r.snippet}\n`;
+					formatted += `\n`;
+				});
+				return formatted.trim();
+			}
+		} catch (bingErr) {
+			this.logger.warn(`[searchWeb] [Tentativa 2 - Bing] Falhou (${bingErr.message}).`);
+		}
+
+		// Tentativa 3: DuckDuckGo Instant Answer API
+		try {
+			this.logger.info(`[searchWeb] [Tentativa 3 - DDG Instant Answer] Buscando "${cleanQuery}"`);
+			const res = await axios.get("https://api.duckduckgo.com/", {
+				params: { q: cleanQuery, format: "json", no_html: 1, skip_disambig: 1 },
+				headers: {
+					"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+				},
+				timeout: 8000
+			});
+
+			const results = [];
+			if (res.data.AbstractText) {
+				results.push({
+					title: res.data.Heading || "Resumo",
+					url: res.data.AbstractURL || "",
+					snippet: res.data.AbstractText
+				});
+			}
+			if (Array.isArray(res.data.RelatedTopics)) {
+				for (const topic of res.data.RelatedTopics) {
+					if (results.length >= 5) break;
+					if (topic.Text) {
+						results.push({
+							title: topic.Text.slice(0, 50),
+							url: topic.FirstURL || "",
+							snippet: topic.Text
+						});
+					}
+				}
+			}
+
+			if (results.length > 0) {
+				this.logger.info(
+					`[searchWeb] [Tentativa 3 - DDG Instant Answer] Sucesso! ${results.length} resultados encontrados.`
+				);
+				let formatted = `Resultados da busca web para "${cleanQuery}":\n\n`;
+				results.forEach((r, idx) => {
+					formatted += `${idx + 1}. **${r.title}**\n`;
+					if (r.url) formatted += `   Link: ${r.url}\n`;
+					if (r.snippet) formatted += `   Resumo: ${r.snippet}\n`;
+					formatted += `\n`;
+				});
+				return formatted.trim();
+			}
+		} catch (ddgApiErr) {
+			this.logger.error(`[searchWeb] [Tentativa 3 - DDG API] Falhou: ${ddgApiErr.message}`);
+		}
+
+		return `Não foi possível encontrar resultados na pesquisa web para "${cleanQuery}".`;
 	}
 
 	/**
@@ -121,11 +324,16 @@ class LLMService {
 			this.logger.info(
 				`[fetchWebContent] [Tentativa 1 - Jina Reader] Requisitando https://r.jina.ai/${targetUrl}`
 			);
+			const headers = {
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+			};
+			if (process.env.JINA_API_KEY) {
+				headers.Authorization = `Bearer ${process.env.JINA_API_KEY.trim()}`;
+			}
+
 			const jinaResponse = await axios.get(`https://r.jina.ai/${targetUrl}`, {
-				headers: {
-					"User-Agent":
-						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-				},
+				headers,
 				timeout: 15000
 			});
 
@@ -846,7 +1054,13 @@ class LLMService {
 					}
 
 					let toolOutput = "";
-					if (fnName === "fetch_web_content") {
+					if (fnName === "web_search") {
+						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
+						toolOutput = await this.searchWeb(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
+						);
+					} else if (fnName === "fetch_web_content") {
 						this.logger.info(
 							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
 						);
@@ -1021,7 +1235,13 @@ class LLMService {
 					}
 
 					let toolOutput = "";
-					if (fnName === "fetch_web_content") {
+					if (fnName === "web_search") {
+						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
+						toolOutput = await this.searchWeb(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
+						);
+					} else if (fnName === "fetch_web_content") {
 						this.logger.info(
 							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
 						);
@@ -1234,7 +1454,13 @@ class LLMService {
 					const parsedArgs = toolCall.function?.arguments || {};
 
 					let toolOutput = "";
-					if (fnName === "fetch_web_content") {
+					if (fnName === "web_search") {
+						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
+						toolOutput = await this.searchWeb(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
+						);
+					} else if (fnName === "fetch_web_content") {
 						this.logger.info(
 							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
 						);
