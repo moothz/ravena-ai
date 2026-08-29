@@ -379,5 +379,8 @@ const helper = {
 
 module.exports = {
 	helper,
-	commands
+	commands,
+	getCityCoordinates,
+	getWeatherData,
+	formatWeatherMessage
 };

@@ -146,6 +146,24 @@ class LLMService {
 						required: []
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "get_weather",
+					description:
+						"Consulta a previsão do tempo meteorológica detalhada e atualizada em tempo real (temperatura atual, sensação térmica, umidade, vento, chuva e previsão dos próximos dias) para uma cidade ou estado.",
+					parameters: {
+						type: "object",
+						properties: {
+							city: {
+								type: "string",
+								description: "Nome da cidade e opcionalmente estado/país (ex: 'São Paulo', 'Belo Horizonte - MG', 'Lisboa')"
+							}
+						},
+						required: ["city"]
+					}
+				}
 			}
 		];
 	}
@@ -512,6 +530,13 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "get_weather") {
+				this.logger.info(`[LLMService] Executando get_weather para: "${args.city}"`);
+				const res = await this.getWeather(args.city);
+				this.logger.info(`[LLMService] Resultado de get_weather (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -520,6 +545,26 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta dados meteorológicos via WeatherMeteo
+	 * @param {string} city - Nome da cidade
+	 * @returns {Promise<string>}
+	 */
+	async getWeather(city) {
+		try {
+			if (!city || typeof city !== "string" || city.trim().length === 0) {
+				return "Por favor, especifique o nome de uma cidade para consultar o clima.";
+			}
+			const { getCityCoordinates, getWeatherData, formatWeatherMessage } = require("../functions/WeatherMeteo");
+			const location = await getCityCoordinates(city.trim());
+			const weather = await getWeatherData(location.lat, location.lon);
+			return formatWeatherMessage(location, weather);
+		} catch (error) {
+			this.logger.error(`[getWeather] Erro ao consultar clima para ${city}:`, error.message);
+			return `Não foi possível obter dados meteorológicos para "${city}": ${error.message}`;
 		}
 	}
 
