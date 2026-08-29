@@ -222,7 +222,64 @@ const helper = {
 	]
 };
 
+/**
+ * Busca o resumo enciclopédico de um termo na Wikipedia
+ * @param {string} query
+ * @returns {Promise<string>}
+ */
+async function fetchWikiSummary(query) {
+	if (!query || typeof query !== "string" || query.trim().length === 0) {
+		return "Por favor, especifique um termo para buscar na Wikipedia.";
+	}
+
+	const termo = query.trim();
+
+	try {
+		const searchResponse = await axios.get(WIKI_SEARCH_API, {
+			params: {
+				action: "query",
+				list: "search",
+				srsearch: termo,
+				format: "json",
+				utf8: 1,
+				srlimit: 1
+			},
+			timeout: 10000
+		});
+
+		if (
+			!searchResponse.data.query ||
+			!searchResponse.data.query.search ||
+			searchResponse.data.query.search.length === 0
+		) {
+			return `Não foi possível encontrar nenhum artigo sobre "${termo}" na Wikipedia em português.`;
+		}
+
+		const pageTitle = searchResponse.data.query.search[0].title;
+		const summaryResponse = await axios.get(encodeURI(`${WIKI_API_URL}${pageTitle}`), {
+			timeout: 10000
+		});
+		const data = summaryResponse.data;
+
+		if (!data || !data.title) {
+			return `Erro ao carregar o resumo de "${termo}".`;
+		}
+
+		let resultado = `📚 **${data.title}**\n\n`;
+		if (data.description) resultado += `*${data.description}*\n\n`;
+		if (data.extract) resultado += `${data.extract}\n\n`;
+		resultado += `🔗 Link: ${data.content_urls?.desktop?.page || `https://pt.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`}`;
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error(`Erro ao consultar Wikipedia para ${query}:`, err.message);
+		return `Erro ao consultar a Wikipedia para "${query}": ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	buscarWikipedia,
+	fetchWikiSummary
 };

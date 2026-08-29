@@ -164,6 +164,24 @@ class LLMService {
 						required: ["city"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "search_wikipedia",
+					description:
+						"Pesquisa na enciclopédia Wikipédia em português por resumos confiáveis, artigos históricos, biografias, conceitos científicos e fatos.",
+					parameters: {
+						type: "object",
+						properties: {
+							query: {
+								type: "string",
+								description: "Termo, nome ou assunto a pesquisar na Wikipedia (ex: 'Albert Einstein', 'Inteligência Artificial', 'Segunda Guerra Mundial')"
+							}
+						},
+						required: ["query"]
+					}
+				}
 			}
 		];
 	}
@@ -537,6 +555,13 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "search_wikipedia") {
+				this.logger.info(`[LLMService] Executando search_wikipedia para: "${args.query}"`);
+				const res = await this.searchWikipedia(args.query);
+				this.logger.info(`[LLMService] Resultado de search_wikipedia (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -545,6 +570,24 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta a Wikipedia via WikipediaCommands
+	 * @param {string} query - Termo de busca
+	 * @returns {Promise<string>}
+	 */
+	async searchWikipedia(query) {
+		try {
+			if (!query || typeof query !== "string" || query.trim().length === 0) {
+				return "Por favor, especifique um termo para pesquisar na Wikipedia.";
+			}
+			const { fetchWikiSummary } = require("../functions/WikipediaCommands");
+			return await fetchWikiSummary(query);
+		} catch (error) {
+			this.logger.error(`[searchWikipedia] Erro ao pesquisar Wikipedia para ${query}:`, error.message);
+			return `Erro ao pesquisar Wikipedia: ${error.message}`;
 		}
 	}
 
