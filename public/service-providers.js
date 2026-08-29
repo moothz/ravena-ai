@@ -150,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('prov-timeout').value = p.timeout_multiplier || '';
                 document.getElementById('prov-text-only').checked = !!p.textOnly;
                 document.getElementById('prov-ignore-video').checked = !!p.ignoreVideo;
+                document.getElementById('prov-tool-calling').checked = !!p.toolCalling;
             }
            } else {
             document.getElementById('prov-name').value = '';
@@ -161,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('prov-timeout').value = '';
             document.getElementById('prov-text-only').checked = false;
             document.getElementById('prov-ignore-video').checked = false;
+            document.getElementById('prov-tool-calling').checked = false;
            }
 
         providerModal.classList.remove('hidden');
@@ -212,6 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isNaN(timeout)) provider.timeout_multiplier = timeout;
             provider.textOnly = document.getElementById('prov-text-only').checked;
             provider.ignoreVideo = document.getElementById('prov-ignore-video').checked;
+            provider.toolCalling = document.getElementById('prov-tool-calling').checked;
         }
 
         if (index === -1) {

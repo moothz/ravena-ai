@@ -1,4 +1,5 @@
 const axios = require("axios");
+const cheerio = require("cheerio");
 const Logger = require("../utils/Logger");
 const fs = require("fs");
 const path = require("path");
@@ -72,6 +73,152 @@ class LLMService {
 	}
 
 	/**
+	 * Definição das ferramentas/functions disponíveis para o LLM.
+	 * @returns {Array<Object>}
+	 */
+	getTools() {
+		return [
+			{
+				type: "function",
+				function: {
+					name: "fetch_web_content",
+					description:
+						"Busca e extrai o conteúdo textual ou markdown de uma URL da web para obter informações atualizadas ou consultar links.",
+					parameters: {
+						type: "object",
+						properties: {
+							url: {
+								type: "string",
+								description: "A URL completa da página web (ex: https://exemplo.com/noticia)"
+							}
+						},
+						required: ["url"]
+					}
+				}
+			}
+		];
+	}
+
+	/**
+	 * Extrai conteúdo de uma URL usando Jina Reader com fallback para Cheerio.
+	 * @param {string} url - URL para extração de conteúdo
+	 * @returns {Promise<string>} - Conteúdo extraído ou mensagem de erro amigável
+	 */
+	async fetchWebContent(url) {
+		if (!url || typeof url !== "string") {
+			return "Não foi possível completar a extração de conteúdo desta URL.";
+		}
+
+		let targetUrl = url.trim();
+		if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+			targetUrl = `https://${targetUrl}`;
+		}
+
+		this.logger.info(`[fetchWebContent] Iniciando busca para URL: ${targetUrl}`);
+
+		// Tentativa 1: Jina Reader (https://r.jina.ai/<URL>)
+		try {
+			this.logger.info(
+				`[fetchWebContent] [Tentativa 1 - Jina Reader] Requisitando https://r.jina.ai/${targetUrl}`
+			);
+			const jinaResponse = await axios.get(`https://r.jina.ai/${targetUrl}`, {
+				headers: {
+					"User-Agent":
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+				},
+				timeout: 15000
+			});
+
+			if (jinaResponse.status === 200 && jinaResponse.data) {
+				const content =
+					typeof jinaResponse.data === "string"
+						? jinaResponse.data.trim()
+						: JSON.stringify(jinaResponse.data);
+
+				if (content.length > 0) {
+					this.logger.info(
+						`[fetchWebContent] [Tentativa 1 - Jina Reader] Sucesso! Conteúdo extraído (${content.length} caracteres)`
+					);
+					this.logger.debug(
+						`[fetchWebContent] Amostra do conteúdo Jina: ${this.summarizeString(content)}`
+					);
+					// Limita tamanho para não estourar contexto do modelo
+					return content.length > 20000
+						? `${content.slice(0, 20000)}\n\n[Conteúdo truncado...]`
+						: content;
+				}
+			}
+			throw new Error(`Resposta vazia ou status inválido: ${jinaResponse.status}`);
+		} catch (jinaError) {
+			this.logger.warn(
+				`[fetchWebContent] [Tentativa 1 - Jina Reader] Falhou (${jinaError.message}). Acionando Tentativa 2 (Cheerio)...`
+			);
+
+			// Tentativa 2: Cheerio (GET direto na URL e parsing de HTML)
+			try {
+				this.logger.info(
+					`[fetchWebContent] [Tentativa 2 - Cheerio] Requisitando diretamente ${targetUrl}`
+				);
+				const directResponse = await axios.get(targetUrl, {
+					headers: {
+						"User-Agent":
+							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+						Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+					},
+					timeout: 15000
+				});
+
+				if (directResponse.status === 200 && directResponse.data) {
+					const html = typeof directResponse.data === "string" ? directResponse.data : "";
+					if (html.length > 0) {
+						const $ = cheerio.load(html);
+
+						// Remover tags de lixo
+						$("script, style, nav, footer, header, noscript, iframe, svg").remove();
+
+						// Extrair texto útil
+						let extractedText = "";
+						const article = $("article, main");
+						if (article.length > 0) {
+							extractedText = article.text();
+						} else {
+							extractedText = $("body").text();
+						}
+
+						// Limpar espaços em branco excessivos
+						const cleanedText = extractedText
+							.replace(/[ \t]+/g, " ")
+							.replace(/\n\s*\n+/g, "\n\n")
+							.trim();
+
+						if (cleanedText.length > 0) {
+							this.logger.info(
+								`[fetchWebContent] [Tentativa 2 - Cheerio] Sucesso! Conteúdo extraído (${cleanedText.length} caracteres)`
+							);
+							this.logger.debug(
+								`[fetchWebContent] Amostra do conteúdo Cheerio: ${this.summarizeString(cleanedText)}`
+							);
+							return cleanedText.length > 20000
+								? `${cleanedText.slice(0, 20000)}\n\n[Conteúdo truncado...]`
+								: cleanedText;
+						}
+					}
+				}
+				throw new Error(
+					`Cheerio não conseguiu extrair texto da página (status ${directResponse.status})`
+				);
+			} catch (cheerioError) {
+				this.logger.error(
+					`[fetchWebContent] [Tentativa 2 - Cheerio] Falhou (${cheerioError.message}). Acionando Fallback Seguro...`
+				);
+
+				// Tentativa 3: Fallback Seguro
+				return "Não foi possível completar a extração de conteúdo desta URL.";
+			}
+		}
+	}
+
+	/**
 	 * Constrói a lista de provedores a partir da configuração
 	 */
 	buildProviders() {
@@ -81,10 +228,12 @@ class LLMService {
 		for (const config of llmConfigs) {
 			// Store textOnly flag for use during provider selection
 			const textOnly = config.textOnly === true;
+			const toolCalling = config.toolCalling === true;
 
 			const providerDef = {
 				name: config.name,
 				textOnly,
+				toolCalling,
 				method: async (options) => {
 					// Apply config values
 					if (config.model) options.model = config.model;
@@ -98,10 +247,14 @@ class LLMService {
 							: 30000 * config.timeout_multiplier;
 					}
 					if (config.ignoreVideo !== undefined) options.ignoreVideo = config.ignoreVideo;
+					if (config.toolCalling !== undefined && options.toolCalling === undefined) {
+						options.toolCalling = config.toolCalling;
+					}
 
 					const completionOptions = {
 						customEndpoint: config.url,
 						providerName: config.name,
+						toolCalling: options.toolCalling !== undefined ? options.toolCalling : toolCalling,
 						...options
 					};
 
@@ -590,15 +743,7 @@ class LLMService {
 			}
 
 			const apiKey = `Bearer ${options.apiKey}`;
-
 			const model = options.model ?? "gpt-3.5-turbo";
-
-			// this.logger.debug(`Enviando solicitação para API compatível com OpenAI:`, {
-			// 	endpoint,
-			// 	model,
-			// 	promptLength: options.prompt.length,
-			// 	maxTokens: options.maxTokens ?? 5000
-			// });
 
 			const ctxInclude =
 				options.systemContext ??
@@ -636,12 +781,14 @@ class LLMService {
 				userContent = options.prompt;
 			}
 
+			const messages = [
+				{ role: "system", content: ctxInclude },
+				{ role: "user", content: userContent }
+			];
+
 			const payload = {
 				model,
-				messages: [
-					{ role: "system", content: ctxInclude },
-					{ role: "user", content: userContent }
-				],
+				messages,
 				max_tokens: options.maxTokens ?? 5000,
 				temperature: options.temperature ?? 0.7,
 				stream: false
@@ -651,15 +798,97 @@ class LLMService {
 				payload.response_format = options.response_format;
 			}
 
+			const allowToolCalling =
+				options.toolCalling === true && !options.response_format && !hasImages;
+			if (allowToolCalling) {
+				payload.tools = this.getTools();
+			}
+
+			const timeout = options.timeout ?? this.apiTimeout;
+
 			const response = await axios.post(endpoint, payload, {
 				headers: {
 					Authorization: apiKey,
 					"Content-Type": "application/json"
 				},
-				timeout: options.timeout ?? this.apiTimeout
+				timeout
 			});
 
 			this._trackUsage(options.providerName || "OpenAI", response.data, model, options);
+
+			const message = response.data?.choices?.[0]?.message;
+
+			// Interação com o Loop do Agente (tool_calls)
+			if (
+				allowToolCalling &&
+				message?.tool_calls &&
+				Array.isArray(message.tool_calls) &&
+				message.tool_calls.length > 0
+			) {
+				this.logger.info(
+					`[LLMService][OpenAI] LLM solicitou ${message.tool_calls.length} tool call(s)`
+				);
+				messages.push(message);
+
+				for (const toolCall of message.tool_calls) {
+					const fnName = toolCall.function?.name;
+					let parsedArgs = {};
+					try {
+						parsedArgs =
+							typeof toolCall.function?.arguments === "string"
+								? JSON.parse(toolCall.function.arguments)
+								: toolCall.function?.arguments || {};
+					} catch (e) {
+						this.logger.error(
+							`[LLMService] Erro ao analisar argumentos de tool_call (${toolCall.function?.arguments}):`,
+							e.message
+						);
+					}
+
+					let toolOutput = "";
+					if (fnName === "fetch_web_content") {
+						this.logger.info(
+							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
+						);
+						toolOutput = await this.fetchWebContent(parsedArgs.url);
+						this.logger.info(
+							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
+						);
+					} else {
+						toolOutput = "Ferramenta não reconhecida.";
+					}
+
+					messages.push({
+						role: "tool",
+						tool_call_id: toolCall.id,
+						name: fnName,
+						content: toolOutput
+					});
+				}
+
+				this.logger.info(
+					"[LLMService][OpenAI] Enviando segunda chamada ao LLM com os resultados das tools..."
+				);
+
+				const secondPayload = {
+					model,
+					messages,
+					max_tokens: options.maxTokens ?? 5000,
+					temperature: options.temperature ?? 0.7,
+					stream: false
+				};
+
+				const secondResponse = await axios.post(endpoint, secondPayload, {
+					headers: {
+						Authorization: apiKey,
+						"Content-Type": "application/json"
+					},
+					timeout
+				});
+
+				this._trackUsage(options.providerName || "OpenAI", secondResponse.data, model, options);
+				return secondResponse.data;
+			}
 
 			return response.data;
 		} catch (error) {
@@ -693,13 +922,6 @@ class LLMService {
 
 			const model = options.model ?? "openai/gpt-3.5-turbo";
 
-			// this.logger.debug("Enviando solicitação para API OpenRouter:", {
-			// 	endpoint,
-			// 	model,
-			// 	promptLength: options.prompt.length,
-			// 	maxTokens: options.maxTokens ?? 5000
-			// });
-
 			const ctxInclude =
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
@@ -732,12 +954,14 @@ class LLMService {
 				userContent = options.prompt;
 			}
 
+			const messages = [
+				{ role: "system", content: ctxInclude },
+				{ role: "user", content: userContent }
+			];
+
 			const payload = {
 				model,
-				messages: [
-					{ role: "system", content: ctxInclude },
-					{ role: "user", content: userContent }
-				],
+				messages,
 				max_tokens: options.maxTokens ?? 5000,
 				temperature: options.temperature ?? 0.7,
 				stream: false
@@ -747,6 +971,14 @@ class LLMService {
 				payload.response_format = options.response_format;
 			}
 
+			const allowToolCalling =
+				options.toolCalling === true && !options.response_format && !hasImages;
+			if (allowToolCalling) {
+				payload.tools = this.getTools();
+			}
+
+			const timeout = options.timeout ?? this.apiTimeout;
+
 			const response = await axios.post(endpoint, payload, {
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
@@ -754,10 +986,86 @@ class LLMService {
 					"HTTP-Referer": "https://ravena.local",
 					"X-Title": "RavenaBot"
 				},
-				timeout: options.timeout ?? this.apiTimeout
+				timeout
 			});
 
 			this._trackUsage(options.providerName || "OpenRouter", response.data, model, options);
+
+			const message = response.data?.choices?.[0]?.message;
+
+			// Interação com o Loop do Agente (tool_calls)
+			if (
+				allowToolCalling &&
+				message?.tool_calls &&
+				Array.isArray(message.tool_calls) &&
+				message.tool_calls.length > 0
+			) {
+				this.logger.info(
+					`[LLMService][OpenRouter] LLM solicitou ${message.tool_calls.length} tool call(s)`
+				);
+				messages.push(message);
+
+				for (const toolCall of message.tool_calls) {
+					const fnName = toolCall.function?.name;
+					let parsedArgs = {};
+					try {
+						parsedArgs =
+							typeof toolCall.function?.arguments === "string"
+								? JSON.parse(toolCall.function.arguments)
+								: toolCall.function?.arguments || {};
+					} catch (e) {
+						this.logger.error(
+							`[LLMService] Erro ao analisar argumentos de tool_call (${toolCall.function?.arguments}):`,
+							e.message
+						);
+					}
+
+					let toolOutput = "";
+					if (fnName === "fetch_web_content") {
+						this.logger.info(
+							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
+						);
+						toolOutput = await this.fetchWebContent(parsedArgs.url);
+						this.logger.info(
+							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
+						);
+					} else {
+						toolOutput = "Ferramenta não reconhecida.";
+					}
+
+					messages.push({
+						role: "tool",
+						tool_call_id: toolCall.id,
+						name: fnName,
+						content: toolOutput
+					});
+				}
+
+				this.logger.info(
+					"[LLMService][OpenRouter] Enviando segunda chamada ao LLM com os resultados das tools..."
+				);
+
+				const secondPayload = {
+					model,
+					messages,
+					max_tokens: options.maxTokens ?? 5000,
+					temperature: options.temperature ?? 0.7,
+					stream: false
+				};
+
+				const secondResponse = await axios.post(endpoint, secondPayload, {
+					headers: {
+						Authorization: `Bearer ${apiKey}`,
+						"Content-Type": "application/json",
+						"HTTP-Referer": "https://ravena.local",
+						"X-Title": "RavenaBot"
+					},
+					timeout
+				});
+
+				this._trackUsage(options.providerName || "OpenRouter", secondResponse.data, model, options);
+				return secondResponse.data;
+			}
 
 			return response.data;
 		} catch (error) {
@@ -824,8 +1132,6 @@ class LLMService {
 	 */
 	async ollamaCompletion(options) {
 		try {
-			const debugPrompt = options.debugPrompt ?? true;
-
 			const endpoint = (options.customEndpoint ?? "http://localhost:11434") + "/api/chat";
 
 			const messages = [];
@@ -839,7 +1145,8 @@ class LLMService {
 				content: options.prompt
 			};
 
-			if (options.images || options.image) {
+			const hasImages = !!(options.images || options.image);
+			if (hasImages) {
 				let imagesToProcess = options.images ? options.images : [options.image];
 				const processedImages = [];
 
@@ -894,16 +1201,12 @@ class LLMService {
 				}
 			};
 
-			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
+			const allowToolCalling = options.toolCalling === true && !ollamaFormat && !hasImages;
+			if (allowToolCalling) {
+				payload.tools = this.getTools();
+			}
 
-			// if (debugPrompt) {
-			// 	this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API", {
-			// 		size: options.prompt.length,
-			// 		prompt: this.summarizeString(options.prompt)
-			// 	});
-			// } else {
-			// 	this.logger.debug("[LLMService][ollamaCompletion] Sending request to Ollama API");
-			// }
+			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
 
 			const response = await axios.post(endpoint, payload, {
 				headers: {
@@ -913,6 +1216,69 @@ class LLMService {
 			});
 
 			this._trackUsage(options.providerName || "Ollama", response.data, payload.model, options);
+
+			const msg = response.data?.message;
+			if (
+				allowToolCalling &&
+				msg?.tool_calls &&
+				Array.isArray(msg.tool_calls) &&
+				msg.tool_calls.length > 0
+			) {
+				this.logger.info(
+					`[LLMService][Ollama] LLM solicitou ${msg.tool_calls.length} tool call(s)`
+				);
+				messages.push(msg);
+
+				for (const toolCall of msg.tool_calls) {
+					const fnName = toolCall.function?.name;
+					const parsedArgs = toolCall.function?.arguments || {};
+
+					let toolOutput = "";
+					if (fnName === "fetch_web_content") {
+						this.logger.info(
+							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
+						);
+						toolOutput = await this.fetchWebContent(parsedArgs.url);
+						this.logger.info(
+							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
+						);
+					} else {
+						toolOutput = "Ferramenta não reconhecida.";
+					}
+
+					messages.push({
+						role: "tool",
+						content: toolOutput
+					});
+				}
+
+				this.logger.info(
+					"[LLMService][Ollama] Enviando segunda chamada ao Ollama com os resultados das tools..."
+				);
+
+				const secondPayload = {
+					model: payload.model,
+					messages,
+					format: ollamaFormat,
+					stream: false,
+					options: payload.options
+				};
+
+				const secondResponse = await axios.post(endpoint, secondPayload, {
+					headers: {
+						"Content-Type": "application/json"
+					},
+					timeout: toTime
+				});
+
+				this._trackUsage(
+					options.providerName || "Ollama",
+					secondResponse.data,
+					payload.model,
+					options
+				);
+				return secondResponse.data;
+			}
 
 			return response.data;
 		} catch (error) {
@@ -948,12 +1314,6 @@ class LLMService {
 			try {
 				// Se um provedor específico for solicitado, use-o diretamente
 				if (options.provider) {
-					// this.logger.debug("[LLMService] Obtendo completion com opções:", {
-					// 	provider: options.provider,
-					// 	promptLength: options.prompt.length,
-					// 	temperature: options.temperature ?? 0.7
-					// });
-
 					const response = await this.getCompletionFromSpecificProvider(options);
 					return this._cleanResponse(response);
 				}
@@ -1039,6 +1399,9 @@ class LLMService {
 		switch (options.provider) {
 			case "ollama":
 				response = await this.ollamaCompletion(options);
+				if (response && response.message && response.message.content) {
+					return response.message.content;
+				}
 				if (
 					!response ||
 					!response.choices ||
