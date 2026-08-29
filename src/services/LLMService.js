@@ -200,6 +200,24 @@ class LLMService {
 						required: ["title"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "search_anime",
+					description:
+						"Pesquisa informações detalhadas sobre animes japoneses no MyAnimeList (episódios, estúdio, nota, ranking, status de exibição, sinopse em português).",
+					parameters: {
+						type: "object",
+						properties: {
+							name: {
+								type: "string",
+								description: "Nome do anime a pesquisar (ex: 'Naruto', 'Frieren', 'Attack on Titan', 'Death Note')"
+							}
+						},
+						required: ["name"]
+					}
+				}
 			}
 		];
 	}
@@ -588,6 +606,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "search_anime") {
+				const animeName = args.name || args.query;
+				this.logger.info(`[LLMService] Executando search_anime para: "${animeName}"`);
+				const res = await this.searchAnime(animeName);
+				this.logger.info(`[LLMService] Resultado de search_anime (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -596,6 +622,24 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta animes no MyAnimeList via AnimeCommands
+	 * @param {string} name - Nome do anime
+	 * @returns {Promise<string>}
+	 */
+	async searchAnime(name) {
+		try {
+			if (!name || typeof name !== "string" || name.trim().length === 0) {
+				return "Por favor, informe o nome do anime para pesquisar.";
+			}
+			const { fetchAnimeInfo } = require("../functions/AnimeCommands");
+			return await fetchAnimeInfo(name);
+		} catch (error) {
+			this.logger.error(`[searchAnime] Erro ao consultar anime ${name}:`, error.message);
+			return `Erro ao consultar anime: ${error.message}`;
 		}
 	}
 

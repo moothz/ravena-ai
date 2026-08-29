@@ -180,7 +180,48 @@ const helper = {
 	]
 };
 
+/**
+ * Busca informações estruturadas de um anime no MyAnimeList via mal-scraper
+ * @param {string} query - Nome do anime
+ * @returns {Promise<string>}
+ */
+async function fetchAnimeInfo(query) {
+	if (!query || typeof query !== "string" || query.trim().length === 0) {
+		return "Por favor, informe o nome do anime a pesquisar.";
+	}
+
+	const nome = query.trim();
+
+	try {
+		const data = await malScraper.getInfoFromName(nome);
+		if (!data || !data.title) {
+			return `Não foi possível encontrar informações sobre o anime "${nome}" no MyAnimeList.`;
+		}
+
+		let resultado = `🗾 **${data.title}** (${data.japaneseTitle || "N/A"})\n`;
+		resultado += `📅 Lançamento: ${data.aired || "N/A"} | Status: ${data.status || "N/A"} | Tipo: ${data.type || "N/A"}\n`;
+		resultado += `🏢 Estúdio: ${data.studios ? data.studios.join(", ") : "N/A"} | Gênero: ${data.genres ? data.genres.join(", ") : "N/A"}\n`;
+		resultado += `🔢 Episódios: ${data.episodes || "N/A"} (${data.duration || "N/A"})\n`;
+		resultado += `⭐ Nota: ${data.score || "N/A"} | Ranking: #${data.ranked || "N/A"} | Popularidade: #${data.popularity || "N/A"}\n`;
+
+		if (data.synopsis) {
+			const sinopse = (await translateText(data.synopsis, "en", "pt")) || data.synopsis;
+			resultado += `\n📝 Sinopse: ${sinopse.trim()}\n`;
+		}
+		if (data.url) {
+			resultado += `\n🔗 Link: ${data.url}`;
+		}
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error(`Erro ao consultar anime ${query}:`, err.message);
+		return `Erro ao consultar MyAnimeList para "${query}": ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	buscarAnime,
+	fetchAnimeInfo
 };
