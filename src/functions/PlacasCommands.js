@@ -792,9 +792,37 @@ const helper = {
 	]
 };
 
+/**
+ * Consulta informações completas de veículo por placa via SiPt ou FIPE
+ * @param {string} placaInput - Placa do veículo
+ * @returns {Promise<string>}
+ */
+async function fetchVehicleInfo(placaInput) {
+	if (!placaInput || typeof placaInput !== "string" || placaInput.trim().length === 0) {
+		return "Por favor, informe uma placa de veículo válida (ex: ABC1234 ou ABC1D23).";
+	}
+
+	const { valid, placa } = validarPlaca(placaInput);
+	if (!valid) {
+		return `Placa "${placaInput}" inválida. Formato esperado: padrão antigo (ABC1234) ou Mercosul (ABC1D23).`;
+	}
+
+	try {
+		const resultados = await getSiPtPlaca(placa, "llm-assistant");
+		if (resultados && resultados.length > 0 && resultados[0].msg) {
+			return resultados[0].msg;
+		}
+		return `Não foi possível obter dados para o veículo com placa "${placa}".`;
+	} catch (err) {
+		logger.error(`Erro ao consultar veículo para placa ${placaInput}:`, err.message);
+		return `Erro ao consultar veículo para a placa "${placaInput}": ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
 	formatarRetornoPlaca,
-	consultarFipeHistory
+	consultarFipeHistory,
+	fetchVehicleInfo
 };

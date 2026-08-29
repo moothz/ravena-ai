@@ -218,6 +218,24 @@ class LLMService {
 						required: ["name"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "query_vehicle_plate",
+					description:
+						"Consulta dados cadastrais, modelo, ano de fabricação, cor, município e histórico de preços na Tabela FIPE de um veículo brasileiro através de sua placa (antiga ou Mercosul).",
+					parameters: {
+						type: "object",
+						properties: {
+							plate: {
+								type: "string",
+								description: "Placa do veículo a consultar (ex: 'ABC1234' ou 'ABC1D23')"
+							}
+						},
+						required: ["plate"]
+					}
+				}
 			}
 		];
 	}
@@ -614,6 +632,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "query_vehicle_plate") {
+				const plate = args.plate || args.placa || args.query;
+				this.logger.info(`[LLMService] Executando query_vehicle_plate para: "${plate}"`);
+				const res = await this.queryVehiclePlate(plate);
+				this.logger.info(`[LLMService] Resultado de query_vehicle_plate (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -622,6 +648,24 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta informações veiculares e FIPE via PlacasCommands
+	 * @param {string} plate - Placa do veículo
+	 * @returns {Promise<string>}
+	 */
+	async queryVehiclePlate(plate) {
+		try {
+			if (!plate || typeof plate !== "string" || plate.trim().length === 0) {
+				return "Por favor, informe uma placa de veículo válida.";
+			}
+			const { fetchVehicleInfo } = require("../functions/PlacasCommands");
+			return await fetchVehicleInfo(plate);
+		} catch (error) {
+			this.logger.error(`[queryVehiclePlate] Erro ao consultar placa ${plate}:`, error.message);
+			return `Erro ao consultar veículo: ${error.message}`;
 		}
 	}
 
