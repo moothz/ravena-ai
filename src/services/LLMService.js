@@ -118,7 +118,18 @@ class LLMService {
 								response.choices[0] &&
 								response.choices[0].message
 							) {
-								return response.choices[0].message.content;
+								const content = response.choices[0].message.content;
+								if (completionOptions.response_format && typeof content === "string") {
+									try {
+										const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
+										JSON.parse(clean);
+									} catch (jsonErr) {
+										throw new Error(
+											`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
+										);
+									}
+								}
+								return content;
 							}
 							throw new Error(`Resposta inválida ou vazia do Ollama (${config.name})`);
 						case "openai":
@@ -133,7 +144,18 @@ class LLMService {
 									response.choices[0] &&
 									response.choices[0].message
 								) {
-									return response.choices[0].message.content;
+									const content = response.choices[0].message.content;
+									if (completionOptions.response_format && typeof content === "string") {
+										try {
+											const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
+											JSON.parse(clean);
+										} catch (jsonErr) {
+											throw new Error(
+												`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
+											);
+										}
+									}
+									return content;
 								}
 								return response;
 							}
