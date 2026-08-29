@@ -272,4 +272,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Combinação e fusão de emojis (Emoji Kitchen do Google)",
+	implementation:
+		"Consulta o repositório de assets do Google Emoji Kitchen e gera figurinhas transparentes com a fusão de dois emojis",
+	tags: "emoji,emojis,figurinha,sticker,kitchen,misturar,combinar",
+	cmds: [
+		{
+			cmd: "!emojikitchen",
+			desc: "Funde dois emojis em uma figurinha única e criativa",
+			usage: ["!emojikitchen 🐱 🚀", "!emojikitchen 🐶 🍕"],
+			category: "midia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

@@ -552,4 +552,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Jogo clássico de Stop / Adedonha interativo em tempo real para grupos",
+	implementation:
+		"Sorteia letras e categorias, processa respostas dos jogadores, faz validação de palavras e pontuação",
+	tags: "stop,adedonha,jogos,palavras,diversao,letras",
+	cmds: [
+		{
+			cmd: "!adedonha",
+			desc: "Inicia uma nova rodada do jogo Stop / Adedonha",
+			usage: ["!adedonha", "!stop"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

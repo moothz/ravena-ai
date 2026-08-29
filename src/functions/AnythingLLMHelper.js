@@ -135,4 +135,24 @@ if (process.env.ANYTHINGLLM_API_KEY && process.env.ANYTHINGLLM_HOST) {
 	);
 }
 
-module.exports = { commands, handleAjuda, askAnythingLLM };
+const helper = {
+	about: "Integração com a base de conhecimento local do AnythingLLM para suporte e perguntas",
+	implementation:
+		"Faz requisições HTTP REST à API do AnythingLLM enviando perguntas e mantendo contexto de sessão por chat",
+	tags: "ajuda,suporte,anythingllm,faq,conhecimento,ia",
+	cmds: [
+		{
+			cmd: "!ajuda",
+			desc: "Consulta a base de conhecimento e tira dúvidas sobre as funcionalidades do bot",
+			usage: ["!ajuda como criar comandos personalizados", "!ajuda como funciona a roleta russa"],
+			category: "geral"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	handleAjuda,
+	askAnythingLLM
+};

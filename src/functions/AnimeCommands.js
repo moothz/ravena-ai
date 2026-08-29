@@ -165,4 +165,22 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Consulta informações completas sobre animes e animações japonesas",
+	implementation:
+		"Utiliza a biblioteca mal-scraper para buscar metadados, notas, episódios, sinopse e imagem de animes no MyAnimeList",
+	tags: "anime,otaku,mal,myanimelist,desenho,animacao,japao",
+	cmds: [
+		{
+			cmd: "!anime",
+			desc: "Pesquisa informações e sinopse de um anime",
+			usage: ["!anime Naruto", "!anime Attack on Titan", "!anime Frieren"],
+			category: "cultura"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

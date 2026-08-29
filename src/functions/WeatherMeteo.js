@@ -362,4 +362,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Previsão do tempo detalhada utilizando a API Open-Meteo",
+	implementation:
+		"Geocodifica a localização e extrai previsões horárias e diárias de alta precisão via Open-Meteo",
+	tags: "clima,tempo,previsao,open-meteo,meteorologia,chuva",
+	cmds: [
+		{
+			cmd: "!clima",
+			desc: "Consulta a previsão do tempo detalhada para uma cidade",
+			usage: ["!clima Belo Horizonte", "!clima Salvador", "!clima Lisboa"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

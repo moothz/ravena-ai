@@ -443,4 +443,22 @@ const commands = [
 // Registra os comandos
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-// module.exports = { commands };
+const helper = {
+	about: "Consulta de clima e previsão meteorológica atualizada",
+	implementation:
+		"Consulta APIs de meteorologia para fornecer temperatura, umidade, vento e condições do tempo por cidade",
+	tags: "clima,tempo,temperatura,previsao,meteorologia,cidade",
+	cmds: [
+		{
+			cmd: "!clima",
+			desc: "Consulta a previsão do tempo para uma cidade ou localização",
+			usage: ["!clima São Paulo", "!clima Rio de Janeiro", "!clima Curitiba"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

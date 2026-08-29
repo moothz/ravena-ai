@@ -2988,7 +2988,59 @@ const commands = [
 // Stub
 function saveSync() {}
 
+const helper = {
+	about: "Jogo de pescaria completo com iscas, varas, peixes lendários, inventário e rankings",
+	implementation:
+		"Sistema de probabilidades por bioma e horário, loja de equipamentos, buffs, persistência SQLite e comércio de peixes",
+	tags: "pesca,pescaria,peixe,iscas,game,ranking,inventario,rpg",
+	cmds: [
+		{
+			cmd: "!pescar",
+			desc: "Lança a linha na água para pescar peixes, itens ou tesouros",
+			usage: ["!pescar"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-iscas",
+			desc: "Exibe seu inventário de iscas e opções de compra/coleta",
+			usage: ["!pesca-iscas"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-ranking",
+			desc: "Exibe os melhores pescadores do grupo por pontuação ou peixes lendários",
+			usage: ["!pesca-ranking"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pescados",
+			desc: "Lista os peixes que você já pescou e seu histórico de capturas",
+			usage: ["!pescados"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-info",
+			desc: "Mostra informações, guia de varas, iscas e biomas da pescaria",
+			usage: ["!pesca-info"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-lendas",
+			desc: "Exibe o livro de peixes lendários capturados",
+			usage: ["!pesca-lendas"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-reset",
+			desc: "Reseta os dados de pescaria do grupo (Apenas Administradores)",
+			usage: ["!pesca-reset"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	forceSaveFishingData: saveSync,
 	addBaits,

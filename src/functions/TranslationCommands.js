@@ -697,4 +697,23 @@ const commands = [
 ];
 
 // Exportar comandos e manipulador de reação
-module.exports = { commands, translateText };
+const helper = {
+	about: "Tradução de textos para diversos idiomas com detecção automática",
+	implementation:
+		"Integra com provedores de tradução para traduzir mensagens citadas ou textos informados por argumentos",
+	tags: "traduzir,traducao,idiomas,ingles,espanhol,portugues,translate",
+	cmds: [
+		{
+			cmd: "!traduzir",
+			desc: "Traduz um texto citado ou informado para o idioma desejado",
+			usage: ["!traduzir en Olá mundo", "!traduzir pt (em resposta a uma mensagem)"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	translateText
+};

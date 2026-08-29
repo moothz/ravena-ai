@@ -671,4 +671,34 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 	);
 });
 
-module.exports = { commands };
+const helper = {
+	about: "Menu de comandos dinâmico e categorizado com navegação completa",
+	implementation:
+		"Lê todos os comandos carregados no bot, agrupa por categoria segundo a ordem do MenuOrder.js e formata a resposta",
+	tags: "menu,ajuda,comandos,help,lista de comandos,navegacao",
+	cmds: [
+		{
+			cmd: "!cmd",
+			desc: "Exibe o menu principal com todas as categorias e comandos do bot",
+			usage: ["!cmd", "!cmd jogos", "!cmd ia", "!cmd midia"],
+			category: "geral"
+		},
+		{
+			cmd: "!cmd-grupo",
+			desc: "Exibe os comandos voltados para o uso no grupo",
+			usage: ["!cmd-grupo"],
+			category: "geral"
+		},
+		{
+			cmd: "!cmd-gerenciamento",
+			desc: "Exibe os comandos de administração e gerenciamento do grupo",
+			usage: ["!cmd-gerenciamento"],
+			category: "geral"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

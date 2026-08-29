@@ -546,4 +546,28 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Geração e leitura de QR Codes e QR Code de pagamento Pix",
+	implementation:
+		"Gera imagens QR Code usando a biblioteca qr-image com suporte a payload Pix e texto livre",
+	tags: "qr,qrcode,pix,gerador qr,codigo",
+	cmds: [
+		{
+			cmd: "!qr",
+			desc: "Gera uma imagem de QR Code a partir de um texto ou link",
+			usage: ["!qr https://google.com", "!qr Minha senha wifi"],
+			category: "utilidades"
+		},
+		{
+			cmd: "!qr-pix",
+			desc: "Gera um QR Code de cobrança Pix",
+			usage: ["!qr-pix chave@pix.com 50.00 Descricao"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

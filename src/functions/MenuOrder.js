@@ -195,4 +195,16 @@ const COMMAND_ORDER = [
 	"youtube-midia-off"
 ];
 
-module.exports = { COMMAND_ORDER, CATEGORY_EMOJIS };
+const helper = {
+	about: "Configuração de ordenação de categorias e prioridade de comandos no menu principal",
+	implementation:
+		"Exporta as constantes COMMAND_ORDER e CATEGORY_EMOJIS utilizadas para formatar a interface de ajuda",
+	tags: "menu,configuracao,ordem,emojis,categorias",
+	cmds: []
+};
+
+module.exports = {
+	helper,
+	COMMAND_ORDER,
+	CATEGORY_EMOJIS
+};

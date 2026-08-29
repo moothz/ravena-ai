@@ -137,4 +137,22 @@ const commands = [
 	})
 ];
 
-//module.exports = { commands  };
+const helper = {
+	about: "Busca e download direto de músicas da plataforma SoundCloud",
+	implementation:
+		"Utiliza soundcloud.ts para buscar faixas, baixar o stream de áudio e converter para MP3 com metadados",
+	tags: "soundcloud,musica,audio,musicas,streaming,baixar",
+	cmds: [
+		{
+			cmd: "!sc",
+			desc: "Pesquisa e faz download de uma música do SoundCloud",
+			usage: ["!sc nome da musica ou artista", "!sc https://soundcloud.com/..."],
+			category: "downloaders"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

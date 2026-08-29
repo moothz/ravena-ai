@@ -287,4 +287,22 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Pesquisa e envio de GIFs animados através da API do Giphy",
+	implementation:
+		"Consulta endpoints de busca do Giphy, faz download do GIF/MP4 e envia como vídeo curto ou animação",
+	tags: "gif,giphy,animacao,memes,busca",
+	cmds: [
+		{
+			cmd: "!gif",
+			desc: "Pesquisa e envia um GIF animado do Giphy",
+			usage: ["!gif gatinho dancando", "!gif parabens", "!gif risada"],
+			category: "busca"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

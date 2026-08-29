@@ -913,4 +913,46 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Monitoramento de lives e canais da Twitch, Kick e YouTube",
+	implementation:
+		"Consulta status de canais em tempo real, monitora streamers favoritos e lista canais online no momento",
+	tags: "stream,twitch,kick,youtube,live,streamers,transmissao",
+	cmds: [
+		{
+			cmd: "!streams",
+			desc: "Lista todos os canais configurados para monitoramento no grupo",
+			usage: ["!streams"],
+			category: "streams"
+		},
+		{
+			cmd: "!streamers",
+			desc: "Lista os canais monitorados que estão ao vivo agora",
+			usage: ["!streamers"],
+			category: "streams"
+		},
+		{
+			cmd: "!live",
+			desc: "Consulta o status e informações de um canal da Twitch",
+			usage: ["!live gaules", "!live alanzoka"],
+			category: "streams"
+		},
+		{
+			cmd: "!live-kick",
+			desc: "Consulta o status e informações de um canal do Kick",
+			usage: ["!live-kick nome_do_canal"],
+			category: "streams"
+		},
+		{
+			cmd: "!topstreams",
+			desc: "Exibe as transmissões com maior audiência no momento",
+			usage: ["!topstreams"],
+			category: "streams"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

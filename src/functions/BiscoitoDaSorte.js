@@ -100,6 +100,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Gera frases motivacionais ou bem-humoradas de biscoito da sorte",
+	implementation:
+		"Carrega mensagens aleatórias da variável customizada 'biscoito-frases' do banco de dados e as processa com variáveis de template",
+	tags: "biscoito,sorte,frase,motivacional,zoeira,fortune cookie",
+	cmds: [
+		{
+			cmd: "!biscoito",
+			desc: "Abre um biscoito da sorte e revela uma mensagem do destino",
+			usage: ["!biscoito"],
+			category: "zoeira"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

@@ -158,6 +158,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Consulta de perfis, jogos e conquistas platinadas na Steam",
+	implementation:
+		"Consulta a API pública da Steam e serviços de conquistas para calcular jogos com 100% de progresso",
+	tags: "steam,platinas,conquistas,jogos,pc,games,perfil",
+	cmds: [
+		{
+			cmd: "!steam-platinas",
+			desc: "Exibe a quantidade e lista de platinas (100% conquistas) de um jogador na Steam",
+			usage: ["!steam-platinas VanityURLOuSteamID"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

@@ -454,4 +454,34 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Mecanismo de busca na web, imagens e Registro Aeronáutico Brasileiro (RAB)",
+	implementation:
+		"Integra com engines de busca na web, DuckDuckGo/Google e banco de dados de aeronaves da ANAC",
+	tags: "busca,pesquisa,google,web,imagens,rab,aviao,aeronave",
+	cmds: [
+		{
+			cmd: "!buscar",
+			desc: "Realiza uma pesquisa rápida na internet",
+			usage: ["!buscar historia do brasil", "!buscar receita de bolo"],
+			category: "busca"
+		},
+		{
+			cmd: "!buscar-img",
+			desc: "Pesquisa e envia imagens encontradas na web",
+			usage: ["!buscar-img paisagem da serra", "!buscar-img wallpaper 4k"],
+			category: "busca"
+		},
+		{
+			cmd: "!rab",
+			desc: "Consulta dados de aeronaves pelo prefixo no Registro Aeronáutico Brasileiro da ANAC",
+			usage: ["!rab PT-ABC", "!rab PR-XYZ"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

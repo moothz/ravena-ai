@@ -719,4 +719,23 @@ const commands = [
 	})
 ];
 
-// module.exports = { commands, generateImage };
+const helper = {
+	about: "Geração de imagens via workflow personalizado ComfyUI",
+	implementation:
+		"Submete jobs para API ComfyUI, monitora progresso via WebSocket/polling e retorna imagem gerada com controle de métricas",
+	tags: "comfyui,ia,imagine,gerar imagem,arte",
+	cmds: [
+		{
+			cmd: "!imagine",
+			desc: "Gera imagens com Inteligência Artificial via servidor ComfyUI",
+			usage: ["!imagine paisagem futurista 4k"],
+			category: "ia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	generateImage
+};

@@ -7205,4 +7205,520 @@ class Management {
 	}
 }
 
+const helper = {
+	about: "Sistema completo de gerenciamento administrativo e configuração de grupos do bot",
+	implementation:
+		"Classe Management com mapeamento de comandos de controle, persistência em SQLite e interface de administração",
+	tags: "gerenciamento,admin,grupo,configuracao,moderação,filtros,streams,customizacao",
+	cmds: [
+		{
+			cmd: "!g-setNome",
+			desc: "ID/Nome do grupo (nome stickers, gerenciamento)",
+			usage: ["!g-setNome"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setPrefixo",
+			desc: "Altera o prefixo de comandos do *grupo* (padrão !)",
+			usage: ["!g-setPrefixo"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setCustomSemPrefixo",
+			desc: "Faz com que comandos personalizados não precisem de prefixo",
+			usage: ["!g-setCustomSemPrefixo"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setBoasvindas",
+			desc: "Mensagem quando alguém entra no grupo. Você pode usar as variáveis {pessoa",
+			usage: ["!g-setBoasvindas"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-delBoasvindas",
+			desc: "Remove um tipo de mídia específico da mensagem de boas-vindas (text, image, audio, video, sticker)",
+			usage: ["!g-delBoasvindas"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setDespedida",
+			desc: "Mensagem quando alguém sai do grupo",
+			usage: ["!g-setDespedida"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-delDespedida",
+			desc: "Remove um tipo de mídia específico da mensagem de despedida (text, image, audio, video, sticker)",
+			usage: ["!g-delDespedida"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-autoStt",
+			desc: "Ativa/desativa conversão automática de voz para texto",
+			usage: ["!g-autoStt"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-info",
+			desc: "Mostra informações detalhadas do grupo (debug)",
+			usage: ["!g-info"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-manage",
+			desc: "Ativa o gerenciamento do grupo pelo PV do bot",
+			usage: ["!g-manage"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setAutoTranslate",
+			desc: "Define o idioma para tradução automática de todas as respostas do bot (Ex: Spanish (ES))",
+			usage: ["!g-setAutoTranslate"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-addCmd",
+			desc: "Cria um comando personalizado",
+			usage: ["!g-addCmd"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-addCmdReply",
+			desc: "Adiciona outra resposta a um comando existente",
+			usage: ["!g-addCmdReply"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-delCmd",
+			desc: "Exclui um comando personalizado",
+			usage: ["!g-delCmd"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-enable",
+			desc: "Habilita comando (comandos personalizados)",
+			usage: ["!g-cmd-enable"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-disable",
+			desc: "Desabilita comando (comandos personalizados)",
+			usage: ["!g-cmd-disable"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-setPV",
+			desc: "A resposta do comando será enviada no PV (comandos personalizados)",
+			usage: ["!g-cmd-setPV"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-enviarTudo",
+			desc: "Envia todas as respostas do comando (se houver mais de uma)",
+			usage: ["!g-cmd-enviarTudo"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-responder",
+			desc: "Ativa/Desativa se o comando deve responder citando a mensagem",
+			usage: ["!g-cmd-responder"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-react",
+			desc: "Reaçao quando usar o comando",
+			usage: ["!g-cmd-react"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-startReact",
+			desc: "Reaçao pré-comando (útil para APIs, como loading)",
+			usage: ["!g-cmd-startReact"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-setAdm",
+			desc: "Define que apenas admins podem usar um comando",
+			usage: ["!g-cmd-setAdm"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-setInteragir",
+			desc: "Define que comando seja usado nas interações aleatórias",
+			usage: ["!g-cmd-setInteragir"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-cd",
+			desc: "Define o cooldown (em segundos) de um comando personalizado. Uso: !g-cmd-cd <comando> <segundos>",
+			usage: ["!g-cmd-cd"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-setHoras",
+			desc: "Define horários permitidos para um comando",
+			usage: ["!g-cmd-setHoras"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-setDias",
+			desc: "Define dias permitidos para um comando",
+			usage: ["!g-cmd-setDias"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-filtro-palavra",
+			desc: "Detecta e Apaga mensagens com a palavra/frase especificada",
+			usage: ["!g-filtro-palavra"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-links",
+			desc: "Detecta e Apaga mensagens com links",
+			usage: ["!g-filtro-links"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-pessoa",
+			desc: "Detecta e Apaga mensagens desta pessoa (Marcar com @)",
+			usage: ["!g-filtro-pessoa"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-nsfw",
+			desc: "Detecta e Apaga mensagens NSFW",
+			usage: ["!g-filtro-nsfw"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-apelido",
+			desc: "Define apelido de *outro membro* no grupo",
+			usage: ["!g-apelido"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-ignorar",
+			desc: "O bot irá ignorar as mensagens desta pessoa",
+			usage: ["!g-ignorar"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-mute",
+			desc: "Desativa/ativa comando com a palavra especificada",
+			usage: ["!g-mute"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-muteCategoria",
+			desc: "Desativa/ativa todos os comandos da categoria especificada",
+			usage: ["!g-muteCategoria"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-customAdmin",
+			desc: "Adiciona pessoas como administradoras fixas do bot no grupo",
+			usage: ["!g-customAdmin"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-pausar",
+			desc: "Pausa/retoma a atividade do bot no grupo",
+			usage: ["!g-pausar"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-interagir",
+			desc: "Ativa/desativa interações automáticas do bot",
+			usage: ["!g-interagir"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-interagir-cmd",
+			desc: "Ativa/desativa interações automáticas do bot usando comandos do grupo",
+			usage: ["!g-interagir-cmd"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-interagir-cd",
+			desc: "Define o tempo de espera entre interações automáticas",
+			usage: ["!g-interagir-cd"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-interagir-chance",
+			desc: "Define a chance de ocorrer interações automáticas",
+			usage: ["!g-interagir-chance"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-interagir-proporcao",
+			desc: "Define a proporção entre comandos e IA para interações automáticas",
+			usage: ["!g-interagir-proporcao"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-fechar",
+			desc: "Fecha o grupo (apenas admins enviam msgs)",
+			usage: ["!g-fechar"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-abrir",
+			desc: "Abre o grupo (todos podem envar msgs)",
+			usage: ["!g-abrir"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-notificar-grupoFechado",
+			desc: "Ativa/desativa a notificação quando o grupo é fechado",
+			usage: ["!g-notificar-grupoFechado"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-notificar-grupoAberto",
+			desc: "Ativa/desativa a notificação quando o grupo é aberto",
+			usage: ["!g-notificar-grupoAberto"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setPersonalidade",
+			desc: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)",
+			usage: ["!g-setPersonalidade"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setApelido",
+			desc: "Define apelido de *outro membro* no grupo (@marcar_pessoa)",
+			usage: ["!g-setApelido"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-twitch-canal",
+			desc: "Adiciona/remove canal da Twitch para monitoramento",
+			usage: ["!g-twitch-canal"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-mudarTitulo",
+			desc: "Ativa/desativa mudança de título do grupo para eventos da Twitch",
+			usage: ["!g-twitch-mudarTitulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-titulo",
+			desc: "Define título do grupo para eventos de canal da Twitch",
+			usage: ["!g-twitch-titulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-fotoGrupo",
+			desc: "Define foto do grupo para eventos de canal da Twitch",
+			usage: ["!g-twitch-fotoGrupo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-midia",
+			desc: "Define mídia para notificação de canal da Twitch",
+			usage: ["!g-twitch-midia"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-midia-del",
+			desc: "Remove mídia específica da notificação de canal da Twitch",
+			usage: ["!g-twitch-midia-del"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-usarIA",
+			desc: "Ativa/desativa uso de IA para gerar mensagens de notificação",
+			usage: ["!g-twitch-usarIA"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-usarThumbnail",
+			desc: "Ativa/desativa o envio da thumbnail da stream junto com o texto",
+			usage: ["!g-twitch-usarThumbnail"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-twitch-marcar",
+			desc: "Ativa/desativa menção a todos os membros nas notificações de canal da Twitch",
+			usage: ["!g-twitch-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-canal",
+			desc: "Adiciona/remove canal do Kick para monitoramento",
+			usage: ["!g-kick-canal"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-mudarTitulo",
+			desc: "Ativa/desativa mudança de título do grupo para eventos do Kick",
+			usage: ["!g-kick-mudarTitulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-titulo",
+			desc: "Define título do grupo para eventos de canal do Kick",
+			usage: ["!g-kick-titulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-fotoGrupo",
+			desc: "Define foto do grupo para eventos de canal do Kick",
+			usage: ["!g-kick-fotoGrupo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-midia",
+			desc: "Define mídia para notificação de canal do Kick",
+			usage: ["!g-kick-midia"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-midia-del",
+			desc: "Remove mídia específica da notificação de canal do Kick",
+			usage: ["!g-kick-midia-del"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-usarIA",
+			desc: "Ativa/desativa uso de IA para gerar mensagens de notificação",
+			usage: ["!g-kick-usarIA"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-usarThumbnail",
+			desc: "Ativa/desativa o envio da thumbnail da stream junto com o texto",
+			usage: ["!g-kick-usarThumbnail"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-marcar",
+			desc: "Ativa/desativa menção a todos os membros nas notificações de canal do Kick",
+			usage: ["!g-kick-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-canal",
+			desc: "Adiciona/remove canal do YouTube para monitoramento",
+			usage: ["!g-youtube-canal"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-mudarTitulo",
+			desc: "Ativa/desativa mudança de título do grupo para eventos do YouTube",
+			usage: ["!g-youtube-mudarTitulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-titulo",
+			desc: "Define título do grupo para eventos de canal do YouTube",
+			usage: ["!g-youtube-titulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-fotoGrupo",
+			desc: "Define foto do grupo para eventos de canal do YouTube",
+			usage: ["!g-youtube-fotoGrupo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-midia",
+			desc: "Define mídia para notificação de canal do YouTube",
+			usage: ["!g-youtube-midia"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-midia-del",
+			desc: "Remove mídia específica da notificação de canal do YouTube",
+			usage: ["!g-youtube-midia-del"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-usarIA",
+			desc: "Ativa/desativa uso de IA para gerar mensagens de notificação",
+			usage: ["!g-youtube-usarIA"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-usarThumbnail",
+			desc: "Ativa/desativa o envio da thumbnail da stream junto com o texto",
+			usage: ["!g-youtube-usarThumbnail"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-marcar",
+			desc: "Ativa/desativa menção a todos os membros nas notificações de canal do YouTube",
+			usage: ["!g-youtube-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-variaveis",
+			desc: "Lista todas as variáveis disponíveis para comandos personalizados",
+			usage: ["!g-variaveis"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-painel",
+			desc: "Gera um link para gerenciar o bot via web",
+			usage: ["!g-painel"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-setWebhook",
+			desc: "Cria ou atualiza um webhook para este grupo",
+			usage: ["!g-setWebhook"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-delWebhook",
+			desc: "Apaga um webhook deste grupo",
+			usage: ["!g-delWebhook"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-advertir",
+			desc: "Adiciona uma advertência aos membros mencionados",
+			usage: ["!g-advertir"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-advertencias",
+			desc: "Lista as advertências atuais do grupo",
+			usage: ["!g-advertencias"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-limpar-advertencias",
+			desc: "Remove as advertências dos membros mencionados",
+			usage: ["!g-limpar-advertencias"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-streamRefresh",
+			desc: "Reseta a lista de bots ativos/ignorados para as notificações de stream",
+			usage: ["!g-streamRefresh"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-dossie",
+			desc: "Exibe o histórico de dossiês deste grupo",
+			usage: ["!g-dossie"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-copiarCmds",
+			desc: "Copia os comandos do grupoOrigem pro grupoDestino",
+			usage: ["!g-copiarCmds"],
+			category: "gerenciamento"
+		}
+	]
+};
+
+Management.helper = helper;
+
 module.exports = Management;
+module.exports.helper = helper;

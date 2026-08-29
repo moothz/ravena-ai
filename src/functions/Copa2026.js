@@ -1524,7 +1524,65 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Acompanhamento em tempo real da Copa do Mundo 2026",
+	implementation:
+		"Consulta API externa de futebol com tabelas, jogos, estádios, grupos, classificação, estatísticas e notificações automáticas de partidas",
+	tags: "copa,copa 2026,futebol,jogos,tabela,estadios,selecoes,world cup",
+	cmds: [
+		{
+			cmd: "!copa",
+			desc: "Exibe o menu principal de opções e comandos da Copa 2026",
+			usage: ["!copa"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-hoje",
+			desc: "Mostra todos os jogos da Copa agendados para a data de hoje",
+			usage: ["!copa-hoje"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-jogos",
+			desc: "Lista próximos jogos ou partidas de uma seleção/data específica",
+			usage: ["!copa-jogos", "!copa-jogos Brasil"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-tabela",
+			desc: "Exibe a classificação e tabela dos grupos da Copa",
+			usage: ["!copa-tabela", "!copa-tabela A"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-time",
+			desc: "Mostra informações, elenco e jogos de uma seleção",
+			usage: ["!copa-time Brasil", "!copa-time Argentina"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-jogo",
+			desc: "Exibe detalhes de uma partida específica pelo ID",
+			usage: ["!copa-jogo 1"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-estadios",
+			desc: "Lista os 16 estádios oficiais da Copa do Mundo",
+			usage: ["!copa-estadios"],
+			category: "cultura"
+		},
+		{
+			cmd: "!copa-seguir",
+			desc: "Ativa ou desativa notificações automáticas de gols e partidas de um time",
+			usage: ["!copa-seguir Brasil"],
+			category: "cultura"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands: API_URL ? commands : [],
 	FLAGS,
 	NAMES_PT,

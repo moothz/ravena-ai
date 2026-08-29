@@ -437,4 +437,34 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Comandos úteis para membros e interações gerais em grupos",
+	implementation:
+		"Manipula dados do grupo, apagar mensagens próprias do bot, links de convite e lista de grupos",
+	tags: "grupo,convite,apagar,membros,interacao",
+	cmds: [
+		{
+			cmd: "!convite",
+			desc: "Gera o link de convite do grupo atual",
+			usage: ["!convite"],
+			category: "grupo"
+		},
+		{
+			cmd: "!grupao",
+			desc: "Exibe a lista de grupos públicos parceiros do bot",
+			usage: ["!grupao"],
+			category: "grupo"
+		},
+		{
+			cmd: "!apagar",
+			desc: "Apaga uma mensagem que foi enviada pelo bot (respondendo a ela)",
+			usage: ["!apagar (em resposta a uma mensagem do bot)"],
+			category: "grupo"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

@@ -151,6 +151,23 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about:
+		"Consulta jogos grátis disponíveis por tempo limitado em plataformas como Steam, Epic Games e GOG",
+	implementation:
+		"Scraping e integração com APIs de feeds de promoções de games para obter títulos disponíveis gratuitamente",
+	tags: "jogos,games,gratis,freebies,epic games,steam,promocoes",
+	cmds: [
+		{
+			cmd: "!jogosgratis",
+			desc: "Exibe a lista de jogos gratuitos disponíveis no momento para resgate",
+			usage: ["!jogosgratis"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

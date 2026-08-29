@@ -1052,6 +1052,52 @@ const commands = [
 ];
 
 // Exporta função para ser usada em EventHandler
+const helper = {
+	about: "Síntese de voz (TTS) com diferentes personagens e transcrição de áudio (STT)",
+	implementation:
+		"Executa TTS com vozes locais/remotas e modelos Whisper para Speech-To-Text com estatísticas em SQLite",
+	tags: "tts,stt,voz,falar,transcrever,audio,narrador,rubao,ravena",
+	cmds: [
+		{
+			cmd: "!stt",
+			desc: "Transcreve uma mensagem de voz ou áudio para texto",
+			usage: ["!stt (em resposta a um áudio de voz)"],
+			category: "tts"
+		},
+		{
+			cmd: "!tts",
+			desc: "Converte texto em áudio falado com voz padrão (Ravena)",
+			usage: ["!tts Olá pessoal do grupo!"],
+			category: "tts"
+		},
+		{
+			cmd: "!tts-mulher",
+			desc: "Converte texto em áudio com voz feminina",
+			usage: ["!tts-mulher Bom dia a todos!"],
+			category: "tts"
+		},
+		{
+			cmd: "!tts-homem",
+			desc: "Converte texto em áudio com voz masculina",
+			usage: ["!tts-homem Atenção para o recado!"],
+			category: "tts"
+		},
+		{
+			cmd: "!tts-rubao",
+			desc: "Converte texto em áudio com a voz cômica do Rubão do Pontaço",
+			usage: ["!tts-rubao Fala minha galera do zapzap!"],
+			category: "tts"
+		},
+		{
+			cmd: "!tts-narrador",
+			desc: "Converte texto em áudio com voz de narrador de documentário",
+			usage: ["!tts-narrador E assim a história começou..."],
+			category: "tts"
+		}
+	]
+};
+
+module.exports.helper = helper;
 module.exports.commands = commands;
 module.exports.processAutoSTT = processAutoSTT;
 module.exports.transcribeViaAPI = transcribeViaAPI;

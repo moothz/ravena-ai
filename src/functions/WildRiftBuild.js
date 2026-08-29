@@ -103,6 +103,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Consulta de builds, runas e itens para League of Legends: Wild Rift",
+	implementation:
+		"Retorna links e dados otimizados de builds para campeões da versão mobile Wild Rift",
+	tags: "wildrift,wr,build,lol,riot,mobile,games",
+	cmds: [
+		{
+			cmd: "!wr-build",
+			desc: "Obtém link com a build atualizada de um campeão do Wild Rift",
+			usage: ["!wr-build Jinx", "!wr-build Zed", "!wr-build Lux"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

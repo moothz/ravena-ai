@@ -818,4 +818,26 @@ module.exports.runGroupAnalysis = runGroupAnalysis;
 module.exports.formatMessagesForPrompt = formatMessagesForPrompt;
 
 // Exporta comandos
+const helper = {
+	about: "Resumos de conversas de grupos e interações inteligentes contextualizadas",
+	implementation:
+		"Armazena histórico recente de mensagens do chat e utiliza LLMs para gerar resumos concisos e intervenções bem-humoradas",
+	tags: "resumo,interagir,conversa,ia,mensagens,grupo",
+	cmds: [
+		{
+			cmd: "!resumo",
+			desc: "Gera um resumo das conversas recentes e assuntos debatidos no grupo",
+			usage: ["!resumo"],
+			category: "ia"
+		},
+		{
+			cmd: "!interagir",
+			desc: "Faz o bot interagir e comentar sobre os tópicos atuais da conversa",
+			usage: ["!interagir"],
+			category: "ia"
+		}
+	]
+};
+
+module.exports.helper = helper;
 module.exports.commands = commands;

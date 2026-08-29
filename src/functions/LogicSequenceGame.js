@@ -651,4 +651,35 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, activeGames };
+const helper = {
+	about: "Jogo de quebra-cabeça e dedução de sequências lógicas e matemáticas",
+	implementation:
+		"Gera padrões de sequências numéricas e lógicas, computa tentativas e calcula pontuação para ranking SQLite",
+	tags: "sequencia,logica,raciocinio,game,jogos,ranking,desafio",
+	cmds: [
+		{
+			cmd: "!sequencia",
+			desc: "Inicia um desafio de sequência lógica",
+			usage: ["!sequencia"],
+			category: "jogos"
+		},
+		{
+			cmd: "!seq",
+			desc: "Envia a resposta para a sequência atual",
+			usage: ["!seq 16", "!seq 42"],
+			category: "jogos"
+		},
+		{
+			cmd: "!sequencia-ranking",
+			desc: "Exibe o ranking de maiores pontuadores de lógica",
+			usage: ["!sequencia-ranking"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	activeGames
+};

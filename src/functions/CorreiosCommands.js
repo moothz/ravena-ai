@@ -12,7 +12,35 @@ const DB_NAME = "correios";
 // Early return if CORREIOS_API is not defined
 if (!process.env.CORREIOS_API) {
 	logger.warn("[Correios] CORREIOS_API não definida no .env. Comandos desativados.");
+	const helper = {
+		about: "Rastreamento e monitoramento de encomendas dos Correios",
+		implementation:
+			"Consulta API de rastreamento postal, armazena pacotes em banco SQLite e notifica automaticamente alterações de status",
+		tags: "correios,rastreio,encomenda,pacote,sedex,pac",
+		cmds: [
+			{
+				cmd: "!correios",
+				desc: "Consulta o status de um código de rastreio ou adiciona para monitoramento",
+				usage: ["!correios AA123456789BR", "!correios AA123456789BR Celular novo"],
+				category: "utilidades"
+			},
+			{
+				cmd: "!correios-lista",
+				desc: "Lista todas as encomendas que estão sendo rastreadas no chat",
+				usage: ["!correios-lista"],
+				category: "utilidades"
+			},
+			{
+				cmd: "!correios-del",
+				desc: "Remove um pacote do monitoramento",
+				usage: ["!correios-del AA123456789BR"],
+				category: "utilidades"
+			}
+		]
+	};
+
 	module.exports = {
+		helper,
 		commands: [],
 		inicializarRastreio: async () => {}
 	};

@@ -777,4 +777,24 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, formatarRetornoPlaca, consultarFipeHistory };
+const helper = {
+	about: "Consulta de veículos por placa no padrão brasileiro e Mercosul com tabela FIPE",
+	implementation:
+		"Consulta APIs veiculares públicas para obter modelo, ano, cor, cidade/UF e histórico de preços da tabela FIPE",
+	tags: "placa,carro,moto,veiculo,fipe,consulta,automovel",
+	cmds: [
+		{
+			cmd: "!placa",
+			desc: "Consulta dados e histórico de preço FIPE de um veículo pela placa",
+			usage: ["!placa ABC1234", "!placa ABC1D23"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	formatarRetornoPlaca,
+	consultarFipeHistory
+};

@@ -382,4 +382,28 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Conversão entre diversos formatos de arquivos de mídia (áudio, vídeo, imagem)",
+	implementation:
+		"Utiliza ffmpeg e sharp para processar formatos de mensagens citadas, extraindo áudios ou convertendo vídeos",
+	tags: "conversao,converter,audio,video,mp3,mp4,ffmpeg",
+	cmds: [
+		{
+			cmd: "!tomp3",
+			desc: "Converte um vídeo ou áudio citado para o formato MP3",
+			usage: ["!tomp3 (em resposta a um áudio ou vídeo)"],
+			category: "midia"
+		},
+		{
+			cmd: "!tomp4",
+			desc: "Converte uma figurinha animada ou GIF para o formato de vídeo MP4",
+			usage: ["!tomp4 (em resposta a uma figurinha ou gif)"],
+			category: "midia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

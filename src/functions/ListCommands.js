@@ -998,7 +998,65 @@ const commands = [
 ];
 
 // Export commands and reaction handler
+const helper = {
+	about: "Criação e gerenciamento de listas interativas e votações no grupo",
+	implementation:
+		"Gerencia listas compartilhadas com itens marcáveis, adição dinâmica e suporte a reações por emoji",
+	tags: "listas,lista,compras,tarefas,afazeres,votacao,organizacao",
+	cmds: [
+		{
+			cmd: "!listas",
+			desc: "Mostra todas as listas ativas no grupo",
+			usage: ["!listas"],
+			category: "listas"
+		},
+		{
+			cmd: "!lc",
+			desc: "Cria uma nova lista simples",
+			usage: ["!lc Mercado (arroz, feijao, carne)"],
+			category: "listas"
+		},
+		{
+			cmd: "!lct",
+			desc: "Cria uma lista de tarefas interativa",
+			usage: ["!lct Preparativos da festa"],
+			category: "listas"
+		},
+		{
+			cmd: "!ld",
+			desc: "Deleta uma lista existente",
+			usage: ["!ld 1"],
+			category: "listas"
+		},
+		{
+			cmd: "!le",
+			desc: "Exibe os itens detalhados de uma lista",
+			usage: ["!le 1"],
+			category: "listas"
+		},
+		{
+			cmd: "!ls",
+			desc: "Adiciona um novo item a uma lista existente",
+			usage: ["!ls 1 Comprar refrigerante"],
+			category: "listas"
+		},
+		{
+			cmd: "!lt",
+			desc: "Alterna a marcação de conclusão de um item da lista",
+			usage: ["!lt 1 2"],
+			category: "listas"
+		},
+		{
+			cmd: "!lr",
+			desc: "Remove um item específico de uma lista",
+			usage: ["!lr 1 2"],
+			category: "listas"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	processListReaction
 };

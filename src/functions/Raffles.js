@@ -584,4 +584,21 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Sorteios automáticos de rifas e bilhetes premiados em grupos",
+	implementation: "Gerencia bilhetes, apostas e sorteios pseudo-aleatórios auditáveis no grupo",
+	tags: "rifa,sorteio,bilhetes,premios,apostas",
+	cmds: [
+		{
+			cmd: "!rifa",
+			desc: "Inicia ou consulta a rifa ativa no grupo",
+			usage: ["!rifa"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

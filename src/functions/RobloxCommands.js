@@ -337,4 +337,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Consulta de usuários, avatares e jogos na plataforma Roblox",
+	implementation:
+		"Consome a API pública do Roblox para buscar dados de perfil, data de criação, amigos e render de avatar",
+	tags: "roblox,avatar,perfil,games,jogos",
+	cmds: [
+		{
+			cmd: "!roblox",
+			desc: "Consulta informações e foto do avatar de um jogador do Roblox",
+			usage: ["!roblox NomeDoJogador"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

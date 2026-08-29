@@ -719,4 +719,24 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, aiCommand };
+const helper = {
+	about:
+		"Integração com modelos de Inteligência Artificial para conversação e execução inteligente de comandos",
+	implementation:
+		"Utiliza LLMService para envio de prompts, contexto de conversa, classificação de intenções e auto-invocação de outros comandos do bot",
+	tags: "ia,ai,chat,conversar,inteligencia artificial,gpt,gemini",
+	cmds: [
+		{
+			cmd: "!ai",
+			desc: "Envia uma pergunta ou instrução para a IA responder ou interagir",
+			usage: ["!ai Quem foi Ada Lovelace?", "!ai Explique como funciona o motor a combustão"],
+			category: "ia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	aiCommand
+};

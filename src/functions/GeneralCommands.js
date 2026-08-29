@@ -662,4 +662,47 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands, getUserNickname };
+const helper = {
+	about: "Comandos gerais e utilitários essenciais do bot (status, apelido, avisos, etc.)",
+	implementation:
+		"Obtém métricas do sistema operacional, gerencia apelidos no banco e coordena mensagens de aviso",
+	tags: "geral,status,sistema,ping,apelido,avisos,utilidades",
+	cmds: [
+		{
+			cmd: "!status",
+			desc: "Exibe o status do bot, tempo online, memória e latência",
+			usage: ["!status"],
+			category: "geral"
+		},
+		{
+			cmd: "!avisos",
+			desc: "Exibe o canal de avisos e novidades da comunidade do bot",
+			usage: ["!avisos"],
+			category: "geral"
+		},
+		{
+			cmd: "!apelido",
+			desc: "Define ou altera o seu apelido de exibição no grupo",
+			usage: ["!apelido Moothz", "!apelido Rei do Zap"],
+			category: "geral"
+		},
+		{
+			cmd: "!codigo",
+			desc: "Exibe o link do repositório de código-fonte do bot",
+			usage: ["!codigo"],
+			category: "geral"
+		},
+		{
+			cmd: "!atencao",
+			desc: "Envia um alerta sonoro/visual para chamar a atenção no chat",
+			usage: ["!atencao"],
+			category: "geral"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	getUserNickname
+};

@@ -274,7 +274,23 @@ const commands = [
 ];
 
 // Exporta o módulo
+const helper = {
+	about: "Feed de notícias, atualizações e changelogs de servidores Mu Online",
+	implementation:
+		"Realiza web scraping periódico e sob demanda em fóruns/sites oficiais de Mu Online com notificações",
+	tags: "mu,munews,noticias,mu online,mmorpg,jogos",
+	cmds: [
+		{
+			cmd: "!munews",
+			desc: "Exibe as últimas notícias e atualizações dos servidores de Mu Online",
+			usage: ["!munews"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	detectNews
 };

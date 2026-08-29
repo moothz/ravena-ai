@@ -718,7 +718,35 @@ const commands = [
 	await garantirDiretorios();
 })();
 
+const helper = {
+	about: "Sistema de agendamento de lembretes e alertas temporizados",
+	implementation:
+		"Parser de linguagem natural com chrono-node para datas/horas, agendamento de timers e persistência em SQLite",
+	tags: "lembrete,lembrar,alarme,agenda,tempo,notificacao",
+	cmds: [
+		{
+			cmd: "!lembrar",
+			desc: "Cria um novo lembrete com data, hora ou tempo relativo",
+			usage: ["!lembrar em 10 minutos tirar o lixo", "!lembrar amanha as 14h reuniao importante"],
+			category: "utilidades"
+		},
+		{
+			cmd: "!lembretes",
+			desc: "Lista todos os seus lembretes ativos",
+			usage: ["!lembretes"],
+			category: "utilidades"
+		},
+		{
+			cmd: "!l-cancelar",
+			desc: "Cancela um lembrete ativo pelo ID",
+			usage: ["!l-cancelar 42"],
+			category: "utilidades"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	inicializarLembretes: async (bot) => {
 		try {

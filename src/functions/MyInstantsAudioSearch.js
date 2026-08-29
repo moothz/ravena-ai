@@ -172,7 +172,23 @@ const commands = [
 ];
 
 // Exporta o módulo
+const helper = {
+	about: "Pesquisa e envio instantâneo de áudios e memes do MyInstants",
+	implementation:
+		"Faz web scraping e buscas no site MyInstants, baixa o arquivo de áudio MP3 e envia como mensagem de voz / áudio",
+	tags: "myinstants,audios,memes,sons,efeitos sonoros,audio",
+	cmds: [
+		{
+			cmd: "!som",
+			desc: "Pesquisa e envia um áudio do site MyInstants",
+			usage: ["!som gemidao", "!som vinheta globo", "!som acertou mizeravi"],
+			category: "áudio"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	buscarAudios
 };

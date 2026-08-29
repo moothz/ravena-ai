@@ -1201,4 +1201,34 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Sistema de relacionamentos, casamentos e amizades virtuais no grupo",
+	implementation:
+		"Gerencia propostas de casamento, divórcios, lista de casais do grupo e afinidades com dados em SQLite",
+	tags: "casamento,casar,divorcio,relacionamento,amor,zoeira,casais",
+	cmds: [
+		{
+			cmd: "!casar",
+			desc: "Pede um membro do grupo em casamento",
+			usage: ["!casar @fulano"],
+			category: "diversao"
+		},
+		{
+			cmd: "!divorcio",
+			desc: "Pede o divórcio do seu parceiro atual no grupo",
+			usage: ["!divorcio"],
+			category: "diversao"
+		},
+		{
+			cmd: "!relacionamentos",
+			desc: "Lista todos os casamentos e uniões ativas no grupo",
+			usage: ["!relacionamentos"],
+			category: "diversao"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

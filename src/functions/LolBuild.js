@@ -85,6 +85,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Consulta rápida de builds, runas, talentos e itens para League of Legends",
+	implementation:
+		"Gera links diretos e busca dados otimizados para o campeão selecionado em portais de estatísticas de LoL",
+	tags: "lol,league of legends,build,runas,campeao,moba,riot",
+	cmds: [
+		{
+			cmd: "!lol-build",
+			desc: "Obtém link com a build atualizada e runas de um campeão do LoL",
+			usage: ["!lol-build Yasuo", "!lol-build Jinx", "!lol-build Ahri"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

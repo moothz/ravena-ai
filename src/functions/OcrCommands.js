@@ -152,4 +152,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Reconhecimento óptico de caracteres (OCR) para extrair texto de fotos e documentos",
+	implementation:
+		"Processa imagens enviadas ou citadas através de engines de OCR retornando o texto extraído",
+	tags: "ocr,texto,extrair texto,imagem para texto,leitura,scan",
+	cmds: [
+		{
+			cmd: "!ocr",
+			desc: "Lê e extrai todo o texto contido em uma imagem",
+			usage: ["!ocr (em resposta a uma foto ou imagem com texto)"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

@@ -999,7 +999,45 @@ commands[0].reactions.trigger = "⬇️";
 commands[1].reactions.trigger = "⏬";
 
 // Expõe as funções de extração de URL e detecção de YouTube para outros módulos
+const helper = {
+	about: "Download unificado de vídeos, fotos e áudios de mais de 30 plataformas de redes sociais",
+	implementation:
+		"Utiliza Cobalt API, youtube-dl-exec e instâncias de proxy com cache inteligente em SQLite para entregar mídias em alta qualidade",
+	tags: "download,baixar,video,audio,instagram,tiktok,youtube,twitter,x,reddit,soundcloud,facebook",
+	cmds: [
+		{
+			cmd: "!baixar",
+			desc: "Baixa vídeos, áudios ou fotos de links do YouTube, Instagram, TikTok, Twitter/X, Reddit, etc.",
+			usage: [
+				"!baixar https://vm.tiktok.com/...",
+				"!baixar https://instagram.com/reel/...",
+				"!baixar https://youtu.be/..."
+			],
+			category: "downloaders"
+		},
+		{
+			cmd: "!ig",
+			desc: "Atalho para baixar publicações, reels e stories do Instagram",
+			usage: ["!ig https://instagram.com/p/..."],
+			category: "downloaders"
+		},
+		{
+			cmd: "!tt",
+			desc: "Atalho para baixar vídeos do TikTok",
+			usage: ["!tt https://tiktok.com/@user/video/..."],
+			category: "downloaders"
+		},
+		{
+			cmd: "!tw",
+			desc: "Atalho para baixar vídeos e mídias do Twitter / X",
+			usage: ["!tw https://x.com/user/status/..."],
+			category: "downloaders"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	downloadHandler,
 	detectPlatform,

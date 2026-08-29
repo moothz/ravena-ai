@@ -488,4 +488,35 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, addCoins };
+const helper = {
+	about: "Jogo de caça-níqueis (Slots / Caça-Coisas) com moedas e prêmios colecionáveis",
+	implementation:
+		"Simula rolos de caça-níqueis com combinações premiadas, controle de moedas por usuário e inventário de prêmios",
+	tags: "slots,caca niquel,cassino,jogos,premios,moedas,sorte",
+	cmds: [
+		{
+			cmd: "!slots",
+			desc: "Gira a máquina de caça-níqueis",
+			usage: ["!slots"],
+			category: "jogos"
+		},
+		{
+			cmd: "!slots-premios",
+			desc: "Exibe a sua coleção de prêmios conquistados no caça-níqueis",
+			usage: ["!slots-premios"],
+			category: "jogos"
+		},
+		{
+			cmd: "!slots-ranking",
+			desc: "Exibe o ranking dos maiores vencedores do caça-níqueis",
+			usage: ["!slots-ranking"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	addCoins
+};

@@ -732,4 +732,23 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about:
+		"Consultas de dados e perfis para jogos da Riot Games (League of Legends, Valorant, Wild Rift)",
+	implementation:
+		"Integra com APIs de terceiros para buscar elo, taxa de vitória, estatísticas e histórico de partidas",
+	tags: "riot,lol,valorant,wildrift,elo,estatisticas,games",
+	cmds: [
+		{
+			cmd: "!valorant",
+			desc: "Consulta estatísticas e elo de um jogador de Valorant",
+			usage: ["!valorant Nick#TAG"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

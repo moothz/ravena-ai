@@ -440,4 +440,58 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Comandos de humor, zoeira e brincadeiras sociais para animar o grupo",
+	implementation:
+		"Sorteia membros do grupo e processa variáveis customizadas para piadas, PIX fictício, clonagem de cartão e aniversário",
+	tags: "zoeira,humor,brincadeiras,memes,pix,aniversario,boleto,violencia",
+	cmds: [
+		{
+			cmd: "!violencia",
+			desc: "Pratica um ato cômico de violência contra outro membro",
+			usage: ["!violencia @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!morreu",
+			desc: "Envia meme de anúncio fúnebre zoeiro",
+			usage: ["!morreu @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!boleto",
+			desc: "Escolhe um membro do grupo aleatoriamente para pagar um boleto",
+			usage: ["!boleto"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!clonarcartao",
+			desc: "Simula uma clonagem de cartão para pagar o agiota",
+			usage: ["!clonarcartao @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!presente",
+			desc: "Envia um presente zoeiro da internet para alguém",
+			usage: ["!presente @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!pix",
+			desc: "Simula uma transferência fictícia pelo Ravenabank",
+			usage: ["!pix 1000 @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!aniversario",
+			desc: "Parabeniza um aniversariante do grupo em grande estilo",
+			usage: ["!aniversario @fulano"],
+			category: "zoeira"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

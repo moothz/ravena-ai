@@ -631,7 +631,47 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Sistema completo de sorteios no grupo com inscrição por reações ou sorteio instantâneo",
+	implementation:
+		"Gerencia sorteios com tempo limite, lista de participantes por reação/comando e escolha aleatória com histórico",
+	tags: "sorteio,sortear,rifa,concurso,premios,ganhador",
+	cmds: [
+		{
+			cmd: "!sorteio",
+			desc: "Inicia um novo sorteio com descrição e tempo ou exibe o sorteio em andamento",
+			usage: ["!sorteio 10m Caixa de chocolate", "!sorteio"],
+			category: "diversao"
+		},
+		{
+			cmd: "!sorteio-entrar",
+			desc: "Entra no sorteio ativo do grupo",
+			usage: ["!sorteio-entrar"],
+			category: "diversao"
+		},
+		{
+			cmd: "!sorteio-sair",
+			desc: "Sai da lista de participantes do sorteio ativo",
+			usage: ["!sorteio-sair"],
+			category: "diversao"
+		},
+		{
+			cmd: "!sortear",
+			desc: "Finaliza o sorteio ativo ou sorteia um membro aleatório do grupo imediatamente",
+			usage: ["!sortear"],
+			category: "diversao"
+		},
+		{
+			cmd: "!sorteios",
+			desc: "Exibe o histórico de sorteios já realizados no grupo",
+			usage: ["!sorteios"],
+			category: "diversao"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	processSorteioReaction
 };

@@ -436,4 +436,25 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Permite aos membros enviarem mensagens e mídias anônimas para grupos autorizados",
+	implementation:
+		"Encaminha conteúdo enviado no privado do bot para grupos destino cadastrados, com moderação e controles anti-spam",
+	tags: "anonimo,segredo,correio,mensagem anonima,confissao",
+	cmds: [
+		{
+			cmd: "!anonimo",
+			desc: "Envia uma mensagem ou mídia anonimamente para o grupo indicado",
+			usage: [
+				"!anonimo [nome_do_grupo] Mensagem secreta aqui",
+				"!anonimo (em resposta a uma imagem com legenda)"
+			],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

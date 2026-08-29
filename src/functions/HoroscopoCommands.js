@@ -285,7 +285,23 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Previsões diárias de horóscopo e astrologia para todos os signos do zodíaco",
+	implementation:
+		"Web scraping de portais de astrologia com cache diário e detecção inteligente de signos por texto",
+	tags: "horoscopo,signos,astrologia,zodiaco,previsao,aries,touro",
+	cmds: [
+		{
+			cmd: "!horoscopo",
+			desc: "Consulta a previsão astrológica diária para o seu signo",
+			usage: ["!horoscopo aries", "!horoscopo leao", "!horoscopo escorpiao"],
+			category: "diversao"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	detectHoroscopo
 };

@@ -223,4 +223,28 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Mini-RPG temático inspirado no clássico Ragnarök Online (RagNavena)",
+	implementation:
+		"Sistema de classes, monstros, drops, equipamentos, batalhas por turnos e persistência em banco de dados SQLite",
+	tags: "ragnarok,ragnavena,rpg,jogos,monstros,batalha,classes",
+	cmds: [
+		{
+			cmd: "!ragnavena",
+			desc: "Acessa o menu principal e jogo do RagNavena",
+			usage: ["!ragnavena"],
+			category: "jogos"
+		},
+		{
+			cmd: "!ragnarok-reset",
+			desc: "Reseta os dados do jogo no grupo (Apenas Administradores)",
+			usage: ["!ragnarok-reset"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

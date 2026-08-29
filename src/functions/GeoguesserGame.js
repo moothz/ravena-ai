@@ -1383,4 +1383,30 @@ const cleanup = () => {
 	if (geoCleanupInterval) clearInterval(geoCleanupInterval);
 };
 
-//module.exports = { commands, processLocationMessage, cleanup };
+const helper = {
+	about: "Jogo estilo GeoGuessr no WhatsApp para adivinhar localizações geográficas",
+	implementation:
+		"Gera imagens do Google Street View / Mapas e avalia aproximação por coordenadas de localização enviadas pelos usuários",
+	tags: "geoguessr,jogos,mapa,geografia,paises,adivinhar",
+	cmds: [
+		{
+			cmd: "!geoguesser",
+			desc: "Inicia uma rodada do jogo GeoGuessr no grupo",
+			usage: ["!geoguesser"],
+			category: "jogos"
+		},
+		{
+			cmd: "!geo-ranking",
+			desc: "Exibe o ranking de acertos do jogo GeoGuessr",
+			usage: ["!geo-ranking"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	processLocationMessage,
+	cleanup
+};

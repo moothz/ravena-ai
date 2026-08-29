@@ -671,4 +671,40 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Jogo de Roleta Russa com silenciamento e timeout temporário dos participantes eliminados",
+	implementation:
+		"Gerencia câmara do revólver de 6 posições, remoção ou silenciamento temporário via WhatsApp Web API e ranking de sobreviventes em SQLite",
+	tags: "roleta,roletarussa,tiro,revólver,jogo,timeout,ranking",
+	cmds: [
+		{
+			cmd: "!roletarussa",
+			desc: "Puxa o gatilho na Roleta Russa do grupo",
+			usage: ["!roletarussa"],
+			category: "jogos"
+		},
+		{
+			cmd: "!roleta-ranking",
+			desc: "Exibe o ranking de sobreviventes e mortes na roleta",
+			usage: ["!roleta-ranking"],
+			category: "jogos"
+		},
+		{
+			cmd: "!roleta-tempo",
+			desc: "Define o tempo em minutos de punição para quem morrer (Admins)",
+			usage: ["!roleta-tempo 5"],
+			category: "jogos"
+		},
+		{
+			cmd: "!roleta-reset",
+			desc: "Reseta os dados da roleta russa no grupo (Admins)",
+			usage: ["!roleta-reset"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

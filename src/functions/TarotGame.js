@@ -366,4 +366,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Tiragem de cartas de Tarô com previsões místicas e conselhos",
+	implementation:
+		"Sorteia cartas do baralho de tarô com significados completos, imagens e interpretações em SQLite",
+	tags: "tarot,taro,cartomante,misticismo,futuro,destino,jogos",
+	cmds: [
+		{
+			cmd: "!tarot",
+			desc: "Realiza uma tiragem de carta de Tarô com seu significado",
+			usage: ["!tarot"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

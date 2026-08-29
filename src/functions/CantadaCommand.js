@@ -82,6 +82,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Envia cantadas engraçadas e espirituosas para descontrair no grupo",
+	implementation:
+		"Sorteia frases da lista ou variável de cantadas e processa menções de membros do grupo",
+	tags: "cantada,zoeira,romance,flerte,humor,diversao",
+	cmds: [
+		{
+			cmd: "!cantada",
+			desc: "Envia uma cantada aleatória (ou direcionada a um usuário mencionado)",
+			usage: ["!cantada", "!cantada @fulano"],
+			category: "zoeira"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

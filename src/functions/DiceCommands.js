@@ -267,4 +267,22 @@ commands.push(
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
-module.exports = { commands };
+const helper = {
+	about: "Rolagem de dados poliédricos para jogos de RPG de mesa e sorteios",
+	implementation:
+		"Interpreta expressões clássicas de RPG no formato NdS (ex: 2d20+5, 1d100, 3d6) com suporte a modificadores e somatórios",
+	tags: "dados,dado,rpg,roll,d20,d6,d10,sorteio,aleatorio",
+	cmds: [
+		{
+			cmd: "!roll",
+			desc: "Rola dados poliédricos com base na notação de RPG",
+			usage: ["!roll 1d20", "!roll 2d6+3", "!roll 1d100"],
+			category: "jogos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

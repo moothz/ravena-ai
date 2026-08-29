@@ -899,7 +899,35 @@ const commands = [
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, { commands });
 
+const helper = {
+	about: "Download de vídeos e extração de áudio do YouTube e busca de letras de músicas",
+	implementation:
+		"Utiliza youtube-dl-exec, APIs de busca de letras e stream pipeline para processar mídias do YouTube",
+	tags: "youtube,yt,musica,video,download,letras,audio",
+	cmds: [
+		{
+			cmd: "!yt",
+			desc: "Baixa um vídeo do YouTube em formato MP4",
+			usage: ["!yt https://youtu.be/...", "!yt nome do video"],
+			category: "downloaders"
+		},
+		{
+			cmd: "!sr",
+			desc: "Baixa o áudio de um vídeo do YouTube em formato MP3",
+			usage: ["!sr https://youtu.be/...", "!sr nome da musica"],
+			category: "downloaders"
+		},
+		{
+			cmd: "!letra",
+			desc: "Busca e exibe a letra de uma música",
+			usage: ["!letra Bohemian Rhapsody", "!letra Legião Urbana Tempo Perdido"],
+			category: "downloaders"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	processYoutubeReaction,
 	baixarVideoYoutube,

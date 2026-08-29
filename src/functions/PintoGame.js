@@ -618,4 +618,34 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Brincadeira de medição diária de tamanho com ranking cômico do grupo",
+	implementation:
+		"Gera tamanho randômico por algoritmo diário determinístico por usuário, com mensagens de humor e ranking SQLite",
+	tags: "pinto,tamanho,ranking,zoeira,brincadeira,diversao",
+	cmds: [
+		{
+			cmd: "!pinto",
+			desc: "Mede seu tamanho do dia e exibe seu resultado",
+			usage: ["!pinto"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!pinto-ranking",
+			desc: "Exibe o ranking dos maiores e menores tamanhos do grupo",
+			usage: ["!pinto-ranking"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!pinto-reset",
+			desc: "Reseta os registros do jogo no grupo (Apenas Administradores)",
+			usage: ["!pinto-reset"],
+			category: "zoeira"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

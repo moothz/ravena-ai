@@ -262,4 +262,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Busca de filmes, séries e programas de TV no IMDb / TMDB",
+	implementation:
+		"Consulta APIs de cinema para obter sinopse, elenco, nota IMDb, pôster oficial e ano de lançamento",
+	tags: "filmes,series,cinema,imdb,tmdb,filme,assistir,sinopse,nota",
+	cmds: [
+		{
+			cmd: "!imdb",
+			desc: "Busca informações, nota e sinopse de um filme ou série",
+			usage: ["!imdb Breaking Bad", "!imdb Interestelar", "!imdb O Poderoso Chefao"],
+			category: "cultura"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

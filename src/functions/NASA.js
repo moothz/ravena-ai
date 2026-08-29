@@ -304,4 +304,28 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Imagens astronômicas diárias (APOD) e dados espaciais fornecidos pela NASA",
+	implementation:
+		"Consome a API oficial da NASA (Astronomy Picture of the Day e EPIC Earth Images) com traduções e informações detalhadas",
+	tags: "nasa,espaco,astronomia,apod,planetas,estrelas,terra",
+	cmds: [
+		{
+			cmd: "!apod",
+			desc: "Exibe a Foto Astronômica do Dia da NASA com explicação traduzida",
+			usage: ["!apod"],
+			category: "cultura"
+		},
+		{
+			cmd: "!epic",
+			desc: "Exibe as fotos mais recentes da Terra capturadas pelo satélite EPIC da NASA",
+			usage: ["!epic"],
+			category: "cultura"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

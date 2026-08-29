@@ -471,4 +471,27 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, generateImage, trackBonsaiStats };
+const helper = {
+	about: "Geração de imagens de alta qualidade via Inteligência Artificial usando Bonsai / ComfyUI",
+	implementation:
+		"Comunica com backend Bonsai, traduz prompts para inglês, aplica filtros de segurança NSFW e gera mídias",
+	tags: "ia,imagem,gerar imagem,imagine,bonsai,arte,desenho",
+	cmds: [
+		{
+			cmd: "!imagine",
+			desc: "Gera uma imagem através de descrição textual usando IA",
+			usage: [
+				"!imagine um astronauta andando a cavalo na lua em aquarela",
+				"!imagine cyberpunk city at night"
+			],
+			category: "ia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	generateImage,
+	trackBonsaiStats
+};

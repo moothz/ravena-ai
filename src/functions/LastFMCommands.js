@@ -291,4 +291,22 @@ const commands = [
 ];
 
 // Exporta o módulo
-module.exports = { commands };
+const helper = {
+	about: "Integração com Last.fm para exibir músicas ouvidas recentemente e scrobbles",
+	implementation:
+		"Chama a API oficial do Last.fm para ler faixas recentes, artistas mais ouvidos e capas de álbum",
+	tags: "musica,lastfm,scrobble,ouuvindo,faixa,artista,album",
+	cmds: [
+		{
+			cmd: "!lastfm",
+			desc: "Mostra a música que um usuário do Last.fm está ouvindo agora",
+			usage: ["!lastfm seu_usuario", "!lastfm"],
+			category: "cultura"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

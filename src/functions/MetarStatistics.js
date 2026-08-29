@@ -94,7 +94,23 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Consulta meteorológica de aviação METAR e TAF para aeródromos e aeroportos",
+	implementation:
+		"Consulta a base de dados da REDEMET e APIs aeronáuticas para decodificar boletins meteorológicos por código ICAO",
+	tags: "metar,aviacao,aeroporto,icao,tempo,meteorologia,voo,piloto",
+	cmds: [
+		{
+			cmd: "!metar",
+			desc: "Consulta o informe meteorológico de aviação METAR para um aeroporto (Código ICAO)",
+			usage: ["!metar SBGR", "!metar SBRJ", "!metar SBGL"],
+			category: "utilidades"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	buscarMetar
 };

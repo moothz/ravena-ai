@@ -786,6 +786,52 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Jogo de palavras em que os jogadores devem adivinhar o anagrama embaralhado",
+	implementation:
+		"Gerencia partidas por grupo em memória com dicas, contagem regressiva, persistência de pontuação e ranking em banco SQLite",
+	tags: "jogos,anagrama,palavras,game,ranking,adivinhar",
+	cmds: [
+		{
+			cmd: "!anagrama",
+			desc: "Inicia uma partida de Anagrama no grupo",
+			usage: ["!anagrama"],
+			category: "jogos"
+		},
+		{
+			cmd: "!ana",
+			desc: "Envia um palpite para a palavra embaralhada",
+			usage: ["!ana computador", "!ana teclado"],
+			category: "jogos"
+		},
+		{
+			cmd: "!ana-dica",
+			desc: "Solicita uma dica sobre a palavra atual",
+			usage: ["!ana-dica"],
+			category: "jogos"
+		},
+		{
+			cmd: "!ana-pular",
+			desc: "Pula a palavra atual da rodada",
+			usage: ["!ana-pular"],
+			category: "jogos"
+		},
+		{
+			cmd: "!anagrama-ranking",
+			desc: "Exibe o ranking de jogadores com mais pontos no Anagrama",
+			usage: ["!anagrama-ranking"],
+			category: "jogos"
+		},
+		{
+			cmd: "!anagrama-reset",
+			desc: "Reseta o ranking do jogo no grupo (Apenas Administradores)",
+			usage: ["!anagrama-reset"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

@@ -238,4 +238,22 @@ const commands = [
 	})
 ];
 
-// module.exports = { commands };
+const helper = {
+	about: "Compartilhamento e importação de variáveis customizadas entre grupos e chats",
+	implementation:
+		"Serializa e desserializa variáveis do banco de dados permitindo transporte seguro entre instâncias",
+	tags: "variaveis,compartilhar,backup,exportar,importar,dados",
+	cmds: [
+		{
+			cmd: "!compartilhar",
+			desc: "Gera um código de compartilhamento para uma variável customizada",
+			usage: ["!compartilhar nome_da_variavel"],
+			category: "utilidades"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

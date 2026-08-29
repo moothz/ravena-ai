@@ -813,4 +813,52 @@ const commands = [
 // Registra os comandos sendo exportados
 logger.info(`Módulo ImageManipulation carregado. Exportados ${commands.length} comandos.`);
 
-module.exports = { commands };
+const helper = {
+	about: "Efeitos visuais, filtros e manipulação artística em imagens e fotos",
+	implementation:
+		"Aplica transformações gráficas com Sharp e ImageMagick (remoção de fundo, pixelate, distorção, neon, pintura a óleo, sketch)",
+	tags: "imagem,efeitos,filtros,removebg,neon,pixelate,oil,sketch,distorcer,fotos",
+	cmds: [
+		{
+			cmd: "!removebg",
+			desc: "Remove o fundo de uma imagem usando inteligência artificial",
+			usage: ["!removebg (em resposta a uma foto)"],
+			category: "imagens"
+		},
+		{
+			cmd: "!distort",
+			desc: "Aplica distorção cômica e deformação na imagem",
+			usage: ["!distort (em resposta a uma foto)"],
+			category: "imagens"
+		},
+		{
+			cmd: "!neon",
+			desc: "Aplica efeito de iluminação neon sobre a imagem",
+			usage: ["!neon (em resposta a uma foto)"],
+			category: "imagens"
+		},
+		{
+			cmd: "!oil",
+			desc: "Transforma a imagem em efeito de pintura a óleo",
+			usage: ["!oil (em resposta a uma foto)"],
+			category: "imagens"
+		},
+		{
+			cmd: "!pixelate",
+			desc: "Aplica efeito retrô de pixelização na imagem",
+			usage: ["!pixelate (em resposta a uma foto)"],
+			category: "imagens"
+		},
+		{
+			cmd: "!sketch",
+			desc: "Converte a imagem em um desenho a lápis / esboço",
+			usage: ["!sketch (em resposta a uma foto)"],
+			category: "imagens"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

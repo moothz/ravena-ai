@@ -207,4 +207,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Busca de resumos e artigos enciclopédicos na Wikipedia",
+	implementation:
+		"Consome a API da Wikipedia em português para extrair o primeiro parágrafo, imagem principal e link do artigo",
+	tags: "wiki,wikipedia,enciclopedia,busca,artigo,informacao",
+	cmds: [
+		{
+			cmd: "!wiki",
+			desc: "Pesquisa um termo ou artigo na Wikipedia",
+			usage: ["!wiki Albert Einstein", "!wiki Sistema Solar", "!wiki Inteligência Artificial"],
+			category: "busca"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

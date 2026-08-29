@@ -798,4 +798,47 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, processFileVariable };
+const helper = {
+	about: "Gerenciador de armazenamento de arquivos e mídias do bot",
+	implementation:
+		"Manipula leitura, upload, download e listagem de arquivos salvos em disco vinculados a pastas e variáveis",
+	tags: "arquivos,pastas,download,salvar,storage,gerenciamento",
+	cmds: [
+		{
+			cmd: "!pastas",
+			desc: "Lista as pastas de arquivos públicas ou do grupo",
+			usage: ["!pastas"],
+			category: "arquivos"
+		},
+		{
+			cmd: "!p-criar",
+			desc: "Cria uma nova pasta para armazenar arquivos",
+			usage: ["!p-criar memes"],
+			category: "arquivos"
+		},
+		{
+			cmd: "!p-enviar",
+			desc: "Salva uma mídia citada dentro de uma pasta",
+			usage: ["!p-enviar memes (em resposta a uma foto/vídeo)"],
+			category: "arquivos"
+		},
+		{
+			cmd: "!p-baixar",
+			desc: "Baixa ou envia um arquivo armazenado em uma pasta",
+			usage: ["!p-baixar memes foto.jpg"],
+			category: "arquivos"
+		},
+		{
+			cmd: "!p-excluir",
+			desc: "Exclui uma pasta ou arquivo salvo",
+			usage: ["!p-excluir memes foto.jpg"],
+			category: "arquivos"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	processFileVariable
+};

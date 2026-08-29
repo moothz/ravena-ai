@@ -581,4 +581,34 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Registro e acompanhamento diário de refeições e hábitos alimentares do grupo",
+	implementation:
+		"Armazena logs diários de alimentação por usuário em SQLite, gera resumos e calcula estatísticas de consumo",
+	tags: "comida,alimentacao,dieta,saude,refeicao,tracker,calorias",
+	cmds: [
+		{
+			cmd: "!comida",
+			desc: "Registra o que você acabou de comer ou beber",
+			usage: ["!comida Almoço: arroz, feijão e frango", "!comida Maçã e suco de laranja"],
+			category: "saude"
+		},
+		{
+			cmd: "!comida-lista",
+			desc: "Lista todas as refeições registradas pelos membros do grupo hoje",
+			usage: ["!comida-lista"],
+			category: "saude"
+		},
+		{
+			cmd: "!comida-info",
+			desc: "Exibe seu resumo e estatísticas alimentares",
+			usage: ["!comida-info"],
+			category: "saude"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

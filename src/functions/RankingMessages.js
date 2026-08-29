@@ -539,7 +539,35 @@ const commands = [
 	})
 ];
 
+const helper = {
+	about: "Monitoramento de atividade de mensagens e ranking de membros mais faladores do grupo",
+	implementation:
+		"Registra contagem de mensagens enviadas por usuário em SQLite e gera relatórios periódicos de atividade",
+	tags: "faladores,ranking,mensagens,atividade,membros,estatisticas",
+	cmds: [
+		{
+			cmd: "!faladores",
+			desc: "Exibe o ranking com os membros mais ativos do grupo",
+			usage: ["!faladores"],
+			category: "grupo"
+		},
+		{
+			cmd: "!faladores-limpeza",
+			desc: "Lista membros inativos que não enviaram mensagens recentes",
+			usage: ["!faladores-limpeza"],
+			category: "grupo"
+		},
+		{
+			cmd: "!faladores-reset",
+			desc: "Reseta a contagem de mensagens do grupo (Apenas Administradores)",
+			usage: ["!faladores-reset"],
+			category: "grupo"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands,
 	processMessage,
 	processReaction

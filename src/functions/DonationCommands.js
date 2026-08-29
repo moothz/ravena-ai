@@ -293,4 +293,22 @@ const commands = [
 	})
 ];
 
-module.exports = { commands };
+const helper = {
+	about: "Informações sobre doações e apoio financeiro para manutenção do bot",
+	implementation:
+		"Retorna chave Pix, QR Code e informações de apoia-se configuradas nas variáveis do sistema",
+	tags: "doar,doacao,pix,ajuda,apoiar,crowdfunding",
+	cmds: [
+		{
+			cmd: "!doar",
+			desc: "Exibe as opções de doação e chave Pix para apoiar o projeto",
+			usage: ["!doar"],
+			category: "geral"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands
+};

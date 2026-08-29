@@ -189,6 +189,22 @@ const commands = [
 ];
 
 // Exporta os comandos
+const helper = {
+	about: "Consulta de perfil, troféus e jogos recentes na PlayStation Network (PSN)",
+	implementation:
+		"Utiliza PSN API para extrair nível da conta, troféus (Platina, Ouro, Prata, Bronze) e avatar do jogador",
+	tags: "psn,playstation,sony,trofeus,ps4,ps5,games,jogos",
+	cmds: [
+		{
+			cmd: "!psn",
+			desc: "Consulta o perfil e troféus de uma conta PSN",
+			usage: ["!psn SeuPSNID"],
+			category: "jogos"
+		}
+	]
+};
+
 module.exports = {
+	helper,
 	commands
 };

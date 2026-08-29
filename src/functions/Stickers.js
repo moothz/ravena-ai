@@ -1041,4 +1041,53 @@ const commands = [
 	})
 ];
 
-module.exports = { commands, processAutoSticker };
+const helper = {
+	about: "Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)",
+	implementation:
+		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch e crop por IA",
+	tags: "sticker,figurinha,s,fig,sq,sqi,midia,recorte,whatsapp",
+	cmds: [
+		{
+			cmd: "!sticker",
+			desc: "Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp",
+			usage: ["!sticker (com imagem ou em resposta)", "!s"],
+			category: "midia"
+		},
+		{
+			cmd: "!sqi",
+			desc: "Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA",
+			usage: ["!sqi (com imagem ou em resposta)"],
+			category: "midia"
+		},
+		{
+			cmd: "!sq",
+			desc: "Cria figurinha quadrada cortada no centro",
+			usage: ["!sq (com imagem ou em resposta)"],
+			category: "midia"
+		},
+		{
+			cmd: "!sqc",
+			desc: "Cria figurinha quadrada cortando no topo",
+			usage: ["!sqc (com imagem ou em resposta)"],
+			category: "midia"
+		},
+		{
+			cmd: "!sqb",
+			desc: "Cria figurinha quadrada cortando na base",
+			usage: ["!sqb (com imagem ou em resposta)"],
+			category: "midia"
+		},
+		{
+			cmd: "!sqe",
+			desc: "Cria figurinha quadrada esticada sem cortar as bordas",
+			usage: ["!sqe (com imagem ou em resposta)"],
+			category: "midia"
+		}
+	]
+};
+
+module.exports = {
+	helper,
+	commands,
+	processAutoSticker
+};
