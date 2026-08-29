@@ -133,6 +133,19 @@ class LLMService {
 						required: ["query"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "get_current_time",
+					description:
+						"Retorna a data atual, horário preciso em tempo real, dia da semana, mês, ano e fuso horário oficial (America/Sao_Paulo / UTC-3). Use sempre que precisar saber que dia ou hora é hoje.",
+					parameters: {
+						type: "object",
+						properties: {},
+						required: []
+					}
+				}
 			}
 		];
 	}
@@ -461,6 +474,87 @@ class LLMService {
 			this.logger.error(`[searchCommands] Erro ao consultar comandos: ${error.message}`);
 			return "Erro ao consultar informações dos comandos no momento.";
 		}
+	}
+
+	/**
+	 * Despacha e executa uma chamada de ferramenta com tratamento unificado de erros
+	 * @param {string} fnName - Nome da função chamada pelo modelo
+	 * @param {Object} args - Argumentos passados
+	 * @returns {Promise<string>}
+	 */
+	async executeToolCall(fnName, args = {}) {
+		try {
+			if (fnName === "web_search") {
+				this.logger.info(`[LLMService] Executando web_search para: "${args.query}"`);
+				const res = await this.searchWeb(args.query);
+				this.logger.info(`[LLMService] Resultado do web_search (${res.length} caracteres)`);
+				return res;
+			}
+
+			if (fnName === "fetch_web_content") {
+				this.logger.info(`[LLMService] Executando fetch_web_content para URL: ${args.url}`);
+				const res = await this.fetchWebContent(args.url);
+				this.logger.info(`[LLMService] Resultado do fetch_web_content (${res.length} caracteres)`);
+				return res;
+			}
+
+			if (fnName === "commands_helper") {
+				this.logger.info(`[LLMService] Executando commands_helper para: "${args.query}"`);
+				const res = await this.searchCommands(args.query);
+				this.logger.info(`[LLMService] Resultado do commands_helper (${res.length} caracteres)`);
+				return res;
+			}
+
+			if (fnName === "get_current_time") {
+				this.logger.info("[LLMService] Executando get_current_time");
+				const res = this.getCurrentTime();
+				this.logger.info(`[LLMService] Resultado de get_current_time: ${res}`);
+				return res;
+			}
+
+			if (typeof this[fnName] === "function") {
+				return await this[fnName](args);
+			}
+
+			return "Ferramenta não reconhecida.";
+		} catch (err) {
+			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
+			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Retorna data, hora, dia da semana e fuso horário formatados
+	 * @returns {string}
+	 */
+	getCurrentTime() {
+		const now = new Date();
+		const tz = "America/Sao_Paulo";
+		const dateOptions = { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" };
+		const timeOptions = {
+			timeZone: tz,
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			hour12: false
+		};
+		const weekdayOptions = { timeZone: tz, weekday: "long" };
+
+		const dateStr = new Intl.DateTimeFormat("pt-BR", dateOptions).format(now);
+		const timeStr = new Intl.DateTimeFormat("pt-BR", timeOptions).format(now);
+		const weekday = new Intl.DateTimeFormat("pt-BR", weekdayOptions).format(now);
+
+		return JSON.stringify(
+			{
+				date: dateStr,
+				time: timeStr,
+				day_of_week: weekday,
+				timezone: tz,
+				iso: now.toISOString()
+			},
+			null,
+			2
+		);
 	}
 
 	/**
@@ -1084,32 +1178,7 @@ class LLMService {
 						);
 					}
 
-					let toolOutput = "";
-					if (fnName === "web_search") {
-						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
-						toolOutput = await this.searchWeb(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "fetch_web_content") {
-						this.logger.info(
-							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
-						);
-						toolOutput = await this.fetchWebContent(parsedArgs.url);
-						this.logger.info(
-							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "commands_helper") {
-						this.logger.info(
-							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
-						);
-						toolOutput = await this.searchCommands(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
-						);
-					} else {
-						toolOutput = "Ferramenta não reconhecida.";
-					}
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
 
 					messages.push({
 						role: "tool",
@@ -1273,32 +1342,7 @@ class LLMService {
 						);
 					}
 
-					let toolOutput = "";
-					if (fnName === "web_search") {
-						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
-						toolOutput = await this.searchWeb(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "fetch_web_content") {
-						this.logger.info(
-							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
-						);
-						toolOutput = await this.fetchWebContent(parsedArgs.url);
-						this.logger.info(
-							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "commands_helper") {
-						this.logger.info(
-							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
-						);
-						toolOutput = await this.searchCommands(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
-						);
-					} else {
-						toolOutput = "Ferramenta não reconhecida.";
-					}
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
 
 					messages.push({
 						role: "tool",
@@ -1500,32 +1544,7 @@ class LLMService {
 					const fnName = toolCall.function?.name;
 					const parsedArgs = toolCall.function?.arguments || {};
 
-					let toolOutput = "";
-					if (fnName === "web_search") {
-						this.logger.info(`[LLMService] Executando web_search para: "${parsedArgs.query}"`);
-						toolOutput = await this.searchWeb(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do web_search (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "fetch_web_content") {
-						this.logger.info(
-							`[LLMService] Executando fetch_web_content para URL: ${parsedArgs.url}`
-						);
-						toolOutput = await this.fetchWebContent(parsedArgs.url);
-						this.logger.info(
-							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
-						);
-					} else if (fnName === "commands_helper") {
-						this.logger.info(
-							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
-						);
-						toolOutput = await this.searchCommands(parsedArgs.query);
-						this.logger.info(
-							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
-						);
-					} else {
-						toolOutput = "Ferramenta não reconhecida.";
-					}
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
 
 					messages.push({
 						role: "tool",
