@@ -952,7 +952,76 @@ const helper = {
 	]
 };
 
+/**
+ * Consulta o resumo em tempo real dos streamers monitorados e seus status (Twitch, Kick, YouTube)
+ * @param {string} [filterPlatform] - Filtro opcional ('twitch', 'kick', 'youtube' ou 'all')
+ * @returns {Promise<string>}
+ */
+async function getMonitoredStreamsSummary(filterPlatform = "all") {
+	try {
+		const StreamMonitor = require("../services/StreamMonitor");
+		const streamMonitor = StreamMonitor.getInstance();
+		const statuses = streamMonitor.getStreamStatus();
+		const channels = streamMonitor.getSubscribedChannels();
+
+		if (!channels || channels.length === 0) {
+			return "Nenhum canal de stream está cadastrado no monitoramento global da Ravena no momento.";
+		}
+
+		const filter = (filterPlatform || "all").toLowerCase();
+		const onlineStreams = [];
+		const offlineStreams = [];
+
+		for (const ch of channels) {
+			if (filter !== "all" && ch.source.toLowerCase() !== filter) continue;
+
+			const key = `${ch.source.toLowerCase()}:${ch.name.toLowerCase()}`;
+			const st = statuses[key];
+
+			if (st && st.isLive) {
+				onlineStreams.push({
+					platform: ch.source.toUpperCase(),
+					name: ch.name,
+					title: st.title || "Sem título",
+					game: st.game || "Desconhecido",
+					viewers: st.viewerCount || 0,
+					startedAt: st.startedAt
+				});
+			} else {
+				offlineStreams.push({
+					platform: ch.source.toUpperCase(),
+					name: ch.name
+				});
+			}
+		}
+
+		let resultado = `📺 **Status das Transmissões Monitoradas (Ravena):**\n\n`;
+
+		if (onlineStreams.length > 0) {
+			resultado += `🟢 **Ao Vivo Agora (${onlineStreams.length}):**\n`;
+			for (const stream of onlineStreams) {
+				resultado += `  - **[${stream.platform}] ${stream.name}**: ${stream.title}\n`;
+				resultado += `    🎮 Jogo: ${stream.game} | 👥 Espectadores: ${stream.viewers}\n`;
+			}
+			resultado += `\n`;
+		} else {
+			resultado += `🔴 Nenhum dos canais monitorados está transmitindo ao vivo no momento.\n\n`;
+		}
+
+		if (offlineStreams.length > 0) {
+			const names = offlineStreams.map((s) => `[${s.platform}] ${s.name}`).slice(0, 15);
+			resultado += `💤 **Canais Offline (${offlineStreams.length}):** ${names.join(", ")}${offlineStreams.length > 15 ? "..." : ""}`;
+		}
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error("Erro ao gerar resumo de streams:", err.message);
+		return `Erro ao consultar status das transmissões: ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	getMonitoredStreamsSummary
 };

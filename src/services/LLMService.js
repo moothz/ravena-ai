@@ -236,6 +236,24 @@ class LLMService {
 						required: ["plate"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "check_live_streams",
+					description:
+						"Verifica o status em tempo real das transmissões e canais de streamers monitorados pelo bot (Twitch, Kick e YouTube), exibindo quem está ao vivo, jogo, título e espectadores.",
+					parameters: {
+						type: "object",
+						properties: {
+							platform: {
+								type: "string",
+								description: "Plataforma opcional para filtrar: 'twitch', 'kick', 'youtube' ou 'all' (padrão: 'all')"
+							}
+						},
+						required: []
+					}
+				}
 			}
 		];
 	}
@@ -640,6 +658,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "check_live_streams") {
+				const platform = args.platform || "all";
+				this.logger.info(`[LLMService] Executando check_live_streams para platform: "${platform}"`);
+				const res = await this.checkLiveStreams(platform);
+				this.logger.info(`[LLMService] Resultado de check_live_streams (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -648,6 +674,21 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta o resumo das lives monitoradas via StreamCommands
+	 * @param {string} platform - Plataforma ('twitch', 'kick', 'youtube', 'all')
+	 * @returns {Promise<string>}
+	 */
+	async checkLiveStreams(platform = "all") {
+		try {
+			const { getMonitoredStreamsSummary } = require("../functions/StreamCommands");
+			return await getMonitoredStreamsSummary(platform);
+		} catch (error) {
+			this.logger.error(`[checkLiveStreams] Erro ao consultar streams:`, error.message);
+			return `Erro ao consultar transmissões ao vivo: ${error.message}`;
 		}
 	}
 
