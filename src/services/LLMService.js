@@ -254,6 +254,24 @@ class LLMService {
 						required: []
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "query_metar_aviation",
+					description:
+						"Consulta o boletim meteorológico oficial de aeródromos e aeroportos (METAR/TAF) para aviação a partir do código ICAO do aeroporto (ex: SBGR para Guarulhos, SBRJ para Santos Dumont, SBPA para Porto Alegre).",
+					parameters: {
+						type: "object",
+						properties: {
+							icao: {
+								type: "string",
+								description: "Código ICAO de 4 letras do aeroporto (ex: 'SBGR', 'SBSP', 'SBGL', 'SBRJ', 'SBPA')"
+							}
+						},
+						required: ["icao"]
+					}
+				}
 			}
 		];
 	}
@@ -666,6 +684,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "query_metar_aviation") {
+				const icao = args.icao || args.code || args.query;
+				this.logger.info(`[LLMService] Executando query_metar_aviation para icao: "${icao}"`);
+				const res = await this.queryMetar(icao);
+				this.logger.info(`[LLMService] Resultado de query_metar_aviation (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -674,6 +700,29 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta boletim METAR aeronáutico via MetarStatistics
+	 * @param {string} icao - Código ICAO do aeroporto (ex: SBGR)
+	 * @returns {Promise<string>}
+	 */
+	async queryMetar(icao) {
+		try {
+			if (!icao || typeof icao !== "string" || icao.trim().length === 0) {
+				return "Por favor, informe o código ICAO do aeroporto (ex: SBGR, SBRJ, SBPA).";
+			}
+			const { buscarMetar } = require("../functions/MetarStatistics");
+			const cleanIcao = icao.trim().toUpperCase();
+			const metarData = await buscarMetar(cleanIcao);
+			if (!metarData || metarData.toLowerCase().includes("no data found")) {
+				return `Não foi possível encontrar dados meteorológicos METAR para o aeroporto "${cleanIcao}".`;
+			}
+			return `🌤️ **METAR (${cleanIcao}):**\n\`\`\`\n${metarData}\n\`\`\``;
+		} catch (error) {
+			this.logger.error(`[queryMetar] Erro ao consultar METAR para ${icao}:`, error.message);
+			return `Erro ao consultar METAR: ${error.message}`;
 		}
 	}
 
