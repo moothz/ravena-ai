@@ -1,4 +1,4 @@
-﻿const axios = require("axios");
+const axios = require("axios");
 
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
@@ -277,7 +277,79 @@ const helper = {
 	]
 };
 
+/**
+ * Busca dados estruturados de um filme ou série no OMDB/IMDb
+ * @param {string} query - Nome do filme ou série
+ * @returns {Promise<string>}
+ */
+async function fetchImdbInfo(query) {
+	if (!query || typeof query !== "string" || query.trim().length === 0) {
+		return "Por favor, especifique o nome de um filme ou série para buscar no IMDb.";
+	}
+
+	if (!OMDB_API_KEY) {
+		return "API do OMDB não configurada (OMDB_API_KEY ausente no .env).";
+	}
+
+	const nome = query.trim();
+
+	try {
+		const searchResponse = await axios.get(OMDB_API_URL, {
+			params: {
+				apikey: OMDB_API_KEY,
+				s: nome,
+				type: "",
+				r: "json"
+			},
+			timeout: 10000
+		});
+
+		if (
+			searchResponse.data.Response === "False" ||
+			!searchResponse.data.Search ||
+			searchResponse.data.Search.length === 0
+		) {
+			return `Não foi possível encontrar nenhum título para "${nome}" no IMDb.`;
+		}
+
+		const imdbId = searchResponse.data.Search[0].imdbID;
+		const detailResponse = await axios.get(OMDB_API_URL, {
+			params: {
+				apikey: OMDB_API_KEY,
+				i: imdbId,
+				plot: "full",
+				r: "json"
+			},
+			timeout: 10000
+		});
+
+		const data = detailResponse.data;
+		if (data.Response === "False") {
+			return `Erro ao buscar detalhes para "${nome}".`;
+		}
+
+		let resultado = `🎬 **${data.Title}** (${data.Year})\n`;
+		resultado += `📋 Tipo: ${data.Type} | Classificação: ${data.Rated || "N/A"} | Duração: ${data.Runtime || "N/A"}\n`;
+		if (data.Genre) resultado += `🎭 Gênero: ${data.Genre}\n`;
+		if (data.Director) resultado += `🎬 Direção: ${data.Director}\n`;
+		if (data.Actors) resultado += `👥 Elenco: ${data.Actors}\n`;
+		if (data.imdbRating) resultado += `⭐ IMDb: ${data.imdbRating}/10 (${data.imdbVotes} votos)\n`;
+
+		if (data.Plot && data.Plot !== "N/A") {
+			resultado += `\n📝 Sinopse: ${data.Plot}\n`;
+		}
+		resultado += `\n🔗 Link: https://www.imdb.com/title/${data.imdbID}/`;
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error(`Erro ao consultar IMDb para ${query}:`, err.message);
+		return `Erro ao consultar IMDb para "${query}": ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	buscarImdb,
+	fetchImdbInfo
 };

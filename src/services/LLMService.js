@@ -182,6 +182,24 @@ class LLMService {
 						required: ["query"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "search_imdb",
+					description:
+						"Pesquisa informações detalhadas sobre filmes, séries e programas de TV no IMDb (ano, nota, sinopse, diretor, elenco, gênero, duração).",
+					parameters: {
+						type: "object",
+						properties: {
+							title: {
+								type: "string",
+								description: "Título do filme ou série a pesquisar (ex: 'Interestelar', 'Breaking Bad', 'O Poderoso Chefão')"
+							}
+						},
+						required: ["title"]
+					}
+				}
 			}
 		];
 	}
@@ -562,6 +580,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "search_imdb") {
+				const queryTitle = args.title || args.query;
+				this.logger.info(`[LLMService] Executando search_imdb para: "${queryTitle}"`);
+				const res = await this.searchImdb(queryTitle);
+				this.logger.info(`[LLMService] Resultado de search_imdb (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -570,6 +596,24 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta filmes e séries via ImdbCommands
+	 * @param {string} title - Nome do filme ou série
+	 * @returns {Promise<string>}
+	 */
+	async searchImdb(title) {
+		try {
+			if (!title || typeof title !== "string" || title.trim().length === 0) {
+				return "Por favor, informe o título do filme ou série para buscar no IMDb.";
+			}
+			const { fetchImdbInfo } = require("../functions/ImdbCommands");
+			return await fetchImdbInfo(title);
+		} catch (error) {
+			this.logger.error(`[searchImdb] Erro ao consultar IMDb para ${title}:`, error.message);
+			return `Erro ao consultar IMDb: ${error.message}`;
 		}
 	}
 
