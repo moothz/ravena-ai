@@ -934,5 +934,6 @@ module.exports = {
 	baixarMusicaYoutube,
 	extractYoutubeVideoId,
 	searchYoutubeVideo,
-	extractURLFromString
+	extractURLFromString,
+	searchLyrics
 };

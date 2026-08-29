@@ -272,6 +272,24 @@ class LLMService {
 						required: ["icao"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "search_lyrics",
+					description:
+						"Pesquisa e retorna a letra completa de uma música (com nome da faixa, artista e letra sincronizada/original).",
+					parameters: {
+						type: "object",
+						properties: {
+							query: {
+								type: "string",
+								description: "Nome da música e opcionalmente o artista (ex: 'Bohemian Rhapsody Queen', 'Tempo Perdido Legião Urbana')"
+							}
+						},
+						required: ["query"]
+					}
+				}
 			}
 		];
 	}
@@ -692,6 +710,14 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "search_lyrics") {
+				const queryMusic = args.query || args.song || args.music || args.title;
+				this.logger.info(`[LLMService] Executando search_lyrics para: "${queryMusic}"`);
+				const res = await this.searchMusicLyrics(queryMusic);
+				this.logger.info(`[LLMService] Resultado de search_lyrics (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -700,6 +726,28 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta a letra de uma música via YoutubeDownloader/LRCLib
+	 * @param {string} query - Nome da música e artista
+	 * @returns {Promise<string>}
+	 */
+	async searchMusicLyrics(query) {
+		try {
+			if (!query || typeof query !== "string" || query.trim().length === 0) {
+				return "Por favor, informe o nome da música para buscar a letra.";
+			}
+			const { searchLyrics } = require("../functions/YoutubeDownloader");
+			const res = await searchLyrics(query.trim());
+			if (!res || !res.lyrics) {
+				return `Não foi possível encontrar a letra para a música "${query}".`;
+			}
+			return `🎵 **${res.title}** - *${res.artist}*\n\n${res.lyrics}`;
+		} catch (error) {
+			this.logger.error(`[searchMusicLyrics] Erro ao buscar letra para ${query}:`, error.message);
+			return `Erro ao buscar letra: ${error.message}`;
 		}
 	}
 
