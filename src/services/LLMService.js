@@ -466,12 +466,28 @@ class LLMService {
 						...options
 					};
 
+					const validateJsonResponse = (content) => {
+						if (completionOptions.response_format && typeof content === "string") {
+							try {
+								const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
+								JSON.parse(clean);
+							} catch (jsonErr) {
+								const err = new Error(
+									`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
+								);
+								err.isFormatError = true;
+								throw err;
+							}
+						}
+						return content;
+					};
+
 					let response;
 					switch (config.type) {
 						case "ollama":
 							response = await this.ollamaCompletion(completionOptions);
 							if (response && response.message && response.message.content) {
-								return response.message.content;
+								return validateJsonResponse(response.message.content);
 							}
 							if (
 								response &&
@@ -479,18 +495,7 @@ class LLMService {
 								response.choices[0] &&
 								response.choices[0].message
 							) {
-								const content = response.choices[0].message.content;
-								if (completionOptions.response_format && typeof content === "string") {
-									try {
-										const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
-										JSON.parse(clean);
-									} catch (jsonErr) {
-										throw new Error(
-											`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
-										);
-									}
-								}
-								return content;
+								return validateJsonResponse(response.choices[0].message.content);
 							}
 							throw new Error(`Resposta inválida ou vazia do Ollama (${config.name})`);
 						case "openai":
@@ -505,18 +510,7 @@ class LLMService {
 									response.choices[0] &&
 									response.choices[0].message
 								) {
-									const content = response.choices[0].message.content;
-									if (completionOptions.response_format && typeof content === "string") {
-										try {
-											const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
-											JSON.parse(clean);
-										} catch (jsonErr) {
-											throw new Error(
-												`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
-											);
-										}
-									}
-									return content;
+									return validateJsonResponse(response.choices[0].message.content);
 								}
 								return response;
 							}
@@ -1677,6 +1671,26 @@ class LLMService {
 	 * @param {number} priority - Prioridade da requisição
 	 * @returns {Promise<string>} - O texto gerado pelo primeiro provedor disponível
 	 */
+	/**
+	 * Rebaixa um provedor movendo-o para o final da fila de provedores.
+	 * @param {string} providerName - Nome do provedor a ser rebaixado
+	 */
+	demoteProvider(providerName) {
+		const index = this.providerQueue.findIndex((p) => p.name === providerName);
+		if (index !== -1) {
+			const [removed] = this.providerQueue.splice(index, 1);
+			this.providerQueue.push(removed);
+			this.lastQueueChangeTimestamp = Date.now();
+			this.logger.warn(`[LLMService] Rebaixando provedor ${providerName} para o final da fila.`);
+		}
+	}
+
+	/**
+	 * Tenta múltiplos provedores em sequência até que um funcione
+	 * @param {Object} options - Opções de solicitação
+	 * @param {number} priority - Prioridade da requisição
+	 * @returns {Promise<string>} - O texto gerado pelo primeiro provedor disponível
+	 */
 	async getCompletionFromProviders(options, priority = 0) {
 		const now = Date.now();
 		if (
@@ -1696,12 +1710,15 @@ class LLMService {
 			throw new Error("Erro: Nenhum provedor de IA configurado.");
 		}
 
-		// Priority <= 4: Try only the first available provider (no retry/fallback loop on this call).
-		// Priority 5: Try all providers (fallback loop).
-		let attempts = priority <= 4 ? 1 : totalProviders;
+		// Snapshot dos provedores no momento da requisição
+		const candidateProviders = [...this.providerQueue];
 
-		for (let i = 0; i < attempts; i++) {
-			const provider = this.providerQueue[0];
+		// Priority <= 4: Try only the first available provider (unless fallback is triggered on format error or textOnly).
+		// Priority 5: Try all providers (fallback loop).
+		let maxAttempts = priority <= 4 ? 1 : candidateProviders.length;
+
+		for (let i = 0; i < maxAttempts && i < candidateProviders.length; i++) {
+			const provider = candidateProviders[i];
 
 			// Check if provider is textOnly and request has images
 			const hasImages = !!(options.image || (options.images && options.images.length > 0));
@@ -1709,11 +1726,9 @@ class LLMService {
 				this.logger.info(
 					`[LLMService] Provedor ${provider.name} é textOnly, pulando para o próximo (requisição contém imagens).`
 				);
-				this.providerQueue.push(this.providerQueue.shift());
-				this.lastQueueChangeTimestamp = Date.now();
-				// If priority <= 4 (single attempt), give one more chance to try next provider
-				if (attempts === 1 && i < totalProviders - 1) {
-					attempts++;
+				// If single attempt, allow trying next candidate
+				if (maxAttempts <= i + 1 && i < candidateProviders.length - 1) {
+					maxAttempts = i + 2;
 				}
 				continue;
 			}
@@ -1726,22 +1741,24 @@ class LLMService {
 					throw new Error("Resposta vazia ou inválida do provedor");
 				}
 
-				// if (!result.includes("Imagem[")) {
-				// 	this.logger.debug(
-				// 		`[LLMService] Provedor ${provider.name} retornou resposta com sucesso`,
-				// 		{ result: this.summarizeString(result) }
-				// 	);
-				// }
-
 				return result;
 			} catch (error) {
-				this.logger.error(`Erro ao usar provedor ${provider.name}:`, error.message);
+				if (error.isFormatError) {
+					this.logger.warn(
+						`[LLMService] Provedor ${provider.name} retornou formato inválido (${error.message}). Repassando para o próximo modelo sem rebaixá-lo na fila global.`
+					);
+					this._trackUsage(provider.name, {}, "Unknown", options, false);
+					// Dá oportunidade ao próximo modelo de atender a requisição atual
+					if (maxAttempts <= i + 1 && i < candidateProviders.length - 1) {
+						maxAttempts = i + 2;
+					}
+				} else {
+					this.logger.error(`Erro ao usar provedor ${provider.name}:`, error.message);
 
-				// Rebaixa o provedor que falhou, movendo-o para o final da fila.
-				this.logger.warn(`[LLMService] Rebaixando provedor ${provider.name} para o final da fila.`);
-				this._trackUsage(provider.name, {}, "Unknown", options, false);
-				this.providerQueue.push(this.providerQueue.shift());
-				this.lastQueueChangeTimestamp = Date.now();
+					// Rebaixa o provedor que falhou por indisponibilidade/erro de execução, movendo-o para o final da fila global.
+					this.demoteProvider(provider.name);
+					this._trackUsage(provider.name, {}, "Unknown", options, false);
+				}
 			}
 		}
 
