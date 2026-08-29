@@ -1243,7 +1243,7 @@ class BotAPI {
 			}
 		});
 
-		// Chat API for AnythingLLM help
+		// Chat API de Ajuda (LLM Assistant com CommandsHelper)
 		this.app.post("/api/ajuda/chat", this.strictLimiter, async (req, res) => {
 			const { message, sessionId } = req.body;
 
@@ -1252,8 +1252,8 @@ class BotAPI {
 			}
 
 			try {
-				const { askAnythingLLM } = require("./functions/AnythingLLMHelper");
-				const answer = await askAnythingLLM(message, sessionId);
+				const { askHelp } = require("./functions/Ajuda");
+				const answer = await askHelp(message, sessionId);
 				res.json({ answer });
 			} catch (error) {
 				this.logger.error("Erro na API de ajuda chat:", error);

@@ -1,21 +1,40 @@
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const path = require("path");
 
-// Mocking some parts to avoid side effects and errors
 process.env.SUPPRESS_LOGS = "true";
 
-const FixedCommands = require("./src/commands/FixedCommands");
-const Management = require("./src/commands/Management");
-const SuperAdmin = require("./src/commands/SuperAdmin");
+const CommandsHelper = require("./src/utils/CommandsHelper");
+
+function extractSuperAdminCommands() {
+	try {
+		const saPath = path.join(__dirname, "src/commands/SuperAdmin.js");
+		const content = fsSync.readFileSync(saPath, "utf8");
+		const match = content.match(/this\.commandMap\s*=\s*\{([\s\S]*?)\n\t\t\};/);
+		if (match) {
+			const regex = /["']?([a-zA-Z0-9_-]+)["']?\s*:\s*\{([^}]+)\}/g;
+			const cmds = {};
+			let m;
+			while ((m = regex.exec(match[1])) !== null) {
+				const name = m[1];
+				const descMatch = m[2].match(/description:\s*["'`]?([^"'`]+)["'`]?/);
+				cmds[name] = {
+					description: descMatch ? descMatch[1].trim() : ""
+				};
+			}
+			return cmds;
+		}
+	} catch (e) {}
+	return {};
+}
 
 async function generateDocs() {
 	console.log("🚀 Iniciando geração de documentação consolidada para Ravena LLM Helper...");
 
-	const fixedCmds = new FixedCommands();
-	await fixedCmds.loadCommands();
+	const commandsHelper = CommandsHelper.getInstance();
+	commandsHelper.loadHelpers();
 
-	const management = new Management();
-	const superAdmin = new SuperAdmin();
+	const saCmdMap = extractSuperAdminCommands();
 
 	// 1. Load Base Information
 	const BASE_INFO = `# Ravena - Informações Base
@@ -52,7 +71,7 @@ Envie as instruções de convite
 - **Bot Oficial (Lobby)**: Disponível via https://chat.whatsapp.com/GMtTi1V6XIBChCBgkQC9g0 ou no site https://ravena.moothz.win
 
 ### Instruções de Convite
-Pra começar, envie o *LINK*, apenas o _LINK_ do seu grupo  para uma das ravenas (não pode ser aqui no chat de suporte nem para as vips)
+Pra começar, envie o *LINK*, apenas o _LINK_ do seu grupo para uma das ravenas (não pode ser aqui no chat de suporte nem para as vips)
 Se você tentar adicionar a ravena no grupo, não vai dar certo.
 Após o link, siga as instruções do bot, enviando uma mensagem explicando o motivo de querer o bot no seu grupo.
 
@@ -70,7 +89,7 @@ Me reservo no direito de remover o bot do seu grupo caso ache necessário.
 - *Só casos específicos:* Grupos apenas de figurinhas, grupos de colégio/turmas
 - *Penso bem antes*: Grupos que removem o bot, grupos de teste, convites mal escritos ou por IA (oh, a ironia!)
 
-⚠️ *Atenção*: Se o bot for removido logo após entrar  no grupo, você será *bloqueado* _(considerarei que não tinha permissão ou pouco interesse)_.
+⚠️ *Atenção*: Se o bot for removido logo após entrar no grupo, você será *bloqueado* _(considerarei que não tinha permissão ou pouco interesse)_.
 
 ### Ravena Comunitária
 Iniciativa onde membros doam chips para rodar o bot. O dono da instância comunitária tem acesso aos logs técnicos. Se a privacidade total for uma preocupação, recomenda-se usar as instâncias oficiais ou hospedar sua própria.
@@ -84,21 +103,21 @@ O projeto é mantido por doações voluntárias que ajudam nos custos de servido
 ---
 
 ## 💡 Como Auxiliar o Usuário (Diretrizes)
-Você (AnythingLLM) deve atuar como uma assistente proativa. Siga estas regras:
+Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 
-1.  **Sugira Comandos Específicos**: Quando o usuário perguntar "como fazer X", identifique o comando correspondente na lista abaixo e mostre como usar.
-    *   *Exemplo:* "Como vejo o tempo?" -> "Use o comando \`!clima [cidade]\`. Exemplo: \`!clima Porto Alegre\`"
-2.  **Criação de Comandos Personalizados**: Auxilie na criação de comandos usando \`!g-addCmd\`.
-    *   Sempre sugira o uso de **Variáveis** para tornar o comando dinâmico.
-    *   *Exemplo:* "Quero um comando que mande um pokemon aleatório" -> "Você pode criar assim: \`!g-addCmd poke Você capturou um *{pokemonEN}*!\`"
-3.  **Explique Variáveis**: Se o usuário mencionar algo aleatório (peixes, carros, países), verifique se existe uma variável correspondente (ex: \`{peixe}\`, \`{carro2024}\`, \`{emojiBandeiraPais}\`) e sugira seu uso.
-4.  **Workarounds**: Se o usuário quiser "editar" um comando fixo, explique que ele deve criar um alias com \`{cmd-nome}\` e silenciar o original com \`!g-mute\`.
+1. **Sugira Comandos Específicos**: Quando o usuário perguntar "como fazer X", identifique o comando correspondente e mostre sua sintaxe com exemplos.
+   * *Exemplo:* "Como vejo o tempo?" -> "Use o comando \`!clima [cidade]\`. Exemplo: \`!clima Porto Alegre\`"
+2. **Criação de Comandos Personalizados**: Auxilie na criação de comandos usando \`!g-addCmd\`.
+   * Sempre sugira o uso de **Variáveis** para tornar o comando dinâmico.
+   * *Exemplo:* "Quero um comando que mande um pokemon aleatório" -> "Você pode criar assim: \`!g-addCmd poke Você capturou um *{pokemonEN}*!\`"
+3. **Explique Variáveis**: Se o usuário mencionar algo aleatório (peixes, carros, países), verifique se existe uma variável correspondente (ex: \`{peixe}\`, \`{carro2024}\`, \`{emojiBandeiraPais}\`) e sugira seu uso.
+4. **Workarounds**: Se o usuário quiser "editar" um comando fixo, explique que ele deve criar um alias com \`{cmd-nome}\` e silenciar o original com \`!g-mute\`.
 
 ---
 
 ## 🛠️ Dicas de Gerenciamento
 - **Painel Web**: Sempre sugira o \`!g-painel\` para configurações complexas, é mais fácil que comandos de chat.
-- **Prefixo**: Grupos podem ter prefixos personalizados.
+- **Prefixo**: Grupos podem ter prefixos personalizados (\`!g-setPrefixo\`).
 - **Mute**: Se um comando estiver incomodando, use \`!g-mute [comando]\`.
 
 ---
@@ -110,59 +129,63 @@ Você (AnythingLLM) deve atuar como uma assistente proativa. Siga estas regras:
 
 	let finalMd = BASE_INFO + "\n\n---\n\n";
 
-	// --- 2. Generate Command List ---
-	finalMd += "# 📚 Referência de Comandos\n\n";
-	finalMd += "Abaixo está a lista de todos os comandos que você pode sugerir aos usuários.\n\n";
+	// --- 2. Generate Command List from CommandsHelper ---
+	finalMd += "# 📚 Referência de Comandos e Módulos\n\n";
+	finalMd +=
+		"Abaixo está a lista detalhada de todos os módulos e comandos da Ravena baseados nas definições helper.\n\n";
 
-	// 2.1 Fixed Commands (Comuns)
-	finalMd += "## 🛠️ Comandos Comuns (Fixed Commands)\n";
-	finalMd += "Estes comandos podem ser usados por qualquer membro.\n\n";
+	// 2.1 Comandos Comuns (Módulos de Functions)
+	finalMd += "## 🛠️ Comandos Comuns e Módulos de Funções\n";
+	finalMd +=
+		"Estes comandos e utilitários são carregados dinamicamente e podem ser usados por qualquer membro (salvo indicação contrária).\n\n";
 
-	const allFixed = fixedCmds.getAllCommands();
-	const categorized = {};
+	const functionHelpers = commandsHelper.helpers.filter((h) => h.source === "function");
 
-	for (const cmd of allFixed) {
-		if (cmd.hidden) continue;
-		const cat = cmd.category || "Geral";
-		if (!categorized[cat]) categorized[cat] = [];
-		categorized[cat].push(cmd);
+	for (const mod of functionHelpers) {
+		finalMd += `### 📁 Módulo: \`${mod.file}\`\n`;
+		if (mod.about) finalMd += `**Sobre:** ${mod.about}\n\n`;
+		if (mod.tags) finalMd += `**Tags:** \`${mod.tags}\`\n\n`;
+		if (mod.implementation) finalMd += `**Detalhes Técnicos:** ${mod.implementation}\n\n`;
+
+		if (mod.cmds && mod.cmds.length > 0) {
+			finalMd += `#### Comandos:\n`;
+			for (const cmd of mod.cmds) {
+				finalMd += `- **\`${cmd.cmd}\`**: ${cmd.desc || "Sem descrição."}\n`;
+				if (cmd.category) finalMd += `  - *Categoria:* ${cmd.category}\n`;
+				if (cmd.usage && cmd.usage.length > 0) {
+					finalMd += `  - *Uso/Exemplos:* ${cmd.usage.map((u) => `\`${u}\``).join(", ")}\n`;
+				}
+			}
+			finalMd += "\n";
+		}
+		finalMd += "---\n\n";
 	}
 
-	for (const [cat, cmds] of Object.entries(categorized)) {
-		finalMd += `### Categoria: ${cat}\n`;
-		for (const cmd of cmds) {
-			finalMd += `#### !${cmd.name}\n`;
-			finalMd += `**Descrição:** ${cmd.description || "Sem descrição."}\n\n`;
-			if (cmd.usage) {
-				finalMd += `**Uso:** \`!${cmd.name} ${cmd.usage}\`\n\n`;
-			}
-			if (cmd.example) {
-				finalMd += `**Exemplo:** \`!${cmd.name} ${cmd.example}\`\n\n`;
-			} else if (cmd.usage) {
-				finalMd += `**Exemplo:** \`!${cmd.name} ${cmd.usage.split("|")[0].trim()}\`\n\n`;
+	// 2.2 Management Commands (Gerência)
+	finalMd += "## ⚙️ Comandos de Gerenciamento (!g-)\n";
+	finalMd +=
+		"Comandos restritos aos administradores de grupos para moderação, customização e fluxos do bot.\n\n";
+
+	const mgmtHelper = commandsHelper.helpers.find((h) => h.source === "management");
+	if (mgmtHelper && mgmtHelper.cmds) {
+		if (mgmtHelper.about) finalMd += `**Sobre:** ${mgmtHelper.about}\n\n`;
+		for (const cmd of mgmtHelper.cmds) {
+			finalMd += `#### \`${cmd.cmd}\`\n`;
+			finalMd += `**Descrição:** ${cmd.desc || "Sem descrição."}\n\n`;
+			if (cmd.category) finalMd += `**Categoria:** ${cmd.category}\n\n`;
+			if (cmd.usage && cmd.usage.length > 0) {
+				finalMd += `**Exemplo de uso:** \`${cmd.usage[0]}\`\n\n`;
 			}
 			finalMd += "---\n\n";
 		}
 	}
 
-	// 2.2 Management Commands (Gerência)
-	finalMd += "## ⚙️ Comandos de Gerenciamento\n";
-	finalMd += "Começam com `!g-` e são restritos a administradores.\n\n";
-
-	const manageCmdMap = management.commandMap;
-	for (const [cmdName, cmdData] of Object.entries(manageCmdMap)) {
-		finalMd += `#### !g-${cmdName}\n`;
-		finalMd += `**Descrição:** ${cmdData.description || "Sem descrição."}\n\n`;
-		finalMd += "---\n\n";
-	}
-
 	// 2.3 SuperAdmin Commands
-	finalMd += "## 👑 Comandos de Super Admin\n";
+	finalMd += "## 👑 Comandos de Super Admin (!sa-)\n";
 	finalMd += "Começam com `!sa-` e são exclusivos do dono do bot.\n\n";
 
-	const saCmdMap = superAdmin.commandMap;
 	for (const [cmdName, cmdData] of Object.entries(saCmdMap)) {
-		finalMd += `#### !sa-${cmdName}\n`;
+		finalMd += `#### \`!sa-${cmdName}\`\n`;
 		finalMd += `**Descrição:** ${cmdData.description || "Sem descrição."}\n\n`;
 		finalMd += "---\n\n";
 	}
@@ -243,21 +266,7 @@ Você (AnythingLLM) deve atuar como uma assistente proativa. Siga estas regras:
 
 	await fs.writeFile(path.join(__dirname, "ravena-llm-helper.md"), finalMd);
 	console.log("✅ Arquivo ravena-llm-helper.md gerado com sucesso!");
-
 	console.log("\n✨ Processo concluído!");
-
-	// Tenta fechar o banco de dados graciosamente, mas força a saída
-	try {
-		const Database = require("./src/utils/Database");
-		const db = Database.getInstance();
-		if (db && typeof db.closeAll === "function") {
-			await db.closeAll();
-		}
-	} catch (e) {
-		// Ignora erros ao fechar
-	}
-
-	process.exit(0);
 }
 
 generateDocs().catch((err) => {

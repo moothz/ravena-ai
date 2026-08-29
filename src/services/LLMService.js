@@ -6,6 +6,7 @@ const path = require("path");
 const Database = require("../utils/Database");
 const Queue = require("./Queue");
 const ServiceProviderService = require("./ServiceProviderService");
+const CommandsHelper = require("../utils/CommandsHelper");
 
 /**
  * Serviço para interagir com APIs de LLM
@@ -111,6 +112,25 @@ class LLMService {
 							}
 						},
 						required: ["url"]
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "commands_helper",
+					description:
+						"Consulta informações, sintaxe, exemplos de uso, categorias, tags e detalhes técnicos de implementação de comandos e recursos do bot Ravena e de gerenciamento de grupos (!g-).",
+					parameters: {
+						type: "object",
+						properties: {
+							query: {
+								type: "string",
+								description:
+									"Termo de busca, nome do comando ou funcionalidade (ex: 'pesca', 'criar comando personalizado', 'filtros de grupo', 'tts', 'clima')"
+							}
+						},
+						required: ["query"]
 					}
 				}
 			}
@@ -423,6 +443,23 @@ class LLMService {
 				// Tentativa 3: Fallback Seguro
 				return "Não foi possível completar a extração de conteúdo desta URL.";
 			}
+		}
+	}
+
+	/**
+	 * Consulta a documentação de comandos e funcionalidades da Ravena via CommandsHelper
+	 * @param {string} query - Termo de busca
+	 * @returns {Promise<string>}
+	 */
+	async searchCommands(query) {
+		try {
+			this.logger.info(`[searchCommands] Consultando CommandsHelper para: "${query}"`);
+			const helperInstance = CommandsHelper.getInstance();
+			const result = helperInstance.search(query);
+			return result;
+		} catch (error) {
+			this.logger.error(`[searchCommands] Erro ao consultar comandos: ${error.message}`);
+			return "Erro ao consultar informações dos comandos no momento.";
 		}
 	}
 
@@ -1062,6 +1099,14 @@ class LLMService {
 						this.logger.info(
 							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
 						);
+					} else if (fnName === "commands_helper") {
+						this.logger.info(
+							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
+						);
+						toolOutput = await this.searchCommands(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
+						);
 					} else {
 						toolOutput = "Ferramenta não reconhecida.";
 					}
@@ -1242,6 +1287,14 @@ class LLMService {
 						toolOutput = await this.fetchWebContent(parsedArgs.url);
 						this.logger.info(
 							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
+						);
+					} else if (fnName === "commands_helper") {
+						this.logger.info(
+							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
+						);
+						toolOutput = await this.searchCommands(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
 						);
 					} else {
 						toolOutput = "Ferramenta não reconhecida.";
@@ -1461,6 +1514,14 @@ class LLMService {
 						toolOutput = await this.fetchWebContent(parsedArgs.url);
 						this.logger.info(
 							`[LLMService] Resultado do fetch_web_content (${toolOutput.length} caracteres)`
+						);
+					} else if (fnName === "commands_helper") {
+						this.logger.info(
+							`[LLMService] Executando commands_helper para query: "${parsedArgs.query}"`
+						);
+						toolOutput = await this.searchCommands(parsedArgs.query);
+						this.logger.info(
+							`[LLMService] Resultado do commands_helper (${toolOutput.length} caracteres)`
 						);
 					} else {
 						toolOutput = "Ferramenta não reconhecida.";
