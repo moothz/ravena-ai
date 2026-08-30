@@ -158,7 +158,8 @@ class LLMService {
 						properties: {
 							city: {
 								type: "string",
-								description: "Nome da cidade e opcionalmente estado/país (ex: 'São Paulo', 'Belo Horizonte - MG', 'Lisboa')"
+								description:
+									"Nome da cidade e opcionalmente estado/país (ex: 'São Paulo', 'Belo Horizonte - MG', 'Lisboa')"
 							}
 						},
 						required: ["city"]
@@ -176,7 +177,8 @@ class LLMService {
 						properties: {
 							query: {
 								type: "string",
-								description: "Termo, nome ou assunto a pesquisar na Wikipedia (ex: 'Albert Einstein', 'Inteligência Artificial', 'Segunda Guerra Mundial')"
+								description:
+									"Termo, nome ou assunto a pesquisar na Wikipedia (ex: 'Albert Einstein', 'Inteligência Artificial', 'Segunda Guerra Mundial')"
 							}
 						},
 						required: ["query"]
@@ -194,7 +196,8 @@ class LLMService {
 						properties: {
 							title: {
 								type: "string",
-								description: "Título do filme ou série a pesquisar (ex: 'Interestelar', 'Breaking Bad', 'O Poderoso Chefão')"
+								description:
+									"Título do filme ou série a pesquisar (ex: 'Interestelar', 'Breaking Bad', 'O Poderoso Chefão')"
 							}
 						},
 						required: ["title"]
@@ -212,7 +215,8 @@ class LLMService {
 						properties: {
 							name: {
 								type: "string",
-								description: "Nome do anime a pesquisar (ex: 'Naruto', 'Frieren', 'Attack on Titan', 'Death Note')"
+								description:
+									"Nome do anime a pesquisar (ex: 'Naruto', 'Frieren', 'Attack on Titan', 'Death Note')"
 							}
 						},
 						required: ["name"]
@@ -248,7 +252,8 @@ class LLMService {
 						properties: {
 							platform: {
 								type: "string",
-								description: "Plataforma opcional para filtrar: 'twitch', 'kick', 'youtube' ou 'all' (padrão: 'all')"
+								description:
+									"Plataforma opcional para filtrar: 'twitch', 'kick', 'youtube' ou 'all' (padrão: 'all')"
 							}
 						},
 						required: []
@@ -266,7 +271,8 @@ class LLMService {
 						properties: {
 							icao: {
 								type: "string",
-								description: "Código ICAO de 4 letras do aeroporto (ex: 'SBGR', 'SBSP', 'SBGL', 'SBRJ', 'SBPA')"
+								description:
+									"Código ICAO de 4 letras do aeroporto (ex: 'SBGR', 'SBSP', 'SBGL', 'SBRJ', 'SBPA')"
 							}
 						},
 						required: ["icao"]
@@ -284,7 +290,8 @@ class LLMService {
 						properties: {
 							query: {
 								type: "string",
-								description: "Nome da música e opcionalmente o artista (ex: 'Bohemian Rhapsody Queen', 'Tempo Perdido Legião Urbana')"
+								description:
+									"Nome da música e opcionalmente o artista (ex: 'Bohemian Rhapsody Queen', 'Tempo Perdido Legião Urbana')"
 							}
 						},
 						required: ["query"]
@@ -690,7 +697,9 @@ class LLMService {
 				const plate = args.plate || args.placa || args.query;
 				this.logger.info(`[LLMService] Executando query_vehicle_plate para: "${plate}"`);
 				const res = await this.queryVehiclePlate(plate);
-				this.logger.info(`[LLMService] Resultado de query_vehicle_plate (${res.length} caracteres)`);
+				this.logger.info(
+					`[LLMService] Resultado de query_vehicle_plate (${res.length} caracteres)`
+				);
 				return res;
 			}
 
@@ -706,7 +715,9 @@ class LLMService {
 				const icao = args.icao || args.code || args.query;
 				this.logger.info(`[LLMService] Executando query_metar_aviation para icao: "${icao}"`);
 				const res = await this.queryMetar(icao);
-				this.logger.info(`[LLMService] Resultado de query_metar_aviation (${res.length} caracteres)`);
+				this.logger.info(
+					`[LLMService] Resultado de query_metar_aviation (${res.length} caracteres)`
+				);
 				return res;
 			}
 
@@ -856,7 +867,10 @@ class LLMService {
 			const { fetchWikiSummary } = require("../functions/WikipediaCommands");
 			return await fetchWikiSummary(query);
 		} catch (error) {
-			this.logger.error(`[searchWikipedia] Erro ao pesquisar Wikipedia para ${query}:`, error.message);
+			this.logger.error(
+				`[searchWikipedia] Erro ao pesquisar Wikipedia para ${query}:`,
+				error.message
+			);
 			return `Erro ao pesquisar Wikipedia: ${error.message}`;
 		}
 	}
@@ -871,7 +885,11 @@ class LLMService {
 			if (!city || typeof city !== "string" || city.trim().length === 0) {
 				return "Por favor, especifique o nome de uma cidade para consultar o clima.";
 			}
-			const { getCityCoordinates, getWeatherData, formatWeatherMessage } = require("../functions/WeatherMeteo");
+			const {
+				getCityCoordinates,
+				getWeatherData,
+				formatWeatherMessage
+			} = require("../functions/WeatherMeteo");
 			const location = await getCityCoordinates(city.trim());
 			const weather = await getWeatherData(location.lat, location.lon);
 			return formatWeatherMessage(location, weather);
