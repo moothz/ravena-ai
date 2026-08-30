@@ -422,13 +422,18 @@ async function aiCommand(bot, message, args, group) {
 		// logger.debug("[aiCommand] Requesting LLM completion");
 		const response = await llmService.getCompletion(completionOptions);
 
-		// Process variables
+		// Process variables (se não for do tipo bot-related/ajuda)
 		let processedResponse;
 		try {
-			processedResponse = await bot.eventHandler.commandHandler.variableProcessor.process(
-				response,
-				{ message, group, command: false, options: {}, bot }
-			);
+			if (classificationResult.classification === "bot") {
+				// Respostas explicativas sobre comandos/variáveis não devem ter suas tags substituídas
+				processedResponse = response;
+			} else {
+				processedResponse = await bot.eventHandler.commandHandler.variableProcessor.process(
+					response,
+					{ message, group, command: false, options: {}, bot }
+				);
+			}
 		} catch (e) {
 			processedResponse = response;
 		}

@@ -985,7 +985,10 @@ async function getMonitoredStreamsSummary(filterPlatform = "all") {
 					title: st.title || "Sem título",
 					game: st.game || "Desconhecido",
 					viewers: st.viewerCount || 0,
-					startedAt: st.startedAt
+					startedAt: st.startedAt,
+					lastVideoUrl:
+						st.lastVideo?.url ||
+						(st.lastVideo?.id ? `https://youtube.com/watch?v=${st.lastVideo.id}` : null)
 				});
 			} else {
 				offlineStreams.push({
@@ -998,12 +1001,25 @@ async function getMonitoredStreamsSummary(filterPlatform = "all") {
 		let resultado = `📺 **Status das Transmissões Monitoradas (Ravena):**\n\n`;
 
 		if (onlineStreams.length > 0) {
-			resultado += `🟢 **Ao Vivo Agora (${onlineStreams.length}):**\n`;
+			resultado += `🟢 **Ao Vivo Agora (${onlineStreams.length}):**\n\n`;
 			for (const stream of onlineStreams) {
+				let linkUrl = "";
+				const pLower = stream.platform.toLowerCase();
+				if (pLower === "twitch") {
+					linkUrl = `https://twitch.tv/${stream.name}`;
+				} else if (pLower === "kick") {
+					linkUrl = `https://kick.com/${stream.name}`;
+				} else if (pLower === "youtube") {
+					linkUrl = stream.lastVideoUrl || `https://youtube.com/@${stream.name}`;
+				}
+
 				resultado += `  - **[${stream.platform}] ${stream.name}**: ${stream.title}\n`;
 				resultado += `    🎮 Jogo: ${stream.game} | 👥 Espectadores: ${stream.viewers}\n`;
+				if (linkUrl) {
+					resultado += `    🔗 Assistir: ${linkUrl}\n`;
+				}
+				resultado += `\n`;
 			}
-			resultado += `\n`;
 		} else {
 			resultado += `🔴 Nenhum dos canais monitorados está transmitindo ao vivo no momento.\n\n`;
 		}

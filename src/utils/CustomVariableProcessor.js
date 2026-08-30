@@ -30,8 +30,16 @@ class CustomVariableProcessor {
 		this.logger.debug(`[CustomVariableProcessor][process] ${text} <=> ${Object.keys(context)}`);
 
 		try {
-			const hasFotoPerfil = text.includes("{fotoPerfil}");
-			const hasFotoPerfilMention = text.includes("{fotoPerfilMention}");
+			// Mascara blocos de código e inline code (ex: `!g-addCmd {mention}`) para não substituir variáveis explicativas
+			const codePlaceholders = [];
+			let processedText = text.replace(/(`{1,3})([\s\S]*?)\1/g, (match) => {
+				const placeholder = `__CV_CODE_BLOCK_${codePlaceholders.length}__`;
+				codePlaceholders.push(match);
+				return placeholder;
+			});
+
+			const hasFotoPerfil = processedText.includes("{fotoPerfil}");
+			const hasFotoPerfilMention = processedText.includes("{fotoPerfilMention}");
 			let targetJid = null;
 
 			if ((hasFotoPerfil || hasFotoPerfilMention) && context && context.message) {
@@ -48,7 +56,6 @@ class CustomVariableProcessor {
 				}
 			}
 
-			let processedText = text;
 			if (hasFotoPerfil || hasFotoPerfilMention) {
 				processedText = processedText
 					.replace(/\{fotoPerfil\}/g, "")
@@ -134,6 +141,13 @@ class CustomVariableProcessor {
 							context.options.mentions.push(jid);
 						}
 					}
+				}
+			}
+
+			// Restaura blocos de código e inline code mascarados
+			if (typeof processedText === "string" && codePlaceholders.length > 0) {
+				for (let i = 0; i < codePlaceholders.length; i++) {
+					processedText = processedText.replace(`__CV_CODE_BLOCK_${i}__`, codePlaceholders[i]);
 				}
 			}
 
