@@ -566,9 +566,47 @@ const helper = {
 	]
 };
 
+/**
+ * Consulta o resumo do ranking de mensagens/atividade de um grupo
+ * @param {string} [chatId] - ID do grupo
+ * @returns {Promise<string>}
+ */
+async function fetchGroupRankingSummary(chatId) {
+	if (!chatId) {
+		return "Esta ferramenta só pode ser usada dentro do contexto de um grupo de WhatsApp.";
+	}
+
+	try {
+		const ranking = await getMessageRanking(chatId);
+
+		if (!ranking || ranking.length === 0) {
+			return "Ainda não há estatísticas de mensagens ou atividade registradas para este grupo.";
+		}
+
+		const medals = ["🥇", "🥈", "🥉"];
+		let resultado = `🏆 **Top Membros Mais Ativos do Grupo:**\n\n`;
+
+		ranking.slice(0, 10).forEach((item, index) => {
+			const pos = index < 3 ? medals[index] : `${index + 1}º`;
+			resultado += `${pos} **${item.nome || "Membro"}**: ${item.qtdMsgs} mensagens enviadas\n`;
+		});
+
+		if (ranking.length > 10) {
+			resultado += `\n... e mais ${ranking.length - 10} membros ativos no total.`;
+		}
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error(`Erro ao obter ranking para chat ${chatId}:`, err.message);
+		return `Erro ao consultar estatísticas de atividade do grupo: ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
 	processMessage,
-	processReaction
+	processReaction,
+	getMessageRanking,
+	fetchGroupRankingSummary
 };
