@@ -297,6 +297,82 @@ class LLMService {
 						required: ["query"]
 					}
 				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "get_gaming_freebies",
+					description:
+						"Consulta e lista jogos gratuitos, brindes, DLCs e promoções de 100% de desconto disponíveis no momento para resgate (Steam, Epic Games, GOG, PC, consoles) e o valor total economizado.",
+					parameters: {
+						type: "object",
+						properties: {
+							platform: {
+								type: "string",
+								description:
+									"Plataforma opcional para filtrar: 'pc', 'steam', 'epic-games-store', 'gog', 'ps4', 'ps5', 'xbox-one', 'all' (padrão: 'all')"
+							}
+						},
+						required: []
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "search_steam",
+					description:
+						"Pesquisa informações, preços atuais em Reais (BRL), porcentagens de desconto e detalhes de jogos na loja da Steam (Steam Store), ou consulta conquistas/platinas de um usuário.",
+					parameters: {
+						type: "object",
+						properties: {
+							query: {
+								type: "string",
+								description:
+									"Nome do jogo para pesquisar o preço/dados, ou nome de usuário da Steam"
+							},
+							type: {
+								type: "string",
+								description:
+									"Tipo de consulta: 'game' (padrão) para pesquisar jogo/preço na loja, ou 'profile' para platinas de usuário",
+								enum: ["game", "profile"]
+							}
+						},
+						required: ["query"]
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "get_daily_horoscope",
+					description:
+						"Consulta a previsão diária do horóscopo e astrologia para um signo específico do zodíaco ou para todos os signos (Áries, Touro, Gêmeos, Câncer, Leão, Virgem, Libra, Escorpião, Sagitário, Capricórnio, Aquário, Peixes).",
+					parameters: {
+						type: "object",
+						properties: {
+							signo: {
+								type: "string",
+								description:
+									"Nome do signo do zodíaco (ex: 'Áries', 'Touro', 'Gêmeos', 'Câncer', 'Leão', 'Virgem', 'Libra', 'Escorpião', 'Sagitário', 'Capricórnio', 'Aquário', 'Peixes') ou vazio para todos"
+							}
+						},
+						required: []
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "get_group_ranking_stats",
+					description:
+						"Consulta o ranking e estatísticas dos membros mais ativos e com mais mensagens enviadas no grupo do WhatsApp atual.",
+					parameters: {
+						type: "object",
+						properties: {},
+						required: []
+					}
+				}
 			}
 		];
 	}
@@ -631,9 +707,10 @@ class LLMService {
 	 * Despacha e executa uma chamada de ferramenta com tratamento unificado de erros
 	 * @param {string} fnName - Nome da função chamada pelo modelo
 	 * @param {Object} args - Argumentos passados
+	 * @param {Object} [options] - Opções originais da requisição (contexto do grupo, chatId, etc.)
 	 * @returns {Promise<string>}
 	 */
-	async executeToolCall(fnName, args = {}) {
+	async executeToolCall(fnName, args = {}, options = {}) {
 		try {
 			if (fnName === "web_search") {
 				this.logger.info(`[LLMService] Executando web_search para: "${args.query}"`);
@@ -729,6 +806,49 @@ class LLMService {
 				return res;
 			}
 
+			if (fnName === "get_gaming_freebies") {
+				const platform = args.platform || "all";
+				this.logger.info(
+					`[LLMService] Executando get_gaming_freebies para platform: "${platform}"`
+				);
+				const res = await this.getGamingFreebies(platform);
+				this.logger.info(
+					`[LLMService] Resultado de get_gaming_freebies (${res.length} caracteres)`
+				);
+				return res;
+			}
+
+			if (fnName === "search_steam") {
+				const query = args.query || args.game || args.user;
+				const type = args.type || "game";
+				this.logger.info(`[LLMService] Executando search_steam (${type}) para: "${query}"`);
+				const res = await this.searchSteam(query, type);
+				this.logger.info(`[LLMService] Resultado de search_steam (${res.length} caracteres)`);
+				return res;
+			}
+
+			if (fnName === "get_daily_horoscope") {
+				const signo = args.signo || args.sign || "";
+				this.logger.info(`[LLMService] Executando get_daily_horoscope para signo: "${signo}"`);
+				const res = await this.getDailyHoroscope(signo);
+				this.logger.info(
+					`[LLMService] Resultado de get_daily_horoscope (${res.length} caracteres)`
+				);
+				return res;
+			}
+
+			if (fnName === "get_group_ranking_stats") {
+				const chatId = args.chatId || options.chatId || options.groupId || options.group?.id;
+				this.logger.info(
+					`[LLMService] Executando get_group_ranking_stats para chatId: "${chatId}"`
+				);
+				const res = await this.getGroupRankingStats(chatId);
+				this.logger.info(
+					`[LLMService] Resultado de get_group_ranking_stats (${res.length} caracteres)`
+				);
+				return res;
+			}
+
 			if (typeof this[fnName] === "function") {
 				return await this[fnName](args);
 			}
@@ -737,6 +857,73 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Consulta jogos gratuitos e promoções 100% off no GamingFreebies
+	 * @param {string} [platform]
+	 * @returns {Promise<string>}
+	 */
+	async getGamingFreebies(platform = "all") {
+		try {
+			const { fetchFreebiesSummary } = require("../functions/GamingFreebies");
+			return await fetchFreebiesSummary(platform);
+		} catch (error) {
+			this.logger.error("[getGamingFreebies] Erro ao buscar jogos grátis:", error.message);
+			return `Erro ao buscar jogos gratuitos: ${error.message}`;
+		}
+	}
+
+	/**
+	 * Consulta jogo ou platinas na Steam via SteamCommands
+	 * @param {string} query
+	 * @param {string} [type] - "game" ou "profile"
+	 * @returns {Promise<string>}
+	 */
+	async searchSteam(query, type = "game") {
+		try {
+			if (!query || typeof query !== "string" || query.trim().length === 0) {
+				return "Por favor, informe o nome do jogo ou usuário da Steam.";
+			}
+			const { fetchSteamGameInfo, fetchSteamPlatinums } = require("../functions/SteamCommands");
+			if (type === "profile" || type === "platina" || type === "platinas") {
+				return await fetchSteamPlatinums(query);
+			}
+			return await fetchSteamGameInfo(query);
+		} catch (error) {
+			this.logger.error(`[searchSteam] Erro ao consultar Steam para ${query}:`, error.message);
+			return `Erro ao consultar Steam: ${error.message}`;
+		}
+	}
+
+	/**
+	 * Consulta horóscopo do dia via HoroscopoCommands
+	 * @param {string} [signo]
+	 * @returns {Promise<string>}
+	 */
+	async getDailyHoroscope(signo = "") {
+		try {
+			const { fetchHoroscopeInfo } = require("../functions/HoroscopoCommands");
+			return await fetchHoroscopeInfo(signo);
+		} catch (error) {
+			this.logger.error("[getDailyHoroscope] Erro ao buscar horóscopo:", error.message);
+			return `Erro ao consultar horóscopo: ${error.message}`;
+		}
+	}
+
+	/**
+	 * Consulta estatísticas e ranking de faladores do grupo via RankingMessages
+	 * @param {string} [chatId]
+	 * @returns {Promise<string>}
+	 */
+	async getGroupRankingStats(chatId) {
+		try {
+			const { fetchGroupRankingSummary } = require("../functions/RankingMessages");
+			return await fetchGroupRankingSummary(chatId);
+		} catch (error) {
+			this.logger.error("[getGroupRankingStats] Erro ao buscar ranking do grupo:", error.message);
+			return `Erro ao consultar ranking do grupo: ${error.message}`;
 		}
 	}
 
@@ -1554,7 +1741,7 @@ class LLMService {
 						);
 					}
 
-					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs, options);
 
 					messages.push({
 						role: "tool",
@@ -1718,7 +1905,7 @@ class LLMService {
 						);
 					}
 
-					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs, options);
 
 					messages.push({
 						role: "tool",
@@ -1920,7 +2107,7 @@ class LLMService {
 					const fnName = toolCall.function?.name;
 					const parsedArgs = toolCall.function?.arguments || {};
 
-					const toolOutput = await this.executeToolCall(fnName, parsedArgs);
+					const toolOutput = await this.executeToolCall(fnName, parsedArgs, options);
 
 					messages.push({
 						role: "tool",

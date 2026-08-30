@@ -167,7 +167,76 @@ const helper = {
 	]
 };
 
+/**
+ * Consulta jogos grátis e brindes disponíveis atualmente (apenas texto puro)
+ * @param {string} [platform] - Plataforma opcional (ex: 'pc', 'steam', 'epic-games-store')
+ * @returns {Promise<string>}
+ */
+async function fetchFreebiesSummary(platform = "") {
+	try {
+		const platformArg = (platform || "").trim().toLowerCase();
+		let giveawaysUrl = "https://www.gamerpower.com/api/giveaways?sort-by=popularity";
+		if (platformArg && platformArg !== "all" && platformArg !== "todos") {
+			giveawaysUrl += `&platform=${encodeURIComponent(platformArg)}`;
+		}
+		const worthUrl = "https://www.gamerpower.com/api/worth";
+
+		const [giveawaysResponse, worthResponse] = await Promise.all([
+			axios.get(giveawaysUrl, { timeout: 10000 }).catch(() => ({ data: [] })),
+			axios.get(worthUrl, { timeout: 10000 }).catch(() => ({ data: { worth_estimation_usd: "0" } }))
+		]);
+
+		const giveaways = Array.isArray(giveawaysResponse.data) ? giveawaysResponse.data : [];
+		const worthData = worthResponse.data;
+
+		if (giveaways.length === 0) {
+			return `Nenhum jogo gratuito ou brinde encontrado${platformArg ? ` para a plataforma "${platformArg}"` : ""} no momento.`;
+		}
+
+		const games = giveaways.filter((item) => (item.type || "").toLowerCase() === "game");
+		const others = giveaways.filter((item) => (item.type || "").toLowerCase() !== "game");
+
+		let resultado = `🎮 **Jogos e Brindes Gratuitos Atualmente:**\n\n`;
+		if (platformArg && platformArg !== "all") {
+			resultado += `📍 Filtro de Plataforma: ${platformArg.toUpperCase()}\n\n`;
+		}
+
+		if (games.length > 0) {
+			resultado += `🕹️ **Jogos Completos Gratuitos (${games.length}):**\n`;
+			for (const g of games.slice(0, 10)) {
+				resultado += `  - **${g.title}** (${g.platforms || "PC"})\n`;
+				if (g.worth && g.worth !== "N/A") resultado += `    💰 Valor normal: ${g.worth}\n`;
+				if (g.open_giveaway_url) resultado += `    🔗 Resgatar: ${g.open_giveaway_url}\n`;
+			}
+			resultado += `\n`;
+		}
+
+		if (others.length > 0) {
+			resultado += `🎁 **DLCs, Pacotes e Cupons (${others.length}):**\n`;
+			for (const o of others.slice(0, 5)) {
+				resultado += `  - **${o.title}** (${o.platforms || "Vários"})\n`;
+				if (o.open_giveaway_url) resultado += `    🔗 Resgatar: ${o.open_giveaway_url}\n`;
+			}
+			resultado += `\n`;
+		}
+
+		const rawWorth = worthData?.worth_estimation_usd || worthData?.worth || "0";
+		const usdWorth = parseFloat(rawWorth.replace("$", "").replace(",", "")) || 0;
+		if (usdWorth > 0) {
+			const brlWorth = CurrencyConverter.convertToBRL(usdWorth);
+			resultado += `💵 **Economia Total Estimada:** ${CurrencyConverter.formatBRL(brlWorth)} (US$ ${usdWorth.toFixed(2)})`;
+		}
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error("Erro ao buscar freebies:", err.message);
+		return `Erro ao consultar jogos grátis: ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	gamingFreebiesCommand,
+	fetchFreebiesSummary
 };
