@@ -39,6 +39,8 @@ database.getSQLiteDb(
     dossier_json TEXT,
     conversation_history TEXT,
     analyzed_at_length INTEGER,
+    problematic_score REAL DEFAULT 0,
+    is_problematic INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_group_dossiers_gid ON group_dossiers(group_id);
@@ -47,9 +49,24 @@ database.getSQLiteDb(
     group_id TEXT PRIMARY KEY,
     json_data TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS group_manual_leaves (
+    group_id TEXT PRIMARY KEY,
+    group_name TEXT,
+    left_at INTEGER,
+    bot_id TEXT
+  );
 `,
 	true
 );
+
+// Migração das colunas se a tabela já existir
+database
+	.dbRun(DB_NAME, `ALTER TABLE group_dossiers ADD COLUMN problematic_score REAL DEFAULT 0`)
+	.catch(() => {});
+database
+	.dbRun(DB_NAME, `ALTER TABLE group_dossiers ADD COLUMN is_problematic INTEGER DEFAULT 0`)
+	.catch(() => {});
 
 const mediaAnalysisSchema = {
 	type: "json_schema",
@@ -483,10 +500,18 @@ ${pendingText}`;
 				}
 
 				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
+				const isProblematic = parsed.problematic_score > 7 ? 1 : 0;
 				await database.dbRun(
 					DB_NAME,
-					`INSERT INTO group_dossiers (group_id, dossier_json, conversation_history, analyzed_at_length) VALUES (?, ?, ?, ?)`,
-					[chatId, JSON.stringify(parsed), parsed.problematic_score > 7 ? pendingText : null, 0]
+					`INSERT INTO group_dossiers (group_id, dossier_json, conversation_history, analyzed_at_length, problematic_score, is_problematic) VALUES (?, ?, ?, ?, ?, ?)`,
+					[
+						chatId,
+						JSON.stringify(parsed),
+						isProblematic ? pendingText : null,
+						0,
+						parsed.problematic_score,
+						isProblematic
+					]
 				);
 
 				// 2. Limpa o texto analisado da tabela de status
@@ -517,6 +542,22 @@ ${pendingText}`;
 					const targetGroup = bot.grupoLogs || process.env.GRUPO_LOGS;
 					const groupData = await bot.database.getGroup(chatId);
 
+					// Conta a quantidade de reports problemáticos já gerados para este grupo
+					let reportsCount = 1;
+					try {
+						const countRow = await database.dbGet(
+							DB_NAME,
+							`SELECT COUNT(*) as count FROM group_dossiers 
+							 WHERE group_id = ? AND (is_problematic = 1 OR problematic_score > 7 OR json_extract(dossier_json, '$.problematic_score') > 7)`,
+							[chatId]
+						);
+						if (countRow && typeof countRow.count === "number") {
+							reportsCount = countRow.count;
+						}
+					} catch (countErr) {
+						logger.warn(`[${chatId}] Erro ao contar reports problemáticos:`, countErr);
+					}
+
 					let classifiedText = "";
 					if (Array.isArray(parsed.classified_items) && parsed.classified_items.length > 0) {
 						classifiedText =
@@ -530,6 +571,7 @@ ${pendingText}`;
 					
 📌 *Grupo:* ${groupData ? groupData.name : "N/A"}
 🆔 *ID:* ${chatId}
+🚨 *Reports:* ${reportsCount}
 🤖 *Bot:* ${bot.id}
 
 📊 *Análise:*
@@ -542,15 +584,6 @@ ${pendingText}`;
 					bot
 						.sendMessage(targetGroup, msgAlert)
 						.catch((e) => logger.error("Erro ao enviar alerta de dossiê:", e));
-
-					if (parsed.problematic_score > 7) {
-						bot
-							.sendMessage(
-								targetGroup,
-								`📝 *Histórico da Conversa que gerou o dossiê:*\n\n${pendingText}`
-							)
-							.catch((e) => logger.error("Erro ao enviar histórico de msgs do dossiê:", e));
-					}
 				}
 			} else {
 				logger.warn(`[${chatId}] JSON da IA incompleto:`, parsed);

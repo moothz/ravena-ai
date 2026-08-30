@@ -1657,6 +1657,16 @@ Break down the cost by category and provide a total estimated cost.`;
 				// Tenta sair do grupo
 				await bot.client.leaveGroup(groupId);
 
+				// Registra saída manual do grupo para alertas futuros de convite
+				let groupDbName = chat?.name || "Desconhecido";
+				try {
+					const groupData = await this.database.getGroup(groupId);
+					if (groupData?.name) groupDbName = groupData.name;
+					await this.database.recordManualGroupLeave(groupId, groupDbName, bot.id);
+				} catch (recErr) {
+					this.logger.error("Erro ao registrar saída manual no banco:", recErr);
+				}
+
 				// Prepara mensagem de retorno com comandos de bloqueio
 				let responseMessage = `✅ Bot saiu do grupo ${chat.name} (${groupId}) com sucesso.\n\n`;
 				responseMessage += `*Para bloquear administradores:*\n${blockAdminsCmd}\n\n`;

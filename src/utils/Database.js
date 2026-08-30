@@ -474,6 +474,10 @@ class Database {
 		return this.coreRepo.getAggregatedLoadReports(since);
 	}
 
+	async getBotsWeeklyMessageTotals(since) {
+		return this.coreRepo.getBotsWeeklyMessageTotals(since);
+	}
+
 	async saveLoadReports(reports) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] saveLoadReports() bloqueado");
@@ -490,6 +494,87 @@ class Database {
 		}
 		this.triggerBackupStart();
 		return this.coreRepo.addLoadReport(report);
+	}
+
+	// --- Manual Group Leaves & Dossiers ---
+
+	ensureSummariesDb() {
+		this.getSQLiteDb(
+			"summaries",
+			`
+			CREATE TABLE IF NOT EXISTS group_dossier_status (
+				group_id TEXT PRIMARY KEY,
+				total_length_recorded INTEGER DEFAULT 0,
+				pending_text TEXT DEFAULT ''
+			);
+			CREATE TABLE IF NOT EXISTS group_dossiers (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_id TEXT,
+				dossier_json TEXT,
+				conversation_history TEXT,
+				analyzed_at_length INTEGER,
+				problematic_score REAL DEFAULT 0,
+				is_problematic INTEGER DEFAULT 0,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE INDEX IF NOT EXISTS idx_group_dossiers_gid ON group_dossiers(group_id);
+			CREATE TABLE IF NOT EXISTS group_manual_leaves (
+				group_id TEXT PRIMARY KEY,
+				group_name TEXT,
+				left_at INTEGER,
+				bot_id TEXT
+			);
+			`,
+			true
+		);
+	}
+
+	async recordManualGroupLeave(groupId, groupName, botId) {
+		try {
+			this.ensureSummariesDb();
+			await this.dbRun(
+				"summaries",
+				`INSERT INTO group_manual_leaves (group_id, group_name, left_at, bot_id) 
+				 VALUES (?, ?, ?, ?)
+				 ON CONFLICT(group_id) DO UPDATE SET 
+				   group_name = excluded.group_name,
+				   left_at = excluded.left_at,
+				   bot_id = excluded.bot_id`,
+				[groupId, groupName, Date.now(), botId]
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Erro ao registrar saída manual de grupo:", error);
+			return false;
+		}
+	}
+
+	async getManualGroupLeave(groupId) {
+		try {
+			this.ensureSummariesDb();
+			return await this.dbGet(
+				"summaries",
+				"SELECT group_id, group_name, left_at, bot_id FROM group_manual_leaves WHERE group_id = ?",
+				[groupId]
+			);
+		} catch (error) {
+			this.logger.error("Erro ao buscar saída manual de grupo:", error);
+			return null;
+		}
+	}
+
+	async getLastGroupDossiers(groupId, limit = 3) {
+		try {
+			this.ensureSummariesDb();
+			return await this.dbAll(
+				"summaries",
+				"SELECT dossier_json, conversation_history, problematic_score, created_at FROM group_dossiers WHERE group_id = ? ORDER BY created_at DESC LIMIT ?",
+				[groupId, limit]
+			);
+		} catch (error) {
+			this.logger.error("Erro ao buscar últimos dossiês do grupo:", error);
+			return [];
+		}
 	}
 
 	// --- Donations ---
@@ -640,22 +725,22 @@ class Database {
 
 	// --- Group Membership Periods ---
 
-	async recordGroupJoin(groupJid, groupName, timestamp, responsible) {
+	async recordGroupJoin(groupJid, groupName, timestamp, responsible, botId = null) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] recordGroupJoin() bloqueado");
 			return true;
 		}
 		this.triggerBackupStart();
-		return this.coreRepo.recordGroupJoin(groupJid, groupName, timestamp, responsible);
+		return this.coreRepo.recordGroupJoin(groupJid, groupName, timestamp, responsible, botId);
 	}
 
-	async recordGroupLeave(groupJid, timestamp, responsible) {
+	async recordGroupLeave(groupJid, timestamp, responsible, botId = null) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] recordGroupLeave() bloqueado");
 			return true;
 		}
 		this.triggerBackupStart();
-		return this.coreRepo.recordGroupLeave(groupJid, timestamp, responsible);
+		return this.coreRepo.recordGroupLeave(groupJid, timestamp, responsible, botId);
 	}
 
 	async getGroupMembershipPeriods(groupJid) {

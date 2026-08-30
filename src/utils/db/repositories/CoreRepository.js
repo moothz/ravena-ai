@@ -126,6 +126,7 @@ class CoreRepository {
 				duration INTEGER,
 				join_responsible TEXT,
 				leave_responsible TEXT,
+				bot_id TEXT,
 				json_data TEXT
 			)`
 		};
@@ -839,6 +840,32 @@ class CoreRepository {
 		}
 	}
 
+	/**
+	 * Obtém o total de mensagens por bot desde um timestamp (ex: últimos 7 dias)
+	 * @param {number} since - Timestamp inicial em milissegundos
+	 * @returns {Promise<Map<string, number>>} - Mapa botId -> total de mensagens
+	 */
+	async getBotsWeeklyMessageTotals(since = Date.now() - 7 * 24 * 60 * 60 * 1000) {
+		try {
+			const rows = this.mappers.all(
+				this.REPORTS_DB,
+				`SELECT bot_id as botId, SUM(recv_private + recv_group + sent_private + sent_group) as totalMessages
+				 FROM load_reports
+				 WHERE timestamp_start > ?
+				 GROUP BY bot_id`,
+				[since]
+			);
+			const map = new Map();
+			for (const r of rows) {
+				map.set(r.botId, Number(r.totalMessages) || 0);
+			}
+			return map;
+		} catch (error) {
+			this.logger.error("Error getting bot weekly message totals:", error);
+			return new Map();
+		}
+	}
+
 	async addLoadReport(report) {
 		try {
 			const row = LoadReportMapper.toRow(report);
@@ -1025,7 +1052,7 @@ class CoreRepository {
 
 	// --- Group Membership Periods ---
 
-	async recordGroupJoin(groupJid, groupName, timestamp, responsible) {
+	async recordGroupJoin(groupJid, groupName, timestamp, responsible, botId = null) {
 		try {
 			const ts = timestamp || Date.now();
 			const respStr = responsible
@@ -1044,13 +1071,20 @@ class CoreRepository {
 			// Insert new period
 			this.mappers.run(
 				this.DB,
-				"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, join_responsible, json_data) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, join_responsible, bot_id, json_data) VALUES (?, ?, ?, ?, ?, ?)",
 				[
 					groupJid,
 					groupName,
 					ts,
 					respStr,
-					JSON.stringify({ groupJid, groupName, join_timestamp: ts, join_responsible: responsible })
+					botId,
+					JSON.stringify({
+						groupJid,
+						groupName,
+						join_timestamp: ts,
+						join_responsible: responsible,
+						bot_id: botId
+					})
 				]
 			);
 			return true;
@@ -1060,7 +1094,7 @@ class CoreRepository {
 		}
 	}
 
-	async recordGroupLeave(groupJid, timestamp, responsible) {
+	async recordGroupLeave(groupJid, timestamp, responsible, botId = null) {
 		try {
 			const ts = timestamp || Date.now();
 			const respStr = responsible
@@ -1080,19 +1114,25 @@ class CoreRepository {
 				const duration = ts - openPeriod.join_timestamp;
 				this.mappers.run(
 					this.DB,
-					"UPDATE group_membership_periods SET leave_timestamp = ?, duration = ?, leave_responsible = ? WHERE id = ?",
-					[ts, duration, respStr, openPeriod.id]
+					"UPDATE group_membership_periods SET leave_timestamp = ?, duration = ?, leave_responsible = ?, bot_id = COALESCE(bot_id, ?) WHERE id = ?",
+					[ts, duration, respStr, botId, openPeriod.id]
 				);
 			} else {
 				// No open period, insert a leave-only period
 				this.mappers.run(
 					this.DB,
-					"INSERT INTO group_membership_periods (group_jid, leave_timestamp, leave_responsible, json_data) VALUES (?, ?, ?, ?)",
+					"INSERT INTO group_membership_periods (group_jid, leave_timestamp, leave_responsible, bot_id, json_data) VALUES (?, ?, ?, ?, ?)",
 					[
 						groupJid,
 						ts,
 						respStr,
-						JSON.stringify({ groupJid, leave_timestamp: ts, leave_responsible: responsible })
+						botId,
+						JSON.stringify({
+							groupJid,
+							leave_timestamp: ts,
+							leave_responsible: responsible,
+							bot_id: botId
+						})
 					]
 				);
 			}
@@ -1121,7 +1161,7 @@ class CoreRepository {
 			this.mappers.transaction(this.DB, () => {
 				const conn = this.mappers.getConnection(this.DB);
 				const stmt = conn.prepare(
-					"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, leave_timestamp, duration, join_responsible, leave_responsible, json_data) VALUES (@group_jid, @group_name, @join_timestamp, @leave_timestamp, @duration, @join_responsible, @leave_responsible, @json_data)"
+					"INSERT INTO group_membership_periods (group_jid, group_name, join_timestamp, leave_timestamp, duration, join_responsible, leave_responsible, bot_id, json_data) VALUES (@group_jid, @group_name, @join_timestamp, @leave_timestamp, @duration, @join_responsible, @leave_responsible, @bot_id, @json_data)"
 				);
 				for (const p of periods) {
 					const row = {
@@ -1140,6 +1180,7 @@ class CoreRepository {
 								? JSON.stringify(p.leaveResponsible)
 								: String(p.leaveResponsible)
 							: null,
+						bot_id: p.botId || p.bot_id || null,
 						json_data: JSON.stringify(p)
 					};
 					stmt.run(row);

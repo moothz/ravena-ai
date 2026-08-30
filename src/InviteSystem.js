@@ -1,5 +1,6 @@
 const Logger = require("./utils/Logger");
 const Database = require("./utils/Database");
+const LLMService = require("./services/LLMService");
 const path = require("path");
 const fs = require("fs").promises;
 
@@ -42,6 +43,9 @@ function hasStrangeCharacters(str) {
  * 5. Admins podem usar um comando para entrar no grupo
  */
 class InviteSystem {
+	// Registro de entradas automáticas recentes por bot (botId -> [timestamp, ...]) para limite de 3/30m
+	static recentBotJoins = new Map();
+
 	/**
 	 * Cria uma nova instância do InviteSystem
 	 * @param {WhatsAppBot} bot - A instância do bot
@@ -63,8 +67,260 @@ class InviteSystem {
 	}
 
 	isCommunity(data) {
-		// Community has IsParent: true (não sei se só isso resolve...)
-		return data?.IsParent === true;
+		return (
+			data?.IsParent === true ||
+			data?.isParent === true ||
+			data?.IsCommunity === true ||
+			data?.isCommunity === true ||
+			data?.IsCommunityAnnounce === true ||
+			data?.isCommunityAnnounce === true
+		);
+	}
+
+	static canBotJoin(botId) {
+		const now = Date.now();
+		const windowMs = 30 * 60 * 1000;
+		const joins = (InviteSystem.recentBotJoins.get(botId) || []).filter((t) => now - t < windowMs);
+		InviteSystem.recentBotJoins.set(botId, joins);
+		return joins.length < 3;
+	}
+
+	static recordBotJoin(botId) {
+		const now = Date.now();
+		const joins = InviteSystem.recentBotJoins.get(botId) || [];
+		joins.push(now);
+		InviteSystem.recentBotJoins.set(botId, joins);
+	}
+
+	/**
+	 * Seleciona o melhor bot elegível para entrar no grupo automaticamente
+	 * Critérios:
+	 * - Bot normal (habilitado, não vip, não privado, não comunitário, não banido, não telegram/discord)
+	 * - Menor quantidade de mensagens na semana (últimos 7 dias via load_reports)
+	 * - Máximo de 3 grupos a cada 30 minutos
+	 * @returns {Promise<WhatsAppBotGo|null>}
+	 */
+	async selectBestBotForAutoJoin() {
+		try {
+			const allBots = this.database.botInstances || [];
+			const eligibleBots = allBots.filter((b) => {
+				if (!b || b.banido || b.vip || b.privado || b.comunitario) return false;
+				if (b.useTelegram || b.useDiscord) return false;
+				if (b.ignoreInvites) return false;
+				if (!b.client || typeof b.client.acceptInvite !== "function") return false;
+				return true;
+			});
+
+			if (eligibleBots.length === 0) {
+				this.logger.warn("Nenhum bot normal elegível e disponível para auto-join");
+				return null;
+			}
+
+			// Busca totais de mensagens na semana
+			const weeklyTotals = await this.database.getBotsWeeklyMessageTotals();
+
+			// Ordena por menor mensagens na semana
+			eligibleBots.sort((a, b) => {
+				const countA = weeklyTotals.get(a.id) || 0;
+				const countB = weeklyTotals.get(b.id) || 0;
+				return countA - countB;
+			});
+
+			for (const candidate of eligibleBots) {
+				if (InviteSystem.canBotJoin(candidate.id)) {
+					return candidate;
+				}
+			}
+
+			this.logger.warn("Todos os bots elegíveis atingiram o limite de 3 grupos em 30 minutos");
+			return null;
+		} catch (err) {
+			this.logger.error("Erro ao selecionar bot para auto join:", err);
+			return null;
+		}
+	}
+
+	/**
+	 * Avalia a solicitação de convite com a LLM
+	 * @param {Object} params
+	 * @returns {Promise<{ shouldAutoAccept: boolean, reason: string, rawResponse?: string }>}
+	 */
+	async evaluateAutoAcceptWithLLM({
+		userName,
+		authorId,
+		groupName,
+		participantCount,
+		description,
+		reason
+	}) {
+		// 1. Pré-filtros determinísticos para economizar tokens
+		if (typeof participantCount === "number" && participantCount < 3) {
+			return {
+				shouldAutoAccept: false,
+				reason: `Grupo com poucos participantes (${participantCount} membros)`
+			};
+		}
+
+		if (hasStrangeCharacters(userName)) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Caracteres estranhos/ornamentais no nome do usuário"
+			};
+		}
+
+		if (hasStrangeCharacters(groupName)) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Caracteres estranhos/ornamentais no título do grupo"
+			};
+		}
+
+		if (hasStrangeCharacters(description)) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Caracteres estranhos/ornamentais na descrição do grupo"
+			};
+		}
+
+		// Rejeição de grupos de teste pelo título
+		const normGroupName = (groupName || "")
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "");
+		if (/\b(teste|testes|test|tests|testar|testando)\b/i.test(normGroupName)) {
+			return {
+				shouldAutoAccept: false,
+				reason: `Grupo de testes identificado no título ("${groupName}")`
+			};
+		}
+
+		// Rejeição de motivos com menção a teste
+		const normReason = (reason || "")
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "");
+		if (
+			/\b(testar|teste|testes|testando)\b/i.test(normReason) ||
+			normReason.includes("para testar") ||
+			normReason.includes("pra testar") ||
+			normReason.includes("so teste")
+		) {
+			return {
+				shouldAutoAccept: false,
+				reason: `Motivo menciona teste ("${reason}")`
+			};
+		}
+
+		const cleanReason = (reason || "").trim().toLowerCase();
+		const badReasons = [
+			"tenho permissão",
+			"tenho permissao",
+			"sim",
+			"posso te colocar",
+			"entra aí",
+			"entra ai",
+			"entra por favor",
+			"entra pfv",
+			"coloca aí",
+			"quero testar",
+			"legal"
+		];
+		if (
+			badReasons.some(
+				(br) => cleanReason === br || cleanReason === `${br}.` || cleanReason === `${br}!`
+			)
+		) {
+			return {
+				shouldAutoAccept: false,
+				reason: `Motivo genérico/fraco ("${reason}")`
+			};
+		}
+
+		// 2. Avaliação via LLM
+		try {
+			const llmService = LLMService.getInstance();
+			const autoAcceptSchema = {
+				type: "json_schema",
+				json_schema: {
+					name: "auto_accept_evaluation",
+					schema: {
+						type: "object",
+						properties: {
+							should_auto_accept: {
+								type: "boolean",
+								description:
+									"True apenas se o grupo cumprir todos os critérios para ser aceito automaticamente."
+							},
+							reason: {
+								type: "string",
+								description:
+									"Explicação concisa (em português) do motivo para aceitar ou recusar automaticamente."
+							}
+						},
+						required: ["should_auto_accept", "reason"],
+						additionalProperties: false
+					}
+				}
+			};
+
+			const systemPrompt = `Você é um avaliador criterioso de convites de grupos para bots de WhatsApp.
+Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve ser enviado para moderação manual humana.
+
+REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
+1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição.
+2. Grupos com menos de 3 pessoas.
+3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, vocabulário infantil/underage).
+4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc.).
+5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio.
+6. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
+
+CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
+1. Motivo bem escrito, educado e detalhado, justificando o uso das funções do bot sem quebrar regras.
+2. Grupo de streamer: possui nome ou link de canal (Twitch, YouTube, Kick) na descrição ou tags "[OFF]" ou "[ON]" no título.
+
+Seja exigente: em caso de dúvida, falta de clareza ou risco potencial, recuse (should_auto_accept: false).
+Responda APENAS com um objeto JSON no formato especificado.`;
+
+			const prompt = `Analise a solicitação de convite abaixo:
+
+- Usuário solicitante: "${userName}" (${authorId.split("@")[0]})
+- Nome do Grupo: "${groupName || "Desconhecido"}"
+- Membros: ${participantCount ?? "Desconhecido"}
+- Descrição do Grupo: "${description || "Sem descrição"}"
+- Motivo enviado pelo usuário:
+"${reason}"
+
+Decida se este grupo deve ser aceito automaticamente.`;
+
+			const response = await llmService.getCompletion({
+				prompt,
+				systemContext: systemPrompt,
+				response_format: autoAcceptSchema,
+				priority: 2,
+				timeout: 30000
+			});
+
+			if (response) {
+				const cleanResponse = response.replace(/```json|```/g, "").trim();
+				const parsed = JSON.parse(cleanResponse);
+				return {
+					shouldAutoAccept: Boolean(parsed.should_auto_accept),
+					reason: parsed.reason || "Avaliado pela IA",
+					rawResponse: cleanResponse
+				};
+			} else {
+				return {
+					shouldAutoAccept: false,
+					reason: "IA não retornou resposta"
+				};
+			}
+		} catch (err) {
+			this.logger.error("Erro ao avaliar convite com LLM:", err);
+			return {
+				shouldAutoAccept: false,
+				reason: `Falha na avaliação IA: ${err.message}`
+			};
+		}
 	}
 
 	/**
@@ -87,6 +343,31 @@ class InviteSystem {
 			const inviteLink = inviteMatch[0];
 			const inviteCode = inviteMatch[1];
 			const currentTime = Date.now();
+
+			// Checa se o link é comunidade antes de iniciar cooldown ou pedir motivo
+			try {
+				if (this.bot.client && typeof this.bot.client.getInviteInfo === "function") {
+					const infoCheck = await this.bot.client.getInviteInfo(inviteCode);
+					if (infoCheck && this.isCommunity(infoCheck)) {
+						this.logger.info(
+							`Ignorando convite de comunidade de ${message.author} (${inviteCode}) sem aplicar cooldown.`
+						);
+						if (message.origin && typeof message.origin.react === "function") {
+							message.origin.react("👥");
+						}
+						await this.bot.sendMessage(
+							message.author,
+							"Este link parece ser de uma *comunidade*, e o bot não consegue entrar em comunidades inteiras. Por favor, tente novamente enviando o link do *grupo específico* dentro da comunidade que você deseja adicionar!"
+						);
+						return true;
+					}
+				}
+			} catch (infoErr) {
+				this.logger.debug(
+					`Erro ao checar info prévia do convite ${inviteCode} em processMessage:`,
+					infoErr?.message
+				);
+			}
 
 			const isBlocked = await this.database.isUserInviteBlocked(message.author.split("@")[0]);
 			if (isBlocked) {
@@ -523,10 +804,13 @@ class InviteSystem {
 
 					// 1. Check Community
 					if (this.isCommunity(inviteInfoData)) {
+						this.userCooldowns.delete(authorId);
+						this.groupInviteCooldowns.delete(inviteCode);
 						await this.bot.sendMessage(
 							authorId,
-							"Isto parece ser link de uma comunidade, se não for, ignore esta imagem. Se for, o bot não consegue entrar. Você precisa enviar o link do GRUPO dentro da comunidade que deseja que ele entre, um por vez"
+							"Este link parece ser de uma *comunidade*, e o bot não consegue entrar em comunidades inteiras. Por favor, tente novamente enviando o link do *grupo específico* dentro da comunidade que você deseja adicionar!"
 						);
+						return;
 					}
 
 					// 2. Check Owner PN
@@ -562,13 +846,6 @@ class InviteSystem {
 							authorId,
 							`🛑 A ${this.bot.nomeExibir || "ravenabot"} não recebe mais convite deste grupo, pois ele foi bloqueado.`
 						);
-
-						// if (this.bot.grupoInvites) {
-						// 	await this.bot.sendMessage(
-						// 		this.bot.grupoInvites,
-						// 		`🛑 Usuário ${authorId} tentou enviar convite de grupo bloqueado (JID detectado): ${inviteLink}\nGrupo: ${inviteInfoData.Name} (${inviteInfoData.JID})`
-						// 	);
-						// }
 						return;
 					}
 				}
@@ -611,7 +888,7 @@ class InviteSystem {
 				timestamp: Date.now()
 			};
 
-			// Alteração: usar savePendingJoin em vez de addPendingInvite
+			// Salva pending join
 			await this.database.savePendingJoin(inviteCode, {
 				authorId,
 				authorName: userName
@@ -625,6 +902,100 @@ class InviteSystem {
 				timestamp: Date.now(),
 				reason
 			});
+
+			// Verifica se o bot já foi removido manualmente deste grupo anteriormente
+			let manualLeaveInfo = null;
+			let lastDossiersText = "";
+			if (inviteInfoData?.JID) {
+				try {
+					manualLeaveInfo = await this.database.getManualGroupLeave(inviteInfoData.JID);
+				} catch (leaveCheckErr) {
+					this.logger.error("Erro ao verificar saída manual do grupo:", leaveCheckErr);
+				}
+
+				try {
+					const lastDossiers = await this.database.getLastGroupDossiers(inviteInfoData.JID, 3);
+					if (lastDossiers && lastDossiers.length > 0) {
+						lastDossiersText = "\n📊 *Últimos Dossiês Registrados:*\n";
+						lastDossiers.forEach((d, idx) => {
+							try {
+								const p =
+									typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
+								const dateStr = d.created_at
+									? ` (${new Date(d.created_at).toLocaleDateString("pt-BR")})`
+									: "";
+								let evText = "";
+								if (Array.isArray(p.classified_items) && p.classified_items.length > 0) {
+									evText =
+										"\n" +
+										p.classified_items
+											.map((it) => `  • *${it.category}:* "${it.evidence}"`)
+											.join("\n");
+								}
+								lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
+							} catch (e) {}
+						});
+					}
+				} catch (dossierErr) {
+					this.logger.error("Erro ao carregar últimos dossiês do grupo:", dossierErr);
+				}
+			}
+
+			// Avaliação com LLM para Auto-Accept
+			let autoAccepted = false;
+			let autoAcceptBot = null;
+			let llmReason = "";
+
+			if (manualLeaveInfo) {
+				llmReason = `Bot já foi removido manualmente deste grupo anteriormente (${manualLeaveInfo.group_name || "Desconhecido"})`;
+			} else {
+				try {
+					const evalResult = await this.evaluateAutoAcceptWithLLM({
+						userName,
+						authorId,
+						groupName: inviteInfoData?.Name,
+						participantCount: inviteInfoData?.ParticipantCount,
+						description:
+							inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
+						reason
+					});
+
+					llmReason = evalResult.reason;
+
+					if (evalResult.shouldAutoAccept) {
+						const selectedBot = await this.selectBestBotForAutoJoin();
+						if (selectedBot) {
+							this.logger.info(
+								`[AutoAccept] Convite ${inviteCode} aceito automaticamente pelo bot ${selectedBot.id}. Motivo: ${evalResult.reason}`
+							);
+							const joinResult = await selectedBot.client.acceptInvite(inviteCode);
+							if (joinResult && joinResult.accepted) {
+								autoAccepted = true;
+								autoAcceptBot = selectedBot;
+								InviteSystem.recordBotJoin(selectedBot.id);
+								await this.database.savePendingJoin(inviteCode, {
+									authorId,
+									authorName: userName
+								});
+								await this.database.removePendingJoin(inviteCode);
+							} else {
+								this.logger.warn(
+									`[AutoAccept] Falha do bot ${selectedBot.id} ao aceitar convite: ${joinResult?.error || "Erro desconhecido"}`
+								);
+								llmReason = `Aprovado pela IA, mas bot ${selectedBot.id} falhou ao entrar (${joinResult?.error || "Erro"})`;
+							}
+						} else {
+							this.logger.info(
+								`[AutoAccept] Convite ${inviteCode} aprovado pela IA, mas nenhum bot elegível disponível no momento.`
+							);
+							llmReason = `Aprovado pela IA (${evalResult.reason}), mas nenhum bot elegível disponível (limite 3/30m ou offline)`;
+						}
+					}
+				} catch (evalErr) {
+					this.logger.error("Erro no fluxo de auto-accept com LLM:", evalErr);
+					llmReason = `Falha ao avaliar com IA: ${evalErr.message}`;
+				}
+			}
 
 			// Envia notificação para o usuário
 			let extraText = "";
@@ -680,11 +1051,8 @@ class InviteSystem {
 
 							// Verifica se o autor está na lista de doadores
 							isDonator = donations.some((donation) => {
-								// Se o doador tem um número de telefone
 								if (donation.numero) {
-									// Remove caracteres especiais e espaços do número do doador
 									const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
-									//this.logger.debug(`[donate-invite] ${cleanDonorNumber} vs ${cleanAuthorId} =  ${cleanDonorNumber.includes(cleanAuthorId)} || ${ cleanAuthorId.includes(cleanDonorNumber)}`);
 									if (cleanDonorNumber.length > 10) {
 										if (
 											cleanDonorNumber.includes(cleanAuthorId) ||
@@ -703,6 +1071,11 @@ class InviteSystem {
 					}
 
 					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
+					if (autoAccepted) {
+						infoMessageHeader =
+							`✨ *ACEITO AUTOMATICAMENTE:* ${llmReason}\n🤖 *Bot que entrou:* ${autoAcceptBot.id}\n\n` +
+							infoMessageHeader;
+					}
 					if (isDonator) {
 						infoMessageHeader = `💸💸 R$${donateValue} 💸💸\n` + infoMessageHeader;
 					}
@@ -796,7 +1169,8 @@ class InviteSystem {
 										durationText = " (tempo desconhecido)";
 									}
 
-									membershipHistoryText += `${idx + 1}. 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
+									const botTag = p.bot_id ? ` [🤖 ${p.bot_id}]` : "";
+									membershipHistoryText += `${idx + 1}.${botTag} 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
 								});
 							}
 						} catch (err) {
@@ -804,39 +1178,50 @@ class InviteSystem {
 						}
 					}
 
+					let manualLeaveWarning = "";
+					if (manualLeaveInfo) {
+						manualLeaveWarning = `\n⚠️ *Bot já foi removido manualmente deste grupo anteriormente (${manualLeaveInfo.group_name || "Desconhecido"})*\n`;
+					}
+
 					const infoMessage =
 						infoMessageHeader +
 						`🔗 *Link*: chat.whatsapp.com/${inviteCode}\n` +
 						`👤 *De:* ${userName} (${authorId.split("@")[0]})${ownerMark}${isDonator ? " 💰" : ""}\n` +
 						(inviteInfoData?.Name ? `🏷️ *Nome*: ${inviteInfoData.Name}\n` : "") +
+						(inviteInfoData?.JID ? `🫆 *ID*: ${inviteInfoData.JID}\n` : "") +
 						(inviteInfoData?.ParticipantCount
 							? `👥 *Membros*: ${inviteInfoData.ParticipantCount}\n`
 							: "") +
 						(wasInGroupBefore ? `⚠️ Já esteve neste grupo (${inviteInfoData?.JID || ""})\n` : "") +
+						manualLeaveWarning +
 						`- 📈 *Convites deste usuário*: ${authorInvitesCount}\n` +
 						`- 📊 *Vezes que este grupo foi indicado*: ${groupInvitesCount}\n` +
 						otherInvitersText +
 						membershipHistoryText +
 						`\n💬 *Motivo:*\n${reason}\n` +
 						botWarning +
+						(!autoAccepted && llmReason
+							? `\n🤖 *Análise IA (Não aceito auto):* ${llmReason}\n`
+							: "") +
+						lastDossiersText +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
 
-					// Envia segunda mensagem com comando para aceitar
-					const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
-					const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
+					// Envia comando para aceitar caso não tenha sido aceito automaticamente
+					if (!autoAccepted) {
+						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
+						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
+					}
 
-					await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
+					// Sempre envia o comando de block caso necessário
+					const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
 					await this.bot.sendMessage(this.bot.grupoInvites, blockCommand);
 				} catch (error) {
 					this.logger.error("Erro ao enviar notificação de convite para grupoInvites:", error);
 				}
 			} else {
 				this.logger.warn("Nenhum grupoInvites configurado, o convite não será encaminhado");
-
-				// Notifica o usuário
-				//await this.bot.sendMessage(authorId, "Este bot não recebe convites.");
 			}
 		} catch (error) {
 			this.logger.error("Erro ao tratar solicitação de convite:", error);
