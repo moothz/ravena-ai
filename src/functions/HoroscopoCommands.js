@@ -300,8 +300,61 @@ const helper = {
 	]
 };
 
+/**
+ * Consulta a previsão diária do horóscopo para um signo (apenas texto puro)
+ * @param {string} [signo] - Nome do signo
+ * @returns {Promise<string>}
+ */
+async function fetchHoroscopeInfo(signo = "") {
+	try {
+		const today = new Date();
+		const year = today.getFullYear();
+		const month = String(today.getMonth() + 1).padStart(2, "0");
+		const day = String(today.getDate()).padStart(2, "0");
+		const date = `${year}-${month}-${day}`;
+		const formattedDate = `${day}/${month}/${year}`;
+
+		const rows = await database.dbAll(
+			DB_NAME,
+			"SELECT signo, texto FROM horoscopo WHERE data = ?",
+			[date]
+		);
+
+		const horoscoposDoDia = {};
+		rows.forEach((row) => {
+			horoscoposDoDia[row.signo] = row.texto;
+		});
+
+		const signoAlvo = normalizeSigno(signo);
+
+		if (signoAlvo && horoscoposDoDia[signoAlvo]) {
+			const signoInfo = signos[signoAlvo];
+			return `🔮 **Horóscopo para ${signoInfo.nome} (${formattedDate}):**\n${signoInfo.emoji} ${horoscoposDoDia[signoAlvo]}`;
+		}
+
+		if (rows.length === 0) {
+			return `Ainda não há previsões de horóscopo cadastradas para hoje (${formattedDate}).`;
+		}
+
+		let resultado = `🔮 **Horóscopo do Dia (${formattedDate}):**\n\n`;
+		for (const nome of orderedSignos) {
+			const texto = horoscoposDoDia[nome];
+			if (texto) {
+				const signoInfo = signos[nome];
+				resultado += `${signoInfo.emoji} **${signoInfo.nome}:** ${texto}\n\n`;
+			}
+		}
+
+		return resultado.trim();
+	} catch (err) {
+		logger.error("Erro ao buscar horóscopo via helper:", err.message);
+		return `Erro ao consultar horóscopo: ${err.message}`;
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
-	detectHoroscopo
+	detectHoroscopo,
+	fetchHoroscopeInfo
 };
