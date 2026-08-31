@@ -836,6 +836,88 @@
     font-family: var(--font-display);
 }
 
+/* Invite Normal Bots Row */
+.invite-bots-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.invite-bots-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.invite-bot-avatar-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.invite-bot-avatar-btn:hover {
+    transform: translateY(-3px) scale(1.06);
+}
+
+.invite-bot-avatar-wrap {
+    position: relative;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    border: 2px solid var(--bright-blue);
+    background: #090714;
+    overflow: visible;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.invite-bot-avatar-btn:hover .invite-bot-avatar-wrap {
+    border-color: var(--cyan-neon);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.6);
+}
+
+.invite-bot-avatar-wrap img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.invite-whatsapp-badge {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 18px;
+    height: 18px;
+    background: #25d366;
+    border: 2px solid #110d29;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.invite-bot-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #ffffff;
+    text-align: center;
+}
+
 .invite-section {
     display: flex;
     flex-direction: column;
