@@ -116,7 +116,7 @@
     border: 2px solid var(--gold-color);
     border-radius: 8px;
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.85), 0 0 14px rgba(255, 215, 0, 0.3);
-    z-index: 50;
+    z-index: 1;
     padding: 12px;
     font-family: var(--font-mono);
     cursor: pointer;

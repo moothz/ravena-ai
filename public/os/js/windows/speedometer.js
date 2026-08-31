@@ -34,7 +34,7 @@ WindowManager.register('speedometer', {
         let currentVal = 0;
         let peakVal = 0;
         let animFrame = null;
-        const maxVal = 20000;
+        const maxVal = 30000;
 
         const drawGauge = (val) => {
             const width = canvas.width;

@@ -30,8 +30,8 @@
     border-bottom: 1px solid var(--bright-blue) !important;
     padding: 0 6px !important;
     display: flex !important;
+    flex-direction: row !important;
     align-items: center !important;
-    justify-content: space-between !important;
 }
 
 .winbox.os-window:not(.focus) .wb-header {
@@ -39,33 +39,44 @@
     border-bottom-color: #3b3c58 !important;
 }
 
+.winbox.os-window .wb-icon {
+    order: 1 !important;
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
 .winbox.os-window .wb-title {
+    order: 2 !important;
     font-family: var(--font-display) !important;
     font-size: 12px !important;
     font-weight: 700 !important;
     color: #ffffff !important;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9) !important;
     letter-spacing: 0.5px;
-    padding-left: 4px;
+    padding-left: 2px;
     flex: 1 !important;
     text-align: left !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.winbox.os-window .wb-icon {
-    width: 18px;
-    height: 18px;
-    margin-right: 4px;
+.winbox.os-window .wb-drag {
+    order: 3 !important;
 }
 
 /* Control Buttons Container (Far Right) */
 .winbox.os-window .wb-control {
+    order: 4 !important;
     display: flex !important;
     align-items: center !important;
     gap: 4px !important;
     margin-left: auto !important;
     margin-right: 2px !important;
     height: 100% !important;
-    float: right !important;
+    flex-shrink: 0;
 }
 
 /* Individual Buttons */
