@@ -29,12 +29,12 @@
     <link rel="stylesheet" href="vendor/winbox.min.css">
     
     <!-- App CSS Files -->
-    <link rel="stylesheet" href="css/themes.css">
-    <link rel="stylesheet" href="css/desktop.css">
-    <link rel="stylesheet" href="css/taskbar.css">
-    <link rel="stylesheet" href="css/windows.css">
-    <link rel="stylesheet" href="css/context-menu.css">
-    <link rel="stylesheet" href="css/mobile.css">
+    <link rel="stylesheet" href="css/themes.css?v=3">
+    <link rel="stylesheet" href="css/desktop.css?v=3">
+    <link rel="stylesheet" href="css/taskbar.css?v=3">
+    <link rel="stylesheet" href="css/windows.css?v=3">
+    <link rel="stylesheet" href="css/context-menu.css?v=3">
+    <link rel="stylesheet" href="css/mobile.css?v=3">
     
     <!-- Favicons -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -48,6 +48,24 @@
 
     <!-- Desktop Icons & Windows Container -->
     <div id="desktop" class="desktop"></div>
+
+    <!-- Floating Top Donors Widget (Top-Right Sticky Note) -->
+    <div id="desktop-donates-widget" class="desktop-widget-donates" title="Clique para abrir o mural de doações">
+        <div class="widget-postit-header">
+            <span class="widget-postit-title">📌 Top Doadores</span>
+            <span style="font-size: 10px; color: var(--gold-color); font-weight: 700;">!doar</span>
+        </div>
+        <div class="widget-postit-meta" id="widget-postit-meta">
+            Carregando meta...
+        </div>
+        <div class="widget-postit-list" id="widget-postit-list">
+            <div style="font-size: 10px; color: #888; text-align: center; padding: 6px;">Carregando doadores...</div>
+        </div>
+        <div class="widget-postit-footer">
+            <span>Ver ranking completo</span>
+            <i class="fas fa-arrow-right"></i>
+        </div>
+    </div>
 
     <!-- Mobile Responsive Application Container -->
     <div id="mobile-app" class="mobile-app hidden"></div>
@@ -124,30 +142,30 @@
     <script src="https://code.highcharts.com/highcharts.js"></script>
 
     <!-- App Utilities & Core -->
-    <script src="js/utils/formatters.js"></script>
-    <script src="js/utils/api.js"></script>
-    <script src="js/utils/trail.js"></script>
-    <script src="js/context-menu.js"></script>
-    <script src="js/window-manager.js"></script>
+    <script src="js/utils/formatters.js?v=3"></script>
+    <script src="js/utils/api.js?v=3"></script>
+    <script src="js/utils/trail.js?v=3"></script>
+    <script src="js/context-menu.js?v=3"></script>
+    <script src="js/window-manager.js?v=3"></script>
 
     <!-- Window Modules -->
-    <script src="js/windows/status.js"></script>
-    <script src="js/windows/status-detail.js"></script>
-    <script src="js/windows/donations.js"></script>
-    <script src="js/windows/community.js"></script>
-    <script src="js/windows/statistics.js"></script>
-    <script src="js/windows/help.js"></script>
-    <script src="js/windows/imagine.js"></script>
-    <script src="js/windows/tts.js"></script>
-    <script src="js/windows/stt.js"></script>
-    <script src="js/windows/fishing.js"></script>
-    <script src="js/windows/invite.js"></script>
-    <script src="js/windows/speedometer.js"></script>
+    <script src="js/windows/status.js?v=3"></script>
+    <script src="js/windows/status-detail.js?v=3"></script>
+    <script src="js/windows/donations.js?v=3"></script>
+    <script src="js/windows/community.js?v=3"></script>
+    <script src="js/windows/statistics.js?v=3"></script>
+    <script src="js/windows/help.js?v=3"></script>
+    <script src="js/windows/imagine.js?v=3"></script>
+    <script src="js/windows/tts.js?v=3"></script>
+    <script src="js/windows/stt.js?v=3"></script>
+    <script src="js/windows/fishing.js?v=3"></script>
+    <script src="js/windows/invite.js?v=3"></script>
+    <script src="js/windows/speedometer.js?v=3"></script>
 
     <!-- Desktop, Taskbar, Mobile & Main App -->
-    <script src="js/desktop.js"></script>
-    <script src="js/taskbar.js"></script>
-    <script src="js/mobile.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/desktop.js?v=3"></script>
+    <script src="js/taskbar.js?v=3"></script>
+    <script src="js/mobile.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
 </body>
 </html>

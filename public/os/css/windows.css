@@ -55,17 +55,28 @@
     margin-right: 4px;
 }
 
-/* Control Buttons (Min, Max, Close) */
+/* Control Buttons Container */
 .winbox.os-window .wb-control {
-    width: 20px !important;
-    height: 20px !important;
-    margin: 0 2px !important;
-    border-radius: 3px !important;
-    border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    background: rgba(255, 255, 255, 0.1) !important;
     display: flex !important;
     align-items: center !important;
+    gap: 4px !important;
+    margin-right: 4px !important;
+    height: 100% !important;
+    float: right !important;
+}
+
+/* Individual Buttons */
+.winbox.os-window .wb-control * {
+    display: inline-flex !important;
+    align-items: center !important;
     justify-content: center !important;
+    width: 20px !important;
+    height: 20px !important;
+    margin: 0 !important;
+    border-radius: 3px !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-image: none !important;
     cursor: pointer !important;
     color: #ffffff !important;
     font-family: var(--font-mono) !important;
@@ -73,47 +84,46 @@
     line-height: 1 !important;
     text-align: center !important;
     transition: all 0.12s ease !important;
-    background-image: none !important;
 }
 
 /* Minimize Button */
 .winbox.os-window .wb-min::before {
-    content: "−";
-    font-size: 14px;
-    line-height: 1;
-    display: block;
+    content: "−" !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    display: block !important;
 }
 
 /* Maximize Button */
 .winbox.os-window .wb-max::before {
-    content: "□";
-    font-size: 11px;
-    line-height: 1;
-    display: block;
+    content: "□" !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    display: block !important;
 }
 
 /* Close Button */
 .winbox.os-window .wb-close::before {
-    content: "✕";
-    font-size: 11px;
-    line-height: 1;
-    display: block;
+    content: "✕" !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    display: block !important;
 }
 
 .winbox.os-window .wb-min:hover {
-    background: rgba(246, 173, 85, 0.8) !important;
+    background-color: rgba(246, 173, 85, 0.9) !important;
     border-color: #f6ad55 !important;
-    color: #ffffff !important;
+    color: #000000 !important;
 }
 
 .winbox.os-window .wb-max:hover {
-    background: rgba(4, 169, 240, 0.8) !important;
+    background-color: rgba(4, 169, 240, 0.9) !important;
     border-color: var(--bright-blue) !important;
     color: #ffffff !important;
 }
 
 .winbox.os-window .wb-close:hover {
-    background: rgba(229, 62, 62, 0.9) !important;
+    background-color: rgba(229, 62, 62, 0.95) !important;
     border-color: #e53e3e !important;
     color: #ffffff !important;
 }

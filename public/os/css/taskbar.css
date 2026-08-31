@@ -307,7 +307,7 @@
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.9), 0 0 15px rgba(4, 169, 240, 0.25);
     display: flex;
     z-index: 100001;
-    overflow: visible;
+    overflow: visible !important;
     font-family: var(--font-mono);
 }
 
@@ -340,14 +340,12 @@
     background: #141030;
     border-radius: 0 4px 4px 0;
     position: relative;
-    overflow: visible;
+    overflow: visible !important;
 }
 
 .start-menu-items {
     padding: 6px 0;
-    max-height: 480px;
-    overflow-y: auto;
-    overflow-x: visible;
+    overflow: visible !important;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -364,6 +362,10 @@
     transition: all 0.12s ease;
     position: relative;
     user-select: none;
+}
+
+.start-menu-item.has-submenu {
+    position: relative;
 }
 
 .start-menu-item:hover, .start-menu-item.active {
@@ -405,21 +407,23 @@
     border-radius: 0 0 4px 0;
 }
 
-/* Submenu Popups */
+/* Submenu Popups: Outside the main start menu to the right */
 .start-submenu {
     position: absolute;
     left: 100%;
-    top: -2px;
+    top: 0;
     margin-left: 4px;
-    min-width: 230px;
+    min-width: 240px;
     max-width: 320px;
+    max-height: 420px;
+    overflow-y: auto;
     background: #110d29;
     border: 2px solid var(--bright-blue);
     border-radius: 6px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.95), 0 0 15px rgba(4, 169, 240, 0.3);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.95), 0 0 15px rgba(4, 169, 240, 0.35);
     padding: 6px 0;
     display: none;
-    z-index: 100005;
+    z-index: 100010;
 }
 
 .start-menu-item:hover > .start-submenu {
