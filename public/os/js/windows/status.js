@@ -3,8 +3,12 @@
 WindowManager.register('status', {
     title: 'Status das Ravenas — Instâncias',
     taskbarIcon: 'fa-desktop',
-    width: '850px',
-    height: '600px',
+    get width() {
+        return `${Math.min(1350, Math.max(760, Math.floor(window.innerWidth * 0.80)))}px`;
+    },
+    get height() {
+        return `${Math.min(900, Math.max(520, Math.floor((window.innerHeight - 44) * 0.80)))}px`;
+    },
     singleton: true,
 
     render(wb) {

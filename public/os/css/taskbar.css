@@ -356,7 +356,7 @@
     align-items: center;
     gap: 10px;
     padding: 7px 14px;
-    font-size: 12px;
+    font-size: 13px;
     color: #e0e0ee;
     cursor: pointer;
     transition: all 0.12s ease;
@@ -377,7 +377,7 @@
 .start-menu-item i, .start-menu-item img {
     width: 18px;
     height: 18px;
-    font-size: 14px;
+    font-size: 15px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -387,7 +387,7 @@
 
 .start-menu-item .menu-arrow {
     margin-left: auto;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--light-gray);
 }
 
@@ -401,7 +401,7 @@
     padding: 8px 12px;
     background: #0d0922;
     border-top: 1px solid var(--win-border-subtle);
-    font-size: 10px;
+    font-size: 11px;
     color: var(--light-gray);
     text-align: right;
     border-radius: 0 0 4px 0;
@@ -413,8 +413,8 @@
     left: 100%;
     top: 0;
     margin-left: 4px;
-    min-width: 240px;
-    max-width: 320px;
+    min-width: 250px;
+    max-width: 330px;
     max-height: 420px;
     overflow-y: auto;
     background: #110d29;
@@ -434,8 +434,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
-    font-size: 11px;
+    padding: 7px 12px;
+    font-size: 12px;
     color: #d0d0e0;
     cursor: pointer;
     transition: background 0.12s ease;
@@ -448,18 +448,18 @@
 }
 
 .submenu-item i {
-    font-size: 12px;
+    font-size: 13px;
     width: 16px;
 }
 
 .submenu-header {
-    padding: 4px 12px;
-    font-size: 10px;
+    padding: 4px 12px 6px;
+    font-size: 11px;
     font-weight: 700;
-    color: var(--bright-blue);
+    color: var(--cyan-neon);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     margin-bottom: 4px;
 }
 

@@ -55,6 +55,8 @@ html, body {
     background-color: var(--dark-bg);
     color: var(--light-gray);
     font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.45;
     user-select: none;
 }
 
