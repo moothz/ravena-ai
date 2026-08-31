@@ -1371,6 +1371,125 @@ class BotAPI {
 			}
 		});
 
+		// Endpoint para Status de Todas as Instâncias (HTML)
+		this.app.get(["/instances", "/instances-status", "/bots-status"], authenticateBasic, (req, res) => {
+			const filePath = path.join(__dirname, "../public/instances.html");
+			res.sendFile(filePath);
+		});
+
+		// Endpoint para Status de Todas as Instâncias (API)
+		this.app.get(["/api/instances", "/api/instances-status"], authenticateBasic, this.strictLimiter, async (req, res) => {
+			try {
+				const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+				const recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
+
+				const botReports = {};
+				if (recentReports && Array.isArray(recentReports)) {
+					recentReports.forEach((report) => {
+						if (!botReports[report.botId] || report.timestamp > botReports[report.botId].timestamp) {
+							botReports[report.botId] = report;
+						}
+					});
+				}
+
+				// Busca contagem de grupos no banco
+				let allGroups = [];
+				try {
+					allGroups = await this.database.getGroups();
+				} catch (e) {
+					this.logger.warn("Erro ao buscar grupos para instances API:", e);
+				}
+
+				const groupsCountMap = {};
+				if (Array.isArray(allGroups)) {
+					allGroups.forEach((g) => {
+						if (g && g.botId) {
+							groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
+						}
+					});
+				}
+
+				// Tenta buscar lista de grupos atualizada para bots WhatsApp conectados com timeout curto
+				const botGroupPromises = this.bots.map(async (bot) => {
+					if (bot.isConnected && typeof bot.listGroups === "function") {
+						try {
+							const groups = await Promise.race([
+								bot.listGroups(),
+								new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1200))
+							]);
+							if (Array.isArray(groups)) {
+								return { botId: bot.id, count: groups.length };
+							}
+						} catch (e) {
+							// fallback para contagem do banco
+						}
+					}
+					return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
+				});
+
+				const resolvedGroupCounts = await Promise.all(botGroupPromises);
+				const finalGroupsCountMap = {};
+				resolvedGroupCounts.forEach((item) => {
+					finalGroupsCountMap[item.botId] = item.count;
+				});
+
+				// Coleta dados de todas as instâncias (incluindo privadas, telegram, discord, etc.)
+				const instances = this.bots.map((bot) => {
+					const report = botReports[bot.id] ?? null;
+					const msgsHr = report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
+					const avgResponseTime =
+						report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
+					const maxResponseTime =
+						report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
+
+					const platform = bot.useTelegram ? "Telegram" : bot.useDiscord ? "Discord" : "WhatsApp";
+
+					return {
+						id: bot.id,
+						name: bot.nomeExibir || bot.id,
+						phoneNumber: bot.phoneNumber || (bot.numero ? String(bot.numero) : null),
+						platform,
+						connected: Boolean(bot.isConnected),
+						privado: Boolean(bot.privado),
+						vip: Boolean(bot.vip),
+						comunitario: Boolean(bot.comunitario),
+						banido: Boolean(bot.banido),
+						ignorePV: Boolean(bot.ignorePV),
+						ignoreInvites: Boolean(bot.ignoreInvites),
+						pvAI: Boolean(bot.pvAI),
+						prefix: bot.prefix || "!",
+						numeroResponsavel: bot.numeroResponsavel || null,
+						supportMsg: bot.supportMsg || null,
+						lastMessageReceived: bot.lastMessageReceived ?? null,
+						msgsHr,
+						responseTime: {
+							avg: avgResponseTime,
+							max: maxResponseTime
+						},
+						groupsCount:
+							finalGroupsCountMap[bot.id] !== undefined
+								? finalGroupsCountMap[bot.id]
+								: (groupsCountMap[bot.id] || 0),
+						webhookPort: bot.webhookPort || null,
+						instanceName: bot.instanceName || bot.id
+					};
+				});
+
+				res.json({
+					status: "ok",
+					timestamp: Date.now(),
+					total: instances.length,
+					bots: instances
+				});
+			} catch (error) {
+				this.logger.error("Erro ao buscar status das instâncias:", error);
+				res.status(500).json({
+					status: "error",
+					message: "Erro interno ao buscar status das instâncias"
+				});
+			}
+		});
+
 		// Endpoint para Top Donates dos últimos 3 meses
 		this.app.get("/recent-top-donates", async (req, res) => {
 			try {
