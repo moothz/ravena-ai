@@ -3,8 +3,8 @@
 WindowManager.register('community', {
     title: 'Comunidade — Grupos e Redes',
     taskbarIcon: 'fa-users',
-    width: '600px',
-    height: '420px',
+    width: '640px',
+    height: '440px',
     singleton: true,
 
     render(wb) {
@@ -21,8 +21,13 @@ WindowManager.register('community', {
                     </a>
 
                     <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" class="community-card">
-                        <i class="fas fa-bullhorn" style="font-size: 36px; color: #f6ad55;"></i>
+                        <img src="img/grupo-avisos-small.jpg" alt="Canal de Avisos" onerror="this.onerror=null;this.src='/public/grupo-avisos-small.jpg';">
                         <span>Canal de Avisos</span>
+                    </a>
+
+                    <a href="https://wa.me/555596424307" target="_blank" class="community-card" style="border-color: rgba(37, 211, 102, 0.4);">
+                        <i class="fab fa-whatsapp" style="font-size: 36px; color: #25d366;"></i>
+                        <span>Falar com Criador (moothz)</span>
                     </a>
 
                     <div class="community-card" id="com-open-fishing" style="cursor: pointer;">

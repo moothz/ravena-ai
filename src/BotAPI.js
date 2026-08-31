@@ -847,7 +847,7 @@ class BotAPI {
 		});
 
 		// Novo endpoint para obter dados analíticos
-		this.app.get("/analytics", this.strictLimiter, (req, res) => {
+		this.app.get("/analytics", this.generalLimiter, (req, res) => {
 			try {
 				// Obtém parâmetros da requisição
 				const period = req.query.period ?? "today";
@@ -902,7 +902,7 @@ class BotAPI {
 		});
 
 		// Endpoint para estatísticas detalhadas dos bots (tabela)
-		this.app.get("/api/bot-stats", this.strictLimiter, async (req, res) => {
+		this.app.get("/api/bot-stats", this.generalLimiter, async (req, res) => {
 			try {
 				const now = Date.now();
 				// Se já existe cache (mesmo expirado), responde instantaneamente e atualiza em background
@@ -1311,6 +1311,7 @@ class BotAPI {
 			const filePath = path.join(this.database.databasePath, "media", fileName);
 			try {
 				await fs.access(filePath);
+				res.setHeader("Cache-Control", "public, max-age=86400, immutable");
 				res.sendFile(filePath);
 			} catch (error) {
 				res.status(404).send("Imagem não encontrada");
@@ -1363,7 +1364,7 @@ class BotAPI {
 		});
 
 		// Endpoint para detalhes de doações de um doador específico
-		this.app.get("/api/donates/detail/:name", this.strictLimiter, async (req, res) => {
+		this.app.get("/api/donates/detail/:name", this.generalLimiter, async (req, res) => {
 			try {
 				const name = req.params.name;
 				if (!name) {

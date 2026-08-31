@@ -3,8 +3,8 @@
 WindowManager.register('status-detail', {
     title: 'Detalhes da Ravena',
     taskbarIcon: 'fa-info-circle',
-    width: '480px',
-    height: '420px',
+    width: '490px',
+    height: '430px',
     singleton: false,
 
     render(wb, params) {
@@ -19,7 +19,10 @@ WindowManager.register('status-detail', {
         const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, '') : '';
         const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}` : '#';
 
-        const isOffline = !bot.connected || bot.banido;
+        const respPhoneRaw = bot.numeroResponsavel || bot.responsible || bot.owner;
+        const cleanRespPhone = respPhoneRaw ? String(respPhoneRaw).replace(/\D/g, '') : '';
+        const respPhoneFormatted = respPhoneRaw ? Formatters.formatPhoneNumber(String(respPhoneRaw)) : '';
+
         const minutesSince = Formatters.getTimeSinceLastMessage(bot.lastMessageReceived);
         const lastSeenText = Formatters.formatTimeSince(minutesSince);
 
@@ -39,11 +42,11 @@ WindowManager.register('status-detail', {
         else if (minutesSince > 2) statusText = '<span style="color: var(--status-yellow);">● Atenção</span>';
 
         let comunitContent = '';
-        if (bot.comunitario) {
-            const resp = bot.numeroResponsavel ? Formatters.formatPhoneNumber(String(bot.numeroResponsavel)) : 'Voluntário';
+        if (bot.comunitario || cleanRespPhone) {
+            const resp = respPhoneFormatted || 'Voluntário';
             comunitContent = `
                 <div class="detail-card" style="grid-column: span 2; border-left: 2px solid #ff6b6b;">
-                    <div class="detail-card-label">Responsável Comunitário</div>
+                    <div class="detail-card-label">Responsável pela Ravena</div>
                     <div class="detail-card-value" style="font-size: 11px;">${resp}</div>
                     ${bot.supportMsg ? `<p style="font-size: 10px; color: var(--light-gray); margin-top: 4px; font-style: italic;">"${bot.supportMsg}"</p>` : ''}
                 </div>
@@ -65,7 +68,7 @@ WindowManager.register('status-detail', {
 
                 <div class="bot-detail-grid">
                     <div class="detail-card">
-                        <div class="detail-card-label">Telefone</div>
+                        <div class="detail-card-label">Telefone da Ravena</div>
                         <div class="detail-card-value" style="font-size: 11px;">${phoneNumber}</div>
                     </div>
                     <div class="detail-card">
@@ -83,7 +86,12 @@ WindowManager.register('status-detail', {
                     ${comunitContent}
                 </div>
 
-                <div style="display: flex; gap: 10px; margin-top: 6px; justify-content: flex-end;">
+                <div style="display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; flex-wrap: wrap;">
+                    ${cleanRespPhone ? `
+                        <a href="https://wa.me/${cleanRespPhone}" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #f6ad55 0%, #d68910 100%); border-color: #f6ad55; color: #000; font-weight: 600;">
+                            <i class="fab fa-whatsapp"></i> Chamar Responsável
+                        </a>
+                    ` : ''}
                     ${cleanPhone ? `
                         <a href="${waUrl}" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #25d366 0%, #128c7e 100%); border-color: #25d366;">
                             <i class="fab fa-whatsapp"></i> Chamar no Whats

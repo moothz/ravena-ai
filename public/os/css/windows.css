@@ -11,9 +11,9 @@
     transition: filter 0.25s ease, opacity 0.25s ease, border-color 0.2s ease !important;
 }
 
-/* Background/Unfocused Windows: Lose 75% saturation and slight opacity */
+/* Background/Unfocused Windows: Dimmed saturation and slight opacity */
 .winbox.os-window:not(.focus) {
-    filter: saturate(0.25) opacity(0.85) !important;
+    filter: saturate(0.55) opacity(0.92) !important;
     border-color: rgba(71, 72, 108, 0.7) !important;
 }
 
@@ -31,6 +31,7 @@
     padding: 0 6px !important;
     display: flex !important;
     align-items: center !important;
+    justify-content: space-between !important;
 }
 
 .winbox.os-window:not(.focus) .wb-header {
@@ -47,6 +48,7 @@
     letter-spacing: 0.5px;
     padding-left: 4px;
     flex: 1 !important;
+    text-align: left !important;
 }
 
 .winbox.os-window .wb-icon {
@@ -55,12 +57,13 @@
     margin-right: 4px;
 }
 
-/* Control Buttons Container */
+/* Control Buttons Container (Far Right) */
 .winbox.os-window .wb-control {
     display: flex !important;
     align-items: center !important;
     gap: 4px !important;
-    margin-right: 4px !important;
+    margin-left: auto !important;
+    margin-right: 2px !important;
     height: 100% !important;
     float: right !important;
 }
@@ -84,6 +87,24 @@
     line-height: 1 !important;
     text-align: center !important;
     transition: all 0.12s ease !important;
+}
+
+/* Button Ordering: Minimizar (1) -> Maximizar (2) -> Fechar (3) */
+.winbox.os-window .wb-min {
+    order: 1 !important;
+}
+
+.winbox.os-window .wb-max {
+    order: 2 !important;
+}
+
+.winbox.os-window .wb-close {
+    order: 3 !important;
+}
+
+/* Hide Fullscreen Button (Não exibir ícone tela cheia) */
+.winbox.os-window .wb-full {
+    display: none !important;
 }
 
 /* Minimize Button */
@@ -136,6 +157,8 @@
     padding: 12px !important;
     overflow-y: auto !important;
     user-select: text;
+    box-sizing: border-box !important;
+    height: calc(100% - 30px) !important;
 }
 
 /* Separator */

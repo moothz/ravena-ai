@@ -11,8 +11,8 @@ WindowManager.register('donations', {
         const body = wb.body;
 
         body.innerHTML = `
-            <div class="donations-window">
-                <div class="donations-header">
+            <div class="donations-window" style="display: flex; flex-direction: column; height: 100%; gap: 10px;">
+                <div class="donations-header" style="flex-shrink: 0;">
                     <div>
                         <p style="font-size: 12px; color: #ffffff; font-weight: 600;">
                             🎉 Apoie os custos de hospedagem e manutenção!
@@ -26,11 +26,11 @@ WindowManager.register('donations', {
                     </a>
                 </div>
 
-                <div style="font-size: 10px; color: #8888aa; margin-top: 2px;">
+                <div style="font-size: 10px; color: #8888aa; flex-shrink: 0;">
                     💡 Dica: Clique em qualquer doador na lista para ver o histórico e mensagens enviadas.
                 </div>
 
-                <div style="overflow-x: auto; border: 1px solid var(--win-border-subtle); border-radius: 6px; background: #110d29; max-height: 340px; overflow-y: auto;">
+                <div style="overflow-x: auto; border: 1px solid var(--win-border-subtle); border-radius: 6px; background: #110d29; flex: 1; min-height: 180px; overflow-y: auto;">
                     <table class="explorer-table">
                         <thead>
                             <tr>
