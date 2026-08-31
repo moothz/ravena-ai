@@ -151,14 +151,27 @@ class InviteSystem {
 		groupName,
 		participantCount,
 		description,
-		reason
+		reason,
+		isDonator = false,
+		donateValue = 0
 	}) {
-		// 1. Pré-filtros determinísticos para economizar tokens
-		if (typeof participantCount === "number" && participantCount < 3) {
+		// Doador acima de R$49: Aceite automático direto
+		if (isDonator && donateValue > 49) {
 			return {
-				shouldAutoAccept: false,
-				reason: `Grupo com poucos participantes (${participantCount} membros)`
+				shouldAutoAccept: true,
+				reason: `Doador VIP (R$${donateValue}) - Aceite automático garantido`
 			};
+		}
+
+		// 1. Pré-filtros determinísticos para economizar tokens
+		// Se doador >= 10, aceita independente da quantidade de membros
+		if (!isDonator || donateValue < 10) {
+			if (typeof participantCount === "number" && participantCount < 3) {
+				return {
+					shouldAutoAccept: false,
+					reason: `Grupo com poucos participantes (${participantCount} membros)`
+				};
+			}
 		}
 
 		if (hasStrangeCharacters(userName)) {
@@ -211,29 +224,32 @@ class InviteSystem {
 			};
 		}
 
-		const cleanReason = (reason || "").trim().toLowerCase();
-		const badReasons = [
-			"tenho permissão",
-			"tenho permissao",
-			"sim",
-			"posso te colocar",
-			"entra aí",
-			"entra ai",
-			"entra por favor",
-			"entra pfv",
-			"coloca aí",
-			"quero testar",
-			"legal"
-		];
-		if (
-			badReasons.some(
-				(br) => cleanReason === br || cleanReason === `${br}.` || cleanReason === `${br}!`
-			)
-		) {
-			return {
-				shouldAutoAccept: false,
-				reason: `Motivo genérico/fraco ("${reason}")`
-			};
+		// Se doador >= 30, aceita mesmo com motivo ruim
+		if (!isDonator || donateValue < 30) {
+			const cleanReason = (reason || "").trim().toLowerCase();
+			const badReasons = [
+				"tenho permissão",
+				"tenho permissao",
+				"sim",
+				"posso te colocar",
+				"entra aí",
+				"entra ai",
+				"entra por favor",
+				"entra pfv",
+				"coloca aí",
+				"quero testar",
+				"legal"
+			];
+			if (
+				badReasons.some(
+					(br) => cleanReason === br || cleanReason === `${br}.` || cleanReason === `${br}!`
+				)
+			) {
+				return {
+					shouldAutoAccept: false,
+					reason: `Motivo genérico/fraco ("${reason}")`
+				};
+			}
 		}
 
 		// 2. Avaliação via LLM
@@ -268,22 +284,32 @@ Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve s
 
 REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição.
-2. Grupos com menos de 3 pessoas.
+2. Grupos com menos de 3 pessoas (a menos que o usuário seja doador R$10+).
 3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, vocabulário infantil/underage).
-4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc.).
-5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio.
+4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
+5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
 6. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
 
 CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
-1. Motivo bem escrito, educado e detalhado, justificando o uso das funções do bot sem quebrar regras.
-2. Grupo de streamer: possui nome ou link de canal (Twitch, YouTube, Kick) na descrição ou tags "[OFF]" ou "[ON]" no título.
+1. Usuário Doador (grande peso):
+   - R$1 a R$10: Aceitar mesmo com motivo intermediário/simples se a descrição for coerente.
+   - R$10 a R$30: Aceitar independente da quantidade de membros.
+   - R$30 a R$49: Aceitar mesmo com motivo ruim/fraco.
+   - Acima de R$49: Sempre aceitar (desde que sem conteúdo ilegal/ódio).
+2. Motivo bem escrito, educado e detalhado, justificando o uso das funções do bot sem quebrar regras.
+3. Grupo de streamer: possui nome ou link de canal (Twitch, YouTube, Kick) na descrição ou tags "[OFF]" ou "[ON]" no título.
 
 Seja exigente: em caso de dúvida, falta de clareza ou risco potencial, recuse (should_auto_accept: false).
 Responda APENAS com um objeto JSON no formato especificado.`;
 
+			const donorInfo = isDonator
+				? `Sim (💸 R$${donateValue} 💰)`
+				: "Não";
+
 			const prompt = `Analise a solicitação de convite abaixo:
 
 - Usuário solicitante: "${userName}" (${authorId.split("@")[0]})
+- Doador: ${donorInfo}
 - Nome do Grupo: "${groupName || "Desconhecido"}"
 - Membros: ${participantCount ?? "Desconhecido"}
 - Descrição do Grupo: "${description || "Sem descrição"}"
@@ -941,6 +967,36 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				}
 			}
 
+			// Verifica se o autor está na lista de doadores
+			let isDonator = false;
+			let donateValue = 0;
+
+			try {
+				const donations = await this.database.getDonations();
+
+				if (donations && donations.length > 0) {
+					const cleanAuthorId = authorId.replace(/[^0-9]/g, "");
+
+					isDonator = donations.some((donation) => {
+						if (donation.numero) {
+							const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
+							if (cleanDonorNumber.length > 10) {
+								if (
+									cleanDonorNumber.includes(cleanAuthorId) ||
+									cleanAuthorId.includes(cleanDonorNumber)
+								) {
+									donateValue = Number(donation.valor) || 0;
+									return true;
+								}
+							}
+						}
+						return false;
+					});
+				}
+			} catch (donationError) {
+				this.logger.error("Erro ao verificar se o autor é doador:", donationError);
+			}
+
 			// Avaliação com LLM para Auto-Accept
 			let autoAccepted = false;
 			let autoAcceptBot = null;
@@ -957,7 +1013,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						participantCount: inviteInfoData?.ParticipantCount,
 						description:
 							inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
-						reason
+						reason,
+						isDonator,
+						donateValue
 					});
 
 					llmReason = evalResult.reason;
@@ -1037,39 +1095,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			// Envia notificações para o grupoInvites se configurado
 			if (this.bot.grupoInvites) {
 				try {
-					// Verifica se o autor está na lista de doadores
-					let isDonator = false;
-					let donateValue = 0;
-
-					try {
-						// Obtém todas as doações
-						const donations = await this.database.getDonations();
-
-						if (donations && donations.length > 0) {
-							// Remove caracteres especiais e espaços do número do autor para comparação
-							const cleanAuthorId = authorId.replace(/[^0-9]/g, "");
-
-							// Verifica se o autor está na lista de doadores
-							isDonator = donations.some((donation) => {
-								if (donation.numero) {
-									const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
-									if (cleanDonorNumber.length > 10) {
-										if (
-											cleanDonorNumber.includes(cleanAuthorId) ||
-											cleanAuthorId.includes(cleanDonorNumber)
-										) {
-											donateValue = donation.valor;
-											return true;
-										}
-									}
-								}
-								return false;
-							});
-						}
-					} catch (donationError) {
-						this.logger.error("Erro ao verificar se o autor é doador:", donationError);
-					}
-
 					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
 					if (autoAccepted) {
 						infoMessageHeader =
@@ -1208,15 +1233,14 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
 
-					// Envia comando para aceitar caso não tenha sido aceito automaticamente
+					// Se não foi aceito automaticamente, envia comando para aceitar e comando para bloquear
 					if (!autoAccepted) {
 						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
 						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
-					}
 
-					// Sempre envia o comando de block caso necessário
-					const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
-					await this.bot.sendMessage(this.bot.grupoInvites, blockCommand);
+						const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
+						await this.bot.sendMessage(this.bot.grupoInvites, blockCommand);
+					}
 				} catch (error) {
 					this.logger.error("Erro ao enviar notificação de convite para grupoInvites:", error);
 				}
