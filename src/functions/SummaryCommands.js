@@ -567,6 +567,34 @@ ${pendingText}`;
 								.join("\n");
 					}
 
+					let lastDossiersText = "";
+					try {
+						const lastDossiers = await database.getLastGroupDossiers(chatId, 10);
+						if (lastDossiers && lastDossiers.length > 0) {
+							lastDossiersText = "\n📊 *Últimos Dossiês Registrados:*\n";
+							lastDossiers.forEach((d, idx) => {
+								try {
+									const p =
+										typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
+									const dateStr = d.created_at
+										? ` (${new Date(d.created_at).toLocaleDateString("pt-BR")})`
+										: "";
+									let evText = "";
+									if (Array.isArray(p.classified_items) && p.classified_items.length > 0) {
+										evText =
+											"\n" +
+											p.classified_items
+												.map((it) => `  • *${it.category}:* "${it.evidence}"`)
+												.join("\n");
+									}
+									lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
+								} catch (e) {}
+							});
+						}
+					} catch (dossierErr) {
+						logger.error(`[${chatId}] Erro ao carregar últimos dossiês para alerta:`, dossierErr);
+					}
+
 					const msgAlert = `⚠️ *ALERTA DE GRUPO POSSIVELMENTE PROBLEMÁTICO* ⚠️
 					
 📌 *Grupo:* ${groupData ? groupData.name : "N/A"}
@@ -578,7 +606,7 @@ ${pendingText}`;
 - *Tipo:* ${parsed.type}
 - *Nota:* ${parsed.problematic_score}/10
 - *Resumo:* ${parsed.summary}${classifiedText}
-
+${lastDossiersText}
 !sa-leaveGrupo ${chatId}`;
 
 					bot
