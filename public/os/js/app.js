@@ -63,22 +63,23 @@ const RavenaOS = {
             this.fetchServicesStatus()
         ]);
 
-        // Auto-open windows on desktop: Status (top-left) and Mensagímetro (bottom-right)
+        // Auto-open windows on desktop: Status (top-left, shifted right) and Mensagímetro (bottom-right)
         if (!this.state.isMobile && window.WindowManager) {
             setTimeout(() => {
                 // Open Status das Ravenas
-                window.WindowManager.open('status', {
-                    x: '30px',
-                    y: '30px'
-                });
+                window.WindowManager.open('status');
 
-                // Open Mensagímetro positioned in the bottom-right corner above taskbar
+                // Open Mensagímetro positioned safely in the bottom-right corner inside the screen
                 const screenW = window.innerWidth;
                 const screenH = window.innerHeight;
-                const speedoX = Math.max(300, screenW - 420);
-                const speedoY = Math.max(50, screenH - 440);
+                const speedoW = 420;
+                const speedoH = 400;
+                const speedoX = Math.max(260, screenW - speedoW - 30);
+                const speedoY = Math.max(20, screenH - speedoH - 60);
 
                 window.WindowManager.open('speedometer', {
+                    width: `${speedoW}px`,
+                    height: `${speedoH}px`,
                     x: `${speedoX}px`,
                     y: `${speedoY}px`
                 });

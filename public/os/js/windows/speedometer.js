@@ -3,8 +3,8 @@
 WindowManager.register('speedometer', {
     title: 'Mensagímetro — Fluxo em Tempo Real',
     taskbarIcon: 'fa-gauge-high',
-    width: '460px',
-    height: '440px',
+    width: '420px',
+    height: '400px',
     singleton: true,
 
     render(wb) {

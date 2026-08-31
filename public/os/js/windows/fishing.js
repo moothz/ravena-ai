@@ -202,10 +202,24 @@ WindowManager.register('fishing', {
         WindowManager.open('fishing-detail', {
             title: title,
             taskbarIcon: 'fa-fish',
-            width: '560px',
-            height: '560px',
+            width: '580px',
+            height: '580px',
             singleton: true,
             customRender: (wb) => renderContent(wb)
         });
+    }
+});
+
+// Register fishing-detail window so WindowManager knows this window type
+WindowManager.register('fishing-detail', {
+    title: 'Visualizar Peixe Lendário',
+    taskbarIcon: 'fa-fish',
+    width: '580px',
+    height: '580px',
+    singleton: true,
+    render(wb, params) {
+        if (params && typeof params.customRender === 'function') {
+            params.customRender(wb);
+        }
     }
 });

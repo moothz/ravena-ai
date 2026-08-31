@@ -61,8 +61,11 @@ const WindowManager = {
         if (!posX && !posY) {
             const screenW = window.innerWidth;
             const screenH = window.innerHeight;
-            const offsetX = 30 + ((this.cascadeCount * 28) % Math.max(100, screenW - 650));
-            const offsetY = 30 + ((this.cascadeCount * 28) % Math.max(80, screenH - 520));
+            const leftMargin = 250; // Keep 2 columns of desktop icons visible on the left
+            const maxWOffset = Math.max(40, screenW - leftMargin - 720);
+            const maxHOffset = Math.max(40, screenH - 580);
+            const offsetX = leftMargin + ((this.cascadeCount * 22) % maxWOffset);
+            const offsetY = 20 + ((this.cascadeCount * 22) % maxHOffset);
             this.cascadeCount++;
             posX = `${offsetX}px`;
             posY = `${offsetY}px`;

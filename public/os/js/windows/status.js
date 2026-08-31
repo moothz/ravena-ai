@@ -4,11 +4,13 @@ WindowManager.register('status', {
     title: 'Status das Ravenas — Instâncias',
     taskbarIcon: 'fa-desktop',
     get width() {
-        return `${Math.min(1350, Math.max(760, Math.floor(window.innerWidth * 0.80)))}px`;
+        return `${Math.min(1080, Math.max(680, Math.floor((window.innerWidth - 280) * 0.95)))}px`;
     },
     get height() {
-        return `${Math.min(900, Math.max(520, Math.floor((window.innerHeight - 44) * 0.80)))}px`;
+        return `${Math.min(840, Math.max(500, Math.floor((window.innerHeight - 50) * 0.85)))}px`;
     },
+    x: '250px',
+    y: '20px',
     singleton: true,
 
     render(wb) {
