@@ -31,7 +31,8 @@ database.getSQLiteDb(
         duration_sec REAL,
         char_count INTEGER,
         word_count INTEGER,
-        processing_time_ms INTEGER
+        processing_time_ms INTEGER,
+        api_user TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_transcr_ts ON speech_transcription_stats(timestamp);
 
@@ -41,11 +42,20 @@ database.getSQLiteDb(
         char_count INTEGER,
         word_count INTEGER,
         duration_sec REAL,
-        processing_time_ms INTEGER
+        processing_time_ms INTEGER,
+        api_user TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_gen_ts ON speech_generation_stats(timestamp);
 `
 );
+
+// Migrations for api_user column
+database
+	.dbRun("media_stats", `ALTER TABLE speech_transcription_stats ADD COLUMN api_user TEXT`)
+	.catch(() => {});
+database
+	.dbRun("media_stats", `ALTER TABLE speech_generation_stats ADD COLUMN api_user TEXT`)
+	.catch(() => {});
 
 const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
 
@@ -1101,3 +1111,4 @@ module.exports.helper = helper;
 module.exports.commands = commands;
 module.exports.processAutoSTT = processAutoSTT;
 module.exports.transcribeViaAPI = transcribeViaAPI;
+module.exports.getAudioDuration = getAudioDuration;

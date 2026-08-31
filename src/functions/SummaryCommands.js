@@ -575,7 +575,9 @@ ${pendingText}`;
 							lastDossiers.forEach((d, idx) => {
 								try {
 									const p =
-										typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
+										typeof d.dossier_json === "string"
+											? JSON.parse(d.dossier_json)
+											: d.dossier_json;
 									const dateStr = d.created_at
 										? ` (${new Date(d.created_at).toLocaleDateString("pt-BR")})`
 										: "";

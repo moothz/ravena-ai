@@ -384,8 +384,9 @@ Interações cômicas automáticas do bot.
 | `cmd_usage.db` | `cmd_usage_log` | Log de uso de comandos (analytics) |
 | `cooldowns.db` | `cooldowns` | Rate limiting de comandos por usuário/grupo |
 | `copa_seguir.db` | `copa_seguindo` | Chats que seguem times da Copa 2026 para notificações em tempo real |
-| `llm_stats.db` | `usage_stats` | Tokens consumidos por modelo de IA |
-| `media_stats.db` | `comfy_stats`, `speech_transcription_stats` | Uso de geração de imagem e transcrição |
+| `llm_stats.db` | `usage_stats` | Tokens consumidos por modelo de IA (com identificador de `api_user`) |
+| `media_stats.db` | `comfy_stats`, `speech_transcription_stats`, `speech_generation_stats` | Uso de geração de imagem, transcrição e síntese de voz (com `api_user`) |
+| `bonsai_stats.db` | `bonsai_stats` | Uso de geração de imagem Bonsai SDXL (com `api_user`) |
 | `files.db` | `managed_files` | Arquivos gerenciados pelo FileManager |
 | `lists.db` | `user_lists` | Listas criadas por usuários nos grupos |
 | `lembretes.db` | `lembretes` | Lembretes agendados por usuário |

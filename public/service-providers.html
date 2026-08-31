@@ -237,9 +237,31 @@
                                 </tr>
                             </thead>
                             <tbody id="llm-stats-body">
-                                <tr><td colspan="6" class="text-center">Carregando estatísticas...</td></tr>
+                                <tr><td colspan="7" class="text-center">Carregando estatísticas...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Tabela de Usuários de API Externa -->
+                    <div id="external-api-users-container" style="margin-top: 25px;">
+                        <h4 style="margin-bottom: 12px; color: #a29bfe;"><i class="fas fa-key"></i> Requisições de APIs Externas (Por Usuário)</h4>
+                        <div class="table-responsive">
+                            <table class="table" id="external-users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Usuário</th>
+                                        <th>Total de Requisições</th>
+                                        <th>LLM (Chat)</th>
+                                        <th>Imagine (Imagens)</th>
+                                        <th>STT (Transcrição)</th>
+                                        <th>TTS (Voz)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="external-users-body">
+                                    <tr><td colspan="6" class="text-center" style="color: #888;">Nenhuma requisição de API externa registrada no período.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div class="cost-pickers-container" style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;">

@@ -19,6 +19,7 @@ const WebManagement = require("./utils/WebManagement");
 const { v4: uuidv4 } = require("uuid");
 const { CATEGORY_EMOJIS, COMMAND_ORDER } = require("./functions/MenuOrder");
 const ServiceProviderService = require("./services/ServiceProviderService");
+const ExternalAuthService = require("./services/ExternalAuthService");
 const SpeechCommands = require("./functions/SpeechCommands");
 
 const WEBHOOK_RATE_LIMIT = 120000;
@@ -39,6 +40,7 @@ class BotAPI {
 		this.eventHandler = options.eventHandler ?? false;
 		this.logger = new Logger("bot-api");
 		this.database = Database.getInstance();
+		this.externalAuth = ExternalAuthService.getInstance();
 		this.app = express();
 		this.app.set("trust proxy", true);
 
@@ -948,6 +950,14 @@ class BotAPI {
 			res.sendFile(filePath);
 		});
 
+		// Serve API Docs
+		const serveDocs = (req, res) => {
+			const filePath = path.join(__dirname, "../public/api-docs.html");
+			res.sendFile(filePath);
+		};
+		this.app.get("/api/docs", serveDocs);
+		this.app.get("/docs", serveDocs);
+
 		// Serve help chat page
 		this.app.get("/ajuda", (req, res) => {
 			const filePath = path.join(__dirname, "../public/ajuda.html");
@@ -1004,6 +1014,7 @@ class BotAPI {
 		// STT API
 		this.app.post(
 			"/api/stt/transcrever",
+			this.externalAuth.requireAccess("stt"),
 			this.strictLimiter,
 			upload.single("audio"),
 			async (req, res) => {
@@ -1020,13 +1031,15 @@ class BotAPI {
 				}
 
 				const jobId = uuidv4();
+				const apiUser = req.apiUser || null;
 				const job = {
 					id: jobId,
 					status: "starting",
 					estimatedTime: 0,
 					result: null,
 					error: null,
-					startTime: Date.now()
+					startTime: Date.now(),
+					apiUser
 				};
 				this.sttJobs.set(jobId, job);
 
@@ -1063,9 +1076,27 @@ class BotAPI {
 								job.executionId = executionId;
 							}
 						)
-							.then((result) => {
+							.then(async (result) => {
 								job.status = "complete";
 								job.result = result.text;
+
+								// Track STT stats
+								try {
+									const duration =
+										result.duration || (await SpeechCommands.getAudioDuration(finalPath));
+									const text = result.text || "";
+									const chars = text.length;
+									const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+									const processingTime = Date.now() - job.startTime;
+
+									await this.database.dbRun(
+										"media_stats",
+										`INSERT INTO speech_transcription_stats (timestamp, duration_sec, char_count, word_count, processing_time_ms, api_user) VALUES (?, ?, ?, ?, ?, ?)`,
+										[Date.now(), duration, chars, words, processingTime, job.apiUser || null]
+									);
+								} catch (trackErr) {
+									this.logger.error("Erro ao registrar estatísticas de STT Web:", trackErr);
+								}
 							})
 							.catch((err) => {
 								job.status = "error";
@@ -1088,112 +1119,146 @@ class BotAPI {
 		);
 
 		// Imagine API (Proxy)
-		this.app.post("/api/imagine/generate", this.strictLimiter, async (req, res) => {
-			const { prompt } = req.body;
+		this.app.post(
+			"/api/imagine/generate",
+			this.externalAuth.requireAccess("imagine"),
+			this.strictLimiter,
+			async (req, res) => {
+				const { prompt } = req.body;
 
-			if (!prompt || prompt.trim().length < 4) {
-				return res.status(400).json({ error: "Prompt muito curto ou ausente." });
+				if (!prompt || prompt.trim().length < 4) {
+					return res.status(400).json({ error: "Prompt muito curto ou ausente." });
+				}
+
+				if (prompt.length > 1000) {
+					return res.status(400).json({ error: "Prompt muito longo (máximo 1000 caracteres)." });
+				}
+
+				const providers = this.serviceProviderService.getProviders("bonsai");
+				if (
+					providers.length === 0 ||
+					(this.lastServicesStatus && this.lastServicesStatus.imagine === "down")
+				) {
+					return res.status(503).json({ error: "Serviço de geração de imagens não disponível." });
+				}
+
+				try {
+					const bonsaiUrl = providers[0].url;
+					const aesthetic =
+						"\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
+
+					this.logger.info(
+						`Web request: Gerando imagem com Bonsai, prompt: '${prompt}'${req.apiUser ? ` | User: ${req.apiUser}` : ""}`
+					);
+
+					const response = await axios.post(
+						`${bonsaiUrl}/generate`,
+						{
+							prompt: prompt + aesthetic,
+							width: 1024,
+							height: 1024,
+							seed: Math.floor(Math.random() * 9999999),
+							num_inference_steps: 20,
+							guidance_scale: 7.5
+						},
+						{
+							responseType: "arraybuffer",
+							timeout: 60000
+						}
+					);
+
+					const { trackBonsaiStats } = require("./functions/BonsaiCommands");
+					if (trackBonsaiStats)
+						trackBonsaiStats("1024x1024", 1, "bonsai-ternary", true, req.apiUser || null);
+
+					res.set("Content-Type", "image/jpeg");
+					res.send(response.data);
+				} catch (error) {
+					this.logger.error("Erro na API de geração de imagem:", error);
+					const { trackBonsaiStats } = require("./functions/BonsaiCommands");
+					if (trackBonsaiStats)
+						trackBonsaiStats("1024x1024", 1, "bonsai-ternary", false, req.apiUser || null);
+					res.status(500).json({ error: "Erro ao gerar imagem: " + error.message });
+				}
 			}
-
-			if (prompt.length > 1000) {
-				return res.status(400).json({ error: "Prompt muito longo (máximo 1000 caracteres)." });
-			}
-
-			const providers = this.serviceProviderService.getProviders("bonsai");
-			if (
-				providers.length === 0 ||
-				(this.lastServicesStatus && this.lastServicesStatus.imagine === "down")
-			) {
-				return res.status(503).json({ error: "Serviço de geração de imagens não disponível." });
-			}
-
-			try {
-				const bonsaiUrl = providers[0].url;
-				const aesthetic = "\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
-
-				this.logger.info(`Web request: Gerando imagem com Bonsai, prompt: '${prompt}'`);
-
-				const response = await axios.post(
-					`${bonsaiUrl}/generate`,
-					{
-						prompt: prompt + aesthetic,
-						width: 1024,
-						height: 1024,
-						seed: Math.floor(Math.random() * 9999999),
-						num_inference_steps: 20,
-						guidance_scale: 7.5
-					},
-					{
-						responseType: "arraybuffer",
-						timeout: 60000
-					}
-				);
-
-				const { trackBonsaiStats } = require("./functions/BonsaiCommands");
-				if (trackBonsaiStats) trackBonsaiStats("1024x1024", 1, "bonsai-ternary", true);
-
-				res.set("Content-Type", "image/jpeg");
-				res.send(response.data);
-			} catch (error) {
-				this.logger.error("Erro na API de geração de imagem:", error);
-				const { trackBonsaiStats } = require("./functions/BonsaiCommands");
-				if (trackBonsaiStats) trackBonsaiStats("1024x1024", 1, "bonsai-ternary", false);
-				res.status(500).json({ error: "Erro ao gerar imagem: " + error.message });
-			}
-		});
+		);
 
 		// TTS API (Proxy)
-		this.app.post("/api/tts/generate", this.strictLimiter, async (req, res) => {
-			const { text, voice } = req.body;
+		this.app.post(
+			"/api/tts/generate",
+			this.externalAuth.requireAccess("tts"),
+			this.strictLimiter,
+			async (req, res) => {
+				const { text, voice } = req.body;
 
-			if (!text || text.trim().length < 1) {
-				return res.status(400).json({ error: "Texto ausente." });
+				if (!text || text.trim().length < 1) {
+					return res.status(400).json({ error: "Texto ausente." });
+				}
+
+				if (text.length > 1000) {
+					return res.status(400).json({ error: "Texto muito longo (máximo 1000 caracteres)." });
+				}
+
+				const providers = this.serviceProviderService.getProviders("f5tts");
+				if (
+					providers.length === 0 ||
+					(this.lastServicesStatus && this.lastServicesStatus.f5tts === "down")
+				) {
+					return res.status(503).json({ error: "Serviço de TTS não disponível." });
+				}
+
+				const startTime = Date.now();
+
+				try {
+					const f5ttsUrl = providers[0].url || "http://localhost:5050";
+					const f5ttsApiKey = providers[0].apiKey || "";
+					const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
+
+					this.logger.info(
+						`Web request: Gerando TTS com voz ${voice}, texto: '${text.substring(0, 30)}...'${req.apiUser ? ` | User: ${req.apiUser}` : ""}`
+					);
+
+					const audioResponse = await axios({
+						method: "post",
+						url: apiUrl,
+						data: {
+							model: "f5-tts",
+							input: text,
+							voice: voice || "ravena",
+							response_format: "mp3"
+						},
+						headers: {
+							"Content-Type": "application/json",
+							...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
+						},
+						responseType: "arraybuffer"
+					});
+
+					// Track TTS stats
+					try {
+						const processingTime = Date.now() - startTime;
+						const chars = text.length;
+						const words = text.trim().split(/\s+/).length;
+						// Estimate duration based on word count ~150 wpm or mp3 buffer length
+						const durationSec = Math.max(1, words / 2.5);
+
+						await this.database.dbRun(
+							"media_stats",
+							`INSERT INTO speech_generation_stats (timestamp, char_count, word_count, duration_sec, processing_time_ms, api_user) VALUES (?, ?, ?, ?, ?, ?)`,
+							[Date.now(), chars, words, durationSec, processingTime, req.apiUser || null]
+						);
+					} catch (statErr) {
+						this.logger.error("Erro ao salvar estatísticas de TTS Web:", statErr);
+					}
+
+					res.set("Content-Type", "audio/mpeg");
+					res.send(audioResponse.data);
+				} catch (error) {
+					this.logger.error("Erro na API de TTS:", error);
+					res.status(500).json({ error: "Erro ao gerar áudio: " + error.message });
+				}
 			}
-
-			if (text.length > 1000) {
-				return res.status(400).json({ error: "Texto muito longo (máximo 1000 caracteres)." });
-			}
-
-			const providers = this.serviceProviderService.getProviders("f5tts");
-			if (
-				providers.length === 0 ||
-				(this.lastServicesStatus && this.lastServicesStatus.f5tts === "down")
-			) {
-				return res.status(503).json({ error: "Serviço de TTS não disponível." });
-			}
-
-			try {
-				const f5ttsUrl = providers[0].url || "http://localhost:5050";
-				const f5ttsApiKey = providers[0].apiKey || "";
-				const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
-
-				this.logger.info(
-					`Web request: Gerando TTS com voz ${voice}, texto: '${text.substring(0, 30)}...'`
-				);
-
-				const audioResponse = await axios({
-					method: "post",
-					url: apiUrl,
-					data: {
-						model: "f5-tts",
-						input: text,
-						voice: voice || "ravena",
-						response_format: "mp3"
-					},
-					headers: {
-						"Content-Type": "application/json",
-						...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
-					},
-					responseType: "arraybuffer"
-				});
-
-				res.set("Content-Type", "audio/mpeg");
-				res.send(audioResponse.data);
-			} catch (error) {
-				this.logger.error("Erro na API de TTS:", error);
-				res.status(500).json({ error: "Erro ao gerar áudio: " + error.message });
-			}
-		});
+		);
 
 		this.app.get("/api/stt/status/:jobId", (req, res) => {
 			const job = this.sttJobs.get(req.params.jobId);
@@ -1244,22 +1309,27 @@ class BotAPI {
 		});
 
 		// Chat API de Ajuda (LLM Assistant com CommandsHelper)
-		this.app.post("/api/ajuda/chat", this.strictLimiter, async (req, res) => {
-			const { message, sessionId } = req.body;
+		this.app.post(
+			"/api/ajuda/chat",
+			this.externalAuth.requireAccess("llm"),
+			this.strictLimiter,
+			async (req, res) => {
+				const { message, sessionId } = req.body;
 
-			if (!message || message.trim().length < 2) {
-				return res.status(400).json({ error: "Mensagem muito curta ou ausente." });
-			}
+				if (!message || message.trim().length < 2) {
+					return res.status(400).json({ error: "Mensagem muito curta ou ausente." });
+				}
 
-			try {
-				const { askHelp } = require("./functions/Ajuda");
-				const answer = await askHelp(message, sessionId);
-				res.json({ answer });
-			} catch (error) {
-				this.logger.error("Erro na API de ajuda chat:", error);
-				res.status(500).json({ error: error.message });
+				try {
+					const { askHelp } = require("./functions/Ajuda");
+					const answer = await askHelp(message, sessionId, req.apiUser || null);
+					res.json({ answer });
+				} catch (error) {
+					this.logger.error("Erro na API de ajuda chat:", error);
+					res.status(500).json({ error: error.message });
+				}
 			}
-		});
+		);
 
 		// Endpoint para Top Donates
 		this.app.get("/top-donates", async (req, res) => {
@@ -1372,123 +1442,135 @@ class BotAPI {
 		});
 
 		// Endpoint para Status de Todas as Instâncias (HTML)
-		this.app.get(["/instances", "/instances-status", "/bots-status"], authenticateBasic, (req, res) => {
-			const filePath = path.join(__dirname, "../public/instances.html");
-			res.sendFile(filePath);
-		});
+		this.app.get(
+			["/instances", "/instances-status", "/bots-status"],
+			authenticateBasic,
+			(req, res) => {
+				const filePath = path.join(__dirname, "../public/instances.html");
+				res.sendFile(filePath);
+			}
+		);
 
 		// Endpoint para Status de Todas as Instâncias (API)
-		this.app.get(["/api/instances", "/api/instances-status"], authenticateBasic, this.strictLimiter, async (req, res) => {
-			try {
-				const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
-				const recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
-
-				const botReports = {};
-				if (recentReports && Array.isArray(recentReports)) {
-					recentReports.forEach((report) => {
-						if (!botReports[report.botId] || report.timestamp > botReports[report.botId].timestamp) {
-							botReports[report.botId] = report;
-						}
-					});
-				}
-
-				// Busca contagem de grupos no banco
-				let allGroups = [];
+		this.app.get(
+			["/api/instances", "/api/instances-status"],
+			authenticateBasic,
+			this.strictLimiter,
+			async (req, res) => {
 				try {
-					allGroups = await this.database.getGroups();
-				} catch (e) {
-					this.logger.warn("Erro ao buscar grupos para instances API:", e);
-				}
+					const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+					const recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
 
-				const groupsCountMap = {};
-				if (Array.isArray(allGroups)) {
-					allGroups.forEach((g) => {
-						if (g && g.botId) {
-							groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
+					const botReports = {};
+					if (recentReports && Array.isArray(recentReports)) {
+						recentReports.forEach((report) => {
+							if (
+								!botReports[report.botId] ||
+								report.timestamp > botReports[report.botId].timestamp
+							) {
+								botReports[report.botId] = report;
+							}
+						});
+					}
+
+					// Busca contagem de grupos no banco
+					let allGroups = [];
+					try {
+						allGroups = await this.database.getGroups();
+					} catch (e) {
+						this.logger.warn("Erro ao buscar grupos para instances API:", e);
+					}
+
+					const groupsCountMap = {};
+					if (Array.isArray(allGroups)) {
+						allGroups.forEach((g) => {
+							if (g && g.botId) {
+								groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
+							}
+						});
+					}
+
+					// Tenta buscar lista de grupos atualizada para bots WhatsApp conectados com timeout curto
+					const botGroupPromises = this.bots.map(async (bot) => {
+						if (bot.isConnected && typeof bot.listGroups === "function") {
+							try {
+								const groups = await Promise.race([
+									bot.listGroups(),
+									new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1200))
+								]);
+								if (Array.isArray(groups)) {
+									return { botId: bot.id, count: groups.length };
+								}
+							} catch (e) {
+								// fallback para contagem do banco
+							}
 						}
+						return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
+					});
+
+					const resolvedGroupCounts = await Promise.all(botGroupPromises);
+					const finalGroupsCountMap = {};
+					resolvedGroupCounts.forEach((item) => {
+						finalGroupsCountMap[item.botId] = item.count;
+					});
+
+					// Coleta dados de todas as instâncias (incluindo privadas, telegram, discord, etc.)
+					const instances = this.bots.map((bot) => {
+						const report = botReports[bot.id] ?? null;
+						const msgsHr = report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
+						const avgResponseTime =
+							report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
+						const maxResponseTime =
+							report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
+
+						const platform = bot.useTelegram ? "Telegram" : bot.useDiscord ? "Discord" : "WhatsApp";
+
+						return {
+							id: bot.id,
+							name: bot.nomeExibir || bot.id,
+							phoneNumber: bot.phoneNumber || (bot.numero ? String(bot.numero) : null),
+							platform,
+							connected: Boolean(bot.isConnected),
+							privado: Boolean(bot.privado),
+							vip: Boolean(bot.vip),
+							comunitario: Boolean(bot.comunitario),
+							banido: Boolean(bot.banido),
+							ignorePV: Boolean(bot.ignorePV),
+							ignoreInvites: Boolean(bot.ignoreInvites),
+							pvAI: Boolean(bot.pvAI),
+							prefix: bot.prefix || "!",
+							numeroResponsavel: bot.numeroResponsavel || null,
+							supportMsg: bot.supportMsg || null,
+							lastMessageReceived: bot.lastMessageReceived ?? null,
+							msgsHr,
+							responseTime: {
+								avg: avgResponseTime,
+								max: maxResponseTime
+							},
+							groupsCount:
+								finalGroupsCountMap[bot.id] !== undefined
+									? finalGroupsCountMap[bot.id]
+									: groupsCountMap[bot.id] || 0,
+							webhookPort: bot.webhookPort || null,
+							instanceName: bot.instanceName || bot.id
+						};
+					});
+
+					res.json({
+						status: "ok",
+						timestamp: Date.now(),
+						total: instances.length,
+						bots: instances
+					});
+				} catch (error) {
+					this.logger.error("Erro ao buscar status das instâncias:", error);
+					res.status(500).json({
+						status: "error",
+						message: "Erro interno ao buscar status das instâncias"
 					});
 				}
-
-				// Tenta buscar lista de grupos atualizada para bots WhatsApp conectados com timeout curto
-				const botGroupPromises = this.bots.map(async (bot) => {
-					if (bot.isConnected && typeof bot.listGroups === "function") {
-						try {
-							const groups = await Promise.race([
-								bot.listGroups(),
-								new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1200))
-							]);
-							if (Array.isArray(groups)) {
-								return { botId: bot.id, count: groups.length };
-							}
-						} catch (e) {
-							// fallback para contagem do banco
-						}
-					}
-					return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
-				});
-
-				const resolvedGroupCounts = await Promise.all(botGroupPromises);
-				const finalGroupsCountMap = {};
-				resolvedGroupCounts.forEach((item) => {
-					finalGroupsCountMap[item.botId] = item.count;
-				});
-
-				// Coleta dados de todas as instâncias (incluindo privadas, telegram, discord, etc.)
-				const instances = this.bots.map((bot) => {
-					const report = botReports[bot.id] ?? null;
-					const msgsHr = report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
-					const avgResponseTime =
-						report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
-					const maxResponseTime =
-						report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
-
-					const platform = bot.useTelegram ? "Telegram" : bot.useDiscord ? "Discord" : "WhatsApp";
-
-					return {
-						id: bot.id,
-						name: bot.nomeExibir || bot.id,
-						phoneNumber: bot.phoneNumber || (bot.numero ? String(bot.numero) : null),
-						platform,
-						connected: Boolean(bot.isConnected),
-						privado: Boolean(bot.privado),
-						vip: Boolean(bot.vip),
-						comunitario: Boolean(bot.comunitario),
-						banido: Boolean(bot.banido),
-						ignorePV: Boolean(bot.ignorePV),
-						ignoreInvites: Boolean(bot.ignoreInvites),
-						pvAI: Boolean(bot.pvAI),
-						prefix: bot.prefix || "!",
-						numeroResponsavel: bot.numeroResponsavel || null,
-						supportMsg: bot.supportMsg || null,
-						lastMessageReceived: bot.lastMessageReceived ?? null,
-						msgsHr,
-						responseTime: {
-							avg: avgResponseTime,
-							max: maxResponseTime
-						},
-						groupsCount:
-							finalGroupsCountMap[bot.id] !== undefined
-								? finalGroupsCountMap[bot.id]
-								: (groupsCountMap[bot.id] || 0),
-						webhookPort: bot.webhookPort || null,
-						instanceName: bot.instanceName || bot.id
-					};
-				});
-
-				res.json({
-					status: "ok",
-					timestamp: Date.now(),
-					total: instances.length,
-					bots: instances
-				});
-			} catch (error) {
-				this.logger.error("Erro ao buscar status das instâncias:", error);
-				res.status(500).json({
-					status: "error",
-					message: "Erro interno ao buscar status das instâncias"
-				});
 			}
-		});
+		);
 
 		// Endpoint para Top Donates dos últimos 3 meses
 		this.app.get("/recent-top-donates", async (req, res) => {

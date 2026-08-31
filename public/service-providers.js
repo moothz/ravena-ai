@@ -488,6 +488,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const elTotalCost = document.getElementById('stat-total-cost');
         if (elTotalCost) elTotalCost.innerText = '$ ' + totalEstimatedCost.toFixed(2);
+
+        // Render External API Users table
+        const extBody = document.getElementById('external-users-body');
+        if (extBody) {
+            extBody.innerHTML = '';
+            const apiUsers = Object.keys(data.by_api_user || {});
+            if (apiUsers.length === 0) {
+                extBody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #888;">Nenhuma requisição de API externa registrada no período.</td></tr>';
+            } else {
+                apiUsers.forEach(user => {
+                    const uData = data.by_api_user[user] || {};
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-weight: bold; color: #a29bfe;"><i class="fas fa-user-circle"></i> ${user}</td>
+                        <td style="font-weight: bold;">${(uData.total || 0).toLocaleString()}</td>
+                        <td>${(uData.llm || 0).toLocaleString()}</td>
+                        <td>${(uData.image || 0).toLocaleString()}</td>
+                        <td>${(uData.stt || 0).toLocaleString()}</td>
+                        <td>${(uData.tts || 0).toLocaleString()}</td>
+                    `;
+                    extBody.appendChild(tr);
+                });
+            }
+        }
     }
 
     // Auto-refresh stats and queue every 30 seconds

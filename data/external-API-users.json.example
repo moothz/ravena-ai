@@ -1,0 +1,14 @@
+[
+  {
+    "name": "exemplo_usuario",
+    "apiKey": "rav_live_0123456789abcdef0123456789abcdef",
+    "createdAt": 1772450000000,
+    "enabled": true,
+    "rateLimits": {
+      "imagine": 5,
+      "llm": 10,
+      "stt": 10,
+      "tts": 20
+    }
+  }
+]

@@ -50,17 +50,21 @@ class LLMService {
 				request_type TEXT,
 				input_tokens INTEGER,
 				output_tokens INTEGER,
-				is_success INTEGER DEFAULT 1
+				is_success INTEGER DEFAULT 1,
+				api_user TEXT
 			);
 			CREATE INDEX IF NOT EXISTS idx_timestamp ON usage_stats(timestamp);
 			`,
 			true
 		);
 
-		// Migration: Add is_success column if it doesn't exist
+		// Migration: Add is_success and api_user columns if they don't exist
 		try {
 			this.database
 				.dbRun(this.DB_NAME, `ALTER TABLE usage_stats ADD COLUMN is_success INTEGER DEFAULT 1`)
+				.catch(() => {}); // Ignore error if column already exists
+			this.database
+				.dbRun(this.DB_NAME, `ALTER TABLE usage_stats ADD COLUMN api_user TEXT`)
 				.catch(() => {}); // Ignore error if column already exists
 		} catch (e) {
 			// Silent fail on migration error
@@ -1259,10 +1263,11 @@ class LLMService {
 				`[TokenUsage][${provider}] Type: ${requestType} | Model: ${model} | In: ${promptTokens} | Out: ${completionTokens}${timeStr}`
 			);
 
+			const apiUser = options.apiUser || null;
 			try {
 				await this.database.dbRun(
 					this.DB_NAME,
-					`INSERT INTO usage_stats (timestamp, provider, model, request_type, input_tokens, output_tokens, is_success) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					`INSERT INTO usage_stats (timestamp, provider, model, request_type, input_tokens, output_tokens, is_success, api_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 					[
 						Date.now(),
 						provider,
@@ -1270,7 +1275,8 @@ class LLMService {
 						requestType,
 						promptTokens,
 						completionTokens,
-						isSuccess ? 1 : 0
+						isSuccess ? 1 : 0,
+						apiUser
 					]
 				);
 			} catch (e) {
@@ -1278,11 +1284,12 @@ class LLMService {
 			}
 		} else if (!isSuccess) {
 			// Track failure even with 0 tokens
+			const apiUser = options.apiUser || null;
 			try {
 				await this.database.dbRun(
 					this.DB_NAME,
-					`INSERT INTO usage_stats (timestamp, provider, model, request_type, input_tokens, output_tokens, is_success) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-					[Date.now(), provider, model, requestType, 0, 0, 0]
+					`INSERT INTO usage_stats (timestamp, provider, model, request_type, input_tokens, output_tokens, is_success, api_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+					[Date.now(), provider, model, requestType, 0, 0, 0, apiUser]
 				);
 			} catch (e) {
 				this.logger.error("Error saving LLM failure stats:", e);
@@ -1321,16 +1328,40 @@ class LLMService {
 				total_failures: 0,
 				total_input_tokens: 0,
 				total_output_tokens: 0,
+				external_requests: 0,
 				first_record_timestamp: null,
 				by_type: {
-					text: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0 },
-					image: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0 },
-					video: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0 },
-					stt: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0 },
-					tts: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0 }
+					text: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, external: 0 },
+					image: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, external: 0 },
+					video: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, external: 0 },
+					stt: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, external: 0 },
+					tts: { requests: 0, failures: 0, input_tokens: 0, output_tokens: 0, external: 0 }
 				},
-				by_provider: {}
+				by_provider: {},
+				by_api_user: {}
 			};
+
+			// Query external requests breakdown for LLM
+			try {
+				let extQuery =
+					"SELECT api_user, COUNT(*) as count FROM usage_stats WHERE api_user IS NOT NULL";
+				const extParams = [];
+				if (timeframeMs) {
+					extQuery += " AND timestamp > ?";
+					extParams.push(Date.now() - timeframeMs);
+				}
+				extQuery += " GROUP BY api_user";
+				const extRows = await this.database.dbAll(this.DB_NAME, extQuery, extParams);
+				for (const extRow of extRows) {
+					const u = extRow.api_user;
+					if (!stats.by_api_user[u])
+						stats.by_api_user[u] = { total: 0, llm: 0, image: 0, stt: 0, tts: 0 };
+					stats.by_api_user[u].llm += extRow.count || 0;
+					stats.by_api_user[u].total += extRow.count || 0;
+					stats.external_requests += extRow.count || 0;
+					stats.by_type.text.external += extRow.count || 0;
+				}
+			} catch (extErr) {}
 
 			for (const row of rows) {
 				const type = row.request_type || "text";
@@ -1461,6 +1492,32 @@ class LLMService {
 						stats.first_record_timestamp = bonsaiAgg.min_ts;
 					}
 				}
+
+				// Bonsai external users query
+				try {
+					let bonsaiExtQuery =
+						"SELECT api_user, SUM(count) as count FROM bonsai_stats WHERE api_user IS NOT NULL";
+					const bonsaiExtParams = [];
+					if (timeframeMs) {
+						bonsaiExtQuery += " AND timestamp > ?";
+						bonsaiExtParams.push(Date.now() - timeframeMs);
+					}
+					bonsaiExtQuery += " GROUP BY api_user";
+					const bonsaiExtRows = await this.database.dbAll(
+						"bonsai_stats",
+						bonsaiExtQuery,
+						bonsaiExtParams
+					);
+					for (const extRow of bonsaiExtRows) {
+						const u = extRow.api_user;
+						if (!stats.by_api_user[u])
+							stats.by_api_user[u] = { total: 0, llm: 0, image: 0, stt: 0, tts: 0 };
+						stats.by_api_user[u].image += extRow.count || 0;
+						stats.by_api_user[u].total += extRow.count || 0;
+						stats.external_requests += extRow.count || 0;
+						stats.by_type.image.external += extRow.count || 0;
+					}
+				} catch (e) {}
 			} catch (bonsaiErr) {
 				this.logger.error("Error getting Bonsai stats:", bonsaiErr);
 			}
@@ -1559,6 +1616,28 @@ class LLMService {
 					}
 				}
 
+				// STT external users query
+				try {
+					let sttExtQuery =
+						"SELECT api_user, COUNT(*) as count FROM speech_transcription_stats WHERE api_user IS NOT NULL";
+					const sttExtParams = [];
+					if (timeframeMs) {
+						sttExtQuery += " AND timestamp > ?";
+						sttExtParams.push(Date.now() - timeframeMs);
+					}
+					sttExtQuery += " GROUP BY api_user";
+					const sttExtRows = await this.database.dbAll("media_stats", sttExtQuery, sttExtParams);
+					for (const extRow of sttExtRows) {
+						const u = extRow.api_user;
+						if (!stats.by_api_user[u])
+							stats.by_api_user[u] = { total: 0, llm: 0, image: 0, stt: 0, tts: 0 };
+						stats.by_api_user[u].stt += extRow.count || 0;
+						stats.by_api_user[u].total += extRow.count || 0;
+						stats.external_requests += extRow.count || 0;
+						stats.by_type.stt.external += extRow.count || 0;
+					}
+				} catch (e) {}
+
 				// TTS Stats
 				const ttsAgg = await this.database.dbGet(
 					"media_stats",
@@ -1600,6 +1679,28 @@ class LLMService {
 						stats.first_record_timestamp = ttsAgg.min_ts;
 					}
 				}
+
+				// TTS external users query
+				try {
+					let ttsExtQuery =
+						"SELECT api_user, COUNT(*) as count FROM speech_generation_stats WHERE api_user IS NOT NULL";
+					const ttsExtParams = [];
+					if (timeframeMs) {
+						ttsExtQuery += " AND timestamp > ?";
+						ttsExtParams.push(Date.now() - timeframeMs);
+					}
+					ttsExtQuery += " GROUP BY api_user";
+					const ttsExtRows = await this.database.dbAll("media_stats", ttsExtQuery, ttsExtParams);
+					for (const extRow of ttsExtRows) {
+						const u = extRow.api_user;
+						if (!stats.by_api_user[u])
+							stats.by_api_user[u] = { total: 0, llm: 0, image: 0, stt: 0, tts: 0 };
+						stats.by_api_user[u].tts += extRow.count || 0;
+						stats.by_api_user[u].total += extRow.count || 0;
+						stats.external_requests += extRow.count || 0;
+						stats.by_type.tts.external += extRow.count || 0;
+					}
+				} catch (e) {}
 			} catch (speechErr) {
 				this.logger.error("Error getting optimized speech stats:", speechErr);
 			}

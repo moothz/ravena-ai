@@ -26,16 +26,18 @@ database.getSQLiteDb(
         resolution TEXT,
         count INTEGER DEFAULT 1,
         model TEXT,
-        is_success INTEGER DEFAULT 1
+        is_success INTEGER DEFAULT 1,
+        api_user TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_bonsai_ts ON bonsai_stats(timestamp);
 `
 );
 
-// Migration for existing databases without is_success column
+// Migration for existing databases without is_success or api_user column
 database
 	.dbRun("bonsai_stats", `ALTER TABLE bonsai_stats ADD COLUMN is_success INTEGER DEFAULT 1`)
 	.catch(() => {});
+database.dbRun("bonsai_stats", `ALTER TABLE bonsai_stats ADD COLUMN api_user TEXT`).catch(() => {});
 
 /**
  * Tracks Bonsai usage stats
@@ -43,18 +45,20 @@ database
  * @param {number} count - Number of images generated
  * @param {string} model - Model used
  * @param {boolean} isSuccess - Whether generation succeeded
+ * @param {string|null} apiUser - External API user if applicable
  */
 async function trackBonsaiStats(
 	resolution = "1024x1024",
 	count = 1,
 	model = "bonsai-ternary",
-	isSuccess = true
+	isSuccess = true,
+	apiUser = null
 ) {
 	try {
 		await database.dbRun(
 			"bonsai_stats",
-			`INSERT INTO bonsai_stats (timestamp, resolution, count, model, is_success) VALUES (?, ?, ?, ?, ?)`,
-			[Date.now(), resolution, count, model, isSuccess ? 1 : 0]
+			`INSERT INTO bonsai_stats (timestamp, resolution, count, model, is_success, api_user) VALUES (?, ?, ?, ?, ?, ?)`,
+			[Date.now(), resolution, count, model, isSuccess ? 1 : 0, apiUser]
 		);
 	} catch (e) {
 		logger.error("Error tracking bonsai stats:", e);

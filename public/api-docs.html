@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentação da API - RavenaBot</title>
+    <link rel="stylesheet" href="/management.css?v=15">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        body {
+            background-color: #0f111a;
+            color: #e1e7ec;
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .docs-container {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px 60px;
+        }
+        .docs-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 25px;
+            margin-bottom: 30px;
+        }
+        .docs-title {
+            font-size: 2.2em;
+            font-weight: 700;
+            color: #fff;
+            margin: 0 0 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .docs-title i {
+            color: #a29bfe;
+        }
+        .docs-subtitle {
+            color: #a0aec0;
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .auth-card {
+            background: linear-gradient(135deg, rgba(108, 92, 231, 0.15), rgba(116, 185, 255, 0.05));
+            border: 1px solid rgba(108, 92, 231, 0.3);
+            border-radius: 10px;
+            padding: 20px 25px;
+            margin-bottom: 35px;
+        }
+        .auth-card h3 {
+            margin-top: 0;
+            color: #a29bfe;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .endpoint-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            margin-bottom: 25px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .endpoint-card:hover {
+            border-color: rgba(162, 155, 254, 0.4);
+        }
+        .endpoint-header {
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            flex-wrap: wrap;
+        }
+        .method-badge {
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+        .method-post {
+            background: #27ae60;
+            color: #fff;
+        }
+        .method-get {
+            background: #2980b9;
+            color: #fff;
+        }
+        .endpoint-path {
+            font-family: 'Fira Code', monospace;
+            font-size: 1.1em;
+            font-weight: 500;
+            color: #fff;
+        }
+        .endpoint-rate {
+            margin-left: auto;
+            font-size: 0.85em;
+            color: #f39c12;
+            background: rgba(243, 156, 18, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid rgba(243, 156, 18, 0.3);
+        }
+        .endpoint-body {
+            padding: 20px;
+        }
+        .endpoint-desc {
+            color: #cbd5e0;
+            margin-top: 0;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        .code-box {
+            background: #090a0f;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9em;
+            color: #81ecec;
+            overflow-x: auto;
+            margin-bottom: 15px;
+            position: relative;
+        }
+        .section-label {
+            font-weight: 600;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #a0aec0;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="docs-container">
+        <header class="docs-header">
+            <h1 class="docs-title"><i class="fas fa-book"></i> Documentação da API - RavenaBot</h1>
+            <p class="docs-subtitle">
+                Guia de referência para integração direta com os serviços de Inteligência Artificial, Síntese de Voz, Transcrição e Assistente do RavenaBot.
+            </p>
+        </header>
+
+        <section class="auth-card">
+            <h3><i class="fas fa-shield-alt"></i> Autenticação e Rate Limits</h3>
+            <p>
+                As requisições que partem do <strong>próprio domínio web do bot</strong> possuem acesso liberado pelo navegador.
+                Requisições de <strong>APIs externas, scripts ou clientes remotos</strong> devem incluir a chave de API em um dos seguintes cabeçalhos HTTP:
+            </p>
+            <div class="code-box">
+Header: X-API-Key: rav_live_sua_chave_aqui
+<!-- OU -->
+Header: Authorization: Bearer rav_live_sua_chave_aqui
+            </div>
+            <p style="margin-bottom: 0; font-size: 0.95em; color: #a0aec0;">
+                <i class="fas fa-info-circle"></i> O rate limit é reiniciado a cada 60 segundos. Os cabeçalhos de resposta <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code> e <code>X-RateLimit-Reset</code> informam o consumo restante.
+            </p>
+        </section>
+
+        <!-- 1. Imagine -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-post">POST</span>
+                <span class="endpoint-path">/api/imagine/generate</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 5 req / min</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Gera uma imagem de alta qualidade através do pipeline Bonsai SDXL.</p>
+                <div class="section-label">Request Body (JSON)</div>
+                <div class="code-box">
+{
+  "prompt": "um corvo gótico sobrevoando uma floresta mágica e sombria"
+}
+                </div>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/imagine/generate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: SUA_CHAVE_API" \
+  -d '{"prompt": "gato cibernético neon"}' \
+  --output imagem.jpg
+                </div>
+                <div class="section-label">Resposta</div>
+                <p style="color: #a0aec0; margin: 0;">Buffer binário da imagem JPEG (<code>image/jpeg</code>) em resolução 1024x1024.</p>
+            </div>
+        </div>
+
+        <!-- 2. TTS -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-post">POST</span>
+                <span class="endpoint-path">/api/tts/generate</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 20 req / min</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Sintetiza texto em fala humana natural (F5-TTS).</p>
+                <div class="section-label">Request Body (JSON)</div>
+                <div class="code-box">
+{
+  "text": "Olá! Esta é uma demonstração de síntese de voz da Ravena.",
+  "voice": "ravena" // Opcional: "ravena", "rubao", "mulher", "homem", "carioca", "narrador"
+}
+                </div>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/tts/generate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: SUA_CHAVE_API" \
+  -d '{"text": "Bom dia a todos!", "voice": "ravena"}' \
+  --output audio.mp3
+                </div>
+                <div class="section-label">Resposta</div>
+                <p style="color: #a0aec0; margin: 0;">Áudio MP3 (<code>audio/mpeg</code>).</p>
+            </div>
+        </div>
+
+        <!-- 3. STT -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-post">POST</span>
+                <span class="endpoint-path">/api/stt/transcrever</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 10 req / min</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Envia arquivo de áudio ou vídeo para transcrição assíncrona (Whisper).</p>
+                <div class="section-label">Request (multipart/form-data)</div>
+                <div class="code-box">
+Campo: "audio" (Arquivo de áudio/vídeo, máx 50MB)
+                </div>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/stt/transcrever \
+  -H "X-API-Key: SUA_CHAVE_API" \
+  -F "audio=@gravacao.ogg"
+                </div>
+                <div class="section-label">Resposta</div>
+                <div class="code-box">
+{
+  "jobId": "c56a4180-65aa-42ec-a945-5fd21dec0538"
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. STT Status -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-get">GET</span>
+                <span class="endpoint-path">/api/stt/status/:jobId</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Consultas de Status</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Consulta o status de processamento e o resultado de uma transcrição STT.</p>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl https://ravena.moothz.win/api/stt/status/c56a4180-65aa-42ec-a945-5fd21dec0538
+                </div>
+                <div class="section-label">Resposta</div>
+                <div class="code-box">
+{
+  "id": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "status": "complete", // "starting" | "transcribing" | "complete" | "error"
+  "result": "Texto transcrito com precisão da gravação de áudio.",
+  "estimatedTime": 2
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. Ajuda / Chat LLM -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-post">POST</span>
+                <span class="endpoint-path">/api/ajuda/chat</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 10 req / min</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Envia perguntas e instruções para o LLM com contexto da Ravena e ferramentas integradas.</p>
+                <div class="section-label">Request Body (JSON)</div>
+                <div class="code-box">
+{
+  "message": "Como funciona o sistema de pescaria?",
+  "sessionId": "opcional_id_de_sessao"
+}
+                </div>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/ajuda/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: SUA_CHAVE_API" \
+  -d '{"message": "Quais são os comandos de administração?"}'
+                </div>
+                <div class="section-label">Resposta</div>
+                <div class="code-box">
+{
+  "answer": "Os comandos de administração iniciam com `!g-` como `!g-painel`, `!g-addCmd`..."
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. Status dos Serviços -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-get">GET</span>
+                <span class="endpoint-path">/api/services/status</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Monitoramento</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Retorna o status em tempo real dos serviços (whisper, imagine, f5tts, llm).</p>
+                <div class="section-label">Resposta</div>
+                <div class="code-box">
+{
+  "whisper": "up",
+  "imagine": "up",
+  "f5tts": "up",
+  "llm": "up"
+}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

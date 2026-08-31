@@ -1,11 +1,19 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
-# Suporte para argumentos posicionais no comando make recover_sql
+# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user
 ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),add-api-user)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),del-api-user)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
@@ -171,6 +179,19 @@ test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick 
 
 test-providers: ## Testa todos os provedores de IA do service-providers.json
 	@node test-providers.js
+
+add-api-user: ## Cadastra um novo usuário de API externa (Uso: make add-api-user <nome>)
+	@USER_NAME="$(RUN_ARGS)"; \
+	if [ -z "$$USER_NAME" ]; then USER_NAME="$(USER)"; fi; \
+	node manage-api-users.js add "$$USER_NAME"
+
+del-api-user: ## Remove um usuário de API externa (Uso: make del-api-user <nome>)
+	@USER_NAME="$(RUN_ARGS)"; \
+	if [ -z "$$USER_NAME" ]; then USER_NAME="$(USER)"; fi; \
+	node manage-api-users.js del "$$USER_NAME"
+
+list-api-users: ## Lista usuários de API externa cadastrados
+	@node manage-api-users.js list
 
 regenerate-rarefish: ## Regenera imagens de capturas raras perdidas ou placeholders
 	docker compose exec ravena-ai node regenerate-rarefish.js

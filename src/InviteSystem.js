@@ -302,9 +302,7 @@ CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
 Seja exigente: em caso de dúvida, falta de clareza ou risco potencial, recuse (should_auto_accept: false).
 Responda APENAS com um objeto JSON no formato especificado.`;
 
-			const donorInfo = isDonator
-				? `Sim (💸 R$${donateValue} 💰)`
-				: "Não";
+			const donorInfo = isDonator ? `Sim (💸 R$${donateValue} 💰)` : "Não";
 
 			const prompt = `Analise a solicitação de convite abaixo:
 

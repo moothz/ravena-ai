@@ -42,9 +42,10 @@ async function loadBaseContext() {
  * Processa perguntas de ajuda e dúvidas sobre o bot usando o LLMService com tool calling (commands_helper)
  * @param {string} question - Pergunta do usuário
  * @param {string} [sessionId] - ID de sessão opcional (para chat web ou contexto por chat)
+ * @param {string|null} [apiUser] - Nome de usuário de API externa opcional
  * @returns {Promise<string>} - Resposta gerada pela IA
  */
-async function askHelp(question, sessionId = null) {
+async function askHelp(question, sessionId = null, apiUser = null) {
 	if (!question || typeof question !== "string" || question.trim().length < 2) {
 		return "O que você gostaria de saber? Exemplo: !ajuda como criar comandos personalizados ou !ajuda como funciona a pescaria";
 	}
@@ -62,14 +63,17 @@ async function askHelp(question, sessionId = null) {
 5. Se for uma dúvida de gerenciamento de grupo, lembre que comandos iniciados em !g- são apenas para administradores e mencione o painel web (!g-painel).`;
 
 	try {
-		logger.info(`[Ajuda] Processando dúvida (Session: ${sessionId || "direct"}): "${question}"`);
+		logger.info(
+			`[Ajuda] Processando dúvida (Session: ${sessionId || "direct"}${apiUser ? ` | User: ${apiUser}` : ""}): "${question}"`
+		);
 
 		const response = await llmService.getCompletion({
 			prompt: question.trim(),
 			systemContext,
 			toolCalling: true,
 			temperature: 0.4,
-			priority: 5
+			priority: 5,
+			apiUser
 		});
 
 		if (!response || typeof response !== "string" || response.trim().length === 0) {
