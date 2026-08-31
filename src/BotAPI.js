@@ -138,6 +138,15 @@ class BotAPI {
 		// Configura rotas
 		this.setupRoutes();
 
+		// Entrega da interface Desktop OS (/os)
+		this.app.use(
+			"/os",
+			express.static(path.join(__dirname, "../public/os"), {
+				maxAge: "1d",
+				etag: true
+			})
+		);
+
 		// Entrega de arquivos estáticos com cache de 1 dia e ETag
 		this.app.use(
 			express.static(path.join(__dirname, "../public"), {
@@ -683,7 +692,7 @@ class BotAPI {
 				}
 
 				// Adiciona doação ao banco de dados
-				const donationTotal = await this.database.addDonation(nome, valor);
+				const donationTotal = await this.database.addDonation(nome, valor, undefined, msg);
 
 				// Notifica grupos sobre a doação
 				await this.notifyGroupsAboutDonation(nome, valor, msg, donationTotal);
@@ -1350,6 +1359,36 @@ class BotAPI {
 					this.logger.error("Erro ao ler ou processar o arquivo de doações:", error);
 					res.status(500).json({ error: "Erro interno ao buscar doações" });
 				}
+			}
+		});
+
+		// Endpoint para detalhes de doações de um doador específico
+		this.app.get("/api/donates/detail/:name", this.strictLimiter, async (req, res) => {
+			try {
+				const name = req.params.name;
+				if (!name) {
+					return res.status(400).json({ error: "Nome não informado" });
+				}
+
+				const donor = await this.database.getDonorByName(name);
+				if (!donor) {
+					return res.status(404).json({ error: "Doador não encontrado" });
+				}
+
+				// Retorna nome, total e histórico sem expor o número de telefone
+				res.json({
+					nome: donor.nome,
+					valor: donor.valor,
+					timestamp: donor.timestamp,
+					historico: (donor.historico || []).map((h) => ({
+						ts: h.ts,
+						valor: h.valor,
+						msg: h.msg || ""
+					}))
+				});
+			} catch (error) {
+				this.logger.error("Erro ao buscar detalhes do doador:", error);
+				res.status(500).json({ error: "Erro interno ao buscar detalhes do doador" });
 			}
 		});
 

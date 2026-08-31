@@ -455,6 +455,20 @@ class CoreRepository {
 		}
 	}
 
+	async getDonorByName(name) {
+		try {
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+				[name]
+			);
+			return row ? DonationMapper.fromRow(row) : null;
+		} catch (error) {
+			this.logger.error("Error getting donor by name:", error);
+			return null;
+		}
+	}
+
 	async saveDonations(donations) {
 		try {
 			this.mappers.transaction(this.DB, () => {
@@ -475,7 +489,7 @@ class CoreRepository {
 		}
 	}
 
-	async addDonation(name, amount, numero = undefined) {
+	async addDonation(name, amount, numero = undefined, message = "") {
 		try {
 			const row = this.mappers.get(
 				this.DB,
@@ -485,7 +499,7 @@ class CoreRepository {
 
 			let donor;
 			const now = Date.now();
-			const historyEntry = { ts: now, valor: amount };
+			const historyEntry = { ts: now, valor: amount, msg: message || "" };
 			let donationTotal;
 
 			if (row) {

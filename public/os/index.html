@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RavenaBot — Desktop OS</title>
+    
+    <!-- Meta Tags para Link Preview -->
+    <meta name="description" content="RavenaBot Desktop OS — O dashboard retrofuturista da sua botinha no zap">
+    <meta name="author" content="moothz">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://ravena.moothz.win/os/">
+    <meta property="og:title" content="RavenaBot - Desktop OS">
+    <meta property="og:description" content="O dashboard retrofuturista da sua botinha no zap">
+    <meta property="og:image" content="https://ravena.moothz.win/android-chrome-512x512.png">
+    <meta property="og:site_name" content="RavenaBot">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- WinBox Vendor CSS -->
+    <link rel="stylesheet" href="vendor/winbox.min.css">
+    
+    <!-- App CSS Files -->
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/desktop.css">
+    <link rel="stylesheet" href="css/taskbar.css">
+    <link rel="stylesheet" href="css/windows.css">
+    <link rel="stylesheet" href="css/context-menu.css">
+    <link rel="stylesheet" href="css/mobile.css">
+    
+    <!-- Favicons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <!-- Matrix Animated Background -->
+    <canvas id="matrix-bg"></canvas>
+
+    <!-- Desktop Icons & Windows Container -->
+    <div id="desktop" class="desktop"></div>
+
+    <!-- Mobile Responsive Application Container -->
+    <div id="mobile-app" class="mobile-app hidden"></div>
+
+    <!-- Global System Context Menu -->
+    <div id="context-menu" class="context-menu hidden"></div>
+
+    <!-- Desktop Taskbar -->
+    <div id="taskbar" class="taskbar">
+        <!-- Start Button -->
+        <button id="start-btn" class="start-btn" title="Menu Iniciar da RavenaBot">
+            <img src="img/raven-silhouette.svg" alt="Ravena" class="start-icon">
+            <span>Iniciar</span>
+        </button>
+
+        <!-- Open Windows Tabs -->
+        <div id="taskbar-windows" class="taskbar-windows"></div>
+
+        <!-- Taskbar Widgets -->
+        <div id="taskbar-widgets" class="taskbar-widgets">
+            <!-- Widget: Real-time Message Rate -->
+            <div id="widget-msgs" class="widget-msgs" title="Clique para abrir o mensagímetro">
+                <i class="fas fa-gauge-high"></i>
+                <span id="widget-msgs-value">0 msgs/h</span>
+            </div>
+
+            <!-- Widget: Donators Ticker -->
+            <div id="widget-donates" class="widget-donates" title="Apoiadores da Ravena">
+                <span id="widget-donates-text">Carregando doadores...</span>
+            </div>
+
+            <!-- Traybar: Microservices Health -->
+            <div id="traybar" class="traybar">
+                <div class="tray-icon tray-unknown" id="tray-whatsgoapi" title="WhatsGo API — Verificando...">
+                    <i class="fab fa-whatsapp"></i>
+                </div>
+                <div class="tray-icon tray-unknown" id="tray-imagine" title="Imagine (Bonsai) — Verificando...">
+                    <i class="fas fa-image"></i>
+                </div>
+                <div class="tray-icon tray-unknown" id="tray-llm" title="LLM (IA) — Verificando...">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="tray-icon tray-unknown" id="tray-whisper" title="Whisper (STT) — Verificando...">
+                    <i class="fas fa-microphone"></i>
+                </div>
+                <div class="tray-icon tray-unknown" id="tray-f5tts" title="F5-TTS (Voz) — Verificando...">
+                    <i class="fas fa-volume-high"></i>
+                </div>
+            </div>
+
+            <!-- Digital Clock -->
+            <div id="taskbar-clock" class="taskbar-clock">
+                <span id="clock-time">--:--</span>
+                <span id="clock-date">--/--/----</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Menu Popup -->
+    <div id="start-menu" class="start-menu hidden">
+        <div class="start-menu-sidebar">
+            <span class="start-menu-brand">RavenaBot</span>
+        </div>
+        <div class="start-menu-content">
+            <div id="start-menu-items" class="start-menu-items"></div>
+            <div class="start-menu-footer">
+                <span>ravena.moothz.win</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vendor Scripts -->
+    <script src="vendor/winbox.bundle.min.js"></script>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+
+    <!-- App Utilities & Core -->
+    <script src="js/utils/formatters.js"></script>
+    <script src="js/utils/api.js"></script>
+    <script src="js/utils/trail.js"></script>
+    <script src="js/context-menu.js"></script>
+    <script src="js/window-manager.js"></script>
+
+    <!-- Window Modules -->
+    <script src="js/windows/status.js"></script>
+    <script src="js/windows/status-detail.js"></script>
+    <script src="js/windows/donations.js"></script>
+    <script src="js/windows/community.js"></script>
+    <script src="js/windows/statistics.js"></script>
+    <script src="js/windows/help.js"></script>
+    <script src="js/windows/imagine.js"></script>
+    <script src="js/windows/tts.js"></script>
+    <script src="js/windows/stt.js"></script>
+    <script src="js/windows/fishing.js"></script>
+    <script src="js/windows/invite.js"></script>
+    <script src="js/windows/speedometer.js"></script>
+
+    <!-- Desktop, Taskbar, Mobile & Main App -->
+    <script src="js/desktop.js"></script>
+    <script src="js/taskbar.js"></script>
+    <script src="js/mobile.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

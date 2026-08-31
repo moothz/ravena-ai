@@ -1,0 +1,58 @@
+/* context-menu.css - Retro System Context Menu */
+
+.context-menu {
+    position: fixed;
+    min-width: 170px;
+    background: #110d29;
+    border: 2px solid var(--bright-blue);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.9), 0 0 10px rgba(4, 169, 240, 0.3);
+    padding: 4px 0;
+    z-index: 200000;
+    font-family: var(--font-mono);
+    user-select: none;
+}
+
+.ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #e0e0ee;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.ctx-item:hover {
+    background: linear-gradient(90deg, var(--bright-blue) 0%, var(--medium-purple) 100%);
+    color: #ffffff;
+}
+
+.ctx-item.ctx-bold {
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.ctx-item i {
+    width: 16px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bright-blue);
+}
+
+.ctx-item:hover i {
+    color: #ffffff;
+}
+
+.ctx-no-icon {
+    width: 16px;
+}
+
+.ctx-separator {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--medium-gray), transparent);
+    margin: 4px 6px;
+}

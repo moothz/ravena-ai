@@ -582,6 +582,9 @@ class Database {
 	async getDonations() {
 		return this.coreRepo.getDonations();
 	}
+	async getDonorByName(name) {
+		return this.coreRepo.getDonorByName(name);
+	}
 	async saveDonations(donations) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] saveDonations() bloqueado");
@@ -590,13 +593,13 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.saveDonations(donations);
 	}
-	async addDonation(name, amount, numero = undefined) {
+	async addDonation(name, amount, numero = undefined, message = "") {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] addDonation() bloqueado");
 			return true;
 		}
 		this.triggerBackupStart();
-		return this.coreRepo.addDonation(name, amount, numero);
+		return this.coreRepo.addDonation(name, amount, numero, message);
 	}
 	async updateDonorNumber(name, numero) {
 		if (this.testMode) {

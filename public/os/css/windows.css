@@ -1,0 +1,854 @@
+/* windows.css - WinBox Theme Override and Window Content Styling */
+
+/* WinBox Theme Override */
+.winbox.os-window {
+    background: linear-gradient(180deg, var(--medium-purple) 0%, var(--dark-purple) 100%) !important;
+    border: 2px solid var(--bright-blue) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.85), 0 0 15px rgba(4, 169, 240, 0.3) !important;
+    font-family: var(--font-mono) !important;
+    overflow: hidden;
+    transition: filter 0.25s ease, opacity 0.25s ease, border-color 0.2s ease !important;
+}
+
+/* Background/Unfocused Windows: Lose 75% saturation and slight opacity */
+.winbox.os-window:not(.focus) {
+    filter: saturate(0.25) opacity(0.85) !important;
+    border-color: rgba(71, 72, 108, 0.7) !important;
+}
+
+.winbox.os-window.focus {
+    filter: saturate(1) opacity(1) !important;
+    border-color: var(--cyan-neon) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.95), 0 0 25px rgba(0, 240, 255, 0.4) !important;
+}
+
+/* Titlebar */
+.winbox.os-window .wb-header {
+    height: 30px !important;
+    background: linear-gradient(180deg, #37118f 0%, #1c0558 100%) !important;
+    border-bottom: 1px solid var(--bright-blue) !important;
+    padding: 0 6px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+.winbox.os-window:not(.focus) .wb-header {
+    background: linear-gradient(180deg, #24223d 0%, #141324 100%) !important;
+    border-bottom-color: #3b3c58 !important;
+}
+
+.winbox.os-window .wb-title {
+    font-family: var(--font-display) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9) !important;
+    letter-spacing: 0.5px;
+    padding-left: 4px;
+    flex: 1 !important;
+}
+
+.winbox.os-window .wb-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+}
+
+/* Control Buttons (Min, Max, Close) */
+.winbox.os-window .wb-control {
+    width: 20px !important;
+    height: 20px !important;
+    margin: 0 2px !important;
+    border-radius: 3px !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    color: #ffffff !important;
+    font-family: var(--font-mono) !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    text-align: center !important;
+    transition: all 0.12s ease !important;
+    background-image: none !important;
+}
+
+/* Minimize Button */
+.winbox.os-window .wb-min::before {
+    content: "−";
+    font-size: 14px;
+    line-height: 1;
+    display: block;
+}
+
+/* Maximize Button */
+.winbox.os-window .wb-max::before {
+    content: "□";
+    font-size: 11px;
+    line-height: 1;
+    display: block;
+}
+
+/* Close Button */
+.winbox.os-window .wb-close::before {
+    content: "✕";
+    font-size: 11px;
+    line-height: 1;
+    display: block;
+}
+
+.winbox.os-window .wb-min:hover {
+    background: rgba(246, 173, 85, 0.8) !important;
+    border-color: #f6ad55 !important;
+    color: #ffffff !important;
+}
+
+.winbox.os-window .wb-max:hover {
+    background: rgba(4, 169, 240, 0.8) !important;
+    border-color: var(--bright-blue) !important;
+    color: #ffffff !important;
+}
+
+.winbox.os-window .wb-close:hover {
+    background: rgba(229, 62, 62, 0.9) !important;
+    border-color: #e53e3e !important;
+    color: #ffffff !important;
+}
+
+/* Body Area */
+.winbox.os-window .wb-body {
+    background: var(--dark-bg) !important;
+    color: var(--light-gray) !important;
+    font-family: var(--font-mono) !important;
+    padding: 12px !important;
+    overflow-y: auto !important;
+    user-select: text;
+}
+
+/* Separator */
+.win-xp-separator {
+    border: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--medium-gray), transparent);
+    margin: 14px 0;
+}
+
+/* Common Buttons & Inputs in Windows */
+.os-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: linear-gradient(180deg, var(--medium-purple) 0%, var(--dark-purple) 100%);
+    border: 1px solid var(--bright-blue);
+    border-radius: 4px;
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.os-btn:hover {
+    background: linear-gradient(180deg, var(--bright-blue) 0%, var(--medium-purple) 100%);
+    box-shadow: 0 0 10px rgba(4, 169, 240, 0.5);
+    color: #ffffff;
+}
+
+.os-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+.os-input, .os-textarea, .os-select {
+    width: 100%;
+    background: #0e0d1e;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.os-input:focus, .os-textarea:focus, .os-select:focus {
+    border-color: var(--bright-blue);
+    box-shadow: 0 0 6px rgba(4, 169, 240, 0.4);
+}
+
+/* ========================================================
+   1. STATUS DAS RAVENAS (Disk View)
+   ======================================================== */
+.meu-computador {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.drive-category {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.drive-category-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bright-blue);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.drive-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+}
+
+.drive-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    background: #110d29;
+    border: 1px solid rgba(4, 169, 240, 0.25);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.drive-item:hover {
+    background: #191438;
+    border-color: var(--bright-blue);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(4, 169, 240, 0.2);
+}
+
+.drive-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid var(--bright-blue);
+    flex-shrink: 0;
+    background: #090714;
+}
+
+.drive-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.drive-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot.status-green   { background: var(--status-green); box-shadow: 0 0 5px var(--status-green); }
+.status-dot.status-yellow  { background: var(--status-yellow); box-shadow: 0 0 5px var(--status-yellow); }
+.status-dot.status-red     { background: var(--status-red); box-shadow: 0 0 5px var(--status-red); }
+.status-dot.disconnected   { background: var(--status-gray); }
+.status-dot.banned         { background: #990000; box-shadow: 0 0 4px #990000; }
+
+.drive-bar {
+    position: relative;
+    width: 100%;
+    height: 16px;
+    background: #090714;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.drive-bar-fill {
+    height: 100%;
+    transition: width 0.4s ease, background 0.4s ease;
+}
+
+.drive-bar-text {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 1px 1px 2px #000000;
+    pointer-events: none;
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.drive-item.drive-offline .drive-icon {
+    filter: grayscale(1) opacity(0.5);
+}
+
+.drive-item.drive-offline .drive-bar-fill {
+    background: #2a2a38 !important;
+}
+
+.drive-item.drive-offline .bar-text-offline {
+    color: #ff4d4d;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* ========================================================
+   2. STATUS DETAIL WINDOW
+   ======================================================== */
+.bot-detail-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.bot-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    background: #110d29;
+    border-radius: 6px;
+    border: 1px solid var(--win-border-subtle);
+}
+
+.bot-detail-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    border: 2px solid var(--bright-blue);
+    object-fit: cover;
+}
+
+.bot-detail-title h2 {
+    font-size: 16px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bot-detail-title p {
+    font-size: 11px;
+    color: var(--light-gray);
+    margin-top: 2px;
+}
+
+.bot-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.detail-card {
+    padding: 8px 12px;
+    background: #0e0d1e;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 4px;
+}
+
+.detail-card-label {
+    font-size: 10px;
+    color: #8888aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-card-value {
+    font-size: 13px;
+    color: #ffffff;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+/* ========================================================
+   3. DOAÇÕES WINDOW (Explorer Details Table)
+   ======================================================== */
+.donations-window {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.donations-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.donations-meta {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gold-color);
+}
+
+.explorer-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    text-align: left;
+}
+
+.explorer-table th {
+    background: #141030;
+    color: var(--bright-blue);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--win-border-subtle);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+
+.explorer-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: #d0d0e0;
+}
+
+.explorer-table tr.donation-row {
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.explorer-table tr.donation-row:hover {
+    background: rgba(4, 169, 240, 0.15);
+    color: #ffffff;
+}
+
+.col-rank { width: 35px; text-align: center; }
+.col-icon { width: 30px; text-align: center; }
+.col-value { font-weight: 600; color: var(--gold-color) !important; }
+
+/* Donor detail dialog */
+.donor-entry {
+    padding: 8px 10px;
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+
+.donor-entry-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--gold-color);
+    font-weight: 600;
+}
+
+.donor-entry-msg {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #ffffff;
+    background: #090714;
+    padding: 6px 8px;
+    border-radius: 3px;
+    border-left: 2px solid var(--bright-blue);
+    font-style: italic;
+}
+
+/* ========================================================
+   4. ESTATÍSTICAS WINDOW
+   ======================================================== */
+.stats-window {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.stats-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    background: #110d29;
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.stats-table th, .stats-table td {
+    padding: 8px 10px;
+    text-align: right;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stats-table th:first-child, .stats-table td:first-child {
+    text-align: left;
+}
+
+.stats-table th {
+    background: #141030;
+    color: var(--bright-blue);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.stats-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.chart-box {
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    padding: 10px;
+    min-height: 220px;
+}
+
+.chart-box-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--bright-blue);
+    margin-bottom: 6px;
+}
+
+/* ========================================================
+   5. COMUNIDADE WINDOW
+   ======================================================== */
+.community-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+    padding: 10px;
+}
+
+.community-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    padding: 14px 10px;
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--light-gray);
+    transition: all 0.15s ease;
+}
+
+.community-card:hover {
+    background: #1a143d;
+    border-color: var(--bright-blue);
+    transform: translateY(-2px);
+    color: #ffffff;
+}
+
+.community-card i, .community-card img {
+    font-size: 32px;
+    width: 42px;
+    height: 42px;
+    object-fit: cover;
+    border-radius: 6px;
+    color: var(--bright-blue);
+}
+
+.community-card span {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ========================================================
+   6. AJUDA (Chat LLM)
+   ======================================================== */
+.chat-window {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 10px;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.chat-msg {
+    max-width: 85%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.chat-msg.msg-bot {
+    align-self: flex-start;
+    background: #141030;
+    border: 1px solid var(--win-border-subtle);
+    color: #e0e0ee;
+}
+
+.chat-msg.msg-user {
+    align-self: flex-end;
+    background: rgba(4, 169, 240, 0.25);
+    border: 1px solid var(--bright-blue);
+    color: #ffffff;
+}
+
+.chat-input-area {
+    display: flex;
+    gap: 8px;
+}
+
+/* ========================================================
+   7. IMAGINE / TTS / STT WINDOWS
+   ======================================================== */
+.ai-tool-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ai-preview-box {
+    min-height: 180px;
+    background: #090714;
+    border: 1px dashed var(--win-border-subtle);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.ai-preview-box img {
+    max-width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+/* ========================================================
+   8. PESCA LENDÁRIA WINDOW
+   ======================================================== */
+.fishing-window {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fishing-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.fishing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.fish-card {
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fish-card img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #090714;
+}
+
+.fish-card-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gold-color);
+}
+
+.fish-card-info {
+    font-size: 10px;
+    color: var(--light-gray);
+}
+
+/* ========================================================
+   9. QUERO UMA! (Invite Window)
+   ======================================================== */
+.invite-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.invite-header {
+    background: #110d29;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--win-border-subtle);
+}
+
+.invite-header h2 {
+    font-size: 14px;
+    color: var(--bright-blue);
+    font-family: var(--font-display);
+}
+
+.invite-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.invite-section h3 {
+    font-size: 12px;
+    color: #ffffff;
+    font-family: var(--font-display);
+}
+
+.invite-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+}
+
+.invite-card {
+    background: #110d29;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.invite-card i {
+    font-size: 18px;
+    color: var(--bright-blue);
+}
+
+.invite-avoid-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.invite-avoid-list li {
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.invite-badge {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge-never { background: rgba(229, 62, 62, 0.2); color: #ff6b6b; border: 1px solid #e53e3e; }
+.badge-rare  { background: rgba(246, 173, 85, 0.2); color: #f6ad55; border: 1px solid #f6ad55; }
+
+.invite-warning-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(229, 62, 62, 0.15);
+    border: 1px solid #e53e3e;
+    border-radius: 6px;
+    color: #ff9999;
+    font-size: 11px;
+}
+
+/* ========================================================
+   10. MENSAGÍMETRO WINDOW
+   ======================================================== */
+.speedometer-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px;
+}
+
+#speedometer-canvas {
+    width: 280px;
+    height: 190px;
+}
+
+.speedometer-readout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.speedometer-val {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--cyan-neon);
+    font-family: var(--font-display);
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+}
+
+.speedometer-lbl {
+    font-size: 11px;
+    color: var(--light-gray);
+}

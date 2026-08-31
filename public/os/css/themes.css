@@ -1,0 +1,92 @@
+/* themes.css - Ravena OS Retro-Futuristic Color Palette and Typography */
+
+:root {
+    /* Color Palette */
+    --dark-bg: #05060d;
+    --dark-purple: #23066d;
+    --medium-dark-purple: #18093d;
+    --medium-purple: #3e0ea7;
+    --deep-surface: #0e0d1e;
+    --surface-color: #151428;
+    --card-surface: #1b1935;
+    
+    --bright-blue: #04a9f0;
+    --primary-dark: #0388c2;
+    --cyan-neon: #00f0ff;
+    --purple-light: #a29bfe;
+    
+    --light-gray: #b7b7c5;
+    --medium-gray: #47486c;
+    --dark-gray: #24253a;
+    --text-highlight: #ffffff;
+    
+    --gold-color: #ffd700;
+    --gold-dark: #b8860b;
+    --communist-red: #841616;
+    
+    /* Status indicators */
+    --status-green: #28a745;
+    --status-yellow: #f6ad55;
+    --status-red: #e53e3e;
+    --status-gray: #555566;
+    
+    /* Window & OS borders */
+    --win-border: #04a9f0;
+    --win-border-subtle: #2f304d;
+    --win-titlebar-bg: #23066d;
+    --taskbar-bg: #0d0922;
+    
+    /* Fonts */
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-display: 'Space Mono', 'JetBrains Mono', monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--dark-bg);
+    color: var(--light-gray);
+    font-family: var(--font-mono);
+    user-select: none;
+}
+
+/* Scrollbar retro styling */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+    background: var(--dark-bg);
+}
+
+::-webkit-scrollbar-track {
+    background: #0b0918;
+    border: 1px solid #1a1733;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--medium-purple), var(--dark-purple));
+    border: 1px solid var(--bright-blue);
+    border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--bright-blue), var(--medium-purple));
+}
+
+/* Utility classes */
+.hidden {
+    display: none !important;
+}
+
+.truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
