@@ -83,7 +83,7 @@ const Desktop = {
         const el = document.createElement('div');
         el.className = 'desktop-icon';
         el.dataset.id = config.id;
-        el.title = `${config.label} — ${config.tooltip || ''}`;
+        el.dataset.tooltip = `${config.label}: ${config.tooltip || ''}`;
 
         el.innerHTML = `
             <div class="desktop-icon-img-wrap">

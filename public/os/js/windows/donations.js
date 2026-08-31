@@ -3,8 +3,8 @@
 WindowManager.register('donations', {
     title: 'Doações — Contribuidores da Ravena',
     taskbarIcon: 'fa-heart',
-    width: '720px',
-    height: '520px',
+    width: '830px',
+    height: '600px',
     singleton: true,
 
     render(wb) {

@@ -3,8 +3,8 @@
 WindowManager.register('tts', {
     title: 'TTS — Texto para Voz (F5-TTS)',
     taskbarIcon: 'fa-volume-up',
-    width: '540px',
-    height: '460px',
+    width: '630px',
+    height: '530px',
     singleton: true,
 
     render(wb) {

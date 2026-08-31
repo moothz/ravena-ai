@@ -104,6 +104,36 @@
     line-height: 1.25;
 }
 
+/* Instant Desktop Icon Tooltip */
+.desktop-icon[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: #0d0922;
+    color: #ffffff;
+    border: 1px solid var(--bright-blue);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.08s ease, transform 0.08s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.9), 0 0 8px rgba(4, 169, 240, 0.4);
+    z-index: 999;
+}
+
+.desktop-icon[data-tooltip]:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(2px);
+    transition-delay: 50ms;
+}
+
 /* ========================================================
    FLOATING POST-IT WIDGET: TOP DOADORES
    ======================================================== */

@@ -3,8 +3,8 @@
 WindowManager.register('community', {
     title: 'Comunidade — Grupos e Redes',
     taskbarIcon: 'fa-users',
-    width: '640px',
-    height: '440px',
+    width: '740px',
+    height: '510px',
     singleton: true,
 
     render(wb) {

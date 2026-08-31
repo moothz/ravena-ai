@@ -447,6 +447,9 @@ const Taskbar = {
                 window.open(item.dataset.url, '_blank');
             });
         });
+
+        // Attach hover delay intent for submenus
+        this.initSubmenuHoverDelay();
     },
 
     populateRavenasSubmenu() {
@@ -521,6 +524,74 @@ const Taskbar = {
         updateDot('sm-dot-llm', status.llm);
         updateDot('sm-dot-whisper', status.whisper);
         updateDot('sm-dot-f5tts', status.f5tts);
+    },
+
+    initSubmenuHoverDelay() {
+        let activeSubmenuItem = null;
+        let closeTimer = null;
+        let switchTimer = null;
+
+        const container = document.getElementById('start-menu-items');
+        if (!container) return;
+
+        const submenuItems = container.querySelectorAll('.start-menu-item.has-submenu');
+
+        submenuItems.forEach((item) => {
+            const submenu = item.querySelector('.start-submenu');
+            if (!submenu) return;
+
+            item.addEventListener('mouseenter', () => {
+                if (closeTimer) {
+                    clearTimeout(closeTimer);
+                    closeTimer = null;
+                }
+
+                // If another submenu is already open, add a small 350ms switch buffer
+                if (activeSubmenuItem && activeSubmenuItem !== item) {
+                    if (switchTimer) clearTimeout(switchTimer);
+                    switchTimer = setTimeout(() => {
+                        if (activeSubmenuItem) activeSubmenuItem.classList.remove('submenu-open');
+                        item.classList.add('submenu-open');
+                        activeSubmenuItem = item;
+                    }, 350);
+                } else {
+                    item.classList.add('submenu-open');
+                    activeSubmenuItem = item;
+                }
+            });
+
+            item.addEventListener('mouseleave', () => {
+                if (switchTimer) {
+                    clearTimeout(switchTimer);
+                    switchTimer = null;
+                }
+
+                closeTimer = setTimeout(() => {
+                    item.classList.remove('submenu-open');
+                    if (activeSubmenuItem === item) activeSubmenuItem = null;
+                }, 450); // 450ms buffer delay so user can easily mouse into submenu
+            });
+
+            submenu.addEventListener('mouseenter', () => {
+                if (closeTimer) {
+                    clearTimeout(closeTimer);
+                    closeTimer = null;
+                }
+                if (switchTimer) {
+                    clearTimeout(switchTimer);
+                    switchTimer = null;
+                }
+                item.classList.add('submenu-open');
+                activeSubmenuItem = item;
+            });
+
+            submenu.addEventListener('mouseleave', () => {
+                closeTimer = setTimeout(() => {
+                    item.classList.remove('submenu-open');
+                    if (activeSubmenuItem === item) activeSubmenuItem = null;
+                }, 450);
+            });
+        });
     },
 
     toggleStartMenu() {

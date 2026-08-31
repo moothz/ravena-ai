@@ -3,8 +3,8 @@
 WindowManager.register('status', {
     title: 'Status das Ravenas — Instâncias',
     taskbarIcon: 'fa-desktop',
-    width: '740px',
-    height: '520px',
+    width: '850px',
+    height: '600px',
     singleton: true,
 
     render(wb) {
@@ -79,6 +79,15 @@ WindowManager.register('status', {
             window.RavenaOS.on('healthUpdate', update);
             window.RavenaOS.on('realtimeRate', () => {
                 this.updateLiveBarValues(body);
+            });
+            window.RavenaOS.on('activity', (data) => {
+                if (!data || !data.botId) return;
+                const iconEl = body.querySelector(`.drive-item[data-bot-id="${data.botId}"] .drive-icon`);
+                if (iconEl) {
+                    iconEl.classList.remove('avatar-flash');
+                    void iconEl.offsetWidth;
+                    iconEl.classList.add('avatar-flash');
+                }
             });
         }
     },

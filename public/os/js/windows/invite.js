@@ -3,8 +3,8 @@
 WindowManager.register('invite', {
     title: 'Quero Uma! — Como convidar a RavenaBot',
     taskbarIcon: 'fa-envelope',
-    width: '640px',
-    height: '520px',
+    width: '740px',
+    height: '600px',
     singleton: true,
 
     render(wb) {

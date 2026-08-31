@@ -3,8 +3,8 @@
 WindowManager.register('imagine', {
     title: 'Imagine — Gerador de Imagens IA',
     taskbarIcon: 'fa-palette',
-    width: '560px',
-    height: '520px',
+    width: '650px',
+    height: '600px',
     singleton: true,
 
     render(wb) {

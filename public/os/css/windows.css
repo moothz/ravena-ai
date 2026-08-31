@@ -29,14 +29,29 @@
     background: linear-gradient(180deg, #37118f 0%, #1c0558 100%) !important;
     border-bottom: 1px solid var(--bright-blue) !important;
     padding: 0 6px !important;
+    position: relative !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
+    overflow: hidden !important;
 }
 
 .winbox.os-window:not(.focus) .wb-header {
     background: linear-gradient(180deg, #24223d 0%, #141324 100%) !important;
     border-bottom-color: #3b3c58 !important;
+}
+
+/* wb-drag: covers entire titlebar behind controls to allow drag everywhere */
+.winbox.os-window .wb-drag {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    cursor: move !important;
+    z-index: 1 !important;
 }
 
 .winbox.os-window .wb-icon {
@@ -45,6 +60,9 @@
     height: 18px;
     margin-right: 6px;
     flex-shrink: 0;
+    position: relative !important;
+    z-index: 2 !important;
+    pointer-events: none !important;
 }
 
 .winbox.os-window .wb-title {
@@ -61,13 +79,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    position: relative !important;
+    z-index: 2 !important;
+    pointer-events: none !important;
 }
 
-.winbox.os-window .wb-drag {
-    order: 3 !important;
-}
-
-/* Control Buttons Container (Far Right) */
+/* Control Buttons Container (Far Right, Above Drag Layer) */
 .winbox.os-window .wb-control {
     order: 4 !important;
     display: flex !important;
@@ -77,6 +94,9 @@
     margin-right: 2px !important;
     height: 100% !important;
     flex-shrink: 0;
+    position: relative !important;
+    z-index: 10 !important;
+    pointer-events: auto !important;
 }
 
 /* Individual Buttons */
@@ -89,7 +109,7 @@
     margin: 0 !important;
     border-radius: 3px !important;
     border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: rgba(255, 255, 255, 0.12) !important;
     background-image: none !important;
     cursor: pointer !important;
     color: #ffffff !important;
@@ -97,7 +117,10 @@
     font-weight: 700 !important;
     line-height: 1 !important;
     text-align: center !important;
-    transition: all 0.12s ease !important;
+    transition: all 0.15s ease !important;
+    position: relative !important;
+    z-index: 11 !important;
+    pointer-events: auto !important;
 }
 
 /* Button Ordering: Minimizar (1) -> Maximizar (2) -> Fechar (3) */
@@ -158,6 +181,30 @@
     background-color: rgba(229, 62, 62, 0.95) !important;
     border-color: #e53e3e !important;
     color: #ffffff !important;
+}
+
+/* Avatar activity pulse/flash animation */
+@keyframes avatar-pulse-flash {
+    0% {
+        filter: brightness(1);
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+    }
+    35% {
+        filter: brightness(1.8) contrast(1.15);
+        transform: scale(1.1);
+        border-color: var(--cyan-neon) !important;
+        box-shadow: 0 0 16px var(--cyan-neon);
+    }
+    100% {
+        filter: brightness(1);
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+    }
+}
+
+.avatar-flash {
+    animation: avatar-pulse-flash 0.6s ease-out !important;
 }
 
 /* Body Area */

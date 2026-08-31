@@ -3,8 +3,8 @@
 WindowManager.register('help', {
     title: 'Ajuda — Assistente RavenaBot',
     taskbarIcon: 'fa-question-circle',
-    width: '520px',
-    height: '480px',
+    width: '600px',
+    height: '550px',
     singleton: true,
 
     render(wb) {

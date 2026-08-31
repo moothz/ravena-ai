@@ -68,8 +68,8 @@ const WindowManager = {
             posY = `${offsetY}px`;
         }
 
-        const width = (params && params.width) || config.width || '650px';
-        const height = (params && params.height) || config.height || '460px';
+        const width = (params && params.width) || config.width || '750px';
+        const height = (params && params.height) || config.height || '530px';
 
         const customClasses = ['os-window', ...(config.classes || [])];
         if (params && params.class) {

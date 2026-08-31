@@ -3,8 +3,8 @@
 WindowManager.register('status-detail', {
     title: 'Detalhes da Ravena',
     taskbarIcon: 'fa-info-circle',
-    width: '490px',
-    height: '430px',
+    width: '560px',
+    height: '495px',
     singleton: false,
 
     render(wb, params) {
@@ -100,5 +100,18 @@ WindowManager.register('status-detail', {
                 </div>
             </div>
         `;
+
+        if (window.RavenaOS) {
+            window.RavenaOS.on('activity', (act) => {
+                if (act && act.botId === bot.id) {
+                    const avatar = body.querySelector('.bot-detail-avatar');
+                    if (avatar) {
+                        avatar.classList.remove('avatar-flash');
+                        void avatar.offsetWidth;
+                        avatar.classList.add('avatar-flash');
+                    }
+                }
+            });
+        }
     }
 });

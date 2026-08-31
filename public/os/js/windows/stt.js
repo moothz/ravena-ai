@@ -3,8 +3,8 @@
 WindowManager.register('stt', {
     title: 'STT — Transcrição de Áudio (Whisper)',
     taskbarIcon: 'fa-microphone',
-    width: '560px',
-    height: '500px',
+    width: '650px',
+    height: '580px',
     singleton: true,
 
     render(wb) {

@@ -3,8 +3,8 @@
 WindowManager.register('statistics', {
     title: 'Estatísticas de Mensagens e Fluxo',
     taskbarIcon: 'fa-chart-bar',
-    width: '820px',
-    height: '560px',
+    width: '940px',
+    height: '640px',
     singleton: true,
 
     render(wb) {
