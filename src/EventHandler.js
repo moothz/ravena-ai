@@ -809,26 +809,32 @@ class EventHandler extends EventEmitter {
 					await fs.mkdir(tempDir, { recursive: true });
 				}
 
-				// Obtém dados da mídia
-				let mediaData = message.content?.data;
+				// Obtém dados da mídia (suporta tanto base64 quanto data)
+				let mediaData = message.content?.data || message.content?.base64;
 
-				// Se não tiver dados (comum em vídeos), tenta baixar
+				// Se não tiver dados (comum em vídeos e mensagens WhatsGo), tenta baixar
 				if (!mediaData && typeof message.downloadMedia === "function") {
-					// this.logger.debug("Baixando mídia para verificação NSFW...");
 					try {
 						const media = await message.downloadMedia();
-						mediaData = media?.data;
+						mediaData = media?.data || media?.base64;
 					} catch (dlErr) {
 						this.logger.error("Erro ao baixar mídia para verificação NSFW:", dlErr);
 					}
 				}
 
 				if (!mediaData) {
+					const groupTag = group?.name ? `[${group.name}] ` : "";
 					this.logger.warn(
-						"Não foi possível obter dados da mídia para verificação NSFW, ignorando."
+						`${groupTag}Não foi possível obter dados da mídia para verificação NSFW, ignorando.`
 					);
 					return false;
 				}
+
+				const nsfwContext = {
+					groupName: group?.name || group?.id || "PV",
+					author: message.author || message.authorAlt || "desconhecido",
+					authorName: message.name || message.pushName || message.authorName || message.author || "desconhecido"
+				};
 
 				// Gera nome de arquivo temporário único
 				const fileExt = message.type === "image" || message.type === "sticker" ? "jpg" : "mp4";
@@ -846,10 +852,10 @@ class EventHandler extends EventEmitter {
 				// Apenas imagens são verificadas para NSFW
 				if (message.type === "image" || message.type === "sticker") {
 					// Verifica NSFW
-					result = await this.nsfwPredict.detectNSFW(mediaData);
+					result = await this.nsfwPredict.detectNSFW(mediaData, nsfwContext);
 				} else if (message.type === "video") {
 					// Verifica NSFW em vídeo
-					result = await this.nsfwPredict.detectNSFWVideo(tempFilePath);
+					result = await this.nsfwPredict.detectNSFWVideo(tempFilePath, nsfwContext);
 				}
 
 				// Limpa o arquivo temporário
@@ -859,7 +865,7 @@ class EventHandler extends EventEmitter {
 
 				if (result.isNSFW) {
 					this.logger.info(
-						`Mensagem filtrada no grupo ${group.id} - conteúdo NSFW detectado, motivo: ${result.reason}`
+						`[${nsfwContext.groupName}] Mensagem NSFW filtrada - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
 					);
 
 					// Deleta a mensagem

@@ -642,7 +642,7 @@ async function storeMessage(message, chatId, bot) {
 		let llmUp = false;
 		try {
 			const servicesData = await Status.getServicesStatus();
-			if (servicesData.llm === "up") {
+			if (Status.isUp(servicesData.llm)) {
 				llmUp = true;
 			}
 		} catch (e) {

@@ -16,18 +16,40 @@ class NSFWPredict {
 	}
 
 	/**
+	 * Formata o prefixo e sufixo de contexto para logs
+	 * @param {Object} context
+	 * @returns {{groupPrefix: string, userSuffix: string}}
+	 */
+	_formatLogContext(context = {}) {
+		const groupName = context.groupName || context.groupId;
+		const groupPrefix = groupName ? `[${groupName}] ` : "";
+		const authorName = context.authorName || context.name;
+		const author = context.author;
+		let userSuffix = "";
+		if (authorName && author) {
+			userSuffix = ` [enviado por ${authorName}/${author}]`;
+		} else if (author || authorName) {
+			userSuffix = ` [enviado por ${author || authorName}]`;
+		}
+		return { groupPrefix, userSuffix };
+	}
+
+	/**
 	 * Verifica se uma imagem ou video contém conteúdo NSFW usando um LLM.
 	 * @param {string|Array<string>} imagesInput - A imagem (base64) ou lista de imagens.
+	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
 	 * @returns {Promise<{isNSFW: boolean, reason: String}>} - Resultado da detecção.
 	 */
-	async detectNSFW(imagesInput) {
+	async detectNSFW(imagesInput, context = {}) {
 		if (process.env.DISABLE_ACTIVITY === "true") {
 			return { isNSFW: false, reason: "Activity disabled" };
 		}
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+
 		try {
 			const servicesData = await Status.getServicesStatus();
 
-			if (servicesData.llm !== "up") {
+			if (!Status.isUp(servicesData.llm)) {
 				return { isNSFW: false, reason: "Serviço está temporariamente indisponível" };
 			}
 		} catch (e) {
@@ -35,7 +57,7 @@ class NSFWPredict {
 			return { isNSFW: false, reason: "Serviço está temporariamente indisponível" };
 		}
 
-		this.logger.info(`Detectando NSFW em mídia...`);
+		this.logger.info(`${groupPrefix}Detectando NSFW em mídia...${userSuffix}`);
 
 		const prompt = `Analyze the provided image(s) with a focus on strict content safety classification. Your goal is to distinguish between general skin exposure (Safe) and explicit sexual content (NSFW).
 
@@ -73,30 +95,36 @@ Return the result in JSON format.`;
 				images: Array.isArray(imagesInput) ? imagesInput : [imagesInput],
 				response_format: nsfwSchema,
 				temperature: 0.2,
-				maxTokens: 100,
+				maxTokens: 1024,
 				systemContext: `You are an expert bot in image processing and analysis`,
 				debugPrompt: false,
-				priority: 4
+				priority: 5
 			};
 
 			let response = null;
 			try {
 				response = await this.llmService.getCompletion(completionOptions);
 			} catch (e) {
+				this.logger.error("Erro ao executar LLM para NSFW:", e);
 				response = "{}";
 			}
-			//this.logger.info(`Detecção NSFW RAW: ${response}`);
-			const parsedResponse = JSON.parse(response);
+			this.logger.info(`${groupPrefix}Detecção NSFW RAW: ${response}${userSuffix}`);
+			const cleanResponse = (response || "{}").replace(/```json|```/g, "").trim();
+			let parsedResponse = {};
+			try {
+				parsedResponse = JSON.parse(cleanResponse);
+			} catch (parseErr) {
+				this.logger.error("Erro ao fazer parse do JSON da detecção NSFW:", parseErr, "Raw:", response);
+			}
 
-			//this.logger.info(`Detecção NSFW: ${parsedResponse.classification}`);
-			//this.logger.debug('Resposta do LLM:', parsedResponse);
-
-			const isNSFW = parsedResponse.classification === "nsfw";
-			const reason = parsedResponse.reason;
+			const classification = (parsedResponse.classification || "").toLowerCase();
+			const isNSFW = classification === "nsfw" || classification.includes("nsfw") || parsedResponse.isNSFW === true;
+			const reason = parsedResponse.reason || parsedResponse.reasoning || "";
+			this.logger.info(`${groupPrefix}Detecção NSFW resultado: ${parsedResponse.classification || "unknown"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`);
 
 			return { isNSFW, reason };
 		} catch (error) {
-			this.logger.error("Erro ao executar detecção NSFW com LLM.");
+			this.logger.error("Erro ao executar detecção NSFW com LLM:", error);
 			return { isNSFW: false, reason: "", error: error.message };
 		}
 	}
@@ -104,15 +132,17 @@ Return the result in JSON format.`;
 	/**
 	 * Detecta NSFW em um vídeo extraindo frames.
 	 * @param {string} videoPath - Caminho do arquivo de vídeo.
+	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
 	 * @returns {Promise<{isNSFW: boolean, reason: String}>} - Resultado da detecção.
 	 */
-	async detectNSFWVideo(videoPath) {
+	async detectNSFWVideo(videoPath, context = {}) {
 		let tempDir = null;
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 
 		try {
-			this.logger.info(`Extraindo frames do vídeo para análise NSFW: ${videoPath}`);
+			this.logger.info(`${groupPrefix}Extraindo frames do vídeo para análise NSFW: ${videoPath}${userSuffix}`);
 
-			const framePaths = await extractFrames(videoPath, undefined, 15);
+			const framePaths = await extractFrames(videoPath, undefined, 6);
 			if (framePaths.length > 0) {
 				tempDir = path.dirname(framePaths[0]);
 			}
@@ -127,8 +157,8 @@ Return the result in JSON format.`;
 				return { isNSFW: false, reason: "No frames extracted", error: "No frames extracted" };
 			}
 
-			this.logger.info(`Analisando ${frames.length} frames do vídeo...`);
-			const result = await this.detectNSFW(frames);
+			this.logger.info(`${groupPrefix}Analisando ${frames.length} frames do vídeo...${userSuffix}`);
+			const result = await this.detectNSFW(frames, context);
 			return result;
 		} catch (error) {
 			this.logger.error("Erro ao processar vídeo para NSFW:", error);

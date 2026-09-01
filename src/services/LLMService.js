@@ -1165,11 +1165,78 @@ class LLMService {
 					};
 
 					const validateJsonResponse = (content) => {
-						if (completionOptions.response_format && typeof content === "string") {
+						if (!content || typeof content !== "string") return content;
+
+						const hasImages =
+							(completionOptions.images && completionOptions.images.length > 0) ||
+							completionOptions.image;
+
+						if (hasImages) {
+							const lower = content.toLowerCase();
+							if (
+								lower.includes("no vision-capable provider") ||
+								lower.includes("unable to see the image") ||
+								lower.includes("could not process image") ||
+								lower.includes("cannot process this image")
+							) {
+								const err = new Error(
+									`Provedor (${config.name}) indicou incapacidade de processar visão: ${content.slice(0, 150)}...`
+								);
+								err.isFormatError = true;
+								throw err;
+							}
+						}
+
+						if (completionOptions.response_format) {
 							try {
-								const clean = content.replace(/^```(?:json)?\n?|```$/g, "").trim();
-								JSON.parse(clean);
+								let clean = this._cleanResponse(content);
+								if (clean.startsWith("```")) {
+									clean = clean.replace(/^```(?:json)?\n?|```$/g, "").trim();
+								}
+								const parsed = JSON.parse(clean);
+								if (parsed && typeof parsed === "object") {
+									if (
+										parsed.status === "error" ||
+										parsed.error ||
+										parsed.classification === null ||
+										parsed.classification === "UNAVAILABLE" ||
+										parsed.classification === "unknown"
+									) {
+										const err = new Error(
+											`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+										);
+										err.isFormatError = true;
+										throw err;
+									}
+								}
 							} catch (jsonErr) {
+								if (jsonErr.isFormatError) {
+									throw jsonErr;
+								}
+								// Tenta extrair o bloco JSON caso haja texto ao redor
+								const jsonMatch = content.match(/\{[\s\S]*\}/);
+								if (jsonMatch) {
+									try {
+										const parsed = JSON.parse(jsonMatch[0]);
+										if (
+											parsed &&
+											(parsed.status === "error" ||
+												parsed.error ||
+												parsed.classification === null ||
+												parsed.classification === "UNAVAILABLE" ||
+												parsed.classification === "unknown")
+										) {
+											const err = new Error(
+												`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+											);
+											err.isFormatError = true;
+											throw err;
+										}
+										return content;
+									} catch (innerErr) {
+										if (innerErr.isFormatError) throw innerErr;
+									}
+								}
 								const err = new Error(
 									`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
 								);

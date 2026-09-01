@@ -457,9 +457,10 @@ async function statusCommand(bot, message, args, group) {
 			const servicesData = await Status.getServicesStatus();
 
 			const getEmoji = (status) => {
-				if (status === "up") return "🟢";
-				if (status === "backup") return "🟠";
-				if (status === "down") return "🔴";
+				const s = typeof status === "object" && status !== null ? status.status : status;
+				if (s === "up") return "🟢";
+				if (s === "backup") return "🟠";
+				if (s === "down") return "🔴";
 				return "⚫";
 			};
 

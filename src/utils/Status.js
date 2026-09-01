@@ -9,8 +9,16 @@ class Status {
 	 */
 	static async getServicesStatus() {
 		try {
-			const database = Database.getInstance();
-			const servicesPath = path.join(database.databasePath, "services-status.json");
+			let databasePath = path.join(__dirname, "../../data");
+			try {
+				const database = Database.getInstance();
+				if (database && database.databasePath) {
+					databasePath = database.databasePath;
+				}
+			} catch (dbErr) {
+				// Fallback to default data path
+			}
+			const servicesPath = path.join(databasePath, "services-status.json");
 			const data = await fs.readFile(servicesPath, "utf8");
 			return JSON.parse(data);
 		} catch (error) {
@@ -23,6 +31,17 @@ class Status {
 				f5tts: "down"
 			};
 		}
+	}
+
+	/**
+	 * Verifica se um serviço ou status está online (up ou backup)
+	 * @param {string|Object} serviceStatus - Status do serviço (string ou objeto com .status)
+	 * @returns {boolean}
+	 */
+	static isUp(serviceStatus) {
+		if (!serviceStatus) return false;
+		const status = typeof serviceStatus === "object" ? serviceStatus.status : serviceStatus;
+		return status === "up" || status === "backup" || status === "online" || status === "ok";
 	}
 }
 

@@ -1,10 +1,10 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users
+.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
-# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user
+# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user, migrate-group
 ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
@@ -14,6 +14,10 @@ ifeq ($(firstword $(MAKECMDGOALS)),add-api-user)
   $(eval $(RUN_ARGS):;@:)
 endif
 ifeq ($(firstword $(MAKECMDGOALS)),del-api-user)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),migrate-group)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
@@ -233,3 +237,15 @@ recover_sql: ## Recupera banco SQLite corrompido (Uso: make recover_sql <banco.d
 	if [ -z "$$DB_PATH" ]; then DB_PATH="$(DB)"; fi; \
 	if [ -z "$$DB_PATH" ]; then printf "$(YELLOW)Uso: make recover_sql <caminho/do/banco.db> ou make recover_sql DB=<caminho/do/banco.db>$(NC)\n"; exit 1; fi; \
 	./recover-sqlite.sh "$$DB_PATH"
+
+migrate-group: ## Copia todas as configurações de um grupo para outro (Uso: make migrate-group <oldId> <newId>)
+	@ARGS="$(RUN_ARGS)"; \
+	OLD_ID=$$(echo $$ARGS | awk '{print $$1}'); \
+	NEW_ID=$$(echo $$ARGS | awk '{print $$2}'); \
+	if [ -z "$$OLD_ID" ] || [ -z "$$NEW_ID" ]; then \
+		printf "$(YELLOW)Uso: make migrate-group <oldId> <newId>$(NC)\n"; \
+		printf "$(CYAN)Exemplo: make migrate-group 120363424022939146@g.us 120363427984421447@g.us$(NC)\n"; \
+		exit 1; \
+	fi; \
+	docker cp migrate-group.js $$(docker compose ps -q ravena-ai):/app/migrate-group.js; \
+	docker compose exec ravena-ai node migrate-group.js "$$OLD_ID" "$$NEW_ID"
