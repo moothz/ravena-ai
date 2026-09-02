@@ -1,4 +1,4 @@
-.PHONY: help setup generate-secrets up down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group
+.PHONY: help setup generate-secrets up up-bot down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
@@ -97,6 +97,10 @@ restart: ## Reinicia todos os serviços
 restart-bot: ## Reinicia apenas o bot ravena-ai
 	@mkdir -p data && echo "Reiniciando o contêiner do bot..." > data/status_motivo.txt
 	docker compose restart ravena-ai
+
+up-bot: ## Atualiza o .env e recria apenas o bot ravena-ai sem tocar nos outros
+	@mkdir -p data && echo "Atualizando .env e recriando container do bot..." > data/status_motivo.txt
+	docker compose up -d --no-deps ravena-ai
 
 restart-api: ## Reinicia apenas o whatsgoapi
 	docker compose restart whatsgoapi
