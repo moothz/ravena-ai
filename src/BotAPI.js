@@ -138,7 +138,20 @@ class BotAPI {
 		// Configura rotas
 		this.setupRoutes();
 
-		// Entrega da interface Desktop OS (/os)
+		// Rota para o dashboard clássico legado
+		this.app.get(["/classic", "/legado"], (req, res) => {
+			res.sendFile(path.join(__dirname, "../public/classic.html"));
+		});
+
+		// Entrega da interface Desktop OS como homepage principal (/)
+		this.app.use(
+			express.static(path.join(__dirname, "../public/os"), {
+				maxAge: "1d",
+				etag: true
+			})
+		);
+
+		// Mantém compatibilidade com a rota /os
 		this.app.use(
 			"/os",
 			express.static(path.join(__dirname, "../public/os"), {
@@ -147,7 +160,7 @@ class BotAPI {
 			})
 		);
 
-		// Entrega de arquivos estáticos com cache de 1 dia e ETag
+		// Entrega de arquivos estáticos gerais com cache de 1 dia e ETag
 		this.app.use(
 			express.static(path.join(__dirname, "../public"), {
 				maxAge: "1d",
