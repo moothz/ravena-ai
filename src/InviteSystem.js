@@ -1069,7 +1069,43 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					llmReason = evalResult.reason;
 
 					if (evalResult.shouldAutoAccept) {
-						const selectedBot = await this.selectBestBotForAutoJoin();
+						let selectedBot = null;
+
+						if (this.bot?.comunitario) {
+							// Bots comunitários: convites só devem ser aceitos automaticamente pelo próprio bot recebido, nunca por outros bots
+							const isEligible =
+								!this.bot.banido &&
+								!this.bot.ignoreInvites &&
+								!this.bot.useTelegram &&
+								!this.bot.useDiscord &&
+								this.bot.client &&
+								typeof this.bot.client.acceptInvite === "function";
+
+							if (isEligible) {
+								if (InviteSystem.canBotJoin(this.bot.id)) {
+									selectedBot = this.bot;
+								} else {
+									this.logger.warn(
+										`[AutoAccept] Bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`
+									);
+									llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`;
+								}
+							} else {
+								this.logger.warn(
+									`[AutoAccept] Bot comunitário ${this.bot.id} não está elegível/disponível para auto-join`
+								);
+								llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} não está disponível para entrar`;
+							}
+						} else {
+							selectedBot = await this.selectBestBotForAutoJoin();
+							if (!selectedBot) {
+								this.logger.info(
+									`[AutoAccept] Convite ${inviteCode} aprovado pela IA, mas nenhum bot elegível disponível no momento.`
+								);
+								llmReason = `Aprovado pela IA (${evalResult.reason}), mas nenhum bot elegível disponível (limite 3/30m ou offline)`;
+							}
+						}
+
 						if (selectedBot) {
 							this.logger.info(
 								`[AutoAccept] Convite ${inviteCode} aceito automaticamente pelo bot ${selectedBot.id}. Motivo: ${evalResult.reason}`
@@ -1090,11 +1126,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								);
 								llmReason = `Aprovado pela IA, mas bot ${selectedBot.id} falhou ao entrar (${joinResult?.error || "Erro"})`;
 							}
-						} else {
-							this.logger.info(
-								`[AutoAccept] Convite ${inviteCode} aprovado pela IA, mas nenhum bot elegível disponível no momento.`
-							);
-							llmReason = `Aprovado pela IA (${evalResult.reason}), mas nenhum bot elegível disponível (limite 3/30m ou offline)`;
 						}
 					}
 				} catch (evalErr) {
