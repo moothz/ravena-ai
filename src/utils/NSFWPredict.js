@@ -18,7 +18,7 @@ class NSFWPredict {
 		this.nudenetApiKey = process.env.NUDENET_API_KEY || "";
 		this.nudenetThreshold = process.env.NUDENET_THRESHOLD
 			? parseFloat(process.env.NUDENET_THRESHOLD)
-			: undefined;
+			: 0.8;
 		this.nudenetTimeout = parseInt(process.env.NUDENET_TIMEOUT, 10) || 15000;
 		this.nudenetVideoTimeout = parseInt(process.env.NUDENET_VIDEO_TIMEOUT, 10) || 45000;
 		this.nudenetVideoFps = parseFloat(process.env.NUDENET_VIDEO_FPS || "1.0");
@@ -140,8 +140,7 @@ class NSFWPredict {
 	async _appendDebugLog(entry) {
 		try {
 			const debugDir = await this._ensureDebugDir();
-			const logFilePath = path.join(debugDir, "ndenet_debug.txt");
-			const nudenetLogFilePath = path.join(debugDir, "nudenet_debug.txt");
+			const logFilePath = path.join(debugDir, "nudenet_debug.txt");
 
 			const timestamp = new Date().toISOString();
 			const separator = "=".repeat(60);
@@ -157,12 +156,6 @@ class NSFWPredict {
 			].join("\n");
 
 			await fs.promises.appendFile(logFilePath, logText, "utf8");
-
-			try {
-				if (!fs.existsSync(nudenetLogFilePath)) {
-					await fs.promises.symlink("ndenet_debug.txt", nudenetLogFilePath).catch(() => {});
-				}
-			} catch {}
 		} catch (err) {
 			this.logger.error("Erro ao escrever no arquivo de log de debug:", err);
 		}
@@ -215,12 +208,16 @@ class NSFWPredict {
 	 * Formata um motivo descritivo a partir das detecções do NudeNet
 	 * @param {Array<Object>} detections
 	 * @param {Object} item
+	 * @param {number} minConfidence
 	 * @returns {string}
 	 */
-	_formatNudeNetReason(detections = [], item = {}) {
+	_formatNudeNetReason(detections = [], item = {}, minConfidence = 0.8) {
 		const labelMap = new Map();
 		for (const det of detections || []) {
-			if (this._isNsfwLabel(det.label)) {
+			if (
+				this._isNsfwLabel(det.label) &&
+				(det.confidence === undefined || det.confidence >= minConfidence)
+			) {
 				const existing = labelMap.get(det.label);
 				if (!existing || det.confidence > existing) {
 					labelMap.set(det.label, det.confidence);
@@ -285,9 +282,12 @@ class NSFWPredict {
 				include_detections: true
 			};
 
-			if (this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)) {
-				payload.threshold = this.nudenetThreshold;
-			}
+			const thresholdToUse =
+				this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
+					? this.nudenetThreshold
+					: 0.8;
+
+			payload.threshold = thresholdToUse;
 
 			const headers = { "Content-Type": "application/json" };
 			const apiKey = this.getApiKey();
@@ -307,18 +307,18 @@ class NSFWPredict {
 					this.logger.warn(`${groupPrefix}Erro em item no NudeNet: ${item.error}${userSuffix}`);
 				}
 
-				const thresholdToUse =
-					this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
-						? this.nudenetThreshold
-						: 0.25;
+				const hasNsfwDetection =
+					Array.isArray(item.detections) &&
+					item.detections.some(
+						(det) => this._isNsfwLabel(det.label) && det.confidence >= thresholdToUse
+					);
 
 				const itemIsNSFW =
-					item.classification === "unsafe" ||
-					(item.nsfw_score !== undefined && item.nsfw_score >= thresholdToUse);
+					hasNsfwDetection || (item.nsfw_score !== undefined && item.nsfw_score >= thresholdToUse);
 
 				if (itemIsNSFW) {
 					isAnyNSFW = true;
-					const reason = this._formatNudeNetReason(item.detections, item);
+					const reason = this._formatNudeNetReason(item.detections, item, thresholdToUse);
 					if (reason && !reasons.includes(reason)) {
 						reasons.push(reason);
 					}
@@ -375,9 +375,12 @@ class NSFWPredict {
 		form.append("max_frames", String(this.nudenetVideoMaxFrames));
 		form.append("include_frame_detections", "true");
 
-		if (this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)) {
-			form.append("threshold", String(this.nudenetThreshold));
-		}
+		const thresholdToUse =
+			this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
+				? this.nudenetThreshold
+				: 0.8;
+
+		form.append("threshold", String(thresholdToUse));
 
 		const headers = {};
 		const apiKey = this.getApiKey();
@@ -391,14 +394,25 @@ class NSFWPredict {
 		});
 
 		const data = response.data || {};
-		const thresholdToUse =
-			this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
-				? this.nudenetThreshold
-				: 0.25;
+
+		let hasNsfwFrameDetection = false;
+		if (Array.isArray(data.frames)) {
+			for (const frame of data.frames) {
+				if (Array.isArray(frame.detections)) {
+					if (
+						frame.detections.some(
+							(det) => this._isNsfwLabel(det.label) && det.confidence >= thresholdToUse
+						)
+					) {
+						hasNsfwFrameDetection = true;
+						break;
+					}
+				}
+			}
+		}
 
 		const isNSFW = Boolean(
-			data.is_unsafe === true ||
-			data.overall_classification === "unsafe" ||
+			hasNsfwFrameDetection ||
 			(data.max_nsfw_score !== undefined && data.max_nsfw_score >= thresholdToUse)
 		);
 
@@ -409,7 +423,7 @@ class NSFWPredict {
 				for (const frame of data.frames) {
 					if (Array.isArray(frame.detections)) {
 						for (const det of frame.detections) {
-							if (this._isNsfwLabel(det.label)) {
+							if (this._isNsfwLabel(det.label) && det.confidence >= thresholdToUse) {
 								exposedLabels.add(det.label);
 							}
 						}
