@@ -254,8 +254,8 @@ class NSFWPredict {
 
 		const isNSFW = Boolean(
 			data.is_unsafe === true ||
-				data.overall_classification === "unsafe" ||
-				(data.max_nsfw_score !== undefined && data.max_nsfw_score >= thresholdToUse)
+			data.overall_classification === "unsafe" ||
+			(data.max_nsfw_score !== undefined && data.max_nsfw_score >= thresholdToUse)
 		);
 
 		let reason = "";
@@ -445,8 +445,48 @@ Return the result in JSON format.`;
 	}
 
 	/**
+	 * Pausa a execução pelo tempo especificado em milissegundos
+	 * @param {number} ms
+	 * @returns {Promise<void>}
+	 */
+	_sleep(ms) {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	/**
+	 * Executa uma chamada da API NudeNet com até 3 tentativas (delays de 1s, 2s, 3s)
+	 * @param {Function} apiCall
+	 * @param {Object} context
+	 * @param {string} label
+	 * @returns {Promise<Object>}
+	 */
+	async _executeNudeNetWithRetry(apiCall, context = {}, label = "mídia") {
+		const delays = [1000, 2000, 3000];
+		const maxAttempts = delays.length;
+		let lastError = null;
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				return await apiCall();
+			} catch (err) {
+				lastError = err;
+				const delay = delays[attempt - 1];
+				if (attempt < maxAttempts) {
+					this.logger.warn(
+						`${groupPrefix}NudeNet API (${label}) tentativa ${attempt}/${maxAttempts} falhou (${err.message}). Nova tentativa em ${delay / 1000}s...${userSuffix}`
+					);
+					await this._sleep(delay);
+				}
+			}
+		}
+
+		throw lastError;
+	}
+
+	/**
 	 * Verifica se uma imagem ou vídeo contém conteúdo NSFW.
-	 * Se NUDENET_API estiver definida, usa a nova API. Em caso de falha/offline, realiza fallback para LLM.
+	 * Se NUDENET_API estiver definida, usa a nova API com até 3 tentativas (1s, 2s, 3s delay). Em caso de falha/offline, realiza fallback para LLM.
 	 * Se NUDENET_API não estiver definida, usa diretamente o LLM.
 	 * @param {string|Array<string>} imagesInput - A imagem (base64) ou lista de imagens.
 	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
@@ -460,11 +500,15 @@ Return the result in JSON format.`;
 		const nudenetUrl = this.getNudenetApiUrl();
 		if (nudenetUrl) {
 			try {
-				return await this.detectNSFWWithNudeNet(imagesInput, context, nudenetUrl);
+				return await this._executeNudeNetWithRetry(
+					() => this.detectNSFWWithNudeNet(imagesInput, context, nudenetUrl),
+					context,
+					"imagem"
+				);
 			} catch (err) {
 				const { groupPrefix, userSuffix } = this._formatLogContext(context);
 				this.logger.warn(
-					`${groupPrefix}NudeNet API falhou ou está offline (${err.message}). Executando fallback via LLM...${userSuffix}`
+					`${groupPrefix}NudeNet API falhou após 3 tentativas (${err.message}). Executando fallback via LLM...${userSuffix}`
 				);
 			}
 		}
@@ -474,7 +518,7 @@ Return the result in JSON format.`;
 
 	/**
 	 * Detecta NSFW em um vídeo.
-	 * Se NUDENET_API estiver definida, envia o vídeo diretamente para a nova API. Em caso de falha/offline, realiza fallback para extração de frames + LLM.
+	 * Se NUDENET_API estiver definida, envia o vídeo diretamente para a nova API com até 3 tentativas (1s, 2s, 3s delay). Em caso de falha/offline, realiza fallback para extração de frames + LLM.
 	 * Se NUDENET_API não estiver definida, usa diretamente a extração de frames + LLM.
 	 * @param {string} videoPath - Caminho do arquivo de vídeo.
 	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
@@ -488,11 +532,15 @@ Return the result in JSON format.`;
 		const nudenetUrl = this.getNudenetApiUrl();
 		if (nudenetUrl) {
 			try {
-				return await this.detectNSFWVideoWithNudeNet(videoPath, context, nudenetUrl);
+				return await this._executeNudeNetWithRetry(
+					() => this.detectNSFWVideoWithNudeNet(videoPath, context, nudenetUrl),
+					context,
+					"vídeo"
+				);
 			} catch (err) {
 				const { groupPrefix, userSuffix } = this._formatLogContext(context);
 				this.logger.warn(
-					`${groupPrefix}NudeNet API falhou para vídeo (${err.message}). Executando fallback via LLM...${userSuffix}`
+					`${groupPrefix}NudeNet API falhou para vídeo após 3 tentativas (${err.message}). Executando fallback via LLM...${userSuffix}`
 				);
 			}
 		}
