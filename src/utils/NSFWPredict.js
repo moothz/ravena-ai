@@ -43,6 +43,90 @@ class NSFWPredict {
 	}
 
 	/**
+	 * Verifica se o modo debug do NudeNet está ativado
+	 * @returns {boolean}
+	 */
+	isNudenetDebug() {
+		const debug = process.env.NUDENET_DEBUG;
+		if (!debug) return false;
+		const val = debug.toString().trim().toLowerCase();
+		return val !== "0" && val !== "false" && val !== "undefined";
+	}
+
+	/**
+	 * Garante que a pasta de debug temp/nudenet_debug exista
+	 * @returns {Promise<string>}
+	 */
+	async _ensureDebugDir() {
+		const debugDir = path.join(__dirname, "../../temp/nudenet_debug");
+		await fs.promises.mkdir(debugDir, { recursive: true });
+		return debugDir;
+	}
+
+	/**
+	 * Salva uma imagem classificada como NSFW no diretório de debug
+	 * @param {string|Buffer} data - Imagem em base64, data URI ou buffer
+	 * @param {string} prefix - Prefixo do arquivo
+	 * @param {string} defaultExt - Extensão padrão
+	 */
+	async _saveDebugMedia(data, prefix = "img", defaultExt = "jpg") {
+		try {
+			const debugDir = await this._ensureDebugDir();
+			const timestamp = Date.now();
+			const random = Math.floor(Math.random() * 1000);
+			let ext = defaultExt;
+
+			if (typeof data === "string") {
+				const match = data.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
+				if (match && match[1]) {
+					ext = match[1] === "jpeg" ? "jpg" : match[1];
+				}
+
+				const filename = `nsfw_${prefix}_${timestamp}_${random}.${ext}`;
+				const targetPath = path.join(debugDir, filename);
+
+				if (data.startsWith("http://") || data.startsWith("https://")) {
+					const resp = await axios.get(data, {
+						responseType: "arraybuffer",
+						timeout: 10000
+					});
+					await fs.promises.writeFile(targetPath, resp.data);
+				} else {
+					const base64Data = data.replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, "");
+					await fs.promises.writeFile(targetPath, Buffer.from(base64Data, "base64"));
+				}
+				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+			} else if (Buffer.isBuffer(data)) {
+				const filename = `nsfw_${prefix}_${timestamp}_${random}.${ext}`;
+				const targetPath = path.join(debugDir, filename);
+				await fs.promises.writeFile(targetPath, data);
+				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+			}
+		} catch (err) {
+			this.logger.error("Erro ao salvar imagem de debug NSFW:", err);
+		}
+	}
+
+	/**
+	 * Salva uma cópia do vídeo classificado como NSFW no diretório de debug
+	 * @param {string} videoPath - Caminho do vídeo original
+	 */
+	async _saveDebugVideo(videoPath) {
+		try {
+			const debugDir = await this._ensureDebugDir();
+			const timestamp = Date.now();
+			const random = Math.floor(Math.random() * 1000);
+			const ext = path.extname(videoPath) || ".mp4";
+			const filename = `nsfw_video_${timestamp}_${random}${ext}`;
+			const targetPath = path.join(debugDir, filename);
+			await fs.promises.copyFile(videoPath, targetPath);
+			this.logger.info(`[Debug] Vídeo NSFW salvo em: ${targetPath}`);
+		} catch (err) {
+			this.logger.error("Erro ao salvar vídeo de debug NSFW:", err);
+		}
+	}
+
+	/**
 	 * Formata o prefixo e sufixo de contexto para logs
 	 * @param {Object} context
 	 * @returns {{groupPrefix: string, userSuffix: string}}
@@ -138,9 +222,11 @@ class NSFWPredict {
 			return { isNSFW: false, reason: "" };
 		}
 
-		this.logger.info(
-			`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
-		);
+		if (this.isNudenetDebug()) {
+			this.logger.info(
+				`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
+			);
+		}
 
 		// A API aceita até 16 imagens por requisição (/api/v1/classify)
 		const chunkSize = 16;
@@ -173,7 +259,8 @@ class NSFWPredict {
 			});
 
 			const results = response.data?.results || [];
-			for (const item of results) {
+			for (let idx = 0; idx < results.length; idx++) {
+				const item = results[idx];
 				if (item.error) {
 					this.logger.warn(`${groupPrefix}Erro em item no NudeNet: ${item.error}${userSuffix}`);
 				}
@@ -193,14 +280,20 @@ class NSFWPredict {
 					if (reason && !reasons.includes(reason)) {
 						reasons.push(reason);
 					}
+
+					if (this.isNudenetDebug()) {
+						await this._saveDebugMedia(chunk[idx], "img");
+					}
 				}
 			}
 		}
 
 		const combinedReason = reasons.join("; ");
-		this.logger.info(
-			`${groupPrefix}Detecção NudeNet resultado: ${isAnyNSFW ? "NSFW" : "SAFE"} (isNSFW=${isAnyNSFW}) - ${combinedReason}${userSuffix}`
-		);
+		if (this.isNudenetDebug() || isAnyNSFW) {
+			this.logger.info(
+				`${groupPrefix}Detecção NudeNet resultado: ${isAnyNSFW ? "NSFW" : "SAFE"} (isNSFW=${isAnyNSFW}) - ${combinedReason}${userSuffix}`
+			);
+		}
 
 		return { isNSFW: isAnyNSFW, reason: combinedReason };
 	}
@@ -219,9 +312,9 @@ class NSFWPredict {
 		}
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
-		this.logger.info(
-			`${groupPrefix}Detectando NSFW em vídeo via NudeNet API: ${videoPath}${userSuffix}`
-		);
+		if (this.isNudenetDebug()) {
+			this.logger.info(`${groupPrefix}Detectando NSFW via NudeNet API: ${videoPath}${userSuffix}`);
+		}
 
 		const fileBuffer = await fs.promises.readFile(videoPath);
 		const blob = new Blob([fileBuffer], { type: "video/mp4" });
@@ -285,11 +378,17 @@ class NSFWPredict {
 					? ` (score: ${Math.round(data.max_nsfw_score * 100)}%${frameCountStr})`
 					: "";
 			reason = `${labelStr}${scoreStr}`;
+
+			if (this.isNudenetDebug()) {
+				await this._saveDebugVideo(videoPath);
+			}
 		}
 
-		this.logger.info(
-			`${groupPrefix}Detecção NudeNet Vídeo resultado: ${isNSFW ? "NSFW" : "SAFE"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
-		);
+		if (this.isNudenetDebug() || isNSFW) {
+			this.logger.info(
+				`${groupPrefix}Detecção NudeNet resultado: ${isNSFW ? "NSFW" : "SAFE"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
+			);
+		}
 
 		return { isNSFW, reason };
 	}

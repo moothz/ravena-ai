@@ -157,6 +157,7 @@ test-output-*
 bots.json
 service-providers.json
 temp
+temp/nudenet_debug
 media
 data/sqlites
 data/backups
