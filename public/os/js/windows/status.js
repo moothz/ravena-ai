@@ -147,6 +147,7 @@ WindowManager.register('status', {
             : `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
 
         const phone = bot.phoneNumber || '';
+        const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
 
         return `
             <div class="drive-item ${isOffline ? 'drive-offline' : ''}" 
@@ -168,6 +169,11 @@ WindowManager.register('status', {
                         <span class="drive-bar-text ${isOffline ? 'bar-text-offline' : ''}">${barText}</span>
                     </div>
                 </div>
+                ${cleanPhone ? `
+                    <a href="https://wa.me/${cleanPhone}" target="_blank" class="drive-wa-btn" title="Chamar no WhatsApp" onclick="event.stopPropagation();">
+                        <i class="fab fa-whatsapp"></i>
+                    </a>
+                ` : ''}
             </div>
         `;
     },
@@ -216,6 +222,7 @@ WindowManager.register('status', {
 
             // Left Click -> Open detail window
             el.addEventListener('click', (e) => {
+                if (e.target.closest('.drive-wa-btn')) return;
                 e.stopPropagation();
                 WindowManager.open('status-detail', { botId, bot });
             });

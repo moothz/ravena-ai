@@ -1012,7 +1012,14 @@ class WhatsAppBotGo {
 
 				const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
 
-				const media = { url: fileUrl, mimetype, filename: fileName, filePath, base64: base64Data, data: base64Data };
+				const media = {
+					url: fileUrl,
+					mimetype,
+					filename: fileName,
+					filePath,
+					base64: base64Data,
+					data: base64Data
+				};
 				//this.logger.debug(`[_downloadMediaFromWhatsgo] Res: ${fileUrl}`, media);
 				return media;
 			}

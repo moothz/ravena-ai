@@ -144,7 +144,7 @@
     position: fixed;
     top: 16px;
     right: 16px;
-    width: 250px;
+    width: 275px;
     background: linear-gradient(180deg, #1c153f 0%, #110c29 100%);
     border: 2px solid var(--gold-color);
     border-radius: 8px;
@@ -173,7 +173,7 @@
 }
 
 .widget-postit-title {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--gold-color);
     display: flex;
@@ -184,7 +184,7 @@
 }
 
 .widget-postit-meta {
-    font-size: 10px;
+    font-size: 11px;
     color: #ffeb3b;
     margin-bottom: 8px;
     background: rgba(255, 215, 0, 0.12);
@@ -198,7 +198,7 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
-    max-height: 180px;
+    max-height: 190px;
     overflow-y: auto;
 }
 
@@ -206,9 +206,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: 13.5px;
     color: #e0e0ee;
-    padding: 4px 0;
+    padding: 5px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -219,11 +219,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 140px;
+    max-width: 160px;
+    font-size: 13.5px;
+    font-weight: 600;
 }
 
 .widget-postit-val {
     font-weight: 700;
+    font-size: 13px;
     color: var(--gold-color);
     flex-shrink: 0;
 }

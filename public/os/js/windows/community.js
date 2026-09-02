@@ -15,9 +15,9 @@ WindowManager.register('community', {
                 </p>
 
                 <div class="community-grid">
-                    <a href="https://chat.whatsapp.com/Cjh9gmf1mo2DGBEOBeKGbw" target="_blank" class="community-card">
+                    <a href="https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe" target="_blank" class="community-card">
                         <img src="img/icons/community.png" alt="Comunidade">
-                        <span>Grupo Geral WhatsApp</span>
+                        <span>Comunidade Ravenabot</span>
                     </a>
 
                     <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" class="community-card">
@@ -29,11 +29,6 @@ WindowManager.register('community', {
                         <i class="fab fa-whatsapp" style="font-size: 36px; color: #25d366;"></i>
                         <span>Falar com Criador (moothz)</span>
                     </a>
-
-                    <div class="community-card" id="com-open-fishing" style="cursor: pointer;">
-                        <img src="img/icons/fishing.png" alt="Pesca">
-                        <span>Galeria da Pesca</span>
-                    </div>
 
                     <a href="https://t.me/ravenosabot" target="_blank" class="community-card">
                         <i class="fab fa-telegram" style="font-size: 36px; color: #0088cc;"></i>
@@ -52,12 +47,5 @@ WindowManager.register('community', {
                 </div>
             </div>
         `;
-
-        const fishingBtn = wb.body.querySelector('#com-open-fishing');
-        if (fishingBtn) {
-            fishingBtn.addEventListener('click', () => {
-                WindowManager.open('fishing');
-            });
-        }
     }
 });

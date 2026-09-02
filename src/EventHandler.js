@@ -833,7 +833,12 @@ class EventHandler extends EventEmitter {
 				const nsfwContext = {
 					groupName: group?.name || group?.id || "PV",
 					author: message.author || message.authorAlt || "desconhecido",
-					authorName: message.name || message.pushName || message.authorName || message.author || "desconhecido"
+					authorName:
+						message.name ||
+						message.pushName ||
+						message.authorName ||
+						message.author ||
+						"desconhecido"
 				};
 
 				// Gera nome de arquivo temporário único

@@ -198,4 +198,5 @@ data/www.youtube.com_cookies.json
 /.antigravitycli
 /data/qrcodes
 data/notified_streams_cache.json
+data/geoguesser.json
 SKIP_HEALTH_CHECK

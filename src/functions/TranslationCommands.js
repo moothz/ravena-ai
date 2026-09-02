@@ -301,21 +301,30 @@ function extractTextFromMessage(msg) {
 	if (typeof msg.body === "string" && msg.body.trim()) return msg.body.trim();
 	if (typeof msg.text === "string" && msg.text.trim()) return msg.text.trim();
 	if (msg.content && typeof msg.content === "object") {
-		if (typeof msg.content.text === "string" && msg.content.text.trim()) return msg.content.text.trim();
-		if (typeof msg.content.caption === "string" && msg.content.caption.trim()) return msg.content.caption.trim();
-		if (typeof msg.content.conversation === "string" && msg.content.conversation.trim()) return msg.content.conversation.trim();
+		if (typeof msg.content.text === "string" && msg.content.text.trim())
+			return msg.content.text.trim();
+		if (typeof msg.content.caption === "string" && msg.content.caption.trim())
+			return msg.content.caption.trim();
+		if (typeof msg.content.conversation === "string" && msg.content.conversation.trim())
+			return msg.content.conversation.trim();
 	}
 	if (msg.goMessageData?.Message) {
 		const m = msg.goMessageData.Message;
 		if (typeof m.conversation === "string" && m.conversation.trim()) return m.conversation.trim();
-		if (typeof m.extendedTextMessage?.text === "string" && m.extendedTextMessage.text.trim()) return m.extendedTextMessage.text.trim();
-		if (typeof m.imageMessage?.caption === "string" && m.imageMessage.caption.trim()) return m.imageMessage.caption.trim();
-		if (typeof m.videoMessage?.caption === "string" && m.videoMessage.caption.trim()) return m.videoMessage.caption.trim();
-		if (typeof m.documentMessage?.caption === "string" && m.documentMessage.caption.trim()) return m.documentMessage.caption.trim();
+		if (typeof m.extendedTextMessage?.text === "string" && m.extendedTextMessage.text.trim())
+			return m.extendedTextMessage.text.trim();
+		if (typeof m.imageMessage?.caption === "string" && m.imageMessage.caption.trim())
+			return m.imageMessage.caption.trim();
+		if (typeof m.videoMessage?.caption === "string" && m.videoMessage.caption.trim())
+			return m.videoMessage.caption.trim();
+		if (typeof m.documentMessage?.caption === "string" && m.documentMessage.caption.trim())
+			return m.documentMessage.caption.trim();
 	}
 	if (msg.origin) {
-		if (typeof msg.origin.body === "string" && msg.origin.body.trim()) return msg.origin.body.trim();
-		if (typeof msg.origin.caption === "string" && msg.origin.caption.trim()) return msg.origin.caption.trim();
+		if (typeof msg.origin.body === "string" && msg.origin.body.trim())
+			return msg.origin.body.trim();
+		if (typeof msg.origin.caption === "string" && msg.origin.caption.trim())
+			return msg.origin.caption.trim();
 	}
 	return "";
 }
@@ -339,9 +348,7 @@ async function translateWithDeepL(text, sourceLanguage, targetLanguage) {
 		else if (target === "PT-PT") target = "PT-PT";
 
 		let source =
-			sourceLanguage && sourceLanguage !== "auto"
-				? sourceLanguage.toUpperCase()
-				: undefined;
+			sourceLanguage && sourceLanguage !== "auto" ? sourceLanguage.toUpperCase() : undefined;
 		if (source === "PT-BR" || source === "PT-PT") source = "PT";
 		if (source === "EN-US" || source === "EN-GB") source = "EN";
 
@@ -421,7 +428,9 @@ RULES:
  */
 async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
 	try {
-		const src = (sourceLanguage && sourceLanguage !== "auto" ? sourceLanguage : "auto").toLowerCase();
+		const src = (
+			sourceLanguage && sourceLanguage !== "auto" ? sourceLanguage : "auto"
+		).toLowerCase();
 		const tgt = (targetLanguage || "en").toLowerCase();
 
 		const response = await axios.get("https://api.mymemory.translated.net/get", {

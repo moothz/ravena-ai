@@ -425,6 +425,33 @@
     letter-spacing: 0.5px;
 }
 
+.drive-wa-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: #25d366;
+    color: #ffffff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(37, 211, 102, 0.3);
+}
+
+.drive-wa-btn:hover {
+    background: #1eb857;
+    transform: scale(1.08);
+    box-shadow: 0 4px 10px rgba(37, 211, 102, 0.5);
+    color: #ffffff;
+}
+
+.drive-wa-btn:active {
+    transform: scale(0.95);
+}
+
 /* ========================================================
    2. STATUS DETAIL WINDOW
    ======================================================== */

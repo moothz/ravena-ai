@@ -40,6 +40,7 @@ const RavenaOS = {
 
         // Initialize UI components
         if (this.state.isMobile) {
+            document.getElementById('mobile-app')?.classList.remove('hidden');
             if (window.MobileApp) window.MobileApp.init();
         } else {
             if (window.Desktop) window.Desktop.init();
@@ -98,6 +99,9 @@ const RavenaOS = {
             this.state.isMobile = window.innerWidth < 768;
             if (wasMobile !== this.state.isMobile) {
                 if (this.state.isMobile) {
+                    document.getElementById('mobile-app')?.classList.remove('hidden');
+                    document.getElementById('desktop')?.classList.add('hidden');
+                    document.getElementById('taskbar')?.classList.add('hidden');
                     if (window.MobileApp) window.MobileApp.init();
                 } else {
                     document.getElementById('mobile-app')?.classList.add('hidden');

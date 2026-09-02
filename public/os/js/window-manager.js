@@ -27,6 +27,10 @@ const WindowManager = {
     },
 
     open(type, params = {}) {
+        if ((window.innerWidth < 768 || (window.RavenaOS && window.RavenaOS.state.isMobile)) && window.MobileApp) {
+            return window.MobileApp.openApp(type, params);
+        }
+
         const config = this.configs[type];
         if (!config) {
             console.error(`Unknown window type: ${type}`);
@@ -184,6 +188,10 @@ const WindowManager = {
     },
 
     close(id) {
+        if ((window.innerWidth < 768 || (window.RavenaOS && window.RavenaOS.state.isMobile)) && window.MobileApp) {
+            window.MobileApp.closeApp();
+            return;
+        }
         if (this.windows.has(id)) {
             const entry = this.windows.get(id);
             if (entry && entry.winbox) {
