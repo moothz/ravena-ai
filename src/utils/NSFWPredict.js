@@ -68,6 +68,7 @@ class NSFWPredict {
 	 * @param {string|Buffer} data - Imagem em base64, data URI ou buffer
 	 * @param {string} prefix - Prefixo do arquivo
 	 * @param {string} defaultExt - Extensão padrão
+	 * @returns {Promise<string|null>} Nome do arquivo salvo
 	 */
 	async _saveDebugMedia(data, prefix = "img", defaultExt = "jpg") {
 		try {
@@ -96,20 +97,24 @@ class NSFWPredict {
 					await fs.promises.writeFile(targetPath, Buffer.from(base64Data, "base64"));
 				}
 				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+				return filename;
 			} else if (Buffer.isBuffer(data)) {
 				const filename = `nsfw_${prefix}_${timestamp}_${random}.${ext}`;
 				const targetPath = path.join(debugDir, filename);
 				await fs.promises.writeFile(targetPath, data);
 				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+				return filename;
 			}
 		} catch (err) {
 			this.logger.error("Erro ao salvar imagem de debug NSFW:", err);
 		}
+		return null;
 	}
 
 	/**
 	 * Salva uma cópia do vídeo classificado como NSFW no diretório de debug
 	 * @param {string} videoPath - Caminho do vídeo original
+	 * @returns {Promise<string|null>} Nome do arquivo salvo
 	 */
 	async _saveDebugVideo(videoPath) {
 		try {
@@ -121,8 +126,45 @@ class NSFWPredict {
 			const targetPath = path.join(debugDir, filename);
 			await fs.promises.copyFile(videoPath, targetPath);
 			this.logger.info(`[Debug] Vídeo NSFW salvo em: ${targetPath}`);
+			return filename;
 		} catch (err) {
 			this.logger.error("Erro ao salvar vídeo de debug NSFW:", err);
+		}
+		return null;
+	}
+
+	/**
+	 * Concatena o retorno da detecção NSFW e o objeto da API no arquivo de log de debug
+	 * @param {Object} entry - Dados da detecção
+	 */
+	async _appendDebugLog(entry) {
+		try {
+			const debugDir = await this._ensureDebugDir();
+			const logFilePath = path.join(debugDir, "ndenet_debug.txt");
+			const nudenetLogFilePath = path.join(debugDir, "nudenet_debug.txt");
+
+			const timestamp = new Date().toISOString();
+			const separator = "=".repeat(60);
+			const logText = [
+				separator,
+				`[${timestamp}] Arquivo: ${entry.filename || "desconhecido"} | Tipo: ${entry.type || "mídia"}`,
+				`Contexto: ${entry.group || "N/A"} | Autor: ${entry.author || "N/A"}`,
+				`Resultado: ${entry.resultText || (entry.isNSFW ? "NSFW" : "SAFE")}`,
+				`Motivo: ${entry.reason || "Nenhum"}`,
+				"Objeto da API:",
+				JSON.stringify(entry.apiResponse, null, 2),
+				""
+			].join("\n");
+
+			await fs.promises.appendFile(logFilePath, logText, "utf8");
+
+			try {
+				if (!fs.existsSync(nudenetLogFilePath)) {
+					await fs.promises.symlink("ndenet_debug.txt", nudenetLogFilePath).catch(() => {});
+				}
+			} catch {}
+		} catch (err) {
+			this.logger.error("Erro ao escrever no arquivo de log de debug:", err);
 		}
 	}
 
@@ -282,7 +324,16 @@ class NSFWPredict {
 					}
 
 					if (this.isNudenetDebug()) {
-						await this._saveDebugMedia(chunk[idx], "img");
+						const savedFilename = await this._saveDebugMedia(chunk[idx], "img");
+						await this._appendDebugLog({
+							filename: savedFilename,
+							type: "imagem",
+							group: context.groupName || context.groupId,
+							author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
+							resultText: "NSFW (isNSFW=true)",
+							reason,
+							apiResponse: item
+						});
 					}
 				}
 			}
@@ -380,7 +431,16 @@ class NSFWPredict {
 			reason = `${labelStr}${scoreStr}`;
 
 			if (this.isNudenetDebug()) {
-				await this._saveDebugVideo(videoPath);
+				const savedFilename = await this._saveDebugVideo(videoPath);
+				await this._appendDebugLog({
+					filename: savedFilename,
+					type: "vídeo",
+					group: context.groupName || context.groupId,
+					author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
+					resultText: "NSFW (isNSFW=true)",
+					reason,
+					apiResponse: data
+				});
 			}
 		}
 
