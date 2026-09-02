@@ -8,27 +8,77 @@ const MIN_REASON_LENGTH = 15;
 
 /**
  * Verifica se a string contém caracteres "estranhos" (fontes personalizadas,
- * zalgo, marcas de combinação, símbolos exóticos/ornamentais)
+ * zalgo, marcas de combinação abusivas, alfabetos exóticos usados como fontes ornamentais).
+ * Emojis normais e símbolos comuns (ex: ®, ©, ™) NÃO são considerados estranhos.
  * @param {string} str
  * @returns {boolean}
  */
 function hasStrangeCharacters(str) {
 	if (!str) return false;
 
-	// 1. Math Alphanumeric Symbols (e.g. 𝖲, 𝗔, 𝖫, 𝖵, 🄐, 𝕾, 𝗤, 𝔄, 𝓐)
-	const mathAndEnclosed = /[\u{1D400}-\u{1D7FF}\u{2460}-\u{24FF}\u{1F100}-\u{1F1FF}]/u;
-	if (mathAndEnclosed.test(str)) return true;
-	// 2. Combining marks (strikethrough, underline, Zalgo, Arabic combining marks, etc.)
-	/* eslint-disable no-misleading-character-class */
-	const combiningMarks =
-		/[\u0300-\u036F\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F\u0610-\u061A\u064B-\u065F\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06EC]/;
-	/* eslint-enable no-misleading-character-class */
-	if (combiningMarks.test(str)) return true;
+	// Normaliza para NFC para evitar falsos positivos com acentuação latina padrão (ã, é, ç, etc.)
+	const normalized = str.normalize("NFC");
 
-	// 3. Specific decorative/exotic symbols commonly used in fancy nickname formatting:
-	const exoticOrOrnamental =
-		/[\u0F00-\u0FFF\u0A00-\u0A7F\u2C80-\u2CFF\u2700-\u27BF\u2500-\u25FF\u2600-\u26FF\u2200-\u22FF\u2300-\u23FF\u{10650}-\u{10660}]/u;
-	if (exoticOrOrnamental.test(str)) return true;
+	// 1. Math Alphanumeric Symbols (U+1D400 - U+1D7FF): Fontes matemáticas (negrito, itálico, script/cursiva, fraktur, double-struck, sans, mono)
+	// Ex: 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, 𝓗, 𝓚, 𝔄
+	if (/[\u{1D400}-\u{1D7FF}]/u.test(normalized)) return true;
+
+	// 2. Fullwidth Latin / dígitos (U+FF01 - U+FF5E) usados como fonte: Ａ Ｂ Ｃ
+	if (/[\u{FF01}-\u{FF5E}]/u.test(normalized)) return true;
+
+	// 3. Enclosed Alphanumerics (U+2460 - U+24FF) ex: ①, ⑵, ⒜, ⓐ, Ⓐ
+	if (/[\u{2460}-\u{24FF}]/u.test(normalized)) return true;
+
+	// 4. Enclosed Alphanumeric Supplement (U+1F100 - U+1F1FF) usados como fonte ornamental
+	// Exclui bandeiras (1F1E6-1F1FF) e emojis quadrados padrão (🅰️, 🅱️, 🅾️, 🅿️, 🆎, 🆑, 🆒, 🆓, 🆔, 🆕, 🆖, 🆗, 🆘, 🆙, 🆚)
+	if (/[\u{1F110}-\u{1F16F}\u{1F130}-\u{1F14F}\u{1F120}-\u{1F12F}]/u.test(normalized)) return true;
+
+	// 5. Símbolos matemáticos em formato de letra usados como fonte (ℬ, ℰ, ℱ, ℋ, ℐ, ℒ, ℳ, ℛ, ℯ, ℊ, ℴ, ℭ, ℌ, ℑ, ℜ, ℨ, ℂ, ℍ, ℕ, ℙ, ℚ, ℝ, ℤ)
+	// Não inclui símbolos comuns como ™ (U+2122), № (U+2116), ℃, ℉
+	if (
+		/[\u2102\u210A-\u2113\u2115\u2119-\u211D\u2124\u2128\u212C-\u212D\u2130-\u2139\u213C-\u2149]/u.test(
+			normalized
+		)
+	)
+		return true;
+
+	// 6. Alfabetos/símbolos exóticos usados puramente como fontes decorativas em nicks/grupos:
+	// - Tai Viet (U+AA80-U+AADF, ex: ꫀ, ꪮ)
+	// - Tai Le (U+1950-U+197F, U+1980-U+19DF, ex: ᧉ, ᧓, ᥉)
+	// - Tai Tham (U+1A20-U+1AAF, ex: ᩥ)
+	// - Cherokee & Suplemento (U+13A0-U+13FF, U+AB70-U+ABBF, ex: ꭷ, ᎐)
+	// - Ethiopic (U+1200-U+137F, ex: ፝)
+	// - Coptic (U+2C80-U+2CFF, ex: ⲓ)
+	// - Georgian (U+10A0-U+10FF, U+2D00-U+2D2F, ex: ა, ⴄ)
+	// - Tifinagh (U+2D30-U+2D7F, ex: ⵿)
+	// - Meetei Mayek (U+ABC0-U+ABFF, ex: ꯭)
+	// - Vedic Extensions (U+1CD0-U+1CFF, ex: ᳟)
+	// - IPA / Extensões Fonéticas usadas como small caps (U+0250-U+02AF, U+1D00-U+1D2F, ex: ɪ, ɢ, ʟ, ɴ)
+	// - Glifos indic/orientais decorativos (Gujarati U+0A80-U+0AFF ex: ઇ, Odia U+0B00-U+0B7F ex: ଓ, Gurmukhi U+0A00-U+0A7F, Tibetan U+0F00-U+0FFF, Sinhala U+0D80-U+0DFF)
+	// - Runas (U+16A0-U+16FF), Gótico (U+10330-U+1034F), Glagolítico (U+2C00-U+2C5F)
+	// - Linear A/B (U+10000-U+100FF, U+10650-U+10660)
+	// - Lao marks (U+0EBC)
+	/* eslint-disable no-misleading-character-class */
+	const exoticScripts =
+		/[\u{0A00}-\u{0B7F}\u{0D80}-\u{0DFF}\u{0F00}-\u{0FFF}\u{10A0}-\u{10FF}\u{1200}-\u{137F}\u{13A0}-\u{13FF}\u{16A0}-\u{16FF}\u{1900}-\u{19DF}\u{1A20}-\u{1AAF}\u{1CD0}-\u{1CFF}\u{1D00}-\u{1D2F}\u{2C00}-\u{2C5F}\u{2C80}-\u{2CFF}\u{2D00}-\u{2D7F}\u{AA80}-\u{AADF}\u{AB70}-\u{ABFF}\u{10330}-\u{1034F}\u{10650}-\u{10660}\u{0250}-\u{02AF}\u{0EBC}]/u;
+	if (exoticScripts.test(normalized)) return true;
+
+	// 7. Marcas de combinação decorativas e Zalgo não-latino:
+	// - Diacríticos hebraicos usados como enfeite (U+0591-U+05C7 ex: ׁ, ׅ, ׂ, ֟, ִ)
+	// - Marcas árabes decorativas / Alcorânicas (U+0610-U+061A, U+064B-U+065F, U+06D6-U+06ED, U+08D4-U+08ED ex: ࣭, ࣪, ۫)
+	// - Marcas de combinação para símbolos (U+20D0-U+20E2, U+20E4-U+20FF - excluindo U+20E3 keycap de emojis)
+	// - Diacríticos estendidos / suplementares (U+1AB0-U+1AFF ex: ᪶, U+1DC0-U+1DFF)
+	// - Half marks combinados (U+FE20-U+FE2F)
+	const decorativeCombining =
+		/[\u{0591}-\u{05C7}\u{0610}-\u{061A}\u{064B}-\u{065F}\u{06D6}-\u{06ED}\u{08D4}-\u{08ED}\u{1AB0}-\u{1AFF}\u{1DC0}-\u{1DFF}\u{20D0}-\u{20E2}\u{20E4}-\u{20FF}\u{FE20}-\u{FE2F}]/u;
+	if (decorativeCombining.test(normalized)) return true;
+
+	// 8. Diacríticos empilhados / Zalgo / tachados / sublinhados com marcas de combinação:
+	// - Overlays, tachados, sublinhados, double diacritics (U+0332-U+0338, U+035C-U+0362)
+	// - Múltiplos diacríticos combinados consecutivos empilhados
+	if (/[\u0332-\u0338\u035C-\u0362]/.test(normalized)) return true;
+	if (/[\u0300-\u036F]{2,}/.test(normalized)) return true;
+	/* eslint-enable no-misleading-character-class */
 
 	return false;
 }
@@ -283,7 +333,7 @@ class InviteSystem {
 Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve ser enviado para moderação manual humana.
 
 REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
-1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição.
+1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição (OBS: emojis normais e símbolos comuns como ®, ©, ™, etc. NÃO são caracteres estranhos. Caracteres estranhos referem-se a fontes modificadas/personalizadas como 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, alfabetos exóticos usados apenas para enfeitar letras, ou zalgo/combinações abusivas de acentos decorativos).
 2. Grupos com menos de 3 pessoas (a menos que o usuário seja doador R$10+).
 3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, vocabulário infantil/underage).
 4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
