@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'lbl-ignored-numbers': 'Números que o bot irá ignorar completamente (não responderá).',
         'lbl-delete-links': 'Remove mensagens contendo links (exceto de admins).',
         'lbl-delete-nsfw': 'Tenta identificar e apagar imagens e vídeos impróprios (+18).',
+        'lbl-nsfw-intensity': 'Intensidade da detecção: quanto maior o valor, maior a chance de apagar. Se estiver apagando coisas que não são NSFW, diminua. Se não estiver apagando NSFW o suficiente, aumente.',
         'lbl-forbidden-words': 'Mensagens com estas palavras serão apagadas automaticamente. <br><b>CUIDADO:</b> se tiver algo no meio da palavra, ele apaga também.',
         'lbl-forbidden-users': 'Apaga todas as mensagens enviadas por estes usuários específicos.<br><b>É difícil definir aqui devido a nova criptografia de números do whatsapp. Use o comando marcando a pessoa:<br><i>!g-filtro-pessoa @PessoaIgnorar</i>',
         'lbl-muted-categories': 'Desativa categorias inteiras de comandos (ex: não responder jogos).',

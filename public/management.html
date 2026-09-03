@@ -135,6 +135,15 @@
                             <input type="checkbox" id="delete-nsfw">
                             <label id="lbl-delete-nsfw" for="delete-nsfw">Detectar e Apagar NSFW</label>
                         </div>
+                        <div id="nsfw-settings" class="hidden" style="margin-left: 20px; margin-bottom: 15px;">
+                            <div class="slider-group">
+                                <label id="lbl-nsfw-intensity">Intensidade: <span id="nsfw-intensity-val">20</span>%</label>
+                                <input type="range" id="nsfw-intensity" min="0" max="100" value="20" class="slider">
+                                <span id="nsfw-intensity-desc" style="font-size: 0.85em; font-style: italic; display: block; margin-top: 5px; color: #888;">
+                                    Se estiver apagando coisas que não são NSFW, diminua o valor. Se não estiver apagando NSFW o suficiente, aumente o valor.
+                                </span>
+                            </div>
+                        </div>
 
                         <div class="divider"></div>
 

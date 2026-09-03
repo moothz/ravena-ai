@@ -147,7 +147,7 @@ class Management {
 			},
 			"filtro-nsfw": {
 				method: "filterNSFW",
-				description: "Detecta e Apaga mensagens NSFW"
+				description: "Ativa/desativa ou define a intensidade (0-100) do filtro NSFW"
 			},
 			// 'apelido': {
 			//   method: 'setUserNickname',
@@ -1707,7 +1707,7 @@ class Management {
   *!g-filtro-palavra* <palavra> - Adiciona/remove palavra do filtro
   *!g-filtro-links* - Ativa/desativa filtro de links
   *!g-filtro-pessoa* @MarcarPessoa - Adiciona/remove número do filtro
-  *!g-filtro-nsfw* - Ativa/desativa filtro de conteúdo NSFW
+  *!g-filtro-nsfw* [0-100] - Ativa/desativa ou ajusta a intensidade do filtro NSFW
 
   *Variáveis em mensagens:*
   {pessoa} - Nome da pessoa que entrou/saiu do grupo
@@ -2358,7 +2358,7 @@ class Management {
 	}
 
 	/**
-	 * Ativa ou desativa filtro de conteúdo NSFW
+	 * Ativa/desativa ou define a intensidade (0-100) do filtro de conteúdo NSFW
 	 * @param {WhatsAppBot} bot - Instância do bot
 	 * @param {Object} message - Dados da mensagem
 	 * @param {Array} args - Argumentos do comando
@@ -2387,17 +2387,85 @@ class Management {
 			group.filters = {};
 		}
 
-		// Alterna estado do filtro
-		group.filters.nsfw = !group.filters.nsfw;
-		await this.database.saveGroup(group);
+		const defaultThreshold = parseFloat(process.env.NUDENET_THRESHOLD || "0.8");
+		const calcIntensityFromThreshold = (t) => {
+			const intensity = Math.round(((0.95 - t) / 0.75) * 100);
+			return Math.max(0, Math.min(100, intensity));
+		};
+		const calcThresholdFromIntensity = (intensity) => {
+			const clamped = Math.max(0, Math.min(100, intensity));
+			return parseFloat((0.95 - (clamped / 100) * 0.75).toFixed(4));
+		};
 
-		if (group.filters.nsfw) {
+		const defaultIntensity = calcIntensityFromThreshold(defaultThreshold);
+		const firstArg = args && args[0] ? String(args[0]).trim() : "";
+
+		// Se o argumento for para desativar explicitamente
+		if (firstArg.toLowerCase() === "off" || firstArg.toLowerCase() === "desativar") {
+			group.filters.nsfw = false;
+			await this.database.saveGroup(group);
 			return new ReturnMessage({
 				chatId: group.id,
 				content:
-					"✅ Filtro de conteúdo NSFW ativado. Imagens e vídeos detectados como conteúdo adulto serão automaticamente removidos."
+					"❌ Filtro de conteúdo NSFW desativado. Imagens e vídeos não serão filtrados para conteúdo adulto."
+			});
+		}
+
+		// Se foi fornecido um valor numérico de intensidade (0 a 100)
+		if (firstArg !== "") {
+			const num = parseFloat(firstArg);
+			if (isNaN(num) || num < 0 || num > 100) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content:
+						"⚠️ Valor inválido! Por favor, informe um número de 0 a 100 para a intensidade de detecção (Ex: *!g-filtro-nsfw 30*)."
+				});
+			}
+
+			const intensity = Math.round(num);
+			const threshold = calcThresholdFromIntensity(intensity);
+
+			group.filters.nsfw = true;
+			group.filters.nsfwIntensity = intensity;
+			group.filters.nsfwThreshold = threshold;
+			await this.database.saveGroup(group);
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					`Intensidade de detecção ${intensity}%\n` +
+					"> Se estiver apagando coisas que não são NSFW, diminua o valor. Se não estiver apagando NSFW o suficiente, aumente o valor"
+			});
+		}
+
+		// Sem argumentos: ativa/desativa alternadamente
+		group.filters.nsfw = !group.filters.nsfw;
+
+		if (group.filters.nsfw) {
+			if (
+				group.filters.nsfwThreshold === undefined ||
+				group.filters.nsfwThreshold === null ||
+				isNaN(group.filters.nsfwThreshold)
+			) {
+				group.filters.nsfwThreshold = defaultThreshold;
+				group.filters.nsfwIntensity = defaultIntensity;
+			}
+			await this.database.saveGroup(group);
+
+			const currentIntensity =
+				group.filters.nsfwIntensity !== undefined
+					? group.filters.nsfwIntensity
+					: calcIntensityFromThreshold(group.filters.nsfwThreshold);
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					`✅ Filtro de conteúdo NSFW ativado.\n\n` +
+					`Intensidade de detecção ${currentIntensity}%\n` +
+					"> Se estiver apagando coisas que não são NSFW, diminua o valor. Se não estiver apagando NSFW o suficiente, aumente o valor"
 			});
 		} else {
+			await this.database.saveGroup(group);
 			return new ReturnMessage({
 				chatId: group.id,
 				content:
@@ -7387,8 +7455,8 @@ const helper = {
 		},
 		{
 			cmd: "!g-filtro-nsfw",
-			desc: "Detecta e Apaga mensagens NSFW",
-			usage: ["!g-filtro-nsfw"],
+			desc: "Ativa/desativa ou define a intensidade (0-100) do filtro NSFW",
+			usage: ["!g-filtro-nsfw", "!g-filtro-nsfw 30"],
 			category: "filtros"
 		},
 		{

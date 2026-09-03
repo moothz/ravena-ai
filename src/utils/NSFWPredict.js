@@ -43,6 +43,30 @@ class NSFWPredict {
 	}
 
 	/**
+	 * Obtém o threshold a ser utilizado para detecção
+	 * Prioridade:
+	 * 1. Threshold customizado no contexto (context.threshold)
+	 * 2. Threshold customizado do grupo (context.group?.filters?.nsfwThreshold)
+	 * 3. Threshold padrão do .env (NUDENET_THRESHOLD) ou 0.8
+	 * @param {Object} context
+	 * @returns {number}
+	 */
+	getThreshold(context = {}) {
+		if (context.threshold !== undefined && !isNaN(context.threshold)) {
+			return parseFloat(context.threshold);
+		}
+		if (
+			context.group?.filters?.nsfwThreshold !== undefined &&
+			!isNaN(context.group.filters.nsfwThreshold)
+		) {
+			return parseFloat(context.group.filters.nsfwThreshold);
+		}
+		return this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
+			? this.nudenetThreshold
+			: 0.8;
+	}
+
+	/**
 	 * Verifica se o modo debug do NudeNet está ativado
 	 * @returns {boolean}
 	 */
@@ -148,7 +172,7 @@ class NSFWPredict {
 				separator,
 				`[${timestamp}] Arquivo: ${entry.filename || "desconhecido"} | Tipo: ${entry.type || "mídia"}`,
 				`Contexto: ${entry.group || "N/A"} | Autor: ${entry.author || "N/A"}`,
-				`Resultado: ${entry.resultText || (entry.isNSFW ? "NSFW" : "SAFE")}`,
+				`Resultado: ${entry.resultText || (entry.isNSFW ? "NSFW" : "SAFE")} (Threshold: ${entry.threshold !== undefined ? entry.threshold : "padrão"})`,
 				`Motivo: ${entry.reason || "Nenhum"}`,
 				"Objeto da API:",
 				JSON.stringify(entry.apiResponse, null, 2),
@@ -282,11 +306,7 @@ class NSFWPredict {
 				include_detections: true
 			};
 
-			const thresholdToUse =
-				this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
-					? this.nudenetThreshold
-					: 0.8;
-
+			const thresholdToUse = this.getThreshold(context);
 			payload.threshold = thresholdToUse;
 
 			const headers = { "Content-Type": "application/json" };
@@ -332,6 +352,7 @@ class NSFWPredict {
 							author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
 							resultText: "NSFW (isNSFW=true)",
 							reason,
+							threshold: thresholdToUse,
 							apiResponse: item
 						});
 					}
@@ -375,10 +396,7 @@ class NSFWPredict {
 		form.append("max_frames", String(this.nudenetVideoMaxFrames));
 		form.append("include_frame_detections", "true");
 
-		const thresholdToUse =
-			this.nudenetThreshold !== undefined && !isNaN(this.nudenetThreshold)
-				? this.nudenetThreshold
-				: 0.8;
+		const thresholdToUse = this.getThreshold(context);
 
 		form.append("threshold", String(thresholdToUse));
 
@@ -453,6 +471,7 @@ class NSFWPredict {
 					author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
 					resultText: "NSFW (isNSFW=true)",
 					reason,
+					threshold: thresholdToUse,
 					apiResponse: data
 				});
 			}

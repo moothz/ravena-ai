@@ -557,6 +557,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!groupData.filters) groupData.filters = {};
         groupData.filters.links = document.getElementById('delete-links').checked;
         groupData.filters.nsfw = document.getElementById('delete-nsfw').checked;
+        const nsfwSlider = document.getElementById('nsfw-intensity');
+        if (nsfwSlider) {
+            const intensity = parseInt(nsfwSlider.value, 10);
+            groupData.filters.nsfwIntensity = intensity;
+            groupData.filters.nsfwThreshold = parseFloat((0.95 - (intensity / 100) * 0.75).toFixed(4));
+        }
 
         groupData.autoStt = document.getElementById('auto-stt').checked;
         groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
@@ -593,7 +599,23 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
         
         document.getElementById('delete-links').checked = groupData.filters?.links || false;
-        document.getElementById('delete-nsfw').checked = groupData.filters?.nsfw || false;
+        const nsfwActive = !!groupData.filters?.nsfw;
+        document.getElementById('delete-nsfw').checked = nsfwActive;
+
+        let nsfwIntensity = 20;
+        if (groupData.filters?.nsfwIntensity !== undefined && !isNaN(groupData.filters.nsfwIntensity)) {
+            nsfwIntensity = parseInt(groupData.filters.nsfwIntensity, 10);
+        } else if (groupData.filters?.nsfwThreshold !== undefined && !isNaN(groupData.filters.nsfwThreshold)) {
+            nsfwIntensity = Math.round(((0.95 - groupData.filters.nsfwThreshold) / 0.75) * 100);
+            nsfwIntensity = Math.max(0, Math.min(100, nsfwIntensity));
+        }
+
+        const nsfwSliderEl = document.getElementById('nsfw-intensity');
+        if (nsfwSliderEl) {
+            nsfwSliderEl.value = nsfwIntensity;
+            document.getElementById('nsfw-intensity-val').textContent = nsfwIntensity;
+        }
+        toggleNsfwSettings(nsfwActive);
 
         renderTags('forbidden-words-list', groupData.filters?.words || [], (list) => { 
             if(!groupData.filters) groupData.filters = {};
@@ -758,6 +780,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function toggleTranslateSettings(show) {
         document.getElementById('translate-settings').classList.toggle('hidden', !show);
+    }
+
+    function toggleNsfwSettings(show) {
+        const el = document.getElementById('nsfw-settings');
+        if (el) {
+            el.classList.toggle('hidden', !show);
+        }
     }
 
     function setupListAdder(btnId, inputId, dataPath) {
@@ -1822,6 +1851,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Sliders
+        const deleteNsfwCheckbox = document.getElementById('delete-nsfw');
+        if (deleteNsfwCheckbox) {
+            deleteNsfwCheckbox.addEventListener('change', (e) => {
+                toggleNsfwSettings(e.target.checked);
+            });
+        }
+
+        const nsfwSlider = document.getElementById('nsfw-intensity');
+        if (nsfwSlider) {
+            nsfwSlider.addEventListener('input', (e) => {
+                document.getElementById('nsfw-intensity-val').textContent = e.target.value;
+            });
+        }
+
         const chanceSlider = document.getElementById('interaction-chance');
         if(chanceSlider) {
             chanceSlider.addEventListener('input', (e) => {

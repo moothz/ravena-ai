@@ -838,7 +838,9 @@ class EventHandler extends EventEmitter {
 						message.pushName ||
 						message.authorName ||
 						message.author ||
-						"desconhecido"
+						"desconhecido",
+					threshold: group?.filters?.nsfwThreshold,
+					group
 				};
 
 				// Gera nome de arquivo temporário único
