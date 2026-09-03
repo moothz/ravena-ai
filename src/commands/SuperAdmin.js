@@ -1769,31 +1769,98 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			// Verifica se a mensagem contém uma imagem
-			if (message.type !== "image") {
+			let targetBot = bot;
+			const cmdArgs = [...(args || [])];
+
+			// Verifica se o primeiro argumento é o ID ou nome de outro bot
+			if (cmdArgs.length > 0) {
+				const candidateId = cmdArgs[0];
+				if (candidateId === bot.id || candidateId === bot.name) {
+					targetBot = bot;
+					cmdArgs.shift();
+				} else if (bot.otherBots && Array.isArray(bot.otherBots)) {
+					const found = bot.otherBots.find(
+						(b) => b.id === candidateId || b.name === candidateId || b.instanceName === candidateId
+					);
+					if (found) {
+						targetBot = found;
+						cmdArgs.shift();
+					}
+				}
+			}
+
+			let media = null;
+
+			// 1. Mensagem enviada diretamente como imagem
+			if (message.type === "image") {
+				if (typeof message.downloadMedia === "function") {
+					media = await message.downloadMedia();
+				} else if (message.content && (message.content.data || message.content.url)) {
+					media = message.content;
+				}
+			}
+
+			// 2. Mensagem respondendo/citando uma imagem
+			if (
+				!media &&
+				(message.hasQuotedMsg || typeof message.origin?.getQuotedMessage === "function")
+			) {
+				try {
+					const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+					if (quotedMsg && (quotedMsg.type === "image" || quotedMsg.hasMedia)) {
+						if (typeof quotedMsg.downloadMedia === "function") {
+							media = await quotedMsg.downloadMedia();
+						} else if (quotedMsg.content && (quotedMsg.content.data || quotedMsg.content.url)) {
+							media = quotedMsg.content;
+						}
+					}
+				} catch (err) {
+					this.logger.warn("Erro ao buscar mídia de mensagem citada:", err);
+				}
+			}
+
+			// 3. Argumento contendo URL de imagem ou arquivo local
+			if (!media && cmdArgs.length > 0) {
+				const urlCandidate = cmdArgs[0].trim();
+				if (
+					urlCandidate.startsWith("http://") ||
+					urlCandidate.startsWith("https://") ||
+					urlCandidate.startsWith("data:image/") ||
+					(urlCandidate.length < 300 && require("fs").existsSync(urlCandidate))
+				) {
+					media = urlCandidate;
+				}
+			}
+
+			if (!media) {
 				return new ReturnMessage({
 					chatId,
-					content: "❌ Este comando deve ser usado como legenda de uma imagem."
+					content:
+						"❌ Envie este comando como legenda de uma imagem, respondendo a uma imagem ou passando uma URL. Exemplo:\n• `!sa-foto https://exemplo.com/foto.jpg`\n• `!sa-foto [botNome] https://exemplo.com/foto.jpg`"
 				});
 			}
 
 			try {
-				// Obtém a mídia da mensagem
-				const media = message.content;
-
-				// Altera a foto de perfil
-				await bot.client.setProfilePicture(media);
+				if (typeof targetBot.updateProfilePicture === "function") {
+					await targetBot.updateProfilePicture(media);
+				} else if (typeof targetBot.setProfilePicture === "function") {
+					await targetBot.setProfilePicture(media);
+				} else if (targetBot.client && typeof targetBot.client.setProfilePicture === "function") {
+					await targetBot.client.setProfilePicture(media);
+				} else {
+					throw new Error("Bot não suporta alteração de foto de perfil");
+				}
 
 				return new ReturnMessage({
 					chatId,
-					content: "✅ Foto de perfil alterada com sucesso!"
+					content: `✅ Foto de perfil do bot *${targetBot.id || targetBot.name || "bot"}* alterada com sucesso!`
 				});
 			} catch (pictureError) {
 				this.logger.error("Erro ao alterar foto de perfil:", pictureError);
 
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao alterar foto de perfil: ${pictureError.message}`
+					content: `❌ Erro ao alterar foto de perfil: ${pictureError.message || pictureError}`
 				});
 			}
 		} catch (error) {

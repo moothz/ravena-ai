@@ -38,8 +38,8 @@ class CustomVariableProcessor {
 				return placeholder;
 			});
 
-			const hasFotoPerfil = processedText.includes("{fotoPerfil}");
-			const hasFotoPerfilMention = processedText.includes("{fotoPerfilMention}");
+			const hasFotoPerfil = /\{fotoPerfil\}/.test(processedText);
+			const hasFotoPerfilMention = /\{fotoPerfilMention\}/.test(processedText);
 			let targetJid = null;
 
 			if ((hasFotoPerfil || hasFotoPerfilMention) && context && context.message) {
@@ -49,10 +49,64 @@ class CustomVariableProcessor {
 						context.message.mentionedIds ??
 						context.message.mentions ??
 						[];
-					targetJid =
-						mentions.length > 0 ? mentions[0] : context.message.author || context.message.sender;
+					if (mentions.length > 0) {
+						const rawMention = mentions[0];
+						targetJid =
+							typeof rawMention === "string"
+								? rawMention
+								: rawMention?.id?._serialized ||
+									rawMention?._serialized ||
+									rawMention?.id ||
+									rawMention?.user ||
+									rawMention;
+					} else if (context.message.quotedParticipant) {
+						targetJid = context.message.quotedParticipant;
+					} else if (typeof context.message.origin?.getQuotedMessage === "function") {
+						try {
+							const quoted = await context.message.origin.getQuotedMessage().catch(() => null);
+							if (quoted) {
+								targetJid = quoted.authorAlt || quoted.author || quoted.sender || quoted.from;
+							}
+						} catch (e) {}
+					}
+
+					// Se não achou por menção ou quote, tenta achar número mencionado no texto da mensagem
+					if (!targetJid && (context.message.body || context.message.content)) {
+						const msgText =
+							typeof context.message.body === "string"
+								? context.message.body
+								: typeof context.message.content === "string"
+									? context.message.content
+									: "";
+						const numMatch = msgText.match(/@?(\d{10,25})/);
+						if (numMatch) {
+							targetJid = numMatch[1];
+						}
+					}
+
+					// Fallback: se não achou alvo, usa o autor da mensagem
+					if (!targetJid) {
+						targetJid =
+							context.message.authorAlt ||
+							context.message.author ||
+							context.message.sender ||
+							context.message.from;
+					}
 				} else {
-					targetJid = context.message.author || context.message.sender;
+					targetJid =
+						context.message.authorAlt ||
+						context.message.author ||
+						context.message.sender ||
+						context.message.from;
+				}
+
+				if (targetJid && typeof targetJid === "object") {
+					targetJid =
+						targetJid._serialized ||
+						targetJid.id?._serialized ||
+						targetJid.id ||
+						targetJid.user ||
+						String(targetJid);
 				}
 			}
 
@@ -1125,40 +1179,65 @@ class CustomVariableProcessor {
 	 */
 	async handleProfilePictureResponse(processedText, targetJid, context) {
 		try {
-			if (typeof context.bot.getProfilePictureUrl !== "function") {
+			const fetchPhoto =
+				typeof context.bot?.getProfilePictureUrl === "function"
+					? context.bot.getProfilePictureUrl.bind(context.bot)
+					: typeof context.bot?.client?.getProfilePictureUrl === "function"
+						? context.bot.client.getProfilePictureUrl.bind(context.bot.client)
+						: null;
+
+			if (!fetchPhoto) {
 				throw new Error("Bot não suporta getProfilePictureUrl");
 			}
 
-			const profileUrl = await context.bot.getProfilePictureUrl(targetJid);
+			const profileUrl = await fetchPhoto(targetJid);
 			if (!profileUrl) {
 				throw new Error("Nenhuma URL de imagem de perfil encontrada");
 			}
 
-			const response = await axios.get(profileUrl, { responseType: "arraybuffer" });
-			const buffer = Buffer.from(response.data, "binary");
+			let base64Data = null;
+			try {
+				const response = await axios.get(profileUrl, {
+					responseType: "arraybuffer",
+					timeout: 10000
+				});
+				const buffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
+				base64Data = buffer.toString("base64");
+			} catch (downloadErr) {
+				this.logger.warn(
+					`[handleProfilePictureResponse] Falha ao baixar buffer da imagem (${profileUrl}): ${downloadErr.message}. Usando URL direta.`
+				);
+			}
+
 			const media = {
+				url: profileUrl,
 				mimetype: "image/jpeg",
-				data: buffer.toString("base64"),
+				...(base64Data ? { data: base64Data } : {}),
 				filename: "profile.jpg",
 				isMessageMedia: true
 			};
 
-			if (processedText.length <= 1000) {
+			const captionText = typeof processedText === "string" ? processedText.trim() : "";
+
+			if (captionText.length <= 1000) {
 				if (!context.options) {
 					context.options = {};
 				}
-				context.options.caption = processedText;
+				context.options.caption = captionText;
 				return media;
 			} else {
 				const chatId = context.message.group ?? context.message.author;
 				await context.bot.sendMessage(chatId, media, {
 					goReply: context.message.origin
 				});
-				return processedText;
+				return captionText;
 			}
 		} catch (error) {
-			this.logger.error(`Erro ao obter foto de perfil para ${targetJid}:`, error.message);
-			return processedText + "\n> não foi possível baixar a foto de perfil deste usuário";
+			this.logger.error(`Erro ao obter foto de perfil para ${targetJid}:`, error.message || error);
+			return (
+				(processedText ? processedText.trim() + "\n" : "") +
+				"> não foi possível baixar a foto de perfil deste usuário"
+			);
 		}
 	}
 }

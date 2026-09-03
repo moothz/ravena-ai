@@ -1771,7 +1771,7 @@ class CommandHandler {
 				);
 
 				return new ReturnMessage({
-					chatId: message.group,
+					chatId: message.group ?? message.author,
 					content: processedResponse,
 					options: {
 						quotedMessageId: command.reply ? message.origin.id._serialized : undefined,

@@ -176,6 +176,8 @@ class WhatsAppBotGo {
 			setProfilePicture: async (arg) => {
 				await this.updateProfilePicture(arg);
 			},
+			getProfilePictureUrl: async (arg, preview = false) =>
+				await this.getProfilePictureUrl(arg, preview),
 			setPrivacySettings: (arg) => {
 				this.updatePrivacySettings(arg);
 			},
@@ -2961,45 +2963,93 @@ class WhatsAppBotGo {
 	}
 
 	async updateProfilePicture(picture) {
-		this.logger.debug(`[updateProfilePicture][${this.instanceName}]`, {
-			type: "url",
-			url: picture.url
-		});
-		try {
-			// Try with URL first
-			return await this.apiClient.post(`/user/photo`, {
-				image: picture.url
-			});
-		} catch (error) {
-			// Fallback to base64 if URL fails
-			if (picture.data && picture.mimetype) {
-				this.logger.warn(`[updateProfilePicture] via URL failed, retrying with base64...`);
-				const imageData = `data:${picture.mimetype};base64,${picture.data}`;
-				return await this.apiClient.post(`/user/photo`, {
-					image: imageData
-				});
+		let imageData = null;
+
+		if (typeof picture === "string") {
+			imageData = picture.trim();
+			try {
+				if (fs.existsSync(imageData)) {
+					const ext = path.extname(imageData).toLowerCase();
+					const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
+					const base64 = fs.readFileSync(imageData).toString("base64");
+					imageData = `data:${mimeType};base64,${base64}`;
+				}
+			} catch (e) {}
+		} else if (picture && typeof picture === "object") {
+			if (picture.data) {
+				const mimeType = picture.mimetype || "image/jpeg";
+				imageData = picture.data.startsWith("data:")
+					? picture.data
+					: `data:${mimeType};base64,${picture.data}`;
+			} else if (picture.base64) {
+				const mimeType = picture.mimetype || "image/jpeg";
+				imageData = `data:${mimeType};base64,${picture.base64}`;
+			} else if (typeof picture.downloadMedia === "function") {
+				const downloaded = await picture.downloadMedia();
+				if (downloaded && downloaded.data) {
+					const mimeType = downloaded.mimetype || "image/jpeg";
+					imageData = `data:${mimeType};base64,${downloaded.data}`;
+				}
+			} else if (picture.url) {
+				imageData = picture.url;
 			}
-			throw error;
 		}
+
+		if (!imageData) {
+			throw new Error("Dados de imagem inválidos para alteração de foto de perfil");
+		}
+
+		this.logger.debug(`[updateProfilePicture][${this.instanceName}] Enviando foto para API`);
+		return await this.apiClient.post(`/user/photo`, {
+			image: imageData
+		});
+	}
+
+	async setProfilePicture(picture) {
+		return await this.updateProfilePicture(picture);
 	}
 
 	async getProfilePictureUrl(number, preview = false) {
 		try {
+			if (!number) return null;
+
 			let jid = number;
-			if (!jid.includes("@")) {
-				jid = `${jid}@s.whatsapp.net`;
+			if (typeof jid === "object" && jid !== null) {
+				jid = jid._serialized || jid.id?._serialized || jid.id || jid.user || "";
 			}
+			if (typeof jid !== "string") {
+				jid = String(jid || "");
+			}
+			jid = jid.trim();
+			if (!jid) return null;
+
+			if (jid.endsWith("@c.us")) {
+				jid = jid.replace("@c.us", "@s.whatsapp.net");
+			}
+
+			if (!jid.includes("@")) {
+				if (jid.startsWith("3") && jid.length >= 14) {
+					jid = `${jid}@lid`;
+				} else {
+					jid = `${jid}@s.whatsapp.net`;
+				}
+			}
+
 			const response = await this.apiClient.post("/user/avatar", {
 				number: jid,
 				preview
 			});
-			if (response?.data?.data?.url) {
-				return response.data.data.url;
+
+			if (response?.data?.url) {
+				return response.data.url;
+			}
+			if (response?.url) {
+				return response.url;
 			}
 		} catch (error) {
 			this.logger.error(
 				`[getProfilePictureUrl] Erro ao buscar foto de perfil para ${number}:`,
-				error.message
+				error.message || error
 			);
 		}
 		return null;
