@@ -17,7 +17,6 @@ const RankingMessages = require("./functions/RankingMessages");
 const fs = require("fs").promises;
 const path = require("path");
 const Stickers = require("./functions/Stickers");
-const GeoGuesser = require("./functions/GeoguesserGame");
 const LembretesCommands = require("./functions/LembretesCommands");
 const CorreiosCommands = require("./functions/CorreiosCommands");
 const ReturnMessage = require("./models/ReturnMessage");
