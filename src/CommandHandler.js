@@ -10,6 +10,7 @@ const ReturnMessage = require("./models/ReturnMessage");
 const AdminUtils = require("./utils/AdminUtils");
 const CacheManager = require("./services/CacheManager");
 const CmdUsage = require("./utils/CmdUsage");
+const ProfilePictureHelper = require("./utils/ProfilePictureHelper");
 
 class CommandHandler {
 	constructor() {
@@ -1117,18 +1118,65 @@ class CommandHandler {
 
 				// Verifica a mensagem citada para mídia se a mensagem direta não tiver
 				let hasQuotedMedia = false;
+				let actualQuotedHasMedia = false;
 				if (!hasDirectMedia) {
 					// Se há referência a uma mensagem citada (mesmo que o cache tenha expirado),
 					// passa o comando adiante para que ele possa retornar a mensagem de erro adequada
 					if (message.hasQuotedMsg) {
 						hasQuotedMedia = true; // deixa o comando tratar o caso de cache expirado
+						const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+						actualQuotedHasMedia = !!(
+							quotedMsg &&
+							(quotedMsg.hasMedia ||
+								(quotedMsg.type && quotedMsg.type !== "text" && quotedMsg.type !== "chat"))
+						);
 					} else {
 						const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-						hasQuotedMedia = quotedMsg && quotedMsg.hasMedia;
+						hasQuotedMedia = !!(quotedMsg && quotedMsg.hasMedia);
+						actualQuotedHasMedia = hasQuotedMedia;
 					}
 				}
 
-				if (!hasDirectMedia && !hasQuotedMedia) {
+				// Se não há mídia direta nem mídia na mensagem citada, tenta usar foto de perfil de menção
+				if (!hasDirectMedia && !actualQuotedHasMedia) {
+					const isAudioOnly = ["stt", "transcrever"].includes(command.name);
+					const isMediaCategory = command.category === "midia";
+
+					if (isMediaCategory && !isAudioOnly) {
+						const botJids = [bot.id, bot.phoneNumber, bot.client?.info?.wid?._serialized].filter(
+							Boolean
+						);
+
+						const mentions = ProfilePictureHelper.extractMentions(message, botJids);
+
+						if (mentions.length > 0) {
+							const profileMedia = await ProfilePictureHelper.fetchFirstValidProfilePicture(
+								bot,
+								mentions
+							);
+
+							if (profileMedia && profileMedia.data) {
+								this.logger.debug(
+									`[CommandHandler] Usando foto de perfil de usuário mencionado como entrada para ${command.name}`
+								);
+								message.type = "image";
+								message.content = profileMedia;
+								message.downloadMedia = async () => profileMedia;
+								if (message.origin) {
+									message.origin.type = "image";
+									message.origin.hasMedia = true;
+									message.origin.downloadMedia = async () => profileMedia;
+								}
+							} else {
+								// Tinha menção, mas não conseguiu pegar foto (privada/inexistente).
+								// Permite que o comando responda com a mensagem de feedback/dica
+								hasQuotedMedia = true;
+							}
+						}
+					}
+				}
+
+				if (!hasDirectMedia && !hasQuotedMedia && message.type === "text") {
 					this.logger.debug(`Comando ${command.name} requer mídia, mas nenhuma foi fornecida`);
 					return null; // Ignora o comando silenciosamente
 				}

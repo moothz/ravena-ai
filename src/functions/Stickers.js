@@ -502,7 +502,8 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				}
 				return new ReturnMessage({
 					chatId,
-					content: "Envie uma imagem/vídeo com a legenda do comando, ou responda a uma mídia."
+					content:
+						"Envie uma imagem/vídeo com a legenda do comando, responda a uma mídia ou mencione alguém com @ para usar sua foto de perfil."
 				});
 			}
 
@@ -620,7 +621,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Este tipo de mídia não pode ser convertido em sticker. Apenas imagens, vídeos e stickers são suportados."
+						"Este tipo de mídia não pode ser convertido em sticker. Apenas imagens, vídeos e stickers são suportados (você também pode mencionar alguém com @ para usar sua foto de perfil)."
 				});
 			}
 		}

@@ -2,6 +2,7 @@ const Database = require("./Database");
 const Logger = require("./Logger");
 const axios = require("axios").default;
 const { processFileVariable } = require("../functions/FileManager");
+const ProfilePictureHelper = require("./ProfilePictureHelper");
 
 /**
  * Processa variáveis personalizadas em respostas de comandos
@@ -1179,43 +1180,11 @@ class CustomVariableProcessor {
 	 */
 	async handleProfilePictureResponse(processedText, targetJid, context) {
 		try {
-			const fetchPhoto =
-				typeof context.bot?.getProfilePictureUrl === "function"
-					? context.bot.getProfilePictureUrl.bind(context.bot)
-					: typeof context.bot?.client?.getProfilePictureUrl === "function"
-						? context.bot.client.getProfilePictureUrl.bind(context.bot.client)
-						: null;
+			const media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, targetJid);
 
-			if (!fetchPhoto) {
-				throw new Error("Bot não suporta getProfilePictureUrl");
-			}
-
-			const profileUrl = await fetchPhoto(targetJid);
-			if (!profileUrl) {
+			if (!media) {
 				throw new Error("Nenhuma URL de imagem de perfil encontrada");
 			}
-
-			let base64Data = null;
-			try {
-				const response = await axios.get(profileUrl, {
-					responseType: "arraybuffer",
-					timeout: 10000
-				});
-				const buffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
-				base64Data = buffer.toString("base64");
-			} catch (downloadErr) {
-				this.logger.warn(
-					`[handleProfilePictureResponse] Falha ao baixar buffer da imagem (${profileUrl}): ${downloadErr.message}. Usando URL direta.`
-				);
-			}
-
-			const media = {
-				url: profileUrl,
-				mimetype: "image/jpeg",
-				...(base64Data ? { data: base64Data } : {}),
-				filename: "profile.jpg",
-				isMessageMedia: true
-			};
 
 			const captionText = typeof processedText === "string" ? processedText.trim() : "";
 

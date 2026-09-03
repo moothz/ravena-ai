@@ -269,7 +269,8 @@ async function handleJpeg(bot, message, args, group) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
+				content:
+					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
 			});
 		}
 
@@ -357,7 +358,8 @@ async function handleRemoveBg(bot, message, args, group) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
+				content:
+					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
 			});
 		}
 
@@ -457,7 +459,8 @@ async function handleDistort(bot, message, args, group) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
+				content:
+					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
 			});
 		}
 
@@ -547,7 +550,8 @@ async function handleStickerBg(bot, message, args, group) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
+				content:
+					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
 			});
 		}
 
@@ -645,7 +649,8 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma imagem ou responda a uma imagem com este comando."
+				content:
+					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
 			});
 		}
 

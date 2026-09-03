@@ -7,6 +7,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const { extractFrames } = require("../utils/Conversions");
+const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
 
 const logger = new Logger("ai-commands");
 
@@ -277,8 +278,64 @@ async function aiCommand(bot, message, args, group) {
 		}
 	}
 
+	// 2.1. Identifica os JIDs do bot para não confundi-lo com usuário mencionado
+	const botJids = [bot.id, bot.phoneNumber, bot.client?.info?.wid?._serialized].filter(Boolean);
+
+	if (
+		message.group &&
+		typeof bot.getChatDetails === "function" &&
+		typeof bot.getLidFromPn === "function"
+	) {
+		try {
+			const chatInfo = await bot.getChatDetails(message.group);
+			const botLid = bot.getLidFromPn(bot.phoneNumber || "", chatInfo);
+			if (botLid) botJids.push(botLid);
+		} catch (e) {
+			// Ignora erro ao obter LID
+		}
+	}
+
+	// 2.2. Substitui IDs numéricos (@123123...) pelo nome ou apelido configurado da pessoa
+	if (question && typeof question === "string") {
+		try {
+			question = await ProfilePictureHelper.replaceMentionIdsWithNames(
+				question,
+				message,
+				group,
+				bot,
+				botJids
+			);
+		} catch (replaceErr) {
+			logger.debug(`[aiCommand] Erro ao substituir nomes das menções: ${replaceErr.message}`);
+		}
+	}
+
 	// 3. Check for Media (direct or from quoted message)
-	const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
+	const { media: extractedMedia, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
+	let media = extractedMedia;
+
+	// 3.1. Fallback: Se não há mídia, tenta buscar foto de perfil de outro usuário mencionado
+	if (!media) {
+		try {
+			const otherMentions = ProfilePictureHelper.extractMentions(message, botJids);
+			if (otherMentions.length > 0) {
+				const profileMedia = await ProfilePictureHelper.fetchFirstValidProfilePicture(
+					bot,
+					otherMentions
+				);
+				if (profileMedia && profileMedia.data) {
+					media = profileMedia;
+					logger.debug(
+						`[aiCommand] Anexando foto de perfil de usuário mencionado como imagem de entrada para IA`
+					);
+				}
+			}
+		} catch (profileErr) {
+			logger.debug(
+				`[aiCommand] Falha silenciosa ao obter foto de perfil de menção: ${profileErr.message}`
+			);
+		}
+	}
 
 	// Validation: No media and short question
 	if (!media && question.length < 5) {
