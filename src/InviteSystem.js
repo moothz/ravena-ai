@@ -143,6 +143,92 @@ class InviteSystem {
 	}
 
 	/**
+	 * Retorna todos os números de telefone conhecidos de bots (limpos apenas com dígitos)
+	 * @returns {Set<string>}
+	 */
+	getKnownBotNumbers() {
+		const numbers = new Set();
+
+		// Número do próprio bot
+		if (this.bot?.phoneNumber) {
+			const clean = String(this.bot.phoneNumber)
+				.split("@")[0]
+				.split(":")[0]
+				.replace(/[^0-9]/g, "");
+			if (clean) numbers.add(clean);
+		}
+		if (this.bot?.numero) {
+			const clean = String(this.bot.numero)
+				.split("@")[0]
+				.split(":")[0]
+				.replace(/[^0-9]/g, "");
+			if (clean) numbers.add(clean);
+		}
+
+		// Lista de outros bots configurados no bot atual
+		if (Array.isArray(this.bot?.otherBots)) {
+			for (const b of this.bot.otherBots) {
+				if (b) {
+					const clean = String(b)
+						.split("@")[0]
+						.split(":")[0]
+						.replace(/[^0-9]/g, "");
+					if (clean) numbers.add(clean);
+				}
+			}
+		}
+
+		// Todas as instâncias ativas no database
+		const allBots = this.database?.botInstances || [];
+		for (const b of allBots) {
+			if (b?.phoneNumber) {
+				const clean = String(b.phoneNumber)
+					.split("@")[0]
+					.split(":")[0]
+					.replace(/[^0-9]/g, "");
+				if (clean) numbers.add(clean);
+			}
+			if (b?.numero) {
+				const clean = String(b.numero)
+					.split("@")[0]
+					.split(":")[0]
+					.replace(/[^0-9]/g, "");
+				if (clean) numbers.add(clean);
+			}
+		}
+
+		return numbers;
+	}
+
+	/**
+	 * Identifica quais bots conhecidos estão atualmente presentes nos participantes do grupo
+	 * @param {Object} inviteInfoData - Dados retornados por getInviteInfo
+	 * @returns {string[]} Array de números dos bots presentes no grupo
+	 */
+	getBotsInGroupFromInvite(inviteInfoData) {
+		const botsInGroup = [];
+		if (!inviteInfoData?.Participants || !Array.isArray(inviteInfoData.Participants)) {
+			return botsInGroup;
+		}
+
+		const knownBotNumbers = this.getKnownBotNumbers();
+		for (const p of inviteInfoData.Participants) {
+			const rawNum = p.PhoneNumber || p.JID || "";
+			const cleanNum = String(rawNum)
+				.split("@")[0]
+				.split(":")[0]
+				.replace(/[^0-9]/g, "");
+			if (cleanNum && knownBotNumbers.has(cleanNum)) {
+				if (!botsInGroup.includes(cleanNum)) {
+					botsInGroup.push(cleanNum);
+				}
+			}
+		}
+
+		return botsInGroup;
+	}
+
+	/**
 	 * Seleciona o melhor bot elegível para entrar no grupo automaticamente
 	 * Critérios:
 	 * - Bot normal (habilitado, não vip, não privado, não comunitário, não banido, não telegram/discord)
@@ -203,8 +289,27 @@ class InviteSystem {
 		description,
 		reason,
 		isDonator = false,
-		donateValue = 0
+		donateValue = 0,
+		wasInGroupBefore = false,
+		hasBotInGroup = false
 	}) {
+		// Se já existe um bot no grupo atualmente, NUNCA adicionar outro, independente do convite (inclusive se for doador)
+		if (hasBotInGroup) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Já existe um bot no grupo atualmente"
+			};
+		}
+
+		// Se o bot já esteve no grupo: é porque removeram e não deve ser aceito automaticamente (desconsiderar se for doador)
+		if (wasInGroupBefore && !isDonator) {
+			return {
+				shouldAutoAccept: false,
+				reason:
+					"Bot já esteve neste grupo anteriormente (se saiu/removeram, não deve ser aceito automaticamente)"
+			};
+		}
+
 		// Doador acima de R$49: Aceite automático direto
 		if (isDonator && donateValue > 49) {
 			return {
@@ -339,6 +444,8 @@ REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
 5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
 6. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
+7. Já existe um bot no grupo atualmente (NUNCA aceitar outro, independente do convite).
+8. O bot já esteve no grupo anteriormente (se saiu/removeram, não deve ser aceito, a menos que o solicitante seja doador).
 
 CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
 1. Usuário Doador (grande peso):
@@ -360,6 +467,8 @@ Responda APENAS com um objeto JSON no formato especificado.`;
 - Doador: ${donorInfo}
 - Nome do Grupo: "${groupName || "Desconhecido"}"
 - Membros: ${participantCount ?? "Desconhecido"}
+- Já existe bot no grupo atualmente: ${hasBotInGroup ? "Sim" : "Não"}
+- Bot já esteve neste grupo antes: ${wasInGroupBefore ? "Sim" : "Não"}
 - Descrição do Grupo: "${description || "Sem descrição"}"
 - Motivo enviado pelo usuário:
 "${reason}"
@@ -432,6 +541,23 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						await this.bot.sendMessage(
 							message.author,
 							"Este link parece ser de uma *comunidade*, e o bot não consegue entrar em comunidades inteiras. Por favor, tente novamente enviando o link do *grupo específico* dentro da comunidade que você deseja adicionar!"
+						);
+						return true;
+					}
+
+					// Checa se já existe um bot no grupo atualmente
+					const existingBots = this.getBotsInGroupFromInvite(infoCheck);
+					if (existingBots.length > 0) {
+						const botsStr = existingBots.map((b) => `+${b}`).join(", ");
+						this.logger.info(
+							`Ignorando convite de ${message.author} (${inviteCode}): Bot ${botsStr} já está no grupo.`
+						);
+						if (message.origin && typeof message.origin.react === "function") {
+							message.origin.react("🤖");
+						}
+						await this.bot.sendMessage(
+							message.author,
+							`⚠️ O bot ${botsStr} já está neste grupo! Não é permitido adicionar outro bot.`
 						);
 						return true;
 					}
@@ -866,7 +992,7 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			}
 
 			let inviteInfoData = null;
-			const otherBotsInGroup = [];
+			let otherBotsInGroup = [];
 			let ownerMatch = false;
 
 			try {
@@ -898,18 +1024,19 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					}
 
 					// 3. Check Participants for other bots
-					if (
-						inviteInfoData.Participants &&
-						Array.isArray(inviteInfoData.Participants) &&
-						this.bot.otherBots
-					) {
-						for (const p of inviteInfoData.Participants) {
-							const pNum = p.PhoneNumber ? p.PhoneNumber.split("@")[0] : p.JID.split("@")[0];
-							// this.bot.otherBots should be array of numbers (strings)
-							if (this.bot.otherBots.includes(pNum)) {
-								otherBotsInGroup.push(pNum);
-							}
-						}
+					otherBotsInGroup = this.getBotsInGroupFromInvite(inviteInfoData);
+
+					// Se já existe um bot no grupo atualmente, NUNCA adicionar outro, independente do convite
+					if (otherBotsInGroup.length > 0) {
+						const botsStr = otherBotsInGroup.map((b) => `+${b}`).join(", ");
+						this.logger.info(
+							`Convite ignorado para ${inviteCode}: Já existe um bot (${botsStr}) no grupo ${inviteInfoData?.Name || "sem nome"}`
+						);
+						await this.bot.sendMessage(
+							authorId,
+							`⚠️ O bot ${botsStr} já está neste grupo! Não é permitido adicionar outro bot.`
+						);
+						return;
 					}
 
 					// Verifica se o JID do grupo está bloqueado (mesmo que o invite link tenha mudado)
@@ -939,11 +1066,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					return; // Stop processing
 				}
 				// Continue processing if other error (maybe API down), but warn
-			}
-
-			if (otherBotsInGroup.length > 0) {
-				const botsStr = otherBotsInGroup.map((b) => `+${b}`).join(", ");
-				await this.bot.sendMessage(authorId, `⚠️ Bot ${botsStr} já está neste grupo!`);
 			}
 
 			// Obtém informações do usuário
@@ -977,14 +1099,38 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				reason
 			});
 
-			// Verifica se o bot já foi removido manualmente deste grupo anteriormente
+			// Verifica se o bot já esteve no grupo anteriormente
+			let wasInGroupBefore = false;
 			let manualLeaveInfo = null;
 			let lastDossiersText = "";
+			let groupPeriods = [];
+
 			if (inviteInfoData?.JID) {
 				try {
 					manualLeaveInfo = await this.database.getManualGroupLeave(inviteInfoData.JID);
+					if (manualLeaveInfo) {
+						wasInGroupBefore = true;
+					}
 				} catch (leaveCheckErr) {
 					this.logger.error("Erro ao verificar saída manual do grupo:", leaveCheckErr);
+				}
+
+				try {
+					const existingGroup = await this.database.getGroup(inviteInfoData.JID);
+					if (existingGroup) {
+						wasInGroupBefore = true;
+					}
+				} catch (groupCheckErr) {
+					this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
+				}
+
+				try {
+					groupPeriods = await this.database.getGroupMembershipPeriods(inviteInfoData.JID);
+					if (groupPeriods && groupPeriods.length > 0) {
+						wasInGroupBefore = true;
+					}
+				} catch (periodsErr) {
+					this.logger.error("Erro ao verificar períodos do grupo na base:", periodsErr);
 				}
 
 				try {
@@ -1050,8 +1196,17 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			let autoAcceptBot = null;
 			let llmReason = "";
 
-			if (manualLeaveInfo) {
-				llmReason = `Bot já foi removido manualmente deste grupo anteriormente (${manualLeaveInfo.group_name || "Desconhecido"})`;
+			// Critério: Se o bot já esteve no grupo, é porque removeram e não deve ser aceito automaticamente.
+			// Desconsiderar se for doador.
+			if (wasInGroupBefore && !isDonator) {
+				if (manualLeaveInfo) {
+					llmReason = `Bot já foi removido manualmente deste grupo anteriormente (${manualLeaveInfo.group_name || "Desconhecido"})`;
+				} else {
+					llmReason = `Bot já esteve neste grupo anteriormente (se saiu/removeram, não deve ser aceito automaticamente)`;
+				}
+				this.logger.info(
+					`[AutoAccept] Convite ${inviteCode} NÃO aceito automaticamente: ${llmReason}`
+				);
 			} else {
 				try {
 					const evalResult = await this.evaluateAutoAcceptWithLLM({
@@ -1063,7 +1218,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 							inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
 						reason,
 						isDonator,
-						donateValue
+						donateValue,
+						wasInGroupBefore,
+						hasBotInGroup: otherBotsInGroup.length > 0
 					});
 
 					llmReason = evalResult.reason;
@@ -1191,19 +1348,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						botWarning = `\n⚠️ *Bot ${botsStr} Já está neste grupo!*`;
 					}
 
-					// Fetch Invite statistics
-					let wasInGroupBefore = false;
-					if (inviteInfoData?.JID) {
-						try {
-							const existingGroup = await this.database.getGroup(inviteInfoData.JID);
-							if (existingGroup) {
-								wasInGroupBefore = true;
-							}
-						} catch (groupCheckErr) {
-							this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
-						}
-					}
-
 					let authorInvitesCount = 0;
 					let groupInvitesCount = 0;
 					let otherInvitersText = "";
@@ -1245,7 +1389,10 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 					if (inviteInfoData?.JID) {
 						try {
-							const periods = await this.database.getGroupMembershipPeriods(inviteInfoData.JID);
+							const periods =
+								groupPeriods && groupPeriods.length > 0
+									? groupPeriods
+									: await this.database.getGroupMembershipPeriods(inviteInfoData.JID);
 							if (periods && periods.length > 0) {
 								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
 								periods.forEach((p, idx) => {
@@ -1312,8 +1459,8 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
 
-					// Se não foi aceito automaticamente, envia comando para aceitar e comando para bloquear
-					if (!autoAccepted) {
+					// Se não foi aceito automaticamente, envia comando para aceitar e comando para bloquear (apenas se não houver bot no grupo)
+					if (!autoAccepted && otherBotsInGroup.length === 0) {
 						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
 						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
 
