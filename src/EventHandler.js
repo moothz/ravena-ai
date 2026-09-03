@@ -492,9 +492,19 @@ class EventHandler extends EventEmitter {
 				if (await this.applyFilters(bot, message, group)) {
 					return; // Mensagem foi filtrada
 				}
+
+				// Se NUDENET_DETECT_ALL estiver ativo e a mídia não foi verificada pelo filtro do grupo (ex: grupo sem filtro nsfw ativo)
+				if (this.isNudenetDetectAll() && !group?.filters?.nsfw) {
+					await this.checkNSFW(bot, message, group, true);
+				}
 			} else {
 				// Armazena mensagem para histórico de conversação no pv
 				SummaryCommands.storeMessage(message, message.group, bot);
+
+				// Se NUDENET_DETECT_ALL estiver ativo, verifica mídias no PV também
+				if (this.isNudenetDetectAll()) {
+					await this.checkNSFW(bot, message, null, true);
+				}
 			}
 
 			// Se não houver conteúdo de texto, não pode ser um comando ou menção
@@ -790,100 +800,156 @@ class EventHandler extends EventEmitter {
 			}
 		}
 
-		// Verifica filtro NSFW para imagens e vídeos
+		// Verifica filtro NSFW para imagens, vídeos, gifs e stickers
 		if (
 			filters.nsfw &&
-			(message.type === "image" || message.type === "sticker" || message.type === "video")
+			(message.type === "image" ||
+				message.type === "sticker" ||
+				message.type === "video" ||
+				message.type === "gif" ||
+				message.content?.mimetype === "image/gif")
 		) {
-			// this.logger.info(`Filtros: ${message.type} - Verificando NSFW`);
-			// Processa a imagem/vídeo para detecção NSFW
+			const isDetectAll = this.isNudenetDetectAll();
+			if (await this.checkNSFW(bot, message, group, isDetectAll)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Verifica se a detecção de NSFW em todas as mídias está ativada via .env
+	 * @returns {boolean}
+	 */
+	isNudenetDetectAll() {
+		const envVal = process.env.NUDENET_DETECT_ALL;
+		if (!envVal) return false;
+		const val = envVal.toString().trim().toLowerCase();
+		return val !== "0" && val !== "false" && val !== "undefined";
+	}
+
+	/**
+	 * Realiza verificação NSFW em imagem, vídeo ou GIF recebido
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Mensagem recebida
+	 * @param {Group|null} group - Grupo (se houver)
+	 * @param {boolean} [isDetectAll=false] - Se foi disparado via NUDENET_DETECT_ALL
+	 * @returns {Promise<boolean>} - True se a mensagem foi filtrada (deletada)
+	 */
+	async checkNSFW(bot, message, group, isDetectAll = false) {
+		const isGroupFilter = Boolean(group?.filters?.nsfw);
+
+		// Stickers só são verificados se o filtro do grupo estiver ativo (NUDENET_DETECT_ALL não verifica stickers)
+		if (message.type === "sticker" && !isGroupFilter) {
+			return false;
+		}
+
+		const isGif =
+			message.type === "gif" ||
+			message.content?.mimetype === "image/gif" ||
+			message.content?._mediaDetails?.gifPlayback === true;
+		const isVideo = message.type === "video";
+		const isImage = message.type === "image";
+		const isSticker = message.type === "sticker";
+
+		if (!isImage && !isVideo && !isGif && !isSticker) {
+			return false;
+		}
+
+		try {
+			const tempDir = path.join(__dirname, "../temp");
 			try {
-				// Primeiro salvamos a mídia temporariamente
-				const tempDir = path.join(__dirname, "../temp");
+				await fs.access(tempDir);
+			} catch (error) {
+				await fs.mkdir(tempDir, { recursive: true });
+			}
 
-				// Garante que o diretório temporário exista
+			// Obtém dados da mídia (suporta tanto base64 quanto data)
+			let mediaData = message.content?.data || message.content?.base64;
+
+			// Se não tiver dados (comum em vídeos e mensagens WhatsGo), tenta baixar
+			if (!mediaData && typeof message.downloadMedia === "function") {
 				try {
-					await fs.access(tempDir);
-				} catch (error) {
-					await fs.mkdir(tempDir, { recursive: true });
+					const media = await message.downloadMedia();
+					mediaData = media?.data || media?.base64;
+				} catch (dlErr) {
+					this.logger.error("Erro ao baixar mídia para verificação NSFW:", dlErr);
 				}
+			}
 
-				// Obtém dados da mídia (suporta tanto base64 quanto data)
-				let mediaData = message.content?.data || message.content?.base64;
+			if (!mediaData) {
+				const groupTag = group?.name ? `[${group.name}] ` : "";
+				this.logger.warn(
+					`${groupTag}Não foi possível obter dados da mídia para verificação NSFW, ignorando.`
+				);
+				return false;
+			}
 
-				// Se não tiver dados (comum em vídeos e mensagens WhatsGo), tenta baixar
-				if (!mediaData && typeof message.downloadMedia === "function") {
-					try {
-						const media = await message.downloadMedia();
-						mediaData = media?.data || media?.base64;
-					} catch (dlErr) {
-						this.logger.error("Erro ao baixar mídia para verificação NSFW:", dlErr);
-					}
-				}
+			// Stickers não devem ser marcados como detectAll
+			const isDetectAllForMedia = isDetectAll && !isSticker;
 
-				if (!mediaData) {
-					const groupTag = group?.name ? `[${group.name}] ` : "";
-					this.logger.warn(
-						`${groupTag}Não foi possível obter dados da mídia para verificação NSFW, ignorando.`
-					);
-					return false;
-				}
+			const nsfwContext = {
+				groupName: group?.name || group?.id || (message.group ? message.group : "PV"),
+				author: message.author || message.authorAlt || "desconhecido",
+				authorName:
+					message.name ||
+					message.pushName ||
+					message.authorName ||
+					message.author ||
+					"desconhecido",
+				threshold: group?.filters?.nsfwThreshold,
+				group,
+				detectAll: isDetectAllForMedia,
+				isDetectAll: isDetectAllForMedia
+			};
 
-				const nsfwContext = {
-					groupName: group?.name || group?.id || "PV",
-					author: message.author || message.authorAlt || "desconhecido",
-					authorName:
-						message.name ||
-						message.pushName ||
-						message.authorName ||
-						message.author ||
-						"desconhecido",
-					threshold: group?.filters?.nsfwThreshold,
-					group
-				};
+			let result = { isNSFW: false, reason: "" };
 
-				// Gera nome de arquivo temporário único
-				const fileExt = message.type === "image" || message.type === "sticker" ? "jpg" : "mp4";
+			if (isVideo || isGif) {
+				const isGifMime = isGif && message.content?.mimetype === "image/gif";
+				const fileExt = isGifMime ? "gif" : "mp4";
 				const tempFilePath = path.join(
 					tempDir,
 					`nsfw-check-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`
 				);
 
-				// Salva a mídia
 				const mediaBuffer = Buffer.from(mediaData, "base64");
 				await fs.writeFile(tempFilePath, mediaBuffer);
 
-				let result = { isNSFW: false, reason: "" };
-
-				// Apenas imagens são verificadas para NSFW
-				if (message.type === "image" || message.type === "sticker") {
-					// Verifica NSFW
-					result = await this.nsfwPredict.detectNSFW(mediaData, nsfwContext);
-				} else if (message.type === "video") {
-					// Verifica NSFW em vídeo
+				try {
 					result = await this.nsfwPredict.detectNSFWVideo(tempFilePath, nsfwContext);
+				} finally {
+					fs.unlink(tempFilePath).catch((error) => {
+						this.logger.error(`Erro ao excluir arquivo temporário ${tempFilePath}:`, error);
+					});
 				}
+			} else {
+				// Imagem ou Sticker
+				result = await this.nsfwPredict.detectNSFW(mediaData, nsfwContext);
+			}
 
-				// Limpa o arquivo temporário
-				fs.unlink(tempFilePath).catch((error) => {
-					this.logger.error(`Erro ao excluir arquivo temporário ${tempFilePath}:`, error);
-				});
-
-				if (result.isNSFW) {
+			if (result.isNSFW) {
+				if (isGroupFilter) {
 					this.logger.info(
 						`[${nsfwContext.groupName}] Mensagem NSFW filtrada - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
 					);
 
-					// Deleta a mensagem
+					// Deleta a mensagem se o filtro do grupo estiver ativo
 					message.origin.delete(true).catch((error) => {
 						this.logger.error("Erro ao deletar mensagem NSFW:", error);
 					});
 
 					return true;
+				} else {
+					this.logger.info(
+						`[${nsfwContext.groupName}] Mensagem NSFW detectada (detectAll) - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
+					);
+					return false;
 				}
-			} catch (nsfwError) {
-				this.logger.error("Erro ao verificar conteúdo NSFW:", nsfwError);
 			}
+		} catch (nsfwError) {
+			this.logger.error("Erro ao verificar conteúdo NSFW:", nsfwError);
 		}
 
 		return false;

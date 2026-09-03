@@ -68,9 +68,11 @@ class NSFWPredict {
 
 	/**
 	 * Verifica se o modo debug do NudeNet está ativado
+	 * @param {Object} [context] - Metadados de contexto (detectAll/isDetectAll ativa debug)
 	 * @returns {boolean}
 	 */
-	isNudenetDebug() {
+	isNudenetDebug(context = {}) {
+		if (context?.detectAll || context?.isDetectAll) return true;
 		const debug = process.env.NUDENET_DEBUG;
 		if (!debug) return false;
 		const val = debug.toString().trim().toLowerCase();
@@ -92,14 +94,17 @@ class NSFWPredict {
 	 * @param {string|Buffer} data - Imagem em base64, data URI ou buffer
 	 * @param {string} prefix - Prefixo do arquivo
 	 * @param {string} defaultExt - Extensão padrão
+	 * @param {Object} [context] - Metadados de contexto
 	 * @returns {Promise<string|null>} Nome do arquivo salvo
 	 */
-	async _saveDebugMedia(data, prefix = "img", defaultExt = "jpg") {
+	async _saveDebugMedia(data, prefix = "img", defaultExt = "jpg", context = {}) {
 		try {
 			const debugDir = await this._ensureDebugDir();
 			const timestamp = Date.now();
 			const random = Math.floor(Math.random() * 1000);
 			let ext = defaultExt;
+			const isDetectAll = Boolean(context?.detectAll || context?.isDetectAll);
+			const allPrefix = isDetectAll ? "all_" : "";
 
 			if (typeof data === "string") {
 				const match = data.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
@@ -107,7 +112,7 @@ class NSFWPredict {
 					ext = match[1] === "jpeg" ? "jpg" : match[1];
 				}
 
-				const filename = `nsfw_${prefix}_${timestamp}_${random}.${ext}`;
+				const filename = `nsfw_${allPrefix}${prefix}_${timestamp}_${random}.${ext}`;
 				const targetPath = path.join(debugDir, filename);
 
 				if (data.startsWith("http://") || data.startsWith("https://")) {
@@ -123,7 +128,7 @@ class NSFWPredict {
 				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
 				return filename;
 			} else if (Buffer.isBuffer(data)) {
-				const filename = `nsfw_${prefix}_${timestamp}_${random}.${ext}`;
+				const filename = `nsfw_${allPrefix}${prefix}_${timestamp}_${random}.${ext}`;
 				const targetPath = path.join(debugDir, filename);
 				await fs.promises.writeFile(targetPath, data);
 				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
@@ -138,15 +143,19 @@ class NSFWPredict {
 	/**
 	 * Salva uma cópia do vídeo classificado como NSFW no diretório de debug
 	 * @param {string} videoPath - Caminho do vídeo original
+	 * @param {Object} [context] - Metadados de contexto
 	 * @returns {Promise<string|null>} Nome do arquivo salvo
 	 */
-	async _saveDebugVideo(videoPath) {
+	async _saveDebugVideo(videoPath, context = {}) {
 		try {
 			const debugDir = await this._ensureDebugDir();
 			const timestamp = Date.now();
 			const random = Math.floor(Math.random() * 1000);
 			const ext = path.extname(videoPath) || ".mp4";
-			const filename = `nsfw_video_${timestamp}_${random}${ext}`;
+			const mediaKind = ext.toLowerCase() === ".gif" ? "gif" : "video";
+			const isDetectAll = Boolean(context?.detectAll || context?.isDetectAll);
+			const allPrefix = isDetectAll ? "all_" : "";
+			const filename = `nsfw_${allPrefix}${mediaKind}_${timestamp}_${random}${ext}`;
 			const targetPath = path.join(debugDir, filename);
 			await fs.promises.copyFile(videoPath, targetPath);
 			this.logger.info(`[Debug] Vídeo NSFW salvo em: ${targetPath}`);
@@ -168,9 +177,10 @@ class NSFWPredict {
 
 			const timestamp = new Date().toISOString();
 			const separator = "=".repeat(60);
+			const isDetectAll = Boolean(entry?.detectAll || entry?.isDetectAll);
 			const logText = [
 				separator,
-				`[${timestamp}] Arquivo: ${entry.filename || "desconhecido"} | Tipo: ${entry.type || "mídia"}`,
+				`[${timestamp}] Arquivo: ${entry.filename || "desconhecido"} | Tipo: ${entry.type || "mídia"}${isDetectAll ? " [DETECT_ALL]" : ""}`,
 				`Contexto: ${entry.group || "N/A"} | Autor: ${entry.author || "N/A"}`,
 				`Resultado: ${entry.resultText || (entry.isNSFW ? "NSFW" : "SAFE")} (Threshold: ${entry.threshold !== undefined ? entry.threshold : "padrão"})`,
 				`Motivo: ${entry.reason || "Nenhum"}`,
@@ -191,8 +201,14 @@ class NSFWPredict {
 	 * @returns {{groupPrefix: string, userSuffix: string}}
 	 */
 	_formatLogContext(context = {}) {
+		const isDetectAll = Boolean(context.detectAll || context.isDetectAll);
+		const detectAllTag = isDetectAll ? "[DETECT_ALL] " : "";
 		const groupName = context.groupName || context.groupId;
-		const groupPrefix = groupName ? `[${groupName}] ` : "";
+		const groupPrefix = groupName
+			? `${detectAllTag}[${groupName}] `
+			: detectAllTag
+				? `${detectAllTag}`
+				: "";
 		const authorName = context.authorName || context.name;
 		const author = context.author;
 		let userSuffix = "";
@@ -285,7 +301,7 @@ class NSFWPredict {
 			return { isNSFW: false, reason: "" };
 		}
 
-		if (this.isNudenetDebug()) {
+		if (this.isNudenetDebug(context)) {
 			this.logger.info(
 				`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
 			);
@@ -343,8 +359,8 @@ class NSFWPredict {
 						reasons.push(reason);
 					}
 
-					if (this.isNudenetDebug()) {
-						const savedFilename = await this._saveDebugMedia(chunk[idx], "img");
+					if (this.isNudenetDebug(context)) {
+						const savedFilename = await this._saveDebugMedia(chunk[idx], "img", "jpg", context);
 						await this._appendDebugLog({
 							filename: savedFilename,
 							type: "imagem",
@@ -353,7 +369,8 @@ class NSFWPredict {
 							resultText: "NSFW (isNSFW=true)",
 							reason,
 							threshold: thresholdToUse,
-							apiResponse: item
+							apiResponse: item,
+							detectAll: context.detectAll || context.isDetectAll
 						});
 					}
 				}
@@ -361,7 +378,7 @@ class NSFWPredict {
 		}
 
 		const combinedReason = reasons.join("; ");
-		if (this.isNudenetDebug() || isAnyNSFW) {
+		if (this.isNudenetDebug(context) || isAnyNSFW) {
 			this.logger.info(
 				`${groupPrefix}Detecção NudeNet resultado: ${isAnyNSFW ? "NSFW" : "SAFE"} (isNSFW=${isAnyNSFW}) - ${combinedReason}${userSuffix}`
 			);
@@ -384,14 +401,20 @@ class NSFWPredict {
 		}
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
-		if (this.isNudenetDebug()) {
+		if (this.isNudenetDebug(context)) {
 			this.logger.info(`${groupPrefix}Detectando NSFW via NudeNet API: ${videoPath}${userSuffix}`);
 		}
 
 		const fileBuffer = await fs.promises.readFile(videoPath);
-		const blob = new Blob([fileBuffer], { type: "video/mp4" });
+		const ext = path.extname(videoPath).toLowerCase();
+		const mimeType = ext === ".gif" ? "image/gif" : "video/mp4";
+		const blob = new Blob([fileBuffer], { type: mimeType });
 		const form = new FormData();
-		form.append("file", blob, path.basename(videoPath) || "video.mp4");
+		form.append(
+			"file",
+			blob,
+			path.basename(videoPath) || (ext === ".gif" ? "animation.gif" : "video.mp4")
+		);
 		form.append("sample_fps", String(this.nudenetVideoFps));
 		form.append("max_frames", String(this.nudenetVideoMaxFrames));
 		form.append("include_frame_detections", "true");
@@ -462,22 +485,23 @@ class NSFWPredict {
 					: "";
 			reason = `${labelStr}${scoreStr}`;
 
-			if (this.isNudenetDebug()) {
-				const savedFilename = await this._saveDebugVideo(videoPath);
+			if (this.isNudenetDebug(context)) {
+				const savedFilename = await this._saveDebugVideo(videoPath, context);
 				await this._appendDebugLog({
 					filename: savedFilename,
-					type: "vídeo",
+					type: path.extname(videoPath).toLowerCase() === ".gif" ? "gif" : "vídeo",
 					group: context.groupName || context.groupId,
 					author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
 					resultText: "NSFW (isNSFW=true)",
 					reason,
 					threshold: thresholdToUse,
-					apiResponse: data
+					apiResponse: data,
+					detectAll: context.detectAll || context.isDetectAll
 				});
 			}
 		}
 
-		if (this.isNudenetDebug() || isNSFW) {
+		if (this.isNudenetDebug(context) || isNSFW) {
 			this.logger.info(
 				`${groupPrefix}Detecção NudeNet resultado: ${isNSFW ? "NSFW" : "SAFE"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
 			);
