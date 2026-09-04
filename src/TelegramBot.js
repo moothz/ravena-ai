@@ -1090,6 +1090,18 @@ class WhatsAppBotTelegram {
 		};
 	}
 
+	async createMediaFromBase64(base64Data, mimetype, filename) {
+		const extension = mime.extension(mimetype) ?? "bin";
+		return {
+			mimetype,
+			data: base64Data,
+			filename: filename ?? `file.${extension}`,
+			source: "base64",
+			isMessageMedia: true,
+			size: Buffer.byteLength(base64Data, "base64")
+		};
+	}
+
 	// As funções abaixo são stubs e não têm efeito no bot do Telegram.
 	logout() {
 		this.logger.warn("logout() is not applicable for Telegram Bot");

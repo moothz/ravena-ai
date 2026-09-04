@@ -168,6 +168,23 @@ class FakeBot {
 		}
 	}
 
+	/**
+	 * Cria mídia a partir de base64 simulada
+	 */
+	async createMediaFromBase64(base64Data, mimetype, filename) {
+		const extension = mime.extension(mimetype) ?? "bin";
+		const buffer = Buffer.from(base64Data, "base64");
+		return {
+			mimetype,
+			data: base64Data,
+			filename: filename ?? `file.${extension}`,
+			source: "base64",
+			url: `data:${mimetype};base64,${base64Data.substring(0, 32)}...`,
+			isMessageMedia: true,
+			size: buffer.length
+		};
+	}
+
 	/** Stubs para resolução LID↔PN usada nos filtros de grupo */
 	getLidFromPn(pn) {
 		return null;

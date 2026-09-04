@@ -90,9 +90,13 @@ class FixedCommands {
 		return (
 			this.commands.find((cmd) => {
 				if (cmd.caseSensitive === false) {
-					return cmd.name.toLowerCase() === name.toLowerCase();
+					const nameLower = name.toLowerCase();
+					return (
+						cmd.name.toLowerCase() === nameLower ||
+						(Array.isArray(cmd.aliases) && cmd.aliases.some((a) => a.toLowerCase() === nameLower))
+					);
 				}
-				return cmd.name === name;
+				return cmd.name === name || (Array.isArray(cmd.aliases) && cmd.aliases.includes(name));
 			}) || null
 		);
 	}

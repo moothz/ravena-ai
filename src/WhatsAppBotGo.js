@@ -964,7 +964,13 @@ class WhatsAppBotGo {
 
 	async getFileSizeByURL(url) {
 		try {
-			const headResponse = await axios.head(url);
+			const headResponse = await axios.head(url, {
+				headers: {
+					"User-Agent":
+						this.userAgent ||
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"
+				}
+			});
 			const contentLength = headResponse.headers["content-length"];
 			return contentLength ? parseInt(contentLength, 10) : 0;
 		} catch (error) {
@@ -1146,7 +1152,13 @@ class WhatsAppBotGo {
 
 			if (!mimetype && options.unsafeMime) {
 				try {
-					const headResponse = await axios.head(url);
+					const headResponse = await axios.head(url, {
+						headers: {
+							"User-Agent":
+								this.userAgent ||
+								"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"
+						}
+					});
 					this.logger.info("mimetype do header? ", headResponse);
 					mimetype = options.customMime
 						? options.customMime
