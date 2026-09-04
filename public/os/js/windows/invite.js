@@ -13,7 +13,7 @@ WindowManager.register('invite', {
         const renderPage = () => {
             const data = window.RavenaOS ? window.RavenaOS.state.healthData : null;
             const bots = (data && data.bots) ? data.bots : [];
-            const normalBots = bots.filter(b => !b.vip && !b.comunitario);
+            const normalBots = bots.filter(b => !b.vip && !b.comunitario && !b.privado);
 
             let normalBotsHtml = '';
             if (normalBots.length > 0) {

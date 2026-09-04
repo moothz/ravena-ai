@@ -13,8 +13,8 @@ const DEFAULT_USER_AGENT =
 
 const REQUEST_HEADERS = {
 	"User-Agent": DEFAULT_USER_AGENT,
-	"Accept": "*/*",
-	"Referer": "https://www.myinstants.com/"
+	Accept: "*/*",
+	Referer: "https://www.myinstants.com/"
 };
 
 const path = require("path");
@@ -131,7 +131,11 @@ async function baixarAudioComoMedia(bot, mp3Url, title) {
 
 	const base64Data = data.toString("base64");
 	const mimetype = "audio/mpeg";
-	const safeName = (title || "audio").replace(/[/\\?%*:|"<>]/g, "").slice(0, 50).trim() || "audio";
+	const safeName =
+		(title || "audio")
+			.replace(/[/\\?%*:|"<>]/g, "")
+			.slice(0, 50)
+			.trim() || "audio";
 	const filename = `${safeName}.mp3`;
 
 	if (bot && typeof bot.createMediaFromBase64 === "function") {

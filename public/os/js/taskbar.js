@@ -465,7 +465,8 @@ const Taskbar = {
         let html = '<div class="submenu-header">Ravenas Ativas</div>';
         data.bots.forEach(bot => {
             let icon = '🐦‍⬛';
-            if (bot.vip) icon = '💎';
+            if (bot.privado) icon = '🔒';
+            else if (bot.vip) icon = '💎';
             else if (bot.comunitario) icon = '🐓';
 
             const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, '') : '';

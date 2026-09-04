@@ -212,6 +212,9 @@ async function fetchHealthData() {
         }
         
         const data = await response.json();
+        if (data.isAdmin) {
+            isAdminMode = true;
+        }
         lastHealthData = data;
         renderBots(data);
         
@@ -451,13 +454,14 @@ function renderBots(data) {
 
     updateRealtimeCounter();
     
-    // Ordena os bots: Normais, comunitarios, VIP
-    const botsNormais = data.bots.filter(b => !b.comunitario && !b.vip);
-    const botsComunitarios = data.bots.filter(b => b.comunitario);
-    const botsVips = data.bots.filter(b =>  b.vip);
+    // Ordena os bots: Normais, comunitarios, VIP, Privados
+    const botsPrivados = data.bots.filter(b => b.privado);
+    const botsNormais = data.bots.filter(b => !b.comunitario && !b.vip && !b.privado);
+    const botsComunitarios = data.bots.filter(b => b.comunitario && !b.privado);
+    const botsVips = data.bots.filter(b =>  b.vip && !b.privado);
 
 
-    // console.log({botsNormais, botsComunitarios, botsVips});
+    // console.log({botsNormais, botsComunitarios, botsVips, botsPrivados});
 
     // Renderiza os cards de bot
     const tituloNormais = document.createElement('h2');
@@ -503,6 +507,23 @@ function renderBots(data) {
         vipInfoText.innerHTML = 'Estas são ravenas que hospedo em agradecimento aos primeiros donates que ajudaram a solidificar a ravena, não estão mais disponíveis - estão aqui apenas para que os membros acompanhem o status.<br>⚠️ Os bots <i>vips</i> não recebem convites e nem respondem mensagens no pv!<br><br>';
         botContainer.appendChild(vipInfoText);
         botsVips.forEach(bot => {
+            renderBotCard(botContainer, data, bot);
+        });
+        const separator = document.createElement('hr');
+        separator.className = 'bot-separator';
+        botContainer.appendChild(separator);
+    }
+
+    if(botsPrivados.length > 0){
+        const tituloPrivada = document.createElement('h2');
+        tituloPrivada.className = 'titulo-tipo-bots';
+        tituloPrivada.innerHTML = '🔒 ravenas privadas';
+        botContainer.appendChild(tituloPrivada);
+        const privInfoText = document.createElement('p');
+        privInfoText.className = 'normal-info-text';
+        privInfoText.innerHTML = 'Estas são ravenas privadas de grupos ou desenvolvedores.<br>⚠️ Visíveis apenas para o administrador.';
+        botContainer.appendChild(privInfoText);
+        botsPrivados.forEach(bot => {
             renderBotCard(botContainer, data, bot);
         });
         const separator = document.createElement('hr');

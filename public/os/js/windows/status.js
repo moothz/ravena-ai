@@ -28,9 +28,10 @@ WindowManager.register('status', {
                 return;
             }
 
-            const botsNormais = data.bots.filter(b => !b.comunitario && !b.vip);
-            const botsComunitarios = data.bots.filter(b => b.comunitario);
-            const botsVips = data.bots.filter(b => b.vip);
+            const botsPrivados = data.bots.filter(b => b.privado);
+            const botsNormais = data.bots.filter(b => !b.comunitario && !b.vip && !b.privado);
+            const botsComunitarios = data.bots.filter(b => b.comunitario && !b.privado);
+            const botsVips = data.bots.filter(b => b.vip && !b.privado);
 
             let html = '<div class="meu-computador">';
 
@@ -67,6 +68,19 @@ WindowManager.register('status', {
                         <h3 class="drive-category-title"><i class="fas fa-gem" style="color: var(--gold-color);"></i> Ravenas VIP</h3>
                         <div class="drive-list">
                             ${botsVips.map(b => this.renderDriveItem(b)).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Privadas
+            if (botsPrivados.length > 0) {
+                html += `<hr class="win-xp-separator">`;
+                html += `
+                    <div class="drive-category">
+                        <h3 class="drive-category-title"><i class="fas fa-lock" style="color: #ff9800;"></i> Ravenas Privadas 🔒</h3>
+                        <div class="drive-list">
+                            ${botsPrivados.map(b => this.renderDriveItem(b)).join('')}
                         </div>
                     </div>
                 `;
@@ -163,6 +177,7 @@ WindowManager.register('status', {
                     <div class="drive-name">
                         <span class="status-dot ${statusDotClass}"></span>
                         <span>${bot.id}</span>
+                        ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ''}
                     </div>
                     <div class="drive-bar">
                         <div class="drive-bar-fill" style="width: ${isOffline ? 100 : totalPercent}%; background: ${isOffline ? '#2a2a38' : barColor};"></div>

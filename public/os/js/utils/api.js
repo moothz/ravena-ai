@@ -2,7 +2,7 @@
 
 const Api = {
     async get(endpoint) {
-        const res = await fetch(endpoint);
+        const res = await fetch(endpoint, { credentials: 'same-origin' });
         if (!res.ok) {
             throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
@@ -13,6 +13,7 @@ const Api = {
         const isFormData = body instanceof FormData;
         const options = {
             method: 'POST',
+            credentials: 'same-origin',
             body: isFormData ? body : JSON.stringify(body)
         };
         if (!isFormData) {

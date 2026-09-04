@@ -234,6 +234,7 @@ const RavenaOS = {
         try {
             const data = await Api.get('/health');
             this.state.healthData = data;
+            this.state.isAdmin = !!data.isAdmin;
 
             // Compute total msgs/hr
             let totalMsgsHr = 0;

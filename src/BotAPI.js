@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
@@ -142,6 +143,44 @@ class BotAPI {
 		this.app.get(["/classic", "/legado"], (req, res) => {
 			res.sendFile(path.join(__dirname, "../public/classic.html"));
 		});
+
+		// Rota para encerrar sessão de administrador
+		this.app.get("/logout", (req, res) => {
+			this.clearAdminSessionCookie(res);
+			res.redirect("/");
+		});
+
+		// Handler para index com suporte a parâmetro ?admin e manutenção de sessão
+		const handleIndex = (req, res, next) => {
+			// Suporte a logout via query ?logout
+			if (req.query && "logout" in req.query) {
+				this.clearAdminSessionCookie(res);
+				return res.redirect(req.path || "/");
+			}
+
+			const wantsAdmin = req.query && "admin" in req.query;
+
+			if (wantsAdmin) {
+				if (!this.isAdmin(req)) {
+					res.set("WWW-Authenticate", 'Basic realm="RavenaBot API"');
+					return res.status(401).send("Autenticação requerida");
+				}
+
+				// Autenticado com sucesso: mantém a sessão no navegador via cookie
+				this.setAdminSessionCookie(res);
+				res.set("Cache-Control", "no-cache");
+				return res.sendFile(path.join(__dirname, "../public/os/index.html"));
+			}
+
+			// Se já possui sessão de admin ativa, renova o cookie
+			if (this.isAdmin(req)) {
+				this.setAdminSessionCookie(res);
+			}
+
+			return next();
+		};
+
+		this.app.get(["/", "/os", "/os/", "/index.html", "/os/index.html"], handleIndex);
 
 		// Entrega da interface Desktop OS como homepage principal (/)
 		this.app.use(
@@ -317,6 +356,147 @@ class BotAPI {
 	}
 
 	/**
+	 * Gera o secret derivado para assinatura do cookie de sessão
+	 * @returns {string}
+	 */
+	getAdminSessionSecret() {
+		if (!this._adminSessionSecret) {
+			this._adminSessionSecret = crypto
+				.createHash("sha256")
+				.update(`${this.apiUser}:${this.apiPassword}:ravena_admin_salt`)
+				.digest("hex");
+		}
+		return this._adminSessionSecret;
+	}
+
+	/**
+	 * Cria um token assinado para a sessão de admin
+	 * @returns {string}
+	 */
+	createAdminSessionToken() {
+		const timestamp = Date.now().toString();
+		const secret = this.getAdminSessionSecret();
+		const signature = crypto.createHmac("sha256", secret).update(timestamp).digest("hex");
+		return `${timestamp}.${signature}`;
+	}
+
+	/**
+	 * Valida um token de sessão de admin
+	 * @param {string} token
+	 * @returns {boolean}
+	 */
+	isValidAdminSession(token) {
+		if (!token || typeof token !== "string") return false;
+		const parts = token.split(".");
+		if (parts.length !== 2) return false;
+
+		const [timestampStr, signature] = parts;
+		const timestamp = parseInt(timestampStr, 10);
+		if (isNaN(timestamp)) return false;
+
+		// Sessão expira em 30 dias
+		const MAX_SESSION_AGE = 30 * 24 * 60 * 60 * 1000;
+		if (Date.now() - timestamp > MAX_SESSION_AGE) {
+			return false;
+		}
+
+		const secret = this.getAdminSessionSecret();
+		const expectedSignature = crypto
+			.createHmac("sha256", secret)
+			.update(timestampStr)
+			.digest("hex");
+
+		try {
+			return crypto.timingSafeEqual(
+				Buffer.from(signature, "hex"),
+				Buffer.from(expectedSignature, "hex")
+			);
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Obtém um cookie da requisição
+	 * @param {express.Request} req
+	 * @param {string} name
+	 * @returns {string|null}
+	 */
+	getCookie(req, name) {
+		if (!req || !req.headers || !req.headers.cookie) return null;
+		const cookies = req.headers.cookie.split(";");
+		for (const cookie of cookies) {
+			const [k, ...v] = cookie.trim().split("=");
+			if (k === name) {
+				return decodeURIComponent(v.join("="));
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Define o cookie de sessão de admin na resposta
+	 * @param {express.Response} res
+	 */
+	setAdminSessionCookie(res) {
+		if (!res || res.headersSent) return;
+		const token = this.createAdminSessionToken();
+		const maxAge = 30 * 24 * 60 * 60; // 30 dias em segundos
+		res.setHeader(
+			"Set-Cookie",
+			`ravena_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax`
+		);
+	}
+
+	/**
+	 * Remove o cookie de sessão de admin na resposta
+	 * @param {express.Response} res
+	 */
+	clearAdminSessionCookie(res) {
+		if (!res || res.headersSent) return;
+		res.setHeader("Set-Cookie", "ravena_admin_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+	}
+
+	/**
+	 * Verifica se a requisição possui credenciais válidas de administrador
+	 * (seja por cookie de sessão ou por cabeçalho Basic Auth)
+	 * @param {express.Request} req
+	 * @returns {boolean}
+	 */
+	isAdmin(req) {
+		if (!req) return false;
+
+		// 1. Verifica cookie de sessão
+		const sessionCookie = this.getCookie(req, "ravena_admin_session");
+		if (sessionCookie && this.isValidAdminSession(sessionCookie)) {
+			return true;
+		}
+
+		// 2. Verifica cabeçalho Authorization Basic ou query param auth
+		let authHeader = req.headers ? req.headers.authorization : null;
+		if (!authHeader && req.query && req.query.auth) {
+			authHeader = req.query.auth.startsWith("Basic ") ? req.query.auth : "Basic " + req.query.auth;
+		}
+
+		if (authHeader && authHeader.startsWith("Basic ")) {
+			try {
+				const base64Credentials = authHeader.split(" ")[1];
+				const credentials = Buffer.from(base64Credentials, "base64").toString("utf8");
+				const [username, ...passParts] = credentials.split(":");
+				const password = passParts.join(":");
+
+				if (username === this.apiUser && password === this.apiPassword) {
+					return true;
+				}
+			} catch (error) {
+				this.logger.error("Erro ao verificar autenticação de admin:", error);
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Configura rotas da API
 	 */
 	setupRoutes() {
@@ -346,6 +526,7 @@ class BotAPI {
 		// Endpoint de verificação de saúde
 		this.app.get("/health", async (req, res) => {
 			try {
+				const isAdmin = this.isAdmin(req);
 				// Obtém timestamp de 30 minutos atrás
 				const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
 
@@ -370,8 +551,9 @@ class BotAPI {
 				res.json({
 					status: "ok",
 					timestamp: Date.now(),
+					isAdmin,
 					bots: this.bots
-						.filter((bot) => !bot.privado && !bot.useTelegram && !bot.useDiscord)
+						.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
 						.map((bot) => {
 							// Busca relatório mais recente para este bot
 							const report = botReports[bot.id] ?? null;
@@ -401,34 +583,40 @@ class BotAPI {
 								comunitario: bot.comunitario ?? false,
 								numeroResponsavel: bot.numeroResponsavel ?? false,
 								supportMsg: bot.supportMsg ?? false,
-								vip: bot.vip ?? false
+								vip: bot.vip ?? false,
+								privado: bot.privado ?? false
 							};
 						})
 				});
 			} catch (error) {
 				this.logger.error("Erro ao processar dados de health:", error);
+				const isAdmin = this.isAdmin(req);
 				res.json({
 					status: "error",
 					timestamp: Date.now(),
+					isAdmin,
 					message: "Erro ao processar dados",
-					bots: this.bots.map((bot) => ({
-						id: bot.id,
-						phoneNumber: bot.phoneNumber,
-						connected: bot.isConnected,
-						lastMessageReceived: bot.lastMessageReceived ?? null,
-						msgsHr: 0,
-						responseTime: {
-							avg: 0,
-							max: 0
-						},
-						semPV: bot.ignorePV ?? false,
-						semConvites: bot.ignoreInvites ?? false,
-						banido: bot.banido ?? false,
-						comunitario: bot.comunitario ?? false,
-						numeroResponsavel: bot.numeroResponsavel ?? false,
-						supportMsg: bot.supportMsg ?? false,
-						vip: bot.vip ?? false
-					}))
+					bots: this.bots
+						.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
+						.map((bot) => ({
+							id: bot.id,
+							phoneNumber: bot.phoneNumber,
+							connected: bot.isConnected,
+							lastMessageReceived: bot.lastMessageReceived ?? null,
+							msgsHr: 0,
+							responseTime: {
+								avg: 0,
+								max: 0
+							},
+							semPV: bot.ignorePV ?? false,
+							semConvites: bot.ignoreInvites ?? false,
+							banido: bot.banido ?? false,
+							comunitario: bot.comunitario ?? false,
+							numeroResponsavel: bot.numeroResponsavel ?? false,
+							supportMsg: bot.supportMsg ?? false,
+							vip: bot.vip ?? false,
+							privado: bot.privado ?? false
+						}))
 				});
 			}
 		});
@@ -446,11 +634,13 @@ class BotAPI {
 					pass = bot.managementPW;
 					this.logger.debug(`[authenticateBasic] Using credentials for bot '${botId}'`);
 				}
+			} else if (this.isAdmin(req)) {
+				return next();
 			}
 
 			// Verifica se os cabeçalhos ou parâmetro de consulta existem
 			let authHeader = req.headers.authorization;
-			if (!authHeader && req.query.auth) {
+			if (!authHeader && req.query && req.query.auth) {
 				authHeader = req.query.auth.startsWith("Basic ")
 					? req.query.auth
 					: "Basic " + req.query.auth;
@@ -469,9 +659,13 @@ class BotAPI {
 				// O formato é 'Basic <base64 encoded username:password>'
 				const base64Credentials = authHeader.split(" ")[1];
 				const credentials = Buffer.from(base64Credentials, "base64").toString("utf8");
-				const [username, password] = credentials.split(":");
+				const [username, ...passParts] = credentials.split(":");
+				const password = passParts.join(":");
 
 				if (username === user && password === pass) {
+					if (username === this.apiUser && password === this.apiPassword) {
+						this.setAdminSessionCookie(res);
+					}
 					return next();
 				}
 			} catch (error) {

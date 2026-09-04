@@ -31,7 +31,8 @@ WindowManager.register('status-detail', {
         const msgsHr = Math.round(bot.msgsHr || 0);
 
         let typeBadge = '<span style="color: var(--bright-blue);">🐦‍⬛ Oficial</span>';
-        if (bot.vip) typeBadge = '<span style="color: var(--gold-color);">💎 VIP</span>';
+        if (bot.privado) typeBadge = '<span style="color: #ff9800;">🔒 Privada</span>';
+        else if (bot.vip) typeBadge = '<span style="color: var(--gold-color);">💎 VIP</span>';
         else if (bot.comunitario) typeBadge = '<span style="color: #ff6b6b;">🐓 Comunitária ☭</span>';
 
         let statusText = '<span style="color: var(--status-green);">● Online e Ativa</span>';
