@@ -1,5 +1,6 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
+const { execFile } = require("child_process");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -12,9 +13,61 @@ const DEFAULT_USER_AGENT =
 
 const REQUEST_HEADERS = {
 	"User-Agent": DEFAULT_USER_AGENT,
-	"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-	"Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+	"Accept": "*/*",
+	"Referer": "https://www.myinstants.com/"
 };
+
+const path = require("path");
+
+const PYTHON_FETCHER_PATH = path.join(__dirname, "../utils/myinstants_fetcher.py");
+
+/**
+ * Executa requisição usando script Python em src/utils para contornar bloqueio de TLS Fingerprinting (JA4) do Cloudflare
+ * @param {string} url
+ * @returns {Promise<{status: number, data: Buffer}>}
+ */
+function fetchViaPython(url) {
+	return new Promise((resolve, reject) => {
+		execFile(
+			"python3",
+			[PYTHON_FETCHER_PATH, url],
+			{ maxBuffer: 25 * 1024 * 1024, encoding: "buffer" },
+			(err, stdout) => {
+				if (err) {
+					if (err.code === 4) {
+						return resolve({ status: 404, data: Buffer.alloc(0) });
+					}
+					return reject(err);
+				}
+				resolve({ status: 200, data: stdout });
+			}
+		);
+	});
+}
+
+/**
+ * Faz requisição HTTP para o MyInstants com fallback para Python
+ * a fim de contornar bloqueios de TLS/JA4 do Cloudflare no Node 20.
+ * @param {string} url
+ * @returns {Promise<{status: number, data: Buffer}>}
+ */
+async function fetchMyInstants(url) {
+	try {
+		const res = await axios.get(url, {
+			headers: REQUEST_HEADERS,
+			responseType: "arraybuffer",
+			timeout: 5000,
+			validateStatus: (s) => s < 500
+		});
+		if (res.status === 200 || res.status === 404) {
+			return { status: res.status, data: Buffer.from(res.data) };
+		}
+	} catch (e) {
+		// Fallback para python se axios falhar ou for bloqueado por Cloudflare
+	}
+
+	return await fetchViaPython(url);
+}
 
 /**
  * Busca áudios no myinstants.com
@@ -31,17 +84,13 @@ async function buscarAudios(pesquisa) {
 	const url = `${base}/en/search/?name=${query}`;
 
 	try {
-		const { data, status } = await axios.get(url, {
-			headers: REQUEST_HEADERS,
-			timeout: 10000,
-			validateStatus: (s) => s < 500
-		});
+		const { data, status } = await fetchMyInstants(url);
 
-		if (status === 404) {
+		if (status === 404 || !data || data.length === 0) {
 			return [];
 		}
 
-		const $ = cheerio.load(data);
+		const $ = cheerio.load(data.toString("utf8"));
 		const botoes = $(".instant");
 
 		const resultados = [];
@@ -74,17 +123,13 @@ async function buscarAudios(pesquisa) {
  * @returns {Promise<Object>}
  */
 async function baixarAudioComoMedia(bot, mp3Url, title) {
-	const response = await axios.get(mp3Url, {
-		headers: {
-			"User-Agent": DEFAULT_USER_AGENT,
-			"Accept": "*/*",
-			"Referer": "https://www.myinstants.com/"
-		},
-		responseType: "arraybuffer",
-		timeout: 15000
-	});
+	const { data, status } = await fetchMyInstants(mp3Url);
 
-	const base64Data = Buffer.from(response.data).toString("base64");
+	if (status !== 200 || !data || data.length === 0) {
+		throw new Error(`Falha ao baixar áudio: status ${status}`);
+	}
+
+	const base64Data = data.toString("base64");
 	const mimetype = "audio/mpeg";
 	const safeName = (title || "audio").replace(/[/\\?%*:|"<>]/g, "").slice(0, 50).trim() || "audio";
 	const filename = `${safeName}.mp3`;
@@ -99,7 +144,7 @@ async function baixarAudioComoMedia(bot, mp3Url, title) {
 		filename,
 		source: "base64",
 		isMessageMedia: true,
-		size: response.data.length
+		size: data.length
 	};
 }
 
