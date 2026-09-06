@@ -33,6 +33,48 @@ Este projeto é executado inteiramente dentro de containers Docker. O container 
    docker exec ravena-ai rm /app/<caminho/do/script.js>
    ```
 
+## Harness de Testes e Mocks (`src/testing/`)
+O projeto conta com uma infraestrutura própria para testes em `src/testing/`, permitindo testar comandos e regras do `EventHandler` sem abrir conexões reais de rede:
+
+- **`FakeBot.js`**: Stub dos bots (`WhatsAppBotGo`, etc.) que simula a interface esperada pelo pipeline (`EventHandler` → `CommandHandler` → comandos/funções):
+  - Captura as mensagens enviadas em `bot.capturedMessages` via `sendReturnMessages`.
+  - Inicia o banco de dados em `testMode: true` (evita escrita persistente acidental durante os testes).
+  - Possui `resetCapture()` para limpar as mensagens capturadas entre asserções.
+  - Implementa stubs de suporte como `dossieGroups`, `isDossieGroup(groupId)`, `grupoLogs`, etc.
+- **`FakeMessage.js`**: Construtor de mensagens sintéticas:
+  - `createMessage(overrides)`: Constrói um objeto `message` idêntico ao gerado pelos wrappers de WhatsApp/Telegram/Discord (`author`, `authorName`, `content`, `group`, `type`, `origin.react()`, `origin.getQuotedMessage()`, etc.).
+  - `loadMediaFile(absPath)`: Carrega arquivo de mídia do disco em base64 para testar comandos de mídia/figurinhas.
+- **`helpers.js`**: Funções rápidas para montar mensagens de teste:
+  - `msgTexto(texto, opts)`: Mensagem de texto simples.
+  - `msgMedia(texto, filePath, opts)`: Mensagem com mídia anexada.
+  - `msgComQuote(texto, quotedMsg, opts)`: Mensagem citando outra mensagem.
+  - `msgCustom(overrides)`: Mensagem com propriedades customizadas.
+- **`TestRunner.js`**: Executor de suíte de testes com gerenciamento de timeouts e relatório visual.
+- **`test_dossie_groups.js`**: Exemplo prático de teste unitário/integração usando `FakeBot` e `createMessage`.
+
+### Exemplo Rápido de Teste com FakeBot e FakeMessage:
+```javascript
+const FakeBot = require("./src/testing/FakeBot");
+const EventHandler = require("./src/EventHandler");
+const { createMessage } = require("./src/testing/FakeMessage");
+
+async function test() {
+    const bot = new FakeBot({ id: "teste", grupoLogs: "123@g.us", dossieGroups: "dossie@g.us" });
+    const eventHandler = new EventHandler();
+
+    const msg = createMessage({
+        content: "!ping",
+        group: "123@g.us",
+        author: "5511999999999@s.whatsapp.net"
+    });
+
+    await eventHandler.processMessage(bot, msg);
+    console.log("Mensagens capturadas:", bot.capturedMessages);
+    process.exit(0);
+}
+test();
+```
+
 ## Reinicialização e Rebuild de Containers (REGRA ESTRITA)
 - **NUNCA execute restart ou rebuild automaticamente:** Comandos como `docker restart`, `docker compose restart`, `docker compose down`, `docker compose up --build`, rebuild de imagens ou reinício de containers NUNCA devem ser executados pelo assistente.
 - **SEMPRE SOLICITAR AO USUÁRIO:** Qualquer necessidade de reiniciar ou reconstruir containers deve SEMPRE ser solicitada ao usuário, explicando o motivo e sugerindo o comando adequado para que o usuário execute por conta própria.

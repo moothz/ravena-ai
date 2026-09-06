@@ -45,6 +45,10 @@ class WhatsAppBotTelegram {
 		this.updateStatus = options.updateStatus ?? true;
 		this.aiPersonality = options.aiPersonality ?? "";
 		this.grupoLogs = parseInt(options.grupoLogs || process.env.TELEGRAM_GRUPO_LOGS);
+		this.dossieGroups =
+			options.dossieGroups ??
+			this.grupoLogs ??
+			(process.env.TELEGRAM_GRUPO_DOSSIES ? parseInt(process.env.TELEGRAM_GRUPO_DOSSIES) : null);
 		this.grupoAvisos = parseInt(options.grupoAvisos || process.env.TELEGRAM_GRUPO_AVISOS);
 		this.notificarDonate = options.notificarDonate;
 		this.webhookHost = options.webhookHost; // ex: ravena.moothz.win
@@ -1160,6 +1164,23 @@ class WhatsAppBotTelegram {
 	}
 	getPnFromLid(lid, chat) {
 		return lid;
+	}
+
+	/**
+	 * Verifica se um chat/grupo é o grupo de dossiês do bot
+	 * @param {string|number} groupId - ID do chat a verificar
+	 * @returns {boolean}
+	 */
+	isDossieGroup(groupId) {
+		if (!this.dossieGroups || !groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const groups = Array.isArray(this.dossieGroups)
+			? this.dossieGroups
+			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
+				? this.dossieGroups.split(",").map((g) => g.trim())
+				: [this.dossieGroups];
+		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
 	}
 
 	async destroy() {

@@ -118,6 +118,8 @@ class WhatsAppBotGo {
 		this.whitelist = options.whitelistPV ?? [];
 		this.ignoreInvites = options.ignoreInvites ?? false;
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
+		this.dossieGroups =
+			options.dossieGroups ?? options.grupoLogs ?? process.env.GRUPO_DOSSIES ?? process.env.GRUPO_LOGS;
 		this.grupoInvites = options.grupoInvites ?? process.env.GRUPO_INVITES;
 		this.grupoAvisos = options.grupoAvisos ?? process.env.GRUPO_AVISOS;
 		this.grupoAnuncios = options.grupoAnuncios || process.env.GRUPO_ANUNCIOS;
@@ -1708,7 +1710,8 @@ class WhatsAppBotGo {
 							chatToFilter === this.grupoLogs ||
 							chatToFilter === this.grupoAnuncios ||
 							chatToFilter === this.grupoInvites ||
-							chatToFilter === this.grupoEstabilidade
+							chatToFilter === this.grupoEstabilidade ||
+							this.isDossieGroup(chatToFilter)
 						) {
 							break;
 						}
@@ -2898,6 +2901,23 @@ class WhatsAppBotGo {
 			fromMe: key.fromMe ?? true,
 			participant: key.participant
 		});
+	}
+
+	/**
+	 * Verifica se um chat/grupo é o grupo de dossiês do bot
+	 * @param {string} groupId - ID do grupo a verificar
+	 * @returns {boolean}
+	 */
+	isDossieGroup(groupId) {
+		if (!this.dossieGroups || !groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const groups = Array.isArray(this.dossieGroups)
+			? this.dossieGroups
+			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
+				? this.dossieGroups.split(",").map((g) => g.trim())
+				: [this.dossieGroups];
+		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
 	}
 
 	getLidFromPn(PN, chat) {

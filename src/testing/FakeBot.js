@@ -33,7 +33,8 @@ class FakeBot {
 		this.userAgent = "FakeBot/1.0";
 
 		// IDs de grupos de notificação — null = desabilitado
-		this.grupoLogs = null;
+		this.grupoLogs = options.grupoLogs ?? null;
+		this.dossieGroups = options.dossieGroups ?? options.grupoLogs ?? null;
 		this.grupoAvisos = null;
 		this.grupoEstabilidade = null;
 		this.grupoInvites = null;
@@ -195,6 +196,23 @@ class FakeBot {
 
 	/** Compatibilidade com destruição no SIGINT */
 	async destroy() {}
+
+	/**
+	 * Verifica se um chat/grupo é o grupo de dossiês do bot
+	 * @param {string} groupId - ID do grupo a verificar
+	 * @returns {boolean}
+	 */
+	isDossieGroup(groupId) {
+		if (!this.dossieGroups || !groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const groups = Array.isArray(this.dossieGroups)
+			? this.dossieGroups
+			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
+				? this.dossieGroups.split(",").map((g) => g.trim())
+				: [this.dossieGroups];
+		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
+	}
 
 	/**
 	 * Reseta mensagens capturadas (útil para rodar múltiplos testes com o mesmo bot)

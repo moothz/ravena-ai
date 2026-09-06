@@ -476,6 +476,12 @@ class CommandHandler {
 	 */
 	async handleCommand(bot, message, commandText, group) {
 		try {
+			// Ignora comandos se a mensagem vier do grupo de dossiês
+			if (message.group && bot && typeof bot.isDossieGroup === "function" && bot.isDossieGroup(message.group)) {
+				this.logger.debug(`[${bot.id}] Ignorando comando em grupo de dossiês: ${message.group}`);
+				return null;
+			}
+
 			const userId = message.author || message.authorAlt || message.from;
 			if (userId) {
 				// Ignorar prevenção de spam para super admins/dono do bot

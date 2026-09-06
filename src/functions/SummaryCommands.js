@@ -538,8 +538,11 @@ ${pendingText}`;
 				);
 
 				// Alerta SuperAdmin se a nota for alta (> 7) e tiver bot disponível
-				if (bot && parsed.problematic_score > 7 && (bot.grupoLogs || process.env.GRUPO_LOGS)) {
-					const targetGroup = bot.grupoLogs || process.env.GRUPO_LOGS;
+				const targetGroup = bot
+					? bot.dossieGroups || bot.grupoLogs || process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS
+					: process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS;
+
+				if (bot && parsed.problematic_score > 7 && targetGroup) {
 					const groupData = await bot.database.getGroup(chatId);
 
 					// Conta a quantidade de reports problemáticos já gerados para este grupo
@@ -611,9 +614,17 @@ ${pendingText}`;
 ${lastDossiersText}
 !sa-leaveGrupo ${chatId}`;
 
-					bot
-						.sendMessage(targetGroup, msgAlert)
-						.catch((e) => logger.error("Erro ao enviar alerta de dossiê:", e));
+					const targetGroups = Array.isArray(targetGroup)
+						? targetGroup
+						: typeof targetGroup === "string" && targetGroup.includes(",")
+							? targetGroup.split(",").map((g) => g.trim())
+							: [targetGroup];
+
+					for (const tg of targetGroups) {
+						bot
+							.sendMessage(tg, msgAlert)
+							.catch((e) => logger.error("Erro ao enviar alerta de dossiê:", e));
+					}
 				}
 			} else {
 				logger.warn(`[${chatId}] JSON da IA incompleto:`, parsed);
@@ -721,6 +732,17 @@ async function storeMessage(message, chatId, bot) {
 		}
 
 		if (textContent) {
+			// Ignora mensagens do grupo de dossiês
+			if (
+				bot &&
+				((typeof bot.isDossieGroup === "function" && bot.isDossieGroup(chatId)) ||
+					(bot.dossieGroups &&
+						(bot.dossieGroups === chatId ||
+							(Array.isArray(bot.dossieGroups) && bot.dossieGroups.includes(chatId)))))
+			) {
+				return;
+			}
+
 			// Ignora comandos que começam com '!' no histórico de conversas e dossiê
 			if (typeof textContent === "string" && textContent.trim().startsWith("!")) {
 				return;

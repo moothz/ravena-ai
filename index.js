@@ -87,6 +87,11 @@ async function main() {
 		for (const rBot of rBots) {
 			if (!rBot.enabled) continue;
 
+			// Fallback de dossieGroups para grupoLogs caso não informado no bots.json
+			if (!rBot.dossieGroups) {
+				rBot.dossieGroups = rBot.dossieGroup ?? rBot.grupoLogs;
+			}
+
 			let newRBot;
 			if (rBot.useTelegram) {
 				logger.info(`Inicializando '${rBot.nome}' como Telegram Bot`);
@@ -107,6 +112,7 @@ async function main() {
 
 					// IDs dos canais para notificações - do .env
 					grupoLogs: process.env.TELEGRAM_GRUPO_LOGS,
+					dossieGroups: rBot.dossieGroups ?? rBot.grupoLogs ?? process.env.TELEGRAM_GRUPO_DOSSIES ?? process.env.TELEGRAM_GRUPO_LOGS,
 					grupoAvisos: process.env.TELEGRAM_GRUPO_AVISOS,
 					notificarDonate: rBot.notificarDonate ?? false,
 
@@ -140,6 +146,7 @@ async function main() {
 
 					// IDs dos canais para notificações - do .env
 					grupoLogs: process.env.GRUPO_LOGS_DISCORD,
+					dossieGroups: rBot.dossieGroups ?? rBot.grupoLogs ?? process.env.GRUPO_DOSSIES_DISCORD ?? process.env.GRUPO_LOGS_DISCORD,
 					grupoAvisos: process.env.GRUPO_AVISOS_DISCORD,
 					notificarDonate: rBot.notificarDonate ?? false,
 
@@ -190,6 +197,7 @@ async function main() {
 					// IDs dos grupos para notificações da comunidade
 					grupoEstabilidade: rBot.grupoEstabilidade ?? process.env.GRUPO_ESTABILIDADE,
 					grupoLogs: rBot.grupoLogs ?? process.env.GRUPO_LOGS,
+					dossieGroups: rBot.dossieGroups ?? rBot.grupoLogs ?? process.env.GRUPO_DOSSIES ?? process.env.GRUPO_LOGS,
 					grupoInvites: rBot.grupoInvites ?? process.env.GRUPO_INVITES,
 					grupoAvisos: rBot.grupoAvisos ?? process.env.GRUPO_AVISOS,
 					grupoAnuncios: rBot.grupoAnuncios ?? process.env.GRUPO_ANUNCIOS,

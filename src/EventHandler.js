@@ -78,6 +78,28 @@ class EventHandler extends EventEmitter {
 	}
 
 	/**
+	 * Verifica se um chat/grupo é o grupo de dossiês do bot
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {string} groupId - ID do grupo
+	 * @returns {boolean}
+	 */
+	isDossieGroup(bot, groupId) {
+		if (!bot || !groupId) return false;
+		if (typeof bot.isDossieGroup === "function") {
+			return bot.isDossieGroup(groupId);
+		}
+		if (!bot.dossieGroups) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const groups = Array.isArray(bot.dossieGroups)
+			? bot.dossieGroups
+			: typeof bot.dossieGroups === "string" && bot.dossieGroups.includes(",")
+				? bot.dossieGroups.split(",").map((g) => g.trim())
+				: [bot.dossieGroups];
+		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
+	}
+
+	/**
 	 * Obtém grupo por ID, cria se não existir
 	 * @param {string} groupId - O ID do grupo
 	 * @param {string} name - O nome do grupo (opcional)
@@ -394,6 +416,7 @@ class EventHandler extends EventEmitter {
 				// Ajuda com recuperação de grupo
 				const botNameRecovery = (bot.nomeExibir || "ravena").toLowerCase();
 				if (
+					!this.isDossieGroup(bot, message.group) &&
 					textContent &&
 					typeof textContent === "string" &&
 					textContent.trim().toLowerCase() === `ravena, ajude a recuperar meu grupo!`
@@ -505,6 +528,14 @@ class EventHandler extends EventEmitter {
 				if (this.isNudenetDetectAll()) {
 					await this.checkNSFW(bot, message, null, true);
 				}
+			}
+
+			// Ignora todos os comandos se a mensagem for do grupo de dossiês
+			if (message.group && this.isDossieGroup(bot, message.group)) {
+				this.logger.debug(
+					`[${bot.id}] Mensagem recebida no grupo de dossiês (${message.group}). Comandos ignorados.`
+				);
+				return;
 			}
 
 			// Se não houver conteúdo de texto, não pode ser um comando ou menção

@@ -57,6 +57,11 @@ class DiscordBot {
 		this.updateStatus = options.updateStatus ?? true;
 		this.aiPersonality = options.aiPersonality ?? "";
 		this.grupoLogs = options.grupoLogs; // Espera-se um Channel ID
+		this.dossieGroups =
+			options.dossieGroups ??
+			this.grupoLogs ??
+			process.env.GRUPO_DOSSIES_DISCORD ??
+			process.env.GRUPO_LOGS_DISCORD;
 		this.grupoAvisos = options.grupoAvisos; // Espera-se um Channel ID
 		this.notificarDonate = options.notificarDonate;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
@@ -204,7 +209,7 @@ class DiscordBot {
 		this.lastMessageReceived = Date.now();
 
 		// Filtro de grupos do sistema (se configurado)
-		if (message.channel.id === this.grupoLogs) {
+		if (message.channel.id === this.grupoLogs || this.isDossieGroup(message.channel.id)) {
 			if (this.debugEvents) {
 				this.logger.debug(
 					`[${this.id}] Ignoring message from system channel: ${message.channel.id}`
@@ -1075,6 +1080,23 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			return number.startsWith(PN);
 		});
 		return found ? found.id._serialized : PN;
+	}
+
+	/**
+	 * Verifica se um chat/grupo é o grupo de dossiês do bot
+	 * @param {string} groupId - ID do canal/grupo a verificar
+	 * @returns {boolean}
+	 */
+	isDossieGroup(groupId) {
+		if (!this.dossieGroups || !groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const groups = Array.isArray(this.dossieGroups)
+			? this.dossieGroups
+			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
+				? this.dossieGroups.split(",").map((g) => g.trim())
+				: [this.dossieGroups];
+		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
 	}
 
 	getPnFromLid(lid, chat) {
