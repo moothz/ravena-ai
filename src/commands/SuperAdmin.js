@@ -156,6 +156,29 @@ class SuperAdmin {
 		return this.adminUtils.isComuAdmin(userId, bot);
 	}
 
+	/**
+	 * Extrai o código de convite de uma URL do WhatsApp ou retorna o próprio código limpo.
+	 * Suporta formatos como:
+	 * - https://chat.whatsapp.com/D17CRtfxTCM1bCVYdmVyZs
+	 * - http://chat.whatsapp.com/D17CRtfxTCM1bCVYdmVyZs
+	 * - chat.whatsapp.com/D17CRtfxTCM1bCVYdmVyZs
+	 * - https://chat.whatsapp.com/invite/D17CRtfxTCM1bCVYdmVyZs
+	 * - D17CRtfxTCM1bCVYdmVyZs
+	 * @param {string} input - URL ou código do convite
+	 * @returns {string} - Código de convite extraído
+	 */
+	extractInviteCode(input) {
+		if (!input || typeof input !== "string") return "";
+		const trimmed = input.trim();
+		const match = trimmed.match(
+			/(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9_-]+)/i
+		);
+		if (match) {
+			return match[1];
+		}
+		return trimmed.replace(/^\/+|\/+$/g, "").split("?")[0];
+	}
+
 	async wakeOnLan(bot, message, args) {
 		const chatId = message.group ?? message.author;
 		try {
@@ -608,7 +631,15 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 
 			// Obtém código de convite
-			const inviteCode = args[0];
+			const inviteCode = this.extractInviteCode(args[0]);
+
+			if (!inviteCode) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Por favor, forneça um código de convite válido. Exemplo: !sa-joinGrupo https://chat.whatsapp.com/abcd1234"
+				});
+			}
 
 			// Verifica se está no cache de force join (tentativa repetida em menos de 1 min)
 			const forceJoinKey = `${message.author}:${inviteCode}`;
@@ -729,7 +760,14 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			const inviteCode = args[0];
+			const inviteCode = this.extractInviteCode(args[0]);
+			if (!inviteCode) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Por favor, forneça um código de convite válido. Exemplo: !sa-joinGrupoSilencioso https://chat.whatsapp.com/abcd1234"
+				});
+			}
 
 			// Inicializa o set de joins silenciosos no bot (se ainda não existir)
 			if (!bot.silentJoinGroups) {
@@ -1248,16 +1286,20 @@ Break down the cost by category and provide a total estimated cost.`;
 		let inviteCode = null;
 
 		if (args.length === 1) {
-			const cleanArg = args[0].replace(/\D/g, "");
-			// Se o argumento for um invite code (20+ chars e poucos dígitos)
-			if (args[0].length >= 20 && cleanArg.length < 8) {
-				inviteCode = args[0];
+			if (args[0].includes("chat.whatsapp.com")) {
+				inviteCode = this.extractInviteCode(args[0]);
 			} else {
-				phoneNumber = cleanArg.split("@")[0];
+				const cleanArg = args[0].replace(/\D/g, "");
+				// Se o argumento for um invite code (20+ chars e poucos dígitos)
+				if (args[0].length >= 20 && cleanArg.length < 8) {
+					inviteCode = this.extractInviteCode(args[0]);
+				} else {
+					phoneNumber = cleanArg.split("@")[0];
+				}
 			}
 		} else {
 			phoneNumber = args[0].replace(/\D/g, "").split("@")[0];
-			inviteCode = args[1];
+			inviteCode = this.extractInviteCode(args[1]);
 		}
 
 		const blockedList = new Set();
