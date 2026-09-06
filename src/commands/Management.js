@@ -6438,7 +6438,8 @@ class Management {
 		const expiration = new Date(now.getTime() + expirationMinutes * 60000);
 
 		// Format for display
-		const formattedExpiration = expiration.toLocaleDateString("pt-BR", {
+		const formattedExpiration = expiration.toLocaleString("pt-BR", {
+			timeZone: "America/Sao_Paulo",
 			day: "2-digit",
 			month: "2-digit",
 			year: "numeric",

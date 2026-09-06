@@ -2128,6 +2128,13 @@ class BotAPI {
 							message: `O nome do grupo deve conter apenas letras, números, _, - e ., sem espaços, com no máximo 30 caracteres.`
 						});
 					}
+					const existingGroup = await this.database.getGroupByName(changes.name);
+					if (existingGroup && existingGroup.id !== groupId) {
+						return res.status(400).json({
+							success: false,
+							message: `O nome "${changes.name}" já está em uso por outro grupo. Escolha um nome diferente.`
+						});
+					}
 				}
 
 				// Validate prefix: max 1 char
@@ -2545,6 +2552,185 @@ class BotAPI {
 			} catch (e) {
 				this.logger.error("Error deleting command:", e);
 				res.status(500).json({ message: "Server error" });
+			}
+		});
+
+		// Export Custom Commands as ZIP (with media)
+		this.app.get("/api/custom-commands/:groupId/export-zip", async (req, res) => {
+			const { groupId } = req.params;
+			const { token } = req.query;
+
+			try {
+				const webManagementData = await this.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					return res.status(401).json({ message: "Unauthorized" });
+				}
+
+				const groupData = await this.database.getGroup(groupId);
+				const groupName = (groupData?.name || groupId.split("@")[0] || "grupo").replace(
+					/[^a-zA-Z0-9_-]/g,
+					"_"
+				);
+				const commands = (await this.database.getCustomCommands(groupId)) || [];
+
+				const tempJsonPath = path.join(__dirname, `../temp/cmds_${groupId}_${Date.now()}.json`);
+				const tempZipPath = path.join(__dirname, `../temp/export_${groupId}_${Date.now()}.zip`);
+				const mediaDir = path.join(this.database.databasePath, "media");
+				const helperScript = path.join(__dirname, "../scripts/zip_commands_helper.py");
+
+				await fs.mkdir(path.join(__dirname, "../temp"), { recursive: true }).catch(() => {});
+				await fs.writeFile(tempJsonPath, JSON.stringify(commands, null, 2), "utf-8");
+
+				await new Promise((resolve, reject) => {
+					const child = spawn("python3", [
+						helperScript,
+						"export",
+						tempJsonPath,
+						mediaDir,
+						tempZipPath
+					]);
+					let errOutput = "";
+					child.stderr.on("data", (d) => {
+						errOutput += d.toString();
+					});
+					child.on("close", (code) => {
+						if (code === 0) resolve();
+						else reject(new Error(errOutput || `Python script exited with code ${code}`));
+					});
+				});
+
+				res.setHeader("Content-Type", "application/zip");
+				res.setHeader("Content-Disposition", `attachment; filename="${groupName}_comandos.zip"`);
+
+				const fileData = await fs.readFile(tempZipPath);
+				res.send(fileData);
+
+				await fs.unlink(tempJsonPath).catch(() => {});
+				await fs.unlink(tempZipPath).catch(() => {});
+			} catch (e) {
+				this.logger.error("Erro ao exportar comandos em zip:", e);
+				res.status(500).json({ message: "Erro ao exportar comandos: " + e.message });
+			}
+		});
+
+		// Import Custom Commands from ZIP (with media)
+		this.app.post(
+			"/api/custom-commands/:groupId/import-zip",
+			upload.single("file"),
+			async (req, res) => {
+				const { groupId } = req.params;
+				const { token } = req.body;
+
+				if (!req.file) {
+					return res.status(400).json({ success: false, message: "Nenhum arquivo zip enviado." });
+				}
+
+				try {
+					const webManagementData = await this.readWebManagementToken(token);
+					if (!webManagementData || webManagementData.groupId !== groupId) {
+						if (req.file) await fs.unlink(req.file.path).catch(() => {});
+						return res.status(401).json({ message: "Unauthorized" });
+					}
+
+					const zipFilePath = req.file.path;
+					const tempOutJson = path.join(
+						__dirname,
+						`../temp/imported_cmds_${groupId}_${Date.now()}.json`
+					);
+					const mediaDir = path.join(this.database.databasePath, "media");
+					const helperScript = path.join(__dirname, "../scripts/zip_commands_helper.py");
+
+					await fs.mkdir(path.join(__dirname, "../temp"), { recursive: true }).catch(() => {});
+
+					const pythonResult = await new Promise((resolve, reject) => {
+						const child = spawn("python3", [
+							helperScript,
+							"import",
+							zipFilePath,
+							mediaDir,
+							tempOutJson
+						]);
+						let stdOutput = "";
+						let errOutput = "";
+						child.stdout.on("data", (d) => {
+							stdOutput += d.toString();
+						});
+						child.stderr.on("data", (d) => {
+							errOutput += d.toString();
+						});
+						child.on("close", (code) => {
+							if (code === 0) {
+								try {
+									resolve(JSON.parse(stdOutput.trim()));
+								} catch {
+									resolve({ success: true });
+								}
+							} else {
+								reject(new Error(errOutput || `Python script exited with code ${code}`));
+							}
+						});
+					});
+
+					const rawCmds = await fs.readFile(tempOutJson, "utf-8");
+					const importedCommands = JSON.parse(rawCmds);
+
+					const existingCmds = (await this.database.getCustomCommands(groupId)) || [];
+					let importedCount = 0;
+
+					for (const cmd of importedCommands) {
+						if (!cmd.startsWith) continue;
+						cmd.deleted = false;
+						const exists = existingCmds.find((c) => c.startsWith === cmd.startsWith);
+						if (exists) {
+							await this.database.updateCustomCommand(groupId, cmd);
+						} else {
+							await this.database.saveCustomCommand(groupId, cmd);
+						}
+						importedCount++;
+					}
+
+					this.database.clearCache(`commands:${groupId}`);
+					await reloadGroupCommands(groupId);
+
+					await fs.unlink(tempOutJson).catch(() => {});
+					await fs.unlink(zipFilePath).catch(() => {});
+
+					res.json({
+						success: true,
+						importedCount,
+						mediaCount: pythonResult.media_count || 0
+					});
+				} catch (e) {
+					this.logger.error("Erro ao importar comandos via zip:", e);
+					if (req.file) await fs.unlink(req.file.path).catch(() => {});
+					res.status(500).json({ success: false, message: e.message });
+				}
+			}
+		);
+
+		// Check Group Name Uniqueness for Import/Update
+		this.app.post("/api/group/check-import-name", async (req, res) => {
+			const { token, groupId, name } = req.body;
+			if (!token || !groupId || !name) {
+				return res.status(400).json({ success: false, message: "Parâmetros ausentes." });
+			}
+			try {
+				const webManagementData = await this.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					return res.status(401).json({ success: false, message: "Unauthorized" });
+				}
+				const cleanName = name.trim().toLowerCase();
+				const existing = await this.database.getGroupByName(cleanName);
+				if (existing && existing.id !== groupId) {
+					return res.json({
+						available: false,
+						message: `O nome "${cleanName}" já está em uso por outro grupo.`
+					});
+				}
+				return res.json({ available: true });
+			} catch (e) {
+				this.logger.error("Erro ao verificar nome do grupo:", e);
+				return res.status(500).json({ success: false, message: e.message });
 			}
 		});
 

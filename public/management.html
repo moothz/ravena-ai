@@ -2,28 +2,32 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel de Gerenciamento - RavenaBot</title>
-    <link rel="stylesheet" href="/management.css?v=15">
+    <link rel="stylesheet" href="/management.css?v=20">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 </head>
 <body>
     <div class="container">
+        <!-- Topbar Glassmorphic Header -->
         <header class="header">
             <div class="header-content">
                 <div class="logo">
                     <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
-                    <h1>RavenaBot</h1>
+                    <div class="logo-text">
+                        <h1>RavenaBot</h1>
+                        <span class="logo-badge">Painel do Grupo</span>
+                    </div>
                 </div>
                 <div class="user-info">
                     <div id="user-details">
-                        <p><strong>Usuário:</strong> <span id="user-name">Carregando...</span></p>
-                        <p><strong>Grupo:</strong> <span id="group-name">Carregando...</span></p>
+                        <div class="user-info-row"><i class="fas fa-user-circle"></i> <span id="user-name">Carregando...</span></div>
+                        <div class="user-info-row"><i class="fas fa-users"></i> <span id="group-name">Carregando...</span></div>
                     </div>
                     <div id="session-info" title="Tempo restante da sessão">
-                        <i class="fas fa-clock"></i>
+                        <span class="session-dot"></span>
                         <span id="expiration-time">--:--</span>
                     </div>
                 </div>
@@ -31,74 +35,134 @@
         </header>
 
         <main class="main-content">
+            <!-- Loading State -->
             <div id="loading-container">
                 <div class="loading-spinner"></div>
                 <p>Carregando configurações...</p>
             </div>
 
+            <!-- Error State -->
             <div id="error-container" class="hidden">
                 <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
                 <h2>Erro ao carregar</h2>
                 <p id="error-message">Detalhes do erro aqui.</p>
-                <button id="retry-button" class="btn btn-primary">Tentar novamente</button>
+                <button id="retry-button" class="btn btn-primary"><i class="fas fa-redo"></i> Tentar novamente</button>
             </div>
 
+            <!-- Dashboard Content -->
             <div id="dashboard-content" class="hidden">
                 
+                <!-- Hero Status Card: Pausar Bot -->
+                <div class="hero-status-card" id="hero-pause-card">
+                    <div class="hero-status-left">
+                        <div class="hero-status-icon" id="hero-status-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="hero-status-info">
+                            <div class="hero-status-header">
+                                <span class="hero-status-title">Status da Ravena</span>
+                                <span class="status-pill status-pill-active" id="hero-status-pill">Ativo</span>
+                            </div>
+                            <span class="hero-status-desc" id="hero-status-desc">O bot está funcionando normalmente e respondendo comandos neste grupo.</span>
+                        </div>
+                    </div>
+                    <div class="hero-status-action">
+                        <label class="switch-toggle" title="Alternar pausa do bot">
+                            <input type="checkbox" id="group-paused-toggle">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Accordion 1: Geral -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-cog"></i> Geral</h3>
+                        <h3><i class="fas fa-cog"></i> Configurações Gerais</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
                         <div class="form-group">
                             <label id="lbl-group-id">ID do Grupo</label>
-                            <input type="text" id="group-id" disabled class="form-control">
+                            <input type="text" id="group-id" disabled class="form-control" title="Identificador único no WhatsApp">
+                            <div class="field-hint">Identificador interno do grupo no WhatsApp (@g.us).</div>
                         </div>
+
                         <div class="form-group">
                             <label id="lbl-group-created-at">Data de Entrada</label>
                             <input type="text" id="group-created-at" disabled class="form-control">
+                            <div class="field-hint">Momento em que o bot começou a gerenciar este grupo.</div>
                         </div>
+
                         <div class="form-group">
-                            <label id="lbl-group-name" for="group-name-input">Nome do Grupo</label>
-                            <input type="text" id="group-name-input" class="form-control" maxlength="15" pattern="[a-zA-Z0-9]+" title="Apenas caracteres alfanuméricos, sem espaços.">
+                            <label id="lbl-group-name" for="group-name-input">Nome Único do Grupo</label>
+                            <input type="text" id="group-name-input" class="form-control" maxlength="30" placeholder="ex: meugrupo">
+                            <div class="field-hint">Usado internamente em stickers, comandos e backups. Apenas letras, números, _ e -. Sem espaços.</div>
                         </div>
+
                         <div class="form-group">
-                            <label id="lbl-group-prefix" for="group-prefix">Prefixo</label>
+                            <label id="lbl-group-prefix" for="group-prefix">Prefixo de Comandos</label>
                             <input type="text" id="group-prefix" class="form-control" maxlength="1" placeholder="!">
+                            <div class="field-hint">Símbolo que inicia os comandos da Ravena (padrão: !). Deixe vazio caso queira comandos sem prefixo geral.</div>
                             <small class="form-text text-muted" id="prefix-warning"></small>
                         </div>
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="bot-enabled">
-                            <label id="lbl-bot-enabled" for="bot-enabled">Bot Habilitado (Responde a comandos)</label>
+
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="bot-enabled" id="lbl-bot-enabled">Bot Habilitado</label>
+                                <div class="field-hint">Se desativado, o bot não responde a nenhum comando exceto reativação por administradores.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="bot-enabled">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
+
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="custom-ignores-prefix" id="lbl-custom-ignores">Comandos Personalizados sem Prefixo</label>
+                                <div class="field-hint">Permite acionar comandos criados pelo grupo diretamente pelo texto, sem precisar do prefixo (!).</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="custom-ignores-prefix">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+
                         <div class="form-group">
-                            <label id="lbl-bot-personality" for="bot-personality">Personalidade do Bot (IA)</label>
-                            <textarea id="bot-personality" class="form-control" maxlength="1500" rows="3" placeholder="Descreva como o bot deve se comportar..."></textarea>
-                            <small class="form-text text-right"><span id="personality-count">0</span>/1500</small>
+                            <label id="lbl-bot-personality" for="bot-personality">Personalidade da IA do Bot</label>
+                            <textarea id="bot-personality" class="form-control" maxlength="1500" rows="3" placeholder="Instruções de como a Ravena deve se comportar e responder com IA no grupo..."></textarea>
+                            <div class="field-hint-between">
+                                <span class="field-hint">Define o tom das respostas geradas por inteligência artificial.</span>
+                                <span class="char-counter"><span id="personality-count">0</span>/1500</span>
+                            </div>
                         </div>
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="custom-ignores-prefix">
-                            <label id="lbl-custom-ignores" for="custom-ignores-prefix">Comandos Personalizados sem Prefixo</label>
+
+                        <div class="form-group mt-2">
+                            <button type="button" id="btn-view-members" class="btn btn-secondary btn-block">
+                                <i class="fas fa-users"></i> Ver Membros & Definir Apelidos
+                            </button>
+                            <div class="field-hint mt-1">Consulte participantes do grupo e defina apelidos personalizados.</div>
                         </div>
-                        <div class="form-group">
-                            <button type="button" id="btn-view-members" class="btn btn-secondary"><i class="fas fa-users"></i> Membros do Grupo & Apelidos</button>
-                        </div>
+
                         <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-save-section" data-section="geral">Salvar Geral</button>
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="geral">
+                                <i class="fas fa-save"></i> Salvar Geral
+                            </button>
                         </div>
                     </div>
                 </div>
- 
-                 <!-- Accordion: Dossiês do grupo -->
-                 <div class="accordion-item" id="accordion-dossies">
+
+                <!-- Accordion: Dossiês do grupo -->
+                <div class="accordion-item" id="accordion-dossies">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-file-alt"></i> Dossiês do grupo</h3>
+                        <h3><i class="fas fa-file-shield"></i> Dossiês do Grupo</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
-                        <p class="text-muted mb-3">Histórico de análises automáticas realizadas pela IA sobre o comportamento do grupo - quanto maior a nota, mais preocupado é o conteúdo e maior a possibilidade da ravena ser removida em caso de conteúdo problemático/denúncias por membros. As análises são realizadas de forma automática, de tempos em tempos.</p>
+                        <div class="section-notice mb-3">
+                            <i class="fas fa-info-circle"></i>
+                            <div>Histórico de análises automáticas realizadas pela IA sobre o comportamento do grupo. Quanto maior a pontuação de risco, maior a chance de remoção do bot em caso de denúncias ou violações.</div>
+                        </div>
                         <div id="dossies-history-list" class="dossie-history-container">
                             <div class="loading-history text-center p-4">
                                 <div class="loading-spinner-small"></div>
@@ -108,17 +172,18 @@
                     </div>
                 </div>
 
-                <!-- Accordion 2: Funções Administrativas -->
+                <!-- Accordion 2: Funções Administrativas & Moderação -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-shield-alt"></i> Funções Administrativas</h3>
+                        <h3><i class="fas fa-shield-halved"></i> Moderação & Segurança</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
                         <!-- Números Ignorados -->
                         <div class="list-manager-section">
                             <label id="lbl-ignored-numbers">Números Ignorados</label>
-                            <div class="input-group">
+                            <div class="field-hint">O bot ignorará totalmente comandos e mensagens enviadas por estes números.</div>
+                            <div class="input-group mt-1">
                                 <input type="text" id="new-ignored-number" placeholder="5511999999999" class="form-control">
                                 <button type="button" id="add-ignored-number" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
                             </div>
@@ -127,40 +192,56 @@
 
                         <div class="divider"></div>
 
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="delete-links">
-                            <label id="lbl-delete-links" for="delete-links">Apagar Links</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="delete-links" id="lbl-delete-links">Apagar Links Automaticamente</label>
+                                <div class="field-hint">Remove imediatamente mensagens contendo links de convite ou sites externos enviados por membros não-admin.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="delete-links">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="delete-nsfw">
-                            <label id="lbl-delete-nsfw" for="delete-nsfw">Detectar e Apagar NSFW</label>
+
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="delete-nsfw" id="lbl-delete-nsfw">Filtro Antispam NSFW (Adulto)</label>
+                                <div class="field-hint">Detecta e apaga imagens com conteúdo impróprio ou nudez através do classificador de visão computacional.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="delete-nsfw">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
-                        <div id="nsfw-settings" class="hidden" style="margin-left: 20px; margin-bottom: 15px;">
+
+                        <div id="nsfw-settings" class="hidden slider-panel">
                             <div class="slider-group">
-                                <label id="lbl-nsfw-intensity">Intensidade: <span id="nsfw-intensity-val">20</span>%</label>
+                                <div class="slider-header">
+                                    <label id="lbl-nsfw-intensity">Sensibilidade do Filtro: <span id="nsfw-intensity-val" class="highlight-val">20</span>%</label>
+                                </div>
                                 <input type="range" id="nsfw-intensity" min="0" max="100" value="20" class="slider">
-                                <span id="nsfw-intensity-desc" style="font-size: 0.85em; font-style: italic; display: block; margin-top: 5px; color: #888;">
-                                    Se estiver apagando coisas que não são NSFW, diminua o valor. Se não estiver apagando NSFW o suficiente, aumente o valor.
-                                </span>
+                                <div class="field-hint mt-1">Valores menores deixam o filtro mais tolerante. Valores maiores apagam conteúdos com qualquer suspeita.</div>
                             </div>
                         </div>
 
                         <div class="divider"></div>
 
-                         <!-- Palavras Proibidas -->
-                         <div class="list-manager-section">
-                            <label id="lbl-forbidden-words">Apagar mensagens com estas palavras</label>
-                            <div class="input-group">
+                        <!-- Palavras Proibidas -->
+                        <div class="list-manager-section">
+                            <label id="lbl-forbidden-words">Palavras e Frases Proibidas</label>
+                            <div class="field-hint">Mensagens contendo qualquer um desses termos serão apagadas na hora.</div>
+                            <div class="input-group mt-1">
                                 <input type="text" id="new-forbidden-word" placeholder="Palavra ou frase..." class="form-control">
                                 <button type="button" id="add-forbidden-word" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
                             </div>
                             <div id="forbidden-words-list" class="tags-container"></div>
                         </div>
 
-                        <!-- Usuários Proibidos (Mensagens apagadas) -->
+                        <!-- Usuários Proibidos -->
                         <div class="list-manager-section">
-                            <label id="lbl-forbidden-users">Apagar mensagens destes usuários</label>
-                            <div class="input-group">
+                            <label id="lbl-forbidden-users">Usuários com Mensagens Apagadas</label>
+                            <div class="field-hint">Todas as mensagens enviadas por estes números serão automaticamente apagadas pelo bot.</div>
+                            <div class="input-group mt-1">
                                 <input type="text" id="new-forbidden-user" placeholder="5511999999999" class="form-control">
                                 <button type="button" id="add-forbidden-user" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
                             </div>
@@ -169,29 +250,33 @@
 
                         <div class="divider"></div>
 
+                        <!-- Categorias Silenciadas -->
                         <div class="form-group">
-                            <label id="lbl-muted-categories">Categorias Silenciadas</label>
-                            <div id="muted-categories-list" class="checkbox-grid">
+                            <label id="lbl-muted-categories">Categorias de Comandos Silenciadas</label>
+                            <div class="field-hint">Desativa categorias inteiras de comandos fixos no grupo (jogos, downloaders, memes, etc.).</div>
+                            <div id="muted-categories-list" class="checkbox-grid mt-2">
                                 <!-- Populated via JS -->
                             </div>
                         </div>
 
                         <div class="divider"></div>
 
-                         <!-- Comandos Silenciados -->
-                         <div class="list-manager-section">
-                            <label id="lbl-muted-commands">Comandos Silenciados</label>
-                            <div class="input-group">
-                                <input type="text" id="new-muted-command" placeholder="!comando" class="form-control">
+                        <!-- Comandos Silenciados -->
+                        <div class="list-manager-section">
+                            <label id="lbl-muted-commands">Comandos Fixos Silenciados</label>
+                            <div class="field-hint">Desativa comandos específicos do bot que você não deseja que os membros utilizem.</div>
+                            <div class="input-group mt-1">
+                                <input type="text" id="new-muted-command" placeholder="ex: pesca" class="form-control">
                                 <button type="button" id="add-muted-command" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
                             </div>
                             <div id="muted-commands-list" class="tags-container"></div>
                         </div>
 
-                        <!-- Admins Adicionais -->
+                        <!-- Admins Adicionais do Bot -->
                         <div class="list-manager-section">
                             <label id="lbl-additional-admins">Administradores Adicionais (Bot)</label>
-                            <div class="input-group">
+                            <div class="field-hint">Permite que estes membros usem comandos de gestão do bot mesmo sem serem admins do grupo no WhatsApp.</div>
+                            <div class="input-group mt-1">
                                 <input type="text" id="new-additional-admin" placeholder="5511999999999" class="form-control">
                                 <button type="button" id="add-additional-admin" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
                             </div>
@@ -199,109 +284,169 @@
                         </div>
                         
                         <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-save-section" data-section="admin">Salvar Admin</button>
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="admin">
+                                <i class="fas fa-save"></i> Salvar Moderação
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Accordion 3: Automatizações -->
+                <!-- Accordion 3: Automatizações & Boas-Vindas -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-robot"></i> Automatizações</h3>
+                        <h3><i class="fas fa-wand-magic-sparkles"></i> Automatizações & Boas-Vindas</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="auto-stt">
-                            <label id="lbl-auto-stt" for="auto-stt">Transcrever Áudios Automaticamente</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="auto-stt" id="lbl-auto-stt">Transcrever Áudios Automaticamente</label>
+                                <div class="field-hint">Converte mensagens de voz enviadas no grupo em texto usando IA Whisper.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="auto-stt">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
 
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="notifica-grupo-fechado">
-                            <label id="lbl-notifica-grupo-fechado" for="notifica-grupo-fechado">Notificar quando o grupo é Fechado</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="notifica-grupo-fechado" id="lbl-notifica-grupo-fechado">Notificar Grupo Fechado</label>
+                                <div class="field-hint">Envia aviso no grupo quando um admin altera as permissões para apenas admins enviarem mensagens.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="notifica-grupo-fechado">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
 
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="notifica-grupo-aberto">
-                            <label id="lbl-notifica-grupo-aberto" for="notifica-grupo-aberto">Notificar quando o grupo é Aberto</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="notifica-grupo-aberto" id="lbl-notifica-grupo-aberto">Notificar Grupo Aberto</label>
+                                <div class="field-hint">Envia aviso quando o grupo é liberado para todos os membros conversarem.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="notifica-grupo-aberto">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
 
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="auto-interaction">
-                            <label id="lbl-auto-interaction" for="auto-interaction">Interações Automáticas</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="auto-interaction" id="lbl-auto-interaction">Interações Aleatórias da IA</label>
+                                <div class="field-hint">O bot entra na conversa espontaneamente com frases, piadas ou reações.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="auto-interaction">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
 
-                        <div id="interaction-settings" class="hidden">
+                        <div id="interaction-settings" class="hidden slider-panel">
+                            <div class="form-group toggle-row mb-2">
+                                <div class="toggle-info">
+                                    <label for="interact-use-cmds">Usar Comandos do Grupo nas Interações</label>
+                                    <div class="field-hint">Permite que o bot use respostas de comandos personalizados nas interações.</div>
+                                </div>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="interact-use-cmds">
+                                    <span class="slider-round"></span>
+                                </label>
+                            </div>
                             <div class="slider-group">
-                                <label id="lbl-interaction-chance">Chance: <span id="chance-val">0.1</span>%</label>
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-chance">Frequência/Chance: <span id="chance-val" class="highlight-val">0.1</span>%</label>
+                                </div>
                                 <input type="range" id="interaction-chance" min="1" max="1000" class="slider">
                             </div>
                             <div class="slider-group">
-                                <label id="lbl-interaction-cooldown">Cooldown: <span id="cooldown-val">5</span> minutos</label>
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-cooldown">Tempo de Espera (Cooldown): <span id="cooldown-val" class="highlight-val">5</span> min</label>
+                                </div>
                                 <input type="range" id="interaction-cooldown" min="5" max="43200" class="slider">
                             </div>
                             <div class="slider-group">
-                                <label id="lbl-interaction-proporcao">Proporção IA: <span id="proporcao-val">50</span>%</label>
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-proporcao">Proporção IA: <span id="proporcao-val" class="highlight-val">50</span>%</label>
+                                </div>
                                 <input type="range" id="interaction-proporcao" min="0" max="100" class="slider">
-                                <span id="proporcao-desc" style="font-size: 0.85em; font-style: italic; display: block; margin-top: 5px; color: #888;"></span>
+                                <span id="proporcao-desc" class="field-hint mt-1"></span>
                             </div>
                         </div>
                         
                         <div class="divider"></div>
                         
-                        <!-- Welcome Messages -->
-                        <div class="sub-accordion">
+                        <!-- Welcome Messages com Inline Previews -->
+                        <div class="sub-accordion active">
                             <div class="sub-accordion-header">
-                                <h4 id="lbl-greetings">Mensagens de Boas Vindas</h4>
-                                <i class="fas fa-chevron-right sub-arrow"></i>
+                                <div class="sub-acc-title">
+                                    <i class="fas fa-door-open"></i>
+                                    <h4 id="lbl-greetings">Mensagens de Boas-Vindas</h4>
+                                </div>
+                                <i class="fas fa-chevron-down sub-arrow"></i>
                             </div>
                             <div class="sub-accordion-content">
-                                <div id="greetings-list" class="media-list"></div>
-                                <div class="add-response-buttons">
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'text')"><i class="fas fa-font"></i> Texto</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'image')"><i class="fas fa-image"></i> Imagem</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'video')"><i class="fas fa-video"></i> Vídeo</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'audio')"><i class="fas fa-music"></i> Áudio</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'sticker')"><i class="fas fa-sticky-note"></i> Sticker</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'gif')"><i class="fas fa-film"></i> GIF</button>
+                                <div class="field-hint mb-2">Enviadas automaticamente quando um novo membro entra no grupo. Você pode usar {pessoa} e {group}.</div>
+                                <div id="greetings-list" class="inline-media-container"></div>
+                                <div class="add-response-buttons mt-2">
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'text')"><i class="fas fa-font"></i> + Texto</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'image')"><i class="fas fa-image"></i> + Imagem</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'video')"><i class="fas fa-video"></i> + Vídeo</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'audio')"><i class="fas fa-music"></i> + Áudio</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'sticker')"><i class="fas fa-sticky-note"></i> + Sticker</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('greetings', 'gif')"><i class="fas fa-film"></i> + GIF</button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Farewell Messages -->
-                        <div class="sub-accordion">
+                        <!-- Farewell Messages com Inline Previews -->
+                        <div class="sub-accordion active">
                             <div class="sub-accordion-header">
-                                <h4 id="lbl-farewells">Mensagens de Despedida</h4>
-                                <i class="fas fa-chevron-right sub-arrow"></i>
+                                <div class="sub-acc-title">
+                                    <i class="fas fa-door-closed"></i>
+                                    <h4 id="lbl-farewells">Mensagens de Despedida</h4>
+                                </div>
+                                <i class="fas fa-chevron-down sub-arrow"></i>
                             </div>
                             <div class="sub-accordion-content">
-                                <div id="farewells-list" class="media-list"></div>
-                                <div class="add-response-buttons">
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'text')"><i class="fas fa-font"></i> Texto</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'image')"><i class="fas fa-image"></i> Imagem</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'video')"><i class="fas fa-video"></i> Vídeo</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'audio')"><i class="fas fa-music"></i> Áudio</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'sticker')"><i class="fas fa-sticky-note"></i> Sticker</button>
-                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'gif')"><i class="fas fa-film"></i> GIF</button>
+                                <div class="field-hint mb-2">Enviadas quando alguém sai ou é removido do grupo. Suporta variáveis como {pessoa}.</div>
+                                <div id="farewells-list" class="inline-media-container"></div>
+                                <div class="add-response-buttons mt-2">
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'text')"><i class="fas fa-font"></i> + Texto</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'image')"><i class="fas fa-image"></i> + Imagem</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'video')"><i class="fas fa-video"></i> + Vídeo</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'audio')"><i class="fas fa-music"></i> + Áudio</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'sticker')"><i class="fas fa-sticky-note"></i> + Sticker</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="addDirectMedia('farewells', 'gif')"><i class="fas fa-film"></i> + GIF</button>
                                 </div>
                             </div>
                         </div>
 
                         <div class="divider"></div>
 
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="auto-translate">
-                            <label id="lbl-auto-translate" for="auto-translate">Traduzir Mensagens do Bot</label>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="auto-translate" id="lbl-auto-translate">Traduzir Respostas do Bot</label>
+                                <div class="field-hint">Traduz todas as mensagens geradas pelo bot para outro idioma automaticamente.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="auto-translate">
+                                <span class="slider-round"></span>
+                            </label>
                         </div>
-                        <div class="form-group" id="translate-settings">
-                            <div style="display: flex; gap: 5px; max-width: 50%;">
+
+                        <div class="form-group mt-2" id="translate-settings">
+                            <label>Idioma Alvo</label>
+                            <div class="input-group">
                                 <input type="text" id="translate-lang" class="form-control" maxlength="30" placeholder="Ex.: Spanish (ES)">
-                                <button type="button" id="btn-lang-picker" class="btn btn-secondary"><i class="fas fa-globe"></i></button>
+                                <button type="button" id="btn-lang-picker" class="btn btn-secondary" title="Escolher Idioma"><i class="fas fa-globe"></i> Escolher</button>
                             </div>
                         </div>
 
                         <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-save-section" data-section="automation">Salvar Automatizações</button>
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="automation">
+                                <i class="fas fa-save"></i> Salvar Automatizações
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -309,10 +454,14 @@
                 <!-- Accordion: Streams Twitch -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fab fa-twitch"></i> Streams - Twitch</h3>
+                        <h3><i class="fab fa-twitch text-twitch"></i> Notificações Twitch</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fab fa-twitch"></i>
+                            <div>Avisa no grupo quando streamers entrarem ao vivo na Twitch, com suporte a mensagens personalizadas, thumbnail e alteração de título.</div>
+                        </div>
                         <div class="commands-toolbar">
                             <button type="button" class="btn btn-success btn-add-stream" data-platform="twitch"><i class="fas fa-plus"></i> Adicionar Canal</button>
                         </div>
@@ -321,7 +470,7 @@
                                 <thead>
                                     <tr>
                                         <th>Canal</th>
-                                        <th style="width: 100px;">Ações</th>
+                                        <th style="width: 110px;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -334,10 +483,14 @@
                 <!-- Accordion: Streams Kick -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-video"></i> Streams - Kick</h3>
+                        <h3><i class="fas fa-video text-kick"></i> Notificações Kick</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fas fa-video"></i>
+                            <div>Monitora canais do Kick e envia notificação no grupo assim que a transmissão for iniciada.</div>
+                        </div>
                         <div class="commands-toolbar">
                             <button type="button" class="btn btn-success btn-add-stream" data-platform="kick"><i class="fas fa-plus"></i> Adicionar Canal</button>
                         </div>
@@ -346,7 +499,7 @@
                                 <thead>
                                     <tr>
                                         <th>Canal</th>
-                                        <th style="width: 100px;">Ações</th>
+                                        <th style="width: 110px;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -359,10 +512,14 @@
                 <!-- Accordion: Canais YouTube -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fab fa-youtube"></i> Canais - YouTube</h3>
+                        <h3><i class="fab fa-youtube text-youtube"></i> Canais YouTube</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fab fa-youtube"></i>
+                            <div>Notifica novos vídeos publicados ou lives iniciadas nos canais do YouTube monitorados.</div>
+                        </div>
                         <div class="commands-toolbar">
                             <button type="button" class="btn btn-success btn-add-stream" data-platform="youtube"><i class="fas fa-plus"></i> Adicionar Canal</button>
                         </div>
@@ -370,8 +527,8 @@
                             <table class="table" id="youtube-table">
                                 <thead>
                                     <tr>
-                                        <th>Canal/Handle</th>
-                                        <th style="width: 100px;">Ações</th>
+                                        <th>Canal / Handle</th>
+                                        <th style="width: 110px;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -381,15 +538,16 @@
                     </div>
                 </div>
 
-                <!-- Accordion 4: Comandos -->
+                <!-- Accordion 4: Comandos Personalizados -->
                 <div class="accordion-item">
                     <div class="accordion-header">
                         <h3><i class="fas fa-terminal"></i> Comandos Personalizados</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
+                        <div class="field-hint mb-3">Crie respostas automáticas com textos formatados, fotos, áudios, stickers e variáveis dinâmicas.</div>
                         <div class="commands-toolbar">
-                            <button type="button" id="btn-add-command" class="btn btn-success"><i class="fas fa-plus"></i> Adicionar Novo</button>
+                            <button type="button" id="btn-add-command" class="btn btn-success"><i class="fas fa-plus"></i> Novo Comando</button>
                         </div>
                         
                         <div class="table-responsive">
@@ -405,7 +563,116 @@
                                     <!-- Populated via JS -->
                                 </tbody>
                             </table>
-                            <div id="no-commands-msg" class="text-center p-3 text-muted hidden">Nenhum comando personalizado.</div>
+                            <div id="no-commands-msg" class="text-center p-3 text-muted hidden">Nenhum comando personalizado cadastrado.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion 5: Advertências do Grupo (NOVO) -->
+                <div class="accordion-item" id="accordion-warnings">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-triangle-exclamation text-warning"></i> Advertências do Grupo</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="field-hint mb-3">Membros que receberam advertências administrativas no grupo através do comando <code>!g-advertir</code>.</div>
+                        <div class="commands-toolbar">
+                            <button type="button" id="btn-clear-all-warnings" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> Zerar Todas</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="warnings-table">
+                                <thead>
+                                    <tr>
+                                        <th>Membro</th>
+                                        <th>Advertências</th>
+                                        <th style="width: 80px;">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="warnings-table-body">
+                                </tbody>
+                            </table>
+                            <div id="no-warnings-msg" class="text-center p-3 text-muted hidden">Nenhum membro com advertência ativa.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion 6: Webhooks do Grupo (NOVO) -->
+                <div class="accordion-item" id="accordion-webhooks">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-network-wired"></i> Webhooks Externos</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="field-hint mb-2">Dispare mensagens no grupo a partir de sistemas externos (Git, Hotmart, MercadoPago, etc.).</div>
+                        <div class="webhook-url-box p-3 mb-3">
+                            <label>URL de Disparo</label>
+                            <div class="input-group mt-1">
+                                <input type="text" id="webhooks-endpoint-url" readonly class="form-control" style="font-family: monospace; font-size: 0.85rem;">
+                                <button type="button" id="btn-copy-webhook-url" class="btn btn-secondary" title="Copiar URL"><i class="fas fa-copy"></i> Copiar</button>
+                            </div>
+                            <div class="field-hint mt-1">Envie uma requisição HTTP POST para este endereço com o cabeçalho secreto configurado.</div>
+                        </div>
+
+                        <div class="commands-toolbar">
+                            <button type="button" id="btn-add-webhook" class="btn btn-success"><i class="fas fa-plus"></i> Novo Webhook</button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table" id="webhooks-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Header</th>
+                                        <th>Template</th>
+                                        <th style="width: 70px;">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="webhooks-table-body"></tbody>
+                            </table>
+                            <div id="no-webhooks-msg" class="text-center p-3 text-muted hidden">Nenhum webhook cadastrado.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion 7: Backup & Restauração (NOVO) -->
+                <div class="accordion-item" id="accordion-backups">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-box-archive"></i> Backups & Migração</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="backup-grid">
+                            <!-- Card Backup Comandos -->
+                            <div class="backup-card">
+                                <div class="backup-card-icon"><i class="fas fa-file-zipper"></i></div>
+                                <h4>Comandos Personalizados (.zip)</h4>
+                                <p>Exporta ou restaura todos os comandos junto com seus arquivos de áudio, imagem e vídeo em um arquivo .zip seguro.</p>
+                                <div class="backup-actions">
+                                    <button type="button" id="btn-export-cmds-zip" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-download"></i> Exportar ZIP
+                                    </button>
+                                    <label class="btn btn-sm btn-secondary cursor-pointer">
+                                        <i class="fas fa-upload"></i> Importar ZIP
+                                        <input type="file" id="file-import-cmds-zip" accept=".zip" class="hidden">
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Card Backup Configs -->
+                            <div class="backup-card">
+                                <div class="backup-card-icon"><i class="fas fa-file-code"></i></div>
+                                <h4>Configurações do Grupo (.json)</h4>
+                                <p>Salva todas as preferências (boas-vindas, streams, filtros e personalidades). Na importação, valida o ID e previne nomes duplicados.</p>
+                                <div class="backup-actions">
+                                    <button type="button" id="btn-export-config-json" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-download"></i> Exportar JSON
+                                    </button>
+                                    <label class="btn btn-sm btn-secondary cursor-pointer">
+                                        <i class="fas fa-upload"></i> Importar JSON
+                                        <input type="file" id="file-import-config-json" accept=".json" class="hidden">
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -414,7 +681,7 @@
         </main>
 
         <footer class="footer">
-            <p>ravenabot</p>
+            <p>RavenaBot &bull; Gerenciador Web de Grupos</p>
         </footer>
     </div>
 
@@ -427,84 +694,155 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label id="lbl-cmd-trigger">Comando (Gatilho)</label>
-                    <input type="text" id="cmd-trigger" class="form-control" placeholder="Ex: regras">
+                    <label id="lbl-cmd-trigger">Comando (Palavra Gatilho)</label>
+                    <input type="text" id="cmd-trigger" class="form-control" placeholder="ex: regras">
+                    <div class="field-hint">Termo que acionará a resposta (sem o prefixo).</div>
                 </div>
                 
                 <div class="checkbox-grid-modal">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="cmd-active">
-                        <label id="lbl-cmd-active" for="cmd-active">Ativo</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-active">Comando Ativo</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-active">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="cmd-interact">
-                        <label id="lbl-cmd-interact" for="cmd-interact" title="Participa das interações aleatórias">Interage</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-interact">Participa de Interações</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-interact">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="cmd-reply-quote">
-                        <label id="lbl-cmd-reply-quote" for="cmd-reply-quote">Responder mencionando</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-reply-quote">Responder Citando</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-reply-quote">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="cmd-send-all">
-                        <label id="lbl-cmd-send-all" for="cmd-send-all">Enviar todas as respostas</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-send-all">Enviar Todas as Respostas</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-send-all">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="cmd-admin-only">
-                        <label id="lbl-cmd-admin-only" for="cmd-admin-only">Apenas Administradores <i class="fas fa-info-circle" title="Se habilitado, apenas administradores do grupo poderão usar o comando"></i></label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-admin-only">Apenas Administradores</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-admin-only">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-cmd-reply-private">Responder no Privado (PV)</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-reply-private">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="two-cols-row">
+                    <div class="form-group">
+                        <label id="lbl-cmd-start-emoji">Reação Prévia (Loading)</label>
+                        <div class="emoji-input-wrapper">
+                            <input type="text" id="cmd-start-emoji" class="form-control" placeholder="ex: ⏳" maxlength="2">
+                            <button type="button" id="btn-start-emoji-picker" class="btn btn-secondary"><i class="far fa-clock"></i></button>
+                        </div>
+                        <div class="field-hint">Reação enviada antes do comando (ótimo para comandos lentos).</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label id="lbl-cmd-emoji">Reação Final com Emoji</label>
+                        <div class="emoji-input-wrapper">
+                            <input type="text" id="cmd-emoji" class="form-control" placeholder="ex: 👍" maxlength="2">
+                            <button type="button" id="btn-emoji-picker" class="btn btn-secondary"><i class="far fa-smile"></i></button>
+                        </div>
+                        <div class="field-hint">Reação com emoji na mensagem após responder.</div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label id="lbl-cmd-emoji">Reagir com Emoji</label>
-                    <div class="emoji-input-wrapper" style="display: flex; gap: 5px;">
-                        <input type="text" id="cmd-emoji" class="form-control" placeholder="Emoji" maxlength="2">
-                        <button type="button" id="btn-emoji-picker" class="btn btn-secondary"><i class="far fa-smile"></i></button>
+                    <label id="lbl-cmd-cooldown">Tempo de Cooldown (Intervalo)</label>
+                    <div class="input-inline-flex">
+                        <input type="number" id="cmd-cooldown" class="form-control" placeholder="0" min="0" max="60000" step="1" style="max-width: 140px;">
+                        <span class="text-muted text-sm">segundos entre usos (0 = sem limite)</span>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label id="lbl-cmd-cooldown">Cooldown <i class="fas fa-info-circle" title="Tempo mínimo entre usos do comando (em segundos). 0 = sem cooldown. Máximo: 60000s (~16,6h)"></i></label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" id="cmd-cooldown" class="form-control" placeholder="0" min="0" max="60000" step="1" style="max-width: 120px;">
-                        <span id="cmd-cooldown-label" class="text-muted" style="font-size: 0.85em;">segundos</span>
+                <!-- Restrições de Horário e Dias -->
+                <div class="time-restrictions-box p-3 mb-3">
+                    <label class="font-bold mb-1 d-block"><i class="fas fa-clock"></i> Restrições de Horário & Dias (Opcional)</label>
+                    <div class="two-cols-row mt-2">
+                        <div class="form-group mb-1">
+                            <span class="field-hint">Horário Início</span>
+                            <input type="time" id="cmd-time-start" class="form-control">
+                        </div>
+                        <div class="form-group mb-1">
+                            <span class="field-hint">Horário Fim</span>
+                            <input type="time" id="cmd-time-end" class="form-control">
+                        </div>
+                    </div>
+                    <div class="days-selector-group mt-2">
+                        <span class="field-hint mb-1 d-block">Dias da Semana Permitidos (deixe todos desmarcados para liberar todos os dias):</span>
+                        <div class="days-pill-grid">
+                            <button type="button" class="btn-day-pill" data-day="dom">Dom</button>
+                            <button type="button" class="btn-day-pill" data-day="seg">Seg</button>
+                            <button type="button" class="btn-day-pill" data-day="ter">Ter</button>
+                            <button type="button" class="btn-day-pill" data-day="qua">Qua</button>
+                            <button type="button" class="btn-day-pill" data-day="qui">Qui</button>
+                            <button type="button" class="btn-day-pill" data-day="sex">Sex</button>
+                            <button type="button" class="btn-day-pill" data-day="sab">Sáb</button>
+                        </div>
                     </div>
                 </div>
-
 
                 <div class="list-manager-section">
-                    <label id="lbl-cmd-tags">Marcar Pessoas <i class="fas fa-info-circle" title="Pessoas que serão marcadas na mensagem. O número é encriptado pelo WhatsApp, por isso parece 'estranho' ( @lids)"></i></label>
-                    <div class="input-group">
-                        <button type="button" id="btn-add-tag" class="btn btn-secondary" style="width: 100%;"><i class="fas fa-user-plus"></i> Adicionar Menção</button>
+                    <label id="lbl-cmd-tags">Marcar Participantes</label>
+                    <div class="field-hint">Membros marcados na mensagem de resposta.</div>
+                    <div class="input-group mt-1">
+                        <button type="button" id="btn-add-tag" class="btn btn-secondary btn-block"><i class="fas fa-user-plus"></i> Adicionar Menção</button>
                     </div>
                     <div id="cmd-tags-list" class="tags-container"></div>
-                    <div id="cmd-tags-helper" class="text-muted small mt-1 hidden" style="font-size: 0.8em; line-height: 1.3; margin-top: 5px;">
-                        Os números aqui serão marcados na mensagem independente da variável {mention-123...} (marcação oculta). Use a variável no texto do comando para exibir o nome da pessoa marcada.
+                </div>
+
+                <!-- Simulador de Mensagem WhatsApp Real-Time -->
+                <div class="wa-simulator-wrapper mb-3">
+                    <div class="wa-sim-title"><i class="fab fa-whatsapp"></i> Prévia da Resposta no WhatsApp</div>
+                    <div class="wa-bubble-container" id="cmd-wa-preview-container">
+                        <div class="wa-bubble" id="cmd-wa-bubble">
+                            <div id="cmd-wa-media" class="wa-media-preview hidden"></div>
+                            <div id="cmd-wa-text" class="wa-text-content">Digite uma resposta abaixo para ver a prévia...</div>
+                            <div class="wa-meta">
+                                <span id="cmd-wa-time">12:34</span>
+                                <span class="wa-ticks"><i class="fas fa-check-double"></i></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="responses-section">
-                    <label id="lbl-cmd-responses">Respostas</label>
-                    <div id="cmd-responses-list"></div>
-                    <div class="add-response-buttons">
-                        <button type="button" class="btn btn-xs btn-outline" onclick="addResponseInput('text')"><i class="fas fa-font"></i> Texto</button>
-                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('image')"><i class="fas fa-image"></i> Imagem</button>
-                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('video')"><i class="fas fa-video"></i> Vídeo</button>
-                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('audio')"><i class="fas fa-music"></i> Áudio</button>
-                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('sticker')"><i class="fas fa-sticky-note"></i> Sticker</button>
-                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('gif')"><i class="fas fa-film"></i> GIF</button>
+                    <label id="lbl-cmd-responses">Respostas do Comando</label>
+                    <div class="field-hint">Se houver mais de uma resposta cadastrada, a Ravena sorteará uma delas (ou enviará todas se a opção estiver ativada).</div>
+                    <div id="cmd-responses-list" class="mt-2"></div>
+                    <div class="add-response-buttons mt-2">
+                        <button type="button" class="btn btn-xs btn-outline" onclick="addResponseInput('text')"><i class="fas fa-font"></i> + Texto</button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('image')"><i class="fas fa-image"></i> + Imagem</button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('video')"><i class="fas fa-video"></i> + Vídeo</button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('audio')"><i class="fas fa-music"></i> + Áudio</button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('sticker')"><i class="fas fa-sticky-note"></i> + Sticker</button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="openMediaUpload('gif')"><i class="fas fa-film"></i> + GIF</button>
                     </div>
                 </div>
 
-                <div id="cmd-metadata" class="metadata-footer text-muted small mt-3">
-                    <!-- Metadata populated via JS -->
-                </div>
-
+                <div id="cmd-metadata" class="metadata-footer text-muted small mt-3"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" id="btn-delete-cmd" class="btn btn-danger hidden">Deletar</button>
-                <div class="spacer"></div>
                 <button type="button" class="btn btn-secondary close-modal-btn">Cancelar</button>
-                <button type="button" id="btn-save-cmd" class="btn btn-primary">Salvar</button>
+                <button type="button" id="btn-save-cmd" class="btn btn-primary">Salvar Comando</button>
             </div>
         </div>
     </div>
@@ -518,25 +856,28 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="upload-type">
-                <input type="hidden" id="upload-context"> <!-- 'greetings', 'farewells', 'command' -->
+                <input type="hidden" id="upload-context">
                 
                 <div class="form-group">
-                    <label>Arquivo</label>
+                    <label>Selecione o Arquivo</label>
                     <input type="file" id="media-file-input" class="form-control">
                 </div>
                 <div class="form-group" id="caption-group">
                     <label>Legenda (Opcional)</label>
-                    <textarea id="media-caption" class="form-control" rows="2"></textarea>
+                    <textarea id="media-caption" class="form-control" rows="2" placeholder="Texto da legenda que acompanha a mídia..."></textarea>
                 </div>
-                <div class="checkbox-group hidden" id="as-sticker-group">
-                    <input type="checkbox" id="convert-sticker">
-                    <label for="convert-sticker">Converter para Sticker</label>
+                <div class="form-group toggle-row-compact hidden" id="as-sticker-group">
+                    <span class="toggle-label" for="convert-sticker">Converter para Sticker</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="convert-sticker">
+                        <span class="slider-round"></span>
+                    </label>
                 </div>
                 <div id="upload-status" class="text-center mt-3"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary close-upload">Cancelar</button>
-                <button type="button" id="btn-confirm-upload" class="btn btn-primary">Upload</button>
+                <button type="button" id="btn-confirm-upload" class="btn btn-primary">Fazer Upload</button>
             </div>
         </div>
     </div>
@@ -555,62 +896,78 @@
                 <div class="form-group">
                     <label id="lbl-stream-channel">Canal / Usuário</label>
                     <input type="text" id="stream-channel" class="form-control" placeholder="Nome do canal (sem URL)">
-                    <small class="form-text text-muted" id="stream-hint">Digite apenas o nome de usuário.</small>
+                    <div class="field-hint" id="stream-hint">Digite apenas o nome de usuário ou ID.</div>
                 </div>
 
                 <div class="checkbox-grid-modal">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="stream-mention">
-                        <label id="lbl-stream-mention" for="stream-mention">Marcar Todos</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-stream-mention">Marcar Todos (@todos)</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="stream-mention">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="stream-ai">
-                        <label id="lbl-stream-ai" for="stream-ai">Gerar mensagem com IA</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-stream-ai">Mensagem com IA</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="stream-ai">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
-                    <div class="checkbox-group" style="grid-column: 1 / -1;">
-                        <input type="checkbox" id="stream-change-title">
-                        <label id="lbl-stream-change-title" for="stream-change-title">Mudar Título do Grupo</label>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-stream-use-thumbnail">Enviar Thumbnail da Live</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="stream-use-thumbnail" checked>
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="form-group toggle-row-compact">
+                        <span class="toggle-label" id="lbl-stream-change-title">Mudar Título do Grupo</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="stream-change-title">
+                            <span class="slider-round"></span>
+                        </label>
                     </div>
                 </div>
 
-                <div id="stream-titles-group" class="hidden" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                <div id="stream-titles-group" class="hidden title-custom-box p-3 mb-3">
                     <div class="form-group">
                         <label id="lbl-stream-title-on">Título Online (Opcional)</label>
-                        <input type="text" id="stream-title-on" class="form-control" maxlength="100" placeholder="Se não definir, troca OFF por ON e 🔴 por 🟢">
+                        <input type="text" id="stream-title-on" class="form-control" maxlength="100" placeholder="Ex: Meu Grupo 🔴 [LIVE]">
+                        <div class="field-hint">Se não definir, troca OFF por ON e 🔴 por 🟢.</div>
                     </div>
                     <div class="form-group">
                         <label id="lbl-stream-title-off">Título Offline (Opcional)</label>
-                        <input type="text" id="stream-title-off" class="form-control" maxlength="100" placeholder="Se não definir, troca ON por OFF e 🟢 por 🔴">
+                        <input type="text" id="stream-title-off" class="form-control" maxlength="100" placeholder="Ex: Meu Grupo ⚪ [OFF]">
                     </div>
                 </div>
 
-                <div class="divider"></div>
-
-                <div class="checkbox-grid-modal" style="margin-top: 10px; display: none;">
-                    <!-- Desabilitado pq ainda não tá 100% na go -->
-                    <div class="checkbox-group" style="grid-column: 1 / -1;">
-                        <input type="checkbox" id="stream-change-photo">
-                        <label id="lbl-stream-change-photo" for="stream-change-photo">Mudar Foto do Grupo</label>
+                <!-- Foto do Grupo em Stream (Em Breve) -->
+                <div class="form-group toggle-row-compact disabled-feature-row">
+                    <div>
+                        <span class="toggle-label">Mudar Foto do Grupo em Lives</span>
+                        <span class="badge badge-soon">Em breve</span>
+                        <div class="field-hint">Aguardando atualização de estabilidade na biblioteca do WhatsApp.</div>
                     </div>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="stream-change-photo" disabled>
+                        <span class="slider-round"></span>
+                    </label>
                 </div>
 
-                <div id="stream-photos-group" class="hidden" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
-                    <div class="form-group">
-                        <label>Foto Online</label>
-                        <div class="input-group">
-                            <input type="text" id="stream-photo-on-display" class="form-control" disabled placeholder="Nenhuma foto definida">
-                            <button type="button" id="btn-view-photo-on" class="btn btn-info" title="Ver Foto"><i class="fas fa-eye"></i></button>
-                            <button type="button" id="btn-upload-photo-on" class="btn btn-secondary" title="Upload Foto Online"><i class="fas fa-upload"></i></button>
-                            <button type="button" id="btn-remove-photo-on" class="btn btn-danger" title="Remover Foto"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Foto Offline</label>
-                        <div class="input-group">
-                            <input type="text" id="stream-photo-off-display" class="form-control" disabled placeholder="Nenhuma foto definida">
-                            <button type="button" id="btn-view-photo-off" class="btn btn-info" title="Ver Foto"><i class="fas fa-eye"></i></button>
-                            <button type="button" id="btn-upload-photo-off" class="btn btn-secondary" title="Upload Foto Offline"><i class="fas fa-upload"></i></button>
-                            <button type="button" id="btn-remove-photo-off" class="btn btn-danger" title="Remover Foto"><i class="fas fa-trash"></i></button>
+                <!-- Simulador de Notificação WhatsApp da Stream -->
+                <div class="wa-simulator-wrapper mb-3">
+                    <div class="wa-sim-title"><i class="fab fa-whatsapp"></i> Prévia da Notificação da Live</div>
+                    <div class="wa-bubble-container">
+                        <div class="wa-bubble">
+                            <div id="stream-wa-thumbnail" class="wa-media-preview">
+                                <div class="wa-thumb-placeholder"><i class="fas fa-image"></i> [Thumbnail da Stream / Live]</div>
+                            </div>
+                            <div id="stream-wa-text" class="wa-text-content">🔴 <strong>{canal}</strong> está ao vivo!<br>Venha assistir: {link}</div>
+                            <div class="wa-meta">
+                                <span>Agora</span>
+                                <span class="wa-ticks"><i class="fas fa-check-double"></i></span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -620,16 +977,19 @@
                 <!-- Online Media -->
                 <div class="sub-accordion active">
                     <div class="sub-accordion-header">
-                        <h4><i class="fas fa-satellite-dish"></i> Mídia quando Online</h4>
+                        <div class="sub-acc-title">
+                            <i class="fas fa-satellite-dish text-success"></i>
+                            <h4>Mídia & Mensagem quando Online</h4>
+                        </div>
                     </div>
                     <div class="sub-accordion-content" style="display: block;">
-                        <div id="stream-on-media-list" class="media-list"></div>
-                        <div class="add-response-buttons">
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'text')"><i class="fas fa-font"></i> Texto</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'image')"><i class="fas fa-image"></i> Imagem</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'video')"><i class="fas fa-video"></i> Vídeo</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'audio')"><i class="fas fa-music"></i> Áudio</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'gif')"><i class="fas fa-film"></i> GIF</button>
+                        <div id="stream-on-media-list" class="inline-media-container"></div>
+                        <div class="add-response-buttons mt-2">
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'text')"><i class="fas fa-font"></i> + Texto</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'image')"><i class="fas fa-image"></i> + Imagem</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'video')"><i class="fas fa-video"></i> + Vídeo</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'audio')"><i class="fas fa-music"></i> + Áudio</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('on', 'gif')"><i class="fas fa-film"></i> + GIF</button>
                         </div>
                     </div>
                 </div>
@@ -639,16 +999,19 @@
                 <!-- Offline Media -->
                 <div class="sub-accordion active">
                     <div class="sub-accordion-header">
-                        <h4><i class="fas fa-power-off"></i> Mídia quando Offline</h4>
+                        <div class="sub-acc-title">
+                            <i class="fas fa-power-off text-muted"></i>
+                            <h4>Mídia & Mensagem quando Offline</h4>
+                        </div>
                     </div>
                     <div class="sub-accordion-content" style="display: block;">
-                        <div id="stream-off-media-list" class="media-list"></div>
-                        <div class="add-response-buttons">
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'text')"><i class="fas fa-font"></i> Texto</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'image')"><i class="fas fa-image"></i> Imagem</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'video')"><i class="fas fa-video"></i> Vídeo</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'audio')"><i class="fas fa-music"></i> Áudio</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'gif')"><i class="fas fa-film"></i> GIF</button>
+                        <div id="stream-off-media-list" class="inline-media-container"></div>
+                        <div class="add-response-buttons mt-2">
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'text')"><i class="fas fa-font"></i> + Texto</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'image')"><i class="fas fa-image"></i> + Imagem</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'video')"><i class="fas fa-video"></i> + Vídeo</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'audio')"><i class="fas fa-music"></i> + Áudio</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addStreamMedia('off', 'gif')"><i class="fas fa-film"></i> + GIF</button>
                         </div>
                     </div>
                 </div>
@@ -656,9 +1019,51 @@
             </div>
             <div class="modal-footer">
                 <button type="button" id="btn-delete-stream" class="btn btn-danger hidden">Deletar</button>
-                <div class="spacer"></div>
                 <button type="button" class="btn btn-secondary close-stream-modal">Cancelar</button>
-                <button type="button" id="btn-save-stream" class="btn btn-primary">Salvar</button>
+                <button type="button" id="btn-save-stream" class="btn btn-primary">Salvar Stream</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Webhook Modal (NEW) -->
+    <div id="webhook-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="webhook-modal-title">Configurar Webhook</h2>
+                <span class="close-webhook-modal cursor-pointer">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nome do Webhook</label>
+                    <input type="text" id="webhook-name" class="form-control" placeholder="ex: vendas-hotmart">
+                    <div class="field-hint">Identificador único para este webhook.</div>
+                </div>
+                <div class="two-cols-row">
+                    <div class="form-group">
+                        <label>Nome do Header Secreto</label>
+                        <input type="text" id="webhook-header-name" class="form-control" placeholder="ex: x-token">
+                    </div>
+                    <div class="form-group">
+                        <label>Valor do Header Secreto</label>
+                        <input type="text" id="webhook-header-value" class="form-control" placeholder="ex: minhatoken123">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Modo de Verificação</label>
+                    <select id="webhook-header-mode" class="form-control">
+                        <option value="match">Match Exato (Valor idêntico)</option>
+                        <option value="include">Include (Contém o valor)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Template da Mensagem no Grupo</label>
+                    <textarea id="webhook-template" class="form-control" rows="3" placeholder="Recebido pagamento de {{cliente.nome}} no valor de R${{valor}}"></textarea>
+                    <div class="field-hint">Use {{propriedade}} para interpolar os dados do JSON recebido.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-webhook-modal">Cancelar</button>
+                <button type="button" id="btn-save-webhook-confirm" class="btn btn-primary">Salvar Webhook</button>
             </div>
         </div>
     </div>
@@ -666,8 +1071,8 @@
     <!-- Sticky Save Bar -->
     <div id="sticky-save-bar" class="sticky-save-bar hidden">
         <div class="sticky-content">
-            <span>Você tem alterações não salvas.</span>
-            <button id="btn-global-save" class="btn btn-success"><i class="fas fa-save"></i> Salvar Tudo</button>
+            <span><i class="fas fa-info-circle"></i> Alterações não salvas</span>
+            <button id="btn-global-save" class="btn btn-success"><i class="fas fa-check"></i> Salvar Tudo</button>
         </div>
     </div>
 
@@ -680,7 +1085,7 @@
             </div>
             <div class="modal-body">
                 <p id="dialog-message"></p>
-                <textarea id="dialog-input" class="form-control hidden" style="margin-top: 10px;" rows="3"></textarea>
+                <textarea id="dialog-input" class="form-control hidden mt-2" rows="3"></textarea>
             </div>
             <div class="modal-footer">
                 <button id="dialog-btn-cancel" class="btn btn-secondary hidden">Cancelar</button>
@@ -697,7 +1102,7 @@
                 <span class="close-variable-modal">&times;</span>
             </div>
             <div class="modal-body">
-                <input type="text" id="variable-search" class="form-control" placeholder="Buscar variável..." style="margin-bottom: 10px;">
+                <input type="text" id="variable-search" class="form-control mb-2" placeholder="Buscar variável...">
                 <div id="variable-list" class="variable-list">
                     <!-- Populated via JS -->
                 </div>
@@ -731,19 +1136,17 @@
                 <span class="close-member-modal">&times;</span>
             </div>
             <div class="modal-body">
-                <input type="text" id="member-search" class="form-control" placeholder="Buscar membro..." style="margin-bottom: 10px;">
-                <div id="member-list" class="member-list-container" style="max-height: 300px; overflow-y: auto;">
-                    <!-- Populated via JS -->
+                <input type="text" id="member-search" class="form-control mb-2" placeholder="Buscar membro por número...">
+                <div id="member-list" class="member-list-container" style="max-height: 320px; overflow-y: auto;">
                     <table class="table" style="width: 100%;">
                         <thead>
                             <tr>
                                 <th>Telefone</th>
-                                <th>LID/ID</th>
-                                <th id="member-action-header">Ação</th>
+                                <th>LID / ID</th>
+                                <th id="member-action-header">Apelido</th>
                             </tr>
                         </thead>
-                        <tbody id="member-table-body">
-                        </tbody>
+                        <tbody id="member-table-body"></tbody>
                     </table>
                 </div>
             </div>
@@ -753,13 +1156,6 @@
         </div>
     </div>
 
-    <!-- Custom Tooltip -->
-    <div id="custom-tooltip" class="custom-tooltip hidden">
-        <div id="tooltip-content"></div>
-        <div id="tooltip-close" class="tooltip-close hidden">&times;</div>
-    </div>
-
-    <script src="/help.js"></script>
-    <script src="/management.js?v=15"></script>
+    <script src="/management.js?v=20"></script>
 </body>
 </html>
