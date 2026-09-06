@@ -33,6 +33,13 @@ Este projeto é executado inteiramente dentro de containers Docker. O container 
    docker exec ravena-ai rm /app/<caminho/do/script.js>
    ```
 
+## Lint e Padronização de Código (OBRIGATÓRIO)
+- **SEMPRE execute `npm run lint:fix`** antes de concluir qualquer tarefa, ao finalizar alterações e antes de commits.
+- O script roda o ESLint com `--fix` para corrigir e garantir a padronização de formatação, regras de código e estilo do projeto:
+  ```bash
+  npm run lint:fix
+  ```
+
 ## Harness de Testes e Mocks (`src/testing/`)
 O projeto conta com uma infraestrutura própria para testes em `src/testing/`, permitindo testar comandos e regras do `EventHandler` sem abrir conexões reais de rede:
 

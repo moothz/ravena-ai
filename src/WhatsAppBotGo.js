@@ -119,7 +119,10 @@ class WhatsAppBotGo {
 		this.ignoreInvites = options.ignoreInvites ?? false;
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
 		this.dossieGroups =
-			options.dossieGroups ?? options.grupoLogs ?? process.env.GRUPO_DOSSIES ?? process.env.GRUPO_LOGS;
+			options.dossieGroups ??
+			options.grupoLogs ??
+			process.env.GRUPO_DOSSIES ??
+			process.env.GRUPO_LOGS;
 		this.grupoInvites = options.grupoInvites ?? process.env.GRUPO_INVITES;
 		this.grupoAvisos = options.grupoAvisos ?? process.env.GRUPO_AVISOS;
 		this.grupoAnuncios = options.grupoAnuncios || process.env.GRUPO_ANUNCIOS;
@@ -2917,7 +2920,9 @@ class WhatsAppBotGo {
 			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
 				? this.dossieGroups.split(",").map((g) => g.trim())
 				: [this.dossieGroups];
-		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
+		return groups.some(
+			(g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim()
+		);
 	}
 
 	getLidFromPn(PN, chat) {

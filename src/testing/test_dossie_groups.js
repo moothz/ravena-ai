@@ -8,16 +8,28 @@ async function runTests() {
 
 	// 1. Test FakeBot dossieGroups fallback & isDossieGroup
 	const botWithFallback = new FakeBot({ grupoLogs: "123456@g.us" });
-	assert.strictEqual(botWithFallback.dossieGroups, "123456@g.us", "Fallback to grupoLogs should work");
+	assert.strictEqual(
+		botWithFallback.dossieGroups,
+		"123456@g.us",
+		"Fallback to grupoLogs should work"
+	);
 	assert.strictEqual(botWithFallback.isDossieGroup("123456@g.us"), true, "Should match exact JID");
 	assert.strictEqual(botWithFallback.isDossieGroup("123456"), true, "Should match without @g.us");
-	assert.strictEqual(botWithFallback.isDossieGroup("999999@g.us"), false, "Should not match different group");
+	assert.strictEqual(
+		botWithFallback.isDossieGroup("999999@g.us"),
+		false,
+		"Should not match different group"
+	);
 
 	const botWithCustomDossie = new FakeBot({
 		grupoLogs: "123456@g.us",
 		dossieGroups: "789012@g.us"
 	});
-	assert.strictEqual(botWithCustomDossie.dossieGroups, "789012@g.us", "Explicit dossieGroups should take precedence");
+	assert.strictEqual(
+		botWithCustomDossie.dossieGroups,
+		"789012@g.us",
+		"Explicit dossieGroups should take precedence"
+	);
 	assert.strictEqual(botWithCustomDossie.isDossieGroup("789012@g.us"), true);
 	assert.strictEqual(botWithCustomDossie.isDossieGroup("123456@g.us"), false);
 

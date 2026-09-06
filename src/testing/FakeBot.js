@@ -211,7 +211,9 @@ class FakeBot {
 			: typeof this.dossieGroups === "string" && this.dossieGroups.includes(",")
 				? this.dossieGroups.split(",").map((g) => g.trim())
 				: [this.dossieGroups];
-		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
+		return groups.some(
+			(g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim()
+		);
 	}
 
 	/**

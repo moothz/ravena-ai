@@ -96,7 +96,9 @@ class EventHandler extends EventEmitter {
 			: typeof bot.dossieGroups === "string" && bot.dossieGroups.includes(",")
 				? bot.dossieGroups.split(",").map((g) => g.trim())
 				: [bot.dossieGroups];
-		return groups.some((g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim());
+		return groups.some(
+			(g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim()
+		);
 	}
 
 	/**
