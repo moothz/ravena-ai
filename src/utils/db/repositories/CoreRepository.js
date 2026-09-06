@@ -667,6 +667,7 @@ class CoreRepository {
 				code: inviteCode,
 				authorId: data.authorId,
 				authorName: data.authorName,
+				groupJid: data.groupJid || null,
 				timestamp: Date.now()
 			};
 			const row = PendingJoinMapper.toRow(joinData);
@@ -1021,19 +1022,36 @@ class CoreRepository {
 			let query = "SELECT * FROM invite_history WHERE 1=0";
 			const params = [];
 			if (groupJid && inviteCode) {
-				query = "SELECT * FROM invite_history WHERE group_jid = ? OR invite_code = ?";
+				query =
+					"SELECT * FROM invite_history WHERE group_jid = ? OR invite_code = ? ORDER BY timestamp DESC, id DESC";
 				params.push(groupJid, inviteCode);
 			} else if (groupJid) {
-				query = "SELECT * FROM invite_history WHERE group_jid = ?";
+				query = "SELECT * FROM invite_history WHERE group_jid = ? ORDER BY timestamp DESC, id DESC";
 				params.push(groupJid);
 			} else if (inviteCode) {
-				query = "SELECT * FROM invite_history WHERE invite_code = ?";
+				query =
+					"SELECT * FROM invite_history WHERE invite_code = ? ORDER BY timestamp DESC, id DESC";
 				params.push(inviteCode);
 			}
 			return this.mappers.all(this.DB, query, params);
 		} catch (error) {
 			this.logger.error("Error getting invite history by group:", error);
 			return [];
+		}
+	}
+
+	async updateInviteHistoryGroupJid(inviteCode, groupJid) {
+		try {
+			if (!inviteCode || !groupJid) return false;
+			this.mappers.run(
+				this.DB,
+				"UPDATE invite_history SET group_jid = ? WHERE invite_code = ? AND (group_jid IS NULL OR group_jid = '')",
+				[groupJid, inviteCode]
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error updating invite history group JID:", error);
+			return false;
 		}
 	}
 

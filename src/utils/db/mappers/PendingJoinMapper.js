@@ -10,11 +10,19 @@ const PendingJoinMapper = {
 	 */
 	fromRow(row) {
 		if (!row) return null;
+		let groupJid = null;
+		if (row.json_data) {
+			try {
+				const parsed = JSON.parse(row.json_data);
+				groupJid = parsed.groupJid ?? null;
+			} catch (e) {}
+		}
 		return {
 			code: row.code,
 			authorId: row.author_id ?? null,
 			authorName: row.author_name ?? null,
-			timestamp: row.timestamp ?? null
+			timestamp: row.timestamp ?? null,
+			groupJid
 		};
 	},
 

@@ -717,6 +717,15 @@ class Database {
 		return this.coreRepo.getInviteHistoryByGroup(groupJid, inviteCode);
 	}
 
+	async updateInviteHistoryGroupJid(inviteCode, groupJid) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateInviteHistoryGroupJid() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.updateInviteHistoryGroupJid(inviteCode, groupJid);
+	}
+
 	async saveInviteHistories(invites) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] saveInviteHistories() bloqueado");

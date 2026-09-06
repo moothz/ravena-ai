@@ -647,17 +647,31 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 
 			try {
+				let inviteInfoData = null;
+				try {
+					inviteInfoData = await bot.client.getInviteInfo(inviteCode);
+				} catch (e) {}
+
 				// Aceita o convite
 				const joinResult = await bot.client.acceptInvite(inviteCode);
 
 				if (joinResult.accepted) {
-					// Salva os dados do autor que enviou o convite para uso posterior
-					if (authorId) {
-						await this.database.savePendingJoin(inviteCode, { authorId, authorName });
-					}
+					const finalGroupJid = inviteInfoData?.JID || null;
+					await this.database.addInviteHistory({
+						code: inviteCode,
+						groupJid: finalGroupJid,
+						authorId: authorId || message.author,
+						authorName: authorName || "SuperAdmin",
+						timestamp: Date.now(),
+						reason: "SuperAdmin joinGrupo"
+					});
 
-					// Remove dos convites pendentes se existir
-					await this.database.removePendingJoin(inviteCode);
+					// Salva os dados do autor que enviou o convite para uso posterior
+					await this.database.savePendingJoin(inviteCode, {
+						authorId: authorId || message.author,
+						authorName: authorName || "SuperAdmin",
+						groupJid: finalGroupJid
+					});
 
 					return new ReturnMessage({
 						chatId,
@@ -756,8 +770,20 @@ Break down the cost by category and provide a total estimated cost.`;
 				const joinResult = await bot.client.acceptInvite(inviteCode);
 
 				if (joinResult.accepted) {
-					// Remove dos convites pendentes se existir
-					await this.database.removePendingJoin(inviteCode);
+					await this.database.addInviteHistory({
+						code: inviteCode,
+						groupJid,
+						authorId: message.author,
+						authorName: "SuperAdmin",
+						timestamp: Date.now(),
+						reason: "SuperAdmin joinGrupoSilencioso"
+					});
+
+					await this.database.savePendingJoin(inviteCode, {
+						authorId: message.author,
+						authorName: "SuperAdmin",
+						groupJid
+					});
 
 					return new ReturnMessage({
 						chatId,
@@ -1199,7 +1225,11 @@ Break down the cost by category and provide a total estimated cost.`;
 		const chatId = message.group ?? message.author;
 
 		// Verifica se o usuário é um super admin
-		if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+		if (
+			!message.isSystem &&
+			!this.isSuperAdmin(message.author) &&
+			!this.isComuAdmin(bot, message.author)
+		) {
 			return new ReturnMessage({
 				chatId,
 				content: "⛔ Apenas super administradores podem usar este comando."
@@ -1214,14 +1244,24 @@ Break down the cost by category and provide a total estimated cost.`;
 			});
 		}
 
-		// Processa o número para formato padrão (apenas dígitos)
-		let phoneNumber = args[0].replace(/\D/g, "");
-		phoneNumber = phoneNumber.split("@")[0];
+		let phoneNumber = "";
+		let inviteCode = null;
+
+		if (args.length === 1) {
+			const cleanArg = args[0].replace(/\D/g, "");
+			// Se o argumento for um invite code (20+ chars e poucos dígitos)
+			if (args[0].length >= 20 && cleanArg.length < 8) {
+				inviteCode = args[0];
+			} else {
+				phoneNumber = cleanArg.split("@")[0];
+			}
+		} else {
+			phoneNumber = args[0].replace(/\D/g, "").split("@")[0];
+			inviteCode = args[1];
+		}
 
 		const blockedList = new Set();
 		if (phoneNumber) blockedList.add(phoneNumber);
-
-		const inviteCode = args[1];
 		let inviteInfoData = null;
 
 		if (inviteCode) {
@@ -1260,8 +1300,8 @@ Break down the cost by category and provide a total estimated cost.`;
 		}
 
 		// Adicionalmente bloqueia o invite code e o JID do grupo se disponíveis
-		if (inviteCode && inviteInfoData?.JID) {
-			await this.database.saveBlockedInvite(inviteCode, inviteInfoData.JID);
+		if (inviteCode) {
+			await this.database.saveBlockedInvite(inviteCode, inviteInfoData?.JID || null);
 		}
 
 		let response = `✅ Bloqueio de convites realizado para ${results.length} identificadores:\n- ${results.join("\n- ")}`;

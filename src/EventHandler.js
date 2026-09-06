@@ -1235,8 +1235,9 @@ class EventHandler extends EventEmitter {
 				const stringifiedData = JSON.stringify(data);
 
 				for (const pendingJoin of pendingJoins) {
-					// Verifica se o autor do convite está no grupo (duas abordagens)
+					// Verifica se corresponde ao grupo (groupJid) ou se o autor está no grupo
 					if (
+						(pendingJoin.groupJid && pendingJoin.groupJid === group.id) ||
 						members.includes(pendingJoin.authorId) ||
 						stringifiedData.includes(pendingJoin.authorId)
 					) {
@@ -1244,6 +1245,24 @@ class EventHandler extends EventEmitter {
 						break;
 					}
 				}
+
+				if (foundInviter) {
+					group.inviteCode = foundInviter.code;
+					group.addedBy = foundInviter.authorId;
+					await this.database.updateInviteHistoryGroupJid(foundInviter.code, group.id);
+					await this.database.removePendingJoin(foundInviter.code);
+				} else if (!group.inviteCode) {
+					try {
+						const history = await this.database.getInviteHistoryByGroup(group.id);
+						if (history && history.length > 0 && history[0].invite_code) {
+							group.inviteCode = history[0].invite_code;
+							if (!group.addedBy && history[0].author_id) {
+								group.addedBy = history[0].author_id;
+							}
+						}
+					} catch (e) {}
+				}
+				await this.database.saveGroup(group);
 
 				// Envia uma mensagem de boas-vindas padrão sobre o bot
 				let botInfoMessage = "";
@@ -1295,7 +1314,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 						// Se encontramos o autor do convite, adiciona-o como admin adicional
 						if (foundInviter) {
-							group.addedBy = foundInviter.authorId;
 							// Inicializa additionalAdmins se não existir
 							if (!group.additionalAdmins) {
 								group.additionalAdmins = [];
@@ -1306,9 +1324,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								group.additionalAdmins.push(foundInviter.authorId);
 								await this.database.saveGroup(group);
 							}
-
-							// Remove o join pendente
-							await this.database.removePendingJoin(foundInviter.code);
 						}
 
 						if (bot.comunitario) {
@@ -1606,8 +1621,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						await this.database.saveGroup(group);
 
 						let membershipHistoryText = "";
+						let periods = [];
 						try {
-							const periods = await this.database.getGroupMembershipPeriods(groupId);
+							periods = await this.database.getGroupMembershipPeriods(groupId);
 							if (periods && periods.length > 0) {
 								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
 								periods.forEach((p, idx) => {
@@ -1646,13 +1662,145 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							);
 						}
 
+						// Auto-bloqueio se removido em menos de 24 horas e quem removeu não é doador
+						// Aplica-se apenas às ravenas normais (não processar para vip, comunitárias e privadas)
+						let blockLogsText = "";
+						const isNormalBot = !bot.vip && !bot.comunitario && !bot.privado;
+
+						if (isNormalBot) {
+							const currentPeriod =
+								periods && periods.length > 0 ? periods[periods.length - 1] : null;
+							const durationMs =
+								currentPeriod?.duration ??
+								(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
+							const isLessThan24h =
+								durationMs !== null
+									? durationMs < 24 * 60 * 60 * 1000
+									: group.date
+										? Date.now() - group.date < 24 * 60 * 60 * 1000
+										: false;
+
+							const removerId = data.responsavel?.id || null;
+							const cleanRemoverPhone = removerId
+								? removerId.replace(/\D/g, "").split("@")[0]
+								: null;
+							const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
+							const isRemovedBySelf =
+								cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
+							const isRemoverSuperAdmin = removerId
+								? this.adminUtils.isSuperAdmin(removerId)
+								: false;
+
+							if (isLessThan24h && cleanRemoverPhone && !isRemovedBySelf && !isRemoverSuperAdmin) {
+								let isRemoverDonator = false;
+								try {
+									const donations = await this.database.getDonations();
+									if (donations && donations.length > 0) {
+										isRemoverDonator = donations.some((donation) => {
+											if (donation.numero) {
+												const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
+												if (cleanDonorNumber.length > 10) {
+													return (
+														cleanDonorNumber.includes(cleanRemoverPhone) ||
+														cleanRemoverPhone.includes(cleanDonorNumber)
+													);
+												}
+											}
+											return false;
+										});
+									}
+								} catch (donErr) {
+									this.logger.error("Erro ao verificar doador para quem removeu o bot:", donErr);
+								}
+
+								if (!isRemoverDonator) {
+									this.logger.info(
+										`[processGroupLeave] Bot normal '${bot.id}' removido em <24h (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+									);
+
+									// 1. Busca código de convite e autor do convite
+									let inviteCode = group.inviteCode || null;
+									let inviterId = group.addedBy || null;
+
+									try {
+										const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
+										if (inviteHistory && inviteHistory.length > 0) {
+											const latestInvite =
+												inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+											if (latestInvite) {
+												if (!inviteCode && latestInvite.invite_code) {
+													inviteCode = latestInvite.invite_code;
+												}
+												if (!inviterId && latestInvite.author_id) {
+													inviterId = latestInvite.author_id;
+												}
+											}
+										}
+									} catch (invErr) {
+										this.logger.error(
+											"Erro ao buscar histórico de convites para auto-block:",
+											invErr
+										);
+									}
+
+									const cleanInviterPhone = inviterId
+										? inviterId.replace(/\D/g, "").split("@")[0]
+										: null;
+
+									const blockLogParts = [];
+
+									// 2. Executa block no convite
+									if (cleanInviterPhone || inviteCode) {
+										const inviteArgs = [];
+										if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+										if (inviteCode) inviteArgs.push(inviteCode);
+
+										const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
+										try {
+											const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+												bot,
+												{ group: groupId, author: cleanInviterPhone, isSystem: true },
+												inviteArgs
+											);
+											if (inviteBlockRes && inviteBlockRes.content) {
+												blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+											}
+										} catch (cmdErr) {
+											this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+										}
+									}
+
+									// 3. Executa block em quem removeu
+									if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
+										const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
+										try {
+											const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
+												bot,
+												{ group: groupId, author: cleanRemoverPhone, isSystem: true },
+												[cleanRemoverPhone]
+											);
+											if (removerBlockRes && removerBlockRes.content) {
+												blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
+											}
+										} catch (cmdErr) {
+											this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
+										}
+									}
+
+									if (blockLogParts.length > 0) {
+										blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 24h & não doador):*\n${blockLogParts.join("\n\n")}`;
+									}
+								}
+							}
+						}
+
 						const msgLeave = `🚪🔴 *${bot.id}* saiu do grupo:
 - 🆔 *ID:* \`${group.id}\`
 - 📃 *Nome:* \`${group.name}\`
 - 👷‍♂️ *Responsável:*
 \`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`
 - 👨‍💻 *Raw Data*:
-\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}`;
+\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${blockLogsText}`;
 
 						// Remove o responsável do bot comunitário dos admins adicionais
 						/* por enquanto desabilitado
@@ -1676,7 +1824,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 						bot.sendMessage(bot.grupoLogs, msgLeave).catch((error) => {
 							this.logger.error(
-								"Erro ao enviar notificação de entrada no grupo para o grupo de logs:",
+								"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
 								error
 							);
 						});

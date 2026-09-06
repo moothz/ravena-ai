@@ -528,9 +528,10 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			const currentTime = Date.now();
 
 			// Checa se o link é comunidade antes de iniciar cooldown ou pedir motivo
+			let infoCheck = null;
 			try {
 				if (this.bot.client && typeof this.bot.client.getInviteInfo === "function") {
-					const infoCheck = await this.bot.client.getInviteInfo(inviteCode);
+					infoCheck = await this.bot.client.getInviteInfo(inviteCode);
 					if (infoCheck && this.isCommunity(infoCheck)) {
 						this.logger.info(
 							`Ignorando convite de comunidade de ${message.author} (${inviteCode}) sem aplicar cooldown.`
@@ -567,6 +568,27 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					`Erro ao checar info prévia do convite ${inviteCode} em processMessage:`,
 					infoErr?.message
 				);
+			}
+
+			// Salva imediatamente o código de convite com o JID do grupo e autor no histórico
+			try {
+				const userName =
+					message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Pessoa";
+				await this.database.addInviteHistory({
+					code: inviteCode,
+					groupJid: infoCheck?.JID || null,
+					authorId: message.author,
+					authorName: userName,
+					timestamp: currentTime,
+					reason: null
+				});
+				await this.database.savePendingJoin(inviteCode, {
+					authorId: message.author,
+					authorName: userName,
+					groupJid: infoCheck?.JID || null
+				});
+			} catch (dbErr) {
+				this.logger.error("Erro ao salvar histórico prévio de convite em processMessage:", dbErr);
 			}
 
 			const isBlocked = await this.database.isUserInviteBlocked(message.author.split("@")[0]);
@@ -1084,10 +1106,11 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				timestamp: Date.now()
 			};
 
-			// Salva pending join
+			// Salva pending join com groupJid
 			await this.database.savePendingJoin(inviteCode, {
 				authorId,
-				authorName: userName
+				authorName: userName,
+				groupJid: inviteInfoData?.JID || null
 			});
 
 			await this.database.addInviteHistory({
@@ -1098,6 +1121,10 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				timestamp: Date.now(),
 				reason
 			});
+
+			if (inviteInfoData?.JID) {
+				await this.database.updateInviteHistoryGroupJid(inviteCode, inviteInfoData.JID);
+			}
 
 			// Verifica se o bot já esteve no grupo anteriormente
 			let wasInGroupBefore = false;
@@ -1274,9 +1301,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								InviteSystem.recordBotJoin(selectedBot.id);
 								await this.database.savePendingJoin(inviteCode, {
 									authorId,
-									authorName: userName
+									authorName: userName,
+									groupJid: inviteInfoData?.JID || null
 								});
-								await this.database.removePendingJoin(inviteCode);
 							} else {
 								this.logger.warn(
 									`[AutoAccept] Falha do bot ${selectedBot.id} ao aceitar convite: ${joinResult?.error || "Erro desconhecido"}`
