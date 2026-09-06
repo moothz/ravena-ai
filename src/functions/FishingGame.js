@@ -9,6 +9,8 @@ const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
 const bonsaiModule = require("./BonsaiCommands");
 const ReturnMessage = require("../models/ReturnMessage");
+const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
+const LLMService = require("../services/LLMService");
 
 const logger = new Logger("fishing-game");
 
@@ -124,6 +126,8 @@ const BAIT_REGEN_TIME = 60 * 60 * 1;
 
 // Armazena os cooldowns de pesca (Cache em memória é aceitável para cooldowns de curto prazo)
 const fishingCooldowns = {};
+// Armazena confirmações pendentes de abandono de inventário (1 minuto)
+const abandonConfirmations = new Map();
 // Ajustado escala de mensagens para o novo peso máximo
 const weightScaleMsgs = [180, 150, 120, 100, 80, 60];
 
@@ -1384,13 +1388,68 @@ async function generateRareFishImage(
 	userName,
 	fishName,
 	fishWeight = 10000,
-	fishDescription = ""
+	fishDescription = "",
+	userId = null,
+	message = null
 ) {
 	try {
 		const dateString = getCurrentDateTime();
 
+		let respostaLLM = null;
+		try {
+			let targetJid = null;
+			if (message) {
+				targetJid = message.authorAlt || message.author || message.sender || message.from;
+			}
+			if (!targetJid && userId) {
+				targetJid = userId;
+			}
+
+			if (targetJid && typeof targetJid === "object") {
+				targetJid =
+					targetJid._serialized ||
+					targetJid.id?._serialized ||
+					targetJid.id ||
+					targetJid.user ||
+					String(targetJid);
+			}
+
+			if (targetJid && bot) {
+				const profileMedia = await ProfilePictureHelper.fetchUserProfilePictureMedia(
+					bot,
+					targetJid
+				);
+				if (profileMedia && profileMedia.data) {
+					const llmService = LLMService.getInstance();
+					const completionOptions = {
+						prompt:
+							"Descreva de forma concisa e objetiva as características físicas e visuais da pessoa ou personagem nesta foto de perfil (gênero aparente, traços faciais, estilo e cor do cabelo, tom de pele, roupas e acessórios) para ser usada em um prompt de geração de imagem. Seja breve e direto.",
+						systemContext:
+							"Você é um assistente especializado em descrever características físicas de pessoas em avatares para prompts de geração de imagem.",
+						image: profileMedia.data,
+						priority: 5,
+						timeout: 30000
+					};
+					const response = await llmService.getCompletion(completionOptions);
+					if (response && typeof response === "string" && response.trim().length > 0) {
+						respostaLLM = response.trim();
+					}
+				}
+			}
+		} catch (errorLLM) {
+			logger.warn(
+				"Não foi possível obter a descrição da foto de perfil via LLM:",
+				errorLLM.message || errorLLM
+			);
+		}
+
+		let promptDescricaoPescador = "";
+		if (respostaLLM) {
+			promptDescricaoPescador = `\nDescrição Física do Pescador: ${respostaLLM}\n`;
+		}
+
 		const prompt = `Amateur photo with cybershot style framing, a bit blurry, dirty lens:
-Person named '${userName}' fishing an epically rare monstrous creature (fantasy) fish known as "${fishName}", ${fishDescription}
+Person named '${userName}' fishing an epically rare monstrous creature (fantasy) fish known as "${fishName}", ${fishDescription}${promptDescricaoPescador}
 
 Sweat and tears, joy
 Epic scenario, huge boats, creature captured mythical, fantastic, water splashing
@@ -1888,7 +1947,9 @@ async function fishCommand(bot, message, args, group) {
 				userName,
 				caughtFishes[0].name,
 				caughtFishes[0].weight,
-				caughtFishes[0].description
+				caughtFishes[0].description,
+				userId,
+				message
 			);
 
 			if (!rareFishImage) {
@@ -2102,6 +2163,97 @@ async function fishingDataCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
 			content: "❌ Erro ao ver ficha."
+		});
+	}
+}
+
+/**
+ * Abandona todos os peixes do inventário do usuário após confirmação dentro de 1 minuto
+ */
+async function abandonFishCommand(bot, message, args, group) {
+	try {
+		const chatId = message.group ?? message.author;
+		const userId = message.author;
+		const userName =
+			message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Pescador";
+
+		const userData = await getUserData(userId);
+
+		if (!userData || !userData.fishes || userData.fishes.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: `🎣 ${userName}, seu inventário de peixes já está vazio!`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const now = Date.now();
+		// Limpa confirmações expiradas
+		for (const [id, exp] of abandonConfirmations.entries()) {
+			if (now > exp) {
+				abandonConfirmations.delete(id);
+			}
+		}
+
+		const pendingTime = abandonConfirmations.get(userId);
+
+		if (pendingTime && now <= pendingTime) {
+			abandonConfirmations.delete(userId);
+
+			const fishCount = userData.fishes.length;
+			await clearInventory(userId);
+			userData.fishes = [];
+			userData.inventoryWeight = 0;
+			await saveUserData(userData);
+
+			return new ReturnMessage({
+				chatId,
+				reaction: "🗑️",
+				content: `🗑️ *Inventário Limpo com Sucesso!*\n\n${userName}, todos os seus *${fishCount} peixe(s)* foram abandonados.`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		// Primeira execução ou confirmação expirada: define janela de 1 minuto
+		abandonConfirmations.set(userId, now + 60 * 1000);
+
+		const sortedFishes = [...userData.fishes].sort((a, b) => b.weight - a.weight);
+		let totalWeight = 0;
+		let fishList = "";
+		sortedFishes.forEach((fish, index) => {
+			totalWeight += fish.weight;
+			const rareMark = fish.isRare ? ` ${fish.emoji ?? "✨"} RARO!` : "";
+			fishList += `${index + 1}. ${fish.name}: ${fish.weight.toFixed(2)} kg${rareMark}\n`;
+		});
+
+		let msg = `⚠️ *CONFIRMAÇÃO: ABANDONAR PEIXES* ⚠️\n\n`;
+		msg += `Olá, ${userName}! Você solicitou o descarte do seu inventário de peixes.\n\n`;
+		msg += `📦 *Inventário Atual (${sortedFishes.length} peixe${sortedFishes.length > 1 ? "s" : ""}):*\n`;
+		msg += `${fishList}\n`;
+		msg += `⚖️ *Peso Total:* ${totalWeight.toFixed(2)} kg\n\n`;
+		msg += `🚨 *Atenção:* Essa ação é irreversível e removerá permanentemente todos os peixes listados acima!\n`;
+		msg += `⏳ Para confirmar, envie *!pesca-abandonar* novamente dentro de *1 minuto*.`;
+
+		return new ReturnMessage({
+			chatId,
+			reaction: "⚠️",
+			content: msg,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (error) {
+		logger.error("Erro abandonFishCommand:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "❌ Erro ao processar abandono de peixes."
 		});
 	}
 }
@@ -2934,6 +3086,23 @@ const commands = [
 		method: fishingDataCommand
 	}),
 	new Command({
+		name: "pesca-abandonar",
+		description: "Limpa seu inventário de peixes após confirmação",
+		category: "jogos",
+		cooldown: 0,
+		reactions: { after: "🗑️", error: "❌" },
+		method: abandonFishCommand
+	}),
+	new Command({
+		name: "abandonar-pesca",
+		hidden: true,
+		description: "Limpa seu inventário de peixes após confirmação",
+		category: "jogos",
+		cooldown: 0,
+		reactions: { after: "🗑️", error: "❌" },
+		method: abandonFishCommand
+	}),
+	new Command({
 		name: "psc-addBaits",
 		description: "Add Iscas",
 		category: "jogos",
@@ -3035,6 +3204,12 @@ const helper = {
 			desc: "Reseta os dados de pescaria do grupo (Apenas Administradores)",
 			usage: ["!pesca-reset"],
 			category: "jogos"
+		},
+		{
+			cmd: "!pesca-abandonar",
+			desc: "Limpa seu inventário de peixes após confirmação",
+			usage: ["!pesca-abandonar"],
+			category: "jogos"
 		}
 	]
 };
@@ -3045,5 +3220,6 @@ module.exports = {
 	forceSaveFishingData: saveSync,
 	addBaits,
 	addBuff,
-	UPGRADES
+	UPGRADES,
+	generateRareFishImage
 };
