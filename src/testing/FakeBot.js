@@ -26,10 +26,10 @@ class FakeBot {
 		this.pvAI = false;
 		this.ignoreInvites = true;
 		this.whitelistPV = [];
-		this.banido = false;
-		this.vip = false;
-		this.comunitario = false;
-		this.privado = false;
+		this.banido = options.banido ?? false;
+		this.vip = options.vip ?? false;
+		this.comunitario = options.comunitario ?? false;
+		this.privado = options.privado ?? false;
 		this.userAgent = "FakeBot/1.0";
 
 		// IDs de grupos de notificação — null = desabilitado

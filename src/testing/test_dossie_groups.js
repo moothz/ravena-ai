@@ -125,6 +125,62 @@ async function runTests() {
 	assert.strictEqual(cmdHandlerResult, null, "handleCommand must return null for dossieGroups");
 
 	console.log("✓ EventHandler and CommandHandler command ignore in dossieGroups passed");
+
+	// 6. Test that private and VIP bots do not generate dossiers or record dossier status
+	const SummaryCommands = require("../functions/SummaryCommands");
+	const normalBot = new FakeBot({ id: "normal", privado: false, vip: false });
+	const privateBot = new FakeBot({ id: "priv", privado: true });
+	const vipBot = new FakeBot({ id: "vip", vip: true });
+
+	const testChatNormal = "1111111111@g.us";
+	const testChatPrivate = "2222222222@g.us";
+	const testChatVip = "3333333333@g.us";
+
+	const msgNormal = createMessage({
+		content: "Olá grupo normal",
+		group: testChatNormal,
+		author: "5511000000001@s.whatsapp.net"
+	});
+	const msgPrivate = createMessage({
+		content: "Olá grupo privado",
+		group: testChatPrivate,
+		author: "5511000000002@s.whatsapp.net"
+	});
+	const msgVip = createMessage({
+		content: "Olá grupo vip",
+		group: testChatVip,
+		author: "5511000000003@s.whatsapp.net"
+	});
+
+	await SummaryCommands.storeMessage(msgNormal, testChatNormal, normalBot);
+	await SummaryCommands.storeMessage(msgPrivate, testChatPrivate, privateBot);
+	await SummaryCommands.storeMessage(msgVip, testChatVip, vipBot);
+
+	const statusNormal = await normalBot.database.dbGet(
+		"summaries",
+		"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
+		[testChatNormal]
+	);
+	const statusPrivate = await privateBot.database.dbGet(
+		"summaries",
+		"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
+		[testChatPrivate]
+	);
+	const statusVip = await vipBot.database.dbGet(
+		"summaries",
+		"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
+		[testChatVip]
+	);
+
+	assert.ok(
+		statusNormal && statusNormal.pending_text && statusNormal.pending_text.length > 0,
+		"Normal bot should update dossier status"
+	);
+	assert.strictEqual(statusPrivate, undefined, "Private bot should NOT update dossier status");
+	assert.strictEqual(statusVip, undefined, "VIP bot should NOT update dossier status");
+
+	console.log("✓ Private and VIP bots dossier suppression passed");
+
 	console.log("--- ALL TESTS PASSED! ---");
 	process.exit(0);
 }

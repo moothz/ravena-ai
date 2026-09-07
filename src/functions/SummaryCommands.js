@@ -363,6 +363,11 @@ ${formattedMessages}`;
  * @param {object} bot - Instância do bot para enviar logs
  */
 async function runGroupAnalysis(chatId, pendingText, bot) {
+	// Bots privados e vips não devem gerar dossiês
+	if (bot && (bot.privado || bot.vip)) {
+		return;
+	}
+
 	if (activeAnalyses.has(chatId)) {
 		// logger.debug(`[${chatId}] Análise de dossiê já em andamento, pulando.`);
 		return;
@@ -784,30 +789,34 @@ async function storeMessage(message, chatId, bot) {
 				[chatId]
 			);
 
-			// 3. Atualiza Dossiê (Contagem de caracteres e texto pendente na tabela STATUS)
-			const msgString = `${authorName}: ${textContent}\n`;
+			// 3. Atualiza Dossiê (apenas para bots normais: bots privados e vips não devem gerar dossiês)
+			const isDossierEligible = !bot || (!bot.privado && !bot.vip);
 
-			// Upsert dossier status
-			await database.dbRun(
-				DB_NAME,
-				`INSERT INTO group_dossier_status (group_id, total_length_recorded, pending_text) 
-                 VALUES (?, ?, ?)
-                 ON CONFLICT(group_id) DO UPDATE SET 
-                    total_length_recorded = total_length_recorded + LENGTH(?),
-                    pending_text = pending_text || ?`,
-				[chatId, msgString.length, msgString, msgString, msgString]
-			);
+			if (isDossierEligible) {
+				const msgString = `${authorName}: ${textContent}\n`;
 
-			// Busca o status para decidir se dispara análise
-			const dossierStatus = await database.dbGet(
-				DB_NAME,
-				"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
-				[chatId]
-			);
+				// Upsert dossier status
+				await database.dbRun(
+					DB_NAME,
+					`INSERT INTO group_dossier_status (group_id, total_length_recorded, pending_text) 
+	                 VALUES (?, ?, ?)
+	                 ON CONFLICT(group_id) DO UPDATE SET 
+	                    total_length_recorded = total_length_recorded + LENGTH(?),
+	                    pending_text = pending_text || ?`,
+					[chatId, msgString.length, msgString, msgString, msgString]
+				);
 
-			if (dossierStatus && dossierStatus.pending_text.length >= 10000) {
-				// Dispara análise sem dar await para não travar a resposta
-				runGroupAnalysis(chatId, dossierStatus.pending_text, bot);
+				// Busca o status para decidir se dispara análise
+				const dossierStatus = await database.dbGet(
+					DB_NAME,
+					"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
+					[chatId]
+				);
+
+				if (dossierStatus && dossierStatus.pending_text.length >= 10000) {
+					// Dispara análise sem dar await para não travar a resposta
+					runGroupAnalysis(chatId, dossierStatus.pending_text, bot);
+				}
 			}
 
 			// Legado: Salva na tabela antiga como redundância por enquanto ou se necessário
