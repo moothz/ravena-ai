@@ -714,51 +714,151 @@ class LLMService {
 	 * @param {Object} [options] - Opções originais da requisição (contexto do grupo, chatId, etc.)
 	 * @returns {Promise<string>}
 	 */
+	/**
+	 * Extrai chamadas de ferramentas a partir de respostas em XML/MiniMax nativo quando não vêm no JSON.
+	 * @param {string} content - Conteúdo da mensagem retornado pelo modelo
+	 * @returns {Array<Object>|null} - Lista de tool_calls no padrão OpenAI ou null se não houver
+	 * @private
+	 */
+	_extractXmlToolCalls(content) {
+		if (typeof content !== "string") return null;
+
+		// Checagem rápida de gatilhos
+		if (
+			!content.includes("minimax") &&
+			!content.includes("<tool_call") &&
+			!content.includes("<invoke")
+		) {
+			return null;
+		}
+
+		// Remove tokens de controle do MiniMax
+		const normalized = content
+			.replace(/\]<\]minimax\[>[\][]?/gi, "")
+			.replace(/<\|minimax:[^>]*\|>/gi, "")
+			.replace(/\[minimax\]/gi, "");
+
+		const invokeRegex =
+			/<invoke\s+name=["']([^"']+)["']>([\s\S]*?)(?:<\/invoke>|(?=<\/?invoke|<\/(?:minimax:)?tool_call>|$))/gi;
+		const toolCalls = [];
+		let match;
+
+		while ((match = invokeRegex.exec(normalized)) !== null) {
+			let fnName = match[1].trim();
+			const body = match[2];
+
+			// Normalização de aliases comuns
+			if (fnName === "web_fetch" || fnName === "get") {
+				fnName = "fetch_web_content";
+			} else if (fnName === "google_search" || fnName === "search") {
+				fnName = "web_search";
+			}
+
+			const args = {};
+
+			// Tenta extrair tags do tipo <parameter name="key">val</parameter>
+			const paramRegex = /<parameter\s+name=["']([^"']+)["']>([\s\S]*?)<\/parameter>/gi;
+			let paramMatch;
+			let foundParams = false;
+			while ((paramMatch = paramRegex.exec(body)) !== null) {
+				foundParams = true;
+				const key = paramMatch[1].trim();
+				const val = paramMatch[2].trim();
+				args[key] = val;
+			}
+
+			// Se não encontrou parâmetros nomeados, extrai tags diretas como <query>val</query>, <url>val</url>
+			if (!foundParams) {
+				const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/gi;
+				let tagMatch;
+				while ((tagMatch = tagRegex.exec(body)) !== null) {
+					const key = tagMatch[1].trim();
+					const val = tagMatch[2].trim();
+					if (val || !args[key]) {
+						args[key] = val;
+					}
+				}
+			}
+
+			// Se corpo tiver formato JSON direto
+			if (Object.keys(args).length === 0 && body.trim().startsWith("{")) {
+				try {
+					Object.assign(args, JSON.parse(body.trim()));
+				} catch (e) {}
+			}
+
+			toolCalls.push({
+				id: `call_xml_${Date.now()}_${toolCalls.length}`,
+				type: "function",
+				function: {
+					name: fnName,
+					arguments: JSON.stringify(args)
+				}
+			});
+		}
+
+		return toolCalls.length > 0 ? toolCalls : null;
+	}
+
+	/**
+	 * Despacha e executa uma chamada de ferramenta com tratamento unificado de erros
+	 * @param {string} fnName - Nome da função chamada pelo modelo
+	 * @param {Object} args - Argumentos passados
+	 * @param {Object} [options] - Opções originais da requisição (contexto do grupo, chatId, etc.)
+	 * @returns {Promise<string>}
+	 */
 	async executeToolCall(fnName, args = {}, options = {}) {
 		try {
-			if (fnName === "web_search") {
+			let normalizedName = fnName;
+			if (normalizedName === "web_fetch" || (normalizedName === "get" && args.url)) {
+				normalizedName = "fetch_web_content";
+			} else if (normalizedName === "google_search" || normalizedName === "search") {
+				normalizedName = "web_search";
+			}
+
+			if (normalizedName === "web_search") {
 				this.logger.info(`[LLMService] Executando web_search para: "${args.query}"`);
 				const res = await this.searchWeb(args.query);
 				this.logger.info(`[LLMService] Resultado do web_search (${res.length} caracteres)`);
 				return res;
 			}
 
-			if (fnName === "fetch_web_content") {
+			if (normalizedName === "fetch_web_content") {
 				this.logger.info(`[LLMService] Executando fetch_web_content para URL: ${args.url}`);
 				const res = await this.fetchWebContent(args.url);
 				this.logger.info(`[LLMService] Resultado do fetch_web_content (${res.length} caracteres)`);
 				return res;
 			}
 
-			if (fnName === "commands_helper") {
+			if (normalizedName === "commands_helper") {
 				this.logger.info(`[LLMService] Executando commands_helper para: "${args.query}"`);
 				const res = await this.searchCommands(args.query);
 				this.logger.info(`[LLMService] Resultado do commands_helper (${res.length} caracteres)`);
 				return res;
 			}
 
-			if (fnName === "get_current_time") {
+			if (normalizedName === "get_current_time") {
 				this.logger.info("[LLMService] Executando get_current_time");
 				const res = this.getCurrentTime();
 				this.logger.info(`[LLMService] Resultado de get_current_time: ${res}`);
 				return res;
 			}
 
-			if (fnName === "get_weather") {
+			if (normalizedName === "get_weather") {
 				this.logger.info(`[LLMService] Executando get_weather para: "${args.city}"`);
 				const res = await this.getWeather(args.city);
 				this.logger.info(`[LLMService] Resultado de get_weather (${res.length} caracteres)`);
 				return res;
 			}
 
-			if (fnName === "search_wikipedia") {
+			if (normalizedName === "search_wikipedia") {
 				this.logger.info(`[LLMService] Executando search_wikipedia para: "${args.query}"`);
 				const res = await this.searchWikipedia(args.query);
 				this.logger.info(`[LLMService] Resultado de search_wikipedia (${res.length} caracteres)`);
 				return res;
 			}
 
-			if (fnName === "search_imdb") {
+			if (normalizedName === "search_imdb") {
 				const queryTitle = args.title || args.query;
 				this.logger.info(`[LLMService] Executando search_imdb para: "${queryTitle}"`);
 				const res = await this.searchImdb(queryTitle);
@@ -766,7 +866,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "search_anime") {
+			if (normalizedName === "search_anime") {
 				const animeName = args.name || args.query;
 				this.logger.info(`[LLMService] Executando search_anime para: "${animeName}"`);
 				const res = await this.searchAnime(animeName);
@@ -774,7 +874,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "query_vehicle_plate") {
+			if (normalizedName === "query_vehicle_plate") {
 				const plate = args.plate || args.placa || args.query;
 				this.logger.info(`[LLMService] Executando query_vehicle_plate para: "${plate}"`);
 				const res = await this.queryVehiclePlate(plate);
@@ -784,7 +884,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "check_live_streams") {
+			if (normalizedName === "check_live_streams") {
 				const platform = args.platform || "all";
 				this.logger.info(`[LLMService] Executando check_live_streams para platform: "${platform}"`);
 				const res = await this.checkLiveStreams(platform);
@@ -792,7 +892,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "query_metar_aviation") {
+			if (normalizedName === "query_metar_aviation") {
 				const icao = args.icao || args.code || args.query;
 				this.logger.info(`[LLMService] Executando query_metar_aviation para icao: "${icao}"`);
 				const res = await this.queryMetar(icao);
@@ -802,7 +902,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "search_lyrics") {
+			if (normalizedName === "search_lyrics") {
 				const queryMusic = args.query || args.song || args.music || args.title;
 				this.logger.info(`[LLMService] Executando search_lyrics para: "${queryMusic}"`);
 				const res = await this.searchMusicLyrics(queryMusic);
@@ -810,7 +910,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "get_gaming_freebies") {
+			if (normalizedName === "get_gaming_freebies") {
 				const platform = args.platform || "all";
 				this.logger.info(
 					`[LLMService] Executando get_gaming_freebies para platform: "${platform}"`
@@ -822,7 +922,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "search_steam") {
+			if (normalizedName === "search_steam") {
 				const query = args.query || args.game || args.user;
 				const type = args.type || "game";
 				this.logger.info(`[LLMService] Executando search_steam (${type}) para: "${query}"`);
@@ -831,7 +931,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "get_daily_horoscope") {
+			if (normalizedName === "get_daily_horoscope") {
 				const signo = args.signo || args.sign || "";
 				this.logger.info(`[LLMService] Executando get_daily_horoscope para signo: "${signo}"`);
 				const res = await this.getDailyHoroscope(signo);
@@ -841,7 +941,7 @@ class LLMService {
 				return res;
 			}
 
-			if (fnName === "get_group_ranking_stats") {
+			if (normalizedName === "get_group_ranking_stats") {
 				const chatId = args.chatId || options.chatId || options.groupId || options.group?.id;
 				this.logger.info(
 					`[LLMService] Executando get_group_ranking_stats para chatId: "${chatId}"`
@@ -853,8 +953,8 @@ class LLMService {
 				return res;
 			}
 
-			if (typeof this[fnName] === "function") {
-				return await this[fnName](args);
+			if (typeof this[normalizedName] === "function") {
+				return await this[normalizedName](args);
 			}
 
 			return "Ferramenta não reconhecida.";
@@ -1870,7 +1970,7 @@ class LLMService {
 
 			const timeout = options.timeout ?? this.apiTimeout;
 
-			const response = await axios.post(endpoint, payload, {
+			let currentResponse = await axios.post(endpoint, payload, {
 				headers: {
 					Authorization: apiKey,
 					"Content-Type": "application/json"
@@ -1878,23 +1978,39 @@ class LLMService {
 				timeout
 			});
 
-			this._trackUsage(options.providerName || "OpenAI", response.data, model, options);
+			this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
 
-			const message = response.data?.choices?.[0]?.message;
+			let turn = 0;
+			const maxTurns = 4;
 
-			// Interação com o Loop do Agente (tool_calls)
-			if (
-				allowToolCalling &&
-				message?.tool_calls &&
-				Array.isArray(message.tool_calls) &&
-				message.tool_calls.length > 0
-			) {
+			// Loop do Agente (tool_calls estruturado ou fallback XML/MiniMax)
+			while (allowToolCalling && turn < maxTurns) {
+				const currentMessage = currentResponse.data?.choices?.[0]?.message;
+				if (!currentMessage) break;
+
+				let toolCalls = null;
+				if (Array.isArray(currentMessage.tool_calls) && currentMessage.tool_calls.length > 0) {
+					toolCalls = currentMessage.tool_calls;
+				} else if (typeof currentMessage.content === "string") {
+					toolCalls = this._extractXmlToolCalls(currentMessage.content);
+				}
+
+				if (!toolCalls || toolCalls.length === 0) {
+					break;
+				}
+
+				turn++;
 				this.logger.info(
-					`[LLMService][OpenAI] LLM solicitou ${message.tool_calls.length} tool call(s)`
+					`[LLMService][OpenAI] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
 				);
-				messages.push(message);
 
-				for (const toolCall of message.tool_calls) {
+				messages.push({
+					role: "assistant",
+					content: currentMessage.content || null,
+					tool_calls: toolCalls
+				});
+
+				for (const toolCall of toolCalls) {
 					const fnName = toolCall.function?.name;
 					let parsedArgs = {};
 					try {
@@ -1920,18 +2036,19 @@ class LLMService {
 				}
 
 				this.logger.info(
-					"[LLMService][OpenAI] Enviando segunda chamada ao LLM com os resultados das tools..."
+					`[LLMService][OpenAI] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
 				);
 
-				const secondPayload = {
+				const nextPayload = {
 					model,
 					messages,
+					tools: this.getTools(),
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
 
-				const secondResponse = await axios.post(endpoint, secondPayload, {
+				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
 						Authorization: apiKey,
 						"Content-Type": "application/json"
@@ -1939,11 +2056,15 @@ class LLMService {
 					timeout
 				});
 
-				this._trackUsage(options.providerName || "OpenAI", secondResponse.data, model, options);
-				return secondResponse.data;
+				this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
 			}
 
-			return response.data;
+			const finalMessage = currentResponse.data?.choices?.[0]?.message;
+			if (finalMessage && typeof finalMessage.content === "string") {
+				finalMessage.content = this._cleanResponse(finalMessage.content);
+			}
+
+			return currentResponse.data;
 		} catch (error) {
 			this.logger.error("Erro ao chamar API compatível com OpenAI:", error.message);
 			throw error;
@@ -2032,7 +2153,7 @@ class LLMService {
 
 			const timeout = options.timeout ?? this.apiTimeout;
 
-			const response = await axios.post(endpoint, payload, {
+			let currentResponse = await axios.post(endpoint, payload, {
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
 					"Content-Type": "application/json",
@@ -2042,23 +2163,39 @@ class LLMService {
 				timeout
 			});
 
-			this._trackUsage(options.providerName || "OpenRouter", response.data, model, options);
+			this._trackUsage(options.providerName || "OpenRouter", currentResponse.data, model, options);
 
-			const message = response.data?.choices?.[0]?.message;
+			let turn = 0;
+			const maxTurns = 4;
 
-			// Interação com o Loop do Agente (tool_calls)
-			if (
-				allowToolCalling &&
-				message?.tool_calls &&
-				Array.isArray(message.tool_calls) &&
-				message.tool_calls.length > 0
-			) {
+			// Loop do Agente (tool_calls estruturado ou fallback XML/MiniMax)
+			while (allowToolCalling && turn < maxTurns) {
+				const currentMessage = currentResponse.data?.choices?.[0]?.message;
+				if (!currentMessage) break;
+
+				let toolCalls = null;
+				if (Array.isArray(currentMessage.tool_calls) && currentMessage.tool_calls.length > 0) {
+					toolCalls = currentMessage.tool_calls;
+				} else if (typeof currentMessage.content === "string") {
+					toolCalls = this._extractXmlToolCalls(currentMessage.content);
+				}
+
+				if (!toolCalls || toolCalls.length === 0) {
+					break;
+				}
+
+				turn++;
 				this.logger.info(
-					`[LLMService][OpenRouter] LLM solicitou ${message.tool_calls.length} tool call(s)`
+					`[LLMService][OpenRouter] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
 				);
-				messages.push(message);
 
-				for (const toolCall of message.tool_calls) {
+				messages.push({
+					role: "assistant",
+					content: currentMessage.content || null,
+					tool_calls: toolCalls
+				});
+
+				for (const toolCall of toolCalls) {
 					const fnName = toolCall.function?.name;
 					let parsedArgs = {};
 					try {
@@ -2084,18 +2221,19 @@ class LLMService {
 				}
 
 				this.logger.info(
-					"[LLMService][OpenRouter] Enviando segunda chamada ao LLM com os resultados das tools..."
+					`[LLMService][OpenRouter] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
 				);
 
-				const secondPayload = {
+				const nextPayload = {
 					model,
 					messages,
+					tools: this.getTools(),
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
 
-				const secondResponse = await axios.post(endpoint, secondPayload, {
+				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
 						Authorization: `Bearer ${apiKey}`,
 						"Content-Type": "application/json",
@@ -2105,11 +2243,20 @@ class LLMService {
 					timeout
 				});
 
-				this._trackUsage(options.providerName || "OpenRouter", secondResponse.data, model, options);
-				return secondResponse.data;
+				this._trackUsage(
+					options.providerName || "OpenRouter",
+					currentResponse.data,
+					model,
+					options
+				);
 			}
 
-			return response.data;
+			const finalMessage = currentResponse.data?.choices?.[0]?.message;
+			if (finalMessage && typeof finalMessage.content === "string") {
+				finalMessage.content = this._cleanResponse(finalMessage.content);
+			}
+
+			return currentResponse.data;
 		} catch (error) {
 			this.logger.error("Erro ao chamar API OpenRouter:", error.message);
 			throw error;
@@ -2139,7 +2286,8 @@ class LLMService {
 		if (typeof response !== "string") return response;
 
 		let cleaned = response
-			.replace(/<think>.*?<\/think>/gs, "")
+			.replace(/<think>[\s\S]*?<\/think>/gi, "")
+			.replace(/<think>[\s\S]*/gi, "")
 			.replace(/<\|think\|>.*?<channel\|>/gs, "")
 			.replace(/<\|thought\|>.*?<\|thought_end\|>/gs, "")
 			.replace(/<\/start_of_turn>/g, "")
@@ -2149,6 +2297,17 @@ class LLMService {
 			.replace(/<channel\|>/g, "")
 			.replace(/<\|turn\|>/g, "")
 			.replace(/<turn\|>/g, "")
+			// Delimitadores e tags residuais MiniMax/tool_call
+			.replace(/\]<\]minimax\[>[\][]?/gi, "")
+			.replace(/<\|minimax:[^>]*\|>/gi, "")
+			.replace(/\[minimax\]/gi, "")
+			.replace(/<(?:minimax:)?tool_call>[\s\S]*?<\/(?:minimax:)?tool_call>/gi, "")
+			.replace(
+				/<invoke\s+name=["'][^"']+["']>[\s\S]*?(?:<\/invoke>|(?=<\/?invoke|<\/(?:minimax:)?tool_call>|$))/gi,
+				""
+			)
+			.replace(/<\/?(?:minimax:)?tool_call>/gi, "")
+			.replace(/<\/?invoke[^>]*>/gi, "")
 			.trim();
 
 		// Remove blocos de código Markdown (por exemplo, ```json ... ``` ou ``` ... ```) se existirem
@@ -2250,30 +2409,55 @@ class LLMService {
 
 			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
 
-			const response = await axios.post(endpoint, payload, {
+			let currentResponse = await axios.post(endpoint, payload, {
 				headers: {
 					"Content-Type": "application/json"
 				},
 				timeout: toTime
 			});
 
-			this._trackUsage(options.providerName || "Ollama", response.data, payload.model, options);
+			this._trackUsage(
+				options.providerName || "Ollama",
+				currentResponse.data,
+				payload.model,
+				options
+			);
 
-			const msg = response.data?.message;
-			if (
-				allowToolCalling &&
-				msg?.tool_calls &&
-				Array.isArray(msg.tool_calls) &&
-				msg.tool_calls.length > 0
-			) {
+			let turn = 0;
+			const maxTurns = 4;
+
+			while (allowToolCalling && turn < maxTurns) {
+				const currentMsg = currentResponse.data?.message;
+				if (!currentMsg) break;
+
+				let toolCalls = null;
+				if (Array.isArray(currentMsg.tool_calls) && currentMsg.tool_calls.length > 0) {
+					toolCalls = currentMsg.tool_calls;
+				} else if (typeof currentMsg.content === "string") {
+					toolCalls = this._extractXmlToolCalls(currentMsg.content);
+				}
+
+				if (!toolCalls || toolCalls.length === 0) {
+					break;
+				}
+
+				turn++;
 				this.logger.info(
-					`[LLMService][Ollama] LLM solicitou ${msg.tool_calls.length} tool call(s)`
+					`[LLMService][Ollama] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
 				);
-				messages.push(msg);
 
-				for (const toolCall of msg.tool_calls) {
+				messages.push({
+					role: "assistant",
+					content: currentMsg.content || null,
+					tool_calls: toolCalls
+				});
+
+				for (const toolCall of toolCalls) {
 					const fnName = toolCall.function?.name;
-					const parsedArgs = toolCall.function?.arguments || {};
+					const parsedArgs =
+						typeof toolCall.function?.arguments === "string"
+							? JSON.parse(toolCall.function.arguments)
+							: toolCall.function?.arguments || {};
 
 					const toolOutput = await this.executeToolCall(fnName, parsedArgs, options);
 
@@ -2284,18 +2468,19 @@ class LLMService {
 				}
 
 				this.logger.info(
-					"[LLMService][Ollama] Enviando segunda chamada ao Ollama com os resultados das tools..."
+					`[LLMService][Ollama] Enviando chamada subsequente ${turn + 1} ao Ollama com os resultados das tools...`
 				);
 
-				const secondPayload = {
+				const nextPayload = {
 					model: payload.model,
 					messages,
+					tools: this.getTools(),
 					format: ollamaFormat,
 					stream: false,
 					options: payload.options
 				};
 
-				const secondResponse = await axios.post(endpoint, secondPayload, {
+				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
 						"Content-Type": "application/json"
 					},
@@ -2304,14 +2489,18 @@ class LLMService {
 
 				this._trackUsage(
 					options.providerName || "Ollama",
-					secondResponse.data,
+					currentResponse.data,
 					payload.model,
 					options
 				);
-				return secondResponse.data;
 			}
 
-			return response.data;
+			const finalMsg = currentResponse.data?.message;
+			if (finalMsg && typeof finalMsg.content === "string") {
+				finalMsg.content = this._cleanResponse(finalMsg.content);
+			}
+
+			return currentResponse.data;
 		} catch (error) {
 			this.logger.error("[LLMService] Error calling Ollama API:", error.message);
 			if (error.response) {
