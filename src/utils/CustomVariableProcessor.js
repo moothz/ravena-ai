@@ -426,10 +426,17 @@ class CustomVariableProcessor {
 				return null;
 			}
 
-			// Filtra para excluir o próprio bot
-			const filteredParticipants = participants.filter(
-				(p) => p.id._serialized !== bot.client.info.wid._serialized
+			// Filtra para excluir o próprio bot e contas de robôs (se identificadas)
+			let filteredParticipants = participants.filter(
+				(p) => p.id._serialized !== bot.client.info.wid._serialized && !p.isBot
 			);
+
+			if (filteredParticipants.length === 0) {
+				// Fallback se todos forem robôs ou não houver humanos identificados
+				filteredParticipants = participants.filter(
+					(p) => p.id._serialized !== bot.client.info.wid._serialized
+				);
+			}
 
 			if (filteredParticipants.length === 0) {
 				return null;
@@ -496,11 +503,13 @@ class CustomVariableProcessor {
 		const membroRandomMatches = text.match(/{membroRandom}/g);
 		if (membroRandomMatches && context.bot && context.message && context.message.group) {
 			try {
-				const randomMember = await this.getRandomGroupMember(context.bot, context.message.group);
-				const memberName = randomMember
-					? (randomMember.pushname ?? randomMember.name ?? "Alguém")
-					: "Alguém";
-				text = text.replace(/{membroRandom}/g, memberName.pushName ?? memberName);
+				for (let i = 0; i < membroRandomMatches.length; i++) {
+					const randomMember = await this.getRandomGroupMember(context.bot, context.message.group);
+					const memberName = randomMember
+						? (randomMember.pushname ?? randomMember.name ?? "Alguém")
+						: "Alguém";
+					text = text.replace(/{membroRandom}/, memberName);
+				}
 			} catch (error) {
 				this.logger.error("Erro ao processar variável {membroRandom}:", error);
 				text = text.replace(/{membroRandom}/g, "Alguém");
@@ -526,14 +535,15 @@ class CustomVariableProcessor {
 					let mentionName = null;
 
 					// 1. Primeiro, verifica se há pessoas mencionadas na mensagem original
-					if (
-						context.message.origin.mentionedIds &&
-						context.message.origin.mentionedIds.length > 0
-					) {
+					const msgMentions =
+						context.message.origin?.mentionedIds ??
+						context.message.mentionedIds ??
+						context.message.mentions ??
+						[];
+
+					if (Array.isArray(msgMentions) && msgMentions.length > 0) {
 						// Filtra para usar apenas menções que ainda não foram usadas
-						const availableMentions = context.message.origin.mentionedIds.filter(
-							(id) => !usedMentions.includes(id)
-						);
+						const availableMentions = msgMentions.filter((id) => !usedMentions.includes(id));
 						this.logger.debug(`[processContextVariables][availableMentions] `, availableMentions);
 						if (availableMentions.length > 0) {
 							// Seleciona uma menção aleatória das disponíveis, sem pegar contato
@@ -544,10 +554,10 @@ class CustomVariableProcessor {
 							try {
 								// Obtém informações do contato mencionado
 								mentionContact = await context.bot.client.getContactById(mentionId);
-								mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user.split("@")[0]}`;
+								mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0] ?? String(mentionId).split("@")[0]}`;
 							} catch (err) {
 								this.logger.error("Erro ao obter contato mencionado:", err);
-								mentionName = `@${mentionId.split("@")[0]}`;
+								mentionName = `@${String(mentionId).split("@")[0]}`;
 							}
 
 							// Marca esta menção como usada
@@ -557,7 +567,10 @@ class CustomVariableProcessor {
 					}
 
 					// 2. Se não há menções ou todas já foram usadas, tenta usar a mensagem citada
-					const quotedMsg = await context.message.origin.getQuotedMessage().catch(() => null);
+					const quotedMsg =
+						typeof context.message.origin?.getQuotedMessage === "function"
+							? await context.message.origin.getQuotedMessage().catch(() => null)
+							: null;
 
 					if (quotedMsg && !usedMentions.includes(quotedMsg.author)) {
 						// Usa o contato da mensagem citada
@@ -565,7 +578,7 @@ class CustomVariableProcessor {
 							const mentionContact = await quotedMsg.getContact();
 							if (mentionContact) {
 								mentionId = mentionContact.id._serialized;
-								mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0]}`;
+								mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0] ?? String(mentionId).split("@")[0]}`;
 
 								// Marca esta menção como usada
 								usedMentions.push(mentionId);
@@ -579,7 +592,7 @@ class CustomVariableProcessor {
 					// 3. Se não há mensagem citada ou já foi usada, seleciona um membro aleatório - a não ser que tenha um fallback especificado
 					if (fallbackNumber) {
 						const mentionContact = await context.bot.client.getContactById(fallbackNumber);
-						mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0]}`;
+						mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0] ?? String(fallbackNumber).split("@")[0]}`;
 
 						return { mentionId: fallbackNumber, mentionName, mentionContact };
 					} else {
@@ -588,12 +601,22 @@ class CustomVariableProcessor {
 								// Obtém membros que ainda não foram usados
 								const chat = await context.bot.client.getChatById(context.message.group);
 								if (chat && chat.isGroup && Array.isArray(chat.participants)) {
-									// Filtra participantes para excluir o próprio bot e menções já usadas
-									const filteredParticipants = chat.participants.filter(
+									// Filtra participantes para excluir o próprio bot, robôs e menções já usadas
+									let filteredParticipants = chat.participants.filter(
 										(p) =>
 											p.id._serialized !== context.bot.client.info.wid._serialized &&
+											!p.isBot &&
 											!usedMentions.includes(p.id._serialized)
 									);
+
+									if (filteredParticipants.length === 0) {
+										// Fallback se todos forem robôs
+										filteredParticipants = chat.participants.filter(
+											(p) =>
+												p.id._serialized !== context.bot.client.info.wid._serialized &&
+												!usedMentions.includes(p.id._serialized)
+										);
+									}
 
 									if (filteredParticipants.length > 0) {
 										// Seleciona um participante aleatório
@@ -604,16 +627,23 @@ class CustomVariableProcessor {
 
 										// Obtém o objeto de contato
 										const mentionContact = await context.bot.client.getContactById(mentionId);
-										mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0]}`;
+										mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0] ?? String(mentionId).split("@")[0]}`;
 
 										// Marca esta menção como usada
 										usedMentions.push(mentionId);
 										return { mentionId, mentionName, mentionContact };
 									} else if (chat.participants.length > 1) {
 										// Se todos já foram usados, reseta e usa qualquer um exceto o bot
-										const nonBotParticipants = chat.participants.filter(
-											(p) => p.id._serialized !== context.bot.client.info.wid._serialized
+										let nonBotParticipants = chat.participants.filter(
+											(p) =>
+												p.id._serialized !== context.bot.client.info.wid._serialized && !p.isBot
 										);
+
+										if (nonBotParticipants.length === 0) {
+											nonBotParticipants = chat.participants.filter(
+												(p) => p.id._serialized !== context.bot.client.info.wid._serialized
+											);
+										}
 
 										if (nonBotParticipants.length > 0) {
 											const randomIndex = Math.floor(Math.random() * nonBotParticipants.length);
@@ -623,7 +653,7 @@ class CustomVariableProcessor {
 
 											// Obtém o objeto de contato
 											const mentionContact = await context.bot.client.getContactById(mentionId);
-											mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0]}`;
+											mentionName = `@${mentionContact?.number?.split("@")[0] ?? mentionContact?.id?.user?.split("@")[0] ?? String(mentionId).split("@")[0]}`;
 
 											return { mentionId, mentionName, mentionContact };
 										}

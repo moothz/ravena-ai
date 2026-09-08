@@ -19,9 +19,11 @@ class DiscordApiClient {
 				GatewayIntentBits.GuildMembers,
 				GatewayIntentBits.GuildMessages,
 				GatewayIntentBits.MessageContent,
-				GatewayIntentBits.DirectMessages
+				GatewayIntentBits.DirectMessages,
+				GatewayIntentBits.GuildMessageReactions,
+				GatewayIntentBits.DirectMessageReactions
 			],
-			partials: [Partials.Channel]
+			partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User]
 		});
 
 		this.token = token;

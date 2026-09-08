@@ -131,7 +131,8 @@ class DiscordBot {
 			sendPresenceUpdate: async () => true,
 			info: {
 				wid: {
-					_serialized: this.discordClient.user ? this.discordClient.user.id : "discord-bot"
+					_serialized: this.discordClient.user ? this.discordClient.user.id : "discord-bot",
+					user: this.discordClient.user ? this.discordClient.user.id : "discord-bot"
 				}
 			}
 		};
@@ -147,14 +148,30 @@ class DiscordBot {
 
 		this.logger.info("Registering Discord event listeners...");
 
-		this.discordClient.on("ready", () => {
+		this.discordClient.on("ready", async () => {
 			this.discordBotId = this.discordClient.user.id;
 			this.phoneNumber = this.discordBotId;
 			// Update fake client info now that we have the real user id
 			this.client.info.wid._serialized = this.discordBotId;
+			this.client.info.wid.user = this.discordBotId;
 			this.logger.info(
 				`>>> SUCESSO! Bot ${this.id} (${this.discordClient.user.tag}) está conectado ao Discord! (ID: ${this.discordBotId}) <<<`
 			);
+
+			// Sincroniza membros de todas as guildas para popular o cache
+			try {
+				for (const guild of this.discordClient.guilds.cache.values()) {
+					await guild.members.fetch().catch((e) => {
+						this.logger.warn(
+							`[${this.id}] Não foi possível buscar membros de ${guild.name} (${guild.id}): ${e.message}`
+						);
+					});
+				}
+				this.logger.info(`[${this.id}] Cache de membros das guildas sincronizado.`);
+			} catch (err) {
+				this.logger.warn(`[${this.id}] Erro ao sincronizar membros das guildas:`, err);
+			}
+
 			this._onInstanceConnected();
 			this._sendStartupNotifications();
 		});
@@ -237,6 +254,9 @@ class DiscordBot {
 			this.logger.debug(`_handleGroupJoin`, guild);
 		}
 		this.logger.info(`Bot foi adicionado a um novo servidor: ${guild.name} (${guild.id})`);
+		try {
+			await guild.members.fetch().catch(() => {});
+		} catch (_) {}
 		// Simula o evento de entrada em grupo
 		if (this.eventHandler && typeof this.eventHandler.onGroupJoin === "function") {
 			const mockGroupNotification = {
@@ -357,10 +377,41 @@ class DiscordBot {
 				caption = message.content; // No Discord, o texto acompanha o anexo
 			}
 
+			let mentionsList = [];
+			if (message.mentions?.users) {
+				if (typeof message.mentions.users.map === "function") {
+					mentionsList = message.mentions.users.map((u) => u.id);
+				} else if (typeof message.mentions.users.values === "function") {
+					mentionsList = Array.from(message.mentions.users.values()).map((u) => u.id);
+				} else if (Array.isArray(message.mentions.users)) {
+					mentionsList = message.mentions.users.map((u) => u.id);
+				}
+			}
+			const hasQuotedMsg = !!(message.reference && message.reference.messageId);
+
+			const getQuotedMsgFn = async () => {
+				if (message.reference && message.reference.messageId) {
+					try {
+						const referencedMessage = await message.channel.messages.fetch(
+							message.reference.messageId
+						);
+						return await this.formatMessageFromDiscord(referencedMessage);
+					} catch (quotedErr) {
+						this.logger.debug(
+							`[getQuotedMessage] Não foi possível buscar mensagem referenciada: ${quotedErr.message}`
+						);
+						return null;
+					}
+				}
+				return null;
+			};
+
+			const botUserId = this.discordClient.user?.id ?? this.discordBotId;
+
 			const formattedMessage = {
 				discordMessage: message,
 				id: message.id,
-				fromMe: message.author.id === this.discordClient.user.id,
+				fromMe: message.author.id === botUserId,
 				group: isGroup ? channelId : null,
 				from: channelId, // No Discord, 'from' é o canal
 				guildId, // Necessário pro discord
@@ -371,7 +422,8 @@ class DiscordBot {
 				type,
 				content,
 				body: message.content, // O corpo do texto, sempre
-				mentions: message.mentions.users.map((u) => u.id),
+				mentions: mentionsList,
+				mentionedIds: mentionsList,
 				caption,
 				origin: {},
 				responseTime,
@@ -379,17 +431,19 @@ class DiscordBot {
 				key: {
 					id: message.id,
 					remoteJid: channelId,
-					fromMe: message.author.id === this.discordClient.user.id
+					fromMe: message.author.id === botUserId
 				},
 				hasMedia: !!mediaInfo,
+				hasQuotedMsg,
 
 				getContact: async () => this.getContactDetails(authorId),
 				getChat: async () => this.getChatDetails(channelId),
+				getQuotedMessage: getQuotedMsgFn,
 				delete: async () => message.delete(),
 				downloadMedia: async () => {
 					if (mediaInfo && mediaInfo.url) {
 						const response = await axios.get(mediaInfo.url, { responseType: "arraybuffer" });
-						const base64Data = Buffer.from(response.data, "binary").toString("base64");
+						const base64Data = Buffer.from(response.data).toString("base64");
 						return {
 							mimetype: mediaInfo.mimetype,
 							data: base64Data,
@@ -409,8 +463,8 @@ class DiscordBot {
 				react: async (emoji) => {
 					try {
 						for (const r of message.reactions.cache.values()) {
-							if (r.me) {
-								await r.users.remove(this.discordClient.user.id).catch(() => {});
+							if (r.me && botUserId) {
+								await r.users.remove(botUserId).catch(() => {});
 							}
 						}
 					} catch (_) {}
@@ -418,17 +472,10 @@ class DiscordBot {
 				},
 				getContact: formattedMessage.getContact,
 				getChat: formattedMessage.getChat,
-				getQuotedMessage: async () => {
-					if (message.reference && message.reference.messageId) {
-						const referencedMessage = await message.channel.messages.fetch(
-							message.reference.messageId
-						);
-						return await this.formatMessageFromDiscord(referencedMessage);
-					}
-					return null;
-				},
+				getQuotedMessage: getQuotedMsgFn,
 				delete: async () => message.delete(),
-				body: content
+				body: content,
+				mentionedIds: mentionsList
 			};
 
 			if (!skipCache) {
@@ -514,8 +561,14 @@ class DiscordBot {
 			if (isGroup) {
 				const permissions = channel.permissionsFor(this.discordClient.user);
 				if (permissions) {
-					if (!permissions.has(PermissionsBitField.Flags.SendMessages)) {
-						throw new Error(`Bot sem permissão SEND_MESSAGES no canal ${channel.name} (${chatId})`);
+					const canSend = channel.isThread()
+						? permissions.has(PermissionsBitField.Flags.SendMessagesInThreads) ||
+							permissions.has(PermissionsBitField.Flags.SendMessages)
+						: permissions.has(PermissionsBitField.Flags.SendMessages);
+					if (!canSend) {
+						throw new Error(
+							`Bot sem permissão para enviar mensagens no canal ${channel.name} (${chatId})`
+						);
 					}
 					// Se for enviar mídia, checar ATTACH_FILES
 					const isMedia =
@@ -561,7 +614,7 @@ class DiscordBot {
 					fileBuffer = Buffer.from(content.data, "base64");
 				} else if (content.url) {
 					const response = await axios.get(content.url, { responseType: "arraybuffer" });
-					fileBuffer = Buffer.from(response.data, "binary");
+					fileBuffer = Buffer.from(response.data);
 				} else {
 					throw new Error("Media content must have 'data' (base64) or 'url'.");
 				}
@@ -611,11 +664,16 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			) {
 				// Replace @userId occurrences in text with plain "@name" (no ping)
 				for (const id of options.mentions) {
-					const cleanId = id.split("@")[0];
-					// Try to resolve a display name from the Discord client cache
+					const cleanId = String(id)
+						.split("@")[0]
+						.replace(/[<@!>]/g, "");
+					// Try to resolve a display name from the Discord client cache or fetch from API
 					let displayName = cleanId;
 					try {
-						const user = this.discordClient.users.cache.get(cleanId);
+						let user = this.discordClient.users.cache.get(cleanId);
+						if (!user) {
+							user = await this.discordClient.users.fetch(cleanId).catch(() => null);
+						}
 						if (user) displayName = user.globalName || user.username || cleanId;
 					} catch (_) {
 						/* ignore */
@@ -788,19 +846,28 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 	async getContactDetails(userId) {
 		try {
-			const user = await this.discordClient.users.fetch(userId);
+			const cleanId = String(userId)
+				.split("@")[0]
+				.replace(/[<@!>]/g, "");
+			const user = await this.discordClient.users.fetch(cleanId);
+			const displayName = user.globalName || user.username;
 			return {
 				id: { _serialized: user.id },
-				name: user.globalName || user.username,
-				pushname: user.username,
+				name: displayName,
+				pushname: displayName,
 				number: user.id,
-				isUser: true,
+				isUser: !user.bot,
+				isBot: user.bot,
 				picture: user.displayAvatarURL()
 			};
 		} catch (error) {
 			this.logger.warn(`[getContactDetails] Não foi possível encontrar o usuário ${userId}.`);
 			return {
-				id: { _serialized: userId },
+				id: {
+					_serialized: String(userId)
+						.split("@")[0]
+						.replace(/[<@!>]/g, "")
+				},
 				name: "Usuário Desconhecido",
 				isUser: true,
 				_isPartial: true
@@ -810,35 +877,106 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 	async getChatDetails(channelId) {
 		try {
-			const channel = await this.discordClient.channels.fetch(channelId);
+			let channel = null;
+			let guild = null;
+
+			try {
+				channel = await this.discordClient.channels.fetch(channelId);
+			} catch (chanErr) {
+				// Se não encontrar como canal, tenta como Guild ID
+				guild = await this.discordClient.guilds.fetch(channelId).catch(() => null);
+				if (!guild) throw chanErr;
+			}
+
+			const toMembersArray = (collection) => {
+				if (!collection) return [];
+				if (Array.isArray(collection)) return collection;
+				if (typeof collection.values === "function") return Array.from(collection.values());
+				return Array.from(collection);
+			};
+
+			// Caso seja uma guilda direta
+			if (guild && !channel) {
+				if (guild.memberCount > guild.members.cache.size) {
+					await guild.members.fetch().catch((e) => {
+						this.logger.warn(
+							`[getChatDetails] Falha ao buscar membros da guilda ${guild.id}: ${e.message}`
+						);
+					});
+				}
+
+				const guildMembers = toMembersArray(guild.members.cache);
+				return {
+					id: { _serialized: guild.id },
+					name: guild.name,
+					isGroup: true,
+					participants: guildMembers.map((m) => {
+						const hasAdminPerm = m.permissions.has(PermissionsBitField.Flags.Administrator);
+						const hasSpecificRole = m.roles.cache.some((role) => role.name === "ravenadmin");
+						return {
+							id: { _serialized: m.id },
+							name: m.displayName || m.user.globalName || m.user.username,
+							pushname: m.user.username,
+							number: m.id,
+							isAdmin: hasAdminPerm || hasSpecificRole,
+							isBot: m.user.bot
+						};
+					}),
+					groupMetadata: {
+						desc: guild.description || ""
+					}
+				};
+			}
+
 			if (channel.isDMBased()) {
 				return {
 					id: { _serialized: channel.id },
-					name: channel.recipient ? channel.recipient.username : "DM",
+					name: channel.recipient
+						? channel.recipient.globalName || channel.recipient.username
+						: "DM",
 					isGroup: false
 				};
 			}
+
+			if (channel.guild) {
+				if (channel.guild.memberCount > channel.guild.members.cache.size) {
+					await channel.guild.members.fetch().catch((e) => {
+						this.logger.warn(
+							`[getChatDetails] Falha ao buscar membros da guilda ${channel.guild.id}: ${e.message}`
+						);
+					});
+				}
+			}
+
+			const membersCollection = channel.members || channel.guild?.members.cache;
+			const membersArray = toMembersArray(membersCollection);
+			const participants = membersArray.map((m) => {
+				const hasAdminPerm = m.permissions.has(PermissionsBitField.Flags.Administrator);
+				const hasSpecificRole = m.roles?.cache?.some((role) => role.name === "ravenadmin");
+				return {
+					id: { _serialized: m.id },
+					name: m.displayName || m.user.globalName || m.user.username,
+					pushname: m.user.username,
+					number: m.id,
+					isAdmin: hasAdminPerm || hasSpecificRole,
+					isBot: m.user.bot
+				};
+			});
 
 			return {
 				id: { _serialized: channel.id },
 				name: channel.name,
 				isGroup: true,
-				participants: channel.guild.members.cache.map((m) => {
-					// Check 1: Has Administrator permission
-					const hasAdminPerm = m.permissions.has(PermissionsBitField.Flags.Administrator);
-
-					// Check 2: Has the specific role by name
-					const hasSpecificRole = m.roles.cache.some((role) => role.name === "ravenadmin");
-
-					return {
-						id: { _serialized: m.id },
-						// isAdmin is true if they have EITHER the perm OR the role
-						isAdmin: hasAdminPerm || hasSpecificRole
-					};
-				})
+				participants,
+				groupMetadata: {
+					desc: channel.topic || channel.guild?.description || ""
+				}
 			};
 		} catch (error) {
-			this.logger.warn(`[getChatDetails] Não foi possível encontrar o canal ${channelId}.`);
+			this.logger.warn(
+				`[getChatDetails] Não foi possível encontrar o canal ou guilda ${channelId}:`,
+				error
+			);
 			return { id: { _serialized: channelId }, name: "Canal Desconhecido", _isPartial: true };
 		}
 	}
