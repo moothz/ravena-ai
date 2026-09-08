@@ -183,9 +183,9 @@ async function anonymousMessage(bot, message, args, group) {
 			const chat = await bot.client.getChatById(targetGroup.id);
 
 			// Verifica se o usuário está no grupo (OBRIGATÓRIO)
-			const participants = await chat.participants;
+			const participants = chat?.participants ?? [];
 			const isUserInGroup = participants.some((p) =>
-				senderIds.some((sI) => p.id._serialized.startsWith(sI) || p.phoneNumber?.startsWith(sI))
+				senderIds.some((sI) => p?.id?._serialized?.startsWith(sI) || p?.phoneNumber?.startsWith(sI))
 			);
 
 			//logger.debug(`[anonimo] `,{message, participants, senderIds, isUserInGroup});
