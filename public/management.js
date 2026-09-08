@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let groupData = null;
     let originalGroupData = null;
     let customCommands = [];
+    let schedules = [];
     let groupId = null;
     let tokenData = null;
     let expiresAt = null;
@@ -124,9 +125,24 @@ document.addEventListener('DOMContentLoaded', () => {
         customDialogModal: document.getElementById('custom-dialog-modal'),
         memberModal: document.getElementById('member-modal'),
         webhookModal: document.getElementById('webhook-modal'),
+        scheduleModal: document.getElementById('schedule-modal'),
         
-        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal'),
+        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal'),
         closeUploadBtns: document.querySelectorAll('.close-upload'),
+
+        // Schedules
+        btnAddSchedule: document.getElementById('btn-add-schedule'),
+        btnSaveScheduleConfirm: document.getElementById('btn-save-schedule-confirm'),
+        schedulesOnetimeContainer: document.getElementById('schedules-onetime-container'),
+        noSchedulesOnetimeMsg: document.getElementById('no-schedules-onetime-msg'),
+        schedulesWeeklyContainer: document.getElementById('schedules-weekly-container'),
+        noSchedulesWeeklyMsg: document.getElementById('no-schedules-weekly-msg'),
+        scheduleModalTitle: document.getElementById('schedule-modal-title'),
+        scheduleEditId: document.getElementById('schedule-edit-id'),
+        scheduleTipo: document.getElementById('schedule-tipo'),
+        scheduleHora: document.getElementById('schedule-hora'),
+        scheduleDia: document.getElementById('schedule-dia'),
+        scheduleFrase: document.getElementById('schedule-frase'),
         
         // Sticky Footer
         stickySaveBar: document.getElementById('sticky-save-bar'),
@@ -363,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderCommandsTable();
             renderWarnings();
             renderWebhooks();
+            await loadSchedules();
             setupDirtyTracking();
 
         } catch (e) {
@@ -2104,6 +2121,212 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // --- Group Schedules (Abrir/Fechar) ---
+
+    const DIAS_SEMANA_NOMES = [
+        'Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira',
+        'Quinta-feira', 'Sexta-feira', 'Sábado'
+    ];
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    async function loadSchedules() {
+        try {
+            const res = await fetch(`${API_BASE}/group-schedules/${groupId}?token=${token}`);
+            if (res.ok) {
+                schedules = await res.json();
+                renderSchedules();
+            }
+        } catch (e) {
+            console.error('Erro ao carregar agendamentos:', e);
+        }
+    }
+
+    function renderSchedules() {
+        if (!els.schedulesOnetimeContainer || !els.schedulesWeeklyContainer) return;
+
+        els.schedulesOnetimeContainer.innerHTML = '';
+        els.schedulesWeeklyContainer.innerHTML = '';
+
+        const unicos = schedules.filter(s => s.dia_semana === null || s.dia_semana === undefined);
+        const semanais = schedules.filter(s => s.dia_semana !== null && s.dia_semana !== undefined);
+
+        if (unicos.length === 0) {
+            els.noSchedulesOnetimeMsg.classList.remove('hidden');
+            els.schedulesOnetimeContainer.appendChild(els.noSchedulesOnetimeMsg);
+        } else {
+            els.noSchedulesOnetimeMsg.classList.add('hidden');
+            unicos.forEach(s => {
+                const card = createScheduleCardElement(s);
+                els.schedulesOnetimeContainer.appendChild(card);
+            });
+        }
+
+        if (semanais.length === 0) {
+            els.noSchedulesWeeklyMsg.classList.remove('hidden');
+            els.schedulesWeeklyContainer.appendChild(els.noSchedulesWeeklyMsg);
+        } else {
+            els.noSchedulesWeeklyMsg.classList.add('hidden');
+            semanais.forEach(s => {
+                const card = createScheduleCardElement(s);
+                els.schedulesWeeklyContainer.appendChild(card);
+            });
+        }
+    }
+
+    function createScheduleCardElement(s) {
+        const div = document.createElement('div');
+        const isFechar = s.tipo === 'fechar';
+        div.className = `schedule-card ${isFechar ? 'schedule-fechar' : 'schedule-abrir'}`;
+
+        const emoji = isFechar ? '🔒' : '🔓';
+        const acaoText = isFechar ? 'Fechar Grupo' : 'Abrir Grupo';
+        const horaStr = `${String(s.hora).padStart(2, '0')}:${String(s.minuto).padStart(2, '0')}`;
+
+        let recorrenciaStr = '';
+        if (s.dia_semana !== null && s.dia_semana !== undefined) {
+            recorrenciaStr = `Toda(o) ${DIAS_SEMANA_NOMES[s.dia_semana]}`;
+        } else {
+            recorrenciaStr = 'Execução única';
+        }
+
+        const fraseHtml = s.frase ? `<div class="schedule-phrase">"${escapeHtml(s.frase)}"</div>` : '';
+
+        div.innerHTML = `
+            <div class="schedule-info">
+                <div class="schedule-header">
+                    <span>${emoji}</span>
+                    <span class="schedule-badge-id">[${s.id}]</span>
+                    <span class="schedule-time">${horaStr}</span>
+                    <span class="text-muted" style="font-size: 0.82rem;">(${recorrenciaStr} — ${acaoText})</span>
+                </div>
+                ${fraseHtml}
+            </div>
+            <div class="schedule-actions">
+                <button type="button" class="btn btn-xs btn-outline btn-edit-sched" title="Editar agendamento">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button type="button" class="btn btn-xs btn-danger btn-del-sched" title="Excluir agendamento">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+
+        div.querySelector('.btn-edit-sched').onclick = () => openScheduleModal(s);
+        div.querySelector('.btn-del-sched').onclick = () => deleteSchedule(s.id);
+
+        return div;
+    }
+
+    function openScheduleModal(schedule = null) {
+        if (schedule) {
+            els.scheduleModalTitle.textContent = `Editar Agendamento [${schedule.id}]`;
+            els.scheduleEditId.value = schedule.id;
+            els.scheduleTipo.value = schedule.tipo;
+            els.scheduleHora.value = `${String(schedule.hora).padStart(2, '0')}:${String(schedule.minuto).padStart(2, '0')}`;
+            els.scheduleDia.value = schedule.dia_semana !== null && schedule.dia_semana !== undefined ? schedule.dia_semana : '';
+            els.scheduleFrase.value = schedule.frase || '';
+        } else {
+            els.scheduleModalTitle.textContent = 'Novo Agendamento';
+            els.scheduleEditId.value = '';
+            els.scheduleTipo.value = 'fechar';
+            els.scheduleHora.value = '22:00';
+            els.scheduleDia.value = '';
+            els.scheduleFrase.value = '';
+        }
+        els.scheduleModal.classList.remove('hidden');
+    }
+
+    async function saveSchedule() {
+        const editId = els.scheduleEditId.value;
+        const tipo = els.scheduleTipo.value;
+        const horaRaw = els.scheduleHora.value;
+        const diaSemanaRaw = els.scheduleDia.value;
+        const frase = els.scheduleFrase.value.trim();
+
+        if (!horaRaw) {
+            return await showCustomAlert('Por favor, informe o horário.');
+        }
+
+        const [hStr, mStr] = horaRaw.split(':');
+        const hora = parseInt(hStr, 10);
+        const minuto = parseInt(mStr, 10);
+
+        if (isNaN(hora) || isNaN(minuto)) {
+            return await showCustomAlert('Horário inválido.');
+        }
+
+        if (frase && frase.length > 0 && frase.length < 5) {
+            return await showCustomAlert('A frase personalizada deve ter no mínimo 5 caracteres.');
+        }
+
+        const diaSemana = diaSemanaRaw === '' ? null : parseInt(diaSemanaRaw, 10);
+
+        try {
+            if (editId) {
+                await fetch(`${API_BASE}/group-schedules/${groupId}/${editId}?token=${token}`, {
+                    method: 'DELETE'
+                });
+            }
+
+            const res = await fetch(`${API_BASE}/group-schedules/${groupId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token,
+                    tipo,
+                    hora,
+                    minuto,
+                    diaSemana,
+                    frase: frase || null
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || 'Falha ao salvar agendamento.');
+            }
+
+            els.scheduleModal.classList.add('hidden');
+            await loadSchedules();
+            await showCustomAlert('Agendamento salvo com sucesso!', 'Sucesso');
+        } catch (e) {
+            await showCustomAlert('Erro ao salvar agendamento: ' + e.message, 'Erro');
+        }
+    }
+
+    async function deleteSchedule(id) {
+        const confirmed = await showCustomConfirm(
+            `Deseja realmente remover o agendamento <b>[${id}]</b>?`,
+            'Excluir Agendamento'
+        );
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/group-schedules/${groupId}/${id}?token=${token}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || 'Falha ao excluir agendamento.');
+            }
+
+            await loadSchedules();
+            await showCustomAlert(`Agendamento [${id}] removido com sucesso!`, 'Sucesso');
+        } catch (e) {
+            await showCustomAlert('Erro ao remover agendamento: ' + e.message, 'Erro');
+        }
+    }
+
     // --- Backups Section ---
 
     // Export Commands as .ZIP
@@ -2307,9 +2530,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 els.customDialogModal.classList.add('hidden');
                 els.memberModal.classList.add('hidden');
                 els.webhookModal.classList.add('hidden');
+                els.scheduleModal.classList.add('hidden');
             };
         });
         els.closeUploadBtns.forEach(b => b.onclick = () => els.uploadModal.classList.add('hidden'));
+
+        if (els.btnAddSchedule) {
+            els.btnAddSchedule.onclick = () => openScheduleModal();
+        }
+        if (els.btnSaveScheduleConfirm) {
+            els.btnSaveScheduleConfirm.onclick = saveSchedule;
+        }
 
         // Tag inputs
         setupListAdder('add-ignored-number', 'new-ignored-number', 'ignoredNumbers');

@@ -19,6 +19,7 @@ const path = require("path");
 const Stickers = require("./functions/Stickers");
 const LembretesCommands = require("./functions/LembretesCommands");
 const CorreiosCommands = require("./functions/CorreiosCommands");
+const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
 const EventEmitter = require("events");
@@ -211,6 +212,11 @@ class EventHandler extends EventEmitter {
 		// Inicializa sistema de rastreio de encomendas
 		CorreiosCommands.inicializarRastreio(bot).catch((error) => {
 			this.logger.error("Erro ao inicializar rastreio correios:", error);
+		});
+
+		// Inicializa agendamentos de abrir/fechar grupos
+		GrupoAgendamentos.inicializarAgendamentos(bot).catch((error) => {
+			this.logger.error("Erro ao inicializar agendamentos de grupo:", error);
 		});
 	}
 

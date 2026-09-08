@@ -22,6 +22,7 @@ const { CATEGORY_EMOJIS, COMMAND_ORDER } = require("./functions/MenuOrder");
 const ServiceProviderService = require("./services/ServiceProviderService");
 const ExternalAuthService = require("./services/ExternalAuthService");
 const SpeechCommands = require("./functions/SpeechCommands");
+const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 
 const WEBHOOK_RATE_LIMIT = 120000;
 
@@ -2610,6 +2611,105 @@ class BotAPI {
 			} catch (e) {
 				this.logger.error("Erro ao exportar comandos em zip:", e);
 				res.status(500).json({ message: "Erro ao exportar comandos: " + e.message });
+			}
+		});
+
+		// GET Group Schedules
+		this.app.get("/api/group-schedules/:groupId", async (req, res) => {
+			const { groupId } = req.params;
+			const { token } = req.query;
+
+			try {
+				const webManagementData = await this.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					return res.status(401).json({ message: "Unauthorized" });
+				}
+
+				const schedules = await GrupoAgendamentos.listarAgendamentos(groupId);
+				res.json(schedules || []);
+			} catch (e) {
+				this.logger.error("Error fetching schedules:", e);
+				res.status(500).json({ message: "Server error" });
+			}
+		});
+
+		// POST New Group Schedule
+		this.app.post("/api/group-schedules/:groupId", async (req, res) => {
+			const { groupId } = req.params;
+			const { token, tipo, hora, minuto, diaSemana, frase } = req.body;
+
+			try {
+				const webManagementData = await this.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					return res.status(401).json({ message: "Unauthorized" });
+				}
+
+				if (tipo !== "fechar" && tipo !== "abrir") {
+					return res.status(400).json({ message: "Tipo inválido. Escolha 'fechar' ou 'abrir'." });
+				}
+
+				const h = parseInt(hora, 10);
+				const m = parseInt(minuto, 10);
+				if (isNaN(h) || h < 0 || h > 23 || isNaN(m) || m < 0 || m > 59) {
+					return res.status(400).json({ message: "Horário inválido." });
+				}
+
+				let d = null;
+				if (diaSemana !== null && diaSemana !== undefined && diaSemana !== "") {
+					d = parseInt(diaSemana, 10);
+					if (isNaN(d) || d < 0 || d > 6) {
+						return res.status(400).json({ message: "Dia da semana inválido." });
+					}
+				}
+
+				if (frase && frase.trim().length > 0 && frase.trim().length < 5) {
+					return res
+						.status(400)
+						.json({ message: "A frase personalizada deve ter no mínimo 5 caracteres." });
+				}
+
+				let bot = this.bots.find((b) => b.id === webManagementData.botId);
+				if (!bot || !bot.isConnected) {
+					bot = this.bots.find((b) => b.isConnected);
+				}
+
+				const result = await GrupoAgendamentos.criarAgendamento(
+					bot,
+					groupId,
+					tipo,
+					h,
+					m,
+					d,
+					frase && frase.trim().length >= 5 ? frase : null
+				);
+
+				res.json({ success: true, agendamento: result.agendamento });
+			} catch (e) {
+				this.logger.error("Error creating schedule:", e);
+				res.status(400).json({ message: e.message || "Erro ao criar agendamento" });
+			}
+		});
+
+		// DELETE Group Schedule
+		this.app.delete("/api/group-schedules/:groupId/:id", async (req, res) => {
+			const { groupId, id } = req.params;
+			const { token } = req.query;
+
+			try {
+				const webManagementData = await this.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					return res.status(401).json({ message: "Unauthorized" });
+				}
+
+				const deleted = await GrupoAgendamentos.deletarAgendamento(groupId, id);
+				if (!deleted) {
+					return res.status(404).json({ message: "Agendamento não encontrado ou já inativo." });
+				}
+
+				res.json({ success: true, id: deleted.id });
+			} catch (e) {
+				this.logger.error("Error deleting schedule:", e);
+				res.status(500).json({ message: "Erro ao excluir agendamento: " + e.message });
 			}
 		});
 

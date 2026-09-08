@@ -1,3 +1,7 @@
 _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
+🔥 *!g-painel* novinho! Testem e mandem sugestões
+🔥 *!g-abrir* e *!g-fechar* agora podem ser agendados: Bot abre e fecha o grupo na hora/dia especificado! Disponível também nas automações no *!g-painel*
+🔥 *!pesca-abandonar*: Pra quem cansou dos peixes do inventário, solta tudo!
+

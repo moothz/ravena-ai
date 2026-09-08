@@ -400,6 +400,28 @@ Interações cômicas automáticas do bot.
 | `placas.db` | `placas_cache` | Cache de consultas de placas veiculares |
 | `raffle_cache.db` | `raffle_cache` | Cache de informações e andamento de rifas/ações |
 | `relacionamentos.db` | `relacionamentos` | Histórico e estatísticas de relacionamentos (namoros, casamentos, divórcios, traições e coisas) nos grupos |
+| `grupo_agendamentos.db` | `grupo_agendamentos` | Agendamentos recorrentes e únicos de fechar/abrir grupos automaticamente |
+
+### `grupo_agendamentos.db`
+Banco de dados para agendamentos de abertura e fechamento automático de grupos do WhatsApp.
+
+#### `grupo_agendamentos`
+Armazena horários programados únicos e semanais por grupo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | TEXT PK | Identificador curto por grupo ('A', 'B', ...) |
+| `group_id` | TEXT PK | JID do grupo (ex: `120363...@g.us`) |
+| `bot_id` | TEXT | ID da instância do bot responsável |
+| `tipo` | TEXT | Ação a executar: 'fechar' ou 'abrir' |
+| `hora` | INTEGER | Hora programada no fuso de Brasília (0-23) |
+| `minuto` | INTEGER | Minuto programado no fuso de Brasília (0-59) |
+| `dia_semana` | INTEGER | Dia da semana (0=domingo a 6=sábado, NULL para único) |
+| `timestamp_unico` | INTEGER | Timestamp epoch ms para execução única (NULL para semanal) |
+| `frase` | TEXT | Frase personalizada opcional enviada ao abrir/fechar |
+| `ativo` | INTEGER | Estado do agendamento (1=ativo, 0=inativo/executado) |
+| `criado_em` | INTEGER | Timestamp de criação |
+| `executado_em` | INTEGER | Timestamp da última ou única execução |
 
 ### `relacionamentos.db`
 Banco de dados para o módulo de relacionamentos nos grupos do WhatsApp.

@@ -331,6 +331,44 @@
                             </label>
                         </div>
 
+                        <div class="divider"></div>
+
+                        <!-- Sub-accordion: Agendamentos de Abrir/Fechar -->
+                        <div class="sub-accordion active">
+                            <div class="sub-accordion-header">
+                                <div class="sub-acc-title">
+                                    <i class="fas fa-clock"></i>
+                                    <h4>Agendamentos de Abrir / Fechar Grupo</h4>
+                                </div>
+                                <i class="fas fa-chevron-down sub-arrow"></i>
+                            </div>
+                            <div class="sub-accordion-content">
+                                <div class="field-hint mb-2">
+                                    Defina horários automáticos para fechar (apenas admins) ou abrir (todos) o grupo. Limite de até 4 agendamentos por dia da semana.
+                                </div>
+
+                                <div class="mb-3">
+                                    <button type="button" id="btn-add-schedule" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-plus"></i> Novo Agendamento
+                                    </button>
+                                </div>
+
+                                <!-- Lista de Horários Únicos -->
+                                <h5 class="schedule-section-title mt-2 mb-2"><i class="fas fa-calendar-day"></i> Horários Únicos (executam uma vez)</h5>
+                                <div id="schedules-onetime-container" class="schedules-list-container">
+                                    <div id="no-schedules-onetime-msg" class="text-muted p-2">Nenhum agendamento único configurado.</div>
+                                </div>
+
+                                <!-- Lista de Horários Semanais -->
+                                <h5 class="schedule-section-title mt-3 mb-2"><i class="fas fa-calendar-week"></i> Horários Recorrentes (por dia da semana)</h5>
+                                <div id="schedules-weekly-container" class="schedules-list-container">
+                                    <div id="no-schedules-weekly-msg" class="text-muted p-2">Nenhum agendamento semanal configurado.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="divider"></div>
+
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
                                 <label for="auto-interaction" id="lbl-auto-interaction">Interações Aleatórias da IA</label>
@@ -1064,6 +1102,54 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary close-webhook-modal">Cancelar</button>
                 <button type="button" id="btn-save-webhook-confirm" class="btn btn-primary">Salvar Webhook</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schedule Modal (Abrir/Fechar) -->
+    <div id="schedule-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="schedule-modal-title">Novo Agendamento</h2>
+                <span class="close-schedule-modal cursor-pointer">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="schedule-edit-id" value="">
+                <div class="form-group">
+                    <label>Ação</label>
+                    <select id="schedule-tipo" class="form-control">
+                        <option value="fechar">🔒 Fechar Grupo (apenas admins enviam mensagens)</option>
+                        <option value="abrir">🔓 Abrir Grupo (todos podem enviar mensagens)</option>
+                    </select>
+                </div>
+                <div class="two-cols-row">
+                    <div class="form-group">
+                        <label>Horário</label>
+                        <input type="time" id="schedule-hora" class="form-control" value="22:00" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Recorrência</label>
+                        <select id="schedule-dia" class="form-control">
+                            <option value="">Uma vez (hoje ou amanhã)</option>
+                            <option value="0">Toda Domingo</option>
+                            <option value="1">Toda Segunda-feira</option>
+                            <option value="2">Toda Terça-feira</option>
+                            <option value="3">Toda Quarta-feira</option>
+                            <option value="4">Toda Quinta-feira</option>
+                            <option value="5">Toda Sexta-feira</option>
+                            <option value="6">Todo Sábado</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Mensagem personalizada <span class="field-hint" style="display:inline;">(opcional, mín. 5 caracteres)</span></label>
+                    <input type="text" id="schedule-frase" class="form-control" placeholder="ex: 🔒 Boa noite a todos! Grupo fechado até amanhã.">
+                    <div class="field-hint">Se preenchida, o bot enviará esta mensagem ao executar. Sempre iniciará com emoji de cadeado.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-schedule-modal">Cancelar</button>
+                <button type="button" id="btn-save-schedule-confirm" class="btn btn-primary">Salvar Agendamento</button>
             </div>
         </div>
     </div>

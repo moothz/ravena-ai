@@ -1188,3 +1188,93 @@ textarea.form-control {
     color: var(--text-muted);
     border-top: 1px solid var(--border-color);
 }
+
+/* Agendamentos de Abrir/Fechar */
+.close-schedule-modal {
+    cursor: pointer;
+}
+
+.schedules-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.schedule-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.schedule-card.schedule-fechar {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.schedule-card.schedule-fechar:hover {
+    background: rgba(239, 68, 68, 0.13);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.schedule-card.schedule-abrir {
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.schedule-card.schedule-abrir:hover {
+    background: rgba(34, 197, 94, 0.13);
+    border-color: rgba(34, 197, 94, 0.5);
+}
+
+.schedule-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.schedule-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.schedule-badge-id {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+    color: var(--text-color);
+    font-family: monospace;
+}
+
+.schedule-time {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.schedule-phrase {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 2px;
+}
+
+.schedule-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.schedule-section-title {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+}

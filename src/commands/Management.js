@@ -8,6 +8,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const WebManagement = require("../utils/WebManagement");
 const StreamSystem = require("../StreamSystem");
+const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 
 class Management {
 	constructor() {
@@ -205,11 +206,27 @@ class Management {
 			},
 			fechar: {
 				method: "closeGroup",
-				description: "Fecha o grupo (apenas admins enviam msgs)"
+				description: "Fecha o grupo (apenas admins enviam msgs) ou agenda horário"
+			},
+			"fechar-lista": {
+				method: "listGroupSchedulesClose",
+				description: "Lista horários agendados para fechar o grupo"
+			},
+			"fechar-del": {
+				method: "deleteGroupScheduleClose",
+				description: "Remove um agendamento de fechamento do grupo"
 			},
 			abrir: {
 				method: "openGroup",
-				description: "Abre o grupo (todos podem envar msgs)"
+				description: "Abre o grupo (todos podem enviar msgs) ou agenda horário"
+			},
+			"abrir-lista": {
+				method: "listGroupSchedulesOpen",
+				description: "Lista horários agendados para abrir o grupo"
+			},
+			"abrir-del": {
+				method: "deleteGroupScheduleOpen",
+				description: "Remove um agendamento de abertura do grupo"
 			},
 			"notificar-grupoFechado": {
 				method: "toggleNotificaGrupoFechado",
@@ -6195,12 +6212,34 @@ class Management {
 	 * @param {Object} group - Dados do grupo
 	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
 	 */
+	/**
+	 * Fecha o grupo para que apenas admins possam enviar mensagens ou agenda fechamento
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
 	async closeGroup(bot, message, args, group) {
-		return this.toggleGroupMessagesAdminsOnly(bot, message, args, group, true);
+		if (!args || args.length === 0) {
+			const ret = await this.toggleGroupMessagesAdminsOnly(bot, message, args, group, true);
+			if (ret && ret.content && ret.content.startsWith("🔒")) {
+				ret.content +=
+					"\n\n💡 *Dica:* Você pode agendar o fechamento automático!\n" +
+					"• `!g-fechar 13:30` — fecha hoje às 13h30 (ou amanhã se já passou)\n" +
+					"• `!g-fechar 13:30 sex` — toda sexta às 13h30\n" +
+					"• `!g-fechar 13:30 sex 🔒 Boa noite, pessoal!` — com mensagem personalizada\n" +
+					"📋 Use `!g-fechar-lista` para ver os agendamentos e `!g-fechar-del <id>` para remover.\n" +
+					"Também é possível configurar pelo `!g-painel`.";
+			}
+			return ret;
+		}
+
+		return this.handleScheduleGroupAction(bot, message, args, group, "fechar");
 	}
 
 	/**
-	 * Abre o grupo para que todos possam enviar mensagens
+	 * Abre o grupo para que todos possam enviar mensagens ou agenda abertura
 	 * @param {WhatsAppBot} bot - Instância do bot
 	 * @param {Object} message - Dados da mensagem
 	 * @param {Array} args - Argumentos do comando
@@ -6208,7 +6247,274 @@ class Management {
 	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
 	 */
 	async openGroup(bot, message, args, group) {
-		return this.toggleGroupMessagesAdminsOnly(bot, message, args, group, false);
+		if (!args || args.length === 0) {
+			const ret = await this.toggleGroupMessagesAdminsOnly(bot, message, args, group, false);
+			if (ret && ret.content && ret.content.startsWith("🔓")) {
+				ret.content +=
+					"\n\n💡 *Dica:* Você pode agendar a abertura automática!\n" +
+					"• `!g-abrir 07:30` — abre hoje às 07h30 (ou amanhã se já passou)\n" +
+					"• `!g-abrir 07:30 seg` — toda segunda às 07h30\n" +
+					"• `!g-abrir 07:30 seg 🔓 Bom dia, pessoal!` — com mensagem personalizada\n" +
+					"📋 Use `!g-abrir-lista` para ver os agendamentos e `!g-abrir-del <id>` para remover.\n" +
+					"Também é possível configurar pelo `!g-painel`.";
+			}
+			return ret;
+		}
+
+		return this.handleScheduleGroupAction(bot, message, args, group, "abrir");
+	}
+
+	/**
+	 * Manipula a criação de agendamento de fechar ou abrir o grupo
+	 */
+	async handleScheduleGroupAction(bot, message, args, group, tipo) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ O bot precisa ser administrador do grupo para poder alterar as configurações do grupo."
+			});
+		}
+
+		const parsedHora = GrupoAgendamentos.parseHora(args[0]);
+		if (!parsedHora) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ Horário inválido! Use formatos como "13:30", "13h30", "7:30" ou "07h30".\nExemplo: !g-${tipo} 13:30`
+			});
+		}
+
+		// 1 argumento: agendamento único para hoje ou amanhã
+		if (args.length === 1) {
+			try {
+				const result = await GrupoAgendamentos.criarAgendamento(
+					bot,
+					group.id,
+					tipo,
+					parsedHora.hora,
+					parsedHora.minuto,
+					null,
+					null
+				);
+				const horaStr = GrupoAgendamentos.formatarHora(parsedHora.hora, parsedHora.minuto);
+				const tempoStr = GrupoAgendamentos.formatarTempoRestante(result.diffMs);
+				const quando = result.isTomorrow ? "amanhã" : "hoje";
+				const acao = tipo === "fechar" ? "fechado" : "aberto";
+
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `✅ Grupo será *${acao}* ${quando} às *${horaStr}* (${tempoStr}).\n📋 Use \`!g-${tipo}-lista\` para ver todos os agendamentos e \`!g-${tipo}-del ${result.agendamento.id}\` para remover.`
+				});
+			} catch (error) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ ${error.message}`
+				});
+			}
+		}
+
+		// 2 ou mais argumentos: agendamento semanal recorrente
+		const parsedDia = GrupoAgendamentos.parseDiaSemana(args[1]);
+		if (parsedDia === null) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ Dia da semana inválido! Use abreviações ou nomes como "seg", "ter", "qua", "qui", "sex", "sab", "dom".\nExemplo: !g-${tipo} 13:30 sex`
+			});
+		}
+
+		let fraseRaw = null;
+		if (args.length >= 3) {
+			fraseRaw = args.slice(2).join(" ");
+			if (fraseRaw.trim().length < 5) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: "❌ A frase personalizada deve conter no mínimo 5 caracteres."
+				});
+			}
+		}
+
+		try {
+			const result = await GrupoAgendamentos.criarAgendamento(
+				bot,
+				group.id,
+				tipo,
+				parsedHora.hora,
+				parsedHora.minuto,
+				parsedDia,
+				fraseRaw
+			);
+			const horaStr = GrupoAgendamentos.formatarHora(parsedHora.hora, parsedHora.minuto);
+			const nomeDia = GrupoAgendamentos.DIAS_SEMANA_NOMES[parsedDia];
+			const acao = tipo === "fechar" ? "fechado" : "aberto";
+
+			if (result.agendamento.frase) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `✅ Todo(a) *${nomeDia}* às *${horaStr}* o grupo será *${acao}* com a mensagem:\n${result.agendamento.frase}\n📋 Use \`!g-${tipo}-lista\` para ver todos os agendamentos e \`!g-${tipo}-del ${result.agendamento.id}\` para remover.`
+				});
+			} else {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `✅ Todo(a) *${nomeDia}* às *${horaStr}* o grupo será *${acao}* automaticamente.\n📋 Use \`!g-${tipo}-lista\` para ver todos os agendamentos e \`!g-${tipo}-del ${result.agendamento.id}\` para remover.`
+				});
+			}
+		} catch (error) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ ${error.message}`
+			});
+		}
+	}
+
+	/**
+	 * Lista agendamentos de fechamento do grupo
+	 */
+	async listGroupSchedulesClose(bot, message, args, group) {
+		return this.listGroupSchedules(bot, message, args, group, "fechar");
+	}
+
+	/**
+	 * Lista agendamentos de abertura do grupo
+	 */
+	async listGroupSchedulesOpen(bot, message, args, group) {
+		return this.listGroupSchedules(bot, message, args, group, "abrir");
+	}
+
+	/**
+	 * Método compartilhado para listagem de agendamentos
+	 */
+	async listGroupSchedules(bot, message, args, group, tipo) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const agendamentos = await GrupoAgendamentos.listarAgendamentos(group.id, tipo);
+		const tipoNome = tipo === "fechar" ? "fechamento" : "abertura";
+		const tipoTitulo = tipo === "fechar" ? "Fechamento" : "Abertura";
+		const emoji = tipo === "fechar" ? "🔒" : "🔓";
+
+		if (!agendamentos || agendamentos.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `📋 Nenhum agendamento de *${tipoNome}* configurado para este grupo.\nUse \`!g-${tipo} 22:00\` ou \`!g-${tipo} 22:00 sex\` para criar um.`
+			});
+		}
+
+		const unicos = agendamentos.filter((a) => a.dia_semana === null || a.dia_semana === undefined);
+		const semanais = agendamentos.filter(
+			(a) => a.dia_semana !== null && a.dia_semana !== undefined
+		);
+
+		let msg = `📋 *Agendamentos de ${tipoTitulo} — ${group.name || group.titulo || "Grupo"}*\n`;
+
+		if (unicos.length > 0) {
+			msg += `\n${emoji} *Únicos (executar uma vez)*\n`;
+			const agora = Date.now();
+			for (const u of unicos) {
+				const horaStr = GrupoAgendamentos.formatarHora(u.hora, u.minuto);
+				const diff = (u.timestamp_unico || 0) - agora;
+				const tempoStr = GrupoAgendamentos.formatarTempoRestante(diff);
+
+				let diaStr = "";
+				if (u.timestamp_unico) {
+					const d = new Date(u.timestamp_unico);
+					const dtf = new Intl.DateTimeFormat("pt-BR", {
+						timeZone: "America/Sao_Paulo",
+						weekday: "short"
+					});
+					diaStr = ` (${dtf.format(d)})`;
+				}
+
+				msg += `[${u.id}] ${horaStr}${diaStr} — ${tempoStr}`;
+				if (u.frase) msg += ` — "${u.frase}"`;
+				msg += "\n";
+			}
+		}
+
+		if (semanais.length > 0) {
+			msg += `\n${emoji} *Semanais (recorrentes)*\n`;
+			for (const s of semanais) {
+				const horaStr = GrupoAgendamentos.formatarHora(s.hora, s.minuto);
+				const nomeDia = GrupoAgendamentos.DIAS_SEMANA_NOMES[s.dia_semana] || "Dia";
+				msg += `[${s.id}] Todo(a) ${nomeDia} às ${horaStr}`;
+				if (s.frase) msg += ` — "${s.frase}"`;
+				msg += "\n";
+			}
+		}
+
+		msg += `\nUse \`!g-${tipo}-del <id>\` para remover um agendamento.`;
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: msg.trim()
+		});
+	}
+
+	/**
+	 * Deleta agendamento de fechamento do grupo
+	 */
+	async deleteGroupScheduleClose(bot, message, args, group) {
+		return this.deleteGroupSchedule(bot, message, args, group, "fechar");
+	}
+
+	/**
+	 * Deleta agendamento de abertura do grupo
+	 */
+	async deleteGroupScheduleOpen(bot, message, args, group) {
+		return this.deleteGroupSchedule(bot, message, args, group, "abrir");
+	}
+
+	/**
+	 * Método compartilhado para remoção de agendamentos
+	 */
+	async deleteGroupSchedule(bot, message, args, group, tipo) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (!args || args.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ Por favor, informe o ID do agendamento que deseja remover. Exemplo: !g-${tipo}-del A\nUse \`!g-${tipo}-lista\` para ver os IDs disponíveis.`
+			});
+		}
+
+		const id = args[0].trim().toUpperCase();
+		const deleted = await GrupoAgendamentos.deletarAgendamento(group.id, id, tipo);
+
+		if (!deleted) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `❌ Agendamento *[${id}]* não encontrado. Use \`!g-${tipo}-lista\` para ver os IDs disponíveis.`
+			});
+		}
+
+		const horaStr = GrupoAgendamentos.formatarHora(deleted.hora, deleted.minuto);
+		let detalhe = "";
+		if (deleted.dia_semana !== null && deleted.dia_semana !== undefined) {
+			detalhe = ` (todo(a) ${GrupoAgendamentos.DIAS_SEMANA_NOMES[deleted.dia_semana]} às ${horaStr})`;
+		} else {
+			detalhe = ` (às ${horaStr})`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: `✅ Agendamento *[${deleted.id}]*${detalhe} removido com sucesso.`
+		});
 	}
 
 	/**
@@ -7528,14 +7834,43 @@ const helper = {
 		},
 		{
 			cmd: "!g-fechar",
-			desc: "Fecha o grupo (apenas admins enviam msgs)",
-			usage: ["!g-fechar"],
+			desc: "Fecha o grupo ou agenda fechamento automático",
+			usage: [
+				"!g-fechar",
+				"!g-fechar 13:30",
+				"!g-fechar 13:30 sex",
+				"!g-fechar 13:30 sex 🔒 Boa noite!"
+			],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-fechar-lista",
+			desc: "Lista agendamentos de fechamento do grupo",
+			usage: ["!g-fechar-lista"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-fechar-del",
+			desc: "Remove agendamento de fechamento pelo ID",
+			usage: ["!g-fechar-del A"],
 			category: "gerenciamento"
 		},
 		{
 			cmd: "!g-abrir",
-			desc: "Abre o grupo (todos podem envar msgs)",
-			usage: ["!g-abrir"],
+			desc: "Abre o grupo ou agenda abertura automática",
+			usage: ["!g-abrir", "!g-abrir 07:30", "!g-abrir 07:30 seg", "!g-abrir 07:30 seg 🔓 Bom dia!"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-abrir-lista",
+			desc: "Lista agendamentos de abertura do grupo",
+			usage: ["!g-abrir-lista"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-abrir-del",
+			desc: "Remove agendamento de abertura pelo ID",
+			usage: ["!g-abrir-del A"],
 			category: "gerenciamento"
 		},
 		{
