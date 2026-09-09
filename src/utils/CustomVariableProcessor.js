@@ -311,6 +311,23 @@ class CustomVariableProcessor {
 	 */
 	processSystemVariables(text) {
 		const now = new Date();
+		const timeZone = process.env.TZ || "America/Sao_Paulo";
+
+		const dtf = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			hourCycle: "h23"
+		});
+		const parts = dtf.formatToParts(now);
+		const map = {};
+		for (const p of parts) {
+			map[p.type] = p.value;
+		}
 
 		// Substitui {day} pelo nome do dia atual
 		const days = [
@@ -322,34 +339,35 @@ class CustomVariableProcessor {
 			"Sexta-feira",
 			"Sábado"
 		];
-		text = text.replace(/{day}/g, days[now.getDay()]);
+		const dayIndex = new Date(now.toLocaleString("en-US", { timeZone })).getDay();
+		text = text.replace(/{day}/g, days[dayIndex]);
 
 		// Substitui {date} pela data atual
-		const dateStr = now.toLocaleDateString();
+		const dateStr = `${map.day}/${map.month}/${map.year}`;
 		text = text.replace(/{date}/g, dateStr);
 
 		// Substitui {time} pela hora atual
-		const timeStr = now.toLocaleTimeString();
+		const timeStr = `${map.hour}:${map.minute}:${map.second}`;
 		text = text.replace(/{time}/g, timeStr);
 
 		// NOVAS VARIÁVEIS DE DATA E HORA DETALHADAS
 		// Substitui {data-hora} pela hora atual
-		text = text.replace(/{data-hora}/g, now.getHours().toString().padStart(2, "0"));
+		text = text.replace(/{data-hora}/g, map.hour);
 
 		// Substitui {data-minuto} pelo minuto atual
-		text = text.replace(/{data-minuto}/g, now.getMinutes().toString().padStart(2, "0"));
+		text = text.replace(/{data-minuto}/g, map.minute);
 
 		// Substitui {data-segundo} pelo segundo atual
-		text = text.replace(/{data-segundo}/g, now.getSeconds().toString().padStart(2, "0"));
+		text = text.replace(/{data-segundo}/g, map.second);
 
 		// Substitui {data-dia} pelo dia atual
-		text = text.replace(/{data-dia}/g, now.getDate().toString().padStart(2, "0"));
+		text = text.replace(/{data-dia}/g, map.day);
 
 		// Substitui {data-mes} pelo mês atual
-		text = text.replace(/{data-mes}/g, (now.getMonth() + 1).toString().padStart(2, "0"));
+		text = text.replace(/{data-mes}/g, map.month);
 
 		// Substitui {data-ano} pelo ano atual
-		text = text.replace(/{data-ano}/g, now.getFullYear());
+		text = text.replace(/{data-ano}/g, map.year);
 
 		// VARIÁVEIS DE NÚMEROS ALEATÓRIOS
 		// Substitui {randomPequeno} por um número aleatório de 1 a 10

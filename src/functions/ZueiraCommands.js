@@ -48,14 +48,38 @@ const gerarCpf = () => {
 	return `${base.substring(0, 3)}.${base.substring(3, 6)}.${base.substring(6, 9)}-${dig1}${dig2}`;
 };
 
+function getNowBrasilia() {
+	const now = new Date();
+	const timeZone = process.env.TZ || "America/Sao_Paulo";
+	const dtf = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23"
+	});
+	const parts = dtf.formatToParts(now);
+	const map = {};
+	for (const p of parts) {
+		map[p.type] = p.value;
+	}
+	return {
+		hour: parseInt(map.hour, 10),
+		hourStr: map.hour,
+		minuteStr: map.minute,
+		secondStr: map.second,
+		dayStr: map.day,
+		monthStr: map.month,
+		yearStr: map.year
+	};
+}
+
 const gerarDataHoraAtual = () => {
-	const agora = new Date();
-	const dia = String(agora.getDate()).padStart(2, "0");
-	const mes = String(agora.getMonth() + 1).padStart(2, "0"); // Meses são 0-indexados
-	const ano = agora.getFullYear();
-	const horas = String(agora.getHours()).padStart(2, "0");
-	const minutos = String(agora.getMinutes()).padStart(2, "0");
-	return `${dia}/${mes}/${ano} às ${horas}:${minutos}`;
+	const b = getNowBrasilia();
+	return `${b.dayStr}/${b.monthStr}/${b.yearStr} às ${b.hourStr}:${b.minuteStr}`;
 };
 
 async function gerarTicket(dados) {
@@ -328,8 +352,8 @@ function getSaudacao(hora) {
 
 async function horaDataCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
-	const agora = new Date();
-	const saudacao = getSaudacao(agora.getHours());
+	const { hour, hourStr } = getNowBrasilia();
+	const saudacao = getSaudacao(hour);
 
 	const template = `🕰️ Agora são aproximadamente exatos 🕒 {data-hora}:{data-minuto} do dia {data-dia}/{data-mes}/{data-ano} 🗓\n${saudacao}`;
 
@@ -353,8 +377,7 @@ async function horaDataCommand(bot, message, args, group) {
 		})
 	];
 
-	const horaStr = String(agora.getHours()).padStart(2, "0");
-	const audioPath = path.join(database.databasePath, "assets", `horacerta_${horaStr}.mp3`);
+	const audioPath = path.join(database.databasePath, "assets", `horacerta_${hourStr}.mp3`);
 
 	if (fs.existsSync(audioPath) && bot && typeof bot.createMedia === "function") {
 		try {
