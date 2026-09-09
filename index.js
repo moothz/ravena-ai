@@ -14,6 +14,7 @@ const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
 const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
+const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const fs = require("fs");
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,6 +37,7 @@ async function main() {
 	const logger = new Logger("main");
 	const botInstances = [];
 	let botAPI;
+	let statusScheduler;
 
 	try {
 		const disableActivity = process.env.DISABLE_ACTIVITY === "true";
@@ -246,6 +248,14 @@ async function main() {
 
 		logger.info("Todos os bots inicializados e rodando");
 
+		// Inicializa scheduler para escalonar (stagger) atualização de status dos bots a cada 5 minutos
+		statusScheduler = ProfileStatusScheduler.getInstance({
+			bots: botInstances
+		});
+		if (!disableActivity) {
+			statusScheduler.start();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,
@@ -264,6 +274,11 @@ async function main() {
 	// Manipula encerramento do programa sequencialmente para evitar corrupção de arquivos
 	const shutdown = async (signal) => {
 		logger.info(`Desligando bots e servidor API (${signal})...`);
+
+		// Para o scheduler de status
+		if (statusScheduler) {
+			statusScheduler.stop();
+		}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
 		if (botAPI) {

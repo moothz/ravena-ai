@@ -23,6 +23,7 @@ const Database = require("./utils/Database");
 const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
+const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -141,6 +142,7 @@ class DiscordBot {
 	async initialize() {
 		this.logger.info(`[${this.id}] Initializing Discord bot...`);
 		this.database.registerBotInstance(this);
+		ProfileStatusScheduler.getInstance().registerBot(this);
 		this.startupTime = Date.now();
 		this.lastMessageReceived = Date.now();
 
@@ -832,6 +834,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 	async destroy() {
 		this.logger.info(`[destroy] Desligando o bot do Discord ${this.id}...`);
+		ProfileStatusScheduler.getInstance().unregisterBot(this);
 		if (this.discordClient) {
 			await this.discordClient.destroy();
 		}

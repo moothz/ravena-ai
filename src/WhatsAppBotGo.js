@@ -27,6 +27,7 @@ const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const { toOpus, toMp3 } = require("./utils/Conversions");
 const { llmTranslate } = require("./utils/LLMTranslate");
+const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1327,6 +1328,7 @@ class WhatsAppBotGo {
 	async initialize() {
 		await this._loadSkipGroupInfo();
 		this.database.registerBotInstance(this);
+		ProfileStatusScheduler.getInstance().registerBot(this);
 		this.startupTime = Date.now();
 		this.lastMessageReceived = Date.now();
 
@@ -3127,6 +3129,7 @@ class WhatsAppBotGo {
 	}
 
 	async destroy() {
+		ProfileStatusScheduler.getInstance().unregisterBot(this);
 		if (this.versionUpdateInterval) clearInterval(this.versionUpdateInterval);
 		if (this.webhookServer) this.webhookServer.close();
 		if (this.loadReport) this.loadReport.destroy();

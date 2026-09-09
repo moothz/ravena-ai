@@ -60,6 +60,19 @@ class FakeBot {
 		// Mensagens capturadas durante o teste
 		this.capturedMessages = [];
 
+		this.isConnected = options.isConnected ?? true;
+		this.currentStatus = null;
+		this.updatedStatuses = [];
+		this.updateProfileStatus =
+			options.updateProfileStatus ||
+			(async (status) => {
+				this.currentStatus = status;
+				this.updatedStatuses.push(status);
+			});
+		this.client = {
+			setStatus: async (status) => await this.updateProfileStatus(status)
+		};
+
 		this.logger = new Logger("fake-bot");
 	}
 
