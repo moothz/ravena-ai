@@ -125,13 +125,13 @@ class NSFWPredict {
 					const base64Data = data.replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, "");
 					await fs.promises.writeFile(targetPath, Buffer.from(base64Data, "base64"));
 				}
-				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+				//this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
 				return filename;
 			} else if (Buffer.isBuffer(data)) {
 				const filename = `nsfw_${allPrefix}${prefix}_${timestamp}_${random}.${ext}`;
 				const targetPath = path.join(debugDir, filename);
 				await fs.promises.writeFile(targetPath, data);
-				this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
+				//this.logger.info(`[Debug] Imagem NSFW salva em: ${targetPath}`);
 				return filename;
 			}
 		} catch (err) {
@@ -158,7 +158,7 @@ class NSFWPredict {
 			const filename = `nsfw_${allPrefix}${mediaKind}_${timestamp}_${random}${ext}`;
 			const targetPath = path.join(debugDir, filename);
 			await fs.promises.copyFile(videoPath, targetPath);
-			this.logger.info(`[Debug] Vídeo NSFW salvo em: ${targetPath}`);
+			//this.logger.info(`[Debug] Vídeo NSFW salvo em: ${targetPath}`);
 			return filename;
 		} catch (err) {
 			this.logger.error("Erro ao salvar vídeo de debug NSFW:", err);
@@ -301,11 +301,11 @@ class NSFWPredict {
 			return { isNSFW: false, reason: "" };
 		}
 
-		if (this.isNudenetDebug(context)) {
-			this.logger.info(
-				`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
-			);
-		}
+		// if (this.isNudenetDebug(context)) {
+		// 	this.logger.info(
+		// 		`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
+		// 	);
+		// }
 
 		// A API aceita até 16 imagens por requisição (/api/v1/classify)
 		const chunkSize = 16;
@@ -378,11 +378,11 @@ class NSFWPredict {
 		}
 
 		const combinedReason = reasons.join("; ");
-		if (this.isNudenetDebug(context) || isAnyNSFW) {
-			this.logger.info(
-				`${groupPrefix}Detecção NudeNet resultado: ${isAnyNSFW ? "NSFW" : "SAFE"} (isNSFW=${isAnyNSFW}) - ${combinedReason}${userSuffix}`
-			);
-		}
+		// if (this.isNudenetDebug(context) || isAnyNSFW) {
+		// 	this.logger.info(
+		// 		`${groupPrefix}Detecção NudeNet resultado: ${isAnyNSFW ? "NSFW" : "SAFE"} (isNSFW=${isAnyNSFW}) - ${combinedReason}${userSuffix}`
+		// 	);
+		// }
 
 		return { isNSFW: isAnyNSFW, reason: combinedReason };
 	}
@@ -401,9 +401,9 @@ class NSFWPredict {
 		}
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
-		if (this.isNudenetDebug(context)) {
-			this.logger.info(`${groupPrefix}Detectando NSFW via NudeNet API: ${videoPath}${userSuffix}`);
-		}
+		// if (false && this.isNudenetDebug(context)) {
+		// 	this.logger.info(`${groupPrefix}Detectando NSFW via NudeNet API: ${videoPath}${userSuffix}`);
+		// }
 
 		const fileBuffer = await fs.promises.readFile(videoPath);
 		const ext = path.extname(videoPath).toLowerCase();
@@ -501,11 +501,11 @@ class NSFWPredict {
 			}
 		}
 
-		if (this.isNudenetDebug(context) || isNSFW) {
-			this.logger.info(
-				`${groupPrefix}Detecção NudeNet resultado: ${isNSFW ? "NSFW" : "SAFE"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
-			);
-		}
+		// if (false && (this.isNudenetDebug(context) || isNSFW)) {
+		// 	this.logger.info(
+		// 		`${groupPrefix}Detecção NudeNet resultado: ${isNSFW ? "NSFW" : "SAFE"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
+		// 	);
+		// }
 
 		return { isNSFW, reason };
 	}
@@ -530,7 +530,7 @@ class NSFWPredict {
 			return { isNSFW: false, reason: "Serviço está temporariamente indisponível" };
 		}
 
-		this.logger.info(`${groupPrefix}Detectando NSFW em mídia via LLM...${userSuffix}`);
+		//this.logger.info(`${groupPrefix}Detectando NSFW em mídia via LLM...${userSuffix}`);
 
 		const prompt = `Analyze the provided image(s) with a focus on strict content safety classification. Your goal is to distinguish between general skin exposure (Safe) and explicit sexual content (NSFW).
 
@@ -581,7 +581,7 @@ Return the result in JSON format.`;
 				this.logger.error("Erro ao executar LLM para NSFW:", e);
 				response = "{}";
 			}
-			this.logger.info(`${groupPrefix}Detecção NSFW RAW: ${response}${userSuffix}`);
+			//this.logger.info(`${groupPrefix}Detecção NSFW RAW: ${response}${userSuffix}`);
 			const cleanResponse = (response || "{}").replace(/```json|```/g, "").trim();
 			let parsedResponse = {};
 			try {
@@ -601,9 +601,7 @@ Return the result in JSON format.`;
 				classification.includes("nsfw") ||
 				parsedResponse.isNSFW === true;
 			const reason = parsedResponse.reason || parsedResponse.reasoning || "";
-			this.logger.info(
-				`${groupPrefix}Detecção NSFW resultado: ${parsedResponse.classification || "unknown"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`
-			);
+			//this.logger.info(`${groupPrefix}Detecção NSFW resultado: ${parsedResponse.classification || "unknown"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`);
 
 			return { isNSFW, reason };
 		} catch (error) {
@@ -642,7 +640,7 @@ Return the result in JSON format.`;
 				return { isNSFW: false, reason: "No frames extracted", error: "No frames extracted" };
 			}
 
-			this.logger.info(`${groupPrefix}Analisando ${frames.length} frames do vídeo...${userSuffix}`);
+			//this.logger.info(`${groupPrefix}Analisando ${frames.length} frames do vídeo...${userSuffix}`);
 			const result = await this.detectNSFWWithLLM(frames, context);
 			return result;
 		} catch (error) {
@@ -689,9 +687,7 @@ Return the result in JSON format.`;
 				lastError = err;
 				const delay = delays[attempt - 1];
 				if (attempt < maxAttempts) {
-					this.logger.warn(
-						`${groupPrefix}NudeNet API (${label}) tentativa ${attempt}/${maxAttempts} falhou (${err.message}). Nova tentativa em ${delay / 1000}s...${userSuffix}`
-					);
+					//this.logger.warn(`${groupPrefix}NudeNet API (${label}) tentativa ${attempt}/${maxAttempts} falhou (${err.message}). Nova tentativa em ${delay / 1000}s...${userSuffix}`);
 					await this._sleep(delay);
 				}
 			}
