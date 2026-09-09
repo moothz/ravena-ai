@@ -1,3 +1,4 @@
+const fs = require("fs");
 const { createCanvas, loadImage } = require("canvas");
 const path = require("path");
 const Logger = require("../utils/Logger");
@@ -313,6 +314,71 @@ async function presente(bot, message, args, group) {
 	return resposta;
 }
 
+function getSaudacao(hora) {
+	if (hora >= 5 && hora < 12) {
+		return "Tenha um bom dia! ☀️";
+	} else if (hora >= 12 && hora < 18) {
+		return "Tenha uma boa tarde! ☀️";
+	} else if (hora >= 18 && hora < 24) {
+		return "Tenha uma boa noite! 🌙";
+	} else {
+		return "Tenha uma boa madrugada! 🌙";
+	}
+}
+
+async function horaDataCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const agora = new Date();
+	const saudacao = getSaudacao(agora.getHours());
+
+	const template = `🕰️ Agora são aproximadamente exatos 🕒 {data-hora}:{data-minuto} do dia {data-dia}/{data-mes}/{data-ano} 🗓\n${saudacao}`;
+
+	const options = {};
+	const textoFinal = await variableProcessor.process(template, {
+		message,
+		group,
+		options,
+		bot
+	});
+
+	const retorno = [
+		new ReturnMessage({
+			chatId,
+			content: textoFinal,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				...options
+			}
+		})
+	];
+
+	const horaStr = String(agora.getHours()).padStart(2, "0");
+	const audioPath = path.join(database.databasePath, "assets", `horacerta_${horaStr}.mp3`);
+
+	if (fs.existsSync(audioPath) && bot && typeof bot.createMedia === "function") {
+		try {
+			const media = await bot.createMedia(audioPath, "audio/mp3");
+			if (media) {
+				retorno.push(
+					new ReturnMessage({
+						chatId,
+						content: media,
+						options: {
+							quotedMessageId: message.origin?.id?._serialized,
+							goReply: message.origin
+						}
+					})
+				);
+			}
+		} catch (err) {
+			logger.error(`Erro ao carregar áudio de hora certa (${audioPath}):`, err);
+		}
+	}
+
+	return retorno;
+}
+
 // Criar array de comandos usando a classe Command
 const commands = [
 	new Command({
@@ -437,6 +503,25 @@ const commands = [
 		},
 		method: async (bot, message, args, group) =>
 			await handleComandoVariavelSimples(bot, message, args, group, "genshin")
+	}),
+	new Command({
+		name: "hora",
+		aliases: ["data"],
+		description: "Informa a data e hora atual com precisão aproximada",
+		category: "zoeira",
+		reactions: {
+			after: "🕒"
+		},
+		method: horaDataCommand
+	}),
+	new Command({
+		name: "data",
+		category: "zoeira",
+		hidden: true,
+		reactions: {
+			after: "🗓"
+		},
+		method: horaDataCommand
 	})
 ];
 
@@ -444,7 +529,7 @@ const helper = {
 	about: "Comandos de humor, zoeira e brincadeiras sociais para animar o grupo",
 	implementation:
 		"Sorteia membros do grupo e processa variáveis customizadas para piadas, PIX fictício, clonagem de cartão e aniversário",
-	tags: "zoeira,humor,brincadeiras,memes,pix,aniversario,boleto,violencia",
+	tags: "zoeira,humor,brincadeiras,memes,pix,aniversario,boleto,violencia,hora,data",
 	cmds: [
 		{
 			cmd: "!violencia",
@@ -486,6 +571,12 @@ const helper = {
 			cmd: "!aniversario",
 			desc: "Parabeniza um aniversariante do grupo em grande estilo",
 			usage: ["!aniversario @fulano"],
+			category: "zoeira"
+		},
+		{
+			cmd: "!hora",
+			desc: "Informa a hora e a data atual com precisão aproximada",
+			usage: ["!hora", "!data"],
 			category: "zoeira"
 		}
 	]
