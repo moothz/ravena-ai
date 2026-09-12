@@ -34,6 +34,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const unlinkAsync = promisify(fs.unlink);
+const statAsync = promisify(fs.stat);
+const renameAsync = promisify(fs.rename);
 const convertAsync = promisify(imagemagick.convert);
 
 class WhatsAppBotGo {
@@ -471,7 +473,7 @@ class WhatsAppBotGo {
 			isTempInputFile = true;
 
 			const targetSize = 512;
-			const videoFilter = `scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
+			const videoFilter = `scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
 
 			await new Promise((resolve, reject) => {
 				ffmpeg(inputPath)
@@ -789,21 +791,20 @@ class WhatsAppBotGo {
 
 			this.logger.info("[toAnimatedWebP] Starting square animated WebP conversion for:", inputPath);
 
-			// Define the target square dimensions
+			// Define as dimensões e padrões recomendados pelo WhatsApp
 			const targetSize = 512;
+			const maxDuration = 6;
+			const fps = 15;
 
-			// Construct the complex video filter string
-			// 1. Set FPS
-			// 2. Scale to fit within targetSize x targetSize, preserving aspect ratio (lanczos for quality)
-			// 3. Pad to targetSize x targetSize, center content, fill with transparent background
-			// 4. Generate and use a palette for better WebP quality and transparency handling
-			const videoFilter = `fps=20,scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0,split[s0][s1];[s0]palettegen=max_colors=250:reserve_transparent=on[p];[s1][p]paletteuse=dither=bayer:alpha_threshold=128`;
+			const videoFilter = `fps=${fps},scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
 
 			await new Promise((resolve, reject) => {
 				ffmpeg(inputPath)
 					.outputOptions([
 						"-vf",
 						videoFilter,
+						"-t",
+						String(maxDuration),
 						"-loop",
 						"0",
 						"-c:v",
@@ -811,14 +812,12 @@ class WhatsAppBotGo {
 						"-lossless",
 						"0",
 						"-q:v",
-						"75", // Quality for lossy WebP (0-100)
+						"45", // Qualidade balanceada com alta compactação
 						"-compression_level",
-						"6", // Compression level (0-6)
+						"6", // Compressão máxima
 						"-preset",
 						"default",
-						"-an", // Remove audio
-						"-vsync",
-						"cfr" // Constant frame rate
+						"-an" // Remove áudio
 					])
 					.toFormat("webp")
 					.on("end", () => {
@@ -838,6 +837,44 @@ class WhatsAppBotGo {
 					})
 					.save(tempOutputPath);
 			});
+
+			// WhatsApp limit check: se passar de 500 KB, aplica compressão de fallback
+			const stats = await statAsync(tempOutputPath).catch(() => null);
+			if (stats && stats.size > 500 * 1024) {
+				this.logger.warn(
+					`[toAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) > 500 KB. Recompactando...`
+				);
+				const tempCompressedPath = path.join(tempDirectory, `${tempId}_recompressed.webp`);
+				await new Promise((resolve) => {
+					ffmpeg(tempOutputPath)
+						.outputOptions([
+							"-vf",
+							`fps=12,scale=400:400:force_original_aspect_ratio=decrease,format=yuva420p,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0.0`,
+							"-t",
+							"4.5",
+							"-loop",
+							"0",
+							"-c:v",
+							"libwebp",
+							"-lossless",
+							"0",
+							"-q:v",
+							"28",
+							"-compression_level",
+							"6",
+							"-an"
+						])
+						.toFormat("webp")
+						.on("end", async () => {
+							try {
+								await renameAsync(tempCompressedPath, tempOutputPath);
+							} catch {}
+							resolve();
+						})
+						.on("error", () => resolve())
+						.save(tempCompressedPath);
+				});
+			}
 
 			this.logger.info(
 				"[toAnimatedWebP] Square animated WebP saved to temporary file:",
@@ -2346,10 +2383,27 @@ class WhatsAppBotGo {
 				if (options.sendMediaAsSticker) {
 					endpoint = "/send/sticker";
 					if (!content.url && content.data) {
+						let stickerData = content.data;
+						let stickerMime = content.mimetype || "image/webp";
+						if (!stickerMime.includes("webp")) {
+							try {
+								if (stickerMime.startsWith("video/") || stickerMime === "image/gif") {
+									stickerData = await this.convertToAnimatedWebP(content.data);
+									stickerMime = "image/webp";
+								} else {
+									stickerData = await this.convertToSquareWebPImage(content.data);
+									stickerMime = "image/webp";
+								}
+							} catch (convErr) {
+								this.logger.warn(
+									`[sendMessage] Erro ao padronizar mídia para WebP sticker: ${convErr.message}`
+								);
+							}
+						}
 						const media = await this.createMediaFromBase64(
-							content.data,
-							content.mimetype,
-							content.filename
+							stickerData,
+							stickerMime,
+							content.filename ? content.filename.replace(/\.[^/.]+$/, ".webp") : "sticker.webp"
 						);
 						payload.sticker = media.url;
 					} else {

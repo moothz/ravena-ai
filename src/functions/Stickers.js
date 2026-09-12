@@ -46,6 +46,17 @@ async function cleanupTempFiles() {
 	}
 }
 
+// Padrões recomendados do WhatsApp para figurinhas (stickers)
+const WHATSAPP_STICKER = {
+	MAX_SIZE: 512, // Dimensão padrão do WhatsApp: 512x512 pixels
+	MAX_DURATION: 6, // Duração máxima recomendada: 6 segundos para animadas
+	FPS: 15, // 15 FPS para fluidez com arquivo controlado
+	MAX_FILE_SIZE: 500 * 1024, // Limite estrito do WhatsApp: 500 KB para figurinhas animadas
+	STATIC_QUALITY: 80, // Qualidade WebP para imagens estáticas
+	ANIMATED_QUALITY: 45, // Qualidade WebP para animações
+	COMPRESSION_LEVEL: 6 // Nível de compressão máximo da libwebp (0-6)
+};
+
 // Função para determinar se o arquivo é um vídeo ou uma imagem
 function isVideo(mimeType) {
 	return mimeType.startsWith("video/") || mimeType === "image/gif";
@@ -55,12 +66,134 @@ function isVideo(mimeType) {
 async function saveTempMedia(mediaBuffer, mimeType) {
 	await ensureTempDir();
 
-	const extension = mimeType.split("/")[1].replace("jpeg", "jpg");
-	const tempFileName = `temp-${Date.now()}.${extension}`;
+	let extension = "mp4";
+	if (mimeType.includes("gif")) {
+		extension = "gif";
+	} else if (mimeType.includes("webp")) {
+		extension = "webp";
+	} else if (mimeType.includes("quicktime") || mimeType.includes("mov")) {
+		extension = "mov";
+	} else if (mimeType.includes("webm")) {
+		extension = "webm";
+	} else if (mimeType.includes("/")) {
+		extension = mimeType.split("/")[1].replace("jpeg", "jpg");
+	}
+	const tempFileName = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}.${extension}`;
 	const tempFilePath = path.join(TEMP_DIR, tempFileName);
 
 	await fs.writeFile(tempFilePath, mediaBuffer);
 	return tempFilePath;
+}
+
+/**
+ * Codifica vídeo ou GIF para WebP animado no padrão do WhatsApp:
+ * - 512x512 dimensões máximas
+ * - Limite de duração de até 6 segundos
+ * - 15 FPS
+ * - Bordas transparentes para vídeos não quadrados
+ * - Compressão máxima libwebp e garantia de tamanho < 500 KB
+ */
+async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
+	const outputPath = path.join(
+		TEMP_DIR,
+		`anim-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
+	);
+
+	const runFfmpeg = (opts, vf, targetPath) =>
+		new Promise((resolve, reject) => {
+			ffmpeg(inputPath)
+				.outputOptions(opts)
+				.videoFilters(vf)
+				.toFormat("webp")
+				.save(targetPath)
+				.on("end", resolve)
+				.on("error", reject);
+		});
+
+	// Pass 1: Qualidade e compressão otimizada para WhatsApp
+	await runFfmpeg(
+		[
+			"-y",
+			"-t",
+			String(WHATSAPP_STICKER.MAX_DURATION),
+			"-c:v",
+			"libwebp",
+			"-lossless",
+			"0",
+			"-compression_level",
+			String(WHATSAPP_STICKER.COMPRESSION_LEVEL),
+			"-q:v",
+			String(WHATSAPP_STICKER.ANIMATED_QUALITY),
+			"-loop",
+			"0",
+			"-an"
+		],
+		filterCommand,
+		outputPath
+	);
+
+	let stats = await fs.stat(outputPath);
+	logger.info(
+		`[encodeAnimatedWebP] Sticker animado gerado. Tamanho: ${(stats.size / 1024).toFixed(1)} KB`
+	);
+
+	// Pass 2 (Fallback): Se ultrapassar o limite estrito do WhatsApp (500 KB), recompacta mais agressivamente
+	if (stats.size > WHATSAPP_STICKER.MAX_FILE_SIZE) {
+		logger.warn(
+			`[encodeAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) excede 500 KB. Aplicando compressão secundária...`
+		);
+		const fallbackPath = path.join(
+			TEMP_DIR,
+			`anim-fallback-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
+		);
+
+		await new Promise((resolve) => {
+			ffmpeg(outputPath)
+				.outputOptions([
+					"-y",
+					"-t",
+					"4.5",
+					"-c:v",
+					"libwebp",
+					"-lossless",
+					"0",
+					"-compression_level",
+					"6",
+					"-q:v",
+					"28",
+					"-loop",
+					"0",
+					"-an"
+				])
+				.videoFilters(
+					"fps=12,scale=400:400:force_original_aspect_ratio=decrease,format=yuva420p,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0.0"
+				)
+				.toFormat("webp")
+				.save(fallbackPath)
+				.on("end", async () => {
+					try {
+						await fs.rename(fallbackPath, outputPath);
+						stats = await fs.stat(outputPath);
+						logger.info(
+							`[encodeAnimatedWebP] Fallback concluído. Novo tamanho: ${(stats.size / 1024).toFixed(1)} KB`
+						);
+					} catch (e) {
+						logger.error("[encodeAnimatedWebP] Erro ao aplicar fallback:", e);
+					}
+					resolve();
+				})
+				.on("error", (err) => {
+					logger.warn(
+						`[encodeAnimatedWebP] Falha no fallback de compressão, mantendo versão anterior: ${err.message}`
+					);
+					resolve();
+				});
+		});
+	}
+
+	const buffer = await fs.readFile(outputPath);
+	await fs.unlink(outputPath).catch(() => {});
+	return buffer;
 }
 
 /**
@@ -149,25 +282,36 @@ Responda APENAS com um objeto JSON seguindo este schema: { "percentage": número
 	}
 }
 
-// Função para converter um buffer de mídia em um buffer de sticker quadrado
+// Função para converter um buffer de mídia em um buffer de sticker quadrado nos padrões do WhatsApp
 async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 	try {
-		// Se for imagem (exceto GIF), use sharp
-		if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
-			// logger.info(`[makeSquareMedia] Processando imagem ${mimeType}`);
+		// Converter de base64 para Buffer se necessário
+		let rawBuffer = mediaBuffer;
+		if (typeof mediaBuffer === "string") {
+			rawBuffer = Buffer.from(mediaBuffer, "base64");
+		} else if (mediaBuffer.data && typeof mediaBuffer.data === "string") {
+			rawBuffer = Buffer.from(mediaBuffer.data, "base64");
+		}
 
-			// Carregar a imagem - Converter de base64 para Buffer se necessário
-			let imageBuffer = mediaBuffer;
-			if (typeof mediaBuffer === "string") {
-				imageBuffer = Buffer.from(mediaBuffer, "base64");
-			} else if (mediaBuffer.data && typeof mediaBuffer.data === "string") {
-				imageBuffer = Buffer.from(mediaBuffer.data, "base64");
-			}
+		const TARGET_SIZE = WHATSAPP_STICKER.MAX_SIZE;
+		const FPS = WHATSAPP_STICKER.FPS;
 
-			const image = sharp(imageBuffer);
+		// Verifica se é WebP animado
+		let isAnimWebP = false;
+		if (mimeType === "image/webp") {
+			try {
+				const checkAnim = sharp(rawBuffer, { animated: true });
+				const meta = await checkAnim.metadata();
+				if (meta.pages > 1) {
+					isAnimWebP = true;
+				}
+			} catch {}
+		}
+
+		// Se for imagem estática (exceto GIF e WebP animado), use sharp
+		if (mimeType.startsWith("image/") && mimeType !== "image/gif" && !isAnimWebP) {
+			const image = sharp(rawBuffer);
 			const metadata = await image.metadata();
-
-			// logger.debug(`Metadata da imagem: ${JSON.stringify(metadata)}`);
 
 			// Determinar dimensões para corte quadrado
 			const size = Math.min(metadata.width, metadata.height);
@@ -190,238 +334,73 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 					left = 0;
 				}
 			} else if (cropType === "center") {
-				// Centraliza o corte
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = Math.max(0, (metadata.height - size) / 2);
 			} else if (cropType === "top") {
-				// Preserva o topo, corta o fundo
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = 0;
 			} else if (cropType === "bottom") {
-				// Preserva o fundo, corta o topo
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = Math.max(0, metadata.height - size);
 			} else if (cropType === "stretch") {
-				// Para o modo de esticamento, redimensionamos diretamente para 400x400
-				return await image.resize(400, 400, { fit: "fill" }).toBuffer();
-			} else if (cropType === "transparent") {
-				// Redimensiona para caber em 400x400 mantendo o aspecto e adiciona bordas transparentes
-				// Converte para webp para garantir suporte à transparência
 				return await image
-					.resize(400, 400, {
+					.resize(TARGET_SIZE, TARGET_SIZE, { fit: "fill" })
+					.webp({
+						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
+					})
+					.toBuffer();
+			} else if (cropType === "transparent") {
+				// Redimensiona para caber em 512x512 mantendo o aspecto e adiciona bordas transparentes
+				return await image
+					.resize(TARGET_SIZE, TARGET_SIZE, {
 						fit: "contain",
 						background: { r: 0, g: 0, b: 0, alpha: 0 }
 					})
-					.webp()
+					.webp({
+						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
+					})
 					.toBuffer();
 			}
 
-			// Aplicar o corte e redimensionar para 400x400
+			// Aplicar o corte e redimensionar para 512x512 em WebP
 			return await image
 				.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
-				.resize(400, 400)
+				.resize(TARGET_SIZE, TARGET_SIZE)
+				.webp({
+					quality: WHATSAPP_STICKER.STATIC_QUALITY,
+					effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
+				})
 				.toBuffer();
-		} else if (isVideo(mimeType)) {
-			// logger.info(`[makeSquareMedia] Processando video ${mimeType}`);
+		} else if (isVideo(mimeType) || isAnimWebP) {
+			// Para vídeos, GIFs e WebP animado, processa via ffmpeg
+			const inputPath = await saveTempMedia(rawBuffer, mimeType);
 
-			// Converter de base64 para Buffer se necessário
-			let videoBuffer = mediaBuffer;
-			if (typeof mediaBuffer === "string") {
-				videoBuffer = Buffer.from(mediaBuffer, "base64");
-			} else if (mediaBuffer.data && typeof mediaBuffer.data === "string") {
-				videoBuffer = Buffer.from(mediaBuffer.data, "base64");
-			}
-
-			// Para vídeos e GIFs, use ffmpeg
-			const inputPath = await saveTempMedia(videoBuffer, mimeType);
-			const outputPath = `${inputPath.split(".")[0]}-square.${inputPath.split(".")[1]}`;
-
-			logger.debug(`Arquivos temporários: input=${inputPath}, output=${outputPath}`);
-
-			// Configurar os filtros baseados no tipo de corte
 			let filterCommand = "";
-			let outputLabel = "scaled";
-
-			// Estratégia: primeiro determinar a área de corte e depois redimensionar para 400x400
 			const percentage = parseFloat(cropType);
 
 			if (!isNaN(percentage)) {
-				// Cortar com base na porcentagem e depois redimensionar
-				filterCommand = [
-					{
-						filter: "crop",
-						options: {
-							w: "min(iw,ih)",
-							h: "min(iw,ih)",
-							x: `clip((iw * ${percentage}/100) - (min(iw,ih)/2), 0, iw - min(iw,ih))`,
-							y: `clip((ih * ${percentage}/100) - (min(iw,ih)/2), 0, ih - min(iw,ih))`
-						},
-						outputs: "cropped"
-					},
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400
-						},
-						inputs: "cropped",
-						outputs: "scaled"
-					}
-				];
+				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):clip((iw*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,iw-min(iw\\,ih)):clip((ih*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,ih-min(iw\\,ih)),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
 			} else if (cropType === "center") {
-				// Cortar para quadrado no centro e depois redimensionar
-				filterCommand = [
-					{
-						filter: "crop",
-						options: {
-							w: "min(iw,ih)",
-							h: "min(iw,ih)",
-							x: "(iw-min(iw,ih))/2",
-							y: "(ih-min(iw,ih))/2"
-						},
-						outputs: "cropped"
-					},
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400
-						},
-						inputs: "cropped",
-						outputs: "scaled"
-					}
-				];
+				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
 			} else if (cropType === "top") {
-				// Cortar para quadrado preservando o topo e depois redimensionar
-				filterCommand = [
-					{
-						filter: "crop",
-						options: {
-							w: "min(iw,ih)",
-							h: "min(iw,ih)",
-							x: "(iw-min(iw,ih))/2",
-							y: "0"
-						},
-						outputs: "cropped"
-					},
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400
-						},
-						inputs: "cropped",
-						outputs: "scaled"
-					}
-				];
+				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:0,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
 			} else if (cropType === "bottom") {
-				// Cortar para quadrado preservando o fundo e depois redimensionar
-				filterCommand = [
-					{
-						filter: "crop",
-						options: {
-							w: "min(iw,ih)",
-							h: "min(iw,ih)",
-							x: "(iw-min(iw,ih))/2",
-							y: "(ih-min(iw,ih))"
-						},
-						outputs: "cropped"
-					},
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400
-						},
-						inputs: "cropped",
-						outputs: "scaled"
-					}
-				];
+				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:ih-min(iw\\,ih),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
 			} else if (cropType === "stretch") {
-				// Esticar o vídeo para 400x400 sem cortar
-				filterCommand = [
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400,
-							force_original_aspect_ratio: 0 // Força o esticamento
-						},
-						outputs: "scaled"
-					}
-				];
+				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
 			} else if (cropType === "transparent") {
-				// Ajustar vídeo para caber em 400x400 e preencher com preto (letterbox)
-				outputLabel = "padded";
-				filterCommand = [
-					{
-						filter: "scale",
-						options: {
-							w: 400,
-							h: 400,
-							force_original_aspect_ratio: "decrease"
-						},
-						outputs: "scaled"
-					},
-					{
-						filter: "pad",
-						options: {
-							w: 400,
-							h: 400,
-							x: "(ow-iw)/2",
-							y: "(oh-ih)/2",
-							color: "black"
-						},
-						inputs: "scaled",
-						outputs: "padded"
-					}
-				];
+				// Ajustar vídeo para caber em 512x512 e preencher com fundo 100% transparente (sem bordas pretas)
+				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,format=yuva420p,pad=${TARGET_SIZE}:${TARGET_SIZE}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
 			}
 
-			// Usar arquivo intermediário em vez de pipe para evitar problemas de formato
-			return new Promise((resolve, reject) => {
-				ffmpeg(inputPath)
-					.outputOptions([
-						"-y",
-						"-an",
-						"-c:v libx264",
-						"-preset veryfast",
-						"-crf 32",
-						"-r 15",
-						"-t 7",
-						"-pix_fmt yuv420p"
-					])
-					.complexFilter(filterCommand, outputLabel)
-					.output(outputPath)
-					.on("start", (cmdline) => {
-						logger.debug(`Comando ffmpeg: ${cmdline}`);
-					})
-					.on("end", async () => {
-						try {
-							// Ler o arquivo de saída
-							const processedBuffer = await fs.readFile(outputPath);
-							// Limpar arquivos temporários
-							// await fs.unlink(inputPath).catch(() => {
-							//   logger.warn(`Não foi possível excluir ${inputPath}`);
-							// });
-							// await fs.unlink(outputPath).catch(() => {
-							//   logger.warn(`Não foi possível excluir ${outputPath}`);
-							// });
-							resolve(processedBuffer);
-						} catch (error) {
-							logger.error(`Erro ao ler arquivo processado: ${error}`);
-							reject(error);
-						}
-					})
-					.on("error", (err) => {
-						logger.error(`Erro no ffmpeg: ${err.message}`);
-						// Tentar limpar os arquivos mesmo em caso de erro
-						//fs.unlink(inputPath).catch(() => {});
-						//fs.unlink(outputPath).catch(() => {});
-						reject(err);
-					})
-					.run();
-			});
+			try {
+				const processedBuffer = await encodeAnimatedWebPWithFallback(inputPath, filterCommand);
+				return processedBuffer;
+			} finally {
+				await fs.unlink(inputPath).catch(() => {});
+			}
 		} else {
 			throw new Error(`Tipo de mídia não suportado: ${mimeType}`);
 		}
@@ -637,19 +616,13 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			finalCropType = await getLLMCropPercentage(mediaBuffer, mimeType);
 		}
 
-		// Processar a mídia para torná-la quadrada
+		// Processar a mídia para torná-la quadrada no padrão WhatsApp
 		const processedBuffer = await processMediaToSquare(mediaBuffer, mimeType, finalCropType);
 
-		// Salvar o buffer processado em um arquivo temporário
+		// Salvar o buffer processado em um arquivo temporário WebP
 		await ensureTempDir();
 
-		// Determinar a extensão correta
-		let extension = mimeType.split("/")[1].replace("jpeg", "jpg");
-		if (mimeType.startsWith("image/") && cropType === "transparent") {
-			extension = "webp";
-		}
-
-		const tempFileName = `processed-${Date.now()}.${extension}`;
+		const tempFileName = `processed-${Date.now()}.webp`;
 		const tempFilePath = path.join(TEMP_DIR, tempFileName);
 
 		logger.debug(`Salvando mídia processada em: ${tempFilePath}`);
@@ -658,16 +631,14 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		// Usar o método do bot para criar a mídia no formato correto
 		const processedFileBuffer = await fs.readFile(tempFilePath);
 		const processedMedia = {
-			mimetype: require("mime-types").lookup(tempFilePath) || "application/octet-stream",
+			mimetype: "image/webp",
 			data: processedFileBuffer.toString("base64"),
-			filename: require("path").basename(tempFilePath),
+			filename: `sticker-${Date.now()}.webp`,
 			isMessageMedia: true
 		};
 
-		// Tentar limpar o arquivo temporário (de forma assíncrona, não bloqueia)
-		// fs.unlink(tempFilePath).catch(err => {
-		//   logger.warn(`Não foi possível excluir o arquivo temporário ${tempFilePath}: ${err.message}`);
-		// });
+		// Limpa temporário de forma assíncrona
+		fs.unlink(tempFilePath).catch(() => {});
 
 		// Extrair nome do sticker dos args ou usa nome do grupo
 		const stickerName = args.length > 0 ? args.join(" ") : group ? group.name : "sticker";
@@ -737,10 +708,7 @@ async function processAutoSticker(bot, message, group) {
 		}
 
 		// Verifica se o usuário está gerenciando algum grupo pelo PV
-		if (
-			bot.eventHandler.commandHandler.privateManagement &&
-			bot.eventHandler.commandHandler.privateManagement[message.author]
-		) {
+		if (bot.eventHandler?.commandHandler?.privateManagement?.[message.author]) {
 			// O usuário está gerenciando um grupo pelo PV, não criar sticker automaticamente
 			return false;
 		}
@@ -772,10 +740,31 @@ async function processAutoSticker(bot, message, group) {
 			return false;
 		}
 
+		// Processa a mídia para o padrão de figurinha do WhatsApp (512x512, transparente, compactado, max 6s)
+		let processedMedia = stickerContent;
+		try {
+			const processedBuffer = await processMediaToSquare(
+				stickerContent,
+				stickerContent.mimetype || message.type,
+				"transparent"
+			);
+			processedMedia = {
+				mimetype: "image/webp",
+				data: processedBuffer.toString("base64"),
+				filename: `autosticker-${Date.now()}.webp`,
+				isMessageMedia: true
+			};
+		} catch (procErr) {
+			logger.warn(
+				"[processAutoSticker] Erro ao pré-processar sticker no padrão, usando mídia original:",
+				procErr
+			);
+		}
+
 		// Usar ReturnMessage para enviar o sticker
 		const returnMessage = new ReturnMessage({
 			chatId: message.author,
-			content: stickerContent,
+			content: processedMedia,
 			options: {
 				sendMediaAsSticker: true,
 				stickerAuthor: "ravena",

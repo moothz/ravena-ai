@@ -570,7 +570,18 @@ async function handleStickerBg(bot, message, args, group) {
 		logger.debug(`Imagem recortada, salva em ${trimmedPath}`);
 		filePaths.push(trimmedPath);
 
-		const resultMedia = await bot.createMedia(trimmedPath);
+		// Padroniza para dimensões de sticker do WhatsApp (512x512, fundo transparente, WebP)
+		const stickerPath = inputPath.replace(/\.[^/.]+$/, "") + "_sticker.webp";
+		await sharp(trimmedPath)
+			.resize(512, 512, {
+				fit: "contain",
+				background: { r: 0, g: 0, b: 0, alpha: 0 }
+			})
+			.webp({ quality: 80, effort: 6 })
+			.toFile(stickerPath);
+		filePaths.push(stickerPath);
+
+		const resultMedia = await bot.createMedia(stickerPath);
 
 		// Limpa arquivos temporários
 		cleanupTempFiles(filePaths).catch((error) => {
@@ -586,7 +597,7 @@ async function handleStickerBg(bot, message, args, group) {
 			args: args.join(" "),
 			info: {
 				cropType: "nobg",
-				mimeType: "image/png"
+				mimeType: "image/webp"
 			}
 		});
 
