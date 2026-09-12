@@ -1588,22 +1588,23 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				// 	greetings: group.greetings
 				// });
 				if (group.greetings) {
-					this.generateGreetingMessage(bot, group, data.user, chat)
-						.then((welcomes) => {
-							if (welcomes && Array.isArray(welcomes)) {
-								for (const welcome of welcomes) {
-									const options = welcome.options ?? {};
-									if (welcome.mentions) options.mentions = welcome.mentions;
+					try {
+						const welcomes = await this.generateGreetingMessage(bot, group, data.user, chat);
+						if (welcomes && Array.isArray(welcomes)) {
+							for (const welcome of welcomes) {
+								const options = welcome.options ?? {};
+								if (welcome.mentions) options.mentions = welcome.mentions;
 
-									bot.sendMessage(group.id, welcome.message, options).catch((error) => {
-										this.logger.error("Erro ao enviar mensagem de boas-vindas:", error);
-									});
+								try {
+									await bot.sendMessage(group.id, welcome.message, options);
+								} catch (error) {
+									this.logger.error("Erro ao enviar mensagem de boas-vindas:", error);
 								}
 							}
-						})
-						.catch((error) => {
-							this.logger.error("Erro ao gerar mensagem de saudação:", error);
-						});
+						}
+					} catch (error) {
+						this.logger.error("Erro ao gerar mensagem de saudação:", error);
+					}
 				}
 			}
 		} catch (error) {
@@ -1880,16 +1881,22 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			// 	farewells: group?.farewells
 			// });
 			if (group && group.farewells && !isBotLeaving) {
-				const farewells = await this.processFarewellMessage(group, data.user, bot);
-				if (farewells && Array.isArray(farewells)) {
-					for (const farewell of farewells) {
-						const options = farewell.options ?? {};
-						if (farewell.mentions) options.mentions = farewell.mentions;
+				try {
+					const farewells = await this.processFarewellMessage(group, data.user, bot);
+					if (farewells && Array.isArray(farewells)) {
+						for (const farewell of farewells) {
+							const options = farewell.options ?? {};
+							if (farewell.mentions) options.mentions = farewell.mentions;
 
-						bot.sendMessage(data.group.id, farewell.message, options).catch((error) => {
-							this.logger.error("Erro ao enviar mensagem de despedida:", error);
-						});
+							try {
+								await bot.sendMessage(data.group.id, farewell.message, options);
+							} catch (error) {
+								this.logger.error("Erro ao enviar mensagem de despedida:", error);
+							}
+						}
 					}
+				} catch (error) {
+					this.logger.error("Erro ao gerar mensagem de despedida:", error);
 				}
 			}
 		} catch (error) {
@@ -1939,6 +1946,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const availableTypes = Object.keys(group.greetings).filter((type) => group.greetings[type]);
 
 			if (availableTypes.length === 0) return [];
+
+			// Garante que o texto seja processado primeiro, seguido das mídias
+			const typePriority = ["text", "image", "video", "gif", "sticker", "audio"];
+			availableTypes.sort((a, b) => {
+				const ia = typePriority.indexOf(a);
+				const ib = typePriority.indexOf(b);
+				return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+			});
 
 			const messagesToSend = [];
 
@@ -1991,21 +2006,19 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				return { text: message, mentions: options.mentions || [] };
 			};
 
-			const hasMediaWithCaption = availableTypes.some(
-				(t) => t !== "text" && (group.greetings[t]?.caption || group.greetings.text)
-			);
-
 			for (const type of availableTypes) {
 				const greetingData = group.greetings[type];
 				let currentMentions = [...baseMentions];
 
 				// Se saudação de texto
 				if (type === "text") {
-					if (hasMediaWithCaption) {
-						// Pula envio do texto avulso pois a legenda já irá junto da mídia
+					if (typeof greetingData === "string" && !greetingData.trim()) {
 						continue;
 					}
 					const processed = await processText(greetingData, baseMentions); // greetingData is the string itself for text type
+					if (!processed.text || !processed.text.trim()) {
+						continue;
+					}
 					currentMentions = [...new Set([...currentMentions, ...processed.mentions])];
 
 					messagesToSend.push({
@@ -2034,10 +2047,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						// Processa caption se houver (audio e sticker ignoram caption no envio, mas a gente processa igual)
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
-							let rawCaption = typeof greetingData.caption === "string" ? greetingData.caption : "";
-							if (!rawCaption && typeof group.greetings.text === "string" && group.greetings.text) {
-								rawCaption = group.greetings.text;
-							}
+							const rawCaption =
+								typeof greetingData.caption === "string" ? greetingData.caption : "";
 							const processedCaption = await processText(rawCaption, baseMentions);
 							caption = processedCaption.text;
 							currentMentions = [...new Set([...currentMentions, ...processedCaption.mentions])];
@@ -2057,9 +2068,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						});
 					} catch (err) {
 						this.logger.error(`Erro ao carregar mídia de greeting (${mediaPath}):`, err);
-						// Fallback para texto se falhar ao carregar mídia e houver texto configurado (mas não duplicar se o loop já cobrir 'text')
-						// Como o loop passa por todos os types, se 'text' estiver configurado, ele será processado separadamente.
-						// Então aqui apenas logamos o erro.
 					}
 				}
 			}
@@ -2093,6 +2101,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 			const availableTypes = Object.keys(group.farewells).filter((type) => group.farewells[type]);
 			if (availableTypes.length === 0) return [];
+
+			// Garante que o texto seja processado primeiro, seguido das mídias
+			const typePriority = ["text", "image", "video", "gif", "sticker", "audio"];
+			availableTypes.sort((a, b) => {
+				const ia = typePriority.indexOf(a);
+				const ib = typePriority.indexOf(b);
+				return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+			});
 
 			const messagesToSend = [];
 			const baseMentions = [user.id];
