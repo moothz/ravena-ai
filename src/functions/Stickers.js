@@ -49,13 +49,22 @@ async function cleanupTempFiles() {
 // Padrões recomendados do WhatsApp para figurinhas (stickers)
 const WHATSAPP_STICKER = {
 	MAX_SIZE: 512, // Dimensão padrão do WhatsApp: 512x512 pixels
-	MAX_DURATION: 5, // Duração ideal recomendada para figurinhas animadas (3 a 5s)
-	FPS: 12, // 12 FPS: taxa ideal para figurinhas fluidas com economia de ~25% no tamanho
-	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança rigorosamente abaixo de 500 KB do WhatsApp
+	MAX_DURATION: 15, // Duração máxima padrão de até 15s
+	FPS: 8, // 8 FPS
+	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança (< 500 KB) do WhatsApp
 	STATIC_QUALITY: 80, // Qualidade WebP para imagens estáticas
-	ANIMATED_QUALITY: 35, // Qualidade WebP balanceada que garante tamanho < 500 KB
+	ANIMATED_QUALITY: 28, // Qualidade inicial para 15s a 8 FPS
 	COMPRESSION_LEVEL: 6 // Nível de compressão máximo da libwebp (0-6)
 };
+
+// Perfis sequenciais de fallback para figurinhas animadas (interrompe assim que tamanho <= 490 KB)
+const ANIMATED_FALLBACK_PROFILES = [
+	{ duration: 15, fps: 8, qv: 28, desc: "15s @ 8fps (q:28)" },
+	{ duration: 15, fps: 8, qv: 18, desc: "15s @ 8fps menor q:v (q:18)" },
+	{ duration: 10, fps: 8, qv: 22, desc: "10s @ 8fps (q:22)" },
+	{ duration: 5, fps: 8, qv: 25, desc: "5s @ 8fps (q:25)" },
+	{ duration: 3.5, fps: 8, qv: 20, desc: "3.5s @ 8fps (q:20)" }
+];
 
 // Função para determinar se o arquivo é um vídeo ou uma imagem
 function isVideo(mimeType) {
@@ -81,8 +90,12 @@ async function saveTempMedia(mediaBuffer, mimeType) {
 }
 
 /**
- * Executa ffmpeg com fallback seguro para garantir que figurinhas animadas
- * nunca ultrapassem o limite estrito de 500 KB do WhatsApp.
+ * Executa ffmpeg com múltiplos fallbacks em cascata para figurinhas animadas:
+ * 1. 15s e 8 fps
+ * 2. 15s e 8 fps menor q:v
+ * 3. 10s e 8 fps
+ * 4. 5s e 8 fps
+ * 5. 3.5s e 8 fps
  *
  * @param {string} inputPath - Caminho do vídeo/gif de entrada
  * @param {string} filterCommand - Filtro de vídeo (crop, scale, yuva420p, pad)
@@ -90,10 +103,6 @@ async function saveTempMedia(mediaBuffer, mimeType) {
  */
 async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 	await ensureTempDir();
-	const outputPath = path.join(
-		TEMP_DIR,
-		`anim-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
-	);
 
 	const runFfmpeg = (options, filter, output) =>
 		new Promise((resolve, reject) => {
@@ -106,92 +115,74 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 				.on("error", reject);
 		});
 
-	// Pass 1: Qualidade e compressão otimizada para WhatsApp
-	await runFfmpeg(
-		[
-			"-y",
-			"-t",
-			String(WHATSAPP_STICKER.MAX_DURATION),
-			"-c:v",
-			"libwebp",
-			"-lossless",
-			"0",
-			"-compression_level",
-			String(WHATSAPP_STICKER.COMPRESSION_LEVEL),
-			"-q:v",
-			String(WHATSAPP_STICKER.ANIMATED_QUALITY),
-			"-loop",
-			"0",
-			"-an"
-		],
-		filterCommand,
-		outputPath
-	);
+	let bestBuffer = null;
+	let bestSize = Infinity;
+	const tempFilesToClean = [];
 
-	let stats = await fs.stat(outputPath);
-	logger.info(
-		`[encodeAnimatedWebP] Sticker animado gerado. Tamanho: ${(stats.size / 1024).toFixed(1)} KB`
-	);
+	try {
+		for (let i = 0; i < ANIMATED_FALLBACK_PROFILES.length; i++) {
+			const profile = ANIMATED_FALLBACK_PROFILES[i];
+			const currentOutput = path.join(
+				TEMP_DIR,
+				`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
+			);
+			tempFilesToClean.push(currentOutput);
 
-	// Pass 2 (Fallback): Se ultrapassar o limite do WhatsApp (490 KB), recompacta a partir do input original
-	if (stats.size > WHATSAPP_STICKER.MAX_FILE_SIZE) {
-		logger.warn(
-			`[encodeAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) excede limite seguro. Aplicando compressão secundária...`
-		);
-		const fallbackPath = path.join(
-			TEMP_DIR,
-			`anim-fallback-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
-		);
+			const currentFilter = filterCommand.includes("fps=")
+				? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
+				: `fps=${profile.fps},${filterCommand}`;
 
-		const fallbackFilter = filterCommand.includes("fps=")
-			? filterCommand.replace(/fps=\d+/, "fps=10")
-			: `fps=10,${filterCommand}`;
-
-		await new Promise((resolve) => {
-			ffmpeg(inputPath)
-				.outputOptions([
+			await runFfmpeg(
+				[
 					"-y",
 					"-t",
-					"3.5",
+					String(profile.duration),
 					"-c:v",
 					"libwebp",
 					"-lossless",
 					"0",
 					"-compression_level",
-					"6",
+					String(WHATSAPP_STICKER.COMPRESSION_LEVEL),
 					"-q:v",
-					"24",
+					String(profile.qv),
 					"-loop",
 					"0",
 					"-an"
-				])
-				.videoFilters(fallbackFilter)
-				.toFormat("webp")
-				.save(fallbackPath)
-				.on("end", async () => {
-					try {
-						await fs.rename(fallbackPath, outputPath);
-						stats = await fs.stat(outputPath);
-						logger.info(
-							`[encodeAnimatedWebP] Fallback concluído. Novo tamanho: ${(stats.size / 1024).toFixed(1)} KB`
-						);
-					} catch (e) {
-						logger.error("[encodeAnimatedWebP] Erro ao aplicar fallback:", e);
-					}
-					resolve();
-				})
-				.on("error", (err) => {
-					logger.warn(
-						`[encodeAnimatedWebP] Falha no fallback de compressão, mantendo versão anterior: ${err.message}`
-					);
-					resolve();
-				});
-		});
-	}
+				],
+				currentFilter,
+				currentOutput
+			);
 
-	const buffer = await fs.readFile(outputPath);
-	await fs.unlink(outputPath).catch(() => {});
-	return buffer;
+			const stats = await fs.stat(currentOutput);
+			const sizeKb = (stats.size / 1024).toFixed(1);
+			logger.info(`[encodeAnimatedWebP] Tentativa [${profile.desc}]: ${sizeKb} KB`);
+
+			if (stats.size < bestSize) {
+				bestSize = stats.size;
+				bestBuffer = await fs.readFile(currentOutput);
+			}
+
+			if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
+				logger.info(
+					`[encodeAnimatedWebP] Perfil '${profile.desc}' aprovado (${sizeKb} KB <= 490 KB).`
+				);
+				return bestBuffer;
+			}
+
+			logger.warn(
+				`[encodeAnimatedWebP] Perfil '${profile.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
+			);
+		}
+
+		logger.warn(
+			`[encodeAnimatedWebP] Todos os perfis excederam o limite. Usando menor arquivo gerado (${(bestSize / 1024).toFixed(1)} KB).`
+		);
+		return bestBuffer;
+	} finally {
+		for (const file of tempFilesToClean) {
+			fs.unlink(file).catch(() => {});
+		}
+	}
 }
 
 /**

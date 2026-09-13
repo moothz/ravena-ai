@@ -791,67 +791,28 @@ class WhatsAppBotGo {
 
 			this.logger.info("[toAnimatedWebP] Starting square animated WebP conversion for:", inputPath);
 
-			// Define as dimensões e padrões recomendados pelo WhatsApp
+			// Define as dimensões e perfis sequenciais de fallback para WhatsApp
 			const targetSize = 512;
-			const maxDuration = 5;
-			const fps = 12;
+			const profiles = [
+				{ duration: 15, fps: 8, qv: 28, desc: "15s @ 8fps (q:28)" },
+				{ duration: 15, fps: 8, qv: 18, desc: "15s @ 8fps menor q:v (q:18)" },
+				{ duration: 10, fps: 8, qv: 22, desc: "10s @ 8fps (q:22)" },
+				{ duration: 5, fps: 8, qv: 25, desc: "5s @ 8fps (q:25)" },
+				{ duration: 3.5, fps: 8, qv: 20, desc: "3.5s @ 8fps (q:20)" }
+			];
 
-			const videoFilter = `fps=${fps},scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
+			let finalOutputCreated = false;
+			for (let i = 0; i < profiles.length; i++) {
+				const p = profiles[i];
+				const videoFilter = `fps=${p.fps},scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
 
-			await new Promise((resolve, reject) => {
-				ffmpeg(inputPath)
-					.outputOptions([
-						"-vf",
-						videoFilter,
-						"-t",
-						String(maxDuration),
-						"-loop",
-						"0",
-						"-c:v",
-						"libwebp",
-						"-lossless",
-						"0",
-						"-q:v",
-						"35", // Qualidade balanceada com alta compactação
-						"-compression_level",
-						"6", // Compressão máxima
-						"-preset",
-						"default",
-						"-an" // Remove áudio
-					])
-					.toFormat("webp")
-					.on("end", () => {
-						this.logger.info("[toAnimatedWebP] Square animated WebP conversion finished.");
-						resolve();
-					})
-					.on("error", (err) => {
-						let ffmpegCommand = "";
-						if (err.ffmpegCommand) {
-							ffmpegCommand = `FFmpeg command: ${err.ffmpegCommand}`;
-						}
-						this.logger.error(
-							`[toAnimatedWebP] Error during square WebP conversion: ${err.message}. ${ffmpegCommand}`,
-							err.stack
-						);
-						reject(err);
-					})
-					.save(tempOutputPath);
-			});
-
-			// WhatsApp limit check: se passar de 490 KB, aplica compressão de fallback reencodando do input original
-			const stats = await statAsync(tempOutputPath).catch(() => null);
-			if (stats && stats.size > 490 * 1024) {
-				this.logger.warn(
-					`[toAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) > 490 KB. Recompactando a partir do vídeo original...`
-				);
-				const tempCompressedPath = path.join(tempDirectory, `${tempId}_recompressed.webp`);
-				await new Promise((resolve) => {
+				await new Promise((resolve, reject) => {
 					ffmpeg(inputPath)
 						.outputOptions([
 							"-vf",
-							`fps=10,scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`,
+							videoFilter,
 							"-t",
-							"3.5",
+							String(p.duration),
 							"-loop",
 							"0",
 							"-c:v",
@@ -859,21 +820,49 @@ class WhatsAppBotGo {
 							"-lossless",
 							"0",
 							"-q:v",
-							"24",
+							String(p.qv),
 							"-compression_level",
 							"6",
+							"-preset",
+							"default",
 							"-an"
 						])
 						.toFormat("webp")
-						.on("end", async () => {
-							try {
-								await renameAsync(tempCompressedPath, tempOutputPath);
-							} catch {}
+						.on("end", () => {
+							finalOutputCreated = true;
 							resolve();
 						})
-						.on("error", () => resolve())
-						.save(tempCompressedPath);
+						.on("error", (err) => {
+							let ffmpegCommand = "";
+							if (err.ffmpegCommand) {
+								ffmpegCommand = `FFmpeg command: ${err.ffmpegCommand}`;
+							}
+							this.logger.error(
+								`[toAnimatedWebP] Error during square WebP conversion (${p.desc}): ${err.message}. ${ffmpegCommand}`
+							);
+							reject(err);
+						})
+						.save(tempOutputPath);
 				});
+
+				const stats = await statAsync(tempOutputPath).catch(() => null);
+				if (stats) {
+					const sizeKb = (stats.size / 1024).toFixed(1);
+					this.logger.info(`[toAnimatedWebP] Tentativa [${p.desc}]: ${sizeKb} KB`);
+					if (stats.size <= 490 * 1024) {
+						this.logger.info(
+							`[toAnimatedWebP] Perfil '${p.desc}' aprovado (${sizeKb} KB <= 490 KB).`
+						);
+						break;
+					}
+					this.logger.warn(
+						`[toAnimatedWebP] Perfil '${p.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
+					);
+				}
+			}
+
+			if (!finalOutputCreated) {
+				throw new Error("Falha ao gerar arquivo WebP animado em todas as tentativas de fallback");
 			}
 
 			this.logger.info(
