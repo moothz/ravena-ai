@@ -376,6 +376,68 @@ docker compose exec ravena-ai node -e "
 
 ---
 
+## Variáveis de comandos personalizados e API
+
+Os argumentos digitados depois do comando são disponibilizados como `arg1`, `arg2`, etc.
+na URL e nos headers da variável de API. Por exemplo:
+
+```text
+!g-addCmd teste {API#POST#TEXT#https://httpbin.org/post?texto=arg1}
+teste olá mundo
+```
+
+O POST envia `{"texto":"olá"}`. Argumentos ausentes viram vazio; no POST e FORM,
+parâmetros com valor vazio são omitidos. Os valores são codificados para preservar
+acentos, espaços e caracteres como `&`, `=` e `#`. `{contador}` mantém a contagem de usos.
+
+Também estão disponíveis estas variáveis, em respostas de texto e dentro da API:
+
+| Variável | Valor |
+| --- | --- |
+| `{autor}` | Identificador do remetente do comando (`authorAlt`, quando disponível, ou `author`). Para o nome, use `{nomeAutor}` fora da API. |
+| `{mensagemCitada}` | Texto ou legenda da mensagem respondida. |
+| `{autorCitado}` | Identificador do autor da mensagem respondida. |
+| `{midiaCitada}` | Imagem ou vídeo da mensagem respondida. Na API, vira uma data URI (`data:image/png;base64,...` ou `data:video/mp4;base64,...`). |
+
+Sem citação, ou se ela não puder ser recuperada, as variáveis citadas ficam vazias.
+Uma mídia ausente, indisponível ou de outro tipo também fica vazia. O download só é
+solicitado quando `{midiaCitada}` está presente. Usada sozinha como resposta, essa
+variável envia a imagem ou o vídeo, em vez do texto base64:
+
+```text
+!g-addCmd repetir {midiaCitada}
+!g-addCmd analisar {API#POST#TEXT#https://api.exemplo.com/analisar?texto={mensagemCitada}&autor={autor}&autorOriginal={autorCitado}&midia={midiaCitada}}
+```
+
+Para configurar headers, acrescente `#HEADER#Nome=valor` depois da URL. Repita esse
+segmento para cada header. Valores literais seguem a codificação de URL: `%20` para
+espaço, `%23` para `#`, `%25` para `%`. Argumentos e variáveis são codificados
+automaticamente. Headers vazios são omitidos e quebras de linha são rejeitadas.
+
+```text
+!g-addCmd consultar {API#GET#JSON#https://api.exemplo.com/consulta?texto=arg1#HEADER#X-Cliente=ravena#HEADER#Authorization=Bearer%20TOKEN_DE_EXEMPLO
+[resultado]}
+```
+
+Headers funcionam com GET, POST e FORM. No formato JSON, ficam na primeira linha,
+antes da quebra de linha do template. Comandos personalizados são armazenados e
+podem ser consultados no grupo: não coloque credenciais privadas nesses comandos.
+Para mídia, prefira POST ou FORM; GET está sujeito ao limite de tamanho de URL do servidor.
+
+Respostas aleatórias e o envio de todas as respostas recebem os mesmos argumentos.
+Comandos sem prefixo e gatilhos `ignorePrefix` recebem as palavras depois do nome
+do comando. Interações sorteadas sem comando digitado usam uma lista vazia. `{cmd-...}` continua
+encaminhando argumentos para comandos fixos; a proteção contra chamadas recursivas
+de comandos personalizados foi preservada.
+
+O teste de regressão intercepta o axios e usa mensagens falsas, sem rede, WhatsApp
+ou banco persistente. Execute no container após copiar os arquivos alterados:
+
+```bash
+docker exec -w /app ravena-ai node src/testing/test_custom_command_args.js
+docker exec -w /app ravena-ai npm run lint
+```
+
 ## 📝 Licença
 
 Free, usem como quiserem.

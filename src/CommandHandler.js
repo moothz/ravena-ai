@@ -1657,15 +1657,15 @@ class CommandHandler {
 	}
 
 	processCustomIgnoresPrefix(textContent, bot, message, group) {
-		const command = `${textContent}`;
+		const [command, ...args] = `${textContent}`.trim().split(/\s+/);
 
 		//this.logger.debug(`[processCustomIgnoresPrefix][${group.name}] Buscando comando '${command}'`);
-		const matchResult = this.findCustomCommand(command, this.customCommands[group.id]);
+		const matchResult = this.findCustomCommand(command, this.customCommands[group.id], args);
 
 		if (matchResult) {
 			const { customCommand, newArgs } = matchResult;
 			// this.logger.debug(`[processCustomIgnoresPrefix] `, customCommand);
-			this.executeCustomCommand(bot, message, customCommand, newArgs, group);
+			return this.executeCustomCommand(bot, message, customCommand, newArgs, group);
 		}
 	}
 
@@ -1681,18 +1681,19 @@ class CommandHandler {
 	async processCustomCommandResponse(bot, message, responseText, command, group, args) {
 		try {
 			this.logger.debug(
-				`Processando resposta para comando ${command.startsWith}: ${responseText.substring(0, 50)}${responseText.length > 50 ? "..." : ""}`
+				`Processando resposta para comando ${command.startsWith} (${responseText.length} caracteres)`
 			);
 
 			// Processa variáveis na resposta
 			const options = {};
-			const processedResponse = await this.variableProcessor.process(responseText, {
+			const context = {
 				message,
 				group,
-				command,
+				command: { ...command, args: args ?? [] },
 				options,
 				bot // Incluindo o bot no contexto para processar variáveis de arquivo
-			});
+			};
+			const processedResponse = await this.variableProcessor.process(responseText, context);
 
 			this.logger.debug(
 				`Processando resposta: '${processedResponse}', options ${JSON.stringify(options)}`
@@ -1841,9 +1842,11 @@ class CommandHandler {
 			}
 
 			// Verifica se é uma resposta de mídia (formato: "{img-filename.png} Legenda\nlegenda 2...")
-			const mediaMatch = processedResponse.match(
-				/^\{(audio|voice|image|video|gif|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
-			);
+			const mediaMatch =
+				!context.hasQuotedText &&
+				processedResponse.match(
+					/^\{(audio|voice|image|video|gif|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
+				);
 
 			if (mediaMatch) {
 				const [, mediaType, fileName, caption] = mediaMatch;
@@ -2008,8 +2011,11 @@ class CommandHandler {
 					text.toLowerCase().includes(command.startsWith.toLowerCase())
 				) {
 					this.logger.debug(`Encontrado comando auto-acionado: ${command.startsWith}`);
+					const triggerIndex = text.toLowerCase().indexOf(command.startsWith.toLowerCase());
+					const argumentText = text.slice(triggerIndex + command.startsWith.length).trim();
+					const args = argumentText ? argumentText.split(/\s+/) : [];
 					// Executa o comando, mas não espera para evitar bloqueio
-					this.executeCustomCommand(bot, message, command, [], group, false, true).catch(
+					this.executeCustomCommand(bot, message, command, args, group, false, true).catch(
 						(error) => {
 							this.logger.error(
 								`Erro no comando auto-acionado ${command.startsWith}:`,

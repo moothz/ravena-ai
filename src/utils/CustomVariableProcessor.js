@@ -28,7 +28,7 @@ class CustomVariableProcessor {
 	async process(text, context) {
 		if (!text) return "";
 
-		this.logger.debug(`[CustomVariableProcessor][process] ${text} <=> ${Object.keys(context)}`);
+		this.logger.debug(`[CustomVariableProcessor][process] Contexto: ${Object.keys(context)}`);
 
 		try {
 			// Mascara blocos de código e inline code (ex: `!g-addCmd {mention}`) para não substituir variáveis explicativas
@@ -38,6 +38,10 @@ class CustomVariableProcessor {
 				codePlaceholders.push(match);
 				return placeholder;
 			});
+			const messageVariables = await this.getMessageVariables(processedText, context);
+			if (processedText.trim() === "{midiaCitada}") {
+				return messageVariables.media ?? "";
+			}
 
 			const hasFotoPerfil = /\{fotoPerfil\}/.test(processedText);
 			const hasFotoPerfilMention = /\{fotoPerfilMention\}/.test(processedText);
@@ -151,7 +155,7 @@ class CustomVariableProcessor {
 			}
 
 			// Processa variáveis de API
-			processedText = await this.processAPIRequest(processedText, context);
+			processedText = await this.processAPIRequest(processedText, context, messageVariables);
 
 			// Processa variáveis de tempo e data
 			processedText = this.processSystemVariables(processedText);
@@ -197,6 +201,15 @@ class CustomVariableProcessor {
 						}
 					}
 				}
+			}
+
+			// Insere conteúdo de mensagens por último, sem executá-lo como comandos/variáveis.
+			if (typeof processedText === "string") {
+				if (processedText.includes("{mensagemCitada}")) context.hasQuotedText = true;
+				processedText = processedText.replace(
+					/\{(mensagemCitada|autor|autorCitado|midiaCitada)\}/g,
+					(match, name) => messageVariables[name] ?? ""
+				);
 			}
 
 			// Restaura blocos de código e inline code mascarados
@@ -868,19 +881,52 @@ class CustomVariableProcessor {
 	}
 
 	/**
-	 * Processa variáveis de solicitação de API no formato {API#MÉTODO#TIPO_RESPOSTA#URL}
-	 * @param {string} text - Texto contendo variáveis de API
-	 * @param {Object} context - Dados de contexto (mensagem, args, etc.)
-	 * @returns {Promise<string>} - Texto processado
+	 * Obtém autores, texto e mídia citada somente quando solicitados na resposta.
 	 */
-	async processAPIRequest(text, context) {
+	async getMessageVariables(text, context) {
+		const message = context?.message;
+		const values = { autor: message?.authorAlt || message?.author || "" };
+		if (!/\{(mensagemCitada|autorCitado|midiaCitada)\}/.test(text)) return values;
+
+		let quoted = null;
+		try {
+			const source = message?.getQuotedMessage ? message : message?.origin;
+			quoted = await source?.getQuotedMessage?.();
+		} catch (error) {
+			this.logger.debug("Mensagem citada indisponível");
+		}
+		quoted ??= message?.quotedMsg;
+		values.mensagemCitada =
+			[quoted?.caption, quoted?.body, quoted?.content].find(
+				(value) => typeof value === "string" && value.length > 0
+			) ?? "";
+		values.autorCitado = quoted?.authorAlt || quoted?.author || "";
+		if (text.includes("{midiaCitada}") && quoted) {
+			try {
+				const source = quoted.downloadMedia ? quoted : quoted.origin;
+				const media = (await source?.downloadMedia?.()) ?? quoted.content;
+				if (media?.data && /^(image|video)\//.test(media.mimetype)) {
+					values.media = media;
+					values.midiaCitada = `data:${media.mimetype};base64,${media.data}`;
+				}
+			} catch (error) {
+				this.logger.debug("Mídia citada indisponível");
+			}
+		}
+		return values;
+	}
+
+	/** Processa {API#MÉTODO#TIPO_RESPOSTA#URL}, com headers opcionais. */
+	async processAPIRequest(text, context, messageVariables) {
 		try {
 			// Expressão regular para encontrar variáveis de solicitação de API
-			const apiRegex = /{API#(GET|POST|FORM)#(TEXT|JSON)#([^}]+)}/gs;
+			const apiRegex =
+				/{API#(GET|POST|FORM)#(TEXT|JSON)#((?:[^{}]|\{(?:mensagemCitada|autor|autorCitado|midiaCitada)\})+)}/gs;
 
 			// Encontra todas as variáveis de solicitação de API
 			const matches = Array.from(text.matchAll(apiRegex));
 			if (matches.length === 0) return text;
+			messageVariables ??= await this.getMessageVariables(text, context);
 
 			this.logger.debug(`Encontradas ${matches.length} variáveis de API para processar`);
 
@@ -888,40 +934,53 @@ class CustomVariableProcessor {
 			for (const match of matches) {
 				const [fullMatch, method, responseType, urlAndTemplate] = match;
 
-				// Divide URL e template (para tipo de resposta JSON)
-				let url, template;
-				if (responseType === "JSON") {
-					// Encontra a primeira quebra de linha para separar URL do template
-					const firstLineBreak = urlAndTemplate.indexOf("\n");
-					if (firstLineBreak !== -1) {
-						url = urlAndTemplate.substring(0, firstLineBreak).trim();
-						template = urlAndTemplate.substring(firstLineBreak + 1).trim();
+				try {
+					// Divide URL e template (para tipo de resposta JSON)
+					let url, template;
+					if (responseType === "JSON") {
+						// Encontra a primeira quebra de linha para separar URL do template
+						const firstLineBreak = urlAndTemplate.indexOf("\n");
+						if (firstLineBreak !== -1) {
+							url = urlAndTemplate.substring(0, firstLineBreak).trim();
+							template = urlAndTemplate.substring(firstLineBreak + 1).trim();
+						} else {
+							url = urlAndTemplate.trim();
+							template = "";
+						}
 					} else {
 						url = urlAndTemplate.trim();
-						template = "";
 					}
-				} else {
-					url = urlAndTemplate.trim();
-				}
 
-				// Processa argumentos na URL (arg1, arg2, etc.)
-				if (context && context.command && Array.isArray(context.command.args)) {
-					// Substitui arg1, arg2, etc. pelos argumentos reais
-					url = url.replace(/arg(\d+)/g, (match, index) => {
-						const argIndex = parseInt(index, 10) - 1;
-						return argIndex < context.command.args.length
-							? encodeURIComponent(context.command.args[argIndex])
-							: "";
-					});
-				}
+					// Headers: #HEADER#Nome=valor (valor percent-encoded, como na query).
+					const [requestUrl, ...headerParts] = url.split("#HEADER#");
+					const substitute = (value) =>
+						value.replace(
+							/arg(\d+)|\{(mensagemCitada|autor|autorCitado|midiaCitada)\}/g,
+							(match, index, name) => {
+								if (name) return encodeURIComponent(messageVariables[name] ?? "");
+								if (!Array.isArray(context?.command?.args)) return match;
+								return encodeURIComponent(context.command.args[Number(index) - 1] ?? "");
+							}
+						);
+					url = substitute(requestUrl);
+					const headers = Object.create(null);
+					for (const part of headerParts) {
+						const separator = part.indexOf("=");
+						if (separator < 1) throw new Error("Header deve usar Nome=valor");
+						const name = part.slice(0, separator).trim();
+						const value = decodeURIComponent(substitute(part.slice(separator + 1)));
+						if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || /[\r\n]/.test(value)) {
+							throw new Error("Header inválido");
+						}
+						if (value) headers[name.toLowerCase()] = value;
+					}
 
-				this.logger.debug(`Processando solicitação de API: ${method} ${url}`);
+					this.logger.debug(`Processando solicitação de API: ${method}`);
 
-				// Faz a solicitação de API real
-				let response;
-				try {
+					// Faz a solicitação de API real
+					let response;
 					if (method === "GET") {
-						response = await axios.get(url);
+						response = await axios.get(url, { headers });
 					} else if (method === "POST") {
 						// Analisa a URL para extrair dados
 						const [baseUrl, queryParams] = url.split("?");
@@ -936,7 +995,7 @@ class CustomVariableProcessor {
 							});
 						}
 
-						response = await axios.post(baseUrl, data);
+						response = await axios.post(baseUrl, data, { headers });
 					} else if (method === "FORM") {
 						// Analisa a URL para extrair dados do formulário
 						const [baseUrl, queryParams] = url.split("?");
@@ -953,7 +1012,8 @@ class CustomVariableProcessor {
 
 						response = await axios.post(baseUrl, formData, {
 							headers: {
-								"Content-Type": "application/x-www-form-urlencoded"
+								"content-type": "application/x-www-form-urlencoded",
+								...headers
 							}
 						});
 					}
@@ -986,10 +1046,11 @@ class CustomVariableProcessor {
 					}
 
 					// Substitui a variável de API pelo resultado
-					text = text.replace(fullMatch, result);
+					text = text.replace(fullMatch, () => result);
 				} catch (apiError) {
-					this.logger.error(`Erro ao fazer solicitação de API para ${url}:`, apiError);
-					text = text.replace(fullMatch, `Erro na requisição API: ${apiError.message}`);
+					// Erros do axios podem conter a configuração completa, incluindo credenciais.
+					this.logger.error("Erro na requisição API");
+					text = text.replace(fullMatch, "Erro na requisição API");
 				}
 			}
 
