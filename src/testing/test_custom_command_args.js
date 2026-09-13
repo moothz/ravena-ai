@@ -1,45 +1,18 @@
 const assert = require("assert");
-const { msgTexto, msgComQuote, msgCustom } = require("./helpers");
-
-// Isola serviços com efeitos colaterais antes de carregar o pipeline real.
-const savedModules = new Map();
-function stubModule(name, exports) {
-	const id = require.resolve(name);
-	savedModules.set(id, require.cache[id]);
-	require.cache[id] = { id, filename: id, loaded: true, exports };
-}
-
-const logger = { debug() {}, info() {}, warn() {}, error() {} };
-stubModule(
-	"../utils/Logger",
-	class {
-		constructor() {
-			return logger;
-		}
-	}
-);
-stubModule("../utils/Database", { getInstance: () => ({}) });
-for (const name of [
-	"../commands/FixedCommands",
-	"../commands/Management",
-	"../commands/SuperAdmin",
-	"../utils/AdminUtils",
-	"../services/CacheManager",
-	"../utils/CmdUsage",
-	"../utils/ProfilePictureHelper",
-	"../functions/FileManager"
-])
-	stubModule(name, {});
-
+const FakeBot = require("./FakeBot");
 const CommandHandler = require("../CommandHandler");
-const CustomVariableProcessor = require("../utils/CustomVariableProcessor");
+const { msgTexto, msgComQuote, msgCustom } = require("./helpers");
 const axios = require("axios").default;
 
 async function runTests() {
+	console.log(
+		"--- Iniciando testes de comandos personalizados (args, citação, headers e mídia) ---"
+	);
 	const requests = [];
 	const originalGet = axios.get;
 	const originalPost = axios.post;
 	const originalRandom = Math.random;
+
 	axios.get = async (url, config) => {
 		requests.push({ method: "GET", url, ...config });
 		return { data: { resultado: "ok" } };
@@ -48,25 +21,21 @@ async function runTests() {
 		requests.push({ method: "POST", url, data, ...config });
 		return { data: "ok" };
 	};
+
 	try {
-		const handler = Object.create(CommandHandler.prototype);
-		handler.logger = logger;
-		handler.variableProcessor = new CustomVariableProcessor();
-		handler.variableProcessor.cache = { variables: {}, lastFetch: Date.now() };
-		handler.checkCooldown = async () => ({ inCooldown: false });
-		handler.updateCooldown = () => {};
-		handler.cmdUsage = { logCommand() {} };
-		handler.database = {
-			updateCustomCommand: async (id, saved) => assert.ok(!Object.hasOwn(saved, "args"))
-		};
-		const bot = { id: "teste", sendReturnMessages: async () => {} };
-		const group = { id: "teste@g.us", prefix: "!" };
+		const bot = new FakeBot({ id: "teste", grupoLogs: "123@g.us" });
+		const handler = new CommandHandler();
+		handler.cmdDebounceTime = 0;
+
+		const group = { id: "teste@g.us", prefix: "!", name: "Grupo Teste" };
 		const message = msgTexto("teste olá mundo", { group: group.id });
 		const command = { startsWith: "teste", count: 7 };
 		const originalCommand = { ...command };
+
 		const matched = handler.findCustomCommand("teste", [command], ["olá", "mundo"]);
 		assert.strictEqual(matched.customCommand, command);
 		assert.deepStrictEqual(matched.newArgs, ["olá", "mundo"]);
+
 		const run = (text, args = ["olá", "mundo"], msg = message) =>
 			handler.processCustomCommandResponse(bot, msg, text, command, group, args);
 
@@ -96,6 +65,7 @@ async function runTests() {
 				]
 			};
 			const requestCount = requests.length;
+			bot.resetCapture();
 			const result = await handler.executeCustomCommand(
 				bot,
 				message,
@@ -110,7 +80,9 @@ async function runTests() {
 			if (sendAllResponses) assert.deepStrictEqual(requests.at(-2).data, { texto: "olá" });
 			assert.ok(!Object.hasOwn(saved, "args"));
 		}
+
 		let embedded;
+		const originalProcessCommand = handler.processCommand;
 		handler.processCommand = async (...params) => {
 			embedded = params;
 			return null;
@@ -118,7 +90,9 @@ async function runTests() {
 		await run("{cmd-!ping extra}");
 		assert.deepStrictEqual(embedded[3], ["extra", "olá", "mundo"]);
 		assert.deepStrictEqual(embedded[5], { skipCustom: true, silent: true });
+		handler.processCommand = originalProcessCommand;
 		console.log("OK: respostas aleatórias/todas e argumentos de comandos embutidos");
+
 		handler.customCommands = {
 			[group.id]: [
 				{
@@ -130,6 +104,7 @@ async function runTests() {
 		};
 		await handler.processCustomIgnoresPrefix("teste olá mundo", bot, message, group);
 		assert.deepStrictEqual(requests.at(-1).data, { texto: "olá", segundo: "mundo" });
+
 		const executeCustomCommand = handler.executeCustomCommand;
 		let automaticExecution;
 		handler.executeCustomCommand = (...params) => {
@@ -255,20 +230,41 @@ async function runTests() {
 		);
 		assert.strictEqual((await run("{midiaCitada}", [], audio)).content, "");
 		console.log("OK: citação indisponível e mídia não suportada ficam vazias");
-		console.log("Todos os testes passaram (sem WhatsApp e sem rede).");
+
+		// Teste de ponta a ponta com FakeBot capturando mensagens
+		bot.resetCapture();
+		handler.customCommands[group.id] = [
+			{
+				startsWith: "eco",
+				responses: ["{API#POST#TEXT#https://httpbin.org/post?mensagem=arg1}"],
+				active: true
+			}
+		];
+		const ecoMsg = msgTexto("!eco sucesso", { group: group.id });
+		await handler.executeCustomCommand(
+			bot,
+			ecoMsg,
+			handler.customCommands[group.id][0],
+			["sucesso"],
+			group
+		);
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].content, "ok");
+		assert.deepStrictEqual(requests.at(-1).data, { mensagem: "sucesso" });
+		console.log("OK: envio de ponta a ponta capturado pelo FakeBot");
+
+		console.log("--- TODOS OS TESTES PASSARAM! ---");
 	} finally {
 		axios.get = originalGet;
 		axios.post = originalPost;
 		Math.random = originalRandom;
-		for (const [id, original] of savedModules) {
-			if (original) require.cache[id] = original;
-			else delete require.cache[id];
-		}
 	}
 }
 
 runTests()
-	.then(() => process.exit(0))
+	.then(() => {
+		process.exit(0);
+	})
 	.catch((error) => {
 		console.error("FALHOU:", error);
 		process.exit(1);
