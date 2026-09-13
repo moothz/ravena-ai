@@ -26,9 +26,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libpango1.0-dev \
     libjpeg-dev \
     libgif-dev \
-    librsvg2-dev \
-    && curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc \
-    && chmod +x /usr/local/bin/mc
+    librsvg2-dev
+
+# Copy official MinIO Client (mc) binary from minio/minio image
+COPY --from=minio/minio:latest /usr/bin/mc /usr/local/bin/mc
 
 # Set working directory
 WORKDIR /app
