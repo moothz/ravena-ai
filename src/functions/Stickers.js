@@ -78,9 +78,9 @@ function acquireFFmpegSlot() {
 			ffmpegActiveCount++;
 			resolve();
 		} else {
-			logger.info(
-				`[FFmpegSemaphore] Slot ocupado (${ffmpegActiveCount}/${FFMPEG_MAX_CONCURRENT}), aguardando na fila (${ffmpegQueue.length + 1} na fila)...`
-			);
+			// logger.info(
+			// 	`[FFmpegSemaphore] Slot ocupado (${ffmpegActiveCount}/${FFMPEG_MAX_CONCURRENT}), aguardando na fila (${ffmpegQueue.length + 1} na fila)...`
+			// );
 			ffmpegQueue.push(resolve);
 		}
 	});
@@ -89,9 +89,9 @@ function acquireFFmpegSlot() {
 function releaseFFmpegSlot() {
 	if (ffmpegQueue.length > 0) {
 		const next = ffmpegQueue.shift();
-		logger.info(
-			`[FFmpegSemaphore] Liberando slot para próximo da fila (${ffmpegQueue.length} restantes)`
-		);
+		// logger.info(
+		// 	`[FFmpegSemaphore] Liberando slot para próximo da fila (${ffmpegQueue.length} restantes)`
+		// );
 		next();
 	} else {
 		ffmpegActiveCount--;
@@ -194,9 +194,9 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 
 			const stats = await fs.stat(currentOutput);
 			const sizeKb = (stats.size / 1024).toFixed(1);
-			logger.info(
-				`[encodeAnimatedWebP] Tentativa ${i + 1}/${ANIMATED_FALLBACK_PROFILES.length} [${profile.desc}]: ${sizeKb} KB em ${attemptMs}ms`
-			);
+			// logger.info(
+			// 	`[encodeAnimatedWebP] Tentativa ${i + 1}/${ANIMATED_FALLBACK_PROFILES.length} [${profile.desc}]: ${sizeKb} KB em ${attemptMs}ms`
+			// );
 
 			if (stats.size < bestSize) {
 				bestSize = stats.size;
@@ -204,20 +204,20 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 			}
 
 			if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
-				logger.info(
-					`[encodeAnimatedWebP] ✓ Perfil '${profile.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
-				);
+				// logger.info(
+				// 	`[encodeAnimatedWebP] ✓ Perfil '${profile.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
+				// );
 				return bestBuffer;
 			}
 
-			logger.warn(
-				`[encodeAnimatedWebP] Perfil '${profile.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
-			);
+			// logger.warn(
+			// 	`[encodeAnimatedWebP] Perfil '${profile.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
+			// );
 		}
 
-		logger.warn(
-			`[encodeAnimatedWebP] Todos os perfis excederam o limite. Usando menor (${(bestSize / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
-		);
+		// logger.warn(
+		// 	`[encodeAnimatedWebP] Todos os perfis excederam o limite. Usando menor (${(bestSize / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
+		// );
 		return bestBuffer;
 	} finally {
 		releaseFFmpegSlot();
@@ -345,9 +345,9 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 			const sharpStart = Date.now();
 			const image = sharp(rawBuffer);
 			const metadata = await image.metadata();
-			logger.info(
-				`[makeSquareMedia] Processando imagem via Sharp [${mimeType}, crop=${cropType}, ${metadata.width}x${metadata.height}]`
-			);
+			// logger.info(
+			// 	`[makeSquareMedia] Processando imagem via Sharp [${mimeType}, crop=${cropType}, ${metadata.width}x${metadata.height}]`
+			// );
 
 			// Determinar dimensões para corte quadrado
 			const size = Math.min(metadata.width, metadata.height);
@@ -442,15 +442,15 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 					.toBuffer();
 			}
 
-			logger.info(
-				`[makeSquareMedia] ✓ Imagem processada via Sharp em ${Date.now() - sharpStart}ms (total: ${Date.now() - fnStart}ms)`
-			);
+			// logger.info(
+			// 	`[makeSquareMedia] ✓ Imagem processada via Sharp em ${Date.now() - sharpStart}ms (total: ${Date.now() - fnStart}ms)`
+			// );
 			return result;
 		} else if (isVideo(mimeType) || isAnimWebP) {
 			// Para vídeos, GIFs e WebP animado, processa via ffmpeg
-			logger.info(
-				`[makeSquareMedia] Iniciando processamento FFmpeg [${mimeType}, crop=${cropType}, isAnimWebP=${isAnimWebP}]...`
-			);
+			// logger.info(
+			// 	`[makeSquareMedia] Iniciando processamento FFmpeg [${mimeType}, crop=${cropType}, isAnimWebP=${isAnimWebP}]...`
+			// );
 			const ffmpegStart = Date.now();
 			const inputPath = await saveTempMedia(rawBuffer, mimeType);
 
@@ -474,9 +474,9 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 
 			try {
 				const processedBuffer = await encodeAnimatedWebPWithFallback(inputPath, filterCommand);
-				logger.info(
-					`[makeSquareMedia] ✓ Vídeo/GIF processado via FFmpeg em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
-				);
+				// logger.info(
+				// 	`[makeSquareMedia] ✓ Vídeo/GIF processado via FFmpeg em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
+				// );
 				return processedBuffer;
 			} finally {
 				await fs.unlink(inputPath).catch(() => {});
@@ -689,26 +689,26 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 
 		// Log unificado do comando sticker + timer global
 		const cmdStart = Date.now();
-		logger.info(
-			`[squareStickerCommand] INÍCIO (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`
-		);
+		// logger.info(
+		// 	`[squareStickerCommand] INÍCIO (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`
+		// );
 
 		// Determinar o tipo de corte final (se for LLM, fazer a query agora)
 		let finalCropType = cropType;
 		if (cropType === "llm") {
-			const llmStart = Date.now();
+			// const llmStart = Date.now();
 			finalCropType = await getLLMCropPercentage(mediaBuffer, mimeType);
-			logger.info(
-				`[squareStickerCommand] LLM crop em ${Date.now() - llmStart}ms → ${finalCropType}%`
-			);
+			// logger.info(
+			// 	`[squareStickerCommand] LLM crop em ${Date.now() - llmStart}ms → ${finalCropType}%`
+			// );
 		}
 
 		// Processar a mídia para torná-la quadrada no padrão WhatsApp
-		const processStart = Date.now();
+		// const processStart = Date.now();
 		const processedBuffer = await processMediaToSquare(mediaBuffer, mimeType, finalCropType);
-		logger.info(
-			`[squareStickerCommand] processMediaToSquare concluído em ${Date.now() - processStart}ms (${(processedBuffer.length / 1024).toFixed(1)} KB)`
-		);
+		// logger.info(
+		// 	`[squareStickerCommand] processMediaToSquare concluído em ${Date.now() - processStart}ms (${(processedBuffer.length / 1024).toFixed(1)} KB)`
+		// );
 
 		// Monta objeto de mídia direto do buffer em memória (sem I/O de arquivo temporário)
 		const processedMedia = {
@@ -734,9 +734,9 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			}
 		});
 
-		logger.info(
-			`[squareStickerCommand] ✓ CONCLUÍDO (${cropType}) em ${Date.now() - cmdStart}ms — entregando ReturnMessage ao bot`
-		);
+		// logger.info(
+		// 	`[squareStickerCommand] ✓ CONCLUÍDO (${cropType}) em ${Date.now() - cmdStart}ms — entregando ReturnMessage ao bot`
+		// );
 
 		// Cria ReturnMessage com opções para sticker
 		return [

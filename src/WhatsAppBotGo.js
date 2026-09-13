@@ -469,9 +469,9 @@ class WhatsAppBotGo {
 				throw new Error("Invalid base64ImageContent: Empty data after stripping prefix.");
 
 			const buffer = Buffer.from(base64Data, "base64");
-			this.logger.info(
-				`[convertToSquareWebPImage] Iniciando FFmpeg para imagem estática (${(buffer.length / 1024).toFixed(1)} KB)...`
-			);
+			// this.logger.info(
+			// 	`[convertToSquareWebPImage] Iniciando FFmpeg para imagem estática (${(buffer.length / 1024).toFixed(1)} KB)...`
+			// );
 			await writeFileAsync(tempInputPath, buffer);
 			inputPath = tempInputPath;
 			isTempInputFile = true;
@@ -499,9 +499,9 @@ class WhatsAppBotGo {
 					.on("error", (err) => reject(err))
 					.save(tempOutputPath);
 			});
-			this.logger.info(
-				`[convertToSquareWebPImage] ✓ FFmpeg concluído em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
-			);
+			// this.logger.info(
+			// 	`[convertToSquareWebPImage] ✓ FFmpeg concluído em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
+			// );
 
 			const webpBuffer = await readFileAsync(tempOutputPath);
 			return webpBuffer.toString("base64");
@@ -862,19 +862,19 @@ class WhatsAppBotGo {
 
 				const stats = await statAsync(tempOutputPath).catch(() => null);
 				if (stats) {
-					const sizeKb = (stats.size / 1024).toFixed(1);
-					const attemptMs = Date.now() - attemptStart;
-					this.logger.info(
-						`[toAnimatedWebP] Tentativa ${i + 1}/${profiles.length} [${p.desc}]: ${sizeKb} KB em ${attemptMs}ms`
-					);
+					// const sizeKb = (stats.size / 1024).toFixed(1);
+					// const attemptMs = Date.now() - attemptStart;
+					// this.logger.info(
+					// 	`[toAnimatedWebP] Tentativa ${i + 1}/${profiles.length} [${p.desc}]: ${sizeKb} KB em ${attemptMs}ms`
+					// );
 					if (stats.size <= 490 * 1024) {
-						this.logger.info(
-							`[toAnimatedWebP] ✓ Perfil '${p.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
-						);
+						// this.logger.info(
+						// 	`[toAnimatedWebP] ✓ Perfil '${p.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
+						// );
 						break;
 					}
 					this.logger.warn(
-						`[toAnimatedWebP] Perfil '${p.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
+						`[toAnimatedWebP] Perfil '${p.desc}' excedeu limite (${(stats.size / 1024).toFixed(1)} KB > 490 KB). Tentando próximo fallback...`
 					);
 				}
 			}
@@ -886,9 +886,9 @@ class WhatsAppBotGo {
 
 			const webpBuffer = await readFileAsync(tempOutputPath);
 			const base64WebP = webpBuffer.toString("base64");
-			this.logger.info(
-				`[toAnimatedWebP] ✓ Conversão concluída (${(webpBuffer.length / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
-			);
+			// this.logger.info(
+			// 	`[toAnimatedWebP] ✓ Conversão concluída (${(webpBuffer.length / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
+			// );
 
 			return base64WebP;
 		} catch (error) {
@@ -2404,10 +2404,10 @@ class WhatsAppBotGo {
 						if (!stickerMime.includes("webp")) {
 							// ATENÇÃO: Esta conversão só ocorre se o mime NÃO for webp.
 							// Se Stickers.js já processou corretamente, este bloco NÃO deve executar.
-							this.logger.warn(
-								`[sendMessage] ⚠️ Sticker com mime não-webp detectado (${stickerMime}) — conversão redundante sendo iniciada!`
-							);
-							const convStart = Date.now();
+							// this.logger.warn(
+							// 	`[sendMessage] ⚠️ Sticker com mime não-webp detectado (${stickerMime}) — conversão redundante sendo iniciada!`
+							// );
+							// const convStart = Date.now();
 							try {
 								if (stickerMime.startsWith("video/") || stickerMime === "image/gif") {
 									stickerData = await this.convertToAnimatedWebP(content.data);
@@ -2416,26 +2416,26 @@ class WhatsAppBotGo {
 									stickerData = await this.convertToSquareWebPImage(content.data);
 									stickerMime = "image/webp";
 								}
-								this.logger.warn(
-									`[sendMessage] ⚠️ Conversão redundante concluída em ${Date.now() - convStart}ms`
-								);
+								// this.logger.warn(
+								// 	`[sendMessage] ⚠️ Conversão redundante concluída em ${Date.now() - convStart}ms`
+								// );
 							} catch (convErr) {
 								this.logger.warn(
 									`[sendMessage] Erro ao padronizar mídia para WebP sticker: ${convErr.message}`
 								);
 							}
 						} else {
-							this.logger.info(
-								`[sendMessage] ✓ Sticker já é WebP (${stickerMime}, ${((content.data.length * 3) / 4 / 1024).toFixed(1)} KB base64) — sem conversão adicional`
-							);
+							// this.logger.info(
+							// 	`[sendMessage] ✓ Sticker já é WebP (${stickerMime}, ${((content.data.length * 3) / 4 / 1024).toFixed(1)} KB base64) — sem conversão adicional`
+							// );
 						}
-						const uploadStart = Date.now();
+						// const uploadStart = Date.now();
 						const media = await this.createMediaFromBase64(
 							stickerData,
 							stickerMime,
 							content.filename ? content.filename.replace(/\.[^/.]+$/, ".webp") : "sticker.webp"
 						);
-						this.logger.info(`[sendMessage] Upload do sticker em ${Date.now() - uploadStart}ms`);
+						// this.logger.info(`[sendMessage] Upload do sticker em ${Date.now() - uploadStart}ms`);
 						payload.sticker = media.url;
 					} else {
 						payload.sticker = content.url ?? content.data;
