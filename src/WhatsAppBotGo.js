@@ -793,8 +793,8 @@ class WhatsAppBotGo {
 
 			// Define as dimensões e padrões recomendados pelo WhatsApp
 			const targetSize = 512;
-			const maxDuration = 6;
-			const fps = 15;
+			const maxDuration = 5;
+			const fps = 12;
 
 			const videoFilter = `fps=${fps},scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
 
@@ -812,7 +812,7 @@ class WhatsAppBotGo {
 						"-lossless",
 						"0",
 						"-q:v",
-						"45", // Qualidade balanceada com alta compactação
+						"35", // Qualidade balanceada com alta compactação
 						"-compression_level",
 						"6", // Compressão máxima
 						"-preset",
@@ -838,20 +838,20 @@ class WhatsAppBotGo {
 					.save(tempOutputPath);
 			});
 
-			// WhatsApp limit check: se passar de 500 KB, aplica compressão de fallback
+			// WhatsApp limit check: se passar de 490 KB, aplica compressão de fallback reencodando do input original
 			const stats = await statAsync(tempOutputPath).catch(() => null);
-			if (stats && stats.size > 500 * 1024) {
+			if (stats && stats.size > 490 * 1024) {
 				this.logger.warn(
-					`[toAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) > 500 KB. Recompactando...`
+					`[toAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) > 490 KB. Recompactando a partir do vídeo original...`
 				);
 				const tempCompressedPath = path.join(tempDirectory, `${tempId}_recompressed.webp`);
 				await new Promise((resolve) => {
-					ffmpeg(tempOutputPath)
+					ffmpeg(inputPath)
 						.outputOptions([
 							"-vf",
-							`fps=12,scale=400:400:force_original_aspect_ratio=decrease,format=yuva420p,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0.0`,
+							`fps=10,scale=${targetSize}:${targetSize}:force_original_aspect_ratio=decrease:flags=lanczos,format=yuva420p,pad=${targetSize}:${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`,
 							"-t",
-							"4.5",
+							"3.5",
 							"-loop",
 							"0",
 							"-c:v",
@@ -859,7 +859,7 @@ class WhatsAppBotGo {
 							"-lossless",
 							"0",
 							"-q:v",
-							"28",
+							"24",
 							"-compression_level",
 							"6",
 							"-an"

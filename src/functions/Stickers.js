@@ -49,11 +49,11 @@ async function cleanupTempFiles() {
 // Padrões recomendados do WhatsApp para figurinhas (stickers)
 const WHATSAPP_STICKER = {
 	MAX_SIZE: 512, // Dimensão padrão do WhatsApp: 512x512 pixels
-	MAX_DURATION: 6, // Duração máxima recomendada: 6 segundos para animadas
-	FPS: 15, // 15 FPS para fluidez com arquivo controlado
-	MAX_FILE_SIZE: 500 * 1024, // Limite estrito do WhatsApp: 500 KB para figurinhas animadas
+	MAX_DURATION: 5, // Duração ideal recomendada para figurinhas animadas (3 a 5s)
+	FPS: 12, // 12 FPS: taxa ideal para figurinhas fluidas com economia de ~25% no tamanho
+	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança rigorosamente abaixo de 500 KB do WhatsApp
 	STATIC_QUALITY: 80, // Qualidade WebP para imagens estáticas
-	ANIMATED_QUALITY: 45, // Qualidade WebP para animações
+	ANIMATED_QUALITY: 35, // Qualidade WebP balanceada que garante tamanho < 500 KB
 	COMPRESSION_LEVEL: 6 // Nível de compressão máximo da libwebp (0-6)
 };
 
@@ -71,14 +71,9 @@ async function saveTempMedia(mediaBuffer, mimeType) {
 		extension = "gif";
 	} else if (mimeType.includes("webp")) {
 		extension = "webp";
-	} else if (mimeType.includes("quicktime") || mimeType.includes("mov")) {
-		extension = "mov";
-	} else if (mimeType.includes("webm")) {
-		extension = "webm";
-	} else if (mimeType.includes("/")) {
-		extension = mimeType.split("/")[1].replace("jpeg", "jpg");
 	}
-	const tempFileName = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}.${extension}`;
+
+	const tempFileName = `temp-${Date.now()}.${extension}`;
 	const tempFilePath = path.join(TEMP_DIR, tempFileName);
 
 	await fs.writeFile(tempFilePath, mediaBuffer);
@@ -86,26 +81,27 @@ async function saveTempMedia(mediaBuffer, mimeType) {
 }
 
 /**
- * Codifica vídeo ou GIF para WebP animado no padrão do WhatsApp:
- * - 512x512 dimensões máximas
- * - Limite de duração de até 6 segundos
- * - 15 FPS
- * - Bordas transparentes para vídeos não quadrados
- * - Compressão máxima libwebp e garantia de tamanho < 500 KB
+ * Executa ffmpeg com fallback seguro para garantir que figurinhas animadas
+ * nunca ultrapassem o limite estrito de 500 KB do WhatsApp.
+ *
+ * @param {string} inputPath - Caminho do vídeo/gif de entrada
+ * @param {string} filterCommand - Filtro de vídeo (crop, scale, yuva420p, pad)
+ * @returns {Promise<Buffer>} - Buffer WebP animado
  */
 async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
+	await ensureTempDir();
 	const outputPath = path.join(
 		TEMP_DIR,
 		`anim-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
 	);
 
-	const runFfmpeg = (opts, vf, targetPath) =>
+	const runFfmpeg = (options, filter, output) =>
 		new Promise((resolve, reject) => {
 			ffmpeg(inputPath)
-				.outputOptions(opts)
-				.videoFilters(vf)
+				.outputOptions(options)
+				.videoFilters(filter)
 				.toFormat("webp")
-				.save(targetPath)
+				.save(output)
 				.on("end", resolve)
 				.on("error", reject);
 		});
@@ -137,22 +133,26 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 		`[encodeAnimatedWebP] Sticker animado gerado. Tamanho: ${(stats.size / 1024).toFixed(1)} KB`
 	);
 
-	// Pass 2 (Fallback): Se ultrapassar o limite estrito do WhatsApp (500 KB), recompacta mais agressivamente
+	// Pass 2 (Fallback): Se ultrapassar o limite do WhatsApp (490 KB), recompacta a partir do input original
 	if (stats.size > WHATSAPP_STICKER.MAX_FILE_SIZE) {
 		logger.warn(
-			`[encodeAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) excede 500 KB. Aplicando compressão secundária...`
+			`[encodeAnimatedWebP] Tamanho (${(stats.size / 1024).toFixed(1)} KB) excede limite seguro. Aplicando compressão secundária...`
 		);
 		const fallbackPath = path.join(
 			TEMP_DIR,
 			`anim-fallback-${Date.now()}-${Math.random().toString(36).substring(7)}.webp`
 		);
 
+		const fallbackFilter = filterCommand.includes("fps=")
+			? filterCommand.replace(/fps=\d+/, "fps=10")
+			: `fps=10,${filterCommand}`;
+
 		await new Promise((resolve) => {
-			ffmpeg(outputPath)
+			ffmpeg(inputPath)
 				.outputOptions([
 					"-y",
 					"-t",
-					"4.5",
+					"3.5",
 					"-c:v",
 					"libwebp",
 					"-lossless",
@@ -160,14 +160,12 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 					"-compression_level",
 					"6",
 					"-q:v",
-					"28",
+					"24",
 					"-loop",
 					"0",
 					"-an"
 				])
-				.videoFilters(
-					"fps=12,scale=400:400:force_original_aspect_ratio=decrease,format=yuva420p,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0.0"
-				)
+				.videoFilters(fallbackFilter)
 				.toFormat("webp")
 				.save(fallbackPath)
 				.on("end", async () => {
