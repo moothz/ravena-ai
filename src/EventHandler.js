@@ -56,6 +56,7 @@ class EventHandler extends EventEmitter {
 		this.pvDebounce = {};
 		this.activeSpammers = new Set();
 		this.spammerActiveWindowUntil = 0;
+		this.sentStickersByOriginalMsg = new Map();
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
@@ -526,15 +527,19 @@ class EventHandler extends EventEmitter {
 
 				// Se NUDENET_DETECT_ALL estiver ativo e a mídia não foi verificada pelo filtro do grupo (ex: grupo sem filtro nsfw ativo)
 				if (this.isNudenetDetectAll() && !group?.filters?.nsfw) {
-					await this.checkNSFW(bot, message, group, true);
+					this.checkNSFW(bot, message, group, true).catch((err) => {
+						this.logger.error("Erro em background checkNSFW (detectAll grupo):", err);
+					});
 				}
 			} else {
 				// Armazena mensagem para histórico de conversação no pv
 				SummaryCommands.storeMessage(message, message.group, bot);
 
-				// Se NUDENET_DETECT_ALL estiver ativo, verifica mídias no PV também
+				// Se NUDENET_DETECT_ALL estiver ativo, verifica mídias no PV em background (sem bloquear autoSticker/comandos)
 				if (this.isNudenetDetectAll()) {
-					await this.checkNSFW(bot, message, null, true);
+					this.checkNSFW(bot, message, null, true).catch((err) => {
+						this.logger.error("Erro em background checkNSFW (detectAll PV):", err);
+					});
 				}
 			}
 
@@ -848,6 +853,16 @@ class EventHandler extends EventEmitter {
 				message.type === "gif" ||
 				message.content?.mimetype === "image/gif")
 		) {
+			// Se for mensagem de sticker, ignora o check NSFW inicial e processa/envia o sticker imediatamente.
+			// Agenda verificação assíncrona pós-envio: se for NSFW, apaga a mensagem original e também o sticker enviado.
+			if (this.isStickerMessage(message, group, bot)) {
+				this.logger.info(
+					`[${group.name || group.id}] Mensagem de sticker detectada em grupo com filtro NSFW. Ignorando checagem inicial e agendando verificação pós-envio...`
+				);
+				this.schedulePostStickerNSFWCheck(bot, message, group);
+				return false;
+			}
+
 			const isDetectAll = this.isNudenetDetectAll();
 			if (await this.checkNSFW(bot, message, group, isDetectAll)) {
 				return true;
@@ -992,6 +1007,194 @@ class EventHandler extends EventEmitter {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Registra um sticker enviado pelo bot associado ao ID da mensagem original
+	 * @param {string} originalMsgId - ID da mensagem original
+	 * @param {Object} stickerInfo - { chatId, id }
+	 */
+	registerSentSticker(originalMsgId, stickerInfo) {
+		if (!originalMsgId || !stickerInfo) return;
+		const idsToRegister = [String(originalMsgId)];
+		if (typeof originalMsgId === "string" && originalMsgId.includes("_")) {
+			const parts = originalMsgId.split("_");
+			idsToRegister.push(parts[parts.length - 1]);
+		}
+
+		for (const id of idsToRegister) {
+			if (!this.sentStickersByOriginalMsg.has(id)) {
+				this.sentStickersByOriginalMsg.set(id, []);
+			}
+			this.sentStickersByOriginalMsg.get(id).push(stickerInfo);
+		}
+
+		// Expira após 15 minutos para evitar acúmulo de memória
+		setTimeout(
+			() => {
+				for (const id of idsToRegister) {
+					this.sentStickersByOriginalMsg.delete(id);
+				}
+			},
+			15 * 60 * 1000
+		);
+	}
+
+	/**
+	 * Obtém a lista de stickers enviados associados a uma mensagem original
+	 * @param {string} originalMsgId - ID da mensagem original
+	 * @returns {Array<Object>}
+	 */
+	getSentStickersForMessage(originalMsgId) {
+		if (!originalMsgId) return [];
+		const strId = String(originalMsgId);
+		let list = this.sentStickersByOriginalMsg.get(strId);
+		if (!list && strId.includes("_")) {
+			const parts = strId.split("_");
+			list = this.sentStickersByOriginalMsg.get(parts[parts.length - 1]);
+		}
+		return list || [];
+	}
+
+	/**
+	 * Limpa o registro de stickers enviados para uma mensagem
+	 * @param {string} originalMsgId
+	 */
+	clearSentStickersForMessage(originalMsgId) {
+		if (!originalMsgId) return;
+		const strId = String(originalMsgId);
+		this.sentStickersByOriginalMsg.delete(strId);
+		if (strId.includes("_")) {
+			const parts = strId.split("_");
+			this.sentStickersByOriginalMsg.delete(parts[parts.length - 1]);
+		}
+	}
+
+	/**
+	 * Verifica se uma mensagem é um comando de criação de sticker
+	 * @param {Object} message - Objeto da mensagem
+	 * @param {Object} group - Objeto do grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @returns {boolean}
+	 */
+	isStickerMessage(message, group, bot) {
+		const textContent = (message.type === "text" ? message.content : message.caption) ?? "";
+		if (!textContent || typeof textContent !== "string") return false;
+
+		const prefix = group?.prefix ?? bot?.prefix ?? "!";
+		const botPrefix = bot?.prefix ?? "!";
+		const prefixes = Array.from(new Set([prefix, botPrefix, "!"])).filter(Boolean);
+
+		const stickerCommands = new Set([
+			"s",
+			"fig",
+			"sticker",
+			"figurinha",
+			"sq",
+			"stickerq",
+			"sqc",
+			"stickerqc",
+			"sqb",
+			"stickerqb",
+			"sqe",
+			"stickerqe",
+			"sqi",
+			"stickerqi",
+			"sbg",
+			"stickerbg"
+		]);
+
+		const trimmed = textContent.trim();
+		for (const p of prefixes) {
+			if (trimmed.startsWith(p)) {
+				const afterPrefix = trimmed.substring(p.length).trim();
+				const cmd = afterPrefix.split(/\s+/)[0].toLowerCase();
+				if (stickerCommands.has(cmd)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Executa verificação NSFW assíncrona pós-envio para comandos de sticker em grupos com filtro.
+	 * Se for detectado conteúdo NSFW, apaga a mensagem original do usuário e também o sticker enviado pelo bot.
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Mensagem original do usuário
+	 * @param {Object} group - Grupo onde o comando foi enviado
+	 */
+	schedulePostStickerNSFWCheck(bot, message, group) {
+		const originalMsgId =
+			message.origin?.id?._serialized || message.origin?.id?.id || message.id || message.key?.id;
+		const chatId = group?.id || message.group;
+
+		(async () => {
+			try {
+				const isDetectAll = this.isNudenetDetectAll();
+				// Executa a checagem NSFW
+				const isNSFW = await this.checkNSFW(bot, message, group, isDetectAll);
+
+				if (isNSFW) {
+					this.logger.warn(
+						`[NSFW-Sticker-Purge] Conteúdo NSFW detectado no comando de sticker em [${group?.name || chatId}]. Deletando mensagem original e sticker enviado...`
+					);
+
+					// 1. Deleta a mensagem original do usuário (se ainda não deletada pelo checkNSFW)
+					try {
+						await message.origin.delete(true);
+						this.logger.info(`[NSFW-Sticker-Purge] Mensagem original ${originalMsgId} deletada.`);
+					} catch (delOrigErr) {
+						this.logger.error("Erro ao deletar mensagem original NSFW:", delOrigErr);
+					}
+
+					// 2. Aguarda até 15 segundos caso o sticker ainda esteja sendo gerado/enviado
+					const maxWaitMs = 15000;
+					const pollIntervalMs = 500;
+					const start = Date.now();
+					let stickersPurged = false;
+
+					while (Date.now() - start < maxWaitMs) {
+						const sentStickers = this.getSentStickersForMessage(originalMsgId);
+						if (sentStickers && sentStickers.length > 0) {
+							for (const stickerInfo of sentStickers) {
+								const stickerMsgId = stickerInfo.id;
+								this.logger.warn(
+									`[NSFW-Sticker-Purge] Deletando sticker enviado ${stickerMsgId} em ${chatId}...`
+								);
+								try {
+									if (typeof bot.deleteMessageByKey === "function") {
+										await bot.deleteMessageByKey({
+											remoteJid: chatId,
+											id: stickerMsgId,
+											fromMe: true
+										});
+										this.logger.info(
+											`[NSFW-Sticker-Purge] ✓ Sticker enviado ${stickerMsgId} deletado com sucesso!`
+										);
+									}
+								} catch (delStickerErr) {
+									this.logger.error("Erro ao deletar sticker enviado:", delStickerErr);
+								}
+							}
+							this.clearSentStickersForMessage(originalMsgId);
+							stickersPurged = true;
+							break;
+						}
+						await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+					}
+
+					if (!stickersPurged) {
+						this.logger.debug(
+							`[NSFW-Sticker-Purge] Nenhum sticker registrado para ${originalMsgId} após timeout de espera.`
+						);
+					}
+				}
+			} catch (err) {
+				this.logger.error("Erro na checagem assíncrona de NSFW para sticker:", err);
+			}
+		})();
 	}
 
 	/**

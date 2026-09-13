@@ -92,7 +92,25 @@ class FakeBot {
 			if (!msg) continue;
 			this.capturedMessages.push(msg);
 			this.logger.debug(`[FakeBot] Capturado ReturnMessage → chatId=${msg.chatId}`);
+			if (msg.options?.sendMediaAsSticker && msg.options?.quotedMessageId) {
+				const stickerId = `fake_sticker_${Date.now()}`;
+				this.eventHandler?.registerSentSticker?.(msg.options.quotedMessageId, {
+					chatId: msg.chatId,
+					id: stickerId
+				});
+			}
 		}
+	}
+
+	/**
+	 * Simula exclusão de mensagem no WhatsApp
+	 * @param {Object} key - { remoteJid, id, fromMe, participant }
+	 */
+	async deleteMessageByKey(key) {
+		this.deletedMessages = this.deletedMessages || [];
+		this.deletedMessages.push(key);
+		this.logger.debug(`[FakeBot] deleteMessageByKey() → id=${key.id}`);
+		return { success: true };
 	}
 
 	/**

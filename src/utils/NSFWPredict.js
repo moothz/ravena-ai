@@ -23,13 +23,18 @@ class NSFWPredict {
 		this.nudenetVideoTimeout = parseInt(process.env.NUDENET_VIDEO_TIMEOUT, 10) || 45000;
 		this.nudenetVideoFps = parseFloat(process.env.NUDENET_VIDEO_FPS || "1.0");
 		this.nudenetVideoMaxFrames = parseInt(process.env.NUDENET_VIDEO_MAX_FRAMES, 10) || 180;
+		this.nudenetOfflineUntil = 0;
+		this.nudenetCircuitBreakerDuration = 60000; // 60 segundos em caso de falha de conexão/rede
 	}
 
 	/**
-	 * Obtém a URL base da NudeNet API se configurada
+	 * Obtém a URL base da NudeNet API se configurada (respeitando o circuit breaker)
 	 * @returns {string|null}
 	 */
 	getNudenetApiUrl() {
+		if (Date.now() < this.nudenetOfflineUntil) {
+			return null;
+		}
 		const url = process.env.NUDENET_API;
 		return url ? url.replace(/\/+$/, "") : null;
 	}
@@ -668,7 +673,26 @@ Return the result in JSON format.`;
 	}
 
 	/**
-	 * Executa uma chamada da API NudeNet com até 3 tentativas (delays de 1s, 2s, 3s)
+	 * Verifica se o erro ocorrido é um erro de rede/conexão com a API NudeNet
+	 * @param {Error} err
+	 * @returns {boolean}
+	 */
+	_isNetworkError(err) {
+		const code = err?.code || err?.cause?.code;
+		return (
+			code === "EHOSTUNREACH" ||
+			code === "ECONNREFUSED" ||
+			code === "ENOTFOUND" ||
+			code === "ETIMEDOUT" ||
+			code === "ECONNABORTED" ||
+			err?.message?.toLowerCase().includes("timeout") ||
+			err?.message?.toLowerCase().includes("network error")
+		);
+	}
+
+	/**
+	 * Executa uma chamada da API NudeNet com até 3 tentativas (delays de 1s, 2s, 3s).
+	 * Em caso de erro de rede (ex: host inalcançável), ativa o circuit breaker imediatamente e não repete.
 	 * @param {Function} apiCall
 	 * @param {Object} context
 	 * @param {string} label
@@ -685,9 +709,17 @@ Return the result in JSON format.`;
 				return await apiCall();
 			} catch (err) {
 				lastError = err;
+				// Se for erro de rede/conexão (ex: EHOSTUNREACH, ECONNREFUSED, timeout), ativa circuit breaker e aborta
+				if (this._isNetworkError(err)) {
+					this.nudenetOfflineUntil = Date.now() + this.nudenetCircuitBreakerDuration;
+					this.logger.warn(
+						`${groupPrefix}NudeNet API (${label}) offline [${err.code || err.message}]. Circuit breaker ativado por 60s.${userSuffix}`
+					);
+					throw err;
+				}
+
 				const delay = delays[attempt - 1];
 				if (attempt < maxAttempts) {
-					//this.logger.warn(`${groupPrefix}NudeNet API (${label}) tentativa ${attempt}/${maxAttempts} falhou (${err.message}). Nova tentativa em ${delay / 1000}s...${userSuffix}`);
 					await this._sleep(delay);
 				}
 			}
