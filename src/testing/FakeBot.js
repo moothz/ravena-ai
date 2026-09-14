@@ -18,6 +18,7 @@ class FakeBot {
 	constructor(options = {}) {
 		this.id = options.id ?? "bot-teste";
 		this.prefix = options.prefix ?? "!";
+		this.phoneNumber = options.phoneNumber ?? "5511999990000";
 
 		// Flags lidas pelo EventHandler / CommandHandler
 		this.ignorePV = false;
@@ -70,7 +71,12 @@ class FakeBot {
 				this.updatedStatuses.push(status);
 			});
 		this.client = {
-			setStatus: async (status) => await this.updateProfileStatus(status)
+			setStatus: async (status) => await this.updateProfileStatus(status),
+			getChatById: async (chatId) => ({
+				id: { _serialized: chatId },
+				name: "FakeGroup",
+				participants: []
+			})
 		};
 
 		this.logger = new Logger("fake-bot");
@@ -122,6 +128,34 @@ class FakeBot {
 		this.logger.debug(`[FakeBot] sendMessage() → chatId=${chatId}`);
 		const ReturnMessage = require("../models/ReturnMessage");
 		this.capturedMessages.push(new ReturnMessage({ chatId, content, metadata: { direct: true } }));
+	}
+
+	/**
+	 * Simula remoção de participantes de um grupo
+	 * @param {string} groupId
+	 * @param {string|string[]} participants
+	 */
+	async removeFromGroup(groupId, participants) {
+		this.removedParticipants = this.removedParticipants || [];
+		this.removedParticipants.push({ groupId, participants });
+		this.logger.debug(
+			`[FakeBot] removeFromGroup() → groupId=${groupId}, participants=${JSON.stringify(participants)}`
+		);
+		return { success: true };
+	}
+
+	/**
+	 * Simula remoção de participantes de uma comunidade
+	 * @param {string} communityId
+	 * @param {string|string[]} participants
+	 */
+	async removeFromCommunity(communityId, participants) {
+		this.removedCommunityParticipants = this.removedCommunityParticipants || [];
+		this.removedCommunityParticipants.push({ communityId, participants });
+		this.logger.debug(
+			`[FakeBot] removeFromCommunity() → communityId=${communityId}, participants=${JSON.stringify(participants)}`
+		);
+		return { success: true };
 	}
 
 	// ---------------------------------------------------------------------------
@@ -223,6 +257,14 @@ class FakeBot {
 	}
 	getPnFromLid(lid) {
 		return null;
+	}
+
+	async getChatDetails(chatId) {
+		return {
+			id: { _serialized: chatId },
+			name: "FakeGroup",
+			participants: []
+		};
 	}
 
 	/** Compatibilidade com destruição no SIGINT */

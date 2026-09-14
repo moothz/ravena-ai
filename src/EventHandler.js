@@ -1317,29 +1317,38 @@ class EventHandler extends EventEmitter {
 		}
 
 		if (!isBotJoining) {
-			const fixedGroups = [
-				process.env.GRUPO_INTERACAO,
-				process.env.GRUPO_PESCA,
-				process.env.GRUPO_DOWNLOADS
-			].filter(Boolean);
-
-			if (data.user && data.user.id && fixedGroups.includes(groupId)) {
-				const userId = data.user.id;
-				const userPhone = userId.split("@")[0];
-				if (userPhone.startsWith("63") || userPhone.startsWith("62")) {
+			if (data.user && this.isFixedSpamGroup(groupId)) {
+				const isSpammer = await this.isSpammerUser(bot, data.user, groupId);
+				if (isSpammer) {
+					const userId = data.user.id;
+					const userPhone = userId ? userId.split("@")[0].replace(/\D/g, "") : "";
 					this.logger.warn(
-						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo ${groupId}`
+						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo fixo ${groupId}. Removendo imediatamente sem enviar boas-vindas.`
 					);
-					this.activeSpammers.add(userId);
-					this.activeSpammers.add(userPhone);
-					this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000; // Ativa janela de monitoramento por 5 minutos
-					setTimeout(
-						() => {
-							this.activeSpammers.delete(userId);
-							this.activeSpammers.delete(userPhone);
-						},
-						5 * 60 * 1000
-					);
+					this.registerSpammer(userId, userPhone);
+
+					try {
+						await bot.removeFromGroup(groupId, [userId]);
+					} catch (remErr) {
+						this.logger.error(
+							`[processGroupJoin] Erro ao remover spammer ${userId} do grupo ${groupId}:`,
+							remErr
+						);
+					}
+
+					try {
+						const chat = await data.origin?.getChat?.();
+						if (chat?.linkedParentJid) {
+							await bot.removeFromCommunity(chat.linkedParentJid, [userId]).catch(() => {});
+						}
+						if (chat) {
+							await this.checkAutoBanSpammers(bot, chat);
+						}
+					} catch (chatErr) {
+						// Ignora erro
+					}
+
+					return;
 				}
 			}
 		}
@@ -1354,6 +1363,13 @@ class EventHandler extends EventEmitter {
 
 			// Verifica se há spammers para banir (63/62) nos grupos fixos
 			await this.checkAutoBanSpammers(bot, chat);
+
+			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat))) {
+				this.logger.warn(
+					`[processGroupJoin] Spammer detectado após verificação do chat no grupo fixo ${groupId}: ${data.user?.id}. Interrompendo boas-vindas.`
+				);
+				return;
+			}
 
 			if (chat.isCommunity) {
 				this.logger.debug(
@@ -1790,6 +1806,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			} else {
 				// Caso 2: Outra pessoa entrou no grupo
+				if (await this.isSpammerUser(bot, data.user, groupId, chat)) {
+					this.logger.info(
+						`[processGroupJoin] Usuário ${data.user?.id} é spammer no grupo ${groupId}. Boas-vindas suprimidas.`
+					);
+					return;
+				}
+
 				// Gera e envia mensagem de boas-vindas para o novo membro
 				// this.logger.debug(`[groupJoin] Outra pessoa entrou, greetings?`, {
 				// 	greetings: group.greetings
@@ -2088,6 +2111,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			// 	farewells: group?.farewells
 			// });
 			if (group && group.farewells && !isBotLeaving) {
+				if (await this.isSpammerUser(bot, data.user, data.group.id)) {
+					this.logger.info(
+						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo ${data.group.id}. Mensagem de despedida suprimida.`
+					);
+					return;
+				}
+
 				try {
 					const farewells = await this.processFarewellMessage(group, data.user, bot);
 					if (farewells && Array.isArray(farewells)) {
@@ -2453,24 +2483,157 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			return false;
 		}
 	}
-	async checkAutoBanSpammers(bot, chat) {
-		const fixedGroups = [
+	/**
+	 * Retorna a lista de grupos fixos monitorados contra spammers
+	 * @returns {string[]}
+	 */
+	getFixedSpamGroups() {
+		return [
 			process.env.GRUPO_INTERACAO,
 			process.env.GRUPO_PESCA,
-			process.env.GRUPO_DOWNLOADS
+			process.env.GRUPO_DOWNLOADS,
+			process.env.GRUPO_STICKERS
 		].filter(Boolean);
+	}
+
+	/**
+	 * Verifica se o grupo é um dos grupos fixos protegidos contra spammers
+	 * @param {string} groupId - ID do grupo
+	 * @returns {boolean}
+	 */
+	isFixedSpamGroup(groupId) {
+		if (!groupId) return false;
+		const fixedGroups = this.getFixedSpamGroups();
+		return fixedGroups.includes(groupId);
+	}
+
+	/**
+	 * Verifica se o telefone possui prefixo de spammer (62 ou 63)
+	 * @param {string} phone
+	 * @returns {boolean}
+	 */
+	isSpammerPrefix(phone) {
+		if (!phone) return false;
+		const clean = String(phone).replace(/\D/g, "");
+		return clean.startsWith("63") || clean.startsWith("62");
+	}
+
+	/**
+	 * Registra um spammer no Set de spammers ativos e estende a janela de monitoramento
+	 * @param {string} userId - ID ou JID do spammer
+	 * @param {string} [phone] - Telefone do spammer
+	 * @param {string} [lid] - LID do spammer
+	 */
+	registerSpammer(userId, phone, lid) {
+		const items = [userId, phone, lid].filter(Boolean);
+		for (const item of items) {
+			const str = String(item);
+			this.activeSpammers.add(str);
+			const clean = str.split("@")[0].replace(/\D/g, "");
+			if (clean) this.activeSpammers.add(clean);
+		}
+
+		this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000;
+
+		setTimeout(
+			() => {
+				for (const item of items) {
+					const str = String(item);
+					this.activeSpammers.delete(str);
+					const clean = str.split("@")[0].replace(/\D/g, "");
+					if (clean) this.activeSpammers.delete(clean);
+				}
+			},
+			5 * 60 * 1000
+		);
+	}
+
+	/**
+	 * Verifica se o usuário (ou algum na lista) é considerado spammer
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object|Array|string} user - Usuário ou lista de usuários
+	 * @param {string} groupId - ID do grupo
+	 * @param {Object} [chat] - Dados do chat (opcional)
+	 * @returns {Promise<boolean>}
+	 */
+	async isSpammerUser(bot, user, groupId, chat = null) {
+		if (!user) return false;
+		const users = Array.isArray(user) ? user : [user];
+		const isFixed = this.isFixedSpamGroup(groupId);
+
+		for (const u of users) {
+			const userId = u?.id?._serialized || u?.id || (typeof u === "string" ? u : "");
+			let phone = u?.phoneNumber || u?.number || "";
+			if (!phone && userId && !userId.endsWith("@lid")) {
+				phone = userId.split("@")[0];
+			}
+			const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+
+			// 1. Está no Set de spammers ativos?
+			if (
+				(userId && this.activeSpammers.has(userId)) ||
+				(cleanPhone && this.activeSpammers.has(cleanPhone))
+			) {
+				return true;
+			}
+
+			// 2. Se for grupo fixo, checa prefixo de spammer
+			if (isFixed) {
+				if (cleanPhone && this.isSpammerPrefix(cleanPhone)) {
+					return true;
+				}
+
+				// Se for LID, tenta obter telefone via chat.participants ou getContactById
+				if (userId && userId.endsWith("@lid")) {
+					let participantPhone = null;
+
+					if (chat) {
+						const participants = chat.Participants || chat.participants || [];
+						const p = participants.find(
+							(part) => part.lid === userId || part.id?._serialized === userId || part.id === userId
+						);
+						if (p) {
+							participantPhone = p.phoneNumber || (p.id?._serialized || p.id || "").split("@")[0];
+						}
+					}
+
+					if (!participantPhone && bot?.client?.getContactById) {
+						try {
+							const contact = await bot.client.getContactById(userId);
+							if (contact?.id?._serialized) {
+								participantPhone = contact.id._serialized.split("@")[0];
+							}
+						} catch (e) {
+							// Ignora erro
+						}
+					}
+
+					if (participantPhone && this.isSpammerPrefix(participantPhone)) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	async checkAutoBanSpammers(bot, chat) {
+		const fixedGroups = this.getFixedSpamGroups();
 
 		const chatId = chat.id._serialized || chat.id;
 		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { fixedGroups });
-		if (fixedGroups.length === 0) return;
+		if (fixedGroups.length === 0) return [];
 
-		if (!fixedGroups.includes(chatId)) return;
+		if (!fixedGroups.includes(chatId)) return [];
 
 		const participants = chat.Participants || chat.participants || [];
 
 		const spammers = participants.filter((p) => {
-			const phone = p.phoneNumber || "";
-			return phone.startsWith("63") || phone.startsWith("62");
+			const phone = (p.phoneNumber || p.id?._serialized || p.id || "")
+				.split("@")[0]
+				.replace(/\D/g, "");
+			return this.isSpammerPrefix(phone);
 		});
 
 		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { participants, spammers });
@@ -2479,10 +2642,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const spammersJids = spammers.map((s) => {
 				// Prioritize the phone number JID (@s.whatsapp.net) over LID
 				if (s.phoneNumber) {
-					const cleanPhone = s.phoneNumber.split("@")[0];
+					const cleanPhone = s.phoneNumber.split("@")[0].replace(/\D/g, "");
 					return `${cleanPhone}@s.whatsapp.net`;
 				}
-				return s.id._serialized || s.id;
+				const sId = s.id?._serialized || s.id || "";
+				if (sId.includes("@")) return sId;
+				return `${sId}@s.whatsapp.net`;
 			});
 			this.logger.info(
 				`[checkAutoBanSpammers] Detectados ${spammers.length} spammers no grupo ${chatId}`,
@@ -2491,23 +2656,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			);
 
-			// Ativa a janela de monitoramento intenso por 5 minutos
-			this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000;
-
-			// Adiciona à lista de spammers ativos para deletar mensagens
-			for (const spammer of spammersJids) {
-				this.activeSpammers.add(spammer);
-				const cleanPhone = spammer.split("@")[0];
-				this.activeSpammers.add(cleanPhone);
-
-				// Remove do set após 5 minutos
-				setTimeout(
-					() => {
-						this.activeSpammers.delete(spammer);
-						this.activeSpammers.delete(cleanPhone);
-					},
-					5 * 60 * 1000
-				);
+			// Ativa a janela de monitoramento intenso por 5 minutos e registra no Set
+			for (const spammer of spammers) {
+				const sId = spammer.id?._serialized || spammer.id || "";
+				const sPhone = spammer.phoneNumber;
+				const sLid = spammer.lid;
+				this.registerSpammer(sId, sPhone, sLid);
 			}
 
 			// Remove do grupo
@@ -2519,7 +2673,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				this.logger.info(`[checkAutoBanSpammers] Removendo spammers da comunidade ${communityJid}`);
 				await bot.removeFromCommunity(communityJid, spammersJids);
 			}
+
+			return spammersJids;
 		}
+
+		return [];
 	}
 
 	/**
@@ -2529,11 +2687,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	 * @returns {Promise<boolean>} - True se a mensagem for de spammer e foi apagada
 	 */
 	async checkSpammerMessage(bot, message) {
-		const fixedGroups = [
-			process.env.GRUPO_INTERACAO,
-			process.env.GRUPO_PESCA,
-			process.env.GRUPO_DOWNLOADS
-		].filter(Boolean);
+		const fixedGroups = this.getFixedSpamGroups();
 
 		if (!message.group || !fixedGroups.includes(message.group)) {
 			return false;
@@ -2552,10 +2706,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			this.activeSpammers.has(message.author) ||
 			(message.authorAlt && this.activeSpammers.has(message.authorAlt)) ||
 			(isWindowActive &&
-				(message.author?.startsWith("63") ||
-					message.author?.startsWith("62") ||
-					(message.authorAlt &&
-						(message.authorAlt.startsWith("63") || message.authorAlt.startsWith("62")))));
+				(this.isSpammerPrefix(message.author) ||
+					(message.authorAlt && this.isSpammerPrefix(message.authorAlt))));
 
 		if (isSpammer) {
 			this.logger.warn(
