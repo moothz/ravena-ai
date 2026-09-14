@@ -1347,7 +1347,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 'imagine': 'api-imagine',
                 'llm': 'api-llm',
                 'whisper': 'api-whisper',
-                'f5tts': 'api-f5tts'
+                'f5tts': 'api-f5tts',
+                'nudenet': 'api-nsfw',
+                'nsfw': 'api-nsfw'
             };
 
             const targetId = typeMap[type];
@@ -1396,6 +1398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatusLight('api-llm', services.llm);
             updateStatusLight('api-whisper', services.whisper);
             updateStatusLight('api-f5tts', services.f5tts);
+            updateStatusLight('api-nsfw', services.nudenet || services.nsfw);
         });
         
     } else {

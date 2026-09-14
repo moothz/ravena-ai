@@ -4,18 +4,19 @@ const axios = require("axios");
 const Logger = require("./Logger");
 const Status = require("./Status");
 const LLMService = require("../services/LLMService");
+const ServiceProviderService = require("../services/ServiceProviderService");
 const { extractFrames } = require("./Conversions");
 
 /**
  * Utilitário para detecção de conteúdo NSFW em imagens e vídeos
- * Suporta NudeNet API (rápido, baseado em ONNX) e LLM (fallback)
+ * Suporta NudeNet API como Service Provider (com failover e circuit breaker) e LLM (fallback)
  */
 class NSFWPredict {
 	constructor() {
 		this.logger = new Logger("nsfw-predict");
 		this.llmService = LLMService.getInstance();
+		this.serviceProviderService = ServiceProviderService.getInstance();
 		this.threshold = parseFloat(process.env.NSFW_THRESHOLD || "0.7");
-		this.nudenetApiKey = process.env.NUDENET_API_KEY || "";
 		this.nudenetThreshold = process.env.NUDENET_THRESHOLD
 			? parseFloat(process.env.NUDENET_THRESHOLD)
 			: 0.8;
@@ -23,28 +24,77 @@ class NSFWPredict {
 		this.nudenetVideoTimeout = parseInt(process.env.NUDENET_VIDEO_TIMEOUT, 10) || 45000;
 		this.nudenetVideoFps = parseFloat(process.env.NUDENET_VIDEO_FPS || "1.0");
 		this.nudenetVideoMaxFrames = parseInt(process.env.NUDENET_VIDEO_MAX_FRAMES, 10) || 180;
-		this.nudenetOfflineUntil = 0;
-		this.nudenetCircuitBreakerDuration = 60000; // 60 segundos em caso de falha de conexão/rede
+		this.defaultCircuitBreakerDuration = 15000; // 15 segundos padrão
+		this.providerOfflineUntil = new Map();
 	}
 
 	/**
-	 * Obtém a URL base da NudeNet API se configurada (respeitando o circuit breaker)
-	 * @returns {string|null}
+	 * Retorna todos os provedores habilitados da categoria nudenet
+	 * @returns {Array<Object>}
 	 */
-	getNudenetApiUrl() {
-		if (Date.now() < this.nudenetOfflineUntil) {
-			return null;
-		}
-		const url = process.env.NUDENET_API;
-		return url ? url.replace(/\/+$/, "") : null;
+	getEnabledProviders() {
+		return this.serviceProviderService.getProviders("nudenet");
 	}
 
 	/**
-	 * Obtém a chave da NudeNet API exclusivamente a partir das variáveis de ambiente
+	 * Obtém a chave única de um provedor para controle de circuit breaker
+	 * @param {Object} provider
 	 * @returns {string}
 	 */
-	getApiKey() {
-		return process.env.NUDENET_API_KEY ? process.env.NUDENET_API_KEY.trim() : "";
+	_getProviderKey(provider) {
+		if (!provider) return "unknown";
+		return (provider.url || provider.name || "unknown").replace(/\/+$/, "");
+	}
+
+	/**
+	 * Obtém o tempo em ms de circuit breaker para um provedor específico
+	 * @param {Object} provider
+	 * @returns {number}
+	 */
+	getCircuitBreakerDuration(provider = {}) {
+		if (provider.circuitBreakerDuration !== undefined) {
+			const val = Number(provider.circuitBreakerDuration);
+			if (!isNaN(val) && val > 0) {
+				return val < 1000 ? val * 1000 : val;
+			}
+		}
+		if (provider.circuitBreaker !== undefined) {
+			const val = Number(provider.circuitBreaker);
+			if (!isNaN(val) && val > 0) {
+				return val < 1000 ? val * 1000 : val;
+			}
+		}
+		return this.defaultCircuitBreakerDuration;
+	}
+
+	/**
+	 * Verifica se um determinado provedor está disponível (não está sob circuit breaker)
+	 * @param {Object} provider
+	 * @returns {boolean}
+	 */
+	isProviderAvailable(provider) {
+		if (!provider || !provider.url) return false;
+		const key = this._getProviderKey(provider);
+		const offlineUntil = this.providerOfflineUntil.get(key) || 0;
+		return Date.now() >= offlineUntil;
+	}
+
+	/**
+	 * Verifica se há pelo menos um provedor NudeNet habilitado e disponível
+	 * @returns {boolean}
+	 */
+	isAvailable() {
+		const providers = this.getEnabledProviders();
+		if (providers.length === 0) return false;
+		return providers.some((p) => this.isProviderAvailable(p));
+	}
+
+	/**
+	 * Retorna os provedores habilitados que não estão em circuit breaker
+	 * @returns {Array<Object>}
+	 */
+	getAvailableProviders() {
+		return this.getEnabledProviders().filter((p) => this.isProviderAvailable(p));
 	}
 
 	/**
@@ -290,13 +340,31 @@ class NSFWPredict {
 	 * Detecta NSFW em imagens usando a NudeNet API
 	 * @param {string|Array<string>} imagesInput - Base64 ou lista de base64/URLs
 	 * @param {Object} context - Metadados de contexto
-	 * @param {string} apiUrl - URL base da API
+	 * @param {Object|string} [providerOrUrl] - Provedor ou URL base da API
 	 * @returns {Promise<{isNSFW: boolean, reason: string}>}
 	 */
-	async detectNSFWWithNudeNet(imagesInput, context = {}, apiUrl = null) {
-		const baseUrl = apiUrl || this.getNudenetApiUrl();
+	async detectNSFWWithNudeNet(imagesInput, context = {}, providerOrUrl = null) {
+		let baseUrl = null;
+		let apiKey = "";
+		let timeout = this.nudenetTimeout;
+
+		if (providerOrUrl && typeof providerOrUrl === "object") {
+			baseUrl = providerOrUrl.url ? providerOrUrl.url.replace(/\/+$/, "") : null;
+			apiKey = providerOrUrl.apiKey ? providerOrUrl.apiKey.trim() : "";
+			if (providerOrUrl.timeout) timeout = Number(providerOrUrl.timeout);
+		} else if (typeof providerOrUrl === "string") {
+			baseUrl = providerOrUrl.replace(/\/+$/, "");
+		} else {
+			const available = this.getAvailableProviders();
+			if (available.length > 0) {
+				baseUrl = available[0].url ? available[0].url.replace(/\/+$/, "") : null;
+				apiKey = available[0].apiKey ? available[0].apiKey.trim() : "";
+				if (available[0].timeout) timeout = Number(available[0].timeout);
+			}
+		}
+
 		if (!baseUrl) {
-			throw new Error("NUDENET_API não está configurada");
+			throw new Error("Nenhum provedor NudeNet configurado ou disponível");
 		}
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
@@ -305,12 +373,6 @@ class NSFWPredict {
 		if (imagesList.length === 0) {
 			return { isNSFW: false, reason: "" };
 		}
-
-		// if (this.isNudenetDebug(context)) {
-		// 	this.logger.info(
-		// 		`${groupPrefix}Detectando NSFW via NudeNet API (${imagesList.length} imagem/ns)...${userSuffix}`
-		// 	);
-		// }
 
 		// A API aceita até 16 imagens por requisição (/api/v1/classify)
 		const chunkSize = 16;
@@ -331,14 +393,13 @@ class NSFWPredict {
 			payload.threshold = thresholdToUse;
 
 			const headers = { "Content-Type": "application/json" };
-			const apiKey = this.getApiKey();
 			if (apiKey) {
 				headers["X-API-Key"] = apiKey;
 			}
 
 			const response = await axios.post(`${baseUrl}/api/v1/classify`, payload, {
 				headers,
-				timeout: this.nudenetTimeout
+				timeout
 			});
 
 			const results = response.data?.results || [];
@@ -396,19 +457,38 @@ class NSFWPredict {
 	 * Detecta NSFW em vídeo usando a NudeNet API (/api/v1/classify/video/upload)
 	 * @param {string} videoPath - Caminho do arquivo de vídeo local
 	 * @param {Object} context - Metadados de contexto
-	 * @param {string} apiUrl - URL base da API
+	 * @param {Object|string} [providerOrUrl] - Provedor ou URL base da API
 	 * @returns {Promise<{isNSFW: boolean, reason: string}>}
 	 */
-	async detectNSFWVideoWithNudeNet(videoPath, context = {}, apiUrl = null) {
-		const baseUrl = apiUrl || this.getNudenetApiUrl();
+	async detectNSFWVideoWithNudeNet(videoPath, context = {}, providerOrUrl = null) {
+		let baseUrl = null;
+		let apiKey = "";
+		let timeout = this.nudenetVideoTimeout;
+
+		if (providerOrUrl && typeof providerOrUrl === "object") {
+			baseUrl = providerOrUrl.url ? providerOrUrl.url.replace(/\/+$/, "") : null;
+			apiKey = providerOrUrl.apiKey ? providerOrUrl.apiKey.trim() : "";
+			if (providerOrUrl.videoTimeout || providerOrUrl.timeout) {
+				timeout = Number(providerOrUrl.videoTimeout || providerOrUrl.timeout);
+			}
+		} else if (typeof providerOrUrl === "string") {
+			baseUrl = providerOrUrl.replace(/\/+$/, "");
+		} else {
+			const available = this.getAvailableProviders();
+			if (available.length > 0) {
+				baseUrl = available[0].url ? available[0].url.replace(/\/+$/, "") : null;
+				apiKey = available[0].apiKey ? available[0].apiKey.trim() : "";
+				if (available[0].videoTimeout || available[0].timeout) {
+					timeout = Number(available[0].videoTimeout || available[0].timeout);
+				}
+			}
+		}
+
 		if (!baseUrl) {
-			throw new Error("NUDENET_API não está configurada");
+			throw new Error("Nenhum provedor NudeNet configurado ou disponível");
 		}
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
-		// if (false && this.isNudenetDebug(context)) {
-		// 	this.logger.info(`${groupPrefix}Detectando NSFW via NudeNet API: ${videoPath}${userSuffix}`);
-		// }
 
 		const fileBuffer = await fs.promises.readFile(videoPath);
 		const ext = path.extname(videoPath).toLowerCase();
@@ -429,14 +509,13 @@ class NSFWPredict {
 		form.append("threshold", String(thresholdToUse));
 
 		const headers = {};
-		const apiKey = this.getApiKey();
 		if (apiKey) {
 			headers["X-API-Key"] = apiKey;
 		}
 
 		const response = await axios.post(`${baseUrl}/api/v1/classify/video/upload`, form, {
 			headers,
-			timeout: this.nudenetVideoTimeout
+			timeout
 		});
 
 		const data = response.data || {};
@@ -692,17 +771,20 @@ Return the result in JSON format.`;
 
 	/**
 	 * Executa uma chamada da API NudeNet com até 3 tentativas (delays de 1s, 2s, 3s).
-	 * Em caso de erro de rede (ex: host inalcançável), ativa o circuit breaker imediatamente e não repete.
+	 * Em caso de erro de rede (ex: host inalcançável), ativa o circuit breaker imediatamente no provedor e aborta.
+	 * @param {Object} provider
 	 * @param {Function} apiCall
 	 * @param {Object} context
 	 * @param {string} label
 	 * @returns {Promise<Object>}
 	 */
-	async _executeNudeNetWithRetry(apiCall, context = {}, label = "mídia") {
+	async _executeNudeNetWithRetry(provider, apiCall, context = {}, label = "mídia") {
 		const delays = [1000, 2000, 3000];
 		const maxAttempts = delays.length;
 		let lastError = null;
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+		const provName = provider.name || provider.url || "default";
+		const key = this._getProviderKey(provider);
 
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
@@ -711,9 +793,10 @@ Return the result in JSON format.`;
 				lastError = err;
 				// Se for erro de rede/conexão (ex: EHOSTUNREACH, ECONNREFUSED, timeout), ativa circuit breaker e aborta
 				if (this._isNetworkError(err)) {
-					this.nudenetOfflineUntil = Date.now() + this.nudenetCircuitBreakerDuration;
+					const duration = this.getCircuitBreakerDuration(provider);
+					this.providerOfflineUntil.set(key, Date.now() + duration);
 					this.logger.warn(
-						`${groupPrefix}NudeNet API (${label}) offline [${err.code || err.message}]. Circuit breaker ativado por 60s.${userSuffix}`
+						`${groupPrefix}NudeNet API [${provName}] (${label}) offline [${err.code || err.message}]. Circuit breaker ativado por ${duration / 1000}s.${userSuffix}`
 					);
 					throw err;
 				}
@@ -729,67 +812,79 @@ Return the result in JSON format.`;
 	}
 
 	/**
-	 * Verifica se uma imagem ou vídeo contém conteúdo NSFW.
-	 * Se NUDENET_API estiver definida, usa a nova API com até 3 tentativas (1s, 2s, 3s delay). Em caso de falha/offline, realiza fallback para LLM.
-	 * Se NUDENET_API não estiver definida, usa diretamente o LLM.
+	 * Verifica se uma imagem contém conteúdo NSFW.
+	 * Itera pelos provedores NudeNet disponíveis com failover e circuit breaker.
+	 * Se todos os provedores estiverem offline/indisponíveis, pula imediatamente (skip).
 	 * @param {string|Array<string>} imagesInput - A imagem (base64) ou lista de imagens.
 	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
-	 * @returns {Promise<{isNSFW: boolean, reason: string}>} - Resultado da detecção.
+	 * @returns {Promise<{isNSFW: boolean, reason: string, skipped?: boolean}>} - Resultado da detecção.
 	 */
 	async detectNSFW(imagesInput, context = {}) {
 		if (process.env.DISABLE_ACTIVITY === "true") {
-			return { isNSFW: false, reason: "Activity disabled" };
+			return { isNSFW: false, reason: "Activity disabled", skipped: true };
 		}
 
-		const nudenetUrl = this.getNudenetApiUrl();
-		if (nudenetUrl) {
+		if (!this.isAvailable()) {
+			return { isNSFW: false, reason: "Provedores NSFW indisponíveis", skipped: true };
+		}
+
+		const availableProviders = this.getAvailableProviders();
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+
+		for (const provider of availableProviders) {
 			try {
 				return await this._executeNudeNetWithRetry(
-					() => this.detectNSFWWithNudeNet(imagesInput, context, nudenetUrl),
+					provider,
+					() => this.detectNSFWWithNudeNet(imagesInput, context, provider),
 					context,
 					"imagem"
 				);
 			} catch (err) {
-				const { groupPrefix, userSuffix } = this._formatLogContext(context);
 				this.logger.warn(
-					`${groupPrefix}NudeNet API falhou após 3 tentativas (${err.message}). Executando fallback via LLM...${userSuffix}`
+					`${groupPrefix}NudeNet [${provider.name || provider.url}] falhou (${err.message}).${userSuffix}`
 				);
 			}
 		}
 
-		return this.detectNSFWWithLLM(imagesInput, context);
+		return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
 	}
 
 	/**
 	 * Detecta NSFW em um vídeo.
-	 * Se NUDENET_API estiver definida, envia o vídeo diretamente para a nova API com até 3 tentativas (1s, 2s, 3s delay). Em caso de falha/offline, realiza fallback para extração de frames + LLM.
-	 * Se NUDENET_API não estiver definida, usa diretamente a extração de frames + LLM.
+	 * Itera pelos provedores NudeNet disponíveis com failover e circuit breaker.
+	 * Se todos os provedores estiverem offline/indisponíveis, pula imediatamente (skip).
 	 * @param {string} videoPath - Caminho do arquivo de vídeo.
 	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
-	 * @returns {Promise<{isNSFW: boolean, reason: string}>} - Resultado da detecção.
+	 * @returns {Promise<{isNSFW: boolean, reason: string, skipped?: boolean}>} - Resultado da detecção.
 	 */
 	async detectNSFWVideo(videoPath, context = {}) {
 		if (process.env.DISABLE_ACTIVITY === "true") {
-			return { isNSFW: false, reason: "Activity disabled" };
+			return { isNSFW: false, reason: "Activity disabled", skipped: true };
 		}
 
-		const nudenetUrl = this.getNudenetApiUrl();
-		if (nudenetUrl) {
+		if (!this.isAvailable()) {
+			return { isNSFW: false, reason: "Provedores NSFW indisponíveis", skipped: true };
+		}
+
+		const availableProviders = this.getAvailableProviders();
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+
+		for (const provider of availableProviders) {
 			try {
 				return await this._executeNudeNetWithRetry(
-					() => this.detectNSFWVideoWithNudeNet(videoPath, context, nudenetUrl),
+					provider,
+					() => this.detectNSFWVideoWithNudeNet(videoPath, context, provider),
 					context,
 					"vídeo"
 				);
 			} catch (err) {
-				const { groupPrefix, userSuffix } = this._formatLogContext(context);
 				this.logger.warn(
-					`${groupPrefix}NudeNet API falhou para vídeo após 3 tentativas (${err.message}). Executando fallback via LLM...${userSuffix}`
+					`${groupPrefix}NudeNet [${provider.name || provider.url}] falhou para vídeo (${err.message}).${userSuffix}`
 				);
 			}
 		}
 
-		return this.detectNSFWVideoWithLLM(videoPath, context);
+		return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
 	}
 
 	/**

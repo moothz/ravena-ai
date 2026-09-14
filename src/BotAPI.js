@@ -331,6 +331,7 @@ class BotAPI {
 		services.whisper = await checkCategoryStatus("whisper");
 		services.f5tts = await checkCategoryStatus("f5tts");
 		services.sdwebui = await checkCategoryStatus("sdwebui");
+		services.nudenet = await checkCategoryStatus("nudenet");
 
 		this.lastServicesStatus = services;
 
@@ -1492,9 +1493,50 @@ class BotAPI {
 					whisper: "unknown",
 					imagine: "unknown",
 					f5tts: "unknown",
-					llm: "unknown"
+					llm: "unknown",
+					nudenet: "unknown"
 				}
 			);
+		});
+
+		// Endpoint público para detecção de conteúdo NSFW
+		this.app.post("/api/nsfw-detect", this.generalLimiter, async (req, res) => {
+			const { image, images, threshold } = req.body || {};
+
+			const targetImages = images || (image ? [image] : []);
+			if (!Array.isArray(targetImages) || targetImages.length === 0) {
+				return res
+					.status(400)
+					.json({ error: "Campo 'image' (string base64/URL) ou 'images' (array) é obrigatório." });
+			}
+
+			const NSFWPredict = require("./utils/NSFWPredict");
+			const nsfwPredict = NSFWPredict.getInstance();
+
+			if (!nsfwPredict.isAvailable()) {
+				return res.status(503).json({
+					error: "Serviço de detecção NSFW indisponível no momento.",
+					skipped: true
+				});
+			}
+
+			try {
+				const context = {};
+				if (threshold !== undefined && !isNaN(threshold)) {
+					context.threshold = parseFloat(threshold);
+				}
+
+				const result = await nsfwPredict.detectNSFW(targetImages, context);
+				return res.json({
+					success: true,
+					isNSFW: Boolean(result.isNSFW),
+					reason: result.reason || "",
+					skipped: Boolean(result.skipped)
+				});
+			} catch (err) {
+				this.logger.error("Erro na API pública /api/nsfw-detect:", err);
+				return res.status(500).json({ error: "Erro ao processar verificação NSFW." });
+			}
 		});
 
 		// Fishing API

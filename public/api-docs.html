@@ -306,7 +306,41 @@ curl -X POST https://ravena.moothz.win/api/ajuda/chat \
             </div>
         </div>
 
-        <!-- 6. Status dos Serviços -->
+        <!-- 6. Detecção NSFW -->
+        <div class="endpoint-card">
+            <div class="endpoint-header">
+                <span class="method-badge method-post">POST</span>
+                <span class="endpoint-path">/api/nsfw-detect</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Público</span>
+            </div>
+            <div class="endpoint-body">
+                <p class="endpoint-desc">Classifica imagens (base64 ou URL) quanto à presença de conteúdo adulto/NSFW via NudeNet.</p>
+                <div class="section-label">Request Body (JSON)</div>
+                <div class="code-box">
+{
+  "image": "data:image/jpeg;base64,...", // ou "images": ["data:image/..."]
+  "threshold": 0.7 // opcional (padrão: 0.7)
+}
+                </div>
+                <div class="section-label">Exemplo cURL</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/nsfw-detect \
+  -H "Content-Type: application/json" \
+  -d '{"image": "data:image/jpeg;base64,...", "threshold": 0.7}'
+                </div>
+                <div class="section-label">Resposta</div>
+                <div class="code-box">
+{
+  "success": true,
+  "isNSFW": false,
+  "reason": "",
+  "skipped": false
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. Status dos Serviços -->
         <div class="endpoint-card">
             <div class="endpoint-header">
                 <span class="method-badge method-get">GET</span>
@@ -314,14 +348,15 @@ curl -X POST https://ravena.moothz.win/api/ajuda/chat \
                 <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Monitoramento</span>
             </div>
             <div class="endpoint-body">
-                <p class="endpoint-desc">Retorna o status em tempo real dos serviços (whisper, imagine, f5tts, llm).</p>
+                <p class="endpoint-desc">Retorna o status em tempo real dos serviços (whisper, imagine, f5tts, llm, nudenet).</p>
                 <div class="section-label">Resposta</div>
                 <div class="code-box">
 {
   "whisper": "up",
   "imagine": "up",
   "f5tts": "up",
-  "llm": "up"
+  "llm": "up",
+  "nudenet": "up"
 }
                 </div>
             </div>

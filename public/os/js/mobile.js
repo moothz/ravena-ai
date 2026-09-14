@@ -50,6 +50,7 @@ const MobileApp = {
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> LLM</div>
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> Whisper</div>
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> F5-TTS</div>
+                <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> NSFW</div>
             </div>
 
             <!-- Middle Content Area (No page scroll) -->
@@ -340,6 +341,7 @@ const MobileApp = {
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.llm)}"></span> LLM</div>
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.whisper)}"></span> Whisper</div>
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.f5tts)}"></span> F5-TTS</div>
+            <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.nudenet || status.nsfw)}"></span> NSFW</div>
         `;
     },
 

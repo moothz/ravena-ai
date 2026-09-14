@@ -8,14 +8,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts'];
+    const categories = ['llm', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
         'whisper': 'Transcrição de Áudio (Whisper)',
         'comfyui': 'Geração de Imagens (ComfyUI)',
         'bonsai': 'Geração de Imagens (Bonsai)',
         'sdwebui': 'Geração de Imagens (SD WebUI)',
-        'f5tts': 'Conversão de Texto em Fala (F5-TTS)'
+        'f5tts': 'Conversão de Texto em Fala (F5-TTS)',
+        'nudenet': 'Detecção de Conteúdo NSFW (NudeNet)'
     };
 
     // Basic auth is handled by the browser since the page itself is protected.
@@ -110,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="provider-card ${isEnabled ? '' : 'disabled'}">
                 <div class="provider-info">
                     <div class="provider-name">${p.name} ${statusHtml}</div>
-                    <div class="provider-type">${p.url} ${p.model ? `(${p.model})` : ''}</div>
+                    <div class="provider-type">${p.url} ${p.model ? `(${p.model})` : ''} ${p.circuitBreakerDuration ? `[CB: ${Math.round(p.circuitBreakerDuration / 1000)}s]` : ''}</div>
                 </div>
                 <div>
                   <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleProvider('${cat}', ${index})"> Ativo
@@ -137,6 +138,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const llmFields = document.getElementById('llm-extra-fields');
         llmFields.classList.toggle('hidden', category !== 'llm');
 
+        const nudenetFields = document.getElementById('nudenet-extra-fields');
+        if (nudenetFields) nudenetFields.classList.toggle('hidden', category !== 'nudenet');
+
         if (isEdit) {
             const p = config[category][index];
             document.getElementById('prov-name').value = p.name || '';
@@ -151,6 +155,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('prov-text-only').checked = !!p.textOnly;
                 document.getElementById('prov-ignore-video').checked = !!p.ignoreVideo;
                 document.getElementById('prov-tool-calling').checked = !!p.toolCalling;
+            } else if (category === 'nudenet') {
+                const cbSeconds = p.circuitBreakerDuration !== undefined
+                    ? Math.round(p.circuitBreakerDuration / 1000)
+                    : (p.circuitBreaker || 15);
+                const cbInput = document.getElementById('prov-circuit-breaker');
+                if (cbInput) cbInput.value = cbSeconds;
             }
            } else {
             document.getElementById('prov-name').value = '';
@@ -163,6 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('prov-text-only').checked = false;
             document.getElementById('prov-ignore-video').checked = false;
             document.getElementById('prov-tool-calling').checked = false;
+            const cbInput = document.getElementById('prov-circuit-breaker');
+            if (cbInput) cbInput.value = 15;
            }
 
         providerModal.classList.remove('hidden');
@@ -215,6 +227,12 @@ document.addEventListener('DOMContentLoaded', () => {
             provider.textOnly = document.getElementById('prov-text-only').checked;
             provider.ignoreVideo = document.getElementById('prov-ignore-video').checked;
             provider.toolCalling = document.getElementById('prov-tool-calling').checked;
+        } else if (category === 'nudenet') {
+            const cbInput = document.getElementById('prov-circuit-breaker');
+            const cbVal = cbInput ? parseFloat(cbInput.value) : 15;
+            if (!isNaN(cbVal) && cbVal > 0) {
+                provider.circuitBreakerDuration = cbVal * 1000;
+            }
         }
 
         if (index === -1) {

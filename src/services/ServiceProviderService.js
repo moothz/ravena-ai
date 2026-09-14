@@ -126,7 +126,8 @@ class ServiceProviderService {
 			comfyui: [],
 			bonsai: [],
 			sdwebui: [],
-			f5tts: []
+			f5tts: [],
+			nudenet: []
 		};
 	}
 }

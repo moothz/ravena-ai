@@ -911,6 +911,10 @@ class EventHandler extends EventEmitter {
 			return false;
 		}
 
+		if (!this.nsfwPredict.isAvailable()) {
+			return false;
+		}
+
 		try {
 			const tempDir = path.join(__dirname, "../temp");
 			try {

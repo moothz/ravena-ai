@@ -355,6 +355,12 @@
                         <input type="checkbox" id="prov-tool-calling">
                         <label for="prov-tool-calling">Suporte a Tool Calling (Busca Web / Functions)</label>
                     </div>
+                <div id="nudenet-extra-fields" class="hidden">
+                    <div class="form-group">
+                        <label>Timeout Circuit Breaker (Segundos)</label>
+                        <input type="number" id="prov-circuit-breaker" class="form-control" placeholder="15" min="1" step="1">
+                        <small style="color: #888; font-size: 0.8em;">Tempo de pausa para retentativas se a API ficar offline ou inacessível (padrão: 15s).</small>
+                    </div>
                 </div>
 
                 <div class="form-group checkbox-group">

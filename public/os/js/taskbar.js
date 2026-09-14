@@ -356,6 +356,10 @@ const Taskbar = {
                         <span class="service-status-dot dot-up" id="sm-dot-f5tts"></span>
                         <span>F5-TTS (Voz)</span>
                     </div>
+                    <div class="submenu-item" style="cursor: default;">
+                        <span class="service-status-dot dot-up" id="sm-dot-nsfw"></span>
+                        <span>NudeNet (NSFW)</span>
+                    </div>
                 </div>
             </div>
 
@@ -525,6 +529,7 @@ const Taskbar = {
         updateDot('sm-dot-llm', status.llm);
         updateDot('sm-dot-whisper', status.whisper);
         updateDot('sm-dot-f5tts', status.f5tts);
+        updateDot('sm-dot-nsfw', status.nudenet || status.nsfw);
     },
 
     initSubmenuHoverDelay() {

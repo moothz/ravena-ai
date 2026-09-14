@@ -364,9 +364,13 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 				const imageBase64 = imageBuffer.toString("base64");
 				const nsfwResult = await nsfwPredict.detectNSFW(imageBase64);
 				isNSFW = nsfwResult.isNSFW;
-				logger.info(
-					`Imagem analisada: NSFW = ${isNSFW}, Reason: ${JSON.stringify(nsfwResult.reason)}`
-				);
+				if (nsfwResult.skipped) {
+					logger.info(`Verificação NSFW ignorada: ${nsfwResult.reason}`);
+				} else {
+					logger.info(
+						`Imagem analisada: NSFW = ${isNSFW}, Reason: ${JSON.stringify(nsfwResult.reason)}`
+					);
+				}
 			} catch (nsfwError) {
 				logger.error("Erro ao verificar NSFW:", nsfwError);
 			}

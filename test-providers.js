@@ -215,6 +215,24 @@ async function runTests() {
 					ttsRes.fileInfo = getFileSize(outPath);
 				}
 				results.push({ name: "TTS", ...ttsRes });
+			} else if (category === "nudenet") {
+				const headers = { "Content-Type": "application/json" };
+				if (p.apiKey) headers["X-API-Key"] = p.apiKey;
+				if (imageBase64) {
+					const classifyRes = await testUrl(
+						`${p.url}/api/v1/classify`,
+						"POST",
+						{
+							images: [{ id: "test", source: imageBase64 }],
+							threshold: 0.7
+						},
+						headers,
+						p.timeout || 15000
+					);
+					results.push({ name: "CLASSIFY", ...classifyRes });
+				} else {
+					results.push({ name: "PING", ...(await testUrl(p.url, "GET", null, headers)) });
+				}
 			} else {
 				results.push({ name: "STATUS", ...(await testUrl(p.url)) });
 			}
