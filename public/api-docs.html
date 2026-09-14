@@ -311,18 +311,24 @@ curl -X POST https://ravena.moothz.win/api/ajuda/chat \
             <div class="endpoint-header">
                 <span class="method-badge method-post">POST</span>
                 <span class="endpoint-path">/api/nsfw-detect</span>
-                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Público</span>
+                <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 100 req/min (Público)</span>
             </div>
             <div class="endpoint-body">
-                <p class="endpoint-desc">Classifica imagens (base64 ou URL) quanto à presença de conteúdo adulto/NSFW via NudeNet.</p>
-                <div class="section-label">Request Body (JSON)</div>
+                <p class="endpoint-desc">Classifica imagens quanto à presença de conteúdo adulto/NSFW via NudeNet. Suporta tanto envio em JSON (base64 ou URL) quanto upload de arquivo via <code>multipart/form-data</code>. Limite: máx. 3MB por arquivo e até 16 imagens por requisição.</p>
+                <div class="section-label">Opção 1: Upload via multipart/form-data</div>
+                <div class="code-box">
+curl -X POST https://ravena.moothz.win/api/nsfw-detect \
+  -F "file=@foto.jpg" \
+  -F "threshold=0.7"
+                </div>
+                <div class="section-label">Opção 2: Request Body (JSON)</div>
                 <div class="code-box">
 {
   "image": "data:image/jpeg;base64,...", // ou "images": ["data:image/..."]
   "threshold": 0.7 // opcional (padrão: 0.7)
 }
                 </div>
-                <div class="section-label">Exemplo cURL</div>
+                <div class="section-label">Exemplo cURL (JSON)</div>
                 <div class="code-box">
 curl -X POST https://ravena.moothz.win/api/nsfw-detect \
   -H "Content-Type: application/json" \

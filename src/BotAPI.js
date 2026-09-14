@@ -12,6 +12,34 @@ const upload = multer({
 	dest: "uploads/",
 	limits: { fileSize: 50 * 1024 * 1024 }
 });
+const MAX_NSFW_FILE_SIZE = 3 * 1024 * 1024; // 3MB
+const uploadNsfw = multer({
+	dest: "uploads/",
+	limits: {
+		fileSize: MAX_NSFW_FILE_SIZE,
+		files: 16
+	},
+	fileFilter: (req, file, cb) => {
+		if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+			return cb(new Error("Apenas arquivos de imagem são permitidos."));
+		}
+		cb(null, true);
+	}
+});
+
+function getBase64ByteSize(str) {
+	if (typeof str !== "string") return 0;
+	if (str.startsWith("http://") || str.startsWith("https://")) {
+		return 0;
+	}
+	const commaIdx = str.indexOf(",");
+	const data = commaIdx !== -1 ? str.slice(commaIdx + 1) : str;
+	const len = data.length;
+	let padding = 0;
+	if (data.endsWith("==")) padding = 2;
+	else if (data.endsWith("=")) padding = 1;
+	return Math.floor((len * 3) / 4) - padding;
+}
 const fs = require("fs").promises;
 const qrcode = require("qr-base64");
 const { exec, spawn } = require("child_process");
@@ -1499,28 +1527,124 @@ class BotAPI {
 			);
 		});
 
+		// Middleware para processar multipart/form-data na detecção NSFW (com limite de 3MB por arquivo)
+		const handleNsfwUpload = (req, res, next) => {
+			if (!req.is("multipart/form-data")) {
+				return next();
+			}
+
+			uploadNsfw.any()(req, res, async (err) => {
+				if (err) {
+					if (Array.isArray(req.files)) {
+						for (const f of req.files) {
+							if (f.path) {
+								try {
+									await fs.unlink(f.path);
+								} catch (e) {}
+							}
+						}
+					}
+					if (err instanceof multer.MulterError) {
+						if (err.code === "LIMIT_FILE_SIZE") {
+							return res.status(413).json({
+								error: "Tamanho do arquivo excede o limite máximo permitido de 3MB."
+							});
+						}
+						if (err.code === "LIMIT_FILE_COUNT") {
+							return res.status(400).json({
+								error: "Limite de arquivos excedido. Máximo de 16 imagens por requisição."
+							});
+						}
+						return res.status(400).json({ error: `Erro no upload: ${err.message}` });
+					}
+					return res.status(400).json({ error: err.message || "Erro no upload do arquivo." });
+				}
+				next();
+			});
+		};
+
 		// Endpoint público para detecção de conteúdo NSFW
-		this.app.post("/api/nsfw-detect", this.generalLimiter, async (req, res) => {
-			const { image, images, threshold } = req.body || {};
-
-			const targetImages = images || (image ? [image] : []);
-			if (!Array.isArray(targetImages) || targetImages.length === 0) {
-				return res
-					.status(400)
-					.json({ error: "Campo 'image' (string base64/URL) ou 'images' (array) é obrigatório." });
-			}
-
-			const NSFWPredict = require("./utils/NSFWPredict");
-			const nsfwPredict = NSFWPredict.getInstance();
-
-			if (!nsfwPredict.isAvailable()) {
-				return res.status(503).json({
-					error: "Serviço de detecção NSFW indisponível no momento.",
-					skipped: true
-				});
-			}
+		this.app.post("/api/nsfw-detect", handleNsfwUpload, async (req, res) => {
+			const filesToCleanup = [];
+			const targetImages = [];
 
 			try {
+				// 1. Arquivos enviados via multipart/form-data
+				if (Array.isArray(req.files) && req.files.length > 0) {
+					for (const file of req.files) {
+						filesToCleanup.push(file.path);
+						const fileBuffer = await fs.readFile(file.path);
+						const mime = file.mimetype || "image/jpeg";
+						targetImages.push(`data:${mime};base64,${fileBuffer.toString("base64")}`);
+					}
+				}
+
+				// 2. Imagens enviadas via JSON ou campos de texto (base64 ou URL)
+				const { image, images, threshold } = req.body || {};
+				if (images) {
+					if (Array.isArray(images)) {
+						targetImages.push(...images);
+					} else if (typeof images === "string") {
+						targetImages.push(images);
+					}
+				}
+				if (image) {
+					if (Array.isArray(image)) {
+						targetImages.push(...image);
+					} else if (typeof image === "string") {
+						targetImages.push(image);
+					}
+				}
+
+				if (targetImages.length === 0) {
+					return res.status(400).json({
+						error:
+							"Campo 'image' (string base64/URL), 'images' (array) ou arquivo via upload (multipart/form-data) é obrigatório."
+					});
+				}
+
+				if (targetImages.length > 16) {
+					return res.status(400).json({
+						error: "Limite excedido. Máximo de 16 imagens por requisição."
+					});
+				}
+
+				// 3. Validação do tamanho máximo de 3MB por arquivo/imagem
+				for (const item of targetImages) {
+					if (typeof item === "string") {
+						if (item.startsWith("http://") || item.startsWith("https://")) {
+							try {
+								const headRes = await axios.head(item, { timeout: 3000 });
+								const contentLength = parseInt(headRes.headers["content-length"], 10);
+								if (!isNaN(contentLength) && contentLength > MAX_NSFW_FILE_SIZE) {
+									return res.status(413).json({
+										error: "Tamanho do arquivo na URL excede o limite máximo permitido de 3MB."
+									});
+								}
+							} catch (e) {
+								// Falhas no HEAD são ignoradas para permitir que NudeNet tente processar
+							}
+						} else {
+							const byteSize = getBase64ByteSize(item);
+							if (byteSize > MAX_NSFW_FILE_SIZE) {
+								return res.status(413).json({
+									error: "Tamanho do arquivo excede o limite máximo permitido de 3MB."
+								});
+							}
+						}
+					}
+				}
+
+				const NSFWPredict = require("./utils/NSFWPredict");
+				const nsfwPredict = NSFWPredict.getInstance();
+
+				if (!nsfwPredict.isAvailable()) {
+					return res.status(503).json({
+						error: "Serviço de detecção NSFW indisponível no momento.",
+						skipped: true
+					});
+				}
+
 				const context = {};
 				if (threshold !== undefined && !isNaN(threshold)) {
 					context.threshold = parseFloat(threshold);
@@ -1536,6 +1660,15 @@ class BotAPI {
 			} catch (err) {
 				this.logger.error("Erro na API pública /api/nsfw-detect:", err);
 				return res.status(500).json({ error: "Erro ao processar verificação NSFW." });
+			} finally {
+				// Apaga imediatamente os arquivos temporários recebidos pelo upload
+				for (const filePath of filesToCleanup) {
+					try {
+						await fs.unlink(filePath);
+					} catch (e) {
+						// Ignora erro se já tiver sido excluído
+					}
+				}
 			}
 		});
 
