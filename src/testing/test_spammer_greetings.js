@@ -145,10 +145,38 @@ async function runTests() {
 
 	await eventHandler.processGroupLeave(bot, spammerLeaveData);
 
-	// Farewells MUST NOT be sent
+	// Standard farewells MUST NOT be sent
 	const farewellMsgs = bot.capturedMessages.filter((m) => m.content && m.content.includes("Adeus"));
-	assert.strictEqual(farewellMsgs.length, 0, "No farewell message should be sent to spammer");
-	console.log("✓ Spammer leave: farewell message suppressed");
+	assert.strictEqual(
+		farewellMsgs.length,
+		0,
+		"Standard farewell message should not be sent to spammer"
+	);
+
+	// Customized spammer leave notice MUST be sent
+	const spammerNotices = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("🚫 Spammer @6281234567890 detectado removido do grupo")
+	);
+	assert.strictEqual(
+		spammerNotices.length,
+		1,
+		"Customized spammer leave notice should be sent to group"
+	);
+	assert(
+		spammerNotices[0].content.includes("!g-permitirSpammer 6281234567890"),
+		"Notice should instruct how to whitelist with !g-permitirSpammer"
+	);
+	console.log("✓ Spammer leave: standard farewell suppressed and custom notice sent");
+
+	// 5b. Test deduplication within 30s
+	bot.resetCapture();
+	await eventHandler.processGroupLeave(bot, spammerLeaveData);
+	assert.strictEqual(
+		bot.capturedMessages.length,
+		0,
+		"Duplicate spammer notice should be suppressed within 30s"
+	);
+	console.log("✓ Spammer leave: duplicate notice within 30s suppressed");
 
 	// 6. Test Normal User joins the fixed group
 	bot.resetCapture();
@@ -228,6 +256,109 @@ async function runTests() {
 	assert.strictEqual(banned[0], "6289999999999@s.whatsapp.net");
 	assert(eventHandler.activeSpammers.has("6289999999999@s.whatsapp.net"));
 	console.log("✓ checkAutoBanSpammers: detected, removed, and registered in activeSpammers");
+
+	// 9. Test toggleBanirSpammers management command
+	const customGroupId = "120363999999999999@g.us";
+	const customGroup = new Group({
+		id: customGroupId,
+		name: "Grupo Normal",
+		prefix: "!",
+		banirSpammers: false,
+		greetings: { text: "Olá {pessoa}!" }
+	});
+	eventHandler.groups[customGroupId] = customGroup;
+
+	assert.strictEqual(
+		eventHandler.isSpamMonitoredGroup(customGroupId, customGroup),
+		false,
+		"Custom group should not be monitored initially"
+	);
+
+	const management = eventHandler.commandHandler.management;
+	const toggleRes1 = await management.toggleBanirSpammers(
+		bot,
+		{ author: "admin@s.whatsapp.net" },
+		[],
+		customGroup
+	);
+	assert.strictEqual(
+		customGroup.banirSpammers,
+		true,
+		"Group banirSpammers should be true after toggle"
+	);
+	assert(toggleRes1.content.includes("ativado"), "Response should indicate activated");
+	assert.strictEqual(
+		eventHandler.isSpamMonitoredGroup(customGroupId, customGroup),
+		true,
+		"Custom group should now be monitored"
+	);
+
+	// Spammer joining custom monitored group should be kicked
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const customSpammerJoin = {
+		group: { id: customGroupId, name: "Grupo Normal" },
+		user: { id: "6287777777777@s.whatsapp.net", name: "Spammer 62 Custom" },
+		responsavel: { id: "responsavel@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => ({
+				id: { _serialized: customGroupId },
+				name: "Grupo Normal",
+				participants: [
+					{ id: { _serialized: "6287777777777@s.whatsapp.net" }, phoneNumber: "6287777777777" }
+				]
+			})
+		}
+	};
+	await eventHandler.processGroupJoin(bot, customSpammerJoin);
+	assert(
+		bot.removedParticipants.length >= 1,
+		"Spammer must be removed from custom monitored group"
+	);
+	console.log("✓ toggleBanirSpammers: activates monitoring and bans spammers");
+
+	// 10. Test togglePermitirSpammer management command
+	const whitelistSpammer = "6287777777777";
+	const allowRes1 = await management.togglePermitirSpammer(
+		bot,
+		{ author: "admin@s.whatsapp.net" },
+		[whitelistSpammer],
+		customGroup
+	);
+	assert(customGroup.spammerWhitelist.includes(whitelistSpammer), "Spammer must be in whitelist");
+	assert(allowRes1.content.includes("adicionado"), "Response should confirm addition to whitelist");
+	assert.strictEqual(
+		eventHandler.isSpammerWhitelisted(
+			customGroup,
+			"6287777777777@s.whatsapp.net",
+			whitelistSpammer
+		),
+		true,
+		"isSpammerWhitelisted should return true"
+	);
+
+	// Spammer should NOT be kicked now because they are whitelisted
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	await eventHandler.processGroupJoin(bot, customSpammerJoin);
+	assert.strictEqual(bot.removedParticipants.length, 0, "Whitelisted spammer must not be removed");
+	const welcomeAllowed = bot.capturedMessages.filter((m) => m.content && m.content.includes("Olá"));
+	assert.strictEqual(welcomeAllowed.length, 1, "Whitelisted user receives greeting");
+	console.log("✓ togglePermitirSpammer: adds to whitelist and allows joining with greeting");
+
+	// Remove from whitelist
+	const allowRes2 = await management.togglePermitirSpammer(
+		bot,
+		{ author: "admin@s.whatsapp.net" },
+		[whitelistSpammer],
+		customGroup
+	);
+	assert(
+		!customGroup.spammerWhitelist.includes(whitelistSpammer),
+		"Spammer must be removed from whitelist"
+	);
+	assert(allowRes2.content.includes("removido"), "Response should confirm removal from whitelist");
+	console.log("✓ togglePermitirSpammer: toggles off and removes from whitelist");
 
 	console.log("--- All spammer greetings suppression tests passed successfully! ---");
 	process.exit(0);

@@ -467,7 +467,8 @@ document.addEventListener('DOMContentLoaded', () => {
             youtube: 'Canais YouTube',
             nicks: 'Apelidos dos Membros',
             warnings: 'Advertências do Grupo',
-            webhooks: 'Webhooks Externos'
+            webhooks: 'Webhooks Externos',
+            banirSpammers: 'Banir Spammers Automaticamente'
         };
 
         for (let key in changes) {
@@ -584,6 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.autoStt = document.getElementById('auto-stt').checked;
         groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
         groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
+        groupData.banirSpammers = document.getElementById('banir-spammers').checked;
 
         if(!groupData.interact) groupData.interact = {};
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
@@ -698,6 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('auto-stt').checked = !!groupData.autoStt;
         document.getElementById('notifica-grupo-fechado').checked = !!groupData.notificaGrupoFechado;
         document.getElementById('notifica-grupo-aberto').checked = !!groupData.notificaGrupoAberto;
+        document.getElementById('banir-spammers').checked = !!groupData.banirSpammers;
         
         const interact = groupData.interact || {};
         document.getElementById('auto-interaction').checked = !!interact.enabled;

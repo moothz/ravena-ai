@@ -67,6 +67,8 @@ class Group {
 		this.customAIPrompt = data.customAIPrompt ?? [];
 		this.notificaGrupoFechado = data.notificaGrupoFechado ?? false;
 		this.notificaGrupoAberto = data.notificaGrupoAberto ?? false;
+		this.banirSpammers = data.banirSpammers ?? false;
+		this.spammerWhitelist = data.spammerWhitelist ?? data.allowedSpammers ?? [];
 
 		// Metadados
 		this.createdAt = data.createdAt ?? Date.now();
@@ -111,6 +113,8 @@ class Group {
 			customAIPrompt: this.customAIPrompt,
 			notificaGrupoFechado: this.notificaGrupoFechado,
 			notificaGrupoAberto: this.notificaGrupoAberto,
+			banirSpammers: this.banirSpammers,
+			spammerWhitelist: this.spammerWhitelist,
 			createdAt: this.createdAt,
 			updatedAt: this.updatedAt
 		};
@@ -196,6 +200,9 @@ class Group {
 			this.notificaGrupoFechado = data.notificaGrupoFechado;
 		if (typeof data.notificaGrupoAberto === "boolean")
 			this.notificaGrupoAberto = data.notificaGrupoAberto;
+		if (typeof data.banirSpammers === "boolean") this.banirSpammers = data.banirSpammers;
+		if (Array.isArray(data.spammerWhitelist)) this.spammerWhitelist = data.spammerWhitelist;
+		else if (Array.isArray(data.allowedSpammers)) this.spammerWhitelist = data.allowedSpammers;
 
 		// Atualiza carimbos de data/hora
 		this.updatedAt = Date.now();

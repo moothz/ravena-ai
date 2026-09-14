@@ -236,6 +236,21 @@ class Management {
 				method: "toggleNotificaGrupoAberto",
 				description: "Ativa/desativa a notificação quando o grupo é aberto"
 			},
+			banirSpammers: {
+				method: "toggleBanirSpammers",
+				description:
+					"Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63) neste grupo"
+			},
+			permitirSpammer: {
+				method: "togglePermitirSpammer",
+				description: "Adiciona/remove número da lista de spammers permitidos no grupo",
+				hidden: true
+			},
+			permitirSpamer: {
+				method: "togglePermitirSpammer",
+				description: "Adiciona/remove número da lista de spammers permitidos no grupo",
+				hidden: true
+			},
 			setPersonalidade: {
 				method: "setPersonalidadeIA",
 				description: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)"
@@ -1885,6 +1900,10 @@ class Management {
 			infoMessage += `- *Links:* ${linkFiltering}\n`;
 			infoMessage += `- *Pessoas:* ${personFilters}\n`;
 			infoMessage += `- *NSFW:* ${nsfwFiltering}\n`;
+			infoMessage += `- *Banir Spammers:* ${group.banirSpammers ? "Sim" : "Não"}\n`;
+			if (group.spammerWhitelist && group.spammerWhitelist.length > 0) {
+				infoMessage += `- *Spammers Permitidos:* ${group.spammerWhitelist.join(", ")}\n`;
+			}
 
 			// Buscar Dossiês
 			let dossierInfo = "";
@@ -2838,6 +2857,106 @@ class Management {
 			chatId: group.id,
 			content: statusMsg
 		});
+	}
+
+	/**
+	 * Alterna o monitoramento e banimento automático de spammers no grupo
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleBanirSpammers(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		group.banirSpammers = !group.banirSpammers;
+		await this.database.saveGroup(group);
+
+		const statusMsg = group.banirSpammers
+			? "🛡️ Monitoramento de *spammers* agora está *ativado* neste grupo.\nO bot removerá automaticamente números com DDI 62/63 ao entrarem."
+			: "⚪ Monitoramento de *spammers* agora está *desativado* neste grupo.";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: statusMsg
+		});
+	}
+
+	/**
+	 * Adiciona ou remove um número de telefone da lista de spammers permitidos do grupo
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async togglePermitirSpammer(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (!Array.isArray(group.spammerWhitelist)) {
+			group.spammerWhitelist = [];
+		}
+
+		let targetPhone = "";
+		if (args && args.length > 0) {
+			targetPhone = args.join("").replace(/\D/g, "");
+		} else if (message.mentions && message.mentions.length > 0) {
+			targetPhone = message.mentions[0].split("@")[0].replace(/\D/g, "");
+		} else if (message.quotedMsg?.author) {
+			targetPhone = message.quotedMsg.author.split("@")[0].replace(/\D/g, "");
+		}
+
+		if (!targetPhone) {
+			const prefix = group.prefix || bot.prefix || "!";
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `⚠️ Informe o número de telefone do spammer ou mencione o usuário.\n*Exemplo:* \`${prefix}g-permitirSpammer 62812345678\``
+			});
+		}
+
+		const mentionJid = `${targetPhone}@s.whatsapp.net`;
+		const index = group.spammerWhitelist.indexOf(targetPhone);
+
+		if (index !== -1) {
+			group.spammerWhitelist.splice(index, 1);
+			await this.database.saveGroup(group);
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `🚫 Número @${targetPhone} *removido* da lista de spammers permitidos. O bot voltará a removê-lo caso entre no grupo.`,
+				options: {
+					mentions: [mentionJid]
+				}
+			});
+		} else {
+			group.spammerWhitelist.push(targetPhone);
+			await this.database.saveGroup(group);
+
+			// Remove do Set activeSpammers se estiver em memória
+			if (bot.eventHandler?.activeSpammers) {
+				bot.eventHandler.activeSpammers.delete(targetPhone);
+				bot.eventHandler.activeSpammers.delete(mentionJid);
+			}
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `✅ Número @${targetPhone} *adicionado* à lista de spammers permitidos neste grupo. O bot não o removerá ao entrar.`,
+				options: {
+					mentions: [mentionJid]
+				}
+			});
+		}
 	}
 
 	/**
@@ -7764,6 +7883,12 @@ const helper = {
 			cmd: "!g-filtro-nsfw",
 			desc: "Ativa/desativa ou define a intensidade (0-100) do filtro NSFW",
 			usage: ["!g-filtro-nsfw", "!g-filtro-nsfw 30"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-banirSpammers",
+			desc: "Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63) no grupo",
+			usage: ["!g-banirSpammers"],
 			category: "filtros"
 		},
 		{

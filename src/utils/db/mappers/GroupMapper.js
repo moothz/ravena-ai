@@ -73,6 +73,8 @@ const GroupMapper = {
 			customAIPrompt: parse(row.custom_ai_prompt, []),
 			notificaGrupoFechado: !!row.notifica_grupo_fechado,
 			notificaGrupoAberto: !!row.notifica_grupo_aberto,
+			banirSpammers: !!row.banir_spammers,
+			spammerWhitelist: parse(row.spammer_whitelist, []),
 			createdAt: row.created_at ?? Date.now(),
 			updatedAt: row.updated_at ?? Date.now()
 		};
@@ -129,6 +131,8 @@ const GroupMapper = {
 			custom_ai_prompt: s(obj.customAIPrompt),
 			notifica_grupo_fechado: obj.notificaGrupoFechado ? 1 : 0,
 			notifica_grupo_aberto: obj.notificaGrupoAberto ? 1 : 0,
+			banir_spammers: obj.banirSpammers ? 1 : 0,
+			spammer_whitelist: s(obj.spammerWhitelist || obj.allowedSpammers || []),
 			created_at: obj.createdAt ?? Date.now(),
 			updated_at: Date.now()
 		};

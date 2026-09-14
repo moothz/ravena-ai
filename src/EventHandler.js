@@ -57,6 +57,7 @@ class EventHandler extends EventEmitter {
 		this.activeSpammers = new Set();
 		this.spammerActiveWindowUntil = 0;
 		this.sentStickersByOriginalMsg = new Map();
+		this.recentSpammerLeaveNotices = new Map();
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
@@ -1317,13 +1318,15 @@ class EventHandler extends EventEmitter {
 		}
 
 		if (!isBotJoining) {
-			if (data.user && this.isFixedSpamGroup(groupId)) {
-				const isSpammer = await this.isSpammerUser(bot, data.user, groupId);
+			const group =
+				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
+			if (data.user && this.isSpamMonitoredGroup(groupId, group)) {
+				const isSpammer = await this.isSpammerUser(bot, data.user, groupId, null, group);
 				if (isSpammer) {
 					const userId = data.user.id;
 					const userPhone = userId ? userId.split("@")[0].replace(/\D/g, "") : "";
 					this.logger.warn(
-						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo fixo ${groupId}. Removendo imediatamente sem enviar boas-vindas.`
+						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo monitorado ${groupId}. Removendo imediatamente sem enviar boas-vindas.`
 					);
 					this.registerSpammer(userId, userPhone);
 
@@ -1361,12 +1364,16 @@ class EventHandler extends EventEmitter {
 
 			//this.logger.info(`[processGroupJoin] Chat `, { chat });
 
-			// Verifica se há spammers para banir (63/62) nos grupos fixos
+			// Carrega o grupo para validações posteriores
+			let group =
+				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
+
+			// Verifica se há spammers para banir (63/62) nos grupos monitorados
 			await this.checkAutoBanSpammers(bot, chat);
 
-			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat))) {
+			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat, group))) {
 				this.logger.warn(
-					`[processGroupJoin] Spammer detectado após verificação do chat no grupo fixo ${groupId}: ${data.user?.id}. Interrompendo boas-vindas.`
+					`[processGroupJoin] Spammer detectado após verificação do chat no grupo monitorado ${groupId}: ${data.user?.id}. Interrompendo boas-vindas.`
 				);
 				return;
 			}
@@ -1388,7 +1395,7 @@ class EventHandler extends EventEmitter {
 				data.responsavel?.id || (typeof data.responsavel === "string" ? data.responsavel : null),
 				bot
 			);
-			const group = groupData.group;
+			group = groupData.group;
 
 			// Motivo da alteração: Não ignorar mais o evento de join em grupos em modo Announce (apenas admins enviam mensagens)
 			// caso o grupo possua mensagem de boas-vindas ou despedida configurada.
@@ -1806,7 +1813,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			} else {
 				// Caso 2: Outra pessoa entrou no grupo
-				if (await this.isSpammerUser(bot, data.user, groupId, chat)) {
+				if (await this.isSpammerUser(bot, data.user, groupId, chat, group)) {
 					this.logger.info(
 						`[processGroupJoin] Usuário ${data.user?.id} é spammer no grupo ${groupId}. Boas-vindas suprimidas.`
 					);
@@ -1857,7 +1864,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 		try {
 			// Obtém grupo
-			const group = this.groups[data.group.id];
+			const group =
+				this.groups[data.group.id] ||
+				(await this.database?.getGroup(data.group.id).catch(() => null));
 
 			// Por enquanto, a única maneira é pegar a info do grupo pra descobrir o LID do bot nele
 			const chatInfo = await bot.getChatDetails(data.group.id);
@@ -2107,17 +2116,57 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			}
 
+			if (!isBotLeaving) {
+				const isSpammer = await this.isSpammerUser(bot, data.user, data.group.id, null, group);
+				if (isSpammer) {
+					this.logger.info(
+						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo monitorado ${data.group.id}. Enviando aviso de spammer e suprimindo despedida padrão.`
+					);
+
+					const rawPhone =
+						data.user?.phoneNumber ||
+						data.user?.number ||
+						(data.user?.id ? data.user.id.split("@")[0] : "");
+					const cleanPhone = String(rawPhone).replace(/\D/g, "");
+					const noticeKey = `${data.group.id}:${cleanPhone || data.user?.id}`;
+					const now = Date.now();
+					const lastSent = this.recentSpammerLeaveNotices.get(noticeKey) || 0;
+
+					if (now - lastSent >= 30000) {
+						this.recentSpammerLeaveNotices.set(noticeKey, now);
+						if (this.recentSpammerLeaveNotices.size > 200) {
+							for (const [k, ts] of this.recentSpammerLeaveNotices.entries()) {
+								if (now - ts > 60000) this.recentSpammerLeaveNotices.delete(k);
+							}
+						}
+
+						const prefix = group?.prefix || bot.prefix || "!";
+						const mentionJid =
+							data.user?.id && data.user.id.includes("@")
+								? data.user.id
+								: `${cleanPhone}@s.whatsapp.net`;
+						const spammerMsg = `🚫 Spammer @${cleanPhone} detectado removido do grupo.\n> Se deseja permitir que este numero entre no grupo, envie ${prefix}g-permitirSpammer ${cleanPhone}`;
+
+						await bot
+							.sendMessage(data.group.id, spammerMsg, {
+								mentions: [mentionJid]
+							})
+							.catch((err) => {
+								this.logger.error(
+									"Erro ao enviar mensagem de despedida personalizada de spammer:",
+									err
+								);
+							});
+					}
+
+					return;
+				}
+			}
+
 			// this.logger.debug(`[groupLeave] Outra pessoa saiu, farewell? `, {
 			// 	farewells: group?.farewells
 			// });
 			if (group && group.farewells && !isBotLeaving) {
-				if (await this.isSpammerUser(bot, data.user, data.group.id)) {
-					this.logger.info(
-						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo ${data.group.id}. Mensagem de despedida suprimida.`
-					);
-					return;
-				}
-
 				try {
 					const farewells = await this.processFarewellMessage(group, data.user, bot);
 					if (farewells && Array.isArray(farewells)) {
@@ -2508,6 +2557,40 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	/**
+	 * Verifica se o grupo é monitorado contra spammers (grupos fixos ou com banirSpammers ativado)
+	 * @param {string} groupId - ID do grupo
+	 * @param {Group} [group] - Objeto do grupo (opcional)
+	 * @returns {boolean}
+	 */
+	isSpamMonitoredGroup(groupId, group = null) {
+		if (!groupId) return false;
+		if (this.isFixedSpamGroup(groupId)) return true;
+		const grp = group || this.groups[groupId];
+		return !!grp?.banirSpammers;
+	}
+
+	/**
+	 * Verifica se o usuário está na whitelist de spammers permitidos do grupo
+	 * @param {Group} group - Objeto do grupo
+	 * @param {string} userId - ID ou JID do usuário
+	 * @param {string} [phone] - Telefone do usuário
+	 * @returns {boolean}
+	 */
+	isSpammerWhitelisted(group, userId, phone = "") {
+		if (!group || !Array.isArray(group.spammerWhitelist) || group.spammerWhitelist.length === 0) {
+			return false;
+		}
+		const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+		const cleanUserId = userId ? String(userId).split("@")[0].replace(/\D/g, "") : "";
+
+		return group.spammerWhitelist.some((allowed) => {
+			const cleanAllowed = String(allowed).replace(/\D/g, "");
+			if (!cleanAllowed) return false;
+			return cleanAllowed === cleanPhone || cleanAllowed === cleanUserId;
+		});
+	}
+
+	/**
 	 * Verifica se o telefone possui prefixo de spammer (62 ou 63)
 	 * @param {string} phone
 	 * @returns {boolean}
@@ -2554,12 +2637,17 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	 * @param {Object|Array|string} user - Usuário ou lista de usuários
 	 * @param {string} groupId - ID do grupo
 	 * @param {Object} [chat] - Dados do chat (opcional)
+	 * @param {Group} [group] - Objeto do grupo (opcional)
 	 * @returns {Promise<boolean>}
 	 */
-	async isSpammerUser(bot, user, groupId, chat = null) {
+	async isSpammerUser(bot, user, groupId, chat = null, group = null) {
 		if (!user) return false;
+		const grp =
+			group || this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
+		const isMonitored = this.isSpamMonitoredGroup(groupId, grp);
+		if (!isMonitored) return false;
+
 		const users = Array.isArray(user) ? user : [user];
-		const isFixed = this.isFixedSpamGroup(groupId);
 
 		for (const u of users) {
 			const userId = u?.id?._serialized || u?.id || (typeof u === "string" ? u : "");
@@ -2569,6 +2657,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			}
 			const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
 
+			// Se estiver na whitelist do grupo, ignora
+			if (this.isSpammerWhitelisted(grp, userId, cleanPhone)) {
+				continue;
+			}
+
 			// 1. Está no Set de spammers ativos?
 			if (
 				(userId && this.activeSpammers.has(userId)) ||
@@ -2577,38 +2670,42 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				return true;
 			}
 
-			// 2. Se for grupo fixo, checa prefixo de spammer
-			if (isFixed) {
-				if (cleanPhone && this.isSpammerPrefix(cleanPhone)) {
-					return true;
+			// 2. Checa prefixo de spammer
+			if (cleanPhone && this.isSpammerPrefix(cleanPhone)) {
+				return true;
+			}
+
+			// Se for LID, tenta obter telefone via chat.participants ou getContactById
+			if (userId && userId.endsWith("@lid")) {
+				let participantPhone = null;
+
+				if (chat) {
+					const participants = chat.Participants || chat.participants || [];
+					const p = participants.find(
+						(part) => part.lid === userId || part.id?._serialized === userId || part.id === userId
+					);
+					if (p) {
+						participantPhone = p.phoneNumber || (p.id?._serialized || p.id || "").split("@")[0];
+					}
 				}
 
-				// Se for LID, tenta obter telefone via chat.participants ou getContactById
-				if (userId && userId.endsWith("@lid")) {
-					let participantPhone = null;
-
-					if (chat) {
-						const participants = chat.Participants || chat.participants || [];
-						const p = participants.find(
-							(part) => part.lid === userId || part.id?._serialized === userId || part.id === userId
-						);
-						if (p) {
-							participantPhone = p.phoneNumber || (p.id?._serialized || p.id || "").split("@")[0];
+				if (!participantPhone && bot?.client?.getContactById) {
+					try {
+						const contact = await bot.client.getContactById(userId);
+						if (contact?.id?._serialized) {
+							participantPhone = contact.id._serialized.split("@")[0];
 						}
+					} catch (e) {
+						// Ignora erro
 					}
+				}
 
-					if (!participantPhone && bot?.client?.getContactById) {
-						try {
-							const contact = await bot.client.getContactById(userId);
-							if (contact?.id?._serialized) {
-								participantPhone = contact.id._serialized.split("@")[0];
-							}
-						} catch (e) {
-							// Ignora erro
-						}
+				if (participantPhone) {
+					const cleanPart = String(participantPhone).replace(/\D/g, "");
+					if (this.isSpammerWhitelisted(grp, userId, cleanPart)) {
+						continue;
 					}
-
-					if (participantPhone && this.isSpammerPrefix(participantPhone)) {
+					if (this.isSpammerPrefix(cleanPart)) {
 						return true;
 					}
 				}
@@ -2619,13 +2716,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	async checkAutoBanSpammers(bot, chat) {
-		const fixedGroups = this.getFixedSpamGroups();
-
-		const chatId = chat.id._serialized || chat.id;
+		const chatId = chat.id?._serialized || chat.id;
 		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { fixedGroups });
-		if (fixedGroups.length === 0) return [];
-
-		if (!fixedGroups.includes(chatId)) return [];
+		const group = this.groups[chatId] || (await this.database?.getGroup(chatId).catch(() => null));
+		if (!this.isSpamMonitoredGroup(chatId, group)) return [];
 
 		const participants = chat.Participants || chat.participants || [];
 
@@ -2633,6 +2727,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const phone = (p.phoneNumber || p.id?._serialized || p.id || "")
 				.split("@")[0]
 				.replace(/\D/g, "");
+			const pId = p.id?._serialized || p.id || "";
+			if (this.isSpammerWhitelisted(group, pId, phone)) {
+				return false;
+			}
 			return this.isSpammerPrefix(phone);
 		});
 
@@ -2687,9 +2785,21 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	 * @returns {Promise<boolean>} - True se a mensagem for de spammer e foi apagada
 	 */
 	async checkSpammerMessage(bot, message) {
-		const fixedGroups = this.getFixedSpamGroups();
+		if (!message.group) {
+			return false;
+		}
 
-		if (!message.group || !fixedGroups.includes(message.group)) {
+		const group =
+			this.groups[message.group] ||
+			(await this.database?.getGroup(message.group).catch(() => null));
+		if (!this.isSpamMonitoredGroup(message.group, group)) {
+			return false;
+		}
+
+		if (
+			this.isSpammerWhitelisted(group, message.author) ||
+			(message.authorAlt && this.isSpammerWhitelisted(group, message.authorAlt))
+		) {
 			return false;
 		}
 
