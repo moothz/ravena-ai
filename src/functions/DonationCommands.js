@@ -282,7 +282,8 @@ const commands = [
 		name: "doadores",
 		description: "Mostra informações de doação e link",
 		category: "geral",
-		method: showTopDonors
+		method: showTopDonors,
+		hidden: true
 	}),
 	new Command({
 		name: "donate",
