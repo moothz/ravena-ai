@@ -98,8 +98,9 @@ const mediaAnalysisSchema = {
  */
 async function analyzeVideo(message) {
 	const tempDirBase = path.join(__dirname, "../../temp");
-	const tempDir = path.join(tempDirBase, `video_analysis_${Date.now()}`);
-	const videoPath = path.join(tempDirBase, `video_${Date.now()}.mp4`);
+	const timestamp = Date.now();
+	const tempDir = path.join(tempDirBase, `video_analysis_${timestamp}`);
+	const videoPath = path.join(tempDirBase, `video_${timestamp}.mp4`);
 
 	try {
 		// Garante diretórios
@@ -126,6 +127,10 @@ async function analyzeVideo(message) {
 			const data = await fs.readFile(filePath, "base64");
 			frames.push(data);
 		}
+
+		// Limpa arquivos de vídeo e frames do disco imediatamente (não aguardar término da fila LLM)
+		await fs.unlink(videoPath).catch(() => {});
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
 		if (frames.length === 0) return false;
 
