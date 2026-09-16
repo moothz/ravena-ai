@@ -23,6 +23,11 @@ API_KEY="${GLOBAL_API_KEY}"
 # ravena-ai health endpoint
 RAVENA_URL="http://${RAVENA_HOST}:${API_PORT:-5000}/health"
 
+# WhatsApp notification config (for disk alerts)
+WHATSGOAPI_SEND_URL="http://${WHATSGOAPI_HOST}:${SERVER_PORT:-8080}/send/text"
+WHATSAPP_BOT_INSTANCE="${HEALTH_CHECK_WA_BOT_INSTANCE:-ravenavip}"
+WHATSAPP_NOTIFY_GROUP="${HEALTH_CHECK_WA_GROUP:-}"
+
 # How often to run the health check (seconds)
 CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-60}"
 
@@ -34,6 +39,14 @@ RAVENA_FAIL_COUNT=0
 # RAM Alert state tracking
 LAST_RAM_WARN_TIME=0
 RAM_WARN_INTERVAL=900  # 15 minutes cooldown for >70% warning alerts
+
+# DISK Alert state tracking
+DISK_CRITICAL_NOTIFIED=0  # 1 = já notificou e desligou, aguardando recuperação
+DISK_CRITICAL_THRESHOLD="${HEALTH_CHECK_DISK_CRITICAL:-95}"   # % para desligar tudo
+DISK_RECOVER_THRESHOLD="${HEALTH_CHECK_DISK_RECOVER:-90}"     # % para reativar
+DISK_MONITOR_MOUNT="${HEALTH_CHECK_DISK_MOUNT:-/}"            # partição a monitorar
+DISK_MONITOR_INTERVAL="${HEALTH_CHECK_DISK_MONITOR_INTERVAL:-120}" # intervalo em modo recovery (segundos)
+
 
 # --- HELPER FUNCTIONS ---
 
@@ -48,6 +61,22 @@ send_telegram() {
         -d chat_id="${TELEGRAM_CHAT_ID}" \
         -d text="${message}" \
         -d parse_mode="HTML" > /dev/null
+}
+
+send_whatsapp() {
+    wa_text="$1"
+    if [ -z "$WHATSAPP_NOTIFY_GROUP" ] || [ -z "$API_KEY" ]; then
+        echo "[health-check] WhatsApp not configured (HEALTH_CHECK_WA_GROUP or API_KEY missing), skipping."
+        return
+    fi
+    # Encode JSON manually (sh compatible)
+    PAYLOAD="{\"number\":\"${WHATSAPP_NOTIFY_GROUP}\",\"text\":\"${wa_text}\",\"delay\":0}"
+    curl -s -X POST "${WHATSGOAPI_SEND_URL}" \
+        -H "Content-Type: application/json" \
+        -H "apikey: ${API_KEY}" \
+        -H "instance: ${WHATSAPP_BOT_INSTANCE}" \
+        -d "${PAYLOAD}" > /dev/null 2>&1
+    echo "[health-check] WhatsApp notification sent to ${WHATSAPP_NOTIFY_GROUP}"
 }
 
 restart_container() {
@@ -144,6 +173,88 @@ while true; do
         RAVENA_FAIL_COUNT=0
         sleep "${CHECK_INTERVAL}"
         continue
+    fi
+
+    # ── 0a. Check DISK Usage (Critical: stop all; Recovery: restart) ──────
+    DISK_USAGE_PCT=$(df "${DISK_MONITOR_MOUNT}" | awk 'NR==2 {gsub(/%/,"",$5); print $5}' 2>/dev/null)
+    DISK_AVAIL=$(df -h "${DISK_MONITOR_MOUNT}" | awk 'NR==2 {print $4}' 2>/dev/null)
+    DISK_USED=$(df -h "${DISK_MONITOR_MOUNT}" | awk 'NR==2 {print $3}' 2>/dev/null)
+    DISK_TOTAL=$(df -h "${DISK_MONITOR_MOUNT}" | awk 'NR==2 {print $2}' 2>/dev/null)
+
+    if [ -n "$DISK_USAGE_PCT" ]; then
+
+        # ── MODO RECOVERY: disco voltou ≤ threshold ─────────────
+        if [ "$DISK_CRITICAL_NOTIFIED" -eq 1 ] && [ "$DISK_USAGE_PCT" -le "$DISK_RECOVER_THRESHOLD" ]; then
+            echo "[health-check] DISK RECOVERED: ${DISK_USAGE_PCT}% (≤${DISK_RECOVER_THRESHOLD}%). Restarting stack..."
+            DISK_CRITICAL_NOTIFIED=0
+
+            # Reinicia a stack
+            restart_stack "Espaço em disco recuperado (${DISK_USAGE_PCT}% ≤ ${DISK_RECOVER_THRESHOLD}%). Reiniciando automaticamente."
+
+            # Mensagem de recuperação
+            WA_RECOVER="✅💾 *Servidor da Ravena — Disco Recuperado*
+O espaço em disco voltou ao normal (${DISK_USAGE_PCT}% de ${DISK_TOTAL}).
+Os bots foram reiniciados automaticamente. 🤖✨"
+
+            TG_RECOVER="✅💾 <b>Espaço em Disco Recuperado</b>%0A"
+            TG_RECOVER="${TG_RECOVER}Uso atual: <b>${DISK_USAGE_PCT}%</b> (${DISK_USED} de ${DISK_TOTAL} — Livre: ${DISK_AVAIL})%0A"
+            TG_RECOVER="${TG_RECOVER}<i>Os containers foram reiniciados automaticamente.</i>"
+
+            send_whatsapp "$WA_RECOVER"
+            send_telegram "$TG_RECOVER"
+
+            # Volta ao intervalo normal
+            sleep "${CHECK_INTERVAL}"
+            continue
+        fi
+
+        # ── MODO RECOVERY: disco ainda crítico — aguarda ────────
+        if [ "$DISK_CRITICAL_NOTIFIED" -eq 1 ]; then
+            echo "[health-check] DISK still critical (${DISK_USAGE_PCT}% > ${DISK_RECOVER_THRESHOLD}%). Waiting ${DISK_MONITOR_INTERVAL}s before next check..."
+            sleep "${DISK_MONITOR_INTERVAL}"
+            continue
+        fi
+
+        # ── CRITICO: disco acima do threshold ───────────────────
+        if [ "$DISK_USAGE_PCT" -ge "$DISK_CRITICAL_THRESHOLD" ]; then
+            echo "[health-check] CRITICAL DISK: ${DISK_USAGE_PCT}% (threshold: ${DISK_CRITICAL_THRESHOLD}%). Sending alerts and stopping containers in 60s..."
+
+            WA_CRITICAL="🚨💾🚨 *Falha Crítica de Disco no Servidor da Ravena*
+
+O disco principal atingiu ${DISK_USAGE_PCT}% de uso (${DISK_USED} de ${DISK_TOTAL}).
+
+Os bots serão *desligados em 1 minuto* para evitar perda de dados.
+⚠️ Intervenção manual necessária.
+
+_(Os bots voltarão automaticamente quando o disco for liberado abaixo de ${DISK_RECOVER_THRESHOLD}%)_"
+
+            TG_CRITICAL="🚨💾🚨 <b>FALHA CRÍTICA: Disco no Servidor da Ravena</b>%0A"
+            TG_CRITICAL="${TG_CRITICAL}Uso do disco: <b>${DISK_USAGE_PCT}%</b> (${DISK_USED} de ${DISK_TOTAL} — Livre: ${DISK_AVAIL})%0A"
+            TG_CRITICAL="${TG_CRITICAL}<i>Os containers serão desligados em 60 segundos para evitar perda de dados.</i>%0A"
+            TG_CRITICAL="${TG_CRITICAL}<i>Intervenção manual necessária.</i>%0A"
+            TG_CRITICAL="${TG_CRITICAL}<i>(Auto-restart quando disco voltar a ≤${DISK_RECOVER_THRESHOLD}%)</i>"
+
+            send_whatsapp "$WA_CRITICAL"
+            send_telegram "$TG_CRITICAL"
+
+            # Aguarda 60 segundos para o humano poder intervir antes do desligamento
+            echo "[health-check] Waiting 60 seconds before stopping containers..."
+            sleep 60
+
+            # Para toda a stack (exceto o próprio health-check)
+            DISK_CRITICAL_NOTIFIED=1
+            PROJECT_NAME=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$HOSTNAME" 2>/dev/null)
+            PROJECT_NAME="${PROJECT_NAME:-ravena-ai}"
+            STACK_CONTAINERS=$(docker ps --filter "label=com.docker.compose.project=${PROJECT_NAME}" --format "{{.Names}}" | grep -v "^health-check$")
+            if [ -n "$STACK_CONTAINERS" ]; then
+                echo "[health-check] Stopping stack containers: ${STACK_CONTAINERS}"
+                docker stop ${STACK_CONTAINERS}
+            fi
+
+            echo "[health-check] All containers stopped. Entering recovery monitor mode (interval: ${DISK_MONITOR_INTERVAL}s)."
+            sleep "${DISK_MONITOR_INTERVAL}"
+            continue
+        fi
     fi
 
     # ── 0. Check RAM Usage ────────────────────────────────────

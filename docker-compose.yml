@@ -174,6 +174,14 @@ services:
       SERVER_PORT: ${SERVER_PORT:-8080}
       API_PORT: ${API_PORT:-5001}
       HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-60}
+      # Disk monitoring
+      HEALTH_CHECK_DISK_CRITICAL: ${HEALTH_CHECK_DISK_CRITICAL:-95}
+      HEALTH_CHECK_DISK_RECOVER: ${HEALTH_CHECK_DISK_RECOVER:-90}
+      HEALTH_CHECK_DISK_MONITOR_INTERVAL: ${HEALTH_CHECK_DISK_MONITOR_INTERVAL:-120}
+      HEALTH_CHECK_DISK_MOUNT: ${HEALTH_CHECK_DISK_MOUNT:-/}
+      # WhatsApp notification (uses the internal whatsgoapi)
+      HEALTH_CHECK_WA_BOT_INSTANCE: ${HEALTH_CHECK_WA_BOT_INSTANCE:-ravenavip}
+      HEALTH_CHECK_WA_GROUP: ${HEALTH_CHECK_WA_GROUP:-${GRUPO_ANUNCIOS:-}}
     volumes:
       - ./check-health.sh:/check-health.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock
