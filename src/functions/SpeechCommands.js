@@ -893,7 +893,7 @@ const commands = [
 	new Command({
 		name: "stt",
 		description: "Converte voz para texto",
-		category: "utilidades",
+		category: "voz",
 		group: "transcr",
 		needsMedia: true, // Verificará mídia direta ou mídia de mensagem citada
 		reactions: {
@@ -906,7 +906,7 @@ const commands = [
 	new Command({
 		name: "transcrever",
 		description: "Converte voz para texto",
-		category: "utilidades",
+		category: "voz",
 		group: "transcr",
 		needsMedia: true, // Verificará mídia direta ou mídia de mensagem citada
 		reactions: {
@@ -920,7 +920,7 @@ const commands = [
 		name: "tts",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem 'ravena'`,
-		category: "tts",
+		category: "voz",
 		reactions: {
 			trigger: ["🗣️", "🦇"],
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -933,7 +933,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem feminina`,
 		group: "ttsMulher",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			trigger: "👩",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -946,7 +946,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem feminina`,
 		group: "ttsMulher",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
@@ -959,7 +959,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
 		group: "ttsHomem",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
@@ -972,7 +972,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem feminina`,
 		group: "ttsMulher",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			trigger: "💋",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -984,7 +984,7 @@ const commands = [
 		name: "tts-sensuel",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
-		category: "tts",
+		category: "voz",
 		group: "ttsHomem",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -997,7 +997,7 @@ const commands = [
 		name: "tts-homem",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
-		category: "tts",
+		category: "voz",
 		group: "ttsHomem",
 		reactions: {
 			trigger: "👨",
@@ -1010,7 +1010,7 @@ const commands = [
 		name: "tts-clint",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
-		category: "tts",
+		category: "voz",
 		group: "ttsHomem",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -1023,7 +1023,7 @@ const commands = [
 		name: "tts-morgan",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
-		category: "tts",
+		category: "voz",
 		group: "ttsHomem",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -1037,7 +1037,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
 		group: "ttsHomem",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			trigger: "🎙️",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -1051,7 +1051,7 @@ const commands = [
 		cooldown: 30,
 		description: `Converte texto para voz usando do Rubão do Pontaço`,
 		group: "ttsHomem",
-		category: "tts",
+		category: "voz",
 		reactions: {
 			trigger: "🎙️",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -1072,37 +1072,37 @@ const helper = {
 			cmd: "!stt",
 			desc: "Transcreve uma mensagem de voz ou áudio para texto",
 			usage: ["!stt (em resposta a um áudio de voz)"],
-			category: "tts"
+			category: "voz"
 		},
 		{
 			cmd: "!tts",
 			desc: "Converte texto em áudio falado com voz padrão (Ravena)",
 			usage: ["!tts Olá pessoal do grupo!"],
-			category: "tts"
+			category: "voz"
 		},
 		{
 			cmd: "!tts-mulher",
 			desc: "Converte texto em áudio com voz feminina",
 			usage: ["!tts-mulher Bom dia a todos!"],
-			category: "tts"
+			category: "voz"
 		},
 		{
 			cmd: "!tts-homem",
 			desc: "Converte texto em áudio com voz masculina",
 			usage: ["!tts-homem Atenção para o recado!"],
-			category: "tts"
+			category: "voz"
 		},
 		{
 			cmd: "!tts-rubao",
 			desc: "Converte texto em áudio com a voz cômica do Rubão do Pontaço",
 			usage: ["!tts-rubao Fala minha galera do zapzap!"],
-			category: "tts"
+			category: "voz"
 		},
 		{
 			cmd: "!tts-narrador",
 			desc: "Converte texto em áudio com voz de narrador de documentário",
 			usage: ["!tts-narrador E assim a história começou..."],
-			category: "tts"
+			category: "voz"
 		}
 	]
 };

@@ -753,7 +753,7 @@ const commands = [
 	new Command({
 		name: "stickerbg",
 		description: "Cria um sticker após remover o fundo",
-		category: "midia",
+		category: "stickers",
 		group: "stickerbg",
 		aliases: ["sbg"],
 		needsMedia: true,
@@ -767,7 +767,7 @@ const commands = [
 	new Command({
 		name: "sbg",
 		description: "Envia sticker sem fundo",
-		category: "midia",
+		category: "stickers",
 		group: "stickerbg",
 		needsMedia: true,
 		reactions: {
@@ -839,37 +839,37 @@ const helper = {
 			cmd: "!removebg",
 			desc: "Remove o fundo de uma imagem usando inteligência artificial",
 			usage: ["!removebg (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		},
 		{
 			cmd: "!distort",
 			desc: "Aplica distorção cômica e deformação na imagem",
 			usage: ["!distort (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		},
 		{
 			cmd: "!neon",
 			desc: "Aplica efeito de iluminação neon sobre a imagem",
 			usage: ["!neon (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		},
 		{
 			cmd: "!oil",
 			desc: "Transforma a imagem em efeito de pintura a óleo",
 			usage: ["!oil (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		},
 		{
 			cmd: "!pixelate",
 			desc: "Aplica efeito retrô de pixelização na imagem",
 			usage: ["!pixelate (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		},
 		{
 			cmd: "!sketch",
 			desc: "Converte a imagem em um desenho a lápis / esboço",
 			usage: ["!sketch (em resposta a uma foto)"],
-			category: "imagens"
+			category: "midia"
 		}
 	]
 };

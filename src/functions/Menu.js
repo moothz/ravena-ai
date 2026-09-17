@@ -100,7 +100,13 @@ async function showCommandsByCategory(bot, message, args, group) {
 			}
 
 			// Build message
-			let menuText = `🤖 *Comandos na categoria '${category}'*\n\n`;
+			const customNames = {
+				interacao: "Interação",
+				integracao: "Interação",
+				ia: "IA"
+			};
+			const displayCategory = customNames[category] || category;
+			let menuText = `🤖 *Comandos na categoria '${displayCategory}'*\n\n`;
 
 			// Add fixed commands
 			if (commandsInCategory.length > 0) {
@@ -364,10 +370,13 @@ async function sendCommandList(bot, message, args, group) {
 
 			// Adiciona cabeçalho da categoria com emoji
 			const emoji = CATEGORY_EMOJIS[category];
-			let nomeCategoria = category.charAt(0).toUpperCase() + category.slice(1);
-			if (nomeCategoria.length < 4) {
-				nomeCategoria = nomeCategoria.toUpperCase();
-			}
+			const customNames = {
+				interacao: "Interação",
+				integracao: "Interação",
+				ia: "IA"
+			};
+			const nomeCategoria =
+				customNames[category] || category.charAt(0).toUpperCase() + category.slice(1);
 			menuText += `\n${emoji} *${nomeCategoria}:*\n`;
 
 			// Agrupa comandos relacionados
@@ -383,6 +392,28 @@ async function sendCommandList(bot, message, args, group) {
 					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
 				} else {
 					// Comando individual
+					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
+					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
+				}
+			}
+		}
+
+		// Fallback para comandos em categorias não mapeadas ou 'resto'
+		const unmappedCommands = [];
+		for (const cat in categorizedCommands) {
+			if (!CATEGORY_EMOJIS[cat] && categorizedCommands[cat]?.length > 0) {
+				unmappedCommands.push(...categorizedCommands[cat]);
+			}
+		}
+
+		if (unmappedCommands.length > 0) {
+			menuText += `\n❓ *Outros:*\n`;
+			const groupedCommands = groupRelatedCommands(unmappedCommands);
+			const sortedGroups = sortCommands(groupedCommands);
+			for (const cmdGroup of sortedGroups) {
+				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
+					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
+				} else {
 					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
 					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
 				}

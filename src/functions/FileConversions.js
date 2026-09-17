@@ -342,7 +342,7 @@ const commands = [
 	new Command({
 		name: "extractaudio",
 		description: "Extrai audio do arquivo especificado, em mp3",
-		category: "áudio",
+		category: "audio",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎵",
@@ -355,7 +355,7 @@ const commands = [
 	new Command({
 		name: "extractvoice",
 		description: "Extrai audio do arquivo especificado, como mensagem de voz",
-		category: "áudio",
+		category: "audio",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🎤",
@@ -368,7 +368,7 @@ const commands = [
 	new Command({
 		name: "volume",
 		description: "Ajusta o volume da mídia (0-1000)",
-		category: "áudio",
+		category: "audio",
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊",

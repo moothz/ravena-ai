@@ -328,13 +328,13 @@ const helper = {
 			cmd: "!audio",
 			desc: "Pesquisa e envia um áudio do site MyInstants",
 			usage: ["!audio vinheta globo", "!audio vinheta globo 1", "!audio acertou mizeravi 1"],
-			category: "áudio"
+			category: "busca"
 		},
 		{
 			cmd: "!som",
 			desc: "Pesquisa e envia um áudio do site MyInstants (alias para !audio)",
 			usage: ["!som vinheta globo", "!som acertou mizeravi 1"],
-			category: "áudio"
+			category: "busca"
 		}
 	]
 };

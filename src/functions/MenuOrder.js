@@ -5,24 +5,22 @@
 const CATEGORY_EMOJIS = {
 	geral: "📃",
 	grupo: "👥",
-	midia: "📱",
+	stickers: "🏷️",
 	ia: "🤖",
+	interacao: "🤝",
+	midia: "📱",
+	voz: "🗣️",
 	utilidades: "🛠️",
-	jogos: "🎮",
-	áudio: "🔈",
-	diversao: "🧸",
-	zoeira: "🤪",
 	downloaders: "📤",
-	imagens: "📷",
-	tts: "🗣",
+	jogos: "🎮",
+	streams: "📺",
+	zoeira: "🤪",
+	mudae: "💍",
 	busca: "🔎",
 	cultura: "🍿",
+	audio: "🔈",
 	listas: "📜",
-	saude: "🥗",
-	general: "🖨️",
-	info: "ℹ️",
-	arquivos: "📂",
-	resto: "❓"
+	arquivos: "📂"
 };
 
 /**

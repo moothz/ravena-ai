@@ -1581,6 +1581,8 @@ const helper = {
 	]
 };
 
+/*
+
 module.exports = {
 	helper,
 	commands: API_URL ? commands : [],
@@ -1591,3 +1593,5 @@ module.exports = {
 	fetchTeamsMap,
 	detectCopaGif
 };
+
+*/

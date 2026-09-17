@@ -873,7 +873,7 @@ const commands = [
 	new Command({
 		name: "sticker",
 		description: "Converte mídia em sticker",
-		category: "midia",
+		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
 		caseSensitive: false,
@@ -891,7 +891,7 @@ const commands = [
 	new Command({
 		name: "figurinha",
 		description: "Converte mídia em sticker",
-		category: "midia",
+		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
 		caseSensitive: false,
@@ -910,7 +910,7 @@ const commands = [
 	new Command({
 		name: "s",
 		description: "Alias curto para comando sticker",
-		category: "midia",
+		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
@@ -928,7 +928,7 @@ const commands = [
 	new Command({
 		name: "fig",
 		description: "Alias curto para comando sticker",
-		category: "midia",
+		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
@@ -946,7 +946,7 @@ const commands = [
 	new Command({
 		name: "sqi",
 		description: "Sticker quadrado com corte inteligente via IA",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -962,7 +962,7 @@ const commands = [
 	new Command({
 		name: "stickerqi",
 		description: "Sticker quadrado com corte inteligente via IA",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -979,7 +979,7 @@ const commands = [
 		name: "sq",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -996,7 +996,7 @@ const commands = [
 		name: "stickerq",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1013,7 +1013,7 @@ const commands = [
 		name: "sqc",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1030,7 +1030,7 @@ const commands = [
 		name: "stickerqc",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1048,7 +1048,7 @@ const commands = [
 		name: "sqb",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1065,7 +1065,7 @@ const commands = [
 		name: "stickerqb",
 		description:
 			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1082,7 +1082,7 @@ const commands = [
 	new Command({
 		name: "sqe",
 		description: "Sticker quadrado esticado, sem cortar a imagem",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1098,7 +1098,7 @@ const commands = [
 	new Command({
 		name: "stickerqe",
 		description: "Sticker quadrado esticado, sem cortar a imagem",
-		category: "midia",
+		category: "stickers",
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
@@ -1123,37 +1123,37 @@ const helper = {
 			cmd: "!sticker",
 			desc: "Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp",
 			usage: ["!sticker (com imagem ou em resposta)", "!s"],
-			category: "midia"
+			category: "stickers"
 		},
 		{
 			cmd: "!sqi",
 			desc: "Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA",
 			usage: ["!sqi (com imagem ou em resposta)"],
-			category: "midia"
+			category: "stickers"
 		},
 		{
 			cmd: "!sq",
 			desc: "Cria figurinha quadrada cortada no centro",
 			usage: ["!sq (com imagem ou em resposta)"],
-			category: "midia"
+			category: "stickers"
 		},
 		{
 			cmd: "!sqc",
 			desc: "Cria figurinha quadrada cortando no topo",
 			usage: ["!sqc (com imagem ou em resposta)"],
-			category: "midia"
+			category: "stickers"
 		},
 		{
 			cmd: "!sqb",
 			desc: "Cria figurinha quadrada cortando na base",
 			usage: ["!sqb (com imagem ou em resposta)"],
-			category: "midia"
+			category: "stickers"
 		},
 		{
 			cmd: "!sqe",
 			desc: "Cria figurinha quadrada esticada sem cortar as bordas",
 			usage: ["!sqe (com imagem ou em resposta)"],
-			category: "midia"
+			category: "stickers"
 		}
 	]
 };

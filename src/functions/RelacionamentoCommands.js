@@ -1130,7 +1130,7 @@ const commands = [
 	new Command({
 		name: "namorar",
 		description: "Pede em namoro ou aceita pedido de namoro",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "💖"
 		},
@@ -1139,7 +1139,7 @@ const commands = [
 	new Command({
 		name: "casar",
 		description: "Pede em casamento ou aceita pedido de casamento",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "💍"
 		},
@@ -1148,7 +1148,7 @@ const commands = [
 	new Command({
 		name: "separar",
 		description: "Pede separação ou aceita pedido de separação",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "💔"
 		},
@@ -1157,7 +1157,7 @@ const commands = [
 	new Command({
 		name: "recusar",
 		description: "Recusa um pedido de namoro, casamento ou separação",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "💔"
 		},
@@ -1166,7 +1166,7 @@ const commands = [
 	new Command({
 		name: "coisar",
 		description: "Coisa com a pessoa marcada ou com parceiro aleatório",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "🔥"
 		},
@@ -1175,7 +1175,7 @@ const commands = [
 	new Command({
 		name: "trair",
 		description: "Trai parceiro(s) com a pessoa marcada ou membro aleatório",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "😈"
 		},
@@ -1184,7 +1184,7 @@ const commands = [
 	new Command({
 		name: "relacionamento",
 		description: "Exibe o histórico de relacionamentos do autor",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "📊"
 		},
@@ -1193,7 +1193,7 @@ const commands = [
 	new Command({
 		name: "relacionamentos",
 		description: "Exibe todos os relacionamentos e estatísticas do grupo",
-		category: "diversao",
+		category: "interacao",
 		reactions: {
 			after: "📊"
 		},
@@ -1211,19 +1211,19 @@ const helper = {
 			cmd: "!casar",
 			desc: "Pede um membro do grupo em casamento",
 			usage: ["!casar @fulano"],
-			category: "diversao"
+			category: "interacao"
 		},
 		{
 			cmd: "!divorcio",
 			desc: "Pede o divórcio do seu parceiro atual no grupo",
 			usage: ["!divorcio"],
-			category: "diversao"
+			category: "interacao"
 		},
 		{
 			cmd: "!relacionamentos",
 			desc: "Lista todos os casamentos e uniões ativas no grupo",
 			usage: ["!relacionamentos"],
-			category: "diversao"
+			category: "interacao"
 		}
 	]
 };

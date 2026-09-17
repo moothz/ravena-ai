@@ -295,7 +295,7 @@ const helper = {
 			cmd: "!horoscopo",
 			desc: "Consulta a previsão astrológica diária para o seu signo",
 			usage: ["!horoscopo aries", "!horoscopo leao", "!horoscopo escorpiao"],
-			category: "diversao"
+			category: "utilidades"
 		}
 	]
 };

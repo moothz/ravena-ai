@@ -934,7 +934,7 @@ const commands = [
 	new Command({
 		name: "mu-roll",
 		description: "Sorteia um personagem aleatório (waifus e husbandos)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-roll",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
@@ -942,7 +942,7 @@ const commands = [
 	new Command({
 		name: "mu-r",
 		description: "Alias curto para !mu-roll",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-roll",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
@@ -950,7 +950,7 @@ const commands = [
 	new Command({
 		name: "mu-waifu",
 		description: "Alias para !mu-roll",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-roll",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
@@ -958,7 +958,7 @@ const commands = [
 	new Command({
 		name: "mu-w",
 		description: "Alias curto para !mu-roll",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-roll",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
@@ -968,7 +968,7 @@ const commands = [
 	new Command({
 		name: "mu-rollm",
 		description: "Sorteia apenas personagens masculinos (husbandos)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rollm",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
@@ -976,7 +976,7 @@ const commands = [
 	new Command({
 		name: "mu-rm",
 		description: "Alias de !mu-rollm",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rollm",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
@@ -984,7 +984,7 @@ const commands = [
 	new Command({
 		name: "mu-husbando",
 		description: "Alias de !mu-rollm",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rollm",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
@@ -994,7 +994,7 @@ const commands = [
 	new Command({
 		name: "mu-rollf",
 		description: "Sorteia apenas personagens femininos (waifus)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rollf",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
@@ -1002,7 +1002,7 @@ const commands = [
 	new Command({
 		name: "mu-rf",
 		description: "Alias de !mu-rollf",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rollf",
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
@@ -1012,7 +1012,7 @@ const commands = [
 	new Command({
 		name: "mu-casar",
 		description: "Casa com o personagem sorteado recentemente (janela 120s)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
@@ -1020,7 +1020,7 @@ const commands = [
 	new Command({
 		name: "mu-claim",
 		description: "Alias de !mu-casar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
@@ -1028,7 +1028,7 @@ const commands = [
 	new Command({
 		name: "mu-c",
 		description: "Alias curto de !mu-casar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
@@ -1036,7 +1036,7 @@ const commands = [
 	new Command({
 		name: "mu-marry",
 		description: "Alias em inglês de !mu-casar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
@@ -1046,7 +1046,7 @@ const commands = [
 	new Command({
 		name: "mu-divorciar",
 		description: "Divorcia um personagem do harém e resgata Zinthos (💜)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
@@ -1055,7 +1055,7 @@ const commands = [
 	new Command({
 		name: "mu-divorce",
 		description: "Alias de !mu-divorciar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
@@ -1064,7 +1064,7 @@ const commands = [
 	new Command({
 		name: "mu-div",
 		description: "Alias curto de !mu-divorciar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
@@ -1073,7 +1073,7 @@ const commands = [
 	new Command({
 		name: "mu-d",
 		description: "Alias ultra-curto de !mu-divorciar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
@@ -1084,7 +1084,7 @@ const commands = [
 	new Command({
 		name: "mu-like",
 		description: "Dá like/coração em um personagem para aumentar sua popularidade",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
@@ -1093,7 +1093,7 @@ const commands = [
 	new Command({
 		name: "mu-l",
 		description: "Alias curto de !mu-like",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
@@ -1102,7 +1102,7 @@ const commands = [
 	new Command({
 		name: "mu-coracao",
 		description: "Alias de !mu-like",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
@@ -1113,7 +1113,7 @@ const commands = [
 	new Command({
 		name: "mu-diario",
 		description: "Coleta sua recompensa diária de Zinthos (💜)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1121,7 +1121,7 @@ const commands = [
 	new Command({
 		name: "mu-daily",
 		description: "Alias em inglês de !mu-diario",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1129,7 +1129,7 @@ const commands = [
 	new Command({
 		name: "mu-dz",
 		description: "Alias curto de !mu-diario (Daily Zinthos)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1137,7 +1137,7 @@ const commands = [
 	new Command({
 		name: "mu-dk",
 		description: "Alias de compatibilidade de !mu-diario (Daily Kakera)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1145,7 +1145,7 @@ const commands = [
 	new Command({
 		name: "mu-zinthos-diario",
 		description: "Alias descritivo de !mu-diario",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1153,7 +1153,7 @@ const commands = [
 	new Command({
 		name: "mu-kakera-diario",
 		description: "Alias de compatibilidade de !mu-diario",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
 		method: diariosKakera
@@ -1163,7 +1163,7 @@ const commands = [
 	new Command({
 		name: "mu-saldo",
 		description: "Consulta seu saldo atual de Zinthos (💜)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1171,7 +1171,7 @@ const commands = [
 	new Command({
 		name: "mu-zinthos",
 		description: "Alias de !mu-saldo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1179,7 +1179,7 @@ const commands = [
 	new Command({
 		name: "mu-z",
 		description: "Alias curto de !mu-saldo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1187,7 +1187,7 @@ const commands = [
 	new Command({
 		name: "mu-kakera",
 		description: "Alias de compatibilidade de !mu-saldo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1195,7 +1195,7 @@ const commands = [
 	new Command({
 		name: "mu-k",
 		description: "Alias curto de compatibilidade de !mu-saldo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1203,7 +1203,7 @@ const commands = [
 	new Command({
 		name: "mu-bal",
 		description: "Alias em inglês de !mu-saldo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
 		method: saldoKakera
@@ -1213,7 +1213,7 @@ const commands = [
 	new Command({
 		name: "mu-harem",
 		description: "Lista todos os personagens pertencentes ao seu harém",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
 		method: verHarem
@@ -1221,7 +1221,7 @@ const commands = [
 	new Command({
 		name: "mu-h",
 		description: "Alias curto de !mu-harem",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
 		method: verHarem
@@ -1229,7 +1229,7 @@ const commands = [
 	new Command({
 		name: "mu-colecao",
 		description: "Alias de !mu-harem",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
 		method: verHarem
@@ -1239,7 +1239,7 @@ const commands = [
 	new Command({
 		name: "mu-perfil",
 		description: "Exibe seu perfil completo no jogo, harém e waifu favorita",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
 		method: verPerfil
@@ -1247,7 +1247,7 @@ const commands = [
 	new Command({
 		name: "mu-p",
 		description: "Alias curto de !mu-perfil",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
 		method: verPerfil
@@ -1255,7 +1255,7 @@ const commands = [
 	new Command({
 		name: "mu-profile",
 		description: "Alias em inglês de !mu-perfil",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
 		method: verPerfil
@@ -1263,7 +1263,7 @@ const commands = [
 	new Command({
 		name: "mu-eu",
 		description: "Alias rápido de !mu-perfil",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
 		method: verPerfil
@@ -1273,7 +1273,7 @@ const commands = [
 	new Command({
 		name: "mu-wishlist",
 		description: "Lista seus personagens desejados cadastrados",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verWishlist
@@ -1281,7 +1281,7 @@ const commands = [
 	new Command({
 		name: "mu-wl",
 		description: "Alias curto de !mu-wishlist",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verWishlist
@@ -1289,7 +1289,7 @@ const commands = [
 	new Command({
 		name: "mu-desejos",
 		description: "Alias em português de !mu-wishlist",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verWishlist
@@ -1299,7 +1299,7 @@ const commands = [
 	new Command({
 		name: "mu-desejar",
 		description: "Adiciona um personagem à sua Wishlist (aumenta chance no roll)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
@@ -1308,7 +1308,7 @@ const commands = [
 	new Command({
 		name: "mu-wish",
 		description: "Alias em inglês de !mu-desejar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
@@ -1317,7 +1317,7 @@ const commands = [
 	new Command({
 		name: "mu-add",
 		description: "Alias de !mu-desejar",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
@@ -1328,7 +1328,7 @@ const commands = [
 	new Command({
 		name: "mu-removerdesejo",
 		description: "Remove um personagem da sua Wishlist",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
@@ -1337,7 +1337,7 @@ const commands = [
 	new Command({
 		name: "mu-rmwish",
 		description: "Alias curto de !mu-removerdesejo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
@@ -1346,7 +1346,7 @@ const commands = [
 	new Command({
 		name: "mu-rmdesejo",
 		description: "Alias de !mu-removerdesejo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
@@ -1355,7 +1355,7 @@ const commands = [
 	new Command({
 		name: "mu-unwish",
 		description: "Alias em inglês de !mu-removerdesejo",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
@@ -1366,7 +1366,7 @@ const commands = [
 	new Command({
 		name: "mu-favorito",
 		description: "Define um personagem do harém como o favorito principal em destaque",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
@@ -1375,7 +1375,7 @@ const commands = [
 	new Command({
 		name: "mu-fav",
 		description: "Alias curto de !mu-favorito",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
@@ -1384,7 +1384,7 @@ const commands = [
 	new Command({
 		name: "mu-fave",
 		description: "Alias de !mu-favorito",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
@@ -1395,7 +1395,7 @@ const commands = [
 	new Command({
 		name: "mu-soulmates",
 		description: "Lista seus personagens que atingiram status de Soulmate (10+ chaves)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
 		method: verSoulmates
@@ -1403,7 +1403,7 @@ const commands = [
 	new Command({
 		name: "mu-sm",
 		description: "Alias curto de !mu-soulmates",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
 		method: verSoulmates
@@ -1411,7 +1411,7 @@ const commands = [
 	new Command({
 		name: "mu-almas",
 		description: "Alias em português de !mu-soulmates",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
 		method: verSoulmates
@@ -1421,7 +1421,7 @@ const commands = [
 	new Command({
 		name: "mu-ranking",
 		description: "Ranking global de jogadores mais ricos em Zinthos (💜)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
 		method: verRanking
@@ -1429,7 +1429,7 @@ const commands = [
 	new Command({
 		name: "mu-top",
 		description: "Alias de !mu-ranking",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
 		method: verRanking
@@ -1437,7 +1437,7 @@ const commands = [
 	new Command({
 		name: "mu-rank",
 		description: "Alias curto de !mu-ranking",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
 		method: verRanking
@@ -1445,7 +1445,7 @@ const commands = [
 	new Command({
 		name: "mu-lb",
 		description: "Alias Leaderboard de !mu-ranking",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
 		method: verRanking
@@ -1455,7 +1455,7 @@ const commands = [
 	new Command({
 		name: "mu-topchars",
 		description: "Ranking dos personagens mais casados e mais curtidos",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verTopCharacters
@@ -1463,7 +1463,7 @@ const commands = [
 	new Command({
 		name: "mu-topwaifus",
 		description: "Alias de !mu-topchars",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verTopCharacters
@@ -1471,7 +1471,7 @@ const commands = [
 	new Command({
 		name: "mu-populares",
 		description: "Alias de !mu-topchars",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
 		method: verTopCharacters
@@ -1481,7 +1481,7 @@ const commands = [
 	new Command({
 		name: "mu-personagens",
 		description: "Busca personagens no catálogo por nome ou série",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1490,7 +1490,7 @@ const commands = [
 	new Command({
 		name: "mu-chars",
 		description: "Alias curto de !mu-personagens",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1499,7 +1499,7 @@ const commands = [
 	new Command({
 		name: "mu-buscar",
 		description: "Alias de !mu-personagens",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1508,7 +1508,7 @@ const commands = [
 	new Command({
 		name: "mu-find",
 		description: "Alias em inglês de !mu-personagens",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1519,7 +1519,7 @@ const commands = [
 	new Command({
 		name: "mu-char",
 		description: "Consulta detalhes e foto de um personagem por ID",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1528,7 +1528,7 @@ const commands = [
 	new Command({
 		name: "mu-info",
 		description: "Alias de !mu-char",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1537,7 +1537,7 @@ const commands = [
 	new Command({
 		name: "mu-winfo",
 		description: "Alias Waifu-Info de !mu-char",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
@@ -1548,7 +1548,7 @@ const commands = [
 	new Command({
 		name: "mu-cooldowns",
 		description: "Consulta todos os seus tempos de espera ativos (roll, claim, daily)",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
 		method: verCooldowns
@@ -1556,7 +1556,7 @@ const commands = [
 	new Command({
 		name: "mu-cd",
 		description: "Alias curto de !mu-cooldowns",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
 		method: verCooldowns
@@ -1564,7 +1564,7 @@ const commands = [
 	new Command({
 		name: "mu-tempo",
 		description: "Alias em português de !mu-cooldowns",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
 		method: verCooldowns
@@ -1574,7 +1574,7 @@ const commands = [
 	new Command({
 		name: "waifus",
 		description: "Explica as mecânicas do jogo Waifuletes/Munae e lista todos os comandos",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
@@ -1582,7 +1582,7 @@ const commands = [
 	new Command({
 		name: "munae",
 		description: "Alias para o guia completo do jogo Waifuletes/Mudae",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
@@ -1590,7 +1590,7 @@ const commands = [
 	new Command({
 		name: "mudae",
 		description: "Alias para o guia completo do jogo Waifuletes",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
@@ -1598,7 +1598,7 @@ const commands = [
 	new Command({
 		name: "mu-ajuda",
 		description: "Alias de ajuda do jogo Waifuletes",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
@@ -1606,7 +1606,7 @@ const commands = [
 	new Command({
 		name: "mu-help",
 		description: "Alias em inglês de ajuda do jogo Waifuletes",
-		category: "jogos",
+		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
@@ -1623,61 +1623,61 @@ const helper = {
 			cmd: "!waifus / !munae",
 			desc: "Explica as mecânicas do jogo e lista todos os comandos e filtros disponíveis",
 			usage: ["!waifus", "!munae", "!mu-ajuda"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-roll",
 			desc: "Sorteia um personagem aleatório para o grupo (waifus e husbandos)",
 			usage: ["!mu-roll", "!mu-r", "!mu-rollm (só homens)", "!mu-rollf (só mulheres)"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-casar",
 			desc: "Casa com o personagem recém-sorteado dentro da janela de 120 segundos",
 			usage: ["!mu-casar", "!mu-c", "!mu-casar rem-re-zero"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-diario",
 			desc: "Resgata a recompensa diária de Zinthos (💜)",
 			usage: ["!mu-diario", "!mu-dz", "!mu-dk"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-harem",
 			desc: "Lista os personagens que você possui em seu harém",
 			usage: ["!mu-harem", "!mu-h 2"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-saldo",
 			desc: "Consulta seu saldo atual de Zinthos (💜)",
 			usage: ["!mu-saldo", "!mu-zinthos", "!mu-z", "!mu-k"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-wishlist",
 			desc: "Lista seus personagens desejados (aumenta drop rate no roll)",
 			usage: ["!mu-wishlist", "!mu-desejar <id>", "!mu-removerdesejo <id>"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-personagens",
 			desc: "Busca personagens cadastrados no catálogo por nome ou série",
 			usage: ["!mu-personagens Frieren", "!mu-chars Naruto"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-ranking",
 			desc: "Ranking dos jogadores mais ricos em Zinthos (💜)",
 			usage: ["!mu-ranking", "!mu-top 10"],
-			category: "jogos"
+			category: "mudae"
 		},
 		{
 			cmd: "!mu-cooldowns",
 			desc: "Verifica os tempos restantes para poder rolar, casar ou resgatar o diário",
 			usage: ["!mu-cooldowns", "!mu-cd"],
-			category: "jogos"
+			category: "mudae"
 		}
 	]
 };
