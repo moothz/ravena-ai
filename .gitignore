@@ -152,6 +152,8 @@ test-output-*
 *.db-journal
 *.db-wal
 *.db-shm
+*.zip
+*.bak
 
 # Ravena data
 bots.json

@@ -54,14 +54,28 @@ def import_zip(input_zip_path, target_media_dir, output_commands_json_path):
                     raise ValueError(f"Caminho inseguro detectado no arquivo zip: {member}")
                 zf.extract(member, temp_dir)
 
-        extracted_commands_path = os.path.join(temp_dir, 'commands.json')
+        base_dir = temp_dir
+        extracted_commands_path = os.path.join(base_dir, 'commands.json')
         if not os.path.isfile(extracted_commands_path):
-            raise ValueError("O arquivo zip não contém o arquivo 'commands.json'")
+            found = False
+            for root, dirs, files in os.walk(temp_dir):
+                if 'commands.json' in files:
+                    base_dir = root
+                    extracted_commands_path = os.path.join(base_dir, 'commands.json')
+                    found = True
+                    break
+            if not found:
+                raise ValueError("O arquivo zip não contém o arquivo 'commands.json'")
 
         with open(extracted_commands_path, 'r', encoding='utf-8') as f:
             commands = json.load(f)
 
-        extracted_media_dir = os.path.join(temp_dir, 'media')
+        extracted_media_dir = os.path.join(base_dir, 'media')
+        if not os.path.isdir(extracted_media_dir):
+            alt_media = os.path.join(temp_dir, 'media')
+            if os.path.isdir(alt_media):
+                extracted_media_dir = alt_media
+
         restored_media_count = 0
         if os.path.isdir(extracted_media_dir):
             for file_name in os.listdir(extracted_media_dir):
@@ -100,5 +114,6 @@ if __name__ == '__main__':
             print(json.dumps({"success": False, "error": f"Modo desconhecido: {mode}"}))
             sys.exit(1)
     except Exception as e:
+        sys.stderr.write(str(e) + "\n")
         print(json.dumps({"success": False, "error": str(e)}))
         sys.exit(1)

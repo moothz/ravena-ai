@@ -2941,7 +2941,14 @@ class BotAPI {
 									resolve({ success: true });
 								}
 							} else {
-								reject(new Error(errOutput || `Python script exited with code ${code}`));
+								let errorMsg = errOutput.trim();
+								if (!errorMsg && stdOutput.trim()) {
+									try {
+										const parsed = JSON.parse(stdOutput.trim());
+										if (parsed && parsed.error) errorMsg = parsed.error;
+									} catch {}
+								}
+								reject(new Error(errorMsg || `Python script exited with code ${code}`));
 							}
 						});
 					});
@@ -2955,6 +2962,7 @@ class BotAPI {
 					for (const cmd of importedCommands) {
 						if (!cmd.startsWith) continue;
 						cmd.deleted = false;
+						cmd.groupId = groupId;
 						const exists = existingCmds.find((c) => c.startsWith === cmd.startsWith);
 						if (exists) {
 							await this.database.updateCustomCommand(groupId, cmd);
