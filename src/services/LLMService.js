@@ -2344,15 +2344,21 @@ class LLMService {
 		let cleaned = response
 			.replace(/<think>[\s\S]*?<\/think>/gi, "")
 			.replace(/<think>[\s\S]*/gi, "")
-			.replace(/<\|think\|>.*?<channel\|>/gs, "")
-			.replace(/<\|thought\|>.*?<\|thought_end\|>/gs, "")
+			.replace(/<\|think\|>[\s\S]*?<channel\|>/gi, "")
+			.replace(/<\|thought\|>[\s\S]*?<\|thought_end\|>/gi, "")
+			.replace(
+				/<\|channel\|?>thought[\s\S]*?(?:<channel\|?>|<\|channel\|?>(?:response|call)?)/gi,
+				""
+			)
 			.replace(/<\/start_of_turn>/g, "")
 			.replace(/<\/end_of_turn>/g, "")
 			.replace(/<\/blockquote>/g, "")
-			.replace(/<\|channel\|>/g, "")
-			.replace(/<channel\|>/g, "")
-			.replace(/<\|turn\|>/g, "")
-			.replace(/<turn\|>/g, "")
+			.replace(/<\|channel\|?>thought/gi, "")
+			.replace(/<\|channel\|?>/gi, "")
+			.replace(/<channel\|?>/gi, "")
+			.replace(/<\|turn\|?>/gi, "")
+			.replace(/<turn\|?>/gi, "")
+			.replace(/<\|think\|?>/gi, "")
 			// Delimitadores e tags residuais MiniMax/tool_call
 			.replace(/\]<\]minimax\[>[\][]?/gi, "")
 			.replace(/<\|minimax:[^>]*\|>/gi, "")
