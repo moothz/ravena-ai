@@ -371,13 +371,14 @@ class NSFWPredict {
 		const imagesList = Array.isArray(imagesInput) ? imagesInput : [imagesInput];
 
 		if (imagesList.length === 0) {
-			return { isNSFW: false, reason: "" };
+			return { isNSFW: false, reason: "", detections: [] };
 		}
 
 		// A API aceita até 16 imagens por requisição (/api/v1/classify)
 		const chunkSize = 16;
 		let isAnyNSFW = false;
 		const reasons = [];
+		const allDetections = [];
 
 		for (let i = 0; i < imagesList.length; i += chunkSize) {
 			const chunk = imagesList.slice(i, i + chunkSize);
@@ -407,6 +408,10 @@ class NSFWPredict {
 				const item = results[idx];
 				if (item.error) {
 					this.logger.warn(`${groupPrefix}Erro em item no NudeNet: ${item.error}${userSuffix}`);
+				}
+
+				if (Array.isArray(item.detections)) {
+					allDetections.push(...item.detections);
 				}
 
 				const hasNsfwDetection =
@@ -450,7 +455,7 @@ class NSFWPredict {
 		// 	);
 		// }
 
-		return { isNSFW: isAnyNSFW, reason: combinedReason };
+		return { isNSFW: isAnyNSFW, reason: combinedReason, detections: allDetections };
 	}
 
 	/**

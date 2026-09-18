@@ -98,6 +98,13 @@ const Taskbar = {
             });
         }
 
+        // Tray icon click to open NudeNet window
+        const trayNsfw = document.getElementById('tray-nudenet');
+        if (trayNsfw) {
+            trayNsfw.style.cursor = 'pointer';
+            trayNsfw.addEventListener('click', () => WindowManager.open('nudenet'));
+        }
+
         // Initialize Donators Ticker
         this.initDonateWidget();
 
@@ -110,6 +117,17 @@ const Taskbar = {
             window.RavenaOS.on('serviceStatusUpdate', (status) => this.updateTrayIcons(status));
             window.RavenaOS.on('activity', (data) => this.flashActivityService(data));
             window.RavenaOS.on('healthUpdate', () => this.buildStartMenu());
+
+            if (window.RavenaOS.state && window.RavenaOS.state.serviceStatus) {
+                this.updateTrayIcons(window.RavenaOS.state.serviceStatus);
+            }
+        }
+
+        // Direct fetch to guarantee tray status is immediately accurate
+        if (window.Api) {
+            window.Api.get('/api/services/status')
+                .then(data => this.updateTrayIcons(data))
+                .catch(() => {});
         }
     },
 
@@ -173,7 +191,8 @@ const Taskbar = {
             'tray-imagine':    { name: 'Imagine (Bonsai AI)', st: status.imagine },
             'tray-llm':        { name: 'LLM (IA / Resumos)', st: status.llm },
             'tray-whisper':    { name: 'Whisper (Áudio STT)', st: status.whisper },
-            'tray-f5tts':      { name: 'F5-TTS (Voz TTS)', st: status.f5tts }
+            'tray-f5tts':      { name: 'F5-TTS (Voz TTS)', st: status.f5tts },
+            'tray-nudenet':    { name: 'Detector NSFW (NudeNet)', st: status.nudenet || status.nsfw }
         };
 
         for (const [id, s] of Object.entries(serviceMap)) {
@@ -207,7 +226,9 @@ const Taskbar = {
             imagine: 'tray-imagine',
             llm: 'tray-llm',
             whisper: 'tray-whisper',
-            f5tts: 'tray-f5tts'
+            f5tts: 'tray-f5tts',
+            nudenet: 'tray-nudenet',
+            nsfw: 'tray-nudenet'
         };
         const elId = idMap[data.service];
         if (elId) {
@@ -409,6 +430,11 @@ const Taskbar = {
             <div class="start-menu-item" data-action="stt">
                 <i class="fas fa-microphone"></i>
                 <span>STT</span>
+            </div>
+
+            <div class="start-menu-item" data-action="nudenet">
+                <i class="fas fa-shield-halved"></i>
+                <span>Detector NSFW</span>
             </div>
 
             <div class="start-menu-item" data-action="fishing">

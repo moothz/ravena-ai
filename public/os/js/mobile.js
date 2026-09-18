@@ -10,6 +10,7 @@ const MobileApp = {
         { id: 'imagine',    label: 'Imagine',      icon: 'img/icons/imagine.png',    window: 'imagine',    iconFa: 'fa-palette' },
         { id: 'tts',        label: 'TTS',          icon: 'img/icons/tts.png',        window: 'tts',        iconFa: 'fa-volume-up' },
         { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.png',        window: 'stt',        iconFa: 'fa-microphone' },
+        { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.png',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
         { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.png',    window: 'fishing',    iconFa: 'fa-fish' },
         { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.png',     window: 'invite',     iconFa: 'fa-envelope' },
         { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },

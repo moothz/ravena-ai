@@ -10,6 +10,7 @@ const Desktop = {
         { id: 'imagine',    label: 'Imagine',       tooltip: 'Gerador de imagens com inteligência artificial', icon: 'img/icons/imagine.png', window: 'imagine' },
         { id: 'tts',        label: 'TTS',           tooltip: 'Conversor de texto em voz (F5-TTS)',          icon: 'img/icons/tts.png',        window: 'tts' },
         { id: 'stt',        label: 'STT',           tooltip: 'Transcritor de áudio em texto (Whisper)',     icon: 'img/icons/stt.png',        window: 'stt' },
+        { id: 'nudenet',    label: 'Detector NSFW', tooltip: 'Detecção e moderação de conteúdo adulto / NSFW', icon: 'img/icons/nudenet.png', window: 'nudenet' },
         { id: 'fishing',    label: 'Pesca',         tooltip: 'Hall da fama dos peixes lendários pescados',  icon: 'img/icons/fishing.png',    window: 'fishing' },
         { id: 'github',     label: 'GitHub',        tooltip: 'Código-fonte oficial da RavenaBot',           icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai' },
         { id: 'invite',     label: 'Quero Uma!',    tooltip: 'Instruções para adicionar o bot no seu grupo', icon: 'img/icons/invite.png',     window: 'invite' }

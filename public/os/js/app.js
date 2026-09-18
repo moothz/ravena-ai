@@ -11,7 +11,8 @@ const RavenaOS = {
             imagine: 'unknown',
             llm: 'unknown',
             whisper: 'unknown',
-            f5tts: 'unknown'
+            f5tts: 'unknown',
+            nudenet: 'unknown'
         },
         messageTimestamps: [],
         botMessageTimestamps: {},

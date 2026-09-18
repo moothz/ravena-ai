@@ -1651,10 +1651,12 @@ class BotAPI {
 				}
 
 				const result = await nsfwPredict.detectNSFW(targetImages, context);
+				this.broadcastSSE("activity", { service: "nudenet" });
 				return res.json({
 					success: true,
 					isNSFW: Boolean(result.isNSFW),
 					reason: result.reason || "",
+					detections: result.detections || [],
 					skipped: Boolean(result.skipped)
 				});
 			} catch (err) {

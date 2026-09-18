@@ -1056,3 +1056,255 @@
     font-size: 11px;
     color: var(--light-gray);
 }
+
+/* ========================================================
+   11. NUDENET NSFW SCANNER WINDOW
+   ======================================================== */
+.nudenet-tool-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.nudenet-dropzone {
+    border: 2px dashed var(--bright-blue);
+    border-radius: 8px;
+    padding: 24px 16px;
+    text-align: center;
+    background: #090714;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+}
+
+.nudenet-dropzone:hover,
+.nudenet-dropzone.dragover {
+    border-color: var(--cyan-neon);
+    background: #130d2d;
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
+}
+
+.nudenet-dropzone-icon {
+    font-size: 36px;
+    color: var(--bright-blue);
+    margin-bottom: 4px;
+    transition: transform 0.2s ease;
+}
+
+.nudenet-dropzone:hover .nudenet-dropzone-icon {
+    transform: scale(1.1);
+    color: var(--cyan-neon);
+}
+
+.nudenet-preview-wrapper {
+    background: #090714;
+    border: 1px solid var(--win-border-subtle);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+}
+
+.nudenet-image-stage {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    border-radius: 6px;
+    overflow: visible;
+}
+
+.nudenet-preview-img {
+    display: block;
+    max-width: 100%;
+    max-height: 380px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+}
+
+.nudenet-boxes-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    border-radius: 6px;
+    overflow: visible;
+}
+
+.nudenet-box {
+    position: absolute;
+    pointer-events: auto;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+    cursor: default;
+}
+
+.nudenet-box.nsfw {
+    background-color: rgba(255, 23, 68, 0.28);
+    border: 2px solid #ff1744;
+    box-shadow: 0 0 10px rgba(255, 23, 68, 0.5), inset 0 0 8px rgba(255, 23, 68, 0.25);
+}
+
+.nudenet-box.neutral {
+    background-color: rgba(0, 240, 255, 0.12);
+    border: 1.5px dashed #00f0ff;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+}
+
+.nudenet-box-label {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+    line-height: 1.2;
+}
+
+.nudenet-box.nsfw .nudenet-box-label {
+    background: #ff1744;
+    color: #ffffff;
+}
+
+.nudenet-box.neutral .nudenet-box-label {
+    background: #00d2ff;
+    color: #070614;
+}
+
+.nudenet-box:hover {
+    transform: scale(1.02);
+    z-index: 20;
+}
+
+.nudenet-box.nsfw:hover {
+    background-color: rgba(255, 23, 68, 0.45);
+    box-shadow: 0 0 16px rgba(255, 23, 68, 0.85);
+}
+
+.nudenet-result-card {
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.nudenet-result-card.danger {
+    background: linear-gradient(135deg, rgba(50, 10, 24, 0.9) 0%, rgba(20, 6, 12, 0.95) 100%);
+    border: 2px solid #ff1744;
+    box-shadow: 0 0 18px rgba(255, 23, 68, 0.3);
+}
+
+.nudenet-result-card.safe {
+    background: linear-gradient(135deg, rgba(8, 38, 20, 0.9) 0%, rgba(6, 20, 12, 0.95) 100%);
+    border: 2px solid #00e676;
+    box-shadow: 0 0 18px rgba(0, 230, 118, 0.25);
+}
+
+.nudenet-result-card.warning {
+    background: linear-gradient(135deg, rgba(45, 30, 10, 0.9) 0%, rgba(25, 18, 8, 0.95) 100%);
+    border: 2px solid #ffb300;
+    box-shadow: 0 0 18px rgba(255, 179, 0, 0.25);
+}
+
+.nudenet-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.nudenet-status-title {
+    font-size: 13px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+}
+
+.nudenet-result-card.danger .nudenet-status-title {
+    color: #ff3366;
+    text-shadow: 0 0 10px rgba(255, 51, 102, 0.6);
+}
+
+.nudenet-result-card.safe .nudenet-status-title {
+    color: #00e676;
+    text-shadow: 0 0 10px rgba(0, 230, 118, 0.6);
+}
+
+.nudenet-chips-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.nudenet-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.nudenet-chip.nsfw {
+    background: rgba(255, 23, 68, 0.2);
+    border: 1px solid #ff1744;
+    color: #ff6b8b;
+}
+
+.nudenet-chip.neutral {
+    background: rgba(0, 240, 255, 0.1);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    color: #00f0ff;
+}
+
+.nudenet-certainty-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+}
+
+.nudenet-certainty-badge.nsfw {
+    background: rgba(255, 23, 68, 0.25);
+    border: 1px solid #ff1744;
+    color: #ff6b8b;
+}
+
+.nudenet-certainty-badge.safe {
+    background: rgba(0, 230, 118, 0.2);
+    border: 1px solid #00e676;
+    color: #00e676;
+}
+
