@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs").promises;
 
 const MIN_REASON_LENGTH = 15;
+const frasesNaoSabeLer = ["tenho permissão", "tenho permissao"];
 
 /**
  * Verifica se a string contém caracteres "estranhos" (fontes personalizadas,
@@ -93,6 +94,8 @@ function hasStrangeCharacters(str) {
  * 5. Admins podem usar um comando para entrar no grupo
  */
 class InviteSystem {
+	static frasesNaoSabeLer = frasesNaoSabeLer;
+
 	// Registro de entradas automáticas recentes por bot (botId -> [timestamp, ...]) para limite de 3/30m
 	static recentBotJoins = new Map();
 
@@ -110,6 +113,7 @@ class InviteSystem {
 		this.groupInviteCooldowns = new Map(); // Mapa de inviteCode -> timestamp do último convite do grupo
 		this.blockedUserNotifyCache = new Map(); // Mapa de author -> timestamp da última notificação de bloqueio
 		this.groupCooldownNotifyCache = new Map(); // Mapa de inviteCode -> timestamp da última notificação de cooldown
+		this.frasesNaoSabeLer = frasesNaoSabeLer;
 	}
 
 	rndString() {
@@ -124,6 +128,25 @@ class InviteSystem {
 			data?.isCommunity === true ||
 			data?.IsCommunityAnnounce === true ||
 			data?.isCommunityAnnounce === true
+		);
+	}
+
+	getParticipantCount(data) {
+		if (!data) return null;
+		if (typeof data.ParticipantCount === "number") return data.ParticipantCount;
+		if (typeof data.participantCount === "number") return data.participantCount;
+		if (Array.isArray(data.Participants)) return data.Participants.length;
+		if (Array.isArray(data.participants)) return data.participants.length;
+		if (typeof data.Size === "number") return data.Size;
+		if (typeof data.size === "number") return data.size;
+		return null;
+	}
+
+	getCommunityLink() {
+		return (
+			this.bot?.linkComunidade ||
+			process.env.LINK_COMUNIDADE ||
+			"https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe"
 		);
 	}
 
@@ -329,25 +352,28 @@ class InviteSystem {
 			}
 		}
 
-		if (hasStrangeCharacters(userName)) {
-			return {
-				shouldAutoAccept: false,
-				reason: "Caracteres estranhos/ornamentais no nome do usuário"
-			};
-		}
+		// Se for doador, caracteres estranhos não são um problema
+		if (!isDonator) {
+			if (hasStrangeCharacters(userName)) {
+				return {
+					shouldAutoAccept: false,
+					reason: "Caracteres estranhos/ornamentais no nome do usuário"
+				};
+			}
 
-		if (hasStrangeCharacters(groupName)) {
-			return {
-				shouldAutoAccept: false,
-				reason: "Caracteres estranhos/ornamentais no título do grupo"
-			};
-		}
+			if (hasStrangeCharacters(groupName)) {
+				return {
+					shouldAutoAccept: false,
+					reason: "Caracteres estranhos/ornamentais no título do grupo"
+				};
+			}
 
-		if (hasStrangeCharacters(description)) {
-			return {
-				shouldAutoAccept: false,
-				reason: "Caracteres estranhos/ornamentais na descrição do grupo"
-			};
+			if (hasStrangeCharacters(description)) {
+				return {
+					shouldAutoAccept: false,
+					reason: "Caracteres estranhos/ornamentais na descrição do grupo"
+				};
+			}
 		}
 
 		// Rejeição de grupos de teste pelo título
@@ -438,7 +464,7 @@ class InviteSystem {
 Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve ser enviado para moderação manual humana.
 
 REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
-1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição (OBS: emojis normais e símbolos comuns como ®, ©, ™, etc. NÃO são caracteres estranhos. Caracteres estranhos referem-se a fontes modificadas/personalizadas como 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, alfabetos exóticos usados apenas para enfeitar letras, ou zalgo/combinações abusivas de acentos decorativos).
+1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição (desconsiderar se o usuário for doador — se for doador, caracteres estranhos NÃO são um problema). (OBS: emojis normais e símbolos comuns como ®, ©, ™, etc. NÃO são caracteres estranhos. Caracteres estranhos referem-se a fontes modificadas/personalizadas como 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, alfabetos exóticos usados apenas para enfeitar letras, ou zalgo/combinações abusivas de acentos decorativos).
 2. Grupos com menos de 3 pessoas (a menos que o usuário seja doador R$10+).
 3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, vocabulário infantil/underage).
 4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
@@ -449,6 +475,7 @@ REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 
 CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
 1. Usuário Doador (grande peso):
+   - Se for doador, caracteres estranhos ou fontes ornamentais NÃO são um problema.
    - R$1 a R$10: Aceitar mesmo com motivo intermediário/simples se a descrição for coerente.
    - R$10 a R$30: Aceitar independente da quantidade de membros.
    - R$30 a R$49: Aceitar mesmo com motivo ruim/fraco.
@@ -546,19 +573,20 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						return true;
 					}
 
-					// Checa se já existe um bot no grupo atualmente
-					const existingBots = this.getBotsInGroupFromInvite(infoCheck);
-					if (existingBots.length > 0) {
-						const botsStr = existingBots.map((b) => `+${b}`).join(", ");
+					// Checa se o grupo tem apenas 1 membro (hard filter - não repassa o convite)
+					const count = this.getParticipantCount(infoCheck);
+					if (count !== null && count <= 1) {
 						this.logger.info(
-							`Ignorando convite de ${message.author} (${inviteCode}): Bot ${botsStr} já está no grupo.`
+							`Ignorando convite de grupo com apenas 1 membro de ${message.author} (${inviteCode}) sem repassar convite.`
 						);
 						if (message.origin && typeof message.origin.react === "function") {
-							message.origin.react("🤖");
+							message.origin.react("👤");
 						}
+						const botName = this.bot.nomeExibir || "ravenabot";
+						const communityLink = this.getCommunityLink();
 						await this.bot.sendMessage(
 							message.author,
-							`⚠️ O bot ${botsStr} já está neste grupo! Não é permitido adicionar outro bot.`
+							`Este grupo tem apenas 1 membro. Lembre-se que a ${botName} pode ser usada diretamente no PV, não tem necessidade de criar um grupo com ela! Se quiser testar os comandos, entre na comunidade da ravenabot:\n${communityLink}`
 						);
 						return true;
 					}
@@ -772,6 +800,27 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				return true;
 			}
 
+			// Verifica se enviou frase de quem não sabe ler — também processado imediatamente
+			if (
+				(this.frasesNaoSabeLer || frasesNaoSabeLer).some((frase) =>
+					text.toLowerCase().includes(frase.toLowerCase())
+				)
+			) {
+				clearTimeout(timeout);
+				if (requestData.accumulationTimeout) clearTimeout(requestData.accumulationTimeout);
+				this.pendingRequests.delete(message.author);
+				await this.handleInviteRequest(
+					message.author,
+					inviteCode,
+					inviteLink,
+					text,
+					message,
+					verificationCode,
+					preConviteContent
+				);
+				return true;
+			}
+
 			// 2. Se já está acumulando mensagens, apenas adiciona ao buffer
 			if (accumulatedMessages) {
 				accumulatedMessages.push(text.trim());
@@ -833,6 +882,25 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				inviteCode,
 				inviteLink,
 				"Nenhum motivo fornecido",
+				originalMessage,
+				verificationCode,
+				preConviteContent
+			);
+			return;
+		}
+
+		// Verifica frases de quem não sabe ler antes de checar tamanho
+		if (
+			(this.frasesNaoSabeLer || frasesNaoSabeLer).some((frase) =>
+				reason.toLowerCase().includes(frase.toLowerCase())
+			)
+		) {
+			this.pendingRequests.delete(authorId);
+			await this.handleInviteRequest(
+				authorId,
+				inviteCode,
+				inviteLink,
+				reason,
 				originalMessage,
 				verificationCode,
 				preConviteContent
@@ -1013,6 +1081,41 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				return;
 			}
 
+			// Verifica se o motivo contém alguma frase de quem não sabe ler
+			const matchedFraseNaoSabeLer =
+				reason &&
+				(this.frasesNaoSabeLer || frasesNaoSabeLer).find((frase) =>
+					reason.toLowerCase().includes(frase.toLowerCase())
+				);
+
+			if (matchedFraseNaoSabeLer) {
+				this.logger.info(
+					`Usuário ${authorId} enviou frase que indica falta de leitura no motivo ("${matchedFraseNaoSabeLer}"). Ignorando convite.`
+				);
+
+				try {
+					const ignoredPath = path.join(
+						this.database.databasePath,
+						"textos",
+						"invite_ignorado.txt"
+					);
+					const ignoredText = await fs
+						.readFile(ignoredPath, "utf8")
+						.catch(() => "Leitura não é o seu forte, né? _Convite ignorado._");
+					await this.bot.sendMessage(authorId, ignoredText);
+				} catch (err) {
+					this.bot.sendMessage(authorId, "Leitura não é o seu forte, né? _Convite ignorado._");
+				}
+
+				const punishDuration = 10 * this.inviteCooldown * 60 * 1000;
+				const normalDuration = this.inviteCooldown * 60 * 1000;
+
+				const futureTime = Date.now() + punishDuration - normalDuration;
+				this.userCooldowns.set(authorId, futureTime);
+
+				return;
+			}
+
 			let inviteInfoData = null;
 			let otherBotsInGroup = [];
 			let ownerMatch = false;
@@ -1035,6 +1138,26 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						return;
 					}
 
+					// 2. Check 1 member (hard filter - não repassa o convite)
+					const count = this.getParticipantCount(inviteInfoData);
+					if (count !== null && count <= 1) {
+						this.logger.info(
+							`Convite ignorado para ${inviteCode}: grupo tem apenas 1 membro (${inviteInfoData?.Name || "sem nome"}). Não repassando convite.`
+						);
+						this.userCooldowns.delete(authorId);
+						this.groupInviteCooldowns.delete(inviteCode);
+						if (message?.origin && typeof message.origin.react === "function") {
+							message.origin.react("👤");
+						}
+						const botName = this.bot.nomeExibir || "ravenabot";
+						const communityLink = this.getCommunityLink();
+						await this.bot.sendMessage(
+							authorId,
+							`Este grupo tem apenas 1 membro. Lembre-se que a ${botName} pode ser usada diretamente no PV, não tem necessidade de criar um grupo com ela! Se quiser testar os comandos, entre na comunidade da ravenabot:\n${communityLink}`
+						);
+						return;
+					}
+
 					// 2. Check Owner PN
 					if (inviteInfoData.OwnerPN) {
 						// Normalize PNs
@@ -1047,19 +1170,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 					// 3. Check Participants for other bots
 					otherBotsInGroup = this.getBotsInGroupFromInvite(inviteInfoData);
-
-					// Se já existe um bot no grupo atualmente, NUNCA adicionar outro, independente do convite
-					if (otherBotsInGroup.length > 0) {
-						const botsStr = otherBotsInGroup.map((b) => `+${b}`).join(", ");
-						this.logger.info(
-							`Convite ignorado para ${inviteCode}: Já existe um bot (${botsStr}) no grupo ${inviteInfoData?.Name || "sem nome"}`
-						);
-						await this.bot.sendMessage(
-							authorId,
-							`⚠️ O bot ${botsStr} já está neste grupo! Não é permitido adicionar outro bot.`
-						);
-						return;
-					}
 
 					// Verifica se o JID do grupo está bloqueado (mesmo que o invite link tenha mudado)
 					const isGroupBlocked = await this.database.isInviteBlocked(null, inviteInfoData.JID);
@@ -1322,24 +1432,29 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			let extraText = "";
 			let addedAny = false;
 
-			if (inviteInfoData?.ParticipantCount !== undefined && inviteInfoData.ParticipantCount <= 2) {
+			if (inviteInfoData?.ParticipantCount !== undefined && inviteInfoData.ParticipantCount === 2) {
 				const botName = this.bot.nomeExibir || "ravena";
 				extraText += `\n- 😪 Este parece ser um grupo particular. Lembre-se que a ${botName} faz tudo no PV, não tem necessidade de criar um grupo com ela! Se quiser só brincar com os comandos, que tal entrar na nossa comunidade? Envie !grupao - temos grupos de downloads, jogos e bate papo.`;
 				addedAny = true;
 			}
 
 			if (
-				(inviteInfoData?.Name && hasStrangeCharacters(inviteInfoData.Name)) ||
-				(userName && hasStrangeCharacters(userName))
+				!isDonator &&
+				((inviteInfoData?.Name && hasStrangeCharacters(inviteInfoData.Name)) ||
+					(userName && hasStrangeCharacters(userName)))
 			) {
 				extraText +=
 					"\n- ⛔️ *Evito* grupos e pessoas com esses caracteres estranhos, pois geralmente são crianças.";
 				addedAny = true;
 			}
 
-			if (inviteInfoData && this.isCommunity(inviteInfoData)) {
+			const hasBotInGroup = otherBotsInGroup.length > 0;
+			if (hasBotInGroup) {
+				extraText += "\n- 🚨 Já tem uma ravena no seu grupo!";
+				addedAny = true;
+			} else if (wasInGroupBefore) {
 				extraText +=
-					"\n- 👎 *Não consigo* entrar em comunidade, você vai precisar mandar o convite do grupo em específico que eu devo entrar.";
+					"\n- ⚠️ Alguma ravena já esteve no seu grupo e foi removida. É provável que seu convite não seja aceito";
 				addedAny = true;
 			}
 
