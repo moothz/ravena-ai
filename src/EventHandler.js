@@ -12,7 +12,7 @@ const { PermissionsBitField } = require("discord.js");
 const NSFWPredict = require("./utils/NSFWPredict");
 const MuNewsCommands = require("./functions/MuNewsCommands");
 const HoroscopoCommands = require("./functions/HoroscopoCommands");
-const Copa2026 = require("./functions/Copa2026");
+// const Copa2026 = require("./functions/Copa2026");
 const RankingMessages = require("./functions/RankingMessages");
 const fs = require("fs").promises;
 const path = require("path");
@@ -328,7 +328,7 @@ class EventHandler extends EventEmitter {
 						// });
 					}
 
-					await Copa2026.detectCopaGif(message, bot);
+					//await Copa2026.detectCopaGif(message, bot);
 				} catch (error) {
 					this.logger.error("Erro ao verificar Newsletter:", error);
 				}
