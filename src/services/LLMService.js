@@ -1918,7 +1918,7 @@ class LLMService {
 			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
-				userContent = [{ type: "text", text: options.prompt }];
+				userContent = [{ type: "text", text: options.prompt || "" }];
 				for (const img of imagesToProcess) {
 					let base64;
 					if (img.startsWith("data:image")) {
@@ -1942,13 +1942,21 @@ class LLMService {
 					}
 				}
 			} else {
-				userContent = options.prompt;
+				userContent = options.prompt || "";
 			}
 
-			const messages = [
-				{ role: "system", content: ctxInclude },
-				{ role: "user", content: userContent }
-			];
+			let messages;
+			if (Array.isArray(options.messages) && options.messages.length > 0) {
+				messages = [...options.messages];
+				if (ctxInclude && !messages.some((m) => m.role === "system")) {
+					messages.unshift({ role: "system", content: ctxInclude });
+				}
+			} else {
+				messages = [
+					{ role: "system", content: ctxInclude },
+					{ role: "user", content: userContent }
+				];
+			}
 
 			const payload = {
 				model,
@@ -1965,7 +1973,15 @@ class LLMService {
 			const allowToolCalling =
 				options.toolCalling === true && !options.response_format && !hasImages;
 			if (allowToolCalling) {
-				payload.tools = this.getTools();
+				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(availableTools) && availableTools.length > 0) {
+					payload.tools = availableTools;
+				}
+			}
+
+			// Garantia estrita: vLLM e outros endpoints OpenAI rejeitam tools se for array vazio
+			if (payload.tools && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+				delete payload.tools;
 			}
 
 			const timeout = options.timeout ?? this.apiTimeout;
@@ -2042,11 +2058,15 @@ class LLMService {
 				const nextPayload = {
 					model,
 					messages,
-					tools: this.getTools(),
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
+
+				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(nextTools) && nextTools.length > 0) {
+					nextPayload.tools = nextTools;
+				}
 
 				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
@@ -2067,6 +2087,14 @@ class LLMService {
 			return currentResponse.data;
 		} catch (error) {
 			this.logger.error("Erro ao chamar API compatível com OpenAI:", error.message);
+			if (error.response) {
+				this.logger.error(
+					`[LLMService][OpenAI] Detalhes do erro HTTP ${error.response.status}:`,
+					typeof error.response.data === "object"
+						? JSON.stringify(error.response.data)
+						: error.response.data
+				);
+			}
 			throw error;
 		}
 	}
@@ -2105,7 +2133,7 @@ class LLMService {
 			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
-				userContent = [{ type: "text", text: options.prompt }];
+				userContent = [{ type: "text", text: options.prompt || "" }];
 				for (const img of imagesToProcess) {
 					if (img.startsWith("data:image")) {
 						userContent.push({
@@ -2125,13 +2153,21 @@ class LLMService {
 					}
 				}
 			} else {
-				userContent = options.prompt;
+				userContent = options.prompt || "";
 			}
 
-			const messages = [
-				{ role: "system", content: ctxInclude },
-				{ role: "user", content: userContent }
-			];
+			let messages;
+			if (Array.isArray(options.messages) && options.messages.length > 0) {
+				messages = [...options.messages];
+				if (ctxInclude && !messages.some((m) => m.role === "system")) {
+					messages.unshift({ role: "system", content: ctxInclude });
+				}
+			} else {
+				messages = [
+					{ role: "system", content: ctxInclude },
+					{ role: "user", content: userContent }
+				];
+			}
 
 			const payload = {
 				model,
@@ -2148,7 +2184,15 @@ class LLMService {
 			const allowToolCalling =
 				options.toolCalling === true && !options.response_format && !hasImages;
 			if (allowToolCalling) {
-				payload.tools = this.getTools();
+				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(availableTools) && availableTools.length > 0) {
+					payload.tools = availableTools;
+				}
+			}
+
+			// Garantia estrita: vLLM e outros endpoints OpenAI rejeitam tools se for array vazio
+			if (payload.tools && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+				delete payload.tools;
 			}
 
 			const timeout = options.timeout ?? this.apiTimeout;
@@ -2227,11 +2271,15 @@ class LLMService {
 				const nextPayload = {
 					model,
 					messages,
-					tools: this.getTools(),
 					max_tokens: options.maxTokens ?? 5000,
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
+
+				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(nextTools) && nextTools.length > 0) {
+					nextPayload.tools = nextTools;
+				}
 
 				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
@@ -2259,6 +2307,14 @@ class LLMService {
 			return currentResponse.data;
 		} catch (error) {
 			this.logger.error("Erro ao chamar API OpenRouter:", error.message);
+			if (error.response) {
+				this.logger.error(
+					`[LLMService][OpenRouter] Detalhes do erro HTTP ${error.response.status}:`,
+					typeof error.response.data === "object"
+						? JSON.stringify(error.response.data)
+						: error.response.data
+				);
+			}
 			throw error;
 		}
 	}
@@ -2404,7 +2460,14 @@ class LLMService {
 
 			const allowToolCalling = options.toolCalling === true && !ollamaFormat && !hasImages;
 			if (allowToolCalling) {
-				payload.tools = this.getTools();
+				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(availableTools) && availableTools.length > 0) {
+					payload.tools = availableTools;
+				}
+			}
+
+			if (payload.tools && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+				delete payload.tools;
 			}
 
 			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
@@ -2474,11 +2537,15 @@ class LLMService {
 				const nextPayload = {
 					model: payload.model,
 					messages,
-					tools: this.getTools(),
 					format: ollamaFormat,
 					stream: false,
 					options: payload.options
 				};
+
+				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(nextTools) && nextTools.length > 0) {
+					nextPayload.tools = nextTools;
+				}
 
 				currentResponse = await axios.post(endpoint, nextPayload, {
 					headers: {
