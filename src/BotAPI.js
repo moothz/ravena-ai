@@ -112,7 +112,8 @@ class BotAPI {
 			max: 100, // 100 requisições por IP
 			message: { status: "error", message: "Muitas requisições, tente novamente em 1 minuto." },
 			standardHeaders: true,
-			legacyHeaders: false
+			legacyHeaders: false,
+			validate: { trustProxy: false }
 		});
 
 		this.strictLimiter = rateLimit({
@@ -120,7 +121,8 @@ class BotAPI {
 			max: 10, // 10 requisições por IP (para endpoints pesados)
 			message: { status: "error", message: "Limite excedido. Tente novamente em breve." },
 			standardHeaders: true,
-			legacyHeaders: false
+			legacyHeaders: false,
+			validate: { trustProxy: false }
 		});
 
 		// Estado da UPS
