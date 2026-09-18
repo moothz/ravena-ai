@@ -148,10 +148,15 @@ async function analyzeVideo(message) {
 		};
 
 		const response = await llmService.getCompletion(completionOptions);
+		if (!response || typeof response !== "string" || response.startsWith("Erro:")) {
+			logger.warn("Não foi possível obter análise do vídeo pelo LLM:", response);
+			return false;
+		}
+
 		try {
 			const parsed = JSON.parse(response);
 			const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
-			return `Video[${parsed.type}|${nsfwTag}|${parsed.description}]`;
+			return `Video[${parsed.type || "outros"}|${nsfwTag}|${parsed.description || ""}]`;
 		} catch (e) {
 			logger.warn("Falha ao analisar JSON do vídeo, retornando cru:", response);
 			return `Video[outros|sfw|${response}]`;
