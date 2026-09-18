@@ -474,6 +474,10 @@ class Database {
 		return this.coreRepo.getAggregatedLoadReports(since);
 	}
 
+	async archiveOldLoadReports(retentionDays = 30) {
+		return this.coreRepo.archiveOldLoadReports(retentionDays);
+	}
+
 	async getBotsWeeklyMessageTotals(since) {
 		return this.coreRepo.getBotsWeeklyMessageTotals(since);
 	}

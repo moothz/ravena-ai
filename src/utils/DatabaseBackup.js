@@ -34,6 +34,7 @@ class DatabaseBackup {
 		if (this.backupIgnoreFiles.includes(filename)) return true;
 		if (filename === "cache.db" || filename.startsWith("cache.db-")) return true;
 		if (filename.includes("corrupt") || filename.includes("corrupted")) return true;
+		if (filename.endsWith("-wal") || filename.endsWith("-shm")) return true;
 
 		// Ignore databases flagged as noBackup (and their companion files like -wal, -shm)
 		if (this.db && this.db.noBackupDatabases) {
@@ -109,6 +110,11 @@ class DatabaseBackup {
 
 			this.logger.info(`File backup created: ${backupDir}`);
 			this.cleanupOldScheduledBackups();
+
+			// Arquiva relatórios antigos com mais de 30 dias automaticamente
+			await this.db.archiveOldLoadReports(30).catch((err) => {
+				this.logger.error("Erro ao arquivar relatórios antigos durante backup:", err);
+			});
 
 			return true;
 		} catch (error) {

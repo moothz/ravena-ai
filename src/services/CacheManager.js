@@ -134,6 +134,9 @@ class CacheManager {
 		// Start cleanup timer (every hour)
 		this.cleanupTimer = setInterval(() => this.cleanExpired(), 60 * 60 * 1000);
 
+		// Start vacuum timer (every 6 hours)
+		this.vacuumTimer = setInterval(() => this.runVacuum(), 6 * 60 * 60 * 1000);
+
 		// Setup shutdown hook
 		this.setupShutdown();
 
@@ -301,11 +304,20 @@ class CacheManager {
 			for (const table of tables) {
 				await this.database.dbRun(this.DB_NAME, `DELETE FROM ${table} WHERE expires_at < ?`, [now]);
 			}
-
-			// Reclaim empty space from deleted records incrementally (1000 pages = ~4MB per hour)
-			await this.database.dbRun(this.DB_NAME, "PRAGMA incremental_vacuum(1000)");
 		} catch (e) {
 			this.logger.error("Error cleaning expired cache:", e);
+		}
+	}
+
+	/**
+	 * Run periodic incremental vacuum every 6 hours to reclaim disk space
+	 */
+	async runVacuum() {
+		try {
+			this.logger.info("CacheManager: Running scheduled vacuum (incremental)...");
+			await this.database.dbRun(this.DB_NAME, "PRAGMA incremental_vacuum(5000)");
+		} catch (e) {
+			this.logger.error("CacheManager: Error during scheduled vacuum:", e);
 		}
 	}
 

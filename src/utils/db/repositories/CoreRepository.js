@@ -10,6 +10,7 @@
 
 "use strict";
 
+const path = require("path");
 const Logger = require("../../Logger");
 const GroupMapper = require("../mappers/GroupMapper");
 const CommandMapper = require("../mappers/CommandMapper");
@@ -205,6 +206,12 @@ class CoreRepository {
 			this.REPORTS_DB,
 			"load_reports",
 			`(id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, timestamp_start INTEGER, timestamp_end INTEGER, duration REAL, recv_private INTEGER, recv_group INTEGER, sent_private INTEGER, sent_group INTEGER, msgs_per_hour REAL, resp_avg REAL, resp_max REAL, resp_count INTEGER, json_data TEXT)`
+		);
+		this.mappers.exec(
+			this.REPORTS_DB,
+			`CREATE INDEX IF NOT EXISTS idx_load_reports_end ON load_reports(timestamp_end);
+			CREATE INDEX IF NOT EXISTS idx_load_reports_start ON load_reports(timestamp_start);
+			CREATE INDEX IF NOT EXISTS idx_load_reports_bot ON load_reports(bot_id);`
 		);
 	}
 
@@ -856,6 +863,66 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error getting aggregated load reports:", error);
 			return [];
+		}
+	}
+
+	/**
+	 * Arquiva relatórios antigos com mais de X dias para load_reports_archive.db
+	 * Mantém o load_reports.db leve e preserva 100% dos dados históricos.
+	 */
+	async archiveOldLoadReports(retentionDays = 30) {
+		try {
+			const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+			const archivePath = path.join(
+				this.mappers.databasePath,
+				"sqlites",
+				"load_reports_archive.db"
+			);
+			const conn = this.mappers.getConnection(this.REPORTS_DB);
+
+			conn.exec(`
+				ATTACH DATABASE '${archivePath}' AS archive;
+				CREATE TABLE IF NOT EXISTS archive.load_reports (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					bot_id          TEXT,
+					timestamp_start INTEGER,
+					timestamp_end   INTEGER,
+					duration        REAL,
+					recv_private    INTEGER DEFAULT 0,
+					recv_group      INTEGER DEFAULT 0,
+					sent_private    INTEGER DEFAULT 0,
+					sent_group      INTEGER DEFAULT 0,
+					msgs_per_hour   REAL,
+					resp_avg        REAL,
+					resp_max        REAL,
+					resp_count      INTEGER,
+					json_data       TEXT
+				);
+				CREATE INDEX IF NOT EXISTS archive.idx_archive_reports_end ON load_reports(timestamp_end);
+				CREATE INDEX IF NOT EXISTS archive.idx_archive_reports_start ON load_reports(timestamp_start);
+
+				INSERT INTO archive.load_reports (
+					bot_id, timestamp_start, timestamp_end, duration,
+					recv_private, recv_group, sent_private, sent_group,
+					msgs_per_hour, resp_avg, resp_max, resp_count, json_data
+				)
+				SELECT 
+					bot_id, timestamp_start, timestamp_end, duration,
+					recv_private, recv_group, sent_private, sent_group,
+					msgs_per_hour, resp_avg, resp_max, resp_count, json_data
+				FROM main.load_reports
+				WHERE timestamp_end < ${cutoff};
+
+				DELETE FROM main.load_reports WHERE timestamp_end < ${cutoff};
+				DETACH DATABASE archive;
+			`);
+			this.logger.info(
+				`[load_reports] Arquivamento concluído com sucesso (> ${retentionDays} dias).`
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Erro ao arquivar relatórios antigos:", error);
+			return false;
 		}
 	}
 

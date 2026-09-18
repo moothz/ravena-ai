@@ -553,31 +553,12 @@ class BotAPI {
 			});
 		});
 
-		// Endpoint de verificação de saúde
-		this.app.get("/health", async (req, res) => {
+		// Endpoint de verificação de saúde (100% em memória, ultra-rápido)
+		this.app.get("/health", (req, res) => {
 			try {
 				const isAdmin = this.isAdmin(req);
-				// Obtém timestamp de 30 minutos atrás
-				const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
 
-				// Obtém relatórios de carga mais recentes
-				const recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
-
-				// Mapeia resultados por bot
-				const botReports = {};
-				if (recentReports && Array.isArray(recentReports)) {
-					recentReports.forEach((report) => {
-						// Se não existir um relatório para este bot ou se for mais recente
-						if (
-							!botReports[report.botId] ||
-							report.timestamp > botReports[report.botId].timestamp
-						) {
-							botReports[report.botId] = report;
-						}
-					});
-				}
-
-				// Prepara resposta com dados adicionais
+				// Prepara resposta com dados em memória sem tocar no disco
 				res.json({
 					status: "ok",
 					timestamp: Date.now(),
@@ -585,16 +566,9 @@ class BotAPI {
 					bots: this.bots
 						.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
 						.map((bot) => {
-							// Busca relatório mais recente para este bot
-							const report = botReports[bot.id] ?? null;
-							const messagesPerHour =
-								report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
-
-							// Adiciona informações de tempo de resposta
-							const avgResponseTime =
-								report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
-							const maxResponseTime =
-								report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
+							const metrics = bot.loadReport
+								? bot.loadReport.getLiveMetrics()
+								: { msgsHr: 0, responseTime: { avg: 0, max: 0 } };
 
 							return {
 								id: bot.id,
@@ -602,11 +576,8 @@ class BotAPI {
 								supportNumber: bot.supportNumber,
 								connected: bot.isConnected,
 								lastMessageReceived: bot.lastMessageReceived ?? null,
-								msgsHr: messagesPerHour,
-								responseTime: {
-									avg: avgResponseTime,
-									max: maxResponseTime
-								},
+								msgsHr: metrics.msgsHr,
+								responseTime: metrics.responseTime,
 								semPV: bot.ignorePV ?? false,
 								semConvites: bot.ignoreInvites ?? false,
 								banido: bot.banido ?? false,
@@ -626,27 +597,7 @@ class BotAPI {
 					timestamp: Date.now(),
 					isAdmin,
 					message: "Erro ao processar dados",
-					bots: this.bots
-						.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
-						.map((bot) => ({
-							id: bot.id,
-							phoneNumber: bot.phoneNumber,
-							connected: bot.isConnected,
-							lastMessageReceived: bot.lastMessageReceived ?? null,
-							msgsHr: 0,
-							responseTime: {
-								avg: 0,
-								max: 0
-							},
-							semPV: bot.ignorePV ?? false,
-							semConvites: bot.ignoreInvites ?? false,
-							banido: bot.banido ?? false,
-							comunitario: bot.comunitario ?? false,
-							numeroResponsavel: bot.numeroResponsavel ?? false,
-							supportMsg: bot.supportMsg ?? false,
-							vip: bot.vip ?? false,
-							privado: bot.privado ?? false
-						}))
+					bots: []
 				});
 			}
 		});

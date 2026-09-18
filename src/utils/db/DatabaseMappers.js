@@ -55,8 +55,8 @@ class DatabaseMappers {
 		try {
 			const conn = name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-			conn.pragma("journal_mode = DELETE");
-			conn.pragma("synchronous = FULL"); // Use FULL for strong corruption prevention on disk restarts
+			conn.pragma("journal_mode = WAL");
+			conn.pragma("synchronous = NORMAL");
 			conn.pragma("busy_timeout = 5000");
 
 			// Apply the schema first if we have it in parent Database class
@@ -142,8 +142,8 @@ class DatabaseMappers {
 				const freshConn =
 					name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-				freshConn.pragma("journal_mode = DELETE");
-				freshConn.pragma("synchronous = FULL");
+				freshConn.pragma("journal_mode = WAL");
+				freshConn.pragma("synchronous = NORMAL");
 				freshConn.pragma("busy_timeout = 5000");
 
 				const schema = this.db.schemas[name];

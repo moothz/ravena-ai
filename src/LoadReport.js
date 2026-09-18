@@ -24,6 +24,7 @@ class LoadReport {
 			maxResponseTime: 0, // Valor máximo de tempo de resposta
 			timestamp: Date.now()
 		};
+		this.lastReport = null;
 
 		// Configura intervalo para relatório (a cada 10 minutos)
 		if (process.env.DISABLE_ACTIVITY !== "true") {
@@ -117,7 +118,8 @@ class LoadReport {
 				(report.messages.totalReceived + report.messages.totalSent) / (report.duration / 3600)
 			);
 
-			// Salva relatório no banco de dados
+			// Salva relatório no banco de dados e em memória
+			this.lastReport = report;
 			await this.saveReport(report);
 
 			// A atualização de status do perfil agora é gerenciada pelo ProfileStatusScheduler
@@ -152,6 +154,32 @@ class LoadReport {
 		} catch (error) {
 			this.logger.error("Erro ao gerar relatório de carga:", error);
 		}
+	}
+
+	/**
+	 * Retorna métricas operacionais ao vivo direto da memória (sem tocar no disco)
+	 */
+	getLiveMetrics() {
+		const currentTime = Date.now();
+		const responseTimeCount = this.stats.responseTimes.length;
+		const avgResponseTime =
+			responseTimeCount > 0 ? this.stats.totalResponseTime / responseTimeCount : 0;
+		const duration = Math.max(1, Math.floor((currentTime - this.stats.timestamp) / 1000));
+		const totalReceived = this.stats.receivedPrivate + this.stats.receivedGroup;
+		const totalSent = this.stats.sentPrivate + this.stats.sentGroup;
+		const currentMsgsHr = Math.floor((totalReceived + totalSent) / (duration / 3600));
+
+		const fallbackAvg = this.lastReport?.responseTime?.average
+			? parseFloat(this.lastReport.responseTime.average)
+			: 0;
+
+		return {
+			msgsHr: currentMsgsHr || (this.lastReport?.messages?.messagesPerHour ?? 0),
+			responseTime: {
+				avg: parseFloat(avgResponseTime.toFixed(2)) || fallbackAvg,
+				max: this.stats.maxResponseTime || (this.lastReport?.responseTime?.max ?? 0)
+			}
+		};
 	}
 
 	/**
