@@ -947,6 +947,7 @@ class EventHandler extends EventEmitter {
 
 			// Stickers não devem ser marcados como detectAll
 			const isDetectAllForMedia = isDetectAll && !isSticker;
+			const isStickerCmd = this.isStickerMessage(message, group, bot);
 
 			const nsfwContext = {
 				groupName: group?.name || group?.id || (message.group ? message.group : "PV"),
@@ -960,7 +961,9 @@ class EventHandler extends EventEmitter {
 				threshold: group?.filters?.nsfwThreshold,
 				group,
 				detectAll: isDetectAllForMedia,
-				isDetectAll: isDetectAllForMedia
+				isDetectAll: isDetectAllForMedia,
+				isSticker: isSticker || isStickerCmd,
+				type: message.type
 			};
 
 			let result = { isNSFW: false, reason: "" };

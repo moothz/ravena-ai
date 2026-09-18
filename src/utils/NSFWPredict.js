@@ -836,14 +836,17 @@ Return the result in JSON format.`;
 		const availableProviders = this.getAvailableProviders();
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 
+		let result = null;
+
 		for (const provider of availableProviders) {
 			try {
-				return await this._executeNudeNetWithRetry(
+				result = await this._executeNudeNetWithRetry(
 					provider,
 					() => this.detectNSFWWithNudeNet(imagesInput, context, provider),
 					context,
 					"imagem"
 				);
+				break;
 			} catch (err) {
 				this.logger.warn(
 					`${groupPrefix}NudeNet [${provider.name || provider.url}] falhou (${err.message}).${userSuffix}`
@@ -851,7 +854,67 @@ Return the result in JSON format.`;
 			}
 		}
 
-		return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
+		if (!result) {
+			// Fallback para LLM se todos os provedores NudeNet falharem
+			try {
+				this.logger.warn(
+					`${groupPrefix}Todos os provedores NudeNet falharam. Executando fallback via LLM...${userSuffix}`
+				);
+				return await this.detectNSFWWithLLM(imagesInput, context);
+			} catch (llmErr) {
+				return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
+			}
+		}
+
+		// Por causa de falsos positivos no nudenet:
+		// Stickers com olhos grandes frequentemente são detectados como seios erroneamente (FEMALE_BREAST_EXPOSED).
+		// Se for marcado como NSFW, for sticker e a classificação for FEMALE_BREAST_EXPOSED,
+		// deve ser analisado pela LLM pra ter certeza que realmente é NSFW e não apenas uma ilustração boba.
+		const isSticker = Boolean(context.isSticker || context.type === "sticker");
+		const hasFemaleBreastExposed =
+			(typeof result.reason === "string" && result.reason.includes("FEMALE_BREAST_EXPOSED")) ||
+			(Array.isArray(result.detections) &&
+				result.detections.some(
+					(d) =>
+						(d?.label === "FEMALE_BREAST_EXPOSED" || d?.class === "FEMALE_BREAST_EXPOSED") &&
+						(d.confidence === undefined || d.confidence >= this.getThreshold(context))
+				));
+
+		if (result.isNSFW && isSticker && hasFemaleBreastExposed) {
+			this.logger.info(
+				`${groupPrefix}Sticker marcado como NSFW com FEMALE_BREAST_EXPOSED no NudeNet. Analisando via LLM para descartar falso positivo (ex: olhos grandes)...${userSuffix}`
+			);
+			try {
+				const llmResult = await this.detectNSFWWithLLM(imagesInput, context);
+				if (llmResult.error || llmResult.reason === "Serviço está temporariamente indisponível") {
+					this.logger.warn(
+						`${groupPrefix}LLM indisponível para validar sticker; mantendo resultado do NudeNet.${userSuffix}`
+					);
+				} else if (!llmResult.isNSFW) {
+					this.logger.info(
+						`${groupPrefix}LLM classificou sticker como seguro (falso positivo do NudeNet descartado): ${llmResult.reason}${userSuffix}`
+					);
+					return {
+						...result,
+						isNSFW: false,
+						reason: `Falso positivo do NudeNet descartado via LLM: ${llmResult.reason || "ilustração segura"}`
+					};
+				} else {
+					this.logger.info(
+						`${groupPrefix}LLM confirmou sticker como NSFW: ${llmResult.reason}${userSuffix}`
+					);
+					return {
+						...result,
+						isNSFW: true,
+						reason: llmResult.reason || result.reason
+					};
+				}
+			} catch (llmErr) {
+				this.logger.error("Erro ao analisar sticker via LLM:", llmErr);
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -889,7 +952,15 @@ Return the result in JSON format.`;
 			}
 		}
 
-		return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
+		// Fallback para LLM se todos os provedores falharem
+		try {
+			this.logger.warn(
+				`${groupPrefix}Todos os provedores NudeNet falharam para vídeo. Executando fallback via LLM...${userSuffix}`
+			);
+			return await this.detectNSFWVideoWithLLM(videoPath, context);
+		} catch (llmErr) {
+			return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
+		}
 	}
 
 	/**

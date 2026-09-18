@@ -1533,7 +1533,7 @@ class BotAPI {
 				}
 
 				// 2. Imagens enviadas via JSON ou campos de texto (base64 ou URL)
-				const { image, images, threshold } = req.body || {};
+				const { image, images, threshold, isSticker } = req.body || {};
 				if (images) {
 					if (Array.isArray(images)) {
 						targetImages.push(...images);
@@ -1601,6 +1601,9 @@ class BotAPI {
 				const context = {};
 				if (threshold !== undefined && !isNaN(threshold)) {
 					context.threshold = parseFloat(threshold);
+				}
+				if (isSticker !== undefined) {
+					context.isSticker = isSticker === true || isSticker === "true" || isSticker === "1";
 				}
 
 				const result = await nsfwPredict.detectNSFW(targetImages, context);
