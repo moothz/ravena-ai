@@ -78,10 +78,19 @@ async function showCommandsByCategory(bot, message, args, group) {
 			// Get fixed commands
 			const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
 
-			// Filter commands by category
-			const commandsInCategory = fixedCommands.filter(
-				(cmd) => cmd.category && cmd.category.toLowerCase() === category && !cmd.hidden
-			);
+			// Filter commands by category with deduplication
+			const seenCommands = new Set();
+			const commandsInCategory = fixedCommands.filter((cmd) => {
+				if (!cmd.category || cmd.category.toLowerCase() !== category || cmd.hidden) {
+					return false;
+				}
+				const cmdKey = cmd.name?.toLowerCase();
+				if (cmdKey) {
+					if (seenCommands.has(cmdKey)) return false;
+					seenCommands.add(cmdKey);
+				}
+				return true;
+			});
 
 			// Get custom commands for this group
 			const customCommands = group
@@ -316,10 +325,18 @@ async function sendCommandList(bot, message, args, group) {
 			group && Array.isArray(group.mutedCategories) ? group.mutedCategories : [];
 		const mutedCommands = group && Array.isArray(group.mutedCommands) ? group.mutedCommands : [];
 
-		// Obtém todos os comandos fixos e filtra
+		// Obtém todos os comandos fixos e filtra com deduplicação por nome
+		const seenFixedCmds = new Set();
 		const fixedCommands = bot.eventHandler.commandHandler.fixedCommands
 			.getAllCommands()
 			.filter((cmd) => {
+				// Evita comandos duplicados com o mesmo nome
+				const cmdKey = cmd.name?.toLowerCase();
+				if (cmdKey) {
+					if (seenFixedCmds.has(cmdKey)) return false;
+					seenFixedCmds.add(cmdKey);
+				}
+
 				// Filtra por categoria
 				if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
 					return false;

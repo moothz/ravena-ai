@@ -399,21 +399,15 @@ const commands = [
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
 const helper = {
-	about: "Geração de imagens via inteligência artificial com Stable Diffusion",
+	about:
+		"Geração de imagens via inteligência artificial com Stable Diffusion (Desativado / Legado)",
 	implementation:
 		"Integra com APIs de Stable Diffusion WebUI / Automatic1111 enviando prompts e parâmetros de amostragem",
-	tags: "imagine,sd,stablediffusion,ia,imagem,arte",
-	cmds: [
-		{
-			cmd: "!imagine",
-			desc: "Gera uma imagem através de um prompt de texto",
-			usage: ["!imagine um castelo medieval no topo de uma montanha ao por do sol"],
-			category: "ia"
-		}
-	]
+	tags: "sd,stablediffusion,ia,legado",
+	cmds: []
 };
 
 module.exports = {
 	helper,
-	commands
+	commands: []
 };

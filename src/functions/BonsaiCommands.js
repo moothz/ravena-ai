@@ -268,8 +268,8 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 					width: 1024,
 					height: 1024,
 					seed: Math.floor(Math.random() * 9999999),
-					num_inference_steps: 20,
-					guidance_scale: 7.5
+					steps: 6,
+					guidance: 3.5
 				},
 				{
 					responseType: "arraybuffer",
