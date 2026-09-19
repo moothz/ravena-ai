@@ -164,6 +164,21 @@ class NSFWPredict {
 			const allPrefix = isDetectAll ? "all_" : "";
 
 			if (typeof data === "string") {
+				if (
+					(data.startsWith("/") || data.startsWith("./") || data.startsWith("../")) &&
+					fs.existsSync(data)
+				) {
+					try {
+						const fileBuffer = await fs.promises.readFile(data);
+						const fileExt = path.extname(data).replace(/^\./, "") || defaultExt;
+						ext = fileExt === "jpeg" ? "jpg" : fileExt;
+						const filename = `nsfw_${allPrefix}${prefix}_${timestamp}_${random}.${ext}`;
+						const targetPath = path.join(debugDir, filename);
+						await fs.promises.writeFile(targetPath, fileBuffer);
+						return filename;
+					} catch {}
+				}
+
 				const match = data.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
 				if (match && match[1]) {
 					ext = match[1] === "jpeg" ? "jpg" : match[1];
@@ -831,12 +846,23 @@ Return the result in JSON format.`;
 			return { isNSFW: false, reason: "Activity disabled", skipped: true };
 		}
 
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+		const shouldForceLLM = Boolean(
+			context.forceLLM || context.skipNudeNet || context.useLLM || context.provider === "llm"
+		);
+
+		if (shouldForceLLM) {
+			this.logger.info(
+				`${groupPrefix}Análise NSFW via LLM forçada por parâmetro de contexto.${userSuffix}`
+			);
+			return await this.detectNSFWWithLLM(imagesInput, context);
+		}
+
 		if (!this.isAvailable()) {
 			return { isNSFW: false, reason: "Provedores NSFW indisponíveis", skipped: true };
 		}
 
 		const availableProviders = this.getAvailableProviders();
-		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 
 		let result = null;
 
@@ -932,12 +958,23 @@ Return the result in JSON format.`;
 			return { isNSFW: false, reason: "Activity disabled", skipped: true };
 		}
 
+		const { groupPrefix, userSuffix } = this._formatLogContext(context);
+		const shouldForceLLM = Boolean(
+			context.forceLLM || context.skipNudeNet || context.useLLM || context.provider === "llm"
+		);
+
+		if (shouldForceLLM) {
+			this.logger.info(
+				`${groupPrefix}Análise NSFW de vídeo via LLM forçada por parâmetro de contexto.${userSuffix}`
+			);
+			return await this.detectNSFWVideoWithLLM(videoPath, context);
+		}
+
 		if (!this.isAvailable()) {
 			return { isNSFW: false, reason: "Provedores NSFW indisponíveis", skipped: true };
 		}
 
 		const availableProviders = this.getAvailableProviders();
-		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 
 		for (const provider of availableProviders) {
 			try {
@@ -1031,6 +1068,106 @@ Return the result in JSON format.`;
 			const author = message.author || message.authorAlt || "desconhecido";
 			const mediaType = detectionData.type || message.type || "mídia";
 			const reasonStr = `Vision AI [${mediaType}]: ${detectionData.description || "Conteúdo NSFW detectado"}`;
+
+			const debugContext = {
+				groupName,
+				groupId: chatId,
+				author,
+				authorName,
+				detectAll: isDetectAll,
+				isDetectAll,
+				group
+			};
+
+			// Se isNudenetDebug estiver ativo, salva a imagem/mídia de debug
+			if (this.isNudenetDebug(debugContext)) {
+				try {
+					let mediaData =
+						detectionData.media ||
+						detectionData.image ||
+						detectionData.buffer ||
+						detectionData.data ||
+						detectionData.base64 ||
+						null;
+
+					if (!mediaData && message) {
+						if (message.content && typeof message.content === "object" && message.content.data) {
+							mediaData = message.content.data;
+						} else if (Buffer.isBuffer(message.content)) {
+							mediaData = message.content;
+						} else if (typeof message.content === "string" && message.content.length > 100) {
+							mediaData = message.content;
+						} else if (typeof message.downloadMedia === "function") {
+							try {
+								const dl = await message.downloadMedia();
+								if (dl && dl.data) {
+									mediaData = dl.data;
+								}
+							} catch (dlErr) {
+								this.logger.debug(
+									`Erro ao baixar mídia para debug no handleExternalDetection: ${dlErr.message}`
+								);
+							}
+						} else if (message.origin && typeof message.origin.downloadMedia === "function") {
+							try {
+								const dl = await message.origin.downloadMedia();
+								if (dl && dl.data) {
+									mediaData = dl.data;
+								}
+							} catch (dlErr) {
+								this.logger.debug(
+									`Erro ao baixar origin.downloadMedia para debug no handleExternalDetection: ${dlErr.message}`
+								);
+							}
+						}
+					}
+
+					if (mediaData && typeof mediaData === "object" && mediaData.data) {
+						mediaData = mediaData.data;
+					}
+
+					let defaultExt = "jpg";
+					const mime =
+						detectionData.mimetype || message?.content?.mimetype || message?.mimetype || "";
+					if (mime.includes("webp")) defaultExt = "webp";
+					else if (mime.includes("png")) defaultExt = "png";
+					else if (mime.includes("gif")) defaultExt = "gif";
+					else if (mime.includes("mp4") || mime.includes("video")) defaultExt = "mp4";
+
+					let savedFilename = null;
+					if (
+						detectionData.videoPath &&
+						(await fs.promises
+							.stat(detectionData.videoPath)
+							.then(() => true)
+							.catch(() => false))
+					) {
+						savedFilename = await this._saveDebugVideo(detectionData.videoPath, debugContext);
+					} else if (mediaData) {
+						const prefix =
+							mediaType === "sticker"
+								? "sticker"
+								: mediaType === "video"
+									? "video"
+									: "external_img";
+						savedFilename = await this._saveDebugMedia(mediaData, prefix, defaultExt, debugContext);
+					}
+
+					await this._appendDebugLog({
+						filename: savedFilename || "sem_midia",
+						type: mediaType || "imagem",
+						group: groupName || chatId,
+						author: `${authorName}/${author}`.replace(/^\/|\/$/g, ""),
+						resultText: `NSFW (isNSFW=true) [External: ${detectionData.source || "VisionAI"}]`,
+						reason: reasonStr,
+						threshold: this.getThreshold(debugContext),
+						apiResponse: detectionData,
+						detectAll: isDetectAll
+					});
+				} catch (debugErr) {
+					this.logger.error("Erro ao salvar mídia de debug no handleExternalDetection:", debugErr);
+				}
+			}
 
 			if (isGroupFilter) {
 				this.logger.info(

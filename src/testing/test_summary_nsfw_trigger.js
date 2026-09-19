@@ -1,4 +1,6 @@
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
@@ -269,6 +271,91 @@ async function runTests() {
 		assert.strictEqual(resultVideo.deleted, true, "Vídeo deveria ser marcado como deletado");
 		assert.strictEqual(videoMsgDeleted, true, "Mensagem de vídeo deveria ter sido deletada");
 		console.log("✓ Trigger NSFW para vídeo validado com sucesso!");
+
+		// -----------------------------------------------------------------------
+		// 9. handleExternalDetection com isNudenetDebug ativo -> salva imagem de debug
+		// -----------------------------------------------------------------------
+		console.log(
+			"\n9. Testando salvamento de imagem no handleExternalDetection com isNudenetDebug=true..."
+		);
+		const originalNudenetDebug = process.env.NUDENET_DEBUG;
+		process.env.NUDENET_DEBUG = "true";
+
+		const debugDir = path.join(__dirname, "../../temp/nudenet_debug");
+		await fs.promises.mkdir(debugDir, { recursive: true });
+
+		const sampleBase64 =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const msgDebug = createMessage({
+			type: "image",
+			group: "grupo-com-filtro@g.us",
+			author: "5511999990009@s.whatsapp.net",
+			name: "UsuarioDebug",
+			content: {
+				data: sampleBase64,
+				mimetype: "image/png"
+			}
+		});
+
+		const filesBefore = new Set(await fs.promises.readdir(debugDir));
+
+		await nsfwPredict.handleExternalDetection(bot, msgDebug, {
+			isNSFW: true,
+			type: "anime",
+			description: "Arte NSFW externa",
+			source: "SummaryCommands:VisionAI:Image",
+			group: groupComFiltro,
+			media: sampleBase64
+		});
+
+		const filesAfter = await fs.promises.readdir(debugDir);
+		const newFiles = filesAfter.filter((f) => !filesBefore.has(f) && f.endsWith(".png"));
+		assert(newFiles.length >= 1, "Deveria ter salvo a imagem detectada no diretório de debug");
+
+		const logPath = path.join(debugDir, "nudenet_debug.txt");
+		if (fs.existsSync(logPath)) {
+			const logContent = await fs.promises.readFile(logPath, "utf-8");
+			assert(
+				logContent.includes("Arte NSFW externa") || logContent.includes("SummaryCommands"),
+				"Log de debug deveria conter o motivo da detecção externa"
+			);
+		}
+		console.log(
+			"✓ Imagem e log salvos com sucesso no diretório de debug quando isNudenetDebug=true!"
+		);
+
+		// -----------------------------------------------------------------------
+		// 10. handleExternalDetection com isNudenetDebug desativado -> NÃO salva imagem
+		// -----------------------------------------------------------------------
+		console.log(
+			"\n10. Testando que handleExternalDetection NÃO salva imagem com isNudenetDebug=false..."
+		);
+		process.env.NUDENET_DEBUG = "false";
+		process.env.NUDENET_DETECT_ALL = "false";
+
+		const filesBeforeDisabled = new Set(await fs.promises.readdir(debugDir));
+
+		await nsfwPredict.handleExternalDetection(bot, msgDebug, {
+			isNSFW: true,
+			type: "anime",
+			description: "Arte NSFW sem debug",
+			source: "SummaryCommands:VisionAI:Image",
+			group: groupComFiltro,
+			media: sampleBase64
+		});
+
+		const filesAfterDisabled = await fs.promises.readdir(debugDir);
+		const newFilesDisabled = filesAfterDisabled.filter(
+			(f) => !filesBeforeDisabled.has(f) && f !== "nudenet_debug.txt"
+		);
+		assert.strictEqual(
+			newFilesDisabled.length,
+			0,
+			"Nenhuma imagem de debug deve ser salva quando debug estiver desativado"
+		);
+		console.log("✓ Nenhuma imagem salva quando isNudenetDebug=false!");
+
+		process.env.NUDENET_DEBUG = originalNudenetDebug;
 
 		// Restaura stubs
 		llmService.getCompletion = originalGetCompletion;

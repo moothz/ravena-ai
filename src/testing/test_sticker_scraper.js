@@ -267,17 +267,14 @@ async function runTests() {
 	const originalCheckNSFW = StickerScraper.checkStickerNSFW;
 	const originalFetchLovecell = StickerScraper.fetchLovecellSticker;
 
-	// Simula resposta do Lovecell para o ID de teste
-	const dummyWebp = await sharp({
-		create: {
-			width: 512,
-			height: 597,
-			channels: 4,
-			background: { r: 255, g: 0, b: 0, alpha: 1 }
-		}
-	})
-		.webp()
+	// Simula resposta do Lovecell para o ID de teste (buffer válido com tamanho > 3KB)
+	const crypto = require("crypto");
+	const rawBytes = crypto.randomBytes(256 * 298 * 3);
+	const dummyWebp = await sharp(rawBytes, { raw: { width: 256, height: 298, channels: 3 } })
+		.resize(512, 597)
+		.webp({ quality: 80 })
 		.toBuffer();
+	assert(dummyWebp.length >= StickerScraper.MIN_STICKER_BYTES, "dummyWebp deve ter tamanho >= 3KB");
 
 	StickerScraper.fetchLovecellSticker = async (id) => {
 		if (id === nsfwTestId) {
@@ -512,6 +509,139 @@ async function runTests() {
 	StickerScraper.stopScraperTimer();
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
 	console.log("✓ Controle do timer (start/stop/status) validado com sucesso");
+
+	// 17. Teste do filtro de tamanho mínimo (< 3KB considerado inválido)
+	console.log("\n17. Testando filtro de tamanho mínimo (< 3KB considerado inválido)...");
+	const tinyWebp = await sharp({
+		create: {
+			width: 64,
+			height: 64,
+			channels: 4,
+			background: { r: 255, g: 255, b: 255, alpha: 1 }
+		}
+	})
+		.webp()
+		.toBuffer();
+	assert(
+		tinyWebp.length < StickerScraper.MIN_STICKER_BYTES,
+		`tinyWebp (${tinyWebp.length} bytes) deve ser menor que 3KB (${StickerScraper.MIN_STICKER_BYTES} bytes)`
+	);
+
+	// A) saveStickerToCache deve recusar salvar buffers menores que 3KB
+	const tinyId = 999997;
+	const tinySaveResult = await StickerScraper.saveStickerToCache(tinyId, tinyWebp);
+	assert.strictEqual(
+		tinySaveResult,
+		null,
+		"saveStickerToCache deve retornar null para buffer < 3KB"
+	);
+
+	// B) getStickerFromCache deve remover arquivo existente no disco com < 3KB e retornar null
+	const tinyFilePath = StickerScraper.getStickerFilePath(tinyId);
+	await fs.writeFile(tinyFilePath, tinyWebp);
+	assert(
+		await fs
+			.stat(tinyFilePath)
+			.then(() => true)
+			.catch(() => false),
+		"Arquivo temporário deve ter sido escrito"
+	);
+
+	const cachedResult = StickerScraper.getStickerFromCache(tinyId);
+	assert.strictEqual(
+		cachedResult,
+		null,
+		"getStickerFromCache deve retornar null para arquivo < 3KB"
+	);
+	const tinyFileStillExists = await fs
+		.stat(tinyFilePath)
+		.then(() => true)
+		.catch(() => false);
+	assert.strictEqual(
+		tinyFileStillExists,
+		false,
+		"getStickerFromCache deve ter excluído o arquivo < 3KB do disco"
+	);
+
+	// C) getRandomCachedStickers deve ignorar arquivos < 3KB
+	await fs.writeFile(tinyFilePath, tinyWebp);
+	const randomCached = await StickerScraper.getRandomCachedStickers(10);
+	const foundTinyInRandom = randomCached.some((item) => item.id === tinyId);
+	assert.strictEqual(
+		foundTinyInRandom,
+		false,
+		"getRandomCachedStickers não deve incluir figurinhas < 3KB"
+	);
+	try {
+		await fs.unlink(tinyFilePath);
+	} catch {}
+
+	// D) Comando com ID cujo Lovecell retorne < 3KB deve informar como inválida
+	bot.resetCapture();
+	clearCooldowns();
+	StickerScraper.fetchLovecellSticker = async () => ({
+		found: false,
+		invalid: true,
+		tooSmall: true
+	});
+	const msgTiny = createMessage({
+		content: `!figa ${tinyId}`,
+		group: "group_test_17@g.us",
+		author: "user_test_17@s.whatsapp.net",
+		authorName: "Testador 17"
+	});
+	await cmdHandler.processCommand(bot, msgTiny, "figa", [String(tinyId)], {
+		id: "group_test_17@g.us",
+		name: "Grupo Teste 17"
+	});
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert(
+		bot.capturedMessages[0].content.includes("inválida") ||
+			bot.capturedMessages[0].content.includes("não foi encontrada"),
+		"Deve avisar que a figurinha < 3KB é inválida ou não encontrada"
+	);
+	console.log("✓ Filtro de figurinhas < 3KB validado com sucesso em todas as etapas");
+
+	// 18. Teste de extractFramesForAnalysis (suporte a WebP estático e animado)
+	console.log("\n18. Testando extractFramesForAnalysis (multi-frames para análise temporal)...");
+	// Estático: deve retornar exatamente 1 frame
+	const staticFrames = await StickerScraper.extractFramesForAnalysis(staticTallBuf, 6);
+	assert.strictEqual(staticFrames.length, 1, "WebP estático deve gerar 1 frame");
+	assert(typeof staticFrames[0] === "string", "Frame deve ser string base64");
+
+	// Animado: utiliza WebP animado com múltiplas páginas (do cache ou gerado com ffmpeg)
+	let multiPageAnim = null;
+	const existingAnimFile = path.join(StickerScraper.LOVECELL_DIR, "figs_lovecell_109166.webp");
+	try {
+		const buf = await fs.readFile(existingAnimFile);
+		const m = await sharp(buf, { animated: true }).metadata();
+		if (m.pages && m.pages > 1) {
+			multiPageAnim = buf;
+		}
+	} catch {}
+
+	if (!multiPageAnim) {
+		const { execSync } = require("child_process");
+		const tmpAnim = path.join("/tmp", "test_anim_frames.webp");
+		execSync(
+			`ffmpeg -y -f lavfi -i testsrc=duration=1:size=64x64:rate=5 -vcodec libwebp -loop 0 "${tmpAnim}" -loglevel error`
+		);
+		multiPageAnim = await fs.readFile(tmpAnim);
+		try {
+			await fs.unlink(tmpAnim);
+		} catch {}
+	}
+
+	const animFrames = await StickerScraper.extractFramesForAnalysis(multiPageAnim, 6);
+	assert(animFrames.length > 1, "WebP animado deve gerar múltiplos frames para inspeção temporal");
+	assert(animFrames.length <= 6, "Não deve exceder maxFrames (6)");
+	assert(
+		animFrames.every((f) => typeof f === "string" && f.length > 0),
+		"Todos os frames devem ser base64 válidos"
+	);
+	console.log(
+		`✓ extractFramesForAnalysis gerou ${animFrames.length} frames distribuídos para análise temporal via LLM`
+	);
 
 	// Restaura stubs
 	StickerScraper.fetchLovecellSticker = originalFetch;

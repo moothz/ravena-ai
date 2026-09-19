@@ -166,7 +166,9 @@ async function analyzeVideo(message, bot = null) {
 						isNSFW: true,
 						type: parsed.type,
 						description: parsed.description,
-						source: "SummaryCommands:VisionAI:Video"
+						source: "SummaryCommands:VisionAI:Video",
+						media: media?.data || (frames.length > 0 ? frames[0] : null),
+						mimetype: "video/mp4"
 					})
 					.catch((triggerErr) =>
 						logger.error("Erro no trigger NSFW de vídeo do SummaryCommands:", triggerErr)
@@ -746,7 +748,9 @@ async function storeMessage(message, chatId, bot) {
 										isNSFW: true,
 										type: parsed.type,
 										description: parsed.description,
-										source: "SummaryCommands:VisionAI:Image"
+										source: "SummaryCommands:VisionAI:Image",
+										media: imageData,
+										mimetype: message.content?.mimetype || "image/jpeg"
 									})
 									.catch((triggerErr) =>
 										logger.error("Erro no trigger NSFW de imagem do SummaryCommands:", triggerErr)

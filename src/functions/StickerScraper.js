@@ -34,6 +34,7 @@ const MAX_QUANTITY = 4;
 const BANNER_HEIGHT = 85;
 const TARGET_SIZE = 512;
 const MAX_STICKER_BYTES = 490 * 1024; // Limite de segurança (< 500 KB) do WhatsApp
+const MIN_STICKER_BYTES = 3 * 1024; // Tamanho mínimo de 3 KB para considerar o sticker válido
 
 // Limites de download automático: mínimo 1 sticker/min (60s), máximo 15 stickers/min (4s)
 const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 4 * 1000; // Máx 15 stickers/min
@@ -163,7 +164,20 @@ function loadDownloadedIdsSync() {
 						logger.info(`Arquivo #${id} removido do cache por estar na blacklist.`);
 					} catch {}
 				} else {
-					downloadedIds.add(id);
+					const filePath = path.join(LOVECELL_DIR, file);
+					try {
+						const stat = fs.statSync(filePath);
+						if (stat.size < MIN_STICKER_BYTES) {
+							fs.unlinkSync(filePath);
+							logger.info(
+								`Arquivo #${id} removido do cache por ter tamanho inferior a 3KB (${stat.size} bytes).`
+							);
+						} else {
+							downloadedIds.add(id);
+						}
+					} catch {
+						downloadedIds.add(id);
+					}
 				}
 			}
 		}
@@ -274,7 +288,7 @@ async function cropLovecellBanner(webpBuffer) {
 }
 
 /**
- * Retorna o caminho do arquivo em cache se já existir e não estiver na blacklist
+ * Retorna o caminho do arquivo em cache se já existir, tiver tamanho válido e não estiver na blacklist
  * @param {number|string} stickerId
  * @returns {string|null}
  */
@@ -284,14 +298,31 @@ function getStickerFromCache(stickerId) {
 		return null;
 	}
 	const filePath = getStickerFilePath(stickerId);
-	if (fs.existsSync(filePath)) {
-		return filePath;
+	try {
+		if (fs.existsSync(filePath)) {
+			const stat = fs.statSync(filePath);
+			if (stat.size < MIN_STICKER_BYTES) {
+				logger.warn(
+					`Figurinha #${id} no cache tem tamanho inferior a 3KB (${stat.size} bytes). Removendo do cache.`
+				);
+				try {
+					fs.unlinkSync(filePath);
+				} catch {}
+				if (!isNaN(id)) {
+					downloadedIds.delete(id);
+				}
+				return null;
+			}
+			return filePath;
+		}
+	} catch {
+		return null;
 	}
 	return null;
 }
 
 /**
- * Salva a figurinha já recortada em disco
+ * Salva a figurinha já recortada em disco caso seja válida (>= 3KB e não blacklisted)
  * @param {number|string} stickerId
  * @param {Buffer} buffer
  * @returns {Promise<string|null>}
@@ -300,6 +331,13 @@ async function saveStickerToCache(stickerId, buffer) {
 	const id = parseInt(stickerId, 10);
 	if (!isNaN(id) && module.exports.isBlacklisted(id)) {
 		logger.warn(`Tentativa de salvar figurinha #${id} que está na blacklist abortada.`);
+		return null;
+	}
+
+	if (!buffer || buffer.length < MIN_STICKER_BYTES) {
+		logger.warn(
+			`Tentativa de salvar figurinha #${stickerId} inválida com tamanho inferior a 3KB (${buffer?.length || 0} bytes) abortada.`
+		);
 		return null;
 	}
 
@@ -318,7 +356,7 @@ async function saveStickerToCache(stickerId, buffer) {
 }
 
 /**
- * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted)
+ * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted e < 3KB)
  * @param {number} count - Quantidade desejada
  * @param {Set<number|string>} excludeIds - IDs a excluir
  * @returns {Promise<Array<{ id: number|string, buffer: Buffer }>>}
@@ -329,20 +367,32 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 		const files = await fs.promises.readdir(LOVECELL_DIR);
 		const stickerFiles = files.filter((f) => f.startsWith("figs_lovecell_") && f.endsWith(".webp"));
 
-		let available = stickerFiles.filter((f) => {
+		const filterValidFile = (f, checkExclude = true) => {
 			const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
 			if (!match) return false;
 			const id = parseInt(match[1], 10);
-			return !excludeIds.has(id) && !module.exports.isBlacklisted(id);
-		});
+			if (checkExclude && excludeIds.has(id)) return false;
+			if (module.exports.isBlacklisted(id)) return false;
+			try {
+				const fullPath = path.join(LOVECELL_DIR, f);
+				const stat = fs.statSync(fullPath);
+				if (stat.size < MIN_STICKER_BYTES) {
+					try {
+						fs.unlinkSync(fullPath);
+					} catch {}
+					downloadedIds.delete(id);
+					return false;
+				}
+				return true;
+			} catch {
+				return false;
+			}
+		};
+
+		let available = stickerFiles.filter((f) => filterValidFile(f, true));
 
 		if (available.length === 0 && stickerFiles.length > 0) {
-			available = stickerFiles.filter((f) => {
-				const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
-				if (!match) return false;
-				const id = parseInt(match[1], 10);
-				return !module.exports.isBlacklisted(id);
-			});
+			available = stickerFiles.filter((f) => filterValidFile(f, false));
 		}
 
 		if (available.length === 0) return [];
@@ -360,7 +410,9 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 			const id = match ? parseInt(match[1], 10) : filename;
 			const fullPath = path.join(LOVECELL_DIR, filename);
 			const buffer = await fs.promises.readFile(fullPath);
-			results.push({ id, buffer });
+			if (buffer.length >= MIN_STICKER_BYTES) {
+				results.push({ id, buffer });
+			}
 		}
 		return results;
 	} catch (err) {
@@ -423,9 +475,21 @@ async function fetchLovecellSticker(stickerId) {
 			validateStatus: (status) => status === 200
 		});
 
+		const buffer = Buffer.from(imgResponse.data);
+		if (buffer.length < MIN_STICKER_BYTES) {
+			logger.warn(
+				`Figurinha #${stickerId} obtida com tamanho inferior a 3KB (${buffer.length} bytes). Considerando inválida.`
+			);
+			return {
+				found: false,
+				invalid: true,
+				tooSmall: true
+			};
+		}
+
 		return {
 			found: true,
-			buffer: Buffer.from(imgResponse.data),
+			buffer,
 			title,
 			imageUrl
 		};
@@ -439,18 +503,71 @@ async function fetchLovecellSticker(stickerId) {
 }
 
 /**
- * Avalia se o buffer de uma figurinha contém conteúdo adulto/NSFW via NSFWPredict
+ * Extrai frames de um WebP animado para análise temporal completa pela LLM.
+ * Se o WebP for estático, retorna apenas o frame único em base64.
+ * @param {Buffer} buffer - Buffer WebP
+ * @param {number} maxFrames - Quantidade máxima de frames a extrair (padrão: 6)
+ * @returns {Promise<string[]>} - Array de strings base64 dos frames
+ */
+async function extractFramesForAnalysis(buffer, maxFrames = 6) {
+	try {
+		const meta = await sharp(buffer, { animated: true }).metadata();
+		const totalPages = meta.pages || 1;
+
+		if (totalPages <= 1) {
+			return [buffer.toString("base64")];
+		}
+
+		// Distribui a extração de forma uniforme pela duração da animação
+		const step = Math.max(1, Math.floor(totalPages / maxFrames));
+		const indices = [];
+		for (let i = 0; i < totalPages; i += step) {
+			indices.push(i);
+			if (indices.length >= maxFrames) break;
+		}
+
+		// Garante que o último frame esteja incluído na amostragem se houver espaço
+		if (!indices.includes(totalPages - 1) && indices.length < maxFrames) {
+			indices.push(totalPages - 1);
+		}
+
+		const framesBase64 = await Promise.all(
+			indices.map(async (pageIdx) => {
+				const frameBuf = await sharp(buffer, { page: pageIdx }).jpeg({ quality: 80 }).toBuffer();
+				return frameBuf.toString("base64");
+			})
+		);
+
+		logger.debug(
+			`Extraídos ${framesBase64.length} frames de WebP animado (${totalPages} páginas) para análise NSFW.`
+		);
+		return framesBase64;
+	} catch (error) {
+		logger.warn(
+			`Falha ao extrair múltiplos frames do WebP (${error.message}); analisando frame padrão.`
+		);
+		return [buffer.toString("base64")];
+	}
+}
+
+/**
+ * Avalia se o buffer de uma figurinha contém conteúdo adulto/NSFW via NSFWPredict.
+ * Para figurinhas animadas, extrai múltiplos frames ao longo da animação para garantir
+ * que cenas NSFW no meio/fim do sticker sejam detectadas pela LLM.
+ *
  * @param {Buffer} buffer - Buffer WebP da figurinha
  * @param {number|string} stickerId - ID para logging e rastreamento
  * @returns {Promise<boolean>} - true se for NSFW, false se seguro
  */
 async function checkStickerNSFW(buffer, stickerId) {
 	try {
-		const base64 = buffer.toString("base64");
-		const result = await nsfwPredict.detectNSFW(base64, {
+		const frames = await module.exports.extractFramesForAnalysis(buffer, 6);
+		const result = await nsfwPredict.detectNSFW(frames, {
 			isSticker: true,
 			type: "sticker",
-			stickerId
+			stickerId,
+			forceLLM: true,
+			skipNudeNet: true
 		});
 
 		if (result?.isNSFW) {
@@ -591,14 +708,23 @@ async function stickerScraperCommand(bot, message, args, group) {
 				});
 			}
 
-			if (!result.found || !result.buffer) {
+			if (!result.found || !result.buffer || result.buffer.length < MIN_STICKER_BYTES) {
 				return new ReturnMessage({
 					chatId,
-					content: `Figurinha #${specificId} não foi encontrada no Lovecell.`
+					content: `Figurinha #${specificId} não foi encontrada ou é inválida no Lovecell.`
 				});
 			}
 
 			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
+			if (croppedBuffer.length < MIN_STICKER_BYTES) {
+				logger.warn(
+					`Figurinha #${specificId} ficou com tamanho inferior a 3KB (${croppedBuffer.length} bytes) após corte do banner. Descartando.`
+				);
+				return new ReturnMessage({
+					chatId,
+					content: `Figurinha #${specificId} é inválida.`
+				});
+			}
 
 			// Verificação NSFW para ID específico
 			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, specificId);
@@ -643,16 +769,18 @@ async function stickerScraperCommand(bot, message, args, group) {
 			if (cachedPath) {
 				logger.info(`Tentativa ${attempt}: figurinha #${randomId} encontrada no cache local!`);
 				const fileBuf = await fs.promises.readFile(cachedPath);
-				returnMessages.push(
-					buildStickerReturnMessage(
-						chatId,
-						fileBuf,
-						randomId,
-						`Lovecell #${randomId}`,
-						bot,
-						message
-					)
-				);
+				if (fileBuf.length >= MIN_STICKER_BYTES) {
+					returnMessages.push(
+						buildStickerReturnMessage(
+							chatId,
+							fileBuf,
+							randomId,
+							`Lovecell #${randomId}`,
+							bot,
+							message
+						)
+					);
+				}
 				continue;
 			}
 
@@ -662,9 +790,15 @@ async function stickerScraperCommand(bot, message, args, group) {
 				break;
 			}
 
-			if (result.found && result.buffer) {
+			if (result.found && result.buffer && result.buffer.length >= MIN_STICKER_BYTES) {
 				logger.info(`Tentativa ${attempt}: figurinha #${randomId} obtida com sucesso do Lovecell!`);
 				const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
+				if (croppedBuffer.length < MIN_STICKER_BYTES) {
+					logger.warn(
+						`Tentativa ${attempt}: figurinha #${randomId} ficou com tamanho inferior a 3KB (${croppedBuffer.length} bytes) após corte do banner. Pulando...`
+					);
+					continue;
+				}
 
 				// Verificação NSFW: se for positivo, adiciona à blacklist, descarta e tenta a próxima
 				const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId);
@@ -772,15 +906,21 @@ async function runBackgroundScraperTick() {
 				return;
 			}
 
-			if (!result.found || !result.buffer) {
+			if (!result.found || !result.buffer || result.buffer.length < MIN_STICKER_BYTES) {
 				logger.debug(
-					`Background scraper: figurinha #${candidateId} não encontrada (${attempt}/${maxAttemptsPerTick}).`
+					`Background scraper: figurinha #${candidateId} não encontrada ou inválida (< 3KB) (${attempt}/${maxAttemptsPerTick}).`
 				);
 				continue;
 			}
 
 			// Recorta o banner promocional inferior (85px)
 			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
+			if (croppedBuffer.length < MIN_STICKER_BYTES) {
+				logger.debug(
+					`Background scraper: figurinha #${candidateId} inválida (< 3KB após recorte) (${attempt}/${maxAttemptsPerTick}).`
+				);
+				continue;
+			}
 
 			// Filtro NSFW
 			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, candidateId);
@@ -950,10 +1090,12 @@ module.exports = {
 	loadDownloadedIdsSync,
 	isDownloaded,
 	getRandomUndownloadedId,
+	extractFramesForAnalysis,
 	checkStickerNSFW,
 	runBackgroundScraperTick,
 	startScraperTimer,
 	stopScraperTimer,
 	isScraperTimerRunning,
-	getRandomInterval
+	getRandomInterval,
+	MIN_STICKER_BYTES
 };

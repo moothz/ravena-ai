@@ -240,6 +240,85 @@ async function runTests() {
 		);
 	}
 
+	// 6. Testa forceLLM / skipNudeNet em detectNSFW para imagem
+	console.log("\n6. Testando parâmetro forceLLM / skipNudeNet em detectNSFW (imagem)...");
+	{
+		let nudenetCalled = false;
+		let llmCalled = false;
+
+		const originalExecute = nsfwPredict._executeNudeNetWithRetry;
+		const originalLLM = nsfwPredict.detectNSFWWithLLM;
+
+		nsfwPredict._executeNudeNetWithRetry = async () => {
+			nudenetCalled = true;
+			return { isNSFW: false };
+		};
+		nsfwPredict.detectNSFWWithLLM = async () => {
+			llmCalled = true;
+			return { isNSFW: true, reason: "NSFW detectado via LLM forçado" };
+		};
+
+		const result = await nsfwPredict.detectNSFW("dummy_base64", {
+			forceLLM: true,
+			skipNudeNet: true
+		});
+
+		assert.strictEqual(
+			nudenetCalled,
+			false,
+			"NudeNet NÃO deve ser chamado quando forceLLM está ativo"
+		);
+		assert.strictEqual(
+			llmCalled,
+			true,
+			"LLM DEVE ser chamado diretamente quando forceLLM está ativo"
+		);
+		assert.strictEqual(result.isNSFW, true, "Resultado retornado deve vir da análise do LLM");
+
+		nsfwPredict._executeNudeNetWithRetry = originalExecute;
+		nsfwPredict.detectNSFWWithLLM = originalLLM;
+		console.log("✓ forceLLM em detectNSFW pulou NudeNet e executou LLM diretamente com sucesso!");
+	}
+
+	// 7. Testa forceLLM / skipNudeNet em detectNSFWVideo para vídeo
+	console.log("\n7. Testando parâmetro forceLLM / skipNudeNet em detectNSFWVideo (vídeo)...");
+	{
+		let nudenetVideoCalled = false;
+		let llmVideoCalled = false;
+
+		const originalExecute = nsfwPredict._executeNudeNetWithRetry;
+		const originalLLMVideo = nsfwPredict.detectNSFWVideoWithLLM;
+
+		nsfwPredict._executeNudeNetWithRetry = async () => {
+			nudenetVideoCalled = true;
+			return { isNSFW: false };
+		};
+		nsfwPredict.detectNSFWVideoWithLLM = async () => {
+			llmVideoCalled = true;
+			return { isNSFW: true, reason: "NSFW detectado em vídeo via LLM forçado" };
+		};
+
+		const result = await nsfwPredict.detectNSFWVideo("/tmp/dummy_video.mp4", {
+			forceLLM: true
+		});
+
+		assert.strictEqual(
+			nudenetVideoCalled,
+			false,
+			"NudeNet NÃO deve ser chamado quando forceLLM está ativo em vídeo"
+		);
+		assert.strictEqual(
+			llmVideoCalled,
+			true,
+			"LLM de vídeo DEVE ser chamado diretamente quando forceLLM está ativo"
+		);
+		assert.strictEqual(result.isNSFW, true, "Resultado do vídeo deve vir da análise do LLM");
+
+		nsfwPredict._executeNudeNetWithRetry = originalExecute;
+		nsfwPredict.detectNSFWVideoWithLLM = originalLLMVideo;
+		console.log("✓ forceLLM em detectNSFWVideo pulou NudeNet e executou LLM de vídeo com sucesso!");
+	}
+
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 	process.exit(0);
 }
