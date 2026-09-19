@@ -14,6 +14,16 @@ const logger = new Logger("sticker-scraper");
 const database = Database.getInstance();
 const nsfwPredict = NSFWPredict.getInstance();
 
+// Inicializa banco de dados SQLite para o Lovecell
+database.getSQLiteDb(
+	"lovecell",
+	`CREATE TABLE IF NOT EXISTS lovecell_blacklist (
+		id INTEGER PRIMARY KEY,
+		reason TEXT,
+		created_at TEXT
+	);`
+);
+
 // Diretório para armazenar as figurinhas do Lovecell em cache (não indexado pelo git)
 const LOVECELL_DIR = path.join(database.databasePath, "media", "lovecell");
 const BLACKLIST_FILE = path.join(LOVECELL_DIR, "blacklist.json");
@@ -53,43 +63,56 @@ let isTimerRunning = false;
 let isScrapingInProgress = false;
 
 /**
- * Carrega a blacklist persistente de figurinhas NSFW do disco (JSON)
+ * Carrega a blacklist persistente de figurinhas NSFW do SQLite
  */
 function loadBlacklistSync() {
 	blacklistedIds.clear();
 	try {
+		// Migração legada: se ainda existir blacklist.json residual, importa para SQLite e apaga
 		if (fs.existsSync(BLACKLIST_FILE)) {
-			const content = fs.readFileSync(BLACKLIST_FILE, "utf-8");
-			const data = JSON.parse(content);
-			if (Array.isArray(data)) {
-				for (const id of data) {
-					const num = parseInt(id, 10);
-					if (!isNaN(num)) blacklistedIds.add(num);
+			try {
+				const content = fs.readFileSync(BLACKLIST_FILE, "utf-8");
+				const data = JSON.parse(content);
+				if (Array.isArray(data)) {
+					for (const id of data) {
+						const num = parseInt(id, 10);
+						if (!isNaN(num)) {
+							database.mappers.run(
+								"lovecell",
+								"INSERT OR IGNORE INTO lovecell_blacklist (id, reason, created_at) VALUES (?, ?, ?)",
+								[num, "Importado de blacklist.json", new Date().toISOString()]
+							);
+						}
+					}
 				}
-			} else if (typeof data === "object" && data !== null) {
-				for (const key of Object.keys(data)) {
-					const num = parseInt(key, 10);
-					if (!isNaN(num)) blacklistedIds.add(num);
-				}
+				fs.unlinkSync(BLACKLIST_FILE);
+				logger.info(
+					"Blacklist legada (blacklist.json) migrada para o SQLite e removida com sucesso."
+				);
+			} catch (mErr) {
+				logger.warn(`Erro na migração de blacklist.json: ${mErr.message}`);
 			}
-			logger.info(`Blacklist do Lovecell carregada com ${blacklistedIds.size} figurinha(s).`);
 		}
+
+		const rows = database.mappers.all("lovecell", "SELECT id FROM lovecell_blacklist");
+		if (Array.isArray(rows)) {
+			for (const row of rows) {
+				blacklistedIds.add(row.id);
+			}
+		}
+		logger.info(
+			`Blacklist do Lovecell carregada com ${blacklistedIds.size} figurinha(s) do SQLite.`
+		);
 	} catch (error) {
-		logger.error(`Erro ao carregar blacklist do Lovecell: ${error.message}`);
+		logger.error(`Erro ao carregar blacklist do Lovecell do SQLite: ${error.message}`);
 	}
 }
 
 /**
- * Salva a blacklist persistente de figurinhas no disco
+ * Salva a blacklist persistente de figurinhas no SQLite (mantido para compatibilidade)
  */
 async function saveBlacklist() {
-	try {
-		const list = Array.from(blacklistedIds).sort((a, b) => a - b);
-		await fs.promises.writeFile(BLACKLIST_FILE, JSON.stringify(list, null, 2), "utf-8");
-		logger.debug(`Blacklist do Lovecell salva com ${list.length} itens.`);
-	} catch (error) {
-		logger.error(`Erro ao salvar blacklist do Lovecell: ${error.message}`);
-	}
+	// A persistência é atômica via SQLite (lovecell_blacklist) em addToBlacklist()
 }
 
 /**
@@ -112,10 +135,11 @@ function isBlacklisted(stickerId) {
 }
 
 /**
- * Adiciona um ID à blacklist NSFW, remove do cache local caso já exista e persiste no JSON
+ * Adiciona um ID à blacklist NSFW, remove do cache local caso já exista e persiste no SQLite
  * @param {number|string} stickerId
+ * @param {string} [reason="NSFW detectado"]
  */
-async function addToBlacklist(stickerId) {
+async function addToBlacklist(stickerId, reason = "NSFW detectado") {
 	const id = parseInt(stickerId, 10);
 	if (isNaN(id)) return;
 
@@ -128,8 +152,18 @@ async function addToBlacklist(stickerId) {
 	downloadedIds.delete(id);
 
 	if (changed) {
-		await saveBlacklist();
-		logger.warn(`Figurinha #${id} adicionada à blacklist NSFW do Lovecell.`);
+		try {
+			database.mappers.run(
+				"lovecell",
+				"INSERT OR REPLACE INTO lovecell_blacklist (id, reason, created_at) VALUES (?, ?, ?)",
+				[id, reason, new Date().toISOString()]
+			);
+			logger.warn(`Figurinha #${id} adicionada à blacklist NSFW do Lovecell.`);
+		} catch (dbErr) {
+			logger.error(
+				`Erro ao persistir figurinha #${id} no SQLite lovecell_blacklist: ${dbErr.message}`
+			);
+		}
 	}
 
 	// Se o arquivo existir no cache, apaga do disco imediatamente
