@@ -38,6 +38,34 @@ const statAsync = promisify(fs.stat);
 const renameAsync = promisify(fs.rename);
 const convertAsync = promisify(imagemagick.convert);
 
+/**
+ * Verifica se um erro indica que o bot não participa do grupo ou o grupo não existe
+ * @param {any} err
+ * @returns {boolean}
+ */
+function isNotInGroupError(err) {
+	if (!err) return false;
+	if (err.notInGroup) return true;
+	const errorDetails = [
+		err.message,
+		err.data?.error,
+		err.response?.data?.error,
+		err.response?.data?.message,
+		typeof err === "string" ? err : null
+	]
+		.filter((s) => typeof s === "string")
+		.join(" ")
+		.toLowerCase();
+
+	return (
+		errorDetails.includes("not participating") ||
+		errorDetails.includes("not_participating") ||
+		errorDetails.includes("no longer a participant") ||
+		errorDetails.includes("not in group") ||
+		errorDetails.includes("that group does not exist")
+	);
+}
+
 class WhatsAppBotGo {
 	constructor(options) {
 		this.id = options.id;
@@ -1271,6 +1299,25 @@ class WhatsAppBotGo {
 				await sleep(message.delay);
 			}
 
+			// Se for mensagem para grupo e o bot não participa dele, pula imediatamente
+			if (
+				message.chatId &&
+				message.chatId.includes("@g.us") &&
+				!this.isParticipating(message.chatId)
+			) {
+				this.logger.warn(
+					`[${this.id}] Ignorando envio de ReturnMessage para ${message.chatId}: bot não participa deste grupo.`
+				);
+				results.push({
+					error: new Error(`Bot ${this.id} não participa do grupo ${message.chatId}`),
+					notInGroup: true,
+					skipped: true,
+					messageContent: message.content,
+					getInfo: () => ({ delivery: [], played: [], read: [] })
+				});
+				continue;
+			}
+
 			const contentToSend = message.content;
 			const options = { ...(message.options ?? {}) }; // Clone options
 
@@ -1314,12 +1361,21 @@ class WhatsAppBotGo {
 					}
 				}
 			} catch (sendError) {
+				const isNotInGroup = sendError?.notInGroup || isNotInGroupError(sendError);
+				if (isNotInGroup && message.chatId && message.chatId.includes("@g.us")) {
+					this.logger.warn(
+						`[${this.id}] Detectado que o bot não participa do grupo ${message.chatId} ao enviar ReturnMessages. Marcando como fora do grupo.`
+					);
+					await this.markNotInGroup(message.chatId);
+				}
+
 				this.logger.error(
 					`[${this.id}] Falha enviando ReturnMessages pra ${message.chatId}:`,
 					sendError
 				);
 				results.push({
 					error: sendError,
+					notInGroup: isNotInGroup,
 					messageContent: message.content,
 					getInfo: () =>
 						// Usado no StreamSystem pra saber se foi enviada
@@ -2337,6 +2393,17 @@ class WhatsAppBotGo {
 	async sendMessage(chatId, content, options = {}) {
 		try {
 			if (!this.isConnected) throw new Error("Not connected");
+
+			if (chatId && chatId.includes("@g.us") && !this.isParticipating(chatId)) {
+				this.logger.warn(
+					`[${this.id}] Ignorando sendMessage para ${chatId}: bot não participa deste grupo.`
+				);
+				const err = new Error(`Bot ${this.id} não participa do grupo ${chatId}`);
+				err.notInGroup = true;
+				err.status = 403;
+				throw err;
+			}
+
 			let isGroup = false;
 
 			const payload = {
@@ -2536,6 +2603,14 @@ class WhatsAppBotGo {
 				}
 			};
 		} catch (error) {
+			if (chatId && chatId.includes("@g.us") && isNotInGroupError(error)) {
+				this.logger.warn(
+					`[${this.id}] Falha enviando mensagem para ${chatId}: bot não participa do grupo. Marcando como fora do grupo.`
+				);
+				await this.markNotInGroup(chatId);
+				error.notInGroup = true;
+			}
+
 			this.logger.error(`[${this.id}] Error sending message:`, error);
 			throw error;
 		}
@@ -2712,7 +2787,7 @@ class WhatsAppBotGo {
 	async getChatDetails(chatId) {
 		if (!chatId) return null;
 
-		if (this.skipGroupInfo && this.skipGroupInfo.includes(chatId)) {
+		if (chatId.includes("@g.us") && !this.isParticipating(chatId)) {
 			this.logger.info(
 				`[getChatDetails] Skipping fetch for ${chatId} as it is in skipGroupInfo list.`
 			);
@@ -2721,6 +2796,7 @@ class WhatsAppBotGo {
 				name: chatId,
 				isGroup: true,
 				notInGroup: true,
+				isParticipating: false,
 				participants: []
 			};
 		}
@@ -2751,6 +2827,7 @@ class WhatsAppBotGo {
 						isAnnounce: groupInfo.IsAnnounce,
 						linkedParentJid: groupInfo.LinkedParentJID,
 						notInGroup: false,
+						isParticipating: true,
 						groupMetadata: { desc: groupInfo.Topic },
 						participants: groupInfo.Participants.map((p) => ({
 							id: { _serialized: p.JID },
@@ -2817,37 +2894,25 @@ class WhatsAppBotGo {
 				this.logger.warn(
 					`[getChatDetails] Group ${chatId} does not exist (status 500). Adding to skip list.`
 				);
-				await this.addSkipGroup(chatId);
+				await this.markNotInGroup(chatId);
 				return {
 					id: { _serialized: chatId },
 					name: chatId,
 					isGroup: true,
 					notInGroup: true,
+					isParticipating: false,
 					participants: []
 				};
 			} else {
-				const errorDetails = [
-					e.message,
-					e.data?.error,
-					e.response?.data?.error,
-					typeof e === "string" ? e : null
-				]
-					.filter((s) => typeof s === "string")
-					.join(" ")
-					.toLowerCase();
-
-				if (
-					errorDetails.includes("not participating") ||
-					errorDetails.includes("not_participating") ||
-					errorDetails.includes("no longer a participant") ||
-					errorDetails.includes("not in group")
-				) {
+				if (isNotInGroupError(e)) {
 					this.logger.info(`[getChatDetails] Error fetching ${chatId}, bot não está no grupo`);
+					await this.markNotInGroup(chatId);
 					return {
 						id: { _serialized: chatId },
 						name: chatId,
 						isGroup: true,
 						notInGroup: true,
+						isParticipating: false,
 						participants: []
 					};
 				}
@@ -2888,12 +2953,114 @@ class WhatsAppBotGo {
 			this.logger.info(`[SkipGroups] Removed ${groupId} from skip list.`);
 		}
 	}
+
+	/**
+	 * Verifica se o bot participa do grupo (não está na lista de skip).
+	 * @param {string} groupId
+	 * @returns {boolean}
+	 */
+	isParticipating(groupId) {
+		if (!groupId) return false;
+		if (this.skipGroupInfo && this.skipGroupInfo.includes(groupId)) {
+			return false;
+		}
+		return true;
+	}
+
+	isInGroup(groupId) {
+		return this.isParticipating(groupId);
+	}
+
+	/**
+	 * Marca que este bot não participa do grupo.
+	 * Adiciona à skip list persistente e atualiza group.botNotInGroup no banco.
+	 * @param {string} groupId
+	 */
+	async markNotInGroup(groupId) {
+		if (!groupId) return;
+		await this.addSkipGroup(groupId);
+
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (!grp.botNotInGroup) grp.botNotInGroup = [];
+				if (!grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup.push(this.id);
+				}
+			}
+
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group) {
+					if (!group.botNotInGroup) group.botNotInGroup = [];
+					if (!group.botNotInGroup.includes(this.id)) {
+						group.botNotInGroup.push(this.id);
+						await this.database.saveGroup(group);
+						this.logger.info(`[${this.id}] Marcado botNotInGroup no banco para o grupo ${groupId}`);
+					}
+				}
+			}
+		} catch (error) {
+			this.logger.error(
+				`[${this.id}] Erro ao persistir markNotInGroup no banco para ${groupId}:`,
+				error
+			);
+		}
+	}
+
+	/**
+	 * Marca que este bot participa do grupo.
+	 * Remove da skip list persistente e atualiza group.botNotInGroup no banco.
+	 * @param {string} groupId
+	 */
+	async markInGroup(groupId) {
+		if (!groupId) return;
+		await this.removeSkipGroup(groupId);
+
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (grp.botNotInGroup && grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup = grp.botNotInGroup.filter((b) => b !== this.id);
+				}
+			}
+
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group && group.botNotInGroup && group.botNotInGroup.includes(this.id)) {
+					group.botNotInGroup = group.botNotInGroup.filter((b) => b !== this.id);
+					await this.database.saveGroup(group);
+					this.logger.info(`[${this.id}] Removido botNotInGroup no banco para o grupo ${groupId}`);
+				}
+			}
+		} catch (error) {
+			this.logger.error(
+				`[${this.id}] Erro ao persistir markInGroup no banco para ${groupId}:`,
+				error
+			);
+		}
+	}
+
 	async fetchPushNameFromCache(id) {
 		return await this.cacheManager.getPushnameFromCache(id);
 	}
 
 	async getContactDetails(id, prefetchedName, cacheDurationHours = 12) {
 		if (!id) return null;
+
+		if (id.endsWith("@g.us")) {
+			if (!this.isParticipating(id)) {
+				return {
+					id: { _serialized: id },
+					name: id,
+					isGroup: true,
+					notInGroup: true,
+					isParticipating: false,
+					participants: []
+				};
+			}
+			return await this.getChatDetails(id);
+		}
 
 		if (id === this.phoneNumber) {
 			return {
@@ -2967,6 +3134,13 @@ class WhatsAppBotGo {
 	}
 
 	async sendReaction(chatId, messageId, reaction) {
+		if (chatId && chatId.includes("@g.us") && !this.isParticipating(chatId)) {
+			this.logger.warn(
+				`[${this.id}] Ignorando sendReaction para ${chatId}: bot não participa deste grupo.`
+			);
+			return false;
+		}
+
 		try {
 			await this.apiClient.post("/message/react", {
 				number: chatId,
@@ -2976,6 +3150,9 @@ class WhatsAppBotGo {
 			});
 			return true;
 		} catch (e) {
+			if (chatId && chatId.includes("@g.us") && isNotInGroupError(e)) {
+				await this.markNotInGroup(chatId);
+			}
 			this.logger.error(`[sendReaction] Error`, e);
 			return false;
 		}

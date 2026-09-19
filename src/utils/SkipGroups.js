@@ -68,6 +68,20 @@ class SkipGroups {
 			return false;
 		}
 	}
+
+	async isGroupSkipped(botId, groupId) {
+		try {
+			const row = await this.database.dbGet(
+				this.DB_NAME,
+				"SELECT 1 FROM skipped_groups WHERE bot_id = ? AND group_id = ?",
+				[botId, groupId]
+			);
+			return !!row;
+		} catch (error) {
+			this.logger.error(`Error checking if group ${groupId} is skipped for ${botId}:`, error);
+			return false;
+		}
+	}
 }
 
 module.exports = SkipGroups;

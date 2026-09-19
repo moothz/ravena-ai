@@ -1051,6 +1051,66 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 		}
 	}
 
+	isParticipating(groupId) {
+		if (!groupId) return false;
+		if (this.skipGroupInfo && this.skipGroupInfo.includes(groupId)) {
+			return false;
+		}
+		return true;
+	}
+
+	isInGroup(groupId) {
+		return this.isParticipating(groupId);
+	}
+
+	async markNotInGroup(groupId) {
+		if (!groupId) return;
+		await this.addSkipGroup(groupId);
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (!grp.botNotInGroup) grp.botNotInGroup = [];
+				if (!grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup.push(this.id);
+				}
+			}
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group) {
+					if (!group.botNotInGroup) group.botNotInGroup = [];
+					if (!group.botNotInGroup.includes(this.id)) {
+						group.botNotInGroup.push(this.id);
+						await this.database.saveGroup(group);
+					}
+				}
+			}
+		} catch (error) {
+			this.logger.error(`[DiscordBot] Erro ao marcar botNotInGroup:`, error);
+		}
+	}
+
+	async markInGroup(groupId) {
+		if (!groupId) return;
+		await this.removeSkipGroup(groupId);
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (grp.botNotInGroup && grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup = grp.botNotInGroup.filter((b) => b !== this.id);
+				}
+			}
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group && group.botNotInGroup && group.botNotInGroup.includes(this.id)) {
+					group.botNotInGroup = group.botNotInGroup.filter((b) => b !== this.id);
+					await this.database.saveGroup(group);
+				}
+			}
+		} catch (error) {
+			this.logger.error(`[DiscordBot] Erro ao remover botNotInGroup:`, error);
+		}
+	}
+
 	// --- Funções de Notificação (Adaptadas) ---
 
 	_sendStartupNotifications() {

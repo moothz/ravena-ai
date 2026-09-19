@@ -383,22 +383,26 @@ class EventHandler extends EventEmitter {
 				);
 				group = groupData.group;
 
-				if (!group.botNotInGroup) {
-					group.botNotInGroup = [];
+				if (bot.markInGroup) {
+					await bot.markInGroup(message.group);
 				} else {
-					// Verifica se o bot está marcada como fora do grupo - se ele recebeu msg aqui, é pq tá dentro!
-					if (group.botNotInGroup.includes(bot.id)) {
-						this.logger.info(
-							`[processMessage] O bot '${bot.id}' estava como fora do grupo '${group.name}', mas recebeu mensagem - atualizando`
-						);
-						group.botNotInGroup = group.botNotInGroup.filter((b) => b !== bot.id);
-						await this.database.saveGroup(group);
+					if (!group.botNotInGroup) {
+						group.botNotInGroup = [];
+					} else {
+						// Verifica se o bot está marcado como fora do grupo - se ele recebeu msg aqui, é pq tá dentro!
+						if (group.botNotInGroup.includes(bot.id)) {
+							this.logger.info(
+								`[processMessage] O bot '${bot.id}' estava como fora do grupo '${group.name}', mas recebeu mensagem - atualizando`
+							);
+							group.botNotInGroup = group.botNotInGroup.filter((b) => b !== bot.id);
+							await this.database.saveGroup(group);
+						}
 					}
-				}
 
-				// Como o bot recebeu mensagem do grupo, ele está nele. Remove do skip list.
-				if (bot.removeSkipGroup) {
-					await bot.removeSkipGroup(message.group);
+					// Como o bot recebeu mensagem do grupo, ele está nele. Remove do skip list.
+					if (bot.removeSkipGroup) {
+						await bot.removeSkipGroup(message.group);
+					}
 				}
 
 				// Verifica apelido do usuário e atualiza o nome se necessário
@@ -1242,7 +1246,9 @@ class EventHandler extends EventEmitter {
 			data?.isBotJoining ||
 			data?.group?.isBotJoining ||
 			data?.user?.id?.startsWith(bot.phoneNumber);
-		if (bot.removeSkipGroup) {
+		if (bot.markInGroup) {
+			await bot.markInGroup(groupId);
+		} else if (bot.removeSkipGroup) {
 			await bot.removeSkipGroup(groupId);
 		}
 
@@ -1890,7 +1896,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
 						const group = groupData.group;
 
-						if (bot.addSkipGroup) {
+						if (bot.markNotInGroup) {
+							await bot.markNotInGroup(groupId);
+						} else if (bot.addSkipGroup) {
 							await bot.addSkipGroup(groupId);
 						}
 

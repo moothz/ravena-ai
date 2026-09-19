@@ -60,6 +60,7 @@ class FakeBot {
 
 		// Mensagens capturadas durante o teste
 		this.capturedMessages = [];
+		this.skipGroupInfo = options.skipGroupInfo ?? [];
 
 		this.isConnected = options.isConnected ?? true;
 		this.currentStatus = null;
@@ -72,11 +73,7 @@ class FakeBot {
 			});
 		this.client = {
 			setStatus: async (status) => await this.updateProfileStatus(status),
-			getChatById: async (chatId) => ({
-				id: { _serialized: chatId },
-				name: "FakeGroup",
-				participants: []
-			})
+			getChatById: async (chatId) => await this.getChatDetails(chatId)
 		};
 
 		this.logger = new Logger("fake-bot");
@@ -92,10 +89,23 @@ class FakeBot {
 	 * @param {Group|null} group
 	 */
 	async sendReturnMessages(messages, group = null) {
-		if (!messages) return;
+		if (!messages) return [];
 		const arr = Array.isArray(messages) ? messages.flat() : [messages];
+		const results = [];
 		for (const msg of arr) {
 			if (!msg) continue;
+			if (msg.chatId && msg.chatId.includes("@g.us") && !this.isParticipating(msg.chatId)) {
+				this.logger.warn(
+					`[FakeBot] Ignorando envio de ReturnMessage para ${msg.chatId}: bot não participa deste grupo.`
+				);
+				results.push({
+					error: new Error(`Bot ${this.id} não participa do grupo ${msg.chatId}`),
+					notInGroup: true,
+					skipped: true,
+					messageContent: msg.content
+				});
+				continue;
+			}
 			this.capturedMessages.push(msg);
 			this.logger.debug(`[FakeBot] Capturado ReturnMessage → chatId=${msg.chatId}`);
 			if (msg.options?.sendMediaAsSticker && msg.options?.quotedMessageId) {
@@ -105,7 +115,9 @@ class FakeBot {
 					id: stickerId
 				});
 			}
+			results.push({ id: { _serialized: `fake_msg_${Date.now()}` }, ack: 1 });
 		}
+		return results;
 	}
 
 	/**
@@ -126,8 +138,19 @@ class FakeBot {
 	 */
 	async sendMessage(chatId, content) {
 		this.logger.debug(`[FakeBot] sendMessage() → chatId=${chatId}`);
+		if (chatId && chatId.includes("@g.us") && !this.isParticipating(chatId)) {
+			this.logger.warn(
+				`[FakeBot] Ignorando sendMessage para ${chatId}: bot não participa deste grupo.`
+			);
+			const err = new Error(`Bot ${this.id} não participa do grupo ${chatId}`);
+			err.notInGroup = true;
+			err.status = 403;
+			throw err;
+		}
 		const ReturnMessage = require("../models/ReturnMessage");
-		this.capturedMessages.push(new ReturnMessage({ chatId, content, metadata: { direct: true } }));
+		const msg = new ReturnMessage({ chatId, content, metadata: { direct: true } });
+		this.capturedMessages.push(msg);
+		return { id: { _serialized: `fake_direct_${Date.now()}` }, ack: 1 };
 	}
 
 	/**
@@ -260,11 +283,85 @@ class FakeBot {
 	}
 
 	async getChatDetails(chatId) {
+		const inGroup = this.isParticipating(chatId);
 		return {
 			id: { _serialized: chatId },
 			name: "FakeGroup",
+			isGroup: chatId.includes("@g.us"),
+			notInGroup: !inGroup,
+			isParticipating: inGroup,
 			participants: []
 		};
+	}
+
+	isParticipating(groupId) {
+		if (!groupId) return false;
+		if (this.skipGroupInfo && this.skipGroupInfo.includes(groupId)) {
+			return false;
+		}
+		return true;
+	}
+
+	isInGroup(groupId) {
+		return this.isParticipating(groupId);
+	}
+
+	async addSkipGroup(groupId) {
+		if (!this.skipGroupInfo.includes(groupId)) {
+			this.skipGroupInfo.push(groupId);
+		}
+	}
+
+	async removeSkipGroup(groupId) {
+		this.skipGroupInfo = this.skipGroupInfo.filter((id) => id !== groupId);
+	}
+
+	async markNotInGroup(groupId) {
+		if (!groupId) return;
+		await this.addSkipGroup(groupId);
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (!grp.botNotInGroup) grp.botNotInGroup = [];
+				if (!grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup.push(this.id);
+				}
+			}
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group) {
+					if (!group.botNotInGroup) group.botNotInGroup = [];
+					if (!group.botNotInGroup.includes(this.id)) {
+						group.botNotInGroup.push(this.id);
+						await this.database.saveGroup(group);
+					}
+				}
+			}
+		} catch (error) {
+			this.logger.error(`[FakeBot] Erro ao marcar botNotInGroup:`, error);
+		}
+	}
+
+	async markInGroup(groupId) {
+		if (!groupId) return;
+		await this.removeSkipGroup(groupId);
+		try {
+			if (this.eventHandler?.groups?.[groupId]) {
+				const grp = this.eventHandler.groups[groupId];
+				if (grp.botNotInGroup && grp.botNotInGroup.includes(this.id)) {
+					grp.botNotInGroup = grp.botNotInGroup.filter((b) => b !== this.id);
+				}
+			}
+			if (this.database?.getGroup && this.database?.saveGroup) {
+				const group = await this.database.getGroup(groupId);
+				if (group && group.botNotInGroup && group.botNotInGroup.includes(this.id)) {
+					group.botNotInGroup = group.botNotInGroup.filter((b) => b !== this.id);
+					await this.database.saveGroup(group);
+				}
+			}
+		} catch (error) {
+			this.logger.error(`[FakeBot] Erro ao remover botNotInGroup:`, error);
+		}
 	}
 
 	/** Compatibilidade com destruição no SIGINT */

@@ -100,6 +100,7 @@ Configuração completa de cada grupo onde o bot está presente.
 | `muted_commands` | TEXT (JSON) | Comandos silenciados |
 | `webhooks` | TEXT (JSON) | Webhooks configurados |
 | `twitch` / `youtube` / `kick` | TEXT (JSON) | Canais monitorados |
+| `bot_not_in_group` | TEXT (JSON) | Lista de bot_ids que não participam deste grupo |
 | `json_data` | TEXT | **Legado** — mantido como fallback (Fase 4 remove) |
 
 ### `donations`
@@ -391,7 +392,7 @@ Interações cômicas automáticas do bot.
 | `lists.db` | `user_lists` | Listas criadas por usuários nos grupos |
 | `lembretes.db` | `lembretes` | Lembretes agendados por usuário |
 | `greeted_users.db` | `greeted_users` | Controle de saudação (evita repetição) |
-| `skip_groups.db` | `skip_groups` | Grupos excluídos de operações em lote |
+| `skip_groups.db` | `skipped_groups` | Grupos ignorados onde o bot não participa ou excluídos de envios |
 | `web_management.db` | `sessions`, `users` | Autenticação do painel web |
 | `anon_msgs.db` | `anonymous_messages` | Histórico de mensagens anônimas |
 | `correios.db` | `tracked_packages` | Rastreamento de encomendas Correios |
@@ -441,3 +442,15 @@ Armazena propostas e relacionamentos ativos ou terminados entre os participantes
 | `terminado_em` | INTEGER | Timestamp de término (separação) |
 | `coisas_count` | INTEGER | Contador de quantas vezes o casal coisou |
 | `traicoes_count` | INTEGER | Contador de quantas vezes o autor traiu o cônjuge / parceiros |
+
+### `skip_groups.db`
+Banco de dados para controle de grupos ignorados ou dos quais o bot não participa.
+
+#### `skipped_groups`
+Armazena a relação de bots e grupos que devem ser ignorados em envios de mensagens e buscas de detalhes/contato.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `bot_id` | TEXT PK | Identificador da instância do bot (ex: 'rav-enculinha') |
+| `group_id` | TEXT PK | JID do grupo ignorado/sem participação (ex: `120363...@g.us`) |
+

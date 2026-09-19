@@ -538,7 +538,9 @@ class StreamSystem {
 
 						if (botNotInGroupError) {
 							this.logger.warn(`Bot ${bot.id} não está no grupo ${group.id}, marcando para pular.`);
-							if (bot.addSkipGroup) {
+							if (bot.markNotInGroup) {
+								await bot.markNotInGroup(group.id);
+							} else if (bot.addSkipGroup) {
 								await bot.addSkipGroup(group.id);
 							}
 							notInGroupErrors.push(bot.id);
@@ -585,7 +587,8 @@ class StreamSystem {
 						errorDetails.includes("no longer a participant") ||
 						errorDetails.includes("not in group")
 					) {
-						if (bot.addSkipGroup) await bot.addSkipGroup(group.id);
+						if (bot.markNotInGroup) await bot.markNotInGroup(group.id);
+						else if (bot.addSkipGroup) await bot.addSkipGroup(group.id);
 						notInGroupErrors.push(bot.id);
 					}
 					// Continua para o próximo bot
@@ -928,7 +931,9 @@ class StreamSystem {
 
 		// Remove de todos os bots registrados
 		for (const bot of this.bots) {
-			if (bot.removeSkipGroup) {
+			if (bot.markInGroup) {
+				await bot.markInGroup(groupId);
+			} else if (bot.removeSkipGroup) {
 				await bot.removeSkipGroup(groupId);
 			}
 		}
@@ -950,7 +955,9 @@ class StreamSystem {
 
 				// Remove o ID deste grupo de todos os bots registrados
 				for (const bot of this.bots) {
-					if (bot.removeSkipGroup) {
+					if (bot.markInGroup) {
+						await bot.markInGroup(group.id);
+					} else if (bot.removeSkipGroup) {
 						await bot.removeSkipGroup(group.id);
 					}
 				}
