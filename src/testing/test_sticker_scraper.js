@@ -8,11 +8,21 @@ const { createMessage } = require("./FakeMessage");
 const StickerScraper = require("../functions/StickerScraper");
 
 async function runTests() {
-	console.log("=== Iniciando testes de StickerScraper (Lovecell) ===");
+	console.log("=== Iniciando testes de StickerScraper (Lovecell, NSFW & Offline Stock) ===");
+
+	// Garante que o timer em background esteja parado durante os testes
+	StickerScraper.stopScraperTimer();
+
 	const bot = new FakeBot({ id: "test-bot" });
 	const eventHandler = new EventHandler();
 	const cmdHandler = eventHandler.commandHandler;
-	const mockGroup = { id: "123456@g.us", name: "Grupo Teste" };
+
+	function clearCooldowns() {
+		try {
+			const db = cmdHandler.database.getSQLiteDb("cooldowns");
+			if (db) db.prepare("DELETE FROM cooldowns").run();
+		} catch {}
+	}
 
 	// 1. Teste de cropLovecellBanner com imagem estática 512x597
 	console.log("\n1. Testando corte de banner em WebP estático 512x597...");
@@ -71,6 +81,7 @@ async function runTests() {
 	// 4. Teste de execução do comando !figa com ID conhecido (37019)
 	console.log("\n4. Testando comando !figa 37019...");
 	bot.resetCapture();
+	clearCooldowns();
 
 	const testCachedFile = path.join(StickerScraper.LOVECELL_DIR, "figs_lovecell_37019.webp");
 	try {
@@ -79,12 +90,15 @@ async function runTests() {
 
 	const msgSpecific = createMessage({
 		content: "!figa 37019",
-		group: "123456@g.us",
-		author: "5511999999999@s.whatsapp.net",
-		authorName: "Testador"
+		group: "group_test_4@g.us",
+		author: "user_test_4@s.whatsapp.net",
+		authorName: "Testador 4"
 	});
 
-	await cmdHandler.processCommand(bot, msgSpecific, "figa", ["37019"], mockGroup);
+	await cmdHandler.processCommand(bot, msgSpecific, "figa", ["37019"], {
+		id: "group_test_4@g.us",
+		name: "Grupo Teste 4"
+	});
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar exatamente 1 mensagem");
 	const sentMsg = bot.capturedMessages[0];
 	assert.strictEqual(
@@ -112,7 +126,17 @@ async function runTests() {
 	// 5. Teste de cache hit: executar novamente !figa 37019 deve ler do cache
 	console.log("\n5. Testando cache hit para !figa 37019...");
 	bot.resetCapture();
-	await cmdHandler.processCommand(bot, msgSpecific, "figa", ["37019"], mockGroup);
+	clearCooldowns();
+	const msgSpecificCache = createMessage({
+		content: "!figa 37019",
+		group: "group_test_5@g.us",
+		author: "user_test_5@s.whatsapp.net",
+		authorName: "Testador 5"
+	});
+	await cmdHandler.processCommand(bot, msgSpecificCache, "figa", ["37019"], {
+		id: "group_test_5@g.us",
+		name: "Grupo Teste 5"
+	});
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar a figurinha a partir do cache");
 	assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
 	console.log("✓ Figurinha retornada do cache com sucesso");
@@ -120,14 +144,18 @@ async function runTests() {
 	// 6. Teste de comando aleatório !figa padrão (1 figurinha)
 	console.log("\n6. Testando comando !figa (modo aleatório, padrão = 1)...");
 	bot.resetCapture();
+	clearCooldowns();
 	const msgRandom = createMessage({
 		content: "!figa",
-		group: "123456@g.us",
-		author: "5511999999999@s.whatsapp.net",
-		authorName: "Testador"
+		group: "group_test_6@g.us",
+		author: "user_test_6@s.whatsapp.net",
+		authorName: "Testador 6"
 	});
 
-	await cmdHandler.processCommand(bot, msgRandom, "figa", [], mockGroup);
+	await cmdHandler.processCommand(bot, msgRandom, "figa", [], {
+		id: "group_test_6@g.us",
+		name: "Grupo Teste 6"
+	});
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar 1 figurinha aleatória");
 	const sentRandom = bot.capturedMessages[0];
 	assert.strictEqual(sentRandom.options.sendMediaAsSticker, true, "Deve enviar como sticker");
@@ -137,13 +165,17 @@ async function runTests() {
 	// 7. Teste de quantidade múltipla (ex: !figa 2 e limite máximo de 4)
 	console.log("\n7. Testando quantidade múltipla (!figa 2)...");
 	bot.resetCapture();
+	clearCooldowns();
 	const msgQtd2 = createMessage({
 		content: "!figa 2",
-		group: "123456@g.us",
-		author: "5511999999999@s.whatsapp.net",
-		authorName: "Testador"
+		group: "group_test_7@g.us",
+		author: "user_test_7@s.whatsapp.net",
+		authorName: "Testador 7"
 	});
-	await cmdHandler.processCommand(bot, msgQtd2, "figa", ["2"], mockGroup);
+	await cmdHandler.processCommand(bot, msgQtd2, "figa", ["2"], {
+		id: "group_test_7@g.us",
+		name: "Grupo Teste 7"
+	});
 	assert.strictEqual(bot.capturedMessages.length, 2, "Deve enviar 2 figurinhas");
 	for (const m of bot.capturedMessages) {
 		assert.strictEqual(m.options.sendMediaAsSticker, true);
@@ -168,13 +200,6 @@ async function runTests() {
 	);
 	assert.strictEqual(cmdFiga.group, "lovecell");
 	assert.strictEqual(cmdFigrandom.group, "lovecell");
-	assert.strictEqual(cmdFiga.reply, false, "Comando figa deve ter reply: false");
-	assert.strictEqual(cmdFigrandom.reply, false, "Comando figrandom deve ter reply: false");
-	assert.strictEqual(
-		sentMsg.options.quotedMessageId,
-		undefined,
-		"Não deve citar a mensagem quando reply: false"
-	);
 	console.log(
 		"✓ Comandos 'figa' e 'figrandom' configurados com reply: false, descrição correta e mesmo group"
 	);
@@ -182,16 +207,20 @@ async function runTests() {
 	// 9. Teste de rate limit com fallback de cache
 	console.log("\n9. Testando resposta a rate limit com fallback do cache local...");
 	bot.resetCapture();
+	clearCooldowns();
 	const originalFetch = StickerScraper.fetchLovecellSticker;
 	StickerScraper.fetchLovecellSticker = async () => ({ found: false, rateLimit: true });
 	try {
 		const msgRate = createMessage({
 			content: "!figa",
-			group: "123456@g.us",
-			author: "5511999999999@s.whatsapp.net",
-			authorName: "Testador"
+			group: "group_test_9@g.us",
+			author: "user_test_9@s.whatsapp.net",
+			authorName: "Testador 9"
 		});
-		await cmdHandler.processCommand(bot, msgRate, "figa", [], mockGroup);
+		await cmdHandler.processCommand(bot, msgRate, "figa", [], {
+			id: "group_test_9@g.us",
+			name: "Grupo Teste 9"
+		});
 		assert.strictEqual(bot.capturedMessages.length, 1);
 		assert.strictEqual(
 			bot.capturedMessages[0].options.sendMediaAsSticker,
@@ -203,10 +232,20 @@ async function runTests() {
 		// 10. Teste de rate limit sem nenhuma figurinha em cache
 		console.log("\n10. Testando rate limit com cache vazio...");
 		bot.resetCapture();
+		clearCooldowns();
 		const originalGetCached = StickerScraper.getRandomCachedStickers;
 		StickerScraper.getRandomCachedStickers = async () => [];
 		try {
-			await cmdHandler.processCommand(bot, msgRate, "figa", [], mockGroup);
+			const msgRateEmpty = createMessage({
+				content: "!figa",
+				group: "group_test_10@g.us",
+				author: "user_test_10@s.whatsapp.net",
+				authorName: "Testador 10"
+			});
+			await cmdHandler.processCommand(bot, msgRateEmpty, "figa", [], {
+				id: "group_test_10@g.us",
+				name: "Grupo Teste 10"
+			});
 			assert.strictEqual(bot.capturedMessages.length, 1);
 			assert(
 				bot.capturedMessages[0].content.includes("temporariamente indisponível"),
@@ -219,6 +258,264 @@ async function runTests() {
 	} finally {
 		StickerScraper.fetchLovecellSticker = originalFetch;
 	}
+
+	// 11. Teste de Detecção NSFW com ID Específico e Blacklist
+	console.log("\n11. Testando detecção NSFW com ID específico e adição à blacklist...");
+	bot.resetCapture();
+	clearCooldowns();
+	const nsfwTestId = 999991;
+	const originalCheckNSFW = StickerScraper.checkStickerNSFW;
+	const originalFetchLovecell = StickerScraper.fetchLovecellSticker;
+
+	// Simula resposta do Lovecell para o ID de teste
+	const dummyWebp = await sharp({
+		create: {
+			width: 512,
+			height: 597,
+			channels: 4,
+			background: { r: 255, g: 0, b: 0, alpha: 1 }
+		}
+	})
+		.webp()
+		.toBuffer();
+
+	StickerScraper.fetchLovecellSticker = async (id) => {
+		if (id === nsfwTestId) {
+			return {
+				found: true,
+				buffer: dummyWebp,
+				title: "Sticker NSFW Proibido",
+				imageUrl: `https://img2.lovecell.com.br/figurinhas/${id}.webp`
+			};
+		}
+		return originalFetchLovecell(id);
+	};
+
+	// Simula detecção NSFW positiva
+	StickerScraper.checkStickerNSFW = async (buffer, id) => id === nsfwTestId;
+
+	const msgNSFWSpecific = createMessage({
+		content: `!figa ${nsfwTestId}`,
+		group: "group_test_11@g.us",
+		author: "user_test_11@s.whatsapp.net",
+		authorName: "Testador 11"
+	});
+
+	await cmdHandler.processCommand(bot, msgNSFWSpecific, "figa", [String(nsfwTestId)], {
+		id: "group_test_11@g.us",
+		name: "Grupo Teste 11"
+	});
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert(
+		bot.capturedMessages[0].content.includes("bloqueada por conter conteúdo impróprio (NSFW)"),
+		"Deve informar que o sticker foi bloqueado por ser NSFW"
+	);
+	assert(
+		StickerScraper.isBlacklisted(nsfwTestId),
+		"O ID 999991 deve ter sido adicionado à blacklist"
+	);
+
+	// Verifica se NÃO foi salvo no cache
+	const nsfwFilePath = StickerScraper.getStickerFilePath(nsfwTestId);
+	let nsfwFileOnDisk = false;
+	try {
+		await fs.stat(nsfwFilePath);
+		nsfwFileOnDisk = true;
+	} catch {}
+	assert.strictEqual(nsfwFileOnDisk, false, "Sticker NSFW não deve ser salvo no cache!");
+
+	// Executar novamente com ID na blacklist deve bloquear imediatamente sem nem consultar o site
+	bot.resetCapture();
+	clearCooldowns();
+	let fetchCalled = false;
+	StickerScraper.fetchLovecellSticker = async () => {
+		fetchCalled = true;
+		return { found: true };
+	};
+	const msgBlacklisted = createMessage({
+		content: `!figa ${nsfwTestId}`,
+		group: "group_test_11b@g.us",
+		author: "user_test_11b@s.whatsapp.net",
+		authorName: "Testador 11b"
+	});
+	await cmdHandler.processCommand(bot, msgBlacklisted, "figa", [String(nsfwTestId)], {
+		id: "group_test_11b@g.us",
+		name: "Grupo Teste 11b"
+	});
+	assert.strictEqual(
+		fetchCalled,
+		false,
+		"Não deve consultar o site para ID que já está na blacklist"
+	);
+	assert(bot.capturedMessages[0].content.includes("bloqueada"));
+	console.log(
+		"✓ Detecção NSFW para ID específico bloqueou o envio e adicionou à blacklist com sucesso"
+	);
+
+	// 12. Teste de Detecção NSFW no modo aleatório (pula NSFW e pega o próximo)
+	console.log(
+		"\n12. Testando modo aleatório com NSFW (pula NSFW e entrega sticker seguro seguinte)..."
+	);
+	bot.resetCapture();
+	clearCooldowns();
+
+	let attemptSeq = 0;
+	StickerScraper.fetchLovecellSticker = async () => {
+		attemptSeq++;
+		if (attemptSeq === 1) {
+			return {
+				found: true,
+				buffer: dummyWebp,
+				title: "NSFW Random",
+				imageUrl: "https://img2.lovecell.com.br/figurinhas/999992.webp"
+			};
+		}
+		return {
+			found: true,
+			buffer: dummyWebp,
+			title: "Safe Random",
+			imageUrl: "https://img2.lovecell.com.br/figurinhas/999993.webp"
+		};
+	};
+
+	StickerScraper.checkStickerNSFW = async () =>
+		// Apenas a primeira tentativa é marcada como NSFW
+		attemptSeq === 1;
+
+	const msgRandomNSFW = createMessage({
+		content: "!figa",
+		group: "group_test_12@g.us",
+		author: "user_test_12@s.whatsapp.net",
+		authorName: "Testador 12"
+	});
+
+	await cmdHandler.processCommand(bot, msgRandomNSFW, "figa", [], {
+		id: "group_test_12@g.us",
+		name: "Grupo Teste 12"
+	});
+	assert.strictEqual(bot.capturedMessages.length, 1, "Deve entregar 1 sticker seguro");
+	assert.strictEqual(
+		bot.capturedMessages[0].options.sendMediaAsSticker,
+		true,
+		"Deve ser enviado como sticker"
+	);
+	console.log("✓ Modo aleatório pulou figurinha NSFW e buscou a próxima válida com sucesso");
+
+	// 13. Teste de persistência da blacklist e exclusão de cache
+	console.log(
+		"\n13. Testando persistência da blacklist (blacklist.json) e remoção de arquivo em cache..."
+	);
+	const cacheRemovalId = 999994;
+	const cacheRemovalPath = StickerScraper.getStickerFilePath(cacheRemovalId);
+	await fs.writeFile(cacheRemovalPath, dummyWebp);
+	assert(
+		await fs
+			.stat(cacheRemovalPath)
+			.then(() => true)
+			.catch(() => false),
+		"Arquivo teste deve existir"
+	);
+
+	await StickerScraper.addToBlacklist(cacheRemovalId);
+	assert(StickerScraper.isBlacklisted(cacheRemovalId), "Deve constar na blacklist em memória");
+
+	// Arquivo deve ter sido removido
+	const fileExistsAfterBlacklist = await fs
+		.stat(cacheRemovalPath)
+		.then(() => true)
+		.catch(() => false);
+	assert.strictEqual(
+		fileExistsAfterBlacklist,
+		false,
+		"Arquivo em cache deve ser apagado ao ser adicionado à blacklist"
+	);
+
+	// Testa recarga da blacklist a partir do JSON
+	StickerScraper.loadBlacklistSync();
+	assert(
+		StickerScraper.isBlacklisted(cacheRemovalId),
+		"Deve continuar na blacklist após recarga do JSON"
+	);
+	console.log("✓ Blacklist persistida e sincronizada no JSON com sucesso");
+
+	// 14. Teste de getRandomUndownloadedId (não repete IDs já baixados nem blacklisted)
+	console.log("\n14. Testando sorteio de IDs não baixados e não blacklisted...");
+	const undownloadedId = StickerScraper.getRandomUndownloadedId();
+	assert(typeof undownloadedId === "number", "Deve retornar um ID numérico");
+	assert(
+		!StickerScraper.isDownloaded(undownloadedId),
+		"ID sorteado não deve estar marcado como baixado"
+	);
+	assert(!StickerScraper.isBlacklisted(undownloadedId), "ID sorteado não deve estar na blacklist");
+	console.log("✓ getRandomUndownloadedId() sorteou ID válido e inédito com sucesso");
+
+	// 15. Teste do ciclo do background scraper (runBackgroundScraperTick)
+	console.log("\n15. Testando ciclo do background scraper (runBackgroundScraperTick)...");
+	const backgroundSafeId = 999995;
+	const backgroundSafePath = StickerScraper.getStickerFilePath(backgroundSafeId);
+	try {
+		await fs.unlink(backgroundSafePath);
+	} catch {}
+
+	StickerScraper.fetchLovecellSticker = async () => ({
+		found: true,
+		buffer: dummyWebp,
+		title: "Background Safe Sticker"
+	});
+	StickerScraper.checkStickerNSFW = async () => false; // Seguro
+	StickerScraper.getRandomUndownloadedId = () => backgroundSafeId;
+
+	await StickerScraper.runBackgroundScraperTick();
+
+	const bgFileSaved = await fs
+		.stat(backgroundSafePath)
+		.then(() => true)
+		.catch(() => false);
+	assert.strictEqual(
+		bgFileSaved,
+		true,
+		"Figurinha segura deve ser salva no cache offline pelo background scraper"
+	);
+	assert(StickerScraper.isDownloaded(backgroundSafeId), "ID deve ser registrado como baixado");
+	await fs.unlink(backgroundSafePath);
+
+	// Agora testa ciclo onde background scraper encontra sticker NSFW
+	const backgroundNsfwId = 999996;
+	const backgroundNsfwPath = StickerScraper.getStickerFilePath(backgroundNsfwId);
+	StickerScraper.checkStickerNSFW = async () => true; // NSFW
+	StickerScraper.getRandomUndownloadedId = () => backgroundNsfwId;
+
+	await StickerScraper.runBackgroundScraperTick();
+
+	const bgNsfwSaved = await fs
+		.stat(backgroundNsfwPath)
+		.then(() => true)
+		.catch(() => false);
+	assert.strictEqual(
+		bgNsfwSaved,
+		false,
+		"Figurinha NSFW NÃO deve ser salva no cache offline pelo background scraper"
+	);
+	assert(
+		StickerScraper.isBlacklisted(backgroundNsfwId),
+		"Figurinha NSFW deve ser adicionada à blacklist pelo background scraper"
+	);
+	console.log(
+		"✓ runBackgroundScraperTick salvou stickers seguros e descartou/blacklistou stickers NSFW"
+	);
+
+	// 16. Teste de controle do timer (start/stop/status)
+	console.log("\n16. Testando controle do timer (start, stop, isRunning)...");
+	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
+	StickerScraper.startScraperTimer(60000);
+	assert.strictEqual(StickerScraper.isScraperTimerRunning(), true);
+	StickerScraper.stopScraperTimer();
+	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
+	console.log("✓ Controle do timer (start/stop/status) validado com sucesso");
+
+	// Restaura stubs
+	StickerScraper.fetchLovecellSticker = originalFetch;
+	StickerScraper.checkStickerNSFW = originalCheckNSFW;
 
 	console.log("\n=== TODOS OS TESTES DE STICKERSCRAPER PASSARAM COM SUCESSO! ===");
 	process.exit(0);

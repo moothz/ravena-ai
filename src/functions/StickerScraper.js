@@ -8,12 +8,15 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
+const NSFWPredict = require("../utils/NSFWPredict");
 
 const logger = new Logger("sticker-scraper");
 const database = Database.getInstance();
+const nsfwPredict = NSFWPredict.getInstance();
 
 // Diretório para armazenar as figurinhas do Lovecell em cache (não indexado pelo git)
 const LOVECELL_DIR = path.join(database.databasePath, "media", "lovecell");
+const BLACKLIST_FILE = path.join(LOVECELL_DIR, "blacklist.json");
 
 // Garante que o diretório de cache existe
 try {
@@ -32,8 +35,158 @@ const BANNER_HEIGHT = 85;
 const TARGET_SIZE = 512;
 const MAX_STICKER_BYTES = 490 * 1024; // Limite de segurança (< 500 KB) do WhatsApp
 
+// Limites de download automático: mínimo 1 sticker/min (60s), máximo 15 stickers/min (4s)
+const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 4 * 1000; // Máx 15 stickers/min
+const DEFAULT_MAX_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MAX_INTERVAL, 10) || 60 * 1000; // Mín 1 sticker/min
+const BACKOFF_RATE_LIMIT_MS =
+	parseInt(process.env.STICKER_SCRAPER_BACKOFF_INTERVAL, 10) || 15 * 60 * 1000; // 15 min
+
 const BROWSER_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+const blacklistedIds = new Set();
+const downloadedIds = new Set();
+
+let scraperTimer = null;
+let isTimerRunning = false;
+let isScrapingInProgress = false;
+
+/**
+ * Carrega a blacklist persistente de figurinhas NSFW do disco (JSON)
+ */
+function loadBlacklistSync() {
+	blacklistedIds.clear();
+	try {
+		if (fs.existsSync(BLACKLIST_FILE)) {
+			const content = fs.readFileSync(BLACKLIST_FILE, "utf-8");
+			const data = JSON.parse(content);
+			if (Array.isArray(data)) {
+				for (const id of data) {
+					const num = parseInt(id, 10);
+					if (!isNaN(num)) blacklistedIds.add(num);
+				}
+			} else if (typeof data === "object" && data !== null) {
+				for (const key of Object.keys(data)) {
+					const num = parseInt(key, 10);
+					if (!isNaN(num)) blacklistedIds.add(num);
+				}
+			}
+			logger.info(`Blacklist do Lovecell carregada com ${blacklistedIds.size} figurinha(s).`);
+		}
+	} catch (error) {
+		logger.error(`Erro ao carregar blacklist do Lovecell: ${error.message}`);
+	}
+}
+
+/**
+ * Salva a blacklist persistente de figurinhas no disco
+ */
+async function saveBlacklist() {
+	try {
+		const list = Array.from(blacklistedIds).sort((a, b) => a - b);
+		await fs.promises.writeFile(BLACKLIST_FILE, JSON.stringify(list, null, 2), "utf-8");
+		logger.debug(`Blacklist do Lovecell salva com ${list.length} itens.`);
+	} catch (error) {
+		logger.error(`Erro ao salvar blacklist do Lovecell: ${error.message}`);
+	}
+}
+
+/**
+ * Caminho do arquivo em cache para um dado ID
+ * @param {number|string} stickerId
+ * @returns {string}
+ */
+function getStickerFilePath(stickerId) {
+	return path.join(LOVECELL_DIR, `figs_lovecell_${stickerId}.webp`);
+}
+
+/**
+ * Verifica se uma figurinha está na blacklist NSFW
+ * @param {number|string} stickerId
+ * @returns {boolean}
+ */
+function isBlacklisted(stickerId) {
+	const id = parseInt(stickerId, 10);
+	return !isNaN(id) && blacklistedIds.has(id);
+}
+
+/**
+ * Adiciona um ID à blacklist NSFW, remove do cache local caso já exista e persiste no JSON
+ * @param {number|string} stickerId
+ */
+async function addToBlacklist(stickerId) {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return;
+
+	let changed = false;
+	if (!blacklistedIds.has(id)) {
+		blacklistedIds.add(id);
+		changed = true;
+	}
+
+	downloadedIds.delete(id);
+
+	if (changed) {
+		await saveBlacklist();
+		logger.warn(`Figurinha #${id} adicionada à blacklist NSFW do Lovecell.`);
+	}
+
+	// Se o arquivo existir no cache, apaga do disco imediatamente
+	const cachedPath = getStickerFilePath(id);
+	try {
+		if (fs.existsSync(cachedPath)) {
+			await fs.promises.unlink(cachedPath);
+			logger.info(`Arquivo da figurinha #${id} apagado do cache local por ser NSFW.`);
+		}
+	} catch (err) {
+		logger.error(`Erro ao apagar arquivo da figurinha #${id} do cache: ${err.message}`);
+	}
+}
+
+/**
+ * Indexa em memória todas as figurinhas que já foram baixadas no cache local
+ */
+function loadDownloadedIdsSync() {
+	downloadedIds.clear();
+	try {
+		if (!fs.existsSync(LOVECELL_DIR)) return;
+		const files = fs.readdirSync(LOVECELL_DIR);
+		for (const file of files) {
+			const match = file.match(/^figs_lovecell_(\d+)\.webp$/);
+			if (match) {
+				const id = parseInt(match[1], 10);
+				if (blacklistedIds.has(id)) {
+					// Se o arquivo já está na blacklist, remove do disco
+					const filePath = path.join(LOVECELL_DIR, file);
+					try {
+						fs.unlinkSync(filePath);
+						logger.info(`Arquivo #${id} removido do cache por estar na blacklist.`);
+					} catch {}
+				} else {
+					downloadedIds.add(id);
+				}
+			}
+		}
+		logger.info(`Estoque offline do Lovecell indexado com ${downloadedIds.size} figurinha(s).`);
+	} catch (err) {
+		logger.error(`Erro ao indexar figurinhas baixadas do Lovecell: ${err.message}`);
+	}
+}
+
+// Inicializa blacklist e estoque local baixado
+loadBlacklistSync();
+loadDownloadedIdsSync();
+
+/**
+ * Verifica se a figurinha já foi baixada no cache local
+ * @param {number|string} stickerId
+ * @returns {boolean}
+ */
+function isDownloaded(stickerId) {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id) || module.exports.isBlacklisted(id)) return false;
+	return downloadedIds.has(id) || fs.existsSync(getStickerFilePath(id));
+}
 
 /**
  * Limpa o título extraído da página para exibição como nome da figurinha
@@ -121,20 +274,15 @@ async function cropLovecellBanner(webpBuffer) {
 }
 
 /**
- * Caminho do arquivo em cache para um dado ID
- * @param {number|string} stickerId
- * @returns {string}
- */
-function getStickerFilePath(stickerId) {
-	return path.join(LOVECELL_DIR, `figs_lovecell_${stickerId}.webp`);
-}
-
-/**
- * Retorna o caminho do arquivo em cache se já existir
+ * Retorna o caminho do arquivo em cache se já existir e não estiver na blacklist
  * @param {number|string} stickerId
  * @returns {string|null}
  */
 function getStickerFromCache(stickerId) {
+	const id = parseInt(stickerId, 10);
+	if (!isNaN(id) && module.exports.isBlacklisted(id)) {
+		return null;
+	}
 	const filePath = getStickerFilePath(stickerId);
 	if (fs.existsSync(filePath)) {
 		return filePath;
@@ -149,9 +297,18 @@ function getStickerFromCache(stickerId) {
  * @returns {Promise<string|null>}
  */
 async function saveStickerToCache(stickerId, buffer) {
+	const id = parseInt(stickerId, 10);
+	if (!isNaN(id) && module.exports.isBlacklisted(id)) {
+		logger.warn(`Tentativa de salvar figurinha #${id} que está na blacklist abortada.`);
+		return null;
+	}
+
 	const filePath = getStickerFilePath(stickerId);
 	try {
 		await fs.promises.writeFile(filePath, buffer);
+		if (!isNaN(id)) {
+			downloadedIds.add(id);
+		}
 		logger.info(`Figurinha salva em cache: ${filePath}`);
 		return filePath;
 	} catch (error) {
@@ -161,7 +318,7 @@ async function saveStickerToCache(stickerId, buffer) {
 }
 
 /**
- * Busca figurinhas aleatórias já salvas no cache local do Lovecell
+ * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted)
  * @param {number} count - Quantidade desejada
  * @param {Set<number|string>} excludeIds - IDs a excluir
  * @returns {Promise<Array<{ id: number|string, buffer: Buffer }>>}
@@ -175,11 +332,17 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 		let available = stickerFiles.filter((f) => {
 			const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
 			if (!match) return false;
-			return !excludeIds.has(parseInt(match[1], 10));
+			const id = parseInt(match[1], 10);
+			return !excludeIds.has(id) && !module.exports.isBlacklisted(id);
 		});
 
 		if (available.length === 0 && stickerFiles.length > 0) {
-			available = [...stickerFiles];
+			available = stickerFiles.filter((f) => {
+				const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
+				if (!match) return false;
+				const id = parseInt(match[1], 10);
+				return !module.exports.isBlacklisted(id);
+			});
 		}
 
 		if (available.length === 0) return [];
@@ -276,6 +439,53 @@ async function fetchLovecellSticker(stickerId) {
 }
 
 /**
+ * Avalia se o buffer de uma figurinha contém conteúdo adulto/NSFW via NSFWPredict
+ * @param {Buffer} buffer - Buffer WebP da figurinha
+ * @param {number|string} stickerId - ID para logging e rastreamento
+ * @returns {Promise<boolean>} - true se for NSFW, false se seguro
+ */
+async function checkStickerNSFW(buffer, stickerId) {
+	try {
+		const base64 = buffer.toString("base64");
+		const result = await nsfwPredict.detectNSFW(base64, {
+			isSticker: true,
+			type: "sticker",
+			stickerId
+		});
+
+		if (result?.isNSFW) {
+			logger.warn(
+				`Figurinha #${stickerId} classificada como NSFW: ${result.reason || "conteúdo adulto detectado"}`
+			);
+			return true;
+		}
+		return false;
+	} catch (error) {
+		logger.error(`Erro ao verificar NSFW para figurinha #${stickerId}: ${error.message}`);
+		return false;
+	}
+}
+
+/**
+ * Sorteia um ID de figurinha dentro da faixa do Lovecell que ainda não tenha sido baixado e não esteja na blacklist
+ * @param {number} maxAttempts
+ * @returns {number|null}
+ */
+function getRandomUndownloadedId(maxAttempts = 1000) {
+	for (let i = 0; i < maxAttempts; i++) {
+		const id = Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
+		if (
+			!downloadedIds.has(id) &&
+			!module.exports.isBlacklisted(id) &&
+			!fs.existsSync(getStickerFilePath(id))
+		) {
+			return id;
+		}
+	}
+	return null;
+}
+
+/**
  * Cria um objeto ReturnMessage para uma figurinha
  * @param {string} chatId
  * @param {Buffer} buffer
@@ -335,7 +545,14 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 		// 1. Caso tenha sido especificado um ID numérico da figurinha
 		if (specificId) {
-			const cachedPath = getStickerFromCache(specificId);
+			if (module.exports.isBlacklisted(specificId)) {
+				return new ReturnMessage({
+					chatId,
+					content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW).`
+				});
+			}
+
+			const cachedPath = module.exports.getStickerFromCache(specificId);
 			if (cachedPath) {
 				logger.info(`Usando figurinha em cache para ID ${specificId}`);
 				const fileBuf = await fs.promises.readFile(cachedPath);
@@ -382,7 +599,18 @@ async function stickerScraperCommand(bot, message, args, group) {
 			}
 
 			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
-			await saveStickerToCache(specificId, croppedBuffer);
+
+			// Verificação NSFW para ID específico
+			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, specificId);
+			if (isNsfw) {
+				await module.exports.addToBlacklist(specificId);
+				return new ReturnMessage({
+					chatId,
+					content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW).`
+				});
+			}
+
+			await module.exports.saveStickerToCache(specificId, croppedBuffer);
 
 			return buildStickerReturnMessage(
 				chatId,
@@ -398,7 +626,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 		const returnMessages = [];
 		const usedIds = new Set();
 		let rateLimited = false;
-		const maxAttempts = 10 * targetQuantity;
+		const maxAttempts = 15 * targetQuantity;
 
 		for (
 			let attempt = 1;
@@ -408,10 +636,10 @@ async function stickerScraperCommand(bot, message, args, group) {
 			const randomId =
 				Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
 
-			if (usedIds.has(randomId)) continue;
+			if (usedIds.has(randomId) || module.exports.isBlacklisted(randomId)) continue;
 			usedIds.add(randomId);
 
-			const cachedPath = getStickerFromCache(randomId);
+			const cachedPath = module.exports.getStickerFromCache(randomId);
 			if (cachedPath) {
 				logger.info(`Tentativa ${attempt}: figurinha #${randomId} encontrada no cache local!`);
 				const fileBuf = await fs.promises.readFile(cachedPath);
@@ -437,7 +665,18 @@ async function stickerScraperCommand(bot, message, args, group) {
 			if (result.found && result.buffer) {
 				logger.info(`Tentativa ${attempt}: figurinha #${randomId} obtida com sucesso do Lovecell!`);
 				const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
-				await saveStickerToCache(randomId, croppedBuffer);
+
+				// Verificação NSFW: se for positivo, adiciona à blacklist, descarta e tenta a próxima
+				const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId);
+				if (isNsfw) {
+					logger.warn(
+						`Tentativa ${attempt}: figurinha #${randomId} detectada como NSFW. Adicionando à blacklist e pulando para a próxima...`
+					);
+					await module.exports.addToBlacklist(randomId);
+					continue;
+				}
+
+				await module.exports.saveStickerToCache(randomId, croppedBuffer);
 
 				returnMessages.push(
 					buildStickerReturnMessage(
@@ -482,7 +721,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Não foi possível encontrar uma figurinha válida após 10 tentativas. Por favor, tente novamente."
+				"Não foi possível encontrar uma figurinha válida após várias tentativas. Por favor, tente novamente."
 		});
 	} catch (error) {
 		logger.error(`Erro ao processar comando sticker-scraper: ${error.message}`, error);
@@ -491,6 +730,153 @@ async function stickerScraperCommand(bot, message, args, group) {
 			content: "Ocorreu um erro ao buscar a figurinha. Por favor, tente novamente mais tarde."
 		});
 	}
+}
+
+/**
+ * Retorna intervalo aleatório em milissegundos
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function getRandomInterval(min = DEFAULT_MIN_INTERVAL_MS, max = DEFAULT_MAX_INTERVAL_MS) {
+	const lower = Math.min(min, max);
+	const upper = Math.max(min, max);
+	return Math.floor(Math.random() * (upper - lower + 1)) + lower;
+}
+
+/**
+ * Executa um ciclo do background scraper:
+ * Sorteia um número que ainda não foi baixado, faz o download do Lovecell,
+ * recorta o banner inferior (85px), passa pelo filtro NSFW (descartando e blacklisting se positivo)
+ * e salva no estoque offline.
+ */
+async function runBackgroundScraperTick() {
+	if (isScrapingInProgress) return;
+	isScrapingInProgress = true;
+
+	try {
+		const maxAttemptsPerTick = 5;
+		for (let attempt = 1; attempt <= maxAttemptsPerTick; attempt++) {
+			const candidateId = module.exports.getRandomUndownloadedId();
+			if (!candidateId) {
+				logger.debug("Nenhum ID elegível não baixado disponível para o background scraper.");
+				break;
+			}
+
+			const result = await module.exports.fetchLovecellSticker(candidateId);
+			if (result.rateLimit) {
+				logger.warn(
+					`Lovecell rate limit (429/403) no background scraper ao consultar ID ${candidateId}. Pausando timer por 15 minutos...`
+				);
+				scheduleNextTick(BACKOFF_RATE_LIMIT_MS);
+				return;
+			}
+
+			if (!result.found || !result.buffer) {
+				logger.debug(
+					`Background scraper: figurinha #${candidateId} não encontrada (${attempt}/${maxAttemptsPerTick}).`
+				);
+				continue;
+			}
+
+			// Recorta o banner promocional inferior (85px)
+			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
+
+			// Filtro NSFW
+			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, candidateId);
+			if (isNsfw) {
+				logger.warn(
+					`Background scraper: figurinha #${candidateId} é NSFW. Adicionando à blacklist e descartando.`
+				);
+				await module.exports.addToBlacklist(candidateId);
+				continue; // Não salva no estoque offline e continua o ciclo
+			}
+
+			// Salva no estoque offline
+			await module.exports.saveStickerToCache(candidateId, croppedBuffer);
+			logger.info(
+				`Background scraper: figurinha #${candidateId} ("${result.title || "Lovecell"}") salva no estoque offline com sucesso.`
+			);
+			break; // Sucesso ao baixar uma figurinha neste ciclo
+		}
+	} catch (error) {
+		logger.error(`Erro durante ciclo do background scraper: ${error.message}`, error);
+	} finally {
+		isScrapingInProgress = false;
+	}
+}
+
+/**
+ * Agenda a próxima execução do background scraper
+ * @param {number|null} delayMs
+ */
+function scheduleNextTick(delayMs = null) {
+	if (!isTimerRunning) return;
+	if (scraperTimer) {
+		clearTimeout(scraperTimer);
+		scraperTimer = null;
+	}
+
+	const delay = delayMs !== null ? delayMs : getRandomInterval();
+	logger.debug(`Próximo scraping offline agendado em ${Math.round(delay / 1000)}s.`);
+
+	scraperTimer = setTimeout(async () => {
+		try {
+			await module.exports.runBackgroundScraperTick();
+		} catch (err) {
+			logger.error(`Erro ao executar tick do background scraper: ${err.message}`);
+		} finally {
+			if (isTimerRunning) {
+				scheduleNextTick();
+			}
+		}
+	}, delay);
+
+	if (scraperTimer && scraperTimer.unref) {
+		scraperTimer.unref();
+	}
+}
+
+/**
+ * Inicia o timer do background scraper
+ * @param {number|null} initialDelayMs
+ */
+function startScraperTimer(initialDelayMs = null) {
+	if (isTimerRunning) return;
+	isTimerRunning = true;
+	logger.info("Timer de scraping em background do Lovecell iniciado.");
+	scheduleNextTick(initialDelayMs);
+}
+
+/**
+ * Para o timer do background scraper
+ */
+function stopScraperTimer() {
+	isTimerRunning = false;
+	if (scraperTimer) {
+		clearTimeout(scraperTimer);
+		scraperTimer = null;
+	}
+	logger.info("Timer de scraping em background do Lovecell pausado.");
+}
+
+/**
+ * Indica se o timer do background scraper está em execução
+ * @returns {boolean}
+ */
+function isScraperTimerRunning() {
+	return isTimerRunning;
+}
+
+// Inicialização automática do timer caso não esteja em testes ou desativado
+const shouldAutoStartTimer =
+	process.env.NODE_ENV !== "test" &&
+	process.env.DISABLE_STICKER_SCRAPER_TIMER !== "true" &&
+	process.env.DISABLE_ACTIVITY !== "true";
+
+if (shouldAutoStartTimer) {
+	const initialDelay = Math.floor(Math.random() * 30000) + 15000;
+	startScraperTimer(initialDelay);
 }
 
 const commands = [
@@ -531,7 +917,7 @@ const commands = [
 const helper = {
 	about: "Busca e envia figurinhas sob demanda do portal Lovecell",
 	implementation:
-		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando.",
+		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando. Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.",
 	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random",
 	cmds: [
 		{
@@ -550,7 +936,24 @@ module.exports = {
 	fetchLovecellSticker,
 	getRandomCachedStickers,
 	cleanTitle,
+	getStickerFilePath,
 	getStickerFromCache,
 	saveStickerToCache,
-	LOVECELL_DIR
+	LOVECELL_DIR,
+	BLACKLIST_FILE,
+	blacklistedIds,
+	downloadedIds,
+	loadBlacklistSync,
+	saveBlacklist,
+	isBlacklisted,
+	addToBlacklist,
+	loadDownloadedIdsSync,
+	isDownloaded,
+	getRandomUndownloadedId,
+	checkStickerNSFW,
+	runBackgroundScraperTick,
+	startScraperTimer,
+	stopScraperTimer,
+	isScraperTimerRunning,
+	getRandomInterval
 };
