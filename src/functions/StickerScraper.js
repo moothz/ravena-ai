@@ -502,7 +502,7 @@ const commands = [
 		reply: false,
 		aliases: ["figrandom"],
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 30,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -518,7 +518,7 @@ const commands = [
 		group: "lovecell",
 		reply: false,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 30,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
