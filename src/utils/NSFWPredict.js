@@ -3,6 +3,7 @@ const path = require("path");
 const axios = require("axios");
 const Logger = require("./Logger");
 const Status = require("./Status");
+const Database = require("./Database");
 const LLMService = require("../services/LLMService");
 const ServiceProviderService = require("../services/ServiceProviderService");
 const { extractFrames } = require("./Conversions");
@@ -14,6 +15,7 @@ const { extractFrames } = require("./Conversions");
 class NSFWPredict {
 	constructor() {
 		this.logger = new Logger("nsfw-predict");
+		this.database = Database.getInstance();
 		this.llmService = LLMService.getInstance();
 		this.serviceProviderService = ServiceProviderService.getInstance();
 		this.threshold = parseFloat(process.env.NSFW_THRESHOLD || "0.7");
@@ -980,6 +982,117 @@ Return the result in JSON format.`;
 		} catch (error) {
 			this.logger.error("Erro ao processar MessageMedia para detecção NSFW:", error);
 			return { isNSFW: false, reason: "", error: error.message };
+		}
+	}
+
+	/**
+	 * Processa uma detecção de NSFW originada de um analisador externo (ex: Vision AI do SummaryCommands).
+	 * Avalia se o grupo possui filtro NSFW ativo e toma as providências de moderação cabíveis (excluir mensagem, purgar stickers, logs).
+	 *
+	 * @param {Object} bot - Instância do bot
+	 * @param {Object} message - Objeto da mensagem recebida
+	 * @param {Object} detectionData - Dados da detecção { isNSFW, type, description, source, group }
+	 * @returns {Promise<{ handled: boolean, deleted: boolean, reason?: string, error?: string }>}
+	 */
+	async handleExternalDetection(bot, message, detectionData = {}) {
+		if (!detectionData?.isNSFW) {
+			return { handled: false, deleted: false };
+		}
+
+		const chatId = message?.group || message?.guildId;
+		if (!chatId) {
+			return { handled: false, deleted: false, reason: "private_chat" };
+		}
+
+		// Não modera grupos de dossiê do bot
+		if (bot && typeof bot.isDossieGroup === "function" && bot.isDossieGroup(chatId)) {
+			return { handled: false, deleted: false, reason: "dossie_group" };
+		}
+
+		try {
+			// Carrega dados do grupo (cache do eventHandler, objeto fornecido ou SQLite)
+			let group = detectionData.group || bot?.eventHandler?.groups?.[chatId];
+			if (!group) {
+				const db = bot?.database || this.database || Database.getInstance();
+				group = await db.getGroup(chatId);
+			}
+
+			const isGroupFilter = Boolean(group?.filters?.nsfw);
+			const envVal = process.env.NUDENET_DETECT_ALL;
+			const isDetectAll =
+				envVal &&
+				envVal.toString().trim().toLowerCase() !== "0" &&
+				envVal.toString().trim().toLowerCase() !== "false" &&
+				envVal.toString().trim().toLowerCase() !== "undefined";
+
+			const groupName = group?.name || chatId;
+			const authorName =
+				message.authorName || message.name || message.pushName || message.author || "desconhecido";
+			const author = message.author || message.authorAlt || "desconhecido";
+			const mediaType = detectionData.type || message.type || "mídia";
+			const reasonStr = `Vision AI [${mediaType}]: ${detectionData.description || "Conteúdo NSFW detectado"}`;
+
+			if (isGroupFilter) {
+				this.logger.info(
+					`[${groupName}] Mensagem NSFW filtrada retroativamente (${detectionData.source || "External"}) - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
+				);
+
+				// Deleta a mensagem original
+				let deleted = false;
+				try {
+					if (message.origin && typeof message.origin.delete === "function") {
+						await message.origin.delete(true);
+						deleted = true;
+					} else if (bot && typeof bot.deleteMessageByKey === "function") {
+						const msgId = message.origin?.id?.id || message.id;
+						await bot.deleteMessageByKey({
+							remoteJid: chatId,
+							id: msgId,
+							fromMe: false,
+							participant: author
+						});
+						deleted = true;
+					}
+				} catch (delErr) {
+					this.logger.debug(
+						`[${groupName}] Mensagem já havia sido deletada ou erro ao deletar: ${delErr.message}`
+					);
+				}
+
+				// Purgar stickers associados se a mensagem for originária de comando de sticker
+				if (bot?.eventHandler && typeof bot.eventHandler.getSentStickersForMessage === "function") {
+					const originalMsgId =
+						message.origin?.id?._serialized || message.origin?.id?.id || message.id;
+					const sentStickers = bot.eventHandler.getSentStickersForMessage(originalMsgId);
+					if (sentStickers && sentStickers.length > 0) {
+						for (const s of sentStickers) {
+							try {
+								if (typeof bot.deleteMessageByKey === "function") {
+									await bot.deleteMessageByKey({
+										remoteJid: chatId,
+										id: s.id,
+										fromMe: true
+									});
+								}
+							} catch (stkErr) {
+								this.logger.debug(`Erro ao purgar sticker residual: ${stkErr.message}`);
+							}
+						}
+					}
+				}
+
+				return { handled: true, deleted, reason: reasonStr };
+			} else if (isDetectAll) {
+				this.logger.info(
+					`[${groupName}] Mensagem NSFW detectada via Vision AI (${detectionData.source || "External"}) [DETECT_ALL] - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
+				);
+				return { handled: true, deleted: false, reason: reasonStr };
+			}
+
+			return { handled: false, deleted: false };
+		} catch (err) {
+			this.logger.error(`Erro ao processar detecção externa NSFW para o grupo ${chatId}:`, err);
+			return { handled: false, deleted: false, error: err.message };
 		}
 	}
 

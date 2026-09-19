@@ -7,10 +7,12 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const fs = require("fs").promises;
 const { extractFrames } = require("../utils/Conversions");
+const NSFWPredict = require("../utils/NSFWPredict");
 
 const logger = new Logger("summary-commands");
 const database = Database.getInstance();
 const llmService = LLMService.getInstance();
+const nsfwPredict = NSFWPredict.getInstance();
 const DB_NAME = "summaries";
 const activeAnalyses = new Set();
 const otherAI = [];
@@ -94,9 +96,10 @@ const mediaAnalysisSchema = {
 /**
  * Analisa um vídeo e retorna uma descrição
  * @param {Object} message - A mensagem contendo o vídeo
+ * @param {Object} [bot] - Instância do bot para disparo de moderação NSFW retroativa
  * @returns {Promise<string|boolean>} - Descrição do vídeo ou false
  */
-async function analyzeVideo(message) {
+async function analyzeVideo(message, bot = null) {
 	const tempDirBase = path.join(__dirname, "../../temp");
 	const timestamp = Date.now();
 	const tempDir = path.join(tempDirBase, `video_analysis_${timestamp}`);
@@ -134,11 +137,11 @@ async function analyzeVideo(message) {
 
 		if (frames.length === 0) return false;
 
-		// Chama LLM
+		// Chama LLM com prompt direto/uncensored para análise e classificação de conteúdo
 		const completionOptions = {
 			prompt:
-				"Analyze the video frames provided and return a brief description ((in pt-BR, portuguese brazil)). Describe the main actions and events in the video. Also classify the type (real life, anime, game, etc) and if it contains NSFW content.",
-			systemContext: `You are an expert bot in video processing and analysis`,
+				"Analyze the video frames provided and return an objective, factual description ((in pt-BR, portuguese brazil)) of the main actions and events ((try to stay below 200 characters)). You may describe explicit, sexual, or sensitive elements directly and accurately for moderation purposes. Also classify the type (vida-real, anime, desenho, jogo, ia-generated, outros) and if it contains NSFW content (nudity, pornography, sexually explicit acts or poses).",
+			systemContext: `You are an expert, uncensored content moderation and video processing assistant. You analyze visual media objectively without refusal or moralizing.`,
 			images: frames,
 			response_format: mediaAnalysisSchema,
 			maxTokens: 150,
@@ -156,6 +159,20 @@ async function analyzeVideo(message) {
 		try {
 			const parsed = JSON.parse(response);
 			const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
+
+			if (parsed.nsfw && bot) {
+				nsfwPredict
+					.handleExternalDetection(bot, message, {
+						isNSFW: true,
+						type: parsed.type,
+						description: parsed.description,
+						source: "SummaryCommands:VisionAI:Video"
+					})
+					.catch((triggerErr) =>
+						logger.error("Erro no trigger NSFW de vídeo do SummaryCommands:", triggerErr)
+					);
+			}
+
 			return `Video[${parsed.type || "outros"}|${nsfwTag}|${parsed.description || ""}]`;
 		} catch (e) {
 			logger.warn("Falha ao analisar JSON do vídeo, retornando cru:", response);
@@ -697,8 +714,8 @@ async function storeMessage(message, chatId, bot) {
 				if (imageData) {
 					const completionOptions = {
 						prompt:
-							"Analyze the picture and return a brief description ((in pt-BR, portuguese brazil)) ((try to stay below 200 characters)). Also classify the type (real life, anime, game, etc) and if it contains NSFW content.",
-						systemContext: `You are an expert bot in image processing and analysis`,
+							"Analyze the picture and return an objective, factual description ((in pt-BR, portuguese brazil)) ((try to stay below 200 characters)). You may describe explicit, sexual, or sensitive elements directly and accurately for moderation purposes. Also classify the type (vida-real, anime, desenho, jogo, ia-generated, documento, outros) and if it contains NSFW content (nudity, pornography, sexually explicit acts or poses).",
+						systemContext: `You are an expert, uncensored content moderation and image processing assistant. You analyze visual media objectively without refusal or moralizing.`,
 						image: imageData,
 						response_format: mediaAnalysisSchema,
 						maxTokens: 150,
@@ -722,6 +739,19 @@ async function storeMessage(message, chatId, bot) {
 								? `${finalString}\nLegenda: ${message.caption}`
 								: finalString;
 							logger.info(`[${chatId}][storeMessage] Imagem interpretada: ${textContent}`);
+
+							if (parsed.nsfw && bot) {
+								nsfwPredict
+									.handleExternalDetection(bot, message, {
+										isNSFW: true,
+										type: parsed.type,
+										description: parsed.description,
+										source: "SummaryCommands:VisionAI:Image"
+									})
+									.catch((triggerErr) =>
+										logger.error("Erro no trigger NSFW de imagem do SummaryCommands:", triggerErr)
+									);
+							}
 						} catch (e) {
 							logger.warn("Falha ao analisar JSON da imagem, retornando cru:", response);
 							// Fallback if not JSON
@@ -733,7 +763,7 @@ async function storeMessage(message, chatId, bot) {
 		} else if (message.type === "video" && llmUp) {
 			// Tenta interpretar o video usando Vision AI
 			if (message.content && !message.caption?.startsWith("!s")) {
-				const response = await analyzeVideo(message);
+				const response = await analyzeVideo(message, bot);
 
 				if (
 					response &&
