@@ -43,6 +43,7 @@ class Command {
 		this.deleteOnComplete = data.deleteOnComplete ?? false; // Se deve excluir a mensagem original após concluir
 		// FIX: Corrigido typo 'replyInPvivate' para 'replyInPrivate'
 		this.replyInPrivate = data.replyInPrivate ?? data.replyInPvivate ?? false; // Responde no PV ao invés de grupo
+		this.reply = data.reply ?? true; // Se deve responder citando a mensagem original
 
 		// Processamento e execução
 		this.method = data.method ?? null; // Função que implementa o comando (obrigatória)
@@ -133,6 +134,7 @@ class Command {
 			timeout: this.timeout,
 			deleteOnComplete: this.deleteOnComplete,
 			replyInPrivate: this.replyInPrivate,
+			reply: this.reply,
 
 			ignoreInteract: this.ignoreInteract,
 			// Não inclui o method para evitar problemas de serialização de funções

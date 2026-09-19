@@ -1292,6 +1292,11 @@ class CommandHandler {
 								msg.reaction = command.reactions?.after;
 							}
 
+							if (command.reply === false && msg.options) {
+								delete msg.options.quotedMessageId;
+								delete msg.options.goReply;
+							}
+
 							// Auto-mention do usuário que pediu o comando (apenas em grupos)
 							if (requesterId && msg instanceof ReturnMessage && message.group) {
 								if (!msg.options) msg.options = {};

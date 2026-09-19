@@ -161,6 +161,52 @@ async function saveStickerToCache(stickerId, buffer) {
 }
 
 /**
+ * Busca figurinhas aleatórias já salvas no cache local do Lovecell
+ * @param {number} count - Quantidade desejada
+ * @param {Set<number|string>} excludeIds - IDs a excluir
+ * @returns {Promise<Array<{ id: number|string, buffer: Buffer }>>}
+ */
+async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
+	try {
+		if (!fs.existsSync(LOVECELL_DIR)) return [];
+		const files = await fs.promises.readdir(LOVECELL_DIR);
+		const stickerFiles = files.filter((f) => f.startsWith("figs_lovecell_") && f.endsWith(".webp"));
+
+		let available = stickerFiles.filter((f) => {
+			const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
+			if (!match) return false;
+			return !excludeIds.has(parseInt(match[1], 10));
+		});
+
+		if (available.length === 0 && stickerFiles.length > 0) {
+			available = [...stickerFiles];
+		}
+
+		if (available.length === 0) return [];
+
+		// Embaralha aleatoriamente (Fisher-Yates)
+		for (let i = available.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[available[i], available[j]] = [available[j], available[i]];
+		}
+
+		const selected = available.slice(0, count);
+		const results = [];
+		for (const filename of selected) {
+			const match = filename.match(/^figs_lovecell_(\d+)\.webp$/);
+			const id = match ? parseInt(match[1], 10) : filename;
+			const fullPath = path.join(LOVECELL_DIR, filename);
+			const buffer = await fs.promises.readFile(fullPath);
+			results.push({ id, buffer });
+		}
+		return results;
+	} catch (err) {
+		logger.error(`Erro ao obter figurinhas aleatórias do cache: ${err.message}`);
+		return [];
+	}
+}
+
+/**
  * Realiza scraping sob demanda de um ID específico no Lovecell
  * @param {number|string} stickerId
  * @returns {Promise<{ found: boolean, rateLimit?: boolean, buffer?: Buffer, title?: string, imageUrl?: string, error?: string }>}
@@ -253,9 +299,7 @@ function buildStickerReturnMessage(chatId, buffer, stickerId, title, bot, messag
 		options: {
 			sendMediaAsSticker: true,
 			stickerAuthor: bot?.nomeExibir || "ravena",
-			stickerName: title || `Lovecell #${stickerId}`,
-			quotedMessageId: message.origin?.id?._serialized,
-			goReply: message.origin
+			stickerName: title || `Lovecell #${stickerId}`
 		}
 	});
 }
@@ -307,6 +351,22 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 			const result = await module.exports.fetchLovecellSticker(specificId);
 			if (result.rateLimit) {
+				// Em caso de rate-limit, busca uma figurinha aleatória já baixada no cache
+				const fallback = await module.exports.getRandomCachedStickers(1);
+				if (fallback.length > 0) {
+					logger.info(
+						`Rate limit atingido para ID ${specificId}. Usando figurinha #${fallback[0].id} do cache local como fallback.`
+					);
+					return buildStickerReturnMessage(
+						chatId,
+						fallback[0].buffer,
+						fallback[0].id,
+						`Lovecell #${fallback[0].id}`,
+						bot,
+						message
+					);
+				}
+
 				return new ReturnMessage({
 					chatId,
 					content:
@@ -340,7 +400,11 @@ async function stickerScraperCommand(bot, message, args, group) {
 		let rateLimited = false;
 		const maxAttempts = 10 * targetQuantity;
 
-		for (let attempt = 1; attempt <= maxAttempts && returnMessages.length < targetQuantity; attempt++) {
+		for (
+			let attempt = 1;
+			attempt <= maxAttempts && returnMessages.length < targetQuantity;
+			attempt++
+		) {
 			const randomId =
 				Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
 
@@ -388,6 +452,21 @@ async function stickerScraperCommand(bot, message, args, group) {
 			}
 		}
 
+		// Em caso de rate-limit, preenche as figurinhas restantes com figurinhas já baixadas no cache
+		if (rateLimited && returnMessages.length < targetQuantity) {
+			const needed = targetQuantity - returnMessages.length;
+			logger.warn(
+				`Lovecell com rate limit. Buscando ${needed} figurinha(s) do cache local como fallback...`
+			);
+			const fallbackStickers = await module.exports.getRandomCachedStickers(needed, usedIds);
+			for (const fb of fallbackStickers) {
+				usedIds.add(fb.id);
+				returnMessages.push(
+					buildStickerReturnMessage(chatId, fb.buffer, fb.id, `Lovecell #${fb.id}`, bot, message)
+				);
+			}
+		}
+
 		if (returnMessages.length > 0) {
 			return returnMessages;
 		}
@@ -417,9 +496,10 @@ async function stickerScraperCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "figa",
-		description: "Envia figurinha aleatória (Lovecell)",
+		description: "Faz scraping da figurinha principal no Lovecell (estático ou animado)",
 		category: "stickers",
 		group: "lovecell",
+		reply: false,
 		aliases: ["figrandom"],
 		caseSensitive: false,
 		cooldown: 0,
@@ -433,9 +513,10 @@ const commands = [
 
 	new Command({
 		name: "figrandom",
-		description: "Envia figurinha aleatória (Lovecell)",
+		description: "Faz scraping da figurinha principal no Lovecell (estático ou animado)",
 		category: "stickers",
 		group: "lovecell",
+		reply: false,
 		caseSensitive: false,
 		cooldown: 0,
 		reactions: {
@@ -450,12 +531,12 @@ const commands = [
 const helper = {
 	about: "Busca e envia figurinhas sob demanda do portal Lovecell",
 	implementation:
-		"Faz scraping de figurinhas no Lovecell",
-	tags: "figa,figrandom,figurinha",
+		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando.",
+	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random",
 	cmds: [
 		{
 			cmd: "!figa",
-			desc: "Envia figurinha aleatória (Lovecell)",
+			desc: "Faz scraping da figurinha principal no Lovecell (estático ou animado)",
 			usage: ["!figa", "!figa 4", "!figrandom 2", "!figa 37019"],
 			category: "stickers"
 		}
@@ -467,6 +548,7 @@ module.exports = {
 	commands,
 	cropLovecellBanner,
 	fetchLovecellSticker,
+	getRandomCachedStickers,
 	cleanTitle,
 	getStickerFromCache,
 	saveStickerToCache,

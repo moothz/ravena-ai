@@ -168,10 +168,19 @@ async function runTests() {
 	);
 	assert.strictEqual(cmdFiga.group, "lovecell");
 	assert.strictEqual(cmdFigrandom.group, "lovecell");
-	console.log("✓ Comandos 'figa' e 'figrandom' configurados com a descrição correta e mesmo group");
+	assert.strictEqual(cmdFiga.reply, false, "Comando figa deve ter reply: false");
+	assert.strictEqual(cmdFigrandom.reply, false, "Comando figrandom deve ter reply: false");
+	assert.strictEqual(
+		sentMsg.options.quotedMessageId,
+		undefined,
+		"Não deve citar a mensagem quando reply: false"
+	);
+	console.log(
+		"✓ Comandos 'figa' e 'figrandom' configurados com reply: false, descrição correta e mesmo group"
+	);
 
-	// 9. Teste de rate limit
-	console.log("\n9. Testando resposta a rate limit...");
+	// 9. Teste de rate limit com fallback de cache
+	console.log("\n9. Testando resposta a rate limit com fallback do cache local...");
 	bot.resetCapture();
 	const originalFetch = StickerScraper.fetchLovecellSticker;
 	StickerScraper.fetchLovecellSticker = async () => ({ found: false, rateLimit: true });
@@ -184,11 +193,29 @@ async function runTests() {
 		});
 		await cmdHandler.processCommand(bot, msgRate, "figa", [], mockGroup);
 		assert.strictEqual(bot.capturedMessages.length, 1);
-		assert(
-			bot.capturedMessages[0].content.includes("temporariamente indisponível"),
-			"Deve avisar que o serviço está temporariamente indisponível por limite de requisições"
+		assert.strictEqual(
+			bot.capturedMessages[0].options.sendMediaAsSticker,
+			true,
+			"Deve enviar figurinha do cache como fallback em rate limit"
 		);
-		console.log("✓ Rate limit tratado e usuário avisado corretamente");
+		console.log("✓ Rate limit acionou fallback e enviou figurinha já baixada do cache");
+
+		// 10. Teste de rate limit sem nenhuma figurinha em cache
+		console.log("\n10. Testando rate limit com cache vazio...");
+		bot.resetCapture();
+		const originalGetCached = StickerScraper.getRandomCachedStickers;
+		StickerScraper.getRandomCachedStickers = async () => [];
+		try {
+			await cmdHandler.processCommand(bot, msgRate, "figa", [], mockGroup);
+			assert.strictEqual(bot.capturedMessages.length, 1);
+			assert(
+				bot.capturedMessages[0].content.includes("temporariamente indisponível"),
+				"Deve avisar que o serviço está temporariamente indisponível caso não haja cache"
+			);
+			console.log("✓ Rate limit com cache vazio avisou o usuário corretamente");
+		} finally {
+			StickerScraper.getRandomCachedStickers = originalGetCached;
+		}
 	} finally {
 		StickerScraper.fetchLovecellSticker = originalFetch;
 	}
