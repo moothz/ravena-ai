@@ -21,7 +21,14 @@ database.getSQLiteDb(
 		id INTEGER PRIMARY KEY,
 		reason TEXT,
 		created_at TEXT
-	);`
+	);
+	CREATE TABLE IF NOT EXISTS lovecell_stats (
+		id INTEGER PRIMARY KEY,
+		sent_count INTEGER DEFAULT 0,
+		last_sent_at TEXT,
+		created_at TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_lovecell_stats_sent ON lovecell_stats(sent_count);`
 );
 
 // Diretório para armazenar as figurinhas do Lovecell em cache (não indexado pelo git)
@@ -46,9 +53,9 @@ const TARGET_SIZE = 512;
 const MAX_STICKER_BYTES = 490 * 1024; // Limite de segurança (< 500 KB) do WhatsApp
 const MIN_STICKER_BYTES = 3 * 1024; // Tamanho mínimo de 3 KB para considerar o sticker válido
 
-// Limites de download automático: mínimo 1 sticker/min (60s), máximo 15 stickers/min (4s)
-const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 4 * 1000; // Máx 15 stickers/min
-const DEFAULT_MAX_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MAX_INTERVAL, 10) || 60 * 1000; // Mín 1 sticker/min
+// Limites de download automático: mínimo 10 stickers/min (6s), máximo 150 stickers/min (400ms)
+const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 400; // Máx 150 stickers/min (400ms)
+const DEFAULT_MAX_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MAX_INTERVAL, 10) || 6 * 1000; // Mín 10 stickers/min (6s)
 const BACKOFF_RATE_LIMIT_MS =
 	parseInt(process.env.STICKER_SCRAPER_BACKOFF_INTERVAL, 10) || 15 * 60 * 1000; // 15 min
 
@@ -226,6 +233,101 @@ loadBlacklistSync();
 loadDownloadedIdsSync();
 
 /**
+ * Inicializa e sincroniza estatísticas de figurinhas no SQLite.
+ * Considera todas as figurinhas atuais no disco como sent_count = 1 se ainda não tiverem registro.
+ */
+function initStickerStatsSync() {
+	try {
+		database.mappers.exec(
+			"lovecell",
+			`CREATE TABLE IF NOT EXISTS lovecell_stats (
+				id INTEGER PRIMARY KEY,
+				sent_count INTEGER DEFAULT 0,
+				last_sent_at TEXT,
+				created_at TEXT
+			);
+			CREATE INDEX IF NOT EXISTS idx_lovecell_stats_sent ON lovecell_stats(sent_count);`
+		);
+
+		if (fs.existsSync(LOVECELL_DIR)) {
+			const files = fs.readdirSync(LOVECELL_DIR);
+			const rows = database.mappers.all("lovecell", "SELECT id FROM lovecell_stats");
+			const recordedIds = new Set(Array.isArray(rows) ? rows.map((r) => r.id) : []);
+			const now = new Date().toISOString();
+
+			for (const file of files) {
+				const match = file.match(/^figs_lovecell_(\d+)\.webp$/);
+				if (match) {
+					const id = parseInt(match[1], 10);
+					if (!isNaN(id) && !recordedIds.has(id)) {
+						database.mappers.run(
+							"lovecell",
+							"INSERT OR IGNORE INTO lovecell_stats (id, sent_count, last_sent_at, created_at) VALUES (?, 1, ?, ?)",
+							[id, now, now]
+						);
+						recordedIds.add(id);
+					}
+				}
+			}
+		}
+		logger.info("Estatísticas de envio de figurinhas do Lovecell sincronizadas no SQLite.");
+	} catch (error) {
+		logger.error(`Erro ao inicializar lovecell_stats no SQLite: ${error.message}`);
+	}
+}
+
+initStickerStatsSync();
+
+/**
+ * Registra o envio de uma figurinha, incrementando seu contador em SQLite
+ * @param {number|string} stickerId
+ */
+function recordStickerSent(stickerId) {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return;
+	try {
+		const now = new Date().toISOString();
+		database.mappers.run(
+			"lovecell",
+			`INSERT INTO lovecell_stats (id, sent_count, last_sent_at, created_at)
+			 VALUES (?, 1, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET sent_count = sent_count + 1, last_sent_at = excluded.last_sent_at`,
+			[id, now, now]
+		);
+	} catch (err) {
+		logger.error(`Erro ao registrar envio da figurinha #${id} no SQLite: ${err.message}`);
+	}
+}
+
+/**
+ * Retorna as estatísticas de envio de uma figurinha
+ * @param {number|string} stickerId
+ * @returns {{ id: number, sentCount: number, lastSentAt: string|null, createdAt: string|null }|null}
+ */
+function getStickerStats(stickerId) {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return null;
+	try {
+		const row = database.mappers.get(
+			"lovecell",
+			"SELECT id, sent_count, last_sent_at, created_at FROM lovecell_stats WHERE id = ?",
+			[id]
+		);
+		if (row) {
+			return {
+				id: row.id,
+				sentCount: typeof row.sent_count === "number" ? row.sent_count : 0,
+				lastSentAt: row.last_sent_at || null,
+				createdAt: row.created_at || null
+			};
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Verifica se a figurinha já foi baixada no cache local
  * @param {number|string} stickerId
  * @returns {boolean}
@@ -380,6 +482,14 @@ async function saveStickerToCache(stickerId, buffer) {
 		await fs.promises.writeFile(filePath, buffer);
 		if (!isNaN(id)) {
 			downloadedIds.add(id);
+			try {
+				const now = new Date().toISOString();
+				database.mappers.run(
+					"lovecell",
+					"INSERT OR IGNORE INTO lovecell_stats (id, sent_count, last_sent_at, created_at) VALUES (?, 0, NULL, ?)",
+					[id, now]
+				);
+			} catch {}
 		}
 		logger.info(`Figurinha salva em cache: ${filePath}`);
 		return filePath;
@@ -390,7 +500,10 @@ async function saveStickerToCache(stickerId, buffer) {
 }
 
 /**
- * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted e < 3KB)
+ * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted e < 3KB).
+ * Prioriza figurinhas nunca enviadas (sent_count = 0) ou pouco enviadas (sent_count menor)
+ * para evitar repetição excessiva para os usuários.
+ *
  * @param {number} count - Quantidade desejada
  * @param {Set<number|string>} excludeIds - IDs a excluir
  * @returns {Promise<Array<{ id: number|string, buffer: Buffer }>>}
@@ -431,21 +544,70 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 
 		if (available.length === 0) return [];
 
-		// Embaralha aleatoriamente (Fisher-Yates)
-		for (let i = available.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[available[i], available[j]] = [available[j], available[i]];
+		// Carrega estatísticas de envio do SQLite para priorizar figurinhas nunca ou pouco enviadas
+		const statsMap = new Map();
+		try {
+			const rows = database.mappers.all(
+				"lovecell",
+				"SELECT id, sent_count, last_sent_at FROM lovecell_stats"
+			);
+			if (Array.isArray(rows)) {
+				for (const row of rows) {
+					statsMap.set(row.id, {
+						sentCount: typeof row.sent_count === "number" ? row.sent_count : 0,
+						lastSentAt: row.last_sent_at || null
+					});
+				}
+			}
+		} catch (dbErr) {
+			logger.warn(`Não foi possível ler lovecell_stats no SQLite: ${dbErr.message}`);
 		}
 
-		const selected = available.slice(0, count);
-		const results = [];
-		for (const filename of selected) {
+		// Mapeia os candidatos válidos com seus contadores de envio
+		const candidates = available.map((filename) => {
 			const match = filename.match(/^figs_lovecell_(\d+)\.webp$/);
 			const id = match ? parseInt(match[1], 10) : filename;
-			const fullPath = path.join(LOVECELL_DIR, filename);
+			const stats = statsMap.get(id);
+			// Se o arquivo existe no disco mas ainda não está registrado, considera como 1
+			const sentCount = stats ? stats.sentCount : 1;
+			const lastSentAt = stats?.lastSentAt || null;
+			return { filename, id, sentCount, lastSentAt };
+		});
+
+		// Agrupa candidatos por faixa de envio (sentCount: 0, 1, 2, ...)
+		const groupsByCount = new Map();
+		for (const cand of candidates) {
+			if (!groupsByCount.has(cand.sentCount)) {
+				groupsByCount.set(cand.sentCount, []);
+			}
+			groupsByCount.get(cand.sentCount).push(cand);
+		}
+
+		// Ordena os níveis de prioridade do menor para o maior (0 = nunca enviadas, depois 1, 2, etc.)
+		const sortedLevels = Array.from(groupsByCount.keys()).sort((a, b) => a - b);
+
+		const selectedCandidates = [];
+		for (const level of sortedLevels) {
+			if (selectedCandidates.length >= count) break;
+
+			const tierItems = groupsByCount.get(level);
+
+			// Embaralha aleatoriamente (Fisher-Yates) os itens dentro do mesmo nível para variar a ordem
+			for (let i = tierItems.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[tierItems[i], tierItems[j]] = [tierItems[j], tierItems[i]];
+			}
+
+			const needed = count - selectedCandidates.length;
+			selectedCandidates.push(...tierItems.slice(0, needed));
+		}
+
+		const results = [];
+		for (const item of selectedCandidates) {
+			const fullPath = path.join(LOVECELL_DIR, item.filename);
 			const buffer = await fs.promises.readFile(fullPath);
 			if (buffer.length >= MIN_STICKER_BYTES) {
-				results.push({ id, buffer });
+				results.push({ id: item.id, buffer });
 			}
 		}
 		return results;
@@ -707,6 +869,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 			if (cachedPath) {
 				logger.info(`Usando figurinha em cache para ID ${specificId}`);
 				const fileBuf = await fs.promises.readFile(cachedPath);
+				module.exports.recordStickerSent(specificId);
 				return buildStickerReturnMessage(
 					chatId,
 					fileBuf,
@@ -725,6 +888,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 					logger.info(
 						`Rate limit atingido para ID ${specificId}. Usando figurinha #${fallback[0].id} do cache local como fallback.`
 					);
+					module.exports.recordStickerSent(fallback[0].id);
 					return buildStickerReturnMessage(
 						chatId,
 						fallback[0].buffer,
@@ -771,6 +935,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 			}
 
 			await module.exports.saveStickerToCache(specificId, croppedBuffer);
+			module.exports.recordStickerSent(specificId);
 
 			return buildStickerReturnMessage(
 				chatId,
@@ -782,95 +947,83 @@ async function stickerScraperCommand(bot, message, args, group) {
 			);
 		}
 
-		// 2. Modo aleatório (busca até targetQuantity figurinhas válidas)
+		// 2. Modo aleatório (seleciona figurinhas já baixadas diretamente da pasta local / cache)
+		// Otimização: entrega imediata sem necessidade de download ou análise NSFW em tempo de requisição
 		const returnMessages = [];
 		const usedIds = new Set();
-		let rateLimited = false;
-		const maxAttempts = 15 * targetQuantity;
 
-		for (
-			let attempt = 1;
-			attempt <= maxAttempts && returnMessages.length < targetQuantity;
-			attempt++
-		) {
-			const randomId =
-				Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
+		const cachedStickers = await module.exports.getRandomCachedStickers(targetQuantity, usedIds);
+		for (const item of cachedStickers) {
+			usedIds.add(item.id);
+			module.exports.recordStickerSent(item.id);
+			returnMessages.push(
+				buildStickerReturnMessage(
+					chatId,
+					item.buffer,
+					item.id,
+					`Lovecell #${item.id}`,
+					bot,
+					message
+				)
+			);
+		}
 
-			if (usedIds.has(randomId) || module.exports.isBlacklisted(randomId)) continue;
-			usedIds.add(randomId);
+		// Fallback: se o estoque local estiver vazio ou insuficiente (ex: instalação nova), busca online
+		if (returnMessages.length < targetQuantity) {
+			let rateLimited = false;
+			const needed = targetQuantity - returnMessages.length;
+			const maxAttempts = 15 * needed;
 
-			const cachedPath = module.exports.getStickerFromCache(randomId);
-			if (cachedPath) {
-				logger.info(`Tentativa ${attempt}: figurinha #${randomId} encontrada no cache local!`);
-				const fileBuf = await fs.promises.readFile(cachedPath);
-				if (fileBuf.length >= MIN_STICKER_BYTES) {
+			for (
+				let attempt = 1;
+				attempt <= maxAttempts && returnMessages.length < targetQuantity;
+				attempt++
+			) {
+				const randomId =
+					Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
+
+				if (usedIds.has(randomId) || module.exports.isBlacklisted(randomId)) continue;
+				usedIds.add(randomId);
+
+				const result = await module.exports.fetchLovecellSticker(randomId);
+				if (result.rateLimit) {
+					rateLimited = true;
+					break;
+				}
+
+				if (result.found && result.buffer && result.buffer.length >= MIN_STICKER_BYTES) {
+					const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
+					if (croppedBuffer.length < MIN_STICKER_BYTES) continue;
+
+					// Verificação NSFW
+					const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId);
+					if (isNsfw) {
+						await module.exports.addToBlacklist(randomId);
+						continue;
+					}
+
+					await module.exports.saveStickerToCache(randomId, croppedBuffer);
+					module.exports.recordStickerSent(randomId);
+
 					returnMessages.push(
 						buildStickerReturnMessage(
 							chatId,
-							fileBuf,
+							croppedBuffer,
 							randomId,
-							`Lovecell #${randomId}`,
+							result.title || `Lovecell #${randomId}`,
 							bot,
 							message
 						)
 					);
 				}
-				continue;
 			}
 
-			const result = await module.exports.fetchLovecellSticker(randomId);
-			if (result.rateLimit) {
-				rateLimited = true;
-				break;
-			}
-
-			if (result.found && result.buffer && result.buffer.length >= MIN_STICKER_BYTES) {
-				logger.info(`Tentativa ${attempt}: figurinha #${randomId} obtida com sucesso do Lovecell!`);
-				const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
-				if (croppedBuffer.length < MIN_STICKER_BYTES) {
-					logger.warn(
-						`Tentativa ${attempt}: figurinha #${randomId} ficou com tamanho inferior a 3KB (${croppedBuffer.length} bytes) após corte do banner. Pulando...`
-					);
-					continue;
-				}
-
-				// Verificação NSFW: se for positivo, adiciona à blacklist, descarta e tenta a próxima
-				const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId);
-				if (isNsfw) {
-					logger.warn(
-						`Tentativa ${attempt}: figurinha #${randomId} detectada como NSFW. Adicionando à blacklist e pulando para a próxima...`
-					);
-					await module.exports.addToBlacklist(randomId);
-					continue;
-				}
-
-				await module.exports.saveStickerToCache(randomId, croppedBuffer);
-
-				returnMessages.push(
-					buildStickerReturnMessage(
-						chatId,
-						croppedBuffer,
-						randomId,
-						result.title || `Lovecell #${randomId}`,
-						bot,
-						message
-					)
-				);
-			}
-		}
-
-		// Em caso de rate-limit, preenche as figurinhas restantes com figurinhas já baixadas no cache
-		if (rateLimited && returnMessages.length < targetQuantity) {
-			const needed = targetQuantity - returnMessages.length;
-			logger.warn(
-				`Lovecell com rate limit. Buscando ${needed} figurinha(s) do cache local como fallback...`
-			);
-			const fallbackStickers = await module.exports.getRandomCachedStickers(needed, usedIds);
-			for (const fb of fallbackStickers) {
-				usedIds.add(fb.id);
-				returnMessages.push(
-					buildStickerReturnMessage(chatId, fb.buffer, fb.id, `Lovecell #${fb.id}`, bot, message)
-				);
+			if (returnMessages.length === 0 && rateLimited) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ O serviço do Lovecell está temporariamente indisponível no momento devido a limite de requisições. Tente novamente mais tarde."
+				});
 			}
 		}
 
@@ -878,18 +1031,10 @@ async function stickerScraperCommand(bot, message, args, group) {
 			return returnMessages;
 		}
 
-		if (rateLimited) {
-			return new ReturnMessage({
-				chatId,
-				content:
-					"⚠️ O serviço do Lovecell está temporariamente indisponível no momento devido a limite de requisições. Tente novamente mais tarde."
-			});
-		}
-
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Não foi possível encontrar uma figurinha válida após várias tentativas. Por favor, tente novamente."
+				"Não foi possível encontrar figurinhas disponíveis no momento. Por favor, tente novamente em instantes."
 		});
 	} catch (error) {
 		logger.error(`Erro ao processar comando sticker-scraper: ${error.message}`, error);
@@ -919,7 +1064,12 @@ function getRandomInterval(min = DEFAULT_MIN_INTERVAL_MS, max = DEFAULT_MAX_INTE
  * e salva no estoque offline.
  */
 async function runBackgroundScraperTick() {
-	if (isScrapingInProgress) return;
+	if (isScrapingInProgress) {
+		logger.debug(
+			"Ciclo do background scraper ignorado: download/processamento anterior ainda em andamento."
+		);
+		return;
+	}
 	isScrapingInProgress = true;
 
 	try {
@@ -936,8 +1086,7 @@ async function runBackgroundScraperTick() {
 				logger.warn(
 					`Lovecell rate limit (429/403) no background scraper ao consultar ID ${candidateId}. Pausando timer por 15 minutos...`
 				);
-				scheduleNextTick(BACKOFF_RATE_LIMIT_MS);
-				return;
+				return BACKOFF_RATE_LIMIT_MS;
 			}
 
 			if (!result.found || !result.buffer || result.buffer.length < MIN_STICKER_BYTES) {
@@ -981,7 +1130,8 @@ async function runBackgroundScraperTick() {
 }
 
 /**
- * Agenda a próxima execução do background scraper
+ * Agenda a próxima execução do background scraper.
+ * O intervalo de delay só começa a contar após o término completo do download e processamento do ciclo anterior.
  * @param {number|null} delayMs
  */
 function scheduleNextTick(delayMs = null) {
@@ -992,16 +1142,19 @@ function scheduleNextTick(delayMs = null) {
 	}
 
 	const delay = delayMs !== null ? delayMs : getRandomInterval();
-	logger.debug(`Próximo scraping offline agendado em ${Math.round(delay / 1000)}s.`);
+	const formattedDelay = delay < 1000 ? `${delay}ms` : `${(delay / 1000).toFixed(1)}s`;
+	logger.debug(`Próximo scraping offline agendado em ${formattedDelay}.`);
 
 	scraperTimer = setTimeout(async () => {
+		let nextDelay = null;
 		try {
-			await module.exports.runBackgroundScraperTick();
+			nextDelay = await module.exports.runBackgroundScraperTick();
 		} catch (err) {
 			logger.error(`Erro ao executar tick do background scraper: ${err.message}`);
 		} finally {
+			// Garante que o próximo tick só é agendado após o término completo do ciclo/download anterior
 			if (isTimerRunning) {
-				scheduleNextTick();
+				scheduleNextTick(typeof nextDelay === "number" ? nextDelay : null);
 			}
 		}
 	}, delay);
@@ -1131,5 +1284,11 @@ module.exports = {
 	stopScraperTimer,
 	isScraperTimerRunning,
 	getRandomInterval,
-	MIN_STICKER_BYTES
+	MIN_STICKER_BYTES,
+	DEFAULT_MIN_INTERVAL_MS,
+	DEFAULT_MAX_INTERVAL_MS,
+	isScrapingInProgress: () => isScrapingInProgress,
+	recordStickerSent,
+	getStickerStats,
+	initStickerStatsSync
 };

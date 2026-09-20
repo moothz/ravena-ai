@@ -379,24 +379,31 @@ async function runTests() {
 		// Apenas a primeira tentativa é marcada como NSFW
 		attemptSeq === 1;
 
-	const msgRandomNSFW = createMessage({
-		content: "!figa",
-		group: "group_test_12@g.us",
-		author: "user_test_12@s.whatsapp.net",
-		authorName: "Testador 12"
-	});
+	const originalGetCached12 = StickerScraper.getRandomCachedStickers;
+	StickerScraper.getRandomCachedStickers = async () => [];
 
-	await cmdHandler.processCommand(bot, msgRandomNSFW, "figa", [], {
-		id: "group_test_12@g.us",
-		name: "Grupo Teste 12"
-	});
-	assert.strictEqual(bot.capturedMessages.length, 1, "Deve entregar 1 sticker seguro");
-	assert.strictEqual(
-		bot.capturedMessages[0].options.sendMediaAsSticker,
-		true,
-		"Deve ser enviado como sticker"
-	);
-	console.log("✓ Modo aleatório pulou figurinha NSFW e buscou a próxima válida com sucesso");
+	try {
+		const msgRandomNSFW = createMessage({
+			content: "!figa",
+			group: "group_test_12@g.us",
+			author: "user_test_12@s.whatsapp.net",
+			authorName: "Testador 12"
+		});
+
+		await cmdHandler.processCommand(bot, msgRandomNSFW, "figa", [], {
+			id: "group_test_12@g.us",
+			name: "Grupo Teste 12"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deve entregar 1 sticker seguro");
+		assert.strictEqual(
+			bot.capturedMessages[0].options.sendMediaAsSticker,
+			true,
+			"Deve ser enviado como sticker"
+		);
+		console.log("✓ Modo aleatório pulou figurinha NSFW e buscou a próxima válida com sucesso");
+	} finally {
+		StickerScraper.getRandomCachedStickers = originalGetCached12;
+	}
 
 	// 13. Teste de persistência da blacklist e exclusão de cache
 	console.log(
@@ -502,13 +509,28 @@ async function runTests() {
 	);
 
 	// 16. Teste de controle do timer (start/stop/status)
-	console.log("\n16. Testando controle do timer (start, stop, isRunning)...");
+	console.log("\n16. Testando controle do timer (start, stop, isRunning, intervalos)...");
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
 	StickerScraper.startScraperTimer(60000);
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), true);
 	StickerScraper.stopScraperTimer();
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
-	console.log("✓ Controle do timer (start/stop/status) validado com sucesso");
+	assert.strictEqual(
+		StickerScraper.DEFAULT_MIN_INTERVAL_MS,
+		400,
+		"Intervalo mínimo padrão deve ser 400ms (10x)"
+	);
+	assert.strictEqual(
+		StickerScraper.DEFAULT_MAX_INTERVAL_MS,
+		6000,
+		"Intervalo máximo padrão deve ser 6000ms (10x)"
+	);
+	const sampleInterval = StickerScraper.getRandomInterval();
+	assert(
+		sampleInterval >= 400 && sampleInterval <= 6000,
+		"Intervalo aleatório deve respeitar os novos limites"
+	);
+	console.log("✓ Controle do timer (start/stop/status) e intervalos validados com sucesso");
 
 	// 17. Teste do filtro de tamanho mínimo (< 3KB considerado inválido)
 	console.log("\n17. Testando filtro de tamanho mínimo (< 3KB considerado inválido)...");
@@ -642,6 +664,184 @@ async function runTests() {
 	console.log(
 		`✓ extractFramesForAnalysis gerou ${animFrames.length} frames distribuídos para análise temporal via LLM`
 	);
+
+	// Restaura stubs para os testes finais
+	StickerScraper.fetchLovecellSticker = originalFetch;
+	StickerScraper.checkStickerNSFW = originalCheckNSFW;
+
+	// 19. Teste: comando do usuário lê direto da pasta (sem download online nem NSFW)
+	console.log(
+		"\n19. Testando leitura direta da pasta pelo comando do usuário (alta performance, sem download nem NSFW)..."
+	);
+	bot.resetCapture();
+	clearCooldowns();
+
+	let directFetchCalled = false;
+	let directNsfwCalled = false;
+	StickerScraper.fetchLovecellSticker = async () => {
+		directFetchCalled = true;
+		throw new Error("Não deve baixar online quando há figurinhas no cache!");
+	};
+	StickerScraper.checkStickerNSFW = async () => {
+		directNsfwCalled = true;
+		throw new Error("Não deve rodar verificação NSFW em figurinhas já baixadas!");
+	};
+
+	const msgDirectCache = createMessage({
+		content: "!figa 2",
+		group: "group_test_19@g.us",
+		author: "user_test_19@s.whatsapp.net",
+		authorName: "Testador 19"
+	});
+
+	await cmdHandler.processCommand(bot, msgDirectCache, "figa", ["2"], {
+		id: "group_test_19@g.us",
+		name: "Grupo Teste 19"
+	});
+
+	assert.strictEqual(bot.capturedMessages.length, 2, "Deve retornar 2 figurinhas da pasta local");
+	assert.strictEqual(directFetchCalled, false, "fetchLovecellSticker não deve ser chamado");
+	assert.strictEqual(directNsfwCalled, false, "checkStickerNSFW não deve ser chamado");
+	console.log(
+		"✓ Comando do usuário respondeu instantaneamente direto da pasta sem download e sem NSFW"
+	);
+
+	// 20. Testando sequencialidade do background scraper (não inicia novo tick antes do término do anterior)
+	console.log("\n20. Testando sequencialidade do background scraper...");
+	assert.strictEqual(
+		StickerScraper.isScrapingInProgress(),
+		false,
+		"Scraping deve estar ocioso inicialmente"
+	);
+	let backgroundFetchStarted = false;
+	let backgroundFetchFinished = false;
+
+	StickerScraper.fetchLovecellSticker = async () => {
+		backgroundFetchStarted = true;
+		await new Promise((resolve) => setTimeout(resolve, 80));
+		backgroundFetchFinished = true;
+		return { found: true, buffer: dummyWebp, title: "BG Sticker" };
+	};
+	StickerScraper.checkStickerNSFW = async () => false;
+	StickerScraper.getRandomUndownloadedId = () => 999998;
+
+	// Inicia tick
+	const tickPromise = StickerScraper.runBackgroundScraperTick();
+	assert.strictEqual(
+		StickerScraper.isScrapingInProgress(),
+		true,
+		"Deve acusar scraping em andamento"
+	);
+
+	// Tentar iniciar outro tick enquanto o primeiro roda
+	await StickerScraper.runBackgroundScraperTick(); // deve ignorar
+
+	await tickPromise;
+	assert.strictEqual(backgroundFetchStarted, true);
+	assert.strictEqual(backgroundFetchFinished, true);
+	assert.strictEqual(StickerScraper.isScrapingInProgress(), false, "Scraping deve finalizar limpo");
+	console.log("✓ Background scraper respeita execução sequencial estrita");
+
+	// 21. Testando registro de envio no SQLite (recordStickerSent e getStickerStats)
+	console.log("\n21. Testando contagem de envios (recordStickerSent e getStickerStats)...");
+	const testStatId = 888001;
+	cmdHandler.database.mappers.run("lovecell", "DELETE FROM lovecell_stats WHERE id = ?", [
+		testStatId
+	]);
+
+	StickerScraper.recordStickerSent(testStatId);
+	let stat = StickerScraper.getStickerStats(testStatId);
+	assert(stat !== null, "Estatística deve existir após envio");
+	assert.strictEqual(stat.sentCount, 1, "sentCount deve ser 1 após o primeiro envio");
+	assert(stat.lastSentAt !== null, "lastSentAt deve estar preenchido");
+
+	StickerScraper.recordStickerSent(testStatId);
+	stat = StickerScraper.getStickerStats(testStatId);
+	assert.strictEqual(stat.sentCount, 2, "sentCount deve ser incrementado para 2 no segundo envio");
+
+	cmdHandler.database.mappers.run("lovecell", "DELETE FROM lovecell_stats WHERE id = ?", [
+		testStatId
+	]);
+	console.log("✓ Contagem de envios e persistência no SQLite validados com sucesso");
+
+	// 22. Testando seleção priorizando figurinhas nunca enviadas ou pouco enviadas
+	console.log(
+		"\n22. Testando seleção priorizando figurinhas nunca enviadas ou pouco enviadas (getRandomCachedStickers)..."
+	);
+	const idHeavy = 777001; // muito enviada (5 vezes)
+	const idLight = 777002; // pouco enviada (1 vez)
+	const idFresh = 777003; // nunca enviada (0 vezes)
+
+	const fileHeavy = StickerScraper.getStickerFilePath(idHeavy);
+	const fileLight = StickerScraper.getStickerFilePath(idLight);
+	const fileFresh = StickerScraper.getStickerFilePath(idFresh);
+
+	await fs.writeFile(fileHeavy, dummyWebp);
+	await fs.writeFile(fileLight, dummyWebp);
+	await fs.writeFile(fileFresh, dummyWebp);
+
+	StickerScraper.downloadedIds.add(idHeavy);
+	StickerScraper.downloadedIds.add(idLight);
+	StickerScraper.downloadedIds.add(idFresh);
+
+	// Configura contadores no SQLite
+	cmdHandler.database.mappers.run(
+		"lovecell",
+		"INSERT OR REPLACE INTO lovecell_stats (id, sent_count, last_sent_at) VALUES (?, ?, ?)",
+		[idHeavy, 5, new Date().toISOString()]
+	);
+	cmdHandler.database.mappers.run(
+		"lovecell",
+		"INSERT OR REPLACE INTO lovecell_stats (id, sent_count, last_sent_at) VALUES (?, ?, ?)",
+		[idLight, 1, new Date().toISOString()]
+	);
+	cmdHandler.database.mappers.run(
+		"lovecell",
+		"INSERT OR REPLACE INTO lovecell_stats (id, sent_count, last_sent_at) VALUES (?, ?, NULL)",
+		[idFresh, 0]
+	);
+
+	// Exclui todos os outros IDs para testar apenas o trio
+	const otherFiles = (await fs.readdir(StickerScraper.LOVECELL_DIR))
+		.filter((f) => f.startsWith("figs_lovecell_"))
+		.map((f) => {
+			const m = f.match(/^figs_lovecell_(\d+)\.webp$/);
+			return m ? parseInt(m[1], 10) : 0;
+		})
+		.filter((id) => id !== idHeavy && id !== idLight && id !== idFresh);
+
+	const excludeOther = new Set(otherFiles);
+
+	// Teste 22.1: Deve priorizar o idFresh (sent_count = 0)
+	const chosen1 = await StickerScraper.getRandomCachedStickers(1, excludeOther);
+	assert.strictEqual(chosen1.length, 1);
+	assert.strictEqual(
+		chosen1[0].id,
+		idFresh,
+		"Figurinha nunca enviada (0) deve ter prioridade máxima"
+	);
+
+	// Teste 22.2: Se idFresh estiver excluído, deve priorizar idLight (sent_count = 1) sobre idHeavy (sent_count = 5)
+	const excludeWithFresh = new Set([...otherFiles, idFresh]);
+	const chosen2 = await StickerScraper.getRandomCachedStickers(1, excludeWithFresh);
+	assert.strictEqual(chosen2.length, 1);
+	assert.strictEqual(
+		chosen2[0].id,
+		idLight,
+		"Figurinha pouco enviada (1) deve ter prioridade sobre a muito enviada (5)"
+	);
+
+	// Limpa arquivos de teste do disco
+	try {
+		await fs.unlink(fileHeavy);
+		await fs.unlink(fileLight);
+		await fs.unlink(fileFresh);
+	} catch {}
+	StickerScraper.downloadedIds.delete(idHeavy);
+	StickerScraper.downloadedIds.delete(idLight);
+	StickerScraper.downloadedIds.delete(idFresh);
+
+	console.log("✓ Lógica de priorização anti-repetição validada com perfeição");
 
 	// Restaura stubs
 	StickerScraper.fetchLovecellSticker = originalFetch;
