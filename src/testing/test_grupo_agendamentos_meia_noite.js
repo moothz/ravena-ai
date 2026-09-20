@@ -249,6 +249,65 @@ async function runTests() {
 	assert.ok(!replyLista.content.includes("NaN"), "Lista não pode conter NaN");
 	console.log("✓ !g-fechar-lista lista os agendamentos corretamente");
 
+	// ---------------------------------------------------------------------------
+	// 6. Teste do watchdog para agendamentos únicos pendentes e compatibilidade de bot
+	// ---------------------------------------------------------------------------
+	console.log("\n[6] Testando execução de agendamento único pendente pelo watchdog e protocolo...");
+	let chatAdminSetCalled = false;
+	const fakeChat = {
+		setMessagesAdminsOnly: async (set) => {
+			chatAdminSetCalled = set;
+		}
+	};
+	bot.client.getChatById = async () => fakeChat;
+	bot.capturedMessages = [];
+
+	// Insere um agendamento único que deveria ter rodado há 2 minutos (ex: durante reinício do container)
+	const twoMinutesAgo = Date.now() - 120000;
+	await db.dbRun(
+		dbName,
+		`INSERT OR REPLACE INTO grupo_agendamentos (
+			id, group_id, bot_id, tipo, hora, minuto, dia_semana, timestamp_unico, frase, ativo, criado_em
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+		[
+			"TEST_WATCHDOG",
+			testGroupId,
+			"teste-bot",
+			"fechar",
+			0,
+			5,
+			null,
+			twoMinutesAgo,
+			null,
+			Date.now() - 150000
+		]
+	);
+
+	// Chama verificarAgendamentosSemanais diretamente
+	await GrupoAgendamentos.verificarAgendamentosSemanais();
+
+	assert.strictEqual(
+		chatAdminSetCalled,
+		true,
+		"Watchdog DEVE executar setMessagesAdminsOnly para agendamento pendente"
+	);
+	const closedMsg = bot.capturedMessages.find(
+		(m) => m.chatId === testGroupId && m.content.includes("fechado automaticamente")
+	);
+	assert.ok(closedMsg, "Watchdog deve enviar mensagem de fechamento para o grupo");
+
+	const dbCheck = await db.dbGet(
+		dbName,
+		"SELECT ativo FROM grupo_agendamentos WHERE id = ? AND group_id = ?",
+		["TEST_WATCHDOG", testGroupId]
+	);
+	assert.strictEqual(
+		dbCheck.ativo,
+		0,
+		"Agendamento único executado pelo watchdog deve ser desativado (ativo = 0)"
+	);
+	console.log("✓ Watchdog executou e desativou agendamento único pendente com sucesso");
+
 	// Limpa agendamentos criados pelo teste
 	await db.dbRun(dbName, `DELETE FROM grupo_agendamentos WHERE group_id = ?`, [testGroupId]);
 

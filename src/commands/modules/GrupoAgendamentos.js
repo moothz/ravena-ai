@@ -420,7 +420,67 @@ function armarTimerUnico(bot, agendamento) {
 }
 
 /**
- * Loop de checagem para agendamentos semanais
+ * Localiza a melhor instância de bot para executar o agendamento
+ */
+function getBotParaAgendamento(row) {
+	const botId = row.bot_id;
+	const isWhatsApp = row.group_id && row.group_id.includes("@g.us");
+	const isDiscord = row.group_id && String(row.group_id).includes("@discord");
+
+	// 1. Tenta achar no activeBots pelo botId exato
+	let bot = botId ? activeBots.get(botId) : null;
+	if (bot && bot.isConnected) {
+		if (isWhatsApp && (bot.useTelegram || bot.useDiscord)) {
+			// Incompatível: grupo WhatsApp não pode ser gerenciado por Telegram/Discord
+		} else {
+			return bot;
+		}
+	}
+
+	// 2. Tenta achar na lista global de botInstances do Database
+	const allBots = Database.getInstance().botInstances || [];
+	if (botId) {
+		bot = allBots.find((b) => (b.id === botId || b.name === botId) && b.isConnected);
+		if (bot) {
+			if (isWhatsApp && (bot.useTelegram || bot.useDiscord)) {
+				// Incompatível
+			} else {
+				activeBots.set(bot.id || botId, bot);
+				return bot;
+			}
+		}
+	}
+
+	// 3. Fallback inteligente estrito por protocolo
+	if (isWhatsApp) {
+		// DEVE ser um bot WhatsApp
+		bot =
+			allBots.find((b) => !b.useTelegram && !b.useDiscord && b.isConnected) ||
+			Array.from(activeBots.values()).find(
+				(b) => !b.useTelegram && !b.useDiscord && b.isConnected
+			) ||
+			allBots.find((b) => !b.useTelegram && !b.useDiscord);
+	} else if (isDiscord) {
+		bot =
+			allBots.find((b) => b.useDiscord && b.isConnected) ||
+			Array.from(activeBots.values()).find((b) => b.useDiscord && b.isConnected);
+	} else {
+		// Telegram ou genérico
+		bot =
+			allBots.find((b) => b.useTelegram && b.isConnected) ||
+			Array.from(activeBots.values()).find((b) => b.useTelegram && b.isConnected) ||
+			allBots.find((b) => b.isConnected) ||
+			Array.from(activeBots.values()).find((b) => b.isConnected);
+	}
+
+	if (bot) {
+		activeBots.set(bot.id || botId, bot);
+	}
+	return bot;
+}
+
+/**
+ * Loop de checagem para agendamentos semanais e verificação de agendamentos únicos pendentes
  */
 async function verificarAgendamentosSemanais() {
 	try {
@@ -429,8 +489,49 @@ async function verificarAgendamentosSemanais() {
 		const currentMin = sp.minute;
 		const currentDay = sp.diaSemana;
 		const dateKey = `${sp.year}-${sp.month}-${sp.day}-${currentHour}-${currentMin}`;
+		const agoraMs = Date.now();
 
-		// Busca todos os agendamentos semanais ativos para hoje/hora/minuto
+		// 1. Checa agendamentos únicos pendentes ou que venceram recentemente (fallback seguro contra reinício de container)
+		const unicosPendentes = await database.dbAll(
+			dbName,
+			`SELECT * FROM grupo_agendamentos 
+			 WHERE ativo = 1 
+			   AND dia_semana IS NULL 
+			   AND timestamp_unico <= ?`,
+			[agoraMs]
+		);
+
+		if (unicosPendentes && unicosPendentes.length > 0) {
+			for (const row of unicosPendentes) {
+				const bot = getBotParaAgendamento(row);
+				const atraso = agoraMs - row.timestamp_unico;
+				if (atraso < 15 * 60 * 1000) {
+					// Até 15 minutos de atraso (ex: reinício do container ou timeout perdido)
+					if (bot) {
+						logger.info(
+							`Executando agendamento único pendente [${row.id}] (${row.tipo}) no grupo ${row.group_id} (atraso de ${Math.round(atraso / 1000)}s)`
+						);
+						executarAgendamento(row, bot);
+					} else {
+						logger.warn(
+							`Nenhum bot conectado encontrado para agendamento único pendente [${row.id}] no grupo ${row.group_id}`
+						);
+					}
+				} else {
+					// Expirado há mais de 15 minutos: desativa para não acumular
+					logger.info(
+						`Desativando agendamento único expirado há ${Math.round(atraso / 60000)}min [${row.id}] no grupo ${row.group_id}`
+					);
+					await database.dbRun(
+						dbName,
+						`UPDATE grupo_agendamentos SET ativo = 0 WHERE id = ? AND group_id = ?`,
+						[row.id, row.group_id]
+					);
+				}
+			}
+		}
+
+		// 2. Busca todos os agendamentos semanais ativos para hoje/hora/minuto
 		const rows = await database.dbAll(
 			dbName,
 			`SELECT * FROM grupo_agendamentos 
@@ -452,17 +553,8 @@ async function verificarAgendamentosSemanais() {
 
 			lastFiredWeekly.set(key, dateKey);
 
-			// Acha o bot associado ao agendamento
-			let bot = activeBots.get(row.bot_id);
-			if (!bot || !bot.isConnected) {
-				// Fallback para qualquer bot conectado
-				for (const b of activeBots.values()) {
-					if (b && b.isConnected) {
-						bot = b;
-						break;
-					}
-				}
-			}
+			// Acha o bot apropriado para o protocolo do grupo
+			const bot = getBotParaAgendamento(row);
 
 			if (bot) {
 				executarAgendamento(row, bot);
@@ -480,7 +572,7 @@ async function verificarAgendamentosSemanais() {
 			}
 		}
 	} catch (error) {
-		logger.error("Erro na verificação de agendamentos semanais:", error);
+		logger.error("Erro na verificação de agendamentos:", error);
 	}
 }
 
@@ -489,37 +581,34 @@ async function verificarAgendamentosSemanais() {
  */
 async function inicializarAgendamentos(bot) {
 	try {
-		const botId = bot.id || bot.name || "default";
-		activeBots.set(botId, bot);
+		const botId = bot?.id || bot?.name || "default";
+		if (bot) {
+			activeBots.set(botId, bot);
+		}
 
-		// Inicializa o interval global de checagem semanal se ainda não estiver rodando
+		// Inicializa o interval global de checagem se ainda não estiver rodando
 		if (!weeklyCheckInterval) {
 			weeklyCheckInterval = setInterval(verificarAgendamentosSemanais, 30000);
 		}
 
-		// Carrega agendamentos únicos ativos deste bot (ou sem bot_id)
+		// Carrega agendamentos únicos ativos futuros
+		const agora = Date.now();
 		const rows = await database.dbAll(
 			dbName,
 			`SELECT * FROM grupo_agendamentos 
 			 WHERE ativo = 1 
 			   AND dia_semana IS NULL 
-			   AND (bot_id = ? OR bot_id IS NULL OR bot_id = '')`,
-			[botId]
+			   AND timestamp_unico > ?`,
+			[agora]
 		);
 
-		logger.info(`Inicializando ${rows.length} agendamentos únicos para o bot ${botId}`);
+		logger.info(`Inicializando ${rows.length} agendamentos únicos futuros`);
 
 		for (const row of rows) {
-			if (!row.bot_id) {
-				await database.dbRun(
-					dbName,
-					`UPDATE grupo_agendamentos SET bot_id = ? WHERE id = ? AND group_id = ?`,
-					[botId, row.id, row.group_id]
-				);
-				row.bot_id = botId;
+			const botToUse = bot || getBotParaAgendamento(row);
+			if (botToUse) {
+				armarTimerUnico(botToUse, row);
 			}
-
-			armarTimerUnico(bot, row);
 		}
 	} catch (error) {
 		logger.error("Erro ao inicializar agendamentos do grupo:", error);
@@ -706,5 +795,7 @@ module.exports = {
 	criarAgendamento,
 	listarAgendamentos,
 	deletarAgendamento,
-	executarAgendamento
+	executarAgendamento,
+	verificarAgendamentosSemanais,
+	getBotParaAgendamento
 };

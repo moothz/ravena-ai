@@ -28,6 +28,7 @@ const SkipGroups = require("./utils/SkipGroups");
 const { toOpus, toMp3 } = require("./utils/Conversions");
 const { llmTranslate } = require("./utils/LLMTranslate");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
+const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1438,6 +1439,7 @@ class WhatsAppBotGo {
 		await this._loadSkipGroupInfo();
 		this.database.registerBotInstance(this);
 		ProfileStatusScheduler.getInstance().registerBot(this);
+		GrupoAgendamentos.inicializarAgendamentos(this).catch(() => {});
 		this.startupTime = Date.now();
 		this.lastMessageReceived = Date.now();
 
@@ -1706,7 +1708,8 @@ class WhatsAppBotGo {
 		this._sendStartupNotifications();
 		this.fetchAndPrepareBlockedContacts();
 
-		if (this.isConnected) return;
+		if (this._hasEmittedConnected) return;
+		this._hasEmittedConnected = true;
 		this.isConnected = true;
 		this.logger.info(`[${this.id}] Successfully connected to WhatsApp via WhatsgoGO API.`);
 		this.broadcastQRUpdate({ type: "connected", botId: this.id });
@@ -1719,6 +1722,7 @@ class WhatsAppBotGo {
 	_onInstanceDisconnected(reason = "Unknown") {
 		if (!this.isConnected && reason !== "INITIALIZING") return;
 		this.isConnected = false;
+		this._hasEmittedConnected = false;
 		this.disconnectedAt = Date.now();
 		this.logger.info(`[${this.id}] Disconnected from WhatsApp. Reason: ${reason}`);
 		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
