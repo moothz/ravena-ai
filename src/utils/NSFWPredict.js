@@ -250,14 +250,45 @@ class NSFWPredict {
 			const timestamp = new Date().toISOString();
 			const separator = "=".repeat(60);
 			const isDetectAll = Boolean(entry?.detectAll || entry?.isDetectAll);
+
+			// Formata Contexto com título atual do grupo e qual a Ravena
+			const groupTitle = entry.groupTitle ? String(entry.groupTitle).trim() : "";
+			const groupName = entry.group ? String(entry.group).trim() : "";
+			let groupDisplay = "";
+			if (groupTitle && groupName && groupTitle !== groupName) {
+				groupDisplay = `${groupTitle} (${groupName})`;
+			} else {
+				groupDisplay = groupTitle || groupName || "N/A";
+			}
+
+			const botId = entry.bot || entry.botId || "desconhecido";
+			const contextoLine = `Contexto: ${groupDisplay} | Ravena: ${botId} | Autor: ${entry.author || "N/A"}`;
+
+			// Limpa base64 e buffers pesados (especialmente propriedade 'media') do objeto da API
+			let apiResponseToLog = entry.apiResponse;
+			if (apiResponseToLog && typeof apiResponseToLog === "object") {
+				if (Array.isArray(apiResponseToLog)) {
+					apiResponseToLog = apiResponseToLog.map((item) => {
+						if (item && typeof item === "object") {
+							const { media, image, buffer, data, base64, ...rest } = item;
+							return rest;
+						}
+						return item;
+					});
+				} else {
+					const { media, image, buffer, data, base64, ...rest } = apiResponseToLog;
+					apiResponseToLog = rest;
+				}
+			}
+
 			const logText = [
 				separator,
 				`[${timestamp}] Arquivo: ${entry.filename || "desconhecido"} | Tipo: ${entry.type || "mídia"}${isDetectAll ? " [DETECT_ALL]" : ""}`,
-				`Contexto: ${entry.group || "N/A"} | Autor: ${entry.author || "N/A"}`,
+				contextoLine,
 				`Resultado: ${entry.resultText || (entry.isNSFW ? "NSFW" : "SAFE")} (Threshold: ${entry.threshold !== undefined ? entry.threshold : "padrão"})`,
 				`Motivo: ${entry.reason || "Nenhum"}`,
 				"Objeto da API:",
-				JSON.stringify(entry.apiResponse, null, 2),
+				JSON.stringify(apiResponseToLog, null, 2),
 				""
 			].join("\n");
 
@@ -453,6 +484,8 @@ class NSFWPredict {
 							filename: savedFilename,
 							type: "imagem",
 							group: context.groupName || context.groupId,
+							groupTitle: context.groupTitle || context.group?.titulo,
+							bot: context.botId || context.bot?.id || context.bot?.nome,
 							author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
 							resultText: "NSFW (isNSFW=true)",
 							reason,
@@ -597,6 +630,8 @@ class NSFWPredict {
 					filename: savedFilename,
 					type: path.extname(videoPath).toLowerCase() === ".gif" ? "gif" : "vídeo",
 					group: context.groupName || context.groupId,
+					groupTitle: context.groupTitle || context.group?.titulo,
+					bot: context.botId || context.bot?.id || context.bot?.nome,
 					author: `${context.authorName || ""}/${context.author || ""}`.replace(/^\/|\/$/g, ""),
 					resultText: "NSFW (isNSFW=true)",
 					reason,
@@ -642,13 +677,14 @@ class NSFWPredict {
 
 DEFINITIONS:
 - NSFW: ANY visible human genitalia (penis, testicles, vulva, vagina, erect or flaccid), exposed female breasts or nipples, exposed buttocks in a sexual context, oral sex, intercourse, masturbation, sexual acts, semen, hentai/animated pornography, or explicit erotic poses.
-- SAFE: Everyday clothing, summer wear, non-sexual portraits, swimsuits/beachwear without exposure of genitalia or nipples, cartoons, memes, animals, objects, normal social interactions.
+- SAFE: Everyday clothing, summer wear, non-sexual portraits, swimsuits/beachwear without exposure of genitalia or nipples, cartoons, memes, animals, objects, normal social interactions, sports, work uniforms, gaming scenes, documents, text messages and chat screenshots.
 
 CRITICAL RULES:
 1. Provide a brief 1-2 sentence objective visual description.
 2. If ANY genitalia (penis, vulva), exposed nipples/breasts, or sexual acts are visible, classification MUST be "nsfw".
 3. Do NOT classify explicit nudity or sexual acts as "lifestyle", "beachwear", or "artistic". If genitalia or sexual acts are present, it is always "nsfw" regardless of context.
-4. If no explicit nudity or sexual acts are present, classification MUST be "safe".`;
+4. Screenshots of text, chat messages, or searches, even if containing vulgar or sexual slang, do NOT constitute visual NSFW.
+5. If no explicit nudity or sexual acts are present, classification MUST be "safe".`;
 
 		const nsfwSchema = {
 			type: "json_schema",
@@ -1045,6 +1081,10 @@ CRITICAL RULES:
 			return { handled: false, deleted: false };
 		}
 
+		if (detectionData.type === "documento") {
+			return { handled: false, deleted: false, reason: "document_not_visual_nsfw" };
+		}
+
 		const chatId = message?.group || message?.guildId;
 		if (!chatId) {
 			return { handled: false, deleted: false, reason: "private_chat" };
@@ -1061,6 +1101,27 @@ CRITICAL RULES:
 			if (!group) {
 				const db = bot?.database || this.database || Database.getInstance();
 				group = await db.getGroup(chatId);
+			}
+
+			const botId = bot?.id || bot?.nome || detectionData.botId || "desconhecido";
+			let groupTitle =
+				group?.titulo || detectionData.groupTitle || detectionData.group?.titulo || null;
+			if (!groupTitle && bot && typeof bot.getChatDetails === "function") {
+				try {
+					const chatDetails = await bot.getChatDetails(chatId);
+					if (chatDetails?.name && chatDetails.name !== chatId) {
+						groupTitle = chatDetails.name;
+						if (group) {
+							group.titulo = groupTitle;
+							const db = bot?.database || this.database || Database.getInstance();
+							if (db && typeof db.saveGroup === "function") {
+								db.saveGroup(group).catch(() => {});
+							}
+						}
+					}
+				} catch (chatErr) {
+					this.logger.debug(`Erro ao obter chatDetails para groupTitle: ${chatErr.message}`);
+				}
 			}
 
 			const isGroupFilter = Boolean(group?.filters?.nsfw);
@@ -1080,7 +1141,9 @@ CRITICAL RULES:
 
 			const debugContext = {
 				groupName,
+				groupTitle,
 				groupId: chatId,
+				botId,
 				author,
 				authorName,
 				detectAll: isDetectAll,
@@ -1166,6 +1229,8 @@ CRITICAL RULES:
 						filename: savedFilename || "sem_midia",
 						type: mediaType || "imagem",
 						group: groupName || chatId,
+						groupTitle,
+						bot: botId,
 						author: `${authorName}/${author}`.replace(/^\/|\/$/g, ""),
 						resultText: `NSFW (isNSFW=true) [External: ${detectionData.source || "VisionAI"}]`,
 						reason: reasonStr,
@@ -1178,9 +1243,14 @@ CRITICAL RULES:
 				}
 			}
 
+			const groupDisplay =
+				groupTitle && groupTitle !== groupName
+					? `${groupTitle} (${groupName})`
+					: groupTitle || groupName;
+
 			if (isGroupFilter) {
 				this.logger.info(
-					`[${groupName}] Mensagem NSFW filtrada retroativamente (${detectionData.source || "External"}) - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
+					`[${botId}][${groupDisplay}] Mensagem NSFW filtrada retroativamente (${detectionData.source || "External"}) - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
 				);
 
 				// Deleta a mensagem original
@@ -1230,7 +1300,7 @@ CRITICAL RULES:
 				return { handled: true, deleted, reason: reasonStr };
 			} else if (isDetectAll) {
 				this.logger.info(
-					`[${groupName}] Mensagem NSFW detectada via Vision AI (${detectionData.source || "External"}) [DETECT_ALL] - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
+					`[${botId}][${groupDisplay}] Mensagem NSFW detectada via Vision AI (${detectionData.source || "External"}) [DETECT_ALL] - motivo: ${reasonStr} [enviado por ${authorName}/${author}]`
 				);
 				return { handled: true, deleted: false, reason: reasonStr };
 			}

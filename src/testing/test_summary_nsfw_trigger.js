@@ -315,13 +315,24 @@ async function runTests() {
 		const logPath = path.join(debugDir, "nudenet_debug.txt");
 		if (fs.existsSync(logPath)) {
 			const logContent = await fs.promises.readFile(logPath, "utf-8");
+			const entries = logContent.split("=".repeat(60)).filter((e) => e.trim().length > 0);
+			const lastEntry = entries[entries.length - 1] || "";
 			assert(
-				logContent.includes("Arte NSFW externa") || logContent.includes("SummaryCommands"),
+				lastEntry.includes("Arte NSFW externa") || lastEntry.includes("SummaryCommands"),
 				"Log de debug deveria conter o motivo da detecção externa"
 			);
+			assert(
+				!lastEntry.includes(sampleBase64),
+				"Última entrada do log de debug NÃO deve conter o base64 bruto da propriedade media"
+			);
+			assert(
+				lastEntry.includes("Ravena: bot-test"),
+				"Log de debug deve indicar qual a Ravena processou a mensagem"
+			);
+			assert(lastEntry.includes("Grupo Seguro"), "Log de debug deve exibir o título/nome do grupo");
 		}
 		console.log(
-			"✓ Imagem e log salvos com sucesso no diretório de debug quando isNudenetDebug=true!"
+			"✓ Imagem e log salvos com sucesso no diretório de debug quando isNudenetDebug=true (sem base64 e com Ravena)!"
 		);
 
 		// -----------------------------------------------------------------------
@@ -354,6 +365,76 @@ async function runTests() {
 			"Nenhuma imagem de debug deve ser salva quando debug estiver desativado"
 		);
 		console.log("✓ Nenhuma imagem salva quando isNudenetDebug=false!");
+
+		// -----------------------------------------------------------------------
+		// 11. handleExternalDetection ignorando type === 'documento'
+		// -----------------------------------------------------------------------
+		console.log(
+			"\n11. Testando que handleExternalDetection ignora e não deleta tipo 'documento'..."
+		);
+		let docMsgDeleted = false;
+		const msgDoc = createMessage({
+			type: "image",
+			group: "grupo-com-filtro@g.us",
+			author: "5511999990010@s.whatsapp.net"
+		});
+		msgDoc.origin.delete = async () => {
+			docMsgDeleted = true;
+		};
+
+		const resultDoc = await nsfwPredict.handleExternalDetection(bot, msgDoc, {
+			isNSFW: true,
+			type: "documento",
+			description: "Captura de conversa de chat com texto sensível",
+			source: "SummaryCommands:VisionAI:Image",
+			group: groupComFiltro
+		});
+
+		assert.strictEqual(
+			resultDoc.handled,
+			false,
+			"Tipo documento não deve ser tratado como NSFW visual"
+		);
+		assert.strictEqual(resultDoc.deleted, false, "Tipo documento não deve ser deletado");
+		assert.strictEqual(docMsgDeleted, false, "origin.delete não deve ser chamado para documentos");
+		console.log("✓ Captura de chat/documento ignorada corretamente sem deleção!");
+
+		// -----------------------------------------------------------------------
+		// 12. SummaryCommands.storeMessage ignorando falso positivo do LLM sem nsfw_reason
+		// -----------------------------------------------------------------------
+		console.log(
+			"\n12. Testando que storeMessage ignora falso positivo do LLM (jogo/trabalho sem nsfw_reason)..."
+		);
+		let fpMsgDeleted = false;
+		const msgFalsoPositivo = createMessage({
+			type: "image",
+			content: { data: "base64_jogo_screen" },
+			group: "grupo-com-filtro@g.us",
+			author: "5511999990011@s.whatsapp.net"
+		});
+		msgFalsoPositivo.origin.delete = async () => {
+			fpMsgDeleted = true;
+		};
+
+		// Mock do LLM retornando nsfw: true por engano, mas com nsfw_reason vazio e descrição inofensiva
+		llmService.getCompletion = async () =>
+			JSON.stringify({
+				type: "jogo",
+				nsfw: true,
+				nsfw_reason: "",
+				description:
+					"Uma tela de computador exibe um personagem de jogo em um cenário azulado com elementos mágicos."
+			});
+
+		await SummaryCommands.storeMessage(msgFalsoPositivo, "grupo-com-filtro@g.us", bot);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		assert.strictEqual(
+			fpMsgDeleted,
+			false,
+			"Falso positivo sem justificativa explícita não deve ser deletado"
+		);
+		console.log("✓ Falso positivo do Vision AI filtrado e ignorado com sucesso em storeMessage!");
 
 		process.env.NUDENET_DEBUG = originalNudenetDebug;
 

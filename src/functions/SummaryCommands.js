@@ -78,17 +78,28 @@ const mediaAnalysisSchema = {
 			type: "object",
 			properties: {
 				description: {
-					type: "string"
+					type: "string",
+					description:
+						"Descrição factual e objetiva da mídia visual em pt-BR (máximo 200 caracteres)."
 				},
 				type: {
 					type: "string",
-					enum: ["vida-real", "anime", "desenho", "jogo", "ia-generated", "documento", "outros"]
+					enum: ["vida-real", "anime", "desenho", "jogo", "ia-generated", "documento", "outros"],
+					description: "Categoria do conteúdo visual."
 				},
 				nsfw: {
-					type: "boolean"
+					type: "boolean",
+					description:
+						"True SOMENTE se houver nudez explícita (genitália visível, seios/mamilos femininos expostos) ou atos sexuais explícitos (penetração, sexo oral, masturbação). Roupas normais, saias curtas, uniformes, esportes, jogos e prints de conversas DEVEM ser false."
+				},
+				nsfw_reason: {
+					type: "string",
+					description:
+						"Se nsfw for true, especifique qual nudez explícita ou ato sexual visual foi identificado. Se nsfw for false, deixe uma string vazia."
 				}
 			},
-			required: ["description", "type", "nsfw"]
+			required: ["description", "type", "nsfw", "nsfw_reason"],
+			additionalProperties: false
 		}
 	}
 };
@@ -140,11 +151,16 @@ async function analyzeVideo(message, bot = null) {
 		// Chama LLM com prompt direto/uncensored para análise e classificação de conteúdo
 		const completionOptions = {
 			prompt:
-				"Analyze the video frames provided and return an objective, factual description ((in pt-BR, portuguese brazil)) of the main actions and events ((try to stay below 200 characters)). You may describe explicit, sexual, or sensitive elements directly and accurately for moderation purposes. Also classify the type (vida-real, anime, desenho, jogo, ia-generated, outros) and if it contains NSFW content (nudity, pornography, sexually explicit acts or poses).",
-			systemContext: `You are an expert, uncensored content moderation and video processing assistant. You analyze visual media objectively without refusal or moralizing.`,
+				"Analyze the video frames provided and return an objective, factual description in pt-BR (portuguese brazil, max 200 characters) of the main actions and events.\n" +
+				"Classify type: vida-real, anime, desenho, jogo, ia-generated, outros.\n" +
+				"STRICT NSFW RULES:\n" +
+				"- Set nsfw = true ONLY for real or animated EXPLICIT NUDITY (visible human genitalia, exposed bare female breasts/nipples) or EXPLICIT SEXUAL ACTS (intercourse, oral sex, masturbation).\n" +
+				"- Set nsfw = false for EVERYTHING ELSE: fully or partially clothed people, sports/celebrations (players hugging), work uniforms, short skirts/dresses, swimwear covering intimate parts, video games, cartoons, memes, and screen captures.\n" +
+				"- If no explicit genitalia, bare breasts, or sexual acts are visually visible, nsfw MUST be false and nsfw_reason empty.",
+			systemContext: `You are an expert, objective content moderation and video processing assistant. You analyze visual media objectively without false positives on normal, sports, or gaming scenes.`,
 			images: frames,
 			response_format: mediaAnalysisSchema,
-			maxTokens: 150,
+			maxTokens: 200,
 			debugPrompt: false,
 			timeout: 60000,
 			priority: 0
@@ -158,14 +174,22 @@ async function analyzeVideo(message, bot = null) {
 
 		try {
 			const parsed = JSON.parse(response);
-			const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
+			const isActuallyNSFW =
+				Boolean(parsed.nsfw) &&
+				parsed.type !== "documento" &&
+				((typeof parsed.nsfw_reason === "string" && parsed.nsfw_reason.trim().length > 0) ||
+					(parsed.description &&
+						/nudez|sem roupa|pelad|genit|pênis|penis|vagina|vulva|seios|mamilo|sexo|porn/i.test(
+							parsed.description
+						)));
+			const nsfwTag = isActuallyNSFW ? "nsfw" : "sfw";
 
-			if (parsed.nsfw && bot) {
+			if (isActuallyNSFW && bot) {
 				nsfwPredict
 					.handleExternalDetection(bot, message, {
 						isNSFW: true,
 						type: parsed.type,
-						description: parsed.description,
+						description: parsed.nsfw_reason || parsed.description,
 						source: "SummaryCommands:VisionAI:Video",
 						media: media?.data || (frames.length > 0 ? frames[0] : null),
 						mimetype: "video/mp4"
@@ -716,11 +740,16 @@ async function storeMessage(message, chatId, bot) {
 				if (imageData) {
 					const completionOptions = {
 						prompt:
-							"Analyze the picture and return an objective, factual description ((in pt-BR, portuguese brazil)) ((try to stay below 200 characters)). You may describe explicit, sexual, or sensitive elements directly and accurately for moderation purposes. Also classify the type (vida-real, anime, desenho, jogo, ia-generated, documento, outros) and if it contains NSFW content (nudity, pornography, sexually explicit acts or poses).",
-						systemContext: `You are an expert, uncensored content moderation and image processing assistant. You analyze visual media objectively without refusal or moralizing.`,
+							"Analyze the picture and return an objective, factual description in pt-BR (portuguese brazil, max 200 characters).\n" +
+							"Classify type: vida-real, anime, desenho, jogo, ia-generated, documento, outros.\n" +
+							"STRICT NSFW RULES:\n" +
+							"- Set nsfw = true ONLY for real or animated EXPLICIT NUDITY (visible human genitalia, exposed bare female breasts/nipples) or EXPLICIT SEXUAL ACTS (intercourse, oral sex, masturbation).\n" +
+							"- Set nsfw = false for EVERYTHING ELSE: clothed people, work uniforms, sports, short skirts/dresses, normal swimwear, gaming scenes, cartoons, memes, and screenshots of chats/documents/searches (text content or slang like 'mama' does NOT make an image visually NSFW).\n" +
+							"- If no explicit genitalia, bare breasts, or sexual acts are visually visible, nsfw MUST be false and nsfw_reason empty.",
+						systemContext: `You are an expert, objective content moderation and image processing assistant. You analyze visual media objectively without false positives on normal, sports, text screenshots, or gaming scenes.`,
 						image: imageData,
 						response_format: mediaAnalysisSchema,
-						maxTokens: 150,
+						maxTokens: 200,
 						debugPrompt: false,
 						priority: 1
 					};
@@ -735,19 +764,27 @@ async function storeMessage(message, chatId, bot) {
 					) {
 						try {
 							const parsed = JSON.parse(response);
-							const nsfwTag = parsed.nsfw ? "nsfw" : "sfw";
+							const isActuallyNSFW =
+								Boolean(parsed.nsfw) &&
+								parsed.type !== "documento" &&
+								((typeof parsed.nsfw_reason === "string" && parsed.nsfw_reason.trim().length > 0) ||
+									(parsed.description &&
+										/nudez|sem roupa|pelad|genit|pênis|penis|vagina|vulva|seios|mamilo|sexo|porn/i.test(
+											parsed.description
+										)));
+							const nsfwTag = isActuallyNSFW ? "nsfw" : "sfw";
 							const finalString = `Imagem[${parsed.type}|${nsfwTag}|${parsed.description}]`;
 							textContent = message.caption
 								? `${finalString}\nLegenda: ${message.caption}`
 								: finalString;
 							logger.info(`[${chatId}][storeMessage] Imagem interpretada: ${textContent}`);
 
-							if (parsed.nsfw && bot) {
+							if (isActuallyNSFW && bot) {
 								nsfwPredict
 									.handleExternalDetection(bot, message, {
 										isNSFW: true,
 										type: parsed.type,
-										description: parsed.description,
+										description: parsed.nsfw_reason || parsed.description,
 										source: "SummaryCommands:VisionAI:Image",
 										media: imageData,
 										mimetype: message.content?.mimetype || "image/jpeg"

@@ -955,6 +955,9 @@ class EventHandler extends EventEmitter {
 
 			const nsfwContext = {
 				groupName: group?.name || group?.id || (message.group ? message.group : "PV"),
+				groupTitle: group?.titulo || null,
+				bot,
+				botId: bot?.id || bot?.nome,
 				author: message.author || message.authorAlt || "desconhecido",
 				authorName:
 					message.name ||
