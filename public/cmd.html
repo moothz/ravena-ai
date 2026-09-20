@@ -3,81 +3,151 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista de Comandos - RavenaBot</title>
+    <title>Comandos - RavenaBot</title>
     
     <!-- Meta Tags para Link Preview (WhatsApp, Facebook, Twitter, etc) -->
-    <meta name="description" content="ravenabot! Lista de comandos da sua botinha no zap">
+    <meta name="description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta name="author" content="moothz">
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://ravena.moothz.win/cmd.html">
-    <meta property="og:title" content="Lista de Comandos - RavenaBot">
-    <meta property="og:description" content="ravenabot! Lista de comandos da sua botinha no zap">
+    <meta property="og:url" content="https://ravena.moothz.win/cmd">
+    <meta property="og:title" content="Comandos e Exemplos de Uso - RavenaBot">
+    <meta property="og:description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta property="og:image" content="https://ravena.moothz.win/android-chrome-512x512.png">
     <meta property="og:site_name" content="RavenaBot">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary">
-    <meta property="twitter:url" content="https://ravena.moothz.win/cmd.html">
-    <meta property="twitter:title" content="Lista de Comandos - RavenaBot">
-    <meta property="twitter:description" content="ravenabot! Lista de comandos da sua botinha no zap">
+    <meta property="twitter:url" content="https://ravena.moothz.win/cmd">
+    <meta property="twitter:title" content="Comandos e Exemplos de Uso - RavenaBot">
+    <meta property="twitter:description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta property="twitter:image" content="https://ravena.moothz.win/android-chrome-512x512.png">
 
     <!-- Schema.org / Google / WhatsApp -->
-    <meta itemprop="name" content="Lista de Comandos - RavenaBot">
-    <meta itemprop="description" content="ravenabot! Lista de comandos da sua botinha no zap">
+    <meta itemprop="name" content="Comandos e Exemplos de Uso - RavenaBot">
+    <meta itemprop="description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta itemprop="image" content="https://ravena.moothz.win/android-chrome-512x512.png">
 
-    <link rel="stylesheet" href="/cmd.css?v=2">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="stylesheet" href="/cmd.css?v=3">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 </head>
 <body>
     <div class="container">
+        <!-- Topbar Header com Glassmorphism (padrão !g-painel) -->
         <header class="header">
-            <div class="logo">
-                <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
-                <h1>RavenaBot</h1>
-            </div>
-            <div class="header-title">
-                Lista de Comandos
+            <div class="header-content">
+                <div class="logo">
+                    <img src="/android-chrome-192x192.png" alt="RavenaBot Avatar">
+                    <div class="logo-text">
+                        <h1>RavenaBot</h1>
+                        <span class="logo-badge"><i class="fas fa-terminal"></i> Catálogo Oficial</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <a href="/ajuda" class="btn-header" title="Ajuda com IA"><i class="fas fa-question-circle"></i> <span>Ajuda</span></a>
+                    <a href="https://github.com/moothz/ravena-ai" target="_blank" rel="noopener" class="btn-header" title="GitHub"><i class="fab fa-github"></i> <span>Código</span></a>
+                </div>
             </div>
         </header>
 
+        <!-- Hero Status Card (estilo !g-painel) -->
+        <section class="hero-card">
+            <div class="hero-left">
+                <div class="hero-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="hero-info">
+                    <div class="hero-header-line">
+                        <span class="hero-title">Central de Comandos</span>
+                        <span class="status-pill status-pill-active"><i class="fas fa-circle"></i> Online</span>
+                    </div>
+                    <p class="hero-desc">
+                        Explore todos os comandos disponíveis. <strong>Clique em um comando</strong> para ver a sintaxe completa e <strong>exemplos práticos de uso</strong> para copiar no WhatsApp!
+                    </p>
+                </div>
+            </div>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="stat-value" id="stat-total-cmds">--</span>
+                    <span class="stat-label">Comandos</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="stat-total-cats">--</span>
+                    <span class="stat-label">Categorias</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="stat-prefix">! / !g-</span>
+                    <span class="stat-label">Prefixos</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Search Container -->
         <div class="search-container">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" id="command-search" class="search-input" placeholder="Buscar comando...">
+            <div class="search-box">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" id="command-search" class="search-input" placeholder="Buscar comando, exemplo ou descrição... (ex: !pescar, sticker, fipe)" autocomplete="off">
+                <button id="clear-search" class="clear-btn hidden" title="Limpar busca"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="toolbar-actions">
+                <button id="btn-expand-all" class="btn-tool" title="Expandir todas as categorias"><i class="fas fa-angle-double-down"></i> Expandir</button>
+                <button id="btn-collapse-all" class="btn-tool" title="Recolher todas as categorias"><i class="fas fa-angle-double-up"></i> Recolher</button>
+            </div>
         </div>
 
+        <!-- Category Quick Filter Pills -->
+        <nav class="category-pills-bar" id="category-pills" aria-label="Filtro rápido por categoria">
+            <button class="cat-pill active" data-cat="all">🌟 Todas</button>
+            <!-- Pills geradas dinamicamente via JS -->
+        </nav>
+
+        <!-- Main Content -->
         <main id="command-list" class="main-content">
-            <div id="no-results" class="info-text hidden" style="border-left-color: #ff4444; background-color: rgba(255, 68, 68, 0.1);">
-                Nenhum comando encontrado para '<span id="search-term"></span>'
-            </div>
-            <div class="info-text">
-                Comandos com um emoji podem ser ativados via reação (reagir na mensagem com o emoji).<br>
-            </div>
-<!--            <div class="info-text hot">
-                🔥 <b>Comandos novos:</b> !relacionamento, !namorar, !casar, !trair, !coisar
-            </div> -->
+            <!-- Loading State -->
             <div id="loading" class="loading-container">
                 <div class="loading-spinner"></div>
-                <p>Carregando comandos...</p>
+                <p>Carregando catálogo de comandos e exemplos...</p>
+            </div>
+
+            <!-- No results banner -->
+            <div id="no-results" class="info-banner warning hidden">
+                <i class="fas fa-search-minus"></i>
+                <div>
+                    Nenhum comando encontrado para "<strong><span id="search-term"></span></strong>".
+                    <div class="banner-sub">Tente buscar por termos gerais como <em>sticker</em>, <em>jogos</em>, <em>download</em> ou <em>painel</em>.</div>
+                </div>
+            </div>
+
+            <!-- Info banner -->
+            <div class="info-banner tip">
+                <i class="fas fa-lightbulb"></i>
+                <div>
+                    <strong>Dica rápida:</strong> Clique em qualquer comando para ver sua <strong>sintaxe e exemplos práticos</strong> prontos para copiar. Comandos marcados com emoji também podem ser acionados via <strong>reação de mensagem</strong> no WhatsApp!
+                </div>
             </div>
         </main>
 
         <footer class="footer">
-            <p>RavenaBot © 2026</p>
+            <div class="footer-content">
+                <p><strong>RavenaBot</strong> • Bot de WhatsApp gratuito e de código aberto por <strong>moothz</strong></p>
+                <div class="footer-links">
+                    <a href="/cmd"><i class="fas fa-terminal"></i> Comandos</a>
+                    <a href="/ajuda"><i class="fas fa-comment-dots"></i> Dúvidas & IA</a>
+                    <a href="https://github.com/moothz/ravena-ai" target="_blank" rel="noopener"><i class="fab fa-github"></i> GitHub</a>
+                </div>
+            </div>
         </footer>
 
-        <div id="toast" class="toast hidden">Comando copiado! Cole no zap</div>
+        <!-- Toast de Notificação ao Copiar -->
+        <div id="toast" class="toast hidden" role="status" aria-live="polite">
+            <i class="fas fa-check-circle"></i>
+            <span id="toast-text">Comando copiado! Cole no WhatsApp</span>
+        </div>
     </div>
 
-    <!-- Template for Tooltip -->
-    <div id="tooltip" class="tooltip hidden"></div>
-
-    <script src="/help.js?v=2"></script>
-    <script src="/cmd.js?v=2"></script>
+    <script src="/cmd.js?v=3"></script>
 </body>
 </html>

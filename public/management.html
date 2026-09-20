@@ -152,26 +152,6 @@
                     </div>
                 </div>
 
-                <!-- Accordion: Dossiês do grupo -->
-                <div class="accordion-item" id="accordion-dossies">
-                    <div class="accordion-header">
-                        <h3><i class="fas fa-file-shield"></i> Dossiês do Grupo</h3>
-                        <i class="fas fa-chevron-down arrow"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <div class="section-notice mb-3">
-                            <i class="fas fa-info-circle"></i>
-                            <div>Histórico de análises automáticas realizadas pela IA sobre o comportamento do grupo. Quanto maior a pontuação de risco, maior a chance de remoção do bot em caso de denúncias ou violações.</div>
-                        </div>
-                        <div id="dossies-history-list" class="dossie-history-container">
-                            <div class="loading-history text-center p-4">
-                                <div class="loading-spinner-small"></div>
-                                <p>Carregando histórico...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Accordion 2: Funções Administrativas & Moderação -->
                 <div class="accordion-item">
                     <div class="accordion-header">
@@ -259,8 +239,32 @@
                             <div id="forbidden-users-list" class="tags-container"></div>
                         </div>
 
-                        <div class="divider"></div>
+                        <!-- Admins Adicionais do Bot -->
+                        <div class="list-manager-section">
+                            <label id="lbl-additional-admins">Administradores Adicionais (Bot)</label>
+                            <div class="field-hint">Permite que estes membros usem comandos de gestão do bot mesmo sem serem admins do grupo no WhatsApp.</div>
+                            <div class="input-group mt-1">
+                                <input type="text" id="new-additional-admin" placeholder="5511999999999" class="form-control">
+                                <button type="button" id="add-additional-admin" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div id="additional-admins-list" class="tags-container"></div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="admin">
+                                <i class="fas fa-save"></i> Salvar Moderação
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Accordion: Comandos -->
+                <div class="accordion-item" id="accordion-commands">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-sliders"></i> Comandos</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
                         <!-- Categorias Silenciadas -->
                         <div class="form-group">
                             <label id="lbl-muted-categories">Categorias de Comandos Silenciadas</label>
@@ -283,29 +287,18 @@
                             <div id="muted-commands-list" class="tags-container"></div>
                         </div>
 
-                        <!-- Admins Adicionais do Bot -->
-                        <div class="list-manager-section">
-                            <label id="lbl-additional-admins">Administradores Adicionais (Bot)</label>
-                            <div class="field-hint">Permite que estes membros usem comandos de gestão do bot mesmo sem serem admins do grupo no WhatsApp.</div>
-                            <div class="input-group mt-1">
-                                <input type="text" id="new-additional-admin" placeholder="5511999999999" class="form-control">
-                                <button type="button" id="add-additional-admin" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
-                            </div>
-                            <div id="additional-admins-list" class="tags-container"></div>
-                        </div>
-                        
                         <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-save-section" data-section="admin">
-                                <i class="fas fa-save"></i> Salvar Moderação
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="commands">
+                                <i class="fas fa-save"></i> Salvar Comandos
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Accordion 3: Automatizações & Boas-Vindas -->
-                <div class="accordion-item">
+                <!-- Accordion: Automações -->
+                <div class="accordion-item" id="accordion-automations">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-wand-magic-sparkles"></i> Automatizações & Boas-Vindas</h3>
+                        <h3><i class="fas fa-wand-magic-sparkles"></i> Automações</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
@@ -382,49 +375,38 @@
 
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
-                                <label for="auto-interaction" id="lbl-auto-interaction">Interações Aleatórias da IA</label>
-                                <div class="field-hint">O bot entra na conversa espontaneamente com frases, piadas ou reações.</div>
+                                <label for="auto-translate" id="lbl-auto-translate">Traduzir Respostas do Bot</label>
+                                <div class="field-hint">Traduz todas as mensagens geradas pelo bot para outro idioma automaticamente.</div>
                             </div>
                             <label class="switch-toggle">
-                                <input type="checkbox" id="auto-interaction">
+                                <input type="checkbox" id="auto-translate">
                                 <span class="slider-round"></span>
                             </label>
                         </div>
 
-                        <div id="interaction-settings" class="hidden slider-panel">
-                            <div class="form-group toggle-row mb-2">
-                                <div class="toggle-info">
-                                    <label for="interact-use-cmds">Usar Comandos do Grupo nas Interações</label>
-                                    <div class="field-hint">Permite que o bot use respostas de comandos personalizados nas interações.</div>
-                                </div>
-                                <label class="switch-toggle">
-                                    <input type="checkbox" id="interact-use-cmds">
-                                    <span class="slider-round"></span>
-                                </label>
-                            </div>
-                            <div class="slider-group">
-                                <div class="slider-header">
-                                    <label id="lbl-interaction-chance">Frequência/Chance: <span id="chance-val" class="highlight-val">0.1</span>%</label>
-                                </div>
-                                <input type="range" id="interaction-chance" min="1" max="1000" class="slider">
-                            </div>
-                            <div class="slider-group">
-                                <div class="slider-header">
-                                    <label id="lbl-interaction-cooldown">Tempo de Espera (Cooldown): <span id="cooldown-val" class="highlight-val">5</span> min</label>
-                                </div>
-                                <input type="range" id="interaction-cooldown" min="5" max="43200" class="slider">
-                            </div>
-                            <div class="slider-group">
-                                <div class="slider-header">
-                                    <label id="lbl-interaction-proporcao">Proporção IA: <span id="proporcao-val" class="highlight-val">50</span>%</label>
-                                </div>
-                                <input type="range" id="interaction-proporcao" min="0" max="100" class="slider">
-                                <span id="proporcao-desc" class="field-hint mt-1"></span>
+                        <div class="form-group mt-2" id="translate-settings">
+                            <label>Idioma Alvo</label>
+                            <div class="input-group">
+                                <input type="text" id="translate-lang" class="form-control" maxlength="30" placeholder="Ex.: Spanish (ES)">
+                                <button type="button" id="btn-lang-picker" class="btn btn-secondary" title="Escolher Idioma"><i class="fas fa-globe"></i> Escolher</button>
                             </div>
                         </div>
-                        
-                        <div class="divider"></div>
-                        
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="automation">
+                                <i class="fas fa-save"></i> Salvar Automações
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Boas-Vindas & Despedidas -->
+                <div class="accordion-item" id="accordion-greetings">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-door-open"></i> Boas-Vindas & Despedidas</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
                         <!-- Welcome Messages com Inline Previews -->
                         <div class="sub-accordion active">
                             <div class="sub-accordion-header">
@@ -471,30 +453,67 @@
                             </div>
                         </div>
 
-                        <div class="divider"></div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="greetings">
+                                <i class="fas fa-save"></i> Salvar Boas-Vindas & Despedidas
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Accordion: Interações Automáticas -->
+                <div class="accordion-item" id="accordion-interactions">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-comments"></i> Interações Automáticas</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
-                                <label for="auto-translate" id="lbl-auto-translate">Traduzir Respostas do Bot</label>
-                                <div class="field-hint">Traduz todas as mensagens geradas pelo bot para outro idioma automaticamente.</div>
+                                <label for="auto-interaction" id="lbl-auto-interaction">Interações Aleatórias da IA</label>
+                                <div class="field-hint">O bot entra na conversa espontaneamente com frases, piadas ou reações.</div>
                             </div>
                             <label class="switch-toggle">
-                                <input type="checkbox" id="auto-translate">
+                                <input type="checkbox" id="auto-interaction">
                                 <span class="slider-round"></span>
                             </label>
                         </div>
 
-                        <div class="form-group mt-2" id="translate-settings">
-                            <label>Idioma Alvo</label>
-                            <div class="input-group">
-                                <input type="text" id="translate-lang" class="form-control" maxlength="30" placeholder="Ex.: Spanish (ES)">
-                                <button type="button" id="btn-lang-picker" class="btn btn-secondary" title="Escolher Idioma"><i class="fas fa-globe"></i> Escolher</button>
+                        <div id="interaction-settings" class="hidden slider-panel">
+                            <div class="form-group toggle-row mb-2">
+                                <div class="toggle-info">
+                                    <label for="interact-use-cmds">Usar Comandos do Grupo nas Interações</label>
+                                    <div class="field-hint">Permite que o bot use respostas de comandos personalizados nas interações.</div>
+                                </div>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="interact-use-cmds">
+                                    <span class="slider-round"></span>
+                                </label>
+                            </div>
+                            <div class="slider-group">
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-chance">Frequência/Chance: <span id="chance-val" class="highlight-val">0.1</span>%</label>
+                                </div>
+                                <input type="range" id="interaction-chance" min="1" max="1000" class="slider">
+                            </div>
+                            <div class="slider-group">
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-cooldown">Tempo de Espera (Cooldown): <span id="cooldown-val" class="highlight-val">5</span> min</label>
+                                </div>
+                                <input type="range" id="interaction-cooldown" min="5" max="43200" class="slider">
+                            </div>
+                            <div class="slider-group">
+                                <div class="slider-header">
+                                    <label id="lbl-interaction-proporcao">Proporção IA: <span id="proporcao-val" class="highlight-val">50</span>%</label>
+                                </div>
+                                <input type="range" id="interaction-proporcao" min="0" max="100" class="slider">
+                                <span id="proporcao-desc" class="field-hint mt-1"></span>
                             </div>
                         </div>
 
                         <div class="form-actions">
-                            <button type="button" class="btn btn-primary btn-save-section" data-section="automation">
-                                <i class="fas fa-save"></i> Salvar Automatizações
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="interaction">
+                                <i class="fas fa-save"></i> Salvar Interações Automáticas
                             </button>
                         </div>
                     </div>
@@ -503,7 +522,7 @@
                 <!-- Accordion: Streams Twitch -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fab fa-twitch text-twitch"></i> Notificações Twitch</h3>
+                        <h3><i class="fab fa-twitch text-twitch"></i> Twitch</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
@@ -532,7 +551,7 @@
                 <!-- Accordion: Streams Kick -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-video text-kick"></i> Notificações Kick</h3>
+                        <h3><i class="fas fa-video text-kick"></i> Kick</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
@@ -561,7 +580,7 @@
                 <!-- Accordion: Canais YouTube -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fab fa-youtube text-youtube"></i> Canais YouTube</h3>
+                        <h3><i class="fab fa-youtube text-youtube"></i> YouTube</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
@@ -617,35 +636,7 @@
                     </div>
                 </div>
 
-                <!-- Accordion 5: Advertências do Grupo (NOVO) -->
-                <div class="accordion-item" id="accordion-warnings">
-                    <div class="accordion-header">
-                        <h3><i class="fas fa-triangle-exclamation text-warning"></i> Advertências do Grupo</h3>
-                        <i class="fas fa-chevron-down arrow"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <div class="field-hint mb-3">Membros que receberam advertências administrativas no grupo através do comando <code>!g-advertir</code>.</div>
-                        <div class="commands-toolbar">
-                            <button type="button" id="btn-clear-all-warnings" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> Zerar Todas</button>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table" id="warnings-table">
-                                <thead>
-                                    <tr>
-                                        <th>Membro</th>
-                                        <th>Advertências</th>
-                                        <th style="width: 80px;">Ação</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="warnings-table-body">
-                                </tbody>
-                            </table>
-                            <div id="no-warnings-msg" class="text-center p-3 text-muted hidden">Nenhum membro com advertência ativa.</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Accordion 6: Webhooks do Grupo (NOVO) -->
+                <!-- Accordion: Webhooks do Grupo -->
                 <div class="accordion-item" id="accordion-webhooks">
                     <div class="accordion-header">
                         <h3><i class="fas fa-network-wired"></i> Webhooks Externos</h3>
@@ -683,7 +674,55 @@
                     </div>
                 </div>
 
-                <!-- Accordion 7: Backup & Restauração (NOVO) -->
+                <!-- Accordion: Advertências do Grupo -->
+                <div class="accordion-item" id="accordion-warnings">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-triangle-exclamation text-warning"></i> Advertências do Grupo</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="field-hint mb-3">Membros que receberam advertências administrativas no grupo através do comando <code>!g-advertir</code>.</div>
+                        <div class="commands-toolbar">
+                            <button type="button" id="btn-clear-all-warnings" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> Zerar Todas</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="warnings-table">
+                                <thead>
+                                    <tr>
+                                        <th>Membro</th>
+                                        <th>Advertências</th>
+                                        <th style="width: 80px;">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="warnings-table-body">
+                                </tbody>
+                            </table>
+                            <div id="no-warnings-msg" class="text-center p-3 text-muted hidden">Nenhum membro com advertência ativa.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Dossiês do grupo -->
+                <div class="accordion-item" id="accordion-dossies">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-file-shield"></i> Dossiês do Grupo</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fas fa-info-circle"></i>
+                            <div>Histórico de análises automáticas realizadas pela IA sobre o comportamento do grupo. Quanto maior a pontuação de risco, maior a chance de remoção do bot em caso de denúncias ou violações.</div>
+                        </div>
+                        <div id="dossies-history-list" class="dossie-history-container">
+                            <div class="loading-history text-center p-4">
+                                <div class="loading-spinner-small"></div>
+                                <p>Carregando histórico...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Backup & Restauração -->
                 <div class="accordion-item" id="accordion-backups">
                     <div class="accordion-header">
                         <h3><i class="fas fa-box-archive"></i> Backups & Migração</h3>

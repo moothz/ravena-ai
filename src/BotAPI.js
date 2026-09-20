@@ -51,6 +51,7 @@ const ServiceProviderService = require("./services/ServiceProviderService");
 const ExternalAuthService = require("./services/ExternalAuthService");
 const SpeechCommands = require("./functions/SpeechCommands");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
+const CommandsHelper = require("./utils/CommandsHelper");
 
 const WEBHOOK_RATE_LIMIT = 120000;
 
@@ -4138,6 +4139,7 @@ class BotAPI {
 
 			const categorizedCommands = groupCommandsByCategory(fixedCommands);
 			const finalCategories = [];
+			const commandsHelper = CommandsHelper.getInstance();
 
 			for (const category in CATEGORY_EMOJIS) {
 				const commands = categorizedCommands[category] || [];
@@ -4167,12 +4169,26 @@ class BotAPI {
 					}
 
 					aliases = [...new Set(aliases)];
+					const meta = commandsHelper.findCommandMeta(cmd.name);
+					const usage =
+						meta?.usage && meta.usage.length > 0
+							? meta.usage
+							: cmd.usage
+								? Array.isArray(cmd.usage)
+									? cmd.usage
+									: [cmd.usage]
+								: [`!${cmd.name}`];
 
 					categoryData.commands.push({
 						name: cmd.name,
-						description: cmd.description,
+						description: cmd.description || meta?.desc || "Sem descrição.",
 						aliases,
-						reaction: cmd.reactions?.trigger
+						reaction: cmd.reactions?.trigger || null,
+						usage,
+						examples: usage,
+						about: meta?.about || "",
+						category: cmd.category || category,
+						isManagement: false
 					});
 				}
 				finalCategories.push(categoryData);
@@ -4190,7 +4206,30 @@ class BotAPI {
 			});
 
 			const sortedMgmt = {};
-			sortedMgmtKeys.forEach((key) => (sortedMgmt[key] = managementCommands[key]));
+			sortedMgmtKeys.forEach((key) => {
+				const mgmtCmd = managementCommands[key];
+				const meta =
+					commandsHelper.findCommandMeta(`g-${key}`) || commandsHelper.findCommandMeta(key);
+				const usage =
+					meta?.usage && meta.usage.length > 0
+						? meta.usage
+						: mgmtCmd?.usage
+							? Array.isArray(mgmtCmd.usage)
+								? mgmtCmd.usage
+								: [mgmtCmd.usage]
+							: [`!g-${key}`];
+
+				sortedMgmt[key] = {
+					name: `g-${key}`,
+					description: mgmtCmd?.description || meta?.desc || "Comando de administração do grupo.",
+					aliases: mgmtCmd?.aliases || [],
+					usage,
+					examples: usage,
+					about: meta?.about || "Configuração e moderação de grupos",
+					category: meta?.category || "gerenciamento",
+					isManagement: true
+				};
+			});
 
 			this.publicCommandsCache = {
 				categories: finalCategories,

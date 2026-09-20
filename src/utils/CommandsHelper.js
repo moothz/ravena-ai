@@ -29,6 +29,15 @@ class CommandsHelper {
 		return CommandsHelper.instance;
 	}
 
+	/**
+	 * Atalho estático para obter metadados de comando
+	 * @param {string} commandName
+	 * @returns {Object|null}
+	 */
+	static findCommandMeta(commandName) {
+		return CommandsHelper.getInstance().findCommandMeta(commandName);
+	}
+
 	constructor() {
 		this.logger = new Logger("commands-helper");
 		this.helpers = [];
@@ -323,93 +332,126 @@ class CommandsHelper {
 	}
 
 	/**
-	 * Obtém informações detalhadas, sintaxe e exemplos de uso de um comando específico
-	 * @param {string} commandName - Nome do comando (com ou sem prefixo)
-	 * @returns {string}
+	 * Retorna os metadados brutos de um comando (nome, desc, usage, categoria, módulo)
+	 * @param {string} commandName
+	 * @returns {Object|null}
 	 */
-	getCommandDetails(commandName = "") {
+	findCommandMeta(commandName = "") {
 		if (!this.initialized || this.helpers.length === 0) {
 			this.loadHelpers();
 		}
 
 		const cleanCmd = (commandName || "").trim().toLowerCase().replace(/^[!/]/, "");
-
-		let foundCmd = null;
-		let foundHelper = null;
+		if (!cleanCmd) return null;
 
 		// 1. Busca exata pelo nome do comando
 		for (const h of this.helpers) {
 			for (const c of h.cmds) {
 				const name = (c.cmd || "").toLowerCase().replace(/^[!/]/, "");
-				if (name === cleanCmd || name === `g-${cleanCmd}`) {
-					foundCmd = c;
-					foundHelper = h;
-					break;
+				if (
+					name === cleanCmd ||
+					name === `g-${cleanCmd}` ||
+					(cleanCmd.startsWith("g-") && name === cleanCmd.slice(2))
+				) {
+					return {
+						cmd: c.cmd,
+						desc: c.desc || "",
+						usage:
+							Array.isArray(c.usage) && c.usage.length > 0
+								? c.usage
+								: [`!${c.cmd.replace(/^[!/]/, "")}`],
+						category: c.category || "resto",
+						file: h.file,
+						about: h.about || "",
+						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
+					};
 				}
 			}
-			if (foundCmd) break;
 		}
 
 		// 2. Busca nos exemplos de usage ou aliases
-		if (!foundCmd) {
-			for (const h of this.helpers) {
-				for (const c of h.cmds) {
-					const usages = (c.usage || []).map(
-						(u) => u.toLowerCase().replace(/^[!/]/, "").split(/\s+/)[0]
-					);
-					if (usages.includes(cleanCmd) || usages.includes(`g-${cleanCmd}`)) {
-						foundCmd = c;
-						foundHelper = h;
-						break;
-					}
+		for (const h of this.helpers) {
+			for (const c of h.cmds) {
+				const usages = (c.usage || []).map(
+					(u) => u.toLowerCase().replace(/^[!/]/, "").split(/\s+/)[0]
+				);
+				if (usages.includes(cleanCmd) || usages.includes(`g-${cleanCmd}`)) {
+					return {
+						cmd: c.cmd,
+						desc: c.desc || "",
+						usage:
+							Array.isArray(c.usage) && c.usage.length > 0
+								? c.usage
+								: [`!${c.cmd.replace(/^[!/]/, "")}`],
+						category: c.category || "resto",
+						file: h.file,
+						about: h.about || "",
+						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
+					};
 				}
-				if (foundCmd) break;
 			}
 		}
 
 		// 3. Busca nas tags do módulo
-		if (!foundCmd) {
-			for (const h of this.helpers) {
-				const tags = (h.tags || "")
-					.toLowerCase()
-					.split(",")
-					.map((t) => t.trim());
-				if (tags.includes(cleanCmd)) {
-					if (h.cmds && h.cmds.length > 0) {
-						foundCmd = h.cmds[0];
-						foundHelper = h;
-						break;
-					}
+		for (const h of this.helpers) {
+			const tags = (h.tags || "")
+				.toLowerCase()
+				.split(",")
+				.map((t) => t.trim());
+			if (tags.includes(cleanCmd)) {
+				if (h.cmds && h.cmds.length > 0) {
+					const c = h.cmds[0];
+					return {
+						cmd: c.cmd,
+						desc: c.desc || "",
+						usage:
+							Array.isArray(c.usage) && c.usage.length > 0
+								? c.usage
+								: [`!${c.cmd.replace(/^[!/]/, "")}`],
+						category: c.category || "resto",
+						file: h.file,
+						about: h.about || "",
+						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
+					};
 				}
 			}
 		}
 
-		if (foundCmd) {
-			let text = `🤖 **Comando:** \`${foundCmd.cmd}\`\n`;
-			if (foundCmd.category) {
-				const emoji =
-					CATEGORY_EMOJIS[foundCmd.category] || EXTRA_CATEGORY_EMOJIS[foundCmd.category] || "📁";
-				text += `🏷️ **Categoria:** ${emoji} ${foundCmd.category}\n`;
-			}
-			text += `📝 **Descrição:** ${foundCmd.desc || "Sem descrição."}\n`;
+		return null;
+	}
 
-			if (foundCmd.usage && foundCmd.usage.length > 0) {
+	/**
+	 * Obtém informações detalhadas, sintaxe e exemplos de uso de um comando específico
+	 * @param {string} commandName - Nome do comando (com ou sem prefixo)
+	 * @returns {string}
+	 */
+	getCommandDetails(commandName = "") {
+		const meta = this.findCommandMeta(commandName);
+		if (meta) {
+			let text = `🤖 **Comando:** \`${meta.cmd}\`\n`;
+			if (meta.category) {
+				const emoji =
+					CATEGORY_EMOJIS[meta.category] || EXTRA_CATEGORY_EMOJIS[meta.category] || "📁";
+				text += `🏷️ **Categoria:** ${emoji} ${meta.category}\n`;
+			}
+			text += `📝 **Descrição:** ${meta.desc || "Sem descrição."}\n`;
+
+			if (meta.usage && meta.usage.length > 0) {
 				text += `💡 **Como usar (Exemplos):**\n`;
-				for (const u of foundCmd.usage) {
+				for (const u of meta.usage) {
 					text += `  - \`${u}\`\n`;
 				}
 			}
 
-			if (foundHelper) {
-				if (foundHelper.about) text += `ℹ️ **Sobre o módulo:** ${foundHelper.about}\n`;
-				if (foundHelper.source === "management" || foundCmd.cmd.startsWith("!g-")) {
-					text += `🔒 **Acesso:** Exclusivo para administradores do grupo (inicia com \`!g-\`).\n`;
-				}
+			if (meta.about) text += `ℹ️ **Sobre o módulo:** ${meta.about}\n`;
+			if (meta.isManagement) {
+				text += `🔒 **Acesso:** Exclusivo para administradores do grupo (inicia com \`!g-\`).\n`;
 			}
 
 			return text.trim();
 		}
 
+		const cleanCmd = (commandName || "").trim().toLowerCase().replace(/^[!/]/, "");
 		// Se não encontrou o comando exato, faz uma busca por aproximação
 		return `Comando '${commandName}' não encontrado exatamente.\n\n${this.search(cleanCmd, { limit: 5 })}`;
 	}
