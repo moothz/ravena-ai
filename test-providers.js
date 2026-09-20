@@ -7,6 +7,56 @@ const CONFIG_FILE = "service-providers.json";
 const TEST_IMAGE = path.join(__dirname, "data", "rare-fish.jpg");
 const TEST_AUDIO = path.join(__dirname, "data", "ravena_sample.mp3");
 
+const TEST_TOOLS = [
+	{
+		type: "function",
+		function: {
+			name: "web_search",
+			description: "Pesquisa na web por informações atualizadas, notícias ou fatos recentes.",
+			parameters: {
+				type: "object",
+				properties: {
+					query: {
+						type: "string",
+						description: "Termos de busca"
+					}
+				},
+				required: ["query"]
+			}
+		}
+	}
+];
+
+function extractToolCall(data, type) {
+	if (!data) return null;
+	const msg = type === "ollama" ? data.message : data.choices?.[0]?.message;
+	if (!msg) return null;
+
+	// Formato padrão OpenAI ou Ollama
+	if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+		const first = msg.tool_calls[0];
+		return first.function?.name || first.name || "called";
+	}
+
+	// Formato legado function_call
+	if (msg.function_call?.name) {
+		return msg.function_call.name;
+	}
+
+	// Fallback para respostas com tags XML (ex: MiniMax ou invoke tags)
+	if (typeof msg.content === "string") {
+		const invokeMatch = msg.content.match(/<invoke\s+name=["']([^"']+)["']/i);
+		if (invokeMatch) return invokeMatch[1];
+		const toolCallMatch = msg.content.match(
+			/<(?:minimax:)?tool_call[^>]*>[\s\S]*?<invoke\s+name=["']([^"']+)["']/i
+		);
+		if (toolCallMatch) return toolCallMatch[1];
+		if (/<tool_call>[\s\S]*?<\/tool_call>/i.test(msg.content)) return "tool_call";
+	}
+
+	return null;
+}
+
 // Cores para o terminal
 const COLORS = {
 	reset: "\x1b[0m",
@@ -164,6 +214,66 @@ async function runTests() {
 					}
 					results.push({ name: "VISION", ...imgRes });
 				}
+
+				// 3. Teste de Tool Calling (se habilitado pro modelo)
+				const isToolCallingEnabled = p.toolCalling === true || p.tool_calling === true;
+				if (isToolCallingEnabled) {
+					const toolTimeout = (p.timeout || 30000) * (p.timeout_multiplier || 1);
+					let toolRes;
+
+					if (p.type === "ollama") {
+						toolRes = await testUrl(
+							`${p.url}/api/chat`,
+							"POST",
+							{
+								model: p.model,
+								messages: [
+									{
+										role: "user",
+										content:
+											"Qual a cotação do dólar hoje? Use a ferramenta web_search para pesquisar."
+									}
+								],
+								tools: TEST_TOOLS,
+								options: { num_predict: 150 },
+								stream: false
+							},
+							{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined },
+							toolTimeout
+						);
+					} else {
+						toolRes = await testUrl(
+							`${p.url}/chat/completions`,
+							"POST",
+							{
+								model: p.model,
+								messages: [
+									{
+										role: "user",
+										content:
+											"Qual a cotação do dólar hoje? Use a ferramenta web_search para pesquisar."
+									}
+								],
+								tools: TEST_TOOLS,
+								max_tokens: 150,
+								stream: false
+							},
+							{ Authorization: p.apiKey ? `Bearer ${p.apiKey}` : undefined },
+							toolTimeout
+						);
+					}
+
+					if (toolRes.ok) {
+						const calledTool = extractToolCall(toolRes.data, p.type);
+						if (calledTool) {
+							toolRes.fileInfo = `call: ${calledTool}`;
+						} else {
+							toolRes.ok = false;
+							toolRes.status = "NO_CALL";
+						}
+					}
+					results.push({ name: "TOOLS", ...toolRes });
+				}
 			} else if (category === "whisper") {
 				if (audioBase64) {
 					const transcribeRes = await testUrl(`${p.url}/transcribe`, "POST", {
@@ -245,6 +355,9 @@ async function runTests() {
 				if (res.status === 200) {
 					statusSymbol = `${COLORS.green}✅ [OK] `;
 					statusColor += COLORS.green;
+				} else if (res.status === "NO_CALL") {
+					statusSymbol = `${COLORS.yellow}⚠️  [WARN]`;
+					statusColor += COLORS.yellow;
 				} else if (res.ok) {
 					statusSymbol = `${COLORS.green}✅ [UP] `;
 					statusColor += COLORS.cyan;
@@ -269,6 +382,17 @@ async function runTests() {
 
 				if (!res.reachable && res.error) {
 					console.log(`${COLORS.red}   ┗ Error: ${res.error}${COLORS.reset}`);
+				} else if (res.status === "NO_CALL") {
+					const msgContent =
+						p.type === "ollama"
+							? res.data?.message?.content
+							: res.data?.choices?.[0]?.message?.content;
+					const preview = msgContent
+						? (typeof msgContent === "string" ? msgContent : JSON.stringify(msgContent)).trim()
+						: "Modelo respondeu sem acionar tool_calls";
+					console.log(
+						`${COLORS.yellow}   ┗ Resposta: ${preview.substring(0, 100)}${preview.length > 100 ? "..." : ""}${COLORS.reset}`
+					);
 				} else if (res.status !== 200 && !res.ok && res.data) {
 					const errorMsg = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
 					console.log(

@@ -21,7 +21,8 @@
 			"model": "gpt-4o",
 			"enabled": true,
 			"temperature": 0.7,
-			"timeout_multiplier": 2
+			"timeout_multiplier": 2,
+			"toolCalling": true
 		},
 		{
 			"name": "openrouter-default",
