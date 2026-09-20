@@ -94,6 +94,20 @@ const DIAS_MAP = {
 	saturday: 6
 };
 
+const DIAS_MAP_SHORT = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+/**
+ * Retorna o dia da semana (0-6) de um objeto Date no fuso de Brasília
+ */
+function getDiaSemanaBrasilia(date) {
+	const dtf = new Intl.DateTimeFormat("en-US", {
+		timeZone: "America/Sao_Paulo",
+		weekday: "short"
+	});
+	const dayStr = dtf.format(date).toLowerCase();
+	return DIAS_MAP_SHORT[dayStr];
+}
+
 /**
  * Retorna as informações de data/hora atual no fuso America/Sao_Paulo (GMT-3)
  */
@@ -107,7 +121,8 @@ function getNowBrasilia() {
 		hour: "2-digit",
 		minute: "2-digit",
 		second: "2-digit",
-		hour12: false
+		hourCycle: "h23",
+		weekday: "short"
 	});
 	const parts = dtf.formatToParts(now);
 	const map = {};
@@ -121,8 +136,9 @@ function getNowBrasilia() {
 	const hour = parseInt(map.hour, 10);
 	const minute = parseInt(map.minute, 10);
 	const second = parseInt(map.second, 10);
+	const diaSemana = DIAS_MAP_SHORT[map.weekday.toLowerCase()];
 
-	// Monta objeto Date para calcular dia da semana no fuso
+	// Monta objeto Date para compatibilidade
 	const dateInTz = new Date(
 		`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}-03:00`
 	);
@@ -135,7 +151,7 @@ function getNowBrasilia() {
 		hour,
 		minute,
 		second,
-		diaSemana: dateInTz.getDay(),
+		diaSemana,
 		dateInTz
 	};
 }
@@ -277,7 +293,7 @@ function sanitizarFrase(frase, tipo) {
  */
 function calcularTimestampUnico(hora, minuto) {
 	const sp = getNowBrasilia();
-	const agoraSpDate = sp.dateInTz;
+	const agoraMs = Date.now();
 
 	// Cria data alvo hoje no fuso
 	const targetDate = new Date(
@@ -285,18 +301,18 @@ function calcularTimestampUnico(hora, minuto) {
 	);
 
 	let isTomorrow = false;
-	if (targetDate.getTime() <= agoraSpDate.getTime()) {
-		// Já passou hoje, programa para amanhã
-		targetDate.setDate(targetDate.getDate() + 1);
+	if (targetDate.getTime() <= agoraMs) {
+		// Já passou hoje, programa para amanhã (avança 24 horas)
+		targetDate.setTime(targetDate.getTime() + 24 * 60 * 60 * 1000);
 		isTomorrow = true;
 	}
 
-	const diffMs = targetDate.getTime() - agoraSpDate.getTime();
+	const diffMs = targetDate.getTime() - agoraMs;
 	return {
 		timestamp: targetDate.getTime(),
 		diffMs,
 		isTomorrow,
-		diaSemanaCalculado: targetDate.getDay()
+		diaSemanaCalculado: getDiaSemanaBrasilia(targetDate)
 	};
 }
 
@@ -521,21 +537,13 @@ async function contarAgendamentosNoDia(groupId, diaSemana) {
 	);
 
 	let count = 0;
-	const sp = getNowBrasilia();
 
 	for (const r of rows) {
 		if (r.dia_semana !== null && r.dia_semana !== undefined) {
 			if (r.dia_semana === diaSemana) count++;
 		} else if (r.timestamp_unico) {
 			// Checa qual o dia da semana deste agendamento único no fuso
-			const targetDate = new Date(r.timestamp_unico);
-			const dtf = new Intl.DateTimeFormat("en-US", {
-				timeZone: "America/Sao_Paulo",
-				weekday: "short"
-			});
-			const dayStr = dtf.format(targetDate).toLowerCase();
-			const dayMapShort = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-			const uniqueDay = dayMapShort[dayStr];
+			const uniqueDay = getDiaSemanaBrasilia(new Date(r.timestamp_unico));
 			if (uniqueDay === diaSemana) count++;
 		}
 	}
@@ -685,6 +693,7 @@ module.exports = {
 	DIAS_SEMANA_NOMES,
 	DIAS_MAP,
 	getNowBrasilia,
+	getDiaSemanaBrasilia,
 	parseHora,
 	parseDiaSemana,
 	formatarHora,
