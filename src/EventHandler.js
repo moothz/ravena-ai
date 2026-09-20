@@ -1333,11 +1333,12 @@ class EventHandler extends EventEmitter {
 				const isSpammer = await this.isSpammerUser(bot, data.user, groupId, null, group);
 				if (isSpammer) {
 					const userId = data.user.id;
-					const userPhone = userId ? userId.split("@")[0].replace(/\D/g, "") : "";
+					const userPhone = this.extractPhoneNumber(data.user) || this.extractPhoneNumber(userId);
+					const userLid = userId && userId.endsWith("@lid") ? userId : null;
 					this.logger.warn(
 						`[processGroupJoin] Spammer detectado via join event: ${userId} no grupo monitorado ${groupId}. Removendo imediatamente sem enviar boas-vindas.`
 					);
-					this.registerSpammer(userId, userPhone);
+					this.registerSpammer(userId, userPhone, userLid);
 
 					try {
 						await bot.removeFromGroup(groupId, [userId]);
@@ -1377,13 +1378,20 @@ class EventHandler extends EventEmitter {
 			let group =
 				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
 
-			// Verifica se há spammers para banir (63/62) nos grupos monitorados
+			// Verifica se há spammers para banir (62/63/380 ou padrão MI###) nos grupos monitorados
 			await this.checkAutoBanSpammers(bot, chat);
 
 			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat, group))) {
 				this.logger.warn(
-					`[processGroupJoin] Spammer detectado após verificação do chat no grupo monitorado ${groupId}: ${data.user?.id}. Interrompendo boas-vindas.`
+					`[processGroupJoin] Spammer detectado após verificação do chat no grupo monitorado ${groupId}: ${data.user?.id}. Removendo e interrompendo boas-vindas.`
 				);
+				const userId = data.user?.id;
+				const userPhone = this.extractPhoneNumber(data.user) || this.extractPhoneNumber(userId);
+				const userLid = userId && userId.endsWith("@lid") ? userId : null;
+				this.registerSpammer(userId, userPhone, userLid);
+				if (userId) {
+					await bot.removeFromGroup(groupId, [userId]).catch(() => {});
+				}
 				return;
 			}
 
@@ -2134,11 +2142,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo monitorado ${data.group.id}. Enviando aviso de spammer e suprimindo despedida padrão.`
 					);
 
-					const rawPhone =
-						data.user?.phoneNumber ||
-						data.user?.number ||
-						(data.user?.id ? data.user.id.split("@")[0] : "");
-					const cleanPhone = String(rawPhone).replace(/\D/g, "");
+					const cleanPhone =
+						this.extractPhoneNumber(data.user) || this.extractPhoneNumber(data.user?.id) || "";
 					const noticeKey = `${data.group.id}:${cleanPhone || data.user?.id}`;
 					const now = Date.now();
 					const lastSent = this.recentSpammerLeaveNotices.get(noticeKey) || 0;
@@ -2602,14 +2607,106 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	/**
-	 * Verifica se o telefone possui prefixo de spammer (62 ou 63)
+	 * Extrai o número de telefone celular real de um usuário, participante ou JID.
+	 * Retorna null se for um LID (@lid) ou se o número real não puder ser determinado.
+	 * O banimento por DDI NUNCA deve ocorrer usando um LID.
+	 * @param {Object|string} userOrJid
+	 * @returns {string|null}
+	 */
+	extractPhoneNumber(userOrJid) {
+		if (!userOrJid) return null;
+
+		if (typeof userOrJid === "string") {
+			const str = userOrJid.trim();
+			if (str.endsWith("@lid") || str.includes("@lid") || str.endsWith("@g.us")) {
+				return null;
+			}
+			if (str.endsWith("@s.whatsapp.net") || str.endsWith("@c.us")) {
+				const num = str.split("@")[0].replace(/\D/g, "");
+				return num || null;
+			}
+			// Se for apenas dígitos ou formato internacional (+55...) sem @lid
+			const num = str.replace(/\D/g, "");
+			return num || null;
+		}
+
+		if (typeof userOrJid === "object") {
+			// Prioriza phoneNumber explícito se não for LID
+			if (userOrJid.phoneNumber && typeof userOrJid.phoneNumber === "string") {
+				const pn = userOrJid.phoneNumber.trim();
+				if (!pn.includes("@lid")) {
+					const clean = pn.split("@")[0].replace(/\D/g, "");
+					if (clean) return clean;
+				}
+			}
+
+			// Verifica se o ID principal é de telefone (@s.whatsapp.net ou @c.us)
+			const idStr = userOrJid.id?._serialized || userOrJid.id || "";
+			if (typeof idStr === "string" && !idStr.includes("@lid") && !idStr.includes("@g.us")) {
+				if (idStr.endsWith("@s.whatsapp.net") || idStr.endsWith("@c.us")) {
+					const clean = idStr.split("@")[0].replace(/\D/g, "");
+					if (clean) return clean;
+				}
+			}
+
+			// Se tiver campo .number, só confia se idStr NÃO for @lid
+			if (userOrJid.number && typeof userOrJid.number === "string") {
+				const numStr = userOrJid.number.trim();
+				if (!numStr.includes("@lid") && (!idStr || !idStr.includes("@lid"))) {
+					const clean = numStr.split("@")[0].replace(/\D/g, "");
+					if (clean) return clean;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Extrai o nome de exibição / pushname de um usuário ou participante
+	 * @param {Object|string} userOrParticipant
+	 * @returns {string}
+	 */
+	extractUserName(userOrParticipant) {
+		if (!userOrParticipant || typeof userOrParticipant === "string") return "";
+		return (
+			userOrParticipant.name ||
+			userOrParticipant.pushname ||
+			userOrParticipant.pushName ||
+			userOrParticipant.displayName ||
+			userOrParticipant.verifiedName ||
+			userOrParticipant.authorName ||
+			""
+		);
+	}
+
+	/**
+	 * Verifica se o nome do usuário segue o padrão de spammer: MI seguido de 3 a 8 dígitos
+	 * Exemplos: MI523508, MI123456
+	 * @param {string} name
+	 * @returns {boolean}
+	 */
+	isSpammerName(name) {
+		if (!name || typeof name !== "string") return false;
+		const clean = name.trim();
+		return /^MI\s*\d{3,8}$/i.test(clean);
+	}
+
+	/**
+	 * Verifica se o telefone possui prefixo de spammer (62, 63 ou 380).
+	 * NUNCA deve retornar true para LIDs (@lid) ou IDs que não sejam números de celular.
 	 * @param {string} phone
 	 * @returns {boolean}
 	 */
 	isSpammerPrefix(phone) {
 		if (!phone) return false;
-		const clean = String(phone).replace(/\D/g, "");
-		return clean.startsWith("63") || clean.startsWith("62");
+		const str = String(phone).trim();
+		if (str.endsWith("@lid") || str.includes("@lid") || str.endsWith("@g.us")) {
+			return false;
+		}
+		const clean = str.split("@")[0].replace(/\D/g, "");
+		if (!clean) return false;
+		return clean.startsWith("63") || clean.startsWith("62") || clean.startsWith("380");
 	}
 
 	/**
@@ -2623,8 +2720,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		for (const item of items) {
 			const str = String(item);
 			this.activeSpammers.add(str);
-			const clean = str.split("@")[0].replace(/\D/g, "");
-			if (clean) this.activeSpammers.add(clean);
+			// Não adiciona os dígitos puros de um LID para não colidir com números de celular
+			if (!str.endsWith("@lid") && !str.includes("@lid")) {
+				const clean = str.split("@")[0].replace(/\D/g, "");
+				if (clean) this.activeSpammers.add(clean);
+			}
 		}
 
 		this.spammerActiveWindowUntil = Date.now() + 5 * 60 * 1000;
@@ -2634,8 +2734,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				for (const item of items) {
 					const str = String(item);
 					this.activeSpammers.delete(str);
-					const clean = str.split("@")[0].replace(/\D/g, "");
-					if (clean) this.activeSpammers.delete(clean);
+					if (!str.endsWith("@lid") && !str.includes("@lid")) {
+						const clean = str.split("@")[0].replace(/\D/g, "");
+						if (clean) this.activeSpammers.delete(clean);
+					}
 				}
 			},
 			5 * 60 * 1000
@@ -2662,11 +2764,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 		for (const u of users) {
 			const userId = u?.id?._serialized || u?.id || (typeof u === "string" ? u : "");
-			let phone = u?.phoneNumber || u?.number || "";
-			if (!phone && userId && !userId.endsWith("@lid")) {
-				phone = userId.split("@")[0];
-			}
-			const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+			const isLid = Boolean(userId && (userId.endsWith("@lid") || userId.includes("@lid")));
+
+			// Extrai telefone real com segurança (retorna null se for LID)
+			const cleanPhone =
+				this.extractPhoneNumber(u) || (isLid ? null : this.extractPhoneNumber(userId));
+
+			// Extrai nome do usuário
+			const userName = this.extractUserName(u);
 
 			// Se estiver na whitelist do grupo, ignora
 			if (this.isSpammerWhitelisted(grp, userId, cleanPhone)) {
@@ -2681,43 +2786,79 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				return true;
 			}
 
-			// 2. Checa prefixo de spammer
+			// 2. Checa se o nome do usuário segue o padrão MI### (3 a 8 números)
+			if (this.isSpammerName(userName)) {
+				return true;
+			}
+
+			// 3. Checa prefixo de spammer no telefone celular real (62, 63, 380)
+			// JAMAIS testa se cleanPhone for nulo ou proveniente de LID
 			if (cleanPhone && this.isSpammerPrefix(cleanPhone)) {
 				return true;
 			}
 
-			// Se for LID, tenta obter telefone via chat.participants ou getContactById
-			if (userId && userId.endsWith("@lid")) {
+			// 4. Se for LID ou o telefone/nome não tiver sido obtido, tenta buscar via chat.participants ou bot
+			if (isLid || !cleanPhone || !userName) {
 				let participantPhone = null;
+				let participantName = null;
 
 				if (chat) {
 					const participants = chat.Participants || chat.participants || [];
 					const p = participants.find(
-						(part) => part.lid === userId || part.id?._serialized === userId || part.id === userId
+						(part) =>
+							part.lid === userId ||
+							part.id?._serialized === userId ||
+							part.id === userId ||
+							(cleanPhone &&
+								(part.phoneNumber === cleanPhone ||
+									(part.id?._serialized || part.id || "").startsWith(cleanPhone)))
 					);
 					if (p) {
-						participantPhone = p.phoneNumber || (p.id?._serialized || p.id || "").split("@")[0];
+						participantPhone = this.extractPhoneNumber(p);
+						participantName = this.extractUserName(p);
 					}
 				}
 
-				if (!participantPhone && bot?.client?.getContactById) {
-					try {
-						const contact = await bot.client.getContactById(userId);
-						if (contact?.id?._serialized) {
-							participantPhone = contact.id._serialized.split("@")[0];
-						}
-					} catch (e) {
-						// Ignora erro
-					}
+				if (participantName && this.isSpammerName(participantName)) {
+					return true;
 				}
 
 				if (participantPhone) {
-					const cleanPart = String(participantPhone).replace(/\D/g, "");
-					if (this.isSpammerWhitelisted(grp, userId, cleanPart)) {
+					if (this.isSpammerWhitelisted(grp, userId, participantPhone)) {
 						continue;
 					}
-					if (this.isSpammerPrefix(cleanPart)) {
+					if (this.isSpammerPrefix(participantPhone)) {
 						return true;
+					}
+				}
+
+				// Se ainda não achou nem nome nem telefone do LID, tenta contato via bot
+				if (
+					(!participantPhone || !participantName) &&
+					(bot?.getContactDetails || bot?.client?.getContactById)
+				) {
+					try {
+						const contact = bot.getContactDetails
+							? await bot.getContactDetails(userId)
+							: await bot.client.getContactById(userId);
+
+						if (contact) {
+							const cName = this.extractUserName(contact);
+							if (this.isSpammerName(cName)) {
+								return true;
+							}
+							const cPhone = this.extractPhoneNumber(contact);
+							if (cPhone) {
+								if (this.isSpammerWhitelisted(grp, userId, cPhone)) {
+									continue;
+								}
+								if (this.isSpammerPrefix(cPhone)) {
+									return true;
+								}
+							}
+						}
+					} catch (e) {
+						// Ignora erro
 					}
 				}
 			}
@@ -2735,14 +2876,31 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		const participants = chat.Participants || chat.participants || [];
 
 		const spammers = participants.filter((p) => {
-			const phone = (p.phoneNumber || p.id?._serialized || p.id || "")
-				.split("@")[0]
-				.replace(/\D/g, "");
 			const pId = p.id?._serialized || p.id || "";
+			const phone = this.extractPhoneNumber(p);
+			const name = this.extractUserName(p);
+
 			if (this.isSpammerWhitelisted(group, pId, phone)) {
 				return false;
 			}
-			return this.isSpammerPrefix(phone);
+
+			// 1. Está no Set de spammers ativos?
+			if ((pId && this.activeSpammers.has(pId)) || (phone && this.activeSpammers.has(phone))) {
+				return true;
+			}
+
+			// 2. Nome de spammer MI### (3 a 8 dígitos)
+			if (this.isSpammerName(name)) {
+				return true;
+			}
+
+			// 3. Prefixo de spammer (62, 63, 380) no telefone celular REAL
+			// NUNCA valida se for LID ou se phone for nulo
+			if (phone && this.isSpammerPrefix(phone)) {
+				return true;
+			}
+
+			return false;
 		});
 
 		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { participants, spammers });
@@ -2750,8 +2908,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		if (spammers.length > 0) {
 			const spammersJids = spammers.map((s) => {
 				// Prioritize the phone number JID (@s.whatsapp.net) over LID
-				if (s.phoneNumber) {
-					const cleanPhone = s.phoneNumber.split("@")[0].replace(/\D/g, "");
+				const cleanPhone = this.extractPhoneNumber(s);
+				if (cleanPhone) {
 					return `${cleanPhone}@s.whatsapp.net`;
 				}
 				const sId = s.id?._serialized || s.id || "";
@@ -2768,8 +2926,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			// Ativa a janela de monitoramento intenso por 5 minutos e registra no Set
 			for (const spammer of spammers) {
 				const sId = spammer.id?._serialized || spammer.id || "";
-				const sPhone = spammer.phoneNumber;
-				const sLid = spammer.lid;
+				const sPhone = this.extractPhoneNumber(spammer);
+				const sLid = sId.endsWith("@lid") ? sId : spammer.lid;
 				this.registerSpammer(sId, sPhone, sLid);
 			}
 
@@ -2822,13 +2980,20 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			return false;
 		}
 
+		const authorPhone = this.extractPhoneNumber(message.author);
+		const authorAltPhone = this.extractPhoneNumber(message.authorAlt);
+		const authorName = this.extractUserName(message);
+
 		// Verifica se o autor ou authorAlt é spammer
 		const isSpammer =
 			this.activeSpammers.has(message.author) ||
 			(message.authorAlt && this.activeSpammers.has(message.authorAlt)) ||
+			(authorPhone && this.activeSpammers.has(authorPhone)) ||
+			(authorAltPhone && this.activeSpammers.has(authorAltPhone)) ||
+			this.isSpammerName(authorName) ||
 			(isWindowActive &&
-				(this.isSpammerPrefix(message.author) ||
-					(message.authorAlt && this.isSpammerPrefix(message.authorAlt))));
+				((authorPhone && this.isSpammerPrefix(authorPhone)) ||
+					(authorAltPhone && this.isSpammerPrefix(authorAltPhone))));
 
 		if (isSpammer) {
 			this.logger.warn(

@@ -3075,12 +3075,13 @@ class WhatsAppBotGo {
 		const now = Date.now();
 		const expirationMs = cacheDurationHours * 60 * 60 * 1000;
 
-		const jidCom = `${id.split("@")[0]}@s.whatsapp.net`;
+		const isLid = id.endsWith("@lid");
+		const jidCom = isLid ? id : `${id.split("@")[0]}@s.whatsapp.net`;
 
 		const returnData = {
 			id: { _serialized: id },
-			number: id.split("@")[0],
-			lid: id,
+			number: isLid ? null : id.split("@")[0],
+			lid: isLid ? id : null,
 			name: prefetchedName ?? id.split("@")[0],
 			block: async () => await this.setCttBlockStatus(id, "block"),
 			unblock: async () => await this.setCttBlockStatus(id, "unblock"),
@@ -3105,8 +3106,8 @@ class WhatsAppBotGo {
 		}
 
 		try {
-			if (!cacheName) {
-				// Não tem cache
+			if (!cacheName && !isLid) {
+				// Não tem cache e não é LID
 				let numberToFetch = id;
 				if (numberToFetch.includes("@")) {
 					numberToFetch = numberToFetch.split("@")[0] + "@s.whatsapp.net";

@@ -239,7 +239,7 @@ class Management {
 			banirSpammers: {
 				method: "toggleBanirSpammers",
 				description:
-					"Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63) neste grupo"
+					"Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380 ou padrão MI###) neste grupo"
 			},
 			permitirSpammer: {
 				method: "togglePermitirSpammer",
@@ -2879,7 +2879,7 @@ class Management {
 		await this.database.saveGroup(group);
 
 		const statusMsg = group.banirSpammers
-			? "🛡️ Monitoramento de *spammers* agora está *ativado* neste grupo.\nO bot removerá automaticamente números com DDI 62/63 ao entrarem."
+			? "🛡️ Monitoramento de *spammers* agora está *ativado* neste grupo.\nO bot removerá automaticamente números com DDI 62/63/380 ou padrão de nome MI### ao entrarem."
 			: "⚪ Monitoramento de *spammers* agora está *desativado* neste grupo.";
 
 		return new ReturnMessage({
@@ -7887,7 +7887,7 @@ const helper = {
 		},
 		{
 			cmd: "!g-banirSpammers",
-			desc: "Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63) no grupo",
+			desc: "Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380) no grupo",
 			usage: ["!g-banirSpammers"],
 			category: "filtros"
 		},

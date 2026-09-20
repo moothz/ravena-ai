@@ -47,6 +47,16 @@ async function runTests() {
 		"DDI 63 should be detected"
 	);
 	assert.strictEqual(
+		eventHandler.isSpammerPrefix("380679523508"),
+		true,
+		"DDI 380 should be detected"
+	);
+	assert.strictEqual(
+		eventHandler.isSpammerPrefix("+380 67 952 3508"),
+		true,
+		"DDI 380 with formatting should be detected"
+	);
+	assert.strictEqual(
 		eventHandler.isSpammerPrefix("+62 812-345-678"),
 		true,
 		"DDI 62 with symbols should be detected"
@@ -61,7 +71,96 @@ async function runTests() {
 		false,
 		"DDI 1 should not be detected"
 	);
-	console.log("✓ isSpammerPrefix tests passed");
+	// Test that LIDs NEVER match isSpammerPrefix
+	assert.strictEqual(
+		eventHandler.isSpammerPrefix("628282381273812@lid"),
+		false,
+		"LID starting with 62 must NOT be detected as spammer prefix"
+	);
+	assert.strictEqual(
+		eventHandler.isSpammerPrefix("638282381273812@lid"),
+		false,
+		"LID starting with 63 must NOT be detected as spammer prefix"
+	);
+	assert.strictEqual(
+		eventHandler.isSpammerPrefix("380123456789012@lid"),
+		false,
+		"LID starting with 380 must NOT be detected as spammer prefix"
+	);
+	console.log("✓ isSpammerPrefix tests passed (including DDI 380 and LID protection)");
+
+	// 2b. Test isSpammerName
+	assert.strictEqual(eventHandler.isSpammerName("MI523508"), true, "MI523508 should match");
+	assert.strictEqual(
+		eventHandler.isSpammerName("mi523508"),
+		true,
+		"mi523508 lowercase should match"
+	);
+	assert.strictEqual(eventHandler.isSpammerName("MI123"), true, "MI123 (3 digits) should match");
+	assert.strictEqual(
+		eventHandler.isSpammerName("MI12345678"),
+		true,
+		"MI12345678 (8 digits) should match"
+	);
+	assert.strictEqual(eventHandler.isSpammerName("MI 523508"), true, "MI with space should match");
+	assert.strictEqual(eventHandler.isSpammerName("MI12"), false, "MI12 (2 digits) should NOT match");
+	assert.strictEqual(
+		eventHandler.isSpammerName("MI123456789"),
+		false,
+		"MI + 9 digits should NOT match"
+	);
+	assert.strictEqual(
+		eventHandler.isSpammerName("Michael"),
+		false,
+		"Normal name Michael should NOT match"
+	);
+	assert.strictEqual(
+		eventHandler.isSpammerName("Usuario Normal"),
+		false,
+		"Normal user should NOT match"
+	);
+	assert.strictEqual(eventHandler.isSpammerName(""), false, "Empty name should NOT match");
+	assert.strictEqual(eventHandler.isSpammerName(null), false, "Null name should NOT match");
+	console.log("✓ isSpammerName tests passed");
+
+	// 2c. Test extractPhoneNumber
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber("628282381273812@lid"),
+		null,
+		"LID string must return null phone"
+	);
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber({ id: { _serialized: "628282381273812@lid" } }),
+		null,
+		"LID object without phone must return null"
+	);
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber({
+			id: { _serialized: "628282381273812@lid" },
+			number: "628282381273812"
+		}),
+		null,
+		"LID object with matching number must return null"
+	);
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber({
+			id: { _serialized: "628282381273812@lid" },
+			phoneNumber: "380679523508@s.whatsapp.net"
+		}),
+		"380679523508",
+		"LID with real phoneNumber property should extract phone"
+	);
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber("5511999999999@s.whatsapp.net"),
+		"5511999999999",
+		"Regular phone JID should extract digits"
+	);
+	assert.strictEqual(
+		eventHandler.extractPhoneNumber("+380 67 952 3508"),
+		"380679523508",
+		"Formatted phone number should extract digits"
+	);
+	console.log("✓ extractPhoneNumber tests passed");
 
 	// 3. Configure test group with greetings and farewells
 	const stickerGroupId = "120363411693189058@g.us";
@@ -359,6 +458,208 @@ async function runTests() {
 	);
 	assert(allowRes2.content.includes("removido"), "Response should confirm removal from whitelist");
 	console.log("✓ togglePermitirSpammer: toggles off and removes from whitelist");
+
+	// 11. Test User with LID starting with 62 (NOT A SPAMMER) joins fixed group
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const innocentLid = "628282381273812@lid";
+	const innocentLidJoin = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: innocentLid, name: "Inocente da Silva" },
+		responsavel: { id: "responsavel@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => ({
+				id: { _serialized: stickerGroupId },
+				name: "Grupo Stickers",
+				participants: [
+					{
+						id: { _serialized: innocentLid },
+						lid: innocentLid,
+						name: "Inocente da Silva"
+					}
+				]
+			})
+		}
+	};
+	await eventHandler.processGroupJoin(bot, innocentLidJoin);
+	assert.strictEqual(
+		bot.removedParticipants.length,
+		0,
+		"User with LID starting with 62 must NEVER be removed"
+	);
+	const innocentWelcome = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("Bem-vindo")
+	);
+	assert.strictEqual(
+		innocentWelcome.length,
+		1,
+		"User with LID starting with 62 must receive welcome message"
+	);
+	console.log("✓ User with LID starting with 62: NOT removed and receives greeting");
+
+	// 12. Test checkAutoBanSpammers with LID starting with 62
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const chatWithLidUser = {
+		id: { _serialized: stickerGroupId },
+		Participants: [
+			{
+				id: { _serialized: innocentLid },
+				lid: innocentLid,
+				name: "Inocente da Silva"
+			},
+			{
+				id: { _serialized: "5511999999999@s.whatsapp.net" },
+				phoneNumber: "5511999999999"
+			}
+		]
+	};
+	const bannedLid = await eventHandler.checkAutoBanSpammers(bot, chatWithLidUser);
+	assert.strictEqual(
+		bannedLid.length,
+		0,
+		"checkAutoBanSpammers must NOT ban user with LID starting with 62"
+	);
+	assert.strictEqual(
+		bot.removedParticipants.length,
+		0,
+		"No participant should be removed when user only has LID starting with 62"
+	);
+	console.log("✓ checkAutoBanSpammers: LID starting with 62 is correctly ignored");
+
+	// 13. Test DDI 380 Spammer joins fixed group and is detected in checkAutoBanSpammers
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const ukraineSpammerJoin = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: "380679523508@s.whatsapp.net", name: "Spammer Ucrânia" },
+		responsavel: { id: "responsavel@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => ({
+				id: { _serialized: stickerGroupId },
+				name: "Grupo Stickers",
+				participants: [
+					{
+						id: { _serialized: "380679523508@s.whatsapp.net" },
+						phoneNumber: "380679523508"
+					}
+				]
+			})
+		}
+	};
+	await eventHandler.processGroupJoin(bot, ukraineSpammerJoin);
+	assert(bot.removedParticipants.length >= 1, "DDI 380 spammer must be removed");
+	console.log("✓ DDI 380 spammer: detected and removed on join");
+
+	// checkAutoBanSpammers with DDI 380
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const chatWithDdi380 = {
+		id: { _serialized: stickerGroupId },
+		Participants: [
+			{
+				id: { _serialized: "380679523508@s.whatsapp.net" },
+				phoneNumber: "380679523508"
+			}
+		]
+	};
+	const bannedDdi380 = await eventHandler.checkAutoBanSpammers(bot, chatWithDdi380);
+	assert.strictEqual(bannedDdi380.length, 1);
+	assert.strictEqual(bannedDdi380[0], "380679523508@s.whatsapp.net");
+	console.log("✓ checkAutoBanSpammers: DDI 380 detected and removed");
+
+	// 14. Test Spammer with name matching MI### pattern (e.g. MI523508), even with LID
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const spammerByNameJoin = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: "629991112223334@lid", name: "MI523508" },
+		responsavel: { id: "responsavel@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => ({
+				id: { _serialized: stickerGroupId },
+				name: "Grupo Stickers",
+				participants: [
+					{
+						id: { _serialized: "629991112223334@lid" },
+						lid: "629991112223334@lid",
+						name: "MI523508"
+					}
+				]
+			})
+		}
+	};
+	await eventHandler.processGroupJoin(bot, spammerByNameJoin);
+	assert(bot.removedParticipants.length >= 1, "Spammer with name MI523508 must be removed");
+	const welcomeSpammerName = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("Bem-vindo")
+	);
+	assert.strictEqual(
+		welcomeSpammerName.length,
+		0,
+		"No welcome message should be sent to spammer with name MI###"
+	);
+	console.log("✓ Spammer with name MI523508: detected by name and removed on join");
+
+	// checkAutoBanSpammers with name MI###
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const chatWithSpammerName = {
+		id: { _serialized: stickerGroupId },
+		Participants: [
+			{
+				id: { _serialized: "629991112223334@lid" },
+				name: "MI523508"
+			}
+		]
+	};
+	const bannedByName = await eventHandler.checkAutoBanSpammers(bot, chatWithSpammerName);
+	assert.strictEqual(bannedByName.length, 1);
+	console.log("✓ checkAutoBanSpammers: spammer detected by MI### name pattern");
+
+	// 15. Test checkSpammerMessage with LID vs Spammers during active window
+	eventHandler.spammerActiveWindowUntil = Date.now() + 60000; // active window
+
+	// Message from innocent user with LID starting with 62
+	const innocentLidMsg = {
+		group: stickerGroupId,
+		author: "628282381273812@lid",
+		authorName: "Inocente",
+		key: { id: "msg1" }
+	};
+	const isMsgDeleted = await eventHandler.checkSpammerMessage(bot, innocentLidMsg);
+	assert.strictEqual(
+		isMsgDeleted,
+		false,
+		"Message from user with LID starting with 62 must NOT be deleted"
+	);
+	console.log("✓ checkSpammerMessage: message from LID starting with 62 NOT deleted");
+
+	// Message from DDI 380 during active window
+	const ddi380Msg = {
+		group: stickerGroupId,
+		author: "380679523508@s.whatsapp.net",
+		authorName: "Spammer Ucrânia",
+		key: { id: "msg2" }
+	};
+	const isDdi380Deleted = await eventHandler.checkSpammerMessage(bot, ddi380Msg);
+	assert.strictEqual(
+		isDdi380Deleted,
+		true,
+		"Message from DDI 380 during active window must be deleted"
+	);
+	console.log("✓ checkSpammerMessage: message from DDI 380 deleted during active window");
+
+	// Message from spammer with name MI523508
+	const miNameMsg = {
+		group: stickerGroupId,
+		author: "5511988887777@s.whatsapp.net",
+		authorName: "MI523508",
+		key: { id: "msg3" }
+	};
+	const isMiDeleted = await eventHandler.checkSpammerMessage(bot, miNameMsg);
+	assert.strictEqual(isMiDeleted, true, "Message from user with name MI523508 must be deleted");
+	console.log("✓ checkSpammerMessage: message from author with name MI523508 deleted");
 
 	console.log("--- All spammer greetings suppression tests passed successfully! ---");
 	process.exit(0);
