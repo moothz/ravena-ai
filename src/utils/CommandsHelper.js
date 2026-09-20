@@ -2,6 +2,21 @@ const fs = require("fs");
 const path = require("path");
 const Logger = require("./Logger");
 
+let CATEGORY_EMOJIS = {};
+try {
+	CATEGORY_EMOJIS = require("../functions/MenuOrder").CATEGORY_EMOJIS || {};
+} catch (e) {
+	CATEGORY_EMOJIS = {};
+}
+
+const EXTRA_CATEGORY_EMOJIS = {
+	gerenciamento: "⚙️",
+	filtros: "🛡️",
+	"custom-cmds": "🧩",
+	streamers: "📺",
+	streams: "📺"
+};
+
 class CommandsHelper {
 	/**
 	 * Retorna a instância singleton
@@ -200,6 +215,271 @@ class CommandsHelper {
 		}
 
 		return formatted.trim();
+	}
+
+	/**
+	 * Lista todas as categorias disponíveis com contagem de comandos e emojis
+	 * @returns {string}
+	 */
+	listCategories() {
+		if (!this.initialized || this.helpers.length === 0) {
+			this.loadHelpers();
+		}
+
+		const categoryCounts = {};
+		for (const h of this.helpers) {
+			for (const c of h.cmds) {
+				const cat = (c.category || "resto").toLowerCase();
+				categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+			}
+		}
+
+		let text = "📚 **Categorias de Comandos da Ravena:**\n\n";
+		for (const [cat, count] of Object.entries(categoryCounts)) {
+			const emoji = CATEGORY_EMOJIS[cat] || EXTRA_CATEGORY_EMOJIS[cat] || "📁";
+			text += `${emoji} **${cat}** (${count} comando${count > 1 ? "s" : ""})\n`;
+		}
+
+		text +=
+			"\n💡 *Dica:* Para listar todos os comandos de uma categoria, consulte com `category: '<categoria>'`.\n";
+		text +=
+			"Para ver detalhes e exemplos de um comando específico, consulte com `command: '<nome_comando>'`.";
+		return text;
+	}
+
+	/**
+	 * Lista todos os comandos pertencentes a uma categoria específica com descrições e exemplos
+	 * @param {string} category - Nome da categoria
+	 * @returns {string}
+	 */
+	getCommandsByCategory(category = "") {
+		if (!this.initialized || this.helpers.length === 0) {
+			this.loadHelpers();
+		}
+
+		const cleanCat = (category || "").trim().toLowerCase();
+		const catAliases = {
+			ai: "ia",
+			inteligencia: "ia",
+			sticker: "stickers",
+			figurinha: "stickers",
+			figurinhas: "stickers",
+			jogo: "jogos",
+			game: "jogos",
+			games: "jogos",
+			downloader: "downloaders",
+			download: "downloaders",
+			musica: "downloaders",
+			musicas: "downloaders",
+			videos: "downloaders",
+			video: "downloaders",
+			audio: "audio",
+			audios: "audio",
+			gerencia: "gerenciamento",
+			gerência: "gerenciamento",
+			admin: "gerenciamento",
+			adm: "gerenciamento",
+			custom: "custom-cmds",
+			customizados: "custom-cmds",
+			filtro: "filtros",
+			stream: "streams",
+			streamer: "streams"
+		};
+
+		const targetCat = catAliases[cleanCat] || cleanCat;
+		const matchedCmds = [];
+
+		for (const h of this.helpers) {
+			for (const c of h.cmds) {
+				const cmdCat = (c.category || "resto").toLowerCase();
+				if (
+					cmdCat === targetCat ||
+					(targetCat === "gerenciamento" && (cmdCat === "filtros" || cmdCat === "custom-cmds"))
+				) {
+					matchedCmds.push({
+						...c,
+						file: h.file
+					});
+				}
+			}
+		}
+
+		if (matchedCmds.length === 0) {
+			return `Nenhum comando encontrado para a categoria '${category}'.\n\n${this.listCategories()}`;
+		}
+
+		const emoji = CATEGORY_EMOJIS[targetCat] || EXTRA_CATEGORY_EMOJIS[targetCat] || "📋";
+		let text = `${emoji} **Comandos na categoria '${targetCat}' (${matchedCmds.length} comandos):**\n\n`;
+
+		for (const c of matchedCmds) {
+			text += `• **${c.cmd}**: ${c.desc || "Sem descrição."}`;
+			if (c.usage && c.usage.length > 0) {
+				text += `\n  - _Exemplo:_ \`${c.usage[0]}\``;
+			}
+			text += "\n";
+		}
+
+		return text.trim();
+	}
+
+	/**
+	 * Obtém informações detalhadas, sintaxe e exemplos de uso de um comando específico
+	 * @param {string} commandName - Nome do comando (com ou sem prefixo)
+	 * @returns {string}
+	 */
+	getCommandDetails(commandName = "") {
+		if (!this.initialized || this.helpers.length === 0) {
+			this.loadHelpers();
+		}
+
+		const cleanCmd = (commandName || "").trim().toLowerCase().replace(/^[!/]/, "");
+
+		let foundCmd = null;
+		let foundHelper = null;
+
+		// 1. Busca exata pelo nome do comando
+		for (const h of this.helpers) {
+			for (const c of h.cmds) {
+				const name = (c.cmd || "").toLowerCase().replace(/^[!/]/, "");
+				if (name === cleanCmd || name === `g-${cleanCmd}`) {
+					foundCmd = c;
+					foundHelper = h;
+					break;
+				}
+			}
+			if (foundCmd) break;
+		}
+
+		// 2. Busca nos exemplos de usage ou aliases
+		if (!foundCmd) {
+			for (const h of this.helpers) {
+				for (const c of h.cmds) {
+					const usages = (c.usage || []).map(
+						(u) => u.toLowerCase().replace(/^[!/]/, "").split(/\s+/)[0]
+					);
+					if (usages.includes(cleanCmd) || usages.includes(`g-${cleanCmd}`)) {
+						foundCmd = c;
+						foundHelper = h;
+						break;
+					}
+				}
+				if (foundCmd) break;
+			}
+		}
+
+		// 3. Busca nas tags do módulo
+		if (!foundCmd) {
+			for (const h of this.helpers) {
+				const tags = (h.tags || "")
+					.toLowerCase()
+					.split(",")
+					.map((t) => t.trim());
+				if (tags.includes(cleanCmd)) {
+					if (h.cmds && h.cmds.length > 0) {
+						foundCmd = h.cmds[0];
+						foundHelper = h;
+						break;
+					}
+				}
+			}
+		}
+
+		if (foundCmd) {
+			let text = `🤖 **Comando:** \`${foundCmd.cmd}\`\n`;
+			if (foundCmd.category) {
+				const emoji =
+					CATEGORY_EMOJIS[foundCmd.category] || EXTRA_CATEGORY_EMOJIS[foundCmd.category] || "📁";
+				text += `🏷️ **Categoria:** ${emoji} ${foundCmd.category}\n`;
+			}
+			text += `📝 **Descrição:** ${foundCmd.desc || "Sem descrição."}\n`;
+
+			if (foundCmd.usage && foundCmd.usage.length > 0) {
+				text += `💡 **Como usar (Exemplos):**\n`;
+				for (const u of foundCmd.usage) {
+					text += `  - \`${u}\`\n`;
+				}
+			}
+
+			if (foundHelper) {
+				if (foundHelper.about) text += `ℹ️ **Sobre o módulo:** ${foundHelper.about}\n`;
+				if (foundHelper.source === "management" || foundCmd.cmd.startsWith("!g-")) {
+					text += `🔒 **Acesso:** Exclusivo para administradores do grupo (inicia com \`!g-\`).\n`;
+				}
+			}
+
+			return text.trim();
+		}
+
+		// Se não encontrou o comando exato, faz uma busca por aproximação
+		return `Comando '${commandName}' não encontrado exatamente.\n\n${this.search(cleanCmd, { limit: 5 })}`;
+	}
+
+	/**
+	 * Ponto de entrada unificado para a ferramenta list_commands
+	 * @param {Object|string} options - Parâmetros da tool: { category, command, query }
+	 * @returns {string}
+	 */
+	listCommands(options = {}) {
+		if (typeof options === "string") {
+			const str = options.trim();
+			if (str.startsWith("!") || str.startsWith("/")) {
+				return this.getCommandDetails(str);
+			}
+			return this.search(str);
+		}
+
+		const { category, command, query } = options || {};
+
+		if (command && typeof command === "string" && command.trim().length > 0) {
+			return this.getCommandDetails(command);
+		}
+
+		if (category && typeof category === "string" && category.trim().length > 0) {
+			if (
+				category.trim().toLowerCase() === "all" ||
+				category.trim().toLowerCase() === "todas" ||
+				category.trim().toLowerCase() === "todas as categorias"
+			) {
+				return this.listCategories();
+			}
+			return this.getCommandsByCategory(category);
+		}
+
+		if (query && typeof query === "string" && query.trim().length > 0) {
+			const cleanQuery = query.trim().toLowerCase();
+			const knownCategories = [
+				"ia",
+				"geral",
+				"jogos",
+				"cultura",
+				"zoeira",
+				"utilidades",
+				"stickers",
+				"midia",
+				"arquivos",
+				"busca",
+				"grupo",
+				"listas",
+				"interacao",
+				"downloaders",
+				"voz",
+				"streams",
+				"mudae",
+				"gerenciamento",
+				"filtros",
+				"custom-cmds"
+			];
+			if (knownCategories.includes(cleanQuery)) {
+				return this.getCommandsByCategory(cleanQuery);
+			}
+			if (cleanQuery.startsWith("!") || cleanQuery.startsWith("g-")) {
+				return this.getCommandDetails(cleanQuery);
+			}
+			return this.search(query);
+		}
+
+		// Padrão: visão geral das categorias
+		return this.listCategories();
 	}
 
 	/**

@@ -472,6 +472,7 @@ async function aiCommand(bot, message, args, group) {
 	const completionOptions = {
 		prompt: question,
 		systemContext,
+		toolCalling: true,
 		priority: 5
 	};
 

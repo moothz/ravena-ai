@@ -204,3 +204,4 @@ data/www.youtube.com_cookies.json
 data/notified_streams_cache.json
 data/geoguesser.json
 SKIP_HEALTH_CHECK
+data/status_motivo.txt

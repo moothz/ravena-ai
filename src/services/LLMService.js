@@ -122,6 +122,34 @@ class LLMService {
 			{
 				type: "function",
 				function: {
+					name: "list_commands",
+					description:
+						"Lista comandos reais do bot Ravena e suas instruções de uso. Permite listar todas as categorias disponíveis, ver todos os comandos de uma categoria específica, detalhar a sintaxe e exemplos de uso de um comando específico, ou buscar por funcionalidade.",
+					parameters: {
+						type: "object",
+						properties: {
+							category: {
+								type: "string",
+								description:
+									"Nome da categoria para listar todos os seus comandos (ex: 'stickers', 'ia', 'jogos', 'downloaders', 'voz', 'utilidades', 'gerenciamento', 'mudae', 'busca', 'geral', 'midia', 'interacao', 'all')."
+							},
+							command: {
+								type: "string",
+								description:
+									"Nome de um comando específico para ver seus detalhes, descrição e exemplos de uso (ex: 'pescar', 'imagine', 'g-addCmd', 's', 'stt', 'clima', 'roletarussa', 'mu-roll')."
+							},
+							query: {
+								type: "string",
+								description: "Termo ou palavra-chave para buscar comandos e recursos relacionados."
+							}
+						},
+						required: []
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
 					name: "commands_helper",
 					description:
 						"Consulta informações, sintaxe, exemplos de uso, categorias, tags e detalhes técnicos de implementação de comandos e recursos do bot Ravena e de gerenciamento de grupos (!g-).",
@@ -132,9 +160,17 @@ class LLMService {
 								type: "string",
 								description:
 									"Termo de busca, nome do comando ou funcionalidade (ex: 'pesca', 'criar comando personalizado', 'filtros de grupo', 'tts', 'clima')"
+							},
+							category: {
+								type: "string",
+								description: "Categoria opcional para filtrar os comandos."
+							},
+							command: {
+								type: "string",
+								description: "Nome de comando específico para buscar detalhes e exemplos de uso."
 							}
 						},
-						required: ["query"]
+						required: []
 					}
 				}
 			},
@@ -699,10 +735,27 @@ class LLMService {
 		try {
 			this.logger.info(`[searchCommands] Consultando CommandsHelper para: "${query}"`);
 			const helperInstance = CommandsHelper.getInstance();
-			const result = helperInstance.search(query);
+			const result = helperInstance.listCommands({ query });
 			return result;
 		} catch (error) {
 			this.logger.error(`[searchCommands] Erro ao consultar comandos: ${error.message}`);
+			return "Erro ao consultar informações dos comandos no momento.";
+		}
+	}
+
+	/**
+	 * Consulta comandos, categorias e instruções de uso no CommandsHelper
+	 * @param {Object} args - Argumentos ({ category, command, query })
+	 * @returns {Promise<string>}
+	 */
+	async listCommands(args = {}) {
+		try {
+			this.logger.info(`[listCommands] Consultando CommandsHelper com args:`, args);
+			const helperInstance = CommandsHelper.getInstance();
+			const result = helperInstance.listCommands(args);
+			return result;
+		} catch (error) {
+			this.logger.error(`[listCommands] Erro ao consultar comandos: ${error.message}`);
 			return "Erro ao consultar informações dos comandos no momento.";
 		}
 	}
@@ -830,9 +883,17 @@ class LLMService {
 				return res;
 			}
 
+			if (normalizedName === "list_commands") {
+				this.logger.info("[LLMService] Executando list_commands com args:", args);
+				const res = await this.listCommands(args);
+				this.logger.info(`[LLMService] Resultado do list_commands (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (normalizedName === "commands_helper") {
-				this.logger.info(`[LLMService] Executando commands_helper para: "${args.query}"`);
-				const res = await this.searchCommands(args.query);
+				this.logger.info("[LLMService] Executando commands_helper com args:", args);
+				const helperArgs = args?.query ? { query: args.query, ...args } : args;
+				const res = await this.listCommands(helperArgs);
 				this.logger.info(`[LLMService] Resultado do commands_helper (${res.length} caracteres)`);
 				return res;
 			}
