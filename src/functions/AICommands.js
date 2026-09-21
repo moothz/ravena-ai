@@ -473,7 +473,11 @@ async function aiCommand(bot, message, args, group) {
 		prompt: question,
 		systemContext,
 		toolCalling: true,
-		priority: 5
+		priority: 5,
+		bot,
+		message,
+		group,
+		chatId
 	};
 
 	try {
@@ -496,7 +500,7 @@ async function aiCommand(bot, message, args, group) {
 			processedResponse = response;
 		}
 
-		return new ReturnMessage({
+		const mainReturn = new ReturnMessage({
 			chatId,
 			content: processedResponse,
 			options: {
@@ -504,6 +508,15 @@ async function aiCommand(bot, message, args, group) {
 				goReply: message.origin
 			}
 		});
+
+		if (
+			Array.isArray(completionOptions.pendingReturnMessages) &&
+			completionOptions.pendingReturnMessages.length > 0
+		) {
+			return [mainReturn, ...completionOptions.pendingReturnMessages];
+		}
+
+		return mainReturn;
 	} catch (error) {
 		logger.error("[aiCommand] Error in LLM completion:", error);
 		return new ReturnMessage({

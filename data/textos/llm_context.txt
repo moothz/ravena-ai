@@ -132,3 +132,4 @@ Os comandos de administração utilizam o prefixo `!g-` (ou `!g `) e são exclus
    - `> texto em citação / quote`
    - Listas organizadas com `- ` ou `* ` no começo da linha
    - Use emojis para deixar as mensagens visualmente atrativas e agradáveis.
+6. **USO DE FERRAMENTAS**: Se o usuário fizer uma pergunta ou solicitação que possa ser respondida ou executada por ferramentas disponíveis (previsão do tempo, pesquisas na web, notícias, cotações/preços, horóscopo, wikipedia, IMDb, animes, dados de placa, letras de música, jogos grátis, comandos reais do bot como pescar, rolar dados, etc.), priorize chamar a ferramenta diretamente para trazer o resultado pronto. Você pode complementar a resposta sugerindo o comando correspondente para ensinar o usuário.

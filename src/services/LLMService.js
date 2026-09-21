@@ -8,6 +8,12 @@ const Queue = require("./Queue");
 const ServiceProviderService = require("./ServiceProviderService");
 const CommandsHelper = require("../utils/CommandsHelper");
 
+const TOOL_CALLING_POLICY = `### POLÍTICA OBRIGATÓRIA DE USO DE FERRAMENTAS:
+1. SEMPRE que o usuário fizer uma pergunta ou solicitação que possa ser respondida, enriquecida ou executada por uma ferramenta disponível (ex: previsão do tempo, horário/data, pesquisas na web, notícias, cotações/preços, wikipedia, filmes/séries no IMDb, animes, dados de placa de veículo, letras de música, jogos grátis, horóscopo, rankings do chat ou executar comandos nativos do bot via execute_bot_command), você DEVE chamar a ferramenta correspondente diretamente.
+2. Priorize executar a ferramenta para trazer a resposta ou ação pronta ao usuário; você pode complementar sua resposta sugerindo e ensinando o comando correspondente do bot (ex: '!clima <cidade>').
+3. Não peça confirmação prévia nem faça perguntas antes de buscar informações de leitura ou executar comandos. Invoque a ferramenta imediatamente.
+4. Para eventos recentes, dados em tempo real ou informações fora do seu conhecimento prévio, SEMPRE use as ferramentas de busca na web (web_search / fetch_web_content).`;
+
 /**
  * Serviço para interagir com APIs de LLM
  */
@@ -411,6 +417,30 @@ class LLMService {
 						type: "object",
 						properties: {},
 						required: []
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
+					name: "execute_bot_command",
+					description:
+						"Executa um comando ou funcionalidade nativa do bot Ravena no chat (ex: 'pescar', 'd20', 'roll', 'slots', 'audio', 's', 'tarot', 'figrandom', etc.) quando o usuário solicitar para realizar uma ação, jogar ou invocar um recurso em vez de apenas tirar uma dúvida.",
+					parameters: {
+						type: "object",
+						properties: {
+							command: {
+								type: "string",
+								description:
+									"Nome do comando a ser executado sem o prefixo '!' (ex: 'pescar', 'd20', 'roll', 'slots', 'audio', 'tarot', 'figrandom', 's')"
+							},
+							args: {
+								type: "string",
+								description:
+									"Argumentos adicionais do comando, se houver (ex: '20' para rolar d20, 'gemidão' para áudio, etc.)"
+							}
+						},
+						required: ["command"]
 					}
 				}
 			}
@@ -1014,6 +1044,15 @@ class LLMService {
 				return res;
 			}
 
+			if (normalizedName === "execute_bot_command") {
+				this.logger.info("[LLMService] Executando execute_bot_command:", args);
+				const res = await this.executeBotCommand(args, options);
+				this.logger.info(
+					`[LLMService] Resultado de execute_bot_command (${res.length} caracteres)`
+				);
+				return res;
+			}
+
 			if (typeof this[normalizedName] === "function") {
 				return await this[normalizedName](args);
 			}
@@ -1022,6 +1061,101 @@ class LLMService {
 		} catch (err) {
 			this.logger.error(`[LLMService] Erro ao executar tool ${fnName}:`, err.message);
 			return `Erro ao executar ferramenta ${fnName}: ${err.message}`;
+		}
+	}
+
+	/**
+	 * Executa um comando real do bot Ravena a pedido da LLM
+	 * @param {Object} args - Argumentos da ferramenta ({ command: string, args?: string })
+	 * @param {Object} options - Opções da requisição (contém bot, message, group)
+	 * @returns {Promise<string>} - Resultado em texto para a LLM
+	 */
+	async executeBotCommand(args, options = {}) {
+		const bot = options.bot;
+		const message = options.message;
+		const group = options.group;
+
+		if (!bot || !message) {
+			return "Erro: Contexto de chat/bot não disponível para executar o comando.";
+		}
+
+		const rawCmd = args?.command || args?.cmd || "";
+		const cmdName = String(rawCmd)
+			.replace(/^[!/.]/, "")
+			.trim()
+			.toLowerCase();
+		const argsStr = args?.args ? String(args.args).trim() : "";
+
+		if (!cmdName) {
+			return "Erro: Nome do comando não especificado.";
+		}
+
+		// Bloqueia comandos de IA para evitar auto-recursão infinita
+		const aiAliases = ["ai", "ia", "gemini", "gpt"];
+		if (aiAliases.includes(cmdName)) {
+			return "Comando de IA não pode ser executado recursivamente por outra IA.";
+		}
+
+		const fixedCommands = bot.eventHandler?.commandHandler?.fixedCommands;
+		if (!fixedCommands) {
+			return "Erro: Módulo de comandos fixos não inicializado no bot.";
+		}
+
+		const fixedCmd = fixedCommands.getCommand(cmdName);
+		if (!fixedCmd) {
+			return `Comando '!${cmdName}' não encontrado no bot Ravena. Você pode usar a ferramenta 'list_commands' ou 'commands_helper' para verificar os comandos disponíveis.`;
+		}
+
+		try {
+			this.logger.info(`[LLMService] Invocando comando '!${cmdName}' com args: "${argsStr}"`);
+
+			// Clona a mensagem de forma rasa para configurar a invocação do comando
+			const cmdMessage = Object.assign(Object.create(Object.getPrototypeOf(message)), message);
+			const fullCommandString = `!${cmdName} ${argsStr}`.trim();
+
+			if (cmdMessage.type === "image" || cmdMessage.type === "video" || cmdMessage.hasMedia) {
+				cmdMessage.caption = fullCommandString;
+			} else {
+				cmdMessage.body = fullCommandString;
+				cmdMessage.content = fullCommandString;
+			}
+
+			const cmdArgs = argsStr.length > 0 ? argsStr.split(" ").filter((a) => a.length > 0) : [];
+			const result = await fixedCmd.execute(bot, cmdMessage, cmdArgs, group);
+
+			let textOutput = "";
+			const items = Array.isArray(result) ? result : result ? [result] : [];
+
+			for (const item of items) {
+				if (typeof item === "string") {
+					textOutput += (textOutput ? "\n" : "") + item;
+				} else if (item && typeof item === "object") {
+					if (typeof item.content === "string" && item.content.trim()) {
+						textOutput += (textOutput ? "\n" : "") + item.content.trim();
+					}
+					if (typeof item.options?.caption === "string" && item.options.caption.trim()) {
+						textOutput += (textOutput ? "\n" : "") + item.options.caption.trim();
+					}
+					// Se o comando gerou mídia (sticker, imagem, etc.), preserva para envio
+					if (item.options?.sendMediaAsSticker || item.media || item.options?.sendAsDocument) {
+						if (!options.pendingReturnMessages) options.pendingReturnMessages = [];
+						options.pendingReturnMessages.push(item);
+					}
+				}
+			}
+
+			if (!textOutput) {
+				if (items.length > 0) {
+					textOutput = `Comando !${cmdName} executado com sucesso (resposta multimídia gerada).`;
+				} else {
+					textOutput = `Comando !${cmdName} executado sem mensagens de retorno.`;
+				}
+			}
+
+			return `[Resultado da execução de !${cmdName} ${argsStr}]:\n${textOutput}`;
+		} catch (err) {
+			this.logger.error(`[LLMService] Erro ao executar !${cmdName}:`, err);
+			return `Erro ao executar o comando !${cmdName}: ${err.message}`;
 		}
 	}
 
@@ -1982,13 +2116,20 @@ class LLMService {
 			const apiKey = `Bearer ${options.apiKey}`;
 			const model = options.model ?? "gpt-3.5-turbo";
 
-			const ctxInclude =
+			const hasImages = !!(options.image || (options.images && options.images.length > 0));
+			const allowToolCalling =
+				options.toolCalling === true && !options.response_format && !hasImages;
+
+			let ctxInclude =
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
 
+			if (allowToolCalling && !ctxInclude.includes("POLÍTICA OBRIGATÓRIA DE USO DE FERRAMENTAS")) {
+				ctxInclude = `${ctxInclude}\n\n${TOOL_CALLING_POLICY}`;
+			}
+
 			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
 			let userContent;
-			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
 				userContent = [{ type: "text", text: options.prompt || "" }];
@@ -2031,11 +2172,21 @@ class LLMService {
 				];
 			}
 
+			const initialTemperature =
+				options.toolTemperature ??
+				(options.temperature !== undefined
+					? allowToolCalling
+						? Math.min(options.temperature, 0.2)
+						: options.temperature
+					: allowToolCalling
+						? 0.1
+						: 0.7);
+
 			const payload = {
 				model,
 				messages,
 				max_tokens: options.maxTokens ?? 5000,
-				temperature: options.temperature ?? 0.7,
+				temperature: initialTemperature,
 				stream: false
 			};
 
@@ -2056,8 +2207,6 @@ class LLMService {
 				payload.response_format = options.response_format;
 			}
 
-			const allowToolCalling =
-				options.toolCalling === true && !options.response_format && !hasImages;
 			if (allowToolCalling) {
 				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
 				if (Array.isArray(availableTools) && availableTools.length > 0) {
@@ -2223,13 +2372,20 @@ class LLMService {
 
 			const model = options.model ?? "openai/gpt-3.5-turbo";
 
-			const ctxInclude =
+			const hasImages = !!(options.image || (options.images && options.images.length > 0));
+			const allowToolCalling =
+				options.toolCalling === true && !options.response_format && !hasImages;
+
+			let ctxInclude =
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
 
+			if (allowToolCalling && !ctxInclude.includes("POLÍTICA OBRIGATÓRIA DE USO DE FERRAMENTAS")) {
+				ctxInclude = `${ctxInclude}\n\n${TOOL_CALLING_POLICY}`;
+			}
+
 			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
 			let userContent;
-			const hasImages = !!(options.image || (options.images && options.images.length > 0));
 			if (hasImages) {
 				const imagesToProcess = options.images ? options.images : [options.image];
 				userContent = [{ type: "text", text: options.prompt || "" }];
@@ -2268,11 +2424,21 @@ class LLMService {
 				];
 			}
 
+			const initialTemperature =
+				options.toolTemperature ??
+				(options.temperature !== undefined
+					? allowToolCalling
+						? Math.min(options.temperature, 0.2)
+						: options.temperature
+					: allowToolCalling
+						? 0.1
+						: 0.7);
+
 			const payload = {
 				model,
 				messages,
 				max_tokens: options.maxTokens ?? 5000,
-				temperature: options.temperature ?? 0.7,
+				temperature: initialTemperature,
 				stream: false
 			};
 
@@ -2293,8 +2459,6 @@ class LLMService {
 				payload.response_format = options.response_format;
 			}
 
-			const allowToolCalling =
-				options.toolCalling === true && !options.response_format && !hasImages;
 			if (allowToolCalling) {
 				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
 				if (Array.isArray(availableTools) && availableTools.length > 0) {
@@ -2523,9 +2687,33 @@ class LLMService {
 			const endpoint = (options.customEndpoint ?? "http://localhost:11434") + "/api/chat";
 
 			const messages = [];
-			const systemContext =
+			const hasImages = !!(options.images || options.image);
+
+			let ollamaFormat = null;
+			if (options.response_format) {
+				if (
+					options.response_format.type === "json_schema" &&
+					options.response_format.json_schema?.schema
+				) {
+					ollamaFormat = options.response_format.json_schema.schema;
+				} else {
+					ollamaFormat = options.response_format;
+				}
+			}
+
+			const allowToolCalling = options.toolCalling === true && !ollamaFormat && !hasImages;
+
+			let systemContext =
 				options.systemContext ??
 				"Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
+
+			if (
+				allowToolCalling &&
+				!systemContext.includes("POLÍTICA OBRIGATÓRIA DE USO DE FERRAMENTAS")
+			) {
+				systemContext = `${systemContext}\n\n${TOOL_CALLING_POLICY}`;
+			}
+
 			messages.push({ role: "system", content: systemContext });
 
 			const userMessage = {
@@ -2533,7 +2721,6 @@ class LLMService {
 				content: options.prompt
 			};
 
-			const hasImages = !!(options.images || options.image);
 			if (hasImages) {
 				let imagesToProcess = options.images ? options.images : [options.image];
 				const processedImages = [];
@@ -2564,17 +2751,15 @@ class LLMService {
 
 			messages.push(userMessage);
 
-			let ollamaFormat = null;
-			if (options.response_format) {
-				if (
-					options.response_format.type === "json_schema" &&
-					options.response_format.json_schema?.schema
-				) {
-					ollamaFormat = options.response_format.json_schema.schema;
-				} else {
-					ollamaFormat = options.response_format;
-				}
-			}
+			const initialTemperature =
+				options.toolTemperature ??
+				(options.temperature !== undefined
+					? allowToolCalling
+						? Math.min(options.temperature, 0.2)
+						: options.temperature
+					: allowToolCalling
+						? 0.1
+						: 0.7);
 
 			const payload = {
 				model: options.model ?? "gemma3:12b",
@@ -2582,14 +2767,13 @@ class LLMService {
 				format: ollamaFormat,
 				stream: false,
 				options: {
-					temperature: options.temperature ?? 0.7,
+					temperature: initialTemperature,
 					num_predict: options.maxTokens ?? 8096,
 					top_k: options.top_k,
 					top_p: options.top_p
 				}
 			};
 
-			const allowToolCalling = options.toolCalling === true && !ollamaFormat && !hasImages;
 			if (allowToolCalling) {
 				const availableTools = Array.isArray(options.tools) ? options.tools : this.getTools();
 				if (Array.isArray(availableTools) && availableTools.length > 0) {
@@ -2665,12 +2849,15 @@ class LLMService {
 					`[LLMService][Ollama] Enviando chamada subsequente ${turn + 1} ao Ollama com os resultados das tools...`
 				);
 
+				const nextTemperature = options.temperature !== undefined ? options.temperature : 0.6;
+				const nextOptions = { ...payload.options, temperature: nextTemperature };
+
 				const nextPayload = {
 					model: payload.model,
 					messages,
 					format: ollamaFormat,
 					stream: false,
-					options: payload.options
+					options: nextOptions
 				};
 
 				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
