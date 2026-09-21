@@ -19,6 +19,39 @@ Este projeto é executado inteiramente dentro de containers Docker. O container 
 - **NUNCA** execute scripts de teste, debug ou novas rotinas diretamente no host local. Todas as dependências (Node 20, canvas, ffmpeg, pacotes npm, etc.) e o ambiente de runtime estão no container Docker.
 - **SEMPRE** copie os scripts para dentro do container `ravena-ai` e execute-os lá dentro via `docker exec`.
 
+### Prevenção Crítica de Processos Órfãos e Travamento de Servidor (OBRIGATÓRIO)
+1. **`process.exit(...)` OBRIGATÓRIO EM TODOS OS SCRIPTS E TESTES:**
+   - **NUNCA** confie no encerramento natural do event loop do Node.js. Diversos módulos do projeto (como `Database`, `StickerScraper`, pools SQLite, serviços HTTP) mantêm conexões abertas e timers ativos que impedem o Node de encerrar sozinho.
+   - **SEMPRE** termine qualquer script de teste, debug ou utilitário com `process.exit(0)` em caso de sucesso e `process.exit(1)` em caso de erro:
+     ```javascript
+     main()
+         .then(() => process.exit(0))
+         .catch((err) => {
+             console.error(err);
+             process.exit(1);
+         });
+     ```
+2. **Comandos `node -e` (One-liners) SEMPRE com `process.exit(0)`:**
+   - Se for rodar um comando inline com `node -e`, inclua **obrigatoriamente** `; process.exit(0);` no final:
+     ```bash
+     docker exec ravena-ai node -e "const db = ...; console.log(...); process.exit(0);"
+     ```
+   - Comandos `node -e` sem `process.exit(0)` ficam rodando indefinidamente em segundo plano no container, consumindo 20-30% de CPU e gigabytes de RAM.
+3. **Desativação de Timers em Módulos Importados (`DISABLE_STICKER_SCRAPER_TIMER="true"`):**
+   - Módulos como `StickerScraper` disparam timers automáticos ao serem importados (`require`).
+   - Em scripts efêmeros, passe a variável de ambiente ou defina no topo do script:
+     ```javascript
+     process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
+     process.env.DISABLE_ACTIVITY = "true";
+     ```
+4. **Verificação de Processos Órfãos Após Execuções:**
+   - Se uma tarefa der timeout ou for cancelada no assistente, o processo filho dentro do container Docker pode continuar rodando no kernel.
+   - Verifique com `docker top ravena-ai` e, caso haja processos `node` órfãos (que não sejam o PID 1 `node index.js`), encerre-os imediatamente:
+     ```bash
+     # Listar processos dentro do container
+     docker exec ravena-ai bash -c 'for p in /proc/[0-9]*; do if [ -f "$p/cmdline" ]; then echo "$p: $(tr "\0" " " < "$p/cmdline")"; fi; done'
+     ```
+
 ### Comandos para Cópia e Execução:
 1. **Copiar o script ou arquivo para o container:**
    ```bash
