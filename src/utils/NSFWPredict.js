@@ -657,6 +657,77 @@ class NSFWPredict {
 	 * @param {Object} context - Metadados de contexto (groupName, author, authorName).
 	 * @returns {Promise<{isNSFW: boolean, reason: string}>} - Resultado da detecção.
 	 */
+	/**
+	 * Constrói o prompt para análise de segurança via LLM.
+	 * Se context.strictModeration for verdadeiro, inclui checagens estritas para:
+	 * 1. Nudez e conteúdo sexual explícito (NSFW)
+	 * 2. Apologia nazista, símbolos de ódio e fascismo
+	 * 3. Fotos de crianças / menores reais (proteção de menores e privacidade)
+	 * 4. Apologia / piadas de estupro, assédio e abuso sexual (ex: "hora do abuso")
+	 * 5. Gore, mutilação e violência extrema
+	 *
+	 * @param {Object} context
+	 * @returns {string}
+	 */
+	getLLMPrompt(context = {}) {
+		if (context.customPrompt) {
+			return context.customPrompt;
+		}
+
+		if (context.strictModeration) {
+			let prompt = `You are a strict content safety and moderation classifier for digital stickers and media. Analyze the provided image(s) or sticker frame(s), inspecting BOTH visual imagery AND any visible text, captions, subtitles, or meme text.
+
+DETERMINE IF THE CONTENT VIOLATES ANY OF THE FOLLOWING 5 SAFETY RULES (ANY violation MUST be classified as "nsfw"):
+
+1. NUDITY & SEXUAL CONTENT:
+- Visible human genitalia (penis, testicles, vulva, vagina), exposed female breasts, nipples, or areolas, or buttocks in an explicit sexual context.
+- Explicit sexual acts: intercourse, oral sex, masturbation, ejaculation, semen, sexual fluids, hentai, animated pornography, or explicit erotic poses.
+
+2. HATE SYMBOLS, NAZISM & EXTREMISM:
+- Nazi swastikas, Schutzstaffel (SS) bolts/runes, Totenkopf (death's head), Black Sun (Sonnenrad), Nazi salutes, or fascist gestures.
+- Glorification, praise, apology, or meme celebration of Adolf Hitler, Nazism, fascism, white supremacy, Ku Klux Klan, or hate groups.
+- Dehumanizing hate speech or slurs targeting race, religion, ethnicity, nationality, or sexual orientation.
+
+3. REAL CHILDREN / MINORS (CHILD PROTECTION & PRIVACY):
+- ANY real photograph or video frame depicting a real baby, toddler, child, or minor. Real children must NEVER be approved for sticker packs to safeguard minor privacy and safety.
+- Any child sexual abuse material (CSAM), exploitation, or suggestive depiction of minors.
+- Note: Non-sexual, stylized fictional cartoon/anime characters (e.g. anime mascots, cartoons) in family-friendly contexts are safe, but any REAL photo of a child is strictly FORBIDDEN.
+
+4. SEXUAL ABUSE, RAPE & COERCION:
+- Any text, caption, joke, meme, or image referencing, threatening, trivializing, or joking about rape, sexual assault, harassment, or abuse (for example: "hora do abuso", "vai ter que dar", "vou te abusar", non-consensual sexual acts, sexual violence).
+
+5. GORE & EXTREME GRAPHIC VIOLENCE:
+- Decapitation, mutilation, dismemberment, exposed organs/viscera, corpses, severe bloodshed, grotesque injuries, torture, or graphic self-harm.
+
+SAFE CONTENT:
+- Everyday harmless memes (without hate, abuse, or gore), harmless pop culture references, cartoon/anime characters in non-sexual settings, animals, objects, gaming scenes, wholesome jokes, and friendly text.
+
+CRITICAL INSTRUCTIONS:
+1. READ ALL TEXT: Carefully read any text written on the sticker or image. If the text mentions or jokes about sexual abuse/rape (e.g. "hora do abuso"), hate speech, or Nazism, it MUST be classified as "nsfw".
+2. CHECK FOR REAL CHILDREN: If the sticker contains a photograph of a real child/minor, it MUST be classified as "nsfw" under child safety.
+3. If ANY violation of rules 1, 2, 3, 4, or 5 is present, classification MUST be "nsfw".
+4. If the content is completely clean and complies with all rules, classification MUST be "safe".`;
+
+			if (context.title) {
+				prompt += `\n\nATTACHED METADATA / TITLE: "${context.title}"`;
+			}
+			return prompt;
+		}
+
+		return `You are a strict content safety classifier. Analyze the provided image(s) or video frame(s) to determine if the content contains NSFW or explicit material.
+
+DEFINITIONS:
+- NSFW: ANY visible human genitalia (penis, testicles, vulva, vagina, erect or flaccid), exposed female breasts or nipples, exposed buttocks in a sexual context, oral sex, intercourse, masturbation, sexual acts, semen, hentai/animated pornography, or explicit erotic poses.
+- SAFE: Everyday clothing, summer wear, non-sexual portraits, swimsuits/beachwear without exposure of genitalia or nipples, cartoons, memes, animals, objects, normal social interactions, sports, work uniforms, gaming scenes, documents, text messages and chat screenshots.
+
+CRITICAL RULES:
+1. Provide a brief 1-2 sentence objective visual description.
+2. If ANY genitalia (penis, vulva), exposed nipples/breasts, or sexual acts are visible, classification MUST be "nsfw".
+3. Do NOT classify explicit nudity or sexual acts as "lifestyle", "beachwear", or "artistic". If genitalia or sexual acts are present, it is always "nsfw" regardless of context.
+4. Screenshots of text, chat messages, or searches, even if containing vulgar or sexual slang, do NOT constitute visual NSFW.
+5. If no explicit nudity or sexual acts are present, classification MUST be "safe".`;
+	}
+
 	async detectNSFWWithLLM(imagesInput, context = {}) {
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 
@@ -673,18 +744,7 @@ class NSFWPredict {
 
 		//this.logger.info(`${groupPrefix}Detectando NSFW em mídia via LLM...${userSuffix}`);
 
-		const prompt = `You are a strict content safety classifier. Analyze the provided image(s) or video frame(s) to determine if the content contains NSFW or explicit material.
-
-DEFINITIONS:
-- NSFW: ANY visible human genitalia (penis, testicles, vulva, vagina, erect or flaccid), exposed female breasts or nipples, exposed buttocks in a sexual context, oral sex, intercourse, masturbation, sexual acts, semen, hentai/animated pornography, or explicit erotic poses.
-- SAFE: Everyday clothing, summer wear, non-sexual portraits, swimsuits/beachwear without exposure of genitalia or nipples, cartoons, memes, animals, objects, normal social interactions, sports, work uniforms, gaming scenes, documents, text messages and chat screenshots.
-
-CRITICAL RULES:
-1. Provide a brief 1-2 sentence objective visual description.
-2. If ANY genitalia (penis, vulva), exposed nipples/breasts, or sexual acts are visible, classification MUST be "nsfw".
-3. Do NOT classify explicit nudity or sexual acts as "lifestyle", "beachwear", or "artistic". If genitalia or sexual acts are present, it is always "nsfw" regardless of context.
-4. Screenshots of text, chat messages, or searches, even if containing vulgar or sexual slang, do NOT constitute visual NSFW.
-5. If no explicit nudity or sexual acts are present, classification MUST be "safe".`;
+		const prompt = this.getLLMPrompt(context);
 
 		const nsfwSchema = {
 			type: "json_schema",
@@ -695,11 +755,24 @@ CRITICAL RULES:
 					properties: {
 						visual_analysis: {
 							type: "string",
-							description: "Brief 1-2 sentence objective description of what is depicted."
+							description:
+								"Brief 1-2 sentence objective description of what is depicted, including any visible text or captions."
 						},
 						classification: {
 							type: "string",
 							enum: ["nsfw", "safe"]
+						},
+						category: {
+							type: "string",
+							enum: [
+								"none",
+								"nudity_sexual",
+								"hate_nazi_extremism",
+								"child_safety",
+								"sexual_abuse_rape",
+								"gore_violence"
+							],
+							description: "Primary category of violation, or 'none' if safe."
 						},
 						reason: {
 							type: "string",
@@ -718,7 +791,7 @@ CRITICAL RULES:
 				images: Array.isArray(imagesInput) ? imagesInput : [imagesInput],
 				response_format: nsfwSchema,
 				temperature: 0.2,
-				maxTokens: 350,
+				maxTokens: 400,
 				systemContext: "You are a content safety classifier.",
 				debugPrompt: false,
 				priority: 5
@@ -746,15 +819,17 @@ CRITICAL RULES:
 			}
 
 			const classification = (parsedResponse.classification || "").toLowerCase();
+			const category = (parsedResponse.category || "").toLowerCase();
 			const isNSFW =
 				classification === "nsfw" ||
 				classification.includes("nsfw") ||
-				parsedResponse.isNSFW === true;
+				parsedResponse.isNSFW === true ||
+				(category && category !== "none");
 			const reason =
 				parsedResponse.reason || parsedResponse.reasoning || parsedResponse.visual_analysis || "";
-			//this.logger.info(`${groupPrefix}Detecção NSFW resultado: ${parsedResponse.classification || "unknown"} (isNSFW=${isNSFW}) - ${reason}${userSuffix}`);
+			const detectedCategory = category && category !== "none" ? category : null;
 
-			return { isNSFW, reason };
+			return { isNSFW, reason, category: detectedCategory };
 		} catch (error) {
 			this.logger.error("Erro ao executar detecção NSFW com LLM:", error);
 			return { isNSFW: false, reason: "", error: error.message };

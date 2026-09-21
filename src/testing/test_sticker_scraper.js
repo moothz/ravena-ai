@@ -208,6 +208,7 @@ async function runTests() {
 	bot.resetCapture();
 	clearCooldowns();
 	const originalFetch = StickerScraper.fetchLovecellSticker;
+	const originalGetRandomUndownloadedId = StickerScraper.getRandomUndownloadedId;
 	StickerScraper.fetchLovecellSticker = async () => ({ found: false, rateLimit: true });
 	try {
 		const msgRate = createMessage({
@@ -739,6 +740,9 @@ async function runTests() {
 	assert.strictEqual(backgroundFetchStarted, true);
 	assert.strictEqual(backgroundFetchFinished, true);
 	assert.strictEqual(StickerScraper.isScrapingInProgress(), false, "Scraping deve finalizar limpo");
+	StickerScraper.fetchLovecellSticker = originalFetch;
+	StickerScraper.checkStickerNSFW = originalCheckNSFW;
+	StickerScraper.getRandomUndownloadedId = originalGetRandomUndownloadedId;
 	console.log("✓ Background scraper respeita execução sequencial estrita");
 
 	// 21. Testando registro de envio no SQLite (recordStickerSent e getStickerStats)
@@ -987,9 +991,179 @@ async function runTests() {
 		StickerScraper.getRandomCachedStickers = originalGetRandomCached;
 	}
 
-	// Restaura stubs
-	StickerScraper.fetchLovecellSticker = originalFetch;
 	StickerScraper.checkStickerNSFW = originalCheckNSFW;
+
+	// 24. Teste de moderação estrita (nazismo, fotos de crianças, estupro/abuso como "hora do abuso", gore)
+	console.log(
+		"\n24. Testando filtro de moderação estrita (apologia nazista, fotos de crianças, abuso/estupro e gore)..."
+	);
+
+	// 24.1: isForbiddenText deve identificar termos proibidos e aprovar termos legítimos
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("figurinha hora do abuso"),
+		true,
+		"Deve bloquear 'hora do abuso'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("meme apologia ao nazismo"),
+		true,
+		"Deve bloquear 'nazismo'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("adesivo com suástica"),
+		true,
+		"Deve bloquear 'suástica'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("piada de estupro pesada"),
+		true,
+		"Deve bloquear 'estupro'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("foto com decapitação"),
+		true,
+		"Deve bloquear 'decapitação'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("bom dia grupo lindo"),
+		false,
+		"Deve aprovar texto normal"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("hora do show porra"),
+		false,
+		"Deve aprovar 'hora do show'"
+	);
+	assert.strictEqual(
+		StickerScraper.isForbiddenText("hora do café"),
+		false,
+		"Deve aprovar 'hora do café'"
+	);
+	console.log("✓ isForbiddenText filtra com precisão termos abusivos e aprova termos normais");
+
+	// 24.2: checkStickerNSFW deve rejeitar imediatamente título proibido
+	const dummyBuf = Buffer.alloc(4096, "b");
+	const rejectedFast = await StickerScraper.checkStickerNSFW(dummyBuf, 999901, {
+		title: "Figurinha Hora do Abuso"
+	});
+	assert.strictEqual(
+		rejectedFast,
+		true,
+		"checkStickerNSFW deve rejeitar imediatamente sticker com título proibido"
+	);
+	console.log("✓ checkStickerNSFW bloqueia rapidamente sticker com título proibido");
+
+	// 24.3: NSFWPredict.getLLMPrompt com strictModeration
+	const NSFWPredict = require("../utils/NSFWPredict");
+	const nsfwPredictInstance = new NSFWPredict();
+	const strictPrompt = nsfwPredictInstance.getLLMPrompt({
+		strictModeration: true,
+		title: "Meme teste"
+	});
+	assert(
+		strictPrompt.includes("NAZISM") || strictPrompt.includes("HATE SYMBOLS"),
+		"Prompt deve conter seção de nazismo/ódio"
+	);
+	assert(
+		strictPrompt.includes("CHILDREN") || strictPrompt.includes("MINORS"),
+		"Prompt deve conter seção de proteção de crianças"
+	);
+	assert(
+		strictPrompt.includes("SEXUAL ABUSE") || strictPrompt.includes("RAPE"),
+		"Prompt deve conter seção de abuso sexual e estupro"
+	);
+	assert(
+		strictPrompt.includes("hora do abuso"),
+		"Prompt deve conter menção explícita a 'hora do abuso'"
+	);
+	assert(strictPrompt.includes("GORE"), "Prompt deve conter seção de gore e violência extrema");
+	console.log(
+		"✓ getLLMPrompt(strictModeration) contém diretrizes completas contra nazismo, fotos de crianças, abuso e gore"
+	);
+
+	// 24.4: detectNSFWWithLLM deve classificar violação de categoria como isNSFW: true
+	const originalGetCompletion = nsfwPredictInstance.llmService.getCompletion;
+	try {
+		// Mock simulando LLM detectando meme de abuso sexual
+		nsfwPredictInstance.llmService.getCompletion = async () =>
+			JSON.stringify({
+				visual_analysis: "Sticker contains text 'hora do abuso' with cartoon character.",
+				classification: "nsfw",
+				category: "sexual_abuse_rape",
+				reason: "Text references sexual abuse/rape"
+			});
+
+		const resultAbuse = await nsfwPredictInstance.detectNSFWWithLLM(dummyBuf, {
+			strictModeration: true
+		});
+		assert.strictEqual(
+			resultAbuse.isNSFW,
+			true,
+			"detectNSFWWithLLM deve retornar isNSFW=true para categoria sexual_abuse_rape"
+		);
+		assert.strictEqual(
+			resultAbuse.category,
+			"sexual_abuse_rape",
+			"Categoria deve ser sexual_abuse_rape"
+		);
+
+		// Mock simulando LLM detectando foto de criança
+		nsfwPredictInstance.llmService.getCompletion = async () =>
+			JSON.stringify({
+				visual_analysis: "Photo of a real child looking at camera.",
+				classification: "nsfw",
+				category: "child_safety",
+				reason: "Real photo of a child/minor"
+			});
+
+		const resultChild = await nsfwPredictInstance.detectNSFWWithLLM(dummyBuf, {
+			strictModeration: true
+		});
+		assert.strictEqual(
+			resultChild.isNSFW,
+			true,
+			"detectNSFWWithLLM deve retornar isNSFW=true para child_safety"
+		);
+		assert.strictEqual(resultChild.category, "child_safety");
+
+		// Mock simulando LLM detectando símbolo nazista
+		nsfwPredictInstance.llmService.getCompletion = async () =>
+			JSON.stringify({
+				visual_analysis: "Swastika symbol on a flag.",
+				classification: "nsfw",
+				category: "hate_nazi_extremism",
+				reason: "Depicts Nazi swastika"
+			});
+
+		const resultNazi = await nsfwPredictInstance.detectNSFWWithLLM(dummyBuf, {
+			strictModeration: true
+		});
+		assert.strictEqual(
+			resultNazi.isNSFW,
+			true,
+			"detectNSFWWithLLM deve retornar isNSFW=true para hate_nazi_extremism"
+		);
+
+		// Mock simulando imagem segura
+		nsfwPredictInstance.llmService.getCompletion = async () =>
+			JSON.stringify({
+				visual_analysis: "Cute funny cat wearing sunglasses.",
+				classification: "safe",
+				category: "none",
+				reason: "Harmless cat meme"
+			});
+
+		const resultSafe = await nsfwPredictInstance.detectNSFWWithLLM(dummyBuf, {
+			strictModeration: true
+		});
+		assert.strictEqual(resultSafe.isNSFW, false, "detectNSFWWithLLM deve aprovar meme seguro");
+		assert.strictEqual(resultSafe.category, null);
+		console.log(
+			"✓ detectNSFWWithLLM detecta e categoriza corretamente violações de abuso, crianças e nazismo"
+		);
+	} finally {
+		nsfwPredictInstance.llmService.getCompletion = originalGetCompletion;
+	}
 
 	console.log("\n=== TODOS OS TESTES DE STICKERSCRAPER PASSARAM COM SUCESSO! ===");
 	process.exit(0);

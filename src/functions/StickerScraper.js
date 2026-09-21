@@ -746,35 +746,70 @@ async function extractFramesForAnalysis(buffer, maxFrames = 6) {
 	}
 }
 
+// Padrões de texto estritamente proibidos em títulos ou metadados de figurinhas
+const FORBIDDEN_TITLE_PATTERNS = [
+	/\bhora\s+d[oe]\s+abuso\b/i,
+	/\babuso\s+sexual\b/i,
+	/\b(estupro|estuprar|estuprador)\b/i,
+	/\bpedofilia|pedofilo|pedófilo\b/i,
+	/\b(nazis(mo|ta)?|hitler|swastika|su[aá]stica|sol\s+negro|sonnenrad)\b/i,
+	/\b(white\s+power|ku\s+klux\s+klan|aryan\s+brotherhood)\b/i,
+	/\b(decapita[cç][aã]o|mutila[cç][aã]o|esquarteja(do|r))\b/i
+];
+
 /**
- * Avalia se o buffer de uma figurinha contém conteúdo adulto/NSFW via NSFWPredict.
- * Para figurinhas animadas, extrai múltiplos frames ao longo da animação para garantir
- * que cenas NSFW no meio/fim do sticker sejam detectadas pela LLM.
+ * Verifica se um texto/título contém termos proibidos (abuso, estupro, nazismo, etc.)
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isForbiddenText(text) {
+	if (!text || typeof text !== "string") return false;
+	return FORBIDDEN_TITLE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Avalia se o buffer de uma figurinha contém conteúdo adulto ou impróprio via NSFWPredict com moderação estrita.
+ * Verifica pornografia/NSFW, apologia ao nazismo, fotos de crianças reais, referências a estupro/abuso
+ * (ex: "hora do abuso") e violência extrema/gore.
  *
  * @param {Buffer} buffer - Buffer WebP da figurinha
  * @param {number|string} stickerId - ID para logging e rastreamento
- * @returns {Promise<boolean>} - true se for NSFW, false se seguro
+ * @param {Object|string} [extraContext] - Contexto opcional contendo título/metadados
+ * @returns {Promise<boolean>} - true se for impróprio/NSFW, false se seguro
  */
-async function checkStickerNSFW(buffer, stickerId) {
+async function checkStickerNSFW(buffer, stickerId, extraContext = {}) {
 	try {
+		const title = typeof extraContext === "string" ? extraContext : extraContext?.title || "";
+
+		// 1. Verificação rápida local: se o título contiver termos proibidos conhecidos (ex: "hora do abuso", "nazismo", etc.)
+		if (title && isForbiddenText(title)) {
+			logger.warn(
+				`Figurinha #${stickerId} bloqueada imediatamente por título proibido: "${title}"`
+			);
+			return true;
+		}
+
+		// 2. Análise profunda multimodal via LLM com regras estritas de moderação
 		const frames = await module.exports.extractFramesForAnalysis(buffer, 6);
 		const result = await nsfwPredict.detectNSFW(frames, {
 			isSticker: true,
 			type: "sticker",
 			stickerId,
+			title,
 			forceLLM: true,
-			skipNudeNet: true
+			skipNudeNet: true,
+			strictModeration: true
 		});
 
 		if (result?.isNSFW) {
 			logger.warn(
-				`Figurinha #${stickerId} classificada como NSFW: ${result.reason || "conteúdo adulto detectado"}`
+				`Figurinha #${stickerId} bloqueada pelo filtro de moderação (${result.category || "impróprio"}): ${result.reason || "conteúdo impróprio detectado"}`
 			);
 			return true;
 		}
 		return false;
 	} catch (error) {
-		logger.error(`Erro ao verificar NSFW para figurinha #${stickerId}: ${error.message}`);
+		logger.error(`Erro ao verificar moderação para figurinha #${stickerId}: ${error.message}`);
 		return false;
 	}
 }
@@ -927,13 +962,15 @@ async function stickerScraperCommand(bot, message, args, group) {
 				});
 			}
 
-			// Verificação NSFW para ID específico
-			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, specificId);
+			// Verificação NSFW e moderação estrita para ID específico
+			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, specificId, {
+				title: result.title
+			});
 			if (isNsfw) {
 				await module.exports.addToBlacklist(specificId);
 				return new ReturnMessage({
 					chatId,
-					content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW).`
+					content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW, apologia a ódio/abuso ou violação de diretrizes).`
 				});
 			}
 
@@ -998,8 +1035,10 @@ async function stickerScraperCommand(bot, message, args, group) {
 					const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
 					if (croppedBuffer.length < MIN_STICKER_BYTES) continue;
 
-					// Verificação NSFW
-					const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId);
+					// Verificação NSFW e moderação estrita
+					const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId, {
+						title: result.title
+					});
 					if (isNsfw) {
 						await module.exports.addToBlacklist(randomId);
 						continue;
@@ -1108,11 +1147,13 @@ async function runBackgroundScraperTick() {
 				continue;
 			}
 
-			// Filtro NSFW
-			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, candidateId);
+			// Filtro NSFW e moderação estrita
+			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, candidateId, {
+				title: result.title
+			});
 			if (isNsfw) {
 				logger.warn(
-					`Background scraper: figurinha #${candidateId} é NSFW. Adicionando à blacklist e descartando.`
+					`Background scraper: figurinha #${candidateId} é imprópria/NSFW. Adicionando à blacklist e descartando.`
 				);
 				await module.exports.addToBlacklist(candidateId);
 				continue; // Não salva no estoque offline e continua o ciclo
@@ -1295,5 +1336,7 @@ module.exports = {
 	recordStickerSent,
 	getStickerStats,
 	initStickerStatsSync,
-	stickerScraperCommand
+	stickerScraperCommand,
+	isForbiddenText,
+	FORBIDDEN_TITLE_PATTERNS
 };
