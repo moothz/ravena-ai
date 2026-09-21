@@ -2397,6 +2397,62 @@ class WhatsAppBotGo {
 		return actualId;
 	}
 
+	/**
+	 * Limita o conteúdo de texto para evitar mensagens gigantescas ou loops de repetição.
+	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 *
+	 * @param {string} text - Texto a ser validado e possivelmente truncado.
+	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxLines=200] - Limite máximo de linhas.
+	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
+	 * @returns {string} - Texto original ou truncado com indicador.
+	 */
+	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+		if (typeof text !== "string" || !text) {
+			return text;
+		}
+
+		let result = text;
+		let modified = false;
+
+		// Limita repetições consecutivas do mesmo caractere para no máximo 15 (ex: "KKK...KKK" -> 15 K's)
+		if (maxCharRepeats > 0) {
+			const repeatRegex =
+				maxCharRepeats === 15 ? /(.)\1{15,}/gu : new RegExp(`(.)\\1{${maxCharRepeats},}`, "gu");
+			if (repeatRegex.test(result)) {
+				result = result.replace(repeatRegex, (match, char) => char.repeat(maxCharRepeats));
+				modified = true;
+			}
+		}
+
+		const lines = result.split(/\r?\n/);
+		const exceedsLines = maxLines > 0 && lines.length > maxLines;
+		const exceedsChars = maxChars > 0 && result.length > maxChars;
+
+		if (exceedsLines || exceedsChars) {
+			modified = true;
+			const suffix = "\n... [truncado]";
+
+			if (exceedsLines) {
+				const targetLines = Math.max(1, maxLines - 1);
+				result = lines.slice(0, targetLines).join("\n") + suffix;
+			}
+
+			if (maxChars > 0 && result.length > maxChars) {
+				const targetChars = Math.max(0, maxChars - suffix.length);
+				result = result.slice(0, targetChars) + suffix;
+			}
+		}
+
+		if (modified) {
+			this.logger.warn(
+				`[${this.id}] Mensagem de texto ajustada por filtros de tamanho/repetição (${maxChars} chars / ${maxLines} linhas / máx ${maxCharRepeats} repetições).`
+			);
+		}
+
+		return result;
+	}
+
 	async sendMessage(chatId, content, options = {}) {
 		try {
 			if (!this.isConnected) throw new Error("Not connected");
@@ -2467,7 +2523,7 @@ class WhatsAppBotGo {
 					this.logger.debug(`[sendMessage] Content is URL! `, { endpoint, payload });
 				} else {
 					endpoint = "/send/text";
-					payload.text = content;
+					payload.text = this.truncateText(content);
 				}
 			} else if (content.isMessageMedia || options.sendMediaAsSticker) {
 				if (options.sendMediaAsSticker) {
@@ -2589,6 +2645,13 @@ class WhatsAppBotGo {
 					content,
 					payload
 				});
+			}
+
+			if (typeof payload.text === "string") {
+				payload.text = this.truncateText(payload.text);
+			}
+			if (typeof payload.caption === "string") {
+				payload.caption = this.truncateText(payload.caption);
 			}
 
 			const response = await this.apiClient.post(endpoint, payload);

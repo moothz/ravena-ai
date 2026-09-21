@@ -1307,6 +1307,18 @@ class LLMService {
 					if (config.temperature !== undefined) options.temperature = config.temperature;
 					if (config.top_k !== undefined) options.top_k = config.top_k;
 					if (config.top_p !== undefined) options.top_p = config.top_p;
+					if (config.min_p !== undefined) options.min_p = config.min_p;
+					if (config.frequency_penalty !== undefined) {
+						options.frequency_penalty = config.frequency_penalty;
+					}
+					if (config.presence_penalty !== undefined) {
+						options.presence_penalty = config.presence_penalty;
+					}
+					if (config.repetition_penalty !== undefined) {
+						options.repetition_penalty = config.repetition_penalty;
+					}
+					if (config.maxTokens !== undefined) options.maxTokens = config.maxTokens;
+					if (config.max_tokens !== undefined) options.maxTokens = config.max_tokens;
 					if (config.apiKey) options.apiKey = config.apiKey;
 					if (config.timeout_multiplier) {
 						options.timeout = options.timeout
@@ -2027,6 +2039,19 @@ class LLMService {
 				stream: false
 			};
 
+			if (options.top_p !== undefined) payload.top_p = options.top_p;
+			if (options.top_k !== undefined) payload.top_k = options.top_k;
+			if (options.min_p !== undefined) payload.min_p = options.min_p;
+			if (options.frequency_penalty !== undefined) {
+				payload.frequency_penalty = options.frequency_penalty;
+			}
+			if (options.presence_penalty !== undefined) {
+				payload.presence_penalty = options.presence_penalty;
+			}
+			if (options.repetition_penalty !== undefined) {
+				payload.repetition_penalty = options.repetition_penalty;
+			}
+
 			if (options.response_format) {
 				payload.response_format = options.response_format;
 			}
@@ -2123,6 +2148,19 @@ class LLMService {
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
+
+				if (options.top_p !== undefined) nextPayload.top_p = options.top_p;
+				if (options.top_k !== undefined) nextPayload.top_k = options.top_k;
+				if (options.min_p !== undefined) nextPayload.min_p = options.min_p;
+				if (options.frequency_penalty !== undefined) {
+					nextPayload.frequency_penalty = options.frequency_penalty;
+				}
+				if (options.presence_penalty !== undefined) {
+					nextPayload.presence_penalty = options.presence_penalty;
+				}
+				if (options.repetition_penalty !== undefined) {
+					nextPayload.repetition_penalty = options.repetition_penalty;
+				}
 
 				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
 				if (Array.isArray(nextTools) && nextTools.length > 0) {
@@ -2238,6 +2276,19 @@ class LLMService {
 				stream: false
 			};
 
+			if (options.top_p !== undefined) payload.top_p = options.top_p;
+			if (options.top_k !== undefined) payload.top_k = options.top_k;
+			if (options.min_p !== undefined) payload.min_p = options.min_p;
+			if (options.frequency_penalty !== undefined) {
+				payload.frequency_penalty = options.frequency_penalty;
+			}
+			if (options.presence_penalty !== undefined) {
+				payload.presence_penalty = options.presence_penalty;
+			}
+			if (options.repetition_penalty !== undefined) {
+				payload.repetition_penalty = options.repetition_penalty;
+			}
+
 			if (options.response_format) {
 				payload.response_format = options.response_format;
 			}
@@ -2336,6 +2387,19 @@ class LLMService {
 					temperature: options.temperature ?? 0.7,
 					stream: false
 				};
+
+				if (options.top_p !== undefined) nextPayload.top_p = options.top_p;
+				if (options.top_k !== undefined) nextPayload.top_k = options.top_k;
+				if (options.min_p !== undefined) nextPayload.min_p = options.min_p;
+				if (options.frequency_penalty !== undefined) {
+					nextPayload.frequency_penalty = options.frequency_penalty;
+				}
+				if (options.presence_penalty !== undefined) {
+					nextPayload.presence_penalty = options.presence_penalty;
+				}
+				if (options.repetition_penalty !== undefined) {
+					nextPayload.repetition_penalty = options.repetition_penalty;
+				}
 
 				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
 				if (Array.isArray(nextTools) && nextTools.length > 0) {

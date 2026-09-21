@@ -87,6 +87,62 @@ class FakeBot {
 	// ---------------------------------------------------------------------------
 
 	/**
+	 * Limita o conteúdo de texto para evitar mensagens gigantescas ou loops de repetição.
+	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 *
+	 * @param {string} text - Texto a ser validado e possivelmente truncado.
+	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxLines=200] - Limite máximo de linhas.
+	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
+	 * @returns {string} - Texto original ou truncado com indicador.
+	 */
+	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+		if (typeof text !== "string" || !text) {
+			return text;
+		}
+
+		let result = text;
+		let modified = false;
+
+		// Limita repetições consecutivas do mesmo caractere para no máximo 15 (ex: "KKK...KKK" -> 15 K's)
+		if (maxCharRepeats > 0) {
+			const repeatRegex =
+				maxCharRepeats === 15 ? /(.)\1{15,}/gu : new RegExp(`(.)\\1{${maxCharRepeats},}`, "gu");
+			if (repeatRegex.test(result)) {
+				result = result.replace(repeatRegex, (match, char) => char.repeat(maxCharRepeats));
+				modified = true;
+			}
+		}
+
+		const lines = result.split(/\r?\n/);
+		const exceedsLines = maxLines > 0 && lines.length > maxLines;
+		const exceedsChars = maxChars > 0 && result.length > maxChars;
+
+		if (exceedsLines || exceedsChars) {
+			modified = true;
+			const suffix = "\n... [truncado]";
+
+			if (exceedsLines) {
+				const targetLines = Math.max(1, maxLines - 1);
+				result = lines.slice(0, targetLines).join("\n") + suffix;
+			}
+
+			if (maxChars > 0 && result.length > maxChars) {
+				const targetChars = Math.max(0, maxChars - suffix.length);
+				result = result.slice(0, targetChars) + suffix;
+			}
+		}
+
+		if (modified) {
+			this.logger.warn(
+				`[FakeBot] Mensagem de texto ajustada por filtros de tamanho/repetição (${maxChars} chars / ${maxLines} linhas / máx ${maxCharRepeats} repetições).`
+			);
+		}
+
+		return result;
+	}
+
+	/**
 	 * Captura ReturnMessage(s) que seriam enviadas pelo bot real.
 	 * @param {ReturnMessage|ReturnMessage[]} messages
 	 * @param {Group|null} group
@@ -108,6 +164,12 @@ class FakeBot {
 					messageContent: msg.content
 				});
 				continue;
+			}
+			if (typeof msg.content === "string") {
+				msg.content = this.truncateText(msg.content);
+			}
+			if (msg.options?.caption && typeof msg.options.caption === "string") {
+				msg.options.caption = this.truncateText(msg.options.caption);
 			}
 			this.capturedMessages.push(msg);
 			this.logger.debug(`[FakeBot] Capturado ReturnMessage → chatId=${msg.chatId}`);
@@ -151,7 +213,11 @@ class FakeBot {
 			throw err;
 		}
 		const ReturnMessage = require("../models/ReturnMessage");
-		const msg = new ReturnMessage({ chatId, content, metadata: { direct: true } });
+		const msg = new ReturnMessage({
+			chatId,
+			content: typeof content === "string" ? this.truncateText(content) : content,
+			metadata: { direct: true }
+		});
 		this.capturedMessages.push(msg);
 		return { id: { _serialized: `fake_direct_${Date.now()}` }, ack: 1 };
 	}
