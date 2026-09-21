@@ -176,6 +176,11 @@ class BotAPI {
 			res.sendFile(path.join(__dirname, "../public/classic.html"));
 		});
 
+		// Redireciona /dashboard e /dashboard.html para o novo /instances moderno
+		this.app.get(["/dashboard", "/dashboard.html"], (req, res) => {
+			res.redirect("/instances");
+		});
+
 		// Rota para encerrar sessão de administrador
 		this.app.get("/logout", (req, res) => {
 			this.clearAdminSessionCookie(res);
@@ -1840,70 +1845,17 @@ class BotAPI {
 			this.strictLimiter,
 			async (req, res) => {
 				try {
-					const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
-					const recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
-
-					const botReports = {};
-					if (recentReports && Array.isArray(recentReports)) {
-						recentReports.forEach((report) => {
-							if (
-								!botReports[report.botId] ||
-								report.timestamp > botReports[report.botId].timestamp
-							) {
-								botReports[report.botId] = report;
-							}
-						});
-					}
-
-					// Busca contagem de grupos no banco
-					let allGroups = [];
-					try {
-						allGroups = await this.database.getGroups();
-					} catch (e) {
-						this.logger.warn("Erro ao buscar grupos para instances API:", e);
-					}
-
-					const groupsCountMap = {};
-					if (Array.isArray(allGroups)) {
-						allGroups.forEach((g) => {
-							if (g && g.botId) {
-								groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
-							}
-						});
-					}
-
-					// Tenta buscar lista de grupos atualizada para bots WhatsApp conectados com timeout curto
-					const botGroupPromises = this.bots.map(async (bot) => {
-						if (bot.isConnected && typeof bot.listGroups === "function") {
-							try {
-								const groups = await Promise.race([
-									bot.listGroups(),
-									new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1200))
-								]);
-								if (Array.isArray(groups)) {
-									return { botId: bot.id, count: groups.length };
-								}
-							} catch (e) {
-								// fallback para contagem do banco
-							}
-						}
-						return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
-					});
-
-					const resolvedGroupCounts = await Promise.all(botGroupPromises);
-					const finalGroupsCountMap = {};
-					resolvedGroupCounts.forEach((item) => {
-						finalGroupsCountMap[item.botId] = item.count;
-					});
+					const runtimeStatusMap = await this.getBotsRuntimeStatusMap();
 
 					// Coleta dados de todas as instâncias (incluindo privadas, telegram, discord, etc.)
 					const instances = this.bots.map((bot) => {
-						const report = botReports[bot.id] ?? null;
-						const msgsHr = report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
-						const avgResponseTime =
-							report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
-						const maxResponseTime =
-							report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
+						const runtime = runtimeStatusMap.get(bot.id) || {
+							connected: Boolean(bot.isConnected),
+							msgsHr: 0,
+							responseTime: { avg: 0, max: 0 },
+							groupsCount: 0,
+							lastMessageReceived: bot.lastMessageReceived ?? null
+						};
 
 						const platform = bot.useTelegram ? "Telegram" : bot.useDiscord ? "Discord" : "WhatsApp";
 
@@ -1912,7 +1864,7 @@ class BotAPI {
 							name: bot.nomeExibir || bot.id,
 							phoneNumber: bot.phoneNumber || (bot.numero ? String(bot.numero) : null),
 							platform,
-							connected: Boolean(bot.isConnected),
+							connected: runtime.connected,
 							privado: Boolean(bot.privado),
 							vip: Boolean(bot.vip),
 							comunitario: Boolean(bot.comunitario),
@@ -1923,16 +1875,10 @@ class BotAPI {
 							prefix: bot.prefix || "!",
 							numeroResponsavel: bot.numeroResponsavel || null,
 							supportMsg: bot.supportMsg || null,
-							lastMessageReceived: bot.lastMessageReceived ?? null,
-							msgsHr,
-							responseTime: {
-								avg: avgResponseTime,
-								max: maxResponseTime
-							},
-							groupsCount:
-								finalGroupsCountMap[bot.id] !== undefined
-									? finalGroupsCountMap[bot.id]
-									: groupsCountMap[bot.id] || 0,
+							lastMessageReceived: runtime.lastMessageReceived,
+							msgsHr: runtime.msgsHr,
+							responseTime: runtime.responseTime,
+							groupsCount: runtime.groupsCount,
 							webhookPort: bot.webhookPort || null,
 							instanceName: bot.instanceName || bot.id
 						};
@@ -3641,45 +3587,275 @@ class BotAPI {
 			}
 		});
 
-		// Dashboard: Get bots configuration
+		// Dashboard / Instances: Get bots configuration enriched with runtime status
 		this.app.get("/api/bots", authenticateBasic, async (req, res) => {
 			try {
 				const botsJsonPath = path.join(__dirname, "../bots.json");
-				const data = await fs.readFile(botsJsonPath, "utf8");
-				res.json(JSON.parse(data));
-			} catch (error) {
-				if (error.code === "ENOENT") {
-					this.logger.warn("bots.json not found, returning empty array.");
-					return res.json([]);
+				let data = [];
+				try {
+					const fileContent = await fs.readFile(botsJsonPath, "utf8");
+					data = JSON.parse(fileContent);
+				} catch (readErr) {
+					if (readErr.code === "ENOENT") {
+						this.logger.warn("bots.json not found, returning empty array.");
+						return res.json([]);
+					}
+					throw readErr;
 				}
+
+				if (!Array.isArray(data)) {
+					data = [];
+				}
+
+				// Coleta status de telemetria dos bots em execução
+				let runtimeStatusMap = new Map();
+				try {
+					runtimeStatusMap = await this.getBotsRuntimeStatusMap();
+				} catch (statusErr) {
+					this.logger.warn("Erro ao obter mapa de status de runtime:", statusErr);
+				}
+
+				const enrichedBots = data.map((botConfig) => {
+					const liveBot = this.bots.find(
+						(b) =>
+							b.id === botConfig.nome ||
+							(botConfig.numero &&
+								b.phoneNumber &&
+								String(b.phoneNumber) === String(botConfig.numero))
+					);
+
+					const runtime =
+						liveBot && runtimeStatusMap.has(liveBot.id)
+							? runtimeStatusMap.get(liveBot.id)
+							: {
+									isLive: false,
+									connected: false,
+									msgsHr: 0,
+									responseTime: { avg: 0, max: 0 },
+									groupsCount: 0,
+									lastMessageReceived: null
+								};
+
+					return {
+						...botConfig,
+						_runtime: runtime,
+						connected: runtime.connected,
+						msgsHr: runtime.msgsHr,
+						responseTime: runtime.responseTime,
+						groupsCount: runtime.groupsCount,
+						lastMessageReceived: runtime.lastMessageReceived,
+						isLive: runtime.isLive
+					};
+				});
+
+				// Inclui instâncias ativas em memória que porventura não constem no bots.json
+				const foundNames = new Set(data.map((b) => b.nome));
+				this.bots.forEach((liveBot) => {
+					if (!foundNames.has(liveBot.id)) {
+						const runtime = runtimeStatusMap.get(liveBot.id) || {
+							isLive: true,
+							connected: Boolean(liveBot.isConnected),
+							msgsHr: 0,
+							responseTime: { avg: 0, max: 0 },
+							groupsCount: 0,
+							lastMessageReceived: liveBot.lastMessageReceived ?? null
+						};
+						enrichedBots.push({
+							enabled: liveBot.enabled !== false,
+							nome: liveBot.id,
+							nomeExibir: liveBot.nomeExibir || liveBot.id,
+							numero: liveBot.phoneNumber || (liveBot.numero ? String(liveBot.numero) : ""),
+							customPrefix: liveBot.prefix || "!",
+							privado: Boolean(liveBot.privado),
+							vip: Boolean(liveBot.vip),
+							comunitario: Boolean(liveBot.comunitario),
+							banido: Boolean(liveBot.banido),
+							ignorePV: Boolean(liveBot.ignorePV),
+							autoDownloadPV: Boolean(liveBot.autoDownloadPV),
+							ignoreInvites: Boolean(liveBot.ignoreInvites),
+							pvAI: Boolean(liveBot.pvAI),
+							extras: liveBot.extras || {},
+							_runtime: runtime,
+							connected: runtime.connected,
+							msgsHr: runtime.msgsHr,
+							responseTime: runtime.responseTime,
+							groupsCount: runtime.groupsCount,
+							lastMessageReceived: runtime.lastMessageReceived,
+							isLive: true
+						});
+					}
+				});
+
+				res.json(enrichedBots);
+			} catch (error) {
 				this.logger.error("Error reading bots.json:", error);
 				res.status(500).json({ status: "error", message: "Failed to read bots configuration." });
 			}
 		});
 
-		// Dashboard: Save bots configuration
+		// Dashboard / Instances: Save bots configuration and synchronize in real-time
 		this.app.post("/api/bots", authenticateBasic, async (req, res) => {
 			const botsData = req.body;
 			if (!Array.isArray(botsData)) {
 				return res
 					.status(400)
-					.json({ status: "error", message: "Invalid data format. Expected an array." });
+					.json({ status: "error", message: "Formato inválido. Esperado um array de instâncias." });
 			}
 
-			// Validation
+			// Validação rigorosa
 			for (const bot of botsData) {
-				if (typeof bot.enabled !== "boolean" || !bot.nome || !bot.numero) {
+				if (!bot || typeof bot !== "object") {
 					return res.status(400).json({
 						status: "error",
-						message: `Invalid entry: 'enabled' must be a boolean, 'nome' and 'numero' are required. Problematic entry: ${JSON.stringify(bot)}`
+						message: "Entrada inválida: cada item deve ser um objeto de configuração."
 					});
+				}
+
+				if (!bot.nome || typeof bot.nome !== "string" || bot.nome.trim().length === 0) {
+					return res.status(400).json({
+						status: "error",
+						message: "Campo 'nome' é obrigatório para todas as instâncias."
+					});
+				}
+
+				if (typeof bot.enabled !== "boolean") {
+					bot.enabled = Boolean(bot.enabled);
+				}
+
+				if (!bot.useDiscord && (!bot.numero || String(bot.numero).trim().length === 0)) {
+					return res.status(400).json({
+						status: "error",
+						message: `Campo 'numero' é obrigatório para a instância '${bot.nome}'.`
+					});
+				}
+
+				// Validação do parâmetro 'extras' (profundidade máxima de 3 níveis: extras -> categoria -> propriedade)
+				if (bot.extras !== undefined && bot.extras !== null) {
+					if (typeof bot.extras !== "object" || Array.isArray(bot.extras)) {
+						return res.status(400).json({
+							status: "error",
+							message: `Campo 'extras' da instância '${bot.nome}' deve ser um objeto.`
+						});
+					}
+
+					for (const [catKey, catVal] of Object.entries(bot.extras)) {
+						if (typeof catVal !== "object" || catVal === null || Array.isArray(catVal)) {
+							return res.status(400).json({
+								status: "error",
+								message: `Categoria '${catKey}' em extras da instância '${bot.nome}' deve ser um objeto.`
+							});
+						}
+
+						for (const [propKey, propVal] of Object.entries(catVal)) {
+							if (typeof propVal === "object" && propVal !== null) {
+								return res.status(400).json({
+									status: "error",
+									message: `Profundidade máxima de 3 níveis excedida em extras -> '${catKey}' -> '${propKey}'. Propriedades devem ser valores primitivos (string, número ou booleano).`
+								});
+							}
+						}
+					}
+				}
+			}
+
+			const botsJsonPath = path.join(__dirname, "../bots.json");
+
+			// Proteção contra exclusão: instâncias existentes no bots.json que forem omitidas são preservadas com enabled: false
+			let currentBots = [];
+			try {
+				const currentData = await fs.readFile(botsJsonPath, "utf8");
+				currentBots = JSON.parse(currentData) || [];
+			} catch (e) {
+				// arquivo pode não existir ainda
+			}
+
+			const incomingNames = new Set(botsData.map((b) => b.nome));
+			if (Array.isArray(currentBots)) {
+				for (const prevBot of currentBots) {
+					if (prevBot && prevBot.nome && !incomingNames.has(prevBot.nome)) {
+						botsData.push({
+							...prevBot,
+							enabled: false
+						});
+						this.logger.warn(
+							`[BotAPI] Instância '${prevBot.nome}' foi preservada e marcada como desativada (deleção não permitida).`
+						);
+					}
 				}
 			}
 
 			try {
-				const botsJsonPath = path.join(__dirname, "../bots.json");
-				await fs.writeFile(botsJsonPath, JSON.stringify(botsData, null, 2), "utf8");
-				res.json({ status: "ok", message: "Configuration saved successfully." });
+				// Limpa dados de runtime antes de persistir em bots.json
+				const cleanBotsData = botsData.map((b) => {
+					const copy = { ...b };
+					delete copy._runtime;
+					delete copy.connected;
+					delete copy.msgsHr;
+					delete copy.responseTime;
+					delete copy.groupsCount;
+					delete copy.lastMessageReceived;
+					delete copy.isLive;
+					return copy;
+				});
+
+				await fs.writeFile(botsJsonPath, JSON.stringify(cleanBotsData, null, 2), "utf8");
+
+				// Sincronização em tempo real das instâncias em execução na memória
+				let synchronizedCount = 0;
+				for (const botConfig of cleanBotsData) {
+					const liveBot = this.bots.find(
+						(b) =>
+							b.id === botConfig.nome ||
+							(botConfig.numero &&
+								b.phoneNumber &&
+								String(b.phoneNumber) === String(botConfig.numero))
+					);
+
+					if (liveBot) {
+						liveBot.enabled = Boolean(botConfig.enabled);
+						liveBot.nomeExibir = botConfig.nomeExibir || botConfig.nome;
+						liveBot.prefix = botConfig.customPrefix || (liveBot.useTelegram ? "/" : "!");
+						liveBot.privado = Boolean(botConfig.privado);
+						liveBot.vip = Boolean(botConfig.vip);
+						liveBot.comunitario = Boolean(botConfig.comunitario);
+						liveBot.banido = Boolean(botConfig.banido);
+						liveBot.ignorePV = Boolean(botConfig.ignorePV);
+						liveBot.autoDownloadPV = Boolean(botConfig.autoDownloadPV);
+						liveBot.ignoreInvites = Boolean(botConfig.ignoreInvites);
+						liveBot.pvAI = Boolean(botConfig.pvAI);
+						liveBot.notificarDonate = Boolean(botConfig.notificarDonate);
+						liveBot.updateStatus =
+							botConfig.updateStatus !== undefined ? Boolean(botConfig.updateStatus) : true;
+						liveBot.sendJoinInfo = Boolean(botConfig.sendJoinInfo);
+						liveBot.aiPersonality = botConfig.aiPersonality || "";
+						liveBot.supportMsg = botConfig.msgSuporte || botConfig.supportMsg || null;
+						liveBot.numeroResponsavel = botConfig.numeroResponsavel || null;
+						if (botConfig.managementUser) liveBot.managementUser = botConfig.managementUser;
+						if (botConfig.managementPW) liveBot.managementPW = botConfig.managementPW;
+						if (botConfig.grupoLogs !== undefined) liveBot.grupoLogs = botConfig.grupoLogs;
+						if (botConfig.grupoAvisos !== undefined) liveBot.grupoAvisos = botConfig.grupoAvisos;
+						if (botConfig.grupoInvites !== undefined) liveBot.grupoInvites = botConfig.grupoInvites;
+						if (botConfig.dossieGroups !== undefined) liveBot.dossieGroups = botConfig.dossieGroups;
+						if (botConfig.grupoEstabilidade !== undefined)
+							liveBot.grupoEstabilidade = botConfig.grupoEstabilidade;
+						if (botConfig.linkGrupao !== undefined) liveBot.linkGrupao = botConfig.linkGrupao;
+						if (botConfig.linkAvisos !== undefined) liveBot.linkAvisos = botConfig.linkAvisos;
+						liveBot.extras = botConfig.extras ? JSON.parse(JSON.stringify(botConfig.extras)) : {};
+
+						synchronizedCount++;
+					}
+				}
+
+				this.logger.info(
+					`[BotAPI] Configuração de ${cleanBotsData.length} instâncias salva e ${synchronizedCount} atualizadas em tempo real.`
+				);
+
+				res.json({
+					status: "ok",
+					message: "Configurações salvas e sincronizadas em tempo real.",
+					synchronizedCount,
+					total: cleanBotsData.length
+				});
 			} catch (error) {
 				this.logger.error("Error writing to bots.json:", error);
 				res.status(500).json({ status: "error", message: "Failed to save bots configuration." });
@@ -3957,6 +4133,94 @@ class BotAPI {
 				res.status(500).json({ status: "error", message: error.message });
 			}
 		});
+	}
+
+	/**
+	 * Coleta status de telemetria e runtime dos bots ativos em memória
+	 * @returns {Promise<Map<string, Object>>} Mapa de botId para status de runtime
+	 */
+	async getBotsRuntimeStatusMap() {
+		const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+		let recentReports = [];
+		try {
+			recentReports = await this.database.getLoadReports(thirtyMinutesAgo);
+		} catch (e) {
+			this.logger.warn("Erro ao buscar load reports para runtime status:", e);
+		}
+
+		const botReports = {};
+		if (recentReports && Array.isArray(recentReports)) {
+			recentReports.forEach((report) => {
+				if (!botReports[report.botId] || report.timestamp > botReports[report.botId].timestamp) {
+					botReports[report.botId] = report;
+				}
+			});
+		}
+
+		let allGroups = [];
+		try {
+			allGroups = await this.database.getGroups();
+		} catch (e) {
+			this.logger.warn("Erro ao buscar grupos para runtime status:", e);
+		}
+
+		const groupsCountMap = {};
+		if (Array.isArray(allGroups)) {
+			allGroups.forEach((g) => {
+				if (g && g.botId) {
+					groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
+				}
+			});
+		}
+
+		const botGroupPromises = this.bots.map(async (bot) => {
+			if (bot.isConnected && typeof bot.listGroups === "function") {
+				try {
+					const groups = await Promise.race([
+						bot.listGroups(),
+						new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1200))
+					]);
+					if (Array.isArray(groups)) {
+						return { botId: bot.id, count: groups.length };
+					}
+				} catch (e) {
+					// fallback para o banco
+				}
+			}
+			return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
+		});
+
+		const resolvedGroupCounts = await Promise.all(botGroupPromises);
+		const finalGroupsCountMap = {};
+		resolvedGroupCounts.forEach((item) => {
+			finalGroupsCountMap[item.botId] = item.count;
+		});
+
+		const statusMap = new Map();
+		this.bots.forEach((bot) => {
+			const report = botReports[bot.id] ?? null;
+			const msgsHr = report && report.messages ? (report.messages.messagesPerHour ?? 0) : 0;
+			const avgResponseTime =
+				report && report.responseTime ? (parseFloat(report.responseTime.average) ?? 0) : 0;
+			const maxResponseTime = report && report.responseTime ? (report.responseTime.max ?? 0) : 0;
+
+			statusMap.set(bot.id, {
+				isLive: true,
+				connected: Boolean(bot.isConnected),
+				lastMessageReceived: bot.lastMessageReceived ?? null,
+				msgsHr,
+				responseTime: {
+					avg: avgResponseTime,
+					max: maxResponseTime
+				},
+				groupsCount:
+					finalGroupsCountMap[bot.id] !== undefined
+						? finalGroupsCountMap[bot.id]
+						: groupsCountMap[bot.id] || 0
+			});
+		});
+
+		return statusMap;
 	}
 
 	/**

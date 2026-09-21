@@ -264,6 +264,11 @@ class EventHandler extends EventEmitter {
 	 */
 	async processMessage(bot, message) {
 		try {
+			// Se o bot estiver explicitamente desativado, descarta processamento
+			if (bot && bot.enabled === false) {
+				return;
+			}
+
 			// Ignorar: Mensagens do bot e mensagens de broadcast ('status@broadcast')
 			if (
 				message.fromMe ||
