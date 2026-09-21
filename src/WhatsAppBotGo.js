@@ -70,6 +70,7 @@ function isNotInGroupError(err) {
 class WhatsAppBotGo {
 	constructor(options) {
 		this.id = options.id;
+		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
 		this.nomeExibir = options.nomeExibir;
 		this.sendJoinInfo = options.sendJoinInfo;
 		this.vip = options.vip;
@@ -98,6 +99,7 @@ class WhatsAppBotGo {
 
 		// Acesso pelo painel por terceiros
 		this.privado = options.privado ?? false;
+		this.extras = options.extras || {};
 		this.managementUser = options.managementUser ?? process.env.BOTAPI_USER ?? "admin";
 		this.managementPW = options.managementPW ?? process.env.BOTAPI_PASSWORD ?? "batata123";
 

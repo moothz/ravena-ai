@@ -845,14 +845,17 @@ async function stickerScraperCommand(bot, message, args, group) {
 		let targetQuantity = 1;
 		let specificId = null;
 
+		const configuredMax = parseInt(bot?.extras?.stickers?.maxFiga, 10);
+		const maxQuantity = !isNaN(configuredMax) && configuredMax > 0 ? configuredMax : MAX_QUANTITY;
+
 		if (arg && /^\d+$/.test(arg)) {
 			const parsed = parseInt(arg, 10);
 			if (parsed >= MIN_STICKER_ID) {
 				// Número alto: ID específico da figurinha
 				specificId = parsed;
 			} else if (parsed > 0) {
-				// Número de 1 a 4: quantidade solicitada
-				targetQuantity = Math.min(MAX_QUANTITY, parsed);
+				// Quantidade solicitada (limitada pelo maxQuantity do bot ou padrão MAX_QUANTITY)
+				targetQuantity = Math.min(maxQuantity, parsed);
 			}
 		}
 
@@ -1244,7 +1247,7 @@ const commands = [
 const helper = {
 	about: "Busca e envia figurinhas sob demanda do portal Lovecell",
 	implementation:
-		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando. Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.",
+		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando (configurável por bot via extras.stickers.maxFiga). Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.",
 	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random",
 	cmds: [
 		{
@@ -1284,11 +1287,13 @@ module.exports = {
 	stopScraperTimer,
 	isScraperTimerRunning,
 	getRandomInterval,
+	MAX_QUANTITY,
 	MIN_STICKER_BYTES,
 	DEFAULT_MIN_INTERVAL_MS,
 	DEFAULT_MAX_INTERVAL_MS,
 	isScrapingInProgress: () => isScrapingInProgress,
 	recordStickerSent,
 	getStickerStats,
-	initStickerStatsSync
+	initStickerStatsSync,
+	stickerScraperCommand
 };

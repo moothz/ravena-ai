@@ -17,6 +17,7 @@ const Logger = require("../utils/Logger");
 class FakeBot {
 	constructor(options = {}) {
 		this.id = options.id ?? "bot-teste";
+		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
 		this.prefix = options.prefix ?? "!";
 		this.phoneNumber = options.phoneNumber ?? "5511999990000";
 
@@ -31,6 +32,7 @@ class FakeBot {
 		this.vip = options.vip ?? false;
 		this.comunitario = options.comunitario ?? false;
 		this.privado = options.privado ?? false;
+		this.extras = options.extras || {};
 		this.userAgent = "FakeBot/1.0";
 
 		// IDs de grupos de notificação — null = desabilitado

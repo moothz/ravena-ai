@@ -19,8 +19,7 @@ async function runTests() {
 
 	function clearCooldowns() {
 		try {
-			const db = cmdHandler.database.getSQLiteDb("cooldowns");
-			if (db) db.prepare("DELETE FROM cooldowns").run();
+			cmdHandler.database.mappers.run("cooldowns", "DELETE FROM cooldowns");
 		} catch {}
 	}
 
@@ -842,6 +841,151 @@ async function runTests() {
 	StickerScraper.downloadedIds.delete(idFresh);
 
 	console.log("✓ Lógica de priorização anti-repetição validada com perfeição");
+
+	// 23. Teste de personalização de limite maxFiga via bot.extras.stickers.maxFiga
+	console.log("\n23. Testando customização de limite maxFiga via bot.extras...");
+
+	const originalGetRandomCached = StickerScraper.getRandomCachedStickers;
+	let lastRequestedCount = 0;
+	// Mock temporário para interceptar o count solicitado
+	StickerScraper.getRandomCachedStickers = async (count) => {
+		lastRequestedCount = count;
+		const fakeBuffer = Buffer.alloc(4096, "a");
+		return Array.from({ length: count }, (_, i) => ({
+			id: 888000 + i,
+			buffer: fakeBuffer
+		}));
+	};
+
+	try {
+		// 23.1: Bot padrão sem extras deve respeitar MAX_QUANTITY (4)
+		const defaultBot = new FakeBot({ id: "bot-default" });
+		const msg10 = createMessage({
+			content: "!figa 10",
+			group: "group_test_23_1@g.us",
+			author: "user_test_23_1@s.whatsapp.net"
+		});
+
+		clearCooldowns();
+		defaultBot.resetCapture();
+		await cmdHandler.processCommand(defaultBot, msg10, "figa", ["10"], {
+			id: "group_test_23_1@g.us",
+			name: "Grupo Teste 23_1"
+		});
+
+		assert.strictEqual(lastRequestedCount, 4, "Bot sem extras deve limitar requisição a 4");
+		assert.strictEqual(
+			defaultBot.capturedMessages.length,
+			4,
+			"Bot sem extras deve enviar 4 stickers"
+		);
+		console.log("✓ Bot padrão sem extras limita corretamente a 4 stickers");
+
+		// 23.2: Bot com extras.stickers.maxFiga = 30 aceita valores até 30
+		const customBot = new FakeBot({
+			id: "bot-custom",
+			extras: { stickers: { maxFiga: 30 } }
+		});
+
+		clearCooldowns();
+		customBot.resetCapture();
+		const msg15 = createMessage({
+			content: "!figa 15",
+			group: "group_test_23_2@g.us",
+			author: "user_test_23_2@s.whatsapp.net"
+		});
+		await cmdHandler.processCommand(customBot, msg15, "figa", ["15"], {
+			id: "group_test_23_2@g.us",
+			name: "Grupo Teste 23_2"
+		});
+
+		assert.strictEqual(lastRequestedCount, 15, "Bot customizado deve solicitar 15 stickers");
+		assert.strictEqual(
+			customBot.capturedMessages.length,
+			15,
+			"Bot customizado deve enviar 15 stickers"
+		);
+		console.log("✓ Bot com extras.stickers.maxFiga = 30 envia 15 stickers");
+
+		// 23.3: Bot com extras.stickers.maxFiga = 30 cede ao limite configurado se o usuário pedir mais
+		clearCooldowns();
+		customBot.resetCapture();
+		const msg50 = createMessage({
+			content: "!figa 50",
+			group: "group_test_23_3@g.us",
+			author: "user_test_23_3@s.whatsapp.net"
+		});
+		await cmdHandler.processCommand(customBot, msg50, "figa", ["50"], {
+			id: "group_test_23_3@g.us",
+			name: "Grupo Teste 23_3"
+		});
+
+		assert.strictEqual(
+			lastRequestedCount,
+			30,
+			"Bot com maxFiga=30 deve limitar requisição de 50 para 30"
+		);
+		assert.strictEqual(
+			customBot.capturedMessages.length,
+			30,
+			"Bot customizado deve enviar 30 stickers ao pedir 50"
+		);
+		console.log("✓ Bot com extras.stickers.maxFiga = 30 limita corretamente pedido de 50 para 30");
+
+		// 23.4: Bot com extras inválidos (string inválida ou número <= 0) deve usar fallback seguro para 4
+		const invalidBot = new FakeBot({
+			id: "bot-invalid",
+			extras: { stickers: { maxFiga: "invalido" } }
+		});
+
+		clearCooldowns();
+		invalidBot.resetCapture();
+		const msgInv = createMessage({
+			content: "!figa 10",
+			group: "group_test_23_4@g.us",
+			author: "user_test_23_4@s.whatsapp.net"
+		});
+		await cmdHandler.processCommand(invalidBot, msgInv, "figa", ["10"], {
+			id: "group_test_23_4@g.us",
+			name: "Grupo Teste 23_4"
+		});
+
+		assert.strictEqual(lastRequestedCount, 4, "Bot com maxFiga inválido deve usar fallback de 4");
+		assert.strictEqual(
+			invalidBot.capturedMessages.length,
+			4,
+			"Bot com maxFiga inválido deve enviar 4 stickers"
+		);
+		console.log("✓ Bot com extras.stickers.maxFiga inválido faz fallback seguro para 4");
+
+		// 23.5: Bot com número em formato string ("20") deve ser interpretado corretamente
+		const stringNumBot = new FakeBot({
+			id: "bot-string-num",
+			extras: { stickers: { maxFiga: "20" } }
+		});
+
+		clearCooldowns();
+		stringNumBot.resetCapture();
+		const msgStr = createMessage({
+			content: "!figa 10",
+			group: "group_test_23_5@g.us",
+			author: "user_test_23_5@s.whatsapp.net"
+		});
+		await cmdHandler.processCommand(stringNumBot, msgStr, "figa", ["10"], {
+			id: "group_test_23_5@g.us",
+			name: "Grupo Teste 23_5"
+		});
+
+		assert.strictEqual(lastRequestedCount, 10, "Bot com maxFiga='20' deve permitir 10 stickers");
+		assert.strictEqual(
+			stringNumBot.capturedMessages.length,
+			10,
+			"Bot com maxFiga='20' deve enviar 10 stickers"
+		);
+		console.log("✓ Bot com maxFiga como string numérica é interpretado corretamente");
+	} finally {
+		StickerScraper.getRandomCachedStickers = originalGetRandomCached;
+	}
 
 	// Restaura stubs
 	StickerScraper.fetchLovecellSticker = originalFetch;

@@ -131,7 +131,8 @@ async function main() {
 					updateStatus: rBot.updateStatus ?? true,
 					aiPersonality: rBot.aiPersonality ?? "",
 					nomeExibir: rBot.nomeExibir,
-					sendJoinInfo: rBot.sendJoinInfo
+					sendJoinInfo: rBot.sendJoinInfo,
+					extras: rBot.extras ?? {}
 				});
 
 				redisDbAtual++;
@@ -169,7 +170,8 @@ async function main() {
 					updateStatus: rBot.updateStatus ?? true,
 					aiPersonality: rBot.aiPersonality ?? "",
 					nomeExibir: rBot.nomeExibir,
-					sendJoinInfo: rBot.sendJoinInfo
+					sendJoinInfo: rBot.sendJoinInfo,
+					extras: rBot.extras ?? {}
 				});
 
 				redisDbAtual++;
@@ -234,7 +236,8 @@ async function main() {
 					updateStatus: rBot.updateStatus ?? true,
 					aiPersonality: rBot.aiPersonality ?? "",
 					nomeExibir: rBot.nomeExibir,
-					sendJoinInfo: rBot.sendJoinInfo
+					sendJoinInfo: rBot.sendJoinInfo,
+					extras: rBot.extras ?? {}
 				});
 
 				redisDbAtual++;

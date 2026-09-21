@@ -14,7 +14,12 @@
     "customPrefix": "!",
     "autoDownloadPV": false,
     "updateStatus": true,
-    "aiPersonality": "Você é um assistente prestativo."
+    "aiPersonality": "Você é um assistente prestativo.",
+    "extras": {
+      "stickers": {
+        "maxFiga": 30
+      }
+    }
    },
    {
     "enabled": false,

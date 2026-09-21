@@ -27,6 +27,7 @@ const unlinkAsync = promisify(fs.unlink);
 class WhatsAppBotTelegram {
 	constructor(options) {
 		this.id = options.id;
+		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
 		this.telegramBotName = options.telegramBotName || "ravenabot";
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "/";
@@ -70,6 +71,7 @@ class WhatsAppBotTelegram {
 		this.whatsgoApiKey = options.whatsgoApiKey;
 		this.goInstanceName = options.goInstanceName;
 		this.privado = options.privado ?? false;
+		this.extras = options.extras || {};
 		this.managementUser = options.managementUser ?? "admin";
 		this.managementPW = options.managementPW ?? "batata123";
 		this.redisURL = options.redisURL;

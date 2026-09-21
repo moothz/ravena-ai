@@ -38,6 +38,7 @@ class DiscordBot {
 		}
 
 		this.id = options.id;
+		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "!";
 		this.logger = new Logger(`bot-discord-${this.id}`);
@@ -57,6 +58,7 @@ class DiscordBot {
 		this.ignorePV = options.ignorePV || false;
 		this.updateStatus = options.updateStatus ?? true;
 		this.aiPersonality = options.aiPersonality ?? "";
+		this.extras = options.extras || {};
 		this.grupoLogs = options.grupoLogs; // Espera-se um Channel ID
 		this.dossieGroups =
 			options.dossieGroups ??
