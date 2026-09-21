@@ -34,6 +34,7 @@ class FakeBot {
 		this.privado = options.privado ?? false;
 		this.extras = options.extras || {};
 		this.userAgent = "FakeBot/1.0";
+		this.lidToPnMap = new Map();
 
 		// IDs de grupos de notificação — null = desabilitado
 		this.grupoLogs = options.grupoLogs ?? null;
@@ -280,7 +281,22 @@ class FakeBot {
 	getLidFromPn(pn) {
 		return null;
 	}
-	getPnFromLid(lid) {
+	getPnFromLid(lid, chat) {
+		if (!lid) return null;
+		if (this.lidToPnMap) {
+			const strLid = String(lid);
+			const pure = strLid.split(/[@:]/)[0].replace(/\D/g, "");
+			if (this.lidToPnMap.has(strLid)) return this.lidToPnMap.get(strLid);
+			if (pure && this.lidToPnMap.has(pure)) return this.lidToPnMap.get(pure);
+			if (pure && this.lidToPnMap.has(`${pure}@lid`)) return this.lidToPnMap.get(`${pure}@lid`);
+		}
+		if (chat?.participants || chat?.Participants) {
+			const parts = chat.participants || chat.Participants || [];
+			const p = parts.find(
+				(part) => part.lid === lid || part.id === lid || part.id?._serialized === lid
+			);
+			if (p?.phoneNumber || p?.PhoneNumber) return p.phoneNumber || p.PhoneNumber;
+		}
 		return null;
 	}
 

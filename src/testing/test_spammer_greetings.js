@@ -661,6 +661,137 @@ async function runTests() {
 	assert.strictEqual(isMiDeleted, true, "Message from user with name MI523508 must be deleted");
 	console.log("✓ checkSpammerMessage: message from author with name MI523508 deleted");
 
+	// 16. Test Auto-ban spammer with LID + PhoneNumber and ensure processGroupLeave displays real phone number
+	bot.resetCapture();
+	bot.removedParticipants = [];
+	const testSpammerLid = "28682546638944@lid";
+	const testSpammerPhone = "6285701712778";
+	const chatWithLidSpammer = {
+		id: { _serialized: stickerGroupId },
+		Participants: [
+			{
+				id: { _serialized: `${testSpammerPhone}@s.whatsapp.net` },
+				phoneNumber: `${testSpammerPhone}@s.whatsapp.net`,
+				lid: testSpammerLid
+			}
+		]
+	};
+
+	const bannedLidSpammer = await eventHandler.checkAutoBanSpammers(bot, chatWithLidSpammer);
+	assert.strictEqual(bannedLidSpammer.length, 1);
+	assert.strictEqual(bannedLidSpammer[0], `${testSpammerPhone}@s.whatsapp.net`);
+	assert(
+		eventHandler.activeSpammers.has(testSpammerLid),
+		"activeSpammers must contain the spammer LID"
+	);
+	assert.strictEqual(
+		eventHandler.spammerPhoneMap.get(testSpammerLid),
+		testSpammerPhone,
+		"spammerPhoneMap must map the spammer LID to the real phone number"
+	);
+	console.log(
+		"✓ checkAutoBanSpammers: correctly mapped spammer LID to real phone number in spammerPhoneMap"
+	);
+
+	// Now simulate the leave event dispatched by WhatsApp with LID
+	bot.resetCapture();
+	const spammerLidLeaveData = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: testSpammerLid, name: "28682546638944" },
+		responsavel: { id: bot.id, name: bot.id }
+	};
+
+	await eventHandler.processGroupLeave(bot, spammerLidLeaveData);
+
+	const spammerLidNotices = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("🚫 Spammer @")
+	);
+	assert.strictEqual(
+		spammerLidNotices.length,
+		1,
+		"Spammer leave notice must be sent for LID spammer"
+	);
+	assert(
+		spammerLidNotices[0].content.includes(`@${testSpammerPhone}`),
+		`Notice MUST contain the real phone number @${testSpammerPhone}, got: ${spammerLidNotices[0].content}`
+	);
+	assert(
+		spammerLidNotices[0].content.includes(`!g-permitirSpammer ${testSpammerPhone}`),
+		`Notice MUST contain !g-permitirSpammer ${testSpammerPhone}, got: ${spammerLidNotices[0].content}`
+	);
+	assert(
+		!spammerLidNotices[0].content.includes("🚫 Spammer @ detectado"),
+		"Notice MUST NOT contain empty @ without number"
+	);
+	console.log(
+		"✓ processGroupLeave with LID: correctly sends notice with real phone number instead of blank @"
+	);
+
+	// 17. Test resolution via bot.getPnFromLid when spammer was not in spammerPhoneMap
+	bot.resetCapture();
+	eventHandler.spammerPhoneMap.clear();
+	const anotherSpammerLid = "399991112223334@lid";
+	const anotherSpammerPhone = "639123456789";
+	bot.lidToPnMap.set(anotherSpammerLid, `${anotherSpammerPhone}@s.whatsapp.net`);
+	eventHandler.activeSpammers.add(anotherSpammerLid);
+
+	const leaveWithoutPriorMap = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: anotherSpammerLid, name: "Spammer 63" },
+		responsavel: { id: bot.id, name: bot.id }
+	};
+
+	await eventHandler.processGroupLeave(bot, leaveWithoutPriorMap);
+	const resolvedNotices = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("🚫 Spammer @")
+	);
+	assert.strictEqual(resolvedNotices.length, 1);
+	assert(
+		resolvedNotices[0].content.includes(`@${anotherSpammerPhone}`),
+		`Notice MUST resolve phone via bot.getPnFromLid: @${anotherSpammerPhone}, got: ${resolvedNotices[0].content}`
+	);
+	assert(
+		resolvedNotices[0].content.includes(`!g-permitirSpammer ${anotherSpammerPhone}`),
+		`Notice MUST contain command with resolved phone: !g-permitirSpammer ${anotherSpammerPhone}`
+	);
+	console.log("✓ processGroupLeave: resolved phone number via bot.getPnFromLid successfully");
+
+	// 18. Test edge-case fallback when phone cannot be found anywhere
+	bot.resetCapture();
+	eventHandler.spammerPhoneMap.clear();
+	bot.lidToPnMap.clear();
+	const unknownLid = "999998887776665@lid";
+	eventHandler.activeSpammers.add(unknownLid);
+
+	const leaveUnknownPhone = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: unknownLid, name: "MI123456" },
+		responsavel: { id: bot.id, name: bot.id }
+	};
+
+	await eventHandler.processGroupLeave(bot, leaveUnknownPhone);
+	const unknownNotices = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("🚫 Spammer @")
+	);
+	assert.strictEqual(unknownNotices.length, 1);
+	assert(
+		!unknownNotices[0].content.includes("🚫 Spammer @ detectado"),
+		"Notice MUST NOT contain empty @ without target"
+	);
+	assert(
+		unknownNotices[0].content.includes("@MI123456") ||
+			unknownNotices[0].content.includes("@999998887776665"),
+		"Notice should fallback to name or ID"
+	);
+	assert(
+		!unknownNotices[0].content.includes("!g-permitirSpammer \n") &&
+			!unknownNotices[0].content.endsWith("!g-permitirSpammer "),
+		"Command argument must not be empty"
+	);
+	console.log(
+		"✓ processGroupLeave: fallback handles unknown phone without empty '@' or empty command argument"
+	);
+
 	console.log("--- All spammer greetings suppression tests passed successfully! ---");
 	process.exit(0);
 }

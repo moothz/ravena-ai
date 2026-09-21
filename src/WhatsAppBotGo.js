@@ -113,6 +113,7 @@ class WhatsAppBotGo {
 		this.messageCache = [];
 		this.contactCache = [];
 		this.sentMessagesCache = [];
+		this.lidToPnCache = new Map();
 		this.cacheManager = CacheManager.getInstance(
 			this.redisURL,
 			this.redisDB,
@@ -2641,6 +2642,14 @@ class WhatsAppBotGo {
 					(await this.getContactDetails(groupData.Sender)) ??
 					(await this.getContactDetails(groupData.SenderPN));
 
+				let participantPhone = null;
+				if (participant && (participant.endsWith("@lid") || participant.includes("@lid"))) {
+					const resolvedPn = this.getPnFromLid(participant, groupDetails);
+					if (resolvedPn && typeof resolvedPn === "string" && !resolvedPn.includes("@lid")) {
+						participantPhone = resolvedPn;
+					}
+				}
+
 				const eventData = {
 					group: {
 						id: groupId,
@@ -2653,7 +2662,11 @@ class WhatsAppBotGo {
 					isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
 					isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce,
 					isBotJoining: groupData.isBotJoining ?? groupDetails.isBotJoining,
-					user: { id: participant, name: contact?.name ?? participant.split("@")[0] },
+					user: {
+						id: participant,
+						name: contact?.name ?? participant.split("@")[0],
+						phoneNumber: participantPhone || contact?.number || undefined
+					},
 					responsavel: {
 						id: groupData.SenderPN,
 						name: contactResp?.name ?? groupData.SenderPN?.split("@")[0]
@@ -2816,10 +2829,22 @@ class WhatsAppBotGo {
 					// Cache LIDs
 					if (groupInfo.Participants) {
 						groupInfo.Participants.forEach((p) => {
+							const pJid = p.JID || p.id?._serialized;
+							const pLid = p.LID || p.lid;
+							const pPhone = p.PhoneNumber || p.phoneNumber;
+							if (pLid && pPhone) {
+								const cleanPhone = String(pPhone).split("@")[0].replace(/\D/g, "");
+								const cleanLid = String(pLid).split("@")[0].replace(/\D/g, "");
+								if (cleanPhone && cleanLid && this.lidToPnCache) {
+									this.lidToPnCache.set(cleanLid, cleanPhone);
+									this.lidToPnCache.set(`${cleanLid}@lid`, cleanPhone);
+									this.lidToPnCache.set(String(pLid), cleanPhone);
+								}
+							}
 							if (p.LID)
 								this.cacheManager.putContactInCache({ id: { _serialized: p.JID }, lid: p.LID });
 							// Check if it's me to store my LID
-							if (p.JID.includes(this.phoneNumber)) {
+							if (p.JID && p.JID.includes(this.phoneNumber)) {
 								this.myLid = p.LID;
 							}
 						});
@@ -3208,6 +3233,10 @@ class WhatsAppBotGo {
 	}
 
 	getPnFromLid(lid, chat) {
+		if (!lid) return "";
+		const strLid = String(lid);
+		const pure = strLid.split(/[@:]/)[0].replace(/\D/g, "");
+
 		// 1. Normalize the list: Get participants regardless of case
 		const participants = chat?.Participants || chat?.participants || [];
 
@@ -3216,15 +3245,32 @@ class WhatsAppBotGo {
 			(p) =>
 				// We check LID, JID (and their lowercase variants), or the serialized ID
 				// Using ?. prevents errors if a field doesn't exist
-				p.LID?.startsWith(lid) ||
-				p.lid?.startsWith(lid) ||
-				p.JID?.startsWith(lid) ||
-				p.jid?.startsWith(lid) ||
-				p.id?._serialized?.startsWith(lid)
+				p.LID?.startsWith(strLid) ||
+				p.lid?.startsWith(strLid) ||
+				p.JID?.startsWith(strLid) ||
+				p.jid?.startsWith(strLid) ||
+				p.id?._serialized?.startsWith(strLid) ||
+				(pure &&
+					((p.LID && String(p.LID).startsWith(pure)) ||
+						(p.lid && String(p.lid).startsWith(pure)) ||
+						(p.JID && String(p.JID).startsWith(pure)) ||
+						(p.id?._serialized && String(p.id._serialized).startsWith(pure))))
 		);
 
-		// 3. Return: The normalized PhoneNumber, or fallback to the input lid
-		return found ? found.PhoneNumber || found.phoneNumber : lid;
+		if (found) {
+			const res = found.PhoneNumber || found.phoneNumber;
+			if (res) return res;
+		}
+
+		// 3. Fallback to lidToPnCache
+		if (this.lidToPnCache) {
+			if (this.lidToPnCache.has(strLid)) return this.lidToPnCache.get(strLid);
+			if (pure && this.lidToPnCache.has(pure)) return this.lidToPnCache.get(pure);
+			if (pure && this.lidToPnCache.has(`${pure}@lid`)) return this.lidToPnCache.get(`${pure}@lid`);
+		}
+
+		// 4. Return: The normalized PhoneNumber, or fallback to the input lid
+		return lid;
 	}
 
 	notInWhitelist(author) {
