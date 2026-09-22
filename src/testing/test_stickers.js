@@ -245,6 +245,80 @@ async function runTests() {
 	assert.strictEqual(goImgMeta.hasAlpha, true);
 	console.log("✓ WhatsAppBotGo.convertToSquareWebPImage: 512x512, transparente");
 
+	// 7. Teste: Sticker de vídeo com !shq (alta taxa de quadros, 22-25 FPS, proporções preservadas)
+	console.log("\n7. Testando sticker HQ de vídeo (!shq)...");
+	const shqVideoMsg = createMessage({
+		type: "video",
+		caption: "!shq",
+		group: "123456@g.us",
+		author: "5511999999999@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: videoBuffer.toString("base64")
+		}
+	});
+
+	bot.resetCapture();
+	await cmdHandler.processCommand(bot, shqVideoMsg, "shq", [], { name: "Grupo Teste" });
+
+	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar exatamente 1 mensagem");
+	const sentShqSticker = bot.capturedMessages[0];
+	assert.strictEqual(sentShqSticker.options.sendMediaAsSticker, true, "Deve enviar como sticker");
+	assert.strictEqual(sentShqSticker.content.mimetype, "image/webp", "Mimetype deve ser image/webp");
+
+	const shqWebpBuffer = Buffer.from(sentShqSticker.content.data, "base64");
+	const shqMeta = await sharp(shqWebpBuffer, { animated: true }).metadata();
+	assert.strictEqual(shqMeta.pages > 1, true, "Deve ser WebP animado");
+	assert.strictEqual(
+		shqWebpBuffer.length <= 500 * 1024,
+		true,
+		"Sticker HQ deve ter tamanho <= 500 KB"
+	);
+
+	// Verifica se a maior dimensão é 512 e a proporção foi mantida (320x180 -> 512x288)
+	const frameHeight = shqMeta.pageHeight || shqMeta.height;
+	assert.strictEqual(Math.max(shqMeta.width, frameHeight), 512, "Maior dimensão deve ser 512");
+	assert.strictEqual(shqMeta.width, 512, "Largura deve ser 512");
+	assert.strictEqual(frameHeight, 288, "Altura proporcional deve ser 288");
+
+	// Verifica se a taxa de quadros é alta (delay por frame entre ~35ms e ~50ms, ou seja, 20-28 FPS)
+	if (shqMeta.delay && shqMeta.delay.length > 0) {
+		const frameDelay = shqMeta.delay[0];
+		console.log(`Delay do frame HQ: ${frameDelay}ms`);
+		assert.strictEqual(frameDelay <= 50, true, "Frame delay deve ser <= 50ms (>= 20 FPS)");
+	}
+	console.log(
+		`✓ !shq vídeo: ${shqMeta.width}x${frameHeight}, ${(shqWebpBuffer.length / 1024).toFixed(1)} KB, alta taxa de quadros (22-25 FPS)`
+	);
+
+	// 8. Teste: Sticker de imagem com !stickerhq (preservando dimensões nativas até 512x512)
+	console.log("\n8. Testando sticker HQ de imagem estática (!stickerhq)...");
+	const shqImgMsg = createMessage({
+		type: "image",
+		caption: "!stickerhq",
+		group: "123456@g.us",
+		author: "5511999999999@s.whatsapp.net",
+		content: {
+			mimetype: "image/png",
+			data: imgBuffer.toString("base64")
+		}
+	});
+
+	bot.resetCapture();
+	await cmdHandler.processCommand(bot, shqImgMsg, "stickerhq", [], { name: "Grupo Teste" });
+
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	const sentShqImg = bot.capturedMessages[0];
+	assert.strictEqual(sentShqImg.options.sendMediaAsSticker, true);
+	const shqImgWebpBuffer = Buffer.from(sentShqImg.content.data, "base64");
+	const shqImgMeta = await sharp(shqImgWebpBuffer).metadata();
+	// Imagem original é 600x300 -> redimensionada proporcionalmente para 512x256
+	assert.strictEqual(shqImgMeta.width, 512, "Largura deve ser 512");
+	assert.strictEqual(shqImgMeta.height, 256, "Altura proporcional deve ser 256");
+	console.log(
+		`✓ !stickerhq imagem: ${shqImgMeta.width}x${shqImgMeta.height}, proporção preservada sem bordas`
+	);
+
 	// Limpeza dos arquivos temporários de teste
 	await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 

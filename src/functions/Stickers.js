@@ -66,6 +66,14 @@ const ANIMATED_FALLBACK_PROFILES = [
 	{ duration: 3.5, fps: 8, qv: 20, desc: "3.5s @ 8fps (q:20)" }
 ];
 
+// Perfis sequenciais de fallback para figurinhas animadas em alta taxa de quadros (HQ: 22-25 FPS)
+const ANIMATED_HQ_PROFILES = [
+	{ duration: 7, fps: 25, qv: 24, desc: "7s @ 25fps (q:24)" },
+	{ duration: 6, fps: 25, qv: 18, desc: "6s @ 25fps menor q:v (q:18)" },
+	{ duration: 5, fps: 22, qv: 18, desc: "5s @ 22fps (q:18)" },
+	{ duration: 4.5, fps: 22, qv: 14, desc: "4.5s @ 22fps (q:14)" }
+];
+
 // Semáforo de concorrência: limita FFmpegs paralelos para evitar contenção de CPU
 // Quando todos os slots estão ocupados, novas requisições aguardam na fila
 const FFMPEG_MAX_CONCURRENT = 2;
@@ -131,9 +139,14 @@ async function saveTempMedia(mediaBuffer, mimeType) {
  *
  * @param {string} inputPath - Caminho do vídeo/gif de entrada
  * @param {string} filterCommand - Filtro de vídeo (crop, scale, yuva420p, pad)
+ * @param {Array} [profiles=ANIMATED_FALLBACK_PROFILES] - Perfis sequenciais de fallback
  * @returns {Promise<Buffer>} - Buffer WebP animado
  */
-async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
+async function encodeAnimatedWebPWithFallback(
+	inputPath,
+	filterCommand,
+	profiles = ANIMATED_FALLBACK_PROFILES
+) {
 	await ensureTempDir();
 
 	const fnStart = Date.now();
@@ -157,8 +170,8 @@ async function encodeAnimatedWebPWithFallback(inputPath, filterCommand) {
 	const tempFilesToClean = [];
 
 	try {
-		for (let i = 0; i < ANIMATED_FALLBACK_PROFILES.length; i++) {
-			const profile = ANIMATED_FALLBACK_PROFILES[i];
+		for (let i = 0; i < profiles.length; i++) {
+			const profile = profiles[i];
 			const currentOutput = path.join(
 				TEMP_DIR,
 				`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
@@ -419,6 +432,15 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
+			} else if (cropType === "hq") {
+				// Redimensiona para caber em 512x512 mantendo o aspecto original, sem adicionar bordas
+				result = await image
+					.resize(TARGET_SIZE, TARGET_SIZE, { fit: "inside" })
+					.webp({
+						quality: 85,
+						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
+					})
+					.toBuffer();
 			} else if (cropType === "transparent") {
 				// Redimensiona para caber em 512x512 mantendo o aspecto e adiciona bordas transparentes
 				result = await image
@@ -470,10 +492,18 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 			} else if (cropType === "transparent") {
 				// Ajustar vídeo para caber em 512x512 e preencher com fundo 100% transparente (sem bordas pretas)
 				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,format=yuva420p,pad=${TARGET_SIZE}:${TARGET_SIZE}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
+			} else if (cropType === "hq") {
+				// HQ: apenas dimensões (máx 512) com proporção original, sem crop, pad ou yuva420p
+				filterCommand = `fps=25,scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 			}
 
 			try {
-				const processedBuffer = await encodeAnimatedWebPWithFallback(inputPath, filterCommand);
+				const profiles = cropType === "hq" ? ANIMATED_HQ_PROFILES : ANIMATED_FALLBACK_PROFILES;
+				const processedBuffer = await encodeAnimatedWebPWithFallback(
+					inputPath,
+					filterCommand,
+					profiles
+				);
 				// logger.info(
 				// 	`[makeSquareMedia] ✓ Vídeo/GIF processado via FFmpeg em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
 				// );
@@ -1110,19 +1140,59 @@ const commands = [
 		},
 		method: async (bot, message, args, group) =>
 			await squareStickerCommand(bot, message, args, group, "stretch")
+	}),
+	new Command({
+		name: "shq",
+		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "hq")
+	}),
+	new Command({
+		name: "stickerhq",
+		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "hq")
 	})
 ];
 
 const helper = {
 	about: "Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)",
 	implementation:
-		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch e crop por IA",
-	tags: "sticker,figurinha,s,fig,sq,sqi,midia,recorte,whatsapp",
+		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA",
+	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp",
 	cmds: [
 		{
 			cmd: "!sticker",
 			desc: "Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp",
 			usage: ["!sticker (com imagem ou em resposta)", "!s"],
+			category: "stickers"
+		},
+		{
+			cmd: "!shq",
+			desc: "Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais",
+			usage: ["!shq (com imagem/vídeo ou em resposta)", "!stickerhq"],
 			category: "stickers"
 		},
 		{
