@@ -40,9 +40,10 @@ const classifyQuestionSchema = {
 /**
  * Helper to get command lists formatted for the prompt
  */
-function getCommandLists(bot, group = null) {
-	const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
-	const managementCommands = bot.eventHandler.commandHandler.management.getManagementCommands();
+async function getCommandLists(bot, group = null) {
+	const fixedCommands = bot.eventHandler?.commandHandler?.fixedCommands?.getAllCommands() || [];
+	const managementCommands =
+		bot.eventHandler?.commandHandler?.management?.getManagementCommands() || {};
 
 	let cmdSimpleList = "";
 	let cmdGerenciaSimplesList = "";
@@ -78,6 +79,63 @@ function getCommandLists(bot, group = null) {
 		cmdGerenciaSimplesList += `- ${prefix}g-${cmd}: ${desc}\n`;
 	}
 
+	// Inclui comandos personalizados se for um grupo
+	if (group && group.id && bot.eventHandler?.commandHandler) {
+		let customCommands = bot.eventHandler.commandHandler.customCommands?.[group.id];
+		if (
+			!customCommands &&
+			typeof bot.eventHandler.commandHandler.loadCustomCommandsForGroup === "function"
+		) {
+			await bot.eventHandler.commandHandler.loadCustomCommandsForGroup(group.id).catch(() => {});
+			customCommands = bot.eventHandler.commandHandler.customCommands?.[group.id];
+		}
+
+		if (Array.isArray(customCommands)) {
+			const validCustomCmds = customCommands.filter((cmd) => {
+				if (!cmd || !cmd.active || cmd.deleted || !cmd.startsWith || !cmd.startsWith.trim()) {
+					return false;
+				}
+				if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
+					return false;
+				}
+				if (mutedCommands.includes(cmd.startsWith)) {
+					return false;
+				}
+				return true;
+			});
+
+			// Ordena por contagem de uso e último uso (prioriza mais relevantes)
+			validCustomCmds.sort(
+				(a, b) => (b.count || 0) - (a.count || 0) || (b.lastUsed || 0) - (a.lastUsed || 0)
+			);
+			const customToInclude = validCustomCmds.slice(0, 150);
+
+			if (customToInclude.length > 0) {
+				cmdSimpleList += `\n### Comandos Personalizados do Grupo:\n`;
+				for (const cmd of customToInclude) {
+					let desc = "";
+					if (cmd.description && typeof cmd.description === "string" && cmd.description.trim()) {
+						desc = cmd.description.trim();
+					} else if (Array.isArray(cmd.responses) && cmd.responses.length > 0) {
+						const firstResp = typeof cmd.responses[0] === "string" ? cmd.responses[0] : "";
+						const cleanResp = firstResp
+							.replace(/\{[^}]+\}/g, "")
+							.replace(/\s+/g, " ")
+							.trim();
+						desc = cleanResp
+							? cleanResp.length > 80
+								? cleanResp.substring(0, 77) + "..."
+								: cleanResp
+							: "Comando personalizado do grupo";
+					} else {
+						desc = "Comando personalizado do grupo";
+					}
+					cmdSimpleList += `- ${prefix}${cmd.startsWith}: ${desc}\n`;
+				}
+			}
+		}
+	}
+
 	return { cmdSimpleList, cmdGerenciaSimplesList };
 }
 
@@ -104,12 +162,12 @@ ${mediaContext}
    - Even if the request contains keywords found in commands (e.g., "gold", "money", "fish"), if the intent is a QUESTION, it is "general".
    - Example: "how much is gold?", "analyze this image", "who is the president?", "o fundo MM Ouro oscilou quanto?".
 
-2. **"command" (FUNCTIONAL TOOLS)**:
-   - User wants to DO something using a specific bot feature/utility.
-   - The intent must explicitly or very closely match the *action* described in "Available Commands".
-   - MUST be a functional request (e.g., "make a sticker", "remove the background", "play the game", "stickerize this").
-   - If the request is a complex sentence or a question, it is almost never a command.
-   - Be ((EXTREMELY STRICT)). If it doesn't clearly map to a tool's primary purpose, it's "general".
+2. **"command" (FUNCTIONAL TOOLS & GROUP CUSTOM COMMANDS)**:
+   - User wants to DO something using a specific bot feature/utility, OR is asking for information covered by a custom command of the group (e.g., group pix, social links, rules, custom responses).
+   - The intent must explicitly or closely match the action or information described in "Available Commands".
+   - If a custom command of the group directly answers the question (e.g., "qual o pix?", "qual o discord?", "regras do grupo", "link do insta"), classify as 'command' and identify that command.
+   - MUST be a functional request or direct match to an available command.
+   - Be ((STRICT)): don't trigger game or action tools (like !pescar) for general questions about those topics.
 
 3. **"bot"**: 
    - Questions about the bot's identity, status, or how to use it (e.g., "who made you?", "what can you do?", "how to create this command", "how to configure feature", "help").
@@ -137,7 +195,7 @@ Return JSON: {"classification": "...", "command": "...", "args": "..."}
 
 		try {
 			if (response.classification == "command") {
-				this.logger.debug(
+				logger.debug(
 					`[classifyRequest][command] "${question.substring(0, 100)}" -> "!${response.command} ${response.args}"`
 				);
 			}
@@ -156,19 +214,19 @@ Return JSON: {"classification": "...", "command": "...", "args": "..."}
  * Handles the "command" classification
  */
 async function handleCommandInvocation(classification, bot, message, group) {
-	const cmdName = classification.command?.replace(/!/g, "").trim();
+	const cmdName = classification.command?.replace(/^[!/.]/, "").trim();
 	const argsStr = classification.args || "";
 	const args = argsStr.split(" ").filter((a) => a.length > 0);
 
-	// Try to find the command
-	const fixedCmd = bot.eventHandler.commandHandler.fixedCommands.getCommand(cmdName);
+	// Try to find the fixed command first
+	const fixedCmd = bot.eventHandler?.commandHandler?.fixedCommands?.getCommand(cmdName);
 
 	if (fixedCmd) {
 		try {
 			logger.info(`[AICommand] Auto-invoking command: ${cmdName} with args: ${args}`);
 
 			// Hijack the message object
-			const fullCommandString = `!${cmdName} ${argsStr}`;
+			const fullCommandString = `!${cmdName} ${argsStr}`.trim();
 
 			// We need to be careful not to mutate the original message permanently if it's used elsewhere,
 			// but for this flow it's likely fine.
@@ -181,7 +239,7 @@ async function handleCommandInvocation(classification, bot, message, group) {
 			}
 
 			const result = await fixedCmd.execute(bot, message, args, group);
-			const introText = `> 🤖 Usando comando !${cmdName} ${argsStr}`;
+			const introText = `> 🤖 Usando comando !${cmdName}${argsStr ? " " + argsStr : ""}`;
 			const introMessage = new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content: introText,
@@ -241,6 +299,125 @@ async function handleCommandInvocation(classification, bot, message, group) {
 		}
 	}
 
+	// Try to find custom command if this is a group
+	if (group && group.id && bot.eventHandler?.commandHandler) {
+		const commandHandler = bot.eventHandler.commandHandler;
+		const customCommands = commandHandler.customCommands?.[group.id] || [];
+		const matchResult = commandHandler.findCustomCommand(cmdName, customCommands, args);
+
+		if (matchResult) {
+			const { customCommand, newArgs } = matchResult;
+			try {
+				logger.info(
+					`[AICommand] Auto-invoking custom command: ${customCommand.startsWith} with args: ${newArgs}`
+				);
+
+				// Verifica cooldown
+				const cooldownCheckCmd = {
+					name: customCommand.startsWith,
+					cooldown: customCommand.cooldown ?? 0
+				};
+				const cooldownInfo = await commandHandler.checkCooldown(
+					cooldownCheckCmd,
+					message.group,
+					bot.id
+				);
+				if (cooldownInfo.inCooldown) {
+					return new ReturnMessage({
+						chatId: message.group ?? message.author,
+						content: `O comando personalizado *!${customCommand.startsWith}* está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`,
+						options: { quotedMessageId: message.origin.id._serialized }
+					});
+				}
+
+				// Prepara mensagem para o comando customizado
+				const fullCommandString = `!${customCommand.startsWith} ${newArgs.join(" ")}`.trim();
+				if (message.type === "image" || message.type === "video" || message.hasMedia) {
+					message.caption = fullCommandString;
+				} else {
+					message.body = fullCommandString;
+					message.content = fullCommandString;
+				}
+
+				// Executa com silent: true para não disparar mensagens duplicadas no executeCustomCommand
+				const result = await commandHandler.executeCustomCommand(
+					bot,
+					message,
+					customCommand,
+					newArgs,
+					group,
+					true
+				);
+
+				// Se o comando possui reação definida, aplica à mensagem original
+				if (customCommand.react) {
+					try {
+						await message.origin.react(customCommand.react);
+					} catch (reactErr) {
+						// Ignora erro de reação
+					}
+				}
+
+				const introText = `> 🤖 Usando comando !${customCommand.startsWith}${newArgs.length > 0 ? " " + newArgs.join(" ") : ""}`;
+				const introMessage = new ReturnMessage({
+					chatId: message.group ?? message.author,
+					content: introText,
+					options: { quotedMessageId: message.origin.id._serialized }
+				});
+
+				// Case 1: Result is an Array of ReturnMessages
+				if (Array.isArray(result)) {
+					return [introMessage, ...result];
+				}
+
+				// Case 2: Result is a single ReturnMessage
+				if (result instanceof ReturnMessage) {
+					if (result.options?.sendMediaAsSticker) {
+						return [introMessage, result];
+					}
+
+					if (typeof result.options?.caption === "string") {
+						const currentCaption = result.options.caption.trim();
+						result.options.caption = currentCaption
+							? `${introText}\n\n${currentCaption}`
+							: introText;
+						return result;
+					}
+
+					if (typeof result.content === "string") {
+						const currentContent = result.content.trim();
+						result.content = currentContent ? `${introText}\n\n${currentContent}` : introText;
+						return result;
+					}
+
+					return [introMessage, result];
+				}
+
+				// Case 3: Result is a string
+				if (typeof result === "string") {
+					return new ReturnMessage({
+						chatId: message.group ?? message.author,
+						content: `${introText}\n\n${result}`,
+						options: { quotedMessageId: message.origin.id._serialized }
+					});
+				}
+
+				// Case 4: Sem resultado retornado
+				return introMessage;
+			} catch (e) {
+				logger.error(
+					`[AICommand] Error auto-invoking custom command ${customCommand.startsWith}`,
+					e
+				);
+				return new ReturnMessage({
+					chatId: message.group ?? message.author,
+					content: `Tentei executar o comando personalizado !${customCommand.startsWith}, mas ocorreu um erro: ${e.message}`,
+					options: { quotedMessageId: message.origin.id._serialized }
+				});
+			}
+		}
+	}
+
 	return new ReturnMessage({
 		chatId: message.group ?? message.author,
 		content: `Entendi que você quer usar o comando "${cmdName}", mas não consegui encontrá-lo ou executá-lo.`,
@@ -266,11 +443,11 @@ async function aiCommand(bot, message, args, group) {
 	const botCtxPath = path.join(database.databasePath, "textos", "llm_bot_context.txt");
 	const botCtxContent = (await fs.readFile(botCtxPath, "utf8")) || "";
 
-	const { cmdSimpleList, cmdGerenciaSimplesList } = getCommandLists(bot, group);
+	const { cmdSimpleList, cmdGerenciaSimplesList } = await getCommandLists(bot, group);
 
 	// 2. Prepare Question/Prompt
 	let question = args.length > 0 ? args.join(" ") : (message.caption ?? message.content);
-	const quotedMsg = await message.origin.getQuotedMessage();
+	const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
 	if (quotedMsg && !message.originReaction) {
 		const quotedText = quotedMsg.caption ?? quotedMsg.content ?? quotedMsg.body;
 		if (quotedText && quotedText.length > 10) {
@@ -732,18 +909,20 @@ async function getMediaFromMessage(message) {
 	// Verifica se havia uma mensagem citada (antes de tentar recuperá-la do cache)
 	const hadQuoted = !!message.hasQuotedMsg;
 
-	// Tenta obter mídia da mensagem citada
-	try {
-		const quotedMsg = await message.origin.getQuotedMessage();
-		if (quotedMsg && quotedMsg.hasMedia) {
-			const media = await quotedMsg.downloadMedia();
-			// quotedHadMedia=true: a mensagem citada existe e tem mídia (download pode ter falhado)
-			return { media, hadQuoted, quotedHadMedia: true };
+	// Tenta obter mídia da mensagem citada apenas se houver mensagem citada
+	if (hadQuoted) {
+		try {
+			const quotedMsg = await message.origin.getQuotedMessage();
+			if (quotedMsg && quotedMsg.hasMedia) {
+				const media = await quotedMsg.downloadMedia();
+				// quotedHadMedia=true: a mensagem citada existe e tem mídia (download pode ter falhado)
+				return { media, hadQuoted, quotedHadMedia: true };
+			}
+			// Quoted msg exists but has no media (or couldn't be recovered from cache)
+			return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
+		} catch (error) {
+			logger.error("Erro ao obter mídia da mensagem citada:", error);
 		}
-		// Quoted msg exists but has no media (or couldn't be recovered from cache)
-		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
-	} catch (error) {
-		logger.error("Erro ao obter mídia da mensagem citada:", error);
 	}
 	return { media: null, hadQuoted, quotedHadMedia: null };
 }

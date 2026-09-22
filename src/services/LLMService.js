@@ -425,7 +425,7 @@ class LLMService {
 				function: {
 					name: "execute_bot_command",
 					description:
-						"Executa um comando ou funcionalidade nativa do bot Ravena no chat (ex: 'pescar', 'd20', 'roll', 'slots', 'audio', 's', 'tarot', 'figrandom', etc.) quando o usuário solicitar para realizar uma ação, jogar ou invocar um recurso em vez de apenas tirar uma dúvida.",
+						"Executa um comando ou funcionalidade nativa do bot Ravena no chat (ex: 'pescar', 'd20', 'roll', 'slots', 'audio', 's', 'tarot', 'figrandom', etc.) ou comando personalizado do grupo quando o usuário solicitar para realizar uma ação, jogar ou invocar um recurso em vez de apenas tirar uma dúvida.",
 					parameters: {
 						type: "object",
 						properties: {
@@ -1103,6 +1103,73 @@ class LLMService {
 
 		const fixedCmd = fixedCommands.getCommand(cmdName);
 		if (!fixedCmd) {
+			// Verifica se é um comando personalizado do grupo
+			if (group && group.id && bot.eventHandler?.commandHandler) {
+				const commandHandler = bot.eventHandler.commandHandler;
+				const customCommands = commandHandler.customCommands?.[group.id] || [];
+				const cmdArgs = argsStr.length > 0 ? argsStr.split(" ").filter((a) => a.length > 0) : [];
+				const matchResult = commandHandler.findCustomCommand(cmdName, customCommands, cmdArgs);
+
+				if (matchResult) {
+					const { customCommand, newArgs } = matchResult;
+					this.logger.info(
+						`[LLMService] Invocando comando personalizado '!${customCommand.startsWith}' com args: "${newArgs.join(" ")}"`
+					);
+
+					// Clona a mensagem de forma rasa para configurar a invocação do comando
+					const cmdMessage = Object.assign(Object.create(Object.getPrototypeOf(message)), message);
+					const fullCommandString = `!${customCommand.startsWith} ${newArgs.join(" ")}`.trim();
+
+					if (cmdMessage.type === "image" || cmdMessage.type === "video" || cmdMessage.hasMedia) {
+						cmdMessage.caption = fullCommandString;
+					} else {
+						cmdMessage.body = fullCommandString;
+						cmdMessage.content = fullCommandString;
+					}
+
+					const result = await commandHandler.executeCustomCommand(
+						bot,
+						cmdMessage,
+						customCommand,
+						newArgs,
+						group,
+						true
+					);
+
+					let textOutput = "";
+					const items = Array.isArray(result) ? result : result ? [result] : [];
+
+					for (const item of items) {
+						if (typeof item === "string") {
+							textOutput += (textOutput ? "\n" : "") + item;
+						} else if (item && typeof item === "object") {
+							if (typeof item.content === "string" && item.content.trim()) {
+								textOutput += (textOutput ? "\n" : "") + item.content.trim();
+							}
+							if (typeof item.options?.caption === "string" && item.options.caption.trim()) {
+								textOutput += (textOutput ? "\n" : "") + item.options.caption.trim();
+							}
+							// Se o comando gerou mídia (sticker, imagem, etc.), preserva para envio
+							if (item.options?.sendMediaAsSticker || item.media || item.options?.sendAsDocument) {
+								if (!options.pendingReturnMessages) options.pendingReturnMessages = [];
+								options.pendingReturnMessages.push(item);
+							}
+						}
+					}
+
+					if (!textOutput) {
+						if (items.length > 0) {
+							textOutput = `Comando personalizado !${customCommand.startsWith} executado com sucesso (resposta multimídia gerada).`;
+						} else {
+							textOutput = `Comando personalizado !${customCommand.startsWith} executado sem mensagens de retorno.`;
+						}
+					}
+
+					const customArgsStr = newArgs.length > 0 ? ` ${newArgs.join(" ")}` : "";
+					return `[Resultado da execução de comando personalizado !${customCommand.startsWith}${customArgsStr}]:\n${textOutput}`;
+				}
+			}
+
 			return `Comando '!${cmdName}' não encontrado no bot Ravena. Você pode usar a ferramenta 'list_commands' ou 'commands_helper' para verificar os comandos disponíveis.`;
 		}
 
