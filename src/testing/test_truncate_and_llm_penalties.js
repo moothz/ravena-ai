@@ -60,9 +60,17 @@ async function main() {
 		"Traços repetidos devem ser limitados a 15"
 	);
 
-	// 1.3 Limite de caracteres (> 3000 caracteres sem repetições simples)
-	const longCharsText = "ABCDEFGHIJ ".repeat(350);
-	const truncatedChars = bot.truncateText(longCharsText, 3000, 200);
+	// 1.3 Suporte ao novo padrão de 15000 caracteres (comandos longos como !news e !waifus)
+	const long3850Text = "ABCDEFGHIJ ".repeat(350); // 3850 caracteres
+	const notTruncatedDefault = bot.truncateText(long3850Text);
+	assert.strictEqual(
+		notTruncatedDefault,
+		long3850Text,
+		"Texto de 3850 caracteres (ex: !news, !waifus) não deve ser truncado com o default de 15000 caracteres"
+	);
+
+	// 1.4 Limite explícito de caracteres para LLM (maxChars = 3000)
+	const truncatedChars = bot.truncateText(long3850Text, 3000, 200);
 	assert(
 		truncatedChars.length <= 3000,
 		`Texto truncado por caracteres deve ter <= 3000 chars, obteve ${truncatedChars.length}`
@@ -76,42 +84,30 @@ async function main() {
 		"Texto truncado deve começar com o conteúdo original"
 	);
 
-	// 1.3 Limite de linhas (> 200 linhas)
+	// 1.5 Limite do wrapper atingido com texto gigantesco (> 15000 caracteres)
+	const huge16kText = "ABCDEFGHIJ ".repeat(1500); // 16500 caracteres
+	const truncated15k = bot.truncateText(huge16kText);
+	assert(
+		truncated15k.length <= 15000,
+		`Texto acima de 15000 caracteres deve ser truncado pelo wrapper, obteve ${truncated15k.length}`
+	);
+	assert(truncated15k.endsWith("\n... [truncado]"));
+
+	// 1.6 Limite de linhas (> 200 linhas)
 	const linesArray = [];
 	for (let i = 1; i <= 250; i++) {
 		linesArray.push(`- São Francisco ${i}`);
 	}
 	const longLinesText = linesArray.join("\n");
-	const truncatedLines = bot.truncateText(longLinesText, 3000, 200);
+	const truncatedLines = bot.truncateText(longLinesText);
 	const lineCount = truncatedLines.split("\n").length;
 	assert(lineCount <= 200, `Texto truncado por linhas deve ter <= 200 linhas, obteve ${lineCount}`);
-	assert(
-		truncatedLines.length <= 3000,
-		`Texto truncado também deve respeitar 3000 caracteres, obteve ${truncatedLines.length}`
-	);
 	assert(
 		truncatedLines.endsWith("... [truncado]"),
 		"Texto truncado por linhas deve conter indicador [truncado]"
 	);
 
-	// 1.4 Limite combinado (> 200 linhas E > 3000 caracteres)
-	const hugeArray = [];
-	for (let i = 1; i <= 300; i++) {
-		hugeArray.push(`Linha longa com bastante texto repetitivo número ${i} de 300`);
-	}
-	const hugeText = hugeArray.join("\n");
-	const truncatedHuge = bot.truncateText(hugeText, 3000, 200);
-	assert(
-		truncatedHuge.length <= 3000,
-		`Texto combinado deve ter <= 3000 chars, obteve ${truncatedHuge.length}`
-	);
-	assert(
-		truncatedHuge.split("\n").length <= 200,
-		`Texto combinado deve ter <= 200 linhas, obteve ${truncatedHuge.split("\n").length}`
-	);
-	assert(truncatedHuge.endsWith("... [truncado]"));
-
-	// 1.5 Casos nulos e tipos inválidos
+	// 1.7 Casos nulos e tipos inválidos
 	assert.strictEqual(bot.truncateText(null), null);
 	assert.strictEqual(bot.truncateText(undefined), undefined);
 	assert.strictEqual(bot.truncateText(""), "");
@@ -142,25 +138,43 @@ async function main() {
 		"Repetição de 4000 'K's deve virar 15 'K's"
 	);
 
-	// 2.2 Envio de texto longo variado (> 3000 caracteres)
+	// 2.2 Envio de comando com texto longo variado (3850 chars) não é cortado pelo default (15000 chars)
 	postedPayload = null;
-	await bot.sendMessage("5511999999999@s.whatsapp.net", "ABCDEFGHIJ ".repeat(350));
+	await bot.sendMessage("5511999999999@s.whatsapp.net", long3850Text);
+	assert.strictEqual(
+		postedPayload.text,
+		long3850Text,
+		"Comando longo com 3850 caracteres deve ser enviado integralmente com default de 15000 chars"
+	);
+
+	// 2.3 Envio com maxChars customizado (ex: LLM com 3000 chars)
+	postedPayload = null;
+	await bot.sendMessage("5511999999999@s.whatsapp.net", long3850Text, { maxChars: 3000 });
 	assert(
 		postedPayload.text.length <= 3000,
-		`payload.text deve ter <= 3000 caracteres, obteve ${postedPayload.text.length}`
+		`payload.text com maxChars=3000 deve ter <= 3000 caracteres, obteve ${postedPayload.text.length}`
 	);
 	assert(postedPayload.text.endsWith("... [truncado]"));
 
-	// 2.3 Envio de mídia com caption longa
+	// 2.4 Envio de texto superior a 15000 caracteres deve ser truncado pelo wrapper
+	postedPayload = null;
+	await bot.sendMessage("5511999999999@s.whatsapp.net", huge16kText);
+	assert(
+		postedPayload.text.length <= 15000,
+		`payload.text deve respeitar limite padrão de 15000 caracteres, obteve ${postedPayload.text.length}`
+	);
+	assert(postedPayload.text.endsWith("... [truncado]"));
+
+	// 2.5 Envio de mídia com caption longa (LLM maxChars: 3000)
 	postedPayload = null;
 	await bot.sendMessage(
 		"5511999999999@s.whatsapp.net",
 		{ isMessageMedia: true, url: "https://example.com/image.jpg", mimetype: "image/jpeg" },
-		{ caption: "Legenda: " + "ABCDEFGHIJ ".repeat(350) }
+		{ caption: "Legenda: " + long3850Text, maxChars: 3000 }
 	);
 	assert(
 		postedPayload.caption.length <= 3000,
-		`payload.caption deve ter <= 3000 caracteres, obteve ${postedPayload.caption.length}`
+		`payload.caption com maxChars=3000 deve ter <= 3000 caracteres, obteve ${postedPayload.caption.length}`
 	);
 	assert(postedPayload.caption.endsWith("... [truncado]"));
 
@@ -172,17 +186,32 @@ async function main() {
 	console.log("\n[3] Testando FakeBot.sendReturnMessages e FakeBot.sendMessage...");
 	const fakeBot = new FakeBot({ id: "fake-test" });
 
-	const retMsg = new ReturnMessage({
+	// 3.1 Mensagem de comando longo (> 3000 caracteres) NÃO deve ser truncada
+	const retMsgLong = new ReturnMessage({
 		chatId: "123@g.us",
-		content: "ABCDEFGHIJ ".repeat(350)
+		content: long3850Text
 	});
-	await fakeBot.sendReturnMessages(retMsg);
+	await fakeBot.sendReturnMessages(retMsgLong);
 	assert.strictEqual(fakeBot.capturedMessages.length, 1);
-	assert(
-		fakeBot.capturedMessages[0].content.length <= 3000,
-		"FakeBot deve truncar content para <= 3000 caracteres"
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].content,
+		long3850Text,
+		"FakeBot não deve truncar mensagem de 3850 caracteres por padrão"
 	);
-	assert(fakeBot.capturedMessages[0].content.endsWith("... [truncado]"));
+
+	// 3.2 Mensagem do LLM com maxChars=3000 DEVE ser truncada
+	const retMsgLLM = new ReturnMessage({
+		chatId: "123@g.us",
+		content: long3850Text,
+		options: { maxChars: 3000 }
+	});
+	await fakeBot.sendReturnMessages(retMsgLLM);
+	assert.strictEqual(fakeBot.capturedMessages.length, 2);
+	assert(
+		fakeBot.capturedMessages[1].content.length <= 3000,
+		"FakeBot deve truncar mensagem do LLM com maxChars=3000"
+	);
+	assert(fakeBot.capturedMessages[1].content.endsWith("... [truncado]"));
 
 	const repMsg = new ReturnMessage({
 		chatId: "123@g.us",
@@ -190,7 +219,7 @@ async function main() {
 	});
 	await fakeBot.sendReturnMessages(repMsg);
 	assert.strictEqual(
-		fakeBot.capturedMessages[1].content,
+		fakeBot.capturedMessages[2].content,
 		"KKKKKKKKKKKKKKK",
 		"FakeBot deve limitar repetições para 15"
 	);
@@ -204,9 +233,20 @@ async function main() {
 	const tgBot = new TelegramBot({ id: "tg-test", telegramBotToken: "123:dummy" });
 	const tgRep = tgBot.truncateText("KKKKKKKKKKKKKKKKKKKKKKKK");
 	assert.strictEqual(tgRep, "KKKKKKKKKKKKKKK", "TelegramBot deve limitar repetições para 15");
-	const tgTruncated = tgBot.truncateText("ABCDEFGHIJ ".repeat(350));
+
+	// Default 15000 não trunca 3850 caracteres
+	const tgLong = tgBot.truncateText(long3850Text);
+	assert.strictEqual(tgLong, long3850Text, "TelegramBot não deve truncar 3850 chars por padrão");
+
+	// maxChars = 3000 (LLM) trunca
+	const tgTruncated = tgBot.truncateText(long3850Text, 3000);
 	assert(tgTruncated.length <= 3000);
 	assert(tgTruncated.endsWith("... [truncado]"));
+
+	// Acima de 15000 trunca
+	const tgHuge = tgBot.truncateText(huge16kText);
+	assert(tgHuge.length <= 15000);
+	assert(tgHuge.endsWith("... [truncado]"));
 	console.log("✓ TelegramBot.truncateText passou com sucesso.");
 
 	// ---------------------------------------------------------------------------
@@ -247,6 +287,16 @@ async function main() {
 	} finally {
 		llmService.openaiCompletion = originalOpenaiCompletion;
 	}
+
+	// 5.2 Valida truncateText específico do LLMService (mantém limite de 3000 por padrão)
+	assert.strictEqual(typeof llmService.truncateText, "function");
+	const llmTruncated = llmService.truncateText(long3850Text);
+	assert(
+		llmTruncated.length <= 3000,
+		`LLMService.truncateText deve limitar a 3000 chars por padrão, obteve ${llmTruncated.length}`
+	);
+	assert(llmTruncated.endsWith("... [truncado]"));
+	console.log("✓ LLMService.truncateText limita texto do LLM em 3000 caracteres por padrão.");
 
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 }

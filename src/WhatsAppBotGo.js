@@ -2399,15 +2399,15 @@ class WhatsAppBotGo {
 
 	/**
 	 * Limita o conteúdo de texto para evitar mensagens gigantescas ou loops de repetição.
-	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 * Respeita o limite máximo de caracteres (padrão 15000), de linhas (padrão 200) e repetições consecutivas (máx 15).
 	 *
 	 * @param {string} text - Texto a ser validado e possivelmente truncado.
-	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxChars=15000] - Limite máximo de caracteres.
 	 * @param {number} [maxLines=200] - Limite máximo de linhas.
 	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
 	 * @returns {string} - Texto original ou truncado com indicador.
 	 */
-	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+	truncateText(text, maxChars = 15000, maxLines = 200, maxCharRepeats = 15) {
 		if (typeof text !== "string" || !text) {
 			return text;
 		}
@@ -2469,6 +2469,10 @@ class WhatsAppBotGo {
 
 			let isGroup = false;
 
+			const maxChars = options.maxChars !== undefined ? options.maxChars : 15000;
+			const maxLines = options.maxLines !== undefined ? options.maxLines : 200;
+			const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
+
 			const payload = {
 				number: chatId,
 				delay: options.delay ?? 0
@@ -2523,7 +2527,7 @@ class WhatsAppBotGo {
 					this.logger.debug(`[sendMessage] Content is URL! `, { endpoint, payload });
 				} else {
 					endpoint = "/send/text";
-					payload.text = this.truncateText(content);
+					payload.text = this.truncateText(content, maxChars, maxLines, maxCharRepeats);
 				}
 			} else if (content.isMessageMedia || options.sendMediaAsSticker) {
 				if (options.sendMediaAsSticker) {
@@ -2648,10 +2652,10 @@ class WhatsAppBotGo {
 			}
 
 			if (typeof payload.text === "string") {
-				payload.text = this.truncateText(payload.text);
+				payload.text = this.truncateText(payload.text, maxChars, maxLines, maxCharRepeats);
 			}
 			if (typeof payload.caption === "string") {
-				payload.caption = this.truncateText(payload.caption);
+				payload.caption = this.truncateText(payload.caption, maxChars, maxLines, maxCharRepeats);
 			}
 
 			const response = await this.apiClient.post(endpoint, payload);

@@ -2670,6 +2670,62 @@ class LLMService {
 	}
 
 	/**
+	 * Limita o conteúdo de texto do LLM para evitar loops de repetição ou respostas gigantescas.
+	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 *
+	 * @param {string} text - Texto a ser validado e possivelmente truncado.
+	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxLines=200] - Limite máximo de linhas.
+	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
+	 * @returns {string} - Texto original ou truncado com indicador.
+	 */
+	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+		if (typeof text !== "string" || !text) {
+			return text;
+		}
+
+		let result = text;
+		let modified = false;
+
+		// Limita repetições consecutivas do mesmo caractere para no máximo 15 (ex: "KKK...KKK" -> 15 K's)
+		if (maxCharRepeats > 0) {
+			const repeatRegex =
+				maxCharRepeats === 15 ? /(.)\1{15,}/gu : new RegExp(`(.)\\1{${maxCharRepeats},}`, "gu");
+			if (repeatRegex.test(result)) {
+				result = result.replace(repeatRegex, (match, char) => char.repeat(maxCharRepeats));
+				modified = true;
+			}
+		}
+
+		const lines = result.split(/\r?\n/);
+		const exceedsLines = maxLines > 0 && lines.length > maxLines;
+		const exceedsChars = maxChars > 0 && result.length > maxChars;
+
+		if (exceedsLines || exceedsChars) {
+			modified = true;
+			const suffix = "\n... [truncado]";
+
+			if (exceedsLines) {
+				const targetLines = Math.max(1, maxLines - 1);
+				result = lines.slice(0, targetLines).join("\n") + suffix;
+			}
+
+			if (maxChars > 0 && result.length > maxChars) {
+				const targetChars = Math.max(0, maxChars - suffix.length);
+				result = result.slice(0, targetChars) + suffix;
+			}
+		}
+
+		if (modified) {
+			this.logger.warn(
+				`[LLMService] Mensagem de texto ajustada por filtros de tamanho/repetição (${maxChars} chars / ${maxLines} linhas / máx ${maxCharRepeats} repetições).`
+			);
+		}
+
+		return result;
+	}
+
+	/**
 	 * Sends a completion request to the Ollama API.
 	 * This method handles text, system context, and image inputs.
 	 * @param {Object} options - Request options.
@@ -2917,16 +2973,27 @@ class LLMService {
 
 		const task = async () => {
 			try {
-				// Se um provedor específico for solicitado, use-o diretamente
+				let result;
 				if (options.provider) {
 					const response = await this.getCompletionFromSpecificProvider(options);
-					return this._cleanResponse(response);
+					result = this._cleanResponse(response);
 				}
 				// Caso contrário, tente múltiplos provedores em sequência
 				else {
 					const response = await this.getCompletionFromProviders(options, priority);
-					return this._cleanResponse(response);
+					result = this._cleanResponse(response);
 				}
+
+				if (options.maxChars !== undefined || options.truncate === true) {
+					result = this.truncateText(
+						result,
+						options.maxChars ?? 3000,
+						options.maxLines ?? 200,
+						options.maxCharRepeats ?? 15
+					);
+				}
+
+				return result;
 			} catch (error) {
 				this.logger.error("Erro ao obter completion:", error.message);
 				throw error;

@@ -88,15 +88,15 @@ class FakeBot {
 
 	/**
 	 * Limita o conteúdo de texto para evitar mensagens gigantescas ou loops de repetição.
-	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 * Respeita o limite máximo de caracteres (padrão 15000), de linhas (padrão 200) e repetições consecutivas (máx 15).
 	 *
 	 * @param {string} text - Texto a ser validado e possivelmente truncado.
-	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxChars=15000] - Limite máximo de caracteres.
 	 * @param {number} [maxLines=200] - Limite máximo de linhas.
 	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
 	 * @returns {string} - Texto original ou truncado com indicador.
 	 */
-	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+	truncateText(text, maxChars = 15000, maxLines = 200, maxCharRepeats = 15) {
 		if (typeof text !== "string" || !text) {
 			return text;
 		}
@@ -165,11 +165,21 @@ class FakeBot {
 				});
 				continue;
 			}
+			const maxChars = msg.options?.maxChars !== undefined ? msg.options.maxChars : 15000;
+			const maxLines = msg.options?.maxLines !== undefined ? msg.options.maxLines : 200;
+			const maxCharRepeats =
+				msg.options?.maxCharRepeats !== undefined ? msg.options.maxCharRepeats : 15;
+
 			if (typeof msg.content === "string") {
-				msg.content = this.truncateText(msg.content);
+				msg.content = this.truncateText(msg.content, maxChars, maxLines, maxCharRepeats);
 			}
 			if (msg.options?.caption && typeof msg.options.caption === "string") {
-				msg.options.caption = this.truncateText(msg.options.caption);
+				msg.options.caption = this.truncateText(
+					msg.options.caption,
+					maxChars,
+					maxLines,
+					maxCharRepeats
+				);
 			}
 			this.capturedMessages.push(msg);
 			this.logger.debug(`[FakeBot] Capturado ReturnMessage → chatId=${msg.chatId}`);
@@ -200,8 +210,9 @@ class FakeBot {
 	 * Simula envio direto de mensagem de texto.
 	 * @param {string} chatId
 	 * @param {string} content
+	 * @param {Object} [options={}]
 	 */
-	async sendMessage(chatId, content) {
+	async sendMessage(chatId, content, options = {}) {
 		this.logger.debug(`[FakeBot] sendMessage() → chatId=${chatId}`);
 		if (chatId && chatId.includes("@g.us") && !this.isParticipating(chatId)) {
 			this.logger.warn(
@@ -212,10 +223,18 @@ class FakeBot {
 			err.status = 403;
 			throw err;
 		}
+		const maxChars = options.maxChars !== undefined ? options.maxChars : 15000;
+		const maxLines = options.maxLines !== undefined ? options.maxLines : 200;
+		const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
+
 		const ReturnMessage = require("../models/ReturnMessage");
 		const msg = new ReturnMessage({
 			chatId,
-			content: typeof content === "string" ? this.truncateText(content) : content,
+			content:
+				typeof content === "string"
+					? this.truncateText(content, maxChars, maxLines, maxCharRepeats)
+					: content,
+			options,
 			metadata: { direct: true }
 		});
 		this.capturedMessages.push(msg);

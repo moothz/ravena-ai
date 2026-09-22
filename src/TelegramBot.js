@@ -626,15 +626,15 @@ class WhatsAppBotTelegram {
 
 	/**
 	 * Limita o conteúdo de texto para evitar mensagens gigantescas ou loops de repetição.
-	 * Respeita o limite máximo de caracteres (padrão 3000), de linhas (padrão 200) e repetições consecutivas (máx 15).
+	 * Respeita o limite máximo de caracteres (padrão 15000), de linhas (padrão 200) e repetições consecutivas (máx 15).
 	 *
 	 * @param {string} text - Texto a ser validado e possivelmente truncado.
-	 * @param {number} [maxChars=3000] - Limite máximo de caracteres.
+	 * @param {number} [maxChars=15000] - Limite máximo de caracteres.
 	 * @param {number} [maxLines=200] - Limite máximo de linhas.
 	 * @param {number} [maxCharRepeats=15] - Limite máximo de repetições consecutivas do mesmo caractere.
 	 * @returns {string} - Texto original ou truncado com indicador.
 	 */
-	truncateText(text, maxChars = 3000, maxLines = 200, maxCharRepeats = 15) {
+	truncateText(text, maxChars = 15000, maxLines = 200, maxCharRepeats = 15) {
 		if (typeof text !== "string" || !text) {
 			return text;
 		}
@@ -719,16 +719,20 @@ class WhatsAppBotTelegram {
 				);
 			}
 
+			const maxChars = options.maxChars !== undefined ? options.maxChars : 15000;
+			const maxLines = options.maxLines !== undefined ? options.maxLines : 200;
+			const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
+
 			// Format Content (Text)
 			if (typeof content === "string") {
 				content = this._formatMessage(content, mentionMap);
-				content = this.truncateText(content);
+				content = this.truncateText(content, maxChars, maxLines, maxCharRepeats);
 			}
 
 			// Format Caption (Media)
 			if (options.caption) {
 				options.caption = this._formatMessage(options.caption, mentionMap);
-				options.caption = this.truncateText(options.caption);
+				options.caption = this.truncateText(options.caption, maxChars, maxLines, maxCharRepeats);
 			}
 
 			let response;

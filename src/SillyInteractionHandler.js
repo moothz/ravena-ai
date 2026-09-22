@@ -257,12 +257,18 @@ class SillyInteractionHandler {
 					"Sua personalidade: Atrevida se for xingada, fofa e gentil se for elogiada. Não use muitas emojis."
 			});
 
+			let replyContent = response;
+			if (bot && typeof bot.truncateText === "function") {
+				replyContent = bot.truncateText(replyContent, 3000);
+			}
+
 			const returnMsg = new ReturnMessage({
 				chatId: message.group ?? message.author,
-				content: response,
+				content: replyContent,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
+					goReply: message.origin,
+					maxChars: 3000
 				}
 			});
 

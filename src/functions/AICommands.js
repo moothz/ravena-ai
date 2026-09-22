@@ -500,12 +500,17 @@ async function aiCommand(bot, message, args, group) {
 			processedResponse = response;
 		}
 
+		if (bot && typeof bot.truncateText === "function") {
+			processedResponse = bot.truncateText(processedResponse, 3000);
+		}
+
 		const mainReturn = new ReturnMessage({
 			chatId,
 			content: processedResponse,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
+				goReply: message.origin,
+				maxChars: 3000
 			}
 		});
 
@@ -661,12 +666,17 @@ async function handleMediaRequest(
 			processedResponse = response;
 		}
 
+		if (bot && typeof bot.truncateText === "function") {
+			processedResponse = bot.truncateText(processedResponse, 3000);
+		}
+
 		return new ReturnMessage({
 			chatId,
 			content: processedResponse,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
+				goReply: message.origin,
+				maxChars: 3000
 			}
 		});
 	} catch (error) {

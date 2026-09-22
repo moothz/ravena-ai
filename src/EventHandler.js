@@ -1696,12 +1696,17 @@ Retorne um JSON com dois campos:
 										);
 										// Fallback: usa resposta crua como mensagem de boas-vindas
 										if (bot.sendJoinInfo !== false) {
-											bot.sendMessage(group.id, llmResponse, { delay: 5000 }).catch((error) => {
-												this.logger.error(
-													"Erro ao enviar mensagem de boas-vindas do grupo:",
-													error
-												);
-											});
+											bot
+												.sendMessage(group.id, llmResponse, {
+													delay: 5000,
+													maxChars: 3000
+												})
+												.catch((error) => {
+													this.logger.error(
+														"Erro ao enviar mensagem de boas-vindas do grupo:",
+														error
+													);
+												});
 										}
 										return;
 									}
@@ -1711,9 +1716,17 @@ Retorne um JSON com dois campos:
 									// Envia a mensagem de boas-vindas gerada
 									if (welcomeMessage && bot.sendJoinInfo !== false) {
 										this.logger.debug(`[groupJoin] LLM Welcome: ${welcomeMessage}`);
-										bot.sendMessage(group.id, welcomeMessage, { delay: 5000 }).catch((error) => {
-											this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
-										});
+										bot
+											.sendMessage(group.id, welcomeMessage, {
+												delay: 5000,
+												maxChars: 3000
+											})
+											.catch((error) => {
+												this.logger.error(
+													"Erro ao enviar mensagem de boas-vindas do grupo:",
+													error
+												);
+											});
 									}
 
 									// Salva personalidade no grupo se for válida

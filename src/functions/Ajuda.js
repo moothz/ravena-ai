@@ -117,14 +117,18 @@ async function handleAjuda(bot, message, args, group) {
 	}
 
 	try {
-		const answer = await askHelp(question, chatId);
+		let answer = await askHelp(question, chatId);
+		if (bot && typeof bot.truncateText === "function") {
+			answer = bot.truncateText(answer, 3000);
+		}
 
 		return new ReturnMessage({
 			chatId,
 			content: `🤖 *Ajuda (Ravena)*\n\n${answer}`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
+				goReply: message.origin,
+				maxChars: 3000
 			}
 		});
 	} catch (error) {
