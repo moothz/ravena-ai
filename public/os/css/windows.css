@@ -664,6 +664,13 @@
     border-radius: 6px;
     padding: 10px;
     min-height: 220px;
+    touch-action: pan-y;
+}
+
+.chart-container-inner {
+    width: 100%;
+    min-height: 200px;
+    touch-action: pan-y;
 }
 
 .chart-box-title {

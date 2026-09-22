@@ -3,12 +3,16 @@
 @media (max-width: 767px) {
     html, body {
         overflow: hidden !important;
-        height: 100vh !important;
+        height: 100% !important;
         height: 100dvh !important;
         max-height: 100dvh !important;
         margin: 0 !important;
         padding: 0 !important;
         position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
         width: 100% !important;
     }
 
@@ -31,16 +35,20 @@
     .mobile-app {
         display: flex !important;
         flex-direction: column;
-        height: 100vh !important;
+        height: 100% !important;
         height: 100dvh !important;
-        max-height: 100dvh !important;
+        max-height: 100% !important;
         overflow: hidden !important;
-        padding: 10px 12px 8px 12px;
+        padding: 8px 10px max(6px, env(safe-area-inset-bottom, 6px)) 10px;
         box-sizing: border-box;
         background: transparent !important;
         color: var(--light-gray);
         font-family: var(--font-mono);
-        position: relative;
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
         z-index: 2;
     }
 }
@@ -426,6 +434,15 @@
     }
 }
 
+.mobile-app.app-active .mobile-services {
+    display: none !important;
+}
+
+.mobile-app.app-active .mobile-header {
+    padding: 2px 4px !important;
+    margin-bottom: 4px !important;
+}
+
 .mobile-window-card {
     background: linear-gradient(180deg, rgba(35, 6, 109, 0.96) 0%, rgba(13, 9, 34, 0.98) 100%);
     backdrop-filter: blur(8px);
@@ -435,8 +452,9 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    flex: 1;
+    flex: 1 1 0;
     min-height: 0;
+    max-height: 100%;
 }
 
 .mobile-window-header {
@@ -492,6 +510,7 @@
     cursor: pointer;
     transition: all 0.15s ease;
     flex-shrink: 0;
+    z-index: 10;
 }
 
 .mobile-window-close-btn:active {
@@ -502,24 +521,27 @@
 
 /* ONLY THIS CONTAINER SCROLLS ITS CONTENT IN APP VIEW! */
 .mobile-window-body {
-    padding: 12px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    flex: 1;
+    padding: 10px;
+    overflow-y: auto !important;
+    overflow-x: auto;
+    flex: 1 1 0;
     min-height: 0;
-    font-size: 12.5px;
+    font-size: 12px;
     color: #e0e0ee;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pan-x;
+    overscroll-behavior-y: contain;
 }
 
-/* Larger Close App Button with generous top & bottom margins */
+/* Close App Button with safe-area spacing */
 .mobile-home-bar {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 0 8px 0;
-    margin-top: 4px;
+    padding: 6px 0;
+    margin-top: 2px;
     flex-shrink: 0;
+    padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
 }
 
 .mobile-home-fab {
@@ -527,14 +549,14 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    height: 42px;
-    padding: 0 26px;
+    height: 38px;
+    padding: 0 22px;
     background: linear-gradient(180deg, #2a1458 0%, #150b36 100%);
     border: 2px solid var(--bright-blue);
-    border-radius: 21px;
+    border-radius: 19px;
     color: #ffffff;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.5px;
     cursor: pointer;
@@ -565,8 +587,52 @@
     width: 100% !important;
 }
 
+.mobile-window-body .stats-window {
+    min-width: 0 !important;
+    width: 100% !important;
+}
+
+.mobile-window-body .stats-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y !important;
+    width: 100% !important;
+    margin-bottom: 8px !important;
+}
+
+.mobile-window-body .stats-table {
+    min-width: 520px !important;
+    font-size: 10.5px !important;
+}
+
+.mobile-window-body .stats-table th,
+.mobile-window-body .stats-table td {
+    padding: 5px 6px !important;
+    white-space: nowrap !important;
+}
+
 .mobile-window-body .stats-charts-grid {
     grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+.mobile-window-body .chart-box {
+    padding: 8px !important;
+    min-height: unset !important;
+    touch-action: pan-y !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+.mobile-window-body .chart-container-inner,
+.mobile-window-body .highcharts-container,
+.mobile-window-body .highcharts-root {
+    touch-action: pan-y !important;
+    max-width: 100% !important;
 }
 
 .mobile-window-body .community-grid {

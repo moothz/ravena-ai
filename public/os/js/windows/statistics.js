@@ -3,8 +3,8 @@
 WindowManager.register('statistics', {
     title: 'Estatísticas de Mensagens e Fluxo',
     taskbarIcon: 'fa-chart-bar',
-    width: '940px',
-    height: '640px',
+    width: () => Math.min(940, Math.max(320, window.innerWidth - 30)) + 'px',
+    height: () => Math.min(620, Math.max(280, window.innerHeight - 80)) + 'px',
     singleton: true,
 
     render(wb) {
@@ -43,21 +43,29 @@ WindowManager.register('statistics', {
                         📈 Análise Gráfica
                     </h3>
                     <div class="stats-charts-grid">
-                        <div class="chart-box" id="os-chart-daily">
-                            <div class="chart-box-title">Média de Mensagens do Dia</div>
-                            <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                        <div class="chart-box">
+                            <div class="chart-box-title">Msgs/hora (Média do Dia)</div>
+                            <div class="chart-container-inner" id="os-chart-daily">
+                                <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            </div>
                         </div>
-                        <div class="chart-box" id="os-chart-weekly">
+                        <div class="chart-box">
                             <div class="chart-box-title">Média de Mensagens da Semana</div>
-                            <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            <div class="chart-container-inner" id="os-chart-weekly">
+                                <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            </div>
                         </div>
-                        <div class="chart-box" id="os-chart-monthly">
-                            <div class="chart-box-title">Média de Mensagens do Mês</div>
-                            <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                        <div class="chart-box">
+                            <div class="chart-box-title">Msgs por Bot (Semanal)</div>
+                            <div class="chart-container-inner" id="os-chart-monthly">
+                                <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            </div>
                         </div>
-                        <div class="chart-box" id="os-chart-yearly">
+                        <div class="chart-box">
                             <div class="chart-box-title">Total de Mensagens por Dia do Ano</div>
-                            <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            <div class="chart-container-inner" id="os-chart-yearly">
+                                <div style="text-align: center; padding: 40px; font-size: 11px; color: #888;">Carregando gráfico...</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -119,7 +127,9 @@ WindowManager.register('statistics', {
         return {
             chart: {
                 backgroundColor: '#110d29',
-                style: { fontFamily: "'JetBrains Mono', monospace" }
+                style: { fontFamily: "'JetBrains Mono', monospace" },
+                panning: false,
+                pinchType: undefined
             },
             title: { text: null },
             credits: { enabled: false },
@@ -142,7 +152,8 @@ WindowManager.register('statistics', {
             tooltip: {
                 backgroundColor: '#1c1542',
                 borderColor: '#04a9f0',
-                style: { color: '#ffffff', fontSize: '10px' }
+                style: { color: '#ffffff', fontSize: '10px' },
+                followTouchMove: false
             },
             colors: ['#04a9f0', '#ffd700', '#28a745', '#ff6b6b', '#a29bfe', '#00f0ff']
         };
@@ -152,10 +163,10 @@ WindowManager.register('statistics', {
         if (!data) return;
         const theme = this.getCommonHighchartsTheme();
 
-        // 1. Daily Chart
+        // 1. Daily Chart (Msgs/hora -> curva/spline)
         if (data.daily && body.querySelector('#os-chart-daily')) {
             Highcharts.chart('os-chart-daily', Highcharts.merge(theme, {
-                chart: { type: 'column', height: 200 },
+                chart: { type: 'spline', height: 200 },
                 xAxis: { categories: data.daily.hours.map(h => `${h}h`) },
                 series: data.daily.series || []
             }));
@@ -170,11 +181,19 @@ WindowManager.register('statistics', {
             }));
         }
 
-        // 3. Monthly Chart
+        // 3. Messages per bot (msgs por bot -> barras/column)
         if (data.monthly && body.querySelector('#os-chart-monthly')) {
             Highcharts.chart('os-chart-monthly', Highcharts.merge(theme, {
-                chart: { type: 'line', height: 200 },
-                xAxis: { categories: data.monthly.days || [] },
+                chart: { type: 'column', height: 200 },
+                plotOptions: {
+                    column: {
+                        colorByPoint: true
+                    }
+                },
+                xAxis: {
+                    categories: data.monthly.days || [],
+                    labels: { style: { color: '#8888aa', fontSize: '9px' }, rotation: -45 }
+                },
                 series: data.monthly.series || []
             }));
         }

@@ -275,6 +275,7 @@ const MobileApp = {
         // Show app view with slide-up
         if (homeEl) homeEl.classList.add('hidden');
         appViewEl.classList.remove('hidden', 'sliding-down');
+        document.getElementById('mobile-app')?.classList.add('app-active');
     },
 
     closeApp() {
@@ -314,6 +315,7 @@ const MobileApp = {
             this.currentAppId = null;
             this.currentHost = null;
             this.appStack = [];
+            document.getElementById('mobile-app')?.classList.remove('app-active');
         }, 200);
     },
 

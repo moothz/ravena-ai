@@ -58,27 +58,55 @@ const WindowManager = {
             return null;
         }
 
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+
+        const rawWidth = (params && params.width) || config.width || '750px';
+        let width = typeof rawWidth === 'function' ? rawWidth() : rawWidth;
+        const rawHeight = (params && params.height) || config.height || '530px';
+        let height = typeof rawHeight === 'function' ? rawHeight() : rawHeight;
+
+        // Ensure window dimensions never overflow screen bounds
+        let parsedW = parseInt(width) || 750;
+        let parsedH = parseInt(height) || 530;
+
+        const maxAvailableW = Math.max(280, screenW - 20);
+        const maxAvailableH = Math.max(240, screenH - 68); // 48px taskbar clearance + margins
+
+        if (parsedW > maxAvailableW) {
+            parsedW = maxAvailableW;
+            width = `${parsedW}px`;
+        }
+        if (parsedH > maxAvailableH) {
+            parsedH = maxAvailableH;
+            height = `${parsedH}px`;
+        }
+
         // Staggered positioning if not explicitly provided
         let posX = (params && params.x) || config.x;
         let posY = (params && params.y) || config.y;
 
         if (!posX && !posY) {
-            const screenW = window.innerWidth;
-            const screenH = window.innerHeight;
-            const leftMargin = 250; // Keep 2 columns of desktop icons visible on the left
-            const maxWOffset = Math.max(40, screenW - leftMargin - 720);
-            const maxHOffset = Math.max(40, screenH - 580);
+            const leftMargin = screenW > 700 ? 250 : 20;
+            const maxWOffset = Math.max(20, screenW - leftMargin - parsedW);
+            const maxHOffset = Math.max(20, screenH - 68 - parsedH);
             const offsetX = leftMargin + ((this.cascadeCount * 22) % maxWOffset);
             const offsetY = 20 + ((this.cascadeCount * 22) % maxHOffset);
             this.cascadeCount++;
             posX = `${offsetX}px`;
             posY = `${offsetY}px`;
+        } else {
+            let numX = parseInt(posX) || 20;
+            let numY = parseInt(posY) || 20;
+            if (numX + parsedW > screenW - 10) {
+                numX = Math.max(10, screenW - parsedW - 10);
+                posX = `${numX}px`;
+            }
+            if (numY + parsedH > screenH - 58) {
+                numY = Math.max(10, screenH - parsedH - 58);
+                posY = `${numY}px`;
+            }
         }
-
-        const rawWidth = (params && params.width) || config.width || '750px';
-        const width = typeof rawWidth === 'function' ? rawWidth() : rawWidth;
-        const rawHeight = (params && params.height) || config.height || '530px';
-        const height = typeof rawHeight === 'function' ? rawHeight() : rawHeight;
 
         const customClasses = ['os-window', ...(config.classes || [])];
         if (params && params.class) {
