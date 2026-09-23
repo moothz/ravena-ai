@@ -3755,6 +3755,11 @@ Retorne no formato JSON rigoroso:
 				responseMessage += `\n*Filtros:*\n`;
 				responseMessage += `- *NSFW:* ${group.filters.nsfw ? "Ativado" : "Desativado"}\n`;
 				responseMessage += `- *Links:* ${group.filters.links ? "Ativado" : "Desativado"}\n`;
+				responseMessage += `- *Permitir Admins:* ${group.filters.allowAdmins ? "Ativado" : "Desativado"}\n`;
+
+				if (group.filters.allowedLinks && group.filters.allowedLinks.length > 0) {
+					responseMessage += `- *Links Permitidos:* ${group.filters.allowedLinks.join(", ")}\n`;
+				}
 
 				if (group.filters.words && group.filters.words.length > 0) {
 					responseMessage += `- *Palavras:* ${group.filters.words.join(", ")}\n`;

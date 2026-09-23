@@ -22,12 +22,18 @@ class Group {
 		this.additionalAdmins = data.additionalAdmins ?? [];
 
 		// Filtros
-		this.filters = data.filters ?? {
+		this.filters = {
 			nsfw: false,
 			links: false,
 			words: [],
-			people: []
+			people: [],
+			allowAdmins: false,
+			allowedLinks: [],
+			...(data.filters || {})
 		};
+		if (!Array.isArray(this.filters.allowedLinks)) {
+			this.filters.allowedLinks = [];
+		}
 
 		// Monitoramento de plataformas
 		this.twitch = data.twitch ?? [];

@@ -73,9 +73,15 @@ class AdminUtils {
 			let chatInstance = chat;
 			const client = botOrClient?.client || botOrClient;
 
-			// Se o chat não foi fornecido ou é um pv, tenta buscá-lo usando o cliente
+			const hasParticipants =
+				chatInstance &&
+				((Array.isArray(chatInstance.participants) && chatInstance.participants.length > 0) ||
+					(Array.isArray(chatInstance._rawGroup?.participants) &&
+						chatInstance._rawGroup.participants.length > 0));
+
+			// Se o chat não foi fornecido, está sem participantes ou é um pv, tenta buscá-lo usando o cliente
 			if (
-				(!chatInstance &&
+				((!chatInstance || (chatInstance.isGroup && !hasParticipants)) &&
 					client &&
 					typeof client.getChatById === "function" &&
 					group &&

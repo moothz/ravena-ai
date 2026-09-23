@@ -778,6 +778,24 @@ class EventHandler extends EventEmitter {
 
 		const filters = group.filters;
 
+		// Se o grupo permitir que administradores ignorem os filtros
+		if (filters.allowAdmins || filters.permitirAdm) {
+			const chatRaw = message.origin?.getChat
+				? await message.origin.getChat().catch(() => null)
+				: null;
+			const chat = chatRaw?.participants?.length ? chatRaw : null;
+			let isSenderAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
+			if (!isSenderAdmin && message.authorAlt) {
+				isSenderAdmin = await this.adminUtils.isAdmin(message.authorAlt, group, chat, bot);
+			}
+			if (isSenderAdmin) {
+				this.logger.debug(
+					`[applyFilters] Mensagem de ${message.author} ignorada pelos filtros pois o autor é admin no grupo ${group.id}.`
+				);
+				return false;
+			}
+		}
+
 		// Verifica filtro de palavras
 		if (filters.words && Array.isArray(filters.words) && filters.words.length > 0) {
 			if (textContent) {
@@ -800,15 +818,24 @@ class EventHandler extends EventEmitter {
 		}
 
 		// Verifica filtro de links
-		if (filters.links && textContent && textContent.match(/https?:\/\/[^\s]+/g)) {
-			this.logger.info(`Mensagem filtrada no grupo ${group.id} - contém link`);
+		if (filters.links && textContent) {
+			const foundLinks = textContent.match(/(?:https?:\/\/|www\.)[^\s]+/gi);
+			if (foundLinks && foundLinks.length > 0) {
+				const allowedLinks = Array.isArray(filters.allowedLinks) ? filters.allowedLinks : [];
+				// Se todos os links encontrados estiverem na lista de permitidos, a mensagem é autorizada
+				const hasForbiddenLink = foundLinks.some((link) => !this.isLinkAllowed(link, allowedLinks));
 
-			// Deleta a mensagem se possível - não bloqueia
-			message.origin.delete(true).catch((error) => {
-				this.logger.error("Erro ao deletar mensagem filtrada:", error);
-			});
+				if (hasForbiddenLink) {
+					this.logger.info(`Mensagem filtrada no grupo ${group.id} - contém link não permitido`);
 
-			return true;
+					// Deleta a mensagem se possível - não bloqueia
+					message.origin.delete(true).catch((error) => {
+						this.logger.error("Erro ao deletar mensagem filtrada:", error);
+					});
+
+					return true;
+				}
+			}
 		}
 
 		// Verifica filtro de pessoas
@@ -881,6 +908,80 @@ class EventHandler extends EventEmitter {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Extrai e normaliza informações de um link para verificação contra filtros permitidos
+	 * @param {string} urlStr
+	 * @returns {{ hostname: string, pathname: string, full: string }}
+	 */
+	parseUrlInfo(urlStr) {
+		const clean = (urlStr || "").replace(/[.,;!?)]+$/, "");
+		try {
+			const formatted = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(clean) ? clean : `http://${clean}`;
+			const parsed = new URL(formatted);
+			const hostname = parsed.hostname.toLowerCase();
+			const pathname = parsed.pathname.toLowerCase();
+			return {
+				hostname,
+				pathname,
+				full: `${hostname}${pathname}`
+			};
+		} catch {
+			const fallbackHost = clean
+				.replace(/^https?:\/\//i, "")
+				.split(/[/?#]/)[0]
+				.toLowerCase();
+			return {
+				hostname: fallbackHost,
+				pathname: "",
+				full: fallbackHost
+			};
+		}
+	}
+
+	/**
+	 * Verifica se uma URL é permitida de acordo com a lista de links/padrões permitidos
+	 * @param {string} urlStr - URL encontrada na mensagem
+	 * @param {Array<string>} allowedList - Lista de domínios ou padrões permitidos
+	 * @returns {boolean} - True se for permitida
+	 */
+	isLinkAllowed(urlStr, allowedList) {
+		if (!Array.isArray(allowedList) || allowedList.length === 0) {
+			return false;
+		}
+
+		const urlInfo = this.parseUrlInfo(urlStr);
+		if (!urlInfo.hostname) return false;
+
+		return allowedList.some((rawPattern) => {
+			if (!rawPattern || typeof rawPattern !== "string") return false;
+			const pattern = rawPattern.trim().toLowerCase();
+			if (!pattern) return false;
+
+			// Suporte a wildcard (*)
+			if (pattern.includes("*")) {
+				const target = pattern.includes("/") ? urlInfo.full : urlInfo.hostname;
+				const regexStr =
+					"^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$";
+				try {
+					return new RegExp(regexStr, "i").test(target);
+				} catch {
+					return false;
+				}
+			}
+
+			// Se o padrão especifica um caminho (ex: domain.com/path)
+			if (pattern.includes("/")) {
+				return (
+					urlInfo.full === pattern ||
+					urlInfo.full.startsWith(pattern.endsWith("/") ? pattern : `${pattern}/`)
+				);
+			}
+
+			// Correspondência exata ou subdomínio (ex: 'terra.com.br' casa com 'terra.com.br' e 'sub.terra.com.br')
+			return urlInfo.hostname === pattern || urlInfo.hostname.endsWith(`.${pattern}`);
+		});
 	}
 
 	/**

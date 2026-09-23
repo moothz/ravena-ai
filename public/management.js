@@ -21,6 +21,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // Constants
     const API_BASE = '/api';
 
+    const TRUSTED_DOMAINS = [
+        "youtube.com",
+        "youtu.be",
+        "google.com",
+        "google.com.br",
+        "goo.gl",
+        "olx.com.br",
+        "mercadolivre.com.br",
+        "mercadolivre.com",
+        "mercadopago.com.br",
+        "mercadopago.com",
+        "facebook.com",
+        "fb.watch",
+        "fb.me",
+        "instagram.com",
+        "x.com",
+        "twitter.com",
+        "t.co",
+        "tiktok.com",
+        "vm.tiktok.com",
+        "amazon.com.br",
+        "amazon.com",
+        "amzn.to",
+        "shopee.com.br",
+        "shopee.com",
+        "pinterest.com",
+        "pin.it",
+        "reddit.com",
+        "redd.it",
+        "linkedin.com",
+        "lnkd.in",
+        "github.com",
+        "twitch.tv",
+        "spotify.com",
+        "spoti.fi"
+    ];
+
     const AVAILABLE_LANGUAGES = [
         { code: 'English (EN)', desc: 'Inglês' },
         { code: 'Spanish (ES)', desc: 'Espanhol' },
@@ -574,6 +611,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if(!groupData.filters) groupData.filters = {};
         groupData.filters.links = document.getElementById('delete-links').checked;
+        const allowAdminsEl = document.getElementById('filters-allow-admins');
+        if (allowAdminsEl) {
+            groupData.filters.allowAdmins = allowAdminsEl.checked;
+        }
         groupData.filters.nsfw = document.getElementById('delete-nsfw').checked;
         const nsfwSlider = document.getElementById('nsfw-intensity');
         if (nsfwSlider) {
@@ -640,6 +681,14 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
         
         document.getElementById('delete-links').checked = groupData.filters?.links || false;
+        const allowAdminsEl = document.getElementById('filters-allow-admins');
+        if (allowAdminsEl) {
+            allowAdminsEl.checked = !!groupData.filters?.allowAdmins;
+        }
+        renderTags('allowed-links-list', groupData.filters?.allowedLinks || [], (list) => {
+            if(!groupData.filters) groupData.filters = {};
+            groupData.filters.allowedLinks = list; setDirty(true);
+        });
         const nsfwActive = !!groupData.filters?.nsfw;
         document.getElementById('delete-nsfw').checked = nsfwActive;
 
@@ -937,12 +986,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const lastKey = parts[parts.length - 1];
 
-            if (!target[lastKey]) target[lastKey] = [];
-            
             if (btnId === 'add-ignored-number' || btnId === 'add-forbidden-user' || btnId === 'add-additional-admin') {
                 val = val.replace(/\D/g, '');
                 if (!val) return;
             }
+
+            if (btnId === 'add-allowed-link') {
+                if (!val.includes('*')) {
+                    val = val.replace(/^https?:\/\//i, '').split(/[/?#]/)[0];
+                    if (val.toLowerCase().startsWith('www.')) {
+                        val = val.substring(4);
+                    }
+                    val = val.toLowerCase().trim();
+                } else {
+                    val = val.toLowerCase().trim();
+                }
+                if (!val) return;
+            }
+
+            if (!target[lastKey]) target[lastKey] = [];
 
             if (!target[lastKey].includes(val)) {
                 target[lastKey].push(val);
@@ -2551,6 +2613,29 @@ document.addEventListener('DOMContentLoaded', () => {
         setupListAdder('add-forbidden-user', 'new-forbidden-user', 'filters.people');
         setupListAdder('add-muted-command', 'new-muted-command', 'mutedCommands');
         setupListAdder('add-additional-admin', 'new-additional-admin', 'additionalAdmins');
+        setupListAdder('add-allowed-link', 'new-allowed-link', 'filters.allowedLinks');
+
+        const btnAddTrustedLinks = document.getElementById('btn-add-trusted-links');
+        if (btnAddTrustedLinks) {
+            btnAddTrustedLinks.addEventListener('click', () => {
+                if (!groupData.filters) groupData.filters = {};
+                if (!Array.isArray(groupData.filters.allowedLinks)) groupData.filters.allowedLinks = [];
+                let addedCount = 0;
+                for (const domain of TRUSTED_DOMAINS) {
+                    if (!groupData.filters.allowedLinks.includes(domain)) {
+                        groupData.filters.allowedLinks.push(domain);
+                        addedCount++;
+                    }
+                }
+                if (addedCount > 0) {
+                    setDirty(true);
+                    renderTags('allowed-links-list', groupData.filters.allowedLinks, (newList) => {
+                        groupData.filters.allowedLinks = newList;
+                        setDirty(true);
+                    });
+                }
+            });
+        }
 
         const botPersonalityInput = document.getElementById('bot-personality');
         if (botPersonalityInput) {

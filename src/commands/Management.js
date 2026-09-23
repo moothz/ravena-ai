@@ -142,6 +142,19 @@ class Management {
 				method: "filterLinks",
 				description: "Detecta e Apaga mensagens com links"
 			},
+			"filtro-permitirAdm": {
+				method: "filterAllowAdmins",
+				description: "Habilita/desabilita a filtragem de mensagens de administradores do grupo"
+			},
+			"filtro-permitirLink": {
+				method: "filterAllowLink",
+				description: "Adiciona/remove ou lista domínios e padrões de links permitidos no grupo"
+			},
+			"filtro-linksConfiaveis": {
+				method: "filterTrustedLinks",
+				description:
+					"Adiciona ou remove os principais sites confiáveis da lista de links permitidos"
+			},
 			"filtro-pessoa": {
 				method: "filterPerson",
 				description: "Detecta e Apaga mensagens desta pessoa (Marcar com @)"
@@ -420,7 +433,12 @@ class Management {
 	 * @returns {Object} - Objeto com comandos e descrições
 	 */
 	getCommandMethod(command) {
-		return this.commandMap[command]?.method;
+		if (!command) return undefined;
+		if (this.commandMap[command]) return this.commandMap[command].method;
+		const lower = command.toLowerCase();
+		if (this.commandMap[lower]) return this.commandMap[lower].method;
+		const match = Object.entries(this.commandMap).find(([k]) => k.toLowerCase() === lower);
+		return match ? match[1].method : undefined;
 	}
 
 	/**
@@ -1738,6 +1756,9 @@ class Management {
   *Comandos de Filtro:*
   *!g-filtro-palavra* <palavra> - Adiciona/remove palavra do filtro
   *!g-filtro-links* - Ativa/desativa filtro de links
+  *!g-filtro-permitirLink* <dominio> - Adiciona/remove ou lista domínios e padrões de links permitidos
+  *!g-filtro-linksConfiaveis* - Adiciona ou remove principais sites confiáveis dos links permitidos
+  *!g-filtro-permitirAdm* - Ativa/desativa isenção de filtros para administradores
   *!g-filtro-pessoa* @MarcarPessoa - Adiciona/remove número do filtro
   *!g-filtro-nsfw* [0-100] - Ativa/desativa ou ajusta a intensidade do filtro NSFW
 
@@ -1898,6 +1919,10 @@ class Management {
 			infoMessage += `*Filtros:*\n`;
 			infoMessage += `- *Palavras:* ${wordFilters}\n`;
 			infoMessage += `- *Links:* ${linkFiltering}\n`;
+			infoMessage += `- *Permitir Admins:* ${group.filters?.allowAdmins ? "Sim" : "Não"}\n`;
+			if (group.filters?.allowedLinks && group.filters.allowedLinks.length > 0) {
+				infoMessage += `- *Links Permitidos:* ${group.filters.allowedLinks.join(", ")}\n`;
+			}
 			infoMessage += `- *Pessoas:* ${personFilters}\n`;
 			infoMessage += `- *NSFW:* ${nsfwFiltering}\n`;
 			infoMessage += `- *Banir Spammers:* ${group.banirSpammers ? "Sim" : "Não"}\n`;
@@ -2302,10 +2327,23 @@ class Management {
 		await this.database.saveGroup(group);
 
 		if (group.filters.links) {
+			let content =
+				"✅ *Filtro de links ativado!* Mensagens contendo links serão apagadas automaticamente.\n\n";
+			content += "💡 *Deseja personalizar quais links são permitidos?*\n";
+			content +=
+				"• *!g-filtro-permitirLink <dominio>* - Permite domínios específicos (ex: `!g-filtro-permitirLink *youtube*` ou `terra.com.br`)\n";
+			content +=
+				"• *!g-filtro-linksConfiaveis* - Libera sites confiáveis (YouTube, Google, OLX, Mercado Livre, Facebook, Instagram)\n";
+			content +=
+				"• *!g-filtro-permitirAdm* - Permite que administradores enviem links livremente sem serem filtrados";
+
+			if (group.filters.allowedLinks && group.filters.allowedLinks.length > 0) {
+				content += `\n\n📌 *Links permitidos atualmente (${group.filters.allowedLinks.length}):*\n${group.filters.allowedLinks.join(", ")}`;
+			}
+
 			return new ReturnMessage({
 				chatId: group.id,
-				content:
-					"✅ Filtro de links ativado. Mensagens contendo links serão apagadas automaticamente."
+				content
 			});
 		} else {
 			return new ReturnMessage({
@@ -2313,6 +2351,337 @@ class Management {
 				content: "❌ Filtro de links desativado. Mensagens contendo links não serão mais filtradas."
 			});
 		}
+	}
+
+	/**
+	 * Habilita ou desabilita a filtragem de mensagens enviadas por administradores do grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async filterAllowAdmins(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			await bot.sendMessage(
+				group.id,
+				"⚠️ Atenção: O bot não é administrador do grupo. Ele não poderá apagar mensagens filtradas. Para usar filtros efetivamente, adicione o bot como administrador."
+			);
+		}
+
+		if (!group.filters) {
+			group.filters = {};
+		}
+
+		group.filters.allowAdmins = !group.filters.allowAdmins;
+		await this.database.saveGroup(group);
+
+		if (group.filters.allowAdmins) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"✅ *Isenção para administradores ativada!*\n\nMensagens enviadas por administradores do grupo ou admins adicionais *não serão mais apagadas* por filtros (palavras, links, pessoas ou NSFW)."
+			});
+		} else {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"❌ *Isenção para administradores desativada!*\n\nMensagens de todos os membros, inclusive administradores, serão filtradas normalmente."
+			});
+		}
+	}
+
+	/**
+	 * Normaliza de forma inteligente um domínio ou padrão para links permitidos
+	 * @param {string} input - Domínio, URL ou wildcard
+	 * @returns {{ pattern: string, extractedFromUrl: boolean }}
+	 */
+	_normalizeLinkPattern(input) {
+		if (!input) return { pattern: "", extractedFromUrl: false };
+		let raw = input.trim();
+
+		// Se contém wildcard '*', mantém o padrão
+		if (raw.includes("*")) {
+			return { pattern: raw.toLowerCase(), extractedFromUrl: false };
+		}
+
+		const extractedFromUrl = false;
+		if (/^(https?:\/\/|www\.)/i.test(raw)) {
+			try {
+				const formatted = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(raw) ? raw : `http://${raw}`;
+				const parsed = new URL(formatted);
+				let host = parsed.hostname.toLowerCase();
+				if (host.startsWith("www.")) {
+					host = host.substring(4);
+				}
+				return { pattern: host, extractedFromUrl: true };
+			} catch {
+				// Fallback
+			}
+		}
+
+		// Remove protocolo se houver
+		raw = raw.replace(/^https?:\/\//i, "");
+		// Remove query string e hash
+		raw = raw.split(/[?#]/)[0];
+		if (raw.toLowerCase().startsWith("www.")) {
+			raw = raw.substring(4);
+		}
+		raw = raw.replace(/\/+$/, "");
+
+		return { pattern: raw.toLowerCase(), extractedFromUrl };
+	}
+
+	/**
+	 * Permite ao usuário adicionar, remover ou listar domínios/padrões permitidos no filtro de links
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async filterAllowLink(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			await bot.sendMessage(
+				group.id,
+				"⚠️ Atenção: O bot não é administrador do grupo. Ele não poderá apagar mensagens filtradas. Para usar filtros efetivamente, adicione o bot como administrador."
+			);
+		}
+
+		if (!group.filters) {
+			group.filters = {};
+		}
+		if (!Array.isArray(group.filters.allowedLinks)) {
+			group.filters.allowedLinks = [];
+		}
+
+		// Se usado sem argumentos: exibe a lista atual e ajuda
+		if (args.length === 0) {
+			const linksList =
+				group.filters.allowedLinks.length > 0
+					? group.filters.allowedLinks.map((l) => `• ${l}`).join("\n")
+					: "_Nenhum link ou domínio permitido cadastrado_";
+
+			let helpContent = `🔗 *Links e Domínios Permitidos Atualmente:*\n${linksList}\n\n`;
+			helpContent += `*Como usar este comando:*\n`;
+			helpContent += `• *!g-filtro-permitirLink <dominio>* - Adiciona ou remove um domínio (Ex: \`!g-filtro-permitirLink terra.com.br\`)\n`;
+			helpContent += `• *!g-filtro-permitirLink *palavra** - Suporta wildcard (Ex: \`!g-filtro-permitirLink *youtube*\` ou \`*.google.com\`)\n`;
+			helpContent += `• *!g-filtro-linksConfiaveis* - Adiciona os principais sites confiáveis automaticamente\n`;
+			helpContent += `• *!g-filtro-permitirLink limpar* - Remove todos os links permitidos da lista`;
+
+			if (!group.filters.links) {
+				helpContent += `\n\n💡 *Aviso:* O filtro de links está desativado no momento. Use *!g-filtro-links* para ativá-lo.`;
+			}
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: helpContent
+			});
+		}
+
+		const actionOrDomain = args.join(" ").trim();
+
+		// Ação limpar / reset
+		if (actionOrDomain.toLowerCase() === "limpar" || actionOrDomain.toLowerCase() === "reset") {
+			group.filters.allowedLinks = [];
+			await this.database.saveGroup(group);
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"🗑️ *Lista de links permitidos limpa com sucesso!*\n\nAgora todas as mensagens com links serão bloqueadas se o filtro de links estiver ativo."
+			});
+		}
+
+		const { pattern, extractedFromUrl } = this._normalizeLinkPattern(actionOrDomain);
+
+		if (!pattern) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ Domínio ou padrão inválido. Exemplo de uso: *!g-filtro-permitirLink terra.com.br*"
+			});
+		}
+
+		const existingIndex = group.filters.allowedLinks.findIndex(
+			(l) => l.toLowerCase() === pattern.toLowerCase()
+		);
+
+		let retornoMsg = "";
+		if (existingIndex !== -1) {
+			// Remove
+			group.filters.allowedLinks.splice(existingIndex, 1);
+			await this.database.saveGroup(group);
+			retornoMsg = `➖ *Domínio/padrão removido dos permitidos:* \`${pattern}\``;
+		} else {
+			// Adiciona
+			group.filters.allowedLinks.push(pattern);
+			await this.database.saveGroup(group);
+			retornoMsg = `➕ *Domínio/padrão adicionado aos permitidos:* \`${pattern}\``;
+			if (extractedFromUrl) {
+				retornoMsg += ` _(extraído automaticamente da URL informada)_`;
+			}
+		}
+
+		const updatedList =
+			group.filters.allowedLinks.length > 0
+				? group.filters.allowedLinks.join(", ")
+				: "_Nenhum link permitido no momento_";
+
+		retornoMsg += `\n\n📌 *Links permitidos atualmente (${group.filters.allowedLinks.length}):*\n${updatedList}`;
+
+		if (!group.filters.links) {
+			retornoMsg += `\n\n💡 *Dica:* O filtro de links está desligado. Ative-o com *!g-filtro-links* para começar a filtrar.`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: retornoMsg
+		});
+	}
+
+	/**
+	 * Adiciona ou remove os principais sites confiáveis à lista de links permitidos
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async filterTrustedLinks(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			await bot.sendMessage(
+				group.id,
+				"⚠️ Atenção: O bot não é administrador do grupo. Ele não poderá apagar mensagens filtradas. Para usar filtros efetivamente, adicione o bot como administrador."
+			);
+		}
+
+		if (!group.filters) {
+			group.filters = {};
+		}
+		if (!Array.isArray(group.filters.allowedLinks)) {
+			group.filters.allowedLinks = [];
+		}
+
+		const TRUSTED_DOMAINS = [
+			"youtube.com",
+			"youtu.be",
+			"google.com",
+			"google.com.br",
+			"goo.gl",
+			"olx.com.br",
+			"mercadolivre.com.br",
+			"mercadolivre.com",
+			"mercadopago.com.br",
+			"mercadopago.com",
+			"facebook.com",
+			"fb.watch",
+			"fb.me",
+			"instagram.com",
+			"x.com",
+			"twitter.com",
+			"t.co",
+			"tiktok.com",
+			"vm.tiktok.com",
+			"amazon.com.br",
+			"amazon.com",
+			"amzn.to",
+			"shopee.com.br",
+			"shopee.com",
+			"pinterest.com",
+			"pin.it",
+			"reddit.com",
+			"redd.it",
+			"linkedin.com",
+			"lnkd.in",
+			"github.com",
+			"twitch.tv",
+			"spotify.com",
+			"spoti.fi"
+		];
+
+		const isRemove = args.length > 0 && args[0].toLowerCase() === "remover";
+
+		if (isRemove) {
+			const initialCount = group.filters.allowedLinks.length;
+			group.filters.allowedLinks = group.filters.allowedLinks.filter(
+				(link) => !TRUSTED_DOMAINS.includes(link.toLowerCase())
+			);
+			await this.database.saveGroup(group);
+
+			const removedCount = initialCount - group.filters.allowedLinks.length;
+			const updatedList =
+				group.filters.allowedLinks.length > 0
+					? group.filters.allowedLinks.join(", ")
+					: "_Nenhum link permitido no momento_";
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `🗑️ *${removedCount} sites confiáveis foram removidos dos links permitidos.*\n\n📌 *Links permitidos atualmente (${group.filters.allowedLinks.length}):*\n${updatedList}`
+			});
+		}
+
+		// Adiciona os que ainda não estiverem na lista
+		const newlyAdded = [];
+		for (const domain of TRUSTED_DOMAINS) {
+			if (!group.filters.allowedLinks.some((l) => l.toLowerCase() === domain.toLowerCase())) {
+				group.filters.allowedLinks.push(domain);
+				newlyAdded.push(domain);
+			}
+		}
+
+		await this.database.saveGroup(group);
+
+		let retorno = "";
+		if (newlyAdded.length > 0) {
+			retorno += `✅ *Sites confiáveis adicionados aos links permitidos:*\n`;
+			retorno += `• YouTube (\`youtube.com\`, \`youtu.be\`)\n`;
+			retorno += `• Google (\`google.com\`, \`google.com.br\`, \`goo.gl\`)\n`;
+			retorno += `• Twitter / X (\`x.com\`, \`twitter.com\`, \`t.co\`)\n`;
+			retorno += `• Instagram (\`instagram.com\`) & Facebook (\`facebook.com\`, \`fb.watch\`)\n`;
+			retorno += `• TikTok (\`tiktok.com\`, \`vm.tiktok.com\`)\n`;
+			retorno += `• Mercado Livre / Pago (\`mercadolivre.com.br\`, \`mercadopago.com.br\`)\n`;
+			retorno += `• OLX (\`olx.com.br\`), Amazon (\`amazon.com.br\`), Shopee (\`shopee.com.br\`)\n`;
+			retorno += `• GitHub, Reddit, LinkedIn, Twitch, Spotify, Pinterest`;
+		} else {
+			retorno += `ℹ️ *Todos os sites confiáveis já estavam na lista de links permitidos!*`;
+		}
+
+		retorno += `\n\n📌 *Total de links permitidos:* ${group.filters.allowedLinks.length} domínios/padrões`;
+		retorno += `\n\n💡 Para remover os sites confiáveis da lista, use: *!g-filtro-linksConfiaveis remover*`;
+
+		if (!group.filters.links) {
+			retorno += `\n\n💡 *Aviso:* O filtro de links está desativado no momento. Use *!g-filtro-links* para ativá-lo.`;
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: retorno
+		});
 	}
 
 	/**
@@ -7871,6 +8240,28 @@ const helper = {
 			cmd: "!g-filtro-links",
 			desc: "Detecta e Apaga mensagens com links",
 			usage: ["!g-filtro-links"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-permitirLink",
+			desc: "Adiciona/remove ou lista domínios e padrões de links permitidos",
+			usage: [
+				"!g-filtro-permitirLink",
+				"!g-filtro-permitirLink terra.com.br",
+				"!g-filtro-permitirLink *youtube*"
+			],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-linksConfiaveis",
+			desc: "Adiciona ou remove principais sites confiáveis da lista de links permitidos",
+			usage: ["!g-filtro-linksConfiaveis", "!g-filtro-linksConfiaveis remover"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-permitirAdm",
+			desc: "Habilita/desabilita a filtragem de mensagens de administradores do grupo",
+			usage: ["!g-filtro-permitirAdm"],
 			category: "filtros"
 		},
 		{

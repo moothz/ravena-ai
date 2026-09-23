@@ -40,7 +40,14 @@ const GroupMapper = {
 			inviteCode: row.invite_code ?? null,
 			paused: !!row.paused,
 			additionalAdmins: parse(row.additional_admins, []),
-			filters: parse(row.filters, { nsfw: false, links: false, words: [], people: [] }),
+			filters: parse(row.filters, {
+				nsfw: false,
+				links: false,
+				words: [],
+				people: [],
+				allowAdmins: false,
+				allowedLinks: []
+			}),
 			twitch: parse(row.twitch, []),
 			kick: parse(row.kick, []),
 			youtube: parse(row.youtube, []),
