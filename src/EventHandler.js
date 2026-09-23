@@ -1832,7 +1832,19 @@ Retorne um JSON com dois campos:
 
 									// Salva personalidade no grupo se for válida
 									if (botPersonality && botPersonality.trim().length > 0) {
-										group.customAIPrompt = botPersonality.trim().slice(0, 1500);
+										let personality = botPersonality.trim().slice(0, 1500);
+										if (
+											typeof personality.isWellFormed === "function" &&
+											!personality.isWellFormed()
+										) {
+											personality = personality
+												.replace(
+													/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+													""
+												)
+												.toWellFormed();
+										}
+										group.customAIPrompt = personality;
 										await this.database.saveGroup(group);
 										this.logger.info(
 											`[groupJoin] Personalidade definida para '${group.name}': ${group.customAIPrompt}`

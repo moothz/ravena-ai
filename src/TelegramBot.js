@@ -667,7 +667,14 @@ class WhatsAppBotTelegram {
 
 			if (maxChars > 0 && result.length > maxChars) {
 				const targetChars = Math.max(0, maxChars - suffix.length);
-				result = result.slice(0, targetChars) + suffix;
+				let sliced = result.slice(0, targetChars);
+				if (typeof sliced.isWellFormed === "function" && !sliced.isWellFormed()) {
+					sliced = sliced.replace(
+						/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+						""
+					);
+				}
+				result = sliced + suffix;
 			}
 		}
 
@@ -677,7 +684,7 @@ class WhatsAppBotTelegram {
 			);
 		}
 
-		return result;
+		return typeof result.toWellFormed === "function" ? result.toWellFormed() : result;
 	}
 
 	async sendMessage(chatId, content, options = {}) {

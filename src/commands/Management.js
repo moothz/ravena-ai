@@ -2903,7 +2903,13 @@ class Management {
 			// Zera mensagem
 			group.customAIPrompt = "";
 		} else {
-			group.customAIPrompt = args.join(" ").slice(0, 1500);
+			let newPrompt = args.join(" ").slice(0, 1500);
+			if (typeof newPrompt.isWellFormed === "function" && !newPrompt.isWellFormed()) {
+				newPrompt = newPrompt
+					.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu, "")
+					.toWellFormed();
+			}
+			group.customAIPrompt = newPrompt;
 		}
 
 		// Alterna estado do filtro

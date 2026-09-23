@@ -2258,6 +2258,38 @@ class LLMService {
 	}
 
 	/**
+	 * Sanitiza strings e objetos para garantir que todo texto seja UTF-8 válido e bem-formado,
+	 * eliminando surrogates isolados (ex: \uD83C sem par de baixa ordem que quebra emojis).
+	 * Surrogates isolados causam erros HTTP 400 (TextEncodeInput) em tokenizers Rust/HF (ex: vLLM).
+	 * @param {*} value
+	 * @returns {*}
+	 * @private
+	 */
+	_sanitizeUtf8(value) {
+		if (typeof value === "string") {
+			if (typeof value.isWellFormed === "function" && value.isWellFormed()) {
+				return value;
+			}
+			const cleaned = value.replace(
+				/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+				""
+			);
+			return typeof cleaned.toWellFormed === "function" ? cleaned.toWellFormed() : cleaned;
+		}
+		if (Array.isArray(value)) {
+			return value.map((item) => this._sanitizeUtf8(item));
+		}
+		if (value && typeof value === "object") {
+			const result = {};
+			for (const [k, v] of Object.entries(value)) {
+				result[k] = this._sanitizeUtf8(v);
+			}
+			return result;
+		}
+		return value;
+	}
+
+	/**
 	 * Envia uma solicitação de completion para API compatível com OpenAI (OpenAI, LM Studio, DeepSeek, etc.)
 	 * @param {Object} options - Opções de solicitação
 	 * @param {string} options.prompt - O texto do prompt
@@ -2268,6 +2300,7 @@ class LLMService {
 	 * @returns {Promise<Object>} - A resposta da API
 	 */
 	async openaiCompletion(options) {
+		const providerName = options?.providerName || "OpenAI";
 		try {
 			// Determina endpoint
 			let endpoint = "https://api.openai.com/v1/chat/completions";
@@ -2343,6 +2376,8 @@ class LLMService {
 				];
 			}
 
+			messages = this._sanitizeUtf8(messages);
+
 			const initialTemperature =
 				options.toolTemperature ??
 				(options.temperature !== undefined
@@ -2377,7 +2412,7 @@ class LLMService {
 				const available = contextLength - estimatedPromptTokens - 30;
 				if (available > 30 && available < maxTokens) {
 					this.logger.warn(
-						`[LLMService][OpenAI] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
+						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
 					);
 					maxTokens = available;
 				}
@@ -2430,10 +2465,10 @@ class LLMService {
 					"Content-Type": "application/json"
 				},
 				timeout,
-				options.providerName || "OpenAI"
+				providerName
 			);
 
-			this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
+			this._trackUsage(providerName, currentResponse.data, model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -2456,12 +2491,12 @@ class LLMService {
 
 				turn++;
 				this.logger.info(
-					`[LLMService][OpenAI] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
+					`[LLMService][${providerName}] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
 				);
 
 				messages.push({
 					role: "assistant",
-					content: currentMessage.content || null,
+					content: this._sanitizeUtf8(currentMessage.content || null),
 					tool_calls: toolCalls
 				});
 
@@ -2486,12 +2521,12 @@ class LLMService {
 						role: "tool",
 						tool_call_id: toolCall.id,
 						name: fnName,
-						content: toolOutput
+						content: this._sanitizeUtf8(toolOutput)
 					});
 				}
 
 				this.logger.info(
-					`[LLMService][OpenAI] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
+					`[LLMService][${providerName}] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
 				);
 
 				const nextPayload = {
@@ -2528,10 +2563,10 @@ class LLMService {
 						"Content-Type": "application/json"
 					},
 					timeout,
-					options.providerName || "OpenAI"
+					providerName
 				);
 
-				this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
+				this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
 			const finalMessage = currentResponse.data?.choices?.[0]?.message;
@@ -2541,10 +2576,13 @@ class LLMService {
 
 			return currentResponse.data;
 		} catch (error) {
-			this.logger.error("Erro ao chamar API compatível com OpenAI:", error.message);
+			this.logger.error(
+				`Erro ao chamar API compatível com OpenAI (${providerName}):`,
+				error.message
+			);
 			if (error.response) {
 				this.logger.error(
-					`[LLMService][OpenAI] Detalhes do erro HTTP ${error.response.status}:`,
+					`[LLMService][${providerName}] Detalhes do erro HTTP ${error.response.status}:`,
 					typeof error.response.data === "object"
 						? JSON.stringify(error.response.data)
 						: error.response.data
@@ -2565,6 +2603,7 @@ class LLMService {
 	 * @returns {Promise<Object>} - A resposta da API
 	 */
 	async openrouterCompletion(options) {
+		const providerName = options?.providerName || "OpenRouter";
 		try {
 			const apiKey = options.apiKey;
 			if (!apiKey) {
@@ -2631,6 +2670,8 @@ class LLMService {
 				];
 			}
 
+			messages = this._sanitizeUtf8(messages);
+
 			const initialTemperature =
 				options.toolTemperature ??
 				(options.temperature !== undefined
@@ -2664,7 +2705,7 @@ class LLMService {
 				const available = contextLength - estimatedPromptTokens - 30;
 				if (available > 30 && available < maxTokens) {
 					this.logger.warn(
-						`[LLMService][OpenRouter] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
+						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
 					);
 					maxTokens = available;
 				}
@@ -2719,10 +2760,10 @@ class LLMService {
 					"X-Title": "RavenaBot"
 				},
 				timeout,
-				options.providerName || "OpenRouter"
+				providerName
 			);
 
-			this._trackUsage(options.providerName || "OpenRouter", currentResponse.data, model, options);
+			this._trackUsage(providerName, currentResponse.data, model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -2745,12 +2786,12 @@ class LLMService {
 
 				turn++;
 				this.logger.info(
-					`[LLMService][OpenRouter] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
+					`[LLMService][${providerName}] LLM solicitou ${toolCalls.length} tool call(s) (Turno ${turn}/${maxTurns})`
 				);
 
 				messages.push({
 					role: "assistant",
-					content: currentMessage.content || null,
+					content: this._sanitizeUtf8(currentMessage.content || null),
 					tool_calls: toolCalls
 				});
 
@@ -2775,12 +2816,12 @@ class LLMService {
 						role: "tool",
 						tool_call_id: toolCall.id,
 						name: fnName,
-						content: toolOutput
+						content: this._sanitizeUtf8(toolOutput)
 					});
 				}
 
 				this.logger.info(
-					`[LLMService][OpenRouter] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
+					`[LLMService][${providerName}] Enviando chamada subsequente ${turn + 1} ao LLM com os resultados das tools...`
 				);
 
 				const nextPayload = {
@@ -2819,15 +2860,10 @@ class LLMService {
 						"X-Title": "RavenaBot"
 					},
 					timeout,
-					options.providerName || "OpenRouter"
+					providerName
 				);
 
-				this._trackUsage(
-					options.providerName || "OpenRouter",
-					currentResponse.data,
-					model,
-					options
-				);
+				this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
 			const finalMessage = currentResponse.data?.choices?.[0]?.message;
@@ -2837,10 +2873,10 @@ class LLMService {
 
 			return currentResponse.data;
 		} catch (error) {
-			this.logger.error("Erro ao chamar API OpenRouter:", error.message);
+			this.logger.error(`Erro ao chamar API OpenRouter (${providerName}):`, error.message);
 			if (error.response) {
 				this.logger.error(
-					`[LLMService][OpenRouter] Detalhes do erro HTTP ${error.response.status}:`,
+					`[LLMService][${providerName}] Detalhes do erro HTTP ${error.response.status}:`,
 					typeof error.response.data === "object"
 						? JSON.stringify(error.response.data)
 						: error.response.data
@@ -2954,7 +2990,14 @@ class LLMService {
 
 			if (maxChars > 0 && result.length > maxChars) {
 				const targetChars = Math.max(0, maxChars - suffix.length);
-				result = result.slice(0, targetChars) + suffix;
+				let sliced = result.slice(0, targetChars);
+				if (typeof sliced.isWellFormed === "function" && !sliced.isWellFormed()) {
+					sliced = sliced.replace(
+						/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+						""
+					);
+				}
+				result = sliced + suffix;
 			}
 		}
 
@@ -2964,7 +3007,7 @@ class LLMService {
 			);
 		}
 
-		return result;
+		return this._sanitizeUtf8(result);
 	}
 
 	/**
@@ -2981,10 +3024,11 @@ class LLMService {
 	 * @returns {Promise<Object>} - The response from the Ollama API.
 	 */
 	async ollamaCompletion(options) {
+		const providerName = options?.providerName || "Ollama";
 		try {
 			const endpoint = (options.customEndpoint ?? "http://localhost:11434") + "/api/chat";
 
-			const messages = [];
+			let messages = [];
 			const hasImages = !!(options.images || options.image);
 
 			let ollamaFormat = null;
@@ -3049,6 +3093,8 @@ class LLMService {
 
 			messages.push(userMessage);
 
+			messages = this._sanitizeUtf8(messages);
+
 			const initialTemperature =
 				options.toolTemperature ??
 				(options.temperature !== undefined
@@ -3092,12 +3138,7 @@ class LLMService {
 				timeout: toTime
 			});
 
-			this._trackUsage(
-				options.providerName || "Ollama",
-				currentResponse.data,
-				payload.model,
-				options
-			);
+			this._trackUsage(providerName, currentResponse.data, payload.model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -3124,7 +3165,7 @@ class LLMService {
 
 				messages.push({
 					role: "assistant",
-					content: currentMsg.content || null,
+					content: this._sanitizeUtf8(currentMsg.content || null),
 					tool_calls: toolCalls
 				});
 
@@ -3139,7 +3180,7 @@ class LLMService {
 
 					messages.push({
 						role: "tool",
-						content: toolOutput
+						content: this._sanitizeUtf8(toolOutput)
 					});
 				}
 
@@ -3170,12 +3211,7 @@ class LLMService {
 					timeout: toTime
 				});
 
-				this._trackUsage(
-					options.providerName || "Ollama",
-					currentResponse.data,
-					payload.model,
-					options
-				);
+				this._trackUsage(providerName, currentResponse.data, payload.model, options);
 			}
 
 			const finalMsg = currentResponse.data?.message;
@@ -3185,11 +3221,16 @@ class LLMService {
 
 			return currentResponse.data;
 		} catch (error) {
-			this.logger.error("[LLMService] Error calling Ollama API:", error.message);
+			this.logger.error(`[LLMService] Error calling Ollama API (${providerName}):`, error.message);
 			if (error.response) {
-				this.logger.error("[LLMService] Ollama API Response Error:", error.response.status);
+				this.logger.error(
+					`[LLMService][${providerName}] Detalhes do erro HTTP ${error.response.status}:`,
+					typeof error.response.data === "object"
+						? JSON.stringify(error.response.data)
+						: error.response.data
+				);
 			} else if (error.request) {
-				this.logger.error("[LLMService] Ollama API No Response Received.");
+				this.logger.error(`[LLMService][${providerName}] Ollama API No Response Received.`);
 			}
 			throw error;
 		}
@@ -3210,6 +3251,15 @@ class LLMService {
 		const EventHandler = require("../EventHandler");
 		EventHandler.getInstance().emit("activity", { type: "llm" });
 		options._startTime = options._startTime || Date.now();
+		if (typeof options.prompt === "string") {
+			options.prompt = this._sanitizeUtf8(options.prompt);
+		}
+		if (typeof options.systemContext === "string") {
+			options.systemContext = this._sanitizeUtf8(options.systemContext);
+		}
+		if (Array.isArray(options.messages)) {
+			options.messages = this._sanitizeUtf8(options.messages);
+		}
 		const priority = options.priority ?? 0;
 		const maxQueueRetries = 10; // Limit times we can send back to queue
 

@@ -77,7 +77,20 @@ const GroupMapper = {
 			mutedCategories: parse(row.muted_categories, []),
 			nicks: parse(row.nicks, []),
 			warnings: parse(row.warnings, []),
-			customAIPrompt: parse(row.custom_ai_prompt, []),
+			customAIPrompt: (() => {
+				const val = parse(row.custom_ai_prompt, []);
+				if (typeof val === "string") {
+					if (typeof val.isWellFormed === "function" && val.isWellFormed()) {
+						return val;
+					}
+					const cleaned = val.replace(
+						/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+						""
+					);
+					return typeof cleaned.toWellFormed === "function" ? cleaned.toWellFormed() : cleaned;
+				}
+				return val;
+			})(),
 			notificaGrupoFechado: !!row.notifica_grupo_fechado,
 			notificaGrupoAberto: !!row.notifica_grupo_aberto,
 			banirSpammers: !!row.banir_spammers,
@@ -135,7 +148,21 @@ const GroupMapper = {
 			muted_categories: s(obj.mutedCategories),
 			nicks: s(obj.nicks),
 			warnings: s(obj.warnings),
-			custom_ai_prompt: s(obj.customAIPrompt),
+			custom_ai_prompt: (() => {
+				if (typeof obj.customAIPrompt === "string") {
+					let val = obj.customAIPrompt;
+					if (typeof val.isWellFormed === "function" && !val.isWellFormed()) {
+						val = val
+							.replace(
+								/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+								""
+							)
+							.toWellFormed();
+					}
+					return s(val);
+				}
+				return s(obj.customAIPrompt);
+			})(),
 			notifica_grupo_fechado: obj.notificaGrupoFechado ? 1 : 0,
 			notifica_grupo_aberto: obj.notificaGrupoAberto ? 1 : 0,
 			banir_spammers: obj.banirSpammers ? 1 : 0,
