@@ -178,10 +178,11 @@ async function conviteCommand(bot, message, args, group) {
 		return todas;
 	} catch (error) {
 		logger.warn("Erro ao ler invites_xxx.txt:", error);
+		const botName = bot?.nomeExibir || "ravenabot";
 		return [
 			new ReturnMessage({
 				chatId,
-				content: `🐦‍⬛ Então você quer a *ravenabot* no seu grupo?
+				content: `🐦‍⬛ Então você quer a *${botName}* no seu grupo?
 Pra começar, me envie o *LINK*, apenas o _LINK_ do seu grupo.
 Se você enviar um convite tradicional, não vai adiantar de nada, pois não consigo aceitar por aqui.
 Após o link, siga as instruções do bot, enviando uma mensagem explicando o motivo de querer o bot no seu grupo.`

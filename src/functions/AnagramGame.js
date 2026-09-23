@@ -389,7 +389,11 @@ async function startNewRound(bot, message, group, isFirstRound = true) {
 		new ReturnMessage({
 			chatId: groupId,
 			content: media,
-			options: { sendMediaAsSticker: true, stickerAuthor: "Ravena", stickerName: group.name }
+			options: {
+				sendMediaAsSticker: true,
+				stickerAuthor: bot?.nomeExibir || "Ravena",
+				stickerName: group.name
+			}
 		}),
 		group
 	);

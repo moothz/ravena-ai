@@ -371,9 +371,10 @@ async function sendCommandList(bot, message, args, group) {
 		const categorizedCommands = groupCommandsByCategory(fixedCommands);
 
 		// Constrói mensagem
-		let menuText = "🤖 *Comandos Ravenabot*🐦‍⬛\n";
+		const botDisplayName = bot?.nomeExibir || "Ravenabot";
+		let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
 		if (!group) {
-			menuText += `> _PV da *${bot.id}*_\n`;
+			menuText += `> _PV de *${bot?.nomeExibir || bot.id}*_\n`;
 		} else {
 			menuText += `> _Grupo ${group.name} _\n`;
 		}

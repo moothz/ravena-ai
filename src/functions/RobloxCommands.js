@@ -286,7 +286,7 @@ async function handleRobloxCommand(bot, message, args, group) {
 					options: {
 						sendMediaAsSticker: true,
 						stickerName: `Avatar de ${data.officialName}`,
-						stickerAuthor: "Ravena Bot"
+						stickerAuthor: bot?.nomeExibir || "Ravena Bot"
 					}
 				}),
 				new ReturnMessage({

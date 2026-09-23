@@ -85,18 +85,32 @@ function calculateScore(flaccid, erect, girth, curvature) {
 	return Math.round(weightedAvg * MAX_SCORE);
 }
 
+/**
+ * Retorna o nome do doutor para o jogo, usando o nome personalizado do bot se definido.
+ * @param {Object} bot - Instância do bot
+ * @returns {string} - Nome do doutor (ex: "Dr. Stallone", "Dr. Raveno")
+ */
+function getDoctorName(bot) {
+	if (!bot?.nomeExibir) return "Dr. Raveno";
+	const nome = bot.nomeExibir.trim();
+	if (/^dr[a-z]?\./i.test(nome)) {
+		return nome;
+	}
+	return `Dr. ${nome}`;
+}
+
 const INTRO_A = [
-	"Olá {pessoa}, entre e fique à vontade no consultório do Dr. Raveno! 🩺",
+	"Olá {pessoa}, entre e fique à vontade no consultório do {doutor}! 🩺",
 	"Seja bem-vindo(a), {pessoa}. Pode ir tirando a roupa para o exame... 🥼",
 	"Ah, {pessoa}! Estava te esperando. Sente-se na maca, por favor. 🛋️",
 	"Bom dia, {pessoa}. Pronto para sua avaliação trimestral? 📝",
 	"Ora ora, se não é o(a) {pessoa}. Veio finalmente tirar a prova? 🔍",
 	"Entre, {pessoa}. Não precisa ter vergonha, já vi de tudo por aqui. 🏥",
 	"Aproxime-se, {pessoa}. Vamos ver como andam as coisas... 🧐",
-	"Saudações, {pessoa}! O Dr. Raveno está pronto para atendê-lo(a). 🎩",
+	"Saudações, {pessoa}! O {doutor} está pronto para atendê-lo(a). 🎩",
 	"Oi {pessoa}, veio fazer o check-up de rotina? 💉",
 	"{pessoa}, você de novo? Veio ver se mudou alguma coisa? 🔄",
-	"Bem-vindo(a) à clínica de estética do Dr. Raveno, {pessoa}! ✨",
+	"Bem-vindo(a) à clínica de estética do {doutor}, {pessoa}! ✨",
 	"Olha só quem apareceu... Pode entrar, {pessoa}. 🚪",
 	"Sente-se, {pessoa}. O procedimento será rápido e indolor (espero). ⚡",
 	"Preparado(a) para o veredito, {pessoa}? A ciência não mente! 🔬",
@@ -116,7 +130,7 @@ const INTRO_B = [
 	"Sinto uma energia... potente vindo desta direção. ⚡",
 	"O clima esquentou de repente ou é impressão minha? 🔥",
 	"De acordo com os manuais de anatomia, isso aqui é raro... 📚",
-	"Mantenha a calma. O Dr. Raveno é profissional. 🧤",
+	"Mantenha a calma. O {doutor} é profissional. 🧤",
 	"Sempre fico surpreso com o que encontro nesta profissão... 😮",
 	"Tudo bem, respire fundo. O processo de medição vai começar. ⏱️"
 ];
@@ -142,15 +156,16 @@ const INTRO_C = [
 /**
  * Gera um comentário com base no score com maior variedade
  * @param {number} score - Score calculado
+ * @param {string} [doctorName] - Nome do médico/doutor
  * @returns {string} - Comentário engraçado
  */
-function getComment(score) {
+function getComment(score, doctorName = "Dr. Raveno") {
 	if (score >= 1000) return "🌌 *DEUS DO OLIMPO!* Isso não é um membro, é um monumento histórico!";
 	if (score >= 950)
 		return "🔥 *LENDÁRIO!* As lendas urbanas falavam de algo assim, mas eu não acreditava!";
 	if (score >= 900)
 		return "⚡ *IMPRESSIONANTE!* Você precisa de uma licença especial para carregar isso?";
-	if (score >= 850) return "🏆 *CAMPEÃO PESO-PESADO!* O Dr. Raveno ficou até sem fôlego!";
+	if (score >= 850) return `🏆 *CAMPEÃO PESO-PESADO!* O ${doctorName} ficou até sem fôlego!`;
 	if (score >= 800) return "🌟 *EXCEPCIONAL!* Um verdadeiro espécime de elite, parabéns!";
 	if (score >= 750) return "💎 *JOIA RARA!* Acima de qualquer expectativa razoável!";
 	if (score >= 700) return "👏 *INCRÍVEL!* Um resultado que impõe respeito em qualquer lugar!";
@@ -173,14 +188,14 @@ function getComment(score) {
 /**
  * Gera as frases de introdução aleatórias
  * @param {string} userName - Nome do usuário
+ * @param {string} [doctorName] - Nome do médico/doutor
  * @returns {string} - Frase combinada
  */
-function generateFlavorText(userName) {
-	const a = INTRO_A[Math.floor(Math.random() * INTRO_A.length)].replace(
-		"{pessoa}",
-		`*${userName}*`
-	);
-	const b = INTRO_B[Math.floor(Math.random() * INTRO_B.length)];
+function generateFlavorText(userName, doctorName = "Dr. Raveno") {
+	const a = INTRO_A[Math.floor(Math.random() * INTRO_A.length)]
+		.replace("{pessoa}", `*${userName}*`)
+		.replace("{doutor}", doctorName);
+	const b = INTRO_B[Math.floor(Math.random() * INTRO_B.length)].replace("{doutor}", doctorName);
 	const c = INTRO_C[Math.floor(Math.random() * INTRO_C.length)];
 	return `${a}\n${b}\n${c}`;
 }
@@ -296,8 +311,10 @@ async function pintoCommand(bot, message, args, group) {
 		// Calcula o score
 		const score = calculateScore(flaccid, erect, girth, curvature);
 
+		const doctorName = getDoctorName(bot);
+
 		// Obtém um comentário baseado no score
-		const comment = getComment(score);
+		const comment = getComment(score, doctorName);
 
 		// Timestamp atual
 		const currentTimestamp = Date.now();
@@ -348,7 +365,7 @@ async function pintoCommand(bot, message, args, group) {
 		}
 
 		// Prepara a mensagem de resposta
-		const flavorText = generateFlavorText(userName);
+		const flavorText = generateFlavorText(userName, doctorName);
 		const response =
 			`${flavorText}\n\n` +
 			`• *Comprimento Flácido:* ${flaccid.toFixed(1)} cm\n` +

@@ -2,7 +2,9 @@ const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const Database = require("../utils/Database");
 
+const database = Database.getInstance();
 const logger = new Logger("waifu-commands");
 
 // ─── Configurações da API ───────────────────────────────────────────────────
@@ -641,10 +643,106 @@ async function verSoulmates(bot, message) {
 	}
 }
 
+function matchUserNumber(nickNumero, targetUserId) {
+	if (!nickNumero || !targetUserId) return false;
+	const cleanNick = String(nickNumero).replace(/\D/g, "");
+	const cleanTarget = String(targetUserId).replace(/\D/g, "");
+	if (cleanNick && cleanTarget && cleanNick === cleanTarget) return true;
+	return String(nickNumero).toLowerCase() === String(targetUserId).toLowerCase();
+}
+
+function findNickInGroup(groupObj, targetUserId) {
+	if (!groupObj || !Array.isArray(groupObj.nicks)) return null;
+	const item = groupObj.nicks.find((n) => matchUserNumber(n.numero, targetUserId));
+	return item?.apelido?.trim() || null;
+}
+
+/**
+ * Resolve o nome de exibição de um jogador para o ranking, dando preferência
+ * ao apelido configurado no grupo em que ele usa comandos (ou no grupo atual).
+ * @param {Object} user - Objeto de usuário retornado da API
+ * @param {Object} [currentGroup] - Objeto do grupo atual onde o comando foi chamado
+ * @returns {Promise<string>}
+ */
+async function resolveUserDisplayName(user, currentGroup) {
+	const rawUserId = user.id;
+	const cleanUserId = String(rawUserId || "").replace(/\D/g, "");
+
+	// 1. Apelido no grupo atual onde o comando foi executado
+	const currentNick = findNickInGroup(currentGroup, rawUserId);
+	if (currentNick) {
+		return currentNick;
+	}
+
+	// 2. Apelido no grupo em que o usuário mais usa comandos de waifu (mu-%)
+	try {
+		const muGroupRow = await database.dbGet(
+			"cmd_usage",
+			`SELECT group_id, count(*) as cnt 
+			 FROM cmd_usage_log 
+			 WHERE (user = ? OR user LIKE ? OR user = ?) 
+			   AND group_id IS NOT NULL 
+			   AND command LIKE ? 
+			 GROUP BY group_id 
+			 ORDER BY cnt DESC 
+			 LIMIT 1`,
+			[cleanUserId, `${cleanUserId}@%`, rawUserId, "mu-%"]
+		);
+
+		if (muGroupRow?.group_id) {
+			const muGroup = await database.getGroup(muGroupRow.group_id);
+			const muNick = findNickInGroup(muGroup, rawUserId);
+			if (muNick) return muNick;
+		}
+
+		// 3. Apelido no grupo mais ativo do usuário no geral
+		const generalGroupRow = await database.dbGet(
+			"cmd_usage",
+			`SELECT group_id, count(*) as cnt 
+			 FROM cmd_usage_log 
+			 WHERE (user = ? OR user LIKE ? OR user = ?) 
+			   AND group_id IS NOT NULL 
+			 GROUP BY group_id 
+			 ORDER BY cnt DESC 
+			 LIMIT 1`,
+			[cleanUserId, `${cleanUserId}@%`, rawUserId]
+		);
+
+		if (generalGroupRow?.group_id && generalGroupRow.group_id !== muGroupRow?.group_id) {
+			const generalGroup = await database.getGroup(generalGroupRow.group_id);
+			const genNick = findNickInGroup(generalGroup, rawUserId);
+			if (genNick) return genNick;
+		}
+
+		// 4. Fallback: busca em qualquer grupo no core.db que tenha apelido para este número
+		if (cleanUserId) {
+			const coreRow = await database.dbGet(
+				"core",
+				"SELECT nicks FROM groups WHERE nicks LIKE ? LIMIT 1",
+				[`%${cleanUserId}%`]
+			);
+			if (coreRow?.nicks) {
+				try {
+					const parsedNicks = JSON.parse(coreRow.nicks);
+					const fallbackItem = parsedNicks.find((n) => matchUserNumber(n.numero, cleanUserId));
+					if (fallbackItem?.apelido?.trim()) return fallbackItem.apelido.trim();
+				} catch {
+					// Ignora erro de JSON parse
+				}
+			}
+		}
+	} catch (err) {
+		logger.debug(`Erro ao resolver apelido para usuário ${rawUserId}:`, err.message);
+	}
+
+	// 5. Fallback para o nome cadastrado na API
+	return user.name || "Jogador";
+}
+
 /**
  * Exibe ranking global de jogadores por saldo de Zinthos
  */
-async function verRanking(bot, message, args) {
+async function verRanking(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 	const limit = Math.min(parseInt(args[0], 10) || 10, 20);
 
@@ -659,14 +757,21 @@ async function verRanking(bot, message, args) {
 			});
 		}
 
-		const medals = ["🥇", "🥈", "🥉"];
-		let text = `🏆 *Top ${topRich.length} Jogadores de Zinthos:*\n\n`;
+		const currentGroup = group || (message.group ? await database.getGroup(message.group) : null);
 
-		topRich.forEach((user, idx) => {
-			const pos = medals[idx] || `${idx + 1}.`;
-			text += `${pos} *${user.name}* — 💜 *${user.kakera}* Zinthos\n`;
-			text += `   ↳ 👰 Harém: ${user._count?.harem ?? 0} | 💖 Soulmates: ${user._count?.soulmates ?? 0}\n`;
-		});
+		const medals = ["🥇", "🥈", "🥉"];
+		const lines = await Promise.all(
+			topRich.map(async (user, idx) => {
+				const pos = medals[idx] || `${idx + 1}.`;
+				const displayName = await resolveUserDisplayName(user, currentGroup);
+				let line = `${pos} *${displayName}* — 💜 *${user.kakera}* Zinthos\n`;
+				line += `   ↳ 👰 Harém: ${user._count?.harem ?? 0} | 💖 Soulmates: ${user._count?.soulmates ?? 0}\n`;
+				return line;
+			})
+		);
+
+		let text = `🏆 *Top ${topRich.length} Jogadores de Zinthos:*\n\n`;
+		text += lines.join("");
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {

@@ -223,8 +223,9 @@ async function tarotCommand(bot, message, args, group) {
 	const entrance = getRandom(ENTRANCE_PHRASES);
 	const drawIntro = getRandom(DRAW_PHRASES);
 	const cardNames = drawn.map((c) => `*${c.name}*`).join(", ");
+	const botDisplayName = bot?.nomeExibir || "ravenabot";
 
-	let response = `🔮 *Cartomante _ravenabot_* 🎩\n\n`;
+	let response = `🔮 *Cartomante _${botDisplayName}_* 🎩\n\n`;
 	response += `✨ _${entrance}_ 🪄\n\n`;
 	response += `🎴 ${drawIntro}\n${cardNames}\n\n`;
 
@@ -251,8 +252,7 @@ Responda em PORTUGUÊS BRASIL.`;
 		logger.debug(`[Tarot] Requesting IA analysis for ${userName}`);
 		analysis = await llmService.getCompletion({
 			prompt,
-			systemContext:
-				"Você é uma cartomante experiente, futurista e misteriosa chamada ravenabot. Suas respostas sempre são em 800 caracteres ou menos, sucintas mas poderosas.",
+			systemContext: `Você é uma cartomante experiente, futurista e misteriosa chamada ${botDisplayName}. Suas respostas sempre são em 800 caracteres ou menos, sucintas mas poderosas.`,
 			priority: 5
 		});
 	} catch (error) {

@@ -155,6 +155,32 @@ async function getStringMunewsDisponiveis() {
 }
 
 /**
+ * Retorna a data padrão (YYYY-MM-DD) para buscar as MuNews.
+ * As notícias geralmente são lançadas às 06:00. Portanto, a virada do dia
+ * ocorre apenas a partir das 06:00 no fuso de Brasília (America/Sao_Paulo).
+ * Antes das 06:00, busca as notícias do dia anterior.
+ *
+ * @param {Date} [referenceDate] - Data/hora de referência (padrão: agora)
+ * @returns {string} - Data no formato YYYY-MM-DD
+ */
+function getMuNewsDefaultDate(referenceDate = new Date()) {
+	// Subtrai 6 horas para que o dia só vire às 06:00 da manhã
+	const shifted = new Date(referenceDate.getTime() - 6 * 60 * 60 * 1000);
+	const dtf = new Intl.DateTimeFormat("en-US", {
+		timeZone: "America/Sao_Paulo",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit"
+	});
+	const parts = dtf.formatToParts(shifted);
+	const map = {};
+	for (const p of parts) {
+		map[p.type] = p.value;
+	}
+	return `${map.year}-${map.month}-${map.day}`;
+}
+
+/**
  * Obtém MuNews para uma data específica
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Mensagem recebida
@@ -166,56 +192,64 @@ async function newsCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		// Define a data (padrão: hoje)
+		// Define a data (padrão: data de referência com virada às 06:00 de Brasília)
 		let date;
 
 		if (args.length > 0) {
-			// Junta os argumentos para formar a expressão de data
-			const dateExpression = args.join(" ");
+			const dateExpression = args.join(" ").trim();
+			const lowerExpr = dateExpression.toLowerCase();
 
-			// Usa o chrono para interpretar a data em linguagem natural
-			const parsedDate = chrono.pt.parse(dateExpression, new Date(), { forwardDate: false });
-
-			if (parsedDate && parsedDate.length > 0) {
-				// Se chrono conseguiu interpretar a data
-				const resultDate = parsedDate[0].start.date();
-				const year = resultDate.getFullYear();
-				const month = String(resultDate.getMonth() + 1).padStart(2, "0");
-				const day = String(resultDate.getDate()).padStart(2, "0");
-				date = `${year}-${month}-${day}`;
+			if (lowerExpr === "hoje") {
+				date = getMuNewsDefaultDate();
+			} else if (lowerExpr === "ontem") {
+				date = getMuNewsDefaultDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+			} else if (/^\d{4}-\d{2}-\d{2}$/.test(dateExpression)) {
+				date = dateExpression;
 			} else {
-				// Tenta os formatos anteriores como fallback
-
-				// Verifica se é uma data no formato YYYY-MM-DD
-				const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-				if (dateRegex.test(dateExpression)) {
-					date = dateExpression;
+				// Tenta formato DD/MM/YYYY ou DD-MM-YYYY ou DD/MM
+				const dmyMatch = dateExpression.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{4}))?$/);
+				if (dmyMatch) {
+					const day = dmyMatch[1].padStart(2, "0");
+					const month = dmyMatch[2].padStart(2, "0");
+					const defaultDate = getMuNewsDefaultDate();
+					const year = dmyMatch[3] || defaultDate.split("-")[0];
+					date = `${year}-${month}-${day}`;
 				} else {
-					// Tenta extrair data no formato "dd de mês de yyyy"
+					// Tenta extrair data no formato textual "dd de mês de yyyy"
 					const extractedDate = extractDate(dateExpression);
 					if (extractedDate) {
 						date = extractedDate;
 					} else {
-						const stringDatasDisponiveis = await getStringMunewsDisponiveis();
-						// Formato de data inválido
-						return new ReturnMessage({
-							chatId,
-							content: `❌ Formato de data não reconhecido. Tente usar formatos como "hoje", "ontem", "segunda-feira passada", "19/04/2025" ou "YYYY-MM-DD".\n\n${stringDatasDisponiveis}`,
-							options: {
-								quotedMessageId: message.origin.id._serialized,
-								goReply: message.origin
-							}
+						// Usa o chrono para interpretar a data em linguagem natural
+						const defaultDate = getMuNewsDefaultDate();
+						const [dYear, dMonth, dDay] = defaultDate.split("-").map(Number);
+						const referenceDate = new Date(Date.UTC(dYear, dMonth - 1, dDay, 12, 0, 0));
+						const parsedDate = chrono.pt.parse(dateExpression, referenceDate, {
+							forwardDate: false
 						});
+
+						if (parsedDate && parsedDate.length > 0) {
+							const resultDate = parsedDate[0].start.date();
+							const rYear = resultDate.getUTCFullYear();
+							const rMonth = String(resultDate.getUTCMonth() + 1).padStart(2, "0");
+							const rDay = String(resultDate.getUTCDate()).padStart(2, "0");
+							date = `${rYear}-${rMonth}-${rDay}`;
+						} else {
+							const stringDatasDisponiveis = await getStringMunewsDisponiveis();
+							return new ReturnMessage({
+								chatId,
+								content: `❌ Formato de data não reconhecido. Tente usar formatos como "hoje", "ontem", "segunda-feira passada", "19/04/2025" ou "YYYY-MM-DD".\n\n${stringDatasDisponiveis}`,
+								options: {
+									quotedMessageId: message.origin.id._serialized,
+									goReply: message.origin
+								}
+							});
+						}
 					}
 				}
 			}
 		} else {
-			// Usa a data atual se nenhum argumento for fornecido
-			const today = new Date();
-			const year = today.getFullYear();
-			const month = String(today.getMonth() + 1).padStart(2, "0");
-			const day = String(today.getDate()).padStart(2, "0");
-			date = `${year}-${month}-${day}`;
+			date = getMuNewsDefaultDate();
 		}
 
 		// Busca no banco de dados

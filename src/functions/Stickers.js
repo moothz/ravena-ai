@@ -775,7 +775,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				content: processedMedia,
 				options: {
 					sendMediaAsSticker: true,
-					stickerAuthor: "ravena",
+					stickerAuthor: bot?.nomeExibir || "ravena",
 					stickerName,
 					quotedMessageId
 				}
@@ -879,7 +879,7 @@ async function processAutoSticker(bot, message, group) {
 			content: processedMedia,
 			options: {
 				sendMediaAsSticker: true,
-				stickerAuthor: "ravena",
+				stickerAuthor: bot?.nomeExibir || "ravena",
 				stickerName,
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

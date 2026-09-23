@@ -606,8 +606,8 @@ async function handleStickerBg(bot, message, args, group) {
 			content: resultMedia,
 			options: {
 				sendMediaAsSticker: true,
-				stickerAuthor: "ravena",
-				stickerName: args.join(" ") || "ravena sticker",
+				stickerAuthor: bot?.nomeExibir || "ravena",
+				stickerName: args.join(" ") || `${bot?.nomeExibir || "ravena"} sticker`,
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
 			}
