@@ -452,56 +452,151 @@ async function separarCommand(bot, message, args, group) {
 	const authorJid = getSenderJid(message);
 	const authorId = getCleanNumber(authorJid);
 
-	// Pegar mentions
-	const mentions = message.mentions ?? message.origin?.mentionedIds ?? [];
-	if (mentions.length === 0) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Você precisa mencionar quem deseja se separar! Ex: *!separar @pessoa* 🧐",
-			options: {
-				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	const targetJid = mentions[0];
-	const targetId = getCleanNumber(targetJid);
-
-	if (targetId === authorId) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Como você vai se separar de si mesmo(a)? 🤔",
-			options: {
-				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	// Verificar se estão namorando ou casados
-	const activeRel = await database.dbGet(
+	// Buscar relacionamentos ativos do autor no grupo
+	const activeRels = await database.dbAll(
 		dbName,
 		`
 		SELECT * FROM relacionamentos 
 		WHERE group_id = ? 
-		  AND ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?))
+		  AND (user1 = ? OR user2 = ?)
 		  AND status = 'ativo'
 		  AND tipo IN ('namoro', 'casamento')
+		ORDER BY criado_em DESC
 		`,
-		[groupId, authorId, targetId, targetId, authorId]
+		[groupId, authorId, authorId]
 	);
 
-	if (!activeRel) {
+	if (!activeRels || activeRels.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Ops! Você não tem nenhum relacionamento ativo (namoro ou casamento) com ${getMentionStr(targetJid)}! 🧐`,
+			content:
+				"❌ Ops! Você não tem nenhum relacionamento ativo (namoro ou casamento) neste grupo! 🧐",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin,
-				mentions: [targetJid]
+				goReply: message.origin
 			}
 		});
+	}
+
+	const mentions = message.mentions ?? message.origin?.mentionedIds ?? [];
+	let activeRel = null;
+
+	if (mentions.length > 0) {
+		const targetJid = mentions[0];
+		const targetId = getCleanNumber(targetJid);
+
+		if (targetId === authorId) {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Como você vai se separar de si mesmo(a)? 🤔",
+				options: {
+					quotedMessageId: message.origin.id._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		activeRel = activeRels.find(
+			(r) =>
+				r.user1 === targetId ||
+				r.user2 === targetId ||
+				getCleanNumber(r.user1_jid) === targetId ||
+				getCleanNumber(r.user2_jid) === targetId
+		);
+
+		if (!activeRel) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Ops! Você não tem nenhum relacionamento ativo (namoro ou casamento) com ${getMentionStr(targetJid)}! 🧐`,
+				options: {
+					quotedMessageId: message.origin.id._serialized,
+					goReply: message.origin,
+					mentions: [targetJid]
+				}
+			});
+		}
+	} else if (args && args.length > 0) {
+		const arg = args[0].trim();
+		const cleanDigits = arg.replace(/^@/, "").replace(/\D/g, "");
+
+		if (/^\d+$/.test(arg)) {
+			const indexNum = parseInt(arg, 10);
+			// 1) Se for um número na faixa da lista simples (1 .. N)
+			if (indexNum >= 1 && indexNum <= activeRels.length) {
+				activeRel = activeRels[indexNum - 1];
+			} else {
+				// 2) Se não está na faixa simples, pode ser número de telefone ou ID do banco
+				activeRel = activeRels.find(
+					(r) =>
+						r.user1 === cleanDigits ||
+						r.user2 === cleanDigits ||
+						getCleanNumber(r.user1_jid) === cleanDigits ||
+						getCleanNumber(r.user2_jid) === cleanDigits ||
+						r.id === indexNum
+				);
+
+				if (!activeRel && indexNum > activeRels.length && arg.length <= 4) {
+					return new ReturnMessage({
+						chatId,
+						content: `❌ Número de relacionamento inválido! Você tem ${activeRels.length} relacionamento(s) ativo(s) (escolha entre 1 e ${activeRels.length}).\nConsulte a lista com *!relacionamento*.`,
+						options: {
+							quotedMessageId: message.origin.id._serialized,
+							goReply: message.origin
+						}
+					});
+				}
+			}
+		} else if (cleanDigits) {
+			// Argumento com @ ou texto que contém dígitos de telefone
+			activeRel = activeRels.find(
+				(r) =>
+					r.user1 === cleanDigits ||
+					r.user2 === cleanDigits ||
+					getCleanNumber(r.user1_jid) === cleanDigits ||
+					getCleanNumber(r.user2_jid) === cleanDigits
+			);
+		}
+
+		if (!activeRel) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Relacionamento não encontrado! Use *!separar [número]* (ex: *!separar 1*) ou mencione a pessoa com *!separar @pessoa*.\nConsulte seus relacionamentos com *!relacionamento*.`,
+				options: {
+					quotedMessageId: message.origin.id._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+	} else {
+		// Sem menção e sem argumentos
+		if (activeRels.length === 1) {
+			// Se o usuário tem apenas 1 relacionamento ativo, separa diretamente
+			activeRel = activeRels[0];
+		} else {
+			// Se possui múltiplos, lista as opções
+			const listLines = activeRels
+				.map((r, i) => {
+					const partnerJid = r.user1 === authorId ? r.user2_jid : r.user1_jid;
+					const partnerNumber = r.user1 === authorId ? r.user2 : r.user1;
+					const typeStr = r.tipo === "casamento" ? "💍 Casamento" : "💖 Namoro";
+					return `${i + 1}. ${getMentionStr(partnerJid)} (${partnerNumber}) - ${typeStr} -> *!separar ${i + 1}*`;
+				})
+				.join("\n");
+
+			const allPartnerJids = activeRels.map((r) =>
+				r.user1 === authorId ? r.user2_jid : r.user1_jid
+			);
+
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Você possui ${activeRels.length} relacionamentos ativos neste grupo! Especifique de quem deseja se separar:\n\n${listLines}\n\nExemplo: *!separar 1* ou *!separar @pessoa*`,
+				options: {
+					quotedMessageId: message.origin.id._serialized,
+					goReply: message.origin,
+					mentions: allPartnerJids
+				}
+			});
+		}
 	}
 
 	// Terminar o relacionamento imediatamente!
@@ -515,6 +610,8 @@ async function separarCommand(bot, message, args, group) {
 		[Date.now(), activeRel.id]
 	);
 
+	const partnerId = activeRel.user1 === authorId ? activeRel.user2 : activeRel.user1;
+
 	// Limpar qualquer pedido/proposta pendente entre eles
 	await database.dbRun(
 		dbName,
@@ -524,7 +621,7 @@ async function separarCommand(bot, message, args, group) {
 		  AND ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?))
 		  AND status = 'pendente'
 		`,
-		[groupId, authorId, targetId, targetId, authorId]
+		[groupId, authorId, partnerId, partnerId, authorId]
 	);
 
 	const relTypeStr = activeRel.tipo === "casamento" ? "casamento 💍" : "namoro 💖";
@@ -970,34 +1067,55 @@ async function relacionamentoCommand(bot, message, args, group) {
 		});
 	}
 
+	const activeRels = rels.filter((r) => r.status === "ativo");
+	const terminatedRels = rels.filter((r) => r.status === "terminado");
+
 	let responseText = `📊 *HISTÓRICO DE RELACIONAMENTOS* 📊\n\n👤 Perfil: ${getMentionStr(authorJid)}\n\n`;
 	const mentionsList = [authorJid];
 
-	rels.forEach((rel, index) => {
-		const partnerJid = rel.user1 === authorId ? rel.user2_jid : rel.user1_jid;
-		mentionsList.push(partnerJid);
+	if (activeRels.length > 0) {
+		responseText += `*Relacionamentos Ativos (${activeRels.length}):*\n`;
+		activeRels.forEach((rel, index) => {
+			const partnerJid = rel.user1 === authorId ? rel.user2_jid : rel.user1_jid;
+			const partnerNumber = rel.user1 === authorId ? rel.user2 : rel.user1;
+			if (!mentionsList.includes(partnerJid)) mentionsList.push(partnerJid);
 
-		const typeStr = rel.tipo === "casamento" ? "💍 Casamento" : "💖 Namoro";
-		const statusStr = rel.status === "ativo" ? "✅ Ativo" : "💔 Terminado";
+			const typeStr = rel.tipo === "casamento" ? "💍 Casamento" : "💖 Namoro";
+			const durationStr = formatDuration(Date.now() - rel.criado_em);
 
-		let durationStr = "";
-		if (rel.status === "ativo") {
-			durationStr = formatDuration(Date.now() - rel.criado_em);
-		} else if (rel.terminado_em) {
-			durationStr = formatDuration(rel.terminado_em - rel.criado_em);
-		} else {
-			durationStr = "Sem registro";
-		}
+			responseText += `${index + 1}. *Parceiro(a):* ${getMentionStr(partnerJid)} (${partnerNumber})\n`;
+			responseText += `   *Tipo:* ${typeStr}\n`;
+			responseText += `   *Duração:* ${durationStr}\n`;
+			responseText += `   *Coisaram:* ${rel.coisas_count} vez(es) 🔥\n`;
+			responseText += `   *Traições:* ${rel.traicoes_count} vez(es) 😈\n`;
+			responseText += `   *Para separar:* !separar ${index + 1}\n\n`;
+		});
+	} else {
+		responseText += `*Relacionamentos Ativos:*\nNenhum relacionamento ativo no momento. 💔\n\n`;
+	}
 
-		responseText += `${index + 1}. *Parceiro(a):* ${getMentionStr(partnerJid)}\n`;
-		responseText += `   *Tipo:* ${typeStr}\n`;
-		responseText += `   *Status:* ${statusStr}\n`;
-		responseText += `   *Duração:* ${durationStr}\n`;
-		responseText += `   *Coisaram:* ${rel.coisas_count} vez(es) 🔥\n`;
-		responseText += `   *Traições:* ${rel.traicoes_count} vez(es) 😈\n\n`;
-	});
+	if (terminatedRels.length > 0) {
+		responseText += `*Relacionamentos Anteriores (Terminados - ${terminatedRels.length}):*\n`;
+		terminatedRels.forEach((rel) => {
+			const partnerJid = rel.user1 === authorId ? rel.user2_jid : rel.user1_jid;
+			const partnerNumber = rel.user1 === authorId ? rel.user2 : rel.user1;
+			if (!mentionsList.includes(partnerJid)) mentionsList.push(partnerJid);
 
-	responseText += `Use bastante amor (ou safadeza) no grupo! 😉`;
+			const typeStr = rel.tipo === "casamento" ? "💍 Casamento" : "💖 Namoro";
+			let durationStr = "Sem registro";
+			if (rel.terminado_em && rel.criado_em) {
+				durationStr = formatDuration(rel.terminado_em - rel.criado_em);
+			}
+
+			responseText += `• *Parceiro(a):* ${getMentionStr(partnerJid)} (${partnerNumber})\n`;
+			responseText += `   *Tipo:* ${typeStr} (Terminado)\n`;
+			responseText += `   *Duração:* ${durationStr}\n`;
+			responseText += `   *Coisaram:* ${rel.coisas_count} vez(es) 🔥\n`;
+			responseText += `   *Traições:* ${rel.traicoes_count} vez(es) 😈\n\n`;
+		});
+	}
+
+	responseText += `💡 Dica: Para se separar, use *!separar [número]* ou *!separar @pessoa*.\nPara terminar todos de uma vez, use *!celibar*! 😉`;
 
 	return new ReturnMessage({
 		chatId,
@@ -1084,7 +1202,7 @@ async function relacionamentosCommand(bot, message, args, group) {
 		responseText += `*Relacionamentos Ativos:* \n`;
 		activeRels.forEach((rel, index) => {
 			const typeEmoji = rel.tipo === "casamento" ? "💍" : "💖";
-			responseText += `${index + 1}. ${getMentionStr(rel.user1_jid)} ${typeEmoji} ${getMentionStr(rel.user2_jid)} (Duração: ${formatDuration(Date.now() - rel.criado_em)})\n`;
+			responseText += `${index + 1}. ${getMentionStr(rel.user1_jid)} (${rel.user1}) ${typeEmoji} ${getMentionStr(rel.user2_jid)} (${rel.user2}) (Duração: ${formatDuration(Date.now() - rel.criado_em)})\n`;
 			if (!mentionsList.includes(rel.user1_jid)) mentionsList.push(rel.user1_jid);
 			if (!mentionsList.includes(rel.user2_jid)) mentionsList.push(rel.user2_jid);
 		});
@@ -1125,6 +1243,122 @@ async function relacionamentosCommand(bot, message, args, group) {
 	});
 }
 
+const CELIBAR_FRASES = [
+	"🧘 *VOTO DE CASTIDADE!* {usuario} aderiu ao celibato e abandonou {pessoas}! Agora a vida é só oração, chá de camomila e paz espiritual. 📿🕊️",
+	"🕊️ *FIM DA SAFADEZA!* {usuario} cansou da vida mundana, aderiu ao celibato e abandonou {pessoas} a ver navios! 🚢💔",
+	"🚫 *FECHADO PARA BALANÇO!* {usuario} aderiu ao celibato e abandonou {pessoas}! O coração trancou as portas e jogou a chave fora. 🔒🙅",
+	"💔 *CHORORÔ NO GRUPO!* {usuario} jogou a toalha, aderiu ao celibato e abandonou {pessoas}! Foi bom enquanto durou... ou não! 🏃‍♂️💨",
+	"⛪ *NOVO MONGE NO PEDAÇO!* {usuario} vestiu a túnica, aderiu ao celibato e abandonou {pessoas}! Que o universo conforte os corações partidos! 🕯️🥺",
+	"🛑 *GREVE GERAL!* {usuario} aderiu ao celibato e abandonou {pessoas}! Decretou abstinência total por tempo indeterminado! 🧘‍♂️✨",
+	"📿 *PAZ E SOSSEGO!* {usuario} percebeu que relacionamento só dá dor de cabeça, aderiu ao celibato e abandonou {pessoas}! Solteiro(a) e sereno(a)! 😌🍃"
+];
+
+async function celibarCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+
+	// Só funciona em grupo
+	if (!message.group) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Este comando só funciona em grupos! 👥",
+			options: {
+				quotedMessageId: message.origin.id._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	const groupId = message.group;
+	const authorJid = getSenderJid(message);
+	const authorId = getCleanNumber(authorJid);
+
+	// Buscar todos os relacionamentos ativos do autor neste grupo
+	const activeRels = await database.dbAll(
+		dbName,
+		`
+		SELECT * FROM relacionamentos 
+		WHERE group_id = ? 
+		  AND (user1 = ? OR user2 = ?)
+		  AND status = 'ativo'
+		  AND tipo IN ('namoro', 'casamento')
+		`,
+		[groupId, authorId, authorId]
+	);
+
+	if (!activeRels || activeRels.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ ${getMentionStr(authorJid)}, você não tem nenhum relacionamento ativo neste grupo para abandonar! Seu celibato já era involuntário... 😅`,
+			options: {
+				quotedMessageId: message.origin.id._serialized,
+				goReply: message.origin,
+				mentions: [authorJid]
+			}
+		});
+	}
+
+	const partnerJids = [];
+	activeRels.forEach((rel) => {
+		const pJid = rel.user1 === authorId ? rel.user2_jid : rel.user1_jid;
+		if (!partnerJids.includes(pJid)) {
+			partnerJids.push(pJid);
+		}
+	});
+
+	// Terminar todos os relacionamentos ativos do autor neste grupo
+	await database.dbRun(
+		dbName,
+		`
+		UPDATE relacionamentos 
+		SET status = 'terminado', terminado_em = ? 
+		WHERE group_id = ? 
+		  AND (user1 = ? OR user2 = ?)
+		  AND status = 'ativo'
+		  AND tipo IN ('namoro', 'casamento')
+		`,
+		[Date.now(), groupId, authorId, authorId]
+	);
+
+	// Limpar qualquer proposta pendente envolvendo o autor neste grupo
+	await database.dbRun(
+		dbName,
+		`
+		DELETE FROM relacionamentos 
+		WHERE group_id = ? 
+		  AND (user1 = ? OR user2 = ?)
+		  AND status = 'pendente'
+		`,
+		[groupId, authorId, authorId]
+	);
+
+	// Formatar lista de pessoas abandonadas
+	let listaPessoas = "";
+	if (partnerJids.length === 1) {
+		listaPessoas = getMentionStr(partnerJids[0]);
+	} else if (partnerJids.length === 2) {
+		listaPessoas = `${getMentionStr(partnerJids[0])} e ${getMentionStr(partnerJids[1])}`;
+	} else {
+		const allExceptLast = partnerJids.slice(0, -1).map(getMentionStr).join(", ");
+		const last = getMentionStr(partnerJids[partnerJids.length - 1]);
+		listaPessoas = `${allExceptLast} e ${last}`;
+	}
+
+	const randomFrase = CELIBAR_FRASES[Math.floor(Math.random() * CELIBAR_FRASES.length)];
+	const formattedFrase = randomFrase
+		.replace("{usuario}", getMentionStr(authorJid))
+		.replace("{pessoas}", listaPessoas);
+
+	return new ReturnMessage({
+		chatId,
+		content: formattedFrase,
+		options: {
+			quotedMessageId: message.origin.id._serialized,
+			goReply: message.origin,
+			mentions: [authorJid, ...partnerJids]
+		}
+	});
+}
+
 // Configura e exporta os comandos
 const commands = [
 	new Command({
@@ -1147,12 +1381,23 @@ const commands = [
 	}),
 	new Command({
 		name: "separar",
-		description: "Pede separação ou aceita pedido de separação",
+		aliases: ["divorciar", "divorcio"],
+		description: "Pede separação ou termina relacionamento por menção, número da lista ou telefone",
 		category: "interacao",
 		reactions: {
 			after: "💔"
 		},
 		method: separarCommand
+	}),
+	new Command({
+		name: "celibar",
+		aliases: ["celibato"],
+		description: "Termina todos os seus relacionamentos no grupo e adere ao celibato",
+		category: "interacao",
+		reactions: {
+			after: "🧘"
+		},
+		method: celibarCommand
 	}),
 	new Command({
 		name: "recusar",
@@ -1205,12 +1450,24 @@ const helper = {
 	about: "Sistema de relacionamentos, casamentos e amizades virtuais no grupo",
 	implementation:
 		"Gerencia propostas de casamento, divórcios, lista de casais do grupo e afinidades com dados em SQLite",
-	tags: "casamento,casar,divorcio,relacionamento,amor,zoeira,casais",
+	tags: "casamento,casar,divorcio,relacionamento,amor,zoeira,casais,celibar,celibato",
 	cmds: [
 		{
 			cmd: "!casar",
 			desc: "Pede um membro do grupo em casamento",
 			usage: ["!casar @fulano"],
+			category: "interacao"
+		},
+		{
+			cmd: "!separar",
+			desc: "Termina o relacionamento por menção, número da lista ou telefone",
+			usage: ["!separar @fulano", "!separar 1", "!separar 551199999999"],
+			category: "interacao"
+		},
+		{
+			cmd: "!celibar",
+			desc: "Termina todos os seus relacionamentos no grupo e adere ao celibato",
+			usage: ["!celibar"],
 			category: "interacao"
 		},
 		{
