@@ -1956,8 +1956,11 @@ class CommandHandler {
 				const now = Date.now();
 				const lastInteraction = group.interact.lastInteraction ?? 0;
 				let cdMinutos = group.interact.cooldown ?? 60;
-				if (cdMinutos < 30) {
-					cdMinutos = 30; // Limite 30
+				if (cdMinutos < 1) {
+					cdMinutos = 1; // Limite mínimo 1 minuto
+				}
+				if (cdMinutos > 720) {
+					cdMinutos = 720; // Limite máximo 12 horas (720 minutos)
 				}
 				const cooldown = cdMinutos * 60 * 1000; // Converte minutos para milissegundos
 
@@ -1965,8 +1968,11 @@ class CommandHandler {
 					// Gera número aleatório entre 1 e 10000
 					const randomValue = Math.floor(Math.random() * 10000) + 1;
 					let interactionChance = group.interact.chance ?? 100; // Padrão 1% de chance (100/10000)
-					if (interactionChance > 500) {
-						interactionChance = 500; // Limite 5%
+					if (interactionChance < 100 && interactionChance > 0) {
+						interactionChance = interactionChance * 100; // Suporte caso salvo como porcentagem direta (ex: 5 -> 500)
+					}
+					if (interactionChance > 10000) {
+						interactionChance = 10000; // Limite 100%
 					}
 
 					//this.logger.debug(`Verificação de interação automática: ${randomValue} <= ${interactionChance}`);

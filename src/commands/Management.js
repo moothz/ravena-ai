@@ -5231,20 +5231,24 @@ class Management {
 		if (args.length === 0 || isNaN(parseInt(args[0]))) {
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `🕐 Cooldown atual: ${group.interact.cooldown} minutos\n\nUse !g-interagir-cd [minutos] para alterar. Valores entre 5 minutos e 30 dias (43200 minutos).`
+				content: `🕐 Cooldown atual: ${group.interact.cooldown} minutos\n\nUse !g-interagir-cd [minutos] para alterar. Valores entre 1 minuto e 12 horas (720 minutos).`
 			});
 		}
 
 		// Analisa e valida o cooldown
 		let textoMinimo = "";
+		let textoMaximo = "";
 
 		let cooldown = parseInt(args[0]);
-		if (cooldown < 30) {
-			textoMinimo = " (mínimo possível)";
-			cooldown = 30; // Mínimo 30 minutos
+		if (cooldown < 1) {
+			textoMinimo = " (mínimo de 1 minuto)";
+			cooldown = 1; // Mínimo 1 minuto
 		}
 
-		if (cooldown > 43200) cooldown = 43200; // Máximo 30 dias
+		if (cooldown > 720) {
+			textoMaximo = " (máximo de 12 horas / 720 minutos)";
+			cooldown = 720; // Máximo 12 horas
+		}
 
 		// Atualiza cooldown
 		group.interact.cooldown = cooldown;
@@ -5254,7 +5258,7 @@ class Management {
 
 		return new ReturnMessage({
 			chatId: group.id,
-			content: `🕐 Cooldown de interações definido para ${cooldown} minutos${textoMinimo}.`
+			content: `🕐 Cooldown de interações definido para ${cooldown} minutos${textoMinimo}${textoMaximo}.`
 		});
 	}
 
@@ -5292,30 +5296,43 @@ class Management {
 
 		// Verifica se valor de chance foi fornecido
 		if (args.length === 0 || isNaN(parseInt(args[0]))) {
+			const chanceExibida =
+				group.interact.chance >= 100
+					? Math.round(group.interact.chance / 100)
+					: group.interact.chance;
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `📊 Chance atual: ${group.interact.chance / 100}% (${group.interact.chance}/10000)\n\nUse !g-interagir-chance [1-1000] para alterar. Valores entre 0.01% e 10%.`
+				content: `📊 Chance atual: ${chanceExibida}%\n\nUse !g-interagir-chance [1-100] para alterar. Valores entre 1% e 100%.`
 			});
 		}
 
 		let textoMaximo = "";
+		let textoMinimo = "";
 		// Analisa e valida a chance
-		let chance = parseInt(args[0]);
-		if (chance < 1) chance = 1; // Mínimo 0.01%
-		if (chance >= 500) {
-			chance = 500; // Máximo 5%
-			textoMaximo = " (máximo possível)";
+		const rawChance = parseInt(args[0]);
+		let chancePercent = rawChance;
+		if (rawChance > 100) {
+			// Suporte ao formato antigo em basis points (ex: 500 para 5%)
+			chancePercent = Math.round(rawChance / 100);
+		}
+		if (chancePercent < 1) {
+			chancePercent = 1;
+			textoMinimo = " (mínimo de 1%)";
+		}
+		if (chancePercent > 100) {
+			chancePercent = 100;
+			textoMaximo = " (máximo de 100%)";
 		}
 
-		// Atualiza chance
-		group.interact.chance = chance;
+		// Atualiza chance em base 10000 (1% = 100, 100% = 10000)
+		group.interact.chance = chancePercent * 100;
 
 		// Salva mudanças
 		await this.database.saveGroup(group);
 
 		return new ReturnMessage({
 			chatId: group.id,
-			content: `📊 Chance de interações definida para ${chance / 100}%${textoMaximo}.`
+			content: `📊 Chance de interações definida para ${chancePercent}%${textoMinimo}${textoMaximo}.`
 		});
 	}
 

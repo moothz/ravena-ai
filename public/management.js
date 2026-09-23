@@ -631,8 +631,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!groupData.interact) groupData.interact = {};
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
         groupData.interact.useCmds = document.getElementById('interact-use-cmds').checked;
-        groupData.interact.chance = parseInt(document.getElementById('interaction-chance').value);
-        groupData.interact.cooldown = parseInt(document.getElementById('interaction-cooldown').value);
+        const percentVal = parseInt(document.getElementById('interaction-chance').value, 10) || 1;
+        groupData.interact.chance = Math.min(100, Math.max(1, percentVal)) * 100;
+        const cdVal = parseInt(document.getElementById('interaction-cooldown').value, 10) || 30;
+        groupData.interact.cooldown = Math.min(720, Math.max(1, cdVal));
         const proporcaoSlider = document.getElementById('interaction-proporcao');
         if (proporcaoSlider) {
             groupData.interact.proporcao = parseInt(proporcaoSlider.value);
@@ -662,6 +664,19 @@ document.addEventListener('DOMContentLoaded', () => {
             els.heroStatusDesc.textContent = 'O bot está funcionando normalmente e respondendo comandos neste grupo.';
             els.groupPausedToggle.checked = true;
         }
+    }
+
+    function formatCooldownText(val) {
+        const minutes = parseInt(val, 10) || 1;
+        if (minutes < 60) {
+            return `${minutes} min`;
+        }
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        if (m === 0) {
+            return `${h}h (${minutes} min)`;
+        }
+        return `${h}h ${m}min (${minutes} min)`;
     }
 
     function populateFields() {
@@ -755,13 +770,35 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('auto-interaction').checked = !!interact.enabled;
         document.getElementById('interact-use-cmds').checked = interact.useCmds !== false;
         
-        const chanceVal = interact.chance || 1;
-        document.getElementById('interaction-chance').value = chanceVal; 
-        document.getElementById('chance-val').textContent = (chanceVal / 100).toFixed(2);
-        document.getElementById('interaction-chance').max = 1000;
+        const chanceRaw = interact.chance !== undefined ? interact.chance : 100;
+        let percentVal = 1;
+        if (chanceRaw >= 100) {
+            percentVal = Math.round(chanceRaw / 100);
+        } else if (chanceRaw > 0) {
+            percentVal = chanceRaw;
+        }
+        percentVal = Math.min(100, Math.max(1, percentVal));
 
-        document.getElementById('interaction-cooldown').value = interact.cooldown || 5;
-        document.getElementById('cooldown-val').textContent = interact.cooldown || 5;
+        const chanceInputEl = document.getElementById('interaction-chance');
+        if (chanceInputEl) {
+            chanceInputEl.min = 1;
+            chanceInputEl.max = 100;
+            chanceInputEl.value = percentVal;
+        }
+        const chanceValEl = document.getElementById('chance-val');
+        if (chanceValEl) chanceValEl.textContent = percentVal;
+        const chanceDescEl = document.getElementById('chance-desc-val');
+        if (chanceDescEl) chanceDescEl.textContent = percentVal + '%';
+
+        const cooldownVal = Math.min(720, Math.max(1, parseInt(interact.cooldown, 10) || 30));
+        const cooldownInputEl = document.getElementById('interaction-cooldown');
+        if (cooldownInputEl) {
+            cooldownInputEl.min = 1;
+            cooldownInputEl.max = 720;
+            cooldownInputEl.value = cooldownVal;
+        }
+        const cooldownValEl = document.getElementById('cooldown-val');
+        if (cooldownValEl) cooldownValEl.textContent = formatCooldownText(cooldownVal);
 
         const proporcaoVal = interact.proporcao !== undefined ? interact.proporcao : 50;
         const proporcaoSlider = document.getElementById('interaction-proporcao');
@@ -2673,16 +2710,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const chanceSlider = document.getElementById('interaction-chance');
-        if(chanceSlider) {
+        if (chanceSlider) {
             chanceSlider.addEventListener('input', (e) => {
-                document.getElementById('chance-val').textContent = (e.target.value / 100).toFixed(2);
+                document.getElementById('chance-val').textContent = e.target.value;
+                const descEl = document.getElementById('chance-desc-val');
+                if (descEl) descEl.textContent = e.target.value + '%';
             });
         }
 
         const cooldownSlider = document.getElementById('interaction-cooldown');
-        if(cooldownSlider) {
+        if (cooldownSlider) {
             cooldownSlider.addEventListener('input', (e) => {
-                document.getElementById('cooldown-val').textContent = e.target.value;
+                document.getElementById('cooldown-val').textContent = formatCooldownText(e.target.value);
             });
         }
 

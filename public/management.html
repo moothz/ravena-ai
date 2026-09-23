@@ -519,20 +519,23 @@
                             </div>
                             <div class="slider-group">
                                 <div class="slider-header">
-                                    <label id="lbl-interaction-chance">Frequência/Chance: <span id="chance-val" class="highlight-val">0.1</span>%</label>
+                                    <label id="lbl-interaction-chance">Chance de Interação: <span id="chance-val" class="highlight-val">1</span>%</label>
                                 </div>
-                                <input type="range" id="interaction-chance" min="1" max="1000" class="slider">
+                                <div class="field-hint" id="desc-interaction-chance">A cada mensagem enviada no grupo, tem <span id="chance-desc-val">1%</span> de chance do bot interagir se estiver fora de cooldown.</div>
+                                <input type="range" id="interaction-chance" min="1" max="100" value="1" class="slider">
                             </div>
                             <div class="slider-group">
                                 <div class="slider-header">
-                                    <label id="lbl-interaction-cooldown">Tempo de Espera (Cooldown): <span id="cooldown-val" class="highlight-val">5</span> min</label>
+                                    <label id="lbl-interaction-cooldown">Tempo de Espera (Cooldown): <span id="cooldown-val" class="highlight-val">30 min</span></label>
                                 </div>
-                                <input type="range" id="interaction-cooldown" min="5" max="43200" class="slider">
+                                <div class="field-hint">Tempo entre interações do bot, para evitar que ele envie mensagens frequentes (ou permitir que envie mais). Mínimo de 1 minuto e máximo de 12 horas.</div>
+                                <input type="range" id="interaction-cooldown" min="1" max="720" value="30" class="slider">
                             </div>
                             <div class="slider-group">
                                 <div class="slider-header">
                                     <label id="lbl-interaction-proporcao">Proporção IA: <span id="proporcao-val" class="highlight-val">50</span>%</label>
                                 </div>
+                                <div class="field-hint">Equilíbrio entre respostas geradas pela IA e comandos personalizados do grupo durante as interações.</div>
                                 <input type="range" id="interaction-proporcao" min="0" max="100" class="slider">
                                 <span id="proporcao-desc" class="field-hint mt-1"></span>
                             </div>
