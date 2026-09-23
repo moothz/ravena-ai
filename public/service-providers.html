@@ -355,6 +355,17 @@
                         <input type="checkbox" id="prov-tool-calling">
                         <label for="prov-tool-calling">Suporte a Tool Calling (Busca Web / Functions)</label>
                     </div>
+                    <div class="form-group">
+                        <label>Tamanho do Contexto (contextLength em tokens)</label>
+                        <input type="number" id="prov-context-length" class="form-control" placeholder="Ex: 16384, 32768, 65536" step="1">
+                        <small style="color: #888; font-size: 0.8em;">Janela de contexto máxima do modelo em tokens (ex: 16384, 32768, 65536).</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Máximo de Tokens de Saída (maxTokens)</label>
+                        <input type="number" id="prov-max-tokens" class="form-control" placeholder="Ex: 4096" step="1">
+                        <small style="color: #888; font-size: 0.8em;">Limite padrão de tokens para respostas geradas (padrão: 4096).</small>
+                    </div>
+                </div>
                 <div id="nudenet-extra-fields" class="hidden">
                     <div class="form-group">
                         <label>Timeout Circuit Breaker (Segundos)</label>

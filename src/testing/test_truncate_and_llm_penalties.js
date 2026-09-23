@@ -280,10 +280,19 @@ async function main() {
 		);
 		assert.strictEqual(capturedPayload.frequency_penalty, 0.2, "frequency_penalty deve ser 0.2");
 		assert.strictEqual(capturedPayload.presence_penalty, 0.2, "presence_penalty deve ser 0.2");
-		assert.strictEqual(capturedPayload.maxTokens, 2000, "maxTokens deve ser 2000");
+		assert.strictEqual(capturedPayload.maxTokens, 4096, "maxTokens deve ser 4096");
 		console.log(
 			"✓ LLMService repassou repetition_penalty, frequency_penalty, presence_penalty e maxTokens!"
 		);
+
+		// Testa se maxTokens customizado na chamada é preservado e não sobrescrito pelo config
+		await vllmProvider.method({ prompt: "teste", maxTokens: 200 });
+		assert.strictEqual(
+			capturedPayload.maxTokens,
+			200,
+			"maxTokens customizado deve ser preservado e não sobrescrito"
+		);
+		console.log("✓ maxTokens customizado na chamada é respeitado e não sobrescrito pelo config!");
 	} finally {
 		llmService.openaiCompletion = originalOpenaiCompletion;
 	}
@@ -297,6 +306,62 @@ async function main() {
 	);
 	assert(llmTruncated.endsWith("... [truncado]"));
 	console.log("✓ LLMService.truncateText limita texto do LLM em 3000 caracteres por padrão.");
+
+	// 5.3 Valida auto-recuperação do _postWithContextRetry em erro HTTP 400 de estouro de contexto
+	console.log("\n[5.3] Testando _postWithContextRetry auto-recuperação em HTTP 400...");
+	let attempts = 0;
+	let retriedPayload = null;
+	const axios = require("axios");
+	const originalPost = axios.post;
+	axios.post = async (url, payload) => {
+		attempts++;
+		if (attempts === 1) {
+			const err = new Error("Request failed with status code 400");
+			err.response = {
+				status: 400,
+				data: {
+					error: {
+						message:
+							"This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains at least 14385 input tokens, for a total of at least 16385 tokens. Please reduce the length of the input prompt or the number of requested output tokens. (parameter=input_tokens, value=14385)",
+						type: "BadRequestError",
+						param: "input_tokens",
+						code: 400
+					}
+				}
+			};
+			throw err;
+		}
+		retriedPayload = payload;
+		return { data: { choices: [{ message: { content: "Sucesso após retry" } }] } };
+	};
+
+	try {
+		const testPayload = {
+			model: "gemma4",
+			max_tokens: 2000,
+			messages: [{ role: "user", content: "oi" }]
+		};
+		const res = await llmService._postWithContextRetry(
+			"http://fake-endpoint",
+			testPayload,
+			{},
+			5000,
+			"TestProv"
+		);
+		assert.strictEqual(attempts, 2, "Deveria ter tentado 2 vezes (original + retry)");
+		assert.strictEqual(
+			testPayload.max_tokens,
+			1979,
+			"max_tokens deveria ter sido ajustado para 16384 - 14385 - 20 = 1979"
+		);
+		assert.strictEqual(retriedPayload.max_tokens, 1979, "payload enviado no retry deve ter 1979");
+		assert.strictEqual(res.data.choices[0].message.content, "Sucesso após retry");
+		console.log(
+			"✓ _postWithContextRetry ajustou max_tokens dinamicamente e recuperou com sucesso!"
+		);
+	} finally {
+		axios.post = originalPost;
+	}
 
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 }

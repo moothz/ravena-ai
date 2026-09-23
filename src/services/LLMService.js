@@ -1502,41 +1502,71 @@ class LLMService {
 				name: config.name,
 				textOnly,
 				toolCalling,
+				contextLength: config.contextLength,
+				maxTokens: config.maxTokens ?? config.max_tokens,
 				method: async (options) => {
-					// Apply config values
-					if (config.model) options.model = config.model;
-					if (config.temperature !== undefined) options.temperature = config.temperature;
-					if (config.top_k !== undefined) options.top_k = config.top_k;
-					if (config.top_p !== undefined) options.top_p = config.top_p;
-					if (config.min_p !== undefined) options.min_p = config.min_p;
-					if (config.frequency_penalty !== undefined) {
-						options.frequency_penalty = config.frequency_penalty;
+					// Clona para evitar mutar o objeto options compartilhado entre tentativas
+					const completionOptions = { ...options };
+
+					// Aplica valores da configuração respeitando se options já definiu
+					if (config.model && !completionOptions.model) completionOptions.model = config.model;
+					if (config.temperature !== undefined && completionOptions.temperature === undefined) {
+						completionOptions.temperature = config.temperature;
 					}
-					if (config.presence_penalty !== undefined) {
-						options.presence_penalty = config.presence_penalty;
+					if (config.top_k !== undefined && completionOptions.top_k === undefined) {
+						completionOptions.top_k = config.top_k;
 					}
-					if (config.repetition_penalty !== undefined) {
-						options.repetition_penalty = config.repetition_penalty;
+					if (config.top_p !== undefined && completionOptions.top_p === undefined) {
+						completionOptions.top_p = config.top_p;
 					}
-					if (config.maxTokens !== undefined) options.maxTokens = config.maxTokens;
-					if (config.max_tokens !== undefined) options.maxTokens = config.max_tokens;
-					if (config.apiKey) options.apiKey = config.apiKey;
+					if (config.min_p !== undefined && completionOptions.min_p === undefined) {
+						completionOptions.min_p = config.min_p;
+					}
+					if (
+						config.frequency_penalty !== undefined &&
+						completionOptions.frequency_penalty === undefined
+					) {
+						completionOptions.frequency_penalty = config.frequency_penalty;
+					}
+					if (
+						config.presence_penalty !== undefined &&
+						completionOptions.presence_penalty === undefined
+					) {
+						completionOptions.presence_penalty = config.presence_penalty;
+					}
+					if (
+						config.repetition_penalty !== undefined &&
+						completionOptions.repetition_penalty === undefined
+					) {
+						completionOptions.repetition_penalty = config.repetition_penalty;
+					}
+					// Só define maxTokens do config caso a chamada não tenha especificado
+					if (completionOptions.maxTokens === undefined) {
+						if (config.maxTokens !== undefined) completionOptions.maxTokens = config.maxTokens;
+						else if (config.max_tokens !== undefined)
+							completionOptions.maxTokens = config.max_tokens;
+					}
+					if (config.contextLength !== undefined && completionOptions.contextLength === undefined) {
+						completionOptions.contextLength = config.contextLength;
+					}
+					if (config.apiKey && !completionOptions.apiKey) completionOptions.apiKey = config.apiKey;
 					if (config.timeout_multiplier) {
-						options.timeout = options.timeout
-							? options.timeout * config.timeout_multiplier
+						completionOptions.timeout = completionOptions.timeout
+							? completionOptions.timeout * config.timeout_multiplier
 							: 30000 * config.timeout_multiplier;
 					}
-					if (config.ignoreVideo !== undefined) options.ignoreVideo = config.ignoreVideo;
-					if (config.toolCalling !== undefined && options.toolCalling === undefined) {
-						options.toolCalling = config.toolCalling;
+					if (config.ignoreVideo !== undefined && completionOptions.ignoreVideo === undefined) {
+						completionOptions.ignoreVideo = config.ignoreVideo;
+					}
+					if (config.toolCalling !== undefined && completionOptions.toolCalling === undefined) {
+						completionOptions.toolCalling = config.toolCalling;
 					}
 
-					const completionOptions = {
-						customEndpoint: config.url,
-						providerName: config.name,
-						toolCalling: options.toolCalling !== undefined ? options.toolCalling : toolCalling,
-						...options
-					};
+					completionOptions.customEndpoint = config.url;
+					completionOptions.providerName = config.name;
+					if (completionOptions.toolCalling === undefined) {
+						completionOptions.toolCalling = toolCalling;
+					}
 
 					const validateJsonResponse = (content) => {
 						if (!content || typeof content !== "string") return content;
@@ -2154,6 +2184,80 @@ class LLMService {
 	}
 
 	/**
+	 * Executa POST com retry automático caso a API retorne HTTP 400 por estouro de contexto
+	 * (ajustando max_tokens para os tokens restantes disponíveis no contexto).
+	 *
+	 * @param {string} endpoint - URL do endpoint
+	 * @param {Object} payload - Payload JSON a enviar
+	 * @param {Object} headers - Headers HTTP
+	 * @param {number} timeout - Timeout em ms
+	 * @param {string} providerName - Nome do provedor para logs
+	 * @returns {Promise<Object>} - Resposta do axios
+	 * @private
+	 */
+	async _postWithContextRetry(endpoint, payload, headers, timeout, providerName = "OpenAI") {
+		try {
+			return await axios.post(endpoint, payload, { headers, timeout });
+		} catch (error) {
+			const errMsg =
+				error.response?.data?.error?.message ||
+				(typeof error.response?.data === "string" ? error.response.data : "") ||
+				"";
+
+			// Caso 1: Estouro de tokens de saída somados ao prompt
+			// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains at least 14385 input tokens..."
+			const tokenMatch = errMsg.match(
+				/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (?:at least )?(\d+) input tokens/i
+			);
+
+			if (tokenMatch) {
+				const maxContext = parseInt(tokenMatch[1], 10);
+				const requestedTokens = parseInt(tokenMatch[2], 10);
+				const inputTokens = parseInt(tokenMatch[3], 10);
+				const availableTokens = maxContext - inputTokens - 20;
+
+				if (availableTokens >= 30) {
+					this.logger.warn(
+						`[LLMService][${providerName}] Contexto excedido: modelo suporta ${maxContext} tokens, prompt tem ${inputTokens} tokens. Ajustando max_tokens de ${requestedTokens} para ${availableTokens} e retentando...`
+					);
+					payload.max_tokens = availableTokens;
+					return await axios.post(endpoint, payload, { headers, timeout });
+				}
+			}
+
+			// Caso 2: Prompt excede limite de caracteres
+			// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains 604962 characters (more than 445904 characters, which is the upper bound for 14384 input tokens)..."
+			const charMatch = errMsg.match(
+				/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (\d+) characters.*?upper bound for (\d+) input tokens/i
+			);
+
+			if (charMatch && Array.isArray(payload.messages) && payload.messages.length > 0) {
+				const maxContext = parseInt(charMatch[1], 10);
+				const boundTokens = parseInt(charMatch[4], 10);
+				this.logger.warn(
+					`[LLMService][${providerName}] Prompt em caracteres excede limite do contexto (${charMatch[3]} chars). Truncando mensagens do prompt e retentando...`
+				);
+
+				const charBudget = Math.floor(boundTokens * 2.5);
+				for (let i = payload.messages.length - 1; i >= 0; i--) {
+					const msg = payload.messages[i];
+					if (msg.role === "user" && typeof msg.content === "string") {
+						if (msg.content.length > charBudget) {
+							msg.content = msg.content.slice(-charBudget);
+						}
+						break;
+					}
+				}
+
+				payload.max_tokens = Math.max(100, maxContext - boundTokens - 50);
+				return await axios.post(endpoint, payload, { headers, timeout });
+			}
+
+			throw error;
+		}
+	}
+
+	/**
 	 * Envia uma solicitação de completion para API compatível com OpenAI (OpenAI, LM Studio, DeepSeek, etc.)
 	 * @param {Object} options - Opções de solicitação
 	 * @param {string} options.prompt - O texto do prompt
@@ -2249,10 +2353,40 @@ class LLMService {
 						? 0.1
 						: 0.7);
 
+			let maxTokens = options.maxTokens ?? 4096;
+
+			// Ajusta dinamicamente caso o contextLength do modelo seja conhecido e o prompt esteja próximo do limite
+			const contextLength = options.contextLength;
+			if (contextLength && typeof contextLength === "number") {
+				let estimatedPromptTokens = 0;
+				if (typeof userContent === "string") {
+					estimatedPromptTokens += Math.ceil(userContent.length / 3);
+				} else if (Array.isArray(userContent)) {
+					for (const item of userContent) {
+						if (item.type === "text" && item.text) {
+							estimatedPromptTokens += Math.ceil(item.text.length / 3);
+						} else if (item.type === "image_url") {
+							estimatedPromptTokens += 1000;
+						}
+					}
+				}
+				if (typeof ctxInclude === "string") {
+					estimatedPromptTokens += Math.ceil(ctxInclude.length / 3);
+				}
+
+				const available = contextLength - estimatedPromptTokens - 30;
+				if (available > 30 && available < maxTokens) {
+					this.logger.warn(
+						`[LLMService][OpenAI] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
+					);
+					maxTokens = available;
+				}
+			}
+
 			const payload = {
 				model,
 				messages,
-				max_tokens: options.maxTokens ?? 5000,
+				max_tokens: maxTokens,
 				temperature: initialTemperature,
 				stream: false
 			};
@@ -2288,13 +2422,16 @@ class LLMService {
 
 			const timeout = options.timeout ?? this.apiTimeout;
 
-			let currentResponse = await axios.post(endpoint, payload, {
-				headers: {
+			let currentResponse = await this._postWithContextRetry(
+				endpoint,
+				payload,
+				{
 					Authorization: apiKey,
 					"Content-Type": "application/json"
 				},
-				timeout
-			});
+				timeout,
+				options.providerName || "OpenAI"
+			);
 
 			this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
 
@@ -2383,13 +2520,16 @@ class LLMService {
 					nextPayload.tools = nextTools;
 				}
 
-				currentResponse = await axios.post(endpoint, nextPayload, {
-					headers: {
+				currentResponse = await this._postWithContextRetry(
+					endpoint,
+					nextPayload,
+					{
 						Authorization: apiKey,
 						"Content-Type": "application/json"
 					},
-					timeout
-				});
+					timeout,
+					options.providerName || "OpenAI"
+				);
 
 				this._trackUsage(options.providerName || "OpenAI", currentResponse.data, model, options);
 			}
@@ -2501,10 +2641,39 @@ class LLMService {
 						? 0.1
 						: 0.7);
 
+			let maxTokens = options.maxTokens ?? 4096;
+
+			const contextLength = options.contextLength;
+			if (contextLength && typeof contextLength === "number") {
+				let estimatedPromptTokens = 0;
+				if (typeof userContent === "string") {
+					estimatedPromptTokens += Math.ceil(userContent.length / 3);
+				} else if (Array.isArray(userContent)) {
+					for (const item of userContent) {
+						if (item.type === "text" && item.text) {
+							estimatedPromptTokens += Math.ceil(item.text.length / 3);
+						} else if (item.type === "image_url") {
+							estimatedPromptTokens += 1000;
+						}
+					}
+				}
+				if (typeof ctxInclude === "string") {
+					estimatedPromptTokens += Math.ceil(ctxInclude.length / 3);
+				}
+
+				const available = contextLength - estimatedPromptTokens - 30;
+				if (available > 30 && available < maxTokens) {
+					this.logger.warn(
+						`[LLMService][OpenRouter] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
+					);
+					maxTokens = available;
+				}
+			}
+
 			const payload = {
 				model,
 				messages,
-				max_tokens: options.maxTokens ?? 5000,
+				max_tokens: maxTokens,
 				temperature: initialTemperature,
 				stream: false
 			};
@@ -2540,15 +2709,18 @@ class LLMService {
 
 			const timeout = options.timeout ?? this.apiTimeout;
 
-			let currentResponse = await axios.post(endpoint, payload, {
-				headers: {
+			let currentResponse = await this._postWithContextRetry(
+				endpoint,
+				payload,
+				{
 					Authorization: `Bearer ${apiKey}`,
 					"Content-Type": "application/json",
 					"HTTP-Referer": "https://ravena.local",
 					"X-Title": "RavenaBot"
 				},
-				timeout
-			});
+				timeout,
+				options.providerName || "OpenRouter"
+			);
 
 			this._trackUsage(options.providerName || "OpenRouter", currentResponse.data, model, options);
 
@@ -2637,15 +2809,18 @@ class LLMService {
 					nextPayload.tools = nextTools;
 				}
 
-				currentResponse = await axios.post(endpoint, nextPayload, {
-					headers: {
+				currentResponse = await this._postWithContextRetry(
+					endpoint,
+					nextPayload,
+					{
 						Authorization: `Bearer ${apiKey}`,
 						"Content-Type": "application/json",
 						"HTTP-Referer": "https://ravena.local",
 						"X-Title": "RavenaBot"
 					},
-					timeout
-				});
+					timeout,
+					options.providerName || "OpenRouter"
+				);
 
 				this._trackUsage(
 					options.providerName || "OpenRouter",

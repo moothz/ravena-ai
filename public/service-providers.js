@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="provider-card ${isEnabled ? '' : 'disabled'}">
                 <div class="provider-info">
                     <div class="provider-name">${p.name} ${statusHtml}</div>
-                    <div class="provider-type">${p.url} ${p.model ? `(${p.model})` : ''} ${p.circuitBreakerDuration ? `[CB: ${Math.round(p.circuitBreakerDuration / 1000)}s]` : ''}</div>
+                    <div class="provider-type">${p.url} ${p.model ? `(${p.model})` : ''} ${p.contextLength ? `[Ctx: ${p.contextLength}]` : ''} ${p.maxTokens ? `[MaxOut: ${p.maxTokens}]` : ''} ${p.circuitBreakerDuration ? `[CB: ${Math.round(p.circuitBreakerDuration / 1000)}s]` : ''}</div>
                 </div>
                 <div>
                   <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleProvider('${cat}', ${index})"> Ativo
@@ -155,6 +155,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('prov-text-only').checked = !!p.textOnly;
                 document.getElementById('prov-ignore-video').checked = !!p.ignoreVideo;
                 document.getElementById('prov-tool-calling').checked = !!p.toolCalling;
+                document.getElementById('prov-context-length').value = p.contextLength || '';
+                document.getElementById('prov-max-tokens').value = p.maxTokens || '';
             } else if (category === 'nudenet') {
                 const cbSeconds = p.circuitBreakerDuration !== undefined
                     ? Math.round(p.circuitBreakerDuration / 1000)
@@ -173,6 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('prov-text-only').checked = false;
             document.getElementById('prov-ignore-video').checked = false;
             document.getElementById('prov-tool-calling').checked = false;
+            document.getElementById('prov-context-length').value = '';
+            document.getElementById('prov-max-tokens').value = '';
             const cbInput = document.getElementById('prov-circuit-breaker');
             if (cbInput) cbInput.value = 15;
            }
@@ -227,6 +231,26 @@ document.addEventListener('DOMContentLoaded', () => {
             provider.textOnly = document.getElementById('prov-text-only').checked;
             provider.ignoreVideo = document.getElementById('prov-ignore-video').checked;
             provider.toolCalling = document.getElementById('prov-tool-calling').checked;
+
+            const contextLen = parseInt(document.getElementById('prov-context-length').value, 10);
+            if (!isNaN(contextLen) && contextLen > 0) {
+                provider.contextLength = contextLen;
+            }
+            const maxToks = parseInt(document.getElementById('prov-max-tokens').value, 10);
+            if (!isNaN(maxToks) && maxToks > 0) {
+                provider.maxTokens = maxToks;
+            }
+
+            if (isEdit) {
+                const p = config[category][index];
+                if (p.repetition_penalty !== undefined) provider.repetition_penalty = p.repetition_penalty;
+                if (p.frequency_penalty !== undefined) provider.frequency_penalty = p.frequency_penalty;
+                if (p.presence_penalty !== undefined) provider.presence_penalty = p.presence_penalty;
+                if (p.min_p !== undefined) provider.min_p = p.min_p;
+                if (p.top_p !== undefined) provider.top_p = p.top_p;
+                if (p.top_k !== undefined) provider.top_k = p.top_k;
+                if (p.temperature !== undefined) provider.temperature = p.temperature;
+            }
         } else if (category === 'nudenet') {
             const cbInput = document.getElementById('prov-circuit-breaker');
             const cbVal = cbInput ? parseFloat(cbInput.value) : 15;

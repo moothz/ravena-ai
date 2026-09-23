@@ -24,7 +24,8 @@
 			"repetition_penalty": 1.15,
 			"frequency_penalty": 0.2,
 			"presence_penalty": 0.2,
-			"maxTokens": 2000,
+			"maxTokens": 4096,
+			"contextLength": 32768,
 			"timeout_multiplier": 2,
 			"toolCalling": true
 		},

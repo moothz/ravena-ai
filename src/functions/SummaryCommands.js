@@ -132,8 +132,8 @@ async function analyzeVideo(message, bot = null) {
 
 		await fs.writeFile(videoPath, Buffer.from(media.data, "base64"));
 
-		// Extrai frames usando a função utilitária
-		const framePaths = await extractFrames(videoPath, tempDir, 30);
+		// Extrai frames usando a função utilitária (12 frames para equilibrar contexto e tokens)
+		const framePaths = await extractFrames(videoPath, tempDir, 12);
 
 		// Lê os frames
 		const frames = [];
@@ -508,6 +508,9 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 			}
 		};
 
+		// Limita o texto para análise para evitar estourar o limite de tokens do modelo
+		const textToAnalyze = pendingText.length > 20000 ? pendingText.slice(-20000) : pendingText;
+
 		const prompt = `Analise a conversa abaixo e preencha o dossiê:
 - use apenas 1 palavra para 'type'.
 - seja extremamente suscinto no 'summary' (máximo 200 caracteres).
@@ -518,13 +521,14 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 ${historicalContext}
 
 Conversa:
-${pendingText}`;
+${textToAnalyze}`;
 
 		const response = await llmService.getCompletion({
 			prompt,
 			systemContext: systemPrompt,
 			response_format: dossierSchema,
 			priority: 10, // Baixa prioridade
+			maxTokens: 500,
 			debugPrompt: false
 		});
 
@@ -554,7 +558,10 @@ ${pendingText}`;
 				let newPendingText = "";
 				if (currentStatus && currentStatus.pending_text) {
 					// Removemos do início do texto atual o que enviamos para a IA
-					newPendingText = currentStatus.pending_text.replace(pendingText, "");
+					newPendingText = currentStatus.pending_text.replace(textToAnalyze, "");
+					if (newPendingText.length > 20000) {
+						newPendingText = newPendingText.slice(-10000);
+					}
 				}
 
 				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
@@ -565,7 +572,7 @@ ${pendingText}`;
 					[
 						chatId,
 						JSON.stringify(parsed),
-						isProblematic ? pendingText : null,
+						isProblematic ? textToAnalyze : null,
 						0,
 						parsed.problematic_score,
 						isProblematic
@@ -690,6 +697,30 @@ ${lastDossiersText}
 		}
 	} catch (error) {
 		logger.error(`[${chatId}] Erro ao processar análise de dossiê:`, error);
+		try {
+			const currentStatus = await database.dbGet(
+				DB_NAME,
+				"SELECT pending_text FROM group_dossier_status WHERE group_id = ?",
+				[chatId]
+			);
+			if (
+				currentStatus &&
+				currentStatus.pending_text &&
+				currentStatus.pending_text.length > 30000
+			) {
+				const trimmed = currentStatus.pending_text.slice(-10000);
+				await database.dbRun(
+					DB_NAME,
+					"UPDATE group_dossier_status SET pending_text = ? WHERE group_id = ?",
+					[trimmed, chatId]
+				);
+				logger.warn(
+					`[${chatId}] Análise de dossiê falhou e pending_text estava com ${currentStatus.pending_text.length} chars. Truncado para 10000 chars para evitar loop.`
+				);
+			}
+		} catch (dbErr) {
+			logger.error(`[${chatId}] Erro ao truncar pending_text excedente:`, dbErr);
+		}
 	} finally {
 		activeAnalyses.delete(chatId);
 	}
@@ -913,16 +944,18 @@ async function storeMessage(message, chatId, bot) {
 /**
  * Obtém mensagens recentes para um grupo
  * @param {string} chatId - O ID do grupo
+ * @param {number} [limit=150] - Limite máximo de mensagens recentes a buscar
  * @returns {Promise<Array>} - Array de objetos de mensagem
  */
-async function getRecentMessages(chatId) {
+async function getRecentMessages(chatId, limit = 150) {
+	if (!chatId) return [];
 	try {
 		const rows = await database.dbAll(
 			DB_NAME,
-			"SELECT author, text, timestamp FROM chat_conversations WHERE group_id = ? ORDER BY timestamp ASC",
-			[chatId]
+			"SELECT author, text, timestamp FROM chat_conversations WHERE group_id = ? ORDER BY timestamp DESC LIMIT ?",
+			[chatId, limit]
 		);
-		return rows.map((r) => ({
+		return rows.reverse().map((r) => ({
 			author: r.author,
 			text: r.text,
 			timestamp: r.timestamp

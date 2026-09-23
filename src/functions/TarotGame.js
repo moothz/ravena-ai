@@ -253,7 +253,8 @@ Responda em PORTUGUÊS BRASIL.`;
 		analysis = await llmService.getCompletion({
 			prompt,
 			systemContext: `Você é uma cartomante experiente, futurista e misteriosa chamada ${botDisplayName}. Suas respostas sempre são em 800 caracteres ou menos, sucintas mas poderosas.`,
-			priority: 5
+			priority: 5,
+			maxTokens: 1000
 		});
 	} catch (error) {
 		logger.error("[Tarot] Error in IA analysis:", error);
