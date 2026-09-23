@@ -31,7 +31,12 @@ async function searchAircraftRAB(bot, message, args, group) {
 	try {
 		const chatId = message.group ?? message.author;
 
-		if (args.length === 0) {
+		const cleanArgs = args
+			.join("")
+			.toUpperCase()
+			.replace(/[^A-Z0-9-]/g, "");
+
+		if (!cleanArgs) {
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça a matrícula da aeronave. Exemplo: !rab PT-XYZ",
@@ -42,28 +47,51 @@ async function searchAircraftRAB(bot, message, args, group) {
 			});
 		}
 
-		const marca = args[0].toUpperCase();
+		const marca = cleanArgs;
 		logger.info(`Consultando aeronave com matrícula: ${marca}`);
 
-		// URL da consulta RAB
-		const url = `https://sistemas.anac.gov.br/aeronaves/cons_rab_resposta.asp?textMarca=${marca}`;
+		// URL da consulta RAB (ANAC migrou para aeronaves.anac.gov.br)
+		const currentUrl = `https://aeronaves.anac.gov.br/aeronaves/cons_rab_resposta.asp?textMarca=${encodeURIComponent(marca)}`;
 
 		// Realiza a requisição com timeout de 10 segundos
-		const response = await axios.get(url, {
+		let response = await axios.get(currentUrl, {
 			responseType: "arraybuffer",
-			timeout: 10000
+			timeout: 10000,
+			headers: {
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+			}
 		});
 
 		// Decodifica a resposta usando ISO-8859-1 (padrão para sites brasileiros antigos)
 		const decoder = new TextDecoder("iso-8859-1");
-		const html = decoder.decode(response.data);
+		let html = decoder.decode(response.data);
+
+		// Se houver meta refresh redirect, segue o redirecionamento
+		const refreshMatch = html.match(
+			/<meta[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*url=([^"']+)["']/i
+		);
+		if (refreshMatch && refreshMatch[1]) {
+			let redirectUrl = refreshMatch[1].trim();
+			if (!redirectUrl.startsWith("http")) {
+				redirectUrl = new URL(redirectUrl, currentUrl).href;
+			}
+			response = await axios.get(redirectUrl, {
+				responseType: "arraybuffer",
+				timeout: 10000,
+				headers: {
+					"User-Agent":
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+				}
+			});
+			html = decoder.decode(response.data);
+		}
 
 		// Carrega o HTML para parsing
 		const $ = cheerio.load(html);
 
-		// Verifica se a aeronave foi encontrada
-		if (html.includes("encontrado")) {
-			// alert("Registro não encontrado!");
+		// Verifica se a aeronave não foi encontrada via alerta do script da ANAC
+		if (html.toLowerCase().includes("encontrado")) {
 			logger.info(`Matrícula ${marca} não encontrada.`);
 			return new ReturnMessage({
 				chatId,
@@ -77,21 +105,35 @@ async function searchAircraftRAB(bot, message, args, group) {
 
 		// Encontra a tabela com os dados da aeronave
 		const table = $(".table.table-hover");
+		const rows = [];
 
-		// Inicializa a mensagem de retorno
-		let retorno = `🛄 *Consulta RAB - Matrícula ${marca}*\n\n`;
-
-		// Itera sobre cada linha da tabela
 		table.find("tr").each((index, element) => {
-			// Extrai a propriedade e o valor de cada linha
 			const property = $(element).find("th:nth-child(1)").text().trim();
-			const value = $(element).find("td:nth-child(2)").text().trim();
+			const value = $(element).find("td:nth-child(2)").text().trim().replace(/\s+/g, " ");
 
-			// Adiciona à mensagem de retorno se houver conteúdo
 			if (property && value) {
-				retorno += `*${property}*: ${value}\n`;
+				// Ignora avisos de campos descontinuados da ANAC
+				if (value.includes("descontinuado") || value.includes("ConsultaRAB NOVO")) {
+					return;
+				}
+				const cleanProperty = property.replace(/:$/, "").trim();
+				rows.push(`*${cleanProperty}*: ${value}`);
 			}
 		});
+
+		if (rows.length === 0) {
+			logger.info(`Matrícula ${marca} não retornou dados.`);
+			return new ReturnMessage({
+				chatId,
+				content: `🛄 Consulta RAB - Matrícula '${marca}' não encontrada!`,
+				options: {
+					quotedMessageId: message.origin.id._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const retorno = `🛄 *Consulta RAB - Matrícula ${marca}*\n\n` + rows.join("\n");
 
 		logger.info(`Dados da aeronave ${marca} encontrados e processados.`);
 
