@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel de Gerenciamento - RavenaBot</title>
-    <link rel="stylesheet" href="/management.css?v=20">
+    <link rel="stylesheet" href="/management.css?v=22">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -663,6 +663,14 @@
                             <div id="no-youtube_live-msg" class="text-center p-3 text-muted hidden">Nenhum canal configurado para lives.</div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Elementos legados mantidos para compatibilidade com versões em cache do script -->
+                <div style="display: none;" aria-hidden="true">
+                    <table class="table" id="youtube-table">
+                        <tbody></tbody>
+                    </table>
+                    <div id="no-youtube-msg"></div>
                 </div>
 
                 <!-- Accordion 4: Comandos Personalizados -->
@@ -1351,6 +1359,6 @@
         </div>
     </div>
 
-    <script src="/management.js?v=20"></script>
+    <script src="/management.js?v=22"></script>
 </body>
 </html>

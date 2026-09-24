@@ -739,29 +739,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const categories = ["geral","grupo","utilidades","saude","midia","ia","downloaders","jogos","cultura","áudio","tts","busca","listas","arquivos","general","diversao","info","imagens","zoeira"];
         const mutedList = document.getElementById('muted-categories-list');
-        mutedList.innerHTML = '';
-        const muted = groupData.mutedCategories || [];
-        categories.forEach(cat => {
-            const div = document.createElement('div');
-            div.className = 'checkbox-group toggle-row-compact';
-            div.innerHTML = `
-                <span class="toggle-label">${cat}</span>
-                <label class="switch-toggle">
-                    <input type="checkbox" id="mute-cat-${cat}" ${muted.includes(cat) ? 'checked' : ''}>
-                    <span class="slider-round"></span>
-                </label>
-            `;
-            div.querySelector('input').addEventListener('change', (e) => {
-                if(e.target.checked) {
-                    if(!groupData.mutedCategories) groupData.mutedCategories = [];
-                    if(!groupData.mutedCategories.includes(cat)) groupData.mutedCategories.push(cat);
-                } else {
-                    if(groupData.mutedCategories) groupData.mutedCategories = groupData.mutedCategories.filter(c => c !== cat);
-                }
-                setDirty(true);
+        if (mutedList) {
+            mutedList.innerHTML = '';
+            const muted = groupData.mutedCategories || [];
+            categories.forEach(cat => {
+                const div = document.createElement('div');
+                div.className = 'checkbox-group toggle-row-compact';
+                div.innerHTML = `
+                    <span class="toggle-label">${cat}</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="mute-cat-${cat}" ${muted.includes(cat) ? 'checked' : ''}>
+                        <span class="slider-round"></span>
+                    </label>
+                `;
+                div.querySelector('input').addEventListener('change', (e) => {
+                    if(e.target.checked) {
+                        if(!groupData.mutedCategories) groupData.mutedCategories = [];
+                        if(!groupData.mutedCategories.includes(cat)) groupData.mutedCategories.push(cat);
+                    } else {
+                        if(groupData.mutedCategories) groupData.mutedCategories = groupData.mutedCategories.filter(c => c !== cat);
+                    }
+                    setDirty(true);
+                });
+                mutedList.appendChild(div);
             });
-            mutedList.appendChild(div);
-        });
+        }
 
         document.getElementById('auto-stt').checked = !!groupData.autoStt;
         document.getElementById('notifica-grupo-fechado').checked = !!groupData.notificaGrupoFechado;
@@ -838,6 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTags(containerId, dataList, updateCallback) {
         const container = document.getElementById(containerId);
+        if (!container) return;
         container.innerHTML = '';
         dataList.forEach(item => {
             const tag = document.createElement('span');
@@ -881,6 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMediaList(containerId, mediaObj, type) {
         const container = document.getElementById(containerId);
+        if (!container) return;
         container.innerHTML = '';
 
         const entries = Object.entries(mediaObj).filter(([k, v]) => !!v);
@@ -1068,9 +1072,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Streams (Twitch, Kick, YouTube) ---
 
     function renderStreamSection(platform) {
+        if (platform === 'youtube') {
+            renderStreamSection('youtube_video');
+            renderStreamSection('youtube_live');
+            const legacyTbody = document.querySelector('#youtube-table tbody');
+            const legacyNoMsg = document.querySelector('#no-youtube-msg');
+            if (legacyTbody) legacyTbody.innerHTML = '';
+            if (legacyNoMsg) legacyNoMsg.classList.add('hidden');
+            return;
+        }
+
         const tbody = document.querySelector(`#${platform}-table tbody`);
         const noMsg = document.querySelector(`#no-${platform}-msg`);
-        if (!tbody || !noMsg) return;
+        if (!tbody) return;
         tbody.innerHTML = '';
 
         let streams = [];
@@ -1087,9 +1101,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (streams.length === 0) {
-            noMsg.classList.remove('hidden');
+            if (noMsg) noMsg.classList.remove('hidden');
         } else {
-            noMsg.classList.add('hidden');
+            if (noMsg) noMsg.classList.add('hidden');
             streams.forEach((stream) => {
                 const index = stream._originalIndex;
                 const tr = document.createElement('tr');
@@ -1237,11 +1251,14 @@ document.addEventListener('DOMContentLoaded', () => {
             textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{link\}/gi, `https://${currentStream?.platform || 'twitch'}.tv/${channelName}`);
         }
         
-        els.streamWaText.innerHTML = formatWhatsAppMarkdown(textContent);
+        if (els.streamWaText) {
+            els.streamWaText.innerHTML = formatWhatsAppMarkdown(textContent);
+        }
     }
 
     function renderStreamMediaList(containerId, mediaArray) {
         const container = document.getElementById(containerId);
+        if (!container) return;
         container.innerHTML = '';
         
         mediaArray.forEach((media, index) => {
@@ -1494,14 +1511,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderCommandsTable() {
         const tbody = document.querySelector('#commands-table tbody');
+        if (!tbody) return;
         tbody.innerHTML = '';
         const activeCmds = customCommands.filter(c => !c.deleted);
         
+        const noCmdsMsg = document.getElementById('no-commands-msg');
         if (activeCmds.length === 0) {
-            document.getElementById('no-commands-msg').classList.remove('hidden');
+            if (noCmdsMsg) noCmdsMsg.classList.remove('hidden');
             return;
         } else {
-            document.getElementById('no-commands-msg').classList.add('hidden');
+            if (noCmdsMsg) noCmdsMsg.classList.add('hidden');
         }
 
         activeCmds.forEach(cmd => {
@@ -1544,7 +1563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentEditingCmd = cmd;
         els.modalTitle.textContent = cmd ? 'Editar Comando' : 'Novo Comando';
         els.btnDeleteCmd.classList.toggle('hidden', !cmd);
-        els.cmdResponsesList.innerHTML = '';
+        if (els.cmdResponsesList) els.cmdResponsesList.innerHTML = '';
 
         if (cmd) {
             els.cmdTrigger.value = cmd.startsWith;
@@ -1672,6 +1691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Emoji Grid
     function renderEmojiGrid() {
         const container = document.getElementById('emoji-list');
+        if (!container) return;
         container.innerHTML = '';
         COMMON_EMOJIS.forEach(emoji => {
             const span = document.createElement('span');
@@ -1711,6 +1731,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Variables Picker
     function renderVariables(filter = '') {
         const container = document.getElementById('variable-list');
+        if (!container) return;
         container.innerHTML = '';
         
         const filtered = AVAILABLE_VARIABLES.filter(v => 
@@ -1732,6 +1753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLanguages(filter = '') {
         const container = document.getElementById('variable-list');
+        if (!container) return;
         container.innerHTML = '';
         
         const filtered = AVAILABLE_LANGUAGES.filter(l =>
@@ -2066,6 +2088,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMembers(filter = '') {
         const tbody = els.memberTableBody;
+        if (!tbody) return;
         tbody.innerHTML = '';
         
         const actionHeader = document.getElementById('member-action-header');
@@ -2189,6 +2212,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCmdTags() {
+        if (!els.cmdTagsList) return;
         els.cmdTagsList.innerHTML = '';
         currentCmdMentions.forEach(m => {
             const clean = m.split('@')[0];
