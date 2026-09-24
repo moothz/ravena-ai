@@ -44,6 +44,155 @@ const RARITY_LABEL = {
 	LEGENDARY: "Lendário"
 };
 
+// Limite máximo de itens na Wishlist
+const WISHLIST_MAX_ITEMS = 100;
+
+// Pesos base de cada raridade no sorteio (RollService)
+const RARITY_WEIGHTS = {
+	COMMON: 100,
+	UNCOMMON: 60,
+	RARE: 30,
+	EPIC: 15,
+	LEGENDARY: 5
+};
+
+// Cache de estatísticas e probabilidades de drop
+let cachedDropStats = null;
+let cachedDropStatsAt = 0;
+const DROP_STATS_CACHE_TTL = 15 * 60 * 1000; // 15 minutos
+
+async function getUserWishlistStats(userId, totalWeight) {
+	try {
+		const { data } = await api.get(`/wishlist/${userId}`);
+		const wishlist = data?.data || [];
+		if (wishlist.length === 0) {
+			return {
+				count: 0,
+				maxItems: WISHLIST_MAX_ITEMS,
+				totalWishWeight: 0,
+				anyWishChance: 0,
+				oneInX: null
+			};
+		}
+
+		let totalWishWeight = 0;
+		for (const item of wishlist) {
+			const char = item.character;
+			const r = char?.baseRarity || char?.rarity || "COMMON";
+			const baseW = RARITY_WEIGHTS[r] || 100;
+			const multiplier = item.isStarWish ? 2.0 : 1.5;
+			totalWishWeight += Math.max(1, Math.round(baseW * multiplier));
+		}
+
+		const anyWishChance = totalWeight > 0 ? (totalWishWeight / totalWeight) * 100 : 0;
+		return {
+			count: wishlist.length,
+			maxItems: WISHLIST_MAX_ITEMS,
+			totalWishWeight,
+			anyWishChance,
+			oneInX: totalWishWeight > 0 ? Math.round(totalWeight / totalWishWeight) : null
+		};
+	} catch (_) {
+		return null;
+	}
+}
+
+async function getDropRateStats(userId = null, forceRefresh = false) {
+	const now = Date.now();
+	if (!forceRefresh && cachedDropStats && now - cachedDropStatsAt < DROP_STATS_CACHE_TTL) {
+		if (userId) {
+			const userWishlistStats = await getUserWishlistStats(userId, cachedDropStats.totalWeight);
+			return { ...cachedDropStats, userWishlistStats };
+		}
+		return cachedDropStats;
+	}
+
+	try {
+		// 1. Tenta endpoint direto /characters/stats
+		const params = userId ? { userId } : {};
+		const { data } = await api.get("/characters/stats", { params, timeout: 5000 });
+		if (data?.success && data?.data) {
+			cachedDropStats = data.data;
+			cachedDropStatsAt = now;
+			return data.data;
+		}
+	} catch (_) {
+		// Fallback para cálculo dinâmico
+	}
+
+	// 2. Fallback dinâmico: busca contagens por raridade
+	try {
+		const rarities = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
+		const counts = {};
+		await Promise.all(
+			rarities.map(async (r) => {
+				try {
+					const res = await api.get(`/characters?rarity=${r}&limit=1`, { timeout: 4000 });
+					counts[r] = res.data?.data?.total ?? 0;
+				} catch (_) {
+					counts[r] = { COMMON: 23974, UNCOMMON: 2393, RARE: 837, EPIC: 220, LEGENDARY: 56 }[r];
+				}
+			})
+		);
+
+		const totalCharacters = Object.values(counts).reduce((a, b) => a + b, 0);
+		let totalWeight = 0;
+		for (const r of rarities) {
+			totalWeight += counts[r] * (RARITY_WEIGHTS[r] || 100);
+		}
+
+		const breakdown = rarities.map((r) => {
+			const count = counts[r];
+			const baseWeight = RARITY_WEIGHTS[r] || 100;
+			const categoryWeight = count * baseWeight;
+			const categoryChance = totalWeight > 0 ? (categoryWeight / totalWeight) * 100 : 0;
+			const singleBaseChance = totalWeight > 0 ? (baseWeight / totalWeight) * 100 : 0;
+			const singleWishChance =
+				totalWeight > 0 ? (Math.round(baseWeight * 1.5) / totalWeight) * 100 : 0;
+			const singleStarWishChance =
+				totalWeight > 0 ? (Math.round(baseWeight * 2.0) / totalWeight) * 100 : 0;
+
+			return {
+				rarity: r,
+				count,
+				percentOfTotal: totalCharacters > 0 ? (count / totalCharacters) * 100 : 0,
+				baseWeight,
+				categoryWeight,
+				categoryChance,
+				oneInX: categoryWeight > 0 ? Math.round(totalWeight / categoryWeight) : null,
+				singleBaseChance,
+				singleBaseOneInX: baseWeight > 0 ? Math.round(totalWeight / baseWeight) : null,
+				singleWishChance,
+				singleWishOneInX:
+					baseWeight > 0 ? Math.round(totalWeight / Math.round(baseWeight * 1.5)) : null,
+				singleStarWishChance,
+				singleStarWishOneInX:
+					baseWeight > 0 ? Math.round(totalWeight / Math.round(baseWeight * 2.0)) : null
+			};
+		});
+
+		let userWishlistStats = null;
+		if (userId) {
+			userWishlistStats = await getUserWishlistStats(userId, totalWeight);
+		}
+
+		const result = {
+			totalCharacters,
+			totalWeight,
+			wishlistMaxItems: WISHLIST_MAX_ITEMS,
+			breakdown,
+			userWishlistStats
+		};
+
+		cachedDropStats = result;
+		cachedDropStatsAt = now;
+		return result;
+	} catch (e) {
+		logger.error("Erro ao calcular drop stats:", e);
+		return null;
+	}
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getUserId(message) {
@@ -127,7 +276,7 @@ function handleApiError(err, chatId, defaultMsg) {
 		LOCK_EXPIRED: "⌛ A janela de 120 segundos para casar expirou!",
 		CHARACTER_ALREADY_CLAIMED: "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
-		WISHLIST_LIMIT_REACHED: "⚠️ Sua wishlist está cheia (máximo de 30). Remova um item antes.",
+		WISHLIST_LIMIT_REACHED: "⚠️ Sua wishlist está cheia (máximo de 100). Remova um item antes.",
 		CHARACTER_NOT_FOUND: "🔍 Personagem não encontrado. Verifique o ID informado.",
 		USER_NOT_FOUND: "👤 Usuário não cadastrado ainda. Use *!mu-roll* para começar!"
 	};
@@ -167,7 +316,15 @@ function makeRollHandler(genderFilter) {
 			const labelRarity = RARITY_LABEL[rarity] || rarity;
 
 			let text = `🎲 *${character.name}* — _${character.series}_\n`;
-			text += `${emojiRarity} *[${labelRarity}]*\n`;
+			text += `${emojiRarity} *[${labelRarity}]*`;
+			if (data.data?.isWishlist) {
+				text += ` 🌟 *[SEU DESEJO!]*`;
+			}
+			text += "\n";
+
+			if (data.data?.isWishlist) {
+				text += `✨ *DESEJO REALIZADO!* Este personagem estava na sua Wishlist (+50% de bônus no sorteio)!\n`;
+			}
 
 			if (character.description) {
 				const desc =
@@ -476,7 +633,7 @@ async function verPerfil(bot, message) {
 		text += `💜 Zinthos: *${user.kakera}*\n`;
 		text += `👰 Harém: *${haremCount} personagens*\n`;
 		text += `💖 Soulmates: *${soulmateCount}*\n`;
-		text += `🌟 Wishlist: *${wishlistCount}/30*\n`;
+		text += `🌟 Wishlist: *${wishlistCount}/${WISHLIST_MAX_ITEMS}*\n`;
 
 		if (favoriteChar) {
 			text += `⭐ Waifu Favorita: *${favoriteChar.name}* (${favoriteChar.series})\n`;
@@ -504,19 +661,33 @@ async function verWishlist(bot, message) {
 		if (wishlist.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"🌟 *Sua Wishlist está vazia!*\nAdicione personagens com `!mu-desejar <id>` para aumentar suas chances de roll!"
+				content: `🌟 *Sua Wishlist está vazia!*\nAdicione personagens com \`!mu-desejar <id>\` (até ${WISHLIST_MAX_ITEMS}) para aumentar suas chances de roll!\nUse \`!mu-chances\` para ver a tabela completa de probabilidades.`
 			});
 		}
 
-		let text = `🌟 *Sua Lista de Desejos* (${wishlist.length}/30):\n\n`;
+		const stats = await getDropRateStats(userId);
+		let text = `🌟 *Sua Lista de Desejos* (${wishlist.length}/${WISHLIST_MAX_ITEMS}):\n\n`;
 		wishlist.forEach((item, idx) => {
 			const char = item.character;
 			const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
-			text += `${idx + 1}. ${emojiRarity} *${char.name}* — _${char.series}_\n   ↳ ID: \`${char.id}\`\n`;
+			const star = item.isStarWish ? "⭐ " : "";
+			text += `${idx + 1}. ${emojiRarity} *${char.name}* — _${char.series}_\n   ↳ ID: \`${char.id}\`${star ? " *(Star Wish)*" : ""}\n`;
 		});
 
-		text += `\n_Para remover: \`!mu-removerdesejo <id>\`_`;
+		text += `\n💡 *Bônus de Drop:* Cada item na sua lista tem o peso aumentado em *+50%* (+100% se Star Wish).\n`;
+		if (stats?.userWishlistStats?.anyWishChance) {
+			const wishChanceStr =
+				stats.userWishlistStats.anyWishChance < 0.01
+					? stats.userWishlistStats.anyWishChance.toFixed(3)
+					: stats.userWishlistStats.anyWishChance.toFixed(2);
+			text += `🎯 Chance total de rolar um desejo seu no próximo roll: *${wishChanceStr}%*`;
+			if (stats.userWishlistStats.oneInX) {
+				text += ` (~1 em cada *${stats.userWishlistStats.oneInX.toLocaleString("pt-BR")}* rolls)`;
+			}
+			text += `\n`;
+		}
+		text += `📊 Para ver todas as probabilidades do catálogo, envie \`!mu-chances\`.\n`;
+		text += `_Para remover: \`!mu-removerdesejo <id>\`_`;
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar wishlist.");
@@ -545,9 +716,12 @@ async function adicionarDesejo(bot, message, args) {
 	try {
 		await ensureUser(userId, groupId, name);
 		const { data } = await api.post("/wishlist", { userId, characterId });
+		const msgText = data.data?.message || "Personagem adicionado à Wishlist com sucesso!";
+		const responseText = `🌟 ${msgText}\n↳ *Bônus ativado:* +50% de peso no sorteio para este personagem!\n💡 Sua Wishlist comporta até *${WISHLIST_MAX_ITEMS}* personagens. Digite \`!mu-wishlist\` para ver sua lista ou \`!mu-chances\` para ver suas probabilidades.`;
+
 		return new ReturnMessage({
 			chatId,
-			content: `🌟 ${data.data.message || "Personagem adicionado à Wishlist com sucesso!"}`
+			content: responseText
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao adicionar à wishlist.");
@@ -575,7 +749,7 @@ async function removerDesejo(bot, message, args) {
 		await api.delete(`/wishlist/${userId}/${characterId}`);
 		return new ReturnMessage({
 			chatId,
-			content: `🗑️ Personagem \`${characterId}\` removido da sua Wishlist.`
+			content: `🗑️ Personagem \`${characterId}\` removido da sua Wishlist (limite de até ${WISHLIST_MAX_ITEMS}).`
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao remover da wishlist.");
@@ -878,6 +1052,22 @@ async function detalhesPersonagem(bot, message, args) {
 		let text = `👤 *${char.name}* (${char.series})\n`;
 		text += `⭐ Raridade: ${emojiRarity} *${labelRarity}*\n`;
 		text += `⚧ Gênero: *${char.gender === "FEMALE" ? "Feminino" : char.gender === "MALE" ? "Masculino" : "Outro"}*\n`;
+
+		const stats = await getDropRateStats();
+		const rarityStat = stats?.breakdown?.find((b) => b.rarity === rarity);
+		if (rarityStat) {
+			const singleBaseStr =
+				rarityStat.singleBaseChance < 0.001
+					? rarityStat.singleBaseChance.toFixed(4)
+					: rarityStat.singleBaseChance.toFixed(3);
+			const singleWishStr =
+				rarityStat.singleWishChance < 0.001
+					? rarityStat.singleWishChance.toFixed(4)
+					: rarityStat.singleWishChance.toFixed(3);
+			text += `🎯 Chance no roll: *${singleBaseStr}%* (1 em ${rarityStat.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+			text += `🌟 Com Wishlist: *${singleWishStr}%* (*+50%* | 1 em ${rarityStat.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+		}
+
 		text += `💍 Total de casamentos: *${char.claimCount}*\n`;
 		text += `❤️ Curtidas: *${char.likeCount}*\n`;
 
@@ -945,10 +1135,81 @@ async function verCooldowns(bot, message) {
 }
 
 /**
+ * Consulta a tabela completa de probabilidades de drop e bônus da wishlist
+ */
+async function verChances(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	const stats = await getDropRateStats(userId);
+	const totalChars = (stats?.totalCharacters || 27480).toLocaleString("pt-BR");
+	const maxWl = stats?.wishlistMaxItems || WISHLIST_MAX_ITEMS;
+
+	let text = `🎯 *PROBABILIDADES E CHANCES DE DROP*\n`;
+	text += `_Base de dados atualizada: *${totalChars}* personagens cadastrados_\n\n`;
+
+	text += `📊 *Chances por Categoria de Personagem:*\n`;
+	if (stats?.breakdown) {
+		for (const b of stats.breakdown) {
+			const emoji = RARITY_EMOJI[b.rarity] || "⚪";
+			const label = RARITY_LABEL[b.rarity] || b.rarity;
+			const catChanceStr =
+				b.categoryChance < 0.01 ? b.categoryChance.toFixed(3) : b.categoryChance.toFixed(2);
+			const singleBaseStr =
+				b.singleBaseChance < 0.001 ? b.singleBaseChance.toFixed(4) : b.singleBaseChance.toFixed(3);
+			const singleWishStr =
+				b.singleWishChance < 0.001 ? b.singleWishChance.toFixed(4) : b.singleWishChance.toFixed(3);
+
+			text += `${emoji} *${label}* (${b.count.toLocaleString("pt-BR")} no banco | Peso ${b.baseWeight})\n`;
+			text += `   ↳ Drop da categoria: *${catChanceStr}%* ${b.oneInX ? `(~1 a cada ${b.oneInX.toLocaleString("pt-BR")} rolls)` : ""}\n`;
+			text += `   ↳ 1 específico (base): *${singleBaseStr}%* (1 em ${b.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+			text += `   ↳ Com Wishlist: *${singleWishStr}%* (*+50%* | 1 em ${b.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n\n`;
+		}
+	} else {
+		text += `⚪ *Comum:* ~93,30% (peso 100 | 1 específico: 0,0039%)\n`;
+		text += `🟢 *Incomum:* ~5,59% (peso 60 | 1 específico: 0,0023%)\n`;
+		text += `🔵 *Raro:* ~0,98% (peso 30 | 1 específico: 0,0012%)\n`;
+		text += `🟣 *Épico:* ~0,13% (peso 15 | 1 específico: 0,0006%)\n`;
+		text += `⭐ *Lendário:* ~0,011% (peso 5 | 1 específico: 0,0002%)\n\n`;
+	}
+
+	text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos):*\n`;
+	text += `• Cada personagem desejado tem o peso multiplicado por *1.5x (+50%)*.\n`;
+	text += `• Se for marcado como Star Wish, o multiplicador é de *2.0x (+100%)*.\n`;
+
+	if (stats?.userWishlistStats && stats.userWishlistStats.count > 0) {
+		const wishChanceStr =
+			stats.userWishlistStats.anyWishChance < 0.01
+				? stats.userWishlistStats.anyWishChance.toFixed(3)
+				: stats.userWishlistStats.anyWishChance.toFixed(2);
+		text += `\n✨ *Sua Wishlist Pessoal (${stats.userWishlistStats.count}/${maxWl} itens):*\n`;
+		text += `• Chance de tirar QUALQUER desejo seu no próximo roll: *${wishChanceStr}%*\n`;
+		if (stats.userWishlistStats.oneInX) {
+			text += `• Média estimada: *1 a cada ~${stats.userWishlistStats.oneInX.toLocaleString("pt-BR")} rolls*!\n`;
+		}
+	} else {
+		text += `\n💡 *Dica:* Você ainda não tem itens na Wishlist. Use \`!mu-desejar <id>\` (até ${maxWl}) para aumentar a chance de tirar seus personagens favoritos!\n`;
+	}
+
+	text += `\n⚡ *Filtros de Gênero:* Rolar com \`!mu-rollf\` (apenas waifus) ou \`!mu-rollm\` (apenas husbandos) reduz o total de candidatos pela metade/terço, quase *triplicando* a chance individual de cada personagem!`;
+
+	return new ReturnMessage({
+		chatId,
+		content: text,
+		options: {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		}
+	});
+}
+
+/**
  * Explica o jogo (clone não-oficial de Mudae), suas mecânicas e lista todos os comandos
  */
 async function ajudaWaifus(bot, message) {
 	const chatId = message.group ?? message.author;
+	const stats = await getDropRateStats();
+	const totalChars = (stats?.totalCharacters || 27480).toLocaleString("pt-BR");
 
 	let text = `🎲 *WAIFULETES (MUDAE)* — _Clone Não-Oficial do Mudae no WhatsApp_\n\n`;
 	text += `O *Waifuletes* é um jogo de roleta de personagens de animes, mangás e games inspirado no clássico bot Mudae do Discord, totalmente adaptado para o WhatsApp através da API REST do Waifuletes.\n\n`;
@@ -958,9 +1219,26 @@ async function ajudaWaifus(bot, message) {
 	text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
 	text += `🎲 *1. Sorteio (Roll)*\n`;
-	text += `• Ao rolar com \`!mu-roll\`, você sorteia um personagem aleatório dentre mais de 43.000 cadastrados.\n`;
-	text += `• A chance de drop é ponderada pela raridade (⚪ Comum, 🟢 Incomum, 🔵 Raro, 🟣 Épico, ⭐ Lendário) e pela popularidade de casamentos/curtidas.\n`;
-	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\`.\n`;
+	text += `• Ao rolar com \`!mu-roll\`, você sorteia um personagem aleatório dentre os *${totalChars}* cadastrados no banco de dados.\n`;
+	text += `• A chance de drop de cada categoria (calculada com base no peso e total na base atual) é:\n`;
+	if (stats?.breakdown) {
+		for (const b of stats.breakdown) {
+			const emoji = RARITY_EMOJI[b.rarity] || "⚪";
+			const label = RARITY_LABEL[b.rarity] || b.rarity;
+			const catChanceStr =
+				b.categoryChance < 0.01 ? b.categoryChance.toFixed(3) : b.categoryChance.toFixed(2);
+			const oneInStr = b.oneInX ? ` (~1 a cada ${b.oneInX.toLocaleString("pt-BR")} rolls)` : "";
+			text += `  ${emoji} *${label}:* ${catChanceStr}% (${b.count.toLocaleString("pt-BR")} chars | peso ${b.baseWeight})${oneInStr}\n`;
+		}
+	} else {
+		text += `  ⚪ *Comum:* ~93,30% (23.974 chars | peso 100)\n`;
+		text += `  🟢 *Incomum:* ~5,59% (2.393 chars | peso 60 | 1 em 18 rolls)\n`;
+		text += `  🔵 *Raro:* ~0,98% (837 chars | peso 30 | 1 em 102 rolls)\n`;
+		text += `  🟣 *Épico:* ~0,13% (220 chars | peso 15 | 1 em 779 rolls)\n`;
+		text += `  ⭐ *Lendário:* ~0,011% (56 chars | peso 5 | 1 em 9.177 rolls)\n`;
+	}
+	text += `• Digite \`!mu-chances\` para abrir o painel completo de probabilidades e simulação!\n`;
+	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
 	text += `• *Cooldown:* 10 minutos.\n\n`;
 
 	text += `💍 *2. Casamento (Claim)*\n`;
@@ -981,8 +1259,9 @@ async function ajudaWaifus(bot, message) {
 	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos proporcional à raridade e chaves.\n\n`;
 
 	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
-	text += `• Adicione até 30 personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
-	text += `• Personagens na sua lista têm probabilidade de drop significativamente aumentada nos seus rolls!\n\n`;
+	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
+	text += `• *Bônus no Roll:* Cada personagem na sua lista ganha *+50% de peso* (multiplicador 1.5x) nos seus sorteios! (Star Wish ganha +100% / 2.0x).\n`;
+	text += `• *Aumento da chance:* Se você preencher a wishlist com ${WISHLIST_MAX_ITEMS} personagens, sua chance de tirar qualquer um dos seus desejos em um roll sobe para *~0,17% a ~0,58%* (1 em cada 170 a 580 rolls), aumentando brutalmente suas chances em relação ao drop natural individual (~1 em 25.000+)!\n\n`;
 
 	text += `❤️ *6. Curtidas (Likes)*\n`;
 	text += `• Dê like nos seus personagens favoritos com \`!mu-like <id>\` para aumentar a popularidade global deles.\n\n`;
@@ -991,10 +1270,11 @@ async function ajudaWaifus(bot, message) {
 	text += `📋 *LISTA COMPLETA DE COMANDOS*\n`;
 	text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-	text += `🎲 *Sorteio (Rolls):*\n`;
+	text += `🎲 *Sorteio (Rolls) & Taxas:*\n`;
 	text += `• \`!mu-roll\` (aliases: \`!mu-r\`, \`!mu-w\`, \`!mu-waifu\`) — Sorteia waifus e husbandos misturados.\n`;
 	text += `• \`!mu-rollm\` (aliases: \`!mu-rm\`, \`!mu-husbando\`) — Sorteia apenas personagens masculinos.\n`;
-	text += `• \`!mu-rollf\` (aliases: \`!mu-rf\`) — Sorteia apenas personagens femininos.\n\n`;
+	text += `• \`!mu-rollf\` (aliases: \`!mu-rf\`) — Sorteia apenas personagens femininos.\n`;
+	text += `• \`!mu-chances\` (aliases: \`!mu-taxas\`, \`!mu-prob\`) — Consulta as taxas de drop e probabilidade da sua wishlist.\n\n`;
 
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 120s.\n`;
@@ -1011,12 +1291,12 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-cooldowns\` (aliases: \`!mu-cd\`, \`!mu-tempo\`) — Consulta o tempo restante dos seus cooldowns.\n\n`;
 
 	text += `🌟 *Wishlist e Catálogo:*\n`;
-	text += `• \`!mu-wishlist\` (aliases: \`!mu-wl\`, \`!mu-desejos\`) — Lista seus personagens desejados.\n`;
-	text += `• \`!mu-desejar <id>\` (aliases: \`!mu-wish\`, \`!mu-add\`) — Adiciona um personagem à sua wishlist.\n`;
+	text += `• \`!mu-wishlist\` (aliases: \`!mu-wl\`, \`!mu-desejos\`) — Lista seus personagens desejados (até ${WISHLIST_MAX_ITEMS}).\n`;
+	text += `• \`!mu-desejar <id>\` (aliases: \`!mu-wish\`, \`!mu-add\`) — Adiciona um personagem à sua wishlist (+50% no drop).\n`;
 	text += `• \`!mu-removerdesejo <id>\` (aliases: \`!mu-rmwish\`) — Remove um personagem da wishlist.\n`;
 	text += `• \`!mu-like <id>\` (aliases: \`!mu-l\`, \`!mu-coracao\`) — Dá like em um personagem.\n`;
 	text += `• \`!mu-personagens <busca>\` (aliases: \`!mu-chars\`, \`!mu-buscar\`) — Pesquisa personagens no catálogo por nome/série.\n`;
-	text += `• \`!mu-char <id>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto e ficha técnica completa de um personagem.\n`;
+	text += `• \`!mu-char <id>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e chances de drop de um personagem.\n`;
 	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n\n`;
 
 	text += `ℹ️ *Ajuda do Jogo:*\n`;
@@ -1715,6 +1995,40 @@ const commands = [
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
 		method: ajudaWaifus
+	}),
+
+	// ── PROBABILIDADES / TAXAS ───────────────────────────────────────────────
+	new Command({
+		name: "mu-chances",
+		description: "Mostra as probabilidades de drop por raridade e o bônus da Wishlist",
+		category: "mudae",
+		group: "muwaifu-chances",
+		reactions: { before: "🎲", after: "📊", error: "❌" },
+		method: verChances
+	}),
+	new Command({
+		name: "mu-taxas",
+		description: "Alias em português de !mu-chances",
+		category: "mudae",
+		group: "muwaifu-chances",
+		reactions: { before: "🎲", after: "📊", error: "❌" },
+		method: verChances
+	}),
+	new Command({
+		name: "mu-prob",
+		description: "Alias curto de !mu-chances",
+		category: "mudae",
+		group: "muwaifu-chances",
+		reactions: { before: "🎲", after: "📊", error: "❌" },
+		method: verChances
+	}),
+	new Command({
+		name: "mu-probabilidades",
+		description: "Alias longo de !mu-chances",
+		category: "mudae",
+		group: "muwaifu-chances",
+		reactions: { before: "🎲", after: "📊", error: "❌" },
+		method: verChances
 	})
 ];
 
@@ -1762,8 +2076,14 @@ const helper = {
 		},
 		{
 			cmd: "!mu-wishlist",
-			desc: "Lista seus personagens desejados (aumenta drop rate no roll)",
+			desc: "Lista seus personagens desejados (até 100) e calcula a chance de drop no roll",
 			usage: ["!mu-wishlist", "!mu-desejar <id>", "!mu-removerdesejo <id>"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-chances",
+			desc: "Mostra as probabilidades de drop por categoria de personagem e o bônus da Wishlist",
+			usage: ["!mu-chances", "!mu-taxas", "!mu-prob"],
 			category: "mudae"
 		},
 		{
@@ -1791,6 +2111,7 @@ module.exports = {
 	helper,
 	commands,
 	ajudaWaifus,
+	verChances,
 	rollAny,
 	rollMale,
 	rollFemale,

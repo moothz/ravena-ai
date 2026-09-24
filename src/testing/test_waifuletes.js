@@ -56,7 +56,10 @@ async function runTests() {
 		"mu-char",
 		"mu-info",
 		"mu-cooldowns",
-		"mu-cd"
+		"mu-cd",
+		"mu-chances",
+		"mu-taxas",
+		"mu-prob"
 	];
 
 	for (const req of requiredCommands) {
@@ -222,6 +225,45 @@ async function runTests() {
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !mu-removerdesejo");
 	console.log(`✓ Fluxo de Wishlist passou.`);
+
+	// 10.1. Testar !waifus (Guia com probabilidades e limite de 100)
+	console.log(`[Teste 9.1] Executando !waifus...`);
+	eventHandler.commandHandler.userDebounceMap.clear();
+	bot.resetCapture();
+	const msgWaifus = createMessage({
+		content: "!waifus",
+		author: testUser,
+		authorName: "TestPlayer",
+		group: testGroup
+	});
+	await eventHandler.processMessage(bot, msgWaifus);
+	await waitForReply();
+	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !waifus");
+	const waifusContent = bot.capturedMessages[0]?.content || "";
+	assert.ok(waifusContent.includes("100"), "!waifus deveria mencionar limite de 100 na wishlist");
+	assert.ok(
+		waifusContent.includes("Comum") || waifusContent.includes("93"),
+		"!waifus deveria listar probabilidades das categorias"
+	);
+	console.log(`✓ Guia !waifus com probabilidades e limite de 100 passou.`);
+
+	// 10.2. Testar !mu-chances
+	console.log(`[Teste 9.2] Executando !mu-chances...`);
+	eventHandler.commandHandler.userDebounceMap.clear();
+	bot.resetCapture();
+	const msgChances = createMessage({
+		content: "!mu-chances",
+		author: testUser,
+		authorName: "TestPlayer",
+		group: testGroup
+	});
+	await eventHandler.processMessage(bot, msgChances);
+	await waitForReply();
+	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !mu-chances");
+	const chancesContent = bot.capturedMessages[0]?.content || "";
+	assert.ok(chancesContent.includes("PROBABILIDADES"), "!mu-chances deveria exibir probabilidades");
+	assert.ok(chancesContent.includes("100"), "!mu-chances deveria mencionar limite de 100");
+	console.log(`✓ Comando !mu-chances passou.`);
 
 	// 11. Testar Roll de personagem (!mu-roll)
 	console.log(`[Teste 10] Executando !mu-roll...`);
