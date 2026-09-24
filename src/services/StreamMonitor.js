@@ -98,6 +98,13 @@ class StreamMonitor extends EventEmitter {
 		};
 
 		this.youtubeNotFounds = {};
+		this.youtubeApiKey = process.env.YOUTUBE_API_KEY || null;
+		this.youtubeHeaders = {
+			"User-Agent":
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			"Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+			Cookie: "SOCS=CAESEwgDEgk2MTc4MjE5MzAaAmVuIAEaBgiA_LuuBg; CONSENT=YES+"
+		};
 		this.twitchNotFounds = {};
 		this.kickNotFounds = {};
 		this.twitchRateLimitedUntil = null;
@@ -918,7 +925,9 @@ class StreamMonitor extends EventEmitter {
 			},
 			youtube: {
 				channelCount: ytChannels.length,
-				intervalSec: Math.round((this.customPollingIntervals?.youtube || ytCalc.intervalMs) / 1000)
+				intervalSec: Math.round((this.customPollingIntervals?.youtube || ytCalc.intervalMs) / 1000),
+				mode: this.youtubeApiKey ? "official_api" : "autonomous",
+				hasApiKey: Boolean(this.youtubeApiKey)
 			}
 		};
 	}
@@ -1991,14 +2000,17 @@ class StreamMonitor extends EventEmitter {
 		channel = channel.replace("@", "").trim();
 		if (!channel) return null;
 
+		// Se já for um Channel ID no formato oficial UC...
+		if (channel.startsWith("UC") && channel.length === 24) {
+			return channel;
+		}
+
 		// Check Cache DB
 		try {
 			const row = await this.database.dbGet(
 				this.dbNameYt,
-				`
-            SELECT channel_id FROM channel_cache WHERE channel_handle = ?
-        `,
-				[channel]
+				`SELECT channel_id FROM channel_cache WHERE channel_handle = ?`,
+				[channel.toLowerCase()]
 			);
 
 			if (row && row.channel_id) {
@@ -2008,21 +2020,42 @@ class StreamMonitor extends EventEmitter {
 			this.logger.error(`[getYtChannelID] Error checking cache DB:`, err);
 		}
 
-		// Try @handle first (modern YouTube format), then legacy formats
+		// 1. Se possuir YOUTUBE_API_KEY, resolve via API oficial (1 unidade de cota)
+		if (this.youtubeApiKey) {
+			try {
+				const apiRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", {
+					params: {
+						part: "id",
+						forHandle: channel,
+						key: this.youtubeApiKey
+					},
+					timeout: 8000
+				});
+				const items = apiRes.data?.items;
+				if (items && items.length > 0) {
+					const resolvedId = items[0].id;
+					await this.database.dbRun(
+						this.dbNameYt,
+						`INSERT OR REPLACE INTO channel_cache (channel_handle, channel_id) VALUES (?, ?)`,
+						[channel.toLowerCase(), resolvedId]
+					);
+					return resolvedId;
+				}
+			} catch (apiErr) {
+				this.logger.warn(`[getYtChannelID] API resolve failed for ${channel}:`, apiErr.message);
+			}
+		}
+
+		// 2. Modo Autônomo com cabeçalhos anti-consentimento da Google
 		const chUrls = [
 			`https://www.youtube.com/@${channel}`,
-			`https://www.youtube.com/c/${channel}`,
-			`https://www.youtube.com/user/${channel}`
+			`https://www.youtube.com/@${channel}/about`
 		];
 
 		for (const chUrl of chUrls) {
 			try {
 				const resolveResponse = await axios.get(chUrl, {
-					headers: {
-						"User-Agent":
-							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-						"Accept-Language": "en-US,en;q=0.9"
-					},
+					headers: this.youtubeHeaders,
 					timeout: 8000
 				});
 
@@ -2032,211 +2065,348 @@ class StreamMonitor extends EventEmitter {
 					// Save to Cache DB
 					await this.database.dbRun(
 						this.dbNameYt,
-						`
-            INSERT OR REPLACE INTO channel_cache (channel_handle, channel_id)
-            VALUES (?, ?)
-          `,
-						[channel, exID]
+						`INSERT OR REPLACE INTO channel_cache (channel_handle, channel_id) VALUES (?, ?)`,
+						[channel.toLowerCase(), exID]
 					);
 
 					return exID;
 				}
 			} catch (error) {
-				// Ignore resolve errors on individual URLs without throwing 404
+				// Ignore resolve errors on individual URLs
 			}
 		}
 
 		return null;
 	}
 
+	/**
+	 * Checa se um canal do YouTube está transmitindo ao vivo (Modo Híbrido: API ou /live canônico)
+	 * @param {string} channelId - ID canônico do canal (UC...)
+	 * @param {string} channelName - Nome de exibição do canal
+	 * @returns {Promise<{isLive: boolean, videoId?: string, title?: string, url?: string, thumbnail?: string}>}
+	 * @private
+	 */
+	async _checkYoutubeLiveStatus(channelId, channelName) {
+		// 1. Modo Oficial (se YOUTUBE_API_KEY configurada)
+		if (this.youtubeApiKey) {
+			try {
+				const playlistId = "UU" + channelId.substring(2);
+				const plRes = await axios.get("https://www.googleapis.com/youtube/v3/playlistItems", {
+					params: {
+						part: "snippet",
+						playlistId,
+						maxResults: 3,
+						key: this.youtubeApiKey
+					},
+					timeout: 8000
+				});
+
+				const items = plRes.data?.items || [];
+				if (items.length > 0) {
+					const videoIds = items.map((it) => it.snippet?.resourceId?.videoId).filter(Boolean);
+					if (videoIds.length > 0) {
+						const vidRes = await axios.get("https://www.googleapis.com/youtube/v3/videos", {
+							params: {
+								part: "snippet,liveStreamingDetails",
+								id: videoIds.join(","),
+								key: this.youtubeApiKey
+							},
+							timeout: 8000
+						});
+
+						for (const vid of vidRes.data?.items || []) {
+							if (vid.snippet?.liveBroadcastContent === "live") {
+								return {
+									isLive: true,
+									videoId: vid.id,
+									title: vid.snippet.title || `Live de ${channelName}`,
+									url: `https://www.youtube.com/watch?v=${vid.id}`,
+									thumbnail:
+										vid.snippet?.thumbnails?.maxres?.url ||
+										vid.snippet?.thumbnails?.high?.url ||
+										`https://i.ytimg.com/vi/${vid.id}/hqdefault.jpg`
+								};
+							}
+						}
+					}
+				}
+				return { isLive: false };
+			} catch (err) {
+				this.logger.warn(
+					`[_checkYoutubeLiveStatus] API check error for ${channelName}: ${err.message}. Alternando para modo autônomo.`
+				);
+			}
+		}
+
+		// 2. Modo Autônomo via rota canônica /live (Zero Chave)
+		try {
+			const liveUrl = `https://www.youtube.com/channel/${channelId}/live`;
+			const res = await axios.get(liveUrl, {
+				headers: this.youtubeHeaders,
+				maxRedirects: 5,
+				timeout: 8000,
+				validateStatus: (status) => (status >= 200 && status < 300) || status === 404
+			});
+
+			if (res.status === 404) {
+				return { isLive: false };
+			}
+
+			const html = res.data;
+			if (typeof html !== "string") {
+				return { isLive: false };
+			}
+
+			// Procura link canônico apontando para watch?v=
+			const canonicalMatch = html.match(
+				/<link rel=["']canonical["']\s+href=["']https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})["']/
+			);
+			const videoId =
+				canonicalMatch?.[1] ||
+				(res.request?.res?.responseUrl || "").match(/watch\?v=([a-zA-Z0-9_-]{11})/)?.[1];
+
+			if (!videoId) {
+				return { isLive: false };
+			}
+
+			// Avalia se o player está de fato em live ativa
+			let isLiveContent = false;
+			let title = `Live de ${channelName}`;
+
+			const playerMatch = html.match(
+				/ytInitialPlayerResponse\s*=\s*({.+?});(?:var|\s*<\/script>)/s
+			);
+			if (playerMatch) {
+				try {
+					const json = JSON.parse(playerMatch[1]);
+					const videoDetails = json.videoDetails || {};
+					const microformat = json.microformat?.playerMicroformatRenderer || {};
+					const liveDetails = microformat.liveBroadcastDetails || {};
+
+					isLiveContent =
+						videoDetails.isLiveContent === true ||
+						liveDetails.isLiveNow === true ||
+						(Boolean(liveDetails.startTimestamp) && !liveDetails.endTimestamp);
+
+					if (videoDetails.title) {
+						title = videoDetails.title;
+					}
+				} catch (e) {
+					isLiveContent =
+						html.includes('"isLiveContent":true') &&
+						!html.includes('"status":"LIVE_STREAM_OFFLINE"');
+				}
+			} else {
+				isLiveContent =
+					html.includes('"isLiveContent":true') && !html.includes('"status":"LIVE_STREAM_OFFLINE"');
+			}
+
+			if (isLiveContent) {
+				if (title === `Live de ${channelName}`) {
+					const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+					if (titleMatch) {
+						title = titleMatch[1].replace(" - YouTube", "").trim();
+					}
+				}
+
+				return {
+					isLive: true,
+					videoId,
+					title,
+					url: `https://www.youtube.com/watch?v=${videoId}`,
+					thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+				};
+			}
+
+			return { isLive: false };
+		} catch (error) {
+			this.logger.debug(`[_checkYoutubeLiveStatus] Error for ${channelName}: ${error.message}`);
+			return { isLive: false };
+		}
+	}
+
+	/**
+	 * Consulta novos vídeos gravados via feed RSS oficial do YouTube
+	 * @param {string} channelId - ID canônico do canal (UC...)
+	 * @param {string} channelName - Nome do canal
+	 * @returns {Promise<Object|null>}
+	 * @private
+	 */
+	async _checkYoutubeFeedVideos(channelId, channelName) {
+		try {
+			const response = await axios.get(
+				`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
+				{
+					headers: this.youtubeHeaders,
+					timeout: 8000
+				}
+			);
+
+			const parser = new (require("xml2js").Parser)({ explicitArray: false });
+			const feed = await parser.parseStringPromise(response.data);
+
+			if (!feed?.feed?.entry) return null;
+
+			const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
+			if (entries.length === 0) return null;
+
+			const latestEntry = entries[0];
+			const videoId = latestEntry["yt:videoId"];
+			if (!videoId) return null;
+
+			return {
+				id: videoId,
+				title: latestEntry.title || "Novo Vídeo",
+				url: `https://www.youtube.com/watch?v=${videoId}`,
+				publishedAt: latestEntry.published,
+				thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+			};
+		} catch (error) {
+			if (error.response && error.response.status === 404) {
+				throw error;
+			}
+			this.logger.debug(`[_checkYoutubeFeedVideos] Erro RSS ${channelName}: ${error.message}`);
+			return null;
+		}
+	}
+
 	async _pollYoutubeChannels() {
 		const youtubeChannels = this.channels.filter((c) => c.source.toLowerCase() === "youtube");
 		if (youtubeChannels.length === 0) return;
 
-		for (const channel of youtubeChannels) {
-			try {
-				// First, resolve channel name to channel ID if needed
-				let channelId = this.sanitizePlatformChannelName(channel.name, "youtube");
+		// Processa canais em lotes concorrentes para reduzir latência total
+		const BATCH_SIZE = 5;
+		for (let i = 0; i < youtubeChannels.length; i += BATCH_SIZE) {
+			const batch = youtubeChannels.slice(i, i + BATCH_SIZE);
 
-				// If it's not a channel ID format, try to resolve it
-				if (!channelId.startsWith("UC")) {
-					const resolved = await this.getYtChannelID(channelId);
-					if (resolved) {
-						channelId = resolved;
-					} else {
-						// Se não resolveu (bloqueio temporário, captcha ou canal com nome especial), pula este ciclo sem contar erro 404
-						continue;
-					}
-				}
+			await Promise.allSettled(
+				batch.map(async (channel) => {
+					try {
+						let channelId = this.sanitizePlatformChannelName(channel.name, "youtube");
 
-				// Get channel info and latest videos using RSS feed
-				const response = await axios.get(
-					`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
-					{ timeout: 10000 }
-				);
-
-				const channelKey = `youtube:${channel.name.toLowerCase()}`;
-
-				// Parse the XML
-				const parser = new (require("xml2js").Parser)({ explicitArray: false });
-				const feed = await parser.parseStringPromise(response.data);
-
-				if (!feed.feed || !feed.feed.entry || !Array.isArray(feed.feed.entry)) {
-					// No videos or invalid response
-					continue;
-				}
-
-				// Canal encontrado com sucesso, reseta contagem de erros
-				this.youtubeNotFounds[channel.name] = 0;
-
-				// Get the latest video/stream
-				const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-
-				if (entries.length === 0) continue;
-
-				const latestEntry = entries[0];
-				const videoId = latestEntry["yt:videoId"];
-				const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-				// Initialize channel status if needed
-				if (!this.streamStatuses[channelKey]) {
-					this.streamStatuses[channelKey] = {
-						isLive: false,
-						lastVideo: null,
-						lastChecked: new Date().toISOString(),
-						platform: "youtube",
-						channelName: channel.name
-					};
-				}
-
-				// Check if this is a new video
-				const lastVideoId = this.streamStatuses[channelKey]?.lastVideo?.id ?? "";
-				if (videoId !== lastVideoId) {
-					// Failsafe: Only notify if the video was published in the last 24 hours to prevent spam on DB resets/imports
-					const publishedAtStr = latestEntry.published;
-					let isRecent = true;
-					if (publishedAtStr) {
-						const published = new Date(publishedAtStr);
-						const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-						if (published < oneDayAgo) {
-							isRecent = false;
-							this.logger.info(
-								`[Failsafe] Ignoring old YouTube video ${videoId} for ${channel.name} (published at ${publishedAtStr}).`
-							);
+						// Se não for formato ID (UC...), resolve via cache ou busca
+						if (!channelId.startsWith("UC") || channelId.length !== 24) {
+							const resolved = await this.getYtChannelID(channelId);
+							if (resolved) {
+								channelId = resolved;
+							} else {
+								return;
+							}
 						}
-					}
 
-					// Get more details about the video to determine if it's a livestream
-					const videoResponse = await axios.get(`https://www.youtube.com/watch?v=${videoId}`, {
-						timeout: 10000
-					});
-					const html = videoResponse.data;
+						const channelKey = `youtube:${channel.name.toLowerCase()}`;
 
-					// Look for live indicators in page source
-					const isLiveNow =
-						html.includes('"isLiveNow":true') ||
-						html.includes('"isLive":true') ||
-						html.includes('"liveBroadcastDetails"');
+						// Inicializa estado se não existir
+						if (!this.streamStatuses[channelKey]) {
+							this.streamStatuses[channelKey] = {
+								isLive: false,
+								lastVideo: null,
+								lastChecked: new Date().toISOString(),
+								platform: "youtube",
+								channelName: channel.name,
+								currentLiveVideoId: null
+							};
+						}
 
-					// Update status
-					this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
-					this.streamStatuses[channelKey].lastVideo = {
-						id: videoId,
-						title: latestEntry.title,
-						url: videoUrl,
-						publishedAt: latestEntry.published,
-						thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
-					};
+						// Checagens em paralelo: Live Status (rota /live) e Vídeos Recentes (RSS)
+						const [liveResult, feedResult] = await Promise.allSettled([
+							this._checkYoutubeLiveStatus(channelId, channel.name),
+							this._checkYoutubeFeedVideos(channelId, channel.name)
+						]);
 
-					if (isRecent) {
-						const wasLive = this.streamStatuses[channelKey].isLive;
-						if (isLiveNow) {
+						// Reset de erros se qualquer consulta tiver tido sucesso
+						this.youtubeNotFounds[channel.name] = 0;
+
+						const liveStatus =
+							liveResult.status === "fulfilled" && liveResult.value
+								? liveResult.value
+								: { isLive: false };
+						const wasLive = Boolean(this.streamStatuses[channelKey].isLive);
+
+						// 1. Orquestração do Status de LIVE (Online / Offline)
+						if (liveStatus.isLive) {
 							this.streamStatuses[channelKey].isLive = true;
+							this.streamStatuses[channelKey].currentLiveVideoId = liveStatus.videoId;
+							this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
 
 							if (!wasLive) {
 								await this._emitIfSafe("streamOnline", {
 									platform: "youtube",
 									channelName: channel.name,
-									title: latestEntry.title,
-									thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-									url: videoUrl,
-									videoId
+									title: liveStatus.title,
+									thumbnail: liveStatus.thumbnail,
+									url: liveStatus.url,
+									videoId: liveStatus.videoId
 								});
 							}
 						} else {
+							this.streamStatuses[channelKey].isLive = false;
+							this.streamStatuses[channelKey].currentLiveVideoId = null;
+							this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
+
 							if (wasLive) {
-								this.streamStatuses[channelKey].isLive = false;
 								await this._emitIfSafe("streamOffline", {
 									platform: "youtube",
 									channelName: channel.name
 								});
 							}
-
-							await this._emitIfSafe("newVideo", {
-								platform: "youtube",
-								channelName: channel.name,
-								title: latestEntry.title,
-								thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-								url: videoUrl,
-								videoId,
-								publishedAt: latestEntry.published
-							});
 						}
-					} else {
-						this.streamStatuses[channelKey].isLive = !!isLiveNow;
-					}
-				} else {
-					if (this.streamStatuses[channelKey].isLive) {
-						try {
-							const videoResponse = await axios.get(`https://www.youtube.com/watch?v=${videoId}`, {
-								timeout: 10000
-							});
-							const html = videoResponse.data;
-							const isStillLive =
-								html.includes('"isLiveNow":true') || html.includes('"isLive":true');
 
-							if (!isStillLive) {
-								this.streamStatuses[channelKey].isLive = false;
-								await this._emitIfSafe("streamOffline", {
-									platform: "youtube",
-									channelName: channel.name
-								});
+						// 2. Orquestração de Novos Vídeos Gravados (newVideo)
+						const latestVideo =
+							feedResult.status === "fulfilled" && feedResult.value ? feedResult.value : null;
+
+						if (latestVideo && latestVideo.id) {
+							const lastVideoId = this.streamStatuses[channelKey]?.lastVideo?.id ?? "";
+
+							if (latestVideo.id !== lastVideoId) {
+								// Failsafe 24h para não disparar em banco limpo/vídeos antigos
+								const publishedAtStr = latestVideo.publishedAt;
+								let isRecent = true;
+								if (publishedAtStr) {
+									const published = new Date(publishedAtStr);
+									const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+									if (published < oneDayAgo) {
+										isRecent = false;
+									}
+								}
+
+								this.streamStatuses[channelKey].lastVideo = latestVideo;
+
+								// Notifica newVideo apenas se for recente e NÃO for a live atual ativa
+								if (isRecent && latestVideo.id !== liveStatus.videoId) {
+									await this._emitIfSafe("newVideo", {
+										platform: "youtube",
+										channelName: channel.name,
+										title: latestVideo.title,
+										thumbnail: latestVideo.thumbnail,
+										url: latestVideo.url,
+										videoId: latestVideo.id,
+										publishedAt: latestVideo.publishedAt
+									});
+								}
 							}
-						} catch (error) {
-							this.logger.error(
-								`Error checking YouTube live status for ${channel.name}:`,
-								error.message
+						}
+
+						// Persiste status atualizado no SQLite
+						await this._updateStatusInDB(channelKey, this.streamStatuses[channelKey]);
+					} catch (error) {
+						if (error.response && error.response.status === 404) {
+							this.youtubeNotFounds[channel.name] = (this.youtubeNotFounds[channel.name] || 0) + 1;
+							if (this.youtubeNotFounds[channel.name] > 200) {
+								await this.pauseChannel(channel.name, "youtube");
+							}
+						} else {
+							this.logger.debug(
+								`Erro temporário ao monitorar YouTube ${channel.name}: ${error.message}`
 							);
 						}
 					}
-				}
+				})
+			);
 
-				// Update DB
-				await this._updateStatusInDB(channelKey, this.streamStatuses[channelKey]);
-			} catch (error) {
-				// Apenas conta erro de "não encontrado" se a URL do feed RSS retornar HTTP 404 de verdade
-				if (error.response && error.response.status === 404) {
-					if (!this.youtubeNotFounds[channel.name]) {
-						this.youtubeNotFounds[channel.name] = 1;
-						this.logger.warn(
-							`Canal do YouTube não encontrado (RSS 404): '${channel.name}'. Iniciando contagem de erros.`
-						);
-					} else {
-						this.youtubeNotFounds[channel.name]++;
-						this.logger.warn(
-							`Canal do YouTube não encontrado (${this.youtubeNotFounds[channel.name]}/200 vezes): '${channel.name}'.`
-						);
-						// Aumentado limite para 200 erros consecutivos antes de pausar
-						if (this.youtubeNotFounds[channel.name] > 200) {
-							await this.pauseChannel(channel.name, "youtube");
-						}
-					}
-				} else {
-					this.logger.error(
-						`Erro temporário ao monitorar canal do YouTube ${channel.name}:`,
-						error.message
-					);
-				}
+			if (i + BATCH_SIZE < youtubeChannels.length) {
+				await sleep(500);
 			}
 		}
 	}
@@ -2674,13 +2844,20 @@ class StreamMonitor extends EventEmitter {
 		const rules = platformRules[platform.toLowerCase()] ?? platformRules.twitch;
 
 		// 1. Remove the URL domain/protocol
-		let cleaned = inputString.replace(rules.urlPattern, "");
+		let cleaned = inputString.replace(rules.urlPattern, "").trim();
 
-		// 2. Lowercase everything (Standardizes input)
-		cleaned = cleaned.toLowerCase();
+		// Se for um Channel ID do YouTube (UC + 22 chars), preserva o case exato (Base64URL é case-sensitive)
+		const isYoutubeChannelId =
+			platform.toLowerCase() === "youtube" && cleaned.startsWith("UC") && cleaned.length === 24;
+
+		if (!isYoutubeChannelId) {
+			// Lowercase everything (Standardizes handles/usernames)
+			cleaned = cleaned.toLowerCase();
+		}
 
 		// 3. Remove any characters that are not allowed on that specific platform
-		const sanitized = cleaned.replace(rules.illegalChars, "");
+		const illegalChars = isYoutubeChannelId ? /[^a-zA-Z0-9_-]/g : rules.illegalChars;
+		const sanitized = cleaned.replace(illegalChars, "");
 
 		return sanitized ?? "";
 	}

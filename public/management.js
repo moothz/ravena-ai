@@ -131,7 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEFAULT_MSG = {
         twitch: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* está online jogando {jogo}!\nAssista: {link}",
         kick: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* iniciou stream na Kick!\nAssista: {link}",
-        youtube: "🔴 Novo vídeo no canal *{author}*!\nAssista agora: {link}"
+        youtube: "🎬 Novo vídeo no canal *{author}*!\nAssista agora: {link}",
+        youtube_video: "🎬 Novo vídeo no canal *{author}*!\n*{title}*\nAssista agora: {link}",
+        youtube_live: "🔴 *{canal}* está AO VIVO no YouTube!\n*{titulo}*\nAssista: {link}"
     };
 
     // UI Elements
@@ -830,7 +832,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderStreamSection('twitch');
         renderStreamSection('kick');
-        renderStreamSection('youtube');
+        renderStreamSection('youtube_video');
+        renderStreamSection('youtube_live');
     }
 
     function renderTags(containerId, dataList, updateCallback) {
@@ -1067,14 +1070,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderStreamSection(platform) {
         const tbody = document.querySelector(`#${platform}-table tbody`);
         const noMsg = document.querySelector(`#no-${platform}-msg`);
+        if (!tbody || !noMsg) return;
         tbody.innerHTML = '';
 
-        const streams = groupData[platform] || [];
+        let streams = [];
+        if (platform === 'youtube_video') {
+            streams = (groupData.youtube || [])
+                .map((s, idx) => ({ ...s, _originalIndex: idx }))
+                .filter(s => s.notifyVideos !== false);
+        } else if (platform === 'youtube_live') {
+            streams = (groupData.youtube || [])
+                .map((s, idx) => ({ ...s, _originalIndex: idx }))
+                .filter(s => s.notifyLives !== false);
+        } else {
+            streams = (groupData[platform] || []).map((s, idx) => ({ ...s, _originalIndex: idx }));
+        }
+
         if (streams.length === 0) {
             noMsg.classList.remove('hidden');
         } else {
             noMsg.classList.add('hidden');
-            streams.forEach((stream, index) => {
+            streams.forEach((stream) => {
+                const index = stream._originalIndex;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
@@ -1089,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             document.querySelectorAll(`.btn-edit-stream[data-platform="${platform}"]`).forEach(btn => {
-                btn.addEventListener('click', () => openStreamModal(platform, btn.dataset.index));
+                btn.addEventListener('click', () => openStreamModal(platform, parseInt(btn.dataset.index, 10)));
             });
         }
     }
@@ -1100,30 +1117,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openStreamModal(platform, index) {
         currentStream = { platform, index, data: null };
-        const isEdit = index !== null;
+        const isEdit = index !== null && !isNaN(index);
+        const isYtVideo = platform === 'youtube_video';
+        const isYtLive = platform === 'youtube_live';
+        const isYoutube = isYtVideo || isYtLive;
         
-        els.streamModalTitle.textContent = isEdit ? `Editar ${platform.toUpperCase()}` : `Adicionar Canal ${platform.toUpperCase()}`;
+        let platformLabel = platform.toUpperCase();
+        if (isYtVideo) platformLabel = "YOUTUBE (VÍDEOS)";
+        if (isYtLive) platformLabel = "YOUTUBE (LIVES)";
+
+        els.streamModalTitle.textContent = isEdit ? `Editar ${platformLabel}` : `Adicionar Canal ${platformLabel}`;
         els.btnDeleteStream.classList.toggle('hidden', !isEdit);
-        els.streamHint.textContent = platform === 'youtube' ? 'ID do canal ou Handle (@nome).' : 'Apenas o nome de usuário, sem URL.';
+        els.streamHint.textContent = isYoutube ? 'ID do canal ou Handle (@nome).' : 'Apenas o nome de usuário, sem URL.';
         
+        const simLabel = document.getElementById('wa-sim-title-label');
+        const onTitle = document.getElementById('stream-on-title');
+        const offAcc = document.getElementById('stream-off-accordion');
+        const offDiv = document.getElementById('stream-off-divider');
+        const titleRow = document.getElementById('stream-change-title-row');
+
+        if (isYtVideo) {
+            if (simLabel) simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação de Vídeo Novo';
+            if (onTitle) onTitle.innerHTML = '<i class="fab fa-youtube text-danger"></i> <h4>Mídia & Mensagem de Novo Vídeo</h4>';
+            if (offAcc) offAcc.classList.add('hidden');
+            if (offDiv) offDiv.classList.add('hidden');
+            if (titleRow) titleRow.classList.add('hidden');
+        } else {
+            if (simLabel) simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação da Live';
+            if (onTitle) onTitle.innerHTML = '<i class="fas fa-satellite-dish text-success"></i> <h4>Mídia & Mensagem quando Online</h4>';
+            if (offAcc) offAcc.classList.remove('hidden');
+            if (offDiv) offDiv.classList.remove('hidden');
+            if (titleRow) titleRow.classList.remove('hidden');
+        }
+
         if (isEdit) {
-            const data = groupData[platform][index];
-            currentStream.data = JSON.parse(JSON.stringify(data));
+            const rawData = (isYoutube ? groupData.youtube : groupData[platform])[index];
+            currentStream.data = JSON.parse(JSON.stringify(rawData));
         } else {
             currentStream.data = {
                 channel: '',
                 mentionAllMembers: false,
-                changeTitleOnEvent: false,
+                changeTitleOnEvent: isYtLive || platform === 'twitch' || platform === 'kick',
                 onlineTitle: '',
                 offlineTitle: '',
                 useThumbnail: true,
                 useAI: false,
-                onConfig: { media: [{ type: 'text', content: DEFAULT_MSG[platform] }] },
+                notifyVideos: true,
+                notifyLives: true,
+                videoConfig: { media: [{ type: 'text', content: DEFAULT_MSG.youtube_video }] },
+                onConfig: { media: [{ type: 'text', content: DEFAULT_MSG[platform] || DEFAULT_MSG.youtube_live }] },
                 offConfig: { media: [] }
             };
         }
 
         const d = currentStream.data;
+        if (!d.videoConfig) {
+            d.videoConfig = d.onConfig ? JSON.parse(JSON.stringify(d.onConfig)) : { media: [{ type: 'text', content: DEFAULT_MSG.youtube_video }] };
+        }
+        if (!d.onConfig) {
+            d.onConfig = { media: [{ type: 'text', content: DEFAULT_MSG.youtube_live }] };
+        }
+        if (!d.offConfig) {
+            d.offConfig = { media: [] };
+        }
+
         els.streamChannel.value = d.channel;
         els.streamMention.checked = !!d.mentionAllMembers;
         els.streamChangeTitle.checked = !!d.changeTitleOnEvent;
@@ -1132,9 +1189,14 @@ document.addEventListener('DOMContentLoaded', () => {
         els.streamTitleOn.value = d.onlineTitle || '';
         els.streamTitleOff.value = d.offlineTitle || '';
         
-        toggleStreamTitles(d.changeTitleOnEvent);
-        renderStreamMediaList('stream-on-media-list', d.onConfig?.media || []);
-        renderStreamMediaList('stream-off-media-list', d.offConfig?.media || []);
+        toggleStreamTitles(!isYtVideo && d.changeTitleOnEvent);
+
+        if (isYtVideo) {
+            renderStreamMediaList('stream-on-media-list', d.videoConfig?.media || []);
+        } else {
+            renderStreamMediaList('stream-on-media-list', d.onConfig?.media || []);
+            renderStreamMediaList('stream-off-media-list', d.offConfig?.media || []);
+        }
         updateStreamPreview();
 
         els.streamModal.classList.remove('hidden');
@@ -1162,9 +1224,18 @@ document.addEventListener('DOMContentLoaded', () => {
         
         els.streamWaThumbnail.classList.toggle('hidden', !showThumb);
         
-        const firstMedia = currentStream?.data?.onConfig?.media?.[0];
+        const isYtVideo = currentStream?.platform === 'youtube_video';
+        const mediaSource = isYtVideo ? currentStream?.data?.videoConfig?.media : currentStream?.data?.onConfig?.media;
+        const firstMedia = mediaSource?.[0];
+        
         let textContent = firstMedia?.type === 'text' ? firstMedia.content : DEFAULT_MSG[currentStream?.platform || 'twitch'];
-        textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{link\}/gi, `https://${currentStream?.platform || 'twitch'}.tv/${channelName}`);
+        if (isYtVideo) {
+            textContent = textContent.replace(/\{author\}/gi, channelName).replace(/\{canal\}/gi, channelName).replace(/\{title\}/gi, 'Título do Vídeo').replace(/\{link\}/gi, `https://youtube.com/watch?v=exemplo`);
+        } else if (currentStream?.platform === 'youtube_live') {
+            textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{titulo\}/gi, 'Título da Live').replace(/\{link\}/gi, `https://youtube.com/watch?v=live`);
+        } else {
+            textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{link\}/gi, `https://${currentStream?.platform || 'twitch'}.tv/${channelName}`);
+        }
         
         els.streamWaText.innerHTML = formatWhatsAppMarkdown(textContent);
     }
@@ -1190,7 +1261,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
                 div.querySelector('.btn-edit-stream-txt').onclick = async () => {
-                    const newText = await showCustomPrompt("Digite a mensagem da stream:", textVal);
+                    const promptTitle = currentStream?.platform === 'youtube_video' ? "Digite a mensagem do vídeo:" : "Digite a mensagem da stream:";
+                    const newText = await showCustomPrompt(promptTitle, textVal);
                     if (newText !== null && newText.trim()) {
                         media.content = newText.trim();
                         renderStreamMediaList(containerId, mediaArray);
@@ -1226,10 +1298,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addStreamMedia = async function(context, type) {
-        const targetArray = context === 'on' ? currentStream.data.onConfig.media : currentStream.data.offConfig.media;
+        const isYtVideo = currentStream?.platform === 'youtube_video';
+        let targetArray;
+        if (isYtVideo) {
+            if (!currentStream.data.videoConfig) currentStream.data.videoConfig = { media: [] };
+            targetArray = currentStream.data.videoConfig.media;
+        } else {
+            targetArray = context === 'on' ? currentStream.data.onConfig.media : currentStream.data.offConfig.media;
+        }
         
         if (type === 'text') {
-            const text = await showCustomPrompt("Digite o texto da notificação:");
+            const promptTitle = isYtVideo ? "Digite o texto da notificação de novo vídeo:" : "Digite o texto da notificação:";
+            const text = await showCustomPrompt(promptTitle);
             if (text) {
                 const existingIdx = targetArray.findIndex(m => m.type === 'text');
                 if(existingIdx !== -1) targetArray.splice(existingIdx, 1);
@@ -1313,6 +1393,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!channel) return await showCustomAlert('Nome do canal obrigatório.');
         
         const platform = currentStream.platform;
+        const isYtVideo = platform === 'youtube_video';
+        const isYtLive = platform === 'youtube_live';
+        const isYoutube = isYtVideo || isYtLive;
+        const storeKey = isYoutube ? 'youtube' : platform;
+
         if (platform === 'twitch' || platform === 'kick') {
             if (channel.includes('/') || channel.includes('http')) return await showCustomAlert('Digite apenas o usuário, não a URL.');
             if (!/^[a-zA-Z0-9_]{2,50}$/.test(channel)) return await showCustomAlert('Nome de usuário inválido.');
@@ -1321,31 +1406,87 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = currentStream.data;
         d.channel = channel;
         d.mentionAllMembers = els.streamMention.checked;
-        d.changeTitleOnEvent = els.streamChangeTitle.checked;
         d.useAI = els.streamAI.checked;
         d.useThumbnail = els.streamUseThumbnail.checked;
-        d.onlineTitle = els.streamTitleOn.value;
-        d.offlineTitle = els.streamTitleOff.value;
 
-        if (!groupData[platform]) groupData[platform] = [];
+        if (!isYtVideo) {
+            d.changeTitleOnEvent = els.streamChangeTitle.checked;
+            d.onlineTitle = els.streamTitleOn.value;
+            d.offlineTitle = els.streamTitleOff.value;
+        }
+
+        if (isYtVideo) {
+            d.notifyVideos = true;
+        } else if (isYtLive) {
+            d.notifyLives = true;
+        }
+
+        if (!groupData[storeKey]) groupData[storeKey] = [];
         
-        if (currentStream.index !== null) {
-            groupData[platform][currentStream.index] = d;
+        if (currentStream.index !== null && !isNaN(currentStream.index)) {
+            groupData[storeKey][currentStream.index] = d;
         } else {
-            groupData[platform].push(d);
+            if (isYoutube) {
+                const existingIdx = groupData.youtube.findIndex(
+                    s => s.channel.toLowerCase() === channel.toLowerCase()
+                );
+                if (existingIdx !== -1) {
+                    if (isYtVideo) {
+                        groupData.youtube[existingIdx].notifyVideos = true;
+                        groupData.youtube[existingIdx].videoConfig = d.videoConfig;
+                    } else {
+                        groupData.youtube[existingIdx].notifyLives = true;
+                        groupData.youtube[existingIdx].onConfig = d.onConfig;
+                        groupData.youtube[existingIdx].offConfig = d.offConfig;
+                        groupData.youtube[existingIdx].changeTitleOnEvent = d.changeTitleOnEvent;
+                        groupData.youtube[existingIdx].onlineTitle = d.onlineTitle;
+                        groupData.youtube[existingIdx].offlineTitle = d.offlineTitle;
+                    }
+                } else {
+                    groupData.youtube.push(d);
+                }
+            } else {
+                groupData[storeKey].push(d);
+            }
         }
 
         setDirty(true);
-        renderStreamSection(platform);
+        if (isYoutube) {
+            renderStreamSection('youtube_video');
+            renderStreamSection('youtube_live');
+        } else {
+            renderStreamSection(platform);
+        }
         els.streamModal.classList.add('hidden');
     };
 
     els.btnDeleteStream.onclick = async () => {
         if(!await showCustomConfirm('Tem certeza que deseja remover este canal?')) return;
         const { platform, index } = currentStream;
-        groupData[platform].splice(index, 1);
+        const isYtVideo = platform === 'youtube_video';
+        const isYtLive = platform === 'youtube_live';
+        const isYoutube = isYtVideo || isYtLive;
+
+        if (isYoutube) {
+            const stream = groupData.youtube[index];
+            if (stream) {
+                if (isYtVideo) {
+                    stream.notifyVideos = false;
+                } else if (isYtLive) {
+                    stream.notifyLives = false;
+                }
+                if (stream.notifyVideos === false && stream.notifyLives === false) {
+                    groupData.youtube.splice(index, 1);
+                }
+            }
+            renderStreamSection('youtube_video');
+            renderStreamSection('youtube_live');
+        } else {
+            groupData[platform].splice(index, 1);
+            renderStreamSection(platform);
+        }
+
         setDirty(true);
-        renderStreamSection(platform);
         els.streamModal.classList.add('hidden');
     };
 

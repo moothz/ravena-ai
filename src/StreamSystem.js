@@ -374,6 +374,9 @@ class StreamSystem {
 
 				if (!channelConfig) continue;
 
+				// Para YouTube, verifica se lives estão ativadas para este canal
+				if (data.platform === "youtube" && channelConfig.notifyLives === false) continue;
+
 				await this.processStreamEvent(groupData, channelConfig, data, "online");
 			}
 		} catch (error) {
@@ -397,6 +400,9 @@ class StreamSystem {
 				);
 
 				if (!channelConfig) continue;
+
+				// Para YouTube, verifica se lives estão ativadas para este canal
+				if (data.platform === "youtube" && channelConfig.notifyLives === false) continue;
 
 				await this.processStreamEvent(groupData, channelConfig, data, "offline");
 			}
@@ -422,7 +428,10 @@ class StreamSystem {
 
 				if (!channelConfig) continue;
 
-				await this.processStreamEvent(groupData, channelConfig, data, "online");
+				// Verifica se a notificação de vídeos está habilitada
+				if (channelConfig.notifyVideos === false) continue;
+
+				await this.processStreamEvent(groupData, channelConfig, data, "video");
 			}
 		} catch (error) {
 			this.logger.error("Erro ao manipular evento de novo vídeo:", error);
@@ -434,7 +443,7 @@ class StreamSystem {
 	 * @param {Object} group - Dados do grupo
 	 * @param {Object} channelConfig - Configuração do canal
 	 * @param {Object} eventData - Dados do evento
-	 * @param {string} eventType - Tipo de evento ('online' ou 'offline')
+	 * @param {string} eventType - Tipo de evento ('online', 'offline' ou 'video')
 	 */
 	async processStreamEvent(group, channelConfig, eventData, eventType) {
 		try {
@@ -448,8 +457,18 @@ class StreamSystem {
 				return;
 			}
 
-			// Obtém a configuração apropriada
-			const config = eventType === "online" ? channelConfig.onConfig : channelConfig.offConfig;
+			// Obtém a configuração apropriada (para vídeos, prioriza videoConfig com fallback para onConfig)
+			let config;
+			if (eventType === "video") {
+				config =
+					channelConfig.videoConfig?.media && channelConfig.videoConfig.media.length > 0
+						? channelConfig.videoConfig
+						: channelConfig.onConfig;
+			} else if (eventType === "online") {
+				config = channelConfig.onConfig;
+			} else {
+				config = channelConfig.offConfig;
+			}
 
 			// Tenta enviar com cada bot candidato até conseguir
 			let sentSuccess = false;
@@ -460,8 +479,8 @@ class StreamSystem {
 				try {
 					const returnMessages = [];
 
-					// Processa alteração de título (se habilitada)
-					if (channelConfig.changeTitleOnEvent && !titleChanged) {
+					// Processa alteração de título (se habilitada e apenas para lives online/offline, nunca para novos vídeos gravados)
+					if (eventType !== "video" && channelConfig.changeTitleOnEvent && !titleChanged) {
 						this.logger.debug(`[processStreamEvent] ${group.name} -> changeTitleOnEvent 'true'`);
 						titleChanged = await this.changeGroupTitleForStream(
 							bot,
@@ -474,7 +493,10 @@ class StreamSystem {
 
 					// Obter menções
 					let mentions = [];
-					if (channelConfig.mentionAllMembers && eventType === "online") {
+					if (
+						channelConfig.mentionAllMembers &&
+						(eventType === "online" || eventType === "video")
+					) {
 						mentions = await this.getAllMembersMentions(bot, group.id);
 					}
 
@@ -496,7 +518,7 @@ class StreamSystem {
 					}
 
 					// Gera mensagem de IA
-					if (channelConfig.useAI && eventType === "online") {
+					if (channelConfig.useAI && (eventType === "online" || eventType === "video")) {
 						const aiMessage = await this.createAINotification(bot, group, eventData, channelConfig);
 						if (aiMessage) {
 							returnMessages.push(aiMessage);
@@ -803,7 +825,10 @@ class StreamSystem {
 				} else if (eventData.platform === "youtube") {
 					content = content
 						.replace(/{author}/g, eventData.author ?? eventData.channelName)
+						.replace(/{canal}/g, eventData.channelName)
+						.replace(/{nomeCanal}/g, eventData.channelName)
 						.replace(/{title}/g, eventData.title ?? "")
+						.replace(/{titulo}/g, eventData.title ?? "")
 						.replace(/{link}/g, eventData.url ?? "");
 				}
 				return content;

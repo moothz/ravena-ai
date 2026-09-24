@@ -2417,6 +2417,10 @@ class BotAPI {
 					["twitch", "kick", "youtube"].forEach((platform) => {
 						if (groupData[platform]) {
 							groupData[platform].forEach((stream) => {
+								if (stream.videoConfig?.media)
+									stream.videoConfig.media.forEach((m) => {
+										if (m.type !== "text") addFileSize(m.content);
+									});
 								if (stream.onConfig?.media)
 									stream.onConfig.media.forEach((m) => {
 										if (m.type !== "text") addFileSize(m.content);

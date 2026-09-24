@@ -3406,7 +3406,7 @@ class Management {
 	 * @param {string} channelName - The channel name
 	 * @returns {Object} - Default notification configuration
 	 */
-	createDefaultNotificationConfig(platform, channelName) {
+	createDefaultNotificationConfig(platform, channelName, eventType = "on") {
 		let defaultText = "";
 
 		if (platform === "twitch" || platform === "kick") {
@@ -3415,7 +3415,13 @@ class Management {
 				`⚠️ ATENÇÃO!⚠️\n\n🌟 *${channelName}* ✨ está *online* streamando *{jogo}*!\n_{titulo}_\n\n` +
 				`https://${platform}.${domain}/${channelName}`;
 		} else if (platform === "youtube") {
-			defaultText = `*⚠️ Vídeo novo! ⚠️*\n\n*{author}:* *{title}* \n{link}`;
+			if (eventType === "video") {
+				defaultText = `*⚠️ Vídeo novo! ⚠️*\n\n*{author}:* *{title}*\n{link}`;
+			} else if (eventType === "on") {
+				defaultText = `🔴 *{canal}* está AO VIVO no YouTube!\n\n*{titulo}*\nVenha assistir: {link}`;
+			} else {
+				defaultText = `⚫ A live de *{canal}* no YouTube foi finalizada.`;
+			}
 		}
 
 		return {
@@ -4560,14 +4566,17 @@ class Management {
 				content: `Canal do YouTube removido: ${channelName}`
 			});
 		} else {
-			// Add channel with default configuration
+			// Add channel with default configuration (separando videoConfig e onConfig para lives)
 			const newChannel = {
 				channel: channelName,
-				onConfig: this.createDefaultNotificationConfig("youtube", channelName),
+				notifyVideos: true,
+				notifyLives: true,
+				videoConfig: this.createDefaultNotificationConfig("youtube", channelName, "video"),
+				onConfig: this.createDefaultNotificationConfig("youtube", channelName, "on"),
 				offConfig: {
 					media: []
 				},
-				changeTitleOnEvent: false,
+				changeTitleOnEvent: true,
 				useAI: false,
 				useThumbnail: true
 			};
@@ -4593,7 +4602,7 @@ class Management {
 					chatId: group.id,
 					content:
 						`Canal do YouTube adicionado: ${channelName}\n\n` +
-						`Configuração padrão de notificação de vídeo definida. Use !g-youtube-midia on ${channelName} para personalizar.`
+						`Configurações padrão definidas para Novos Vídeos e Lives. Use !g-youtube-midia [video|on|off] ${channelName} para personalizar.`
 				});
 			} else {
 				return new ReturnMessage({
@@ -5510,7 +5519,7 @@ class Management {
 	 * @param {string} mode - The mode (on or off)
 	 * @returns {Promise<ReturnMessage>} Return message
 	 */
-	async setStreamMedia(bot, message, args, group, platform, mode = "on") {
+	async setStreamMedia(bot, message, args, group, platform, mode = null) {
 		if (!group) {
 			return new ReturnMessage({
 				chatId: message.author,
@@ -5520,16 +5529,23 @@ class Management {
 
 		this.logger.debug(`[setStreamMedia] Recebido pedido para: ${args.join("|")}, modo ${mode}`);
 
-		// Determina o modo (online/offline) a partir dos argumentos
+		// Determina o modo (vídeo, online ou offline) a partir dos argumentos
 		if (args.length > 0) {
 			const modeArg = args[0].toLowerCase();
 			if (modeArg === "on" || modeArg === "online") {
 				mode = "on";
-				args = args.slice(1); // Remove o primeiro argumento
+				args = args.slice(1);
 			} else if (modeArg === "off" || modeArg === "offline") {
 				mode = "off";
-				args = args.slice(1); // Remove o primeiro argumento
+				args = args.slice(1);
+			} else if (platform === "youtube" && (modeArg === "video" || modeArg === "videos")) {
+				mode = "video";
+				args = args.slice(1);
 			}
+		}
+
+		if (!mode) {
+			mode = platform === "youtube" ? "video" : "on";
 		}
 
 		// Validate and get channel name
@@ -5551,10 +5567,17 @@ class Management {
 		}
 
 		// Verify if this is a reply to a message
-
 		const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
 
-		const configKey = mode === "on" ? "onConfig" : "offConfig";
+		let configKey = "onConfig";
+		if (mode === "video") {
+			configKey = "videoConfig";
+		} else if (mode === "off") {
+			configKey = "offConfig";
+		}
+
+		const modeDesc =
+			mode === "video" ? "novo vídeo" : mode === "on" ? "live online" : "live offline";
 
 		if (!quotedMsg && args.length <= 1) {
 			this.logger.debug(`[stream media] no quoted`, { quotedMsg, message });
@@ -5566,16 +5589,26 @@ class Management {
 				});
 			} else {
 				// Reset to default if no quoted message and no additional args
-				if (mode === "on") {
-					channelConfig[configKey] = this.createDefaultNotificationConfig(platform, channelName);
+				if (mode === "video") {
+					channelConfig.videoConfig = this.createDefaultNotificationConfig(
+						platform,
+						channelName,
+						"video"
+					);
+				} else if (mode === "on") {
+					channelConfig.onConfig = this.createDefaultNotificationConfig(
+						platform,
+						channelName,
+						"on"
+					);
 				} else {
-					channelConfig[configKey] = { media: [] };
+					channelConfig.offConfig = { media: [] };
 				}
 				await this.database.saveGroup(group);
 
 				return new ReturnMessage({
 					chatId: group.id,
-					content: `Configuração de notificação "${mode === "on" ? "online" : "offline"}" para o canal ${channelName} redefinida para o padrão.`
+					content: `Configuração de notificação "${modeDesc}" para o canal ${channelName} redefinida para o padrão.`
 				});
 			}
 		}
@@ -5687,7 +5720,7 @@ class Management {
 
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `Configuração de notificação "${mode === "on" ? "online" : "offline"}" para o canal ${channelName} atualizada com sucesso.\n\nAdicionado conteúdo do tipo: ${mediaTypeDesc[mediaType] || mediaType}\n\nPara remover este tipo de conteúdo, use:\n!g-${platform}-midia-del ${mode} ${mediaType} ${channelName}`
+				content: `Configuração de notificação "${modeDesc}" para o canal ${channelName} atualizada com sucesso.\n\nAdicionado conteúdo do tipo: ${mediaTypeDesc[mediaType] || mediaType}\n\nPara remover este tipo de conteúdo, use:\n!g-${platform}-midia-del ${mode} ${mediaType} ${channelName}`
 			});
 		} catch (error) {
 			this.logger.error(
@@ -5720,23 +5753,29 @@ class Management {
 
 		// Verifica se todos os argumentos necessários foram fornecidos
 		if (args.length < 2) {
+			const modesAllowed = platform === "youtube" ? "[video/on/off]" : "[on/off]";
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `Argumentos insuficientes. Uso: !g-${platform}-midia-del [on/off] [tipo]
-        
-  Onde:
-  - [on/off]: Especifica se é para notificação online ou offline
-  - [tipo]: Tipo de mídia (text, image, audio, video, sticker)`
+				content: `Argumentos insuficientes. Uso: !g-${platform}-midia-del ${modesAllowed} [tipo] <canal>\n\nOnde:\n- ${modesAllowed}: Especifica o tipo de notificação\n- [tipo]: Tipo de mídia (text, image, audio, video, sticker)`
 			});
 		}
 
-		// Determina o modo (online/offline)
+		// Determina o modo
 		const mode = args[0].toLowerCase();
-		if (mode !== "on" && mode !== "off") {
-			return new ReturnMessage({
-				chatId: group.id,
-				content: `Modo inválido: ${mode}. Use "on" ou "off".`
-			});
+		if (platform === "youtube") {
+			if (!["video", "on", "off"].includes(mode)) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `Modo inválido: ${mode}. Para YouTube, use "video", "on" ou "off".`
+				});
+			}
+		} else {
+			if (mode !== "on" && mode !== "off") {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `Modo inválido: ${mode}. Use "on" ou "off".`
+				});
+			}
 		}
 
 		// Determina o tipo de mídia
@@ -5773,7 +5812,7 @@ class Management {
 		}
 
 		// Seleciona a configuração correta com base no modo
-		const configKey = mode === "on" ? "onConfig" : "offConfig";
+		const configKey = mode === "video" ? "videoConfig" : mode === "on" ? "onConfig" : "offConfig";
 
 		// Verifica se a configuração e o array de mídia existem
 		if (!channelConfig[configKey] || !channelConfig[configKey].media) {
@@ -8612,14 +8651,19 @@ const helper = {
 		},
 		{
 			cmd: "!g-youtube-midia",
-			desc: "Define mídia para notificação de canal do YouTube",
-			usage: ["!g-youtube-midia"],
+			desc: "Define mídia para notificações de novos vídeos ou lives do YouTube",
+			usage: [
+				"!g-youtube-midia [video|on|off] <canal>",
+				"!g-youtube-midia <canal> (padrão: novos vídeos)",
+				"!g-youtube-midia on <canal> (lives online)",
+				"!g-youtube-midia off <canal> (lives offline)"
+			],
 			category: "streams"
 		},
 		{
 			cmd: "!g-youtube-midia-del",
-			desc: "Remove mídia específica da notificação de canal do YouTube",
-			usage: ["!g-youtube-midia-del"],
+			desc: "Remove mídia específica de vídeo ou live do YouTube",
+			usage: ["!g-youtube-midia-del [video|on|off] <tipo> <canal>"],
 			category: "streams"
 		},
 		{

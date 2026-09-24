@@ -607,22 +607,22 @@
                     </div>
                 </div>
 
-                <!-- Accordion: Canais YouTube -->
+                <!-- Accordion: Canais YouTube (Vídeos) -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fab fa-youtube text-youtube"></i> YouTube</h3>
+                        <h3><i class="fab fa-youtube text-youtube"></i> YouTube (Vídeos)</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
                         <div class="section-notice mb-3">
                             <i class="fab fa-youtube"></i>
-                            <div>Notifica novos vídeos publicados ou lives iniciadas nos canais do YouTube monitorados.</div>
+                            <div>Notifica novos vídeos gravados publicados nos canais do YouTube monitorados.</div>
                         </div>
                         <div class="commands-toolbar">
-                            <button type="button" class="btn btn-success btn-add-stream" data-platform="youtube"><i class="fas fa-plus"></i> Adicionar Canal</button>
+                            <button type="button" class="btn btn-success btn-add-stream" data-platform="youtube_video"><i class="fas fa-plus"></i> Adicionar Canal (Vídeos)</button>
                         </div>
                         <div class="table-responsive">
-                            <table class="table" id="youtube-table">
+                            <table class="table" id="youtube_video-table">
                                 <thead>
                                     <tr>
                                         <th>Canal / Handle</th>
@@ -631,7 +631,36 @@
                                 </thead>
                                 <tbody></tbody>
                             </table>
-                            <div id="no-youtube-msg" class="text-center p-3 text-muted hidden">Nenhum canal configurado.</div>
+                            <div id="no-youtube_video-msg" class="text-center p-3 text-muted hidden">Nenhum canal configurado para vídeos.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Canais YouTube (Lives) -->
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-broadcast-tower text-youtube"></i> YouTube (Lives)</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fas fa-broadcast-tower"></i>
+                            <div>Monitora canais do YouTube e envia notificação no grupo assim que o streamer entrar ao vivo, com suporte a mensagens Online/Offline e mudança de título.</div>
+                        </div>
+                        <div class="commands-toolbar">
+                            <button type="button" class="btn btn-success btn-add-stream" data-platform="youtube_live"><i class="fas fa-plus"></i> Adicionar Canal (Lives)</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="youtube_live-table">
+                                <thead>
+                                    <tr>
+                                        <th>Canal / Handle</th>
+                                        <th style="width: 110px;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <div id="no-youtube_live-msg" class="text-center p-3 text-muted hidden">Nenhum canal configurado para lives.</div>
                         </div>
                     </div>
                 </div>
@@ -1039,7 +1068,7 @@
                             <span class="slider-round"></span>
                         </label>
                     </div>
-                    <div class="form-group toggle-row-compact">
+                    <div id="stream-change-title-row" class="form-group toggle-row-compact">
                         <span class="toggle-label" id="lbl-stream-change-title">Mudar Título do Grupo</span>
                         <label class="switch-toggle">
                             <input type="checkbox" id="stream-change-title">
@@ -1075,7 +1104,7 @@
 
                 <!-- Simulador de Notificação WhatsApp da Stream -->
                 <div class="wa-simulator-wrapper mb-3">
-                    <div class="wa-sim-title"><i class="fab fa-whatsapp"></i> Prévia da Notificação da Live</div>
+                    <div class="wa-sim-title" id="wa-sim-title-label"><i class="fab fa-whatsapp"></i> Prévia da Notificação da Live</div>
                     <div class="wa-bubble-container">
                         <div class="wa-bubble">
                             <div id="stream-wa-thumbnail" class="wa-media-preview">
@@ -1092,10 +1121,10 @@
 
                 <div class="divider"></div>
 
-                <!-- Online Media -->
-                <div class="sub-accordion active">
+                <!-- Online Media / Video Media -->
+                <div class="sub-accordion active" id="stream-on-accordion">
                     <div class="sub-accordion-header">
-                        <div class="sub-acc-title">
+                        <div class="sub-acc-title" id="stream-on-title">
                             <i class="fas fa-satellite-dish text-success"></i>
                             <h4>Mídia & Mensagem quando Online</h4>
                         </div>
@@ -1112,10 +1141,10 @@
                     </div>
                 </div>
 
-                <div class="divider"></div>
+                <div class="divider" id="stream-off-divider"></div>
 
                 <!-- Offline Media -->
-                <div class="sub-accordion active">
+                <div class="sub-accordion active" id="stream-off-accordion">
                     <div class="sub-accordion-header">
                         <div class="sub-acc-title">
                             <i class="fas fa-power-off text-muted"></i>
