@@ -2038,12 +2038,21 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			const chatInfo = await bot.getChatDetails(data.group.id);
 
 			// 1° passo: descobrir o lid do bot nesse grupo (identificado via Whatsgo)
-			const botNumber = bot.getLidFromPn(bot.phoneNumber, chatInfo);
+			const botNumber =
+				bot.getLidFromPn && chatInfo
+					? bot.getLidFromPn(bot.phoneNumber, chatInfo)
+					: bot.phoneNumber?.replace(/\D/g, "");
 
 			// notInGroup é solução nova que coloquei da Go, quando falha ao retornar info do grupo pois o bot não participa
-			const isBotLeaving = data.group.notInGroup || data?.user?.id?.startsWith(botNumber);
+			const cleanBotPn = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
+			const isBotLeaving =
+				data.isBotLeaving ||
+				data.group?.notInGroup ||
+				chatInfo?.notInGroup ||
+				(botNumber && data?.user?.id?.startsWith(botNumber)) ||
+				(cleanBotPn && data?.user?.id?.startsWith(cleanBotPn));
 
-			//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${botNumber} | not in group? ${data.group.notInGroup}`, { data, chatInfo });
+			//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${botNumber} | not in group? ${data.group?.notInGroup}`, { data, chatInfo });
 
 			// Envia notificação para o grupo de logs
 			if (bot.grupoLogs) {
@@ -2065,6 +2074,103 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							data.responsavel,
 							bot?.id || null
 						);
+
+						// Limpeza das configurações de monitoramento de streams do grupo (Twitch, Kick, YouTube)
+						let streamsRemovedText = "";
+						const oldTwitch = Array.isArray(group.twitch) ? [...group.twitch] : [];
+						const oldKick = Array.isArray(group.kick) ? [...group.kick] : [];
+						const oldYoutube = Array.isArray(group.youtube) ? [...group.youtube] : [];
+						const totalStreams = oldTwitch.length + oldKick.length + oldYoutube.length;
+
+						if (totalStreams > 0) {
+							group.twitch = [];
+							group.kick = [];
+							group.youtube = [];
+
+							const parts = [];
+							if (oldTwitch.length > 0) {
+								parts.push(
+									`${oldTwitch.length} Twitch (${oldTwitch.map((c) => c.channel).join(", ")})`
+								);
+							}
+							if (oldKick.length > 0) {
+								parts.push(`${oldKick.length} Kick (${oldKick.map((c) => c.channel).join(", ")})`);
+							}
+							if (oldYoutube.length > 0) {
+								parts.push(
+									`${oldYoutube.length} YouTube (${oldYoutube.map((c) => c.channel).join(", ")})`
+								);
+							}
+							streamsRemovedText = `\n📺 *Streams Removidas (${totalStreams}):* ${parts.join(" | ")}`;
+
+							this.logger.info(
+								`[processGroupLeave] Bot '${bot.id}' saiu do grupo '${group.name}' (${groupId}). Removidas configurações de streams: ${parts.join(" | ")}`
+							);
+
+							// Desinscreve canais do StreamMonitor caso não sejam usados por nenhum outro grupo
+							try {
+								const StreamSystem = require("./StreamSystem");
+								const streamSystem = StreamSystem.getInstance();
+								const streamMonitor = bot.streamMonitor || streamSystem?.streamMonitor;
+
+								if (streamMonitor) {
+									const allGroups = await this.database.getGroups();
+									for (const ch of oldTwitch) {
+										const chName = ch.channel;
+										const stillUsed = allGroups.some(
+											(g) =>
+												g.id !== groupId &&
+												Array.isArray(g.twitch) &&
+												g.twitch.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+										);
+										if (!stillUsed) {
+											streamMonitor.unsubscribe(chName, "twitch");
+											this.logger.debug(
+												`[processGroupLeave] Desinscrito canal Twitch sem grupos restantes: ${chName}`
+											);
+										}
+									}
+
+									for (const ch of oldKick) {
+										const chName = ch.channel;
+										const stillUsed = allGroups.some(
+											(g) =>
+												g.id !== groupId &&
+												Array.isArray(g.kick) &&
+												g.kick.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+										);
+										if (!stillUsed) {
+											streamMonitor.unsubscribe(chName, "kick");
+											this.logger.debug(
+												`[processGroupLeave] Desinscrito canal Kick sem grupos restantes: ${chName}`
+											);
+										}
+									}
+
+									for (const ch of oldYoutube) {
+										const chName = ch.channel;
+										const stillUsed = allGroups.some(
+											(g) =>
+												g.id !== groupId &&
+												Array.isArray(g.youtube) &&
+												g.youtube.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+										);
+										if (!stillUsed) {
+											streamMonitor.unsubscribe(chName, "youtube");
+											this.logger.debug(
+												`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
+											);
+										}
+									}
+								}
+							} catch (streamErr) {
+								this.logger.error(
+									`[processGroupLeave] Erro ao desinscrever canais de streams do grupo ${groupId}:`,
+									streamErr
+								);
+							}
+						}
+
 						await this.database.saveGroup(group);
 
 						let membershipHistoryText = "";
@@ -2247,7 +2353,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 - 👷‍♂️ *Responsável:*
 \`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`
 - 👨‍💻 *Raw Data*:
-\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${blockLogsText}`;
+\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${streamsRemovedText}${blockLogsText}`;
 
 						// Remove o responsável do bot comunitário dos admins adicionais
 						/* por enquanto desabilitado
