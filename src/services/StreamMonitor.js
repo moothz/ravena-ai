@@ -916,6 +916,78 @@ class StreamMonitor extends EventEmitter {
 		}
 	}
 
+	/**
+	 * Verifica se um canal do Kick existe
+	 * @param {string} channelName - Nome do canal a verificar
+	 * @returns {Promise<boolean>} - True se o canal existir, false caso contrário
+	 */
+	async kickChannelExists(channelName) {
+		try {
+			if (!this.kickToken) {
+				const token = await this._refreshKickToken();
+				if (!token) return false;
+			}
+
+			const sanitizedName = this.sanitizePlatformChannelName(channelName ?? "", "kick");
+			if (!sanitizedName) return false;
+
+			const response = await axios.get(
+				`https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(sanitizedName)}`,
+				{
+					headers: {
+						Authorization: `Bearer ${this.kickToken}`,
+						Accept: "application/json"
+					},
+					timeout: 10000
+				}
+			);
+
+			return !!(
+				response.status === 200 &&
+				response.data &&
+				Array.isArray(response.data.data) &&
+				response.data.data.length > 0
+			);
+		} catch (error) {
+			if (error.response && error.response.status === 401) {
+				this.kickToken = null;
+				await this._refreshKickToken();
+				try {
+					const sanitizedName = this.sanitizePlatformChannelName(channelName ?? "", "kick");
+					const retryResponse = await axios.get(
+						`https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(sanitizedName)}`,
+						{
+							headers: {
+								Authorization: `Bearer ${this.kickToken}`,
+								Accept: "application/json"
+							},
+							timeout: 10000
+						}
+					);
+					return !!(
+						retryResponse.status === 200 &&
+						retryResponse.data &&
+						Array.isArray(retryResponse.data.data) &&
+						retryResponse.data.data.length > 0
+					);
+				} catch (retryError) {
+					this.logger.error(
+						`Error checking if Kick channel exists (retry): ${channelName} - ${retryError.message}`
+					);
+					return false;
+				}
+			}
+
+			// Se status for 400, o canal é inválido ou não existe na Kick
+			if (error.response && error.response.status === 400) {
+				return false;
+			}
+
+			this.logger.error(`Error checking if Kick channel exists: ${channelName} - ${error.message}`);
+			return false;
+		}
+	}
+
 	async cleanupChannelList(channelsObj) {
 		try {
 			const channels = channelsObj.map((ch) => ch.name);
@@ -1305,6 +1377,150 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
+	 * Update channel status and emit events for Kick channel
+	 * @private
+	 */
+	async _updateKickChannelStatus(channel, channelData) {
+		const channelKey = `kick:${channel.name.toLowerCase()}`;
+
+		if (!channelData) {
+			if (!this.kickNotFounds[channel.name]) {
+				this.kickNotFounds[channel.name] = 1;
+				this.logger.warn(
+					`Canal da Kick não encontrado: '${channel.name}'. Iniciando contagem de erros.`
+				);
+			} else {
+				this.kickNotFounds[channel.name]++;
+				this.logger.warn(
+					`Canal da Kick não encontrado (${this.kickNotFounds[channel.name]} vezes): '${channel.name}'.`
+				);
+				if (this.kickNotFounds[channel.name] > 50) {
+					await this.pauseChannel(channel.name, "kick");
+				}
+			}
+			return;
+		} else {
+			this.kickNotFounds[channel.name] = 0;
+		}
+
+		const isLiveNow = !!(channelData && channelData.stream && channelData.stream.is_live);
+		const wasLive = this.streamStatuses[channelKey]?.isLive ?? false;
+
+		// Create or update status
+		if (!this.streamStatuses[channelKey]) {
+			this.streamStatuses[channelKey] = {};
+		}
+		this.streamStatuses[channelKey].isLive = isLiveNow;
+		this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
+		this.streamStatuses[channelKey].platform = "kick";
+		this.streamStatuses[channelKey].channelName = channel.name;
+
+		// Add stream details if live
+		if (isLiveNow) {
+			const stream = channelData.stream;
+			this.streamStatuses[channelKey].title =
+				stream?.stream_title || channelData.stream_title || "";
+			this.streamStatuses[channelKey].thumbnail = stream?.thumbnail || "";
+			this.streamStatuses[channelKey].viewerCount = stream?.viewer_count || 0;
+			this.streamStatuses[channelKey].startedAt = stream?.start_time || null;
+			this.streamStatuses[channelKey].game = channelData.category
+				? channelData.category.name
+				: "Unknown";
+		}
+
+		// Emit events for status changes
+		if (isLiveNow && !wasLive) {
+			const stream = channelData.stream;
+			await this._emitIfSafe("streamOnline", {
+				platform: "kick",
+				channelName: channelData.slug,
+				title: stream?.stream_title || channelData.stream_title || "",
+				game: channelData.category ? channelData.category.name : "Unknown",
+				thumbnail: stream?.thumbnail || "",
+				viewerCount: stream?.viewer_count || 0,
+				startedAt: stream?.start_time || null
+			});
+		} else if (!isLiveNow && wasLive) {
+			await this._emitIfSafe("streamOffline", {
+				platform: "kick",
+				channelName: channel.name
+			});
+		}
+
+		// Update DB
+		await this._updateStatusInDB(channelKey, this.streamStatuses[channelKey]);
+	}
+
+	/**
+	 * Poll Kick channels individually as fallback when a batch fails.
+	 * Isolates which channel causes HTTP 400 (not found/invalid) so valid channels continue to be monitored.
+	 * @private
+	 */
+	async _pollKickChannelsIndividual(channels) {
+		this.logger.info(
+			`[_pollKickChannelsIndividual] Polling ${channels.length} Kick channels individually as fallback.`
+		);
+
+		for (const channel of channels) {
+			const sanitizedName = this.sanitizePlatformChannelName(channel.name ?? "", "kick");
+			if (!sanitizedName) {
+				this.logger.warn(
+					`[_pollKickChannelsIndividual] Canal com nome inválido: '${channel.name}'.`
+				);
+				await this._updateKickChannelStatus(channel, null);
+				continue;
+			}
+
+			try {
+				const response = await axios.get(
+					`https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(sanitizedName)}`,
+					{
+						headers: {
+							Authorization: `Bearer ${this.kickToken}`,
+							Accept: "application/json"
+						},
+						timeout: 10000
+					}
+				);
+
+				if (response.status === 200 && response.data && Array.isArray(response.data.data)) {
+					const channelData = response.data.data.find(
+						(ch) => ch.slug.toLowerCase() === sanitizedName.toLowerCase()
+					);
+					await this._updateKickChannelStatus(channel, channelData);
+				} else {
+					await this._updateKickChannelStatus(channel, null);
+				}
+			} catch (error) {
+				if (error.response && error.response.status === 401) {
+					this.logger.warn(
+						"[_pollKickChannelsIndividual] Kick token unauthorized. Refreshing token."
+					);
+					this.kickToken = null;
+					await this._refreshKickToken();
+					break;
+				} else if (error.response && error.response.status === 400) {
+					this.logger.warn(
+						`[_pollKickChannelsIndividual] Canal não existe ou inválido na Kick: '${channel.name}' (HTTP 400).`
+					);
+					await this._updateKickChannelStatus(channel, null);
+				} else if (error.response && error.response.status === 429) {
+					this.logger.warn(
+						"[_pollKickChannelsIndividual] Rate limit (429) atingido na Kick. Interrompendo fallback."
+					);
+					break;
+				} else {
+					this.logger.error(
+						`[_pollKickChannelsIndividual] Erro ao consultar canal Kick '${channel.name}': ${error.message}`
+					);
+				}
+			}
+
+			await sleep(500);
+		}
+	}
+
+	/**
 	 * Poll Kick channels for status updates
 	 * @private
 	 */
@@ -1318,10 +1534,10 @@ class StreamMonitor extends EventEmitter {
 			if (!token) return; // Can't proceed without a token
 		}
 
-		// Split channels into batches (using 100 as a safe limit)
+		// Split channels into batches (using 25 as a safe limit - Kick API supports up to 50 slugs)
 		const channelBatches = [];
-		for (let i = 0; i < kickChannels.length; i += 100) {
-			channelBatches.push(kickChannels.slice(i, i + 100));
+		for (let i = 0; i < kickChannels.length; i += 25) {
+			channelBatches.push(kickChannels.slice(i, i + 25));
 		}
 
 		this.logger.info(
@@ -1329,19 +1545,22 @@ class StreamMonitor extends EventEmitter {
 		);
 
 		for (const batch of channelBatches) {
-			try {
-				const slugs = [
-					...new Set(batch.map((c) => this.sanitizePlatformChannelName(c.name ?? "", "kick")))
-				]
-					.filter(Boolean) // remove strings avazias
-					.map((name) => `slug=${encodeURIComponent(name.substring(0, 25))}`)
-					.join("&");
+			const slugs = [
+				...new Set(batch.map((c) => this.sanitizePlatformChannelName(c.name ?? "", "kick")))
+			]
+				.filter(Boolean)
+				.map((name) => `slug=${encodeURIComponent(name.substring(0, 25))}`)
+				.join("&");
 
+			if (!slugs) continue;
+
+			try {
 				const kickRequestParameters = {
 					headers: {
 						Authorization: `Bearer ${this.kickToken}`,
 						Accept: "application/json"
-					}
+					},
+					timeout: 15000
 				};
 
 				this.logger.info(`[_pollKickChannels] Slugs: '${slugs}'`);
@@ -1350,83 +1569,18 @@ class StreamMonitor extends EventEmitter {
 					kickRequestParameters
 				);
 
-				if (response.status === 200 && response.data) {
+				if (response.status === 200 && response.data && Array.isArray(response.data.data)) {
 					const liveData = new Map(response.data.data.map((ch) => [ch.slug.toLowerCase(), ch]));
-					this.logger.info(`[_pollKickChannels] Response: '${JSON.stringify(liveData, null, "	")}'`);
 
 					// Update status for all channels in the batch
 					for (const channel of batch) {
-						const channelKey = `kick:${channel.name.toLowerCase()}`;
-						const channelData = liveData.get(channel.name.toLowerCase());
-
-						if (!channelData) {
-							if (!this.kickNotFounds[channel.name]) {
-								this.kickNotFounds[channel.name] = 1;
-								this.logger.warn(
-									`Canal da Kick não encontrado: '${channel.name}'. Iniciando contagem de erros.`
-								);
-							} else {
-								this.kickNotFounds[channel.name]++;
-								this.logger.warn(
-									`Canal da Kick não encontrado (${this.kickNotFounds[channel.name]} vezes): '${channel.name}'.`
-								);
-								if (this.kickNotFounds[channel.name] > 50) {
-									await this.pauseChannel(channel.name, "kick");
-								}
-							}
-							continue;
-						} else {
-							this.kickNotFounds[channel.name] = 0;
-						}
-
-						const isLiveNow = !!(channelData && channelData.stream && channelData.stream.is_live);
-						const wasLive = this.streamStatuses[channelKey]?.isLive ?? false;
-
-						// Create or update status
-						if (!this.streamStatuses[channelKey]) {
-							this.streamStatuses[channelKey] = {};
-						}
-						this.streamStatuses[channelKey].isLive = isLiveNow;
-						this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
-						this.streamStatuses[channelKey].platform = "kick";
-						this.streamStatuses[channelKey].channelName = channel.name;
-
-						// Add stream details if live
-						if (isLiveNow) {
-							const stream = channelData.stream;
-							this.streamStatuses[channelKey].title = stream.stream_title;
-							this.streamStatuses[channelKey].thumbnail = stream.thumbnail;
-							this.streamStatuses[channelKey].viewerCount = stream.viewer_count;
-							this.streamStatuses[channelKey].startedAt = stream.start_time;
-							this.streamStatuses[channelKey].game = channelData.category
-								? channelData.category.name
-								: "Unknown";
-						}
-
-						// Emit events for status changes
-						if (isLiveNow && !wasLive) {
-							const stream = channelData.stream;
-							await this._emitIfSafe("streamOnline", {
-								platform: "kick",
-								channelName: channelData.slug,
-								title: stream.stream_title,
-								game: channelData.category ? channelData.category.name : "Unknown",
-								thumbnail: stream.thumbnail,
-								viewerCount: stream.viewer_count,
-								startedAt: stream.start_time
-							});
-						} else if (!isLiveNow && wasLive) {
-							await this._emitIfSafe("streamOffline", {
-								platform: "kick",
-								channelName: channel.name
-							});
-						}
-
-						// Update DB
-						await this._updateStatusInDB(channelKey, this.streamStatuses[channelKey]);
+						const cleanName = this.sanitizePlatformChannelName(channel.name ?? "", "kick");
+						const channelData = liveData.get(cleanName.toLowerCase());
+						await this._updateKickChannelStatus(channel, channelData);
 					}
 				} else {
-					this.logger.warn(`[_pollKickChannels] Error? ${response.status}`);
+					this.logger.warn(`[_pollKickChannels] Unexpected response status: ${response.status}`);
+					await this._pollKickChannelsIndividual(batch);
 				}
 			} catch (error) {
 				if (error.response && error.response.status === 401) {
@@ -1437,9 +1591,14 @@ class StreamMonitor extends EventEmitter {
 					this.kickToken = null;
 					await this._refreshKickToken();
 				} else {
-					this.logger.error(`[_pollKickChannels] Error polling Kick channels: ${error.message}`, {
-						channels: batch
-					});
+					const errorDetail = error.response
+						? `HTTP ${error.response.status}: ${JSON.stringify(error.response.data)}`
+						: error.message;
+					this.logger.error(
+						`[_pollKickChannels] Error polling Kick channels batch (${batch.length} channels): ${errorDetail}. Executing fallback individual polling.`
+					);
+					// Fallback to individual polling so an invalid channel doesn't fail the entire batch
+					await this._pollKickChannelsIndividual(batch);
 				}
 			}
 			// Add a small delay between batches to avoid rate limiting
@@ -1884,16 +2043,20 @@ class StreamMonitor extends EventEmitter {
 
 			const results = [];
 			const batches = [];
-			for (let i = 0; i < channelArray.length; i += 100) {
-				batches.push(channelArray.slice(i, i + 100));
+			for (let i = 0; i < channelArray.length; i += 25) {
+				batches.push(channelArray.slice(i, i + 25));
 			}
 
 			for (const batch of batches) {
+				const sanitizedBatch = batch
+					.map((c) => this.sanitizePlatformChannelName(c ?? "", "kick"))
+					.filter(Boolean);
+
+				if (sanitizedBatch.length === 0) continue;
+
 				try {
-					// Manually construct the query string for slugs, like in _pollKickChannels
-					const slugsQuery = batch
-						.map((c) => `slug=${encodeURIComponent(c.toLowerCase())}`)
-						.join("&");
+					// Manually construct the query string for slugs
+					const slugsQuery = sanitizedBatch.map((c) => `slug=${encodeURIComponent(c)}`).join("&");
 
 					const response = await axios.get(
 						`https://api.kick.com/public/v1/channels?${slugsQuery}`,
@@ -1901,15 +2064,17 @@ class StreamMonitor extends EventEmitter {
 							headers: {
 								Authorization: `Bearer ${this.kickToken}`,
 								Accept: "application/json"
-							}
+							},
+							timeout: 10000
 						}
 					);
 
-					if (response.status === 200 && response.data && response.data.data) {
+					if (response.status === 200 && response.data && Array.isArray(response.data.data)) {
 						const liveData = new Map(response.data.data.map((ch) => [ch.slug.toLowerCase(), ch]));
 
 						for (const channelName of batch) {
-							const channelData = liveData.get(channelName.toLowerCase());
+							const cleanName = this.sanitizePlatformChannelName(channelName ?? "", "kick");
+							const channelData = liveData.get(cleanName.toLowerCase());
 
 							if (!channelData) {
 								results.push({
@@ -1933,11 +2098,11 @@ class StreamMonitor extends EventEmitter {
 
 							if (isLiveNow) {
 								const stream = channelData.stream;
-								status.title = channelData.stream_title;
+								status.title = stream?.stream_title || channelData.stream_title || "";
 								status.game = channelData.category ? channelData.category.name : "Unknown";
-								status.thumbnail = stream.thumbnail;
-								status.viewerCount = stream.viewer_count;
-								status.startedAt = stream.start_time;
+								status.thumbnail = stream?.thumbnail || "";
+								status.viewerCount = stream?.viewer_count || 0;
+								status.startedAt = stream?.start_time || null;
 							}
 							results.push(status);
 						}
@@ -1954,8 +2119,8 @@ class StreamMonitor extends EventEmitter {
 						}
 					}
 				} catch (error) {
-					this.logger.error(
-						`Error getting Kick status for batch ${batch.join(", ")}: ${error.message}`
+					this.logger.warn(
+						`Error getting Kick status for batch ${batch.join(", ")} (${error.message}), trying individually.`
 					);
 
 					if (error.response && error.response.status === 401) {
@@ -1963,15 +2128,69 @@ class StreamMonitor extends EventEmitter {
 						this.kickToken = null; // Invalidate token
 					}
 
-					// Add error status for all channels in the failed batch
+					// Fallback to individual requests for this batch
 					for (const channelName of batch) {
-						results.push({
-							platform: "kick",
-							channelName,
-							isLive: false,
-							error: error.message,
-							lastChecked: new Date().toISOString()
-						});
+						const cleanName = this.sanitizePlatformChannelName(channelName ?? "", "kick");
+						if (!cleanName) {
+							results.push({
+								platform: "kick",
+								channelName,
+								isLive: false,
+								error: "Invalid channel name",
+								lastChecked: new Date().toISOString()
+							});
+							continue;
+						}
+
+						try {
+							const singleRes = await axios.get(
+								`https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(cleanName)}`,
+								{
+									headers: {
+										Authorization: `Bearer ${this.kickToken}`,
+										Accept: "application/json"
+									},
+									timeout: 5000
+								}
+							);
+
+							const channelData = singleRes.data?.data?.[0];
+							if (singleRes.status === 200 && channelData) {
+								const isLiveNow = !!(channelData.stream && channelData.stream.is_live);
+								const status = {
+									platform: "kick",
+									channelName: channelData.slug,
+									displayName: channelData.slug,
+									isLive: isLiveNow,
+									lastChecked: new Date().toISOString()
+								};
+								if (isLiveNow) {
+									const stream = channelData.stream;
+									status.title = stream?.stream_title || channelData.stream_title || "";
+									status.game = channelData.category ? channelData.category.name : "Unknown";
+									status.thumbnail = stream?.thumbnail || "";
+									status.viewerCount = stream?.viewer_count || 0;
+									status.startedAt = stream?.start_time || null;
+								}
+								results.push(status);
+							} else {
+								results.push({
+									platform: "kick",
+									channelName,
+									isLive: false,
+									error: "Channel not found",
+									lastChecked: new Date().toISOString()
+								});
+							}
+						} catch (singleErr) {
+							results.push({
+								platform: "kick",
+								channelName,
+								isLive: false,
+								error: singleErr.response?.status === 400 ? "Channel not found" : singleErr.message,
+								lastChecked: new Date().toISOString()
+							});
+						}
 					}
 				}
 			}

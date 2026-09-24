@@ -1,11 +1,13 @@
 const fs = require("fs").promises;
 const path = require("path");
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
 const LLMService = require("../services/LLMService");
 const { exec } = require("child_process");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Manipula comandos super admin (apenas para admins do sistema)
@@ -124,6 +126,16 @@ class SuperAdmin {
 			addUserGp: {
 				method: "addUserGp",
 				description: "Adiciona um usuário ao grupo: !sa-addUserGp <grupoJid> <contato>"
+			},
+			"streams-cleanup": {
+				method: "streamsCleanup",
+				description:
+					"Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes"
+			},
+			streamsCleanup: {
+				method: "streamsCleanup",
+				description:
+					"Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes"
 			}
 		};
 
@@ -4155,6 +4167,471 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro ao adicionar usuário: ${error.message || JSON.stringify(error)}`
+			});
+		}
+	}
+
+	/**
+	 * Mapeia todos os IDs de grupos nos quais pelo menos uma instância de bot está presente.
+	 * Consulta as APIs nativas das instâncias whatsgo e bots em execução (WhatsApp, Discord, Telegram).
+	 * @param {Object} currentBot - Instância atual do bot que recebeu o comando
+	 * @returns {Promise<{activeGroupIds: Set<string>, botSummary: string[]}>}
+	 */
+	async getAllActiveBotGroupIds(currentBot) {
+		const activeGroupIds = new Set();
+		const botSummary = [];
+
+		// 1. Consulta WhatsGo API diretamente para todas as instâncias ativas
+		const whatsGoUrl = (process.env.WHATS_GO_API_URL || "http://localhost:9800").replace(/\/$/, "");
+		const globalKey = process.env.GLOBAL_API_KEY || "admin";
+
+		try {
+			const instRes = await axios.get(`${whatsGoUrl}/instance/all`, {
+				headers: { apikey: globalKey },
+				timeout: 5000
+			});
+			const instances = (instRes.data?.data || []).filter((i) => i.connected);
+			for (const inst of instances) {
+				try {
+					const res = await axios.get(`${whatsGoUrl}/group/list`, {
+						headers: { apikey: globalKey, instance: inst.name },
+						timeout: 10000
+					});
+					const list = res.data?.data || res.data || [];
+					let count = 0;
+					list.forEach((g) => {
+						if (g.JID) {
+							activeGroupIds.add(g.JID);
+							count++;
+						}
+					});
+					botSummary.push(`WhatsGo:${inst.name} (${count} grupos)`);
+				} catch (err) {
+					this.logger.warn(
+						`[streamsCleanup] Erro ao listar grupos WhatsGo para ${inst.name}: ${err.message}`
+					);
+				}
+			}
+		} catch (err) {
+			this.logger.warn(
+				`[streamsCleanup] Não foi possível consultar WhatsGo API (/instance/all): ${err.message}`
+			);
+		}
+
+		// 2. Complementa com bots registrados em memória (WhatsApp, Discord, Telegram)
+		const StreamSystem = require("../StreamSystem");
+		const streamSystem = StreamSystem.getInstance();
+		const allBots =
+			streamSystem.bots && streamSystem.bots.length > 0
+				? streamSystem.bots
+				: this.database.botInstances || [currentBot];
+
+		for (const b of allBots) {
+			try {
+				if (b.useDiscord && b.discordClient) {
+					let dcCount = 0;
+					if (b.discordClient.channels?.cache) {
+						for (const chId of b.discordClient.channels.cache.keys()) {
+							activeGroupIds.add(chId.toString());
+							dcCount++;
+						}
+					}
+					if (b.discordClient.guilds?.cache) {
+						for (const gId of b.discordClient.guilds.cache.keys()) {
+							activeGroupIds.add(gId.toString());
+							dcCount++;
+						}
+					}
+					botSummary.push(`Discord:${b.id} (${dcCount} canais/guilds)`);
+				} else if (b.useTelegram) {
+					botSummary.push(`Telegram:${b.id}`);
+				} else if (
+					typeof b.listGroups === "function" &&
+					!botSummary.some((s) => s.startsWith(`WhatsGo:${b.id}`))
+				) {
+					const grupos = await b.listGroups();
+					if (Array.isArray(grupos)) {
+						let count = 0;
+						grupos.forEach((g) => {
+							if (g.JID) {
+								activeGroupIds.add(g.JID);
+								count++;
+							}
+						});
+						botSummary.push(`WhatsApp:${b.id} (${count} grupos)`);
+					}
+				}
+			} catch (err) {
+				this.logger.warn(
+					`[streamsCleanup] Erro ao consultar grupos do bot ${b.id}: ${err.message}`
+				);
+			}
+		}
+
+		return { activeGroupIds, botSummary };
+	}
+
+	/**
+	 * Comando SuperAdmin: streams-cleanup
+	 * 1. Itera todos os grupos que possuem um canal da Twitch/Kick definido
+	 * 2. Verifica se o canal existe na plataforma
+	 * 3. Verifica se algum dos bots (todas as instâncias, não importa o tipo) está no grupo
+	 *
+	 * Canal não existe ou nenhum bot no grupo: remove a entrada de stream do grupo.
+	 * Verbose no terminal e resposta com relatório completo.
+	 *
+	 * @param {Object} bot - Instância do bot que recebeu o comando
+	 * @param {Object} message - Mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 */
+	async streamsCleanup(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
+				});
+			}
+
+			const startTime = Date.now();
+			this.logger.info("=== [streamsCleanup] INICIANDO LIMPEZA DE STREAMS ===");
+			console.log("[streamsCleanup] Iniciando varredura e limpeza de streams...");
+
+			// Avisa no chat que o processo começou
+			if (typeof bot.sendMessage === "function") {
+				await bot.sendMessage(
+					chatId,
+					"⏳ *Iniciando streams-cleanup...*\nMapeando bots, grupos e checando integridade dos canais na Twitch e Kick. Isso pode levar alguns instantes."
+				);
+			}
+
+			// 1. Obter StreamMonitor e StreamSystem
+			const StreamSystem = require("../StreamSystem");
+			const streamSystem = StreamSystem.getInstance();
+			const streamMonitor = bot.streamMonitor || streamSystem.streamMonitor;
+
+			if (!streamMonitor) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ StreamMonitor não está inicializado no bot."
+				});
+			}
+
+			// 2. Mapear grupos ativos com bots
+			console.log("[streamsCleanup] Mapeando instâncias de bots e seus grupos ativos...");
+			const { activeGroupIds, botSummary } = await this.getAllActiveBotGroupIds(bot);
+			console.log(
+				`[streamsCleanup] Total de grupos únicos com pelo menos 1 bot: ${activeGroupIds.size}`
+			);
+			console.log(`[streamsCleanup] Bots mapeados: ${botSummary.join(", ")}`);
+
+			// 3. Obter todos os grupos do banco
+			const allGroups = await this.database.getGroups();
+			const streamGroups = allGroups.filter(
+				(g) =>
+					(Array.isArray(g.twitch) && g.twitch.length > 0) ||
+					(Array.isArray(g.kick) && g.kick.length > 0)
+			);
+
+			console.log(
+				`[streamsCleanup] Encontrados ${streamGroups.length} grupos com streams configuradas.`
+			);
+			this.logger.info(
+				`[streamsCleanup] ${streamGroups.length} grupos com streams a serem avaliados.`
+			);
+
+			const removedChannels = [];
+			const keptChannels = [];
+			let groupsModifiedCount = 0;
+			let groupsWithBotCount = 0;
+			let groupsWithoutBotCount = 0;
+
+			// Cache em memória para não consultar o mesmo canal repetidas vezes nas APIs
+			const twitchExistenceCache = new Map();
+			const kickExistenceCache = new Map();
+
+			for (let i = 0; i < streamGroups.length; i++) {
+				const group = streamGroups[i];
+				const groupName = group.name || "Sem nome";
+				const groupId = group.id;
+
+				// Verifica se algum bot está no grupo
+				let hasBot = false;
+				if (groupId.includes("@g.us")) {
+					hasBot = activeGroupIds.has(groupId);
+				} else if (groupId.startsWith("-")) {
+					// Telegram: verifica se algum bot é Telegram ou se está mapeado
+					hasBot = streamSystem.bots.some((b) => b.useTelegram) || activeGroupIds.has(groupId);
+				} else {
+					// Discord ou outros IDs numéricos
+					hasBot = activeGroupIds.has(groupId.toString());
+				}
+
+				if (hasBot) {
+					groupsWithBotCount++;
+				} else {
+					groupsWithoutBotCount++;
+				}
+
+				let groupModified = false;
+
+				// ─── CENÁRIO A: NENHUM BOT NO GRUPO ───────────────────────────────
+				if (!hasBot) {
+					console.log(
+						`[streamsCleanup] [${i + 1}/${streamGroups.length}] GRUPO ÓRFÃO: "${groupName}" (${groupId}) - Nenhum bot presente. Removendo todas as streams.`
+					);
+
+					if (Array.isArray(group.twitch) && group.twitch.length > 0) {
+						for (const ch of group.twitch) {
+							removedChannels.push({
+								platform: "Twitch",
+								channel: ch.channel,
+								groupName,
+								groupId,
+								reason: "Nenhum bot no grupo"
+							});
+						}
+						group.twitch = [];
+						groupModified = true;
+					}
+
+					if (Array.isArray(group.kick) && group.kick.length > 0) {
+						for (const ch of group.kick) {
+							removedChannels.push({
+								platform: "Kick",
+								channel: ch.channel,
+								groupName,
+								groupId,
+								reason: "Nenhum bot no grupo"
+							});
+						}
+						group.kick = [];
+						groupModified = true;
+					}
+				} else {
+					// ─── CENÁRIO B: BOT PRESENTE NO GRUPO ─────────────────────────────
+					console.log(
+						`[streamsCleanup] [${i + 1}/${streamGroups.length}] GRUPO COM BOT: "${groupName}" (${groupId}) - Validando canais...`
+					);
+
+					// 1. Checagem de Canais da Twitch
+					if (Array.isArray(group.twitch) && group.twitch.length > 0) {
+						const originalTwitch = [...group.twitch];
+						const newTwitch = [];
+
+						for (const ch of originalTwitch) {
+							const cleanName = streamMonitor.sanitizePlatformChannelName(ch.channel, "twitch");
+							if (!cleanName) {
+								console.log(`  -> [Twitch] Canal '${ch.channel}' inválido! Removendo.`);
+								removedChannels.push({
+									platform: "Twitch",
+									channel: ch.channel,
+									groupName,
+									groupId,
+									reason: "Nome de canal inválido na Twitch"
+								});
+								groupModified = true;
+								continue;
+							}
+
+							let exists = twitchExistenceCache.get(cleanName);
+							if (exists === undefined) {
+								exists = await streamMonitor.twitchChannelExists(cleanName);
+								twitchExistenceCache.set(cleanName, exists);
+								await sleep(200); // Respeita rate limit da Twitch
+							}
+
+							if (!exists) {
+								console.log(`  -> [Twitch] Canal '${ch.channel}' NÃO EXISTE na Twitch! Removendo.`);
+								removedChannels.push({
+									platform: "Twitch",
+									channel: ch.channel,
+									groupName,
+									groupId,
+									reason: "Canal inexistente na Twitch"
+								});
+								groupModified = true;
+							} else {
+								console.log(`  -> [Twitch] Canal '${ch.channel}' existe (OK).`);
+								newTwitch.push(ch);
+								keptChannels.push({
+									platform: "Twitch",
+									channel: ch.channel,
+									groupName,
+									groupId
+								});
+							}
+						}
+						group.twitch = newTwitch;
+					}
+
+					// 2. Checagem de Canais da Kick
+					if (Array.isArray(group.kick) && group.kick.length > 0) {
+						const originalKick = [...group.kick];
+						const newKick = [];
+
+						for (const ch of originalKick) {
+							const cleanName = streamMonitor.sanitizePlatformChannelName(ch.channel, "kick");
+							if (!cleanName) {
+								console.log(`  -> [Kick] Canal '${ch.channel}' inválido! Removendo.`);
+								removedChannels.push({
+									platform: "Kick",
+									channel: ch.channel,
+									groupName,
+									groupId,
+									reason: "Nome de canal inválido na Kick"
+								});
+								groupModified = true;
+								continue;
+							}
+
+							let exists = kickExistenceCache.get(cleanName);
+							if (exists === undefined) {
+								exists = await streamMonitor.kickChannelExists(cleanName);
+								kickExistenceCache.set(cleanName, exists);
+								await sleep(200);
+							}
+
+							if (!exists) {
+								console.log(`  -> [Kick] Canal '${ch.channel}' NÃO EXISTE na Kick! Removendo.`);
+								removedChannels.push({
+									platform: "Kick",
+									channel: ch.channel,
+									groupName,
+									groupId,
+									reason: "Canal inexistente na Kick"
+								});
+								groupModified = true;
+							} else {
+								console.log(`  -> [Kick] Canal '${ch.channel}' existe (OK).`);
+								newKick.push(ch);
+								keptChannels.push({
+									platform: "Kick",
+									channel: ch.channel,
+									groupName,
+									groupId
+								});
+							}
+						}
+						group.kick = newKick;
+					}
+				}
+
+				if (groupModified) {
+					groupsModifiedCount++;
+					await this.database.saveGroup(group);
+				}
+			}
+
+			// 4. Limpeza no StreamMonitor de canais que não estão mais em nenhum grupo
+			console.log("[streamsCleanup] Verificando canais no StreamMonitor para desinscrição...");
+			const allGroupsAfter = await this.database.getGroups();
+			const activeTwitchChannels = new Set();
+			const activeKickChannels = new Set();
+
+			for (const g of allGroupsAfter) {
+				if (Array.isArray(g.twitch)) {
+					g.twitch.forEach((c) => activeTwitchChannels.add(c.channel.toLowerCase()));
+				}
+				if (Array.isArray(g.kick)) {
+					g.kick.forEach((c) => activeKickChannels.add(c.channel.toLowerCase()));
+				}
+			}
+
+			let unmonitoredCount = 0;
+			for (const rem of removedChannels) {
+				const chLower = rem.channel.toLowerCase();
+				if (rem.platform === "Twitch" && !activeTwitchChannels.has(chLower)) {
+					streamMonitor.unsubscribe(rem.channel, "twitch");
+					unmonitoredCount++;
+				} else if (rem.platform === "Kick" && !activeKickChannels.has(chLower)) {
+					streamMonitor.unsubscribe(rem.channel, "kick");
+					unmonitoredCount++;
+				}
+			}
+
+			const durationSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+			console.log(
+				`[streamsCleanup] CONCLUÍDO em ${durationSeconds}s! Modificados: ${groupsModifiedCount} grupos, Removidos: ${removedChannels.length} canais, Mantidos: ${keptChannels.length} canais.`
+			);
+			this.logger.info(
+				`[streamsCleanup] Concluído em ${durationSeconds}s. Modificados: ${groupsModifiedCount}, Removidos: ${removedChannels.length}, Mantidos: ${keptChannels.length}, Desinscritos: ${unmonitoredCount}.`
+			);
+
+			// 5. Montagem do Relatório
+			const twitchRemCount = removedChannels.filter((c) => c.platform === "Twitch").length;
+			const kickRemCount = removedChannels.filter((c) => c.platform === "Kick").length;
+			const twitchKeptCount = keptChannels.filter((c) => c.platform === "Twitch").length;
+			const kickKeptCount = keptChannels.filter((c) => c.platform === "Kick").length;
+
+			const noBotCount = removedChannels.filter((c) => c.reason === "Nenhum bot no grupo").length;
+			const notFoundCount = removedChannels.length - noBotCount;
+
+			const summaryMsg =
+				`🧹 *RELATÓRIO: STREAMS CLEANUP*\n\n` +
+				`⏱️ Duração: *${durationSeconds}s*\n` +
+				`📊 *Estatísticas Gerais:*\n` +
+				`• Grupos analisados: *${streamGroups.length}*\n` +
+				`• Grupos com bots presentes: *${groupsWithBotCount}*\n` +
+				`• Grupos órfãos (sem bots): *${groupsWithoutBotCount}*\n` +
+				`• Grupos modificados/limpos: *${groupsModifiedCount}*\n\n` +
+				`📈 *Canais Mantidos (${keptChannels.length}):*\n` +
+				`• Twitch: *${twitchKeptCount}* | Kick: *${kickKeptCount}*\n\n` +
+				`📉 *Canais Removidos (${removedChannels.length}):*\n` +
+				`• Twitch: *${twitchRemCount}* | Kick: *${kickRemCount}*\n` +
+				`  - Sem bots no grupo: *${noBotCount}*\n` +
+				`  - Canal inexistente: *${notFoundCount}*\n` +
+				`• Canais desinscritos do monitor: *${unmonitoredCount}*`;
+
+			const returnMessages = [
+				new ReturnMessage({
+					chatId,
+					content: summaryMsg
+				})
+			];
+
+			// Detalhamento dos canais removidos em blocos (máx ~3500 chars por mensagem)
+			if (removedChannels.length > 0) {
+				let currentChunk = `❌ *DETALHE DOS CANAIS REMOVIDOS (${removedChannels.length}):*\n`;
+				for (const item of removedChannels) {
+					const line = `• [${item.platform}] *${item.channel}* em "${item.groupName}" (${item.groupId})\n  ↳ Motivo: ${item.reason}\n`;
+					if ((currentChunk + line).length > 3500) {
+						returnMessages.push(new ReturnMessage({ chatId, content: currentChunk }));
+						currentChunk = `❌ *CANAIS REMOVIDOS (cont.):*\n` + line;
+					} else {
+						currentChunk += line;
+					}
+				}
+				if (currentChunk.trim().length > 0) {
+					returnMessages.push(new ReturnMessage({ chatId, content: currentChunk }));
+				}
+			}
+
+			// Detalhamento dos canais mantidos em blocos
+			if (keptChannels.length > 0) {
+				let currentChunk = `✅ *DETALHE DOS CANAIS MANTIDOS (${keptChannels.length}):*\n`;
+				for (const item of keptChannels) {
+					const line = `• [${item.platform}] *${item.channel}* em "${item.groupName}" (${item.groupId})\n`;
+					if ((currentChunk + line).length > 3500) {
+						returnMessages.push(new ReturnMessage({ chatId, content: currentChunk }));
+						currentChunk = `✅ *CANAIS MANTIDOS (cont.):*\n` + line;
+					} else {
+						currentChunk += line;
+					}
+				}
+				if (currentChunk.trim().length > 0) {
+					returnMessages.push(new ReturnMessage({ chatId, content: currentChunk }));
+				}
+			}
+
+			return returnMessages;
+		} catch (error) {
+			this.logger.error("[streamsCleanup] Erro fatal:", error);
+			console.error("[streamsCleanup] Erro fatal:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao executar streams-cleanup: ${error.message}`
 			});
 		}
 	}

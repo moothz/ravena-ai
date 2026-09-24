@@ -3471,6 +3471,29 @@ class Management {
 	}
 
 	/**
+	 * Processes a string to extract and sanitize a Kick channel name.
+	 *
+	 * @param {string} inputString - The raw input string, potentially a URL or just a name.
+	 * @returns {string} The sanitized Kick channel name, or an empty string if input is invalid.
+	 */
+	sanitizeKickChannelName(inputString) {
+		if (typeof inputString !== "string") {
+			return "";
+		}
+
+		// 1. Remove common Kick URL prefixes
+		const withoutUrl = inputString.replace(/^(https?:\/\/)?(www\.)?kick\.com\//i, "");
+
+		// 2. Convert to lowercase
+		const lowercased = withoutUrl.toLowerCase().trim();
+
+		// 3. Keep alphanumeric and underscores
+		const sanitized = lowercased.replace(/[^a-z0-9_]/g, "");
+
+		return sanitized ?? "";
+	}
+
+	/**
 	 * Toggles monitoring of a Twitch channel
 	 * @param {WhatsAppBot} bot - The bot instance
 	 * @param {Object} message - The message object
@@ -4058,6 +4081,8 @@ class Management {
 			});
 		}
 
+		args = args.filter((a) => !["on", "off"].includes(a.toLowerCase()));
+
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId: group.id,
@@ -4065,7 +4090,14 @@ class Management {
 			});
 		}
 
-		const channelName = args[0].toLowerCase();
+		const channelName = this.sanitizeKickChannelName(args[0] ?? "");
+
+		if (!channelName) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "Nome de canal inválido para o Kick. Por favor, forneça um nome válido."
+			});
+		}
 
 		// Get current channels
 		const channels = this.getChannelConfig(group, "kick");
@@ -4074,7 +4106,6 @@ class Management {
 		const existingChannel = this.findChannelConfig(group, "kick", channelName);
 
 		if (existingChannel) {
-			// Remove channel
 			// Remove channel
 			const updatedChannels = channels.filter(
 				(c) => c.channel.toLowerCase() !== channelName.toLowerCase()
@@ -4093,6 +4124,17 @@ class Management {
 				content: `Canal do Kick removido: ${channelName}`
 			});
 		} else {
+			// Check if the channel exists on Kick before adding
+			if (bot.streamMonitor) {
+				const channelExists = await bot.streamMonitor.kickChannelExists(channelName);
+				if (!channelExists) {
+					return new ReturnMessage({
+						chatId: group.id,
+						content: `❌ Erro: O canal "${channelName}" não existe na Kick. Verifique se o nome ou link está correto.`
+					});
+				}
+			}
+
 			// Add channel with default configuration
 			const newChannel = {
 				channel: channelName,
