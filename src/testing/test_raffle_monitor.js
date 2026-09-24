@@ -17,11 +17,11 @@ async function runTests() {
 
 	await raffleMonitor.init(bot);
 
-	// Limpa dados de teste prévios e timers residuais
+	// Limpa apenas dados de teste prévios e timers residuais
 	raffleMonitor.stopAll();
-	await database.dbRun("raffles", "DELETE FROM raffle_follows");
-	await database.dbRun("raffles", "DELETE FROM raffle_notifications");
-	await database.dbRun("raffle_cache", "DELETE FROM raffle_cache");
+	await database.dbRun("raffles", "DELETE FROM raffle_follows WHERE url LIKE '%teste-rifa%'");
+	await database.dbRun("raffles", "DELETE FROM raffle_notifications WHERE url LIKE '%teste-rifa%'");
+	await database.dbRun("raffle_cache", "DELETE FROM raffle_cache WHERE url LIKE '%teste-rifa%'");
 
 	// 1. Teste do banco de frases e getRandomPhrase
 	console.log("\n1. Testando geração de frases aleatórias para metas...");
