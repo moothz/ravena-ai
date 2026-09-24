@@ -2068,6 +2068,15 @@ Break down the cost by category and provide a total estimated cost.`;
 
 			// Verifica se o StreamMonitor está disponível
 			if (!bot.streamMonitor) {
+				const StreamSystem = require("../StreamSystem");
+				const streamSystem = StreamSystem.getInstance();
+				if (!streamSystem.initialized) {
+					await streamSystem.initialize(true);
+				}
+				bot.streamMonitor = streamSystem.streamMonitor;
+			}
+
+			if (!bot.streamMonitor) {
 				return new ReturnMessage({
 					chatId,
 					content: "❌ StreamMonitor não está inicializado no bot."
@@ -4309,12 +4318,24 @@ Retorne no formato JSON rigoroso:
 			// 1. Obter StreamMonitor e StreamSystem
 			const StreamSystem = require("../StreamSystem");
 			const streamSystem = StreamSystem.getInstance();
-			const streamMonitor = bot.streamMonitor || streamSystem.streamMonitor;
+
+			if (!streamSystem.initialized) {
+				console.log(
+					"[streamsCleanup] StreamSystem ainda não inicializado (aguardando timer de 3min pós-boot). Inicializando agora..."
+				);
+				await streamSystem.initialize(true);
+			}
+
+			let streamMonitor = bot.streamMonitor || streamSystem.streamMonitor;
+			if (!streamMonitor) {
+				const StreamMonitor = require("../services/StreamMonitor");
+				streamMonitor = StreamMonitor.getInstance();
+			}
 
 			if (!streamMonitor) {
 				return new ReturnMessage({
 					chatId,
-					content: "❌ StreamMonitor não está inicializado no bot."
+					content: "❌ StreamMonitor não pôde ser inicializado no bot."
 				});
 			}
 
