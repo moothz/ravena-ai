@@ -84,9 +84,14 @@ class StreamMonitor extends EventEmitter {
 		this.kickClientId = process.env.KICK_CLIENT_ID;
 		this.kickClientSecret = process.env.KICK_CLIENT_SECRET;
 
-		this.pollingInterval = 60000 * 3; // 3 minute default polling interval
+		this.pollingInterval = 60000 * 3; // 3 minute default polling interval (fallback/legado)
 		this.pollingIntervalBatches = 30000; // between batches
 		this.pollingTimers = {
+			twitch: null,
+			kick: null,
+			youtube: null
+		};
+		this.customPollingIntervals = {
 			twitch: null,
 			kick: null,
 			youtube: null
@@ -96,6 +101,12 @@ class StreamMonitor extends EventEmitter {
 		this.twitchNotFounds = {};
 		this.kickNotFounds = {};
 		this.twitchRateLimitedUntil = null;
+		this.kickRateLimitedUntil = null;
+		this.twitchRateLimit = {
+			limit: 800,
+			remaining: 800,
+			reset: 0
+		};
 		this.reactivationTimer = null;
 
 		// Flag para verificar se o monitoramento está ativo
@@ -555,6 +566,219 @@ class StreamMonitor extends EventEmitter {
 	/**
 	 * Start monitoring all channels
 	 */
+	/**
+	 * Calcula matematicamente o intervalo mínimo ideal de polling para a Twitch
+	 * baseando-se no número de canais ativos, tamanho do lote e limites da API (Helix).
+	 *
+	 * Modelo matemático:
+	 * - Limite oficial Twitch: 800 requisições / minuto (janela deslizante de 60s)
+	 * - Capacidade máxima por requisição (/helix/streams?user_login=...): 100 logins (usamos 80 por segurança de URL)
+	 * - Fator de utilização alvo (alvo de segurança): 60% = 480 req/min
+	 *   Reservando 40% (320 req/min) para comandos do bot (!live, status, exists, fallback de falhas)
+	 * - Número de lotes por ciclo: K = Math.ceil(N_canais / batchSize)
+	 * - Máximo de ciclos por minuto permitidos pelo rate limit: C_max = R_alvo / K
+	 * - Intervalo mínimo pelo rate limit: I_rateLimit = (60 * K) / R_alvo
+	 * - Piso físico de utilidade: 30 segundos (o CDN/edge da Twitch atualiza o status de live a cada ~15-20s)
+	 * - Tempo estimado de execução do ciclo: T_exec = K * (tempo_http + delay_entre_lotes)
+	 *
+	 * @param {number} [channelCount] - Quantidade de canais Twitch
+	 * @returns {{ intervalMs: number, batchSize: number, batches: number, reqsPerMinute: number, utilizationPct: number, reason: string }}
+	 */
+	calculateOptimalTwitchInterval(channelCount = null) {
+		const count =
+			channelCount ?? this.channels.filter((c) => c.source.toLowerCase() === "twitch").length;
+		if (count === 0) {
+			return {
+				intervalMs: 60000,
+				batchSize: 80,
+				batches: 0,
+				reqsPerMinute: 0,
+				utilizationPct: 0,
+				reason: "Twitch: sem canais cadastrados (padrão 60s)"
+			};
+		}
+
+		const batchSize = 80;
+		const batches = Math.ceil(count / batchSize);
+
+		const TWITCH_RATE_LIMIT_PER_MIN = 800; // Helix App Token limit
+		const TARGET_UTILIZATION = 0.6; // 60% da cota para polling (480 req/min)
+		const MAX_POLLING_REQS_PER_MIN = TWITCH_RATE_LIMIT_PER_MIN * TARGET_UTILIZATION;
+
+		// Intervalo mínimo imposto pelo rate limit
+		const minIntervalRateLimitSec = (60 * batches) / MAX_POLLING_REQS_PER_MIN;
+
+		// Tempo estimado para executar todos os lotes (HTTP ~300ms + delay 350ms)
+		const estimatedCycleExecSec = batches * 0.65;
+
+		// Piso físico / cache da Twitch CDN (30s)
+		const PHYSICAL_FLOOR_SEC = 30;
+
+		const optimalSec = Math.max(
+			PHYSICAL_FLOOR_SEC,
+			Math.ceil(minIntervalRateLimitSec),
+			Math.ceil(estimatedCycleExecSec + 5)
+		);
+
+		const intervalMs = optimalSec * 1000;
+		const cyclesPerMin = 60 / optimalSec;
+		const reqsPerMinute = Math.round(cyclesPerMin * batches);
+		const utilizationPct = Math.round((reqsPerMinute / TWITCH_RATE_LIMIT_PER_MIN) * 100);
+
+		return {
+			intervalMs,
+			batchSize,
+			batches,
+			reqsPerMinute,
+			utilizationPct,
+			reason: `Twitch: ${count} canais em ${batches} lote(s) de até ${batchSize} -> ${optimalSec}s por busca (~${reqsPerMinute} req/min = ${utilizationPct}% da cota)`
+		};
+	}
+
+	/**
+	 * Calcula matematicamente o intervalo mínimo ideal de polling para a Kick
+	 * baseando-se no número de canais ativos, tamanho do lote e limites da API da Kick.
+	 *
+	 * Modelo matemático:
+	 * - Limite seguro Kick API (com OAuth Bearer Token e Cloudflare): ~60 requisições / minuto
+	 * - Capacidade máxima por requisição (/public/v1/channels?slug=...): 50 slugs (usamos 25 por segurança de 400 bad request)
+	 * - Fator de utilização alvo: 50% (30 req/min = 1 requisição a cada 2s no máx)
+	 * - Número de lotes por ciclo: K = Math.ceil(N_canais / batchSize)
+	 * - Intervalo mínimo pelo rate limit: I_rateLimit = (60 * K) / 30 = 2 * K segundos
+	 * - Piso de segurança da Kick: 45 segundos (Kick é mais sensível a polling frequente que a Twitch)
+	 *
+	 * @param {number} [channelCount] - Quantidade de canais Kick
+	 * @returns {{ intervalMs: number, batchSize: number, batches: number, reqsPerMinute: number, utilizationPct: number, reason: string }}
+	 */
+	calculateOptimalKickInterval(channelCount = null) {
+		const count =
+			channelCount ?? this.channels.filter((c) => c.source.toLowerCase() === "kick").length;
+		if (count === 0) {
+			return {
+				intervalMs: 60000,
+				batchSize: 25,
+				batches: 0,
+				reqsPerMinute: 0,
+				utilizationPct: 0,
+				reason: "Kick: sem canais cadastrados (padrão 60s)"
+			};
+		}
+
+		const batchSize = 25;
+		const batches = Math.ceil(count / batchSize);
+
+		const KICK_SAFE_LIMIT_PER_MIN = 60;
+		const TARGET_UTILIZATION = 0.5; // 50% = 30 req/min
+		const MAX_POLLING_REQS_PER_MIN = KICK_SAFE_LIMIT_PER_MIN * TARGET_UTILIZATION;
+
+		const minIntervalRateLimitSec = (60 * batches) / MAX_POLLING_REQS_PER_MIN;
+		const estimatedCycleExecSec = batches * 1.3;
+
+		// Piso de segurança da Kick (45s)
+		const PHYSICAL_FLOOR_SEC = 45;
+
+		const optimalSec = Math.max(
+			PHYSICAL_FLOOR_SEC,
+			Math.ceil(minIntervalRateLimitSec),
+			Math.ceil(estimatedCycleExecSec + 5)
+		);
+
+		const intervalMs = optimalSec * 1000;
+		const cyclesPerMin = 60 / optimalSec;
+		const reqsPerMinute = Math.round(cyclesPerMin * batches);
+		const utilizationPct = Math.round((reqsPerMinute / KICK_SAFE_LIMIT_PER_MIN) * 100);
+
+		return {
+			intervalMs,
+			batchSize,
+			batches,
+			reqsPerMinute,
+			utilizationPct,
+			reason: `Kick: ${count} canais em ${batches} lote(s) de até ${batchSize} -> ${optimalSec}s por busca (~${reqsPerMinute} req/min = ${utilizationPct}% da cota)`
+		};
+	}
+
+	/**
+	 * Intervalo para YouTube (baseado em RSS XML feed)
+	 * @returns {{ intervalMs: number, reason: string }}
+	 */
+	calculateOptimalYoutubeInterval(channelCount = null) {
+		const count =
+			channelCount ?? this.channels.filter((c) => c.source.toLowerCase() === "youtube").length;
+		const optimalSec = count > 50 ? 180 : 120;
+		return {
+			intervalMs: optimalSec * 1000,
+			reason: `YouTube: ${count} canais -> ${optimalSec}s por busca (RSS XML)`
+		};
+	}
+
+	/**
+	 * Agenda o próximo ciclo de polling para uma plataforma específica
+	 * usando agendamento recursivo (evita sobreposição de ciclos e adapta intervalos em tempo real).
+	 * @private
+	 * @param {string} platform - "twitch" | "kick" | "youtube"
+	 * @param {number} [delayMs=0] - Tempo de espera em ms antes de executar
+	 */
+	_schedulePlatformLoop(platform, delayMs = 0) {
+		if (!this.isMonitoring) return;
+
+		if (this.pollingTimers[platform]) {
+			clearTimeout(this.pollingTimers[platform]);
+			this.pollingTimers[platform] = null;
+		}
+
+		this.pollingTimers[platform] = setTimeout(async () => {
+			if (!this.isMonitoring) return;
+
+			let nextDelayMs = 30000;
+			try {
+				if (platform === "twitch") {
+					await this._pollTwitchChannels();
+					const calc = this.calculateOptimalTwitchInterval();
+					nextDelayMs = this.customPollingIntervals?.twitch || calc.intervalMs;
+
+					// Se o rate limit da Twitch estiver baixo, aguarda o reset do bucket
+					if (this.twitchRateLimit.remaining < 100 && this.twitchRateLimit.reset) {
+						const secondsToReset = Math.max(
+							1,
+							this.twitchRateLimit.reset - Math.floor(Date.now() / 1000)
+						);
+						const safeDelay = (secondsToReset + 2) * 1000;
+						if (safeDelay > nextDelayMs) {
+							this.logger.warn(
+								`[_schedulePlatformLoop][twitch] RateLimit baixo (${this.twitchRateLimit.remaining}/${this.twitchRateLimit.limit}). Pausa de segurança por ${secondsToReset}s até reset.`
+							);
+							nextDelayMs = safeDelay;
+						}
+					}
+				} else if (platform === "kick") {
+					await this._pollKickChannels();
+					const calc = this.calculateOptimalKickInterval();
+					nextDelayMs = this.customPollingIntervals?.kick || calc.intervalMs;
+
+					if (this.kickRateLimitedUntil && Date.now() < this.kickRateLimitedUntil) {
+						const waitMs = this.kickRateLimitedUntil - Date.now() + 1000;
+						if (waitMs > nextDelayMs) nextDelayMs = waitMs;
+					}
+				} else if (platform === "youtube") {
+					await this._pollYoutubeChannels();
+					const calc = this.calculateOptimalYoutubeInterval();
+					nextDelayMs = this.customPollingIntervals?.youtube || calc.intervalMs;
+				}
+			} catch (err) {
+				this.logger.error(`[schedulePlatformLoop] Erro no ciclo de polling de ${platform}:`, err);
+				nextDelayMs = 60000;
+			} finally {
+				if (this.isMonitoring) {
+					this._schedulePlatformLoop(platform, nextDelayMs);
+				}
+			}
+		}, delayMs);
+	}
+
+	/**
+	 * Start monitoring all channels
+	 */
 	async startMonitoring() {
 		// Wait for initialization
 		await this.initPromise;
@@ -568,25 +792,27 @@ class StreamMonitor extends EventEmitter {
 		// Stop any existing polling
 		this.stopMonitoring();
 
-		// Start new polling for each platform
-		this.pollingTimers.twitch = setInterval(() => this._pollTwitchChannels(), this.pollingInterval);
-		this.pollingTimers.kick = setInterval(() => this._pollKickChannels(), this.pollingInterval);
-		this.pollingTimers.youtube = setInterval(
-			() => this._pollYoutubeChannels(),
-			this.pollingInterval
-		);
-
-		// Start reactivation timer for paused channels
-		this.reactivationTimer = setInterval(() => this.checkPausedChannelsReactivation(), 60000 * 5);
-
-		// Do initial checks/polls
-		this.checkPausedChannelsReactivation();
-		this._pollTwitchChannels();
-		this._pollKickChannels();
-		this._pollYoutubeChannels();
-
 		this.isMonitoring = true;
-		this.logger.info("Monitoramento de streams iniciado");
+
+		// Start reactivation timer for paused channels (a cada 5 min)
+		this.reactivationTimer = setInterval(() => this.checkPausedChannelsReactivation(), 60000 * 5);
+		this.checkPausedChannelsReactivation();
+
+		const twitchCalc = this.calculateOptimalTwitchInterval();
+		const kickCalc = this.calculateOptimalKickInterval();
+		const ytCalc = this.calculateOptimalYoutubeInterval();
+
+		this.logger.info(`[startMonitoring] Intervalos calculados para polling de streams:`);
+		this.logger.info(`  • ${twitchCalc.reason}`);
+		this.logger.info(`  • ${kickCalc.reason}`);
+		this.logger.info(`  • ${ytCalc.reason}`);
+
+		// Inicia loops auto-agendados com escalonamento inicial para evitar picos
+		this._schedulePlatformLoop("twitch", 0);
+		this._schedulePlatformLoop("kick", 1500);
+		this._schedulePlatformLoop("youtube", 4000);
+
+		this.logger.info("Monitoramento de streams iniciado (loops auto-agendados otimizados)");
 	}
 
 	/**
@@ -595,7 +821,7 @@ class StreamMonitor extends EventEmitter {
 	stopMonitoring() {
 		Object.keys(this.pollingTimers).forEach((platform) => {
 			if (this.pollingTimers[platform]) {
-				clearInterval(this.pollingTimers[platform]);
+				clearTimeout(this.pollingTimers[platform]);
 				this.pollingTimers[platform] = null;
 			}
 		});
@@ -610,15 +836,91 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
-	 * Set the polling interval for all platforms
+	 * Set the polling interval for platforms manually
 	 * @param {number} interval - Polling interval in milliseconds
+	 * @param {string|null} [platform=null] - "twitch" | "kick" | "youtube" | null
 	 */
-	setPollingInterval(interval, delay = 60000) {
-		this.pollingInterval = interval;
-		// Restart monitoring with new interval
-		if (Object.values(this.pollingTimers).some((timer) => timer !== null)) {
-			setTimeout(this.startMonitoring, delay);
+	setPollingInterval(interval, platform = null) {
+		if (platform && this.customPollingIntervals[platform] !== undefined) {
+			this.customPollingIntervals[platform] = interval;
+		} else {
+			this.customPollingIntervals.twitch = interval;
+			this.customPollingIntervals.kick = interval;
+			this.customPollingIntervals.youtube = interval;
 		}
+		this.pollingInterval = interval;
+		// Reinicia os loops para aplicar o novo intervalo
+		if (this.isMonitoring) {
+			this._schedulePlatformLoop("twitch", 0);
+			this._schedulePlatformLoop("kick", 1000);
+			this._schedulePlatformLoop("youtube", 2000);
+		}
+	}
+
+	/**
+	 * Reseta intervalos customizados e volta a usar o cálculo matemático automático
+	 */
+	resetToOptimalIntervals() {
+		this.customPollingIntervals = {
+			twitch: null,
+			kick: null,
+			youtube: null
+		};
+		if (this.isMonitoring) {
+			this._schedulePlatformLoop("twitch", 0);
+			this._schedulePlatformLoop("kick", 1000);
+			this._schedulePlatformLoop("youtube", 2000);
+		}
+	}
+
+	/**
+	 * Retorna métricas detalhadas dos intervalos de polling e consumo de rate limit
+	 */
+	getPollingMetrics() {
+		const twitchChannels = this.channels.filter((c) => c.source.toLowerCase() === "twitch");
+		const kickChannels = this.channels.filter((c) => c.source.toLowerCase() === "kick");
+		const ytChannels = this.channels.filter((c) => c.source.toLowerCase() === "youtube");
+
+		const twitchCalc = this.calculateOptimalTwitchInterval(twitchChannels.length);
+		const kickCalc = this.calculateOptimalKickInterval(kickChannels.length);
+		const ytCalc = this.calculateOptimalYoutubeInterval(ytChannels.length);
+
+		return {
+			isMonitoring: this.isMonitoring,
+			twitch: {
+				channelCount: twitchChannels.length,
+				batchSize: twitchCalc.batchSize,
+				batches: twitchCalc.batches,
+				intervalSec: Math.round(
+					(this.customPollingIntervals?.twitch || twitchCalc.intervalMs) / 1000
+				),
+				estimatedReqsPerMinute: twitchCalc.reqsPerMinute,
+				rateLimitCapacity: 800,
+				targetUtilization: `${twitchCalc.utilizationPct}%`,
+				liveRateLimit: {
+					limit: this.twitchRateLimit.limit,
+					remaining: this.twitchRateLimit.remaining,
+					resetInSec: this.twitchRateLimit.reset
+						? Math.max(0, this.twitchRateLimit.reset - Math.floor(Date.now() / 1000))
+						: null
+				},
+				isRateLimited: !!(this.twitchRateLimitedUntil && Date.now() < this.twitchRateLimitedUntil)
+			},
+			kick: {
+				channelCount: kickChannels.length,
+				batchSize: kickCalc.batchSize,
+				batches: kickCalc.batches,
+				intervalSec: Math.round((this.customPollingIntervals?.kick || kickCalc.intervalMs) / 1000),
+				estimatedReqsPerMinute: kickCalc.reqsPerMinute,
+				safeCapacity: 60,
+				targetUtilization: `${kickCalc.utilizationPct}%`,
+				isRateLimited: !!(this.kickRateLimitedUntil && Date.now() < this.kickRateLimitedUntil)
+			},
+			youtube: {
+				channelCount: ytChannels.length,
+				intervalSec: Math.round((this.customPollingIntervals?.youtube || ytCalc.intervalMs) / 1000)
+			}
+		};
 	}
 
 	/**
@@ -1090,10 +1392,11 @@ class StreamMonitor extends EventEmitter {
 			if (!token) return; // Can't proceed without token
 		}
 
-		// Split channels into batches of 75 (Twitch API limit for user_login filter is 100, 75 is safe)
+		// Split channels into batches (Twitch Helix supports up to 100 logins, 80 is safe for URL length)
+		const { batchSize } = this.calculateOptimalTwitchInterval(twitchChannels.length);
 		const channelBatches = [];
-		for (let i = 0; i < twitchChannels.length; i += 75) {
-			channelBatches.push(twitchChannels.slice(i, i + 75));
+		for (let i = 0; i < twitchChannels.length; i += batchSize) {
+			channelBatches.push(twitchChannels.slice(i, i + batchSize));
 		}
 
 		const totalBatches = channelBatches.length;
@@ -1129,6 +1432,17 @@ class StreamMonitor extends EventEmitter {
 					3,
 					2000
 				);
+
+				// Atualiza métricas de Rate Limit a partir dos headers da resposta Helix
+				if (streamResponse && streamResponse.headers) {
+					const limit = parseInt(streamResponse.headers["ratelimit-limit"], 10);
+					const remaining = parseInt(streamResponse.headers["ratelimit-remaining"], 10);
+					const reset = parseInt(streamResponse.headers["ratelimit-reset"], 10);
+
+					if (!isNaN(limit)) this.twitchRateLimit.limit = limit;
+					if (!isNaN(remaining)) this.twitchRateLimit.remaining = remaining;
+					if (!isNaN(reset)) this.twitchRateLimit.reset = reset;
+				}
 
 				// Process the results
 				const liveStreams = streamResponse.data.data;
@@ -1202,10 +1516,14 @@ class StreamMonitor extends EventEmitter {
 				if (error.response && error.response.status === 401) {
 					await this._refreshTwitchToken();
 				} else if (error.response && error.response.status === 429) {
-					// Twitch Rate Limit hit — pause Twitch polling for 60s
-					this.twitchRateLimitedUntil = Date.now() + 60000;
+					// Twitch Rate Limit hit — pause Twitch polling based on reset header or 60s
+					const resetHeader = parseInt(error.response.headers?.["ratelimit-reset"], 10);
+					const pauseMs = resetHeader
+						? Math.max(5000, resetHeader * 1000 - Date.now() + 1000)
+						: 60000;
+					this.twitchRateLimitedUntil = Date.now() + pauseMs;
 					this.logger.warn(
-						`[_pollTwitchChannels] Rate Limit (429) atingido na Twitch. Pausando requisições por 60 segundos.`
+						`[_pollTwitchChannels] Rate Limit (429) atingido na Twitch. Pausando requisições por ${Math.round(pauseMs / 1000)}s.`
 					);
 					failedBatches.push(batch);
 					break; // Stop remaining batches for this poll cycle
@@ -1219,7 +1537,12 @@ class StreamMonitor extends EventEmitter {
 				}
 			}
 
-			await sleep(2000);
+			// Delay adaptativo entre lotes (350ms em condições normais; se remaining < 100, aguarda 1.5s)
+			if (this.twitchRateLimit.remaining < 100) {
+				await sleep(1500);
+			} else {
+				await sleep(350);
+			}
 		}
 
 		if (failedBatches.length > 0 && !this.twitchRateLimitedUntil) {
@@ -1528,16 +1851,26 @@ class StreamMonitor extends EventEmitter {
 		const kickChannels = this.channels.filter((c) => c.source.toLowerCase() === "kick");
 		if (kickChannels.length === 0) return;
 
+		// Check if Kick polling is currently paused due to rate limiting (HTTP 429)
+		if (this.kickRateLimitedUntil && Date.now() < this.kickRateLimitedUntil) {
+			const secondsLeft = Math.ceil((this.kickRateLimitedUntil - Date.now()) / 1000);
+			this.logger.warn(
+				`[_pollKickChannels] Em pausa por Rate Limit (429) na Kick por mais ${secondsLeft}s.`
+			);
+			return;
+		}
+
 		// Ensure we have a valid token
 		if (!this.kickToken) {
 			const token = await this._refreshKickToken();
 			if (!token) return; // Can't proceed without a token
 		}
 
-		// Split channels into batches (using 25 as a safe limit - Kick API supports up to 50 slugs)
+		// Split channels into batches (using safe batchSize calculated from formula)
+		const { batchSize } = this.calculateOptimalKickInterval(kickChannels.length);
 		const channelBatches = [];
-		for (let i = 0; i < kickChannels.length; i += 25) {
-			channelBatches.push(kickChannels.slice(i, i + 25));
+		for (let i = 0; i < kickChannels.length; i += batchSize) {
+			channelBatches.push(kickChannels.slice(i, i + batchSize));
 		}
 
 		this.logger.info(
@@ -1590,6 +1923,13 @@ class StreamMonitor extends EventEmitter {
 					// Force a refresh on the next cycle by clearing the current token
 					this.kickToken = null;
 					await this._refreshKickToken();
+				} else if (error.response && error.response.status === 429) {
+					const retryAfterSec = parseInt(error.response.headers?.["retry-after"], 10) || 60;
+					this.kickRateLimitedUntil = Date.now() + retryAfterSec * 1000;
+					this.logger.warn(
+						`[_pollKickChannels] Rate Limit (429) atingido na Kick. Pausando requisições por ${retryAfterSec}s.`
+					);
+					break;
 				} else {
 					const errorDetail = error.response
 						? `HTTP ${error.response.status}: ${JSON.stringify(error.response.data)}`
@@ -1602,7 +1942,7 @@ class StreamMonitor extends EventEmitter {
 				}
 			}
 			// Add a small delay between batches to avoid rate limiting
-			await sleep(1000);
+			await sleep(800);
 		}
 	}
 

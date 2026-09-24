@@ -2059,8 +2059,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				try {
 					if (isBotLeaving) {
 						const groupId = data.group.id;
+						const dbGroup = await this.database?.getGroup(groupId).catch(() => null);
 						const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
-						const group = groupData.group;
+						const group = dbGroup || groupData.group;
+						this.groups[groupId] = group;
 
 						if (bot.markNotInGroup) {
 							await bot.markNotInGroup(groupId);

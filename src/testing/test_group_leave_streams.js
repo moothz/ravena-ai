@@ -24,8 +24,8 @@ async function main() {
 		}
 	};
 
-	const testGroupId = "120363999111@g.us";
-	const otherGroupId = "120363999222@g.us";
+	const testGroupId = `120363999_${Date.now()}_1@g.us`;
+	const otherGroupId = `120363999_${Date.now()}_2@g.us`;
 
 	// 1. Criar grupo teste com streams configuradas
 	const groupTest = new Group({

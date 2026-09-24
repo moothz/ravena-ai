@@ -136,6 +136,14 @@ class SuperAdmin {
 				method: "streamsCleanup",
 				description:
 					"Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes"
+			},
+			"streams-rate": {
+				method: "streamsRate",
+				description: "Exibe métricas de velocidade de busca e rate limit do StreamMonitor"
+			},
+			streamsRate: {
+				method: "streamsRate",
+				description: "Exibe métricas de velocidade de busca e rate limit do StreamMonitor"
 			}
 		};
 
@@ -4655,6 +4663,72 @@ Retorne no formato JSON rigoroso:
 				content: `❌ Erro ao executar streams-cleanup: ${error.message}`
 			});
 		}
+	}
+
+	/**
+	 * Exibe métricas detalhadas dos intervalos de polling e status de rate limit das plataformas de streaming
+	 * Comando: !sa-streams-rate ou !sa-streamsRate
+	 */
+	async streamsRate(bot, message, args) {
+		const chatId = message.group || message.author;
+
+		const StreamSystem = require("../StreamSystem");
+		const streamSystem = StreamSystem.getInstance();
+
+		if (!streamSystem.initialized) {
+			await streamSystem.initialize(true);
+		}
+
+		let streamMonitor = bot.streamMonitor || streamSystem.streamMonitor;
+		if (!streamMonitor) {
+			const StreamMonitor = require("../services/StreamMonitor");
+			streamMonitor = StreamMonitor.getInstance();
+		}
+
+		if (!streamMonitor || typeof streamMonitor.getPollingMetrics !== "function") {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ StreamMonitor não está disponível ou atualizado."
+			});
+		}
+
+		const m = streamMonitor.getPollingMetrics();
+
+		let statusText = `⚡ *MÉTRICAS DE POLLING & RATE LIMIT (STREAMS)*\n\n`;
+
+		statusText += `🟣 *Twitch (Helix API):*\n`;
+		statusText += `• Status: ${m.twitch.isRateLimited ? "🔴 *Em pausa (429)*" : "🟢 *Ativo / Saudável*"}\n`;
+		statusText += `• Canais monitorados: *${m.twitch.channelCount}*\n`;
+		statusText += `• Lotes por ciclo: *${m.twitch.batches}* (${m.twitch.batchSize} canais/lote)\n`;
+		statusText += `• Intervalo calculado: *${m.twitch.intervalSec}s* (antes: 180s - ⚡ *${Math.round(180 / m.twitch.intervalSec)}x mais rápido!*)\n`;
+		statusText += `• Requisições estimadas: *~${m.twitch.estimatedReqsPerMinute} req/min* (Meta: máx 480 / Limite: 800 req/min)\n`;
+		statusText += `• Utilização da cota: *${m.twitch.targetUtilization}*\n`;
+		if (m.twitch.liveRateLimit && m.twitch.liveRateLimit.remaining !== undefined) {
+			const resetInfo =
+				m.twitch.liveRateLimit.resetInSec !== null
+					? ` (reset em ${m.twitch.liveRateLimit.resetInSec}s)`
+					: "";
+			statusText += `• RateLimit ao vivo: *${m.twitch.liveRateLimit.remaining}/${m.twitch.liveRateLimit.limit}* restantes${resetInfo}\n`;
+		}
+
+		statusText += `\n🟢 *Kick API:*\n`;
+		statusText += `• Status: ${m.kick.isRateLimited ? "🔴 *Em pausa (429)*" : "🟢 *Ativo / Saudável*"}\n`;
+		statusText += `• Canais monitorados: *${m.kick.channelCount}*\n`;
+		statusText += `• Lotes por ciclo: *${m.kick.batches}* (${m.kick.batchSize} canais/lote)\n`;
+		statusText += `• Intervalo calculado: *${m.kick.intervalSec}s* (antes: 180s - ⚡ *${Math.round(180 / m.kick.intervalSec)}x mais rápido!*)\n`;
+		statusText += `• Requisições estimadas: *~${m.kick.estimatedReqsPerMinute} req/min* (Limite seguro: 60 req/min)\n`;
+		statusText += `• Utilização da cota: *${m.kick.targetUtilization}*\n`;
+
+		statusText += `\n🔴 *YouTube (RSS XML):*\n`;
+		statusText += `• Canais monitorados: *${m.youtube.channelCount}*\n`;
+		statusText += `• Intervalo de busca: *${m.youtube.intervalSec}s*\n`;
+
+		statusText += `\n⚙️ *Monitoramento Global:* ${m.isMonitoring ? "🟢 Rodando" : "🟡 Pausado"}`;
+
+		return new ReturnMessage({
+			chatId,
+			content: statusText
+		});
 	}
 }
 
