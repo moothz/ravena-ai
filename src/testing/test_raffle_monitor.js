@@ -83,15 +83,27 @@ async function runTests() {
 	);
 	console.log("✓ Interval reaproveitado com sucesso: 2 grupos compartilham o mesmo timer.");
 
-	// 4. Teste de detecção de nova meta e salto de porcentagem
-	console.log("\n4. Testando salto de vendas (de 42% para 55%)...");
-	// Popula raffle_cache simulando que a rifa avançou para 55% vendida
+	// 4. Teste de detecção de nova meta e salto de porcentagem (com imagem e dados completos)
+	console.log(
+		"\n4. Testando salto de vendas (de 42% para 55%) com imagem e dados completos de !raffle..."
+	);
+	// Popula raffle_cache simulando que a rifa avançou para 55% vendida com imagem de capa
 	// Total: 1000, Disponíveis: 450 (Vendidas: 550 = 55%)
 	await database.dbRun(
 		"raffle_cache",
 		`INSERT OR REPLACE INTO raffle_cache (url, title, price, total_nums, available_nums, alert_text, description, image_url, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		[testUrl1, "Rifa Fusca 1970", "R$ 0,50", 1000, 450, "", "Descrição de teste", "", Date.now()]
+		[
+			testUrl1,
+			"Rifa Fusca 1970",
+			"R$ 0,50",
+			1000,
+			450,
+			"Aviso importante",
+			"Descrição de teste",
+			"https://example.com/fusca.jpg",
+			Date.now()
+		]
 	);
 
 	// Salva grupos no banco para resolução de nome e status
@@ -107,11 +119,24 @@ async function runTests() {
 		2,
 		"Ambos os grupos devem receber a notificação de 50%"
 	);
-	assert(bot.capturedMessages[0].content.includes("50%"), "Mensagem deve conter menção a 50%");
+	const notifMsg = bot.capturedMessages[0];
 	assert(
-		bot.capturedMessages[1].content.includes("50%"),
-		"Mensagem do grupo 2 deve conter menção a 50%"
+		notifMsg.content && notifMsg.content.isMessageMedia,
+		"Deve enviar mídia da imagem da rifa"
 	);
+	assert.strictEqual(
+		notifMsg.content.url,
+		"https://example.com/fusca.jpg",
+		"URL da imagem deve bater"
+	);
+	const caption = notifMsg.options.caption;
+	assert(caption.includes("🎉"), "Legenda deve conter cabeçalho festivo");
+	assert(caption.includes("50%"), "Legenda deve conter a meta de 50%");
+	assert(caption.includes("Rifa Fusca 1970"), "Legenda deve conter título da ação");
+	assert(caption.includes("R$ 0,50"), "Legenda deve conter o preço por cota");
+	assert(caption.includes("450 cotas restantes"), "Legenda deve conter cotas restantes");
+	assert(caption.includes("▰"), "Legenda deve conter a barra de progresso");
+	assert(caption.includes(testUrl1), "Legenda deve conter o link da rifa");
 
 	// Verifica se a meta 50% foi registrada no banco para ambos
 	const notifsG1 = await database.dbAll(
@@ -123,6 +148,49 @@ async function runTests() {
 	assert.deepStrictEqual(milestonesG1, [10, 15, 25, 50], "Metas do grupo 1 devem incluir 50%");
 
 	console.log("✓ Notificação disparada para a meta de 50% com sucesso.");
+
+	// 4.1 Teste de armazenamento local em data/media/raffles/
+	console.log(
+		"\n4.1 Testando armazenamento e carregamento de mídia local em data/media/raffles/..."
+	);
+	const fs = require("fs");
+	const path = require("path");
+	const crypto = require("crypto");
+	const mediaDir = path.join(database.databasePath, "media", "raffles");
+	await fs.promises.mkdir(mediaDir, { recursive: true });
+
+	const testImgUrl = "https://example.com/foto-local.jpg";
+	const imgHash = crypto.createHash("md5").update(testImgUrl).digest("hex");
+	const localFile = path.join(mediaDir, `${imgHash}.jpg`);
+	await fs.promises.writeFile(localFile, Buffer.from("fake-jpeg-data"));
+
+	const mediaResult = await buildRaffleMessage(
+		bot,
+		group1,
+		{
+			title: "Rifa Local",
+			price: "R$ 10,00",
+			total_nums: 100,
+			available_nums: 20,
+			image_url: testImgUrl
+		},
+		"https://example.com/rifa-local"
+	);
+
+	assert(
+		mediaResult.content && mediaResult.content.isMessageMedia,
+		"Deve gerar mídia a partir do arquivo local"
+	);
+	assert.strictEqual(
+		mediaResult.content.source,
+		"file",
+		"A origem da mídia deve ser 'file' (cache local em disco)"
+	);
+	console.log("✓ Carregamento de mídia a partir de data/media/raffles/ validado com sucesso.");
+
+	if (fs.existsSync(localFile)) {
+		await fs.promises.unlink(localFile);
+	}
 
 	// 5. Teste de deduplicação (segunda checagem com os mesmos 55%)
 	console.log("\n5. Testando deduplicação de notificações...");

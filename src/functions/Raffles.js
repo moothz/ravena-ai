@@ -1,3 +1,6 @@
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Database = require("../utils/Database");
@@ -11,6 +14,60 @@ const logger = new Logger("raffles");
 const database = Database.getInstance();
 const adminUtils = AdminUtils.getInstance();
 const dbName = "raffle_cache";
+const RAFFLES_MEDIA_DIR = path.join(database.databasePath, "media", "raffles");
+
+/**
+ * Garante que o diretório data/media/raffles exista
+ */
+async function garantirDiretorioMidia() {
+	try {
+		await fs.promises.mkdir(RAFFLES_MEDIA_DIR, { recursive: true });
+	} catch (err) {
+		logger.error("Erro ao criar diretório data/media/raffles:", err.message ?? err);
+	}
+}
+
+/**
+ * Obtém ou faz download da imagem da rifa salvando em data/media/raffles/
+ * @param {string} imageUrl - URL da imagem
+ * @returns {Promise<string|null>} Caminho local do arquivo no disco
+ */
+async function getOrDownloadRaffleImage(imageUrl) {
+	if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("http")) return null;
+	try {
+		await garantirDiretorioMidia();
+		const hash = crypto.createHash("md5").update(imageUrl).digest("hex");
+		const localPath = path.join(RAFFLES_MEDIA_DIR, `${hash}.jpg`);
+
+		// Se já existe localmente, retorna o caminho do arquivo
+		if (fs.existsSync(localPath)) {
+			return localPath;
+		}
+
+		logger.info(
+			`[Raffles] Baixando imagem da rifa para cache local em data/media/raffles/: ${imageUrl}`
+		);
+		const response = await axios.get(imageUrl, {
+			responseType: "arraybuffer",
+			timeout: 10000,
+			headers: {
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+			}
+		});
+
+		if (response.data && response.data.length > 0) {
+			await fs.promises.writeFile(localPath, Buffer.from(response.data));
+			return localPath;
+		}
+	} catch (err) {
+		logger.warn(
+			`[Raffles] Falha ao baixar imagem para cache local (${imageUrl}):`,
+			err.message ?? err
+		);
+	}
+	return null;
+}
 
 // Initialize SQLite database
 database.getSQLiteDb(
@@ -387,6 +444,11 @@ async function getRaffleData(url, force = false) {
 				data,
 				timestamp: Date.now()
 			});
+
+			// Baixa imagem para data/media/raffles/ em background
+			if (data.image_url) {
+				getOrDownloadRaffleImage(data.image_url).catch(() => {});
+			}
 		}
 	} catch (error) {
 		logger.error(`Error fetching raffle online for ${url}:`, error.message ?? error);
@@ -484,40 +546,54 @@ async function buildRaffleMessage(
 		: {};
 
 	// Try sending with image if available
-	if (data.image_url && typeof bot?.createMediaFromURL === "function") {
+	if (data.image_url) {
 		try {
-			const media = await bot.createMediaFromURL(data.image_url);
-			media.mimetype = "image/jpeg";
-			media.filename = "raffle.jpg";
+			let media = null;
+			// 1. Tenta carregar ou baixar para o cache local em data/media/raffles/
+			const localImagePath = await getOrDownloadRaffleImage(data.image_url);
+			if (
+				localImagePath &&
+				fs.existsSync(localImagePath) &&
+				typeof bot?.createMedia === "function"
+			) {
+				media = await bot.createMedia(localImagePath);
+			} else if (typeof bot?.createMediaFromURL === "function") {
+				media = await bot.createMediaFromURL(data.image_url);
+			}
 
-			// Captions support up to 1024 characters
-			if (text.length > 1024 && data.description) {
-				return [
-					new ReturnMessage({
+			if (media) {
+				media.mimetype = "image/jpeg";
+				media.filename = "raffle.jpg";
+
+				// Captions support up to 1024 characters
+				if (text.length > 1024 && data.description) {
+					return [
+						new ReturnMessage({
+							chatId,
+							content: media,
+							options: {
+								caption: textWithoutDesc,
+								...replyOptions
+							}
+						}),
+						new ReturnMessage({
+							chatId,
+							content: `📝 *Descrição:*\n${data.description}`,
+							options: {
+								...replyOptions
+							}
+						})
+					];
+				} else {
+					return new ReturnMessage({
 						chatId,
 						content: media,
 						options: {
-							caption: textWithoutDesc,
+							caption: text,
 							...replyOptions
 						}
-					}),
-					new ReturnMessage({
-						chatId,
-						content: `📝 *Descrição:*\n${data.description}`,
-						options: {
-							...replyOptions
-						}
-					})
-				];
-			} else {
-				return new ReturnMessage({
-					chatId,
-					content: media,
-					options: {
-						caption: text,
-						...replyOptions
-					}
-				});
+					});
+				}
 			}
 		} catch (imageError) {
 			logger.error(
@@ -1026,5 +1102,6 @@ module.exports = {
 	helper,
 	commands,
 	getRaffleData,
-	buildRaffleMessage
+	buildRaffleMessage,
+	getOrDownloadRaffleImage
 };
