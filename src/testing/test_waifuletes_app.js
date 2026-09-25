@@ -172,6 +172,44 @@ async function main() {
 			`✓ Detalhes de ${detailCharRes.data.data.name} carregados com wishlistCount: ${detailCharRes.data.data.wishlistCount}`
 		);
 
+		// Teste 11: Filtro de estado civil (maritalStatus)
+		console.log("\n[Teste 11] Filtro por estado civil (maritalStatus)");
+		const marriedFilterRes = await axios.get(
+			`${baseUrl}/api/waifuletes/characters?maritalStatus=married&limit=5`
+		);
+		assert.strictEqual(marriedFilterRes.status, 200);
+		const marriedFilterList = marriedFilterRes.data.data.data;
+		console.log(
+			`✓ Consulta com maritalStatus=married retornou ${marriedFilterList.length} personagens (Total: ${marriedFilterRes.data.data.total}).`
+		);
+		if (marriedFilterList.length > 0) {
+			assert.strictEqual(
+				marriedFilterList[0].isClaimed,
+				true,
+				"Personagem retornado no filtro 'married' deve ser casado"
+			);
+			assert.ok(marriedFilterList[0].marriage, "Personagem deve conter dados de casamento");
+			console.log(
+				`✓ Personagem casado verificado: ${marriedFilterList[0].name} (Cônjuge: ${marriedFilterList[0].marriage.spouse})`
+			);
+		}
+
+		const singleFilterRes = await axios.get(
+			`${baseUrl}/api/waifuletes/characters?maritalStatus=single&limit=5`
+		);
+		assert.strictEqual(singleFilterRes.status, 200);
+		const singleFilterList = singleFilterRes.data.data.data;
+		console.log(
+			`✓ Consulta com maritalStatus=single retornou ${singleFilterList.length} personagens (Total: ${singleFilterRes.data.data.total}).`
+		);
+		if (singleFilterList.length > 0) {
+			assert.strictEqual(
+				singleFilterList[0].isClaimed,
+				false,
+				"Personagem retornado no filtro 'single' deve ser solteiro"
+			);
+		}
+
 		console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 🎉");
 	} finally {
 		await botApi.stop();

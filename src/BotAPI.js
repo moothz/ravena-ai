@@ -1684,11 +1684,19 @@ class BotAPI {
 			const waifuletesKey = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
 
 			try {
-				const { search, gender, rarity, page, limit, sortBy, order } = req.query;
+				const { search, gender, rarity, page, limit, sortBy, order, maritalStatus, status } =
+					req.query;
 				const params = {};
 				if (search) params.search = search.toString().trim();
 				if (gender) params.gender = gender.toString().trim();
 				if (rarity) params.rarity = rarity.toString().trim();
+				const rawStatus = maritalStatus || status;
+				if (
+					rawStatus &&
+					["single", "married", "all"].includes(rawStatus.toString().toLowerCase().trim())
+				) {
+					params.maritalStatus = rawStatus.toString().toLowerCase().trim();
+				}
 				if (page) params.page = parseInt(page, 10) || 1;
 				if (limit) params.limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 

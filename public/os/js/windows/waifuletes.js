@@ -11,6 +11,7 @@ WindowManager.register('waifuletes', {
         search: '',
         gender: '',
         rarity: '',
+        maritalStatus: '',
         sortBy: 'ranking',
         page: 1,
         limit: 12,
@@ -49,6 +50,16 @@ WindowManager.register('waifuletes', {
                                 <button class="waifu-pill active" data-gender="">Todos</button>
                                 <button class="waifu-pill" data-gender="FEMALE">Feminino</button>
                                 <button class="waifu-pill" data-gender="MALE">Masculino</button>
+                            </div>
+                        </div>
+
+                        <!-- Marital Status Filter -->
+                        <div class="waifu-filter-group">
+                            <span class="waifu-filter-label"><i class="fas fa-ring"></i> Estado:</span>
+                            <div class="waifu-pill-group" id="waifu-status-pills">
+                                <button class="waifu-pill active" data-status="">Todos</button>
+                                <button class="waifu-pill" data-status="single">Solteiros</button>
+                                <button class="waifu-pill" data-status="married">💍 Casados</button>
                             </div>
                         </div>
 
@@ -162,6 +173,19 @@ WindowManager.register('waifuletes', {
             });
         });
 
+        // Marital status filter pills (Todos / Solteiros / Casados)
+        const statusPills = body.querySelectorAll('#waifu-status-pills .waifu-pill');
+        statusPills.forEach((pill) => {
+            pill.addEventListener('click', () => {
+                if (this.state.maritalStatus === pill.dataset.status) return;
+                statusPills.forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                this.state.maritalStatus = pill.dataset.status;
+                this.state.page = 1;
+                this.loadCharacters(body);
+            });
+        });
+
         // Rarity select
         raritySelect.addEventListener('change', (e) => {
             this.state.rarity = e.target.value;
@@ -268,6 +292,7 @@ WindowManager.register('waifuletes', {
             if (this.state.search) params.append('search', this.state.search);
             if (this.state.gender) params.append('gender', this.state.gender);
             if (this.state.rarity) params.append('rarity', this.state.rarity);
+            if (this.state.maritalStatus) params.append('maritalStatus', this.state.maritalStatus);
             if (this.state.sortBy) params.append('sortBy', this.state.sortBy);
 
             const res = await Api.get(`/api/waifuletes/characters?${params.toString()}`);
