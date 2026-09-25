@@ -102,7 +102,7 @@ WindowManager.register('waifuletes', {
 
                 <!-- Floating Toast Notification -->
                 <div class="waifu-toast hidden" id="waifu-toast">
-                    <i class="fas fa-star" style="color: var(--gold-color);"></i>
+                    <span class="waifu-toast-icon"><i class="fas fa-star" style="color: var(--gold-color);"></i></span>
                     <span id="waifu-toast-msg">Copiado comando! Envie pra ravena ou no seu grupo.</span>
                 </div>
             </div>
@@ -317,19 +317,42 @@ WindowManager.register('waifuletes', {
         const rarityKey = char.baseRarity || char.rarity || 'COMMON';
         const rarityCfg = this.RARITY_CONFIG[rarityKey] || this.RARITY_CONFIG.COMMON;
         const imgSrc = char.imageUrl || '/ravena-help-small.jpg';
+        const isMarried = !!(char.isClaimed || char.marriage);
+        const wishlistCount = char.wishlistCount ?? 0;
 
         const card = document.createElement('div');
         card.className = `waifu-card rarity-${rarityKey.toLowerCase()}`;
         card.dataset.id = char.id;
 
+        // Married badge tooltip text for desktop hover
+        let marriedTooltip = 'Casada(o)';
+        if (char.marriage) {
+            const spouse = char.marriage.spouse || 'Outro jogador';
+            const groupName = char.marriage.groupName || 'Grupo';
+            marriedTooltip = `Casada(o) com ${spouse} no grupo ${groupName}`;
+        }
+
         card.innerHTML = `
             <div class="waifu-img-wrap">
                 <img src="${imgSrc}" loading="lazy" alt="${char.name}" onerror="this.onerror=null;this.src='/ravena-help-small.jpg';">
+                
+                ${isMarried ? `
+                    <button class="waifu-married-badge" title="💍 ${marriedTooltip}" aria-label="Casada(o)">
+                        💍
+                    </button>
+                ` : ''}
+
                 <button class="waifu-fav-btn" title="Favoritar / Desejar ${char.name}" aria-label="Favoritar">
                     <i class="far fa-star"></i>
                 </button>
+
                 <div class="waifu-rarity-badge" style="border-color: ${rarityCfg.color}; color: ${rarityCfg.color};" title="Raridade: ${rarityCfg.label}">
                     ${rarityCfg.emoji}
+                </div>
+
+                <div class="waifu-wishes-badge" title="${wishlistCount} pessoa(s) adicionaram à wishlist" aria-label="${wishlistCount} desejos">
+                    <span class="waifu-wishes-icon">✨</span>
+                    <span class="waifu-wishes-count">${wishlistCount}</span>
                 </div>
             </div>
             <div class="waifu-card-info">
@@ -345,7 +368,69 @@ WindowManager.register('waifuletes', {
             this.handleFavoritar(char.id, favBtn, body);
         });
 
+        // Married badge action: Click/Tap shows toast with spouse and group name
+        if (isMarried) {
+            const marriedBtn = card.querySelector('.waifu-married-badge');
+            if (marriedBtn) {
+                marriedBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await this.handleMarriedClick(char, marriedBtn, body);
+                });
+            }
+        }
+
+        // Wishes badge action: Click/Tap shows toast with wishlist count
+        const wishesBadge = card.querySelector('.waifu-wishes-badge');
+        if (wishesBadge) {
+            wishesBadge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const count = char.wishlistCount ?? 0;
+                const text = count === 1
+                    ? `✨ ${char.name} está na wishlist de 1 pessoa!`
+                    : `✨ ${char.name} foi adicionado(a) a ${count} wishlists!`;
+                this.showToast(body, text, '✨');
+            });
+        }
+
         return card;
+    },
+
+    async handleMarriedClick(char, btn, body) {
+        let spouse = char.marriage?.spouse;
+        let groupName = char.marriage?.groupName;
+        const groupId = char.marriage?.groupId;
+
+        // Se ainda não temos o nome do grupo ou cônjuge, busca dinamicamente
+        if (!spouse || !groupName) {
+            if (groupId && !groupName) {
+                try {
+                    const groupRes = await Api.get(`/api/waifuletes/group?id=${encodeURIComponent(groupId)}`);
+                    if (groupRes?.data?.name) {
+                        groupName = groupRes.data.name;
+                        if (char.marriage) char.marriage.groupName = groupName;
+                    }
+                } catch (_) {}
+            }
+
+            if (!spouse || !groupName) {
+                try {
+                    const detailRes = await Api.get(`/api/waifuletes/characters/${encodeURIComponent(char.id)}`);
+                    const data = detailRes?.data?.data;
+                    if (data?.marriage) {
+                        spouse = data.marriage.spouse || spouse;
+                        groupName = data.marriage.groupName || groupName;
+                        char.marriage = data.marriage;
+                    }
+                } catch (_) {}
+            }
+        }
+
+        spouse = spouse || 'Jogador';
+        groupName = groupName || 'Grupo';
+
+        const toastMsg = `💍 Casada(o) com ${spouse} no grupo ${groupName}`;
+        btn.title = toastMsg;
+        this.showToast(body, toastMsg, '💍');
     },
 
     handleFavoritar(charId, btn, body) {
@@ -391,10 +476,23 @@ WindowManager.register('waifuletes', {
             });
     },
 
-    showToast(body, message) {
+    showToast(body, message, iconHtml) {
         const toast = body.querySelector('#waifu-toast');
         const toastMsg = body.querySelector('#waifu-toast-msg');
         if (!toast || !toastMsg) return;
+
+        const iconContainer = toast.querySelector('.waifu-toast-icon') || toast.querySelector('i');
+        if (iconContainer) {
+            if (iconHtml) {
+                if (iconHtml.startsWith('<')) {
+                    iconContainer.innerHTML = iconHtml;
+                } else {
+                    iconContainer.innerHTML = `<span style="font-size: 15px; line-height: 1;">${iconHtml}</span>`;
+                }
+            } else {
+                iconContainer.innerHTML = '<i class="fas fa-star" style="color: var(--gold-color);"></i>';
+            }
+        }
 
         toastMsg.textContent = message;
         toast.classList.remove('hidden');
@@ -404,6 +502,6 @@ WindowManager.register('waifuletes', {
         this._toastTimer = setTimeout(() => {
             toast.classList.remove('visible');
             setTimeout(() => toast.classList.add('hidden'), 300);
-        }, 3000);
+        }, 3500);
     }
 });

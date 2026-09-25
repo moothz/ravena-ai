@@ -55,6 +55,11 @@ const CommandsHelper = require("./utils/CommandsHelper");
 
 const WEBHOOK_RATE_LIMIT = 120000;
 
+// Caches para Waifuletes (detalhes de personagens e nomes de grupos)
+const waifuDetailsCache = new Map();
+const WAIFU_DETAILS_CACHE_TTL = 5 * 60 * 1000;
+const waifuGroupCache = new Map();
+
 /**
  * Servidor API para o bot WhatsApp
  */
@@ -1721,6 +1726,75 @@ class BotAPI {
 						return { ...c, imageUrl: img };
 					});
 
+					// Enriquecimento com contagem de desejos (wishlists) e dados de casamento/grupo
+					await Promise.all(
+						resultData.data.map(async (c) => {
+							let details = null;
+							const now = Date.now();
+							const cached = waifuDetailsCache.get(c.id);
+							if (cached && now - cached.timestamp < WAIFU_DETAILS_CACHE_TTL) {
+								details = cached.data;
+							} else {
+								try {
+									const detailRes = await axios.get(
+										`${waifuletesUrl}/characters/${encodeURIComponent(c.id)}`,
+										{
+											headers: {
+												Authorization: `Bearer ${waifuletesKey}`,
+												"Content-Type": "application/json"
+											},
+											timeout: 5000
+										}
+									);
+									if (detailRes.data?.data) {
+										details = detailRes.data.data;
+										waifuDetailsCache.set(c.id, { timestamp: now, data: details });
+										if (waifuDetailsCache.size > 2000) {
+											const oldestKey = waifuDetailsCache.keys().next().value;
+											waifuDetailsCache.delete(oldestKey);
+										}
+									}
+								} catch (_) {
+									// Silencioso em caso de falha individual de detalhe
+								}
+							}
+
+							const haremEntry = details?.haremEntries?.[0] || c.haremEntries?.[0];
+							let marriage = null;
+							if (haremEntry) {
+								const spouse =
+									haremEntry.user?.name || details?.owner?.name || c.owner?.name || "Jogador";
+								const groupId = haremEntry.claimedInGroup || c.claimedInGroup;
+								let groupName = "Grupo";
+								if (groupId) {
+									const cachedGroupName = waifuGroupCache.get(groupId);
+									if (cachedGroupName) {
+										groupName = cachedGroupName;
+									} else {
+										try {
+											const g = await this.database.getGroup(groupId);
+											groupName = g?.titulo || g?.name || `Grupo ${groupId.replace(/@.*$/, "")}`;
+											waifuGroupCache.set(groupId, groupName);
+										} catch (_) {
+											groupName = `Grupo ${groupId.replace(/@.*$/, "")}`;
+										}
+									}
+								}
+								marriage = {
+									spouse,
+									spouseId: haremEntry.userId || haremEntry.user?.id,
+									groupId,
+									groupName
+								};
+							}
+
+							c.isClaimed = !!haremEntry || details?.isClaimed || c.isClaimed || false;
+							c.wishlistCount =
+								details?._count?.wishlists ?? c._count?.wishlists ?? c.wishlistCount ?? 0;
+							c.marriage = marriage;
+						})
+					);
+
 					// Ordenação client-side por nome se solicitada
 					if (sortBy === "name") {
 						const isDesc = order === "desc";
@@ -1740,6 +1814,74 @@ class BotAPI {
 				const message =
 					error.response?.data?.message || error.message || "Erro ao consultar personagens.";
 				res.status(status).json({ success: false, error: message });
+			}
+		});
+
+		// Waifuletes Group Name Resolution
+		this.app.get(["/api/waifuletes/group/:groupId", "/api/waifuletes/group"], async (req, res) => {
+			try {
+				const groupId = req.params.groupId || req.query.id;
+				if (!groupId) {
+					return res.status(400).json({ success: false, error: "ID do grupo não informado" });
+				}
+				let name = waifuGroupCache.get(groupId);
+				if (!name) {
+					const g = await this.database.getGroup(groupId);
+					name = g?.titulo || g?.name || `Grupo ${groupId.replace(/@.*$/, "")}`;
+					waifuGroupCache.set(groupId, name);
+				}
+				res.json({ success: true, id: groupId, name });
+			} catch (err) {
+				res.status(500).json({ success: false, error: err.message });
+			}
+		});
+
+		// Waifuletes Single Character Detail Proxy
+		this.app.get("/api/waifuletes/characters/:id", async (req, res) => {
+			const waifuletesUrl = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+			const waifuletesKey = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+			const { id } = req.params;
+
+			try {
+				const response = await axios.get(`${waifuletesUrl}/characters/${encodeURIComponent(id)}`, {
+					headers: {
+						Authorization: `Bearer ${waifuletesKey}`,
+						"Content-Type": "application/json"
+					},
+					timeout: 5000
+				});
+				const charData = response.data?.data;
+				if (charData) {
+					const haremEntry = charData.haremEntries?.[0];
+					let marriage = null;
+					if (haremEntry) {
+						const spouse = haremEntry.user?.name || charData.owner?.name || "Jogador";
+						const groupId = haremEntry.claimedInGroup;
+						let groupName = "Grupo";
+						if (groupId) {
+							let name = waifuGroupCache.get(groupId);
+							if (!name) {
+								const g = await this.database.getGroup(groupId);
+								name = g?.titulo || g?.name || `Grupo ${groupId.replace(/@.*$/, "")}`;
+								waifuGroupCache.set(groupId, name);
+							}
+							groupName = name;
+						}
+						marriage = {
+							spouse,
+							spouseId: haremEntry.userId,
+							groupId,
+							groupName
+						};
+					}
+					charData.isClaimed = !!haremEntry || charData.isClaimed || false;
+					charData.wishlistCount = charData._count?.wishlists || 0;
+					charData.marriage = marriage;
+				}
+				res.json(response.data);
+			} catch (err) {
+				const status = err.response?.status || 500;
+				res.status(status).json({ success: false, error: err.message });
 			}
 		});
 

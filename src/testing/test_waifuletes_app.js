@@ -108,6 +108,70 @@ async function main() {
 		}
 		console.log("✓ Bloqueio de path traversal no proxy de mídia verificado.");
 
+		// Teste 8: Badges (isClaimed, wishlistCount, marriage)
+		console.log("\n[Teste 8] Verificação dos dados de Badges (Casada(o) e # Wishes)");
+		const badgesRes = await axios.get(`${baseUrl}/api/waifuletes/characters?limit=12`);
+		assert.strictEqual(badgesRes.status, 200);
+		const badgesList = badgesRes.data.data.data;
+		assert.ok(badgesList.length > 0, "Lista de personagens não pode estar vazia");
+
+		const sampleBadgeChar = badgesList[0];
+		assert.ok(
+			typeof sampleBadgeChar.wishlistCount === "number",
+			"wishlistCount deve ser um número"
+		);
+		assert.ok(typeof sampleBadgeChar.isClaimed === "boolean", "isClaimed deve ser booleano");
+		console.log(
+			`✓ Exemplo: ${sampleBadgeChar.name} - isClaimed: ${sampleBadgeChar.isClaimed}, wishlistCount: ${sampleBadgeChar.wishlistCount}`
+		);
+
+		// Busca personagem conhecido como casado (touji-fushiguro)
+		const marriedRes = await axios.get(
+			`${baseUrl}/api/waifuletes/characters?search=touji-fushiguro&limit=1`
+		);
+		const marriedChar = marriedRes.data.data.data[0];
+		if (marriedChar && marriedChar.id === "touji-fushiguro") {
+			assert.strictEqual(marriedChar.isClaimed, true, "touji-fushiguro deve ter isClaimed=true");
+			assert.ok(marriedChar.marriage, "touji-fushiguro deve ter objeto marriage");
+			assert.ok(marriedChar.marriage.spouse, "marriage deve conter nome do cônjuge");
+			assert.ok(marriedChar.marriage.groupName, "marriage deve conter nome do grupo");
+			console.log(
+				`✓ Casamento verificado: ${marriedChar.name} casado(a) com ${marriedChar.marriage.spouse} no grupo '${marriedChar.marriage.groupName}'`
+			);
+		}
+
+		// Busca personagem conhecido na wishlist (maomao ou frieren)
+		const wishRes = await axios.get(`${baseUrl}/api/waifuletes/characters?search=maomao&limit=1`);
+		const wishChar = wishRes.data.data.data[0];
+		if (wishChar && wishChar.id === "maomao") {
+			assert.ok(wishChar.wishlistCount >= 1, "maomao deve ter wishlistCount >= 1");
+			console.log(
+				`✓ Wishlists verificadas: ${wishChar.name} está em ${wishChar.wishlistCount} wishlists`
+			);
+		}
+
+		// Teste 9: Endpoint de resolução de grupo
+		console.log("\n[Teste 9] Resolução de nome de grupo (/api/waifuletes/group)");
+		const testGroupId = "120363139279597528@g.us";
+		const groupRes = await axios.get(
+			`${baseUrl}/api/waifuletes/group?id=${encodeURIComponent(testGroupId)}`
+		);
+		assert.strictEqual(groupRes.status, 200);
+		assert.strictEqual(groupRes.data.success, true);
+		assert.ok(groupRes.data.name, "Grupo deve ter nome retornado");
+		console.log(`✓ Grupo ${testGroupId} resolvido com sucesso: '${groupRes.data.name}'`);
+
+		// Teste 10: Endpoint de detalhe de personagem
+		console.log("\n[Teste 10] Detalhe de personagem (/api/waifuletes/characters/:id)");
+		const detailCharRes = await axios.get(`${baseUrl}/api/waifuletes/characters/maomao`);
+		assert.strictEqual(detailCharRes.status, 200);
+		assert.strictEqual(detailCharRes.data.success, true);
+		assert.strictEqual(detailCharRes.data.data.id, "maomao");
+		assert.ok(typeof detailCharRes.data.data.wishlistCount === "number");
+		console.log(
+			`✓ Detalhes de ${detailCharRes.data.data.name} carregados com wishlistCount: ${detailCharRes.data.data.wishlistCount}`
+		);
+
 		console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 🎉");
 	} finally {
 		await botApi.stop();

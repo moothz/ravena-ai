@@ -1556,6 +1556,78 @@
     z-index: 1;
 }
 
+.waifu-married-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(17, 13, 41, 0.88);
+    border: 1px solid rgba(255, 182, 193, 0.6);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    z-index: 2;
+    padding: 0;
+    line-height: 1;
+}
+
+.waifu-married-badge:hover {
+    transform: scale(1.15);
+    border-color: #ff69b4;
+    box-shadow: 0 0 12px rgba(255, 105, 180, 0.65);
+    background: rgba(36, 18, 64, 0.95);
+}
+
+.waifu-married-badge:active {
+    transform: scale(0.95);
+}
+
+.waifu-wishes-badge {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--cyan-neon);
+    background: rgba(9, 7, 20, 0.85);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    border-radius: 4px;
+    padding: 1px 5px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.waifu-wishes-badge:hover {
+    transform: scale(1.08);
+    border-color: var(--cyan-neon);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+    color: #ffffff;
+}
+
+.waifu-wishes-badge .waifu-wishes-icon {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.waifu-wishes-badge .waifu-wishes-count {
+    font-family: var(--font-mono);
+    line-height: 1;
+}
+
 .waifu-card-info {
     padding: 6px 8px;
     display: flex;
@@ -1625,7 +1697,11 @@
     border-radius: 20px;
     padding: 8px 16px;
     color: #ffffff;
-    font-size: 11px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: normal;
+    text-align: center;
+    max-width: 90%;
     font-family: var(--font-mono);
     display: flex;
     align-items: center;
@@ -1635,6 +1711,13 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.waifu-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .waifu-toast.visible {
