@@ -2532,6 +2532,9 @@ class WhatsAppBotGo {
 					}
 
 					this.logger.debug(`[sendMessage] Content is URL! `, { endpoint, payload });
+				} else if (options.linkPreview && /(https?:\/\/[^\s]+)/i.test(content)) {
+					endpoint = "/send/link";
+					payload.text = this.truncateText(content, maxChars, maxLines, maxCharRepeats);
 				} else {
 					endpoint = "/send/text";
 					payload.text = this.truncateText(content, maxChars, maxLines, maxCharRepeats);
@@ -2665,7 +2668,20 @@ class WhatsAppBotGo {
 				payload.caption = this.truncateText(payload.caption, maxChars, maxLines, maxCharRepeats);
 			}
 
-			const response = await this.apiClient.post(endpoint, payload);
+			let response;
+			try {
+				response = await this.apiClient.post(endpoint, payload);
+			} catch (postErr) {
+				if (endpoint === "/send/link") {
+					this.logger.warn(
+						`[${this.id}] Falha ao enviar com link preview (/send/link), enviando via /send/text:`,
+						postErr.message || postErr
+					);
+					response = await this.apiClient.post("/send/text", payload);
+				} else {
+					throw postErr;
+				}
+			}
 			this.loadReport.trackSentMessage(isGroup);
 
 			return {

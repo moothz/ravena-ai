@@ -275,6 +275,90 @@ function parseNameAndLink(inputStr) {
 }
 
 /**
+ * Simplifica o nome oficial do canal quando o usuário não informa um nome personalizado:
+ * - Apenas alfanumérico (letras e números)
+ * - Espaços viram "_"
+ * - Máximo de 3 palavras
+ */
+function simplifyChannelName(nomeOficial, fallback = "canal") {
+	if (!nomeOficial || typeof nomeOficial !== "string") {
+		return fallback;
+	}
+
+	// Remove acentos para garantir caracteres limpos
+	const semAcentos = nomeOficial.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+	// Mantém apenas alfanumérico e espaços (remove pontuação, emojis e símbolos)
+	const apenasAlfaEspaco = semAcentos.replace(/[^a-zA-Z0-9\s]/g, " ");
+
+	// Divide em palavras e pega até 3
+	const palavras = apenasAlfaEspaco
+		.trim()
+		.split(/\s+/)
+		.filter((w) => w.length > 0)
+		.slice(0, 3);
+
+	if (palavras.length === 0) {
+		return fallback;
+	}
+
+	return palavras.join("_");
+}
+
+/**
+ * Encontra o canal que casa com o apelido informado, suportando tanto espaços quanto underscores
+ */
+function matchCanalInGroup(canaisDoGrupo, fullText) {
+	if (!Array.isArray(canaisDoGrupo) || canaisDoGrupo.length === 0 || !fullText) {
+		return { matchedCanal: null, remainder: null };
+	}
+
+	const fullNorm = normalizeString(fullText);
+	const fullNormSpace = fullNorm.replace(/_/g, " ");
+
+	// Ordena por comprimento decrescente para casar nomes mais longos primeiro
+	const sorted = [...canaisDoGrupo].sort(
+		(a, b) => b.apelido_normalizado.length - a.apelido_normalizado.length
+	);
+
+	for (const c of sorted) {
+		const cNorm = c.apelido_normalizado;
+		const cNormSpace = cNorm.replace(/_/g, " ");
+
+		// 1. Casa exato
+		if (fullNorm === cNorm || fullNormSpace === cNormSpace) {
+			return { matchedCanal: c, remainder: null };
+		}
+
+		// 2. Casa prefixo com espaço ou underscore
+		if (fullNorm.startsWith(`${cNorm} `) || fullNorm.startsWith(`${cNorm}_`)) {
+			const remainder = fullText.substring(c.apelido.length).trim();
+			return { matchedCanal: c, remainder: remainder || null };
+		}
+		if (fullNormSpace.startsWith(`${cNormSpace} `)) {
+			const remainder = fullText.substring(c.apelido.length).trim();
+			return { matchedCanal: c, remainder: remainder || null };
+		}
+	}
+
+	// 3. Fallback: tenta casar pelo primeiro argumento
+	const firstArg = fullText.split(/\s+/)[0];
+	const firstArgNorm = normalizeString(firstArg);
+	const firstArgNormSpace = firstArgNorm.replace(/_/g, " ");
+
+	for (const c of sorted) {
+		const cNorm = c.apelido_normalizado;
+		const cNormSpace = cNorm.replace(/_/g, " ");
+		if (firstArgNorm === cNorm || firstArgNormSpace === cNormSpace) {
+			const remainder = fullText.substring(firstArg.length).trim();
+			return { matchedCanal: c, remainder: remainder || null };
+		}
+	}
+
+	return { matchedCanal: null, remainder: null };
+}
+
+/**
  * Parser de data flexível (hoje, ontem, DD/MM/YYYY, YYYY-MM-DD, linguagem natural)
  */
 function parseDateInput(dateExpression) {
@@ -717,79 +801,10 @@ async function buildGroupedReturnMessages(
 		];
 	}
 
-	// Regra de tamanho de bloco
-	let blockSize = 1;
-	if (total >= 4 && total <= 10) {
-		blockSize = 3;
-	} else if (total > 10) {
-		blockSize = 10;
-	}
-
-	// Divide em blocos
-	const blocks = [];
-	for (let i = 0; i < total; i += blockSize) {
-		blocks.push(posts.slice(i, i + blockSize));
-	}
-
-	const separator = "\n------------\n";
-
-	for (let bIndex = 0; bIndex < blocks.length; bIndex++) {
-		const block = blocks[bIndex];
-
-		// Se o bloco tiver tamanho 1 (menos de 4 postagens no dia todo)
-		if (blockSize === 1) {
-			const post = block[0];
-			const postMsg = await createPostReturnMessage(bot, chatId, post, apelido);
-			if (postMsg) returnMessages.push(postMsg);
-			continue;
-		}
-
-		// Para blocos agrupados (3 em 3 ou 10 em 10):
-		// Agrupa textos contíguos em uma mensagem. Mídias seguem separadas com legenda.
-		let currentTextParts = [];
-
-		const flushCurrentText = () => {
-			if (currentTextParts.length > 0) {
-				returnMessages.push(
-					new ReturnMessage({
-						chatId,
-						content: currentTextParts.join(separator)
-					})
-				);
-				currentTextParts = [];
-			}
-		};
-
-		for (const post of block) {
-			if (post.tipo === "texto" || (!post.arquivo && post.texto)) {
-				const horaStr = post.ts
-					? new Date(post.ts).toLocaleTimeString("pt-BR", {
-							timeZone: "America/Sao_Paulo",
-							hour: "2-digit",
-							minute: "2-digit"
-						})
-					: "";
-				const header = horaStr ? `🕒 *[${horaStr}]* ` : "";
-				currentTextParts.push(`${header}${post.texto || ""}`);
-			} else {
-				// Houve mídia: descarrega o texto acumulado antes
-				flushCurrentText();
-				const mediaMsg = await createPostReturnMessage(bot, chatId, post, apelido);
-				if (mediaMsg) returnMessages.push(mediaMsg);
-			}
-		}
-
-		flushCurrentText();
-
-		// Separador entre blocos (exceto após o último bloco)
-		if (bIndex < blocks.length - 1) {
-			returnMessages.push(
-				new ReturnMessage({
-					chatId,
-					content: "------------"
-				})
-			);
-		}
+	// Sem agrupamento: envia cada postagem individualmente
+	for (const post of posts) {
+		const postMsg = await createPostReturnMessage(bot, chatId, post, apelido);
+		if (postMsg) returnMessages.push(postMsg);
 	}
 
 	return returnMessages;
@@ -814,7 +829,10 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 	if (!post.arquivo) {
 		return new ReturnMessage({
 			chatId,
-			content: captionText || `📢 *${apelido}*`
+			content: captionText || `📢 *${apelido}*`,
+			options: {
+				linkPreview: true
+			}
 		});
 	}
 
@@ -826,7 +844,10 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 		// Arquivo não está no disco, envia como texto
 		return new ReturnMessage({
 			chatId,
-			content: `${captionText}\n_(Mídia não disponível no disco)_`.trim()
+			content: `${captionText}\n_(Mídia não disponível no disco)_`.trim(),
+			options: {
+				linkPreview: true
+			}
 		});
 	}
 
@@ -854,7 +875,8 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 					chatId,
 					content: mediaObj,
 					options: {
-						caption: captionText || (isForward ? `📢 *${apelido}*` : "")
+						caption: captionText || (isForward ? `📢 *${apelido}*` : ""),
+						linkPreview: true
 					}
 				});
 			}
@@ -862,14 +884,20 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 			// Fallback para texto se o bot não suportar createMedia
 			return new ReturnMessage({
 				chatId,
-				content: captionText || `📢 *${apelido}*`
+				content: captionText || `📢 *${apelido}*`,
+				options: {
+					linkPreview: true
+				}
 			});
 		}
 	} catch (err) {
 		logger.error(`[Canais] Erro ao anexar mídia para post ${post.msg_id}:`, err);
 		return new ReturnMessage({
 			chatId,
-			content: captionText || `📢 *${apelido}*`
+			content: captionText || `📢 *${apelido}*`,
+			options: {
+				linkPreview: true
+			}
 		});
 	}
 }
@@ -944,8 +972,30 @@ async function seguirCommand(bot, message, args, group) {
 	const nomeOficial = metadata?.thread_metadata?.name?.text || "Canal sem nome";
 	const descricao = metadata?.thread_metadata?.description?.text || "";
 	const inviteCode = metadata?.thread_metadata?.invite || "";
-	const apelidoFinal = (rawName || nomeOficial).trim();
-	const apelidoNorm = normalizeString(apelidoFinal);
+
+	let apelidoFinal = rawName
+		? rawName.trim()
+		: simplifyChannelName(nomeOficial, inviteCode ? `canal_${inviteCode.slice(0, 6)}` : "canal");
+	let apelidoNorm = normalizeString(apelidoFinal);
+
+	if (!rawName) {
+		let counter = 2;
+		let candidate = apelidoFinal;
+		let candidateNorm = apelidoNorm;
+		while (
+			await database.dbGet(
+				DB_NAME,
+				"SELECT 1 FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
+				[message.group, candidateNorm]
+			)
+		) {
+			candidate = `${apelidoFinal}_${counter}`;
+			candidateNorm = normalizeString(candidate);
+			counter++;
+		}
+		apelidoFinal = candidate;
+		apelidoNorm = candidateNorm;
+	}
 
 	if (apelidoNorm.length < 2 || apelidoNorm.length > 40) {
 		return new ReturnMessage({
@@ -1127,15 +1177,15 @@ async function delCommand(bot, message, args, group) {
 		});
 	}
 
-	const apelidoNorm = normalizeString(targetName);
-
-	const row = await database.dbGet(
+	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
-		"SELECT canal_jid, apelido FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
-		[message.group, apelidoNorm]
+		"SELECT canal_jid, apelido, apelido_normalizado FROM canal_grupos WHERE group_id = ?",
+		[message.group]
 	);
 
-	if (!row) {
+	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
+
+	if (!matchedCanal) {
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
@@ -1143,11 +1193,10 @@ async function delCommand(bot, message, args, group) {
 	}
 
 	// Remove vínculo do grupo
-	await database.dbRun(
-		DB_NAME,
-		"DELETE FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
-		[message.group, apelidoNorm]
-	);
+	await database.dbRun(DB_NAME, "DELETE FROM canal_grupos WHERE group_id = ? AND canal_jid = ?", [
+		message.group,
+		matchedCanal.canal_jid
+	]);
 
 	await refreshTrackedChannelsCache();
 
@@ -1155,24 +1204,26 @@ async function delCommand(bot, message, args, group) {
 	const remaining = await database.dbGet(
 		DB_NAME,
 		"SELECT COUNT(*) as count FROM canal_grupos WHERE canal_jid = ?",
-		[row.canal_jid]
+		[matchedCanal.canal_jid]
 	);
 
 	if (!remaining || remaining.count === 0) {
 		// Ninguém mais segue: dá unfollow no WhatsApp
 		try {
-			await bot.apiClient.post("/newsletter/unfollow", { jid: row.canal_jid });
-			logger.info(`[Canais] Instância ${bot.instanceName} deu unfollow no canal ${row.canal_jid}`);
+			await bot.apiClient.post("/newsletter/unfollow", { jid: matchedCanal.canal_jid });
+			logger.info(
+				`[Canais] Instância ${bot.instanceName} deu unfollow no canal ${matchedCanal.canal_jid}`
+			);
 		} catch (unfErr) {
 			logger.warn(
-				`[Canais] Aviso ao dar unfollow em ${row.canal_jid}: ${unfErr.message || unfErr}`
+				`[Canais] Aviso ao dar unfollow em ${matchedCanal.canal_jid}: ${unfErr.message || unfErr}`
 			);
 		}
 	}
 
 	return new ReturnMessage({
 		chatId,
-		content: `✅ O canal *${row.apelido}* deixou de ser seguido neste grupo.\n_(As mídias já salvas foram preservadas no banco de dados)._`
+		content: `✅ O canal *${matchedCanal.apelido}* deixou de ser seguido neste grupo.\n_(As mídias já salvas foram preservadas no banco de dados)._`
 	});
 }
 
@@ -1197,27 +1248,27 @@ async function encaminharCommand(bot, message, args, group) {
 		});
 	}
 
-	const apelidoNorm = normalizeString(targetName);
-
-	const row = await database.dbGet(
+	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
-		"SELECT canal_jid, apelido, encaminhar FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
-		[message.group, apelidoNorm]
+		"SELECT canal_jid, apelido, apelido_normalizado, encaminhar FROM canal_grupos WHERE group_id = ?",
+		[message.group]
 	);
 
-	if (!row) {
+	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
+
+	if (!matchedCanal) {
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
 		});
 	}
 
-	const novoStatus = row.encaminhar === 1 ? 0 : 1;
+	const novoStatus = matchedCanal.encaminhar === 1 ? 0 : 1;
 
 	await database.dbRun(
 		DB_NAME,
 		"UPDATE canal_grupos SET encaminhar = ? WHERE group_id = ? AND canal_jid = ?",
-		[novoStatus, message.group, row.canal_jid]
+		[novoStatus, message.group, matchedCanal.canal_jid]
 	);
 
 	await refreshTrackedChannelsCache();
@@ -1225,12 +1276,12 @@ async function encaminharCommand(bot, message, args, group) {
 	if (novoStatus === 1) {
 		return new ReturnMessage({
 			chatId,
-			content: `⏩ *Encaminhamento ativado!* As novas postagens do canal *${row.apelido}* serão encaminhadas automaticamente para este grupo em tempo real.\n\n_Para desativar, use novamente:_ \`!canal-encaminhar ${row.apelido}\``
+			content: `⏩ *Encaminhamento ativado!* As novas postagens do canal *${matchedCanal.apelido}* serão encaminhadas automaticamente para este grupo em tempo real.\n\n_Para desativar, use novamente:_ \`!canal-encaminhar ${matchedCanal.apelido}\``
 		});
 	} else {
 		return new ReturnMessage({
 			chatId,
-			content: `⏹️ *Encaminhamento desativado.* As postagens do canal *${row.apelido}* não serão mais enviadas automaticamente para este grupo.`
+			content: `⏹️ *Encaminhamento desativado.* As postagens do canal *${matchedCanal.apelido}* não serão mais enviadas automaticamente para este grupo.`
 		});
 	}
 }
@@ -1271,32 +1322,7 @@ async function verCommand(bot, message, args, group) {
 	}
 
 	const fullText = args.join(" ").trim();
-	const fullNorm = normalizeString(fullText);
-
-	let matchedCanal = null;
-	let dateStrArg = null;
-
-	// Encontra o apelido que melhor casa com o início do texto
-	// Ordena por comprimento decrescente para casar nomes maiores primeiro (ex: "carros antigos" antes de "carros")
-	canaisDoGrupo.sort((a, b) => b.apelido_normalizado.length - a.apelido_normalizado.length);
-
-	for (const c of canaisDoGrupo) {
-		if (fullNorm === c.apelido_normalizado || fullNorm.startsWith(`${c.apelido_normalizado} `)) {
-			matchedCanal = c;
-			const remainder = fullText.substring(c.apelido.length).trim();
-			dateStrArg = remainder || null;
-			break;
-		}
-	}
-
-	// Se não casou exatamente com o início, tenta pelo primeiro argumento
-	if (!matchedCanal) {
-		const firstArgNorm = normalizeString(args[0]);
-		matchedCanal = canaisDoGrupo.find((c) => c.apelido_normalizado === firstArgNorm);
-		if (matchedCanal) {
-			dateStrArg = args.slice(1).join(" ").trim() || null;
-		}
-	}
+	const { matchedCanal, remainder: dateStrArg } = matchCanalInGroup(canaisDoGrupo, fullText);
 
 	if (!matchedCanal) {
 		const nomesDisponiveis = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
@@ -1325,7 +1351,7 @@ async function verCommand(bot, message, args, group) {
 		}
 	}
 
-	// Busca posts do dia
+	// Busca posts do dia (limite: 10 mais recentes)
 	let query = "SELECT * FROM canal_posts WHERE canal_jid = ? AND dia = ?";
 	const params = [matchedCanal.canal_jid, targetDia];
 
@@ -1335,9 +1361,11 @@ async function verCommand(bot, message, args, group) {
 		params.push(...allowedTypes);
 	}
 
-	query += " ORDER BY ts ASC, msg_id ASC";
+	query += " ORDER BY ts DESC, msg_id DESC LIMIT 10";
 
 	const posts = await database.dbAll(DB_NAME, query, params);
+	// Ordena cronologicamente para exibição no chat
+	posts.reverse();
 
 	const [ano, mes, dia] = targetDia.split("-");
 	const diaFormatado = `${dia}/${mes}/${ano}`;
@@ -1388,29 +1416,7 @@ async function midiasCommand(bot, message, args, group) {
 	}
 
 	const fullText = args.join(" ").trim();
-	const fullNorm = normalizeString(fullText);
-
-	canaisDoGrupo.sort((a, b) => b.apelido_normalizado.length - a.apelido_normalizado.length);
-
-	let matchedCanal = null;
-	let typesRawArg = null;
-
-	for (const c of canaisDoGrupo) {
-		if (fullNorm === c.apelido_normalizado || fullNorm.startsWith(`${c.apelido_normalizado} `)) {
-			matchedCanal = c;
-			const remainder = fullText.substring(c.apelido.length).trim();
-			typesRawArg = remainder || null;
-			break;
-		}
-	}
-
-	if (!matchedCanal) {
-		const firstArgNorm = normalizeString(args[0]);
-		matchedCanal = canaisDoGrupo.find((c) => c.apelido_normalizado === firstArgNorm);
-		if (matchedCanal) {
-			typesRawArg = args.slice(1).join(" ").trim() || null;
-		}
-	}
+	const { matchedCanal, remainder: typesRawArg } = matchCanalInGroup(canaisDoGrupo, fullText);
 
 	if (!matchedCanal) {
 		const nomes = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
@@ -1504,29 +1510,7 @@ async function rndCommand(bot, message, args, group) {
 	}
 
 	const fullText = args.join(" ").trim();
-	const fullNorm = normalizeString(fullText);
-
-	canaisDoGrupo.sort((a, b) => b.apelido_normalizado.length - a.apelido_normalizado.length);
-
-	let matchedCanal = null;
-	let typesRawArg = null;
-
-	for (const c of canaisDoGrupo) {
-		if (fullNorm === c.apelido_normalizado || fullNorm.startsWith(`${c.apelido_normalizado} `)) {
-			matchedCanal = c;
-			const remainder = fullText.substring(c.apelido.length).trim();
-			typesRawArg = remainder || null;
-			break;
-		}
-	}
-
-	if (!matchedCanal) {
-		const firstArgNorm = normalizeString(args[0]);
-		matchedCanal = canaisDoGrupo.find((c) => c.apelido_normalizado === firstArgNorm);
-		if (matchedCanal) {
-			typesRawArg = args.slice(1).join(" ").trim() || null;
-		}
-	}
+	const { matchedCanal, remainder: typesRawArg } = matchCanalInGroup(canaisDoGrupo, fullText);
 
 	if (!matchedCanal) {
 		const nomes = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
@@ -1674,5 +1658,7 @@ module.exports = {
 	buildGroupedReturnMessages,
 	classifyMessageType,
 	refreshTrackedChannelsCache,
+	simplifyChannelName,
+	matchCanalInGroup,
 	MAX_CANAIS_POR_GRUPO
 };

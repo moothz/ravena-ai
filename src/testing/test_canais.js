@@ -14,6 +14,8 @@ const {
 	classifyMessageType,
 	detectPost,
 	refreshTrackedChannelsCache,
+	simplifyChannelName,
+	matchCanalInGroup,
 	MAX_CANAIS_POR_GRUPO
 } = require("../functions/CanaisCommands");
 
@@ -54,6 +56,57 @@ async function runTests() {
 	const resMissing = parseNameAndLink("Apenas um texto qualquer");
 	assert.ok(resMissing.error, "Deve retornar erro quando não há link");
 	console.log("✓ parseNameAndLink validado com sucesso!");
+
+	// -------------------------------------------------------------
+	// 1b. Testes de simplifyChannelName
+	// -------------------------------------------------------------
+	console.log("\n[1b] Testando simplifyChannelName...");
+	assert.strictEqual(simplifyChannelName("Áudios WhatsApp - Oficial"), "Audios_WhatsApp_Oficial");
+	assert.strictEqual(
+		simplifyChannelName("Canal de Notícias do Brasil e Mundo"),
+		"Canal_de_Noticias"
+	);
+	assert.strictEqual(simplifyChannelName("Carros & Motos"), "Carros_Motos");
+	assert.strictEqual(simplifyChannelName("Só 1palavra"), "So_1palavra");
+	assert.strictEqual(simplifyChannelName("   "), "canal");
+	assert.strictEqual(simplifyChannelName("!@#$%", "fallback_canal"), "fallback_canal");
+	console.log("✓ simplifyChannelName validado com sucesso!");
+
+	// -------------------------------------------------------------
+	// 1c. Testes de matchCanalInGroup
+	// -------------------------------------------------------------
+	console.log("\n[1c] Testando matchCanalInGroup...");
+	const canaisExemplo = [
+		{ apelido: "Audios_WhatsApp", apelido_normalizado: "audios_whatsapp" },
+		{ apelido: "Carros", apelido_normalizado: "carros" },
+		{ apelido: "Carros_Antigos", apelido_normalizado: "carros_antigos" }
+	];
+
+	// Casamento com espaço em apelido com underscore
+	const match1 = matchCanalInGroup(canaisExemplo, "audios whatsapp");
+	assert.strictEqual(match1.matchedCanal?.apelido, "Audios_WhatsApp");
+	assert.strictEqual(match1.remainder, null);
+
+	// Casamento com underscore
+	const match2 = matchCanalInGroup(canaisExemplo, "audios_whatsapp");
+	assert.strictEqual(match2.matchedCanal?.apelido, "Audios_WhatsApp");
+
+	// Casamento com argumento restante (data)
+	const match3 = matchCanalInGroup(canaisExemplo, "audios whatsapp 25/09/2026");
+	assert.strictEqual(match3.matchedCanal?.apelido, "Audios_WhatsApp");
+	assert.strictEqual(match3.remainder, "25/09/2026");
+
+	// Prioridade do nome mais longo (Carros_Antigos vs Carros)
+	const match4 = matchCanalInGroup(canaisExemplo, "carros antigos hoje");
+	assert.strictEqual(match4.matchedCanal?.apelido, "Carros_Antigos");
+	assert.strictEqual(match4.remainder, "hoje");
+
+	// Casamento quando nome é digitado simples
+	const match5 = matchCanalInGroup(canaisExemplo, "carros hoje");
+	assert.strictEqual(match5.matchedCanal?.apelido, "Carros");
+	assert.strictEqual(match5.remainder, "hoje");
+
+	console.log("✓ matchCanalInGroup validado com sucesso!");
 
 	// -------------------------------------------------------------
 	// 2. Testes de parseMediaTypes
@@ -157,11 +210,7 @@ async function runTests() {
 	assert.ok(msgs2[0].content.includes("Post 1"));
 	assert.ok(msgs2[1].content.includes("Post 2"));
 
-	// Caso C: 5 postagens (4 a 10) -> blocos de 3 com separador
-	// Bloco 1: 3 posts de texto -> 1 mensagem com '------------'
-	// Separador de bloco: 1 mensagem com '------------'
-	// Bloco 2: 2 posts de texto -> 1 mensagem com '------------'
-	// Total: 3 mensagens enviadas
+	// Caso C: 5 postagens -> 5 mensagens individuais (sem agrupamento)
 	const posts5 = [
 		{ msg_id: "p1", tipo: "texto", texto: "Msg 1", ts: 1700000000000 },
 		{ msg_id: "p2", tipo: "texto", texto: "Msg 2", ts: 1700001000000 },
@@ -176,43 +225,35 @@ async function runTests() {
 		"CanalTeste",
 		"25/09/2026"
 	);
-	// Bloco 1 (p1, p2, p3) + Separador + Bloco 2 (p4, p5) = 3 mensagens
 	assert.strictEqual(
 		msgs5.length,
-		3,
-		"5 posts de texto agrupados a cada 3 devem gerar 3 mensagens (bloco1, separador, bloco2)"
+		5,
+		"Sem agrupamento, 5 posts devem gerar exatamente 5 mensagens individuais"
 	);
-	assert.ok(msgs5[0].content.includes("Msg 1") && msgs5[0].content.includes("Msg 3"));
-	assert.strictEqual(msgs5[1].content, "------------");
-	assert.ok(msgs5[2].content.includes("Msg 4") && msgs5[2].content.includes("Msg 5"));
+	assert.ok(msgs5[0].content.includes("Msg 1"));
+	assert.strictEqual(msgs5[0].options?.linkPreview, true);
+	assert.ok(msgs5[4].content.includes("Msg 5"));
+	assert.strictEqual(msgs5[4].options?.linkPreview, true);
 
-	// Caso D: 12 postagens (> 10) -> blocos de 10
-	// Bloco 1: 10 posts de texto -> 1 msg
-	// Separador: 1 msg
-	// Bloco 2: 2 posts de texto -> 1 msg
-	// Total: 3 mensagens
-	const posts12 = Array.from({ length: 12 }, (_, i) => ({
+	// Caso D: 10 postagens -> 10 mensagens individuais
+	const posts10 = Array.from({ length: 10 }, (_, i) => ({
 		msg_id: `id_${i + 1}`,
 		tipo: "texto",
 		texto: `Notícia ${i + 1}`,
 		ts: 1700000000000 + i * 100000
 	}));
-	const msgs12 = await buildGroupedReturnMessages(
+	const msgs10 = await buildGroupedReturnMessages(
 		fakeBot,
 		"grp@g.us",
-		posts12,
+		posts10,
 		"CanalTeste",
 		"25/09/2026"
 	);
-	assert.strictEqual(
-		msgs12.length,
-		3,
-		"12 posts devem gerar 3 mensagens: bloco de 10, separador, bloco de 2"
-	);
-	assert.ok(msgs12[0].content.includes("Notícia 1") && msgs12[0].content.includes("Notícia 10"));
-	assert.strictEqual(msgs12[1].content, "------------");
-	assert.ok(msgs12[2].content.includes("Notícia 11") && msgs12[2].content.includes("Notícia 12"));
-	console.log("✓ Regra de agrupamento validada com sucesso!");
+	assert.strictEqual(msgs10.length, 10, "10 posts devem gerar 10 mensagens individuais");
+	assert.ok(msgs10[0].content.includes("Notícia 1"));
+	assert.ok(msgs10[9].content.includes("Notícia 10"));
+	assert.strictEqual(msgs10[0].options?.linkPreview, true);
+	console.log("✓ Envio individual (sem agrupamento) validado com sucesso!");
 
 	// -------------------------------------------------------------
 	// 6. Teste de banco de dados e isolamento multi-grupo
@@ -317,6 +358,44 @@ async function runTests() {
 		"detectPost deve retornar false para canais não monitorados"
 	);
 
+	// Testa verCommand com limite de 10 posts mais recentes
+	const { commands } = require("../functions/CanaisCommands");
+	const cmdVer = commands.find((c) => c.name === "canal-ver");
+	assert.ok(cmdVer, "Comando canal-ver deve existir");
+
+	await database.dbRun(DB_NAME, "DELETE FROM canal_posts WHERE canal_jid = ?", [testCanalJid]);
+
+	const hojeStr = parseDateInput("hoje");
+	for (let i = 1; i <= 15; i++) {
+		await database.dbRun(
+			DB_NAME,
+			"INSERT INTO canal_posts (canal_jid, msg_id, ts, dia, tipo, texto) VALUES (?, ?, ?, ?, ?, ?)",
+			[
+				testCanalJid,
+				`LIMIT_TEST_${i}`,
+				1700000000000 + i * 1000,
+				hojeStr,
+				"texto",
+				`Post de teste ${i}`
+			]
+		);
+	}
+
+	const msgVer = createMessage({
+		content: "!canal-ver Carros",
+		group: testGroup1,
+		author: "5511999@s.whatsapp.net"
+	});
+	const resVer = await cmdVer.execute(fakeBot, msgVer, ["Carros"], { id: testGroup1 });
+	assert.strictEqual(
+		resVer.length,
+		10,
+		"canal-ver deve retornar no máximo 10 mensagens individuais para o dia"
+	);
+	assert.ok(resVer[0].content.includes("Post de teste 6"));
+	assert.ok(resVer[9].content.includes("Post de teste 15"));
+	assert.strictEqual(resVer[0].options?.linkPreview, true);
+
 	// Limpeza dos dados de teste
 	await database.dbRun(DB_NAME, "DELETE FROM canal_grupos WHERE canal_jid = ?", [testCanalJid]);
 	await database.dbRun(DB_NAME, "DELETE FROM canais WHERE jid = ?", [testCanalJid]);
@@ -330,7 +409,6 @@ async function runTests() {
 	// -------------------------------------------------------------
 	console.log("\n[7] Testando canal-encaminhar e encaminhamento em tempo real...");
 
-	const { commands } = require("../functions/CanaisCommands");
 	const cmdEncaminhar = commands.find((c) => c.name === "canal-encaminhar");
 	const cmdLista = commands.find((c) => c.name === "canal-lista");
 	assert.ok(cmdEncaminhar, "Comando canal-encaminhar deve existir");
@@ -407,6 +485,11 @@ async function runTests() {
 		"Mensagem deve conter o texto do post"
 	);
 	assert.ok(fwdMsg.content.includes("Carros"), "Mensagem encaminhada deve conter o nome do canal");
+	assert.strictEqual(
+		fwdMsg.options?.linkPreview,
+		true,
+		"Mensagem encaminhada deve ter linkPreview: true"
+	);
 
 	// Executa comando canal-encaminhar para DESATIVAR
 	const resDesativar = await cmdEncaminhar.execute(fakeBot, msgAdmin, ["Carros"], {
