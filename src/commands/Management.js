@@ -4817,7 +4817,7 @@ class Management {
 				return new ReturnMessage({
 					chatId: group.id,
 					content:
-						"Não há categorias silenciadas neste grupo. Use !g-muteCategoria [categoria] para silenciar uma categoria inteira de comandos."
+						"Não há categorias silenciadas neste grupo. Use !g-muteCategoria [categoria] para silenciar uma categoria inteira de comandos (ex: canais, outros, jogos, downloaders, ia, midia, zoeira)."
 				});
 			}
 
@@ -8405,9 +8405,9 @@ const helper = {
 			category: "gerenciamento"
 		},
 		{
-			cmd: "!g-muteCategoria",
-			desc: "Desativa/ativa todos os comandos da categoria especificada",
-			usage: ["!g-muteCategoria"],
+			cmd: "!g-muteCategoria [categoria]",
+			desc: "Desativa/ativa todos os comandos da categoria especificada (ex: canais, outros, jogos, downloaders, ia, etc)",
+			usage: ["!g-muteCategoria canais", "!g-muteCategoria outros"],
 			category: "gerenciamento"
 		},
 		{

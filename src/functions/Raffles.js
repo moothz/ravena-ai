@@ -1025,7 +1025,7 @@ const commands = [
 		aliases: ["rifa-seguir", "seguir-rifa", "raffle-follow"],
 		description:
 			"Monitora uma rifa e notifica o grupo ao atingir marcos de vendas (10%, 15%, 25%, 50%, etc).",
-		category: "gerenciamento",
+		category: "busca",
 		cooldown: 5,
 		needsArgs: true,
 		minArgs: 1,
@@ -1039,7 +1039,7 @@ const commands = [
 		name: "raffle-parar",
 		aliases: ["rifa-parar", "deseguir-rifa", "raffle-unfollow"],
 		description: "Para o monitoramento de uma rifa no grupo.",
-		category: "gerenciamento",
+		category: "busca",
 		cooldown: 5,
 		needsArgs: true,
 		minArgs: 1,
@@ -1081,13 +1081,13 @@ const helper = {
 			cmd: "!raffle-seguir <link>",
 			desc: "Inicia o monitoramento de uma rifa com alertas automáticos em 10%, 15%, 25%, 50%, 75%, 90%, 99% e 100%",
 			usage: ["!raffle-seguir https://..."],
-			category: "gerenciamento"
+			category: "busca"
 		},
 		{
 			cmd: "!raffle-parar <link>",
 			desc: "Encerra o monitoramento de uma rifa no grupo",
 			usage: ["!raffle-parar https://..."],
-			category: "gerenciamento"
+			category: "busca"
 		},
 		{
 			cmd: "!raffle-listar",

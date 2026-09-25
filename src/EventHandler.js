@@ -12,6 +12,7 @@ const { PermissionsBitField } = require("discord.js");
 const NSFWPredict = require("./utils/NSFWPredict");
 const MuNewsCommands = require("./functions/MuNewsCommands");
 const HoroscopoCommands = require("./functions/HoroscopoCommands");
+const CanaisCommands = require("./functions/CanaisCommands");
 // const Copa2026 = require("./functions/Copa2026");
 const RankingMessages = require("./functions/RankingMessages");
 const fs = require("fs").promises;
@@ -341,6 +342,9 @@ class EventHandler extends EventEmitter {
 						//   this.logger.error('Erro ao enviar confirmação de Horoscopo:', error);
 						// });
 					}
+
+					// Canais genéricos cadastrados por grupos
+					await CanaisCommands.detectPost(bot, message);
 
 					//await Copa2026.detectCopaGif(message, bot);
 				} catch (error) {

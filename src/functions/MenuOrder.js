@@ -20,7 +20,9 @@ const CATEGORY_EMOJIS = {
 	cultura: "🍿",
 	audio: "🔈",
 	listas: "📜",
-	arquivos: "📂"
+	arquivos: "📂",
+	canais: "📢",
+	outros: "📦"
 };
 
 /**
@@ -28,6 +30,13 @@ const CATEGORY_EMOJIS = {
  * Os comandos não listados aparecem depois na ordem original
  */
 const COMMAND_ORDER = [
+	"canal-seguir",
+	"canal-lista",
+	"canal-ver",
+	"canal-rnd",
+	"canal-midias",
+	"canal-encaminhar",
+	"canal-del",
 	"retrospectiva",
 	"cmd",
 	"ajuda",
@@ -127,6 +136,10 @@ const COMMAND_ORDER = [
 	"radar",
 	"aeroporto",
 	"lastfm",
+	"raffle",
+	"raffle-listar",
+	"raffle-seguir",
+	"raffle-parar",
 	"listas",
 	"lc",
 	"lct",

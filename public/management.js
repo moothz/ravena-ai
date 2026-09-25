@@ -737,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTags('muted-commands-list', groupData.mutedCommands || [], (list) => { groupData.mutedCommands = list; setDirty(true); });
         renderTags('additional-admins-list', groupData.additionalAdmins || [], (list) => { groupData.additionalAdmins = list; setDirty(true); });
 
-        const categories = ["geral","grupo","utilidades","saude","midia","ia","downloaders","jogos","cultura","áudio","tts","busca","listas","arquivos","general","diversao","info","imagens","zoeira"];
+        const categories = ["geral","grupo","utilidades","saude","midia","ia","downloaders","jogos","cultura","áudio","tts","busca","listas","arquivos","canais","outros","general","diversao","info","imagens","zoeira"];
         const mutedList = document.getElementById('muted-categories-list');
         if (mutedList) {
             mutedList.innerHTML = '';
