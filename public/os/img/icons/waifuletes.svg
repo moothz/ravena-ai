@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2d0b5a"/>
+      <stop offset="100%" stop-color="#11052c"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff2e93"/>
+      <stop offset="100%" stop-color="#ff8ac7"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="96" height="96" rx="20" fill="url(#bg)" stroke="#a855f7" stroke-width="2"/>
+  <path d="M48 74 C48 74 22 55 22 36 C22 25 30 18 39 18 C44 18 48 22 48 22 C48 22 52 18 57 18 C66 18 74 25 74 36 C74 55 48 74 48 74 Z" fill="url(#heart)" filter="url(#glow)"/>
+  <polygon points="68,20 71,28 79,31 71,34 68,42 65,34 57,31 65,28" fill="#ffd700"/>
+  <polygon points="30,46 32,51 37,53 32,55 30,60 28,55 23,53 28,51" fill="#ffe066"/>
+</svg>

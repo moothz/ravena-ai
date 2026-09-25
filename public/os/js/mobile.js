@@ -12,6 +12,7 @@ const MobileApp = {
         { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.png',        window: 'stt',        iconFa: 'fa-microphone' },
         { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.png',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
         { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.png',    window: 'fishing',    iconFa: 'fa-fish' },
+        { id: 'waifuletes', label: 'Waifuletes',   icon: 'img/icons/waifuletes.svg', window: 'waifuletes', iconFa: 'fa-heart' },
         { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.png',     window: 'invite',     iconFa: 'fa-envelope' },
         { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
         { id: 'reload',     label: 'Recarregar',   action: 'reload',                 iconFa: 'fa-rotate-right' }
@@ -153,11 +154,13 @@ const MobileApp = {
             this.updateMsgsWidget(initialRate || window.RavenaOS.state.averageMsgsHr || 0);
         }
 
-        // Auto-open status app after 1 second
+        // Auto-open status or requested app after 1 second
         if (this.autoOpenTimer) clearTimeout(this.autoOpenTimer);
         this.autoOpenTimer = setTimeout(() => {
             if (!this.currentAppId) {
-                this.openApp('status');
+                const urlParams = new URLSearchParams(window.location.search);
+                const reqApp = urlParams.get('app');
+                this.openApp(reqApp || 'status');
             }
         }, 1000);
     },

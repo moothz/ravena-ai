@@ -663,3 +663,38 @@
 .mobile-window-body select {
     font-size: 12.5px !important;
 }
+
+/* ========================================================
+   WAIFULETES MOBILE OPTIMIZATIONS
+   ======================================================== */
+.mobile-window-body .waifu-window-container {
+    height: auto;
+    min-height: 100%;
+}
+
+.mobile-window-body .waifu-grid-wrapper {
+    flex: unset;
+    min-height: 380px;
+}
+
+.mobile-window-body .waifu-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+}
+
+.mobile-window-body .waifu-card-name {
+    font-size: 11px !important;
+}
+
+.mobile-window-body .waifu-filters-row {
+    gap: 8px !important;
+}
+
+.mobile-window-body .waifu-pill-group {
+    flex-wrap: wrap;
+}
+
+.mobile-window-body .waifu-pagination-bar {
+    padding: 6px 8px !important;
+    gap: 6px !important;
+}

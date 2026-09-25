@@ -1219,6 +1219,11 @@ class BotAPI {
 		this.app.get("/pesca", servePesca);
 		this.app.get("/fishing", servePesca);
 
+		// Waifuletes app direct route
+		this.app.get(["/waifuletes", "/waifus"], (req, res) => {
+			res.redirect("/?app=waifuletes");
+		});
+
 		// STT API
 		this.app.post(
 			"/api/stt/transcrever",
@@ -1663,6 +1668,101 @@ class BotAPI {
 				await fs.access(filePath);
 				res.setHeader("Cache-Control", "public, max-age=86400, immutable");
 				res.sendFile(filePath);
+			} catch (error) {
+				res.status(404).send("Imagem não encontrada");
+			}
+		});
+
+		// Waifuletes API Endpoints
+		this.app.get("/api/waifuletes/characters", this.generalLimiter, async (req, res) => {
+			const waifuletesUrl = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+			const waifuletesKey = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+
+			try {
+				const { search, gender, rarity, page, limit, sortBy, order } = req.query;
+				const params = {};
+				if (search) params.search = search.toString().trim();
+				if (gender) params.gender = gender.toString().trim();
+				if (rarity) params.rarity = rarity.toString().trim();
+				if (page) params.page = parseInt(page, 10) || 1;
+				if (limit) params.limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+
+				const response = await axios.get(`${waifuletesUrl}/characters`, {
+					params,
+					headers: {
+						Authorization: `Bearer ${waifuletesKey}`,
+						"Content-Type": "application/json"
+					},
+					timeout: 10000
+				});
+
+				const resultData = response.data?.data;
+				if (!resultData) {
+					return res.json(response.data);
+				}
+
+				if (Array.isArray(resultData.data)) {
+					resultData.data = resultData.data.map((c) => {
+						let img = c.imageUrl;
+						if (
+							img &&
+							(img.startsWith("/") ||
+								img.includes("localhost:") ||
+								img.includes("host.docker.internal:"))
+						) {
+							const pathPart = img.replace(/^https?:\/\/[^/]+/, "");
+							const cleanPath = pathPart.startsWith("/media/")
+								? pathPart.slice(7)
+								: pathPart.startsWith("/")
+									? pathPart.slice(1)
+									: pathPart;
+							img = `/api/waifuletes/media/${cleanPath}`;
+						}
+						return { ...c, imageUrl: img };
+					});
+
+					// Ordenação client-side por nome se solicitada
+					if (sortBy === "name") {
+						const isDesc = order === "desc";
+						resultData.data.sort((a, b) => {
+							const comp = (a.name || "").localeCompare(b.name || "", "pt-BR", {
+								sensitivity: "base"
+							});
+							return isDesc ? -comp : comp;
+						});
+					}
+				}
+
+				res.json({ success: true, data: resultData });
+			} catch (error) {
+				this.logger.error("Erro ao consultar personagens do Waifuletes:", error.message);
+				const status = error.response?.status || 500;
+				const message =
+					error.response?.data?.message || error.message || "Erro ao consultar personagens.";
+				res.status(status).json({ success: false, error: message });
+			}
+		});
+
+		this.app.get("/api/waifuletes/media/*mediaPath", async (req, res) => {
+			const waifuletesUrl = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+			const rawPath = req.params.mediaPath;
+			const mediaPath = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
+			if (!mediaPath || mediaPath.includes("..")) {
+				return res.status(400).send("Caminho de mídia inválido");
+			}
+
+			try {
+				const targetUrl = `${waifuletesUrl}/media/${mediaPath}`;
+				const response = await axios({
+					method: "get",
+					url: targetUrl,
+					responseType: "stream",
+					timeout: 10000
+				});
+
+				res.setHeader("Content-Type", response.headers["content-type"] || "image/jpeg");
+				res.setHeader("Cache-Control", "public, max-age=86400");
+				response.data.pipe(res);
 			} catch (error) {
 				res.status(404).send("Imagem não encontrada");
 			}

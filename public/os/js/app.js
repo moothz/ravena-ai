@@ -65,26 +65,32 @@ const RavenaOS = {
             this.fetchServicesStatus()
         ]);
 
-        // Auto-open windows on desktop: Status (top-left, shifted right) and Mensagímetro (bottom-right)
+        // Auto-open windows on desktop: Status (top-left, shifted right) and Mensagímetro (bottom-right), or requested app via query param
         if (!this.state.isMobile && window.WindowManager) {
             setTimeout(() => {
-                // Open Status das Ravenas
-                window.WindowManager.open('status');
+                const urlParams = new URLSearchParams(window.location.search);
+                const reqApp = urlParams.get('app');
+                if (reqApp) {
+                    window.WindowManager.open(reqApp);
+                } else {
+                    // Open Status das Ravenas
+                    window.WindowManager.open('status');
 
-                // Open Mensagímetro positioned safely in the bottom-right corner inside the screen
-                const screenW = window.innerWidth;
-                const screenH = window.innerHeight;
-                const speedoW = 420;
-                const speedoH = 400;
-                const speedoX = Math.max(260, screenW - speedoW - 30);
-                const speedoY = Math.max(20, screenH - speedoH - 60);
+                    // Open Mensagímetro positioned safely in the bottom-right corner inside the screen
+                    const screenW = window.innerWidth;
+                    const screenH = window.innerHeight;
+                    const speedoW = 420;
+                    const speedoH = 400;
+                    const speedoX = Math.max(260, screenW - speedoW - 30);
+                    const speedoY = Math.max(20, screenH - speedoH - 60);
 
-                window.WindowManager.open('speedometer', {
-                    width: `${speedoW}px`,
-                    height: `${speedoH}px`,
-                    x: `${speedoX}px`,
-                    y: `${speedoY}px`
-                });
+                    window.WindowManager.open('speedometer', {
+                        width: `${speedoW}px`,
+                        height: `${speedoH}px`,
+                        x: `${speedoX}px`,
+                        y: `${speedoY}px`
+                    });
+                }
             }, 100);
         }
 
