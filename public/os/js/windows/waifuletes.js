@@ -297,7 +297,14 @@ WindowManager.register('waifuletes', {
 
             const res = await Api.get(`/api/waifuletes/characters?${params.toString()}`);
             const resultData = res?.data;
-            const characters = resultData?.data || [];
+            let characters = resultData?.data || [];
+
+            // Filtro de fallback caso a API ainda não tenha sido reiniciada com o filtro
+            if (this.state.maritalStatus === 'married') {
+                characters = characters.filter((c) => !!(c.isClaimed || c.marriage || c.owner));
+            } else if (this.state.maritalStatus === 'single') {
+                characters = characters.filter((c) => !(c.isClaimed || c.marriage || c.owner));
+            }
 
             this.state.total = resultData?.total || 0;
             this.state.totalPages = Math.max(1, resultData?.totalPages || 1);
@@ -342,7 +349,9 @@ WindowManager.register('waifuletes', {
         const rarityKey = char.baseRarity || char.rarity || 'COMMON';
         const rarityCfg = this.RARITY_CONFIG[rarityKey] || this.RARITY_CONFIG.COMMON;
         const imgSrc = char.imageUrl || '/ravena-help-small.jpg';
-        const isMarried = !!(char.isClaimed || char.marriage);
+        const spouse = char.marriage?.spouse || char.owner?.name || (typeof char.owner === 'string' ? char.owner : null);
+        const groupName = char.marriage?.groupName;
+        const isMarried = !!(char.isClaimed || char.marriage || spouse);
         const wishlistCount = char.wishlistCount ?? 0;
 
         const card = document.createElement('div');
@@ -351,10 +360,10 @@ WindowManager.register('waifuletes', {
 
         // Married badge tooltip text for desktop hover
         let marriedTooltip = 'Casada(o)';
-        if (char.marriage) {
-            const spouse = char.marriage.spouse || 'Outro jogador';
-            const groupName = char.marriage.groupName || 'Grupo';
+        if (spouse && groupName) {
             marriedTooltip = `Casada(o) com ${spouse} no grupo ${groupName}`;
+        } else if (spouse) {
+            marriedTooltip = `Casada(o) com ${spouse}`;
         }
 
         card.innerHTML = `
@@ -421,39 +430,44 @@ WindowManager.register('waifuletes', {
     },
 
     async handleMarriedClick(char, btn, body) {
-        let spouse = char.marriage?.spouse;
+        let spouse = char.marriage?.spouse || char.owner?.name || (typeof char.owner === 'string' ? char.owner : null);
         let groupName = char.marriage?.groupName;
-        const groupId = char.marriage?.groupId;
+        const groupId = char.marriage?.groupId || char.claimedInGroup;
 
-        // Se ainda não temos o nome do grupo ou cônjuge, busca dinamicamente
-        if (!spouse || !groupName) {
-            if (groupId && !groupName) {
-                try {
-                    const groupRes = await Api.get(`/api/waifuletes/group?id=${encodeURIComponent(groupId)}`);
-                    if (groupRes?.data?.name) {
-                        groupName = groupRes.data.name;
-                        if (char.marriage) char.marriage.groupName = groupName;
-                    }
-                } catch (_) {}
-            }
-
-            if (!spouse || !groupName) {
-                try {
-                    const detailRes = await Api.get(`/api/waifuletes/characters/${encodeURIComponent(char.id)}`);
-                    const data = detailRes?.data?.data;
-                    if (data?.marriage) {
-                        spouse = data.marriage.spouse || spouse;
-                        groupName = data.marriage.groupName || groupName;
-                        char.marriage = data.marriage;
-                    }
-                } catch (_) {}
-            }
+        // Se ainda não temos o nome do grupo, busca dinamicamente
+        if (groupId && !groupName) {
+            try {
+                const groupRes = await Api.get(`/api/waifuletes/group?id=${encodeURIComponent(groupId)}`);
+                if (groupRes?.data?.name) {
+                    groupName = groupRes.data.name;
+                    if (!char.marriage) char.marriage = {};
+                    char.marriage.groupName = groupName;
+                }
+            } catch (_) {}
         }
 
-        spouse = spouse || 'Jogador';
-        groupName = groupName || 'Grupo';
+        // Se ainda não temos cônjuge, tenta detalhe individual
+        if (!spouse) {
+            try {
+                const detailRes = await Api.get(`/api/waifuletes/characters/${encodeURIComponent(char.id)}`);
+                const data = detailRes?.data?.data;
+                if (data?.marriage) {
+                    spouse = data.marriage.spouse || spouse;
+                    groupName = data.marriage.groupName || groupName;
+                    char.marriage = data.marriage;
+                } else if (data?.owner?.name) {
+                    spouse = data.owner.name;
+                }
+            } catch (_) {}
+        }
 
-        const toastMsg = `💍 Casada(o) com ${spouse} no grupo ${groupName}`;
+        let toastMsg = '💍 Casada(o)';
+        if (spouse && groupName) {
+            toastMsg = `💍 Casada(o) com ${spouse} no grupo ${groupName}`;
+        } else if (spouse) {
+            toastMsg = `💍 Casada(o) com ${spouse}`;
+        }
+
         btn.title = toastMsg;
         this.showToast(body, toastMsg, '💍');
     },
