@@ -255,6 +255,18 @@
                             <div id="forbidden-words-list" class="tags-container"></div>
                         </div>
 
+                        <!-- Filtro por Expressões Regulares (Regex) -->
+                        <div class="list-manager-section">
+                            <label id="lbl-forbidden-regexes">Filtro por Expressões Regulares (Regex)</label>
+                            <div class="field-hint">Mensagens correspondentes ao regex serão apagadas. Ao lado de cada regex criado, você pode testar se um texto é detectado.</div>
+                            <div class="input-group mt-1">
+                                <input type="text" id="new-forbidden-regex" placeholder="Ex: \b(cassino|aposta)\b ou /padrão/i" class="form-control">
+                                <button type="button" id="add-forbidden-regex" class="btn btn-secondary" title="Adicionar Regex"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div id="regex-error-msg" class="field-hint mt-1" style="color: #e53e3e; display: none;"></div>
+                            <div id="forbidden-regexes-list" class="regex-list-container"></div>
+                        </div>
+
                         <!-- Usuários Proibidos -->
                         <div class="list-manager-section">
                             <label id="lbl-forbidden-users">Usuários com Mensagens Apagadas</label>

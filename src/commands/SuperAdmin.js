@@ -3794,6 +3794,10 @@ Retorne no formato JSON rigoroso:
 					responseMessage += `- *Palavras:* ${group.filters.words.join(", ")}\n`;
 				}
 
+				if (group.filters.regexes && group.filters.regexes.length > 0) {
+					responseMessage += `- *Regexes:* ${group.filters.regexes.length} expressões filtradas\n`;
+				}
+
 				if (group.filters.people && group.filters.people.length > 0) {
 					responseMessage += `- *Pessoas:* ${group.filters.people.length} pessoas filtradas\n`;
 				}

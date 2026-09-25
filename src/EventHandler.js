@@ -25,6 +25,7 @@ const RaffleMonitor = require("./services/RaffleMonitor");
 const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
 const EventEmitter = require("events");
+const { buildRegex } = require("./utils/RegexFilterValidator");
 const {
 	downloadHandler,
 	detectPlatform,
@@ -825,6 +826,34 @@ class EventHandler extends EventEmitter {
 
 						return true;
 					}
+				}
+			}
+		}
+
+		// Verifica filtro de regex
+		const regexList = Array.isArray(filters.regexes)
+			? filters.regexes
+			: Array.isArray(filters.regex)
+				? filters.regex
+				: [];
+		if (regexList.length > 0 && textContent) {
+			for (const pattern of regexList) {
+				try {
+					const regex = buildRegex(pattern);
+					if (regex && regex.test(textContent)) {
+						this.logger.info(
+							`Mensagem filtrada no grupo ${group.id} - corresponde ao regex proibido: ${pattern}`
+						);
+
+						// Deleta a mensagem se possível - não bloqueia
+						message.origin.delete(true).catch((error) => {
+							this.logger.error("Erro ao deletar mensagem filtrada por regex:", error);
+						});
+
+						return true;
+					}
+				} catch (regexErr) {
+					this.logger.error(`Erro ao aplicar regex "${pattern}" no grupo ${group.id}:`, regexErr);
 				}
 			}
 		}

@@ -880,6 +880,131 @@ textarea.form-control {
     color: var(--danger-color);
 }
 
+/* Regex Filter Manager */
+.regex-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 0.6rem;
+}
+
+.regex-empty-msg {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 4px 0;
+}
+
+.regex-row-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    flex-wrap: wrap;
+    transition: border-color 0.2s;
+}
+
+.regex-row-item:hover {
+    border-color: var(--border-highlight);
+}
+
+.regex-pattern-display {
+    display: flex;
+    align-items: center;
+    max-width: 100%;
+}
+
+.regex-pattern-display code {
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--primary-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: monospace;
+    word-break: break-all;
+    border: 1px solid rgba(4, 169, 240, 0.2);
+}
+
+.regex-test-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 220px;
+}
+
+.regex-test-input {
+    flex: 1;
+    font-size: 0.82rem;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color);
+    color: var(--text-highlight);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.regex-test-input:focus {
+    border-color: var(--primary-color);
+}
+
+.regex-test-input.input-match-success {
+    border-color: var(--success-light) !important;
+    background: rgba(37, 211, 102, 0.06);
+}
+
+.regex-test-input.input-match-none {
+    border-color: var(--border-color);
+}
+
+.regex-test-badge {
+    font-size: 0.73rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.regex-test-idle {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.regex-test-match {
+    background: rgba(37, 211, 102, 0.18);
+    border: 1px solid rgba(37, 211, 102, 0.45);
+    color: var(--success-light);
+}
+
+.regex-test-nomatch {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.regex-test-error {
+    background: rgba(229, 62, 62, 0.18);
+    border: 1px solid rgba(229, 62, 62, 0.4);
+    color: #ff7070;
+}
+
+.btn-remove-regex {
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    line-height: 1;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
 .badge-soon {
     background: rgba(246, 173, 85, 0.2);
     border: 1px solid rgba(246, 173, 85, 0.4);

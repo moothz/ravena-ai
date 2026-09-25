@@ -489,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
             paused: 'Status do Bot (Pausado/Ativo)',
             customAIPrompt: 'Personalidade da IA',
             customIgnoresPrefix: 'Comandos sem Prefixo',
-            filters: 'Filtros (Links / NSFW / Palavras)',
+            filters: 'Filtros (Links / NSFW / Palavras / Regex)',
             ignoredNumbers: 'Números Ignorados',
             mutedCategories: 'Categorias Silenciadas',
             mutedCommands: 'Comandos Silenciados',
@@ -517,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupDirtyTracking() {
-        const inputs = els.dashboard.querySelectorAll('input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]), textarea, select');
+        const inputs = els.dashboard.querySelectorAll('input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]):not(.regex-test-input), textarea, select');
         inputs.forEach(input => {
             input.addEventListener('change', () => setDirty(true));
             if (input.tagName === 'TEXTAREA' || input.type === 'text') {
@@ -729,6 +729,11 @@ document.addEventListener('DOMContentLoaded', () => {
             groupData.filters.words = list; setDirty(true);
         });
 
+        renderRegexList('forbidden-regexes-list', groupData.filters?.regexes || [], (list) => {
+            if(!groupData.filters) groupData.filters = {};
+            groupData.filters.regexes = list; setDirty(true);
+        });
+
         renderTags('forbidden-users-list', groupData.filters?.people || [], (list) => { 
             if(!groupData.filters) groupData.filters = {};
             groupData.filters.people = list; setDirty(true);
@@ -852,6 +857,160 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTags(containerId, newList, updateCallback);
             };
             container.appendChild(tag);
+        });
+    }
+
+    function buildRegexClient(input) {
+        if (!input || typeof input !== 'string') return null;
+        const match = input.match(/^\/(.+)\/([gimsuyvd]*)$/);
+        if (match) {
+            return new RegExp(match[1], match[2]);
+        }
+        return new RegExp(input, 'i');
+    }
+
+    function validateRegexClient(patternStr) {
+        if (!patternStr || typeof patternStr !== 'string') {
+            return { valid: false, error: 'O padrão regex não pode estar vazio.' };
+        }
+        const trimmed = patternStr.trim();
+        if (trimmed.length < 2) {
+            return { valid: false, error: 'O regex deve ter pelo menos 2 caracteres.' };
+        }
+        let regex;
+        try {
+            regex = buildRegexClient(trimmed);
+        } catch (err) {
+            return { valid: false, error: `Sintaxe inválida: ${err.message}` };
+        }
+        if (!regex) return { valid: false, error: 'Expressão regular inválida.' };
+
+        try {
+            if (regex.test('')) {
+                return { valid: false, error: 'Regex muito abrangente: casa com texto vazio e apagaria todas as mensagens.' };
+            }
+            if (regex.test(' ')) {
+                return { valid: false, error: 'Regex muito abrangente: casa com espaço e apagaria mensagens com espaços.' };
+            }
+            const neutralSamples = [
+                'olá',
+                'tudo bem?',
+                'bom dia',
+                'boa tarde',
+                'ok, obrigado',
+                'sim, entendi',
+                'não posso agora',
+                'reunião amanhã'
+            ];
+            let neutralMatchCount = 0;
+            for (const sample of neutralSamples) {
+                if (regex.test(sample)) neutralMatchCount++;
+            }
+            if (neutralMatchCount >= 4) {
+                return { valid: false, error: 'Regex muito abrangente: coincide com frases normais do dia a dia.' };
+            }
+        } catch (err) {
+            return { valid: false, error: `Erro ao testar regex: ${err.message}` };
+        }
+
+        return { valid: true, regex };
+    }
+
+    function renderRegexList(containerId, regexList, updateCallback) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!regexList || regexList.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'regex-empty-msg';
+            empty.textContent = 'Nenhum regex configurado.';
+            container.appendChild(empty);
+            return;
+        }
+
+        regexList.forEach((pattern, index) => {
+            const row = document.createElement('div');
+            row.className = 'regex-row-item';
+
+            const patternEl = document.createElement('div');
+            patternEl.className = 'regex-pattern-display';
+            const code = document.createElement('code');
+            code.textContent = pattern;
+            patternEl.appendChild(code);
+
+            const testContainer = document.createElement('div');
+            testContainer.className = 'regex-test-container';
+
+            const testInput = document.createElement('input');
+            testInput.type = 'text';
+            testInput.className = 'form-control regex-test-input';
+            testInput.placeholder = 'Testar se regex detecta...';
+
+            const testBadge = document.createElement('span');
+            testBadge.className = 'regex-test-badge regex-test-idle';
+            testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
+
+            let compiled = null;
+            try {
+                compiled = buildRegexClient(pattern);
+            } catch (e) {
+                // error compiling
+            }
+
+            const runTest = () => {
+                const text = testInput.value;
+                if (!text) {
+                    testBadge.className = 'regex-test-badge regex-test-idle';
+                    testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
+                    testInput.classList.remove('input-match-success', 'input-match-none');
+                    return;
+                }
+                if (!compiled) {
+                    testBadge.className = 'regex-test-badge regex-test-error';
+                    testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Regex inválido';
+                    return;
+                }
+                try {
+                    const matched = compiled.test(text);
+                    if (matched) {
+                        testBadge.className = 'regex-test-badge regex-test-match';
+                        testBadge.innerHTML = '<i class="fas fa-check-circle"></i> Detectou!';
+                        testInput.classList.add('input-match-success');
+                        testInput.classList.remove('input-match-none');
+                    } else {
+                        testBadge.className = 'regex-test-badge regex-test-nomatch';
+                        testBadge.innerHTML = '<i class="fas fa-times-circle"></i> Não detectou';
+                        testInput.classList.add('input-match-none');
+                        testInput.classList.remove('input-match-success');
+                    }
+                } catch (err) {
+                    testBadge.className = 'regex-test-badge regex-test-error';
+                    testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Erro';
+                }
+            };
+
+            testInput.addEventListener('input', runTest);
+
+            testContainer.appendChild(testInput);
+            testContainer.appendChild(testBadge);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-danger btn-xs btn-remove-regex';
+            deleteBtn.title = 'Remover este regex';
+            deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+            deleteBtn.onclick = () => {
+                const newList = regexList.filter((_, i) => i !== index);
+                updateCallback(newList);
+                renderRegexList(containerId, newList, updateCallback);
+            };
+
+            row.appendChild(patternEl);
+            row.appendChild(testContainer);
+            row.appendChild(deleteBtn);
+
+            container.appendChild(row);
         });
     }
 
@@ -1065,6 +1224,68 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 btn.click();
+            }
+        });
+    }
+
+    function setupRegexAdder(btnId, inputId, errorId, containerId) {
+        const btn = document.getElementById(btnId);
+        const input = document.getElementById(inputId);
+        const errorEl = document.getElementById(errorId);
+        if (!btn || !input) return;
+
+        const handleAdd = () => {
+            const val = input.value.trim();
+            if (!val) return;
+
+            if (errorEl) {
+                errorEl.style.display = 'none';
+                errorEl.textContent = '';
+            }
+
+            const validation = validateRegexClient(val);
+            if (!validation.valid) {
+                if (errorEl) {
+                    errorEl.textContent = validation.error;
+                    errorEl.style.display = 'block';
+                } else {
+                    showCustomAlert(validation.error, 'Regex Inválido');
+                }
+                return;
+            }
+
+            if (!groupData.filters) groupData.filters = {};
+            if (!Array.isArray(groupData.filters.regexes)) groupData.filters.regexes = [];
+
+            if (groupData.filters.regexes.includes(val)) {
+                if (errorEl) {
+                    errorEl.textContent = 'Este regex já está na lista.';
+                    errorEl.style.display = 'block';
+                }
+                return;
+            }
+
+            groupData.filters.regexes.push(val);
+            input.value = '';
+            if (errorEl) errorEl.style.display = 'none';
+            setDirty(true);
+
+            renderRegexList(containerId, groupData.filters.regexes, (newList) => {
+                groupData.filters.regexes = newList;
+                setDirty(true);
+            });
+        };
+
+        btn.addEventListener('click', handleAdd);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAdd();
+            }
+        });
+        input.addEventListener('input', () => {
+            if (errorEl && errorEl.style.display !== 'none') {
+                errorEl.style.display = 'none';
             }
         });
     }
@@ -2812,6 +3033,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Tag inputs
         setupListAdder('add-ignored-number', 'new-ignored-number', 'ignoredNumbers');
         setupListAdder('add-forbidden-word', 'new-forbidden-word', 'filters.words');
+        setupRegexAdder('add-forbidden-regex', 'new-forbidden-regex', 'regex-error-msg', 'forbidden-regexes-list');
         setupListAdder('add-forbidden-user', 'new-forbidden-user', 'filters.people');
         setupListAdder('add-muted-command', 'new-muted-command', 'mutedCommands');
         setupListAdder('add-additional-admin', 'new-additional-admin', 'additionalAdmins');

@@ -44,6 +44,7 @@ const GroupMapper = {
 				nsfw: false,
 				links: false,
 				words: [],
+				regexes: [],
 				people: [],
 				allowAdmins: false,
 				allowedLinks: []

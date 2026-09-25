@@ -9,6 +9,7 @@ const Command = require("../models/Command");
 const WebManagement = require("../utils/WebManagement");
 const StreamSystem = require("../StreamSystem");
 const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
+const { validateRegexFilter } = require("../utils/RegexFilterValidator");
 
 class Management {
 	constructor() {
@@ -137,6 +138,11 @@ class Management {
 			"filtro-palavra": {
 				method: "filterWord",
 				description: "Detecta e Apaga mensagens com a palavra/frase especificada"
+			},
+			"filtro-regex": {
+				method: "filterRegex",
+				description:
+					"Detecta e Apaga mensagens que correspondam à expressão regular (regex) especificada"
 			},
 			"filtro-links": {
 				method: "filterLinks",
@@ -1755,6 +1761,7 @@ class Management {
 
   *Comandos de Filtro:*
   *!g-filtro-palavra* <palavra> - Adiciona/remove palavra do filtro
+  *!g-filtro-regex* <expressão> - Adiciona/remove regex do filtro
   *!g-filtro-links* - Ativa/desativa filtro de links
   *!g-filtro-permitirLink* <dominio> - Adiciona/remove ou lista domínios e padrões de links permitidos
   *!g-filtro-linksConfiaveis* - Adiciona ou remove principais sites confiáveis dos links permitidos
@@ -1808,6 +1815,11 @@ class Management {
 				group.filters && group.filters.words && group.filters.words.length > 0
 					? group.filters.words.join(", ")
 					: "Nenhuma palavra filtrada";
+
+			const regexFilters =
+				group.filters && group.filters.regexes && group.filters.regexes.length > 0
+					? group.filters.regexes.map((r) => `\`${r}\``).join(", ")
+					: "Nenhum regex filtrado";
 
 			const linkFiltering = group.filters && group.filters.links ? "Sim" : "Não";
 
@@ -1918,6 +1930,7 @@ class Management {
 
 			infoMessage += `*Filtros:*\n`;
 			infoMessage += `- *Palavras:* ${wordFilters}\n`;
+			infoMessage += `- *Regexes:* ${regexFilters}\n`;
 			infoMessage += `- *Links:* ${linkFiltering}\n`;
 			infoMessage += `- *Permitir Admins:* ${group.filters?.allowAdmins ? "Sim" : "Não"}\n`;
 			if (group.filters?.allowedLinks && group.filters.allowedLinks.length > 0) {
@@ -2288,6 +2301,98 @@ class Management {
 			return new ReturnMessage({
 				chatId: group.id,
 				content: `✅ Palavra adicionada ao filtro: "${word}"\n\n*Palavras filtradas atualmente:*\n${wordFilters}`
+			});
+		}
+	}
+
+	/**
+	 * Adiciona ou remove uma expressão regular (regex) do filtro
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async filterRegex(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content: "❌ Este comando só pode ser usado em grupos."
+			});
+		}
+
+		// Verifica se o bot é admin para filtros efetivos
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			await bot.sendMessage(
+				group.id,
+				"⚠️ Atenção: O bot não é administrador do grupo. Ele não poderá apagar mensagens filtradas. Para usar filtros efetivamente, adicione o bot como administrador."
+			);
+		}
+
+		// Inicializa filtros se não existirem
+		if (!group.filters) {
+			group.filters = {};
+		}
+
+		if (!group.filters.regexes || !Array.isArray(group.filters.regexes)) {
+			group.filters.regexes = [];
+		}
+
+		if (args.length === 0) {
+			// Mostra lista de regexes filtrados atualmente
+			const regexFilters =
+				group.filters.regexes.length > 0
+					? group.filters.regexes.map((r) => `• \`${r}\``).join("\n")
+					: "Nenhum regex filtrado";
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `*Expressões regulares (regex) filtradas atualmente:*\n${regexFilters}\n\nPara adicionar ou remover um regex do filtro, use: !g-filtro-regex <expressão regular>\nExemplo: \`!g-filtro-regex \\b(palavra1|palavra2)\\b\` ou \`!g-filtro-regex /padrão/i\``
+			});
+		}
+
+		const pattern = args.join(" ").trim();
+
+		// Verifica se o regex já está no filtro (para remoção)
+		const index = group.filters.regexes.findIndex((r) => r === pattern);
+
+		if (index !== -1) {
+			// Remove o regex
+			group.filters.regexes.splice(index, 1);
+			await this.database.saveGroup(group);
+
+			const regexFilters =
+				group.filters.regexes.length > 0
+					? group.filters.regexes.map((r) => `• \`${r}\``).join("\n")
+					: "Nenhum regex filtrado";
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `✅ Regex removido do filtro: \`${pattern}\`\n\n*Regex filtrados atualmente:*\n${regexFilters}`
+			});
+		} else {
+			// Valida o regex antes de adicionar
+			const validation = validateRegexFilter(pattern);
+			if (!validation.valid) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `⚠️ Não foi possível adicionar o regex:\n${validation.error}`
+				});
+			}
+
+			// Adiciona o regex
+			group.filters.regexes.push(pattern);
+			await this.database.saveGroup(group);
+
+			const regexFilters =
+				group.filters.regexes.length > 0
+					? group.filters.regexes.map((r) => `• \`${r}\``).join("\n")
+					: "Nenhum regex filtrado";
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `✅ Regex adicionado ao filtro: \`${pattern}\`\n\n*Regex filtrados atualmente:*\n${regexFilters}`
 			});
 		}
 	}
@@ -8338,6 +8443,12 @@ const helper = {
 			cmd: "!g-filtro-palavra",
 			desc: "Detecta e Apaga mensagens com a palavra/frase especificada",
 			usage: ["!g-filtro-palavra"],
+			category: "filtros"
+		},
+		{
+			cmd: "!g-filtro-regex",
+			desc: "Detecta e Apaga mensagens que correspondam à expressão regular (regex) especificada",
+			usage: ["!g-filtro-regex \\b(palavra1|palavra2)\\b", "!g-filtro-regex /padrão/i"],
 			category: "filtros"
 		},
 		{

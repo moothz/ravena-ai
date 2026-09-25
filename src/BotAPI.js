@@ -5,6 +5,7 @@ const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const Logger = require("./utils/Logger");
 const Database = require("./utils/Database");
+const { validateRegexFilter } = require("./utils/RegexFilterValidator");
 const path = require("path");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
@@ -2507,6 +2508,19 @@ class BotAPI {
 						return res
 							.status(400)
 							.json({ success: false, message: "Idioma para tradução não suportado." });
+					}
+				}
+
+				// Validate regex filters
+				if (changes.filters?.regexes && Array.isArray(changes.filters.regexes)) {
+					for (const pattern of changes.filters.regexes) {
+						const validation = validateRegexFilter(pattern);
+						if (!validation.valid) {
+							return res.status(400).json({
+								success: false,
+								message: `Regex inválido "${pattern}": ${validation.error}`
+							});
+						}
 					}
 				}
 

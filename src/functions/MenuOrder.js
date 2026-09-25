@@ -179,6 +179,7 @@ const COMMAND_ORDER = [
 	"notificar-grupoFechado",
 	"notificar-grupoAberto",
 	"filtro-palavra",
+	"filtro-regex",
 	"filtro-links",
 	"filtro-permitirLink",
 	"filtro-linksConfiaveis",
