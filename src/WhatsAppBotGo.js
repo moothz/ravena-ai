@@ -1340,6 +1340,24 @@ class WhatsAppBotGo {
 					});
 				}
 
+				// Registra sticker do Lovecell enviado para rastreamento de denúncias
+				const lovecellStickerId =
+					options.lovecellStickerId ||
+					(typeof contentToSend?.filename === "string" &&
+						contentToSend.filename.match(/^figs_lovecell_(\d+)\.webp$/)?.[1]);
+
+				if (lovecellStickerId && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const StickerScraper = require("./functions/StickerScraper");
+						StickerScraper.recordSentStickerMessage(sentMsgId, lovecellStickerId, message.chatId);
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar Lovecell sent sticker #${lovecellStickerId}: ${regErr.message}`
+						);
+					}
+				}
+
 				if (result && result.id?._serialized) {
 					// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
 					/*
@@ -2126,6 +2144,152 @@ class WhatsAppBotGo {
 		return data;
 	}
 
+	formatQuotedMessageFromContext(contextInfo, chatId, fromMe = false) {
+		if (!contextInfo?.quotedMessage) return null;
+		let quotedContent = contextInfo.quotedMessage;
+
+		// Desembrulha wrappers comuns do WhatsApp (viewOnce, ephemeral, etc.)
+		if (quotedContent.viewOnceMessage?.message) {
+			quotedContent = quotedContent.viewOnceMessage.message;
+		} else if (quotedContent.viewOnceMessageV2?.message) {
+			quotedContent = quotedContent.viewOnceMessageV2.message;
+		} else if (quotedContent.ephemeralMessage?.message) {
+			quotedContent = quotedContent.ephemeralMessage.message;
+		} else if (quotedContent.documentWithCaptionMessage?.message) {
+			quotedContent = quotedContent.documentWithCaptionMessage.message;
+		}
+
+		const stanzaId = contextInfo.stanzaID;
+		const participant = contextInfo.participant;
+		const author = this._normalizeId(participant || chatId);
+		const isGroup = chatId.includes("@g.us");
+
+		let type = "unknown";
+		let content = null;
+		let caption = null;
+		let mediaInfo = null;
+
+		if (quotedContent.conversation) {
+			type = "text";
+			content = quotedContent.conversation;
+		} else if (quotedContent.extendedTextMessage) {
+			type = "text";
+			content = quotedContent.extendedTextMessage.text;
+		} else if (quotedContent.imageMessage) {
+			type = "image";
+			caption = quotedContent.imageMessage.caption;
+			mediaInfo = {
+				mimetype: quotedContent.imageMessage.mimetype,
+				url: quotedContent.imageMessage.url,
+				_mediaDetails: quotedContent.imageMessage
+			};
+			content = mediaInfo;
+		} else if (quotedContent.videoMessage) {
+			type = "video";
+			caption = quotedContent.videoMessage.caption;
+			mediaInfo = {
+				mimetype: quotedContent.videoMessage.mimetype,
+				url: quotedContent.videoMessage.url,
+				seconds: quotedContent.videoMessage.seconds,
+				_mediaDetails: quotedContent.videoMessage
+			};
+			content = mediaInfo;
+		} else if (quotedContent.audioMessage) {
+			type = "audio";
+			mediaInfo = {
+				mimetype: quotedContent.audioMessage.mimetype,
+				url: quotedContent.audioMessage.url,
+				seconds: quotedContent.audioMessage.seconds,
+				_mediaDetails: quotedContent.audioMessage
+			};
+			content = mediaInfo;
+		} else if (quotedContent.stickerMessage) {
+			type = "sticker";
+			mediaInfo = {
+				mimetype: quotedContent.stickerMessage.mimetype,
+				url: quotedContent.stickerMessage.url,
+				_mediaDetails: quotedContent.stickerMessage
+			};
+			content = mediaInfo;
+		} else if (quotedContent.documentMessage) {
+			type = "document";
+			caption = quotedContent.documentMessage.caption;
+			mediaInfo = {
+				mimetype: quotedContent.documentMessage.mimetype,
+				url: quotedContent.documentMessage.url,
+				filename: quotedContent.documentMessage.fileName,
+				title: quotedContent.documentMessage.title,
+				_mediaDetails: quotedContent.documentMessage
+			};
+			content = mediaInfo;
+		}
+
+		const formattedQuoted = {
+			id: stanzaId,
+			fromMe: false,
+			group: isGroup ? chatId : null,
+			from: isGroup ? chatId : author,
+			author,
+			name: "Usuario",
+			pushname: "Usuario",
+			authorName: "Usuario",
+			type,
+			content,
+			body: content,
+			caption,
+			timestamp: Date.now() / 1000,
+			hasMedia: !!mediaInfo,
+			mentions: contextInfo.mentionedJID || [],
+			quotedParticipant: participant,
+			hasQuotedMsg: false,
+			isQuoted: true,
+			downloadMedia: async () => {
+				if (mediaInfo) {
+					try {
+						const downloaded = await this._downloadMediaFromWhatsgo(quotedContent);
+						if (downloaded) {
+							return {
+								mimetype: downloaded.mimetype,
+								url: downloaded.url,
+								data: downloaded.base64,
+								filename: downloaded.filename,
+								isMessageMedia: true
+							};
+						}
+					} catch (e) {
+						this.logger.error(`[downloadMedia quotedFromContext] Falha no download:`, e);
+					}
+				}
+				return null;
+			}
+		};
+
+		formattedQuoted.origin = {
+			mentionedIds: formattedQuoted.mentions,
+			id: {
+				_serialized: `${chatId}_false_${stanzaId}`,
+				fromMe: false,
+				remote: chatId,
+				id: stanzaId,
+				_serialized_v3: stanzaId
+			},
+			key: { remoteJid: chatId, fromMe: false, id: stanzaId },
+			author,
+			from: formattedQuoted.from,
+			react: (emoji) => this.sendReaction(chatId, stanzaId, emoji),
+			delete: async () =>
+				this.deleteMessageByKey({
+					remoteJid: chatId,
+					id: stanzaId,
+					fromMe: false,
+					participant
+				}),
+			body: content
+		};
+
+		return formattedQuoted;
+	}
+
 	async formatMessageFromGo(goMessageData, skipCache = false) {
 		try {
 			if (!goMessageData) {
@@ -2163,6 +2327,8 @@ class WhatsAppBotGo {
 			else if (messageContent.audioMessage) contextInfo = messageContent.audioMessage.contextInfo;
 			else if (messageContent.stickerMessage)
 				contextInfo = messageContent.stickerMessage.contextInfo;
+			else if (messageContent.documentMessage)
+				contextInfo = messageContent.documentMessage.contextInfo;
 
 			const mentions = contextInfo?.mentionedJID ?? [];
 			const quotedMessageId = contextInfo?.quotedMessage ? contextInfo.stanzaID : null;
@@ -2273,6 +2439,7 @@ class WhatsAppBotGo {
 				mentions,
 				quotedParticipant,
 				hasQuotedMsg: !!quotedMessageId,
+				quotedMessageId,
 				isQuoted: goMessageData.isQuoted,
 				isNewsletter: chatId.includes("newsletter"),
 
@@ -2324,7 +2491,18 @@ class WhatsAppBotGo {
 				getQuotedMessage: async () => {
 					this.logger.debug(`[getQuotedMessage] ${quotedMessageId}`);
 					if (quotedMessageId) {
-						return await this.recoverMsgFromCache(quotedMessageId);
+						const cached = await this.recoverMsgFromCache(quotedMessageId);
+						if (cached) {
+							return cached;
+						}
+					}
+					// Fallback: se a mensagem não estiver no cache (bot reiniciou ou expiração),
+					// reconstrói a partir do contextInfo.quotedMessage enviado pelo WhatsApp
+					if (contextInfo?.quotedMessage) {
+						this.logger.debug(
+							`[getQuotedMessage] Recuperando mensagem ${quotedMessageId} via contextInfo.quotedMessage (fallback de cache)`
+						);
+						return this.formatQuotedMessageFromContext(contextInfo, chatId, fromMe);
 					}
 					return null;
 				},

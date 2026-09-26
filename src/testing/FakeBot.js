@@ -197,7 +197,20 @@ class FakeBot {
 					id: stickerId
 				});
 			}
-			results.push({ id: { _serialized: `fake_msg_${Date.now()}` }, ack: 1 });
+			const fakeMsgId = `fake_msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+			const lovecellStickerId =
+				msg.options?.lovecellStickerId ||
+				(typeof msg.content?.filename === "string" &&
+					msg.content.filename.match(/^figs_lovecell_(\d+)\.webp$/)?.[1]);
+
+			if (lovecellStickerId) {
+				try {
+					const StickerScraper = require("../functions/StickerScraper");
+					StickerScraper.recordSentStickerMessage(fakeMsgId, lovecellStickerId, msg.chatId);
+				} catch {}
+			}
+
+			results.push({ id: { _serialized: fakeMsgId }, ack: 1 });
 		}
 		return results;
 	}

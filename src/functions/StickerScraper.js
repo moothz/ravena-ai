@@ -28,7 +28,15 @@ database.getSQLiteDb(
 		last_sent_at TEXT,
 		created_at TEXT
 	);
-	CREATE INDEX IF NOT EXISTS idx_lovecell_stats_sent ON lovecell_stats(sent_count);`
+	CREATE INDEX IF NOT EXISTS idx_lovecell_stats_sent ON lovecell_stats(sent_count);
+	CREATE TABLE IF NOT EXISTS lovecell_sent_stickers (
+		message_id TEXT PRIMARY KEY,
+		sticker_id INTEGER NOT NULL,
+		chat_id TEXT,
+		created_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_stickers_id ON lovecell_sent_stickers(sticker_id);
+	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_created ON lovecell_sent_stickers(created_at);`
 );
 
 // Diretório para armazenar as figurinhas do Lovecell em cache (não indexado pelo git)
@@ -325,6 +333,185 @@ function getStickerStats(stickerId) {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Registra o ID da mensagem enviada associada ao ID da figurinha do Lovecell
+ * @param {string} messageId - ID retornado no envio da mensagem
+ * @param {number|string} stickerId - ID da figurinha no Lovecell
+ * @param {string|null} [chatId=null] - Chat onde foi enviada
+ */
+function recordSentStickerMessage(messageId, stickerId, chatId = null) {
+	if (!messageId || !stickerId) return;
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return;
+
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	try {
+		const now = new Date().toISOString();
+		database.mappers.run(
+			"lovecell",
+			`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, created_at)
+			 VALUES (?, ?, ?, ?)`,
+			[stanzaId, id, chatId ? String(chatId) : null, now]
+		);
+		if (strId !== stanzaId) {
+			database.mappers.run(
+				"lovecell",
+				`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, created_at)
+				 VALUES (?, ?, ?, ?)`,
+				[strId, id, chatId ? String(chatId) : null, now]
+			);
+		}
+	} catch (err) {
+		logger.error(`Erro ao registrar sent sticker message #${id} (${messageId}): ${err.message}`);
+	}
+}
+
+/**
+ * Busca o ID da figurinha correspondente ao ID da mensagem
+ * @param {string} messageId
+ * @returns {number|null}
+ */
+function getStickerIdByMessageId(messageId) {
+	if (!messageId) return null;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	try {
+		const row =
+			database.mappers.get(
+				"lovecell",
+				"SELECT sticker_id FROM lovecell_sent_stickers WHERE message_id = ?",
+				[stanzaId]
+			) ||
+			database.mappers.get(
+				"lovecell",
+				"SELECT sticker_id FROM lovecell_sent_stickers WHERE message_id = ?",
+				[strId]
+			);
+		return row ? row.sticker_id : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Tenta extrair o ID da figurinha do Lovecell a partir da mensagem citada
+ * @param {Object} quotedMsg - Objeto da mensagem citada
+ * @param {string|null} [directQuotedId=null] - ID direto da mensagem citada (stanzaID)
+ * @returns {Promise<number|null>}
+ */
+async function getStickerIdFromMessage(quotedMsg, directQuotedId = null) {
+	// 1. Tenta por directQuotedId
+	if (directQuotedId) {
+		const id = getStickerIdByMessageId(directQuotedId);
+		if (id) return id;
+	}
+
+	// 2. Tenta por quotedMsg.id
+	if (quotedMsg?.id) {
+		const id = getStickerIdByMessageId(quotedMsg.id);
+		if (id) return id;
+	}
+
+	// 3. Tenta por quotedMsg.origin.id._serialized
+	if (quotedMsg?.origin?.id?._serialized) {
+		const id = getStickerIdByMessageId(quotedMsg.origin.id._serialized);
+		if (id) return id;
+	}
+
+	// 4. Tenta por nome do arquivo em content ou caption (se ainda estiver em cache)
+	const filename = quotedMsg?.content?.filename || quotedMsg?.filename;
+	if (typeof filename === "string") {
+		const match = filename.match(/figs_lovecell_(\d+)\.webp/i);
+		if (match) {
+			const id = parseInt(match[1], 10);
+			if (!isNaN(id)) return id;
+		}
+	}
+
+	// 5. Tenta por texto/caption se tiver "Lovecell #12345"
+	const captionOrBody = quotedMsg?.caption || quotedMsg?.body || quotedMsg?.content;
+	if (typeof captionOrBody === "string") {
+		const match = captionOrBody.match(/lovecell(?:\.com\.br\/figurinhas\/|[\s#]+)(\d+)/i);
+		if (match) {
+			const id = parseInt(match[1], 10);
+			if (!isNaN(id)) return id;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Remove uma figurinha do Lovecell: adiciona à blacklist, remove do cache local,
+ * limpa estatísticas e limpa registros de envio
+ * @param {number|string} stickerId
+ * @param {string} [reason="Removido manualmente"]
+ * @returns {Promise<{ success: boolean, deletedFile: boolean, id: number }>}
+ */
+async function removeFromLovecell(stickerId, reason = "Removido manualmente") {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id) || id < 1) {
+		return { success: false, deletedFile: false, id };
+	}
+
+	const cachedPath = getStickerFilePath(id);
+	let deletedFile = false;
+	try {
+		if (fs.existsSync(cachedPath)) {
+			await fs.promises.unlink(cachedPath);
+			deletedFile = true;
+		}
+	} catch (e) {
+		logger.error(`Erro ao remover arquivo da figurinha #${id} do cache: ${e.message}`);
+	}
+
+	// Adiciona à blacklist (também remove de downloadedIds e atualiza SQLite)
+	await addToBlacklist(id, reason);
+
+	// Remove das estatísticas
+	try {
+		database.mappers.run("lovecell", "DELETE FROM lovecell_stats WHERE id = ?", [id]);
+	} catch (err) {
+		logger.warn(`Erro ao deletar stats da figurinha #${id}: ${err.message}`);
+	}
+
+	// Remove do rastreamento de enviadas
+	try {
+		database.mappers.run("lovecell", "DELETE FROM lovecell_sent_stickers WHERE sticker_id = ?", [
+			id
+		]);
+	} catch (err) {
+		logger.warn(`Erro ao deletar sent_stickers da figurinha #${id}: ${err.message}`);
+	}
+
+	return { success: true, deletedFile, id };
+}
+
+/**
+ * Remove múltiplas figurinhas do Lovecell em lote
+ * @param {Array<number|string>} stickerIds
+ * @param {string} [reason="Removido manualmente"]
+ * @returns {Promise<{ removedCount: number, results: Array<{ id: number, success: boolean, deletedFile: boolean }> }>}
+ */
+async function removeMultipleFromLovecell(stickerIds, reason = "Removido manualmente") {
+	if (!Array.isArray(stickerIds)) return { removedCount: 0, results: [] };
+	const uniqueIds = Array.from(
+		new Set(stickerIds.map((id) => parseInt(id, 10)).filter((id) => !isNaN(id) && id > 0))
+	);
+
+	const results = [];
+	for (const id of uniqueIds) {
+		const res = await removeFromLovecell(id, reason);
+		results.push(res);
+	}
+
+	const removedCount = results.filter((r) => r.success).length;
+	return { removedCount, results };
 }
 
 /**
@@ -857,7 +1044,8 @@ function buildStickerReturnMessage(chatId, buffer, stickerId, title, bot, messag
 		options: {
 			sendMediaAsSticker: true,
 			stickerAuthor: bot?.nomeExibir || "ravena",
-			stickerName: title || `Lovecell #${stickerId}`
+			stickerName: title || `Lovecell #${stickerId}`,
+			lovecellStickerId: stickerId
 		}
 	});
 }
@@ -1250,6 +1438,130 @@ if (shouldAutoStartTimer) {
 	startScraperTimer(initialDelay);
 }
 
+/**
+ * Comando para usuários denunciarem uma figurinha do Lovecell para moderação
+ * @param {WhatsAppBot} bot
+ * @param {Object} message
+ * @param {Array<string>} args
+ * @param {Object} group
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function figaDenunciarCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+
+	try {
+		const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		if (!quotedMsg && !message.hasQuotedMsg) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"⚠️ Para denunciar uma figurinha, responda (reply) diretamente a ela com *!figa-denunciar*."
+			});
+		}
+
+		if (quotedMsg && quotedMsg.type !== "sticker") {
+			return new ReturnMessage({
+				chatId,
+				content: "⚠️ A mensagem respondida não é uma figurinha."
+			});
+		}
+
+		const grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
+		if (!grupoLogs) {
+			return new ReturnMessage({
+				chatId,
+				content: "⚠️ O grupo de logs para moderação não está configurado neste bot."
+			});
+		}
+
+		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+		const stickerId = await getStickerIdFromMessage(quotedMsg, directQuotedId);
+
+		// Obter buffer da figurinha
+		let stickerBuffer = null;
+		if (stickerId && isDownloaded(stickerId)) {
+			const cachedPath = getStickerFilePath(stickerId);
+			if (fs.existsSync(cachedPath)) {
+				stickerBuffer = await fs.promises.readFile(cachedPath);
+			}
+		}
+
+		if (!stickerBuffer && quotedMsg?.downloadMedia) {
+			const downloaded = await quotedMsg.downloadMedia().catch(() => null);
+			if (downloaded?.data) {
+				stickerBuffer = Buffer.from(downloaded.data, "base64");
+			}
+		}
+
+		const returnMessages = [];
+		const denunciante = message.authorName || message.name || message.author;
+		const grupoOrigem =
+			group?.name || group?.subject || (message.group ? message.group : "Privado");
+
+		// 1. Mensagem para o grupo de logs: a própria figurinha denunciada
+		if (stickerBuffer && stickerBuffer.length >= MIN_STICKER_BYTES) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: {
+						mimetype: "image/webp",
+						data: stickerBuffer.toString("base64"),
+						filename: stickerId ? `figs_lovecell_${stickerId}.webp` : "denuncia.webp",
+						isMessageMedia: true
+					},
+					options: {
+						sendMediaAsSticker: true,
+						stickerAuthor: "Denúncia",
+						stickerName: stickerId ? `Lovecell #${stickerId}` : "Denúncia"
+					}
+				})
+			);
+		}
+
+		// 2. Mensagem para o grupo de logs: detalhes + link + comando de remoção
+		let logText = "";
+		if (stickerId) {
+			logText =
+				`🚨 *Denúncia de Figurinha Recebida*\n\n` +
+				`👤 *Denunciante:* ${denunciante} (${message.author})\n` +
+				`👥 *Origem:* ${grupoOrigem}\n` +
+				`🆔 *ID Lovecell:* ${stickerId}\n` +
+				`🔗 *Link:* https://lovecell.com.br/figurinhas/${stickerId}\n\n` +
+				`*Comando para remoção imediata:*\n` +
+				`!sa-removerFig ${stickerId}`;
+		} else {
+			logText =
+				`🚨 *Denúncia de Figurinha Recebida*\n\n` +
+				`👤 *Denunciante:* ${denunciante} (${message.author})\n` +
+				`👥 *Origem:* ${grupoOrigem}\n` +
+				`⚠️ *Aviso:* Não foi possível identificar o ID numérico desta figurinha no Lovecell (pode ter sido enviada por outro usuário ou antes do rastreamento ativo).`;
+		}
+
+		returnMessages.push(
+			new ReturnMessage({
+				chatId: grupoLogs,
+				content: logText
+			})
+		);
+
+		// 3. Mensagem para o usuário que denunciou: confirmação educada
+		returnMessages.push(
+			new ReturnMessage({
+				chatId,
+				content: "✅ Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!"
+			})
+		);
+
+		return returnMessages;
+	} catch (error) {
+		logger.error(`Erro ao processar comando figa-denunciar: ${error.message}`, error);
+		return new ReturnMessage({
+			chatId,
+			content: "Ocorreu um erro ao registrar a denúncia. Por favor, tente novamente mais tarde."
+		});
+	}
+}
+
 const commands = [
 	new Command({
 		name: "figa",
@@ -1282,6 +1594,24 @@ const commands = [
 			error: "❌"
 		},
 		method: stickerScraperCommand
+	}),
+
+	new Command({
+		name: "figa-denunciar",
+		description: "Denuncia uma figurinha para o administrador",
+		category: "stickers",
+		group: "lovecell",
+		reply: false,
+		aliases: ["denunciar-figa", "denunciarfiga", "figdenunciar"],
+		hidden: false,
+		caseSensitive: false,
+		cooldown: 5,
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🚨",
+			error: "❌"
+		},
+		method: figaDenunciarCommand
 	})
 ];
 
@@ -1289,12 +1619,18 @@ const helper = {
 	about: "Busca e envia figurinhas sob demanda do portal Lovecell",
 	implementation:
 		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando (configurável por bot via extras.stickers.maxFiga). Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.",
-	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random",
+	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random,denunciar",
 	cmds: [
 		{
 			cmd: "!figa",
 			desc: "Faz scraping da figurinha principal no Lovecell (estático ou animado)",
 			usage: ["!figa", "!figa 4", "!figrandom 2", "!figa 37019"],
+			category: "stickers"
+		},
+		{
+			cmd: "!figa-denunciar",
+			desc: "Denuncia uma figurinha para o administrador",
+			usage: ["!figa-denunciar (em resposta a uma figurinha)"],
 			category: "stickers"
 		}
 	]
@@ -1338,5 +1674,11 @@ module.exports = {
 	initStickerStatsSync,
 	stickerScraperCommand,
 	isForbiddenText,
-	FORBIDDEN_TITLE_PATTERNS
+	FORBIDDEN_TITLE_PATTERNS,
+	recordSentStickerMessage,
+	getStickerIdByMessageId,
+	getStickerIdFromMessage,
+	removeFromLovecell,
+	removeMultipleFromLovecell,
+	figaDenunciarCommand
 };

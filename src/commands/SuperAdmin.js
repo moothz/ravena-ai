@@ -148,6 +148,16 @@ class SuperAdmin {
 			streamsRate: {
 				method: "streamsRate",
 				description: "Exibe métricas de velocidade de busca e rate limit do StreamMonitor"
+			},
+			removerFig: {
+				method: "removerFig",
+				description:
+					"Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)"
+			},
+			"remover-fig": {
+				method: "removerFig",
+				description:
+					"Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)"
 			}
 		};
 
@@ -4871,6 +4881,107 @@ Retorne no formato JSON rigoroso:
 			chatId,
 			content: statusText
 		});
+	}
+
+	/**
+	 * Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas.
+	 * Suporta múltiplos IDs separados por espaço ou vírgula, ou extração por mensagem citada.
+	 * Ex: !sa-removerFig 12345 67890 112233
+	 *
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array<string>} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async removerFig(bot, message, args, group) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.adminUtils.isComuAdmin(message.author, bot)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			const StickerScraper = require("../functions/StickerScraper");
+			const rawIds = [];
+
+			// 1. Extrai IDs dos argumentos (aceita múltiplos separados por espaço ou vírgula)
+			if (args && args.length > 0) {
+				for (const arg of args) {
+					// Separa por vírgula se vier colado tipo "123,456"
+					const parts = arg.split(/[,;\s]+/);
+					for (const p of parts) {
+						const cleaned = p.trim().replace(/^#/, "");
+						if (/^\d+$/.test(cleaned)) {
+							const num = parseInt(cleaned, 10);
+							if (num > 0) rawIds.push(num);
+						}
+					}
+				}
+			}
+
+			// 2. Se nenhum ID veio nos argumentos, tenta extrair da mensagem citada (se houver)
+			if (rawIds.length === 0) {
+				const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+				if (quotedMsg) {
+					// Verifica se o texto da mensagem citada tem links ou IDs Lovecell
+					const quotedText = quotedMsg.body || quotedMsg.content || quotedMsg.caption || "";
+					if (typeof quotedText === "string") {
+						const matches = quotedText.matchAll(
+							/lovecell(?:\.com\.br\/figurinhas\/|[\s#]+)(\d+)|!sa-removerFig\s+(\d+)/gi
+						);
+						for (const m of matches) {
+							const foundId = parseInt(m[1] || m[2], 10);
+							if (!isNaN(foundId) && foundId > 0) rawIds.push(foundId);
+						}
+					}
+
+					// Se ainda não encontrou e for um sticker, usa getStickerIdFromMessage
+					if (rawIds.length === 0 && quotedMsg.type === "sticker") {
+						const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+						const foundId = await StickerScraper.getStickerIdFromMessage(quotedMsg, directQuotedId);
+						if (foundId) rawIds.push(foundId);
+					}
+				}
+			}
+
+			const uniqueIds = Array.from(new Set(rawIds));
+
+			if (uniqueIds.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Informe ao menos um ID numérico de figurinha ou responda a uma figurinha/denúncia.\n" +
+						"*Exemplo:* `!sa-removerFig 12345` ou `!sa-removerFig 12345 67890 112233`"
+				});
+			}
+
+			const removalResult = await StickerScraper.removeMultipleFromLovecell(
+				uniqueIds,
+				`Removido via sa-removerFig por ${message.author}`
+			);
+
+			let responseText = `✅ *Processamento de Remoção Concluído*\n`;
+			responseText += `• Total processado: *${removalResult.removedCount}* figurinha(s)\n\n`;
+
+			for (const res of removalResult.results) {
+				const cacheStatus = res.deletedFile ? "Cache local apagado" : "Não estava em cache";
+				responseText += `• *#${res.id}*: Blacklist NSFW ativada | ${cacheStatus}\n  🔗 https://lovecell.com.br/figurinhas/${res.id}\n`;
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: responseText.trim()
+			});
+		} catch (error) {
+			this.logger.error(`Erro ao executar sa-removerFig: ${error.message}`, error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Ocorreu um erro ao remover a(s) figurinha(s): ${error.message}`
+			});
+		}
 	}
 }
 
