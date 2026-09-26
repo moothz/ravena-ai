@@ -33,11 +33,21 @@ database.getSQLiteDb(
 		message_id TEXT PRIMARY KEY,
 		sticker_id INTEGER NOT NULL,
 		chat_id TEXT,
+		bot_id TEXT,
 		created_at TEXT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_stickers_id ON lovecell_sent_stickers(sticker_id);
 	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_created ON lovecell_sent_stickers(created_at);`
 );
+
+// Garante migração de coluna bot_id em bases existentes
+try {
+	const tableInfo = database.mappers.all("lovecell", "PRAGMA table_info(lovecell_sent_stickers)");
+	const hasBotId = Array.isArray(tableInfo) && tableInfo.some((col) => col.name === "bot_id");
+	if (!hasBotId) {
+		database.mappers.run("lovecell", "ALTER TABLE lovecell_sent_stickers ADD COLUMN bot_id TEXT");
+	}
+} catch {}
 
 // Diretório para armazenar as figurinhas do Lovecell em cache (não indexado pelo git)
 const LOVECELL_DIR = path.join(database.databasePath, "media", "lovecell");
@@ -336,37 +346,100 @@ function getStickerStats(stickerId) {
 }
 
 /**
+ * Extrai o stanzaId limpo de um identificador serializado do WhatsApp
+ * @param {string} msgId
+ * @returns {string}
+ */
+function extractStanzaId(msgId) {
+	if (!msgId || typeof msgId !== "string") return msgId;
+	if (msgId.startsWith("true_") || msgId.startsWith("false_")) {
+		const parts = msgId.split("_");
+		if (parts.length >= 3) {
+			return parts.slice(2).join("_");
+		}
+	}
+	if (msgId.includes("_true_")) {
+		return msgId.split("_true_")[1];
+	}
+	if (msgId.includes("_false_")) {
+		return msgId.split("_false_")[1];
+	}
+	return msgId;
+}
+
+/**
  * Registra o ID da mensagem enviada associada ao ID da figurinha do Lovecell
  * @param {string} messageId - ID retornado no envio da mensagem
  * @param {number|string} stickerId - ID da figurinha no Lovecell
  * @param {string|null} [chatId=null] - Chat onde foi enviada
+ * @param {string|null} [botId=null] - ID da instância do bot que enviou/recebeu a figurinha
  */
-function recordSentStickerMessage(messageId, stickerId, chatId = null) {
+function recordSentStickerMessage(messageId, stickerId, chatId = null, botId = null) {
 	if (!messageId || !stickerId) return;
 	const id = parseInt(stickerId, 10);
 	if (isNaN(id)) return;
 
 	const strId = String(messageId);
-	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+	const stanzaId = extractStanzaId(strId);
 
 	try {
 		const now = new Date().toISOString();
 		database.mappers.run(
 			"lovecell",
-			`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, created_at)
-			 VALUES (?, ?, ?, ?)`,
-			[stanzaId, id, chatId ? String(chatId) : null, now]
+			`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, bot_id, created_at)
+			 VALUES (?, ?, ?, ?, ?)`,
+			[stanzaId, id, chatId ? String(chatId) : null, botId ? String(botId) : null, now]
 		);
 		if (strId !== stanzaId) {
 			database.mappers.run(
 				"lovecell",
-				`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, created_at)
-				 VALUES (?, ?, ?, ?)`,
-				[strId, id, chatId ? String(chatId) : null, now]
+				`INSERT OR REPLACE INTO lovecell_sent_stickers (message_id, sticker_id, chat_id, bot_id, created_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+				[strId, id, chatId ? String(chatId) : null, botId ? String(botId) : null, now]
 			);
 		}
 	} catch (err) {
 		logger.error(`Erro ao registrar sent sticker message #${id} (${messageId}): ${err.message}`);
+	}
+}
+
+/**
+ * Recupera todas as mensagens enviadas/reportadas vinculadas a uma figurinha no SQLite
+ * @param {number|string} stickerId
+ * @returns {Array<{ messageId: string, chatId: string, botId: string|null }>}
+ */
+function getMessagesForSticker(stickerId) {
+	if (!stickerId) return [];
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return [];
+
+	try {
+		const rows = database.mappers.all(
+			"lovecell",
+			"SELECT message_id, chat_id, bot_id FROM lovecell_sent_stickers WHERE sticker_id = ?",
+			[id]
+		);
+		if (!Array.isArray(rows)) return [];
+
+		// Deduplica por chat_id e stanzaId
+		const uniqueMessages = [];
+		const seen = new Set();
+		for (const r of rows) {
+			const stanzaId = extractStanzaId(String(r.message_id));
+			const key = `${r.chat_id}_${stanzaId}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				uniqueMessages.push({
+					messageId: stanzaId,
+					chatId: r.chat_id,
+					botId: r.bot_id || null
+				});
+			}
+		}
+		return uniqueMessages;
+	} catch (err) {
+		logger.error(`Erro ao obter mensagens da figurinha #${id}: ${err.message}`);
+		return [];
 	}
 }
 
@@ -378,7 +451,7 @@ function recordSentStickerMessage(messageId, stickerId, chatId = null) {
 function getStickerIdByMessageId(messageId) {
 	if (!messageId) return null;
 	const strId = String(messageId);
-	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+	const stanzaId = extractStanzaId(strId);
 
 	try {
 		const row =
@@ -456,8 +529,11 @@ async function getStickerIdFromMessage(quotedMsg, directQuotedId = null) {
 async function removeFromLovecell(stickerId, reason = "Removido manualmente") {
 	const id = parseInt(stickerId, 10);
 	if (isNaN(id) || id < 1) {
-		return { success: false, deletedFile: false, id };
+		return { success: false, deletedFile: false, id, associatedMessages: [] };
 	}
+
+	// Obtém mensagens associadas antes de limpar registros do SQLite
+	const associatedMessages = getMessagesForSticker(id);
 
 	const cachedPath = getStickerFilePath(id);
 	let deletedFile = false;
@@ -489,7 +565,7 @@ async function removeFromLovecell(stickerId, reason = "Removido manualmente") {
 		logger.warn(`Erro ao deletar sent_stickers da figurinha #${id}: ${err.message}`);
 	}
 
-	return { success: true, deletedFile, id };
+	return { success: true, deletedFile, id, associatedMessages };
 }
 
 /**
@@ -1477,6 +1553,12 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
 		const stickerId = await getStickerIdFromMessage(quotedMsg, directQuotedId);
 
+		// Vincula a mensagem reportada e a instância do bot ao sticker_id para remoção posterior
+		const targetMsgId = directQuotedId || quotedMsg?.id;
+		if (stickerId && targetMsgId) {
+			recordSentStickerMessage(targetMsgId, stickerId, message.group || chatId, bot?.id || null);
+		}
+
 		// Obter buffer da figurinha
 		let stickerBuffer = null;
 		if (stickerId && isDownloaded(stickerId)) {
@@ -1518,7 +1600,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			);
 		}
 
-		// 2. Mensagem para o grupo de logs: detalhes + link + comando de remoção
+		// 2. Mensagem para o grupo de logs: detalhes + link
 		let logText = "";
 		if (stickerId) {
 			logText =
@@ -1526,9 +1608,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 				`👤 *Denunciante:* ${denunciante} (${message.author})\n` +
 				`👥 *Origem:* ${grupoOrigem}\n` +
 				`🆔 *ID Lovecell:* ${stickerId}\n` +
-				`🔗 *Link:* https://lovecell.com.br/figurinhas/${stickerId}\n\n` +
-				`*Comando para remoção imediata:*\n` +
-				`!sa-removerFig ${stickerId}`;
+				`🔗 *Link:* https://lovecell.com.br/figurinhas/${stickerId}`;
 		} else {
 			logText =
 				`🚨 *Denúncia de Figurinha Recebida*\n\n` +
@@ -1544,7 +1624,17 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			})
 		);
 
-		// 3. Mensagem para o usuário que denunciou: confirmação educada
+		// 3. Mensagem para o grupo de logs: comando isolado para fácil encaminhamento direto ao bot
+		if (stickerId) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: `!sa-removerFig ${stickerId}`
+				})
+			);
+		}
+
+		// 4. Mensagem para o usuário que denunciou: confirmação educada
 		returnMessages.push(
 			new ReturnMessage({
 				chatId,
@@ -1678,6 +1768,7 @@ module.exports = {
 	recordSentStickerMessage,
 	getStickerIdByMessageId,
 	getStickerIdFromMessage,
+	getMessagesForSticker,
 	removeFromLovecell,
 	removeMultipleFromLovecell,
 	figaDenunciarCommand

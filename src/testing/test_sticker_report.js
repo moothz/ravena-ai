@@ -198,8 +198,8 @@ async function runTests() {
 		[],
 		testGroupObj
 	);
-	// Deve enviar 3 mensagens: (1) sticker para logsGroup, (2) texto com !sa-removerFig para logsGroup, (3) confirmação para userGroup
-	assert.strictEqual(bot.capturedMessages.length, 3, "Deve enviar 3 mensagens");
+	// Deve enviar 4 mensagens: (1) sticker para logsGroup, (2) detalhes para logsGroup, (3) comando !sa-removerFig para logsGroup, (4) confirmação para userGroup
+	assert.strictEqual(bot.capturedMessages.length, 4, "Deve enviar 4 mensagens");
 
 	const logStickerMsg = bot.capturedMessages[0];
 	assert.strictEqual(logStickerMsg.chatId, logsGroup, "Msg 1 deve ir para grupoLogs");
@@ -212,11 +212,18 @@ async function runTests() {
 	const logTextMsg = bot.capturedMessages[1];
 	assert.strictEqual(logTextMsg.chatId, logsGroup, "Msg 2 deve ir para grupoLogs");
 	assert.ok(logTextMsg.content.includes("Denúncia de Figurinha Recebida"));
-	assert.ok(logTextMsg.content.includes(`!sa-removerFig ${reportedStickerId}`));
 	assert.ok(logTextMsg.content.includes(`figurinhas/${reportedStickerId}`));
 
-	const userFeedbackMsg = bot.capturedMessages[2];
-	assert.strictEqual(userFeedbackMsg.chatId, userGroup, "Msg 3 deve ir para o grupo do usuário");
+	const logCmdMsg = bot.capturedMessages[2];
+	assert.strictEqual(logCmdMsg.chatId, logsGroup, "Msg 3 deve ir para grupoLogs");
+	assert.strictEqual(
+		logCmdMsg.content.trim(),
+		`!sa-removerFig ${reportedStickerId}`,
+		"Msg 3 deve ser exclusivamente o comando para fácil encaminhamento"
+	);
+
+	const userFeedbackMsg = bot.capturedMessages[3];
+	assert.strictEqual(userFeedbackMsg.chatId, userGroup, "Msg 4 deve ir para o grupo do usuário");
 	assert.ok(
 		userFeedbackMsg.content.includes("Figurinha reportada ao admin"),
 		"Mensagem deve informar que foi reportada ao admin"
@@ -224,12 +231,16 @@ async function runTests() {
 
 	if (fs.existsSync(reportedFilePath)) fs.unlinkSync(reportedFilePath);
 	bot.resetCapture();
-	console.log("✓ Pipeline do comando figa-denunciar validado com sucesso.");
+	console.log(
+		"✓ Pipeline do comando figa-denunciar (com 3 msgs no grupo de logs + 1 no PV/grupo) validado com sucesso."
+	);
 
 	// --------------------------------------------------------------------------
-	// 4. Teste do Comando sa-removerFig no SuperAdmin (Suporte a múltiplos IDs)
+	// 4. Teste do Comando sa-removerFig no SuperAdmin (Múltiplos IDs e Apagar Mensagens)
 	// --------------------------------------------------------------------------
-	console.log("\n4. Testando comando sa-removerFig no SuperAdmin com múltiplos IDs...");
+	console.log(
+		"\n4. Testando comando sa-removerFig no SuperAdmin com múltiplos IDs e deleção automática..."
+	);
 	const superAdmin = new SuperAdmin();
 	const ownerUser = process.env.SUPER_ADMINS ? process.env.SUPER_ADMINS.split(",")[0] : testUser;
 	superAdmin.isSuperAdmin = (author) => author === ownerUser;
@@ -255,12 +266,17 @@ async function runTests() {
 	fs.writeFileSync(pathA, Buffer.alloc(100));
 	fs.writeFileSync(pathB, Buffer.alloc(100));
 
+	// Registra uma mensagem associada ao idA para testar deleção automática
+	const msgIdToDelete = "3EB0DELETE_TEST_123";
+	StickerScraper.recordSentStickerMessage(msgIdToDelete, idA, userGroup, bot.id);
+
 	const msgSuperAdmin = createMessage({
 		content: `!sa-removerFig ${idA} ${idB} ${idC}`,
 		group: logsGroup,
 		author: ownerUser
 	});
 
+	bot.deletedMessages = [];
 	const resSuperAdmin = await superAdmin.removerFig(
 		bot,
 		msgSuperAdmin,
@@ -272,6 +288,15 @@ async function runTests() {
 		resSuperAdmin.content.includes("Total processado: *3* figurinha(s)"),
 		"Deve relatar 3 figurinhas processadas"
 	);
+	assert.ok(
+		resSuperAdmin.content.includes("Mensagens apagadas: *1* ocorrência(s)"),
+		"Deve relatar a mensagem associada apagada"
+	);
+	assert.strictEqual(bot.deletedMessages.length, 1, "Deve ter invocado deleteMessageByKey");
+	assert.strictEqual(bot.deletedMessages[0].id, msgIdToDelete);
+	assert.strictEqual(bot.deletedMessages[0].remoteJid, userGroup);
+	assert.strictEqual(bot.deletedMessages[0].fromMe, true);
+
 	assert.ok(resSuperAdmin.content.includes(`• *#${idA}*`), "Deve listar ID A");
 	assert.ok(resSuperAdmin.content.includes(`• *#${idB}*`), "Deve listar ID B");
 	assert.ok(resSuperAdmin.content.includes(`• *#${idC}*`), "Deve listar ID C");
@@ -280,7 +305,9 @@ async function runTests() {
 	assert.ok(StickerScraper.isBlacklisted(idA), "ID A deve estar na blacklist");
 	assert.ok(StickerScraper.isBlacklisted(idB), "ID B deve estar na blacklist");
 	assert.ok(StickerScraper.isBlacklisted(idC), "ID C deve estar na blacklist");
-	console.log("✓ Comando sa-removerFig com múltiplos argumentos validado com sucesso.");
+	console.log(
+		"✓ Comando sa-removerFig com múltiplos argumentos e deleção automática validado com sucesso."
+	);
 
 	// --------------------------------------------------------------------------
 	// 5. Teste de Reconstrução de Quoted Message (Fallback pós-Restart)

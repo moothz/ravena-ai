@@ -52,6 +52,7 @@ class FakeBot {
 			disableBackup: true,
 			testMode: true
 		});
+		this.database.registerBotInstance(this);
 
 		// Sistema de invite desabilitado
 		this.inviteSystem = null;
@@ -206,7 +207,12 @@ class FakeBot {
 			if (lovecellStickerId) {
 				try {
 					const StickerScraper = require("../functions/StickerScraper");
-					StickerScraper.recordSentStickerMessage(fakeMsgId, lovecellStickerId, msg.chatId);
+					StickerScraper.recordSentStickerMessage(
+						fakeMsgId,
+						lovecellStickerId,
+						msg.chatId,
+						this.id
+					);
 				} catch {}
 			}
 

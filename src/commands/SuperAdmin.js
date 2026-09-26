@@ -4963,8 +4963,86 @@ Retorne no formato JSON rigoroso:
 				`Removido via sa-removerFig por ${message.author}`
 			);
 
+			// Tenta apagar a mensagem no WhatsApp nos grupos/chats onde a figurinha foi enviada ou denunciada
+			let totalDeletedMsgs = 0;
+			const Database = require("../utils/Database");
+			const allBots = this.database?.botInstances || Database.getInstance().botInstances || [];
+
+			for (const res of removalResult.results) {
+				if (Array.isArray(res.associatedMessages) && res.associatedMessages.length > 0) {
+					for (const msg of res.associatedMessages) {
+						if (!msg.chatId || !msg.messageId) continue;
+
+						let targetBot = bot;
+						if (msg.botId) {
+							const foundBot = allBots.find(
+								(b) =>
+									b &&
+									(b.id === msg.botId || b.instanceName === msg.botId || b.nomeExibir === msg.botId)
+							);
+							if (foundBot) {
+								targetBot = foundBot;
+							} else if (bot.otherBots && Array.isArray(bot.otherBots)) {
+								const foundInOther = bot.otherBots.find(
+									(b) => b && (b.id === msg.botId || b.instanceName === msg.botId)
+								);
+								if (foundInOther) targetBot = foundInOther;
+							}
+						}
+
+						if (targetBot && typeof targetBot.deleteMessageByKey === "function") {
+							try {
+								const actualId =
+									typeof targetBot.getActualMsgId === "function"
+										? targetBot.getActualMsgId(msg.messageId)
+										: msg.messageId;
+								await targetBot.deleteMessageByKey({
+									remoteJid: msg.chatId,
+									id: actualId,
+									fromMe: true
+								});
+								totalDeletedMsgs++;
+							} catch (delError) {
+								this.logger.debug(
+									`[sa-removerFig] Erro ignorado ao tentar apagar mensagem ${msg.messageId} em ${msg.chatId}: ${delError.message}`
+								);
+							}
+						}
+					}
+				}
+			}
+
+			// Se o comando foi executado respondendo diretamente a um sticker em um chat/grupo
+			const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+			const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+			if (quotedMsg && quotedMsg.type === "sticker" && (message.group || message.chatId)) {
+				const quotedStanzaId = directQuotedId || quotedMsg.id;
+				if (quotedStanzaId && typeof bot.deleteMessageByKey === "function") {
+					try {
+						const actualId =
+							typeof bot.getActualMsgId === "function"
+								? bot.getActualMsgId(quotedStanzaId)
+								: quotedStanzaId;
+						await bot.deleteMessageByKey({
+							remoteJid: message.group || message.chatId,
+							id: actualId,
+							fromMe: true
+						});
+						totalDeletedMsgs++;
+					} catch (delError) {
+						this.logger.debug(
+							`[sa-removerFig] Erro ignorado ao tentar apagar sticker citado: ${delError.message}`
+						);
+					}
+				}
+			}
+
 			let responseText = `✅ *Processamento de Remoção Concluído*\n`;
-			responseText += `• Total processado: *${removalResult.removedCount}* figurinha(s)\n\n`;
+			responseText += `• Total processado: *${removalResult.removedCount}* figurinha(s)\n`;
+			if (totalDeletedMsgs > 0) {
+				responseText += `• Mensagens apagadas: *${totalDeletedMsgs}* ocorrência(s)\n`;
+			}
+			responseText += `\n`;
 
 			for (const res of removalResult.results) {
 				const cacheStatus = res.deletedFile ? "Cache local apagado" : "Não estava em cache";

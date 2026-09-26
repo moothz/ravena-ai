@@ -1350,7 +1350,12 @@ class WhatsAppBotGo {
 					const sentMsgId = result.id._serialized || result.id.id || result.id;
 					try {
 						const StickerScraper = require("./functions/StickerScraper");
-						StickerScraper.recordSentStickerMessage(sentMsgId, lovecellStickerId, message.chatId);
+						StickerScraper.recordSentStickerMessage(
+							sentMsgId,
+							lovecellStickerId,
+							message.chatId,
+							this.id
+						);
 					} catch (regErr) {
 						this.logger.warn(
 							`[sendReturnMessages] Erro ao registrar Lovecell sent sticker #${lovecellStickerId}: ${regErr.message}`
