@@ -232,15 +232,21 @@ class CoreRepository {
 		const columnMatches = schemaSql.match(/\(([\s\S]*)\)/);
 		if (!columnMatches) return;
 
-		const columns = columnMatches[1]
+		// Remove table-level constraints like UNIQUE(...), PRIMARY KEY(...), FOREIGN KEY(...)
+		const cleanedSql = columnMatches[1].replace(
+			/\b(UNIQUE|PRIMARY\s+KEY|FOREIGN\s+KEY|CHECK|CONSTRAINT)\s*\([^)]*\)/gi,
+			""
+		);
+
+		const columns = cleanedSql
 			.split(",")
-			.map((c) => c.trim().split(/\s+/)[0])
-			.filter(
-				(c) =>
-					c &&
-					!["PRIMARY", "FOREIGN", "CHECK", "UNIQUE", "CONSTRAINT"].includes(c.toUpperCase()) &&
-					!c.startsWith("(")
-			);
+			.map((c) =>
+				c
+					.trim()
+					.split(/\s+/)[0]
+					.replace(/[^a-zA-Z0-9_]/g, "")
+			)
+			.filter((c) => c && !/^(PRIMARY|FOREIGN|CHECK|UNIQUE|CONSTRAINT)/i.test(c));
 
 		try {
 			const rows = this.mappers.all(dbName, `PRAGMA table_info(${tableName})`);

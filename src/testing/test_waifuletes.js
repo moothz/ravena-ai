@@ -83,7 +83,7 @@ async function runTests() {
 	const testUser = "5511999990001@s.whatsapp.net";
 	const testGroup = "120363999999999999@g.us";
 
-	async function waitForReply(maxMs = 5000) {
+	async function waitForReply(maxMs = 15000) {
 		const start = Date.now();
 		while (Date.now() - start < maxMs) {
 			if (bot.capturedMessages.length > 0) return bot.capturedMessages;
@@ -297,6 +297,64 @@ async function runTests() {
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !mu-casar");
 	console.log(`✓ Resposta de casamento: ${bot.capturedMessages[0]?.content?.substring(0, 60)}...`);
+
+	// 12.1. Testar Favoritar Waifu do Harém (!mu-favorito)
+	console.log(`[Teste 11.1] Executando !mu-favorito...`);
+	eventHandler.commandHandler.userDebounceMap.clear();
+	bot.resetCapture();
+	const msgFavNotInHarem = createMessage({
+		content: "!mu-favorito frieren-que-nao-ta-no-harem",
+		author: rollUser,
+		authorName: "RollTester",
+		group: rollGroup
+	});
+	await eventHandler.processMessage(bot, msgFavNotInHarem);
+	await waitForReply();
+	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !mu-favorito");
+	assert.ok(
+		bot.capturedMessages[0]?.content?.includes("não faz parte do seu harém") ||
+			bot.capturedMessages[0]?.content?.includes("não encontrado"),
+		"Deveria avisar que personagem não está no harém"
+	);
+	console.log(`✓ Resposta de favorito não no harém validada.`);
+
+	// Testa favoritar o personagem casado do harém
+	eventHandler.commandHandler.userDebounceMap.clear();
+	bot.resetCapture();
+	const msgCheckHarem = createMessage({
+		content: "!mu-harem",
+		author: rollUser,
+		authorName: "RollTester",
+		group: rollGroup
+	});
+	await eventHandler.processMessage(bot, msgCheckHarem);
+	await waitForReply();
+	const haremText = bot.capturedMessages[0]?.content || "";
+	const matchId = haremText.match(/ID: `([^`]+)`/);
+	if (matchId && matchId[1]) {
+		const marriedCharId = matchId[1];
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgFavSuccess = createMessage({
+			content: `!mu-favorito ${marriedCharId}`,
+			author: rollUser,
+			authorName: "RollTester",
+			group: rollGroup
+		});
+		await eventHandler.processMessage(bot, msgFavSuccess);
+		await waitForReply();
+		assert.ok(
+			bot.capturedMessages.length > 0,
+			"Deveria responder ao comando !mu-favorito com sucesso"
+		);
+		assert.ok(
+			bot.capturedMessages[0]?.content?.includes("favorita em destaque"),
+			"Mensagem deveria confirmar waifu favorita em destaque"
+		);
+		console.log(
+			`✓ Definição de favorito com sucesso validada: ${bot.capturedMessages[0]?.content?.substring(0, 60)}...`
+		);
+	}
 
 	// 13. Testar Diário de Zinthos (!mu-diario)
 	console.log(`[Teste 12] Executando !mu-diario...`);

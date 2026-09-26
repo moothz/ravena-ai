@@ -266,7 +266,10 @@ async function downloadImageAsBase64(imageUrl) {
  * @returns {ReturnMessage}
  */
 function handleApiError(err, chatId, defaultMsg) {
-	const apiErr = err.response?.data?.error;
+	const resData = err.response?.data;
+	const apiErr =
+		typeof resData?.error === "object" && resData?.error !== null ? resData.error : null;
+
 	if (apiErr?.code === "COOLDOWN_ACTIVE") {
 		return new ReturnMessage({
 			chatId,
@@ -278,13 +281,21 @@ function handleApiError(err, chatId, defaultMsg) {
 		LOCK_EXPIRED: "⌛ A janela de 120 segundos para casar expirou!",
 		CHARACTER_ALREADY_CLAIMED: "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
-		WISHLIST_LIMIT_REACHED: "⚠️ Sua wishlist está cheia (máximo de 100). Remova um item antes.",
+		NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
+		WISHLIST_LIMIT_REACHED: `⚠️ Sua wishlist está cheia (máximo de ${WISHLIST_MAX_ITEMS}). Remova um item antes com \`!mu-removerdesejo <id>\`.`,
+		ENTRY_NOT_FOUND: "🔍 Este personagem não está na sua Wishlist.",
 		CHARACTER_NOT_FOUND: "🔍 Personagem não encontrado. Verifique o ID informado.",
 		USER_NOT_FOUND: "👤 Usuário não cadastrado ainda. Use *!mu-roll* para começar!"
 	};
 
-	const message = (apiErr?.code && customMsgs[apiErr.code]) || apiErr?.message || defaultMsg;
-	logger.error("Erro na chamada Waifuletes:", apiErr || err.message);
+	const message =
+		(apiErr?.code && customMsgs[apiErr.code]) ||
+		apiErr?.message ||
+		resData?.message ||
+		(typeof resData?.error === "string" ? resData.error : null) ||
+		defaultMsg;
+
+	logger.error("Erro na chamada Waifuletes:", apiErr || resData?.message || err.message);
 	return new ReturnMessage({ chatId, content: `❌ ${message}` });
 }
 
@@ -496,7 +507,7 @@ async function divorciarWaifu(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const characterId = args.join(" ").trim();
 
 	try {
 		const { data } = await api.post("/divorce", { userId, characterId });
@@ -526,7 +537,7 @@ async function likeWaifu(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const characterId = args.join(" ").trim();
 
 	try {
 		const { data } = await api.post("/like", { userId, characterId });
@@ -746,7 +757,7 @@ async function adicionarDesejo(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const characterId = args.join(" ").trim();
 
 	try {
 		await ensureUser(userId, groupId, name);
@@ -778,10 +789,10 @@ async function removerDesejo(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const characterId = args.join(" ").trim();
 
 	try {
-		await api.delete(`/wishlist/${userId}/${characterId}`);
+		await api.delete(`/wishlist/${encodeURIComponent(userId)}/${encodeURIComponent(characterId)}`);
 		return new ReturnMessage({
 			chatId,
 			content: `🗑️ Personagem \`${characterId}\` removido da sua Wishlist (limite de até ${WISHLIST_MAX_ITEMS}).`
@@ -806,13 +817,41 @@ async function definirFavorita(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const rawInput = args.join(" ").trim();
+	let targetId = rawInput;
 
 	try {
-		const { data } = await api.patch(`/harem/${userId}/${characterId}/favorite`);
+		// Tenta resolver o personagem por slug ou nome para obter o ID exato
+		try {
+			const { data: charData } = await api.get(`/characters/${encodeURIComponent(rawInput)}`, {
+				timeout: 4000
+			});
+			if (charData?.data?.id) {
+				targetId = charData.data.id;
+			}
+		} catch (_) {
+			try {
+				const { data: searchData } = await api.get("/characters", {
+					params: { search: rawInput, limit: 1 },
+					timeout: 4000
+				});
+				if (searchData?.data?.data?.[0]?.id) {
+					targetId = searchData.data.data[0].id;
+				}
+			} catch (__) {
+				// Mantém targetId original
+			}
+		}
+
+		const { data } = await api.patch(
+			`/harem/${encodeURIComponent(userId)}/${encodeURIComponent(targetId)}/favorite`,
+			{}
+		);
+		const msgText =
+			data.data?.message || `⭐ *${targetId}* foi definida como sua waifu favorita em destaque!`;
 		return new ReturnMessage({
 			chatId,
-			content: `⭐ *${data.data.characterName || characterId}* foi definida como sua waifu favorita em destaque!`
+			content: msgText
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao definir favorito.");
@@ -1074,10 +1113,10 @@ async function detalhesPersonagem(bot, message, args) {
 		});
 	}
 
-	const characterId = args[0].trim();
+	const characterId = args.join(" ").trim();
 
 	try {
-		const { data } = await api.get(`/characters/${characterId}`);
+		const { data } = await api.get(`/characters/${encodeURIComponent(characterId)}`);
 		const char = data.data;
 
 		const rarity = char.baseRarity || char.rarity || "COMMON";
