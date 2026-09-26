@@ -641,6 +641,27 @@ class Database {
 		return this.coreRepo.mergeDonors(targetName, sourceName);
 	}
 
+	// --- Game Events ---
+	async saveGameEvent(event) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveGameEvent() simulado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.saveGameEvent(event);
+	}
+	async deleteGameEvent(game, type) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] deleteGameEvent() simulado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.deleteGameEvent(game, type);
+	}
+	async getActiveGameEvents() {
+		return this.coreRepo.getActiveGameEvents();
+	}
+
 	// --- Pending Joins ---
 
 	async getPendingJoins() {

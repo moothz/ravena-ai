@@ -7,6 +7,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
 const LLMService = require("../services/LLMService");
 const DonorBonusService = require("../services/DonorBonusService");
+const GameEventService = require("../services/GameEventService");
 const { exec } = require("child_process");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,6 +29,8 @@ class SuperAdmin {
 
 		// Mapeamento de comando para método
 		this.commandMap = {
+			evento: { method: "manageGameEvent", description: "Cria ou cancela evento temporário" },
+			eventos: { method: "listGameEvents", description: "Lista eventos temporários ativos" },
 			retrospectiva: { method: "endYearMsg", description: "Retrospectiva" },
 			testeMsg: { method: "testeMsg", description: "Testar Retorno msg" },
 			sendMsg: { method: "sendMsg", description: "Envia mensagem para chatId" },
@@ -198,6 +201,106 @@ class SuperAdmin {
 			return match[1];
 		}
 		return trimmed.replace(/^\/+|\/+$/g, "").split("?")[0];
+	}
+
+	async manageGameEvent(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ *Uso do comando:*\n" +
+						"`!sa-evento <jogo> <tipo> <valor%> <duracao_em_horas>`\n\n" +
+						"📌 *Jogos e Tipos suportados:*\n" +
+						"• *pesca*: `peso` (aumenta o peso dos peixes), `lendario` (aumenta chance de lendários)\n" +
+						"• *waifu*: `raros` (aumenta chance de raros/épicos/lendários), `wish` (aumenta wishlist)\n" +
+						"• *slots*: `vitoria` (aumenta chance de vitória), `moedas` (prêmio em moedas), `iscas` (prêmio em iscas)\n\n" +
+						"📌 *Exemplos:*\n" +
+						"• `!sa-evento pesca peso 15 4` (+15% peso por 4h)\n" +
+						"• `!sa-evento pesca lendario 50 24` (+50% lendários por 24h)\n" +
+						"• `!sa-evento waifus raros 50 12` (+50% raros por 12h)\n" +
+						"• `!sa-evento waifus wish 25 6` (+25% wishlist por 6h)\n" +
+						"• `!sa-evento slots vitoria 30 8` (+30% vitória por 8h)\n" +
+						"• `!sa-evento pesca peso 0` (Cancela o evento)"
+				});
+			}
+
+			const [gameInput, typeInput, valueInput, durationInput] = args;
+			const cleanValue = valueInput ? parseFloat(String(valueInput).replace(",", ".")) : 0;
+			const cleanDuration = durationInput ? parseFloat(String(durationInput).replace(",", ".")) : 0;
+
+			const result = await GameEventService.setEvent(
+				gameInput,
+				typeInput,
+				cleanValue,
+				cleanDuration,
+				message.author
+			);
+
+			return new ReturnMessage({
+				chatId,
+				content: result.message
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando manageGameEvent:", error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao gerenciar evento temporário."
+			});
+		}
+	}
+
+	async listGameEvents(bot, message) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.adminUtils.isComuAdmin(message.author, bot)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas administradores podem usar este comando."
+				});
+			}
+
+			const events = GameEventService.getActiveEvents();
+			if (!events || events.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "ℹ️ Nenhum evento temporário ativo no momento."
+				});
+			}
+
+			let reply = "🎉 *EVENTOS TEMPORÁRIOS ATIVOS:*\n\n";
+			for (const ev of events) {
+				const start = new Date(ev.startTime).toLocaleString("pt-BR", {
+					timeZone: "America/Sao_Paulo"
+				});
+				const end = new Date(ev.endTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+				reply += `🎮 *Jogo:* ${ev.game.toUpperCase()}\n`;
+				reply += `🏷️ *Tipo:* ${ev.type}\n`;
+				reply += `📈 *Bônus:* +${ev.value}% (multiplicador ${ev.multiplier}x)\n`;
+				reply += `⏳ *Expira em:* ${ev.remainingText} (${end})\n`;
+				reply += `📅 *Início:* ${start}\n\n`;
+			}
+			reply += `_Para cancelar: \`!sa-evento <jogo> <tipo> 0\`_`;
+
+			return new ReturnMessage({
+				chatId,
+				content: reply.trim()
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando listGameEvents:", error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao listar eventos temporários."
+			});
+		}
 	}
 
 	async wakeOnLan(bot, message, args) {

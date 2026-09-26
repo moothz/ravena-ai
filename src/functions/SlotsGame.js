@@ -4,6 +4,7 @@ const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const FishingGame = require("./FishingGame");
+const GameEventService = require("../services/GameEventService");
 
 const logger = new Logger("slots-game");
 const database = Database.getInstance();
@@ -247,14 +248,27 @@ async function slotsCommand(bot, message, args, group) {
 
 	// Rola os números
 	const roll1 = Math.floor(Math.random() * SLOT_EMOJIS.length);
-	const roll2 = Math.floor(Math.random() * SLOT_EMOJIS.length);
-	const roll3 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+	let roll2 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+	let roll3 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+
+	let isWin = roll1 === roll2 && roll2 === roll3;
+
+	// Bônus de evento: vitória extra no caça-coisas
+	if (!isWin) {
+		const winMult = GameEventService.getMultiplier("slots", "vitoria");
+		if (winMult > 1) {
+			const extraChance = 0.01 * (winMult - 1);
+			if (Math.random() < extraChance) {
+				isWin = true;
+				roll2 = roll1;
+				roll3 = roll1;
+			}
+		}
+	}
 
 	const emoji1 = SLOT_EMOJIS[roll1];
 	const emoji2 = SLOT_EMOJIS[roll2];
 	const emoji3 = SLOT_EMOJIS[roll3];
-
-	const isWin = roll1 === roll2 && roll2 === roll3;
 
 	if (message.group) {
 		await recordGroupStats(message.group, userId, userName, isWin);
@@ -284,14 +298,22 @@ async function slotsCommand(bot, message, args, group) {
 			const goodRand = Math.random();
 			if (goodRand < 0.4) {
 				// Moedinhas (1-5) - NOVO
-				const coinsWon = Math.floor(Math.random() * 5) + 1;
+				let coinsWon = Math.floor(Math.random() * 5) + 1;
+				const coinMult = GameEventService.getMultiplier("slots", "moedas");
+				if (coinMult > 1) {
+					coinsWon = Math.max(1, Math.round(coinsWon * coinMult));
+				}
 				userData.coins = Math.min(userData.coins + coinsWon, MAX_COINS);
 				resultMessage += `🎁 VOCÊ GANHOU: *${coinsWon} Moedinhas*! 🪙\n`;
 				resultMessage += `_Mais chances de girar a sorte!_`;
 				await savePrize(userId, `${coinsWon} Moedinhas`, "bom");
 			} else if (goodRand < 0.8) {
 				// Iscas (1-10)
-				const baits = Math.floor(Math.random() * 10) + 1;
+				let baits = Math.floor(Math.random() * 10) + 1;
+				const baitMult = GameEventService.getMultiplier("slots", "iscas");
+				if (baitMult > 1) {
+					baits = Math.max(1, Math.round(baits * baitMult));
+				}
 				resultMessage += `🎁 VOCÊ GANHOU: *${baits} Iscas de Pesca*! 🎣\n`;
 				resultMessage += `_Vão direto pro seu balde de pesca._`;
 				await FishingGame.addBaits(userId, baits);
@@ -328,6 +350,11 @@ async function slotsCommand(bot, message, args, group) {
 	}
 
 	resultMessage += `\n\n> 🪙 Moedinhas: ${userData.coins}/${MAX_COINS}`;
+
+	const eventBanner = GameEventService.getEventBanner("slots");
+	if (eventBanner) {
+		resultMessage += eventBanner;
+	}
 
 	await saveUserData(userData);
 

@@ -11,6 +11,7 @@ const bonsaiModule = require("./BonsaiCommands");
 const ReturnMessage = require("../models/ReturnMessage");
 const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
 const LLMService = require("../services/LLMService");
+const GameEventService = require("../services/GameEventService");
 
 const logger = new Logger("fishing-game");
 
@@ -820,7 +821,8 @@ async function getRandomFish(fishArray, isMultiCatch = false, userData = null) {
 		fishArray = customVariables.peixes;
 	}
 
-	const weightFactor = DEFAULT_GLOBAL_FACTORS.weightFactor || 1.0;
+	const eventWeightMult = GameEventService.getMultiplier("pesca", "peso");
+	const weightFactor = (DEFAULT_GLOBAL_FACTORS.weightFactor || 1.0) * eventWeightMult;
 
 	// Se for pescaria múltipla, não permite peixes raros
 	if (!isMultiCatch) {
@@ -843,8 +845,10 @@ async function getRandomFish(fishArray, isMultiCatch = false, userData = null) {
 				currentChance += rareBuffValue;
 			}
 
-			// Aplica fator global
+			// Aplica fator global e evento temporário
 			currentChance *= DEFAULT_GLOBAL_FACTORS.rareFishChance;
+			const eventLegendaryMult = GameEventService.getMultiplier("pesca", "lendario");
+			currentChance *= eventLegendaryMult;
 
 			const rng = Math.random();
 			if (rng < currentChance) {
@@ -858,13 +862,16 @@ async function getRandomFish(fishArray, isMultiCatch = false, userData = null) {
 				}
 
 				logger.debug(
-					`[getRandomFish] RARO CAPTURADO: ${rareFish.name} | Chance base ${rareFish.chance} | Buff ${rareBuffValue} | RNG ${rng} < ${currentChance}`
+					`[getRandomFish] RARO CAPTURADO: ${rareFish.name} | Chance base ${rareFish.chance} | Buff ${rareBuffValue} | EventMult ${eventLegendaryMult} | RNG ${rng} < ${currentChance}`
 				);
 
 				const baseWeight = parseFloat(
 					(Math.random() * (MAX_FISH_WEIGHT - MIN_FISH_WEIGHT) + MIN_FISH_WEIGHT).toFixed(2)
 				);
-				const totalWeight = baseWeight + rareFish.weightBonus;
+				let totalWeight = baseWeight + rareFish.weightBonus;
+				if (eventWeightMult !== 1.0) {
+					totalWeight = parseFloat((totalWeight * eventWeightMult).toFixed(2));
+				}
 
 				return {
 					name: rareFish.name,
@@ -1940,6 +1947,11 @@ async function fishCommand(bot, message, args, group) {
 		}
 
 		fishMessage += effectMessage;
+
+		const eventBanner = GameEventService.getEventBanner("pesca");
+		if (eventBanner) {
+			fishMessage += eventBanner;
+		}
 		// Se for peixe raro, tentar gerar imagem e salvar no histórico
 		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
 			let rareFishImage = await generateRareFishImage(

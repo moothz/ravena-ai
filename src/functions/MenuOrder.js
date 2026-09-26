@@ -86,6 +86,7 @@ const COMMAND_ORDER = [
 	"interagir",
 	"yt",
 	"sr",
+	"eventos",
 	"ragnavena",
 	"roletarussa",
 	"roletaranking",

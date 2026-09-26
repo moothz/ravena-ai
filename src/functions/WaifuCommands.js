@@ -4,6 +4,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
 const DonorBonusService = require("../services/DonorBonusService");
+const GameEventService = require("../services/GameEventService");
 
 const database = Database.getInstance();
 const logger = new Logger("waifu-commands");
@@ -301,7 +302,30 @@ function makeRollHandler(genderFilter) {
 		const name = getUserName(message);
 
 		try {
-			const rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
+			let rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
+
+			const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
+			const eventWishMult = GameEventService.getMultiplier("waifu", "wish");
+
+			if (eventRarosMult !== 1.0 || eventWishMult !== 1.0) {
+				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
+				const baseRarities = rollBonuses.rarityMultipliers
+					? { ...rollBonuses.rarityMultipliers }
+					: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
+
+				if (eventRarosMult !== 1.0) {
+					baseRarities.RARE = Number((baseRarities.RARE * eventRarosMult).toFixed(3));
+					baseRarities.EPIC = Number((baseRarities.EPIC * eventRarosMult).toFixed(3));
+					baseRarities.LEGENDARY = Number((baseRarities.LEGENDARY * eventRarosMult).toFixed(3));
+				}
+				rollBonuses.rarityMultipliers = baseRarities;
+
+				if (eventWishMult !== 1.0) {
+					const baseWish = rollBonuses.wishlistMultiplier || 1.0;
+					rollBonuses.wishlistMultiplier = Number((baseWish * eventWishMult).toFixed(3));
+				}
+			}
+
 			const payload = {
 				userId,
 				groupId,
@@ -367,6 +391,11 @@ function makeRollHandler(genderFilter) {
 				if (kakeraValue) {
 					text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
 				}
+			}
+
+			const eventBanner = GameEventService.getEventBanner("waifu");
+			if (eventBanner) {
+				text += eventBanner;
 			}
 
 			// Tenta baixar a imagem e enviar com mídia

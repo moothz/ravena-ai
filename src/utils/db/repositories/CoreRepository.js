@@ -131,6 +131,16 @@ class CoreRepository {
 				leave_responsible TEXT,
 				bot_id TEXT,
 				json_data TEXT
+			)`,
+			game_events: `CREATE TABLE IF NOT EXISTS game_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game TEXT NOT NULL,
+				type TEXT NOT NULL,
+				value REAL NOT NULL,
+				start_time INTEGER NOT NULL,
+				end_time INTEGER NOT NULL,
+				created_by TEXT,
+				UNIQUE(game, type)
 			)`
 		};
 
@@ -1345,6 +1355,64 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error saving group membership periods in bulk:", error);
 			return false;
+		}
+	}
+
+	// ===========================================================================
+	// Game Events
+	// ===========================================================================
+
+	async saveGameEvent(event) {
+		try {
+			this.mappers.run(
+				this.DB,
+				`INSERT INTO game_events (game, type, value, start_time, end_time, created_by)
+				VALUES (@game, @type, @value, @start_time, @end_time, @created_by)
+				ON CONFLICT(game, type) DO UPDATE SET
+					value = excluded.value,
+					start_time = excluded.start_time,
+					end_time = excluded.end_time,
+					created_by = excluded.created_by`,
+				{
+					game: String(event.game).toLowerCase(),
+					type: String(event.type).toLowerCase(),
+					value: Number(event.value),
+					start_time: Number(event.startTime || event.start_time || Date.now()),
+					end_time: Number(event.endTime || event.end_time),
+					created_by: event.createdBy || event.created_by || null
+				}
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error saving game event:", error);
+			return false;
+		}
+	}
+
+	async deleteGameEvent(game, type) {
+		try {
+			this.mappers.run(this.DB, "DELETE FROM game_events WHERE game = ? AND type = ?", [
+				String(game).toLowerCase(),
+				String(type).toLowerCase()
+			]);
+			return true;
+		} catch (error) {
+			this.logger.error("Error deleting game event:", error);
+			return false;
+		}
+	}
+
+	async getActiveGameEvents() {
+		try {
+			const now = Date.now();
+			return this.mappers.all(
+				this.DB,
+				"SELECT * FROM game_events WHERE end_time > ? ORDER BY end_time ASC",
+				[now]
+			);
+		} catch (error) {
+			this.logger.error("Error getting active game events:", error);
+			return [];
 		}
 	}
 }
