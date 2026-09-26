@@ -1730,6 +1730,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Custom Commands & Live WhatsApp Simulator ---
 
+    async function deleteCustomCommand(trigger) {
+        if (!trigger) return;
+        if (!await showCustomConfirm(`Tem certeza que deseja apagar o comando "${escapeHtml(trigger)}"?`, 'Excluir Comando')) return;
+        try {
+            const url = `${API_BASE}/custom-commands/${groupId}/${encodeURIComponent(trigger)}?token=${token}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            if (res.ok) {
+                await loadData();
+                if (els.cmdModal && !els.cmdModal.classList.contains('hidden')) {
+                    els.cmdModal.classList.add('hidden');
+                }
+            } else {
+                await showCustomAlert('Erro ao deletar comando.');
+            }
+        } catch (e) {
+            await showCustomAlert('Erro: ' + e.message);
+        }
+    }
+
     function renderCommandsTable() {
         const tbody = document.querySelector('#commands-table tbody');
         if (!tbody) return;
@@ -1762,8 +1781,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (responsesCount > 1) respPreview += ` (+${responsesCount-1})`;
 
             tr.innerHTML = `
-                <td>
-                    <button class="btn btn-xs btn-primary btn-edit-cmd"><i class="fas fa-edit"></i></button>
+                <td style="white-space: nowrap;">
+                    <div class="table-actions">
+                        <button type="button" class="btn btn-xs btn-primary btn-edit-cmd" title="Editar comando"><i class="fas fa-edit"></i></button>
+                        <button type="button" class="btn btn-xs btn-danger btn-delete-cmd-row" title="Excluir comando"><i class="fas fa-trash"></i></button>
+                    </div>
                 </td>
                 <td>
                     <strong>${cmd.startsWith}</strong>
@@ -1774,6 +1796,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             
             tr.querySelector('.btn-edit-cmd').onclick = () => openCommandModal(cmd);
+            tr.querySelector('.btn-delete-cmd-row').onclick = () => deleteCustomCommand(cmd.startsWith);
             tbody.appendChild(tr);
         });
     }
@@ -2288,19 +2311,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     els.btnDeleteCmd.addEventListener('click', async () => {
-        if(!await showCustomConfirm(`Tem certeza que deseja apagar o comando "${currentEditingCmd.startsWith}"?`)) return;
-        try {
-            const url = `${API_BASE}/custom-commands/${groupId}/${encodeURIComponent(currentEditingCmd.startsWith)}?token=${token}`;
-            const res = await fetch(url, { method: 'DELETE' });
-            if (res.ok) {
-                await loadData();
-                els.cmdModal.classList.add('hidden');
-            } else {
-                await showCustomAlert('Erro ao deletar comando.');
-            }
-        } catch (e) {
-            await showCustomAlert('Erro: ' + e.message);
-        }
+        if (!currentEditingCmd) return;
+        await deleteCustomCommand(currentEditingCmd.startsWith);
     });
 
     // --- Member Modal Logic ---

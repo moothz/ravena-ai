@@ -1118,6 +1118,12 @@ textarea.form-control {
     letter-spacing: 0.03em;
 }
 
+.table-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .commands-toolbar {
     margin-bottom: 0.75rem;
     display: flex;
