@@ -195,6 +195,58 @@ async function runTests() {
 	);
 	console.log("✓ awardDonorBonuses com dryRun OK");
 
+	// 5. Teste da mensagem de notificação de donate em grupos logs/avisos
+	console.log("\n--- 5. Testando notifyGroupsAboutDonation com e sem número vinculado ---");
+	const dummyBot = {
+		grupoLogs: "logs@g.us",
+		grupoAvisos: "avisos@g.us",
+		notificarDonate: true,
+		sent: [],
+		async sendMessage(target, msg) {
+			this.sent.push({ target, msg });
+			return { pin: async () => {} };
+		}
+	};
+	const BotAPI = require("../BotAPI");
+	const dummyApi = {
+		database: {
+			getDonorByName: async (name) => {
+				if (name === "DoadorComNumero") return { nome: "DoadorComNumero", numero: "5511999999999" };
+				return { nome: "DoadorSemNumero", numero: null };
+			}
+		},
+		bots: [dummyBot],
+		logger: { error: () => {}, info: () => {} },
+		notifyGroupsAboutDonation: BotAPI.prototype.notifyGroupsAboutDonation
+	};
+
+	// Doador sem número
+	dummyBot.sent = [];
+	await dummyApi.notifyGroupsAboutDonation("DoadorSemNumero", 20, "Parabens pelo bot!", 20);
+	assert.ok(dummyBot.sent.length >= 2, "Deve enviar para grupoLogs e grupoAvisos");
+	assert.ok(
+		dummyBot.sent[0].msg.includes("❗️ Ainda não tenho seu número salvo, me chama no grupão!"),
+		"Deve incluir aviso de número pendente para doador sem número"
+	);
+	assert.ok(
+		dummyBot.sent[1].msg.includes("❗️ Ainda não tenho seu número salvo, me chama no grupão!"),
+		"Deve incluir aviso no grupo de avisos também"
+	);
+
+	// Doador com número
+	dummyBot.sent = [];
+	await dummyApi.notifyGroupsAboutDonation("DoadorComNumero", 50, "Top!", 50);
+	assert.ok(dummyBot.sent.length >= 2, "Deve enviar para grupoLogs e grupoAvisos");
+	assert.ok(
+		!dummyBot.sent[0].msg.includes("❗️ Ainda não tenho seu número salvo, me chama no grupão!"),
+		"Não deve incluir aviso de número para doador com número salvo"
+	);
+	assert.ok(
+		!dummyBot.sent[1].msg.includes("❗️ Ainda não tenho seu número salvo, me chama no grupão!"),
+		"Não deve incluir aviso no grupo de avisos para doador com número salvo"
+	);
+	console.log("✓ notifyGroupsAboutDonation com e sem número OK");
+
 	console.log("\n==========================================================");
 	console.log("🎉 TODOS OS TESTES DE BÔNUS DE DOADORES PASSARAM COM SUCESSO!");
 	console.log("==========================================================");

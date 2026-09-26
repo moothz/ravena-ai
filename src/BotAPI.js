@@ -898,8 +898,9 @@ class BotAPI {
 				const donationTotal = await this.database.addDonation(nome, valor, undefined, msg);
 
 				// Processa concessão de bônus caso o doador já possua número registrado
+				let donor = null;
 				try {
-					const donor = await this.database.getDonorByName(nome);
+					donor = await this.database.getDonorByName(nome);
 					if (donor && donor.numero) {
 						const bonusResult = await DonorBonusService.awardDonorBonuses(
 							donor,
@@ -920,7 +921,7 @@ class BotAPI {
 				}
 
 				// Notifica grupos sobre a doação
-				await this.notifyGroupsAboutDonation(nome, valor, msg, donationTotal);
+				await this.notifyGroupsAboutDonation(nome, valor, msg, donationTotal, donor);
 
 				res.send("ok");
 			} catch (error) {
@@ -5426,7 +5427,7 @@ class BotAPI {
 	 * @param {number} amount - Valor da doação
 	 * @param {string} message - Mensagem da doação
 	 */
-	async notifyGroupsAboutDonation(name, amount, message, donationTotal = 0) {
+	async notifyGroupsAboutDonation(name, amount, message, donationTotal = 0, existingDonor = null) {
 		try {
 			const ignorar = message.includes("#ravprivate") ?? false;
 
@@ -5436,12 +5437,20 @@ class BotAPI {
 					? `> _${name}_ já doou um total de R$${donationTotal.toFixed(2)}\n\n`
 					: "";
 
-			const donationMsg =
+			let donationMsg =
 				`💸 Recebemos um DONATE no tipa.ai! 🥳\n\n` +
 				`*MUITO obrigado* pelos R$${amount.toFixed(2)}, ${name}! 🥰\n` +
 				`Compartilho aqui com todos sua mensagem:\n` +
 				`💬 ${message}\n\n${totalMsg}` +
 				`\`\`\`!doar ou !donate pra conhecer os outros apoiadores e doar também\`\`\``;
+
+			const donor = existingDonor || (await this.database.getDonorByName(name));
+			const cleanNum = donor && donor.numero ? String(donor.numero).replace(/\D/g, "") : "";
+			const hasNumber = cleanNum.length >= 8;
+
+			if (!hasNumber) {
+				donationMsg += `\n\n- ❗️ Ainda não tenho seu número salvo, me chama no grupão!`;
+			}
 
 			// Calcula tempo extra de fixação com base no valor da doação (300 segundos por 1 unidade de moeda)
 			const extraPinTime = Math.floor(amount * 300);
