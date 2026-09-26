@@ -18,12 +18,22 @@ const DonationMapper = {
 			historico = [];
 		}
 
+		let extra = {};
+		if (row.json_data) {
+			try {
+				extra = JSON.parse(row.json_data);
+			} catch {
+				extra = {};
+			}
+		}
+
 		return {
 			nome: row.name,
 			valor: row.valor ?? 0,
 			numero: row.numero ?? undefined,
 			timestamp: row.timestamp ?? null,
-			historico
+			historico,
+			bonusesProcessedAmount: extra.bonusesProcessedAmount ?? 0
 		};
 	},
 

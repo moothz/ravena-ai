@@ -5,6 +5,7 @@ const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const Logger = require("./utils/Logger");
 const Database = require("./utils/Database");
+const DonorBonusService = require("./services/DonorBonusService");
 const { validateRegexFilter } = require("./utils/RegexFilterValidator");
 const path = require("path");
 const multer = require("multer");
@@ -895,6 +896,28 @@ class BotAPI {
 
 				// Adiciona doação ao banco de dados
 				const donationTotal = await this.database.addDonation(nome, valor, undefined, msg);
+
+				// Processa concessão de bônus caso o doador já possua número registrado
+				try {
+					const donor = await this.database.getDonorByName(nome);
+					if (donor && donor.numero) {
+						const bonusResult = await DonorBonusService.awardDonorBonuses(
+							donor,
+							donationTotal,
+							donor.bonusesProcessedAmount || 0
+						);
+						this.logger.info(
+							`[donate_tipa] Bônus automáticos de doação processados para ${nome} (${donor.numero}):`,
+							bonusResult
+						);
+					} else {
+						this.logger.info(
+							`[donate_tipa] Doador ${nome} ainda não possui número cadastrado. Bônus serão concedidos ao vincular o número.`
+						);
+					}
+				} catch (bonusError) {
+					this.logger.error("[donate_tipa] Erro ao processar bônus do doador:", bonusError);
+				}
 
 				// Notifica grupos sobre a doação
 				await this.notifyGroupsAboutDonation(nome, valor, msg, donationTotal);

@@ -87,6 +87,7 @@ const LOSE_MESSAGES = [
  * Obtém dados do usuário
  */
 async function getUserData(userId, userName = null) {
+	userId = `${userId}`.replace(/\D/g, "");
 	let user = await database.dbGet(dbName, "SELECT * FROM slots_users WHERE user_id = ?", [userId]);
 	if (!user) {
 		const now = Date.now();
@@ -375,11 +376,19 @@ async function slotsPrizesCommand(bot, message, args, group) {
 
 /**
  * Adiciona moedinhas a um usuário (usado por outros módulos)
+ * @param {string} userId - ID ou telefone do usuário
+ * @param {number} amount - Quantidade de moedas
+ * @param {boolean} [isBonus=false] - Se true, permite ultrapassar MAX_COINS
  */
-async function addCoins(userId, amount) {
+async function addCoins(userId, amount, isBonus = false) {
+	userId = `${userId}`.replace(/\D/g, "");
 	let userData = await getUserData(userId);
 	userData = regenerateCoins(userData);
-	userData.coins = Math.min(userData.coins + amount, MAX_COINS);
+	if (isBonus) {
+		userData.coins = (userData.coins || 0) + amount;
+	} else {
+		userData.coins = Math.min((userData.coins || 0) + amount, MAX_COINS);
+	}
 	await saveUserData(userData);
 	return userData;
 }

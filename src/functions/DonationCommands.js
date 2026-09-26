@@ -3,6 +3,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const DonorBonusService = require("../services/DonorBonusService");
 const fs = require("fs").promises;
 
 const logger = new Logger("donation-commands");
@@ -270,6 +271,99 @@ async function showTopDonors(bot, message, args, group) {
 	}
 }
 
+/**
+ * Mostra as vantagens de doação e benefícios acumulados do usuário
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {Object} message - Dados da mensagem
+ * @param {Array} args - Argumentos do comando
+ * @param {Object} group - Dados do grupo
+ * @returns {Promise<ReturnMessage>}
+ */
+async function showDonationPerks(bot, message, args, group) {
+	try {
+		const chatId = message.group ?? message.author;
+		const userId = message.author ?? message.authorAlt;
+
+		const donor = await DonorBonusService.getDonorByUserId(userId);
+		const isDonor = Boolean(donor && donor.valor > 0);
+
+		let msg = `✨ *VANTAGENS & BÔNUS PARA APOIADORES* ✨\n\n`;
+		msg += `Suas doações cobrem os custos de manutenção da Ravena _(servidores, APIs, números e recargas)_ e garantem bônus incríveis em todos os jogos!\n\n`;
+
+		msg += `🎣 *Pescaria:*\n`;
+		msg += `• *2 Iscas* no balde a cada R$ 1 doado.\n`;
+		msg += `• *1 Item Simples* a cada R$ 5 doados _(Anzol de Titânio, Bolso de Pesca ou Pochete de Iscas)_.\n`;
+		msg += `• *1 Item Médio* ao doar R$ 20 ou mais _(Calça de Pesca ou Caixa de Iscas)_.\n`;
+		msg += `• *1 Item Alto* ao doar R$ 30 ou mais _(Mochilão ou Viveiro Portátil)_.\n`;
+		msg += `• *Itens Altos Extras:* 1 item alto aos R$ 50 + 1 extra a cada R$ 10 acima de 50!\n\n`;
+
+		msg += `🎰 *Caça-Níqueis (Slots):*\n`;
+		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
+
+		msg += `🌸 *Waifus (Mudae):*\n`;
+		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros, +3.5% em Épicos e +4.5% em Lendários por R$ 1.\n`;
+		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
+		msg += `• *Aos R$ 100:* Lendários atingem ~8% de chance e Wishlist chega a 8x (+700%)!\n`;
+		msg += `• *!mu-chances exclusivo:* Mostra suas probabilidades personalizadas ativas.\n\n`;
+
+		msg += `🩺 *Jogo do Pinto:*\n`;
+		msg += `• *+1% de tamanho* em todos os atributos a cada R$ 1 doado _(respeitando os limites máximos)_.\n\n`;
+
+		msg += `👑 *Vantagens Gerais no Bot:*\n`;
+		msg += `• Aceite prioritário e automático de convites da Ravena para seus grupos.\n`;
+		msg += `• Proteção contra restrições de convites.\n`;
+		msg += `• Destaque no ranking geral de doadores com \`!doadores\`.\n\n`;
+		msg += `──────────────\n\n`;
+
+		if (isDonor) {
+			const totalAmount = Number(donor.valor) || 0;
+			const bonuses = DonorBonusService.calculateBonuses(totalAmount);
+
+			msg += `💖 *Você é um apoiador! Agradeço de coração sua ajuda e por acreditar no projeto.*\n\n`;
+			msg += `📊 *Seus Benefícios Acumulados (Total doado: R$ ${totalAmount.toFixed(2)}):*\n\n`;
+
+			msg += `⚡ *Bônus Efêmeros Concedidos:*\n`;
+			msg += `  • 🐛 *${bonuses.pesca.baits}* iscas de pesca entregues no seu balde.\n`;
+			msg += `  • 🪙 *${bonuses.slots.coins}* moedas entregues no seu cofrinho de slots.\n\n`;
+
+			msg += `🛡️ *Equipamentos & Bônus Fixos da Pesca:*\n`;
+			msg += `  • 🔩 *${bonuses.pesca.simpleItemsCount}* itens simples sorteados.\n`;
+			msg += `  • 👖 *${bonuses.pesca.mediumItemsCount}* item médio sorteado.\n`;
+			msg += `  • 🎒 *${bonuses.pesca.totalHighItems}* itens de elite/altos sorteados.\n\n`;
+
+			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
+			msg += `  • 🔵 Raros: *+${Math.round(totalAmount * 2.0)}%* | 🟣 Épicos: *+${Math.round(totalAmount * 3.5)}%* | ⭐ Lendários: *+${Math.round(totalAmount * 4.5)}%*\n`;
+			if (bonuses.waifu.wishlistMultiplier) {
+				const wishPct = Math.round((bonuses.waifu.wishlistMultiplier - 1) * 100);
+				msg += `  • 🌟 Wishlist: *+${wishPct}%* de multiplicador (${bonuses.waifu.wishlistMultiplier.toFixed(1)}x)!\n`;
+			} else {
+				msg += `  • 🌟 Wishlist VIP: _Desbloqueada ao atingir R$ 50 no total!_\n`;
+			}
+
+			msg += `\n🩺 *Bônus no !pinto:* +${bonuses.pinto.bonusPercent}% de potencial estético!\n`;
+		} else {
+			msg += `🤍 *Você ainda não é um apoiador, mas sem pressão! Qualquer ajuda é bem vinda, mas completamente opcional.*\n\n`;
+			msg += `🔗 Para doar e apoiar o projeto, digite \`!doar\` para obter o link do tipa.ai e a chave Pix!`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: msg,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (error) {
+		logger.error("Erro no comando showDonationPerks:", error);
+		const chatId = message.group ?? message.author;
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Erro ao consultar vantagens de doação. Por favor, tente novamente."
+		});
+	}
+}
+
 // Lista de comandos usando a classe Command
 const commands = [
 	new Command({
@@ -291,19 +385,52 @@ const commands = [
 		category: "geral",
 		method: showTopDonors,
 		hidden: true
+	}),
+	new Command({
+		name: "doar-vantagens",
+		description: "Mostra todas as vantagens, bônus para doadores e seus benefícios acumulados",
+		category: "geral",
+		method: showDonationPerks
+	}),
+	new Command({
+		name: "vantagens",
+		description: "Alias de !doar-vantagens",
+		category: "geral",
+		method: showDonationPerks,
+		hidden: true
+	}),
+	new Command({
+		name: "bonus-doar",
+		description: "Alias de !doar-vantagens",
+		category: "geral",
+		method: showDonationPerks,
+		hidden: true
+	}),
+	new Command({
+		name: "vantagens-doar",
+		description: "Alias de !doar-vantagens",
+		category: "geral",
+		method: showDonationPerks,
+		hidden: true
 	})
 ];
 
 const helper = {
-	about: "Informações sobre doações e apoio financeiro para manutenção do bot",
+	about: "Informações sobre doações, apoio financeiro e vantagens exclusivas para apoiadores",
 	implementation:
-		"Retorna chave Pix, QR Code e informações de apoia-se configuradas nas variáveis do sistema",
-	tags: "doar,doacao,pix,ajuda,apoiar,crowdfunding",
+		"Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto)",
+	tags: "doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus",
 	cmds: [
 		{
 			cmd: "!doar",
 			desc: "Exibe as opções de doação e chave Pix para apoiar o projeto",
 			usage: ["!doar"],
+			category: "geral"
+		},
+		{
+			cmd: "!doar-vantagens",
+			desc: "Exibe todas as vantagens e bônus de doadores e o que você já ganhou",
+			usage: ["!doar-vantagens", "!vantagens"],
 			category: "geral"
 		}
 	]
@@ -311,5 +438,6 @@ const helper = {
 
 module.exports = {
 	helper,
-	commands
+	commands,
+	showDonationPerks
 };

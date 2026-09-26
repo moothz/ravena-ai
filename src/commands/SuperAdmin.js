@@ -6,6 +6,7 @@ const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
 const LLMService = require("../services/LLMService");
+const DonorBonusService = require("../services/DonorBonusService");
 const { exec } = require("child_process");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1003,10 +1004,27 @@ Break down the cost by category and provide a total estimated cost.`;
 			if (success) {
 				bot.whitelist.push(numero);
 
+				let bonusMsg = "";
+				try {
+					const donor = await this.database.getDonorByName(donorName);
+					if (donor && donor.valor > 0) {
+						const bonusRes = await DonorBonusService.awardDonorBonuses(
+							donor,
+							donor.valor,
+							donor.bonusesProcessedAmount || 0
+						);
+						if (bonusRes.success && bonusRes.delta && bonusRes.delta.deltaAmount > 0) {
+							bonusMsg = `\n🎁 *Bônus concedidos:* +${bonusRes.delta.deltaBaits} iscas, +${bonusRes.delta.deltaCoins} moedas, +${bonusRes.chosenItems?.length || 0} itens de pesca!`;
+						}
+					}
+				} catch (errBonus) {
+					this.logger.error("Erro ao conceder bônus no addNewDonate:", errBonus);
+				}
+
 				return [
 					new ReturnMessage({
 						chatId,
-						content: `✅ ${donorName}, ${numero} adicionado com sucesso à lista!`
+						content: `✅ ${donorName}, ${numero} adicionado com sucesso à lista!${bonusMsg}`
 					})
 				];
 			} else {
@@ -1067,6 +1085,23 @@ Break down the cost by category and provide a total estimated cost.`;
 			const success = await this.database.updateDonorNumber(donorName, numero);
 
 			if (success) {
+				let bonusMsg = "";
+				try {
+					const donor = await this.database.getDonorByName(donorName);
+					if (donor && donor.valor > 0) {
+						const bonusRes = await DonorBonusService.awardDonorBonuses(
+							donor,
+							donor.valor,
+							donor.bonusesProcessedAmount || 0
+						);
+						if (bonusRes.success && bonusRes.delta && bonusRes.delta.deltaAmount > 0) {
+							bonusMsg = `\n🎁 *Bônus concedidos:* +${bonusRes.delta.deltaBaits} iscas, +${bonusRes.delta.deltaCoins} moedas, +${bonusRes.chosenItems?.length || 0} itens de pesca!`;
+						}
+					}
+				} catch (errBonus) {
+					this.logger.error("Erro ao conceder bônus no addDonorNumber:", errBonus);
+				}
+
 				// Pega contato do doador e envia junto pra poder add
 				let cttDonate = await bot.createContact(numero);
 
@@ -1079,7 +1114,7 @@ Break down the cost by category and provide a total estimated cost.`;
 				return [
 					new ReturnMessage({
 						chatId,
-						content: `✅ Número ${numero} adicionado com sucesso ao doador ${donorName}`
+						content: `✅ Número ${numero} adicionado com sucesso ao doador ${donorName}.${bonusMsg}`
 					}),
 					new ReturnMessage({
 						chatId,

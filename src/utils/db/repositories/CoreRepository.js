@@ -480,6 +480,32 @@ class CoreRepository {
 		}
 	}
 
+	async getDonorByNumber(numero) {
+		try {
+			if (!numero) return null;
+			const clean = String(numero).replace(/\D/g, "");
+			if (!clean) return null;
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM donations WHERE numero IS NOT NULL AND numero != ''"
+			);
+			for (const r of rows) {
+				const donor = DonationMapper.fromRow(r);
+				const donorClean = String(donor.numero || "").replace(/\D/g, "");
+				if (
+					donorClean &&
+					(donorClean === clean || donorClean.includes(clean) || clean.includes(donorClean))
+				) {
+					return donor;
+				}
+			}
+			return null;
+		} catch (error) {
+			this.logger.error("Error getting donor by number:", error);
+			return null;
+		}
+	}
+
 	async saveDonations(donations) {
 		try {
 			this.mappers.transaction(this.DB, () => {
@@ -568,6 +594,32 @@ class CoreRepository {
 			return true;
 		} catch (error) {
 			this.logger.error("Error updating donor number:", error);
+			return false;
+		}
+	}
+
+	async updateDonorBonusProcessed(name, amount) {
+		try {
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+				[name]
+			);
+			if (!row) {
+				this.logger.warn(`Donor "${name}" not found to update bonus processed`);
+				return false;
+			}
+			const donor = DonationMapper.fromRow(row);
+			donor.bonusesProcessedAmount = amount;
+			const r = DonationMapper.toRow(donor);
+			this.mappers.run(
+				this.DB,
+				"INSERT OR REPLACE INTO donations (name, valor, numero, timestamp, historico, json_data) VALUES (@name, @valor, @numero, @timestamp, @historico, @json_data)",
+				{ ...r, json_data: JSON.stringify(donor) }
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error updating donor bonus processed:", error);
 			return false;
 		}
 	}

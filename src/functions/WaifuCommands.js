@@ -3,6 +3,7 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
+const DonorBonusService = require("../services/DonorBonusService");
 
 const database = Database.getInstance();
 const logger = new Logger("waifu-commands");
@@ -300,12 +301,14 @@ function makeRollHandler(genderFilter) {
 		const name = getUserName(message);
 
 		try {
+			const rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
 			const payload = {
 				userId,
 				groupId,
 				name,
 				platform: "WHATSAPP",
-				...(genderFilter && { gender: genderFilter })
+				...(genderFilter && { gender: genderFilter }),
+				...(rollBonuses ? { bonuses: rollBonuses } : {})
 			};
 
 			const { data } = await api.post("/roll", payload);
@@ -319,6 +322,9 @@ function makeRollHandler(genderFilter) {
 			text += `${emojiRarity} *[${labelRarity}]*`;
 			if (data.data?.isWishlist) {
 				text += ` 🌟 *[SEU DESEJO!]*`;
+			}
+			if (data.data?.appliedBonuses?.donorBadge || rollBonuses?.donorBadge) {
+				text += ` 💎 *[VIP]*`;
 			}
 			text += "\n";
 
@@ -1141,16 +1147,71 @@ async function verChances(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 
+	const donor = await DonorBonusService.getDonorByUserId(userId);
+	const donorTotal = donor ? Number(donor.valor) || 0 : 0;
+	let donorHeader = "";
+	let donorBonuses = null;
+	if (donorTotal > 0) {
+		donorBonuses = DonorBonusService.calculateBonuses(donorTotal).waifu;
+		donorHeader = `💎 *Doador, obrigado!* 💎\n`;
+		donorHeader += `> _Seus benefícios de apoiador (R$ ${donorTotal.toFixed(2)}) estão ativos:_\n`;
+		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 4.5)}%\n`;
+		if (donorBonuses.wishlistMultiplier) {
+			const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
+			donorHeader += `> • 🌟 *Wishlist:* +${wishBonusPct}% de peso em desejos!\n`;
+		}
+		donorHeader += `\n`;
+	}
+
 	const stats = await getDropRateStats(userId);
 	const totalChars = (stats?.totalCharacters || 27480).toLocaleString("pt-BR");
 	const maxWl = stats?.wishlistMaxItems || WISHLIST_MAX_ITEMS;
 
-	let text = `🎯 *PROBABILIDADES E CHANCES DE DROP*\n`;
+	let text = donorHeader;
+	text += `🎯 *PROBABILIDADES E CHANCES DE DROP*\n`;
 	text += `_Base de dados atualizada: *${totalChars}* personagens cadastrados_\n\n`;
 
+	let breakdown = stats?.breakdown;
+	if (breakdown && donorBonuses) {
+		const wishMult = donorBonuses.wishlistMultiplier || 1.5;
+		let donorTotalWeight = 0;
+		const adjustedList = breakdown.map((b) => {
+			const mult = donorBonuses.rarityMultipliers[b.rarity] || 1.0;
+			const weight = Math.round(b.baseWeight * mult);
+			const categoryWeight = b.count * weight;
+			donorTotalWeight += categoryWeight;
+			return {
+				...b,
+				donorWeight: weight,
+				donorCatWeight: categoryWeight
+			};
+		});
+
+		breakdown = adjustedList.map((b) => {
+			const catChance = donorTotalWeight > 0 ? (b.donorCatWeight / donorTotalWeight) * 100 : 0;
+			const singleBaseChance = donorTotalWeight > 0 ? (b.donorWeight / donorTotalWeight) * 100 : 0;
+			const singleWishChance =
+				donorTotalWeight > 0 ? (Math.round(b.donorWeight * wishMult) / donorTotalWeight) * 100 : 0;
+			const oneInX = catChance > 0 ? Math.round(100 / catChance) : null;
+			const singleBaseOneInX = singleBaseChance > 0 ? Math.round(100 / singleBaseChance) : null;
+			const singleWishOneInX = singleWishChance > 0 ? Math.round(100 / singleWishChance) : null;
+
+			return {
+				...b,
+				baseWeight: b.donorWeight,
+				categoryChance: catChance,
+				singleBaseChance,
+				singleWishChance,
+				oneInX,
+				singleBaseOneInX,
+				singleWishOneInX
+			};
+		});
+	}
+
 	text += `📊 *Chances por Categoria de Personagem:*\n`;
-	if (stats?.breakdown) {
-		for (const b of stats.breakdown) {
+	if (breakdown) {
+		for (const b of breakdown) {
 			const emoji = RARITY_EMOJI[b.rarity] || "⚪";
 			const label = RARITY_LABEL[b.rarity] || b.rarity;
 			const catChanceStr =
@@ -1163,7 +1224,10 @@ async function verChances(bot, message) {
 			text += `${emoji} *${label}* (${b.count.toLocaleString("pt-BR")} no banco | Peso ${b.baseWeight})\n`;
 			text += `   ↳ Drop da categoria: *${catChanceStr}%* ${b.oneInX ? `(~1 a cada ${b.oneInX.toLocaleString("pt-BR")} rolls)` : ""}\n`;
 			text += `   ↳ 1 específico (base): *${singleBaseStr}%* (1 em ${b.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
-			text += `   ↳ Com Wishlist: *${singleWishStr}%* (*+50%* | 1 em ${b.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n\n`;
+			const wishBonusLabel = donorBonuses?.wishlistMultiplier
+				? `*+${Math.round((donorBonuses.wishlistMultiplier - 1) * 100)}%*`
+				: `*+50%*`;
+			text += `   ↳ Com Wishlist: *${singleWishStr}%* (${wishBonusLabel} | 1 em ${b.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n\n`;
 		}
 	} else {
 		text += `⚪ *Comum:* ~93,30% (peso 100 | 1 específico: 0,0039%)\n`;
@@ -1173,19 +1237,29 @@ async function verChances(bot, message) {
 		text += `⭐ *Lendário:* ~0,011% (peso 5 | 1 específico: 0,0002%)\n\n`;
 	}
 
-	text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos):*\n`;
-	text += `• Cada personagem desejado tem o peso multiplicado por *1.5x (+50%)*.\n`;
-	text += `• Se for marcado como Star Wish, o multiplicador é de *2.0x (+100%)*.\n`;
+	if (donorBonuses?.wishlistMultiplier) {
+		const wishMultVal = donorBonuses.wishlistMultiplier.toFixed(1);
+		const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
+		text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos) [BÔNUS VIP ATIVO]:*\n`;
+		text += `• Cada personagem desejado tem o peso multiplicado por *${wishMultVal}x (+${wishBonusPct}%)*!\n`;
+	} else {
+		text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos):*\n`;
+		text += `• Cada personagem desejado tem o peso multiplicado por *1.5x (+50%)*.\n`;
+		text += `• Se for marcado como Star Wish, o multiplicador é de *2.0x (+100%)*.\n`;
+	}
 
 	if (stats?.userWishlistStats && stats.userWishlistStats.count > 0) {
+		let anyWishChance = stats.userWishlistStats.anyWishChance;
+		if (donorBonuses?.wishlistMultiplier) {
+			anyWishChance = Math.min(100, anyWishChance * (donorBonuses.wishlistMultiplier / 1.5));
+		}
 		const wishChanceStr =
-			stats.userWishlistStats.anyWishChance < 0.01
-				? stats.userWishlistStats.anyWishChance.toFixed(3)
-				: stats.userWishlistStats.anyWishChance.toFixed(2);
+			anyWishChance < 0.01 ? anyWishChance.toFixed(3) : anyWishChance.toFixed(2);
 		text += `\n✨ *Sua Wishlist Pessoal (${stats.userWishlistStats.count}/${maxWl} itens):*\n`;
 		text += `• Chance de tirar QUALQUER desejo seu no próximo roll: *${wishChanceStr}%*\n`;
-		if (stats.userWishlistStats.oneInX) {
-			text += `• Média estimada: *1 a cada ~${stats.userWishlistStats.oneInX.toLocaleString("pt-BR")} rolls*!\n`;
+		const oneInX = anyWishChance > 0 ? Math.round(100 / anyWishChance) : null;
+		if (oneInX) {
+			text += `• Média estimada: *1 a cada ~${oneInX.toLocaleString("pt-BR")} rolls*!\n`;
 		}
 	} else {
 		text += `\n💡 *Dica:* Você ainda não tem itens na Wishlist. Use \`!mu-desejar <id>\` (até ${maxWl}) para aumentar a chance de tirar seus personagens favoritos!\n`;

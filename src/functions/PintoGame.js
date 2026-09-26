@@ -4,6 +4,7 @@ const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
+const DonorBonusService = require("../services/DonorBonusService");
 
 const logger = new Logger("pinto-game");
 const database = Database.getInstance();
@@ -302,13 +303,24 @@ async function pintoCommand(bot, message, args, group) {
 			});
 		}
 
-		// Gera os valores aleatórios
-		const flaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
-		const erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), MAX_ERECT); // Ereto é no mínimo igual ao flácido
-		const girth = generateRandomValue(MIN_GIRTH, MAX_GIRTH);
+		// Gera os valores aleatórios base
+		let flaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
+		let erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), MAX_ERECT); // Ereto é no mínimo igual ao flácido
+		let girth = generateRandomValue(MIN_GIRTH, MAX_GIRTH);
 		const curvature = generateRandomValue(-30, 30);
 
-		// Calcula o score
+		// Bônus para doadores (+1% por real doado, sem ultrapassar os máximos definidos)
+		const donorTotal = await DonorBonusService.getDonorTotal(userId);
+		let donorBonusText = "";
+		if (donorTotal > 0) {
+			const bonusMult = 1 + donorTotal * 0.01;
+			flaccid = Math.min(MAX_FLACCID, Math.round(flaccid * bonusMult * 10) / 10);
+			erect = Math.min(MAX_ERECT, Math.round(erect * bonusMult * 10) / 10);
+			girth = Math.min(MAX_GIRTH, Math.round(girth * bonusMult * 10) / 10);
+			donorBonusText = `\n💎 *Benefício de Apoiador:* +${Math.round(donorTotal)}% de bônus estético aplicado!`;
+		}
+
+		// Calcula o score com os valores finais
 		const score = calculateScore(flaccid, erect, girth, curvature);
 
 		const doctorName = getDoctorName(bot);
@@ -372,7 +384,7 @@ async function pintoCommand(bot, message, args, group) {
 			`• *Comprimento Ereto:* ${erect.toFixed(1)} cm\n` +
 			`• *Circunferência:* ${girth.toFixed(1)} cm\n` +
 			`• *Curvatura:* ${curvatureText}\n` +
-			`• *Score:* _${score} pontos_\n\n` +
+			`• *Score:* _${score} pontos_${donorBonusText}\n\n` +
 			`${comment}\n\n` +
 			`> Você pode voltar daqui a ${COOLDOWN_DAYS} dias para refazermos sua avaliação.`;
 
