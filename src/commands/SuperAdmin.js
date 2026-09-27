@@ -1463,6 +1463,7 @@ Break down the cost by category and provide a total estimated cost.`;
 		if (process.env.GRUPO_PESCA) groups.add(process.env.GRUPO_PESCA.trim());
 		if (process.env.GRUPO_INTERACAO) groups.add(process.env.GRUPO_INTERACAO.trim());
 		if (process.env.GRUPO_DOWNLOADS) groups.add(process.env.GRUPO_DOWNLOADS.trim());
+		if (process.env.GRUPO_STICKERS) groups.add(process.env.GRUPO_STICKERS.trim());
 		if (process.env.GRUPO_AVISOS) groups.add(process.env.GRUPO_AVISOS.trim());
 		if (process.env.GRUPO_ANUNCIOS) groups.add(process.env.GRUPO_ANUNCIOS.trim());
 
@@ -1495,7 +1496,9 @@ Break down the cost by category and provide a total estimated cost.`;
 			nameLower.includes("gpzuera") ||
 			nameLower.includes("rapescas") ||
 			nameLower.includes("ravdownloads") ||
-			nameLower.includes("legionlog")
+			nameLower.includes("legionlog") ||
+			nameLower.includes("rav-stickers") ||
+			nameLower.includes("stickers")
 		);
 	}
 
