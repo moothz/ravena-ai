@@ -1029,6 +1029,19 @@ class BotAPI {
 					});
 				}
 
+				if (req.query.sendReport !== undefined) {
+					const LLMDailyReportService = require("./services/LLMDailyReportService");
+					const reportService = LLMDailyReportService.getInstance();
+					const result = await reportService.sendReportNow(
+						"📊 <b>Relatório de IA (Disparo Manual) — Ravena Bot</b>"
+					);
+					return res.json({
+						status: result.success ? "ok" : "error",
+						timestamp: Date.now(),
+						report: result
+					});
+				}
+
 				if (req.query.queue !== undefined) {
 					const queueStatus = statsService.getQueueStatus();
 					return res.json({
@@ -1052,6 +1065,33 @@ class BotAPI {
 				});
 			}
 		});
+
+		// Endpoint para envio manual do relatório diário de LLM
+		this.app.post(
+			"/api/llm/report/send",
+			authenticateBasic,
+			this.strictLimiter,
+			async (req, res) => {
+				try {
+					const LLMDailyReportService = require("./services/LLMDailyReportService");
+					const reportService = LLMDailyReportService.getInstance();
+					const title =
+						req.body?.title || "📊 <b>Relatório de IA (Disparo Manual) — Ravena Bot</b>";
+					const result = await reportService.sendReportNow(title);
+					return res.json({
+						status: result.success ? "ok" : "error",
+						timestamp: Date.now(),
+						report: result
+					});
+				} catch (error) {
+					this.logger.error("Erro ao disparar relatório diário de LLM:", error);
+					return res.status(500).json({
+						status: "error",
+						message: error.message
+					});
+				}
+			}
+		);
 
 		// Endpoint para obter relatórios de carga
 		this.app.post("/getLoad", this.strictLimiter, async (req, res) => {

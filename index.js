@@ -15,6 +15,7 @@ const Database = require("./src/utils/Database");
 const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
+const LLMDailyReportService = require("./src/services/LLMDailyReportService");
 const fs = require("fs");
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,6 +39,7 @@ async function main() {
 	const botInstances = [];
 	let botAPI;
 	let statusScheduler;
+	let llmDailyReportService;
 
 	try {
 		const disableActivity = process.env.DISABLE_ACTIVITY === "true";
@@ -259,6 +261,12 @@ async function main() {
 			statusScheduler.start();
 		}
 
+		// Inicializa serviço de relatório diário de LLM (22:00 BRT)
+		llmDailyReportService = LLMDailyReportService.getInstance();
+		if (!disableActivity) {
+			llmDailyReportService.start();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,
@@ -281,6 +289,11 @@ async function main() {
 		// Para o scheduler de status
 		if (statusScheduler) {
 			statusScheduler.stop();
+		}
+
+		// Para o scheduler de relatório diário de LLM
+		if (llmDailyReportService) {
+			llmDailyReportService.stop();
 		}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
