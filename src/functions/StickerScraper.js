@@ -2040,7 +2040,7 @@ const commands = [
 		description: "Denuncia uma figurinha para o administrador",
 		category: "stickers",
 		group: "lovecell",
-		reply: false,
+		reply: true,
 		aliases: ["denunciar-figa", "denunciarfiga", "figdenunciar"],
 		hidden: false,
 		caseSensitive: false,
