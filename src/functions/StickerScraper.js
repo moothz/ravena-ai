@@ -1584,7 +1584,14 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId || quotedMsg?.id;
 		}
 
-		const grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
+		let grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
+		if (grupoLogs && !grupoLogs.includes("@") && /^\d+$/.test(grupoLogs)) {
+			grupoLogs = `${grupoLogs}@g.us`;
+		}
+		if (grupoLogs && !grupoLogs.endsWith("@g.us") && process.env.GRUPO_LOGS) {
+			grupoLogs = process.env.GRUPO_LOGS;
+		}
+
 		if (!grupoLogs) {
 			return new ReturnMessage({
 				chatId,
@@ -1602,7 +1609,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 
 		// Obter buffer da figurinha
 		let stickerBuffer = null;
-		if (stickerId && isDownloaded(stickerId)) {
+		if (stickerId) {
 			const cachedPath = getStickerFilePath(stickerId);
 			if (fs.existsSync(cachedPath)) {
 				stickerBuffer = await fs.promises.readFile(cachedPath);
@@ -2049,7 +2056,8 @@ const commands = [
 
 	new Command({
 		name: "sa-removerFig",
-		description: "Remove figurinha do Lovecell, adiciona à blacklist e apaga ocorrências (apenas SuperAdmin)",
+		description:
+			"Remove figurinha do Lovecell, adiciona à blacklist e apaga ocorrências (apenas SuperAdmin)",
 		category: "stickers",
 		group: "lovecell",
 		reply: false,

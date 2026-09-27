@@ -78,7 +78,8 @@ class FakeBot {
 			});
 		this.client = {
 			setStatus: async (status) => await this.updateProfileStatus(status),
-			getChatById: async (chatId) => await this.getChatDetails(chatId)
+			getChatById: async (chatId) => await this.getChatDetails(chatId),
+			getMessageById: async (msgId) => null
 		};
 
 		this.logger = new Logger("fake-bot");
@@ -231,6 +232,19 @@ class FakeBot {
 		this.deletedMessages.push(key);
 		this.logger.debug(`[FakeBot] deleteMessageByKey() → id=${key.id}`);
 		return { success: true };
+	}
+
+	async formatMessage(msg) {
+		return msg;
+	}
+
+	async sendReaction(chatId, messageId, emoji) {
+		this.sentReactions = this.sentReactions || [];
+		this.sentReactions.push({ chatId, messageId, emoji });
+		this.logger.debug(
+			`[FakeBot] sendReaction() → chatId=${chatId}, id=${messageId}, emoji=${emoji}`
+		);
+		return true;
 	}
 
 	/**

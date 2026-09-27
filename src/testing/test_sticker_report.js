@@ -414,7 +414,10 @@ async function runTests() {
 	assert.strictEqual(bot.capturedMessages.length, 4, "Deve enviar as 4 mensagens de denúncia");
 	assert.strictEqual(bot.capturedMessages[0].chatId, logsGroup);
 	assert.ok(bot.capturedMessages[1].content.includes(testUser), "Denunciante deve ser quem reagiu");
-	assert.strictEqual(bot.capturedMessages[2].content.trim(), `!sa-removerFig ${reportedStickerId2}`);
+	assert.strictEqual(
+		bot.capturedMessages[2].content.trim(),
+		`!sa-removerFig ${reportedStickerId2}`
+	);
 	if (fs.existsSync(stickerPath2)) fs.unlinkSync(stickerPath2);
 	bot.resetCapture();
 	console.log("✓ Reação 🔞 diretamente na figurinha executou a denúncia com sucesso.");
@@ -482,11 +485,136 @@ async function runTests() {
 		resReactSuperAdmin.content.includes("Total processado: *1* figurinha(s)"),
 		"Deve relatar 1 figurinha processada"
 	);
-	assert.strictEqual(fs.existsSync(removeFilePath), false, "Arquivo deve ter sido removido do cache");
+	assert.strictEqual(
+		fs.existsSync(removeFilePath),
+		false,
+		"Arquivo deve ter sido removido do cache"
+	);
 	assert.ok(StickerScraper.isBlacklisted(stickerToRemoveId), "ID deve estar na blacklist");
 	assert.ok(bot.deletedMessages.length >= 1, "Deve ter chamado deleteMessageByKey");
 	assert.strictEqual(bot.deletedMessages[0].id, stickerMsgToRemoveId);
 	console.log("✓ Reação ‼️ por SuperAdmin removeu a figurinha e apagou mensagem com sucesso.");
+
+	// --------------------------------------------------------------------------
+	// 7. Teste de Reações Pós-Restart (Cache Miss -> Fallback Sintético)
+	// --------------------------------------------------------------------------
+	console.log("\n7. Testando reações pós-restart com ReactionsHandler (cache miss -> fallback)...");
+	const postRestartHandler = new ReactionsHandler();
+	await postRestartHandler.loadCommands();
+	bot.eventHandler = eventHandler;
+
+	// Cenário 7.1: Reação 🔞 pós-restart em sticker enviado pelo bot (targetFromMe = true)
+	// getMessageById retorna null (simula pós-restart / cache limpo)
+	bot.client.getMessageById = async () => null;
+
+	const postRestartStickerId = 99991;
+	const postRestartMsgId = "3EB0POSTRESTART_STICKER1";
+	StickerScraper.recordSentStickerMessage(
+		postRestartMsgId,
+		postRestartStickerId,
+		userGroup,
+		bot.id
+	);
+
+	const postRestartPath = StickerScraper.getStickerFilePath(postRestartStickerId);
+	fs.writeFileSync(postRestartPath, Buffer.alloc(4000, 3));
+
+	bot.resetCapture();
+	const handledReportReaction = await postRestartHandler.processReaction(bot, {
+		reaction: "🔞",
+		senderId: testUser,
+		userName: "Denunciante Pós-Restart",
+		msgId: { _serialized: postRestartMsgId },
+		chatId: userGroup,
+		targetFromMe: true
+	});
+
+	assert.strictEqual(
+		handledReportReaction,
+		true,
+		"ReactionsHandler deve processar reação 🔞 via fallback"
+	);
+	assert.strictEqual(bot.capturedMessages.length, 4, "Deve enviar as 4 mensagens de denúncia");
+	assert.strictEqual(bot.capturedMessages[0].chatId, logsGroup, "Sticker deve ir para grupoLogs");
+	assert.strictEqual(
+		bot.capturedMessages[0].options?.mentions?.length || 0,
+		0,
+		"Mensagem do grupoLogs não deve conter menção indevida do denunciante"
+	);
+	assert.strictEqual(
+		bot.capturedMessages[1].chatId,
+		logsGroup,
+		"Texto de detalhes deve ir para grupoLogs"
+	);
+	assert.ok(
+		bot.capturedMessages[1].content.includes(String(postRestartStickerId)),
+		"Texto de detalhes deve conter o ID Lovecell recuperado do SQLite"
+	);
+	assert.strictEqual(bot.capturedMessages[2].chatId, logsGroup);
+	assert.strictEqual(
+		bot.capturedMessages[2].content.trim(),
+		`!sa-removerFig ${postRestartStickerId}`
+	);
+	assert.strictEqual(
+		bot.capturedMessages[3].chatId,
+		userGroup,
+		"Confirmação deve ir para o grupo do usuário"
+	);
+	assert.ok(
+		bot.capturedMessages[3].options?.mentions?.includes(testUser),
+		"Confirmação no grupo do usuário deve conter a menção do denunciante"
+	);
+
+	if (fs.existsSync(postRestartPath)) fs.unlinkSync(postRestartPath);
+	bot.resetCapture();
+	console.log("✓ Reação 🔞 pós-restart com mensagem fora do cache validada com sucesso.");
+
+	// Cenário 7.2: Reação ‼️ pós-restart por SuperAdmin (remove e apaga ocorrência)
+	const removePostRestartId = 99992;
+	const removePostRestartMsgId = "3EB0POSTRESTART_STICKER2";
+	StickerScraper.recordSentStickerMessage(
+		removePostRestartMsgId,
+		removePostRestartId,
+		userGroup,
+		bot.id
+	);
+
+	const removePostRestartPath = StickerScraper.getStickerFilePath(removePostRestartId);
+	fs.writeFileSync(removePostRestartPath, Buffer.alloc(100));
+
+	bot.deletedMessages = [];
+	bot.resetCapture();
+
+	const handledRemoveReaction = await postRestartHandler.processReaction(bot, {
+		reaction: "‼️",
+		senderId: ownerUser,
+		userName: "SuperAdmin Pós-Restart",
+		msgId: { _serialized: removePostRestartMsgId },
+		chatId: userGroup,
+		targetFromMe: true
+	});
+
+	assert.strictEqual(
+		handledRemoveReaction,
+		true,
+		"ReactionsHandler deve processar reação ‼️ via fallback"
+	);
+	assert.ok(StickerScraper.isBlacklisted(removePostRestartId), "Sticker deve estar na blacklist");
+	assert.strictEqual(
+		fs.existsSync(removePostRestartPath),
+		false,
+		"Arquivo deve ter sido excluído do cache"
+	);
+	assert.ok(bot.deletedMessages.length >= 1, "Mensagem deve ter sido apagada no WhatsApp");
+	assert.strictEqual(bot.deletedMessages[0].id, removePostRestartMsgId);
+	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar confirmação para o chat");
+	assert.ok(
+		bot.capturedMessages[0].content.includes("Total processado: *1* figurinha(s)"),
+		"Confirmação deve indicar 1 figurinha removida"
+	);
+
+	bot.resetCapture();
+	console.log("✓ Reação ‼️ pós-restart com mensagem fora do cache validada com sucesso.");
 
 	console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO!");
 }

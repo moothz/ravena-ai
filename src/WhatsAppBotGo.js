@@ -1861,27 +1861,35 @@ class WhatsAppBotGo {
 						}
 
 						if (reactionData) {
-							// ravena só processa se VIER uma reaction (campo 'text')
-							if (reactionData.text !== "" && !reactionData.key.fromMe) {
-								//this.logger.debug(`[${this.id}] Received reaction:`, { msgData, reactionData });
-								// reactionData.text -> emoji
-								// reactionData.key.participant -> @lid da pessoa que RECEBEU a reaction
-								// reactionData.key.remoteJID -> chat que veio a reaction
-								this.reactionHandler.processReaction(this, {
+							// ravena só processa se VIER uma reaction (campo 'text') e a reação não for do próprio bot
+							const isSelfReaction = Boolean(info.IsFromMe || info.fromMe);
+							if (reactionData.text !== "" && !isSelfReaction) {
+								const targetChat =
+									info.Chat || reactionData.key?.remoteJID || reactionData.key?.remoteJid;
+								const targetAuthor =
+									reactionData.key?.participant ||
+									(reactionData.key?.fromMe
+										? this.phoneNumber
+											? `${this.phoneNumber}@s.whatsapp.net`
+											: this.id
+										: null);
+								const targetFromMe = Boolean(reactionData.key?.fromMe);
+
+								const reactionPayload = {
 									reaction: reactionData.text,
 									senderId: info.Sender ?? info.SenderAlt,
 									userName: info.PushName,
-									msgId: { _serialized: reactionData.key.ID }
-								});
+									msgId: { _serialized: reactionData.key.ID },
+									chatId: targetChat,
+									targetAuthor,
+									targetFromMe,
+									key: reactionData.key
+								};
+
+								this.reactionHandler.processReaction(this, reactionPayload);
 
 								if (this.eventHandler && typeof this.eventHandler.onReaction === "function") {
-									this.eventHandler.onReaction(this, {
-										reaction: reactionData.text,
-										senderId: info.Sender ?? info.SenderAlt,
-										userName: info.PushName,
-										chatId: info.Chat,
-										msgId: { _serialized: reactionData.key.ID }
-									});
+									this.eventHandler.onReaction(this, reactionPayload);
 								}
 							}
 						} else {

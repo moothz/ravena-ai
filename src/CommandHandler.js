@@ -1285,7 +1285,8 @@ class CommandHandler {
 						// Adiciona reação "depois" nas mensagens se não estiver definida
 
 						const messages = Array.isArray(result) ? result : [result];
-						const requesterId = message.authorAlt || message.author;
+						const requesterId =
+							message.originReaction?.senderId || message.authorAlt || message.author;
 
 						messages.forEach((msg) => {
 							if (!msg.reactions && command.reactions?.after) {
@@ -1297,8 +1298,13 @@ class CommandHandler {
 								delete msg.options.goReply;
 							}
 
-							// Auto-mention do usuário que pediu o comando (apenas em grupos)
-							if (requesterId && msg instanceof ReturnMessage && message.group) {
+							// Auto-mention do usuário que pediu o comando (apenas em grupos e no mesmo grupo da mensagem de origem)
+							if (
+								requesterId &&
+								msg instanceof ReturnMessage &&
+								message.group &&
+								msg.chatId === message.group
+							) {
 								if (!msg.options) msg.options = {};
 								if (!msg.options.mentions) msg.options.mentions = [];
 								if (!msg.options.mentions.includes(requesterId)) {

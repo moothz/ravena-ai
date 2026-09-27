@@ -1,4 +1,5 @@
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const path = require("path");
 const Logger = require("./utils/Logger");
 
@@ -107,17 +108,27 @@ class ReactionsHandler {
 				return false;
 			}
 
-			// Obtém a mensagem que recebeu a reação
-			const message = await bot.client.getMessageById(reaction.msgId._serialized);
+			const msgId = reaction.msgId?._serialized || reaction.msgId;
+			let message = null;
+			if (bot?.client?.getMessageById) {
+				message = await bot.client.getMessageById(msgId);
+			}
+
 			if (!message) {
 				this.logger.warn(
-					`Não foi possível encontrar mensagem com ID: ${reaction.msgId._serialized}`
+					`[${bot?.id || "bot"}] Mensagem com ID ${msgId} não encontrada no cache. Construindo fallback sintético para reação '${reaction.reaction}'...`
 				);
-				return false;
+				message = this.buildFallbackMessage(bot, reaction);
+				if (!message) {
+					this.logger.warn(
+						`Não foi possível encontrar nem construir fallback para mensagem com ID: ${msgId}`
+					);
+					return false;
+				}
 			}
 
 			// Cria um objeto de mensagem formatado
-			const formattedMessage = await bot.formatMessage(message);
+			const formattedMessage = message._isFallback ? message : await bot.formatMessage(message);
 			formattedMessage.originReaction = reaction; // Para comandos com reactions dinâmicas
 
 			// Encontra e executa o comando
@@ -172,6 +183,146 @@ class ReactionsHandler {
 		} catch (error) {
 			this.logger.error("Erro ao processar reação:", error);
 			return false;
+		}
+	}
+
+	/**
+	 * Constrói uma mensagem sintética de fallback quando a mensagem original
+	 * não está no cache (pós reinício do bot ou expiração do TTL).
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} reaction
+	 * @returns {Object|null}
+	 */
+	buildFallbackMessage(bot, reaction) {
+		try {
+			const stanzaId = reaction.msgId?._serialized || reaction.msgId;
+			if (!stanzaId) return null;
+
+			const chatId = reaction.chatId || reaction.key?.remoteJID || reaction.key?.remoteJid || null;
+			const isGroup = Boolean(chatId && chatId.includes("@g.us"));
+			const fromMe = Boolean(reaction.targetFromMe ?? reaction.key?.fromMe);
+			const author =
+				reaction.targetAuthor ||
+				reaction.key?.participant ||
+				(fromMe ? (bot?.phoneNumber ? `${bot.phoneNumber}@s.whatsapp.net` : bot?.id) : chatId);
+
+			// Tenta recuperar o ID da figurinha do Lovecell caso tenha sido registrado
+			let stickerId = null;
+			try {
+				const StickerScraper = require("./functions/StickerScraper");
+				stickerId = StickerScraper.getStickerIdByMessageId(stanzaId);
+			} catch {
+				// Módulo pode não estar carregado ainda
+			}
+
+			const isStickerReaction =
+				Boolean(stickerId) || ["🔞", "\u{1F51E}", "‼️", "\u203C"].includes(reaction.reaction);
+
+			const type = isStickerReaction ? "sticker" : "unknown";
+			const mediaInfo = isStickerReaction
+				? {
+						mimetype: "image/webp",
+						filename: stickerId ? `figs_lovecell_${stickerId}.webp` : "sticker.webp"
+					}
+				: null;
+
+			const fallbackMessage = {
+				_isFallback: true,
+				id: stanzaId,
+				fromMe,
+				group: isGroup ? chatId : null,
+				from: isGroup ? chatId : author,
+				author,
+				authorAlt: "",
+				name: "Usuario",
+				pushname: "Usuario",
+				authorName: "Usuario",
+				type,
+				content: mediaInfo || "",
+				body: mediaInfo || "",
+				caption: null,
+				timestamp: Math.floor(Date.now() / 1000),
+				hasMedia: Boolean(mediaInfo),
+				mentions: [],
+				quotedParticipant: null,
+				hasQuotedMsg: false,
+				quotedMessageId: null,
+				isQuoted: false,
+				isNewsletter: Boolean(chatId && chatId.includes("newsletter")),
+				downloadMedia: async () => {
+					if (stickerId) {
+						try {
+							const StickerScraper = require("./functions/StickerScraper");
+							const filePath = StickerScraper.getStickerFilePath(stickerId);
+							if (fsSync.existsSync(filePath)) {
+								const buf = await fs.readFile(filePath);
+								return {
+									mimetype: "image/webp",
+									data: buf.toString("base64"),
+									filename: `figs_lovecell_${stickerId}.webp`,
+									isMessageMedia: true
+								};
+							}
+						} catch (downloadErr) {
+							this.logger.debug(
+								`[buildFallbackMessage] Erro ao carregar arquivo de figurinha local: ${downloadErr.message}`
+							);
+						}
+					}
+					return null;
+				},
+				delete: async () => {
+					if (chatId && typeof bot?.deleteMessageByKey === "function") {
+						return await bot.deleteMessageByKey({
+							remoteJid: chatId,
+							id: stanzaId,
+							fromMe,
+							participant: reaction.targetAuthor || reaction.key?.participant
+						});
+					}
+					return false;
+				},
+				origin: {
+					mentionedIds: [],
+					id: {
+						_serialized: `${chatId}_${fromMe}_${stanzaId}`,
+						fromMe,
+						remote: chatId,
+						id: stanzaId,
+						_serialized_v3: stanzaId
+					},
+					key: {
+						remoteJid: chatId,
+						fromMe,
+						id: stanzaId,
+						participant: reaction.targetAuthor || reaction.key?.participant
+					},
+					author,
+					from: isGroup ? chatId : author,
+					react: (emoji) => {
+						if (chatId && typeof bot?.sendReaction === "function") {
+							return bot.sendReaction(chatId, stanzaId, emoji);
+						}
+					},
+					delete: async () => {
+						if (chatId && typeof bot?.deleteMessageByKey === "function") {
+							return await bot.deleteMessageByKey({
+								remoteJid: chatId,
+								id: stanzaId,
+								fromMe,
+								participant: reaction.targetAuthor || reaction.key?.participant
+							});
+						}
+						return false;
+					},
+					body: mediaInfo || ""
+				}
+			};
+
+			return fallbackMessage;
+		} catch (error) {
+			this.logger.error("Erro ao construir fallback de mensagem na reação:", error);
+			return null;
 		}
 	}
 }
