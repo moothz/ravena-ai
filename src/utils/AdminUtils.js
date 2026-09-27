@@ -8,7 +8,11 @@ class AdminUtils {
 	constructor() {
 		this.logger = new Logger("admin-utils");
 		this.database = Database.getInstance();
-		this.superAdmins = process.env.SUPER_ADMINS ? process.env.SUPER_ADMINS.split(",") : [];
+		this.superAdmins = process.env.SUPER_ADMINS
+			? process.env.SUPER_ADMINS.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean)
+			: [];
 	}
 
 	_normalizeId(id, logger) {
@@ -182,11 +186,17 @@ class AdminUtils {
 	 * @returns {boolean} - True se o usuário for super admin
 	 */
 	isSuperAdmin(userId) {
+		if (!userId) return false;
 		const normalizedUserId = this._normalizeId(userId);
-		//this.logger.info(`[isSuperAdmin] ${normalizedUserId}`, this.superAdmins);
-		return (
-			normalizedUserId.length > 10 && this.superAdmins.some((sA) => sA.startsWith(normalizedUserId))
-		);
+		if (!normalizedUserId || normalizedUserId.length < 8) return false;
+		return this.superAdmins.some((sA) => {
+			const cleanSA = this._normalizeId(sA);
+			return (
+				cleanSA === normalizedUserId ||
+				sA.startsWith(normalizedUserId) ||
+				normalizedUserId.startsWith(cleanSA)
+			);
+		});
 	}
 
 	/**

@@ -1373,13 +1373,17 @@ Break down the cost by category and provide a total estimated cost.`;
 	async removeFromSpecialGroups(bot, phoneNumber, specialGroups = [], message) {
 		if (!this.isSuperAdmin(message.author)) return;
 
+		const targetDigits = String(phoneNumber || "").replace(/\D/g, "");
+		const groupsToProcess =
+			specialGroups && specialGroups.length > 0 ? specialGroups : this.getSpecialGroups(bot);
+
 		const results = {
 			successes: 0,
 			failures: 0,
 			details: []
 		};
 
-		for (const groupId of specialGroups) {
+		for (const groupId of groupsToProcess) {
 			try {
 				const chat = await bot.client.getChatById(groupId);
 
@@ -1387,11 +1391,28 @@ Break down the cost by category and provide a total estimated cost.`;
 				if (chat) {
 					this.logger.debug(`[removeFromSpecialGroups] `, { phoneNumber, chat });
 
-					const isInGroup = chat.participants?.some((p) => p.id._serialized === phoneNumber);
+					const participantToRemove = chat.participants?.find((p) => {
+						const pId = p.id?._serialized || p.id || "";
+						const pPn = p.PhoneNumber || p.phoneNumber || "";
+						const pLid = p.LID || p.lid || "";
+						return (
+							pId === phoneNumber ||
+							pPn === phoneNumber ||
+							(targetDigits &&
+								((pId && pId.replace(/\D/g, "") === targetDigits) ||
+									(pPn && pPn.replace(/\D/g, "") === targetDigits) ||
+									(pLid && pLid.replace(/\D/g, "") === targetDigits)))
+						);
+					});
 
-					if (isInGroup) {
+					if (participantToRemove) {
+						const toRemoveId =
+							participantToRemove.id?._serialized ||
+							participantToRemove.JID ||
+							participantToRemove.id ||
+							phoneNumber;
 						// Remove a pessoa do grupo
-						await chat.removeParticipants([phoneNumber]);
+						await chat.removeParticipants([toRemoveId]);
 						results.successes++;
 						results.details.push({
 							groupId,
@@ -1418,6 +1439,151 @@ Break down the cost by category and provide a total estimated cost.`;
 		}
 
 		return results;
+	}
+
+	/**
+	 * Retorna a lista de JIDs de grupos especiais/protegidos (skip ban).
+	 * Inclui os grupos definidos em GRUPOS_SKIP_BAN e grupos oficiais do .env / bot.
+	 */
+	getSpecialGroups(bot) {
+		const groups = new Set();
+
+		// 1. Variável de ambiente dedicada GRUPOS_SKIP_BAN / gruposSkipBan
+		const envSkipBan = process.env.GRUPOS_SKIP_BAN || process.env.gruposSkipBan;
+		if (envSkipBan) {
+			envSkipBan
+				.split(",")
+				.map((g) => g.trim())
+				.filter(Boolean)
+				.forEach((g) => groups.add(g));
+		}
+
+		// 2. Grupos oficiais conhecidos do .env
+		if (process.env.GRUPO_LOGS) groups.add(process.env.GRUPO_LOGS.trim());
+		if (process.env.GRUPO_PESCA) groups.add(process.env.GRUPO_PESCA.trim());
+		if (process.env.GRUPO_INTERACAO) groups.add(process.env.GRUPO_INTERACAO.trim());
+		if (process.env.GRUPO_DOWNLOADS) groups.add(process.env.GRUPO_DOWNLOADS.trim());
+		if (process.env.GRUPO_AVISOS) groups.add(process.env.GRUPO_AVISOS.trim());
+		if (process.env.GRUPO_ANUNCIOS) groups.add(process.env.GRUPO_ANUNCIOS.trim());
+
+		// 3. Grupos especiais do próprio bot
+		if (bot) {
+			if (bot.grupoLogs) groups.add(bot.grupoLogs);
+			if (bot.grupoInteracao) groups.add(bot.grupoInteracao);
+			if (bot.grupoAvisos) groups.add(bot.grupoAvisos);
+			if (bot.grupoAnuncios) groups.add(bot.grupoAnuncios);
+		}
+
+		return Array.from(groups);
+	}
+
+	/**
+	 * Verifica se um grupo é especial/protegido (não deve ser deixado)
+	 */
+	isSpecialGroup(groupId, groupName, specialGroupsList = []) {
+		if (!groupId) return false;
+		const cleanGroupId = groupId.split("@")[0] + "@g.us";
+		if (
+			specialGroupsList &&
+			specialGroupsList.some((sg) => sg === groupId || sg === cleanGroupId)
+		) {
+			return true;
+		}
+
+		const nameLower = groupName ? groupName.toLowerCase() : "";
+		return (
+			nameLower.includes("gpzuera") ||
+			nameLower.includes("rapescas") ||
+			nameLower.includes("ravdownloads") ||
+			nameLower.includes("legionlog")
+		);
+	}
+
+	/**
+	 * Coleta todos os identificadores (telefones e LIDs) de membros de grupos oficiais
+	 * para que NUNCA sejam bloqueados por engano.
+	 */
+	async getOfficialGroupMembers(bot, specialGroupsList = []) {
+		const protectedMembers = new Set();
+		if (!specialGroupsList || specialGroupsList.length === 0) return protectedMembers;
+
+		let enabledBots = [];
+		try {
+			const fs = require("fs");
+			const bots = JSON.parse(fs.readFileSync("bots.json", "utf8")) || [];
+			enabledBots = bots.filter((b) => b.enabled && !b.useTelegram && !b.useDiscord);
+		} catch (_) {}
+
+		const axios = require("axios");
+		const apiUrl = (process.env.WHATS_GO_API_URL || "http://whatsgoapi:8080").replace(/\/$/, "");
+		const apiKey = process.env.WHATS_GO_API_KEY;
+
+		for (const groupJid of specialGroupsList) {
+			let participants = null;
+
+			// Tenta com o próprio bot primeiro
+			try {
+				const chat = await bot.client.getChatById(groupJid);
+				if (
+					chat &&
+					Array.isArray(chat.participants) &&
+					chat.participants.length > 0 &&
+					!chat.notInGroup
+				) {
+					participants = chat.participants;
+				}
+			} catch (_) {}
+
+			// Se o bot não estiver no grupo, consulta as outras instâncias habilitadas via WhatsGo
+			if (!participants && apiKey && enabledBots.length > 0) {
+				for (const b of enabledBots) {
+					const instanceName = b.goID ?? b.nome;
+					try {
+						const res = await axios.post(
+							`${apiUrl}/group/info`,
+							{ groupJid },
+							{
+								headers: {
+									apikey: apiKey,
+									instance: instanceName,
+									"Content-Type": "application/json"
+								},
+								timeout: 3000
+							}
+						);
+						const data = res.data?.data || res.data;
+						if (Array.isArray(data?.Participants) && data.Participants.length > 0) {
+							participants = data.Participants;
+							break;
+						}
+					} catch (_) {}
+				}
+			}
+
+			if (participants) {
+				for (const p of participants) {
+					const fields = [
+						p.PhoneNumber,
+						p.phoneNumber,
+						p.LID,
+						p.lid,
+						p.JID,
+						p.jid,
+						p.id?._serialized,
+						p.id
+					];
+					for (const f of fields) {
+						if (f && typeof f === "string") {
+							const cleanDigits = f.replace(/@.*/, "").replace(/\D/g, "");
+							if (cleanDigits) protectedMembers.add(cleanDigits);
+							protectedMembers.add(f);
+						}
+					}
+				}
+			}
+		}
+
+		return protectedMembers;
 	}
 
 	/**
@@ -1608,13 +1774,16 @@ Break down the cost by category and provide a total estimated cost.`;
 				phoneNumber = `${phoneNumber}@c.us`;
 			}
 
-			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
-			const specialGroups = [];
+			const pnDigits = phoneNumber.replace(/\D/g, "");
+			if (this.isSuperAdmin(phoneNumber) || this.isSuperAdmin(pnDigits)) {
+				return new ReturnMessage({
+					chatId,
+					content: `⛔ Operação cancelada: ${phoneNumber} é um SuperAdministrador e não pode ser bloqueado.`
+				});
+			}
 
-			// Adicionar grupos especiais se estiverem definidos
-			if (bot.grupoInteracao) specialGroups.push(bot.grupoInteracao);
-			if (bot.grupoAvisos) specialGroups.push(bot.grupoAvisos);
-			if (bot.grupoAnuncios) specialGroups.push(bot.grupoAnuncios);
+			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
+			const specialGroups = this.getSpecialGroups(bot);
 
 			try {
 				// Tenta remover o contato de grupos especiais primeiro
@@ -2568,12 +2737,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 
 			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
-			const specialGroups = [];
-
-			// Adicionar grupos especiais se estiverem definidos
-			if (bot.grupoInteracao) specialGroups.push(bot.grupoInteracao);
-			if (bot.grupoAvisos) specialGroups.push(bot.grupoAvisos);
-			if (bot.grupoAnuncios) specialGroups.push(bot.grupoAnuncios);
+			const specialGroups = this.getSpecialGroups(bot);
 
 			// Resultados do bloqueio
 			const results = [];
@@ -2587,6 +2751,13 @@ Break down the cost by category and provide a total estimated cost.`;
 				// Se o número estiver vazio, pula para o próximo
 				if (!phoneNumber) {
 					results.push({ id: contactItem, status: "Erro", message: "Número inválido" });
+					continue;
+				}
+
+				const pnClean = phoneNumber;
+				if (this.isSuperAdmin(contactItem) || this.isSuperAdmin(pnClean)) {
+					this.logger.info(`Ignorando bloqueio de ${contactItem}: usuário é SuperAdmin.`);
+					results.push({ id: contactItem, status: "Ignorado", message: "SuperAdmin protegido" });
 					continue;
 				}
 
@@ -2750,14 +2921,12 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 
 			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
-			const specialGroups = [];
-
-			// Adicionar grupos especiais se estiverem definidos
-			if (bot.grupoInteracao) specialGroups.push(bot.grupoInteracao);
-			if (bot.grupoAvisos) specialGroups.push(bot.grupoAvisos);
-			if (bot.grupoAnuncios) specialGroups.push(bot.grupoAnuncios);
-
+			const specialGroups = this.getSpecialGroups(bot);
 			this.logger.info(`Grupos especiais configurados: ${specialGroups.join(", ")}`);
+
+			// Coleta participantes de grupos oficiais para NUNCA bloqueá-los
+			const officialGroupMembers = await this.getOfficialGroupMembers(bot, specialGroups);
+			this.logger.info(`Membros oficiais protegidos coletados: ${officialGroupMembers.size}`);
 
 			// Resultados da operação para cada contato
 			const contactResults = [];
@@ -2779,6 +2948,20 @@ Break down the cost by category and provide a total estimated cost.`;
 						phoneNumber: contactItem,
 						status: "Erro",
 						message: "Número inválido",
+						groups: [],
+						totalGroups: 0
+					});
+					continue;
+				}
+
+				const targetDigits = phoneNumber;
+				if (this.isSuperAdmin(contactItem) || this.isSuperAdmin(targetDigits)) {
+					this.logger.info(`Ignorando contato alvo ${contactItem}: é SuperAdmin.`);
+					contactResults.push({
+						phoneNumber: contactItem,
+						contactName: "SuperAdmin Protegido",
+						status: "Ignorado",
+						message: "SuperAdmin protegido",
 						groups: [],
 						totalGroups: 0
 					});
@@ -2843,13 +3026,7 @@ Break down the cost by category and provide a total estimated cost.`;
 							const groupName = chat.name ?? groupId;
 
 							// Verifica se é um grupo especial
-							const nameLower = groupName ? groupName.toLowerCase() : "";
-							const isSpecialGroup =
-								specialGroups.includes(groupId) ||
-								(groupName &&
-									(nameLower.includes("gpzuera") ||
-										nameLower.includes("rapescas") ||
-										nameLower.includes("ravdownloads")));
+							const isSpecialGroup = this.isSpecialGroup(groupId, groupName, specialGroups);
 
 							if (isSpecialGroup) {
 								this.logger.info(
@@ -2858,12 +3035,28 @@ Break down the cost by category and provide a total estimated cost.`;
 								results.specialGroups++;
 
 								try {
-									// Verifica se o contato está no grupo
-									const isInGroup = chat.participants.some((p) => p.id._serialized === phoneNumber);
+									const participantToRemove = chat.participants?.find((p) => {
+										const pId = p.id?._serialized || p.id || "";
+										const pPn = p.PhoneNumber || p.phoneNumber || "";
+										const pLid = p.LID || p.lid || "";
+										return (
+											pId === phoneNumber ||
+											pPn === phoneNumber ||
+											(targetDigits &&
+												((pId && pId.replace(/\D/g, "") === targetDigits) ||
+													(pPn && pPn.replace(/\D/g, "") === targetDigits) ||
+													(pLid && pLid.replace(/\D/g, "") === targetDigits)))
+										);
+									});
 
-									if (isInGroup) {
+									if (participantToRemove) {
+										const toRemoveId =
+											participantToRemove.id?._serialized ||
+											participantToRemove.JID ||
+											participantToRemove.id ||
+											phoneNumber;
 										// Remove apenas a pessoa do grupo
-										await chat.removeParticipants([phoneNumber]);
+										await chat.removeParticipants([toRemoveId]);
 
 										results.groups.push({
 											id: groupId,
@@ -2898,24 +3091,38 @@ Break down the cost by category and provide a total estimated cost.`;
 								// Para grupos normais, obtém participantes e sai do grupo
 								const participants = chat.participants ?? [];
 
-								// Adiciona ID de cada participante ao conjunto global e marca o grupo como processado
+								// Adiciona cada participante ao conjunto global e marca o grupo como processado
 								if (!processedGroups.has(groupId)) {
 									participants.forEach((participant) => {
-										// Não adicione os contatos da lista sendo processada
-										const participantId = participant.id._serialized;
+										const pId =
+											participant.id?._serialized ||
+											participant.JID ||
+											participant.id ||
+											participant;
+										const pPn = participant.PhoneNumber || participant.phoneNumber || "";
+										const pLid = participant.LID || participant.lid || "";
+										const pDigits = typeof pId === "string" ? pId.replace(/\D/g, "") : "";
+										const pnDigits = typeof pPn === "string" ? pPn.replace(/\D/g, "") : "";
+
 										if (
-											!contactsList.includes(participantId) &&
-											!contactsList.includes(participantId.replace("@c.us", ""))
+											pId !== phoneNumber &&
+											pDigits !== targetDigits &&
+											pnDigits !== targetDigits &&
+											!contactsList.includes(pId) &&
+											!contactsList.includes(pDigits)
 										) {
-											allContactsSet.add(participantId);
+											allContactsSet.add(
+												JSON.stringify({
+													id: pId,
+													phoneNumber: pPn,
+													lid: pLid
+												})
+											);
 										}
 									});
 
 									// Marca o grupo como processado
 									processedGroups.add(groupId);
-
-									// Envia mensagem de despedida (opcional)
-									//await bot.sendMessage(groupId, '👋 Saindo deste grupo por comando administrativo. Até mais!');
 
 									// Sai do grupo
 									await bot.client.leaveGroup(groupId);
@@ -2951,27 +3158,34 @@ Break down the cost by category and provide a total estimated cost.`;
 					// Adiciona os resultados deste contato
 					contactResults.push(results);
 
-					// Tenta bloquear este contato (API e Local)
-					try {
-						// API
+					// Tenta bloquear este contato alvo (API e Local) se não for SuperAdmin
+					if (this.isSuperAdmin(phoneNumber) || this.isSuperAdmin(targetDigits)) {
+						this.logger.info(`Ignorando bloqueio do contato alvo ${phoneNumber}: é SuperAdmin.`);
+					} else {
 						try {
-							await contact.block();
-						} catch (apiError) {
-							this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, apiError);
-						}
-						// Local
-						try {
-							const pnClean = phoneNumber.split("@")[0];
-							await this.database.addLocalBlock(pnClean);
-						} catch (localError) {
-							this.logger.error(`Erro ao bloquear contato ${phoneNumber} localmente:`, localError);
-						}
+							// API
+							try {
+								await contact.block();
+							} catch (apiError) {
+								this.logger.error(`Erro ao bloquear contato ${phoneNumber} na API:`, apiError);
+							}
+							// Local
+							try {
+								const pnClean = phoneNumber.split("@")[0];
+								await this.database.addLocalBlock(pnClean);
+							} catch (localError) {
+								this.logger.error(
+									`Erro ao bloquear contato ${phoneNumber} localmente:`,
+									localError
+								);
+							}
 
-						this.logger.info(`Contato ${phoneNumber} bloqueado (API/Local).`);
-					} catch (blockError) {
-						this.logger.error(`Erro ao processar bloqueio de ${phoneNumber}:`, blockError);
-						results.status = "Erro ao bloquear";
-						results.error = blockError.message;
+							this.logger.info(`Contato ${phoneNumber} bloqueado (API/Local).`);
+						} catch (blockError) {
+							this.logger.error(`Erro ao processar bloqueio de ${phoneNumber}:`, blockError);
+							results.status = "Erro ao bloquear";
+							results.error = blockError.message;
+						}
 					}
 				} catch (contactError) {
 					this.logger.error(`Erro ao processar contato ${phoneNumber}:`, contactError);
@@ -2985,23 +3199,94 @@ Break down the cost by category and provide a total estimated cost.`;
 				}
 			}
 
-			// Converte o conjunto para array para facilitar o processamento
-			const allContacts = Array.from(allContactsSet);
+			// Converte o conjunto para objetos
+			const allContacts = Array.from(allContactsSet).map((c) => {
+				try {
+					return JSON.parse(c);
+				} catch (_) {
+					return { id: c, phoneNumber: "", lid: "" };
+				}
+			});
 
-			// Bloqueia todos os contatos coletados dos grupos (API e Local)
+			// Bloqueia todos os contatos coletados dos grupos normais (API e Local) com filtros de segurança
 			let blockedCount = 0;
 			let blockErrors = 0;
+			let skippedSuperAdmin = 0;
+			let skippedOfficial = 0;
+			const targetNumbersClean = contactsList.map((c) => c.replace(/\D/g, "")).filter(Boolean);
 
-			for (const contactId of allContacts) {
+			for (const contactObj of allContacts) {
+				const contactId = contactObj.id;
+				const contactPn = contactObj.phoneNumber;
+				const contactLid = contactObj.lid;
+
+				const idDigits = contactId ? contactId.replace(/\D/g, "") : "";
+				const pnDigits = contactPn ? contactPn.replace(/\D/g, "") : "";
+				const lidDigits = contactLid ? contactLid.replace(/\D/g, "") : "";
+
 				try {
-					// Verifica se não é o próprio usuário ou um dos contatos da lista
+					// 1. Verifica se não é o próprio usuário ou um dos contatos da lista
 					if (
 						contactId === message.author ||
 						contactsList.includes(contactId) ||
-						contactsList.includes(contactId.replace("@c.us", ""))
+						contactsList.includes(contactId.replace("@c.us", "")) ||
+						(idDigits && targetNumbersClean.includes(idDigits)) ||
+						(pnDigits && targetNumbersClean.includes(pnDigits))
 					) {
 						continue;
 					}
+
+					// 2. NUNCA bloquear SuperAdmins
+					if (
+						this.isSuperAdmin(contactId) ||
+						(idDigits && this.isSuperAdmin(idDigits)) ||
+						(pnDigits && this.isSuperAdmin(pnDigits)) ||
+						(contactPn && this.isSuperAdmin(contactPn))
+					) {
+						this.logger.info(
+							`Ignorando bloqueio de ${contactId} (${contactPn || idDigits}): usuário é SuperAdmin.`
+						);
+						skippedSuperAdmin++;
+						continue;
+					}
+
+					// 3. NUNCA bloquear membros de grupos oficiais
+					if (
+						officialGroupMembers.has(contactId) ||
+						(idDigits && officialGroupMembers.has(idDigits)) ||
+						(pnDigits && officialGroupMembers.has(pnDigits)) ||
+						(lidDigits && officialGroupMembers.has(lidDigits)) ||
+						(contactPn && officialGroupMembers.has(contactPn))
+					) {
+						this.logger.info(
+							`Ignorando bloqueio de ${contactId} (${contactPn || idDigits}): membro de grupo oficial protegido.`
+						);
+						skippedOfficial++;
+						continue;
+					}
+
+					// Se for LID e não temos o telefone real, tenta consultar detalhes do contato
+					let resolvedNumber = null;
+					try {
+						const contactDetails = await bot.client.getContactById(contactId);
+						if (contactDetails?.number) {
+							resolvedNumber = contactDetails.number.replace(/\D/g, "");
+							if (this.isSuperAdmin(resolvedNumber)) {
+								this.logger.info(
+									`Ignorando bloqueio de ${contactId} (${resolvedNumber}): usuário é SuperAdmin.`
+								);
+								skippedSuperAdmin++;
+								continue;
+							}
+							if (officialGroupMembers.has(resolvedNumber)) {
+								this.logger.info(
+									`Ignorando bloqueio de ${contactId} (${resolvedNumber}): membro de grupo oficial protegido.`
+								);
+								skippedOfficial++;
+								continue;
+							}
+						}
+					} catch (_) {}
 
 					// API
 					try {
@@ -3033,6 +3318,12 @@ Break down the cost by category and provide a total estimated cost.`;
 			responseMessage += `• Grupos únicos processados: ${processedGroups.size}\n`;
 			responseMessage += `• Contatos únicos encontrados: ${allContacts.length}\n`;
 			responseMessage += `• Contatos bloqueados: ${blockedCount}\n`;
+			if (skippedSuperAdmin > 0) {
+				responseMessage += `• SuperAdmins ignorados: ${skippedSuperAdmin}\n`;
+			}
+			if (skippedOfficial > 0) {
+				responseMessage += `• Membros de grupos oficiais ignorados: ${skippedOfficial}\n`;
+			}
 			responseMessage += `• Erros de bloqueio: ${blockErrors}\n\n`;
 
 			// Adiciona detalhes para cada contato processado
@@ -3371,23 +3662,29 @@ Break down the cost by category and provide a total estimated cost.`;
 				});
 			}
 
-			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
-			const specialGroups = [];
-
-			// Adicionar grupos especiais se estiverem definidos
-			if (bot.grupoInteracao) specialGroups.push(bot.grupoInteracao);
-			if (bot.grupoAvisos) specialGroups.push(bot.grupoAvisos);
-			if (bot.grupoAnuncios) specialGroups.push(bot.grupoAnuncios);
-
-			this.logger.info(`Grupos especiais configurados: ${specialGroups.join(", ")}`);
-
 			// Processa o número para formato padrão
 			let phoneNumber = args[0].replace(/\D/g, "");
+			const targetDigits = phoneNumber;
+
+			if (this.isSuperAdmin(args[0]) || this.isSuperAdmin(targetDigits)) {
+				return new ReturnMessage({
+					chatId,
+					content: `⛔ Operação cancelada: ${args[0]} é um SuperAdministrador e não pode ser bloqueado.`
+				});
+			}
 
 			// Se o número não tiver o formato @c.us, adicione
 			if (!phoneNumber.includes("@")) {
 				phoneNumber = `${phoneNumber}@c.us`;
 			}
+
+			// Grupos especiais que não devem ser deixados, apenas remover a pessoa
+			const specialGroups = this.getSpecialGroups(bot);
+			this.logger.info(`Grupos especiais configurados: ${specialGroups.join(", ")}`);
+
+			// Coleta participantes de grupos oficiais para NUNCA bloqueá-los
+			const officialGroupMembers = await this.getOfficialGroupMembers(bot, specialGroups);
+			this.logger.info(`Membros oficiais protegidos coletados: ${officialGroupMembers.size}`);
 
 			try {
 				// Obtém o contato
@@ -3427,13 +3724,7 @@ Break down the cost by category and provide a total estimated cost.`;
 						const groupName = chat.name ?? groupId;
 
 						// Verifica se é um grupo especial
-						const nameLower = groupName ? groupName.toLowerCase() : "";
-						const isSpecialGroup =
-							specialGroups.includes(groupId) ||
-							(groupName &&
-								(nameLower.includes("gpzuera") ||
-									nameLower.includes("rapescas") ||
-									nameLower.includes("ravdownloads")));
+						const isSpecialGroup = this.isSpecialGroup(groupId, groupName, specialGroups);
 
 						if (isSpecialGroup) {
 							this.logger.info(
@@ -3442,12 +3733,28 @@ Break down the cost by category and provide a total estimated cost.`;
 							results.specialGroups++;
 
 							try {
-								// Verifica se o contato está no grupo
-								const isInGroup = chat.participants.some((p) => p.id._serialized === phoneNumber);
+								const participantToRemove = chat.participants?.find((p) => {
+									const pId = p.id?._serialized || p.id || "";
+									const pPn = p.PhoneNumber || p.phoneNumber || "";
+									const pLid = p.LID || p.lid || "";
+									return (
+										pId === phoneNumber ||
+										pPn === phoneNumber ||
+										(targetDigits &&
+											((pId && pId.replace(/\D/g, "") === targetDigits) ||
+												(pPn && pPn.replace(/\D/g, "") === targetDigits) ||
+												(pLid && pLid.replace(/\D/g, "") === targetDigits)))
+									);
+								});
 
-								if (isInGroup) {
+								if (participantToRemove) {
+									const toRemoveId =
+										participantToRemove.id?._serialized ||
+										participantToRemove.JID ||
+										participantToRemove.id ||
+										phoneNumber;
 									// Remove apenas a pessoa do grupo
-									await chat.removeParticipants([phoneNumber]);
+									await chat.removeParticipants([toRemoveId]);
 
 									results.groupsInfo.push({
 										id: groupId,
@@ -3486,16 +3793,26 @@ Break down the cost by category and provide a total estimated cost.`;
 							// Para grupos normais, obtém participantes e sai do grupo
 							const participants = chat.participants ?? [];
 
-							// Adiciona ID de cada participante ao conjunto
+							// Adiciona cada participante ao conjunto (com dados de telefone/lid se disponíveis)
 							participants.forEach((participant) => {
-								// Não adicione o próprio contato sendo bloqueado
-								if (participant.id._serialized !== phoneNumber) {
-									allContacts.add(participant.id._serialized);
+								const pId =
+									participant.id?._serialized || participant.JID || participant.id || participant;
+								const pPn = participant.PhoneNumber || participant.phoneNumber || "";
+								const pLid = participant.LID || participant.lid || "";
+								const pDigits = typeof pId === "string" ? pId.replace(/\D/g, "") : "";
+								const pnDigits = typeof pPn === "string" ? pPn.replace(/\D/g, "") : "";
+
+								// Não adiciona o próprio contato sendo bloqueado
+								if (pId !== phoneNumber && pDigits !== targetDigits && pnDigits !== targetDigits) {
+									allContacts.add(
+										JSON.stringify({
+											id: pId,
+											phoneNumber: pPn,
+											lid: pLid
+										})
+									);
 								}
 							});
-
-							// Envia mensagem de despedida
-							//await bot.sendMessage(groupId, '👋 Saindo deste grupo por comando administrativo. Até mais!');
 
 							// Sai do grupo
 							await bot.client.leaveGroup(groupId);
@@ -3522,12 +3839,88 @@ Break down the cost by category and provide a total estimated cost.`;
 				}
 
 				results.totalContacts = allContacts.size;
+				let skippedSuperAdmin = 0;
+				let skippedOfficial = 0;
 
 				// Bloqueia todos os contatos coletados dos grupos não-especiais (API e Local)
-				for (const contactId of allContacts) {
+				for (const contactRaw of allContacts) {
+					let contactObj;
 					try {
-						// Verifica se não é o próprio usuário ou o contato alvo
-						if (contactId === message.author || contactId === phoneNumber) continue;
+						contactObj = JSON.parse(contactRaw);
+					} catch (_) {
+						contactObj = { id: contactRaw, phoneNumber: "", lid: "" };
+					}
+
+					const contactId = contactObj.id;
+					const contactPn = contactObj.phoneNumber;
+					const contactLid = contactObj.lid;
+
+					const idDigits = contactId ? contactId.replace(/\D/g, "") : "";
+					const pnDigits = contactPn ? contactPn.replace(/\D/g, "") : "";
+					const lidDigits = contactLid ? contactLid.replace(/\D/g, "") : "";
+
+					try {
+						// 1. Verifica se não é o próprio usuário ou o contato alvo
+						if (
+							contactId === message.author ||
+							contactId === phoneNumber ||
+							(idDigits && idDigits === targetDigits) ||
+							(pnDigits && pnDigits === targetDigits)
+						) {
+							continue;
+						}
+
+						// 2. NUNCA bloquear SuperAdmins
+						if (
+							this.isSuperAdmin(contactId) ||
+							(idDigits && this.isSuperAdmin(idDigits)) ||
+							(pnDigits && this.isSuperAdmin(pnDigits)) ||
+							(contactPn && this.isSuperAdmin(contactPn))
+						) {
+							this.logger.info(
+								`Ignorando bloqueio de ${contactId} (${contactPn || idDigits}): usuário é SuperAdmin.`
+							);
+							skippedSuperAdmin++;
+							continue;
+						}
+
+						// 3. NUNCA bloquear membros de grupos oficiais (gpzuera, rapescas, ravdownloads, legionlog, etc.)
+						if (
+							officialGroupMembers.has(contactId) ||
+							(idDigits && officialGroupMembers.has(idDigits)) ||
+							(pnDigits && officialGroupMembers.has(pnDigits)) ||
+							(lidDigits && officialGroupMembers.has(lidDigits)) ||
+							(contactPn && officialGroupMembers.has(contactPn))
+						) {
+							this.logger.info(
+								`Ignorando bloqueio de ${contactId} (${contactPn || idDigits}): membro de grupo oficial protegido.`
+							);
+							skippedOfficial++;
+							continue;
+						}
+
+						// Se for LID e não temos o telefone real, tenta consultar detalhes do contato
+						let resolvedNumber = null;
+						try {
+							const contactDetails = await bot.client.getContactById(contactId);
+							if (contactDetails?.number) {
+								resolvedNumber = contactDetails.number.replace(/\D/g, "");
+								if (this.isSuperAdmin(resolvedNumber)) {
+									this.logger.info(
+										`Ignorando bloqueio de ${contactId} (${resolvedNumber}): usuário é SuperAdmin.`
+									);
+									skippedSuperAdmin++;
+									continue;
+								}
+								if (officialGroupMembers.has(resolvedNumber)) {
+									this.logger.info(
+										`Ignorando bloqueio de ${contactId} (${resolvedNumber}): membro de grupo oficial protegido.`
+									);
+									skippedOfficial++;
+									continue;
+								}
+							}
+						} catch (_) {}
 
 						// API
 						try {
@@ -3552,27 +3945,36 @@ Break down the cost by category and provide a total estimated cost.`;
 					}
 				}
 
-				// Bloqueia o contato alvo por último (API e Local)
-				try {
-					// API
+				// Bloqueia o contato alvo por último (API e Local) se não for SuperAdmin
+				if (this.isSuperAdmin(phoneNumber) || this.isSuperAdmin(targetDigits)) {
+					this.logger.warn(
+						`Tentativa de bloquear contato alvo ${phoneNumber} que é SuperAdmin cancelada.`
+					);
+				} else {
 					try {
-						await contact.block();
-					} catch (apiErr) {
-						this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber} na API:`, apiErr);
-					}
+						// API
+						try {
+							await contact.block();
+						} catch (apiErr) {
+							this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber} na API:`, apiErr);
+						}
 
-					// Local
-					try {
-						const pnClean = phoneNumber.split("@")[0];
-						await this.database.addLocalBlock(pnClean);
-					} catch (localErr) {
-						this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber} localmente:`, localErr);
-					}
+						// Local
+						try {
+							const pnClean = phoneNumber.split("@")[0];
+							await this.database.addLocalBlock(pnClean);
+						} catch (localErr) {
+							this.logger.error(
+								`Erro ao bloquear contato alvo ${phoneNumber} localmente:`,
+								localErr
+							);
+						}
 
-					this.logger.info(`Contato alvo ${phoneNumber} bloqueado (API/Local).`);
-				} catch (blockTargetError) {
-					this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber}:`, blockTargetError);
-					results.errors++;
+						this.logger.info(`Contato alvo ${phoneNumber} bloqueado (API/Local).`);
+					} catch (blockTargetError) {
+						this.logger.error(`Erro ao bloquear contato alvo ${phoneNumber}:`, blockTargetError);
+						results.errors++;
+					}
 				}
 
 				// Constrói a mensagem de resposta
@@ -3583,6 +3985,12 @@ Break down the cost by category and provide a total estimated cost.`;
 				responseMessage += `• Grupos deixados: ${results.leftGroups}\n`;
 				responseMessage += `• Contatos únicos: ${results.totalContacts}\n`;
 				responseMessage += `• Contatos bloqueados: ${results.blockedContacts}\n`;
+				if (skippedSuperAdmin > 0) {
+					responseMessage += `• SuperAdmins ignorados: ${skippedSuperAdmin}\n`;
+				}
+				if (skippedOfficial > 0) {
+					responseMessage += `• Membros de grupos oficiais ignorados: ${skippedOfficial}\n`;
+				}
 				responseMessage += `• Erros: ${results.errors}\n\n`;
 
 				responseMessage += `*Detalhes dos grupos:*\n`;
