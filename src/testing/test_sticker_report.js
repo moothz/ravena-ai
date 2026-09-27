@@ -112,6 +112,9 @@ async function runTests() {
 	assert.strictEqual(figaCmd.hidden, false, "figa-denunciar não deve ser hidden");
 	const helperEntry = StickerScraper.helper.cmds.find((c) => c.cmd === "!figa-denunciar");
 	assert.ok(helperEntry, "figa-denunciar deve estar documentado em helper.cmds");
+	const removerCmd = StickerScraper.commands.find((c) => c.name === "sa-removerFig");
+	assert.ok(removerCmd, "Comando sa-removerFig deve estar registrado");
+	assert.strictEqual(removerCmd.hidden, true, "sa-removerFig deve ser hidden");
 
 	// Cenário 3.1: Usuário chama !figa-denunciar sem marcar mensagem
 	const msgSemQuote = createMessage({
@@ -352,6 +355,138 @@ async function runTests() {
 	console.log(
 		"✓ Reconstrução via contextInfo.quotedMessage (fallback de cache) validada com sucesso."
 	);
+
+	// --------------------------------------------------------------------------
+	// 6. Teste de Gatilhos de Reação (🔞 para figa-denunciar e ‼️ para sa-removerFig)
+	// --------------------------------------------------------------------------
+	console.log("\n6. Testando gatilhos de reação: 🔞 (figa-denunciar) e ‼️ (sa-removerFig)...");
+	const ReactionsHandler = require("../ReactionsHandler");
+	const reactionsHandler = new ReactionsHandler();
+	await reactionsHandler.loadCommands();
+
+	// Validação de mapeamento de emojis
+	assert.strictEqual(
+		reactionsHandler.reactionCommands["🔞"],
+		"figa-denunciar",
+		"Emoji 🔞 deve estar mapeado para 'figa-denunciar'"
+	);
+	assert.strictEqual(
+		reactionsHandler.reactionCommands["‼️"],
+		"sa-removerFig",
+		"Emoji ‼️ deve estar mapeado para 'sa-removerFig'"
+	);
+	console.log("✓ Mapeamento de emojis no ReactionsHandler validado.");
+
+	// Cenário 6.1: Reação 🔞 diretamente em um sticker
+	const reportedStickerId2 = 77772;
+	const sentStickerMsgId2 = "3EB0REACTSTICKER_REPORT";
+	StickerScraper.recordSentStickerMessage(sentStickerMsgId2, reportedStickerId2, userGroup);
+
+	const stickerPath2 = StickerScraper.getStickerFilePath(reportedStickerId2);
+	fs.writeFileSync(stickerPath2, Buffer.alloc(4000, 2));
+
+	bot.resetCapture();
+	const msgReactDenuncia = createMessage({
+		group: userGroup,
+		author: "5511000000000@s.whatsapp.net"
+	});
+	msgReactDenuncia.id = sentStickerMsgId2;
+	msgReactDenuncia.type = "sticker";
+	msgReactDenuncia.originReaction = {
+		reaction: "🔞",
+		senderId: testUser,
+		userName: "Denunciante React"
+	};
+	msgReactDenuncia.origin.id = { _serialized: sentStickerMsgId2, id: sentStickerMsgId2 };
+	msgReactDenuncia.origin.downloadMedia = async () => ({
+		mimetype: "image/webp",
+		data: Buffer.alloc(4000, 2).toString("base64")
+	});
+
+	await eventHandler.commandHandler.processCommand(
+		bot,
+		msgReactDenuncia,
+		"figa-denunciar",
+		[],
+		testGroupObj
+	);
+
+	assert.strictEqual(bot.capturedMessages.length, 4, "Deve enviar as 4 mensagens de denúncia");
+	assert.strictEqual(bot.capturedMessages[0].chatId, logsGroup);
+	assert.ok(bot.capturedMessages[1].content.includes(testUser), "Denunciante deve ser quem reagiu");
+	assert.strictEqual(bot.capturedMessages[2].content.trim(), `!sa-removerFig ${reportedStickerId2}`);
+	if (fs.existsSync(stickerPath2)) fs.unlinkSync(stickerPath2);
+	bot.resetCapture();
+	console.log("✓ Reação 🔞 diretamente na figurinha executou a denúncia com sucesso.");
+
+	// Cenário 6.2: Reação ‼️ em sticker por usuário comum (não autorizado)
+	const stickerToRemoveId = 88882;
+	const stickerMsgToRemoveId = "3EB0REMOVE_STICKER_REACT";
+	StickerScraper.recordSentStickerMessage(stickerMsgToRemoveId, stickerToRemoveId, userGroup);
+
+	const removeFilePath = StickerScraper.getStickerFilePath(stickerToRemoveId);
+	fs.writeFileSync(removeFilePath, Buffer.alloc(100));
+
+	const msgReactSemPerm = createMessage({
+		group: userGroup,
+		author: "5511777777777@s.whatsapp.net"
+	});
+	msgReactSemPerm.id = stickerMsgToRemoveId;
+	msgReactSemPerm.type = "sticker";
+	msgReactSemPerm.originReaction = {
+		reaction: "‼️",
+		senderId: "5511777777777@s.whatsapp.net" // Usuário comum
+	};
+
+	bot.deletedMessages = [];
+	const resReactSemPerm = await StickerScraper.removerFigCommand(
+		bot,
+		msgReactSemPerm,
+		[],
+		testGroupObj
+	);
+	assert.strictEqual(resReactSemPerm, null, "Reação ‼️ de não-superadmin deve ser ignorada");
+	assert.strictEqual(bot.deletedMessages.length, 0, "Nenhuma mensagem deve ser apagada");
+	assert.strictEqual(fs.existsSync(removeFilePath), true, "Arquivo não deve ser removido");
+	console.log("✓ Reação ‼️ de não-superadmin ignorada silenciosamente sem apagar nada.");
+
+	// Cenário 6.3: Reação ‼️ em sticker por SuperAdmin (autorizado)
+	const msgReactSuperAdmin = createMessage({
+		group: userGroup,
+		author: "5511000000000@s.whatsapp.net" // Remetente original da mensagem
+	});
+	msgReactSuperAdmin.id = stickerMsgToRemoveId;
+	msgReactSuperAdmin.type = "sticker";
+	msgReactSuperAdmin.originReaction = {
+		reaction: "‼️",
+		senderId: ownerUser // SuperAdmin reagindo
+	};
+	msgReactSuperAdmin.origin.id = {
+		_serialized: stickerMsgToRemoveId,
+		id: stickerMsgToRemoveId,
+		remote: userGroup
+	};
+
+	// Vincula isSuperAdmin ao ownerUser no superAdmin do commandHandler
+	eventHandler.commandHandler.superAdmin.isSuperAdmin = (author) => author === ownerUser;
+
+	const resReactSuperAdmin = await StickerScraper.removerFigCommand(
+		bot,
+		msgReactSuperAdmin,
+		[],
+		testGroupObj
+	);
+
+	assert.ok(resReactSuperAdmin, "Deve retornar confirmação de remoção");
+	assert.ok(
+		resReactSuperAdmin.content.includes("Total processado: *1* figurinha(s)"),
+		"Deve relatar 1 figurinha processada"
+	);
+	assert.strictEqual(fs.existsSync(removeFilePath), false, "Arquivo deve ter sido removido do cache");
+	assert.ok(StickerScraper.isBlacklisted(stickerToRemoveId), "ID deve estar na blacklist");
+	assert.ok(bot.deletedMessages.length >= 1, "Deve ter chamado deleteMessageByKey");
+	assert.strictEqual(bot.deletedMessages[0].id, stickerMsgToRemoveId);
+	console.log("✓ Reação ‼️ por SuperAdmin removeu a figurinha e apagou mensagem com sucesso.");
 
 	console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO!");
 }

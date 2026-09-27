@@ -9,6 +9,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
 const NSFWPredict = require("../utils/NSFWPredict");
+const AdminUtils = require("../utils/AdminUtils");
 
 const logger = new Logger("sticker-scraper");
 const database = Database.getInstance();
@@ -1523,23 +1524,64 @@ if (shouldAutoStartTimer) {
  * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
  */
 async function figaDenunciarCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
+	const chatId =
+		message.group ?? (message.originReaction ? message.originReaction.senderId : message.author);
 
 	try {
-		const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-		if (!quotedMsg && !message.hasQuotedMsg) {
-			return new ReturnMessage({
-				chatId,
-				content:
-					"⚠️ Para denunciar uma figurinha, responda (reply) diretamente a ela com *!figa-denunciar*."
-			});
-		}
+		let targetMsg = null;
+		let directQuotedId = null;
 
-		if (quotedMsg && quotedMsg.type !== "sticker") {
-			return new ReturnMessage({
-				chatId,
-				content: "⚠️ A mensagem respondida não é uma figurinha."
-			});
+		if (message.originReaction) {
+			const isSelfSticker =
+				message.type === "sticker" ||
+				message.origin?.type === "sticker" ||
+				Boolean(message.content?.mimetype?.includes("webp")) ||
+				Boolean(message.origin?.content?.mimetype?.includes("webp"));
+
+			if (isSelfSticker) {
+				targetMsg = message;
+				directQuotedId =
+					message.id ||
+					message.origin?.id?._serialized_v3 ||
+					message.origin?.id?.id ||
+					message.origin?.id?._serialized ||
+					message.quotedMessageId;
+			} else {
+				const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+				if (
+					quotedMsg &&
+					(quotedMsg.type === "sticker" ||
+						quotedMsg.origin?.type === "sticker" ||
+						Boolean(quotedMsg.content?.mimetype?.includes("webp")))
+				) {
+					targetMsg = quotedMsg;
+					directQuotedId =
+						message.quotedMessageId || message.origin?.quotedMessageId || quotedMsg.id;
+				}
+			}
+
+			if (!targetMsg) {
+				return null;
+			}
+		} else {
+			const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+			if (!quotedMsg && !message.hasQuotedMsg) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Para denunciar uma figurinha, responda (reply) diretamente a ela com *!figa-denunciar*."
+				});
+			}
+
+			if (quotedMsg && quotedMsg.type !== "sticker") {
+				return new ReturnMessage({
+					chatId,
+					content: "⚠️ A mensagem respondida não é uma figurinha."
+				});
+			}
+
+			targetMsg = quotedMsg;
+			directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId || quotedMsg?.id;
 		}
 
 		const grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
@@ -1550,11 +1592,10 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			});
 		}
 
-		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
-		const stickerId = await getStickerIdFromMessage(quotedMsg, directQuotedId);
+		const stickerId = await getStickerIdFromMessage(targetMsg, directQuotedId);
 
 		// Vincula a mensagem reportada e a instância do bot ao sticker_id para remoção posterior
-		const targetMsgId = directQuotedId || quotedMsg?.id;
+		const targetMsgId = directQuotedId || targetMsg?.id || targetMsg?.origin?.id?._serialized_v3;
 		if (stickerId && targetMsgId) {
 			recordSentStickerMessage(targetMsgId, stickerId, message.group || chatId, bot?.id || null);
 		}
@@ -1568,15 +1609,25 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			}
 		}
 
-		if (!stickerBuffer && quotedMsg?.downloadMedia) {
-			const downloaded = await quotedMsg.downloadMedia().catch(() => null);
+		if (!stickerBuffer && (targetMsg?.downloadMedia || targetMsg?.origin?.downloadMedia)) {
+			const downloadFn = targetMsg?.downloadMedia
+				? targetMsg.downloadMedia.bind(targetMsg)
+				: targetMsg.origin.downloadMedia.bind(targetMsg.origin);
+			const downloaded = await downloadFn().catch(() => null);
 			if (downloaded?.data) {
 				stickerBuffer = Buffer.from(downloaded.data, "base64");
 			}
 		}
 
 		const returnMessages = [];
-		const denunciante = message.authorName || message.name || message.author;
+		const denuncianteId = message.originReaction ? message.originReaction.senderId : message.author;
+		const denunciante =
+			(message.originReaction
+				? message.originReaction.userName || message.originReaction.pushName
+				: null) ||
+			message.authorName ||
+			message.name ||
+			denuncianteId;
 		const grupoOrigem =
 			group?.name || group?.subject || (message.group ? message.group : "Privado");
 
@@ -1605,14 +1656,14 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		if (stickerId) {
 			logText =
 				`🚨 *Denúncia de Figurinha Recebida*\n\n` +
-				`👤 *Denunciante:* ${denunciante} (${message.author})\n` +
+				`👤 *Denunciante:* ${denunciante} (${denuncianteId})\n` +
 				`👥 *Origem:* ${grupoOrigem}\n` +
 				`🆔 *ID Lovecell:* ${stickerId}\n` +
 				`🔗 *Link:* https://lovecell.com.br/figurinhas/${stickerId}`;
 		} else {
 			logText =
 				`🚨 *Denúncia de Figurinha Recebida*\n\n` +
-				`👤 *Denunciante:* ${denunciante} (${message.author})\n` +
+				`👤 *Denunciante:* ${denunciante} (${denuncianteId})\n` +
 				`👥 *Origem:* ${grupoOrigem}\n` +
 				`⚠️ *Aviso:* Não foi possível identificar o ID numérico desta figurinha no Lovecell (pode ter sido enviada por outro usuário ou antes do rastreamento ativo).`;
 		}
@@ -1648,6 +1699,297 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content: "Ocorreu um erro ao registrar a denúncia. Por favor, tente novamente mais tarde."
+		});
+	}
+}
+
+/**
+ * Remove figurinha(s) do Lovecell do cache, adiciona à blacklist, limpa estatísticas
+ * e apaga ocorrências no WhatsApp. Suporta chamada por texto (!sa-removerFig) ou reação (‼️).
+ *
+ * @param {WhatsAppBot} bot
+ * @param {Object} message
+ * @param {Array<string>} [args=[]]
+ * @param {Object} [group=null]
+ * @param {Object} [superAdminContext=null]
+ * @returns {Promise<ReturnMessage|null>}
+ */
+async function removerFigCommand(bot, message, args = [], group = null, superAdminContext = null) {
+	const authorId = message.originReaction ? message.originReaction.senderId : message.author;
+	const chatId =
+		message.group ?? (message.originReaction ? message.originReaction.senderId : message.author);
+
+	try {
+		// 1. Verificação de permissões de SuperAdmin / ComuAdmin
+		let isAuthorized = false;
+		if (superAdminContext && typeof superAdminContext.isSuperAdmin === "function") {
+			isAuthorized =
+				superAdminContext.isSuperAdmin(authorId) ||
+				(superAdminContext.adminUtils &&
+					typeof superAdminContext.adminUtils.isComuAdmin === "function" &&
+					superAdminContext.adminUtils.isComuAdmin(authorId, bot));
+		}
+		if (!isAuthorized && bot?.eventHandler?.commandHandler?.superAdmin) {
+			const sa = bot.eventHandler.commandHandler.superAdmin;
+			if (typeof sa.isSuperAdmin === "function" && sa.isSuperAdmin(authorId)) {
+				isAuthorized = true;
+			}
+		}
+		if (!isAuthorized && bot?.superAdmin && typeof bot.superAdmin.isSuperAdmin === "function") {
+			if (bot.superAdmin.isSuperAdmin(authorId)) isAuthorized = true;
+		}
+		if (!isAuthorized) {
+			const adminUtilsInstance = AdminUtils.getInstance();
+			if (
+				adminUtilsInstance.isSuperAdmin(authorId) ||
+				adminUtilsInstance.isComuAdmin(authorId, bot)
+			) {
+				isAuthorized = true;
+			}
+		}
+
+		if (!isAuthorized) {
+			if (message.originReaction) {
+				return null;
+			}
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		const rawIds = [];
+
+		// 2. Extrai IDs dos argumentos (aceita múltiplos separados por espaço ou vírgula)
+		if (args && args.length > 0) {
+			for (const arg of args) {
+				const parts = String(arg).split(/[,;\s]+/);
+				for (const p of parts) {
+					const cleaned = p.trim().replace(/^#/, "");
+					if (/^\d+$/.test(cleaned)) {
+						const num = parseInt(cleaned, 10);
+						if (num > 0) rawIds.push(num);
+					}
+				}
+			}
+		}
+
+		// 3. Se nenhum ID veio nos argumentos, tenta extrair da mensagem atual (se for reação) ou da citada
+		if (rawIds.length === 0) {
+			if (message.originReaction) {
+				const isSelfSticker =
+					message.type === "sticker" ||
+					message.origin?.type === "sticker" ||
+					Boolean(message.content?.mimetype?.includes("webp")) ||
+					Boolean(message.origin?.content?.mimetype?.includes("webp"));
+
+				if (isSelfSticker) {
+					const directId =
+						message.id ||
+						message.origin?.id?._serialized_v3 ||
+						message.origin?.id?.id ||
+						message.origin?.id?._serialized ||
+						message.quotedMessageId;
+					const foundId = await getStickerIdFromMessage(message, directId);
+					if (foundId) rawIds.push(foundId);
+				}
+
+				const msgText = message.body || message.content || message.caption || "";
+				if (typeof msgText === "string") {
+					const matches = msgText.matchAll(
+						/lovecell(?:\.com\.br\/figurinhas\/|[\s#]+)(\d+)|!sa-removerFig\s+(\d+)/gi
+					);
+					for (const m of matches) {
+						const foundId = parseInt(m[1] || m[2], 10);
+						if (!isNaN(foundId) && foundId > 0) rawIds.push(foundId);
+					}
+				}
+			}
+
+			// Verifica mensagem citada (seja em comando por texto ou se reagiu em um reply)
+			const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+			if (quotedMsg) {
+				const quotedText = quotedMsg.body || quotedMsg.content || quotedMsg.caption || "";
+				if (typeof quotedText === "string") {
+					const matches = quotedText.matchAll(
+						/lovecell(?:\.com\.br\/figurinhas\/|[\s#]+)(\d+)|!sa-removerFig\s+(\d+)/gi
+					);
+					for (const m of matches) {
+						const foundId = parseInt(m[1] || m[2], 10);
+						if (!isNaN(foundId) && foundId > 0) rawIds.push(foundId);
+					}
+				}
+
+				if (
+					rawIds.length === 0 &&
+					(quotedMsg.type === "sticker" ||
+						quotedMsg.origin?.type === "sticker" ||
+						Boolean(quotedMsg.content?.mimetype?.includes("webp")))
+				) {
+					const directQuotedId =
+						message.quotedMessageId || message.origin?.quotedMessageId || quotedMsg.id;
+					const foundId = await getStickerIdFromMessage(quotedMsg, directQuotedId);
+					if (foundId) rawIds.push(foundId);
+				}
+			}
+		}
+
+		const uniqueIds = Array.from(new Set(rawIds));
+
+		if (uniqueIds.length === 0) {
+			if (message.originReaction) {
+				return null;
+			}
+			return new ReturnMessage({
+				chatId,
+				content:
+					"⚠️ Informe ao menos um ID numérico de figurinha ou responda a uma figurinha/denúncia.\n" +
+					"*Exemplo:* `!sa-removerFig 12345` ou `!sa-removerFig 12345 67890 112233`"
+			});
+		}
+
+		const removalResult = await removeMultipleFromLovecell(
+			uniqueIds,
+			`Removido via sa-removerFig por ${authorId}`
+		);
+
+		// 4. Apaga ocorrências no WhatsApp nos chats onde a figurinha foi enviada ou denunciada
+		let totalDeletedMsgs = 0;
+		const allBots = Database.getInstance().botInstances || bot?.database?.botInstances || [];
+
+		for (const res of removalResult.results) {
+			if (Array.isArray(res.associatedMessages) && res.associatedMessages.length > 0) {
+				for (const msg of res.associatedMessages) {
+					if (!msg.chatId || !msg.messageId) continue;
+
+					let targetBot = bot;
+					if (msg.botId) {
+						const foundBot = allBots.find(
+							(b) =>
+								b &&
+								(b.id === msg.botId || b.instanceName === msg.botId || b.nomeExibir === msg.botId)
+						);
+						if (foundBot) {
+							targetBot = foundBot;
+						} else if (bot.otherBots && Array.isArray(bot.otherBots)) {
+							const foundInOther = bot.otherBots.find(
+								(b) => b && (b.id === msg.botId || b.instanceName === msg.botId)
+							);
+							if (foundInOther) targetBot = foundInOther;
+						}
+					}
+
+					if (targetBot && typeof targetBot.deleteMessageByKey === "function") {
+						try {
+							const actualId =
+								typeof targetBot.getActualMsgId === "function"
+									? targetBot.getActualMsgId(msg.messageId)
+									: msg.messageId;
+							await targetBot.deleteMessageByKey({
+								remoteJid: msg.chatId,
+								id: actualId,
+								fromMe: true
+							});
+							totalDeletedMsgs++;
+						} catch (delError) {
+							logger.debug(
+								`[sa-removerFig] Erro ignorado ao tentar apagar mensagem ${msg.messageId} em ${msg.chatId}: ${delError.message}`
+							);
+						}
+					}
+				}
+			}
+		}
+
+		// 5. Se foi reação direta em um sticker ou quote de um sticker no chat atual
+		if (message.originReaction) {
+			const isSelfSticker =
+				message.type === "sticker" ||
+				message.origin?.type === "sticker" ||
+				Boolean(message.content?.mimetype?.includes("webp")) ||
+				Boolean(message.origin?.content?.mimetype?.includes("webp"));
+
+			if (isSelfSticker) {
+				const msgStanzaId =
+					message.id ||
+					message.origin?.id?._serialized_v3 ||
+					message.origin?.id?.id ||
+					message.origin?.id?._serialized;
+				const targetChat =
+					message.group ||
+					message.chatId ||
+					(message.origin?.id?.remote ? message.origin.id.remote : chatId);
+
+				if (msgStanzaId && typeof bot.deleteMessageByKey === "function") {
+					try {
+						const actualId =
+							typeof bot.getActualMsgId === "function"
+								? bot.getActualMsgId(msgStanzaId)
+								: msgStanzaId;
+						await bot.deleteMessageByKey({
+							remoteJid: targetChat,
+							id: actualId,
+							fromMe: message.fromMe !== false
+						});
+						totalDeletedMsgs++;
+					} catch (delError) {
+						logger.debug(
+							`[sa-removerFig] Erro ignorado ao tentar apagar sticker via reação: ${delError.message}`
+						);
+					}
+				}
+			}
+		}
+
+		const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+		if (
+			quotedMsg &&
+			(quotedMsg.type === "sticker" || quotedMsg.origin?.type === "sticker") &&
+			(message.group || message.chatId || chatId)
+		) {
+			const quotedStanzaId = directQuotedId || quotedMsg.id;
+			if (quotedStanzaId && typeof bot.deleteMessageByKey === "function") {
+				try {
+					const actualId =
+						typeof bot.getActualMsgId === "function"
+							? bot.getActualMsgId(quotedStanzaId)
+							: quotedStanzaId;
+					await bot.deleteMessageByKey({
+						remoteJid: message.group || message.chatId || chatId,
+						id: actualId,
+						fromMe: true
+					});
+					totalDeletedMsgs++;
+				} catch (delError) {
+					logger.debug(
+						`[sa-removerFig] Erro ignorado ao tentar apagar sticker citado: ${delError.message}`
+					);
+				}
+			}
+		}
+
+		let responseText = `✅ *Processamento de Remoção Concluído*\n`;
+		responseText += `• Total processado: *${removalResult.removedCount}* figurinha(s)\n`;
+		if (totalDeletedMsgs > 0) {
+			responseText += `• Mensagens apagadas: *${totalDeletedMsgs}* ocorrência(s)\n`;
+		}
+		responseText += `\n`;
+
+		for (const res of removalResult.results) {
+			const cacheStatus = res.deletedFile ? "Cache local apagado" : "Não estava em cache";
+			responseText += `• *#${res.id}*: Blacklist NSFW ativada | ${cacheStatus}\n  🔗 https://lovecell.com.br/figurinhas/${res.id}\n`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: responseText.trim()
+		});
+	} catch (error) {
+		logger.error(`Erro ao executar sa-removerFig: ${error.message}`, error);
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Ocorreu um erro ao remover a(s) figurinha(s): ${error.message}`
 		});
 	}
 }
@@ -1697,11 +2039,31 @@ const commands = [
 		caseSensitive: false,
 		cooldown: 5,
 		reactions: {
+			trigger: ["🔞", "\u{1F51E}"],
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🚨",
 			error: "❌"
 		},
 		method: figaDenunciarCommand
+	}),
+
+	new Command({
+		name: "sa-removerFig",
+		description: "Remove figurinha do Lovecell, adiciona à blacklist e apaga ocorrências (apenas SuperAdmin)",
+		category: "stickers",
+		group: "lovecell",
+		reply: false,
+		aliases: ["removerFig", "remover-fig", "figa-remover", "figaremover", "delfig"],
+		hidden: true,
+		caseSensitive: false,
+		cooldown: 0,
+		reactions: {
+			trigger: ["‼️", "\u203C"],
+			before: false,
+			after: false,
+			error: "❌"
+		},
+		method: removerFigCommand
 	})
 ];
 
@@ -1719,8 +2081,8 @@ const helper = {
 		},
 		{
 			cmd: "!figa-denunciar",
-			desc: "Denuncia uma figurinha para o administrador",
-			usage: ["!figa-denunciar (em resposta a uma figurinha)"],
+			desc: "Denuncia uma figurinha para o administrador (ou reaja com 🔞)",
+			usage: ["!figa-denunciar (em resposta a uma figurinha)", "Reação: 🔞"],
 			category: "stickers"
 		}
 	]
@@ -1771,5 +2133,6 @@ module.exports = {
 	getMessagesForSticker,
 	removeFromLovecell,
 	removeMultipleFromLovecell,
-	figaDenunciarCommand
+	figaDenunciarCommand,
+	removerFigCommand
 };
