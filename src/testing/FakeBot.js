@@ -33,6 +33,7 @@ class FakeBot {
 		this.comunitario = options.comunitario ?? false;
 		this.privado = options.privado ?? false;
 		this.extras = options.extras || {};
+		this.numeroResponsavel = options.numeroResponsavel ?? null;
 		this.userAgent = "FakeBot/1.0";
 		this.lidToPnMap = new Map();
 

@@ -280,8 +280,8 @@ async function runTests() {
 	);
 	console.log("✓ evaluateAutoAcceptWithLLM allows strange characters for donators");
 
-	// 10. Test extraText warnings for current ravena and previous ravena
-	// Case A: Bot currently in group (should have 🚨 warning, should NOT duplicate with ⚠️ previous warning)
+	// 10. Test bot already in group vs previous ravena
+	// Case A: Bot currently in group (should terminate early without cooldown, notifying user that bot is already in group)
 	const userJid8 = "5511999990006@s.whatsapp.net";
 	const groupWithBotCode = "GROUPWITHBOT123";
 	bot.resetCapture();
@@ -309,15 +309,25 @@ async function runTests() {
 	);
 
 	const userMsgA = bot.capturedMessages.find((m) => m.chatId === userJid8);
-	assert.ok(userMsgA, "Should send confirmation message to user");
+	assert.ok(userMsgA, "Should send message to user");
 	const msgA = userMsgA.content;
 	assert.ok(
-		msgA.includes("🚨 Já tem uma ravena no seu grupo!"),
-		`Message should contain siren warning: got '${msgA}'`
+		msgA.includes("Já tem um bot no grupo!"),
+		`Message should contain bot in group warning: got '${msgA}'`
 	);
 	assert.ok(
-		!msgA.includes("Alguma ravena já esteve no seu grupo e foi removida"),
-		"Message should NOT contain previous ravena warning when bot is currently in group"
+		msgA.includes("Remover o bot do grupo pode ocasionar o bloqueio"),
+		`Message should mention danger of removing bot: got '${msgA}'`
+	);
+	assert.strictEqual(
+		inviteSystem.userCooldowns.has(userJid8),
+		false,
+		"User should not be on cooldown when bot already in group"
+	);
+	assert.strictEqual(
+		bot.capturedMessages.some((m) => m.chatId === "admin-invites@g.us"),
+		false,
+		"Should not forward invite to admin group when bot already in group"
 	);
 
 	// Case B: Bot was in group before, but NOT currently in group

@@ -150,6 +150,27 @@ class InviteSystem {
 		);
 	}
 
+	getBotAlreadyInGroupMessage() {
+		const communityLink = this.getCommunityLink();
+		return (
+			"Já tem um bot no grupo! Todos os bots rodam o mesmo código, no mesmo servidor e não adianta trocar um pelo outro, pois a instabilidade pode afetar qualquer um deles em períodos aleatórios.\n\n" +
+			"⚠️ *Atenção:* Remover o bot do grupo pode ocasionar o bloqueio se ele foi adicionado recentemente, e seu grupo não terá prioridade para voltar a ter o bot. Por isso, se quiser continuar usando, é importante pedir ajuda em vez de remover!\n\n" +
+			`Se precisar de ajuda, chame no !grupao / comunidade da ravena:\n${communityLink}`
+		);
+	}
+
+	getMinMembersMessage(configuredMinMembros) {
+		let contato = "no !grupao / comunidade da ravena";
+		if (this.bot?.numeroResponsavel && String(this.bot.numeroResponsavel).trim()) {
+			let respNum = String(this.bot.numeroResponsavel).split("@")[0].trim();
+			if (!respNum.startsWith("+")) {
+				respNum = `+${respNum.replace(/\D/g, "")}`;
+			}
+			contato = `administrador desta ravena comunitária em ${respNum}`;
+		}
+		return `Esta ravena não aceita convites de grupos com menos de ${configuredMinMembros} membros. Se tiver dúvidas, chame ${contato}`;
+	}
+
 	static canBotJoin(botId) {
 		const now = Date.now();
 		const windowMs = 30 * 60 * 1000;
@@ -230,13 +251,15 @@ class InviteSystem {
 	 */
 	getBotsInGroupFromInvite(inviteInfoData) {
 		const botsInGroup = [];
-		if (!inviteInfoData?.Participants || !Array.isArray(inviteInfoData.Participants)) {
+		const participants = inviteInfoData?.Participants || inviteInfoData?.participants;
+		if (!participants || !Array.isArray(participants)) {
 			return botsInGroup;
 		}
 
 		const knownBotNumbers = this.getKnownBotNumbers();
-		for (const p of inviteInfoData.Participants) {
-			const rawNum = p.PhoneNumber || p.JID || "";
+		for (const p of participants) {
+			const rawNum =
+				typeof p === "string" ? p : p?.PhoneNumber || p?.JID || p?.phoneNumber || p?.jid || "";
 			const cleanNum = String(rawNum)
 				.split("@")[0]
 				.split(":")[0]
@@ -559,6 +582,7 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			try {
 				if (this.bot.client && typeof this.bot.client.getInviteInfo === "function") {
 					infoCheck = await this.bot.client.getInviteInfo(inviteCode);
+					// Checa se o link é comunidade antes de iniciar cooldown ou pedir motivo
 					if (infoCheck && this.isCommunity(infoCheck)) {
 						this.logger.info(
 							`Ignorando convite de comunidade de ${message.author} (${inviteCode}) sem aplicar cooldown.`
@@ -573,22 +597,56 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						return true;
 					}
 
-					// Checa se o grupo tem apenas 1 membro (hard filter - não repassa o convite)
-					const count = this.getParticipantCount(infoCheck);
-					if (count !== null && count <= 1) {
-						this.logger.info(
-							`Ignorando convite de grupo com apenas 1 membro de ${message.author} (${inviteCode}) sem repassar convite.`
-						);
-						if (message.origin && typeof message.origin.react === "function") {
-							message.origin.react("👤");
+					if (infoCheck) {
+						// Checa se já existe algum bot no grupo
+						const botsInGroup = this.getBotsInGroupFromInvite(infoCheck);
+						if (botsInGroup.length > 0) {
+							this.logger.info(
+								`Ignorando convite de ${message.author} (${inviteCode}): já existe bot no grupo (+${botsInGroup.join(", +")}). Sem cooldown.`
+							);
+							if (message.origin && typeof message.origin.react === "function") {
+								message.origin.react("🤖");
+							}
+							await this.bot.sendMessage(message.author, this.getBotAlreadyInGroupMessage());
+							return true;
 						}
-						const botName = this.bot.nomeExibir || "ravenabot";
-						const communityLink = this.getCommunityLink();
-						await this.bot.sendMessage(
-							message.author,
-							`Este grupo tem apenas 1 membro. Lembre-se que a ${botName} pode ser usada diretamente no PV, não tem necessidade de criar um grupo com ela! Se quiser testar os comandos, entre na comunidade da ravenabot:\n${communityLink}`
-						);
-						return true;
+
+						// Checa se extras.invites.minMembros está configurado
+						const configuredMinMembros = parseInt(this.bot?.extras?.invites?.minMembros, 10);
+						const count = this.getParticipantCount(infoCheck);
+
+						if (Number.isInteger(configuredMinMembros) && configuredMinMembros > 0) {
+							if (count !== null && count < configuredMinMembros) {
+								this.logger.info(
+									`Ignorando convite de ${message.author} (${inviteCode}): grupo possui ${count} membros, mínimo exigido é ${configuredMinMembros}. Sem cooldown.`
+								);
+								if (message.origin && typeof message.origin.react === "function") {
+									message.origin.react("👥");
+								}
+								await this.bot.sendMessage(
+									message.author,
+									this.getMinMembersMessage(configuredMinMembros)
+								);
+								return true;
+							}
+						}
+
+						// Checa se o grupo tem apenas 1 membro (hard filter - não repassa o convite)
+						if (count !== null && count <= 1) {
+							this.logger.info(
+								`Ignorando convite de grupo com apenas 1 membro de ${message.author} (${inviteCode}) sem repassar convite.`
+							);
+							if (message.origin && typeof message.origin.react === "function") {
+								message.origin.react("👤");
+							}
+							const botName = this.bot.nomeExibir || "ravenabot";
+							const communityLink = this.getCommunityLink();
+							await this.bot.sendMessage(
+								message.author,
+								`Este grupo tem apenas 1 membro. Lembre-se que a ${botName} pode ser usada diretamente no PV, não tem necessidade de criar um grupo com ela! Se quiser testar os comandos, entre na comunidade da ravenabot:\n${communityLink}`
+							);
+							return true;
+						}
 					}
 				}
 			} catch (infoErr) {
@@ -1138,8 +1196,43 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						return;
 					}
 
-					// 2. Check 1 member (hard filter - não repassa o convite)
+					// 2. Check bot already in group (fallback)
+					otherBotsInGroup = this.getBotsInGroupFromInvite(inviteInfoData);
+					if (otherBotsInGroup.length > 0) {
+						this.logger.info(
+							`Convite ignorado para ${inviteCode} em handleInviteRequest: já existe bot no grupo (${otherBotsInGroup.join(", ")}). Encerrando ciclo sem cooldown.`
+						);
+						this.userCooldowns.delete(authorId);
+						this.groupInviteCooldowns.delete(inviteCode);
+						if (message?.origin && typeof message.origin.react === "function") {
+							message.origin.react("🤖");
+						}
+						await this.bot.sendMessage(authorId, this.getBotAlreadyInGroupMessage());
+						return;
+					}
+
+					// 3. Check extras.invites.minMembros (fallback)
+					const configuredMinMembros = parseInt(this.bot?.extras?.invites?.minMembros, 10);
 					const count = this.getParticipantCount(inviteInfoData);
+					if (
+						Number.isInteger(configuredMinMembros) &&
+						configuredMinMembros > 0 &&
+						count !== null &&
+						count < configuredMinMembros
+					) {
+						this.logger.info(
+							`Convite ignorado para ${inviteCode} em handleInviteRequest: grupo possui ${count} membros, mínimo exigido é ${configuredMinMembros}. Encerrando ciclo sem cooldown.`
+						);
+						this.userCooldowns.delete(authorId);
+						this.groupInviteCooldowns.delete(inviteCode);
+						if (message?.origin && typeof message.origin.react === "function") {
+							message.origin.react("👥");
+						}
+						await this.bot.sendMessage(authorId, this.getMinMembersMessage(configuredMinMembros));
+						return;
+					}
+
+					// 4. Check 1 member (hard filter - não repassa o convite)
 					if (count !== null && count <= 1) {
 						this.logger.info(
 							`Convite ignorado para ${inviteCode}: grupo tem apenas 1 membro (${inviteInfoData?.Name || "sem nome"}). Não repassando convite.`
@@ -1158,7 +1251,7 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						return;
 					}
 
-					// 2. Check Owner PN
+					// 5. Check Owner PN
 					if (inviteInfoData.OwnerPN) {
 						// Normalize PNs
 						const ownerNum = inviteInfoData.OwnerPN.split("@")[0];
@@ -1167,9 +1260,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 							ownerMatch = true;
 						}
 					}
-
-					// 3. Check Participants for other bots
-					otherBotsInGroup = this.getBotsInGroupFromInvite(inviteInfoData);
 
 					// Verifica se o JID do grupo está bloqueado (mesmo que o invite link tenha mudado)
 					const isGroupBlocked = await this.database.isInviteBlocked(null, inviteInfoData.JID);
