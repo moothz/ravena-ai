@@ -43,7 +43,9 @@ class LLMService {
 		this.DB_NAME = "llm_stats";
 
 		// Queue System
-		this.queue = new Queue({ concurrency: 1 });
+		const queueConcurrency = config.concurrency ?? 2;
+		const queueTaskTimeout = config.taskTimeout ?? 20000;
+		this.queue = new Queue({ concurrency: queueConcurrency, taskTimeout: queueTaskTimeout });
 
 		this.database.getSQLiteDb(
 			this.DB_NAME,
@@ -1090,10 +1092,30 @@ class LLMService {
 			return "Erro: Nome do comando não especificado.";
 		}
 
-		// Bloqueia comandos de IA para evitar auto-recursão infinita
-		const aiAliases = ["ai", "ia", "gemini", "gpt"];
-		if (aiAliases.includes(cmdName)) {
-			return "Comando de IA não pode ser executado recursivamente por outra IA.";
+		// Bloqueia comandos de IA e comandos dependentes de LLM para evitar auto-recursão e deadlock de fila
+		const llmAliases = [
+			"ai",
+			"ia",
+			"gemini",
+			"gpt",
+			"ajuda",
+			"help",
+			"traduza",
+			"traduzir",
+			"tr",
+			"translate",
+			"ocr",
+			"tarot",
+			"anagrama",
+			"stop",
+			"resumo",
+			"resumir",
+			"anoni",
+			"anonimo",
+			"anonima"
+		];
+		if (llmAliases.includes(cmdName)) {
+			return `Comando de IA não pode ser executado recursivamente por outra IA. O comando '!${cmdName}' utiliza o modelo de linguagem.`;
 		}
 
 		const fixedCommands = bot.eventHandler?.commandHandler?.fixedCommands;
@@ -1774,6 +1796,19 @@ class LLMService {
 	 */
 	getQueueStatus() {
 		return this.queue.getStats();
+	}
+
+	/**
+	 * Limpa todas as requisições pendentes na fila do LLM.
+	 * @param {string} [reason="Fila limpa pelo administrador"] - Motivo do cancelamento
+	 * @returns {number} - Quantidade de requisições canceladas
+	 */
+	clearQueue(reason = "Fila limpa pelo administrador") {
+		const count = this.queue.clear(reason);
+		this.logger.warn(
+			`[LLMService] Fila limpa: ${count} requisições marcadas como falhas/canceladas.`
+		);
+		return count;
 	}
 
 	/**
@@ -3312,6 +3347,11 @@ class LLMService {
 			throw lastErr;
 		};
 
+		// Se a chamada for sub-requisição ou explicitamente configurada para ignorar a fila, executa diretamente
+		if (options.bypassQueue || options.isSubRequest) {
+			return await runWithInstantRetries();
+		}
+
 		const scheduleRequest = async (attempt, position) => {
 			try {
 				if (position === undefined) {
@@ -3320,6 +3360,15 @@ class LLMService {
 					return await this.queue.addAt(runWithInstantRetries, position, { priority });
 				}
 			} catch (err) {
+				if (
+					err.noRetry ||
+					err.message?.includes("Queue cleared") ||
+					err.message?.includes("QUEUE_CLEARED")
+				) {
+					this.logger.warn(`[LLMService] Requisição cancelada sem retry: ${err.message}`);
+					return "Solicitação cancelada ou fila reiniciada.";
+				}
+
 				if (attempt < maxQueueRetries) {
 					let nextPos = -1;
 					let shouldRetry = false;

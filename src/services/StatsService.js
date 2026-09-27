@@ -94,6 +94,10 @@ class StatsService {
 		return LLMService.getInstance().getQueueStatus();
 	}
 
+	clearQueue(reason) {
+		return LLMService.getInstance().clearQueue(reason);
+	}
+
 	async getStatsByRange() {
 		const now = Date.now();
 		const day = 24 * 60 * 60 * 1000;

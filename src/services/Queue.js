@@ -1,6 +1,7 @@
 class Queue {
 	constructor(options = {}) {
 		this.concurrency = options.concurrency || 1;
+		this.taskTimeout = options.taskTimeout ?? 20000; // 20s padrão conforme solicitado
 		this.pending = 0;
 		this.queue = [];
 		this.processing = {}; // { priority: count }
@@ -13,6 +14,7 @@ class Queue {
 			const element = {
 				fn,
 				priority: options.priority || 0,
+				timeout: options.timeout ?? this.taskTimeout,
 				resolve,
 				reject,
 				timestamp: Date.now()
@@ -27,6 +29,7 @@ class Queue {
 			const element = {
 				fn,
 				priority: options.priority || 0,
+				timeout: options.timeout ?? this.taskTimeout,
 				resolve,
 				reject,
 				timestamp: Date.now()
@@ -73,22 +76,76 @@ class Queue {
 		const p = item.priority.toString();
 		this.processing[p] = (this.processing[p] || 0) + 1;
 
+		let isSettled = false;
+		let timer = null;
+
+		const cleanup = () => {
+			if (timer) {
+				clearTimeout(timer);
+				timer = null;
+			}
+			this.pending = Math.max(0, this.pending - 1);
+			this.processing[p] = Math.max(0, (this.processing[p] || 0) - 1);
+			this._process();
+		};
+
+		const itemTimeout = item.timeout !== undefined ? item.timeout : this.taskTimeout;
+		if (itemTimeout > 0) {
+			timer = setTimeout(() => {
+				if (!isSettled) {
+					isSettled = true;
+					this.failed[p] = (this.failed[p] || 0) + 1;
+					const timeoutErr = new Error(
+						`[Queue] Task timed out after ${itemTimeout}ms (Priority ${p})`
+					);
+					timeoutErr.isTimeout = true;
+					item.reject(timeoutErr);
+					cleanup();
+				}
+			}, itemTimeout);
+		}
+
 		// Execute
 		Promise.resolve()
 			.then(() => item.fn())
 			.then((result) => {
-				this.fulfilled[p] = (this.fulfilled[p] || 0) + 1;
-				item.resolve(result);
+				if (!isSettled) {
+					isSettled = true;
+					this.fulfilled[p] = (this.fulfilled[p] || 0) + 1;
+					item.resolve(result);
+					cleanup();
+				}
 			})
 			.catch((err) => {
-				this.failed[p] = (this.failed[p] || 0) + 1;
-				item.reject(err);
-			})
-			.finally(() => {
-				this.pending--;
-				this.processing[p] = Math.max(0, this.processing[p] - 1);
-				this._process();
+				if (!isSettled) {
+					isSettled = true;
+					this.failed[p] = (this.failed[p] || 0) + 1;
+					item.reject(err);
+					cleanup();
+				}
 			});
+	}
+
+	clear(reason = "Queue cleared") {
+		const err = new Error(reason);
+		err.noRetry = true;
+		let count = 0;
+		while (this.queue.length > 0) {
+			const item = this.queue.shift();
+			const p = item.priority.toString();
+			this.failed[p] = (this.failed[p] || 0) + 1;
+			try {
+				item.reject(err);
+			} catch (_) {}
+			count++;
+		}
+		return count;
+	}
+
+	reset() {
+		this.pending = 0;
+		this.processing = {};
+		this._process();
 	}
 
 	getStats() {

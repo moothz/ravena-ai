@@ -527,7 +527,7 @@ ${textToAnalyze}`;
 			prompt,
 			systemContext: systemPrompt,
 			response_format: dossierSchema,
-			priority: 10, // Baixa prioridade
+			priority: 0, // Baixa prioridade de background (0 = menor, 5 = maior)
 			maxTokens: 500,
 			debugPrompt: false
 		});

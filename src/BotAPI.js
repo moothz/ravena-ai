@@ -1019,6 +1019,16 @@ class BotAPI {
 				const StatsService = require("./services/StatsService");
 				const statsService = new StatsService();
 
+				if (req.query.clear !== undefined || req.query.clearQueue !== undefined) {
+					const cleared = statsService.clearQueue("Limpo via /llm-stats?clear");
+					return res.json({
+						status: "ok",
+						cleared,
+						timestamp: Date.now(),
+						queue: statsService.getQueueStatus()
+					});
+				}
+
 				if (req.query.queue !== undefined) {
 					const queueStatus = statsService.getQueueStatus();
 					return res.json({
@@ -2266,6 +2276,18 @@ class BotAPI {
 			const LLMService = require("./services/LLMService");
 			res.json({
 				status: "ok",
+				queues: LLMService.getInstance().getQueueStatus()
+			});
+		});
+
+		// API endpoint to clear LLM Queue
+		this.app.post("/api/llm/queue/clear", authenticateBasic, this.strictLimiter, (req, res) => {
+			const LLMService = require("./services/LLMService");
+			const reason = req.body?.reason || "Limpo via API /api/llm/queue/clear";
+			const cleared = LLMService.getInstance().clearQueue(reason);
+			res.json({
+				status: "ok",
+				cleared,
 				queues: LLMService.getInstance().getQueueStatus()
 			});
 		});
