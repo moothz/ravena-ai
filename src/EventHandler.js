@@ -142,13 +142,7 @@ class EventHandler extends EventEmitter {
 					this.groups[groupId] = new Group(existingGroup);
 				} else {
 					// Cria novo grupo
-					let displayName = name
-						? name.trim()
-						: groupId
-								.split("@")[0]
-								.toLowerCase()
-								.replace(/[^a-zA-Z0-9_\-.]/g, "")
-								.substring(0, 30);
+					let displayName = name || groupId.split("@")[0];
 
 					// Verifica se é Discord para formatar o nome como solicitado: nome-guild-nome-do-canal
 					if (bot && bot.useDiscord && message && message.guildId) {
@@ -158,24 +152,31 @@ class EventHandler extends EventEmitter {
 							if (guild && channel) {
 								const cleanGuild = guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 14);
 								const cleanChannel = channel.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 14);
-								displayName = `${cleanGuild}-${cleanChannel}`.toLowerCase();
+								displayName = `${cleanGuild}-${cleanChannel}`;
 							}
 						} catch (discordErr) {
 							this.logger.error("Erro ao buscar nomes no Discord para displayName:", discordErr);
 						}
 					}
 
-					// Verifica se já tem grupo com esse nome antes
-					let grupoExistente = await this.database.getGroupByName(displayName);
-					while (grupoExistente) {
-						const rndG = Math.floor(Math.random() * 100);
-						this.logger.info(
-							`[getOrCreateGroup] Tentei criar grupo '${displayName}', tentando agora '${displayName}${rndG}', mas já existe um!`,
-							grupoExistente
-						);
-						displayName = `${displayName}${rndG}`;
-						grupoExistente = await this.database.getGroupByName(displayName);
+					const normalizedTitle = String(displayName)
+						.normalize("NFD")
+						.replace(/[\u0300-\u036f]/g, "")
+						.toLowerCase()
+						.replace(/[^a-z0-9]/g, "");
+					const letterCount = (normalizedTitle.match(/[a-z]/g) || []).length;
+					const nameBase =
+						letterCount >= 5 ? normalizedTitle.substring(0, 30) : "gp_estranho_";
+					let sequence = 1;
+					let candidate =
+						letterCount >= 5
+							? nameBase
+							: `${nameBase}${String(sequence++).padStart(3, "0")}`;
+					while (await this.database.getGroupByName(candidate)) {
+						const suffix = String(sequence++).padStart(3, "0");
+						candidate = `${nameBase.slice(0, 30 - suffix.length)}${suffix}`;
 					}
+					displayName = candidate;
 
 					const group = new Group({
 						id: groupId,

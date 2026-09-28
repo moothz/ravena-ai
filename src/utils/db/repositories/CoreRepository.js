@@ -148,6 +148,11 @@ class CoreRepository {
 			this.mappers.exec(this.DB, createSql);
 			this._ensureTableSchema(this.DB, tableName, createSql);
 		}
+		this._ensureUniqueGroupNames();
+		this.mappers.exec(
+			this.DB,
+			"CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_name_nocase ON groups(name COLLATE NOCASE)"
+		);
 
 		// Create indexes for performance
 		this.mappers.exec(
@@ -226,6 +231,43 @@ class CoreRepository {
 	}
 
 	/**
+	 * Renomeia registros legados com nomes repetidos antes de criar a restrição
+	 * case-insensitive. O primeiro registro por ordem de criação mantém o nome.
+	 */
+	_ensureUniqueGroupNames() {
+		const rows = this.mappers.all(
+			this.DB,
+			"SELECT id, name FROM groups WHERE name IS NOT NULL AND TRIM(name) != '' ORDER BY rowid"
+		);
+		const used = new Set();
+
+		for (const row of rows) {
+			const original = String(row.name).trim();
+			const key = original.toLowerCase();
+			if (!used.has(key)) {
+				used.add(key);
+				continue;
+			}
+
+			const suffixBase = original.replace(/\d+$/, "");
+			let sequence = 1;
+			let candidate;
+			do {
+				const suffix = String(sequence++);
+				candidate = `${suffixBase.slice(0, 30 - suffix.length)}${suffix}`;
+			} while (used.has(candidate.toLowerCase()));
+
+			this.mappers.run(this.DB, "UPDATE groups SET name = ?, updated_at = ? WHERE id = ?", [
+				candidate,
+				Date.now(),
+				row.id
+			]);
+			used.add(candidate.toLowerCase());
+			this.logger.info(`Nome de grupo duplicado renomeado: ${original} -> ${candidate}`);
+		}
+	}
+
+	/**
 	 * Detect and add missing columns to an existing table (synchronous)
 	 */
 	_ensureTableSchema(dbName, tableName, schemaSql) {
@@ -299,7 +341,9 @@ class CoreRepository {
 
 	async getGroupByName(groupName) {
 		try {
-			const row = this.mappers.get(this.DB, "SELECT * FROM groups WHERE name = ?", [groupName]);
+			const row = this.mappers.get(this.DB, "SELECT * FROM groups WHERE LOWER(name) = LOWER(?)", [
+				groupName
+			]);
 			return row ? GroupMapper.fromRow(row) : null;
 		} catch (error) {
 			this.logger.error("Error in getGroupByName:", error);

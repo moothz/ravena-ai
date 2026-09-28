@@ -578,7 +578,7 @@ class Management {
 
 		const grupoExistente = await this.database.getGroupByName(newName);
 
-		if (grupoExistente) {
+		if (grupoExistente && grupoExistente.id !== group.id) {
 			this.logger.info(
 				`[setGroupName] ${message.author} tentou renomear grupo '${group.name}' para '${newName}', mas já existe um!`,
 				[group, grupoExistente]
