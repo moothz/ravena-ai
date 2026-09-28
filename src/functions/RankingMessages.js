@@ -101,6 +101,12 @@ async function getMessageRanking(chatId) {
 	}
 }
 
+function getRankingDisplayName(item, nameCounts) {
+	const name = String(item.nome || "Pessoa").trim() || "Pessoa";
+	const key = name.toLocaleLowerCase("pt-BR");
+	return nameCounts.get(key) > 1 ? `${name} (${normalizeId(item.numero)})` : name;
+}
+
 /**
  * Remove usuário do ranking
  * @param {string} chatId - ID do chat
@@ -289,6 +295,11 @@ async function faladoresCommand(bot, message, args, group) {
 
 		// Emojis para os 3 primeiros lugares
 		const medals = ["🥇", "🥈", "🥉"];
+		const nameCounts = new Map();
+		ranking.forEach((item) => {
+			const key = String(item.nome || "Pessoa").trim().toLocaleLowerCase("pt-BR");
+			nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+		});
 
 		// Determine list to show
 		const limit = isCompleto ? ranking.length : 10;
@@ -296,7 +307,8 @@ async function faladoresCommand(bot, message, args, group) {
 
 		displayList.forEach((item, index) => {
 			const position = index < 3 ? medals[index] : `${index + 1}º`;
-			let line = `${position} *${item.nome}*: ${item.qtdMsgs} mensagens`;
+			const displayName = getRankingDisplayName(item, nameCounts);
+			let line = `${position} *${displayName}*: ${item.qtdMsgs} mensagens`;
 			if (isCompleto) {
 				line += ` (${normalizeId(item.numero)})`;
 			}
@@ -608,5 +620,6 @@ module.exports = {
 	processMessage,
 	processReaction,
 	getMessageRanking,
-	fetchGroupRankingSummary
+	fetchGroupRankingSummary,
+	getRankingDisplayName
 };
