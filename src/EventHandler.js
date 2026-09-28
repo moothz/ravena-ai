@@ -165,13 +165,10 @@ class EventHandler extends EventEmitter {
 						.toLowerCase()
 						.replace(/[^a-z0-9]/g, "");
 					const letterCount = (normalizedTitle.match(/[a-z]/g) || []).length;
-					const nameBase =
-						letterCount >= 5 ? normalizedTitle.substring(0, 30) : "gp_estranho_";
+					const nameBase = letterCount >= 5 ? normalizedTitle.substring(0, 30) : "gp_estranho_";
 					let sequence = 1;
 					let candidate =
-						letterCount >= 5
-							? nameBase
-							: `${nameBase}${String(sequence++).padStart(3, "0")}`;
+						letterCount >= 5 ? nameBase : `${nameBase}${String(sequence++).padStart(3, "0")}`;
 					while (await this.database.getGroupByName(candidate)) {
 						const suffix = String(sequence++).padStart(3, "0");
 						candidate = `${nameBase.slice(0, 30 - suffix.length)}${suffix}`;
@@ -547,10 +544,7 @@ class EventHandler extends EventEmitter {
 				}
 
 				// Aplica filtros
-				if (
-					group &&
-					(await RoletaRussaCommands.isUserSilenced(group.id, message.author))
-				) {
+				if (group && (await RoletaRussaCommands.isUserSilenced(group.id, message.author))) {
 					this.logger.info(
 						`Mensagem de jogador morto na roleta removida no grupo ${group.id}: ${message.author}`
 					);

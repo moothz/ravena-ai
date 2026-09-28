@@ -124,9 +124,11 @@ async function getGroupData(groupId) {
 }
 
 async function isUserSilenced(groupId, userId) {
-	const group = await database.dbGet(dbName, "SELECT silenciar FROM roleta_groups WHERE group_id = ?", [
-		groupId
-	]);
+	const group = await database.dbGet(
+		dbName,
+		"SELECT silenciar FROM roleta_groups WHERE group_id = ?",
+		[groupId]
+	);
 	if (!group?.silenciar) return false;
 
 	const player = await database.dbGet(
@@ -656,7 +658,7 @@ async function alternarSilenciamentoRoleta(bot, message, args, group) {
 			? true
 			: ["false", "0", "nao", "não", "off", "desativar", "desativado"].includes(value)
 				? false
-				: !Boolean(current.silenciar);
+				: !current.silenciar;
 
 		await database.dbRun(dbName, "UPDATE roleta_groups SET silenciar = ? WHERE group_id = ?", [
 			enabled ? 1 : 0,

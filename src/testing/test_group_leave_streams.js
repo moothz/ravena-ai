@@ -26,11 +26,12 @@ async function main() {
 
 	const testGroupId = `120363999_${Date.now()}_1@g.us`;
 	const otherGroupId = `120363999_${Date.now()}_2@g.us`;
+	const testSuffix = Date.now();
 
 	// 1. Criar grupo teste com streams configuradas
 	const groupTest = new Group({
 		id: testGroupId,
-		name: "Grupo com Streams",
+		name: `Grupo com Streams ${testSuffix}`,
 		twitch: [
 			{ channel: "exclusivo_twitch", customMessage: null },
 			{ channel: "compartilhado_twitch", customMessage: null }
@@ -43,7 +44,7 @@ async function main() {
 	// 2. Criar outro grupo que também monitora 'compartilhado_twitch'
 	const groupOther = new Group({
 		id: otherGroupId,
-		name: "Outro Grupo Ativo",
+		name: `Outro Grupo Ativo ${testSuffix}`,
 		twitch: [{ channel: "compartilhado_twitch", customMessage: null }],
 		kick: [],
 		youtube: []
@@ -55,7 +56,7 @@ async function main() {
 	// 3. Simular saída de um usuário comum (NÃO deve limpar streams)
 	console.log("2. Testando saída de usuário normal...");
 	const normalUserLeaveData = {
-		group: { id: testGroupId, name: "Grupo com Streams" },
+		group: { id: testGroupId, name: groupTest.name },
 		user: { id: "5511888888888@s.whatsapp.net", name: "User Comum" },
 		responsavel: { id: "5511777777777@s.whatsapp.net", name: "Admin" }
 	};

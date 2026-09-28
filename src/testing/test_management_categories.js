@@ -6,9 +6,26 @@ const fs = require("fs");
 function main() {
 	const source = fs.readFileSync("/app/public/management.js", "utf8");
 	const expectedCategories = [
-		"geral", "grupo", "stickers", "ia", "interacao", "midia", "voz",
-		"utilidades", "downloaders", "jogos", "streams", "zoeira", "mudae",
-		"busca", "cultura", "audio", "listas", "arquivos", "canais", "outros"
+		"geral",
+		"grupo",
+		"stickers",
+		"ia",
+		"interacao",
+		"midia",
+		"voz",
+		"utilidades",
+		"downloaders",
+		"jogos",
+		"streams",
+		"zoeira",
+		"mudae",
+		"busca",
+		"cultura",
+		"audio",
+		"listas",
+		"arquivos",
+		"canais",
+		"outros"
 	];
 
 	expectedCategories.forEach((category) => {

@@ -83,7 +83,7 @@ async function runTests() {
 
 	const groupTest = new Group({
 		id: `120363999_${Date.now()}@g.us`,
-		name: "Grupo Teste YouTube",
+		name: `Grupo Teste YouTube ${Date.now()}`,
 		youtube: []
 	});
 	await fakeBot.database.saveGroup(groupTest);

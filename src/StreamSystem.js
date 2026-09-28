@@ -816,7 +816,7 @@ class StreamSystem {
 			// Lógica de substituição de variáveis
 			const replaceVars = (text) => {
 				if (!text) return "";
-				let content = text
+				const content = text
 					.replace(/{canal}/g, eventData.channelName ?? "")
 					.replace(/{nomeCanal}/g, eventData.channelName ?? "")
 					.replace(/{author}/g, eventData.author ?? eventData.channelName ?? "")

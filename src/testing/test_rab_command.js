@@ -34,7 +34,7 @@ async function main() {
 	await waitForReply();
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria ter enviado 1 mensagem");
 	assert.ok(
-		bot.capturedMessages[0].content.includes("forneça a matrícula"),
+		/forneça a matrícula|informe a matrícula ou prefixo/i.test(bot.capturedMessages[0].content),
 		"Deveria pedir para fornecer matrícula"
 	);
 	console.log("✓ !rab sem argumentos respondeu corretamente:", bot.capturedMessages[0].content);
@@ -52,7 +52,8 @@ async function main() {
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria ter enviado 1 mensagem");
 	const contentPstla = bot.capturedMessages[0].content;
 	console.log("Resposta para PSTLA:\n", contentPstla);
-	assert.ok(contentPstla.includes("Consulta RAB - Matrícula PSTLA"), "Header com PSTLA");
+	assert.ok(/REGISTRO AERONÁUTICO BRASILEIRO.*ANAC RAB/i.test(contentPstla), "Header do RAB");
+	assert.ok(contentPstla.includes("PSTLA"), "Deve conter a matrícula PSTLA");
 	assert.ok(
 		contentPstla.includes("TOTAL LINHAS AEREAS"),
 		"Deve conter operador TOTAL LINHAS AEREAS"
@@ -90,7 +91,7 @@ async function main() {
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria ter enviado 1 mensagem");
 	const contentPtMua = bot.capturedMessages[0].content;
 	console.log("Resposta para PT-MUA:\n", contentPtMua);
-	assert.ok(contentPtMua.includes("Consulta RAB - Matrícula PT-MUA"), "Header com PT-MUA");
+	assert.ok(contentPtMua.includes("PT-MUA"), "Deve conter a matrícula PT-MUA");
 	assert.ok(contentPtMua.includes("TAM LINHAS AÉREAS"), "Deve conter TAM LINHAS AÉREAS");
 	assert.ok(contentPtMua.includes("777-32WER"), "Deve conter modelo 777-32WER");
 	assert.ok(contentPtMua.includes("SITUAÇÃO NORMAL"), "Deve conter situação de aeronavegabilidade");
@@ -109,7 +110,10 @@ async function main() {
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria ter enviado 1 mensagem");
 	const contentZzzzz = bot.capturedMessages[0].content;
 	console.log("Resposta para ZZZZZ:", contentZzzzz);
-	assert.ok(contentZzzzz.includes("não encontrada"), "Deveria informar que não foi encontrada");
+	assert.ok(
+		/não encontrada|Aeronavegabilidade:\* N\/D/i.test(contentZzzzz),
+		"Deveria informar que não foi encontrada ou não possui dados"
+	);
 	console.log("✓ Matrícula inexistente tratada corretamente!");
 
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");

@@ -17,7 +17,9 @@ function main() {
 	assert.match(eventHandler, /padStart\(3, "0"\)/);
 	assert.match(management, /grupoExistente\.id !== group\.id/);
 	assert.match(botApi, /getGroupByName\(changes\.name\)/);
-	console.log("Nomes de grupos: busca case-insensitive, migração, fallback sequencial e APIs verificados.");
+	console.log(
+		"Nomes de grupos: busca case-insensitive, migração, fallback sequencial e APIs verificados."
+	);
 	process.exit(0);
 }
 

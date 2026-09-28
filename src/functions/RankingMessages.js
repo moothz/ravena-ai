@@ -297,7 +297,9 @@ async function faladoresCommand(bot, message, args, group) {
 		const medals = ["🥇", "🥈", "🥉"];
 		const nameCounts = new Map();
 		ranking.forEach((item) => {
-			const key = String(item.nome || "Pessoa").trim().toLocaleLowerCase("pt-BR");
+			const key = String(item.nome || "Pessoa")
+				.trim()
+				.toLocaleLowerCase("pt-BR");
 			nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
 		});
 

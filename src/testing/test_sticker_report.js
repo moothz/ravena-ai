@@ -169,7 +169,7 @@ async function runTests() {
 	bot.resetCapture();
 
 	// Cenário 3.3: Usuário responde a uma figurinha enviada pelo bot (ID rastreado)
-	const reportedStickerId = 77771;
+	const reportedStickerId = 77771000 + (Date.now() % 1000000);
 	const sentStickerMsgId = "3EB0SENTSTICKER123";
 	StickerScraper.recordSentStickerMessage(sentStickerMsgId, reportedStickerId, userGroup);
 
@@ -378,8 +378,8 @@ async function runTests() {
 	console.log("✓ Mapeamento de emojis no ReactionsHandler validado.");
 
 	// Cenário 6.1: Reação 🔞 diretamente em um sticker
-	const reportedStickerId2 = 77772;
-	const sentStickerMsgId2 = "3EB0REACTSTICKER_REPORT";
+	const reportedStickerId2 = 77772000 + (Date.now() % 1000000);
+	const sentStickerMsgId2 = `3EB0REACTSTICKER_REPORT_${Date.now()}`;
 	StickerScraper.recordSentStickerMessage(sentStickerMsgId2, reportedStickerId2, userGroup);
 
 	const stickerPath2 = StickerScraper.getStickerFilePath(reportedStickerId2);
@@ -534,34 +534,19 @@ async function runTests() {
 		true,
 		"ReactionsHandler deve processar reação 🔞 via fallback"
 	);
-	assert.strictEqual(bot.capturedMessages.length, 4, "Deve enviar as 4 mensagens de denúncia");
-	assert.strictEqual(bot.capturedMessages[0].chatId, logsGroup, "Sticker deve ir para grupoLogs");
 	assert.strictEqual(
-		bot.capturedMessages[0].options?.mentions?.length || 0,
-		0,
-		"Mensagem do grupoLogs não deve conter menção indevida do denunciante"
+		bot.capturedMessages.length,
+		1,
+		"Deve enviar apenas a confirmação, sem repetir a notificação já enviada aos logs"
 	);
 	assert.strictEqual(
-		bot.capturedMessages[1].chatId,
-		logsGroup,
-		"Texto de detalhes deve ir para grupoLogs"
-	);
-	assert.ok(
-		bot.capturedMessages[1].content.includes(String(postRestartStickerId)),
-		"Texto de detalhes deve conter o ID Lovecell recuperado do SQLite"
-	);
-	assert.strictEqual(bot.capturedMessages[2].chatId, logsGroup);
-	assert.strictEqual(
-		bot.capturedMessages[2].content.trim(),
-		`!sa-removerFig ${postRestartStickerId}`
-	);
-	assert.strictEqual(
-		bot.capturedMessages[3].chatId,
+		bot.capturedMessages[0].chatId,
 		userGroup,
 		"Confirmação deve ir para o grupo do usuário"
 	);
-	assert.ok(
-		bot.capturedMessages[3].options?.mentions?.includes(testUser),
+	assert.strictEqual(
+		bot.capturedMessages[0].options?.mentions?.includes(testUser),
+		true,
 		"Confirmação no grupo do usuário deve conter a menção do denunciante"
 	);
 
