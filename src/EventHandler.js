@@ -63,6 +63,7 @@ class EventHandler extends EventEmitter {
 		this.spammerActiveWindowUntil = 0;
 		this.sentStickersByOriginalMsg = new Map();
 		this.recentSpammerLeaveNotices = new Map();
+		this.greetingTimers = new Map();
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
@@ -230,6 +231,11 @@ class EventHandler extends EventEmitter {
 			.catch((error) => {
 				this.logger.error("Erro ao inicializar monitoramento de rifas:", error);
 			});
+
+		// Inicializa temporizadores pendentes de acúmulo de saudações
+		this.initGreetingAccumulationTimers(bot).catch((error) => {
+			this.logger.error("Erro ao inicializar timers de acúmulo de saudações:", error);
+		});
 	}
 
 	/**
@@ -2035,9 +2041,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				if (group.greetings) {
 					try {
 						const greetingUsers = await this.getAccumulatedGreetingUsers(
+							bot,
 							group,
 							"welcome",
-							data.user
+							data.user,
+							chat
 						);
 						if (!greetingUsers) return;
 						const welcomes = await this.generateGreetingMessage(bot, group, greetingUsers, chat);
@@ -2516,6 +2524,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			if (group && group.farewells && !isBotLeaving) {
 				try {
 					const farewellUsers = await this.getAccumulatedGreetingUsers(
+						bot,
 						group,
 						"farewell",
 						data.user
@@ -2543,34 +2552,276 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		}
 	}
 	/**
-	 * Acumula entradas/saídas e libera a fila após o intervalo configurado.
+	 * Localiza a melhor instância de bot conectada para envio em um grupo.
+	 * @param {string} groupId - ID do grupo
+	 * @param {string|null} preferredBotId - ID preferencial do bot
+	 * @returns {WhatsAppBot|null}
 	 */
-	async getAccumulatedGreetingUsers(group, type, user) {
-		const config = group.greetingAccumulation;
+	getBotForGroup(groupId, preferredBotId = null) {
+		const allBots = Database.getInstance().botInstances || [];
+		if (preferredBotId) {
+			const b = allBots.find(
+				(item) => (item.id === preferredBotId || item.name === preferredBotId) && item.isConnected
+			);
+			if (b) return b;
+		}
+		const isWhatsApp = groupId && groupId.includes("@g.us");
+		if (isWhatsApp) {
+			return (
+				allBots.find((b) => !b.useTelegram && !b.useDiscord && b.isConnected) ||
+				allBots.find((b) => b.isConnected) ||
+				null
+			);
+		}
+		return allBots.find((b) => b.isConnected) || null;
+	}
+
+	/**
+	 * Acumula entradas/saídas e agenda envio em lote, ou retorna usuário imediatamente se desativado.
+	 * Suporta assinaturas:
+	 *   (bot, group, type, user, chatData)
+	 *   (group, type, user)
+	 * Retorna array de usuários se o envio deve acontecer de imediato (quando accumulation está desligado).
+	 * Retorna null se foi acumulado na fila para envio posterior via timer.
+	 */
+	async getAccumulatedGreetingUsers(
+		botOrGroup,
+		groupOrType,
+		typeOrUser,
+		userOrChat = null,
+		chatData = null
+	) {
+		let bot = null;
+		let group = null;
+		let type = null;
+		let user = null;
+		let chat = null;
+
+		if (botOrGroup && typeof botOrGroup.id === "string" && typeof groupOrType === "string") {
+			group = botOrGroup;
+			type = groupOrType;
+			user = typeOrUser;
+		} else {
+			bot = botOrGroup;
+			group = groupOrType;
+			type = typeOrUser;
+			user = userOrChat;
+			chat = chatData;
+		}
+
+		const config = group?.greetingAccumulation;
 		if (!config?.enabled) return [user];
 
 		const now = Date.now();
-		const intervalMs = (Number(config.intervalMinutes) || 30) * 60 * 1000;
+		const intervalMinutes = Math.max(1, Number(config.intervalMinutes) || 30);
+		const intervalMs = intervalMinutes * 60 * 1000;
 		const state = group.greetingAccumulationState ?? {};
 		const queue = Array.isArray(state[type]) ? state[type] : [];
 		const userId = user?.id;
+
 		if (userId && !queue.some((queuedUser) => queuedUser.id === userId)) {
 			queue.push(user);
 		}
 
-		const lastSentAt = Number(state[`${type}LastSentAt`] || 0);
-		if (lastSentAt && now - lastSentAt < intervalMs) {
-			state[type] = queue;
-			group.greetingAccumulationState = state;
-			await this.database.saveGroup(group);
-			return null;
+		state[type] = queue;
+
+		const timerKey = `${group.id}_${type}`;
+		this.greetingTimers = this.greetingTimers || new Map();
+
+		let scheduledFor = Number(state[`${type}ScheduledFor`] || 0);
+		const hasActiveTimer = this.greetingTimers.has(timerKey);
+
+		if (!hasActiveTimer || !scheduledFor || scheduledFor <= now) {
+			scheduledFor = now + intervalMs;
+			state[`${type}ScheduledFor`] = scheduledFor;
+			state[`${type}BotId`] = bot?.id || null;
+
+			if (this.greetingTimers.has(timerKey)) {
+				clearTimeout(this.greetingTimers.get(timerKey));
+			}
+
+			const timer = setTimeout(async () => {
+				try {
+					await this.flushAccumulatedGreetings(bot, group.id, type, chat);
+				} catch (err) {
+					this.logger.error(
+						`[greetingAccumulation] Erro no timeout de ${type} em ${group.id}:`,
+						err
+					);
+				}
+			}, intervalMs);
+
+			this.greetingTimers.set(timerKey, timer);
 		}
 
-		state[type] = [];
-		state[`${type}LastSentAt`] = now;
 		group.greetingAccumulationState = state;
 		await this.database.saveGroup(group);
-		return queue.length > 0 ? queue : [user];
+
+		this.logger.info(
+			`[greetingAccumulation] Usuário ${userId} enfileirado para ${type} no grupo ${group.id} (${group.name || "sem nome"}). Total na fila: ${queue.length}. Disparo previsto para: ${new Date(scheduledFor).toLocaleTimeString()}`
+		);
+
+		return null;
+	}
+
+	/**
+	 * Descarrega e envia as saudações acumuladas para um grupo e tipo (welcome/farewell).
+	 * @param {WhatsAppBot|null} bot - Instância do bot
+	 * @param {string} groupId - ID do grupo
+	 * @param {"welcome"|"farewell"} type - Tipo de saudação
+	 * @param {Object|null} chatData - Dados do chat
+	 */
+	async flushAccumulatedGreetings(bot, groupId, type, chatData = null) {
+		const timerKey = `${groupId}_${type}`;
+		if (this.greetingTimers?.has(timerKey)) {
+			clearTimeout(this.greetingTimers.get(timerKey));
+			this.greetingTimers.delete(timerKey);
+		}
+
+		const group = await this.database.getGroup(groupId);
+		if (!group) return;
+
+		const state = group.greetingAccumulationState ?? {};
+		const queue = Array.isArray(state[type]) ? state[type] : [];
+
+		state[type] = [];
+		state[`${type}ScheduledFor`] = null;
+		state[`${type}LastSentAt`] = Date.now();
+		group.greetingAccumulationState = state;
+		await this.database.saveGroup(group);
+
+		if (queue.length === 0) return;
+
+		// Localiza bot apropriado se não fornecido ou desconectado
+		let botToUse = bot;
+		if (!botToUse || !botToUse.isConnected) {
+			botToUse = this.getBotForGroup(groupId, state[`${type}BotId`]);
+		}
+
+		if (!botToUse) {
+			this.logger.warn(
+				`[greetingAccumulation] Nenhum bot conectado encontrado para enviar ${type} acumulado no grupo ${groupId}.`
+			);
+			return;
+		}
+
+		this.logger.info(
+			`[greetingAccumulation] Enviando ${type} acumulado para ${queue.length} membro(s) no grupo ${groupId} (${group.name || "sem nome"}).`
+		);
+
+		if (type === "welcome" && group.greetings) {
+			try {
+				const welcomes = await this.generateGreetingMessage(botToUse, group, queue, chatData);
+				if (welcomes && Array.isArray(welcomes)) {
+					for (const welcome of welcomes) {
+						const options = welcome.options ?? {};
+						if (welcome.mentions) options.mentions = welcome.mentions;
+						await botToUse.sendMessage(groupId, welcome.message, options);
+					}
+				}
+			} catch (err) {
+				this.logger.error(
+					`[greetingAccumulation] Erro ao enviar boas-vindas acumuladas em ${groupId}:`,
+					err
+				);
+			}
+		} else if (type === "farewell" && group.farewells) {
+			try {
+				const farewells = await this.processFarewellMessage(group, queue, botToUse);
+				if (farewells && Array.isArray(farewells)) {
+					for (const farewell of farewells) {
+						const options = farewell.options ?? {};
+						if (farewell.mentions) options.mentions = farewell.mentions;
+						await botToUse.sendMessage(groupId, farewell.message, options);
+					}
+				}
+			} catch (err) {
+				this.logger.error(
+					`[greetingAccumulation] Erro ao enviar despedida acumulada em ${groupId}:`,
+					err
+				);
+			}
+		}
+	}
+
+	/**
+	 * Restaura e agenda timers pendentes de acúmulo de saudações após reinicialização.
+	 * @param {WhatsAppBot|null} bot - Instância do bot
+	 */
+	async initGreetingAccumulationTimers(bot = null) {
+		try {
+			this.greetingTimers = this.greetingTimers || new Map();
+			const groups = await this.database.getGroups();
+			if (!groups || !Array.isArray(groups)) return;
+
+			const now = Date.now();
+			for (const group of groups) {
+				if (!group.greetingAccumulation?.enabled) continue;
+				const state = group.greetingAccumulationState;
+				if (!state) continue;
+
+				for (const type of ["welcome", "farewell"]) {
+					const queue = Array.isArray(state[type]) ? state[type] : [];
+					if (queue.length === 0) continue;
+
+					const timerKey = `${group.id}_${type}`;
+					if (this.greetingTimers.has(timerKey)) continue;
+
+					const scheduledFor = Number(state[`${type}ScheduledFor`] || 0);
+					const remainingMs = scheduledFor - now;
+
+					if (remainingMs <= 0) {
+						this.logger.info(
+							`[greetingAccumulation] Intervalo expirado em offline para ${type} no grupo ${group.id}. Agendando flush.`
+						);
+						setTimeout(() => {
+							this.flushAccumulatedGreetings(bot, group.id, type).catch((err) =>
+								this.logger.error(
+									`[initGreetingAccumulationTimers] Erro ao descarregar ${type}:`,
+									err
+								)
+							);
+						}, 3000);
+					} else {
+						this.logger.info(
+							`[greetingAccumulation] Restaurando timer de ${type} para grupo ${group.id} com restante de ${Math.round(remainingMs / 1000)}s.`
+						);
+						const timer = setTimeout(() => {
+							this.flushAccumulatedGreetings(bot, group.id, type).catch((err) =>
+								this.logger.error(
+									`[initGreetingAccumulationTimers] Erro ao descarregar ${type}:`,
+									err
+								)
+							);
+						}, remainingMs);
+						this.greetingTimers.set(timerKey, timer);
+					}
+				}
+			}
+		} catch (err) {
+			this.logger.error("Erro ao inicializar timers de acúmulo de saudações:", err);
+		}
+	}
+
+	/**
+	 * Manipula alteração na configuração de acúmulo de saudações (chamado por comando ou painel).
+	 * @param {Group|Object} group - Dados do grupo
+	 */
+	handleGreetingAccumulationConfigChange(group) {
+		if (!group?.id) return;
+		this.greetingTimers = this.greetingTimers || new Map();
+		if (!group.greetingAccumulation?.enabled) {
+			for (const type of ["welcome", "farewell"]) {
+				const timerKey = `${group.id}_${type}`;
+				if (this.greetingTimers.has(timerKey)) {
+					clearTimeout(this.greetingTimers.get(timerKey));
+					this.greetingTimers.delete(timerKey);
+				}
+			}
+		}
+		if (this.groups[group.id]) {
+			this.groups[group.id].greetingAccumulation = group.greetingAccumulation;
+		}
 	}
 
 	/**

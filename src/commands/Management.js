@@ -1707,18 +1707,53 @@ class Management {
 			});
 		}
 
-		const requestedMinutes = Number.parseInt(args?.[0], 10);
-		const minutes =
-			Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : 30;
+		if (!group.greetingAccumulation) {
+			group.greetingAccumulation = {
+				enabled: false,
+				intervalMinutes: 30
+			};
+		}
+
+		let targetEnabled = !group.greetingAccumulation.enabled;
+		let targetMinutes = group.greetingAccumulation.intervalMinutes || 30;
+
+		if (args && args.length > 0) {
+			const argStr = args.join(" ").toLowerCase();
+			const hasEnable = /\b(on|ativar|liga|ligar|true|habilitar|sim)\b/i.test(argStr);
+			const hasDisable = /\b(off|desativar|desliga|desligar|false|desabilitar|nao|não)\b/i.test(
+				argStr
+			);
+			const numMatch = argStr.match(/\b\d+\b/);
+
+			if (numMatch) {
+				const parsed = Number.parseInt(numMatch[0], 10);
+				if (parsed > 0) targetMinutes = parsed;
+			}
+
+			if (hasEnable) {
+				targetEnabled = true;
+			} else if (hasDisable) {
+				targetEnabled = false;
+			} else if (numMatch && !hasEnable && !hasDisable) {
+				targetEnabled = true;
+			}
+		}
+
 		group.greetingAccumulation = {
-			enabled: !group.greetingAccumulation?.enabled,
-			intervalMinutes: minutes
+			enabled: targetEnabled,
+			intervalMinutes: targetMinutes
 		};
+
 		await this.database.saveGroup(group);
+
+		const EventHandler = require("../EventHandler");
+		if (EventHandler.instance) {
+			EventHandler.instance.handleGreetingAccumulationConfigChange(group);
+		}
 
 		return new ReturnMessage({
 			chatId: group.id,
-			content: `Acúmulo de saudações ${group.greetingAccumulation.enabled ? "ativado" : "desativado"} (intervalo: ${minutes} minuto(s)).`
+			content: `Acúmulo de saudações ${group.greetingAccumulation.enabled ? "*ativado*" : "*desativado*"} (intervalo: ${targetMinutes} minuto(s)).`
 		});
 	}
 

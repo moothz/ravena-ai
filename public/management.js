@@ -406,6 +406,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const resGroup = await fetch(`${API_BASE}/group?id=${groupId}&token=${token}`);
             if (!resGroup.ok) throw new Error('Não foi possível carregar dados do grupo.');
             groupData = await resGroup.json();
+            if (!groupData.greetingAccumulation) {
+                groupData.greetingAccumulation = { enabled: false, intervalMinutes: 30 };
+            }
             originalGroupData = JSON.parse(JSON.stringify(groupData));
 
             const resCmds = await fetch(`${API_BASE}/custom-commands/${groupId}?token=${token}`);
@@ -521,7 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const inputs = els.dashboard.querySelectorAll('input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]):not(.regex-test-input), textarea, select');
         inputs.forEach(input => {
             input.addEventListener('change', () => setDirty(true));
-            if (input.tagName === 'TEXTAREA' || input.type === 'text') {
+            if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'number') {
                 input.addEventListener('input', () => setDirty(true));
             }
         });
