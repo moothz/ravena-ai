@@ -772,6 +772,56 @@ class CustomVariableProcessor {
 						}
 					}
 				}
+
+				const mentionPickMatches = text.match(/{mentionPick}/g);
+				if (mentionPickMatches) {
+					const rawMentions =
+						context.message.origin?.mentionedIds ??
+						context.message.mentionedIds ??
+						context.message.mentions ??
+						[];
+					const mentionIds = Array.isArray(rawMentions)
+						? rawMentions
+								.map((mention) =>
+									typeof mention === "string"
+										? mention
+										: mention?.id?._serialized ||
+											mention?._serialized ||
+											mention?.id ||
+											mention?.user
+								)
+								.filter(Boolean)
+						: [];
+					const fallbackId = context.message.authorAlt || context.message.author;
+
+					for (let i = 0; i < mentionPickMatches.length; i++) {
+						const mentionId =
+							mentionIds.length > 0
+								? mentionIds[Math.floor(Math.random() * mentionIds.length)]
+								: fallbackId;
+						let mentionName = `@${String(mentionId || "Usuário").split("@")[0]}`;
+
+						try {
+							const contact = await context.bot?.client?.getContactById?.(mentionId);
+							mentionName = `@${contact?.number?.split("@")[0] ?? contact?.id?.user?.split("@")[0] ?? String(mentionId || "Usuário").split("@")[0]}`;
+						} catch (error) {
+							this.logger.debug(
+								`Não foi possível obter contato de {mentionPick}: ${error.message}`
+							);
+						}
+
+						text = text.replace(/{mentionPick}/, mentionName);
+						if (mentionId) {
+							if (context.options?.mentions) {
+								if (!context.options.mentions.includes(mentionId)) {
+									context.options.mentions.push(mentionId);
+								}
+							} else if (context.options) {
+								context.options.mentions = [mentionId];
+							}
+						}
+					}
+				}
 			} catch (error) {
 				this.logger.error("Erro ao processar variável {mention}:", error);
 			}
