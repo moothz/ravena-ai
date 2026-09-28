@@ -816,21 +816,14 @@ class StreamSystem {
 			// Lógica de substituição de variáveis
 			const replaceVars = (text) => {
 				if (!text) return "";
-				let content = text;
-				if (eventData.platform === "twitch" || eventData.platform === "kick") {
-					content = content
-						.replace(/{nomeCanal}/g, eventData.channelName)
-						.replace(/{titulo}/g, eventData.title ?? "")
-						.replace(/{jogo}/g, eventData.game ?? "Unknown");
-				} else if (eventData.platform === "youtube") {
-					content = content
-						.replace(/{author}/g, eventData.author ?? eventData.channelName)
-						.replace(/{canal}/g, eventData.channelName)
-						.replace(/{nomeCanal}/g, eventData.channelName)
-						.replace(/{title}/g, eventData.title ?? "")
-						.replace(/{titulo}/g, eventData.title ?? "")
-						.replace(/{link}/g, eventData.url ?? "");
-				}
+				let content = text
+					.replace(/{canal}/g, eventData.channelName ?? "")
+					.replace(/{nomeCanal}/g, eventData.channelName ?? "")
+					.replace(/{author}/g, eventData.author ?? eventData.channelName ?? "")
+					.replace(/{title}/g, eventData.title ?? "")
+					.replace(/{titulo}/g, eventData.title ?? "")
+					.replace(/{jogo}/g, eventData.game ?? "Unknown")
+					.replace(/{link}/g, eventData.url ?? "");
 				return content;
 			};
 
