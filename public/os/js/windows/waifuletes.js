@@ -249,7 +249,7 @@ WindowManager.register('waifuletes', {
             const rows = Math.max(1, Math.floor((h + gap) / (cardEstimatedHeight + gap)));
             const newLimit = Math.max(4, Math.min(60, cols * rows));
 
-            if (newLimit !== this.state.limit) {
+            if (!this.state.loading && newLimit !== this.state.limit) {
                 this.state.limit = newLimit;
                 this.loadCharacters(body);
             }
@@ -269,6 +269,9 @@ WindowManager.register('waifuletes', {
     },
 
     async loadCharacters(body) {
+        const requestId = Symbol('waifuletes-request');
+        this.state.activeRequest = requestId;
+        this.state.loading = true;
         const grid = body.querySelector('#waifu-grid');
         const totalCountEl = body.querySelector('#waifu-total-count');
         const pageIndicatorEl = body.querySelector('#waifu-page-indicator');
@@ -277,12 +280,14 @@ WindowManager.register('waifuletes', {
         const nextBtn = body.querySelector('#waifu-next-btn');
         const lastBtn = body.querySelector('#waifu-last-btn');
 
-        grid.innerHTML = `
-            <div class="waifu-loading">
-                <i class="fas fa-spinner fa-spin"></i>
-                <span>Carregando waifus e personagens...</span>
-            </div>
-        `;
+        if (!grid.querySelector('.waifu-card')) {
+            grid.innerHTML = `
+                <div class="waifu-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span>Carregando waifus e personagens...</span>
+                </div>
+            `;
+        }
 
         try {
             const params = new URLSearchParams({
@@ -296,6 +301,7 @@ WindowManager.register('waifuletes', {
             if (this.state.sortBy) params.append('sortBy', this.state.sortBy);
 
             const res = await Api.get(`/api/waifuletes/characters?${params.toString()}`);
+            if (this.state.activeRequest !== requestId) return;
             const resultData = res?.data;
             let characters = resultData?.data || [];
 
@@ -334,6 +340,7 @@ WindowManager.register('waifuletes', {
                 grid.appendChild(this.createCharacterCard(char, body));
             });
         } catch (err) {
+            if (this.state.activeRequest !== requestId) return;
             console.error('Erro ao carregar personagens:', err);
             grid.innerHTML = `
                 <div class="waifu-empty">
@@ -342,6 +349,11 @@ WindowManager.register('waifuletes', {
                     <button class="os-btn" style="margin-top: 12px;" onclick="WindowManager.open('waifuletes')">Tentar Novamente</button>
                 </div>
             `;
+        } finally {
+            if (this.state.activeRequest === requestId) {
+                this.state.loading = false;
+                this.state.activeRequest = null;
+            }
         }
     },
 
