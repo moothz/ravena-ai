@@ -49,6 +49,10 @@ class Management {
 				method: "setFarewellMessage",
 				description: "Mensagem quando alguém sai do grupo"
 			},
+			acumularSaudacoes: {
+				method: "toggleGreetingAccumulation",
+				description: "Ativa/desativa o acúmulo de boas-vindas e despedidas por intervalo"
+			},
 			delDespedida: {
 				method: "deleteFarewellMessage",
 				description:
@@ -1692,6 +1696,32 @@ class Management {
 	 * @param {Object} group - Dados do grupo
 	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
 	 */
+	/**
+	 * Alterna o acúmulo de saudações e define o intervalo em minutos.
+	 */
+	async toggleGreetingAccumulation(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const requestedMinutes = Number.parseInt(args?.[0], 10);
+		const minutes =
+			Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : 30;
+		group.greetingAccumulation = {
+			enabled: !group.greetingAccumulation?.enabled,
+			intervalMinutes: minutes
+		};
+		await this.database.saveGroup(group);
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: `Acúmulo de saudações ${group.greetingAccumulation.enabled ? "ativado" : "desativado"} (intervalo: ${minutes} minuto(s)).`
+		});
+	}
+
 	async deleteFarewellMessage(bot, message, args, group) {
 		if (!group) {
 			return new ReturnMessage({

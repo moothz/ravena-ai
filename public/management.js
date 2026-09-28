@@ -508,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
             banirSpammers: 'Banir Spammers Automaticamente'
+            ,greetingAccumulation: 'Acúmulo de Saudações'
         };
 
         for (let key in changes) {
@@ -629,6 +630,11 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
         groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
         groupData.banirSpammers = document.getElementById('banir-spammers').checked;
+        groupData.greetingAccumulation = {
+            ...(groupData.greetingAccumulation || {}),
+            enabled: document.getElementById('greeting-accumulation').checked,
+            intervalMinutes: Math.max(1, parseInt(document.getElementById('greeting-interval').value, 10) || 30)
+        };
 
         if(!groupData.interact) groupData.interact = {};
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
@@ -686,6 +692,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('group-created-at').value = new Date(groupData.createdAt || Date.now()).toLocaleDateString('pt-BR');
         document.getElementById('group-name-input').value = (groupData.name || '').trim();
         document.getElementById('group-prefix').value = groupData.prefix || '';
+        document.getElementById('greeting-accumulation').checked = !!groupData.greetingAccumulation?.enabled;
+        document.getElementById('greeting-interval').value = groupData.greetingAccumulation?.intervalMinutes || 30;
         
         const isPaused = !!groupData.paused;
         updateHeroStatusVisuals(isPaused);

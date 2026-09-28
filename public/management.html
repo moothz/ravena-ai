@@ -492,6 +492,21 @@
                             </div>
                         </div>
 
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="greeting-accumulation">Acumular saudações</label>
+                                <div class="field-hint">Agrupa entradas e saídas durante o intervalo configurado antes de enviar.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="greeting-accumulation">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="greeting-interval">Intervalo de acúmulo (minutos)</label>
+                            <input type="number" id="greeting-interval" class="form-control" min="1" value="30">
+                        </div>
+
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary btn-save-section" data-section="greetings">
                                 <i class="fas fa-save"></i> Salvar Boas-Vindas & Despedidas

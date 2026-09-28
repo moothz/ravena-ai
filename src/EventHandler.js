@@ -2025,7 +2025,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				// });
 				if (group.greetings) {
 					try {
-						const welcomes = await this.generateGreetingMessage(bot, group, data.user, chat);
+						const greetingUsers = await this.getAccumulatedGreetingUsers(
+							group,
+							"welcome",
+							data.user
+						);
+						if (!greetingUsers) return;
+						const welcomes = await this.generateGreetingMessage(bot, group, greetingUsers, chat);
 						if (welcomes && Array.isArray(welcomes)) {
 							for (const welcome of welcomes) {
 								const options = welcome.options ?? {};
@@ -2500,7 +2506,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			// });
 			if (group && group.farewells && !isBotLeaving) {
 				try {
-					const farewells = await this.processFarewellMessage(group, data.user, bot);
+					const farewellUsers = await this.getAccumulatedGreetingUsers(
+						group,
+						"farewell",
+						data.user
+					);
+					if (!farewellUsers) return;
+					const farewells = await this.processFarewellMessage(group, farewellUsers, bot);
 					if (farewells && Array.isArray(farewells)) {
 						for (const farewell of farewells) {
 							const options = farewell.options ?? {};
@@ -2521,6 +2533,37 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			this.logger.error("Erro ao processar saída do grupo:", error);
 		}
 	}
+	/**
+	 * Acumula entradas/saídas e libera a fila após o intervalo configurado.
+	 */
+	async getAccumulatedGreetingUsers(group, type, user) {
+		const config = group.greetingAccumulation;
+		if (!config?.enabled) return [user];
+
+		const now = Date.now();
+		const intervalMs = (Number(config.intervalMinutes) || 30) * 60 * 1000;
+		const state = group.greetingAccumulationState ?? {};
+		const queue = Array.isArray(state[type]) ? state[type] : [];
+		const userId = user?.id;
+		if (userId && !queue.some((queuedUser) => queuedUser.id === userId)) {
+			queue.push(user);
+		}
+
+		const lastSentAt = Number(state[`${type}LastSentAt`] || 0);
+		if (lastSentAt && now - lastSentAt < intervalMs) {
+			state[type] = queue;
+			group.greetingAccumulationState = state;
+			await this.database.saveGroup(group);
+			return null;
+		}
+
+		state[type] = [];
+		state[`${type}LastSentAt`] = now;
+		group.greetingAccumulationState = state;
+		await this.database.saveGroup(group);
+		return queue.length > 0 ? queue : [user];
+	}
+
 	/**
 	 * Gera mensagem de saudação para novos membros do grupo
 	 * @param {WhatsAppBot} bot - Instância do bot
@@ -2544,19 +2587,25 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			}
 
 			// Se houver múltiplos usuários, prepara os nomes
-			const nomesPessoas = "";
 			let numeroPessoas = "";
+			let pessoasEnter = "";
+			let pessoasVirgula = "";
 			let quantidadePessoas = 1;
 			let isPlural = false;
 			let baseMentions = [];
 
 			if (Array.isArray(user)) {
-				numeroPessoas = user.map((u) => `@${u.id.split("@")[0]}` ?? "@123456780").join(", ");
+				const names = user.map((u) => `@${u.id.split("@")[0]}`);
+				numeroPessoas = names.join(" ");
+				pessoasEnter = names.map((name) => `- ${name}`).join("\n");
+				pessoasVirgula = names.join(", ");
 				quantidadePessoas = user.length;
 				isPlural = quantidadePessoas > 1;
 				baseMentions = user.map((u) => u.id);
 			} else {
 				numeroPessoas = `@${user.id.split("@")[0]}` ?? "@123456780";
+				pessoasEnter = `- ${numeroPessoas}`;
+				pessoasVirgula = numeroPessoas;
 				baseMentions = [user.id];
 			}
 
@@ -2590,6 +2639,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 				// Variáveis básicas
 				message = message.replace(/{pessoa}/g, numeroPessoas);
+				message = message.replace(/{pessoaEnter}/g, pessoasEnter);
+				message = message.replace(/{pessoasVirgula}/g, pessoasVirgula);
 
 				// Variáveis de grupo
 				message = message.replace(/{tituloGrupo}/g, chatData?.name ?? "Grupo");
@@ -2729,7 +2780,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			});
 
 			const messagesToSend = [];
-			const baseMentions = [user.id];
+			const users = Array.isArray(user) ? user : [user];
+			const names = users.map((currentUser) => `@${currentUser.id.split("@")[0]}`);
+			const pessoa = names.join(" ");
+			const pessoaEnter = names.map((name) => `- ${name}`).join("\n");
+			const pessoasVirgula = names.join(", ");
+			const baseMentions = users.map((currentUser) => currentUser.id);
 
 			const processText = async (text, mentionsList) => {
 				if (!text) return { text: "", mentions: [] };
@@ -2740,7 +2796,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 					if (typeof message !== "string") message = "";
 				}
 
-				message = message.replace(/{pessoa}/g, `@${user.id.split("@")[0]}`);
+				message = message.replace(/{pessoa}/g, pessoa);
+				message = message.replace(/{pessoaEnter}/g, pessoaEnter);
+				message = message.replace(/{pessoasVirgula}/g, pessoasVirgula);
 				message = message.replace(/{tituloGrupo}/g, chatData?.name ?? "Grupo");
 
 				// Processa variáveis

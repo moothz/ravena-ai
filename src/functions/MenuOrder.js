@@ -172,6 +172,7 @@ const COMMAND_ORDER = [
 	"variaveis",
 	"setBemvindo",
 	"setDespedida",
+	"acumularSaudacoes",
 	"setApelido",
 	"ignorar",
 	"mute",
