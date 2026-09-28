@@ -15,6 +15,7 @@ database.getSQLiteDb(
     CREATE TABLE IF NOT EXISTS roleta_groups (
       group_id TEXT PRIMARY KEY,
       timeout_time INTEGER DEFAULT 300,
+      silenciar INTEGER DEFAULT 0,
       last_player_id TEXT,
       last_updated INTEGER,
       total_tries INTEGER DEFAULT 0,
@@ -45,6 +46,14 @@ database.getSQLiteDb(
     );
 `
 );
+
+database
+	.dbRun(dbName, "ALTER TABLE roleta_groups ADD COLUMN silenciar INTEGER DEFAULT 0")
+	.catch((error) => {
+		if (!/duplicate column/i.test(error.message || "")) {
+			logger.error("Erro ao atualizar schema da roleta:", error);
+		}
+	});
 
 /**
  * Emojis para ranking
@@ -103,6 +112,7 @@ async function getGroupData(groupId) {
 		group = {
 			group_id: groupId,
 			timeout_time: 300,
+			silenciar: 0,
 			last_player_id: null,
 			last_updated: now,
 			total_tries: 0,
@@ -111,6 +121,20 @@ async function getGroupData(groupId) {
 	}
 
 	return group;
+}
+
+async function isUserSilenced(groupId, userId) {
+	const group = await database.dbGet(dbName, "SELECT silenciar FROM roleta_groups WHERE group_id = ?", [
+		groupId
+	]);
+	if (!group?.silenciar) return false;
+
+	const player = await database.dbGet(
+		dbName,
+		"SELECT timeout_until FROM roleta_players WHERE group_id = ? AND user_id = ?",
+		[groupId, userId]
+	);
+	return Number(player?.timeout_until || 0) > Date.now();
 }
 
 /**
@@ -607,6 +631,61 @@ async function definirTempoRoleta(bot, message, args, group) {
 	}
 }
 
+async function alternarSilenciamentoRoleta(bot, message, args, group) {
+	try {
+		if (!message.group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const groupId = message.group;
+		const isAdmin = await bot.isUserAdminInGroup(message.author, groupId);
+		if (!isAdmin) {
+			return new ReturnMessage({
+				chatId: groupId,
+				content: "⛔ Apenas administradores podem alterar o silenciamento da roleta russa.",
+				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
+			});
+		}
+
+		const current = await getGroupData(groupId);
+		const value = String(args?.[0] || "toggle").toLowerCase();
+		const enabled = ["true", "1", "sim", "on", "ativar", "ativado"].includes(value)
+			? true
+			: ["false", "0", "nao", "não", "off", "desativar", "desativado"].includes(value)
+				? false
+				: !Boolean(current.silenciar);
+
+		await database.dbRun(dbName, "UPDATE roleta_groups SET silenciar = ? WHERE group_id = ?", [
+			enabled ? 1 : 0,
+			groupId
+		]);
+
+		let content = `🔇 Silenciamento da roleta russa ${enabled ? "ativado" : "desativado"}.`;
+		if (enabled) {
+			const management = bot.eventHandler?.commandHandler?.management;
+			const botIsAdmin =
+				typeof management?.isBotAdmin === "function"
+					? await management.isBotAdmin(bot, group)
+					: false;
+			if (!botIsAdmin) {
+				content +=
+					" ⚠️ O bot não é administrador do grupo e não poderá apagar as mensagens dos jogadores mortos.";
+			}
+		}
+
+		return new ReturnMessage({ chatId: groupId, content });
+	} catch (error) {
+		logger.error("Erro ao alternar silenciamento da roleta:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "Erro ao alterar o silenciamento da roleta russa. Por favor, tente novamente."
+		});
+	}
+}
+
 // Commands list
 const commands = [
 	new Command({
@@ -668,6 +747,18 @@ const commands = [
 			error: "❌"
 		},
 		method: definirTempoRoleta
+	}),
+	new Command({
+		name: "roleta-silenciar",
+		description: "Ativa ou desativa a remoção de mensagens de jogadores mortos",
+		category: "jogos",
+		adminOnly: true,
+		cooldown: 10,
+		reactions: {
+			after: "🔇",
+			error: "❌"
+		},
+		method: alternarSilenciamentoRoleta
 	})
 ];
 
@@ -696,6 +787,12 @@ const helper = {
 			category: "jogos"
 		},
 		{
+			cmd: "!roleta-silenciar [true|false|toggle]",
+			desc: "Ativa ou desativa o silenciamento temporário dos jogadores mortos (Admins)",
+			usage: ["!roleta-silenciar", "!roleta-silenciar false"],
+			category: "jogos"
+		},
+		{
 			cmd: "!roleta-reset",
 			desc: "Reseta os dados da roleta russa no grupo (Admins)",
 			usage: ["!roleta-reset"],
@@ -706,5 +803,6 @@ const helper = {
 
 module.exports = {
 	helper,
-	commands
+	commands,
+	isUserSilenced
 };

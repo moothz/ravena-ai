@@ -92,6 +92,7 @@ const COMMAND_ORDER = [
 	"roletaranking",
 	"roleta-ranking",
 	"roleta-tempo",
+	"roleta-silenciar",
 	"roleta-reset",
 	"pescar",
 	"pesca-iscas",

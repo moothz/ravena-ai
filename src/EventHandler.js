@@ -13,6 +13,7 @@ const NSFWPredict = require("./utils/NSFWPredict");
 const MuNewsCommands = require("./functions/MuNewsCommands");
 const HoroscopoCommands = require("./functions/HoroscopoCommands");
 const CanaisCommands = require("./functions/CanaisCommands");
+const RoletaRussaCommands = require("./functions/RoletaRussaCommands");
 // const Copa2026 = require("./functions/Copa2026");
 const RankingMessages = require("./functions/RankingMessages");
 const fs = require("fs").promises;
@@ -545,6 +546,19 @@ class EventHandler extends EventEmitter {
 				}
 
 				// Aplica filtros
+				if (
+					group &&
+					(await RoletaRussaCommands.isUserSilenced(group.id, message.author))
+				) {
+					this.logger.info(
+						`Mensagem de jogador morto na roleta removida no grupo ${group.id}: ${message.author}`
+					);
+					message.origin.delete(true).catch((error) => {
+						this.logger.error("Erro ao deletar mensagem de jogador morto na roleta:", error);
+					});
+					return;
+				}
+
 				if (await this.applyFilters(bot, message, group)) {
 					return; // Mensagem foi filtrada
 				}
