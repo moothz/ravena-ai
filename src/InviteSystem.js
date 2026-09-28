@@ -442,6 +442,8 @@ class InviteSystem {
 				"entra pfv",
 				"coloca aí",
 				"quero testar",
+				"quero prosseguir",
+				"quero que entre",
 				"legal"
 			];
 			if (
@@ -489,7 +491,7 @@ Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve s
 REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição (desconsiderar se o usuário for doador — se for doador, caracteres estranhos NÃO são um problema). (OBS: emojis normais e símbolos comuns como ®, ©, ™, etc. NÃO são caracteres estranhos. Caracteres estranhos referem-se a fontes modificadas/personalizadas como 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, alfabetos exóticos usados apenas para enfeitar letras, ou zalgo/combinações abusivas de acentos decorativos).
 2. Grupos com menos de 3 pessoas (a menos que o usuário seja doador R$10+).
-3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, vocabulário infantil/underage).
+3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, 5° ano, 6° ano, 8° ano, série, vocabulário infantil/underage).
 4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
 5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
 6. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
