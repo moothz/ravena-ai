@@ -38,7 +38,19 @@ database.getSQLiteDb(
 		created_at TEXT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_stickers_id ON lovecell_sent_stickers(sticker_id);
-	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_created ON lovecell_sent_stickers(created_at);`
+	CREATE INDEX IF NOT EXISTS idx_lovecell_sent_created ON lovecell_sent_stickers(created_at);
+	CREATE TABLE IF NOT EXISTS lovecell_sticker_reports (
+		report_key TEXT PRIMARY KEY,
+		sticker_id INTEGER NOT NULL,
+		reporter_id TEXT,
+		source TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_lovecell_reports_sticker ON lovecell_sticker_reports(sticker_id);
+	CREATE TABLE IF NOT EXISTS lovecell_sticker_report_notifications (
+		sticker_id INTEGER PRIMARY KEY,
+		created_at TEXT NOT NULL
+	);`
 );
 
 // Garante migração de coluna bot_id em bases existentes
@@ -470,6 +482,86 @@ function getStickerIdByMessageId(messageId) {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Registra uma denúncia uma única vez por evento e informa se o log já foi
+ * enviado para a figurinha.
+ * @param {number|string} stickerId
+ * @param {string} reporterId
+ * @param {string} reportKey
+ * @param {string} source
+ * @returns {{ count: number, shouldNotify: boolean }}
+ */
+function registerStickerReport(stickerId, reporterId, reportKey, source) {
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id) || !reportKey) return { count: 0, shouldNotify: false };
+
+	const normalizedKey = `${id}:${String(reportKey)}`;
+	try {
+		database.mappers.run(
+			"lovecell",
+			`INSERT OR IGNORE INTO lovecell_sticker_reports
+				 (report_key, sticker_id, reporter_id, source, created_at) VALUES (?, ?, ?, ?, ?)`,
+			[normalizedKey, id, reporterId ? String(reporterId) : null, source, new Date().toISOString()]
+		);
+		const countRow = database.mappers.get(
+			"lovecell",
+			"SELECT COUNT(*) AS count FROM lovecell_sticker_reports WHERE sticker_id = ?",
+			[id]
+		);
+		const notification = database.mappers.run(
+			"lovecell",
+			"INSERT OR IGNORE INTO lovecell_sticker_report_notifications (sticker_id, created_at) VALUES (?, ?)",
+			[id, new Date().toISOString()]
+		);
+		return {
+			count: Number(countRow?.count || 0),
+			shouldNotify: Boolean(notification?.changes)
+		};
+	} catch (error) {
+		logger.error(`Erro ao registrar denúncia da figurinha #${id}: ${error.message}`);
+		throw error;
+	}
+}
+
+async function deleteAssociatedStickerMessages(bot, associatedMessages = []) {
+	const allBots = Database.getInstance().botInstances || bot?.database?.botInstances || [];
+	let deleted = 0;
+
+	for (const msg of associatedMessages) {
+		if (!msg.chatId || !msg.messageId) continue;
+		let targetBot = bot;
+		if (msg.botId && bot?.id !== msg.botId) {
+			targetBot =
+				allBots.find(
+					(candidate) =>
+						candidate &&
+						(candidate.id === msg.botId ||
+							candidate.instanceName === msg.botId ||
+							candidate.nomeExibir === msg.botId)
+				) || targetBot;
+		}
+		if (!targetBot || typeof targetBot.deleteMessageByKey !== "function") continue;
+
+		try {
+			const actualId =
+				typeof targetBot.getActualMsgId === "function"
+					? targetBot.getActualMsgId(msg.messageId)
+					: msg.messageId;
+			await targetBot.deleteMessageByKey({
+				remoteJid: msg.chatId,
+				id: actualId,
+				fromMe: true
+			});
+			deleted++;
+		} catch (error) {
+			logger.debug(
+				`Erro ao apagar ocorrência automática da figurinha #${msg.stickerId || "?"}: ${error.message}`
+			);
+		}
+	}
+	return deleted;
 }
 
 /**
@@ -1600,11 +1692,37 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		}
 
 		const stickerId = await getStickerIdFromMessage(targetMsg, directQuotedId);
+		let reportInfo = null;
 
 		// Vincula a mensagem reportada e a instância do bot ao sticker_id para remoção posterior
 		const targetMsgId = directQuotedId || targetMsg?.id || targetMsg?.origin?.id?._serialized_v3;
 		if (stickerId && targetMsgId) {
 			recordSentStickerMessage(targetMsgId, stickerId, message.group || chatId, bot?.id || null);
+			const reporterId =
+				message.originReaction?.senderId || message.author || message.originReaction?.userName;
+			const reportKey =
+				message.id ||
+				message.origin?.id?._serialized_v3 ||
+				message.originReaction?.id ||
+				`${reporterId}:${Date.now()}`;
+			reportInfo = registerStickerReport(
+				stickerId,
+				reporterId,
+				reportKey,
+				message.originReaction ? "reaction" : "command"
+			);
+
+			if (reportInfo.count >= 3 && !isBlacklisted(stickerId)) {
+				const removal = await removeFromLovecell(
+					stickerId,
+					"Removido automaticamente após 3 denúncias"
+				);
+				await deleteAssociatedStickerMessages(bot, removal.associatedMessages);
+				return new ReturnMessage({
+					chatId,
+					content: `✅ A figurinha #${stickerId} foi removida automaticamente após ${reportInfo.count} denúncias.`
+				});
+			}
 		}
 
 		// Obter buffer da figurinha
@@ -1639,7 +1757,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 			group?.name || group?.subject || (message.group ? message.group : "Privado");
 
 		// 1. Mensagem para o grupo de logs: a própria figurinha denunciada
-		if (stickerBuffer && stickerBuffer.length >= MIN_STICKER_BYTES) {
+		if (reportInfo?.shouldNotify && stickerBuffer && stickerBuffer.length >= MIN_STICKER_BYTES) {
 			returnMessages.push(
 				new ReturnMessage({
 					chatId: grupoLogs,
@@ -1675,15 +1793,17 @@ async function figaDenunciarCommand(bot, message, args, group) {
 				`⚠️ *Aviso:* Não foi possível identificar o ID numérico desta figurinha no Lovecell (pode ter sido enviada por outro usuário ou antes do rastreamento ativo).`;
 		}
 
-		returnMessages.push(
-			new ReturnMessage({
-				chatId: grupoLogs,
-				content: logText
-			})
-		);
+		if (reportInfo?.shouldNotify) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: logText
+				})
+			);
+		}
 
 		// 3. Mensagem para o grupo de logs: comando isolado para fácil encaminhamento direto ao bot
-		if (stickerId) {
+		if (stickerId && reportInfo?.shouldNotify) {
 			returnMessages.push(
 				new ReturnMessage({
 					chatId: grupoLogs,
