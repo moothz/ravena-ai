@@ -206,6 +206,108 @@ class StreamMonitor extends EventEmitter {
 				this.logger.debug("Migration check notice for stream_status:", migrationErr.message);
 			}
 
+			// Migration: normalize all channel_name values to lowercase and remove case-variant duplicates.
+			// This prevents the bug where 'zfaalcon' and 'zFaalcon' produce two rows with conflicting
+			// is_live / lastEventType values, causing streamOffline to be incorrectly suppressed.
+			try {
+				// Find all rows where channel_name is not already lowercase
+				const nonLower = await this.database.dbAll(
+					this.dbNameMonitor,
+					"SELECT platform, channel_name, last_checked FROM stream_status WHERE channel_name != LOWER(channel_name)"
+				);
+
+				if (nonLower.length > 0) {
+					this.logger.info(
+						`[Migration] Normalizing ${nonLower.length} channel_name(s) to lowercase in stream_status...`
+					);
+
+					for (const row of nonLower) {
+						const lcName = row.channel_name.toLowerCase();
+						// Check if a lowercase row already exists for this platform/channel
+						const existing = await this.database.dbAll(
+							this.dbNameMonitor,
+							"SELECT channel_name, last_checked FROM stream_status WHERE platform = ? AND channel_name = ?",
+							[row.platform, lcName]
+						);
+
+						if (existing.length > 0) {
+							// Both variants exist — keep the more recent one (already lowercase)
+							const keepLower =
+								!existing[0].last_checked ||
+								!row.last_checked ||
+								existing[0].last_checked >= row.last_checked;
+
+							if (keepLower) {
+								// The lowercase row is more recent — delete the mixed-case one
+								await this.database.dbRun(
+									this.dbNameMonitor,
+									"DELETE FROM stream_status WHERE platform = ? AND channel_name = ?",
+									[row.platform, row.channel_name]
+								);
+								this.logger.info(
+									`[Migration] Removed stale case-variant row: ${row.platform}:${row.channel_name} (keeping ${lcName})`
+								);
+							} else {
+								// The mixed-case row is more recent — update it to lowercase and delete the old lowercase one
+								await this.database.dbRun(
+									this.dbNameMonitor,
+									"DELETE FROM stream_status WHERE platform = ? AND channel_name = ?",
+									[row.platform, lcName]
+								);
+								await this.database.dbRun(
+									this.dbNameMonitor,
+									"UPDATE stream_status SET channel_name = ? WHERE platform = ? AND channel_name = ?",
+									[lcName, row.platform, row.channel_name]
+								);
+								this.logger.info(
+									`[Migration] Replaced stale lowercase row with newer: ${row.platform}:${row.channel_name} → ${lcName}`
+								);
+							}
+						} else {
+							// No lowercase duplicate — just rename in-place
+							await this.database.dbRun(
+								this.dbNameMonitor,
+								"UPDATE stream_status SET channel_name = ? WHERE platform = ? AND channel_name = ?",
+								[lcName, row.platform, row.channel_name]
+							);
+						}
+					}
+					this.logger.info("[Migration] channel_name normalization complete.");
+				}
+
+				// Same normalization for monitored_channels
+				const nonLowerMc = await this.database.dbAll(
+					this.dbNameMonitor,
+					"SELECT name, platform FROM monitored_channels WHERE name != LOWER(name)"
+				);
+				for (const row of nonLowerMc) {
+					const lcName = row.name.toLowerCase();
+					const existsMc = await this.database.dbAll(
+						this.dbNameMonitor,
+						"SELECT name FROM monitored_channels WHERE platform = ? AND name = ?",
+						[row.platform, lcName]
+					);
+					if (existsMc.length > 0) {
+						await this.database.dbRun(
+							this.dbNameMonitor,
+							"DELETE FROM monitored_channels WHERE platform = ? AND name = ?",
+							[row.platform, row.name]
+						);
+					} else {
+						await this.database.dbRun(
+							this.dbNameMonitor,
+							"UPDATE monitored_channels SET name = ? WHERE platform = ? AND name = ?",
+							[lcName, row.platform, row.name]
+						);
+					}
+				}
+			} catch (normErr) {
+				this.logger.error(
+					"[Migration] Error normalizing channel_name to lowercase:",
+					normErr.message
+				);
+			}
+
 			// YouTube Cache DB
 			await this.database.getSQLiteDb(
 				this.dbNameYt,
@@ -253,7 +355,7 @@ class StreamMonitor extends EventEmitter {
 			// Load statuses
 			const statusRows = await this.database.dbAll(
 				this.dbNameMonitor,
-				"SELECT * FROM stream_status"
+				"SELECT * FROM stream_status ORDER BY last_checked ASC"
 			);
 			for (const row of statusRows) {
 				const key = `${row.platform}:${row.channel_name.toLowerCase()}`;
@@ -330,7 +432,7 @@ class StreamMonitor extends EventEmitter {
               INSERT OR REPLACE INTO monitored_channels (name, platform, subscribed_at)
               VALUES (?, ?, ?)
           `,
-				[channel.name, channel.source, channel.subscribedAt]
+				[channel.name.toLowerCase(), channel.source, channel.subscribedAt]
 			);
 		} catch (error) {
 			this.logger.error(`Error saving channel ${channel.name} to DB:`, error);
@@ -415,7 +517,7 @@ class StreamMonitor extends EventEmitter {
           `,
 				[
 					status.platform || platform,
-					status.channelName || channelName,
+					(status.channelName || channelName).toLowerCase(),
 					status.isLive ? 1 : 0,
 					status.title,
 					status.game,
@@ -1505,6 +1607,7 @@ class StreamMonitor extends EventEmitter {
 							channelName: channelDisplayName,
 							title: liveStream.title,
 							game: liveStream.game_name,
+							url: `https://www.twitch.tv/${channelDisplayName}`,
 							thumbnail: liveStream.thumbnail_url
 								.replace("{width}", "640")
 								.replace("{height}", "360"),
@@ -1667,6 +1770,7 @@ class StreamMonitor extends EventEmitter {
 							channelName: channelDisplayName,
 							title: liveStream.title,
 							game: liveStream.game_name,
+							url: `https://www.twitch.tv/${channelDisplayName}`,
 							thumbnail: liveStream.thumbnail_url
 								.replace("{width}", "640")
 								.replace("{height}", "360"),
@@ -1768,6 +1872,7 @@ class StreamMonitor extends EventEmitter {
 				channelName: channelData.slug,
 				title: stream?.stream_title || channelData.stream_title || "",
 				game: channelData.category ? channelData.category.name : "Unknown",
+				url: `https://kick.com/${channelData.slug}`,
 				thumbnail: stream?.thumbnail || "",
 				viewerCount: stream?.viewer_count || 0,
 				startedAt: stream?.start_time || null
