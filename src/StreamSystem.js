@@ -454,6 +454,9 @@ class StreamSystem {
 
 			if (bots.length === 0) {
 				// Nenhum bot disponível para este grupo (todos ignoraram ou nenhum registrado)
+				this.logger.warn(
+					`[processStreamEvent] Sem bots disponíveis para ${group.name} (${group.id}) - evento ${eventType}/${eventData.platform}/${eventData.channelName} não enviado`
+				);
 				return;
 			}
 
@@ -468,6 +471,21 @@ class StreamSystem {
 				config = channelConfig.onConfig;
 			} else {
 				config = channelConfig.offConfig;
+			}
+
+			// Verifica se há algo para notificar
+			const hasMedia = config && config.media && config.media.length > 0;
+			const hasTitleChange = channelConfig.changeTitleOnEvent;
+			const hasMentions =
+				channelConfig.mentionAllMembers && (eventType === "online" || eventType === "video");
+			const hasAI = channelConfig.useAI && (eventType === "online" || eventType === "video");
+
+			// Log detalhado para diagnosticar eventos que não geram notificações
+			if (!hasMedia && !hasTitleChange && !hasAI) {
+				this.logger.warn(
+					`[processStreamEvent] Sem mídia, title change, nem IA configurada para ${group.name}/${eventData.channelName} (${eventType}) — evento ignorado`
+				);
+				return;
 			}
 
 			// Tenta enviar com cada bot candidato até conseguir
@@ -620,9 +638,14 @@ class StreamSystem {
 			// Se todos os bots falharam por não estarem no grupo
 			if (!sentSuccess && notInGroupErrors.length === bots.length) {
 				this.logger.warn(
-					`Nenhum bot conseguiu enviar mensagem para o grupo ${group.id} (todos removidos/sem permissão).`
+					`[processStreamEvent] Nenhum bot conseguiu enviar notificação para ${group.name} (${group.id}) — todos removidos/sem permissão`
 				);
 				// Opcional: Pausar o grupo ou marcar algo no DB global
+			} else if (!sentSuccess) {
+				// Bots tentaram enviar mas falharam por outros motivos
+				this.logger.warn(
+					`[processStreamEvent] Nenhuma notificação enviada para ${group.name} (${group.id}) — todos os bots falharam (erros: ${notInGroupErrors.join(", ")}). Config: media=${hasMedia}, titleChange=${hasTitleChange}, mentions=${hasMentions}, AI=${hasAI}`
+				);
 			}
 		} catch (error) {
 			this.logger.error(`Erro ao processar evento de stream para ${group.id}:`, error);

@@ -3748,7 +3748,8 @@ class Management {
 						},
 						changeTitleOnEvent: true,
 						useThumbnail: true,
-						useAI: false
+						useAI: false,
+						mentionAllMembers: false
 					};
 
 					channels.push(newChannel);
@@ -4319,7 +4320,8 @@ class Management {
 					media: []
 				},
 				changeTitleOnEvent: true,
-				useAI: false
+				useAI: false,
+				mentionAllMembers: false
 			};
 
 			channels.push(newChannel);
@@ -4748,7 +4750,8 @@ class Management {
 				},
 				changeTitleOnEvent: true,
 				useAI: false,
-				useThumbnail: true
+				useThumbnail: true,
+				mentionAllMembers: false
 			};
 
 			channels.push(newChannel);
@@ -7424,7 +7427,7 @@ class Management {
 
 		// Inicializa a propriedade mentionAllMembers se não existir
 		if (channelConfig.mentionAllMembers === undefined) {
-			channelConfig.mentionAllMembers = true;
+			channelConfig.mentionAllMembers = false;
 		}
 
 		// Alterna o valor
