@@ -120,6 +120,12 @@ class StreamMonitor extends EventEmitter {
 		this.isMonitoring = false;
 		this.isReady = false;
 
+		this.isPolling = {
+			twitch: false,
+			kick: false,
+			youtube: false
+		};
+
 		this.logger = new Logger("stream-monitor");
 
 		// Cache em disco para controle de duplicatas em caso de reset de DB
@@ -445,12 +451,13 @@ class StreamMonitor extends EventEmitter {
 	 */
 	async _removeChannelFromDB(channelName, platform) {
 		try {
+			const normalizedName = channelName.toLowerCase();
 			await this.database.dbRun(
 				this.dbNameMonitor,
 				`
               DELETE FROM monitored_channels WHERE name = ? AND platform = ?
           `,
-				[channelName, platform]
+				[normalizedName, platform]
 			);
 
 			await this.database.dbRun(
@@ -458,7 +465,7 @@ class StreamMonitor extends EventEmitter {
 				`
               DELETE FROM stream_status WHERE channel_name = ? AND platform = ?
           `,
-				[channelName, platform]
+				[normalizedName, platform]
 			);
 		} catch (error) {
 			this.logger.error(`Error removing channel ${channelName} from DB:`, error);
@@ -838,7 +845,12 @@ class StreamMonitor extends EventEmitter {
 
 		this.pollingTimers[platform] = setTimeout(async () => {
 			if (!this.isMonitoring) return;
+			if (this.isPolling[platform]) {
+				this.logger.debug(`[schedulePlatformLoop] Skipping concurrent poll loop for ${platform}`);
+				return;
+			}
 
+			this.isPolling[platform] = true;
 			let nextDelayMs = 30000;
 			try {
 				if (platform === "twitch") {
@@ -878,6 +890,7 @@ class StreamMonitor extends EventEmitter {
 				this.logger.error(`[schedulePlatformLoop] Erro no ciclo de polling de ${platform}:`, err);
 				nextDelayMs = 60000;
 			} finally {
+				this.isPolling[platform] = false;
 				if (this.isMonitoring) {
 					this._schedulePlatformLoop(platform, nextDelayMs);
 				}
@@ -1473,6 +1486,10 @@ class StreamMonitor extends EventEmitter {
 					);
 				}
 			}
+
+			for (const chName of channelsToRemove) {
+				await this.unsubscribe(chName, "twitch");
+			}
 		} catch (error) {
 			this.logger.error("[cleanupChannelList] Erro ao fazer limpeza dos canais:", error);
 		}
@@ -1818,25 +1835,27 @@ class StreamMonitor extends EventEmitter {
 	 */
 	async _updateKickChannelStatus(channel, channelData) {
 		const channelKey = `kick:${channel.name.toLowerCase()}`;
+		const kickSlug = channelData?.slug || channel.name;
 
 		if (!channelData) {
-			if (!this.kickNotFounds[channel.name]) {
-				this.kickNotFounds[channel.name] = 1;
+			const notFoundKey = channel.name.toLowerCase();
+			if (!this.kickNotFounds[notFoundKey]) {
+				this.kickNotFounds[notFoundKey] = 1;
 				this.logger.warn(
 					`Canal da Kick não encontrado: '${channel.name}'. Iniciando contagem de erros.`
 				);
 			} else {
-				this.kickNotFounds[channel.name]++;
+				this.kickNotFounds[notFoundKey]++;
 				this.logger.warn(
-					`Canal da Kick não encontrado (${this.kickNotFounds[channel.name]} vezes): '${channel.name}'.`
+					`Canal da Kick não encontrado (${this.kickNotFounds[notFoundKey]} vezes): '${channel.name}'.`
 				);
-				if (this.kickNotFounds[channel.name] > 50) {
+				if (this.kickNotFounds[notFoundKey] > 50) {
 					await this.pauseChannel(channel.name, "kick");
 				}
 			}
 			return;
 		} else {
-			this.kickNotFounds[channel.name] = 0;
+			this.kickNotFounds[channel.name.toLowerCase()] = 0;
 		}
 
 		const isLiveNow = !!(channelData && channelData.stream && channelData.stream.is_live);
@@ -1849,7 +1868,7 @@ class StreamMonitor extends EventEmitter {
 		this.streamStatuses[channelKey].isLive = isLiveNow;
 		this.streamStatuses[channelKey].lastChecked = new Date().toISOString();
 		this.streamStatuses[channelKey].platform = "kick";
-		this.streamStatuses[channelKey].channelName = channel.name;
+		this.streamStatuses[channelKey].channelName = kickSlug;
 
 		// Add stream details if live
 		if (isLiveNow) {
@@ -1869,10 +1888,10 @@ class StreamMonitor extends EventEmitter {
 			const stream = channelData.stream;
 			await this._emitIfSafe("streamOnline", {
 				platform: "kick",
-				channelName: channelData.slug,
+				channelName: kickSlug,
 				title: stream?.stream_title || channelData.stream_title || "",
 				game: channelData.category ? channelData.category.name : "Unknown",
-				url: `https://kick.com/${channelData.slug}`,
+				url: `https://kick.com/${kickSlug}`,
 				thumbnail: stream?.thumbnail || "",
 				viewerCount: stream?.viewer_count || 0,
 				startedAt: stream?.start_time || null
@@ -1880,7 +1899,7 @@ class StreamMonitor extends EventEmitter {
 		} else if (!isLiveNow && wasLive) {
 			await this._emitIfSafe("streamOffline", {
 				platform: "kick",
-				channelName: channel.name
+				channelName: kickSlug
 			});
 		}
 
@@ -2465,21 +2484,22 @@ class StreamMonitor extends EventEmitter {
 							const lastVideoId = this.streamStatuses[channelKey]?.lastVideo?.id ?? "";
 
 							if (latestVideo.id !== lastVideoId) {
-								// Failsafe 24h para não disparar em banco limpo/vídeos antigos
+								// Failsafe 24h para não disparar em banco limpo/vídeos antigos ou sem data
 								const publishedAtStr = latestVideo.publishedAt;
-								let isRecent = true;
+								let isRecent = false;
 								if (publishedAtStr) {
 									const published = new Date(publishedAtStr);
 									const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-									if (published < oneDayAgo) {
-										isRecent = false;
+									if (!isNaN(published.getTime()) && published >= oneDayAgo) {
+										isRecent = true;
 									}
 								}
 
-								this.streamStatuses[channelKey].lastVideo = latestVideo;
+								const currentLiveId =
+									liveStatus?.videoId || this.streamStatuses[channelKey]?.currentLiveVideoId;
 
 								// Notifica newVideo apenas se for recente e NÃO for a live atual ativa
-								if (isRecent && latestVideo.id !== liveStatus.videoId) {
+								if (isRecent && latestVideo.id !== currentLiveId) {
 									await this._emitIfSafe("newVideo", {
 										platform: "youtube",
 										channelName: channel.name,
@@ -2490,6 +2510,9 @@ class StreamMonitor extends EventEmitter {
 										publishedAt: latestVideo.publishedAt
 									});
 								}
+
+								// Atualiza lastVideo após processar o emit
+								this.streamStatuses[channelKey].lastVideo = latestVideo;
 							}
 						}
 
