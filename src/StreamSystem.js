@@ -753,7 +753,23 @@ class StreamSystem {
 				} else if (eventType === "offline" && channelConfig.offlineTitle) {
 					newTitle = channelConfig.offlineTitle;
 				} else {
-					newTitle = chat.name;
+					// `chat.name` pode chegar indefinido quando o chat ainda não está hidratado
+					// no cache do bot (acontece em grupos recém-carregados ou logo após restart).
+					// Usamos então o título salvo no banco como base; sem nenhuma das duas
+					// informações, avisamos e retornamos false — lançar erro aqui cancelava
+					// também o envio da notificação do evento.
+					const baseTitle =
+						typeof chat.name === "string" && chat.name.trim() ? chat.name : group.titulo;
+
+					if (typeof baseTitle !== "string" || !baseTitle.trim()) {
+						this.logger.warn(
+							`[changeGroupTitleForStream] Sem título base para ${group.name} (${group.id}) via ${bot.id} ` +
+								`(chat.name=${JSON.stringify(chat.name)}, group.titulo=${JSON.stringify(group.titulo)}) — mudança de título ignorada`
+						);
+						return false;
+					}
+
+					newTitle = baseTitle;
 
 					const matchCase = (text, pattern) => {
 						if (pattern === pattern.toUpperCase()) return text.toUpperCase();
