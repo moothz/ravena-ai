@@ -396,7 +396,26 @@ Interações cômicas automáticas do bot.
 | `web_management.db` | `sessions`, `users` | Autenticação do painel web |
 | `anon_msgs.db` | `anonymous_messages` | Histórico de mensagens anônimas |
 | `correios.db` | `tracked_packages` | Rastreamento de encomendas Correios |
+| `afk.db` | `afk_sessions` | Histórico e gerenciamento de status AFK (Away From Keyboard) por grupo |
 | `food_tracker.db` | `food_logs` | Registro alimentar por usuário |
+
+### `afk.db`
+Banco de dados para o módulo de status AFK nos grupos.
+
+#### `afk_sessions`
+Armazena histórico de entradas e saídas de status AFK por membro e grupo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo (ex: `120363...@g.us`) |
+| `user_id` | TEXT | JID do celular do usuário (ex: `5511999999999@s.whatsapp.net`) |
+| `user_lid` | TEXT | LID do usuário (ex: `123456789@lid`), se disponível |
+| `user_name` | TEXT | Nome / pushname do usuário no grupo |
+| `reason` | TEXT | Motivo informado ao entrar em AFK (opcional) |
+| `entered_at` | INTEGER | Timestamp de entrada em AFK (ms) |
+| `exited_at` | INTEGER | Timestamp de saída do AFK (ms, NULL se ativo) |
+| `is_active` | INTEGER | Estado da sessão AFK (1=ativo, 0=encerrado) |
 | `horoscopo.db` | `horoscopo_cache` | Cache de previsões astrológicas |
 | `placas.db` | `placas_cache` | Cache de consultas de placas veiculares |
 | `raffle_cache.db` | `raffle_cache` | Cache de informações e andamento de rifas/ações |

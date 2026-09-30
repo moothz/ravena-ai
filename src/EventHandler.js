@@ -20,6 +20,7 @@ const fs = require("fs").promises;
 const path = require("path");
 const Stickers = require("./functions/Stickers");
 const LembretesCommands = require("./functions/LembretesCommands");
+const AFKCommands = require("./functions/AFKCommands");
 const CorreiosCommands = require("./functions/CorreiosCommands");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const RaffleMonitor = require("./services/RaffleMonitor");
@@ -534,6 +535,14 @@ class EventHandler extends EventEmitter {
 					await this.rankingMessages.processMessage(message);
 				} catch (error) {
 					this.logger.error("Erro ao processar mensagem para ranking:", error);
+				}
+
+				// Processa rotinas de AFK (remoção automática ao falar e resposta a menções)
+				try {
+					await AFKCommands.checkReturnFromAFK(bot, message, group);
+					await AFKCommands.detectAFKMentions(bot, message, group);
+				} catch (error) {
+					this.logger.error("Erro ao processar verificações de AFK:", error);
 				}
 
 				// Verifica se o usuário está ignorado
