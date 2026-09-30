@@ -1069,6 +1069,34 @@ async function seguirCommand(bot, message, args, group) {
 		logger.error(`[Canais] Erro em segundo plano no backfill de ${canalJid}:`, err);
 	});
 
+	let streamHintText = `\n\n📢 *Encaminhamento de Lives:*
+Se você for o dono deste canal e o bot for administrador dele, você pode encaminhar notificações de transmissões ao vivo (Twitch, Kick, YouTube) diretamente para este canal!`;
+
+	try {
+		const groupObj = await database.getGroup(message.group);
+		if (groupObj) {
+			let platform = null;
+			let streamName = null;
+
+			if (Array.isArray(groupObj.twitch) && groupObj.twitch.length > 0) {
+				platform = "twitch";
+				streamName = groupObj.twitch[0].channel;
+			} else if (Array.isArray(groupObj.kick) && groupObj.kick.length > 0) {
+				platform = "kick";
+				streamName = groupObj.kick[0].channel;
+			} else if (Array.isArray(groupObj.youtube) && groupObj.youtube.length > 0) {
+				platform = "youtube";
+				streamName = groupObj.youtube[0].channel;
+			}
+
+			if (platform && streamName) {
+				streamHintText += `\n*Exemplo para este grupo:* \`!g-${platform}-encaminharCanal ${streamName} ${apelidoFinal}\``;
+			}
+		}
+	} catch (err) {
+		logger.warn(`[Canais] Erro ao carregar grupo para dica de stream:`, err);
+	}
+
 	const responseText = `✅ Canal *${nomeOficial}* cadastrado com sucesso!
 🏷️ Apelido no grupo: *${apelidoFinal}*
 📥 Baixando até ${BACKFILL_COUNT} mensagens recentes em segundo plano...
@@ -1084,7 +1112,7 @@ async function seguirCommand(bot, message, args, group) {
 💡 *Dica de Alias:*
 Crie um atalho rápido no grupo para este canal:
 \`!g-addCmd ${apelidoNorm} {cmd-canal-rnd ${apelidoFinal}}\`
-Depois é só digitar \`!${apelidoNorm}\` para receber um post aleatório!`;
+Depois é só digitar \`!${apelidoNorm}\` para receber um post aleatório!${streamHintText}`;
 
 	return new ReturnMessage({
 		chatId,

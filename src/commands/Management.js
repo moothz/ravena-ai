@@ -318,6 +318,11 @@ class Management {
 				method: "toggleTwitchMentions",
 				description: "Ativa/desativa menção a todos os membros nas notificações de canal da Twitch"
 			},
+			"twitch-encaminharCanal": {
+				method: "setTwitchForwardChannel",
+				description:
+					"Ativa/desativa encaminhamento de notificações da Twitch para canal do WhatsApp"
+			},
 			"kick-canal": {
 				method: "toggleKickChannel",
 				description: "Adiciona/remove canal do Kick para monitoramento"
@@ -354,6 +359,10 @@ class Management {
 				method: "toggleKickMentions",
 				description: "Ativa/desativa menção a todos os membros nas notificações de canal do Kick"
 			},
+			"kick-encaminharCanal": {
+				method: "setKickForwardChannel",
+				description: "Ativa/desativa encaminhamento de notificações do Kick para canal do WhatsApp"
+			},
 			"youtube-canal": {
 				method: "toggleYoutubeChannel",
 				description: "Adiciona/remove canal do YouTube para monitoramento"
@@ -389,6 +398,11 @@ class Management {
 			"youtube-marcar": {
 				method: "toggleYoutubeMentions",
 				description: "Ativa/desativa menção a todos os membros nas notificações de canal do YouTube"
+			},
+			"youtube-encaminharCanal": {
+				method: "setYoutubeForwardChannel",
+				description:
+					"Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp"
 			},
 			variaveis: {
 				method: "listVariables",
@@ -7458,6 +7472,154 @@ class Management {
 		return this.toggleStreamMentions(bot, message, args, group, "youtube");
 	}
 
+	async setStreamForwardChannel(bot, message, args, group, platform) {
+		const groupId = group.id;
+
+		// 1. Busca os canais do WhatsApp seguidos pelo grupo em canais.db
+		const followedChannels = await this.database.dbAll(
+			"canais",
+			"SELECT canal_jid, apelido, apelido_normalizado FROM canal_grupos WHERE group_id = ?",
+			[groupId]
+		);
+
+		if (!followedChannels || followedChannels.length === 0) {
+			return new ReturnMessage({
+				chatId: groupId,
+				content:
+					"❌ Este grupo não segue nenhum canal ainda para poder encaminhar mensagens.\n\n" +
+					"Use `!canal-seguir <nome> <link>` para começar a seguir um canal."
+			});
+		}
+
+		// 2. Verifica se há canais de stream configurados no grupo para a plataforma
+		const streamChannels = this.getChannelConfig(group, platform);
+		if (!streamChannels || streamChannels.length === 0) {
+			return new ReturnMessage({
+				chatId: groupId,
+				content: `Nenhum canal de ${platform} configurado neste grupo. Use !g-${platform}-canal <nomeCanal> para adicionar.`
+			});
+		}
+
+		let streamChannelName = null;
+		let followedChannelQuery = null;
+
+		const firstArg = args[0] ? args[0].toLowerCase() : "";
+
+		// Tenta identificar se o primeiro argumento é o nome de um canal de stream configurado
+		const matchedStream = streamChannels.find(
+			(c) => c.channel && c.channel.toLowerCase() === firstArg
+		);
+
+		if (matchedStream) {
+			streamChannelName = matchedStream.channel;
+			followedChannelQuery = args.slice(1).join(" ").trim();
+		} else if (streamChannels.length === 1) {
+			streamChannelName = streamChannels[0].channel;
+			followedChannelQuery = args.join(" ").trim();
+		} else if (args.length === 0) {
+			const channelsList = streamChannels.map((c) => c.channel).join(", ");
+			const followedList = followedChannels.map((c) => c.apelido).join(", ");
+			return new ReturnMessage({
+				chatId: groupId,
+				content:
+					`Múltiplos canais de ${platform} configurados neste grupo.\n\n` +
+					`*Uso:* \`!g-${platform}-encaminharCanal <canalStream> <nomeCanalSeguido>\`\n\n` +
+					`*Streams configuradas:* ${channelsList}\n` +
+					`*Canais seguidos disponíveis:* ${followedList}`
+			});
+		} else {
+			const channelsList = streamChannels.map((c) => c.channel).join(", ");
+			return new ReturnMessage({
+				chatId: groupId,
+				content:
+					`Múltiplos canais de ${platform} configurados. Especifique o canal da stream:\n` +
+					`\`!g-${platform}-encaminharCanal <canalStream> <nomeCanalSeguido>\`\n\n` +
+					`*Streams configuradas:* ${channelsList}`
+			});
+		}
+
+		if (!followedChannelQuery) {
+			const followedList = followedChannels.map((c) => c.apelido).join(", ");
+			return new ReturnMessage({
+				chatId: groupId,
+				content:
+					`Por favor, informe o nome do canal do WhatsApp seguido.\n\n` +
+					`*Exemplo:* \`!g-${platform}-encaminharCanal ${streamChannelName} ${followedChannels[0].apelido}\`\n\n` +
+					`*Canais seguidos no grupo:* ${followedList}`
+			});
+		}
+
+		const streamConfig = this.findChannelConfig(group, platform, streamChannelName);
+		if (!streamConfig) {
+			return new ReturnMessage({
+				chatId: groupId,
+				content: `Canal de ${platform} não encontrado: ${streamChannelName}`
+			});
+		}
+
+		// Procura o canal do WhatsApp pelo apelido ou apelido normalizado
+		const normQuery = followedChannelQuery
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.toLowerCase();
+
+		const matchedFollowed = followedChannels.find(
+			(ch) =>
+				ch.apelido.toLowerCase() === followedChannelQuery.toLowerCase() ||
+				ch.apelido_normalizado === normQuery ||
+				ch.canal_jid === followedChannelQuery
+		);
+
+		if (!matchedFollowed) {
+			const followedList = followedChannels.map((c) => c.apelido).join(", ");
+			return new ReturnMessage({
+				chatId: groupId,
+				content:
+					`❌ Canal do WhatsApp "${followedChannelQuery}" não encontrado entre os canais seguidos neste grupo.\n\n` +
+					`*Canais disponíveis:* ${followedList}`
+			});
+		}
+
+		// Inicializa a lista forwardToChannels
+		if (!Array.isArray(streamConfig.forwardToChannels)) {
+			streamConfig.forwardToChannels = [];
+		}
+
+		const targetJid = matchedFollowed.canal_jid;
+		const existsIndex = streamConfig.forwardToChannels.indexOf(targetJid);
+		let isAdded = false;
+
+		if (existsIndex !== -1) {
+			streamConfig.forwardToChannels.splice(existsIndex, 1);
+			isAdded = false;
+		} else {
+			streamConfig.forwardToChannels.push(targetJid);
+			isAdded = true;
+		}
+
+		await this.database.saveGroup(group);
+
+		const statusStr = isAdded ? "ativado" : "desativado";
+		return new ReturnMessage({
+			chatId: groupId,
+			content:
+				`✅ Encaminhamento de notificações da stream *${streamConfig.channel}* (${platform}) para o canal do WhatsApp *${matchedFollowed.apelido}* foi *${statusStr}*.\n\n` +
+				`⚠️ *Lembre-se:* O bot deve ser **administrador** do canal no WhatsApp para conseguir enviar as mensagens!`
+		});
+	}
+
+	async setTwitchForwardChannel(bot, message, args, group) {
+		return this.setStreamForwardChannel(bot, message, args, group, "twitch");
+	}
+
+	async setKickForwardChannel(bot, message, args, group) {
+		return this.setStreamForwardChannel(bot, message, args, group, "kick");
+	}
+
+	async setYoutubeForwardChannel(bot, message, args, group) {
+		return this.setStreamForwardChannel(bot, message, args, group, "youtube");
+	}
+
 	async generatePainelCommand(bot, message, args, group, privateManagement) {
 		let targetGroup = group;
 
@@ -8751,6 +8913,12 @@ const helper = {
 			category: "streams"
 		},
 		{
+			cmd: "!g-twitch-encaminharCanal",
+			desc: "Ativa/desativa encaminhamento de notificações da Twitch para canal do WhatsApp seguido",
+			usage: ["!g-twitch-encaminharCanal <canalStream> <nomeCanalSeguido>"],
+			category: "streams"
+		},
+		{
 			cmd: "!g-kick-canal",
 			desc: "Adiciona/remove canal do Kick para monitoramento",
 			usage: ["!g-kick-canal"],
@@ -8802,6 +8970,12 @@ const helper = {
 			cmd: "!g-kick-marcar",
 			desc: "Ativa/desativa menção a todos os membros nas notificações de canal do Kick",
 			usage: ["!g-kick-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-encaminharCanal",
+			desc: "Ativa/desativa encaminhamento de notificações do Kick para canal do WhatsApp seguido",
+			usage: ["!g-kick-encaminharCanal <canalStream> <nomeCanalSeguido>"],
 			category: "streams"
 		},
 		{
@@ -8861,6 +9035,12 @@ const helper = {
 			cmd: "!g-youtube-marcar",
 			desc: "Ativa/desativa menção a todos os membros nas notificações de canal do YouTube",
 			usage: ["!g-youtube-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-youtube-encaminharCanal",
+			desc: "Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp seguido",
+			usage: ["!g-youtube-encaminharCanal <canalStream> <nomeCanalSeguido>"],
 			category: "streams"
 		},
 		{

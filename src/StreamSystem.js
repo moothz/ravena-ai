@@ -593,6 +593,40 @@ class StreamSystem {
 							`Notificação de ${eventData.platform}/${eventData.channelName} enviada para ${group.name} (${group.id}) via ${bot.id}`
 						);
 
+						// Encaminha as mensagens para os canais do WhatsApp configurados
+						const forwardTargets = Array.isArray(channelConfig.forwardToChannels)
+							? channelConfig.forwardToChannels
+							: Array.isArray(channelConfig.encaminharCanais)
+								? channelConfig.encaminharCanais
+								: [];
+
+						if (forwardTargets.length > 0) {
+							for (const channelJid of forwardTargets) {
+								try {
+									const channelMessages = returnMessages.map(
+										(msg) =>
+											new ReturnMessage({
+												chatId: channelJid,
+												content: msg.content,
+												options: {
+													...(msg.options || {}),
+													mentions: [] // remove menções do grupo para newsletter
+												}
+											})
+									);
+									await bot.sendReturnMessages(channelMessages);
+									this.logger.info(
+										`Notificação de stream encaminhada para canal do WhatsApp ${channelJid} via ${bot.id}`
+									);
+								} catch (fwdErr) {
+									this.logger.warn(
+										`Falha ao encaminhar notificação de stream para o canal ${channelJid}:`,
+										fwdErr
+									);
+								}
+							}
+						}
+
 						if (this.debugNotificacoes && bot.grupoLogs) {
 							await bot.sendMessage(
 								bot.grupoLogs,

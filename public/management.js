@@ -1447,6 +1447,32 @@ document.addEventListener('DOMContentLoaded', () => {
             renderStreamMediaList('stream-on-media-list', d.onConfig?.media || []);
             renderStreamMediaList('stream-off-media-list', d.offConfig?.media || []);
         }
+
+        // Renderiza canais do WhatsApp seguidos para encaminhamento
+        const forwardContainer = document.getElementById('stream-forward-channels-container');
+        if (forwardContainer) {
+            forwardContainer.innerHTML = '';
+            const followed = groupData.followedChannels || [];
+            if (!followed || followed.length === 0) {
+                forwardContainer.innerHTML = '<div class="text-muted small">Este grupo não segue nenhum canal ainda para poder encaminhar mensagens</div>';
+            } else {
+                const currentForwards = Array.isArray(d.forwardToChannels) ? d.forwardToChannels : [];
+                followed.forEach((ch) => {
+                    const isChecked = currentForwards.includes(ch.canal_jid);
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'form-group toggle-row-compact mb-2';
+                    itemDiv.innerHTML = `
+                        <span class="toggle-label"><i class="fas fa-bullhorn text-secondary"></i> ${ch.apelido}</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" class="stream-forward-ch-checkbox" data-jid="${ch.canal_jid}" ${isChecked ? 'checked' : ''}>
+                            <span class="slider-round"></span>
+                        </label>
+                    `;
+                    forwardContainer.appendChild(itemDiv);
+                });
+            }
+        }
+
         updateStreamPreview();
 
         els.streamModal.classList.remove('hidden');
@@ -1662,6 +1688,16 @@ document.addEventListener('DOMContentLoaded', () => {
         d.useAI = els.streamAI.checked;
         d.useThumbnail = els.streamUseThumbnail.checked;
 
+        // Coleta canais do WhatsApp marcados para encaminhamento
+        const forwardCheckboxes = document.querySelectorAll('.stream-forward-ch-checkbox');
+        const forwardJids = [];
+        forwardCheckboxes.forEach(cb => {
+            if (cb.checked && cb.dataset.jid) {
+                forwardJids.push(cb.dataset.jid);
+            }
+        });
+        d.forwardToChannels = forwardJids;
+
         if (!isYtVideo) {
             d.changeTitleOnEvent = els.streamChangeTitle.checked;
             d.onlineTitle = els.streamTitleOn.value;
@@ -1684,6 +1720,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     s => s.channel.toLowerCase() === channel.toLowerCase()
                 );
                 if (existingIdx !== -1) {
+                    groupData.youtube[existingIdx].forwardToChannels = forwardJids;
                     if (isYtVideo) {
                         groupData.youtube[existingIdx].notifyVideos = true;
                         groupData.youtube[existingIdx].videoConfig = d.videoConfig;

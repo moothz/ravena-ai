@@ -2506,6 +2506,19 @@ class BotAPI {
 				}
 				groupData.participants = participants;
 
+				// Fetch WhatsApp channels followed by this group
+				try {
+					const followedChannels = await this.database.dbAll(
+						"canais",
+						"SELECT canal_jid, apelido, apelido_normalizado FROM canal_grupos WHERE group_id = ?",
+						[id]
+					);
+					groupData.followedChannels = followedChannels || [];
+				} catch (e) {
+					this.logger.error("Error fetching followed channels for group management:", e);
+					groupData.followedChannels = [];
+				}
+
 				this.logger.info(`[management][${token}][${id}] Group ${groupData.name}`);
 				return res.json(groupData);
 			} catch (error) {

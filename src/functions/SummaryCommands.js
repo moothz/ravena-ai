@@ -1013,7 +1013,7 @@ const commands = [
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "💬"
 		},
-		cooldown: 150,
+		cooldown: 55,
 		method: interactWithConversation
 	})
 ];

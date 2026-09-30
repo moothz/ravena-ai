@@ -53,12 +53,31 @@ database.getSQLiteDb(
 	);`
 );
 
-// Garante migração de coluna bot_id em bases existentes
+// Diretório para mover figurinhas detectadas como NSFW (quarentena de debug)
+const NSFW_DIR = path.join(__dirname, "../../temp/nudenet_debug");
 try {
-	const tableInfo = database.mappers.all("lovecell", "PRAGMA table_info(lovecell_sent_stickers)");
-	const hasBotId = Array.isArray(tableInfo) && tableInfo.some((col) => col.name === "bot_id");
+	if (!fs.existsSync(NSFW_DIR)) {
+		fs.mkdirSync(NSFW_DIR, { recursive: true });
+	}
+} catch {}
+
+// Garante migração de coluna bot_id e tags em bases existentes
+try {
+	const tableInfoStickers = database.mappers.all(
+		"lovecell",
+		"PRAGMA table_info(lovecell_sent_stickers)"
+	);
+	const hasBotId =
+		Array.isArray(tableInfoStickers) && tableInfoStickers.some((col) => col.name === "bot_id");
 	if (!hasBotId) {
 		database.mappers.run("lovecell", "ALTER TABLE lovecell_sent_stickers ADD COLUMN bot_id TEXT");
+	}
+
+	const tableInfoStats = database.mappers.all("lovecell", "PRAGMA table_info(lovecell_stats)");
+	const hasTags =
+		Array.isArray(tableInfoStats) && tableInfoStats.some((col) => col.name === "tags");
+	if (!hasTags) {
+		database.mappers.run("lovecell", "ALTER TABLE lovecell_stats ADD COLUMN tags TEXT");
 	}
 } catch {}
 
@@ -204,15 +223,21 @@ async function addToBlacklist(stickerId, reason = "NSFW detectado") {
 		}
 	}
 
-	// Se o arquivo existir no cache, apaga do disco imediatamente
+	// Se o arquivo existir no cache, move para a pasta de quarentena NSFW
 	const cachedPath = getStickerFilePath(id);
 	try {
 		if (fs.existsSync(cachedPath)) {
-			await fs.promises.unlink(cachedPath);
-			logger.info(`Arquivo da figurinha #${id} apagado do cache local por ser NSFW.`);
+			const nsfwDest = path.join(NSFW_DIR, `figs_lovecell_${id}.webp`);
+			try {
+				await fs.promises.rename(cachedPath, nsfwDest);
+			} catch {
+				await fs.promises.copyFile(cachedPath, nsfwDest);
+				await fs.promises.unlink(cachedPath);
+			}
+			logger.info(`Arquivo da figurinha #${id} movido para quarentena NSFW: ${nsfwDest}`);
 		}
 	} catch (err) {
-		logger.error(`Erro ao apagar arquivo da figurinha #${id} do cache: ${err.message}`);
+		logger.error(`Erro ao mover arquivo da figurinha #${id} para quarentena NSFW: ${err.message}`);
 	}
 }
 
@@ -817,9 +842,10 @@ function getStickerFromCache(stickerId) {
  * Salva a figurinha já recortada em disco caso seja válida (>= 3KB e não blacklisted)
  * @param {number|string} stickerId
  * @param {Buffer} buffer
+ * @param {Array<string>} [tags=[]]
  * @returns {Promise<string|null>}
  */
-async function saveStickerToCache(stickerId, buffer) {
+async function saveStickerToCache(stickerId, buffer, tags = []) {
 	const id = parseInt(stickerId, 10);
 	if (!isNaN(id) && module.exports.isBlacklisted(id)) {
 		logger.warn(`Tentativa de salvar figurinha #${id} que está na blacklist abortada.`);
@@ -840,10 +866,13 @@ async function saveStickerToCache(stickerId, buffer) {
 			downloadedIds.add(id);
 			try {
 				const now = new Date().toISOString();
+				const tagsJson = Array.isArray(tags) && tags.length > 0 ? JSON.stringify(tags) : null;
 				database.mappers.run(
 					"lovecell",
-					"INSERT OR IGNORE INTO lovecell_stats (id, sent_count, last_sent_at, created_at) VALUES (?, 0, NULL, ?)",
-					[id, now]
+					`INSERT INTO lovecell_stats (id, sent_count, last_sent_at, created_at, tags)
+					 VALUES (?, 0, NULL, ?, ?)
+					 ON CONFLICT(id) DO UPDATE SET tags = COALESCE(excluded.tags, lovecell_stats.tags)`,
+					[id, now, tagsJson]
 				);
 			} catch {}
 		}
@@ -857,18 +886,59 @@ async function saveStickerToCache(stickerId, buffer) {
 
 /**
  * Busca figurinhas aleatórias já salvas no cache local do Lovecell (ignora blacklisted e < 3KB).
- * Prioriza figurinhas nunca enviadas (sent_count = 0) ou pouco enviadas (sent_count menor)
- * para evitar repetição excessiva para os usuários.
+ * Prioriza figurinhas nunca enviadas (sent_count = 0) ou pouco enviadas (sent_count menor).
+ * Suporta filtragem por lista de tags (OR).
  *
  * @param {number} count - Quantidade desejada
  * @param {Set<number|string>} excludeIds - IDs a excluir
+ * @param {Array<string>} [tagsArray=[]] - Tags solicitadas (busca com lógica OR)
  * @returns {Promise<Array<{ id: number|string, buffer: Buffer }>>}
  */
-async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
+async function getRandomCachedStickers(count = 1, excludeIds = new Set(), tagsArray = []) {
 	try {
 		if (!fs.existsSync(LOVECELL_DIR)) return [];
 		const files = await fs.promises.readdir(LOVECELL_DIR);
 		const stickerFiles = files.filter((f) => f.startsWith("figs_lovecell_") && f.endsWith(".webp"));
+
+		// Se tagsArray foi fornecido, consulta no SQLite quais IDs possuem pelo menos uma dessas tags (expandindo por sinônimos)
+		let matchingTagIds = null;
+		if (Array.isArray(tagsArray) && tagsArray.length > 0) {
+			const requestedSet = new Set();
+			for (const rawTag of tagsArray) {
+				const norm = rawTag.toLowerCase().trim();
+				if (!norm) continue;
+				requestedSet.add(norm);
+				const syns = TAG_SYNONYMS[norm];
+				if (syns) {
+					syns.forEach((s) => requestedSet.add(s.toLowerCase().trim()));
+				}
+			}
+
+			matchingTagIds = new Set();
+			try {
+				const rows = database.mappers.all(
+					"lovecell",
+					"SELECT id, tags FROM lovecell_stats WHERE tags IS NOT NULL"
+				);
+				if (Array.isArray(rows)) {
+					for (const row of rows) {
+						try {
+							const itemTags = JSON.parse(row.tags);
+							if (Array.isArray(itemTags)) {
+								const hasMatch = itemTags.some((t) =>
+									requestedSet.has(String(t).toLowerCase().trim())
+								);
+								if (hasMatch) {
+									matchingTagIds.add(row.id);
+								}
+							}
+						} catch {}
+					}
+				}
+			} catch (dbErr) {
+				logger.warn(`Erro ao filtrar por tags no SQLite: ${dbErr.message}`);
+			}
+		}
 
 		const filterValidFile = (f, checkExclude = true) => {
 			const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
@@ -876,6 +946,8 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 			const id = parseInt(match[1], 10);
 			if (checkExclude && excludeIds.has(id)) return false;
 			if (module.exports.isBlacklisted(id)) return false;
+			if (matchingTagIds !== null && !matchingTagIds.has(id)) return false;
+
 			try {
 				const fullPath = path.join(LOVECELL_DIR, f);
 				const stat = fs.statSync(fullPath);
@@ -894,7 +966,7 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set()) {
 
 		let available = stickerFiles.filter((f) => filterValidFile(f, true));
 
-		if (available.length === 0 && stickerFiles.length > 0) {
+		if (available.length === 0 && stickerFiles.length > 0 && matchingTagIds === null) {
 			available = stickerFiles.filter((f) => filterValidFile(f, false));
 		}
 
@@ -1114,6 +1186,135 @@ const FORBIDDEN_TITLE_PATTERNS = [
 ];
 
 /**
+ * Mapeamento de sinônimos de tags para inclusão automática (OR / Equivalências)
+ */
+const TAG_SYNONYMS = {
+	"anime/desenho": ["anime", "desenho"],
+	anime: ["desenho", "anime/desenho"],
+	desenho: ["anime", "anime/desenho"],
+	cães: ["cachorro", "cao", "filhote"],
+	cachorro: ["cães", "cao", "filhote"],
+	gatos: ["gatinho", "felino", "gato"],
+	gato: ["gatos", "gatinho", "felino"],
+	relação: ["reação", "rosto", "expressao"],
+	"reação/rosto": ["reação", "rosto", "expressao"],
+	políticos: ["politico", "politica"],
+	futebol: ["time", "jogo"],
+	amor: ["coracao", "romance"],
+	"bom dia": ["saudacao", "cafe"]
+};
+
+const LAYA_QUESTIONS = {
+	safety: {
+		type: "choice",
+		instructions: "Classifique o nível de segurança do conteúdo visual.",
+		criteria: {
+			SFW: "Imagem normal, engraçada, fofa ou segura.",
+			Pornografia: "Nudez explícita, atos sexuais ou pornografia.",
+			Gore: "Sangue, violência extrema, ferimentos graves ou decapitação.",
+			Menores: "Conteúdo sexualizado ou inadequado envolvendo crianças ou menores."
+		}
+	},
+	tags: {
+		type: "choice",
+		instructions: "Identifique os temas ou assuntos presentes na imagem.",
+		criteria: {
+			Gatos: "Gatos, gatinhos, felinos.",
+			Cães: "Cachorros, filhotes, cães.",
+			Memes: "Memes de internet, piadas visuais, humor.",
+			"Reação/Rosto": "Expressão de rosto, choque, riso, raiva, deboche.",
+			Futebol: "Futebol, time, jogadores, partida.",
+			"Anime/Desenho": "Desenho animado, anime, mangá, ilustração cartoon.",
+			"Bom Dia": "Mensagens de bom dia, café, flores, saudações.",
+			Amor: "Corações, romance, casal, carinho.",
+			Frases: "Texto em destaque, frases escritas, figurinha de texto.",
+			Políticos: "Memes ou fotos de políticos ou figuras públicas.",
+			Subcelebridades: "Famosos, subcelebridades, influencers."
+		}
+	}
+};
+
+/**
+ * Classifica um buffer de figurinha com a API Laya (SigLIP Zero-Shot)
+ * @param {Buffer} buffer
+ * @returns {Promise<{ isNsfw: boolean, reason?: string, tags: string[] }>}
+ */
+async function classifyWithLaya(buffer) {
+	const FormData = require("form-data");
+	const API_URL = "http://192.168.195.212:8002/predict/image/upload";
+
+	try {
+		const form = new FormData();
+		form.append("file", buffer, { filename: "sticker.webp", contentType: "image/webp" });
+		form.append("questions", JSON.stringify(LAYA_QUESTIONS));
+
+		const response = await axios.post(API_URL, form, {
+			headers: form.getHeaders(),
+			timeout: 10000
+		});
+
+		const results = response.data?.results;
+		if (!results) return { isNsfw: false, tags: [] };
+
+		const safety = results.safety;
+		const tagsRes = results.tags;
+
+		// Regra de NSFW: Apenas se for Pornografia >= 92% (0.92) ou se for Gore / Menores
+		let isNsfw = false;
+		let nsfwReason = "";
+
+		if (safety?.answer === "Pornografia" && (safety.confidence || 0) >= 0.92) {
+			isNsfw = true;
+			nsfwReason = `Laya NSFW Pornografia (${(safety.confidence * 100).toFixed(1)}%)`;
+		} else if (safety?.answer === "Gore" && (safety.confidence || 0) >= 0.5) {
+			isNsfw = true;
+			nsfwReason = `Laya NSFW Gore (${(safety.confidence * 100).toFixed(1)}%)`;
+		} else if (safety?.answer === "Menores" && (safety.confidence || 0) >= 0.5) {
+			isNsfw = true;
+			nsfwReason = `Laya NSFW Menores (${(safety.confidence * 100).toFixed(1)}%)`;
+		}
+
+		if (isNsfw) {
+			return { isNsfw: true, reason: nsfwReason, tags: [] };
+		}
+
+		// Seleção de Tags: Threshold de 70% (0.70) + Sinônimos
+		const tagProbs = tagsRes?.probabilities || {};
+		const sortedTags = Object.entries(tagProbs).sort((a, b) => b[1] - a[1]);
+
+		const matchedSet = new Set();
+		for (const [tag, score] of sortedTags) {
+			if (score >= 0.7) {
+				matchedSet.add(tag);
+				// Adiciona sinônimos
+				const syns = TAG_SYNONYMS[tag.toLowerCase()];
+				if (syns) {
+					syns.forEach((s) => matchedSet.add(s));
+				}
+			}
+		}
+
+		// Fallback: se nenhuma atingiu 70%, adiciona o Top 1
+		if (matchedSet.size === 0 && sortedTags.length > 0) {
+			const topTag = sortedTags[0][0];
+			matchedSet.add(topTag);
+			const syns = TAG_SYNONYMS[topTag.toLowerCase()];
+			if (syns) {
+				syns.forEach((s) => matchedSet.add(s));
+			}
+		}
+
+		return {
+			isNsfw: false,
+			tags: Array.from(matchedSet)
+		};
+	} catch (error) {
+		logger.warn(`Falha na consulta à API Laya: ${error.message}`);
+		return { isNsfw: false, tags: [] };
+	}
+}
+
+/**
  * Verifica se um texto/título contém termos proibidos (abuso, estupro, nazismo, etc.)
  * @param {string} text
  * @returns {boolean}
@@ -1124,28 +1325,36 @@ function isForbiddenText(text) {
 }
 
 /**
- * Avalia se o buffer de uma figurinha contém conteúdo adulto ou impróprio via NSFWPredict com moderação estrita.
- * Verifica pornografia/NSFW, apologia ao nazismo, fotos de crianças reais, referências a estupro/abuso
- * (ex: "hora do abuso") e violência extrema/gore.
+ * Avalia se o buffer de uma figurinha contém conteúdo adulto ou impróprio.
+ * Fluxo em Duas Etapas:
+ * 1. Executa a API Laya (SigLIP Zero-Shot). Se Pornografia >= 92% ou Gore/Menores, bloqueia.
+ * 2. Se a Laya considerar SFW, executa a moderação secundária NSFWPredict ("para ter certeza").
  *
  * @param {Buffer} buffer - Buffer WebP da figurinha
  * @param {number|string} stickerId - ID para logging e rastreamento
  * @param {Object|string} [extraContext] - Contexto opcional contendo título/metadados
- * @returns {Promise<boolean>} - true se for impróprio/NSFW, false se seguro
+ * @returns {Promise<{ isNSFW: boolean, tags: string[] }>}
  */
 async function checkStickerNSFW(buffer, stickerId, extraContext = {}) {
 	try {
 		const title = typeof extraContext === "string" ? extraContext : extraContext?.title || "";
 
-		// 1. Verificação rápida local: se o título contiver termos proibidos conhecidos (ex: "hora do abuso", "nazismo", etc.)
+		// 1. Verificação rápida local por título
 		if (title && isForbiddenText(title)) {
 			logger.warn(
 				`Figurinha #${stickerId} bloqueada imediatamente por título proibido: "${title}"`
 			);
-			return true;
+			return { isNSFW: true, tags: [] };
 		}
 
-		// 2. Análise profunda multimodal via LLM com regras estritas de moderação
+		// 2. Etapa 1: Classificação com a API Laya (SigLIP Zero-Shot)
+		const layaRes = await module.exports.classifyWithLaya(buffer);
+		if (layaRes.isNsfw) {
+			logger.warn(`Figurinha #${stickerId} bloqueada pela API Laya: ${layaRes.reason}`);
+			return { isNSFW: true, tags: [] };
+		}
+
+		// 3. Etapa 2: Moderação Secundária (NSFWPredict) se for considerado SFW na Etapa 1
 		const frames = await module.exports.extractFramesForAnalysis(buffer, 6);
 		const result = await nsfwPredict.detectNSFW(frames, {
 			isSticker: true,
@@ -1159,14 +1368,15 @@ async function checkStickerNSFW(buffer, stickerId, extraContext = {}) {
 
 		if (result?.isNSFW) {
 			logger.warn(
-				`Figurinha #${stickerId} bloqueada pelo filtro de moderação (${result.category || "impróprio"}): ${result.reason || "conteúdo impróprio detectado"}`
+				`Figurinha #${stickerId} passou na Laya mas foi bloqueada pelo NSFWPredict (${result.category || "impróprio"}): ${result.reason || "conteúdo impróprio detectado"}`
 			);
-			return true;
+			return { isNSFW: true, tags: [] };
 		}
-		return false;
+
+		return { isNSFW: false, tags: layaRes.tags || [] };
 	} catch (error) {
 		logger.error(`Erro ao verificar moderação para figurinha #${stickerId}: ${error.message}`);
-		return false;
+		return { isNSFW: false, tags: [] };
 	}
 }
 
@@ -1233,21 +1443,28 @@ async function stickerScraperCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		const arg = args[0]?.trim();
 		let targetQuantity = 1;
 		let specificId = null;
+		const requestedTags = [];
 
 		const configuredMax = parseInt(bot?.extras?.stickers?.maxFiga, 10);
 		const maxQuantity = !isNaN(configuredMax) && configuredMax > 0 ? configuredMax : MAX_QUANTITY;
 
-		if (arg && /^\d+$/.test(arg)) {
-			const parsed = parseInt(arg, 10);
-			if (parsed >= MIN_STICKER_ID) {
-				// Número alto: ID específico da figurinha
-				specificId = parsed;
-			} else if (parsed > 0) {
-				// Quantidade solicitada (limitada pelo maxQuantity do bot ou padrão MAX_QUANTITY)
-				targetQuantity = Math.min(maxQuantity, parsed);
+		// Analisa todos os argumentos: se for número alto (>= MIN_STICKER_ID), é specificId.
+		// Se for número pequeno (>0), é quantidade. Caso contrário, é tag.
+		for (const rawArg of args) {
+			const arg = rawArg?.trim();
+			if (!arg) continue;
+
+			if (/^\d+$/.test(arg)) {
+				const parsed = parseInt(arg, 10);
+				if (parsed >= MIN_STICKER_ID) {
+					specificId = parsed;
+				} else if (parsed > 0) {
+					targetQuantity = Math.min(maxQuantity, parsed);
+				}
+			} else {
+				requestedTags.push(arg.toLowerCase());
 			}
 		}
 
@@ -1277,7 +1494,6 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 			const result = await module.exports.fetchLovecellSticker(specificId);
 			if (result.rateLimit) {
-				// Em caso de rate-limit, busca uma figurinha aleatória já baixada no cache
 				const fallback = await module.exports.getRandomCachedStickers(1);
 				if (fallback.length > 0) {
 					logger.info(
@@ -1310,20 +1526,17 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
 			if (croppedBuffer.length < MIN_STICKER_BYTES) {
-				logger.warn(
-					`Figurinha #${specificId} ficou com tamanho inferior a 3KB (${croppedBuffer.length} bytes) após corte do banner. Descartando.`
-				);
 				return new ReturnMessage({
 					chatId,
 					content: `Figurinha #${specificId} é inválida.`
 				});
 			}
 
-			// Verificação NSFW e moderação estrita para ID específico
-			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, specificId, {
+			// Verificação NSFW e moderação Laya -> NSFWPredict
+			const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, specificId, {
 				title: result.title
 			});
-			if (isNsfw) {
+			if (checkRes.isNSFW) {
 				await module.exports.addToBlacklist(specificId);
 				return new ReturnMessage({
 					chatId,
@@ -1331,7 +1544,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 				});
 			}
 
-			await module.exports.saveStickerToCache(specificId, croppedBuffer);
+			await module.exports.saveStickerToCache(specificId, croppedBuffer, checkRes.tags);
 			module.exports.recordStickerSent(specificId);
 
 			return buildStickerReturnMessage(
@@ -1344,12 +1557,16 @@ async function stickerScraperCommand(bot, message, args, group) {
 			);
 		}
 
-		// 2. Modo aleatório (seleciona figurinhas já baixadas diretamente da pasta local / cache)
-		// Otimização: entrega imediata sem necessidade de download ou análise NSFW em tempo de requisição
+		// 2. Modo aleatório com suporte a filtro por Tags
 		const returnMessages = [];
 		const usedIds = new Set();
 
-		const cachedStickers = await module.exports.getRandomCachedStickers(targetQuantity, usedIds);
+		const cachedStickers = await module.exports.getRandomCachedStickers(
+			targetQuantity,
+			usedIds,
+			requestedTags
+		);
+
 		for (const item of cachedStickers) {
 			usedIds.add(item.id);
 			module.exports.recordStickerSent(item.id);
@@ -1365,7 +1582,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 			);
 		}
 
-		// Fallback: se o estoque local estiver vazio ou insuficiente (ex: instalação nova), busca online
+		// Fallback: se o estoque local estiver vazio ou não houver figurinhas com a tag solicitada
 		if (returnMessages.length < targetQuantity) {
 			let rateLimited = false;
 			const needed = targetQuantity - returnMessages.length;
@@ -1392,16 +1609,25 @@ async function stickerScraperCommand(bot, message, args, group) {
 					const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
 					if (croppedBuffer.length < MIN_STICKER_BYTES) continue;
 
-					// Verificação NSFW e moderação estrita
-					const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, randomId, {
+					// Verificação NSFW e moderação Laya -> NSFWPredict
+					const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, randomId, {
 						title: result.title
 					});
-					if (isNsfw) {
+					if (checkRes.isNSFW) {
 						await module.exports.addToBlacklist(randomId);
 						continue;
 					}
 
-					await module.exports.saveStickerToCache(randomId, croppedBuffer);
+					await module.exports.saveStickerToCache(randomId, croppedBuffer, checkRes.tags);
+
+					// Se o usuário solicitou tags específicas online, verifica se bate
+					if (requestedTags.length > 0) {
+						const hasTagMatch = checkRes.tags.some((t) =>
+							requestedTags.includes(t.toLowerCase().trim())
+						);
+						if (!hasTagMatch) continue;
+					}
+
 					module.exports.recordStickerSent(randomId);
 
 					returnMessages.push(
@@ -1428,6 +1654,38 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 		if (returnMessages.length > 0) {
 			return returnMessages;
+		}
+
+		// Se buscou por tags e não encontrou nada
+		if (requestedTags.length > 0) {
+			// Busca tags populares disponíveis no banco como sugestão
+			let topTagsStr = "";
+			try {
+				const rows = database.mappers.all(
+					"lovecell",
+					"SELECT tags FROM lovecell_stats WHERE tags IS NOT NULL"
+				);
+				const tagCounts = {};
+				if (Array.isArray(rows)) {
+					for (const row of rows) {
+						try {
+							const arr = JSON.parse(row.tags);
+							if (Array.isArray(arr)) {
+								arr.forEach((t) => (tagCounts[t] = (tagCounts[t] || 0) + 1));
+							}
+						} catch {}
+					}
+				}
+				const sorted = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+				if (sorted.length > 0) {
+					topTagsStr = `\n\n💡 *Tags disponíveis:* ${sorted.slice(0, 8).join(", ")}`;
+				}
+			} catch {}
+
+			return new ReturnMessage({
+				chatId,
+				content: `⚠️ Não foi possível encontrar figurinhas para as tags: *${requestedTags.join(", ")}*.${topTagsStr}`
+			});
 		}
 
 		return new ReturnMessage({
@@ -1504,20 +1762,20 @@ async function runBackgroundScraperTick() {
 				continue;
 			}
 
-			// Filtro NSFW e moderação estrita
-			const isNsfw = await module.exports.checkStickerNSFW(croppedBuffer, candidateId, {
+			// Filtro NSFW e moderação Laya -> NSFWPredict
+			const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, candidateId, {
 				title: result.title
 			});
-			if (isNsfw) {
+			if (checkRes.isNSFW) {
 				logger.warn(
-					`Background scraper: figurinha #${candidateId} é imprópria/NSFW. Adicionando à blacklist e descartando.`
+					`Background scraper: figurinha #${candidateId} é imprópria/NSFW. Adicionando à blacklist e movendo para quarentena.`
 				);
 				await module.exports.addToBlacklist(candidateId);
-				continue; // Não salva no estoque offline e continua o ciclo
+				continue;
 			}
 
-			// Salva no estoque offline
-			await module.exports.saveStickerToCache(candidateId, croppedBuffer);
+			// Salva no estoque offline com as tags identificadas
+			await module.exports.saveStickerToCache(candidateId, croppedBuffer, checkRes.tags);
 			logger.info(
 				`Background scraper: figurinha #${candidateId} ("${result.title || "Lovecell"}") salva no estoque offline com sucesso.`
 			);
@@ -2121,6 +2379,79 @@ async function removerFigCommand(bot, message, args = [], group = null, superAdm
 	}
 }
 
+/**
+ * Lista todas as categorias/tags disponíveis e a quantidade de figurinhas cadastradas em cada uma
+ * @param {WhatsAppBot} bot
+ * @param {Object} message
+ * @returns {Promise<ReturnMessage>}
+ */
+async function figaTagsCommand(bot, message) {
+	const chatId = message.group ?? message.author;
+
+	try {
+		const rows = database.mappers.all(
+			"lovecell",
+			"SELECT tags FROM lovecell_stats WHERE tags IS NOT NULL"
+		);
+
+		const tagCounts = {};
+		let taggedStickersCount = 0;
+
+		if (Array.isArray(rows)) {
+			for (const row of rows) {
+				try {
+					const tagsList = JSON.parse(row.tags);
+					if (Array.isArray(tagsList) && tagsList.length > 0) {
+						taggedStickersCount++;
+						tagsList.forEach((tag) => {
+							if (tag && typeof tag === "string") {
+								const cleanTag = tag.trim();
+								tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
+							}
+						});
+					}
+				} catch {}
+			}
+		}
+
+		// Conta o total absoluto no banco
+		const totalRow = database.mappers.get(
+			"lovecell",
+			"SELECT COUNT(*) as total FROM lovecell_stats"
+		);
+		const totalStickers = totalRow?.total || 0;
+
+		const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+
+		if (sortedTags.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🏷️ *Categorias de Figurinhas*\n\nAinda não há categorias/tags cadastradas no momento."
+			});
+		}
+
+		let text = `🏷️ *Categorias & Tags Disponíveis*\n\n`;
+		sortedTags.forEach(([tag, count]) => {
+			text += `• *${tag}*: ${count} figurinha(s)\n`;
+		});
+
+		text += `\n📊 *Total de Figurinhas Disponíveis:* ${taggedStickersCount}`;
+		text += `\n\n💡 _Dica: Use !figa <categoria> para buscar figurinhas dessa categoria (ex: !figa ${sortedTags[0][0].toLowerCase()})_`;
+
+		return new ReturnMessage({
+			chatId,
+			content: text.trim()
+		});
+	} catch (error) {
+		logger.error(`Erro ao executar figa-tags: ${error.message}`, error);
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Ocorreu um erro ao listar as categorias de figurinhas."
+		});
+	}
+}
+
 const commands = [
 	new Command({
 		name: "figa",
@@ -2153,6 +2484,23 @@ const commands = [
 			error: "❌"
 		},
 		method: stickerScraperCommand
+	}),
+
+	new Command({
+		name: "figa-tags",
+		description: "Lista todas as categorias/tags de figurinhas disponíveis e a quantidade",
+		category: "stickers",
+		group: "lovecell",
+		reply: false,
+		aliases: ["figa-categoria", "figatags", "figacategoria", "figa-categorias", "figacategorias"],
+		caseSensitive: false,
+		cooldown: 5,
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🏷️",
+			error: "❌"
+		},
+		method: figaTagsCommand
 	}),
 
 	new Command({
@@ -2199,12 +2547,18 @@ const helper = {
 	about: "Busca e envia figurinhas sob demanda do portal Lovecell",
 	implementation:
 		"Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando (configurável por bot via extras.stickers.maxFiga). Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.",
-	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random,denunciar",
+	tags: "figa,figrandom,lovecell,sticker,figurinha,aleatoria,random,denunciar,tags,categorias",
 	cmds: [
 		{
 			cmd: "!figa",
 			desc: "Faz scraping da figurinha principal no Lovecell (estático ou animado)",
-			usage: ["!figa", "!figa 4", "!figrandom 2", "!figa 37019"],
+			usage: ["!figa", "!figa 4", "!figrandom 2", "!figa 37019", "!figa gatos 2"],
+			category: "stickers"
+		},
+		{
+			cmd: "!figa-tags",
+			desc: "Lista todas as categorias/tags de figurinhas disponíveis e a quantidade",
+			usage: ["!figa-tags", "!figa-categoria"],
 			category: "stickers"
 		},
 		{
@@ -2228,6 +2582,7 @@ module.exports = {
 	saveStickerToCache,
 	LOVECELL_DIR,
 	BLACKLIST_FILE,
+	NSFW_DIR,
 	blacklistedIds,
 	downloadedIds,
 	loadBlacklistSync,
@@ -2239,6 +2594,7 @@ module.exports = {
 	getRandomUndownloadedId,
 	extractFramesForAnalysis,
 	checkStickerNSFW,
+	classifyWithLaya,
 	runBackgroundScraperTick,
 	startScraperTimer,
 	stopScraperTimer,
@@ -2253,6 +2609,7 @@ module.exports = {
 	getStickerStats,
 	initStickerStatsSync,
 	stickerScraperCommand,
+	figaTagsCommand,
 	isForbiddenText,
 	FORBIDDEN_TITLE_PATTERNS,
 	recordSentStickerMessage,
