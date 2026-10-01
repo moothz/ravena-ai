@@ -100,6 +100,54 @@ async function main() {
 
 	bot.resetCapture();
 
+	// 3B. Teste de citação/reply à mensagem do usuário AFK
+	console.log(
+		"▶️ Teste 3B: Outro usuário responde (quote/reply) a uma mensagem de usuária AFK (Ana)"
+	);
+	const afkUser2Jid = "5511977771111@s.whatsapp.net";
+	const afkUser2Lid = "1111222233@lid";
+
+	const msgAfk2 = createMessage({
+		author: afkUser2Jid,
+		authorAlt: afkUser2Lid,
+		authorName: "Ana Souza",
+		content: "!afk Reunião",
+		group: groupId
+	});
+	await eventHandler.processMessage(bot, msgAfk2);
+	await waitForReply();
+	bot.resetCapture();
+
+	const msgQuoteAfk = createMessage({
+		author: "5511977776666@s.whatsapp.net",
+		authorName: "Carlos",
+		content: "Respondendo sua mensagem anterior!",
+		group: groupId,
+		hasQuotedMsg: true,
+		quotedMsg: { author: afkUser2Jid }
+	});
+	msgQuoteAfk.origin.getQuotedMessage = async () => ({
+		author: afkUser2Jid,
+		authorAlt: afkUser2Lid
+	});
+
+	await eventHandler.processMessage(bot, msgQuoteAfk);
+	await waitForReply();
+	assert.strictEqual(
+		bot.capturedMessages.length,
+		1,
+		"Deveria responder com aviso de AFK na citação"
+	);
+	const respQuote = bot.capturedMessages[0].content;
+	console.log("   Aviso de citação:\n", respQuote);
+	assert.match(
+		respQuote,
+		/Ana Souza está AFK!/,
+		"Aviso deve informar que Ana está AFK via citação"
+	);
+
+	bot.resetCapture();
+
 	// 4. Teste de retorno automático do AFK quando o próprio usuário manda mensagem
 	console.log("▶️ Teste 4: Usuário AFK envia mensagem (saída de AFK + reação 🏁)");
 	let reactionApplied = null;
@@ -115,6 +163,16 @@ async function main() {
 	};
 
 	await eventHandler.processMessage(bot, msgRetorno);
+	await new Promise((r) => setTimeout(r, 300));
+
+	const msgRetornoAna = createMessage({
+		author: afkUser2Jid,
+		authorAlt: afkUser2Lid,
+		authorName: "Ana Souza",
+		content: "Voltei da reunião!",
+		group: groupId
+	});
+	await eventHandler.processMessage(bot, msgRetornoAna);
 	await new Promise((r) => setTimeout(r, 300));
 
 	assert.strictEqual(

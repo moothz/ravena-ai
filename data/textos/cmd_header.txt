@@ -1,4 +1,7 @@
 _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
-- 🔥 *!figa*: Busca figurinha aleatória na internet e envia. Em testes, use com cautela
+- 🔥 *!afk <motivo>*: Marca no grupo que está AFK
+- 🔥 *!waifus:* MUDAE pirata da ravena!
+- 🔥 *!canal-seguir*: Faz com que a ravena siga canais do whatsapp e capture as mensagens, podendo ler elas depois ou programar pra ela encaminhar no seu grupo! Também possibilita encaminhar notificações de stream para os canais
+- *!figa-tags*: Possibilita buscar figurinhas de alguns tipos (gato, cachorro, memes...). Em testes.

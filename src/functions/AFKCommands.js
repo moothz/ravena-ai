@@ -81,24 +81,47 @@ function formatDateTime(timestamp) {
 }
 
 /**
- * Extrai todos os IDs mencionados e citados de uma mensagem
+ * Extrai todos os IDs mencionados e citados (replies) de uma mensagem
  * @param {Object} message
- * @returns {string[]} Lista de IDs limpos
+ * @returns {Promise<string[]>} Lista de IDs limpos
  */
-function extractMentionedIds(message) {
+async function extractMentionedIds(message) {
 	const mentionsRaw = [
 		...(Array.isArray(message.mentions) ? message.mentions : []),
 		...(Array.isArray(message.mentionedIds) ? message.mentionedIds : []),
 		...(Array.isArray(message.origin?.mentionedIds) ? message.origin.mentionedIds : [])
 	];
 
-	// Adiciona também autor de citação/reply, se presente
-	const quotedAuthor =
-		message.quotedMsg?.author ||
-		message.origin?.quotedMsg?.author ||
-		message.origin?._data?.quotedParticipant;
-	if (quotedAuthor) {
-		mentionsRaw.push(quotedAuthor);
+	// Campos síncronos de autor de citação/reply
+	if (message.quotedParticipant) mentionsRaw.push(message.quotedParticipant);
+	if (message.quotedMsg?.author) mentionsRaw.push(message.quotedMsg.author);
+	if (message.quotedMsg?.authorAlt) mentionsRaw.push(message.quotedMsg.authorAlt);
+	if (message.quotedMsg?.participant) mentionsRaw.push(message.quotedMsg.participant);
+	if (message.origin?.quotedParticipant) mentionsRaw.push(message.origin.quotedParticipant);
+	if (message.origin?.quotedMsg?.author) mentionsRaw.push(message.origin.quotedMsg.author);
+	if (message.origin?.quotedMsg?.authorAlt) mentionsRaw.push(message.origin.quotedMsg.authorAlt);
+	if (message.origin?._data?.quotedParticipant)
+		mentionsRaw.push(message.origin._data.quotedParticipant);
+
+	// Tenta buscar via getQuotedMessage caso a mensagem tenha citação
+	if (
+		message.hasQuotedMsg ||
+		message.origin?.hasQuotedMsg ||
+		typeof message.origin?.getQuotedMessage === "function"
+	) {
+		try {
+			if (typeof message.origin?.getQuotedMessage === "function") {
+				const quoted = await message.origin.getQuotedMessage().catch(() => null);
+				if (quoted) {
+					if (quoted.author) mentionsRaw.push(quoted.author);
+					if (quoted.authorAlt) mentionsRaw.push(quoted.authorAlt);
+					if (quoted.participant) mentionsRaw.push(quoted.participant);
+					if (quoted.from && !quoted.from.includes("@g.us")) mentionsRaw.push(quoted.from);
+				}
+			}
+		} catch (e) {
+			// Ignora falhas de resgate da mensagem citada
+		}
 	}
 
 	const set = new Set();
@@ -195,7 +218,7 @@ async function detectAFKMentions(bot, message, group) {
 		if (!group || !message) return;
 
 		const groupId = group.id || message.group;
-		const mentionedCleanIds = extractMentionedIds(message);
+		const mentionedCleanIds = await extractMentionedIds(message);
 		if (mentionedCleanIds.length === 0) return;
 
 		const authorClean = cleanId(message.author);
