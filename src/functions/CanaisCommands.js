@@ -1592,6 +1592,81 @@ async function rndCommand(bot, message, args, group) {
 	return await createPostReturnMessage(bot, chatId, post, matchedCanal.apelido);
 }
 
+/**
+ * Aceita convite de admin de um canal (Newsletter)
+ */
+async function aceitarInviteCommand(bot, message, args) {
+	const chatId = message.group || message.from;
+	const linkOrJid = args[0]?.trim();
+
+	if (!linkOrJid) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ *Uso incorreto!*\nInforme o link do canal, o JID ou o apelido do canal seguido no grupo.\n*Exemplo:* `!canal-aceitarinvite https://whatsapp.com/channel/xxx` ou `!canal-aceitarinvite meu-canal`",
+			options: { quoted: message.origin }
+		});
+	}
+
+	let canalJid = null;
+
+	// 1. Se for link do WhatsApp Channel
+	if (linkOrJid.includes("whatsapp.com/channel/") || linkOrJid.includes("chat.whatsapp.com/")) {
+		try {
+			const linkRes = await bot.apiClient.post("/newsletter/link", { key: linkOrJid });
+			if (linkRes?.data?.ID) {
+				canalJid = linkRes.data.ID;
+			} else if (linkRes?.data?.JID) {
+				canalJid = linkRes.data.JID;
+			}
+		} catch (e) {
+			logger.error(`[aceitarInviteCommand] Erro ao resolver link do canal:`, e);
+		}
+	}
+
+	// 2. Tenta encontrar por apelido/nome nos canais seguidos do grupo se não resolveu por link
+	if (!canalJid && message.group) {
+		const matched = await matchCanalInGroup(message.group, linkOrJid);
+		if (matched) {
+			canalJid = matched.canal_jid;
+		}
+	}
+
+	// 3. Se parece com JID direto
+	if (!canalJid) {
+		if (linkOrJid.endsWith("@newsletter")) {
+			canalJid = linkOrJid;
+		} else if (/^\d+$/.test(linkOrJid)) {
+			canalJid = `${linkOrJid}@newsletter`;
+		}
+	}
+
+	if (!canalJid) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ *Canal não encontrado!* Não foi possível identificar o JID do canal a partir de "${linkOrJid}".`,
+			options: { quoted: message.origin }
+		});
+	}
+
+	try {
+		await bot.acceptNewsletterAdminInvite(canalJid);
+		return new ReturnMessage({
+			chatId,
+			content: `✅ *Convite de Admin Aceito com Sucesso!*\n\nO bot agora aceitou o convite de administrador para o canal (\`${canalJid}\`).`,
+			options: { quoted: message.origin }
+		});
+	} catch (error) {
+		logger.error(`[aceitarInviteCommand] Erro ao aceitar convite para ${canalJid}:`, error);
+		const errMsg = error.message || error.data?.message || "Erro desconhecido ao aceitar convite.";
+		return new ReturnMessage({
+			chatId,
+			content: `❌ *Falha ao aceitar convite:* ${errMsg}\n\nVerifique se o convite para ser admin do canal ainda está ativo e se o bot é seguidor do canal.`,
+			options: { quoted: message.origin }
+		});
+	}
+}
+
 // -------------------------------------------------------------
 // DEFINIÇÃO DOS COMANDOS EXPORTADOS
 // -------------------------------------------------------------
@@ -1674,6 +1749,17 @@ const commands = [
 		caseSensitive: false,
 		timeout: 30,
 		method: encaminharCommand
+	}),
+	new Command({
+		name: "canal-aceitarinvite",
+		aliases: ["canal-aceitar", "aceitar-canal", "canal-aceitar-convite", "canalaceitar"],
+		description: "Aceita um convite de administrador para um canal (Newsletter) do WhatsApp",
+		usage: "!canal-aceitarinvite <linkOuJidOuApelido>",
+		category: "canais",
+		adminOnly: true,
+		caseSensitive: false,
+		timeout: 30,
+		method: aceitarInviteCommand
 	})
 ];
 

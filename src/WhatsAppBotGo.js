@@ -222,6 +222,7 @@ class WhatsAppBotGo {
 				this.updatePrivacySettings(arg);
 			},
 			acceptInvite: async (arg) => await this.acceptInviteCode(arg),
+			acceptNewsletterAdminInvite: async (arg) => await this.acceptNewsletterAdminInvite(arg),
 			sendPresenceUpdate: async (xxx) => true,
 			info: {
 				wid: {
@@ -2429,6 +2430,19 @@ class WhatsAppBotGo {
 					displayName: messageContent.contactMessage.displayName,
 					vcard: messageContent.contactMessage.vcard
 				};
+			} else if (
+				messageContent.newsletterAdminInviteMessage ||
+				goMessageData.newsletterAdminInvite
+			) {
+				type = "newsletter_admin_invite";
+				const invite =
+					messageContent.newsletterAdminInviteMessage || goMessageData.newsletterAdminInvite;
+				content = {
+					newsletterJID: invite.newsletterJID || invite.newsletterJid || invite.NewsletterJID,
+					newsletterName: invite.newsletterName || invite.NewsletterName,
+					caption: invite.caption || invite.Caption,
+					inviteExpiration: invite.inviteExpiration || invite.InviteExpiration
+				};
 			}
 
 			const formattedMessage = {
@@ -2502,7 +2516,7 @@ class WhatsAppBotGo {
 				getContact: formattedMessage.getContact,
 				getChat: formattedMessage.getChat,
 				getQuotedMessage: async () => {
-					this.logger.debug(`[getQuotedMessage] ${quotedMessageId}`);
+					// this.logger.debug(`[getQuotedMessage] ${quotedMessageId}`);
 					if (quotedMessageId) {
 						const cached = await this.recoverMsgFromCache(quotedMessageId);
 						if (cached) {
@@ -2512,9 +2526,9 @@ class WhatsAppBotGo {
 					// Fallback: se a mensagem não estiver no cache (bot reiniciou ou expiração),
 					// reconstrói a partir do contextInfo.quotedMessage enviado pelo WhatsApp
 					if (contextInfo?.quotedMessage) {
-						this.logger.debug(
-							`[getQuotedMessage] Recuperando mensagem ${quotedMessageId} via contextInfo.quotedMessage (fallback de cache)`
-						);
+						// this.logger.debug(
+						// 	`[getQuotedMessage] Recuperando mensagem ${quotedMessageId} via contextInfo.quotedMessage (fallback de cache)`
+						// );
 						return this.formatQuotedMessageFromContext(contextInfo, chatId, fromMe);
 					}
 					return null;
@@ -2563,6 +2577,34 @@ class WhatsAppBotGo {
 				}
 
 				this.cacheManager.putGoMessageInCache(cachedMessage);
+			}
+
+			if (goMessageData.newsletterAdminInvite || messageContent.newsletterAdminInviteMessage) {
+				const invite =
+					goMessageData.newsletterAdminInvite || messageContent.newsletterAdminInviteMessage;
+				const inviteJid = invite.newsletterJID || invite.newsletterJid || invite.NewsletterJID;
+				const inviteName = invite.newsletterName || invite.NewsletterName;
+				if (inviteJid) {
+					this.logger.info(
+						`[NewsletterAdminInvite] Recebido convite de admin para o canal ${inviteJid} (${inviteName}). Tentando aceitar automaticamente...`
+					);
+					this.acceptNewsletterAdminInvite(inviteJid)
+						.then((res) => {
+							this.logger.info(
+								`[NewsletterAdminInvite] Convite de admin para ${inviteJid} aceite com sucesso!`,
+								res
+							);
+							this.logMsgToGrupo(
+								`📢 *Convite de Admin de Canal Aceito!*\n*Canal:* ${inviteName || "Sem Nome"}\n*JID:* ${inviteJid}`
+							);
+						})
+						.catch((err) => {
+							this.logger.error(
+								`[NewsletterAdminInvite] Erro ao aceitar convite de admin para ${inviteJid}:`,
+								err
+							);
+						});
+				}
 			}
 
 			return formattedMessage;
@@ -3062,6 +3104,26 @@ class WhatsAppBotGo {
 			);
 			return { accepted: false, error: e.data?.error ?? "Erro aceitando invite" };
 		}
+	}
+
+	/**
+	 * Aceita um convite de administrador de canal (Newsletter)
+	 * @param {string} canalJid
+	 * @returns {Promise<any>}
+	 */
+	async acceptNewsletterAdminInvite(canalJid) {
+		if (!canalJid) {
+			throw new Error("JID do canal é obrigatório para aceitar o convite de admin.");
+		}
+		let cleanJid = canalJid.trim();
+		if (!cleanJid.endsWith("@newsletter")) {
+			cleanJid = `${cleanJid}@newsletter`;
+		}
+		this.logger.info(
+			`[acceptNewsletterAdminInvite][${this.instanceName}] Aceitando convite de admin para o canal: ${cleanJid}`
+		);
+		const resp = await this.apiClient.post("/newsletter/accept-admin-invite", { jid: cleanJid });
+		return resp;
 	}
 
 	async inviteInfo(inviteCode) {
