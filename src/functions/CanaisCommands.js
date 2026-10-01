@@ -1072,6 +1072,9 @@ async function seguirCommand(bot, message, args, group) {
 	let streamHintText = `\n\n📢 *Encaminhamento de Lives:*
 Se você for o dono deste canal e o bot for administrador dele, você pode encaminhar notificações de transmissões ao vivo (Twitch, Kick, YouTube) diretamente para este canal!`;
 
+	const adminInviteHintText = `\n\n👑 *Convite para Administrador:*
+Ao convidar o bot para ser administrador do canal, ele tentará aceitar o convite automaticamente. Se por algum motivo não for aceito de imediato, você pode usar o comando \`!canal-aceitarinvite ${apelidoFinal}\` para forçar o aceite.`;
+
 	try {
 		const groupObj = await database.getGroup(message.group);
 		if (groupObj) {
@@ -1106,13 +1109,14 @@ Se você for o dono deste canal e o bot for administrador dele, você pode encam
 • \`!canal-rnd ${apelidoFinal} [tipos]\` — Postagem aleatória
 • \`!canal-encaminhar ${apelidoFinal}\` — Ativar/desativar encaminhamento automático
 • \`!canal-midias ${apelidoFinal} <tipos>\` — Definir mídias capturadas
+• \`!canal-aceitarinvite ${apelidoFinal}\` — Aceitar convite de admin do canal
 • \`!canal-lista\` — Listar canais do grupo
 • \`!canal-del ${apelidoFinal}\` — Deixar de seguir
 
 💡 *Dica de Alias:*
 Crie um atalho rápido no grupo para este canal:
 \`!g-addCmd ${apelidoNorm} {cmd-canal-rnd ${apelidoFinal}}\`
-Depois é só digitar \`!${apelidoNorm}\` para receber um post aleatório!${streamHintText}`;
+Depois é só digitar \`!${apelidoNorm}\` para receber um post aleatório!${adminInviteHintText}${streamHintText}`;
 
 	return new ReturnMessage({
 		chatId,
