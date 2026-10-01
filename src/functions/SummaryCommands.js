@@ -341,8 +341,25 @@ async function interactWithConversation(bot, message, args, group) {
 			}
 		}
 
-		// Formata mensagens para prompt
-		const formattedMessages = formatMessagesForPrompt(recentMessages);
+		// Formata mensagens para prompt separando histórico antigo do foco principal (últimas 15 mensagens)
+		let historyFormatted = "";
+		if (recentMessages.length > 15) {
+			const olderMessages = recentMessages.slice(0, recentMessages.length - 15);
+			const latest15Messages = recentMessages.slice(-15);
+
+			const formattedOlder = formatMessagesForPrompt(olderMessages);
+			const formattedLatest = formatMessagesForPrompt(latest15Messages);
+
+			historyFormatted = `--- Contexto de onde veio o assunto (Mensagens antigas) ---
+${formattedOlder}
+
+--- ÚLTIMAS 15 MENSAGENS ENVIADAS (FOCO PRINCIPAL - textos e descrições de imagens, vídeos e áudios recentes) ---
+${formattedLatest}`;
+		} else {
+			const formattedLatest = formatMessagesForPrompt(recentMessages);
+			historyFormatted = `--- ÚLTIMAS MENSAGENS ENVIADAS (FOCO PRINCIPAL - textos e descrições de imagens, vídeos e áudios recentes) ---
+${formattedLatest}`;
+		}
 
 		const otherAIsPrompt = "";
 
@@ -350,10 +367,16 @@ async function interactWithConversation(bot, message, args, group) {
 			group.customAIPrompt && group.customAIPrompt.length > 0
 				? `\n\n((Sua personalidade: '${group.customAIPrompt}'))\n\n`
 				: "";
-		// Cria prompt para LLM
-		const prompt = `Responda apenas em português do brasil. A seguir anexei uma conversa recente de um grupo de WhatsApp. Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural. ${customPersonalidade}${otherAIsPrompt}
 
-${formattedMessages}`;
+		// Cria prompt para LLM
+		const prompt = `Responda apenas em português do brasil. A seguir anexei a conversa recente de um grupo de WhatsApp.
+
+SUA TAREFA:
+Foque o seu comentário/interação PRINCIPALMENTE nas últimas 15 mensagens enviadas (incluindo descrições de imagens, áudios, vídeos e textos) para garantir que sua resposta seja sobre o tópico ATUAL do grupo e não sobre algo atrasado. As mensagens anteriores foram incluídas apenas para você contextualizar de onde veio o assunto.
+
+Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural.${customPersonalidade}${otherAIsPrompt}
+
+${historyFormatted}`;
 
 		logger.info(
 			`[${group.id}][interactWithConversation] Gerando interação para o grupo ${message.group} (Msgs recentes: ${recentMessages.length}, Total chars: ${prompt.length})`

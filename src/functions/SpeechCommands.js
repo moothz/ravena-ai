@@ -569,11 +569,15 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 					logger.info(`[stt] ETA ${estimatedTime}s.`);
 
 					// Avisa só se for demorar um pouquinho a mais
-					if (estimatedTime > 15) {
+					if (estimatedTime > 15 || audioDuration > 900) {
+						let etaContent = `🔉 Transcrevendo áudio com _${audioDuration}s_, estimativa de _${estimatedTime}s_ até concluir.`;
+						if (audioDuration > 900) {
+							etaContent += `\n\n> Ps.: Você pode transcrever diretamente no site da ravena! Útil pra áudios grandes assim: https://ravena.moothz.win/?app=stt`;
+						}
 						bot.sendReturnMessages(
 							new ReturnMessage({
 								chatId,
-								content: `🔉 Transcrevendo áudio com _${audioDuration}s_, estimativa de _${estimatedTime}s_ até concluir.`,
+								content: etaContent,
 								options: {
 									quotedMessageId: message.origin.id._serialized,
 									goReply: message.origin
