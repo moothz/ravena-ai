@@ -271,9 +271,25 @@ function handleApiError(err, chatId, defaultMsg) {
 		typeof resData?.error === "object" && resData?.error !== null ? resData.error : null;
 
 	if (apiErr?.code === "COOLDOWN_ACTIVE") {
+		const currentRolls = apiErr.currentRolls ?? 0;
+		const maxRolls = apiErr.maxRolls ?? 10;
+		const nextSecs = apiErr.remainingSeconds ?? 0;
+		const fullSecs = apiErr.fullRechargeSeconds ?? 0;
+		const fullAt = apiErr.fullRechargeAt ? new Date(apiErr.fullRechargeAt) : null;
+
+		let msg = `⏳ *Sem rolls disponíveis!* (*${currentRolls}/${maxRolls}*)\n`;
+		msg += `• Próximo roll em: *${formatRemainingSeconds(nextSecs)}*\n`;
+
+		if (fullAt && !isNaN(fullAt.getTime())) {
+			const timeStr = fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+			msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}* (às ${timeStr})`;
+		} else if (fullSecs > 0) {
+			msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}*`;
+		}
+
 		return new ReturnMessage({
 			chatId,
-			content: `⏳ *Aguarde!* ${apiErr.message || `Você precisa esperar ${formatRemainingSeconds(apiErr.remainingSeconds)}.`}`
+			content: msg
 		});
 	}
 
@@ -347,7 +363,7 @@ function makeRollHandler(genderFilter) {
 			};
 
 			const { data } = await api.post("/roll", payload);
-			const { character, available, isOwner, owner, keyProgress, kakeraValue } = data.data;
+			const { character, available, isOwner, owner, keyProgress, kakeraValue, rollsRemaining, maxRolls } = data.data;
 
 			const rarity = character.rarity || character.baseRarity || "COMMON";
 			const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
@@ -402,6 +418,10 @@ function makeRollHandler(genderFilter) {
 				if (kakeraValue) {
 					text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
 				}
+			}
+
+			if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
+				text += `\n\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
 			}
 
 			const eventBanner = GameEventService.getEventBanner("waifu");
@@ -1190,9 +1210,22 @@ async function verCooldowns(bot, message) {
 
 		let text = `⏳ *Seus Cooldowns Atuais:*\n\n`;
 
-		text += roll.active
-			? `🎲 Sorteio (Roll): ❌ Aguarde *${formatRemainingSeconds(roll.remainingSeconds)}*\n`
-			: `🎲 Sorteio (Roll): ✅ *Disponível agora!*\n`;
+		if (roll) {
+			const rollsAvail = roll.availableRolls ?? (roll.active ? 0 : 10);
+			const maxR = roll.maxRolls ?? 10;
+			if (rollsAvail >= maxR) {
+				text += `🎲 Sorteio (Roll): ✅ *${rollsAvail}/${maxR} rolls disponíveis!*\n`;
+			} else if (rollsAvail > 0) {
+				text += `🎲 Sorteio (Roll): ⚠️ *${rollsAvail}/${maxR} rolls* (Próximo em *${formatRemainingSeconds(roll.remainingSeconds)}* | Cheio em *${formatRemainingSeconds(roll.fullRechargeSeconds)}*)\n`;
+			} else {
+				const fullAt = roll.fullRechargeAt ? new Date(roll.fullRechargeAt) : null;
+				const timeStr =
+					fullAt && !isNaN(fullAt.getTime())
+						? ` às ${fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+						: "";
+				text += `🎲 Sorteio (Roll): ❌ *0/${maxR} rolls* (Próximo em *${formatRemainingSeconds(roll.remainingSeconds)}* | ${maxR}/${maxR} em *${formatRemainingSeconds(roll.fullRechargeSeconds)}*${timeStr})\n`;
+			}
+		}
 
 		text += claim.active
 			? `💍 Casamento (Claim): ❌ Aguarde *${formatRemainingSeconds(claim.remainingSeconds)}*\n`
@@ -1381,7 +1414,7 @@ async function ajudaWaifus(bot, message) {
 	}
 	text += `• Digite \`!mu-chances\` para abrir o painel completo de probabilidades e simulação!\n`;
 	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
-	text += `• *Cooldown:* 10 minutos.\n\n`;
+	text += `• *Sistema de Rolls:* Cada jogador possui até 10 rolls no banco (recarrega 1 roll a cada 5 minutos até o máximo de 10).\n\n`;
 
 	text += `💍 *2. Casamento (Claim)*\n`;
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *120 segundos (2 minutos)*.\n`;
@@ -1463,6 +1496,7 @@ const commands = [
 		description: "Sorteia um personagem aleatório (waifus e husbandos)",
 		category: "mudae",
 		group: "muwaifu-roll",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1471,6 +1505,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1479,6 +1514,7 @@ const commands = [
 		description: "Alias para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1487,6 +1523,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1497,6 +1534,7 @@ const commands = [
 		description: "Sorteia apenas personagens masculinos (husbandos)",
 		category: "mudae",
 		group: "muwaifu-rollm",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1505,6 +1543,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1513,6 +1552,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1523,6 +1563,7 @@ const commands = [
 		description: "Sorteia apenas personagens femininos (waifus)",
 		category: "mudae",
 		group: "muwaifu-rollf",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
 	}),
@@ -1531,6 +1572,7 @@ const commands = [
 		description: "Alias de !mu-rollf",
 		category: "mudae",
 		group: "muwaifu-rollf",
+		cooldown: 5,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
 	}),
