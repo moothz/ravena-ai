@@ -4,7 +4,7 @@ const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
 const axios = require("axios");
 
-const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://waifuletes-api:3030";
 const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
 
 async function runRollTests() {
@@ -16,12 +16,15 @@ async function runRollTests() {
 
 	// Resetar cooldowns do usuário de teste na API
 	try {
-		await axios.post(
+		const res = await axios.post(
 			`${WAIFULETES_URL}/admin/cooldown/reset`,
 			{ userId: testUser, type: "roll" },
 			{ headers: { Authorization: `Bearer ${WAIFULETES_KEY}` } }
 		);
-	} catch (_) {}
+		console.log("✓ Reset de cooldowns do usuário de teste realizado com sucesso.");
+	} catch (e) {
+		console.warn("⚠️ Falha ao resetar cooldowns do usuário de teste:", e.message);
+	}
 
 	const bot = new FakeBot({ id: "test-roll-bot", grupoLogs: logGroup });
 	const eventHandler = new EventHandler();
@@ -36,12 +39,12 @@ async function runRollTests() {
 		return bot.capturedMessages;
 	}
 
-	// 1. Executar rolls até consumir os 10 rolls
+	// 1. Executar rolls respeitando o cooldown de 5s entre comandos
 	console.log("[Teste Roll 1] Executando 10 rolls sequenciais...");
 	let currentRollCount = 0;
 	let attempts = 0;
 
-	while (currentRollCount < 10 && attempts < 20) {
+	while (currentRollCount < 10 && attempts < 25) {
 		attempts++;
 		eventHandler.commandHandler.userDebounceMap.clear();
 		bot.resetCapture();
@@ -68,8 +71,11 @@ async function runRollTests() {
 				`Roll ${currentRollCount} deve mostrar ${expectedRemaining}/10 (recebido: ${replyText})`
 			);
 			console.log(`✓ Roll ${currentRollCount}/10 executado com sucesso: ${expectedRemaining}/10 restantes.`);
+			// Aguarda 5.2s para passar o cooldown de anti-spam
+			await new Promise((r) => setTimeout(r, 5200));
+		} else if (replyText.includes("cooldown por mais")) {
+			await new Promise((r) => setTimeout(r, 3000));
 		} else if (replyText.includes("Sem rolls disponíveis")) {
-			// Já zerou
 			break;
 		}
 	}
@@ -78,6 +84,7 @@ async function runRollTests() {
 
 	// 2. Executar o 11º roll (deve dar Sem rolls disponíveis - 0/10)
 	console.log("[Teste Roll 2] Executando 11º roll (esperando bloqueio 0/10)...");
+	await new Promise((r) => setTimeout(r, 5200));
 	eventHandler.commandHandler.userDebounceMap.clear();
 	bot.resetCapture();
 

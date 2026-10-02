@@ -186,6 +186,7 @@ public/code-snippets.json
 /scripts/*
 !/scripts/zip_commands_helper.py
 !/scripts/apply_retroactive_donation_bonuses.js
+!/scripts/apply_retroactive_roll_bonuses.js
 
 # whatsgoapi ignores
 /whatsgoapi/build

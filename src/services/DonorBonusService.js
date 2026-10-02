@@ -94,7 +94,8 @@ function calculateBonuses(totalAmount) {
 		waifu: {
 			donorBadge: "VIP Doador 💎",
 			rarityMultipliers,
-			wishlistMultiplier
+			wishlistMultiplier,
+			extraMaxRolls: Math.floor(totalAmount / 10)
 		},
 		pinto: {
 			bonusPercent: pintoBonusPercent,
@@ -185,7 +186,8 @@ async function getWaifuRollBonuses(userId) {
 	const bonuses = calculateBonuses(donor.valor);
 	const result = {
 		donorBadge: bonuses.waifu.donorBadge,
-		rarityMultipliers: bonuses.waifu.rarityMultipliers
+		rarityMultipliers: bonuses.waifu.rarityMultipliers,
+		extraMaxRolls: bonuses.waifu.extraMaxRolls
 	};
 	if (bonuses.waifu.wishlistMultiplier) {
 		result.wishlistMultiplier = bonuses.waifu.wishlistMultiplier;

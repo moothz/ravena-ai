@@ -1205,7 +1205,9 @@ async function verCooldowns(bot, message) {
 	const userId = getUserId(message);
 
 	try {
-		const { data } = await api.get(`/user/${userId}/cooldowns`);
+		const donorBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
+		const extraMaxRolls = donorBonuses?.extraMaxRolls || 0;
+		const { data } = await api.get(`/user/${userId}/cooldowns?extraMaxRolls=${extraMaxRolls}`);
 		const { roll, claim, daily } = data.data;
 
 		let text = `⏳ *Seus Cooldowns Atuais:*\n\n`;
@@ -1257,6 +1259,9 @@ async function verChances(bot, message) {
 		donorHeader = `💎 *Doador, obrigado!* 💎\n`;
 		donorHeader += `> _Seus benefícios de apoiador (R$ ${donorTotal.toFixed(2)}) estão ativos:_\n`;
 		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 4.5)}%\n`;
+		if (donorBonuses.extraMaxRolls > 0) {
+			donorHeader += `> • 🎟️ *Rolls Máximos:* ${10 + donorBonuses.extraMaxRolls} rolls (10 base + ${donorBonuses.extraMaxRolls} extras por doação)\n`;
+		}
 		if (donorBonuses.wishlistMultiplier) {
 			const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
 			donorHeader += `> • 🌟 *Wishlist:* +${wishBonusPct}% de peso em desejos!\n`;
@@ -1414,7 +1419,7 @@ async function ajudaWaifus(bot, message) {
 	}
 	text += `• Digite \`!mu-chances\` para abrir o painel completo de probabilidades e simulação!\n`;
 	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
-	text += `• *Sistema de Rolls:* Cada jogador possui até 10 rolls no banco (recarrega 1 roll a cada 5 minutos até o máximo de 10).\n\n`;
+	text += `• *Sistema de Rolls:* Cada jogador possui até 10 rolls no banco (recarrega 1 roll a cada 5 minutos até o limite — doadores ganham +1 roll máximo a cada R$ 10 doados!).\n\n`;
 
 	text += `💍 *2. Casamento (Claim)*\n`;
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *120 segundos (2 minutos)*.\n`;

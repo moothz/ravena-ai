@@ -301,6 +301,7 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
 
 		msg += `🌸 *Waifus (Mudae):*\n`;
+		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
 		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros, +3.5% em Épicos e +4.5% em Lendários por R$ 1.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
 		msg += `• *Aos R$ 100:* Lendários atingem ~8% de chance e Wishlist chega a 8x (+700%)!\n`;
@@ -318,6 +319,8 @@ async function showDonationPerks(bot, message, args, group) {
 		if (isDonor) {
 			const totalAmount = Number(donor.valor) || 0;
 			const bonuses = DonorBonusService.calculateBonuses(totalAmount);
+			const extraRolls = bonuses.waifu.extraMaxRolls || 0;
+			const totalMaxRolls = 10 + extraRolls;
 
 			msg += `💖 *Você é um apoiador! Agradeço de coração sua ajuda e por acreditar no projeto.*\n\n`;
 			msg += `📊 *Seus Benefícios Acumulados (Total doado: R$ ${totalAmount.toFixed(2)}):*\n\n`;
@@ -332,6 +335,7 @@ async function showDonationPerks(bot, message, args, group) {
 			msg += `  • 🎒 *${bonuses.pesca.totalHighItems}* itens de elite/altos sorteados.\n\n`;
 
 			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
+			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (10 base + ${extraRolls} extras por doação)\n`;
 			msg += `  • 🔵 Raros: *+${Math.round(totalAmount * 2.0)}%* | 🟣 Épicos: *+${Math.round(totalAmount * 3.5)}%* | ⭐ Lendários: *+${Math.round(totalAmount * 4.5)}%*\n`;
 			if (bonuses.waifu.wishlistMultiplier) {
 				const wishPct = Math.round((bonuses.waifu.wishlistMultiplier - 1) * 100);
