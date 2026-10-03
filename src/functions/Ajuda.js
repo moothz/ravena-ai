@@ -24,6 +24,7 @@ async function loadBaseContext() {
 		return baseContextCache;
 	}
 
+	try {
 		let docPath = path.join(process.cwd(), "docs", "LLM-HELPER.md");
 		if (!require("fs").existsSync(docPath)) {
 			docPath = path.join(process.cwd(), "ravena-llm-helper.md");
