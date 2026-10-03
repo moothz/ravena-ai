@@ -225,16 +225,11 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `ComfyUICommands.js`
-**Sobre:** Geração de imagens via workflow personalizado ComfyUI
+**Sobre:** Geração de imagens via workflow personalizado ComfyUI (Desativado / Legado)
 
-**Tags:** `comfyui,ia,imagine,gerar imagem,arte`
+**Tags:** `comfyui,ia,legado`
 
 **Detalhes Técnicos:** Submete jobs para API ComfyUI, monitora progresso via WebSocket/polling e retorna imagem gerada com controle de métricas
-
-#### Comandos:
-- **`!imagine`**: Gera imagens com Inteligência Artificial via servidor ComfyUI
-  - *Categoria:* ia
-  - *Uso/Exemplos:* `!imagine paisagem futurista 4k`
 
 ---
 
@@ -322,16 +317,19 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `DonationCommands.js`
-**Sobre:** Informações sobre doações e apoio financeiro para manutenção do bot
+**Sobre:** Informações sobre doações, apoio financeiro e vantagens exclusivas para apoiadores
 
-**Tags:** `doar,doacao,pix,ajuda,apoiar,crowdfunding`
+**Tags:** `doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus`
 
-**Detalhes Técnicos:** Retorna chave Pix, QR Code e informações de apoia-se configuradas nas variáveis do sistema
+**Detalhes Técnicos:** Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto)
 
 #### Comandos:
 - **`!doar`**: Exibe as opções de doação e chave Pix para apoiar o projeto
   - *Categoria:* geral
   - *Uso/Exemplos:* `!doar`
+- **`!doar-vantagens`**: Exibe todas as vantagens e bônus de doadores e o que você já ganhou
+  - *Categoria:* geral
+  - *Uso/Exemplos:* `!doar-vantagens`, `!vantagens`
 
 ---
 
@@ -344,7 +342,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!emojikitchen`**: Funde dois emojis em uma figurinha única e criativa
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!emojikitchen 🐱 🚀`, `!emojikitchen 🐶 🍕`
 
 ---
@@ -421,6 +419,16 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!pesca-reset`**: Reseta os dados de pescaria do grupo (Apenas Administradores)
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pesca-reset`
+- **`!pesca-abandonar`**: Limpa seu inventário de peixes após confirmação
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!pesca-abandonar`
+
+---
+
+### 📁 Módulo: `FlightCommands.js`
+**Sobre:** Rastreamento de vôos ao vivo, painel de aeroportos, consulta ANAC RAB e radar aéreo
+
+**Detalhes Técnicos:** Integração com redes ADS-B (adsb.lol e OpenSky), Registro Aeronáutico Brasileiro da ANAC oficial, NOAA Aviation Weather e envio nativo de localização no WhatsApp quando em voo
 
 ---
 
@@ -433,13 +441,13 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!comida`**: Registra o que você acabou de comer ou beber
-  - *Categoria:* saude
+  - *Categoria:* utilidades
   - *Uso/Exemplos:* `!comida Almoço: arroz, feijão e frango`, `!comida Maçã e suco de laranja`
 - **`!comida-lista`**: Lista todas as refeições registradas pelos membros do grupo hoje
-  - *Categoria:* saude
+  - *Categoria:* utilidades
   - *Uso/Exemplos:* `!comida-lista`
 - **`!comida-info`**: Exibe seu resumo e estatísticas alimentares
-  - *Categoria:* saude
+  - *Categoria:* utilidades
   - *Uso/Exemplos:* `!comida-info`
 
 ---
@@ -481,23 +489,6 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!atencao`**: Envia um alerta sonoro/visual para chamar a atenção no chat
   - *Categoria:* geral
   - *Uso/Exemplos:* `!atencao`
-
----
-
-### 📁 Módulo: `GeoguesserGame.js`
-**Sobre:** Jogo estilo GeoGuessr no WhatsApp para adivinhar localizações geográficas
-
-**Tags:** `geoguessr,jogos,mapa,geografia,paises,adivinhar`
-
-**Detalhes Técnicos:** Gera imagens do Google Street View / Mapas e avalia aproximação por coordenadas de localização enviadas pelos usuários
-
-#### Comandos:
-- **`!geoguesser`**: Inicia uma rodada do jogo GeoGuessr no grupo
-  - *Categoria:* jogos
-  - *Uso/Exemplos:* `!geoguesser`
-- **`!geo-ranking`**: Exibe o ranking de acertos do jogo GeoGuessr
-  - *Categoria:* jogos
-  - *Uso/Exemplos:* `!geo-ranking`
 
 ---
 
@@ -544,7 +535,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!horoscopo`**: Consulta a previsão astrológica diária para o seu signo
-  - *Categoria:* diversao
+  - *Categoria:* utilidades
   - *Uso/Exemplos:* `!horoscopo aries`, `!horoscopo leao`, `!horoscopo escorpiao`
 
 ---
@@ -558,22 +549,22 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!removebg`**: Remove o fundo de uma imagem usando inteligência artificial
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!removebg (em resposta a uma foto)`
 - **`!distort`**: Aplica distorção cômica e deformação na imagem
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!distort (em resposta a uma foto)`
 - **`!neon`**: Aplica efeito de iluminação neon sobre a imagem
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!neon (em resposta a uma foto)`
 - **`!oil`**: Transforma a imagem em efeito de pintura a óleo
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!oil (em resposta a uma foto)`
 - **`!pixelate`**: Aplica efeito retrô de pixelização na imagem
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!pixelate (em resposta a uma foto)`
 - **`!sketch`**: Converte a imagem em um desenho a lápis / esboço
-  - *Categoria:* imagens
+  - *Categoria:* midia
   - *Uso/Exemplos:* `!sketch (em resposta a uma foto)`
 
 ---
@@ -755,14 +746,17 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ### 📁 Módulo: `MyInstantsAudioSearch.js`
 **Sobre:** Pesquisa e envio instantâneo de áudios e memes do MyInstants
 
-**Tags:** `myinstants,audios,memes,sons,efeitos sonoros,audio`
+**Tags:** `myinstants,audios,memes,sons,efeitos sonoros,audio,som`
 
 **Detalhes Técnicos:** Faz web scraping e buscas no site MyInstants, baixa o arquivo de áudio MP3 e envia como mensagem de voz / áudio
 
 #### Comandos:
-- **`!som`**: Pesquisa e envia um áudio do site MyInstants
-  - *Categoria:* áudio
-  - *Uso/Exemplos:* `!som gemidao`, `!som vinheta globo`, `!som acertou mizeravi`
+- **`!audio`**: Pesquisa e envia um áudio do site MyInstants
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!audio vinheta globo`, `!audio vinheta globo 1`, `!audio acertou mizeravi 1`
+- **`!som`**: Pesquisa e envia um áudio do site MyInstants (alias para !audio)
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!som vinheta globo`, `!som acertou mizeravi 1`
 
 ---
 
@@ -863,16 +857,25 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `Raffles.js`
-**Sobre:** Sorteios automáticos de rifas e bilhetes premiados em grupos
+**Sobre:** Monitoramento e consulta de rifas e ações entre amigos
 
-**Tags:** `rifa,sorteio,bilhetes,premios,apostas`
+**Tags:** `rifa,sorteio,bilhetes,cotas,premios,acao`
 
-**Detalhes Técnicos:** Gerencia bilhetes, apostas e sorteios pseudo-aleatórios auditáveis no grupo
+**Detalhes Técnicos:** Faz scraping de plataformas de rifas, armazena em banco de dados SQLite e notifica o grupo automaticamente ao atingir metas percentuais de vendas
 
 #### Comandos:
-- **`!rifa`**: Inicia ou consulta a rifa ativa no grupo
-  - *Categoria:* jogos
-  - *Uso/Exemplos:* `!rifa`
+- **`!raffle <link>`**: Consulta o status atual de uma rifa ou ação
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!raffle https://...`
+- **`!raffle-seguir <link>`**: Inicia o monitoramento de uma rifa com alertas automáticos em 10%, 15%, 25%, 50%, 75%, 90%, 99% e 100%
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!raffle-seguir https://...`
+- **`!raffle-parar <link>`**: Encerra o monitoramento de uma rifa no grupo
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!raffle-parar https://...`
+- **`!raffle-listar`**: Lista todas as rifas atualmente monitoradas pelo grupo
+  - *Categoria:* busca
+  - *Uso/Exemplos:* `!raffle-listar`
 
 ---
 
@@ -916,19 +919,25 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ### 📁 Módulo: `RelacionamentoCommands.js`
 **Sobre:** Sistema de relacionamentos, casamentos e amizades virtuais no grupo
 
-**Tags:** `casamento,casar,divorcio,relacionamento,amor,zoeira,casais`
+**Tags:** `casamento,casar,divorcio,relacionamento,amor,zoeira,casais,celibar,celibato`
 
 **Detalhes Técnicos:** Gerencia propostas de casamento, divórcios, lista de casais do grupo e afinidades com dados em SQLite
 
 #### Comandos:
 - **`!casar`**: Pede um membro do grupo em casamento
-  - *Categoria:* diversao
+  - *Categoria:* interacao
   - *Uso/Exemplos:* `!casar @fulano`
+- **`!separar`**: Termina o relacionamento por menção, número da lista ou telefone
+  - *Categoria:* interacao
+  - *Uso/Exemplos:* `!separar @fulano`, `!separar 1`, `!separar 551199999999`
+- **`!celibar`**: Termina todos os seus relacionamentos no grupo e adere ao celibato
+  - *Categoria:* interacao
+  - *Uso/Exemplos:* `!celibar`
 - **`!divorcio`**: Pede o divórcio do seu parceiro atual no grupo
-  - *Categoria:* diversao
+  - *Categoria:* interacao
   - *Uso/Exemplos:* `!divorcio`
 - **`!relacionamentos`**: Lista todos os casamentos e uniões ativas no grupo
-  - *Categoria:* diversao
+  - *Categoria:* interacao
   - *Uso/Exemplos:* `!relacionamentos`
 
 ---
@@ -978,6 +987,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!roleta-tempo`**: Define o tempo em minutos de punição para quem morrer (Admins)
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!roleta-tempo 5`
+- **`!roleta-silenciar [true|false|toggle]`**: Ativa ou desativa o silenciamento temporário dos jogadores mortos (Admins)
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!roleta-silenciar`, `!roleta-silenciar false`
 - **`!roleta-reset`**: Reseta os dados da roleta russa no grupo (Admins)
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!roleta-reset`
@@ -1056,19 +1068,19 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!sorteio`**: Inicia um novo sorteio com descrição e tempo ou exibe o sorteio em andamento
-  - *Categoria:* diversao
+  - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteio 10m Caixa de chocolate`, `!sorteio`
 - **`!sorteio-entrar`**: Entra no sorteio ativo do grupo
-  - *Categoria:* diversao
+  - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteio-entrar`
 - **`!sorteio-sair`**: Sai da lista de participantes do sorteio ativo
-  - *Categoria:* diversao
+  - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteio-sair`
 - **`!sortear`**: Finaliza o sorteio ativo ou sorteia um membro aleatório do grupo imediatamente
-  - *Categoria:* diversao
+  - *Categoria:* grupo
   - *Uso/Exemplos:* `!sortear`
 - **`!sorteios`**: Exibe o histórico de sorteios já realizados no grupo
-  - *Categoria:* diversao
+  - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteios`
 
 ---
@@ -1096,37 +1108,32 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 #### Comandos:
 - **`!stt`**: Transcreve uma mensagem de voz ou áudio para texto
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!stt (em resposta a um áudio de voz)`
 - **`!tts`**: Converte texto em áudio falado com voz padrão (Ravena)
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!tts Olá pessoal do grupo!`
 - **`!tts-mulher`**: Converte texto em áudio com voz feminina
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!tts-mulher Bom dia a todos!`
 - **`!tts-homem`**: Converte texto em áudio com voz masculina
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!tts-homem Atenção para o recado!`
 - **`!tts-rubao`**: Converte texto em áudio com a voz cômica do Rubão do Pontaço
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!tts-rubao Fala minha galera do zapzap!`
 - **`!tts-narrador`**: Converte texto em áudio com voz de narrador de documentário
-  - *Categoria:* tts
+  - *Categoria:* voz
   - *Uso/Exemplos:* `!tts-narrador E assim a história começou...`
 
 ---
 
 ### 📁 Módulo: `StableDiffusionCommands.js`
-**Sobre:** Geração de imagens via inteligência artificial com Stable Diffusion
+**Sobre:** Geração de imagens via inteligência artificial com Stable Diffusion (Desativado / Legado)
 
-**Tags:** `imagine,sd,stablediffusion,ia,imagem,arte`
+**Tags:** `sd,stablediffusion,ia,legado`
 
 **Detalhes Técnicos:** Integra com APIs de Stable Diffusion WebUI / Automatic1111 enviando prompts e parâmetros de amostragem
-
-#### Comandos:
-- **`!imagine`**: Gera uma imagem através de um prompt de texto
-  - *Categoria:* ia
-  - *Uso/Exemplos:* `!imagine um castelo medieval no topo de uma montanha ao por do sol`
 
 ---
 
@@ -1144,31 +1151,54 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `StickerScraper.js`
+**Sobre:** Busca e envia figurinhas sob demanda do portal Lovecell
+
+**Tags:** `figa,figrandom,lovecell,sticker,figurinha,aleatoria,random,denunciar,tags,categorias`
+
+**Detalhes Técnicos:** Faz scraping da figurinha principal no Lovecell, recorta os 85px de banner inferior e envia no formato 512x512 padrão de stickers (estático ou animado). Suporta envio de até 4 figurinhas por comando (configurável por bot via extras.stickers.maxFiga). Possui filtro NSFW com blacklist persistente e download em segundo plano para estoque offline.
+
+#### Comandos:
+- **`!figa`**: Faz scraping da figurinha principal no Lovecell (estático ou animado)
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!figa`, `!figa 4`, `!figrandom 2`, `!figa 37019`, `!figa gatos 2`
+- **`!figa-tags`**: Lista todas as categorias/tags de figurinhas disponíveis e a quantidade
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!figa-tags`, `!figa-categoria`
+- **`!figa-denunciar`**: Denuncia uma figurinha para o administrador (ou reaja com 🔞)
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!figa-denunciar (em resposta a uma figurinha)`, `Reação: 🔞`
+
+---
+
 ### 📁 Módulo: `Stickers.js`
 **Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)
 
-**Tags:** `sticker,figurinha,s,fig,sq,sqi,midia,recorte,whatsapp`
+**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp`
 
-**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch e crop por IA
+**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA
 
 #### Comandos:
 - **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sticker (com imagem ou em resposta)`, `!s`
+- **`!shq`**: Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!shq (com imagem/vídeo ou em resposta)`, `!stickerhq`
 - **`!sqi`**: Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqi (com imagem ou em resposta)`
 - **`!sq`**: Cria figurinha quadrada cortada no centro
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sq (com imagem ou em resposta)`
 - **`!sqc`**: Cria figurinha quadrada cortando no topo
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqc (com imagem ou em resposta)`
 - **`!sqb`**: Cria figurinha quadrada cortando na base
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqb (com imagem ou em resposta)`
 - **`!sqe`**: Cria figurinha quadrada esticada sem cortar as bordas
-  - *Categoria:* midia
+  - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqe (com imagem ou em resposta)`
 
 ---
@@ -1258,6 +1288,50 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `WaifuCommands.js`
+**Sobre:** Jogo de sorteio de waifus/husbandos (estilo Mudae) integrado com a API Waifuletes
+
+**Tags:** `waifu,mudae,munae,jogo,anime,harem,zinthos,kakera,roleta,casamento`
+
+**Detalhes Técnicos:** Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 120s, harém global, chaves, soulmates e economia de Zinthos (💜).
+
+#### Comandos:
+- **`!waifus / !munae`**: Explica as mecânicas do jogo e lista todos os comandos e filtros disponíveis
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!waifus`, `!munae`, `!mu-ajuda`
+- **`!mu-roll`**: Sorteia um personagem aleatório para o grupo (waifus e husbandos)
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-roll`, `!mu-r`, `!mu-rollm (só homens)`, `!mu-rollf (só mulheres)`
+- **`!mu-casar`**: Casa com o personagem recém-sorteado dentro da janela de 120 segundos
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-casar`, `!mu-c`, `!mu-casar rem-re-zero`
+- **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜)
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-diario`, `!mu-dz`, `!mu-dk`
+- **`!mu-harem`**: Lista os personagens que você possui em seu harém
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-harem`, `!mu-h 2`
+- **`!mu-saldo`**: Consulta seu saldo atual de Zinthos (💜)
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-saldo`, `!mu-zinthos`, `!mu-z`, `!mu-k`
+- **`!mu-wishlist`**: Lista seus personagens desejados (até 100) e calcula a chance de drop no roll
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-wishlist`, `!mu-desejar <id>`, `!mu-removerdesejo <id>`
+- **`!mu-chances`**: Mostra as probabilidades de drop por categoria de personagem e o bônus da Wishlist
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-chances`, `!mu-taxas`, `!mu-prob`
+- **`!mu-personagens`**: Busca personagens cadastrados no catálogo por nome ou série
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-personagens Frieren`, `!mu-chars Naruto`
+- **`!mu-ranking`**: Ranking dos jogadores mais ricos em Zinthos (💜)
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-ranking`, `!mu-top 10`
+- **`!mu-cooldowns`**: Verifica os tempos restantes para poder rolar, casar ou resgatar o diário
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-cooldowns`, `!mu-cd`
+
+---
+
 ### 📁 Módulo: `Weather.js`
 **Sobre:** Consulta de clima e previsão meteorológica atualizada
 
@@ -1337,7 +1411,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ### 📁 Módulo: `ZueiraCommands.js`
 **Sobre:** Comandos de humor, zoeira e brincadeiras sociais para animar o grupo
 
-**Tags:** `zoeira,humor,brincadeiras,memes,pix,aniversario,boleto,violencia`
+**Tags:** `zoeira,humor,brincadeiras,memes,pix,aniversario,boleto,violencia,hora,data`
 
 **Detalhes Técnicos:** Sorteia membros do grupo e processa variáveis customizadas para piadas, PIX fictício, clonagem de cartão e aniversário
 
@@ -1363,6 +1437,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!aniversario`**: Parabeniza um aniversariante do grupo em grande estilo
   - *Categoria:* zoeira
   - *Uso/Exemplos:* `!aniversario @fulano`
+- **`!hora`**: Informa a hora e a data atual com precisão aproximada
+  - *Categoria:* zoeira
+  - *Uso/Exemplos:* `!hora`, `!data`
 
 ---
 
@@ -1614,12 +1691,48 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-filtro-regex`
+**Descrição:** Detecta e Apaga mensagens que correspondam à expressão regular (regex) especificada
+
+**Categoria:** filtros
+
+**Exemplo de uso:** `!g-filtro-regex \b(palavra1|palavra2)\b`
+
+---
+
 #### `!g-filtro-links`
 **Descrição:** Detecta e Apaga mensagens com links
 
 **Categoria:** filtros
 
 **Exemplo de uso:** `!g-filtro-links`
+
+---
+
+#### `!g-filtro-permitirLink`
+**Descrição:** Adiciona/remove ou lista domínios e padrões de links permitidos
+
+**Categoria:** filtros
+
+**Exemplo de uso:** `!g-filtro-permitirLink`
+
+---
+
+#### `!g-filtro-linksConfiaveis`
+**Descrição:** Adiciona ou remove principais sites confiáveis da lista de links permitidos
+
+**Categoria:** filtros
+
+**Exemplo de uso:** `!g-filtro-linksConfiaveis`
+
+---
+
+#### `!g-filtro-permitirAdm`
+**Descrição:** Habilita/desabilita a filtragem de mensagens de administradores do grupo
+
+**Categoria:** filtros
+
+**Exemplo de uso:** `!g-filtro-permitirAdm`
 
 ---
 
@@ -1633,11 +1746,20 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 ---
 
 #### `!g-filtro-nsfw`
-**Descrição:** Detecta e Apaga mensagens NSFW
+**Descrição:** Ativa/desativa ou define a intensidade (0-100) do filtro NSFW
 
 **Categoria:** filtros
 
 **Exemplo de uso:** `!g-filtro-nsfw`
+
+---
+
+#### `!g-banirSpammers`
+**Descrição:** Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380) no grupo
+
+**Categoria:** filtros
+
+**Exemplo de uso:** `!g-banirSpammers`
 
 ---
 
@@ -1668,12 +1790,12 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
-#### `!g-muteCategoria`
-**Descrição:** Desativa/ativa todos os comandos da categoria especificada
+#### `!g-muteCategoria [categoria]`
+**Descrição:** Desativa/ativa todos os comandos da categoria especificada (ex: canais, outros, jogos, downloaders, ia, etc)
 
 **Categoria:** gerenciamento
 
-**Exemplo de uso:** `!g-muteCategoria`
+**Exemplo de uso:** `!g-muteCategoria canais`
 
 ---
 
@@ -1741,7 +1863,7 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 ---
 
 #### `!g-fechar`
-**Descrição:** Fecha o grupo (apenas admins enviam msgs)
+**Descrição:** Fecha o grupo ou agenda fechamento automático
 
 **Categoria:** gerenciamento
 
@@ -1749,12 +1871,48 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-fechar-lista`
+**Descrição:** Lista agendamentos de fechamento do grupo
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-fechar-lista`
+
+---
+
+#### `!g-fechar-del`
+**Descrição:** Remove agendamento de fechamento pelo ID
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-fechar-del A`
+
+---
+
 #### `!g-abrir`
-**Descrição:** Abre o grupo (todos podem envar msgs)
+**Descrição:** Abre o grupo ou agenda abertura automática
 
 **Categoria:** gerenciamento
 
 **Exemplo de uso:** `!g-abrir`
+
+---
+
+#### `!g-abrir-lista`
+**Descrição:** Lista agendamentos de abertura do grupo
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-abrir-lista`
+
+---
+
+#### `!g-abrir-del`
+**Descrição:** Remove agendamento de abertura pelo ID
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-abrir-del A`
 
 ---
 
@@ -1875,6 +2033,15 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-twitch-encaminharCanal`
+**Descrição:** Ativa/desativa encaminhamento de notificações da Twitch para canal do WhatsApp seguido
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-twitch-encaminharCanal <canalStream> <nomeCanalSeguido>`
+
+---
+
 #### `!g-kick-canal`
 **Descrição:** Adiciona/remove canal do Kick para monitoramento
 
@@ -1956,6 +2123,15 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-kick-encaminharCanal`
+**Descrição:** Ativa/desativa encaminhamento de notificações do Kick para canal do WhatsApp seguido
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-kick-encaminharCanal <canalStream> <nomeCanalSeguido>`
+
+---
+
 #### `!g-youtube-canal`
 **Descrição:** Adiciona/remove canal do YouTube para monitoramento
 
@@ -1993,20 +2169,20 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 ---
 
 #### `!g-youtube-midia`
-**Descrição:** Define mídia para notificação de canal do YouTube
+**Descrição:** Define mídia para notificações de novos vídeos ou lives do YouTube
 
 **Categoria:** streams
 
-**Exemplo de uso:** `!g-youtube-midia`
+**Exemplo de uso:** `!g-youtube-midia [video|on|off] <canal>`
 
 ---
 
 #### `!g-youtube-midia-del`
-**Descrição:** Remove mídia específica da notificação de canal do YouTube
+**Descrição:** Remove mídia específica de vídeo ou live do YouTube
 
 **Categoria:** streams
 
-**Exemplo de uso:** `!g-youtube-midia-del`
+**Exemplo de uso:** `!g-youtube-midia-del [video|on|off] <tipo> <canal>`
 
 ---
 
@@ -2034,6 +2210,15 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 **Categoria:** streams
 
 **Exemplo de uso:** `!g-youtube-marcar`
+
+---
+
+#### `!g-youtube-encaminharCanal`
+**Descrição:** Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp seguido
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-youtube-encaminharCanal <canalStream> <nomeCanalSeguido>`
 
 ---
 
@@ -2129,6 +2314,16 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ## 👑 Comandos de Super Admin (!sa-)
 Começam com `!sa-` e são exclusivos do dono do bot.
+
+#### `!sa-evento`
+**Descrição:** Cria ou cancela evento temporário
+
+---
+
+#### `!sa-eventos`
+**Descrição:** Lista eventos temporários ativos
+
+---
 
 #### `!sa-retrospectiva`
 **Descrição:** Retrospectiva
@@ -2325,6 +2520,36 @@ Começam com `!sa-` e são exclusivos do dono do bot.
 
 ---
 
+#### `!sa-streams-cleanup`
+**Descrição:** Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes
+
+---
+
+#### `!sa-streamsCleanup`
+**Descrição:** Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes
+
+---
+
+#### `!sa-streams-rate`
+**Descrição:** Exibe métricas de velocidade de busca e rate limit do StreamMonitor
+
+---
+
+#### `!sa-streamsRate`
+**Descrição:** Exibe métricas de velocidade de busca e rate limit do StreamMonitor
+
+---
+
+#### `!sa-removerFig`
+**Descrição:** Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)
+
+---
+
+#### `!sa-remover-fig`
+**Descrição:** Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)
+
+---
+
 # 🎲 Variáveis para Comandos Personalizados
 
 Use estas variáveis ao sugerir a criação de comandos com `!g-addCmd`.
@@ -2429,4 +2654,5 @@ Estas variáveis escolhem um item aleatório de uma lista pré-definida. Sugira-
 - `{biscoito-frases}`
 - `{cantadas-ruins}`
 - `{statusZap}`
+- `{statusZap2}`
 
