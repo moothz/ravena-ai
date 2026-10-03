@@ -5,11 +5,11 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
-const Database = require('./src/utils/Database');
+const Database = require("./src/utils/Database");
 
 function formatBRL(value) {
 	const num = Number(value) || 0;
-	return `R$ ${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+	return `R$ ${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDonationCount(historico, totalValor) {
@@ -17,36 +17,40 @@ function formatDonationCount(historico, totalValor) {
 		return formatBRL(totalValor);
 	}
 	const count = historico.length;
-	const values = historico.map(h => Number(h.valor) || 0);
-	const allSame = values.every(v => v === values[0]);
+	const values = historico.map((h) => Number(h.valor) || 0);
+	const allSame = values.every((v) => v === values[0]);
 
 	if (allSame && count > 0) {
-		return `${formatBRL(totalValor)} (${count} doaç${count > 1 ? 'ões' : 'ão'} de ${formatBRL(values[0])})`;
+		return `${formatBRL(totalValor)} (${count} doaç${count > 1 ? "ões" : "ão"} de ${formatBRL(values[0])})`;
 	}
-	return `${formatBRL(totalValor)} (${count} doaç${count > 1 ? 'ões' : 'ão'})`;
+	return `${formatBRL(totalValor)} (${count} doaç${count > 1 ? "ões" : "ão"})`;
 }
 
 async function main() {
-	const query = process.argv.slice(2).join(' ').trim();
+	const query = process.argv.slice(2).join(" ").trim();
 	if (!query) {
-		console.log('Nenhum termo de busca fornecido.');
+		console.log("Nenhum termo de busca fornecido.");
 		process.exit(1);
 	}
 
 	const db = Database.getInstance();
 	const donations = await db.getDonations();
 
-	const queryDigits = query.replace(/\D/g, '');
+	const queryDigits = query.replace(/\D/g, "");
 	const queryLower = query.toLowerCase();
 
-	const matches = donations.filter(donor => {
-		const name = (donor.nome || '').toLowerCase();
-		const number = donor.numero ? String(donor.numero) : '';
-		const numberDigits = number.replace(/\D/g, '');
+	const matches = donations.filter((donor) => {
+		const name = (donor.nome || "").toLowerCase();
+		const number = donor.numero ? String(donor.numero) : "";
+		const numberDigits = number.replace(/\D/g, "");
 
 		// 1. Busca por número (se o termo de busca e o doador possuírem ao menos 4 dígitos)
 		if (queryDigits.length >= 4 && numberDigits.length >= 4) {
-			if (numberDigits === queryDigits || numberDigits.includes(queryDigits) || queryDigits.includes(numberDigits)) {
+			if (
+				numberDigits === queryDigits ||
+				numberDigits.includes(queryDigits) ||
+				queryDigits.includes(numberDigits)
+			) {
 				return true;
 			}
 		}
@@ -70,8 +74,8 @@ async function main() {
 	}
 
 	matches.forEach((donor, idx) => {
-		if (idx > 0) console.log('\n---\n');
-		const donorNumeroDisplay = donor.numero || 'Não informado';
+		if (idx > 0) console.log("\n---\n");
+		const donorNumeroDisplay = donor.numero || "Não informado";
 		const valorFormatado = formatDonationCount(donor.historico, donor.valor);
 
 		console.log(`O doador associado ao número/nome "${query}" é ${donor.nome}.\n`);
@@ -84,7 +88,7 @@ async function main() {
 	process.exit(0);
 }
 
-main().catch(err => {
-	console.error('Erro ao buscar doador:', err);
+main().catch((err) => {
+	console.error("Erro ao buscar doador:", err);
 	process.exit(1);
 });
