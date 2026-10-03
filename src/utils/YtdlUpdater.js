@@ -1,10 +1,14 @@
 const { exec } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 const cron = require("node-cron");
 const Logger = require("./Logger");
 
 const logger = new Logger("YtdlUpdater");
-const scriptPath = path.resolve(__dirname, "..", "..", "update-ytdl.sh");
+let scriptPath = path.resolve(__dirname, "..", "..", "scripts", "update-ytdl.sh");
+if (!fs.existsSync(scriptPath)) {
+	scriptPath = path.resolve(__dirname, "..", "..", "update-ytdl.sh");
+}
 
 /**
  * Executes the update-ytdl.sh script
