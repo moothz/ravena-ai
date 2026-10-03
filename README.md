@@ -15,6 +15,13 @@ A **RavenaBot** foi desenvolvida para potencializar a dinâmica de grupos e cana
 - **Streaming:** Notificações automáticas em tempo real de lives da Twitch, Kick e YouTube.
 - **Inteligência Artificial:** Resumo de mensagens, transcrição de voz (Whisper/F5-TTS), OCR e respostas inteligentes via LLMs (Gemini, Claude, GPT, Ollama).
 
+### 🌐 Teste a Ravena
+Você pode testar a Ravena acessando o site oficial em [**ravena.moothz.win**](https://ravena.moothz.win) ou enviando uma mensagem no WhatsApp diretamente para uma das instâncias:
+- **Ravena 2:** [+55 (98) 8771-5450](https://wa.me/559887715450)
+- **Ravena 4:** [+55 (55) 9205-8360](https://wa.me/555592058360)
+- **Ravena 5:** [+55 (55) 9153-7296](https://wa.me/555591537296)
+- **Ravena 10:** [+55 (55) 8102-4412](https://wa.me/555581024412)
+
 ---
 
 ## 🤖 Dúvidas e Suporte com Agentes de IA
