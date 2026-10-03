@@ -24,8 +24,8 @@
 
 require("dotenv").config();
 
-const { msgTexto, msgMedia, msgComQuote, msgCustom } = require("./src/testing/helpers");
-const TestRunner = require("./src/testing/TestRunner");
+const { msgTexto, msgMedia, msgComQuote, msgCustom } = require("../src/testing/helpers");
+const TestRunner = require("../src/testing/TestRunner");
 
 // =============================================================================
 // CONFIGURAÇÃO

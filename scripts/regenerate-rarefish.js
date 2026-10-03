@@ -4,9 +4,9 @@ const path = require("path");
 const { createCanvas, loadImage, registerFont } = require("canvas");
 require("dotenv").config();
 
-const Database = require("./src/utils/Database");
+const Database = require("../src/utils/Database");
 const database = Database.getInstance();
-const bonsaiModule = require("./src/functions/BonsaiCommands");
+const bonsaiModule = require("../src/functions/BonsaiCommands");
 
 const RARE_FISH_DESCRIPTIONS = {
 	Cthulhu: "cosmic horror, tentacles on face, giant wings, green scaly humanoid dragon",

@@ -11,6 +11,9 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # Sem cor
 
+# Sempre executa a partir da raiz do repositório
+cd "$(dirname "$0")/.."
+
 # Verifica se o container está em execução
 CONTAINER_ID=$(docker compose ps -q ravena-ai 2>/dev/null)
 

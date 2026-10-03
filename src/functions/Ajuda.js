@@ -24,8 +24,10 @@ async function loadBaseContext() {
 		return baseContextCache;
 	}
 
-	try {
-		const docPath = path.join(process.cwd(), "ravena-llm-helper.md");
+		let docPath = path.join(process.cwd(), "docs", "LLM-HELPER.md");
+		if (!require("fs").existsSync(docPath)) {
+			docPath = path.join(process.cwd(), "ravena-llm-helper.md");
+		}
 		const content = await fs.readFile(docPath, "utf8");
 		baseContextCache = content;
 		lastCacheRead = now;

@@ -3,9 +3,9 @@ const axios = require("axios");
 const path = require("path");
 const { performance } = require("perf_hooks");
 
-const CONFIG_FILE = "service-providers.json";
-const TEST_IMAGE = path.join(__dirname, "data", "rare-fish.jpg");
-const TEST_AUDIO = path.join(__dirname, "data", "ravena_sample.mp3");
+const CONFIG_FILE = path.join(__dirname, "..", "service-providers.json");
+const TEST_IMAGE = path.join(__dirname, "..", "data", "rare-fish.jpg");
+const TEST_AUDIO = path.join(__dirname, "..", "data", "ravena_sample.mp3");
 
 const TEST_TOOLS = [
 	{

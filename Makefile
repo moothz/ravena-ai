@@ -1,10 +1,10 @@
-.PHONY: help setup generate-secrets up up-bot down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group
+.PHONY: help setup generate-secrets up up-bot down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group get-doador
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
-# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user, migrate-group
+# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user, migrate-group, get-doador
 ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
@@ -18,6 +18,10 @@ ifeq ($(firstword $(MAKECMDGOALS)),del-api-user)
   $(eval $(RUN_ARGS):;@:)
 endif
 ifeq ($(firstword $(MAKECMDGOALS)),migrate-group)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),get-doador)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
@@ -167,45 +171,50 @@ ps: ## Mostra o status de todos os containers
 	docker compose ps
 
 update-allm: ## Atualiza a documentação de comandos para o AnythingLLM no container
-	docker compose exec ravena-ai node update-allm-cmds.js
+	docker compose exec ravena-ai node scripts/update-allm-cmds.js
 
 update-ytdl: ## Atualiza o yt-dlp para nightly dentro do container ravena-ai
-	docker compose exec ravena-ai bash update-ytdl.sh
+	docker compose exec ravena-ai bash scripts/update-ytdl.sh
 
 update-donates: ## Atualiza o ranking de doadores no README.md
-	@./update-donates.sh
+	@./scripts/update-donates.sh
 
 test: ## Roda o arquivo run-testes.js dentro do container (sem WhatsApp)
-	docker cp run-testes.js $$(docker compose ps -q ravena-ai):/app/run-testes.js
+	docker cp scripts/run-testes.js $$(docker compose ps -q ravena-ai):/app/scripts/run-testes.js
 	docker cp src/testing $$(docker compose ps -q ravena-ai):/app/src/
-	docker compose exec ravena-ai node run-testes.js
+	docker compose exec ravena-ai node scripts/run-testes.js
 
 test-quick: ## Copia um arquivo alterado e roda os testes (uso: make test-quick FILE=src/functions/MinhaFunc.js)
 	@if [ -z "$(FILE)" ]; then printf "$(YELLOW)Uso: make test-quick FILE=caminho/do/arquivo.js$(NC)\n"; exit 1; fi
 	docker cp $(FILE) $$(docker compose ps -q ravena-ai):/app/$(FILE)
-	docker compose exec ravena-ai node run-testes.js
+	docker compose exec ravena-ai node scripts/run-testes.js
 
 test-providers: ## Testa todos os provedores de IA do service-providers.json
-	@node test-providers.js
+	@node scripts/test-providers.js
+
+get-doador: ## Busca informações de doadores por número ou nome (Uso: make get-doador <termo>)
+	@QUERY="$(RUN_ARGS)"; \
+	if [ -z "$$QUERY" ]; then printf "$(YELLOW)Uso: make get-doador <número ou nome>$(NC)\n"; exit 1; fi; \
+	node scripts/get-doador.js "$$QUERY"
 
 add-api-user: ## Cadastra um novo usuário de API externa (Uso: make add-api-user <nome>)
 	@USER_NAME="$(RUN_ARGS)"; \
 	if [ -z "$$USER_NAME" ]; then USER_NAME="$(USER)"; fi; \
-	node manage-api-users.js add "$$USER_NAME"
+	node scripts/manage-api-users.js add "$$USER_NAME"
 
 del-api-user: ## Remove um usuário de API externa (Uso: make del-api-user <nome>)
 	@USER_NAME="$(RUN_ARGS)"; \
 	if [ -z "$$USER_NAME" ]; then USER_NAME="$(USER)"; fi; \
-	node manage-api-users.js del "$$USER_NAME"
+	node scripts/manage-api-users.js del "$$USER_NAME"
 
 list-api-users: ## Lista usuários de API externa cadastrados
-	@node manage-api-users.js list
+	@node scripts/manage-api-users.js list
 
 regenerate-rarefish: ## Regenera imagens de capturas raras perdidas ou placeholders
-	docker compose exec ravena-ai node regenerate-rarefish.js
+	docker compose exec ravena-ai node scripts/regenerate-rarefish.js
 
 sync: ## Sincroniza arquivos modificados com o container ravena-ai
-	@./sync-to-docker.sh
+	@./scripts/sync-to-docker.sh
 
 update-whatsgoapi: ## Sincroniza o submódulo whatsgoapi e reconstrói o container
 	@printf "$(CYAN)Sincronizando submódulo whatsgoapi...$(NC)\n"
@@ -240,7 +249,7 @@ recover_sql: ## Recupera banco SQLite corrompido (Uso: make recover_sql <banco.d
 	@DB_PATH="$(RUN_ARGS)"; \
 	if [ -z "$$DB_PATH" ]; then DB_PATH="$(DB)"; fi; \
 	if [ -z "$$DB_PATH" ]; then printf "$(YELLOW)Uso: make recover_sql <caminho/do/banco.db> ou make recover_sql DB=<caminho/do/banco.db>$(NC)\n"; exit 1; fi; \
-	./recover-sqlite.sh "$$DB_PATH"
+	./scripts/recover-sqlite.sh "$$DB_PATH"
 
 migrate-group: ## Copia todas as configurações de um grupo para outro (Uso: make migrate-group <oldId> <newId>)
 	@ARGS="$(RUN_ARGS)"; \
@@ -251,5 +260,5 @@ migrate-group: ## Copia todas as configurações de um grupo para outro (Uso: ma
 		printf "$(CYAN)Exemplo: make migrate-group 120363424022939146@g.us 120363427984421447@g.us$(NC)\n"; \
 		exit 1; \
 	fi; \
-	docker cp migrate-group.js $$(docker compose ps -q ravena-ai):/app/migrate-group.js; \
-	docker compose exec ravena-ai node migrate-group.js "$$OLD_ID" "$$NEW_ID"
+	docker cp scripts/migrate-group.js $$(docker compose ps -q ravena-ai):/app/scripts/migrate-group.js; \
+	docker compose exec ravena-ai node scripts/migrate-group.js "$$OLD_ID" "$$NEW_ID"

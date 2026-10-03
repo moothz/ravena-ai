@@ -183,7 +183,7 @@ services:
       HEALTH_CHECK_WA_BOT_INSTANCE: ${HEALTH_CHECK_WA_BOT_INSTANCE:-ravenavip}
       HEALTH_CHECK_WA_GROUP: ${HEALTH_CHECK_WA_GROUP:-${GRUPO_ANUNCIOS:-}}
     volumes:
-      - ./check-health.sh:/check-health.sh:ro
+      - ./scripts/check-health.sh:/check-health.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
       - ./:/app:ro

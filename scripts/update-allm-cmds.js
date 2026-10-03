@@ -4,11 +4,11 @@ const path = require("path");
 
 process.env.SUPPRESS_LOGS = "true";
 
-const CommandsHelper = require("./src/utils/CommandsHelper");
+const CommandsHelper = require("../src/utils/CommandsHelper");
 
 function extractSuperAdminCommands() {
 	try {
-		const saPath = path.join(__dirname, "src/commands/SuperAdmin.js");
+		const saPath = path.join(__dirname, "../src/commands/SuperAdmin.js");
 		const content = fsSync.readFileSync(saPath, "utf8");
 		const match = content.match(/this\.commandMap\s*=\s*\{([\s\S]*?)\n\t\t\};/);
 		if (match) {
@@ -246,7 +246,7 @@ Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 	// --- 4. Extra: Random Variables from JSON ---
 	try {
 		const customVarsData = JSON.parse(
-			await fs.readFile(path.join(__dirname, "data", "custom-variables.json"), "utf-8")
+			await fs.readFile(path.join(__dirname, "..", "data", "custom-variables.json"), "utf-8")
 		);
 		const randomKeys = Object.keys(customVarsData);
 		if (randomKeys.length > 0) {
@@ -264,8 +264,10 @@ Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 		);
 	}
 
-	await fs.writeFile(path.join(__dirname, "ravena-llm-helper.md"), finalMd);
-	console.log("✅ Arquivo ravena-llm-helper.md gerado com sucesso!");
+	const docsDir = path.join(__dirname, "..", "docs");
+	await fs.mkdir(docsDir, { recursive: true });
+	await fs.writeFile(path.join(docsDir, "LLM-HELPER.md"), finalMd);
+	console.log("✅ Arquivo docs/LLM-HELPER.md gerado com sucesso!");
 	console.log("\n✨ Processo concluído!");
 }
 

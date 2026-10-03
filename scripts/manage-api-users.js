@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const USERS_FILE = path.join(__dirname, "data", "external-API-users.json");
+const USERS_FILE = path.join(__dirname, "..", "data", "external-API-users.json");
 
 const DEFAULT_RATE_LIMITS = {
 	imagine: 5,

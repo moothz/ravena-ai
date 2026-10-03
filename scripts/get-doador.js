@@ -5,7 +5,7 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
-const Database = require("./src/utils/Database");
+const Database = require("../src/utils/Database");
 
 function formatBRL(value) {
 	const num = Number(value) || 0;

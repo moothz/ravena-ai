@@ -2,6 +2,9 @@
 
 # Script para atualizar o ranking de doadores no CONTRIBUTING.md
 
+# Sempre executa a partir da raiz do repositório
+cd "$(dirname "$0")/.."
+
 # Configurações
 DB_PATH="data/sqlites/core.db"
 CONTRIB_PATH="CONTRIBUTING.md"
