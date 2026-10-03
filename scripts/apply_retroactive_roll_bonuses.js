@@ -30,7 +30,9 @@ async function main() {
 	);
 
 	console.log(`📋 Total de doadores cadastrados: ${donations.length}`);
-	console.log(`✅ Doadores com número vinculado (com rolls extras ativos): ${eligibleDonors.length}`);
+	console.log(
+		`✅ Doadores com número vinculado (com rolls extras ativos): ${eligibleDonors.length}`
+	);
 	console.log(`⚠️  Doadores sem número vinculado: ${donorsWithoutNumber.length}\n`);
 
 	console.log("--- Status dos Doadores Elegíveis: ---\n");
@@ -52,7 +54,9 @@ async function main() {
 			console.log(`👤 Doador: ${donor.nome}`);
 			console.log(`   📱 Número: ${cleanNumber}`);
 			console.log(`   💰 Total doado: R$ ${totalAmount.toFixed(2)}`);
-			console.log(`   🎟️ Rolls Máximos: ${totalMaxRolls} (10 base + ${extraRolls} extras por doação)`);
+			console.log(
+				`   🎟️ Rolls Máximos: ${totalMaxRolls} (10 base + ${extraRolls} extras por doação)`
+			);
 			console.log("");
 		} else {
 			console.log(

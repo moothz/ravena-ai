@@ -11,21 +11,27 @@ const logger = new Logger("waifu-commands");
 
 // ─── Configurações da API ───────────────────────────────────────────────────
 const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
-const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY;
+
+if (!WAIFULETES_KEY) {
+	logger.error(
+		"WAIFULETES_API_KEY não configurada no .env! Comandos de Waifuletes falharão na autenticação."
+	);
+}
 
 const api = axios.create({
 	baseURL: WAIFULETES_URL,
 	headers: {
-		Authorization: `Bearer ${WAIFULETES_KEY}`,
+		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
 		"Content-Type": "application/json"
 	},
 	timeout: 15000
 });
 
-// Janela de claim: 120 segundos (2 minutos)
-const CLAIM_WINDOW_MS = 120 * 1000;
+// Janela de claim: 300 segundos (5 minutos)
+const CLAIM_WINDOW_MS = 300 * 1000;
 
-// Cache em memória da janela de claim (120s) por grupo
+// Cache em memória da janela de claim (300s / 5 min) por grupo
 // Map<groupId, { characterId: string, characterName: string, expiresAt: number }>
 const pendingClaims = new Map();
 
@@ -363,7 +369,16 @@ function makeRollHandler(genderFilter) {
 			};
 
 			const { data } = await api.post("/roll", payload);
-			const { character, available, isOwner, owner, keyProgress, kakeraValue, rollsRemaining, maxRolls } = data.data;
+			const {
+				character,
+				available,
+				isOwner,
+				owner,
+				keyProgress,
+				kakeraValue,
+				rollsRemaining,
+				maxRolls
+			} = data.data;
 
 			const rarity = character.rarity || character.baseRarity || "COMMON";
 			const emojiRarity = RARITY_EMOJI[rarity] || "⚪";

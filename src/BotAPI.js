@@ -1756,7 +1756,13 @@ class BotAPI {
 		// Waifuletes API Endpoints
 		this.app.get("/api/waifuletes/characters", this.generalLimiter, async (req, res) => {
 			const waifuletesUrl = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
-			const waifuletesKey = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+			const waifuletesKey = process.env.WAIFULETES_API_KEY;
+
+			if (!waifuletesKey) {
+				return res
+					.status(503)
+					.json({ success: false, error: "Serviço Waifuletes não configurado no servidor." });
+			}
 
 			try {
 				const { search, gender, rarity, page, limit, sortBy, order, maritalStatus, status } =
@@ -1865,7 +1871,6 @@ class BotAPI {
 								}
 								marriage = {
 									spouse,
-									spouseId: haremEntry.userId || haremEntry.user?.id,
 									groupId,
 									groupName
 								};
@@ -1922,7 +1927,14 @@ class BotAPI {
 		// Waifuletes Single Character Detail Proxy
 		this.app.get("/api/waifuletes/characters/:id", async (req, res) => {
 			const waifuletesUrl = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
-			const waifuletesKey = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+			const waifuletesKey = process.env.WAIFULETES_API_KEY;
+
+			if (!waifuletesKey) {
+				return res
+					.status(503)
+					.json({ success: false, error: "Serviço Waifuletes não configurado no servidor." });
+			}
+
 			const { id } = req.params;
 
 			try {
@@ -1952,7 +1964,6 @@ class BotAPI {
 						}
 						marriage = {
 							spouse,
-							spouseId: haremEntry.userId,
 							groupId,
 							groupName
 						};

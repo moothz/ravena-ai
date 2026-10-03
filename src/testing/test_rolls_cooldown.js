@@ -5,7 +5,7 @@ const { createMessage } = require("./FakeMessage");
 const axios = require("axios");
 
 const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://waifuletes-api:3030";
-const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY || "waifuletes_secret_token_123456";
+const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY;
 
 async function runRollTests() {
 	console.log("=== Testando Novo Sistema de Cooldown e Saldo de Rolls (10 base / 5min) ===");
@@ -61,7 +61,8 @@ async function runRollTests() {
 		if (bot.capturedMessages.length === 0) continue;
 
 		const captured = bot.capturedMessages[0];
-		const replyText = typeof captured.content === "string" ? captured.content : (captured.options?.caption || "");
+		const replyText =
+			typeof captured.content === "string" ? captured.content : captured.options?.caption || "";
 
 		if (replyText.includes("Rolls restantes")) {
 			currentRollCount++;
@@ -70,7 +71,9 @@ async function runRollTests() {
 				replyText.includes(`${expectedRemaining}/10`),
 				`Roll ${currentRollCount} deve mostrar ${expectedRemaining}/10 (recebido: ${replyText})`
 			);
-			console.log(`✓ Roll ${currentRollCount}/10 executado com sucesso: ${expectedRemaining}/10 restantes.`);
+			console.log(
+				`✓ Roll ${currentRollCount}/10 executado com sucesso: ${expectedRemaining}/10 restantes.`
+			);
 			// Aguarda 5.2s para passar o cooldown de anti-spam
 			await new Promise((r) => setTimeout(r, 5200));
 		} else if (replyText.includes("cooldown por mais")) {
@@ -99,7 +102,10 @@ async function runRollTests() {
 	await waitForReply();
 	assert.strictEqual(bot.capturedMessages.length, 1, "Roll bloqueado deve gerar 1 mensagem");
 	const capturedBlock = bot.capturedMessages[0];
-	const blockText = typeof capturedBlock.content === "string" ? capturedBlock.content : (capturedBlock.options?.caption || "");
+	const blockText =
+		typeof capturedBlock.content === "string"
+			? capturedBlock.content
+			: capturedBlock.options?.caption || "";
 
 	assert.ok(blockText.includes("Sem rolls disponíveis"), "Deve conter 'Sem rolls disponíveis!'");
 	assert.ok(blockText.includes("Próximo roll em"), "Deve informar tempo até o próximo roll");
@@ -122,7 +128,8 @@ async function runRollTests() {
 	await waitForReply();
 	assert.strictEqual(bot.capturedMessages.length, 1, "!mu-cooldowns deve gerar 1 mensagem");
 	const capturedCd = bot.capturedMessages[0];
-	const cdText = typeof capturedCd.content === "string" ? capturedCd.content : (capturedCd.options?.caption || "");
+	const cdText =
+		typeof capturedCd.content === "string" ? capturedCd.content : capturedCd.options?.caption || "";
 
 	assert.ok(cdText.includes("0/10 rolls"), "!mu-cooldowns deve mostrar 0/10 rolls");
 	console.log(`✓ !mu-cooldowns validado:\n${cdText}`);
