@@ -10,13 +10,17 @@ const { validateRegexFilter } = require("./utils/RegexFilterValidator");
 const path = require("path");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
+const uploadsDir = path.join(__dirname, "../temp/uploads");
+if (!fs.existsSync(uploadsDir)) {
+	fs.mkdirSync(uploadsDir, { recursive: true });
+}
 const upload = multer({
-	dest: "uploads/",
+	dest: uploadsDir,
 	limits: { fileSize: 50 * 1024 * 1024 }
 });
 const MAX_NSFW_FILE_SIZE = 3 * 1024 * 1024; // 3MB
 const uploadNsfw = multer({
-	dest: "uploads/",
+	dest: uploadsDir,
 	limits: {
 		fileSize: MAX_NSFW_FILE_SIZE,
 		files: 16

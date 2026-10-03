@@ -141,7 +141,7 @@ class NSFWPredict {
 	 * @returns {Promise<string>}
 	 */
 	async _ensureDebugDir() {
-		const debugDir = path.join(__dirname, "../../temp/nudenet_debug");
+		const debugDir = path.join(__dirname, "../../data/nudenet_debug");
 		await fs.promises.mkdir(debugDir, { recursive: true });
 		return debugDir;
 	}

@@ -10,12 +10,11 @@ downloads/
 data/
 public/
 temp/
-media/
 *.log
 npm-debug.log*
 .gemini/
 .github/
 /old/
-/.Trash-1000/
+.Trash-*/
 test-*/
 *.swp

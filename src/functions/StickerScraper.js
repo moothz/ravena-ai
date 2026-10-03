@@ -54,7 +54,7 @@ database.getSQLiteDb(
 );
 
 // Diretório para mover figurinhas detectadas como NSFW (quarentena de debug)
-const NSFW_DIR = path.join(__dirname, "../../temp/nudenet_debug");
+const NSFW_DIR = path.join(__dirname, "../../data/nudenet_debug");
 try {
 	if (!fs.existsSync(NSFW_DIR)) {
 		fs.mkdirSync(NSFW_DIR, { recursive: true });

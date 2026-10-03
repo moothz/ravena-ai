@@ -159,8 +159,7 @@ test-output-*
 bots.json
 service-providers.json
 temp
-temp/nudenet_debug
-media
+data/nudenet_debug
 data/sqlites
 data/backups
 data/media
@@ -184,10 +183,7 @@ public/code-snippets.json
 /npm-update-testes
 /data/sillies
 /src/utils/db/migrations
-/scripts/*
-!/scripts/zip_commands_helper.py
-!/scripts/apply_retroactive_donation_bonuses.js
-!/scripts/apply_retroactive_roll_bonuses.js
+/scripts/__pycache__
 
 # whatsgoapi ignores
 /whatsgoapi/build

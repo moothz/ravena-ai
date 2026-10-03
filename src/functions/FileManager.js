@@ -99,7 +99,7 @@ async function listFilesFromDb(chatId, prefix = "") {
  * Obtém o caminho base para armazenar arquivos
  */
 function getBasePath(chatId) {
-	return path.join(__dirname, "../../media", chatId, "files");
+	return path.join(database.databasePath, "media", "user_files", chatId, "files");
 }
 
 /**

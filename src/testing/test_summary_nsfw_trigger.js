@@ -281,7 +281,7 @@ async function runTests() {
 		const originalNudenetDebug = process.env.NUDENET_DEBUG;
 		process.env.NUDENET_DEBUG = "true";
 
-		const debugDir = path.join(__dirname, "../../temp/nudenet_debug");
+		const debugDir = path.join(__dirname, "../../data/nudenet_debug");
 		await fs.promises.mkdir(debugDir, { recursive: true });
 
 		const sampleBase64 =
