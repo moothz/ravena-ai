@@ -1402,6 +1402,7 @@ async function generateRareFishImage(
 	try {
 		const dateString = getCurrentDateTime();
 
+		let profileMedia = null;
 		let respostaLLM = null;
 		try {
 			let targetJid = null;
@@ -1422,10 +1423,7 @@ async function generateRareFishImage(
 			}
 
 			if (targetJid && bot) {
-				const profileMedia = await ProfilePictureHelper.fetchUserProfilePictureMedia(
-					bot,
-					targetJid
-				);
+				profileMedia = await ProfilePictureHelper.fetchUserProfilePictureMedia(bot, targetJid);
 				if (profileMedia && profileMedia.data) {
 					const llmService = LLMService.getInstance();
 					const completionOptions = {
@@ -1485,19 +1483,23 @@ Dynamic, action-ready close-up composition, medium depth-of-field, hyper-detaile
 
 		if (!result || !result.content || !result.content.mimetype) return null;
 
-		// Inject the text onto the image
+		let processedResultMedia = result.content;
 		try {
-			const processedMedia = await drawTextOnRareFishImage(
+			processedResultMedia = await drawTextOnRareFishImage(
 				result.content,
 				fishName,
 				fishWeight,
 				dateString
 			);
-			return processedMedia;
 		} catch (drawError) {
 			logger.error("Erro ao desenhar texto no peixe raro, retornando original:", drawError);
-			return result.content;
 		}
+
+		return {
+			image: processedResultMedia,
+			profileMedia,
+			respostaLLM
+		};
 	} catch (error) {
 		logger.error("Erro ao gerar imagem para peixe raro:", error);
 		return null;
@@ -1954,7 +1956,7 @@ async function fishCommand(bot, message, args, group) {
 		}
 		// Se for peixe raro, tentar gerar imagem e salvar no histórico
 		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
-			let rareFishImage = await generateRareFishImage(
+			const rareFishResult = await generateRareFishImage(
 				bot,
 				userName,
 				caughtFishes[0].name,
@@ -1963,6 +1965,19 @@ async function fishCommand(bot, message, args, group) {
 				userId,
 				message
 			);
+
+			let rareFishImage = null;
+			let profileMedia = null;
+			let respostaLLM = null;
+
+			if (rareFishResult && rareFishResult.image) {
+				rareFishImage = rareFishResult.image;
+				profileMedia = rareFishResult.profileMedia;
+				respostaLLM = rareFishResult.respostaLLM;
+			} else if (rareFishResult && rareFishResult.mimetype) {
+				// Fallback se retornou objeto Media direto
+				rareFishImage = rareFishResult;
+			}
 
 			if (!rareFishImage) {
 				// Placeholder
@@ -2009,6 +2024,18 @@ async function fishCommand(bot, message, args, group) {
 				notificacaoPeixeRaro.chatId = bot.grupoLogs;
 				const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
 				if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
+
+				if (profileMedia) {
+					const captionAvatarLog = `👤 *Foto de perfil de ${userName} (${userId})*\n\n📝 *Descrição gerada pela IA:* ${respostaLLM || "_Sem descrição gerada_"}`;
+					const notificacaoAvatarLog = new ReturnMessage({
+						chatId: bot.grupoLogs,
+						content: profileMedia,
+						options: {
+							caption: captionAvatarLog
+						}
+					});
+					await bot.sendReturnMessages(notificacaoAvatarLog);
+				}
 			}
 
 			if (bot.grupoAvisos) {
