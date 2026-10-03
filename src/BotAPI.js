@@ -8,11 +8,13 @@ const Database = require("./utils/Database");
 const DonorBonusService = require("./services/DonorBonusService");
 const { validateRegexFilter } = require("./utils/RegexFilterValidator");
 const path = require("path");
+const fsSync = require("fs");
+const fs = require("fs").promises;
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
 const uploadsDir = path.join(__dirname, "../temp/uploads");
-if (!fs.existsSync(uploadsDir)) {
-	fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fsSync.existsSync(uploadsDir)) {
+	fsSync.mkdirSync(uploadsDir, { recursive: true });
 }
 const upload = multer({
 	dest: uploadsDir,
@@ -46,7 +48,6 @@ function getBase64ByteSize(str) {
 	else if (data.endsWith("=")) padding = 1;
 	return Math.floor((len * 3) / 4) - padding;
 }
-const fs = require("fs").promises;
 const qrcode = require("qr-base64");
 const { exec, spawn } = require("child_process");
 const axios = require("axios");
