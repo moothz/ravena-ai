@@ -62,64 +62,60 @@ async function ragnarokCommand(bot, message, args, group) {
 	logger.debug(`[ragnarokCommand] `, { message, args });
 	const chatId = message.author;
 	const authorId = message.author ?? message.authorAlt;
-	const sanitizedUser = sanitize(authorId.split("@")[0]);
+	const isSuperAdmin = adminUtils.isSuperAdmin(authorId);
+	const targetUser = isSuperAdmin ? "admin" : sanitize(authorId.split("@")[0]);
 
 	let user, pass;
 	let isNew = false;
 
-	// 1. Check Super Admin
-	if (adminUtils.isSuperAdmin(authorId)) {
-		user = "admin";
-		pass = "admin";
-	} else {
-		const connection = await mysql.createConnection(dbConfig);
-		try {
-			// Check if account exists
-			const [rows] = await connection.execute(
-				"SELECT account_id, userid, user_pass FROM login WHERE userid = ?",
-				[sanitizedUser]
+	const connection = await mysql.createConnection(dbConfig);
+	try {
+		// Check if account exists
+		const [rows] = await connection.execute(
+			"SELECT account_id, userid, user_pass FROM login WHERE userid = ?",
+			[targetUser]
+		);
+
+		if (rows.length > 0) {
+			user = rows[0].userid;
+			pass = rows[0].user_pass;
+		} else {
+			// Create new account
+			isNew = true;
+			user = targetUser;
+			pass = isSuperAdmin ? "admin" : generatePassword();
+			const groupId = isSuperAdmin ? 99 : 0;
+
+			const [result] = await connection.execute(
+				'INSERT INTO login (userid, user_pass, sex, email, group_id) VALUES (?, ?, "M", ?, ?)',
+				[user, pass, `${user}@ravenabot.com`, groupId]
 			);
 
-			if (rows.length > 0) {
-				user = rows[0].userid;
-				pass = rows[0].user_pass;
-			} else {
-				// Create new account
-				isNew = true;
-				user = sanitizedUser;
-				pass = generatePassword();
+			const accountId = result.insertId;
 
-				const [result] = await connection.execute(
-					'INSERT INTO login (userid, user_pass, sex, email, group_id) VALUES (?, ?, "M", ?, 0)',
-					[user, pass, `${user}@ravenabot.com`]
-				);
+			// Create initial character
+			const rawName = message.name ?? message.pushName ?? message.pushname ?? message.authorName;
+			let charName = sanitize(rawName);
 
-				const accountId = result.insertId;
-
-				// Create initial character
-				const rawName = message.name ?? message.pushName ?? message.pushname ?? message.authorName;
-				let charName = sanitize(rawName);
-
-				if (!charName || charName.length <= 3 || charName.length === 0) {
-					logger.info(`[ragnarokCommand] '${rawName}' -> '${charName}' invalido?`);
-					charName = sanitize("Player_" + user).substring(0, 23);
-				}
-
-				charName = charName.substring(0, 23);
-
-				try {
-					await connection.execute(
-						'INSERT INTO `char` (account_id, name, char_num, class, base_level, job_level, hair, hair_color, last_map, last_x, last_y, save_map, save_x, save_y, max_hp, hp, max_sp, sp) VALUES (?, ?, 0, 0, 1, 1, 1, 1, "darkmall", 100, 98, "darkmall", 100, 98, 40, 40, 11, 11)',
-						[accountId, charName]
-					);
-				} catch (charErr) {
-					logger.error("Failed to create character: " + charErr.message);
-					// Character creation might fail if name is taken, we continue anyway as account is created
-				}
+			if (!charName || charName.length <= 3 || charName.length === 0) {
+				logger.info(`[ragnarokCommand] '${rawName}' -> '${charName}' invalido?`);
+				charName = sanitize("Player_" + user).substring(0, 23);
 			}
-		} finally {
-			await connection.end();
+
+			charName = charName.substring(0, 23);
+
+			try {
+				await connection.execute(
+					'INSERT INTO `char` (account_id, name, char_num, class, base_level, job_level, hair, hair_color, last_map, last_x, last_y, save_map, save_x, save_y, max_hp, hp, max_sp, sp) VALUES (?, ?, 0, 0, 1, 1, 1, 1, "darkmall", 100, 98, "darkmall", 100, 98, 40, 40, 11, 11)',
+					[accountId, charName]
+				);
+			} catch (charErr) {
+				logger.error("Failed to create character: " + charErr.message);
+				// Character creation might fail if name is taken, we continue anyway as account is created
+			}
 		}
+	} finally {
+		await connection.end();
 	}
 
 	// 2. Generate Auth Link
