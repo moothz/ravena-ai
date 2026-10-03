@@ -7,7 +7,9 @@ function main() {
 	const repository = fs.readFileSync("/app/src/utils/db/repositories/CoreRepository.js", "utf8");
 	const eventHandler = fs.readFileSync("/app/src/EventHandler.js", "utf8");
 	const management = fs.readFileSync("/app/src/commands/Management.js", "utf8");
-	const botApi = fs.readFileSync("/app/src/BotAPI.js", "utf8");
+	const botApi = fs.existsSync("/app/src/BotAPI/routes/managementRoutes.js")
+		? fs.readFileSync("/app/src/BotAPI/routes/managementRoutes.js", "utf8")
+		: fs.readFileSync("/app/src/BotAPI.js", "utf8");
 
 	assert.match(repository, /LOWER\(name\) = LOWER\(\?\)/);
 	assert.match(repository, /idx_groups_name_nocase/);
