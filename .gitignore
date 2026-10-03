@@ -172,6 +172,7 @@ data/kick-token.json
 data/www.youtube.com_cookies.txt
 data/smd_cookies.txt
 data/errors-debug
+data/profile-pics
 public/gifs
 public/attachments
 public/audios
