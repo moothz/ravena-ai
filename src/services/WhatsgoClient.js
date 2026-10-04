@@ -1,4 +1,5 @@
 const axios = require("axios");
+const RateLimitTracker = require("./RateLimitTracker");
 
 class WhatsgoClient {
 	/**
@@ -16,6 +17,7 @@ class WhatsgoClient {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.globalApiKey = globalApiKey;
 		this.instanceName = instanceName;
+		this.rateLimitTracker = RateLimitTracker.getInstance();
 
 		this.client = axios.create({
 			baseURL: this.baseUrl,
@@ -52,10 +54,13 @@ class WhatsgoClient {
 		};
 	}
 
-	_handleError(error, context, reqData = {}) {
+	_handleError(error, context, reqData = {}, reqCtx = null) {
 		const status = error.response?.status;
 		const data = error.response?.data;
 		const message = data?.message || error.message || "Erro desconhecido";
+
+		// Registra no rastreador de rate limit se aplicável
+		this.rateLimitTracker.recordRateLimit(reqCtx, error, reqData);
 
 		// Logs detalhados para debug
 		this.logger.error(`[GO] Erro em ${context}: ${status} - ${message}`, { reqData });
@@ -70,6 +75,7 @@ class WhatsgoClient {
 	 * GET Request (Usa Instance Token por padrão)
 	 */
 	async get(endpoint, params = {}, useGlobalKey = false) {
+		const reqCtx = this.rateLimitTracker.startRequest(this.instanceName, "GET", endpoint, params);
 		try {
 			const config = { params };
 
@@ -81,9 +87,10 @@ class WhatsgoClient {
 			}
 
 			const response = await this.client.get(endpoint, config);
+			this.rateLimitTracker.recordSuccess(reqCtx);
 			return response.data;
 		} catch (error) {
-			return this._handleError(error, `GET ${endpoint}`, params);
+			return this._handleError(error, `GET ${endpoint}`, params, reqCtx);
 		}
 	}
 
@@ -92,12 +99,14 @@ class WhatsgoClient {
 	 * @param {boolean} useGlobalKey - Se true, usa a Global API Key (ex: create instance)
 	 */
 	async post(endpoint, body = {}, useGlobalKey = false) {
+		const reqCtx = this.rateLimitTracker.startRequest(this.instanceName, "POST", endpoint, body);
 		try {
 			const config = useGlobalKey ? this._adminConfig : this._instanceConfig;
 			const response = await this.client.post(endpoint, body, config);
+			this.rateLimitTracker.recordSuccess(reqCtx);
 			return response.data;
 		} catch (error) {
-			return this._handleError(error, `POST ${endpoint}`, body);
+			return this._handleError(error, `POST ${endpoint}`, body, reqCtx);
 		}
 	}
 
@@ -105,12 +114,14 @@ class WhatsgoClient {
 	 * PUT Request
 	 */
 	async put(endpoint, body = {}, useGlobalKey = false) {
+		const reqCtx = this.rateLimitTracker.startRequest(this.instanceName, "PUT", endpoint, body);
 		try {
 			const config = useGlobalKey ? this._adminConfig : this._instanceConfig;
 			const response = await this.client.put(endpoint, body, config);
+			this.rateLimitTracker.recordSuccess(reqCtx);
 			return response.data;
 		} catch (error) {
-			return this._handleError(error, `PUT ${endpoint}`, body);
+			return this._handleError(error, `PUT ${endpoint}`, body, reqCtx);
 		}
 	}
 
@@ -119,14 +130,16 @@ class WhatsgoClient {
 	 * @param {boolean} useGlobalKey - Se true, usa a Global API Key (ex: delete instance)
 	 */
 	async delete(endpoint, body = {}, useGlobalKey = false) {
+		const reqCtx = this.rateLimitTracker.startRequest(this.instanceName, "DELETE", endpoint, body);
 		try {
 			const config = useGlobalKey ? this._adminConfig : this._instanceConfig;
 			config.data = body; // Axios passa body no delete via config.data
 
 			const response = await this.client.delete(endpoint, config);
+			this.rateLimitTracker.recordSuccess(reqCtx);
 			return response.data;
 		} catch (error) {
-			return this._handleError(error, `DELETE ${endpoint}`, body);
+			return this._handleError(error, `DELETE ${endpoint}`, body, reqCtx);
 		}
 	}
 }

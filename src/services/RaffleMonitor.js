@@ -12,7 +12,7 @@ const RAFFLE_POLL_INTERVAL_MS = process.env.RAFFLE_POLL_INTERVAL_MS
 	: 10 * 60 * 1000;
 
 // Metas percentuais de vendas para notificação
-const MILESTONES = [10, 15, 25, 50, 75, 90, 99, 100];
+const MILESTONES = [10, 15, 25, 50, 75, 80, 90, 99, 100];
 
 // Banco com 10 frases criativas para cada porcentagem
 const MILESTONE_PHRASES = {
@@ -75,6 +75,18 @@ const MILESTONE_PHRASES = {
 		"75% vendido com sucesso! As chances tão se afunilando, não fique de fora! 🎯",
 		"75% da ação arrematada! A qualquer momento o sorteio pode ser marcado! 📅",
 		"Apenas um quarto restante: 75% vendido! Garanta seus números antes que esgote! 💸"
+	],
+	80: [
+		"ATENÇÃO: 80% da rifa já foi vendida! Restam apenas 20%! 🚨",
+		"80% DAS COTAS VENDIDAS! A reta final começou com tudo! 🚀",
+		"Batemos 80% das vendas! O sorteio tá ficando muito perto! ⏳",
+		"80% VENDIDO! Faltam só 20% das cotas disponíveis! Corre! 🏃‍♂️💨",
+		"Marca de 80% atingida! Quem não comprou tá correndo risco de ficar sem! ⚠️",
+		"80% das cotas já foram garantidas! A disputa tá esquentando! 🔥",
+		"80% DA AÇÃO CONCLUÍDA! O prêmio tá quase saindo! 🎁",
+		"Batemos a marca dos 80%! Garanta seus números da sorte! 🎯",
+		"80% arrematado! Apenas 20% restantes pra fechar! 📅",
+		"80% VENDIDO! Não deixe pra última hora! 💸"
 	],
 	90: [
 		"ÚLTIMA CHAMADA! 90% das cotas foram vendidas! Tá acabando! 📢",
@@ -501,16 +513,6 @@ class RaffleMonitor {
 				// Como acordado: se houve salto (ex: 20% -> 55%), notifica a maior meta atingida (50%)
 				// e registra todas as intermediárias no banco para evitar spam.
 				const highestMilestone = Math.max(...unnotifiedReached);
-				const now = Date.now();
-
-				for (const m of unnotifiedReached) {
-					await this.database.dbRun(
-						DB_NAME,
-						`INSERT OR IGNORE INTO raffle_notifications (group_id, url, milestone, notified_at)
-						 VALUES (?, ?, ?, ?)`,
-						[groupId, url, m, now]
-					);
-				}
 
 				// Obtém frase aleatória para a meta mais alta atingida
 				const phrase = this.getRandomPhrase(highestMilestone);
@@ -528,6 +530,18 @@ class RaffleMonitor {
 				const returnMsg = await buildRaffleMessage(bot, groupId, data, url, phrase);
 				if (returnMsg) {
 					await bot.sendReturnMessages(returnMsg, groupObj);
+
+					// Registra no banco de dados SOMENTE APÓS o envio bem sucedido no WhatsApp
+					const now = Date.now();
+					for (const m of unnotifiedReached) {
+						await this.database.dbRun(
+							DB_NAME,
+							`INSERT OR IGNORE INTO raffle_notifications (group_id, url, milestone, notified_at)
+							 VALUES (?, ?, ?, ?)`,
+							[groupId, url, m, now]
+						);
+					}
+
 					this.logger.info(
 						`[RaffleMonitor] Notificação de ${highestMilestone}% enviada com sucesso para o grupo ${groupId}.`
 					);

@@ -3084,6 +3084,59 @@ class WhatsAppBotGo {
 		}
 	}
 
+	async promoteInGroup(groupJid, participants) {
+		try {
+			this.logger.info(
+				`[promoteInGroup][${this.instanceName}] Promovendo ${participants.length} no grupo ${groupJid}`
+			);
+			return await this.apiClient.post(`/group/participant`, {
+				groupJid,
+				action: "promote",
+				participants: Array.isArray(participants) ? participants : [participants]
+			});
+		} catch (e) {
+			this.logger.error(
+				`[promoteInGroup][${this.instanceName}] Erro ao promover participantes:`,
+				e
+			);
+			throw e;
+		}
+	}
+
+	async demoteInGroup(groupJid, participants) {
+		try {
+			this.logger.info(
+				`[demoteInGroup][${this.instanceName}] Rebaixando ${participants.length} no grupo ${groupJid}`
+			);
+			return await this.apiClient.post(`/group/participant`, {
+				groupJid,
+				action: "demote",
+				participants: Array.isArray(participants) ? participants : [participants]
+			});
+		} catch (e) {
+			this.logger.error(`[demoteInGroup][${this.instanceName}] Erro ao rebaixar participantes:`, e);
+			throw e;
+		}
+	}
+
+	async pinMessage(chatId, messageId, participant = null, fromMe = false, type = "pin") {
+		try {
+			this.logger.info(
+				`[pinMessage][${this.instanceName}] Fixando mensagem ${messageId} no chat ${chatId} (type: ${type})`
+			);
+			return await this.apiClient.post(`/message/pin`, {
+				chat: chatId,
+				messageId,
+				fromMe: Boolean(fromMe),
+				participant: participant || undefined,
+				type
+			});
+		} catch (e) {
+			this.logger.error(`[pinMessage][${this.instanceName}] Erro ao fixar mensagem:`, e);
+			throw e;
+		}
+	}
+
 	logMsgToGrupo(msg, extra = false) {
 		if (this.grupoLogs && msg) {
 			this.logger.info(`[logMsgToGrupo] ${msg}`, extra);

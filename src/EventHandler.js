@@ -1457,7 +1457,8 @@ class EventHandler extends EventEmitter {
 
 		// Carrega o grupo para verificar se o usuário que entrou está bloqueado
 		try {
-			const group = await this.database.getGroup(groupId);
+			const group =
+				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
 			if (
 				group &&
 				group.filters &&
@@ -1497,8 +1498,95 @@ class EventHandler extends EventEmitter {
 					return;
 				}
 			}
+
+			// Verificação de banidos no grupo (bannedUsers)
+			if (
+				!isBotJoining &&
+				group &&
+				Array.isArray(group.bannedUsers) &&
+				group.bannedUsers.length > 0 &&
+				bot.privado
+			) {
+				const userId = data.user?.id;
+				if (userId) {
+					let userPn = userId.split("@")[0].replace(/\D/g, "");
+					let userLid = userId.endsWith("@lid") ? userId.split("@")[0] : null;
+
+					try {
+						const contact = await bot.client?.getContactById?.(userId);
+						if (contact) {
+							if (contact.id?._serialized) {
+								userPn = contact.id._serialized.split("@")[0].replace(/\D/g, "");
+							}
+							if (contact.lid) {
+								userLid = contact.lid.split("@")[0];
+							}
+						}
+					} catch (contactErr) {
+						// Ignora erro ao buscar contato
+					}
+
+					const isBanned = group.bannedUsers.some((ban) => {
+						if (!ban) return false;
+						if (typeof ban === "string") {
+							const cleanBan = ban.split("@")[0].replace(/\D/g, "");
+							return (
+								(cleanBan && cleanBan === userPn) || (userLid && ban.split("@")[0] === userLid)
+							);
+						}
+						const banPhone = ban.phone ? String(ban.phone).split("@")[0].replace(/\D/g, "") : null;
+						const banLid = ban.lid ? String(ban.lid).split("@")[0] : null;
+						const banId = ban.id ? String(ban.id).split("@")[0].replace(/\D/g, "") : null;
+						return (
+							(banPhone && banPhone === userPn) ||
+							(banLid && userLid && banLid === userLid) ||
+							(banId && banId === userPn)
+						);
+					});
+
+					if (isBanned) {
+						this.logger.warn(
+							`[processGroupJoin] Usuário banido detectado ao entrar no grupo: ${userId} (Telefone: ${userPn}, LID: ${userLid}) no grupo ${groupId}. Removendo imediatamente.`
+						);
+						try {
+							await bot.removeFromGroup(groupId, [userId]);
+						} catch (remErr) {
+							this.logger.error(
+								`[processGroupJoin] Erro ao remover usuário banido ${userId} do grupo ${groupId}:`,
+								remErr
+							);
+						}
+
+						try {
+							const chat = await data.origin?.getChat?.();
+							if (chat?.linkedParentJid) {
+								await bot.removeFromCommunity(chat.linkedParentJid, [userId]).catch(() => {});
+							}
+						} catch (chatErr) {
+							// Ignora erro de comunidade
+						}
+
+						const idParaDesbanir = userPn || userLid || userId.split("@")[0];
+						const banNotice = `🚫 @${userPn || userLid || userId.split("@")[0]} está banido deste grupo e foi removido.\nPara desbanir: \`!g-desbanir ${idParaDesbanir}\``;
+						try {
+							await bot.sendMessage(groupId, banNotice, {
+								mentions: [userId]
+							});
+						} catch (sendErr) {
+							this.logger.error(
+								`[processGroupJoin] Erro ao enviar aviso de ban no grupo ${groupId}:`,
+								sendErr
+							);
+						}
+						return;
+					}
+				}
+			}
 		} catch (dbErr) {
-			this.logger.error(`[processGroupJoin] Erro ao verificar filtros do grupo ${groupId}:`, dbErr);
+			this.logger.error(
+				`[processGroupJoin] Erro ao verificar filtros/ban do grupo ${groupId}:`,
+				dbErr
+			);
 		}
 
 		if (!isBotJoining) {

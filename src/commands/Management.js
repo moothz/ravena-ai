@@ -217,6 +217,27 @@ class Management {
 				method: "setInteractionProportion",
 				description: "Define a proporção entre comandos e IA para interações automáticas"
 			},
+			pin: {
+				method: "pinMessage",
+				description: "Fixa a mensagem marcada (em resposta)"
+			},
+			promover: {
+				method: "promoteMembers",
+				description: "Transforma membros mencionados em administradores do grupo (máx 10)"
+			},
+			rebaixar: {
+				method: "demoteMembers",
+				description: "Remove privilégios de administrador dos membros mencionados (máx 10)"
+			},
+			banir: {
+				method: "banGroupMembers",
+				description:
+					"Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m)"
+			},
+			desbanir: {
+				method: "unbanGroupMembers",
+				description: "Remove o ban da pessoa, permitindo que entre no grupo novamente"
+			},
 			ban: {
 				method: "banUser",
 				description: "Remove membros mencionados do grupo",
@@ -2020,6 +2041,9 @@ class Management {
 			infoMessage += `- *Banir Spammers:* ${group.banirSpammers ? "Sim" : "Não"}\n`;
 			if (group.spammerWhitelist && group.spammerWhitelist.length > 0) {
 				infoMessage += `- *Spammers Permitidos:* ${group.spammerWhitelist.join(", ")}\n`;
+			}
+			if (group.bannedUsers && group.bannedUsers.length > 0) {
+				infoMessage += `- *Banidos:* ${group.bannedUsers.length}\n`;
 			}
 
 			// Buscar Dossiês
@@ -8505,6 +8529,554 @@ class Management {
 			}
 		});
 	}
+
+	/**
+	 * Verifica se o bot é privado. Retorna ReturnMessage de erro caso não seja.
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} group
+	 * @param {Object} message
+	 * @returns {ReturnMessage|null}
+	 */
+	requirePrivateBot(bot, group, message) {
+		if (!bot.privado) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content:
+					"Este comando gera muito risco de ban no chip (add/remover pessoas de grupo), então é restrito às ravenas privadas, onde o dono é responsável pelo chip."
+			});
+		}
+		return null;
+	}
+
+	/**
+	 * Fixa a mensagem marcada (em reply)
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async pinMessage(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isBotAdmin = await this.isBotAdmin(bot, group);
+		if (!isBotAdmin) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para fixar mensagens."
+			});
+		}
+
+		let quotedMsg = null;
+		try {
+			quotedMsg = await message.origin?.getQuotedMessage?.();
+		} catch (e) {
+			// Sem mensagem citada
+		}
+
+		const quotedId = message.quotedMessageId || quotedMsg?.id?._serialized || quotedMsg?.id;
+		if (!quotedId) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Responda (em reply) à mensagem que você deseja fixar com `!g-pin`."
+			});
+		}
+
+		const participant = quotedMsg?.author || quotedMsg?.from || null;
+		const fromMe = Boolean(quotedMsg?.fromMe);
+
+		try {
+			if (typeof bot.pinMessage === "function") {
+				await bot.pinMessage(group.id, quotedId, participant, fromMe, "pin");
+			}
+
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				reaction: "📌",
+				content: "📌 Mensagem fixada com sucesso!"
+			});
+		} catch (err) {
+			this.logger.error(`Erro ao fixar mensagem ${quotedId} no grupo ${group.id}:`, err);
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "❌ Falha ao fixar mensagem. Verifique se o bot possui permissão no grupo."
+			});
+		}
+	}
+
+	/**
+	 * Promove pessoas mencionadas a administradores do grupo (máx 10)
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async promoteMembers(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isBotAdmin = await this.isBotAdmin(bot, group);
+		if (!isBotAdmin) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para promover membros."
+			});
+		}
+
+		const mentions = message.mentions ?? [];
+		if (mentions.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content:
+					"⚠️ Por favor, mencione as pessoas que deseja promover a administrador (máximo 10). Exemplo: `!g-promover @usuario`"
+			});
+		}
+
+		if (mentions.length > 10) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Você só pode promover no máximo 10 pessoas por comando."
+			});
+		}
+
+		const botPhoneClean = this.adminUtils._normalizeId(bot.phoneNumber);
+		const authorClean = this.adminUtils._normalizeId(message.author);
+
+		const validTargets = [];
+		const ignored = [];
+
+		for (const target of mentions) {
+			const targetClean = this.adminUtils._normalizeId(target);
+			if (targetClean === botPhoneClean || targetClean === authorClean) {
+				ignored.push(targetClean);
+				continue;
+			}
+			validTargets.push(target);
+		}
+
+		if (validTargets.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Nenhum alvo válido para promover."
+			});
+		}
+
+		try {
+			if (typeof bot.promoteInGroup === "function") {
+				await bot.promoteInGroup(group.id, validTargets);
+			}
+
+			const promotedMentions = validTargets.map((t) => `@${this.adminUtils._normalizeId(t)}`);
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: `👑 *Promovido(s) a Administrador:* ${promotedMentions.join(", ")}`,
+				options: {
+					mentions: validTargets
+				}
+			});
+		} catch (err) {
+			this.logger.error(`Erro ao promover membros no grupo ${group.id}:`, err);
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "❌ Falha ao promover os membros. Verifique se o bot é administrador do grupo."
+			});
+		}
+	}
+
+	/**
+	 * Remove admin dos membros mencionados no grupo (máx 10)
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async demoteMembers(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isBotAdmin = await this.isBotAdmin(bot, group);
+		if (!isBotAdmin) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para rebaixar administradores."
+			});
+		}
+
+		const mentions = message.mentions ?? [];
+		if (mentions.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content:
+					"⚠️ Por favor, mencione as pessoas que deseja rebaixar de administrador (máximo 10). Exemplo: `!g-rebaixar @usuario`"
+			});
+		}
+
+		if (mentions.length > 10) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Você só pode rebaixar no máximo 10 pessoas por comando."
+			});
+		}
+
+		const botPhoneClean = this.adminUtils._normalizeId(bot.phoneNumber);
+		const authorClean = this.adminUtils._normalizeId(message.author);
+
+		const validTargets = [];
+		const protectedTargets = [];
+
+		for (const target of mentions) {
+			const targetClean = this.adminUtils._normalizeId(target);
+			if (
+				targetClean === botPhoneClean ||
+				targetClean === authorClean ||
+				this.adminUtils.isSuperAdmin(targetClean)
+			) {
+				protectedTargets.push(targetClean);
+				continue;
+			}
+			validTargets.push(target);
+		}
+
+		if (validTargets.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Não é permitido rebaixar o próprio bot, o autor do comando ou super admins."
+			});
+		}
+
+		try {
+			if (typeof bot.demoteInGroup === "function") {
+				await bot.demoteInGroup(group.id, validTargets);
+			}
+
+			const demotedMentions = validTargets.map((t) => `@${this.adminUtils._normalizeId(t)}`);
+			let replyText = `👤 *Rebaixado(s) de Administrador:* ${demotedMentions.join(", ")}`;
+			if (protectedTargets.length > 0) {
+				replyText += `\n_(${protectedTargets.length} protegido(s) e ignorado(s))_`;
+			}
+
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: replyText,
+				options: {
+					mentions: validTargets
+				}
+			});
+		} catch (err) {
+			this.logger.error(`Erro ao rebaixar membros no grupo ${group.id}:`, err);
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "❌ Falha ao rebaixar os membros. Verifique se o bot é administrador do grupo."
+			});
+		}
+	}
+
+	/**
+	 * Remove pessoas mencionadas do grupo e da comunidade, impedindo reentrada (máx 5, cooldown 30m) ou lista banidos
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async banGroupMembers(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const privCheck = this.requirePrivateBot(bot, group, message);
+		if (privCheck) return privCheck;
+
+		const mentions = message.mentions ?? [];
+
+		// Se não houver mentions, listar os banidos
+		if (mentions.length === 0) {
+			if (
+				!group.bannedUsers ||
+				!Array.isArray(group.bannedUsers) ||
+				group.bannedUsers.length === 0
+			) {
+				return new ReturnMessage({
+					chatId: message.managementResponseChatId || group.id,
+					content:
+						"📋 Não há usuários banidos neste grupo.\nPara banir alguém: `!g-banir @usuario` (máx 5 mentions, cooldown 30m)."
+				});
+			}
+
+			let listText = `📋 *Usuários banidos deste grupo (${group.bannedUsers.length}):*\n`;
+			group.bannedUsers.forEach((b, idx) => {
+				const id = typeof b === "string" ? b : b.phone || b.id || b.lid;
+				const dateStr = b.date ? ` _(${new Date(b.date).toLocaleDateString("pt-BR")})_` : "";
+				listText += `${idx + 1}. \`${id}\`${dateStr}\n`;
+			});
+			listText += `\nPara desbanir: \`!g-desbanir <numero/LID>\``;
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: listText.trim()
+			});
+		}
+
+		// Cooldown de 30 minutos por grupo
+		const now = Date.now();
+		const COOLDOWN_MS = 30 * 60 * 1000;
+		if (group.lastBanAt && now - group.lastBanAt < COOLDOWN_MS) {
+			const remainingMin = Math.ceil((COOLDOWN_MS - (now - group.lastBanAt)) / (60 * 1000));
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: `⏳ O comando de banir está em cooldown neste grupo. Aguarde ${remainingMin} minuto(s) para usar novamente.`
+			});
+		}
+
+		if (mentions.length > 5) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Você só pode banir no máximo 5 pessoas por comando."
+			});
+		}
+
+		const isBotAdmin = await this.isBotAdmin(bot, group);
+		if (!isBotAdmin) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ O bot precisa ser administrador do grupo para remover e banir membros."
+			});
+		}
+
+		const botPhoneClean = this.adminUtils._normalizeId(bot.phoneNumber);
+		const authorClean = this.adminUtils._normalizeId(message.author);
+
+		const validTargets = [];
+		const protectedTargets = [];
+
+		for (const target of mentions) {
+			const targetClean = this.adminUtils._normalizeId(target);
+			if (
+				targetClean === botPhoneClean ||
+				targetClean === authorClean ||
+				this.adminUtils.isSuperAdmin(targetClean)
+			) {
+				protectedTargets.push(targetClean);
+				continue;
+			}
+			validTargets.push(target);
+		}
+
+		if (validTargets.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "⚠️ Não é permitido banir o próprio bot, o autor do comando ou super admins."
+			});
+		}
+
+		if (!group.bannedUsers || !Array.isArray(group.bannedUsers)) {
+			group.bannedUsers = [];
+		}
+
+		let chat = null;
+		try {
+			chat = await bot.client?.getChatById?.(group.id);
+		} catch (e) {
+			// Ignora erro ao obter chat
+		}
+
+		const bannedMentions = [];
+
+		for (const target of validTargets) {
+			let pn = this.adminUtils._normalizeId(target);
+			let lid = null;
+
+			try {
+				const contact = await bot.client?.getContactById?.(target);
+				if (contact) {
+					if (contact.id?._serialized) {
+						pn = this.adminUtils._normalizeId(contact.id._serialized);
+					}
+					if (contact.lid) {
+						lid = contact.lid.split("@")[0];
+					}
+				}
+			} catch (contactErr) {
+				// Ignora erro de contato
+			}
+
+			// Evita duplicatas em group.bannedUsers
+			const alreadyBanned = group.bannedUsers.some((b) => {
+				if (!b) return false;
+				if (typeof b === "string") {
+					const cleanB = b.split("@")[0].replace(/\D/g, "");
+					return cleanB === pn || (lid && b.split("@")[0] === lid);
+				}
+				const bPhone = b.phone ? String(b.phone).split("@")[0].replace(/\D/g, "") : null;
+				const bLid = b.lid ? String(b.lid).split("@")[0] : null;
+				return (bPhone && bPhone === pn) || (bLid && lid && bLid === lid);
+			});
+
+			if (!alreadyBanned) {
+				group.bannedUsers.push({
+					phone: pn,
+					lid,
+					id: target,
+					bannedBy: message.author,
+					date: now
+				});
+			}
+
+			// Remove do grupo
+			try {
+				await bot.removeFromGroup(group.id, [target]);
+			} catch (remErr) {
+				this.logger.error(`Erro ao remover banido ${target} do grupo ${group.id}:`, remErr);
+			}
+
+			// Remove da comunidade se houver
+			if (chat?.linkedParentJid) {
+				try {
+					await bot.removeFromCommunity(chat.linkedParentJid, [target]);
+				} catch (commErr) {
+					this.logger.error(
+						`Erro ao remover banido ${target} da comunidade ${chat.linkedParentJid}:`,
+						commErr
+					);
+				}
+			}
+
+			bannedMentions.push(`@${pn}`);
+		}
+
+		group.lastBanAt = now;
+		await this.database.saveGroup(group);
+
+		let replyText = `🔨 *Usuário(s) banido(s) do grupo e comunidade:*\n${bannedMentions.join("\n")}\n\nSe tentarem entrar novamente, serão removidos imediatamente.\nPara desbanir: \`!g-desbanir <numero>\``;
+		if (protectedTargets.length > 0) {
+			replyText += `\n\n_(${protectedTargets.length} protegido(s) e ignorado(s))_`;
+		}
+
+		return new ReturnMessage({
+			chatId: message.managementResponseChatId || group.id,
+			content: replyText,
+			options: {
+				mentions: validTargets
+			}
+		});
+	}
+
+	/**
+	 * Remove o ban de uma pessoa permitindo que entre no grupo novamente
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async unbanGroupMembers(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const privCheck = this.requirePrivateBot(bot, group, message);
+		if (privCheck) return privCheck;
+
+		const mentions = message.mentions ?? [];
+		const targetsToUnban = [];
+
+		if (mentions.length > 0) {
+			for (const m of mentions) {
+				targetsToUnban.push(this.adminUtils._normalizeId(m));
+			}
+		}
+
+		if (args.length > 0) {
+			for (const arg of args) {
+				const cleanArg = arg.replace(/[@<>\s]/g, "").trim();
+				if (cleanArg) {
+					targetsToUnban.push(this.adminUtils._normalizeId(cleanArg) || cleanArg.split("@")[0]);
+				}
+			}
+		}
+
+		if (targetsToUnban.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content:
+					"⚠️ Especifique quem deseja desbanir (mencione @usuario, ou digite o número/LID).\nExemplo: `!g-desbanir 5511999999999` ou `!g-desbanir @usuario`."
+			});
+		}
+
+		if (!group.bannedUsers || !Array.isArray(group.bannedUsers) || group.bannedUsers.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "📋 Não há usuários banidos neste grupo."
+			});
+		}
+
+		const unbanned = [];
+		group.bannedUsers = group.bannedUsers.filter((b) => {
+			if (!b) return false;
+			let bPhone = null;
+			let bLid = null;
+			let bId = null;
+
+			if (typeof b === "string") {
+				bPhone = b.split("@")[0].replace(/\D/g, "");
+				bLid = b.split("@")[0];
+			} else {
+				bPhone = b.phone ? String(b.phone).split("@")[0].replace(/\D/g, "") : null;
+				bLid = b.lid ? String(b.lid).split("@")[0] : null;
+				bId = b.id ? String(b.id).split("@")[0].replace(/\D/g, "") : null;
+			}
+
+			const shouldRemove = targetsToUnban.some((target) => {
+				const targetClean = target.replace(/\D/g, "");
+				return (
+					(targetClean && bPhone && targetClean === bPhone) ||
+					(targetClean && bId && targetClean === bId) ||
+					(target && bLid && target === bLid) ||
+					(target && bPhone && target === bPhone)
+				);
+			});
+
+			if (shouldRemove) {
+				unbanned.push(bPhone || bLid || bId || JSON.stringify(b));
+				return false;
+			}
+			return true;
+		});
+
+		if (unbanned.length === 0) {
+			return new ReturnMessage({
+				chatId: message.managementResponseChatId || group.id,
+				content: "❌ Usuário(s) não encontrado(s) na lista de banidos deste grupo."
+			});
+		}
+
+		await this.database.saveGroup(group);
+
+		return new ReturnMessage({
+			chatId: message.managementResponseChatId || group.id,
+			content: `✅ Usuário(s) desbanido(s) com sucesso: ${unbanned.join(", ")}.\nAgora ele(a) pode entrar no grupo novamente.`
+		});
+	}
 }
 
 const helper = {
@@ -8513,6 +9085,36 @@ const helper = {
 		"Classe Management com mapeamento de comandos de controle, persistência em SQLite e interface de administração",
 	tags: "gerenciamento,admin,grupo,configuracao,moderação,filtros,streams,customizacao",
 	cmds: [
+		{
+			cmd: "!g-pin",
+			desc: "Fixa a mensagem marcada (em resposta)",
+			usage: ["!g-pin"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-promover",
+			desc: "Transforma pessoas mencionadas em administradores do grupo (máx 10)",
+			usage: ["!g-promover @usuario"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-rebaixar",
+			desc: "Remove privilégios de administrador das pessoas mencionadas (máx 10)",
+			usage: ["!g-rebaixar @usuario"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-banir",
+			desc: "Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m) ou lista banidos",
+			usage: ["!g-banir @usuario", "!g-banir"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-desbanir",
+			desc: "Remove o ban de uma pessoa pelo mention, número ou LID",
+			usage: ["!g-desbanir 5511999999999", "!g-desbanir @usuario"],
+			category: "gerenciamento"
+		},
 		{
 			cmd: "!g-setNome",
 			desc: "ID/Nome do grupo (nome stickers, gerenciamento)",

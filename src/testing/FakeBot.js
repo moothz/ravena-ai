@@ -310,6 +310,46 @@ class FakeBot {
 		return { success: true };
 	}
 
+	/**
+	 * Simula promoção de participantes em um grupo
+	 * @param {string} groupId
+	 * @param {string|string[]} participants
+	 */
+	async promoteInGroup(groupId, participants) {
+		this.promotedParticipants = this.promotedParticipants || [];
+		this.promotedParticipants.push({ groupId, participants });
+		this.logger.debug(
+			`[FakeBot] promoteInGroup() → groupId=${groupId}, participants=${JSON.stringify(participants)}`
+		);
+		return { success: true };
+	}
+
+	/**
+	 * Simula rebaixamento de participantes em um grupo
+	 * @param {string} groupId
+	 * @param {string|string[]} participants
+	 */
+	async demoteInGroup(groupId, participants) {
+		this.demotedParticipants = this.demotedParticipants || [];
+		this.demotedParticipants.push({ groupId, participants });
+		this.logger.debug(
+			`[FakeBot] demoteInGroup() → groupId=${groupId}, participants=${JSON.stringify(participants)}`
+		);
+		return { success: true };
+	}
+
+	/**
+	 * Simula fixação de mensagem
+	 */
+	async pinMessage(chatId, messageId, participant = null, fromMe = false, type = "pin") {
+		this.pinnedMessages = this.pinnedMessages || [];
+		this.pinnedMessages.push({ chatId, messageId, participant, fromMe, type });
+		this.logger.debug(
+			`[FakeBot] pinMessage() → chatId=${chatId}, messageId=${messageId}, type=${type}`
+		);
+		return { success: true };
+	}
+
 	// ---------------------------------------------------------------------------
 	// Helpers lidos pelo EventHandler / AdminUtils
 	// ---------------------------------------------------------------------------
@@ -535,6 +575,11 @@ class FakeBot {
 	 */
 	resetCapture() {
 		this.capturedMessages = [];
+		this.removedParticipants = [];
+		this.removedCommunityParticipants = [];
+		this.promotedParticipants = [];
+		this.demotedParticipants = [];
+		this.pinnedMessages = [];
 	}
 }
 

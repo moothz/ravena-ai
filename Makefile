@@ -1,10 +1,10 @@
-.PHONY: help setup generate-secrets up up-bot down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group get-doador
+.PHONY: help setup generate-secrets up up-bot down logs restart build pull ps update-allm update-ytdl update-whatsgoapi logs-cobalt recover_sql skip-check add-api-user del-api-user list-api-users migrate-group get-doador debug-ratelimit
 
 # Habilita o Docker BuildKit por padrão para builds mais rápidas
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
-# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user, migrate-group, get-doador
+# Suporte para argumentos posicionais nos comandos make recover_sql, add-api-user, del-api-user, migrate-group, get-doador, debug-ratelimit
 ifeq ($(firstword $(MAKECMDGOALS)),recover_sql)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
@@ -22,6 +22,10 @@ ifeq ($(firstword $(MAKECMDGOALS)),migrate-group)
   $(eval $(RUN_ARGS):;@:)
 endif
 ifeq ($(firstword $(MAKECMDGOALS)),get-doador)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),debug-ratelimit)
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
@@ -262,3 +266,9 @@ migrate-group: ## Copia todas as configurações de um grupo para outro (Uso: ma
 	fi; \
 	docker cp scripts/migrate-group.js $$(docker compose ps -q ravena-ai):/app/scripts/migrate-group.js; \
 	docker compose exec ravena-ai node scripts/migrate-group.js "$$OLD_ID" "$$NEW_ID"
+
+debug-ratelimit: ## Relatório contínuo de erros 429 e rate-overlimit (Uso: make debug-ratelimit [ARGS="--recent 20"])
+	@docker cp .env $$(docker compose ps -q ravena-ai):/app/.env 2>/dev/null || true
+	@docker cp scripts/debug-ratelimit.js $$(docker compose ps -q ravena-ai):/app/scripts/debug-ratelimit.js 2>/dev/null || true
+	@docker cp src/services/RateLimitTracker.js $$(docker compose ps -q ravena-ai):/app/src/services/RateLimitTracker.js 2>/dev/null || true
+	@docker compose exec ravena-ai node scripts/debug-ratelimit.js $(if $(RUN_ARGS),$(RUN_ARGS),$(ARGS))
