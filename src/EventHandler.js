@@ -1840,8 +1840,12 @@ class EventHandler extends EventEmitter {
 				// Se é grupo novo, a mensagem de boas vindas é enviada
 
 				if (groupData.newGroup) {
-					this.logger.debug(`[groupJoin] Novo grupo, enviando toda mensagem de boas vindas`);
-					if (!joinSilencioso) {
+					if (joinSilencioso) {
+						this.logger.info(
+							`[groupJoin] 🔇 Join silencioso - Novo grupo (${group.name} / ${groupId}), boas-vindas suprimidas.`
+						);
+					} else {
+						this.logger.debug(`[groupJoin] Novo grupo, enviando toda mensagem de boas vindas`);
 						const botDisplayName = bot.nomeExibir || "ravenabot";
 						botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*, um bot de WhatsApp. Use "${group.prefix}cmd" para ver os comandos disponíveis.`;
 						try {
@@ -2084,58 +2088,54 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes, mas se tiverem dúvidas, é só mandar um *!cmd*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
 						}
 					}
+				}
 
-					this.logger.debug(`[groupJoin] botInfoMessage: ${botInfoMessage}`);
+				this.logger.debug(`[groupJoin] botInfoMessage: ${botInfoMessage}`);
 
-					let targetId = group.id;
-					// Se for Discord, tenta encontrar um canal adequado se o ID do grupo (Guild ID) não for um canal válido
-					if (bot.useDiscord && data.origin) {
+				let targetId = group.id;
+				// Se for Discord, tenta encontrar um canal adequado se o ID do grupo (Guild ID) não for um canal válido
+				if (bot.useDiscord && data.origin) {
+					try {
+						// Append discord.txt if it exists
 						try {
-							// Append discord.txt if it exists
-							try {
-								const discordTxtPath = path.join(
-									this.database.databasePath,
-									"textos",
-									"discord.txt"
-								);
-								const discordTxtContent = await fs.readFile(discordTxtPath, "utf8");
-								if (discordTxtContent && discordTxtContent.trim() !== "") {
-									botInfoMessage += `\n\n${discordTxtContent.trim()}`;
-								}
-							} catch (e) {
-								// Ignora se arquivo não existir
-							}
-
-							const guild = await bot.discordClient.guilds.fetch(data.group.id);
-							const systemChannel = guild.systemChannelId;
-							if (systemChannel) {
-								targetId = systemChannel;
-							} else {
-								// Busca o primeiro canal de texto onde o bot pode falar
-								const channels = await guild.channels.fetch();
-								const firstChannel = channels.find(
-									(c) =>
-										c.isTextBased() &&
-										c
-											.permissionsFor(bot.discordClient.user)
-											.has(PermissionsBitField.Flags.SendMessages)
-								);
-								if (firstChannel) targetId = firstChannel.id;
+							const discordTxtPath = path.join(this.database.databasePath, "textos", "discord.txt");
+							const discordTxtContent = await fs.readFile(discordTxtPath, "utf8");
+							if (discordTxtContent && discordTxtContent.trim() !== "") {
+								botInfoMessage += `\n\n${discordTxtContent.trim()}`;
 							}
 						} catch (e) {
-							this.logger.error("Erro ao definir canal de boas-vindas no Discord:", e);
+							// Ignora se arquivo não existir
 						}
-					}
 
-					if (!joinSilencioso && botInfoMessage && bot.sendJoinInfo !== false) {
-						bot.sendMessage(targetId, botInfoMessage).catch((error) => {
-							this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
-						});
-					} else if (joinSilencioso || bot.sendJoinInfo === false) {
-						this.logger.info(
-							`[groupJoin] 🔇 Join silencioso ou sendJoinInfo desativado - mensagem de boas-vindas suprimida para ${groupId} (${group.name})`
-						);
+						const guild = await bot.discordClient.guilds.fetch(data.group.id);
+						const systemChannel = guild.systemChannelId;
+						if (systemChannel) {
+							targetId = systemChannel;
+						} else {
+							// Busca o primeiro canal de texto onde o bot pode falar
+							const channels = await guild.channels.fetch();
+							const firstChannel = channels.find(
+								(c) =>
+									c.isTextBased() &&
+									c
+										.permissionsFor(bot.discordClient.user)
+										.has(PermissionsBitField.Flags.SendMessages)
+							);
+							if (firstChannel) targetId = firstChannel.id;
+						}
+					} catch (e) {
+						this.logger.error("Erro ao definir canal de boas-vindas no Discord:", e);
 					}
+				}
+
+				if (!joinSilencioso && botInfoMessage && bot.sendJoinInfo !== false) {
+					bot.sendMessage(targetId, botInfoMessage).catch((error) => {
+						this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
+					});
+				} else if (joinSilencioso || bot.sendJoinInfo === false) {
+					this.logger.info(
+						`[groupJoin] 🔇 Join silencioso ou sendJoinInfo desativado - mensagem de boas-vindas suprimida para ${groupId} (${group.name})`
+					);
 				}
 			} else {
 				// Caso 2: Outra pessoa entrou no grupo
