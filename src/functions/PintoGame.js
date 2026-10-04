@@ -674,7 +674,40 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém o ranking semanal do PintoGame para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklyPintoStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        MAX(erect) as erect,
+			        MAX(score) as score
+			 FROM pinto_history
+			 WHERE timestamp >= ?
+			 GROUP BY user_id
+			 ORDER BY score DESC, erect DESC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => ({
+			user_id: r.user_id,
+			user_name: r.user_name || "Jogador",
+			erect: Number(r.erect) || 0,
+			score: Number(r.score) || 0
+		}));
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais do PintoGame:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	getWeeklyPintoStats
 };

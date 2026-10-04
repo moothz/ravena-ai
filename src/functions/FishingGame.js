@@ -3253,6 +3253,44 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém o ranking semanal de pesca para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklyFishingStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT i.user_id,
+			        COALESCE(u.name, 'Pescador') as user_name,
+			        COUNT(*) as total_catches,
+			        SUM(i.weight) as total_weight
+			 FROM fishing_inventory i
+			 LEFT JOIN fishing_users u ON i.user_id = u.user_id
+			 WHERE i.timestamp >= ?
+			 GROUP BY i.user_id
+			 ORDER BY (SUM(i.weight) + (COUNT(*) * 5)) DESC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => {
+			const catches = Number(r.total_catches) || 0;
+			const weight = Number(r.total_weight) || 0;
+			return {
+				user_id: r.user_id,
+				user_name: r.user_name || "Pescador",
+				total_catches: catches,
+				total_weight: weight,
+				score: Number((weight + catches * 5).toFixed(2))
+			};
+		});
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais de pesca:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
@@ -3260,5 +3298,6 @@ module.exports = {
 	addBaits,
 	addBuff,
 	UPGRADES,
-	generateRareFishImage
+	generateRareFishImage,
+	getWeeklyFishingStats
 };

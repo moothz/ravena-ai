@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS anagram_scores (
   last_updated INTEGER,
   PRIMARY KEY (group_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS anagram_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT,
+  user_id TEXT,
+  user_name TEXT,
+  points INTEGER,
+  timestamp INTEGER
+);
 `
 );
 
@@ -200,6 +208,15 @@ async function updateUserStats(groupId, userId, userName, updates) {
 
 		// Concatena os valores para o INSERT com os valores para o UPDATE
 		await database.dbRun(dbName, sql, [...insertValues, ...values]);
+
+		if (updates.points && updates.points > 0) {
+			await database.dbRun(
+				dbName,
+				`INSERT INTO anagram_history (group_id, user_id, user_name, points, timestamp)
+				 VALUES (?, ?, ?, ?, ?)`,
+				[groupId, userId, userName, updates.points, timestamp]
+			);
+		}
 	} catch (error) {
 		logger.error("Erro ao atualizar estatísticas do usuário:", error);
 	}
@@ -835,7 +852,38 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém o ranking semanal do Anagrama para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklyAnagramStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        SUM(points) as points
+			 FROM anagram_history
+			 WHERE timestamp >= ?
+			 GROUP BY user_id
+			 ORDER BY points DESC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => ({
+			user_id: r.user_id,
+			user_name: r.user_name || "Jogador",
+			points: Number(r.points) || 0
+		}));
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais do Anagrama:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	getWeeklyAnagramStats
 };

@@ -346,7 +346,7 @@ function handleApiError(err, chatId, defaultMsg) {
 	}
 
 	const customMsgs = {
-		LOCK_EXPIRED: "⌛ A janela de 120 segundos para casar expirou!",
+		LOCK_EXPIRED: "⌛ A janela de 300 segundos para casar expirou!",
 		CHARACTER_ALREADY_CLAIMED: "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
@@ -454,7 +454,7 @@ function makeRollHandler(genderFilter) {
 			text += "\n";
 
 			if (available) {
-				// Salva o claim temporário no grupo por 120 segundos
+				// Salva o claim temporário no grupo por 300 segundos
 				pendingClaims.set(groupId, {
 					characterId: character.id,
 					characterName: character.name,
@@ -467,7 +467,7 @@ function makeRollHandler(genderFilter) {
 					}
 				}, CLAIM_WINDOW_MS);
 
-				text += `💍 *LIVRE!* Digite \`!mu-casar\` ou \`!mu-casar ${character.id}\` em até 120s para casar!`;
+				text += `💍 *LIVRE!* Digite \`!mu-casar\` ou \`!mu-casar ${character.id}\` em até 300s para casar!`;
 			} else if (isOwner) {
 				const keys = keyProgress?.currentKeys ?? 1;
 				text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
@@ -617,6 +617,19 @@ async function casarWaifu(bot, message, args) {
 
 		pendingClaims.delete(groupId);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
+
+		// Notifica canal de avisos em caso de personagem Épico ou Lendário
+		if (
+			character &&
+			(character.rarity === "EPIC" ||
+				character.rarity === "LEGENDARY" ||
+				character.baseRarity === "EPIC" ||
+				character.baseRarity === "LEGENDARY")
+		) {
+			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
+				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
+			});
+		}
 
 		let text = `💍 *Parabéns!* Você se casou com *${character.name}*! 🎉\n`;
 		text += `🔑 Chaves: *${keys}/10*\n`;
@@ -1544,7 +1557,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• *Sistema de Rolls:* Cada jogador possui até 10 rolls no banco (recarrega 1 roll a cada 5 minutos até o limite — doadores ganham +1 roll máximo a cada R$ 10 doados!).\n\n`;
 
 	text += `💍 *2. Casamento (Claim)*\n`;
-	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *120 segundos (2 minutos)*.\n`;
+	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *300 segundos (5 minutos)*.\n`;
 	text += `• O primeiro jogador a enviar \`!mu-casar\` (ou \`!mu-c\`) se casa com a waifu/husbando!\n`;
 	text += `• O personagem passa a pertencer ao seu Harém global (em todos os grupos do bot).\n`;
 	text += `• *Cooldown de casamento:* 3 horas.\n\n`;
@@ -1579,7 +1592,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-chances\` (aliases: \`!mu-taxas\`, \`!mu-prob\`) — Consulta as taxas de drop e probabilidade da sua wishlist.\n\n`;
 
 	text += `💍 *Casamento e Harém:*\n`;
-	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 120s.\n`;
+	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos.\n`;
 	text += `• \`!mu-harem [página]\` (aliases: \`!mu-h\`, \`!mu-colecao\`) — Lista todas as waifus/husbandos que você possui.\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Define seu personagem favorito em destaque.\n`;
@@ -1623,7 +1636,7 @@ const commands = [
 		description: "Sorteia um personagem aleatório (waifus e husbandos)",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1632,7 +1645,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1641,7 +1654,7 @@ const commands = [
 		description: "Alias para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1650,7 +1663,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollAny
 	}),
@@ -1661,7 +1674,7 @@ const commands = [
 		description: "Sorteia apenas personagens masculinos (husbandos)",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1670,7 +1683,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1679,7 +1692,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollMale
 	}),
@@ -1690,7 +1703,7 @@ const commands = [
 		description: "Sorteia apenas personagens femininos (waifus)",
 		category: "mudae",
 		group: "muwaifu-rollf",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
 	}),
@@ -1699,7 +1712,7 @@ const commands = [
 		description: "Alias de !mu-rollf",
 		category: "mudae",
 		group: "muwaifu-rollf",
-		cooldown: 5,
+		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		method: rollFemale
 	}),
@@ -1707,7 +1720,7 @@ const commands = [
 	// ── CASAR ───────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-casar",
-		description: "Casa com o personagem sorteado recentemente (janela 120s)",
+		description: "Casa com o personagem sorteado recentemente (janela 300s)",
 		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
@@ -2346,7 +2359,7 @@ const commands = [
 const helper = {
 	about: "Jogo de sorteio de waifus/husbandos (estilo Mudae) integrado com a API Waifuletes",
 	implementation:
-		"Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 120s, harém global, chaves, soulmates e economia de Zinthos (💜).",
+		"Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 300s, harém global, chaves, soulmates e economia de Zinthos (💜).",
 	tags: "waifu,mudae,munae,jogo,anime,harem,zinthos,kakera,roleta,casamento",
 	cmds: [
 		{
@@ -2363,7 +2376,7 @@ const helper = {
 		},
 		{
 			cmd: "!mu-casar",
-			desc: "Casa com o personagem recém-sorteado dentro da janela de 120 segundos",
+			desc: "Casa com o personagem recém-sorteado dentro da janela de 300 segundos",
 			usage: ["!mu-casar", "!mu-c", "!mu-casar rem-re-zero"],
 			category: "mudae"
 		},
@@ -2418,6 +2431,150 @@ const helper = {
 	]
 };
 
+/**
+ * Envia notificação festiva de casamento para personagens épicos ou lendários no canal de avisos
+ * @param {Object} bot
+ * @param {Object} character
+ * @param {string} userName
+ * @param {string} [customDateStr]
+ * @param {string} [customChatId]
+ * @returns {Promise<boolean>}
+ */
+async function notifySpecialMarriage(
+	bot,
+	character,
+	userName,
+	customDateStr = null,
+	customChatId = null
+) {
+	try {
+		if (!character) return false;
+		const rarity = character.rarity || character.baseRarity || "COMMON";
+		if (rarity !== "EPIC" && rarity !== "LEGENDARY") return false;
+
+		const targetChats = [];
+		if (customChatId) {
+			targetChats.push(customChatId);
+		} else if (bot) {
+			if (bot.grupoAnuncios) targetChats.push(bot.grupoAnuncios);
+			if (bot.grupoAvisos) targetChats.push(bot.grupoAvisos);
+			if (targetChats.length === 0 && bot.grupoLogs) {
+				targetChats.push(bot.grupoLogs);
+			}
+			if (targetChats.length === 0) {
+				if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
+					targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
+				}
+				if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+					targetChats.push(process.env.GRUPO_AVISOS.trim());
+				}
+			}
+		} else {
+			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
+				targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
+			}
+			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+				targetChats.push(process.env.GRUPO_AVISOS.trim());
+			}
+		}
+
+		if (targetChats.length === 0) {
+			logger.warn(
+				"[notifySpecialMarriage] Nenhum canal/grupo configurado (GRUPO_ANUNCIOS / GRUPO_AVISOS). Envio ignorado."
+			);
+			return false;
+		}
+
+		const dateStr =
+			customDateStr ||
+			new Date().toLocaleDateString("pt-BR", {
+				timeZone: "America/Sao_Paulo"
+			});
+
+		let caption = "";
+		if (rarity === "LEGENDARY") {
+			caption += `👑 ✨ 👑 *CASAMENTO LENDÁRIO EXTRAORDINÁRIO!* 👑 ✨ 👑\n\n`;
+			caption += `💍 ══════════════════════════ 💍\n`;
+			caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
+			caption += `💍 ══════════════════════════ 💍\n\n`;
+			caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
+			caption += `⭐ 🌟 *${character.name}* 🌟 ⭐\n`;
+			caption += `👑 *Raridade:* LENDÁRIO ✨\n`;
+			if (character.series) {
+				caption += `📺 *Universo:* ${character.series}\n`;
+			}
+			caption += `📅 *Data da Cerimônia:* ${dateStr}\n\n`;
+			caption += `✨ ══════════════════════════ ✨\n`;
+			caption += `🎉 *Que este casal lendário reine supremo com felicidades infinitas, companheirismo inabalável e vitórias épicas por toda a eternidade!* 🥂🍾✨`;
+		} else {
+			caption += `💖 *FELIZES PARA SEMPRE!* 💍\n\n`;
+			caption += `✨ O jogador *${userName}* uniu seus laços matrimoniais com a personagem épica:\n\n`;
+			caption += `🟣 *${character.name}* 🟣\n`;
+			caption += `🏷️ *Raridade:* ÉPICO\n`;
+			if (character.series) {
+				caption += `📺 *Série:* ${character.series}\n`;
+			}
+			caption += `📅 *Data do Casamento:* ${dateStr}\n\n`;
+			caption += `🎉 *Desejamos ao casal uma vida repleta de felicidades, batalhas vencidas e companheirismo eterno!* 🥂✨`;
+		}
+
+		const imageBase64 = await downloadImageAsBase64(character.imageUrl);
+		let sentAny = false;
+
+		for (const targetChat of targetChats) {
+			try {
+				let retMsg;
+				if (imageBase64) {
+					retMsg = new ReturnMessage({
+						chatId: targetChat,
+						content: {
+							mimetype: "image/jpeg",
+							data: imageBase64,
+							filename: `${character.id || "waifu"}.jpg`,
+							isMessageMedia: true
+						},
+						options: {
+							caption
+						}
+					});
+				} else {
+					retMsg = new ReturnMessage({
+						chatId: targetChat,
+						content: caption
+					});
+				}
+
+				if (bot && typeof bot.sendReturnMessages === "function") {
+					await bot.sendReturnMessages(retMsg);
+					sentAny = true;
+				} else if (bot && typeof bot.sendMessage === "function") {
+					if (imageBase64) {
+						const media = await bot.createMedia(
+							Buffer.from(imageBase64, "base64"),
+							"image/jpeg",
+							`${character.id || "waifu"}.jpg`
+						);
+						await bot.sendMessage(targetChat, media, { caption });
+					} else {
+						await bot.sendMessage(targetChat, caption);
+					}
+					sentAny = true;
+				}
+			} catch (errSend) {
+				logger.error(
+					`[notifySpecialMarriage] Erro ao enviar notificação para ${targetChat}:`,
+					errSend
+				);
+			}
+		}
+
+		return sentAny;
+	} catch (err) {
+		logger.error("Erro ao notificar casamento especial:", err);
+		return false;
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
@@ -2445,5 +2602,7 @@ module.exports = {
 	verCooldowns,
 	pendingClaims,
 	recordRollMessage,
-	getRollByMessageId
+	getRollByMessageId,
+	notifySpecialMarriage,
+	downloadImageAsBase64
 };

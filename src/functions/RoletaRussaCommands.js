@@ -803,8 +803,44 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém os dados da semana do Roleta Russa para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklyRoletaStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        SUM(CASE WHEN action = 'safe' THEN 1 ELSE 0 END) as survivals,
+			        SUM(CASE WHEN action = 'death' THEN 1 ELSE 0 END) as deaths,
+			        COUNT(*) as total_tries
+			 FROM roleta_history
+			 WHERE timestamp >= ?
+			 GROUP BY user_id
+			 HAVING survivals > 0 OR deaths > 0
+			 ORDER BY survivals DESC, total_tries ASC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => ({
+			user_id: r.user_id,
+			user_name: r.user_name || "Jogador",
+			survivals: Number(r.survivals) || 0,
+			deaths: Number(r.deaths) || 0,
+			isAlive: (Number(r.deaths) || 0) === 0
+		}));
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais de Roleta Russa:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
-	isUserSilenced
+	isUserSilenced,
+	getWeeklyRoletaStats
 };

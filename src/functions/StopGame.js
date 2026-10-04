@@ -1,14 +1,40 @@
-﻿// src/functions/StopGame.js
+// src/functions/StopGame.js
 const path = require("path");
 const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
-//const Database = require('../utils/Database');
+const Database = require("../utils/Database");
 const LLMService = require("../services/LLMService");
 
 const logger = new Logger("stop-game");
-//const database = Database.getInstance();
+const database = Database.getInstance();
 const llmService = LLMService.getInstance();
+const dbName = "stop_game";
+
+database.getSQLiteDb(
+	dbName,
+	`
+    CREATE TABLE IF NOT EXISTS stop_scores (
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        user_name TEXT,
+        points INTEGER DEFAULT 0,
+        wins INTEGER DEFAULT 0,
+        last_updated INTEGER,
+        PRIMARY KEY (group_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stop_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id TEXT,
+        user_id TEXT,
+        user_name TEXT,
+        points INTEGER,
+        is_win INTEGER DEFAULT 0,
+        timestamp INTEGER
+    );
+`
+);
 
 // Constantes do jogo
 const GAME_DURATION = 1.5 * 60 * 1000; // 2 minutos em milissegundos
@@ -478,6 +504,33 @@ async function endGame(bot, groupId) {
 				const [winnerId, winner] = sortedPlayers[0];
 				options = { mentions: [winnerId] };
 
+				const now = Date.now();
+				for (const [uId, res] of sortedPlayers) {
+					const isWin = uId === winnerId ? 1 : 0;
+					const pScore = Number(res.score) || 0;
+					try {
+						await database.dbRun(
+							dbName,
+							`INSERT INTO stop_scores (group_id, user_id, user_name, points, wins, last_updated)
+							 VALUES (?, ?, ?, ?, ?, ?)
+							 ON CONFLICT(group_id, user_id) DO UPDATE SET
+							   points = points + excluded.points,
+							   wins = wins + excluded.wins,
+							   user_name = excluded.user_name,
+							   last_updated = excluded.last_updated`,
+							[groupId, uId, res.userName || "Jogador", pScore, isWin, now]
+						);
+						await database.dbRun(
+							dbName,
+							`INSERT INTO stop_history (group_id, user_id, user_name, points, is_win, timestamp)
+							 VALUES (?, ?, ?, ?, ?, ?)`,
+							[groupId, uId, res.userName || "Jogador", pScore, isWin, now]
+						);
+					} catch (eDb) {
+						logger.error("Erro ao salvar pontuação de Stop/Adedonha no DB:", eDb);
+					}
+				}
+
 				resultsMessage += `\n🏆 *Vencedor:* @${winnerId.split("@")[0]}\n\n`;
 				resultsMessage += "*Respostas enviadas:*\n";
 
@@ -567,7 +620,40 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém o ranking semanal de Stop/Adedonha para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklyStopStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        SUM(points) as points,
+			        SUM(is_win) as wins
+			 FROM stop_history
+			 WHERE timestamp >= ?
+			 GROUP BY user_id
+			 ORDER BY points DESC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => ({
+			user_id: r.user_id,
+			user_name: r.user_name || "Jogador",
+			points: Number(r.points) || 0,
+			wins: Number(r.wins) || 0
+		}));
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais de Stop/Adedonha:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	getWeeklyStopStats
 };

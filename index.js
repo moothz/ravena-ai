@@ -267,6 +267,14 @@ async function main() {
 			llmDailyReportService.start();
 		}
 
+		// Inicializa serviço de resumo semanal dos jogos (Domingo 22:00 BRT)
+		const WeeklyGameDigestService = require("./src/services/WeeklyGameDigestService");
+		const weeklyDigestService = WeeklyGameDigestService.getInstance();
+		botInstances.forEach((b) => weeklyDigestService.registerBot(b));
+		if (!disableActivity) {
+			weeklyDigestService.start();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,

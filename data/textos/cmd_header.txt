@@ -1,7 +1,6 @@
 _Veja melhor a lista em:_
 🔗 https://ravena.moothz.win/cmd
 
-- 🔥 *!afk <motivo>*: Marca no grupo que está AFK
-- 🔥 *!waifus:* MUDAE pirata da ravena!
-- 🔥 *!canal-seguir*: Faz com que a ravena siga canais do whatsapp e capture as mensagens, podendo ler elas depois ou programar pra ela encaminhar no seu grupo! Também possibilita encaminhar notificações de stream para os canais
-- *!figa-tags*: Possibilita buscar figurinhas de alguns tipos (gato, cachorro, memes...). Em testes.
+- 🔥 *!g-promover / !g-rebaixar*: Promote/demote membros a admin do grupo (máx 10 ao mesmo tempo)
+- *!waifus:* MUDAE! Reagir com 💍 liberado
+- *!afk <motivo>*: Marca no grupo que está AFK

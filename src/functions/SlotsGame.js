@@ -39,6 +39,16 @@ database.getSQLiteDb(
         total_wins INTEGER DEFAULT 0,
         PRIMARY KEY (group_id, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS slots_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id TEXT,
+        user_id TEXT,
+        user_name TEXT,
+        is_win INTEGER,
+        coins_spent INTEGER DEFAULT 1,
+        timestamp INTEGER
+    );
 `
 );
 
@@ -272,6 +282,17 @@ async function slotsCommand(bot, message, args, group) {
 
 	if (message.group) {
 		await recordGroupStats(message.group, userId, userName, isWin);
+	}
+
+	try {
+		await database.dbRun(
+			dbName,
+			`INSERT INTO slots_history (group_id, user_id, user_name, is_win, coins_spent, timestamp)
+			 VALUES (?, ?, ?, ?, 1, ?)`,
+			[message.group || null, userId, userName, isWin ? 1 : 0, Date.now()]
+		);
+	} catch (errHist) {
+		logger.error("Erro ao gravar histórico do slots:", errHist);
 	}
 
 	let resultMessage = `🎰 *CAÇA-COISAS* 🎰\n`;
@@ -551,8 +572,43 @@ const helper = {
 	]
 };
 
+/**
+ * Obtém os dados da semana do Slots para o resumo semanal
+ * @param {number} sinceMs
+ * @returns {Promise<Array<Object>>}
+ */
+async function getWeeklySlotsStats(sinceMs) {
+	try {
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) as wins,
+			        COUNT(*) as plays,
+			        SUM(coins_spent) as coins_spent
+			 FROM slots_history
+			 WHERE timestamp >= ?
+			 GROUP BY user_id
+			 ORDER BY wins DESC, plays ASC
+			 LIMIT 10`,
+			[sinceMs]
+		);
+		return (rows || []).map((r) => ({
+			user_id: r.user_id,
+			user_name: r.user_name || "Jogador",
+			wins: Number(r.wins) || 0,
+			plays: Number(r.plays) || 0,
+			coins_spent: Number(r.coins_spent) || 0
+		}));
+	} catch (error) {
+		logger.error("Erro ao buscar estatísticas semanais de Slots:", error);
+		return [];
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
-	addCoins
+	addCoins,
+	getWeeklySlotsStats
 };

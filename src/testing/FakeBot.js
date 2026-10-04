@@ -40,12 +40,12 @@ class FakeBot {
 		// IDs de grupos de notificação — null = desabilitado
 		this.grupoLogs = options.grupoLogs ?? null;
 		this.dossieGroups = options.dossieGroups ?? options.grupoLogs ?? null;
-		this.grupoAvisos = null;
-		this.grupoEstabilidade = null;
-		this.grupoInvites = null;
-		this.grupoAnuncios = null;
-		this.grupoInteracao = null;
-		this.linkGrupao = null;
+		this.grupoAvisos = options.grupoAvisos ?? options.grupoLogs ?? null;
+		this.grupoEstabilidade = options.grupoEstabilidade ?? null;
+		this.grupoInvites = options.grupoInvites ?? null;
+		this.grupoAnuncios = options.grupoAnuncios ?? null;
+		this.grupoInteracao = options.grupoInteracao ?? null;
+		this.linkGrupao = options.linkGrupao ?? null;
 		this.linkAvisos = null;
 
 		// DB compartilhado com o sistema real (leitura), testMode bloqueia escritas
