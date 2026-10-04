@@ -1364,6 +1364,20 @@ class WhatsAppBotGo {
 					}
 				}
 
+				if (options.waifuCharacterId && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const WaifuCommands = require("./functions/WaifuCommands");
+						if (typeof WaifuCommands.recordRollMessage === "function") {
+							WaifuCommands.recordRollMessage(sentMsgId, options.waifuCharacterId, message.chatId);
+						}
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar waifu roll message: ${regErr.message}`
+						);
+					}
+				}
+
 				if (result && result.id?._serialized) {
 					// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
 					/*

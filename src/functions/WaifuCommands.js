@@ -35,6 +35,52 @@ const CLAIM_WINDOW_MS = 300 * 1000;
 // Map<groupId, { characterId: string, characterName: string, expiresAt: number }>
 const pendingClaims = new Map();
 
+// Cache em memória de mensagens de roll ativas (por ID de mensagem enviado)
+// Map<messageId, { characterId: string, groupId: string, expiresAt: number }>
+const rollClaimsByMsgId = new Map();
+
+/**
+ * Registra o ID de uma mensagem enviada de roll associando-o ao personagem sorteado
+ * @param {string} messageId
+ * @param {string} characterId
+ * @param {string} groupId
+ * @param {number} [expiresAt]
+ */
+function recordRollMessage(messageId, characterId, groupId, expiresAt) {
+	if (!messageId || !characterId) return;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+	const claimData = {
+		characterId,
+		groupId,
+		expiresAt: expiresAt || Date.now() + CLAIM_WINDOW_MS
+	};
+	rollClaimsByMsgId.set(strId, claimData);
+	rollClaimsByMsgId.set(stanzaId, claimData);
+}
+
+/**
+ * Busca dados do roll por ID da mensagem (se não estiver expirado)
+ * @param {string} messageId
+ * @returns {{ characterId: string, groupId: string, expiresAt: number } | null}
+ */
+function getRollByMessageId(messageId) {
+	if (!messageId) return null;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	const claimData = rollClaimsByMsgId.get(strId) || rollClaimsByMsgId.get(stanzaId);
+	if (claimData) {
+		if (Date.now() > claimData.expiresAt) {
+			rollClaimsByMsgId.delete(strId);
+			rollClaimsByMsgId.delete(stanzaId);
+			return null;
+		}
+		return claimData;
+	}
+	return null;
+}
+
 // Mapeamentos visuais de Raridade
 const RARITY_EMOJI = {
 	COMMON: "⚪",
@@ -456,12 +502,21 @@ function makeRollHandler(genderFilter) {
 						isMessageMedia: true
 					},
 					options: {
-						caption: text
+						caption: text,
+						waifuCharacterId: character.id,
+						waifuGroupId: groupId
 					}
 				});
 			}
 
-			return new ReturnMessage({ chatId, content: text });
+			return new ReturnMessage({
+				chatId,
+				content: text,
+				options: {
+					waifuCharacterId: character.id,
+					waifuGroupId: groupId
+				}
+			});
 		} catch (err) {
 			return handleApiError(
 				err,
@@ -485,7 +540,59 @@ async function casarWaifu(bot, message, args) {
 	const userId = getUserId(message);
 	const name = getUserName(message);
 
-	let characterId = args[0];
+	let characterId = null;
+
+	// 1. Se informou um ID/slug de personagem diretamente como argumento
+	if (args && args[0] && /^[a-zA-Z0-9_-]+$/.test(args[0])) {
+		characterId = args[0].trim();
+	}
+
+	// 2. Se a chamada foi disparada por uma reação (originReaction na mensagem de roll)
+	if (!characterId && message.originReaction) {
+		const targetMsgId =
+			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
+		const rollData = getRollByMessageId(targetMsgId);
+		if (rollData) {
+			characterId = rollData.characterId;
+		} else {
+			const text =
+				message.caption ||
+				(typeof message.content === "string" ? message.content : "") ||
+				message.body ||
+				"";
+			const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
+			if (match) {
+				characterId = match[1];
+			}
+		}
+	}
+
+	// 3. Se a chamada citou uma mensagem (quotedMessage)
+	if (!characterId) {
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		}
+		if (quotedMsg) {
+			const quotedId = quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id;
+			const rollData = getRollByMessageId(quotedId);
+			if (rollData) {
+				characterId = rollData.characterId;
+			} else {
+				const text =
+					quotedMsg.caption ||
+					(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+					quotedMsg.body ||
+					"";
+				const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
+				if (match) {
+					characterId = match[1];
+				}
+			}
+		}
+	}
+
+	// 4. Fallback: busca na janela de claim mais recente do grupo
 	if (!characterId) {
 		const pending = pendingClaims.get(groupId);
 		if (!pending || Date.now() > pending.expiresAt) {
@@ -1603,7 +1710,7 @@ const commands = [
 		description: "Casa com o personagem sorteado recentemente (janela 120s)",
 		category: "mudae",
 		group: "muwaifu-casar",
-		reactions: { before: "💍", after: "💍", error: "❌" },
+		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
 	}),
 	new Command({
@@ -1611,7 +1718,7 @@ const commands = [
 		description: "Alias de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
-		reactions: { before: "💍", after: "💍", error: "❌" },
+		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
 	}),
 	new Command({
@@ -1619,7 +1726,7 @@ const commands = [
 		description: "Alias curto de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
-		reactions: { before: "💍", after: "💍", error: "❌" },
+		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
 	}),
 	new Command({
@@ -1627,7 +1734,7 @@ const commands = [
 		description: "Alias em inglês de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
-		reactions: { before: "💍", after: "💍", error: "❌" },
+		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
 		method: casarWaifu
 	}),
 
@@ -2336,5 +2443,7 @@ module.exports = {
 	buscarPersonagens,
 	detalhesPersonagem,
 	verCooldowns,
-	pendingClaims
+	pendingClaims,
+	recordRollMessage,
+	getRollByMessageId
 };
