@@ -800,7 +800,7 @@ class CommandHandler {
 
 			// Verifica se o grupo está pausado e se o comando NÃO é g-pausar
 			// No privado não existe !pausar
-			if (group && group.paused && (command !== "g-pausar") & !isManagingFromPrivate) {
+			if (group && group.paused && command !== "g-pausar" && !isManagingFromPrivate) {
 				this.logger.info(`Ignorando comando de gerenciamento em grupo pausado: ${command}`);
 				return null;
 			}

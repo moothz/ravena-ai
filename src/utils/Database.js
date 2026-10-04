@@ -378,6 +378,18 @@ class Database {
 		return this.coreRepo.getGroups();
 	}
 	async getGroup(groupId) {
+		try {
+			const EventHandler = require("../EventHandler");
+			if (
+				EventHandler.instance &&
+				EventHandler.instance.groups &&
+				EventHandler.instance.groups[groupId]
+			) {
+				return EventHandler.instance.groups[groupId];
+			}
+		} catch {
+			// ignore sync error
+		}
 		return this.coreRepo.getGroup(groupId);
 	}
 	async getGroupByName(groupName) {
@@ -389,7 +401,22 @@ class Database {
 			return true;
 		}
 		this.triggerBackupStart();
-		return this.coreRepo.saveGroup(group);
+		const result = await this.coreRepo.saveGroup(group);
+		try {
+			const EventHandler = require("../EventHandler");
+			if (EventHandler.instance && group && group.id) {
+				if (typeof EventHandler.instance.updateGroupCache === "function") {
+					EventHandler.instance.updateGroupCache(group);
+				} else if (EventHandler.instance.groups) {
+					const Group = require("../models/Group");
+					EventHandler.instance.groups[group.id] =
+						group instanceof Group ? group : new Group(group);
+				}
+			}
+		} catch {
+			// ignore sync error
+		}
+		return result;
 	}
 
 	/**
@@ -398,7 +425,20 @@ class Database {
 	 */
 	updateGroupInteract(groupId, interact) {
 		if (this.testMode) return true;
-		return this.coreRepo.updateGroupInteract(groupId, interact);
+		const result = this.coreRepo.updateGroupInteract(groupId, interact);
+		try {
+			const EventHandler = require("../EventHandler");
+			if (
+				EventHandler.instance &&
+				EventHandler.instance.groups &&
+				EventHandler.instance.groups[groupId]
+			) {
+				EventHandler.instance.groups[groupId].interact = interact;
+			}
+		} catch {
+			// ignore sync error
+		}
+		return result;
 	}
 
 	// --- Custom Commands ---

@@ -88,6 +88,19 @@ class EventHandler extends EventEmitter {
 	}
 
 	/**
+	 * Atualiza ou adiciona um grupo no cache em memória
+	 * @param {Group|Object} group - Objeto do grupo
+	 */
+	updateGroupCache(group) {
+		if (!group || !group.id) return;
+		if (group instanceof Group) {
+			this.groups[group.id] = group;
+		} else {
+			this.groups[group.id] = new Group(group);
+		}
+	}
+
+	/**
 	 * Verifica se um chat/grupo é o grupo de dossiês do bot
 	 * @param {WhatsAppBot} bot - Instância do bot
 	 * @param {string} groupId - ID do grupo
