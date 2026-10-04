@@ -1636,7 +1636,7 @@ class EventHandler extends EventEmitter {
 
 		try {
 			// Obtém os dados completos do chat
-			const chat = await data.origin.getChat();
+			const chat = await data.origin?.getChat?.().catch(() => null);
 
 			//this.logger.info(`[processGroupJoin] Chat `, { chat });
 
@@ -1645,7 +1645,9 @@ class EventHandler extends EventEmitter {
 				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
 
 			// Verifica se há spammers para banir (62/63/380 ou padrão MI###) nos grupos monitorados
-			await this.checkAutoBanSpammers(bot, chat);
+			if (chat) {
+				await this.checkAutoBanSpammers(bot, chat);
+			}
 
 			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat, group))) {
 				const userId = data.user?.id;
@@ -1664,7 +1666,7 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 
-			if (chat.isCommunity) {
+			if (chat?.isCommunity) {
 				this.logger.debug(
 					`[processGroupJoin][viaChat] IGNORANDO evento de join em comunidade '${chat.name}' (${data.group?.id || chat.id})`,
 					{ chat }
@@ -1689,7 +1691,7 @@ class EventHandler extends EventEmitter {
 				group?.greetings && Object.keys(group.greetings).some((k) => group.greetings[k]);
 			const hasFarewells =
 				group?.farewells && Object.keys(group.farewells).some((k) => group.farewells[k]);
-			if (chat.isAnnounce && !hasGreetings && !hasFarewells) {
+			if (chat?.isAnnounce && !hasGreetings && !hasFarewells) {
 				this.logger.debug(
 					`[processGroupJoin][viaChat] IGNORANDO evento de join em Announce Channel '${chat.name}' (${data.group?.id || chat.id}) sem boas-vindas/despedida configuradas`,
 					{ chat }
@@ -1703,8 +1705,8 @@ class EventHandler extends EventEmitter {
 			);
 
 			// Popula titulo e descricao
-			group.titulo = chat.name || null;
-			group.descricao = chat.groupMetadata?.desc || null;
+			group.titulo = chat?.name || null;
+			group.descricao = chat?.groupMetadata?.desc || null;
 
 			//this.logger.debug(`Informações do grupo: ${JSON.stringify(group)}`);
 
@@ -1784,7 +1786,7 @@ class EventHandler extends EventEmitter {
 				let foundInviter = null;
 
 				// Obtém todos os membros do grupo para verificação
-				const members = (chat.participants || [])
+				const members = (chat?.participants || [])
 					.filter((p) => p && p.id)
 					.map((p) => p.id._serialized);
 				const stringifiedData = JSON.stringify(data);
@@ -1894,9 +1896,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						try {
 							// Extrai informações do grupo para o LLM
 							const groupInfo = {
-								name: chat.name,
-								description: chat.groupMetadata?.desc ?? "",
-								memberCount: chat.participants?.length ?? 0
+								name: chat?.name ?? data.group?.name ?? "",
+								description: chat?.groupMetadata?.desc ?? "",
+								memberCount: chat?.participants?.length ?? 0
 							};
 
 							const groupWelcomeSchema = {
@@ -3741,7 +3743,9 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	async checkAutoBanSpammers(bot, chat) {
+		if (!chat || !chat.id) return [];
 		const chatId = chat.id?._serialized || chat.id;
+		if (!chatId) return [];
 		//this.logger.debug(`[checkAutoBanSpammers][${chatId}]`, { fixedGroups });
 		const group = this.groups[chatId] || (await this.database?.getGroup(chatId).catch(() => null));
 		if (!this.isSpamMonitoredGroup(chatId, group)) return [];
