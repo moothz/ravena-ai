@@ -401,7 +401,10 @@ function makeRollHandler(genderFilter) {
 
 				if (eventWishMult !== 1.0) {
 					const baseWish = rollBonuses.wishlistMultiplier || 1.0;
-					rollBonuses.wishlistMultiplier = Number((baseWish * eventWishMult).toFixed(3));
+					rollBonuses.wishlistMultiplier = Math.min(
+						20.0,
+						Number((baseWish * eventWishMult).toFixed(3))
+					);
 				}
 			}
 

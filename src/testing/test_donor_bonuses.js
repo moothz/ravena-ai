@@ -94,6 +94,12 @@ async function runTests() {
 	assert.strictEqual(b100.waifu.rarityMultipliers.EPIC, 4.5, "R$100: EPIC 4.5x");
 	assert.strictEqual(b100.waifu.rarityMultipliers.LEGENDARY, 5.5, "R$100: LEGENDARY 5.5x");
 	assert.strictEqual(b100.waifu.wishlistMultiplier, 8.0, "R$100: Wishlist 8.0x (+700%)");
+	const b300 = DonorBonusService.calculateBonuses(300);
+	assert.strictEqual(
+		b300.waifu.wishlistMultiplier,
+		20.0,
+		"R$300: Wishlist capada em 20.0x (+1900%)"
+	);
 
 	// Cálculo da probabilidade ponderada de lendário
 	const legWeight = 5 * b100.waifu.rarityMultipliers.LEGENDARY; // 27.5

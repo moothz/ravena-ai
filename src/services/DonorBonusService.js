@@ -70,8 +70,8 @@ function calculateBonuses(totalAmount) {
 
 	let wishlistMultiplier = null;
 	if (totalAmount >= 50) {
-		// Base de 4.0x (+300%) + 8% por real acima de 50 -> aos R$100: 8.0x (+700%)
-		wishlistMultiplier = Number((4.0 + (totalAmount - 50) * 0.08).toFixed(3));
+		// Base de 4.0x (+300%) + 8% por real acima de 50 -> aos R$100: 8.0x (+700%) -> teto de 20.0x
+		wishlistMultiplier = Math.min(20.0, Number((4.0 + (totalAmount - 50) * 0.08).toFixed(3)));
 	}
 
 	// Pinto Game (+1% de tamanho por R$1)
