@@ -2385,7 +2385,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							);
 						}
 
-						// Auto-bloqueio se removido em menos de 24 horas e quem removeu não é doador
+						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
 						// Aplica-se apenas às ravenas normais (não processar para vip, comunitárias e privadas)
 						let blockLogsText = "";
 						const isNormalBot = !bot.vip && !bot.comunitario && !bot.privado;
@@ -2396,11 +2396,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							const durationMs =
 								currentPeriod?.duration ??
 								(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
-							const isLessThan24h =
+							const isLessThan7Days =
 								durationMs !== null
-									? durationMs < 24 * 60 * 60 * 1000
+									? durationMs < 7 * 24 * 60 * 60 * 1000
 									: group.date
-										? Date.now() - group.date < 24 * 60 * 60 * 1000
+										? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
 										: false;
 
 							const removerId = data.responsavel?.id || null;
@@ -2414,7 +2414,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								? this.adminUtils.isSuperAdmin(removerId)
 								: false;
 
-							if (isLessThan24h && cleanRemoverPhone && !isRemovedBySelf && !isRemoverSuperAdmin) {
+							if (
+								isLessThan7Days &&
+								cleanRemoverPhone &&
+								!isRemovedBySelf &&
+								!isRemoverSuperAdmin
+							) {
 								let isRemoverDonator = false;
 								try {
 									const donations = await this.database.getDonations();
@@ -2438,7 +2443,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 								if (!isRemoverDonator) {
 									this.logger.info(
-										`[processGroupLeave] Bot normal '${bot.id}' removido em <24h (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+										`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
 									);
 
 									// 1. Busca código de convite e autor do convite
@@ -2511,7 +2516,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 									}
 
 									if (blockLogParts.length > 0) {
-										blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 24h & não doador):*\n${blockLogParts.join("\n\n")}`;
+										blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
 									}
 								}
 							}

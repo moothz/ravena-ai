@@ -1693,11 +1693,14 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
 
-					// Se não foi aceito automaticamente, envia comando para aceitar e comando para bloquear (apenas se não houver bot no grupo)
+					// Envia comando para aceitar se não foi aceito automaticamente (apenas se não houver bot no grupo)
 					if (!autoAccepted && otherBotsInGroup.length === 0) {
 						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
 						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
+					}
 
+					// Envia comando para bloquear convites (apenas se não houver bot no grupo)
+					if (otherBotsInGroup.length === 0) {
 						const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
 						await this.bot.sendMessage(this.bot.grupoInvites, blockCommand);
 					}
