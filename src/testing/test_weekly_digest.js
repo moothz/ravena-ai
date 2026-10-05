@@ -93,8 +93,9 @@ async function runTests() {
 	console.log(digestText);
 
 	assert.ok(digestText, "Digest text must not be null");
+	assert.ok(!digestText.includes("Período"), "Must not include Período line");
 	assert.ok(digestText.includes("SLOTS"), "Must include SLOTS section");
-	assert.ok(digestText.includes("FISHING GAME"), "Must include FISHING GAME section");
+	assert.ok(digestText.includes("PESCARIA"), "Must include PESCARIA section");
 	assert.ok(digestText.includes("ROLETA RUSSA"), "Must include ROLETA RUSSA section");
 	assert.ok(digestText.includes("ANAGRAMA"), "Must include ANAGRAMA section");
 	assert.ok(digestText.includes("ADEDONHA"), "Must include ADEDONHA section");
@@ -116,9 +117,60 @@ async function runTests() {
 
 	assert.ok(!modularDigest.includes("SLOTS"), "Slots section must be omitted when empty");
 	assert.ok(!modularDigest.includes("ADEDONHA"), "Adedonha section must be omitted when empty");
-	assert.ok(modularDigest.includes("FISHING GAME"), "Fishing section must remain");
+	assert.ok(modularDigest.includes("PESCARIA"), "Pescaria section must remain");
 
 	console.log("✓ Modular omission test passed");
+
+	// 3. Test sendDigest bot selection and target restrictions
+	const FakeBot = require("./FakeBot");
+	const telegramBot = new FakeBot({ id: "ravena-telegram", grupoLogs: "telegram_logs" });
+	telegramBot.useTelegram = true;
+	const discordBot = new FakeBot({ id: "ravena-discord", grupoLogs: "discord_logs" });
+	discordBot.useDiscord = true;
+	const yukiBot = new FakeBot({ id: "yuki", grupoLogs: "yuki_logs@g.us" });
+	yukiBot.notificarDonate = false;
+	const ravenaVipBot = new FakeBot({
+		id: "ravenavip",
+		grupoAnuncios: "target_anuncios@g.us",
+		grupoAvisos: "target_avisos@g.us"
+	});
+	ravenaVipBot.notificarDonate = true;
+
+	digestService.registeredBots.clear();
+	digestService.registerBot(telegramBot);
+	digestService.registerBot(discordBot);
+	digestService.registerBot(yukiBot);
+	digestService.registerBot(ravenaVipBot);
+
+	const sendRes = await digestService.sendDigest();
+	assert.ok(sendRes, "sendDigest should return true");
+	assert.strictEqual(
+		telegramBot.capturedMessages.length,
+		0,
+		"Telegram bot must receive 0 messages"
+	);
+	assert.strictEqual(discordBot.capturedMessages.length, 0, "Discord bot must receive 0 messages");
+	assert.strictEqual(yukiBot.capturedMessages.length, 0, "Yuki bot must receive 0 messages");
+	assert.strictEqual(
+		ravenaVipBot.capturedMessages.length,
+		2,
+		"ravenavip must send exactly 2 messages (anuncios and avisos)"
+	);
+
+	const sentChats = ravenaVipBot.capturedMessages.map((m) => m.chatId);
+	assert.ok(
+		sentChats.includes("target_anuncios@g.us") ||
+			(process.env.GRUPO_ANUNCIOS && sentChats.includes(process.env.GRUPO_ANUNCIOS.trim())),
+		"Must send to anuncios"
+	);
+	assert.ok(
+		sentChats.includes("target_avisos@g.us") ||
+			(process.env.GRUPO_AVISOS && sentChats.includes(process.env.GRUPO_AVISOS.trim())),
+		"Must send to avisos"
+	);
+	assert.ok(!sentChats.includes("yuki_logs@g.us"), "Must never send to yuki_logs");
+
+	console.log("✓ Bot selection and target isolation test passed");
 	console.log("--- ALL TESTS PASSED SUCCESSFULLY! ---");
 	process.exit(0);
 }

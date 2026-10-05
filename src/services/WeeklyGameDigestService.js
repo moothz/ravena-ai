@@ -49,14 +49,6 @@ class WeeklyGameDigestService {
 		const now = new Date();
 		const startOfWeek = sinceMs || now.getTime() - 7 * 24 * 60 * 60 * 1000;
 
-		const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
-			timeZone: this.timeZone,
-			day: "2-digit",
-			month: "2-digit"
-		});
-		const endDateStr = dateFormatter.format(now);
-		const startDateStr = dateFormatter.format(new Date(startOfWeek));
-
 		const [slotsStats, fishingStats, roletaStats, anagramStats, stopStats, pintoStats] =
 			await Promise.all([
 				SlotsGame.getWeeklySlotsStats(startOfWeek),
@@ -70,7 +62,17 @@ class WeeklyGameDigestService {
 		const medals = ["🥇", "🥈", "🥉"];
 		const sections = [];
 
-		// 1. SlotsGame
+		// 1. Pescaria (FishingGame)
+		if (fishingStats && fishingStats.length > 0) {
+			let sec = `🎣 *PESCARIA - TOP 10 PESCADORES*\n_Critério: Score Combinado (Peso + Peixes x5)_\n`;
+			fishingStats.forEach((p, idx) => {
+				const medal = medals[idx] || `${idx + 1}º`;
+				sec += `${medal} *${p.user_name}* — 🎖️ ${p.score.toLocaleString("pt-BR")} pts (${p.total_catches} peixes | ${p.total_weight.toFixed(2)} kg)\n`;
+			});
+			sections.push(sec.trim());
+		}
+
+		// 2. Slots
 		if (slotsStats && slotsStats.length > 0) {
 			let sec = `🎰 *SLOTS - REIS DO CAÇA-COISAS*\n_Ordenado por Vitórias (menos jogadas = melhor taxa)_\n`;
 			slotsStats.forEach((p, idx) => {
@@ -80,17 +82,7 @@ class WeeklyGameDigestService {
 			sections.push(sec.trim());
 		}
 
-		// 2. FishingGame
-		if (fishingStats && fishingStats.length > 0) {
-			let sec = `🎣 *FISHING GAME - TOP 10 PESCADORES*\n_Critério: Score Combinado (Peso + Peixes x5)_\n`;
-			fishingStats.forEach((p, idx) => {
-				const medal = medals[idx] || `${idx + 1}º`;
-				sec += `${medal} *${p.user_name}* — 🎖️ ${p.score.toLocaleString("pt-BR")} pts (${p.total_catches} peixes | ${p.total_weight.toFixed(2)} kg)\n`;
-			});
-			sections.push(sec.trim());
-		}
-
-		// 3. RoletaRussa
+		// 3. Roleta
 		if (roletaStats && roletaStats.length > 0) {
 			let sec = `🎲 *ROLETA RUSSA - MAIORES SOBREVIVENTES*\n_Ordenado por Sobrevivências no Gatilho_\n`;
 			roletaStats.forEach((p, idx) => {
@@ -101,27 +93,7 @@ class WeeklyGameDigestService {
 			sections.push(sec.trim());
 		}
 
-		// 4. Anagrama
-		if (anagramStats && anagramStats.length > 0) {
-			let sec = `🔤 *ANAGRAMA - MESTRES DAS PALAVRAS*\n`;
-			anagramStats.forEach((p, idx) => {
-				const medal = medals[idx] || `${idx + 1}º`;
-				sec += `${medal} *${p.user_name}* — ${p.points} pontos\n`;
-			});
-			sections.push(sec.trim());
-		}
-
-		// 5. Adedonha (StopGame)
-		if (stopStats && stopStats.length > 0) {
-			let sec = `✏️ *ADEDONHA - REIS DO STOP*\n`;
-			stopStats.forEach((p, idx) => {
-				const medal = medals[idx] || `${idx + 1}º`;
-				sec += `${medal} *${p.user_name}* — ${p.points} pontos (${p.wins} vitórias)\n`;
-			});
-			sections.push(sec.trim());
-		}
-
-		// 6. PintoGame
+		// 4. Pinto
 		if (pintoStats && pintoStats.length > 0) {
 			let sec = `🍆 *PINTO GAME - MAIORES DA SEMANA*\n`;
 			pintoStats.forEach((p, idx) => {
@@ -131,12 +103,32 @@ class WeeklyGameDigestService {
 			sections.push(sec.trim());
 		}
 
+		// 5. Anagrama
+		if (anagramStats && anagramStats.length > 0) {
+			let sec = `🔤 *ANAGRAMA - MESTRES DAS PALAVRAS*\n`;
+			anagramStats.forEach((p, idx) => {
+				const medal = medals[idx] || `${idx + 1}º`;
+				sec += `${medal} *${p.user_name}* — ${p.points} pontos\n`;
+			});
+			sections.push(sec.trim());
+		}
+
+		// 6. Adedonha (StopGame)
+		if (stopStats && stopStats.length > 0) {
+			let sec = `✏️ *ADEDONHA - REIS DO STOP*\n`;
+			stopStats.forEach((p, idx) => {
+				const medal = medals[idx] || `${idx + 1}º`;
+				const winText = p.wins > 0 ? ` (${p.wins} vitórias)` : "";
+				sec += `${medal} *${p.user_name}* — ${p.points} pontos${winText}\n`;
+			});
+			sections.push(sec.trim());
+		}
+
 		if (sections.length === 0) {
 			return null;
 		}
 
-		let header = `🏆 *RESUMO DA SEMANA DOS JOGOS DA RAVENA* 🏆\n`;
-		header += `📅 _Período: ${startDateStr} a ${endDateStr} às 22:00_\n\n`;
+		const header = `🏆 *RESUMO DA SEMANA DOS JOGOS DA RAVENA* 🏆\n\n`;
 
 		const footer = `\n✨ *Parabéns a todos os campeões da semana! Novo ciclo iniciado!* 🚀`;
 
@@ -163,50 +155,74 @@ class WeeklyGameDigestService {
 				return false;
 			}
 
+			// Localiza estritamente o bot principal do WhatsApp (notificarDonate: true, ex: ravenavip)
+			// NUNCA seleciona bots do Telegram ou Discord
+			const targetBot =
+				bots.find(
+					(b) =>
+						!b.useTelegram && !b.useDiscord && b.notificarDonate && (b.isConnected || b.testMode)
+				) ||
+				bots.find(
+					(b) =>
+						!b.useTelegram && !b.useDiscord && b.id === "ravenavip" && (b.isConnected || b.testMode)
+				) ||
+				bots.find((b) => !b.useTelegram && !b.useDiscord && (b.isConnected || b.testMode));
+
+			if (!targetBot) {
+				this.logger.warn(
+					"[sendDigest] Nenhum bot WhatsApp habilitado (ravenavip / notificarDonate) conectado para envio."
+				);
+				return false;
+			}
+
+			// Destinos: APENAS GRUPO_ANUNCIOS e GRUPO_AVISOS do .env (ou configurados no bot)
+			// NUNCA envia para grupoLogs ou outros grupos!
+			const targets = [];
+			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
+				targets.push(process.env.GRUPO_ANUNCIOS.trim());
+			} else if (targetBot.grupoAnuncios) {
+				targets.push(targetBot.grupoAnuncios);
+			}
+
+			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+				targets.push(process.env.GRUPO_AVISOS.trim());
+			} else if (targetBot.grupoAvisos) {
+				targets.push(targetBot.grupoAvisos);
+			}
+
+			if (targets.length === 0) {
+				this.logger.warn(
+					"[sendDigest] Nenhum destino configurado (GRUPO_ANUNCIOS / GRUPO_AVISOS). Envio omitido."
+				);
+				return false;
+			}
+
 			let sentCount = 0;
 			const processedTargets = new Set();
 
-			for (const bot of bots) {
-				if (!bot.isConnected) continue;
-				const candidateTargets = [];
-				if (bot.grupoAnuncios) candidateTargets.push(bot.grupoAnuncios);
-				if (bot.grupoAvisos) candidateTargets.push(bot.grupoAvisos);
-				if (candidateTargets.length === 0 && bot.grupoLogs) {
-					candidateTargets.push(bot.grupoLogs);
-				}
-				if (candidateTargets.length === 0) {
-					if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
-						candidateTargets.push(process.env.GRUPO_ANUNCIOS.trim());
-					}
-					if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
-						candidateTargets.push(process.env.GRUPO_AVISOS.trim());
-					}
-				}
-
-				for (const targetChat of candidateTargets) {
-					if (!targetChat || processedTargets.has(targetChat)) continue;
-					processedTargets.add(targetChat);
-					try {
-						if (typeof bot.sendReturnMessages === "function") {
-							await bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId: targetChat,
-									content: digestText
-								})
-							);
-						} else if (typeof bot.sendMessage === "function") {
-							await bot.sendMessage(targetChat, digestText);
-						}
-						sentCount++;
-						this.logger.info(
-							`[sendDigest] Resumo semanal enviado para ${targetChat} via bot ${bot.id}`
+			for (const targetChat of targets) {
+				if (!targetChat || processedTargets.has(targetChat)) continue;
+				processedTargets.add(targetChat);
+				try {
+					if (typeof targetBot.sendReturnMessages === "function") {
+						await targetBot.sendReturnMessages(
+							new ReturnMessage({
+								chatId: targetChat,
+								content: digestText
+							})
 						);
-					} catch (errBot) {
-						this.logger.error(
-							`[sendDigest] Erro ao enviar para ${targetChat} via bot ${bot.id}:`,
-							errBot
-						);
+					} else if (typeof targetBot.sendMessage === "function") {
+						await targetBot.sendMessage(targetChat, digestText);
 					}
+					sentCount++;
+					this.logger.info(
+						`[sendDigest] Resumo semanal enviado para ${targetChat} via bot ${targetBot.id}`
+					);
+				} catch (errBot) {
+					this.logger.error(
+						`[sendDigest] Erro ao enviar para ${targetChat} via bot ${targetBot.id}:`,
+						errBot
+					);
 				}
 			}
 

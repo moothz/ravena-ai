@@ -589,17 +589,20 @@ async function getWeeklySlotsStats(sinceMs) {
 			 FROM slots_history
 			 WHERE timestamp >= ?
 			 GROUP BY user_id
+			 HAVING wins > 0
 			 ORDER BY wins DESC, plays ASC
 			 LIMIT 10`,
 			[sinceMs]
 		);
-		return (rows || []).map((r) => ({
-			user_id: r.user_id,
-			user_name: r.user_name || "Jogador",
-			wins: Number(r.wins) || 0,
-			plays: Number(r.plays) || 0,
-			coins_spent: Number(r.coins_spent) || 0
-		}));
+		return (rows || [])
+			.filter((r) => (Number(r.wins) || 0) > 0)
+			.map((r) => ({
+				user_id: r.user_id,
+				user_name: r.user_name || "Jogador",
+				wins: Number(r.wins) || 0,
+				plays: Number(r.plays) || 0,
+				coins_spent: Number(r.coins_spent) || 0
+			}));
 	} catch (error) {
 		logger.error("Erro ao buscar estatísticas semanais de Slots:", error);
 		return [];
