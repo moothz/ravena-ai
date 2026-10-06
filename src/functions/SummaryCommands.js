@@ -503,8 +503,8 @@ function filterUnderageFalsePositives(parsed) {
 		// Se não há nenhum indicador ou item de menores de 16 anos restante
 		if (remainingUnderageItems.length === 0 && remainingUnderageIndicators.length === 0) {
 			parsed.is_underage = false;
-			// Se a nota era exclusivamente alta por conta da falsa detecção de menores
-			if (parsed.problematic_score >= 8 && (parsed.classified_items || []).length === 0) {
+			// Se a nota era exclusivamente pela detecção de menores (ex: peso base)
+			if (parsed.problematic_score >= 4 && (parsed.classified_items || []).length === 0) {
 				parsed.problematic_score = 0;
 			}
 		}
@@ -594,7 +594,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 						problematic_score: {
 							type: "number",
 							description:
-								"Nota de 0 a 10 (10: ilegal, crimes, pedofilia, gore, extremismo; 8-9: grupo de crianças/adolescentes de até 16 anos [OBRIGATÓRIO atribuir no mínimo 8 para alertar a moderação no grupo de dossiês]; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores, divulgações; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos adultos de 17+ anos ou hobbies)"
+								"Nota de 0 a 10. Se for grupo de crianças/adolescentes de até 16 anos (is_underage = true), atribua PESO BASE 4, somando aos pontos de outros comportamentos identificados (ex: adolescentes neutro/jogos/escola = 4; adolescentes com brigas/xingamentos = 5 a 6; adolescentes com pornografia, nudes, drogas, crimes ou conteúdo ilegal = 8 a 10). Para grupos de adultos: 10: crimes/ilegal/gore/racismo; 6: pornografia/hentai em excesso; 4: encontros/flertes/sensual; 3: discussões/insultos; 0: bots/chat geral/jogos/tecnologia."
 						},
 						classified_items: {
 							type: "array",
@@ -642,7 +642,9 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
   * Menções a ensino fundamental ou anos iniciais do ensino médio (escola, série/ano como 7º/8º ano, lição de casa, provas escolares, uniforme de escola básica);
   * Dinâmicas ou assuntos infantis/juvenis exclusivos de menores de 16 anos.
 - 'underage_indicators': se is_underage for true (até 16 anos), liste os motivos (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas do 8º ano'). Se false ou se as idades forem 17+, deixe vazio [].
-- 'problematic_score': de 0 a 10. ATENÇÃO: se for grupo de crianças/adolescentes de até 16 anos (is_underage = true), atribua nota alta (no mínimo 8, ex: 8 a 9). Se forem adultos/maiores (17+ anos), avalie normalmente pelo teor da conversa sem pontuação de menores.
+- 'problematic_score': de 0 a 10.
+  * Grupos de crianças/adolescentes de até 16 anos (is_underage = true): atribua PESO BASE 4, somando a pontuação de outros comportamentos observados no chat (ex: chat adolescente normal, jogos, escola = nota 4; com discussões ou xingamentos = nota 5 a 6; com pornografia, nudes, drogas, aliciamento ou crimes = nota 8 a 10).
+  * Grupos de adultos/maiores (17+ anos): avalie normalmente na escala padrão sem o peso base de menores (0: neutro/jogos/bots, 3: discussões, 4: flertes/sensual, 6: pornografia, 10: crimes/ilegal).
 - 'classified_items': caso identifique falas problemáticas ou falas que comprovem menores de ATÉ 16 anos (ex: category: 'Crianças/Adolescentes', evidence: 'João: tenho 13 anos'), liste a categoria e a mensagem exata correspondente. NUNCA cite mensagens com idades de 17 anos ou mais (ex: 23 ou 24 anos) como evidência de crianças/adolescentes. Se não houver, deixe a lista vazia [].
 - Uso de bots é permitido e jamais deve ser flagrado como algo ruim
 - Anúncios, ofertas de troca de seguidores, divulgações de canais e conteúdo de NÃO são consinderados problemáticos
@@ -676,9 +678,9 @@ ${textToAnalyze}`;
 				// Filtra falsos positivos de menores de idade (ex: pessoas com 17 anos ou mais)
 				parsed = filterUnderageFalsePositives(parsed);
 
-				// Se is_underage for identificado (e confirmado até 16 anos), garante nota suficiente para envio ao grupo de dossiês (mínimo 8)
-				if (parsed.is_underage && parsed.problematic_score < 8) {
-					parsed.problematic_score = 8;
+				// Se is_underage for identificado (e confirmado até 16 anos), garante peso base 4 (mais a soma de outros pontos)
+				if (parsed.is_underage && parsed.problematic_score < 4) {
+					parsed.problematic_score = 4;
 				}
 
 				// Para evitar deletar mensagens que chegaram ENQUANTO a IA analisava,
@@ -700,8 +702,8 @@ ${textToAnalyze}`;
 					}
 				}
 
-				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7 ou for menores)
-				const isProblematic = parsed.problematic_score > 7 || parsed.is_underage ? 1 : 0;
+				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
+				const isProblematic = parsed.problematic_score > 7 ? 1 : 0;
 				const isUnderage = parsed.is_underage ? 1 : 0;
 				await database.dbRun(
 					DB_NAME,
@@ -740,12 +742,12 @@ ${textToAnalyze}`;
 					`[${chatId}] Novo dossiê inserido. Histórico limitado a 15. ${newPendingText.length} chars remanescentes.`
 				);
 
-				// Alerta SuperAdmin se a nota for alta (> 7) ou for menores, e tiver bot disponível
+				// Alerta SuperAdmin se a nota for alta (> 7) e tiver bot disponível
 				const targetGroup = bot
 					? bot.dossieGroups || bot.grupoLogs || process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS
 					: process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS;
 
-				if (bot && (parsed.problematic_score > 7 || parsed.is_underage) && targetGroup) {
+				if (bot && parsed.problematic_score > 7 && targetGroup) {
 					const groupData = await bot.database.getGroup(chatId);
 
 					// Conta a quantidade de reports problemáticos já gerados para este grupo
@@ -754,7 +756,7 @@ ${textToAnalyze}`;
 						const countRow = await database.dbGet(
 							DB_NAME,
 							`SELECT COUNT(*) as count FROM group_dossiers 
-							 WHERE group_id = ? AND (is_problematic = 1 OR is_underage = 1 OR problematic_score > 7 OR json_extract(dossier_json, '$.problematic_score') > 7 OR json_extract(dossier_json, '$.is_underage') = 1)`,
+							 WHERE group_id = ? AND (is_problematic = 1 OR problematic_score > 7 OR json_extract(dossier_json, '$.problematic_score') > 7)`,
 							[chatId]
 						);
 						if (countRow && typeof countRow.count === "number") {

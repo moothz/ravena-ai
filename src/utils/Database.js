@@ -617,7 +617,7 @@ class Database {
 			this.ensureSummariesDb();
 			return await this.dbAll(
 				"summaries",
-				"SELECT dossier_json, conversation_history, problematic_score, is_underage, created_at FROM group_dossiers WHERE group_id = ? ORDER BY created_at DESC LIMIT ?",
+				"SELECT dossier_json, conversation_history, problematic_score, is_problematic, is_underage, created_at FROM group_dossiers WHERE group_id = ? ORDER BY created_at DESC LIMIT ?",
 				[groupId, limit]
 			);
 		} catch (error) {
