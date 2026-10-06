@@ -581,6 +581,35 @@ class FakeBot {
 		this.demotedParticipants = [];
 		this.pinnedMessages = [];
 	}
+
+	async tryReconnect() {
+		return {
+			results: [{ action: "connect", status: "success" }],
+			status: { instanceDetails: { version: "1.0.0", tipo: "fake" }, extra: { ok: true } }
+		};
+	}
+
+	async recreateInstance() {
+		return [{ action: "recreate", status: "success" }];
+	}
+
+	async logout() {
+		this.isConnected = false;
+		return { status: "ok" };
+	}
+
+	async deleteInstance() {
+		return { status: "deleted" };
+	}
+
+	async getGoInstance(name) {
+		return {
+			id: "fake-instance-id",
+			name: name || this.id,
+			connected: Boolean(this.isConnected),
+			jid: `${this.phoneNumber}@s.whatsapp.net`
+		};
+	}
 }
 
 module.exports = FakeBot;

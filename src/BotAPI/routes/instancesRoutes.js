@@ -10,6 +10,7 @@ const { spawn } = require("child_process");
  * - GET  /restart/:botId             - Reinicia um bot específico
  * - GET  /logout/:botId              - Desconecta a sessão de um bot
  * - GET  /recreate/:botId            - Recria a instância na WhatsGoAPI
+ * - GET  /reconnect/:botId           - Tenta reconectar sessão existente da instância
  * - POST /passkey/respond/:botId     - Envia resposta de passkey
  * - POST /passkey/confirm/:botId     - Confirma pareamento de passkey
  * - GET  /api/bot-stats              - Estatísticas agregadas e detalhadas dos bots
@@ -138,6 +139,32 @@ function registerInstancesRoutes(api) {
 			res.json({ status: "ok", message: "Recreation process finished.", details: result });
 		} catch (e) {
 			api.logger.error(`[API] Error during recreate for bot '${botId}':`, e);
+			res.status(500).json({ status: "error", message: e.message, details: e.stack });
+		}
+	});
+
+	// Tentar reconectar instância (restaura configurações/JID e conecta)
+	app.get("/reconnect/:botId", api.authenticateBasic, api.strictLimiter, async (req, res) => {
+		const { botId } = req.params;
+		const bot = api.bots.find((b) => b.id === botId);
+		if (!bot) {
+			return res
+				.status(404)
+				.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
+		}
+		try {
+			api.logger.info(`[API] Executing tryReconnect for bot '${botId}'`);
+			if (typeof bot.tryReconnect === "function") {
+				const result = await bot.tryReconnect();
+				res.json({ status: "ok", message: "Tentativa de reconexão concluída.", details: result });
+			} else if (typeof bot._checkInstanceStatusAndConnect === "function") {
+				const result = await bot._checkInstanceStatusAndConnect(true, false);
+				res.json({ status: "ok", message: "Status verificado.", details: result });
+			} else {
+				res.json({ status: "error", message: "Bot não suporta reconexão automática." });
+			}
+		} catch (e) {
+			api.logger.error(`[API] Error during tryReconnect for bot '${botId}':`, e);
 			res.status(500).json({ status: "error", message: e.message, details: e.stack });
 		}
 	});
@@ -416,7 +443,33 @@ function registerInstancesRoutes(api) {
       --yellow: #f6c90e; --red: #ff4d4d; --blue: #4f8ef7; --orange: #f59e42;
     }
     body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 2rem 1rem; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 1.25rem; padding: 2rem; max-width: 520px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 1.25rem; padding: 2rem; max-width: 520px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .btn-refresh {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      font-size: 1.15rem;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text);
+      transition: all 0.2s ease;
+      line-height: 1;
+    }
+    .btn-refresh:hover {
+      background: var(--border);
+      transform: scale(1.05);
+    }
+    .btn-refresh.spinning {
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
     .bot-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
     .bot-icon { width: 48px; height: 48px; background: var(--green); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
     .bot-title h1 { font-size: 1.2rem; font-weight: 700; }
@@ -437,6 +490,20 @@ function registerInstancesRoutes(api) {
     #qr-img.refreshing { opacity: 0.4; }
     .pairing-section h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-align: center; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
     #pairing-code { font-family: 'Courier New', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: 0.1em; color: var(--green); text-align: center; padding: 1rem; background: rgba(37,211,102,0.08); border: 1px solid rgba(37,211,102,0.2); border-radius: 0.75rem; min-height: 4rem; display: flex; align-items: center; justify-content: center; }
+    .help-box {
+      background: rgba(79, 142, 247, 0.08);
+      border: 1px solid rgba(79, 142, 247, 0.2);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1rem;
+      margin: 1.25rem 0 0.5rem 0;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      text-align: left;
+    }
+    .help-box strong {
+      color: var(--text);
+    }
     #status-msg { text-align: center; font-size: 0.9rem; color: var(--text-muted); margin: 1rem 0; min-height: 1.5rem; }
     .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; margin-top: 1.5rem; }
     button { padding: 0.6rem 1.2rem; border: none; border-radius: 0.5rem; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
@@ -444,6 +511,8 @@ function registerInstancesRoutes(api) {
     .btn-primary:hover { background: var(--green-dark); color: #fff; }
     .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--border); }
+    .btn-warning { background: rgba(245,158,66,0.15); color: var(--orange); border: 1px solid rgba(245,158,66,0.3); }
+    .btn-warning:hover { background: var(--orange); color: #000; }
     .btn-danger { background: rgba(255,77,77,0.15); color: var(--red); border: 1px solid rgba(255,77,77,0.3); }
     .btn-danger:hover { background: var(--red); color: #fff; }
     .footer { margin-top: 1.5rem; text-align: center; font-size: 0.78rem; color: var(--text-muted); }
@@ -451,6 +520,7 @@ function registerInstancesRoutes(api) {
 </head>
 <body>
   <div class="card">
+    <button id="btn-refresh" class="btn-refresh" onclick="refreshPage()" title="Atualizar">🔄</button>
     <div class="bot-header">
       <div class="bot-icon">🤖</div>
       <div class="bot-title">
@@ -467,6 +537,10 @@ function registerInstancesRoutes(api) {
 						: '<span class="status-badge disconnected"><span class="dot"></span> Desconectado</span>'
 			}
     </div>
+    ${
+			isConnected
+				? ""
+				: `
     <div class="info-row">
       <span>ℹ️</span>
       <div>
@@ -483,12 +557,26 @@ function registerInstancesRoutes(api) {
         <h2>Código de Pareamento</h2>
         <div id="pairing-code">—</div>
       </div>
+    </div>`
+		}
+    <div class="help-box">
+      <div>&bull; <strong>Tentar Reconectar:</strong> Tente isto antes de recriar, principalmente quando o bot ficar muitas horas offline.</div>
     </div>
     <div id="status-msg"></div>
     <div class="btn-row">
-      <button class="btn-primary" onclick="forceConnect()">Conectar Novamente</button>
-      <button class="btn-secondary" onclick="checkStatus()">Atualizar Status</button>
+      ${
+				isConnected
+					? `
       <button class="btn-danger" onclick="logoutBot()">Desconectar</button>
+      <button class="btn-primary" onclick="tryReconnect()">Tentar Reconectar</button>
+      <button class="btn-warning" onclick="recreateBot()">Recriar</button>
+      `
+					: `
+      <button class="btn-primary" onclick="tryReconnect()">Tentar Reconectar</button>
+      <button class="btn-warning" onclick="recreateBot()">Recriar</button>
+      <button class="btn-danger" onclick="logoutBot()">Desconectar</button>
+      `
+			}
     </div>
   </div>
   <div class="footer">RavenaBot AI &bull; WhatsApp Connection Manager</div>
@@ -504,7 +592,7 @@ function registerInstancesRoutes(api) {
       const qri = document.getElementById('qr-img');
       const qrp = document.getElementById('qr-placeholder');
       const pc = document.getElementById('pairing-code');
-      if (d.qrCode) {
+      if (d.qrCode && qri) {
         qri.src = d.qrCode.startsWith('data:') ? d.qrCode : 'data:image/png;base64,' + d.qrCode;
         qri.style.display = 'inline-block';
         if (qrp) qrp.style.display = 'none';
@@ -529,36 +617,93 @@ function registerInstancesRoutes(api) {
       try {
         const r = await fetch('/qrcode-status/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
-        if (d.connected && !isConnected) { window.location.reload(); }
+        if ((d.connected && !isConnected) || (!d.connected && isConnected)) {
+          window.location.reload();
+        }
       } catch(e){}
+    }
+
+    async function refreshPage() {
+      const btn = document.getElementById('btn-refresh');
+      if (btn) btn.classList.add('spinning');
+      try {
+        await checkStatus();
+      } catch(e){}
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
     }
 
     async function forceConnect() {
       const msg = document.getElementById('status-msg');
-      msg.textContent = 'Iniciando conexão...';
+      if (msg) msg.textContent = 'Iniciando conexão...';
       try {
         const r = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
         if (d.extra && d.extra.connectData) { applyConnectData(d.extra.connectData); }
-        msg.textContent = 'Fluxo de conexão iniciado.';
-      } catch(e) { msg.textContent = 'Erro ao iniciar conexão: ' + e.message; }
+        if (msg) msg.textContent = 'Fluxo de conexão iniciado.';
+      } catch(e) { if (msg) msg.textContent = 'Erro ao iniciar conexão: ' + e.message; }
+    }
+
+    async function tryReconnect() {
+      const msg = document.getElementById('status-msg');
+      if (msg) msg.textContent = 'Tentando reconectar sessão existente...';
+      try {
+        const r = await fetch('/reconnect/' + botId + authQuery, { credentials: 'same-origin' });
+        const d = await r.json();
+        if (d.status === 'ok') {
+          if (msg) msg.textContent = 'Comando de reconexão enviado. Verificando status...';
+          setTimeout(async () => {
+            await checkStatus();
+            window.location.reload();
+          }, 3000);
+        } else {
+          if (msg) msg.textContent = 'Erro ao reconectar: ' + (d.message || 'Erro desconhecido');
+        }
+      } catch(e) {
+        if (msg) msg.textContent = 'Erro de rede: ' + e.message;
+      }
+    }
+
+    async function recreateBot() {
+      if (!confirm('Deseja realmente apagar e recriar esta instância? Esta ação apagará a instância atual e criará uma nova.')) return;
+      const msg = document.getElementById('status-msg');
+      if (msg) msg.textContent = 'Recriando instância na WhatsGoAPI...';
+      try {
+        const r = await fetch('/recreate/' + botId + authQuery, { credentials: 'same-origin' });
+        const d = await r.json();
+        if (d.status === 'ok') {
+          if (msg) msg.textContent = 'Instância recriada com sucesso! Atualizando página...';
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          if (msg) msg.textContent = 'Erro ao recriar: ' + (d.message || 'Erro desconhecido');
+        }
+      } catch(e) {
+        if (msg) msg.textContent = 'Erro de rede: ' + e.message;
+      }
     }
 
     async function logoutBot() {
       if (!confirm('Deseja realmente desconectar esta sessão?')) return;
       const msg = document.getElementById('status-msg');
-      msg.textContent = 'Desconectando...';
+      if (msg) msg.textContent = 'Desconectando...';
       try {
         const r = await fetch('/logout/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
         if (d.status === 'ok') { window.location.reload(); }
-        else { msg.textContent = 'Erro ao desconectar.'; }
-      } catch(e) { msg.textContent = 'Erro de rede: ' + e.message; }
+        else { if (msg) msg.textContent = 'Erro ao desconectar.'; }
+      } catch(e) { if (msg) msg.textContent = 'Erro de rede: ' + e.message; }
     }
 
     (function init() {
-      if (isConnected) { if (statusBox) statusBox.textContent = 'Bot conectado.'; return; }
-      if (!instanceExists) { if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI. Clique em "Conectar Novamente" para criar.'; return; }
+      if (isConnected) {
+        setInterval(checkStatus, 5000);
+        return;
+      }
+      if (!instanceExists) {
+        if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI. Clique em "Tentar Reconectar" ou "Recriar".';
+        return;
+      }
       startSSE();
       setInterval(checkStatus, 4000);
       forceConnect();

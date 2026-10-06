@@ -440,6 +440,99 @@ class WhatsAppBotGo {
 		return results;
 	}
 
+	async tryReconnect() {
+		this.logger.info(`[tryReconnect] Starting reconnect process for ${this.instanceName}`);
+		if (this._disconnectTimer) {
+			clearTimeout(this._disconnectTimer);
+			this._disconnectTimer = null;
+		}
+
+		const results = [];
+		let instance = await this.getGoInstance(this.instanceName);
+
+		// 1. Criar a instância via API WhatsGo se não existir
+		if (!instance) {
+			this.logger.info(
+				`[tryReconnect] Instância ${this.instanceName} não encontrada. Criando nova instância...`
+			);
+			try {
+				const createResult = await this.createInstance();
+				results.push({ action: "create", status: "success", result: createResult });
+				await sleep(2000);
+				instance = await this.getGoInstance(this.instanceName);
+			} catch (err) {
+				this.logger.error(`[tryReconnect] Falha ao criar instância:`, err);
+				results.push({ action: "create", status: "error", error: err.message });
+			}
+		}
+
+		// 2. Definir Advanced Settings e restaurar JID caso esteja ausente
+		if (instance) {
+			try {
+				const settingsResult = await this.instanceAdvSettings(true, true, false, false, true);
+				results.push({ action: "advSettings", status: "success", result: settingsResult });
+			} catch (err) {
+				this.logger.warn(`[tryReconnect] Falha ao definir advSettings:`, err);
+				results.push({ action: "advSettings", status: "error", error: err.message });
+			}
+
+			// Se a instância estiver sem JID e tivermos phoneNumber, recuperar do banco whatsmeow
+			if (!instance.jid && this.phoneNumber) {
+				try {
+					this.logger.info(
+						`[tryReconnect] Instância sem JID. Chamando forcereconnect com ${this.phoneNumber}...`
+					);
+					const forceResult = await this.apiClient.post(
+						`/instance/forcereconnect/${instance.id}`,
+						{ number: this.phoneNumber },
+						true
+					);
+					results.push({ action: "forceReconnectJid", status: "success", result: forceResult });
+				} catch (err) {
+					this.logger.warn(`[tryReconnect] Falha no forcereconnect:`, err);
+					results.push({ action: "forceReconnectJid", status: "error", error: err.message });
+				}
+			}
+		}
+
+		// 3. Chamar /instance/connect com webhookUrl e subscribe ALL
+		const webhookUrl = `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`;
+		try {
+			this.logger.info(
+				`[tryReconnect] Chamando /instance/connect para ${this.instanceName} com webhook ${webhookUrl}...`
+			);
+			const connectResult = await this.apiClient.post(
+				`/instance/connect`,
+				{
+					webhookUrl,
+					subscribe: [
+						"MESSAGE",
+						"SEND_MESSAGE",
+						"READ_RECEIPT",
+						"PRESENCE",
+						"CHAT_PRESENCE",
+						"CALL",
+						"CONNECTION",
+						"LABEL",
+						"CONTACT",
+						"GROUP",
+						"NEWSLETTER",
+						"QRCODE"
+					]
+				},
+				false
+			);
+			results.push({ action: "connect", status: "success", result: connectResult });
+		} catch (err) {
+			this.logger.error(`[tryReconnect] Erro ao conectar instância:`, err);
+			results.push({ action: "connect", status: "error", error: err.message });
+		}
+
+		await sleep(2000);
+		const status = await this._checkInstanceStatusAndConnect(true, false);
+		return { results, status };
+	}
+
 	async instanceAdvSettings(
 		alwaysOnline = true,
 		rejectCall = true,
