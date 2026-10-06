@@ -412,33 +412,103 @@ class RaffleMonitor {
 	}
 
 	/**
+	 * Encontra bots candidatos aptos a enviar mensagem no grupo, filtrando por conectividade
+	 * e participação no grupo (ignorando bots marcados em botNotInGroup / skipGroupInfo).
+	 * @param {string} groupId - JID do grupo
+	 * @param {string} [preferredBotId=null] - ID do bot preferencial
+	 * @param {Object} [groupObj=null] - Objeto do grupo salvo no banco
+	 * @returns {Array<Object>} Lista ordenada de instâncias de bots candidatas
+	 */
+	findBotsForGroup(groupId, preferredBotId = null, groupObj = null) {
+		const allBots = this.database.botInstances || [];
+		if (allBots.length === 0) {
+			if (this.defaultBot) return [this.defaultBot];
+			return [];
+		}
+
+		const isWhatsApp = groupId.includes("@g.us") || groupId.includes("@s.whatsapp.net");
+		const isTelegram = groupId.startsWith("-");
+		const isDiscord = !isWhatsApp && !isTelegram && groupId.length >= 17;
+
+		const excludedBotNames = new Set(
+			Array.isArray(groupObj?.botNotInGroup) ? groupObj.botNotInGroup : []
+		);
+
+		const candidates = [];
+
+		for (const bot of allBots) {
+			// Compatibilidade de plataforma
+			if (bot.useTelegram) {
+				if (isWhatsApp || isDiscord) continue;
+			} else if (bot.useDiscord) {
+				if (isWhatsApp || isTelegram) continue;
+			} else {
+				if (!isWhatsApp) continue;
+			}
+
+			// Deve estar conectado (ou se não tiver a propriedade, assume pronto)
+			if (bot.isConnected === false) continue;
+
+			// Verifica se o bot foi marcado no grupo como não participante
+			if (excludedBotNames.has(bot.id) || excludedBotNames.has(bot.name)) continue;
+
+			// Verifica o método do bot isParticipating / isInGroup
+			if (typeof bot.isParticipating === "function" && !bot.isParticipating(groupId)) {
+				continue;
+			}
+
+			// Verifica lista de skips em memória do bot
+			if (Array.isArray(bot.skipGroupInfo) && bot.skipGroupInfo.includes(groupId)) {
+				continue;
+			}
+
+			candidates.push(bot);
+		}
+
+		// Ordenação de prioridade: coloca o preferredBotId em primeiro caso esteja entre os candidatos
+		if (preferredBotId) {
+			candidates.sort((a, b) => {
+				const aPref = a.id === preferredBotId || a.name === preferredBotId;
+				const bPref = b.id === preferredBotId || b.name === preferredBotId;
+				if (aPref && !bPref) return -1;
+				if (!aPref && bPref) return 1;
+				return 0;
+			});
+		}
+
+		// Fallback para defaultBot ou qualquer bot conectado caso nenhum candidato específico passe no filtro estrito
+		if (candidates.length === 0) {
+			if (preferredBotId) {
+				const pref = allBots.find(
+					(b) => (b.id === preferredBotId || b.name === preferredBotId) && b.isConnected !== false
+				);
+				if (pref) candidates.push(pref);
+			}
+
+			if (candidates.length === 0 && this.defaultBot && this.defaultBot.isConnected !== false) {
+				candidates.push(this.defaultBot);
+			}
+
+			if (candidates.length === 0) {
+				const anyConnected = allBots.find((b) => b.isConnected !== false);
+				if (anyConnected) candidates.push(anyConnected);
+			}
+		}
+
+		return candidates;
+	}
+
+	/**
 	 * Localiza a melhor instância de bot disponível para enviar mensagem para o grupo.
+	 * Mantido para compatibilidade retroativa.
 	 * @param {string} groupId - JID do grupo
 	 * @param {string} [botId=null] - ID do bot preferencial
+	 * @param {Object} [groupObj=null] - Objeto do grupo
 	 * @returns {Object|null} Instância do bot
 	 */
-	resolveBotForGroup(groupId, botId = null) {
-		const allBots = this.database.botInstances || [];
-
-		// 1. Tenta achar pelo botId exato conectado
-		if (botId) {
-			const preferred = allBots.find((b) => (b.id === botId || b.name === botId) && b.isConnected);
-			if (preferred) return preferred;
-		}
-
-		// 2. Busca qualquer bot WhatsApp conectado
-		const isWhatsApp = groupId.includes("@g.us");
-		if (isWhatsApp) {
-			const waBot = allBots.find((b) => !b.useTelegram && !b.useDiscord && b.isConnected);
-			if (waBot) return waBot;
-		}
-
-		// 3. Fallback para defaultBot ou primeiro conectado
-		if (this.defaultBot && this.defaultBot.isConnected) {
-			return this.defaultBot;
-		}
-
-		return allBots.find((b) => b.isConnected) || this.defaultBot || allBots[0] || null;
+	resolveBotForGroup(groupId, botId = null, groupObj = null) {
+		const bots = this.findBotsForGroup(groupId, botId, groupObj);
+		return bots.length > 0 ? bots[0] : null;
 	}
 
 	/**
@@ -517,21 +587,55 @@ class RaffleMonitor {
 				// Obtém frase aleatória para a meta mais alta atingida
 				const phrase = this.getRandomPhrase(highestMilestone);
 
-				// Localiza o bot para enviar a mensagem
-				const bot = this.resolveBotForGroup(groupId, follow.bot_id);
-				if (!bot) {
+				// Localiza os bots candidatos que realmente participam do grupo
+				const candidateBots = this.findBotsForGroup(groupId, follow.bot_id, groupObj);
+				if (candidateBots.length === 0) {
 					this.logger.warn(
 						`[RaffleMonitor] Nenhum bot disponível para enviar notificação ao grupo ${groupId}.`
 					);
 					continue;
 				}
 
-				// Constrói e envia a mensagem de retorno para o grupo
-				const returnMsg = await buildRaffleMessage(bot, groupId, data, url, phrase);
-				if (returnMsg) {
-					await bot.sendReturnMessages(returnMsg, groupObj);
+				let deliverySuccess = false;
 
-					// Registra no banco de dados SOMENTE APÓS o envio bem sucedido no WhatsApp
+				for (const bot of candidateBots) {
+					try {
+						// Constrói a mensagem com o bot atual
+						const returnMsg = await buildRaffleMessage(bot, groupId, data, url, phrase);
+						if (!returnMsg) continue;
+
+						const results = await bot.sendReturnMessages(returnMsg, groupObj);
+
+						// Valida se o envio foi de fato bem-sucedido (não pulado nem com erro)
+						const wasSkippedOrErrored =
+							Array.isArray(results) &&
+							results.length > 0 &&
+							results.every((r) => r && (r.skipped || r.error || r.notInGroup));
+
+						if (wasSkippedOrErrored) {
+							this.logger.warn(
+								`[RaffleMonitor] Bot ${bot.id} não pôde entregar notificação no grupo ${groupId}. Tentando próximo bot...`
+							);
+							if (typeof bot.markNotInGroup === "function") {
+								await bot.markNotInGroup(groupId);
+							}
+							continue;
+						}
+
+						deliverySuccess = true;
+						this.logger.info(
+							`[RaffleMonitor] Notificação de ${highestMilestone}% enviada com sucesso para o grupo ${groupId} via ${bot.id}.`
+						);
+						break; // Mensagem entregue, sai do loop de bots
+					} catch (botErr) {
+						this.logger.warn(
+							`[RaffleMonitor] Falha ao enviar via bot ${bot.id} para ${groupId}: ${botErr.message ?? botErr}. Tentando próximo...`
+						);
+					}
+				}
+
+				// Registra no banco de dados SOMENTE se houve entrega real
+				if (deliverySuccess) {
 					const now = Date.now();
 					for (const m of unnotifiedReached) {
 						await this.database.dbRun(
@@ -541,9 +645,9 @@ class RaffleMonitor {
 							[groupId, url, m, now]
 						);
 					}
-
-					this.logger.info(
-						`[RaffleMonitor] Notificação de ${highestMilestone}% enviada com sucesso para o grupo ${groupId}.`
+				} else {
+					this.logger.error(
+						`[RaffleMonitor] Todos os bots falharam ao tentar entregar a notificação de ${highestMilestone}% no grupo ${groupId}. A meta será retentada no próximo ciclo.`
 					);
 				}
 			} catch (groupError) {

@@ -819,6 +819,10 @@ async function getWeeklyRoletaStats(sinceMs) {
 			        COUNT(*) as total_tries
 			 FROM roleta_history
 			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2')
+			   AND group_id != '123@g.us'
+			   AND group_id NOT LIKE 'test_%'
 			 GROUP BY user_id
 			 HAVING survivals > 0 OR deaths > 0
 			 ORDER BY survivals DESC, total_tries ASC

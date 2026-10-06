@@ -588,6 +588,10 @@ async function getWeeklySlotsStats(sinceMs) {
 			        SUM(coins_spent) as coins_spent
 			 FROM slots_history
 			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2')
+			   AND group_id != '123@g.us'
+			   AND group_id NOT LIKE 'test_%'
 			 GROUP BY user_id
 			 HAVING wins > 0
 			 ORDER BY wins DESC, plays ASC

@@ -635,6 +635,10 @@ async function getWeeklyStopStats(sinceMs) {
 			        SUM(is_win) as wins
 			 FROM stop_history
 			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2')
+			   AND group_id != '123@g.us'
+			   AND group_id NOT LIKE 'test_%'
 			 GROUP BY user_id
 			 ORDER BY points DESC
 			 LIMIT 10`,

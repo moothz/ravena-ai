@@ -1641,6 +1641,7 @@ const commands = [
 		group: "muwaifu-roll",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollAny
 	}),
 	new Command({
@@ -1650,6 +1651,7 @@ const commands = [
 		group: "muwaifu-roll",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollAny
 	}),
 	new Command({
@@ -1659,6 +1661,7 @@ const commands = [
 		group: "muwaifu-roll",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollAny
 	}),
 	new Command({
@@ -1668,6 +1671,7 @@ const commands = [
 		group: "muwaifu-roll",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollAny
 	}),
 
@@ -1679,6 +1683,7 @@ const commands = [
 		group: "muwaifu-rollm",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollMale
 	}),
 	new Command({
@@ -1688,6 +1693,7 @@ const commands = [
 		group: "muwaifu-rollm",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollMale
 	}),
 	new Command({
@@ -1697,6 +1703,7 @@ const commands = [
 		group: "muwaifu-rollm",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollMale
 	}),
 
@@ -1708,6 +1715,7 @@ const commands = [
 		group: "muwaifu-rollf",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollFemale
 	}),
 	new Command({
@@ -1717,6 +1725,7 @@ const commands = [
 		group: "muwaifu-rollf",
 		cooldown: 1,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
+		reply: true,
 		method: rollFemale
 	}),
 
@@ -1727,6 +1736,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
+		reply: true,
 		method: casarWaifu
 	}),
 	new Command({
@@ -1735,6 +1745,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
+		reply: true,
 		method: casarWaifu
 	}),
 	new Command({
@@ -1743,6 +1754,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
+		reply: true,
 		method: casarWaifu
 	}),
 	new Command({
@@ -1751,6 +1763,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-casar",
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
+		reply: true,
 		method: casarWaifu
 	}),
 
@@ -1762,6 +1775,7 @@ const commands = [
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
+		reply: true,
 		method: divorciarWaifu
 	}),
 	new Command({
@@ -1771,6 +1785,7 @@ const commands = [
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
+		reply: true,
 		method: divorciarWaifu
 	}),
 	new Command({
@@ -1780,6 +1795,7 @@ const commands = [
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
+		reply: true,
 		method: divorciarWaifu
 	}),
 	new Command({
@@ -1789,6 +1805,7 @@ const commands = [
 		group: "muwaifu-div",
 		needsArgs: true,
 		reactions: { before: "💔", after: "💔", error: "❌" },
+		reply: true,
 		method: divorciarWaifu
 	}),
 
@@ -1800,6 +1817,7 @@ const commands = [
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
+		reply: true,
 		method: likeWaifu
 	}),
 	new Command({
@@ -1809,6 +1827,7 @@ const commands = [
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
+		reply: true,
 		method: likeWaifu
 	}),
 	new Command({
@@ -1818,6 +1837,7 @@ const commands = [
 		group: "muwaifu-like",
 		needsArgs: true,
 		reactions: { before: "❤️", after: "❤️", error: "❌" },
+		reply: true,
 		method: likeWaifu
 	}),
 
@@ -1828,6 +1848,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 	new Command({
@@ -1836,6 +1857,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 	new Command({
@@ -1844,6 +1866,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 	new Command({
@@ -1852,6 +1875,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 	new Command({
@@ -1860,6 +1884,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 	new Command({
@@ -1868,6 +1893,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-daily",
 		reactions: { before: "💜", after: "💜", error: "❌" },
+		reply: true,
 		method: diariosKakera
 	}),
 
@@ -1878,6 +1904,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 	new Command({
@@ -1886,6 +1913,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 	new Command({
@@ -1894,6 +1922,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 	new Command({
@@ -1902,6 +1931,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 	new Command({
@@ -1910,6 +1940,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 	new Command({
@@ -1918,6 +1949,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-saldo",
 		reactions: { before: "💜", after: "✅", error: "❌" },
+		reply: true,
 		method: saldoKakera
 	}),
 
@@ -1928,6 +1960,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
+		reply: true,
 		method: verHarem
 	}),
 	new Command({
@@ -1936,6 +1969,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
+		reply: true,
 		method: verHarem
 	}),
 	new Command({
@@ -1944,6 +1978,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-harem",
 		reactions: { before: "👰", after: "✅", error: "❌" },
+		reply: true,
 		method: verHarem
 	}),
 
@@ -1954,6 +1989,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
+		reply: true,
 		method: verPerfil
 	}),
 	new Command({
@@ -1962,6 +1998,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
+		reply: true,
 		method: verPerfil
 	}),
 	new Command({
@@ -1970,6 +2007,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
+		reply: true,
 		method: verPerfil
 	}),
 	new Command({
@@ -1978,6 +2016,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-perfil",
 		reactions: { before: "🎮", after: "✅", error: "❌" },
+		reply: true,
 		method: verPerfil
 	}),
 
@@ -1988,6 +2027,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verWishlist
 	}),
 	new Command({
@@ -1996,6 +2036,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verWishlist
 	}),
 	new Command({
@@ -2004,6 +2045,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-wl",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verWishlist
 	}),
 
@@ -2015,6 +2057,7 @@ const commands = [
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
+		reply: true,
 		method: adicionarDesejo
 	}),
 	new Command({
@@ -2024,6 +2067,7 @@ const commands = [
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
+		reply: true,
 		method: adicionarDesejo
 	}),
 	new Command({
@@ -2033,6 +2077,7 @@ const commands = [
 		group: "muwaifu-wish",
 		needsArgs: true,
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
+		reply: true,
 		method: adicionarDesejo
 	}),
 
@@ -2044,6 +2089,7 @@ const commands = [
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
+		reply: true,
 		method: removerDesejo
 	}),
 	new Command({
@@ -2053,6 +2099,7 @@ const commands = [
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
+		reply: true,
 		method: removerDesejo
 	}),
 	new Command({
@@ -2062,6 +2109,7 @@ const commands = [
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
+		reply: true,
 		method: removerDesejo
 	}),
 	new Command({
@@ -2071,6 +2119,7 @@ const commands = [
 		group: "muwaifu-rmwish",
 		needsArgs: true,
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
+		reply: true,
 		method: removerDesejo
 	}),
 
@@ -2082,6 +2131,7 @@ const commands = [
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
+		reply: true,
 		method: definirFavorita
 	}),
 	new Command({
@@ -2091,6 +2141,7 @@ const commands = [
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
+		reply: true,
 		method: definirFavorita
 	}),
 	new Command({
@@ -2100,6 +2151,7 @@ const commands = [
 		group: "muwaifu-fav",
 		needsArgs: true,
 		reactions: { before: "⭐", after: "⭐", error: "❌" },
+		reply: true,
 		method: definirFavorita
 	}),
 
@@ -2110,6 +2162,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
+		reply: true,
 		method: verSoulmates
 	}),
 	new Command({
@@ -2118,6 +2171,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
+		reply: true,
 		method: verSoulmates
 	}),
 	new Command({
@@ -2126,6 +2180,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-sm",
 		reactions: { before: "💖", after: "✅", error: "❌" },
+		reply: true,
 		method: verSoulmates
 	}),
 
@@ -2136,6 +2191,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
 		method: verRanking
 	}),
 	new Command({
@@ -2144,6 +2200,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
 		method: verRanking
 	}),
 	new Command({
@@ -2152,6 +2209,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
 		method: verRanking
 	}),
 	new Command({
@@ -2160,6 +2218,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-rank",
 		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
 		method: verRanking
 	}),
 
@@ -2170,6 +2229,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verTopCharacters
 	}),
 	new Command({
@@ -2178,6 +2238,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verTopCharacters
 	}),
 	new Command({
@@ -2186,6 +2247,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-topchars",
 		reactions: { before: "🌟", after: "✅", error: "❌" },
+		reply: true,
 		method: verTopCharacters
 	}),
 
@@ -2197,6 +2259,7 @@ const commands = [
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: buscarPersonagens
 	}),
 	new Command({
@@ -2206,6 +2269,7 @@ const commands = [
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: buscarPersonagens
 	}),
 	new Command({
@@ -2215,6 +2279,7 @@ const commands = [
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: buscarPersonagens
 	}),
 	new Command({
@@ -2224,6 +2289,7 @@ const commands = [
 		group: "muwaifu-chars",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: buscarPersonagens
 	}),
 
@@ -2235,6 +2301,7 @@ const commands = [
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: detalhesPersonagem
 	}),
 	new Command({
@@ -2244,6 +2311,7 @@ const commands = [
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: detalhesPersonagem
 	}),
 	new Command({
@@ -2253,6 +2321,7 @@ const commands = [
 		group: "muwaifu-char",
 		needsArgs: true,
 		reactions: { before: "🔍", after: "✅", error: "❌" },
+		reply: true,
 		method: detalhesPersonagem
 	}),
 
@@ -2263,6 +2332,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
+		reply: true,
 		method: verCooldowns
 	}),
 	new Command({
@@ -2271,6 +2341,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
+		reply: true,
 		method: verCooldowns
 	}),
 	new Command({
@@ -2279,6 +2350,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-cd",
 		reactions: { before: "⏳", after: "✅", error: "❌" },
+		reply: true,
 		method: verCooldowns
 	}),
 
@@ -2289,6 +2361,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
+		reply: true,
 		method: ajudaWaifus
 	}),
 	new Command({
@@ -2297,6 +2370,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
+		reply: true,
 		method: ajudaWaifus
 	}),
 	new Command({
@@ -2305,6 +2379,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
+		reply: true,
 		method: ajudaWaifus
 	}),
 	new Command({
@@ -2313,6 +2388,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
+		reply: true,
 		method: ajudaWaifus
 	}),
 	new Command({
@@ -2321,6 +2397,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-help",
 		reactions: { before: "🎲", after: "📖", error: "❌" },
+		reply: true,
 		method: ajudaWaifus
 	}),
 
@@ -2331,6 +2408,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-chances",
 		reactions: { before: "🎲", after: "📊", error: "❌" },
+		reply: true,
 		method: verChances
 	}),
 	new Command({
@@ -2339,6 +2417,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-chances",
 		reactions: { before: "🎲", after: "📊", error: "❌" },
+		reply: true,
 		method: verChances
 	}),
 	new Command({
@@ -2347,6 +2426,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-chances",
 		reactions: { before: "🎲", after: "📊", error: "❌" },
+		reply: true,
 		method: verChances
 	}),
 	new Command({
@@ -2355,6 +2435,7 @@ const commands = [
 		category: "mudae",
 		group: "muwaifu-chances",
 		reactions: { before: "🎲", after: "📊", error: "❌" },
+		reply: true,
 		method: verChances
 	})
 ];

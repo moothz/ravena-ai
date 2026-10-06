@@ -214,7 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-save-prov').onclick = () => {
         const category = document.getElementById('edit-category').value;
-        const index = parseInt(document.getElementById('edit-index').value);
+        const index = parseInt(document.getElementById('edit-index').value, 10);
+        const isEdit = index !== -1;
         
         const provider = {
             name: document.getElementById('prov-name').value,

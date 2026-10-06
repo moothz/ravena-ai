@@ -3269,6 +3269,8 @@ async function getWeeklyFishingStats(sinceMs) {
 			 FROM fishing_inventory i
 			 LEFT JOIN fishing_users u ON i.user_id = u.user_id
 			 WHERE i.timestamp >= ?
+			   AND i.user_id NOT LIKE 'user_%'
+			   AND i.user_id NOT IN ('user1', 'user2', '5511999999999@s.whatsapp.net', 'test_abandonar_user')
 			 GROUP BY i.user_id
 			 ORDER BY (SUM(i.weight) + (COUNT(*) * 5)) DESC
 			 LIMIT 10`,

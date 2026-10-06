@@ -689,6 +689,14 @@ async function getWeeklyPintoStats(sinceMs) {
 			        MAX(score) as score
 			 FROM pinto_history
 			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2', '5511999999999@s.whatsapp.net')
+			   AND user_id NOT LIKE 'user%@s.whatsapp.net'
+			   AND group_id != '123@g.us'
+			   AND group_id NOT LIKE 'test_%'
+			   AND group_id != 'group1'
+			   AND group_id NOT LIKE 'grp%'
+			   AND group_id != 'SEU_GROUP_ID_AQUI@g.us'
 			 GROUP BY user_id
 			 ORDER BY score DESC, erect DESC
 			 LIMIT 10`,

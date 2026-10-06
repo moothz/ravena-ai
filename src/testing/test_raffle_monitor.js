@@ -321,7 +321,36 @@ async function runTests() {
 	// Restaura isAdmin
 	AdminUtils.getInstance().isAdmin = originalIsAdmin;
 
-	// 10. Encerramento limpo de todos os timers
+	// 10. Teste de seleção de bots participantes e fallback quando o bot não está no grupo
+	console.log("\n10. Testando seleção de bots com filtro botNotInGroup e fallback...");
+	const fakeBotInGroup = new FakeBot({ id: "bot-in-group" });
+	const fakeBotNotInGroup = new FakeBot({ id: "bot-not-in-group" });
+
+	// Grupo configurado onde bot-not-in-group está excluído
+	const groupFallback = "120363999999999999@g.us";
+	const groupFallbackObj = {
+		id: groupFallback,
+		name: "Grupo Fallback",
+		paused: false,
+		botNotInGroup: ["bot-not-in-group"]
+	};
+	await database.saveGroup(groupFallbackObj);
+
+	database.botInstances = [fakeBotNotInGroup, fakeBotInGroup];
+	const selectedBots = raffleMonitor.findBotsForGroup(
+		groupFallback,
+		"bot-not-in-group",
+		groupFallbackObj
+	);
+	assert.strictEqual(selectedBots.length, 1, "Deve retornar apenas 1 bot candidato participante");
+	assert.strictEqual(
+		selectedBots[0].id,
+		"bot-in-group",
+		"O bot selecionado deve ser bot-in-group, ignorando o excluído"
+	);
+	console.log("    ✓ Bot excluído do grupo foi ignorado e o bot participante selecionado.");
+
+	// 11. Encerramento limpo de todos os timers
 	raffleMonitor.stopAll();
 	assert.strictEqual(raffleMonitor.activeTimers.size, 0, "stopAll deve limpar todos os timers");
 

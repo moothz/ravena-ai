@@ -211,6 +211,8 @@ async function runTests() {
 		console.log("✓ Teste 5 passou: Janela de 1 minuto e expiração funcionam perfeitamente.");
 	} finally {
 		Date.now = realDateNow;
+		await database.dbRun("fishing", "DELETE FROM fishing_inventory WHERE user_id = ?", [testUser]);
+		await database.dbRun("fishing", "DELETE FROM fishing_users WHERE user_id = ?", [testUser]);
 	}
 
 	console.log("--- Todos os testes de !pesca-abandonar passaram com sucesso! ---");
