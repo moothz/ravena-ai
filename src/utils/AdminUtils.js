@@ -1,5 +1,6 @@
 const Database = require("./Database");
 const Logger = require("./Logger");
+const PhoneUtils = require("./PhoneUtils");
 
 /**
  * Classe utilitária para verificação de permissões administrativas
@@ -115,9 +116,14 @@ class AdminUtils {
 					if (botNumber && chatInstance && chatInstance.participants) {
 						const normalizedBotNumber = this._normalizeId(botNumber);
 						botInGroup = chatInstance.participants.some((p) =>
-							[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
-								(field) => field && this._normalizeId(field) === normalizedBotNumber
-							)
+							[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some((field) => {
+								if (!field) return false;
+								const cleanField = this._normalizeId(field);
+								return (
+									cleanField === normalizedBotNumber ||
+									PhoneUtils.isSamePhone(cleanField, normalizedBotNumber)
+								);
+							})
 						);
 
 						if (!botInGroup) {
@@ -214,7 +220,10 @@ class AdminUtils {
 		const normalizedUserId = this._normalizeId(userId);
 		const normalizedResponsavel = this._normalizeId(numeroResponsavel);
 
-		return normalizedUserId === normalizedResponsavel;
+		return (
+			normalizedUserId === normalizedResponsavel ||
+			PhoneUtils.isSamePhone(normalizedUserId, normalizedResponsavel)
+		);
 	}
 
 	/**

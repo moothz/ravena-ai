@@ -22,6 +22,7 @@ const AdminUtils = require("./utils/AdminUtils");
 const InviteSystem = require("./InviteSystem");
 const StreamSystem = require("./StreamSystem");
 const Database = require("./utils/Database");
+const PhoneUtils = require("./utils/PhoneUtils");
 const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
@@ -3347,8 +3348,12 @@ class WhatsAppBotGo {
 							if (p.LID)
 								this.cacheManager.putContactInCache({ id: { _serialized: p.JID }, lid: p.LID });
 							// Check if it's me to store my LID
-							if (p.JID && p.JID.includes(this.phoneNumber)) {
-								this.myLid = p.LID;
+							if (
+								this.phoneNumber &&
+								(PhoneUtils.matchesParticipant(p, this.phoneNumber) ||
+									(p.JID && p.JID.includes(this.phoneNumber)))
+							) {
+								this.myLid = p.LID || p.lid;
 							}
 						});
 					}
@@ -3725,14 +3730,33 @@ class WhatsAppBotGo {
 	}
 
 	getLidFromPn(PN, chat) {
+		if (!PN) return "";
 		const participants = chat?.Participants || chat?.participants || [];
 
-		const found = participants.find((p) => {
-			const number = p.PhoneNumber || p.phoneNumber || p.id?._serialized || "";
-			return number.startsWith(PN);
-		});
+		// 1. Tenta achar nos participantes do chat usando PhoneUtils
+		const found = participants.find((p) => PhoneUtils.matchesParticipant(p, PN));
+		if (found) {
+			return found.LID || found.lid || found.phoneNumber || found.PhoneNumber || PN;
+		}
 
-		return found ? found.LID || found.lid || found.phoneNumber : PN;
+		// 2. Fallback: Se for o próprio bot e já temos this.myLid, retorna
+		if (this.myLid && PhoneUtils.isSamePhone(PN, this.phoneNumber)) {
+			return this.myLid;
+		}
+
+		// 3. Fallback no cache reverso lidToPnCache
+		if (this.lidToPnCache) {
+			const variants = PhoneUtils.getPhoneVariants(PN);
+			for (const variant of variants) {
+				for (const [lidKey, phoneVal] of this.lidToPnCache.entries()) {
+					if (PhoneUtils.cleanPhone(phoneVal) === variant) {
+						return lidKey;
+					}
+				}
+			}
+		}
+
+		return PN;
 	}
 
 	getPnFromLid(lid, chat) {

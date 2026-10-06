@@ -8,6 +8,7 @@ const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const { extractFrames } = require("../utils/Conversions");
 const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
+const PhoneUtils = require("../utils/PhoneUtils");
 
 const logger = new Logger("ai-commands");
 
@@ -457,6 +458,12 @@ async function aiCommand(bot, message, args, group) {
 
 	// 2.1. Identifica os JIDs do bot para não confundi-lo com usuário mencionado
 	const botJids = [bot.id, bot.phoneNumber, bot.client?.info?.wid?._serialized].filter(Boolean);
+	if (bot.phoneNumber) {
+		botJids.push(...PhoneUtils.getPhoneVariants(bot.phoneNumber));
+	}
+	if (bot.myLid) {
+		botJids.push(bot.myLid);
+	}
 
 	if (
 		message.group &&
