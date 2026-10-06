@@ -16,7 +16,10 @@ const {
 	refreshTrackedChannelsCache,
 	simplifyChannelName,
 	matchCanalInGroup,
-	MAX_CANAIS_POR_GRUPO
+	MAX_CANAIS_POR_GRUPO,
+	HEADER_COOLDOWN_MS,
+	lastChannelForwardActivity,
+	resetForwardActivity
 } = require("../functions/CanaisCommands");
 
 const database = Database.getInstance();
@@ -514,6 +517,172 @@ async function runTests() {
 	await refreshTrackedChannelsCache();
 
 	console.log("✓ canal-encaminhar e fluxo em tempo real validados com sucesso!");
+
+	// -------------------------------------------------------------
+	// 8. Testes de encaminhamento de áudio/sticker e cadência de header (15 minutos)
+	// -------------------------------------------------------------
+	console.log("\n[8] Testando encaminhamento de mídias sem legenda e regra de 15 minutos...");
+
+	// Re-ativa o canal para testGroup1 com encaminhamento ligado
+	await database.dbRun(
+		DB_NAME,
+		"INSERT INTO canais (jid, invite, link, nome_oficial, descricao, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+		[
+			testCanalJid,
+			"inv123",
+			"https://whatsapp.com/channel/inv123",
+			"Canal de Áudios e Figurinhas",
+			"Desc",
+			Date.now()
+		]
+	);
+	await database.dbRun(
+		DB_NAME,
+		"INSERT INTO canal_grupos (group_id, canal_jid, apelido, apelido_normalizado, tipos_midia, encaminhar, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		[
+			testGroup1,
+			testCanalJid,
+			"AudiosZap",
+			"audioszap",
+			null,
+			1,
+			"admin@s.whatsapp.net",
+			Date.now()
+		]
+	);
+	await refreshTrackedChannelsCache();
+	resetForwardActivity();
+
+	const fakeAudioBase64 = Buffer.from("fake-ogg-audio-content").toString("base64");
+	const fakeStickerBase64 = Buffer.from("fake-webp-sticker-content").toString("base64");
+
+	// Post 1: Áudio em t = 0 min -> deve enviar [header, áudio]
+	fakeBot.resetCapture();
+	const postAudio1 = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_AUDIO_1",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "audio",
+		// Simula objeto como gerado pelo WhatsAppBotGo
+		body: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 7 },
+		content: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 7 },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeAudioBase64, mimetype: "audio/ogg" })
+	};
+	const detected1 = await detectPost(fakeBot, postAudio1);
+	assert.strictEqual(detected1, true, "detectPost deve detectar e processar áudio com sucesso");
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		2,
+		"Post 1 (áudio inicial) deve disparar 2 mensagens: header + áudio"
+	);
+	assert.ok(
+		fakeBot.capturedMessages[0].content.includes("AudiosZap"),
+		"Mensagem 1 deve ser o header com o nome do canal"
+	);
+	assert.ok(
+		fakeBot.capturedMessages[0].content.includes("🕒"),
+		"Mensagem 1 deve conter o emoji de relógio"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[1].options?.sendAudioAsVoice,
+		true,
+		"Mensagem 2 deve ser o áudio como voz"
+	);
+
+	// Post 2: Áudio após 10 minutos (<= 15 min) -> deve enviar apenas [áudio]
+	fakeBot.resetCapture();
+	lastChannelForwardActivity.set(`${testGroup1}:${testCanalJid}`, Date.now() - 10 * 60 * 1000);
+	const postAudio2 = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_AUDIO_2",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "audio",
+		body: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 5 },
+		content: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 5 },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeAudioBase64, mimetype: "audio/ogg" })
+	};
+	await detectPost(fakeBot, postAudio2);
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		1,
+		"Post 2 (áudio após 10m) deve enviar APENAS 1 mensagem (áudio sem header)"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.sendAudioAsVoice,
+		true,
+		"Mensagem deve ser áudio direto"
+	);
+
+	// Post 3: Sticker após 12 minutos do Post 2 (<= 15 min) -> deve enviar apenas [sticker]
+	fakeBot.resetCapture();
+	lastChannelForwardActivity.set(`${testGroup1}:${testCanalJid}`, Date.now() - 12 * 60 * 1000);
+	const postSticker3 = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_STICKER_3",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "sticker",
+		body: { mimetype: "image/webp", url: "https://..." },
+		content: { mimetype: "image/webp", url: "https://..." },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeStickerBase64, mimetype: "image/webp" })
+	};
+	await detectPost(fakeBot, postSticker3);
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		1,
+		"Post 3 (sticker após 12m) deve enviar APENAS 1 mensagem (figurinha sem header)"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.sendMediaAsSticker,
+		true,
+		"Mensagem deve ser sticker"
+	);
+
+	// Post 4: Áudio após 20 minutos do Post 3 (> 15 min) -> deve enviar [header, áudio]
+	fakeBot.resetCapture();
+	lastChannelForwardActivity.set(`${testGroup1}:${testCanalJid}`, Date.now() - 20 * 60 * 1000);
+	const postAudio4 = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_AUDIO_4",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "audio",
+		body: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 9 },
+		content: { mimetype: "audio/ogg; codecs=opus", url: "https://...", seconds: 9 },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeAudioBase64, mimetype: "audio/ogg" })
+	};
+	await detectPost(fakeBot, postAudio4);
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		2,
+		"Post 4 (áudio após 20m) deve disparar 2 mensagens: header + áudio"
+	);
+	assert.ok(
+		fakeBot.capturedMessages[0].content.includes("AudiosZap"),
+		"Mensagem 1 deve ser o header"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[1].options?.sendAudioAsVoice,
+		true,
+		"Mensagem 2 deve ser o áudio"
+	);
+
+	// Limpa dados de teste
+	await database.dbRun(DB_NAME, "DELETE FROM canal_grupos WHERE canal_jid = ?", [testCanalJid]);
+	await database.dbRun(DB_NAME, "DELETE FROM canais WHERE jid = ?", [testCanalJid]);
+	await database.dbRun(DB_NAME, "DELETE FROM canal_posts WHERE canal_jid = ?", [testCanalJid]);
+	await refreshTrackedChannelsCache();
+	resetForwardActivity();
+
+	console.log(
+		"✓ Encaminhamento de áudios/stickers e cadência de 15 minutos validados com sucesso!"
+	);
 
 	console.log("\n==========================================");
 	console.log("🎉 TODOS OS TESTES PASSARAM COM SUCESSO!");

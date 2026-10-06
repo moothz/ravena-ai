@@ -79,6 +79,14 @@ database.getSQLiteDb(
 let monitoredChannelsCache = new Map();
 let cacheLoaded = false;
 
+// Controle de intervalo de header para mídias sem legenda (áudio/sticker): no máximo 1 header a cada 15 min
+const HEADER_COOLDOWN_MS = 15 * 60 * 1000;
+const lastChannelForwardActivity = new Map(); // `${chatId}:${canalJid}` -> timestamp ms
+
+function resetForwardActivity() {
+	lastChannelForwardActivity.clear();
+}
+
 /**
  * Atualiza o cache em memória dos canais monitorados
  */
@@ -628,11 +636,28 @@ async function detectPost(bot, message) {
 		const ts = message.timestamp ? Number(message.timestamp) * 1000 : Date.now();
 		const dia = timestampToDayBrasilia(ts);
 		const tipo = classifyMessageType(message.type);
-		const texto = message.body || message.caption || message.content || "";
 
 		// Enquetes: ignora
-		if (message.goMessageData?.pollCreationMessage || message.type === "poll") {
+		if (
+			message.goMessageData?.pollCreationMessage ||
+			message.goMessageData?.pollCreationMessageV2 ||
+			message.goMessageData?.pollCreationMessageV3 ||
+			message.goMessageData?.Message?.pollCreationMessage ||
+			message.goMessageData?.Message?.pollCreationMessageV2 ||
+			message.goMessageData?.Message?.pollCreationMessageV3 ||
+			message.type === "poll"
+		) {
 			return false;
+		}
+
+		// Extração segura de texto (garante que nunca seja um objeto ou não-string)
+		let postTexto = "";
+		if (typeof message.caption === "string" && message.caption.trim()) {
+			postTexto = message.caption;
+		} else if (typeof message.body === "string" && message.body.trim()) {
+			postTexto = message.body;
+		} else if (typeof message.content === "string" && message.content.trim()) {
+			postTexto = message.content;
 		}
 
 		let arquivo = null;
@@ -676,7 +701,7 @@ async function detectPost(bot, message) {
 			DB_NAME,
 			`INSERT OR IGNORE INTO canal_posts (canal_jid, msg_id, ts, dia, tipo, texto, arquivo, mimetype)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			[channelJid, msgId, ts, dia, tipo, texto, arquivo, mimetype]
+			[channelJid, msgId, ts, dia, tipo, postTexto, arquivo || null, mimetype || null]
 		);
 
 		logger.info(`[Canais] Post ${msgId} capturado de ${channelJid} (tipo: ${tipo}, dia: ${dia})`);
@@ -696,7 +721,7 @@ async function detectPost(bot, message) {
 					ts,
 					dia,
 					tipo,
-					texto,
+					texto: postTexto,
 					arquivo,
 					mimetype
 				};
@@ -710,17 +735,34 @@ async function detectPost(bot, message) {
 							}
 						}
 
+						const activityKey = `${grp.group_id}:${channelJid}`;
+						const lastActivity = lastChannelForwardActivity.get(activityKey) || 0;
+						const now = Date.now();
+						const elapsed = now - lastActivity;
+
+						const isNoCaptionMedia = tipo === "audio" || tipo === "sticker";
+						const needsHeader = isNoCaptionMedia && (!lastActivity || elapsed > HEADER_COOLDOWN_MS);
+
+						// Atualiza o timestamp de atividade para este canal neste grupo
+						lastChannelForwardActivity.set(activityKey, now);
+
 						const postReturnMsg = await createPostReturnMessage(
 							bot,
 							grp.group_id,
 							postData,
 							grp.apelido,
-							true
+							true,
+							{ includeHeader: needsHeader }
 						);
 
 						if (postReturnMsg && typeof bot.sendReturnMessages === "function") {
-							postReturnMsg.delay = 1000;
-							await bot.sendReturnMessages(postReturnMsg);
+							const msgsToSend = Array.isArray(postReturnMsg) ? postReturnMsg : [postReturnMsg];
+							for (let idx = 0; idx < msgsToSend.length; idx++) {
+								if (!msgsToSend[idx].delay) {
+									msgsToSend[idx].delay = idx === 0 ? 500 : 1000;
+								}
+							}
+							await bot.sendReturnMessages(msgsToSend);
 							logger.info(
 								`[Canais] Post ${msgId} encaminhado para grupo ${grp.group_id} (${grp.apelido})`
 							);
@@ -802,18 +844,43 @@ async function buildGroupedReturnMessages(
 	}
 
 	// Sem agrupamento: envia cada postagem individualmente
+	let lastPostTs = 0;
 	for (const post of posts) {
-		const postMsg = await createPostReturnMessage(bot, chatId, post, apelido);
-		if (postMsg) returnMessages.push(postMsg);
+		const isNoCaptionMedia = post.tipo === "audio" || post.tipo === "sticker";
+		let includeHeader = false;
+		if (isNoCaptionMedia) {
+			if (!lastPostTs || (post.ts && post.ts - lastPostTs > HEADER_COOLDOWN_MS)) {
+				includeHeader = true;
+			}
+		}
+		if (post.ts) lastPostTs = post.ts;
+
+		const postMsg = await createPostReturnMessage(bot, chatId, post, apelido, false, {
+			includeHeader
+		});
+		if (postMsg) {
+			if (Array.isArray(postMsg)) {
+				returnMessages.push(...postMsg);
+			} else {
+				returnMessages.push(postMsg);
+			}
+		}
 	}
 
 	return returnMessages;
 }
 
 /**
- * Cria um ReturnMessage individual para uma postagem (texto ou mídia)
+ * Cria um ReturnMessage individual (ou array com header + mídia) para uma postagem
  */
-async function createPostReturnMessage(bot, chatId, post, apelido, isForward = false) {
+async function createPostReturnMessage(
+	bot,
+	chatId,
+	post,
+	apelido,
+	isForward = false,
+	options = {}
+) {
 	const horaStr = post.ts
 		? new Date(post.ts).toLocaleTimeString("pt-BR", {
 				timeZone: "America/Sao_Paulo",
@@ -822,7 +889,7 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 			})
 		: "";
 	const header = horaStr ? `🕒 *[${horaStr}]* ` : "";
-	const prefix = isForward ? `📢 *${apelido}*\n` : "";
+	const prefix = isForward || options.includeHeader ? `📢 *${apelido}*\n` : "";
 	const captionText = `${prefix}${header}${post.texto || ""}`.trim();
 
 	// Se não tem arquivo, envia como texto
@@ -855,21 +922,45 @@ async function createPostReturnMessage(bot, chatId, post, apelido, isForward = f
 		if (typeof bot?.createMedia === "function") {
 			const mediaObj = await bot.createMedia(absPath, post.mimetype);
 			if (post.tipo === "sticker") {
-				return new ReturnMessage({
+				const stickerMsg = new ReturnMessage({
 					chatId,
 					content: mediaObj,
 					options: {
 						sendMediaAsSticker: true
 					}
 				});
+				if (options.includeHeader) {
+					const headerMsg = new ReturnMessage({
+						chatId,
+						content: captionText || `📢 *${apelido}*`,
+						options: {
+							linkPreview: true
+						}
+					});
+					stickerMsg.delay = 1000;
+					return [headerMsg, stickerMsg];
+				}
+				return stickerMsg;
 			} else if (post.tipo === "audio") {
-				return new ReturnMessage({
+				const audioMsg = new ReturnMessage({
 					chatId,
 					content: mediaObj,
 					options: {
 						sendAudioAsVoice: true
 					}
 				});
+				if (options.includeHeader) {
+					const headerMsg = new ReturnMessage({
+						chatId,
+						content: captionText || `📢 *${apelido}*`,
+						options: {
+							linkPreview: true
+						}
+					});
+					audioMsg.delay = 1000;
+					return [headerMsg, audioMsg];
+				}
+				return audioMsg;
 			} else {
 				return new ReturnMessage({
 					chatId,
@@ -1593,7 +1684,9 @@ async function rndCommand(bot, message, args, group) {
 		});
 	}
 
-	return await createPostReturnMessage(bot, chatId, post, matchedCanal.apelido);
+	return await createPostReturnMessage(bot, chatId, post, matchedCanal.apelido, false, {
+		includeHeader: post.tipo === "audio" || post.tipo === "sticker"
+	});
 }
 
 /**
@@ -1770,6 +1863,7 @@ const commands = [
 module.exports = {
 	commands,
 	detectPost,
+	createPostReturnMessage,
 	parseNameAndLink,
 	parseMediaTypes,
 	parseDateInput,
@@ -1778,5 +1872,8 @@ module.exports = {
 	refreshTrackedChannelsCache,
 	simplifyChannelName,
 	matchCanalInGroup,
-	MAX_CANAIS_POR_GRUPO
+	MAX_CANAIS_POR_GRUPO,
+	HEADER_COOLDOWN_MS,
+	lastChannelForwardActivity,
+	resetForwardActivity
 };
