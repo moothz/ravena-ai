@@ -82,7 +82,7 @@ class LLMService {
 		this.buildProviders();
 
 		this.lastQueueChangeTimestamp = 0;
-		this.resetQueueTimeout = 60 * 1000; // 60 segundos
+		this.resetQueueTimeout = 30 * 1000; // 30 segundos
 	}
 
 	/**
@@ -3296,7 +3296,7 @@ class LLMService {
 			options.messages = this._sanitizeUtf8(options.messages);
 		}
 		const priority = options.priority ?? 0;
-		const maxQueueRetries = 10; // Limit times we can send back to queue
+		const maxQueueRetries = 2; // Até 2 re-enfileiramentos na fila (3 tentativas totais)
 
 		const task = async () => {
 			try {
@@ -3327,38 +3327,14 @@ class LLMService {
 			}
 		};
 
-		const runWithInstantRetries = async () => {
-			let maxInstant = 0;
-			if (priority === 5) maxInstant = 5;
-			else if (priority === 4) maxInstant = 3;
-
-			let lastErr;
-			for (let i = 0; i <= maxInstant; i++) {
-				try {
-					return await task();
-				} catch (e) {
-					lastErr = e;
-					if (i < maxInstant) {
-						this.logger.warn(`[LLMService] Instant retry ${i + 1}/${maxInstant} for P${priority}`);
-						await new Promise((r) => setTimeout(r, 1000));
-					}
-				}
-			}
-			throw lastErr;
-		};
-
 		// Se a chamada for sub-requisição ou explicitamente configurada para ignorar a fila, executa diretamente
 		if (options.bypassQueue || options.isSubRequest) {
-			return await runWithInstantRetries();
+			return await task();
 		}
 
-		const scheduleRequest = async (attempt, position) => {
+		const scheduleRequest = async (attempt = 0) => {
 			try {
-				if (position === undefined) {
-					return await this.queue.add(runWithInstantRetries, { priority });
-				} else {
-					return await this.queue.addAt(runWithInstantRetries, position, { priority });
-				}
+				return await this.queue.add(task, { priority });
 			} catch (err) {
 				if (
 					err.noRetry ||
@@ -3370,29 +3346,17 @@ class LLMService {
 				}
 
 				if (attempt < maxQueueRetries) {
-					let nextPos = -1;
-					let shouldRetry = false;
-
-					if (priority >= 4) {
-						shouldRetry = true;
-						nextPos = this.queue.size;
-					} else if (priority === 3) {
-						shouldRetry = true;
-						nextPos = 3;
-					} else if (priority === 2) {
-						shouldRetry = true;
-						nextPos = 5;
-					}
-
-					if (shouldRetry) {
-						this.logger.warn(
-							`[LLMService] Request failed, re-queueing at pos ${nextPos}. (Queue Attempt ${attempt + 1}/${maxQueueRetries})`
-						);
-						await new Promise((r) => setTimeout(r, 2000));
-						return scheduleRequest(attempt + 1, nextPos);
-					}
+					this.logger.warn(
+						`[LLMService] Request failed across providers, re-queueing at the end of priority ${priority} queue. (Queue Attempt ${attempt + 1}/${maxQueueRetries})`
+					);
+					// Pequeno delay antes de re-enfileirar para evitar loop acelerado em fila vazia
+					await new Promise((r) => setTimeout(r, 1500));
+					return scheduleRequest(attempt + 1);
 				}
 
+				this.logger.error(
+					`[LLMService] Requisição falhou definitivamente após ${attempt + 1} tentativas na fila (P${priority}).`
+				);
 				return "Erro: Não foi possível gerar uma resposta. Por favor, tente novamente mais tarde.";
 			}
 		};
@@ -3506,9 +3470,8 @@ class LLMService {
 		// Snapshot dos provedores no momento da requisição
 		const candidateProviders = [...this.providerQueue];
 
-		// Priority <= 4: Try only the first available provider (unless fallback is triggered on format error or textOnly).
-		// Priority 5: Try all providers (fallback loop).
-		let maxAttempts = priority <= 4 ? 1 : candidateProviders.length;
+		// Tenta os provedores disponíveis em sequência (fallback entre provedores)
+		let maxAttempts = candidateProviders.length;
 
 		for (let i = 0; i < maxAttempts && i < candidateProviders.length; i++) {
 			const provider = candidateProviders[i];
