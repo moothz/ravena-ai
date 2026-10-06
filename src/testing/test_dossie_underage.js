@@ -149,6 +149,60 @@ async function runTests() {
 		assert.strictEqual(adultDossiers[0].is_underage, 0);
 		console.log("✓ Grupo neutro processado sem alertas indevidos");
 
+		// ==========================================
+		// Teste 3: Pessoas adultas declarando idade (23 e 24 anos)
+		// Simula alucinação da IA marcando Crianças/Adolescentes para 23/24 anos
+		// O filtro deve interceptar, descartar a evidência e anular o is_underage
+		// ==========================================
+		console.log(
+			"3. Testando grupo de adultos declarando idades 23 e 24 anos (não deve ser underage)..."
+		);
+		bot.resetCapture();
+
+		const adultAgeChatId = "120363000000000003@g.us";
+		await bot.database.saveGroup({
+			id: adultAgeChatId,
+			name: "Amigos da Faculdade"
+		});
+
+		llmService.getCompletion = async () =>
+			JSON.stringify({
+				type: "geral",
+				summary: "Membros se apresentando e falando suas idades.",
+				is_underage: true, // Alucinação da IA
+				underage_indicators: ["Membros falaram a idade: 23 e 24 anos"],
+				problematic_score: 8,
+				classified_items: [
+					{
+						category: "Crianças/Adolescentes",
+						evidence: "Rafaela Freire: Idade: 23 anos; Frann: Idade: 24"
+					}
+				]
+			});
+
+		await SummaryCommands.runGroupAnalysis(
+			adultAgeChatId,
+			"Rafaela Freire: Idade: 23 anos; Frann: Idade: 24",
+			bot
+		);
+
+		assert.strictEqual(
+			bot.capturedMessages.length,
+			0,
+			"Grupo de adultos (23 e 24 anos) JAMAIS deve disparar alerta de crianças/adolescentes"
+		);
+
+		const adultAgeDossiers = await bot.database.getLastGroupDossiers(adultAgeChatId, 5);
+		assert.strictEqual(
+			adultAgeDossiers[0].is_underage,
+			0,
+			"is_underage no banco deve ser 0 para adultos de 23 e 24 anos"
+		);
+		const adultAgeParsed = JSON.parse(adultAgeDossiers[0].dossier_json);
+		assert.strictEqual(adultAgeParsed.is_underage, false);
+		assert.strictEqual(adultAgeParsed.classified_items.length, 0);
+		console.log("✓ Falso positivo de 23/24 anos filtrado com sucesso sem disparar alerta");
+
 		console.log("--- ALL TESTS PASSED SUCCESSFULLY! ---");
 		process.exit(0);
 	} catch (err) {

@@ -437,6 +437,83 @@ ${historyFormatted}`;
 }
 
 /**
+ * Extrai menções numéricas a idade a partir de trechos de texto
+ * @param {string} text
+ * @returns {number[]}
+ */
+function extractAgesFromText(text) {
+	if (!text || typeof text !== "string") return [];
+	const regex =
+		/(?:idade[:\s]+|tenho\s+|tem\s+|fa[çc]o\s+)?(\d{1,2})\s*anos\b|idade[:\s]+(\d{1,2})\b|(?:tenho|tem|fa[çc]o)\s+(\d{1,2})\b/gi;
+	const matches = [...text.matchAll(regex)];
+	return matches.map((m) => parseInt(m[1] || m[2] || m[3], 10)).filter((n) => !isNaN(n));
+}
+
+/**
+ * Remove falsos positivos de menores de idade caso mencione apenas pessoas com 17 anos ou mais
+ * @param {object} parsed
+ * @returns {object}
+ */
+function filterUnderageFalsePositives(parsed) {
+	if (!parsed) return parsed;
+
+	const isUnderageCategory = (cat) => /crian[çc]a|adolescente|menor/i.test(cat || "");
+
+	// 1. Filtrar classified_items onde as idades mencionadas são apenas >= 17
+	if (Array.isArray(parsed.classified_items)) {
+		parsed.classified_items = parsed.classified_items.filter((item) => {
+			if (!isUnderageCategory(item.category)) {
+				return true;
+			}
+			const ages = extractAgesFromText(item.evidence);
+			if (ages.length > 0) {
+				const hasUnder17 = ages.some((age) => age >= 1 && age <= 16);
+				const has17Plus = ages.some((age) => age >= 17);
+				// Se só tem idades >= 17 anos (ex: 23, 24 anos) e nenhuma <= 16, é falso positivo
+				if (has17Plus && !hasUnder17) {
+					return false;
+				}
+			}
+			return true;
+		});
+	}
+
+	// 2. Filtrar underage_indicators onde as idades mencionadas são apenas >= 17
+	if (Array.isArray(parsed.underage_indicators)) {
+		parsed.underage_indicators = parsed.underage_indicators.filter((ind) => {
+			const ages = extractAgesFromText(ind);
+			if (ages.length > 0) {
+				const hasUnder17 = ages.some((age) => age >= 1 && age <= 16);
+				const has17Plus = ages.some((age) => age >= 17);
+				if (has17Plus && !hasUnder17) {
+					return false;
+				}
+			}
+			return true;
+		});
+	}
+
+	// 3. Se is_underage foi marcado como true, verificar se foi baseado apenas em maiores de 17 anos
+	if (parsed.is_underage) {
+		const remainingUnderageItems = (parsed.classified_items || []).filter((item) =>
+			isUnderageCategory(item.category)
+		);
+		const remainingUnderageIndicators = parsed.underage_indicators || [];
+
+		// Se não há nenhum indicador ou item de menores de 16 anos restante
+		if (remainingUnderageItems.length === 0 && remainingUnderageIndicators.length === 0) {
+			parsed.is_underage = false;
+			// Se a nota era exclusivamente alta por conta da falsa detecção de menores
+			if (parsed.problematic_score >= 8 && (parsed.classified_items || []).length === 0) {
+				parsed.problematic_score = 0;
+			}
+		}
+	}
+
+	return parsed;
+}
+
+/**
  * Executa uma análise de dossiê do grupo usando IA
  * @param {string} chatId - Id do grupo
  * @param {string} pendingText - Texto pendente para análise
@@ -504,12 +581,12 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 						is_underage: {
 							type: "boolean",
 							description:
-								"True se for detectado que o grupo é predominantemente de crianças ou adolescentes (menores de idade). Padrões de identificação: membros mencionando a própria idade (ex: 10 a 16 anos), frequentando ensino fundamental ou médio (escola, lição de casa, provas, ano/série escolar), gírias ou assuntos típicos de adolescentes."
+								"True SOMENTE se o grupo for comprovadamente ou predominantemente de crianças ou adolescentes de ATÉ 16 ANOS (ex: 10 a 16 anos). NUNCA marcar true para idades a partir de 17 anos (17, 18, 20, 23, 24 anos são adultos/maiores, JAMAIS crianças ou adolescentes)."
 						},
 						underage_indicators: {
 							type: "array",
 							description:
-								"Se is_underage for true, lista de padrões ou evidências observadas que confirmam se tratar de crianças/adolescentes (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas escolares do 8º ano'). Se false, lista vazia [].",
+								"Se is_underage for true, lista de padrões ou evidências observadas de menores de ATÉ 16 ANOS (ex: 'Membro declarou ter 13 anos', 'Alunos do 8º ano fundamental'). Se false ou se as idades forem a partir de 17 anos, lista vazia [].",
 							items: {
 								type: "string"
 							}
@@ -517,7 +594,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 						problematic_score: {
 							type: "number",
 							description:
-								"Nota de 0 a 10 (10: ilegal, crimes, pedofilia, gore, extremismo; 8-9: grupo de crianças/adolescentes [OBRIGATÓRIO atribuir no mínimo 8 para alertar a moderação no grupo de dossiês]; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores, divulgações; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos adultos ou hobbies)"
+								"Nota de 0 a 10 (10: ilegal, crimes, pedofilia, gore, extremismo; 8-9: grupo de crianças/adolescentes de até 16 anos [OBRIGATÓRIO atribuir no mínimo 8 para alertar a moderação no grupo de dossiês]; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores, divulgações; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos adultos de 17+ anos ou hobbies)"
 						},
 						classified_items: {
 							type: "array",
@@ -529,7 +606,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 									category: {
 										type: "string",
 										description:
-											"Categoria do problema (ex: 'Crianças/Adolescentes', 'Menores de idade', 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
+											"Categoria do problema (ex: 'Crianças/Adolescentes (até 16 anos)', 'Menores de idade (até 16 anos)', 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal'). NUNCA usar categorias de menores para pessoas de 17 anos ou mais."
 									},
 									evidence: {
 										type: "string",
@@ -554,14 +631,19 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 		const prompt = `Analise a conversa abaixo e preencha o dossiê:
 - use apenas 1 palavra para 'type'.
 - seja extremamente suscinto no 'summary' (máximo 200 caracteres).
-- 'is_underage': marque como true se detectar que o grupo é de crianças ou adolescentes (menores de idade).
-  Padrões de identificação:
-  * Membros falando a própria idade (ex: 'tenho 12 anos', 'faço 14', '15 anos', etc.);
-  * Menções a ensino fundamental ou médio (escola, série/ano escolar, lição de casa, matérias, provas escolares, uniforme, professores);
-  * Assuntos, gírias e dinâmicas típicas de crianças ou adolescentes.
-- 'underage_indicators': se is_underage for true, liste os motivos ou padrões identificados (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas do 8º ano'). Se false, deixe vazio [].
-- 'problematic_score': de 0 a 10. ATENÇÃO: se for grupo de crianças/adolescentes (is_underage = true), atribua OBRIGATORIAMENTE nota alta (no mínimo 8, ex: 8 a 9) para garantir o envio do relatório no grupo de dossiês.
-- 'classified_items': caso identifique falas problemáticas, suspeitas ou falas que comprovem menores de idade (ex: category: 'Crianças/Adolescentes', evidence: 'João: tenho 13 anos'), liste a categoria e a mensagem exata correspondente. Se não houver, deixe a lista vazia [].
+- 'is_underage': marque como true SOMENTE se detectar que o grupo é de crianças ou adolescentes de ATÉ 16 ANOS.
+  REGRA CRÍTICA DE IDADE:
+  * Crianças e adolescentes são ESTRITAMENTE pessoas de ATÉ 16 ANOS (ex: 10, 11, 12, 13, 14, 15, 16 anos).
+  * Pessoas com 17 anos ou mais (ex: 17, 18, 19, 20, 21, 22, 23, 24 anos) NÃO SÃO ADOLESCENTES NEM CRIANÇAS! São maiores/adultos.
+  * JAMAIS classifique pessoas de 17 anos ou mais (como 23 ou 24 anos) como 'Crianças/Adolescentes'.
+  * Se membros mencionarem ter 17, 18, 20, 23, 24 anos ou mais, isso indica um grupo de MAIORES/ADULTOS: 'is_underage' DEVE SER FALSE e 'classified_items' NÃO deve conter 'Crianças/Adolescentes'.
+  Padrões válidos de identificação de menores:
+  * Membros declarando explicitamente ter até 16 anos (ex: 'tenho 12 anos', 'faço 14', '15 anos', '16 anos');
+  * Menções a ensino fundamental ou anos iniciais do ensino médio (escola, série/ano como 7º/8º ano, lição de casa, provas escolares, uniforme de escola básica);
+  * Dinâmicas ou assuntos infantis/juvenis exclusivos de menores de 16 anos.
+- 'underage_indicators': se is_underage for true (até 16 anos), liste os motivos (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas do 8º ano'). Se false ou se as idades forem 17+, deixe vazio [].
+- 'problematic_score': de 0 a 10. ATENÇÃO: se for grupo de crianças/adolescentes de até 16 anos (is_underage = true), atribua nota alta (no mínimo 8, ex: 8 a 9). Se forem adultos/maiores (17+ anos), avalie normalmente pelo teor da conversa sem pontuação de menores.
+- 'classified_items': caso identifique falas problemáticas ou falas que comprovem menores de ATÉ 16 anos (ex: category: 'Crianças/Adolescentes', evidence: 'João: tenho 13 anos'), liste a categoria e a mensagem exata correspondente. NUNCA cite mensagens com idades de 17 anos ou mais (ex: 23 ou 24 anos) como evidência de crianças/adolescentes. Se não houver, deixe a lista vazia [].
 - Uso de bots é permitido e jamais deve ser flagrado como algo ruim
 - Anúncios, ofertas de troca de seguidores, divulgações de canais e conteúdo de NÃO são consinderados problemáticos
 ${historicalContext}
@@ -591,7 +673,10 @@ ${textToAnalyze}`;
 
 			// Só limpa se o JSON tiver os campos obrigatórios
 			if (parsed.type && parsed.summary && typeof parsed.problematic_score === "number") {
-				// Se is_underage for identificado, garante nota suficiente para envio ao grupo de dossiês (mínimo 8)
+				// Filtra falsos positivos de menores de idade (ex: pessoas com 17 anos ou mais)
+				parsed = filterUnderageFalsePositives(parsed);
+
+				// Se is_underage for identificado (e confirmado até 16 anos), garante nota suficiente para envio ao grupo de dossiês (mínimo 8)
 				if (parsed.is_underage && parsed.problematic_score < 8) {
 					parsed.problematic_score = 8;
 				}
