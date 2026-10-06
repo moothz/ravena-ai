@@ -1381,7 +1381,8 @@ Decida se este grupo deve ser aceito automaticamente.`;
 											.map((it) => `  • *${it.category}:* "${it.evidence}"`)
 											.join("\n");
 								}
-								lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
+								const underageTag = p.is_underage ? " 👶 [Menores]" : "";
+								lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${underageTag}${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
 							} catch (e) {}
 						});
 					}

@@ -559,6 +559,7 @@ class Database {
 				analyzed_at_length INTEGER,
 				problematic_score REAL DEFAULT 0,
 				is_problematic INTEGER DEFAULT 0,
+				is_underage INTEGER DEFAULT 0,
 				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 			);
 			CREATE INDEX IF NOT EXISTS idx_group_dossiers_gid ON group_dossiers(group_id);
@@ -571,6 +572,10 @@ class Database {
 			`,
 			true
 		);
+		this.dbRun(
+			"summaries",
+			`ALTER TABLE group_dossiers ADD COLUMN is_underage INTEGER DEFAULT 0`
+		).catch(() => {});
 	}
 
 	async recordManualGroupLeave(groupId, groupName, botId) {
@@ -612,7 +617,7 @@ class Database {
 			this.ensureSummariesDb();
 			return await this.dbAll(
 				"summaries",
-				"SELECT dossier_json, conversation_history, problematic_score, created_at FROM group_dossiers WHERE group_id = ? ORDER BY created_at DESC LIMIT ?",
+				"SELECT dossier_json, conversation_history, problematic_score, is_underage, created_at FROM group_dossiers WHERE group_id = ? ORDER BY created_at DESC LIMIT ?",
 				[groupId, limit]
 			);
 		} catch (error) {

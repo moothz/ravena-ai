@@ -43,6 +43,7 @@ database.getSQLiteDb(
     analyzed_at_length INTEGER,
     problematic_score REAL DEFAULT 0,
     is_problematic INTEGER DEFAULT 0,
+    is_underage INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_group_dossiers_gid ON group_dossiers(group_id);
@@ -68,6 +69,9 @@ database
 	.catch(() => {});
 database
 	.dbRun(DB_NAME, `ALTER TABLE group_dossiers ADD COLUMN is_problematic INTEGER DEFAULT 0`)
+	.catch(() => {});
+database
+	.dbRun(DB_NAME, `ALTER TABLE group_dossiers ADD COLUMN is_underage INTEGER DEFAULT 0`)
 	.catch(() => {});
 
 const mediaAnalysisSchema = {
@@ -477,7 +481,7 @@ async function runGroupAnalysis(chatId, pendingText, bot) {
 		}
 
 		const systemPrompt = `Você é um analista de grupos de segurança e moderação. 
-Seu objetivo é categorizar grupos de WhatsApp de forma ultra-concisa, com o objetivo principal de detectar grupos que praticam coisas ilegais (racismo, pedofilia, aliciamento de menores, xenofobia, vendas ilegais, extremismo, gore, etc.)
+Seu objetivo é categorizar grupos de WhatsApp de forma ultra-concisa, com o objetivo principal de detectar grupos que praticam coisas ilegais (racismo, pedofilia, aliciamento de menores, xenofobia, vendas ilegais, extremismo, gore, etc.) e identificar se o grupo é composto por crianças ou adolescentes (menores de idade).
 Você DEVE responder APENAS com um objeto JSON válido seguindo estritamente o esquema solicitado. 
 Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 
@@ -491,16 +495,29 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 						type: {
 							type: "string",
 							description:
-								"Tipo de conteúdo do grupo (apenas 1 palavra, ex: 'jogos', 'onibus', 'romance', 'politica')"
+								"Tipo de conteúdo do grupo (apenas 1 palavra, ex: 'jogos', 'onibus', 'romance', 'politica', 'escola')"
 						},
 						summary: {
 							type: "string",
 							description: "Frase de até 250 caracteres que resume o que é discutido no grupo"
 						},
+						is_underage: {
+							type: "boolean",
+							description:
+								"True se for detectado que o grupo é predominantemente de crianças ou adolescentes (menores de idade). Padrões de identificação: membros mencionando a própria idade (ex: 10 a 16 anos), frequentando ensino fundamental ou médio (escola, lição de casa, provas, ano/série escolar), gírias ou assuntos típicos de adolescentes."
+						},
+						underage_indicators: {
+							type: "array",
+							description:
+								"Se is_underage for true, lista de padrões ou evidências observadas que confirmam se tratar de crianças/adolescentes (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas escolares do 8º ano'). Se false, lista vazia [].",
+							items: {
+								type: "string"
+							}
+						},
 						problematic_score: {
 							type: "number",
 							description:
-								"Nota de 0 a 10 (10: ilegal, racismo, gore, extremismo; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores,divulgações; troca de seguidores; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos ou hobbies)"
+								"Nota de 0 a 10 (10: ilegal, crimes, pedofilia, gore, extremismo; 8-9: grupo de crianças/adolescentes [OBRIGATÓRIO atribuir no mínimo 8 para alertar a moderação no grupo de dossiês]; 6: pornografia, hentai em excesso; 4: encontros, rolês, fotos sensuais, aparência, flertes grupos de troca de nudes/conteúdo, baladas, sexualidade; 3: insultos, discussões, disputas, xingamentos; 3: anúncios, troca de seguidores, divulgações; 0: bots, uso de comandos (!), advertências, chat geral, jogos, tecnologia, amigos adultos ou hobbies)"
 						},
 						classified_items: {
 							type: "array",
@@ -512,7 +529,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 									category: {
 										type: "string",
 										description:
-											"Categoria do problema (ex: 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
+											"Categoria do problema (ex: 'Crianças/Adolescentes', 'Menores de idade', 'Teor racista', 'Gore', 'Xenofobia', 'Assédio', 'Pedofilia', 'Venda ilegal')"
 									},
 									evidence: {
 										type: "string",
@@ -525,7 +542,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 							}
 						}
 					},
-					required: ["type", "summary", "problematic_score"],
+					required: ["type", "summary", "is_underage", "problematic_score"],
 					additionalProperties: false
 				}
 			}
@@ -537,8 +554,14 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 		const prompt = `Analise a conversa abaixo e preencha o dossiê:
 - use apenas 1 palavra para 'type'.
 - seja extremamente suscinto no 'summary' (máximo 200 caracteres).
-- 'problematic_score' de 0 a 10.
-- 'classified_items': caso identifique falas problemáticas ou suspeitas (ex: racismo, preconceito, ofensas graves, conteúdo ilegal, nsfw excessivo), liste a categoria e a mensagem exata correspondente (ex: category: 'Teor racista', evidence: 'Thiago: Morra negoney'). Se não houver, deixe a lista vazia [].
+- 'is_underage': marque como true se detectar que o grupo é de crianças ou adolescentes (menores de idade).
+  Padrões de identificação:
+  * Membros falando a própria idade (ex: 'tenho 12 anos', 'faço 14', '15 anos', etc.);
+  * Menções a ensino fundamental ou médio (escola, série/ano escolar, lição de casa, matérias, provas escolares, uniforme, professores);
+  * Assuntos, gírias e dinâmicas típicas de crianças ou adolescentes.
+- 'underage_indicators': se is_underage for true, liste os motivos ou padrões identificados (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas do 8º ano'). Se false, deixe vazio [].
+- 'problematic_score': de 0 a 10. ATENÇÃO: se for grupo de crianças/adolescentes (is_underage = true), atribua OBRIGATORIAMENTE nota alta (no mínimo 8, ex: 8 a 9) para garantir o envio do relatório no grupo de dossiês.
+- 'classified_items': caso identifique falas problemáticas, suspeitas ou falas que comprovem menores de idade (ex: category: 'Crianças/Adolescentes', evidence: 'João: tenho 13 anos'), liste a categoria e a mensagem exata correspondente. Se não houver, deixe a lista vazia [].
 - Uso de bots é permitido e jamais deve ser flagrado como algo ruim
 - Anúncios, ofertas de troca de seguidores, divulgações de canais e conteúdo de NÃO são consinderados problemáticos
 ${historicalContext}
@@ -568,6 +591,11 @@ ${textToAnalyze}`;
 
 			// Só limpa se o JSON tiver os campos obrigatórios
 			if (parsed.type && parsed.summary && typeof parsed.problematic_score === "number") {
+				// Se is_underage for identificado, garante nota suficiente para envio ao grupo de dossiês (mínimo 8)
+				if (parsed.is_underage && parsed.problematic_score < 8) {
+					parsed.problematic_score = 8;
+				}
+
 				// Para evitar deletar mensagens que chegaram ENQUANTO a IA analisava,
 				// vamos apenas remover o trecho que foi enviado para a análise.
 
@@ -587,18 +615,20 @@ ${textToAnalyze}`;
 					}
 				}
 
-				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
-				const isProblematic = parsed.problematic_score > 7 ? 1 : 0;
+				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7 ou for menores)
+				const isProblematic = parsed.problematic_score > 7 || parsed.is_underage ? 1 : 0;
+				const isUnderage = parsed.is_underage ? 1 : 0;
 				await database.dbRun(
 					DB_NAME,
-					`INSERT INTO group_dossiers (group_id, dossier_json, conversation_history, analyzed_at_length, problematic_score, is_problematic) VALUES (?, ?, ?, ?, ?, ?)`,
+					`INSERT INTO group_dossiers (group_id, dossier_json, conversation_history, analyzed_at_length, problematic_score, is_problematic, is_underage) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 					[
 						chatId,
 						JSON.stringify(parsed),
 						isProblematic ? textToAnalyze : null,
 						0,
 						parsed.problematic_score,
-						isProblematic
+						isProblematic,
+						isUnderage
 					]
 				);
 
@@ -625,12 +655,12 @@ ${textToAnalyze}`;
 					`[${chatId}] Novo dossiê inserido. Histórico limitado a 15. ${newPendingText.length} chars remanescentes.`
 				);
 
-				// Alerta SuperAdmin se a nota for alta (> 7) e tiver bot disponível
+				// Alerta SuperAdmin se a nota for alta (> 7) ou for menores, e tiver bot disponível
 				const targetGroup = bot
 					? bot.dossieGroups || bot.grupoLogs || process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS
 					: process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS;
 
-				if (bot && parsed.problematic_score > 7 && targetGroup) {
+				if (bot && (parsed.problematic_score > 7 || parsed.is_underage) && targetGroup) {
 					const groupData = await bot.database.getGroup(chatId);
 
 					// Conta a quantidade de reports problemáticos já gerados para este grupo
@@ -639,7 +669,7 @@ ${textToAnalyze}`;
 						const countRow = await database.dbGet(
 							DB_NAME,
 							`SELECT COUNT(*) as count FROM group_dossiers 
-							 WHERE group_id = ? AND (is_problematic = 1 OR problematic_score > 7 OR json_extract(dossier_json, '$.problematic_score') > 7)`,
+							 WHERE group_id = ? AND (is_problematic = 1 OR is_underage = 1 OR problematic_score > 7 OR json_extract(dossier_json, '$.problematic_score') > 7 OR json_extract(dossier_json, '$.is_underage') = 1)`,
 							[chatId]
 						);
 						if (countRow && typeof countRow.count === "number") {
@@ -656,6 +686,18 @@ ${textToAnalyze}`;
 							parsed.classified_items
 								.map((item) => `• *${item.category}:* "${item.evidence}"`)
 								.join("\n");
+					}
+
+					let underageText = "";
+					if (parsed.is_underage) {
+						underageText = "\n👶 *Crianças/Adolescentes:* Detectado ⚠️";
+						if (
+							Array.isArray(parsed.underage_indicators) &&
+							parsed.underage_indicators.length > 0
+						) {
+							underageText +=
+								"\n" + parsed.underage_indicators.map((ind) => `  ▫️ ${ind}`).join("\n");
+						}
 					}
 
 					let lastDossiersText = "";
@@ -680,7 +722,8 @@ ${textToAnalyze}`;
 												.map((it) => `  • *${it.category}:* "${it.evidence}"`)
 												.join("\n");
 									}
-									lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
+									const underageTag = p.is_underage ? " 👶 [Menores]" : "";
+									lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${underageTag}${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
 								} catch (e) {}
 							});
 						}
@@ -688,7 +731,11 @@ ${textToAnalyze}`;
 						logger.error(`[${chatId}] Erro ao carregar últimos dossiês para alerta:`, dossierErr);
 					}
 
-					const msgAlert = `⚠️ *ALERTA DE GRUPO POSSIVELMENTE PROBLEMÁTICO* ⚠️
+					const alertTitle = parsed.is_underage
+						? "⚠️ *ALERTA DE GRUPO DE CRIANÇAS/ADOLESCENTES* ⚠️"
+						: "⚠️ *ALERTA DE GRUPO POSSIVELMENTE PROBLEMÁTICO* ⚠️";
+
+					const msgAlert = `${alertTitle}
 					
 📌 *Grupo:* ${groupData ? groupData.name : "N/A"}
 🆔 *ID:* ${chatId}
@@ -697,7 +744,7 @@ ${textToAnalyze}`;
 
 📊 *Análise:*
 - *Tipo:* ${parsed.type}
-- *Nota:* ${parsed.problematic_score}/10
+- *Nota:* ${parsed.problematic_score}/10${underageText}
 - *Resumo:* ${parsed.summary}${classifiedText}
 ${lastDossiersText}
 !sa-leaveGrupo ${chatId}`;

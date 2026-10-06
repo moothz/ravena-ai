@@ -2067,7 +2067,8 @@ class Management {
 					const avgScore = (totalScore / dossiers.length).toFixed(1);
 
 					dossierInfo += `\n*📋 Dossiê do Grupo:*\n`;
-					dossierInfo += `- *Último:* [${latest.type}] ${latest.summary}\n`;
+					const underageTag = latest.is_underage ? " 👶 [Menores]" : "";
+					dossierInfo += `- *Último:* [${latest.type}] ${latest.summary}${underageTag}\n`;
 					dossierInfo += `- *Nota Média:* ${avgScore}/10 (baseado em ${dossiers.length} análises)\n`;
 				}
 			} catch (e) {
@@ -8170,7 +8171,8 @@ class Management {
 				try {
 					const p = JSON.parse(d.dossier_json);
 					const date = new Date(d.created_at).toLocaleString("pt-BR");
-					response += `*${i + 1}. [${date}]* (Nota: ${p.problematic_score}/10)\n`;
+					const underageTag = p.is_underage ? " 👶 [Menores]" : "";
+					response += `*${i + 1}. [${date}]* (Nota: ${p.problematic_score}/10)${underageTag}\n`;
 					response += `> *Tipo:* ${p.type}\n`;
 					response += `> *Resumo:* ${p.summary}\n\n`;
 				} catch (e) {
