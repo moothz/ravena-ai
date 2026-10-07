@@ -2870,13 +2870,14 @@ class WhatsAppBotGo {
 					// Facilidade pra enviar mídia
 					endpoint = "/send/media";
 					payload.url = content;
-					payload.type = content.endsWith(".gif")
-						? "video"
-						: (mime.lookup(content.split("?")[0]).split("/")[0] ?? "document");
+					const detectedMime = mime.lookup(content.split("?")[0]) || "";
+					const isGifUrl =
+						content.split("?")[0].toLowerCase().endsWith(".gif") || detectedMime === "image/gif";
+					payload.type = isGifUrl ? "gif" : (detectedMime.split("/")[0] ?? "document");
 
-					// Se sendVideoAsGif estiver ativo e o tipo for vídeo, use "gif" para que a API Go
+					// Se sendVideoAsGif estiver ativo ou for arquivo GIF, use "gif" para que a API Go
 					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)
-					if (options.sendVideoAsGif && payload.type === "video") {
+					if (options.sendVideoAsGif || isGifUrl) {
 						payload.type = "gif";
 					}
 
@@ -2950,6 +2951,17 @@ class WhatsAppBotGo {
 
 					const rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
 					let mediaType = rawMime ? rawMime.split("/")[0] : "image";
+					const isGifFile =
+						rawMime === "image/gif" ||
+						(typeof content.filename === "string" &&
+							content.filename.toLowerCase().endsWith(".gif"));
+
+					// Se for GIF ou sendVideoAsGif estiver ativo, use "gif" para que a API Go
+					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)
+					if (isGifFile || options.sendVideoAsGif) {
+						mediaType = "gif";
+					}
+
 					const cttSize = content.size ?? (await this.getFileSizeByURL(content.url)) ?? 0;
 					const urlPublica = process.env.BOT_DOMAIN_LOCAL
 						? payload.url.replace(process.env.BOT_DOMAIN_LOCAL, process.env.BOT_DOMAIN)
@@ -2958,12 +2970,6 @@ class WhatsAppBotGo {
 						mediaType = "document";
 						// Se enviar como doc, manda a nossa URL publica junto também
 						payload.caption += `\n\n> Link temporário: ${urlPublica}`;
-					}
-
-					// Se sendVideoAsGif estiver ativo e o tipo for vídeo, use "gif" para que a API Go
-					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)
-					if (options.sendVideoAsGif && mediaType === "video") {
-						mediaType = "gif";
 					}
 
 					let typeStr = mediaType.split("/")[0];

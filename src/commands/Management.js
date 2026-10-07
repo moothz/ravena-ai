@@ -1468,6 +1468,16 @@ class Management {
 						mediaType = "audio";
 					}
 
+					const isGif =
+						quotedMsg.content?._mediaDetails?.gifPlayback === true ||
+						quotedMsg._mediaDetails?.gifPlayback === true ||
+						quotedMsg.isGif === true ||
+						media.mimetype === "image/gif";
+
+					if (isGif) {
+						mediaType = "gif";
+					}
+
 					// Gera nome de arquivo com extensão apropriada
 					let fileExt = media.mimetype.split("/")[1];
 					if (fileExt.includes(";")) {
@@ -1654,6 +1664,16 @@ class Management {
 					}
 					if (quotedMsg.type.toLowerCase() == "voice") {
 						mediaType = "audio";
+					}
+
+					const isGif =
+						quotedMsg.content?._mediaDetails?.gifPlayback === true ||
+						quotedMsg._mediaDetails?.gifPlayback === true ||
+						quotedMsg.isGif === true ||
+						media.mimetype === "image/gif";
+
+					if (isGif) {
+						mediaType = "gif";
 					}
 
 					// Gera nome de arquivo com extensão apropriada

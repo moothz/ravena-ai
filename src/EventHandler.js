@@ -3108,7 +3108,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								mentions: currentMentions,
 								sendAudioAsVoice: type === "audio",
 								sendMediaAsSticker: type === "sticker",
-								sendVideoAsGif: type === "gif"
+								sendVideoAsGif:
+									type === "gif" ||
+									mimeType === "image/gif" ||
+									Boolean(greetingData.file && greetingData.file.toLowerCase().endsWith(".gif"))
 							},
 							mentions: currentMentions
 						});
@@ -3236,7 +3239,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								mentions: currentMentions,
 								sendAudioAsVoice: type === "audio",
 								sendMediaAsSticker: type === "sticker",
-								sendVideoAsGif: type === "gif"
+								sendVideoAsGif:
+									type === "gif" ||
+									mimeType === "image/gif" ||
+									Boolean(farewellData.file && farewellData.file.toLowerCase().endsWith(".gif"))
 							},
 							mentions: currentMentions
 						});
