@@ -1,5 +1,6 @@
 const fs = require("fs").promises;
 const path = require("path");
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
@@ -311,6 +312,10 @@ class Management {
 				method: "toggleTwitchTitleChange",
 				description: "Ativa/desativa mudança de título do grupo para eventos da Twitch"
 			},
+			"twitch-mudarFoto": {
+				method: "toggleTwitchPhotoChange",
+				description: "Ativa/desativa mudança de foto do grupo para eventos da Twitch"
+			},
 			"twitch-titulo": {
 				method: "setTwitchTitle",
 				description: "Define título do grupo para eventos de canal da Twitch"
@@ -352,6 +357,10 @@ class Management {
 				method: "toggleKickTitleChange",
 				description: "Ativa/desativa mudança de título do grupo para eventos do Kick"
 			},
+			"kick-mudarFoto": {
+				method: "toggleKickPhotoChange",
+				description: "Ativa/desativa mudança de foto do grupo para eventos do Kick"
+			},
 			"kick-titulo": {
 				method: "setKickTitle",
 				description: "Define título do grupo para eventos de canal do Kick"
@@ -391,6 +400,10 @@ class Management {
 			"youtube-mudarTitulo": {
 				method: "toggleYoutubeTitleChange",
 				description: "Ativa/desativa mudança de título do grupo para eventos do YouTube"
+			},
+			"youtube-mudarFoto": {
+				method: "toggleYoutubePhotoChange",
+				description: "Ativa/desativa mudança de foto do grupo para eventos do YouTube"
 			},
 			"youtube-titulo": {
 				method: "setYoutubeTitle",
@@ -2134,13 +2147,18 @@ class Management {
 					infoMessage += `  • Marcar Todos: ${channel.mentionAllMembers ? "Sim" : "Não"}\n`;
 					infoMessage += `  • Usar Thumbnail: ${channel.useThumbnail ? "Sim" : "Não"}\n`;
 					infoMessage += `  • Usar IA: ${channel.useAI ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Mudar foto do grupo: ${channel.changePhotoOnEvent ? "Sim" : "Não"}\n`;
 
 					if (channel.groupPhotoOnline) {
 						infoMessage += `  • Foto de grupo Online: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Online: Thumbnail da live\n`;
 					}
 
 					if (channel.groupPhotoOffline) {
 						infoMessage += `  • Foto de grupo Offline: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
 					infoMessage += "\n";
@@ -2178,13 +2196,18 @@ class Management {
 					}
 
 					infoMessage += `  • Usar IA: ${channel.useAI ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Mudar foto do grupo: ${channel.changePhotoOnEvent ? "Sim" : "Não"}\n`;
 
 					if (channel.groupPhotoOnline) {
 						infoMessage += `  • Foto de grupo Online: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Online: Thumbnail da live\n`;
 					}
 
 					if (channel.groupPhotoOffline) {
 						infoMessage += `  • Foto de grupo Offline: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
 					infoMessage += "\n";
@@ -2215,9 +2238,18 @@ class Management {
 					}
 
 					infoMessage += `  • Usar IA: ${channel.useAI ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Mudar foto do grupo: ${channel.changePhotoOnEvent ? "Sim" : "Não"}\n`;
 
 					if (channel.groupPhotoOnline) {
-						infoMessage += `  • Foto de grupo Novo Vídeo: Configurada\n`;
+						infoMessage += `  • Foto de grupo Online: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Online: Thumbnail da live\n`;
+					}
+
+					if (channel.groupPhotoOffline) {
+						infoMessage += `  • Foto de grupo Offline: Configurada\n`;
+					} else if (channel.changePhotoOnEvent) {
+						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
 					infoMessage += "\n";
@@ -6084,17 +6116,25 @@ class Management {
 			});
 		}
 
-		// Determina o modo (online/offline) a partir dos argumentos
+		// Determina o modo (on/off) e se é comando de remoção
 		let mode = "on";
-		if (args.length > 0) {
-			const modeArg = args[0].toLowerCase();
-			if (modeArg === "on" || modeArg === "online") {
-				mode = "on";
-				args = args.slice(1); // Remove o primeiro argumento
-			} else if (modeArg === "off" || modeArg === "offline") {
-				mode = "off";
-				args = args.slice(1); // Remove o primeiro argumento
-			}
+		let isDelete = false;
+
+		const delIdx = args.findIndex((a) =>
+			["del", "delete", "remover", "remove", "limpar"].includes(a.toLowerCase())
+		);
+		if (delIdx !== -1) {
+			isDelete = true;
+			args.splice(delIdx, 1);
+		}
+
+		const modeIdx = args.findIndex((a) =>
+			["on", "online", "off", "offline"].includes(a.toLowerCase())
+		);
+		if (modeIdx !== -1) {
+			const modeVal = args[modeIdx].toLowerCase();
+			mode = modeVal === "off" || modeVal === "offline" ? "off" : "on";
+			args.splice(modeIdx, 1);
 		}
 
 		// Valida e obtém o nome do canal
@@ -6115,15 +6155,28 @@ class Management {
 			});
 		}
 
-		// Verifica se há uma mensagem citada com mídia ou se a mensagem atual tem mídia
+		if (isDelete) {
+			if (mode === "on") {
+				delete channelConfig.groupPhotoOnline;
+			} else {
+				delete channelConfig.groupPhotoOffline;
+			}
+			await this.database.saveGroup(group);
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `🗑️ Configuração de foto do grupo para eventos ${mode === "on" ? "online" : "offline"} do canal ${channelName} removida.`
+			});
+		}
+
 		let mediaData = null;
+		let capturedFromCurrentGroup = false;
 
 		// 1. Tenta obter da mensagem citada
 		const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
 		if (quotedMsg && quotedMsg.hasMedia) {
 			try {
 				const media = await quotedMsg.downloadMedia();
-				if (media.mimetype.startsWith("image/")) {
+				if (media && media.mimetype && media.mimetype.startsWith("image/")) {
 					// Salva arquivo no disco em vez de base64 no banco
 					const ext = media.mimetype.split("/")[1].split(";")[0] || "jpg";
 					const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
@@ -6151,7 +6204,8 @@ class Management {
 			}
 
 			if (imageData) {
-				const ext = message.content.mimetype.split("/")[1].split(";")[0] || "jpg";
+				const ext =
+					(message.content.mimetype || "image/jpeg").split("/")[1]?.split(";")[0] || "jpg";
 				const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
 				const mediaDir = path.join(this.dataPath, "media");
 				await fs.mkdir(mediaDir, { recursive: true });
@@ -6161,27 +6215,42 @@ class Management {
 			}
 		}
 
-		// Se não há argumentos e não há mídia, remove a configuração de foto
-		if (args.length === 0 && !mediaData) {
-			if (mode === "on") {
-				delete channelConfig.groupPhotoOnline;
-			} else {
-				delete channelConfig.groupPhotoOffline;
+		// 3. Se usado sem foto anexada/citada, captura a foto atual do grupo no WhatsApp
+		if (!mediaData) {
+			try {
+				let currentPhotoUrl = null;
+				if (typeof bot.getProfilePictureUrl === "function") {
+					currentPhotoUrl = await bot.getProfilePictureUrl(group.id);
+				}
+				if (currentPhotoUrl) {
+					const response = await axios.get(currentPhotoUrl, {
+						responseType: "arraybuffer",
+						timeout: 10000
+					});
+					if (response.data && response.data.length > 0) {
+						const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.jpg`;
+						const mediaDir = path.join(this.dataPath, "media");
+						await fs.mkdir(mediaDir, { recursive: true });
+						await fs.writeFile(path.join(mediaDir, fileName), Buffer.from(response.data));
+						mediaData = fileName;
+						capturedFromCurrentGroup = true;
+					}
+				}
+			} catch (photoErr) {
+				this.logger.warn(
+					`Erro ao capturar foto atual do grupo ${group.id}:`,
+					photoErr.message || photoErr
+				);
 			}
-
-			await this.database.saveGroup(group);
-
-			return new ReturnMessage({
-				chatId: group.id,
-				content: `Configuração de foto do grupo para eventos ${mode} do canal ${channelName} removida.`
-			});
 		}
 
-		// Se não há mídia, instrui o usuário
+		// Se não há mídia obtida nem capturada, instrui o usuário
 		if (!mediaData) {
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `Para definir a foto do grupo para eventos ${mode} do canal ${channelName}, envie uma imagem com o comando na legenda ou use o comando como resposta a uma imagem.`
+				content:
+					`⚠️ Não foi possível capturar a foto atual do grupo (ou o grupo não possui foto definida no WhatsApp).\n\n` +
+					`Para definir a foto do grupo para eventos ${mode === "on" ? "online" : "offline"} do canal ${channelName}, envie uma imagem junto com o comando na legenda ou responda a uma imagem.`
 			});
 		}
 
@@ -6192,18 +6261,20 @@ class Management {
 			channelConfig.groupPhotoOffline = mediaData;
 		}
 
-		// Ativa mudança de título se não estiver ativa
-		if (!channelConfig.changeTitleOnEvent) {
-			channelConfig.changeTitleOnEvent = true;
+		// Ativa mudança de foto se não estiver ativa
+		if (!channelConfig.changePhotoOnEvent) {
+			channelConfig.changePhotoOnEvent = true;
 		}
 
 		await this.database.saveGroup(group);
 
+		const originMsg = capturedFromCurrentGroup
+			? "📸 Foto atual do grupo capturada e configurada com sucesso"
+			: "✅ Foto enviada configurada com sucesso";
+
 		return new ReturnMessage({
 			chatId: group.id,
-			content: `Foto do grupo para eventos ${mode === "on" ? "online" : "offline"} do canal ${channelName} configurada com sucesso.
-      
-  A mudança de título para eventos também foi automaticamente ativada.`
+			content: `${originMsg} para eventos ${mode === "on" ? "online" : "offline"} do canal ${channelName}.\n\nA alteração de foto do grupo para eventos deste canal foi automaticamente ativada.`
 		});
 	}
 
@@ -6605,6 +6676,72 @@ class Management {
 
 	async setYoutubeGroupPhoto(bot, message, args, group) {
 		return this.setStreamGroupPhoto(bot, message, args, group, "youtube");
+	}
+
+	async toggleStreamPhotoChange(bot, message, args, group, platform) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const channelName = await this.validateChannelName(bot, message, args, group, platform);
+		if (channelName instanceof ReturnMessage) {
+			return channelName;
+		}
+
+		const channelConfig = this.findChannelConfig(group, platform, channelName);
+		if (!channelConfig) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Canal não configurado: ${channelName}. Use !g-${platform}-canal ${channelName} para configurar.`
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ O bot não é administrador do grupo. Para alterar a foto do grupo, o bot precisa ser um administrador. " +
+					"Por favor, adicione o bot como administrador e tente novamente."
+			});
+		}
+
+		channelConfig.changePhotoOnEvent = !channelConfig.changePhotoOnEvent;
+		await this.database.saveGroup(group);
+
+		const status = channelConfig.changePhotoOnEvent ? "ativada" : "desativada";
+		if (channelConfig.changePhotoOnEvent) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					`Alteração de foto do grupo para eventos do canal ${channelName} ${status}.\n\n` +
+					`• Ao ficar online: usa foto online configurada ou thumbnail da stream\n` +
+					`• Ao ficar offline: usa foto offline configurada ou restaura foto anterior\n\n` +
+					`Para configurar fotos personalizadas:\n` +
+					`!g-${platform}-fotoGrupo on ${channelName}\n` +
+					`!g-${platform}-fotoGrupo off ${channelName}`
+			});
+		} else {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Alteração de foto do grupo para eventos do canal ${channelName} ${status}.`
+			});
+		}
+	}
+
+	async toggleTwitchPhotoChange(bot, message, args, group) {
+		return this.toggleStreamPhotoChange(bot, message, args, group, "twitch");
+	}
+
+	async toggleKickPhotoChange(bot, message, args, group) {
+		return this.toggleStreamPhotoChange(bot, message, args, group, "kick");
+	}
+
+	async toggleYoutubePhotoChange(bot, message, args, group) {
+		return this.toggleStreamPhotoChange(bot, message, args, group, "youtube");
 	}
 
 	/**

@@ -229,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         streamChannel: document.getElementById('stream-channel'),
         streamMention: document.getElementById('stream-mention'),
         streamChangeTitle: document.getElementById('stream-change-title'),
+        streamChangePhoto: document.getElementById('stream-change-photo'),
         streamAI: document.getElementById('stream-ai'),
         streamUseThumbnail: document.getElementById('stream-use-thumbnail'),
         streamTitlesGroup: document.getElementById('stream-titles-group'),
@@ -1434,6 +1435,7 @@ document.addEventListener('DOMContentLoaded', () => {
         els.streamChannel.value = d.channel;
         els.streamMention.checked = !!d.mentionAllMembers;
         els.streamChangeTitle.checked = !!d.changeTitleOnEvent;
+        if (els.streamChangePhoto) els.streamChangePhoto.checked = d.changePhotoOnEvent === true;
         els.streamAI.checked = !!d.useAI;
         els.streamUseThumbnail.checked = d.useThumbnail !== false;
         els.streamTitleOn.value = d.onlineTitle || '';
@@ -1700,6 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isYtVideo) {
             d.changeTitleOnEvent = els.streamChangeTitle.checked;
+            d.changePhotoOnEvent = els.streamChangePhoto ? els.streamChangePhoto.checked : false;
             d.onlineTitle = els.streamTitleOn.value;
             d.offlineTitle = els.streamTitleOff.value;
         }
@@ -1729,6 +1732,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         groupData.youtube[existingIdx].onConfig = d.onConfig;
                         groupData.youtube[existingIdx].offConfig = d.offConfig;
                         groupData.youtube[existingIdx].changeTitleOnEvent = d.changeTitleOnEvent;
+                        groupData.youtube[existingIdx].changePhotoOnEvent = d.changePhotoOnEvent;
                         groupData.youtube[existingIdx].onlineTitle = d.onlineTitle;
                         groupData.youtube[existingIdx].offlineTitle = d.offlineTitle;
                     }

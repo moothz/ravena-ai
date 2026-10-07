@@ -4,8 +4,10 @@ const LLMService = require("./services/LLMService");
 const ReturnMessage = require("./models/ReturnMessage");
 const path = require("path");
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const Database = require("./utils/Database");
+const AdminUtils = require("./utils/AdminUtils");
 
 /**
  * Sistema para gerenciamento de monitoramento de streams (Singleton)
@@ -35,6 +37,8 @@ class StreamSystem {
 		// Assume que o path do banco é o mesmo pra todos (global)
 		this.dataPath = this.database.databasePath;
 		this.mediaPath = path.join(this.dataPath, "media");
+		this.cachedGroupPhotos = new Map();
+		this.adminUtils = AdminUtils.getInstance();
 		this.initialized = false;
 		this.initializing = false;
 		this.initTimeout = null;
@@ -476,14 +480,15 @@ class StreamSystem {
 			// Verifica se há algo para notificar
 			const hasMedia = config && config.media && config.media.length > 0;
 			const hasTitleChange = channelConfig.changeTitleOnEvent;
+			const hasPhotoChange = channelConfig.changePhotoOnEvent === true;
 			const hasMentions =
 				channelConfig.mentionAllMembers && (eventType === "online" || eventType === "video");
 			const hasAI = channelConfig.useAI && (eventType === "online" || eventType === "video");
 
 			// Log detalhado para diagnosticar eventos que não geram notificações
-			if (!hasMedia && !hasTitleChange && !hasAI) {
+			if (!hasMedia && !hasTitleChange && !hasPhotoChange && !hasAI) {
 				this.logger.warn(
-					`[processStreamEvent] Sem mídia, title change, nem IA configurada para ${group.name}/${eventData.channelName} (${eventType}) — evento ignorado`
+					`[processStreamEvent] Sem mídia, title change, photo change, nem IA configurada para ${group.name}/${eventData.channelName} (${eventType}) — evento ignorado`
 				);
 				return;
 			}
@@ -491,6 +496,7 @@ class StreamSystem {
 			// Tenta enviar com cada bot candidato até conseguir
 			let sentSuccess = false;
 			let titleChanged = false;
+			let photoChanged = false;
 			const notInGroupErrors = [];
 
 			for (const bot of bots) {
@@ -501,6 +507,18 @@ class StreamSystem {
 					if (eventType !== "video" && channelConfig.changeTitleOnEvent && !titleChanged) {
 						this.logger.debug(`[processStreamEvent] ${group.name} -> changeTitleOnEvent 'true'`);
 						titleChanged = await this.changeGroupTitleForStream(
+							bot,
+							group,
+							channelConfig,
+							eventData,
+							eventType
+						);
+					}
+
+					// Processa alteração de foto do grupo (se habilitada e apenas para lives online/offline, nunca para vídeos gravados)
+					if (eventType !== "video" && channelConfig.changePhotoOnEvent && !photoChanged) {
+						this.logger.debug(`[processStreamEvent] ${group.name} -> changePhotoOnEvent 'true'`);
+						photoChanged = await this.changeGroupPhotoForStream(
 							bot,
 							group,
 							channelConfig,
@@ -678,7 +696,7 @@ class StreamSystem {
 			} else if (!sentSuccess) {
 				// Bots tentaram enviar mas falharam por outros motivos
 				this.logger.warn(
-					`[processStreamEvent] Nenhuma notificação enviada para ${group.name} (${group.id}) — todos os bots falharam (erros: ${notInGroupErrors.join(", ")}). Config: media=${hasMedia}, titleChange=${hasTitleChange}, mentions=${hasMentions}, AI=${hasAI}`
+					`[processStreamEvent] Nenhuma notificação enviada para ${group.name} (${group.id}) — todos os bots falharam (erros: ${notInGroupErrors.join(", ")}). Config: media=${hasMedia}, titleChange=${hasTitleChange}, photoChange=${hasPhotoChange}, mentions=${hasMentions}, AI=${hasAI}`
 				);
 			}
 		} catch (error) {
@@ -843,41 +861,141 @@ class StreamSystem {
 				}
 			}
 
-			// Mudança de foto (simplificado, mantendo lógica original)
-			if (eventType === "online" && channelConfig.groupPhotoOnline) {
-				await this.changeGroupPhoto(bot, chat, channelConfig.groupPhotoOnline);
-			} else if (eventType === "offline" && channelConfig.groupPhotoOffline) {
-				await this.changeGroupPhoto(bot, chat, channelConfig.groupPhotoOffline);
-			}
-
 			return success;
 		} catch (error) {
-			this.logger.error(
-				`Erro ao alterar título/foto do grupo ${group.id} via bot ${bot.id}:`,
-				error
-			);
+			this.logger.error(`Erro ao alterar título do grupo ${group.id} via bot ${bot.id}:`, error);
+			return false;
+		}
+	}
+
+	/**
+	 * Altera a foto do grupo durante eventos de live (online/offline)
+	 */
+	async changeGroupPhotoForStream(bot, group, channelConfig, eventData, eventType) {
+		try {
+			if (!channelConfig || channelConfig.changePhotoOnEvent !== true) {
+				return false;
+			}
+
+			const chat = await bot.client.getChatById(group.id);
+			if (!chat || !chat.isGroup) {
+				return false;
+			}
+			if (chat.notInGroup) {
+				this.logger.debug(
+					`Bot ${bot.id} não está no grupo ${group.id}, ignorando mudança de foto.`
+				);
+				return false;
+			}
+
+			// Verifica se bot tem permissão de administrador no grupo
+			let isAdmin = false;
+			if (typeof chat.isBotAdmin === "function") {
+				isAdmin = await chat.isBotAdmin();
+			} else if (this.adminUtils) {
+				isAdmin = await this.adminUtils.isAdmin(bot.phoneNumber || bot.id, group, chat, bot, false);
+			} else {
+				// Fallback permissivo
+				isAdmin = true;
+			}
+
+			if (!isAdmin) {
+				this.logger.warn(
+					`[changeGroupPhotoForStream] Bot ${bot.id} não é admin no grupo ${group.id}, alteração de foto ignorada.`
+				);
+				return false;
+			}
+
+			if (eventType === "online") {
+				// 1. Salva foto atual do grupo para posterior restauração (se ainda não em cache)
+				if (!this.cachedGroupPhotos.has(group.id)) {
+					try {
+						if (typeof bot.getProfilePictureUrl === "function") {
+							const currentUrl = await bot.getProfilePictureUrl(group.id);
+							if (currentUrl) {
+								this.cachedGroupPhotos.set(group.id, currentUrl);
+								this.logger.debug(
+									`[changeGroupPhotoForStream] Foto anterior do grupo ${group.id} armazenada em cache para restauração`
+								);
+							}
+						}
+					} catch (cacheErr) {
+						this.logger.debug(
+							`[changeGroupPhotoForStream] Não foi possível obter foto anterior do grupo:`,
+							cacheErr
+						);
+					}
+				}
+
+				// 2. Aplica foto online customizada se houver, ou thumbnail da stream
+				if (channelConfig.groupPhotoOnline) {
+					return await this.changeGroupPhoto(bot, chat, channelConfig.groupPhotoOnline);
+				} else if (eventData && eventData.thumbnail) {
+					return await this.changeGroupPhoto(bot, chat, eventData.thumbnail);
+				}
+			} else if (eventType === "offline") {
+				// 1. Se houver foto offline customizada, aplica
+				if (channelConfig.groupPhotoOffline) {
+					return await this.changeGroupPhoto(bot, chat, channelConfig.groupPhotoOffline);
+				}
+
+				// 2. Senão, restaura a foto que o grupo tinha antes da live
+				const previousPhotoUrl = this.cachedGroupPhotos.get(group.id);
+				if (previousPhotoUrl) {
+					this.cachedGroupPhotos.delete(group.id);
+					return await this.changeGroupPhoto(bot, chat, previousPhotoUrl);
+				}
+			}
+
+			return true;
+		} catch (error) {
+			this.logger.error(`Erro ao alterar foto do grupo ${group.id} via bot ${bot.id}:`, error);
 			return false;
 		}
 	}
 
 	async changeGroupPhoto(bot, chat, photoData) {
 		try {
+			if (!photoData) return false;
+
 			if (typeof photoData === "string") {
-				// É um nome de arquivo (URL da pasta data)
-				const mediaPath = path.join(this.mediaPath, photoData);
-				const media = await bot.createMedia(mediaPath);
-				await chat.setPicture(media);
+				if (
+					photoData.startsWith("http://") ||
+					photoData.startsWith("https://") ||
+					photoData.startsWith("data:")
+				) {
+					if (typeof chat.setPicture === "function") {
+						await chat.setPicture(photoData);
+						return true;
+					}
+				} else {
+					// É um nome de arquivo salvo no disco
+					const mediaPath = path.join(this.mediaPath, photoData);
+					if (fsSync.existsSync(mediaPath)) {
+						const media = await bot.createMedia(mediaPath);
+						if (typeof chat.setPicture === "function") {
+							await chat.setPicture(media);
+							return true;
+						}
+					} else {
+						this.logger.warn(`[changeGroupPhoto] Arquivo de mídia não encontrado: ${mediaPath}`);
+					}
+				}
 			} else if (photoData && photoData.data && photoData.mimetype) {
-				// Legacy object, não deveria existir mais, mas aqui amamos fallbacks
 				const media = await bot.createMediaFromBase64(
 					photoData.data,
 					photoData.mimetype,
 					`fotoGrupo.jpg`
 				);
-				await chat.setPicture(media);
+				if (typeof chat.setPicture === "function") {
+					await chat.setPicture(media);
+					return true;
+				}
 			}
+			return false;
 		} catch (e) {
-			this.logger.error(`Erro ao alterar foto do grupo ${chat.id._serialized}:`, e);
+			this.logger.error(`Erro ao alterar foto do grupo ${chat.id?._serialized || chat.id}:`, e);
+			return false;
 		}
 	}
 

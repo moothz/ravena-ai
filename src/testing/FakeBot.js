@@ -474,8 +474,23 @@ class FakeBot {
 			isGroup: chatId.includes("@g.us"),
 			notInGroup: !inGroup,
 			isParticipating: inGroup,
-			participants: []
+			participants: [{ id: { _serialized: this.phoneNumber + "@s.whatsapp.net" }, isAdmin: true }],
+			isBotAdmin: async () => true,
+			setPicture: async (pic) => {
+				this.capturedGroupPictures = this.capturedGroupPictures || [];
+				this.capturedGroupPictures.push({ chatId, picture: pic });
+				return true;
+			},
+			setSubject: async (title) => {
+				this.capturedSubjects = this.capturedSubjects || [];
+				this.capturedSubjects.push({ chatId, title });
+				return true;
+			}
 		};
+	}
+
+	async getProfilePictureUrl(jid) {
+		return this.profilePictureUrl || "https://example.com/fake-avatar.jpg";
 	}
 
 	isParticipating(groupId) {
