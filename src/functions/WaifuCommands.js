@@ -31,12 +31,19 @@ const api = axios.create({
 // Janela de claim: 300 segundos (5 minutos)
 const CLAIM_WINDOW_MS = 300 * 1000;
 
+// Janela de exclusividade para o autor do roll em raridades especiais (Raro, Épico, Lendário): 60 segundos
+const EXCLUSIVE_CLAIM_WINDOW_MS = 60 * 1000;
+
 // Cache em memória da janela de claim (300s / 5 min) por grupo
-// Map<groupId, { characterId: string, characterName: string, expiresAt: number }>
+// Map<groupId, { characterId: string, characterName: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const pendingClaims = new Map();
 
+// Cache em memória de claims ativos por chave `${groupId}:${characterId}`
+// Map<string, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
+const activeClaimsByCharGroup = new Map();
+
 // Cache em memória de mensagens de roll ativas (por ID de mensagem enviado)
-// Map<messageId, { characterId: string, groupId: string, expiresAt: number }>
+// Map<messageId, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const rollClaimsByMsgId = new Map();
 
 /**
@@ -45,15 +52,35 @@ const rollClaimsByMsgId = new Map();
  * @param {string} characterId
  * @param {string} groupId
  * @param {number} [expiresAt]
+ * @param {string} [rollerUserId]
+ * @param {number} [exclusiveUntil]
+ * @param {string} [rollerUserName]
  */
-function recordRollMessage(messageId, characterId, groupId, expiresAt) {
+function recordRollMessage(
+	messageId,
+	characterId,
+	groupId,
+	expiresAt,
+	rollerUserId = null,
+	exclusiveUntil = null,
+	rollerUserName = null
+) {
 	if (!messageId || !characterId) return;
 	const strId = String(messageId);
 	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	const existing = activeClaimsByCharGroup.get(`${groupId}:${characterId}`);
+	const finalRollerUserId = rollerUserId || existing?.rollerUserId || null;
+	const finalExclusiveUntil = exclusiveUntil ?? existing?.exclusiveUntil ?? null;
+	const finalRollerUserName = rollerUserName || existing?.rollerUserName || null;
+
 	const claimData = {
 		characterId,
 		groupId,
-		expiresAt: expiresAt || Date.now() + CLAIM_WINDOW_MS
+		rollerUserId: finalRollerUserId,
+		rollerUserName: finalRollerUserName,
+		exclusiveUntil: finalExclusiveUntil,
+		expiresAt: expiresAt || existing?.expiresAt || Date.now() + CLAIM_WINDOW_MS
 	};
 	rollClaimsByMsgId.set(strId, claimData);
 	rollClaimsByMsgId.set(stanzaId, claimData);
@@ -62,7 +89,7 @@ function recordRollMessage(messageId, characterId, groupId, expiresAt) {
 /**
  * Busca dados do roll por ID da mensagem (se não estiver expirado)
  * @param {string} messageId
- * @returns {{ characterId: string, groupId: string, expiresAt: number } | null}
+ * @returns {{ characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number } | null}
  */
 function getRollByMessageId(messageId) {
 	if (!messageId) return null;
@@ -250,6 +277,9 @@ async function getDropRateStats(userId = null, forceRefresh = false) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getUserId(message) {
+	if (message?.originReaction?.senderId) {
+		return message.originReaction.senderId;
+	}
 	return message.author;
 }
 
@@ -258,6 +288,12 @@ function getGroupId(message) {
 }
 
 function getUserName(message) {
+	if (message?.originReaction?.userName) {
+		return message.originReaction.userName;
+	}
+	if (message?.originReaction?.senderId) {
+		return message.originReaction.senderId.split("@")[0];
+	}
 	return message.authorName || (message.author ? message.author.split("@")[0] : "Jogador");
 }
 
@@ -430,8 +466,19 @@ function makeRollHandler(genderFilter) {
 			} = data.data;
 
 			const rarity = character.rarity || character.baseRarity || "COMMON";
-			const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
-			const labelRarity = RARITY_LABEL[rarity] || rarity;
+			const normalizedRarity = String(rarity).toUpperCase();
+			const emojiRarity = RARITY_EMOJI[normalizedRarity] || RARITY_EMOJI[rarity] || "⚪";
+			const labelRarity = RARITY_LABEL[normalizedRarity] || RARITY_LABEL[rarity] || rarity;
+			const isSpecialRarity = [
+				"RARE",
+				"EPIC",
+				"LEGENDARY",
+				"RARO",
+				"EPICO",
+				"ÉPICO",
+				"LENDARIO",
+				"LENDÁRIO"
+			].includes(normalizedRarity);
 
 			let text = `🎲 *${character.name}* — _${character.series}_\n`;
 			text += `${emojiRarity} *[${labelRarity}]*`;
@@ -456,21 +503,41 @@ function makeRollHandler(genderFilter) {
 			}
 			text += "\n";
 
+			let exclusiveUntil = null;
 			if (available) {
-				// Salva o claim temporário no grupo por 300 segundos
-				pendingClaims.set(groupId, {
+				const now = Date.now();
+				exclusiveUntil = isSpecialRarity ? now + EXCLUSIVE_CLAIM_WINDOW_MS : null;
+				const claimData = {
 					characterId: character.id,
 					characterName: character.name,
-					expiresAt: Date.now() + CLAIM_WINDOW_MS
-				});
+					rollerUserId: userId,
+					rollerUserName: name,
+					exclusiveUntil,
+					expiresAt: now + CLAIM_WINDOW_MS
+				};
+
+				// Salva o claim temporário no grupo e no índice por personagem por 300 segundos
+				pendingClaims.set(groupId, claimData);
+				activeClaimsByCharGroup.set(`${groupId}:${character.id}`, claimData);
+
 				setTimeout(() => {
 					const cur = pendingClaims.get(groupId);
 					if (cur && cur.characterId === character.id) {
 						pendingClaims.delete(groupId);
 					}
+					const curChar = activeClaimsByCharGroup.get(`${groupId}:${character.id}`);
+					if (curChar && curChar.expiresAt <= Date.now()) {
+						activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
+					}
 				}, CLAIM_WINDOW_MS);
 
-				text += `💍 *LIVRE!* Digite \`!mu-casar\` ou \`!mu-casar ${character.id}\` em até 300s para casar!`;
+				const rollerMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+
+				if (isSpecialRarity) {
+					text += `🔒 *EXCLUSIVO!* ${rollerMention} tem 60s de exclusividade para casar! Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`).\n⏳ Após 60s, ficará livre para qualquer jogador casar (janela total de 300s).`;
+				} else {
+					text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
+				}
 			} else if (isOwner) {
 				const keys = keyProgress?.currentKeys ?? 1;
 				text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
@@ -493,6 +560,8 @@ function makeRollHandler(genderFilter) {
 				text += eventBanner;
 			}
 
+			const mentions = isSpecialRarity && available && userId ? [userId] : [];
+
 			// Tenta baixar a imagem e enviar com mídia
 			const imageBase64 = await downloadImageAsBase64(character.imageUrl);
 			if (imageBase64) {
@@ -507,7 +576,11 @@ function makeRollHandler(genderFilter) {
 					options: {
 						caption: text,
 						waifuCharacterId: character.id,
-						waifuGroupId: groupId
+						waifuGroupId: groupId,
+						waifuRollerUserId: userId,
+						waifuExclusiveUntil: exclusiveUntil,
+						waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
+						mentions
 					}
 				});
 			}
@@ -517,7 +590,11 @@ function makeRollHandler(genderFilter) {
 				content: text,
 				options: {
 					waifuCharacterId: character.id,
-					waifuGroupId: groupId
+					waifuGroupId: groupId,
+					waifuRollerUserId: userId,
+					waifuExclusiveUntil: exclusiveUntil,
+					waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
+					mentions
 				}
 			});
 		} catch (err) {
@@ -544,10 +621,14 @@ async function casarWaifu(bot, message, args) {
 	const name = getUserName(message);
 
 	let characterId = null;
+	let matchedRoll = null;
 
 	// 1. Se informou um ID/slug de personagem diretamente como argumento
 	if (args && args[0] && /^[a-zA-Z0-9_-]+$/.test(args[0])) {
 		characterId = args[0].trim();
+		matchedRoll =
+			activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+			(pendingClaims.get(groupId)?.characterId === characterId ? pendingClaims.get(groupId) : null);
 	}
 
 	// 2. Se a chamada foi disparada por uma reação (originReaction na mensagem de roll)
@@ -557,6 +638,7 @@ async function casarWaifu(bot, message, args) {
 		const rollData = getRollByMessageId(targetMsgId);
 		if (rollData) {
 			characterId = rollData.characterId;
+			matchedRoll = rollData;
 		} else {
 			const text =
 				message.caption ||
@@ -566,6 +648,11 @@ async function casarWaifu(bot, message, args) {
 			const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
 			if (match) {
 				characterId = match[1];
+				matchedRoll =
+					activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+					(pendingClaims.get(groupId)?.characterId === characterId
+						? pendingClaims.get(groupId)
+						: null);
 			}
 		}
 	}
@@ -581,6 +668,7 @@ async function casarWaifu(bot, message, args) {
 			const rollData = getRollByMessageId(quotedId);
 			if (rollData) {
 				characterId = rollData.characterId;
+				matchedRoll = rollData;
 			} else {
 				const text =
 					quotedMsg.caption ||
@@ -590,6 +678,11 @@ async function casarWaifu(bot, message, args) {
 				const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
 				if (match) {
 					characterId = match[1];
+					matchedRoll =
+						activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+						(pendingClaims.get(groupId)?.characterId === characterId
+							? pendingClaims.get(groupId)
+							: null);
 				}
 			}
 		}
@@ -607,6 +700,38 @@ async function casarWaifu(bot, message, args) {
 			});
 		}
 		characterId = pending.characterId;
+		matchedRoll = pending;
+	}
+
+	if (!matchedRoll) {
+		matchedRoll =
+			activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+			(pendingClaims.get(groupId)?.characterId === characterId ? pendingClaims.get(groupId) : null);
+	}
+
+	// Validação de Exclusividade (Raro, Épico, Lendário):
+	// Durante 60s apenas o autor do roll pode casar (seja por comando ou reação)
+	if (
+		matchedRoll &&
+		matchedRoll.exclusiveUntil &&
+		Date.now() < matchedRoll.exclusiveUntil &&
+		matchedRoll.rollerUserId &&
+		matchedRoll.rollerUserId !== userId
+	) {
+		const remainingSecs = Math.max(1, Math.ceil((matchedRoll.exclusiveUntil - Date.now()) / 1000));
+		const rollerMention = matchedRoll.rollerUserId.includes("@")
+			? `@${matchedRoll.rollerUserId.split("@")[0]}`
+			: `@${matchedRoll.rollerUserId}`;
+
+		return new ReturnMessage({
+			chatId,
+			content: `⏳ *Personagem exclusivo!* Este personagem é exclusivo de ${rollerMention} por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [matchedRoll.rollerUserId]
+			}
+		});
 	}
 
 	try {
@@ -619,6 +744,7 @@ async function casarWaifu(bot, message, args) {
 		});
 
 		pendingClaims.delete(groupId);
+		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
 		// Notifica canal de avisos em caso de personagem Épico ou Lendário
@@ -634,7 +760,8 @@ async function casarWaifu(bot, message, args) {
 			});
 		}
 
-		let text = `💍 *Parabéns!* Você se casou com *${character.name}*! 🎉\n`;
+		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
 		text += `🔑 Chaves: *${keys}/10*\n`;
 		text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
 		if (isSoulmate) {
@@ -644,7 +771,11 @@ async function casarWaifu(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content: text,
-			options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [userId]
+			}
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao realizar casamento.");
@@ -2685,8 +2816,11 @@ module.exports = {
 	detalhesPersonagem,
 	verCooldowns,
 	pendingClaims,
+	activeClaimsByCharGroup,
+	EXCLUSIVE_CLAIM_WINDOW_MS,
 	recordRollMessage,
 	getRollByMessageId,
 	notifySpecialMarriage,
-	downloadImageAsBase64
+	downloadImageAsBase64,
+	api
 };

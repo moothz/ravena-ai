@@ -1463,7 +1463,15 @@ class WhatsAppBotGo {
 					try {
 						const WaifuCommands = require("./functions/WaifuCommands");
 						if (typeof WaifuCommands.recordRollMessage === "function") {
-							WaifuCommands.recordRollMessage(sentMsgId, options.waifuCharacterId, message.chatId);
+							WaifuCommands.recordRollMessage(
+								sentMsgId,
+								options.waifuCharacterId,
+								message.chatId,
+								options.waifuExpiresAt,
+								options.waifuRollerUserId,
+								options.waifuExclusiveUntil,
+								options.waifuRollerUserName
+							);
 						}
 					} catch (regErr) {
 						this.logger.warn(
