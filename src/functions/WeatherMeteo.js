@@ -184,7 +184,8 @@ async function getCityCoordinates(query) {
 				count: 10,
 				language: "pt",
 				format: "json"
-			}
+			},
+			timeout: 8000
 		});
 
 		if (response.data && response.data.results && response.data.results.length > 0) {
@@ -237,7 +238,8 @@ async function getWeatherData(lat, lon) {
 					"weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max",
 				timezone: "auto",
 				forecast_days: 7
-			}
+			},
+			timeout: 8000
 		});
 
 		return response.data;
@@ -382,5 +384,6 @@ module.exports = {
 	commands,
 	getCityCoordinates,
 	getWeatherData,
-	formatWeatherMessage
+	formatWeatherMessage,
+	WMO_MAPPING
 };

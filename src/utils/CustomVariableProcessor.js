@@ -421,9 +421,9 @@ class CustomVariableProcessor {
 		if (sumMatches) {
 			// Procura por números anteriores no texto que foram gerados por variáveis random
 			const numbersInText = text
-				.split(/\\s+/)
-				.filter((word) => /^\\d+$/.test(word))
-				.map((num) => parseInt(num));
+				.split(/\s+/)
+				.filter((word) => /^\d+$/.test(word))
+				.map((num) => parseInt(num, 10));
 			const sum = numbersInText.reduce((acc, curr) => acc + curr, 0);
 
 			// Substitui {somaRandoms} pela soma
@@ -431,6 +431,37 @@ class CustomVariableProcessor {
 		}
 
 		return text;
+	}
+
+	/**
+	 * Verifica se um participante corresponde ao próprio bot
+	 * @param {Object} bot
+	 * @param {Object} participant
+	 * @returns {boolean}
+	 */
+	isBotSelf(bot, participant) {
+		if (!bot || !participant) return false;
+		const botIdentifiers = [];
+
+		if (bot.phoneNumber) {
+			botIdentifiers.push(String(bot.phoneNumber).split("@")[0]);
+		}
+		if (bot.client?.info?.wid?._serialized) {
+			botIdentifiers.push(String(bot.client.info.wid._serialized).split("@")[0]);
+		}
+		if (bot.client?.info?.wid?.user) {
+			botIdentifiers.push(String(bot.client.info.wid.user));
+		}
+		if (bot.client?.info?.me?._serialized) {
+			botIdentifiers.push(String(bot.client.info.me._serialized).split("@")[0]);
+		}
+
+		const pNum =
+			participant.id?.user ||
+			String(participant.id?._serialized || participant.id || "").split("@")[0];
+		const pLid = participant.lid ? String(participant.lid).split("@")[0] : null;
+
+		return botIdentifiers.some((id) => id && (id === pNum || id === pLid));
 	}
 
 	/**
@@ -458,15 +489,11 @@ class CustomVariableProcessor {
 			}
 
 			// Filtra para excluir o próprio bot e contas de robôs (se identificadas)
-			let filteredParticipants = participants.filter(
-				(p) => p.id._serialized !== bot.client.info.wid._serialized && !p.isBot
-			);
+			let filteredParticipants = participants.filter((p) => !this.isBotSelf(bot, p) && !p.isBot);
 
 			if (filteredParticipants.length === 0) {
 				// Fallback se todos forem robôs ou não houver humanos identificados
-				filteredParticipants = participants.filter(
-					(p) => p.id._serialized !== bot.client.info.wid._serialized
-				);
+				filteredParticipants = participants.filter((p) => !this.isBotSelf(bot, p));
 			}
 
 			if (filteredParticipants.length === 0) {
@@ -520,9 +547,10 @@ class CustomVariableProcessor {
 		if (context.group && context.group.name) {
 			text = text.replace(/{group}/g, context.group.name);
 
-			// Novas variáveis {nomeCanal} e {nomeGrupo} - mesmo comportamento que {group}
+			// Novas variáveis {nomeCanal}, {nomeGrupo} e {tituloGrupo} - mesmo comportamento que {group}
 			text = text.replace(/{nomeCanal}/g, context.group.name);
 			text = text.replace(/{nomeGrupo}/g, context.group.name);
+			text = text.replace(/{tituloGrupo}/g, context.group.name);
 		}
 
 		// Variável {contador} - número de vezes que o comando foi executado
@@ -635,7 +663,7 @@ class CustomVariableProcessor {
 									// Filtra participantes para excluir o próprio bot, robôs e menções já usadas
 									let filteredParticipants = chat.participants.filter(
 										(p) =>
-											p.id._serialized !== context.bot.client.info.wid._serialized &&
+											!this.isBotSelf(context.bot, p) &&
 											!p.isBot &&
 											!usedMentions.includes(p.id._serialized)
 									);
@@ -644,8 +672,7 @@ class CustomVariableProcessor {
 										// Fallback se todos forem robôs
 										filteredParticipants = chat.participants.filter(
 											(p) =>
-												p.id._serialized !== context.bot.client.info.wid._serialized &&
-												!usedMentions.includes(p.id._serialized)
+												!this.isBotSelf(context.bot, p) && !usedMentions.includes(p.id._serialized)
 										);
 									}
 
@@ -666,13 +693,12 @@ class CustomVariableProcessor {
 									} else if (chat.participants.length > 1) {
 										// Se todos já foram usados, reseta e usa qualquer um exceto o bot
 										let nonBotParticipants = chat.participants.filter(
-											(p) =>
-												p.id._serialized !== context.bot.client.info.wid._serialized && !p.isBot
+											(p) => !this.isBotSelf(context.bot, p) && !p.isBot
 										);
 
 										if (nonBotParticipants.length === 0) {
 											nonBotParticipants = chat.participants.filter(
-												(p) => p.id._serialized !== context.bot.client.info.wid._serialized
+												(p) => !this.isBotSelf(context.bot, p)
 											);
 										}
 
@@ -918,8 +944,8 @@ class CustomVariableProcessor {
 					// Marca este índice como usado
 					usedIndices[key].push(selectedIndex);
 
-					// Substitui a primeira ocorrência da variável pelo valor selecionado
-					text = text.replace(regex, value[selectedIndex]);
+					// Substitui a primeira ocorrência restante da variável pelo valor selecionado
+					text = text.replace(`{${key}}`, value[selectedIndex]);
 				}
 			} else if (typeof value === "string") {
 				// Para valores de string, substitui normalmente
@@ -1030,7 +1056,7 @@ class CustomVariableProcessor {
 					// Faz a solicitação de API real
 					let response;
 					if (method === "GET") {
-						response = await axios.get(url, { headers });
+						response = await axios.get(url, { headers, timeout: 10000 });
 					} else if (method === "POST") {
 						// Analisa a URL para extrair dados
 						const [baseUrl, queryParams] = url.split("?");
@@ -1045,7 +1071,7 @@ class CustomVariableProcessor {
 							});
 						}
 
-						response = await axios.post(baseUrl, data, { headers });
+						response = await axios.post(baseUrl, data, { headers, timeout: 10000 });
 					} else if (method === "FORM") {
 						// Analisa a URL para extrair dados do formulário
 						const [baseUrl, queryParams] = url.split("?");
@@ -1064,7 +1090,8 @@ class CustomVariableProcessor {
 							headers: {
 								"content-type": "application/x-www-form-urlencoded",
 								...headers
-							}
+							},
+							timeout: 10000
 						});
 					}
 
@@ -1206,16 +1233,40 @@ class CustomVariableProcessor {
 	}
 
 	/**
-	 * Obtém informações de clima (implementação de exemplo)
+	 * Obtém informações de clima via WeatherMeteo
 	 * @param {string} location - Nome da localização
 	 * @returns {Promise<string>} - Informações de clima
 	 */
 	async getWeather(location) {
 		try {
-			// Isso é um placeholder. Em uma implementação real, você chamaria uma API de clima
-			return `Clima para ${location}: Ensolarado, 25°C`;
+			if (!location || typeof location !== "string" || location.trim().length === 0) {
+				return "Localização não especificada";
+			}
+
+			const {
+				getCityCoordinates,
+				getWeatherData,
+				WMO_MAPPING
+			} = require("../functions/WeatherMeteo");
+
+			const loc = await getCityCoordinates(location.trim());
+			const weather = await getWeatherData(loc.lat, loc.lon);
+			const current = weather?.current;
+
+			if (!current) {
+				return `Dados de clima não disponíveis para ${location}`;
+			}
+
+			const temp = Math.round(current.temperature_2m);
+			const feelsLike = Math.round(current.apparent_temperature);
+			const humidity = current.relative_humidity_2m;
+			const code = current.weather_code;
+			const wmo = WMO_MAPPING?.[code] || { desc: "Tempo estável", emoji: "🌡️" };
+
+			const stateSuffix = loc.admin1 ? `, ${loc.admin1}` : "";
+			return `${wmo.emoji} ${wmo.desc}, ${temp}°C (sensação ${feelsLike}°C), umidade ${humidity}% em ${loc.name}${stateSuffix}`;
 		} catch (error) {
-			this.logger.error(`Erro ao obter clima para ${location}:`, error);
+			this.logger.error(`Erro ao obter clima para ${location}:`, error.message);
 			return `Dados de clima não disponíveis para ${location}`;
 		}
 	}
