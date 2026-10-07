@@ -1137,6 +1137,75 @@ class WhatsAppBotGo {
 		}
 	}
 
+	/**
+	 * Converte um arquivo ou buffer GIF para MP4 compatível com WhatsApp (H.264 / yuv420p / +faststart)
+	 * @param {string|Buffer} input - Buffer, base64 ou URL/caminho local do arquivo GIF
+	 * @returns {Promise<Buffer>} - Buffer do arquivo MP4 resultante
+	 */
+	async convertGifToMp4(input) {
+		const tempId = randomBytes(16).toString("hex");
+		const tempDir = os.tmpdir();
+		const tempInputPath = path.join(tempDir, `${tempId}_input.gif`);
+		const tempOutputPath = path.join(tempDir, `${tempId}_output.mp4`);
+
+		let isTempFile = false;
+		let inputPath = input;
+
+		try {
+			if (Buffer.isBuffer(input)) {
+				await writeFileAsync(tempInputPath, input);
+				inputPath = tempInputPath;
+				isTempFile = true;
+			} else if (typeof input === "string") {
+				if (input.startsWith("http://") || input.startsWith("https://")) {
+					inputPath = input;
+				} else if (fs.existsSync(input)) {
+					inputPath = input;
+				} else {
+					const base64Data = input.includes(",") ? input.split(",")[1] : input;
+					const buffer = Buffer.from(base64Data, "base64");
+					await writeFileAsync(tempInputPath, buffer);
+					inputPath = tempInputPath;
+					isTempFile = true;
+				}
+			}
+
+			await new Promise((resolve, reject) => {
+				ffmpeg(inputPath)
+					.output(tempOutputPath)
+					.noAudio()
+					.videoCodec("libx264")
+					.outputOptions([
+						"-pix_fmt yuv420p",
+						"-movflags +faststart",
+						"-preset fast",
+						"-crf 23",
+						"-vf",
+						"scale=max(2\\,trunc(iw/2)*2):max(2\\,trunc(ih/2)*2)"
+					])
+					.on("end", resolve)
+					.on("error", (err) => {
+						this.logger.error(`[convertGifToMp4] Erro ffmpeg: ${err.message}`);
+						reject(err);
+					})
+					.run();
+			});
+
+			const mp4Buffer = await readFileAsync(tempOutputPath);
+			return mp4Buffer;
+		} catch (error) {
+			this.logger.error(`[convertGifToMp4] Erro na conversão de GIF para MP4: ${error.message}`);
+			throw error;
+		} finally {
+			if (isTempFile && fs.existsSync(tempInputPath)) {
+				unlinkAsync(tempInputPath).catch(() => {});
+			}
+			if (fs.existsSync(tempOutputPath)) {
+				unlinkAsync(tempOutputPath).catch(() => {});
+			}
+		}
+	}
+
 	async getFileSizeByURL(url) {
 		try {
 			const headResponse = await axios.head(url, {
@@ -2881,6 +2950,22 @@ class WhatsAppBotGo {
 						payload.type = "gif";
 					}
 
+					if (isGifUrl) {
+						try {
+							const mp4Buffer = await this.convertGifToMp4(content);
+							const media = await this.createMediaFromBase64(
+								mp4Buffer.toString("base64"),
+								"video/mp4",
+								"animation.mp4"
+							);
+							payload.url = media.url;
+						} catch (convErr) {
+							this.logger.error(
+								`[sendMessage] Erro ao converter GIF URL para MP4: ${convErr.message}`
+							);
+						}
+					}
+
 					this.logger.debug(`[sendMessage] Content is URL! `, { endpoint, payload });
 				} else if (options.linkPreview && /(https?:\/\/[^\s]+)/i.test(content)) {
 					endpoint = "/send/link";
@@ -2936,6 +3021,47 @@ class WhatsAppBotGo {
 					}
 				} else {
 					endpoint = "/send/media";
+
+					const rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
+					const isGifFile =
+						rawMime === "image/gif" ||
+						(typeof content.filename === "string" &&
+							content.filename.toLowerCase().endsWith(".gif")) ||
+						(typeof content.data === "string" && content.data.startsWith("R0lGOD"));
+
+					// WhatsApp exige que GIFs sejam transmitidos como MP4 (H.264 / yuv420p) com GifPlayback=true.
+					// Arquivos GIF89a puros enviados como VideoMessage causam placeholder cinza vazio que não carrega no app.
+					if (isGifFile && content.data) {
+						try {
+							const mp4Buffer = await this.convertGifToMp4(content.data);
+							content.data = mp4Buffer.toString("base64");
+							content.mimetype = "video/mp4";
+							content.filename = content.filename
+								? content.filename.replace(/\.gif$/i, ".mp4")
+								: "animation.mp4";
+						} catch (convErr) {
+							this.logger.error(
+								`[sendMessage] Falha ao converter GIF para MP4: ${convErr.message}`
+							);
+						}
+					} else if (isGifFile && content.url) {
+						try {
+							const mp4Buffer = await this.convertGifToMp4(content.url);
+							const media = await this.createMediaFromBase64(
+								mp4Buffer.toString("base64"),
+								"video/mp4",
+								content.filename ? content.filename.replace(/\.gif$/i, ".mp4") : "animation.mp4"
+							);
+							content.url = media.url;
+							content.mimetype = "video/mp4";
+							content.filename = media.filename;
+						} catch (convErr) {
+							this.logger.error(
+								`[sendMessage] Falha ao converter GIF URL para MP4: ${convErr.message}`
+							);
+						}
+					}
+
 					payload.url = content.url;
 					if (!payload.url && content.data) {
 						const media = await this.createMediaFromBase64(
@@ -2949,12 +3075,9 @@ class WhatsAppBotGo {
 
 					payload.caption = typeof options.caption === "string" ? options.caption : "";
 
-					const rawMime = typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
-					let mediaType = rawMime ? rawMime.split("/")[0] : "image";
-					const isGifFile =
-						rawMime === "image/gif" ||
-						(typeof content.filename === "string" &&
-							content.filename.toLowerCase().endsWith(".gif"));
+					const currentMime =
+						typeof content.mimetype === "string" ? content.mimetype : "image/jpeg";
+					let mediaType = currentMime ? currentMime.split("/")[0] : "image";
 
 					// Se for GIF ou sendVideoAsGif estiver ativo, use "gif" para que a API Go
 					// envie com GifPlayback=true (reprodução automática sem controles de vídeo)

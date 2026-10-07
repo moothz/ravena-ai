@@ -97,9 +97,13 @@ async function main() {
 		});
 
 		botGo.isConnected = true;
-		botGo.createMediaFromBase64 = async (data, mimeType, filename) => ({
-			url: `http://example.com/${filename || "media"}`
-		});
+		let createdMediaArgs = null;
+		botGo.createMediaFromBase64 = async (data, mimeType, filename) => {
+			createdMediaArgs = { data, mimeType, filename };
+			return {
+				url: `http://example.com/${filename || "media"}`
+			};
+		};
 
 		let capturedPayload = null;
 		let capturedEndpoint = null;
@@ -114,6 +118,7 @@ async function main() {
 
 		// 3a. MessageMedia with mimetype 'image/gif' and options.sendVideoAsGif = true
 		capturedPayload = null;
+		createdMediaArgs = null;
 		await botGo.sendMessage(
 			"123456@g.us",
 			{
@@ -131,10 +136,23 @@ async function main() {
 			"gif",
 			`Esperava payload.type = 'gif' para imagem GIF com sendVideoAsGif, recebeu '${capturedPayload.type}'`
 		);
-		console.log("✓ Test 3a passed: WhatsAppBotGo define payload.type = 'gif' com sendVideoAsGif");
+		assert.strictEqual(
+			createdMediaArgs.mimeType,
+			"video/mp4",
+			`Esperava que o GIF fosse convertido para 'video/mp4', recebeu '${createdMediaArgs?.mimeType}'`
+		);
+		assert.strictEqual(
+			createdMediaArgs.filename,
+			"yone.mp4",
+			`Esperava extensão renomeada para .mp4, recebeu '${createdMediaArgs?.filename}'`
+		);
+		console.log(
+			"✓ Test 3a passed: WhatsAppBotGo converte GIF para MP4 e define payload.type = 'gif' com sendVideoAsGif"
+		);
 
 		// 3b. MessageMedia with mimetype 'image/gif' without options.sendVideoAsGif
 		capturedPayload = null;
+		createdMediaArgs = null;
 		await botGo.sendMessage(
 			"123456@g.us",
 			{
@@ -152,11 +170,16 @@ async function main() {
 			"gif",
 			`Esperava payload.type = 'gif' para arquivo image/gif sem sendVideoAsGif, recebeu '${capturedPayload.type}'`
 		);
+		assert.strictEqual(
+			createdMediaArgs.mimeType,
+			"video/mp4",
+			`Esperava conversão automática para 'video/mp4'`
+		);
 		console.log(
-			"✓ Test 3b passed: WhatsAppBotGo define payload.type = 'gif' automaticamente para image/gif"
+			"✓ Test 3b passed: WhatsAppBotGo converte GIF e define payload.type = 'gif' automaticamente"
 		);
 
-		// 3c. URL string ending in .gif
+		// 3c. URL string ending in .gif (fallback se URL não existir na rede)
 		capturedPayload = null;
 		await botGo.sendMessage("123456@g.us", "http://example.com/attachments/test.gif", {});
 		assert.strictEqual(capturedEndpoint, "/send/media");
@@ -171,6 +194,7 @@ async function main() {
 
 		// 3d. Normal JPEG image should remain 'image'
 		capturedPayload = null;
+		createdMediaArgs = null;
 		await botGo.sendMessage(
 			"123456@g.us",
 			{
@@ -187,7 +211,25 @@ async function main() {
 			"image",
 			`Esperava payload.type = 'image' para JPEG, recebeu '${capturedPayload.type}'`
 		);
+		assert.strictEqual(
+			createdMediaArgs.mimeType,
+			"image/jpeg",
+			"JPEG não deve ser convertido para MP4"
+		);
 		console.log("✓ Test 3d passed: WhatsAppBotGo mantém payload.type = 'image' para JPEG comum");
+
+		// Test 4: convertGifToMp4 method directly
+		const mp4Result = await botGo.convertGifToMp4(
+			"R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+		);
+		assert(Buffer.isBuffer(mp4Result), "Resultado deve ser um Buffer");
+		assert(mp4Result.length > 0, "Buffer MP4 não pode ser vazio");
+		assert.strictEqual(
+			mp4Result.slice(4, 8).toString(),
+			"ftyp",
+			"Buffer deve ter o atom ftyp característico de container MP4"
+		);
+		console.log("✓ Test 4 passed: convertGifToMp4 gera MP4 válido com atom ftyp");
 	}
 
 	// Clean up dummy gif
