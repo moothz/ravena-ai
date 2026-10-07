@@ -1220,116 +1220,347 @@ class CustomVariableProcessor {
 		}
 	}
 
+	/**
+	 * Detecta se a URL corresponde a uma imagem, GIF ou vídeo
+	 * @param {string} url
+	 * @returns {string|null} 'image' | 'gif' | 'video' | null
+	 */
+	detectMediaType(url) {
+		if (!url || typeof url !== "string") return null;
+		const cleanUrl = url.split("?")[0].toLowerCase();
+		if (cleanUrl.endsWith(".mp4") || cleanUrl.endsWith(".webm") || url.includes("v.redd.it")) {
+			return "video";
+		}
+		if (cleanUrl.endsWith(".gif") || cleanUrl.endsWith(".gifv")) {
+			return "gif";
+		}
+		if (
+			cleanUrl.endsWith(".jpg") ||
+			cleanUrl.endsWith(".jpeg") ||
+			cleanUrl.endsWith(".png") ||
+			cleanUrl.endsWith(".webp") ||
+			url.includes("i.redd.it") ||
+			url.includes("i.imgur.com")
+		) {
+			return "image";
+		}
+		return null;
+	}
+
+	/**
+	 * Normaliza a lista de posts vinda da API do Reddit / espelhos
+	 * @param {Array} children
+	 * @returns {Array<Object>}
+	 */
+	normalizeRedditChildren(children) {
+		return children
+			.map((p) => {
+				const data = p?.data || {};
+				const rawUrl = data.url_overridden_by_dest || data.url || "";
+				const videoUrl =
+					data.media?.reddit_video?.fallback_url ||
+					data.preview?.reddit_video_preview?.fallback_url ||
+					null;
+				const type = videoUrl ? "video" : this.detectMediaType(rawUrl);
+
+				return {
+					id: data.id || String(Math.random()),
+					title: data.title || "",
+					author: data.author || "",
+					subreddit: data.subreddit_name_prefixed || `r/${data.subreddit || ""}`,
+					ups: data.ups || 0,
+					downs: data.downs || 0,
+					permalink: data.permalink
+						? data.permalink.startsWith("http")
+							? data.permalink
+							: `https://reddit.com${data.permalink.startsWith("/") ? "" : "/"}${data.permalink}`
+						: rawUrl,
+					url: rawUrl,
+					videoUrl,
+					isNsfw: Boolean(data.over_18),
+					stickied: Boolean(data.stickied),
+					type
+				};
+			})
+			.filter((p) => Boolean(p.url || p.videoUrl));
+	}
+
+	/**
+	 * Busca posts de um subreddit utilizando múltiplos provedores públicos em cascata
+	 * @param {string} subreddit
+	 * @returns {Promise<Array<Object>>}
+	 */
+	async fetchRedditPosts(subreddit) {
+		const cleanSubreddit = subreddit.replace(/^r\//i, "").trim();
+
+		// 1. Provedor meme-api.com (serviço dedicado para mídia do Reddit, imune a bloqueios de IP de datacenter)
+		try {
+			const memeResponse = await axios.get(
+				`https://meme-api.com/gimme/${encodeURIComponent(cleanSubreddit)}/50`,
+				{
+					timeout: 8000,
+					headers: {
+						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RavenaBot/1.0"
+					}
+				}
+			);
+			const memes = memeResponse?.data?.memes;
+			if (Array.isArray(memes) && memes.length > 0) {
+				return memes
+					.map((m) => {
+						const id = m.postLink ? m.postLink.split("/").pop() : String(Math.random());
+						const mediaType = this.detectMediaType(m.url) || "image";
+						return {
+							id,
+							title: m.title || "",
+							author: m.author || "",
+							subreddit: m.subreddit ? `r/${m.subreddit}` : `r/${cleanSubreddit}`,
+							ups: m.ups || 0,
+							downs: 0,
+							permalink: m.postLink || `https://reddit.com/r/${cleanSubreddit}`,
+							url: m.url,
+							videoUrl: null,
+							isNsfw: Boolean(m.nsfw),
+							stickied: false,
+							type: mediaType
+						};
+					})
+					.filter((m) => Boolean(m.url));
+			}
+		} catch (err) {
+			this.logger.debug(
+				`[Reddit] meme-api não retornou posts para r/${cleanSubreddit}: ${err.message}`
+			);
+		}
+
+		// 2. Provedor Reddit JSON público direto (funciona caso o IP não esteja bloqueado)
+		try {
+			const directResponse = await axios.get(
+				`https://www.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/hot.json?limit=100`,
+				{
+					headers: {
+						"User-Agent":
+							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+						Accept: "application/json, text/plain, */*"
+					},
+					timeout: 8000
+				}
+			);
+			const children = directResponse?.data?.data?.children;
+			if (Array.isArray(children) && children.length > 0) {
+				const normalized = this.normalizeRedditChildren(children);
+				if (normalized.length > 0) return normalized;
+			}
+		} catch (err) {
+			this.logger.debug(
+				`[Reddit] Requisição pública direta falhou para r/${cleanSubreddit}: ${err.message}`
+			);
+		}
+
+		// 3. Provedor PullPush API (busca pública de submissões como contingência)
+		try {
+			const pullpushResponse = await axios.get(
+				`https://api.pullpush.io/reddit/search/submission/?subreddit=${encodeURIComponent(cleanSubreddit)}&size=50`,
+				{
+					headers: {
+						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RavenaBot/1.0"
+					},
+					timeout: 8000
+				}
+			);
+			const submissions = pullpushResponse?.data?.data;
+			if (Array.isArray(submissions) && submissions.length > 0) {
+				return submissions
+					.map((data) => {
+						const rawUrl = data.url_overridden_by_dest || data.url || "";
+						const videoUrl =
+							data.media?.reddit_video?.fallback_url ||
+							data.preview?.reddit_video_preview?.fallback_url ||
+							null;
+						const type = videoUrl ? "video" : this.detectMediaType(rawUrl);
+
+						return {
+							id: data.id || String(Math.random()),
+							title: data.title || "",
+							author: data.author || "",
+							subreddit: data.subreddit ? `r/${data.subreddit}` : `r/${cleanSubreddit}`,
+							ups: data.ups || data.score || 0,
+							downs: 0,
+							permalink: data.permalink
+								? data.permalink.startsWith("http")
+									? data.permalink
+									: `https://reddit.com${data.permalink.startsWith("/") ? "" : "/"}${data.permalink}`
+								: rawUrl,
+							url: rawUrl,
+							videoUrl,
+							isNsfw: Boolean(data.over_18),
+							stickied: Boolean(data.stickied),
+							type
+						};
+					})
+					.filter((p) => Boolean((p.url || p.videoUrl) && p.type));
+			}
+		} catch (err) {
+			this.logger.debug(`[Reddit] PullPush falhou para r/${cleanSubreddit}: ${err.message}`);
+		}
+
+		return [];
+	}
+
+	/**
+	 * Processa variáveis do Reddit no formato {reddit-subreddit1-subreddit2...}
+	 * @param {string} text
+	 * @param {Object} context
+	 * @returns {Promise<{type: string, text?: string, payload?: Object}>}
+	 */
 	async processRedditVariable(text, context) {
-		// A regex agora busca por {reddit-xxx} dentro do texto recebido
 		const regex = /\{reddit-(.+?)\}/;
 		const match = text.match(regex);
 
-		// Se a variável não for encontrada, retorna o texto original para continuar o processamento.
 		if (!match) {
 			return { type: "text", text };
 		}
 
-		const fullVariable = match[0]; // Ex: "{reddit-memes-funny-coolthings}"
+		const fullVariable = match[0];
+		const subredditOptions = match[1]
+			.split("-")
+			.map((s) => s.trim().replace(/^r\//i, ""))
+			.filter(Boolean);
 
-		// Separa os subreddits especificados pelo caractere '-'
-		const subredditOptions = match[1].split("-"); // Ex: ['memes', 'funny', 'coolthings']
-
-		// Escolhe um subreddit aleatório da lista fornecida
-		const subreddit = subredditOptions[Math.floor(Math.random() * subredditOptions.length)];
-
-		try {
-			// 1. Busca os posts mais recentes via API do Reddit
-			const response = await axios.get(`https://www.reddit.com/r/${subreddit}/new.json?limit=100`);
-			const posts = response?.data?.data?.children;
-
-			if (!posts || posts.length === 0) {
-				const newText = text.replace(
-					fullVariable,
-					`Subreddit r/${subreddit} não foi encontrado ou não possui posts.`
-				);
-				return { type: "text", text: newText };
-			}
-
-			// 2. Gerencia o cache global
-			const groupId = context.group;
-			if (!this.redditCache[groupId]) this.redditCache[groupId] = {};
-			if (!this.redditCache[groupId][subreddit]) this.redditCache[groupId][subreddit] = [];
-
-			// 3. Filtra posts fixados e já enviados
-			let availablePosts = posts
-				.filter((p) => !p.data.stickied)
-				.filter((p) => !this.redditCache[groupId][subreddit].includes(p.data.id));
-
-			// 4. Se todos os posts já foram vistos, reseta o cache
-			if (availablePosts.length === 0 && posts.filter((p) => !p.data.stickied).length > 0) {
-				this.redditCache[groupId][subreddit] = [];
-				availablePosts = posts.filter((p) => !p.data.stickied);
-			}
-
-			// 5. Separa e seleciona a mídia com base na prioridade (Imagem > GIF > Vídeo)
-			const images = [],
-				gifs = [],
-				videos = [];
-			for (const post of availablePosts) {
-				const { data } = post;
-				const url = data.url_overridden_by_dest;
-				const hint = data.post_hint;
-				if (!url) continue;
-
-				if (hint === "image" && (url.endsWith(".jpg") || url.endsWith(".png"))) images.push(post);
-				else if (hint === "image" && (url.endsWith(".gif") || url.endsWith(".gifv")))
-					gifs.push(post);
-				else if (
-					(data.is_video || hint === "hosted:video") &&
-					data?.media?.reddit_video?.fallback_url
-				) {
-					videos.push(post);
-				}
-			}
-
-			const selectRandom = (arr) =>
-				arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : null;
-			let selectedPost, mediaUrl, mediaType;
-
-			let customMime = "image/jpeg";
-			if ((selectedPost = selectRandom(images))) {
-				mediaUrl = selectedPost.data.url_overridden_by_dest;
-				mediaType = "image";
-			} else if ((selectedPost = selectRandom(gifs))) {
-				mediaUrl = selectedPost.data.url_overridden_by_dest;
-				mediaType = "image";
-			} else if ((selectedPost = selectRandom(videos))) {
-				mediaUrl = selectedPost.data.media.reddit_video.fallback_url;
-				mediaType = "video";
-				customMime = "video/mp4";
-			}
-
-			// 6. Cria o MessageMedia e retorna o payload
-			if (selectedPost && mediaUrl && mediaType) {
-				const opts = { unsafeMime: false, customMime };
-				const media = await context.bot.createMediaFromURL(mediaUrl, opts);
-
-				// Hijack as options pra fazer legenda
-				context.options.caption = `📷 [${selectedPost.data.subreddit_name_prefixed}] _${selectedPost.data.title}_
-> ${selectedPost.data.ups} 👍 ${selectedPost.data.downs} 👎
-> reddit.com/${selectedPost.data.permalink}`; // > reddit.com/u/${selectedPost.data.author
-
-				if (media) {
-					this.redditCache[groupId][subreddit].push(selectedPost.data.id);
-					// Retorna um tipo 'media' para indicar que a mensagem inteira deve ser este anexo
-					return { type: "media", payload: media };
-				}
-			}
-
-			// Se nenhuma mídia foi encontrada ou a criação do MessageMedia falhou
-			const errorText = `Nenhuma mídia (imagem/gif/vídeo) recente encontrada em r/${subreddit}.`;
-			return { type: "text", text: text.replace(fullVariable, errorText) };
-		} catch (error) {
-			console.error(`[RedditVariable] Erro ao processar r/${subreddit}:`, error.message);
-			const errorText = `Subreddit r/${subreddit} não foi encontrado.`;
+		if (subredditOptions.length === 0) {
+			const errorText = "Subreddit não especificado.";
 			return { type: "text", text: text.replace(fullVariable, errorText) };
 		}
+
+		// Embaralha as opções para permitir alternância quando múltiplos subreddits são fornecidos
+		const shuffledOptions = [...subredditOptions].sort(() => Math.random() - 0.5);
+
+		const groupId =
+			context?.group?.id ||
+			(typeof context?.group === "string" ? context.group : null) ||
+			context?.message?.group ||
+			context?.message?.author ||
+			"global";
+
+		if (!this.redditCache[groupId]) this.redditCache[groupId] = {};
+
+		const filterNsfw = Boolean(context?.group?.filters?.nsfw);
+
+		for (const subreddit of shuffledOptions) {
+			if (!this.redditCache[groupId][subreddit]) this.redditCache[groupId][subreddit] = [];
+
+			try {
+				const posts = await this.fetchRedditPosts(subreddit);
+				if (!posts || posts.length === 0) {
+					continue;
+				}
+
+				// Filtra posts fixados, NSFW (se filtro ativo) e já vistos no grupo
+				let availablePosts = posts
+					.filter((p) => !p.stickied)
+					.filter((p) => !filterNsfw || !p.isNsfw)
+					.filter((p) => !this.redditCache[groupId][subreddit].includes(p.id));
+
+				// Se todos os posts disponíveis já foram vistos, reseta o cache para este subreddit
+				if (
+					availablePosts.length === 0 &&
+					posts.filter((p) => !p.stickied && (!filterNsfw || !p.isNsfw)).length > 0
+				) {
+					this.redditCache[groupId][subreddit] = [];
+					availablePosts = posts.filter((p) => !p.stickied).filter((p) => !filterNsfw || !p.isNsfw);
+				}
+
+				if (availablePosts.length === 0) {
+					continue;
+				}
+
+				// Separa por prioridade: Imagem > GIF > Vídeo
+				const images = [];
+				const gifs = [];
+				const videos = [];
+
+				for (const post of availablePosts) {
+					if (post.type === "video" || post.videoUrl) {
+						videos.push(post);
+					} else if (post.type === "gif") {
+						gifs.push(post);
+					} else if (post.type === "image") {
+						images.push(post);
+					}
+				}
+
+				const selectRandom = (arr) =>
+					arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : null;
+
+				// Tenta até 3 candidatos caso algum link de mídia falhe ao ser baixado
+				const candidatesPool = [
+					selectRandom(images),
+					selectRandom(gifs),
+					selectRandom(videos)
+				].filter(Boolean);
+
+				for (const selectedPost of candidatesPool) {
+					let mediaUrl = selectedPost.url;
+					let mediaType = selectedPost.type;
+					let customMime = "image/jpeg";
+
+					if (selectedPost.videoUrl) {
+						mediaUrl = selectedPost.videoUrl;
+						mediaType = "video";
+						customMime = "video/mp4";
+					} else if (mediaType === "gif") {
+						if (mediaUrl.toLowerCase().endsWith(".gifv")) {
+							mediaUrl = mediaUrl.replace(/\.gifv$/i, ".mp4");
+							mediaType = "video";
+							customMime = "video/mp4";
+						} else {
+							customMime = "image/gif";
+						}
+					} else if (mediaType === "video") {
+						customMime = "video/mp4";
+					}
+
+					if (context?.bot?.createMediaFromURL && mediaUrl) {
+						try {
+							const opts = { unsafeMime: true, customMime };
+							const media = await context.bot.createMediaFromURL(mediaUrl, opts);
+
+							if (media) {
+								if (!context.options) {
+									context.options = {};
+								}
+
+								const subDisplay = selectedPost.subreddit.startsWith("r/")
+									? selectedPost.subreddit
+									: `r/${selectedPost.subreddit}`;
+
+								const link = selectedPost.permalink.startsWith("http")
+									? selectedPost.permalink
+									: `https://reddit.com${selectedPost.permalink.startsWith("/") ? "" : "/"}${selectedPost.permalink}`;
+
+								const cleanLink = link.replace(/^https?:\/\//i, "");
+
+								context.options.caption = `📷 [${subDisplay}] _${selectedPost.title}_\n> ${selectedPost.ups} 👍 ${selectedPost.downs} 👎\n> ${cleanLink}`;
+
+								this.redditCache[groupId][subreddit].push(selectedPost.id);
+								return { type: "media", payload: media };
+							}
+						} catch (mediaError) {
+							this.logger.warn(
+								`[RedditVariable] Falha ao baixar mídia de ${mediaUrl}: ${mediaError.message}`
+							);
+						}
+					}
+				}
+			} catch (subError) {
+				this.logger.error(`[RedditVariable] Erro ao processar r/${subreddit}:`, subError.message);
+			}
+		}
+
+		// Se nenhuma mídia foi encontrada ou todos os subreddits falharam
+		const subList = subredditOptions.map((s) => `r/${s}`).join(", ");
+		const errorText = `Subreddit ${subList} não foi encontrado ou não possui posts com mídia recente.`;
+		return { type: "text", text: text.replace(fullVariable, errorText) };
 	}
 
 	/**
