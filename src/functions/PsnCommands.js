@@ -2,209 +2,108 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const axios = require("axios");
-
-// Cria novo logger
 const logger = new Logger("psncommand");
 
-const API_BASE_URL = process.env.PSNCOMMAND_API_URL;
-
-/**
- * Consulta as platinas de um usuário da PSN
- * @param {WhatsAppBot} bot
- * @param {Object} message
- * @param {Array} args
- * @param {Object} group
- * @returns {Promise<ReturnMessage>}
- */
-async function psnPlatinaCommand(bot, message, args, group) {
-	const chatId = message.group || message.author;
-
-	// Verifica se foi fornecido o usuário
-	if (args.length === 0) {
-		return new ReturnMessage({
-			chatId,
-			content:
-				"❌ Por favor, forneça um nome de usuário da PSN.\n\n*Exemplo:* !psn-platinas meu_usuario",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
+function configuration(variable) {
+	const raw = process.env[variable]?.trim();
+	const key = process.env.API_KEY_STEAMCOMMAND?.trim();
+	if (!raw || !key) throw new Error("PLATFORM_NOT_CONFIGURED");
+	let base;
+	try { base = new URL(raw); } catch { throw new Error("PLATFORM_NOT_CONFIGURED"); }
+	if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
+		throw new Error("PLATFORM_NOT_CONFIGURED");
 	}
-
-	const usuario = args.join(" ");
-
-	try {
-		const apiKey = process.env.API_KEY_STEAMCOMMAND;
-
-		if (!apiKey) {
-			logger.error("API_KEY_STEAMCOMMAND não configurada");
-			return new ReturnMessage({
-				chatId,
-				content: "❌ Erro: API_KEY_STEAMCOMMAND não configurada!",
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		// Primeiro, buscar o usuário
-		const searchResponse = await axios.get(
-			`${API_BASE_URL}/search/${encodeURIComponent(usuario)}`,
-			{
-				headers: { "api-key": apiKey }
-			}
-		);
-
-		const searchData = searchResponse.data;
-
-		// Verificar se há resultados
-		if (!searchData.results || searchData.results.length === 0) {
-			return new ReturnMessage({
-				chatId,
-				content: "❌ Nenhum resultado encontrado!",
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		const socialResults = searchData.results.find((r) => r.domain === "SocialAllAccounts");
-
-		if (!socialResults || !socialResults.results || socialResults.results.length === 0) {
-			return new ReturnMessage({
-				chatId,
-				content: "❌ Usuário não encontrado na PSN!",
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		// Pegar o primeiro resultado (mais relevante)
-		const userData = socialResults.results[0].socialMetadata;
-		const accountId = userData.accountId;
-
-		if (!accountId) {
-			return new ReturnMessage({
-				chatId,
-				content: "❌ Não foi possível obter o ID da conta!",
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		// Buscar as platinas
-		const platinumsResponse = await axios.get(`${API_BASE_URL}/user/${accountId}/platinums`, {
-			headers: { "api-key": apiKey }
-		});
-
-		const platinumsData = platinumsResponse.data;
-
-		// Montar a mensagem de resposta
-		let resposta = `🏆 *Platinas da PlayStation*\n\n`;
-		resposta += `👤 *${userData.onlineId}*\n`;
-		resposta += `🌍 País: *${userData.country || "N/A"}*\n`;
-		resposta += `💎 Total de Platinas: *${platinumsData.totalPlatinums}*\n`;
-		resposta += `⭐ PS Plus: *${userData.isPsPlus ? "Sim" : "Não"}*\n\n`;
-
-		// Adicionar as platinas
-		if (platinumsData.platinums && platinumsData.platinums.length > 0) {
-			resposta += `🏅 *Jogos Platinados:*\n\n`;
-
-			platinumsData.platinums.forEach((game, index) => {
-				const totalTrophies =
-					game.earnedTrophies.bronze +
-					game.earnedTrophies.silver +
-					game.earnedTrophies.gold +
-					game.earnedTrophies.platinum;
-
-				const lastUpdated = new Date(game.lastUpdatedDateTime);
-				const dateText = lastUpdated.toLocaleDateString("pt-BR");
-
-				resposta += `*${index + 1}. ${game.trophyTitleName}*\n`;
-				resposta += `   🥉 ${game.earnedTrophies.bronze} 🥈 ${game.earnedTrophies.silver} 🥇 ${game.earnedTrophies.gold} 💎 ${game.earnedTrophies.platinum}\n`;
-				resposta += `   🏅 ${totalTrophies} troféu${totalTrophies > 1 ? "s" : ""} • 📅 ${dateText}\n\n`;
-			});
-		} else {
-			resposta += `😔 _Nenhuma platina encontrada ainda..._\n\n`;
-		}
-
-		return new ReturnMessage({
-			chatId,
-			content: resposta,
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	} catch (error) {
-		logger.error("Erro ao buscar platinas da PSN:");
-
-		let errorMessage = "❌ Erro ao buscar informações da PSN.";
-
-		if (error.response) {
-			if (error.response.status === 404) {
-				errorMessage = "❌ Usuário não encontrado!";
-			} else if (error.response.status === 401 || error.response.status === 403) {
-				errorMessage = "❌ Erro de autenticação com a API. Verifique a API key.";
-			} else {
-				errorMessage = `❌ Erro na API: ${error.response.status}`;
-			}
-		} else if (error.request) {
-			errorMessage = "❌ Não foi possível conectar à API. Verifique sua conexão.";
-		}
-
-		return new ReturnMessage({
-			chatId,
-			content: errorMessage,
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
+	return {
+		base: raw.replace(/\/+$/, ""),
+		options: { headers: { Authorization: `Bearer ${key}` }, timeout: 25000, maxRedirects: 0 }
+	};
 }
 
-// Comandos registrados
-const commands = [
-	new Command({
-		name: "psn-platinas",
-		aliases: ["psn", "playstation"],
-		description: "Consulta as platinas de um usuário da PSN",
-		usage: "!psn-platinas <usuario>",
-		category: "jogos",
-		needsArgs: true,
-		minArgs: 1,
-		reactions: {
-			after: "🏆"
-		},
-		method: psnPlatinaCommand
-	})
-];
+async function fetchPsnLookup(onlineId) {
+	const { base, options } = configuration("PSNCOMMAND_API_URL");
+	const response = await axios.get(
+		`${base}/internal/psn/profiles/${encodeURIComponent(onlineId)}/platinums`,
+		{ ...options, timeout: 90000 }
+	);
+	if (!response.data?.profile?.onlineId || !Array.isArray(response.data.platinums)) {
+		throw new Error("INVALID_PLATFORM_RESPONSE");
+	}
+	return response.data;
+}
 
-// Exporta os comandos
+function lookupErrorMessage(error, platform) {
+	const code = error.lookupCode || error.response?.data?.code;
+	const status = error.response?.status;
+	if (error.message === "PLATFORM_NOT_CONFIGURED") return "❌ A consulta de platinas precisa ser configurada pelo administrador do bot.";
+	if (error.message === "PLATFORM_LOOKUP_PENDING") return "⏳ A consulta Steam ainda está em andamento. Tente o comando novamente em alguns minutos para recuperar o resultado.";
+	if (code === "LOOKUP_EXPIRED") return "⏳ A consulta expirou. Execute o comando novamente para iniciar outra.";
+	if (status === 401 || status === 403) return "❌ A credencial da API precisa ser verificada pelo administrador do bot.";
+	if (["PSN_PRIVATE", "STEAM_PRIVATE", "STEAM_STATS_UNAVAILABLE"].includes(code)) return `🔒 Deixe o perfil, os jogos e as conquistas públicos na ${platform} para consultar.`;
+	if (status === 404 || ["PSN_NOT_FOUND", "STEAM_NOT_FOUND"].includes(code)) return `❌ Perfil não encontrado na ${platform}. Confira o identificador informado.`;
+	if (status === 400) return platform === "Steam" ? "❌ Informe um SteamID64, nome da URL personalizada ou link do perfil Steam." : "❌ Informe um Online ID PSN válido, com 3 a 16 caracteres.";
+	if (code === "PSN_AUTH_EXPIRED") return "❌ A autenticação PSN precisa ser renovada pelo administrador.";
+	if (status === 429 || ["STEAM_RATE_LIMIT", "PSN_RATE_LIMIT", "LOOKUP_BUSY"].includes(code)) return "⏳ Há muitas consultas em andamento. Tente novamente em alguns minutos.";
+	return `❌ Não foi possível consultar a ${platform} agora. Tente novamente mais tarde.`;
+}
+
+function safeName(value) {
+	return String(value || "Sem nome").replace(/[\r\n*_`]/g, " ").slice(0, 200);
+}
+
+function formatPsnReport(data, limit = 50) {
+	let text = `🏆 *Platinas da PlayStation*\n\n👤 *${safeName(data.profile.onlineId)}*\n🎮 Conjuntos de troféus: *${data.totalGames}*\n💎 Platinas: *${data.totalPlatinums}*\n\n`;
+	for (const [index, game] of data.platinums.slice(0, limit).entries()) {
+		const trophies = game.earnedTrophies;
+		text += `*${index + 1}. ${safeName(game.trophyTitleName)}* (${safeName(game.trophyTitlePlatform)})\n   🥉 ${trophies.bronze} 🥈 ${trophies.silver} 🥇 ${trophies.gold} 💎 ${trophies.platinum}\n`;
+		const date = new Date(game.lastUpdatedDateTime);
+		if (Number.isFinite(date.getTime())) text += `   📅 Última atividade: ${date.toLocaleDateString("pt-BR")}\n`;
+		text += "\n";
+	}
+	if (!data.platinums.length) text += "😔 Nenhuma platina encontrada.\n";
+	if (data.platinums.length > limit) text += `📋 Exibindo ${limit} de ${data.platinums.length} conjuntos platinados.\n`;
+	text += "\nℹ️ Versões com conjuntos de troféus distintos contam separadamente na PSN.\n";
+	text += data.fromCache ? "📦 Dados em cache." : "✨ Consulta atualizada.";
+	return text;
+}
+
+function splitPlatformMessage(text, maxLength = 3500) {
+	const parts = [];
+	let part = "";
+	for (const line of text.split("\n")) {
+		if (part && part.length + line.length + 1 > maxLength) { parts.push(part.trim()); part = ""; }
+		part += line + "\n";
+	}
+	if (part.trim()) parts.push(part.trim());
+	return parts;
+}
+
+function reply(message, content) {
+    const messages = splitPlatformMessage(content).map((part) => new ReturnMessage({
+        chatId: message.group || message.author, content: part,
+        options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+    }));
+    return messages.length === 1 ? messages[0] : messages;
+}
+async function psnPlatinaCommand(bot, message, args, group) {
+    if (!args.length) return reply(message, "❌ Informe seu Online ID PSN.\n*Exemplo:* !psn-platinas SuperSugoii");
+    try {
+        const data = await fetchPsnLookup(args.join(" ").trim());
+        return reply(message, formatPsnReport(data));
+    } catch (error) {
+        logger.error("Erro na consulta PSN", { code: error.lookupCode || error.response?.data?.code, status: error.response?.status });
+        return reply(message, lookupErrorMessage(error, "PSN"));
+    }
+}
+const commands = [new Command({
+    name: "psn-platinas", aliases: ["psn", "playstation"],
+    description: "Consulta as platinas PSN sem cadastro no Platifly",
+    usage: "!psn-platinas <online-id>", category: "jogos", needsArgs: true, minArgs: 1,
+    reactions: { after: "🏆" }, method: psnPlatinaCommand
+})];
 const helper = {
-	about: "Consulta de perfil, troféus e jogos recentes na PlayStation Network (PSN)",
-	implementation:
-		"Utiliza PSN API para extrair nível da conta, troféus (Platina, Ouro, Prata, Bronze) e avatar do jogador",
-	tags: "psn,playstation,sony,trofeus,ps4,ps5,games,jogos",
-	cmds: [
-		{
-			cmd: "!psn",
-			desc: "Consulta o perfil e troféus de uma conta PSN",
-			usage: ["!psn SeuPSNID"],
-			category: "jogos"
-		}
-	]
+    about: "Consulta de platinas públicas na PlayStation Network",
+    implementation: "Consulta protegida à API PSN Platifly pelo Online ID, sem vincular contas",
+    tags: "psn,playstation,sony,trofeus,ps4,ps5,games,jogos",
+    cmds: [{ cmd: "!psn", desc: "Consulta platinas de uma conta PSN", usage: ["!psn SeuPSNID"], category: "jogos" }]
 };
-
-module.exports = {
-	helper,
-	commands
-};
+module.exports = { helper, commands, psnPlatinaCommand };
