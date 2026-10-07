@@ -2123,10 +2123,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isMedia) {
             const end = value.indexOf('}');
-            const meta = value.substring(1, end).split('-');
-            mediaType = meta[0]; 
-            mediaContent = meta[1]; 
-            mediaCaption = value.substring(end+1).trim();
+            const inside = value.substring(1, end);
+            const firstDash = inside.indexOf('-');
+            mediaType = firstDash !== -1 ? inside.substring(0, firstDash) : inside;
+            mediaContent = firstDash !== -1 ? inside.substring(firstDash + 1) : '';
+            mediaCaption = value.substring(end + 1).trim();
         }
 
         if (mediaType === 'text') {
@@ -2230,7 +2231,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         xhr.onload = () => {
             if (xhr.status === 200) {
-                const data = JSON.parse(xhr.responseText);
+                let data = {};
+                try {
+                    data = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    showCustomAlert('Resposta inválida do servidor.');
+                    cleanup();
+                    return;
+                }
                 if (data.success) {
                     const finalType = type;
                     const responseStr = `{${finalType}-${data.fileName}} ${caption}`.trim();
@@ -2252,15 +2260,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     els.uploadModal.classList.add('hidden');
                 } else {
-                    showCustomAlert('Erro: ' + data.message);
+                    showCustomAlert('Erro: ' + (data.message || 'Falha no upload.'));
                 }
             } else {
-                showCustomAlert('Erro no upload.');
+                let errorMsg = 'Erro no upload.';
+                try {
+                    const errData = JSON.parse(xhr.responseText);
+                    if (errData && errData.message) {
+                        errorMsg = errData.message;
+                    }
+                } catch {}
+                console.error('[Upload] Falha:', xhr.status, xhr.responseText);
+                if (xhr.status === 401 && errorMsg.toLowerCase().includes('token')) {
+                    showCustomAlert(`Sessão expirada: ${errorMsg}`);
+                } else {
+                    showCustomAlert(`Erro no upload (${xhr.status}): ${errorMsg}`);
+                }
             }
             cleanup();
         };
 
         xhr.onerror = () => {
+            console.error('[Upload] Erro de rede ou conexão');
             showCustomAlert('Erro de conexão durante o upload.');
             cleanup();
         };

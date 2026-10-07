@@ -485,67 +485,102 @@ function registerManagementRoutes(api) {
 	});
 
 	// Upload de mídia de grupo
-	app.post("/api/upload-media", api.strictLimiter, upload.single("file"), async (req, res) => {
-		const { token, groupId, type, name, caption } = req.body;
-		const file = req.file;
+	app.post(
+		"/api/upload-media",
+		api.strictLimiter,
+		(req, res, next) => {
+			upload.single("file")(req, res, (err) => {
+				if (err) {
+					api.logger.warn(`[management] Upload multer error: ${err.message}`);
+					return res.status(400).json({
+						success: false,
+						message: `Erro no upload do arquivo: ${err.message}`
+					});
+				}
+				next();
+			});
+		},
+		async (req, res) => {
+			const { token, groupId, type, name, caption } = req.body;
+			const file = req.file;
 
-		if (!token || !groupId || !type || !name || !file) {
-			return res.status(400).json({ success: false, message: "Missing required parameters" });
+			if (!token || !groupId || !type || !name || !file) {
+				api.logger.warn(
+					`[management] Upload rejeitado - parâmetros ausentes: token=${!!token}, groupId=${groupId || "none"}, type=${type || "none"}, name=${name || "none"}, file=${!!file}`
+				);
+				return res
+					.status(400)
+					.json({ success: false, message: "Parâmetros obrigatórios ausentes." });
+			}
+
+			try {
+				const webManagementData = await api.readWebManagementToken(token);
+				if (!webManagementData || webManagementData.groupId !== groupId) {
+					api.logger.warn(`[management][${token}][${groupId}] Upload rejeitado: Não autorizado`);
+					return res.status(401).json({ success: false, message: "Acesso não autorizado." });
+				}
+
+				if (new Date() > new Date(webManagementData.expiresAt)) {
+					api.logger.warn(
+						`[management][${token}][${groupId}] Upload rejeitado: Token expirado (expirou em ${webManagementData.expiresAt})`
+					);
+					return res.status(401).json({
+						success: false,
+						message: "Token expirado. Por favor, gere um novo link usando !g-painel no grupo."
+					});
+				}
+
+				const groupData = await api.database.getGroup(groupId);
+				if (!groupData) {
+					api.logger.warn(
+						`[management][${token}][${groupId}] Upload rejeitado: Grupo não encontrado`
+					);
+					return res.status(404).json({ success: false, message: "Grupo não encontrado." });
+				}
+
+				await checkGroupLimits(groupId, "storage", { fileSize: file.size });
+
+				const fileName = `${Date.now()}-${file.originalname}`;
+				const mediaPath = path.join(api.database.databasePath, "media");
+
+				await fs.mkdir(mediaPath, { recursive: true }).catch(() => {});
+
+				const filePath = path.join(mediaPath, fileName);
+				await fs.copyFile(file.path, filePath);
+
+				if (!groupData[type]) {
+					groupData[type] = {};
+				}
+
+				groupData[type][name] = {
+					file: fileName,
+					caption: caption ? caption.trim() : undefined,
+					uploadedAt: new Date().toISOString(),
+					uploadedBy: webManagementData.requestNumber
+				};
+
+				groupData.lastUpdated = new Date().toISOString();
+				await api.database.saveGroup(groupData);
+
+				api.logger.info(
+					`[management][${token}][${groupId}] Media '${type}' enviada com sucesso: ${fileName} (${(file.size / 1024).toFixed(1)} KB)`
+				);
+
+				return res.json({ success: true, fileName });
+			} catch (error) {
+				api.logger.error(`[management][${token}][${groupId}] Erro no upload de mídia:`, error);
+				return res
+					.status(500)
+					.json({ success: false, message: error.message || "Erro interno do servidor." });
+			} finally {
+				if (req.file) {
+					fs.unlink(req.file.path).catch((error) => {
+						api.logger.error("Error removing temp file:", error);
+					});
+				}
+			}
 		}
-
-		try {
-			const webManagementData = await api.readWebManagementToken(token);
-			if (!webManagementData || webManagementData.groupId !== groupId) {
-				return res.status(401).json({ success: false, message: "Unauthorized" });
-			}
-
-			if (new Date() > new Date(webManagementData.expiresAt)) {
-				return res.status(401).json({ success: false, message: "Token expired" });
-			}
-
-			const groupData = await api.database.getGroup(groupId);
-			if (!groupData) {
-				return res.status(404).json({ success: false, message: "Group not found" });
-			}
-
-			await checkGroupLimits(groupId, "storage", { fileSize: file.size });
-
-			const fileName = `${Date.now()}-${file.originalname}`;
-			const mediaPath = path.join(api.database.databasePath, "media");
-
-			await fs.mkdir(mediaPath, { recursive: true }).catch(() => {});
-
-			const filePath = path.join(mediaPath, fileName);
-			await fs.copyFile(file.path, filePath);
-
-			if (!groupData[type]) {
-				groupData[type] = {};
-			}
-
-			groupData[type][name] = {
-				file: fileName,
-				caption: caption ? caption.trim() : undefined,
-				uploadedAt: new Date().toISOString(),
-				uploadedBy: webManagementData.requestNumber
-			};
-
-			groupData.lastUpdated = new Date().toISOString();
-			await api.database.saveGroup(groupData);
-
-			api.logger.info(`[management][${token}][${groupId}] Media '${type}' uplodaded: ${fileName}`);
-
-			return res.json({ success: true, fileName });
-		} catch (error) {
-			api.logger.error("Error uploading media:", error);
-			return res.status(500).json({ success: false, message: "Server error" });
-		} finally {
-			if (req.file) {
-				fs.unlink(req.file.path).catch((error) => {
-					api.logger.error("Error removing temp file:", error);
-				});
-			}
-		}
-	});
+	);
 
 	// GET Custom Commands
 	app.get("/api/custom-commands/:groupId", async (req, res) => {
