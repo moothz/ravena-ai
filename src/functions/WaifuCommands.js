@@ -351,33 +351,80 @@ async function downloadImageAsBase64(imageUrl) {
  * @param {Error} err
  * @param {string} chatId
  * @param {string} defaultMsg
+ * @param {object} [options]
  * @returns {ReturnMessage}
  */
-function handleApiError(err, chatId, defaultMsg) {
+function handleApiError(err, chatId, defaultMsg, options = {}) {
 	const resData = err.response?.data;
 	const apiErr =
 		typeof resData?.error === "object" && resData?.error !== null ? resData.error : null;
 
-	if (apiErr?.code === "COOLDOWN_ACTIVE") {
-		const currentRolls = apiErr.currentRolls ?? 0;
-		const maxRolls = apiErr.maxRolls ?? 10;
-		const nextSecs = apiErr.remainingSeconds ?? 0;
-		const fullSecs = apiErr.fullRechargeSeconds ?? 0;
-		const fullAt = apiErr.fullRechargeAt ? new Date(apiErr.fullRechargeAt) : null;
+	if (
+		apiErr?.code === "COOLDOWN_ACTIVE" ||
+		apiErr?.code === "CLAIM_COOLDOWN_ACTIVE" ||
+		apiErr?.code === "DAILY_COOLDOWN_ACTIVE"
+	) {
+		// Cooldown de Rolls: identificado quando possui currentRolls numérico
+		if (typeof apiErr.currentRolls === "number") {
+			const currentRolls = apiErr.currentRolls;
+			const maxRolls = apiErr.maxRolls ?? 10;
+			const nextSecs = apiErr.remainingSeconds ?? 0;
+			const fullSecs = apiErr.fullRechargeSeconds ?? 0;
+			const fullAt = apiErr.fullRechargeAt ? new Date(apiErr.fullRechargeAt) : null;
 
-		let msg = `⏳ *Sem rolls disponíveis!* (*${currentRolls}/${maxRolls}*)\n`;
-		msg += `• Próximo roll em: *${formatRemainingSeconds(nextSecs)}*\n`;
+			let msg = `⏳ *Sem rolls disponíveis!* (*${currentRolls}/${maxRolls}*)\n`;
+			msg += `• Próximo roll em: *${formatRemainingSeconds(nextSecs)}*\n`;
 
-		if (fullAt && !isNaN(fullAt.getTime())) {
-			const timeStr = fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-			msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}* (às ${timeStr})`;
-		} else if (fullSecs > 0) {
-			msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}*`;
+			if (fullAt && !isNaN(fullAt.getTime())) {
+				const timeStr = fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+				msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}* (às ${timeStr})`;
+			} else if (fullSecs > 0) {
+				msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}*`;
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: msg,
+				options
+			});
+		}
+
+		// Cooldown de Casamento (Claim) ou Diário (Daily)
+		const retryAt = apiErr.retryAfter ? new Date(apiErr.retryAfter) : null;
+		const timeStr =
+			retryAt && !isNaN(retryAt.getTime())
+				? ` (às ${retryAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})`
+				: "";
+
+		const remaining = apiErr.remainingSeconds
+			? formatRemainingSeconds(apiErr.remainingSeconds)
+			: null;
+
+		let msg;
+		if (
+			apiErr.code === "CLAIM_COOLDOWN_ACTIVE" ||
+			(typeof apiErr.message === "string" && apiErr.message.includes("casamento"))
+		) {
+			const waitTime = remaining || "um momento";
+			msg = `💍 *Cooldown de Casamento ativo!*\n• Você precisa aguardar *${waitTime}* para realizar outro casamento${timeStr}.`;
+		} else if (
+			apiErr.code === "DAILY_COOLDOWN_ACTIVE" ||
+			(typeof apiErr.message === "string" && apiErr.message.includes("diária"))
+		) {
+			const waitTime = remaining || "um momento";
+			msg = `💜 *Cooldown Diário ativo!*\n• Você já resgatou sua recompensa diária! Volte em *${waitTime}*${timeStr}.`;
+		} else if (apiErr.message) {
+			msg = `⏳ ${apiErr.message}${timeStr}`;
+		} else if (remaining) {
+			msg = `⏳ Cooldown ativo! Aguarde *${remaining}*${timeStr}.`;
+		} else {
+			msg = `⏳ Cooldown ativo. Aguarde antes de tentar novamente.`;
 		}
 
 		return new ReturnMessage({
 			chatId,
-			content: msg
+			content: msg,
+			options
 		});
 	}
 
@@ -400,7 +447,7 @@ function handleApiError(err, chatId, defaultMsg) {
 		defaultMsg;
 
 	logger.error("Erro na chamada Waifuletes:", apiErr || resData?.message || err.message);
-	return new ReturnMessage({ chatId, content: `❌ ${message}` });
+	return new ReturnMessage({ chatId, content: `❌ ${message}`, options });
 }
 
 // ─── Handlers de Comandos ───────────────────────────────────────────────────
@@ -778,7 +825,10 @@ async function casarWaifu(bot, message, args) {
 			}
 		});
 	} catch (err) {
-		return handleApiError(err, chatId, "Erro ao realizar casamento.");
+		return handleApiError(err, chatId, "Erro ao realizar casamento.", {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		});
 	}
 }
 
@@ -2822,5 +2872,6 @@ module.exports = {
 	getRollByMessageId,
 	notifySpecialMarriage,
 	downloadImageAsBase64,
+	handleApiError,
 	api
 };

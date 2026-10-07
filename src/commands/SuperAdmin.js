@@ -158,6 +158,19 @@ class SuperAdmin {
 				method: "removerFig",
 				description:
 					"Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)"
+			},
+			waifuCasar: {
+				method: "waifuCasar",
+				description:
+					"Casa administrativamente um usuário com um personagem: !sa-waifuCasar <numero> <personagem>"
+			},
+			waifucasar: {
+				method: "waifuCasar",
+				description: "Alias de waifuCasar"
+			},
+			"waifu-casar": {
+				method: "waifuCasar",
+				description: "Alias de waifuCasar"
 			}
 		};
 
@@ -5308,6 +5321,109 @@ Retorne no formato JSON rigoroso:
 	async removerFig(bot, message, args, group) {
 		const StickerScraper = require("../functions/StickerScraper");
 		return await StickerScraper.removerFigCommand(bot, message, args, group, this);
+	}
+
+	/**
+	 * Comando SuperAdmin: sa-waifuCasar
+	 * Casa administrativamente um usuário com um personagem especificado.
+	 *
+	 * Uso: !sa-waifuCasar <número do usuário> <nome/id do personagem>
+	 * Exemplo: !sa-waifuCasar 5511999999999 izumi-blue-archive
+	 *          !sa-waifuCasar 5511888888888 casar com yuuki-yoshino-shokugeki-no-souma
+	 *
+	 * @param {Object} bot
+	 * @param {Object} message
+	 * @param {Array<string>} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async waifuCasar(bot, message, args, group) {
+		const chatId = message.group ?? message.author;
+
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
+				});
+			}
+
+			if (!args || args.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ *Uso correto:* `!sa-waifuCasar <número usuário> <nome/id do personagem>`\n\n*Exemplo:* `!sa-waifuCasar 5511999999999 izumi-blue-archive`"
+				});
+			}
+
+			// 1. Extrai o número do usuário (limpa caracteres não-numéricos)
+			const targetUserRaw = args[0];
+			const targetUserId = targetUserRaw.replace(/\D/g, "");
+
+			if (!targetUserId || targetUserId.length < 8) {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Número de usuário inválido: "${targetUserRaw}". Informe o número com DDI e DDD (ex: 5511999999999).`
+				});
+			}
+
+			// 2. Extrai o nome ou slug do personagem (remove conectivos se enviados, ex: "casar com")
+			let charQuery = args.slice(1).join(" ").trim();
+			charQuery = charQuery.replace(/^(casar\s+com\s+|com\s+|casar\s+)/i, "").trim();
+
+			if (!charQuery) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Nome ou ID do personagem não informado."
+				});
+			}
+
+			const { api } = require("../functions/WaifuCommands");
+			const groupId = message.group ?? "admin";
+
+			// 3. Efetua a requisição ao endpoint administrativo da API Waifuletes
+			const { data } = await api.post("/admin/marry", {
+				userId: targetUserId,
+				characterId: charQuery,
+				groupId,
+				name: targetUserId
+			});
+
+			if (data.success) {
+				const { character, keys, user } = data.data;
+				let text = `💍 *Casamento Administrativo Realizado com Sucesso!* 💍\n\n`;
+				text += `👤 *Usuário:* ${user?.name || targetUserId} (\`${targetUserId}\`)\n`;
+				text += `✨ *Personagem:* *${character.name}* (${character.series})\n`;
+				text += `🆔 *ID:* \`${character.id}\`\n`;
+				text += `🔑 *Chaves:* ${keys}/10`;
+
+				return new ReturnMessage({
+					chatId,
+					content: text,
+					options: {
+						quotedMessageId: message.origin?.id?._serialized,
+						goReply: message.origin
+					}
+				});
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao casar: ${data.error?.message || "Falha na requisição."}`
+			});
+		} catch (err) {
+			const apiErr = err.response?.data?.error;
+			const errorMsg =
+				apiErr?.message ||
+				err.response?.data?.message ||
+				(typeof err.response?.data?.error === "string" ? err.response?.data?.error : null) ||
+				err.message;
+
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao realizar casamento administrativo: ${errorMsg}`
+			});
+		}
 	}
 }
 
