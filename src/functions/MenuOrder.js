@@ -36,6 +36,7 @@ const COMMAND_ORDER = [
 	"canal-rnd",
 	"canal-midias",
 	"canal-encaminhar",
+	"canais-header",
 	"canal-del",
 	"retrospectiva",
 	"cmd",

@@ -39,6 +39,7 @@ database.getSQLiteDb(
     apelido_normalizado TEXT NOT NULL,
     tipos_midia TEXT,
     encaminhar INTEGER DEFAULT 0,
+    header INTEGER DEFAULT 1,
     criado_por TEXT,
     criado_em INTEGER,
     PRIMARY KEY (group_id, canal_jid),
@@ -70,6 +71,11 @@ database.getSQLiteDb(
 			DB_NAME,
 			"ALTER TABLE canal_grupos ADD COLUMN encaminhar INTEGER DEFAULT 0"
 		);
+	} catch (e) {
+		// Coluna já existe
+	}
+	try {
+		await database.dbRun(DB_NAME, "ALTER TABLE canal_grupos ADD COLUMN header INTEGER DEFAULT 1");
 	} catch (e) {
 		// Coluna já existe
 	}
@@ -710,7 +716,7 @@ async function detectPost(bot, message) {
 		try {
 			const forwardingGroups = await database.dbAll(
 				DB_NAME,
-				"SELECT group_id, apelido, tipos_midia FROM canal_grupos WHERE canal_jid = ? AND encaminhar = 1",
+				"SELECT group_id, apelido, tipos_midia, header FROM canal_grupos WHERE canal_jid = ? AND encaminhar = 1",
 				[channelJid]
 			);
 
@@ -735,13 +741,16 @@ async function detectPost(bot, message) {
 							}
 						}
 
+						const showHeader = grp.header !== 0;
+
 						const activityKey = `${grp.group_id}:${channelJid}`;
 						const lastActivity = lastChannelForwardActivity.get(activityKey) || 0;
 						const now = Date.now();
 						const elapsed = now - lastActivity;
 
 						const isNoCaptionMedia = tipo === "audio" || tipo === "sticker";
-						const needsHeader = isNoCaptionMedia && (!lastActivity || elapsed > HEADER_COOLDOWN_MS);
+						const needsHeader =
+							showHeader && isNoCaptionMedia && (!lastActivity || elapsed > HEADER_COOLDOWN_MS);
 
 						// Atualiza o timestamp de atividade para este canal neste grupo
 						lastChannelForwardActivity.set(activityKey, now);
@@ -752,7 +761,7 @@ async function detectPost(bot, message) {
 							postData,
 							grp.apelido,
 							true,
-							{ includeHeader: needsHeader }
+							{ includeHeader: needsHeader, showHeader }
 						);
 
 						if (postReturnMsg && typeof bot.sendReturnMessages === "function") {
@@ -799,7 +808,8 @@ async function buildGroupedReturnMessages(
 	apelido,
 	diaFormatado,
 	canalJid = null,
-	allowedTypes = null
+	allowedTypes = null,
+	showHeader = true
 ) {
 	const total = posts.length;
 	const returnMessages = [];
@@ -848,7 +858,7 @@ async function buildGroupedReturnMessages(
 	for (const post of posts) {
 		const isNoCaptionMedia = post.tipo === "audio" || post.tipo === "sticker";
 		let includeHeader = false;
-		if (isNoCaptionMedia) {
+		if (showHeader && isNoCaptionMedia) {
 			if (!lastPostTs || (post.ts && post.ts - lastPostTs > HEADER_COOLDOWN_MS)) {
 				includeHeader = true;
 			}
@@ -856,7 +866,8 @@ async function buildGroupedReturnMessages(
 		if (post.ts) lastPostTs = post.ts;
 
 		const postMsg = await createPostReturnMessage(bot, chatId, post, apelido, false, {
-			includeHeader
+			includeHeader,
+			showHeader
 		});
 		if (postMsg) {
 			if (Array.isArray(postMsg)) {
@@ -881,6 +892,13 @@ async function createPostReturnMessage(
 	isForward = false,
 	options = {}
 ) {
+	const showHeader =
+		options.showHeader !== undefined
+			? Boolean(options.showHeader)
+			: options.header !== undefined
+				? Boolean(options.header)
+				: true;
+
 	const horaStr = post.ts
 		? new Date(post.ts).toLocaleTimeString("pt-BR", {
 				timeZone: "America/Sao_Paulo",
@@ -890,13 +908,15 @@ async function createPostReturnMessage(
 		: "";
 	const header = horaStr ? `🕒 *[${horaStr}]* ` : "";
 	const prefix = isForward || options.includeHeader ? `📢 *${apelido}*\n` : "";
-	const captionText = `${prefix}${header}${post.texto || ""}`.trim();
+	const captionText = showHeader
+		? `${prefix}${header}${post.texto || ""}`.trim()
+		: post.texto || "";
 
 	// Se não tem arquivo, envia como texto
 	if (!post.arquivo) {
 		return new ReturnMessage({
 			chatId,
-			content: captionText || `📢 *${apelido}*`,
+			content: showHeader ? captionText || `📢 *${apelido}*` : captionText,
 			options: {
 				linkPreview: true
 			}
@@ -909,9 +929,14 @@ async function createPostReturnMessage(
 
 	if (!fs.existsSync(absPath)) {
 		// Arquivo não está no disco, envia como texto
+		const fallbackContent = showHeader
+			? `${captionText}\n_(Mídia não disponível no disco)_`.trim()
+			: captionText
+				? `${captionText}\n_(Mídia não disponível no disco)_`
+				: "_(Mídia não disponível no disco)_";
 		return new ReturnMessage({
 			chatId,
-			content: `${captionText}\n_(Mídia não disponível no disco)_`.trim(),
+			content: fallbackContent,
 			options: {
 				linkPreview: true
 			}
@@ -929,7 +954,7 @@ async function createPostReturnMessage(
 						sendMediaAsSticker: true
 					}
 				});
-				if (options.includeHeader) {
+				if (showHeader && options.includeHeader) {
 					const headerMsg = new ReturnMessage({
 						chatId,
 						content: captionText || `📢 *${apelido}*`,
@@ -949,7 +974,7 @@ async function createPostReturnMessage(
 						sendAudioAsVoice: true
 					}
 				});
-				if (options.includeHeader) {
+				if (showHeader && options.includeHeader) {
 					const headerMsg = new ReturnMessage({
 						chatId,
 						content: captionText || `📢 *${apelido}*`,
@@ -966,7 +991,7 @@ async function createPostReturnMessage(
 					chatId,
 					content: mediaObj,
 					options: {
-						caption: captionText || (isForward ? `📢 *${apelido}*` : ""),
+						caption: showHeader ? captionText || (isForward ? `📢 *${apelido}*` : "") : captionText,
 						linkPreview: true
 					}
 				});
@@ -975,7 +1000,7 @@ async function createPostReturnMessage(
 			// Fallback para texto se o bot não suportar createMedia
 			return new ReturnMessage({
 				chatId,
-				content: captionText || `📢 *${apelido}*`,
+				content: showHeader ? captionText || `📢 *${apelido}*` : captionText,
 				options: {
 					linkPreview: true
 				}
@@ -985,7 +1010,7 @@ async function createPostReturnMessage(
 		logger.error(`[Canais] Erro ao anexar mídia para post ${post.msg_id}:`, err);
 		return new ReturnMessage({
 			chatId,
-			content: captionText || `📢 *${apelido}*`,
+			content: showHeader ? captionText || `📢 *${apelido}*` : captionText,
 			options: {
 				linkPreview: true
 			}
@@ -1199,6 +1224,7 @@ Ao convidar o bot para ser administrador do canal, ele tentará aceitar o convit
 • \`!canal-ver ${apelidoFinal} [data]\` — Ver as postagens do dia
 • \`!canal-rnd ${apelidoFinal} [tipos]\` — Postagem aleatória
 • \`!canal-encaminhar ${apelidoFinal}\` — Ativar/desativar encaminhamento automático
+• \`!canais-header ${apelidoFinal}\` — Ativar/desativar cabeçalho nas mensagens
 • \`!canal-midias ${apelidoFinal} <tipos>\` — Definir mídias capturadas
 • \`!canal-aceitarinvite ${apelidoFinal}\` — Aceitar convite de admin do canal
 • \`!canal-lista\` — Listar canais do grupo
@@ -1229,7 +1255,7 @@ async function listaCommand(bot, message, args, group) {
 
 	const rows = await database.dbAll(
 		DB_NAME,
-		`SELECT g.apelido, g.tipos_midia, g.encaminhar, c.nome_oficial, c.link, c.jid,
+		`SELECT g.apelido, g.tipos_midia, g.encaminhar, g.header, c.nome_oficial, c.link, c.jid,
             (SELECT COUNT(*) FROM canal_posts p WHERE p.canal_jid = g.canal_jid) as total_posts
      FROM canal_grupos g
      JOIN canais c ON g.canal_jid = c.jid
@@ -1270,6 +1296,9 @@ async function listaCommand(bot, message, args, group) {
 		text += `   ↳ Postagens salvas: ${row.total_posts}\n`;
 		if (row.encaminhar === 1) {
 			text += `   ↳ ⏩ *Encaminhando mensagens*\n`;
+		}
+		if (row.header === 0) {
+			text += `   ↳ 🔕 *Cabeçalho desativado*\n`;
 		}
 		text += "\n";
 	});
@@ -1410,6 +1439,64 @@ async function encaminharCommand(bot, message, args, group) {
 }
 
 /**
+ * !canais-header <nome>
+ */
+async function headerCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	if (!message.group) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Este comando só pode ser utilizado dentro de grupos."
+		});
+	}
+
+	const targetName = args.join(" ").trim();
+	if (!targetName) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"ℹ️ *Como usar:* `!canais-header <nome>`\n\nAtiva ou desativa o envio do cabeçalho (canal e horário) nas mensagens deste canal.\nUse `!canal-lista` para ver os canais ativos."
+		});
+	}
+
+	const canaisDoGrupo = await database.dbAll(
+		DB_NAME,
+		"SELECT canal_jid, apelido, apelido_normalizado, header FROM canal_grupos WHERE group_id = ?",
+		[message.group]
+	);
+
+	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
+
+	if (!matchedCanal) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
+		});
+	}
+
+	const isCurrentlyEnabled = matchedCanal.header !== 0;
+	const novoStatus = isCurrentlyEnabled ? 0 : 1;
+
+	await database.dbRun(
+		DB_NAME,
+		"UPDATE canal_grupos SET header = ? WHERE group_id = ? AND canal_jid = ?",
+		[novoStatus, message.group, matchedCanal.canal_jid]
+	);
+
+	if (novoStatus === 1) {
+		return new ReturnMessage({
+			chatId,
+			content: `🏷️ *Cabeçalho ativado!* As mensagens do canal *${matchedCanal.apelido}* voltarão a incluir o nome do canal e horário.\n\n_Para desativar, use novamente:_ \`!canais-header ${matchedCanal.apelido}\``
+		});
+	} else {
+		return new ReturnMessage({
+			chatId,
+			content: `⏹️ *Cabeçalho desativado!* As mensagens e legendas do canal *${matchedCanal.apelido}* serão enviadas na íntegra, sem adicionar horário ou nome do canal.`
+		});
+	}
+}
+
+/**
  * !canal-ver <nome> [data]
  */
 async function verCommand(bot, message, args, group) {
@@ -1432,7 +1519,7 @@ async function verCommand(bot, message, args, group) {
 	// Procura o canal no grupo casando o prefixo dos argumentos
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
-		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia FROM canal_grupos WHERE group_id = ?",
+		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia, header FROM canal_grupos WHERE group_id = ?",
 		[message.group]
 	);
 
@@ -1492,6 +1579,7 @@ async function verCommand(bot, message, args, group) {
 
 	const [ano, mes, dia] = targetDia.split("-");
 	const diaFormatado = `${dia}/${mes}/${ano}`;
+	const showHeader = matchedCanal.header !== 0;
 
 	return await buildGroupedReturnMessages(
 		bot,
@@ -1500,7 +1588,8 @@ async function verCommand(bot, message, args, group) {
 		matchedCanal.apelido,
 		diaFormatado,
 		matchedCanal.canal_jid,
-		allowedTypes
+		allowedTypes,
+		showHeader
 	);
 }
 
@@ -1620,7 +1709,7 @@ async function rndCommand(bot, message, args, group) {
 
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
-		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia FROM canal_grupos WHERE group_id = ?",
+		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia, header FROM canal_grupos WHERE group_id = ?",
 		[message.group]
 	);
 
@@ -1684,8 +1773,11 @@ async function rndCommand(bot, message, args, group) {
 		});
 	}
 
+	const showHeader = matchedCanal.header !== 0;
+
 	return await createPostReturnMessage(bot, chatId, post, matchedCanal.apelido, false, {
-		includeHeader: post.tipo === "audio" || post.tipo === "sticker"
+		includeHeader: showHeader && (post.tipo === "audio" || post.tipo === "sticker"),
+		showHeader
 	});
 }
 
@@ -1848,6 +1940,17 @@ const commands = [
 		method: encaminharCommand
 	}),
 	new Command({
+		name: "canais-header",
+		aliases: ["canal-header", "canaisheader", "canalheader"],
+		description: "Ativa ou desativa o envio de cabeçalho (canal/horário) nas mensagens do canal",
+		usage: "!canais-header <nome>",
+		category: "canais",
+		adminOnly: true,
+		caseSensitive: false,
+		timeout: 30,
+		method: headerCommand
+	}),
+	new Command({
 		name: "canal-aceitarinvite",
 		aliases: ["canal-aceitar", "aceitar-canal", "canal-aceitar-convite", "canalaceitar"],
 		description: "Aceita um convite de administrador para um canal (Newsletter) do WhatsApp",
@@ -1872,6 +1975,7 @@ module.exports = {
 	refreshTrackedChannelsCache,
 	simplifyChannelName,
 	matchCanalInGroup,
+	headerCommand,
 	MAX_CANAIS_POR_GRUPO,
 	HEADER_COOLDOWN_MS,
 	lastChannelForwardActivity,

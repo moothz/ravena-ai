@@ -16,6 +16,7 @@ const {
 	refreshTrackedChannelsCache,
 	simplifyChannelName,
 	matchCanalInGroup,
+	headerCommand,
 	MAX_CANAIS_POR_GRUPO,
 	HEADER_COOLDOWN_MS,
 	lastChannelForwardActivity,
@@ -683,6 +684,284 @@ async function runTests() {
 	console.log(
 		"✓ Encaminhamento de áudios/stickers e cadência de 15 minutos validados com sucesso!"
 	);
+
+	// -------------------------------------------------------------
+	// 9. Testes de canais-header (toggle on/off e envio sem header)
+	// -------------------------------------------------------------
+	console.log("\n[9] Testando canais-header...");
+
+	const cmdHeader = commands.find((c) => c.name === "canais-header");
+	assert.ok(cmdHeader, "Comando canais-header deve existir");
+	assert.strictEqual(cmdHeader.adminOnly, true, "canais-header deve ser adminOnly");
+	assert.ok(cmdHeader.aliases.includes("canal-header"), "Deve ter alias canal-header");
+
+	// Prepara canal no banco para testGroup1
+	await database.dbRun(
+		DB_NAME,
+		"INSERT INTO canais (jid, invite, link, nome_oficial, descricao, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+		[
+			testCanalJid,
+			"invHeader",
+			"https://whatsapp.com/channel/invHeader",
+			"Canal Header Test",
+			"Desc Header",
+			Date.now()
+		]
+	);
+	await database.dbRun(
+		DB_NAME,
+		"INSERT INTO canal_grupos (group_id, canal_jid, apelido, apelido_normalizado, tipos_midia, encaminhar, header, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)",
+		[
+			testGroup1,
+			testCanalJid,
+			"CanalHeader",
+			"canalheader",
+			null,
+			"admin@s.whatsapp.net",
+			Date.now()
+		]
+	);
+	await refreshTrackedChannelsCache();
+	resetForwardActivity();
+
+	// Teste 9a: Erro se usado fora de grupo
+	const msgPv = createMessage({
+		content: "!canais-header CanalHeader",
+		author: "admin@s.whatsapp.net"
+	});
+	const resPv = await cmdHeader.execute(fakeBot, msgPv, ["CanalHeader"], null);
+	assert.ok(
+		resPv.content.includes("apenas dentro de grupos") || resPv.content.includes("dentro de grupos")
+	);
+
+	// Teste 9b: Erro se nome ausente
+	const msgSemNome = createMessage({
+		content: "!canais-header",
+		group: testGroup1,
+		author: "admin@s.whatsapp.net"
+	});
+	const resSemNome = await cmdHeader.execute(fakeBot, msgSemNome, [], { id: testGroup1 });
+	assert.ok(resSemNome.content.includes("Como usar"));
+
+	// Teste 9c: Erro se canal não encontrado
+	const msgInexistente = createMessage({
+		content: "!canais-header Inexistente",
+		group: testGroup1,
+		author: "admin@s.whatsapp.net"
+	});
+	const resInexistente = await cmdHeader.execute(fakeBot, msgInexistente, ["Inexistente"], {
+		id: testGroup1
+	});
+	assert.ok(resInexistente.content.includes("não encontrado"));
+
+	// Teste 9d: Desativar header (header: 1 -> 0)
+	const msgToggleOff = createMessage({
+		content: "!canais-header CanalHeader",
+		group: testGroup1,
+		author: "admin@s.whatsapp.net"
+	});
+	const resToggleOff = await cmdHeader.execute(fakeBot, msgToggleOff, ["CanalHeader"], {
+		id: testGroup1
+	});
+	assert.ok(
+		resToggleOff.content.includes("Cabeçalho desativado"),
+		"Deve confirmar que cabeçalho foi desativado"
+	);
+
+	const checkHeaderOff = await database.dbGet(
+		DB_NAME,
+		"SELECT header FROM canal_grupos WHERE group_id = ? AND canal_jid = ?",
+		[testGroup1, testCanalJid]
+	);
+	assert.strictEqual(checkHeaderOff.header, 0, "header deve ser 0 após desativar");
+
+	// Teste 9e: Verificar se listaCommand mostra "Cabeçalho desativado"
+	const cmdListaRef = commands.find((c) => c.name === "canal-lista");
+	const resListaHeaderOff = await cmdListaRef.execute(fakeBot, msgToggleOff, [], {
+		id: testGroup1
+	});
+	assert.ok(
+		resListaHeaderOff.content.includes("Cabeçalho desativado"),
+		"canal-lista deve indicar cabeçalho desativado"
+	);
+
+	// Teste 9f: Encaminhamento em tempo real com header DESATIVADO (texto)
+	fakeBot.resetCapture();
+	const postTextoHeaderOff = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_TXT_NO_HEADER",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "texto",
+		body: "Texto original exatamente na íntegra sem prefixo nem hora!",
+		content: "Texto original exatamente na íntegra sem prefixo nem hora!",
+		hasMedia: false
+	};
+	await detectPost(fakeBot, postTextoHeaderOff);
+	assert.strictEqual(fakeBot.capturedMessages.length, 1, "Deve enviar 1 mensagem de texto");
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].content,
+		"Texto original exatamente na íntegra sem prefixo nem hora!",
+		"O texto deve ser enviado na íntegra sem canal ou hora"
+	);
+	assert.ok(
+		!fakeBot.capturedMessages[0].content.includes("📢"),
+		"Não deve conter prefixo do canal"
+	);
+	assert.ok(!fakeBot.capturedMessages[0].content.includes("🕒"), "Não deve conter horário");
+
+	// Teste 9g: Encaminhamento em tempo real com header DESATIVADO (áudio - sem mensagem de header)
+	fakeBot.resetCapture();
+	resetForwardActivity();
+	const postAudioHeaderOff = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_AUDIO_NO_HEADER",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "audio",
+		body: { mimetype: "audio/ogg", url: "https://..." },
+		content: { mimetype: "audio/ogg", url: "https://..." },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeAudioBase64, mimetype: "audio/ogg" })
+	};
+	await detectPost(fakeBot, postAudioHeaderOff);
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		1,
+		"Com header desativado, áudio deve gerar apenas 1 mensagem (sem header separado)"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.sendAudioAsVoice,
+		true,
+		"A mensagem enviada deve ser o áudio diretamente"
+	);
+
+	// Teste 9h: Encaminhamento em tempo real com header DESATIVADO (sticker - sem mensagem de header)
+	fakeBot.resetCapture();
+	resetForwardActivity();
+	const postStickerHeaderOff = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_STICKER_NO_HEADER",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "sticker",
+		body: { mimetype: "image/webp", url: "https://..." },
+		content: { mimetype: "image/webp", url: "https://..." },
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeStickerBase64, mimetype: "image/webp" })
+	};
+	await detectPost(fakeBot, postStickerHeaderOff);
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		1,
+		"Com header desativado, figurinha deve gerar apenas 1 mensagem (sem header separado)"
+	);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.sendMediaAsSticker,
+		true,
+		"A mensagem enviada deve ser a figurinha diretamente"
+	);
+
+	// Teste 9h2: Encaminhamento em tempo real com header DESATIVADO (imagem com legenda)
+	fakeBot.resetCapture();
+	const fakeImageBase64 = Buffer.from("fake-jpeg-image-content").toString("base64");
+	const postImageHeaderOff = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_IMG_NO_HEADER",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "image",
+		body: { caption: "Legenda da imagem na íntegra sem hora nem canal" },
+		content: { caption: "Legenda da imagem na íntegra sem hora nem canal" },
+		caption: "Legenda da imagem na íntegra sem hora nem canal",
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeImageBase64, mimetype: "image/jpeg" })
+	};
+	await detectPost(fakeBot, postImageHeaderOff);
+	assert.strictEqual(fakeBot.capturedMessages.length, 1);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.caption,
+		"Legenda da imagem na íntegra sem hora nem canal",
+		"Legenda da imagem deve ser mantida na íntegra sem header/canal"
+	);
+
+	// Teste 9h3: Encaminhamento em tempo real com header DESATIVADO (imagem sem legenda)
+	fakeBot.resetCapture();
+	const postImageNoCaptionHeaderOff = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_IMG_NO_CAPTION",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "image",
+		body: {},
+		content: {},
+		caption: "",
+		hasMedia: true,
+		downloadMedia: async () => ({ data: fakeImageBase64, mimetype: "image/jpeg" })
+	};
+	await detectPost(fakeBot, postImageNoCaptionHeaderOff);
+	assert.strictEqual(fakeBot.capturedMessages.length, 1);
+	assert.strictEqual(
+		fakeBot.capturedMessages[0].options?.caption,
+		"",
+		"Imagem sem legenda não deve receber header/canal de fallback"
+	);
+
+	// Teste 9i: Teste de canal-rnd com header DESATIVADO
+	const cmdRnd = commands.find((c) => c.name === "canal-rnd");
+	const resRnd = await cmdRnd.execute(fakeBot, msgToggleOff, ["CanalHeader"], { id: testGroup1 });
+	assert.ok(resRnd, "canal-rnd deve retornar mensagem");
+	if (typeof resRnd.content === "string") {
+		assert.ok(
+			!resRnd.content.includes("🕒"),
+			"canal-rnd com header desativado não deve conter horário"
+		);
+	}
+
+	// Teste 9j: Reativar header (header: 0 -> 1)
+	const resToggleOn = await cmdHeader.execute(fakeBot, msgToggleOff, ["CanalHeader"], {
+		id: testGroup1
+	});
+	assert.ok(
+		resToggleOn.content.includes("Cabeçalho ativado"),
+		"Deve confirmar que cabeçalho foi ativado"
+	);
+
+	const checkHeaderOn = await database.dbGet(
+		DB_NAME,
+		"SELECT header FROM canal_grupos WHERE group_id = ? AND canal_jid = ?",
+		[testGroup1, testCanalJid]
+	);
+	assert.strictEqual(checkHeaderOn.header, 1, "header deve ser 1 após reativar");
+
+	// Teste 9k: Encaminhamento após reativar -> volta comportamento atual com canal e hora
+	fakeBot.resetCapture();
+	const postTextoHeaderOn = {
+		isNewsletter: true,
+		from: testCanalJid,
+		id: "POST_TXT_WITH_HEADER",
+		timestamp: Math.floor(Date.now() / 1000),
+		type: "texto",
+		body: "Texto com cabeçalho ativado!",
+		content: "Texto com cabeçalho ativado!",
+		hasMedia: false
+	};
+	await detectPost(fakeBot, postTextoHeaderOn);
+	assert.strictEqual(fakeBot.capturedMessages.length, 1);
+	assert.ok(
+		fakeBot.capturedMessages[0].content.includes("📢 *CanalHeader*"),
+		"Deve incluir nome do canal"
+	);
+	assert.ok(fakeBot.capturedMessages[0].content.includes("🕒"), "Deve incluir horário");
+
+	// Limpa dados de teste
+	await database.dbRun(DB_NAME, "DELETE FROM canal_grupos WHERE canal_jid = ?", [testCanalJid]);
+	await database.dbRun(DB_NAME, "DELETE FROM canais WHERE jid = ?", [testCanalJid]);
+	await database.dbRun(DB_NAME, "DELETE FROM canal_posts WHERE canal_jid = ?", [testCanalJid]);
+	await refreshTrackedChannelsCache();
+	resetForwardActivity();
+
+	console.log("✓ canais-header validado com sucesso!");
 
 	console.log("\n==========================================");
 	console.log("🎉 TODOS OS TESTES PASSARAM COM SUCESSO!");
