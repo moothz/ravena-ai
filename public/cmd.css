@@ -359,21 +359,10 @@ body {
 
 /* Category Quick Filter Pills Bar */
 .category-pills-bar {
-    padding: 0 1rem 0.5rem 1rem;
+    padding: 0 1rem 0.75rem 1rem;
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-color) transparent;
-}
-
-.category-pills-bar::-webkit-scrollbar {
-    height: 4px;
-}
-
-.category-pills-bar::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 4px;
 }
 
 .cat-pill {

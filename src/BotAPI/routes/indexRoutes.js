@@ -201,7 +201,7 @@ function registerIndexRoutes(api) {
 	});
 
 	// Serve página de comandos públicos
-	app.get("/cmd", (req, res) => {
+	app.get(["/cmd", "/comandos"], (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/cmd.html"));
 	});
 

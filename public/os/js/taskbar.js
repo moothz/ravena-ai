@@ -392,6 +392,11 @@ const Taskbar = {
                 <span>Status das Ravenas</span>
             </div>
 
+            <div class="start-menu-item" data-action="commands">
+                <i class="fas fa-terminal"></i>
+                <span>Comandos</span>
+            </div>
+
             <div class="start-menu-item" data-action="speedometer">
                 <i class="fas fa-gauge-high"></i>
                 <span>Mensagímetro</span>

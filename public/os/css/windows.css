@@ -1742,3 +1742,22 @@
     color: var(--bright-blue);
 }
 
+/* ========================================================
+   COMMANDS WINDOW & EMBEDDED IFRAME
+   ======================================================== */
+.winbox.window-commands .wb-body,
+.wb-body.commands-body {
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #05060d !important;
+}
+
+.commands-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: #05060d;
+}
+
+

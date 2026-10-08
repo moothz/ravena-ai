@@ -716,3 +716,10 @@
     font-size: 9.5px !important;
     padding: 1px 4px !important;
 }
+
+/* Commands App Mobile View */
+.mobile-window-body.commands-body {
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+

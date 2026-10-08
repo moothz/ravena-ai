@@ -29,7 +29,7 @@
     <meta itemprop="description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta itemprop="image" content="https://ravena.moothz.win/android-chrome-512x512.png">
 
-    <link rel="stylesheet" href="/cmd.css?v=3">
+    <link rel="stylesheet" href="/cmd.css?v=4">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -53,38 +53,6 @@
             </div>
         </header>
 
-        <!-- Hero Status Card (estilo !g-painel) -->
-        <section class="hero-card">
-            <div class="hero-left">
-                <div class="hero-icon">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="hero-info">
-                    <div class="hero-header-line">
-                        <span class="hero-title">Central de Comandos</span>
-                        <span class="status-pill status-pill-active"><i class="fas fa-circle"></i> Online</span>
-                    </div>
-                    <p class="hero-desc">
-                        Explore todos os comandos disponíveis. <strong>Clique em um comando</strong> para ver a sintaxe completa e <strong>exemplos práticos de uso</strong> para copiar no WhatsApp!
-                    </p>
-                </div>
-            </div>
-            <div class="hero-stats">
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-total-cmds">--</span>
-                    <span class="stat-label">Comandos</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-total-cats">--</span>
-                    <span class="stat-label">Categorias</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-prefix">! / !g-</span>
-                    <span class="stat-label">Prefixos</span>
-                </div>
-            </div>
-        </section>
-
         <!-- Search Container -->
         <div class="search-container">
             <div class="search-box">
@@ -100,7 +68,7 @@
 
         <!-- Category Quick Filter Pills -->
         <nav class="category-pills-bar" id="category-pills" aria-label="Filtro rápido por categoria">
-            <button class="cat-pill active" data-cat="all">🌟 Todas</button>
+            <button class="cat-pill active" data-cat="all"><span>🌟</span> Todas <span class="badge-count" id="badge-all-count"></span></button>
             <!-- Pills geradas dinamicamente via JS -->
         </nav>
 
@@ -148,6 +116,6 @@
         </div>
     </div>
 
-    <script src="/cmd.js?v=3"></script>
+    <script src="/cmd.js?v=4"></script>
 </body>
 </html>

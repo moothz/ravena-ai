@@ -3,6 +3,7 @@
 const MobileApp = {
     apps: [
         { id: 'status',     label: 'Status',       icon: 'img/icons/status.png',     window: 'status',     iconFa: 'fa-desktop' },
+        { id: 'commands',   label: 'Comandos',     icon: 'img/icons/commands.svg',   window: 'commands',   iconFa: 'fa-terminal' },
         { id: 'donations',  label: 'Doações',      icon: 'img/icons/donations.png',  window: 'donations',  iconFa: 'fa-heart' },
         { id: 'community',  label: 'Comunidade',   icon: 'img/icons/community.png',  window: 'community',  iconFa: 'fa-users' },
         { id: 'statistics', label: 'Estatísticas', icon: 'img/icons/statistics.png', window: 'statistics', iconFa: 'fa-chart-bar' },

@@ -18,6 +18,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastTap = 0;
     let toastTimeout = null;
 
+    // Configuração do botão "Todas"
+    const allPill = categoryPillsContainer ? categoryPillsContainer.querySelector('[data-cat="all"]') : null;
+    if (allPill) {
+        allPill.addEventListener('click', () => {
+            resetCategoryFilterToAll();
+        });
+    }
+
+    function resetCategoryFilterToAll() {
+        document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+        if (allPill) allPill.classList.add('active');
+        filterByCategory('all');
+    }
+
     // Fetch and load public commands
     async function fetchCommands() {
         try {
@@ -114,9 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
             createCategoryPill('Gerenciamento', '⚙️', mgmtCommands.length);
         }
 
-        // Atualiza contadores do Hero
+        // Atualiza contadores do Hero e Badge Todas
         if (statTotalCmds) statTotalCmds.textContent = totalCmdsCount;
         if (statTotalCats) statTotalCats.textContent = totalCatsCount;
+        const allBadge = categoryPillsContainer.querySelector('#badge-all-count');
+        if (allBadge) allBadge.textContent = totalCmdsCount;
     }
 
     function createCategoryPill(name, emoji, count) {
@@ -126,6 +142,11 @@ document.addEventListener('DOMContentLoaded', () => {
         pill.innerHTML = `<span>${emoji}</span> ${name} <span class="badge-count">${count}</span>`;
 
         pill.addEventListener('click', () => {
+            if (pill.classList.contains('active')) {
+                resetCategoryFilterToAll();
+                return;
+            }
+
             document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
             pill.classList.add('active');
             filterByCategory(name.toLowerCase());
@@ -365,13 +386,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         categories.forEach(category => {
             const thisCat = category.dataset.catName;
-            if (catName === 'all' || thisCat === catName) {
+            if (catName === 'all') {
+                category.classList.remove('hidden');
+            } else if (thisCat === catName) {
                 category.classList.remove('hidden');
                 category.classList.add('active'); // Abre a categoria selecionada
             } else {
                 category.classList.add('hidden');
             }
         });
+
+        // Se houver busca ativa, reaplica a busca respeitando o novo filtro
+        const currentSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        if (currentSearch) {
+            handleSearch(currentSearch);
+        }
 
         // Scroll suave para a lista
         commandList.scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -3,6 +3,7 @@
 const Desktop = {
     icons: [
         { id: 'status',     label: 'Status',        tooltip: 'Painel de status das instâncias da Ravena',  icon: 'img/icons/status.png',     window: 'status' },
+        { id: 'commands',   label: 'Comandos',      tooltip: 'Catálogo de comandos e exemplos de uso',      icon: 'img/icons/commands.svg',   window: 'commands' },
         { id: 'donations',  label: 'Doações',       tooltip: 'Mural de apoiadores e ranking de doações',    icon: 'img/icons/donations.png',  window: 'donations' },
         { id: 'community',  label: 'Comunidade',    tooltip: 'Grupos no WhatsApp, Discord e Telegram',     icon: 'img/icons/community.png',  window: 'community' },
         { id: 'statistics', label: 'Estatísticas',  tooltip: 'Métricas, fluxo e gráficos de mensagens',    icon: 'img/icons/statistics.png', window: 'statistics' },
@@ -47,6 +48,11 @@ const Desktop = {
                         label: 'Abrir Status das Ravenas',
                         icon: 'fas fa-desktop',
                         action: () => WindowManager.open('status')
+                    },
+                    {
+                        label: 'Abrir Comandos',
+                        icon: 'fas fa-terminal',
+                        action: () => WindowManager.open('commands')
                     },
                     {
                         label: 'Abrir Mensagímetro',
