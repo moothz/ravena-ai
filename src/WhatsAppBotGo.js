@@ -3124,9 +3124,13 @@ class WhatsAppBotGo {
 			if (options.mentionAll) {
 				payload.mentionAll = true;
 			} else if (options.mentions) {
-				payload.mentionedJid = Array.isArray(options.mentions)
-					? options.mentions.join(",")
-					: options.mentions;
+				const mentionsList = Array.isArray(options.mentions)
+					? options.mentions
+					: [options.mentions];
+				const sanitizedMentions = mentionsList.map((m) =>
+					typeof m === "string" && !m.includes("@") && /^\d+$/.test(m) ? `${m}@s.whatsapp.net` : m
+				);
+				payload.mentionedJid = sanitizedMentions.join(",");
 			}
 
 			//this.logger.debug(`[sendMessage] '${endpoint}'`, { contentType: typeof content, content, payload });

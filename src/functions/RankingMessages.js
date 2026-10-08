@@ -17,35 +17,43 @@ database.getSQLiteDb(
       user_name TEXT,
       message_count INTEGER DEFAULT 0,
       reaction_count INTEGER DEFAULT 0,
+      last_message_at INTEGER,
       PRIMARY KEY (chat_id, user_id)
     )`
 );
 
-// Migração: Adiciona coluna reaction_count se não existir
+// Migrações: Adiciona colunas se não existirem
 database
 	.dbRun(dbName, "ALTER TABLE ranking ADD COLUMN reaction_count INTEGER DEFAULT 0")
 	.catch(() => {
 		// Ignora erro se a coluna já existir
 	});
 
+database.dbRun(dbName, "ALTER TABLE ranking ADD COLUMN last_message_at INTEGER").catch(() => {
+	// Ignora erro se a coluna já existir
+});
+
 /**
  * Atualiza o ranking de mensagens para um usuário
  * @param {string} chatId - ID do chat (grupo ou PV)
  * @param {string} userId - ID do usuário
  * @param {string} userName - Nome do usuário
+ * @param {number} [timestamp] - Timestamp do evento
  */
-async function updateMessageCount(chatId, userId, userName) {
+async function updateMessageCount(chatId, userId, userName, timestamp) {
 	try {
+		const now = timestamp || Date.now();
 		await database.dbRun(
 			dbName,
 			`
-      INSERT INTO ranking (chat_id, user_id, user_name, message_count, reaction_count)
-      VALUES (?, ?, ?, 1, 0)
+      INSERT INTO ranking (chat_id, user_id, user_name, message_count, reaction_count, last_message_at)
+      VALUES (?, ?, ?, 1, 0, ?)
       ON CONFLICT(chat_id, user_id) DO UPDATE SET
         message_count = message_count + 1,
-        user_name = excluded.user_name
+        user_name = excluded.user_name,
+        last_message_at = excluded.last_message_at
     `,
-			[chatId, userId, userName]
+			[chatId, userId, userName, now]
 		);
 	} catch (error) {
 		logger.error("Erro ao atualizar contagem de mensagens (SQLite):", error);
@@ -57,19 +65,22 @@ async function updateMessageCount(chatId, userId, userName) {
  * @param {string} chatId - ID do chat
  * @param {string} userId - ID do usuário
  * @param {string} userName - Nome do usuário
+ * @param {number} [timestamp] - Timestamp do evento
  */
-async function updateReactionCount(chatId, userId, userName) {
+async function updateReactionCount(chatId, userId, userName, timestamp) {
 	try {
+		const now = timestamp || Date.now();
 		await database.dbRun(
 			dbName,
 			`
-      INSERT INTO ranking (chat_id, user_id, user_name, message_count, reaction_count)
-      VALUES (?, ?, ?, 0, 1)
+      INSERT INTO ranking (chat_id, user_id, user_name, message_count, reaction_count, last_message_at)
+      VALUES (?, ?, ?, 0, 1, ?)
       ON CONFLICT(chat_id, user_id) DO UPDATE SET
         reaction_count = reaction_count + 1,
-        user_name = excluded.user_name
+        user_name = excluded.user_name,
+        last_message_at = excluded.last_message_at
     `,
-			[chatId, userId, userName]
+			[chatId, userId, userName, now]
 		);
 	} catch (error) {
 		logger.error("Erro ao atualizar contagem de reações (SQLite):", error);
@@ -86,7 +97,7 @@ async function getMessageRanking(chatId) {
 		const rows = await database.dbAll(
 			dbName,
 			`
-      SELECT user_name as nome, user_id as numero, (message_count + reaction_count) as qtdMsgs
+      SELECT user_name as nome, user_id as numero, (message_count + reaction_count) as qtdMsgs, last_message_at
       FROM ranking
       WHERE chat_id = ?
       ORDER BY (message_count + reaction_count) DESC
@@ -153,8 +164,16 @@ async function processMessage(message) {
 			});
 		}
 
+		// Timestamp da mensagem
+		const timestamp =
+			typeof message.timestamp === "number" && message.timestamp > 0
+				? message.timestamp < 1e11
+					? message.timestamp * 1000
+					: message.timestamp
+				: Date.now();
+
 		// Atualiza contagem de mensagens
-		await updateMessageCount(chatId, userId, userName);
+		await updateMessageCount(chatId, userId, userName, timestamp);
 	} catch (error) {
 		logger.error("Erro ao processar mensagem para ranking:", error);
 	}
@@ -176,8 +195,15 @@ async function processReaction(reactionData) {
 		// Obtém nome do usuário
 		const userName = reactionData.userName ?? "Fulano";
 
+		const timestamp =
+			typeof reactionData.timestamp === "number" && reactionData.timestamp > 0
+				? reactionData.timestamp < 1e11
+					? reactionData.timestamp * 1000
+					: reactionData.timestamp
+				: Date.now();
+
 		// Atualiza contagem de reações
-		await updateReactionCount(chatId, userId, userName);
+		await updateReactionCount(chatId, userId, userName, timestamp);
 	} catch (error) {
 		logger.error("Erro ao processar reação para ranking:", error);
 	}
@@ -526,7 +552,363 @@ async function faladoresResetCommand(bot, message, args, group) {
 	}
 }
 
-// Comando para exibir o ranking de faladores
+const ACTIVITY_BUCKETS = [
+	{
+		key: "menos_12h",
+		label: "menos de 12 horas",
+		emoji: "🟢",
+		minMs: 0,
+		maxMs: 12 * 60 * 60 * 1000
+	},
+	{
+		key: "menos_1d",
+		label: "menos de 1 dia",
+		emoji: "🟡",
+		minMs: 12 * 60 * 60 * 1000,
+		maxMs: 24 * 60 * 60 * 1000
+	},
+	{
+		key: "1_3d",
+		label: "1 a 3 dias",
+		emoji: "🟠",
+		minMs: 24 * 60 * 60 * 1000,
+		maxMs: 3 * 24 * 60 * 60 * 1000
+	},
+	{
+		key: "3_5d",
+		label: "3 a 5 dias",
+		emoji: "🟡",
+		minMs: 3 * 24 * 60 * 60 * 1000,
+		maxMs: 5 * 24 * 60 * 60 * 1000
+	},
+	{
+		key: "5_7d",
+		label: "5 a 7 dias",
+		emoji: "🔵",
+		minMs: 5 * 24 * 60 * 60 * 1000,
+		maxMs: 7 * 24 * 60 * 60 * 1000
+	},
+	{
+		key: "7_15d",
+		label: "7 a 15 dias",
+		emoji: "🟣",
+		minMs: 7 * 24 * 60 * 60 * 1000,
+		maxMs: 15 * 24 * 60 * 60 * 1000
+	},
+	{
+		key: "15_30d",
+		label: "15 a 30 dias",
+		emoji: "🟤",
+		minMs: 15 * 24 * 60 * 60 * 1000,
+		maxMs: 30 * 24 * 60 * 60 * 1000
+	},
+	{
+		key: "mais_30d",
+		label: "mais de 30 dias",
+		emoji: "⚫",
+		minMs: 30 * 24 * 60 * 60 * 1000,
+		maxMs: Infinity
+	}
+];
+
+function formatTimeAgo(ms) {
+	if (ms < 0) ms = 0;
+	const minutes = Math.floor(ms / (1000 * 60));
+	const hours = Math.floor(ms / (1000 * 60 * 60));
+	const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+
+	if (minutes < 1) return "agora há pouco";
+	if (minutes < 60) return `há ${minutes}min`;
+	if (hours < 24) return `há ${hours}h`;
+	if (days === 1) return `há 1 dia`;
+	return `há ${days} dias`;
+}
+
+/**
+ * Exibe a atividade dos membros do grupo categorizada por tempo desde a última mensagem vista
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {Object} message - Mensagem formatada
+ * @param {Array} args - Argumentos do comando
+ * @param {Object} group - Dados do grupo
+ * @returns {Promise<ReturnMessage>} - Mensagem de retorno
+ */
+async function faladoresAtividadeCommand(bot, message, args, group) {
+	try {
+		const userId = message.author || message.authorAlt;
+		const chatId = message.group ?? userId;
+
+		if (!message.group) {
+			return new ReturnMessage({
+				chatId,
+				content: "Este comando só funciona em grupos."
+			});
+		}
+
+		const ranking = await getMessageRanking(chatId);
+		const participants = await getGroupParticipants(bot, message, chatId);
+
+		if (ranking.length === 0 && participants.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: "Ainda não há estatísticas de atividade ou membros para este grupo."
+			});
+		}
+
+		const rankingMap = new Map();
+		for (const r of ranking) {
+			const norm = normalizeId(r.numero);
+			if (norm) {
+				rankingMap.set(norm, r);
+			}
+		}
+
+		// Prepara lista de membros a classificar
+		const membersToClassify = [];
+		if (participants.length > 0) {
+			for (const p of participants) {
+				const pIds = [p.phoneNumber, p.lid, p.jid].map((id) => normalizeId(id)).filter(Boolean);
+
+				let rankedItem = null;
+				for (const id of pIds) {
+					if (rankingMap.has(id)) {
+						rankedItem = rankingMap.get(id);
+						break;
+					}
+				}
+
+				membersToClassify.push({
+					id: p.phoneNumber || p.jid || p.lid || "unknown",
+					name: rankedItem?.nome || p.displayName || "Pessoa",
+					rankedItem
+				});
+			}
+		} else {
+			// Fallback quando não foi possível obter lista de participantes via API
+			for (const r of ranking) {
+				membersToClassify.push({
+					id: r.numero,
+					name: r.nome || "Pessoa",
+					rankedItem: r
+				});
+			}
+		}
+
+		const now = Date.now();
+		const buckets = ACTIVITY_BUCKETS.map((b) => ({
+			...b,
+			members: []
+		}));
+		const semDataBucket = {
+			key: "sem_data",
+			label: "sem registro recente (histórico)",
+			emoji: "⚪",
+			members: []
+		};
+		const nuncaBucket = {
+			key: "nunca",
+			label: "nunca",
+			emoji: "🚫",
+			members: []
+		};
+
+		for (const m of membersToClassify) {
+			const item = m.rankedItem;
+			if (item && item.qtdMsgs > 0) {
+				if (item.last_message_at) {
+					const diff = Math.max(0, now - item.last_message_at);
+					const targetBucket =
+						buckets.find((b) => diff >= b.minMs && diff < b.maxMs) || buckets[buckets.length - 1];
+					targetBucket.members.push({
+						id: m.id,
+						name: m.name,
+						diff,
+						timeAgoStr: formatTimeAgo(diff),
+						qtdMsgs: item.qtdMsgs
+					});
+				} else {
+					semDataBucket.members.push({
+						id: m.id,
+						name: m.name,
+						qtdMsgs: item.qtdMsgs
+					});
+				}
+			} else {
+				nuncaBucket.members.push({
+					id: m.id,
+					name: m.name,
+					qtdMsgs: 0
+				});
+			}
+		}
+
+		// Ordenações internas
+		for (const b of buckets) {
+			b.members.sort((a, b) => a.diff - b.diff);
+		}
+		semDataBucket.members.sort((a, b) => b.qtdMsgs - a.qtdMsgs);
+		nuncaBucket.members.sort((a, b) => String(a.name).localeCompare(String(b.name), "pt-BR"));
+
+		// Contagem de nomes repetidos para desambiguação
+		const nameCounts = new Map();
+		for (const m of membersToClassify) {
+			const key = String(m.name || "Pessoa")
+				.trim()
+				.toLocaleLowerCase("pt-BR");
+			nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+		}
+
+		const formatMember = (m, showTime = true) => {
+			const key = String(m.name || "Pessoa")
+				.trim()
+				.toLocaleLowerCase("pt-BR");
+			const display = nameCounts.get(key) > 1 ? `${m.name} (${normalizeId(m.id)})` : m.name;
+			if (showTime && m.timeAgoStr) {
+				return `• ${display} (${m.timeAgoStr})`;
+			}
+			if (showTime && m.qtdMsgs) {
+				return `• ${display} (${m.qtdMsgs} msgs pré-rastreamento)`;
+			}
+			return `• ${display}`;
+		};
+
+		const totalCount = membersToClassify.length;
+		const arg = (args[0] || "").toLowerCase().trim();
+
+		const allBuckets = [...buckets];
+		if (semDataBucket.members.length > 0) {
+			allBuckets.push(semDataBucket);
+		}
+		allBuckets.push(nuncaBucket);
+
+		// Filtro específico: 'nunca'
+		if (arg === "nunca") {
+			let resp = `🚫 *Membros que nunca falaram no grupo* (${nuncaBucket.members.length}/${totalCount})\n\n`;
+			if (nuncaBucket.members.length === 0) {
+				resp += "Todos os membros atuais já enviaram pelo menos uma mensagem! 🎉";
+			} else {
+				resp += nuncaBucket.members.map((m) => formatMember(m, false)).join("\n");
+			}
+			return new ReturnMessage({ chatId, content: resp });
+		}
+
+		// Filtro específico: 'inativos' (7+ dias sem mensagens)
+		if (arg === "inativos") {
+			const inactBuckets = allBuckets.filter(
+				(b) =>
+					["7_15d", "15_30d", "mais_30d", "sem_data", "nunca"].includes(b.key) &&
+					b.members.length > 0
+			);
+			let resp = `💤 *Membros Inativos no Grupo (7+ dias sem mensagens)*\n\n`;
+			if (inactBuckets.length === 0) {
+				resp += "Nenhum membro inativo há mais de 7 dias! O grupo está bem ativo! 🔥";
+			} else {
+				for (const b of inactBuckets) {
+					resp += `${b.emoji} *${b.label}* (${b.members.length}):\n`;
+					resp += b.members.map((m) => formatMember(m, true)).join("\n");
+					resp += "\n\n";
+				}
+			}
+			return new ReturnMessage({ chatId, content: resp.trim() });
+		}
+
+		// Filtro por faixa específica
+		const bucketKeyMap = {
+			"12h": "menos_12h",
+			"menos-12h": "menos_12h",
+			"1d": "menos_1d",
+			"24h": "menos_1d",
+			"3d": "1_3d",
+			"5d": "3_5d",
+			"7d": "5_7d",
+			"15d": "7_15d",
+			"30d": "15_30d",
+			"+30d": "mais_30d",
+			"30d+": "mais_30d",
+			"mais-30d": "mais_30d"
+		};
+
+		if (bucketKeyMap[arg]) {
+			const targetKey = bucketKeyMap[arg];
+			const b = allBuckets.find((item) => item.key === targetKey);
+			if (b) {
+				let resp = `${b.emoji} *Membros na faixa: ${b.label}* (${b.members.length}/${totalCount})\n\n`;
+				if (b.members.length === 0) {
+					resp += "Nenhum membro nesta faixa de atividade.";
+				} else {
+					resp += b.members.map((m) => formatMember(m, true)).join("\n");
+				}
+				return new ReturnMessage({ chatId, content: resp });
+			}
+		}
+
+		// Visão Geral (Default ou 'completo')
+		const isCompleto = arg === "completo";
+		let response = `📊 *Rank de Atividade dos Membros* 🕒\n`;
+		response += `👥 *Total de membros analisados:* ${totalCount}\n\n`;
+
+		// Resumo quantitativo por faixa
+		response += `📋 *Resumo por tempo da última mensagem vista:*\n`;
+		for (const b of allBuckets) {
+			const count = b.members.length;
+			const pct = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
+			response += `${b.emoji} *${b.label}:* ${count} (${pct}%)\n`;
+		}
+		response += "\n";
+
+		// Detalhamento dos membros
+		if (isCompleto || totalCount <= 35) {
+			response += `👥 *Listagem de membros:*\n\n`;
+			for (const b of allBuckets) {
+				if (b.members.length === 0) continue;
+				response += `${b.emoji} *${b.label}* (${b.members.length}):\n`;
+				response += b.members.map((m) => formatMember(m, true)).join("\n");
+				response += "\n\n";
+			}
+			response = response.trim();
+		} else {
+			// Grupo grande (> 35 membros) sem 'completo': destaque para inativos
+			const criticos = [];
+			const bMais30 = allBuckets.find((b) => b.key === "mais_30d");
+			const bNunca = allBuckets.find((b) => b.key === "nunca");
+
+			if (bMais30 && bMais30.members.length > 0) {
+				criticos.push(bMais30);
+			}
+			if (bNunca && bNunca.members.length > 0) {
+				criticos.push(bNunca);
+			}
+
+			if (criticos.length > 0) {
+				response += `🔍 *Destaque de Inatividade:*\n\n`;
+				for (const b of criticos) {
+					response += `${b.emoji} *${b.label}* (${b.members.length}):\n`;
+					const maxShow = 15;
+					const slice = b.members.slice(0, maxShow);
+					response += slice.map((m) => formatMember(m, true)).join("\n");
+					if (b.members.length > maxShow) {
+						response += `\n... e mais ${b.members.length - maxShow} membros`;
+					}
+					response += "\n\n";
+				}
+			}
+
+			response += `💡 *Dica:* Use '${bot.prefix}faladores-atividade completo' para ver a lista de todos os membros, ou '${bot.prefix}faladores-atividade inativos' para ver quem está sem falar há 7+ dias.`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: response
+		});
+	} catch (error) {
+		logger.error("Erro ao executar comando de atividade de faladores:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "Ocorreu um erro ao obter a atividade dos membros."
+		});
+	}
+}
+
+// Comandos para ranking de faladores
 const commands = [
 	new Command({
 		name: "faladores",
@@ -550,13 +932,21 @@ const commands = [
 		adminOnly: true,
 		method: faladoresResetCommand,
 		reactions: { after: "♻️", error: "❌" }
+	}),
+	new Command({
+		name: "faladores-atividade",
+		aliases: ["atividade", "faladores-atv"],
+		description: "Mostra o rank de membros por tempo de atividade recente no grupo",
+		category: "grupo",
+		method: faladoresAtividadeCommand,
+		reactions: { after: "🕒", error: "❌" }
 	})
 ];
 
 const helper = {
 	about: "Monitoramento de atividade de mensagens e ranking de membros mais faladores do grupo",
 	implementation:
-		"Registra contagem de mensagens enviadas por usuário em SQLite e gera relatórios periódicos de atividade",
+		"Registra contagem de mensagens e timestamps de atividade em SQLite, gerando relatórios de participação recente",
 	tags: "faladores,ranking,mensagens,atividade,membros,estatisticas",
 	cmds: [
 		{
@@ -575,6 +965,18 @@ const helper = {
 			cmd: "!faladores-reset",
 			desc: "Reseta a contagem de mensagens do grupo (Apenas Administradores)",
 			usage: ["!faladores-reset"],
+			category: "grupo"
+		},
+		{
+			cmd: "!faladores-atividade",
+			desc: "Mostra o rank de atividade recente dos membros (última mensagem vista)",
+			usage: [
+				"!faladores-atividade",
+				"!faladores-atividade completo",
+				"!faladores-atividade nunca",
+				"!faladores-atividade inativos",
+				"!faladores-atividade 7d"
+			],
 			category: "grupo"
 		}
 	]
@@ -622,6 +1024,7 @@ module.exports = {
 	processMessage,
 	processReaction,
 	getMessageRanking,
+	faladoresAtividadeCommand,
 	fetchGroupRankingSummary,
 	getRankingDisplayName
 };

@@ -57,6 +57,7 @@ const COMMAND_ORDER = [
 	"faladores",
 	"faladores-limpeza",
 	"faladores-reset",
+	"faladores-atividade",
 	"clima",
 	"news",
 	"stt",

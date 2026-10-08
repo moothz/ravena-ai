@@ -282,6 +282,11 @@ function normalizeUserId(id) {
 	return id.split("@")[0].split(":")[0];
 }
 
+function toJid(id) {
+	if (!id || typeof id !== "string") return "";
+	return id.includes("@") ? id : `${id}@s.whatsapp.net`;
+}
+
 function getUserId(message) {
 	const rawId = message?.originReaction?.senderId || message?.author;
 	return normalizeUserId(rawId);
@@ -611,7 +616,7 @@ function makeRollHandler(genderFilter) {
 				text += eventBanner;
 			}
 
-			const mentions = isSpecialRarity && available && userId ? [userId] : [];
+			const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
 
 			// Tenta baixar a imagem e enviar com mídia
 			const imageBase64 = await downloadImageAsBase64(character.imageUrl);
@@ -780,7 +785,7 @@ async function casarWaifu(bot, message, args) {
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin,
-				mentions: [matchedRoll.rollerUserId]
+				mentions: [toJid(matchedRoll.rollerUserId)]
 			}
 		});
 	}
@@ -825,7 +830,7 @@ async function casarWaifu(bot, message, args) {
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin,
-				mentions: [userId]
+				mentions: [toJid(userId)]
 			}
 		});
 	} catch (err) {

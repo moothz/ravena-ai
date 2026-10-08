@@ -61,10 +61,11 @@ async function runTests() {
 		blockedReactionRes.content.includes("5511999990001"),
 		"Deveria mencionar o @ do autor do roll na mensagem de bloqueio"
 	);
+	const userRollerJid = `${userRoller}@s.whatsapp.net`;
 	assert.deepStrictEqual(
 		blockedReactionRes.options.mentions,
-		[userRoller],
-		"Options.mentions deve conter o autor do roll"
+		[userRollerJid],
+		"Options.mentions deve conter o autor do roll com domínio WhatsApp"
 	);
 	console.log("✓ 2. Casar via reação 💍 por outro usuário foi bloqueado com sucesso.");
 
@@ -308,8 +309,8 @@ async function runTests() {
 		assert.ok(rollText.includes("💍"), "Legenda do roll deve sugerir usar a reação 💍 para casar");
 		assert.deepStrictEqual(
 			rollResult.options.mentions,
-			[userRoller],
-			"Options.mentions do roll deve conter o autor do roll"
+			[userRollerJid],
+			"Options.mentions do roll deve conter o autor do roll com domínio WhatsApp"
 		);
 		assert.ok(
 			rollResult.options.waifuExclusiveUntil > Date.now(),
@@ -334,8 +335,8 @@ async function runTests() {
 		);
 		assert.deepStrictEqual(
 			marryResult.options.mentions,
-			[userRoller],
-			"Options.mentions do casamento deve conter o usuário que casou"
+			[userRollerJid],
+			"Options.mentions do casamento deve conter o usuário que casou com domínio WhatsApp"
 		);
 		console.log("✓ 10. Mensagem de casamento bem-sucedido exibiu @menção do usuário que casou.");
 	} finally {

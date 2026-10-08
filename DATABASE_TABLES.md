@@ -353,7 +353,16 @@ Participantes inscritos em sorteios ativos.
 ## 📣 Social & Conteúdo
 
 ### `msgranking.db → ranking`
-Contador de mensagens por usuário/grupo para ranking de atividade.
+Contador de mensagens e timestamp de última atividade por usuário/grupo para ranking de faladores e atividade (`!faladores`, `!faladores-atividade`).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `chat_id` | TEXT PK | JID do grupo ou chat |
+| `user_id` | TEXT PK | JID / número do usuário |
+| `user_name` | TEXT | Nome / pushName do usuário |
+| `message_count` | INTEGER | Quantidade de mensagens enviadas |
+| `reaction_count` | INTEGER | Quantidade de reações enviadas |
+| `last_message_at` | INTEGER | Timestamp (ms) da última mensagem ou reação |
 
 ### `summaries.db → group_summaries`
 Resumos gerados por IA das conversas dos grupos.
