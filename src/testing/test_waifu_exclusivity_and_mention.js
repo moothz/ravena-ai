@@ -12,8 +12,8 @@ async function runTests() {
 
 	const bot = new FakeBot({ id: "teste", grupoLogs: "123@g.us" });
 	const groupId = "group_waifu_test@g.us";
-	const userRoller = "5511999990001@s.whatsapp.net";
-	const userOutro = "5511999990002@s.whatsapp.net";
+	const userRoller = "5511999990001";
+	const userOutro = "5511999990002";
 
 	// 1. Teste de registro de exclusividade no recordRollMessage
 	const msgId = "MSG_ROLL_RARE_123";

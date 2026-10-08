@@ -70,7 +70,8 @@ function recordRollMessage(
 	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
 
 	const existing = activeClaimsByCharGroup.get(`${groupId}:${characterId}`);
-	const finalRollerUserId = rollerUserId || existing?.rollerUserId || null;
+	const rawRoller = rollerUserId || existing?.rollerUserId || null;
+	const finalRollerUserId = rawRoller ? normalizeUserId(rawRoller) : null;
 	const finalExclusiveUntil = exclusiveUntil ?? existing?.exclusiveUntil ?? null;
 	const finalRollerUserName = rollerUserName || existing?.rollerUserName || null;
 
@@ -276,11 +277,14 @@ async function getDropRateStats(userId = null, forceRefresh = false) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function normalizeUserId(id) {
+	if (!id || typeof id !== "string") return "";
+	return id.split("@")[0].split(":")[0];
+}
+
 function getUserId(message) {
-	if (message?.originReaction?.senderId) {
-		return message.originReaction.senderId;
-	}
-	return message.author;
+	const rawId = message?.originReaction?.senderId || message?.author;
+	return normalizeUserId(rawId);
 }
 
 function getGroupId(message) {
@@ -763,7 +767,7 @@ async function casarWaifu(bot, message, args) {
 		matchedRoll.exclusiveUntil &&
 		Date.now() < matchedRoll.exclusiveUntil &&
 		matchedRoll.rollerUserId &&
-		matchedRoll.rollerUserId !== userId
+		normalizeUserId(matchedRoll.rollerUserId) !== userId
 	) {
 		const remainingSecs = Math.max(1, Math.ceil((matchedRoll.exclusiveUntil - Date.now()) / 1000));
 		const rollerMention = matchedRoll.rollerUserId.includes("@")
@@ -2873,5 +2877,7 @@ module.exports = {
 	notifySpecialMarriage,
 	downloadImageAsBase64,
 	handleApiError,
-	api
+	api,
+	normalizeUserId,
+	getUserId
 };
