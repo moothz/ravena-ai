@@ -284,7 +284,7 @@ const commands = [
 		name: "afk",
 		description: "Define seu status como AFK (Away From Keyboard) no grupo",
 		usage: "!afk <motivo (opcional)>",
-		category: "utilitarios",
+		category: "grupo",
 		group: false,
 		method: async (bot, message, args, group) => {
 			if (!group && !message.group) {
@@ -319,7 +319,7 @@ const commands = [
 		aliases: ["afks", "afklist"],
 		description: "Lista os membros do grupo que estão atualmente AFK",
 		usage: "!afk-lista",
-		category: "utilitarios",
+		category: "grupo",
 		group: false,
 		method: async (bot, message, args, group) => {
 			if (!group && !message.group) {

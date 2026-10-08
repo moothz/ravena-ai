@@ -233,11 +233,13 @@ class Management {
 			banir: {
 				method: "banGroupMembers",
 				description:
-					"Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m)"
+					"Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m)",
+				hidden: true
 			},
 			desbanir: {
 				method: "unbanGroupMembers",
-				description: "Remove o ban da pessoa, permitindo que entre no grupo novamente"
+				description: "Remove o ban da pessoa, permitindo que entre no grupo novamente",
+				hidden: true
 			},
 			ban: {
 				method: "banUser",
