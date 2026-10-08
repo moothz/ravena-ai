@@ -92,6 +92,64 @@ const FRASES_MORTE = [
 ];
 
 /**
+ * Extrai o 1º mention do comando (via message.mentions, args ou quoted)
+ * @param {Object} message - Objeto da mensagem
+ * @param {Array} args - Argumentos do comando
+ * @returns {{ targetJid: string|null, targetText: string }}
+ */
+function extractFirstMention(message, args) {
+	let targetJid = null;
+	let targetText = "";
+
+	const rawMentions =
+		Array.isArray(message.mentions) && message.mentions.length > 0
+			? message.mentions
+			: Array.isArray(message.origin?.mentionedIds) && message.origin.mentionedIds.length > 0
+				? message.origin.mentionedIds
+				: [];
+
+	if (rawMentions.length > 0) {
+		targetJid = rawMentions[0];
+	}
+
+	const mentionArg = Array.isArray(args)
+		? args.find((a) => typeof a === "string" && a.startsWith("@"))
+		: null;
+
+	if (mentionArg) {
+		const cleanDigits = mentionArg.replace(/^@/, "").replace(/\D/g, "");
+		if (!targetJid && cleanDigits.length >= 7) {
+			targetJid = `${cleanDigits}@s.whatsapp.net`;
+		}
+		if (cleanDigits.length >= 7) {
+			targetText = `@${cleanDigits}`;
+		} else if (!targetJid) {
+			targetText = mentionArg;
+		}
+	}
+
+	if (!targetJid && !targetText) {
+		const quotedParticipant =
+			message.quotedParticipant ??
+			message.origin?.quotedParticipant ??
+			message.quotedMsg?.author ??
+			message.origin?.quotedMsg?.author ??
+			message.quotedMsg?.participant ??
+			message.origin?.quotedMsg?.participant;
+		if (quotedParticipant) {
+			targetJid = quotedParticipant;
+		}
+	}
+
+	if (targetJid && !targetText) {
+		const cleanNum = targetJid.split("@")[0].replace(/\D/g, "");
+		targetText = cleanNum ? `@${cleanNum}` : `@${targetJid.split("@")[0]}`;
+	}
+
+	return { targetJid, targetText };
+}
+
+/**
  * Obtém ou cria dados do grupo
  */
 async function getGroupData(groupId) {
@@ -263,6 +321,20 @@ async function jogarRoletaRussa(bot, message, args, group) {
 		const currentTries = (playerData.current_tries || 0) + 1;
 		const totalTries = (playerData.total_tries || 0) + 1;
 
+		const authorNum = userId.split("@")[0].replace(/\D/g, "");
+		const authorMention = authorNum ? `@${authorNum}` : `@${userId}`;
+
+		const { targetJid, targetText } = extractFirstMention(message, args);
+
+		const mentionPrefix = targetText
+			? `${authorMention} pegou a pistola de ${targetText} e ....\n\n`
+			: "";
+
+		const mentionsList = [userId];
+		if (targetJid && !mentionsList.includes(targetJid)) {
+			mentionsList.push(targetJid);
+		}
+
 		// Roll the dice (1 in 6)
 		const died = Math.floor(Math.random() * 6) === 0;
 
@@ -334,10 +406,11 @@ async function jogarRoletaRussa(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `💥🔫 *BANG* - *F no chat* ${info}\n\n> _${fraseAleatoria}_`,
+				content: `${mentionPrefix}💥🔫 *BANG* - *F no chat* ${info}\n\n> _${fraseAleatoria}_`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
+					goReply: message.origin,
+					mentions: mentionsList
 				}
 			});
 		} else {
@@ -366,10 +439,11 @@ async function jogarRoletaRussa(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `💨🔫 *click* - Tá *safe*! \`\`\`${currentTries}\`\`\``,
+				content: `${mentionPrefix}💨🔫 *click* - Tá *safe*! \`\`\`${currentTries}\`\`\``,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
+					goReply: message.origin,
+					mentions: mentionsList
 				}
 			});
 		}
@@ -692,6 +766,19 @@ async function alternarSilenciamentoRoleta(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "roletarussa",
+		description: "Joga roleta russa, risco de ser silenciado",
+		category: "jogos",
+		cooldown: 0,
+		reactions: {
+			after: "🔫",
+			error: "❌"
+		},
+		method: jogarRoletaRussa
+	}),
+
+	new Command({
+		name: "roleta",
+		hidden: true,
 		description: "Joga roleta russa, risco de ser silenciado",
 		category: "jogos",
 		cooldown: 0,

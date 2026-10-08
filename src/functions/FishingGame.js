@@ -1611,7 +1611,11 @@ async function fishCommand(bot, message, args, group) {
 		const userName =
 			message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Pescador";
 		const groupId = message.group;
-		const mentionPessoa = message.mentions ?? message.origin?.mentionedIds ?? [];
+		const mentionPessoa = Array.isArray(message.mentions)
+			? [...message.mentions]
+			: Array.isArray(message.origin?.mentionedIds)
+				? [...message.origin.mentionedIds]
+				: [];
 
 		let userData = await getUserData(userId);
 
@@ -1892,17 +1896,57 @@ async function fishCommand(bot, message, args, group) {
 		fishingCooldowns[userId] = now + currentCooldown;
 
 		// Montar mensagem
-		let extraMsg = "";
-		if (args[0]?.match(/^@\d\d/g)) {
-			mentionPessoa.push(args[0]);
-			extraMsg = `, segurando firme na vara de ${args[0]}, `;
+		let targetJid = null;
+		let targetText = "";
+
+		if (mentionPessoa.length > 0) {
+			targetJid = mentionPessoa[0];
 		}
+
+		const mentionArg = Array.isArray(args)
+			? args.find((a) => typeof a === "string" && a.startsWith("@"))
+			: null;
+		if (mentionArg) {
+			const cleanDigits = mentionArg.replace(/^@/, "").replace(/\D/g, "");
+			if (!targetJid && cleanDigits.length >= 7) {
+				targetJid = `${cleanDigits}@s.whatsapp.net`;
+			}
+			if (cleanDigits.length >= 7) {
+				targetText = `@${cleanDigits}`;
+			} else if (!targetJid) {
+				targetText = mentionArg;
+			}
+		}
+
+		if (!targetJid && !targetText) {
+			const quotedParticipant =
+				message.quotedParticipant ??
+				message.origin?.quotedParticipant ??
+				message.quotedMsg?.author ??
+				message.origin?.quotedMsg?.author ??
+				message.quotedMsg?.participant ??
+				message.origin?.quotedMsg?.participant;
+			if (quotedParticipant) {
+				targetJid = quotedParticipant;
+			}
+		}
+
+		if (targetJid && !targetText) {
+			const cleanNum = targetJid.split("@")[0].replace(/\D/g, "");
+			targetText = cleanNum ? `@${cleanNum}` : `@${targetJid.split("@")[0]}`;
+		}
+
+		if (targetJid && !mentionPessoa.includes(targetJid)) {
+			mentionPessoa.push(targetJid);
+		}
+
+		const extraMsg = targetText ? `, segurando firme na vara de ${targetText},` : "";
 
 		if (caughtFishes.length === 0) {
 			return new ReturnMessage({
 				chatId,
 
-				content: `🎣 ${userName} jogou a linha ${extraMsg}e... ${effectMessage}\n\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`,
+				content: `🎣 ${userName} jogou a linha${extraMsg} e... ${effectMessage}\n\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`,
 
 				reaction: "🎣",
 
@@ -1921,15 +1965,15 @@ async function fishCommand(bot, message, args, group) {
 				.map((fish) => `*${fish.name}* (_${fish.weight.toFixed(2)} kg_)`)
 				.join(" e ");
 
-			fishMessage = `🎣 ${userName} pescou ${fishDetails}!`;
+			fishMessage = `🎣 ${userName}${extraMsg} pescou ${fishDetails}!`;
 		} else {
 			const fish = caughtFishes[0];
 
 			if (fish.isRare) {
 				const chanceFinal = (fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(5);
-				fishMessage = `🏆 INCRÍVEL! _${userName}_ capturou um(a) _raríssimo_ *${fish.name}* de _${fish.weight.toFixed(2)} kg_! (${fish.emoji} ${chanceFinal}% de chance)`;
+				fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${fish.name}* de _${fish.weight.toFixed(2)} kg_! (${fish.emoji} ${chanceFinal}% de chance)`;
 			} else {
-				fishMessage = `🎣 ${userName} ${extraMsg}pescou um *${fish.name}* de _${fish.weight.toFixed(2)} kg_!`;
+				fishMessage = `🎣 ${userName}${extraMsg} pescou um *${fish.name}* de _${fish.weight.toFixed(2)} kg_!`;
 			}
 		}
 
@@ -2016,7 +2060,8 @@ async function fishCommand(bot, message, args, group) {
 			const notificacaoPeixeRaro = new ReturnMessage({
 				content: rareFishImage,
 				options: {
-					caption: `🏆 *${userName}* capturou um(a) _*${caughtFishes[0].name}* LENDÁRIO(A)_ pesando *${caughtFishes[0].weight.toFixed(2)} kg* no grupo "${groupName}"! (${caughtFishes[0].emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`
+					caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${caughtFishes[0].name}* LENDÁRIO(A)_ pesando *${caughtFishes[0].weight.toFixed(2)} kg* no grupo "${groupName}"! (${caughtFishes[0].emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`,
+					mentions: mentionPessoa
 				}
 			});
 

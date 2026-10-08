@@ -187,17 +187,86 @@ function getComment(score, doctorName = "Dr. Raveno") {
 }
 
 /**
+ * Extrai o 1º mention do comando (via message.mentions, args ou quoted)
+ * @param {Object} message - Objeto da mensagem
+ * @param {Array} args - Argumentos do comando
+ * @returns {{ targetJid: string|null, targetText: string }}
+ */
+function extractFirstMention(message, args) {
+	let targetJid = null;
+	let targetText = "";
+
+	const rawMentions =
+		Array.isArray(message.mentions) && message.mentions.length > 0
+			? message.mentions
+			: Array.isArray(message.origin?.mentionedIds) && message.origin.mentionedIds.length > 0
+				? message.origin.mentionedIds
+				: [];
+
+	if (rawMentions.length > 0) {
+		targetJid = rawMentions[0];
+	}
+
+	const mentionArg = Array.isArray(args)
+		? args.find((a) => typeof a === "string" && a.startsWith("@"))
+		: null;
+
+	if (mentionArg) {
+		const cleanDigits = mentionArg.replace(/^@/, "").replace(/\D/g, "");
+		if (!targetJid && cleanDigits.length >= 7) {
+			targetJid = `${cleanDigits}@s.whatsapp.net`;
+		}
+		if (cleanDigits.length >= 7) {
+			targetText = `@${cleanDigits}`;
+		} else if (!targetJid) {
+			targetText = mentionArg;
+		}
+	}
+
+	if (!targetJid && !targetText) {
+		const quotedParticipant =
+			message.quotedParticipant ??
+			message.origin?.quotedParticipant ??
+			message.quotedMsg?.author ??
+			message.origin?.quotedMsg?.author ??
+			message.quotedMsg?.participant ??
+			message.origin?.quotedMsg?.participant;
+		if (quotedParticipant) {
+			targetJid = quotedParticipant;
+		}
+	}
+
+	if (targetJid && !targetText) {
+		const cleanNum = targetJid.split("@")[0].replace(/\D/g, "");
+		targetText = cleanNum ? `@${cleanNum}` : `@${targetJid.split("@")[0]}`;
+	}
+
+	return { targetJid, targetText };
+}
+
+/**
  * Gera as frases de introdução aleatórias
  * @param {string} userName - Nome do usuário
  * @param {string} [doctorName] - Nome do médico/doutor
+ * @param {string} [targetText] - Menção ao usuário
  * @returns {string} - Frase combinada
  */
-function generateFlavorText(userName, doctorName = "Dr. Raveno") {
+function generateFlavorText(userName, doctorName = "Dr. Raveno", targetText = null) {
 	const a = INTRO_A[Math.floor(Math.random() * INTRO_A.length)]
 		.replace("{pessoa}", `*${userName}*`)
 		.replace("{doutor}", doctorName);
 	const b = INTRO_B[Math.floor(Math.random() * INTRO_B.length)].replace("{doutor}", doctorName);
 	const c = INTRO_C[Math.floor(Math.random() * INTRO_C.length)];
+
+	if (targetText) {
+		const mentionPhrases = [
+			`Ah, você trouxe ${targetText} junto pra consulta?`,
+			`${targetText}, pode ajudar a segurar aqui?`
+		];
+		const chosen = mentionPhrases[Math.floor(Math.random() * mentionPhrases.length)];
+		return `${a}\n${chosen}\n${b}\n${c}`;
+	}
+
 	return `${a}\n${b}\n${c}`;
 }
 
@@ -376,8 +445,11 @@ async function pintoCommand(bot, message, args, group) {
 			curvatureText = `${absCurvature.toFixed(1)}°, torto para direita`;
 		}
 
+		// Determina menção
+		const { targetJid, targetText } = extractFirstMention(message, args);
+
 		// Prepara a mensagem de resposta
-		const flavorText = generateFlavorText(userName, doctorName);
+		const flavorText = generateFlavorText(userName, doctorName, targetText);
 		const response =
 			`${flavorText}\n\n` +
 			`• *Comprimento Flácido:* ${flaccid.toFixed(1)} cm\n` +
@@ -388,12 +460,15 @@ async function pintoCommand(bot, message, args, group) {
 			`${comment}\n\n` +
 			`> Você pode voltar daqui a ${COOLDOWN_DAYS} dias para refazermos sua avaliação.`;
 
+		const mentionsList = targetJid ? [targetJid] : [];
+
 		return new ReturnMessage({
 			chatId: groupId,
 			content: response,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
+				goReply: message.origin,
+				mentions: mentionsList
 			}
 		});
 	} catch (error) {
