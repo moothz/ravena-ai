@@ -278,7 +278,7 @@ class InviteSystem {
 	 * Seleciona o melhor bot elegível para entrar no grupo automaticamente
 	 * Critérios:
 	 * - Bot normal (habilitado, não vip, não privado, não comunitário, não banido, não telegram/discord)
-	 * - Menor quantidade de mensagens na semana (últimos 7 dias via load_reports)
+	 * - Menor quantidade de mensagens nos últimos 3 dias via load_reports
 	 * - Máximo de 3 grupos a cada 30 minutos
 	 * @returns {Promise<WhatsAppBotGo|null>}
 	 */
@@ -298,13 +298,13 @@ class InviteSystem {
 				return null;
 			}
 
-			// Busca totais de mensagens na semana
-			const weeklyTotals = await this.database.getBotsWeeklyMessageTotals();
+			// Busca totais de mensagens nos últimos 3 dias
+			const messageTotals = await this.database.getBotsMessageTotals();
 
-			// Ordena por menor mensagens na semana
+			// Ordena por menor mensagens nos últimos 3 dias
 			eligibleBots.sort((a, b) => {
-				const countA = weeklyTotals.get(a.id) || 0;
-				const countB = weeklyTotals.get(b.id) || 0;
+				const countA = messageTotals.get(a.id) || 0;
+				const countB = messageTotals.get(b.id) || 0;
 				return countA - countB;
 			});
 

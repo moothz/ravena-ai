@@ -241,6 +241,29 @@ function registerInstancesRoutes(api) {
 		}
 	});
 
+	// Endpoint para totais de mensagens agregadas por bot em uma janela de dias (padrão: 3 dias)
+	app.get("/api/bot-load-totals", api.generalLimiter, async (req, res) => {
+		try {
+			const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 3));
+			const onlyGroup = req.query.onlyGroup === "true" || req.query.onlyGroup === "1";
+			const since = Date.now() - days * 24 * 60 * 60 * 1000;
+			const totalsMap = await api.database.getBotsMessageTotals(since, { onlyGroup });
+			const result = {};
+			for (const [botId, count] of totalsMap.entries()) {
+				result[botId] = count;
+			}
+			res.json({
+				days,
+				since,
+				onlyGroup,
+				totals: result
+			});
+		} catch (error) {
+			api.logger.error("Erro ao buscar totais de mensagens dos bots:", error);
+			res.status(500).json({ error: "Erro ao buscar totais de mensagens" });
+		}
+	});
+
 	// Imagem do QR Code
 	app.get("/qrimg/:botId", api.authenticateBasic, async (req, res) => {
 		const { botId } = req.params;

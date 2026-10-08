@@ -1039,15 +1039,21 @@ class CoreRepository {
 	}
 
 	/**
-	 * Obtém o total de mensagens por bot desde um timestamp (ex: últimos 7 dias)
-	 * @param {number} since - Timestamp inicial em milissegundos
+	 * Obtém o total de mensagens por bot desde um timestamp (padrão: últimos 3 dias)
+	 * @param {number} [since] - Timestamp inicial em milissegundos (padrão: 3 dias atrás)
+	 * @param {Object} [options]
+	 * @param {boolean} [options.onlyGroup=false] - Se true, soma apenas mensagens de grupo
 	 * @returns {Promise<Map<string, number>>} - Mapa botId -> total de mensagens
 	 */
-	async getBotsWeeklyMessageTotals(since = Date.now() - 7 * 24 * 60 * 60 * 1000) {
+	async getBotsMessageTotals(since = Date.now() - 3 * 24 * 60 * 60 * 1000, options = {}) {
 		try {
+			const sumExpr = options.onlyGroup
+				? "SUM(recv_group + sent_group)"
+				: "SUM(recv_private + recv_group + sent_private + sent_group)";
+
 			const rows = this.mappers.all(
 				this.REPORTS_DB,
-				`SELECT bot_id as botId, SUM(recv_private + recv_group + sent_private + sent_group) as totalMessages
+				`SELECT bot_id as botId, ${sumExpr} as totalMessages
 				 FROM load_reports
 				 WHERE timestamp_start > ?
 				 GROUP BY bot_id`,
@@ -1059,9 +1065,19 @@ class CoreRepository {
 			}
 			return map;
 		} catch (error) {
-			this.logger.error("Error getting bot weekly message totals:", error);
+			this.logger.error("Error getting bot message totals:", error);
 			return new Map();
 		}
+	}
+
+	/**
+	 * Obtém o total de mensagens por bot desde um timestamp (ex: últimos 7 dias)
+	 * Mantido para compatibilidade retroativa.
+	 * @param {number} since - Timestamp inicial em milissegundos
+	 * @returns {Promise<Map<string, number>>} - Mapa botId -> total de mensagens
+	 */
+	async getBotsWeeklyMessageTotals(since = Date.now() - 7 * 24 * 60 * 60 * 1000) {
+		return this.getBotsMessageTotals(since);
 	}
 
 	async addLoadReport(report) {

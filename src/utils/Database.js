@@ -518,6 +518,10 @@ class Database {
 		return this.coreRepo.archiveOldLoadReports(retentionDays);
 	}
 
+	async getBotsMessageTotals(since, options) {
+		return this.coreRepo.getBotsMessageTotals(since, options);
+	}
+
 	async getBotsWeeklyMessageTotals(since) {
 		return this.coreRepo.getBotsWeeklyMessageTotals(since);
 	}
