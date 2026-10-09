@@ -46,6 +46,7 @@ class CoreRepository {
 				name TEXT,
 				titulo TEXT,
 				descricao TEXT,
+				regras TEXT,
 				added_by TEXT,
 				removed_by TEXT,
 				prefix TEXT,
@@ -361,14 +362,14 @@ class CoreRepository {
 			this.mappers.run(
 				this.DB,
 				`INSERT INTO groups (
-          id, name, titulo, descricao, added_by, removed_by, prefix,
+          id, name, titulo, descricao, regras, added_by, removed_by, prefix,
           custom_ignores_prefix, invite_code, paused, additional_admins,
           filters, twitch, kick, youtube, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
           ignored_numbers, ignored_users, muted_commands, muted_categories,
           nicks, warnings, custom_ai_prompt, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, created_at, updated_at, json_data
         ) VALUES (
-          @id, @name, @titulo, @descricao, @added_by, @removed_by, @prefix,
+          @id, @name, @titulo, @descricao, @regras, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
           @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
@@ -379,6 +380,7 @@ class CoreRepository {
           name                  = excluded.name,
           titulo                = excluded.titulo,
           descricao             = excluded.descricao,
+          regras                = excluded.regras,
           added_by              = excluded.added_by,
           removed_by            = excluded.removed_by,
           prefix                = excluded.prefix,

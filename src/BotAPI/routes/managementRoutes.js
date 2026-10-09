@@ -462,6 +462,26 @@ function registerManagementRoutes(api) {
 				}
 			}
 
+			if (changes.regras !== undefined) {
+				if (typeof changes.regras === "string") {
+					let val = changes.regras;
+					if (val.length > 5000) {
+						val = val.slice(0, 5000);
+					}
+					if (typeof val.isWellFormed === "function" && !val.isWellFormed()) {
+						val = val
+							.replace(
+								/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+								""
+							)
+							.toWellFormed();
+					}
+					changes.regras = val.trim().length > 0 ? val : null;
+				} else {
+					changes.regras = null;
+				}
+			}
+
 			api.logger.info(
 				`[management][${token}][${groupId}] UPDATED Group data:\n${JSON.stringify(changes, null, 2)}`
 			);

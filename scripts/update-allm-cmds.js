@@ -1,40 +1,15 @@
 const fs = require("fs").promises;
-const fsSync = require("fs");
 const path = require("path");
 
 process.env.SUPPRESS_LOGS = "true";
 
 const CommandsHelper = require("../src/utils/CommandsHelper");
 
-function extractSuperAdminCommands() {
-	try {
-		const saPath = path.join(__dirname, "../src/commands/SuperAdmin.js");
-		const content = fsSync.readFileSync(saPath, "utf8");
-		const match = content.match(/this\.commandMap\s*=\s*\{([\s\S]*?)\n\t\t\};/);
-		if (match) {
-			const regex = /["']?([a-zA-Z0-9_-]+)["']?\s*:\s*\{([^}]+)\}/g;
-			const cmds = {};
-			let m;
-			while ((m = regex.exec(match[1])) !== null) {
-				const name = m[1];
-				const descMatch = m[2].match(/description:\s*["'`]?([^"'`]+)["'`]?/);
-				cmds[name] = {
-					description: descMatch ? descMatch[1].trim() : ""
-				};
-			}
-			return cmds;
-		}
-	} catch (e) {}
-	return {};
-}
-
 async function generateDocs() {
 	console.log("🚀 Iniciando geração de documentação consolidada para Ravena LLM Helper...");
 
 	const commandsHelper = CommandsHelper.getInstance();
 	commandsHelper.loadHelpers();
-
-	const saCmdMap = extractSuperAdminCommands();
 
 	// 1. Load Base Information
 	const BASE_INFO = `# Ravena - Informações Base
@@ -180,15 +155,7 @@ Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 		}
 	}
 
-	// 2.3 SuperAdmin Commands
-	finalMd += "## 👑 Comandos de Super Admin (!sa-)\n";
-	finalMd += "Começam com `!sa-` e são exclusivos do dono do bot.\n\n";
-
-	for (const [cmdName, cmdData] of Object.entries(saCmdMap)) {
-		finalMd += `#### \`!sa-${cmdName}\`\n`;
-		finalMd += `**Descrição:** ${cmdData.description || "Sem descrição."}\n\n`;
-		finalMd += "---\n\n";
-	}
+	// NOTA: Comandos de Super Admin (!sa-) são exclusivos do dono do bot e ficam FORA do LLM-Helper.
 
 	// --- 3. Generate Variable List ---
 	finalMd += "# 🎲 Variáveis para Comandos Personalizados\n\n";
@@ -271,7 +238,9 @@ Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 	console.log("\n✨ Processo concluído!");
 }
 
-generateDocs().catch((err) => {
-	console.error("❌ Erro durante a geração:", err);
-	process.exit(1);
-});
+generateDocs()
+	.then(() => process.exit(0))
+	.catch((err) => {
+		console.error("❌ Erro durante a geração:", err);
+		process.exit(1);
+	});

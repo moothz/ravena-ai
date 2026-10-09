@@ -33,6 +33,7 @@ const GroupMapper = {
 			name: row.name,
 			titulo: row.titulo ?? null,
 			descricao: row.descricao ?? null,
+			regras: row.regras ?? null,
 			addedBy: row.added_by ?? null,
 			removedBy: row.removed_by ?? false,
 			prefix: row.prefix ?? "!",
@@ -124,6 +125,7 @@ const GroupMapper = {
 			titulo: obj.titulo !== undefined && obj.titulo !== null ? asString(obj.titulo) : null,
 			descricao:
 				obj.descricao !== undefined && obj.descricao !== null ? asString(obj.descricao) : null,
+			regras: obj.regras !== undefined && obj.regras !== null ? asString(obj.regras) : null,
 			added_by: obj.addedBy !== undefined && obj.addedBy !== null ? asString(obj.addedBy) : null,
 			removed_by: obj.removedBy && obj.removedBy !== false ? asString(obj.removedBy) : null,
 			prefix: obj.prefix ?? "!",

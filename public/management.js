@@ -511,8 +511,9 @@ document.addEventListener('DOMContentLoaded', () => {
             nicks: 'Apelidos dos Membros',
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
-            banirSpammers: 'Banir Spammers Automaticamente'
-            ,greetingAccumulation: 'Acúmulo de Saudações'
+            banirSpammers: 'Banir Spammers Automaticamente',
+            greetingAccumulation: 'Acúmulo de Saudações',
+            regras: 'Regras do Grupo'
         };
 
         for (let key in changes) {
@@ -616,6 +617,11 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.customAIPrompt = document.getElementById('bot-personality').value;
         groupData.customIgnoresPrefix = document.getElementById('custom-ignores-prefix').checked;
 
+        const groupRulesEl = document.getElementById('group-rules');
+        if (groupRulesEl) {
+            groupData.regras = groupRulesEl.value.trim() ? groupRulesEl.value : null;
+        }
+
         if(!groupData.filters) groupData.filters = {};
         groupData.filters.links = document.getElementById('delete-links').checked;
         const allowAdminsEl = document.getElementById('filters-allow-admins');
@@ -706,6 +712,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('bot-personality').value = groupData.customAIPrompt || '';
         document.getElementById('personality-count').textContent = (groupData.customAIPrompt || '').length;
         document.getElementById('custom-ignores-prefix').checked = !!groupData.customIgnoresPrefix;
+
+        const rulesVal = groupData.regras || '';
+        const groupRulesEl = document.getElementById('group-rules');
+        if (groupRulesEl) {
+            groupRulesEl.value = rulesVal;
+            const rulesCountEl = document.getElementById('rules-count');
+            if (rulesCountEl) rulesCountEl.textContent = rulesVal.length;
+        }
 
         renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
         
@@ -3154,6 +3168,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (botPersonalityInput) {
             botPersonalityInput.addEventListener('input', (e) => {
                 document.getElementById('personality-count').textContent = e.target.value.length;
+            });
+        }
+
+        const groupRulesInput = document.getElementById('group-rules');
+        if (groupRulesInput) {
+            groupRulesInput.addEventListener('input', (e) => {
+                const countEl = document.getElementById('rules-count');
+                if (countEl) countEl.textContent = e.target.value.length;
             });
         }
 

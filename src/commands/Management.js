@@ -499,6 +499,10 @@ class Management {
 			copiarCmds: {
 				method: "copyCommands",
 				description: "Copia os comandos do grupoOrigem pro grupoDestino"
+			},
+			regras: {
+				method: "handleGroupRules",
+				description: "Define, exibe ou remove as regras do grupo"
 			}
 		};
 
@@ -8163,7 +8167,12 @@ class Management {
 			response += `- ${emojis} @${number} (${currentCount}) ❗️\n`;
 		}
 
-		response += "\n⚠️ _Respeitem as regras do grupo!_ 🚔";
+		if (group.regras && group.regras.trim().length > 0) {
+			response += `\n📜 *Regras do Grupo:*\n${group.regras}`;
+		} else {
+			const prefixo = group.prefix ?? "!";
+			response += `\n⚠️ _Respeitem as regras do grupo!_ 🚔\n> Os administradores podem cadastrar as regras usando ${prefixo}g-regras`;
+		}
 
 		//this.logger.debug(`[advertencias] `, { response, mentions });
 
@@ -8290,6 +8299,117 @@ class Management {
 			}
 		});
 	}
+
+	/**
+	 * Define, exibe ou remove as regras do grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async handleGroupRules(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		// Verifica se a mensagem é uma resposta a outra mensagem
+		const quotedMsg = await message.origin?.getQuotedMessage?.().catch(() => null);
+
+		// Extrai o texto após o comando preservando quebras de linha e formatação
+		let texto = "";
+		if (message.origin && message.origin.body) {
+			const bodyStr = message.origin.body;
+			const lower = bodyStr.toLowerCase();
+			const idx = lower.indexOf("g-regras");
+			if (idx !== -1) {
+				texto = bodyStr.substring(idx + "g-regras".length).trim();
+			}
+		}
+
+		if (!texto && args && args.length > 0) {
+			texto = args.join(" ").trim();
+		}
+
+		// Se não foi passado texto no comando mas marcou uma mensagem
+		if (!texto && quotedMsg) {
+			let quotedText = "";
+			if (typeof quotedMsg.body === "string" && quotedMsg.body.trim()) {
+				quotedText = quotedMsg.body.trim();
+			} else if (typeof quotedMsg.caption === "string" && quotedMsg.caption.trim()) {
+				quotedText = quotedMsg.caption.trim();
+			} else if (typeof quotedMsg.content === "string" && quotedMsg.content.trim()) {
+				quotedText = quotedMsg.content.trim();
+			} else if (
+				quotedMsg._data &&
+				typeof quotedMsg._data.body === "string" &&
+				quotedMsg._data.body.trim()
+			) {
+				quotedText = quotedMsg._data.body.trim();
+			}
+
+			if (quotedText) {
+				texto = quotedText;
+			} else {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: "A mensagem marcada precisa conter texto para ser definida como regras."
+				});
+			}
+		}
+
+		// Se após checar argumentos e reply não houver texto
+		if (!texto) {
+			if (group.regras && group.regras.trim().length > 0) {
+				const regrasAnteriores = group.regras;
+				group.regras = null;
+				await this.database.saveGroup(group);
+
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `📜 *Regras anteriores do grupo:*\n\n${regrasAnteriores}\n\n🗑️ _As regras foram removidas do grupo._`
+				});
+			} else {
+				const prefixo = group.prefix ?? "!";
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `Este grupo não possui regras cadastradas.\n\nPara definir regras:\n- ${prefixo}g-regras <texto das regras>\n- Ou responda a uma mensagem de texto com ${prefixo}g-regras`
+				});
+			}
+		}
+
+		// Há texto: define as regras
+		let foiCortado = false;
+		if (texto.length > 5000) {
+			texto = texto.slice(0, 5000);
+			foiCortado = true;
+		}
+
+		if (typeof texto.isWellFormed === "function" && !texto.isWellFormed()) {
+			texto = texto
+				.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu, "")
+				.toWellFormed();
+		}
+
+		group.regras = texto;
+		await this.database.saveGroup(group);
+
+		let response = "✅ *Regras do grupo atualizadas com sucesso!*";
+		if (foiCortado) {
+			response +=
+				"\n\n⚠️ *Aviso:* O texto ultrapassou o limite máximo de 5000 caracteres e foi cortado.";
+		}
+		response += `\n\n📜 *Regras:*\n${texto}`;
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: response
+		});
+	}
+
 	/**
 	 * Remove o ID do grupo de todos os bots ignorados e limpa blacklist local
 	 * @param {Object} group - Dados do grupo
@@ -9749,6 +9869,12 @@ const helper = {
 			cmd: "!g-copiarCmds",
 			desc: "Copia os comandos do grupoOrigem pro grupoDestino",
 			usage: ["!g-copiarCmds"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-regras",
+			desc: "Define, exibe ou remove as regras deste grupo",
+			usage: ["!g-regras", "!g-regras <texto>", "!g-regras (em resposta a uma mensagem)"],
 			category: "gerenciamento"
 		}
 	]

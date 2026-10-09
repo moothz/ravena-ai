@@ -401,6 +401,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!pescar`**: Lança a linha na água para pescar peixes, itens ou tesouros
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pescar`
+- **`!pesca-rede [iscas]`**: Lança uma rede de pesca para capturar criaturas em lote gastando múltiplas iscas
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!pesca-rede`, `!pesca-rede 10`
 - **`!pesca-iscas`**: Exibe seu inventário de iscas e opções de compra/coleta
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pesca-iscas`
@@ -826,14 +829,14 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `PsnCommands.js`
-**Sobre:** Consulta de perfil, troféus e jogos recentes na PlayStation Network (PSN)
+**Sobre:** Consulta de platinas públicas na PlayStation Network
 
 **Tags:** `psn,playstation,sony,trofeus,ps4,ps5,games,jogos`
 
-**Detalhes Técnicos:** Utiliza PSN API para extrair nível da conta, troféus (Platina, Ouro, Prata, Bronze) e avatar do jogador
+**Detalhes Técnicos:** Consulta protegida à API PSN Platifly pelo Online ID, sem vincular contas
 
 #### Comandos:
-- **`!psn`**: Consulta o perfil e troféus de uma conta PSN
+- **`!psn`**: Consulta platinas de uma conta PSN
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!psn SeuPSNID`
 
@@ -901,7 +904,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 **Tags:** `faladores,ranking,mensagens,atividade,membros,estatisticas`
 
-**Detalhes Técnicos:** Registra contagem de mensagens enviadas por usuário em SQLite e gera relatórios periódicos de atividade
+**Detalhes Técnicos:** Registra contagem de mensagens e timestamps de atividade em SQLite, gerando relatórios de participação recente
 
 #### Comandos:
 - **`!faladores`**: Exibe o ranking com os membros mais ativos do grupo
@@ -913,6 +916,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!faladores-reset`**: Reseta a contagem de mensagens do grupo (Apenas Administradores)
   - *Categoria:* grupo
   - *Uso/Exemplos:* `!faladores-reset`
+- **`!faladores-atividade`**: Mostra o rank de atividade recente dos membros (última mensagem vista)
+  - *Categoria:* grupo
+  - *Uso/Exemplos:* `!faladores-atividade`, `!faladores-atividade completo`, `!faladores-atividade nunca`, `!faladores-atividade inativos`, `!faladores-atividade 7d`
 
 ---
 
@@ -1142,10 +1148,10 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 **Tags:** `steam,platinas,conquistas,jogos,pc,games,perfil`
 
-**Detalhes Técnicos:** Consulta a API pública da Steam e serviços de conquistas para calcular jogos com 100% de progresso
+**Detalhes Técnicos:** Consulta protegida ao backend Platifly; SteamID64, URL personalizada ou link público
 
 #### Comandos:
-- **`!steam-platinas`**: Exibe a quantidade e lista de platinas (100% conquistas) de um jogador na Steam
+- **`!steam-platinas`**: Lista jogos com 100% das conquistas
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!steam-platinas VanityURLOuSteamID`
 
@@ -1293,7 +1299,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 **Tags:** `waifu,mudae,munae,jogo,anime,harem,zinthos,kakera,roleta,casamento`
 
-**Detalhes Técnicos:** Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 120s, harém global, chaves, soulmates e economia de Zinthos (💜).
+**Detalhes Técnicos:** Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 300s, harém global, chaves, soulmates e economia de Zinthos (💜).
 
 #### Comandos:
 - **`!waifus / !munae`**: Explica as mecânicas do jogo e lista todos os comandos e filtros disponíveis
@@ -1302,7 +1308,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-roll`**: Sorteia um personagem aleatório para o grupo (waifus e husbandos)
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-roll`, `!mu-r`, `!mu-rollm (só homens)`, `!mu-rollf (só mulheres)`
-- **`!mu-casar`**: Casa com o personagem recém-sorteado dentro da janela de 120 segundos
+- **`!mu-casar`**: Casa com o personagem recém-sorteado dentro da janela de 300 segundos
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-casar`, `!mu-c`, `!mu-casar rem-re-zero`
 - **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜)
@@ -1329,20 +1335,6 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-cooldowns`**: Verifica os tempos restantes para poder rolar, casar ou resgatar o diário
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-cooldowns`, `!mu-cd`
-
----
-
-### 📁 Módulo: `Weather.js`
-**Sobre:** Consulta de clima e previsão meteorológica atualizada
-
-**Tags:** `clima,tempo,temperatura,previsao,meteorologia,cidade`
-
-**Detalhes Técnicos:** Consulta APIs de meteorologia para fornecer temperatura, umidade, vento e condições do tempo por cidade
-
-#### Comandos:
-- **`!clima`**: Consulta a previsão do tempo para uma cidade ou localização
-  - *Categoria:* utilidades
-  - *Uso/Exemplos:* `!clima São Paulo`, `!clima Rio de Janeiro`, `!clima Curitiba`
 
 ---
 
@@ -1447,6 +1439,51 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 Comandos restritos aos administradores de grupos para moderação, customização e fluxos do bot.
 
 **Sobre:** Sistema completo de gerenciamento administrativo e configuração de grupos do bot
+
+#### `!g-pin`
+**Descrição:** Fixa a mensagem marcada (em resposta)
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-pin`
+
+---
+
+#### `!g-promover`
+**Descrição:** Transforma pessoas mencionadas em administradores do grupo (máx 10)
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-promover @usuario`
+
+---
+
+#### `!g-rebaixar`
+**Descrição:** Remove privilégios de administrador das pessoas mencionadas (máx 10)
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-rebaixar @usuario`
+
+---
+
+#### `!g-banir`
+**Descrição:** Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5) ou lista banidos
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-banir @usuario`
+
+---
+
+#### `!g-desbanir`
+**Descrição:** Remove o ban de uma pessoa pelo mention, número ou LID
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-desbanir 5511999999999`
+
+---
 
 #### `!g-setNome`
 **Descrição:** ID/Nome do grupo (nome stickers, gerenciamento)
@@ -2312,241 +2349,12 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
-## 👑 Comandos de Super Admin (!sa-)
-Começam com `!sa-` e são exclusivos do dono do bot.
+#### `!g-regras`
+**Descrição:** Define, exibe ou remove as regras deste grupo
 
-#### `!sa-evento`
-**Descrição:** Cria ou cancela evento temporário
+**Categoria:** gerenciamento
 
----
-
-#### `!sa-eventos`
-**Descrição:** Lista eventos temporários ativos
-
----
-
-#### `!sa-retrospectiva`
-**Descrição:** Retrospectiva
-
----
-
-#### `!sa-testeMsg`
-**Descrição:** Testar Retorno msg
-
----
-
-#### `!sa-sendMsg`
-**Descrição:** Envia mensagem para chatId
-
----
-
-#### `!sa-joinGrupo`
-**Descrição:** Entra em um grupo via link de convite
-
----
-
-#### `!sa-joinGrupoSilencioso`
-**Descrição:** Entra em um grupo via link de convite SEM enviar mensagem de boas-vindas
-
----
-
-#### `!sa-modoSilencioso`
-**Descrição:** Toggle do modo silencioso global (sem boas-vindas por 30 min)
-
----
-
-#### `!sa-addDonate`
-**Descrição:** Adiciona novo donate
-
----
-
-#### `!sa-addDonateNumero`
-**Descrição:** Adiciona número de um doador
-
----
-
-#### `!sa-addDonateValor`
-**Descrição:** Atualiza valor de doação
-
----
-
-#### `!sa-mergeDonates`
-**Descrição:** Une dois doadores em um
-
----
-
-#### `!sa-block`
-**Descrição:** Bloqueia um usuário
-
----
-
-#### `!sa-unblock`
-**Descrição:** Desbloqueia um usuário
-
----
-
-#### `!sa-leaveGrupo`
-**Descrição:** Sai de um grupo com opção de bloquear membros
-
----
-
-#### `!sa-privacidade`
-**Descrição:** Seta padrões de privacidade
-
----
-
-#### `!sa-foto`
-**Descrição:** Altera foto de perfil do bot
-
----
-
-#### `!sa-simular`
-**Descrição:** Simula evento de stream
-
----
-
-#### `!sa-restart`
-**Descrição:** Reinicia o bot
-
----
-
-#### `!sa-stats`
-**Descrição:** Status, grupos
-
----
-
-#### `!sa-iaStats`
-**Descrição:** Estatísticas de IA (LLM, Comfy, Speech)
-
----
-
-#### `!sa-getGroupInfo`
-**Descrição:** Dump de dados de grupo por nome cadastro
-
----
-
-#### `!sa-getMembros`
-**Descrição:** Lista todos os membros do grupo separados por admin e membros normais
-
----
-
-#### `!sa-blockInvites`
-**Descrição:** Bloqueia os invites dessa pessoa
-
----
-
-#### `!sa-unblockInvites`
-**Descrição:** Bloqueia os invites dessa pessoa
-
----
-
-#### `!sa-blockList`
-**Descrição:** Bloqueia todos os contatos recebidos separados por vírgula
-
----
-
-#### `!sa-blockTudoList`
-**Descrição:** Sai de todos os grupos em comum com uma lista de pessoas e bloqueia todos os membros
-
----
-
-#### `!sa-unblockList`
-**Descrição:** Desbloqueia todos os contatos recebidos separados por vírgula
-
----
-
-#### `!sa-listaGruposPessoa`
-**Descrição:** Lista todos os grupos em comum com uma pessoa
-
----
-
-#### `!sa-blockTudoPessoa`
-**Descrição:** Sai de todos os grupos em comum com uma pessoa e bloqueia todos os membros
-
----
-
-#### `!sa-reagir`
-**Descrição:** Reage com o emoji informado [debug apenas]
-
----
-
-#### `!sa-status`
-**Descrição:** Define o status do bot
-
----
-
-#### `!sa-wol`
-**Descrição:** Envia pacote wake-on-lan na rede
-
----
-
-#### `!sa-globalStreamRefresh`
-**Descrição:** Reseta a lista de bots ativos/ignorados para transmissões em TODOS os grupos
-
----
-
-#### `!sa-dossie`
-**Descrição:** Trigga análise de dossiê para um grupo
-
----
-
-#### `!sa-addElogio`
-**Descrição:** Adiciona um sticker de elogio (use em resposta)
-
----
-
-#### `!sa-addXingamento`
-**Descrição:** Adiciona um sticker de xingamento (use em resposta)
-
----
-
-#### `!sa-fixGroupNames`
-**Descrição:** Escaneia e sugere correção para nomes de grupos (dry run)
-
----
-
-#### `!sa-dumpdbs`
-**Descrição:** Força o dump em disco (checkpoint WAL) e roda testes de integridade em todos os bancos de dados
-
----
-
-#### `!sa-removeUserGp`
-**Descrição:** Remove um usuário do grupo: !sa-removeUserGp <grupoJid> <contato>
-
----
-
-#### `!sa-addUserGp`
-**Descrição:** Adiciona um usuário ao grupo: !sa-addUserGp <grupoJid> <contato>
-
----
-
-#### `!sa-streams-cleanup`
-**Descrição:** Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes
-
----
-
-#### `!sa-streamsCleanup`
-**Descrição:** Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes
-
----
-
-#### `!sa-streams-rate`
-**Descrição:** Exibe métricas de velocidade de busca e rate limit do StreamMonitor
-
----
-
-#### `!sa-streamsRate`
-**Descrição:** Exibe métricas de velocidade de busca e rate limit do StreamMonitor
-
----
-
-#### `!sa-removerFig`
-**Descrição:** Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)
-
----
-
-#### `!sa-remover-fig`
-**Descrição:** Remove figurinha(s) do Lovecell do cache, adiciona à blacklist e limpa estatísticas (suporta múltiplos IDs)
+**Exemplo de uso:** `!g-regras`
 
 ---
 

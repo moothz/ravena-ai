@@ -122,6 +122,7 @@ test();
 # Commands
 ## SuperAdmin
 Only for the bot owner, useful commands like join group
+- **CRÍTICO:** Comandos de Super Admin (`!sa-` / `src/commands/SuperAdmin.js`) NUNCA devem ser incluídos no `docs/LLM-HELPER.md` nem expostos para usuários ou documentações da IA. Eles são de uso estritamente exclusivo do dono do bot e devem permanecer FORA do `LLM-HELPER.md`.
 
 ## Management
 Only for group admins, defined in src/commands/Management.js
