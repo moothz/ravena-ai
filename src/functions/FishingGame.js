@@ -510,6 +510,16 @@ const UPGRADES = [
 		effect: "max_baits",
 		value: 4,
 		description: "Aumenta seu limite de iscas em 4."
+	},
+	{
+		name: "Rede de Pesca",
+		chance: 0.02,
+		emoji: "🕸️",
+		effect: "fishing_net",
+		value: 0.25,
+		minValue: 25,
+		maxValue: 25,
+		description: "Adiciona 25% de eficiência na pesca com rede (!pesca-rede)."
 	}
 ];
 
@@ -1163,6 +1173,59 @@ async function applyItemEffect(userData, item) {
 					await require("./SlotsGame").addCoins(userData.userId, item.value);
 					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} moedinhas adicionadas ao seu saldo do !slots.`;
 					break;
+				case "fishing_net": {
+					if (!userData.buffs) userData.buffs = [];
+					const existingNet = userData.buffs.find((b) => b.type === "fishing_net");
+					if (existingNet) {
+						existingNet.remainingUses = (existingNet.remainingUses || 0) + 1;
+						if (existingNet.dbId) {
+							await updateBuffUses(existingNet.dbId, existingNet.remainingUses);
+						}
+					} else {
+						const netBuff = {
+							type: item.effect,
+							value: item.value,
+							minValue: item.minValue,
+							maxValue: item.maxValue,
+							remainingUses: 1,
+							originalName: item.name
+						};
+						await addBuff(userData.userId, netBuff, false);
+						userData.buffs.push(netBuff);
+					}
+					effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! ${item.description}`;
+					break;
+				}
+				case "inventory_slot": {
+					if (!userData.buffs) userData.buffs = [];
+					const buff = {
+						type: item.effect,
+						value: item.value,
+						remainingUses: 999999,
+						originalName: item.name,
+						minValue: 0,
+						maxValue: 0
+					};
+					await addBuff(userData.userId, buff, false);
+					userData.buffs.push(buff);
+					effectMessage = `\n\n${item.emoji} Você equipou ${item.name}! Espaço extra: +${item.value}`;
+					break;
+				}
+				case "max_baits": {
+					if (!userData.buffs) userData.buffs = [];
+					const buff = {
+						type: item.effect,
+						value: item.value,
+						remainingUses: 999999,
+						originalName: item.name,
+						minValue: 0,
+						maxValue: 0
+					};
+					await addBuff(userData.userId, buff, false);
+					userData.buffs.push(buff);
+					effectMessage = `\n\n${item.emoji} Você equipou ${item.name}! Limite de iscas aumentado: +${item.value}`;
+					break;
+				}
 			}
 			break;
 
@@ -2000,110 +2063,19 @@ async function fishCommand(bot, message, args, group) {
 		}
 		// Se for peixe raro, tentar gerar imagem e salvar no histórico
 		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
-			const rareFishResult = await generateRareFishImage(
+			return await processLegendaryFishCatch({
 				bot,
-				userName,
-				caughtFishes[0].name,
-				caughtFishes[0].weight,
-				caughtFishes[0].description,
-				userId,
-				message
-			);
-
-			let rareFishImage = null;
-			let profileMedia = null;
-			let respostaLLM = null;
-
-			if (rareFishResult && rareFishResult.image) {
-				rareFishImage = rareFishResult.image;
-				profileMedia = rareFishResult.profileMedia;
-				respostaLLM = rareFishResult.respostaLLM;
-			} else if (rareFishResult && rareFishResult.mimetype) {
-				// Fallback se retornou objeto Media direto
-				rareFishImage = rareFishResult;
-			}
-
-			if (!rareFishImage) {
-				// Placeholder
-				const pchPescaRara = path.join(database.databasePath, "rare-fish.jpg");
-				rareFishImage = await bot.createMedia(pchPescaRara, "image/jpeg");
-			}
-
-			const savedImageName = await saveRareFishImage(rareFishImage, userId, caughtFishes[0].name);
-
-			// Save Legendary to DB
-			const currentYear = new Date().getFullYear();
-			await database.dbRun(
-				dbName,
-				`INSERT INTO fishing_legendary_history 
-        (fish_name, weight, user_id, user_name, group_id, group_name, timestamp, image_name, year)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
-					caughtFishes[0].name,
-					caughtFishes[0].weight,
-					userId,
-					userName,
-					groupId || null,
-					group ? group.name : "chat privado",
-					Date.now(),
-					savedImageName,
-					currentYear
-				]
-			);
-
-			const groupName = group ? group.name : "chat privado";
-			const chanceFinal = (
-				caughtFishes[0].chance *
-				100 *
-				DEFAULT_GLOBAL_FACTORS.rareFishChance
-			).toFixed(5);
-			const notificacaoPeixeRaro = new ReturnMessage({
-				content: rareFishImage,
-				options: {
-					caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${caughtFishes[0].name}* LENDÁRIO(A)_ pesando *${caughtFishes[0].weight.toFixed(2)} kg* no grupo "${groupName}"! (${caughtFishes[0].emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`,
-					mentions: mentionPessoa
-				}
-			});
-
-			if (bot.grupoLogs) {
-				notificacaoPeixeRaro.chatId = bot.grupoLogs;
-				const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
-				if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
-
-				if (profileMedia) {
-					const captionAvatarLog = `👤 *Foto de perfil de ${userName} (${userId})*\n\n📝 *Descrição gerada pela IA:* ${respostaLLM || "_Sem descrição gerada_"}`;
-					const notificacaoAvatarLog = new ReturnMessage({
-						chatId: bot.grupoLogs,
-						content: profileMedia,
-						options: {
-							caption: captionAvatarLog
-						}
-					});
-					await bot.sendReturnMessages(notificacaoAvatarLog);
-				}
-			}
-
-			if (bot.grupoAvisos) {
-				notificacaoPeixeRaro.chatId = bot.grupoAvisos;
-				const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
-				if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
-			}
-
-			if (bot.grupoAnuncios) {
-				notificacaoPeixeRaro.chatId = bot.grupoAnuncios;
-				const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
-				if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
-			}
-
-			return new ReturnMessage({
+				message,
 				chatId,
-				content: rareFishImage,
-				options: {
-					caption: fishMessage,
-					quotedMessageId: message.origin.id._serialized,
-					mentions: mentionPessoa,
-					goReply: message.origin
-				},
+				userId,
+				userName,
+				groupId,
+				group,
+				mentionPessoa,
+				extraMsg,
+				rareFish: caughtFishes[0],
+				userData,
+				effectMessage,
 				reaction: "🎣"
 			});
 		}
@@ -2123,6 +2095,519 @@ async function fishCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
 			content: "❌ Erro ao pescar."
+		});
+	}
+}
+
+async function processLegendaryFishCatch({
+	bot,
+	message,
+	chatId,
+	userId,
+	userName,
+	groupId,
+	group,
+	mentionPessoa,
+	extraMsg = "",
+	rareFish,
+	userData,
+	effectMessage = "",
+	reaction = "🎣"
+}) {
+	const chanceFinal = (rareFish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(5);
+	let fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${rareFish.name}* de _${rareFish.weight.toFixed(2)} kg_! (${rareFish.emoji} ${chanceFinal}% de chance)`;
+
+	fishMessage += `\n\n> 🐳 Seu maior peixe: ${userData.biggestFish ? userData.biggestFish.name : rareFish.name} (${(userData.biggestFish ? userData.biggestFish.weight : rareFish.weight).toFixed(2)} kg)`;
+	fishMessage += `\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
+	fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca`;
+
+	if (effectMessage) {
+		fishMessage += effectMessage;
+	}
+
+	const eventBanner = GameEventService.getEventBanner("pesca");
+	if (eventBanner) {
+		fishMessage += eventBanner;
+	}
+
+	const rareFishResult = await generateRareFishImage(
+		bot,
+		userName,
+		rareFish.name,
+		rareFish.weight,
+		rareFish.description,
+		userId,
+		message
+	);
+
+	let rareFishImage = null;
+	let profileMedia = null;
+	let respostaLLM = null;
+
+	if (rareFishResult && rareFishResult.image) {
+		rareFishImage = rareFishResult.image;
+		profileMedia = rareFishResult.profileMedia;
+		respostaLLM = rareFishResult.respostaLLM;
+	} else if (rareFishResult && rareFishResult.mimetype) {
+		rareFishImage = rareFishResult;
+	}
+
+	if (!rareFishImage) {
+		const pchPescaRara = path.join(database.databasePath, "rare-fish.jpg");
+		rareFishImage = await bot.createMedia(pchPescaRara, "image/jpeg");
+	}
+
+	const savedImageName = await saveRareFishImage(rareFishImage, userId, rareFish.name);
+
+	const currentYear = new Date().getFullYear();
+	await database.dbRun(
+		dbName,
+		`INSERT INTO fishing_legendary_history 
+        (fish_name, weight, user_id, user_name, group_id, group_name, timestamp, image_name, year)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			rareFish.name,
+			rareFish.weight,
+			userId,
+			userName,
+			groupId || null,
+			group ? group.name : "chat privado",
+			Date.now(),
+			savedImageName,
+			currentYear
+		]
+	);
+
+	const groupName = group ? group.name : "chat privado";
+	const notificacaoPeixeRaro = new ReturnMessage({
+		content: rareFishImage,
+		options: {
+			caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`,
+			mentions: mentionPessoa
+		}
+	});
+
+	if (bot.grupoLogs) {
+		notificacaoPeixeRaro.chatId = bot.grupoLogs;
+		const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
+		if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
+
+		if (profileMedia) {
+			const captionAvatarLog = `👤 *Foto de perfil de ${userName} (${userId})*\n\n📝 *Descrição gerada pela IA:* ${respostaLLM || "_Sem descrição gerada_"}`;
+			const notificacaoAvatarLog = new ReturnMessage({
+				chatId: bot.grupoLogs,
+				content: profileMedia,
+				options: {
+					caption: captionAvatarLog
+				}
+			});
+			await bot.sendReturnMessages(notificacaoAvatarLog);
+		}
+	}
+
+	if (bot.grupoAvisos) {
+		notificacaoPeixeRaro.chatId = bot.grupoAvisos;
+		const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
+		if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
+	}
+
+	if (bot.grupoAnuncios) {
+		notificacaoPeixeRaro.chatId = bot.grupoAnuncios;
+		const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
+		if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
+	}
+
+	return new ReturnMessage({
+		chatId,
+		content: rareFishImage,
+		options: {
+			caption: fishMessage,
+			quotedMessageId: message?.origin?.id?._serialized,
+			mentions: mentionPessoa,
+			goReply: message?.origin
+		},
+		reaction
+	});
+}
+
+/**
+ * Pesca em lote utilizando rede (!pesca-rede)
+ */
+async function netFishCommand(bot, message, args, group) {
+	try {
+		const chatId = message.group ?? message.author;
+		const userId = message.author;
+		const userName =
+			message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Pescador";
+		const groupId = message.group;
+		const mentionPessoa = Array.isArray(message.mentions)
+			? [...message.mentions]
+			: Array.isArray(message.origin?.mentionedIds)
+				? [...message.origin.mentionedIds]
+				: [];
+
+		if (!mentionPessoa.includes(userId)) {
+			mentionPessoa.push(userId);
+		}
+
+		let userData = await getUserData(userId);
+
+		if (!userData) {
+			userData = {
+				userId,
+				name: userName,
+				fishes: [],
+				totalWeight: 0,
+				inventoryWeight: 0,
+				biggestFish: null,
+				totalCatches: 0,
+				totalBaitsUsed: 0,
+				totalTrashCaught: 0,
+				baits: MAX_BAITS,
+				lastBaitRegen: Date.now(),
+				buffs: [],
+				debuffs: []
+			};
+			await saveUserData(userData);
+		} else {
+			userData.name = userName;
+		}
+
+		userData = regenerateBaits(userData);
+
+		// Cooldown logic
+		const now = Math.floor(Date.now() / 1000);
+		let currentCooldown = FISHING_COOLDOWN;
+
+		if (userData.buffs) {
+			const cooldownBuff = userData.buffs.find(
+				(b) => b.type === "cooldown_reduction" && b.remainingUses > 0
+			);
+			if (cooldownBuff) {
+				currentCooldown *= 1 - cooldownBuff.value;
+			}
+		}
+		if (userData.debuffs) {
+			const cooldownDebuff = userData.debuffs.find(
+				(d) => d.type === "longer_cooldown" && d.remainingUses > 0
+			);
+			if (cooldownDebuff) {
+				currentCooldown *= cooldownDebuff.value;
+			}
+		}
+
+		if (fishingCooldowns[userId] && now < fishingCooldowns[userId]) {
+			try {
+				setTimeout(
+					(mo) => {
+						mo.react("😴");
+					},
+					2000,
+					message.origin
+				);
+			} catch (e) {}
+			return null;
+		}
+
+		if (userData.baits <= 0) {
+			try {
+				if (bot?.testMode || bot?.database?.testMode) {
+					message.origin?.react("🍥");
+				} else {
+					setTimeout(
+						(mo) => {
+							mo?.react("🍥");
+						},
+						3000,
+						message.origin
+					);
+				}
+			} catch (e) {}
+			return null;
+		}
+
+		// Iscas a gastar
+		let iscasUsadas = userData.baits;
+		if (args && args.length > 0) {
+			const requested = parseInt(args[0], 10);
+			if (!isNaN(requested)) {
+				if (requested <= 0) {
+					return new ReturnMessage({
+						chatId,
+						content: "❌ Quantidade inválida de iscas. Informe um número maior que zero."
+					});
+				}
+				iscasUsadas = Math.min(requested, userData.baits);
+			}
+		}
+
+		// Cálculo de eficiência
+		const baseEfficiency = iscasUsadas < 8 ? 0.5 : 0.75;
+
+		// Doações (acima de R$20: cada R$5 doado aumenta 1%, iniciando em R$21)
+		let donateBonus = 0;
+		try {
+			const donor = await database.getDonorByNumber(userId);
+			const valorDoado = donor?.valor || 0;
+			if (valorDoado > 20) {
+				const pct = 1 + Math.floor((valorDoado - 21) / 5);
+				donateBonus = pct * 0.01;
+			}
+		} catch (err) {
+			logger.warn("Erro ao buscar doação para !pesca-rede:", err);
+		}
+
+		// Item "Rede de Pesca" (+25% de eficiência, consumido ao usar)
+		let netBonus = 0;
+		let usedNetItem = false;
+		if (userData.buffs) {
+			const netBuff = userData.buffs.find((b) => b.type === "fishing_net" && b.remainingUses > 0);
+			if (netBuff) {
+				netBonus = 0.25;
+				usedNetItem = true;
+				netBuff.remainingUses -= 1;
+				if (netBuff.dbId) {
+					await updateBuffUses(netBuff.dbId, netBuff.remainingUses);
+				}
+			}
+		}
+
+		// Eficiência máxima: 150% (1.50)
+		const finalEfficiency = Math.min(1.5, baseEfficiency + donateBonus + netBonus);
+
+		// Quantidade de pescas (capturas)
+		const rawCatches = iscasUsadas * finalEfficiency;
+		let totalCatches = Math.floor(rawCatches);
+		const extraChance = rawCatches - totalCatches;
+		if (Math.random() < extraChance) {
+			totalCatches += 1;
+		}
+		totalCatches = Math.max(1, totalCatches);
+
+		// Descontar iscas do usuário
+		userData.baits -= iscasUsadas;
+		userData.totalBaitsUsed = (userData.totalBaitsUsed ?? 0) + iscasUsadas;
+
+		// Obter peixes
+		let fishArray = ["Lambari", "Tilápia"];
+		try {
+			const customVariables = await database.getCustomVariables();
+			fishArray = customVariables.peixes;
+		} catch (error) {}
+
+		const caughtFishes = [];
+		const caughtItems = [];
+		const caughtTrash = [];
+		let legendaryFish = null;
+
+		for (let i = 0; i < totalCatches; i++) {
+			const potentialFish = await getRandomFish(fishArray, false, userData);
+
+			if (potentialFish.isRare) {
+				legendaryFish = potentialFish;
+				break;
+			}
+
+			const randomItem = checkRandomItem();
+			let isTrash = false;
+
+			if (randomItem) {
+				const itemResult = await applyItemEffect(userData, randomItem);
+				userData = itemResult.userData;
+
+				if (randomItem.type === "trash") {
+					userData.totalTrashCaught = (userData.totalTrashCaught ?? 0) + 1;
+					isTrash = true;
+					caughtTrash.push(randomItem);
+				} else {
+					caughtItems.push(randomItem);
+				}
+			}
+
+			let fishToKeep = null;
+			if (!isTrash) {
+				const buffResult = await applyBuffs(userData, potentialFish);
+				fishToKeep = buffResult.fish;
+				caughtFishes.push(fishToKeep);
+			}
+
+			await handleBuffDecrement(userData, {
+				caughtFish: !!fishToKeep,
+				caughtTrash: isTrash,
+				isRare: false,
+				isFirstCatchOfCommand: i === 0
+			});
+		}
+
+		// Se fisgou peixe lendário: ignora outros peixes/buffs/lixos e retorna exclusivamente a mensagem do lendário
+		if (legendaryFish) {
+			const fishDbId = await addFishToInventory(userId, legendaryFish);
+			legendaryFish.dbId = fishDbId;
+			userData.fishes.push(legendaryFish);
+
+			if (legendaryFish.weight <= 35000) {
+				userData.totalWeight = (userData.totalWeight || 0) + legendaryFish.weight;
+				userData.inventoryWeight = (userData.inventoryWeight || 0) + legendaryFish.weight;
+				userData.totalCatches = (userData.totalCatches ?? 0) + 1;
+			}
+
+			if (!userData.biggestFish || legendaryFish.weight > userData.biggestFish.weight) {
+				userData.biggestFish = legendaryFish;
+			}
+
+			if (groupId && legendaryFish.weight <= 35000) {
+				await updateGroupStats(
+					groupId,
+					userId,
+					userName,
+					legendaryFish.weight,
+					true,
+					legendaryFish
+				);
+			}
+
+			await saveUserData(userData);
+			fishingCooldowns[userId] = now + currentCooldown;
+
+			return await processLegendaryFishCatch({
+				bot,
+				message,
+				chatId,
+				userId,
+				userName,
+				groupId,
+				group,
+				mentionPessoa,
+				extraMsg: "",
+				rareFish: legendaryFish,
+				userData,
+				reaction: "🕸️"
+			});
+		}
+
+		// Adiciona peixes ao inventário
+		for (const fish of caughtFishes) {
+			const fishDbId = await addFishToInventory(userId, fish);
+			fish.dbId = fishDbId;
+			userData.fishes.push(fish);
+
+			if (fish.weight <= 35000) {
+				userData.totalWeight = (userData.totalWeight || 0) + fish.weight;
+				userData.inventoryWeight = (userData.inventoryWeight || 0) + fish.weight;
+				userData.totalCatches = (userData.totalCatches ?? 0) + 1;
+			}
+
+			if (!userData.biggestFish || fish.weight > userData.biggestFish.weight) {
+				userData.biggestFish = fish;
+			}
+
+			if (groupId && fish.weight <= 35000) {
+				await updateGroupStats(groupId, userId, userName, fish.weight, true, fish);
+			}
+		}
+
+		// Descarte de peixes se inventário estiver cheio
+		const maxInventory = getMaxInventory(userData);
+		const discardedFishes = [];
+
+		while (userData.fishes.length > maxInventory) {
+			const candidates = userData.fishes.map((f, idx) => ({ index: idx, fish: f }));
+			candidates.sort((a, b) => a.fish.weight - b.fish.weight);
+
+			const poolSize = Math.min(3, candidates.length);
+			const randomIndex = Math.floor(Math.random() * poolSize);
+			const chosen = candidates[randomIndex];
+			const removed = chosen.fish;
+
+			if (removed.dbId) {
+				await removeFishFromInventory(userId, removed.dbId);
+			}
+			userData.fishes.splice(chosen.index, 1);
+			if (removed.weight <= 35000) {
+				userData.inventoryWeight -= removed.weight;
+			}
+			discardedFishes.push(removed);
+		}
+
+		await saveUserData(userData);
+		fishingCooldowns[userId] = now + currentCooldown;
+
+		// Montagem da mensagem final
+		const userTag = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+		const flavorTemplates = [
+			`🎣 ${userTag} gastou ${iscasUsadas} iscas e conseguiu fazer uma rede pra pegar ${totalCatches} peixes de uma vez!`,
+			`🕸️ ${userTag} arremessou uma rede pesada usando ${iscasUsadas} iscas e capturou ${totalCatches} peixes de uma vez!`,
+			`🌊 Com ${iscasUsadas} iscas na água, ${userTag} arrastou a rede e trouxe ${totalCatches} capturas!`,
+			`🚢 ${userTag} lançou uma rede épica gastando ${iscasUsadas} iscas e fisgou ${totalCatches} peixes de uma tacada só!`
+		];
+		const headerMsg = flavorTemplates[Math.floor(Math.random() * flavorTemplates.length)];
+
+		const efficiencyPct = Math.round(finalEfficiency * 100);
+		const basePct = Math.round(baseEfficiency * 100);
+		const bonusParts = [`${basePct}% base`];
+		if (usedNetItem) bonusParts.push("+25% Rede de Pesca");
+		if (donateBonus > 0) bonusParts.push(`+${Math.round(donateBonus * 100)}% Doação`);
+		const efficiencyInfo = `📊 *Eficiência da rede:* \`${efficiencyPct}%\` _(${bonusParts.join(", ")})_`;
+
+		let contentMsg = `${headerMsg}\n${efficiencyInfo}\n`;
+
+		// Peixes pescados ordenados por peso decrescente
+		if (caughtFishes.length > 0) {
+			caughtFishes.sort((a, b) => b.weight - a.weight);
+			contentMsg += `\n🐟 *Peixes Pescados:*\n`;
+			caughtFishes.forEach((fish, idx) => {
+				contentMsg += `  ${idx + 1}. *${fish.name}*: _${fish.weight.toFixed(2)} kg_\n`;
+			});
+		} else {
+			contentMsg += `\n🐟 _Nenhum peixe fisgado nesta puxada de rede._\n`;
+		}
+
+		// Itens / Buffs obtidos
+		if (caughtItems.length > 0) {
+			contentMsg += `\n✨ *Itens & Buffs Obtidos:*\n`;
+			caughtItems.forEach((item) => {
+				contentMsg += `  • ${item.emoji || "🎁"} *${item.name}*\n`;
+			});
+		}
+
+		// Lixos pescados
+		if (caughtTrash.length > 0) {
+			contentMsg += `\n🗑️ *Lixos Recolhidos:*\n`;
+			caughtTrash.forEach((trash) => {
+				contentMsg += `  • ${trash.emoji || "👞"} ${trash.name}\n`;
+			});
+		}
+
+		// Peixes descartados (inventário cheio)
+		if (discardedFishes.length > 0) {
+			contentMsg += `\n⚠️ *Peixes Descartados (inventário cheio):*\n`;
+			discardedFishes.forEach((fish) => {
+				contentMsg += `  • *${fish.name}* (_${fish.weight.toFixed(2)} kg_)\n`;
+			});
+		}
+
+		contentMsg += `\n> 🎒 Inventário: ${userData.fishes.length}/${maxInventory} | 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
+
+		const eventBanner = GameEventService.getEventBanner("pesca");
+		if (eventBanner) {
+			contentMsg += `\n${eventBanner}`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: contentMsg,
+			reaction: "🕸️",
+			options: {
+				quotedMessageId: message?.origin?.id?._serialized,
+				mentions: mentionPessoa,
+				goReply: message?.origin
+			}
+		});
+	} catch (error) {
+		logger.error("Erro no comando netFishCommand:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "❌ Erro ao pescar com rede."
 		});
 	}
 }
@@ -3178,6 +3663,32 @@ const commands = [
 		method: abandonFishCommand
 	}),
 	new Command({
+		name: "pesca-rede",
+		description: "Pescaria em lote utilizando rede",
+		category: "jogos",
+		cooldown: 0,
+		reactions: { before: "🕸️", after: "🐟", error: "❌" },
+		method: netFishCommand
+	}),
+	new Command({
+		name: "pescarede",
+		hidden: true,
+		description: "Pescaria em lote utilizando rede",
+		category: "jogos",
+		cooldown: 0,
+		reactions: { before: "🕸️", after: "🐟", error: "❌" },
+		method: netFishCommand
+	}),
+	new Command({
+		name: "rede",
+		hidden: true,
+		description: "Pescaria em lote utilizando rede",
+		category: "jogos",
+		cooldown: 0,
+		reactions: { before: "🕸️", after: "🐟", error: "❌" },
+		method: netFishCommand
+	}),
+	new Command({
 		name: "abandonar-pesca",
 		hidden: true,
 		description: "Limpa seu inventário de peixes após confirmação",
@@ -3251,6 +3762,12 @@ const helper = {
 			cmd: "!pescar",
 			desc: "Lança a linha na água para pescar peixes, itens ou tesouros",
 			usage: ["!pescar"],
+			category: "jogos"
+		},
+		{
+			cmd: "!pesca-rede [iscas]",
+			desc: "Lança uma rede de pesca para capturar peixes em lote gastando múltiplas iscas",
+			usage: ["!pesca-rede", "!pesca-rede 10"],
 			category: "jogos"
 		},
 		{
@@ -3345,6 +3862,10 @@ module.exports = {
 	addBaits,
 	addBuff,
 	UPGRADES,
+	RARE_FISH,
+	fishingCooldowns,
+	getUserData,
+	getMaxInventory,
 	generateRareFishImage,
 	getWeeklyFishingStats
 };
