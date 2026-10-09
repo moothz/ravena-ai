@@ -887,7 +887,20 @@ function registerManagementRoutes(api) {
 	});
 
 	// Import Custom Commands from ZIP
-	app.post("/api/custom-commands/:groupId/import-zip", upload.single("file"), async (req, res) => {
+	const handleZipUpload = (req, res, next) => {
+		upload.single("file")(req, res, (err) => {
+			if (err) {
+				api.logger.warn(`[management] Import ZIP multer error: ${err.message}`);
+				return res.status(400).json({
+					success: false,
+					message: `Erro no upload do arquivo ZIP: ${err.message}`
+				});
+			}
+			next();
+		});
+	};
+
+	app.post("/api/custom-commands/:groupId/import-zip", handleZipUpload, async (req, res) => {
 		const { groupId } = req.params;
 		const { token } = req.body;
 

@@ -46,11 +46,28 @@ function registerServicesRoutes(api) {
 	const app = api.app;
 
 	// STT API
+	const handleAudioUpload = (req, res, next) => {
+		upload.single("audio")(req, res, (err) => {
+			if (err) {
+				if (err instanceof multer.MulterError) {
+					if (err.code === "LIMIT_FILE_SIZE") {
+						return res.status(413).json({
+							error: "Tamanho do arquivo excede o limite máximo permitido de 50MB."
+						});
+					}
+					return res.status(400).json({ error: `Erro no upload: ${err.message}` });
+				}
+				return res.status(400).json({ error: err.message || "Erro no upload do arquivo." });
+			}
+			next();
+		});
+	};
+
 	app.post(
 		"/api/stt/transcrever",
 		api.externalAuth.requireAccess("stt"),
 		api.strictLimiter,
-		upload.single("audio"),
+		handleAudioUpload,
 		async (req, res) => {
 			if (!req.file) {
 				return res.status(400).json({ error: "Nenhum arquivo enviado." });

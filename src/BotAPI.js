@@ -327,6 +327,24 @@ class BotAPI {
 		registerServicesRoutes(this);
 		registerWebhooksRoutes(this);
 		registerFeaturesRoutes(this);
+
+		// Middleware global de tratamento de erros para rotas da API
+		this.app.use((err, req, res, next) => {
+			if (res.headersSent) {
+				return next(err);
+			}
+			this.logger.error(`[API Error] ${req.method} ${req.url}:`, err);
+			if (req.path.startsWith("/api/")) {
+				const status =
+					err.status ||
+					err.statusCode ||
+					(err.name === "MulterError" ? (err.code === "LIMIT_FILE_SIZE" ? 413 : 400) : 500);
+				return res.status(status).json({
+					error: err.message || "Erro interno do servidor."
+				});
+			}
+			next(err);
+		});
 	}
 
 	/* ========================================================================== */
