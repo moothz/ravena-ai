@@ -183,6 +183,10 @@ async function runTests() {
 		contentDoador.includes("240") && contentDoador.includes("moedas"),
 		"Deve listar 240 moedas acumuladas"
 	);
+	assert.ok(
+		contentDoador.includes("eficiência extra na rede de pesca (!pesca-rede)"),
+		"Deve listar eficiência da rede para doador"
+	);
 	console.log("✓ !doar-vantagens para apoiador OK");
 
 	// 4. Teste de concessão simulada (dry-run)

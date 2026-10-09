@@ -915,7 +915,12 @@ async function getRandomFish(fishArray, isMultiCatch = false, userData = null) {
 				).toFixed(2)
 			);
 			// Decrement handled in handleBuffDecrement
-			return { name: fishName, weight, timestamp: Date.now() };
+			return {
+				name: fishName,
+				weight,
+				timestamp: Date.now(),
+				appliedModifiers: [guaranteedWeightBuff.originalName || "Sonar Portátil"]
+			};
 		}
 	}
 
@@ -1315,33 +1320,45 @@ async function applyBuffs(userData, fish) {
 		(!userData.buffs || userData.buffs.length === 0) &&
 		(!userData.debuffs || userData.debuffs.length === 0)
 	) {
-		return { fish, buffs: [], debuffs: [] };
+		return {
+			fish,
+			buffs: [],
+			debuffs: [],
+			appliedModifiers: fish.appliedModifiers || []
+		};
 	}
 
 	const modifiedFish = { ...fish };
 	const buffMessages = [];
+	const appliedModifiers = [...(fish.appliedModifiers || [])];
 
 	// Apply and decrement buffs
 	if (userData.buffs) {
 		for (const buff of userData.buffs) {
 			if (buff.remainingUses <= 0) continue;
 			switch (buff.type) {
-				case "weight_boost":
+				case "weight_boost": {
 					const originalWeight = modifiedFish.weight;
 					modifiedFish.weight *= 1 + buff.value;
 					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+					const buffName = buff.originalName || "Buff de Peso";
+					appliedModifiers.push(buffName);
 					buffMessages.push(
-						`🎯 Buff do ${buff.originalName || "item"}: +${buff.value * 100}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
+						`🎯 Buff do ${buffName}: +${buff.value * 100}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
 					);
 					break;
-				case "next_fish_bonus":
+				}
+				case "next_fish_bonus": {
 					const beforeBonus = modifiedFish.weight;
 					modifiedFish.weight += buff.value;
 					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+					const buffName = buff.originalName || "Minhocão";
+					appliedModifiers.push(buffName);
 					buffMessages.push(
-						`🎯 Buff do ${buff.originalName || "Minhocão"}: +${buff.value}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
+						`🎯 Buff do ${buffName}: +${buff.value}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
 					);
 					break;
+				}
 			}
 		}
 	}
@@ -1351,20 +1368,26 @@ async function applyBuffs(userData, fish) {
 		for (const debuff of userData.debuffs) {
 			if (debuff.remainingUses <= 0) continue;
 			switch (debuff.type) {
-				case "weight_loss":
+				case "weight_loss": {
 					const originalWeightDebuff = modifiedFish.weight;
 					modifiedFish.weight *= 1 + debuff.value;
 					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
 					modifiedFish.name = toDemonic(modifiedFish.name);
+					const debuffName = debuff.originalName || "Debuff de Peso";
+					appliedModifiers.push(debuffName);
 					buffMessages.push(
 						`⬇️ Peixe magro... (${originalWeightDebuff}kg → ${modifiedFish.weight}kg)`
 					);
 					break;
+				}
 			}
 		}
 	}
 
-	return { fish: modifiedFish, buffMessages };
+	const uniqueModifiers = [...new Set(appliedModifiers)];
+	modifiedFish.appliedModifiers = uniqueModifiers;
+
+	return { fish: modifiedFish, buffMessages, appliedModifiers: uniqueModifiers };
 }
 
 function getCurrentDateTime() {
@@ -2535,31 +2558,28 @@ async function netFishCommand(bot, message, args, group) {
 		// Montagem da mensagem final
 		const userTag = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 		const flavorTemplates = [
-			`🎣 ${userTag} gastou ${iscasUsadas} iscas e conseguiu fazer uma rede pra pegar ${totalCatches} peixes de uma vez!`,
-			`🕸️ ${userTag} arremessou uma rede pesada usando ${iscasUsadas} iscas e capturou ${totalCatches} peixes de uma vez!`,
-			`🌊 Com ${iscasUsadas} iscas na água, ${userTag} arrastou a rede e trouxe ${totalCatches} capturas!`,
-			`🚢 ${userTag} lançou uma rede épica gastando ${iscasUsadas} iscas e fisgou ${totalCatches} peixes de uma tacada só!`
+			`🎣 ${userTag} gastou ${iscasUsadas} iscas e conseguiu fazer uma rede pra pegar ${totalCatches} criaturas de uma vez!`,
+			`🕸️ ${userTag} arremessou uma rede pesada usando ${iscasUsadas} iscas e capturou ${totalCatches} criaturas de uma vez!`,
+			`🌊 Com ${iscasUsadas} iscas na água, ${userTag} arrastou a rede e trouxe ${totalCatches} criaturas!`,
+			`🚢 ${userTag} lançou uma rede épica gastando ${iscasUsadas} iscas e fisgou ${totalCatches} criaturas de uma tacada só!`
 		];
 		const headerMsg = flavorTemplates[Math.floor(Math.random() * flavorTemplates.length)];
 
-		const efficiencyPct = Math.round(finalEfficiency * 100);
-		const basePct = Math.round(baseEfficiency * 100);
-		const bonusParts = [`${basePct}% base`];
-		if (usedNetItem) bonusParts.push("+25% Rede de Pesca");
-		if (donateBonus > 0) bonusParts.push(`+${Math.round(donateBonus * 100)}% Doação`);
-		const efficiencyInfo = `📊 *Eficiência da rede:* \`${efficiencyPct}%\` _(${bonusParts.join(", ")})_`;
+		let contentMsg = `${headerMsg}\n`;
 
-		let contentMsg = `${headerMsg}\n${efficiencyInfo}\n`;
-
-		// Peixes pescados ordenados por peso decrescente
+		// Criaturas capturadas ordenadas por peso decrescente
 		if (caughtFishes.length > 0) {
 			caughtFishes.sort((a, b) => b.weight - a.weight);
-			contentMsg += `\n🐟 *Peixes Pescados:*\n`;
+			contentMsg += `\n🐟 *Criaturas Capturadas:*\n`;
 			caughtFishes.forEach((fish, idx) => {
-				contentMsg += `  ${idx + 1}. *${fish.name}*: _${fish.weight.toFixed(2)} kg_\n`;
+				const modText =
+					fish.appliedModifiers && fish.appliedModifiers.length > 0
+						? ` _(${fish.appliedModifiers.join(", ")})_`
+						: "";
+				contentMsg += `  ${idx + 1}. *${fish.name}*: _${fish.weight.toFixed(2)} kg_${modText}\n`;
 			});
 		} else {
-			contentMsg += `\n🐟 _Nenhum peixe fisgado nesta puxada de rede._\n`;
+			contentMsg += `\n🐟 _Nenhuma criatura fisgada nesta puxada de rede._\n`;
 		}
 
 		// Itens / Buffs obtidos
@@ -2578,11 +2598,15 @@ async function netFishCommand(bot, message, args, group) {
 			});
 		}
 
-		// Peixes descartados (inventário cheio)
+		// Criaturas descartadas (inventário cheio)
 		if (discardedFishes.length > 0) {
-			contentMsg += `\n⚠️ *Peixes Descartados (inventário cheio):*\n`;
+			contentMsg += `\n⚠️ *Criaturas Descartadas (inventário cheio):*\n`;
 			discardedFishes.forEach((fish) => {
-				contentMsg += `  • *${fish.name}* (_${fish.weight.toFixed(2)} kg_)\n`;
+				const modText =
+					fish.appliedModifiers && fish.appliedModifiers.length > 0
+						? ` _(${fish.appliedModifiers.join(", ")})_`
+						: "";
+				contentMsg += `  • *${fish.name}* (_${fish.weight.toFixed(2)} kg_)${modText}\n`;
 			});
 		}
 
@@ -3766,7 +3790,7 @@ const helper = {
 		},
 		{
 			cmd: "!pesca-rede [iscas]",
-			desc: "Lança uma rede de pesca para capturar peixes em lote gastando múltiplas iscas",
+			desc: "Lança uma rede de pesca para capturar criaturas em lote gastando múltiplas iscas",
 			usage: ["!pesca-rede", "!pesca-rede 10"],
 			category: "jogos"
 		},

@@ -56,6 +56,7 @@ function calculateBonuses(totalAmount) {
 	// Faixa acima de 50: 1 base em R$50 + 1 a cada R$10 acima de 50
 	const highItemsAbove50Count = totalAmount >= 50 ? 1 + Math.floor((totalAmount - 50) / 10) : 0;
 	const totalHighItems = highItems30to50Count + highItemsAbove50Count;
+	const netEfficiencyBonus = totalAmount > 20 ? 1 + Math.floor((totalAmount - 21) / 5) : 0;
 
 	// Waifus:
 	// RARE: +2.0% por R$1 -> 1 + total * 0.02 (aos R$100: 3.0x ou +200%)
@@ -86,7 +87,8 @@ function calculateBonuses(totalAmount) {
 			mediumItemsCount,
 			highItems30to50Count,
 			highItemsAbove50Count,
-			totalHighItems
+			totalHighItems,
+			netEfficiencyBonus
 		},
 		slots: {
 			coins

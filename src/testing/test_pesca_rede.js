@@ -92,9 +92,13 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem de retorno");
 		const resposta2 = bot.capturedMessages[0].content;
 		assert.ok(resposta2.includes("5 iscas"), "Deve mencionar 5 iscas gastas");
-		assert.ok(resposta2.includes("50%"), "Deve indicar 50% de eficiência base");
 		assert.ok(
-			resposta2.includes("Peixes Pescados") ||
+			!resposta2.includes("Eficiência da rede"),
+			"Não deve conter linha de eficiência da rede"
+		);
+		assert.ok(resposta2.includes("criaturas"), "Deve usar termo criaturas");
+		assert.ok(
+			resposta2.includes("Criaturas Capturadas") ||
 				resposta2.includes("Lixos Recolhidos") ||
 				resposta2.includes("Itens & Buffs"),
 			"Deve conter lista de pescados"
@@ -107,7 +111,7 @@ async function runTests() {
 		);
 		assert.strictEqual(userApos5.total_baits_used, 5, "Total de iscas usadas deve ser 5");
 		console.log(
-			"✓ Teste 2 passou: Eficiência base de 50% para menos de 8 iscas executada com sucesso."
+			"✓ Teste 2 passou: Eficiência base de 50% para menos de 8 iscas executada com sucesso sem linha de eficiência."
 		);
 		bot.resetCapture();
 
@@ -132,7 +136,10 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta3 = bot.capturedMessages[0].content;
 		assert.ok(resposta3.includes("10 iscas"), "Deve mencionar 10 iscas");
-		assert.ok(resposta3.includes("75%"), "Deve indicar 75% de eficiência");
+		assert.ok(
+			!resposta3.includes("Eficiência da rede"),
+			"Não deve conter linha de eficiência da rede"
+		);
 
 		const userApos10 = await database.dbGet(
 			"fishing",
@@ -169,9 +176,11 @@ async function runTests() {
 		await eventHandler.commandHandler.processCommand(bot, msgDonate, "pesca-rede", ["10"], null);
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta4 = bot.capturedMessages[0].content;
-		assert.ok(resposta4.includes("77%"), "Deveria somar 75% base + 2% doação = 77%");
-		assert.ok(resposta4.includes("+2% Doação"), "Deveria detalhar +2% Doação");
-		console.log("✓ Teste 4 passou: Bônus de doador calculado corretamente (R$ 26 -> +2%).");
+		assert.ok(
+			!resposta4.includes("Eficiência da rede"),
+			"Não deve conter linha de eficiência da rede"
+		);
+		console.log("✓ Teste 4 passou: Bônus de doador processado sem linha de eficiência.");
 		bot.resetCapture();
 
 		// -------------------------------------------------------------
@@ -202,11 +211,9 @@ async function runTests() {
 		await eventHandler.commandHandler.processCommand(bot, msgItem, "pesca-rede", ["8"], null);
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta5 = bot.capturedMessages[0].content;
-		// 75% base + 25% rede + 2% doação = 102%
-		assert.ok(resposta5.includes("102%"), "Deveria ter 102% de eficiência (75 + 25 + 2)");
 		assert.ok(
-			resposta5.includes("+25% Rede de Pesca"),
-			"Deveria indicar uso do item Rede de Pesca"
+			!resposta5.includes("Eficiência da rede"),
+			"Não deve conter linha de eficiência da rede"
 		);
 
 		const buffRow = await database.dbGet(
@@ -220,7 +227,7 @@ async function runTests() {
 			"Deveria restar 1 uso da Rede de Pesca (era 2, consumiu 1)"
 		);
 		console.log(
-			"✓ Teste 5 passou: Item 'Rede de Pesca' adicionou +25% e foi consumido adequadamente."
+			"✓ Teste 5 passou: Item 'Rede de Pesca' consumido adequadamente sem linha de eficiência."
 		);
 		bot.resetCapture();
 
@@ -251,7 +258,10 @@ async function runTests() {
 		await eventHandler.commandHandler.processCommand(bot, msgCap, "pesca-rede", ["10"], null);
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta6 = bot.capturedMessages[0].content;
-		assert.ok(resposta6.includes("150%"), "Eficiência deve estar limitada no cap de 150%");
+		assert.ok(
+			!resposta6.includes("Eficiência da rede"),
+			"Não deve conter linha de eficiência da rede"
+		);
 		console.log("✓ Teste 6 passou: Cap de eficiência em 150% respeitado.");
 		bot.resetCapture();
 
@@ -287,8 +297,8 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta7 = bot.capturedMessages[0].content;
 		assert.ok(
-			resposta7.includes("Peixes Descartados (inventário cheio)"),
-			"Deveria exibir seção de peixes descartados quando o inventário atinge o limite"
+			resposta7.includes("Criaturas Descartadas (inventário cheio)"),
+			"Deveria exibir seção de criaturas descartadas quando o inventário atinge o limite"
 		);
 
 		const fishesFinal = await database.dbAll(
@@ -303,7 +313,9 @@ async function runTests() {
 			expectedLimit,
 			`Inventário final deve respeitar o limite máximo (${expectedLimit})`
 		);
-		console.log("✓ Teste 7 passou: Descarte de peixes excedentes e aviso formatado com sucesso.");
+		console.log(
+			"✓ Teste 7 passou: Descarte de criaturas excedentes e aviso formatado com sucesso."
+		);
 		bot.resetCapture();
 
 		// -------------------------------------------------------------
@@ -348,6 +360,50 @@ async function runTests() {
 		} finally {
 			FishingGame.RARE_FISH[0].monthlyLimit = originalMonthlyLimit;
 		}
+
+		// -------------------------------------------------------------
+		// Teste 9: Mostrar buff ou debuff aplicado em cada peixe da lista
+		// -------------------------------------------------------------
+		resetCooldown();
+		await database.dbRun("fishing", "DELETE FROM fishing_inventory WHERE user_id = ?", [testUser]);
+		await database.dbRun("fishing", "DELETE FROM fishing_buffs WHERE user_id = ?", [testUser]);
+		await database.dbRun(
+			"fishing",
+			"UPDATE fishing_users SET baits = 10, last_bait_regen = ? WHERE user_id = ?",
+			[Date.now(), testUser]
+		);
+		// Adiciona buff do Minhocão e debuff da Vela Acesa
+		await database.dbRun(
+			"fishing",
+			`INSERT INTO fishing_buffs (user_id, effect_type, is_debuff, value, min_value, max_value, remaining_uses, original_name)
+			VALUES (?, 'next_fish_bonus', 0, 20, 20, 20, 5, 'Minhocão')`,
+			[testUser]
+		);
+		await database.dbRun(
+			"fishing",
+			`INSERT INTO fishing_buffs (user_id, effect_type, is_debuff, value, min_value, max_value, remaining_uses, original_name)
+			VALUES (?, 'weight_loss', 1, -0.4, 0, 0, 5, 'Vela Acesa do 𝒸𝒶𝓅𝒾𝓇𝑜𝓉𝑜')`,
+			[testUser]
+		);
+
+		const msgComBuffs = createMessage({
+			content: "!pesca-rede 4",
+			group: testGroup,
+			author: testUser,
+			authorName: "PescadorRede"
+		});
+
+		await eventHandler.commandHandler.processCommand(bot, msgComBuffs, "pesca-rede", ["4"], null);
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
+		const resposta9 = bot.capturedMessages[0].content;
+		assert.ok(
+			resposta9.includes("Minhocão") || resposta9.includes("Vela Acesa do 𝒸𝒶𝓅𝒾𝓇𝑜𝓉𝑜"),
+			"A resposta deve indicar os nomes dos buffs/debuffs aplicados nas criaturas"
+		);
+		console.log(
+			"✓ Teste 9 passou: Modificadores (buffs/debuffs) exibidos com sucesso ao lado das criaturas."
+		);
+		bot.resetCapture();
 	} finally {
 		FishingGame.RARE_FISH.forEach((f, idx) => {
 			f.chance = originalChances[idx];

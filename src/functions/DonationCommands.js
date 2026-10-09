@@ -295,7 +295,8 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *1 Item Simples* a cada R$ 5 doados _(Anzol de Titânio, Bolso de Pesca ou Pochete de Iscas)_.\n`;
 		msg += `• *1 Item Médio* ao doar R$ 20 ou mais _(Calça de Pesca ou Caixa de Iscas)_.\n`;
 		msg += `• *1 Item Alto* ao doar R$ 30 ou mais _(Mochilão ou Viveiro Portátil)_.\n`;
-		msg += `• *Itens Altos Extras:* 1 item alto aos R$ 50 + 1 extra a cada R$ 10 acima de 50!\n\n`;
+		msg += `• *Itens Altos Extras:* 1 item alto aos R$ 50 + 1 extra a cada R$ 10 acima de 50!\n`;
+		msg += `• *Eficiência da Rede (!pesca-rede):* Acima de R$ 20 doados, +1% de eficiência na rede a cada R$ 5 adicionais (começando em +1% aos R$ 21)!\n\n`;
 
 		msg += `🎰 *Caça-Níqueis (Slots):*\n`;
 		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
@@ -332,7 +333,12 @@ async function showDonationPerks(bot, message, args, group) {
 			msg += `🛡️ *Equipamentos & Bônus Fixos da Pesca:*\n`;
 			msg += `  • 🔩 *${bonuses.pesca.simpleItemsCount}* itens simples sorteados.\n`;
 			msg += `  • 👖 *${bonuses.pesca.mediumItemsCount}* item médio sorteado.\n`;
-			msg += `  • 🎒 *${bonuses.pesca.totalHighItems}* itens de elite/altos sorteados.\n\n`;
+			msg += `  • 🎒 *${bonuses.pesca.totalHighItems}* itens de elite/altos sorteados.\n`;
+			if (bonuses.pesca.netEfficiencyBonus > 0) {
+				msg += `  • 🕸️ *+${bonuses.pesca.netEfficiencyBonus}%* de eficiência extra na rede de pesca (!pesca-rede).\n\n`;
+			} else {
+				msg += `  • 🕸️ Eficiência na rede (!pesca-rede): _Desbloqueada ao doar acima de R$ 20!_\n\n`;
+			}
 
 			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
 			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (10 base + ${extraRolls} extras por doação)\n`;
