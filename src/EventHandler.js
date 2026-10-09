@@ -1468,51 +1468,11 @@ class EventHandler extends EventEmitter {
 
 		//this.logger.info(`[processGroupJoin] `, { data });
 
-		// Carrega o grupo para verificar se o usuário que entrou está bloqueado
+		// Verificação de banidos no grupo (bannedUsers - apenas bots privados)
 		try {
 			const group =
 				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
-			if (
-				group &&
-				group.filters &&
-				group.filters.people &&
-				Array.isArray(group.filters.people) &&
-				group.filters.people.length > 0
-			) {
-				const userId = data.user.id;
-				let userPn = userId.split("@")[0];
-				let userLid = null;
 
-				try {
-					const contact = await bot.client.getContactById(userId);
-					if (contact) {
-						userPn = contact.id._serialized.split("@")[0];
-						if (contact.lid) {
-							userLid = contact.lid.split("@")[0];
-						}
-					}
-				} catch (contactErr) {
-					this.logger.error(
-						`[processGroupJoin] Erro ao obter contato ${userId} para validação de ban:`,
-						contactErr.message
-					);
-				}
-
-				const isBlocked = group.filters.people.some((blocked) => {
-					const blockedClean = blocked.split("@")[0];
-					return blockedClean === userPn || (userLid && blockedClean === userLid);
-				});
-
-				if (isBlocked) {
-					this.logger.warn(
-						`[processGroupJoin] Usuário bloqueado detectado ao entrar no grupo: ${userId} (LID: ${userLid}) no grupo ${groupId}. Removendo imediatamente.`
-					);
-					await bot.removeFromGroup(groupId, [userId]);
-					return;
-				}
-			}
-
-			// Verificação de banidos no grupo (bannedUsers)
 			if (
 				!isBotJoining &&
 				group &&

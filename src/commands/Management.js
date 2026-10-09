@@ -233,7 +233,22 @@ class Management {
 			banir: {
 				method: "banGroupMembers",
 				description:
-					"Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m)",
+					"Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5)",
+				hidden: true
+			},
+			ban: {
+				method: "banGroupMembers",
+				description: "Alias de banir",
+				hidden: true
+			},
+			block: {
+				method: "banGroupMembers",
+				description: "Alias de banir",
+				hidden: true
+			},
+			bloquear: {
+				method: "banGroupMembers",
+				description: "Alias de banir",
 				hidden: true
 			},
 			desbanir: {
@@ -241,14 +256,19 @@ class Management {
 				description: "Remove o ban da pessoa, permitindo que entre no grupo novamente",
 				hidden: true
 			},
-			ban: {
-				method: "banUser",
-				description: "Remove membros mencionados do grupo",
+			desblock: {
+				method: "unbanGroupMembers",
+				description: "Alias de desbanir",
 				hidden: true
 			},
-			block: {
-				method: "blockGroupUser",
-				description: "Remove membros mencionados do grupo e impede reentrada",
+			unban: {
+				method: "unbanGroupMembers",
+				description: "Alias de desbanir",
+				hidden: true
+			},
+			unblock: {
+				method: "unbanGroupMembers",
+				description: "Alias de desbanir",
 				hidden: true
 			},
 			fechar: {
@@ -8543,152 +8563,17 @@ class Management {
 	}
 
 	/**
-	 * Remove membros mencionados do grupo
-	 * @param {WhatsAppBot} bot - Instância do bot
-	 * @param {Object} message - Dados da mensagem
-	 * @param {Array} args - Argumentos do comando
-	 * @param {Object} group - Dados do grupo
-	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 * Alias de banir (banGroupMembers)
 	 */
 	async banUser(bot, message, args, group) {
-		if (!group || !bot.privado) return null;
-
-		const isAdmin = await this.isBotAdmin(bot, group);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId: group.id,
-				content: "⚠️ O bot precisa ser administrador do grupo para remover membros."
-			});
-		}
-
-		const mentions = message.mentions ?? [];
-		if (mentions.length === 0) {
-			return new ReturnMessage({
-				chatId: group.id,
-				content: "⚠️ Por favor, mencione pelo menos uma pessoa para remover."
-			});
-		}
-
-		// Remove cada pessoa mencionada
-		const removed = [];
-		const failed = [];
-		for (const target of mentions) {
-			try {
-				await bot.removeFromGroup(group.id, [target]);
-				removed.push(target.split("@")[0]);
-			} catch (err) {
-				this.logger.error(`Erro ao banir usuário ${target} do grupo ${group.id}:`, err);
-				failed.push(target.split("@")[0]);
-			}
-		}
-
-		let response = "";
-		if (removed.length > 0) {
-			response += `✅ Removido(s) do grupo: @${removed.join(", @")}\n`;
-		}
-		if (failed.length > 0) {
-			response += `❌ Falha ao remover: @${failed.join(", @")}\n`;
-		}
-
-		return new ReturnMessage({
-			chatId: group.id,
-			content: response.trim(),
-			options: {
-				mentions
-			}
-		});
+		return this.banGroupMembers(bot, message, args, group);
 	}
 
 	/**
-	 * Remove membros mencionados do grupo e os bloqueia no banco de dados
-	 * @param {WhatsAppBot} bot - Instância do bot
-	 * @param {Object} message - Dados da mensagem
-	 * @param {Array} args - Argumentos do comando
-	 * @param {Object} group - Dados do grupo
-	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 * Alias de banir/bloquear (banGroupMembers)
 	 */
 	async blockGroupUser(bot, message, args, group) {
-		if (!group || !bot.privado) return null;
-
-		const isAdmin = await this.isBotAdmin(bot, group);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId: group.id,
-				content: "⚠️ O bot precisa ser administrador do grupo para remover e bloquear membros."
-			});
-		}
-
-		const mentions = message.mentions ?? [];
-		if (mentions.length === 0) {
-			return new ReturnMessage({
-				chatId: group.id,
-				content: "⚠️ Por favor, mencione pelo menos uma pessoa para bloquear."
-			});
-		}
-
-		// Garante que o array filters.people está inicializado
-		if (!group.filters) {
-			group.filters = {};
-		}
-		if (!group.filters.people || !Array.isArray(group.filters.people)) {
-			group.filters.people = [];
-		}
-
-		const removed = [];
-		const failed = [];
-
-		for (const target of mentions) {
-			try {
-				// Resolve o contato para obter o número e o LID correto
-				let pn = target.split("@")[0];
-				let lid = null;
-				try {
-					const contact = await bot.client.getContactById(target);
-					if (contact) {
-						pn = contact.id._serialized.split("@")[0];
-						if (contact.lid) {
-							lid = contact.lid.split("@")[0];
-						}
-					}
-				} catch (e) {
-					this.logger.error(`Erro ao obter contato para obter LID de ${target}:`, e.message);
-				}
-
-				// Adiciona ao banco de dados (group.filters.people)
-				if (!group.filters.people.includes(pn)) {
-					group.filters.people.push(pn);
-				}
-				if (lid && !group.filters.people.includes(lid) && lid !== pn) {
-					group.filters.people.push(lid);
-				}
-
-				// Remove a pessoa do grupo
-				await bot.removeFromGroup(group.id, [target]);
-				removed.push(pn);
-			} catch (err) {
-				this.logger.error(`Erro ao bloquear/remover usuário ${target} do grupo ${group.id}:`, err);
-				failed.push(target.split("@")[0]);
-			}
-		}
-
-		// Salva o grupo atualizado
-		await this.database.saveGroup(group);
-
-		let response = "";
-		if (removed.length > 0) {
-			response += `🔒 Removido(s) e bloqueado(s) do grupo: @${removed.join(", @")}\n`;
-		}
-		if (failed.length > 0) {
-			response += `❌ Falha ao remover/bloquear: @${failed.join(", @")}\n`;
-		}
-
-		return new ReturnMessage({
-			chatId: group.id,
-			content: response.trim(),
-			options: {
-				mentions
-			}
-		});
+		return this.banGroupMembers(bot, message, args, group);
 	}
 
 	/**
@@ -8978,7 +8863,7 @@ class Management {
 				return new ReturnMessage({
 					chatId: message.managementResponseChatId || group.id,
 					content:
-						"📋 Não há usuários banidos neste grupo.\nPara banir alguém: `!g-banir @usuario` (máx 5 mentions, cooldown 30m)."
+						"📋 Não há usuários banidos neste grupo.\nPara banir alguém: `!g-banir @usuario` (máx 5 mentions)."
 				});
 			}
 
@@ -8995,14 +8880,14 @@ class Management {
 			});
 		}
 
-		// Cooldown de 30 minutos por grupo
+		// Cooldown de 5 segundos por grupo (anti-flood)
 		const now = Date.now();
-		const COOLDOWN_MS = 30 * 60 * 1000;
+		const COOLDOWN_MS = 5 * 1000;
 		if (group.lastBanAt && now - group.lastBanAt < COOLDOWN_MS) {
-			const remainingMin = Math.ceil((COOLDOWN_MS - (now - group.lastBanAt)) / (60 * 1000));
+			const remainingSec = Math.ceil((COOLDOWN_MS - (now - group.lastBanAt)) / 1000);
 			return new ReturnMessage({
 				chatId: message.managementResponseChatId || group.id,
-				content: `⏳ O comando de banir está em cooldown neste grupo. Aguarde ${remainingMin} minuto(s) para usar novamente.`
+				content: `⏳ Aguarde ${remainingSec} segundo(s) para usar o comando de banir novamente.`
 			});
 		}
 
@@ -9266,7 +9151,7 @@ const helper = {
 		},
 		{
 			cmd: "!g-banir",
-			desc: "Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5, cooldown 30m) ou lista banidos",
+			desc: "Remove pessoas mencionadas do grupo e comunidade, impedindo reentrada (máx 5) ou lista banidos",
 			usage: ["!g-banir @usuario", "!g-banir"],
 			category: "gerenciamento"
 		},

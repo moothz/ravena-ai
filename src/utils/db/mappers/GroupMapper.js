@@ -96,6 +96,7 @@ const GroupMapper = {
 			notificaGrupoAberto: !!row.notifica_grupo_aberto,
 			banirSpammers: !!row.banir_spammers,
 			spammerWhitelist: parse(row.spammer_whitelist, []),
+			bannedUsers: parse(row.banned_users, parse(row.json_data, {}).bannedUsers || []),
 			createdAt: row.created_at ?? Date.now(),
 			updatedAt: row.updated_at ?? Date.now()
 		};
@@ -168,6 +169,7 @@ const GroupMapper = {
 			notifica_grupo_aberto: obj.notificaGrupoAberto ? 1 : 0,
 			banir_spammers: obj.banirSpammers ? 1 : 0,
 			spammer_whitelist: s(obj.spammerWhitelist || obj.allowedSpammers || []),
+			banned_users: s(obj.bannedUsers || []),
 			created_at: obj.createdAt ?? Date.now(),
 			updated_at: Date.now()
 		};

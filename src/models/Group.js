@@ -75,6 +75,7 @@ class Group {
 		this.notificaGrupoAberto = data.notificaGrupoAberto ?? false;
 		this.banirSpammers = data.banirSpammers ?? false;
 		this.spammerWhitelist = data.spammerWhitelist ?? data.allowedSpammers ?? [];
+		this.bannedUsers = Array.isArray(data.bannedUsers) ? data.bannedUsers : [];
 
 		// Metadados
 		this.createdAt = data.createdAt ?? Date.now();
@@ -121,6 +122,7 @@ class Group {
 			notificaGrupoAberto: this.notificaGrupoAberto,
 			banirSpammers: this.banirSpammers,
 			spammerWhitelist: this.spammerWhitelist,
+			bannedUsers: this.bannedUsers,
 			createdAt: this.createdAt,
 			updatedAt: this.updatedAt
 		};
@@ -209,6 +211,7 @@ class Group {
 		if (typeof data.banirSpammers === "boolean") this.banirSpammers = data.banirSpammers;
 		if (Array.isArray(data.spammerWhitelist)) this.spammerWhitelist = data.spammerWhitelist;
 		else if (Array.isArray(data.allowedSpammers)) this.spammerWhitelist = data.allowedSpammers;
+		if (Array.isArray(data.bannedUsers)) this.bannedUsers = data.bannedUsers;
 
 		// Atualiza carimbos de data/hora
 		this.updatedAt = Date.now();

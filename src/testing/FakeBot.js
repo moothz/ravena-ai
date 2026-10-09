@@ -18,6 +18,7 @@ class FakeBot {
 	constructor(options = {}) {
 		this.id = options.id ?? "bot-teste";
 		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
+		this.testMode = options.testMode !== undefined ? Boolean(options.testMode) : true;
 		this.prefix = options.prefix ?? "!";
 		this.phoneNumber = options.phoneNumber ?? "5511999990000";
 
