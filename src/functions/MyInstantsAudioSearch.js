@@ -1,6 +1,5 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
-const { execFile } = require("child_process");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -17,39 +16,52 @@ const REQUEST_HEADERS = {
 	Referer: "https://www.myinstants.com/"
 };
 
-const path = require("path");
+let browserClient;
 
-const PYTHON_FETCHER_PATH = path.join(__dirname, "../utils/myinstants_fetcher.py");
-
-/**
- * Executa requisição usando script Python em src/utils para contornar bloqueio de TLS Fingerprinting (JA4) do Cloudflare
- * @param {string} url
- * @returns {Promise<{status: number, data: Buffer}>}
- */
-function fetchViaPython(url) {
-	return new Promise((resolve, reject) => {
-		execFile(
-			"python3",
-			[PYTHON_FETCHER_PATH, url],
-			{ maxBuffer: 25 * 1024 * 1024, encoding: "buffer" },
-			(err, stdout) => {
-				if (err) {
-					if (err.code === 4) {
-						return resolve({ status: 404, data: Buffer.alloc(0) });
-					}
-					return reject(err);
-				}
-				resolve({ status: 200, data: stdout });
-			}
-		);
-	});
+function isCloudflareChallenge(data) {
+	const html = data.toString("utf8", 0, 4096);
+	return /<title>\s*(?:Just a moment|Um momento|Attention Required)|_cf_chl_opt/i.test(html);
 }
 
 /**
- * Faz requisição HTTP para o MyInstants com fallback para Python
+ * Usa uma conexão com TLS e HTTP de navegador quando o MyInstants bloqueia o Axios.
+ * @param {string} url
+ * @returns {Promise<{status: number, data: Buffer, contentType: string}>}
+ */
+async function fetchViaBrowser(url) {
+	if (!browserClient) {
+		const { Impit } = require("impit");
+		browserClient = new Impit({ browser: "chrome", timeout: 15000 });
+	}
+
+	const response = await browserClient.fetch(url, {
+		headers: { Referer: REQUEST_HEADERS.Referer }
+	});
+	if (response.status !== 200 && response.status !== 404) {
+		response.abort();
+		throw new Error(`MyInstants retornou HTTP ${response.status}`);
+	}
+
+	const data = Buffer.from(await response.arrayBuffer());
+	if (isCloudflareChallenge(data)) {
+		throw new Error("O MyInstants bloqueou a requisição com uma verificação do Cloudflare");
+	}
+	if (response.status === 200 && data.length === 0) {
+		throw new Error("O MyInstants retornou uma resposta vazia");
+	}
+
+	return {
+		status: response.status,
+		data,
+		contentType: response.headers.get("content-type") || ""
+	};
+}
+
+/**
+ * Faz requisição HTTP para o MyInstants com fallback para uma conexão de navegador
  * a fim de contornar bloqueios de TLS/JA4 do Cloudflare no Node 20.
  * @param {string} url
- * @returns {Promise<{status: number, data: Buffer}>}
+ * @returns {Promise<{status: number, data: Buffer, contentType: string}>}
  */
 async function fetchMyInstants(url) {
 	try {
@@ -60,13 +72,20 @@ async function fetchMyInstants(url) {
 			validateStatus: (s) => s < 500
 		});
 		if (res.status === 200 || res.status === 404) {
-			return { status: res.status, data: Buffer.from(res.data) };
+			const data = Buffer.from(res.data);
+			if (!isCloudflareChallenge(data) && (res.status === 404 || data.length > 0)) {
+				return {
+					status: res.status,
+					data,
+					contentType: res.headers["content-type"] || ""
+				};
+			}
 		}
 	} catch (e) {
-		// Fallback para python se axios falhar ou for bloqueado por Cloudflare
+		// Tenta a conexão de navegador se o Axios falhar ou for bloqueado.
 	}
 
-	return await fetchViaPython(url);
+	return await fetchViaBrowser(url);
 }
 
 /**
@@ -111,7 +130,7 @@ async function buscarAudios(pesquisa) {
 		return resultados;
 	} catch (err) {
 		logger.error("Erro ao buscar áudios:", err.message || err);
-		return [];
+		throw err;
 	}
 }
 
@@ -123,10 +142,13 @@ async function buscarAudios(pesquisa) {
  * @returns {Promise<Object>}
  */
 async function baixarAudioComoMedia(bot, mp3Url, title) {
-	const { data, status } = await fetchMyInstants(mp3Url);
+	const { data, status, contentType } = await fetchMyInstants(mp3Url);
 
 	if (status !== 200 || !data || data.length === 0) {
 		throw new Error(`Falha ao baixar áudio: status ${status}`);
+	}
+	if (/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+		throw new Error("O MyInstants retornou uma página HTML em vez do áudio");
 	}
 
 	const base64Data = data.toString("base64");
