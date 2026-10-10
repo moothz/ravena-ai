@@ -171,6 +171,19 @@ class SuperAdmin {
 			"waifu-casar": {
 				method: "waifuCasar",
 				description: "Alias de waifuCasar"
+			},
+			remudae: {
+				method: "removerMudaePersonagem",
+				description:
+					"Remove personagem problemático do catálogo Waifuletes, desfaz casamentos com reembolso e apaga vínculos: !sa-remudae <id/nome> [motivo]"
+			},
+			removerMudae: {
+				method: "removerMudaePersonagem",
+				description: "Alias de remudae"
+			},
+			"remover-mudae": {
+				method: "removerMudaePersonagem",
+				description: "Alias de remudae"
 			}
 		};
 
@@ -5422,6 +5435,117 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro ao realizar casamento administrativo: ${errorMsg}`
+			});
+		}
+	}
+
+	/**
+	 * Remove um personagem do catálogo Waifuletes, desfaz casamentos com reembolso
+	 * proporcional de Zinthos por raridade e remove vínculos.
+	 *
+	 * Uso: !sa-remudae <id/nome do personagem> [motivo]
+	 * Exemplo: !sa-remudae loli-problematica Violação das diretrizes
+	 *
+	 * @param {Object} bot
+	 * @param {Object} message
+	 * @param {Array<string>} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async removerMudaePersonagem(bot, message, args, group) {
+		const chatId = message.group ?? message.author;
+
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
+				});
+			}
+
+			if (!args || args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ *Uso correto:* `!sa-remudae <id ou nome do personagem> [motivo]`\n\n*Exemplo:* `!sa-remudae loli-problematica Violação das diretrizes`"
+				});
+			}
+
+			const { api } = require("../functions/WaifuCommands");
+
+			const characterId = args[0];
+			let reason = args.slice(1).join(" ").trim() || "Remoção administrativa por moderação";
+
+			let responseData = null;
+
+			// Tenta primeiro com args[0] como characterId e o resto como motivo
+			try {
+				const { data } = await api.post("/admin/characters/purge-character", {
+					characterId,
+					reason
+				});
+				if (data.success) {
+					responseData = data.data;
+				}
+			} catch (firstErr) {
+				// Se deu erro e havia múltiplos args, tenta considerar todo o args como nome do personagem
+				if (args.length > 1) {
+					const fullName = args.join(" ").trim();
+					try {
+						const { data } = await api.post("/admin/characters/purge-character", {
+							characterId: fullName,
+							reason: "Remoção administrativa por moderação"
+						});
+						if (data.success) {
+							responseData = data.data;
+							reason = "Remoção administrativa por moderação";
+						}
+					} catch (_) {
+						// Repassa o primeiro erro
+						throw firstErr;
+					}
+				} else {
+					throw firstErr;
+				}
+			}
+
+			if (responseData) {
+				const { character, marriagesUndone, totalKakeraRefunded } = responseData;
+				let text = `🗑️ *Personagem Removido do Waifuletes com Sucesso!* 🗑️\n\n`;
+				text += `✨ *Nome:* *${character.name}* (${character.series})\n`;
+				text += `🆔 *ID:* \`${character.id}\`\n`;
+				text += `⭐ *Raridade:* ${character.rarity}\n`;
+				text += `💔 *Casamentos desfeitos:* ${marriagesUndone}\n`;
+				text += `💜 *Total reembolsado aos donos:* ${totalKakeraRefunded} Zinthos\n`;
+				if (reason) {
+					text += `📝 *Motivo:* ${reason}`;
+				}
+
+				return new ReturnMessage({
+					chatId,
+					content: text,
+					options: {
+						quotedMessageId: message.origin?.id?._serialized,
+						goReply: message.origin
+					}
+				});
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Falha ao remover personagem."
+			});
+		} catch (err) {
+			const apiErr = err.response?.data?.error;
+			const errorMsg =
+				apiErr?.message ||
+				err.response?.data?.message ||
+				(typeof err.response?.data?.error === "string" ? err.response?.data?.error : null) ||
+				err.message;
+
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao remover personagem do Waifuletes: ${errorMsg}`
 			});
 		}
 	}

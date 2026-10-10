@@ -45,6 +45,9 @@ const activeClaimsByCharGroup = new Map();
 // Cache em memória de mensagens de roll ativas (por ID de mensagem enviado)
 // Map<messageId, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const rollClaimsByMsgId = new Map();
+// Histórico para moderação/denúncias (mantém últimos 1000 IDs mesmo após expirar claim)
+const rollHistoryByMsgId = new Map();
+const MAX_ROLL_HISTORY = 1000;
 
 /**
  * Registra o ID de uma mensagem enviada de roll associando-o ao personagem sorteado
@@ -85,6 +88,13 @@ function recordRollMessage(
 	};
 	rollClaimsByMsgId.set(strId, claimData);
 	rollClaimsByMsgId.set(stanzaId, claimData);
+
+	rollHistoryByMsgId.set(strId, characterId);
+	rollHistoryByMsgId.set(stanzaId, characterId);
+	if (rollHistoryByMsgId.size > MAX_ROLL_HISTORY * 2) {
+		const firstKey = rollHistoryByMsgId.keys().next().value;
+		rollHistoryByMsgId.delete(firstKey);
+	}
 }
 
 /**
@@ -107,6 +117,22 @@ function getRollByMessageId(messageId) {
 		return claimData;
 	}
 	return null;
+}
+
+/**
+ * Busca ID do personagem associado a uma mensagem de roll (para moderação e denúncias)
+ * @param {string} messageId
+ * @returns {string|null}
+ */
+function getCharacterIdFromMessageId(messageId) {
+	if (!messageId) return null;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	const claimData = rollClaimsByMsgId.get(strId) || rollClaimsByMsgId.get(stanzaId);
+	if (claimData?.characterId) return claimData.characterId;
+
+	return rollHistoryByMsgId.get(strId) || rollHistoryByMsgId.get(stanzaId) || null;
 }
 
 // Mapeamentos visuais de Raridade
@@ -517,6 +543,7 @@ function makeRollHandler(genderFilter) {
 				owner,
 				keyProgress,
 				kakeraValue,
+				rollReward,
 				rollsRemaining,
 				maxRolls
 			} = data.data;
@@ -604,6 +631,13 @@ function makeRollHandler(genderFilter) {
 				text += `🔒 Já pertence a: *${owner?.name || "Outro jogador"}*`;
 				if (kakeraValue) {
 					text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
+				}
+			}
+
+			if (rollReward) {
+				text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos (+${rollReward.scrapRollBonus} por ${rollsRemaining} rolls restantes)`;
+				if (rollReward.rarityBonus > 0) {
+					text += `\n🌟 *BÔNUS DE RARIDADE:* +${rollReward.rarityBonus} Zinthos!`;
 				}
 			}
 
@@ -911,7 +945,7 @@ async function diariosKakera(bot, message) {
 
 	try {
 		const { data } = await api.post("/kakera/daily", { userId, groupId, name });
-		const { amount, currencyEmoji, newBalance, nextDailyAt } = data.data;
+		const { amount, currencyEmoji, newBalance, nextDailyAt, streak } = data.data;
 
 		const nextDate = new Date(nextDailyAt);
 		const formattedDate = nextDate.toLocaleString("pt-BR", {
@@ -923,6 +957,11 @@ async function diariosKakera(bot, message) {
 
 		let text = `${currencyEmoji || "💜"} *Recompensa Diária Coletada!*\n\n`;
 		text += `🎁 Você recebeu: *+${amount} Zinthos*\n`;
+		if (streak && streak.current > 1) {
+			text += `🔥 Sequência Diária: *Dia ${streak.current}/7* (+${streak.bonusPercent}% de bônus!)\n`;
+		} else {
+			text += `🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)\n`;
+		}
 		text += `💰 Saldo total: *${newBalance} Zinthos*\n`;
 		text += `⏰ Próximo resgate: *${formattedDate}*`;
 
@@ -1336,38 +1375,135 @@ async function resolveUserDisplayName(user, currentGroup) {
 }
 
 /**
- * Exibe ranking global de jogadores por saldo de Zinthos
+ * Exibe ranking global consolidado (Zinthos e Casamentos) ou detalhado com 'all'
  */
 async function verRanking(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
-	const limit = Math.min(parseInt(args[0], 10) || 10, 20);
+	const currentGroup = group || (message.group ? await database.getGroup(message.group) : null);
+	const medals = ["🥇", "🥈", "🥉"];
 
+	const subcmd = (args[0] || "").toLowerCase();
+	const arg1 = (args[1] || "").toLowerCase();
+
+	const isAll = subcmd === "all" || arg1 === "all";
+	const limit = isAll ? 500 : Math.min(parseInt(args[1] || args[0], 10) || 10, 50);
+
+	// Cenário A: Ranking detalhado de Casamentos / Harém
+	if (
+		["casamentos", "casamento", "c", "harem", "harém", "h", "colecao", "coleção"].includes(subcmd)
+	) {
+		try {
+			const { data } = await api.get("/leaderboard/harem", { params: { limit } });
+			const topHarem = data.data?.topHarem || [];
+
+			if (topHarem.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "👑 Nenhum jogador com personagens no harém registrado ainda."
+				});
+			}
+
+			const lines = await Promise.all(
+				topHarem.map(async (u, idx) => {
+					const pos = medals[idx] || `${idx + 1}.`;
+					const displayName = await resolveUserDisplayName(u, currentGroup);
+					let line = `${pos} *${displayName}* — *${u.collectionPoints} pts* (${u.totalMarriages} waifus | ${u.totalKeys} 🔑)\n`;
+					line += `   └ ⚪${u.commonCount}  🟢${u.uncommonCount}  🔵${u.rareCount}  🟣${u.epicCount}  ⭐${u.legendaryCount}\n`;
+					return line;
+				})
+			);
+
+			let text = `👑 *Ranking de Colecionadores de Waifus (Harém & Raridade)* [${topHarem.length} jogadores]:\n\n`;
+			text += lines.join("");
+			if (!isAll) {
+				text += `\n💡 Para ver todos os jogadores: \`!mu-rank casamentos all\``;
+			}
+
+			return new ReturnMessage({ chatId, content: text });
+		} catch (err) {
+			return handleApiError(err, chatId, "Erro ao consultar ranking de casamentos.");
+		}
+	}
+
+	// Cenário B: Ranking detalhado de Zinthos
+	if (["zinthos", "z", "moeda", "saldo"].includes(subcmd)) {
+		try {
+			const { data } = await api.get("/leaderboard/users", { params: { limit } });
+			const topRich = data.data?.topRich || [];
+
+			if (topRich.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "🏆 Nenhum jogador registrado no ranking de Zinthos ainda."
+				});
+			}
+
+			const lines = await Promise.all(
+				topRich.map(async (u, idx) => {
+					const pos = medals[idx] || `${idx + 1}.`;
+					const displayName = await resolveUserDisplayName(u, currentGroup);
+					return `${pos} *${displayName}* — 💜 *${u.kakera}* Zinthos (Harém: ${u._count?.harem ?? 0})\n`;
+				})
+			);
+
+			let text = `💜 *Ranking de Jogadores Mais Ricos em Zinthos* [${topRich.length} jogadores]:\n\n`;
+			text += lines.join("");
+			if (!isAll) {
+				text += `\n💡 Para ver todos os jogadores: \`!mu-rank zinthos all\``;
+			}
+
+			return new ReturnMessage({ chatId, content: text });
+		} catch (err) {
+			return handleApiError(err, chatId, "Erro ao consultar ranking de Zinthos.");
+		}
+	}
+
+	// Cenário C: Visão Dupla Consolidada (Top 10 Zinthos + Top 10 Casamentos)
 	try {
-		const { data } = await api.get("/leaderboard/users", { params: { limit } });
-		const topRich = data.data?.topRich || [];
+		const [usersRes, haremRes] = await Promise.all([
+			api.get("/leaderboard/users", { params: { limit: 10 } }).catch(() => null),
+			api.get("/leaderboard/harem", { params: { limit: 10 } }).catch(() => null)
+		]);
 
+		const topRich = usersRes?.data?.data?.topRich || [];
+		const topHarem = haremRes?.data?.data?.topHarem || [];
+
+		let text = `🏆 *PAINEL DE LIDERANÇA WAIFULETES* 🏆\n\n`;
+
+		text += `💜 *Top 10 — Mais Ricos (Zinthos):*\n`;
 		if (topRich.length === 0) {
-			return new ReturnMessage({
-				chatId,
-				content: "🏆 Nenhum jogador registrado no ranking ainda."
-			});
+			text += `Nenhum jogador registrado ainda.\n`;
+		} else {
+			const richLines = await Promise.all(
+				topRich.slice(0, 10).map(async (u, idx) => {
+					const pos = medals[idx] || `${idx + 1}.`;
+					const displayName = await resolveUserDisplayName(u, currentGroup);
+					return `${pos} *${displayName}* — *${u.kakera}* Zinthos\n`;
+				})
+			);
+			text += richLines.join("");
 		}
 
-		const currentGroup = group || (message.group ? await database.getGroup(message.group) : null);
+		text += `\n👑 *Top 10 — Maiores Colecionadores (Casamentos & Raridade):*\n`;
+		if (topHarem.length === 0) {
+			text += `Nenhum jogador registrado ainda.\n`;
+		} else {
+			const haremLines = await Promise.all(
+				topHarem.slice(0, 10).map(async (u, idx) => {
+					const pos = medals[idx] || `${idx + 1}.`;
+					const displayName = await resolveUserDisplayName(u, currentGroup);
+					let line = `${pos} *${displayName}* — *${u.collectionPoints} pts* (${u.totalMarriages} waifus)\n`;
+					line += `   └ ⚪${u.commonCount}  🟢${u.uncommonCount}  🔵${u.rareCount}  🟣${u.epicCount}  ⭐${u.legendaryCount}\n`;
+					return line;
+				})
+			);
+			text += haremLines.join("");
+		}
 
-		const medals = ["🥇", "🥈", "🥉"];
-		const lines = await Promise.all(
-			topRich.map(async (user, idx) => {
-				const pos = medals[idx] || `${idx + 1}.`;
-				const displayName = await resolveUserDisplayName(user, currentGroup);
-				let line = `${pos} *${displayName}* — 💜 *${user.kakera}* Zinthos\n`;
-				line += `   ↳ 👰 Harém: ${user._count?.harem ?? 0} | 💖 Soulmates: ${user._count?.soulmates ?? 0}\n`;
-				return line;
-			})
-		);
-
-		let text = `🏆 *Top ${topRich.length} Jogadores de Zinthos:*\n\n`;
-		text += lines.join("");
+		text += `\n────────────────────────\n`;
+		text += `💡 *Rankings completos:*\n`;
+		text += `• \`!mu-rank zinthos all\` — Lista todos os jogadores de Zinthos\n`;
+		text += `• \`!mu-rank casamentos all\` — Lista todos os colecionadores\n`;
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
@@ -1523,6 +1659,212 @@ async function detalhesPersonagem(bot, message, args) {
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar personagem.");
 	}
+}
+
+/**
+ * Denuncia um personagem problemático do Waifuletes para moderação
+ * Envia imagem + detalhes + comando !sa-remudae para o grupo de logs
+ *
+ * @param {WhatsAppBot} bot
+ * @param {Object} message
+ * @param {Array<string>} args
+ * @param {Object} group
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function denunciarWaifu(bot, message, args, group) {
+	const chatId =
+		message.group ?? (message.originReaction ? message.originReaction.senderId : message.author);
+	const groupId = getGroupId(message);
+	const denuncianteId = message.originReaction ? message.originReaction.senderId : message.author;
+	const denunciante =
+		(message.originReaction
+			? message.originReaction.userName || message.originReaction.pushName
+			: null) ||
+		message.authorName ||
+		message.name ||
+		denuncianteId;
+	const grupoOrigem = group?.name || group?.subject || (message.group ? message.group : "Privado");
+
+	let candidateIdOrQuery = null;
+
+	// 1. Argumentos passados diretamente no comando (!mu-denunciar <id-ou-nome>)
+	if (args && args.length > 0) {
+		candidateIdOrQuery = args.join(" ").trim();
+	}
+
+	// 2. Disparado por reação (⛔) na mensagem de roll
+	if (!candidateIdOrQuery && message.originReaction) {
+		const reactionMsgId =
+			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
+		candidateIdOrQuery = getCharacterIdFromMessageId(reactionMsgId);
+
+		if (!candidateIdOrQuery) {
+			const text =
+				message.caption ||
+				(typeof message.content === "string" ? message.content : "") ||
+				message.body ||
+				"";
+			const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
+			if (matchCasar) {
+				candidateIdOrQuery = matchCasar[1];
+			} else {
+				const matchName = text.match(/🎲\s+\*([^*]+)\*/);
+				if (matchName) {
+					candidateIdOrQuery = matchName[1].trim();
+				}
+			}
+		}
+
+		if (!candidateIdOrQuery) {
+			return null;
+		}
+	}
+
+	// 3. Em resposta a uma mensagem citada (quotedMessage)
+	if (!candidateIdOrQuery) {
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		}
+		if (quotedMsg) {
+			const quotedId =
+				quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id || message.quotedMessageId;
+			candidateIdOrQuery = getCharacterIdFromMessageId(quotedId);
+
+			if (!candidateIdOrQuery) {
+				const text =
+					quotedMsg.caption ||
+					(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+					quotedMsg.body ||
+					"";
+				const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
+				if (matchCasar) {
+					candidateIdOrQuery = matchCasar[1];
+				} else {
+					const matchName = text.match(/🎲\s+\*([^*]+)\*/);
+					if (matchName) {
+						candidateIdOrQuery = matchName[1].trim();
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Fallback: personagem mais recentemente sorteado no grupo (se ainda na janela)
+	if (!candidateIdOrQuery) {
+		const pending = pendingClaims.get(groupId);
+		if (pending && Date.now() <= pending.expiresAt) {
+			candidateIdOrQuery = pending.characterId;
+		}
+	}
+
+	if (!candidateIdOrQuery) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"⚠️ Para denunciar um personagem, responda (reply) ao roll dele com *!mu-denunciar*, reaja ao roll com ⛔, ou informe o ID/nome (ex: `!mu-denunciar <id>`)."
+		});
+	}
+
+	// 5. Busca detalhes do personagem na API Waifuletes
+	let character = null;
+	try {
+		// Tenta buscar por ID direto
+		const res = await api
+			.get(`/characters/${encodeURIComponent(candidateIdOrQuery)}`)
+			.catch(() => null);
+		if (res?.data?.success && res?.data?.data) {
+			character = res.data.data;
+		} else {
+			// Tenta buscar por nome / busca textual
+			const searchRes = await api
+				.get("/characters", { params: { search: candidateIdOrQuery, limit: 1 } })
+				.catch(() => null);
+			const list = searchRes?.data?.data?.data || [];
+			if (list.length > 0) {
+				character = list[0];
+			}
+		}
+	} catch (err) {
+		logger.error(`Erro ao consultar personagem para denúncia: ${err.message}`);
+	}
+
+	if (!character) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Não foi possível encontrar o personagem "${candidateIdOrQuery}" no catálogo Waifuletes.`
+		});
+	}
+
+	// 6. Configura destino no grupo de moderação / logs
+	let grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
+	if (grupoLogs && !grupoLogs.includes("@") && /^\d+$/.test(grupoLogs)) {
+		grupoLogs = `${grupoLogs}@g.us`;
+	}
+	if (grupoLogs && !grupoLogs.endsWith("@g.us") && process.env.GRUPO_LOGS) {
+		grupoLogs = process.env.GRUPO_LOGS;
+	}
+
+	const rarity = character.baseRarity || character.rarity || "COMMON";
+	const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
+	const labelRarity = RARITY_LABEL[rarity] || rarity;
+
+	let logCaption = `🚨 *DENÚNCIA DE PERSONAGEM WAIFULETES* 🚨\n\n`;
+	logCaption += `👤 *Denunciante:* ${denunciante} (${denuncianteId})\n`;
+	logCaption += `👥 *Origem:* ${grupoOrigem}\n`;
+	logCaption += `✨ *Personagem:* *${character.name}*\n`;
+	logCaption += `📺 *Série:* ${character.series}\n`;
+	logCaption += `${emojiRarity} *Raridade:* ${labelRarity}\n`;
+	logCaption += `🆔 *ID:* \`${character.id}\`\n\n`;
+	logCaption += `Comando para remover do catálogo:\n`;
+	logCaption += `!sa-remudae ${character.id}`;
+
+	const returnMessages = [];
+
+	if (grupoLogs) {
+		const imageBase64 = await downloadImageAsBase64(character.imageUrl);
+		if (imageBase64) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: {
+						mimetype: "image/jpeg",
+						data: imageBase64,
+						filename: `${character.id}.jpg`,
+						isMessageMedia: true
+					},
+					options: {
+						caption: logCaption
+					}
+				})
+			);
+		} else {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: logCaption
+				})
+			);
+		}
+
+		// Envia mensagem isolada com comando para facilitar cópia/encaminhamento rápido no celular
+		returnMessages.push(
+			new ReturnMessage({
+				chatId: grupoLogs,
+				content: `!sa-remudae ${character.id}`
+			})
+		);
+	}
+
+	// Resposta amigável para quem denunciou / grupo
+	returnMessages.push(
+		new ReturnMessage({
+			chatId,
+			content: `⛔ *Denúncia Registrada!*\n\nO personagem *${character.name}* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`
+		})
+	);
+
+	return returnMessages;
 }
 
 /**
@@ -2627,6 +2969,37 @@ const commands = [
 		reactions: { before: "🎲", after: "📊", error: "❌" },
 		reply: true,
 		method: verChances
+	}),
+
+	// ── DENÚNCIA / MODERAÇÃO DE PERSONAGENS ──────────────────────────────────
+	new Command({
+		name: "mu-denunciar",
+		description: "Denuncia um personagem problemático para a moderação e remoção",
+		category: "mudae",
+		group: "muwaifu-report",
+		reply: false,
+		aliases: ["mu-report", "denunciar-waifu", "denunciar-mudae", "mudenunciar", "mureport"],
+		reactions: {
+			trigger: ["⛔", "\u{26D4}"],
+			before: "⏳",
+			after: "⛔",
+			error: "❌"
+		},
+		method: denunciarWaifu
+	}),
+	new Command({
+		name: "mu-report",
+		description: "Alias em inglês de !mu-denunciar",
+		category: "mudae",
+		group: "muwaifu-report",
+		reply: false,
+		reactions: {
+			trigger: ["⛔", "\u{26D4}"],
+			before: "⏳",
+			after: "⛔",
+			error: "❌"
+		},
+		method: denunciarWaifu
 	})
 ];
 
@@ -2692,8 +3065,14 @@ const helper = {
 		},
 		{
 			cmd: "!mu-ranking",
-			desc: "Ranking dos jogadores mais ricos em Zinthos (💜)",
-			usage: ["!mu-ranking", "!mu-top 10"],
+			desc: "Painel de líderes consolidado (Zinthos e Casamentos por raridade). Use 'all' para ver todos.",
+			usage: ["!mu-ranking", "!mu-rank zinthos all", "!mu-rank casamentos all"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-denunciar",
+			desc: "Denuncia um personagem problemático para a equipe de moderação e remoção",
+			usage: ["!mu-denunciar (em resposta ao roll)", "Reação: ⛔", "!mu-denunciar <id ou nome>"],
 			category: "mudae"
 		},
 		{
@@ -2873,12 +3252,14 @@ module.exports = {
 	verTopCharacters,
 	buscarPersonagens,
 	detalhesPersonagem,
+	denunciarWaifu,
 	verCooldowns,
 	pendingClaims,
 	activeClaimsByCharGroup,
 	EXCLUSIVE_CLAIM_WINDOW_MS,
 	recordRollMessage,
 	getRollByMessageId,
+	getCharacterIdFromMessageId,
 	notifySpecialMarriage,
 	downloadImageAsBase64,
 	handleApiError,
