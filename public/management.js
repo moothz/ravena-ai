@@ -512,7 +512,8 @@ document.addEventListener('DOMContentLoaded', () => {
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
             banirSpammers: 'Banir Spammers Automaticamente',
-            notificarEpic: 'Notificar Jogos Grátis da Epic'
+            notificarEpic: 'Notificar Jogos Grátis da Epic',
+            notificarSteam: 'Notificar Jogos Grátis da Steam'
             ,greetingAccumulation: 'Acúmulo de Saudações'
         };
 
@@ -636,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
         groupData.banirSpammers = document.getElementById('banir-spammers').checked;
         groupData.notificarEpic = document.getElementById('notificar-epic').checked;
+        groupData.notificarSteam = document.getElementById('notificar-steam').checked;
         groupData.greetingAccumulation = {
             ...(groupData.greetingAccumulation || {}),
             enabled: document.getElementById('greeting-accumulation').checked,
@@ -793,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('notifica-grupo-aberto').checked = !!groupData.notificaGrupoAberto;
         document.getElementById('banir-spammers').checked = !!groupData.banirSpammers;
         document.getElementById('notificar-epic').checked = !!groupData.notificarEpic;
+        document.getElementById('notificar-steam').checked = !!groupData.notificarSteam;
         
         const interact = groupData.interact || {};
         document.getElementById('auto-interaction').checked = !!interact.enabled;

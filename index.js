@@ -14,10 +14,12 @@ const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
 const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
-const EpicFreeGamesSource = require("./src/services/epicFreeGames/EpicFreeGamesSource");
-const NotifyEpicFreeGames = require("./src/services/epicFreeGames/NotifyEpicFreeGames");
-const BotGroupNotifier = require("./src/services/epicFreeGames/BotGroupNotifier");
-const EpicFreeGamesScheduler = require("./src/services/epicFreeGames/EpicFreeGamesScheduler");
+const GamerPowerFreeGamesSource = require("./src/services/freeGames/GamerPowerFreeGamesSource");
+const NotifyFreeGames = require("./src/services/freeGames/NotifyFreeGames");
+const SqliteWeeklyGamesRepository = require("./src/services/freeGames/SqliteWeeklyGamesRepository");
+const BotGroupNotifier = require("./src/services/freeGames/BotGroupNotifier");
+const FreeGamesScheduler = require("./src/services/freeGames/FreeGamesScheduler");
+const { FREE_GAME_STORES } = require("./src/services/freeGames/freeGameStores");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
 const fs = require("fs");
@@ -279,15 +281,17 @@ async function main() {
 			weeklyDigestService.start();
 		}
 
-		// Inicializa aviso semanal de jogos grátis da Epic (sábado 10h BRT)
+		// Inicializa aviso semanal de jogos grátis da Epic e da Steam (sábado 10h BRT)
 		if (!disableActivity) {
-			const epicFreeGamesNotifier = new NotifyEpicFreeGames({
-				source: new EpicFreeGamesSource({ logger: new Logger("epic-free-games") }),
+			const freeGamesNotifier = new NotifyFreeGames({
+				stores: FREE_GAME_STORES,
+				source: new GamerPowerFreeGamesSource({ logger: new Logger("free-games-source") }),
+				repository: new SqliteWeeklyGamesRepository({ database }),
 				groupRepository: database,
 				notifier: new BotGroupNotifier({ getBots: () => botInstances }),
-				logger: new Logger("notify-epic-free-games")
+				logger: new Logger("notify-free-games")
 			});
-			EpicFreeGamesScheduler.getInstance().start(epicFreeGamesNotifier);
+			FreeGamesScheduler.getInstance().start(freeGamesNotifier);
 		}
 
 		// Inicializa servidor da API

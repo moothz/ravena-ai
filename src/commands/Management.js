@@ -11,6 +11,8 @@ const WebManagement = require("../utils/WebManagement");
 const StreamSystem = require("../StreamSystem");
 const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../utils/RegexFilterValidator");
+const { getStoreByKey } = require("../services/freeGames/freeGameStores");
+const { toggleFreeGamesFlag } = require("../services/freeGames/toggleFreeGamesFlag");
 
 class Management {
 	constructor() {
@@ -311,6 +313,10 @@ class Management {
 			"notificar-epic": {
 				method: "toggleNotificarEpic",
 				description: "Ativa/desativa o aviso semanal (sábado, 10h) de jogos grátis da Epic Games"
+			},
+			"notificar-steam": {
+				method: "toggleNotificarSteam",
+				description: "Ativa/desativa o aviso semanal (sábado, 10h) de jogos grátis da Steam"
 			},
 			permitirSpammer: {
 				method: "togglePermitirSpammer",
@@ -2099,6 +2105,7 @@ class Management {
 			infoMessage += `- *NSFW:* ${nsfwFiltering}\n`;
 			infoMessage += `- *Banir Spammers:* ${group.banirSpammers ? "Sim" : "Não"}\n`;
 			infoMessage += `- *Notificar Epic:* ${group.notificarEpic ? "Sim" : "Não"}\n`;
+			infoMessage += `- *Notificar Steam:* ${group.notificarSteam ? "Sim" : "Não"}\n`;
 			if (group.spammerWhitelist && group.spammerWhitelist.length > 0) {
 				infoMessage += `- *Spammers Permitidos:* ${group.spammerWhitelist.join(", ")}\n`;
 			}
@@ -3560,6 +3567,28 @@ class Management {
 	 * @returns {Promise<ReturnMessage>}
 	 */
 	async toggleNotificarEpic(bot, message, args, group) {
+		return this.toggleFreeGamesStore(message, group, "epic");
+	}
+
+	/**
+	 * Alterna o aviso semanal de jogos grátis da Steam no grupo
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleNotificarSteam(bot, message, args, group) {
+		return this.toggleFreeGamesStore(message, group, "steam");
+	}
+
+	/**
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Group} group - O objeto do grupo
+	 * @param {string} storeKey - Loja de jogos grátis ("epic" | "steam")
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleFreeGamesStore(message, group, storeKey) {
 		if (!group) {
 			return new ReturnMessage({
 				chatId: message.author,
@@ -3567,17 +3596,12 @@ class Management {
 			});
 		}
 
-		group.notificarEpic = !group.notificarEpic;
-		await this.database.saveGroup(group);
-
-		const statusMsg = group.notificarEpic
-			? "🎮 Aviso de *jogos grátis da Epic* agora está *ativado* neste grupo.\nTodo sábado às 10h eu aviso quais jogos foram liberados."
-			: "⚪ Aviso de *jogos grátis da Epic* agora está *desativado* neste grupo.";
-
-		return new ReturnMessage({
-			chatId: group.id,
-			content: statusMsg
+		const content = await toggleFreeGamesFlag({
+			group,
+			store: getStoreByKey(storeKey),
+			saveGroup: (changedGroup) => this.database.saveGroup(changedGroup)
 		});
+		return new ReturnMessage({ chatId: group.id, content });
 	}
 
 	/**
@@ -9413,6 +9437,12 @@ const helper = {
 			cmd: "!g-notificar-epic",
 			desc: "Ativa/desativa o aviso semanal (sábado, 10h) dos jogos grátis da Epic Games",
 			usage: ["!g-notificar-epic"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-notificar-steam",
+			desc: "Ativa/desativa o aviso semanal (sábado, 10h) dos jogos grátis da Steam",
+			usage: ["!g-notificar-steam"],
 			category: "gerenciamento"
 		},
 		{

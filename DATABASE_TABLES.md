@@ -91,7 +91,8 @@ Configuração completa de cada grupo onde o bot está presente.
 | `descricao` | TEXT | Descrição do grupo |
 | `prefix` | TEXT | Prefixo de comandos (padrão: `!`) |
 | `paused` | INTEGER | Bot pausado neste grupo (0/1) |
-| `notificar_epic` | INTEGER | Aviso semanal (quinta 13h) de jogos grátis da Epic ativo (0/1, padrão 0) |
+| `notificar_epic` | INTEGER | Aviso semanal (sábado 10h) de jogos grátis da Epic ativo (0/1, padrão 0) |
+| `notificar_steam` | INTEGER | Aviso semanal (sábado 10h) de jogos grátis da Steam ativo (0/1, padrão 0) |
 | `filters` | TEXT (JSON) | Filtros ativos: links, nsfw, palavras |
 | `greetings` / `farewells` | TEXT (JSON) | Mensagens de entrada/saída |
 | `interact` | TEXT (JSON) | Config de interação autônoma |
@@ -407,6 +408,7 @@ Interações cômicas automáticas do bot.
 | `anon_msgs.db` | `anonymous_messages` | Histórico de mensagens anônimas |
 | `correios.db` | `tracked_packages` | Rastreamento de encomendas Correios |
 | `afk.db` | `afk_sessions` | Histórico e gerenciamento de status AFK (Away From Keyboard) por grupo |
+| `free_games_notified.db` | `notified_free_games` | Jogos grátis (Epic/Steam) já anunciados na semana atual, global e não por grupo |
 | `food_tracker.db` | `food_logs` | Registro alimentar por usuário |
 
 ### `afk.db`
@@ -452,6 +454,19 @@ Armazena horários programados únicos e semanais por grupo.
 | `ativo` | INTEGER | Estado do agendamento (1=ativo, 0=inativo/executado) |
 | `criado_em` | INTEGER | Timestamp de criação |
 | `executado_em` | INTEGER | Timestamp da última ou única execução |
+
+### `free_games_notified.db`
+Controle global dos jogos grátis já anunciados no aviso semanal (`!g-notificar-epic` / `!g-notificar-steam`). Guarda só os jogos da semana: a cada execução a lista de cada loja é substituída pelos jogos que continuam disponíveis e pelos recém-anunciados.
+
+#### `notified_free_games`
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `store` | TEXT PK | Loja do jogo (`epic` ou `steam`) |
+| `game_id` | TEXT PK | ID do giveaway na GamerPower |
+| `title` | TEXT | Título exibido na mensagem |
+| `url` | TEXT | Link do giveaway |
+| `notified_at` | INTEGER | Timestamp em que o jogo foi registrado |
 
 ### `relacionamentos.db`
 Banco de dados para o módulo de relacionamentos nos grupos do WhatsApp.
