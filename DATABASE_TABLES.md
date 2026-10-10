@@ -101,6 +101,7 @@ Configuração completa de cada grupo onde o bot está presente.
 | `webhooks` | TEXT (JSON) | Webhooks configurados |
 | `twitch` / `youtube` / `kick` | TEXT (JSON) | Canais monitorados |
 | `bot_not_in_group` | TEXT (JSON) | Lista de bot_ids que não participam deste grupo |
+| `minecraft_server` | TEXT (JSON) | Servidor de Minecraft do grupo `{host, port}` (`!configurar-servidor` / `!servidor`) |
 | `json_data` | TEXT | **Legado** — mantido como fallback (Fase 4 remove) |
 
 ### `donations`

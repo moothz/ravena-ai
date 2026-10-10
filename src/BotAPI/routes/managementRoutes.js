@@ -4,6 +4,10 @@ const { spawn } = require("child_process");
 const { upload } = require("../middleware/upload");
 const GrupoAgendamentos = require("../../commands/modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../../utils/RegexFilterValidator");
+const {
+	parseServerAddress,
+	formatServerAddress
+} = require("../../services/MinecraftServerService");
 
 /**
  * Registra rotas de gerenciamento de grupos, comandos personalizados, agendamentos e dossiês
@@ -459,6 +463,24 @@ function registerManagementRoutes(api) {
 							message: `Regex inválido "${pattern}": ${validation.error}`
 						});
 					}
+				}
+			}
+
+			if (changes.minecraftServer !== undefined) {
+				try {
+					changes.minecraftServer = changes.minecraftServer?.host
+						? parseServerAddress(
+								formatServerAddress({
+									host: changes.minecraftServer.host,
+									port: changes.minecraftServer.port ?? 25565
+								})
+							)
+						: null;
+				} catch {
+					return res.status(400).json({
+						success: false,
+						message: "Endereço do servidor de Minecraft inválido. Use ip ou ip:porta."
+					});
 				}
 			}
 

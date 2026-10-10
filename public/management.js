@@ -511,7 +511,8 @@ document.addEventListener('DOMContentLoaded', () => {
             nicks: 'Apelidos dos Membros',
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
-            banirSpammers: 'Banir Spammers Automaticamente'
+            banirSpammers: 'Banir Spammers Automaticamente',
+            minecraftServer: 'Servidor Minecraft'
             ,greetingAccumulation: 'Acúmulo de Saudações'
         };
 
@@ -660,6 +661,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         groupData.autoTranslateTo = autoTranslate ? translateLang : false;
+
+        groupData.minecraftServer = parseMinecraftServerInput(document.getElementById('minecraft-server').value);
+    }
+
+    // Mesmas regras do MinecraftServerService.parseServerAddress (porta padrão 25565)
+    function parseMinecraftServerInput(rawValue) {
+        const address = (rawValue || '').trim().toLowerCase();
+        if (!address) return null;
+
+        const invalid = () => new Error('Endereço do servidor de Minecraft inválido. Use ip ou ip:porta (ex: play.exemplo.com:25300).');
+        const ipv6Match = address.match(/^\[([0-9a-f:]+)\](?::(.*))?$/);
+        let host;
+        let rawPort;
+        if (ipv6Match) {
+            [, host, rawPort] = ipv6Match;
+        } else {
+            const parts = address.split(':');
+            if (parts.length > 2) throw invalid();
+            [host, rawPort] = parts;
+            if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) throw invalid();
+        }
+
+        if (rawPort === undefined) return { host, port: 25565 };
+        const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : 0;
+        if (port < 1 || port > 65535) throw invalid();
+        return { host, port };
+    }
+
+    function formatMinecraftServer(server) {
+        if (!server || !server.host) return '';
+        const host = server.host.includes(':') ? `[${server.host}]` : server.host;
+        return `${host}:${server.port || 25565}`;
     }
 
     function updateHeroStatusVisuals(isPaused) {
@@ -706,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('bot-personality').value = groupData.customAIPrompt || '';
         document.getElementById('personality-count').textContent = (groupData.customAIPrompt || '').length;
         document.getElementById('custom-ignores-prefix').checked = !!groupData.customIgnoresPrefix;
+        document.getElementById('minecraft-server').value = formatMinecraftServer(groupData.minecraftServer);
 
         renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
         
@@ -3263,4 +3297,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     init();
-});
+});
