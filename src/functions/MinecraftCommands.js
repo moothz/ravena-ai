@@ -14,7 +14,7 @@ const logger = new Logger("minecraft-commands");
 
 const REMOVE_KEYWORDS = ["remover", "off", "desativar", "limpar"];
 const USAGE_HINT =
-	"Use: `!configurar-servidor ip[:porta]` (ex.: `!configurar-servidor play.exemplo.com:25300`). Sem porta, usa 25565.\nPara remover: `!configurar-servidor remover`.\nTambém é possível configurar pelo `!g-painel`.";
+	"Use: `!minecraft-servidor ip[:porta]` (ex.: `!minecraft-servidor play.exemplo.com:25300`). Sem porta, usa 25565.\nPara remover: `!minecraft-servidor remover`.\nTambém é possível configurar pelo `!g-painel`.";
 
 function reply(message, content) {
 	return new ReturnMessage({
@@ -51,7 +51,7 @@ async function configureServerCommand(bot, message, args, group) {
 		await saveMinecraftServer(group, server);
 		return reply(
 			message,
-			`✅ Servidor de Minecraft configurado: *${formatServerAddress(server)}*\nUse \`!servidor\` para ver o status.`
+			`✅ Servidor de Minecraft configurado: *${formatServerAddress(server)}*\nUse \`!minecraft\` para ver o status.`
 		);
 	} catch (error) {
 		if (!(error instanceof InvalidServerAddressError)) throw error;
@@ -66,7 +66,7 @@ async function serverStatusCommand(bot, message, args, group) {
 	if (!server?.host) {
 		return reply(
 			message,
-			"🧱 Nenhum servidor de Minecraft configurado neste grupo.\nUm admin pode configurar com `!configurar-servidor ip[:porta]` ou pelo `!g-painel`."
+			"🧱 Nenhum servidor de Minecraft configurado neste grupo.\nUm admin pode configurar com `!minecraft-servidor ip[:porta]` ou pelo `!g-painel`."
 		);
 	}
 
@@ -84,19 +84,30 @@ async function serverStatusCommand(bot, message, args, group) {
 
 const commands = [
 	new Command({
-		name: "configurar-servidor",
+		name: "minecraft-servidor",
 		description: "Configura o servidor de Minecraft do grupo (ip[:porta])",
-		usage: "!configurar-servidor ip[:porta]",
+		usage: "!minecraft-servidor ip[:porta]",
 		category: "jogos",
+		group: "minecraft-servidor",
 		adminOnly: true,
 		reactions: { after: "🧱" },
 		method: configureServerCommand
 	}),
 	new Command({
-		name: "servidor",
-		aliases: ["mc-servidor", "minecraft"],
+		name: "mine-servidor",
+		description: "Alias para o comando minecraft-servidor",
+		usage: "!mine-servidor ip[:porta]",
+		category: "jogos",
+		group: "minecraft-servidor",
+		adminOnly: true,
+		reactions: { after: "🧱" },
+		method: configureServerCommand
+	}),
+	new Command({
+		name: "minecraft",
+		aliases: [],
 		description: "Mostra se o servidor de Minecraft do grupo está online e quem está jogando",
-		usage: "!servidor",
+		usage: "!minecraft",
 		category: "jogos",
 		cooldown: 10,
 		reactions: { before: "⏳", after: "🧱" },
@@ -106,22 +117,19 @@ const commands = [
 
 const helper = {
 	about: "Status do servidor de Minecraft configurado no grupo",
-	implementation: "Consulta a api.mcsrvstat.us com o ip/porta salvos no grupo",
+	implementation: "Consulta dados e status do servidor de Minecraft configurado no grupo",
 	tags: "minecraft,servidor,server,mc,jogadores,online,jogos",
 	cmds: [
 		{
-			cmd: "!configurar-servidor",
-			desc: "Define o servidor de Minecraft do grupo (apenas admins)",
-			usage: [
-				"!configurar-servidor play.exemplo.com",
-				"!configurar-servidor play.exemplo.com:25300"
-			],
+			cmd: "!minecraft-servidor",
+			desc: "Define o servidor de Minecraft do grupo (apenas admins). Alias: !mine-servidor",
+			usage: ["!minecraft-servidor play.exemplo.com", "!minecraft-servidor play.exemplo.com:25300"],
 			category: "jogos"
 		},
 		{
-			cmd: "!servidor",
+			cmd: "!minecraft",
 			desc: "Mostra se o servidor está online, quantos jogadores e seus nicks",
-			usage: ["!servidor"],
+			usage: ["!minecraft"],
 			category: "jogos"
 		}
 	]

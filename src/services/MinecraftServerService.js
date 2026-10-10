@@ -1,13 +1,17 @@
+const net = require("net");
+const dns = require("dns").promises;
 const axios = require("axios");
 
 const DEFAULT_PORT = 25565;
 const STATUS_API_URL = "https://api.mcsrvstat.us/3";
+const DIRECT_PING_TIMEOUT_MS = 3500;
 const REQUEST_TIMEOUT_MS = 10000;
 const USER_AGENT = "ravena-bot/1.0 (+https://github.com/moothz/ravena-ai)";
 
 const HOSTNAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 const IPV6_WITH_PORT_PATTERN = /^\[([0-9a-f:]+)\](?::(.*))?$/;
 const MINECRAFT_FORMAT_CODE_PATTERN = /§[0-9a-fk-or]/gi;
+const VALID_PLAYER_NAME_PATTERN = /^[.a-zA-Z0-9_]{2,20}$/;
 
 class InvalidServerAddressError extends Error {}
 
@@ -53,17 +57,222 @@ function formatServerAddress({ host, port }) {
 	return `${printableHost}:${port}`;
 }
 
+// ===========================================================================
+// Protocolo Nativo Server List Ping (Minecraft 1.7+)
+// ===========================================================================
+
+function writeVarInt(value) {
+	const bytes = [];
+	let v = value;
+	while (true) {
+		if ((v & ~0x7f) === 0) {
+			bytes.push(v);
+			break;
+		}
+		bytes.push((v & 0x7f) | 0x80);
+		v >>>= 7;
+	}
+	return Buffer.from(bytes);
+}
+
+function readVarInt(buffer, offset = 0) {
+	let value = 0;
+	let length = 0;
+	let currentByte;
+	while (true) {
+		if (offset + length >= buffer.length) {
+			return { value: 0, length: 0, incomplete: true };
+		}
+		currentByte = buffer[offset + length];
+		value |= (currentByte & 0x7f) << (length * 7);
+		length++;
+		if (length > 5) throw new Error("VarInt muito grande");
+		if ((currentByte & 0x80) !== 0x80) break;
+	}
+	return { value, length, incomplete: false };
+}
+
+function buildHandshakePacket(host, port, protocolVersion = 47) {
+	const hostBuffer = Buffer.from(host, "utf8");
+	const hostLengthVarInt = writeVarInt(hostBuffer.length);
+	const portBuffer = Buffer.alloc(2);
+	portBuffer.writeUInt16BE(port, 0);
+
+	const packetId = writeVarInt(0x00);
+	const protoVarInt = writeVarInt(protocolVersion);
+	const nextState = writeVarInt(0x01); // 1 = Status
+
+	const payload = Buffer.concat([
+		packetId,
+		protoVarInt,
+		hostLengthVarInt,
+		hostBuffer,
+		portBuffer,
+		nextState
+	]);
+	const packetLength = writeVarInt(payload.length);
+	return Buffer.concat([packetLength, payload]);
+}
+
+function buildStatusRequestPacket() {
+	return Buffer.from([0x01, 0x00]);
+}
+
+async function resolveMinecraftSrv(host) {
+	if (/^\[?[0-9a-f:.]+\]?$/i.test(host) || host === "localhost") {
+		return null;
+	}
+	try {
+		const records = await dns.resolveSrv(`_minecraft._tcp.${host}`);
+		if (records && records.length > 0) {
+			return { host: records[0].name, port: records[0].port };
+		}
+	} catch {
+		// Sem registro SRV ou erro de DNS
+	}
+	return null;
+}
+
+function pingDirectSocket(targetHost, targetPort, timeoutMs = DIRECT_PING_TIMEOUT_MS) {
+	return new Promise((resolve, reject) => {
+		const socket = new net.Socket();
+		let buffer = Buffer.alloc(0);
+		let resolved = false;
+
+		const cleanup = () => {
+			socket.removeAllListeners();
+			socket.destroy();
+		};
+
+		socket.setTimeout(timeoutMs);
+
+		socket.on("timeout", () => {
+			cleanup();
+			reject(new Error(`Timeout de conexão após ${timeoutMs}ms`));
+		});
+
+		socket.on("error", (err) => {
+			cleanup();
+			reject(err);
+		});
+
+		socket.connect(targetPort, targetHost, () => {
+			try {
+				const handshake = buildHandshakePacket(targetHost, targetPort);
+				const statusRequest = buildStatusRequestPacket();
+				socket.write(Buffer.concat([handshake, statusRequest]));
+			} catch (err) {
+				cleanup();
+				reject(err);
+			}
+		});
+
+		socket.on("data", (chunk) => {
+			buffer = Buffer.concat([buffer, chunk]);
+			if (buffer.length < 3) return;
+
+			try {
+				let offset = 0;
+				const packetLengthInfo = readVarInt(buffer, offset);
+				if (packetLengthInfo.incomplete) return;
+				offset += packetLengthInfo.length;
+
+				if (buffer.length < offset + packetLengthInfo.value) return;
+
+				const packetIdInfo = readVarInt(buffer, offset);
+				if (packetIdInfo.incomplete) return;
+				offset += packetIdInfo.length;
+
+				if (packetIdInfo.value !== 0x00) {
+					cleanup();
+					return reject(new Error(`Packet ID inesperado: ${packetIdInfo.value}`));
+				}
+
+				const stringLengthInfo = readVarInt(buffer, offset);
+				if (stringLengthInfo.incomplete) return;
+				offset += stringLengthInfo.length;
+
+				if (buffer.length < offset + stringLengthInfo.value) return;
+
+				const jsonStr = buffer.toString("utf8", offset, offset + stringLengthInfo.value);
+				cleanup();
+				resolved = true;
+				resolve(JSON.parse(jsonStr));
+			} catch (err) {
+				cleanup();
+				reject(err);
+			}
+		});
+
+		socket.on("close", () => {
+			if (!resolved) {
+				cleanup();
+				reject(new Error("Conexão encerrada pelo servidor"));
+			}
+		});
+	});
+}
+
 /**
- * Consulta o status do servidor na api.mcsrvstat.us
+ * Executa o ping nativo direto via TCP socket
  * @param {{host: string, port: number}} server
- * @returns {Promise<Object>} resposta crua da API
+ * @param {number} timeoutMs
+ * @returns {Promise<Object>}
  */
-async function fetchServerStatus(server) {
+async function pingDirectMinecraftServer(server, timeoutMs = DIRECT_PING_TIMEOUT_MS) {
+	let connectHost = server.host;
+	let connectPort = server.port;
+
+	const srv = await resolveMinecraftSrv(server.host);
+	if (srv) {
+		connectHost = srv.host;
+		connectPort = srv.port;
+	}
+
+	const raw = await pingDirectSocket(connectHost, connectPort, timeoutMs);
+
+	const onlineCount = Number(raw.players?.online) || 0;
+	const maxCount = Number(raw.players?.max) || 0;
+	const sampleList = Array.isArray(raw.players?.sample)
+		? raw.players.sample.map((p) => ({ name: p.name, uuid: p.id }))
+		: [];
+
+	return {
+		online: true,
+		version: typeof raw.version?.name === "string" ? raw.version.name : null,
+		players: {
+			online: onlineCount,
+			max: maxCount,
+			list: sampleList
+		},
+		direct: true
+	};
+}
+
+/**
+ * Consulta a API externa como fallback
+ * @param {{host: string, port: number}} server
+ * @returns {Promise<Object>}
+ */
+async function fetchServerStatusFromApi(server) {
 	const response = await axios.get(`${STATUS_API_URL}/${formatServerAddress(server)}`, {
 		headers: { "User-Agent": USER_AGENT },
 		timeout: REQUEST_TIMEOUT_MS
 	});
 	return response.data;
+}
+
+/**
+ * Consulta o status do servidor Minecraft (priorizando conexão direta com fallback para API)
+ * @param {{host: string, port: number}} server
+ * @returns {Promise<Object>}
+ */
+async function fetchServerStatus(server) {
+	try {
+		return await pingDirectMinecraftServer(server);
+	} catch {
+		return await fetchServerStatusFromApi(server);
+	}
 }
 
 function cleanPlayerName(name) {
@@ -73,14 +282,19 @@ function cleanPlayerName(name) {
 }
 
 /**
- * Junta os nicks de players.list e info.clean (alguns servidores listam jogadores ali)
- * @param {Object} statusData - resposta da API
+ * Extrai e sanitiza os nicks de jogadores online
+ * @param {Object} statusData - resposta do ping direto ou da API
  * @returns {string[]}
  */
 function extractPlayerNames(statusData) {
 	const listedNames = (statusData?.players?.list ?? []).map((player) => player?.name);
-	const infoNames = statusData?.info?.clean ?? [];
-	const names = [...listedNames, ...infoNames].map(cleanPlayerName).filter(Boolean);
+	const sampleNames = (statusData?.players?.sample ?? []).map((player) => player?.name);
+	const rawInfoNames = (statusData?.info?.clean ?? []).filter((name) =>
+		VALID_PLAYER_NAME_PATTERN.test(cleanPlayerName(name))
+	);
+	const names = [...listedNames, ...sampleNames, ...rawInfoNames]
+		.map(cleanPlayerName)
+		.filter((name) => VALID_PLAYER_NAME_PATTERN.test(name));
 	return [...new Set(names)];
 }
 
@@ -94,7 +308,7 @@ function formatPlayerNames(names, onlineCount) {
 /**
  * Monta a mensagem de status para o grupo
  * @param {{host: string, port: number}} server
- * @param {Object} statusData - resposta da API
+ * @param {Object} statusData - resposta do ping ou da API
  * @returns {string}
  */
 function formatStatusMessage(server, statusData) {
@@ -118,6 +332,8 @@ module.exports = {
 	InvalidServerAddressError,
 	parseServerAddress,
 	formatServerAddress,
+	pingDirectMinecraftServer,
+	fetchServerStatusFromApi,
 	fetchServerStatus,
 	extractPlayerNames,
 	formatStatusMessage

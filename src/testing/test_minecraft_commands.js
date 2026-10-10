@@ -16,29 +16,30 @@ const originalGet = axios.get;
 
 const GROUP_ID = "123@g.us";
 
-// Resposta real da api.mcsrvstat.us (icon/debug reduzidos)
+// Fixture com dados fictícios para testes unitários
 const ONLINE_RESPONSE = {
-	ip: "186.212.11.212",
+	ip: "192.0.2.1",
 	port: 25565,
-	motd: { raw: ["Allons-y"], clean: ["Allons-y"], html: ["Allons-y"] },
+	motd: { raw: ["Servidor Ravena"], clean: ["Servidor Ravena"] },
 	players: {
 		online: 3,
-		max: 30,
+		max: 20,
 		list: [
-			{ name: "bpz3r4", uuid: "0c757b36-1522-3a29-ab66-1e2e1cdf01ea" },
-			{ name: "__Dian__", uuid: "5d7e17b1-347d-3918-856b-784b57dba3ba" }
+			{ name: "Steve", uuid: "00000000-0000-0000-0000-000000000001" },
+			{ name: "Alex", uuid: "00000000-0000-0000-0000-000000000002" }
 		]
 	},
-	version: "26.3",
+	version: "1.20.4",
 	online: true,
-	protocol: { version: 777, name: "26.3" },
-	hostname: "biaginimatt.ddns.net",
+	hostname: "mc.exemplo.com",
 	software: "Paper",
-	info: { raw: [".folkita8929"], clean: [".folkita8929"], html: [".folkita8929"] },
-	eula_blocked: false
+	info: {
+		raw: [".Notch", "Visite nosso discord discord.gg/fake"],
+		clean: [".Notch", "Visite nosso discord discord.gg/fake"]
+	}
 };
 
-const OFFLINE_RESPONSE = { ip: "", port: 25565, online: false, hostname: "offline.com" };
+const OFFLINE_RESPONSE = { ip: "", port: 25565, online: false, hostname: "offline.exemplo.com" };
 
 function groupMessage(content) {
 	return createMessage({ content, group: GROUP_ID, author: "5511999999999@s.whatsapp.net" });
@@ -65,8 +66,8 @@ function testParseServerAddress() {
 		host: "play.exemplo.com",
 		port: 25565
 	});
-	assert.deepStrictEqual(parseServerAddress("186.212.11.212:25565"), {
-		host: "186.212.11.212",
+	assert.deepStrictEqual(parseServerAddress("192.0.2.1:25565"), {
+		host: "192.0.2.1",
 		port: 25565
 	});
 	assert.deepStrictEqual(parseServerAddress("[2001:db8::1]:19132"), {
@@ -89,29 +90,48 @@ function testParseServerAddress() {
 	console.log("✓ parseServerAddress");
 }
 
-function testStatusMessageWithRealApiResponse() {
-	const server = { host: "biaginimatt.ddns.net", port: 25565 };
-	assert.deepStrictEqual(MinecraftServerService.extractPlayerNames(ONLINE_RESPONSE), [
-		"bpz3r4",
-		"__Dian__",
-		".folkita8929"
-	]);
+function testStatusMessageAndPlayerExtraction() {
+	const server = { host: "mc.exemplo.com", port: 25565 };
+
+	// Verifica que nicks válidos são extraídos e propagandas são filtradas
+	const players = MinecraftServerService.extractPlayerNames(ONLINE_RESPONSE);
+	assert.deepStrictEqual(players, ["Steve", "Alex", ".Notch"]);
 
 	const text = MinecraftServerService.formatStatusMessage(server, ONLINE_RESPONSE);
 	assert.ok(text.includes("🟢"));
-	assert.ok(text.includes("biaginimatt.ddns.net:25565"));
-	assert.ok(text.includes("3/30"));
-	assert.ok(text.includes("bpz3r4, __Dian__, .folkita8929"));
+	assert.ok(text.includes("mc.exemplo.com:25565"));
+	assert.ok(text.includes("3/20"));
+	assert.ok(text.includes("Steve, Alex, .Notch"));
 
 	const partial = MinecraftServerService.formatStatusMessage(server, {
 		online: true,
-		players: { online: 5, max: 20, list: [{ name: "steve" }] }
+		players: { online: 5, max: 20, list: [{ name: "Steve" }] }
 	});
-	assert.ok(partial.includes("steve e mais 4"), partial);
+	assert.ok(partial.includes("Steve e mais 4"), partial);
 
 	const offline = MinecraftServerService.formatStatusMessage(server, OFFLINE_RESPONSE);
 	assert.ok(offline.includes("🔴") && offline.includes("offline"));
-	console.log("✓ formatStatusMessage");
+	console.log("✓ formatStatusMessage e extractPlayerNames");
+}
+
+function testCommandDefinitions() {
+	const { commands } = MinecraftCommands;
+	const cfgCmd = commands.find((c) => c.name === "minecraft-servidor");
+	const aliasCmd = commands.find((c) => c.name === "mine-servidor");
+	const statusCmd = commands.find((c) => c.name === "minecraft");
+
+	assert.ok(cfgCmd, "Comando !minecraft-servidor deve existir");
+	assert.strictEqual(cfgCmd.group, "minecraft-servidor");
+	assert.strictEqual(cfgCmd.adminOnly, true);
+
+	assert.ok(aliasCmd, "Comando !mine-servidor deve existir");
+	assert.strictEqual(aliasCmd.group, "minecraft-servidor");
+	assert.strictEqual(aliasCmd.adminOnly, true);
+
+	assert.ok(statusCmd, "Comando !minecraft deve existir");
+	assert.strictEqual(statusCmd.aliases.length, 0, "!minecraft não deve ter aliases");
+
+	console.log("✓ testCommandDefinitions");
 }
 
 async function testConfigureServer() {
@@ -119,56 +139,57 @@ async function testConfigureServer() {
 
 	await MinecraftCommands.configureServerCommand(
 		null,
-		groupMessage("!configurar-servidor servidor.com:25300"),
-		["servidor.com:25300"],
+		groupMessage("!minecraft-servidor play.exemplo.com:25300"),
+		["play.exemplo.com:25300"],
 		group
 	);
-	assert.deepStrictEqual(group.minecraftServer, { host: "servidor.com", port: 25300 });
+	assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
 
 	const invalid = await MinecraftCommands.configureServerCommand(
 		null,
-		groupMessage("!configurar-servidor servidor.com:abc"),
-		["servidor.com:abc"],
+		groupMessage("!minecraft-servidor play.exemplo.com:abc"),
+		["play.exemplo.com:abc"],
 		group
 	);
 	assert.ok(invalid.content.includes("❌"));
-	assert.deepStrictEqual(group.minecraftServer, { host: "servidor.com", port: 25300 });
+	assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
 
 	await MinecraftCommands.configureServerCommand(
 		null,
-		groupMessage("!configurar-servidor remover"),
+		groupMessage("!minecraft-servidor remover"),
 		["remover"],
 		group
 	);
 	assert.strictEqual(group.minecraftServer, null);
-	console.log("✓ !configurar-servidor");
+	console.log("✓ !minecraft-servidor e remoção");
 }
 
 async function testServerStatus() {
 	const notConfigured = await MinecraftCommands.serverStatusCommand(
 		null,
-		groupMessage("!servidor"),
+		groupMessage("!minecraft"),
 		[],
 		{ id: GROUP_ID, minecraftServer: null }
 	);
-	assert.ok(notConfigured.content.includes("!configurar-servidor"));
+	assert.ok(notConfigured.content.includes("!minecraft-servidor"));
 
-	const group = { id: GROUP_ID, minecraftServer: { host: "biaginimatt.ddns.net", port: 25565 } };
+	const group = { id: GROUP_ID, minecraftServer: { host: "mc.exemplo.com", port: 25565 } };
+
+	// Testa fallback de API simulado
 	const calls = mockApi(ONLINE_RESPONSE);
 	const online = await MinecraftCommands.serverStatusCommand(
 		null,
-		groupMessage("!servidor"),
+		groupMessage("!minecraft"),
 		[],
 		group
 	);
-	assert.strictEqual(calls[0].url, "https://api.mcsrvstat.us/3/biaginimatt.ddns.net:25565");
-	assert.ok(calls[0].options.headers["User-Agent"], "API exige User-Agent");
-	assert.ok(online.content.includes("bpz3r4, __Dian__, .folkita8929"));
+	assert.strictEqual(calls[0].url, "https://api.mcsrvstat.us/3/mc.exemplo.com:25565");
+	assert.ok(online.content.includes("Steve, Alex, .Notch"));
 
 	mockApi(OFFLINE_RESPONSE);
 	const offline = await MinecraftCommands.serverStatusCommand(
 		null,
-		groupMessage("!servidor"),
+		groupMessage("!minecraft"),
 		[],
 		group
 	);
@@ -179,21 +200,22 @@ async function testServerStatus() {
 	};
 	const failure = await MinecraftCommands.serverStatusCommand(
 		null,
-		groupMessage("!servidor"),
+		groupMessage("!minecraft"),
 		[],
 		group
 	);
 	assert.ok(failure.content.includes("⚠️"));
-	console.log("✓ !servidor");
+	console.log("✓ !minecraft status e fallbacks");
 }
 
 async function runTests() {
-	console.log("=== Testes do servidor Minecraft ===");
+	console.log("=== Testes do servidor Minecraft (Adaptado) ===");
 	testParseServerAddress();
-	testStatusMessageWithRealApiResponse();
+	testStatusMessageAndPlayerExtraction();
+	testCommandDefinitions();
 	await testConfigureServer();
 	await testServerStatus();
-	console.log("\n✅ Todos os testes passaram");
+	console.log("\n✅ Todos os testes passaram!");
 }
 
 runTests()

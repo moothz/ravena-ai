@@ -512,8 +512,10 @@ document.addEventListener('DOMContentLoaded', () => {
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
             banirSpammers: 'Banir Spammers Automaticamente',
-            minecraftServer: 'Servidor Minecraft'
-            ,greetingAccumulation: 'Acúmulo de Saudações'
+            greetingAccumulation: 'Acúmulo de Saudações',
+            regras: 'Regras do Grupo',
+            minecraftServer: 'Servidor Minecraft',
+            roleta: 'Configurações da Roleta Russa'
         };
 
         for (let key in changes) {
@@ -617,6 +619,11 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.customAIPrompt = document.getElementById('bot-personality').value;
         groupData.customIgnoresPrefix = document.getElementById('custom-ignores-prefix').checked;
 
+        const groupRulesEl = document.getElementById('group-rules');
+        if (groupRulesEl) {
+            groupData.regras = groupRulesEl.value.trim() ? groupRulesEl.value : null;
+        }
+
         if(!groupData.filters) groupData.filters = {};
         groupData.filters.links = document.getElementById('delete-links').checked;
         const allowAdminsEl = document.getElementById('filters-allow-admins');
@@ -662,7 +669,24 @@ document.addEventListener('DOMContentLoaded', () => {
         
         groupData.autoTranslateTo = autoTranslate ? translateLang : false;
 
-        groupData.minecraftServer = parseMinecraftServerInput(document.getElementById('minecraft-server').value);
+        const mcServerEl = document.getElementById('minecraft-server');
+        if (mcServerEl) {
+            groupData.minecraftServer = parseMinecraftServerInput(mcServerEl.value);
+        }
+
+        const roletaTempoEl = document.getElementById('roleta-tempo');
+        const roletaSilenciarEl = document.getElementById('roleta-silenciar');
+        if (roletaTempoEl && roletaSilenciarEl) {
+            const roletaTempoInput = (roletaTempoEl.value || '').trim();
+            const roletaTempo = roletaTempoInput !== '' ? Number(roletaTempoInput) : 300;
+            if (isNaN(roletaTempo) || roletaTempo < 10 || roletaTempo > 259200) {
+                throw new Error('Tempo de timeout da roleta deve ser entre 10 e 259200 segundos (72 horas).');
+            }
+            groupData.roleta = {
+                timeoutTime: roletaTempo,
+                silenciar: roletaSilenciarEl.checked
+            };
+        }
     }
 
     // Mesmas regras do MinecraftServerService.parseServerAddress (porta padrão 25565)
@@ -680,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const parts = address.split(':');
             if (parts.length > 2) throw invalid();
             [host, rawPort] = parts;
-            if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) throw invalid();
+            if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) || host.length > 253) throw invalid();
         }
 
         if (rawPort === undefined) return { host, port: 25565 };
@@ -739,7 +763,27 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('bot-personality').value = groupData.customAIPrompt || '';
         document.getElementById('personality-count').textContent = (groupData.customAIPrompt || '').length;
         document.getElementById('custom-ignores-prefix').checked = !!groupData.customIgnoresPrefix;
-        document.getElementById('minecraft-server').value = formatMinecraftServer(groupData.minecraftServer);
+
+        const rulesVal = groupData.regras || '';
+        const groupRulesEl = document.getElementById('group-rules');
+        if (groupRulesEl) {
+            groupRulesEl.value = rulesVal;
+            const rulesCountEl = document.getElementById('rules-count');
+            if (rulesCountEl) rulesCountEl.textContent = rulesVal.length;
+        }
+
+        const mcServerInput = document.getElementById('minecraft-server');
+        if (mcServerInput) {
+            mcServerInput.value = formatMinecraftServer(groupData.minecraftServer);
+        }
+        const roletaTempoInput = document.getElementById('roleta-tempo');
+        if (roletaTempoInput) {
+            roletaTempoInput.value = groupData.roleta?.timeoutTime ?? 300;
+        }
+        const roletaSilenciarInput = document.getElementById('roleta-silenciar');
+        if (roletaSilenciarInput) {
+            roletaSilenciarInput.checked = !!groupData.roleta?.silenciar;
+        }
 
         renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
         
@@ -3191,6 +3235,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        const groupRulesInput = document.getElementById('group-rules');
+        if (groupRulesInput) {
+            groupRulesInput.addEventListener('input', (e) => {
+                const countEl = document.getElementById('rules-count');
+                if (countEl) countEl.textContent = e.target.value.length;
+            });
+        }
+
         const deleteNsfwCheckbox = document.getElementById('delete-nsfw');
         if (deleteNsfwCheckbox) {
             deleteNsfwCheckbox.addEventListener('change', (e) => {
@@ -3297,4 +3349,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     init();
-});
+});
