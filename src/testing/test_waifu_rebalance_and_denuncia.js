@@ -100,18 +100,23 @@ async function runTests() {
 				}
 			};
 		}
-		if (url.startsWith("/characters/test-waifu-id") || url.startsWith("/characters/frieren")) {
+		if (
+			url.startsWith("/characters/test-waifu-id") ||
+			url.startsWith("/characters/frieren") ||
+			url.startsWith("/characters/common-ringtail-possum")
+		) {
+			const isPossum = url.includes("possum");
 			return {
 				data: {
 					success: true,
 					data: {
-						id: "frieren-sousou-no-frieren",
-						name: "Frieren",
-						series: "Sousou no Frieren",
-						baseRarity: "EPIC",
+						id: isPossum ? "common-ringtail-possum" : "frieren-sousou-no-frieren",
+						name: isPossum ? "Common Ringtail Possum" : "Frieren",
+						series: isPossum ? "Kemono Friends" : "Sousou no Frieren",
+						baseRarity: isPossum ? "COMMON" : "EPIC",
 						claimCount: 4,
 						likeCount: 12,
-						imageUrl: "http://example.com/frieren.jpg"
+						imageUrl: "http://example.com/char.jpg"
 					}
 				}
 			};
@@ -223,6 +228,40 @@ async function runTests() {
 	assert.ok(Array.isArray(reactResults));
 	assert.ok(reactResults.some((m) => m.content?.includes("Denúncia Registrada")));
 	console.log("✓ Denúncia por reação ⛔ validada com sucesso.");
+
+	// 4.4 Denúncia por reação ⛔ com texto completo de roll repassado nos args pelo ReactionsHandler
+	const fullRollCaption =
+		"🎲 Common Ringtail Possum — Kemono Friends ⚪ [Comum] Common Ringtail Possum é uma personagem de Kemono Friends. 💍 LIVRE! Reaja com 💍 ou use !mu-casar (ou !mu-casar common-ringtail-possum) em até 300s para casar! ✨ Fragmentos colhidos: +39 Zinthos (+16 por 8 rolls restantes) 🎟️ Rolls restantes: 8/10";
+	const denMsgFullReact = createMessage({
+		content: fullRollCaption,
+		caption: fullRollCaption,
+		group: "group1@g.us",
+		author: "5511999990001@s.whatsapp.net"
+	});
+	denMsgFullReact.originReaction = {
+		reaction: "⛔",
+		msgId: { _serialized: "MSG_POSSUM_999" },
+		senderId: "5511999990001@s.whatsapp.net"
+	};
+	denMsgFullReact.id = "MSG_POSSUM_999";
+	// Simula exatamente o comportamento do ReactionsHandler, que divide o texto da mensagem em args
+	const simulatedArgs = fullRollCaption.split(/\s+/);
+
+	const fullReactResults = await WaifuCommands.denunciarWaifu(bot, denMsgFullReact, simulatedArgs, {
+		name: "Anime Group"
+	});
+	assert.ok(Array.isArray(fullReactResults), "Deve retornar array de ReturnMessages");
+	const possumLogMsg = fullReactResults.find(
+		(m) => m.chatId === "logs123@g.us" && typeof m.content === "string"
+	);
+	assert.ok(possumLogMsg, "Deve enviar mensagem com comando para o grupo de logs");
+	assert.ok(
+		possumLogMsg.content.includes("!sa-remudae common-ringtail-possum"),
+		"Deve extrair o slug common-ringtail-possum mesmo com todos os args passados pelo ReactionsHandler"
+	);
+	console.log(
+		"✓ Denúncia por reação ⛔ com texto completo e args do ReactionsHandler validada com sucesso!"
+	);
 
 	// ── 5. Teste do SuperAdmin !sa-remudae ──
 	console.log("\n5. Testando comando SuperAdmin !sa-remudae...");

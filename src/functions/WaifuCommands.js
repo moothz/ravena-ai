@@ -1662,6 +1662,32 @@ async function detalhesPersonagem(bot, message, args) {
 }
 
 /**
+ * Extrai o ID ou nome do personagem a partir do texto/legenda de uma mensagem de roll
+ * @param {string} text
+ * @returns {string|null}
+ */
+function extractCharacterFromRollText(text) {
+	if (!text || typeof text !== "string") return null;
+
+	// 1. Procura pelo comando de casamento na legenda: !mu-casar <slug>
+	const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/i);
+	if (matchCasar && matchCasar[1]) {
+		return matchCasar[1].trim();
+	}
+
+	// 2. Procura pelo cabeçalho: 🎲 *Nome* — _Serie_ ou 🎲 Nome — Serie
+	const matchHeader = text.match(/🎲\s*\*?([^*\n—–-]+?)\*?\s*[—–-]/);
+	if (matchHeader && matchHeader[1]) {
+		const name = matchHeader[1].trim();
+		if (name.length > 1 && !name.startsWith("!mu-")) {
+			return name;
+		}
+	}
+
+	return null;
+}
+
+/**
  * Denuncia um personagem problemático do Waifuletes para moderação
  * Envia imagem + detalhes + comando !sa-remudae para o grupo de logs
  *
@@ -1687,13 +1713,10 @@ async function denunciarWaifu(bot, message, args, group) {
 
 	let candidateIdOrQuery = null;
 
-	// 1. Argumentos passados diretamente no comando (!mu-denunciar <id-ou-nome>)
-	if (args && args.length > 0) {
-		candidateIdOrQuery = args.join(" ").trim();
-	}
-
-	// 2. Disparado por reação (⛔) na mensagem de roll
-	if (!candidateIdOrQuery && message.originReaction) {
+	// 1. Se disparado por reação (⛔) na mensagem de roll
+	// IMPORTANTE: ReactionsHandler passa as palavras da mensagem no array args.
+	// Por isso, quando originReaction estiver presente, ignoramos args e inspecionamos a mensagem diretamente!
+	if (message.originReaction) {
 		const reactionMsgId =
 			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
 		candidateIdOrQuery = getCharacterIdFromMessageId(reactionMsgId);
@@ -1704,57 +1727,54 @@ async function denunciarWaifu(bot, message, args, group) {
 				(typeof message.content === "string" ? message.content : "") ||
 				message.body ||
 				"";
-			const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
-			if (matchCasar) {
-				candidateIdOrQuery = matchCasar[1];
-			} else {
-				const matchName = text.match(/🎲\s+\*([^*]+)\*/);
-				if (matchName) {
-					candidateIdOrQuery = matchName[1].trim();
-				}
+			candidateIdOrQuery = extractCharacterFromRollText(text);
+		}
+
+		if (!candidateIdOrQuery) {
+			const pending = pendingClaims.get(groupId);
+			if (pending && Date.now() <= pending.expiresAt) {
+				candidateIdOrQuery = pending.characterId;
 			}
 		}
 
 		if (!candidateIdOrQuery) {
 			return null;
 		}
-	}
-
-	// 3. Em resposta a uma mensagem citada (quotedMessage)
-	if (!candidateIdOrQuery) {
-		let quotedMsg = null;
-		if (typeof message.origin?.getQuotedMessage === "function") {
-			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+	} else {
+		// 2. Chamada via comando normal (!mu-denunciar)
+		// 2.1 Se informou argumentos explicitamente (!mu-denunciar <id-ou-nome>)
+		if (args && args.length > 0) {
+			candidateIdOrQuery = args.join(" ").trim();
 		}
-		if (quotedMsg) {
-			const quotedId =
-				quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id || message.quotedMessageId;
-			candidateIdOrQuery = getCharacterIdFromMessageId(quotedId);
 
-			if (!candidateIdOrQuery) {
-				const text =
-					quotedMsg.caption ||
-					(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
-					quotedMsg.body ||
-					"";
-				const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
-				if (matchCasar) {
-					candidateIdOrQuery = matchCasar[1];
-				} else {
-					const matchName = text.match(/🎲\s+\*([^*]+)\*/);
-					if (matchName) {
-						candidateIdOrQuery = matchName[1].trim();
-					}
+		// 2.2 Se respondeu/citou uma mensagem de roll
+		if (!candidateIdOrQuery) {
+			let quotedMsg = null;
+			if (typeof message.origin?.getQuotedMessage === "function") {
+				quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+			}
+			if (quotedMsg) {
+				const quotedId =
+					quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id || message.quotedMessageId;
+				candidateIdOrQuery = getCharacterIdFromMessageId(quotedId);
+
+				if (!candidateIdOrQuery) {
+					const text =
+						quotedMsg.caption ||
+						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+						quotedMsg.body ||
+						"";
+					candidateIdOrQuery = extractCharacterFromRollText(text);
 				}
 			}
 		}
-	}
 
-	// 4. Fallback: personagem mais recentemente sorteado no grupo (se ainda na janela)
-	if (!candidateIdOrQuery) {
-		const pending = pendingClaims.get(groupId);
-		if (pending && Date.now() <= pending.expiresAt) {
-			candidateIdOrQuery = pending.characterId;
+		// 2.3 Fallback: personagem mais recentemente sorteado no grupo (se ainda na janela)
+		if (!candidateIdOrQuery) {
+			const pending = pendingClaims.get(groupId);
+			if (pending && Date.now() <= pending.expiresAt) {
+				candidateIdOrQuery = pending.characterId;
+			}
 		}
 	}
 
@@ -3260,6 +3280,7 @@ module.exports = {
 	recordRollMessage,
 	getRollByMessageId,
 	getCharacterIdFromMessageId,
+	extractCharacterFromRollText,
 	notifySpecialMarriage,
 	downloadImageAsBase64,
 	handleApiError,
