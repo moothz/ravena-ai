@@ -54,6 +54,7 @@ const GroupMapper = {
 			youtube: parse(row.youtube, []),
 			botNotInGroup: parse(row.bot_not_in_group, []),
 			webhooks: parse(row.webhooks, []),
+			minecraftServer: parse(row.minecraft_server, null),
 			greetings: parse(row.greetings, {}),
 			farewells: parse(row.farewells, {}),
 			interact: (() => {
@@ -138,6 +139,7 @@ const GroupMapper = {
 			youtube: s(obj.youtube),
 			bot_not_in_group: s(obj.botNotInGroup),
 			webhooks: s(obj.webhooks),
+			minecraft_server: s(obj.minecraftServer),
 			greetings: s(obj.greetings),
 			farewells: s(obj.farewells),
 			interact: s(obj.interact),

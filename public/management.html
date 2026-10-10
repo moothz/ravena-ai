@@ -289,6 +289,18 @@
                             <div id="additional-admins-list" class="tags-container"></div>
                         </div>
                         
+                        <div class="divider"></div>
+
+                        <!-- Regras do Grupo -->
+                        <div class="form-group">
+                            <label id="lbl-group-rules" for="group-rules">Regras do Grupo</label>
+                            <textarea id="group-rules" class="form-control" maxlength="5000" rows="6" placeholder="Defina aqui as regras do grupo..."></textarea>
+                            <div class="field-hint-between">
+                                <span class="field-hint">Regras do grupo exibidas quando membros recebem advertências ou consultadas/gerenciadas via !g-regras.</span>
+                                <span class="char-counter"><span id="rules-count">0</span>/5000</span>
+                            </div>
+                        </div>
+
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary btn-save-section" data-section="admin">
                                 <i class="fas fa-save"></i> Salvar Moderação
@@ -688,6 +700,49 @@
                                 <tbody></tbody>
                             </table>
                             <div id="no-youtube_live-msg" class="text-center p-3 text-muted hidden">Nenhum canal configurado para lives.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Configuração Jogos -->
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-gamepad"></i> Configuração de Jogos</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <!-- Subseção: Servidor Minecraft -->
+                        <h4 class="sub-header"><i class="fas fa-cube"></i> Servidor Minecraft</h4>
+                        <div class="field-hint mb-3">Configure o servidor de Minecraft do grupo. Membros podem usar <code>!minecraft</code> para ver status, versão e jogadores online.</div>
+                        <div class="form-group">
+                            <label id="lbl-minecraft-server" for="minecraft-server">Endereço do Servidor</label>
+                            <input type="text" id="minecraft-server" class="form-control" maxlength="260" placeholder="ex: play.exemplo.com ou play.exemplo.com:25300">
+                            <div class="field-hint">IP ou domínio, com porta opcional após <code>:</code> (padrão: <code>25565</code>). Deixe vazio para remover.</div>
+                        </div>
+
+                        <!-- Subseção: Roleta Russa -->
+                        <h4 class="sub-header mt-4"><i class="fas fa-crosshairs"></i> Roleta Russa</h4>
+                        <div class="field-hint mb-3">Ajuste os parâmetros da roleta russa do grupo (<code>!roleta</code>, <code>!roleta-tempo</code>, <code>!roleta-silenciar</code>).</div>
+                        <div class="form-group">
+                            <label id="lbl-roleta-tempo" for="roleta-tempo">Tempo de Morte / Timeout (segundos)</label>
+                            <input type="number" id="roleta-tempo" class="form-control" min="10" max="259200" placeholder="300" style="max-width: 220px;">
+                            <div class="field-hint">Duração em segundos que o jogador permanece eliminado (mínimo 10s, máximo 72h / 259200s, padrão: 300s).</div>
+                        </div>
+                        <div class="form-group toggle-row">
+                            <div class="toggle-info">
+                                <label for="roleta-silenciar" id="lbl-roleta-silenciar">Silenciar Jogadores Eliminados</label>
+                                <div class="field-hint">Apaga automaticamente as mensagens de membros eliminados durante o tempo de morte.</div>
+                            </div>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="roleta-silenciar">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+
+                        <div class="form-actions mt-3">
+                            <button type="button" class="btn btn-primary btn-save-section" data-section="jogos">
+                                <i class="fas fa-save"></i> Salvar Configurações de Jogos
+                            </button>
                         </div>
                     </div>
                 </div>

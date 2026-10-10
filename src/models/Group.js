@@ -42,6 +42,9 @@ class Group {
 		this.botNotInGroup = data.botNotInGroup ?? [];
 		this.webhooks = data.webhooks ?? [];
 
+		// Servidor de Minecraft do grupo: { host, port } | null
+		this.minecraftServer = data.minecraftServer ?? null;
+
 		// Mensagens de boas-vindas e despedida
 		this.greetings = data.greetings ?? {};
 		this.farewells = data.farewells ?? {};
@@ -105,6 +108,7 @@ class Group {
 			youtube: this.youtube,
 			botNotInGroup: this.botNotInGroup,
 			webhooks: this.webhooks,
+			minecraftServer: this.minecraftServer,
 			greetings: this.greetings,
 			farewells: this.farewells,
 			interact: this.interact,
@@ -169,6 +173,7 @@ class Group {
 		if (data.botNotInGroup) this.botNotInGroup = data.botNotInGroup;
 
 		if (data.webhooks) this.webhooks = data.webhooks;
+		if (data.minecraftServer !== undefined) this.minecraftServer = data.minecraftServer;
 
 		// Atualiza boas-vindas
 		if (data.greetings) {

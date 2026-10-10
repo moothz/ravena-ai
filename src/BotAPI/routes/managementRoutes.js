@@ -4,6 +4,10 @@ const { spawn } = require("child_process");
 const { upload } = require("../middleware/upload");
 const GrupoAgendamentos = require("../../commands/modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../../utils/RegexFilterValidator");
+const {
+	parseServerAddress,
+	formatServerAddress
+} = require("../../services/MinecraftServerService");
 
 /**
  * Registra rotas de gerenciamento de grupos, comandos personalizados, agendamentos e dossiês
@@ -366,6 +370,21 @@ function registerManagementRoutes(api) {
 				groupData.followedChannels = [];
 			}
 
+			try {
+				const roletaGroup = await api.database.dbGet(
+					"roleta_russa",
+					"SELECT timeout_time, silenciar FROM roleta_groups WHERE group_id = ?",
+					[id]
+				);
+				groupData.roleta = {
+					timeoutTime: roletaGroup?.timeout_time ?? 300,
+					silenciar: Boolean(roletaGroup?.silenciar ?? 0)
+				};
+			} catch (e) {
+				api.logger.error("Error fetching roleta group settings:", e);
+				groupData.roleta = { timeoutTime: 300, silenciar: false };
+			}
+
 			api.logger.info(`[management][${token}][${id}] Group ${groupData.name}`);
 			return res.json(groupData);
 		} catch (error) {
@@ -460,6 +479,80 @@ function registerManagementRoutes(api) {
 						});
 					}
 				}
+			}
+
+			if (changes.regras !== undefined) {
+				if (typeof changes.regras === "string") {
+					let val = changes.regras;
+					if (val.length > 5000) {
+						val = val.slice(0, 5000);
+					}
+					if (typeof val.isWellFormed === "function" && !val.isWellFormed()) {
+						val = val
+							.replace(
+								/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu,
+								""
+							)
+							.toWellFormed();
+					}
+					changes.regras = val.trim().length > 0 ? val : null;
+				} else {
+					changes.regras = null;
+				}
+			}
+
+			if (changes.minecraftServer !== undefined) {
+				if (changes.minecraftServer === null || changes.minecraftServer === "") {
+					changes.minecraftServer = null;
+				} else {
+					try {
+						if (typeof changes.minecraftServer === "string") {
+							changes.minecraftServer = parseServerAddress(changes.minecraftServer);
+						} else if (
+							typeof changes.minecraftServer === "object" &&
+							changes.minecraftServer.host
+						) {
+							changes.minecraftServer = parseServerAddress(
+								formatServerAddress({
+									host: changes.minecraftServer.host,
+									port: changes.minecraftServer.port ?? 25565
+								})
+							);
+						} else {
+							return res.status(400).json({
+								success: false,
+								message: "Endereço do servidor de Minecraft inválido. Use ip ou ip:porta."
+							});
+						}
+					} catch {
+						return res.status(400).json({
+							success: false,
+							message: "Endereço do servidor de Minecraft inválido. Use ip ou ip:porta."
+						});
+					}
+				}
+			}
+
+			if (changes.roleta !== undefined && changes.roleta !== null) {
+				try {
+					const timeoutTime = Number(changes.roleta.timeoutTime);
+					const silenciar = changes.roleta.silenciar ? 1 : 0;
+					if (!isNaN(timeoutTime) && timeoutTime >= 10 && timeoutTime <= 259200) {
+						await api.database.dbRun(
+							"roleta_russa",
+							`INSERT INTO roleta_groups (group_id, timeout_time, silenciar, last_updated)
+							 VALUES (?, ?, ?, ?)
+							 ON CONFLICT(group_id) DO UPDATE SET
+								timeout_time = excluded.timeout_time,
+								silenciar = excluded.silenciar,
+								last_updated = excluded.last_updated`,
+							[groupId, timeoutTime, silenciar, Date.now()]
+						);
+					}
+				} catch (err) {
+					api.logger.error("Erro ao salvar configurações da roleta:", err);
+				}
+				delete changes.roleta;
 			}
 
 			api.logger.info(
@@ -887,7 +980,20 @@ function registerManagementRoutes(api) {
 	});
 
 	// Import Custom Commands from ZIP
-	app.post("/api/custom-commands/:groupId/import-zip", upload.single("file"), async (req, res) => {
+	const handleZipUpload = (req, res, next) => {
+		upload.single("file")(req, res, (err) => {
+			if (err) {
+				api.logger.warn(`[management] Import ZIP multer error: ${err.message}`);
+				return res.status(400).json({
+					success: false,
+					message: `Erro no upload do arquivo ZIP: ${err.message}`
+				});
+			}
+			next();
+		});
+	};
+
+	app.post("/api/custom-commands/:groupId/import-zip", handleZipUpload, async (req, res) => {
 		const { groupId } = req.params;
 		const { token } = req.body;
 
