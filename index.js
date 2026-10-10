@@ -14,6 +14,10 @@ const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
 const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
+const EpicFreeGamesSource = require("./src/services/epicFreeGames/EpicFreeGamesSource");
+const NotifyEpicFreeGames = require("./src/services/epicFreeGames/NotifyEpicFreeGames");
+const BotGroupNotifier = require("./src/services/epicFreeGames/BotGroupNotifier");
+const EpicFreeGamesScheduler = require("./src/services/epicFreeGames/EpicFreeGamesScheduler");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
 const fs = require("fs");
@@ -273,6 +277,17 @@ async function main() {
 		botInstances.forEach((b) => weeklyDigestService.registerBot(b));
 		if (!disableActivity) {
 			weeklyDigestService.start();
+		}
+
+		// Inicializa aviso semanal de jogos grátis da Epic (sábado 10h BRT)
+		if (!disableActivity) {
+			const epicFreeGamesNotifier = new NotifyEpicFreeGames({
+				source: new EpicFreeGamesSource({ logger: new Logger("epic-free-games") }),
+				groupRepository: database,
+				notifier: new BotGroupNotifier({ getBots: () => botInstances }),
+				logger: new Logger("notify-epic-free-games")
+			});
+			EpicFreeGamesScheduler.getInstance().start(epicFreeGamesNotifier);
 		}
 
 		// Inicializa servidor da API

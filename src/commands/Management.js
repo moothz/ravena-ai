@@ -308,6 +308,10 @@ class Management {
 				description:
 					"Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380 ou padrão MI###) neste grupo"
 			},
+			"notificar-epic": {
+				method: "toggleNotificarEpic",
+				description: "Ativa/desativa o aviso semanal (sábado, 10h) de jogos grátis da Epic Games"
+			},
 			permitirSpammer: {
 				method: "togglePermitirSpammer",
 				description: "Adiciona/remove número da lista de spammers permitidos no grupo",
@@ -2094,6 +2098,7 @@ class Management {
 			infoMessage += `- *Pessoas:* ${personFilters}\n`;
 			infoMessage += `- *NSFW:* ${nsfwFiltering}\n`;
 			infoMessage += `- *Banir Spammers:* ${group.banirSpammers ? "Sim" : "Não"}\n`;
+			infoMessage += `- *Notificar Epic:* ${group.notificarEpic ? "Sim" : "Não"}\n`;
 			if (group.spammerWhitelist && group.spammerWhitelist.length > 0) {
 				infoMessage += `- *Spammers Permitidos:* ${group.spammerWhitelist.join(", ")}\n`;
 			}
@@ -3539,6 +3544,35 @@ class Management {
 		const statusMsg = group.banirSpammers
 			? "🛡️ Monitoramento de *spammers* agora está *ativado* neste grupo.\nO bot removerá automaticamente números com DDI 62/63/380 ou padrão de nome MI### ao entrarem."
 			: "⚪ Monitoramento de *spammers* agora está *desativado* neste grupo.";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: statusMsg
+		});
+	}
+
+	/**
+	 * Alterna o aviso semanal de jogos grátis da Epic Games no grupo
+	 * @param {WhatsAppBot} bot - A instância do bot
+	 * @param {Object} message - A mensagem recebida
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - O objeto do grupo
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleNotificarEpic(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		group.notificarEpic = !group.notificarEpic;
+		await this.database.saveGroup(group);
+
+		const statusMsg = group.notificarEpic
+			? "🎮 Aviso de *jogos grátis da Epic* agora está *ativado* neste grupo.\nTodo sábado às 10h eu aviso quais jogos foram liberados."
+			: "⚪ Aviso de *jogos grátis da Epic* agora está *desativado* neste grupo.";
 
 		return new ReturnMessage({
 			chatId: group.id,
@@ -9374,6 +9408,12 @@ const helper = {
 			desc: "Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380) no grupo",
 			usage: ["!g-banirSpammers"],
 			category: "filtros"
+		},
+		{
+			cmd: "!g-notificar-epic",
+			desc: "Ativa/desativa o aviso semanal (sábado, 10h) dos jogos grátis da Epic Games",
+			usage: ["!g-notificar-epic"],
+			category: "gerenciamento"
 		},
 		{
 			cmd: "!g-apelido",

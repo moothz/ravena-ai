@@ -74,6 +74,7 @@ class Group {
 		this.notificaGrupoFechado = data.notificaGrupoFechado ?? false;
 		this.notificaGrupoAberto = data.notificaGrupoAberto ?? false;
 		this.banirSpammers = data.banirSpammers ?? false;
+		this.notificarEpic = data.notificarEpic ?? false;
 		this.spammerWhitelist = data.spammerWhitelist ?? data.allowedSpammers ?? [];
 		this.bannedUsers = Array.isArray(data.bannedUsers) ? data.bannedUsers : [];
 
@@ -121,6 +122,7 @@ class Group {
 			notificaGrupoFechado: this.notificaGrupoFechado,
 			notificaGrupoAberto: this.notificaGrupoAberto,
 			banirSpammers: this.banirSpammers,
+			notificarEpic: this.notificarEpic,
 			spammerWhitelist: this.spammerWhitelist,
 			bannedUsers: this.bannedUsers,
 			createdAt: this.createdAt,
@@ -209,6 +211,7 @@ class Group {
 		if (typeof data.notificaGrupoAberto === "boolean")
 			this.notificaGrupoAberto = data.notificaGrupoAberto;
 		if (typeof data.banirSpammers === "boolean") this.banirSpammers = data.banirSpammers;
+		if (typeof data.notificarEpic === "boolean") this.notificarEpic = data.notificarEpic;
 		if (Array.isArray(data.spammerWhitelist)) this.spammerWhitelist = data.spammerWhitelist;
 		else if (Array.isArray(data.allowedSpammers)) this.spammerWhitelist = data.allowedSpammers;
 		if (Array.isArray(data.bannedUsers)) this.bannedUsers = data.bannedUsers;

@@ -511,7 +511,8 @@ document.addEventListener('DOMContentLoaded', () => {
             nicks: 'Apelidos dos Membros',
             warnings: 'Advertências do Grupo',
             webhooks: 'Webhooks Externos',
-            banirSpammers: 'Banir Spammers Automaticamente'
+            banirSpammers: 'Banir Spammers Automaticamente',
+            notificarEpic: 'Notificar Jogos Grátis da Epic'
             ,greetingAccumulation: 'Acúmulo de Saudações'
         };
 
@@ -634,6 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
         groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
         groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
         groupData.banirSpammers = document.getElementById('banir-spammers').checked;
+        groupData.notificarEpic = document.getElementById('notificar-epic').checked;
         groupData.greetingAccumulation = {
             ...(groupData.greetingAccumulation || {}),
             enabled: document.getElementById('greeting-accumulation').checked,
@@ -790,6 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('notifica-grupo-fechado').checked = !!groupData.notificaGrupoFechado;
         document.getElementById('notifica-grupo-aberto').checked = !!groupData.notificaGrupoAberto;
         document.getElementById('banir-spammers').checked = !!groupData.banirSpammers;
+        document.getElementById('notificar-epic').checked = !!groupData.notificarEpic;
         
         const interact = groupData.interact || {};
         document.getElementById('auto-interaction').checked = !!interact.enabled;

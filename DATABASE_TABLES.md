@@ -91,6 +91,7 @@ Configuração completa de cada grupo onde o bot está presente.
 | `descricao` | TEXT | Descrição do grupo |
 | `prefix` | TEXT | Prefixo de comandos (padrão: `!`) |
 | `paused` | INTEGER | Bot pausado neste grupo (0/1) |
+| `notificar_epic` | INTEGER | Aviso semanal (quinta 13h) de jogos grátis da Epic ativo (0/1, padrão 0) |
 | `filters` | TEXT (JSON) | Filtros ativos: links, nsfw, palavras |
 | `greetings` / `farewells` | TEXT (JSON) | Mensagens de entrada/saída |
 | `interact` | TEXT (JSON) | Config de interação autônoma |
