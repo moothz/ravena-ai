@@ -19,6 +19,7 @@ const NotifyFreeGames = require("./src/services/freeGames/NotifyFreeGames");
 const SqliteWeeklyGamesRepository = require("./src/services/freeGames/SqliteWeeklyGamesRepository");
 const BotGroupNotifier = require("./src/services/freeGames/BotGroupNotifier");
 const FreeGamesScheduler = require("./src/services/freeGames/FreeGamesScheduler");
+const cron = require("node-cron");
 const { FREE_GAME_STORES } = require("./src/services/freeGames/freeGameStores");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
@@ -288,10 +289,16 @@ async function main() {
 				source: new GamerPowerFreeGamesSource({ logger: new Logger("free-games-source") }),
 				repository: new SqliteWeeklyGamesRepository({ database }),
 				groupRepository: database,
-				notifier: new BotGroupNotifier({ getBots: () => botInstances }),
+				notifier: new BotGroupNotifier({
+					getBots: () => botInstances,
+					logger: new Logger("free-games-notifier")
+				}),
 				logger: new Logger("notify-free-games")
 			});
-			FreeGamesScheduler.getInstance().start(freeGamesNotifier);
+			new FreeGamesScheduler({
+				cron,
+				logger: new Logger("free-games-scheduler")
+			}).start(freeGamesNotifier);
 		}
 
 		// Inicializa servidor da API

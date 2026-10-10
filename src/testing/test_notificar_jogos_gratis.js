@@ -3,6 +3,9 @@ const assert = require("assert");
 const { formatFreeGamesMessage } = require("../services/freeGames/formatFreeGamesMessage");
 const GamerPowerFreeGamesSource = require("../services/freeGames/GamerPowerFreeGamesSource");
 const { FREE_GAME_STORES } = require("../services/freeGames/freeGameStores");
+const { FREE_GAMES_SCHEDULE } = require("../services/freeGames/freeGamesSchedule");
+const FreeGamesScheduler = require("../services/freeGames/FreeGamesScheduler");
+const { describeFreeGamesFlag } = require("../services/freeGames/describeFreeGamesFlag");
 const NotifyFreeGames = require("../services/freeGames/NotifyFreeGames");
 const InMemoryWeeklyGamesRepository = require("../services/freeGames/InMemoryWeeklyGamesRepository");
 const SqliteWeeklyGamesRepository = require("../services/freeGames/SqliteWeeklyGamesRepository");
@@ -13,6 +16,9 @@ const GroupMapper = require("../utils/db/mappers/GroupMapper");
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 const EPIC_STORE = FREE_GAME_STORES.find((store) => store.key === "epic");
+const STORE_KEY_BY_PLATFORM = Object.fromEntries(
+	FREE_GAME_STORES.map((store) => [store.platform, store.key])
+);
 const STEAM_STORE = FREE_GAME_STORES.find((store) => store.key === "steam");
 
 const EPIC_GAMES = [
@@ -95,7 +101,9 @@ function buildScenario({
 	const repository = new InMemoryWeeklyGamesRepository();
 	const useCase = new NotifyFreeGames({
 		stores: FREE_GAME_STORES,
-		source: { fetchCurrentGames: async (store) => world.catalog[store.key] },
+		source: {
+			fetchCurrentGames: async (platform) => world.catalog[STORE_KEY_BY_PLATFORM[platform]]
+		},
 		repository,
 		groupRepository: { getGroups: async () => world.groups },
 		notifier: {
@@ -107,7 +115,7 @@ function buildScenario({
 		},
 		logger: silentLogger
 	});
-	return { world, sent, repository, useCase };
+	return { world, sent, repository, useCase, failingGroups };
 }
 
 const group = (id, flags = {}) => ({ id, paused: false, ...flags });
@@ -151,7 +159,7 @@ function createSqliteDatabaseFake() {
 	};
 }
 
-function fakeBot({ id, results = [{}], telegram = false, skip = [] }) {
+function fakeBot({ id, results = [{}], telegram = false, skip = [], throws = false }) {
 	return {
 		id,
 		useTelegram: telegram,
@@ -159,6 +167,7 @@ function fakeBot({ id, results = [{}], telegram = false, skip = [] }) {
 		sent: [],
 		marked: [],
 		async sendReturnMessages(message) {
+			if (throws) throw new Error("bot caiu");
 			this.sent.push(message);
 			return results;
 		},
@@ -221,41 +230,86 @@ async function runTests() {
 				return { data: [] };
 			}
 		};
-		await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE);
-		await sourceWith(httpClient).fetchCurrentGames(EPIC_STORE);
+		await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE.platform);
+		await sourceWith(httpClient).fetchCurrentGames(EPIC_STORE.platform);
 		assert.strictEqual(requested[0].platform, "steam");
 		assert.strictEqual(requested[0].type, "game");
 		assert.strictEqual(requested[1].platform, "epic-games-store");
 		assert.strictEqual(requested[1].type, "game");
 	});
 
-	await test("source: Epic titles are cleaned and Steam titles stay raw", async () => {
+	await test("source: returns titles exactly as the API sends them", async () => {
 		const httpClient = {
-			get: async (url, config) => ({
-				data:
-					config.params.platform === "steam"
-						? [
-								{
-									id: 2,
-									title: "Pony Island (Steam) Giveaway",
-									open_giveaway_url: "u2",
-									worth: "$4.99"
-								}
-							]
-						: [
-								{
-									id: 1,
-									title: "Out of Sight (Epic Games) Giveaway",
-									open_giveaway_url: "u1",
-									worth: "N/A"
-								}
-							]
+			get: async () => ({
+				data: [
+					{
+						id: 1,
+						title: "Out of Sight (Epic Games) Giveaway",
+						open_giveaway_url: "u1",
+						worth: "N/A"
+					}
+				]
 			})
 		};
-		const epic = await sourceWith(httpClient).fetchCurrentGames(EPIC_STORE);
-		const steam = await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE);
-		assert.strictEqual(epic.games[0].title, "Out of Sight");
-		assert.strictEqual(steam.games[0].title, "Pony Island (Steam) Giveaway");
+		const result = await sourceWith(httpClient).fetchCurrentGames(EPIC_STORE.platform);
+		assert.strictEqual(result.games[0].title, "Out of Sight (Epic Games) Giveaway");
+	});
+
+	await test("source: ignores giveaways that are not games, even if the API filter is not applied", async () => {
+		const httpClient = {
+			get: async () => ({
+				data: [
+					{ id: 1, title: "A", open_giveaway_url: "ua", type: "Game" },
+					{ id: 2, title: "B DLC", open_giveaway_url: "ub", type: "DLC" },
+					{ id: 3, title: "C", open_giveaway_url: "uc", type: "Early Access" },
+					{ id: 4, title: "D", open_giveaway_url: "ud" }
+				]
+			})
+		};
+		const result = await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE.platform);
+		assert.deepStrictEqual(
+			result.games.map((item) => item.id),
+			["1", "4"]
+		);
+	});
+
+	await test("source: ignores giveaways that cost ARP (Alienware Arena points)", async () => {
+		const httpClient = {
+			get: async () => ({
+				data: [
+					{
+						id: 1,
+						title: "Dwarven Realms (Steam) Key Giveaway",
+						open_giveaway_url: "ua",
+						type: "Game",
+						description:
+							"Please note this Steam Key giveaway requires 10 ARP (Arena Reward Points).",
+						instructions: "1. Log in to your free Alienware account (10 ARP required)."
+					},
+					{
+						id: 2,
+						title: "Outro",
+						open_giveaway_url: "ub",
+						type: "Game",
+						description: "Um jogo ótimo.",
+						instructions: "1. Click the button to visit the giveaway page."
+					},
+					{
+						id: 3,
+						title: "Farm Simulator",
+						open_giveaway_url: "uc",
+						type: "Game",
+						description: "A game about starting a farm.",
+						instructions: "1. Click the button."
+					}
+				]
+			})
+		};
+		const result = await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE.platform);
+		assert.deepStrictEqual(
+			result.games.map((item) => item.id),
+			["2", "3"]
+		);
 	});
 
 	await test("source: maps id, url and worth in USD (N/A becomes 0)", async () => {
@@ -269,7 +323,7 @@ async function runTests() {
 				]
 			})
 		};
-		const result = await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE);
+		const result = await sourceWith(httpClient).fetchCurrentGames(STEAM_STORE.platform);
 		assert.deepStrictEqual(result, {
 			ok: true,
 			games: [
@@ -283,8 +337,10 @@ async function runTests() {
 	await test("source: request failure is { ok: false }, different from an empty list", async () => {
 		const failing = { get: async () => Promise.reject(new Error("boom")) };
 		const empty = { get: async () => ({ data: [] }) };
-		assert.deepStrictEqual(await sourceWith(failing).fetchCurrentGames(STEAM_STORE), { ok: false });
-		assert.deepStrictEqual(await sourceWith(empty).fetchCurrentGames(STEAM_STORE), {
+		assert.deepStrictEqual(await sourceWith(failing).fetchCurrentGames(STEAM_STORE.platform), {
+			ok: false
+		});
+		assert.deepStrictEqual(await sourceWith(empty).fetchCurrentGames(STEAM_STORE.platform), {
 			ok: true,
 			games: []
 		});
@@ -299,6 +355,30 @@ async function runTests() {
 		await useCase.execute();
 		assert.deepStrictEqual(contentFor(sent, "a@g.us"), [
 			`🎮 *Jogos novos liberados!*\n\n*Epic:*\n${entry("e1")}\n\n*Steam:*\n${entry("s1")}`
+		]);
+	});
+
+	await test("use case: Epic titles are cleaned and Steam titles stay raw in the message", async () => {
+		const { sent, useCase } = buildScenario({
+			groups: [group("a@g.us", { notificarEpic: true, notificarSteam: true })],
+			catalog: {
+				epic: listed({
+					id: "e1",
+					title: "Out of Sight (Epic Games) Giveaway",
+					url: "ue",
+					worthUsd: 0
+				}),
+				steam: listed({
+					id: "s1",
+					title: "Pony Island (Steam) Giveaway",
+					url: "us",
+					worthUsd: 5
+				})
+			}
+		});
+		await useCase.execute();
+		assert.deepStrictEqual(contentFor(sent, "a@g.us"), [
+			"🎮 *Jogos novos liberados!*\n\n*Epic:*\n*Out of Sight*\n🔗 ue\n\n*Steam:*\n*Pony Island (Steam) Giveaway*\n🔗 us"
 		]);
 	});
 
@@ -453,6 +533,21 @@ async function runTests() {
 		assert.deepStrictEqual([...(await repository.getGameIds("epic"))], ["e1"]);
 	});
 
+	await test("use case: when every delivery fails nothing is recorded, so the games are announced next run", async () => {
+		const { sent, repository, useCase, failingGroups } = buildScenario({
+			groups: [group("broken@g.us", { notificarEpic: true })],
+			catalog: { epic: listed(game("e1")), steam: listed() },
+			failingGroups: ["broken@g.us"]
+		});
+		await useCase.execute();
+		assert.deepStrictEqual([...(await repository.getGameIds("epic"))], []);
+		failingGroups.length = 0;
+		await useCase.execute();
+		assert.deepStrictEqual(contentFor(sent, "broken@g.us"), [
+			`🎮 *Jogos novos liberados na Epic!*\n\n${entry("e1")}`
+		]);
+	});
+
 	await test("use case: games are recorded even when no group has the store enabled", async () => {
 		const { repository, useCase } = buildScenario({
 			groups: [group("a@g.us")],
@@ -472,49 +567,56 @@ async function runTests() {
 		await test(`repository (${kind}): starts empty and returns the ids that were saved`, async () => {
 			const repository = createRepository();
 			assert.deepStrictEqual([...(await repository.getGameIds("steam"))], []);
-			await repository.replaceStoreGames("steam", [game("a"), game("b")]);
+			await repository.replaceStoreGameIds("steam", ["a", "b"]);
 			assert.deepStrictEqual([...(await repository.getGameIds("steam"))].sort(), ["a", "b"]);
 		});
 
 		await test(`repository (${kind}): replacing a store drops old games and keeps other stores`, async () => {
 			const repository = createRepository();
-			await repository.replaceStoreGames("epic", [game("e1")]);
-			await repository.replaceStoreGames("steam", [game("a"), game("b")]);
-			await repository.replaceStoreGames("steam", [game("b"), game("c")]);
+			await repository.replaceStoreGameIds("epic", ["e1"]);
+			await repository.replaceStoreGameIds("steam", ["a", "b"]);
+			await repository.replaceStoreGameIds("steam", ["b", "c"]);
 			assert.deepStrictEqual([...(await repository.getGameIds("steam"))].sort(), ["b", "c"]);
 			assert.deepStrictEqual([...(await repository.getGameIds("epic"))], ["e1"]);
 		});
 
 		await test(`repository (${kind}): replacing with an empty list clears the store`, async () => {
 			const repository = createRepository();
-			await repository.replaceStoreGames("steam", [game("a")]);
-			await repository.replaceStoreGames("steam", []);
+			await repository.replaceStoreGameIds("steam", ["a"]);
+			await repository.replaceStoreGameIds("steam", []);
 			assert.deepStrictEqual([...(await repository.getGameIds("steam"))], []);
 		});
 	}
 
 	// S5. Config por grupo
-	await test("toggle: flips the store flag, saves the group and tells the new state", async () => {
+	await test("toggle: flips the store flag on the group, saves it and returns the new state", async () => {
 		const savedGroups = [];
 		const steamGroup = { id: "a@g.us", notificarSteam: false };
 		const saveGroup = async (saved) => savedGroups.push({ ...saved });
 
-		const enabledText = await toggleFreeGamesFlag({
-			group: steamGroup,
-			store: STEAM_STORE,
-			saveGroup
-		});
+		const enabled = await toggleFreeGamesFlag({ group: steamGroup, store: STEAM_STORE, saveGroup });
+		assert.strictEqual(enabled, true);
 		assert.strictEqual(steamGroup.notificarSteam, true);
-		assert.ok(enabledText.includes("*jogos grátis da Steam*") && enabledText.includes("*ativado*"));
 
-		const disabledText = await toggleFreeGamesFlag({
+		const disabled = await toggleFreeGamesFlag({
 			group: steamGroup,
 			store: STEAM_STORE,
 			saveGroup
 		});
+		assert.strictEqual(disabled, false);
 		assert.strictEqual(steamGroup.notificarSteam, false);
+		assert.deepStrictEqual(
+			savedGroups.map((saved) => saved.notificarSteam),
+			[true, false]
+		);
+	});
+
+	await test("describeFreeGamesFlag: tells the store, the new state and the schedule", () => {
+		const enabledText = describeFreeGamesFlag({ store: STEAM_STORE, enabled: true });
+		assert.ok(enabledText.includes("*jogos grátis da Steam*") && enabledText.includes("*ativado*"));
+		assert.ok(enabledText.includes(FREE_GAMES_SCHEDULE.description));
+		const disabledText = describeFreeGamesFlag({ store: STEAM_STORE, enabled: false });
 		assert.ok(disabledText.includes("*desativado*"));
-		assert.strictEqual(savedGroups.length, 2);
 	});
 
 	await test("group: notificarSteam defaults to false, updates and survives the mapper round-trip", () => {
@@ -532,7 +634,10 @@ async function runTests() {
 		const telegramBot = fakeBot({ id: "tg", telegram: true });
 		const skippedBot = fakeBot({ id: "skipped", skip: ["a@g.us"] });
 		const goodBot = fakeBot({ id: "good" });
-		const notifier = new BotGroupNotifier({ getBots: () => [telegramBot, skippedBot, goodBot] });
+		const notifier = new BotGroupNotifier({
+			getBots: () => [telegramBot, skippedBot, goodBot],
+			logger: silentLogger
+		});
 		assert.strictEqual(await notifier.notify("a@g.us", "oi"), true);
 		assert.strictEqual(telegramBot.sent.length, 0);
 		assert.strictEqual(skippedBot.sent.length, 0);
@@ -545,15 +650,82 @@ async function runTests() {
 			results: [{ error: { message: "not participating in group" } }]
 		});
 		const second = fakeBot({ id: "second" });
-		const notifier = new BotGroupNotifier({ getBots: () => [notInGroup, second] });
+		const notifier = new BotGroupNotifier({
+			getBots: () => [notInGroup, second],
+			logger: silentLogger
+		});
 		assert.strictEqual(await notifier.notify("a@g.us", "oi"), true);
 		assert.deepStrictEqual(notInGroup.marked, ["a@g.us"]);
 		assert.strictEqual(second.sent.length, 1);
 	});
 
+	await test("notifier: an exception in one bot does not stop the fallback to the next", async () => {
+		const crashing = fakeBot({ id: "crashing", throws: true });
+		const second = fakeBot({ id: "second" });
+		const notifier = new BotGroupNotifier({
+			getBots: () => [crashing, second],
+			logger: silentLogger
+		});
+		assert.strictEqual(await notifier.notify("a@g.us", "oi"), true);
+		assert.strictEqual(second.sent.length, 1);
+	});
+
 	await test("notifier: returns false when no bot can deliver", async () => {
-		const notifier = new BotGroupNotifier({ getBots: () => [] });
+		const notifier = new BotGroupNotifier({ getBots: () => [], logger: silentLogger });
 		assert.strictEqual(await notifier.notify("a@g.us", "oi"), false);
+	});
+
+	// S6. Agendamento semanal
+	const buildScheduler = () => {
+		const scheduled = [];
+		const errors = [];
+		const cron = {
+			schedule: (expression, callback, options) => {
+				const task = { expression, callback, options, stopped: false };
+				task.stop = () => {
+					task.stopped = true;
+				};
+				scheduled.push(task);
+				return task;
+			}
+		};
+		const logger = { ...silentLogger, error: (...args) => errors.push(args) };
+		return { scheduled, errors, scheduler: new FreeGamesScheduler({ cron, logger }) };
+	};
+
+	await test("schedule: cron expression is valid and runs on Saturday at 10h", () => {
+		assert.strictEqual(require("node-cron").validate(FREE_GAMES_SCHEDULE.cron), true);
+		assert.strictEqual(FREE_GAMES_SCHEDULE.cron, "0 10 * * 6");
+		assert.strictEqual(FREE_GAMES_SCHEDULE.timeZone, "America/Sao_Paulo");
+	});
+
+	await test("scheduler: schedules the use case once with the shared schedule", async () => {
+		const { scheduled, scheduler } = buildScheduler();
+		let executions = 0;
+		const useCase = { execute: async () => executions++ };
+		scheduler.start(useCase);
+		scheduler.start(useCase);
+		assert.strictEqual(scheduled.length, 1);
+		assert.strictEqual(scheduled[0].expression, FREE_GAMES_SCHEDULE.cron);
+		assert.strictEqual(scheduled[0].options.timezone, FREE_GAMES_SCHEDULE.timeZone);
+		await scheduled[0].callback();
+		assert.strictEqual(executions, 1);
+	});
+
+	await test("scheduler: a failing execution is logged and does not throw", async () => {
+		const { scheduled, errors, scheduler } = buildScheduler();
+		scheduler.start({ execute: async () => Promise.reject(new Error("boom")) });
+		await scheduled[0].callback();
+		assert.strictEqual(errors.length, 1);
+	});
+
+	await test("scheduler: stop cancels the task and allows starting again", () => {
+		const { scheduled, scheduler } = buildScheduler();
+		scheduler.start({ execute: async () => {} });
+		scheduler.stop();
+		assert.strictEqual(scheduled[0].stopped, true);
+		scheduler.start({ execute: async () => {} });
+		assert.strictEqual(scheduled.length, 2);
 	});
 
 	console.log("--- ALL jogos grátis TESTS PASSED ---");

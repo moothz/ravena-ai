@@ -13,6 +13,8 @@ const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../utils/RegexFilterValidator");
 const { getStoreByKey } = require("../services/freeGames/freeGameStores");
 const { toggleFreeGamesFlag } = require("../services/freeGames/toggleFreeGamesFlag");
+const { describeFreeGamesFlag } = require("../services/freeGames/describeFreeGamesFlag");
+const { FREE_GAMES_SCHEDULE } = require("../services/freeGames/freeGamesSchedule");
 
 class Management {
 	constructor() {
@@ -312,11 +314,11 @@ class Management {
 			},
 			"notificar-epic": {
 				method: "toggleNotificarEpic",
-				description: "Ativa/desativa o aviso semanal (sábado, 10h) de jogos grátis da Epic Games"
+				description: `Ativa/desativa o aviso semanal (${FREE_GAMES_SCHEDULE.description}) de jogos grátis da Epic Games`
 			},
 			"notificar-steam": {
 				method: "toggleNotificarSteam",
-				description: "Ativa/desativa o aviso semanal (sábado, 10h) de jogos grátis da Steam"
+				description: `Ativa/desativa o aviso semanal (${FREE_GAMES_SCHEDULE.description}) de jogos grátis da Steam`
 			},
 			permitirSpammer: {
 				method: "togglePermitirSpammer",
@@ -3596,12 +3598,16 @@ class Management {
 			});
 		}
 
-		const content = await toggleFreeGamesFlag({
+		const store = getStoreByKey(storeKey);
+		const enabled = await toggleFreeGamesFlag({
 			group,
-			store: getStoreByKey(storeKey),
+			store,
 			saveGroup: (changedGroup) => this.database.saveGroup(changedGroup)
 		});
-		return new ReturnMessage({ chatId: group.id, content });
+		return new ReturnMessage({
+			chatId: group.id,
+			content: describeFreeGamesFlag({ store, enabled })
+		});
 	}
 
 	/**
@@ -9435,13 +9441,13 @@ const helper = {
 		},
 		{
 			cmd: "!g-notificar-epic",
-			desc: "Ativa/desativa o aviso semanal (sábado, 10h) dos jogos grátis da Epic Games",
+			desc: `Ativa/desativa o aviso semanal (${FREE_GAMES_SCHEDULE.description}) dos jogos grátis da Epic Games`,
 			usage: ["!g-notificar-epic"],
 			category: "gerenciamento"
 		},
 		{
 			cmd: "!g-notificar-steam",
-			desc: "Ativa/desativa o aviso semanal (sábado, 10h) dos jogos grátis da Steam",
+			desc: `Ativa/desativa o aviso semanal (${FREE_GAMES_SCHEDULE.description}) dos jogos grátis da Steam`,
 			usage: ["!g-notificar-steam"],
 			category: "gerenciamento"
 		},

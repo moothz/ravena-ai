@@ -1,24 +1,19 @@
-const cron = require("node-cron");
-const Logger = require("../../utils/Logger");
-
-const SATURDAY_AT_10H = "0 10 * * 6";
-const TIME_ZONE = "America/Sao_Paulo";
+const { FREE_GAMES_SCHEDULE } = require("./freeGamesSchedule");
 
 /**
- * Agenda a execução semanal do caso de uso (sábado, 10h de Brasília).
+ * Agenda a execução semanal do caso de uso.
  * Só faz o wiring do cron; a regra de negócio fica no caso de uso.
  */
 class FreeGamesScheduler {
-	constructor() {
-		this.logger = new Logger("free-games-scheduler");
+	/**
+	 * @param {Object} deps
+	 * @param {{schedule: Function}} deps.cron - normalmente o node-cron
+	 * @param {Object} deps.logger
+	 */
+	constructor({ cron, logger }) {
+		this.cron = cron;
+		this.logger = logger;
 		this.task = null;
-	}
-
-	static getInstance() {
-		if (!FreeGamesScheduler.instance) {
-			FreeGamesScheduler.instance = new FreeGamesScheduler();
-		}
-		return FreeGamesScheduler.instance;
 	}
 
 	/**
@@ -26,16 +21,17 @@ class FreeGamesScheduler {
 	 */
 	start(useCase) {
 		if (this.task) return;
-		this.task = cron.schedule(
-			SATURDAY_AT_10H,
-			() => {
+		this.task = this.cron.schedule(
+			FREE_GAMES_SCHEDULE.cron,
+			() =>
 				useCase.execute().catch((error) => {
 					this.logger.error("Falha na notificação semanal de jogos grátis:", error);
-				});
-			},
-			{ timezone: TIME_ZONE }
+				}),
+			{ timezone: FREE_GAMES_SCHEDULE.timeZone }
 		);
-		this.logger.info(`Agendado: sábados às 10h (${TIME_ZONE}).`);
+		this.logger.info(
+			`Agendado: ${FREE_GAMES_SCHEDULE.description} (${FREE_GAMES_SCHEDULE.timeZone}).`
+		);
 	}
 
 	stop() {

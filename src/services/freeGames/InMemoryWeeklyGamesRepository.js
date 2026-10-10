@@ -4,7 +4,7 @@
  */
 class InMemoryWeeklyGamesRepository {
 	constructor() {
-		this.gamesByStore = new Map();
+		this.gameIdsByStore = new Map();
 	}
 
 	/**
@@ -12,16 +12,15 @@ class InMemoryWeeklyGamesRepository {
 	 * @returns {Promise<Set<string>>}
 	 */
 	async getGameIds(storeKey) {
-		const games = this.gamesByStore.get(storeKey) ?? [];
-		return new Set(games.map((game) => game.id));
+		return new Set(this.gameIdsByStore.get(storeKey) ?? []);
 	}
 
 	/**
 	 * @param {string} storeKey
-	 * @param {Array<{id: string}>} games
+	 * @param {string[]} gameIds
 	 */
-	async replaceStoreGames(storeKey, games) {
-		this.gamesByStore.set(storeKey, [...games]);
+	async replaceStoreGameIds(storeKey, gameIds) {
+		this.gameIdsByStore.set(storeKey, [...gameIds]);
 	}
 }
 

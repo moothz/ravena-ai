@@ -1,4 +1,12 @@
-const GENERIC_HEADER = "🎮 *Jogos novos liberados!*";
+const MULTI_STORE_HEADER = "🎮 *Jogos novos liberados!*";
+
+/**
+ * @param {string} storeLabel
+ * @returns {string}
+ */
+function singleStoreHeader(storeLabel) {
+	return `🎮 *Jogos novos liberados na ${storeLabel}!*`;
+}
 
 /**
  * @typedef {Object} FreeGame
@@ -23,11 +31,11 @@ function formatGameEntry(game) {
 }
 
 /**
- * @param {StoreSection} section
+ * @param {FreeGame[]} games
  * @returns {string}
  */
-function formatGameList(section) {
-	return section.games.map(formatGameEntry).join("\n\n");
+function formatGameList(games) {
+	return games.map(formatGameEntry).join("\n\n");
 }
 
 /**
@@ -35,7 +43,7 @@ function formatGameList(section) {
  * @returns {string}
  */
 function formatLabeledSection(section) {
-	return `*${section.label}:*\n${formatGameList(section)}`;
+	return `*${section.label}:*\n${formatGameList(section.games)}`;
 }
 
 /**
@@ -49,10 +57,10 @@ function formatFreeGamesMessage(sections) {
 
 	if (sections.length === 1) {
 		const [section] = sections;
-		return `🎮 *Jogos novos liberados na ${section.label}!*\n\n${formatGameList(section)}`;
+		return `${singleStoreHeader(section.label)}\n\n${formatGameList(section.games)}`;
 	}
 
-	return `${GENERIC_HEADER}\n\n${sections.map(formatLabeledSection).join("\n\n")}`;
+	return `${MULTI_STORE_HEADER}\n\n${sections.map(formatLabeledSection).join("\n\n")}`;
 }
 
 module.exports = { formatFreeGamesMessage };

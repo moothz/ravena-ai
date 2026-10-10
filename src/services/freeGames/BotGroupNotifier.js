@@ -47,9 +47,11 @@ class BotGroupNotifier {
 	/**
 	 * @param {Object} deps
 	 * @param {() => Array<Object>} deps.getBots
+	 * @param {Object} deps.logger
 	 */
-	constructor({ getBots }) {
+	constructor({ getBots, logger }) {
 		this.getBots = getBots;
+		this.logger = logger;
 	}
 
 	/**
@@ -66,17 +68,24 @@ class BotGroupNotifier {
 	}
 
 	/**
+	 * Uma falha deste bot (resposta de erro ou exceção) devolve false para o
+	 * próximo candidato tentar.
 	 * @returns {Promise<boolean>}
 	 */
 	async trySend(bot, groupId, content) {
-		const results = await bot.sendReturnMessages(new ReturnMessage({ chatId: groupId, content }));
-		const sendResults = [].concat(results ?? []);
+		try {
+			const results = await bot.sendReturnMessages(new ReturnMessage({ chatId: groupId, content }));
+			const sendResults = [].concat(results ?? []);
 
-		if (botIsNotInGroup(sendResults)) {
-			await bot.markNotInGroup?.(groupId);
+			if (botIsNotInGroup(sendResults)) {
+				await bot.markNotInGroup?.(groupId);
+				return false;
+			}
+			return !hasSendError(sendResults);
+		} catch (error) {
+			this.logger.error(`[BotGroupNotifier] Bot falhou ao enviar para ${groupId}:`, error);
 			return false;
 		}
-		return !hasSendError(sendResults);
 	}
 }
 

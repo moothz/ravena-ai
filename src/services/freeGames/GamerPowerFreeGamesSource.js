@@ -14,22 +14,43 @@ function parseWorthUsd(rawWorth) {
 }
 
 /**
+ * O filtro `type=game` da API já exclui DLC e early access; conferir aqui
+ * garante o mesmo resultado se o filtro deixar de ser aplicado.
+ * @param {Object} giveaway
+ * @returns {boolean}
+ */
+function isGame(giveaway) {
+	return !giveaway.type || String(giveaway.type).toLowerCase() === "game";
+}
+
+const ARP_POINTS_PATTERN = /\bARP\b/;
+
+/**
+ * Chaves da Alienware Arena custam ARP (pontos da conta deles): não são de graça de verdade.
+ * @param {Object} giveaway
+ * @returns {boolean}
+ */
+function requiresArpPoints(giveaway) {
+	return ARP_POINTS_PATTERN.test(`${giveaway.description ?? ""} ${giveaway.instructions ?? ""}`);
+}
+
+/**
  * @param {Object} giveaway - item cru da API da GamerPower
- * @param {import("./freeGameStores").FreeGameStore} store
  * @returns {import("./formatFreeGamesMessage").FreeGame|null}
  */
-function toFreeGame(giveaway, store) {
+function toFreeGame(giveaway) {
 	if (!giveaway?.id || !giveaway?.title || !giveaway?.open_giveaway_url) return null;
+	if (!isGame(giveaway) || requiresArpPoints(giveaway)) return null;
 	return {
 		id: String(giveaway.id),
-		title: store.formatTitle(giveaway.title),
+		title: giveaway.title,
 		url: giveaway.open_giveaway_url,
 		worthUsd: parseWorthUsd(giveaway.worth)
 	};
 }
 
 /**
- * Fonte de jogos grátis de uma loja, via GamerPower.
+ * Fonte de jogos grátis por plataforma, via GamerPower.
  */
 class GamerPowerFreeGamesSource {
 	/**
@@ -43,20 +64,21 @@ class GamerPowerFreeGamesSource {
 	}
 
 	/**
-	 * @param {import("./freeGameStores").FreeGameStore} store
-	 * @returns {Promise<{ok: true, games: Array}|{ok: false}>} `ok: false` quando a requisição falha
+	 * @param {string} platform - filtro `platform` da GamerPower (ex.: "steam")
+	 * @returns {Promise<{ok: true, games: Array}|{ok: false}>} `ok: false` quando a requisição falha.
+	 *   Os títulos vêm exatamente como a API devolve.
 	 */
-	async fetchCurrentGames(store) {
+	async fetchCurrentGames(platform) {
 		try {
 			const response = await this.httpClient.get(GIVEAWAYS_URL, {
-				params: { platform: store.platform, type: "game", "sort-by": "popularity" },
+				params: { platform, type: "game", "sort-by": "popularity" },
 				timeout: REQUEST_TIMEOUT_MS
 			});
 			const giveaways = Array.isArray(response.data) ? response.data : [];
-			const games = giveaways.map((giveaway) => toFreeGame(giveaway, store)).filter(Boolean);
+			const games = giveaways.map(toFreeGame).filter(Boolean);
 			return { ok: true, games };
 		} catch (error) {
-			this.logger.error(`Erro ao buscar jogos grátis (${store.key}):`, error.message);
+			this.logger.error(`Erro ao buscar jogos grátis (${platform}):`, error.message);
 			return { ok: false };
 		}
 	}

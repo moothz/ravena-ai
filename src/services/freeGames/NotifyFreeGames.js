@@ -2,8 +2,25 @@ const { formatFreeGamesMessage } = require("./formatFreeGamesMessage");
 const {
 	selectNewGames,
 	selectGamesToAnnounce,
-	nextWeeklyGames
+	idsToKeepRegistered
 } = require("./weeklyGamesSelection");
+
+/**
+ * @typedef {Object} StoreUpdate
+ * @property {import("./freeGameStores").FreeGameStore} store
+ * @property {import("./formatFreeGamesMessage").FreeGame[]} currentGames
+ * @property {Set<string>} registeredIds
+ * @property {import("./formatFreeGamesMessage").FreeGame[]} announcedGames
+ */
+
+/**
+ * Nenhum grupo recebeu o aviso, embora houvesse grupos esperando por ele.
+ * @param {{sent: number, failed: number}} summary
+ * @returns {boolean}
+ */
+function nobodyWasNotified(summary) {
+	return summary.sent === 0 && summary.failed > 0;
+}
 
 /**
  * @param {Object} group
@@ -23,8 +40,8 @@ class NotifyFreeGames {
 	/**
 	 * @param {Object} deps
 	 * @param {import("./freeGameStores").FreeGameStore[]} deps.stores
-	 * @param {{fetchCurrentGames: (store: Object) => Promise<Object>}} deps.source
-	 * @param {{getGameIds: Function, replaceStoreGames: Function}} deps.repository
+	 * @param {{fetchCurrentGames: (platform: string) => Promise<Object>}} deps.source
+	 * @param {{getGameIds: Function, replaceStoreGameIds: Function}} deps.repository
 	 * @param {{getGroups: () => Promise<Array>}} deps.groupRepository
 	 * @param {{notify: (groupId: string, content: string) => Promise<boolean>}} deps.notifier
 	 * @param {Object} deps.logger
@@ -44,7 +61,14 @@ class NotifyFreeGames {
 	async execute() {
 		const updates = await this.collectStoreUpdates();
 		const summary = await this.notifyGroups(updates);
-		await this.persistStoreUpdates(updates);
+
+		if (nobodyWasNotified(summary)) {
+			this.logger.warn(
+				"[NotifyFreeGames] Nenhum envio deu certo; jogos não registrados para nova tentativa."
+			);
+		} else {
+			await this.persistStoreUpdates(updates);
+		}
 
 		this.logger.info(
 			`[NotifyFreeGames] Concluído: ${summary.sent} enviados, ${summary.failed} falhas.`
@@ -54,7 +78,7 @@ class NotifyFreeGames {
 
 	/**
 	 * Busca cada loja e separa o que é novo. Lojas cuja busca falhou ficam de fora.
-	 * @returns {Promise<Array<{store: Object, currentGames: Array, registeredIds: Set<string>, announcedGames: Array}>>}
+	 * @returns {Promise<StoreUpdate[]>}
 	 */
 	async collectStoreUpdates() {
 		const updates = [];
@@ -65,20 +89,28 @@ class NotifyFreeGames {
 		return updates;
 	}
 
+	/**
+	 * @returns {Promise<StoreUpdate|null>}
+	 */
 	async collectStoreUpdate(store) {
-		const result = await this.source.fetchCurrentGames(store);
+		const result = await this.source.fetchCurrentGames(store.platform);
 		if (!result.ok) {
 			this.logger.warn(`[NotifyFreeGames] Falha ao buscar ${store.key}. Loja ignorada.`);
 			return null;
 		}
 
 		const registeredIds = await this.repository.getGameIds(store.key);
-		const newGames = selectNewGames(result.games, registeredIds);
+		const currentGames = result.games.map((game) => ({
+			...game,
+			title: store.formatTitle(game.title)
+		}));
+		const newGames = selectNewGames(currentGames, registeredIds);
 		const announcedGames = selectGamesToAnnounce(newGames, store);
-		return { store, currentGames: result.games, registeredIds, announcedGames };
+		return { store, currentGames, registeredIds, announcedGames };
 	}
 
 	/**
+	 * @param {StoreUpdate[]} updates
 	 * @returns {Promise<{sent: number, failed: number}>}
 	 */
 	async notifyGroups(updates) {
@@ -119,11 +151,14 @@ class NotifyFreeGames {
 		}
 	}
 
+	/**
+	 * @param {StoreUpdate[]} updates
+	 */
 	async persistStoreUpdates(updates) {
 		for (const { store, currentGames, registeredIds, announcedGames } of updates) {
-			const nextGames = nextWeeklyGames(registeredIds, currentGames, announcedGames);
+			const idsToKeep = idsToKeepRegistered(registeredIds, currentGames, announcedGames);
 			try {
-				await this.repository.replaceStoreGames(store.key, nextGames);
+				await this.repository.replaceStoreGameIds(store.key, idsToKeep);
 			} catch (error) {
 				this.logger.error(
 					`[NotifyFreeGames] Erro ao salvar jogos da semana (${store.key}):`,

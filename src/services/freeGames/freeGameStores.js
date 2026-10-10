@@ -1,3 +1,5 @@
+const { keepSourceOrder, byWorthDescending } = require("./weeklyGamesSelection");
+
 /**
  * Lojas monitoradas pelo aviso semanal de jogos grátis.
  * A ordem do array define a ordem das seções na mensagem.
@@ -23,8 +25,8 @@ function cleanEpicTitle(rawTitle) {
  * @property {string} platform - valor do filtro `platform` da GamerPower
  * @property {string} groupFlag - campo do grupo que liga o aviso desta loja
  * @property {(title: string) => string} formatTitle
- * @property {"api"|"worth"} ranking - ordem dos jogos novos antes de aplicar o limite
- * @property {number} maxGames - máximo de jogos anunciados por execução
+ * @property {import("./weeklyGamesSelection").GameRanking} rank - ordem dos jogos novos antes do limite
+ * @property {number} [maxGames] - máximo de jogos anunciados por execução (sem valor: todos)
  */
 
 /** @type {FreeGameStore[]} */
@@ -35,8 +37,7 @@ const FREE_GAME_STORES = [
 		platform: "epic-games-store",
 		groupFlag: "notificarEpic",
 		formatTitle: cleanEpicTitle,
-		ranking: "api",
-		maxGames: Infinity
+		rank: keepSourceOrder
 	},
 	{
 		key: "steam",
@@ -44,7 +45,7 @@ const FREE_GAME_STORES = [
 		platform: "steam",
 		groupFlag: "notificarSteam",
 		formatTitle: (title) => title,
-		ranking: "worth",
+		rank: byWorthDescending,
 		maxGames: 3
 	}
 ];

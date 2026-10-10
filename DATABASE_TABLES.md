@@ -408,7 +408,7 @@ Interações cômicas automáticas do bot.
 | `anon_msgs.db` | `anonymous_messages` | Histórico de mensagens anônimas |
 | `correios.db` | `tracked_packages` | Rastreamento de encomendas Correios |
 | `afk.db` | `afk_sessions` | Histórico e gerenciamento de status AFK (Away From Keyboard) por grupo |
-| `free_games_notified.db` | `notified_free_games` | Jogos grátis (Epic/Steam) já anunciados na semana atual, global e não por grupo |
+| `free_games_notified.db` | `weekly_free_games` | Jogos grátis (Epic/Steam) já anunciados na semana atual, global e não por grupo |
 | `food_tracker.db` | `food_logs` | Registro alimentar por usuário |
 
 ### `afk.db`
@@ -458,15 +458,12 @@ Armazena horários programados únicos e semanais por grupo.
 ### `free_games_notified.db`
 Controle global dos jogos grátis já anunciados no aviso semanal (`!g-notificar-epic` / `!g-notificar-steam`). Guarda só os jogos da semana: a cada execução a lista de cada loja é substituída pelos jogos que continuam disponíveis e pelos recém-anunciados.
 
-#### `notified_free_games`
+#### `weekly_free_games`
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
 | `store` | TEXT PK | Loja do jogo (`epic` ou `steam`) |
 | `game_id` | TEXT PK | ID do giveaway na GamerPower |
-| `title` | TEXT | Título exibido na mensagem |
-| `url` | TEXT | Link do giveaway |
-| `notified_at` | INTEGER | Timestamp em que o jogo foi registrado |
 
 ### `relacionamentos.db`
 Banco de dados para o módulo de relacionamentos nos grupos do WhatsApp.
