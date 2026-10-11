@@ -231,6 +231,10 @@ async function runTests() {
 		userFeedbackMsg.content.includes("Figurinha reportada ao admin"),
 		"Mensagem deve informar que foi reportada ao admin"
 	);
+	assert.ok(
+		userFeedbackMsg.content.startsWith("🔞"),
+		"Mensagem de feedback de denúncia de figurinha deve começar com emoji 🔞"
+	);
 
 	if (fs.existsSync(reportedFilePath)) fs.unlinkSync(reportedFilePath);
 	bot.resetCapture();
@@ -273,6 +277,16 @@ async function runTests() {
 	const msgIdToDelete = "3EB0DELETE_TEST_123";
 	StickerScraper.recordSentStickerMessage(msgIdToDelete, idA, userGroup, bot.id);
 
+	// Registra uma mensagem de confirmação de denúncia para idA para testar edição automática
+	const msgIdToEdit = "3EB0REPORT_CONFIRM_123";
+	StickerScraper.recordReportConfirmationMessage(
+		msgIdToEdit,
+		idA,
+		userGroup,
+		bot.id,
+		"🔞 Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!"
+	);
+
 	const msgSuperAdmin = createMessage({
 		content: `!sa-removerFig ${idA} ${idB} ${idC}`,
 		group: logsGroup,
@@ -280,6 +294,7 @@ async function runTests() {
 	});
 
 	bot.deletedMessages = [];
+	bot.editedMessages = [];
 	const resSuperAdmin = await superAdmin.removerFig(
 		bot,
 		msgSuperAdmin,
@@ -299,6 +314,18 @@ async function runTests() {
 	assert.strictEqual(bot.deletedMessages[0].id, msgIdToDelete);
 	assert.strictEqual(bot.deletedMessages[0].remoteJid, userGroup);
 	assert.strictEqual(bot.deletedMessages[0].fromMe, true);
+
+	assert.strictEqual(
+		bot.editedMessages.length,
+		1,
+		"Deve ter invocado editMessage para a confirmação de report"
+	);
+	assert.strictEqual(bot.editedMessages[0].messageId, msgIdToEdit);
+	assert.strictEqual(bot.editedMessages[0].chat, userGroup);
+	assert.ok(
+		bot.editedMessages[0].text.endsWith("Conteúdo removido com sucesso! ✅"),
+		"Mensagem editada deve terminar com 'Conteúdo removido com sucesso! ✅'"
+	);
 
 	assert.ok(resSuperAdmin.content.includes(`• *#${idA}*`), "Deve listar ID A");
 	assert.ok(resSuperAdmin.content.includes(`• *#${idB}*`), "Deve listar ID B");

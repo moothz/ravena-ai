@@ -299,6 +299,19 @@ async function runTests() {
 
 	// 5.2 Execução com sucesso por SuperAdmin
 	superAdmin.isSuperAdmin = (id) => String(id).includes("5511888888888");
+
+	// Registra mensagem de confirmação de denúncia para persona-bad para testar edição automática
+	const waifuMsgIdToEdit = "3EB0WAIFU_REPORT_CONFIRM_123";
+	const waifuChatId = "120363111111111111@g.us";
+	WaifuCommands.recordWaifuReportConfirmation(
+		waifuMsgIdToEdit,
+		"persona-bad",
+		waifuChatId,
+		bot.id,
+		"⛔ *Denúncia Registrada!*\n\nO personagem *Personagem Ruim* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!"
+	);
+
+	bot.editedMessages = [];
 	const adminMsg = createMessage({
 		content: "!sa-remudae persona-bad Conteúdo impróprio",
 		author: "5511888888888@s.whatsapp.net"
@@ -313,7 +326,21 @@ async function runTests() {
 	assert.ok(purgeRes.content.includes("Casamentos desfeitos"));
 	assert.ok(purgeRes.content.includes("996 Zinthos"));
 	assert.ok(purgeRes.content.includes("Conteúdo impróprio"));
-	console.log("✓ Execução de !sa-remudae com sucesso e estorno validada.");
+
+	assert.strictEqual(
+		bot.editedMessages.length,
+		1,
+		"Deve ter invocado editMessage para a confirmação de denúncia do waifu"
+	);
+	assert.strictEqual(bot.editedMessages[0].messageId, waifuMsgIdToEdit);
+	assert.strictEqual(bot.editedMessages[0].chat, waifuChatId);
+	assert.ok(
+		bot.editedMessages[0].text.endsWith("Conteúdo removido com sucesso! ✅"),
+		"Mensagem editada deve terminar com 'Conteúdo removido com sucesso! ✅'"
+	);
+	console.log(
+		"✓ Execução de !sa-remudae com sucesso, estorno e edição de mensagem de denúncia validada."
+	);
 
 	// Restaura mocks
 	WaifuCommands.api.get = origGet;

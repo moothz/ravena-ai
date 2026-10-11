@@ -50,7 +50,16 @@ database.getSQLiteDb(
 	CREATE TABLE IF NOT EXISTS lovecell_sticker_report_notifications (
 		sticker_id INTEGER PRIMARY KEY,
 		created_at TEXT NOT NULL
-	);`
+	);
+	CREATE TABLE IF NOT EXISTS lovecell_report_messages (
+		message_id TEXT PRIMARY KEY,
+		sticker_id INTEGER NOT NULL,
+		chat_id TEXT NOT NULL,
+		bot_id TEXT,
+		text TEXT,
+		created_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_lovecell_report_msgs_sticker ON lovecell_report_messages(sticker_id);`
 );
 
 // Diretório para mover figurinhas detectadas como NSFW (quarentena de debug)
@@ -480,6 +489,88 @@ function getMessagesForSticker(stickerId) {
 	} catch (err) {
 		logger.error(`Erro ao obter mensagens da figurinha #${id}: ${err.message}`);
 		return [];
+	}
+}
+
+/**
+ * Registra a mensagem de confirmação de denúncia enviada para uma figurinha
+ * @param {string} messageId
+ * @param {number|string} stickerId
+ * @param {string} chatId
+ * @param {string|null} botId
+ * @param {string} text
+ */
+function recordReportConfirmationMessage(messageId, stickerId, chatId, botId = null, text = "") {
+	if (!messageId || !stickerId) return;
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return;
+	const stanzaId = extractStanzaId(String(messageId));
+
+	try {
+		database.mappers.run(
+			"lovecell",
+			`INSERT OR REPLACE INTO lovecell_report_messages (message_id, sticker_id, chat_id, bot_id, text, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			[
+				stanzaId,
+				id,
+				String(chatId),
+				botId ? String(botId) : null,
+				String(text || ""),
+				new Date().toISOString()
+			]
+		);
+	} catch (err) {
+		logger.error(
+			`Erro ao registrar report confirmation message #${id} (${messageId}): ${err.message}`
+		);
+	}
+}
+
+/**
+ * Obtém todas as mensagens de confirmação de denúncia associadas a uma figurinha
+ * @param {number|string} stickerId
+ * @returns {Array<{ messageId: string, chatId: string, botId: string|null, text: string }>}
+ */
+function getReportConfirmationMessages(stickerId) {
+	if (!stickerId) return [];
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return [];
+
+	try {
+		const rows = database.mappers.all(
+			"lovecell",
+			"SELECT message_id, chat_id, bot_id, text FROM lovecell_report_messages WHERE sticker_id = ?",
+			[id]
+		);
+		if (!Array.isArray(rows)) return [];
+		return rows.map((r) => ({
+			messageId: extractStanzaId(String(r.message_id)),
+			chatId: r.chat_id,
+			botId: r.bot_id || null,
+			text: r.text || ""
+		}));
+	} catch (err) {
+		logger.error(`Erro ao obter report confirmation messages #${id}: ${err.message}`);
+		return [];
+	}
+}
+
+/**
+ * Remove mensagens de confirmação de denúncia associadas a uma figurinha após serem editadas
+ * @param {number|string} stickerId
+ */
+function deleteReportConfirmationMessages(stickerId) {
+	if (!stickerId) return;
+	const id = parseInt(stickerId, 10);
+	if (isNaN(id)) return;
+
+	try {
+		database.mappers.run("lovecell", "DELETE FROM lovecell_report_messages WHERE sticker_id = ?", [
+			id
+		]);
+	} catch (err) {
+		logger.warn(`Erro ao deletar report confirmation messages #${id}: ${err.message}`);
 	}
 }
 
@@ -2076,7 +2167,10 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		returnMessages.push(
 			new ReturnMessage({
 				chatId,
-				content: "✅ Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!"
+				content: "🔞 Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!",
+				options: {
+					stickerReportId: stickerId || null
+				}
 			})
 		);
 
@@ -2285,6 +2379,54 @@ async function removerFigCommand(bot, message, args = [], group = null, superAdm
 						}
 					}
 				}
+			}
+		}
+
+		// 4.1 Edita mensagens de confirmação de denúncia ("🔞 Figurinha reportada...") adicionando status de remoção
+		for (const stickerId of uniqueIds) {
+			const reportMsgs = getReportConfirmationMessages(stickerId);
+			if (Array.isArray(reportMsgs) && reportMsgs.length > 0) {
+				for (const repMsg of reportMsgs) {
+					if (!repMsg.chatId || !repMsg.messageId) continue;
+
+					let targetBot = bot;
+					if (repMsg.botId) {
+						const foundBot = allBots.find(
+							(b) =>
+								b &&
+								(b.id === repMsg.botId ||
+									b.instanceName === repMsg.botId ||
+									b.nomeExibir === repMsg.botId)
+						);
+						if (foundBot) {
+							targetBot = foundBot;
+						} else if (bot.otherBots && Array.isArray(bot.otherBots)) {
+							const foundInOther = bot.otherBots.find(
+								(b) => b && (b.id === repMsg.botId || b.instanceName === repMsg.botId)
+							);
+							if (foundInOther) targetBot = foundInOther;
+						}
+					}
+
+					if (targetBot && typeof targetBot.editMessage === "function") {
+						try {
+							const actualId =
+								typeof targetBot.getActualMsgId === "function"
+									? targetBot.getActualMsgId(repMsg.messageId)
+									: repMsg.messageId;
+							const baseText =
+								repMsg.text ||
+								"🔞 Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!";
+							const updatedText = `${baseText}\n\nConteúdo removido com sucesso! ✅`;
+							await targetBot.editMessage(repMsg.chatId, actualId, updatedText);
+						} catch (editErr) {
+							logger.warn(
+								`[sa-removerFig] Erro ao editar mensagem de report ${repMsg.messageId} em ${repMsg.chatId}: ${editErr.message}`
+							);
+						}
+					}
+				}
+				deleteReportConfirmationMessages(stickerId);
 			}
 		}
 
@@ -2621,5 +2763,8 @@ module.exports = {
 	removeFromLovecell,
 	removeMultipleFromLovecell,
 	figaDenunciarCommand,
-	removerFigCommand
+	removerFigCommand,
+	recordReportConfirmationMessage,
+	getReportConfirmationMessages,
+	deleteReportConfirmationMessages
 };

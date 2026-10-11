@@ -1549,6 +1549,46 @@ class WhatsAppBotGo {
 					}
 				}
 
+				if (options.stickerReportId && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const StickerScraper = require("./functions/StickerScraper");
+						if (typeof StickerScraper.recordReportConfirmationMessage === "function") {
+							StickerScraper.recordReportConfirmationMessage(
+								sentMsgId,
+								options.stickerReportId,
+								message.chatId,
+								this.id,
+								typeof contentToSend === "string" ? contentToSend : message.content
+							);
+						}
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar confirmação de report do sticker #${options.stickerReportId}: ${regErr.message}`
+						);
+					}
+				}
+
+				if (options.waifuReportCharacterId && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const WaifuCommands = require("./functions/WaifuCommands");
+						if (typeof WaifuCommands.recordWaifuReportConfirmation === "function") {
+							WaifuCommands.recordWaifuReportConfirmation(
+								sentMsgId,
+								options.waifuReportCharacterId,
+								message.chatId,
+								this.id,
+								typeof contentToSend === "string" ? contentToSend : message.content
+							);
+						}
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar confirmação de report waifu #${options.waifuReportCharacterId}: ${regErr.message}`
+						);
+					}
+				}
+
 				if (result && result.id?._serialized) {
 					// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
 					/*
@@ -3827,6 +3867,24 @@ class WhatsAppBotGo {
 			messageId: key.id,
 			fromMe: key.fromMe ?? true,
 			participant: key.participant
+		});
+	}
+
+	/**
+	 * Edita uma mensagem de texto enviada anteriormente pelo bot
+	 * @param {string} chat - JID do chat
+	 * @param {string} messageId - ID da mensagem a ser editada
+	 * @param {string} text - Novo conteúdo de texto da mensagem
+	 * @returns {Promise<any>}
+	 */
+	async editMessage(chat, messageId, text) {
+		const actualId =
+			typeof this.getActualMsgId === "function" ? this.getActualMsgId(messageId) : messageId;
+		this.logger.debug(`[editMessage] ${actualId} in ${chat}`);
+		return await this.apiClient.post("/message/edit", {
+			chat,
+			messageId: actualId,
+			message: text
 		});
 	}
 

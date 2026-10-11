@@ -49,6 +49,126 @@ const rollClaimsByMsgId = new Map();
 const rollHistoryByMsgId = new Map();
 const MAX_ROLL_HISTORY = 1000;
 
+// Inicializa banco de relatórios para mensagens de denúncia
+try {
+	database.getSQLiteDb(
+		"reports",
+		`CREATE TABLE IF NOT EXISTS waifu_report_messages (
+			message_id TEXT PRIMARY KEY,
+			character_id TEXT NOT NULL,
+			chat_id TEXT NOT NULL,
+			bot_id TEXT,
+			text TEXT,
+			created_at TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_waifu_report_msgs_char ON waifu_report_messages(character_id);`
+	);
+} catch (e) {
+	logger.warn(`Erro ao inicializar tabela waifu_report_messages: ${e.message}`);
+}
+
+/**
+ * Extrai o stanzaId limpo de um identificador serializado do WhatsApp
+ * @param {string} msgId
+ * @returns {string}
+ */
+function extractStanzaId(msgId) {
+	if (!msgId || typeof msgId !== "string") return msgId;
+	if (msgId.startsWith("true_") || msgId.startsWith("false_")) {
+		const parts = msgId.split("_");
+		if (parts.length >= 3) {
+			return parts.slice(2).join("_");
+		}
+	}
+	if (msgId.includes("_true_")) {
+		return msgId.split("_true_")[1];
+	}
+	if (msgId.includes("_false_")) {
+		return msgId.split("_false_")[1];
+	}
+	return msgId;
+}
+
+/**
+ * Registra confirmação de mensagem de denúncia de Waifu enviada ao usuário/grupo
+ * @param {string} messageId
+ * @param {string} characterId
+ * @param {string} chatId
+ * @param {string|null} botId
+ * @param {string} text
+ */
+function recordWaifuReportConfirmation(messageId, characterId, chatId, botId = null, text = "") {
+	if (!messageId || !characterId) return;
+	const stanzaId = extractStanzaId(String(messageId));
+
+	try {
+		database.mappers.run(
+			"reports",
+			`INSERT OR REPLACE INTO waifu_report_messages (message_id, character_id, chat_id, bot_id, text, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			[
+				stanzaId,
+				String(characterId).toLowerCase().trim(),
+				String(chatId),
+				botId ? String(botId) : null,
+				String(text || ""),
+				new Date().toISOString()
+			]
+		);
+	} catch (err) {
+		logger.error(
+			`Erro ao registrar waifu report confirmation message (${characterId}, ${messageId}): ${err.message}`
+		);
+	}
+}
+
+/**
+ * Busca mensagens de denúncia registradas para um personagem
+ * @param {string} characterId
+ * @returns {Array<{ messageId: string, chatId: string, botId: string|null, text: string }>}
+ */
+function getWaifuReportConfirmations(characterId) {
+	if (!characterId) return [];
+	const id = String(characterId).toLowerCase().trim();
+
+	try {
+		const rows = database.mappers.all(
+			"reports",
+			"SELECT message_id, chat_id, bot_id, text FROM waifu_report_messages WHERE LOWER(character_id) = ?",
+			[id]
+		);
+		if (!Array.isArray(rows)) return [];
+		return rows.map((r) => ({
+			messageId: extractStanzaId(String(r.message_id)),
+			chatId: r.chat_id,
+			botId: r.bot_id || null,
+			text: r.text || ""
+		}));
+	} catch (err) {
+		logger.error(`Erro ao buscar waifu report confirmations (${characterId}): ${err.message}`);
+		return [];
+	}
+}
+
+/**
+ * Remove mensagens de denúncia registradas para um personagem após edição
+ * @param {string} characterId
+ */
+function deleteWaifuReportConfirmations(characterId) {
+	if (!characterId) return;
+	const id = String(characterId).toLowerCase().trim();
+
+	try {
+		database.mappers.run(
+			"reports",
+			"DELETE FROM waifu_report_messages WHERE LOWER(character_id) = ?",
+			[id]
+		);
+	} catch (err) {
+		logger.warn(`Erro ao deletar waifu report confirmations (${characterId}): ${err.message}`);
+	}
+}
+
 /**
  * Registra o ID de uma mensagem enviada de roll associando-o ao personagem sorteado
  * @param {string} messageId
@@ -1880,7 +2000,10 @@ async function denunciarWaifu(bot, message, args, group) {
 	returnMessages.push(
 		new ReturnMessage({
 			chatId,
-			content: `⛔ *Denúncia Registrada!*\n\nO personagem *${character.name}* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`
+			content: `⛔ *Denúncia Registrada!*\n\nO personagem *${character.name}* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`,
+			options: {
+				waifuReportCharacterId: character.id
+			}
 		})
 	);
 
@@ -3286,5 +3409,8 @@ module.exports = {
 	handleApiError,
 	api,
 	normalizeUserId,
-	getUserId
+	getUserId,
+	recordWaifuReportConfirmation,
+	getWaifuReportConfirmations,
+	deleteWaifuReportConfirmations
 };

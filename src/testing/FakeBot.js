@@ -83,6 +83,7 @@ class FakeBot {
 			getMessageById: async (msgId) => null
 		};
 
+		this.editedMessages = [];
 		this.logger = new Logger("fake-bot");
 	}
 
@@ -219,6 +220,36 @@ class FakeBot {
 				} catch {}
 			}
 
+			if (msg.options?.stickerReportId) {
+				try {
+					const StickerScraper = require("../functions/StickerScraper");
+					if (typeof StickerScraper.recordReportConfirmationMessage === "function") {
+						StickerScraper.recordReportConfirmationMessage(
+							fakeMsgId,
+							msg.options.stickerReportId,
+							msg.chatId,
+							this.id,
+							typeof msg.content === "string" ? msg.content : ""
+						);
+					}
+				} catch {}
+			}
+
+			if (msg.options?.waifuReportCharacterId) {
+				try {
+					const WaifuCommands = require("../functions/WaifuCommands");
+					if (typeof WaifuCommands.recordWaifuReportConfirmation === "function") {
+						WaifuCommands.recordWaifuReportConfirmation(
+							fakeMsgId,
+							msg.options.waifuReportCharacterId,
+							msg.chatId,
+							this.id,
+							typeof msg.content === "string" ? msg.content : ""
+						);
+					}
+				} catch {}
+			}
+
 			results.push({ id: { _serialized: fakeMsgId }, ack: 1 });
 		}
 		return results;
@@ -233,6 +264,19 @@ class FakeBot {
 		this.deletedMessages.push(key);
 		this.logger.debug(`[FakeBot] deleteMessageByKey() → id=${key.id}`);
 		return { success: true };
+	}
+
+	/**
+	 * Simula edição de mensagem no WhatsApp
+	 * @param {string} chat - JID do chat
+	 * @param {string} messageId - ID da mensagem editada
+	 * @param {string} text - Novo conteúdo de texto
+	 */
+	async editMessage(chat, messageId, text) {
+		this.editedMessages = this.editedMessages || [];
+		this.editedMessages.push({ chat, messageId, text });
+		this.logger.debug(`[FakeBot] editMessage() → id=${messageId}, chat=${chat}`);
+		return { success: true, messageId };
 	}
 
 	async formatMessage(msg) {
@@ -591,6 +635,7 @@ class FakeBot {
 	 */
 	resetCapture() {
 		this.capturedMessages = [];
+		this.editedMessages = [];
 		this.removedParticipants = [];
 		this.removedCommunityParticipants = [];
 		this.promotedParticipants = [];

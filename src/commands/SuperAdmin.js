@@ -5521,6 +5521,68 @@ Retorne no formato JSON rigoroso:
 					text += `📝 *Motivo:* ${reason}`;
 				}
 
+				// Edita as mensagens de confirmação de denúncia ("⛔ *Denúncia Registrada!*...") adicionando o status de remoção
+				try {
+					const WaifuCommandsModule = require("../functions/WaifuCommands");
+					const Database = require("../utils/Database");
+					const allBots = Database.getInstance().botInstances || bot?.database?.botInstances || [];
+					const charIdsToCheck = [character.id];
+					if (characterId && !charIdsToCheck.includes(characterId)) {
+						charIdsToCheck.push(characterId);
+					}
+
+					for (const cid of charIdsToCheck) {
+						const reportMsgs = WaifuCommandsModule.getWaifuReportConfirmations(cid);
+						if (Array.isArray(reportMsgs) && reportMsgs.length > 0) {
+							for (const repMsg of reportMsgs) {
+								if (!repMsg.chatId || !repMsg.messageId) continue;
+
+								let targetBot = bot;
+								if (repMsg.botId) {
+									const foundBot = allBots.find(
+										(b) =>
+											b &&
+											(b.id === repMsg.botId ||
+												b.instanceName === repMsg.botId ||
+												b.nomeExibir === repMsg.botId)
+									);
+									if (foundBot) {
+										targetBot = foundBot;
+									} else if (bot.otherBots && Array.isArray(bot.otherBots)) {
+										const foundInOther = bot.otherBots.find(
+											(b) => b && (b.id === repMsg.botId || b.instanceName === repMsg.botId)
+										);
+										if (foundInOther) targetBot = foundInOther;
+									}
+								}
+
+								if (targetBot && typeof targetBot.editMessage === "function") {
+									try {
+										const actualId =
+											typeof targetBot.getActualMsgId === "function"
+												? targetBot.getActualMsgId(repMsg.messageId)
+												: repMsg.messageId;
+										const baseText =
+											repMsg.text ||
+											`⛔ *Denúncia Registrada!*\n\nO personagem *${character.name}* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`;
+										const updatedText = `${baseText}\n\nConteúdo removido com sucesso! ✅`;
+										await targetBot.editMessage(repMsg.chatId, actualId, updatedText);
+									} catch (editErr) {
+										this.logger.warn(
+											`[sa-remudae] Erro ao editar mensagem de denúncia ${repMsg.messageId} em ${repMsg.chatId}: ${editErr.message}`
+										);
+									}
+								}
+							}
+							WaifuCommandsModule.deleteWaifuReportConfirmations(cid);
+						}
+					}
+				} catch (repErr) {
+					this.logger.warn(
+						`[sa-remudae] Erro ao processar edição de mensagens de report: ${repErr.message}`
+					);
+				}
+
 				return new ReturnMessage({
 					chatId,
 					content: text,
