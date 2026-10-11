@@ -106,6 +106,8 @@
                             <small class="form-text text-muted" id="prefix-warning"></small>
                         </div>
 
+                        <hr>
+
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
                                 <label for="bot-enabled" id="lbl-bot-enabled">Bot Habilitado</label>
@@ -128,6 +130,8 @@
                             </label>
                         </div>
 
+                        <hr>
+
                         <div class="form-group">
                             <label id="lbl-bot-personality" for="bot-personality">Personalidade da IA do Bot</label>
                             <textarea id="bot-personality" class="form-control" maxlength="1500" rows="3" placeholder="Instruções de como a Ravena deve se comportar e responder com IA no grupo..."></textarea>
@@ -136,6 +140,8 @@
                                 <span class="char-counter"><span id="personality-count">0</span>/1500</span>
                             </div>
                         </div>
+
+                        <hr>
 
                         <div class="form-group mt-2">
                             <button type="button" id="btn-view-members" class="btn btn-secondary btn-block">
@@ -170,7 +176,7 @@
                             <div id="ignored-numbers-list" class="tags-container"></div>
                         </div>
 
-                        <div class="divider"></div>
+                        <hr>
 
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
@@ -242,7 +248,7 @@
                             </div>
                         </div>
 
-                        <div class="divider"></div>
+                        <hr>
 
                         <!-- Palavras Proibidas -->
                         <div class="list-manager-section">
@@ -254,6 +260,8 @@
                             </div>
                             <div id="forbidden-words-list" class="tags-container"></div>
                         </div>
+
+                        <hr>
 
                         <!-- Filtro por Expressões Regulares (Regex) -->
                         <div class="list-manager-section">
@@ -267,6 +275,8 @@
                             <div id="forbidden-regexes-list" class="regex-list-container"></div>
                         </div>
 
+                        <hr>
+
                         <!-- Usuários Proibidos -->
                         <div class="list-manager-section">
                             <label id="lbl-forbidden-users">Usuários com Mensagens Apagadas</label>
@@ -277,6 +287,8 @@
                             </div>
                             <div id="forbidden-users-list" class="tags-container"></div>
                         </div>
+
+                        <hr>
 
                         <!-- Admins Adicionais do Bot -->
                         <div class="list-manager-section">
@@ -289,7 +301,7 @@
                             <div id="additional-admins-list" class="tags-container"></div>
                         </div>
                         
-                        <div class="divider"></div>
+                        <hr>
 
                         <!-- Regras do Grupo -->
                         <div class="form-group">
@@ -325,7 +337,7 @@
                             </div>
                         </div>
 
-                        <div class="divider"></div>
+                        <hr>
 
                         <!-- Comandos Silenciados -->
                         <div class="list-manager-section">
@@ -386,7 +398,7 @@
                             </label>
                         </div>
 
-                        <div class="divider"></div>
+                        <hr>
 
                         <!-- Sub-accordion: Agendamentos de Abrir/Fechar -->
                         <div class="sub-accordion active">
@@ -422,7 +434,7 @@
                             </div>
                         </div>
 
-                        <div class="divider"></div>
+                        <hr>
 
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
@@ -481,6 +493,8 @@
                             </div>
                         </div>
 
+                        <hr>
+
                         <!-- Farewell Messages com Inline Previews -->
                         <div class="sub-accordion active">
                             <div class="sub-accordion-header">
@@ -503,6 +517,8 @@
                                 </div>
                             </div>
                         </div>
+
+                        <hr>
 
                         <div class="form-group toggle-row">
                             <div class="toggle-info">
@@ -720,8 +736,10 @@
                             <div class="field-hint">IP ou domínio, com porta opcional após <code>:</code> (padrão: <code>25565</code>). Deixe vazio para remover.</div>
                         </div>
 
+                        <hr>
+
                         <!-- Subseção: Roleta Russa -->
-                        <h4 class="sub-header mt-4"><i class="fas fa-crosshairs"></i> Roleta Russa</h4>
+                        <h4 class="sub-header"><i class="fas fa-crosshairs"></i> Roleta Russa</h4>
                         <div class="field-hint mb-3">Ajuste os parâmetros da roleta russa do grupo (<code>!roleta</code>, <code>!roleta-tempo</code>, <code>!roleta-silenciar</code>).</div>
                         <div class="form-group">
                             <label id="lbl-roleta-tempo" for="roleta-tempo">Tempo de Morte / Timeout (segundos)</label>

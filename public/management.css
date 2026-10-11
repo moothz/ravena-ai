@@ -1293,6 +1293,13 @@ textarea.form-control {
 .d-block { display: block; }
 .font-bold { font-weight: 700; }
 
+/* Dividers and Horizontal Rules */
+hr, .divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1.25rem 0;
+}
+
 /* Input group */
 .input-group {
     display: flex;

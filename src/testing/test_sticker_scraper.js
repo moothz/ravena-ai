@@ -517,17 +517,17 @@ async function runTests() {
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
 	assert.strictEqual(
 		StickerScraper.DEFAULT_MIN_INTERVAL_MS,
-		400,
-		"Intervalo mínimo padrão deve ser 400ms (10x)"
+		12000,
+		"Intervalo mínimo padrão deve ser 12000ms (1/30 da frequência)"
 	);
 	assert.strictEqual(
 		StickerScraper.DEFAULT_MAX_INTERVAL_MS,
-		6000,
-		"Intervalo máximo padrão deve ser 6000ms (10x)"
+		180000,
+		"Intervalo máximo padrão deve ser 180000ms (1/30 da frequência)"
 	);
 	const sampleInterval = StickerScraper.getRandomInterval();
 	assert(
-		sampleInterval >= 400 && sampleInterval <= 6000,
+		sampleInterval >= 12000 && sampleInterval <= 180000,
 		"Intervalo aleatório deve respeitar os novos limites"
 	);
 	console.log("✓ Controle do timer (start/stop/status) e intervalos validados com sucesso");
@@ -1047,7 +1047,7 @@ async function runTests() {
 		title: "Figurinha Hora do Abuso"
 	});
 	assert.strictEqual(
-		rejectedFast,
+		rejectedFast.isNSFW,
 		true,
 		"checkStickerNSFW deve rejeitar imediatamente sticker com título proibido"
 	);

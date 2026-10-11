@@ -95,6 +95,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mine-servidor",
+		aliases: ["mine-server"],
 		description: "Alias para o comando minecraft-servidor",
 		usage: "!mine-servidor ip[:porta]",
 		category: "jogos",
@@ -122,7 +123,7 @@ const helper = {
 	cmds: [
 		{
 			cmd: "!minecraft-servidor",
-			desc: "Define o servidor de Minecraft do grupo (apenas admins). Alias: !mine-servidor",
+			desc: "Define o servidor de Minecraft do grupo (apenas admins). Alias: !mine-servidor, !mine-server",
 			usage: ["!minecraft-servidor play.exemplo.com", "!minecraft-servidor play.exemplo.com:25300"],
 			category: "jogos"
 		},

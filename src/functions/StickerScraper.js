@@ -103,9 +103,11 @@ const TARGET_SIZE = 512;
 const MAX_STICKER_BYTES = 490 * 1024; // Limite de segurança (< 500 KB) do WhatsApp
 const MIN_STICKER_BYTES = 3 * 1024; // Tamanho mínimo de 3 KB para considerar o sticker válido
 
-// Limites de download automático: mínimo 10 stickers/min (6s), máximo 150 stickers/min (400ms)
-const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 400; // Máx 150 stickers/min (400ms)
-const DEFAULT_MAX_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MAX_INTERVAL, 10) || 6 * 1000; // Mín 10 stickers/min (6s)
+// Limites de download automático reduzidos para 1/30 da frequência com estoque > 170k:
+// Mínimo: 1 sticker a cada 3 min (180s), Máximo: 5 stickers/min (12s)
+const DEFAULT_MIN_INTERVAL_MS = parseInt(process.env.STICKER_SCRAPER_MIN_INTERVAL, 10) || 12 * 1000; // Máx 5 stickers/min (12s)
+const DEFAULT_MAX_INTERVAL_MS =
+	parseInt(process.env.STICKER_SCRAPER_MAX_INTERVAL, 10) || 180 * 1000; // Mín 1 sticker a cada 3 min (180s)
 const BACKOFF_RATE_LIMIT_MS =
 	parseInt(process.env.STICKER_SCRAPER_BACKOFF_INTERVAL, 10) || 15 * 60 * 1000; // 15 min
 

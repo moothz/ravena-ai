@@ -127,6 +127,7 @@ function testCommandDefinitions() {
 	assert.ok(aliasCmd, "Comando !mine-servidor deve existir");
 	assert.strictEqual(aliasCmd.group, "minecraft-servidor");
 	assert.strictEqual(aliasCmd.adminOnly, true);
+	assert.ok(aliasCmd.aliases.includes("mine-server"), "mine-servidor deve ter alias mine-server");
 
 	assert.ok(statusCmd, "Comando !minecraft deve existir");
 	assert.strictEqual(statusCmd.aliases.length, 0, "!minecraft não deve ter aliases");
