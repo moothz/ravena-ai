@@ -372,7 +372,7 @@ function registerManagementRoutes(api) {
 
 			try {
 				const roletaGroup = await api.database.dbGet(
-					"roleta_russa",
+					"roleta",
 					"SELECT timeout_time, silenciar FROM roleta_groups WHERE group_id = ?",
 					[id]
 				);
@@ -539,7 +539,7 @@ function registerManagementRoutes(api) {
 					const silenciar = changes.roleta.silenciar ? 1 : 0;
 					if (!isNaN(timeoutTime) && timeoutTime >= 10 && timeoutTime <= 259200) {
 						await api.database.dbRun(
-							"roleta_russa",
+							"roleta",
 							`INSERT INTO roleta_groups (group_id, timeout_time, silenciar, last_updated)
 							 VALUES (?, ?, ?, ?)
 							 ON CONFLICT(group_id) DO UPDATE SET

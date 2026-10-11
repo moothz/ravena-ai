@@ -470,15 +470,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function calculateChanges(original, current) {
         const changes = {};
-        for (let key in current) {
+        const allKeys = new Set([...Object.keys(original || {}), ...Object.keys(current || {})]);
+        for (const key of allKeys) {
             if (key === 'participants') continue;
-            if (typeof current[key] === 'object' && current[key] !== null) {
-                if (JSON.stringify(original[key]) !== JSON.stringify(current[key])) {
-                    changes[key] = current[key];
+            const origVal = original ? original[key] : undefined;
+            const currVal = current ? current[key] : undefined;
+            if ((typeof currVal === 'object' && currVal !== null) || (typeof origVal === 'object' && origVal !== null)) {
+                if (JSON.stringify(origVal) !== JSON.stringify(currVal)) {
+                    changes[key] = currVal;
                 }
             } else {
-                if (original[key] !== current[key]) {
-                    changes[key] = current[key];
+                if (origVal !== currVal) {
+                    changes[key] = currVal;
                 }
             }
         }
@@ -528,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const inputs = els.dashboard.querySelectorAll('input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]):not(.regex-test-input), textarea, select');
         inputs.forEach(input => {
             input.addEventListener('change', () => setDirty(true));
-            if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'number') {
+            if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'number' || input.type === 'range') {
                 input.addEventListener('input', () => setDirty(true));
             }
         });
@@ -716,7 +719,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatMinecraftServer(server) {
         if (!server || !server.host) return '';
         const host = server.host.includes(':') ? `[${server.host}]` : server.host;
-        return `${host}:${server.port || 25565}`;
+        if (server.port && Number(server.port) !== 25565) {
+            return `${host}:${server.port}`;
+        }
+        return host;
     }
 
     function updateHeroStatusVisuals(isPaused) {
@@ -3253,6 +3259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nsfwSlider) {
             nsfwSlider.addEventListener('input', (e) => {
                 document.getElementById('nsfw-intensity-val').textContent = e.target.value;
+                setDirty(true);
             });
         }
 
@@ -3276,6 +3283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('chance-val').textContent = e.target.value;
                 const descEl = document.getElementById('chance-desc-val');
                 if (descEl) descEl.textContent = e.target.value + '%';
+                setDirty(true);
             });
         }
 
@@ -3283,6 +3291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cooldownSlider) {
             cooldownSlider.addEventListener('input', (e) => {
                 document.getElementById('cooldown-val').textContent = formatCooldownText(e.target.value);
+                setDirty(true);
             });
         }
 
@@ -3303,7 +3312,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         descEl.textContent = `${cmdChance}% de chance de usar comandos, ${iaChance}% de chance de usar IA`;
                     }
                 }
+                setDirty(true);
             });
+        }
+
+        const mcServerInput = document.getElementById('minecraft-server');
+        if (mcServerInput) {
+            mcServerInput.addEventListener('input', () => setDirty(true));
+            mcServerInput.addEventListener('change', () => setDirty(true));
+        }
+
+        const roletaTempoInput = document.getElementById('roleta-tempo');
+        if (roletaTempoInput) {
+            roletaTempoInput.addEventListener('input', () => setDirty(true));
+            roletaTempoInput.addEventListener('change', () => setDirty(true));
+        }
+
+        const roletaSilenciarInput = document.getElementById('roleta-silenciar');
+        if (roletaSilenciarInput) {
+            roletaSilenciarInput.addEventListener('change', () => setDirty(true));
         }
     }
 
