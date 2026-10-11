@@ -1,0 +1,2 @@
+# Exemplo de bot-greeting.txt
+# Adicione seu texto customizado aqui

@@ -1,0 +1,2 @@
+# Exemplo de llm_context.txt
+# Adicione seu texto customizado aqui

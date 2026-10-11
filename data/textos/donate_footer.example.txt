@@ -1,0 +1,2 @@
+# Exemplo de donate_footer.txt
+# Adicione seu texto customizado aqui

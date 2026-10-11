@@ -1,6 +1,0 @@
-_Veja melhor a lista em:_
-🔗 https://ravena.moothz.win/cmd
-
-- 🔥 *!g-promover / !g-rebaixar*: Promote/demote membros a admin do grupo (máx 10 ao mesmo tempo)
-- *!waifus:* MUDAE! Reagir com 💍 liberado
-- *!afk <motivo>*: Marca no grupo que está AFK

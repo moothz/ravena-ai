@@ -1,0 +1,2 @@
+# Exemplo de donate_header.txt
+# Adicione seu texto customizado aqui

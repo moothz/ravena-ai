@@ -29,7 +29,7 @@ Envie as instruções de convite
 - **ravena4**: (55) 98102-4412
 - **ravena5**: (55) 99153-7296
 - **ravena10**: (55) 98102-4412
-- **Bot Oficial (Lobby)**: Disponível via https://chat.whatsapp.com/GMtTi1V6XIBChCBgkQC9g0 ou no site https://ravena.moothz.win
+- **Bot Oficial (Lobby)**: Disponível via https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV ou no site https://ravena.moothz.win
 
 ### Instruções de Convite
 Pra começar, envie o *LINK*, apenas o _LINK_ do seu grupo para uma das ravenas (não pode ser aqui no chat de suporte nem para as vips)

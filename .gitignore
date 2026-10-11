@@ -142,7 +142,9 @@ dist
 
 # Scripts e coisas locais
 nssm-service.bat
-data/textos/archive.txt
+/scripts/
+data/textos/*.txt
+!data/textos/*.example.txt
 /src/scripts
 /old
 /.Trash-1000
@@ -175,6 +177,7 @@ data/profile-pics
 public/gifs
 public/attachments
 public/audios
+public/os/img/profiles/
 
 data/services-status.json
 data/external-API-users.json

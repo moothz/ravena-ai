@@ -1,0 +1,2 @@
+# Exemplo de groupJoin.txt
+# Adicione seu texto customizado aqui

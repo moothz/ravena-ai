@@ -1,0 +1,2 @@
+# Exemplo de cmd_header.txt
+# Adicione seu texto customizado aqui
