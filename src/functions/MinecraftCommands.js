@@ -12,6 +12,7 @@ const {
 
 const logger = new Logger("minecraft-commands");
 
+const GroupContextHelper = require("../utils/GroupContextHelper");
 const REMOVE_KEYWORDS = ["remover", "off", "desativar", "limpar"];
 const USAGE_HINT =
 	"Use: `!minecraft-servidor ip[:porta]` (ex.: `!minecraft-servidor play.exemplo.com:25300`). Sem porta, usa 25565.\nPara remover: `!minecraft-servidor remover`.\nTambém é possível configurar pelo `!g-painel`.";
@@ -36,22 +37,33 @@ async function saveMinecraftServer(group, server) {
 }
 
 async function configureServerCommand(bot, message, args, group) {
-	if (!group) return reply(message, "Este comando só pode ser usado em grupos.");
+	const { targetGroup, errorResponse } = await GroupContextHelper.resolveGroupAndAdmin(
+		bot,
+		message,
+		group,
+		{
+			featureName: "o servidor de Minecraft"
+		}
+	);
+	if (errorResponse) return errorResponse;
 
 	const input = args.join(" ").trim();
-	if (!input) return reply(message, `${describeCurrentServer(group)}\n\n${USAGE_HINT}`);
+	if (!input) return reply(message, `${describeCurrentServer(targetGroup)}\n\n${USAGE_HINT}`);
 
 	if (REMOVE_KEYWORDS.includes(input.toLowerCase())) {
-		await saveMinecraftServer(group, null);
-		return reply(message, "🗑️ Servidor de Minecraft removido deste grupo.");
+		await saveMinecraftServer(targetGroup, null);
+		return reply(
+			message,
+			`🗑️ Servidor de Minecraft removido do grupo *${targetGroup.name || targetGroup.id}*.`
+		);
 	}
 
 	try {
 		const server = parseServerAddress(input);
-		await saveMinecraftServer(group, server);
+		await saveMinecraftServer(targetGroup, server);
 		return reply(
 			message,
-			`✅ Servidor de Minecraft configurado: *${formatServerAddress(server)}*\nUse \`!minecraft\` para ver o status.`
+			`✅ Servidor de Minecraft configurado para o grupo *${targetGroup.name || targetGroup.id}*: *${formatServerAddress(server)}*\nUse \`!minecraft\` para ver o status.`
 		);
 	} catch (error) {
 		if (!(error instanceof InvalidServerAddressError)) throw error;
@@ -60,13 +72,21 @@ async function configureServerCommand(bot, message, args, group) {
 }
 
 async function serverStatusCommand(bot, message, args, group) {
-	if (!group) return reply(message, "Este comando só pode ser usado em grupos.");
+	const { targetGroup, errorResponse } = await GroupContextHelper.resolveGroup(
+		bot,
+		message,
+		group,
+		{
+			featureName: "status do servidor de Minecraft"
+		}
+	);
+	if (errorResponse) return errorResponse;
 
-	const server = group.minecraftServer;
+	const server = targetGroup.minecraftServer;
 	if (!server?.host) {
 		return reply(
 			message,
-			"🧱 Nenhum servidor de Minecraft configurado neste grupo.\nUm admin pode configurar com `!minecraft-servidor ip[:porta]` ou pelo `!g-painel`."
+			`🧱 Nenhum servidor de Minecraft configurado no grupo *${targetGroup.name || targetGroup.id}*.\nUm admin pode configurar com \`!minecraft-servidor ip[:porta]\` ou pelo \`!g-painel\`.`
 		);
 	}
 

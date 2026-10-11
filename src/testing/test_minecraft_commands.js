@@ -136,33 +136,43 @@ function testCommandDefinitions() {
 }
 
 async function testConfigureServer() {
+	const bot = new FakeBot({ id: "test-bot" });
 	const group = { id: GROUP_ID, name: "teste" };
 
-	await MinecraftCommands.configureServerCommand(
-		null,
-		groupMessage("!minecraft-servidor play.exemplo.com:25300"),
-		["play.exemplo.com:25300"],
-		group
-	);
-	assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
+	// Mock isAdmin para considerar o autor admin neste teste
+	const AdminUtils = require("../utils/AdminUtils");
+	const originalIsAdmin = AdminUtils.getInstance().isAdmin;
+	AdminUtils.getInstance().isAdmin = async () => true;
 
-	const invalid = await MinecraftCommands.configureServerCommand(
-		null,
-		groupMessage("!minecraft-servidor play.exemplo.com:abc"),
-		["play.exemplo.com:abc"],
-		group
-	);
-	assert.ok(invalid.content.includes("❌"));
-	assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
+	try {
+		await MinecraftCommands.configureServerCommand(
+			bot,
+			groupMessage("!minecraft-servidor play.exemplo.com:25300"),
+			["play.exemplo.com:25300"],
+			group
+		);
+		assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
 
-	await MinecraftCommands.configureServerCommand(
-		null,
-		groupMessage("!minecraft-servidor remover"),
-		["remover"],
-		group
-	);
-	assert.strictEqual(group.minecraftServer, null);
-	console.log("✓ !minecraft-servidor e remoção");
+		const invalid = await MinecraftCommands.configureServerCommand(
+			bot,
+			groupMessage("!minecraft-servidor play.exemplo.com:abc"),
+			["play.exemplo.com:abc"],
+			group
+		);
+		assert.ok(invalid.content.includes("❌"));
+		assert.deepStrictEqual(group.minecraftServer, { host: "play.exemplo.com", port: 25300 });
+
+		await MinecraftCommands.configureServerCommand(
+			bot,
+			groupMessage("!minecraft-servidor remover"),
+			["remover"],
+			group
+		);
+		assert.strictEqual(group.minecraftServer, null);
+		console.log("✓ !minecraft-servidor e remoção");
+	} finally {
+		AdminUtils.getInstance().isAdmin = originalIsAdmin;
+	}
 }
 
 async function testServerStatus() {

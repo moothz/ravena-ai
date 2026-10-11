@@ -3,6 +3,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("roleta-russa-commands");
 const database = Database.getInstance();
@@ -546,31 +547,16 @@ async function mostrarRanking(bot, message, args, group) {
  */
 async function resetarRoletaRussa(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return [
-				new ReturnMessage({
-					chatId: message.author,
-					content: "O reset da roleta russa só pode ser executado em grupos."
-				})
-			];
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "a roleta russa"
+		});
+		if (errorResponse) return [errorResponse];
 
-		const groupId = message.group;
-		const userId = message.author;
-
-		const isAdmin = await bot.isUserAdminInGroup(userId, groupId);
-		if (!isAdmin) {
-			return [
-				new ReturnMessage({
-					chatId: groupId,
-					content: "⛔ Apenas administradores podem resetar os dados da roleta russa.",
-					options: {
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
-				})
-			];
-		}
+		const groupId = targetGroup.id;
 
 		// Count players to show in message
 		const countResult = await database.dbGet(
@@ -583,10 +569,10 @@ async function resetarRoletaRussa(bot, message, args, group) {
 		if (numJogadores === 0) {
 			return [
 				new ReturnMessage({
-					chatId: groupId,
-					content: "⚠️ Não há dados da roleta russa para este grupo.",
+					chatId,
+					content: `⚠️ Não há dados da roleta russa para o grupo ${targetGroup.name || targetGroup.id}.`,
 					options: {
-						quotedMessageId: message.origin.id._serialized,
+						quotedMessageId: message.origin?.id?._serialized,
 						goReply: message.origin
 					}
 				})
@@ -594,7 +580,10 @@ async function resetarRoletaRussa(bot, message, args, group) {
 		}
 
 		// Get ranking before reset
-		const rankingMessage = await mostrarRanking(bot, message, args, group);
+		const rankingMessage = await mostrarRanking(bot, message, args, targetGroup);
+		if (rankingMessage && rankingMessage.chatId !== chatId) {
+			rankingMessage.chatId = chatId;
+		}
 
 		// Reset players (Delete them)
 		await database.dbRun(dbName, "DELETE FROM roleta_players WHERE group_id = ?", [groupId]);
@@ -615,10 +604,10 @@ async function resetarRoletaRussa(bot, message, args, group) {
 		return [
 			rankingMessage,
 			new ReturnMessage({
-				chatId: groupId,
-				content: `🔄 *Dados da Roleta Russa Resetados*\n\nForam removidos dados de ${numJogadores} jogadores deste grupo.\n\nO ranking acima mostra como estava antes do reset.`,
+				chatId,
+				content: `🔄 *Dados da Roleta Russa Resetados*\n\nForam removidos dados de ${numJogadores} jogadores do grupo ${targetGroup.name || targetGroup.id}.\n\nO ranking acima mostra como estava antes do reset.`,
 				options: {
-					quotedMessageId: message.origin.id._serialized,
+					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
 				}
 			})
@@ -639,30 +628,20 @@ async function resetarRoletaRussa(bot, message, args, group) {
  */
 async function definirTempoRoleta(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "o tempo da roleta russa"
+		});
+		if (errorResponse) return errorResponse;
 
-		const groupId = message.group;
-
-		const isAdmin = await bot.isUserAdminInGroup(message.author, groupId);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId: groupId,
-				content: "⛔ Apenas administradores podem definir o tempo da roleta russa.",
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
+		const groupId = targetGroup.id;
 
 		if (args.length === 0 || isNaN(parseInt(args[0]))) {
 			return new ReturnMessage({
-				chatId: groupId,
+				chatId,
 				content:
 					"Por favor, forneça um tempo em segundos (mínimo 10, máximo 259200, 72 horas). Exemplo: !roleta-tempo 300"
 			});
@@ -695,8 +674,8 @@ async function definirTempoRoleta(bot, message, args, group) {
 		}
 
 		return new ReturnMessage({
-			chatId: groupId,
-			content: `🕐 Tempo de "morte" na roleta russa definido para ${tempoFormatado}.`
+			chatId,
+			content: `🕐 Tempo de "morte" na roleta russa do grupo *${targetGroup.name || targetGroup.id}* definido para ${tempoFormatado}.`
 		});
 	} catch (error) {
 		logger.error("Erro ao definir tempo de roleta:", error);
@@ -709,22 +688,16 @@ async function definirTempoRoleta(bot, message, args, group) {
 
 async function alternarSilenciamentoRoleta(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "o silenciamento da roleta russa"
+		});
+		if (errorResponse) return errorResponse;
 
-		const groupId = message.group;
-		const isAdmin = await bot.isUserAdminInGroup(message.author, groupId);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId: groupId,
-				content: "⛔ Apenas administradores podem alterar o silenciamento da roleta russa.",
-				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
-			});
-		}
+		const groupId = targetGroup.id;
 
 		const current = await getGroupData(groupId);
 		const value = String(args?.[0] || "toggle").toLowerCase();
@@ -739,12 +712,12 @@ async function alternarSilenciamentoRoleta(bot, message, args, group) {
 			groupId
 		]);
 
-		let content = `🔇 Silenciamento da roleta russa ${enabled ? "ativado" : "desativado"}.`;
+		let content = `🔇 Silenciamento da roleta russa ${enabled ? "ativado" : "desativado"} para o grupo *${targetGroup.name || targetGroup.id}*.`;
 		if (enabled) {
 			const management = bot.eventHandler?.commandHandler?.management;
 			const botIsAdmin =
 				typeof management?.isBotAdmin === "function"
-					? await management.isBotAdmin(bot, group)
+					? await management.isBotAdmin(bot, targetGroup)
 					: false;
 			if (!botIsAdmin) {
 				content +=

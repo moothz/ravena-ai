@@ -6,6 +6,7 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("canais-commands");
 const database = Database.getInstance();
@@ -1026,13 +1027,14 @@ async function createPostReturnMessage(
  * !canal-seguir <nome> <link>
  */
 async function seguirCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "os canais seguidos"
+	});
+	if (errorResponse) return errorResponse;
 
 	const rawInput = args.join(" ").trim();
 	if (!rawInput) {
@@ -1054,7 +1056,7 @@ async function seguirCommand(bot, message, args, group) {
 	const totalCanaisGrupo = await database.dbGet(
 		DB_NAME,
 		"SELECT COUNT(*) as count FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	if (totalCanaisGrupo && totalCanaisGrupo.count >= MAX_CANAIS_POR_GRUPO) {
@@ -1102,7 +1104,7 @@ async function seguirCommand(bot, message, args, group) {
 			await database.dbGet(
 				DB_NAME,
 				"SELECT 1 FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
-				[message.group, candidateNorm]
+				[targetGroup.id, candidateNorm]
 			)
 		) {
 			candidate = `${apelidoFinal}_${counter}`;
@@ -1124,7 +1126,7 @@ async function seguirCommand(bot, message, args, group) {
 	const canalJaExisteNoGrupo = await database.dbGet(
 		DB_NAME,
 		"SELECT apelido FROM canal_grupos WHERE group_id = ? AND canal_jid = ?",
-		[message.group, canalJid]
+		[targetGroup.id, canalJid]
 	);
 	if (canalJaExisteNoGrupo) {
 		return new ReturnMessage({
@@ -1137,7 +1139,7 @@ async function seguirCommand(bot, message, args, group) {
 	const apelidoEmUso = await database.dbGet(
 		DB_NAME,
 		"SELECT 1 FROM canal_grupos WHERE group_id = ? AND apelido_normalizado = ?",
-		[message.group, apelidoNorm]
+		[targetGroup.id, apelidoNorm]
 	);
 	if (apelidoEmUso) {
 		return new ReturnMessage({
@@ -1164,7 +1166,7 @@ async function seguirCommand(bot, message, args, group) {
 		DB_NAME,
 		`INSERT INTO canal_grupos (group_id, canal_jid, apelido, apelido_normalizado, tipos_midia, criado_por, criado_em)
      VALUES (?, ?, ?, ?, NULL, ?, ?)`,
-		[message.group, canalJid, apelidoFinal, apelidoNorm, message.author, agora]
+		[targetGroup.id, canalJid, apelidoFinal, apelidoNorm, message.author, agora]
 	);
 
 	// Atualiza cache em memória
@@ -1192,7 +1194,7 @@ Se você for o dono deste canal e o bot for administrador dele, você pode encam
 Ao convidar o bot para ser administrador do canal, ele tentará aceitar o convite automaticamente. Se por algum motivo não for aceito de imediato, você pode usar o comando \`!canal-aceitarinvite ${apelidoFinal}\` para forçar o aceite.`;
 
 	try {
-		const groupObj = await database.getGroup(message.group);
+		const groupObj = await database.getGroup(targetGroup.id);
 		if (groupObj) {
 			let platform = null;
 			let streamName = null;
@@ -1216,7 +1218,7 @@ Ao convidar o bot para ser administrador do canal, ele tentará aceitar o convit
 		logger.warn(`[Canais] Erro ao carregar grupo para dica de stream:`, err);
 	}
 
-	const responseText = `✅ Canal *${nomeOficial}* cadastrado com sucesso!
+	const responseText = `✅ Canal *${nomeOficial}* cadastrado com sucesso para o grupo *${targetGroup.name || targetGroup.id}*!
 🏷️ Apelido no grupo: *${apelidoFinal}*
 📥 Baixando até ${BACKFILL_COUNT} mensagens recentes em segundo plano...
 
@@ -1245,13 +1247,14 @@ Depois é só digitar \`!${apelidoNorm}\` para receber um post aleatório!${admi
  * !canal-lista
  */
 async function listaCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroup(bot, message, group, {
+		featureName: "listar os canais"
+	});
+	if (errorResponse) return errorResponse;
 
 	const rows = await database.dbAll(
 		DB_NAME,
@@ -1261,18 +1264,17 @@ async function listaCommand(bot, message, args, group) {
      JOIN canais c ON g.canal_jid = c.jid
      WHERE g.group_id = ?
      ORDER BY g.criado_em ASC`,
-		[message.group]
+		[targetGroup.id]
 	);
 
 	if (!rows || rows.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"📭 Nenhum canal está sendo seguido neste grupo.\n\nPara seguir um canal, use:\n`!canal-seguir <nome> <link>`"
+			content: `📭 Nenhum canal está sendo seguido no grupo *${targetGroup.name || targetGroup.id}*.\n\nPara seguir um canal, use:\n\`!canal-seguir <nome> <link>\``
 		});
 	}
 
-	let text = `📢 *Canais seguidos neste grupo (${rows.length}/${MAX_CANAIS_POR_GRUPO}):*\n\n`;
+	let text = `📢 *Canais seguidos no grupo ${targetGroup.name || targetGroup.id} (${rows.length}/${MAX_CANAIS_POR_GRUPO}):*\n\n`;
 
 	rows.forEach((row, i) => {
 		let midiasStr = "Todas";
@@ -1312,13 +1314,14 @@ async function listaCommand(bot, message, args, group) {
  * !canal-del <nome>
  */
 async function delCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "remover canais seguidos"
+	});
+	if (errorResponse) return errorResponse;
 
 	const targetName = args.join(" ").trim();
 	if (!targetName) {
@@ -1332,7 +1335,7 @@ async function delCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
@@ -1340,13 +1343,13 @@ async function delCommand(bot, message, args, group) {
 	if (!matchedCanal) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
+			content: `❌ Canal *${targetName}* não encontrado no grupo *${targetGroup.name || targetGroup.id}*. Use \`!canal-lista\` para conferir.`
 		});
 	}
 
 	// Remove vínculo do grupo
 	await database.dbRun(DB_NAME, "DELETE FROM canal_grupos WHERE group_id = ? AND canal_jid = ?", [
-		message.group,
+		targetGroup.id,
 		matchedCanal.canal_jid
 	]);
 
@@ -1375,7 +1378,7 @@ async function delCommand(bot, message, args, group) {
 
 	return new ReturnMessage({
 		chatId,
-		content: `✅ O canal *${matchedCanal.apelido}* deixou de ser seguido neste grupo.\n_(As mídias já salvas foram preservadas no banco de dados)._`
+		content: `✅ O canal *${matchedCanal.apelido}* deixou de ser seguido no grupo *${targetGroup.name || targetGroup.id}*.\n_(As mídias já salvas foram preservadas no banco de dados)._`
 	});
 }
 
@@ -1383,13 +1386,14 @@ async function delCommand(bot, message, args, group) {
  * !canal-encaminhar <nome>
  */
 async function encaminharCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "o encaminhamento de canais"
+	});
+	if (errorResponse) return errorResponse;
 
 	const targetName = args.join(" ").trim();
 	if (!targetName) {
@@ -1403,7 +1407,7 @@ async function encaminharCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado, encaminhar FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
@@ -1411,7 +1415,7 @@ async function encaminharCommand(bot, message, args, group) {
 	if (!matchedCanal) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
+			content: `❌ Canal *${targetName}* não encontrado no grupo *${targetGroup.name || targetGroup.id}*. Use \`!canal-lista\` para conferir.`
 		});
 	}
 
@@ -1420,7 +1424,7 @@ async function encaminharCommand(bot, message, args, group) {
 	await database.dbRun(
 		DB_NAME,
 		"UPDATE canal_grupos SET encaminhar = ? WHERE group_id = ? AND canal_jid = ?",
-		[novoStatus, message.group, matchedCanal.canal_jid]
+		[novoStatus, targetGroup.id, matchedCanal.canal_jid]
 	);
 
 	await refreshTrackedChannelsCache();
@@ -1428,12 +1432,12 @@ async function encaminharCommand(bot, message, args, group) {
 	if (novoStatus === 1) {
 		return new ReturnMessage({
 			chatId,
-			content: `⏩ *Encaminhamento ativado!* As novas postagens do canal *${matchedCanal.apelido}* serão encaminhadas automaticamente para este grupo em tempo real.\n\n_Para desativar, use novamente:_ \`!canal-encaminhar ${matchedCanal.apelido}\``
+			content: `⏩ *Encaminhamento ativado!* As novas postagens do canal *${matchedCanal.apelido}* serão encaminhadas automaticamente para o grupo *${targetGroup.name || targetGroup.id}* em tempo real.\n\n_Para desativar, use novamente:_ \`!canal-encaminhar ${matchedCanal.apelido}\``
 		});
 	} else {
 		return new ReturnMessage({
 			chatId,
-			content: `⏹️ *Encaminhamento desativado.* As postagens do canal *${matchedCanal.apelido}* não serão mais enviadas automaticamente para este grupo.`
+			content: `⏹️ *Encaminhamento desativado.* As postagens do canal *${matchedCanal.apelido}* não serão mais enviadas automaticamente para o grupo *${targetGroup.name || targetGroup.id}*.`
 		});
 	}
 }
@@ -1442,13 +1446,14 @@ async function encaminharCommand(bot, message, args, group) {
  * !canais-header <nome>
  */
 async function headerCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "o cabeçalho de canais"
+	});
+	if (errorResponse) return errorResponse;
 
 	const targetName = args.join(" ").trim();
 	if (!targetName) {
@@ -1462,7 +1467,7 @@ async function headerCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado, header FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	const { matchedCanal } = matchCanalInGroup(canaisDoGrupo, targetName);
@@ -1470,7 +1475,7 @@ async function headerCommand(bot, message, args, group) {
 	if (!matchedCanal) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal *${targetName}* não encontrado neste grupo. Use \`!canal-lista\` para conferir.`
+			content: `❌ Canal *${targetName}* não encontrado no grupo *${targetGroup.name || targetGroup.id}*. Use \`!canal-lista\` para conferir.`
 		});
 	}
 
@@ -1480,7 +1485,7 @@ async function headerCommand(bot, message, args, group) {
 	await database.dbRun(
 		DB_NAME,
 		"UPDATE canal_grupos SET header = ? WHERE group_id = ? AND canal_jid = ?",
-		[novoStatus, message.group, matchedCanal.canal_jid]
+		[novoStatus, targetGroup.id, matchedCanal.canal_jid]
 	);
 
 	if (novoStatus === 1) {
@@ -1500,13 +1505,14 @@ async function headerCommand(bot, message, args, group) {
  * !canal-ver <nome> [data]
  */
 async function verCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroup(bot, message, group, {
+		featureName: "ver as postagens do canal"
+	});
+	if (errorResponse) return errorResponse;
 
 	if (args.length === 0) {
 		return new ReturnMessage({
@@ -1520,14 +1526,13 @@ async function verCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia, header FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	if (!canaisDoGrupo || canaisDoGrupo.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"📭 Nenhum canal está sendo seguido neste grupo.\nUse `!canal-seguir <nome> <link>` para começar."
+			content: `📭 Nenhum canal está sendo seguido no grupo *${targetGroup.name || targetGroup.id}*.\nUse \`!canal-seguir <nome> <link>\` para começar.`
 		});
 	}
 
@@ -1538,7 +1543,7 @@ async function verCommand(bot, message, args, group) {
 		const nomesDisponiveis = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal não encontrado neste grupo.\nCanais disponíveis: ${nomesDisponiveis}`
+			content: `❌ Canal não encontrado no grupo *${targetGroup.name || targetGroup.id}*.\nCanais disponíveis: ${nomesDisponiveis}`
 		});
 	}
 
@@ -1597,13 +1602,14 @@ async function verCommand(bot, message, args, group) {
  * !canal-midias <nome> [texto,imagem,audio,sticker,video,documento]
  */
 async function midiasCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "as mídias capturadas do canal"
+	});
+	if (errorResponse) return errorResponse;
 
 	if (args.length === 0) {
 		return new ReturnMessage({
@@ -1616,14 +1622,13 @@ async function midiasCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	if (!canaisDoGrupo || canaisDoGrupo.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"📭 Nenhum canal está sendo seguido neste grupo.\nUse `!canal-seguir <nome> <link>` para começar."
+			content: `📭 Nenhum canal está sendo seguido no grupo *${targetGroup.name || targetGroup.id}*.\nUse \`!canal-seguir <nome> <link>\` para começar.`
 		});
 	}
 
@@ -1634,7 +1639,7 @@ async function midiasCommand(bot, message, args, group) {
 		const nomes = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal não encontrado neste grupo.\nCanais disponíveis: ${nomes}`
+			content: `❌ Canal não encontrado no grupo *${targetGroup.name || targetGroup.id}*.\nCanais disponíveis: ${nomes}`
 		});
 	}
 
@@ -1643,13 +1648,13 @@ async function midiasCommand(bot, message, args, group) {
 		await database.dbRun(
 			DB_NAME,
 			"UPDATE canal_grupos SET tipos_midia = NULL WHERE group_id = ? AND canal_jid = ?",
-			[message.group, matchedCanal.canal_jid]
+			[targetGroup.id, matchedCanal.canal_jid]
 		);
 		await refreshTrackedChannelsCache();
 
 		return new ReturnMessage({
 			chatId,
-			content: `✅ Captura de *todos os tipos de mídia* ativada para o canal *${matchedCanal.apelido}*!\n\n💡 *Dica:* Para restringir apenas a mídias específicas, envie a lista separada por vírgula:\n\`!canal-midias ${matchedCanal.apelido} texto, imagem, audio\``
+			content: `✅ Captura de *todos os tipos de mídia* ativada para o canal *${matchedCanal.apelido}* no grupo *${targetGroup.name || targetGroup.id}*!\n\n💡 *Dica:* Para restringir apenas a mídias específicas, envie a lista separada por vírgula:\n\`!canal-midias ${matchedCanal.apelido} texto, imagem, audio\``
 		});
 	}
 
@@ -1659,13 +1664,13 @@ async function midiasCommand(bot, message, args, group) {
 		await database.dbRun(
 			DB_NAME,
 			"UPDATE canal_grupos SET tipos_midia = NULL WHERE group_id = ? AND canal_jid = ?",
-			[message.group, matchedCanal.canal_jid]
+			[targetGroup.id, matchedCanal.canal_jid]
 		);
 		await refreshTrackedChannelsCache();
 
 		return new ReturnMessage({
 			chatId,
-			content: `✅ Captura de *todas as mídias* ativada para o canal *${matchedCanal.apelido}*!`
+			content: `✅ Captura de *todas as mídias* ativada para o canal *${matchedCanal.apelido}* no grupo *${targetGroup.name || targetGroup.id}*!`
 		});
 	}
 
@@ -1677,13 +1682,13 @@ async function midiasCommand(bot, message, args, group) {
 	await database.dbRun(
 		DB_NAME,
 		"UPDATE canal_grupos SET tipos_midia = ? WHERE group_id = ? AND canal_jid = ?",
-		[jsonTypes, message.group, matchedCanal.canal_jid]
+		[jsonTypes, targetGroup.id, matchedCanal.canal_jid]
 	);
 	await refreshTrackedChannelsCache();
 
 	return new ReturnMessage({
 		chatId,
-		content: `✅ Tipos de mídia para *${matchedCanal.apelido}* atualizados com sucesso!\n📌 Mídias ativas: *${parsed.types.join(", ")}*`
+		content: `✅ Tipos de mídia para *${matchedCanal.apelido}* atualizados com sucesso no grupo *${targetGroup.name || targetGroup.id}*!\n📌 Mídias ativas: *${parsed.types.join(", ")}*`
 	});
 }
 
@@ -1691,13 +1696,14 @@ async function midiasCommand(bot, message, args, group) {
  * !canal-rnd <nome> [tipos]
  */
 async function rndCommand(bot, message, args, group) {
-	const chatId = message.group ?? message.author;
-	if (!message.group) {
-		return new ReturnMessage({
-			chatId,
-			content: "❌ Este comando só pode ser utilizado dentro de grupos."
-		});
-	}
+	const {
+		targetGroup,
+		responseChatId: chatId,
+		errorResponse
+	} = await GroupContextHelper.resolveGroup(bot, message, group, {
+		featureName: "postagem aleatória de canal"
+	});
+	if (errorResponse) return errorResponse;
 
 	if (args.length === 0) {
 		return new ReturnMessage({
@@ -1710,14 +1716,13 @@ async function rndCommand(bot, message, args, group) {
 	const canaisDoGrupo = await database.dbAll(
 		DB_NAME,
 		"SELECT canal_jid, apelido, apelido_normalizado, tipos_midia, header FROM canal_grupos WHERE group_id = ?",
-		[message.group]
+		[targetGroup.id]
 	);
 
 	if (!canaisDoGrupo || canaisDoGrupo.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"📭 Nenhum canal está sendo seguido neste grupo.\nUse `!canal-seguir <nome> <link>` para começar."
+			content: `📭 Nenhum canal está sendo seguido no grupo *${targetGroup.name || targetGroup.id}*.\nUse \`!canal-seguir <nome> <link>\` para começar.`
 		});
 	}
 
@@ -1728,7 +1733,7 @@ async function rndCommand(bot, message, args, group) {
 		const nomes = canaisDoGrupo.map((c) => `*${c.apelido}*`).join(", ");
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Canal não encontrado neste grupo.\nCanais disponíveis: ${nomes}`
+			content: `❌ Canal não encontrado no grupo *${targetGroup.name || targetGroup.id}*.\nCanais disponíveis: ${nomes}`
 		});
 	}
 

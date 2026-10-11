@@ -315,6 +315,11 @@ async function runTests() {
 		// -------------------------------------------------------------
 		console.log("\n[6] Testando checkAndNotifyFreeGames com fallback de bot...");
 
+		// Limpa inscrições existentes para isolar teste
+		await database.dbRun(DB_NAME, "DELETE FROM free_games_subscriptions WHERE group_id != ?", [
+			testGroup.id
+		]);
+
 		// Configura o grupo para turno 'manha' com frequência de 1 dia e ultimo_aviso zerado
 		await database.dbRun(
 			DB_NAME,

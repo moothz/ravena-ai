@@ -439,6 +439,10 @@ async function runTests() {
 	await refreshTrackedChannelsCache();
 
 	// Executa comando canal-encaminhar para ATIVAR
+	const AdminUtils = require("../utils/AdminUtils");
+	const originalIsAdmin = AdminUtils.getInstance().isAdmin;
+	AdminUtils.getInstance().isAdmin = async () => true;
+
 	const msgAdmin = createMessage({
 		content: "!canal-encaminhar Carros",
 		group: testGroup1,
@@ -724,14 +728,17 @@ async function runTests() {
 	await refreshTrackedChannelsCache();
 	resetForwardActivity();
 
-	// Teste 9a: Erro se usado fora de grupo
+	// Teste 9a: Erro se usado fora de grupo sem !g-manage
 	const msgPv = createMessage({
 		content: "!canais-header CanalHeader",
 		author: "admin@s.whatsapp.net"
 	});
 	const resPv = await cmdHeader.execute(fakeBot, msgPv, ["CanalHeader"], null);
 	assert.ok(
-		resPv.content.includes("apenas dentro de grupos") || resPv.content.includes("dentro de grupos")
+		resPv.content.includes("apenas dentro de grupos") ||
+			resPv.content.includes("dentro de grupos") ||
+			resPv.content.includes("g-manage"),
+		"Deve requerer grupo ou g-manage no PV"
 	);
 
 	// Teste 9b: Erro se nome ausente

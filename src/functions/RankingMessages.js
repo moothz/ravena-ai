@@ -2,6 +2,7 @@ const Logger = require("../utils/Logger");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 const database = Database.getInstance();
 
 const logger = new Logger("ranking-messages");
@@ -268,24 +269,22 @@ async function getGroupParticipants(bot, message, chatId) {
  */
 async function faladoresCommand(bot, message, args, group) {
 	try {
-		const userId = message.author || message.authorAlt;
-		const chatId = message.group ?? userId;
-
-		// Verifica se está em um grupo
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Este comando só funciona em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "ver o ranking de faladores"
+		});
+		if (errorResponse) return errorResponse;
 
 		const isCompleto = args[0]?.toLowerCase() === "completo";
 
 		// Obtém ranking
-		const ranking = await getMessageRanking(chatId);
+		const ranking = await getMessageRanking(targetGroup.id);
 
 		// Get participants
-		const participants = await getGroupParticipants(bot, message, chatId);
+		const participants = await getGroupParticipants(bot, message, targetGroup.id);
 
 		// Identify missing
 		const missingParticipants = [];
@@ -411,30 +410,16 @@ async function faladoresCommand(bot, message, args, group) {
  */
 async function faladoresLimpezaCommand(bot, message, args, group) {
 	try {
-		const userId = message.author || message.authorAlt;
-		const chatId = message.group ?? userId;
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "a limpeza do ranking de faladores"
+		});
+		if (errorResponse) return errorResponse;
 
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Comando apenas para grupos."
-			});
-		}
-
-		// Verifica se o usuário é admin
-		const isAdmin = await bot.isUserAdminInGroup(userId, chatId);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId,
-				content: "⛔ Apenas administradores podem realizar a limpeza do ranking.",
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		const participants = await getGroupParticipants(bot, message, chatId);
+		const participants = await getGroupParticipants(bot, message, targetGroup.id);
 
 		if (!participants || participants.length === 0) {
 			return new ReturnMessage({
@@ -444,7 +429,7 @@ async function faladoresLimpezaCommand(bot, message, args, group) {
 			});
 		}
 
-		const ranking = await getMessageRanking(chatId);
+		const ranking = await getMessageRanking(targetGroup.id);
 		let removedCount = 0;
 
 		// Build set of current participant IDs (normalized)
@@ -459,7 +444,7 @@ async function faladoresLimpezaCommand(bot, message, args, group) {
 			const dbId = normalizeId(item.numero);
 			if (!currentMemberIds.has(dbId)) {
 				// User in ranking but not in current participants
-				await removeUserFromRanking(chatId, item.numero);
+				await removeUserFromRanking(targetGroup.id, item.numero);
 				removedCount++;
 			}
 		}
@@ -494,35 +479,21 @@ async function resetRanking(chatId) {
  */
 async function faladoresResetCommand(bot, message, args, group) {
 	try {
-		const userId = message.author || message.authorAlt;
-		const chatId = message.group ?? userId;
-
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Comando apenas para grupos."
-			});
-		}
-
-		// Verifica se o usuário é admin
-		const isAdmin = await bot.isUserAdminInGroup(userId, chatId);
-		if (!isAdmin) {
-			return new ReturnMessage({
-				chatId,
-				content: "⛔ Apenas administradores podem resetar o ranking.",
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "o reset do ranking de faladores"
+		});
+		if (errorResponse) return errorResponse;
 
 		// 1. Get current full ranking
-		const rankingMsg = await faladoresCommand(bot, message, ["completo"], group);
+		const rankingMsg = await faladoresCommand(bot, message, ["completo"], targetGroup);
 		const rankingContent = rankingMsg.content;
 
 		// 2. Reset database
-		await resetRanking(chatId);
+		await resetRanking(targetGroup.id);
 
 		// 3. Format Date
 		const now = new Date();
@@ -634,18 +605,17 @@ function formatTimeAgo(ms) {
  */
 async function faladoresAtividadeCommand(bot, message, args, group) {
 	try {
-		const userId = message.author || message.authorAlt;
-		const chatId = message.group ?? userId;
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "a atividade dos membros"
+		});
+		if (errorResponse) return errorResponse;
 
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Este comando só funciona em grupos."
-			});
-		}
-
-		const ranking = await getMessageRanking(chatId);
-		const participants = await getGroupParticipants(bot, message, chatId);
+		const ranking = await getMessageRanking(targetGroup.id);
+		const participants = await getGroupParticipants(bot, message, targetGroup.id);
 
 		if (ranking.length === 0 && participants.length === 0) {
 			return new ReturnMessage({

@@ -4,6 +4,7 @@ const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const StreamSystem = require("../StreamSystem");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("stream-commands");
 const database = Database.getInstance();
@@ -20,19 +21,19 @@ const database = Database.getInstance();
  */
 async function listMonitoredChannels(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.author;
-
-		if (!group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "listar streams"
+		});
+		if (errorResponse) return errorResponse;
 
 		// Verifica se há canais configurados
-		const twitchChannels = Array.isArray(group.twitch) ? group.twitch : [];
-		const kickChannels = Array.isArray(group.kick) ? group.kick : [];
-		const youtubeChannels = Array.isArray(group.youtube) ? group.youtube : [];
+		const twitchChannels = Array.isArray(targetGroup.twitch) ? targetGroup.twitch : [];
+		const kickChannels = Array.isArray(targetGroup.kick) ? targetGroup.kick : [];
+		const youtubeChannels = Array.isArray(targetGroup.youtube) ? targetGroup.youtube : [];
 
 		const totalChannels = twitchChannels.length + kickChannels.length + youtubeChannels.length;
 
@@ -45,7 +46,7 @@ async function listMonitoredChannels(bot, message, args, group) {
 		}
 
 		// Constrói mensagem
-		let response = `*Canais Monitorados neste Grupo*\n\n`;
+		let response = `*Canais Monitorados neste Grupo (${targetGroup.name || targetGroup.id})*\n\n`;
 
 		// Lista canais Twitch
 		if (twitchChannels.length > 0) {
@@ -141,17 +142,17 @@ function avisoStreamSystem(bot, chatId) {
  */
 async function showStreamStatus(bot, message, args, group) {
 	try {
-		const chatId = message.group ?? message.author;
-
-		if (!group) {
-			return new ReturnMessage({
-				chatId,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "ver status das streams"
+		});
+		if (errorResponse) return errorResponse;
 
 		// Cleanup bot status for this group
-		await StreamSystem.getInstance().refreshGroup(group);
+		await StreamSystem.getInstance().refreshGroup(targetGroup);
 
 		// Verifica se o StreamMonitor está inicializado
 		if (!bot.streamMonitor) {
@@ -159,14 +160,14 @@ async function showStreamStatus(bot, message, args, group) {
 		}
 
 		// Obtém canais configurados para este grupo
-		const twitchChannels = Array.isArray(group.twitch)
-			? group.twitch.map((c) => c.channel.toLowerCase())
+		const twitchChannels = Array.isArray(targetGroup.twitch)
+			? targetGroup.twitch.map((c) => c.channel.toLowerCase())
 			: [];
-		const kickChannels = Array.isArray(group.kick)
-			? group.kick.map((c) => c.channel.toLowerCase())
+		const kickChannels = Array.isArray(targetGroup.kick)
+			? targetGroup.kick.map((c) => c.channel.toLowerCase())
 			: [];
-		const youtubeChannels = Array.isArray(group.youtube)
-			? group.youtube.map((c) => c.channel.toLowerCase())
+		const youtubeChannels = Array.isArray(targetGroup.youtube)
+			? targetGroup.youtube.map((c) => c.channel.toLowerCase())
 			: [];
 
 		const totalChannels = twitchChannels.length + kickChannels.length + youtubeChannels.length;

@@ -5,6 +5,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const DonorBonusService = require("../services/DonorBonusService");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("pinto-game");
 const database = Database.getInstance();
@@ -495,15 +496,16 @@ async function pintoCommand(bot, message, args, group) {
  */
 async function pintoRankingCommand(bot, message, args, group) {
 	try {
-		// Verifica se está em um grupo
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "🏆 O ranking do jogo só pode ser visualizado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "o ranking do jogo"
+		});
+		if (errorResponse) return errorResponse;
 
-		const groupId = message.group;
+		const groupId = targetGroup.id;
 
 		// Obtém o ranking do banco de dados
 		const topPlayers = await database.dbAll(
@@ -520,15 +522,13 @@ async function pintoRankingCommand(bot, message, args, group) {
 
 		if (topPlayers.length === 0) {
 			return new ReturnMessage({
-				chatId: groupId,
-				content: "🏆 Ainda não há dados para o ranking neste grupo. Use !pinto para participar!"
+				chatId,
+				content: `🏆 Ainda não há dados para o ranking no grupo ${targetGroup.name || targetGroup.id}. Use !pinto para participar!`
 			});
 		}
 
 		// Prepara a mensagem de ranking
-		let rankingMessage = `🍆 *Ranking do Tamanho - ${group.name || "Grupo"}*
-
-`;
+		let rankingMessage = `🍆 *Ranking do Tamanho - ${targetGroup.name || "Grupo"}*\n\n`;
 
 		topPlayers.forEach((player, index) => {
 			const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`;
@@ -592,33 +592,16 @@ async function pintoRankingCommand(bot, message, args, group) {
  */
 async function pintoResetCommand(bot, message, args, group) {
 	try {
-		// Verifica se está em um grupo
-		if (!message.group) {
-			return [
-				new ReturnMessage({
-					chatId: message.author,
-					content: "O reset do jogo só pode ser executado em grupos."
-				})
-			];
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "os dados do jogo"
+		});
+		if (errorResponse) return [errorResponse];
 
-		const groupId = message.group;
-		const userId = message.author;
-
-		// Verifica se o usuário é admin
-		const isAdmin = await bot.isUserAdminInGroup(userId, groupId);
-		if (!isAdmin) {
-			return [
-				new ReturnMessage({
-					chatId: groupId,
-					content: "⛔ Apenas administradores podem resetar os dados do jogo.",
-					options: {
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
-				})
-			];
-		}
+		const groupId = targetGroup.id;
 
 		// Verifica quantos jogadores existem antes de deletar
 		const countResult = await database.dbGet(
@@ -635,10 +618,10 @@ async function pintoResetCommand(bot, message, args, group) {
 		if (numJogadores === 0) {
 			return [
 				new ReturnMessage({
-					chatId: groupId,
-					content: "⚠️ Não há dados do jogo para este grupo.",
+					chatId,
+					content: `⚠️ Não há dados do jogo para o grupo ${targetGroup.name || targetGroup.id}.`,
 					options: {
-						quotedMessageId: message.origin.id._serialized,
+						quotedMessageId: message.origin?.id?._serialized,
 						goReply: message.origin
 					}
 				})
@@ -646,7 +629,10 @@ async function pintoResetCommand(bot, message, args, group) {
 		}
 
 		// Obtém o ranking atual antes de resetar
-		const rankingMessage = await pintoRankingCommand(bot, message, args, group);
+		const rankingMessage = await pintoRankingCommand(bot, message, args, targetGroup);
+		if (rankingMessage && rankingMessage.chatId !== chatId) {
+			rankingMessage.chatId = chatId;
+		}
 
 		// Reseta os dados do grupo (Scores)
 		await database.dbRun(
@@ -661,10 +647,10 @@ async function pintoResetCommand(bot, message, args, group) {
 		return [
 			rankingMessage,
 			new ReturnMessage({
-				chatId: groupId,
-				content: `🔄 *Dados do Jogo Pinto Resetados*\n\nForam removidos dados de ${numJogadores} jogadores deste grupo.\n\nO ranking acima mostra como estava antes do reset.`,
+				chatId,
+				content: `🔄 *Dados do Jogo Pinto Resetados*\n\nForam removidos dados de ${numJogadores} jogadores do grupo ${targetGroup.name || targetGroup.id}.\n\nO ranking acima mostra como estava antes do reset.`,
 				options: {
-					quotedMessageId: message.origin.id._serialized,
+					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
 				}
 			})

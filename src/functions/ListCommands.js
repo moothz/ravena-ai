@@ -6,6 +6,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("list-commands");
 const database = Database.getInstance();
@@ -205,25 +206,27 @@ async function getUserDisplayName(bot, group, message, userId) {
  */
 async function showLists(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "visualizar listas"
+		});
+		if (errorResponse) return errorResponse;
 
 		// Get lists for this group
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 
 		if (lists.length === 0) {
 			return new ReturnMessage({
-				chatId: message.group,
-				content: "Não há listas criadas neste grupo. Use !lc <nome> para criar uma lista."
+				chatId,
+				content: `Não há listas criadas no grupo ${targetGroup.name || targetGroup.id}. Use !lc <nome> para criar uma lista.`
 			});
 		}
 
 		// Format the message with lists
-		let listsMessage = "*Listas disponíveis*\n\n";
+		let listsMessage = `*Listas disponíveis (${targetGroup.name || targetGroup.id})*\n\n`;
 
 		for (let i = 0; i < lists.length; i++) {
 			const list = lists[i];
@@ -245,7 +248,7 @@ async function showLists(bot, message, args, group) {
 
 				for (const member of list.members) {
 					// Get display name (with possible nickname)
-					const displayName = await getUserDisplayName(bot, group, message, member.id);
+					const displayName = await getUserDisplayName(bot, targetGroup, message, member.id);
 					memberNames.push(displayName);
 				}
 
@@ -262,7 +265,7 @@ async function showLists(bot, message, args, group) {
 
 		// Return the message with lists
 		return new ReturnMessage({
-			chatId: message.group,
+			chatId,
 			content: listsMessage
 		});
 	} catch (error) {
@@ -285,22 +288,24 @@ async function showLists(bot, message, args, group) {
  */
 async function createList(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "criar listas"
+		});
+		if (errorResponse) return errorResponse;
 
 		if (args.length === 0) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content: "Por favor, forneça pelo menos um nome de lista. Exemplo: !lc lista1 lista2"
 			});
 		}
 
 		// Get lists for this group
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 
 		// Create each list
 		const createdLists = [];
@@ -319,7 +324,7 @@ async function createList(bot, message, args, group) {
 				// Skip existing lists
 				returnMessages.push(
 					new ReturnMessage({
-						chatId: message.group,
+						chatId,
 						content: `Lista "${listName}" já existe.`
 					})
 				);
@@ -341,12 +346,12 @@ async function createList(bot, message, args, group) {
 
 		// Save updated lists
 		if (createdLists.length > 0) {
-			await saveGroupLists(message.group, lists);
+			await saveGroupLists(targetGroup.id, lists);
 
 			// Notify about created lists
 			returnMessages.push(
 				new ReturnMessage({
-					chatId: message.group,
+					chatId,
 					content: `Lista${createdLists.length > 1 ? "s" : ""} criada${
 						createdLists.length > 1 ? "s" : ""
 					}: ${createdLists.join(", ")}`
@@ -354,14 +359,14 @@ async function createList(bot, message, args, group) {
 			);
 
 			// Add updated list display to return messages
-			const listsResult = await showLists(bot, message, [], group);
+			const listsResult = await showLists(bot, message, [], targetGroup);
 			returnMessages.push(listsResult);
 		}
 
 		return returnMessages.length > 0
 			? returnMessages
 			: new ReturnMessage({
-					chatId: message.group,
+					chatId,
 					content: "Nenhuma lista foi criada."
 				});
 	} catch (error) {
@@ -383,16 +388,18 @@ async function createList(bot, message, args, group) {
  */
 async function createListWithTitle(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "criar listas com título"
+		});
+		if (errorResponse) return errorResponse;
 
 		if (args.length < 2) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content:
 					"Por favor, forneça o nome da lista e o título. Exemplo: !lct lista1 Título da Lista"
 			});
@@ -403,14 +410,14 @@ async function createListWithTitle(bot, message, args, group) {
 		const listTitle = args.slice(1).join(" ");
 
 		// Get lists for this group
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 
 		// Check if list already exists
 		const existingList = lists.find((list) => list.name.toLowerCase() === listName.toLowerCase());
 
 		if (existingList) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content: `Lista "${listName}" já existe. Use !lt ${listName} ${listTitle} para atualizar o título.`
 			});
 		}
@@ -427,15 +434,15 @@ async function createListWithTitle(bot, message, args, group) {
 		lists.push(newList);
 
 		// Save updated lists
-		await saveGroupLists(message.group, lists);
+		await saveGroupLists(targetGroup.id, lists);
 
 		// Return both a creation confirmation and updated lists
 		return [
 			new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content: `Lista criada: ${listName} (${listTitle})`
 			}),
-			await showLists(bot, message, [], group)
+			await showLists(bot, message, [], targetGroup)
 		];
 	} catch (error) {
 		logger.error("Error creating list with title:", error);
@@ -456,23 +463,25 @@ async function createListWithTitle(bot, message, args, group) {
  */
 async function deleteList(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "excluir listas"
+		});
+		if (errorResponse) return errorResponse;
 
 		if (args.length === 0) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content:
 					"Por favor, forneça pelo menos um nome de lista para excluir. Exemplo: !ld lista1 lista2"
 			});
 		}
 
 		// Get lists for this group
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 
 		// Delete each list
 		const deletedLists = [];
@@ -493,7 +502,7 @@ async function deleteList(bot, message, args, group) {
 				// Skip non-existent lists
 				returnMessages.push(
 					new ReturnMessage({
-						chatId: message.group,
+						chatId,
 						content: `Lista "${listName}" não encontrada.`
 					})
 				);
@@ -507,12 +516,12 @@ async function deleteList(bot, message, args, group) {
 
 		// Save updated lists
 		if (deletedLists.length > 0) {
-			await saveGroupLists(message.group, lists);
+			await saveGroupLists(targetGroup.id, lists);
 
 			// Notify about deleted lists
 			returnMessages.push(
 				new ReturnMessage({
-					chatId: message.group,
+					chatId,
 					content: `Lista${deletedLists.length > 1 ? "s" : ""} excluída${
 						deletedLists.length > 1 ? "s" : ""
 					}: ${deletedLists.join(", ")}`
@@ -521,14 +530,14 @@ async function deleteList(bot, message, args, group) {
 
 			// Show remaining lists if any
 			if (lists.length > 0) {
-				returnMessages.push(await showLists(bot, message, [], group));
+				returnMessages.push(await showLists(bot, message, [], targetGroup));
 			}
 		}
 
 		return returnMessages.length > 0
 			? returnMessages
 			: new ReturnMessage({
-					chatId: message.group,
+					chatId,
 					content: "Nenhuma lista foi excluída."
 				});
 	} catch (error) {
@@ -550,22 +559,24 @@ async function deleteList(bot, message, args, group) {
  */
 async function joinList(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "entrar em listas"
+		});
+		if (errorResponse) return errorResponse;
 
 		if (args.length === 0) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content: "Por favor, forneça o nome da lista para entrar. Exemplo: !le lista1"
 			});
 		}
 
 		// Get lists for this group
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 		const returnMessages = [];
 
 		for (const arg of args) {
@@ -577,7 +588,7 @@ async function joinList(bot, message, args, group) {
 			if (!list) {
 				returnMessages.push(
 					new ReturnMessage({
-						chatId: message.group,
+						chatId,
 						content: `Lista "${listName}" não encontrada.`
 					})
 				);
@@ -598,7 +609,7 @@ async function joinList(bot, message, args, group) {
 			if (existingMember) {
 				returnMessages.push(
 					new ReturnMessage({
-						chatId: message.group,
+						chatId,
 						content: `Você já está na lista "${list.title || list.name}".`
 					})
 				);
@@ -613,17 +624,17 @@ async function joinList(bot, message, args, group) {
 
 			returnMessages.push(
 				new ReturnMessage({
-					chatId: message.group,
+					chatId,
 					content: `${userName} entrou na lista "${list.title || list.name}".`
 				})
 			);
 		}
 
 		// Save updated lists
-		await saveGroupLists(message.group, lists);
+		await saveGroupLists(targetGroup.id, lists);
 
 		// Return both a joining confirmation and updated lists
-		return [...returnMessages, await showLists(bot, message, [], group)];
+		return [...returnMessages, await showLists(bot, message, [], targetGroup)];
 	} catch (error) {
 		logger.error("Error joining list:", error);
 		return new ReturnMessage({
@@ -643,22 +654,24 @@ async function joinList(bot, message, args, group) {
  */
 async function leaveList(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
-			});
-		}
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "sair de listas"
+		});
+		if (errorResponse) return errorResponse;
 
 		if (args.length === 0) {
 			return new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content:
 					"Por favor, forneça o nome de pelo menos uma lista para sair. Exemplo: !ls lista1 lista2"
 			});
 		}
 
-		const lists = await getGroupLists(message.group);
+		const lists = await getGroupLists(targetGroup.id);
 
 		const userName =
 			message.name ??
@@ -690,7 +703,7 @@ async function leaveList(bot, message, args, group) {
 			leftLists.push(list.title || list.name);
 		}
 
-		await saveGroupLists(message.group, lists);
+		await saveGroupLists(targetGroup.id, lists);
 
 		const summary =
 			leftLists.length > 0
@@ -701,10 +714,10 @@ async function leaveList(bot, message, args, group) {
 
 		return [
 			new ReturnMessage({
-				chatId: message.group,
+				chatId,
 				content: summary + errorMsg
 			}),
-			await showLists(bot, message, [], group)
+			await showLists(bot, message, [], targetGroup)
 		];
 	} catch (error) {
 		logger.error("Error leaving list:", error);

@@ -5,6 +5,7 @@ const CurrencyConverter = require("../utils/CurrencyConverter");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("GamingFreebies");
 const database = Database.getInstance();
@@ -310,49 +311,9 @@ async function getOrCreateSubscription(groupId) {
  * @returns {Promise<{targetGroup: Object|null, errorResponse: ReturnMessage|null}>}
  */
 async function resolveTargetGroupAndAdmin(bot, message, group) {
-	const isPrivate = !message.group;
-	const responseChatId = message.group ?? message.author;
-
-	let targetGroup = group;
-	if (isPrivate) {
-		const managedGroupId = bot.eventHandler?.commandHandler?.privateManagement?.[message.author];
-		if (managedGroupId) {
-			targetGroup = await database.getGroup(managedGroupId);
-		}
-	}
-
-	if (!targetGroup) {
-		return {
-			targetGroup: null,
-			errorResponse: new ReturnMessage({
-				chatId: responseChatId,
-				content: isPrivate
-					? "⚠️ *Atenção:* Para gerenciar notificações de jogos grátis pelo privado, selecione primeiro um grupo com `!g-manage [nomeDoGrupo]`."
-					: "❌ Não foi possível identificar as informações do grupo atual.",
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			})
-		};
-	}
-
-	const isUserAdmin = await adminUtils.isAdmin(message.author, targetGroup, null, bot);
-	if (!isUserAdmin) {
-		return {
-			targetGroup: null,
-			errorResponse: new ReturnMessage({
-				chatId: responseChatId,
-				content: `⛔ *Acesso negado:* Apenas administradores do grupo *'${targetGroup.name || targetGroup.id}'* podem alterar as configurações de notificações.`,
-				options: {
-					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin
-				}
-			})
-		};
-	}
-
-	return { targetGroup, errorResponse: null };
+	return GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+		featureName: "as configurações de notificações"
+	});
 }
 
 /**

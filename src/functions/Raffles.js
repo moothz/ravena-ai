@@ -9,6 +9,7 @@ const Command = require("../models/Command");
 const Logger = require("../utils/Logger");
 const AdminUtils = require("../utils/AdminUtils");
 const RaffleMonitor = require("../services/RaffleMonitor");
+const GroupContextHelper = require("../utils/GroupContextHelper");
 
 const logger = new Logger("raffles");
 const database = Database.getInstance();
@@ -712,48 +713,17 @@ async function raffleCommand(bot, message, args, group) {
  * Handler command para seguir uma rifa (!raffle-seguir <link>)
  */
 async function raffleSeguirCommand(bot, message, args, group) {
-	const isPrivate = !message.group;
-	const responseChatId = message.group ?? message.author;
+	const { targetGroup, isPrivate, responseChatId, errorResponse } =
+		await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "o monitoramento de rifas"
+		});
+	if (errorResponse) return errorResponse;
 
 	if (args.length === 0) {
 		return new ReturnMessage({
 			chatId: responseChatId,
 			content:
 				"⚠️ *Atenção:* Use o comando informando o link da rifa que deseja seguir. Exemplo: `!raffle-seguir https://www.narigapremios.com/campanha/fiat-palio-71054`",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	// 1. Identificar o grupo alvo (suporte a PV com !g-manage)
-	let targetGroup = group;
-	if (isPrivate) {
-		const managedGroupId = bot.eventHandler?.commandHandler?.privateManagement?.[message.author];
-		if (managedGroupId) {
-			targetGroup = await database.getGroup(managedGroupId);
-		}
-	}
-
-	if (!targetGroup) {
-		return new ReturnMessage({
-			chatId: responseChatId,
-			content:
-				"⚠️ *Atenção:* Para seguir uma rifa a partir do chat privado, você deve primeiro selecionar um grupo usando `!g-manage [nomeDoGrupo]`.",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	// 2. Verificar se o usuário é administrador do grupo alvo
-	const isUserAdmin = await adminUtils.isAdmin(message.author, targetGroup, null, bot);
-	if (!isUserAdmin) {
-		return new ReturnMessage({
-			chatId: responseChatId,
-			content: `⛔ *Acesso negado:* Apenas administradores do grupo *'${targetGroup.name}'* podem configurar o monitoramento de rifas.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -863,46 +833,17 @@ async function raffleSeguirCommand(bot, message, args, group) {
  * Handler command para parar de seguir uma rifa (!raffle-parar <link>)
  */
 async function rafflePararCommand(bot, message, args, group) {
-	const isPrivate = !message.group;
-	const responseChatId = message.group ?? message.author;
+	const { targetGroup, responseChatId, errorResponse } =
+		await GroupContextHelper.resolveGroupAndAdmin(bot, message, group, {
+			featureName: "o monitoramento de rifas"
+		});
+	if (errorResponse) return errorResponse;
 
 	if (args.length === 0) {
 		return new ReturnMessage({
 			chatId: responseChatId,
 			content:
 				"⚠️ *Atenção:* Use o comando informando o link da rifa que deseja parar de seguir. Exemplo: `!raffle-parar https://www.narigapremios.com/campanha/fiat-palio-71054`",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	let targetGroup = group;
-	if (isPrivate) {
-		const managedGroupId = bot.eventHandler?.commandHandler?.privateManagement?.[message.author];
-		if (managedGroupId) {
-			targetGroup = await database.getGroup(managedGroupId);
-		}
-	}
-
-	if (!targetGroup) {
-		return new ReturnMessage({
-			chatId: responseChatId,
-			content:
-				"⚠️ *Atenção:* Para gerenciar rifas no privado, você deve primeiro selecionar um grupo usando `!g-manage [nomeDoGrupo]`.",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-
-	const isUserAdmin = await adminUtils.isAdmin(message.author, targetGroup, null, bot);
-	if (!isUserAdmin) {
-		return new ReturnMessage({
-			chatId: responseChatId,
-			content: `⛔ *Acesso negado:* Apenas administradores do grupo *'${targetGroup.name}'* podem alterar o monitoramento de rifas.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -943,28 +884,15 @@ async function rafflePararCommand(bot, message, args, group) {
  * Handler command para listar rifas seguidas pelo grupo (!raffle-listar)
  */
 async function raffleListarCommand(bot, message, args, group) {
-	const isPrivate = !message.group;
-	const responseChatId = message.group ?? message.author;
-
-	let targetGroup = group;
-	if (isPrivate) {
-		const managedGroupId = bot.eventHandler?.commandHandler?.privateManagement?.[message.author];
-		if (managedGroupId) {
-			targetGroup = await database.getGroup(managedGroupId);
+	const { targetGroup, responseChatId, errorResponse } = await GroupContextHelper.resolveGroup(
+		bot,
+		message,
+		group,
+		{
+			featureName: "listar rifas"
 		}
-	}
-
-	if (!targetGroup) {
-		return new ReturnMessage({
-			chatId: responseChatId,
-			content:
-				"⚠️ *Atenção:* Para listar rifas no privado, você deve primeiro selecionar um grupo usando `!g-manage [nomeDoGrupo]`.",
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
-			}
-		});
-	}
+	);
+	if (errorResponse) return errorResponse;
 
 	const raffleMonitor = RaffleMonitor.getInstance();
 	const list = await raffleMonitor.listFollowed(targetGroup.id);
