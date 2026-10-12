@@ -217,17 +217,18 @@ class StreamSystem {
 	 * @param {string} groupId
 	 * @returns {Promise<Object|null>}
 	 */
-	async findBotForGroup(groupId) {
-		const bots = await this.findBotsForGroup(groupId);
+	async findBotForGroup(groupId, group = null) {
+		const bots = await this.findBotsForGroup(groupId, group);
 		return bots.length > 0 ? bots[0] : null;
 	}
 
 	/**
 	 * Encontra bots adequados para enviar mensagem em um grupo
 	 * @param {string} groupId
+	 * @param {Object} [group=null]
 	 * @returns {Promise<Array<Object>>}
 	 */
-	async findBotsForGroup(groupId) {
+	async findBotsForGroup(groupId, group = null) {
 		const candidates = [];
 		const gidStr = groupId.toString();
 
@@ -235,6 +236,19 @@ class StreamSystem {
 		const isTelegramGroup = gidStr.startsWith("-");
 		// IDs do Discord são numéricos e longos (geralmente 18+ caracteres)
 		const isDiscordGroup = !isWhatsAppGroup && !isTelegramGroup && gidStr.length >= 17;
+
+		let groupObj = group;
+		if (!groupObj && this.database && typeof this.database.getGroup === "function") {
+			try {
+				groupObj = await this.database.getGroup(groupId);
+			} catch (e) {
+				// Ignora erro
+			}
+		}
+
+		const excludedBotNames = new Set(
+			Array.isArray(groupObj?.botNotInGroup) ? groupObj.botNotInGroup : []
+		);
 
 		// Itera sobre os bots registrados para encontrar os que podem participar do grupo
 		for (const bot of this.bots) {
@@ -251,11 +265,20 @@ class StreamSystem {
 					if (!isWhatsAppGroup) continue;
 				}
 
+				// Deve estar conectado (ou se não tiver a propriedade, assume pronto)
+				if (bot.isConnected === false) continue;
+
+				// Verifica se o bot foi marcado no grupo como não participante
+				if (excludedBotNames.has(bot.id) || excludedBotNames.has(bot.name)) continue;
+
+				// Verifica método isInGroup / isParticipating se existir
+				if (typeof bot.isParticipating === "function" && !bot.isParticipating(groupId)) {
+					continue;
+				}
+
 				// Verifica flag se o bot já foi marcado como não estando no grupo
 				if (bot.skipGroupInfo?.includes(groupId)) continue;
 
-				// Adiciona como candidato. A verificação real de "está no grupo"
-				// será feita ao tentar enviar a mensagem, pois checkar antes é custoso/impreciso
 				candidates.push(bot);
 			} catch (e) {
 				// Ignora erro
@@ -454,7 +477,7 @@ class StreamSystem {
 			if (group.paused) return;
 
 			// Encontra bots candidatos
-			const bots = await this.findBotsForGroup(group.id);
+			const bots = await this.findBotsForGroup(group.id, group);
 
 			if (bots.length === 0) {
 				// Nenhum bot disponível para este grupo (todos ignoraram ou nenhum registrado)
@@ -687,6 +710,47 @@ class StreamSystem {
 				}
 			}
 
+			// Garante que a alteração de título seja realizada mesmo que o bot que enviou as mensagens não tenha conseguido alterar o título
+			if (eventType !== "video" && channelConfig.changeTitleOnEvent && !titleChanged) {
+				for (const bot of bots) {
+					try {
+						titleChanged = await this.changeGroupTitleForStream(
+							bot,
+							group,
+							channelConfig,
+							eventData,
+							eventType
+						);
+						if (titleChanged) {
+							this.logger.info(
+								`Título do grupo ${group.name} (${group.id}) alterado com sucesso via bot ${bot.id}`
+							);
+							break;
+						}
+					} catch (e) {
+						// Ignora e tenta o próximo bot
+					}
+				}
+			}
+
+			// Garante que a alteração de foto seja realizada mesmo que o bot que enviou as mensagens não tenha conseguido alterar a foto
+			if (eventType !== "video" && channelConfig.changePhotoOnEvent === true && !photoChanged) {
+				for (const bot of bots) {
+					try {
+						photoChanged = await this.changeGroupPhotoForStream(
+							bot,
+							group,
+							channelConfig,
+							eventData,
+							eventType
+						);
+						if (photoChanged) break;
+					} catch (e) {
+						// Ignora e tenta o próximo bot
+					}
+				}
+			}
+
 			// Se todos os bots falharam por não estarem no grupo
 			if (!sentSuccess && notInGroupErrors.length === bots.length) {
 				this.logger.warn(
@@ -783,10 +847,35 @@ class StreamSystem {
 	 */
 	async changeGroupTitleForStream(bot, group, channelConfig, eventData, eventType) {
 		try {
-			const chat = await bot.client.getChatById(group.id);
+			let chat = null;
+			try {
+				chat = await bot.client.getChatById(group.id);
+			} catch (chatErr) {
+				this.logger.debug(
+					`Bot ${bot.id} erro ao buscar chat para ${group.id}: ${chatErr?.message || chatErr}`
+				);
+			}
+
 			if (!chat || !chat.isGroup) {
-				//this.logger.debug(`Bot ${bot.id} não conseguiu obter chat para ${group.id}`);
-				return false;
+				// Se chat falhou em hidratar mas o bot tem setGroupName e temos título base/configurado, tenta fallback direto
+				if (
+					typeof bot.setGroupName === "function" ||
+					typeof bot.client?.setGroupSubject === "function"
+				) {
+					chat = {
+						id: { _serialized: group.id },
+						name: group.titulo,
+						isGroup: true,
+						setSubject: async (title) => {
+							if (typeof bot.setGroupName === "function") {
+								return await bot.setGroupName(group.id, title);
+							}
+							return await bot.client.setGroupSubject(group.id, title);
+						}
+					};
+				} else {
+					return false;
+				}
 			}
 
 			if (chat.notInGroup) {
@@ -851,9 +940,35 @@ class StreamSystem {
 					} else if (typeof chat.setSubject === "function") {
 						this.logger.debug(`[changeGroupTitleForStream] Result ${group.name} -> '${newTitle}'`);
 						await chat.setSubject(newTitle);
+					} else if (typeof bot.setGroupName === "function") {
+						this.logger.debug(
+							`[changeGroupTitleForStream] Result via bot.setGroupName ${group.name} -> '${newTitle}'`
+						);
+						await bot.setGroupName(group.id, newTitle);
+					} else if (typeof bot.client?.setGroupSubject === "function") {
+						this.logger.debug(
+							`[changeGroupTitleForStream] Result via client.setGroupSubject ${group.name} -> '${newTitle}'`
+						);
+						await bot.client.setGroupSubject(group.id, newTitle);
 					} else {
 						this.logger.warn(`Bot ${bot.id} não possui método setSubject para o grupo ${group.id}`);
 						success = false;
+					}
+
+					if (success) {
+						if (group.titulo !== newTitle) {
+							group.titulo = newTitle;
+							if (this.database && typeof this.database.saveGroup === "function") {
+								try {
+									await this.database.saveGroup(group);
+								} catch (dbErr) {
+									this.logger.warn(
+										`[changeGroupTitleForStream] Erro ao salvar novo título no banco:`,
+										dbErr
+									);
+								}
+							}
+						}
 					}
 				} catch (titleError) {
 					this.logger.error(`Erro ao alterar título do grupo ${group.id}:`, titleError);

@@ -224,6 +224,8 @@ class WhatsAppBotGo {
 			},
 			acceptInvite: async (arg) => await this.acceptInviteCode(arg),
 			acceptNewsletterAdminInvite: async (arg) => await this.acceptNewsletterAdminInvite(arg),
+			setSubject: async (groupId, title) => await this.setGroupName(groupId, title),
+			setGroupSubject: async (groupId, title) => await this.setGroupName(groupId, title),
 			sendPresenceUpdate: async (xxx) => true,
 			info: {
 				wid: {
@@ -3488,6 +3490,27 @@ class WhatsAppBotGo {
 		}
 	}
 
+	/**
+	 * Altera o nome/título de um grupo no WhatsApp via whatsgoapi
+	 * @param {string} groupId
+	 * @param {string} title
+	 * @returns {Promise<boolean>}
+	 */
+	async setGroupName(groupId, title) {
+		if (!groupId || !title) return false;
+		try {
+			await this.apiClient.post("/group/name", { groupJid: groupId, name: title });
+			return true;
+		} catch (err) {
+			this.logger.error(`[setGroupName] Erro ao alterar título de ${groupId}:`, err);
+			throw err;
+		}
+	}
+
+	async setGroupSubject(groupId, title) {
+		return await this.setGroupName(groupId, title);
+	}
+
 	async getChatDetails(chatId) {
 		if (!chatId) return null;
 
@@ -3501,7 +3524,8 @@ class WhatsAppBotGo {
 				isGroup: true,
 				notInGroup: true,
 				isParticipating: false,
-				participants: []
+				participants: [],
+				setSubject: async (title) => await this.setGroupName(chatId, title)
 			};
 		}
 
@@ -3559,8 +3583,7 @@ class WhatsAppBotGo {
 						_raw: groupInfo,
 
 						// Métodos do wwebjs
-						setSubject: async (title) =>
-							await this.apiClient.post(`/group/name`, { groupJid: chatId, name: title }),
+						setSubject: async (title) => await this.setGroupName(chatId, title),
 						addParticipants: async (participants) => await this.addToGroup(chatId, participants),
 						removeParticipants: async (participants) =>
 							await this.removeFromGroup(chatId, participants),
@@ -3600,7 +3623,8 @@ class WhatsAppBotGo {
 					isGroup: true,
 					notInGroup: true,
 					isParticipating: false,
-					participants: []
+					participants: [],
+					setSubject: async (title) => await this.setGroupName(chatId, title)
 				};
 			} else {
 				if (isNotInGroupError(e)) {
@@ -3612,14 +3636,25 @@ class WhatsAppBotGo {
 						isGroup: true,
 						notInGroup: true,
 						isParticipating: false,
-						participants: []
+						participants: [],
+						setSubject: async (title) => await this.setGroupName(chatId, title)
 					};
 				}
 
 				this.logger.error(`[getChatDetails] Error fetching ${chatId}`, e);
 			}
 		}
-		return { id: { _serialized: chatId }, isGroup: chatId.includes("@g.us") };
+		return {
+			id: { _serialized: chatId },
+			name: chatId,
+			isGroup: chatId.includes("@g.us"),
+			notInGroup: !this.isParticipating(chatId),
+			isParticipating: this.isParticipating(chatId),
+			participants: [],
+			setSubject: chatId.includes("@g.us")
+				? async (title) => await this.setGroupName(chatId, title)
+				: undefined
+		};
 	}
 
 	async _loadSkipGroupInfo() {

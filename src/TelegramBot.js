@@ -1001,6 +1001,20 @@ class WhatsAppBotTelegram {
 		}
 	}
 
+	async setGroupName(groupId, title) {
+		if (!groupId || !title) return false;
+		try {
+			return await this.apiClient.setChatTitle(groupId, title);
+		} catch (err) {
+			this.logger.error(`[setGroupName] Erro ao alterar título de ${groupId}:`, err);
+			throw err;
+		}
+	}
+
+	async setGroupSubject(groupId, title) {
+		return await this.setGroupName(groupId, title);
+	}
+
 	async getChatDetails(chatId) {
 		try {
 			if (chatId.includes("@")) {
