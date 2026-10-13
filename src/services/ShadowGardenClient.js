@@ -89,7 +89,7 @@ class ShadowGardenClient {
 	}
 
 	/**
-	 * Colhe plantas prontas e limpa canteiros murchos
+	 * Colhe plantas prontas e limpa canteiros secos
 	 * @param {string} userId
 	 * @param {number|null} [slot]
 	 * @param {boolean} [all=true]

@@ -166,6 +166,37 @@ async function runTests() {
 	);
 	console.log("✓ !fazenda no PV passou com sucesso!");
 
+	// 7.1 Teste de !faz-adm no Grupo (Não deve enviar mensagem no grupo, apenas despachar no PV e reagir)
+	console.log("7.1 Testando !faz-adm em Grupo...");
+	prepareStep();
+	let reactedEmoji = null;
+	const msgFazAdmGrupo = createMessage({
+		content: "!faz-adm",
+		author: testUser,
+		group: testGroup
+	});
+	msgFazAdmGrupo.origin.react = async (emoji) => {
+		reactedEmoji = emoji;
+	};
+	await eventHandler.processMessage(bot, msgFazAdmGrupo);
+	await waitForReply();
+	assert.strictEqual(reactedEmoji, "📨", "Deveria reagir à mensagem do grupo com 📨");
+	assert.strictEqual(
+		bot.capturedMessages.length,
+		1,
+		"Deveria enviar apenas 1 mensagem (despachada no PV)"
+	);
+	assert.strictEqual(
+		bot.capturedMessages[0].chatId,
+		testUser,
+		"A mensagem enviada deve ser direcionada ao PV do usuário"
+	);
+	assert(
+		bot.capturedMessages[0].content.includes("PAINEL FARM ADMIN"),
+		"Conteúdo no PV deve ser o painel do Farm Admin"
+	);
+	console.log("✓ !faz-adm em grupo reagiu e despachou no PV sem poluir o grupo!");
+
 	// 8. Teste de colheita com !faz-colher
 	console.log("8. Testando !faz-colher...");
 	prepareStep();

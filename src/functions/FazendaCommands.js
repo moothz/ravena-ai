@@ -202,19 +202,19 @@ async function handleFazenda(bot, message) {
 		const plots = status.slots || [];
 		let readyCount = 0;
 		let growingCount = 0;
-		let witheredCount = 0;
+		let dryCount = 0;
 		let emptyCount = 0;
 
 		plots.forEach((p) => {
 			if (p.stage === "harvestable" || p.stage === "ready") readyCount++;
 			else if (p.stage === "growing") growingCount++;
-			else if (p.stage === "withered") witheredCount++;
+			else if (p.stage === "withered") dryCount++;
 			else emptyCount++;
 		});
 
 		let text = `🌱 *JARDIM DAS SOMBRAS* 🌱\n\n`;
 		text += `💰 *Moedas:* ${status.coins ?? 0}\n`;
-		text += `🌾 *Canteiros (9):* ${readyCount} prontos | ${growingCount} crescendo | ${witheredCount} murchos | ${emptyCount} livres\n`;
+		text += `🌾 *Canteiros (9):* ${readyCount} prontos | ${growingCount} crescendo | ${dryCount} secos | ${emptyCount} livres\n`;
 
 		if (status.buffs?.activeBuffs?.length > 0) {
 			text += `✨ *Buffs Ativos:* ${status.buffs.activeBuffs.map((b) => b.type).join(", ")}\n`;
@@ -257,7 +257,7 @@ async function handleFazenda(bot, message) {
 					dailyText += `• *${it.name || it.itemId}* (x${it.count || 1})\n`;
 				});
 			}
-			dailyText += `\nVolte amanhã às 03:00 para resgatar novamente!`;
+			dailyText += `\nVolte amanhã para resgatar novamente!`;
 
 			returns.push(
 				new ReturnMessage({
@@ -283,7 +283,6 @@ async function handleFazenda(bot, message) {
 async function handleFazAdm(bot, message) {
 	const userId = getUserId(message);
 	const inPrivate = isPrivateChat(message);
-	const targetChatId = inPrivate ? message.author : message.author; // No PV sempre
 
 	try {
 		const adminUrl = await jardimClient.getAdminUrl(userId);
@@ -291,12 +290,12 @@ async function handleFazAdm(bot, message) {
 
 		if (inPrivate) {
 			return new ReturnMessage({
-				chatId: targetChatId,
+				chatId: message.author,
 				content
 			});
 		}
 
-		// Se enviado em grupo, avisa no grupo e despacha o link no PV
+		// Se enviado em grupo, despacha o link no PV e apenas reage à mensagem no grupo
 		await bot.sendReturnMessages([
 			new ReturnMessage({
 				chatId: message.author,
@@ -304,13 +303,15 @@ async function handleFazAdm(bot, message) {
 			})
 		]);
 
-		return new ReturnMessage({
-			chatId: message.group,
-			content: `📨 @${userId}, enviei o link do Farm Admin no seu privado!`,
-			options: {
-				mentions: [userId]
+		try {
+			if (message.origin && typeof message.origin.react === "function") {
+				await message.origin.react("📨");
 			}
-		});
+		} catch (reactErr) {
+			logger.debug(`[handleFazAdm] Não foi possível reagir à mensagem: ${reactErr.message}`);
+		}
+
+		return null;
 	} catch (err) {
 		logger.error(`[handleFazAdm] Erro ao gerar admin url: ${err.message}`);
 		return new ReturnMessage({
@@ -321,7 +322,7 @@ async function handleFazAdm(bot, message) {
 }
 
 /**
- * !faz-colher: Colhe plantas prontas e limpa canteiros murchos
+ * !faz-colher: Colhe plantas prontas e limpa canteiros secos
  */
 async function handleFazColher(bot, message) {
 	const userId = getUserId(message);
@@ -341,7 +342,7 @@ async function handleFazColher(bot, message) {
 		if (harvested.length === 0 && withered.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `⏳ Não há plantas prontas para colheita nem canteiros murchos no momento.`
+				content: `⏳ Não há plantas prontas para colheita nem canteiros secos no momento.`
 			});
 		}
 
@@ -354,7 +355,7 @@ async function handleFazColher(bot, message) {
 		}
 
 		if (withered.length > 0) {
-			text += `🥀 *Canteiros Murchos Limpos:* ${withered.length} canteiro(s) liberado(s).\n\n`;
+			text += `🥀 *Canteiros Secos Limpos:* ${withered.length} canteiro(s) liberado(s).\n\n`;
 		}
 
 		// Despacha bônus externos para outros jogos se houver
@@ -832,7 +833,7 @@ async function handleFazAjuda(bot, message) {
 		`🌱 *GUIA DO JARDIM DAS SOMBRAS* 🌱\n\n` +
 		`• \`!fazenda\` — Ver a sua fazenda e resgatar Sacola do Coveiro diária\n` +
 		`• \`!faz-adm\` — Obter link do painel web Farm Admin no privado\n` +
-		`• \`!faz-colher\` — Colher plantas maduras e limpar canteiros murchos\n` +
+		`• \`!faz-colher\` — Colher plantas maduras e limpar canteiros secos\n` +
 		`• \`!faz-plantar <semente> [canteiro]\` — Semear nos canteiros\n` +
 		`• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n` +
 		`• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n` +
@@ -876,7 +877,7 @@ const commands = [
 	new Command({
 		name: "faz-colher",
 		aliases: ["faz-colhertudo"],
-		description: "Colhe plantas maduras e limpa canteiros murchos",
+		description: "Colhe plantas maduras e limpa canteiros secos",
 		usage: "!faz-colher [número do canteiro]",
 		category: "jogos",
 		hidden: true,
