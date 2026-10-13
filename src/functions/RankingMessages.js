@@ -357,16 +357,15 @@ async function faladoresCommand(bot, message, args, group) {
 
 					if (!displayName || displayName === "Pessoa") {
 						try {
-							const contact = await bot.client.getContactById(pId);
-							displayName =
-								contact.name?.pushName ??
-								contact.name ??
-								contact.pushName ??
-								contact.pushname ??
-								contact.number ??
-								`Alguém (${normalizeId(pId)})`;
+							// Consulta local de pushname em cache para evitar rajadas HTTP na API externa
+							let localPushname = null;
+							if (typeof bot.fetchPushNameFromCache === "function") {
+								const cacheObj = await bot.fetchPushNameFromCache(pId);
+								localPushname = cacheObj?.pushName ?? cacheObj;
+							}
+							displayName = localPushname || (pId ? `Alguém (${normalizeId(pId)})` : "Alguém");
 						} catch (e) {
-							displayName = `Alguém (${normalizeId(pId)})`;
+							displayName = pId ? `Alguém (${normalizeId(pId)})` : "Alguém";
 						}
 					}
 					return { name: displayName, id: pId };

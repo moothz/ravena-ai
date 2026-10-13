@@ -268,7 +268,7 @@ migrate-group: ## Copia todas as configurações de um grupo para outro (Uso: ma
 	docker compose exec ravena-ai node scripts/migrate-group.js "$$OLD_ID" "$$NEW_ID"
 
 debug-ratelimit: ## Relatório contínuo de erros 429 e rate-overlimit (Uso: make debug-ratelimit [ARGS="--recent 20"])
-	@docker cp .env $$(docker compose ps -q ravena-ai):/app/.env 2>/dev/null || true
-	@docker cp scripts/debug-ratelimit.js $$(docker compose ps -q ravena-ai):/app/scripts/debug-ratelimit.js 2>/dev/null || true
-	@docker cp src/services/RateLimitTracker.js $$(docker compose ps -q ravena-ai):/app/src/services/RateLimitTracker.js 2>/dev/null || true
+	@docker cp .env ravena-ai:/app/.env 2>/dev/null || true
+	@docker cp scripts/debug-ratelimit.js ravena-ai:/app/scripts/debug-ratelimit.js 2>/dev/null || true
+	@docker cp src/services/RateLimitTracker.js ravena-ai:/app/src/services/RateLimitTracker.js 2>/dev/null || true
 	@docker compose exec ravena-ai node scripts/debug-ratelimit.js $(if $(RUN_ARGS),$(RUN_ARGS),$(ARGS))

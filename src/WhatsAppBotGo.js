@@ -30,6 +30,7 @@ const { toOpus, toMp3 } = require("./utils/Conversions");
 const { llmTranslate } = require("./utils/LLMTranslate");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
+const MemoryCache = require("./utils/MemoryCache");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -121,6 +122,12 @@ class WhatsAppBotGo {
 			this.redisTTL,
 			this.maxCacheSize
 		);
+
+		// Cache em memória de alta performance para metadados de grupos e usuários (mitigação de 429)
+		const groupCacheTtlSec = parseInt(process.env.GROUP_CACHE_TTL_SEC, 10) || 60;
+		const userCacheTtlSec = parseInt(process.env.USER_CACHE_TTL_SEC, 10) || 60;
+		this.groupCache = new MemoryCache(groupCacheTtlSec * 1000, 500);
+		this.userCache = new MemoryCache(userCacheTtlSec * 1000, 5000);
 
 		if (!this.whatsgoApiUrl || !this.whatsgoApiKey || !this.instanceName || !this.webhookHost) {
 			const errMsg =
@@ -3242,6 +3249,9 @@ class WhatsAppBotGo {
 		// groupData: { JID, Join: [], Leave: [], Promote: [], Demote: [] }
 		//this.logger.debug(`[_handleGroupParticipantsUpdate] `, groupData);
 		const groupId = groupData.JID;
+		if (this.groupCache && groupId) {
+			this.groupCache.delete(groupId);
+		}
 
 		// Helper to process actions
 		const processAction = async (groupData, participants, action) => {
@@ -3352,6 +3362,7 @@ class WhatsAppBotGo {
 	leaveGroup(groupJid) {
 		try {
 			this.logger.debug(`[leaveGroup][${this.instanceName}] '${groupJid}'`);
+			if (this.groupCache && groupJid) this.groupCache.delete(groupJid);
 			this.apiClient.post(`/group/leave`, { groupJid });
 		} catch (e) {
 			this.logger.warn(`[leaveGroup] Erro saindo do grupo '${groupJid}'`, e);
@@ -3363,6 +3374,7 @@ class WhatsAppBotGo {
 			this.logger.info(
 				`[removeFromGroup][${this.instanceName}] Removendo ${participants.length} do grupo ${groupJid}`
 			);
+			if (this.groupCache && groupJid) this.groupCache.delete(groupJid);
 			return await this.apiClient.post(`/group/participant`, {
 				groupJid,
 				action: "remove",
@@ -3381,6 +3393,7 @@ class WhatsAppBotGo {
 			this.logger.info(
 				`[addToGroup][${this.instanceName}] Adicionando ${participants.length} ao grupo ${groupJid}`
 			);
+			if (this.groupCache && groupJid) this.groupCache.delete(groupJid);
 			return await this.apiClient.post(`/group/participant`, {
 				groupJid,
 				action: "add",
@@ -3531,6 +3544,7 @@ class WhatsAppBotGo {
 		if (!groupId || !title) return false;
 		try {
 			await this.apiClient.post("/group/name", { groupJid: groupId, name: title });
+			if (this.groupCache) this.groupCache.delete(groupId);
 			return true;
 		} catch (err) {
 			this.logger.error(`[setGroupName] Erro ao alterar título de ${groupId}:`, err);
@@ -3542,7 +3556,7 @@ class WhatsAppBotGo {
 		return await this.setGroupName(groupId, title);
 	}
 
-	async getChatDetails(chatId) {
+	async getChatDetails(chatId, options = {}) {
 		if (!chatId) return null;
 
 		if (chatId.includes("@g.us") && !this.isParticipating(chatId)) {
@@ -3558,6 +3572,13 @@ class WhatsAppBotGo {
 				participants: [],
 				setSubject: async (title) => await this.setGroupName(chatId, title)
 			};
+		}
+
+		if (chatId.includes("@g.us") && !options?.forceRefresh && this.groupCache) {
+			const cached = this.groupCache.get(chatId);
+			if (cached) {
+				return cached;
+			}
 		}
 
 		try {
@@ -3594,7 +3615,7 @@ class WhatsAppBotGo {
 						});
 					}
 
-					return {
+					const chatResult = {
 						id: { _serialized: groupInfo.JID },
 						name: groupInfo.Name ?? chatId,
 						isGroup: true,
@@ -3633,6 +3654,12 @@ class WhatsAppBotGo {
 						},
 						setPicture: async (picture) => await this.setGroupPhoto(chatId, picture)
 					};
+
+					if (this.groupCache) {
+						this.groupCache.set(chatId, chatResult);
+					}
+
+					return chatResult;
 				}
 			} else {
 				const contact = await this.getContactDetails(chatId);
@@ -3643,6 +3670,9 @@ class WhatsAppBotGo {
 				};
 			}
 		} catch (e) {
+			if (this.groupCache && chatId.includes("@g.us")) {
+				this.groupCache.delete(chatId);
+			}
 			if (e.status === 500 && e.data?.error === "that group does not exist") {
 				this.logger.warn(
 					`[getChatDetails] Group ${chatId} does not exist (status 500). Adding to skip list.`
@@ -3843,6 +3873,13 @@ class WhatsAppBotGo {
 		const isLid = id.endsWith("@lid");
 		const jidCom = isLid ? id : `${id.split("@")[0]}@s.whatsapp.net`;
 
+		if (this.userCache && !isLid) {
+			const cachedUser = this.userCache.get(id);
+			if (cachedUser) {
+				return cachedUser;
+			}
+		}
+
 		const returnData = {
 			id: { _serialized: id },
 			number: isLid ? null : id.split("@")[0],
@@ -3891,10 +3928,20 @@ class WhatsAppBotGo {
 				}
 			}
 		} catch (e) {
-			// Ignore
+			// Negative cache temporário (60s) para evitar bombardeio da API após falha/429
+			if (this.userCache) {
+				this.userCache.set(id, returnData, 60000);
+			}
 		}
 
 		//this.logger.debug(`[getChatDetails] ${id}, ${prefetchedName}`, { returnData });
+
+		if (this.userCache) {
+			this.userCache.set(id, returnData);
+			if (returnData.number && returnData.number !== id) {
+				this.userCache.set(returnData.number, returnData);
+			}
+		}
 
 		return returnData;
 	}

@@ -79,6 +79,9 @@ class RateLimitTracker {
 				CREATE INDEX IF NOT EXISTS idx_rle_endpoint ON rate_limit_events(endpoint);
 				CREATE INDEX IF NOT EXISTS idx_rle_bot ON rate_limit_events(bot_name);
 				CREATE INDEX IF NOT EXISTS idx_rle_caller ON rate_limit_events(caller_file);
+				CREATE INDEX IF NOT EXISTS idx_rle_caller_func ON rate_limit_events(caller_file, caller_function);
+				CREATE INDEX IF NOT EXISTS idx_rle_method_endpoint ON rate_limit_events(method, endpoint);
+				CREATE INDEX IF NOT EXISTS idx_rle_error_type ON rate_limit_events(error_type);
 
 				CREATE TABLE IF NOT EXISTS request_metrics (
 					id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +95,7 @@ class RateLimitTracker {
 				);
 
 				CREATE INDEX IF NOT EXISTS idx_rm_bucket ON request_metrics(minute_bucket);
+				CREATE INDEX IF NOT EXISTS idx_rm_endpoint_method ON request_metrics(endpoint, method, total_requests);
 			`);
 
 			// Limpeza automática de dados antigos (> 14 dias) na inicialização
@@ -407,20 +411,26 @@ class RateLimitTracker {
 			.prepare("SELECT COUNT(*) AS count FROM rate_limit_events WHERE timestamp_ms >= ?")
 			.get(sevenDaysAgo).count;
 
-		// Top Endpoints com taxa de falha
+		// Top Endpoints com taxa de falha (agrega eventos primeiro para evitar produto cartesiano)
 		const byEndpoint = this.db
 			.prepare(
 				`
 				SELECT 
 					rle.method,
 					rle.endpoint,
-					COUNT(rle.id) AS hits,
-					COALESCE(SUM(rm.total_requests), COUNT(rle.id)) AS total_requests
-				FROM rate_limit_events rle
-				LEFT JOIN request_metrics rm ON rm.endpoint = rle.endpoint AND rm.method = rle.method
-				GROUP BY rle.method, rle.endpoint
-				ORDER BY hits DESC
-				LIMIT 10
+					rle.hits,
+					COALESCE((
+						SELECT SUM(rm.total_requests)
+						FROM request_metrics rm
+						WHERE rm.endpoint = rle.endpoint AND rm.method = rle.method
+					), rle.hits) AS total_requests
+				FROM (
+					SELECT method, endpoint, COUNT(*) AS hits
+					FROM rate_limit_events
+					GROUP BY method, endpoint
+					ORDER BY hits DESC
+					LIMIT 10
+				) rle
 			`
 			)
 			.all();
@@ -574,6 +584,20 @@ class RateLimitTracker {
 			this.db.prepare("DELETE FROM request_metrics WHERE minute_bucket < ?").run(thresholdBucket);
 		} catch (err) {
 			this.logger.error("Erro na limpeza de histórico antigo:", err);
+		}
+	}
+
+	/**
+	 * Fecha a conexão com o banco SQLite
+	 */
+	close() {
+		if (this.db) {
+			try {
+				this.db.close();
+			} catch (err) {
+				// Ignora se já estiver fechado
+			}
+			this.db = null;
 		}
 	}
 }
