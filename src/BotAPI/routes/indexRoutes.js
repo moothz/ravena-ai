@@ -45,6 +45,14 @@ function registerIndexRoutes(api) {
 		res.redirect("/instances");
 	});
 
+	// Painel moderno de gestão de instâncias
+	app.get(["/instances", "/instances.html"], (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+		}
+		res.sendFile(path.join(__dirname, "../../../public/instances.html"));
+	});
+
 	// Rota para encerrar sessão de administrador
 	app.get("/logout", (req, res) => {
 		api.clearAdminSessionCookie(res);

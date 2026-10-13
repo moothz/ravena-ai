@@ -148,6 +148,7 @@ class WhatsAppBotGo {
 		this.otherBots = options.otherBots ?? [];
 
 		this.ignorePV = options.ignorePV ?? false;
+		this.deleteMessagesInterval = options.deleteMessagesInterval ?? false;
 		this.updateStatus = options.updateStatus ?? true;
 		this.aiPersonality = options.aiPersonality ?? "";
 		this.autoDownloadPV = options.autoDownloadPV ?? false;
@@ -3315,6 +3316,36 @@ class WhatsAppBotGo {
 			return grupos.data;
 		} catch (e) {
 			this.logger.warn(`[listGroups] Erro listando grupos`, e);
+		}
+	}
+
+	async clearChat(chatJid, deleteMedia = false) {
+		try {
+			this.logger.info(
+				`[clearChat][${this.instanceName}] Limpando mensagens em '${chatJid}' (deleteMedia: ${deleteMedia})`
+			);
+			return await this.apiClient.post("/chat/clear", {
+				chat: chatJid,
+				deleteMedia: Boolean(deleteMedia)
+			});
+		} catch (e) {
+			this.logger.error(`[clearChat][${this.instanceName}] Erro ao limpar chat '${chatJid}':`, e);
+			throw e;
+		}
+	}
+
+	async deleteChat(chatJid, deleteMedia = false) {
+		try {
+			this.logger.info(
+				`[deleteChat][${this.instanceName}] Apagando conversa '${chatJid}' (deleteMedia: ${deleteMedia})`
+			);
+			return await this.apiClient.post("/chat/delete", {
+				chat: chatJid,
+				deleteMedia: Boolean(deleteMedia)
+			});
+		} catch (e) {
+			this.logger.error(`[deleteChat][${this.instanceName}] Erro ao apagar chat '${chatJid}':`, e);
+			throw e;
 		}
 	}
 

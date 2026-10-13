@@ -16,6 +16,7 @@ const minioSetup = require("./src/utils/MinioSetup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
+const ChatCleanerScheduler = require("./src/services/ChatCleanerScheduler");
 const fs = require("fs");
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,6 +41,7 @@ async function main() {
 	let botAPI;
 	let statusScheduler;
 	let llmDailyReportService;
+	let chatCleanerScheduler;
 
 	try {
 		const disableActivity = process.env.DISABLE_ACTIVITY === "true";
@@ -238,6 +240,7 @@ async function main() {
 					updateStatus: rBot.updateStatus ?? true,
 					aiPersonality: rBot.aiPersonality ?? "",
 					nomeExibir: rBot.nomeExibir,
+					deleteMessagesInterval: rBot.deleteMessagesInterval ?? false,
 					sendJoinInfo: rBot.sendJoinInfo,
 					extras: rBot.extras ?? {}
 				});
@@ -273,6 +276,14 @@ async function main() {
 		botInstances.forEach((b) => weeklyDigestService.registerBot(b));
 		if (!disableActivity) {
 			weeklyDigestService.start();
+		}
+
+		// Inicializa scheduler de limpeza automática de mensagens (ClearChat - 03:30 BRT)
+		chatCleanerScheduler = ChatCleanerScheduler.getInstance({
+			bots: botInstances
+		});
+		if (!disableActivity) {
+			chatCleanerScheduler.start();
 		}
 
 		// Inicializa servidor da API

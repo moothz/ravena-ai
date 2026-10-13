@@ -514,7 +514,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
 
-                <!-- Seção 5: Integração Externa (Telegram / Discord) -->
+                <!-- Seção 5: Manutenção & Limpeza de Mensagens -->
+                <div class="form-section">
+                    <div class="form-section-title"><i class="fas fa-broom"></i> Manutenção & Limpeza de Mensagens</div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label>Intervalo de Limpeza de Mensagens (deleteMessagesInterval)</label>
+                            <input type="text" class="form-control field-delete-messages-interval" value="${bot.deleteMessagesInterval !== undefined ? bot.deleteMessagesInterval : 'false'}" placeholder="false ou número de dias (ex: 3 ou 7)">
+                            <div class="field-hint">false = nunca apaga; 3 = apaga a cada 3 dias; 7 = semanalmente às 03:30 AM via ClearChat.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção 6: Integração Externa (Telegram / Discord) -->
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-network-wired"></i> Conexão Multiplataforma (Telegram / Discord)</div>
                     <div class="form-grid">
@@ -905,6 +917,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const whPortVal = getVal('.field-webhook-port');
         bot.webhookPort = whPortVal ? parseInt(whPortVal, 10) : null;
+
+        const deleteIntervalVal = getVal('.field-delete-messages-interval');
+        if (!deleteIntervalVal || deleteIntervalVal.toLowerCase() === 'false' || deleteIntervalVal === '0') {
+            bot.deleteMessagesInterval = false;
+        } else {
+            const parsedDays = parseInt(deleteIntervalVal, 10);
+            bot.deleteMessagesInterval = isNaN(parsedDays) || parsedDays <= 0 ? false : parsedDays;
+        }
 
         bot.useTelegram = getBool('.field-use-telegram');
         bot.telegramBotToken = getVal('.field-telegram-token');

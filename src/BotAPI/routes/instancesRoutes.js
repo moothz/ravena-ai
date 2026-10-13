@@ -984,6 +984,8 @@ function registerInstancesRoutes(api) {
 						liveBot.grupoEstabilidade = botConfig.grupoEstabilidade;
 					if (botConfig.linkGrupao !== undefined) liveBot.linkGrupao = botConfig.linkGrupao;
 					if (botConfig.linkAvisos !== undefined) liveBot.linkAvisos = botConfig.linkAvisos;
+					if (botConfig.deleteMessagesInterval !== undefined)
+						liveBot.deleteMessagesInterval = botConfig.deleteMessagesInterval;
 					liveBot.extras = botConfig.extras ? JSON.parse(JSON.stringify(botConfig.extras)) : {};
 
 					synchronizedCount++;
