@@ -5,6 +5,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
 const DonorBonusService = require("../services/DonorBonusService");
 const GameEventService = require("../services/GameEventService");
+const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 
 const database = Database.getInstance();
 const logger = new Logger("waifu-commands");
@@ -621,6 +622,28 @@ function makeRollHandler(genderFilter) {
 		try {
 			let rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
 
+			// Verifica se possui rolls ou tickets da Fazenda (Jardim das Sombras)
+			const farmBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
+			const hasFarmBonus = (farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0;
+			let consumedFarmBonus = null;
+
+			if (hasFarmBonus) {
+				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
+				// Concede rolls extras para não ser bloqueado por cooldown
+				rollBonuses.extraMaxRolls = (rollBonuses.extraMaxRolls || 0) + 10;
+
+				// Se tiver ticket (Rosa de Sangue), concede bônus de raridade equivalente a doador alto
+				if (farmBonus.tickets > 0) {
+					const curMults = rollBonuses.rarityMultipliers
+						? { ...rollBonuses.rarityMultipliers }
+						: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
+					curMults.RARE = Math.max(curMults.RARE || 1.0, 1.4);
+					curMults.EPIC = Math.max(curMults.EPIC || 1.0, 1.7);
+					curMults.LEGENDARY = Math.max(curMults.LEGENDARY || 1.0, 2.0);
+					rollBonuses.rarityMultipliers = curMults;
+				}
+			}
+
 			const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
 			const eventWishMult = GameEventService.getMultiplier("waifu", "wish");
 
@@ -656,6 +679,11 @@ function makeRollHandler(genderFilter) {
 			};
 
 			const { data } = await api.post("/roll", payload);
+
+			// Se o roll teve sucesso na API e o usuário tinha bônus da fazenda, consome 1 unidade
+			if (hasFarmBonus) {
+				consumedFarmBonus = await ShadowGardenBonusService.consumeWaifuBonus(userId);
+			}
 			const {
 				character,
 				available,
@@ -763,6 +791,14 @@ function makeRollHandler(genderFilter) {
 
 			if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
 				text += `\n\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
+			}
+
+			if (consumedFarmBonus?.consumed) {
+				const bType =
+					consumedFarmBonus.type === "ticket"
+						? "Ticket de Waifu (Rosa de Sangue)"
+						: "Roll Bônus (Coração Púrpuro)";
+				text += `\n🌱 *Bônus da Fazenda Usado:* ${bType} (Restantes: ${consumedFarmBonus.remainingRolls} rolls, ${consumedFarmBonus.remainingTickets} tickets)`;
 			}
 
 			const eventBanner = GameEventService.getEventBanner("waifu");

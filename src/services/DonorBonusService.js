@@ -2,9 +2,12 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const FishingGame = require("../functions/FishingGame");
 const SlotsGame = require("../functions/SlotsGame");
+const ShadowGardenBonusService = require("./ShadowGardenBonusService");
+const ShadowGardenClient = require("./ShadowGardenClient");
 
 const logger = new Logger("donor-bonus-service");
 const database = Database.getInstance();
+const jardimClient = new ShadowGardenClient();
 
 const SIMPLE_ITEMS = ["Anzol de Titânio", "Bolso de Pesca", "Pochete de Iscas"];
 const MEDIUM_ITEMS = ["Calça de Pesca", "Caixa de Iscas"];
@@ -79,6 +82,8 @@ function calculateBonuses(totalAmount) {
 	const pintoBonusPercent = Math.round(totalAmount * 1);
 	const pintoMultiplier = Number((1 + totalAmount * 0.01).toFixed(3));
 
+	const farm = ShadowGardenBonusService.calculateFarmDonationBonuses(totalAmount, 0).current;
+
 	return {
 		totalAmount,
 		pesca: {
@@ -102,7 +107,8 @@ function calculateBonuses(totalAmount) {
 		pinto: {
 			bonusPercent: pintoBonusPercent,
 			multiplier: pintoMultiplier
-		}
+		},
+		fazenda: farm
 	};
 }
 
@@ -132,6 +138,11 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 	);
 	const deltaHighItems = Math.max(0, current.pesca.totalHighItems - previous.pesca.totalHighItems);
 
+	const farmDelta = ShadowGardenBonusService.calculateFarmDonationBonuses(
+		totalAmount,
+		previousAmount
+	).delta;
+
 	return {
 		deltaAmount,
 		deltaBaits,
@@ -139,6 +150,7 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		deltaSimpleItems,
 		deltaMediumItems,
 		deltaHighItems,
+		deltaFazenda: farmDelta,
 		current,
 		previous
 	};
@@ -283,7 +295,47 @@ async function awardDonorBonuses(
 				await FishingGame.addBuff(cleanNumber, buff, false);
 			}
 
-			// 4. Atualiza o valor processado no banco de doações
+			// 4. Concede Itens e Decorações da Fazenda (Jardim das Sombras)
+			if (delta.deltaFazenda) {
+				try {
+					if (delta.deltaFazenda.dailyLuck > 0) {
+						await jardimClient.adminGive(cleanNumber, {
+							itemId: "liquid_ashes",
+							amount: delta.deltaFazenda.dailyLuck,
+							reason: "donor_reward"
+						});
+					}
+					if (delta.deltaFazenda.coinsBonus > 0) {
+						await jardimClient.adminGive(cleanNumber, {
+							itemId: "midas_tear",
+							amount: delta.deltaFazenda.coinsBonus,
+							reason: "donor_reward"
+						});
+					}
+					if (delta.deltaFazenda.growthSpeed > 0) {
+						await jardimClient.adminGive(cleanNumber, {
+							itemId: "spectral_sigh",
+							amount: delta.deltaFazenda.growthSpeed,
+							reason: "donor_reward"
+						});
+					}
+					if (delta.deltaFazenda.decors && delta.deltaFazenda.decors.length > 0) {
+						for (const decorId of delta.deltaFazenda.decors) {
+							await jardimClient.adminGive(cleanNumber, {
+								itemId: decorId,
+								amount: 1,
+								reason: "donor_reward"
+							});
+						}
+					}
+				} catch (farmErr) {
+					logger.warn(
+						`[DonorBonusService] Falha ao despachar itens da fazenda para ${cleanNumber}: ${farmErr.message}`
+					);
+				}
+			}
+
+			// 5. Atualiza o valor processado no banco de doações
 			await database.updateDonorBonusProcessed(donor.nome, totalAmount);
 
 			logger.info(
