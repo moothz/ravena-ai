@@ -98,14 +98,22 @@ async function runTests() {
 	console.log("4. Testando !faz-comprar...");
 	prepareStep();
 	const msgBuy = createMessage({
-		content: "!faz-comprar 1 2",
+		content: "!faz-comprar 1 1",
 		author: testUser,
 		group: testGroup
 	});
 	await eventHandler.processMessage(bot, msgBuy);
 	await waitForReply();
 	assert(bot.capturedMessages.length > 0, "Deveria processar compra ou saldo");
-	console.log("✓ !faz-comprar respondeu adequadamente!");
+	if (bot.capturedMessages.length > 1) {
+		assert(
+			bot.capturedMessages[1].options?.sendMediaAsSticker === true,
+			"Segunda mensagem da compra deve ser o sticker do item comprado"
+		);
+		console.log("✓ !faz-comprar incluiu sticker da compra!");
+	} else {
+		console.log("✓ !faz-comprar respondeu adequadamente!");
+	}
 
 	// 5. Teste de plantio com !faz-plantar
 	console.log("5. Testando !faz-plantar...");

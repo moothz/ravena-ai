@@ -230,7 +230,7 @@ async function handleFazenda(bot, message) {
 				logger.warn(`[handleFazenda] Falha ao obter admin-url no PV: ${admErr.message}`);
 			}
 		} else {
-			text += `\n\n💡 _Dica: Digite \`!faz-adm\` no meu privado para receber o link do Farm Admin!_`;
+			text += `\n\n💡 _Dica: Digite \`!faz-adm\` para receber o link do Farm Admin no seu privado!_`;
 		}
 
 		const returns = [];
@@ -503,16 +503,40 @@ async function handleFazComprar(bot, message) {
 	try {
 		const buyRes = await jardimClient.buy(userId, itemParam, quantity);
 
+		const returns = [];
+
 		let text = `🛍️ *COMPRA REALIZADA COM SUCESSO!* 🛍️\n\n`;
-		text += `• Item: *${buyRes.item?.name || itemParam}*\n`;
-		text += `• Quantidade: *${quantity}x*\n`;
-		text += `• Total Pago: *${buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
+		text += `• Item: *${buyRes.itemName || buyRes.item?.name || itemParam}*\n`;
+		text += `• Quantidade: *${buyRes.quantityBought || quantity}x*\n`;
+		text += `• Total Pago: *${buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
 		text += `• Saldo Restante: *${buyRes.remainingCoins ?? buyRes.coins ?? 0} moedas*`;
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		returns.push(
+			new ReturnMessage({
+				chatId,
+				content: text
+			})
+		);
+
+		// Se a API retornou o sticker WebP/PNG em Base64, envia como figurinha
+		if (buyRes.stickerBase64) {
+			const stickerBuffer = Buffer.from(buyRes.stickerBase64, "base64");
+			returns.push(
+				new ReturnMessage({
+					chatId,
+					content: stickerBuffer,
+					options: {
+						sendMediaAsSticker: true,
+						stickerAuthor: bot?.nomeExibir || "ravena",
+						stickerName: `Jardim: ${buyRes.itemName || itemParam}`,
+						quotedMessageId: message.origin?.id?._serialized,
+						goReply: message.origin
+					}
+				})
+			);
+		}
+
+		return returns;
 	} catch (err) {
 		logger.error(`[handleFazComprar] Erro ao comprar: ${err.message}`);
 		return new ReturnMessage({
