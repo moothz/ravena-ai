@@ -137,6 +137,8 @@ services:
       - ./temp:/app/temp
       # DL_FOLDER: maps the host path you set in .env to the fixed internal path
       - ${DL_FOLDER}:/app/downloads
+      # Stickers Lovecell: HD secundário mapeado de forma transparente para o cache interno
+      - ${LOVECELL_STICKERS_FOLDER:-/mnt/ks500gb/stickers}:/app/data/media/lovecell
       # Config files — edit on host and restart the container to apply changes (no rebuild needed)
       - ./bots.json:/app/bots.json
       - ./service-providers.json:/app/service-providers.json

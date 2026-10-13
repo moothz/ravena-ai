@@ -517,18 +517,18 @@ async function runTests() {
 	assert.strictEqual(StickerScraper.isScraperTimerRunning(), false);
 	assert.strictEqual(
 		StickerScraper.DEFAULT_MIN_INTERVAL_MS,
-		12000,
-		"Intervalo mínimo padrão deve ser 12000ms (1/30 da frequência)"
+		400,
+		"Intervalo mínimo padrão deve ser 400ms"
 	);
 	assert.strictEqual(
 		StickerScraper.DEFAULT_MAX_INTERVAL_MS,
-		180000,
-		"Intervalo máximo padrão deve ser 180000ms (1/30 da frequência)"
+		6000,
+		"Intervalo máximo padrão deve ser 6000ms"
 	);
 	const sampleInterval = StickerScraper.getRandomInterval();
 	assert(
-		sampleInterval >= 12000 && sampleInterval <= 180000,
-		"Intervalo aleatório deve respeitar os novos limites"
+		sampleInterval >= 400 && sampleInterval <= 6000,
+		"Intervalo aleatório deve respeitar os limites rápidos"
 	);
 	console.log("✓ Controle do timer (start/stop/status) e intervalos validados com sucesso");
 
