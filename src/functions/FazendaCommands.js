@@ -200,7 +200,9 @@ async function handleFazenda(bot, message) {
 		try {
 			imageBuffer = await jardimClient.getImageBuffer(userId, true);
 		} catch (imgErr) {
-			logger.warn(`[handleFazenda] Não foi possível renderizar imagem da fazenda: ${imgErr.message}`);
+			logger.warn(
+				`[handleFazenda] Não foi possível renderizar imagem da fazenda: ${imgErr.message}`
+			);
 		}
 
 		// 4. Monta o texto de status
@@ -237,7 +239,7 @@ async function handleFazenda(bot, message) {
 		if (inPrivate) {
 			try {
 				const adminRes = await jardimClient.getAdminUrl(userId);
-				const adminUrl = typeof adminRes === "object" ? (adminRes.url || adminRes.link) : adminRes;
+				const adminUrl = typeof adminRes === "object" ? adminRes.url || adminRes.link : adminRes;
 				if (adminUrl) {
 					text += `\n\n🔐 *Acesso ao Farm Admin:* ${adminUrl}`;
 				}
@@ -256,9 +258,9 @@ async function handleFazenda(bot, message) {
 				new ReturnMessage({
 					chatId,
 					content: {
-						mimetype: "image/png",
+						mimetype: "image/jpeg",
 						data: imageBuffer.toString("base64"),
-						filename: `fazenda-${userId}.png`,
+						filename: `fazenda-${userId}.jpg`,
 						isMessageMedia: true
 					},
 					options: {
@@ -314,7 +316,7 @@ async function handleFazAdm(bot, message) {
 
 	try {
 		const adminRes = await jardimClient.getAdminUrl(userId);
-		const adminUrl = typeof adminRes === "object" ? (adminRes.url || adminRes.link) : adminRes;
+		const adminUrl = typeof adminRes === "object" ? adminRes.url || adminRes.link : adminRes;
 		const content = `🔐 *PAINEL FARM ADMIN* 🔐\n\nAcesse sua fazenda interativa pelo navegador:\n${adminUrl}\n\n⚠️ _Este link é pessoal e temporário. Não compartilhe com terceiros!_`;
 
 		if (inPrivate) {
