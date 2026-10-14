@@ -1079,7 +1079,7 @@ function makeRollHandler(genderFilter) {
 				}
 
 				if (rollReward) {
-					text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos (+${rollReward.scrapRollBonus} por ${rollsRemaining} rolls restantes)`;
+					text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos`;
 					if (rollReward.rarityBonus > 0) {
 						text += `\n🌟 *BÔNUS DE RARIDADE:* +${rollReward.rarityBonus} Zinthos!`;
 					}
@@ -1271,9 +1271,8 @@ function makeRollHandler(genderFilter) {
 			const lastRes = allRollResults[allRollResults.length - 1];
 			const lastRemaining = lastRes.rollsRemaining ?? 0;
 			const lastMax = lastRes.maxRolls ?? initialMaxRolls;
-			const scrapRollBonus = lastRes.rollReward?.scrapRollBonus ?? lastRemaining * 2;
 
-			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos (+${scrapRollBonus} por ${lastRemaining} rolls restantes)\n\n`;
+			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos\n\n`;
 			text += `🎟️ Rolls restantes: ${lastRemaining}/${lastMax}`;
 
 			const eventBanner = GameEventService.getEventBanner("waifu");
