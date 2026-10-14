@@ -1,4 +1,5 @@
 const axios = require("axios");
+const sharp = require("sharp");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -29,11 +30,57 @@ const api = axios.create({
 	timeout: 15000
 });
 
-// Janela de claim: 300 segundos (5 minutos)
+// Janela de claim total: 300 segundos (5 minutos)
 const CLAIM_WINDOW_MS = 300 * 1000;
 
-// Janela de exclusividade para o autor do roll em raridades especiais (Raro, Épico, Lendário): 60 segundos
+// Novos tempos de reserva por raridade:
+// Incomum: 30s | Raro: 60s | Épico: 90s | Lendário: 120s | Comum: 0s
+const EXCLUSIVE_CLAIM_WINDOWS = {
+	COMMON: 0,
+	COMUM: 0,
+	UNCOMMON: 30 * 1000,
+	INCOMUM: 30 * 1000,
+	RARE: 60 * 1000,
+	RARO: 60 * 1000,
+	EPIC: 90 * 1000,
+	EPICO: 90 * 1000,
+	ÉPICO: 90 * 1000,
+	LEGENDARY: 120 * 1000,
+	LENDARIO: 120 * 1000,
+	LENDÁRIO: 120 * 1000
+};
+
+// Mantido para compatibilidade retroativa de testes
 const EXCLUSIVE_CLAIM_WINDOW_MS = 60 * 1000;
+
+/**
+ * Retorna o tempo de reserva exclusiva em milissegundos para uma raridade
+ * @param {string} rarity
+ * @returns {number}
+ */
+function getExclusiveClaimWindowMs(rarity) {
+	if (!rarity) return 0;
+	const norm = String(rarity).toUpperCase().trim();
+	return EXCLUSIVE_CLAIM_WINDOWS[norm] || 0;
+}
+
+// Emojis numéricos para reações e identificadores visuais (1 a 9)
+const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️"];
+
+/**
+ * Converte emoji numérico (1️⃣ a 9️⃣) no índice de slot correspondente (1 a 9)
+ * @param {string} emoji
+ * @returns {number|null}
+ */
+function getSlotNumberFromEmoji(emoji) {
+	if (!emoji || typeof emoji !== "string") return null;
+	let idx = NUMBER_EMOJIS.indexOf(emoji);
+	if (idx === -1) idx = NUMBER_EMOJIS2.indexOf(emoji);
+	if (idx === -1) idx = NUMBER_EMOJIS3.indexOf(emoji);
+	return idx !== -1 ? idx + 1 : null;
+}
 
 // Cache em memória da janela de claim (300s / 5 min) por grupo
 // Map<groupId, { characterId: string, characterName: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
@@ -171,39 +218,123 @@ function deleteWaifuReportConfirmations(characterId) {
 }
 
 /**
- * Registra o ID de uma mensagem enviada de roll associando-o ao personagem sorteado
+ * Registra o ID de uma mensagem enviada de roll associando-o ao personagem (ou personagens) sorteado(s)
  * @param {string} messageId
- * @param {string} characterId
+ * @param {string|Array<object|string>} characterIdOrRolls
  * @param {string} groupId
  * @param {number} [expiresAt]
  * @param {string} [rollerUserId]
  * @param {number} [exclusiveUntil]
  * @param {string} [rollerUserName]
+ * @param {Array<object>} [extraRollsData]
  */
 function recordRollMessage(
 	messageId,
-	characterId,
+	characterIdOrRolls,
 	groupId,
 	expiresAt,
 	rollerUserId = null,
 	exclusiveUntil = null,
-	rollerUserName = null
+	rollerUserName = null,
+	extraRollsData = null
 ) {
-	if (!messageId || !characterId) return;
+	if (!messageId || !characterIdOrRolls) return;
 	const strId = String(messageId);
 	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
 
-	const existing = activeClaimsByCharGroup.get(`${groupId}:${characterId}`);
-	const rawRoller = rollerUserId || existing?.rollerUserId || null;
+	const isArray = Array.isArray(characterIdOrRolls) || Array.isArray(extraRollsData);
+	const rollsList = Array.isArray(characterIdOrRolls)
+		? characterIdOrRolls
+		: Array.isArray(extraRollsData)
+			? extraRollsData
+			: null;
+
+	const rawRoller = rollerUserId || null;
 	const finalRollerUserId = rawRoller ? normalizeUserId(rawRoller) : null;
+	const finalExpiresAt = expiresAt || Date.now() + CLAIM_WINDOW_MS;
+
+	if (isArray && rollsList) {
+		const slots = rollsList.map((item, idx) => {
+			if (typeof item === "string") {
+				return {
+					slot: idx + 1,
+					characterId: item,
+					characterName: item,
+					available: true,
+					exclusiveUntil: exclusiveUntil || null,
+					claimed: false
+				};
+			}
+			return {
+				slot: item.slot || idx + 1,
+				characterId: item.characterId || item.id,
+				characterName: item.characterName || item.name || item.id,
+				rarity: item.rarity || item.baseRarity || "COMMON",
+				available: item.available !== false,
+				exclusiveUntil: item.exclusiveUntil || null,
+				claimed: Boolean(item.claimed)
+			};
+		});
+
+		const primaryCharId = slots[0]?.characterId || "multi";
+
+		const claimData = {
+			isMultiRoll: true,
+			characterId: primaryCharId,
+			characters: slots,
+			slots,
+			groupId,
+			rollerUserId: finalRollerUserId,
+			rollerUserName,
+			exclusiveUntil,
+			expiresAt: finalExpiresAt
+		};
+
+		rollClaimsByMsgId.set(strId, claimData);
+		rollClaimsByMsgId.set(stanzaId, claimData);
+
+		rollHistoryByMsgId.set(strId, primaryCharId);
+		rollHistoryByMsgId.set(stanzaId, primaryCharId);
+
+		// Registra também cada personagem nos claims ativos do grupo
+		slots.forEach((s) => {
+			if (s.characterId) {
+				const charClaim = {
+					characterId: s.characterId,
+					characterName: s.characterName,
+					groupId,
+					rollerUserId: finalRollerUserId,
+					rollerUserName,
+					exclusiveUntil: s.exclusiveUntil,
+					expiresAt: finalExpiresAt
+				};
+				activeClaimsByCharGroup.set(`${groupId}:${s.characterId}`, charClaim);
+			}
+		});
+
+		if (rollHistoryByMsgId.size > MAX_ROLL_HISTORY * 2) {
+			const firstKey = rollHistoryByMsgId.keys().next().value;
+			rollHistoryByMsgId.delete(firstKey);
+		}
+		return;
+	}
+
+	// Single roll
+	const characterId =
+		typeof characterIdOrRolls === "string"
+			? characterIdOrRolls
+			: characterIdOrRolls?.characterId || characterIdOrRolls?.id;
+	const existing = activeClaimsByCharGroup.get(`${groupId}:${characterId}`);
 	const finalExclusiveUntil = exclusiveUntil ?? existing?.exclusiveUntil ?? null;
-	const finalRollerUserName = rollerUserName || existing?.rollerUserName || null;
+	const finalRollerName = rollerUserName || existing?.rollerUserName || null;
 
 	const claimData = {
+		isMultiRoll: false,
 		characterId,
 		groupId,
-		rollerUserId: finalRollerUserId,
-		rollerUserName: finalRollerUserName,
+		rollerUserId:
+			finalRollerUserId || (existing?.rollerUserId ? normalizeUserId(existing.rollerUserId) : null),
+		rollerUserName: finalRollerName,
 		exclusiveUntil: finalExclusiveUntil,
 		expiresAt: expiresAt || existing?.expiresAt || Date.now() + CLAIM_WINDOW_MS
 	};
@@ -477,11 +608,11 @@ function formatRemainingSeconds(seconds) {
 }
 
 /**
- * Baixa a imagem do personagem pela porta exposta da API e retorna em Base64
+ * Baixa o buffer binário da imagem do personagem
  * @param {string} imageUrl
- * @returns {Promise<string|null>}
+ * @returns {Promise<Buffer|null>}
  */
-async function downloadImageAsBase64(imageUrl) {
+async function downloadImageBuffer(imageUrl) {
 	if (!imageUrl) return null;
 	try {
 		let resolvedUrl = imageUrl;
@@ -495,11 +626,164 @@ async function downloadImageAsBase64(imageUrl) {
 			responseType: "arraybuffer",
 			timeout: 10000
 		});
-		return Buffer.from(response.data, "binary").toString("base64");
+		return Buffer.from(response.data);
 	} catch (err) {
 		logger.warn(`Falha ao baixar imagem de waifu (${imageUrl}):`, err.message);
 		return null;
 	}
+}
+
+/**
+ * Baixa a imagem do personagem pela porta exposta da API e retorna em Base64
+ * @param {string} imageUrl
+ * @returns {Promise<string|null>}
+ */
+async function downloadImageAsBase64(imageUrl) {
+	const buf = await downloadImageBuffer(imageUrl);
+	return buf ? buf.toString("base64") : null;
+}
+
+/**
+ * Constrói o grid de imagens unindo as fotos dos personagens com seu badge numérico
+ * Layouts (Linhas x Colunas):
+ * - 2: 1x2
+ * - 3: 1x3
+ * - 4: 2x2
+ * - 5: 2x3 (quadrado central deslocado para o meio, face 5 de um dado de 6 lados)
+ * - 6: 2x3
+ * - 7: 3x3 (quadrado central deslocado para o meio como o 5)
+ * - 8: 3x3 (quadrado central sem nada)
+ * - 9: 3x3
+ * @param {Array<{ slot: number, character: object, imageBuffer: Buffer|null }>} items
+ * @returns {Promise<Buffer>}
+ */
+async function buildRollGridImage(items) {
+	const count = items.length;
+	const cellW = 320;
+	const cellH = 320;
+	const badgeW = 52;
+	const badgeH = 40;
+	const badgeTop = cellH - badgeH - 12;
+	const badgeLeft = Math.floor((cellW - badgeW) / 2);
+
+	const preparedCells = await Promise.all(
+		items.map(async (item, idx) => {
+			const slot = item.slot || idx + 1;
+
+			const badgeSvg = Buffer.from(`
+				<svg width="${badgeW}" height="${badgeH}" xmlns="http://www.w3.org/2000/svg">
+					<rect width="${badgeW}" height="${badgeH}" rx="8" fill="rgba(0, 0, 0, 0.85)" stroke="#ffffff" stroke-width="2"/>
+					<text x="${badgeW / 2}" y="29" font-size="26" font-weight="bold" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">${slot}</text>
+				</svg>
+			`);
+
+			let baseImageBuffer = item.imageBuffer;
+			if (!baseImageBuffer) {
+				const charName = String(item.character?.name || "Personagem").substring(0, 20);
+				const charSeries = String(item.character?.series || "").substring(0, 22);
+				const placeholderSvg = Buffer.from(`
+					<svg width="${cellW}" height="${cellH}" xmlns="http://www.w3.org/2000/svg">
+						<rect width="${cellW}" height="${cellH}" fill="#1e212b"/>
+						<text x="${cellW / 2}" y="${cellH / 2 - 15}" font-size="20" font-weight="bold" text-anchor="middle" fill="#ffffff" font-family="sans-serif">${charName}</text>
+						<text x="${cellW / 2}" y="${cellH / 2 + 15}" font-size="14" text-anchor="middle" fill="#aaaaaa" font-family="sans-serif">${charSeries}</text>
+					</svg>
+				`);
+				baseImageBuffer = await sharp(placeholderSvg).png().toBuffer();
+			}
+
+			return await sharp(baseImageBuffer)
+				.resize(cellW, cellH, { fit: "cover", position: "center" })
+				.composite([{ input: badgeSvg, top: badgeTop, left: badgeLeft }])
+				.png()
+				.toBuffer();
+		})
+	);
+
+	let canvasW = cellW;
+	let canvasH = cellH;
+	const overlays = [];
+
+	if (count === 2) {
+		canvasW = 2 * cellW;
+		canvasH = cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+	} else if (count === 3) {
+		canvasW = 3 * cellW;
+		canvasH = cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 2 * cellW, top: 0 });
+	} else if (count === 4) {
+		canvasW = 2 * cellW;
+		canvasH = 2 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 0, top: cellH });
+		overlays.push({ input: preparedCells[3], left: cellW, top: cellH });
+	} else if (count === 5) {
+		canvasW = 3 * cellW;
+		canvasH = 2 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 }); // Top-Left
+		overlays.push({ input: preparedCells[1], left: 2 * cellW, top: 0 }); // Top-Right
+		overlays.push({ input: preparedCells[2], left: cellW, top: Math.floor(0.5 * cellH) }); // Center
+		overlays.push({ input: preparedCells[3], left: 0, top: cellH }); // Bottom-Left
+		overlays.push({ input: preparedCells[4], left: 2 * cellW, top: cellH }); // Bottom-Right
+	} else if (count === 6) {
+		canvasW = 3 * cellW;
+		canvasH = 2 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 2 * cellW, top: 0 });
+		overlays.push({ input: preparedCells[3], left: 0, top: cellH });
+		overlays.push({ input: preparedCells[4], left: cellW, top: cellH });
+		overlays.push({ input: preparedCells[5], left: 2 * cellW, top: cellH });
+	} else if (count === 7) {
+		canvasW = 3 * cellW;
+		canvasH = 3 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 2 * cellW, top: 0 });
+		overlays.push({ input: preparedCells[3], left: cellW, top: cellH }); // Centro
+		overlays.push({ input: preparedCells[4], left: 0, top: 2 * cellH });
+		overlays.push({ input: preparedCells[5], left: cellW, top: 2 * cellH });
+		overlays.push({ input: preparedCells[6], left: 2 * cellW, top: 2 * cellH });
+	} else if (count === 8) {
+		canvasW = 3 * cellW;
+		canvasH = 3 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 2 * cellW, top: 0 });
+		overlays.push({ input: preparedCells[3], left: 0, top: cellH });
+		overlays.push({ input: preparedCells[4], left: 2 * cellW, top: cellH });
+		overlays.push({ input: preparedCells[5], left: 0, top: 2 * cellH });
+		overlays.push({ input: preparedCells[6], left: cellW, top: 2 * cellH });
+		overlays.push({ input: preparedCells[7], left: 2 * cellW, top: 2 * cellH });
+	} else if (count >= 9) {
+		canvasW = 3 * cellW;
+		canvasH = 3 * cellH;
+		overlays.push({ input: preparedCells[0], left: 0, top: 0 });
+		overlays.push({ input: preparedCells[1], left: cellW, top: 0 });
+		overlays.push({ input: preparedCells[2], left: 2 * cellW, top: 0 });
+		overlays.push({ input: preparedCells[3], left: 0, top: cellH });
+		overlays.push({ input: preparedCells[4], left: cellW, top: cellH });
+		overlays.push({ input: preparedCells[5], left: 2 * cellW, top: cellH });
+		overlays.push({ input: preparedCells[6], left: 0, top: 2 * cellH });
+		overlays.push({ input: preparedCells[7], left: cellW, top: 2 * cellH });
+		overlays.push({ input: preparedCells[8], left: 2 * cellW, top: 2 * cellH });
+	}
+
+	return await sharp({
+		create: {
+			width: canvasW,
+			height: canvasH,
+			channels: 4,
+			background: { r: 24, g: 26, b: 32, alpha: 1 }
+		}
+	})
+		.composite(overlays)
+		.jpeg({ quality: 85 })
+		.toBuffer();
 }
 
 /**
@@ -613,11 +897,20 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
 function makeRollHandler(genderFilter) {
-	return async function rollWaifu(bot, message) {
+	return async function rollWaifu(bot, message, args) {
 		const chatId = message.group ?? message.author;
 		const userId = getUserId(message);
 		const groupId = getGroupId(message);
 		const name = getUserName(message);
+
+		// Extrai quantidade solicitada (1 a 9)
+		let requestedRolls = 1;
+		if (args && args[0]) {
+			const parsed = parseInt(args[0], 10);
+			if (!isNaN(parsed) && parsed > 0) {
+				requestedRolls = Math.min(parsed, 9);
+			}
+		}
 
 		try {
 			let rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
@@ -630,7 +923,7 @@ function makeRollHandler(genderFilter) {
 			if (hasFarmBonus) {
 				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
 				// Concede rolls extras para não ser bloqueado por cooldown
-				rollBonuses.extraMaxRolls = (rollBonuses.extraMaxRolls || 0) + 10;
+				rollBonuses.extraMaxRolls = (rollBonuses.extraMaxRolls || 0) + 9;
 
 				// Se tiver ticket (Rosa de Sangue), concede bônus de raridade equivalente a doador alto
 				if (farmBonus.tickets > 0) {
@@ -680,147 +973,163 @@ function makeRollHandler(genderFilter) {
 
 			const { data } = await api.post("/roll", payload);
 
-			// Se o roll teve sucesso na API e o usuário tinha bônus da fazenda, consome 1 unidade
 			if (hasFarmBonus) {
 				consumedFarmBonus = await ShadowGardenBonusService.consumeWaifuBonus(userId);
 			}
-			const {
-				character,
-				available,
-				isOwner,
-				owner,
-				keyProgress,
-				kakeraValue,
-				rollReward,
-				rollsRemaining,
-				maxRolls
-			} = data.data;
 
-			const rarity = character.rarity || character.baseRarity || "COMMON";
-			const normalizedRarity = String(rarity).toUpperCase();
-			const emojiRarity = RARITY_EMOJI[normalizedRarity] || RARITY_EMOJI[rarity] || "⚪";
-			const labelRarity = RARITY_LABEL[normalizedRarity] || RARITY_LABEL[rarity] || rarity;
-			const isSpecialRarity = [
-				"RARE",
-				"EPIC",
-				"LEGENDARY",
-				"RARO",
-				"EPICO",
-				"ÉPICO",
-				"LENDARIO",
-				"LENDÁRIO"
-			].includes(normalizedRarity);
+			const firstRollData = data.data;
+			const initialRollsRemaining = firstRollData.rollsRemaining;
+			const initialMaxRolls = firstRollData.maxRolls ?? 9;
 
-			let text = `🎲 *${character.name}* — _${character.series}_\n`;
-			text += `${emojiRarity} *[${labelRarity}]*`;
-			if (data.data?.isWishlist) {
-				text += ` 🌟 *[SEU DESEJO!]*`;
-			}
-			if (data.data?.appliedBonuses?.donorBadge || rollBonuses?.donorBadge) {
-				text += ` 💎 *[VIP]*`;
-			}
-			text += "\n";
+			// Define a quantidade real de rolls a executar: Math.min(solicitado, 1 + restante)
+			const maxPossibleRolls =
+				1 + (typeof initialRollsRemaining === "number" ? initialRollsRemaining : 0);
+			const rollsToExecute = Math.min(requestedRolls, maxPossibleRolls);
 
-			if (data.data?.isWishlist) {
-				text += `✨ *DESEJO REALIZADO!* Este personagem estava na sua Wishlist (+50% de bônus no sorteio)!\n`;
-			}
+			// Se for apenas 1 roll (ou se o usuário só tinha 1 roll disponível)
+			if (rollsToExecute <= 1) {
+				const {
+					character,
+					available,
+					isOwner,
+					owner,
+					keyProgress,
+					kakeraValue,
+					rollReward,
+					rollsRemaining,
+					maxRolls
+				} = firstRollData;
 
-			if (character.description) {
-				const desc =
-					character.description.length > 180
-						? `${character.description.substring(0, 180)}...`
-						: character.description;
-				text += `\n_${desc}_\n`;
-			}
-			text += "\n";
+				const rarity = character.rarity || character.baseRarity || "COMMON";
+				const normalizedRarity = String(rarity).toUpperCase();
+				const emojiRarity = RARITY_EMOJI[normalizedRarity] || RARITY_EMOJI[rarity] || "⚪";
+				const labelRarity = RARITY_LABEL[normalizedRarity] || RARITY_LABEL[rarity] || rarity;
+				const exclusiveMs = available ? getExclusiveClaimWindowMs(rarity) : 0;
+				const isSpecialRarity = exclusiveMs > 0;
 
-			let exclusiveUntil = null;
-			if (available) {
-				const now = Date.now();
-				exclusiveUntil = isSpecialRarity ? now + EXCLUSIVE_CLAIM_WINDOW_MS : null;
-				const claimData = {
-					characterId: character.id,
-					characterName: character.name,
-					rollerUserId: userId,
-					rollerUserName: name,
-					exclusiveUntil,
-					expiresAt: now + CLAIM_WINDOW_MS
-				};
+				let text = `🎲 *${character.name}* — _${character.series}_\n`;
+				text += `${emojiRarity} *[${labelRarity}]*`;
+				if (firstRollData?.isWishlist) {
+					text += ` 🌟 *[SEU DESEJO!]*`;
+				}
+				if (firstRollData?.appliedBonuses?.donorBadge || rollBonuses?.donorBadge) {
+					text += ` 💎 *[VIP]*`;
+				}
+				text += "\n";
 
-				// Salva o claim temporário no grupo e no índice por personagem por 300 segundos
-				pendingClaims.set(groupId, claimData);
-				activeClaimsByCharGroup.set(`${groupId}:${character.id}`, claimData);
+				if (firstRollData?.isWishlist) {
+					text += `✨ *DESEJO REALIZADO!* Este personagem estava na sua Wishlist (+50% de bônus no sorteio)!\n`;
+				}
 
-				setTimeout(() => {
-					const cur = pendingClaims.get(groupId);
-					if (cur && cur.characterId === character.id) {
-						pendingClaims.delete(groupId);
+				if (character.description) {
+					const desc =
+						character.description.length > 180
+							? `${character.description.substring(0, 180)}...`
+							: character.description;
+					text += `\n_${desc}_\n`;
+				}
+				text += "\n";
+
+				let exclusiveUntil = null;
+				if (available) {
+					const now = Date.now();
+					exclusiveUntil = isSpecialRarity ? now + exclusiveMs : null;
+					const claimData = {
+						characterId: character.id,
+						characterName: character.name,
+						rollerUserId: userId,
+						rollerUserName: name,
+						exclusiveUntil,
+						expiresAt: now + CLAIM_WINDOW_MS
+					};
+
+					pendingClaims.set(groupId, claimData);
+					activeClaimsByCharGroup.set(`${groupId}:${character.id}`, claimData);
+
+					setTimeout(() => {
+						const cur = pendingClaims.get(groupId);
+						if (cur && cur.characterId === character.id) {
+							pendingClaims.delete(groupId);
+						}
+						const curChar = activeClaimsByCharGroup.get(`${groupId}:${character.id}`);
+						if (curChar && curChar.expiresAt <= Date.now()) {
+							activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
+						}
+					}, CLAIM_WINDOW_MS);
+
+					const rollerMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+
+					if (isSpecialRarity) {
+						const exclSecs = Math.round(exclusiveMs / 1000);
+						text += `🔒 *EXCLUSIVO!* ${rollerMention} tem ${exclSecs}s de exclusividade para casar! Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`).\n⏳ Após ${exclSecs}s, ficará livre para qualquer jogador casar (janela total de 300s).`;
+					} else {
+						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
 					}
-					const curChar = activeClaimsByCharGroup.get(`${groupId}:${character.id}`);
-					if (curChar && curChar.expiresAt <= Date.now()) {
-						activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
+				} else if (isOwner) {
+					const keys = keyProgress?.currentKeys ?? 1;
+					text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
+					if (keyProgress?.becameSoulmateNow) {
+						text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
 					}
-				}, CLAIM_WINDOW_MS);
-
-				const rollerMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-
-				if (isSpecialRarity) {
-					text += `🔒 *EXCLUSIVO!* ${rollerMention} tem 60s de exclusividade para casar! Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`).\n⏳ Após 60s, ficará livre para qualquer jogador casar (janela total de 300s).`;
 				} else {
-					text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
+					text += `🔒 Já pertence a: *${owner?.name || "Outro jogador"}*`;
+					if (kakeraValue) {
+						text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
+					}
 				}
-			} else if (isOwner) {
-				const keys = keyProgress?.currentKeys ?? 1;
-				text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
-				if (keyProgress?.becameSoulmateNow) {
-					text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
+
+				if (rollReward) {
+					text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos (+${rollReward.scrapRollBonus} por ${rollsRemaining} rolls restantes)`;
+					if (rollReward.rarityBonus > 0) {
+						text += `\n🌟 *BÔNUS DE RARIDADE:* +${rollReward.rarityBonus} Zinthos!`;
+					}
 				}
-			} else {
-				text += `🔒 Já pertence a: *${owner?.name || "Outro jogador"}*`;
-				if (kakeraValue) {
-					text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
+
+				if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
+					text += `\n\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
 				}
-			}
 
-			if (rollReward) {
-				text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos (+${rollReward.scrapRollBonus} por ${rollsRemaining} rolls restantes)`;
-				if (rollReward.rarityBonus > 0) {
-					text += `\n🌟 *BÔNUS DE RARIDADE:* +${rollReward.rarityBonus} Zinthos!`;
+				if (consumedFarmBonus?.consumed) {
+					const bType =
+						consumedFarmBonus.type === "ticket"
+							? "Ticket de Waifu (Rosa de Sangue)"
+							: "Roll Bônus (Coração Púrpuro)";
+					text += `\n🌱 *Bônus da Fazenda Usado:* ${bType} (Restantes: ${consumedFarmBonus.remainingRolls} rolls, ${consumedFarmBonus.remainingTickets} tickets)`;
 				}
-			}
 
-			if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
-				text += `\n\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
-			}
+				const eventBanner = GameEventService.getEventBanner("waifu");
+				if (eventBanner) {
+					text += eventBanner;
+				}
 
-			if (consumedFarmBonus?.consumed) {
-				const bType =
-					consumedFarmBonus.type === "ticket"
-						? "Ticket de Waifu (Rosa de Sangue)"
-						: "Roll Bônus (Coração Púrpuro)";
-				text += `\n🌱 *Bônus da Fazenda Usado:* ${bType} (Restantes: ${consumedFarmBonus.remainingRolls} rolls, ${consumedFarmBonus.remainingTickets} tickets)`;
-			}
+				const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
 
-			const eventBanner = GameEventService.getEventBanner("waifu");
-			if (eventBanner) {
-				text += eventBanner;
-			}
+				const imageBase64 = await downloadImageAsBase64(character.imageUrl);
+				if (imageBase64) {
+					return new ReturnMessage({
+						chatId,
+						content: {
+							mimetype: "image/jpeg",
+							data: imageBase64,
+							filename: "waifu.jpg",
+							isMessageMedia: true
+						},
+						options: {
+							caption: text,
+							waifuCharacterId: character.id,
+							waifuGroupId: groupId,
+							waifuRollerUserId: userId,
+							waifuExclusiveUntil: exclusiveUntil,
+							waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
+							mentions
+						}
+					});
+				}
 
-			const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
-
-			// Tenta baixar a imagem e enviar com mídia
-			const imageBase64 = await downloadImageAsBase64(character.imageUrl);
-			if (imageBase64) {
 				return new ReturnMessage({
 					chatId,
-					content: {
-						mimetype: "image/jpeg",
-						data: imageBase64,
-						filename: "waifu.jpg",
-						isMessageMedia: true
-					},
+					content: text,
 					options: {
-						caption: text,
 						waifuCharacterId: character.id,
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
@@ -831,16 +1140,193 @@ function makeRollHandler(genderFilter) {
 				});
 			}
 
+			// ─── ROLLS MÚLTIPLOS (2 a 9) ──────────────────────────────────────────
+			const allRollResults = [firstRollData];
+			for (let i = 2; i <= rollsToExecute; i++) {
+				try {
+					const nextRes = await api.post("/roll", payload);
+					if (nextRes.data?.success && nextRes.data?.data) {
+						allRollResults.push(nextRes.data.data);
+						if (hasFarmBonus) {
+							await ShadowGardenBonusService.consumeWaifuBonus(userId);
+						}
+					} else {
+						break;
+					}
+				} catch (subErr) {
+					logger.warn(`Erro no roll múltiplo #${i}: ${subErr.message}`);
+					break;
+				}
+			}
+
+			const now = Date.now();
+			const multiRollSlots = allRollResults.map((r, idx) => {
+				const slot = idx + 1;
+				const char = r.character;
+				const rarity = char.rarity || char.baseRarity || "COMMON";
+				const exclMs = r.available ? getExclusiveClaimWindowMs(rarity) : 0;
+				const exclusiveUntil = exclMs > 0 ? now + exclMs : null;
+
+				return {
+					slot,
+					characterId: char.id,
+					characterName: char.name,
+					series: char.series,
+					rarity,
+					available: Boolean(r.available),
+					isOwner: Boolean(r.isOwner),
+					owner: r.owner,
+					keyProgress: r.keyProgress,
+					exclusiveUntil,
+					claimed: false,
+					imageUrl: char.imageUrl,
+					rollReward: r.rollReward
+				};
+			});
+
+			// Registra no activeClaimsByCharGroup e pendingClaims
+			multiRollSlots.forEach((s) => {
+				if (s.available) {
+					const claimData = {
+						characterId: s.characterId,
+						characterName: s.characterName,
+						groupId,
+						rollerUserId: userId,
+						rollerUserName: name,
+						exclusiveUntil: s.exclusiveUntil,
+						expiresAt: now + CLAIM_WINDOW_MS
+					};
+					activeClaimsByCharGroup.set(`${groupId}:${s.characterId}`, claimData);
+
+					setTimeout(() => {
+						const curChar = activeClaimsByCharGroup.get(`${groupId}:${s.characterId}`);
+						if (curChar && curChar.expiresAt <= Date.now()) {
+							activeClaimsByCharGroup.delete(`${groupId}:${s.characterId}`);
+						}
+					}, CLAIM_WINDOW_MS);
+				}
+			});
+
+			pendingClaims.set(groupId, {
+				isMultiRoll: true,
+				groupId,
+				characters: multiRollSlots,
+				slots: multiRollSlots,
+				rollerUserId: userId,
+				rollerUserName: name,
+				expiresAt: now + CLAIM_WINDOW_MS
+			});
+
+			setTimeout(() => {
+				const cur = pendingClaims.get(groupId);
+				if (cur && cur.isMultiRoll && cur.expiresAt <= Date.now()) {
+					pendingClaims.delete(groupId);
+				}
+			}, CLAIM_WINDOW_MS);
+
+			// Montagem da Legenda
+			let text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n\n`;
+
+			const freeSlots = multiRollSlots.filter((s) => s.available);
+			const marriedSlots = multiRollSlots.filter((s) => !s.available);
+
+			if (freeSlots.length > 0) {
+				text += `💍 *Personagens livres:*\n`;
+				text += `_Reaja com o emoji do número para casar!_\n\n`;
+				freeSlots.forEach((s) => {
+					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+					const normRarity = String(s.rarity).toUpperCase();
+					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}\n`;
+					text += `> !mu-casar ${s.characterId}\n\n`;
+				});
+			}
+
+			if (marriedSlots.length > 0) {
+				text += `💔 *Personagens casados:*\n`;
+				marriedSlots.forEach((s) => {
+					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+					const normRarity = String(s.rarity).toUpperCase();
+					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
+					const ownerInfo = s.isOwner
+						? ` (🔑 Chaves: ${s.keyProgress?.currentKeys || 1}/10)`
+						: s.owner?.name
+							? ` (${s.owner.name})`
+							: "";
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${ownerInfo}\n`;
+				});
+				text += "\n";
+			}
+
+			// Fragmentos acumulados
+			let totalScrap = 0;
+			allRollResults.forEach((r) => {
+				if (r.rollReward) {
+					totalScrap += Number(r.rollReward.totalScrap) || 0;
+				}
+			});
+
+			const lastRes = allRollResults[allRollResults.length - 1];
+			const lastRemaining = lastRes.rollsRemaining ?? 0;
+			const lastMax = lastRes.maxRolls ?? initialMaxRolls;
+			const scrapRollBonus = lastRes.rollReward?.scrapRollBonus ?? lastRemaining * 2;
+
+			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos (+${scrapRollBonus} por ${lastRemaining} rolls restantes)\n\n`;
+			text += `🎟️ Rolls restantes: ${lastRemaining}/${lastMax}`;
+
+			const eventBanner = GameEventService.getEventBanner("waifu");
+			if (eventBanner) {
+				text += eventBanner;
+			}
+
+			// Download paralelo das imagens e geração do Grid
+			const downloadedBuffers = await Promise.all(
+				multiRollSlots.map(async (s) => {
+					const buf = await downloadImageBuffer(s.imageUrl);
+					return { slot: s.slot, character: s, imageBuffer: buf };
+				})
+			);
+
+			let gridBase64 = null;
+			try {
+				const gridBuf = await buildRollGridImage(downloadedBuffers);
+				gridBase64 = gridBuf ? gridBuf.toString("base64") : null;
+			} catch (gridErr) {
+				logger.error(
+					`Erro ao construir grid de imagens para ${allRollResults.length} rolls:`,
+					gridErr.message
+				);
+			}
+
+			if (gridBase64) {
+				return new ReturnMessage({
+					chatId,
+					content: {
+						mimetype: "image/jpeg",
+						data: gridBase64,
+						filename: "waifus.jpg",
+						isMessageMedia: true
+					},
+					options: {
+						caption: text,
+						waifuRolls: multiRollSlots,
+						waifuGroupId: groupId,
+						waifuRollerUserId: userId,
+						waifuExpiresAt: now + CLAIM_WINDOW_MS
+					}
+				});
+			}
+
 			return new ReturnMessage({
 				chatId,
 				content: text,
 				options: {
-					waifuCharacterId: character.id,
+					waifuRolls: multiRollSlots,
 					waifuGroupId: groupId,
 					waifuRollerUserId: userId,
-					waifuExclusiveUntil: exclusiveUntil,
-					waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
-					mentions
+					waifuExpiresAt: now + CLAIM_WINDOW_MS
 				}
 			});
 		} catch (err) {
@@ -860,6 +1346,9 @@ const rollFemale = makeRollHandler("FEMALE");
 /**
  * Reivindica casamento com personagem sorteado
  */
+/**
+ * Reivindica casamento com personagem sorteado
+ */
 async function casarWaifu(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const groupId = getGroupId(message);
@@ -869,12 +1358,44 @@ async function casarWaifu(bot, message, args) {
 	let characterId = null;
 	let matchedRoll = null;
 
-	// 1. Se informou um ID/slug de personagem diretamente como argumento
-	if (args && args[0] && /^[a-zA-Z0-9_-]+$/.test(args[0])) {
-		characterId = args[0].trim();
-		matchedRoll =
-			activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
-			(pendingClaims.get(groupId)?.characterId === characterId ? pendingClaims.get(groupId) : null);
+	// 1. Se informou um ID/slug de personagem ou número de slot diretamente como argumento
+	if (args && args[0]) {
+		const argVal = args[0].trim();
+		if (/^[1-9]$/.test(argVal)) {
+			const slotNum = parseInt(argVal, 10);
+			let targetSlots = null;
+			let quotedMsg = null;
+			if (typeof message.origin?.getQuotedMessage === "function") {
+				quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+			}
+			if (quotedMsg) {
+				const qId = quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id;
+				const rollData = getRollByMessageId(qId);
+				if (rollData?.slots || rollData?.characters) {
+					targetSlots = rollData.slots || rollData.characters;
+				}
+			}
+			if (!targetSlots) {
+				const pending = pendingClaims.get(groupId);
+				if (pending?.slots || pending?.characters) {
+					targetSlots = pending.slots || pending.characters;
+				}
+			}
+			if (targetSlots) {
+				const foundSlot = targetSlots.find((s) => s.slot === slotNum);
+				if (foundSlot) {
+					characterId = foundSlot.characterId;
+					matchedRoll = foundSlot;
+				}
+			}
+		} else if (/^[a-zA-Z0-9_-]+$/.test(argVal)) {
+			characterId = argVal;
+			matchedRoll =
+				activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+				(pendingClaims.get(groupId)?.characterId === characterId
+					? pendingClaims.get(groupId)
+					: null);
+		}
 	}
 
 	// 2. Se a chamada foi disparada por uma reação (originReaction na mensagem de roll)
@@ -883,6 +1404,10 @@ async function casarWaifu(bot, message, args) {
 			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
 		const rollData = getRollByMessageId(targetMsgId);
 		if (rollData) {
+			// Se for multi-roll e a reação for 💍, ignorar conforme solicitado pelo usuário
+			if (rollData.isMultiRoll) {
+				return false;
+			}
 			characterId = rollData.characterId;
 			matchedRoll = rollData;
 		} else {
@@ -913,8 +1438,25 @@ async function casarWaifu(bot, message, args) {
 			const quotedId = quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id;
 			const rollData = getRollByMessageId(quotedId);
 			if (rollData) {
-				characterId = rollData.characterId;
-				matchedRoll = rollData;
+				if (rollData.isMultiRoll) {
+					const free = (rollData.slots || rollData.characters || []).filter(
+						(s) => s.available && !s.claimed
+					);
+					if (free.length === 1) {
+						characterId = free[0].characterId;
+						matchedRoll = free[0];
+					} else if (free.length > 1) {
+						return new ReturnMessage({
+							chatId,
+							content:
+								"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
+					}
+				} else {
+					characterId = rollData.characterId;
+					matchedRoll = rollData;
+				}
 			} else {
 				const text =
 					quotedMsg.caption ||
@@ -945,8 +1487,31 @@ async function casarWaifu(bot, message, args) {
 				options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 			});
 		}
-		characterId = pending.characterId;
-		matchedRoll = pending;
+		if (pending.isMultiRoll) {
+			const free = (pending.slots || pending.characters || []).filter(
+				(s) => s.available && !s.claimed
+			);
+			if (free.length === 1) {
+				characterId = free[0].characterId;
+				matchedRoll = free[0];
+			} else if (free.length > 1) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ Há múltiplos personagens livres nesta rolagem! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+				});
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Todos os personagens desta rolagem já foram casados!",
+					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+				});
+			}
+		} else {
+			characterId = pending.characterId;
+			matchedRoll = pending;
+		}
 	}
 
 	if (!matchedRoll) {
@@ -955,8 +1520,7 @@ async function casarWaifu(bot, message, args) {
 			(pendingClaims.get(groupId)?.characterId === characterId ? pendingClaims.get(groupId) : null);
 	}
 
-	// Validação de Exclusividade (Raro, Épico, Lendário):
-	// Durante 60s apenas o autor do roll pode casar (seja por comando ou reação)
+	// Validação de Exclusividade (Incomum, Raro, Épico, Lendário):
 	if (
 		matchedRoll &&
 		matchedRoll.exclusiveUntil &&
@@ -1028,6 +1592,134 @@ async function casarWaifu(bot, message, args) {
 			quotedMessageId: message.origin?.id?._serialized,
 			goReply: message.origin
 		});
+	}
+}
+
+/**
+ * Trata reações numéricas (1️⃣ a 9️⃣) em mensagens de roll para casar com o personagem do respectivo slot
+ */
+async function processWaifuReaction(bot, message, args, group) {
+	if (!message.originReaction) return false;
+
+	const reaction = message.originReaction;
+	const slot = getSlotNumberFromEmoji(reaction.reaction);
+	if (!slot) return false;
+
+	const targetMsgId = message.id || reaction.msgId?._serialized || reaction.msgId;
+	const rollData = getRollByMessageId(targetMsgId);
+	if (!rollData) return false;
+
+	const chatId = message.group ?? message.author;
+	const groupId = getGroupId(message);
+	const userId = getUserId(message);
+	const name = getUserName(message);
+
+	// Se for roll individual (1 roll) e reagiu com 1️⃣
+	if (!rollData.isMultiRoll) {
+		if (slot === 1) {
+			return await casarWaifu(bot, message, [rollData.characterId]);
+		}
+		return false;
+	}
+
+	// Se for roll múltiplo
+	const slots = rollData.slots || rollData.characters || [];
+	const slotData = slots.find((s) => s.slot === slot);
+	if (!slotData) return false;
+
+	if (!slotData.available) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ O personagem do slot ${slot} (*${slotData.characterName}*) já possui um dono!`,
+			options: { quotedMessageId: targetMsgId, goReply: message.origin }
+		});
+	}
+
+	if (slotData.claimed) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ O personagem do slot ${slot} (*${slotData.characterName}*) já foi casado por outro jogador!`,
+			options: { quotedMessageId: targetMsgId, goReply: message.origin }
+		});
+	}
+
+	// Validação de exclusividade/reserva
+	if (
+		slotData.exclusiveUntil &&
+		Date.now() < slotData.exclusiveUntil &&
+		rollData.rollerUserId &&
+		normalizeUserId(rollData.rollerUserId) !== userId
+	) {
+		const remainingSecs = Math.max(1, Math.ceil((slotData.exclusiveUntil - Date.now()) / 1000));
+		const rollerMention = rollData.rollerUserId.includes("@")
+			? `@${rollData.rollerUserId.split("@")[0]}`
+			: `@${rollData.rollerUserId}`;
+
+		return new ReturnMessage({
+			chatId,
+			content: `⏳ *Personagem exclusivo!* O personagem do slot ${slot} (*${slotData.characterName}*) é exclusivo de ${rollerMention} por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
+			options: {
+				quotedMessageId: targetMsgId,
+				goReply: message.origin,
+				mentions: [toJid(rollData.rollerUserId)]
+			}
+		});
+	}
+
+	try {
+		const { data } = await api.post("/marry", {
+			userId,
+			groupId,
+			characterId: slotData.characterId,
+			name,
+			platform: "WHATSAPP"
+		});
+
+		slotData.claimed = true;
+		activeClaimsByCharGroup.delete(`${groupId}:${slotData.characterId}`);
+
+		const allFreeClaimed = slots.filter((s) => s.available).every((s) => s.claimed);
+		if (allFreeClaimed) {
+			pendingClaims.delete(groupId);
+		}
+
+		const { character, keys, isSoulmate, kakeraBalance } = data.data;
+
+		if (
+			character &&
+			(character.rarity === "EPIC" ||
+				character.rarity === "LEGENDARY" ||
+				character.baseRarity === "EPIC" ||
+				character.baseRarity === "LEGENDARY")
+		) {
+			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
+				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
+			});
+		}
+
+		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}* (Slot ${slot})! 🎉\n`;
+		text += `🔑 Chaves: *${keys}/10*\n`;
+		text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
+		if (isSoulmate) {
+			text += `\n💖 *${character.name} é sua Soulmate definitiva!*`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: targetMsgId,
+				goReply: message.origin,
+				mentions: [toJid(userId)]
+			}
+		});
+	} catch (err) {
+		return handleApiError(
+			err,
+			chatId,
+			"Erro ao realizar casamento de personagem. Tente novamente."
+		);
 	}
 }
 
@@ -2109,7 +2801,7 @@ async function verChances(bot, message) {
 		donorHeader += `> _Seus benefícios de apoiador (R$ ${donorTotal.toFixed(2)}) estão ativos:_\n`;
 		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 4.5)}%\n`;
 		if (donorBonuses.extraMaxRolls > 0) {
-			donorHeader += `> • 🎟️ *Rolls Máximos:* ${10 + donorBonuses.extraMaxRolls} rolls (10 base + ${donorBonuses.extraMaxRolls} extras por doação)\n`;
+			donorHeader += `> • 🎟️ *Rolls Máximos:* ${9 + donorBonuses.extraMaxRolls} rolls (9 base + ${donorBonuses.extraMaxRolls} extras por doação)\n`;
 		}
 		if (donorBonuses.wishlistMultiplier) {
 			const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
@@ -2268,7 +2960,7 @@ async function ajudaWaifus(bot, message) {
 	}
 	text += `• Digite \`!mu-chances\` para abrir o painel completo de probabilidades e simulação!\n`;
 	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
-	text += `• *Sistema de Rolls:* Cada jogador possui até 10 rolls no banco (recarrega 1 roll a cada 5 minutos até o limite — doadores ganham +1 roll máximo a cada R$ 10 doados!).\n\n`;
+	text += `• *Sistema de Rolls:* Cada jogador possui até 9 rolls no banco (recarrega 1 roll a cada 5 minutos até o limite — doadores ganham +1 roll máximo a cada R$ 10 doados!).\n\n`;
 
 	text += `💍 *2. Casamento (Claim)*\n`;
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *300 segundos (5 minutos)*.\n`;
@@ -2476,6 +3168,17 @@ const commands = [
 		reactions: { trigger: "💍", before: "💍", after: "💍", error: "❌" },
 		reply: true,
 		method: casarWaifu
+	}),
+	new Command({
+		name: "reactionWaifuHelper",
+		description: "Invocado apenas pelo ReactionsHandler para casamentos por reação numérica",
+		category: "mudae",
+		reactions: {
+			trigger: NUMBER_EMOJIS.concat(NUMBER_EMOJIS2, NUMBER_EMOJIS3)
+		},
+		usage: "",
+		hidden: true,
+		method: processWaifuReaction
 	}),
 
 	// ── DIVORCIAR ───────────────────────────────────────────────────────────
@@ -3436,6 +4139,12 @@ module.exports = {
 	pendingClaims,
 	activeClaimsByCharGroup,
 	EXCLUSIVE_CLAIM_WINDOW_MS,
+	EXCLUSIVE_CLAIM_WINDOWS,
+	getExclusiveClaimWindowMs,
+	NUMBER_EMOJIS,
+	buildRollGridImage,
+	downloadImageBuffer,
+	processWaifuReaction,
 	recordRollMessage,
 	getRollByMessageId,
 	getCharacterIdFromMessageId,

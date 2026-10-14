@@ -1539,14 +1539,14 @@ class WhatsAppBotGo {
 					}
 				}
 
-				if (options.waifuCharacterId && result?.id) {
+				if ((options.waifuCharacterId || options.waifuRolls) && result?.id) {
 					const sentMsgId = result.id._serialized || result.id.id || result.id;
 					try {
 						const WaifuCommands = require("./functions/WaifuCommands");
 						if (typeof WaifuCommands.recordRollMessage === "function") {
 							WaifuCommands.recordRollMessage(
 								sentMsgId,
-								options.waifuCharacterId,
+								options.waifuRolls || options.waifuCharacterId,
 								message.chatId,
 								options.waifuExpiresAt,
 								options.waifuRollerUserId,

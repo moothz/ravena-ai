@@ -78,11 +78,15 @@ class ReactionsHandler {
 				? cmd.reactions.trigger
 				: [cmd.reactions.trigger];
 
-			// Adiciona cada trigger ao mapa
+			// Adiciona cada trigger ao mapa suportando múltiplos comandos por emoji
 			triggers.forEach((emoji) => {
 				if (emoji && typeof emoji === "string") {
-					this.reactionCommands[emoji] = cmd.name;
-					//this.logger.debug(`Mapeado emoji '${emoji}' para comando ${cmd.name}`);
+					if (!this.reactionCommands[emoji]) {
+						this.reactionCommands[emoji] = [];
+					}
+					if (!this.reactionCommands[emoji].includes(cmd.name)) {
+						this.reactionCommands[emoji].push(cmd.name);
+					}
 				}
 			});
 		} catch (error) {
@@ -98,13 +102,13 @@ class ReactionsHandler {
 	 */
 	async processReaction(bot, reaction) {
 		try {
-			//this.logger.info(`Processando reação: ${reaction.reaction} de ${reaction.senderId} na mensagem ${reaction.msgId._serialized}`);
-
 			// Verifica se este emoji mapeia para um comando
-			const commandName = this.reactionCommands[reaction.reaction];
-			if (!commandName) {
-				//this.logger.debug(`Nenhum comando mapeado para o emoji: ${reaction.reaction}`);
-				//console.log(this.reactionCommands);
+			const rawCommandNames = this.reactionCommands[reaction.reaction];
+			if (!rawCommandNames) {
+				return false;
+			}
+			const commandNames = Array.isArray(rawCommandNames) ? rawCommandNames : [rawCommandNames];
+			if (commandNames.length === 0) {
 				return false;
 			}
 
@@ -131,52 +135,62 @@ class ReactionsHandler {
 			const formattedMessage = message._isFallback ? message : await bot.formatMessage(message);
 			formattedMessage.originReaction = reaction; // Para comandos com reactions dinâmicas
 
-			// Encontra e executa o comando
-			const command = bot.eventHandler.commandHandler.fixedCommands.getCommand(commandName);
-			if (command) {
-				// Extrai argumentos do conteúdo da mensagem, se disponível
-				const msgText =
-					formattedMessage.type === "text" ? formattedMessage.content : formattedMessage.caption;
-				const args = msgText ? msgText.trim().split(/\s+/) : [];
+			// Extrai argumentos do conteúdo da mensagem, se disponível
+			const msgText =
+				formattedMessage.type === "text" ? formattedMessage.content : formattedMessage.caption;
+			const args = msgText ? msgText.trim().split(/\s+/) : [];
 
-				// Obtém dados do grupo
-				let group = null;
-				if (formattedMessage.group) {
-					const groupData = await bot.eventHandler.getOrCreateGroup(formattedMessage.group);
-					group = groupData.group;
+			// Obtém dados do grupo
+			let group = null;
+			if (formattedMessage.group && bot.eventHandler?.getOrCreateGroup) {
+				const groupData = await bot.eventHandler.getOrCreateGroup(formattedMessage.group);
+				group = groupData?.group;
 
-					// Verifica se o comando específico está mutado
-					if (group.mutedCommands && Array.isArray(group.mutedCommands)) {
-						if (group.mutedCommands.includes(commandName)) {
-							this.logger.debug(
-								`Ignorando reação do comando '${commandName}' (${reaction.reaction}), comando silenciado no grupo '${group.name}'`
-							);
-							return false;
-						}
-					}
+				if (group?.paused) {
+					// Se o grupo estiver pausado, ignora a reação
+					this.logger.info(`Ignorando reação em grupo pausado: ${formattedMessage.group}`);
+					return false;
+				}
+			}
 
-					if (group.paused) {
-						// Se o grupo estiver pausado, ignora a reação
-						this.logger.info(`Ignorando reação em grupo pausado: ${formattedMessage.group}`);
-						return false;
+			if (!bot?.eventHandler?.commandHandler?.fixedCommands) {
+				return false;
+			}
+
+			for (const commandName of commandNames) {
+				const command = bot.eventHandler.commandHandler.fixedCommands.getCommand(commandName);
+				if (!command) {
+					this.logger.warn(
+						`Comando ${commandName} mapeado do emoji ${reaction.reaction} não encontrado`
+					);
+					continue;
+				}
+
+				// Verifica se o comando específico está mutado
+				if (group?.mutedCommands && Array.isArray(group.mutedCommands)) {
+					if (group.mutedCommands.includes(commandName)) {
+						this.logger.debug(
+							`Ignorando reação do comando '${commandName}' (${reaction.reaction}), comando silenciado no grupo '${group.name}'`
+						);
+						continue;
 					}
 				}
 
 				this.logger.info(`Executando comando ${commandName} via reação ${reaction.reaction}`);
 
 				// Executa o comando
-				await bot.eventHandler.commandHandler.executeFixedCommand(
+				const result = await bot.eventHandler.commandHandler.executeFixedCommand(
 					bot,
 					formattedMessage,
 					command,
 					args,
 					group
 				);
-				return true;
-			} else {
-				this.logger.warn(
-					`Comando ${commandName} mapeado do emoji ${reaction.reaction} não encontrado`
-				);
+
+				// Se o comando tratou e retornou algo válido (não false e não null), considera resolvido
+				if (result !== false && result !== null && result !== undefined) {
+					return true;
+				}
 			}
 
 			return false;

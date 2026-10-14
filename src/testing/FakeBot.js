@@ -250,6 +250,23 @@ class FakeBot {
 				} catch {}
 			}
 
+			if (msg.options?.waifuCharacterId || msg.options?.waifuRolls) {
+				try {
+					const WaifuCommands = require("../functions/WaifuCommands");
+					if (typeof WaifuCommands.recordRollMessage === "function") {
+						WaifuCommands.recordRollMessage(
+							fakeMsgId,
+							msg.options.waifuRolls || msg.options.waifuCharacterId,
+							msg.chatId,
+							msg.options.waifuExpiresAt,
+							msg.options.waifuRollerUserId,
+							msg.options.waifuExclusiveUntil,
+							msg.options.waifuRollerUserName
+						);
+					}
+				} catch {}
+			}
+
 			results.push({ id: { _serialized: fakeMsgId }, ack: 1 });
 		}
 		return results;
