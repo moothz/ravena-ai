@@ -140,12 +140,13 @@ async function runTests() {
 	await waitForReply();
 	assert(bot.capturedMessages.length >= 1, "Deveria enviar pelo menos a imagem da fazenda");
 	const firstMsg = bot.capturedMessages[0];
-	assert(firstMsg.content.includes("JARDIM DAS SOMBRAS"), "Deveria conter cabeçalho do jardim");
+	const captionText = firstMsg.options?.caption || (typeof firstMsg.content === "string" ? firstMsg.content : "");
+	assert(captionText.includes("JARDIM DAS SOMBRAS"), "Deveria conter cabeçalho do jardim");
 	assert(
-		firstMsg.content.includes("!faz-adm") && firstMsg.content.includes("privado"),
+		captionText.includes("!faz-adm") && captionText.includes("privado"),
 		"Deveria conter a dica de ir ao PV para o admin"
 	);
-	assert(!firstMsg.content.includes("token="), "NÃO deve vazar token/link de admin no grupo!");
+	assert(!captionText.includes("token="), "NÃO deve vazar token/link de admin no grupo!");
 	console.log("✓ !fazenda em grupo passou com sucesso!");
 
 	// 7. Teste de !fazenda no Privado (Verifica se envia link de admin)
@@ -160,8 +161,9 @@ async function runTests() {
 	await waitForReply();
 	assert(bot.capturedMessages.length >= 1, "Deveria enviar mensagem no PV");
 	const pvMsg = bot.capturedMessages[0];
+	const pvText = pvMsg.options?.caption || (typeof pvMsg.content === "string" ? pvMsg.content : "");
 	assert(
-		pvMsg.content.includes("Farm Admin"),
+		pvText.includes("Farm Admin"),
 		"Deveria incluir acesso ao Farm Admin quando chamado no PV"
 	);
 	console.log("✓ !fazenda no PV passou com sucesso!");
@@ -194,6 +196,14 @@ async function runTests() {
 	assert(
 		bot.capturedMessages[0].content.includes("PAINEL FARM ADMIN"),
 		"Conteúdo no PV deve ser o painel do Farm Admin"
+	);
+	assert(
+		!bot.capturedMessages[0].content.includes("[object Object]"),
+		"O link não deve conter [object Object]"
+	);
+	assert(
+		bot.capturedMessages[0].content.includes("https://jds.moothz.win/farm?id="),
+		"Deve conter link público válido"
 	);
 	console.log("✓ !faz-adm em grupo reagiu e despachou no PV sem poluir o grupo!");
 

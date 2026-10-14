@@ -192,13 +192,18 @@ async function handleFazenda(bot, message) {
 			logger.debug(`[handleFazenda] Tentativa de claim daily: ${claimErr.message}`);
 		}
 
-		// 2. Busca status e imagem atualizada
-		const [status, imageBuffer] = await Promise.all([
-			jardimClient.getStatus(userId),
-			jardimClient.getImageBuffer(userId, true)
-		]);
+		// 2. Busca status da fazenda
+		const status = await jardimClient.getStatus(userId);
 
-		// 3. Monta o texto de status
+		// 3. Tenta renderizar imagem (se falhar, envia mensagem de texto sem derrubar o comando)
+		let imageBuffer = null;
+		try {
+			imageBuffer = await jardimClient.getImageBuffer(userId, true);
+		} catch (imgErr) {
+			logger.warn(`[handleFazenda] Não foi possível renderizar imagem da fazenda: ${imgErr.message}`);
+		}
+
+		// 4. Monta o texto de status
 		const plots = status.slots || [];
 		let readyCount = 0;
 		let growingCount = 0;
@@ -222,10 +227,20 @@ async function handleFazenda(bot, message) {
 
 		text += `\n📖 *Comandos Rápidos:* \`!faz-colher\`, \`!faz-plantar\`, \`!faz-loja\`, \`!faz-inv\``;
 
+		// Link público da fazenda
+		const shareUrl =
+			status.shareUrl || (status.uuid ? `https://jds.moothz.win/farm?id=${status.uuid}` : null);
+		if (shareUrl) {
+			text += `\n\n🌐 *Ver Fazenda Online:* ${shareUrl}`;
+		}
+
 		if (inPrivate) {
 			try {
-				const adminUrl = await jardimClient.getAdminUrl(userId);
-				text += `\n\n🔐 *Acesso ao Farm Admin:* ${adminUrl}`;
+				const adminRes = await jardimClient.getAdminUrl(userId);
+				const adminUrl = typeof adminRes === "object" ? (adminRes.url || adminRes.link) : adminRes;
+				if (adminUrl) {
+					text += `\n\n🔐 *Acesso ao Farm Admin:* ${adminUrl}`;
+				}
 			} catch (admErr) {
 				logger.warn(`[handleFazenda] Falha ao obter admin-url no PV: ${admErr.message}`);
 			}
@@ -235,17 +250,30 @@ async function handleFazenda(bot, message) {
 
 		const returns = [];
 
-		// Envia a imagem com a legenda principal
-		returns.push(
-			new ReturnMessage({
-				chatId,
-				content: text,
-				options: {
-					media: imageBuffer,
-					caption: text
-				}
-			})
-		);
+		// Envia a imagem com a legenda principal se tiver, ou apenas texto se falhou a imagem
+		if (imageBuffer) {
+			returns.push(
+				new ReturnMessage({
+					chatId,
+					content: {
+						mimetype: "image/png",
+						data: imageBuffer.toString("base64"),
+						filename: `fazenda-${userId}.png`,
+						isMessageMedia: true
+					},
+					options: {
+						caption: text
+					}
+				})
+			);
+		} else {
+			returns.push(
+				new ReturnMessage({
+					chatId,
+					content: text
+				})
+			);
+		}
 
 		// Se coletou diário nesta chamada, envia segunda mensagem com o prêmio
 		if (dailyClaimResult) {
@@ -285,7 +313,8 @@ async function handleFazAdm(bot, message) {
 	const inPrivate = isPrivateChat(message);
 
 	try {
-		const adminUrl = await jardimClient.getAdminUrl(userId);
+		const adminRes = await jardimClient.getAdminUrl(userId);
+		const adminUrl = typeof adminRes === "object" ? (adminRes.url || adminRes.link) : adminRes;
 		const content = `🔐 *PAINEL FARM ADMIN* 🔐\n\nAcesse sua fazenda interativa pelo navegador:\n${adminUrl}\n\n⚠️ _Este link é pessoal e temporário. Não compartilhe com terceiros!_`;
 
 		if (inPrivate) {
@@ -521,11 +550,16 @@ async function handleFazComprar(bot, message) {
 
 		// Se a API retornou o sticker WebP/PNG em Base64, envia como figurinha
 		if (buyRes.stickerBase64) {
-			const stickerBuffer = Buffer.from(buyRes.stickerBase64, "base64");
+			const stickerMedia = {
+				mimetype: "image/webp",
+				data: buyRes.stickerBase64,
+				filename: `sticker-${itemParam}.webp`,
+				isMessageMedia: true
+			};
 			returns.push(
 				new ReturnMessage({
 					chatId,
-					content: stickerBuffer,
+					content: stickerMedia,
 					options: {
 						sendMediaAsSticker: true,
 						stickerAuthor: bot?.nomeExibir || "ravena",
