@@ -99,6 +99,224 @@ class InviteSystem {
 	// Registro de entradas automáticas recentes por bot (botId -> [timestamp, ...]) para limite de 3/30m
 	static recentBotJoins = new Map();
 
+	// Fila de convites aprovados aguardando bot disponível
+	static inviteQueue = [];
+
+	// Timer de processamento da fila de convites
+	static queueTimer = null;
+
+	// Histórico dos últimos convites aceitos (tanto diretos quanto da fila)
+	static recentlyAccepted = [];
+
+	/**
+	 * Adiciona um convite aprovado à fila de espera caso não haja bot disponível
+	 * @param {Object} item - Dados do convite a enfileirar
+	 * @returns {number} Posição na fila (1-indexed)
+	 */
+	static enqueueInvite(item) {
+		const existingIndex = InviteSystem.inviteQueue.findIndex(
+			(q) => q.inviteCode === item.inviteCode
+		);
+		if (existingIndex !== -1) {
+			return existingIndex + 1;
+		}
+		InviteSystem.inviteQueue.push({
+			...item,
+			attempts: 0
+		});
+		InviteSystem.startQueueTimer();
+		return InviteSystem.inviteQueue.length;
+	}
+
+	/**
+	 * Remove um convite da fila caso tenha sido aceito manualmente
+	 * @param {string} inviteCode
+	 * @returns {boolean}
+	 */
+	static removeFromQueue(inviteCode) {
+		const idx = InviteSystem.inviteQueue.findIndex((q) => q.inviteCode === inviteCode);
+		if (idx !== -1) {
+			InviteSystem.inviteQueue.splice(idx, 1);
+			if (InviteSystem.inviteQueue.length === 0 && InviteSystem.queueTimer) {
+				clearInterval(InviteSystem.queueTimer);
+				InviteSystem.queueTimer = null;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Registra um convite aceito na lista dos últimos 10
+	 * @param {Object} entry
+	 */
+	static _pushRecentlyAccepted(entry) {
+		InviteSystem.recentlyAccepted.push({
+			...entry,
+			acceptedAt: Date.now()
+		});
+		if (InviteSystem.recentlyAccepted.length > 10) {
+			InviteSystem.recentlyAccepted.shift();
+		}
+	}
+
+	/**
+	 * Calcula o tempo estimado e hora prevista de entrada para uma dada posição na fila
+	 * @param {number} position - Posição na fila (1-indexed)
+	 * @returns {{ totalMinutes: number, tempo: string, horaPrevista: string, formatted: string }}
+	 */
+	static getETA(position = InviteSystem.inviteQueue.length) {
+		const pos = Math.max(1, position);
+		const intervalMinutes = 15;
+		const totalMinutes = pos * intervalMinutes;
+		const futureMs = Date.now() + totalMinutes * 60 * 1000;
+		const date = new Date(futureMs);
+		const horaPrevista = date.toLocaleTimeString("pt-BR", {
+			hour: "2-digit",
+			minute: "2-digit",
+			timeZone: "America/Sao_Paulo"
+		});
+		return {
+			totalMinutes,
+			tempo: `~${totalMinutes} minutos`,
+			horaPrevista,
+			formatted: `~${totalMinutes} min (às ${horaPrevista})`
+		};
+	}
+
+	/**
+	 * Inicia o timer da fila de convites (padrão a cada 15 minutos)
+	 * @param {number} intervalMs
+	 */
+	static startQueueTimer(intervalMs = 15 * 60 * 1000) {
+		if (InviteSystem.queueTimer) return;
+		InviteSystem.queueTimer = setInterval(() => {
+			InviteSystem.processQueueTick().catch((err) => {
+				console.error("[InviteSystem Queue Error]", err);
+			});
+		}, intervalMs);
+		if (typeof InviteSystem.queueTimer.unref === "function") {
+			InviteSystem.queueTimer.unref();
+		}
+	}
+
+	/**
+	 * Limpa a fila e cancela o timer (útil em testes ou shutdown)
+	 */
+	static clearQueue() {
+		if (InviteSystem.queueTimer) {
+			clearInterval(InviteSystem.queueTimer);
+			InviteSystem.queueTimer = null;
+		}
+		InviteSystem.inviteQueue = [];
+	}
+
+	/**
+	 * Processa o próximo item da fila quando um bot se torna disponível
+	 */
+	static async processQueueTick() {
+		if (InviteSystem.inviteQueue.length === 0) {
+			if (InviteSystem.queueTimer) {
+				clearInterval(InviteSystem.queueTimer);
+				InviteSystem.queueTimer = null;
+			}
+			return;
+		}
+
+		const item = InviteSystem.inviteQueue[0];
+		if (!item || !item.inviteSystem) {
+			InviteSystem.inviteQueue.shift();
+			return;
+		}
+
+		try {
+			// Tenta selecionar um bot disponível
+			const selectedBot = await item.inviteSystem.selectBestBotForAutoJoin();
+			if (!selectedBot) {
+				item.inviteSystem.logger.info(
+					`[Fila] Tique da fila executado, mas nenhum bot elegível disponível ainda. Mantendo ${item.inviteCode} na posição 1.`
+				);
+				return;
+			}
+
+			// Remove da fila para tentar aceitar
+			InviteSystem.inviteQueue.shift();
+
+			item.inviteSystem.logger.info(
+				`[Fila] Tentando aceitar convite ${item.inviteCode} com bot ${selectedBot.id}...`
+			);
+			const joinResult = await selectedBot.client.acceptInvite(item.inviteCode);
+
+			if (joinResult && joinResult.accepted) {
+				InviteSystem.recordBotJoin(selectedBot.id);
+				InviteSystem._pushRecentlyAccepted({
+					inviteCode: item.inviteCode,
+					authorId: item.authorId,
+					authorName: item.authorName,
+					botId: selectedBot.id,
+					groupName: item.groupName
+				});
+
+				await item.inviteSystem.database.savePendingJoin(item.inviteCode, {
+					authorId: item.authorId,
+					authorName: item.authorName,
+					groupJid: item.groupJid || null
+				});
+
+				const successMsg =
+					`✅ *[Fila de Convites]* Convite aceito automaticamente!\n` +
+					`🤖 *Bot:* ${selectedBot.id}\n` +
+					`👤 *Solicitante:* ${item.authorName} (${(item.authorId || "").split("@")[0]})\n` +
+					`🏷️ *Grupo:* ${item.groupName || "Desconhecido"}\n` +
+					`🔗 chat.whatsapp.com/${item.inviteCode}`;
+
+				if (item.inviteSystem.bot?.grupoLogs) {
+					await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoLogs, successMsg);
+				}
+				if (
+					item.inviteSystem.bot?.grupoInvites &&
+					item.inviteSystem.bot.grupoInvites !== item.inviteSystem.bot.grupoLogs
+				) {
+					await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoInvites, successMsg);
+				}
+			} else {
+				item.attempts = (item.attempts || 0) + 1;
+				item.inviteSystem.logger.warn(
+					`[Fila] Falha ao aceitar convite ${item.inviteCode} na tentativa ${item.attempts}/3: ${joinResult?.error || "Erro"}`
+				);
+				if (item.attempts < 3) {
+					// Volta para o final da fila
+					InviteSystem.inviteQueue.push(item);
+				} else {
+					const failMsg =
+						`❌ *[Fila de Convites]* Convite ${item.inviteCode} descartado após 3 tentativas sem sucesso.\n` +
+						`👤 *Solicitante:* ${item.authorName} (${(item.authorId || "").split("@")[0]})\n` +
+						`🏷️ *Grupo:* ${item.groupName || "Desconhecido"}`;
+					if (item.inviteSystem.bot?.grupoLogs) {
+						await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoLogs, failMsg);
+					}
+					if (
+						item.inviteSystem.bot?.grupoInvites &&
+						item.inviteSystem.bot.grupoInvites !== item.inviteSystem.bot.grupoLogs
+					) {
+						await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoInvites, failMsg);
+					}
+				}
+			}
+		} catch (err) {
+			item.inviteSystem?.logger?.error("[Fila] Erro no processamento do tick:", err);
+			item.attempts = (item.attempts || 0) + 1;
+			if (item.attempts < 3) {
+				InviteSystem.inviteQueue.push(item);
+			}
+		}
+
+		if (InviteSystem.inviteQueue.length === 0 && InviteSystem.queueTimer) {
+			clearInterval(InviteSystem.queueTimer);
+			InviteSystem.queueTimer = null;
+		}
+	}
+
 	/**
 	 * Cria uma nova instância do InviteSystem
 	 * @param {WhatsAppBot} bot - A instância do bot
@@ -190,7 +408,7 @@ class InviteSystem {
 	 * Retorna todos os números de telefone conhecidos de bots (limpos apenas com dígitos)
 	 * @returns {Set<string>}
 	 */
-	getKnownBotNumbers() {
+	getKnownBotNumbers({ excludeBanned = true } = {}) {
 		const numbers = new Set();
 
 		// Número do próprio bot
@@ -241,22 +459,170 @@ class InviteSystem {
 			}
 		}
 
+		if (excludeBanned) {
+			const bannedNumbers = this.getBannedBotNumbers();
+			for (const num of bannedNumbers) {
+				numbers.delete(num);
+			}
+		}
+
 		return numbers;
+	}
+
+	/**
+	 * Retorna todos os bots que estão habilitados e marcados como banidos
+	 * @returns {Array<Object>}
+	 */
+	getBannedBots() {
+		try {
+			const botsPath = path.resolve(__dirname, "../bots.json");
+			const raw = require("fs").readFileSync(botsPath, "utf8");
+			const bots = JSON.parse(raw);
+			if (Array.isArray(bots)) {
+				return bots.filter((b) => b && b.enabled === true && b.banido === true);
+			}
+		} catch (e) {
+			this.logger.warn("Erro ao ler bots.json para getBannedBots:", e.message);
+		}
+		const allBots = this.database?.botInstances || [];
+		return allBots.filter((b) => b && b.enabled === true && b.banido === true);
+	}
+
+	/**
+	 * Retorna o Set de números limpos dos bots que estão banidos e habilitados
+	 * @returns {Set<string>}
+	 */
+	getBannedBotNumbers() {
+		const numbers = new Set();
+		const bannedBots = this.getBannedBots();
+		for (const b of bannedBots) {
+			if (b?.phoneNumber) {
+				const clean = String(b.phoneNumber)
+					.split("@")[0]
+					.split(":")[0]
+					.replace(/[^0-9]/g, "");
+				if (clean) numbers.add(clean);
+			}
+			if (b?.numero) {
+				const clean = String(b.numero)
+					.split("@")[0]
+					.split(":")[0]
+					.replace(/[^0-9]/g, "");
+				if (clean) numbers.add(clean);
+			}
+		}
+		return numbers;
+	}
+
+	/**
+	 * Retorna o Set de IDs/nomes em lowercase de bots que estão marcados como banido: true e enabled: false
+	 * Usado para desconsiderar bots antigos banidos/desativados no histórico de estadias
+	 * @returns {Set<string>}
+	 */
+	getBannedDisabledBotIds() {
+		const ids = new Set();
+		try {
+			const botsPath = path.resolve(__dirname, "../bots.json");
+			const raw = require("fs").readFileSync(botsPath, "utf8");
+			const bots = JSON.parse(raw);
+			if (Array.isArray(bots)) {
+				for (const b of bots) {
+					if (b && b.banido === true && b.enabled === false) {
+						if (b.nome) ids.add(String(b.nome).toLowerCase());
+						if (b.id) ids.add(String(b.id).toLowerCase());
+					}
+				}
+			}
+		} catch (e) {
+			this.logger.warn("Erro ao ler bots.json em getBannedDisabledBotIds:", e.message);
+		}
+		return ids;
+	}
+
+	/**
+	 * Verifica se algum bot banido habilitado está atualmente presente nos participantes do convite
+	 * @param {Object} inviteInfoData
+	 * @returns {boolean}
+	 */
+	hasBannedBotInGroup(inviteInfoData) {
+		const participants = inviteInfoData?.Participants || inviteInfoData?.participants;
+		if (!participants || !Array.isArray(participants)) {
+			return false;
+		}
+		const bannedNumbers = this.getBannedBotNumbers();
+		if (bannedNumbers.size === 0) return false;
+
+		for (const p of participants) {
+			const rawNum =
+				typeof p === "string" ? p : p?.PhoneNumber || p?.JID || p?.phoneNumber || p?.jid || "";
+			const cleanNum = String(rawNum)
+				.split("@")[0]
+				.split(":")[0]
+				.replace(/[^0-9]/g, "");
+			if (cleanNum && bannedNumbers.has(cleanNum)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Verifica se o grupo possui canal de stream configurado (Twitch, Kick ou YouTube)
+	 * @param {string} groupJid
+	 * @returns {Promise<boolean>}
+	 */
+	async groupHasStreamChannel(groupJid) {
+		if (!groupJid) return false;
+		try {
+			const group = await this.database.getGroup(groupJid);
+			if (!group) return false;
+			const hasTwitch = Array.isArray(group.twitch) && group.twitch.length > 0;
+			const hasKick = Array.isArray(group.kick) && group.kick.length > 0;
+			const hasYoutube = Array.isArray(group.youtube) && group.youtube.length > 0;
+			return hasTwitch || hasKick || hasYoutube;
+		} catch (err) {
+			this.logger.error(`Erro ao checar canais de stream do grupo ${groupJid}:`, err);
+			return false;
+		}
+	}
+
+	/**
+	 * Seleciona bot VIP habilitado e disponível para aceitar convite (ex: doadores R$100+)
+	 * @returns {WhatsAppBotGo|null}
+	 */
+	selectVipBot() {
+		try {
+			const allBots = this.database?.botInstances || [];
+			const vipBots = allBots.filter((b) => {
+				if (!b || b.banido || !b.vip) return false;
+				if (b.enabled === false) return false;
+				if (b.useTelegram || b.useDiscord) return false;
+				if (b.ignoreInvites) return false;
+				if (!b.client || typeof b.client.acceptInvite !== "function") return false;
+				return true;
+			});
+			return vipBots[0] || null;
+		} catch (err) {
+			this.logger.error("Erro ao selecionar bot VIP:", err);
+			return null;
+		}
 	}
 
 	/**
 	 * Identifica quais bots conhecidos estão atualmente presentes nos participantes do grupo
 	 * @param {Object} inviteInfoData - Dados retornados por getInviteInfo
+	 * @param {Object} [options]
+	 * @param {boolean} [options.excludeBanned=true]
 	 * @returns {string[]} Array de números dos bots presentes no grupo
 	 */
-	getBotsInGroupFromInvite(inviteInfoData) {
+	getBotsInGroupFromInvite(inviteInfoData, { excludeBanned = true } = {}) {
 		const botsInGroup = [];
 		const participants = inviteInfoData?.Participants || inviteInfoData?.participants;
 		if (!participants || !Array.isArray(participants)) {
 			return botsInGroup;
 		}
 
-		const knownBotNumbers = this.getKnownBotNumbers();
+		const knownBotNumbers = this.getKnownBotNumbers({ excludeBanned });
 		for (const p of participants) {
 			const rawNum =
 				typeof p === "string" ? p : p?.PhoneNumber || p?.JID || p?.phoneNumber || p?.jid || "";
@@ -272,6 +638,77 @@ class InviteSystem {
 		}
 
 		return botsInGroup;
+	}
+
+	/**
+	 * Avalia a solicitação de convite no modo RECENTLY_BANNED
+	 * @param {Object} params
+	 * @returns {Promise<{ shouldAutoAccept: boolean, reason: string, bannedModeReject?: string }>}
+	 */
+	async evaluateAutoAcceptRecentlyBanned({
+		isDonator = false,
+		donateValue = 0,
+		wasInGroupBefore = false,
+		hasBotInGroup = false,
+		hasBannedBotInGroup = false,
+		participantCount = 0,
+		groupJid = null
+	}) {
+		if (
+			process.env.DISABLE_INVITE_AUTO_ACCEPT === "true" ||
+			process.env.DISABLE_AUTO_ACCEPT === "true"
+		) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Auto-accept desativado via configuração (.env)"
+			};
+		}
+
+		// Se já existe um bot ativo no grupo atualmente, nunca adicionar outro
+		if (hasBotInGroup) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Já existe um bot no grupo atualmente"
+			};
+		}
+
+		// 1. Donates: Continua aceitando normalmente
+		if (isDonator) {
+			return {
+				shouldAutoAccept: true,
+				reason: `Doador (R$${donateValue}) - Aceite em modo RECENTLY_BANNED`
+			};
+		}
+
+		// 2. Grupos que nunca tiveram a ravena (novos): Não aceitar
+		const hadBot = hasBannedBotInGroup || wasInGroupBefore;
+		if (!hadBot) {
+			return {
+				shouldAutoAccept: false,
+				bannedModeReject: "new_group",
+				reason: "Grupo novo (modo RECENTLY_BANNED: aceitando apenas reposição de ravenas)"
+			};
+		}
+
+		// 3. Grupos que tem a ravena que foi banida nos membros (ou histórico anterior comprovado):
+		// Se >= 15 membros OU Grupo com canal twitch/kick/youtube configurado: aceitar automaticamente
+		const hasStreamChannel = await this.groupHasStreamChannel(groupJid);
+		const count = typeof participantCount === "number" ? participantCount : 0;
+
+		if (count >= 15 || hasStreamChannel) {
+			const justification = count >= 15 ? `${count} membros` : "canal de live configurado";
+			return {
+				shouldAutoAccept: true,
+				reason: `Reposição de ravena banida (${justification})`
+			};
+		}
+
+		// Caso contrário, negar e adicionar na mensagem "Grupo pequeno pendente"
+		return {
+			shouldAutoAccept: false,
+			bannedModeReject: "small_group",
+			reason: "Grupo pequeno pendente"
+		};
 	}
 
 	/**
@@ -339,6 +776,16 @@ class InviteSystem {
 		wasInGroupBefore = false,
 		hasBotInGroup = false
 	}) {
+		if (
+			process.env.DISABLE_INVITE_AUTO_ACCEPT === "true" ||
+			process.env.DISABLE_AUTO_ACCEPT === "true"
+		) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Auto-accept desativado via configuração (.env)"
+			};
+		}
+
 		// Se já existe um bot no grupo atualmente, NUNCA adicionar outro, independente do convite (inclusive se for doador)
 		if (hasBotInGroup) {
 			return {
@@ -1335,31 +1782,55 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			let groupPeriods = [];
 
 			if (inviteInfoData?.JID) {
+				const bannedDisabledBotIds = this.getBannedDisabledBotIds();
+
 				try {
 					manualLeaveInfo = await this.database.getManualGroupLeave(inviteInfoData.JID);
 					if (manualLeaveInfo) {
-						wasInGroupBefore = true;
+						const leaveBotId = String(manualLeaveInfo.bot_id || "").toLowerCase();
+						// Se o bot que já esteve no grupo é um banido true e enabled false, não deve ser considerado
+						if (!bannedDisabledBotIds.has(leaveBotId)) {
+							wasInGroupBefore = true;
+						}
 					}
 				} catch (leaveCheckErr) {
 					this.logger.error("Erro ao verificar saída manual do grupo:", leaveCheckErr);
 				}
 
 				try {
-					const existingGroup = await this.database.getGroup(inviteInfoData.JID);
-					if (existingGroup) {
-						wasInGroupBefore = true;
-					}
-				} catch (groupCheckErr) {
-					this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
-				}
-
-				try {
 					groupPeriods = await this.database.getGroupMembershipPeriods(inviteInfoData.JID);
 					if (groupPeriods && groupPeriods.length > 0) {
-						wasInGroupBefore = true;
+						// Filtra apenas períodos de bots que NÃO sejam banido: true e enabled: false
+						const validPeriods = groupPeriods.filter((p) => {
+							const pBotId = String(p.bot_id || "").toLowerCase();
+							return !pBotId || !bannedDisabledBotIds.has(pBotId);
+						});
+						if (validPeriods.length > 0) {
+							wasInGroupBefore = true;
+						}
 					}
 				} catch (periodsErr) {
 					this.logger.error("Erro ao verificar períodos do grupo na base:", periodsErr);
+				}
+
+				try {
+					const existingGroup = await this.database.getGroup(inviteInfoData.JID);
+					if (existingGroup && !wasInGroupBefore) {
+						// Se só achou pelo existingGroup (sem períodos válidos e sem manualLeave válido):
+						// se todos os períodos registrados no grupo eram apenas de bots banidos/desativados, não marca wasInGroupBefore
+						const hasOnlyBannedDisabledPeriods =
+							groupPeriods &&
+							groupPeriods.length > 0 &&
+							groupPeriods.every((p) => {
+								const pBotId = String(p.bot_id || "").toLowerCase();
+								return pBotId && bannedDisabledBotIds.has(pBotId);
+							});
+						if (!hasOnlyBannedDisabledPeriods) {
+							wasInGroupBefore = true;
+						}
+					}
+				} catch (groupCheckErr) {
+					this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
 				}
 
 				try {
@@ -1421,14 +1892,25 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				this.logger.error("Erro ao verificar se o autor é doador:", donationError);
 			}
 
-			// Avaliação com LLM para Auto-Accept
+			// Avaliação para Auto-Accept (LLM normal ou RECENTLY_BANNED)
 			let autoAccepted = false;
 			let autoAcceptBot = null;
+			let enqueuedAutoAccept = false;
+			let queuePosition = 0;
 			let llmReason = "";
+			let evalResult = null;
 
-			// Critério: Se o bot já esteve no grupo, é porque removeram e não deve ser aceito automaticamente.
-			// Desconsiderar se for doador.
-			if (wasInGroupBefore && !isDonator) {
+			const isAutoAcceptDisabled =
+				process.env.DISABLE_INVITE_AUTO_ACCEPT === "true" ||
+				process.env.DISABLE_AUTO_ACCEPT === "true";
+			const isRecentlyBanned = process.env.RECENTLY_BANNED === "true";
+
+			if (isAutoAcceptDisabled) {
+				llmReason = "Auto-accept desativado via configuração (.env)";
+				this.logger.info(
+					`[AutoAccept] Convite ${inviteCode} ignorando auto-accept (desativado via .env)`
+				);
+			} else if (wasInGroupBefore && !isDonator && !isRecentlyBanned) {
 				if (manualLeaveInfo) {
 					llmReason = `Bot já foi removido manualmente deste grupo anteriormente (${manualLeaveInfo.group_name || "Desconhecido"})`;
 				} else {
@@ -1439,19 +1921,33 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				);
 			} else {
 				try {
-					const evalResult = await this.evaluateAutoAcceptWithLLM({
-						userName,
-						authorId,
-						groupName: inviteInfoData?.Name,
-						participantCount: inviteInfoData?.ParticipantCount,
-						description:
-							inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
-						reason,
-						isDonator,
-						donateValue,
-						wasInGroupBefore,
-						hasBotInGroup: otherBotsInGroup.length > 0
-					});
+					const hasBannedBotInGroup = this.hasBannedBotInGroup(inviteInfoData);
+
+					if (isRecentlyBanned) {
+						evalResult = await this.evaluateAutoAcceptRecentlyBanned({
+							isDonator,
+							donateValue,
+							wasInGroupBefore,
+							hasBotInGroup: otherBotsInGroup.length > 0,
+							hasBannedBotInGroup,
+							participantCount: this.getParticipantCount(inviteInfoData) ?? 0,
+							groupJid: inviteInfoData?.JID || null
+						});
+					} else {
+						evalResult = await this.evaluateAutoAcceptWithLLM({
+							userName,
+							authorId,
+							groupName: inviteInfoData?.Name,
+							participantCount: inviteInfoData?.ParticipantCount,
+							description:
+								inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
+							reason,
+							isDonator,
+							donateValue,
+							wasInGroupBefore,
+							hasBotInGroup: otherBotsInGroup.length > 0
+						});
+					}
 
 					llmReason = evalResult.reason;
 
@@ -1484,12 +1980,22 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} não está disponível para entrar`;
 							}
 						} else {
-							selectedBot = await this.selectBestBotForAutoJoin();
+							// Se donate R$100 ou acima: Aceitar sempre no bot vip que está enabled
+							if (isDonator && donateValue >= 100) {
+								selectedBot = this.selectVipBot();
+								if (selectedBot) {
+									this.logger.info(
+										`[AutoAccept] Convite ${inviteCode} direcionado para bot VIP (${selectedBot.id}) devido a donate R$${donateValue}`
+									);
+								} else {
+									this.logger.warn(
+										`[AutoAccept] Doador R$100+ (${donateValue}), mas nenhum bot VIP disponível. Tentando seleção normal.`
+									);
+								}
+							}
+
 							if (!selectedBot) {
-								this.logger.info(
-									`[AutoAccept] Convite ${inviteCode} aprovado pela IA, mas nenhum bot elegível disponível no momento.`
-								);
-								llmReason = `Aprovado pela IA (${evalResult.reason}), mas nenhum bot elegível disponível (limite 3/30m ou offline)`;
+								selectedBot = await this.selectBestBotForAutoJoin();
 							}
 						}
 
@@ -1502,6 +2008,13 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								autoAccepted = true;
 								autoAcceptBot = selectedBot;
 								InviteSystem.recordBotJoin(selectedBot.id);
+								InviteSystem._pushRecentlyAccepted({
+									inviteCode,
+									authorId,
+									authorName: userName,
+									botId: selectedBot.id,
+									groupName: inviteInfoData?.Name
+								});
 								await this.database.savePendingJoin(inviteCode, {
 									authorId,
 									authorName: userName,
@@ -1513,17 +2026,46 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								);
 								llmReason = `Aprovado pela IA, mas bot ${selectedBot.id} falhou ao entrar (${joinResult?.error || "Erro"})`;
 							}
+						} else if (!this.bot?.comunitario) {
+							// Nenhum bot disponível para entrar agora: criar fila com timer para ir aceitando aos poucos
+							queuePosition = InviteSystem.enqueueInvite({
+								inviteCode,
+								authorId,
+								authorName: userName,
+								groupName: inviteInfoData?.Name,
+								groupJid: inviteInfoData?.JID || null,
+								reason,
+								enqueuedAt: Date.now(),
+								inviteSystem: this
+							});
+							enqueuedAutoAccept = true;
+							const eta = InviteSystem.getETA(queuePosition);
+							llmReason = `Aprovado para auto accept → Enfileirado na posição ${queuePosition} (Previsão: ${eta.tempo}, às ${eta.horaPrevista})`;
+							this.logger.info(
+								`[AutoAccept] Convite ${inviteCode} colocado na fila de espera na posição ${queuePosition}. ETA: ${eta.formatted}`
+							);
 						}
 					}
 				} catch (evalErr) {
-					this.logger.error("Erro no fluxo de auto-accept com LLM:", evalErr);
-					llmReason = `Falha ao avaliar com IA: ${evalErr.message}`;
+					this.logger.error("Erro no fluxo de auto-accept:", evalErr);
+					llmReason = `Falha na avaliação: ${evalErr.message}`;
 				}
 			}
 
 			// Envia notificação para o usuário
 			let extraText = "";
 			let addedAny = false;
+			let headerText = "";
+
+			if (evalResult?.bannedModeReject === "new_group" && !isDonator) {
+				const bannedBots = this.getBannedBots();
+				const bannedBotName =
+					bannedBots[0]?.nomeExibir || bannedBots[0]?.nome || this.bot.nomeExibir || "ravena";
+				headerText = `🚨 A *${bannedBotName}* foi banida recentemente - neste momento, não estou aceitando nenhum convite novo, apenas repondo as ravenas no grupo\n\n`;
+			} else if (evalResult?.bannedModeReject === "small_group" && !isDonator) {
+				extraText += "\n- ⚠️ Grupo pequeno pendente";
+				addedAny = true;
+			}
 
 			if (inviteInfoData?.ParticipantCount !== undefined && inviteInfoData.ParticipantCount === 2) {
 				const botName = this.bot.nomeExibir || "ravena";
@@ -1558,10 +2100,10 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			const invitesPosPath = path.join(this.database.databasePath, "textos", "invites_pos.txt");
 			const posConvite = await fs.readFile(invitesPosPath, "utf8");
 
-			await this.bot.sendMessage(
-				authorId,
-				"Seu convite foi recebido e será analisado." + extraText + posConvite
-			);
+			const finalUserMessage =
+				headerText + "Seu convite foi recebido e será analisado." + extraText + posConvite;
+
+			await this.bot.sendMessage(authorId, finalUserMessage);
 
 			// Envia notificações para o grupoInvites se configurado
 			if (this.bot.grupoInvites) {
@@ -1570,6 +2112,11 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					if (autoAccepted) {
 						infoMessageHeader =
 							`✨ *ACEITO AUTOMATICAMENTE:* ${llmReason}\n🤖 *Bot que entrou:* ${autoAcceptBot.id}\n\n` +
+							infoMessageHeader;
+					} else if (enqueuedAutoAccept) {
+						const eta = InviteSystem.getETA(queuePosition);
+						infoMessageHeader =
+							`⏳ *AUTO ACCEPT (FILA DE ESPERA):* ${llmReason}\n⏰ *Previsão de entrada:* ${eta.tempo} (às *${eta.horaPrevista}*)\n📍 *Posição na fila:* ${queuePosition}\n\n` +
 							infoMessageHeader;
 					}
 					if (isDonator) {
@@ -1686,13 +2233,29 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						membershipHistoryText +
 						`\n💬 *Motivo:*\n${reason}\n` +
 						botWarning +
-						(!autoAccepted && llmReason
+						(!autoAccepted && !enqueuedAutoAccept && llmReason
 							? `\n🤖 *Análise IA (Não aceito auto):* ${llmReason}\n`
 							: "") +
 						lastDossiersText +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
+
+					if (
+						enqueuedAutoAccept &&
+						this.bot.grupoLogs &&
+						this.bot.grupoLogs !== this.bot.grupoInvites
+					) {
+						const eta = InviteSystem.getETA(queuePosition);
+						const queueLogMsg =
+							`⏳ *[Fila de Auto Accept]* Convite colocado na fila de espera!\n` +
+							`🏷️ *Grupo:* ${inviteInfoData?.Name || "Desconhecido"}\n` +
+							`👤 *Solicitante:* ${userName} (${authorId.split("@")[0]})\n` +
+							`🔗 *Código:* ${inviteCode}\n` +
+							`⏰ *Previsão de entrada:* ${eta.tempo} (às *${eta.horaPrevista}*)\n` +
+							`📍 *Posição na fila:* ${queuePosition}`;
+						await this.bot.sendMessage(this.bot.grupoLogs, queueLogMsg);
+					}
 
 					// Envia comando para aceitar se não foi aceito automaticamente (apenas se não houver bot no grupo)
 					if (!autoAccepted && otherBotsInGroup.length === 0) {

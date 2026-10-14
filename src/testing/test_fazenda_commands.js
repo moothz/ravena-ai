@@ -140,7 +140,8 @@ async function runTests() {
 	await waitForReply();
 	assert(bot.capturedMessages.length >= 1, "Deveria enviar pelo menos a imagem da fazenda");
 	const firstMsg = bot.capturedMessages[0];
-	const captionText = firstMsg.options?.caption || (typeof firstMsg.content === "string" ? firstMsg.content : "");
+	const captionText =
+		firstMsg.options?.caption || (typeof firstMsg.content === "string" ? firstMsg.content : "");
 	assert(captionText.includes("JARDIM DAS SOMBRAS"), "Deveria conter cabeçalho do jardim");
 	assert(
 		captionText.includes("!faz-adm") && captionText.includes("privado"),

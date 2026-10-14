@@ -39,6 +39,10 @@ class SuperAdmin {
 				method: "joinGroupSilent",
 				description: "Entra em um grupo via link de convite SEM enviar mensagem de boas-vindas"
 			},
+			filaInvites: {
+				method: "filaInvites",
+				description: "Mostra os últimos 10 aceitos e a fila de invites pendentes com ETA"
+			},
 			modoSilencioso: {
 				method: "toggleSilentMode",
 				description: "Toggle do modo silencioso global (sem boas-vindas por 30 min)"
@@ -847,6 +851,11 @@ Break down the cost by category and provide a total estimated cost.`;
 				const joinResult = await bot.client.acceptInvite(inviteCode);
 
 				if (joinResult.accepted) {
+					try {
+						const InviteSystem = require("../InviteSystem");
+						InviteSystem.removeFromQueue(inviteCode);
+					} catch (e) {}
+
 					const finalGroupJid = inviteInfoData?.JID || null;
 					await this.database.addInviteHistory({
 						code: inviteCode,
@@ -968,6 +977,11 @@ Break down the cost by category and provide a total estimated cost.`;
 				const joinResult = await bot.client.acceptInvite(inviteCode);
 
 				if (joinResult.accepted) {
+					try {
+						const InviteSystem = require("../InviteSystem");
+						InviteSystem.removeFromQueue(inviteCode);
+					} catch (e) {}
+
 					await this.database.addInviteHistory({
 						code: inviteCode,
 						groupJid,
@@ -1014,6 +1028,75 @@ Break down the cost by category and provide a total estimated cost.`;
 				content: "❌ Erro ao processar comando."
 			});
 		}
+	}
+
+	/**
+	 * Mostra a lista dos últimos 10 aceitos e toda a fila de invites pendentes com ETA
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async filaInvites(bot, message, args) {
+		const chatId = message.group ?? message.author;
+
+		if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		const InviteSystem = require("../InviteSystem");
+		const accepted = InviteSystem.recentlyAccepted || [];
+		const queue = InviteSystem.inviteQueue || [];
+
+		let reply = "📋 *Status da Fila de Invites*\n\n";
+
+		// Últimos 10 aceitos
+		const lastAccepted = [...accepted].reverse().slice(0, 10);
+		reply += `✅ *Últimos ${lastAccepted.length} Aceitos:*\n`;
+		if (lastAccepted.length === 0) {
+			reply += "_(nenhum convite aceito recentemente)_\n";
+		} else {
+			lastAccepted.forEach((a, i) => {
+				const dt = new Date(a.acceptedAt).toLocaleString("pt-BR", {
+					timeZone: "America/Sao_Paulo"
+				});
+				const botTag = a.botId ? `🤖 *${a.botId}*` : "";
+				const authorTag = (a.authorId || "").split("@")[0];
+				reply += `${i + 1}. *${a.authorName || "Desconhecido"}* (${authorTag}) → ${botTag}\n`;
+				reply += `   🏷️ ${a.groupName || "Grupo"} • 🔗 \`${a.inviteCode}\` • ⏰ ${dt}\n`;
+			});
+		}
+
+		reply += "\n";
+
+		// Fila pendente
+		reply += `⏳ *Fila Pendente (${queue.length}):*\n`;
+		if (queue.length === 0) {
+			reply += "_(fila vazia no momento)_\n";
+		} else {
+			queue.forEach((q, i) => {
+				const eta = InviteSystem.getETA(i + 1);
+				const enqStr = new Date(q.enqueuedAt).toLocaleString("pt-BR", {
+					timeZone: "America/Sao_Paulo"
+				});
+				const authorTag = (q.authorId || "").split("@")[0];
+				reply += `${i + 1}. *${q.authorName || "Desconhecido"}* (${authorTag})\n`;
+				reply += `   🏷️ ${q.groupName || "Desconhecido"} • 🔗 \`${q.inviteCode}\`\n`;
+				reply += `   ⏰ Previsão (ETA): *${eta.tempo}* (às *${eta.horaPrevista}*)\n`;
+				reply += `   📥 Enfileirado: ${enqStr}\n`;
+				if ((q.attempts || 0) > 0) {
+					reply += `   ⚠️ Tentativas: ${q.attempts}/3\n`;
+				}
+			});
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: reply.trim()
+		});
 	}
 
 	/**
