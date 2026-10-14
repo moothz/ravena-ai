@@ -9,6 +9,7 @@ const sharp = require("sharp");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Logger = require("../utils/Logger");
+const { resolveMentionName } = require("../utils/ProfilePictureHelper");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 
@@ -58,6 +59,160 @@ function getArgsText(message) {
 }
 
 /**
+ * Obtém o nome ou apelido de exibição do usuário (respeitando apelido no grupo se definido)
+ * @param {Object} bot
+ * @param {Object} message
+ * @param {Object} [group]
+ * @returns {Promise<string>}
+ */
+async function getUserDisplayName(bot, message, group) {
+	const userJid = message.author || message.from || "";
+	const numDigits = userJid.split("@")[0].replace(/\D/g, "");
+	let targetGroup = group;
+	if (!targetGroup && message.group && bot?.groups) {
+		targetGroup = bot.groups[message.group];
+	}
+
+	// 1. Apelido configurado no grupo (group.nicks) - imediato em memória
+	if (targetGroup?.nicks && Array.isArray(targetGroup.nicks)) {
+		const nickData = targetGroup.nicks.find((n) => {
+			if (!n?.numero) return false;
+			const nStr = String(n.numero);
+			const nDigits = nStr.split("@")[0].replace(/\D/g, "");
+			return nStr === userJid || (numDigits && nDigits === numDigits);
+		});
+		if (nickData?.apelido && nickData.apelido.trim()) {
+			return nickData.apelido.trim();
+		}
+	}
+
+	// 2. Nome push que já veio na mensagem do WhatsApp - imediato em memória
+	const fallback = message.authorName || message.pushName || message.name;
+	if (fallback && typeof fallback === "string" && fallback.trim()) {
+		return fallback.trim();
+	}
+
+	// 3. Fallback assíncrono caso nenhum dos anteriores exista
+	try {
+		const name = await resolveMentionName(bot, userJid, targetGroup);
+		if (name && typeof name === "string" && name.trim()) {
+			return name.trim();
+		}
+	} catch (err) {
+		logger.debug(`[getUserDisplayName] Erro ao resolver nome: ${err.message}`);
+	}
+
+	return "Cultivador";
+}
+
+let cachedTexts = null;
+let lastTextsFetchTime = 0;
+const TEXTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+/**
+ * Obtém os textos e emoji do jogo configurados, com cache em memória
+ * @returns {Promise<{ name: string, emoji: string }>}
+ */
+async function getGameTexts() {
+	const now = Date.now();
+	if (cachedTexts && now - lastTextsFetchTime < TEXTS_CACHE_TTL) {
+		return cachedTexts;
+	}
+	try {
+		const texts = await jardimClient.getTexts();
+		if (texts && texts.gameName) {
+			cachedTexts = {
+				name: texts.gameName,
+				emoji: texts.gameEmoji || "🦇"
+			};
+			lastTextsFetchTime = now;
+			return cachedTexts;
+		}
+	} catch (err) {
+		logger.warn(`[getGameTexts] Falha ao obter textos da API: ${err.message}`);
+	}
+	return cachedTexts || { name: "Jardim Lutoso", emoji: "🦇" };
+}
+
+/**
+ * Cria uma instância de ReturnMessage com citação (reply) à mensagem de origem
+ * @param {string} chatId
+ * @param {string|Object} content
+ * @param {Object} message
+ * @param {Object} [extraOptions={}]
+ * @returns {ReturnMessage}
+ */
+function replyReturnMessage(chatId, content, message, extraOptions = {}) {
+	const options = {
+		...(message?.origin?.id?._serialized && { quotedMessageId: message.origin.id._serialized }),
+		...(message?.origin && { goReply: message.origin }),
+		...extraOptions
+	};
+	return new ReturnMessage({
+		chatId,
+		content,
+		options
+	});
+}
+
+/**
+ * Formata os buffs ativos do jogador em texto legível e sem repetições
+ * @param {Object|Array} buffsData
+ * @returns {string|null}
+ */
+function formatActiveBuffs(buffsData) {
+	if (!buffsData) return null;
+
+	const parts = [];
+
+	if (buffsData.effectiveCoinMultiplier && buffsData.effectiveCoinMultiplier > 1.0) {
+		parts.push(`💰 Moedas ${buffsData.effectiveCoinMultiplier}x`);
+	}
+	if (buffsData.effectiveGrowthMultiplier && buffsData.effectiveGrowthMultiplier < 1.0) {
+		const pct = Math.round((1.0 - buffsData.effectiveGrowthMultiplier) * 100);
+		parts.push(`⚡ Crescimento +${pct}%`);
+	}
+	if (buffsData.witherFrozen) {
+		parts.push(`❄️ Imunidade a Murcha`);
+	}
+	if (buffsData.dailyLuckMultiplier && buffsData.dailyLuckMultiplier > 1.0) {
+		parts.push(`🍀 Sorte da Sacola ${buffsData.dailyLuckMultiplier}x`);
+	} else if (buffsData.dailySpecialItemBonus && buffsData.dailySpecialItemBonus > 0) {
+		parts.push(`🍀 Sorte da Sacola +${Math.round(buffsData.dailySpecialItemBonus * 100)}%`);
+	}
+
+	if (parts.length === 0) {
+		const list = Array.isArray(buffsData) ? buffsData : buffsData.activeBuffs || [];
+
+		if (!Array.isArray(list) || list.length === 0) return null;
+
+		const typeLabels = {
+			coin_multiplier: "💰 Bônus de Moedas",
+			coin_factor: "💰 Multiplicador de Moedas",
+			growth_speed: "⚡ Velocidade de Crescimento",
+			growth_reduction: "⚡ Redução de Tempo",
+			growth_factor: "⚡ Aceleração do Vazio",
+			growth_halve: "⚡ Crescimento Acelerado (Metade do Tempo)",
+			wither_freeze: "❄️ Imunidade a Murcha",
+			daily_luck: "🍀 Sorte da Sacola Diária",
+			daily_bag_bonus: "🍀 Chance de Itens Especiais",
+			daily_bag_luck: "🍀 Sorte Dupla Diária"
+		};
+
+		const seen = new Set();
+		list.forEach((b) => {
+			const type = typeof b === "string" ? b : b.type;
+			if (!type || seen.has(type)) return;
+			seen.add(type);
+			const label = typeLabels[type] || `✨ ${type.replace(/_/g, " ")}`;
+			parts.push(label);
+		});
+	}
+
+	return parts.length > 0 ? parts.join(" | ") : null;
+}
+
+/**
  * Formata segundos restantes de forma amigável
  * @param {number} totalSeconds
  * @returns {string}
@@ -72,6 +227,49 @@ function formatRemainingTime(totalSeconds) {
 		return `${hours}h ${remMins}m`;
 	}
 	return `${mins}m ${secs}s`;
+}
+
+const HQ_FLAGS = new Set(["hd", "hq", "alta", "web", "full", "1024"]);
+
+/**
+ * Extrai flags de alta qualidade de uma lista de argumentos
+ * @param {string[]} argsArray
+ * @returns {{ isHighQuality: boolean, remainingArgs: string[] }}
+ */
+function extractQualityFlag(argsArray) {
+	let isHighQuality = false;
+	const remainingArgs = [];
+	for (const arg of argsArray) {
+		const clean = arg.toLowerCase().trim();
+		if (HQ_FLAGS.has(clean)) {
+			isHighQuality = true;
+		} else {
+			remainingArgs.push(arg);
+		}
+	}
+	return { isHighQuality, remainingArgs };
+}
+
+/**
+ * Otimiza a imagem da fazenda para envio rápido no WhatsApp
+ * Reduz de 1024x1024 (~335KB) para 800x800 (~130KB), a menos que solicitada em alta resolução
+ * @param {Buffer} imageBuffer - Buffer original da imagem 1024x1024
+ * @param {boolean} [isHighQuality=false] - Se true, preserva a resolução nativa 1024x1024
+ * @returns {Promise<Buffer>}
+ */
+async function optimizeFarmImage(imageBuffer, isHighQuality = false) {
+	if (!imageBuffer || isHighQuality) {
+		return imageBuffer;
+	}
+	try {
+		return await sharp(imageBuffer)
+			.resize(800, 800, { fit: "contain" })
+			.jpeg({ quality: 75, mozjpeg: true })
+			.toBuffer();
+	} catch (err) {
+		logger.warn(`[optimizeFarmImage] Falha ao otimizar imagem: ${err.message}`);
+		return imageBuffer;
+	}
 }
 
 /**
@@ -175,10 +373,14 @@ async function consumeFarmWaifuRoll(userId) {
 /**
  * !fazenda: Visualiza a fazenda atual com imagem 1024x1024, resgata diário se disponível
  */
-async function handleFazenda(bot, message) {
+async function handleFazenda(bot, message, _args, group) {
 	const userId = getUserId(message);
 	const chatId = getChatId(message);
 	const inPrivate = isPrivateChat(message);
+
+	const rawArgs = getArgsText(message).split(/\s+/).filter(Boolean);
+	const { isHighQuality } = extractQualityFlag(rawArgs);
+	const wantsHq = isHighQuality || rawArgs.some((a) => a.toLowerCase().trim() === "max");
 
 	try {
 		// 1. Tenta coletar o bônus diário automaticamente
@@ -192,13 +394,17 @@ async function handleFazenda(bot, message) {
 			logger.debug(`[handleFazenda] Tentativa de claim daily: ${claimErr.message}`);
 		}
 
-		// 2. Busca status da fazenda
-		const status = await jardimClient.getStatus(userId);
+		// 2. Busca status da fazenda, textos configurados e nome do usuário em paralelo
+		const [status, { name: gameName, emoji: gameEmoji }, userName] = await Promise.all([
+			jardimClient.getStatus(userId),
+			getGameTexts(),
+			getUserDisplayName(bot, message, group)
+		]);
 
 		// 3. Tenta renderizar imagem (se falhar, envia mensagem de texto sem derrubar o comando)
 		let imageBuffer = null;
 		try {
-			imageBuffer = await jardimClient.getImageBuffer(userId, true);
+			imageBuffer = await jardimClient.getImageBuffer(userId, true, { userName });
 		} catch (imgErr) {
 			logger.warn(
 				`[handleFazenda] Não foi possível renderizar imagem da fazenda: ${imgErr.message}`
@@ -219,12 +425,13 @@ async function handleFazenda(bot, message) {
 			else emptyCount++;
 		});
 
-		let text = `🌱 *JARDIM DAS SOMBRAS* 🌱\n\n`;
+		let text = `${gameEmoji} *${gameName.toUpperCase()}* ${gameEmoji}\n\n`;
 		text += `💰 *Moedas:* ${status.coins ?? 0}\n`;
 		text += `🌾 *Canteiros (9):* ${readyCount} prontos | ${growingCount} crescendo | ${dryCount} secos | ${emptyCount} livres\n`;
 
-		if (status.buffs?.activeBuffs?.length > 0) {
-			text += `✨ *Buffs Ativos:* ${status.buffs.activeBuffs.map((b) => b.type).join(", ")}\n`;
+		const buffsFormatted = formatActiveBuffs(status.buffs);
+		if (buffsFormatted) {
+			text += `✨ *Buffs Ativos:* ${buffsFormatted}\n`;
 		}
 
 		text += `\n📖 *Comandos Rápidos:* \`!faz-colher\`, \`!faz-plantar\`, \`!faz-loja\`, \`!faz-inv\``;
@@ -234,6 +441,10 @@ async function handleFazenda(bot, message) {
 			status.shareUrl || (status.uuid ? `https://jds.moothz.win/farm?id=${status.uuid}` : null);
 		if (shareUrl) {
 			text += `\n\n🌐 *Ver Fazenda Online:* ${shareUrl}`;
+		}
+
+		if (wantsHq) {
+			text += `\n📸 *Qualidade:* Alta Resolução (1024x1024)`;
 		}
 
 		if (inPrivate) {
@@ -254,27 +465,24 @@ async function handleFazenda(bot, message) {
 
 		// Envia a imagem com a legenda principal se tiver, ou apenas texto se falhou a imagem
 		if (imageBuffer) {
+			const finalBuffer = await optimizeFarmImage(imageBuffer, wantsHq);
 			returns.push(
-				new ReturnMessage({
+				replyReturnMessage(
 					chatId,
-					content: {
+					{
 						mimetype: "image/jpeg",
-						data: imageBuffer.toString("base64"),
+						data: finalBuffer.toString("base64"),
 						filename: `fazenda-${userId}.jpg`,
 						isMessageMedia: true
 					},
-					options: {
+					message,
+					{
 						caption: text
 					}
-				})
+				)
 			);
 		} else {
-			returns.push(
-				new ReturnMessage({
-					chatId,
-					content: text
-				})
-			);
+			returns.push(replyReturnMessage(chatId, text, message));
 		}
 
 		// Se coletou diário nesta chamada, envia segunda mensagem com o prêmio
@@ -289,21 +497,13 @@ async function handleFazenda(bot, message) {
 			}
 			dailyText += `\nVolte amanhã para resgatar novamente!`;
 
-			returns.push(
-				new ReturnMessage({
-					chatId,
-					content: dailyText
-				})
-			);
+			returns.push(replyReturnMessage(chatId, dailyText, message));
 		}
 
 		return returns;
 	} catch (err) {
 		logger.error(`[handleFazenda] Erro ao carregar fazenda: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao acessar o Jardim das Sombras: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao acessar o Jardim: ${err.message}`, message);
 	}
 }
 
@@ -320,10 +520,7 @@ async function handleFazAdm(bot, message) {
 		const content = `🔐 *PAINEL FARM ADMIN* 🔐\n\nAcesse sua fazenda interativa pelo navegador:\n${adminUrl}\n\n⚠️ _Este link é pessoal e temporário. Não compartilhe com terceiros!_`;
 
 		if (inPrivate) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content
-			});
+			return replyReturnMessage(message.author, content, message);
 		}
 
 		// Se enviado em grupo, despacha o link no PV e apenas reage à mensagem no grupo
@@ -345,42 +542,59 @@ async function handleFazAdm(bot, message) {
 		return null;
 	} catch (err) {
 		logger.error(`[handleFazAdm] Erro ao gerar admin url: ${err.message}`);
-		return new ReturnMessage({
-			chatId: getChatId(message),
-			content: `❌ Não foi possível gerar seu link de acesso: ${err.message}`
-		});
+		return replyReturnMessage(
+			getChatId(message),
+			`❌ Não foi possível gerar seu link de acesso: ${err.message}`,
+			message
+		);
 	}
 }
 
 /**
  * !faz-colher: Colhe plantas prontas e limpa canteiros secos
  */
-async function handleFazColher(bot, message) {
+async function handleFazColher(bot, message, _args, group) {
 	const userId = getUserId(message);
 	const chatId = getChatId(message);
-	const args = getArgsText(message);
+	const rawArgs = getArgsText(message).split(/\s+/).filter(Boolean);
+	const { isHighQuality, remainingArgs } = extractQualityFlag(rawArgs);
 
-	const slotNum = args && /^\d+$/.test(args) ? parseInt(args, 10) : null;
+	const slotArg = remainingArgs[0];
+	const slotNum = slotArg && /^\d+$/.test(slotArg) ? parseInt(slotArg, 10) : null;
 
 	try {
-		const harvestRes = await jardimClient.harvest(userId, slotNum, !slotNum);
+		const [harvestRes, { name: gameName }, userName] = await Promise.all([
+			jardimClient.harvest(userId, slotNum, !slotNum),
+			getGameTexts(),
+			getUserDisplayName(bot, message, group)
+		]);
 
-		let text = `🌾 *COLHEITA DO JARDIM DAS SOMBRAS* 🌾\n\n`;
+		let text = `🌾 *COLHEITA DO ${gameName.toUpperCase()}* 🌾\n\n`;
 
 		const harvested = harvestRes.harvested || [];
 		const withered = harvestRes.clearedWithered || harvestRes.withered || [];
 
 		if (harvested.length === 0 && withered.length === 0) {
-			return new ReturnMessage({
+			return replyReturnMessage(
 				chatId,
-				content: `⏳ Não há plantas prontas para colheita nem canteiros secos no momento.`
-			});
+				`⏳ Não há plantas prontas para colheita nem canteiros secos no momento.`,
+				message
+			);
 		}
 
 		if (harvested.length > 0) {
 			text += `✨ *Itens Colhidos:*\n`;
 			harvested.forEach((h) => {
-				text += `• *${h.name || h.plantName || h.plantId}* (Canteiro #${h.slotIndex || h.slot})\n`;
+				const qty = h.count || h.quantity || (Array.isArray(h.slots) ? h.slots.length : 1);
+				let slotInfo = "";
+				if (Array.isArray(h.slots) && h.slots.length > 0) {
+					slotInfo = ` (Canteiro${h.slots.length > 1 ? "s" : ""} ${h.slots.map((s) => `#${s}`).join(", ")})`;
+				} else if (h.slotIndex || h.slot) {
+					slotInfo = ` (Canteiro #${h.slotIndex || h.slot})`;
+				} else if (slotNum) {
+					slotInfo = ` (Canteiro #${slotNum})`;
+				}
+				text += `• *${h.name || h.plantName || h.plantId}*: *${qty}x*${slotInfo}\n`;
 			});
 			text += "\n";
 		}
@@ -400,62 +614,158 @@ async function handleFazColher(bot, message) {
 
 		text += `💰 *Saldo Atual:* ${harvestRes.coins ?? harvestRes.currentCoins ?? 0} moedas`;
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		// Tenta renderizar imagem atualizada pós-colheita com efeito de fantasma dourado
+		let imageBuffer = null;
+		try {
+			const harvestedSlots =
+				harvested.length > 0
+					? harvested
+							.flatMap((h) => {
+								if (Array.isArray(h.slots) && h.slots.length > 0) {
+									return h.slots.map((s) => `${s}:${h.plantId}`);
+								}
+								if (h.slotIndex || h.slot) {
+									return [`${h.slotIndex || h.slot}:${h.plantId}`];
+								}
+								if (slotNum && h.plantId) {
+									return [`${slotNum}:${h.plantId}`];
+								}
+								return [];
+							})
+							.filter(Boolean)
+							.join(",") || undefined
+					: undefined;
+			imageBuffer = await jardimClient.getImageBuffer(userId, true, {
+				userName,
+				harvestedSlots
+			});
+		} catch (imgErr) {
+			logger.warn(
+				`[handleFazColher] Não foi possível renderizar imagem da fazenda pós-colheita: ${imgErr.message}`
+			);
+		}
+
+		if (imageBuffer) {
+			const finalBuffer = await optimizeFarmImage(imageBuffer, isHighQuality);
+			return replyReturnMessage(
+				chatId,
+				{
+					mimetype: "image/jpeg",
+					data: finalBuffer.toString("base64"),
+					filename: `fazenda-colheita-${userId}.jpg`,
+					isMessageMedia: true
+				},
+				message,
+				{
+					caption: text
+				}
+			);
+		}
+
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazColher] Erro na colheita: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha na colheita: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha na colheita: ${err.message}`, message);
 	}
 }
 
 /**
- * !faz-plantar: Planta sementes em canteiro específico ou em todos os canteiros livres
+ * !faz-plantar: Planta sementes em canteiro específico ou em canteiros livres (padrão: 3)
  */
-async function handleFazPlantar(bot, message) {
+async function handleFazPlantar(bot, message, _args, group) {
 	const userId = getUserId(message);
 	const chatId = getChatId(message);
-	const args = getArgsText(message).split(/\s+/).filter(Boolean);
+	const rawArgs = getArgsText(message).split(/\s+/).filter(Boolean);
+	const { isHighQuality, remainingArgs: args } = extractQualityFlag(rawArgs);
 
 	if (args.length === 0) {
-		return new ReturnMessage({
+		return replyReturnMessage(
 			chatId,
-			content: `🌱 *Como plantar:*\n• \`!faz-plantar <semente>\` (planta em todos os canteiros livres)\n• \`!faz-plantar <semente> <canteiro>\` (ex: \`!faz-plantar 1 5\`)\n\nVeja suas sementes com \`!faz-inv\`.`
-		});
+			`🌱 *Como plantar:*\n• \`!faz-plantar <semente>\` (planta até 3 nos canteiros livres)\n• \`!faz-plantar <semente> <qtd>\` (ex: \`!faz-plantar 3 5\` ou \`!faz-plantar 3 tudo\`)\n\nVeja suas sementes com \`!faz-inv\`.`,
+			message
+		);
 	}
 
 	const itemParam = args[0];
-	const slotParam = args[1] && /^\d+$/.test(args[1]) ? parseInt(args[1], 10) : null;
+	let slotParam = null;
+	let amountParam = 3; // Padrão: 3 sementes (se tiver)
+
+	if (args[1]) {
+		const secondArg = args[1].toLowerCase().trim();
+		if (["tudo", "all", "max", "todas"].includes(secondArg)) {
+			amountParam = 9;
+		} else if (/^c\d+$/i.test(secondArg) || /^slot:\d+$/i.test(secondArg)) {
+			slotParam = parseInt(secondArg.replace(/\D/g, ""), 10);
+			amountParam = 1;
+		} else if (/^\d+$/.test(secondArg)) {
+			if (args[2] && /^\d+$/.test(args[2])) {
+				amountParam = parseInt(secondArg, 10);
+				slotParam = parseInt(args[2], 10);
+			} else {
+				amountParam = parseInt(secondArg, 10);
+			}
+		}
+	}
 
 	try {
-		const plantRes = await jardimClient.plant(userId, itemParam, slotParam, slotParam ? 1 : null);
+		const [plantRes, userName] = await Promise.all([
+			jardimClient.plant(userId, itemParam, slotParam, amountParam),
+			getUserDisplayName(bot, message, group)
+		]);
 
-		let text = `🌱 *PLANTIO REALIZADO COM SUCESSO!* 🌱\n\n`;
 		const planted = plantRes.planted || (plantRes.slot ? [plantRes] : []);
+		const plantedCount =
+			plantRes.plantedCount || (plantRes.slots ? plantRes.slots.length : planted.length || 1);
+		const plantName = plantRes.plantName || itemParam;
+		const slotsList = (plantRes.slots || planted.map((p) => p.slotIndex || p.slot))
+			.filter(Boolean)
+			.map((s) => `#${s}`)
+			.join(", ");
 
-		if (planted.length > 0) {
-			planted.forEach((p) => {
-				text += `• Canteiro #${p.slotIndex || p.slot}: *${p.name || p.plantName || itemParam}*\n`;
+		const plural = plantedCount > 1 ? "sementes" : "semente";
+		let text = `🌱 *Plantadas ${plantedCount} ${plural} de ${plantName}!* 🌱\n\n`;
+		if (slotsList) {
+			text += `🌾 *Canteiros ocupados:* ${slotsList}\n\n`;
+		}
+		text += `💡 _Você pode usar \`!faz-plantar ${itemParam} <qtd>\` para escolher quantas plantar (padrão: 3)._`;
+
+		// Tenta renderizar imagem atualizada pós-plantio destacando os canteiros recém-plantados em verde
+		let imageBuffer = null;
+		try {
+			const plantedSlots = (plantRes.slots || planted.map((p) => p.slotIndex || p.slot))
+				.filter(Boolean)
+				.join(",");
+			imageBuffer = await jardimClient.getImageBuffer(userId, true, {
+				userName,
+				plantedSlots
 			});
-		} else {
-			text += `Planta(s) adicionadas com sucesso aos canteiros livres!\n`;
+		} catch (imgErr) {
+			logger.warn(
+				`[handleFazPlantar] Não foi possível renderizar imagem da fazenda pós-plantio: ${imgErr.message}`
+			);
 		}
 
-		text += `\nConsulte o crescimento com \`!fazenda\`.`;
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		if (imageBuffer) {
+			const finalBuffer = await optimizeFarmImage(imageBuffer, isHighQuality);
+			return replyReturnMessage(
+				chatId,
+				{
+					mimetype: "image/jpeg",
+					data: finalBuffer.toString("base64"),
+					filename: `fazenda-plantio-${userId}.jpg`,
+					isMessageMedia: true
+				},
+				message,
+				{
+					caption: text
+				}
+			);
+		}
+
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazPlantar] Erro ao plantar: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao plantar: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao plantar: ${err.message}`, message);
 	}
 }
 
@@ -467,16 +777,19 @@ async function handleFazLoja(bot, message) {
 	const chatId = getChatId(message);
 
 	try {
-		const shop = await jardimClient.getShop(userId);
+		const [{ name: gameName }, shop] = await Promise.all([
+			getGameTexts(),
+			jardimClient.getShop(userId)
+		]);
 
-		let text = `🛒 *MERCADO DO JARDIM DAS SOMBRAS* 🛒\n\n`;
+		let text = `🛒 *MERCADO DO ${gameName.toUpperCase()}* 🛒\n\n`;
 
 		if (shop.seeds?.length > 0) {
 			text += `🌱 *SEMENTES:*\n`;
 			shop.seeds.forEach((s) => {
 				const rem =
 					s.remainingToday !== undefined ? ` [${s.remainingToday}/${s.dailyLimit} hoje]` : "";
-				text += `• *#${s.index} ${s.name}* — 💰 ${s.price} moedas (${s.growthMinutes}m)${rem}\n  _${s.description}_\n`;
+				text += `• *#${s.index} ${s.name}* — Compra: 💰 ${s.price} | Venda: 🪙 ${s.sellPrice || 0} (${s.growthMinutes}m)${rem}\n  _${s.description || ""}_\n`;
 			});
 			text += "\n";
 		}
@@ -486,7 +799,7 @@ async function handleFazLoja(bot, message) {
 			shop.consumables.forEach((c) => {
 				const rem =
 					c.remainingToday !== undefined ? ` [${c.remainingToday}/${c.dailyLimit} hoje]` : "";
-				text += `• *#${c.index} ${c.name}* — 💰 ${c.price} moedas${rem}\n  _${c.description}_\n`;
+				text += `• *#${c.index} ${c.name}* — 💰 ${c.price} moedas${rem}\n  _${c.description || ""}_\n`;
 			});
 			text += "\n";
 		}
@@ -501,16 +814,10 @@ async function handleFazLoja(bot, message) {
 
 		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\``;
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazLoja] Erro ao carregar loja: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao carregar loja: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao carregar loja: ${err.message}`, message);
 	}
 }
 
@@ -523,10 +830,11 @@ async function handleFazComprar(bot, message) {
 	const args = getArgsText(message).split(/\s+/).filter(Boolean);
 
 	if (args.length === 0) {
-		return new ReturnMessage({
+		return replyReturnMessage(
 			chatId,
-			content: `🛒 *Como comprar:*\n• \`!faz-comprar <id ou número do item> [quantidade]\`\nExemplo: \`!faz-comprar 1 5\` (compra 5 sementes do item #1)`
-		});
+			`🛒 *Como comprar:*\n• \`!faz-comprar <id ou número do item> [quantidade]\`\nExemplo: \`!faz-comprar 1 5\` (compra 5 sementes do item #1)`,
+			message
+		);
 	}
 
 	const itemParam = args[0];
@@ -543,43 +851,46 @@ async function handleFazComprar(bot, message) {
 		text += `• Total Pago: *${buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
 		text += `• Saldo Restante: *${buyRes.remainingCoins ?? buyRes.coins ?? 0} moedas*`;
 
-		returns.push(
-			new ReturnMessage({
-				chatId,
-				content: text
-			})
-		);
+		returns.push(replyReturnMessage(chatId, text, message));
 
-		// Se a API retornou o sticker WebP/PNG em Base64, envia como figurinha
+		// Se a API retornou o sticker WebP/PNG em Base64, converte para WebP e envia como figurinha
 		if (buyRes.stickerBase64) {
-			const stickerMedia = {
-				mimetype: "image/webp",
-				data: buyRes.stickerBase64,
-				filename: `sticker-${itemParam}.webp`,
-				isMessageMedia: true
-			};
-			returns.push(
-				new ReturnMessage({
-					chatId,
-					content: stickerMedia,
-					options: {
+			try {
+				const cleanBase64 = String(buyRes.stickerBase64).replace(/^data:image\/\w+;base64,/, "");
+				const pngBuffer = Buffer.from(cleanBase64, "base64");
+				// Converte para WebP 512x512 transparente para sticker do WhatsApp
+				const webpBuffer = await sharp(pngBuffer)
+					.resize(512, 512, {
+						fit: "contain",
+						background: { r: 0, g: 0, b: 0, alpha: 0 }
+					})
+					.webp({ quality: 90, effort: 4 })
+					.toBuffer();
+
+				const stickerMedia = {
+					mimetype: "image/webp",
+					data: webpBuffer.toString("base64"),
+					filename: `sticker-${itemParam}.webp`,
+					isMessageMedia: true
+				};
+				returns.push(
+					replyReturnMessage(chatId, stickerMedia, message, {
 						sendMediaAsSticker: true,
 						stickerAuthor: bot?.nomeExibir || "ravena",
-						stickerName: `Jardim: ${buyRes.itemName || itemParam}`,
-						quotedMessageId: message.origin?.id?._serialized,
-						goReply: message.origin
-					}
-				})
-			);
+						stickerName: `Jardim: ${buyRes.itemName || itemParam}`
+					})
+				);
+			} catch (stickerErr) {
+				logger.error(
+					`[handleFazComprar] Erro ao converter sticker da compra para WebP: ${stickerErr.message}`
+				);
+			}
 		}
 
 		return returns;
 	} catch (err) {
 		logger.error(`[handleFazComprar] Erro ao comprar: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha na compra: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha na compra: ${err.message}`, message);
 	}
 }
 
@@ -591,14 +902,17 @@ async function handleFazInventario(bot, message) {
 	const chatId = getChatId(message);
 
 	try {
-		const inv = await jardimClient.getInventory(userId);
+		const [{ name: gameName }, inv] = await Promise.all([
+			getGameTexts(),
+			jardimClient.getInventory(userId)
+		]);
 
-		let text = `🎒 *MOCHILA DO JARDIM DAS SOMBRAS* 🎒\n\n`;
+		let text = `🎒 *MOCHILA DO ${gameName.toUpperCase()}* 🎒\n\n`;
 
 		const items = inv.items || inv.inventory || [];
 		if (items.length === 0) {
 			text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
-			return new ReturnMessage({ chatId, content: text });
+			return replyReturnMessage(chatId, text, message);
 		}
 
 		const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
@@ -606,10 +920,15 @@ async function handleFazInventario(bot, message) {
 		const consumables = items.filter((i) => i.type === "consumable" || i.category === "consumable");
 		const decors = items.filter((i) => i.type === "decoration" || i.category === "decoration");
 
+		const getItemPrefix = (item) => {
+			const id = item.catalogIndex ?? item.index ?? item.id ?? item.itemId;
+			return id !== undefined && id !== null && id !== "" ? `[${id}] ` : "";
+		};
+
 		if (seeds.length > 0) {
 			text += `🌱 *Sementes:*\n`;
 			seeds.forEach((s) => {
-				text += `• ${s.name}: *${s.quantity}x*\n`;
+				text += `• ${getItemPrefix(s)}${s.name}: *${s.quantity}x*\n`;
 			});
 			text += "\n";
 		}
@@ -617,7 +936,7 @@ async function handleFazInventario(bot, message) {
 		if (crops.length > 0) {
 			text += `🌾 *Colheitas Prontas (Venda com !faz-vender):*\n`;
 			crops.forEach((c) => {
-				text += `• ${c.name}: *${c.quantity}x* (💰 ${c.sellPrice || 0} cada)\n`;
+				text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x* (💰 ${c.sellPrice || 0} cada)\n`;
 			});
 			text += "\n";
 		}
@@ -625,7 +944,7 @@ async function handleFazInventario(bot, message) {
 		if (consumables.length > 0) {
 			text += `🧪 *Elixires & Poções:*\n`;
 			consumables.forEach((c) => {
-				text += `• ${c.name}: *${c.quantity}x*\n`;
+				text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x*\n`;
 			});
 			text += "\n";
 		}
@@ -633,7 +952,7 @@ async function handleFazInventario(bot, message) {
 		if (decors.length > 0) {
 			text += `🏺 *Decorações:*\n`;
 			decors.forEach((d) => {
-				text += `• ${d.name}: *${d.quantity}x*\n`;
+				text += `• ${getItemPrefix(d)}${d.name}: *${d.quantity}x*\n`;
 			});
 			text += "\n";
 		}
@@ -649,16 +968,10 @@ async function handleFazInventario(bot, message) {
 
 		text += `💡 *Ações:* \`!faz-plantar\`, \`!faz-usar\`, \`!faz-vender\`, \`!faz-decorar\``;
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazInventario] Erro ao carregar inventário: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao buscar inventário: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao buscar inventário: ${err.message}`, message);
 	}
 }
 
@@ -671,10 +984,11 @@ async function handleFazUsar(bot, message) {
 	const args = getArgsText(message).split(/\s+/).filter(Boolean);
 
 	if (args.length === 0) {
-		return new ReturnMessage({
+		return replyReturnMessage(
 			chatId,
-			content: `🧪 *Como usar um elixir:*\n• \`!faz-usar <id ou nome do elixir> [canteiro]\`\nExemplo: \`!faz-usar blood_ruby 1\``
-		});
+			`🧪 *Como usar um elixir:*\n• \`!faz-usar <id ou nome do elixir> [canteiro]\`\nExemplo: \`!faz-usar blood_ruby 1\``,
+			message
+		);
 	}
 
 	const itemParam = args[0];
@@ -689,16 +1003,10 @@ async function handleFazUsar(bot, message) {
 			text += `• Quantidade Restante: *${useRes.remainingQuantity}x*`;
 		}
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazUsar] Erro ao usar elixir: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao usar item: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao usar item: ${err.message}`, message);
 	}
 }
 
@@ -721,9 +1029,12 @@ async function handleFazVender(bot, message) {
 			...(quantity && { quantity })
 		});
 
+		const earned = sellRes.totalCoinsEarned ?? sellRes.earnedCoins ?? sellRes.totalGained ?? 0;
+		const balance = sellRes.newCoinsBalance ?? sellRes.currentCoins ?? sellRes.coins ?? 0;
+
 		let text = `💰 *VENDA REALIZADA COM SUCESSO!* 💰\n\n`;
-		text += `• Moedas Ganhas: *+${sellRes.earnedCoins || sellRes.totalGained || 0} moedas*\n`;
-		text += `• Saldo Atual: *${sellRes.currentCoins || sellRes.coins || 0} moedas*\n`;
+		text += `• Moedas Ganhas: *+${earned} moedas*\n`;
+		text += `• Saldo Atual: *${balance} moedas*\n`;
 
 		if (sellRes.soldItems?.length > 0) {
 			text += `\nItens vendidos:\n`;
@@ -732,16 +1043,10 @@ async function handleFazVender(bot, message) {
 			});
 		}
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazVender] Erro ao vender colheitas: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha na venda: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha na venda: ${err.message}`, message);
 	}
 }
 
@@ -758,10 +1063,11 @@ async function handleFazDecorar(bot, message) {
 	const userMedia = message.media || quoted?.media || null;
 
 	if (args.length === 0) {
-		return new ReturnMessage({
+		return replyReturnMessage(
 			chatId,
-			content: `🏺 *Como posicionar enfeites:*\n• Por slot: \`!faz-decorar <enfeite> <slot de 1 a 4>\`\n• Por coordenadas: \`!faz-decorar <enfeite> <slot> <x> <y>\`\n• Por imagem: Marque um emoji sobre o terreno na foto da sua fazenda e envie respondendo: \`!faz-decorar <enfeite>\``
-		});
+			`🏺 *Como posicionar enfeites:*\n• Por slot: \`!faz-decorar <enfeite> <slot de 1 a 4>\`\n• Por coordenadas: \`!faz-decorar <enfeite> <slot> <x> <y>\`\n• Por imagem: Marque um emoji sobre o terreno na foto da sua fazenda e envie respondendo: \`!faz-decorar <enfeite>\``,
+			message
+		);
 	}
 
 	const decorParam = args[0];
@@ -804,58 +1110,251 @@ async function handleFazDecorar(bot, message) {
 		}
 		text += `\nVeja o novo visual com \`!fazenda\`!`;
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazDecorar] Erro ao posicionar enfeite: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao posicionar enfeite: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao posicionar enfeite: ${err.message}`, message);
 	}
+}
+
+/**
+ * Verifica se um identificador de usuário pertence a testes ou simulações
+ * @param {string} userId
+ * @returns {boolean}
+ */
+function isTestUser(userId) {
+	if (!userId) return true;
+	const s = String(userId).trim().toLowerCase();
+	return (
+		s.startsWith("test") ||
+		s.startsWith("sim") ||
+		s.includes("test") ||
+		s.includes("sim") ||
+		s === "calibrate" ||
+		s === "1"
+	);
+}
+
+/**
+ * Resolve o apelido ou nome amigável do usuário preservando a privacidade
+ * @param {WhatsAppBot} bot
+ * @param {string} userId
+ * @param {Object} [message]
+ * @param {Object} [group]
+ * @returns {Promise<string>}
+ */
+async function resolvePlayerRankingName(bot, userId, message, group) {
+	if (!userId) return "Cultivador";
+
+	const strId = String(userId).trim();
+	const numDigits = strId.split("@")[0].replace(/\D/g, "");
+
+	// Se for o próprio autor da mensagem atual
+	const authorJid = message?.author || message?.from || "";
+	const authorDigits = authorJid.split("@")[0].replace(/\D/g, "");
+	const isAuthor = strId === authorJid || (numDigits && authorDigits === numDigits);
+
+	let targetGroup = group;
+	if (!targetGroup && message?.group && bot?.groups) {
+		targetGroup = bot.groups[message.group];
+	}
+
+	// 1. Apelido configurado no grupo atual (group.nicks)
+	if (targetGroup?.nicks && Array.isArray(targetGroup.nicks)) {
+		const nickData = targetGroup.nicks.find((n) => {
+			if (!n?.numero) return false;
+			const nStr = String(n.numero);
+			const nDigits = nStr.split("@")[0].replace(/\D/g, "");
+			return nStr === strId || (numDigits && nDigits === numDigits);
+		});
+		if (nickData?.apelido && nickData.apelido.trim()) {
+			return nickData.apelido.trim();
+		}
+	}
+
+	// 2. Se for o autor da mensagem, aproveitar pushName/authorName da mensagem
+	if (isAuthor) {
+		const fallback = message?.authorName || message?.pushName || message?.name;
+		if (fallback && typeof fallback === "string" && fallback.trim()) {
+			const clean = fallback.trim();
+			if (
+				clean !== strId &&
+				clean.replace(/\D/g, "") !== numDigits &&
+				clean !== "." &&
+				clean !== "..."
+			) {
+				return clean;
+			}
+		}
+	}
+
+	// 3. Apelido em outros grupos onde o bot participa
+	if (bot?.groups && typeof bot.groups === "object") {
+		for (const gId of Object.keys(bot.groups)) {
+			const otherGroup = bot.groups[gId];
+			if (otherGroup?.nicks && Array.isArray(otherGroup.nicks)) {
+				const nickData = otherGroup.nicks.find((n) => {
+					if (!n?.numero) return false;
+					const nStr = String(n.numero);
+					const nDigits = nStr.split("@")[0].replace(/\D/g, "");
+					return nStr === strId || (numDigits && nDigits === numDigits);
+				});
+				if (nickData?.apelido && nickData.apelido.trim()) {
+					return nickData.apelido.trim();
+				}
+			}
+		}
+	}
+
+	// 4. Fallback através do resolveMentionName
+	const jid = strId.includes("@")
+		? strId
+		: numDigits.length >= 10
+			? `${numDigits}@s.whatsapp.net`
+			: strId;
+
+	try {
+		const name = await resolveMentionName(bot, jid, targetGroup);
+		if (name && typeof name === "string" && name.trim()) {
+			const clean = name.trim();
+			const cleanDigits = clean.replace(/\D/g, "");
+			if (clean !== strId && cleanDigits !== numDigits && clean !== "." && clean !== "...") {
+				return clean;
+			}
+		}
+	} catch (err) {
+		logger.debug(`[resolvePlayerRankingName] Erro em resolveMentionName: ${err.message}`);
+	}
+
+	// 5. Consulta cache pushname do bot
+	try {
+		if (typeof bot?.fetchPushNameFromCache === "function") {
+			const cacheObj = await bot.fetchPushNameFromCache(jid);
+			const pName = cacheObj?.pushName ?? cacheObj?.pushname ?? cacheObj;
+			if (pName && typeof pName === "string" && pName.trim()) {
+				const clean = pName.trim();
+				const cleanDigits = clean.replace(/\D/g, "");
+				if (clean !== strId && cleanDigits !== numDigits && clean !== "." && clean !== "...") {
+					return clean;
+				}
+			}
+		}
+	} catch (err) {
+		logger.debug(`[resolvePlayerRankingName] Erro em fetchPushNameFromCache: ${err.message}`);
+	}
+
+	// 6. Consulta no SQLite (cache.db e msgranking.db)
+	try {
+		const Database = require("../utils/Database");
+		const db = Database.getInstance();
+
+		// msgranking.db tem o nome registrado em mensagens
+		const msgRow = await db.dbGet(
+			"msgranking",
+			"SELECT user_name FROM ranking WHERE user_id LIKE ? AND user_name IS NOT NULL AND user_name != '' LIMIT 1;",
+			[`%${numDigits || strId}%`]
+		);
+		if (msgRow?.user_name && typeof msgRow.user_name === "string" && msgRow.user_name.trim()) {
+			const clean = msgRow.user_name.trim();
+			const cleanDigits = clean.replace(/\D/g, "");
+			if (clean !== strId && cleanDigits !== numDigits && clean !== "." && clean !== "...") {
+				return clean;
+			}
+		}
+
+		// cache.db pushnames
+		const pushRow = await db.dbGet(
+			"cache",
+			"SELECT pushname FROM pushnames WHERE id = ? OR id = ? OR id LIKE ? LIMIT 1;",
+			[jid, strId, `%${numDigits || strId}%`]
+		);
+		if (pushRow?.pushname && typeof pushRow.pushname === "string" && pushRow.pushname.trim()) {
+			const clean = pushRow.pushname.trim();
+			const cleanDigits = clean.replace(/\D/g, "");
+			if (clean !== strId && cleanDigits !== numDigits && clean !== "." && clean !== "...") {
+				return clean;
+			}
+		}
+
+		// cache.db tg_names (Telegram)
+		const tgRow = await db.dbGet("cache", "SELECT json_data FROM tg_names WHERE key = ? LIMIT 1;", [
+			`tg_name:${strId}`
+		]);
+		if (tgRow?.json_data) {
+			try {
+				const parsed = JSON.parse(tgRow.json_data);
+				if (parsed && typeof parsed === "string" && parsed.trim()) {
+					return parsed.trim();
+				}
+			} catch (_) {}
+		}
+	} catch (err) {
+		logger.debug(`[resolvePlayerRankingName] Erro na consulta SQLite: ${err.message}`);
+	}
+
+	// 7. Fallback seguro que NUNCA expõe o número completo
+	if (numDigits.length >= 4) {
+		return `Cultivador (...${numDigits.slice(-4)})`;
+	}
+	return "Cultivador";
 }
 
 /**
  * !faz-ranking: Exibe rankings de riqueza e de colheitas
  */
-async function handleFazRanking(bot, message) {
+async function handleFazRanking(bot, message, args = [], group = null) {
 	const chatId = getChatId(message);
-	const args = getArgsText(message).toLowerCase();
+	const argsText = getArgsText(message).toLowerCase();
 
-	const isFarmers = args.includes("colheita") || args.includes("farmer");
+	const isFarmers = argsText.includes("colheita") || argsText.includes("farmer");
+
+	let targetGroup = group;
+	if (!targetGroup && message?.group && bot?.groups) {
+		targetGroup = bot.groups[message.group];
+	}
 
 	try {
 		let text = "";
 		if (isFarmers) {
-			const farmers = await jardimClient.getFarmersRanking();
+			const farmers = await jardimClient.getFarmersRanking(25);
 			text += `🏆 *TOP 10 MESTRES DA COLHEITA* 🏆\n\n`;
-			const list = farmers.ranking || farmers || [];
-			list.slice(0, 10).forEach((f, idx) => {
-				text += `${idx + 1}º. @${f.userId || f.playerId} — *${f.harvestCount || f.totalHarvested || 0} colheitas*\n`;
+			const rawList = farmers.ranking || farmers || [];
+			const list = rawList.filter((f) => !isTestUser(f.userId || f.playerId));
+			const topList = list.slice(0, 10);
+			const resolvedNames = await Promise.all(
+				topList.map((f) =>
+					resolvePlayerRankingName(bot, f.userId || f.playerId, message, targetGroup)
+				)
+			);
+			topList.forEach((f, idx) => {
+				const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}º.`;
+				const name = resolvedNames[idx];
+				text += `${medal} *${name}* — *${f.harvestCount || f.totalHarvested || 0} colheitas*\n`;
 			});
 			text += `\n_Para ver o ranking de moedas, digite \`!faz-ranking riqueza\`_`;
 		} else {
-			const wealth = await jardimClient.getWealthRanking();
+			const wealth = await jardimClient.getWealthRanking(25);
 			text += `🏆 *TOP 10 FAZENDEIROS MAIS RICOS* 🏆\n\n`;
-			const list = wealth.ranking || wealth || [];
-			list.slice(0, 10).forEach((w, idx) => {
-				text += `${idx + 1}º. @${w.userId || w.playerId} — 💰 *${w.coins || 0} moedas*\n`;
+			const rawList = wealth.ranking || wealth || [];
+			const list = rawList.filter((w) => !isTestUser(w.userId || w.playerId));
+			const topList = list.slice(0, 10);
+			const resolvedNames = await Promise.all(
+				topList.map((w) =>
+					resolvePlayerRankingName(bot, w.userId || w.playerId, message, targetGroup)
+				)
+			);
+			topList.forEach((w, idx) => {
+				const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}º.`;
+				const name = resolvedNames[idx];
+				text += `${medal} *${name}* — 💰 *${w.coins || 0} moedas*\n`;
 			});
 			text += `\n_Para ver o ranking de colheitas, digite \`!faz-ranking colheitas\`_`;
 		}
 
-		return new ReturnMessage({
-			chatId,
-			content: text
-		});
+		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazRanking] Erro ao buscar rankings: ${err.message}`);
-		return new ReturnMessage({
-			chatId,
-			content: `❌ Falha ao carregar ranking: ${err.message}`
-		});
+		return replyReturnMessage(chatId, `❌ Falha ao carregar ranking: ${err.message}`, message);
 	}
 }
 
@@ -864,13 +1363,14 @@ async function handleFazRanking(bot, message) {
  */
 async function handleFazAjuda(bot, message) {
 	const chatId = getChatId(message);
+	const { name: gameName, emoji: gameEmoji } = await getGameTexts();
 
 	const text =
-		`🌱 *GUIA DO JARDIM DAS SOMBRAS* 🌱\n\n` +
-		`• \`!fazenda\` — Ver a sua fazenda e resgatar Sacola do Coveiro diária\n` +
+		`${gameEmoji} *GUIA DO ${gameName.toUpperCase()}* ${gameEmoji}\n\n` +
+		`• \`!fazenda [hd]\` — Ver a sua fazenda (adicione \`hd\` para resolução máxima) e resgatar diário\n` +
 		`• \`!faz-adm\` — Obter link do painel web Farm Admin no privado\n` +
-		`• \`!faz-colher\` — Colher plantas maduras e limpar canteiros secos\n` +
-		`• \`!faz-plantar <semente> [canteiro]\` — Semear nos canteiros\n` +
+		`• \`!faz-colher [canteiro] [hd]\` — Colher plantas maduras e limpar canteiros secos\n` +
+		`• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n` +
 		`• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n` +
 		`• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n` +
 		`• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n` +
@@ -880,23 +1380,19 @@ async function handleFazAjuda(bot, message) {
 		`• \`!faz-ranking\` — Ver o ranking dos melhores fazendeiros\n` +
 		`• \`!faz-ajuda\` — Exibir este menu de ajuda`;
 
-	return new ReturnMessage({
-		chatId,
-		content: text
-	});
+	return replyReturnMessage(chatId, text, message);
 }
 
 // ─── DEFINIÇÃO DOS COMANDOS EXPORTADOS ──────────────────────────────────────
 
 const commands = [
-	// REMOVER_HIDDEN_NO_LANCAMENTO: Altere para 'hidden: false' quando o Jardim das Sombras for lançado oficialmente
 	new Command({
 		name: "fazenda",
 		aliases: ["jardim"],
 		description: "Visualiza a fazenda atual no Jardim das Sombras e coleta o diário",
-		usage: "!fazenda",
+		usage: "!fazenda [hd]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 5,
 		method: handleFazenda
 	}),
@@ -906,7 +1402,7 @@ const commands = [
 		description: "Gera o link de autenticação seguro para o painel Farm Admin",
 		usage: "!faz-adm",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 10,
 		method: handleFazAdm
 	}),
@@ -914,9 +1410,9 @@ const commands = [
 		name: "faz-colher",
 		aliases: ["faz-colhertudo"],
 		description: "Colhe plantas maduras e limpa canteiros secos",
-		usage: "!faz-colher [número do canteiro]",
+		usage: "!faz-colher [número do canteiro] [hd]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazColher
 	}),
@@ -924,9 +1420,9 @@ const commands = [
 		name: "faz-plantar",
 		aliases: ["faz-plantartudo"],
 		description: "Planta sementes em canteiro específico ou em todos os canteiros livres",
-		usage: "!faz-plantar <semente> [canteiro]",
+		usage: "!faz-plantar <semente> [canteiro ou qtd] [hd]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazPlantar
 	}),
@@ -936,7 +1432,7 @@ const commands = [
 		description: "Visualiza catálogo de sementes, elixires e decorações",
 		usage: "!faz-loja",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 5,
 		method: handleFazLoja
 	}),
@@ -946,7 +1442,7 @@ const commands = [
 		description: "Compra sementes, elixires ou decorações da loja",
 		usage: "!faz-comprar <item> [quantidade]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazComprar
 	}),
@@ -956,7 +1452,7 @@ const commands = [
 		description: "Exibe a mochila de itens, sementes e bônus acumulados",
 		usage: "!faz-inventario",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazInventario
 	}),
@@ -966,7 +1462,7 @@ const commands = [
 		description: "Utiliza um elixir ou consumível do inventário",
 		usage: "!faz-usar <elixir> [canteiro]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazUsar
 	}),
@@ -976,7 +1472,7 @@ const commands = [
 		description: "Vende colheitas do inventário por moedas",
 		usage: "!faz-vender [item ou tudo]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 3,
 		method: handleFazVender
 	}),
@@ -986,7 +1482,7 @@ const commands = [
 		description: "Posiciona ou reposiciona itens decorativos no terreno da fazenda",
 		usage: "!faz-decorar <enfeite> [slot ou com imagem marcada]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 5,
 		method: handleFazDecorar
 	}),
@@ -996,7 +1492,7 @@ const commands = [
 		description: "Exibe os rankings de riqueza ou mestres da colheita",
 		usage: "!faz-ranking [riqueza|colheitas]",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 5,
 		method: handleFazRanking
 	}),
@@ -1006,7 +1502,7 @@ const commands = [
 		description: "Exibe guia de comandos e mecânicas do Jardim das Sombras",
 		usage: "!faz-ajuda",
 		category: "jogos",
-		hidden: true,
+		reply: true,
 		cooldown: 5,
 		method: handleFazAjuda
 	})
@@ -1015,5 +1511,10 @@ const commands = [
 module.exports = {
 	commands,
 	getFarmWaifuRollBonus,
-	consumeFarmWaifuRoll
+	consumeFarmWaifuRoll,
+	getUserDisplayName,
+	resolvePlayerRankingName,
+	isTestUser,
+	optimizeFarmImage,
+	extractQualityFlag
 };

@@ -338,14 +338,28 @@ async function awardDonorBonuses(
 			// 5. Atualiza o valor processado no banco de doações
 			await database.updateDonorBonusProcessed(donor.nome, totalAmount);
 
+			let logDetails = `+${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${chosenItems.length} itens`;
+			if (delta.deltaFazenda) {
+				const fLog = [];
+				if (delta.deltaFazenda.dailyLuck > 0) fLog.push(`+${delta.deltaFazenda.dailyLuck} cinzas`);
+				if (delta.deltaFazenda.coinsBonus > 0) fLog.push(`+${delta.deltaFazenda.coinsBonus} midas`);
+				if (delta.deltaFazenda.growthSpeed > 0)
+					fLog.push(`+${delta.deltaFazenda.growthSpeed} suspiro`);
+				if (delta.deltaFazenda.decors?.length > 0)
+					fLog.push(`+${delta.deltaFazenda.decors.length} decors`);
+				if (fLog.length > 0) logDetails += `, fazenda: [${fLog.join(", ")}]`;
+			}
+
 			logger.info(
-				`[DonorBonusService] Bônus concedidos com sucesso para ${donor.nome} (${cleanNumber}): +${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${chosenItems.length} itens.`
+				`[DonorBonusService] Bônus concedidos com sucesso para ${donor.nome} (${cleanNumber}): ${logDetails}.`
 			);
 		} else {
 			logger.info(
 				`[DonorBonusService] [DRY-RUN] Simulação de bônus para ${donor.nome} (${cleanNumber}): +${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${chosenItems.length} itens.`
 			);
 		}
+
+		const bonusMsg = formatBonusMessage({ success: true, delta, chosenItems });
 
 		return {
 			success: true,
@@ -355,12 +369,79 @@ async function awardDonorBonuses(
 			totalAmount,
 			previousAmount,
 			delta,
-			chosenItems
+			chosenItems,
+			bonusMsg
 		};
 	} catch (error) {
 		logger.error("Erro ao conceder bônus de doador:", error);
 		return { success: false, error: error.message };
 	}
+}
+
+/**
+ * Formata em texto legível a mensagem de bônus concedidos para doadores
+ * @param {Object} bonusRes - Objeto de resultado retornado por awardDonorBonuses
+ * @returns {string} Mensagem formatada iniciando com quebra de linha (se houver bônus)
+ */
+function formatBonusMessage(bonusRes) {
+	if (!bonusRes || !bonusRes.success || !bonusRes.delta || bonusRes.delta.deltaAmount <= 0) {
+		return "";
+	}
+
+	const { delta, chosenItems } = bonusRes;
+	const parts = [];
+
+	if (delta.deltaBaits > 0) {
+		parts.push(`+${delta.deltaBaits} iscas`);
+	}
+	if (delta.deltaCoins > 0) {
+		parts.push(`+${delta.deltaCoins} moedas`);
+	}
+	const itemsCount = chosenItems?.length || 0;
+	if (itemsCount > 0) {
+		parts.push(`+${itemsCount} ${itemsCount === 1 ? "item de pesca" : "itens de pesca"}`);
+	}
+
+	let msg = "";
+	if (parts.length > 0) {
+		msg += `\n🎁 *Bônus concedidos:* ${parts.join(", ")}!`;
+	}
+
+	// Bônus da Fazenda (Jardim Lutoso)
+	if (delta.deltaFazenda) {
+		const farmParts = [];
+		if (delta.deltaFazenda.dailyLuck > 0) {
+			const count = delta.deltaFazenda.dailyLuck;
+			farmParts.push(`+${count} Cinzas Líquidas`);
+		}
+		if (delta.deltaFazenda.coinsBonus > 0) {
+			const count = delta.deltaFazenda.coinsBonus;
+			farmParts.push(`+${count} ${count === 1 ? "Lágrima de Midas" : "Lágrimas de Midas"}`);
+		}
+		if (delta.deltaFazenda.growthSpeed > 0) {
+			const count = delta.deltaFazenda.growthSpeed;
+			farmParts.push(`+${count} ${count === 1 ? "Suspiro Espectral" : "Suspiros Espectrais"}`);
+		}
+		if (delta.deltaFazenda.decors && delta.deltaFazenda.decors.length > 0) {
+			const count = delta.deltaFazenda.decors.length;
+			const decorNames = delta.deltaFazenda.decors
+				.map((d) => ShadowGardenBonusService.VIP_DECOR_NAMES?.[d] || d)
+				.join(", ");
+			if (count <= 2) {
+				farmParts.push(
+					`+${count} ${count === 1 ? "decoração VIP" : "decorações VIP"} (${decorNames})`
+				);
+			} else {
+				farmParts.push(`+${count} decorações VIP`);
+			}
+		}
+
+		if (farmParts.length > 0) {
+			msg += `\n🦇 *Fazenda:* ${farmParts.join(", ")}!`;
+		}
+	}
+
+	return msg;
 }
 
 module.exports = {
@@ -373,5 +454,6 @@ module.exports = {
 	getDonorByUserId,
 	getDonorTotal,
 	getWaifuRollBonuses,
-	awardDonorBonuses
+	awardDonorBonuses,
+	formatBonusMessage
 };

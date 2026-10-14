@@ -1091,6 +1091,39 @@ function formatTimeString(seconds) {
 	return timeString;
 }
 
+function formatRemainingTime(totalSeconds) {
+	if (totalSeconds <= 0) return "0min";
+	const totalMinutes = Math.ceil(totalSeconds / 60);
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	if (hours > 0 && minutes > 0) return `${hours}h ${minutes}min`;
+	if (hours > 0) return `${hours}h`;
+	return `${minutes}min`;
+}
+
+function getNetBaitSuggestion(userData) {
+	const maxBaits = getMaxBaits(userData);
+	const currentBaits = userData.baits ?? 0;
+	if (currentBaits >= maxBaits) {
+		return `> 💡 *Dica:* Suas iscas já estão no máximo (${currentBaits}/${maxBaits})! Você já pode usar a rede novamente assim que o cooldown terminar.`;
+	}
+
+	const regenInfo = getNextBaitRegenTime(userData);
+	const targetDate = regenInfo.allBaitsTime;
+	const now = new Date();
+	const isTomorrow = targetDate.getDate() !== now.getDate();
+	const horaFormatada = targetDate.toLocaleTimeString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false
+	});
+	const diaPrefixo = isTomorrow ? "amanhã " : "";
+	const tempoRestante = formatRemainingTime(regenInfo.secondsUntilAllBaits);
+
+	return `> 💡 *Dica:* Melhor hora para usar a rede novamente: ${diaPrefixo}às ${horaFormatada} (faltam ${tempoRestante} para encher as ${maxBaits} iscas)`;
+}
+
 function checkRandomItem() {
 	const factors = DEFAULT_GLOBAL_FACTORS;
 
@@ -2504,6 +2537,7 @@ async function netFishCommand(bot, message, args, group) {
 				extraMsg: "",
 				rareFish: legendaryFish,
 				userData,
+				effectMessage: `\n${getNetBaitSuggestion(userData)}`,
 				reaction: "🕸️"
 			});
 		}
@@ -2611,6 +2645,7 @@ async function netFishCommand(bot, message, args, group) {
 		}
 
 		contentMsg += `\n> 🎒 Inventário: ${userData.fishes.length}/${maxInventory} | 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
+		contentMsg += `\n${getNetBaitSuggestion(userData)}`;
 
 		const eventBanner = GameEventService.getEventBanner("pesca");
 		if (eventBanner) {
@@ -3891,5 +3926,7 @@ module.exports = {
 	getUserData,
 	getMaxInventory,
 	generateRareFishImage,
-	getWeeklyFishingStats
+	getWeeklyFishingStats,
+	getNetBaitSuggestion,
+	formatRemainingTime
 };

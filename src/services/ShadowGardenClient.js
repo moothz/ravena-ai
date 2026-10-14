@@ -55,6 +55,10 @@ class ShadowGardenClient {
 		if (withTooltips) params.set("tooltips", "true");
 		if (extraParams.timeOverride) params.set("time_override", extraParams.timeOverride);
 		if (extraParams.tooltipStyle) params.set("tooltip_style", String(extraParams.tooltipStyle));
+		if (extraParams.userName) params.set("user_name", extraParams.userName);
+		if (extraParams.headerStyle) params.set("header_style", String(extraParams.headerStyle));
+		if (extraParams.harvestedSlots) params.set("harvested_slots", extraParams.harvestedSlots);
+		if (extraParams.plantedSlots) params.set("planted_slots", extraParams.plantedSlots);
 
 		const query = params.toString() ? `?${params.toString()}` : "";
 		const url = `${this.baseUrl}/farm/${encodeURIComponent(userId)}/image${query}`;
@@ -217,20 +221,22 @@ class ShadowGardenClient {
 	}
 
 	/**
-	 * Ranking dos 10 jogadores com mais moedas
+	 * Ranking dos jogadores com mais moedas
+	 * @param {number} [limit=20]
 	 */
-	async getWealthRanking() {
-		const res = await fetch(`${this.baseUrl}/rankings/wealth`, {
+	async getWealthRanking(limit = 20) {
+		const res = await fetch(`${this.baseUrl}/rankings/wealth?limit=${limit}`, {
 			headers: this._headers()
 		});
 		return this._handleResponse(res, "Falha ao buscar ranking de riqueza");
 	}
 
 	/**
-	 * Ranking dos 10 jogadores com mais colheitas
+	 * Ranking dos jogadores com mais colheitas
+	 * @param {number} [limit=20]
 	 */
-	async getFarmersRanking() {
-		const res = await fetch(`${this.baseUrl}/rankings/farmers`, {
+	async getFarmersRanking(limit = 20) {
+		const res = await fetch(`${this.baseUrl}/rankings/farmers?limit=${limit}`, {
 			headers: this._headers()
 		});
 		return this._handleResponse(res, "Falha ao buscar ranking de colheitas");
@@ -263,6 +269,14 @@ class ShadowGardenClient {
 			body: JSON.stringify({ userId, ...options })
 		});
 		return this._handleResponse(res, "Falha ao aplicar buff via admin");
+	}
+
+	/**
+	 * Obtém textos e configurações públicas do jogo (nome, emojis, tooltips)
+	 */
+	async getTexts() {
+		const res = await fetch(`${this.baseUrl}/texts`);
+		return await res.json();
 	}
 }
 

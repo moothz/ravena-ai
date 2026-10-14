@@ -159,6 +159,10 @@ async function runTests() {
 	assert.ok(contentNaoDoador.includes("Pescaria:"), "Deve listar regras de Pescaria");
 	assert.ok(contentNaoDoador.includes("Caça-Níqueis (Slots):"), "Deve listar regras de Slots");
 	assert.ok(contentNaoDoador.includes("Waifus (Mudae):"), "Deve listar regras de Waifus");
+	assert.ok(
+		contentNaoDoador.includes("Fazenda (Jardim Lutoso):"),
+		"Deve listar regras da Fazenda (Jardim Lutoso)"
+	);
 	console.log("✓ !doar-vantagens para não-doador OK");
 
 	// Teste com doador conhecido (Agrius / 5511981010487)
@@ -187,6 +191,22 @@ async function runTests() {
 		contentDoador.includes("eficiência extra na rede de pesca (!pesca-rede)"),
 		"Deve listar eficiência da rede para doador"
 	);
+	assert.ok(
+		contentDoador.includes("Cinzas Líquidas") && contentDoador.includes("4"),
+		"Deve listar 4 Cinzas Líquidas para o doador"
+	);
+	assert.ok(
+		contentDoador.includes("Lágrimas de Midas") && contentDoador.includes("3"),
+		"Deve listar 3 Lágrimas de Midas para o doador"
+	);
+	assert.ok(
+		contentDoador.includes("Suspiros Espectrais") && contentDoador.includes("2"),
+		"Deve listar 2 Suspiros Espectrais para o doador"
+	);
+	assert.ok(
+		contentDoador.includes("decorações VIP exclusivas") && contentDoador.includes("2"),
+		"Deve listar 2 decorações VIP para o doador"
+	);
 	console.log("✓ !doar-vantagens para apoiador OK");
 
 	// 4. Teste de concessão simulada (dry-run)
@@ -203,7 +223,17 @@ async function runTests() {
 		22,
 		"Total de itens sorteados deve ser 16 + 1 + 1 + 4 = 22"
 	);
-	console.log("✓ awardDonorBonuses com dryRun OK");
+	assert(resDry.bonusMsg, "Deve gerar bonusMsg formatada");
+	assert(resDry.bonusMsg.includes("+160 iscas"), "Deve conter +160 iscas");
+	assert(resDry.bonusMsg.includes("+240 moedas"), "Deve conter +240 moedas");
+	assert(resDry.bonusMsg.includes("+22 itens de pesca"), "Deve conter +22 itens de pesca");
+	assert(resDry.bonusMsg.includes("Fazenda"), "Deve conter seção da Fazenda");
+	assert(resDry.bonusMsg.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
+	assert(resDry.bonusMsg.includes("Lágrimas de Midas"), "Deve conter Lágrimas de Midas");
+	assert(resDry.bonusMsg.includes("Suspiros Espectrais"), "Deve conter Suspiros Espectrais");
+	assert(resDry.bonusMsg.includes("decorações VIP"), "Deve conter decorações VIP");
+	console.log("   bonusMsg formatada:\n" + resDry.bonusMsg);
+	console.log("✓ awardDonorBonuses com dryRun e formatBonusMessage OK");
 
 	// 5. Teste da mensagem de notificação de donate em grupos logs/avisos
 	console.log("\n--- 5. Testando notifyGroupsAboutDonation com e sem número vinculado ---");
@@ -256,6 +286,56 @@ async function runTests() {
 		"Não deve incluir aviso no grupo de avisos para doador com número salvo"
 	);
 	console.log("✓ notifyGroupsAboutDonation com e sem número OK");
+
+	// 6. Teste da resposta de addDonorNumber e addNewDonate no SuperAdmin
+	console.log("\n--- 6. Testando addDonorNumber no SuperAdmin ---");
+	const SuperAdmin = require("../commands/SuperAdmin");
+	const sa = new SuperAdmin();
+	sa.isSuperAdmin = () => true;
+	const originalUpdateDonorNumber = sa.database.updateDonorNumber;
+	const originalGetDonorByName = sa.database.getDonorByName;
+	sa.database.updateDonorNumber = async () => true;
+	sa.database.getDonorByName = async () => ({
+		nome: "Agrius Metamorphosis",
+		numero: "5511999998888",
+		valor: 50,
+		bonusesProcessedAmount: 0
+	});
+
+	const dummySaBot = {
+		whitelist: [],
+		createContact: async (num) => `Contato ${num}`
+	};
+	const dummyMsg = {
+		author: "5511999999999@s.whatsapp.net",
+		group: "123@g.us"
+	};
+
+	const saRes = await sa.addDonorNumber(dummySaBot, dummyMsg, [
+		"5511999998888",
+		"Agrius",
+		"Metamorphosis"
+	]);
+	assert.ok(Array.isArray(saRes), "Deve retornar array de ReturnMessage");
+	const replyContent = saRes[0].content;
+	console.log("   Mensagem do SuperAdmin no addDonorNumber:\n" + replyContent);
+	assert.ok(
+		replyContent.includes("adicionado com sucesso ao doador Agrius Metamorphosis"),
+		"Deve conter mensagem de sucesso"
+	);
+	assert.ok(
+		replyContent.includes("🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +13 itens de pesca!"),
+		"Deve conter bônus de pesca"
+	);
+	assert.ok(replyContent.includes("🦇 *Fazenda:*"), "Deve conter seção da Fazenda");
+	assert.ok(replyContent.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
+	assert.ok(replyContent.includes("Lágrimas de Midas"), "Deve conter Lágrimas de Midas");
+	assert.ok(replyContent.includes("Suspiro Espectral"), "Deve conter Suspiro Espectral");
+	assert.ok(replyContent.includes("decoração VIP"), "Deve conter decoração VIP");
+	console.log("✓ SuperAdmin addDonorNumber exibindo bônus da fazenda OK");
+
+	sa.database.updateDonorNumber = originalUpdateDonorNumber;
+	sa.database.getDonorByName = originalGetDonorByName;
 
 	console.log("\n==========================================================");
 	console.log("🎉 TODOS OS TESTES DE BÔNUS DE DOADORES PASSARAM COM SUCESSO!");

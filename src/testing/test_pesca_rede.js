@@ -404,6 +404,61 @@ async function runTests() {
 			"✓ Teste 9 passou: Modificadores (buffs/debuffs) exibidos com sucesso ao lado das criaturas."
 		);
 		bot.resetCapture();
+
+		// -------------------------------------------------------------
+		// Teste 10: Sugestão da melhor hora para usar a rede novamente
+		// -------------------------------------------------------------
+		resetCooldown();
+		await database.dbRun(
+			"fishing",
+			"UPDATE fishing_users SET baits = 5, last_bait_regen = ? WHERE user_id = ?",
+			[Date.now(), testUser]
+		);
+
+		const msgSugestao = createMessage({
+			content: "!pesca-rede 3",
+			group: testGroup,
+			author: testUser,
+			authorName: "PescadorRede"
+		});
+
+		await eventHandler.commandHandler.processCommand(bot, msgSugestao, "pesca-rede", ["3"], null);
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
+		const resposta10 = bot.capturedMessages[0].content;
+		assert.ok(
+			resposta10.includes("Melhor hora para usar a rede novamente") ||
+				resposta10.includes("Suas iscas já estão no máximo"),
+			"A resposta deve sugerir a melhor hora para usar a rede novamente com base nas iscas"
+		);
+		assert.ok(
+			resposta10.includes("faltam") || resposta10.includes("máximo"),
+			"A resposta deve informar o tempo restante para recarregar"
+		);
+
+		// Teste unitário direto das funções auxiliares
+		const userComBaits = { baits: 2, lastBaitRegen: Date.now() };
+		const sugestaoFaltando = FishingGame.getNetBaitSuggestion(userComBaits);
+		assert.ok(
+			sugestaoFaltando.includes("Melhor hora para usar a rede novamente"),
+			"getNetBaitSuggestion deve sugerir horário quando faltam iscas"
+		);
+		assert.ok(
+			sugestaoFaltando.includes("faltam"),
+			"getNetBaitSuggestion deve incluir quanto tempo falta"
+		);
+
+		const userFullBaits = { baits: 20, lastBaitRegen: Date.now() };
+		const sugestaoCheia = FishingGame.getNetBaitSuggestion(userFullBaits);
+		assert.ok(
+			sugestaoCheia.includes("já estão no máximo"),
+			"getNetBaitSuggestion deve avisar quando iscas estão cheias"
+		);
+
+		assert.strictEqual(FishingGame.formatRemainingTime(3600), "1h");
+		assert.strictEqual(FishingGame.formatRemainingTime(3660), "1h 1min");
+		assert.strictEqual(FishingGame.formatRemainingTime(120), "2min");
+		console.log("✓ Teste 10 passou: Sugestão de melhor hora para !pesca-rede testada com sucesso!");
+		bot.resetCapture();
 	} finally {
 		FishingGame.RARE_FISH.forEach((f, idx) => {
 			f.chance = originalChances[idx];

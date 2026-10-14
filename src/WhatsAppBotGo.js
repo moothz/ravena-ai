@@ -1323,7 +1323,9 @@ class WhatsAppBotGo {
 	async createMediaFromBase64(base64Data, mimetype, filename) {
 		try {
 			const extension = mime.extension(mimetype) ?? "bin";
-			const buffer = Buffer.from(base64Data, "base64");
+			const cleanBase64 =
+				typeof base64Data === "string" ? base64Data.replace(/^data:[^;]+;base64,/, "") : base64Data;
+			const buffer = Buffer.from(cleanBase64, "base64");
 			const size = buffer.length;
 			const url = this._storeMediaFile(buffer, `.${extension}`);
 
@@ -1334,7 +1336,7 @@ class WhatsAppBotGo {
 
 			const media = {
 				mimetype,
-				data: base64Data,
+				data: cleanBase64,
 				filename: filename ?? `file.${extension}`,
 				source: "base64",
 				url,
@@ -3028,7 +3030,10 @@ class WhatsAppBotGo {
 				if (options.sendMediaAsSticker) {
 					endpoint = "/send/sticker";
 					if (!content.url && content.data) {
-						let stickerData = content.data;
+						let stickerData =
+							typeof content.data === "string"
+								? content.data.replace(/^data:[^;]+;base64,/, "")
+								: content.data;
 						let stickerMime = content.mimetype || "image/webp";
 						if (!stickerMime.includes("webp")) {
 							// ATENÇÃO: Esta conversão só ocorre se o mime NÃO for webp.

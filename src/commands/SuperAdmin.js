@@ -1236,7 +1236,7 @@ Break down the cost by category and provide a total estimated cost.`;
 							donor.bonusesProcessedAmount || 0
 						);
 						if (bonusRes.success && bonusRes.delta && bonusRes.delta.deltaAmount > 0) {
-							bonusMsg = `\n🎁 *Bônus concedidos:* +${bonusRes.delta.deltaBaits} iscas, +${bonusRes.delta.deltaCoins} moedas, +${bonusRes.chosenItems?.length || 0} itens de pesca!`;
+							bonusMsg = DonorBonusService.formatBonusMessage(bonusRes);
 						}
 					}
 				} catch (errBonus) {
@@ -1317,7 +1317,7 @@ Break down the cost by category and provide a total estimated cost.`;
 							donor.bonusesProcessedAmount || 0
 						);
 						if (bonusRes.success && bonusRes.delta && bonusRes.delta.deltaAmount > 0) {
-							bonusMsg = `\n🎁 *Bônus concedidos:* +${bonusRes.delta.deltaBaits} iscas, +${bonusRes.delta.deltaCoins} moedas, +${bonusRes.chosenItems?.length || 0} itens de pesca!`;
+							bonusMsg = DonorBonusService.formatBonusMessage(bonusRes);
 						}
 					}
 				} catch (errBonus) {

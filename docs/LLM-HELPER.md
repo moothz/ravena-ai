@@ -319,9 +319,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ### 📁 Módulo: `DonationCommands.js`
 **Sobre:** Informações sobre doações, apoio financeiro e vantagens exclusivas para apoiadores
 
-**Tags:** `doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus`
+**Tags:** `doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus,fazenda,jardim`
 
-**Detalhes Técnicos:** Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto)
+**Detalhes Técnicos:** Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto, Fazenda)
 
 #### Comandos:
 - **`!doar`**: Exibe as opções de doação e chave Pix para apoiar o projeto

@@ -68,6 +68,18 @@ const VIP_HIGH_DECORS = [
 	"decor_27_dark_sun_niflheim"
 ];
 
+const VIP_DECOR_NAMES = {
+	decor_19_fallen_king_crown: "Coroa do Rei Caído",
+	decor_20_blood_diamond_cluster: "Diamante de Sangue",
+	decor_21_molten_gold_chalice: "Cálice de Ouro",
+	decor_22_marble_gold_tombstone: "Lápide de Ouro",
+	decor_23_sapphire_fire_lantern: "Lanterna de Safira",
+	decor_24_solid_gold_gargoyle: "Gárgula Dourada",
+	decor_25_imprisoned_crystal_moon: "Lua de Cristal",
+	decor_26_platinum_imperial_fountain: "Fonte Imperial",
+	decor_27_dark_sun_niflheim: "Sol Negro"
+};
+
 function pickRandom(arr) {
 	return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -414,6 +426,7 @@ module.exports = {
 	VIP_BASIC_DECORS,
 	VIP_MEDIUM_DECORS,
 	VIP_HIGH_DECORS,
+	VIP_DECOR_NAMES,
 	addWaifuBonus,
 	getWaifuBonus,
 	consumeWaifuBonus,

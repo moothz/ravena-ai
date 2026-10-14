@@ -311,6 +311,12 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `🩺 *Jogo do Pinto:*\n`;
 		msg += `• *+1% de tamanho* em todos os atributos a cada R$ 1 doado _(respeitando os limites máximos)_.\n\n`;
 
+		msg += `🦇 *Fazenda (Jardim Lutoso):*\n`;
+		msg += `• *1x Cinzas Líquidas (Sorte Diária)* a cada R$ 20 doados.\n`;
+		msg += `• *1x Lágrima de Midas (Bônus de Moedas)* a cada R$ 25 doados.\n`;
+		msg += `• *1x Suspiro Espectral (Crescimento Acelerado)* a cada R$ 30 doados.\n`;
+		msg += `• *Decorações VIP Exclusivas:* desbloqueadas a cada R$ 25 adicionais a partir de R$ 50 (Básicas), R$ 100 (Médias) e R$ 300 (Altas)!\n\n`;
+
 		msg += `👑 *Vantagens Gerais no Bot:*\n`;
 		msg += `• Aceite prioritário e automático de convites da Ravena para seus grupos.\n`;
 		msg += `• Proteção contra restrições de convites.\n`;
@@ -351,6 +357,22 @@ async function showDonationPerks(bot, message, args, group) {
 			}
 
 			msg += `\n🩺 *Bônus no !pinto:* +${bonuses.pinto.bonusPercent}% de potencial estético!\n`;
+
+			const farmBonuses = bonuses.fazenda || {
+				dailyLuck: 0,
+				coinsBonus: 0,
+				growthSpeed: 0,
+				decorsCount: 0
+			};
+			msg += `\n🦇 *Fazenda (Jardim Lutoso):*\n`;
+			msg += `  • 🧪 *${farmBonuses.dailyLuck}* Cinzas Líquidas (Sorte Diária) entregues.\n`;
+			msg += `  • 🪙 *${farmBonuses.coinsBonus}* Lágrimas de Midas (Bônus de Moedas) entregues.\n`;
+			msg += `  • 💨 *${farmBonuses.growthSpeed}* Suspiros Espectrais (Crescimento Acelerado) entregues.\n`;
+			if (farmBonuses.decorsCount > 0) {
+				msg += `  • 🏺 *${farmBonuses.decorsCount}* decorações VIP exclusivas desbloqueadas.\n`;
+			} else {
+				msg += `  • 🏺 Decorações VIP: _Desbloqueadas a partir de R$ 50 no total!_\n`;
+			}
 		} else {
 			msg += `🤍 *Você ainda não é um apoiador, mas sem pressão! Qualquer ajuda é bem vinda, mas completamente opcional.*\n\n`;
 			msg += `🔗 Para doar e apoiar o projeto, digite \`!doar\` para obter o link do tipa.ai e a chave Pix!`;
@@ -428,8 +450,8 @@ const commands = [
 const helper = {
 	about: "Informações sobre doações, apoio financeiro e vantagens exclusivas para apoiadores",
 	implementation:
-		"Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto)",
-	tags: "doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus",
+		"Exibe opções de apoio (Pix, QR Code, Tipa.ai) e calcula vantagens nos jogos (Pesca, Slots, Waifus, Pinto, Fazenda)",
+	tags: "doar,doacao,pix,ajuda,apoiar,crowdfunding,vantagens,bonus,fazenda,jardim",
 	cmds: [
 		{
 			cmd: "!doar",
