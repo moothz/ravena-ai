@@ -1335,6 +1335,12 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-cooldowns`**: Verifica os tempos restantes para poder rolar, casar ou resgatar o diário
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-cooldowns`, `!mu-cd`
+- **`!mu-adm / !mu-admin`**: Envia no privado um link seguro temporário (30 min) para gerenciar seu harém, wishlist e fotos no site
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-adm`, `!mu-admin`
+- **`!mu-share / !mu-compartilhar`**: Mostra o link público da sua coleção/harém no catálogo web para compartilhar com amigos
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-share`, `!mu-compartilhar`
 
 ---
 

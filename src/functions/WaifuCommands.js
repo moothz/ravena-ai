@@ -14,6 +14,7 @@ const logger = new Logger("waifu-commands");
 // ─── Configurações da API ───────────────────────────────────────────────────
 const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
 const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY;
+const WAIFULETES_WEB_URL = process.env.WAIFULETES_WEB_URL || "https://waifuletes.moothz.win";
 
 if (!WAIFULETES_KEY) {
 	logger.error(
@@ -3432,7 +3433,9 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-like <id>\` (aliases: \`!mu-l\`, \`!mu-coracao\`) — Dá like em um personagem.\n`;
 	text += `• \`!mu-personagens <busca>\` (aliases: \`!mu-chars\`, \`!mu-buscar\`) — Pesquisa personagens no catálogo por nome/série.\n`;
 	text += `• \`!mu-char <id>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e chances de drop de um personagem.\n`;
-	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n\n`;
+	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n`;
+	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist e fotos).\n`;
+	text += `• \`!mu-share\` (alias: \`!mu-compartilhar\`) — Exibe o link público do seu harém para compartilhar com amigos.\n\n`;
 
 	text += `ℹ️ *Ajuda do Jogo:*\n`;
 	text += `• \`!waifus\` ou \`!mudae\` — Abre este menu explicativo com regras e comandos.`;
@@ -3445,6 +3448,155 @@ async function ajudaWaifus(bot, message) {
 			goReply: message.origin
 		}
 	});
+}
+
+/**
+ * Garante que a URL gerada utilize o domínio web público configurado
+ * @param {string} rawUrl
+ * @param {string} path
+ * @returns {string}
+ */
+function formatWebUrl(rawUrl, path) {
+	if (rawUrl) {
+		try {
+			const u = new URL(rawUrl);
+			if (
+				u.hostname === "localhost" ||
+				u.hostname === "127.0.0.1" ||
+				u.hostname === "host.docker.internal"
+			) {
+				const base = new URL(WAIFULETES_WEB_URL);
+				u.protocol = base.protocol;
+				u.host = base.host;
+				return u.toString();
+			}
+			return rawUrl;
+		} catch {
+			// Fallback para montagem direta
+		}
+	}
+	const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
+	return `${WAIFULETES_WEB_URL}${cleanPath}`;
+}
+
+/**
+ * Gera um link temporário (30 minutos) e envia no PV do usuário para gerenciar seu harém/wishlist na web
+ * @param {object} bot
+ * @param {object} message
+ * @returns {Promise<ReturnMessage>}
+ */
+async function painelWebAdmin(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const userName = getUserName(message);
+
+	try {
+		await ensureUser(userId, groupId, userName);
+		const { data } = await api.post("/user/session", { userId });
+		const session = data?.data || {};
+
+		const publicId = session.publicId;
+		const token = session.token;
+		const sessionUrl = formatWebUrl(
+			session.url,
+			publicId && token ? `/user/${publicId}?token=${token}` : ""
+		);
+
+		let pvText = `✨ *Painel Pessoal — Waifuletes* ✨\n\n`;
+		pvText += `Olá, *${userName}*! Aqui está o seu link de acesso temporário:\n`;
+		pvText += `🔗 ${sessionUrl}\n\n`;
+		pvText += `⏳ *Duração:* Este link expira em *30 minutos*.\n`;
+		pvText += `🔒 *Acesso Privado:* Não repasse este link para ninguém! Através dele você pode:\n`;
+		pvText += `• Visualizar e divorciar personagens do seu harém\n`;
+		pvText += `• Gerenciar sua Wishlist\n`;
+		pvText += `• Pesquisar personagens no catálogo\n`;
+		pvText += `• Sugerir novas fotos (com recorte interativo) e novas raridades\n`;
+
+		// Se a mensagem veio de um grupo, envia no privado e avisa no grupo
+		if (message.group && message.group !== message.author) {
+			const pvMsg = new ReturnMessage({
+				chatId: message.author,
+				content: pvText
+			});
+
+			if (bot && typeof bot.sendReturnMessages === "function") {
+				await bot.sendReturnMessages(pvMsg);
+			} else if (bot && typeof bot.sendMessage === "function") {
+				await bot.sendMessage(message.author, pvText);
+			}
+
+			const authorMention = message.author.split("@")[0];
+			return new ReturnMessage({
+				chatId,
+				content: `📩 @${authorMention}, enviei o link de acesso ao seu painel pessoal no seu privado!`,
+				options: {
+					mentions: [message.author]
+				}
+			});
+		}
+
+		// Se já foi executado no privado, responde diretamente no PV
+		return new ReturnMessage({
+			chatId: message.author,
+			content: pvText
+		});
+	} catch (err) {
+		return handleApiError(
+			err,
+			chatId,
+			"❌ Não foi possível gerar o link do painel pessoal no momento. Tente novamente mais tarde."
+		);
+	}
+}
+
+/**
+ * Exibe o link público do harém do usuário para que ele compartilhe com amigos
+ * @param {object} bot
+ * @param {object} message
+ * @returns {Promise<ReturnMessage>}
+ */
+async function compartilharHarem(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const userName = getUserName(message);
+
+	try {
+		await ensureUser(userId, groupId, userName);
+		const { data } = await api.get(`/user/${userId}`);
+		const user = data?.data || {};
+
+		const publicId = user.publicId;
+		const publicUrl = formatWebUrl(user.publicUrl, publicId ? `/user/${publicId}` : "");
+
+		const haremCount = user.haremCount ?? user._count?.harem ?? 0;
+		const soulmateCount = user.soulmateCount ?? user._count?.soulmates ?? 0;
+		const wishlistCount = user.wishlistCount ?? user._count?.wishlist ?? 0;
+		const favoriteChar = user.favoriteCharacter || user.harem?.[0]?.character;
+
+		let text = `✨ *Harém de ${user.name || userName} — Waifuletes* ✨\n\n`;
+		text += `Acesse a vitrine pública de personagens no catálogo web:\n`;
+		text += `🔗 ${publicUrl}\n\n`;
+		text += `👰 *Colecionados:* ${haremCount} waifus/husbandos\n`;
+		text += `💖 *Soulmates:* ${soulmateCount}\n`;
+		text += `🌟 *Wishlist:* ${wishlistCount}/${WISHLIST_MAX_ITEMS}\n`;
+		if (favoriteChar) {
+			text += `⭐ *Waifu Favorita:* ${favoriteChar.name} (${favoriteChar.series || "Sem série"})\n`;
+		}
+		text += `\n💡 _Compartilhe este link com amigos para exibir sua coleção!_`;
+
+		return new ReturnMessage({
+			chatId,
+			content: text
+		});
+	} catch (err) {
+		return handleApiError(
+			err,
+			chatId,
+			"❌ Não foi possível obter o link do seu harém público no momento."
+		);
+	}
 }
 
 // ─── Registro dos Comandos e Aliases (Padrão Stickers.js) ───────────────────
@@ -4296,6 +4448,49 @@ const commands = [
 			error: "❌"
 		},
 		method: denunciarWaifu
+	}),
+
+	// ── PAINEL WEB PESSOAL (ADMIN / GESTÃO PRIVADA) ─────────────────────────
+	new Command({
+		name: "mu-adm",
+		description:
+			"Gera e envia no seu privado o link de acesso ao seu painel web pessoal do Waifuletes (30 min)",
+		category: "mudae",
+		group: "muwaifu-web",
+		aliases: ["mu-admin", "muadm", "muadmin"],
+		reactions: { before: "⏳", after: "🔗", error: "❌" },
+		reply: true,
+		method: painelWebAdmin
+	}),
+	new Command({
+		name: "mu-admin",
+		description: "Alias de !mu-adm",
+		category: "mudae",
+		group: "muwaifu-web",
+		reactions: { before: "⏳", after: "🔗", error: "❌" },
+		reply: true,
+		method: painelWebAdmin
+	}),
+
+	// ── COMPARTILHAR HARÉM (VITRINE PÚBLICA) ────────────────────────────────
+	new Command({
+		name: "mu-share",
+		description: "Compartilha o link público do seu harém no Waifuletes",
+		category: "mudae",
+		group: "muwaifu-web",
+		aliases: ["mu-compartilhar", "mu-link", "mushare", "mucompartilhar"],
+		reactions: { before: "⏳", after: "✨", error: "❌" },
+		reply: true,
+		method: compartilharHarem
+	}),
+	new Command({
+		name: "mu-compartilhar",
+		description: "Alias de !mu-share",
+		category: "mudae",
+		group: "muwaifu-web",
+		reactions: { before: "⏳", after: "✨", error: "❌" },
+		reply: true,
+		method: compartilharHarem
 	})
 ];
 
@@ -4375,6 +4570,18 @@ const helper = {
 			cmd: "!mu-cooldowns",
 			desc: "Verifica os tempos restantes para poder rolar, casar ou resgatar o diário",
 			usage: ["!mu-cooldowns", "!mu-cd"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-adm / !mu-admin",
+			desc: "Gera e envia no privado o link temporário (30 min) para gerenciar harém, wishlist e sugerir fotos/raridades",
+			usage: ["!mu-adm", "!mu-admin"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-share / !mu-compartilhar",
+			desc: "Exibe o link público da sua coleção/harém para compartilhar com amigos",
+			usage: ["!mu-share", "!mu-compartilhar"],
 			category: "mudae"
 		}
 	]
@@ -4539,6 +4746,8 @@ module.exports = {
 	saldoKakera,
 	verHarem,
 	verPerfil,
+	painelWebAdmin,
+	compartilharHarem,
 	verWishlist,
 	adicionarDesejo,
 	removerDesejo,
