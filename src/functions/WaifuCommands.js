@@ -3367,11 +3367,11 @@ async function ajudaWaifus(bot, message) {
 			text += `  ${emoji} *${label}:* ${catChanceStr}% (${b.count.toLocaleString("pt-BR")} chars | peso ${b.baseWeight})${oneInStr}\n`;
 		}
 	} else {
-		text += `  ⚪ *Comum:* ~93,30% (23.974 chars | peso 100)\n`;
-		text += `  🟢 *Incomum:* ~5,59% (2.393 chars | peso 60 | 1 em 18 rolls)\n`;
-		text += `  🔵 *Raro:* ~0,98% (837 chars | peso 30 | 1 em 102 rolls)\n`;
-		text += `  🟣 *Épico:* ~0,13% (220 chars | peso 15 | 1 em 779 rolls)\n`;
-		text += `  ⭐ *Lendário:* ~0,011% (56 chars | peso 5 | 1 em 9.177 rolls)\n`;
+		text += `  ⚪ *Comum:* ~68,74% (112.144 chars | peso 100)\n`;
+		text += `  🟢 *Incomum:* ~28,35% (77.095 chars | peso 60 | 1 em 4 rolls)\n`;
+		text += `  🔵 *Raro:* ~2,39% (15.576 chars | peso 25 | 1 em 42 rolls)\n`;
+		text += `  🟣 *Épico:* ~0,51% (10.384 chars | peso 8 | 1 em 196 rolls)\n`;
+		text += `  ⭐ *Lendário:* ~0,012% (379 chars | peso 5 | 1 em 8.600 rolls)\n`;
 	}
 	text += `• Digite \`!mu-chances\` para abrir o painel completo de probabilidades e simulação!\n`;
 	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
@@ -3381,7 +3381,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *300 segundos (5 minutos)*.\n`;
 	text += `• O primeiro jogador a enviar \`!mu-casar\` (ou \`!mu-c\`) se casa com a waifu/husbando!\n`;
 	text += `• O personagem passa a pertencer ao seu Harém global (em todos os grupos do bot).\n`;
-	text += `• *Cooldown de casamento:* 3 horas.\n\n`;
+	text += `• *Cooldown de casamento:* 2 horas.\n\n`;
 
 	text += `🔑 *3. Chaves (Keys) & Soulmates*\n`;
 	text += `• Se você rolar um personagem que *já pertence a você*, você ganha *+1 Chave (Key)*!\n`;

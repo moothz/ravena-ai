@@ -1299,7 +1299,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 **Tags:** `waifu,mudae,munae,jogo,anime,harem,zinthos,kakera,roleta,casamento`
 
-**Detalhes Técnicos:** Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 300s, harém global, chaves, soulmates e economia de Zinthos (💜).
+**Detalhes Técnicos:** Consome a API REST local do Waifuletes para sorteio ponderado, casamentos em janela de 300s (cooldown de casamento de 2h), harém global, chaves, soulmates e economia de Zinthos (💜).
 
 #### Comandos:
 - **`!waifus / !munae`**: Explica as mecânicas do jogo e lista todos os comandos e filtros disponíveis
