@@ -235,17 +235,26 @@ class FakeBot {
 				} catch {}
 			}
 
-			if (msg.options?.waifuReportCharacterId) {
+			if (msg.options?.waifuReportCharacterId || msg.options?.waifuReportCharacterIds) {
 				try {
 					const WaifuCommands = require("../functions/WaifuCommands");
 					if (typeof WaifuCommands.recordWaifuReportConfirmation === "function") {
-						WaifuCommands.recordWaifuReportConfirmation(
-							fakeMsgId,
-							msg.options.waifuReportCharacterId,
-							msg.chatId,
-							this.id,
-							typeof msg.content === "string" ? msg.content : ""
-						);
+						const reportCharIds =
+							msg.options.waifuReportCharacterIds &&
+							Array.isArray(msg.options.waifuReportCharacterIds)
+								? msg.options.waifuReportCharacterIds
+								: [msg.options.waifuReportCharacterId];
+						reportCharIds.forEach((charId) => {
+							if (charId) {
+								WaifuCommands.recordWaifuReportConfirmation(
+									fakeMsgId,
+									charId,
+									msg.chatId,
+									this.id,
+									typeof msg.content === "string" ? msg.content : ""
+								);
+							}
+						});
 					}
 				} catch {}
 			}
@@ -261,7 +270,9 @@ class FakeBot {
 							msg.options.waifuExpiresAt,
 							msg.options.waifuRollerUserId,
 							msg.options.waifuExclusiveUntil,
-							msg.options.waifuRollerUserName
+							msg.options.waifuRollerUserName,
+							null,
+							msg.options.waifuGridBase64
 						);
 					}
 				} catch {}

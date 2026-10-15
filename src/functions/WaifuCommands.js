@@ -96,23 +96,50 @@ const rollClaimsByMsgId = new Map();
 // Histórico para moderação/denúncias (mantém últimos 1000 IDs mesmo após expirar claim)
 const rollHistoryByMsgId = new Map();
 const MAX_ROLL_HISTORY = 1000;
+// Histórico de mensagens de rolls múltiplos para moderação/denúncias
+const multiRollHistoryByMsgId = new Map();
 
 // Inicializa banco de relatórios para mensagens de denúncia
 try {
 	database.getSQLiteDb(
 		"reports",
 		`CREATE TABLE IF NOT EXISTS waifu_report_messages (
-			message_id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
 			character_id TEXT NOT NULL,
 			chat_id TEXT NOT NULL,
 			bot_id TEXT,
 			text TEXT,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			PRIMARY KEY (message_id, character_id)
 		);
 		CREATE INDEX IF NOT EXISTS idx_waifu_report_msgs_char ON waifu_report_messages(character_id);`
 	);
+
+	// Migração para tabelas criadas previamente com PRIMARY KEY apenas em message_id
+	const tableInfo = database.mappers.get(
+		"reports",
+		"SELECT sql FROM sqlite_master WHERE type='table' AND name='waifu_report_messages'"
+	);
+	if (tableInfo?.sql && tableInfo.sql.includes("message_id TEXT PRIMARY KEY")) {
+		database.mappers.exec(
+			"reports",
+			`CREATE TABLE waifu_report_messages_new (
+				message_id TEXT NOT NULL,
+				character_id TEXT NOT NULL,
+				chat_id TEXT NOT NULL,
+				bot_id TEXT,
+				text TEXT,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (message_id, character_id)
+			);
+			INSERT OR IGNORE INTO waifu_report_messages_new SELECT * FROM waifu_report_messages;
+			DROP TABLE waifu_report_messages;
+			ALTER TABLE waifu_report_messages_new RENAME TO waifu_report_messages;
+			CREATE INDEX IF NOT EXISTS idx_waifu_report_msgs_char ON waifu_report_messages(character_id);`
+		);
+	}
 } catch (e) {
-	logger.warn(`Erro ao inicializar tabela waifu_report_messages: ${e.message}`);
+	logger.warn(`Erro ao inicializar/migrar tabela waifu_report_messages: ${e.message}`);
 }
 
 /**
@@ -227,6 +254,7 @@ function deleteWaifuReportConfirmations(characterId) {
  * @param {number} [exclusiveUntil]
  * @param {string} [rollerUserName]
  * @param {Array<object>} [extraRollsData]
+ * @param {string} [gridBase64]
  */
 function recordRollMessage(
 	messageId,
@@ -236,7 +264,8 @@ function recordRollMessage(
 	rollerUserId = null,
 	exclusiveUntil = null,
 	rollerUserName = null,
-	extraRollsData = null
+	extraRollsData = null,
+	gridBase64 = null
 ) {
 	if (!messageId || !characterIdOrRolls) return;
 	const strId = String(messageId);
@@ -260,6 +289,8 @@ function recordRollMessage(
 					slot: idx + 1,
 					characterId: item,
 					characterName: item,
+					series: "",
+					imageUrl: null,
 					available: true,
 					exclusiveUntil: exclusiveUntil || null,
 					claimed: false
@@ -269,6 +300,8 @@ function recordRollMessage(
 				slot: item.slot || idx + 1,
 				characterId: item.characterId || item.id,
 				characterName: item.characterName || item.name || item.id,
+				series: item.series || "",
+				imageUrl: item.imageUrl || null,
 				rarity: item.rarity || item.baseRarity || "COMMON",
 				available: item.available !== false,
 				exclusiveUntil: item.exclusiveUntil || null,
@@ -287,11 +320,19 @@ function recordRollMessage(
 			rollerUserId: finalRollerUserId,
 			rollerUserName,
 			exclusiveUntil,
-			expiresAt: finalExpiresAt
+			expiresAt: finalExpiresAt,
+			gridBase64: gridBase64 || null
 		};
 
 		rollClaimsByMsgId.set(strId, claimData);
 		rollClaimsByMsgId.set(stanzaId, claimData);
+
+		multiRollHistoryByMsgId.set(strId, claimData);
+		multiRollHistoryByMsgId.set(stanzaId, claimData);
+		if (multiRollHistoryByMsgId.size > 800) {
+			const firstKey = multiRollHistoryByMsgId.keys().next().value;
+			multiRollHistoryByMsgId.delete(firstKey);
+		}
 
 		rollHistoryByMsgId.set(strId, primaryCharId);
 		rollHistoryByMsgId.set(stanzaId, primaryCharId);
@@ -368,6 +409,29 @@ function getRollByMessageId(messageId) {
 		}
 		return claimData;
 	}
+	return null;
+}
+
+/**
+ * Busca dados de roll múltiplo por ID da mensagem (em cache ativo ou histórico de moderação)
+ * @param {string} messageId
+ * @returns {object|null}
+ */
+function getMultiRollByMessageId(messageId) {
+	if (!messageId) return null;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+
+	const claim = rollClaimsByMsgId.get(strId) || rollClaimsByMsgId.get(stanzaId);
+	if (claim?.isMultiRoll || (claim?.slots && claim.slots.length > 1)) {
+		return claim;
+	}
+
+	const hist = multiRollHistoryByMsgId.get(strId) || multiRollHistoryByMsgId.get(stanzaId);
+	if (hist?.isMultiRoll || (hist?.slots && hist.slots.length > 1)) {
+		return hist;
+	}
+
 	return null;
 }
 
@@ -922,8 +986,8 @@ function makeRollHandler(genderFilter) {
 
 			if (hasFarmBonus) {
 				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
-				// Concede rolls extras para não ser bloqueado por cooldown
-				rollBonuses.extraMaxRolls = (rollBonuses.extraMaxRolls || 0) + 9;
+				// Concede roll gratuito da fazenda sem consumir o saldo de cooldown
+				rollBonuses.isFreeRoll = true;
 
 				// Se tiver ticket (Rosa de Sangue), concede bônus de raridade equivalente a doador alto
 				if (farmBonus.tickets > 0) {
@@ -981,9 +1045,13 @@ function makeRollHandler(genderFilter) {
 			const initialRollsRemaining = firstRollData.rollsRemaining;
 			const initialMaxRolls = firstRollData.maxRolls ?? 9;
 
-			// Define a quantidade real de rolls a executar: Math.min(solicitado, 1 + restante)
-			const maxPossibleRolls =
-				1 + (typeof initialRollsRemaining === "number" ? initialRollsRemaining : 0);
+			// Define a quantidade real de rolls a executar: 1 (já executado) + rolls normais restantes + bônus da fazenda restantes
+			const farmBonusRemainingAfterFirst = await ShadowGardenBonusService.getWaifuBonus(userId);
+			const farmRemainingCount =
+				(farmBonusRemainingAfterFirst.rolls || 0) + (farmBonusRemainingAfterFirst.tickets || 0);
+			const standardRollsRemaining =
+				typeof initialRollsRemaining === "number" ? initialRollsRemaining : 0;
+			const maxPossibleRolls = 1 + farmRemainingCount + standardRollsRemaining;
 			const rollsToExecute = Math.min(requestedRolls, maxPossibleRolls);
 
 			// Se for apenas 1 roll (ou se o usuário só tinha 1 roll disponível)
@@ -1142,13 +1210,40 @@ function makeRollHandler(genderFilter) {
 
 			// ─── ROLLS MÚLTIPLOS (2 a 9) ──────────────────────────────────────────
 			const allRollResults = [firstRollData];
+			let totalFarmConsumedInBatch = consumedFarmBonus?.consumed ? 1 : 0;
+
 			for (let i = 2; i <= rollsToExecute; i++) {
 				try {
-					const nextRes = await api.post("/roll", payload);
+					const curFarm = await ShadowGardenBonusService.getWaifuBonus(userId);
+					const stillHasFarm = (curFarm.rolls || 0) > 0 || (curFarm.tickets || 0) > 0;
+					const stepBonuses = rollBonuses ? { ...rollBonuses } : {};
+
+					if (stillHasFarm) {
+						stepBonuses.isFreeRoll = true;
+						if (curFarm.tickets > 0) {
+							const curMults = stepBonuses.rarityMultipliers
+								? { ...stepBonuses.rarityMultipliers }
+								: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
+							curMults.RARE = Math.max(curMults.RARE || 1.0, 1.4);
+							curMults.EPIC = Math.max(curMults.EPIC || 1.0, 1.7);
+							curMults.LEGENDARY = Math.max(curMults.LEGENDARY || 1.0, 2.0);
+							stepBonuses.rarityMultipliers = curMults;
+						}
+					} else {
+						delete stepBonuses.isFreeRoll;
+					}
+
+					const stepPayload = {
+						...payload,
+						...(Object.keys(stepBonuses).length > 0 ? { bonuses: stepBonuses } : {})
+					};
+
+					const nextRes = await api.post("/roll", stepPayload);
 					if (nextRes.data?.success && nextRes.data?.data) {
 						allRollResults.push(nextRes.data.data);
-						if (hasFarmBonus) {
-							await ShadowGardenBonusService.consumeWaifuBonus(userId);
+						if (stillHasFarm) {
+							const cRes = await ShadowGardenBonusService.consumeWaifuBonus(userId);
+							if (cRes?.consumed) totalFarmConsumedInBatch++;
 						}
 					} else {
 						break;
@@ -1274,6 +1369,10 @@ function makeRollHandler(genderFilter) {
 
 			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos\n\n`;
 			text += `🎟️ Rolls restantes: ${lastRemaining}/${lastMax}`;
+			if (totalFarmConsumedInBatch > 0) {
+				const finalFarm = await ShadowGardenBonusService.getWaifuBonus(userId);
+				text += `\n🌱 *Bônus da Fazenda Usado:* ${totalFarmConsumedInBatch} roll(s) gratuitos (Restantes: ${finalFarm.rolls} rolls, ${finalFarm.tickets} tickets)`;
+			}
 
 			const eventBanner = GameEventService.getEventBanner("waifu");
 			if (eventBanner) {
@@ -1300,6 +1399,10 @@ function makeRollHandler(genderFilter) {
 			}
 
 			if (gridBase64) {
+				const curPending = pendingClaims.get(groupId);
+				if (curPending && curPending.isMultiRoll) {
+					curPending.gridBase64 = gridBase64;
+				}
 				return new ReturnMessage({
 					chatId,
 					content: {
@@ -1313,7 +1416,8 @@ function makeRollHandler(genderFilter) {
 						waifuRolls: multiRollSlots,
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
-						waifuExpiresAt: now + CLAIM_WINDOW_MS
+						waifuExpiresAt: now + CLAIM_WINDOW_MS,
+						waifuGridBase64: gridBase64
 					}
 				});
 			}
@@ -1556,14 +1660,8 @@ async function casarWaifu(bot, message, args) {
 		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
-		// Notifica canal de avisos em caso de personagem Épico ou Lendário
-		if (
-			character &&
-			(character.rarity === "EPIC" ||
-				character.rarity === "LEGENDARY" ||
-				character.baseRarity === "EPIC" ||
-				character.baseRarity === "LEGENDARY")
-		) {
+		// Notifica canal de avisos apenas em caso de personagem Lendário
+		if (character && (character.rarity === "LEGENDARY" || character.baseRarity === "LEGENDARY")) {
 			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
 				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
 			});
@@ -1684,13 +1782,7 @@ async function processWaifuReaction(bot, message, args, group) {
 
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
-		if (
-			character &&
-			(character.rarity === "EPIC" ||
-				character.rarity === "LEGENDARY" ||
-				character.baseRarity === "EPIC" ||
-				character.baseRarity === "LEGENDARY")
-		) {
+		if (character && (character.rarity === "LEGENDARY" || character.baseRarity === "LEGENDARY")) {
 			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
 				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
 			});
@@ -2535,6 +2627,259 @@ function extractCharacterFromRollText(text) {
 }
 
 /**
+ * Extrai slots de um post de multi-roll a partir do texto/legenda
+ * @param {string} text
+ * @returns {Array<{ slot: number, characterId?: string, characterName: string, series?: string, rarity?: string }>}
+ */
+function extractMultiRollSlotsFromText(text) {
+	if (!text || typeof text !== "string") return [];
+
+	const isMulti =
+		/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
+		(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1 ||
+		(text.match(/[1-9](?:️⃣|\uFE0F?\u20E3)/g) || []).length > 1;
+
+	if (!isMulti) return [];
+
+	const lines = text.split("\n");
+	const slots = [];
+	let currentSlot = null;
+
+	for (let i = 0; i < lines.length; i++) {
+		const rawLine = lines[i].trim();
+		if (!rawLine) continue;
+
+		// Verifica se a linha indica um slot numerado: ex: 1️⃣ ⚪ [Comum] Nome — Serie
+		const slotMatch = rawLine.match(
+			/^([1-9])(?:️⃣|\uFE0F?\u20E3)\s*(?:[^\s[*]*\s*)?(?:\[([^\]]+)\]\s*)?\*?([^*\n—–-]+?)\*?\s*(?:[—–-]\s*([^\n(]+))?(?:\s*\((.*)\))?$/
+		);
+
+		if (slotMatch) {
+			const slotNum = parseInt(slotMatch[1], 10);
+			const labelRarity = slotMatch[2]?.trim() || "COMMON";
+			const name = slotMatch[3]?.trim();
+			let series = slotMatch[4]?.trim() || "";
+			// Limpa markdown formatting
+			series = series.replace(/^[*_~`]+|[*_~`]+$/g, "").trim();
+
+			currentSlot = {
+				slot: slotNum,
+				characterName: name,
+				series,
+				rarity: labelRarity,
+				characterId: null
+			};
+			slots.push(currentSlot);
+			continue;
+		}
+
+		// Se for comando de casar: > !mu-casar <id>
+		const casarMatch = rawLine.match(/^>?\s*!mu-casar\s+([a-zA-Z0-9_-]+)/i);
+		if (casarMatch && currentSlot) {
+			currentSlot.characterId = casarMatch[1].trim();
+		}
+	}
+
+	return slots;
+}
+
+/**
+ * Processa a denúncia de um sorteio com múltiplos rolls (multi-roll)
+ * Envia imagem do grid e lista de comandos !sa-remudae na mesma mensagem para o grupo de logs
+ */
+async function processMultiRollReport({
+	bot,
+	chatId,
+	groupId,
+	denunciante,
+	denuncianteId,
+	grupoOrigem,
+	targetMsgId,
+	targetMediaSource,
+	multiRollData
+}) {
+	const rawSlots = multiRollData.slots || [];
+	if (!rawSlots || rawSlots.length === 0) return null;
+
+	// 1. Resolve os dados de cada slot (garante id, nome, serie, raridade e imageUrl)
+	const resolvedSlots = await Promise.all(
+		rawSlots.map(async (slotItem, idx) => {
+			const s = { ...slotItem };
+			s.slot = s.slot || idx + 1;
+
+			// Se não tiver ID mas tiver nome, pesquisa na API
+			if (!s.characterId && s.characterName) {
+				try {
+					const searchRes = await api
+						.get("/characters", { params: { search: s.characterName, limit: 1 } })
+						.catch(() => null);
+					const list = searchRes?.data?.data?.data || [];
+					if (list.length > 0) {
+						s.characterId = list[0].id;
+						if (!s.series) s.series = list[0].series;
+						if (!s.imageUrl) s.imageUrl = list[0].imageUrl;
+						if (!s.rarity) s.rarity = list[0].baseRarity || list[0].rarity;
+					}
+				} catch (err) {
+					logger.warn(`Erro ao buscar personagem por nome no multi-roll: ${err.message}`);
+				}
+			}
+
+			// Se tiver ID mas faltar detalhes (ex: imageUrl ou série), busca na API
+			if (s.characterId && (!s.characterName || !s.imageUrl || !s.series)) {
+				try {
+					const charRes = await api
+						.get(`/characters/${encodeURIComponent(s.characterId)}`)
+						.catch(() => null);
+					if (charRes?.data?.success && charRes?.data?.data) {
+						const c = charRes.data.data;
+						s.characterName = s.characterName || c.name;
+						s.series = s.series || c.series;
+						s.rarity = s.rarity || c.baseRarity || c.rarity;
+						s.imageUrl = s.imageUrl || c.imageUrl;
+					}
+				} catch (err) {
+					logger.warn(`Erro ao buscar detalhes de ${s.characterId}: ${err.message}`);
+				}
+			}
+
+			return s;
+		})
+	);
+
+	// 2. Obtenção da imagem do Grid com todas as waifus
+	let gridBase64 = multiRollData.gridBase64 || null;
+
+	// 2.1 Se não tiver no cache, tenta baixar a mídia da própria mensagem
+	if (!gridBase64 && targetMediaSource) {
+		const downloadFn =
+			typeof targetMediaSource.downloadMedia === "function"
+				? targetMediaSource.downloadMedia.bind(targetMediaSource)
+				: typeof targetMediaSource.origin?.downloadMedia === "function"
+					? targetMediaSource.origin.downloadMedia.bind(targetMediaSource.origin)
+					: null;
+
+		if (downloadFn) {
+			try {
+				const media = await downloadFn();
+				if (media?.data) {
+					gridBase64 = media.data;
+				}
+			} catch (dlErr) {
+				logger.warn(`Erro ao baixar imagem da mensagem no multi-roll report: ${dlErr.message}`);
+			}
+		}
+	}
+
+	// 2.2 Se ainda não tiver o grid, reconstrói usando buildRollGridImage a partir das URLs individuais
+	if (!gridBase64) {
+		try {
+			const downloadedBuffers = await Promise.all(
+				resolvedSlots.map(async (s) => {
+					const buf = s.imageUrl ? await downloadImageBuffer(s.imageUrl) : null;
+					return { slot: s.slot, character: s, imageBuffer: buf };
+				})
+			);
+			const validBuffers = downloadedBuffers.filter((b) => Boolean(b.imageBuffer));
+			if (validBuffers.length > 0) {
+				const gridBuf = await buildRollGridImage(downloadedBuffers);
+				if (gridBuf) {
+					gridBase64 = gridBuf.toString("base64");
+				}
+			}
+		} catch (rebuildErr) {
+			logger.error(`Erro ao reconstruir grid para denúncia de multi-roll: ${rebuildErr.message}`);
+		}
+	}
+
+	// 3. Montagem da Legenda da Denúncia
+	let logCaption = `🚨 *DENÚNCIA DE ROLLS MÚLTIPLOS WAIFULETES* 🚨\n\n`;
+	logCaption += `👤 *Denunciante:* ${denunciante} (${denuncianteId})\n`;
+	logCaption += `👥 *Origem:* ${grupoOrigem}\n`;
+	logCaption += `🎲 *Total de Personagens:* ${resolvedSlots.length}\n\n`;
+
+	resolvedSlots.forEach((s) => {
+		const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+		const normRarity = String(s.rarity || "COMMON").toUpperCase();
+		const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+		const labelRarity = RARITY_LABEL[normRarity] || s.rarity || "Comum";
+		const charName = s.characterName || s.characterId || `Personagem #${s.slot}`;
+		const series = s.series ? ` — ${s.series}` : "";
+		const charId = s.characterId || "desconhecido";
+
+		logCaption += `${emojiNum} ${emojiRarity} [${labelRarity}] *${charName}*${series}\n`;
+		logCaption += `!sa-remudae ${charId}\n\n`;
+	});
+
+	logCaption += `📋 *Comandos de remoção:*\n`;
+	resolvedSlots.forEach((s) => {
+		if (s.characterId) {
+			logCaption += `!sa-remudae ${s.characterId}\n`;
+		}
+	});
+
+	// 4. Configura destino no grupo de moderação / logs
+	let grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
+	if (grupoLogs && !grupoLogs.includes("@") && /^\d+$/.test(grupoLogs)) {
+		grupoLogs = `${grupoLogs}@g.us`;
+	}
+	if (grupoLogs && !grupoLogs.endsWith("@g.us") && process.env.GRUPO_LOGS) {
+		grupoLogs = process.env.GRUPO_LOGS;
+	}
+
+	const returnMessages = [];
+
+	if (grupoLogs) {
+		if (gridBase64) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: {
+						mimetype: "image/jpeg",
+						data: gridBase64,
+						filename: "denuncia_multiroll.jpg",
+						isMessageMedia: true
+					},
+					options: {
+						caption: logCaption.trim()
+					}
+				})
+			);
+		} else {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: grupoLogs,
+					content: logCaption.trim()
+				})
+			);
+		}
+	}
+
+	// 5. Registra confirmação de denúncia no SQLite para cada personagem
+	if (targetMsgId) {
+		resolvedSlots.forEach((s) => {
+			if (s.characterId) {
+				recordWaifuReportConfirmation(targetMsgId, s.characterId, chatId, bot?.id, logCaption);
+			}
+		});
+	}
+
+	// 6. Resposta amigável para o chat de origem
+	returnMessages.push(
+		new ReturnMessage({
+			chatId,
+			content: `⛔ *Denúncia Registrada!*\n\nOs *${resolvedSlots.length}* personagens deste sorteio foram encaminhados para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`,
+			options: {
+				waifuReportCharacterId: resolvedSlots[0]?.characterId || "multi",
+				waifuReportCharacterIds: resolvedSlots.map((s) => s.characterId).filter(Boolean)
+			}
+		})
+	);
+
+	return returnMessages;
+}
+
+/**
  * Denuncia um personagem problemático do Waifuletes para moderação
  * Envia imagem + detalhes + comando !sa-remudae para o grupo de logs
  *
@@ -2558,35 +2903,20 @@ async function denunciarWaifu(bot, message, args, group) {
 		denuncianteId;
 	const grupoOrigem = group?.name || group?.subject || (message.group ? message.group : "Privado");
 
+	let targetMsgId = null;
+	let targetText = "";
+	let targetMediaSource = null;
 	let candidateIdOrQuery = null;
 
-	// 1. Se disparado por reação (⛔) na mensagem de roll
-	// IMPORTANTE: ReactionsHandler passa as palavras da mensagem no array args.
-	// Por isso, quando originReaction estiver presente, ignoramos args e inspecionamos a mensagem diretamente!
 	if (message.originReaction) {
-		const reactionMsgId =
+		targetMsgId =
 			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
-		candidateIdOrQuery = getCharacterIdFromMessageId(reactionMsgId);
-
-		if (!candidateIdOrQuery) {
-			const text =
-				message.caption ||
-				(typeof message.content === "string" ? message.content : "") ||
-				message.body ||
-				"";
-			candidateIdOrQuery = extractCharacterFromRollText(text);
-		}
-
-		if (!candidateIdOrQuery) {
-			const pending = pendingClaims.get(groupId);
-			if (pending && Date.now() <= pending.expiresAt) {
-				candidateIdOrQuery = pending.characterId;
-			}
-		}
-
-		if (!candidateIdOrQuery) {
-			return null;
-		}
+		targetText =
+			message.caption ||
+			(typeof message.content === "string" ? message.content : "") ||
+			message.body ||
+			"";
+		targetMediaSource = message;
 	} else {
 		// 2. Chamada via comando normal (!mu-denunciar)
 		// 2.1 Se informou argumentos explicitamente (!mu-denunciar <id-ou-nome>)
@@ -2595,28 +2925,91 @@ async function denunciarWaifu(bot, message, args, group) {
 		}
 
 		// 2.2 Se respondeu/citou uma mensagem de roll
-		if (!candidateIdOrQuery) {
-			let quotedMsg = null;
-			if (typeof message.origin?.getQuotedMessage === "function") {
-				quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-			}
-			if (quotedMsg) {
-				const quotedId =
-					quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id || message.quotedMessageId;
-				candidateIdOrQuery = getCharacterIdFromMessageId(quotedId);
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		}
+		if (quotedMsg) {
+			targetMsgId =
+				quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id || message.quotedMessageId;
+			targetText =
+				quotedMsg.caption ||
+				(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+				quotedMsg.body ||
+				"";
+			targetMediaSource = quotedMsg;
+		}
+	}
 
-				if (!candidateIdOrQuery) {
-					const text =
-						quotedMsg.caption ||
-						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
-						quotedMsg.body ||
-						"";
-					candidateIdOrQuery = extractCharacterFromRollText(text);
-				}
+	// ─── VERIFICAÇÃO DE MULTI-ROLL ─────────────────────────────────────────
+	let multiRollData = null;
+
+	// 1. Tenta identificar se o targetMsgId é um roll múltiplo (cache ou histórico)
+	if (targetMsgId) {
+		multiRollData = getMultiRollByMessageId(targetMsgId);
+	}
+
+	// 2. Se não achou por ID e não foi passado argumento específico de ID/nome,
+	// inspeciona o texto da mensagem reagida/citada
+	if (!multiRollData && (!candidateIdOrQuery || message.originReaction)) {
+		const parsedSlots = extractMultiRollSlotsFromText(targetText);
+		if (parsedSlots.length > 1) {
+			multiRollData = {
+				isMultiRoll: true,
+				slots: parsedSlots
+			};
+		}
+	}
+
+	// 3. Fallback: se não tiver mensagem citada nem args, verifica o roll pendente no grupo
+	if (!multiRollData && !candidateIdOrQuery && !targetMsgId) {
+		const pending = pendingClaims.get(groupId);
+		if (pending?.isMultiRoll && pending?.slots?.length > 1 && Date.now() <= pending.expiresAt) {
+			multiRollData = pending;
+		}
+	}
+
+	// Se for identificado como post de múltiplos rolls, processa pelo fluxo de multi-roll
+	if (multiRollData && Array.isArray(multiRollData.slots) && multiRollData.slots.length > 1) {
+		return await processMultiRollReport({
+			bot,
+			chatId,
+			groupId,
+			denunciante,
+			denuncianteId,
+			grupoOrigem,
+			targetMsgId,
+			targetMediaSource,
+			multiRollData
+		});
+	}
+
+	// ─── FLUXO DE ROLL ÚNICO (EXISTENTE) ──────────────────────────────────
+	// 1. Se disparado por reação (⛔) na mensagem de roll único
+	if (message.originReaction && !candidateIdOrQuery) {
+		if (targetMsgId) {
+			candidateIdOrQuery = getCharacterIdFromMessageId(targetMsgId);
+		}
+		if (!candidateIdOrQuery && targetText) {
+			candidateIdOrQuery = extractCharacterFromRollText(targetText);
+		}
+		if (!candidateIdOrQuery) {
+			const pending = pendingClaims.get(groupId);
+			if (pending && Date.now() <= pending.expiresAt) {
+				candidateIdOrQuery = pending.characterId;
 			}
 		}
-
-		// 2.3 Fallback: personagem mais recentemente sorteado no grupo (se ainda na janela)
+		if (!candidateIdOrQuery) {
+			return null;
+		}
+	} else if (!candidateIdOrQuery) {
+		// 2. Chamada via comando normal sem args informados
+		if (targetMsgId) {
+			candidateIdOrQuery = getCharacterIdFromMessageId(targetMsgId);
+		}
+		if (!candidateIdOrQuery && targetText) {
+			candidateIdOrQuery = extractCharacterFromRollText(targetText);
+		}
 		if (!candidateIdOrQuery) {
 			const pending = pendingClaims.get(groupId);
 			if (pending && Date.now() <= pending.expiresAt) {
@@ -2769,6 +3162,15 @@ async function verCooldowns(bot, message) {
 			}
 		}
 
+		const farmBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
+		if ((farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0) {
+			const parts = [];
+			if (farmBonus.rolls > 0) parts.push(`*+${farmBonus.rolls} rolls* (Coração Púrpuro)`);
+			if (farmBonus.tickets > 0)
+				parts.push(`*+${farmBonus.tickets} tickets raros* (Rosa de Sangue)`);
+			text += `🌱 Bônus da Fazenda: 🎁 ${parts.join(" | ")} acumulados e prontos para uso!\n`;
+		}
+
 		text += claim.active
 			? `💍 Casamento (Claim): ❌ Aguarde *${formatRemainingSeconds(claim.remainingSeconds)}*\n`
 			: `💍 Casamento (Claim): ✅ *Disponível agora!*\n`;
@@ -2814,6 +3216,19 @@ async function verChances(bot, message) {
 	const maxWl = stats?.wishlistMaxItems || WISHLIST_MAX_ITEMS;
 
 	let text = donorHeader;
+
+	const farmBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
+	if ((farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0) {
+		text += `🌱 *Colheita do Jardim das Sombras:* 🌱\n`;
+		if (farmBonus.rolls > 0) {
+			text += `> • 🎲 *Rolls Extras:* +${farmBonus.rolls} rolls gratuitos (Coração Púrpuro)\n`;
+		}
+		if (farmBonus.tickets > 0) {
+			text += `> • 🌹 *Tickets Raros:* +${farmBonus.tickets} tickets com bônus de raridade (Rosa de Sangue)\n`;
+		}
+		text += `\n`;
+	}
+
 	text += `🎯 *PROBABILIDADES E CHANCES DE DROP*\n`;
 	text += `_Base de dados atualizada: *${totalChars}* personagens cadastrados_\n\n`;
 
@@ -3984,7 +4399,7 @@ async function notifySpecialMarriage(
 	try {
 		if (!character) return false;
 		const rarity = character.rarity || character.baseRarity || "COMMON";
-		if (rarity !== "EPIC" && rarity !== "LEGENDARY") return false;
+		if (rarity !== "LEGENDARY") return false;
 
 		const targetChats = [];
 		if (customChatId) {
@@ -4146,8 +4561,12 @@ module.exports = {
 	processWaifuReaction,
 	recordRollMessage,
 	getRollByMessageId,
+	getMultiRollByMessageId,
 	getCharacterIdFromMessageId,
 	extractCharacterFromRollText,
+	extractMultiRollSlotsFromText,
+	processMultiRollReport,
+	multiRollHistoryByMsgId,
 	notifySpecialMarriage,
 	downloadImageAsBase64,
 	handleApiError,

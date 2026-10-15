@@ -1551,7 +1551,9 @@ class WhatsAppBotGo {
 								options.waifuExpiresAt,
 								options.waifuRollerUserId,
 								options.waifuExclusiveUntil,
-								options.waifuRollerUserName
+								options.waifuRollerUserName,
+								null,
+								options.waifuGridBase64
 							);
 						}
 					} catch (regErr) {
@@ -1581,22 +1583,30 @@ class WhatsAppBotGo {
 					}
 				}
 
-				if (options.waifuReportCharacterId && result?.id) {
+				if ((options.waifuReportCharacterId || options.waifuReportCharacterIds) && result?.id) {
 					const sentMsgId = result.id._serialized || result.id.id || result.id;
 					try {
 						const WaifuCommands = require("./functions/WaifuCommands");
 						if (typeof WaifuCommands.recordWaifuReportConfirmation === "function") {
-							WaifuCommands.recordWaifuReportConfirmation(
-								sentMsgId,
-								options.waifuReportCharacterId,
-								message.chatId,
-								this.id,
-								typeof contentToSend === "string" ? contentToSend : message.content
-							);
+							const reportCharIds =
+								options.waifuReportCharacterIds && Array.isArray(options.waifuReportCharacterIds)
+									? options.waifuReportCharacterIds
+									: [options.waifuReportCharacterId];
+							reportCharIds.forEach((charId) => {
+								if (charId) {
+									WaifuCommands.recordWaifuReportConfirmation(
+										sentMsgId,
+										charId,
+										message.chatId,
+										this.id,
+										typeof contentToSend === "string" ? contentToSend : message.content
+									);
+								}
+							});
 						}
 					} catch (regErr) {
 						this.logger.warn(
-							`[sendReturnMessages] Erro ao registrar confirmação de report waifu #${options.waifuReportCharacterId}: ${regErr.message}`
+							`[sendReturnMessages] Erro ao registrar confirmação de report waifu: ${regErr.message}`
 						);
 					}
 				}

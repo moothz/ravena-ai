@@ -298,7 +298,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 					{
 						type: "weight_boost",
 						value: bonusPercent,
-						duration: 1,
+						remainingUses: 1,
 						originalName: "Alga do Estige"
 					},
 					false
