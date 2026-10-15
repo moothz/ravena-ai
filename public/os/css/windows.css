@@ -1316,8 +1316,151 @@
 }
 
 /* ========================================================
-   12. WAIFULETES (Character Catalog & Wishlist Window)
+   12. WAIFULETES (Novo Site Redirect Notice)
    ======================================================== */
+.waifu-redirect-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 20px;
+    height: 100%;
+    box-sizing: border-box;
+    gap: 18px;
+    background: radial-gradient(circle at 50% 25%, rgba(168, 85, 247, 0.15) 0%, rgba(17, 13, 41, 0.95) 75%, #0d0922 100%);
+    border-radius: 6px;
+    overflow-y: auto;
+}
+
+.waifu-redirect-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.waifu-redirect-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ffffff;
+    font-family: var(--font-display);
+    text-shadow: 0 0 14px rgba(255, 46, 147, 0.6);
+    margin: 0;
+}
+
+.waifu-redirect-card {
+    background: rgba(21, 20, 40, 0.85);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.waifu-redirect-text {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--light-gray);
+    margin: 0;
+}
+
+.waifu-command-tag {
+    background: #090714;
+    border: 1px solid rgba(0, 240, 255, 0.45);
+    color: var(--cyan-neon);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.waifu-command-tag:hover {
+    background: rgba(0, 240, 255, 0.15);
+    border-color: var(--cyan-neon);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.45);
+    transform: translateY(-1px);
+}
+
+.waifu-command-tag.copied {
+    background: rgba(40, 167, 69, 0.25);
+    border-color: var(--status-green);
+    color: #4ade80;
+}
+
+.waifu-redirect-cta-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.waifu-redirect-cta-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--light-gray);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.waifu-redirect-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.waifu-redirect-icon-link {
+    display: inline-block;
+    transition: transform 0.25s ease, filter 0.25s ease;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.waifu-redirect-icon-link:hover {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 14px rgba(255, 46, 147, 0.75));
+}
+
+.waifu-redirect-icon {
+    width: 60px;
+    height: 60px;
+    display: block;
+}
+
+.waifu-redirect-url-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #2d0b5a, #4a127a);
+    border: 1px solid rgba(255, 46, 147, 0.6);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    transition: all 0.25s ease;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.waifu-redirect-url-link:hover {
+    background: linear-gradient(135deg, #3d0f7a, #6917a8);
+    border-color: #ff2e93;
+    color: #ff8ac7;
+    box-shadow: 0 0 15px rgba(255, 46, 147, 0.5);
+    transform: translateY(-2px);
+}
+
 .waifu-window-container {
     display: flex;
     flex-direction: column;
