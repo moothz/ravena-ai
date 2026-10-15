@@ -434,7 +434,7 @@ async function handleFazenda(bot, message, _args, group) {
 			text += `✨ *Buffs Ativos:* ${buffsFormatted}\n`;
 		}
 
-		text += `\n📖 *Comandos Rápidos:* \`!faz-colher\`, \`!faz-plantar\`, \`!faz-loja\`, \`!faz-inv\``;
+		text += `\n📖 *Comandos Rápidos:* \`!faz-colheita\`, \`!faz-plantar\`, \`!faz-loja\`, \`!faz-inv\``;
 
 		// Link público da fazenda
 		const shareUrl =
@@ -1369,7 +1369,7 @@ async function handleFazAjuda(bot, message) {
 		`${gameEmoji} *GUIA DO ${gameName.toUpperCase()}* ${gameEmoji}\n\n` +
 		`• \`!fazenda [hd]\` — Ver a sua fazenda (adicione \`hd\` para resolução máxima) e resgatar diário\n` +
 		`• \`!faz-adm\` — Obter link do painel web Farm Admin no privado\n` +
-		`• \`!faz-colher [canteiro] [hd]\` — Colher plantas maduras e limpar canteiros secos\n` +
+		`• \`!faz-colheita [canteiro] [hd]\` — Colher plantas maduras e limpar canteiros secos\n` +
 		`• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n` +
 		`• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n` +
 		`• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n` +
@@ -1407,12 +1407,23 @@ const commands = [
 		method: handleFazAdm
 	}),
 	new Command({
+		name: "faz-colheita",
+		aliases: ["faz-colheitatudo"],
+		description: "Colhe plantas maduras e limpa canteiros secos",
+		usage: "!faz-colheita [número do canteiro] [hd]",
+		category: "jogos",
+		reply: true,
+		cooldown: 3,
+		method: handleFazColher
+	}),
+	new Command({
 		name: "faz-colher",
 		aliases: ["faz-colhertudo"],
 		description: "Colhe plantas maduras e limpa canteiros secos",
 		usage: "!faz-colher [número do canteiro] [hd]",
 		category: "jogos",
 		reply: true,
+		hidden: true,
 		cooldown: 3,
 		method: handleFazColher
 	}),

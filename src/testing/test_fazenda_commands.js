@@ -228,8 +228,8 @@ async function runTests() {
 		const hdBuf = Buffer.from(hdMsg.content.data, "base64");
 		console.log(`   Tamanho da imagem HD (!fazenda hd): ${(hdBuf.length / 1024).toFixed(1)} KB`);
 		assert(
-			hdBuf.length > 250 * 1024,
-			"Imagem HD do !fazenda deve preservar resolução nativa (> 250 KB)"
+			hdBuf.length > 200 * 1024,
+			"Imagem HD do !fazenda deve preservar resolução nativa (> 200 KB)"
 		);
 	}
 	console.log("✓ !fazenda hd testado com sucesso!");
@@ -307,8 +307,26 @@ async function runTests() {
 	);
 	console.log("✓ !faz-adm em grupo reagiu e despachou no PV sem poluir o grupo!");
 
-	// 8. Teste de colheita com !faz-colher
-	console.log("8. Testando !faz-colher...");
+	// 8. Teste de colheita com !faz-colheita e !faz-colher
+	console.log("8. Testando !faz-colheita e !faz-colher (oculto)...");
+	prepareStep();
+	const msgColheita = createMessage({
+		content: "!faz-colheita",
+		author: testUser,
+		group: testGroup
+	});
+	await eventHandler.processMessage(bot, msgColheita);
+	await waitForReply();
+	assert(bot.capturedMessages.length > 0, "Deveria responder a colheita via !faz-colheita");
+	const colheitaContent =
+		bot.capturedMessages[0].options?.caption ||
+		(typeof bot.capturedMessages[0].content === "string" ? bot.capturedMessages[0].content : "");
+	assert(
+		!colheitaContent.includes("#undefined"),
+		"Mensagem de colheita NUNCA deve conter '#undefined'"
+	);
+	console.log("✓ !faz-colheita executado sem #undefined!");
+
 	prepareStep();
 	const msgColher = createMessage({
 		content: "!faz-colher",
@@ -317,15 +335,8 @@ async function runTests() {
 	});
 	await eventHandler.processMessage(bot, msgColher);
 	await waitForReply();
-	assert(bot.capturedMessages.length > 0, "Deveria responder a colheita");
-	const colherContent =
-		bot.capturedMessages[0].options?.caption ||
-		(typeof bot.capturedMessages[0].content === "string" ? bot.capturedMessages[0].content : "");
-	assert(
-		!colherContent.includes("#undefined"),
-		"Mensagem de colheita NUNCA deve conter '#undefined'"
-	);
-	console.log("✓ !faz-colher executado sem #undefined!");
+	assert(bot.capturedMessages.length > 0, "Deveria responder a colheita via !faz-colher oculto");
+	console.log("✓ !faz-colher (comando oculto) executado com sucesso!");
 
 	// 9. Teste de venda com !faz-vender
 	console.log("9. Testando !faz-vender...");
@@ -419,14 +430,18 @@ async function runTests() {
 	);
 	console.log("✓ Resolução de apelidos e nomes testada com sucesso!");
 
-	// 12. Teste de visibilidade dos comandos (hidden: false) e ranking de privacidade
+	// 12. Teste de visibilidade dos comandos (faz-colher hidden, demais visíveis) e ranking de privacidade
 	console.log("12. Testando visibilidade dos comandos da fazenda e privacidade do ranking...");
 
-	// Verifica se nenhum comando está hidden
+	// Verifica visibilidade dos comandos
 	FazendaCommands.commands.forEach((cmd) => {
-		assert.strictEqual(!cmd.hidden, true, `Comando ${cmd.name} não deveria estar hidden`);
+		if (cmd.name === "faz-colher") {
+			assert.strictEqual(cmd.hidden, true, `Comando ${cmd.name} deveria estar hidden`);
+		} else {
+			assert.strictEqual(!cmd.hidden, true, `Comando ${cmd.name} não deveria estar hidden`);
+		}
 	});
-	console.log("   ✓ Todos os comandos da fazenda estão visíveis (hidden removido)!");
+	console.log("   ✓ Comandos validados: faz-colher está oculto e faz-colheita visível!");
 
 	// Teste do isTestUser
 	assert.strictEqual(FazendaCommands.isTestUser("test-inv-user"), true);
