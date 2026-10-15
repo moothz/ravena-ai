@@ -401,7 +401,16 @@ async function handleFazenda(bot, message, _args, group) {
 			getUserDisplayName(bot, message, group)
 		]);
 
-		// 3. Tenta renderizar imagem (se falhar, envia mensagem de texto sem derrubar o comando)
+		// 3. Sincroniza colheitas pendentes do inventário caso o status traga o inventário
+		if (Array.isArray(status?.inventory) && status.inventory.length > 0) {
+			try {
+				await ShadowGardenBonusService.syncInventoryCrops(userId, status.inventory);
+			} catch (syncErr) {
+				logger.warn(`[handleFazenda] Falha ao sincronizar inventário: ${syncErr.message}`);
+			}
+		}
+
+		// 4. Tenta renderizar imagem (se falhar, envia mensagem de texto sem derrubar o comando)
 		let imageBuffer = null;
 		try {
 			imageBuffer = await jardimClient.getImageBuffer(userId, true, { userName });
@@ -604,12 +613,32 @@ async function handleFazColher(bot, message, _args, group) {
 		}
 
 		// Despacha bônus externos para outros jogos se houver
-		const drops = harvestRes.externalDrops || harvestRes.bonusDrops || [];
+		const drops = (harvested || harvestRes.externalDrops || harvestRes.bonusDrops || []).filter(
+			(d) => d && d.bonusType && d.bonusType !== "none" && d.bonusType !== "coins"
+		);
+		const allBonusMsgs = [];
 		if (drops.length > 0) {
 			const bonusMsgs = await ShadowGardenBonusService.dispatchHarvestDrops(userId, drops);
 			if (bonusMsgs.length > 0) {
-				text += `🎁 *BÔNUS ESPECIAIS CONCEDIDOS:*\n${bonusMsgs.join("\n")}\n\n`;
+				allBonusMsgs.push(...bonusMsgs);
 			}
+		}
+
+		// Sincroniza também qualquer colheita prévia não creditada no inventário (ex: colhida via web)
+		try {
+			const invRes = await jardimClient.getInventory(userId);
+			if (invRes?.items) {
+				const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(userId, invRes.items);
+				if (syncMsgs.length > 0) {
+					allBonusMsgs.push(...syncMsgs);
+				}
+			}
+		} catch (syncErr) {
+			logger.warn(`[handleFazColher] Falha ao sincronizar inventário: ${syncErr.message}`);
+		}
+
+		if (allBonusMsgs.length > 0) {
+			text += `🎁 *BÔNUS ESPECIAIS CONCEDIDOS:*\n${allBonusMsgs.join("\n")}\n\n`;
 		}
 
 		text += `💰 *Saldo Atual:* ${harvestRes.coins ?? harvestRes.currentCoins ?? 0} moedas`;
@@ -664,6 +693,27 @@ async function handleFazColher(bot, message, _args, group) {
 
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
+		// Se não havia plantas prontas para colher no chão, verifica se há colheitas não sincronizadas no inventário (ex: colhidas via web)
+		try {
+			const invRes = await jardimClient.getInventory(userId);
+			if (invRes?.items) {
+				const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(userId, invRes.items);
+				if (syncMsgs.length > 0) {
+					return replyReturnMessage(
+						chatId,
+						`🌾 *SINCRONIZAÇÃO DO JARDIM DAS SOMBRAS* 🌾\n\n` +
+							`🎁 *BÔNUS ESPECIAIS RESGATADOS DAS SUAS COLHEITAS:*\n${syncMsgs.join("\n")}\n\n` +
+							`💡 _Não havia novas plantas prontas no terreno, mas seus bônus de colheitas anteriores foram computados com sucesso!_`,
+						message
+					);
+				}
+			}
+		} catch (syncErr) {
+			logger.warn(
+				`[handleFazColher] Falha ao sincronizar inventário no fallback: ${syncErr.message}`
+			);
+		}
+
 		logger.error(`[handleFazColher] Erro na colheita: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha na colheita: ${err.message}`, message);
 	}
@@ -913,6 +963,13 @@ async function handleFazInventario(bot, message) {
 		if (items.length === 0) {
 			text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
 			return replyReturnMessage(chatId, text, message);
+		}
+
+		// Sincroniza qualquer colheita prévia no inventário (ex: colhida via web)
+		try {
+			await ShadowGardenBonusService.syncInventoryCrops(userId, items);
+		} catch (syncErr) {
+			logger.warn(`[handleFazInventario] Falha ao sincronizar inventário: ${syncErr.message}`);
 		}
 
 		const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");

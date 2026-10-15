@@ -16,7 +16,7 @@ const logger = new Logger("shadow-garden-bonus");
 const database = Database.getInstance();
 const dbName = "core";
 
-// Inicializa tabela local para persistência de rolls e tickets ganhos na fazenda
+// Inicializa tabelas locais para persistência de bônus e controle de colheitas
 try {
 	database.getSQLiteDb(
 		dbName,
@@ -25,11 +25,30 @@ try {
 			rolls INTEGER DEFAULT 0,
 			tickets INTEGER DEFAULT 0,
 			updated_at INTEGER
+		);
+		CREATE TABLE IF NOT EXISTS farm_credited_crops (
+			user_id TEXT,
+			crop_item_id TEXT,
+			credited_quantity INTEGER DEFAULT 0,
+			updated_at INTEGER,
+			PRIMARY KEY (user_id, crop_item_id)
 		);`
 	);
 } catch (err) {
-	logger.warn(`Erro ao inicializar tabela farm_bonus_inventory: ${err.message}`);
+	logger.warn(`Erro ao inicializar tabelas da fazenda no core.db: ${err.message}`);
 }
+
+// ─── MAPEAMENTO DE COLHEITAS PARA BÔNUS EXTERNOS ───────────────────────────
+const PLANT_BONUS_MAP = {
+	crop_05_mist_crawler_v2: { bonusType: "fishing_buff", name: "Rastejante de Névoa" },
+	crop_06_styx_kelp_v2: { bonusType: "fishing_weight_buff", name: "Alga do Estige" },
+	crop_07_spectral_gourd_v2: { bonusType: "fishing_inventory_boost", name: "Cabaça Espectral" },
+	crop_08_devouring_root_v2: { bonusType: "fishing_baits_5", name: "Raiz Devoradora" },
+	crop_09_obsidian_clover: { bonusType: "casino_standard_chips", name: "Trevo de Obsidiana" },
+	crop_10_golden_clover: { bonusType: "casino_gold_chips", name: "Trevo Dourado" },
+	crop_11_purple_heart: { bonusType: "waifu_rolls", name: "Coração Púrpuro" },
+	crop_12_blood_rose: { bonusType: "waifu_premium_ticket", name: "Rosa de Sangue" }
+};
 
 // ─── ITENS CANÔNICOS DE PESCA PARA COLHEITA ─────────────────────────────────
 const FISHING_BUFF_POOL = [
@@ -221,9 +240,24 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 	for (const drop of harvestedDrops) {
 		const count = drop.count || 1;
 
+		let cropKey = drop.plantId
+			? drop.plantId.startsWith("crop_")
+				? drop.plantId
+				: `crop_${drop.plantId}`
+			: null;
+		if (!cropKey && drop.name) {
+			for (const [k, v] of Object.entries(PLANT_BONUS_MAP)) {
+				if (v.name === drop.name || v.bonusType === drop.bonusType) {
+					cropKey = k;
+					break;
+				}
+			}
+		}
+
 		switch (drop.bonusType) {
 			case "coins":
-				// Moedas já são somadas e persistidas pela própria API da Fazenda
+			case "none":
+				// Moedas já são somadas e persistidas pela própria API da Fazenda, e none não tem bônus externo
 				break;
 
 			case "fishing_buff": {
@@ -331,9 +365,84 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				logger.warn(`[dispatchHarvestDrops] bonusType desconhecido: ${drop.bonusType}`);
 				break;
 		}
+
+		if (cropKey && PLANT_BONUS_MAP[cropKey]) {
+			try {
+				database.mappers.run(
+					dbName,
+					`INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, updated_at)
+					 VALUES (?, ?, ?, ?)
+					 ON CONFLICT(user_id, crop_item_id) DO UPDATE SET
+					   credited_quantity = credited_quantity + excluded.credited_quantity,
+					   updated_at = excluded.updated_at`,
+					[cId, cropKey, count, Date.now()]
+				);
+			} catch (err) {
+				logger.warn(`Erro ao atualizar farm_credited_crops para ${cId}: ${err.message}`);
+			}
+		}
 	}
 
 	return dispatchedMessages;
+}
+
+/**
+ * Sincroniza e credita bônus de colheitas que estão no inventário (ex: colhidas pelo Farm Admin Web)
+ * @param {string} userId
+ * @param {Array<Object>} inventoryItems
+ * @returns {Promise<Array<string>>} Lista de mensagens com bônus creditados
+ */
+async function syncInventoryCrops(userId, inventoryItems = []) {
+	const cId = cleanUserId(userId);
+	if (!cId || !Array.isArray(inventoryItems) || inventoryItems.length === 0) return [];
+
+	const dropsToDispatch = [];
+
+	for (const item of inventoryItems) {
+		if (!item || !item.itemId || !item.itemId.startsWith("crop_")) continue;
+		const plantInfo = PLANT_BONUS_MAP[item.itemId];
+		if (!plantInfo) continue;
+
+		const currentQty = Math.max(0, Number(item.quantity) || 0);
+
+		let creditedQty = 0;
+		try {
+			const row = database.mappers.get(
+				dbName,
+				"SELECT credited_quantity FROM farm_credited_crops WHERE user_id = ? AND crop_item_id = ?",
+				[cId, item.itemId]
+			);
+			creditedQty = Math.max(0, Number(row?.credited_quantity) || 0);
+		} catch (err) {
+			logger.warn(`Erro ao consultar farm_credited_crops para ${cId}: ${err.message}`);
+		}
+
+		if (currentQty < creditedQty) {
+			// Usuário vendeu colheitas, ajusta quantidade creditada para a atual
+			try {
+				database.mappers.run(
+					dbName,
+					"UPDATE farm_credited_crops SET credited_quantity = ?, updated_at = ? WHERE user_id = ? AND crop_item_id = ?",
+					[currentQty, Date.now(), cId, item.itemId]
+				);
+			} catch (err) {
+				logger.warn(`Erro ao atualizar farm_credited_crops para ${cId}: ${err.message}`);
+			}
+		} else if (currentQty > creditedQty) {
+			const uncredited = currentQty - creditedQty;
+			dropsToDispatch.push({
+				plantId: item.itemId,
+				name: plantInfo.name,
+				bonusType: plantInfo.bonusType,
+				count: uncredited
+			});
+		}
+	}
+
+	if (dropsToDispatch.length > 0) {
+		return await dispatchHarvestDrops(cId, dropsToDispatch);
+	}
+	return [];
 }
 
 /**
@@ -427,10 +536,12 @@ module.exports = {
 	VIP_MEDIUM_DECORS,
 	VIP_HIGH_DECORS,
 	VIP_DECOR_NAMES,
+	PLANT_BONUS_MAP,
 	addWaifuBonus,
 	getWaifuBonus,
 	consumeWaifuBonus,
 	dispatchHarvestDrops,
+	syncInventoryCrops,
 	getEligibleVipDecorations,
 	calculateFarmDonationBonuses
 };

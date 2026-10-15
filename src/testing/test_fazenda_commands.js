@@ -378,6 +378,35 @@ async function runTests() {
 	assert.strictEqual(consRoll.type, "roll", "Deveria consumir o roll");
 	console.log("✓ Bônus cruzado de Waifus testado com sucesso!");
 
+	// 10.1. Teste de sincronização de colheitas do inventário (syncInventoryCrops)
+	console.log("10.1. Testando sincronização automática de colheitas do inventário...");
+	const syncUser = "5511999997777@s.whatsapp.net";
+	const mockInventory = [
+		{ itemId: "crop_11_purple_heart", quantity: 3 }, // 3 x 2 = 6 rolls
+		{ itemId: "crop_12_blood_rose", quantity: 1 } // 1 x 1 = 1 ticket
+	];
+
+	const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(syncUser, mockInventory);
+	assert.strictEqual(syncMsgs.length, 2, "Deveria despachar 2 mensagens de bônus");
+
+	const bonusAfterSync = await FazendaCommands.getFarmWaifuRollBonus(syncUser);
+	assert.strictEqual(
+		bonusAfterSync.rolls >= 6,
+		true,
+		"Deveria ter pelo menos 6 rolls sincronizados"
+	);
+	assert.strictEqual(
+		bonusAfterSync.tickets >= 1,
+		true,
+		"Deveria ter pelo menos 1 ticket sincronizado"
+	);
+
+	// Segunda chamada não deve duplicar bônus
+	const syncMsgs2 = await ShadowGardenBonusService.syncInventoryCrops(syncUser, mockInventory);
+	assert.strictEqual(syncMsgs2.length, 0, "Segunda sincronização não deve duplicar bônus");
+
+	console.log("✓ Sincronização automática de inventário testada com sucesso!");
+
 	// 11. Teste de resolução de apelido e fallback de nome para imagem da fazenda
 	console.log("11. Testando resolução de apelido do usuário (group.nicks)...");
 	const mockGroupWithNick = {
