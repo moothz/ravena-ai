@@ -169,6 +169,7 @@ ${mediaContext}
    - If a custom command of the group directly answers the question (e.g., "qual o pix?", "qual o discord?", "regras do grupo", "link do insta"), classify as 'command' and identify that command.
    - MUST be a functional request or direct match to an available command.
    - Be ((STRICT)): don't trigger game or action tools (like !pescar) for general questions about those topics.
+   - If no specific command matches or if you aren't sure, ALWAYS classify as "general". NEVER classify as "command" with command "none" or empty.
 
 3. **"bot"**: 
    - Questions about the bot's identity, status, or how to use it (e.g., "who made you?", "what can you do?", "how to create this command", "how to configure feature", "help").
@@ -195,12 +196,38 @@ Return JSON: {"classification": "...", "command": "...", "args": "..."}
 		});
 
 		try {
-			if (response.classification == "command") {
+			const parsed = typeof response === "string" ? JSON.parse(response) : response;
+			const rawCmd = parsed?.command
+				? parsed.command
+						.replace(/^[!/.]/, "")
+						.replace(/['"]/g, "")
+						.trim()
+						.toLowerCase()
+				: "";
+			const isNoneCmd =
+				!rawCmd ||
+				rawCmd === "none" ||
+				rawCmd === "null" ||
+				rawCmd === "undefined" ||
+				rawCmd === "nenhum" ||
+				rawCmd === "nao" ||
+				rawCmd === "não" ||
+				rawCmd === "n/a";
+
+			if (parsed?.classification === "command" && isNoneCmd) {
+				parsed.classification = "general";
+				delete parsed.command;
+			}
+			if (parsed?.classification === "none") {
+				parsed.classification = "general";
+			}
+
+			if (parsed?.classification === "command") {
 				logger.debug(
-					`[classifyRequest][command] "${question.substring(0, 100)}" -> "!${response.command} ${response.args}"`
+					`[classifyRequest][command] "${question.substring(0, 100)}" -> "!${parsed.command} ${parsed.args}"`
 				);
 			}
-			return JSON.parse(response);
+			return parsed;
 		} catch (e) {
 			logger.warn("[classifyRequest] Failed to parse JSON, defaulting to general", response);
 			return { classification: "general" };
@@ -215,9 +242,26 @@ Return JSON: {"classification": "...", "command": "...", "args": "..."}
  * Handles the "command" classification
  */
 async function handleCommandInvocation(classification, bot, message, group) {
-	const cmdName = classification.command?.replace(/^[!/.]/, "").trim();
+	const cmdName = classification.command
+		?.replace(/^[!/.]/, "")
+		.replace(/['"]/g, "")
+		.trim();
 	const argsStr = classification.args || "";
 	const args = argsStr.split(" ").filter((a) => a.length > 0);
+
+	const lowerCmdName = cmdName?.toLowerCase();
+	if (
+		!lowerCmdName ||
+		lowerCmdName === "none" ||
+		lowerCmdName === "null" ||
+		lowerCmdName === "undefined" ||
+		lowerCmdName === "nenhum" ||
+		lowerCmdName === "nao" ||
+		lowerCmdName === "não" ||
+		lowerCmdName === "n/a"
+	) {
+		return null;
+	}
 
 	// Try to find the fixed command first
 	const fixedCmd = bot.eventHandler?.commandHandler?.fixedCommands?.getCommand(cmdName);
@@ -563,18 +607,50 @@ async function aiCommand(bot, message, args, group) {
 
 	// 5. Handle Classification Results
 	const aiAliases = ["ai", "ia", "gpt", "gemini"];
+	const rawCmd = classificationResult.command
+		? classificationResult.command
+				.replace(/^[!/.]/, "")
+				.replace(/['"]/g, "")
+				.trim()
+				.toLowerCase()
+		: "";
+	const isNoneCommand =
+		!rawCmd ||
+		rawCmd === "none" ||
+		rawCmd === "null" ||
+		rawCmd === "undefined" ||
+		rawCmd === "nenhum" ||
+		rawCmd === "nao" ||
+		rawCmd === "não" ||
+		rawCmd === "n/a";
+
 	if (
 		classificationResult.classification === "command" &&
-		aiAliases.includes(classificationResult.command?.toLowerCase().replace(/!/g, ""))
+		(isNoneCommand || aiAliases.includes(rawCmd))
 	) {
-		logger.debug("[aiCommand] Self-invocation detected, reclassifying to general");
+		logger.debug(
+			`[aiCommand] No executable command or self-invocation detected (${rawCmd || "empty"}), reclassifying to general`
+		);
+		classificationResult.classification = "general";
+		delete classificationResult.command;
+	}
+
+	if (classificationResult.classification === "none") {
 		classificationResult.classification = "general";
 	}
 
 	// CASE A: Command Invocation (e.g. "make sticker", "weather in paris")
 	if (classificationResult.classification === "command" && classificationResult.command) {
 		// Even if it has media, if it classified as a command (like !sticker), we hand it off to the command handler.
-		return handleCommandInvocation(classificationResult, bot, message, group);
+		const cmdResult = await handleCommandInvocation(classificationResult, bot, message, group);
+		if (cmdResult) {
+			return cmdResult;
+		}
+		// Se não encontrou ou retornou null (ex: comando inválido ou nenhum), prossegue para o fluxo geral
+		logger.debug(
+			"[aiCommand] Command invocation produced no result, falling through to general response"
+		);
+		classificationResult.classification = "general";
 	}
 
 	// CASE B: Analysis/Bot Question WITH Media (e.g. "what is this?", "summarize this video")
