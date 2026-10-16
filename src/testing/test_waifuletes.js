@@ -240,12 +240,12 @@ async function runTests() {
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !waifus");
 	const waifusContent = bot.capturedMessages[0]?.content || "";
-	assert.ok(waifusContent.includes("100"), "!waifus deveria mencionar limite de 100 na wishlist");
+	assert.ok(waifusContent.includes("1000"), "!waifus deveria mencionar limite de 1000 na wishlist");
 	assert.ok(
 		waifusContent.includes("Comum") || waifusContent.includes("93"),
 		"!waifus deveria listar probabilidades das categorias"
 	);
-	console.log(`✓ Guia !waifus com probabilidades e limite de 100 passou.`);
+	console.log(`✓ Guia !waifus com probabilidades e limite de 1000 passou.`);
 
 	// 10.2. Testar !mu-chances
 	console.log(`[Teste 9.2] Executando !mu-chances...`);
@@ -354,6 +354,19 @@ async function runTests() {
 		console.log(
 			`✓ Definição de favorito com sucesso validada: ${bot.capturedMessages[0]?.content?.substring(0, 60)}...`
 		);
+
+		// Desfaz casamento do teste para não deixar waifu presa no banco
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgDivorce = createMessage({
+			content: `!mu-divorciar ${marriedCharId}`,
+			author: rollUser,
+			authorName: "RollTester",
+			group: rollGroup
+		});
+		await eventHandler.processMessage(bot, msgDivorce);
+		await waitForReply();
+		console.log(`✓ Divórcio de limpeza do teste executado para ${marriedCharId}.`);
 	}
 
 	// 13. Testar Diário de Zinthos (!mu-diario)

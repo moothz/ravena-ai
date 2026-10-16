@@ -470,7 +470,7 @@ const RARITY_LABEL = {
 };
 
 // Limite máximo de itens na Wishlist
-const WISHLIST_MAX_ITEMS = 100;
+const WISHLIST_MAX_ITEMS = 1000;
 
 // Pesos base de cada raridade no sorteio (RollService)
 const RARITY_WEIGHTS = {
@@ -1151,6 +1151,10 @@ function makeRollHandler(genderFilter) {
 					text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos`;
 					if (rollReward.rarityBonus > 0) {
 						text += `\n🌟 *BÔNUS DE RARIDADE:* +${rollReward.rarityBonus} Zinthos!`;
+					}
+					if (rollReward.wishlistBonus > 0) {
+						const wishMultPct = Math.round((rollReward.wishlistMultiplier - 1) * 100);
+						text += `\n🌟 *BÔNUS DE WISHLIST:* +${rollReward.wishlistBonus} Zinthos (${rollReward.wishlistCount}/1000 desejos | +${wishMultPct}%)!`;
 					}
 				}
 
@@ -1902,6 +1906,9 @@ async function diariosKakera(bot, message) {
 		} else {
 			text += `🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)\n`;
 		}
+		if (data.data?.wishlist?.bonusAmount > 0) {
+			text += `🌟 Bônus de Wishlist: *+${data.data.wishlist.bonusAmount} Zinthos* (${data.data.wishlist.count}/1000 desejos)\n`;
+		}
 		text += `💰 Saldo total: *${newBalance} Zinthos*\n`;
 		text += `⏰ Próximo resgate: *${formattedDate}*`;
 
@@ -2000,7 +2007,13 @@ async function verPerfil(bot, message) {
 		const haremCount = user._count?.harem ?? 0;
 		const soulmateCount = user._count?.soulmates ?? 0;
 		const wishlistCount = user._count?.wishlist ?? 0;
-		const favoriteChar = user.harem?.[0]?.character;
+		const favoriteChars =
+			user.favoriteCharacters ||
+			(user.harem
+				? user.harem.filter((h) => h.isFavorite).map((h) => h.character)
+				: user.harem?.[0]?.character
+					? [user.harem[0].character]
+					: []);
 
 		let text = `🎮 *Perfil de ${user.name}*\n\n`;
 		text += `💜 Zinthos: *${user.kakera}*\n`;
@@ -2008,8 +2021,11 @@ async function verPerfil(bot, message) {
 		text += `💖 Soulmates: *${soulmateCount}*\n`;
 		text += `🌟 Wishlist: *${wishlistCount}/${WISHLIST_MAX_ITEMS}*\n`;
 
-		if (favoriteChar) {
-			text += `⭐ Waifu Favorita: *${favoriteChar.name}* (${favoriteChar.series})\n`;
+		if (favoriteChars.length > 0) {
+			text += `💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
+			favoriteChars.forEach((f, idx) => {
+				text += `  ${idx + 1}. *${f.name}* (${f.series || "Sem série"})\n`;
+			});
 		}
 
 		text += `📅 No jogo desde: *${new Date(user.createdAt).toLocaleDateString("pt-BR")}*`;
@@ -2038,13 +2054,21 @@ async function verWishlist(bot, message) {
 			});
 		}
 
+		const casadas = wishlist.filter((item) => item.isMarried || item.character?.isMarried);
+		let avisoCasadas = "";
+		if (casadas.length > 0) {
+			avisoCasadas = `⚠️ *Aviso:* ${casadas.length} personagem(ns) da sua Wishlist já estão casadas! Elas continuam na lista mas não podem ser reivindicadas normalmente.\n💡 Use \`!mu-wishlist-limpar\` para removê-las e liberar espaço!\n\n`;
+		}
+
 		const stats = await getDropRateStats(userId);
-		let text = `🌟 *Sua Lista de Desejos* (${wishlist.length}/${WISHLIST_MAX_ITEMS}):\n\n`;
+		let text = `${avisoCasadas}🌟 *Sua Lista de Desejos* (${wishlist.length}/${WISHLIST_MAX_ITEMS}):\n\n`;
 		wishlist.forEach((item, idx) => {
 			const char = item.character;
 			const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
 			const star = item.isStarWish ? "⭐ " : "";
-			text += `${idx + 1}. ${emojiRarity} *${char.name}* — _${char.series}_\n   ↳ ID: \`${char.id}\`${star ? " *(Star Wish)*" : ""}\n`;
+			const isMarried = Boolean(item.isMarried || char.isMarried);
+			const marriedIcon = isMarried ? " 💍" : "";
+			text += `${idx + 1}. ${emojiRarity} *${char.name}*${marriedIcon} — _${char.series}_\n   ↳ ID: \`${char.id}\`${star ? " *(Star Wish)*" : ""}\n`;
 		});
 
 		text += `\n💡 *Bônus de Drop:* Cada item na sua lista tem o peso aumentado em *+50%* (+100% se Star Wish).\n`;
@@ -2060,7 +2084,7 @@ async function verWishlist(bot, message) {
 			text += `\n`;
 		}
 		text += `📊 Para ver todas as probabilidades do catálogo, envie \`!mu-chances\`.\n`;
-		text += `_Para remover: \`!mu-removerdesejo <id>\`_`;
+		text += `_Para remover: \`!mu-removerdesejo <id>\` ou \`!mu-wishlist-limpar\`_`;
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar wishlist.");
@@ -2126,6 +2150,41 @@ async function removerDesejo(bot, message, args) {
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao remover da wishlist.");
+	}
+}
+
+/**
+ * Remove todas as waifus casadas da wishlist do usuário
+ */
+async function limparWishlistCasadas(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const name = getUserName(message);
+
+	try {
+		await ensureUser(userId, groupId, name);
+		const { data } = await api.delete(`/wishlist/${encodeURIComponent(userId)}/married`);
+		const removed = data.data?.removed || [];
+
+		if (removed.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🧹 *Nenhuma waifu casada encontrada na sua Wishlist!*\nTodas as waifus da sua lista ainda estão livres para claim."
+			});
+		}
+
+		let text = `🧹 *Wishlist Limpa com Sucesso!*\nForam removidas *${removed.length}* waifu(s) que já estavam casadas:\n\n`;
+		removed.forEach((char, idx) => {
+			const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+			text += `${idx + 1}. ${emojiRarity} *${char.name}* 💍 — _${char.series}_\n`;
+		});
+		text += `\n✨ Espaço liberado! Use \`!mu-desejar <id>\` para adicionar novas waifus à sua lista.`;
+
+		return new ReturnMessage({ chatId, content: text });
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao limpar casadas da wishlist.");
 	}
 }
 
@@ -3397,8 +3456,7 @@ async function ajudaWaifus(bot, message) {
 	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
 	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
 	text += `• *Bônus no Roll:* Cada personagem na sua lista ganha *+50% de peso* (multiplicador 1.5x) nos seus sorteios! (Star Wish ganha +100% / 2.0x).\n`;
-	text += `• *Aumento da chance:* Se você preencher a wishlist com ${WISHLIST_MAX_ITEMS} personagens, sua chance de tirar qualquer um dos seus desejos em um roll sobe para *~0,17% a ~0,58%* (1 em cada 170 a 580 rolls), aumentando brutalmente suas chances em relação ao drop natural individual (~1 em 25.000+)!\n\n`;
-
+	text += `• *Bônus de Zinthos Proporcional:* Cada waifu na Wishlist adiciona *+0,1% de Zinthos* em rolls e diários (+1/1000 por item), dobrando o valor adquirido (2.0x) ao atingir 1000 desejos!\n\n`;
 	text += `❤️ *6. Curtidas (Likes)*\n`;
 	text += `• Dê like nos seus personagens favoritos com \`!mu-like <id>\` para aumentar a popularidade global deles.\n\n`;
 
@@ -3416,7 +3474,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos.\n`;
 	text += `• \`!mu-harem [página]\` (aliases: \`!mu-h\`, \`!mu-colecao\`) — Lista todas as waifus/husbandos que você possui.\n`;
-	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Define seu personagem favorito em destaque.\n`;
+	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
 	text += `• \`!mu-soulmates\` (aliases: \`!mu-sm\`, \`!mu-almas\`) — Lista seus parceiros com 10+ chaves.\n\n`;
 
 	text += `💰 *Economia & Perfil:*\n`;
@@ -3430,6 +3488,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-wishlist\` (aliases: \`!mu-wl\`, \`!mu-desejos\`) — Lista seus personagens desejados (até ${WISHLIST_MAX_ITEMS}).\n`;
 	text += `• \`!mu-desejar <id>\` (aliases: \`!mu-wish\`, \`!mu-add\`) — Adiciona um personagem à sua wishlist (+50% no drop).\n`;
 	text += `• \`!mu-removerdesejo <id>\` (aliases: \`!mu-rmwish\`) — Remove um personagem da wishlist.\n`;
+	text += `• \`!mu-wishlist-limpar\` (aliases: \`!mu-wllimpar\`, \`!mu-limparwishlist\`) — Remove todas as waifus já casadas da sua wishlist.\n`;
 	text += `• \`!mu-like <id>\` (aliases: \`!mu-l\`, \`!mu-coracao\`) — Dá like em um personagem.\n`;
 	text += `• \`!mu-personagens <busca>\` (aliases: \`!mu-chars\`, \`!mu-buscar\`) — Pesquisa personagens no catálogo por nome/série.\n`;
 	text += `• \`!mu-char <id>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e chances de drop de um personagem.\n`;
@@ -3513,7 +3572,7 @@ async function painelWebAdmin(bot, message) {
 		pvText += `• Pesquisar personagens no catálogo\n`;
 		pvText += `• Sugerir novas fotos (com recorte interativo) e novas raridades\n`;
 
-		// Se a mensagem veio de um grupo, envia no privado e avisa no grupo
+		// Se a mensagem veio de um grupo, envia no privado e apenas reage com emoji no grupo
 		if (message.group && message.group !== message.author) {
 			const pvMsg = new ReturnMessage({
 				chatId: message.author,
@@ -3526,14 +3585,11 @@ async function painelWebAdmin(bot, message) {
 				await bot.sendMessage(message.author, pvText);
 			}
 
-			const authorMention = message.author.split("@")[0];
-			return new ReturnMessage({
-				chatId,
-				content: `📩 @${authorMention}, enviei o link de acesso ao seu painel pessoal no seu privado!`,
-				options: {
-					mentions: [message.author]
-				}
-			});
+			if (message.origin && typeof message.origin.react === "function") {
+				await message.origin.react("🔗").catch(() => {});
+			}
+
+			return null;
 		}
 
 		// Se já foi executado no privado, responde diretamente no PV
@@ -3575,14 +3631,25 @@ async function compartilharHarem(bot, message) {
 		const wishlistCount = user.wishlistCount ?? user._count?.wishlist ?? 0;
 		const favoriteChar = user.favoriteCharacter || user.harem?.[0]?.character;
 
+		const favoriteChars =
+			user.favoriteCharacters ||
+			(user.harem
+				? user.harem.filter((h) => h.isFavorite).map((h) => h.character)
+				: favoriteChar
+					? [favoriteChar]
+					: []);
+
 		let text = `✨ *Harém de ${user.name || userName} — Waifuletes* ✨\n\n`;
 		text += `Acesse a vitrine pública de personagens no catálogo web:\n`;
 		text += `🔗 ${publicUrl}\n\n`;
 		text += `👰 *Colecionados:* ${haremCount} waifus/husbandos\n`;
 		text += `💖 *Soulmates:* ${soulmateCount}\n`;
 		text += `🌟 *Wishlist:* ${wishlistCount}/${WISHLIST_MAX_ITEMS}\n`;
-		if (favoriteChar) {
-			text += `⭐ *Waifu Favorita:* ${favoriteChar.name} (${favoriteChar.series || "Sem série"})\n`;
+		if (favoriteChars.length > 0) {
+			text += `💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
+			favoriteChars.forEach((f, idx) => {
+				text += `  ${idx + 1}. *${f.name}* (${f.series || "Sem série"})\n`;
+			});
 		}
 		text += `\n💡 _Compartilhe este link com amigos para exibir sua coleção!_`;
 
@@ -4101,6 +4168,35 @@ const commands = [
 		reactions: { before: "🗑️", after: "✅", error: "❌" },
 		reply: true,
 		method: removerDesejo
+	}),
+
+	// ── LIMPAR WISHLIST (REMOVER CASADAS) ────────────────────────────────────
+	new Command({
+		name: "mu-wishlist-limpar",
+		description: "Remove todas as waifus casadas da sua Wishlist",
+		category: "mudae",
+		group: "muwaifu-wllimpar",
+		reactions: { before: "🧹", after: "✨", error: "❌" },
+		reply: true,
+		method: limparWishlistCasadas
+	}),
+	new Command({
+		name: "mu-wllimpar",
+		description: "Alias de !mu-wishlist-limpar",
+		category: "mudae",
+		group: "muwaifu-wllimpar",
+		reactions: { before: "🧹", after: "✨", error: "❌" },
+		reply: true,
+		method: limparWishlistCasadas
+	}),
+	new Command({
+		name: "mu-limparwishlist",
+		description: "Alias em português de !mu-wishlist-limpar",
+		category: "mudae",
+		group: "muwaifu-wllimpar",
+		reactions: { before: "🧹", after: "✨", error: "❌" },
+		reply: true,
+		method: limparWishlistCasadas
 	}),
 
 	// ── FAVORITO ────────────────────────────────────────────────────────────
@@ -4749,6 +4845,7 @@ module.exports = {
 	painelWebAdmin,
 	compartilharHarem,
 	verWishlist,
+	limparWishlistCasadas,
 	adicionarDesejo,
 	removerDesejo,
 	definirFavorita,
