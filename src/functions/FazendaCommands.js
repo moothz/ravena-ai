@@ -613,9 +613,21 @@ async function handleFazColher(bot, message, _args, group) {
 		}
 
 		// Despacha bônus externos para outros jogos se houver
-		const drops = (harvested || harvestRes.externalDrops || harvestRes.bonusDrops || []).filter(
-			(d) => d && d.bonusType && d.bonusType !== "none" && d.bonusType !== "coins"
-		);
+		const rawDrops =
+			Array.isArray(harvested) && harvested.length > 0
+				? harvested
+				: harvestRes.externalDrops || harvestRes.bonusDrops || [];
+		const drops = rawDrops.filter((d) => {
+			if (!d) return false;
+			const cropKey = d.plantId
+				? d.plantId.startsWith("crop_")
+					? d.plantId
+					: `crop_${d.plantId}`
+				: null;
+			const mappedType = cropKey && ShadowGardenBonusService.PLANT_BONUS_MAP[cropKey]?.bonusType;
+			const bType = d.bonusType || mappedType;
+			return bType && bType !== "none" && bType !== "coins";
+		});
 		const allBonusMsgs = [];
 		if (drops.length > 0) {
 			const bonusMsgs = await ShadowGardenBonusService.dispatchHarvestDrops(userId, drops);
@@ -777,6 +789,18 @@ async function handleFazPlantar(bot, message, _args, group) {
 		if (slotsList) {
 			text += `🌾 *Canteiros ocupados:* ${slotsList}\n\n`;
 		}
+
+		const plantedKey = String(plantRes.plantId || plantRes.id || itemParam);
+		const fullKey = plantedKey.startsWith("crop_") ? plantedKey : `crop_${plantedKey}`;
+		const bonusInfo =
+			ShadowGardenBonusService.PLANT_BONUS_MAP[fullKey] ||
+			Object.values(ShadowGardenBonusService.PLANT_BONUS_MAP).find(
+				(p) => p.name.toLowerCase() === plantName.toLowerCase()
+			);
+		if (bonusInfo) {
+			text += `🎁 *Bônus Especial:* Os efeitos de *${bonusInfo.name}* serão entregues automaticamente quando você colher a planta pronta (\`!faz-colheita\`)!\n\n`;
+		}
+
 		text += `💡 _Você pode usar \`!faz-plantar ${itemParam} <qtd>\` para escolher quantas plantar (padrão: 3)._`;
 
 		// Tenta renderizar imagem atualizada pós-plantio destacando os canteiros recém-plantados em verde

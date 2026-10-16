@@ -386,6 +386,14 @@ async function runTests() {
 		{ itemId: "crop_12_blood_rose", quantity: 1 } // 1 x 1 = 1 ticket
 	];
 
+	// Limpa registros prévios do usuário de teste para garantir idempotência da suíte
+	try {
+		const Database = require("../utils/Database");
+		const db = Database.getInstance();
+		db.mappers.run("core", "DELETE FROM farm_credited_crops WHERE user_id = ?", ["5511999997777"]);
+		db.mappers.run("core", "DELETE FROM farm_bonus_inventory WHERE user_id = ?", ["5511999997777"]);
+	} catch (cleanupErr) {}
+
 	const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(syncUser, mockInventory);
 	assert.strictEqual(syncMsgs.length, 2, "Deveria despachar 2 mensagens de bônus");
 

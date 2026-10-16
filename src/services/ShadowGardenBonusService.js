@@ -11,9 +11,11 @@ const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const FishingGame = require("../functions/FishingGame");
 const SlotsGame = require("../functions/SlotsGame");
+const ShadowGardenClient = require("./ShadowGardenClient");
 
 const logger = new Logger("shadow-garden-bonus");
 const database = Database.getInstance();
+const jardimClient = new ShadowGardenClient();
 const dbName = "core";
 
 // Inicializa tabelas locais para persistência de bônus e controle de colheitas
@@ -123,8 +125,8 @@ async function addWaifuBonus(userId, { rolls = 0, tickets = 0 } = {}) {
 			`INSERT INTO farm_bonus_inventory (user_id, rolls, tickets, updated_at)
 			 VALUES (?, ?, ?, ?)
 			 ON CONFLICT(user_id) DO UPDATE SET
-			   rolls = rolls + excluded.rolls,
-			   tickets = tickets + excluded.tickets,
+			   rolls = COALESCE(rolls, 0) + excluded.rolls,
+			   tickets = COALESCE(tickets, 0) + excluded.tickets,
 			   updated_at = excluded.updated_at`,
 			[cId, Math.max(0, rolls), Math.max(0, tickets), Date.now()]
 		);
@@ -133,14 +135,27 @@ async function addWaifuBonus(userId, { rolls = 0, tickets = 0 } = {}) {
 	}
 }
 
+const lastUserSyncTimes = new Map();
+
 /**
  * Consulta saldo de rolls e tickets de Waifus ganhos pela fazenda
  * @param {string} userId
+ * @param {boolean} [autoSync=true] - Se true, tenta sincronizar colheitas do inventário automaticamente
  * @returns {Promise<{ rolls: number, tickets: number }>}
  */
-async function getWaifuBonus(userId) {
+async function getWaifuBonus(userId, autoSync = true) {
 	const cId = cleanUserId(userId);
 	if (!cId) return { rolls: 0, tickets: 0 };
+
+	if (autoSync) {
+		try {
+			await syncUserBonuses(cId);
+		} catch (e) {
+			logger.debug(
+				`[getWaifuBonus] Falha ao auto-sincronizar bônus de waifu para ${cId}: ${e.message}`
+			);
+		}
+	}
 
 	try {
 		const row = database.mappers.get(
@@ -240,21 +255,34 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 	for (const drop of harvestedDrops) {
 		const count = drop.count || 1;
 
-		let cropKey = drop.plantId
-			? drop.plantId.startsWith("crop_")
-				? drop.plantId
-				: `crop_${drop.plantId}`
-			: null;
-		if (!cropKey && drop.name) {
+		const cleanName = drop.name ? drop.name.replace(/\s*\(Colhida\)/i, "").trim() : "";
+		const pIdStr =
+			drop.plantId !== undefined && drop.plantId !== null ? String(drop.plantId).trim() : "";
+		let cropKey = pIdStr ? (pIdStr.startsWith("crop_") ? pIdStr : `crop_${pIdStr}`) : null;
+
+		if ((!cropKey || !PLANT_BONUS_MAP[cropKey]) && cleanName) {
 			for (const [k, v] of Object.entries(PLANT_BONUS_MAP)) {
-				if (v.name === drop.name || v.bonusType === drop.bonusType) {
+				if (v.name === cleanName || cleanName.includes(v.name)) {
 					cropKey = k;
 					break;
 				}
 			}
 		}
 
-		switch (drop.bonusType) {
+		if ((!cropKey || !PLANT_BONUS_MAP[cropKey]) && drop.plantId) {
+			const num = parseInt(String(drop.plantId).replace(/\D/g, ""), 10);
+			if (num) {
+				const pad = String(num).padStart(2, "0");
+				const found = Object.keys(PLANT_BONUS_MAP).find((k) => k.startsWith(`crop_${pad}_`));
+				if (found) cropKey = found;
+			}
+		}
+
+		const mappedInfo = cropKey && PLANT_BONUS_MAP[cropKey] ? PLANT_BONUS_MAP[cropKey] : null;
+		const bonusType = drop.bonusType || mappedInfo?.bonusType;
+		const plantDisplayName = cleanName || mappedInfo?.name || drop.name || "Planta";
+
+		switch (bonusType) {
 			case "coins":
 			case "none":
 				// Moedas já são somadas e persistidas pela própria API da Fazenda, e none não tem bônus externo
@@ -270,7 +298,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 					itemsWon.push(chosenName);
 				}
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ Buffs de pesca concedidos: ${itemsWon.join(", ")}`
+					`• *${plantDisplayName}* (x${count}) ➔ Buffs de pesca concedidos: ${itemsWon.join(", ")}`
 				);
 				break;
 			}
@@ -285,7 +313,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 					itemsWon.push(chosenName);
 				}
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ Equipamentos de pesca equipados: ${itemsWon.join(", ")}`
+					`• *${plantDisplayName}* (x${count}) ➔ Equipamentos de pesca equipados: ${itemsWon.join(", ")}`
 				);
 				break;
 			}
@@ -304,7 +332,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 					false
 				);
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${Math.round(bonusPercent * 100)}% de peso no seu próximo peixe!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${Math.round(bonusPercent * 100)}% de peso no seu próximo peixe!`
 				);
 				break;
 			}
@@ -314,7 +342,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				const baitsToAdd = 5 * count;
 				await FishingGame.addBaits(cId, baitsToAdd);
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${baitsToAdd} iscas vivas adicionadas ao seu balde de pesca!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${baitsToAdd} iscas vivas adicionadas ao seu balde de pesca!`
 				);
 				break;
 			}
@@ -324,7 +352,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				const coinsToAdd = 5 * count;
 				await SlotsGame.addCoins(cId, coinsToAdd, true);
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${coinsToAdd} moedinhas adicionadas para jogar no !slots!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${coinsToAdd} moedinhas adicionadas para jogar no !slots!`
 				);
 				break;
 			}
@@ -334,7 +362,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				const coinsToAdd = 25 * count;
 				await SlotsGame.addCoins(cId, coinsToAdd, true);
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${coinsToAdd} moedas de ouro creditadas no !slots!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${coinsToAdd} moedas de ouro creditadas no !slots!`
 				);
 				break;
 			}
@@ -345,7 +373,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				const rollsToAdd = 2 * count;
 				await addWaifuBonus(cId, { rolls: rollsToAdd });
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${rollsToAdd} rolls especiais de Waifuletes acumulados!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${rollsToAdd} rolls especiais de Waifuletes acumulados!`
 				);
 				break;
 			}
@@ -356,13 +384,15 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				const ticketsToAdd = 1 * count;
 				await addWaifuBonus(cId, { tickets: ticketsToAdd });
 				dispatchedMessages.push(
-					`• *${drop.name}* (x${count}) ➔ +${ticketsToAdd} Ticket Especial de Waifu Rara!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${ticketsToAdd} Ticket Especial de Waifu Rara!`
 				);
 				break;
 			}
 
 			default:
-				logger.warn(`[dispatchHarvestDrops] bonusType desconhecido: ${drop.bonusType}`);
+				if (bonusType) {
+					logger.warn(`[dispatchHarvestDrops] bonusType desconhecido: ${bonusType}`);
+				}
 				break;
 		}
 
@@ -373,7 +403,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 					`INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, updated_at)
 					 VALUES (?, ?, ?, ?)
 					 ON CONFLICT(user_id, crop_item_id) DO UPDATE SET
-					   credited_quantity = credited_quantity + excluded.credited_quantity,
+					   credited_quantity = COALESCE(credited_quantity, 0) + excluded.credited_quantity,
 					   updated_at = excluded.updated_at`,
 					[cId, cropKey, count, Date.now()]
 				);
@@ -441,6 +471,35 @@ async function syncInventoryCrops(userId, inventoryItems = []) {
 
 	if (dropsToDispatch.length > 0) {
 		return await dispatchHarvestDrops(cId, dropsToDispatch);
+	}
+	return [];
+}
+
+/**
+ * Sincroniza os bônus do inventário do Jardim das Sombras para o usuário
+ * Busca o inventário do jogador na API e processa colheitas pendentes
+ * @param {string} userId
+ * @param {boolean} [force=false]
+ * @returns {Promise<Array<string>>}
+ */
+async function syncUserBonuses(userId, force = false) {
+	const cId = cleanUserId(userId);
+	if (!cId) return [];
+
+	const now = Date.now();
+	const lastSync = lastUserSyncTimes.get(cId) || 0;
+	if (!force && now - lastSync < 15000) {
+		return [];
+	}
+	lastUserSyncTimes.set(cId, now);
+
+	try {
+		const invRes = await jardimClient.getInventory(cId);
+		if (invRes?.items && Array.isArray(invRes.items)) {
+			return await syncInventoryCrops(cId, invRes.items);
+		}
+	} catch (err) {
+		logger.debug(`[syncUserBonuses] Falha ao sincronizar inventário para ${cId}: ${err.message}`);
 	}
 	return [];
 }
@@ -542,6 +601,7 @@ module.exports = {
 	consumeWaifuBonus,
 	dispatchHarvestDrops,
 	syncInventoryCrops,
+	syncUserBonuses,
 	getEligibleVipDecorations,
 	calculateFarmDonationBonuses
 };

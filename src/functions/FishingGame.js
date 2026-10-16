@@ -1736,6 +1736,13 @@ async function fishCommand(bot, message, args, group) {
 				? [...message.origin.mentionedIds]
 				: [];
 
+		try {
+			const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+			await ShadowGardenBonusService.syncUserBonuses(userId);
+		} catch (syncErr) {
+			logger.debug(`[fishCommand] Falha ao sincronizar bônus da fazenda: ${syncErr.message}`);
+		}
+
 		let userData = await getUserData(userId);
 
 		if (!userData) {
@@ -2677,6 +2684,15 @@ async function fishingDataCommand(bot, message, args, group) {
 		const userId = message.author;
 		const userName =
 			message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Pescador";
+
+		try {
+			const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+			await ShadowGardenBonusService.syncUserBonuses(userId);
+		} catch (syncErr) {
+			logger.debug(
+				`[fishingDataCommand] Falha ao sincronizar bônus da fazenda: ${syncErr.message}`
+			);
+		}
 
 		let userData = await getUserData(userId);
 

@@ -292,6 +292,13 @@ async function slotsCommand(bot, message, args, group) {
 		}
 	}
 
+	try {
+		const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+		await ShadowGardenBonusService.syncUserBonuses(userId);
+	} catch (syncErr) {
+		logger.debug(`[slotsCommand] Falha ao sincronizar bônus da fazenda: ${syncErr.message}`);
+	}
+
 	let userData = await getUserData(userId, userName);
 
 	// Regenera moedas

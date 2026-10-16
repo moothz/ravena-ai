@@ -708,6 +708,60 @@ async function downloadImageAsBase64(imageUrl) {
 	return buf ? buf.toString("base64") : null;
 }
 
+// Estilos visuais de badges numéricos no grid por Raridade
+const GRID_RARITY_STYLES = {
+	COMMON: {
+		bg: "rgba(35, 39, 47, 0.92)",
+		stroke: "#9CA3AF",
+		strokeWidth: 2,
+		textColor: "#FFFFFF",
+		badgeW: 56,
+		badgeH: 42,
+		fontSize: 28,
+		rx: 9
+	},
+	UNCOMMON: {
+		bg: "rgba(16, 120, 60, 0.94)",
+		stroke: "#6EE7B7",
+		strokeWidth: 2.5,
+		textColor: "#FFFFFF",
+		badgeW: 66,
+		badgeH: 48,
+		fontSize: 34,
+		rx: 11
+	},
+	RARE: {
+		bg: "rgba(29, 78, 216, 0.95)",
+		stroke: "#93C5FD",
+		strokeWidth: 3,
+		textColor: "#FFFFFF",
+		badgeW: 76,
+		badgeH: 54,
+		fontSize: 40,
+		rx: 13
+	},
+	EPIC: {
+		bg: "rgba(126, 34, 206, 0.95)",
+		stroke: "#E9D5FF",
+		strokeWidth: 3.5,
+		textColor: "#FFFFFF",
+		badgeW: 86,
+		badgeH: 62,
+		fontSize: 46,
+		rx: 15
+	},
+	LEGENDARY: {
+		bg: "rgba(217, 119, 6, 0.96)",
+		stroke: "#FEF08A",
+		strokeWidth: 4,
+		textColor: "#FFFFFF",
+		badgeW: 98,
+		badgeH: 70,
+		fontSize: 52,
+		rx: 18
+	}
+};
+
 /**
  * Constrói o grid de imagens unindo as fotos dos personagens com seu badge numérico
  * Layouts (Linhas x Colunas):
@@ -726,25 +780,45 @@ async function buildRollGridImage(items) {
 	const count = items.length;
 	const cellW = 320;
 	const cellH = 320;
-	const badgeW = 52;
-	const badgeH = 40;
-	const badgeTop = cellH - badgeH - 12;
-	const badgeLeft = Math.floor((cellW - badgeW) / 2);
 
 	const preparedCells = await Promise.all(
 		items.map(async (item, idx) => {
 			const slot = item.slot || idx + 1;
 
+			const rawRarity = String(
+				item.character?.rarity || item.character?.baseRarity || item.rarity || "COMMON"
+			)
+				.toUpperCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
+
+			let rarityKey = "COMMON";
+			if (rawRarity.includes("LEGEND") || rawRarity.includes("LEND")) {
+				rarityKey = "LEGENDARY";
+			} else if (rawRarity.includes("EPIC")) {
+				rarityKey = "EPIC";
+			} else if (rawRarity.includes("RAR")) {
+				rarityKey = "RARE";
+			} else if (rawRarity.includes("INCOM") || rawRarity.includes("UNCOM")) {
+				rarityKey = "UNCOMMON";
+			}
+
+			const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
+			const badgeTop = cellH - style.badgeH - 12;
+			const badgeLeft = Math.floor((cellW - style.badgeW) / 2);
+
 			const badgeSvg = Buffer.from(`
-				<svg width="${badgeW}" height="${badgeH}" xmlns="http://www.w3.org/2000/svg">
-					<rect width="${badgeW}" height="${badgeH}" rx="8" fill="rgba(0, 0, 0, 0.85)" stroke="#ffffff" stroke-width="2"/>
-					<text x="${badgeW / 2}" y="29" font-size="26" font-weight="bold" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">${slot}</text>
+				<svg width="${style.badgeW}" height="${style.badgeH}" xmlns="http://www.w3.org/2000/svg">
+					<rect width="${style.badgeW}" height="${style.badgeH}" rx="${style.rx}" fill="${style.bg}" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"/>
+					<text x="${style.badgeW / 2}" y="${style.badgeH / 2}" font-size="${style.fontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">${slot}</text>
 				</svg>
 			`);
 
 			let baseImageBuffer = item.imageBuffer;
 			if (!baseImageBuffer) {
-				const charName = String(item.character?.name || "Personagem").substring(0, 20);
+				const charName = String(
+					item.character?.characterName || item.character?.name || "Personagem"
+				).substring(0, 20);
 				const charSeries = String(item.character?.series || "").substring(0, 22);
 				const placeholderSvg = Buffer.from(`
 					<svg width="${cellW}" height="${cellH}" xmlns="http://www.w3.org/2000/svg">
@@ -757,7 +831,7 @@ async function buildRollGridImage(items) {
 			}
 
 			return await sharp(baseImageBuffer)
-				.resize(cellW, cellH, { fit: "cover", position: "center" })
+				.resize(cellW, cellH, { fit: "cover", position: "top" })
 				.composite([{ input: badgeSvg, top: badgeTop, left: badgeLeft }])
 				.png()
 				.toBuffer();
