@@ -366,6 +366,18 @@
                         <small style="color: #888; font-size: 0.8em;">Limite padrão de tokens para respostas geradas (padrão: 4096).</small>
                     </div>
                 </div>
+                <div id="laya-extra-fields" class="hidden">
+                    <div class="form-group">
+                        <label>Modelo do Laya</label>
+                        <input type="text" id="prov-laya-model" class="form-control" placeholder="ravena-bgem3">
+                        <small style="color: #888; font-size: 0.8em;">Identificador do modelo na API (padrão: ravena-bgem3).</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout da Requisição (ms)</label>
+                        <input type="number" id="prov-laya-timeout" class="form-control" placeholder="3000" step="500">
+                        <small style="color: #888; font-size: 0.8em;">Tempo máximo em ms antes do fallback para LLM (padrão: 3000ms).</small>
+                    </div>
+                </div>
                 <div id="nudenet-extra-fields" class="hidden">
                     <div class="form-group">
                         <label>Timeout Circuit Breaker (Segundos)</label>

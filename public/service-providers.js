@@ -8,9 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet'];
+    const categories = ['llm', 'laya', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
+        'laya': 'Decisão Rápida / Intenção (Laya System One)',
         'whisper': 'Transcrição de Áudio (Whisper)',
         'comfyui': 'Geração de Imagens (ComfyUI)',
         'bonsai': 'Geração de Imagens (Bonsai)',
@@ -138,6 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const llmFields = document.getElementById('llm-extra-fields');
         llmFields.classList.toggle('hidden', category !== 'llm');
 
+        const layaFields = document.getElementById('laya-extra-fields');
+        if (layaFields) layaFields.classList.toggle('hidden', category !== 'laya');
+
         const nudenetFields = document.getElementById('nudenet-extra-fields');
         if (nudenetFields) nudenetFields.classList.toggle('hidden', category !== 'nudenet');
 
@@ -157,6 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('prov-tool-calling').checked = !!p.toolCalling;
                 document.getElementById('prov-context-length').value = p.contextLength || '';
                 document.getElementById('prov-max-tokens').value = p.maxTokens || '';
+            } else if (category === 'laya') {
+                const modelInput = document.getElementById('prov-laya-model');
+                if (modelInput) modelInput.value = p.model || 'ravena-bgem3';
+                const timeoutInput = document.getElementById('prov-laya-timeout');
+                if (timeoutInput) timeoutInput.value = p.timeoutMs || p.timeout || 3000;
             } else if (category === 'nudenet') {
                 const cbSeconds = p.circuitBreakerDuration !== undefined
                     ? Math.round(p.circuitBreakerDuration / 1000)
@@ -177,6 +186,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('prov-tool-calling').checked = false;
             document.getElementById('prov-context-length').value = '';
             document.getElementById('prov-max-tokens').value = '';
+            const layaModelInput = document.getElementById('prov-laya-model');
+            if (layaModelInput) layaModelInput.value = 'ravena-bgem3';
+            const layaTimeoutInput = document.getElementById('prov-laya-timeout');
+            if (layaTimeoutInput) layaTimeoutInput.value = 3000;
             const cbInput = document.getElementById('prov-circuit-breaker');
             if (cbInput) cbInput.value = 15;
            }
@@ -251,6 +264,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (p.top_p !== undefined) provider.top_p = p.top_p;
                 if (p.top_k !== undefined) provider.top_k = p.top_k;
                 if (p.temperature !== undefined) provider.temperature = p.temperature;
+            }
+        } else if (category === 'laya') {
+            const modelInput = document.getElementById('prov-laya-model');
+            provider.model = modelInput && modelInput.value ? modelInput.value.trim() : 'ravena-bgem3';
+            const timeoutInput = document.getElementById('prov-laya-timeout');
+            const timeoutVal = timeoutInput ? parseInt(timeoutInput.value, 10) : 3000;
+            if (!isNaN(timeoutVal) && timeoutVal > 0) {
+                provider.timeoutMs = timeoutVal;
             }
         } else if (category === 'nudenet') {
             const cbInput = document.getElementById('prov-circuit-breaker');

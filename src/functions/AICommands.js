@@ -3,6 +3,7 @@ const fs = require("fs").promises;
 const Logger = require("../utils/Logger");
 const { getRecentMessages, formatMessagesForPrompt, storeMessage } = require("./SummaryCommands");
 const LLMService = require("../services/LLMService");
+const LayaService = require("../services/LayaService");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
@@ -141,9 +142,63 @@ async function getCommandLists(bot, group = null) {
 }
 
 /**
- * Classifies the user's request using LLM
+ * Converte o texto da lista de comandos em dicionário de critérios para o Laya
+ * @param {string} commandList
+ * @returns {Object}
+ */
+function parseCommandListToCriteria(commandList) {
+	const criteria = {};
+	if (!commandList || typeof commandList !== "string") return criteria;
+
+	const lines = commandList.split("\n");
+	for (const line of lines) {
+		const match = line.match(/^-\s*!?(?:g-)?([a-zA-Z0-9_-]+):\s*(.+)$/);
+		if (match) {
+			const cmdName = match[1].toLowerCase();
+			const cmdDesc = match[2].trim();
+			criteria[cmdName] = cmdDesc.length > 200 ? cmdDesc.substring(0, 197) + "..." : cmdDesc;
+		}
+	}
+	return criteria;
+}
+
+/**
+ * Classifies the user's request using Laya (primary) and LLM (fallback)
  */
 async function classifyRequest(question, commandList, ctxContent, hasMedia) {
+	// 1. CLASSIFICAÇÃO PRIMÁRIA VIA LAYA (System One - sub-10ms)
+	const layaService = LayaService.getInstance();
+	if (layaService.isEnabled()) {
+		try {
+			const commandsCriteria = parseCommandListToCriteria(commandList);
+			let layaInstructions =
+				"Determine se a mensagem é para executar um comando do bot ou apenas conversa geral.";
+			if (hasMedia) {
+				layaInstructions +=
+					" O usuário anexou imagem/vídeo. Se pedir para criar figurinha ou transformar a mídia, classifique o comando de figurinha correspondente (ex: fig, sticker). Se for pergunta sobre a mídia, classifique como conversa.";
+			}
+
+			const layaResult = await layaService.classifyIntent(question, commandsCriteria, {
+				instructions: layaInstructions,
+				minConfidence: 0.45
+			});
+
+			if (layaResult && layaResult.classification) {
+				logger.info(
+					`[classifyRequest][laya] "${question.substring(0, 60)}" -> ${layaResult.classification}${layaResult.command ? ` (!${layaResult.command})` : ""} (${(layaResult.confidence * 100).toFixed(1)}%)`
+				);
+				return {
+					classification: layaResult.classification,
+					command: layaResult.command || undefined,
+					args: layaResult.args || ""
+				};
+			}
+		} catch (layaErr) {
+			logger.warn(`[classifyRequest] Laya falhou, caindo para fallback LLM: ${layaErr.message}`);
+		}
+	}
+
+	// 2. FALLBACK VIA LLM (Caso Laya esteja desabilitado ou falhe)
 	let mediaContext = "";
 	if (hasMedia) {
 		mediaContext =
@@ -1086,5 +1141,6 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
-	aiCommand
+	aiCommand,
+	classifyRequest
 };

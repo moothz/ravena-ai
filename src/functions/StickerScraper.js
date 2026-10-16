@@ -1331,20 +1331,20 @@ const LAYA_QUESTIONS = {
  * @returns {Promise<{ isNsfw: boolean, reason?: string, tags: string[] }>}
  */
 async function classifyWithLaya(buffer) {
-	const FormData = require("form-data");
-	const API_URL = "http://192.168.195.212:8002/predict/image/upload";
-
 	try {
-		const form = new FormData();
-		form.append("file", buffer, { filename: "sticker.webp", contentType: "image/webp" });
-		form.append("questions", JSON.stringify(LAYA_QUESTIONS));
+		const LayaService = require("../services/LayaService");
+		const layaService = LayaService.getInstance();
+		if (!layaService.isEnabled()) {
+			return { isNsfw: false, tags: [] };
+		}
 
-		const response = await axios.post(API_URL, form, {
-			headers: form.getHeaders(),
-			timeout: 10000
+		const data = await layaService.classifyImage(buffer, LAYA_QUESTIONS, {
+			filename: "sticker.webp",
+			contentType: "image/webp",
+			timeoutMs: 10000
 		});
 
-		const results = response.data?.results;
+		const results = data?.results;
 		if (!results) return { isNsfw: false, tags: [] };
 
 		const safety = results.safety;

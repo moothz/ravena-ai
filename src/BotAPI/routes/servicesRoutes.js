@@ -489,6 +489,9 @@ function registerServicesRoutes(api) {
 			const LLMService = require("../../services/LLMService");
 			LLMService.getInstance().buildProviders();
 
+			const LayaService = require("../../services/LayaService");
+			LayaService.getInstance().buildProviders();
+
 			res.json({ status: "ok", message: "Configuration saved successfully" });
 		} catch (error) {
 			api.logger.error("Error saving service providers via API:", error);

@@ -122,6 +122,7 @@ class ServiceProviderService {
 	getDefaultConfig() {
 		return {
 			llm: [],
+			laya: [],
 			whisper: [],
 			comfyui: [],
 			bonsai: [],
