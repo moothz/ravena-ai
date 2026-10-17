@@ -415,9 +415,9 @@ async function slotsCommand(bot, message, args, group) {
 				await FishingGame.addBaits(userId, baits);
 				await savePrize(userId, `${baits} Iscas`, "bom");
 			} else {
-				// Upgrade
-				const upgrade =
-					FishingGame.UPGRADES[Math.floor(Math.random() * FishingGame.UPGRADES.length)];
+				// Upgrade de Pesca (ignora Ficha de Cassino pois já é prêmio de moedas)
+				const fishingUpgrades = FishingGame.UPGRADES.filter((u) => u.effect !== "slots_coins");
+				const upgrade = fishingUpgrades[Math.floor(Math.random() * fishingUpgrades.length)];
 				resultMessage += `🎁 VOCÊ GANHOU: *${upgrade.emoji} ${upgrade.name}*! 🛠️\n`;
 				resultMessage += `_Um item de elite para sua pescaria!_`;
 
