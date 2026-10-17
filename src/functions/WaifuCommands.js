@@ -807,12 +807,8 @@ async function buildRollGridImage(items) {
 			}
 
 			const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
-			const isRollerWishlist = Boolean(
-				item.character?.isWishlist || item.isWishlist
-			);
-			const badgeW = isRollerWishlist
-				? Math.max(style.badgeW + 60, 116)
-				: style.badgeW;
+			const isRollerWishlist = Boolean(item.character?.isWishlist || item.isWishlist);
+			const badgeW = isRollerWishlist ? Math.max(style.badgeW + 60, 116) : style.badgeW;
 			const badgeH = style.badgeH;
 			const fontSize = isRollerWishlist
 				? Math.max(22, Math.round(style.fontSize * 0.76))
@@ -1443,14 +1439,19 @@ function makeRollHandler(genderFilter) {
 			// 4. Casados
 			const rollerKeysSlots = multiRollSlots.filter((s) => s.isOwner);
 			const groupWishlistFreeSlots = multiRollSlots.filter(
-				(s) => !s.isOwner && s.available && ((s.wishlistUsers && s.wishlistUsers.length > 0) || s.isWishlist)
+				(s) =>
+					!s.isOwner &&
+					s.available &&
+					((s.wishlistUsers && s.wishlistUsers.length > 0) || s.isWishlist)
 			);
 			const solteirosSlots = multiRollSlots.filter(
-				(s) => !s.isOwner && s.available && (!s.wishlistUsers || s.wishlistUsers.length === 0) && !s.isWishlist
+				(s) =>
+					!s.isOwner &&
+					s.available &&
+					(!s.wishlistUsers || s.wishlistUsers.length === 0) &&
+					!s.isWishlist
 			);
-			const casadosSlots = multiRollSlots.filter(
-				(s) => !s.available && !s.isOwner
-			);
+			const casadosSlots = multiRollSlots.filter((s) => !s.available && !s.isOwner);
 
 			if (rollerKeysSlots.length > 0) {
 				text += `🔑 *Com chaves:*\n`;
@@ -5254,7 +5255,10 @@ const helper = {
 		{
 			cmd: "!mu-vender / !mu-anunciar",
 			desc: "Anuncia uma waifu/hushando nos classificados globais definindo o que busca em troca",
-			usage: ["!mu-vender <id-waifu> <mensagem de interesse>", "!mu-anunciar rem-re-zero Troco por Emília ou 50x Tilápia"],
+			usage: [
+				"!mu-vender <id-waifu> <mensagem de interesse>",
+				"!mu-anunciar rem-re-zero Troco por Emília ou 50x Tilápia"
+			],
 			category: "mudae"
 		},
 		{

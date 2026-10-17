@@ -53,6 +53,7 @@ database.getSQLiteDb(
 );
 
 const MAX_COINS = 5;
+const MAX_STORED_COINS = 1000;
 const COIN_REGEN_TIME = 2 * 60; // 2 minutes in seconds
 const SLOT_EMOJIS = ["🍎", "🍋", "🍒", "🍇", "🍉", "🍓", "🍑", "🍍", "🥭", "💎"];
 
@@ -398,7 +399,7 @@ async function slotsCommand(bot, message, args, group) {
 				if (coinMult > 1) {
 					coinsWon = Math.max(1, Math.round(coinsWon * coinMult));
 				}
-				userData.coins = Math.min(userData.coins + coinsWon, MAX_COINS);
+				userData.coins = Math.min((userData.coins || 0) + coinsWon, MAX_STORED_COINS);
 				resultMessage += `🎁 VOCÊ GANHOU: *${coinsWon} Moedinhas*! 🪙\n`;
 				resultMessage += `_Mais chances de girar a sorte!_`;
 				await savePrize(userId, `${coinsWon} Moedinhas`, "bom");
@@ -506,17 +507,13 @@ async function slotsPrizesCommand(bot, message, args, group) {
  * Adiciona moedinhas a um usuário (usado por outros módulos)
  * @param {string} userId - ID ou telefone do usuário
  * @param {number} amount - Quantidade de moedas
- * @param {boolean} [isBonus=false] - Se true, permite ultrapassar MAX_COINS
+ * @param {boolean} [isBonus=false] - Mantido para compatibilidade
  */
 async function addCoins(userId, amount, isBonus = false) {
 	userId = `${userId}`.replace(/\D/g, "");
 	let userData = await getUserData(userId);
 	userData = regenerateCoins(userData);
-	if (isBonus) {
-		userData.coins = (userData.coins || 0) + amount;
-	} else {
-		userData.coins = Math.min((userData.coins || 0) + amount, MAX_COINS);
-	}
+	userData.coins = Math.min((userData.coins || 0) + amount, MAX_STORED_COINS);
 	await saveUserData(userData);
 	return userData;
 }

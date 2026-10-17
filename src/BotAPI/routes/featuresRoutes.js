@@ -366,7 +366,9 @@ function registerFeaturesRoutes(api) {
 			const { fromUserId, toUserId, fishes = [], buffs = [], farmItems = [] } = req.body;
 
 			if (!fromUserId || !toUserId) {
-				return res.status(400).json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
+				return res
+					.status(400)
+					.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
 			}
 
 			// 1. Validação de Peixes (SQLite)
@@ -437,7 +439,9 @@ function registerFeaturesRoutes(api) {
 			return res.json({ success: true });
 		} catch (error) {
 			api.logger.error("Erro geral na rota /api/market/transfer:", error);
-			return res.status(500).json({ success: false, reason: error.message || "Erro interno de transferência" });
+			return res
+				.status(500)
+				.json({ success: false, reason: error.message || "Erro interno de transferência" });
 		}
 	});
 }

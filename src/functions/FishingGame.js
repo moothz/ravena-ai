@@ -814,7 +814,10 @@ async function transferFish(fromUserId, toUserId, fishDbId) {
 		[fishDbId, fromUserId]
 	);
 	if (!fish) {
-		return { success: false, reason: `Peixe ID ${fishDbId} não encontrado no inventário de ${fromUserId}` };
+		return {
+			success: false,
+			reason: `Peixe ID ${fishDbId} não encontrado no inventário de ${fromUserId}`
+		};
 	}
 
 	const fishWeight = Number(fish.weight) || 0;
@@ -846,7 +849,10 @@ async function transferBuff(fromUserId, toUserId, buffDbId) {
 		[buffDbId, fromUserId]
 	);
 	if (!buff) {
-		return { success: false, reason: `Buff ID ${buffDbId} não encontrado no inventário de ${fromUserId}` };
+		return {
+			success: false,
+			reason: `Buff ID ${buffDbId} não encontrado no inventário de ${fromUserId}`
+		};
 	}
 
 	await database.dbRun(
@@ -1267,10 +1273,17 @@ async function applyItemEffect(userData, item) {
 					userData.baits = userData.baits + item.value;
 					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} iscas adicionadas (${userData.baits}/${MAX_BAITS}).`;
 					break;
-				case "slots_coins":
-					await require("./SlotsGame").addCoins(userData.userId, item.value);
-					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} moedinhas adicionadas ao seu saldo do !slots.`;
+				case "slots_coins": {
+					const slotsData = await require("./SlotsGame").addCoins(
+						userData.userId,
+						item.value,
+						true
+					);
+					const saldoInfo =
+						slotsData && slotsData.coins !== undefined ? ` (Saldo: ${slotsData.coins})` : "";
+					effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! +${item.value} moedinhas adicionadas ao seu saldo do !slots.${saldoInfo}`;
 					break;
+				}
 				case "fishing_net": {
 					if (!userData.buffs) userData.buffs = [];
 					const existingNet = userData.buffs.find((b) => b.type === "fishing_net");
