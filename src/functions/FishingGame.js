@@ -825,11 +825,10 @@ async function transferFish(fromUserId, toUserId, fishDbId) {
 
 	const fishWeight = Number(fish.weight) || 0;
 
-	await database.dbRun(
-		dbName,
-		"UPDATE fishing_inventory SET user_id = ? WHERE id = ?",
-		[cleanTo, fishDbId]
-	);
+	await database.dbRun(dbName, "UPDATE fishing_inventory SET user_id = ? WHERE id = ?", [
+		cleanTo,
+		fishDbId
+	]);
 
 	await database.dbRun(
 		dbName,
@@ -861,11 +860,10 @@ async function transferBuff(fromUserId, toUserId, buffDbId) {
 		};
 	}
 
-	await database.dbRun(
-		dbName,
-		"UPDATE fishing_buffs SET user_id = ? WHERE id = ?",
-		[cleanTo, buffDbId]
-	);
+	await database.dbRun(dbName, "UPDATE fishing_buffs SET user_id = ? WHERE id = ?", [
+		cleanTo,
+		buffDbId
+	]);
 
 	return { success: true, buff };
 }

@@ -3723,14 +3723,22 @@ async function ajudaWaifus(bot, message) {
 	text += `🌟 *Wishlist e Catálogo:*\n`;
 	text += `• \`!mu-wishlist\` (aliases: \`!mu-wl\`, \`!mu-desejos\`) — Lista seus personagens desejados (até ${WISHLIST_MAX_ITEMS}).\n`;
 	text += `• \`!mu-desejar <id>\` (aliases: \`!mu-wish\`, \`!mu-add\`) — Adiciona um personagem à sua wishlist (+50% no drop).\n`;
+	text += `• \`!mu-cobiçar <id>\` (aliases: \`!mu-cobicar\`, \`!mucobicar\`) — Cobiça uma waifu já casada de outro jogador (adiciona à wishlist e avisa o dono no roll).\n`;
 	text += `• \`!mu-removerdesejo <id>\` (aliases: \`!mu-rmwish\`) — Remove um personagem da wishlist.\n`;
 	text += `• \`!mu-wishlist-limpar\` (aliases: \`!mu-wllimpar\`, \`!mu-limparwishlist\`) — Remove todas as waifus já casadas da sua wishlist.\n`;
 	text += `• \`!mu-like <id>\` (aliases: \`!mu-l\`, \`!mu-coracao\`) — Dá like em um personagem.\n`;
 	text += `• \`!mu-personagens <busca>\` (aliases: \`!mu-chars\`, \`!mu-buscar\`) — Pesquisa personagens no catálogo por nome/série.\n`;
 	text += `• \`!mu-char <busca>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e detalhes de um personagem (busca ampla por nome, série, descrição ou ID).\n`;
 	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n`;
-	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist e fotos).\n`;
+	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist, classificados e fotos).\n`;
 	text += `• \`!mu-share\` (alias: \`!mu-compartilhar\`) — Exibe o link público do seu harém para compartilhar com amigos.\n\n`;
+
+	text += `🏷️ *Classificados & Mercado:*\n`;
+	text += `• \`!mu-vender <id> <o que procura>\` (alias: \`!mu-anunciar\`) — Anuncia uma waifu do seu harém nos classificados globais.\n`;
+	text += `• \`!mu-classificados\` — Lista as waifus disponíveis nos classificados globais.\n`;
+	text += `• \`!mu-ofertas\` — Lista ofertas pendentes enviadas por outros jogadores para suas waifus.\n`;
+	text += `• \`!mu-of-aceitar <id>\` — Aceita uma proposta de troca (transfere waifus, itens ou zinthos).\n`;
+	text += `• \`!mu-of-negar <id>\` — Nega uma proposta de troca recebida.\n\n`;
 
 	text += `ℹ️ *Ajuda do Jogo:*\n`;
 	text += `• \`!waifus\` ou \`!mudae\` — Abre este menu explicativo com regras e comandos.`;
@@ -4092,6 +4100,8 @@ async function listarOfertasRecebidasCmd(bot, message) {
 					parts.push(`${offered.fishingBuffs.length} buff(s)`);
 				if (Array.isArray(offered.farmItems) && offered.farmItems.length > 0)
 					parts.push(`${offered.farmItems.length} item(ns) de fazenda`);
+				if (offered.zinthos && Number(offered.zinthos) > 0)
+					parts.push(`🪙 ${Number(offered.zinthos).toLocaleString("pt-BR")} Zinthos`);
 				itemsDesc = parts.join(", ") || "Nenhum item";
 			}
 
@@ -4189,6 +4199,78 @@ async function negarOfertaCmd(bot, message, args) {
 			err?.message ||
 			"Erro ao negar oferta.";
 		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
+	}
+}
+
+/**
+ * Cobiça um personagem já casado de outro jogador
+ * !mu-cobiçar <id-personagem ou busca>
+ * Aliases: !mu-cobicar, !mucobicar, !mucobiçar
+ */
+async function cobicarWaifuCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	if (!args || args.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Uso: `!mu-cobiçar <id ou nome do personagem>`\nExemplo: `!mu-cobiçar makima`\n\n_Cobiçar adiciona o personagem à sua Wishlist e notifica o dono na próxima rolagem dele!_"
+		});
+	}
+
+	const search = args.join(" ").trim();
+
+	try {
+		const { data } = await api.post("/covet", {
+			userId,
+			characterId: search
+		});
+
+		if (data?.success) {
+			const char = data.data.character;
+			const owner = data.data.owner;
+			const ownerName = owner?.name ? ` de *${owner.name}*` : "";
+			return new ReturnMessage({
+				chatId,
+				content: `👀 Você agora está cobiçando *${char.name}* (${char.series || "Sem série"})${ownerName}!\n\n🌟 O personagem foi adicionado à sua Wishlist e o dono será avisado na próxima rolagem.`
+			});
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Não foi possível registrar seu interesse."
+		});
+	} catch (err) {
+		const errData = err?.response?.data?.error;
+		const code = errData?.code;
+		const msg = errData?.message || err?.message || "Erro ao cobiçar personagem.";
+
+		if (code === "NOT_MARRIED") {
+			return new ReturnMessage({
+				chatId,
+				content: `ℹ️ ${msg}`
+			});
+		}
+
+		if (code === "OWN_CHARACTER") {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Você já é casado(a) com este personagem!"
+			});
+		}
+
+		if (code === "WISHLIST_LIMIT_REACHED") {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Sua Wishlist atingiu o limite máximo de ${WISHLIST_MAX_ITEMS} personagens! Remova algum antes de cobiçar novos.`
+			});
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: `❌ ${msg}`
+		});
 	}
 }
 
@@ -4652,6 +4734,30 @@ const commands = [
 		reactions: { before: "🌟", after: "⭐", error: "❌" },
 		reply: true,
 		method: adicionarDesejo
+	}),
+
+	// ── COBIÇAR WAIFU CASADA ────────────────────────────────────────────────
+	new Command({
+		name: "mu-cobiçar",
+		description: "Cobiça uma waifu já casada de outro jogador, adicionando-a à sua Wishlist",
+		category: "mudae",
+		group: "muwaifu-covet",
+		needsArgs: true,
+		aliases: ["mu-cobicar", "mucobicar", "mucobiçar"],
+		reactions: { before: "👀", after: "✨", error: "❌" },
+		reply: true,
+		method: cobicarWaifuCmd
+	}),
+	new Command({
+		name: "mu-cobicar",
+		description: "Alias de !mu-cobiçar",
+		category: "mudae",
+		group: "muwaifu-covet",
+		needsArgs: true,
+		aliases: ["mucobicar", "mucobiçar"],
+		reactions: { before: "👀", after: "✨", error: "❌" },
+		reply: true,
+		method: cobicarWaifuCmd
 	}),
 
 	// ── REMOVER DESEJO ──────────────────────────────────────────────────────
@@ -5297,6 +5403,12 @@ const helper = {
 			cmd: "!mu-of-aceitar / !mu-of-negar",
 			desc: "Aceita ou recusa uma proposta de troca nos seus classificados",
 			usage: ["!mu-of-aceitar <id-da-oferta>", "!mu-of-negar <id-da-oferta>"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-cobiçar / !mu-cobicar",
+			desc: "Cobiça uma waifu já casada de outro jogador. Adiciona à sua Wishlist e notifica o dono no próximo roll",
+			usage: ["!mu-cobiçar <id-waifu>", "!mu-cobicar makima"],
 			category: "mudae"
 		}
 	]
