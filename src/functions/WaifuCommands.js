@@ -3796,16 +3796,36 @@ async function painelWebAdmin(bot, message) {
 			const pscData = await FishingGame.getUserData(cleanUser);
 			if (pscData) {
 				inventorySnapshot.fishes = (pscData.fishes || []).map((f) => ({
-					id: f.id,
+					id: f.dbId ?? f.id,
 					name: f.name,
 					weight: f.weight,
-					isRare: f.is_rare || f.isRare
+					isRare: Boolean(f.is_rare || f.isRare)
 				}));
-				inventorySnapshot.buffs = (pscData.buffs || []).map((b) => ({
-					id: b.id,
-					originalName: b.original_name || b.originalName || b.type,
-					type: b.type
-				}));
+				inventorySnapshot.buffs = (pscData.buffs || []).map((b) => {
+					const bType = b.type || b.effect_type;
+					const buffMap = {
+						bait_on_trash: "Evita perder a isca ao pescar lixo",
+						rare_chance_boost: "Aumenta chance de peixe raro",
+						double_catch: "Pesca 2 peixes em 1 tentativa",
+						cooldown_reduction: "Reduz o tempo de espera",
+						guaranteed_weight: "Garante peso extra aos peixes",
+						inventory_slot: "Aumenta capacidade do inventário",
+						next_fish_bonus: "Bônus de peso no próximo peixe",
+						longer_cooldown: "Aumenta o tempo de espera",
+						remove_baits: "Perde iscas"
+					};
+					const bDesc = buffMap[bType] || "Buff permanente de pesca";
+					const uses = b.remainingUses ?? b.remaining_uses;
+					const descWithUses = uses ? `${bDesc} (${uses} uso${uses === 1 ? "" : "s"})` : bDesc;
+					return {
+						id: b.dbId ?? b.id,
+						originalName: b.originalName || b.original_name || bType || "Buff",
+						type: bType,
+						description: descWithUses,
+						remainingUses: uses,
+						value: b.value
+					};
+				});
 			}
 
 			const gardenInv = await jardimClient.getInventory(cleanUser).catch(() => null);

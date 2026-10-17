@@ -371,14 +371,23 @@ function registerFeaturesRoutes(api) {
 					.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
 			}
 
+			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
+			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+
 			// 1. Validação de Peixes (SQLite)
 			if (Array.isArray(fishes) && fishes.length > 0) {
 				for (const f of fishes) {
 					const fishId = typeof f === "object" ? f.id : f;
+					if (!fishId) {
+						return res.status(400).json({
+							success: false,
+							reason: "ID do peixe ofertado inválido ou nulo."
+						});
+					}
 					const row = await api.database.dbGet(
 						"fishing",
-						"SELECT id FROM fishing_inventory WHERE id = ? AND user_id = ?",
-						[fishId, fromUserId]
+						"SELECT id FROM fishing_inventory WHERE id = ? AND (user_id = ? OR user_id = ?)",
+						[fishId, fromUserId, cleanFrom]
 					);
 					if (!row) {
 						return res.status(400).json({
@@ -393,10 +402,16 @@ function registerFeaturesRoutes(api) {
 			if (Array.isArray(buffs) && buffs.length > 0) {
 				for (const b of buffs) {
 					const buffId = typeof b === "object" ? b.id : b;
+					if (!buffId) {
+						return res.status(400).json({
+							success: false,
+							reason: "ID do buff ofertado inválido ou nulo."
+						});
+					}
 					const row = await api.database.dbGet(
 						"fishing",
-						"SELECT id FROM fishing_buffs WHERE id = ? AND user_id = ?",
-						[buffId, fromUserId]
+						"SELECT id FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
+						[buffId, fromUserId, cleanFrom]
 					);
 					if (!row) {
 						return res.status(400).json({
@@ -410,7 +425,7 @@ function registerFeaturesRoutes(api) {
 			// 3. Validação e Transferência de Fazenda (Jardim das Sombras)
 			if (Array.isArray(farmItems) && farmItems.length > 0) {
 				try {
-					await jardimClient.transferItems(fromUserId, toUserId, farmItems);
+					await jardimClient.transferItems(cleanFrom, cleanTo, farmItems);
 				} catch (farmErr) {
 					api.logger.error("Erro ao transferir itens da fazenda no mercado:", farmErr);
 					return res.status(400).json({
@@ -424,7 +439,7 @@ function registerFeaturesRoutes(api) {
 			if (Array.isArray(fishes) && fishes.length > 0) {
 				for (const f of fishes) {
 					const fishId = typeof f === "object" ? f.id : f;
-					await FishingGame.transferFish(fromUserId, toUserId, fishId);
+					await FishingGame.transferFish(cleanFrom, cleanTo, fishId);
 				}
 			}
 
@@ -432,7 +447,7 @@ function registerFeaturesRoutes(api) {
 			if (Array.isArray(buffs) && buffs.length > 0) {
 				for (const b of buffs) {
 					const buffId = typeof b === "object" ? b.id : b;
-					await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+					await FishingGame.transferBuff(cleanFrom, cleanTo, buffId);
 				}
 			}
 

@@ -808,10 +808,13 @@ async function clearInventory(userId) {
 }
 
 async function transferFish(fromUserId, toUserId, fishDbId) {
+	const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
+	const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+
 	const fish = await database.dbGet(
 		dbName,
-		"SELECT * FROM fishing_inventory WHERE id = ? AND user_id = ?",
-		[fishDbId, fromUserId]
+		"SELECT * FROM fishing_inventory WHERE id = ? AND (user_id = ? OR user_id = ?)",
+		[fishDbId, fromUserId, cleanFrom]
 	);
 	if (!fish) {
 		return {
@@ -824,29 +827,32 @@ async function transferFish(fromUserId, toUserId, fishDbId) {
 
 	await database.dbRun(
 		dbName,
-		"UPDATE fishing_inventory SET user_id = ? WHERE id = ? AND user_id = ?",
-		[toUserId, fishDbId, fromUserId]
+		"UPDATE fishing_inventory SET user_id = ? WHERE id = ?",
+		[cleanTo, fishDbId]
 	);
 
 	await database.dbRun(
 		dbName,
-		"UPDATE fishing_users SET inventory_weight = MAX(0, inventory_weight - ?) WHERE user_id = ?",
-		[fishWeight, fromUserId]
+		"UPDATE fishing_users SET inventory_weight = MAX(0, inventory_weight - ?) WHERE user_id = ? OR user_id = ?",
+		[fishWeight, fromUserId, cleanFrom]
 	);
 	await database.dbRun(
 		dbName,
-		"UPDATE fishing_users SET inventory_weight = inventory_weight + ? WHERE user_id = ?",
-		[fishWeight, toUserId]
+		"UPDATE fishing_users SET inventory_weight = inventory_weight + ? WHERE user_id = ? OR user_id = ?",
+		[fishWeight, toUserId, cleanTo]
 	);
 
 	return { success: true, fish };
 }
 
 async function transferBuff(fromUserId, toUserId, buffDbId) {
+	const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
+	const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+
 	const buff = await database.dbGet(
 		dbName,
-		"SELECT * FROM fishing_buffs WHERE id = ? AND user_id = ?",
-		[buffDbId, fromUserId]
+		"SELECT * FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
+		[buffDbId, fromUserId, cleanFrom]
 	);
 	if (!buff) {
 		return {
@@ -857,18 +863,19 @@ async function transferBuff(fromUserId, toUserId, buffDbId) {
 
 	await database.dbRun(
 		dbName,
-		"UPDATE fishing_buffs SET user_id = ? WHERE id = ? AND user_id = ?",
-		[toUserId, buffDbId, fromUserId]
+		"UPDATE fishing_buffs SET user_id = ? WHERE id = ?",
+		[cleanTo, buffDbId]
 	);
 
 	return { success: true, buff };
 }
 
 async function removeBuff(userId, buffDbId) {
+	const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
 	const res = await database.dbRun(
 		dbName,
-		"DELETE FROM fishing_buffs WHERE id = ? AND user_id = ?",
-		[buffDbId, userId]
+		"DELETE FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
+		[buffDbId, userId, cleanUser]
 	);
 	return { success: true, changes: res?.changes || 0 };
 }
