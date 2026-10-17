@@ -272,6 +272,21 @@ class ShadowGardenClient {
 	}
 
 	/**
+	 * Transfere itens entre jogadores atomicamente
+	 * @param {string} fromUserId
+	 * @param {string} toUserId
+	 * @param {Array<{ itemId: string, amount: number }>} items
+	 */
+	async transferItems(fromUserId, toUserId, items) {
+		const res = await fetch(`${this.baseUrl}/admin/transfer`, {
+			method: "POST",
+			headers: this._headers(),
+			body: JSON.stringify({ fromUserId, toUserId, items })
+		});
+		return this._handleResponse(res, "Falha ao transferir itens da fazenda");
+	}
+
+	/**
 	 * Obtém textos e configurações públicas do jogo (nome, emojis, tooltips)
 	 */
 	async getTexts() {

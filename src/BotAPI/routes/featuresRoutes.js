@@ -1,6 +1,9 @@
 const path = require("path");
 const fs = require("fs").promises;
 const axios = require("axios");
+const FishingGame = require("../../functions/FishingGame");
+const ShadowGardenClient = require("../../services/ShadowGardenClient");
+const jardimClient = new ShadowGardenClient();
 
 // Caches locais para Waifuletes (detalhes de personagens e nomes de grupos)
 const waifuDetailsCache = new Map();
@@ -354,6 +357,87 @@ function registerFeaturesRoutes(api) {
 				status: "error",
 				message: "Erro interno do servidor"
 			});
+		}
+	});
+
+	// Transferência de Itens do Mercado (Pesca & Fazenda)
+	app.post("/api/market/transfer", async (req, res) => {
+		try {
+			const { fromUserId, toUserId, fishes = [], buffs = [], farmItems = [] } = req.body;
+
+			if (!fromUserId || !toUserId) {
+				return res.status(400).json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
+			}
+
+			// 1. Validação de Peixes (SQLite)
+			if (Array.isArray(fishes) && fishes.length > 0) {
+				for (const f of fishes) {
+					const fishId = typeof f === "object" ? f.id : f;
+					const row = await api.database.dbGet(
+						"fishing",
+						"SELECT id FROM fishing_inventory WHERE id = ? AND user_id = ?",
+						[fishId, fromUserId]
+					);
+					if (!row) {
+						return res.status(400).json({
+							success: false,
+							reason: `Peixe (ID: ${fishId}) não encontrado no inventário de pesca do ofertante.`
+						});
+					}
+				}
+			}
+
+			// 2. Validação de Buffs (SQLite)
+			if (Array.isArray(buffs) && buffs.length > 0) {
+				for (const b of buffs) {
+					const buffId = typeof b === "object" ? b.id : b;
+					const row = await api.database.dbGet(
+						"fishing",
+						"SELECT id FROM fishing_buffs WHERE id = ? AND user_id = ?",
+						[buffId, fromUserId]
+					);
+					if (!row) {
+						return res.status(400).json({
+							success: false,
+							reason: `Buff de pesca (ID: ${buffId}) não encontrado no inventário do ofertante.`
+						});
+					}
+				}
+			}
+
+			// 3. Validação e Transferência de Fazenda (Jardim das Sombras)
+			if (Array.isArray(farmItems) && farmItems.length > 0) {
+				try {
+					await jardimClient.transferItems(fromUserId, toUserId, farmItems);
+				} catch (farmErr) {
+					api.logger.error("Erro ao transferir itens da fazenda no mercado:", farmErr);
+					return res.status(400).json({
+						success: false,
+						reason: `Item da fazenda não disponível: ${farmErr.message}`
+					});
+				}
+			}
+
+			// 4. Executa transferência de Peixes (SQLite)
+			if (Array.isArray(fishes) && fishes.length > 0) {
+				for (const f of fishes) {
+					const fishId = typeof f === "object" ? f.id : f;
+					await FishingGame.transferFish(fromUserId, toUserId, fishId);
+				}
+			}
+
+			// 5. Executa transferência de Buffs (SQLite)
+			if (Array.isArray(buffs) && buffs.length > 0) {
+				for (const b of buffs) {
+					const buffId = typeof b === "object" ? b.id : b;
+					await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+				}
+			}
+
+			return res.json({ success: true });
+		} catch (error) {
+			api.logger.error("Erro geral na rota /api/market/transfer:", error);
+			return res.status(500).json({ success: false, reason: error.message || "Erro interno de transferência" });
 		}
 	});
 }

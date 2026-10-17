@@ -807,6 +807,66 @@ async function clearInventory(userId) {
 	await database.dbRun(dbName, "DELETE FROM fishing_inventory WHERE user_id = ?", [userId]);
 }
 
+async function transferFish(fromUserId, toUserId, fishDbId) {
+	const fish = await database.dbGet(
+		dbName,
+		"SELECT * FROM fishing_inventory WHERE id = ? AND user_id = ?",
+		[fishDbId, fromUserId]
+	);
+	if (!fish) {
+		return { success: false, reason: `Peixe ID ${fishDbId} não encontrado no inventário de ${fromUserId}` };
+	}
+
+	const fishWeight = Number(fish.weight) || 0;
+
+	await database.dbRun(
+		dbName,
+		"UPDATE fishing_inventory SET user_id = ? WHERE id = ? AND user_id = ?",
+		[toUserId, fishDbId, fromUserId]
+	);
+
+	await database.dbRun(
+		dbName,
+		"UPDATE fishing_users SET inventory_weight = MAX(0, inventory_weight - ?) WHERE user_id = ?",
+		[fishWeight, fromUserId]
+	);
+	await database.dbRun(
+		dbName,
+		"UPDATE fishing_users SET inventory_weight = inventory_weight + ? WHERE user_id = ?",
+		[fishWeight, toUserId]
+	);
+
+	return { success: true, fish };
+}
+
+async function transferBuff(fromUserId, toUserId, buffDbId) {
+	const buff = await database.dbGet(
+		dbName,
+		"SELECT * FROM fishing_buffs WHERE id = ? AND user_id = ?",
+		[buffDbId, fromUserId]
+	);
+	if (!buff) {
+		return { success: false, reason: `Buff ID ${buffDbId} não encontrado no inventário de ${fromUserId}` };
+	}
+
+	await database.dbRun(
+		dbName,
+		"UPDATE fishing_buffs SET user_id = ? WHERE id = ? AND user_id = ?",
+		[toUserId, buffDbId, fromUserId]
+	);
+
+	return { success: true, buff };
+}
+
+async function removeBuff(userId, buffDbId) {
+	const res = await database.dbRun(
+		dbName,
+		"DELETE FROM fishing_buffs WHERE id = ? AND user_id = ?",
+		[buffDbId, userId]
+	);
+	return { success: true, changes: res?.changes || 0 };
+}
+
 // --- LÓGICA DO JOGO ---
 
 async function getMonthlyCatchCount(fishName) {
@@ -3944,5 +4004,8 @@ module.exports = {
 	generateRareFishImage,
 	getWeeklyFishingStats,
 	getNetBaitSuggestion,
-	formatRemainingTime
+	formatRemainingTime,
+	transferFish,
+	transferBuff,
+	removeBuff
 };

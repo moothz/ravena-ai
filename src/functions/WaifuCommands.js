@@ -7,6 +7,9 @@ const Database = require("../utils/Database");
 const DonorBonusService = require("../services/DonorBonusService");
 const GameEventService = require("../services/GameEventService");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+const FishingGame = require("./FishingGame");
+const ShadowGardenClient = require("../services/ShadowGardenClient");
+const jardimClient = new ShadowGardenClient();
 
 const database = Database.getInstance();
 const logger = new Logger("waifu-commands");
@@ -1162,6 +1165,9 @@ function makeRollHandler(genderFilter) {
 				const isSpecialRarity = exclusiveMs > 0;
 
 				let text = `🎲 *${character.name}* — _${character.series}_\n`;
+				if (firstRollData?.marketNotification) {
+					text += `${firstRollData.marketNotification}\n`;
+				}
 				text += `${emojiRarity} *[${labelRarity}]*`;
 				if (firstRollData?.isWishlist) {
 					text += ` 🌟 *[SEU DESEJO!]*`;
@@ -1426,6 +1432,9 @@ function makeRollHandler(genderFilter) {
 
 			// Montagem da Legenda
 			let text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n\n`;
+			if (firstRollData?.marketNotification) {
+				text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n${firstRollData.marketNotification}\n\n`;
+			}
 
 			// Categorias na ordem solicitada:
 			// 1. Personagens que a pessoa que usou o mu-roll já tem alguma chave pelo menos (isOwner)
@@ -3778,7 +3787,43 @@ async function painelWebAdmin(bot, message) {
 
 	try {
 		await ensureUser(userId, groupId, userName);
-		const { data } = await api.post("/user/session", { userId });
+
+		// Captura snapshot de inventário (pesca e fazenda) para o painel web
+		const inventorySnapshot = { fishes: [], buffs: [], farmItems: [] };
+		try {
+			const cleanUser = normalizeUserId(userId);
+			const pscData = await FishingGame.getUserData(cleanUser);
+			if (pscData) {
+				inventorySnapshot.fishes = (pscData.fishes || []).map((f) => ({
+					id: f.id,
+					name: f.name,
+					weight: f.weight,
+					isRare: f.is_rare || f.isRare
+				}));
+				inventorySnapshot.buffs = (pscData.buffs || []).map((b) => ({
+					id: b.id,
+					originalName: b.original_name || b.originalName || b.type,
+					type: b.type
+				}));
+			}
+
+			const gardenInv = await jardimClient.getInventory(cleanUser).catch(() => null);
+			if (gardenInv && Array.isArray(gardenInv.items)) {
+				inventorySnapshot.farmItems = gardenInv.items.map((it) => ({
+					itemId: it.itemId,
+					name: it.name,
+					quantity: it.quantity,
+					type: it.type
+				}));
+			}
+		} catch (invErr) {
+			logger.warn("Falha ao capturar inventário para o painel web:", invErr.message);
+		}
+
+		const { data } = await api.post("/user/session", {
+			userId,
+			inventory: inventorySnapshot
+		});
 		const session = data?.data || {};
 
 		const publicId = session.publicId;
@@ -3796,6 +3841,7 @@ async function painelWebAdmin(bot, message) {
 		pvText += `• Visualizar e divorciar personagens do seu harém\n`;
 		pvText += `• Gerenciar sua Wishlist\n`;
 		pvText += `• Pesquisar personagens no catálogo\n`;
+		pvText += `• Acessar os Classificados Globais para negociar waifus, fazer ofertas e vender\n`;
 		pvText += `• Sugerir novas fotos (com recorte interativo) e novas raridades\n`;
 
 		// Se a mensagem veio de um grupo, envia no privado e apenas reage com emoji no grupo
@@ -3889,6 +3935,239 @@ async function compartilharHarem(bot, message) {
 			chatId,
 			"❌ Não foi possível obter o link do seu harém público no momento."
 		);
+	}
+}
+
+/**
+ * Anuncia uma waifu nos classificados globais via comando WhatsApp
+ * !mu-vender <id-personagem> <mensagem do interesse da troca>
+ */
+async function venderWaifuCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const userName = getUserName(message);
+
+	if (!args || args.length < 2) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Uso: `!mu-vender <id-personagem> <o que você busca em troca>`\nExemplo: `!mu-vender makima Aceito waifus de Chainsaw Man, peixes raros ou itens de fazenda`\nAlias: `!mu-anunciar`"
+		});
+	}
+
+	const characterId = args[0].toLowerCase();
+	const interest = args.slice(1).join(" ");
+
+	try {
+		await ensureUser(userId, groupId, userName);
+		const { data } = await api.post("/market/listing", {
+			userId,
+			characterId,
+			interest
+		});
+
+		const char = data.data?.character;
+		const charName = char?.name || characterId;
+		return new ReturnMessage({
+			chatId,
+			content:
+				`📢 *Personagem Anunciado nos Classificados!* ✨\n\n` +
+				`👤 *Personagem:* ${charName}\n` +
+				`💬 *Interesse de troca:* _${interest}_\n\n` +
+				`Outros jogadores agora podem enviar propostas para você. Acompanhe pelo painel no \`!mu-adm\` ou use \`!mu-ofertas\`!`
+		});
+	} catch (err) {
+		const msg =
+			err?.response?.data?.error?.message ||
+			err?.response?.data?.message ||
+			err?.message ||
+			"Erro ao anunciar personagem.";
+		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
+	}
+}
+
+/**
+ * Lista as waifus nos classificados globais por ordem de raridade/wishlist/popularidade
+ * !mu-classificados
+ */
+async function listarClassificadosCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+
+	try {
+		const { data } = await api.get("/market/listings?sortBy=rarity&limit=10");
+		const listings = data?.data?.listings || [];
+
+		if (listings.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🛒 *Classificados de Waifus & Husbandos*\n\nNenhum personagem anunciado no momento. Seja o primeiro usando `!mu-vender <id> <interesse>`!"
+			});
+		}
+
+		let text = "🛒 *Classificados Globais de Waifus & Husbandos*\n\n";
+		listings.forEach((l, idx) => {
+			const char = l.character;
+			const normRarity = String(char.baseRarity || "COMMON").toUpperCase();
+			const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+			const seller = l.user?.name || "Vendedor";
+
+			text += `*#${idx + 1}* ${emojiRarity} *${char.name}* — _${char.series || "Sem série"}_\n`;
+			text += `👤 *Vendedor:* ${seller}\n`;
+			text += `🔍 *Busca:* _${l.interest}_\n`;
+			text += `🆔 ID do Anúncio: \`${l.id}\`\n\n`;
+		});
+
+		text += `_Se tiver interesse em alguma, visite a aba "Classificados" no !mu-adm_`;
+
+		return new ReturnMessage({ chatId, content: text });
+	} catch (err) {
+		const msg =
+			err?.response?.data?.error?.message ||
+			err?.response?.data?.message ||
+			err?.message ||
+			"Erro ao consultar classificados.";
+		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
+	}
+}
+
+/**
+ * Lista as ofertas pendentes recebidas pelo vendedor
+ * !mu-ofertas
+ */
+async function listarOfertasRecebidasCmd(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	try {
+		const { data } = await api.get(`/market/offers?userId=${encodeURIComponent(userId)}`);
+		const offers = data?.data || [];
+
+		if (offers.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"📬 *Ofertas Recebidas*\n\nVocê não possui nenhuma oferta pendente nos seus classificados no momento."
+			});
+		}
+
+		let text = `📬 *Ofertas Pendentes nos seus Classificados (${offers.length}):*\n\n`;
+		offers.forEach((o, idx) => {
+			const char = o.listing?.character?.name || "Personagem";
+			const buyer = o.buyer?.name || "Jogador";
+			const offered = o.offeredItems || {};
+
+			let itemsDesc = "";
+			if (offered.isFree) {
+				itemsDesc = "🎁 Pediu de graça (Doação)";
+			} else {
+				const parts = [];
+				if (Array.isArray(offered.waifuIds) && offered.waifuIds.length > 0)
+					parts.push(`${offered.waifuIds.length} waifu(s)`);
+				if (Array.isArray(offered.fishes) && offered.fishes.length > 0)
+					parts.push(`${offered.fishes.length} peixe(s)`);
+				if (Array.isArray(offered.fishingBuffs) && offered.fishingBuffs.length > 0)
+					parts.push(`${offered.fishingBuffs.length} buff(s)`);
+				if (Array.isArray(offered.farmItems) && offered.farmItems.length > 0)
+					parts.push(`${offered.farmItems.length} item(ns) de fazenda`);
+				itemsDesc = parts.join(", ") || "Nenhum item";
+			}
+
+			text += `*#${idx + 1}* [ID: \`${o.id}\`]\n`;
+			text += `🎯 *Para sua:* ${char}\n`;
+			text += `👤 *De:* ${buyer}\n`;
+			text += `📦 *Oferece:* ${itemsDesc}\n`;
+			if (o.message) text += `💬 *Msg:* _"${o.message}"_\n`;
+			text += `\n`;
+		});
+
+		text += `Para aceitar: \`!mu-of-aceitar <ID>\`\n`;
+		text += `Para negar: \`!mu-of-negar <ID>\``;
+
+		return new ReturnMessage({ chatId, content: text });
+	} catch (err) {
+		const msg =
+			err?.response?.data?.error?.message ||
+			err?.response?.data?.message ||
+			err?.message ||
+			"Erro ao buscar ofertas.";
+		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
+	}
+}
+
+/**
+ * Aceita uma oferta via comando bot
+ * !mu-of-aceitar <id>
+ */
+async function aceitarOfertaCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	if (!args || !args[0]) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Uso: `!mu-of-aceitar <ID-da-oferta>`\nConsulte os IDs com `!mu-ofertas`."
+		});
+	}
+
+	const offerId = args[0].trim();
+
+	try {
+		const { data } = await api.post(`/market/offers/${encodeURIComponent(offerId)}/accept`, {
+			userId
+		});
+		if (data.success) {
+			return new ReturnMessage({
+				chatId,
+				content: `🎉 *Oferta Aceita com Sucesso!*\n\n${data.message || "Os personagens e itens foram trocados e transferidos."}`
+			});
+		} else {
+			return new ReturnMessage({
+				chatId,
+				content: `⚠️ ${data.reason || "Não foi possível aceitar a oferta."}`
+			});
+		}
+	} catch (err) {
+		const msg =
+			err?.response?.data?.reason ||
+			err?.response?.data?.error?.message ||
+			err?.message ||
+			"Erro ao aceitar oferta.";
+		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
+	}
+}
+
+/**
+ * Nega uma oferta via comando bot
+ * !mu-of-negar <id>
+ */
+async function negarOfertaCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	if (!args || !args[0]) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Uso: `!mu-of-negar <ID-da-oferta>`\nConsulte os IDs com `!mu-ofertas`."
+		});
+	}
+
+	const offerId = args[0].trim();
+
+	try {
+		await api.post(`/market/offers/${encodeURIComponent(offerId)}/reject`, { userId });
+		return new ReturnMessage({
+			chatId,
+			content: "👎 *Oferta Negada com Sucesso.*\nO proponente foi notificado."
+		});
+	} catch (err) {
+		const msg =
+			err?.response?.data?.error?.message ||
+			err?.response?.data?.message ||
+			err?.message ||
+			"Erro ao negar oferta.";
+		return new ReturnMessage({ chatId, content: `❌ ${msg}` });
 	}
 }
 
@@ -4814,6 +5093,71 @@ const commands = [
 		reactions: { before: "⏳", after: "✨", error: "❌" },
 		reply: true,
 		method: compartilharHarem
+	}),
+
+	// ── CLASSIFICADOS E MERCADO ─────────────────────────────────────────────
+	new Command({
+		name: "mu-vender",
+		description: "Anuncia uma waifu/hushando nos classificados globais com interesse de troca",
+		category: "mudae",
+		group: "muwaifu-market",
+		needsArgs: true,
+		aliases: ["mu-anunciar", "muvender", "muanunciar"],
+		reactions: { before: "🏷️", after: "✅", error: "❌" },
+		reply: true,
+		method: venderWaifuCmd
+	}),
+	new Command({
+		name: "mu-anunciar",
+		description: "Alias de !mu-vender",
+		category: "mudae",
+		group: "muwaifu-market",
+		needsArgs: true,
+		reactions: { before: "🏷️", after: "✅", error: "❌" },
+		reply: true,
+		method: venderWaifuCmd
+	}),
+	new Command({
+		name: "mu-classificados",
+		description: "Lista personagens disponíveis nos classificados globais",
+		category: "mudae",
+		group: "muwaifu-market",
+		aliases: ["muclassificados", "mu-mercado", "mumercado"],
+		reactions: { before: "🛍️", after: "✅", error: "❌" },
+		reply: true,
+		method: listarClassificadosCmd
+	}),
+	new Command({
+		name: "mu-ofertas",
+		description: "Lista ofertas recebidas nos seus anúncios de classificados",
+		category: "mudae",
+		group: "muwaifu-market",
+		aliases: ["muofertas", "mu-propostas"],
+		reactions: { before: "📜", after: "✅", error: "❌" },
+		reply: true,
+		method: listarOfertasRecebidasCmd
+	}),
+	new Command({
+		name: "mu-of-aceitar",
+		description: "Aceita uma oferta recebida nos classificados pelo ID",
+		category: "mudae",
+		group: "muwaifu-market",
+		needsArgs: true,
+		aliases: ["muofaceitar", "mu-aceitar"],
+		reactions: { before: "🤝", after: "🎉", error: "❌" },
+		reply: true,
+		method: aceitarOfertaCmd
+	}),
+	new Command({
+		name: "mu-of-negar",
+		description: "Nega ou recusa uma oferta recebida nos classificados pelo ID",
+		category: "mudae",
+		group: "muwaifu-market",
+		needsArgs: true,
+		aliases: ["muofnegar", "mu-negar", "mu-recusar"],
+		reactions: { before: "⏳", after: "🚫", error: "❌" },
+		reply: true,
+		method: negarOfertaCmd
 	})
 ];
 
@@ -4905,6 +5249,30 @@ const helper = {
 			cmd: "!mu-share / !mu-compartilhar",
 			desc: "Exibe o link público da sua coleção/harém para compartilhar com amigos",
 			usage: ["!mu-share", "!mu-compartilhar"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-vender / !mu-anunciar",
+			desc: "Anuncia uma waifu/hushando nos classificados globais definindo o que busca em troca",
+			usage: ["!mu-vender <id-waifu> <mensagem de interesse>", "!mu-anunciar rem-re-zero Troco por Emília ou 50x Tilápia"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-classificados",
+			desc: "Lista as waifus disponíveis nos classificados globais ordenadas por raridade",
+			usage: ["!mu-classificados", "!mu-classificados 2"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-ofertas",
+			desc: "Lista todas as ofertas pendentes que outros jogadores fizeram nos seus anúncios",
+			usage: ["!mu-ofertas"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-of-aceitar / !mu-of-negar",
+			desc: "Aceita ou recusa uma proposta de troca nos seus classificados",
+			usage: ["!mu-of-aceitar <id-da-oferta>", "!mu-of-negar <id-da-oferta>"],
 			category: "mudae"
 		}
 	]
@@ -5108,5 +5476,10 @@ module.exports = {
 	getUserId,
 	recordWaifuReportConfirmation,
 	getWaifuReportConfirmations,
-	deleteWaifuReportConfirmations
+	deleteWaifuReportConfirmations,
+	venderWaifuCmd,
+	listarClassificadosCmd,
+	listarOfertasRecebidasCmd,
+	aceitarOfertaCmd,
+	negarOfertaCmd
 };
