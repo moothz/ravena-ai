@@ -804,13 +804,24 @@ async function buildRollGridImage(items) {
 			}
 
 			const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
-			const badgeTop = cellH - style.badgeH - 12;
-			const badgeLeft = Math.floor((cellW - style.badgeW) / 2);
+			const isRollerWishlist = Boolean(
+				item.character?.isWishlist || item.isWishlist
+			);
+			const badgeW = isRollerWishlist
+				? Math.max(style.badgeW + 60, 116)
+				: style.badgeW;
+			const badgeH = style.badgeH;
+			const fontSize = isRollerWishlist
+				? Math.max(22, Math.round(style.fontSize * 0.76))
+				: style.fontSize;
+			const badgeTop = cellH - badgeH - 12;
+			const badgeLeft = Math.floor((cellW - badgeW) / 2);
+			const badgeText = isRollerWishlist ? `⭐ ${slot} ⭐` : `${slot}`;
 
 			const badgeSvg = Buffer.from(`
-				<svg width="${style.badgeW}" height="${style.badgeH}" xmlns="http://www.w3.org/2000/svg">
-					<rect width="${style.badgeW}" height="${style.badgeH}" rx="${style.rx}" fill="${style.bg}" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"/>
-					<text x="${style.badgeW / 2}" y="${style.badgeH / 2}" font-size="${style.fontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">${slot}</text>
+				<svg width="${badgeW}" height="${badgeH}" xmlns="http://www.w3.org/2000/svg">
+					<rect width="${badgeW}" height="${badgeH}" rx="${style.rx}" fill="${style.bg}" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"/>
+					<text x="${badgeW / 2}" y="${badgeH / 2}" font-size="${fontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">${badgeText}</text>
 				</svg>
 			`);
 
@@ -1251,6 +1262,18 @@ function makeRollHandler(genderFilter) {
 
 				const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
 
+				if (Array.isArray(firstRollData.wishlistUsers) && firstRollData.wishlistUsers.length > 0) {
+					const listMentions = firstRollData.wishlistUsers
+						.map((u) => `@${normalizeUserId(u.userId)}`)
+						.join(", ");
+					text += `\n\n- Usuários que tem personagem na wishlist: ${listMentions}`;
+					firstRollData.wishlistUsers.forEach((u) => {
+						mentions.push(toJid(u.userId));
+					});
+				}
+
+				const uniqueMentions = [...new Set(mentions)];
+
 				const imageBase64 = await downloadImageAsBase64(character.imageUrl);
 				if (imageBase64) {
 					return new ReturnMessage({
@@ -1268,7 +1291,7 @@ function makeRollHandler(genderFilter) {
 							waifuRollerUserId: userId,
 							waifuExclusiveUntil: exclusiveUntil,
 							waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
-							mentions
+							mentions: uniqueMentions
 						}
 					});
 				}
@@ -1282,7 +1305,7 @@ function makeRollHandler(genderFilter) {
 						waifuRollerUserId: userId,
 						waifuExclusiveUntil: exclusiveUntil,
 						waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
-						mentions
+						mentions: uniqueMentions
 					}
 				});
 			}
@@ -1349,6 +1372,9 @@ function makeRollHandler(genderFilter) {
 					rarity,
 					available: Boolean(r.available),
 					isOwner: Boolean(r.isOwner),
+					isWishlist: Boolean(r.isWishlist),
+					isStarWish: Boolean(r.isStarWish),
+					wishlistUsers: r.wishlistUsers || [],
 					owner: r.owner,
 					keyProgress: r.keyProgress,
 					exclusiveUntil,
@@ -1401,13 +1427,43 @@ function makeRollHandler(genderFilter) {
 			// Montagem da Legenda
 			let text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n\n`;
 
-			const freeSlots = multiRollSlots.filter((s) => s.available);
-			const marriedSlots = multiRollSlots.filter((s) => !s.available);
+			// Categorias na ordem solicitada:
+			// 1. Personagens que a pessoa que usou o mu-roll já tem alguma chave pelo menos (isOwner)
+			// 2. Personagens da wishlist de alguém do grupo (solteiros)
+			// 3. Solteiros
+			// 4. Casados
+			const rollerKeysSlots = multiRollSlots.filter((s) => s.isOwner);
+			const groupWishlistFreeSlots = multiRollSlots.filter(
+				(s) => !s.isOwner && s.available && ((s.wishlistUsers && s.wishlistUsers.length > 0) || s.isWishlist)
+			);
+			const solteirosSlots = multiRollSlots.filter(
+				(s) => !s.isOwner && s.available && (!s.wishlistUsers || s.wishlistUsers.length === 0) && !s.isWishlist
+			);
+			const casadosSlots = multiRollSlots.filter(
+				(s) => !s.available && !s.isOwner
+			);
 
-			if (freeSlots.length > 0) {
-				text += `💍 *Personagens livres:*\n`;
+			if (rollerKeysSlots.length > 0) {
+				text += `🔑 *Com chaves:*\n`;
+				rollerKeysSlots.forEach((s) => {
+					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+					const normRarity = String(s.rarity).toUpperCase();
+					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
+					const keysCount = s.keyProgress?.currentKeys || 1;
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""} (🔑 Chaves: ${keysCount}/10)\n`;
+				});
+				text += "\n";
+			}
+
+			const hasFreeSlots = groupWishlistFreeSlots.length > 0 || solteirosSlots.length > 0;
+			if (hasFreeSlots) {
 				text += `_Reaja com o emoji do número para casar!_\n\n`;
-				freeSlots.forEach((s) => {
+			}
+
+			if (groupWishlistFreeSlots.length > 0) {
+				text += `⭐ *Wishlist do grupo:*\n`;
+				groupWishlistFreeSlots.forEach((s) => {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
@@ -1417,18 +1473,26 @@ function makeRollHandler(genderFilter) {
 				});
 			}
 
-			if (marriedSlots.length > 0) {
-				text += `💔 *Personagens casados:*\n`;
-				marriedSlots.forEach((s) => {
+			if (solteirosSlots.length > 0) {
+				text += `💍 *Solteiros:*\n`;
+				solteirosSlots.forEach((s) => {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
-					const ownerInfo = s.isOwner
-						? ` (🔑 Chaves: ${s.keyProgress?.currentKeys || 1}/10)`
-						: s.owner?.name
-							? ` (${s.owner.name})`
-							: "";
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}\n`;
+					text += `> !mu-casar ${s.characterId}\n\n`;
+				});
+			}
+
+			if (casadosSlots.length > 0) {
+				text += `💔 *Casados:*\n`;
+				casadosSlots.forEach((s) => {
+					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+					const normRarity = String(s.rarity).toUpperCase();
+					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
+					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
 					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${ownerInfo}\n`;
 				});
 				text += "\n";
@@ -1457,6 +1521,32 @@ function makeRollHandler(genderFilter) {
 			if (eventBanner) {
 				text += eventBanner;
 			}
+
+			// Coleta todos os usuários do grupo que têm algum dos personagens na wishlist
+			const wishlistUsersMap = new Map();
+			allRollResults.forEach((r) => {
+				if (Array.isArray(r.wishlistUsers)) {
+					r.wishlistUsers.forEach((u) => {
+						const cleanId = normalizeUserId(u.userId);
+						if (cleanId) {
+							wishlistUsersMap.set(cleanId, u);
+						}
+					});
+				}
+			});
+
+			const multiMentions = [];
+			if (wishlistUsersMap.size > 0) {
+				const listMentions = Array.from(wishlistUsersMap.values())
+					.map((u) => `@${normalizeUserId(u.userId)}`)
+					.join(", ");
+				text += `\n\n- Usuários que tem personagem na wishlist: ${listMentions}`;
+				wishlistUsersMap.forEach((u) => {
+					multiMentions.push(toJid(u.userId));
+				});
+			}
+
+			const uniqueMultiMentions = [...new Set(multiMentions)];
 
 			// Download paralelo das imagens e geração do Grid
 			const downloadedBuffers = await Promise.all(
@@ -1496,7 +1586,8 @@ function makeRollHandler(genderFilter) {
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
 						waifuExpiresAt: now + CLAIM_WINDOW_MS,
-						waifuGridBase64: gridBase64
+						waifuGridBase64: gridBase64,
+						mentions: uniqueMultiMentions
 					}
 				});
 			}
@@ -1508,7 +1599,8 @@ function makeRollHandler(genderFilter) {
 					waifuRolls: multiRollSlots,
 					waifuGroupId: groupId,
 					waifuRollerUserId: userId,
-					waifuExpiresAt: now + CLAIM_WINDOW_MS
+					waifuExpiresAt: now + CLAIM_WINDOW_MS,
+					mentions: uniqueMultiMentions
 				}
 			});
 		} catch (err) {
@@ -4769,7 +4861,7 @@ const helper = {
 		},
 		{
 			cmd: "!mu-wishlist",
-			desc: "Lista seus personagens desejados (até 100) e calcula a chance de drop no roll",
+			desc: "Lista seus personagens desejados (até 1000) e calcula a chance de drop no roll",
 			usage: ["!mu-wishlist", "!mu-desejar <id>", "!mu-removerdesejo <id>"],
 			category: "mudae"
 		},
