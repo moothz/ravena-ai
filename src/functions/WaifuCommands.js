@@ -2658,7 +2658,7 @@ async function buscarPersonagens(bot, message, args) {
 }
 
 /**
- * Exibe detalhes e imagem de um personagem específico
+ * Exibe detalhes e imagem de um personagem com suporte a busca ampla (ID, nome, série, descrição)
  */
 async function detalhesPersonagem(bot, message, args) {
 	const chatId = message.group ?? message.author;
@@ -2666,16 +2666,63 @@ async function detalhesPersonagem(bot, message, args) {
 	if (!args[0]) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Informe o ID do personagem.\nExemplo: `!mu-char rem-re-zero`"
+			content:
+				"🔍 Informe o nome, série, descrição ou ID do personagem para buscar.\nExemplo: `!mu-char Frieren` ou `!mu-char audrey`"
 		});
 	}
 
-	const characterId = args.join(" ").trim();
+	const query = args.join(" ").trim();
+	let char = null;
+	let otherResults = [];
+
+	// 1. Se o termo não contiver espaços, tenta buscar direto por ID/slug exato
+	if (!/\s/.test(query)) {
+		try {
+			const { data } = await api.get(`/characters/${encodeURIComponent(query)}`);
+			if (data?.data) {
+				char = data.data;
+			}
+		} catch (idErr) {
+			// Se 404, não é erro crítico: prossegue normalmente para a busca ampla
+			if (idErr.response?.status !== 404) {
+				logger.debug(`[detalhesPersonagem] Falha na consulta por ID: ${idErr.message}`);
+			}
+		}
+	}
+
+	// 2. Se não encontrou por ID exato, executa busca ampla no catálogo
+	if (!char) {
+		try {
+			const { data } = await api.get("/characters", {
+				params: { search: query, limit: 6 }
+			});
+			const results = data.data?.data || [];
+			if (results.length > 0) {
+				const normQ = query.toLowerCase();
+				// Prioridade inteligente:
+				// 1) ID exato (case-insensitive)
+				// 2) Nome exato (case-insensitive)
+				// 3) Nome começando com a busca
+				// 4) Primeiro resultado mais popular (ordenado por claimCount / likeCount desc na API)
+				const exactId = results.find((c) => c.id?.toLowerCase() === normQ);
+				const exactName = results.find((c) => c.name?.toLowerCase() === normQ);
+				const startsName = results.find((c) => c.name?.toLowerCase().startsWith(normQ));
+				char = exactId || exactName || startsName || results[0];
+				otherResults = results.filter((c) => c.id !== char.id);
+			}
+		} catch (searchErr) {
+			logger.error(`[detalhesPersonagem] Erro na busca ampla: ${searchErr.message}`);
+		}
+	}
+
+	if (!char) {
+		return new ReturnMessage({
+			chatId,
+			content: `🔍 Nenhum personagem encontrado para "${query}".\n\n💡 _Dica: Tente pesquisar por parte do nome, anime/série ou palavras da descrição com \`!mu-char <busca>\`._`
+		});
+	}
 
 	try {
-		const { data } = await api.get(`/characters/${encodeURIComponent(characterId)}`);
-		const char = data.data;
-
 		const rarity = char.baseRarity || char.rarity || "COMMON";
 		const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
 		const labelRarity = RARITY_LABEL[rarity] || rarity;
@@ -2712,6 +2759,19 @@ async function detalhesPersonagem(bot, message, args) {
 
 		text += `\n🆔 ID: \`${char.id}\``;
 
+		// Se houver mais resultados correspondentes na busca ampla, lista como sugestão
+		if (otherResults.length > 0) {
+			const topOthers = otherResults.slice(0, 4);
+			text += `\n\n🔍 *Outros resultados para "${query}":*\n`;
+			topOthers.forEach((o) => {
+				const oEmoji = RARITY_EMOJI[o.baseRarity || o.rarity] || "⚪";
+				text += `• ${oEmoji} *${o.name}* (${o.series}) ➔ \`!mu-char ${o.id}\`\n`;
+			});
+			if (otherResults.length > 4) {
+				text += `_... e mais ${otherResults.length - 4} encontrado(s). Use \`!mu-chars ${query}\` para ver todos._\n`;
+			}
+		}
+
 		const imageBase64 = await downloadImageAsBase64(char.imageUrl);
 		if (imageBase64) {
 			return new ReturnMessage({
@@ -2730,7 +2790,7 @@ async function detalhesPersonagem(bot, message, args) {
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
-		return handleApiError(err, chatId, "Erro ao consultar personagem.");
+		return handleApiError(err, chatId, "Erro ao formatar detalhes do personagem.");
 	}
 }
 
@@ -3565,7 +3625,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-wishlist-limpar\` (aliases: \`!mu-wllimpar\`, \`!mu-limparwishlist\`) — Remove todas as waifus já casadas da sua wishlist.\n`;
 	text += `• \`!mu-like <id>\` (aliases: \`!mu-l\`, \`!mu-coracao\`) — Dá like em um personagem.\n`;
 	text += `• \`!mu-personagens <busca>\` (aliases: \`!mu-chars\`, \`!mu-buscar\`) — Pesquisa personagens no catálogo por nome/série.\n`;
-	text += `• \`!mu-char <id>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e chances de drop de um personagem.\n`;
+	text += `• \`!mu-char <busca>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e detalhes de um personagem (busca ampla por nome, série, descrição ou ID).\n`;
 	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n`;
 	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist e fotos).\n`;
 	text += `• \`!mu-share\` (alias: \`!mu-compartilhar\`) — Exibe o link público do seu harém para compartilhar com amigos.\n\n`;
@@ -4446,7 +4506,8 @@ const commands = [
 	// ── DETALHES PERSONAGEM ─────────────────────────────────────────────────
 	new Command({
 		name: "mu-char",
-		description: "Consulta detalhes e foto de um personagem por ID",
+		description:
+			"Consulta detalhes e foto de um personagem por busca ampla (nome, ID, série, descrição)",
 		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
@@ -4456,7 +4517,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-info",
-		description: "Alias de !mu-char",
+		description: "Alias de !mu-char (busca ampla por nome, ID, série ou descrição)",
 		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
@@ -4466,7 +4527,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-winfo",
-		description: "Alias Waifu-Info de !mu-char",
+		description: "Alias Waifu-Info de !mu-char (busca ampla por nome, ID, série ou descrição)",
 		category: "mudae",
 		group: "muwaifu-char",
 		needsArgs: true,
