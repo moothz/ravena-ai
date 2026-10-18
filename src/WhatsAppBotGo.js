@@ -41,6 +41,17 @@ const statAsync = promisify(fs.stat);
 const renameAsync = promisify(fs.rename);
 const convertAsync = promisify(imagemagick.convert);
 
+// Eventos da whatsgoapi estritamente necessários para o funcionamento da Ravena
+const WHATSGO_SUBSCRIBED_EVENTS = [
+	"MESSAGE",
+	"SEND_MESSAGE",
+	"GROUP",
+	"CONTACT",
+	"CONNECTION",
+	"CALL",
+	"QRCODE"
+];
+
 /**
  * Verifica se um erro indica que o bot não participa do grupo ou o grupo não existe
  * @param {any} err
@@ -362,17 +373,7 @@ class WhatsAppBotGo {
 		const payload = {
 			name: this.instanceName,
 			webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
-			webhookEvents: [
-				"MESSAGE",
-				"PRESENCE",
-				"CALL",
-				"CONNECTION",
-				"QRCODE",
-				"CONNECTION",
-				"CONTACT",
-				"GROUP",
-				"NEWSLETTER"
-			] // Ajustar conforme necessidade da V3
+			webhookEvents: WHATSGO_SUBSCRIBED_EVENTS
 		};
 
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`, payload);
@@ -516,20 +517,7 @@ class WhatsAppBotGo {
 				`/instance/connect`,
 				{
 					webhookUrl,
-					subscribe: [
-						"MESSAGE",
-						"SEND_MESSAGE",
-						"READ_RECEIPT",
-						"PRESENCE",
-						"CHAT_PRESENCE",
-						"CALL",
-						"CONNECTION",
-						"LABEL",
-						"CONTACT",
-						"GROUP",
-						"NEWSLETTER",
-						"QRCODE"
-					]
+					subscribe: WHATSGO_SUBSCRIBED_EVENTS
 				},
 				false
 			);
@@ -1847,20 +1835,7 @@ class WhatsAppBotGo {
 										`/instance/connect`,
 										{
 											webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
-											subscribe: [
-												"MESSAGE",
-												"SEND_MESSAGE",
-												"READ_RECEIPT",
-												"PRESENCE",
-												"CHAT_PRESENCE",
-												"CALL",
-												"CONNECTION",
-												"LABEL",
-												"CONTACT",
-												"GROUP",
-												"NEWSLETTER",
-												"QRCODE"
-											]
+											subscribe: WHATSGO_SUBSCRIBED_EVENTS
 										},
 										false
 									);
@@ -1876,20 +1851,7 @@ class WhatsAppBotGo {
 												`/instance/connect`,
 												{
 													webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
-													subscribe: [
-														"MESSAGE",
-														"SEND_MESSAGE",
-														"READ_RECEIPT",
-														"PRESENCE",
-														"CHAT_PRESENCE",
-														"CALL",
-														"CONNECTION",
-														"LABEL",
-														"CONTACT",
-														"GROUP",
-														"NEWSLETTER",
-														"QRCODE"
-													]
+													subscribe: WHATSGO_SUBSCRIBED_EVENTS
 												},
 												false
 											);

@@ -3088,80 +3088,44 @@ async function processMultiRollReport({
 		}
 	}
 
-	// 3. Montagem da Legenda da Denúncia
-	let logCaption = `🚨 *DENÚNCIA DE ROLLS MÚLTIPLOS WAIFULETES* 🚨\n\n`;
-	logCaption += `👤 *Denunciante:* ${denunciante} (${denuncianteId})\n`;
-	logCaption += `👥 *Origem:* ${grupoOrigem}\n`;
-	logCaption += `🎲 *Total de Personagens:* ${resolvedSlots.length}\n\n`;
-
-	resolvedSlots.forEach((s) => {
-		const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
-		const normRarity = String(s.rarity || "COMMON").toUpperCase();
-		const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-		const labelRarity = RARITY_LABEL[normRarity] || s.rarity || "Comum";
-		const charName = s.characterName || s.characterId || `Personagem #${s.slot}`;
-		const series = s.series ? ` — ${s.series}` : "";
-		const charId = s.characterId || "desconhecido";
-
-		logCaption += `${emojiNum} ${emojiRarity} [${labelRarity}] *${charName}*${series}\n`;
-		logCaption += `!sa-remudae ${charId}\n\n`;
-	});
-
-	logCaption += `📋 *Comandos de remoção:*\n`;
-	resolvedSlots.forEach((s) => {
-		if (s.characterId) {
-			logCaption += `!sa-remudae ${s.characterId}\n`;
-		}
-	});
-
-	// 4. Configura destino no grupo de moderação / logs
-	let grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
-	if (grupoLogs && !grupoLogs.includes("@") && /^\d+$/.test(grupoLogs)) {
-		grupoLogs = `${grupoLogs}@g.us`;
-	}
-	if (grupoLogs && !grupoLogs.endsWith("@g.us") && process.env.GRUPO_LOGS) {
-		grupoLogs = process.env.GRUPO_LOGS;
+	// 3. Despacha denúncia de múltiplos rolls diretamente para a API oficial do Waifuletes (Telegram moderação)
+	try {
+		await api.post("/characters/multi-report", {
+			slots: resolvedSlots.map((s) => ({
+				slot: s.slot,
+				characterId: s.characterId || null,
+				characterName: s.characterName || null,
+				series: s.series || null,
+				rarity: s.rarity || "COMMON",
+				imageUrl: s.imageUrl || null
+			})),
+			gridImageBase64: gridBase64 || null,
+			reason: `Denúncia de rolls múltiplos via WhatsApp por ${denunciante} (${denuncianteId}) no grupo ${grupoOrigem}`,
+			userId: denuncianteId,
+			userName: `${denunciante} (${denuncianteId})`,
+			source: grupoOrigem
+		});
+	} catch (apiErr) {
+		logger.error(`Erro ao enviar denúncia de multi-roll para a API Waifuletes: ${apiErr.message}`);
 	}
 
-	const returnMessages = [];
-
-	if (grupoLogs) {
-		if (gridBase64) {
-			returnMessages.push(
-				new ReturnMessage({
-					chatId: grupoLogs,
-					content: {
-						mimetype: "image/jpeg",
-						data: gridBase64,
-						filename: "denuncia_multiroll.jpg",
-						isMessageMedia: true
-					},
-					options: {
-						caption: logCaption.trim()
-					}
-				})
-			);
-		} else {
-			returnMessages.push(
-				new ReturnMessage({
-					chatId: grupoLogs,
-					content: logCaption.trim()
-				})
-			);
-		}
-	}
-
-	// 5. Registra confirmação de denúncia no SQLite para cada personagem
+	// 4. Registra confirmação de denúncia no SQLite para cada personagem
 	if (targetMsgId) {
 		resolvedSlots.forEach((s) => {
 			if (s.characterId) {
-				recordWaifuReportConfirmation(targetMsgId, s.characterId, chatId, bot?.id, logCaption);
+				recordWaifuReportConfirmation(
+					targetMsgId,
+					s.characterId,
+					chatId,
+					bot?.id,
+					`Denúncia de rolls múltiplos: ${s.characterName || s.characterId}`
+				);
 			}
 		});
 	}
 
-	// 6. Resposta amigável para o chat de origem
-	returnMessages.push(
+	// 5. Resposta amigável para o chat de origem
+	return [
 		new ReturnMessage({
 			chatId,
 			content: `⛔ *Denúncia Registrada!*\n\nOs *${resolvedSlots.length}* personagens deste sorteio foram encaminhados para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`,
@@ -3170,9 +3134,7 @@ async function processMultiRollReport({
 				waifuReportCharacterIds: resolvedSlots.map((s) => s.characterId).filter(Boolean)
 			}
 		})
-	);
-
-	return returnMessages;
+	];
 }
 
 /**
@@ -3352,68 +3314,31 @@ async function denunciarWaifu(bot, message, args, group) {
 		});
 	}
 
-	// 6. Configura destino no grupo de moderação / logs
-	let grupoLogs = bot?.grupoLogs || process.env.GRUPO_LOGS;
-	if (grupoLogs && !grupoLogs.includes("@") && /^\d+$/.test(grupoLogs)) {
-		grupoLogs = `${grupoLogs}@g.us`;
+	// 6. Despacha denúncia diretamente para a API oficial do Waifuletes (Telegram moderação)
+	try {
+		await api.post(`/characters/${encodeURIComponent(character.id)}/report`, {
+			characterId: character.id,
+			reason: `Denúncia via WhatsApp por ${denunciante} (${denuncianteId}) no grupo ${grupoOrigem}`,
+			userId: denuncianteId,
+			userName: `${denunciante} (${denuncianteId})`
+		});
+	} catch (apiErr) {
+		logger.error(`Erro ao enviar denúncia para a API Waifuletes: ${apiErr.message}`);
 	}
-	if (grupoLogs && !grupoLogs.endsWith("@g.us") && process.env.GRUPO_LOGS) {
-		grupoLogs = process.env.GRUPO_LOGS;
-	}
 
-	const rarity = character.baseRarity || character.rarity || "COMMON";
-	const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
-	const labelRarity = RARITY_LABEL[rarity] || rarity;
-
-	let logCaption = `🚨 *DENÚNCIA DE PERSONAGEM WAIFULETES* 🚨\n\n`;
-	logCaption += `👤 *Denunciante:* ${denunciante} (${denuncianteId})\n`;
-	logCaption += `👥 *Origem:* ${grupoOrigem}\n`;
-	logCaption += `✨ *Personagem:* *${character.name}*\n`;
-	logCaption += `📺 *Série:* ${character.series}\n`;
-	logCaption += `${emojiRarity} *Raridade:* ${labelRarity}\n`;
-	logCaption += `🆔 *ID:* \`${character.id}\`\n\n`;
-	logCaption += `Comando para remover do catálogo:\n`;
-	logCaption += `!sa-remudae ${character.id}`;
-
-	const returnMessages = [];
-
-	if (grupoLogs) {
-		const imageBase64 = await downloadImageAsBase64(character.imageUrl);
-		if (imageBase64) {
-			returnMessages.push(
-				new ReturnMessage({
-					chatId: grupoLogs,
-					content: {
-						mimetype: "image/jpeg",
-						data: imageBase64,
-						filename: `${character.id}.jpg`,
-						isMessageMedia: true
-					},
-					options: {
-						caption: logCaption
-					}
-				})
-			);
-		} else {
-			returnMessages.push(
-				new ReturnMessage({
-					chatId: grupoLogs,
-					content: logCaption
-				})
-			);
-		}
-
-		// Envia mensagem isolada com comando para facilitar cópia/encaminhamento rápido no celular
-		returnMessages.push(
-			new ReturnMessage({
-				chatId: grupoLogs,
-				content: `!sa-remudae ${character.id}`
-			})
+	// 7. Registra confirmação de denúncia no SQLite
+	if (targetMsgId) {
+		recordWaifuReportConfirmation(
+			targetMsgId,
+			character.id,
+			chatId,
+			bot?.id,
+			`Denúncia encaminhada para moderação: ${character.name} (${character.id})`
 		);
 	}
 
-	// Resposta amigável para quem denunciou / grupo
-	returnMessages.push(
+	// 8. Resposta amigável para quem denunciou / grupo
+	return [
 		new ReturnMessage({
 			chatId,
 			content: `⛔ *Denúncia Registrada!*\n\nO personagem *${character.name}* foi encaminhado para a equipe de moderação. Obrigado por ajudar a manter o catálogo seguro!`,
@@ -3421,9 +3346,7 @@ async function denunciarWaifu(bot, message, args, group) {
 				waifuReportCharacterId: character.id
 			}
 		})
-	);
-
-	return returnMessages;
+	];
 }
 
 /**

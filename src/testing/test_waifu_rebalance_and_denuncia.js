@@ -170,6 +170,33 @@ async function runTests() {
 	// ── 4. Teste de Denúncia (!mu-denunciar) ──
 	console.log("\n4. Testando fluxo de denúncia (mu-denunciar)...");
 
+	const apiReportCalls = [];
+	WaifuCommands.api.post = async (url, data) => {
+		if (url.includes("/report")) {
+			apiReportCalls.push({ url, data });
+			return { data: { success: true, data: { message: "Reported" } } };
+		}
+		if (url === "/admin/characters/purge-character") {
+			return {
+				data: {
+					success: true,
+					data: {
+						character: {
+							id: data.characterId,
+							name: "Personagem Removido",
+							series: "Serie Problemática",
+							rarity: "RARE"
+						},
+						marriagesUndone: 3,
+						totalKakeraRefunded: 996,
+						message: "Personagem removido com sucesso."
+					}
+				}
+			};
+		}
+		return origPost(url, data);
+	};
+
 	// 4.1 Denúncia por argumento direto
 	const denMsgArgs = createMessage({
 		content: "!mu-denunciar frieren",
@@ -180,12 +207,16 @@ async function runTests() {
 		name: "Anime Group"
 	});
 	assert.ok(Array.isArray(denResults), "Deve retornar array de ReturnMessages");
-	// Verifica se enviou mensagem para grupoLogs e confirmação para o grupo
-	const logMsg = denResults.find(
-		(m) => m.chatId === "logs123@g.us" && typeof m.content === "string"
+	// Verifica se NÃO enviou mensagem para grupoLogs e chamou endpoint oficial
+	assert.strictEqual(
+		denResults.filter((m) => m.chatId === "logs123@g.us").length,
+		0,
+		"NÃO deve enviar mensagem para o grupo de logs"
 	);
-	assert.ok(logMsg, "Deve enviar mensagem com comando para o grupo de logs");
-	assert.ok(logMsg.content.includes("!sa-remudae frieren-sousou-no-frieren"));
+	assert.ok(
+		apiReportCalls.some((c) => c.url.includes("frieren-sousou-no-frieren")),
+		"Deve chamar endpoint oficial de report para frieren"
+	);
 
 	const userReply = denResults.find((m) => m.chatId === "group1@g.us");
 	assert.ok(userReply, "Deve enviar confirmação para o grupo de origem");
@@ -251,13 +282,14 @@ async function runTests() {
 		name: "Anime Group"
 	});
 	assert.ok(Array.isArray(fullReactResults), "Deve retornar array de ReturnMessages");
-	const possumLogMsg = fullReactResults.find(
-		(m) => m.chatId === "logs123@g.us" && typeof m.content === "string"
+	assert.strictEqual(
+		fullReactResults.filter((m) => m.chatId === "logs123@g.us").length,
+		0,
+		"NÃO deve enviar para grupoLogs na reação de roll completo"
 	);
-	assert.ok(possumLogMsg, "Deve enviar mensagem com comando para o grupo de logs");
 	assert.ok(
-		possumLogMsg.content.includes("!sa-remudae common-ringtail-possum"),
-		"Deve extrair o slug common-ringtail-possum mesmo com todos os args passados pelo ReactionsHandler"
+		apiReportCalls.some((c) => c.url.includes("common-ringtail-possum")),
+		"Deve extrair o slug common-ringtail-possum e chamar endpoint oficial"
 	);
 	console.log(
 		"✓ Denúncia por reação ⛔ com texto completo e args do ReactionsHandler validada com sucesso!"

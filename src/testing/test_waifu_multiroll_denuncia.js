@@ -160,44 +160,51 @@ _Reaja com o emoji do número para casar!_
 		})
 	});
 
+	const apiPostCalls = [];
+	WaifuCommands.api.post = async (url, data, config) => {
+		apiPostCalls.push({ url, data, config });
+		return { data: { success: true, data: { report: { id: "rep_test_123" } } } };
+	};
+
 	const reportResults = await WaifuCommands.denunciarWaifu(bot, replyMsg, [], {
 		name: "Grupo Anime"
 	});
 	assert.ok(Array.isArray(reportResults), "Deve retornar array de ReturnMessages");
 
-	// Deve enviar mensagem para o grupo de logs
+	// NÃO deve enviar mensagem para o grupo de logs
 	const logMsg = reportResults.find((m) => m.chatId === "logs123@g.us");
-	assert.ok(logMsg, "Deve enviar mensagem para o grupoLogs");
+	assert.strictEqual(logMsg, undefined, "NÃO deve enviar mensagem para o grupoLogs");
 	assert.strictEqual(
 		reportResults.filter((m) => m.chatId === "logs123@g.us").length,
-		1,
-		"Deve enviar APENAS UMA mensagem para o grupoLogs (imagem + legenda com todos os comandos)"
+		0,
+		"Nenhuma mensagem deve ser enviada para grupoLogs"
 	);
 
-	// Verifica anexo de imagem
-	assert.ok(logMsg.content?.isMessageMedia, "Mensagem de log deve conter mídia anexa");
-	assert.strictEqual(logMsg.content.data, fakeGridBase64, "Deve conter o grid de imagens");
-
-	// Verifica legenda
-	const caption = logMsg.options?.caption;
-	assert.ok(caption, "Deve conter legenda com detalhes da denúncia");
-	assert.ok(
-		caption.includes("DENÚNCIA DE ROLLS MÚLTIPLOS WAIFULETES"),
-		"Cabeçalho de múltiplos rolls"
+	// Verifica chamada na API oficial do Waifuletes
+	const postCall = apiPostCalls.find((c) => c.url === "/characters/multi-report");
+	assert.ok(postCall, "Deve despachar a denúncia para /characters/multi-report");
+	assert.strictEqual(postCall.data.slots.length, 3, "Deve enviar os 3 slots");
+	assert.strictEqual(
+		postCall.data.gridImageBase64,
+		fakeGridBase64,
+		"Deve conter a imagem em base64 do grid"
 	);
-	assert.ok(caption.includes("!sa-remudae rem-re-zero"), "Comando para Rem");
-	assert.ok(caption.includes("!sa-remudae emilia-re-zero"), "Comando para Emilia");
-	assert.ok(caption.includes("!sa-remudae ram-re-zero"), "Comando para Ram");
+	assert.strictEqual(postCall.data.slots[0].characterId, "rem-re-zero");
+	assert.strictEqual(postCall.data.slots[1].characterId, "emilia-re-zero");
+	assert.strictEqual(postCall.data.slots[2].characterId, "ram-re-zero");
 
 	// Verifica resposta de confirmação no grupo
 	const groupConfirmMsg = reportResults.find((m) => m.chatId === "group1@g.us");
 	assert.ok(groupConfirmMsg, "Deve enviar confirmação para o chat de origem");
 	assert.ok(groupConfirmMsg.content.includes("Denúncia Registrada"), "Texto de confirmação");
 	assert.ok(groupConfirmMsg.content.includes("3"), "Indica que 3 personagens foram denunciados");
-	console.log("✓ !mu-denunciar citando mensagem de multi-roll em cache validado com sucesso!");
+	console.log(
+		"✓ !mu-denunciar citando mensagem de multi-roll chamando endpoint oficial validado com sucesso!"
+	);
 
 	// ─── TESTE 3: Denúncia via Reação ⛔ em post de multi-roll ───
 	console.log("\n3. Testando denúncia via reação ⛔ em mensagem de multi-roll...");
+	apiPostCalls.length = 0;
 	const reactMsg = createMessage({
 		content: sampleRollText,
 		caption: sampleRollText,
@@ -218,16 +225,10 @@ _Reaja com o emoji do número para casar!_
 	assert.ok(Array.isArray(reactResults), "Deve retornar array de ReturnMessages");
 
 	const reactLogMsg = reactResults.find((m) => m.chatId === "logs123@g.us");
-	assert.ok(reactLogMsg, "Deve enviar mensagem para grupoLogs na reação");
-	assert.strictEqual(
-		reactResults.filter((m) => m.chatId === "logs123@g.us").length,
-		1,
-		"Deve enviar APENAS UMA mensagem para o grupoLogs na reação"
-	);
-	assert.ok(reactLogMsg.content?.isMessageMedia, "Mídia anexa na denúncia por reação");
-	assert.ok(reactLogMsg.options?.caption.includes("!sa-remudae rem-re-zero"));
-	assert.ok(reactLogMsg.options?.caption.includes("!sa-remudae emilia-re-zero"));
-	assert.ok(reactLogMsg.options?.caption.includes("!sa-remudae ram-re-zero"));
+	assert.strictEqual(reactLogMsg, undefined, "Não deve enviar para grupoLogs na reação");
+	const reactPostCall = apiPostCalls.find((c) => c.url === "/characters/multi-report");
+	assert.ok(reactPostCall, "Reação deve despachar para /characters/multi-report");
+	assert.strictEqual(reactPostCall.data.slots.length, 3);
 	console.log("✓ Denúncia via reação ⛔ em multi-roll validada com sucesso!");
 
 	// ─── TESTE 4: Denúncia pós-restart (cache miss com resolução via texto e download) ───
@@ -237,6 +238,7 @@ _Reaja com o emoji do número para casar!_
 	// Limpa caches em memória
 	WaifuCommands.multiRollHistoryByMsgId.clear();
 	WaifuCommands.pendingClaims.clear();
+	apiPostCalls.length = 0;
 
 	const postRestartMsgId = "3EB0_POST_RESTART_999";
 	const postRestartReply = createMessage({
@@ -260,20 +262,19 @@ _Reaja com o emoji do número para casar!_
 		name: "Grupo B"
 	});
 	assert.ok(Array.isArray(postRestartResults));
-	const postRestartLog = postRestartResults.find((m) => m.chatId === "logs123@g.us");
-	assert.ok(postRestartLog, "Deve gerar log mesmo sem cache de IDs");
 	assert.strictEqual(
 		postRestartResults.filter((m) => m.chatId === "logs123@g.us").length,
-		1,
-		"Deve enviar mensagem unificada no fallback pós-restart"
+		0,
+		"Não deve enviar para grupoLogs no fallback"
 	);
-	// Ram foi casada e não tinha comando !mu-casar no texto, mas foi resolvida via search na API:
+	const restartPostCall = apiPostCalls.find((c) => c.url === "/characters/multi-report");
+	assert.ok(restartPostCall, "Deve chamar /characters/multi-report no fallback");
 	assert.ok(
-		postRestartLog.options.caption.includes("!sa-remudae ram-re-zero"),
+		restartPostCall.data.slots.some((s) => s.characterId === "ram-re-zero"),
 		"Deve ter resolvido o ID de Ram através de busca por nome"
 	);
-	assert.ok(postRestartLog.options.caption.includes("!sa-remudae rem-re-zero"));
-	assert.ok(postRestartLog.options.caption.includes("!sa-remudae emilia-re-zero"));
+	assert.ok(restartPostCall.data.slots.some((s) => s.characterId === "rem-re-zero"));
+	assert.ok(restartPostCall.data.slots.some((s) => s.characterId === "emilia-re-zero"));
 	console.log("✓ Denúncia pós-restart com resolução automática de IDs validada com sucesso!");
 
 	// ─── TESTE 5: Registro no banco SQLite de confirmações ───
