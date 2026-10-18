@@ -1,4 +1,5 @@
 const axios = require("axios");
+const fs = require("fs").promises;
 const sharp = require("sharp");
 const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
@@ -9,6 +10,11 @@ const GameEventService = require("../services/GameEventService");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 const FishingGame = require("./FishingGame");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
+const {
+	generateAndSaveMarriageImage,
+	getMarriagePhoto,
+	removeMarriagePhoto
+} = require("../utils/WaifuMarriagePhotoHelper");
 const jardimClient = new ShadowGardenClient();
 
 const database = Database.getInstance();
@@ -1699,8 +1705,57 @@ const rollMale = makeRollHandler("MALE");
 const rollFemale = makeRollHandler("FEMALE");
 
 /**
- * Reivindica casamento com personagem sorteado
+ * Constrói o ReturnMessage do casamento, incluindo a foto gerada ou fallback de imagem original/texto
  */
+async function buildMarriageReturnMessage(
+	bot,
+	message,
+	character,
+	userId,
+	name,
+	text,
+	replyOptions
+) {
+	const chatId = message.group ?? message.author;
+	try {
+		const photoResult = await generateAndSaveMarriageImage(bot, message, character, userId, name);
+
+		if (photoResult && photoResult.success && photoResult.media) {
+			return new ReturnMessage({
+				chatId,
+				content: photoResult.media,
+				options: {
+					...replyOptions,
+					caption: text
+				}
+			});
+		}
+
+		if (photoResult && photoResult.fallback === "original_image" && photoResult.originalBase64) {
+			return new ReturnMessage({
+				chatId,
+				content: {
+					data: photoResult.originalBase64,
+					mimetype: "image/jpeg",
+					isMessageMedia: true
+				},
+				options: {
+					...replyOptions,
+					caption: text
+				}
+			});
+		}
+	} catch (e) {
+		logger.warn("Erro ao gerar/anexar foto de casamento:", e.message || e);
+	}
+
+	return new ReturnMessage({
+		chatId,
+		content: text,
+		options: replyOptions
+	});
+}
+
 /**
  * Reivindica casamento com personagem sorteado
  */
@@ -1927,14 +1982,10 @@ async function casarWaifu(bot, message, args) {
 			text += `\n💖 *${character.name} é sua Soulmate definitiva!*`;
 		}
 
-		return new ReturnMessage({
-			chatId,
-			content: text,
-			options: {
-				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin,
-				mentions: [toJid(userId)]
-			}
+		return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin,
+			mentions: [toJid(userId)]
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao realizar casamento.", {
@@ -2048,14 +2099,10 @@ async function processWaifuReaction(bot, message, args, group) {
 			text += `\n💖 *${character.name} é sua Soulmate definitiva!*`;
 		}
 
-		return new ReturnMessage({
-			chatId,
-			content: text,
-			options: {
-				quotedMessageId: targetMsgId,
-				goReply: message.origin,
-				mentions: [toJid(userId)]
-			}
+		return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
+			quotedMessageId: targetMsgId,
+			goReply: message.origin,
+			mentions: [toJid(userId)]
 		});
 	} catch (err) {
 		return handleApiError(
@@ -2086,6 +2133,8 @@ async function divorciarWaifu(bot, message, args) {
 		const { data } = await api.post("/divorce", { userId, characterId });
 		const { character, refundedKakera, keysLost, newKakeraBalance } = data.data;
 
+		await removeMarriagePhoto(character.id || characterId).catch(() => {});
+
 		let text = `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n`;
 		text += `💜 Reembolso: *+${refundedKakera} Zinthos* (perdidas ${keysLost} chaves)\n`;
 		text += `💰 Novo saldo: *${newKakeraBalance} Zinthos*`;
@@ -2094,6 +2143,215 @@ async function divorciarWaifu(bot, message, args) {
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao processar divórcio.");
 	}
+}
+
+/**
+ * Consulta ou gera a foto oficial de casamento do casal (!mu-foto [nova] <nome>)
+ */
+async function consultarOuGerarFotoCasamento(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const name = getUserName(message);
+
+	const rawArgs = [...(args || [])];
+	let forceNew = false;
+	if (rawArgs.length > 0 && /^(nova|novo)$/i.test(rawArgs[0])) {
+		forceNew = true;
+		rawArgs.shift();
+	}
+
+	if (rawArgs.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"🔍 Informe o nome ou ID do personagem para consultar a foto de casamento.\nExemplo: `!mu-foto Frieren` ou `!mu-foto nova Frieren`"
+		});
+	}
+
+	const query = rawArgs.join(" ").trim();
+	let char = null;
+
+	// 1. Tenta buscar direto por ID/slug exato se não contiver espaços
+	if (!/\s/.test(query)) {
+		try {
+			const { data } = await api.get(`/characters/${encodeURIComponent(query)}`);
+			if (data?.data) {
+				char = data.data;
+			}
+		} catch (idErr) {
+			if (idErr.response?.status !== 404) {
+				logger.debug(`[consultarOuGerarFotoCasamento] Falha na consulta por ID: ${idErr.message}`);
+			}
+		}
+	}
+
+	// 2. Se não encontrou por ID exato, busca ampla no catálogo
+	if (!char) {
+		try {
+			const { data } = await api.get("/characters", {
+				params: { search: query, limit: 6 }
+			});
+			const results = data.data?.data || [];
+			if (results.length > 0) {
+				const normQ = query.toLowerCase();
+				const exactId = results.find((c) => c.id?.toLowerCase() === normQ);
+				const exactName = results.find((c) => c.name?.toLowerCase() === normQ);
+				const startsName = results.find((c) => c.name?.toLowerCase().startsWith(normQ));
+				char = exactId || exactName || startsName || results[0];
+			}
+		} catch (searchErr) {
+			logger.error(`[consultarOuGerarFotoCasamento] Erro na busca ampla: ${searchErr.message}`);
+		}
+	}
+
+	if (!char) {
+		return new ReturnMessage({
+			chatId,
+			content: `🔍 Nenhum personagem encontrado para "${query}".`
+		});
+	}
+
+	// 3. Validação de Casamento
+	if (!char.isClaimed || !char.owner) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ *${char.name}* ainda não é casado(a) com ninguém! Use *!mu-roll* para encontrar e casar com waifus.`
+		});
+	}
+
+	const ownerId = char.owner.id || "";
+	const isOwner = normalizeUserId(ownerId) === normalizeUserId(userId);
+	const spouseMention = ownerId.includes("@") ? `@${ownerId.split("@")[0]}` : `@${ownerId}`;
+	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+
+	// 4. Se solicitou explicitamente nova foto com 'nova'
+	if (forceNew) {
+		if (!isOwner) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Apenas o cônjuge (${spouseMention}) pode gerar uma nova foto de casamento com *${char.name}*!`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin,
+					mentions: [toJid(ownerId)]
+				}
+			});
+		}
+
+		message.origin?.react?.(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
+		const photoResult = await generateAndSaveMarriageImage(bot, message, char, userId, name);
+
+		if (photoResult && photoResult.success && photoResult.media) {
+			let caption = `💍 *Nova Foto de Casamento!* 📸\n`;
+			caption += `👰 Casal: ${userMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+			caption += `✨ A nova foto oficial foi gerada e atualizada no álbum!`;
+
+			return new ReturnMessage({
+				chatId,
+				content: photoResult.media,
+				options: {
+					caption,
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin,
+					mentions: [toJid(userId)]
+				}
+			});
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Não foi possível gerar a nova foto de casamento no momento. Tente novamente mais tarde.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	// 5. Consulta normal (!mu-foto <personagem>)
+	const existingPhoto = await getMarriagePhoto(char.id);
+
+	if (existingPhoto.exists) {
+		let media = null;
+		if (bot && typeof bot.createMedia === "function") {
+			media = await bot.createMedia(existingPhoto.photoPath, "image/jpeg").catch(() => null);
+		}
+
+		if (!media) {
+			try {
+				const buf = await fs.readFile(existingPhoto.photoPath);
+				media = {
+					data: buf.toString("base64"),
+					mimetype: "image/jpeg",
+					isMessageMedia: true
+				};
+			} catch (_) {}
+		}
+
+		if (media) {
+			let caption = `💍 *Álbum de Casamento* 📸\n`;
+			caption += `👰 Casal: ${spouseMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+			if (isOwner) {
+				caption += `💡 _Envie \`!mu-foto nova ${char.id}\` para gerar uma nova foto e substituir a atual._`;
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: media,
+				options: {
+					caption,
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin,
+					mentions: [toJid(ownerId)]
+				}
+			});
+		}
+	}
+
+	// Se não existe foto salva ainda (casamentos passados):
+	if (!isOwner) {
+		return new ReturnMessage({
+			chatId,
+			content: `📷 Este casamento ainda não possui uma foto oficial registrada no álbum, e apenas o cônjuge (${spouseMention}) pode tirar a primeira foto!`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [toJid(ownerId)]
+			}
+		});
+	}
+
+	// O cônjuge chamou !mu-foto e o casamento não tinha foto salva: gera na hora!
+	message.origin?.react?.(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
+	const photoResult = await generateAndSaveMarriageImage(bot, message, char, userId, name);
+
+	if (photoResult && photoResult.success && photoResult.media) {
+		let caption = `💍 *Foto de Casamento Registrada!* 📸\n`;
+		caption += `👰 Casal: ${userMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+		caption += `✨ A foto de casamento foi gerada com sucesso e arquivada no álbum!`;
+
+		return new ReturnMessage({
+			chatId,
+			content: photoResult.media,
+			options: {
+				caption,
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [toJid(userId)]
+			}
+		});
+	}
+
+	return new ReturnMessage({
+		chatId,
+		content:
+			"❌ Não foi possível gerar a foto do casamento no momento. Tente novamente mais tarde.",
+		options: {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		}
+	});
 }
 
 /**
@@ -3679,6 +3937,7 @@ async function ajudaWaifus(bot, message) {
 
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
+	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos.\n`;
 	text += `• \`!mu-harem [página]\` (aliases: \`!mu-h\`, \`!mu-colecao\`) — Lista todas as waifus/husbandos que você possui.\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
@@ -4391,6 +4650,38 @@ const commands = [
 		usage: "",
 		hidden: true,
 		method: processWaifuReaction
+	}),
+
+	// ── FOTO DE CASAMENTO ────────────────────────────────────────────────────
+	new Command({
+		name: "mu-foto",
+		description: "Exibe ou gera a foto oficial de casamento do casal",
+		category: "mudae",
+		group: "muwaifu-foto",
+		needsArgs: true,
+		reactions: { before: "📸", after: "💍", error: "❌" },
+		reply: true,
+		method: consultarOuGerarFotoCasamento
+	}),
+	new Command({
+		name: "mu-photo",
+		description: "Alias em inglês de !mu-foto",
+		category: "mudae",
+		group: "muwaifu-foto",
+		needsArgs: true,
+		reactions: { before: "📸", after: "💍", error: "❌" },
+		reply: true,
+		method: consultarOuGerarFotoCasamento
+	}),
+	new Command({
+		name: "mu-fotocasal",
+		description: "Alias de !mu-foto",
+		category: "mudae",
+		group: "muwaifu-foto",
+		needsArgs: true,
+		reactions: { before: "📸", after: "💍", error: "❌" },
+		reply: true,
+		method: consultarOuGerarFotoCasamento
 	}),
 
 	// ── DIVORCIAR ───────────────────────────────────────────────────────────
@@ -5284,6 +5575,12 @@ const helper = {
 			category: "mudae"
 		},
 		{
+			cmd: "!mu-foto",
+			desc: "Exibe a foto oficial de casamento do casal ou gera uma nova com 'nova'",
+			usage: ["!mu-foto Rem", "!mu-foto nova Rem", "!mu-foto rem-re-zero"],
+			category: "mudae"
+		},
+		{
 			cmd: "!mu-diario",
 			desc: "Resgata a recompensa diária de Zinthos (💜)",
 			usage: ["!mu-diario", "!mu-dz", "!mu-dk"],
@@ -5538,6 +5835,7 @@ module.exports = {
 	rollMale,
 	rollFemale,
 	casarWaifu,
+	consultarOuGerarFotoCasamento,
 	divorciarWaifu,
 	likeWaifu,
 	diariosKakera,

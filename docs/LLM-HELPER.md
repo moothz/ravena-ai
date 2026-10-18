@@ -1311,6 +1311,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-casar`**: Casa com o personagem recém-sorteado dentro da janela de 300 segundos
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-casar`, `!mu-c`, `!mu-casar rem-re-zero`
+- **`!mu-foto`**: Exibe a foto oficial do casamento do casal gerada por IA ou gera uma nova com o modificador 'nova'
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-foto Rem`, `!mu-foto nova Rem`, `!mu-foto rem-re-zero`
 - **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜)
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-diario`, `!mu-dz`, `!mu-dk`
