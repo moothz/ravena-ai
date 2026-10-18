@@ -229,6 +229,20 @@ function formatRemainingTime(totalSeconds) {
 	return `${mins}m ${secs}s`;
 }
 
+/**
+ * Formata duração em segundos de forma compacta (ex: 15m, 1h, 1h30m, 4h)
+ * @param {number} totalSeconds
+ * @returns {string}
+ */
+function formatTimeSeconds(totalSeconds) {
+	if (!totalSeconds || totalSeconds <= 0) return "";
+	const hours = Math.floor(totalSeconds / 3600);
+	const mins = Math.floor((totalSeconds % 3600) / 60);
+	if (hours > 0 && mins > 0) return `${hours}h${mins}m`;
+	if (hours > 0) return `${hours}h`;
+	return `${mins}m`;
+}
+
 const HQ_FLAGS = new Set(["hd", "hq", "alta", "web", "full", "1024"]);
 
 /**
@@ -863,7 +877,9 @@ async function handleFazLoja(bot, message) {
 			shop.seeds.forEach((s) => {
 				const rem =
 					s.remainingToday !== undefined ? ` [${s.remainingToday}/${s.dailyLimit} hoje]` : "";
-				text += `• *#${s.index} ${s.name}* — Compra: 💰 ${s.price} | Venda: 🪙 ${s.sellPrice || 0} (${s.growthMinutes}m)${rem}\n  _${s.description || ""}_\n`;
+				const deathSecs = s.witherTimeSeconds || (s.witherMinutes ? s.witherMinutes * 60 : 0);
+				const deathStr = deathSecs ? ` | 💀 Morte: ${formatTimeSeconds(deathSecs)}` : "";
+				text += `• *#${s.index} ${s.name}* — Compra: 💰 ${s.price} | Venda: 🪙 ${s.sellPrice || 0} (⏱️ ${s.growthMinutes}m${deathStr})${rem}\n  _${s.description || ""}_\n`;
 			});
 			text += "\n";
 		}

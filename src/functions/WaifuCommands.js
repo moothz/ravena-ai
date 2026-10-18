@@ -1042,6 +1042,44 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 // ─── Handlers de Comandos ───────────────────────────────────────────────────
 
 /**
+ * Formata o retorno da recompensa diária de Zinthos
+ * @param {string} chatId
+ * @param {Object} dailyData
+ * @returns {ReturnMessage}
+ */
+function formatDailyRewardMessage(chatId, dailyData) {
+	const { amount, currencyEmoji, newBalance, nextDailyAt, streak } = dailyData;
+
+	let formattedDate = "";
+	if (nextDailyAt) {
+		const nextDate = new Date(nextDailyAt);
+		formattedDate = nextDate.toLocaleString("pt-BR", {
+			hour: "2-digit",
+			minute: "2-digit",
+			day: "2-digit",
+			month: "2-digit"
+		});
+	}
+
+	let text = `${currencyEmoji || "💜"} *Recompensa Diária Coletada!*\n\n`;
+	text += `🎁 Você recebeu: *+${amount} Zinthos*\n`;
+	if (streak && streak.current > 1) {
+		text += `🔥 Sequência Diária: *Dia ${streak.current}/7* (+${streak.bonusPercent}% de bônus!)\n`;
+	} else {
+		text += `🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)\n`;
+	}
+	if (dailyData?.wishlist?.bonusAmount > 0) {
+		text += `🌟 Bônus de Wishlist: *+${dailyData.wishlist.bonusAmount} Zinthos* (${dailyData.wishlist.count}/1000 desejos)\n`;
+	}
+	text += `💰 Saldo total: *${newBalance} Zinthos*\n`;
+	if (formattedDate) {
+		text += `⏰ Próximo resgate: *${formattedDate}*`;
+	}
+
+	return new ReturnMessage({ chatId, content: text });
+}
+
+/**
  * Cria função de roll com ou sem filtro de gênero
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
@@ -1062,12 +1100,37 @@ function makeRollHandler(genderFilter) {
 		}
 
 		try {
-			let rollBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
+			// Tenta resgatar automaticamente a recompensa diária em paralelo com a busca de bônus
+			const claimDailyPromise = (async () => {
+				try {
+					const { data: dailyData } = await api.post("/kakera/daily", { userId, groupId, name });
+					if (dailyData?.success && dailyData?.data) {
+						return dailyData.data;
+					}
+				} catch (dailyErr) {
+					logger.debug(
+						`[rollWaifu] Tentativa de claim diário: ${dailyErr?.response?.data?.error?.code || dailyErr.message}`
+					);
+				}
+				return null;
+			})();
 
-			// Verifica se possui rolls ou tickets da Fazenda (Jardim das Sombras)
-			const farmBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
+			const [rollBonusesRaw, farmBonus, dailyClaimResult] = await Promise.all([
+				DonorBonusService.getWaifuRollBonuses(userId),
+				ShadowGardenBonusService.getWaifuBonus(userId),
+				claimDailyPromise
+			]);
+
+			let rollBonuses = rollBonusesRaw;
 			const hasFarmBonus = (farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0;
 			let consumedFarmBonus = null;
+
+			const wrapReturn = (mainReturn) => {
+				if (dailyClaimResult) {
+					return [mainReturn, formatDailyRewardMessage(chatId, dailyClaimResult)];
+				}
+				return mainReturn;
+			};
 
 			if (hasFarmBonus) {
 				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
@@ -1278,16 +1341,33 @@ function makeRollHandler(genderFilter) {
 
 				const imageBase64 = await downloadImageAsBase64(character.imageUrl);
 				if (imageBase64) {
-					return new ReturnMessage({
+					return wrapReturn(
+						new ReturnMessage({
+							chatId,
+							content: {
+								mimetype: "image/jpeg",
+								data: imageBase64,
+								filename: "waifu.jpg",
+								isMessageMedia: true
+							},
+							options: {
+								caption: text,
+								waifuCharacterId: character.id,
+								waifuGroupId: groupId,
+								waifuRollerUserId: userId,
+								waifuExclusiveUntil: exclusiveUntil,
+								waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
+								mentions: uniqueMentions
+							}
+						})
+					);
+				}
+
+				return wrapReturn(
+					new ReturnMessage({
 						chatId,
-						content: {
-							mimetype: "image/jpeg",
-							data: imageBase64,
-							filename: "waifu.jpg",
-							isMessageMedia: true
-						},
+						content: text,
 						options: {
-							caption: text,
 							waifuCharacterId: character.id,
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
@@ -1295,21 +1375,8 @@ function makeRollHandler(genderFilter) {
 							waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
 							mentions: uniqueMentions
 						}
-					});
-				}
-
-				return new ReturnMessage({
-					chatId,
-					content: text,
-					options: {
-						waifuCharacterId: character.id,
-						waifuGroupId: groupId,
-						waifuRollerUserId: userId,
-						waifuExclusiveUntil: exclusiveUntil,
-						waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
-						mentions: uniqueMentions
-					}
-				});
+					})
+				);
 			}
 
 			// ─── ROLLS MÚLTIPLOS (2 a 9) ──────────────────────────────────────────
@@ -1582,37 +1649,41 @@ function makeRollHandler(genderFilter) {
 				if (curPending && curPending.isMultiRoll) {
 					curPending.gridBase64 = gridBase64;
 				}
-				return new ReturnMessage({
+				return wrapReturn(
+					new ReturnMessage({
+						chatId,
+						content: {
+							mimetype: "image/jpeg",
+							data: gridBase64,
+							filename: "waifus.jpg",
+							isMessageMedia: true
+						},
+						options: {
+							caption: text,
+							waifuRolls: multiRollSlots,
+							waifuGroupId: groupId,
+							waifuRollerUserId: userId,
+							waifuExpiresAt: now + CLAIM_WINDOW_MS,
+							waifuGridBase64: gridBase64,
+							mentions: uniqueMultiMentions
+						}
+					})
+				);
+			}
+
+			return wrapReturn(
+				new ReturnMessage({
 					chatId,
-					content: {
-						mimetype: "image/jpeg",
-						data: gridBase64,
-						filename: "waifus.jpg",
-						isMessageMedia: true
-					},
+					content: text,
 					options: {
-						caption: text,
 						waifuRolls: multiRollSlots,
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
 						waifuExpiresAt: now + CLAIM_WINDOW_MS,
-						waifuGridBase64: gridBase64,
 						mentions: uniqueMultiMentions
 					}
-				});
-			}
-
-			return new ReturnMessage({
-				chatId,
-				content: text,
-				options: {
-					waifuRolls: multiRollSlots,
-					waifuGroupId: groupId,
-					waifuRollerUserId: userId,
-					waifuExpiresAt: now + CLAIM_WINDOW_MS,
-					mentions: uniqueMultiMentions
-				}
-			});
+				})
+			);
 		} catch (err) {
 			return handleApiError(
 				err,
@@ -2065,30 +2136,7 @@ async function diariosKakera(bot, message) {
 
 	try {
 		const { data } = await api.post("/kakera/daily", { userId, groupId, name });
-		const { amount, currencyEmoji, newBalance, nextDailyAt, streak } = data.data;
-
-		const nextDate = new Date(nextDailyAt);
-		const formattedDate = nextDate.toLocaleString("pt-BR", {
-			hour: "2-digit",
-			minute: "2-digit",
-			day: "2-digit",
-			month: "2-digit"
-		});
-
-		let text = `${currencyEmoji || "💜"} *Recompensa Diária Coletada!*\n\n`;
-		text += `🎁 Você recebeu: *+${amount} Zinthos*\n`;
-		if (streak && streak.current > 1) {
-			text += `🔥 Sequência Diária: *Dia ${streak.current}/7* (+${streak.bonusPercent}% de bônus!)\n`;
-		} else {
-			text += `🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)\n`;
-		}
-		if (data.data?.wishlist?.bonusAmount > 0) {
-			text += `🌟 Bônus de Wishlist: *+${data.data.wishlist.bonusAmount} Zinthos* (${data.data.wishlist.count}/1000 desejos)\n`;
-		}
-		text += `💰 Saldo total: *${newBalance} Zinthos*\n`;
-		text += `⏰ Próximo resgate: *${formattedDate}*`;
-
-		return new ReturnMessage({ chatId, content: text });
+		return formatDailyRewardMessage(chatId, data.data);
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao resgatar recompensa diária.");
 	}
