@@ -362,7 +362,110 @@ async function main() {
 		false,
 		"Foto de casamento deve ser removida após divórcio"
 	);
-	console.log("✓ Teste 7 passou: Foto removida com sucesso no divórcio.");
+	// ─── TESTE 8: Resolução de Ator em Reações e Proteção Contra Avatar do Bot ───
+	console.log("\n[Teste 8] Validando resolução de autor em reações e bloqueio do avatar do bot...");
+	bot.phoneNumber = "555599999999";
+	bot.id = "555599999999@s.whatsapp.net";
+
+	// 8.1: ProfilePictureHelper.isBotJid
+	assert.strictEqual(
+		ProfilePictureHelper.isBotJid(bot, "555599999999@s.whatsapp.net"),
+		true,
+		"Deve identificar JID do bot"
+	);
+	assert.strictEqual(
+		ProfilePictureHelper.isBotJid(bot, "555599999999:2@s.whatsapp.net"),
+		true,
+		"Deve identificar JID com dispositivo do bot"
+	);
+	assert.strictEqual(
+		ProfilePictureHelper.isBotJid(bot, testUser),
+		false,
+		"Não deve identificar usuário comum como bot"
+	);
+
+	// 8.2: waifuHelper.describeUser prioriza userId e rejeita avatar do bot
+	let fetchedJid = null;
+	ProfilePictureHelper.fetchUserProfilePictureMedia = async (b, jid) => {
+		fetchedJid = jid;
+		return { data: dummyBase64 };
+	};
+	LLMService.prototype.getCompletion = async () => "human avatar description";
+
+	// Cenário onde message.author é a Ravena (bot) e userId é o jogador
+	const botMessage = {
+		author: "555599999999@s.whatsapp.net",
+		fromMe: true
+	};
+	const descUser = await waifuHelper.describeUser(bot, testUser, botMessage);
+	assert.strictEqual(fetchedJid, testUser, "Deve buscar o avatar do jogador e NÃO do bot");
+	assert.strictEqual(descUser, "human avatar description", "Deve retornar a descrição do avatar");
+
+	// Cenário onde o targetJid resolvido é o próprio bot
+	const descBot = await waifuHelper.describeUser(bot, bot.id, botMessage);
+	assert.strictEqual(descBot, null, "Deve recusar gerar descrição se o alvo for o bot");
+
+	// 8.3: ReactionsHandler normaliza formattedMessage.author para reaction.senderId
+	const ReactionsHandler = require("../ReactionsHandler");
+	const reactionsHandler = new ReactionsHandler();
+
+	let capturedCommandMessage = null;
+	const dummyCommand = {
+		name: "test-reaction-actor",
+		reactions: { trigger: "🎯" },
+		method: async (b, msg) => {
+			capturedCommandMessage = msg;
+			return "OK";
+		}
+	};
+	eventHandler.commandHandler.fixedCommands.commands.push(dummyCommand);
+	reactionsHandler.reactionCommands["🎯"] = ["test-reaction-actor"];
+
+	const reactionEvent = {
+		reaction: "🎯",
+		senderId: "5511888887777@s.whatsapp.net",
+		userName: "Reagente",
+		msgId: "target-msg-12345"
+	};
+	bot.client = {
+		getMessageById: async () => ({
+			id: "target-msg-12345",
+			author: "555599999999@s.whatsapp.net",
+			authorName: "Ravena",
+			fromMe: true,
+			type: "text",
+			content: "Mensagem do bot que recebeu reação",
+			origin: {
+				id: { _serialized: "target-msg-12345" }
+			}
+		})
+	};
+	bot.eventHandler = eventHandler;
+
+	const handled = await reactionsHandler.processReaction(bot, reactionEvent);
+	assert.strictEqual(handled, true, "ReactionsHandler deve tratar a reação");
+	assert.ok(capturedCommandMessage, "Comando deve ter sido executado");
+	assert.strictEqual(
+		capturedCommandMessage.author,
+		"5511888887777@s.whatsapp.net",
+		"message.author deve ser o usuário reagente"
+	);
+	assert.strictEqual(
+		capturedCommandMessage.authorName,
+		"Reagente",
+		"message.authorName deve ser o nome do usuário reagente"
+	);
+	assert.strictEqual(
+		capturedCommandMessage.fromMe,
+		false,
+		"message.fromMe deve ser false quando um usuário reagiu"
+	);
+	assert.strictEqual(
+		capturedCommandMessage.targetAuthor,
+		"555599999999@s.whatsapp.net",
+		"message.targetAuthor deve preservar o autor da mensagem alvo"
+	);
+	console.log("✓ Teste 8 passou: Normalização de ator em reações e trava de bot validados.");
 
 	// Restaura mocks
 	LLMService.prototype.getCompletion = origGetCompletion;

@@ -159,12 +159,15 @@ async function describeCharacter(character) {
  */
 async function describeUser(bot, userId, message) {
 	try {
-		let targetJid = null;
-		if (message) {
-			targetJid = message.authorAlt || message.author || message.sender || message.from;
-		}
-		if (!targetJid && userId) {
-			targetJid = userId;
+		// Prioriza o userId passado explicitamente (já validado pelo comando de casamento)
+		let targetJid = userId || null;
+		if (!targetJid && message) {
+			targetJid =
+				message.originReaction?.senderId ||
+				message.authorAlt ||
+				message.author ||
+				message.sender ||
+				message.from;
 		}
 
 		if (targetJid && typeof targetJid === "object") {
@@ -177,6 +180,23 @@ async function describeUser(bot, userId, message) {
 		}
 
 		if (!targetJid || !bot) return null;
+
+		targetJid = String(targetJid).trim();
+
+		// Normaliza removendo sufixos de device (ex: 5511...:2@s.whatsapp.net -> 5511...@s.whatsapp.net)
+		if (targetJid.includes(":") && targetJid.includes("@")) {
+			const [userPart, domain] = targetJid.split("@");
+			const cleanUser = userPart.split(":")[0];
+			targetJid = `${cleanUser}@${domain}`;
+		}
+
+		// Trava de segurança: NUNCA usar avatar do próprio bot como descrição do usuário
+		if (ProfilePictureHelper.isBotJid(bot, targetJid)) {
+			logger.warn(
+				`[describeUser] O JID resolvido (${targetJid}) pertence ao próprio bot. Abortando descrição de avatar.`
+			);
+			return null;
+		}
 
 		const profileMedia = await ProfilePictureHelper.fetchUserProfilePictureMedia(bot, targetJid);
 		if (!profileMedia || !profileMedia.data) return null;

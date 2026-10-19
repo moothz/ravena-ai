@@ -135,6 +135,25 @@ class ReactionsHandler {
 			const formattedMessage = message._isFallback ? message : await bot.formatMessage(message);
 			formattedMessage.originReaction = reaction; // Para comandos com reactions dinâmicas
 
+			// Preserva o autor original da mensagem que recebeu a reação
+			formattedMessage.targetAuthor = formattedMessage.author;
+			formattedMessage.targetAuthorAlt = formattedMessage.authorAlt;
+			formattedMessage.targetAuthorName = formattedMessage.authorName;
+			formattedMessage.targetFromMe = formattedMessage.fromMe;
+
+			// Define o autor da ação como sendo o usuário que reagiu (reaction.senderId)
+			if (reaction?.senderId) {
+				formattedMessage.author = reaction.senderId;
+				formattedMessage.authorAlt = reaction.senderId;
+				formattedMessage.sender = reaction.senderId;
+				formattedMessage.fromMe = false;
+				if (reaction.userName || reaction.pushName) {
+					formattedMessage.authorName = reaction.userName || reaction.pushName;
+					formattedMessage.name = formattedMessage.authorName;
+					formattedMessage.pushname = formattedMessage.authorName;
+				}
+			}
+
 			// Extrai argumentos do conteúdo da mensagem, se disponível
 			const msgText =
 				formattedMessage.type === "text" ? formattedMessage.content : formattedMessage.caption;

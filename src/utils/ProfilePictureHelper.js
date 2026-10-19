@@ -276,10 +276,50 @@ async function replaceMentionIdsWithNames(text, message, group, bot, excludeJids
 	return result;
 }
 
+/**
+ * Verifica se um JID pertence ao próprio bot
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {string|Object} targetJid - JID a ser testado
+ * @returns {boolean} True se o JID for do bot
+ */
+function isBotJid(bot, targetJid) {
+	if (!bot || !targetJid) return false;
+
+	const normalizeDigits = (val) => {
+		if (!val) return "";
+		const s =
+			typeof val === "object"
+				? val._serialized || val.id?._serialized || val.id || val.user || ""
+				: String(val);
+		return s.split("@")[0].split(":")[0].replace(/\D/g, "");
+	};
+
+	const targetDigits = normalizeDigits(targetJid);
+	if (!targetDigits) return false;
+
+	const botIdentifiers = [
+		bot.phoneNumber,
+		bot.id,
+		bot.client?.info?.wid?._serialized,
+		bot.client?.info?.wid?.user,
+		bot.wid
+	].filter(Boolean);
+
+	for (const id of botIdentifiers) {
+		const botDigits = normalizeDigits(id);
+		if (botDigits && botDigits === targetDigits) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 module.exports = {
 	fetchUserProfilePictureMedia,
 	extractMentions,
 	fetchFirstValidProfilePicture,
 	resolveMentionName,
-	replaceMentionIdsWithNames
+	replaceMentionIdsWithNames,
+	isBotJid
 };
