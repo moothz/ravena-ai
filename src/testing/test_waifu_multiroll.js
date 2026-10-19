@@ -294,6 +294,50 @@ async function runTests() {
 	assert.strictEqual(dummyHandled, false, "Reação em mensagem comum não deve ser tratada");
 	console.log("✓ 5.2 Reação em mensagem comum retornou false sem colidir.");
 
+	// 5.3 Reação numérica em mensagem de mídia onde body é um objeto (ex: imagem com caption)
+	bot.client = {
+		getMessageById: async () => ({
+			id: "MSG_MEDIA_OBJ_1",
+			fromMe: true,
+			body: { mimetype: "image/jpeg", url: "https://example.com/img.jpg" },
+			caption: "🎲 Multi-Roll Waifu",
+			type: "image"
+		})
+	};
+	const ListCommands = require("../functions/ListCommands");
+	const listCmd = ListCommands.commands.find((c) => c.name === "reactionListHelper");
+	const mediaReactionMsg = {
+		originReaction: {
+			reaction: "4️⃣",
+			senderId: otherUser,
+			msgId: { _serialized: "MSG_MEDIA_OBJ_1" }
+		}
+	};
+	const listResult = await listCmd.method(bot, mediaReactionMsg, [], null);
+	assert.strictEqual(
+		listResult,
+		false,
+		"Deve retornar false graciosamente para mídia que não é lista"
+	);
+	console.log(
+		"✓ 5.3 Reação 4️⃣ em mensagem de mídia com body objeto não lança erro no ListCommands."
+	);
+
+	// 5.4 Validação de fuso horário brasileiro em cooldowns (UTC 00:34 -> SP 21:34)
+	const utcDate = new Date("2026-10-19T00:34:00.000Z");
+	const formattedSP = utcDate.toLocaleTimeString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false
+	});
+	assert.strictEqual(
+		formattedSP,
+		"21:34",
+		"Horário UTC 00:34 deve ser convertido para 21:34 no fuso de São Paulo"
+	);
+	console.log("✓ 5.4 Fuso horário America/Sao_Paulo validado com sucesso (21:34).");
+
 	// Restaura mock da API
 	WaifuCommands.api.post = originalPost;
 

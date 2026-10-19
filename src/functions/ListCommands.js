@@ -56,11 +56,21 @@ async function processListReaction(bot, message, args, group) {
 		const targetMessage = await bot.client.getMessageById(reaction.msgId._serialized);
 		if (!targetMessage) return false;
 
+		const targetText =
+			typeof targetMessage.body === "string"
+				? targetMessage.body
+				: typeof targetMessage.caption === "string"
+					? targetMessage.caption
+					: typeof targetMessage.content === "string"
+						? targetMessage.content
+						: "";
+
 		// Check if the message is from the bot and contains lists
 		if (
 			targetMessage.fromMe &&
+			targetText &&
 			["listas disponíveis", "listas disponibles"].some((ldpf) =>
-				targetMessage.body?.toLowerCase().includes(ldpf)
+				targetText.toLowerCase().includes(ldpf)
 			)
 		) {
 			// Get the chat

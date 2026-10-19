@@ -681,6 +681,26 @@ function formatRemainingSeconds(seconds) {
 	return `${s}s`;
 }
 
+function formatTimeBR(date, options = {}) {
+	if (!date || isNaN(new Date(date).getTime())) return "";
+	return new Date(date).toLocaleTimeString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+		...options
+	});
+}
+
+function formatDateTimeBR(date, options = {}) {
+	if (!date || isNaN(new Date(date).getTime())) return "";
+	return new Date(date).toLocaleString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour12: false,
+		...options
+	});
+}
+
 /**
  * Baixa o buffer binário da imagem do personagem
  * @param {string} imageUrl
@@ -971,7 +991,7 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 			msg += `• Próximo roll em: *${formatRemainingSeconds(nextSecs)}*\n`;
 
 			if (fullAt && !isNaN(fullAt.getTime())) {
-				const timeStr = fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+				const timeStr = formatTimeBR(fullAt);
 				msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}* (às ${timeStr})`;
 			} else if (fullSecs > 0) {
 				msg += `• *${maxRolls}/${maxRolls}* rolls em: *${formatRemainingSeconds(fullSecs)}*`;
@@ -986,10 +1006,7 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 
 		// Cooldown de Casamento (Claim) ou Diário (Daily)
 		const retryAt = apiErr.retryAfter ? new Date(apiErr.retryAfter) : null;
-		const timeStr =
-			retryAt && !isNaN(retryAt.getTime())
-				? ` (às ${retryAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})`
-				: "";
+		const timeStr = retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
 
 		const remaining = apiErr.remainingSeconds
 			? formatRemainingSeconds(apiErr.remainingSeconds)
@@ -1059,7 +1076,7 @@ function formatDailyRewardMessage(chatId, dailyData) {
 	let formattedDate = "";
 	if (nextDailyAt) {
 		const nextDate = new Date(nextDailyAt);
-		formattedDate = nextDate.toLocaleString("pt-BR", {
+		formattedDate = formatDateTimeBR(nextDate, {
 			hour: "2-digit",
 			minute: "2-digit",
 			day: "2-digit",
@@ -2510,7 +2527,7 @@ async function verPerfil(bot, message) {
 			});
 		}
 
-		text += `📅 No jogo desde: *${new Date(user.createdAt).toLocaleDateString("pt-BR")}*`;
+		text += `📅 No jogo desde: *${new Date(user.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}*`;
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
@@ -3679,10 +3696,7 @@ async function verCooldowns(bot, message) {
 				text += `🎲 Sorteio (Roll): ⚠️ *${rollsAvail}/${maxR} rolls* (Próximo em *${formatRemainingSeconds(roll.remainingSeconds)}* | Cheio em *${formatRemainingSeconds(roll.fullRechargeSeconds)}*)\n`;
 			} else {
 				const fullAt = roll.fullRechargeAt ? new Date(roll.fullRechargeAt) : null;
-				const timeStr =
-					fullAt && !isNaN(fullAt.getTime())
-						? ` às ${fullAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
-						: "";
+				const timeStr = fullAt && !isNaN(fullAt.getTime()) ? ` às ${formatTimeBR(fullAt)}` : "";
 				text += `🎲 Sorteio (Roll): ❌ *0/${maxR} rolls* (Próximo em *${formatRemainingSeconds(roll.remainingSeconds)}* | ${maxR}/${maxR} em *${formatRemainingSeconds(roll.fullRechargeSeconds)}*${timeStr})\n`;
 			}
 		}
