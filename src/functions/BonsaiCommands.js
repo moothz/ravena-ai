@@ -259,38 +259,60 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		})();
 
 		// 2. Promise de Geração de Imagem
+		const targetWidth = Number(options.width) || 768;
+		const targetHeight = Number(options.height) || 768;
+		const targetSteps = Number(options.steps) || 6;
+		const targetGuidance = options.guidance !== undefined ? Number(options.guidance) : 3.5;
+
 		const generationPromise = (async () => {
 			const startTime = Date.now();
-			const response = await axios.post(
-				`${bonsaiUrl}/generate`,
-				{
-					prompt: prompt + aesthetic,
-					width: 1024,
-					height: 1024,
-					seed: Math.floor(Math.random() * 9999999),
-					steps: 6,
-					guidance: 3.5
-				},
-				{
+			let response;
+			const requestPayload = {
+				prompt: prompt + aesthetic,
+				width: targetWidth,
+				height: targetHeight,
+				seed: Math.floor(Math.random() * 9999999),
+				steps: targetSteps,
+				guidance: targetGuidance
+			};
+
+			try {
+				response = await axios.post(`${bonsaiUrl}/generate`, requestPayload, {
 					responseType: "arraybuffer",
 					timeout: 60000
+				});
+			} catch (err) {
+				// Se falhar com 500 e a resolução solicitada for maior que 768, tenta fallback para 768x768
+				if (err.response?.status === 500 && (targetWidth > 768 || targetHeight > 768)) {
+					logger.warn(
+						`[BonsaiCommands] Falha com ${targetWidth}x${targetHeight} (500). Tentando fallback para 768x768...`
+					);
+					requestPayload.width = 768;
+					requestPayload.height = 768;
+					response = await axios.post(`${bonsaiUrl}/generate`, requestPayload, {
+						responseType: "arraybuffer",
+						timeout: 60000
+					});
+				} else {
+					throw err;
 				}
-			);
+			}
 
 			const generationTime = ((Date.now() - startTime) / 1000).toFixed(1);
 			return {
 				imageBuffer: Buffer.from(response.data),
-				generationTime
+				generationTime,
+				resolution: `${requestPayload.width}x${requestPayload.height}`
 			};
 		})();
 
 		// Aguarda ambos em paralelo
 		const [safetyMsg, genResult] = await Promise.all([safetyPromise, generationPromise]);
 		let { imageBuffer } = genResult;
-		const { generationTime } = genResult;
+		const { generationTime, resolution: finalResolution } = genResult;
 
 		// Track stats
-		trackBonsaiStats("1024x1024", 1, "bonsai-ternary");
+		trackBonsaiStats(finalResolution || `${targetWidth}x${targetHeight}`, 1, "bonsai-ternary");
 
 		// Add Watermark and compress to JPEG
 		try {
@@ -438,7 +460,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		return returnMessages.length === 1 ? returnMessages[0] : returnMessages;
 	} catch (error) {
 		logger.error("Erro ao gerar imagem:", error);
-		trackBonsaiStats("1024x1024", 1, "bonsai-ternary", false);
+		trackBonsaiStats("error", 1, "bonsai-ternary", false);
 
 		let errorMessage = "Erro ao gerar imagem.";
 		if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {

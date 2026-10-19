@@ -361,7 +361,7 @@ async function generateAndSaveMarriageImage(bot, message, character, userId, use
 					prompt,
 					{ filters: { nsfw: false } },
 					true,
-					{ skipNSFW: true, isProgrammatic: true }
+					{ skipNSFW: true, isProgrammatic: true, width: 768, height: 768 }
 				);
 
 				if (bonsaiResult && bonsaiResult.content && bonsaiResult.content.data) {
