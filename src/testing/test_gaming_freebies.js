@@ -376,31 +376,68 @@ async function runTests() {
 		assert.ok(sentMsg.content.includes("The Falconeer"), "Deve conter jogo da Epic");
 		assert.ok(sentMsg.content.includes("Half-Life 2"), "Deve conter jogo da Steam");
 
-		// Verifica se o jogo foi registrado em free_games_notified
+		// Verifica se o jogo foi registrado em free_games_notified com o group_id
 		const notifiedRows = await database.dbAll(
 			DB_NAME,
 			"SELECT * FROM free_games_notified WHERE store IN ('epic', 'steam')"
 		);
 		assert.ok(
-			notifiedRows.some((r) => r.game_id === "501" && r.store === "epic"),
-			"Epic 501 deve estar em free_games_notified"
+			notifiedRows.some(
+				(r) => r.game_id === "501" && r.store === "epic" && r.group_id === testGroup.id
+			),
+			"Epic 501 deve estar em free_games_notified associado ao testGroup.id"
 		);
 		assert.ok(
-			notifiedRows.some((r) => r.game_id === "601" && r.store === "steam"),
-			"Steam 601 deve estar em free_games_notified"
+			notifiedRows.some(
+				(r) => r.game_id === "601" && r.store === "steam" && r.group_id === testGroup.id
+			),
+			"Steam 601 deve estar em free_games_notified associado ao testGroup.id"
 		);
 
-		// Segunda execução imediata: não deve enviar repetido
+		// Segunda execução imediata para o mesmo grupo: não deve enviar repetido
 		bot.resetCapture();
 		const summary2 = await checkAndNotifyFreeGames("manha");
 		assert.strictEqual(
 			summary2.sent,
 			0,
-			"Não deve enviar novamente pois não há jogos novos e a frequência ainda não venceu"
+			"Não deve enviar novamente pois não há jogos novos para este grupo e a frequência ainda não venceu"
 		);
 		assert.strictEqual(bot.capturedMessages.length, 0);
 
-		console.log("✓ Ciclo de envio e persistência de jogos notificados validado com sucesso.");
+		// Teste de isolamento multi-grupo: segundo grupo elegível deve receber os mesmos jogos
+		const testGroup2 = {
+			id: "120363999999999999@g.us",
+			name: "Segundo Grupo Gamer",
+			admins: ["5511999990000@s.whatsapp.net"],
+			botNotInGroup: []
+		};
+		database.getGroup = async (gid) => (gid === testGroup2.id ? testGroup2 : testGroup);
+
+		await database.dbRun(
+			DB_NAME,
+			"INSERT OR REPLACE INTO free_games_subscriptions (group_id, notificar_epic, notificar_steam, periodo, frequencia_dias, ultimo_aviso) VALUES (?, 1, 1, 'tarde', 1, 0)",
+			[testGroup2.id]
+		);
+
+		bot.resetCapture();
+		const summaryMultiGroup = await checkAndNotifyFreeGames("tarde");
+		assert.strictEqual(
+			summaryMultiGroup.sent,
+			1,
+			"Segundo grupo deve receber notificação normalmente mesmo após primeiro grupo ter recebido"
+		);
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].chatId, testGroup2.id);
+
+		// Limpa grupo 2 após validação
+		await database.dbRun(DB_NAME, "DELETE FROM free_games_subscriptions WHERE group_id = ?", [
+			testGroup2.id
+		]);
+		await database.dbRun(DB_NAME, "DELETE FROM free_games_notified WHERE group_id = ?", [
+			testGroup2.id
+		]);
+
+		console.log("✓ Ciclo de envio e isolamento multi-grupo de jogos notificados validado com sucesso.");
 	} finally {
 		// Restaura o mock do axios
 		axios.get = originalGet;

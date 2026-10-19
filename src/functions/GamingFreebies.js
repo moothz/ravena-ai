@@ -32,15 +32,16 @@ database.getSQLiteDb(
   );
 
   CREATE TABLE IF NOT EXISTS free_games_notified (
+    group_id TEXT NOT NULL,
     store TEXT NOT NULL,
     game_id TEXT NOT NULL,
     title TEXT,
     notified_at INTEGER,
-    PRIMARY KEY (store, game_id)
+    PRIMARY KEY (group_id, store, game_id)
   );
 
   CREATE INDEX IF NOT EXISTS idx_free_games_subs_periodo ON free_games_subscriptions(periodo);
-  CREATE INDEX IF NOT EXISTS idx_free_games_notified_store ON free_games_notified(store, game_id);
+  CREATE INDEX IF NOT EXISTS idx_free_games_notified_group ON free_games_notified(group_id, store, game_id);
 `,
 	true
 );
@@ -54,6 +55,54 @@ database.getSQLiteDb(
 		);
 	} catch (e) {
 		// Coluna já existe
+	}
+
+	try {
+		const tableInfo = await database.dbAll(DB_NAME, "PRAGMA table_info(free_games_notified)");
+		const hasGroupId =
+			Array.isArray(tableInfo) && tableInfo.some((col) => col.name === "group_id");
+		if (tableInfo && tableInfo.length > 0 && !hasGroupId) {
+			await database.dbRun(
+				DB_NAME,
+				`CREATE TABLE IF NOT EXISTS free_games_notified_v2 (
+					group_id TEXT NOT NULL,
+					store TEXT NOT NULL,
+					game_id TEXT NOT NULL,
+					title TEXT,
+					notified_at INTEGER,
+					PRIMARY KEY (group_id, store, game_id)
+				)`
+			);
+			const oldRows = await database.dbAll(DB_NAME, "SELECT * FROM free_games_notified");
+			for (const row of oldRows || []) {
+				let targetGroups = [];
+				if (row.notified_at === 1791682496366) {
+					targetGroups = ["120363000000000000@g.us"];
+				} else if (row.notified_at === 1791720000005) {
+					targetGroups = ["120363252368931506@g.us", "120363431161293361@g.us"];
+				} else if (row.notified_at === 1792083600041) {
+					targetGroups = ["120363431515863732@g.us"];
+				}
+				for (const gid of targetGroups) {
+					await database.dbRun(
+						DB_NAME,
+						"INSERT OR IGNORE INTO free_games_notified_v2 (group_id, store, game_id, title, notified_at) VALUES (?, ?, ?, ?, ?)",
+						[gid, row.store, row.game_id, row.title, row.notified_at]
+					);
+				}
+			}
+			await database.dbRun(DB_NAME, "DROP TABLE free_games_notified");
+			await database.dbRun(
+				DB_NAME,
+				"ALTER TABLE free_games_notified_v2 RENAME TO free_games_notified"
+			);
+			await database.dbRun(
+				DB_NAME,
+				"CREATE INDEX IF NOT EXISTS idx_free_games_notified_group ON free_games_notified(group_id, store, game_id)"
+			);
+		}
+	} catch (e) {
+		logger.error("Erro na migração de free_games_notified:", e.message);
 	}
 })();
 
@@ -666,30 +715,32 @@ async function checkAndNotifyFreeGames(periodoAlvo = null) {
 			}
 		}
 
-		// Consulta quais jogos já foram anunciados
-		const notifiedRows = await database.dbAll(
-			DB_NAME,
-			"SELECT store, game_id FROM free_games_notified"
-		);
-		const notifiedEpicIds = new Set(
-			(notifiedRows || []).filter((r) => r.store === "epic").map((r) => r.game_id)
-		);
-		const notifiedSteamIds = new Set(
-			(notifiedRows || []).filter((r) => r.store === "steam").map((r) => r.game_id)
-		);
-
-		const newEpicGames = currentEpicGames.filter((g) => !notifiedEpicIds.has(g.id));
-		const newSteamGames = currentSteamGames.filter((g) => !notifiedSteamIds.has(g.id)).slice(0, 3);
-
-		if (newEpicGames.length === 0 && newSteamGames.length === 0) {
+		if (currentEpicGames.length === 0 && currentSteamGames.length === 0) {
 			logger.debug(
-				"[GamingFreebies] Nenhum jogo novo da Epic ou Steam para anunciar nesta rodada."
+				"[GamingFreebies] Nenhum jogo disponível na Epic ou Steam no momento."
 			);
 			return summary;
 		}
 
-		const anunciadosComSucessoEpic = new Set();
-		const anunciadosComSucessoSteam = new Set();
+		// Consulta histórico de notificações dos grupos elegíveis
+		const groupIds = gruposElegiveis.map((g) => g.group_id);
+		const placeholders = groupIds.map(() => "?").join(",");
+		const notifiedRows = await database.dbAll(
+			DB_NAME,
+			`SELECT group_id, store, game_id FROM free_games_notified WHERE group_id IN (${placeholders})`,
+			groupIds
+		);
+
+		const notifiedByGroup = new Map();
+		for (const gid of groupIds) {
+			notifiedByGroup.set(gid, new Set());
+		}
+		for (const r of notifiedRows || []) {
+			const set = notifiedByGroup.get(r.group_id);
+			if (set) {
+				set.add(`${r.store}:${r.game_id}`);
+			}
+		}
 
 		for (const sub of gruposElegiveis) {
 			const groupObj = await database.getGroup(sub.group_id);
@@ -697,11 +748,20 @@ async function checkAndNotifyFreeGames(periodoAlvo = null) {
 				continue;
 			}
 
+			const groupNotified = notifiedByGroup.get(sub.group_id) || new Set();
+
+			const newEpicGames = sub.notificar_epic
+				? currentEpicGames.filter((g) => !groupNotified.has(`epic:${g.id}`))
+				: [];
+			const newSteamGames = sub.notificar_steam
+				? currentSteamGames.filter((g) => !groupNotified.has(`steam:${g.id}`)).slice(0, 3)
+				: [];
+
 			const sections = [];
-			if (sub.notificar_epic && newEpicGames.length > 0) {
+			if (newEpicGames.length > 0) {
 				sections.push({ label: "Epic", games: newEpicGames });
 			}
-			if (sub.notificar_steam && newSteamGames.length > 0) {
+			if (newSteamGames.length > 0) {
 				sections.push({ label: "Steam", games: newSteamGames });
 			}
 
@@ -756,36 +816,28 @@ async function checkAndNotifyFreeGames(periodoAlvo = null) {
 					[now, now, sub.group_id]
 				);
 
-				if (sub.notificar_epic) {
-					newEpicGames.forEach((g) => anunciadosComSucessoEpic.add(g));
+				for (const g of newEpicGames) {
+					await database.dbRun(
+						DB_NAME,
+						"INSERT OR IGNORE INTO free_games_notified (group_id, store, game_id, title, notified_at) VALUES (?, ?, ?, ?, ?)",
+						[sub.group_id, "epic", g.id, g.title, now]
+					);
 				}
-				if (sub.notificar_steam) {
-					newSteamGames.forEach((g) => anunciadosComSucessoSteam.add(g));
+				for (const g of newSteamGames) {
+					await database.dbRun(
+						DB_NAME,
+						"INSERT OR IGNORE INTO free_games_notified (group_id, store, game_id, title, notified_at) VALUES (?, ?, ?, ?, ?)",
+						[sub.group_id, "steam", g.id, g.title, now]
+					);
 				}
 			} else {
 				summary.failed++;
 			}
 		}
 
-		// Se houve ao menos um envio com sucesso, registra os jogos notificados no banco global
-		if (summary.sent > 0) {
-			for (const g of anunciadosComSucessoEpic) {
-				await database.dbRun(
-					DB_NAME,
-					"INSERT OR IGNORE INTO free_games_notified (store, game_id, title, notified_at) VALUES (?, ?, ?, ?)",
-					["epic", g.id, g.title, now]
-				);
-			}
-			for (const g of anunciadosComSucessoSteam) {
-				await database.dbRun(
-					DB_NAME,
-					"INSERT OR IGNORE INTO free_games_notified (store, game_id, title, notified_at) VALUES (?, ?, ?, ?)",
-					["steam", g.id, g.title, now]
-				);
-			}
-		} else if (summary.failed > 0) {
+		if (summary.failed > 0 && summary.sent === 0) {
 			logger.warn(
-				"[GamingFreebies] Todos os envios falharam nesta rodada; jogos não registrados para retentativa."
+				"[GamingFreebies] Falha no envio para todos os grupos elegíveis nesta rodada."
 			);
 		}
 
