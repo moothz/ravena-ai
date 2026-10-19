@@ -350,18 +350,46 @@ async function generateAndSaveMarriageImage(bot, message, character, userId, use
 			}
 		};
 
-		const bonsaiResult = await bonsaiModule.generateImage(
-			bot,
-			mockMessage,
-			prompt,
-			{ filters: { nsfw: false } },
-			true,
-			{ skipNSFW: true, isProgrammatic: true }
-		);
+		const maxAttempts = 3;
+		let bonsaiResult = null;
+
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				bonsaiResult = await bonsaiModule.generateImage(
+					bot,
+					mockMessage,
+					prompt,
+					{ filters: { nsfw: false } },
+					true,
+					{ skipNSFW: true, isProgrammatic: true }
+				);
+
+				if (bonsaiResult && bonsaiResult.content && bonsaiResult.content.data) {
+					logger.info(
+						`[generateAndSaveMarriageImage] Imagem gerada com sucesso via Bonsai na tentativa ${attempt}/${maxAttempts}`
+					);
+					break;
+				}
+				logger.warn(
+					`[generateAndSaveMarriageImage] Bonsai não retornou mídia válida na tentativa ${attempt}/${maxAttempts}`
+				);
+			} catch (err) {
+				logger.warn(
+					`[generateAndSaveMarriageImage] Erro na tentativa ${attempt}/${maxAttempts} do Bonsai: ${err.message}`
+				);
+			}
+
+			if (attempt < maxAttempts) {
+				logger.info(
+					`[generateAndSaveMarriageImage] Aguardando 1.5s antes da tentativa ${attempt + 1}...`
+				);
+				await new Promise((resolve) => setTimeout(resolve, 1500));
+			}
+		}
 
 		if (!bonsaiResult || !bonsaiResult.content || !bonsaiResult.content.data) {
 			logger.warn(
-				`Bonsai não retornou mídia válida para casamento de ${character.id}. Fallback para texto.`
+				`Bonsai não retornou mídia válida para casamento de ${character.id} após ${maxAttempts} tentativas. Fallback para texto.`
 			);
 			return { success: false, fallback: "text" };
 		}

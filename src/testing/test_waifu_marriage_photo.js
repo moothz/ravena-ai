@@ -467,6 +467,69 @@ async function main() {
 	);
 	console.log("✓ Teste 8 passou: Normalização de ator em reações e trava de bot validados.");
 
+	// ─── TESTE 9: Mecanismo de Retry (máx 3x) no Bonsai ─────────────────────
+	console.log("\n[Teste 9] Validando retry de até 3x na geração via Bonsai...");
+	let attemptsMade = 0;
+	bonsaiModule.generateImage = async () => {
+		attemptsMade++;
+		if (attemptsMade === 1) {
+			return null; // Primeira tentativa falha
+		}
+		return {
+			content: {
+				mimetype: "image/jpeg",
+				data: dummyBase64
+			}
+		};
+	};
+
+	const charRetry = {
+		id: "retry-char-success",
+		name: "Retry Girl",
+		series: "Anime",
+		baseRarity: "RARE",
+		imageUrl: "http://example.com/retry.jpg"
+	};
+
+	const retryResSuccess = await waifuHelper.generateAndSaveMarriageImage(
+		bot,
+		{ author: testUser },
+		charRetry,
+		testUser,
+		"Tester"
+	);
+	assert.strictEqual(retryResSuccess.success, true, "Deve ter sucesso após retry");
+	assert.strictEqual(attemptsMade, 2, "Deve ter realizado exatamente 2 tentativas");
+
+	// Cenário onde todas as 3 tentativas falham
+	attemptsMade = 0;
+	bonsaiModule.generateImage = async () => {
+		attemptsMade++;
+		throw new Error("HTTP 500 Internal Server Error");
+	};
+
+	const charRetryFail = {
+		id: "retry-char-fail",
+		name: "Fail Girl",
+		series: "Anime",
+		baseRarity: "COMMON",
+		imageUrl: "http://example.com/fail.jpg"
+	};
+
+	const retryResFail = await waifuHelper.generateAndSaveMarriageImage(
+		bot,
+		{ author: testUser },
+		charRetryFail,
+		testUser,
+		"Tester"
+	);
+	assert.strictEqual(retryResFail.success, false, "Deve falhar após 3 tentativas");
+	assert.strictEqual(retryResFail.fallback, "text", "Deve retornar fallback text");
+	assert.strictEqual(attemptsMade, 3, "Deve ter tentado exatamente 3 vezes");
+	console.log(
+		"✓ Teste 9 passou: Retry na 2ª tentativa e fallback após 3 falhas validados com sucesso."
+	);
+
 	// Restaura mocks
 	LLMService.prototype.getCompletion = origGetCompletion;
 	ProfilePictureHelper.fetchUserProfilePictureMedia = origFetchPfp;
