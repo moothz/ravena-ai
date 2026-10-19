@@ -1734,36 +1734,56 @@ async function buildMarriageReturnMessage(
 	replyOptions
 ) {
 	const chatId = message.group ?? message.author;
+	let photoResult = null;
 	try {
-		const photoResult = await generateAndSaveMarriageImage(bot, message, character, userId, name);
-
-		if (photoResult && photoResult.success && photoResult.media) {
-			return new ReturnMessage({
-				chatId,
-				content: photoResult.media,
-				options: {
-					...replyOptions,
-					caption: text
-				}
-			});
-		}
-
-		if (photoResult && photoResult.fallback === "original_image" && photoResult.originalBase64) {
-			return new ReturnMessage({
-				chatId,
-				content: {
-					data: photoResult.originalBase64,
-					mimetype: "image/jpeg",
-					isMessageMedia: true
-				},
-				options: {
-					...replyOptions,
-					caption: text
-				}
-			});
-		}
+		photoResult = await generateAndSaveMarriageImage(bot, message, character, userId, name);
 	} catch (e) {
 		logger.warn("Erro ao gerar/anexar foto de casamento:", e.message || e);
+	}
+
+	// Notifica canal de avisos em caso de personagem Lendário usando a foto gerada (ou fallback)
+	if (character && (character.rarity === "LEGENDARY" || character.baseRarity === "LEGENDARY")) {
+		const notifMedia =
+			photoResult?.success && photoResult?.media
+				? photoResult.media
+				: photoResult?.fallback === "original_image" && photoResult?.originalBase64
+					? {
+							data: photoResult.originalBase64,
+							mimetype: "image/jpeg",
+							filename: `${character.id || "waifu"}.jpg`,
+							isMessageMedia: true
+						}
+					: null;
+
+		notifySpecialMarriage(bot, character, name, null, null, notifMedia).catch((eNotif) => {
+			logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
+		});
+	}
+
+	if (photoResult && photoResult.success && photoResult.media) {
+		return new ReturnMessage({
+			chatId,
+			content: photoResult.media,
+			options: {
+				...replyOptions,
+				caption: text
+			}
+		});
+	}
+
+	if (photoResult && photoResult.fallback === "original_image" && photoResult.originalBase64) {
+		return new ReturnMessage({
+			chatId,
+			content: {
+				data: photoResult.originalBase64,
+				mimetype: "image/jpeg",
+				isMessageMedia: true
+			},
+			options: {
+				...replyOptions,
+				caption: text
+			}
+		});
 	}
 
 	return new ReturnMessage({
@@ -1984,13 +2004,6 @@ async function casarWaifu(bot, message, args) {
 		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
-		// Notifica canal de avisos apenas em caso de personagem Lendário
-		if (character && (character.rarity === "LEGENDARY" || character.baseRarity === "LEGENDARY")) {
-			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
-				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
-			});
-		}
-
 		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
 		text += `🔑 Chaves: *${keys}/10*\n`;
@@ -2101,12 +2114,6 @@ async function processWaifuReaction(bot, message, args, group) {
 		}
 
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
-
-		if (character && (character.rarity === "LEGENDARY" || character.baseRarity === "LEGENDARY")) {
-			notifySpecialMarriage(bot, character, name).catch((eNotif) => {
-				logger.error("Erro ao notificar casamento especial de waifu:", eNotif);
-			});
-		}
 
 		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}* (Slot ${slot})! 🎉\n`;
@@ -5697,12 +5704,13 @@ const helper = {
 };
 
 /**
- * Envia notificação festiva de casamento para personagens épicos ou lendários no canal de avisos
+ * Envia notificação festiva de casamento para personagens lendários no canal de avisos
  * @param {Object} bot
  * @param {Object} character
  * @param {string} userName
  * @param {string} [customDateStr]
  * @param {string} [customChatId]
+ * @param {Object} [customMedia] - Foto gerada do casamento (se disponível)
  * @returns {Promise<boolean>}
  */
 async function notifySpecialMarriage(
@@ -5710,7 +5718,8 @@ async function notifySpecialMarriage(
 	character,
 	userName,
 	customDateStr = null,
-	customChatId = null
+	customChatId = null,
+	customMedia = null
 ) {
 	try {
 		if (!character) return false;
@@ -5757,33 +5766,54 @@ async function notifySpecialMarriage(
 			});
 
 		let caption = "";
-		if (rarity === "LEGENDARY") {
-			caption += `👑 ✨ 👑 *CASAMENTO LENDÁRIO EXTRAORDINÁRIO!* 👑 ✨ 👑\n\n`;
-			caption += `💍 ══════════════════════════ 💍\n`;
-			caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
-			caption += `💍 ══════════════════════════ 💍\n\n`;
-			caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
-			caption += `⭐ 🌟 *${character.name}* 🌟 ⭐\n`;
-			caption += `👑 *Raridade:* LENDÁRIO ✨\n`;
-			if (character.series) {
-				caption += `📺 *Universo:* ${character.series}\n`;
+		caption += `👑 ✨ 👑 *CASAMENTO LENDÁRIO EXTRAORDINÁRIO!* 👑 ✨ 👑\n\n`;
+		caption += `💍 ══════════════════════════ 💍\n`;
+		caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
+		caption += `💍 ══════════════════════════ 💍\n\n`;
+		caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
+		caption += `⭐ 🌟 *${character.name}* 🌟 ⭐\n`;
+		caption += `👑 *Raridade:* LENDÁRIO ✨\n`;
+		if (character.series) {
+			caption += `📺 *Universo:* ${character.series}\n`;
+		}
+		caption += `📅 *Data da Cerimônia:* ${dateStr}\n\n`;
+		caption += `✨ ══════════════════════════ ✨\n`;
+		caption += `🎉 *Que este casal lendário reine supremo com felicidades infinitas, companheirismo inabalável e vitórias épicas por toda a eternidade!* 🥂🍾✨`;
+
+		// 1. Prioridade: foto gerada do casamento (passada diretamente ou buscada no disco/SQLite)
+		let imageBase64 = null;
+		if (customMedia && typeof customMedia === "object") {
+			if (customMedia.data && typeof customMedia.data === "string") {
+				imageBase64 = customMedia.data;
+			} else if (customMedia.photoPath) {
+				try {
+					const buf = await fs.readFile(customMedia.photoPath);
+					imageBase64 = buf.toString("base64");
+				} catch (eRead) {
+					logger.debug(`[notifySpecialMarriage] Erro ao ler photoPath: ${eRead.message}`);
+				}
 			}
-			caption += `📅 *Data da Cerimônia:* ${dateStr}\n\n`;
-			caption += `✨ ══════════════════════════ ✨\n`;
-			caption += `🎉 *Que este casal lendário reine supremo com felicidades infinitas, companheirismo inabalável e vitórias épicas por toda a eternidade!* 🥂🍾✨`;
-		} else {
-			caption += `💖 *FELIZES PARA SEMPRE!* 💍\n\n`;
-			caption += `✨ O jogador *${userName}* uniu seus laços matrimoniais com a personagem épica:\n\n`;
-			caption += `🟣 *${character.name}* 🟣\n`;
-			caption += `🏷️ *Raridade:* ÉPICO\n`;
-			if (character.series) {
-				caption += `📺 *Série:* ${character.series}\n`;
-			}
-			caption += `📅 *Data do Casamento:* ${dateStr}\n\n`;
-			caption += `🎉 *Desejamos ao casal uma vida repleta de felicidades, batalhas vencidas e companheirismo eterno!* 🥂✨`;
 		}
 
-		const imageBase64 = await downloadImageAsBase64(character.imageUrl);
+		if (!imageBase64 && character.id) {
+			try {
+				const savedPhoto = await getMarriagePhoto(character.id);
+				if (savedPhoto && savedPhoto.exists && savedPhoto.photoPath) {
+					const buf = await fs.readFile(savedPhoto.photoPath);
+					imageBase64 = buf.toString("base64");
+				}
+			} catch (errSaved) {
+				logger.debug(
+					`[notifySpecialMarriage] Foto de casamento salva não encontrada para ${character.id}: ${errSaved.message}`
+				);
+			}
+		}
+
+		// 2. Fallback: usar a foto original do personagem
+		if (!imageBase64 && character.imageUrl) {
+			imageBase64 = await module.exports.downloadImageAsBase64(character.imageUrl);
+		}
+
 		let sentAny = false;
 
 		for (const targetChat of targetChats) {
@@ -5795,7 +5825,7 @@ async function notifySpecialMarriage(
 						content: {
 							mimetype: "image/jpeg",
 							data: imageBase64,
-							filename: `${character.id || "waifu"}.jpg`,
+							filename: `marriage_${character.id || "waifu"}.jpg`,
 							isMessageMedia: true
 						},
 						options: {
@@ -5817,7 +5847,7 @@ async function notifySpecialMarriage(
 						const media = await bot.createMedia(
 							Buffer.from(imageBase64, "base64"),
 							"image/jpeg",
-							`${character.id || "waifu"}.jpg`
+							`marriage_${character.id || "waifu"}.jpg`
 						);
 						await bot.sendMessage(targetChat, media, { caption });
 					} else {

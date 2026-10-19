@@ -1,9 +1,10 @@
 const assert = require("assert");
 const FakeBot = require("./FakeBot");
-const { notifySpecialMarriage } = require("../functions/WaifuCommands");
+const WaifuCommands = require("../functions/WaifuCommands");
+const { notifySpecialMarriage } = WaifuCommands;
 
 async function runTests() {
-	console.log("--- Starting Waifu Special Marriage Notification Tests ---");
+	console.log("--- Starting Waifu Legendary Marriage Notification Tests ---");
 
 	const bot = new FakeBot({
 		id: "test-waifu-bot",
@@ -11,65 +12,144 @@ async function runTests() {
 		grupoLogs: "logs@g.us"
 	});
 
-	// 1. Test EPIC character notification
-	const epicChar = {
-		id: "tsunade-senju",
-		name: "Tsunade Senju",
-		series: "Naruto",
-		rarity: "EPIC",
-		imageUrl: "http://localhost:3030/images/tsunade.jpg"
-	};
+	const dummyGeneratedBase64 = Buffer.from("DUMMY_GENERATED_MARRIAGE_PHOTO").toString("base64");
+	const dummyCharacterBase64 = Buffer.from("DUMMY_ORIGINAL_CHARACTER_IMAGE").toString("base64");
 
-	const resEpic = await notifySpecialMarriage(bot, epicChar, "William~~", "19/09/2026");
-	assert.ok(resEpic, "notifySpecialMarriage for EPIC should return true or succeed");
-	assert.ok(bot.capturedMessages.length > 0, "Bot should capture marriage notification message");
-
-	const epicMsg = bot.capturedMessages[bot.capturedMessages.length - 1];
-	assert.strictEqual(epicMsg.chatId, "avisos@g.us", "Message should be sent to grupoAvisos");
-
-	const captionText = epicMsg.options?.caption || epicMsg.content;
-	assert.ok(captionText.includes("Tsunade Senju"), "Caption must include character name");
-	assert.ok(captionText.includes("William~~"), "Caption must include player name");
-	assert.ok(captionText.includes("19/09/2026"), "Caption must include date");
-	assert.ok(captionText.includes("ÉPICO"), "Caption must include rarity label");
-
-	console.log("✓ EPIC marriage notification test passed");
-
-	// 2. Test LEGENDARY character notification
-	bot.resetCapture();
 	const legendaryChar = {
 		id: "katsuki-bakugou",
 		name: "Katsuki Bakugou",
 		series: "Boku no Hero Academia",
-		rarity: "LEGENDARY"
+		rarity: "LEGENDARY",
+		imageUrl: "http://localhost:3030/images/bakugou.jpg"
 	};
 
-	const resLeg = await notifySpecialMarriage(bot, legendaryChar, "ivri matte", "17/09/2026");
-	assert.ok(resLeg, "notifySpecialMarriage for LEGENDARY should succeed");
-	assert.ok(bot.capturedMessages.length > 0, "Bot should capture message");
+	// 1. Notificação de casamento Lendário usando a foto gerada (customMedia)
+	const customMedia = {
+		data: dummyGeneratedBase64,
+		mimetype: "image/jpeg",
+		filename: "marriage_katsuki-bakugou.jpg",
+		isMessageMedia: true
+	};
+
+	const resWithPhoto = await notifySpecialMarriage(
+		bot,
+		legendaryChar,
+		"ivri matte",
+		"17/09/2026",
+		null,
+		customMedia
+	);
+	assert.ok(resWithPhoto, "notifySpecialMarriage para LENDÁRIO com foto gerada deve ter sucesso");
+	assert.ok(bot.capturedMessages.length > 0, "Bot deve capturar mensagem de aviso");
 
 	const legMsg = bot.capturedMessages[0];
-	const legCaption = legMsg.options?.caption || legMsg.content;
-	assert.ok(legCaption.includes("Katsuki Bakugou"), "Must include character name");
-	assert.ok(legCaption.includes("ivri matte"), "Must include player name");
-	assert.ok(legCaption.includes("LENDÁRIO"), "Must include LENDÁRIO rarity");
+	assert.strictEqual(legMsg.chatId, "avisos@g.us", "Mensagem deve ser enviada para grupoAvisos");
+	assert.strictEqual(
+		legMsg.content.data,
+		dummyGeneratedBase64,
+		"Deve usar os dados da foto gerada de casamento"
+	);
+	assert.strictEqual(
+		legMsg.content.filename,
+		"marriage_katsuki-bakugou.jpg",
+		"Filename deve ser da foto de casamento"
+	);
 
-	console.log("✓ LEGENDARY marriage notification test passed");
+	const legCaption = legMsg.options?.caption || "";
+	assert.ok(legCaption.includes("Katsuki Bakugou"), "Legenda deve incluir nome da personagem");
+	assert.ok(legCaption.includes("ivri matte"), "Legenda deve incluir nome do jogador");
+	assert.ok(legCaption.includes("LENDÁRIO"), "Legenda deve incluir raridade LENDÁRIO");
+	console.log("✓ 1. Notificação com foto gerada de casamento passou com sucesso");
 
-	// 3. Test COMMON character (should be ignored)
+	// 2. Fallback: Casamento Lendário sem foto gerada -> deve usar a foto do personagem
 	bot.resetCapture();
+	const origDownload = WaifuCommands.downloadImageAsBase64;
+	WaifuCommands.downloadImageAsBase64 = async () => dummyCharacterBase64;
+
+	const resFallbackImage = await notifySpecialMarriage(
+		bot,
+		legendaryChar,
+		"ivri matte",
+		"17/09/2026",
+		null,
+		null // Sem foto gerada
+	);
+	assert.ok(
+		resFallbackImage,
+		"notifySpecialMarriage para LENDÁRIO sem foto gerada deve usar fallback da foto do personagem"
+	);
+	assert.ok(bot.capturedMessages.length > 0, "Bot deve capturar mensagem de aviso");
+
+	const fallbackMsg = bot.capturedMessages[0];
+	assert.strictEqual(
+		fallbackMsg.content.data,
+		dummyCharacterBase64,
+		"Deve usar a imagem original do personagem como fallback"
+	);
+	console.log("✓ 2. Fallback para foto do personagem passou com sucesso");
+
+	// 3. Fallback: Casamento Lendário sem foto gerada e sem foto do personagem -> texto puro
+	bot.resetCapture();
+	WaifuCommands.downloadImageAsBase64 = async () => null;
+	const legendaryCharSemFoto = {
+		id: "sem-foto-char",
+		name: "Lenda Sem Foto",
+		series: "Anime Raro",
+		rarity: "LEGENDARY",
+		imageUrl: null
+	};
+
+	const resFallbackText = await notifySpecialMarriage(
+		bot,
+		legendaryCharSemFoto,
+		"ivri matte",
+		"17/09/2026",
+		null,
+		null
+	);
+	assert.ok(
+		resFallbackText,
+		"notifySpecialMarriage para LENDÁRIO sem nenhuma foto deve enviar texto puro"
+	);
+	const textOnlyMsg = bot.capturedMessages[0];
+	assert.strictEqual(
+		typeof textOnlyMsg.content,
+		"string",
+		"Mensagem deve ser de texto puro quando não há foto"
+	);
+	assert.ok(textOnlyMsg.content.includes("Lenda Sem Foto"), "Texto puro deve conter o personagem");
+	console.log("✓ 3. Fallback para texto puro passou com sucesso");
+
+	// 4. Raridades não-lendárias (EPIC, COMMON) devem ser ignoradas
+	bot.resetCapture();
+	const epicChar = {
+		id: "tsunade-senju",
+		name: "Tsunade Senju",
+		series: "Naruto",
+		rarity: "EPIC"
+	};
+	const resEpic = await notifySpecialMarriage(bot, epicChar, "William~~");
+	assert.strictEqual(resEpic, false, "EPIC não deve enviar notificação para canal de avisos");
+	assert.strictEqual(bot.capturedMessages.length, 0, "Nenhuma mensagem deve ser enviada para EPIC");
+
 	const commonChar = {
 		id: "common-guy",
 		name: "Common Guy",
-		series: "Background Series",
+		series: "Background",
 		rarity: "COMMON"
 	};
-
 	const resCommon = await notifySpecialMarriage(bot, commonChar, "Player1");
-	assert.strictEqual(resCommon, false, "COMMON rarity should be ignored");
-	assert.strictEqual(bot.capturedMessages.length, 0, "No message should be sent for COMMON rarity");
+	assert.strictEqual(resCommon, false, "COMMON não deve enviar notificação para canal de avisos");
+	assert.strictEqual(
+		bot.capturedMessages.length,
+		0,
+		"Nenhuma mensagem deve ser enviada para COMMON"
+	);
+	console.log("✓ 4. Ignorar raridades não-lendárias (EPIC, COMMON) passou com sucesso");
 
-	console.log("✓ COMMON rarity ignore test passed");
+	// Restaura mock
+	WaifuCommands.downloadImageAsBase64 = origDownload;
+
 	console.log("--- ALL TESTS PASSED SUCCESSFULLY! ---");
 	process.exit(0);
 }
