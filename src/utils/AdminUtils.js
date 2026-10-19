@@ -62,11 +62,21 @@ class AdminUtils {
 				return true;
 			}
 
-			// 2. Verifica 'additionalAdmins' no objeto de grupo
+			// 2. Verifica se é dono/criador do grupo (addedBy)
+			if (this.isGroupOwner(userId, group)) {
+				this.logger.debug(`Usuário ${normalizedUserId} é dono (addedBy) do grupo ${group?.id}.`);
+				return true;
+			}
+
+			// 3. Verifica 'additionalAdmins' no objeto de grupo
 			if (group && Array.isArray(group.additionalAdmins)) {
-				const isAdditionalAdmin = group.additionalAdmins
-					.map(this._normalizeId) // Normaliza cada ID da lista de admins
-					.includes(normalizedUserId);
+				const isAdditionalAdmin = group.additionalAdmins.some((adm) => {
+					if (!adm) return false;
+					const cleanAdm = this._normalizeId(adm);
+					return (
+						cleanAdm === normalizedUserId || PhoneUtils.isSamePhone(cleanAdm, normalizedUserId)
+					);
+				});
 
 				if (isAdditionalAdmin) {
 					this.logger.debug(`Usuário ${normalizedUserId} é admin adicional no grupo ${group.id}.`);
@@ -74,7 +84,7 @@ class AdminUtils {
 				}
 			}
 
-			// 3. Verifica se é admin no WhatsApp
+			// 4. Verifica se é admin no WhatsApp com o bot atual
 			let chatInstance = chat;
 			const client = botOrClient?.client || botOrClient;
 
@@ -86,12 +96,11 @@ class AdminUtils {
 
 			// Se o chat não foi fornecido, está sem participantes ou é um pv, tenta buscá-lo usando o cliente
 			if (
-				((!chatInstance || (chatInstance.isGroup && !hasParticipants)) &&
-					client &&
-					typeof client.getChatById === "function" &&
-					group &&
-					group.id) ||
-				!chat?.isGroup
+				client &&
+				typeof client.getChatById === "function" &&
+				group &&
+				group.id &&
+				(!chatInstance || (chatInstance.isGroup && !hasParticipants) || !chat?.isGroup)
 			) {
 				try {
 					chatInstance = await client.getChatById(group.id);
@@ -101,11 +110,10 @@ class AdminUtils {
 						`Erro ao buscar chat ${group.id} para verificação de admin:`,
 						chatError
 					);
-					// A função continua, mas provavelmente retornará false se esta era a única forma de ser admin.
 				}
 			}
 
-			// 2. Verifica se é o responsável (ComuAdmin) - Apenas se o bot estiver no grupo
+			// 5. Verifica se é o responsável (ComuAdmin) - Apenas se o bot estiver no grupo
 			if (this.isComuAdmin(normalizedUserId, botOrClient)) {
 				let botInGroup = true;
 				const botInstance =
@@ -145,35 +153,24 @@ class AdminUtils {
 				}
 			}
 
-			let participantes = [];
-
-			if (chatInstance && chatInstance.isGroup) {
-				if (Array.isArray(chatInstance.participants)) {
-					participantes = participantes.concat(chatInstance.participants);
-				}
-				if (chatInstance._rawGroup && Array.isArray(chatInstance._rawGroup.participants)) {
-					participantes = participantes.concat(chatInstance._rawGroup.participants);
-				}
-
-				const participant = participantes.find(
-					(p) =>
-						p &&
-						[p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some(
-							(numero) => numero && this._normalizeId(numero) === normalizedUserId
-						)
+			// 6. Verifica se é admin no chatInstance obtido pelo bot atual
+			if (this._isUserAdminInChat(normalizedUserId, chatInstance, debug)) {
+				this.logger.debug(
+					`Usuário ${normalizedUserId} é admin no WhatsApp para o grupo ${group.id}.`
 				);
+				return true;
+			}
 
-				if (debug)
-					this.logger.debug(`[isAdmin][group] `, {
-						normalizedUserId,
-						botPart: participant,
-						participantes
-					});
-
-				if (participant && (participant.isAdmin || participant.admin === "admin")) {
-					this.logger.debug(
-						`Usuário ${normalizedUserId} é admin no WhatsApp para o grupo ${group.id}.`
-					);
+			// 7. Fallback Cross-Bot: Se o bot atual não está no grupo ou não conseguiu os participantes,
+			// consulta os outros bots ativos no sistema para ver se algum deles está no grupo e valida o admin
+			if (group && group.id) {
+				const isCrossAdmin = await this._verifyAdminAcrossBots(
+					normalizedUserId,
+					group,
+					botOrClient,
+					debug
+				);
+				if (isCrossAdmin) {
 					return true;
 				}
 			}
@@ -183,6 +180,115 @@ class AdminUtils {
 		} catch (error) {
 			this.logger.error(`Erro ao verificar se o usuário ${userId} é admin:`, error);
 			return false; // Retorna false em caso de erro inesperado.
+		}
+	}
+
+	/**
+	 * Verifica se o usuário é admin em um objeto de chat com participantes
+	 */
+	_isUserAdminInChat(normalizedUserId, chatInstance, debug = false) {
+		if (!chatInstance || !chatInstance.isGroup) return false;
+
+		let participantes = [];
+		if (Array.isArray(chatInstance.participants)) {
+			participantes = participantes.concat(chatInstance.participants);
+		}
+		if (chatInstance._rawGroup && Array.isArray(chatInstance._rawGroup.participants)) {
+			participantes = participantes.concat(chatInstance._rawGroup.participants);
+		}
+
+		if (participantes.length === 0) return false;
+
+		const participant = participantes.find((p) => {
+			if (!p) return false;
+			return [p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number].some((numero) => {
+				if (!numero) return false;
+				const cleanNum = this._normalizeId(numero);
+				return cleanNum === normalizedUserId || PhoneUtils.isSamePhone(cleanNum, normalizedUserId);
+			});
+		});
+
+		if (debug) {
+			this.logger.debug(`[_isUserAdminInChat] `, {
+				normalizedUserId,
+				botPart: participant,
+				participantesCount: participantes.length
+			});
+		}
+
+		return !!(participant && (participant.isAdmin || participant.admin === "admin"));
+	}
+
+	/**
+	 * Verifica se o usuário é admin do grupo consultando outras instâncias ativas de Ravena (Cross-Bot)
+	 */
+	async _verifyAdminAcrossBots(normalizedUserId, group, currentBotOrClient = null, debug = false) {
+		try {
+			const allBots = this.database.botInstances || [];
+			if (!Array.isArray(allBots) || allBots.length === 0) {
+				return false;
+			}
+
+			const currentBotId = currentBotOrClient?.id || currentBotOrClient?.bot?.id;
+			const isWhatsAppGroup = group.id.includes("@g.us");
+			const excludedBots = new Set(Array.isArray(group.botNotInGroup) ? group.botNotInGroup : []);
+
+			// Prioridade 1: Buscar o bot que a base de dados registra como ativo no grupo
+			let preferredBotId = null;
+			if (typeof this.database.getActiveBotIdForGroup === "function") {
+				preferredBotId = await this.database.getActiveBotIdForGroup(group.id);
+			}
+
+			// Ordena candidatos: primeiro o bot ativo registrado no banco, depois os demais
+			const candidateBots = [];
+			if (preferredBotId) {
+				const preferredBot = allBots.find(
+					(b) =>
+						(b.id === preferredBotId || b.name === preferredBotId) &&
+						b.id !== currentBotId &&
+						b.isConnected !== false
+				);
+				if (preferredBot) {
+					candidateBots.push(preferredBot);
+				}
+			}
+
+			for (const b of allBots) {
+				if (!b || b.id === currentBotId || b.id === preferredBotId) continue;
+				if (b.isConnected === false) continue;
+				if (isWhatsAppGroup && (b.useTelegram || b.useDiscord)) continue;
+				if (excludedBots.has(b.id)) continue;
+				if (typeof b.isParticipating === "function" && !b.isParticipating(group.id)) continue;
+
+				candidateBots.push(b);
+			}
+
+			for (const candidate of candidateBots) {
+				try {
+					const client = candidate.client || candidate;
+					if (client && typeof client.getChatById === "function") {
+						const chat = await client.getChatById(group.id);
+						if (chat && chat.isGroup && !chat.notInGroup) {
+							const isAdminInCandidate = this._isUserAdminInChat(normalizedUserId, chat, debug);
+							if (isAdminInCandidate) {
+								this.logger.info(
+									`[Cross-Bot] Usuário ${normalizedUserId} confirmado como admin do grupo ${group.id} via bot '${candidate.id || candidate.name}'.`
+								);
+								return true;
+							}
+						}
+					}
+				} catch (err) {
+					this.logger.debug(
+						`[Cross-Bot] Falha ao consultar chat via bot '${candidate.id || candidate.name}': ${err.message}`
+					);
+				}
+			}
+
+			return false;
+		} catch (error) {
+			this.logger.error(`[Cross-Bot] Erro ao verificar admin across bots:`, error);
+			return false;
 		}
 	}
 
@@ -234,7 +340,11 @@ class AdminUtils {
 	 */
 	isGroupOwner(userId, group) {
 		if (!group || !group.addedBy) return false;
-		return group.addedBy === userId;
+		const normalizedUserId = this._normalizeId(userId);
+		const cleanAddedBy = this._normalizeId(group.addedBy);
+		return (
+			cleanAddedBy === normalizedUserId || PhoneUtils.isSamePhone(cleanAddedBy, normalizedUserId)
+		);
 	}
 }
 

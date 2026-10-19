@@ -7833,9 +7833,14 @@ class Management {
 
 		// Se veio no PV, não há grupo ativo ou o usuário quer acessar outro grupo diretamente por g-painel nomegrupo
 		if (!message.group && args.length > 0) {
-			const groupName = args[0].trim().toLowerCase();
+			const groupQuery = args.join(" ").trim().toLowerCase();
 			const groups = await this.database.getGroups();
-			targetGroup = groups.find((g) => g.name.trim().toLowerCase() === groupName);
+			targetGroup =
+				groups.find((g) => (g.id || "").toLowerCase() === groupQuery) ||
+				groups.find((g) => (g.name || "").trim().toLowerCase() === groupQuery) ||
+				(groupQuery.length >= 3
+					? groups.find((g) => (g.name || "").toLowerCase().includes(groupQuery))
+					: null);
 
 			if (targetGroup) {
 				const isUserAdminInTarget = await this.adminUtils.isAdmin(
@@ -7858,7 +7863,7 @@ class Management {
 			} else {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: `Grupo não encontrado: ${groupName}`,
+					content: `Grupo não encontrado: ${groupQuery}`,
 					reaction: "🙅‍♂️"
 				});
 			}
@@ -7903,10 +7908,24 @@ class Management {
 		await this.saveWebManagementToken(webManagementData);
 		const managementLink = `${process.env.BOT_DOMAIN}/manage/${token}`;
 
-		return new ReturnMessage({
-			chatId: message.author,
-			content: `Link para gerenciamento do grupo criado com sucesso!\n\nAcesse: ${managementLink}\n\nEste link é válido até ${formattedExpiration}.`
-		});
+		const returnMessages = [
+			new ReturnMessage({
+				chatId: message.author,
+				content: `Link para gerenciamento do grupo *${targetGroup.name}* criado com sucesso!\n\nAcesse: ${managementLink}\n\nEste link é válido até ${formattedExpiration}.`
+			})
+		];
+
+		if (message.group) {
+			returnMessages.push(
+				new ReturnMessage({
+					chatId: message.group,
+					content: `🔗 O link do painel de administração foi enviado no seu chat privado!`,
+					reaction: "📩"
+				})
+			);
+		}
+
+		return returnMessages;
 	}
 
 	generateRandomToken(length) {

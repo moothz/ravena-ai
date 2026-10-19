@@ -18,6 +18,7 @@ const DonationMapper = require("../mappers/DonationMapper");
 const PendingJoinMapper = require("../mappers/PendingJoinMapper");
 const SoftBlockMapper = require("../mappers/SoftBlockMapper");
 const LoadReportMapper = require("../mappers/LoadReportMapper");
+const PhoneUtils = require("../../PhoneUtils");
 
 class CoreRepository {
 	/**
@@ -546,10 +547,10 @@ class CoreRepository {
 		}
 	}
 
-	async getDonorByNumber(numero) {
+	getDonorByNumberSync(numero) {
 		try {
 			if (!numero) return null;
-			const clean = String(numero).replace(/\D/g, "");
+			const clean = PhoneUtils.cleanPhone(numero);
 			if (!clean) return null;
 			const rows = this.mappers.all(
 				this.DB,
@@ -557,10 +558,13 @@ class CoreRepository {
 			);
 			for (const r of rows) {
 				const donor = DonationMapper.fromRow(r);
-				const donorClean = String(donor.numero || "").replace(/\D/g, "");
+				const donorClean = PhoneUtils.cleanPhone(donor.numero);
 				if (
 					donorClean &&
-					(donorClean === clean || donorClean.includes(clean) || clean.includes(donorClean))
+					(donorClean === clean ||
+						PhoneUtils.isSamePhone(donorClean, clean) ||
+						donorClean.includes(clean) ||
+						clean.includes(donorClean))
 				) {
 					return donor;
 				}
@@ -570,6 +574,10 @@ class CoreRepository {
 			this.logger.error("Error getting donor by number:", error);
 			return null;
 		}
+	}
+
+	async getDonorByNumber(numero) {
+		return this.getDonorByNumberSync(numero);
 	}
 
 	async saveDonations(donations) {
@@ -1390,6 +1398,21 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error getting group membership periods:", error);
 			return [];
+		}
+	}
+
+	async getActiveBotIdForGroup(groupJid) {
+		try {
+			if (!groupJid) return null;
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT bot_id FROM group_membership_periods WHERE group_jid = ? AND leave_timestamp IS NULL ORDER BY join_timestamp DESC LIMIT 1",
+				[groupJid]
+			);
+			return row?.bot_id || null;
+		} catch (error) {
+			this.logger.error("Error getting active bot for group:", error);
+			return null;
 		}
 	}
 

@@ -9,6 +9,7 @@ const LLMService = require("../services/LLMService");
 const DonorBonusService = require("../services/DonorBonusService");
 const GameEventService = require("../services/GameEventService");
 const { exec } = require("child_process");
+const PhoneUtils = require("../utils/PhoneUtils");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -1224,7 +1225,15 @@ Break down the cost by category and provide a total estimated cost.`;
 			const success = await this.database.addDonation(donorName, 0, numero);
 
 			if (success) {
-				bot.whitelist.push(numero);
+				const variants = PhoneUtils.getPhoneVariants(numero);
+				const allBots = this.database.botInstances || [bot];
+				allBots.forEach((b) => {
+					if (Array.isArray(b.whitelist)) {
+						variants.forEach((v) => {
+							if (!b.whitelist.includes(v)) b.whitelist.push(v);
+						});
+					}
+				});
 
 				let bonusMsg = "";
 				try {

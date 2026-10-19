@@ -638,6 +638,10 @@ class Database {
 	async getDonorByName(name) {
 		return this.coreRepo.getDonorByName(name);
 	}
+	getDonorByNumberSync(numero) {
+		return this.coreRepo.getDonorByNumberSync(numero);
+	}
+
 	async getDonorByNumber(numero) {
 		return this.coreRepo.getDonorByNumber(numero);
 	}
@@ -842,6 +846,10 @@ class Database {
 
 	async getGroupMembershipPeriods(groupJid) {
 		return this.coreRepo.getGroupMembershipPeriods(groupJid);
+	}
+
+	async getActiveBotIdForGroup(groupJid) {
+		return this.coreRepo.getActiveBotIdForGroup(groupJid);
 	}
 
 	async saveGroupMembershipPeriods(periods) {

@@ -1251,6 +1251,12 @@ class WhatsAppBotTelegram {
 		};
 	}
 
+	notInWhitelist(author) {
+		const cleanAuthor = String(author || "").replace(/\D/g, "");
+		const list = this.whitelist || this.whitelistPV || [];
+		return !list.includes(cleanAuthor);
+	}
+
 	// As funções abaixo são stubs e não têm efeito no bot do Telegram.
 	logout() {
 		this.logger.warn("logout() is not applicable for Telegram Bot");

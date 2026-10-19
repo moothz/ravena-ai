@@ -2536,6 +2536,22 @@ class WhatsAppBotGo {
 			const sender = info.Sender; // geralmente phoneNumber (JID)
 			const senderAlt = info.SenderAlt; // geralmente LID
 
+			if (sender && senderAlt && this.lidToPnCache) {
+				const isSenderLid = String(sender).includes("@lid");
+				const isAltLid = String(senderAlt).includes("@lid");
+				if (isSenderLid && !isAltLid) {
+					const cleanLid = PhoneUtils.cleanPhone(sender);
+					const cleanPn = PhoneUtils.cleanPhone(senderAlt);
+					this.lidToPnCache.set(cleanLid, cleanPn);
+					this.lidToPnCache.set(`${cleanLid}@lid`, cleanPn);
+				} else if (!isSenderLid && isAltLid) {
+					const cleanPn = PhoneUtils.cleanPhone(sender);
+					const cleanLid = PhoneUtils.cleanPhone(senderAlt);
+					this.lidToPnCache.set(cleanLid, cleanPn);
+					this.lidToPnCache.set(`${cleanLid}@lid`, cleanPn);
+				}
+			}
+
 			if (!pushName || pushName?.length < 1) {
 				const cacheObj = await this.fetchPushNameFromCache(senderAlt || sender);
 				pushName = cacheObj?.pushName ?? cacheObj ?? "Usuario";
@@ -2654,13 +2670,25 @@ class WhatsAppBotGo {
 				};
 			}
 
+			let authorJid = sender;
+			if (String(sender).includes("@lid")) {
+				if (senderAlt && !String(senderAlt).includes("@lid")) {
+					authorJid = senderAlt;
+				} else if (this.lidToPnCache) {
+					const cleanLid = PhoneUtils.cleanPhone(sender);
+					const cachedPn =
+						this.lidToPnCache.get(cleanLid) || this.lidToPnCache.get(`${cleanLid}@lid`);
+					if (cachedPn) authorJid = `${cachedPn}@s.whatsapp.net`;
+				}
+			}
+
 			const formattedMessage = {
 				goMessageData,
 				id,
 				fromMe,
 				group: isGroup ? chatId : null,
 				from: isGroup ? chatId : sender,
-				author: this._normalizeId(sender),
+				author: this._normalizeId(authorJid),
 				authorAlt: senderAlt,
 				name: pushName,
 				pushname: pushName,
@@ -4069,9 +4097,42 @@ class WhatsAppBotGo {
 	}
 
 	notInWhitelist(author) {
-		// author is expected to be a JID string
-		const cleanAuthor = author.replace(/\D/g, ""); // Cleans non-digits from JID user part
-		return !this.whitelist.includes(cleanAuthor);
+		if (!author && author !== 0) return true;
+		let cleanAuthor = PhoneUtils.cleanPhone(author);
+		if (!cleanAuthor) return true;
+
+		// Se o ID for um LID, tenta resolver para PhoneNumber
+		if (String(author).includes("@lid") || (cleanAuthor.length > 13 && this.lidToPnCache)) {
+			const resolved =
+				this.lidToPnCache?.get(cleanAuthor) ||
+				this.lidToPnCache?.get(`${cleanAuthor}@lid`) ||
+				(typeof this.getPnFromLid === "function" ? this.getPnFromLid(author) : null);
+			if (resolved) {
+				const cleanResolved = PhoneUtils.cleanPhone(resolved);
+				if (cleanResolved) cleanAuthor = cleanResolved;
+			}
+		}
+
+		// 1. Checa variantes no array em memória this.whitelist
+		const variants = PhoneUtils.getPhoneVariants(cleanAuthor);
+		const inWhitelist = variants.some((v) => this.whitelist.includes(v));
+		if (inWhitelist) return false;
+
+		// 2. Fallback dinâmico: verifica se consta como doador no banco de dados
+		try {
+			const database = this.database || Database.getInstance();
+			const donor = database?.getDonorByNumberSync?.(cleanAuthor);
+			if (donor) {
+				variants.forEach((v) => {
+					if (!this.whitelist.includes(v)) this.whitelist.push(v);
+				});
+				return false;
+			}
+		} catch (err) {
+			// Não bloqueia em caso de erro na consulta
+		}
+
+		return true;
 	}
 
 	validURL(str) {

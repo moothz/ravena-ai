@@ -22,6 +22,7 @@ const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const CurrencyConverter = require("./src/utils/CurrencyConverter");
+const PhoneUtils = require("./src/utils/PhoneUtils");
 
 /**
  * Exemplo de criação de múltiplas instâncias de bot
@@ -77,12 +78,20 @@ async function main() {
 		const whitelistSet = new Set();
 
 		// Add super admins
-		superAdmins.forEach((admin) => whitelistSet.add(admin.replace(/\D/g, "")));
+		superAdmins.forEach((admin) => {
+			const clean = PhoneUtils.cleanPhone(admin);
+			if (clean) {
+				PhoneUtils.getPhoneVariants(clean).forEach((v) => whitelistSet.add(v));
+			}
+		});
 
 		// Add donors
 		donations.forEach((donor) => {
 			if (donor.numero) {
-				whitelistSet.add(donor.numero.replace(/\D/g, ""));
+				const clean = PhoneUtils.cleanPhone(donor.numero);
+				if (clean) {
+					PhoneUtils.getPhoneVariants(clean).forEach((v) => whitelistSet.add(v));
+				}
 			}
 		});
 
@@ -254,6 +263,7 @@ async function main() {
 			botInstances.push(newRBot);
 		}
 
+		database.botInstances = botInstances;
 		logger.info("Todos os bots inicializados e rodando");
 
 		// Inicializa scheduler para escalonar (stagger) atualização de status dos bots a cada 5 minutos
