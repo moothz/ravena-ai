@@ -437,7 +437,9 @@ async function runTests() {
 			testGroup2.id
 		]);
 
-		console.log("✓ Ciclo de envio e isolamento multi-grupo de jogos notificados validado com sucesso.");
+		console.log(
+			"✓ Ciclo de envio e isolamento multi-grupo de jogos notificados validado com sucesso."
+		);
 	} finally {
 		// Restaura o mock do axios
 		axios.get = originalGet;

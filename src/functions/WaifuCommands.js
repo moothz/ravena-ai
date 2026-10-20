@@ -3935,7 +3935,7 @@ async function ajudaWaifus(bot, message) {
 
 	text += `💜 *4. Economia Zinthos*\n`;
 	text += `• *Zinthos (💜)* é a moeda oficial do jogo.\n`;
-	text += `• Resgate sua recompensa diária a cada 20 horas usando \`!mu-diario\`.\n`;
+	text += `• Resgate sua recompensa diária (reseta todos os dias às 04:00) usando \`!mu-diario\`.\n`;
 	text += `• Quando alguém rola um personagem que já é seu, um cristal de Zinthos é gerado com base no valor da sua waifu.\n`;
 	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos proporcional à raridade e chaves.\n\n`;
 

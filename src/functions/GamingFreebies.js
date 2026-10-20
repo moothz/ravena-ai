@@ -59,8 +59,7 @@ database.getSQLiteDb(
 
 	try {
 		const tableInfo = await database.dbAll(DB_NAME, "PRAGMA table_info(free_games_notified)");
-		const hasGroupId =
-			Array.isArray(tableInfo) && tableInfo.some((col) => col.name === "group_id");
+		const hasGroupId = Array.isArray(tableInfo) && tableInfo.some((col) => col.name === "group_id");
 		if (tableInfo && tableInfo.length > 0 && !hasGroupId) {
 			await database.dbRun(
 				DB_NAME,
@@ -716,9 +715,7 @@ async function checkAndNotifyFreeGames(periodoAlvo = null) {
 		}
 
 		if (currentEpicGames.length === 0 && currentSteamGames.length === 0) {
-			logger.debug(
-				"[GamingFreebies] Nenhum jogo disponível na Epic ou Steam no momento."
-			);
+			logger.debug("[GamingFreebies] Nenhum jogo disponível na Epic ou Steam no momento.");
 			return summary;
 		}
 
@@ -836,9 +833,7 @@ async function checkAndNotifyFreeGames(periodoAlvo = null) {
 		}
 
 		if (summary.failed > 0 && summary.sent === 0) {
-			logger.warn(
-				"[GamingFreebies] Falha no envio para todos os grupos elegíveis nesta rodada."
-			);
+			logger.warn("[GamingFreebies] Falha no envio para todos os grupos elegíveis nesta rodada.");
 		}
 
 		logger.info(

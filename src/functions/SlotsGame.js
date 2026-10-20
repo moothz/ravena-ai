@@ -80,7 +80,13 @@ const WIN_MESSAGES = [
 	"Hoje é seu dia de sorte! O jackpot é seu! ✨",
 	"A sorte sorriu para você! Parabéns! 🎉",
 	"Você nasceu virado pra lua! Ganhou! 🌕",
-	"Os deuses do azar tiraram folga hoje! 🏆"
+	"Os deuses do azar tiraram folga hoje! 🏆",
+	"QUE MOMENTO HISTÓRICO! A sorte finalmente bateu na sua porta! 🌟",
+	"CRAVOU! A máquina tremeu e soltou o prêmio! 💥💰",
+	"Contra todas as probabilidades, você venceu! Pode comemorar! 🥳",
+	"A banca chora e você sorri! Vitória espetacular! 🤑✨",
+	"Sensacional! As estrelas se alinharam perfeitamente pra você! ⭐",
+	"O impossível aconteceu! Você dobrou o destino e levou a melhor! 🍀"
 ];
 
 const LOSE_MESSAGES = [
@@ -93,6 +99,23 @@ const LOSE_MESSAGES = [
 	"A banca agradece a sua doação generosa! 🤑",
 	"Sinto cheiro de derrota... e é você. 👃",
 	"Seu saldo de sorte está negativo. Favor recarregar. 🔋"
+];
+
+const MULTI_LOSE_MESSAGES = [
+	"Girou tudo isso e NÃO GANHOU NADA?! Isso já não é azar, é uma maldição ancestral! 💀",
+	"Rodou a máquina inteira e só colheu decepção. Parabéns pelo recorde mundial de zica! 📉",
+	"Gastou todas as fichas pra passar essa vergonha coletiva? Nem se esforçando dava pra ser tão azarado! 🤡",
+	"Se azar desse dinheiro, você comprava o cassino inteiro! Perdeu absolutamente tudo! 💸",
+	"Impressionante! Errou todas as tentativas. Você foi abençoado pelo próprio deus do azar! 🪦",
+	"Tantas chances e zero vitórias... Se você jogar uma moeda pra cima, ela cai em pé e te morde! 🪙🤦‍♂️",
+	"A banca nem comemorou dessa vez, ficou foi com pena de você. Que fase tenebrosa! 📉",
+	"Nem a física quântica explica esse nível de urucubaca. Você limpou o próprio bolso! 🧹",
+	"Você não apenas perdeu, você redefiniu o conceito de azar no universo! 🌌💀",
+	"Girou tudo isso e saiu de mãos abanando. Recomendo um banho de sal grosso urgente! 🧂",
+	"A máquina engoliu tudo e nem cuspiu um farelo de volta. Simplesmente intocável pelo sucesso! 🎰🚫",
+	"Zero acertos! O seu nível de azar devia ser estudado pela NASA! 🚀",
+	"Gastou tudo e o único prêmio foi a humilhação pública. Meus pêsames! 🪦🤡",
+	"Parabéns! Você conseguiu errar 100% das vezes. Uma verdadeira aula de infortúnio! 📉🤦‍♂️"
 ];
 
 /**
@@ -262,16 +285,19 @@ async function savePrize(userId, prizeName, prizeType) {
 /**
  * Registra estatísticas do grupo
  */
-async function recordGroupStats(groupId, userId, userName, isWin) {
+async function recordGroupStats(groupId, userId, userName, wins = 0, plays = 1) {
+	const winsCount = typeof wins === "boolean" ? (wins ? 1 : 0) : Number(wins) || 0;
+	const playsCount = Number(plays) || 1;
+
 	await database.dbRun(
 		dbName,
 		`INSERT INTO slots_group_stats (group_id, user_id, user_name, total_plays, total_wins)
-         VALUES (?, ?, ?, 1, ?)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(group_id, user_id) DO UPDATE SET 
-            total_plays = total_plays + 1, 
+            total_plays = total_plays + ?, 
             total_wins = total_wins + ?, 
             user_name = excluded.user_name`,
-		[groupId, userId, userName, isWin ? 1 : 0, isWin ? 1 : 0]
+		[groupId, userId, userName, playsCount, winsCount, playsCount, winsCount]
 	);
 }
 
@@ -305,6 +331,31 @@ async function slotsCommand(bot, message, args, group) {
 	// Regenera moedas
 	userData = regenerateCoins(userData);
 
+	let rollsCount = 1;
+	const numArg = Array.isArray(args)
+		? args.find((a) => typeof a === "string" && /^-?\d+$/.test(a))
+		: null;
+	const maxArg = Array.isArray(args)
+		? args.find((a) => typeof a === "string" && /^(tudo|all|max)$/i.test(a))
+		: null;
+
+	if (numArg) {
+		const parsed = parseInt(numArg, 10);
+		if (isNaN(parsed) || parsed <= 0) {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Quantidade inválida de rodadas. Informe um número entre 1 e 30.",
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+		rollsCount = Math.min(parsed, 30);
+	} else if (maxArg) {
+		rollsCount = Math.min(Math.max(1, userData.coins), 30);
+	}
+
 	if (userData.coins <= 0) {
 		const nextRegen = getNextCoinRegenTime(userData);
 		const waitTime = formatTimeString(nextRegen.secondsUntilNextCoin);
@@ -318,21 +369,34 @@ async function slotsCommand(bot, message, args, group) {
 		});
 	}
 
-	// Consome uma moeda
-	userData.coins -= 1;
-	userData.total_plays += 1;
+	if (rollsCount > userData.coins) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Você não tem moedinhas suficientes para girar *${rollsCount}x*!\n\n🪙 Suas moedinhas: *${userData.coins}/${MAX_COINS}*`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
 
-	// Rola os números
-	const roll1 = Math.floor(Math.random() * SLOT_EMOJIS.length);
-	let roll2 = Math.floor(Math.random() * SLOT_EMOJIS.length);
-	let roll3 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+	// Consome as moedas
+	userData.coins -= rollsCount;
+	userData.total_plays += rollsCount;
 
-	let isWin = roll1 === roll2 && roll2 === roll3;
+	const rollResults = [];
+	let totalWins = 0;
+	const winMult = GameEventService.getMultiplier("slots", "vitoria");
 
-	// Bônus de evento: vitória extra no caça-coisas
-	if (!isWin) {
-		const winMult = GameEventService.getMultiplier("slots", "vitoria");
-		if (winMult > 1) {
+	for (let i = 0; i < rollsCount; i++) {
+		const roll1 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+		let roll2 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+		let roll3 = Math.floor(Math.random() * SLOT_EMOJIS.length);
+
+		let isWin = roll1 === roll2 && roll2 === roll3;
+
+		// Bônus de evento: vitória extra no caça-coisas
+		if (!isWin && winMult > 1) {
 			const extraChance = 0.01 * (winMult - 1);
 			if (Math.random() < extraChance) {
 				isWin = true;
@@ -340,108 +404,163 @@ async function slotsCommand(bot, message, args, group) {
 				roll3 = roll1;
 			}
 		}
+
+		if (isWin) {
+			totalWins++;
+		}
+
+		rollResults.push({
+			emoji1: SLOT_EMOJIS[roll1],
+			emoji2: SLOT_EMOJIS[roll2],
+			emoji3: SLOT_EMOJIS[roll3],
+			isWin
+		});
 	}
 
-	const emoji1 = SLOT_EMOJIS[roll1];
-	const emoji2 = SLOT_EMOJIS[roll2];
-	const emoji3 = SLOT_EMOJIS[roll3];
-
 	if (message.group) {
-		await recordGroupStats(message.group, userId, userName, isWin);
+		await recordGroupStats(message.group, userId, userName, totalWins, rollsCount);
 	}
 
 	try {
-		await database.dbRun(
-			dbName,
-			`INSERT INTO slots_history (group_id, user_id, user_name, is_win, coins_spent, timestamp)
-			 VALUES (?, ?, ?, ?, 1, ?)`,
-			[message.group || null, userId, userName, isWin ? 1 : 0, Date.now()]
-		);
+		for (const roll of rollResults) {
+			await database.dbRun(
+				dbName,
+				`INSERT INTO slots_history (group_id, user_id, user_name, is_win, coins_spent, timestamp)
+				 VALUES (?, ?, ?, ?, 1, ?)`,
+				[message.group || null, userId, userName, roll.isWin ? 1 : 0, Date.now()]
+			);
+		}
 	} catch (errHist) {
 		logger.error("Erro ao gravar histórico do slots:", errHist);
 	}
 
 	let resultMessage = `🎰 *CAÇA-COISAS* 🎰\n`;
-	resultMessage += `\`\`\`----------------------\n`;
-	resultMessage += `|  [ ${emoji1} ] [ ${emoji2} ] [ ${emoji3} ]  |\n`;
-	resultMessage += `----------------------\`\`\`\n\n`;
+	resultMessage += `\`\`\`---------------\n`;
+	for (const roll of rollResults) {
+		const mark = roll.isWin ? "✅" : "❌";
+		resultMessage += `|  [ ${roll.emoji1} ] [ ${roll.emoji2} ] [ ${roll.emoji3} ]  | ${mark}\n`;
+	}
+	resultMessage += `---------------\`\`\`\n\n`;
 
 	const authorNum = userId.split("@")[0].replace(/\D/g, "");
 	const authorMention = authorNum ? `@${authorNum}` : `@${userId}`;
 
 	const { targetJid, targetText } = extractFirstMention(message, args);
 
+	const spinText = rollsCount > 1 ? "girou, girou, girou " : "girou";
 	const actionPrefix = targetText
-		? `${authorMention} pegou na alavanca de ${targetText}, girou e... `
-		: `${authorMention} girou e... `;
+		? `${authorMention} pegou na alavanca de ${targetText}, ${spinText} e... `
+		: `${authorMention} ${spinText} e... `;
 
-	if (isWin) {
-		userData.total_wins += 1;
+	if (totalWins > 0) {
+		userData.total_wins += totalWins;
 
 		const winMsg = WIN_MESSAGES[Math.floor(Math.random() * WIN_MESSAGES.length)];
 		resultMessage += `${actionPrefix}🎊 *${winMsg}* 🎊\n\n`;
 
-		// Determina o prêmio (30% lixo, 70% bom)
-		const prizeRand = Math.random();
-		if (prizeRand < 0.3) {
-			// Prêmio Normal (Lixo)
-			const prize = JUNK_PRIZES[Math.floor(Math.random() * JUNK_PRIZES.length)];
-			resultMessage += `🎁 Você ganhou: *${prize}*!\n`;
-			resultMessage += `_Incrível como você tem sorte pra ganhar porcaria._ 🙄`;
-			await savePrize(userId, prize, "normal");
-		} else {
-			// Prêmio Bom (Pesca ou Moedas)
-			const goodRand = Math.random();
-			if (goodRand < 0.4) {
-				// Moedinhas (1-5) - NOVO
-				let coinsWon = Math.floor(Math.random() * 5) + 1;
-				const coinMult = GameEventService.getMultiplier("slots", "moedas");
-				if (coinMult > 1) {
-					coinsWon = Math.max(1, Math.round(coinsWon * coinMult));
-				}
-				userData.coins = Math.min((userData.coins || 0) + coinsWon, MAX_STORED_COINS);
-				resultMessage += `🎁 VOCÊ GANHOU: *${coinsWon} Moedinhas*! 🪙\n`;
-				resultMessage += `_Mais chances de girar a sorte!_`;
-				await savePrize(userId, `${coinsWon} Moedinhas`, "bom");
-			} else if (goodRand < 0.8) {
-				// Iscas (1-10)
-				let baits = Math.floor(Math.random() * 10) + 1;
-				const baitMult = GameEventService.getMultiplier("slots", "iscas");
-				if (baitMult > 1) {
-					baits = Math.max(1, Math.round(baits * baitMult));
-				}
-				resultMessage += `🎁 VOCÊ GANHOU: *${baits} Iscas de Pesca*! 🎣\n`;
-				resultMessage += `_Vão direto pro seu balde de pesca._`;
-				await FishingGame.addBaits(userId, baits);
-				await savePrize(userId, `${baits} Iscas`, "bom");
+		const prizesWon = [];
+		for (let w = 0; w < totalWins; w++) {
+			// Determina o prêmio (30% lixo, 70% bom)
+			const prizeRand = Math.random();
+			if (prizeRand < 0.3) {
+				// Prêmio Normal (Lixo)
+				const prize = JUNK_PRIZES[Math.floor(Math.random() * JUNK_PRIZES.length)];
+				await savePrize(userId, prize, "normal");
+				prizesWon.push({
+					type: "junk",
+					title: prize,
+					detail: "Incrível como você tem sorte pra ganhar porcaria. 🙄"
+				});
 			} else {
-				// Upgrade de Pesca (ignora Ficha de Cassino pois já é prêmio de moedas)
-				const fishingUpgrades = FishingGame.UPGRADES.filter((u) => u.effect !== "slots_coins");
-				const upgrade = fishingUpgrades[Math.floor(Math.random() * fishingUpgrades.length)];
-				resultMessage += `🎁 VOCÊ GANHOU: *${upgrade.emoji} ${upgrade.name}*! 🛠️\n`;
-				resultMessage += `_Um item de elite para sua pescaria!_`;
+				// Prêmio Bom (Pesca ou Moedas)
+				const goodRand = Math.random();
+				if (goodRand < 0.4) {
+					// Moedinhas (1-5)
+					let coinsWon = Math.floor(Math.random() * 5) + 1;
+					const coinMult = GameEventService.getMultiplier("slots", "moedas");
+					if (coinMult > 1) {
+						coinsWon = Math.max(1, Math.round(coinsWon * coinMult));
+					}
+					userData.coins = Math.min((userData.coins || 0) + coinsWon, MAX_STORED_COINS);
+					await savePrize(userId, `${coinsWon} Moedinhas`, "bom");
+					prizesWon.push({
+						type: "coins",
+						title: `${coinsWon} Moedinhas`,
+						detail: "Mais chances de girar a sorte!"
+					});
+				} else if (goodRand < 0.8) {
+					// Iscas (1-10)
+					let baits = Math.floor(Math.random() * 10) + 1;
+					const baitMult = GameEventService.getMultiplier("slots", "iscas");
+					if (baitMult > 1) {
+						baits = Math.max(1, Math.round(baits * baitMult));
+					}
+					await FishingGame.addBaits(userId, baits);
+					await savePrize(userId, `${baits} Iscas`, "bom");
+					prizesWon.push({
+						type: "baits",
+						title: `${baits} Iscas de Pesca`,
+						detail: "Vão direto pro seu balde de pesca."
+					});
+				} else {
+					// Upgrade de Pesca (ignora Ficha de Cassino pois já é prêmio de moedas)
+					const fishingUpgrades = FishingGame.UPGRADES.filter((u) => u.effect !== "slots_coins");
+					const upgrade = fishingUpgrades[Math.floor(Math.random() * fishingUpgrades.length)];
 
-				const buff = {
-					type: upgrade.effect,
-					value: upgrade.value || 0,
-					minValue: upgrade.minValue || 0,
-					maxValue: upgrade.maxValue || 0,
-					remainingUses: upgrade.duration || 1,
-					originalName: upgrade.name
-				};
+					const buff = {
+						type: upgrade.effect,
+						value: upgrade.value || 0,
+						minValue: upgrade.minValue || 0,
+						maxValue: upgrade.maxValue || 0,
+						remainingUses: upgrade.duration || 1,
+						originalName: upgrade.name
+					};
 
-				if (upgrade.effect === "extra_baits" || upgrade.effect === "next_fish_bonus") {
-					buff.value =
-						Math.floor(Math.random() * (upgrade.maxValue - upgrade.minValue + 1)) +
-						upgrade.minValue;
+					if (upgrade.effect === "extra_baits" || upgrade.effect === "next_fish_bonus") {
+						buff.value =
+							Math.floor(Math.random() * (upgrade.maxValue - upgrade.minValue + 1)) +
+							upgrade.minValue;
+					}
+
+					await FishingGame.addBuff(userId, buff, false);
+					await savePrize(userId, upgrade.name, "bom");
+					prizesWon.push({
+						type: "upgrade",
+						title: `${upgrade.emoji} ${upgrade.name}`,
+						detail: "Um item de elite para sua pescaria!"
+					});
 				}
+			}
+		}
 
-				await FishingGame.addBuff(userId, buff, false);
-				await savePrize(userId, upgrade.name, "bom");
+		if (totalWins === 1) {
+			const singlePrize = prizesWon[0];
+			if (singlePrize.type === "junk") {
+				resultMessage += `🎁 Você ganhou: *${singlePrize.title}*!\n`;
+				resultMessage += `_${singlePrize.detail}_`;
+			} else if (singlePrize.type === "coins") {
+				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🪙\n`;
+				resultMessage += `_${singlePrize.detail}_`;
+			} else if (singlePrize.type === "baits") {
+				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🎣\n`;
+				resultMessage += `_${singlePrize.detail}_`;
+			} else {
+				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🛠️\n`;
+				resultMessage += `_${singlePrize.detail}_`;
+			}
+		} else {
+			resultMessage += `🎁 *Prêmios Conquistados (${totalWins} vitórias):*\n`;
+			for (const p of prizesWon) {
+				const icon =
+					p.type === "junk" ? "🗑️" : p.type === "coins" ? "🪙" : p.type === "baits" ? "🎣" : "🛠️";
+				resultMessage += `• ${icon} *${p.title}*\n`;
 			}
 		}
 	} else {
-		const loseMsg = LOSE_MESSAGES[Math.floor(Math.random() * LOSE_MESSAGES.length)];
+		const loseMsg =
+			rollsCount > 1
+				? MULTI_LOSE_MESSAGES[Math.floor(Math.random() * MULTI_LOSE_MESSAGES.length)]
+				: LOSE_MESSAGES[Math.floor(Math.random() * LOSE_MESSAGES.length)];
 		resultMessage += `${actionPrefix}❌ ${loseMsg}`;
 	}
 
@@ -629,9 +748,9 @@ const helper = {
 	tags: "slots,caca niquel,cassino,jogos,premios,moedas,sorte",
 	cmds: [
 		{
-			cmd: "!slots",
-			desc: "Gira a máquina de caça-níqueis",
-			usage: ["!slots"],
+			cmd: "!slots [quantidade]",
+			desc: "Gira a máquina de caça-níqueis (opcional: quantidade de 1 a 30, ou 'tudo')",
+			usage: ["!slots", "!slots 5", "!slots 30", "!slots tudo"],
 			category: "jogos"
 		},
 		{
