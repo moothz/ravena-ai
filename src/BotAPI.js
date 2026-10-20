@@ -52,6 +52,7 @@ const { registerManagementRoutes } = require("./BotAPI/routes/managementRoutes")
 const { registerServicesRoutes } = require("./BotAPI/routes/servicesRoutes");
 const { registerWebhooksRoutes } = require("./BotAPI/routes/webhooksRoutes");
 const { registerFeaturesRoutes } = require("./BotAPI/routes/featuresRoutes");
+const { registerGamesRoutes } = require("./BotAPI/routes/gamesRoutes");
 
 /**
  * Servidor API para o ecossistema do bot WhatsApp Ravena
@@ -68,6 +69,7 @@ const { registerFeaturesRoutes } = require("./BotAPI/routes/featuresRoutes");
  * - src/BotAPI/routes/servicesRoutes.js: Serviços de IA (STT, Imagine, TTS, Detecção NSFW, LLM)
  * - src/BotAPI/routes/webhooksRoutes.js: Webhooks de doação (Tipa.ai), telemetria UPS e Copa
  * - src/BotAPI/routes/featuresRoutes.js: Jogos e coleções (Pesca, Waifuletes e API de Analytics)
+ * - src/BotAPI/routes/gamesRoutes.js: Integração de minigames com serviços externos (webhook de colheita do Jardim)
  */
 class BotAPI {
 	/**
@@ -319,6 +321,8 @@ class BotAPI {
 	 *    - GET  /api/waifuletes/characters/:id     -> Detalhes de uma waifu/personagem
 	 *    - GET  /api/waifuletes/media/*            -> Proxy reverso seguro de imagens do Waifuletes
 	 *    - GET  /analytics                         -> Dashboard analítico com dados de uso do bot
+	 *    - POST /api/games/fazenda/harvest         -> Webhook de colheita da API do Jardim (crédito de bônus)
+	 *    - GET  /api/games/fazenda/bonus/:userId   -> Bônus acumulados do jogador (rolls, tickets, iscas)
 	 */
 	setupRoutes() {
 		registerIndexRoutes(this);
@@ -327,6 +331,7 @@ class BotAPI {
 		registerServicesRoutes(this);
 		registerWebhooksRoutes(this);
 		registerFeaturesRoutes(this);
+		registerGamesRoutes(this);
 
 		// Middleware global de tratamento de erros para rotas da API
 		this.app.use((err, req, res, next) => {

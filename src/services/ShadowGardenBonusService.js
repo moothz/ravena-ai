@@ -2,8 +2,12 @@
  * ShadowGardenBonusService.js
  *
  * Gerencia o despacho de bônus do Jardim das Sombras:
- * - Drops de colheita para Pesca, Slots e Waifus.
- * - Inventário SQLite local de rolls/tickets da Fazenda (farm_bonus_inventory).
+ * - reconcileHarvestBonus(): caminho único de crédito, guiado pelos totais cumulativos de
+ *   colheita reportados pela API do Jardim (GET /farm/:id/harvest-totals). É o que permite
+ *   creditar iscas/rolls/fichas quando a colheita acontece no painel web do !faz-adm.
+ * - dispatchHarvestDrops(): converte uma colheita em drops para Pesca, Slots e Waifus.
+ * - syncInventoryCrops(): legado, usado só quando a API não expõe os totais.
+ * - Inventário SQLite local de rolls/tickets da Fazenda (farm_credited_crops / farm_bonus_inventory).
  * - Cálculos e distribuição de bônus para doadores no Jardim das Sombras.
  */
 
@@ -19,6 +23,9 @@ const jardimClient = new ShadowGardenClient();
 const dbName = "core";
 
 // Inicializa tabelas locais para persistência de bônus e controle de colheitas
+// baseline_quantity: marcador de que a linha pertence ao regime de totais cumulativos
+// (colheita reportada pela API do Jardim) e quanto do total já estava coberto pelo
+// ledger antigo. NULL = linha legada (regime por inventário).
 try {
 	database.getSQLiteDb(
 		dbName,
@@ -32,12 +39,20 @@ try {
 			user_id TEXT,
 			crop_item_id TEXT,
 			credited_quantity INTEGER DEFAULT 0,
+			baseline_quantity INTEGER,
 			updated_at INTEGER,
 			PRIMARY KEY (user_id, crop_item_id)
 		);`
 	);
+	database.mappers.run(
+		dbName,
+		"ALTER TABLE farm_credited_crops ADD COLUMN baseline_quantity INTEGER"
+	);
 } catch (err) {
-	logger.warn(`Erro ao inicializar tabelas da fazenda no core.db: ${err.message}`);
+	// ALTER falha quando a coluna já existe (duplicate column name) — esperado.
+	if (!/duplicate column name/i.test(err.message)) {
+		logger.warn(`Erro ao inicializar tabelas da fazenda no core.db: ${err.message}`);
+	}
 }
 
 // ─── MAPEAMENTO DE COLHEITAS PARA BÔNUS EXTERNOS ───────────────────────────
@@ -246,9 +261,13 @@ function createBuffForItem(itemName) {
  * Despacha os bônus externos de colheita (Pesca, Slots e Waifus)
  * @param {string} userId
  * @param {Array<Object>} harvestedDrops
+ * @param {Object} [options]
+ * @param {boolean} [options.updateLedger=true] - false quando o ledger já foi lançado
+ *   por quem chamou (claim CAS do reconcileHarvestBonus), para não contar em dobro.
  * @returns {Promise<Array<string>>} Lista de mensagens descritivas dos bônus concedidos
  */
-async function dispatchHarvestDrops(userId, harvestedDrops = []) {
+async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
+	const { updateLedger = true } = options;
 	const dispatchedMessages = [];
 	const cId = cleanUserId(userId);
 
@@ -396,7 +415,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 				break;
 		}
 
-		if (cropKey && PLANT_BONUS_MAP[cropKey]) {
+		if (updateLedger && cropKey && PLANT_BONUS_MAP[cropKey]) {
 			try {
 				database.mappers.run(
 					dbName,
@@ -416,8 +435,214 @@ async function dispatchHarvestDrops(userId, harvestedDrops = []) {
 	return dispatchedMessages;
 }
 
+// ─── RECONCILIAÇÃO POR TOTAIS CUMULATIVOS (regime atual) ────────────────────
+// A API do Jardim é a fonte de verdade do evento "colheita": GET /farm/:id/harvest-totals
+// devolve o acumulado por planta desde a implantação. O bot credita só a diferença
+// pendente, então:
+//   - vender a colheita no painel antes de qualquer sync não come bônus;
+//   - webhook repetido / fora de ordem não credita em dobro;
+//   - bot fora do ar recupera tudo no próximo comando do jogador.
+//
+//   baseline_quantity = fatia do total que o ledger legado já cobria (marcador de migração)
+//   credited_quantity = bônus creditados dentro deste regime
+//   a creditar        = max(0, totalHarvested - baseline_quantity - credited_quantity)
+
+const SYNC_THROTTLE_MS = 15000;
+const reconcileLocks = new Map();
+
+/** Serializa reconciliações do mesmo usuário (webhook e comando nunca correm juntos). */
+function withUserLock(cId, task) {
+	const prev = reconcileLocks.get(cId) || Promise.resolve();
+	const result = prev.then(task, task);
+	const chain = result.then(
+		() => undefined,
+		() => undefined
+	);
+	reconcileLocks.set(cId, chain);
+	chain.then(() => {
+		if (reconcileLocks.get(cId) === chain) reconcileLocks.delete(cId);
+	});
+	return result;
+}
+
 /**
- * Sincroniza e credita bônus de colheitas que estão no inventário (ex: colhidas pelo Farm Admin Web)
+ * @returns {{ credited: number, baseline: number|null }|null} baseline null = linha legada
+ */
+function readCropLedger(cId, cropItemId) {
+	const row = database.mappers.get(
+		dbName,
+		"SELECT credited_quantity, baseline_quantity FROM farm_credited_crops WHERE user_id = ? AND crop_item_id = ?",
+		[cId, cropItemId]
+	);
+	if (!row) return null;
+	const rawBaseline = row.baseline_quantity;
+	return {
+		credited: Math.max(0, Number(row.credited_quantity) || 0),
+		baseline:
+			rawBaseline === null || rawBaseline === undefined
+				? null
+				: Math.max(0, Number(rawBaseline) || 0)
+	};
+}
+
+/**
+ * Migra a linha para o regime de totais cumulativos: zera o contador legado (que media
+ * estoque, não colheita) e grava quanto do total o ledger legado já cobria.
+ */
+function migrateCropLedger(cId, cropItemId, total, legacyCredited) {
+	const baseline = Math.max(0, Math.min(total, legacyCredited));
+	database.mappers.run(
+		dbName,
+		`INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, baseline_quantity, updated_at)
+		 VALUES (?, ?, 0, ?, ?)
+		 ON CONFLICT(user_id, crop_item_id) DO UPDATE SET
+		   credited_quantity = 0,
+		   baseline_quantity = excluded.baseline_quantity,
+		   updated_at = excluded.updated_at`,
+		[cId, cropItemId, baseline, Date.now()]
+	);
+	return baseline;
+}
+
+/** Claim atômico (CAS): 0 linhas alteradas = outra reconciliação assumiu o crédito. */
+function claimCredit(cId, cropItemId, uncredited, expectedCredited) {
+	try {
+		const res = database.mappers.run(
+			dbName,
+			`UPDATE farm_credited_crops SET credited_quantity = credited_quantity + ?, updated_at = ?
+			  WHERE user_id = ? AND crop_item_id = ? AND credited_quantity = ?`,
+			[uncredited, Date.now(), cId, cropItemId, expectedCredited]
+		);
+		return !!res && res.changes === 1;
+	} catch (err) {
+		logger.error(`[reconcile] Falha no claim de ${cId}/${cropItemId}: ${err.message}`);
+		return false;
+	}
+}
+
+/** Devolve o claim quando o despacho falha, para a próxima reconciliação tentar de novo. */
+function releaseClaim(cId, cropItemId, uncredited) {
+	try {
+		database.mappers.run(
+			dbName,
+			`UPDATE farm_credited_crops SET credited_quantity = MAX(0, credited_quantity - ?), updated_at = ?
+			  WHERE user_id = ? AND crop_item_id = ?`,
+			[uncredited, Date.now(), cId, cropItemId]
+		);
+	} catch (err) {
+		logger.error(`[reconcile] Falha ao devolver claim de ${cId}/${cropItemId}: ${err.message}`);
+	}
+}
+
+async function reconcileFromTotals(cId, totals = []) {
+	const messages = [];
+
+	for (const entry of totals) {
+		const cropItemId = String(entry?.itemId || "");
+		const plantInfo = PLANT_BONUS_MAP[cropItemId];
+		if (!plantInfo) continue;
+
+		const total = Math.max(0, Number(entry?.totalHarvested) || 0);
+
+		let ledger;
+		try {
+			ledger = readCropLedger(cId, cropItemId);
+			if (!ledger || ledger.baseline === null) {
+				const baseline = migrateCropLedger(cId, cropItemId, total, ledger ? ledger.credited : 0);
+				ledger = { credited: 0, baseline };
+			}
+		} catch (err) {
+			logger.error(`[reconcile] Ledger indisponível para ${cId}/${cropItemId}: ${err.message}`);
+			continue;
+		}
+
+		const uncredited = Math.max(0, total - ledger.baseline - ledger.credited);
+		if (uncredited <= 0) continue;
+
+		if (!claimCredit(cId, cropItemId, uncredited, ledger.credited)) {
+			logger.warn(
+				`[reconcile] Claim cancelado para ${cId}/${cropItemId}: outra reconciliação assumiu o crédito.`
+			);
+			continue;
+		}
+
+		try {
+			const msgs = await dispatchHarvestDrops(
+				cId,
+				[
+					{
+						plantId: cropItemId,
+						name: plantInfo.name,
+						bonusType: plantInfo.bonusType,
+						count: uncredited
+					}
+				],
+				{ updateLedger: false }
+			);
+			messages.push(...msgs);
+		} catch (err) {
+			releaseClaim(cId, cropItemId, uncredited);
+			logger.error(
+				`[reconcile] Falha ao creditar ${uncredited}x ${cropItemId} para ${cId}: ${err.message}. Nova tentativa no próximo sync.`
+			);
+		}
+	}
+
+	return messages;
+}
+
+/**
+ * Caminho ÚNICO de crédito de bônus de colheita.
+ * Busca os totais cumulativos na API do Jardim e credita apenas a diferença pendente.
+ * Idempotente por construção: o webhook apenas chama esta função, nunca credita direto.
+ * @param {string} userId
+ * @returns {Promise<Array<string>>} Mensagens dos bônus creditados
+ */
+async function reconcileHarvestBonus(userId) {
+	const cId = cleanUserId(userId);
+	if (!cId) return [];
+
+	return withUserLock(cId, async () => {
+		let totals = null;
+
+		try {
+			const res = await jardimClient.getHarvestTotals(cId);
+			totals = Array.isArray(res?.totals) ? res.totals : [];
+		} catch (err) {
+			if (err?.status === 404 || err?.status === 405) {
+				logger.warn(
+					"[reconcile] API do Jardim sem /harvest-totals (versão antiga). Usando sincronização legada por inventário."
+				);
+			} else {
+				logger.debug(`[reconcile] Totais indisponíveis para ${cId}: ${err?.message}`);
+			}
+		}
+
+		lastUserSyncTimes.set(cId, Date.now());
+
+		if (totals) {
+			return reconcileFromTotals(cId, totals);
+		}
+
+		// Fallback: API antiga (sem rota de totais) ou indisponível — tenta pelo inventário.
+		try {
+			const invRes = await jardimClient.getInventory(cId);
+			if (Array.isArray(invRes?.items)) {
+				return await syncInventoryCrops(cId, invRes.items);
+			}
+		} catch (err) {
+			logger.debug(`[reconcile] Fallback por inventário falhou para ${cId}: ${err?.message}`);
+		}
+
+		return [];
+	});
+}
+
+/**
+ * Sincronização LEGADA por inventário. Só é usada quando a API do Jardim não expõe
+ * /harvest-totals. Colheitas já migradas para o regime de totais são ignoradas aqui e o
+ * ledger nunca é rebaixado quando o estoque diminui — era isso que comia o bônus de quem
+ * vendia a colheita no painel antes do sync.
  * @param {string} userId
  * @param {Array<Object>} inventoryItems
  * @returns {Promise<Array<string>>} Lista de mensagens com bônus creditados
@@ -433,38 +658,22 @@ async function syncInventoryCrops(userId, inventoryItems = []) {
 		const plantInfo = PLANT_BONUS_MAP[item.itemId];
 		if (!plantInfo) continue;
 
-		const currentQty = Math.max(0, Number(item.quantity) || 0);
-
 		let creditedQty = 0;
 		try {
-			const row = database.mappers.get(
-				dbName,
-				"SELECT credited_quantity FROM farm_credited_crops WHERE user_id = ? AND crop_item_id = ?",
-				[cId, item.itemId]
-			);
-			creditedQty = Math.max(0, Number(row?.credited_quantity) || 0);
+			const ledger = readCropLedger(cId, item.itemId);
+			if (ledger && ledger.baseline !== null) continue; // o regime de totais é o dono do crédito
+			creditedQty = ledger ? ledger.credited : 0;
 		} catch (err) {
 			logger.warn(`Erro ao consultar farm_credited_crops para ${cId}: ${err.message}`);
 		}
 
-		if (currentQty < creditedQty) {
-			// Usuário vendeu colheitas, ajusta quantidade creditada para a atual
-			try {
-				database.mappers.run(
-					dbName,
-					"UPDATE farm_credited_crops SET credited_quantity = ?, updated_at = ? WHERE user_id = ? AND crop_item_id = ?",
-					[currentQty, Date.now(), cId, item.itemId]
-				);
-			} catch (err) {
-				logger.warn(`Erro ao atualizar farm_credited_crops para ${cId}: ${err.message}`);
-			}
-		} else if (currentQty > creditedQty) {
-			const uncredited = currentQty - creditedQty;
+		const currentQty = Math.max(0, Number(item.quantity) || 0);
+		if (currentQty > creditedQty) {
 			dropsToDispatch.push({
 				plantId: item.itemId,
 				name: plantInfo.name,
 				bonusType: plantInfo.bonusType,
-				count: uncredited
+				count: currentQty - creditedQty
 			});
 		}
 	}
@@ -482,26 +691,26 @@ async function syncInventoryCrops(userId, inventoryItems = []) {
  * @param {boolean} [force=false]
  * @returns {Promise<Array<string>>}
  */
+/**
+ * Sincroniza os bônus do Jardim para o usuário (throttle de 15 s).
+ * Delega para reconcileHarvestBonus; o inventário só entra como fallback do cliente
+ * quando a API do Jardim ainda não expõe /harvest-totals.
+ * @param {string} userId
+ * @param {boolean} [force=false]
+ * @returns {Promise<Array<string>>}
+ */
 async function syncUserBonuses(userId, force = false) {
 	const cId = cleanUserId(userId);
 	if (!cId) return [];
 
 	const now = Date.now();
 	const lastSync = lastUserSyncTimes.get(cId) || 0;
-	if (!force && now - lastSync < 15000) {
+	if (!force && now - lastSync < SYNC_THROTTLE_MS) {
 		return [];
 	}
 	lastUserSyncTimes.set(cId, now);
 
-	try {
-		const invRes = await jardimClient.getInventory(cId);
-		if (invRes?.items && Array.isArray(invRes.items)) {
-			return await syncInventoryCrops(cId, invRes.items);
-		}
-	} catch (err) {
-		logger.debug(`[syncUserBonuses] Falha ao sincronizar inventário para ${cId}: ${err.message}`);
-	}
-	return [];
+	return reconcileHarvestBonus(cId);
 }
 
 /**
@@ -600,6 +809,7 @@ module.exports = {
 	getWaifuBonus,
 	consumeWaifuBonus,
 	dispatchHarvestDrops,
+	reconcileHarvestBonus,
 	syncInventoryCrops,
 	syncUserBonuses,
 	getEligibleVipDecorations,

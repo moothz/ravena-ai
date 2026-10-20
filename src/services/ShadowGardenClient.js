@@ -28,7 +28,9 @@ class ShadowGardenClient {
 				err.message ||
 				(err.error && typeof err.error === "object" ? err.error.message : err.error) ||
 				`${fallbackError} (HTTP ${res.status})`;
-			throw new Error(msg);
+			const error = new Error(msg);
+			error.status = res.status;
+			throw error;
 		}
 		return await res.json();
 	}
@@ -179,6 +181,19 @@ class ShadowGardenClient {
 			headers: this._headers()
 		});
 		return this._handleResponse(res, "Falha ao buscar inventário");
+	}
+
+	/**
+	 * Totais cumulativos de colheita por planta (fonte de verdade do evento de colheita).
+	 * Usado para creditar bônus sem depender do inventário, que zera quando o jogador vende.
+	 * @param {string} userId
+	 * @returns {Promise<{ userId: string, totals: Array<{ itemId: string, totalHarvested: number, updatedAt: string }> }>}
+	 */
+	async getHarvestTotals(userId) {
+		const res = await fetch(`${this.baseUrl}/farm/${encodeURIComponent(userId)}/harvest-totals`, {
+			headers: this._headers()
+		});
+		return this._handleResponse(res, "Falha ao buscar totais de colheita");
 	}
 
 	/**

@@ -415,6 +415,117 @@ async function runTests() {
 
 	console.log("✓ Sincronização automática de inventário testada com sucesso!");
 
+	// 10.2. Reconciliação por totais cumulativos (colheita feita no painel web do !faz-adm)
+	console.log("10.2. Testando reconciliação de bônus por totais cumulativos...");
+	const ShadowGardenClient = require("../services/ShadowGardenClient");
+	const dbCore = require("../utils/Database").getInstance();
+	const reconcileUser = "5511999996666";
+	const cropIscas = "crop_08_devouring_root_v2"; // 5 iscas vivas por planta colhida
+
+	function resetReconcileLedger() {
+		dbCore.mappers.run("core", "DELETE FROM farm_credited_crops WHERE user_id = ?", [
+			reconcileUser
+		]);
+	}
+	function readReconcileLedger() {
+		return dbCore.mappers.get(
+			"core",
+			"SELECT credited_quantity, baseline_quantity FROM farm_credited_crops WHERE user_id = ? AND crop_item_id = ?",
+			[reconcileUser, cropIscas]
+		);
+	}
+
+	resetReconcileLedger();
+
+	// Stub da API do Jardim: devolve o total cumulativo que a rota /harvest-totals traria
+	const originalGetHarvestTotals = ShadowGardenClient.prototype.getHarvestTotals;
+	let fakeTotals = 0;
+	ShadowGardenClient.prototype.getHarvestTotals = async () => ({
+		userId: reconcileUser,
+		totals: [{ itemId: cropIscas, totalHarvested: fakeTotals, updatedAt: new Date().toISOString() }]
+	});
+
+	try {
+		// 2 plantas colhidas no navegador → webhook → reconcile → +10 iscas
+		fakeTotals = 2;
+		const firstSync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(firstSync.length, 1, "Deveria creditar a colheita feita no painel web");
+		assert(
+			firstSync[0].includes("+10 iscas vivas"),
+			`2 Raízes Devoradoras deveriam render +10 iscas: ${firstSync[0]}`
+		);
+
+		// Webhook duplicado/retry do mesmo evento
+		const dupSync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(dupSync.length, 0, "Webhook repetido não pode creditar em dobro");
+
+		// Jogador vende tudo no painel e só depois roda !faz-colheita
+		const soldSync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(soldSync.length, 0, "Venda não pode gerar crédito duplicado");
+		assert.strictEqual(
+			Math.max(0, Number(readReconcileLedger()?.credited_quantity) || 0),
+			2,
+			"Vender não pode rebaixar o ledger (era assim que o bônus se perdia)"
+		);
+
+		// Colheita seguinte soma apenas a diferença
+		fakeTotals = 5;
+		const nextSync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(nextSync.length, 1, "Deveria creditar apenas a diferença da nova colheita");
+		assert(
+			nextSync[0].includes("+15 iscas vivas"),
+			`Diferença de 3 plantas deveria render +15 iscas: ${nextSync[0]}`
+		);
+		assert.strictEqual(
+			Math.max(0, Number(readReconcileLedger()?.credited_quantity) || 0),
+			5,
+			"O ledger deveria acumular as 5 plantas colhidas"
+		);
+
+		// Linha legada (creditada por estoque) migra sem conceder de novo
+		resetReconcileLedger();
+		dbCore.mappers.run(
+			"core",
+			"INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, updated_at) VALUES (?, ?, ?, ?)",
+			[reconcileUser, cropIscas, 9, Date.now()]
+		);
+		fakeTotals = 9;
+		const legacySync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(
+			legacySync.length,
+			0,
+			"Estoque legado já creditado não pode creditar novamente"
+		);
+		assert.strictEqual(
+			Math.max(0, Number(readReconcileLedger()?.credited_quantity) || 0),
+			0,
+			"A migração zera o contador legado para a nova base de contagem"
+		);
+
+		fakeTotals = 11;
+		const afterLegacy = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
+		assert.strictEqual(afterLegacy.length, 1, "Colheita após a migração deve ser creditada");
+		assert(
+			afterLegacy[0].includes("+10 iscas vivas"),
+			`2 novas plantas deveriam render +10 iscas: ${afterLegacy[0]}`
+		);
+
+		// O caminho legado por inventário ignora linhas migradas (não dobra, não rebaixa)
+		const legacyStockSync = await ShadowGardenBonusService.syncInventoryCrops(reconcileUser, [
+			{ itemId: cropIscas, quantity: 20 }
+		]);
+		assert.strictEqual(
+			legacyStockSync.length,
+			0,
+			"Colheita migrada deve ser ignorada pela sincronização legada por inventário"
+		);
+	} finally {
+		ShadowGardenClient.prototype.getHarvestTotals = originalGetHarvestTotals;
+		resetReconcileLedger();
+	}
+
+	console.log("✓ Reconciliação por totais cumulativos testada com sucesso!");
+
 	// 11. Teste de resolução de apelido e fallback de nome para imagem da fazenda
 	console.log("11. Testando resolução de apelido do usuário (group.nicks)...");
 	const mockGroupWithNick = {

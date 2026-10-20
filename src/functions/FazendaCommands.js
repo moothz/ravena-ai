@@ -415,13 +415,14 @@ async function handleFazenda(bot, message, _args, group) {
 			getUserDisplayName(bot, message, group)
 		]);
 
-		// 3. Sincroniza colheitas pendentes do inventário caso o status traga o inventário
-		if (Array.isArray(status?.inventory) && status.inventory.length > 0) {
-			try {
-				await ShadowGardenBonusService.syncInventoryCrops(userId, status.inventory);
-			} catch (syncErr) {
-				logger.warn(`[handleFazenda] Falha ao sincronizar inventário: ${syncErr.message}`);
-			}
+		// 3. Credita bônus pendentes das colheitas (totais cumulativos reportados pela API
+		// do Jardim). Cobre também as colheitas feitas no painel web (!faz-adm), que nunca
+		// passam pelo bot, e não depende do estoque — vender antes não come bônus.
+		let bonusMsgs = [];
+		try {
+			bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+		} catch (syncErr) {
+			logger.warn(`[handleFazenda] Falha ao reconciliar bônus de colheita: ${syncErr.message}`);
 		}
 
 		// 4. Tenta renderizar imagem (se falhar, envia mensagem de texto sem derrubar o comando)
@@ -455,6 +456,10 @@ async function handleFazenda(bot, message, _args, group) {
 		const buffsFormatted = formatActiveBuffs(status.buffs);
 		if (buffsFormatted) {
 			text += `✨ *Buffs Ativos:* ${buffsFormatted}\n`;
+		}
+
+		if (bonusMsgs.length > 0) {
+			text += `\n🎁 *BÔNUS DAS SUAS COLHEITAS:*\n${bonusMsgs.join("\n")}\n`;
 		}
 
 		text += `\n📖 *Comandos Rápidos:* \`!faz-colheita\`, \`!faz-plantar\`, \`!faz-loja\`, \`!faz-inv\``;
@@ -626,41 +631,18 @@ async function handleFazColher(bot, message, _args, group) {
 			text += `🥀 *Canteiros Secos Limpos:* ${withered.length} canteiro(s) liberado(s).\n\n`;
 		}
 
-		// Despacha bônus externos para outros jogos se houver
-		const rawDrops =
-			Array.isArray(harvested) && harvested.length > 0
-				? harvested
-				: harvestRes.externalDrops || harvestRes.bonusDrops || [];
-		const drops = rawDrops.filter((d) => {
-			if (!d) return false;
-			const cropKey = d.plantId
-				? d.plantId.startsWith("crop_")
-					? d.plantId
-					: `crop_${d.plantId}`
-				: null;
-			const mappedType = cropKey && ShadowGardenBonusService.PLANT_BONUS_MAP[cropKey]?.bonusType;
-			const bType = d.bonusType || mappedType;
-			return bType && bType !== "none" && bType !== "coins";
-		});
+		// Crédita os bônus dos outros jogos (Pesca/Slots/Waifu) pelo caminho único:
+		// reconcile por totais cumulativos da API do Jardim. Cobre esta colheita e
+		// qualquer colheita antiga não creditada (inclusive as do painel web), sem
+		// depender do estoque e sem chance de crédito em dobro.
 		const allBonusMsgs = [];
-		if (drops.length > 0) {
-			const bonusMsgs = await ShadowGardenBonusService.dispatchHarvestDrops(userId, drops);
+		try {
+			const bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
 			if (bonusMsgs.length > 0) {
 				allBonusMsgs.push(...bonusMsgs);
 			}
-		}
-
-		// Sincroniza também qualquer colheita prévia não creditada no inventário (ex: colhida via web)
-		try {
-			const invRes = await jardimClient.getInventory(userId);
-			if (invRes?.items) {
-				const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(userId, invRes.items);
-				if (syncMsgs.length > 0) {
-					allBonusMsgs.push(...syncMsgs);
-				}
-			}
-		} catch (syncErr) {
-			logger.warn(`[handleFazColher] Falha ao sincronizar inventário: ${syncErr.message}`);
+		} catch (reconcileErr) {
+			logger.warn(`[handleFazColher] Falha ao reconciliar bônus: ${reconcileErr.message}`);
 		}
 
 		if (allBonusMsgs.length > 0) {
@@ -719,25 +701,21 @@ async function handleFazColher(bot, message, _args, group) {
 
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
-		// Se não havia plantas prontas para colher no chão, verifica se há colheitas não sincronizadas no inventário (ex: colhidas via web)
+		// Sem plantas prontas no terreno: ainda assim vale reconciliar colheitas antigas
+		// não creditadas (ex: colhidas pelo painel web e já vendidas por lá).
 		try {
-			const invRes = await jardimClient.getInventory(userId);
-			if (invRes?.items) {
-				const syncMsgs = await ShadowGardenBonusService.syncInventoryCrops(userId, invRes.items);
-				if (syncMsgs.length > 0) {
-					return replyReturnMessage(
-						chatId,
-						`🌾 *SINCRONIZAÇÃO DO JARDIM DAS SOMBRAS* 🌾\n\n` +
-							`🎁 *BÔNUS ESPECIAIS RESGATADOS DAS SUAS COLHEITAS:*\n${syncMsgs.join("\n")}\n\n` +
-							`💡 _Não havia novas plantas prontas no terreno, mas seus bônus de colheitas anteriores foram computados com sucesso!_`,
-						message
-					);
-				}
+			const syncMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+			if (syncMsgs.length > 0) {
+				return replyReturnMessage(
+					chatId,
+					`🌾 *SINCRONIZAÇÃO DO JARDIM DAS SOMBRAS* 🌾\n\n` +
+						`🎁 *BÔNUS ESPECIAIS RESGATADOS DAS SUAS COLHEITAS:*\n${syncMsgs.join("\n")}\n\n` +
+						`💡 _Não havia novas plantas prontas no terreno, mas seus bônus de colheitas anteriores foram computados com sucesso!_`,
+					message
+				);
 			}
 		} catch (syncErr) {
-			logger.warn(
-				`[handleFazColher] Falha ao sincronizar inventário no fallback: ${syncErr.message}`
-			);
+			logger.warn(`[handleFazColher] Falha ao reconciliar bônus no fallback: ${syncErr.message}`);
 		}
 
 		logger.error(`[handleFazColher] Erro na colheita: ${err.message}`);
@@ -997,19 +975,23 @@ async function handleFazInventario(bot, message) {
 			jardimClient.getInventory(userId)
 		]);
 
+		// Credita bônus pendentes (colheitas antigas, inclusive as feitas no painel web)
+		// antes de montar a tela, para o jogador ver o resumo junto da mochila.
+		let bonusMsgs = [];
+		try {
+			bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+		} catch (syncErr) {
+			logger.warn(`[handleFazInventario] Falha ao reconciliar bônus: ${syncErr.message}`);
+		}
+		const bonusBlock =
+			bonusMsgs.length > 0 ? `\n🎁 *BÔNUS DAS SUAS COLHEITAS:*\n${bonusMsgs.join("\n")}\n` : "";
+
 		let text = `🎒 *MOCHILA DO ${gameName.toUpperCase()}* 🎒\n\n`;
 
 		const items = inv.items || inv.inventory || [];
 		if (items.length === 0) {
 			text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
-			return replyReturnMessage(chatId, text, message);
-		}
-
-		// Sincroniza qualquer colheita prévia no inventário (ex: colhida via web)
-		try {
-			await ShadowGardenBonusService.syncInventoryCrops(userId, items);
-		} catch (syncErr) {
-			logger.warn(`[handleFazInventario] Falha ao sincronizar inventário: ${syncErr.message}`);
+			return replyReturnMessage(chatId, `${text}${bonusBlock}`, message);
 		}
 
 		const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
@@ -1065,7 +1047,7 @@ async function handleFazInventario(bot, message) {
 
 		text += `💡 *Ações:* \`!faz-plantar\`, \`!faz-usar\`, \`!faz-vender\`, \`!faz-decorar\``;
 
-		return replyReturnMessage(chatId, text, message);
+		return replyReturnMessage(chatId, `${text}${bonusBlock}`, message);
 	} catch (err) {
 		logger.error(`[handleFazInventario] Erro ao carregar inventário: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha ao buscar inventário: ${err.message}`, message);
@@ -1120,6 +1102,17 @@ async function handleFazVender(bot, message) {
 	const quantity = args[1] && /^\d+$/.test(args[1]) ? parseInt(args[1], 10) : null;
 
 	try {
+		// Reconcilia ANTES de vender: o bônus da colheita é devido independentemente da
+		// venda, e depois dela o estoque zera (o saldo deixaria de ser evidência útil).
+		let bonusMsgs = [];
+		try {
+			bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+		} catch (reconcileErr) {
+			logger.warn(
+				`[handleFazVender] Falha ao reconciliar bônus antes da venda: ${reconcileErr.message}`
+			);
+		}
+
 		const sellRes = await jardimClient.sell(userId, {
 			all: sellAll,
 			...(itemParam && { itemId: itemParam }),
@@ -1138,6 +1131,10 @@ async function handleFazVender(bot, message) {
 			sellRes.soldItems.forEach((it) => {
 				text += `• ${it.name || it.itemId}: ${it.quantity}x\n`;
 			});
+		}
+
+		if (bonusMsgs.length > 0) {
+			text += `\n🎁 *BÔNUS DAS COLHEITAS VENDIDAS:*\n${bonusMsgs.join("\n")}\n`;
 		}
 
 		return replyReturnMessage(chatId, text, message);
