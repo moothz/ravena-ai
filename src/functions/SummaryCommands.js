@@ -594,7 +594,7 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
 						problematic_score: {
 							type: "number",
 							description:
-								"Nota de 0 a 10. Se for grupo de crianças/adolescentes de até 16 anos (is_underage = true), atribua PESO BASE 4, somando aos pontos de outros comportamentos identificados (ex: adolescentes neutro/jogos/escola = 4; adolescentes com brigas/xingamentos = 5 a 6; adolescentes com pornografia, nudes, drogas, crimes ou conteúdo ilegal = 8 a 10). Para grupos de adultos: 10: crimes/ilegal/gore/racismo; 6: pornografia/hentai em excesso; 4: encontros/flertes/sensual; 3: discussões/insultos; 0: bots/chat geral/jogos/tecnologia."
+								"Nota de 0 a 10 avaliando o comportamento e gravidade do conteúdo discutido no grupo (0: neutro/jogos/bots/escola/estudos/dia-a-dia; 2: discussões leves, xingamentos, flertes; 4: pornografia, nudes, drogas; 6 a 10: crimes, ilegal, racismo, gore, assédio, pedofilia/aliciamento). Avalie o teor da conversa na escala de 0 a 10 independentemente de idade (a pontuação base de proteção a menores é somada separadamente pelo sistema)."
 						},
 						classified_items: {
 							type: "array",
@@ -642,9 +642,12 @@ Não inclua explicações, introduções ou qualquer texto fora do JSON.`;
   * Menções a ensino fundamental ou anos iniciais do ensino médio (escola, série/ano como 7º/8º ano, lição de casa, provas escolares, uniforme de escola básica);
   * Dinâmicas ou assuntos infantis/juvenis exclusivos de menores de 16 anos.
 - 'underage_indicators': se is_underage for true (até 16 anos), liste os motivos (ex: 'Membro declarou ter 13 anos', 'Conversas sobre provas do 8º ano'). Se false ou se as idades forem 17+, deixe vazio [].
-- 'problematic_score': de 0 a 10.
-  * Grupos de crianças/adolescentes de até 16 anos (is_underage = true): atribua PESO BASE 4, somando a pontuação de outros comportamentos observados no chat (ex: chat adolescente normal, jogos, escola = nota 4; com discussões ou xingamentos = nota 5 a 6; com pornografia, nudes, drogas, aliciamento ou crimes = nota 8 a 10).
-  * Grupos de adultos/maiores (17+ anos): avalie normalmente na escala padrão sem o peso base de menores (0: neutro/jogos/bots, 3: discussões, 4: flertes/sensual, 6: pornografia, 10: crimes/ilegal).
+- 'problematic_score': de 0 a 10, avaliando o teor e comportamento do grupo:
+  * 0: grupo neutro/saudável, bots, jogos, escola, estudos, trabalho, amizade ou conversas cotidianas.
+  * 2: discussões, brigas leves, xingamentos pontuais, flertes ou brincadeiras picantes leves.
+  * 4: pornografia, compartilhamento/pedidos de nudes, drogas ou conteúdo adulto frequente.
+  * 6 a 10: crimes, venda ilegal, pedofilia, aliciamento, racismo, gore, violência explícita ou ameaças.
+  (Atenção: avalie estritamente o conteúdo/comportamento na nota de 0 a 10. Se for grupo de menores, o sistema somará automaticamente a pontuação base de proteção a menores).
 - 'classified_items': caso identifique falas problemáticas ou falas que comprovem menores de ATÉ 16 anos (ex: category: 'Crianças/Adolescentes', evidence: 'João: tenho 13 anos'), liste a categoria e a mensagem exata correspondente. NUNCA cite mensagens com idades de 17 anos ou mais (ex: 23 ou 24 anos) como evidência de crianças/adolescentes. Se não houver, deixe a lista vazia [].
 - Uso de bots é permitido e jamais deve ser flagrado como algo ruim
 - Anúncios, ofertas de troca de seguidores, divulgações de canais e conteúdo de NÃO são consinderados problemáticos
@@ -678,9 +681,9 @@ ${textToAnalyze}`;
 				// Filtra falsos positivos de menores de idade (ex: pessoas com 17 anos ou mais)
 				parsed = filterUnderageFalsePositives(parsed);
 
-				// Se is_underage for identificado (e confirmado até 16 anos), garante peso base 4 (mais a soma de outros pontos)
-				if (parsed.is_underage && parsed.problematic_score < 4) {
-					parsed.problematic_score = 4;
+				// Se is_underage for identificado (e confirmado até 16 anos), SOMA 4 pontos na nota
+				if (parsed.is_underage) {
+					parsed.problematic_score = Math.min(10, (parsed.problematic_score || 0) + 4);
 				}
 
 				// Para evitar deletar mensagens que chegaram ENQUANTO a IA analisava,
@@ -702,8 +705,13 @@ ${textToAnalyze}`;
 					}
 				}
 
-				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se a nota for > 7)
-				const isProblematic = parsed.problematic_score > 7 ? 1 : 0;
+				// Determina se o dossiê é elegível para alerta (nota > 7 para adultos ou > 4 para menores com agravantes)
+				const isAlertEligible = parsed.is_underage
+					? parsed.problematic_score > 4
+					: parsed.problematic_score > 7;
+
+				// 1. INSere o novo dossiê no histórico (guarda histórico da conversa se for problemático/alerta)
+				const isProblematic = isAlertEligible ? 1 : 0;
 				const isUnderage = parsed.is_underage ? 1 : 0;
 				await database.dbRun(
 					DB_NAME,
@@ -742,12 +750,12 @@ ${textToAnalyze}`;
 					`[${chatId}] Novo dossiê inserido. Histórico limitado a 15. ${newPendingText.length} chars remanescentes.`
 				);
 
-				// Alerta SuperAdmin se a nota for alta (> 7) e tiver bot disponível
+				// Alerta SuperAdmin se elegível e tiver bot disponível
 				const targetGroup = bot
 					? bot.dossieGroups || bot.grupoLogs || process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS
 					: process.env.GRUPO_DOSSIES || process.env.GRUPO_LOGS;
 
-				if (bot && parsed.problematic_score > 7 && targetGroup) {
+				if (bot && isAlertEligible && targetGroup) {
 					const groupData = await bot.database.getGroup(chatId);
 
 					// Conta a quantidade de reports problemáticos já gerados para este grupo

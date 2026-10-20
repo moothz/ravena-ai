@@ -29,10 +29,12 @@ async function runTests() {
 
 	try {
 		// ==========================================
-		// Teste 1: Grupo de crianças/adolescentes comum (peso base 4, sem agravantes)
-		// NÃO deve enviar alerta para o grupo de dossiês (nota 4 <= 7)
+		// Teste 1: Grupo de crianças/adolescentes comum (comportamento neutro 0 + base 4 = nota 4)
+		// NÃO deve enviar alerta para o grupo de dossiês (nota 4 <= 4)
 		// ==========================================
-		console.log("1. Testando análise com grupo comum de adolescentes (peso base 4, sem alerta)...");
+		console.log(
+			"1. Testando análise com grupo comum de adolescentes (neutro 0 + base 4, sem alerta)..."
+		);
 
 		llmService.getCompletion = async (opts) => {
 			// Verifica se o schema inclui is_underage e underage_indicators
@@ -47,7 +49,7 @@ async function runTests() {
 				"is_underage must be required in schema"
 			);
 
-			// Retorna resposta simulando IA identificando crianças/adolescentes neutros
+			// Retorna resposta simulando IA identificando crianças/adolescentes neutros (comportamento 0)
 			return JSON.stringify({
 				type: "escola",
 				summary:
@@ -57,7 +59,7 @@ async function runTests() {
 					"Membro informou ter 13 anos",
 					"Conversas sobre prova de matemática do 8º ano"
 				],
-				problematic_score: 2, // Se vier menor que 4, o código deve garantir peso base 4
+				problematic_score: 0, // Neutro: o código soma +4 da base de menores -> total 4
 				classified_items: [
 					{
 						category: "Crianças/Adolescentes (até 16 anos)",
@@ -72,7 +74,7 @@ async function runTests() {
 
 		await SummaryCommands.runGroupAnalysis(testChatId, conversationText, bot);
 
-		// Como é grupo adolescente comum (nota 4 <= 7), NÃO deve enviar alerta
+		// Como é grupo adolescente comum (nota 4 <= 4), NÃO deve enviar alerta
 		assert.strictEqual(
 			bot.capturedMessages.length,
 			0,
@@ -86,20 +88,22 @@ async function runTests() {
 		assert.strictEqual(
 			latest.problematic_score,
 			4,
-			"problematic_score no banco deve ter peso base 4"
+			"problematic_score no banco deve ser 4 (0 + 4 da base de menores)"
 		);
 		assert.strictEqual(latest.is_underage, 1, "is_underage no banco deve ser 1");
-		assert.strictEqual(latest.is_problematic, 0, "is_problematic deve ser 0 pois nota é 4 <= 7");
+		assert.strictEqual(latest.is_problematic, 0, "is_problematic deve ser 0 pois nota é 4 <= 4");
 		const parsedJson = JSON.parse(latest.dossier_json);
 		assert.strictEqual(parsedJson.is_underage, true, "is_underage no JSON deve ser true");
 		assert.strictEqual(parsedJson.problematic_score, 4, "problematic_score no JSON deve ser 4");
 		console.log("✓ Grupo adolescente comum registrado com peso base 4 e sem alerta indevido");
 
 		// ==========================================
-		// Teste 2: Grupo de adolescentes com agravantes graves (base 4 + outros pontos > 7)
-		// DEVE enviar alerta para o grupo de dossiês
+		// Teste 2: Grupo de adolescentes com pontuações não tão altas (base 4 + comportamento 2 = nota 6)
+		// DEVE enviar alerta para o grupo de dossiês (nota 6 > 4)
 		// ==========================================
-		console.log("2. Testando grupo de adolescentes com agravantes graves (deve enviar alerta)...");
+		console.log(
+			"2. Testando grupo de adolescentes com pontuação não tão alta (comportamento 2 + base 4 = 6, deve alertar)..."
+		);
 		bot.resetCapture();
 
 		const riskyChatId = "120363000000000010@g.us";
@@ -110,45 +114,45 @@ async function runTests() {
 
 		llmService.getCompletion = async () =>
 			JSON.stringify({
-				type: "nudes",
-				summary: "Adolescentes trocando fotos íntimas e pedindo conteúdos inadequados.",
+				type: "flerte",
+				summary: "Adolescentes trocando mensagens de flerte e insinuações picantes leves.",
 				is_underage: true,
 				underage_indicators: ["Membro declarou ter 14 anos"],
-				problematic_score: 8, // Base 4 + 4 de conteúdo sexual/nudes = 8 (> 7)
+				problematic_score: 2, // Comportamento leve (2) + base menores (4) = 6 (> 4)
 				classified_items: [
 					{
 						category: "Crianças/Adolescentes (até 16 anos)",
 						evidence: "Lucas: tenho 14 anos"
 					},
 					{
-						category: "Pornografia / Nudes",
-						evidence: "Lucas: manda foto sem roupa no pv"
+						category: "Flerte / Insinuações",
+						evidence: "Lucas: você é linda, me dá um selinho"
 					}
 				]
 			});
 
 		await SummaryCommands.runGroupAnalysis(
 			riskyChatId,
-			"Lucas: tenho 14 anos\nLucas: manda foto sem roupa no pv",
+			"Lucas: tenho 14 anos\nLucas: você é linda, me dá um selinho",
 			bot
 		);
 
 		assert.strictEqual(
 			bot.capturedMessages.length,
 			1,
-			"Grupo adolescente com nota 8 DEVE enviar alerta para o grupo de dossiês"
+			"Grupo adolescente com nota 6 (> 4) DEVE enviar alerta para o grupo de dossiês"
 		);
 		const alertMsg = bot.capturedMessages[0];
 		assert.strictEqual(alertMsg.chatId, "dossie-target@g.us");
 		assert.ok(alertMsg.content.includes("ALERTA DE GRUPO DE CRIANÇAS/ADOLESCENTES"));
 		assert.ok(alertMsg.content.includes("Crianças/Adolescentes:* Detectado ⚠️"));
-		assert.ok(alertMsg.content.includes("Nota:* 8/10"));
+		assert.ok(alertMsg.content.includes("Nota:* 6/10"));
 
 		const riskyDossiers = await bot.database.getLastGroupDossiers(riskyChatId, 5);
-		assert.strictEqual(riskyDossiers[0].problematic_score, 8);
+		assert.strictEqual(riskyDossiers[0].problematic_score, 6);
 		assert.strictEqual(riskyDossiers[0].is_underage, 1);
 		assert.strictEqual(riskyDossiers[0].is_problematic, 1);
-		console.log("✓ Grupo adolescente com agravantes disparou alerta corretamente");
+		console.log("✓ Grupo adolescente com agravantes leves disparou alerta corretamente");
 
 		// ==========================================
 		// Teste 3: Grupo adulto/neutro (is_underage: false, nota baixa)
