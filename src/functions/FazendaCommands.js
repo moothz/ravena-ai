@@ -622,7 +622,12 @@ async function handleFazColher(bot, message, _args, group) {
 				} else if (slotNum) {
 					slotInfo = ` (Canteiro #${slotNum})`;
 				}
-				text += `• *${h.name || h.plantName || h.plantId}*: *${qty}x*${slotInfo}\n`;
+				const bonusLabel = ShadowGardenBonusService.formatCropBonusInline(
+					h.plantId || h.id || h.name,
+					qty
+				);
+				const bonusSuffix = bonusLabel ? `: *${bonusLabel}*` : "";
+				text += `• *${h.name || h.plantName || h.plantId}*: *${qty}x*${slotInfo}${bonusSuffix}\n`;
 			});
 			text += "\n";
 		}

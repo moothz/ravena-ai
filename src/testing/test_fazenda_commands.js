@@ -367,10 +367,19 @@ async function runTests() {
 	assert.strictEqual(bonusAfter.rolls >= 1, true, "Deveria ter pelo menos 1 roll");
 	assert.strictEqual(bonusAfter.tickets >= 1, true, "Deveria ter pelo menos 1 ticket");
 
-	// Consome primeiro o ticket
+	// Consome primeiro os tickets (Rosa de Sangue concede 2 tickets por flor)
 	const consTicket = await FazendaCommands.consumeFarmWaifuRoll(testUser);
 	assert.strictEqual(consTicket.consumed, true, "Deveria consumir com sucesso");
 	assert.strictEqual(consTicket.type, "ticket", "Deveria consumir o ticket primeiro");
+
+	// Consome os tickets restantes até chegar nos rolls
+	let bonusCheck = await FazendaCommands.getFarmWaifuRollBonus(testUser);
+	while (bonusCheck.tickets > 0) {
+		const consExtraTicket = await FazendaCommands.consumeFarmWaifuRoll(testUser);
+		assert.strictEqual(consExtraTicket.consumed, true);
+		assert.strictEqual(consExtraTicket.type, "ticket");
+		bonusCheck = await FazendaCommands.getFarmWaifuRollBonus(testUser);
+	}
 
 	// Consome o roll em seguida
 	const consRoll = await FazendaCommands.consumeFarmWaifuRoll(testUser);
@@ -482,32 +491,46 @@ async function runTests() {
 			"O ledger deveria acumular as 5 plantas colhidas"
 		);
 
-		// Linha legada (creditada por estoque) migra sem conceder de novo
+		// Linha legada (creditada por estoque antigo) migra para o regime de totais
 		resetReconcileLedger();
 		dbCore.mappers.run(
 			"core",
 			"INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, updated_at) VALUES (?, ?, ?, ?)",
 			[reconcileUser, cropIscas, 9, Date.now()]
 		);
-		fakeTotals = 9;
+		// A API reporta 2 novas colheitas feitas no regime novo
+		fakeTotals = 2;
 		const legacySync = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
 		assert.strictEqual(
 			legacySync.length,
-			0,
-			"Estoque legado já creditado não pode creditar novamente"
+			1,
+			"Colheitas da nova tabela da API devem ser creditadas normalmente pós-migração"
+		);
+		assert(
+			legacySync[0].includes("+10 iscas vivas"),
+			`2 novas plantas deveriam render +10 iscas: ${legacySync[0]}`
 		);
 		assert.strictEqual(
 			Math.max(0, Number(readReconcileLedger()?.credited_quantity) || 0),
-			0,
-			"A migração zera o contador legado para a nova base de contagem"
+			2,
+			"O contador do novo regime acumula as 2 novas colheitas"
 		);
 
-		fakeTotals = 11;
+		fakeTotals = 4;
 		const afterLegacy = await ShadowGardenBonusService.reconcileHarvestBonus(reconcileUser);
-		assert.strictEqual(afterLegacy.length, 1, "Colheita após a migração deve ser creditada");
+		assert.strictEqual(
+			afterLegacy.length,
+			1,
+			"Colheita posterior à migração deve somar a diferença"
+		);
 		assert(
 			afterLegacy[0].includes("+10 iscas vivas"),
 			`2 novas plantas deveriam render +10 iscas: ${afterLegacy[0]}`
+		);
+		assert.strictEqual(
+			Math.max(0, Number(readReconcileLedger()?.credited_quantity) || 0),
+			4,
+			"O ledger acumula 4 plantas colhidas no total"
 		);
 
 		// O caminho legado por inventário ignora linhas migradas (não dobra, não rebaixa)
@@ -518,6 +541,20 @@ async function runTests() {
 			legacyStockSync.length,
 			0,
 			"Colheita migrada deve ser ignorada pela sincronização legada por inventário"
+		);
+
+		// Teste de formatação inline de bônus por planta
+		assert.strictEqual(
+			ShadowGardenBonusService.formatCropBonusInline("crop_12_blood_rose", 3),
+			"+6 Tickets de Waifu Rara"
+		);
+		assert.strictEqual(
+			ShadowGardenBonusService.formatCropBonusInline("08_devouring_root_v2", 2),
+			"+10 Iscas Vivas"
+		);
+		assert.strictEqual(
+			ShadowGardenBonusService.formatCropBonusInline("crop_03_corpse_lily", 5),
+			null
 		);
 	} finally {
 		ShadowGardenClient.prototype.getHarvestTotals = originalGetHarvestTotals;

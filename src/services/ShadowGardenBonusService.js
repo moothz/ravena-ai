@@ -399,11 +399,11 @@ async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
 
 			case "waifu_ticket":
 			case "waifu_premium_ticket": {
-				// ID 12: Rosa de Sangue — concede 1 ticket raro de Waifu por planta
-				const ticketsToAdd = 1 * count;
+				// ID 12: Rosa de Sangue — concede 2 tickets raros de Waifu por planta (conforme plants.json)
+				const ticketsToAdd = 2 * count;
 				await addWaifuBonus(cId, { tickets: ticketsToAdd });
 				dispatchedMessages.push(
-					`• *${plantDisplayName}* (x${count}) ➔ +${ticketsToAdd} Ticket Especial de Waifu Rara!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${ticketsToAdd} Ticket${ticketsToAdd > 1 ? "s" : ""} Especial de Waifu Rara!`
 				);
 				break;
 			}
@@ -486,20 +486,22 @@ function readCropLedger(cId, cropItemId) {
 }
 
 /**
- * Migra a linha para o regime de totais cumulativos: zera o contador legado (que media
- * estoque, não colheita) e grava quanto do total o ledger legado já cobria.
+ * Migra a linha para o regime de totais cumulativos. Como a tabela crop_harvest_totals
+ * na API do Jardim foi criada nova e conta apenas as colheitas a partir da implantação,
+ * a baseline de contagem do novo regime é 0 (qualquer colheita reportada é nova e deve
+ * ser creditada).
  */
-function migrateCropLedger(cId, cropItemId, total, legacyCredited) {
-	const baseline = Math.max(0, Math.min(total, legacyCredited));
+function migrateCropLedger(cId, cropItemId) {
+	const baseline = 0;
 	database.mappers.run(
 		dbName,
 		`INSERT INTO farm_credited_crops (user_id, crop_item_id, credited_quantity, baseline_quantity, updated_at)
-		 VALUES (?, ?, 0, ?, ?)
+		 VALUES (?, ?, 0, 0, ?)
 		 ON CONFLICT(user_id, crop_item_id) DO UPDATE SET
 		   credited_quantity = 0,
-		   baseline_quantity = excluded.baseline_quantity,
+		   baseline_quantity = 0,
 		   updated_at = excluded.updated_at`,
-		[cId, cropItemId, baseline, Date.now()]
+		[cId, cropItemId, Date.now()]
 	);
 	return baseline;
 }
@@ -548,7 +550,7 @@ async function reconcileFromTotals(cId, totals = []) {
 		try {
 			ledger = readCropLedger(cId, cropItemId);
 			if (!ledger || ledger.baseline === null) {
-				const baseline = migrateCropLedger(cId, cropItemId, total, ledger ? ledger.credited : 0);
+				const baseline = migrateCropLedger(cId, cropItemId);
 				ledger = { credited: 0, baseline };
 			}
 		} catch (err) {
@@ -797,6 +799,66 @@ function calculateFarmDonationBonuses(totalAmount, previousAmount = 0) {
 	};
 }
 
+/**
+ * Formata um resumo curto do bônus concedido por uma planta para exibição inline na colheita.
+ * Suporta formatos: "crop_12_blood_rose", "12_blood_rose", "12", ou nome da planta.
+ * @param {string} plantIdOrName
+ * @param {number} count
+ * @returns {string|null} ex: "+6 Tickets de Waifu Rara" ou null se não tiver bônus de jogo
+ */
+function formatCropBonusInline(plantIdOrName, count = 1) {
+	if (!plantIdOrName || count <= 0) return null;
+	const pStr = String(plantIdOrName).trim();
+
+	let cropKey = pStr.startsWith("crop_") ? pStr : `crop_${pStr}`;
+	if (!PLANT_BONUS_MAP[cropKey]) {
+		const num = parseInt(pStr.replace(/\D/g, ""), 10);
+		if (num) {
+			const pad = String(num).padStart(2, "0");
+			const found = Object.keys(PLANT_BONUS_MAP).find((k) => k.startsWith(`crop_${pad}_`));
+			if (found) cropKey = found;
+		}
+	}
+	if (!PLANT_BONUS_MAP[cropKey]) {
+		for (const [k, v] of Object.entries(PLANT_BONUS_MAP)) {
+			if (v.name === pStr || pStr.includes(v.name)) {
+				cropKey = k;
+				break;
+			}
+		}
+	}
+
+	const info = PLANT_BONUS_MAP[cropKey];
+	if (!info || !info.bonusType || info.bonusType === "none" || info.bonusType === "coins") {
+		return null;
+	}
+
+	switch (info.bonusType) {
+		case "fishing_buff":
+			return `+${count} Buff${count > 1 ? "s" : ""} de Pesca`;
+		case "fishing_weight_buff": {
+			const pct = Math.min(50, Math.round(15 * count));
+			return `+${pct}% peso na pesca`;
+		}
+		case "fishing_inventory_boost":
+			return `+${count} Equipamento${count > 1 ? "s" : ""} de Pesca`;
+		case "fishing_baits_5":
+			return `+${5 * count} Iscas Vivas`;
+		case "casino_standard_chips":
+			return `+${5 * count} Fichas de Slots`;
+		case "casino_gold_chips":
+			return `+${25 * count} Fichas de Ouro (Slots)`;
+		case "waifu_roll":
+		case "waifu_rolls":
+			return `+${2 * count} Rolls de Waifu`;
+		case "waifu_ticket":
+		case "waifu_premium_ticket":
+			return `+${2 * count} Ticket${count * 2 > 1 ? "s" : ""} de Waifu Rara`;
+		default:
+			return null;
+	}
+}
+
 module.exports = {
 	FISHING_BUFF_POOL,
 	FISHING_INVENTORY_BOOST_POOL,
@@ -813,5 +875,6 @@ module.exports = {
 	syncInventoryCrops,
 	syncUserBonuses,
 	getEligibleVipDecorations,
-	calculateFarmDonationBonuses
+	calculateFarmDonationBonuses,
+	formatCropBonusInline
 };
