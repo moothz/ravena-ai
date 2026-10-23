@@ -26,6 +26,7 @@ class DatabaseMappers {
 
 		this.databasePath = path.join(__dirname, "../../../data");
 		this.connections = {}; // name → better-sqlite3 Database instance
+		this._stmtCache = new WeakMap(); // conn → Map(sql → statement)
 	}
 
 	// ---------------------------------------------------------------------------
@@ -55,9 +56,7 @@ class DatabaseMappers {
 		try {
 			const conn = name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-			conn.pragma("journal_mode = WAL");
-			conn.pragma("synchronous = NORMAL");
-			conn.pragma("busy_timeout = 5000");
+			this._applyPragmas(conn);
 
 			// Apply the schema first if we have it in parent Database class
 			const schema = this.db.schemas[name];
@@ -142,9 +141,7 @@ class DatabaseMappers {
 				const freshConn =
 					name === "cooldowns" ? new BetterSQLite(":memory:") : new BetterSQLite(dbPath);
 
-				freshConn.pragma("journal_mode = WAL");
-				freshConn.pragma("synchronous = NORMAL");
-				freshConn.pragma("busy_timeout = 5000");
+				this._applyPragmas(freshConn);
 
 				const schema = this.db.schemas[name];
 				if (schema) {
@@ -164,6 +161,20 @@ class DatabaseMappers {
 				throw err;
 			}
 		}
+	}
+
+	/**
+	 * WAL + synchronous=NORMAL: escritas ~20x mais rapidas que DELETE/FULL e seguras contra
+	 * crash do processo (so a ultima transacao pode se perder em queda de energia).
+	 * Backups usam a API online (conn.backup) e a restauracao apaga -wal/-shm, entao ambos sao compativeis.
+	 * SQLITE_JOURNAL_MODE=DELETE volta ao modo antigo (com synchronous=FULL).
+	 * @param {import('better-sqlite3').Database} conn
+	 */
+	_applyPragmas(conn) {
+		const mode = (process.env.SQLITE_JOURNAL_MODE || "WAL").toUpperCase() === "DELETE" ? "DELETE" : "WAL";
+		conn.pragma(`journal_mode = ${mode}`);
+		conn.pragma(`synchronous = ${mode === "WAL" ? "NORMAL" : "FULL"}`);
+		conn.pragma("busy_timeout = 5000");
 	}
 
 	/**
@@ -210,6 +221,28 @@ class DatabaseMappers {
 	// ---------------------------------------------------------------------------
 
 	/**
+	 * Returns a prepared statement, reusing it per connection (preparing is the costly part).
+	 * The cache is tied to the connection object, so reopening a connection drops it automatically.
+	 * @param {Object} conn - better-sqlite3 connection
+	 * @param {string} sql
+	 */
+	_prepare(conn, sql) {
+		let cache = this._stmtCache.get(conn);
+		if (!cache) {
+			cache = new Map();
+			this._stmtCache.set(conn, cache);
+		}
+		let stmt = cache.get(sql);
+		if (!stmt) {
+			stmt = conn.prepare(sql);
+			// SQL dinamico (ex.: IN com N placeholders) nao pode crescer sem limite
+			if (cache.size >= 500) cache.delete(cache.keys().next().value);
+			cache.set(sql, stmt);
+		}
+		return stmt;
+	}
+
+	/**
 	 * Execute a write statement (INSERT / UPDATE / DELETE / CREATE …).
 	 * @param {string} name - Database name
 	 * @param {string} sql
@@ -219,7 +252,7 @@ class DatabaseMappers {
 	run(name, sql, params = []) {
 		try {
 			const conn = this.getConnection(name);
-			const stmt = conn.prepare(sql);
+			const stmt = this._prepare(conn, sql);
 			return Array.isArray(params) ? stmt.run(...params) : stmt.run(params);
 		} catch (err) {
 			this._handleError(name, err);
@@ -237,7 +270,7 @@ class DatabaseMappers {
 	get(name, sql, params = []) {
 		try {
 			const conn = this.getConnection(name);
-			const stmt = conn.prepare(sql);
+			const stmt = this._prepare(conn, sql);
 			return Array.isArray(params) ? stmt.get(...params) : stmt.get(params);
 		} catch (err) {
 			this._handleError(name, err);
@@ -255,7 +288,7 @@ class DatabaseMappers {
 	all(name, sql, params = []) {
 		try {
 			const conn = this.getConnection(name);
-			const stmt = conn.prepare(sql);
+			const stmt = this._prepare(conn, sql);
 			return Array.isArray(params) ? stmt.all(...params) : stmt.all(params);
 		} catch (err) {
 			this._handleError(name, err);
