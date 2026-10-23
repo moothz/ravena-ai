@@ -1,91 +1,135 @@
-const { exec } = require("child_process");
+const crypto = require("crypto");
+const axios = require("axios");
 const Logger = require("./Logger");
 
+const sha256 = (data) => crypto.createHash("sha256").update(data).digest("hex");
+const hmac = (key, data) => crypto.createHmac("sha256", key).update(data).digest();
+
+/**
+ * Configura o storage S3 de mídia da whatsgoapi (RustFS, ou qualquer servidor compatível com S3).
+ * Usa a API S3 diretamente (assinatura SigV4), sem depender do MinIO Client (mc).
+ * As variáveis continuam com o prefixo MINIO_ por compatibilidade com a whatsgoapi.
+ */
 class MinioSetup {
 	constructor() {
 		this.logger = new Logger("MinioSetup");
 		this.enabled = process.env.MINIO_ENABLED === "true";
-		this.endpoint = process.env.MINIO_ENDPOINT || "minio:9000";
+		this.endpoint = process.env.MINIO_ENDPOINT || "rustfs:9000";
 		this.accessKey = process.env.MINIO_ACCESS_KEY;
 		this.secretKey = process.env.MINIO_SECRET_KEY;
 		this.bucket = process.env.MINIO_BUCKET || "zap-media";
+		this.region = process.env.MINIO_REGION || "us-east-1";
+		this.protocol = process.env.MINIO_USE_SSL === "true" ? "https" : "http";
 		this.retentionDays = parseInt(process.env.MINIO_RETENTION_DAYS) || 0;
 		this.storageLimitGb = parseInt(process.env.MINIO_STORAGE_LIMIT_GB) || 0;
 	}
 
 	/**
-	 * Configura o MinIO com as políticas de retenção e quota
+	 * Garante que o bucket existe e aplica a política de retenção (lifecycle)
 	 */
 	async init() {
 		if (!this.enabled) {
-			this.logger.debug("MinIO está desativado. Pulando configuração.");
+			this.logger.debug("Storage S3 está desativado. Pulando configuração.");
 			return;
 		}
 
 		if (!this.accessKey || !this.secretKey) {
-			this.logger.warn("MinIO habilitado mas credenciais não encontradas. Verifique .env");
+			this.logger.warn("Storage S3 habilitado mas credenciais não encontradas. Verifique .env");
 			return;
 		}
 
-		// Pequeno delay para garantir que o container minio já subiu e aceita conexões
+		// Pequeno delay para garantir que o container do storage já subiu e aceita conexões
 		await new Promise((resolve) => setTimeout(resolve, 5000));
 
-		this.logger.info("Verificando políticas do MinIO...");
+		this.logger.info("Verificando políticas do storage S3...");
 
 		try {
-			// Validar se o mc está instalado e funcional
-			await this.execute("mc --version").catch((e) => {
-				throw new Error("MinIO Client (mc) não encontrado ou corrompido: " + e.message);
-			});
+			const head = await this.request("HEAD", "");
+			if (head.status === 404) {
+				// A whatsgoapi também cria o bucket no primeiro upload; criar aqui permite aplicar a retenção já
+				const created = await this.request("PUT", "");
+				if (created.status >= 300)
+					throw new Error(`criar bucket: HTTP ${created.status} ${created.data}`);
+				this.logger.info(`Bucket ${this.bucket} criado.`);
+			} else if (head.status >= 300) {
+				throw new Error(`verificar bucket: HTTP ${head.status}`);
+			}
 
-			// 1. Configurar o alias no 'mc'
-
-			const protocol = process.env.MINIO_USE_SSL === "true" ? "https" : "http";
-			const aliasCmd = `mc alias set ravena ${protocol}://${this.endpoint} ${this.accessKey} ${this.secretKey}`;
-
-			await this.execute(aliasCmd);
-
-			// 2. Configurar Retenção (Lifecycle) se habilitado
 			if (this.retentionDays > 0) {
 				this.logger.info(
 					`Configurando retenção de ${this.retentionDays} dias para o bucket ${this.bucket}...`
 				);
-
-				// Remove regras anteriores para evitar duplicatas e aplica a nova
-				await this.execute(`mc ilm rm --all --force ravena/${this.bucket}`).catch(() => {});
-				await this.execute(`mc ilm add --expiry-days ${this.retentionDays} ravena/${this.bucket}`);
+				const body =
+					'<?xml version="1.0" encoding="UTF-8"?>' +
+					'<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">' +
+					"<Rule><ID>ravena-expiry</ID><Status>Enabled</Status><Filter><Prefix></Prefix></Filter>" +
+					`<Expiration><Days>${this.retentionDays}</Days></Expiration></Rule>` +
+					"</LifecycleConfiguration>";
+				// PUT substitui a configuração inteira, então não acumula regras duplicadas
+				const res = await this.request("PUT", "lifecycle=", body, {
+					"content-md5": crypto.createHash("md5").update(body).digest("base64"),
+					"content-type": "application/xml"
+				});
+				if (res.status >= 300) throw new Error(`lifecycle: HTTP ${res.status} ${res.data}`);
 			}
 
-			// 3. Configurar Quota se habilitada
 			if (this.storageLimitGb > 0) {
-				this.logger.info(
-					`Configurando limite de ${this.storageLimitGb}GB para o bucket ${this.bucket}...`
+				// Quota não faz parte da API S3; cada servidor configura do seu jeito
+				this.logger.warn(
+					"MINIO_STORAGE_LIMIT_GB não é aplicado automaticamente: configure a quota no próprio storage."
 				);
-				await this.execute(`mc quota set ravena/${this.bucket} --size ${this.storageLimitGb}GB`);
 			}
 
-			this.logger.info("Configurações do MinIO aplicadas.");
+			this.logger.info("Configurações do storage S3 aplicadas.");
 		} catch (error) {
-			// Silenciamos o erro se for apenas "bucket não existe ainda", pois a whatsgoapi cria ele no primeiro upload
-			if (error.message.includes("does not exist")) {
-				this.logger.debug(
-					"Bucket ainda não existe, as políticas serão aplicadas na próxima inicialização."
-				);
-			} else {
-				this.logger.error("Erro ao configurar MinIO:", error.message);
-			}
+			this.logger.error("Erro ao configurar storage S3:", error.message);
 		}
 	}
 
-	execute(command) {
-		return new Promise((resolve, reject) => {
-			exec(command, (error, stdout, stderr) => {
-				if (error) {
-					reject(new Error(stderr || stdout || error.message));
-					return;
-				}
-				resolve(stdout);
-			});
+	/**
+	 * Requisição S3 path-style assinada com AWS Signature V4
+	 * @param {string} method
+	 * @param {string} query - query string canônica (ex: "lifecycle=")
+	 * @param {string} [body]
+	 * @param {Object} [extraHeaders] - nomes em minúsculo
+	 */
+	async request(method, query, body = "", extraHeaders = {}) {
+		const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "");
+		const day = amzDate.slice(0, 8);
+		const uri = `/${encodeURIComponent(this.bucket)}`;
+		const headers = {
+			...extraHeaders,
+			host: this.endpoint,
+			"x-amz-content-sha256": sha256(body),
+			"x-amz-date": amzDate
+		};
+		const names = Object.keys(headers).sort();
+		const canonicalRequest = [
+			method,
+			uri,
+			query,
+			names.map((n) => `${n}:${String(headers[n]).trim()}\n`).join(""),
+			names.join(";"),
+			headers["x-amz-content-sha256"]
+		].join("\n");
+		const scope = `${day}/${this.region}/s3/aws4_request`;
+		const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, sha256(canonicalRequest)].join("\n");
+		let key = hmac(`AWS4${this.secretKey}`, day);
+		for (const part of [this.region, "s3", "aws4_request"]) key = hmac(key, part);
+		const signature = crypto.createHmac("sha256", key).update(stringToSign).digest("hex");
+
+		const { host, ...sendHeaders } = headers;
+		sendHeaders.authorization = `AWS4-HMAC-SHA256 Credential=${this.accessKey}/${scope}, SignedHeaders=${names.join(";")}, Signature=${signature}`;
+
+		return axios({
+			method,
+			url: `${this.protocol}://${host}${uri}${query ? `?${query}` : ""}`,
+			data: body || undefined,
+			headers: sendHeaders,
+			timeout: 15000,
+			responseType: "text",
+			transformRequest: [(d) => d],
+			validateStatus: () => true
 		});
 	}
 }
