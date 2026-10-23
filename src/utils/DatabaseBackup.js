@@ -3,6 +3,8 @@ const path = require("path");
 const mysql = require("mysql2/promise");
 const BetterSQLite = require("better-sqlite3");
 const Logger = require("./Logger");
+const zlib = require("zlib");
+const { pipeline } = require("stream/promises");
 
 class DatabaseBackup {
 	constructor(databaseInstance) {
@@ -14,6 +16,8 @@ class DatabaseBackup {
 
 		this.maxBackups = parseInt(process.env.MAX_BACKUPS) || 120;
 		this.backupRetentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS) || 30;
+		// Compacta os .db de cada backup em .db.gz (a restauracao aceita os dois formatos)
+		this.backupGzip = process.env.BACKUP_GZIP === "true";
 
 		// Remote Backup Config
 		this.remoteEnabled = process.env.SQLITE_REMOTE_BACKUP === "true";
@@ -103,10 +107,14 @@ class DatabaseBackup {
 					const items = fs.readdirSync(target);
 					for (const item of items) {
 						if (backedUpFiles.has(item)) continue; // Already backed up safely
+						// -wal/-shm/-journal de bancos ja copiados via backup online ja estao incluidos nele
+						if (backedUpFiles.has(item.replace(/-(wal|shm|journal)$/, ""))) continue;
 						this.backupDirectory(path.join(target, item), path.join(dest, item));
 					}
 				}
 			}
+
+			if (this.backupGzip) await this.compressBackupDir(path.join(backupDir, "sqlites"));
 
 			this.logger.info(`File backup created: ${backupDir}`);
 			this.cleanupOldScheduledBackups();
@@ -171,6 +179,32 @@ class DatabaseBackup {
 		}
 	}
 
+	/**
+	 * Compacta com gzip todos os arquivos .db de um diretório de backup (remove o original).
+	 * Se a compactação de um arquivo falhar, o original é mantido.
+	 */
+	async compressBackupDir(dir) {
+		if (!fs.existsSync(dir)) return;
+		for (const file of fs.readdirSync(dir)) {
+			if (!file.endsWith(".db")) continue;
+			const src = path.join(dir, file);
+			const dest = `${src}.gz`;
+			try {
+				await pipeline(
+					fs.createReadStream(src),
+					zlib.createGzip({ level: 9 }),
+					fs.createWriteStream(dest)
+				);
+				fs.unlinkSync(src);
+			} catch (e) {
+				this.logger.error(`Failed to compress backup ${src}:`, e);
+				try {
+					fs.unlinkSync(dest);
+				} catch {}
+			}
+		}
+	}
+
 	cleanupOldScheduledBackups() {
 		try {
 			const now = Date.now();
@@ -197,6 +231,31 @@ class DatabaseBackup {
 		} catch (error) {
 			this.logger.error("Error cleaning up old backups:", error);
 		}
+	}
+
+	/**
+	 * Localiza o arquivo de um banco dentro de um backup (.db.gz ou .db legado) e
+	 * devolve um caminho de arquivo SQLite legível (descompacta para um temporário se preciso).
+	 * @returns {{ filePath: string, temporary: boolean } | null}
+	 */
+	async resolveBackupFile(backupPath, dbFile) {
+		const raw = path.join(backupPath, "sqlites", dbFile);
+		const gz = `${raw}.gz`;
+		if (fs.existsSync(gz)) {
+			const tmp = path.join(this.backupPath, `.restore-${process.pid}-${dbFile}`);
+			try {
+				await pipeline(fs.createReadStream(gz), zlib.createGunzip(), fs.createWriteStream(tmp));
+				return { filePath: tmp, temporary: true };
+			} catch (e) {
+				this.logger.warn(`Failed to decompress ${gz}: ${e.message}`);
+				try {
+					fs.unlinkSync(tmp);
+				} catch {}
+				return null;
+			}
+		}
+		if (fs.existsSync(raw)) return { filePath: raw, temporary: false };
+		return null;
 	}
 
 	getSortedLocalBackups() {
@@ -303,7 +362,7 @@ class DatabaseBackup {
 			if (!db) {
 				const dbPath = path.join(this.databasePath, "sqlites", `${dbName}.db`);
 				if (!fs.existsSync(dbPath)) return;
-				temporaryDb = new BetterSQLite(dbPath, { readonly: true });
+				temporaryDb = new BetterSQLite(dbPath, { readonly: true, timeout: 5000 });
 				db = temporaryDb;
 			}
 
@@ -323,44 +382,28 @@ class DatabaseBackup {
 		}
 	}
 
+	/**
+	 * Executa um SELECT em uma conexão better-sqlite3 pura ou no Sqlite3MockWrapper
+	 * (que delega para as conexões gerenciadas pelo DatabaseMappers).
+	 */
+	queryAll(db, sql, params = []) {
+		if (db.mappers) return db.mappers.all(db.name, sql, params);
+		return db.prepare(sql).all(...params);
+	}
+
 	async getTables(db) {
-		if (typeof db.all === "function") {
-			return new Promise((resolve, reject) => {
-				db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
-					if (err) reject(err);
-					else resolve((rows || []).map((r) => r.name));
-				});
-			});
-		} else if (typeof db.prepare === "function") {
-			const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-			return (rows || []).map((r) => r.name);
-		}
-		return [];
+		return this.queryAll(db, "SELECT name FROM sqlite_master WHERE type='table'").map(
+			(r) => r.name
+		);
 	}
 
 	async getPrimaryKeys(db, tableName) {
-		if (typeof db.all === "function") {
-			return new Promise((resolve, reject) => {
-				db.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
-					if (err) reject(err);
-					else {
-						const pks = (rows || [])
-							.filter((r) => r.pk > 0)
-							.sort((a, b) => a.pk - b.pk)
-							.map((r) => r.name);
-						resolve(pks.length > 0 ? pks : ["rowid"]);
-					}
-				});
-			});
-		} else if (typeof db.prepare === "function") {
-			const rows = db.prepare(`PRAGMA table_info(${tableName})`).all();
-			const pks = (rows || [])
-				.filter((r) => r.pk > 0)
-				.sort((a, b) => a.pk - b.pk)
-				.map((r) => r.name);
-			return pks.length > 0 ? pks : ["rowid"];
-		}
-		return ["rowid"];
+		const rows = this.queryAll(db, `PRAGMA table_info(${tableName})`);
+		const pks = rows
+			.filter((r) => r.pk > 0)
+			.sort((a, b) => a.pk - b.pk)
+			.map((r) => r.name);
+		return pks.length > 0 ? pks : ["rowid"];
 	}
 
 	async syncTable(sqliteDb, tableName, pks, remoteConn) {
@@ -368,17 +411,7 @@ class DatabaseBackup {
 			const createSql = await this.getRemoteCreateStatement(sqliteDb, tableName, pks);
 			await remoteConn.execute(createSql);
 
-			let rows = [];
-			if (typeof sqliteDb.all === "function") {
-				rows = await new Promise((resolve, reject) => {
-					sqliteDb.all(`SELECT * FROM ${tableName}`, (err, resRows) => {
-						if (err) reject(err);
-						else resolve(resRows || []);
-					});
-				});
-			} else if (typeof sqliteDb.prepare === "function") {
-				rows = sqliteDb.prepare(`SELECT * FROM ${tableName}`).all() || [];
-			}
+			const rows = this.queryAll(sqliteDb, `SELECT * FROM ${tableName}`);
 
 			if (rows.length === 0) {
 				this.logger.debug(`Table ${tableName}: No rows to sync.`);
@@ -402,12 +435,7 @@ class DatabaseBackup {
 	}
 
 	async getRemoteCreateStatement(sqliteDb, tableName, pks) {
-		const info = await new Promise((resolve, reject) => {
-			sqliteDb.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
-				if (err) reject(err);
-				else resolve(rows);
-			});
-		});
+		const info = this.queryAll(sqliteDb, `PRAGMA table_info(${tableName})`);
 
 		const columns = info.map((col) => {
 			let type = "TEXT";
@@ -472,18 +500,10 @@ class DatabaseBackup {
 	 * @returns {boolean} - True if healthy
 	 */
 	isBackupFileHealthy(filePath) {
-		const BetterSQLite = require("better-sqlite3");
 		let conn;
 		try {
 			conn = new BetterSQLite(filePath, { readonly: true, timeout: 2000 });
-			const result = conn.pragma("integrity_check");
-			if (Array.isArray(result) && result[0] === "ok") {
-				return true;
-			}
-			if (result === "ok") {
-				return true;
-			}
-			return false;
+			return conn.pragma("integrity_check", { simple: true }) === "ok";
 		} catch (e) {
 			this.logger.warn(`Integrity check failed for backup file ${filePath}: ${e.message}`);
 			return false;
@@ -577,23 +597,27 @@ Error: \`${error.message}\``);
 			if (!restored) {
 				const localBackups = this.getSortedLocalBackups();
 				for (const backup of localBackups) {
-					const backupFilePath = path.join(backup.path, "sqlites", dbFile);
-					if (fs.existsSync(backupFilePath)) {
-						if (this.isBackupFileHealthy(backupFilePath)) {
-							try {
-								fs.copyFileSync(backupFilePath, dbPath);
-								restored = true;
-								backupUsed = `file from ${backup.name}`;
-								break;
-							} catch (e) {
-								this.logger.error(
-									`Failed to restore from local backup ${backup.name}: ${e.message}`
-								);
-							}
+					const resolved = await this.resolveBackupFile(backup.path, dbFile);
+					if (!resolved) continue;
+					try {
+						if (this.isBackupFileHealthy(resolved.filePath)) {
+							fs.copyFileSync(resolved.filePath, dbPath);
+							restored = true;
+							backupUsed = `file from ${backup.name}`;
 						} else {
 							this.logger.warn(`Skipping corrupt local backup: ${backup.name}`);
 						}
+					} catch (e) {
+						this.logger.error(`Failed to restore from local backup ${backup.name}: ${e.message}`);
+					} finally {
+						if (resolved.temporary) {
+							// abrir o temporario (WAL) para o integrity_check cria -wal/-shm ao lado
+							for (const suffix of ["", "-wal", "-shm"]) {
+								fs.rmSync(resolved.filePath + suffix, { force: true });
+							}
+						}
 					}
+					if (restored) break;
 				}
 			}
 
@@ -620,7 +644,9 @@ ${err.message}`);
 			// Fallback re-init
 			try {
 				await this.reinitConnection(dbName);
-			} catch (e) {}
+			} catch (e) {
+				this.logger.error(`Fallback re-init de '${dbName}' falhou apos erro de restauracao:`, e);
+			}
 		} finally {
 			this.recoveringDbs.delete(dbName);
 		}
@@ -704,7 +730,7 @@ ${err.message}`);
 				return true;
 			} catch (e) {
 				this.logger.error(`Cloud restore failed from ${serverUri}:`, e);
-				if (newDb) {
+				if (newDb && newDb.open) {
 					try {
 						newDb.close();
 					} catch (err) {}
@@ -732,34 +758,20 @@ ${err.message}`);
 
 		const sql = `INSERT INTO \`${tableName}\` (${columns}) VALUES (${placeholders})`;
 
-		if (typeof sqliteDb.transaction === "function") {
-			const insertMany = sqliteDb.transaction((records) => {
-				const stmt = sqliteDb.prepare(sql);
-				for (const row of records) {
-					stmt.run(keys.map((k) => row[k]));
-				}
-			});
-			insertMany(rows);
-		} else if (typeof sqliteDb.serialize === "function") {
-			return new Promise((resolve, reject) => {
-				sqliteDb.serialize(() => {
-					sqliteDb.run("BEGIN TRANSACTION");
-					const stmt = sqliteDb.prepare(sql);
-					for (const row of rows) {
-						stmt.run(keys.map((k) => row[k]));
-					}
-					stmt.finalize();
-					sqliteDb.run("COMMIT", (err) => {
-						if (err) {
-							sqliteDb.run("ROLLBACK");
-							reject(err);
-						} else {
-							resolve();
-						}
-					});
-				});
-			});
-		}
+		const stmt = sqliteDb.prepare(sql);
+		// better-sqlite3 só aceita number/string/bigint/Buffer/null; mysql2 pode retornar Date/boolean
+		const toSqliteValue = (v) => {
+			if (v instanceof Date) return v.getTime();
+			if (typeof v === "boolean") return v ? 1 : 0;
+			if (v === undefined) return null;
+			return v;
+		};
+		const insertAll = sqliteDb.transaction((batch) => {
+			for (const row of batch) {
+				stmt.run(keys.map((k) => toSqliteValue(row[k])));
+			}
+		});
+		insertAll(rows);
 	}
 
 	async reinitConnection(dbName) {
