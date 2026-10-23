@@ -552,6 +552,16 @@ async function reconcileFromTotals(cId, totals = []) {
 			if (!ledger || ledger.baseline === null) {
 				const baseline = migrateCropLedger(cId, cropItemId);
 				ledger = { credited: 0, baseline };
+			} else if (ledger.baseline === 0 && ledger.credited > total) {
+				logger.warn(
+					`[reconcile] Detectada discrepância no ledger de ${cId}/${cropItemId}: credited (${ledger.credited}) > total (${total}). Auto-ajustando credited para ${total}.`
+				);
+				database.mappers.run(
+					dbName,
+					"UPDATE farm_credited_crops SET credited_quantity = ?, updated_at = ? WHERE user_id = ? AND crop_item_id = ?",
+					[total, Date.now(), cId, cropItemId]
+				);
+				ledger.credited = total;
 			}
 		} catch (err) {
 			logger.error(`[reconcile] Ledger indisponível para ${cId}/${cropItemId}: ${err.message}`);
