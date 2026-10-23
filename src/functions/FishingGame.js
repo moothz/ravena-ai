@@ -1443,62 +1443,95 @@ async function applyBuffs(userData, fish) {
 	const buffMessages = [];
 	const appliedModifiers = [...(fish.appliedModifiers || [])];
 
-	// Apply and decrement buffs
+	// 1. Aplica buffs (modelo aditivo para evitar multiplicação exponencial descontrolada)
 	if (userData.buffs) {
+		let totalFlatBonus = 0;
+		let totalWeightBoost = 0;
+		const weightBoostNames = [];
+
 		for (const buff of userData.buffs) {
 			if (buff.remainingUses <= 0) continue;
 			switch (buff.type) {
 				case "weight_boost": {
-					const originalWeight = modifiedFish.weight;
-					modifiedFish.weight *= 1 + buff.value;
-					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+					totalWeightBoost += buff.value;
 					const buffName = buff.originalName || "Buff de Peso";
 					appliedModifiers.push(buffName);
-					buffMessages.push(
-						`🎯 Buff do ${buffName}: +${buff.value * 100}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
-					);
+					weightBoostNames.push(buffName);
 					break;
 				}
 				case "next_fish_bonus": {
-					const beforeBonus = modifiedFish.weight;
-					modifiedFish.weight += buff.value;
-					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+					totalFlatBonus += buff.value;
 					const buffName = buff.originalName || "Minhocão";
 					appliedModifiers.push(buffName);
-					buffMessages.push(
-						`🎯 Buff do ${buffName}: +${buff.value}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
-					);
 					break;
 				}
 			}
 		}
+
+		if (totalFlatBonus > 0) {
+			const beforeBonus = modifiedFish.weight;
+			modifiedFish.weight += totalFlatBonus;
+			modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+			buffMessages.push(
+				`🎯 Buff do Minhocão: +${totalFlatBonus}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
+			);
+		}
+
+		if (totalWeightBoost > 0) {
+			const originalWeight = modifiedFish.weight;
+			modifiedFish.weight *= 1 + totalWeightBoost;
+			modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+
+			if (weightBoostNames.length === 1) {
+				buffMessages.push(
+					`🎯 Buff do ${weightBoostNames[0]}: +${Math.round(totalWeightBoost * 100)}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
+				);
+			} else {
+				buffMessages.push(
+					`🎯 Buffs de Peso somados (+${Math.round(totalWeightBoost * 100)}%): ${originalWeight}kg → ${modifiedFish.weight}kg`
+				);
+			}
+		}
 	}
 
-	// Apply and decrement debuffs
+	// 2. Aplica debuffs (modelo aditivo, limitado a 90% de redução)
 	if (userData.debuffs) {
+		let totalWeightLoss = 0;
 		for (const debuff of userData.debuffs) {
 			if (debuff.remainingUses <= 0) continue;
 			switch (debuff.type) {
 				case "weight_loss": {
-					const originalWeightDebuff = modifiedFish.weight;
-					modifiedFish.weight *= 1 + debuff.value;
-					modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
-					modifiedFish.name = toDemonic(modifiedFish.name);
+					totalWeightLoss += Math.abs(debuff.value);
 					const debuffName = debuff.originalName || "Debuff de Peso";
 					appliedModifiers.push(debuffName);
-					buffMessages.push(
-						`⬇️ Peixe magro... (${originalWeightDebuff}kg → ${modifiedFish.weight}kg)`
-					);
 					break;
 				}
 			}
 		}
+
+		if (totalWeightLoss > 0) {
+			const originalWeightDebuff = modifiedFish.weight;
+			const effectiveLoss = Math.min(0.9, totalWeightLoss);
+			modifiedFish.weight *= 1 - effectiveLoss;
+			modifiedFish.weight = parseFloat(Math.max(0.01, modifiedFish.weight).toFixed(2));
+			modifiedFish.name = toDemonic(modifiedFish.name);
+			buffMessages.push(
+				`⬇️ Peixe magro... -${Math.round(effectiveLoss * 100)}% (${originalWeightDebuff}kg → ${modifiedFish.weight}kg)`
+			);
+		}
 	}
 
-	const uniqueModifiers = [...new Set(appliedModifiers)];
-	modifiedFish.appliedModifiers = uniqueModifiers;
+	// Agrupa e conta modificadores aplicados (ex: 32x Chapéu de Pescador, 5x Carretel)
+	const modifierCounts = new Map();
+	for (const mod of appliedModifiers) {
+		modifierCounts.set(mod, (modifierCounts.get(mod) || 0) + 1);
+	}
+	const formattedModifiers = Array.from(modifierCounts.entries()).map(([mod, count]) =>
+		count > 1 ? `${count}x ${mod}` : mod
+	);
+	modifiedFish.appliedModifiers = formattedModifiers;
 
-	return { fish: modifiedFish, buffMessages, appliedModifiers: uniqueModifiers };
+	return { fish: modifiedFish, buffMessages, appliedModifiers: formattedModifiers };
 }
 
 function getCurrentDateTime() {
@@ -1936,39 +1969,7 @@ async function fishCommand(bot, message, args, group) {
 							// Don't catch any fish this iteration
 						} else if (randomItem.effect === "lose_recent_fish") {
 							// This effect steals the "recent" fish.
-							// If we haven't caught one yet (i===0), it might steal from inventory or do nothing?
-							// Original logic implied it stole the *current* catch.
-							// If we are about to catch one, we can just say we caught it and lost it, or catch nothing.
-							// Let's simulate: Catch fish -> Lost it.
-							// So we proceed to catch, but mark it to be removed?
-							// Actually, simpler: Just treat as "No fish caught" but show message.
-							// "Maldito Gato! Ele roubou o peixe que você acabou de pegar!"
-							// implies we DID catch something.
-							// So we should generate the fish, but not add it to inventory (or add and remove).
-							// Let's proceed to generate fish, but flag it.
-						} else if (randomItem.effect === "inventory_slot") {
-							// New upgrade logic handling
-							const buff = {
-								type: randomItem.effect,
-								value: randomItem.value,
-								remainingUses: 999999,
-								originalName: randomItem.name,
-								minValue: 0,
-								maxValue: 0
-							};
-							await addBuff(userData.userId, buff, false);
-							effectMessage += `\n\n${randomItem.emoji} Você equipou ${randomItem.name}! Espaço extra: +${randomItem.value}`;
-						} else if (randomItem.effect === "max_baits") {
-							const buff = {
-								type: randomItem.effect,
-								value: randomItem.value,
-								remainingUses: 999999,
-								originalName: randomItem.name,
-								minValue: 0,
-								maxValue: 0
-							};
-							await addBuff(userData.userId, buff, false);
-							effectMessage += `\n\n${randomItem.emoji} Você equipou ${randomItem.name}! Limite de iscas aumentado: +${randomItem.value}`;
+							// Handled: catch nothing.
 						}
 					}
 				}
@@ -2389,6 +2390,13 @@ async function netFishCommand(bot, message, args, group) {
 
 		if (!mentionPessoa.includes(userId)) {
 			mentionPessoa.push(userId);
+		}
+
+		try {
+			const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+			await ShadowGardenBonusService.syncUserBonuses(userId);
+		} catch (syncErr) {
+			logger.debug(`[netFishCommand] Falha ao sincronizar bônus da fazenda: ${syncErr.message}`);
 		}
 
 		let userData = await getUserData(userId);
@@ -4014,6 +4022,7 @@ module.exports = {
 	forceSaveFishingData: saveSync,
 	addBaits,
 	addBuff,
+	applyBuffs,
 	UPGRADES,
 	RARE_FISH,
 	fishingCooldowns,
