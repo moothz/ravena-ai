@@ -71,7 +71,9 @@ async function main() {
 			botsSource = "BOTS_JSON";
 			botsRaw = process.env.BOTS_JSON;
 		} else {
-			throw new Error("Nenhuma configuração de bots: crie o bots.json ou defina a variável BOTS_JSON.");
+			throw new Error(
+				"Nenhuma configuração de bots: crie o bots.json ou defina a variável BOTS_JSON."
+			);
 		}
 		logger.info(`Carregando configuração de bots de ${botsSource}`);
 		const rBots = JSON.parse(botsRaw) || [];

@@ -171,7 +171,8 @@ class DatabaseMappers {
 	 * @param {import('better-sqlite3').Database} conn
 	 */
 	_applyPragmas(conn) {
-		const mode = (process.env.SQLITE_JOURNAL_MODE || "WAL").toUpperCase() === "DELETE" ? "DELETE" : "WAL";
+		const mode =
+			(process.env.SQLITE_JOURNAL_MODE || "WAL").toUpperCase() === "DELETE" ? "DELETE" : "WAL";
 		conn.pragma(`journal_mode = ${mode}`);
 		conn.pragma(`synchronous = ${mode === "WAL" ? "NORMAL" : "FULL"}`);
 		conn.pragma("busy_timeout = 5000");
