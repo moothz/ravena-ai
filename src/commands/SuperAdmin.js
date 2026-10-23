@@ -111,6 +111,20 @@ class SuperAdmin {
 				method: "runDossieAnalysis",
 				description: "Trigga análise de dossiê para um grupo"
 			},
+			userdossie: {
+				method: "getUserDossier",
+				description:
+					"Exibe o Dossiê 360º de inteligência de um membro: !sa-userdossie <@alvo|telefone|id>"
+			},
+			memoryStats: {
+				method: "getMemoryStats",
+				description: "Estatísticas do banco de memória RME (identidades, fatos, buffer)"
+			},
+			memoryBackfill: {
+				method: "triggerMemoryBackfill",
+				description:
+					"Dispara o bootstrap/backfill da memória: !sa-memoryBackfill [all|phase1|phase2]"
+			},
 			addElogio: {
 				method: "addElogioSticker",
 				description: "Adiciona um sticker de elogio (use em resposta)"
@@ -4585,6 +4599,191 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro ao disparar análise: ${error.message}`
+			});
+		}
+	}
+
+	async getUserDossier(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) return;
+
+			let target = args[0];
+			if (message.mentions && message.mentions.length > 0) {
+				target = message.mentions[0];
+			} else if (message.origin?.getQuotedMessage) {
+				const quoted = await message.origin.getQuotedMessage().catch(() => null);
+				if (quoted?.author || quoted?.sender) {
+					target = quoted.author || quoted.sender;
+				}
+			}
+
+			if (!target) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Informe o alvo (@mention, número ou ID). Uso: `!sa-userdossie @fulano`"
+				});
+			}
+
+			const MemoryService = require("../services/MemoryService");
+			const memoryService = MemoryService.getInstance();
+			const d360 = await memoryService.getUser360(target);
+
+			if (!d360) {
+				return new ReturnMessage({
+					chatId,
+					content: `⚠️ Nenhum dado encontrado na memória para "${target}".`
+				});
+			}
+
+			let response = `📋 *DOSSIÊ 360º DO MEMBRO (RME)* 📋\n\n`;
+			response += `👤 *Nome:* ${d360.display_name}\n`;
+			response += `🆔 *ID Canônico:* \`${d360.canonical_user_id}\`\n`;
+
+			if (d360.identities && d360.identities.length > 0) {
+				response += `📱 *Identidades Vinculadas:*\n`;
+				for (const idn of d360.identities) {
+					response += `  • [${idn.platform}] ${idn.id_type}: \`${idn.platform_id}\`\n`;
+				}
+			}
+
+			// Jogos
+			const g = d360.games || {};
+			const gamesList = [];
+			if (g.fishing) {
+				gamesList.push(
+					`🎣 *Pesca:* Nv. ${g.fishing.level} (${g.fishing.total_fishes_caught || 0} peixes, Vara: ${g.fishing.equipped_rod || "Básica"})`
+				);
+			}
+			if (g.slots) {
+				gamesList.push(
+					`🎰 *Slots:* ${g.slots.coins || 0} fichas (${g.slots.total_bets || 0} apostas)`
+				);
+			}
+			if (g.donation && g.donation.valor > 0) {
+				gamesList.push(`💎 *Apoiador:* R$ ${g.donation.valor.toFixed(2)} doados`);
+			}
+			if (g.relationships && g.relationships.length > 0) {
+				const rel = g.relationships[0];
+				gamesList.push(
+					`💍 *Relacionamento:* ${rel.tipo} com \`${rel.user1 === target ? rel.user2 : rel.user1}\` (${rel.coisas_count || 0}x)`
+				);
+			}
+
+			if (gamesList.length > 0) {
+				response +=
+					`\n🎮 *Atividades & Jogos Ravena:*\n` +
+					gamesList.map((item) => `  • ${item}`).join("\n") +
+					"\n";
+			}
+
+			// Fatos Semânticos Memorizados
+			if (d360.facts && d360.facts.length > 0) {
+				response += `\n🧠 *Fatos & Curiosidades Memorizadas (IA):*\n`;
+				for (const f of d360.facts.slice(0, 10)) {
+					const dateStr = f.last_confirmed_at
+						? ` _(${new Date(f.last_confirmed_at).toLocaleDateString("pt-BR")})_`
+						: "";
+					response += `  • [${f.category}] ${f.fact_text}${dateStr}\n`;
+				}
+			} else {
+				response += `\n🧠 *Fatos Memorizados:* Nenhum fato semântico extraído ainda.\n`;
+			}
+
+			// Grupos Ativos
+			if (d360.active_groups && d360.active_groups.length > 0) {
+				response += `\n👥 *Grupos Mais Ativos:*\n`;
+				for (const ag of d360.active_groups) {
+					response += `  • \`${ag.target_id}\`: ${ag.msgs_count} msgs no buffer recente\n`;
+				}
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: response
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando getUserDossier:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao buscar dossiê 360: ${error.message}`
+			});
+		}
+	}
+
+	async getMemoryStats(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) return;
+
+			const idCount = await this.database.dbGet(
+				"memory",
+				"SELECT COUNT(*) as c FROM memory_identities"
+			);
+			const factsCount = await this.database.dbGet(
+				"memory",
+				"SELECT COUNT(*) as c FROM memory_user_facts"
+			);
+			const profilesCount = await this.database.dbGet(
+				"memory",
+				"SELECT COUNT(*) as c FROM memory_group_profiles"
+			);
+			const dossiersCount = await this.database.dbGet(
+				"memory",
+				"SELECT COUNT(*) as c FROM memory_group_dossiers"
+			);
+			const bufferCount = await this.database.dbGet(
+				"memory",
+				"SELECT COUNT(*) as c FROM memory_message_buffer"
+			);
+
+			const content = `🧠 *ESTATÍSTICAS DA MEMÓRIA RAVENA (RME)* 🧠
+
+👥 *Identidades Mapeadas:* ${idCount?.c || 0}
+💡 *Fatos Semânticos Memorizados:* ${factsCount?.c || 0}
+🏢 *Perfis de Grupos:* ${profilesCount?.c || 0}
+📋 *Dossiês Históricos:* ${dossiersCount?.c || 0}
+📥 *Mensagens no Buffer:* ${bufferCount?.c || 0}
+
+🌐 *Painel Web:* \`/dossies\``;
+
+			return new ReturnMessage({ chatId, content });
+		} catch (error) {
+			this.logger.error("Erro no comando getMemoryStats:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao buscar estatísticas da memória: ${error.message}`
+			});
+		}
+	}
+
+	async triggerMemoryBackfill(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) return;
+
+			const mode = (args[0] || "phase1").toLowerCase();
+			const MemoryService = require("../services/MemoryService");
+			const memoryService = MemoryService.getInstance();
+
+			if (mode === "phase1" || mode === "all") {
+				const res = await memoryService.bootstrapPhase1();
+				return new ReturnMessage({
+					chatId,
+					content: `✅ *Bootstrap Fase 1 Concluído!*\n• Identidades: ${res.migratedIdentities}\n• Dossiês: ${res.migratedDossiers}`
+				});
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ Para executar a Fase 2 (destilação de membros via IA), execute no terminal: `node scripts/backfill_memory.js --phase2`"
+				});
+			}
+		} catch (error) {
+			this.logger.error("Erro no comando triggerMemoryBackfill:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao disparar backfill: ${error.message}`
 			});
 		}
 	}

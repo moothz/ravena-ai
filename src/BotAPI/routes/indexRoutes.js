@@ -278,6 +278,11 @@ function registerIndexRoutes(api) {
 		res.sendFile(path.join(__dirname, "../../../public/groups-dossier.html"));
 	});
 
+	// Painel Completo de Dossiês e Inteligência (Grupos & Usuários - RME)
+	app.get(["/dossies", "/dossier", "/dossie"], api.authenticateBasic, (req, res) => {
+		res.sendFile(path.join(__dirname, "../../../public/dossies.html"));
+	});
+
 	// Página de Provedores de Serviço (HTML)
 	app.get("/service-providers", api.authenticateBasic, (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/service-providers.html"));

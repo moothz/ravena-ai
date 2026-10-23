@@ -45,6 +45,7 @@ graph TD
     subgraph SOCIAL ["📣 Social & Conteúdo"]
         ranking["msgranking.db → ranking"]
         summaries["summaries.db → group_summaries"]
+        memory["memory.db → Ravena Memory Engine (RME)"]
         sillies["sillies.db → silly_interactions"]
         stream["stream_monitor.db → monitored_streams, stream_alerts"]
         ytchannels["ytchannels.db → channels, last_videos"]
@@ -366,7 +367,58 @@ Contador de mensagens e timestamp de última atividade por usuário/grupo para r
 | `last_message_at` | INTEGER | Timestamp (ms) da última mensagem ou reação |
 
 ### `summaries.db → group_summaries`
-Resumos gerados por IA das conversas dos grupos.
+Resumos gerados por IA das conversas dos grupos (legado - em migração para `memory.db`).
+
+### `memory.db` (Ravena Memory Engine - RME)
+Banco de dados central de inteligência contínua, identidades e dossiês de pessoas e grupos.
+
+#### `memory_identities`
+Mapeamento de identidades por plataforma para um ID canônico único por pessoa.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `canonical_user_id` | TEXT | ID unificado da pessoa (ex: `wa_5511999999999` ou `tg_123456`) |
+| `platform` | TEXT | Plataforma de mensageria ('whatsapp', 'telegram') |
+| `platform_id` | TEXT | Identificador original ('5511...@s.whatsapp.net', '...@lid', '123456') |
+| `id_type` | TEXT | Tipo de ID ('jid', 'lid', 'tg_id') |
+| `display_name` | TEXT | Último pushname ou nome observado |
+| `created_at` / `updated_at` | INTEGER | Timestamps de registro |
+
+#### `memory_user_facts`
+Fatos semânticos atômicos, curiosidades e traços de comportamento dos membros vetorizados via BGE-M3.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `canonical_user_id` | TEXT | ID unificado do membro |
+| `fact_text` | TEXT | Fato atômico extraído pela IA |
+| `category` | TEXT | Categoria ('hobby', 'work', 'preference', 'personality') |
+| `confidence` | REAL | Nível de confiança da IA (0.0 a 1.0) |
+| `embedding` | BLOB | Vetor de 1024 floats Float32Array (4096 bytes) do BGE-M3 |
+| `source_type` / `source_id` | TEXT | Origem do fato ('group', 'pv') e ID de origem |
+| `extracted_at` / `last_confirmed_at` | INTEGER | Timestamps de extração e confirmação |
+
+#### `memory_group_profiles`
+Dossiê vivo e cultura observada por grupo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `group_id` | TEXT PK | JID ou ID do grupo |
+| `platform` | TEXT | Plataforma ('whatsapp', 'telegram') |
+| `title` | TEXT | Título do grupo |
+| `vibe_summary` | TEXT | Atmosfera e dinâmica social do grupo |
+| `frequent_topics` | TEXT (JSON) | Tópicos mais recorrentes debatidos |
+| `latest_summary` | TEXT | Último resumo consolidado pré-computado (Rolling Summary) |
+| `last_summarized_at` | INTEGER | Timestamp da última síntese |
+| `messages_since_summary` | INTEGER | Quantidade de mensagens novas desde o último resumo |
+| `average_problematic_score` | REAL | Média histórica de pontuação de risco (0 a 10) |
+
+#### `memory_group_dossiers`
+Histórico de análises de moderação com detecção de menores e evidências.
+
+#### `memory_message_buffer`
+Fila deslizante de mensagens recentes por grupo ou PV para interação imediata e destilação.
 
 ### `sillies.db → silly_interactions`
 Interações cômicas automáticas do bot.

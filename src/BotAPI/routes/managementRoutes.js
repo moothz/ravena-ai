@@ -305,6 +305,55 @@ function registerManagementRoutes(api) {
 		}
 	});
 
+	// --- NOVAS ROTAS DO RAVENA MEMORY ENGINE (RME) ---
+
+	// Listagem e busca de perfis de grupos com estatísticas
+	app.get("/api/dossies/groups", api.authenticateBasic, api.strictLimiter, async (req, res) => {
+		try {
+			const { q = "", limit = 50, offset = 0 } = req.query;
+			const MemoryService = require("../../services/MemoryService");
+			const memoryService = MemoryService.getInstance();
+			const groups = await memoryService.searchGroups(q, parseInt(limit, 10), parseInt(offset, 10));
+			res.json(groups);
+		} catch (error) {
+			api.logger.error("Erro na rota /api/dossies/groups:", error);
+			res.status(500).json({ status: "error", message: "Erro ao buscar grupos" });
+		}
+	});
+
+	// Listagem e busca de usuários
+	app.get("/api/dossies/users", api.authenticateBasic, api.strictLimiter, async (req, res) => {
+		try {
+			const { q = "", limit = 30, offset = 0 } = req.query;
+			const MemoryService = require("../../services/MemoryService");
+			const memoryService = MemoryService.getInstance();
+			const users = await memoryService.searchUsers(q, parseInt(limit, 10), parseInt(offset, 10));
+			res.json(users);
+		} catch (error) {
+			api.logger.error("Erro na rota /api/dossies/users:", error);
+			res.status(500).json({ status: "error", message: "Erro ao buscar usuários" });
+		}
+	});
+
+	// Dossiê 360 detalhado de um usuário
+	app.get("/api/dossies/user/:id", api.authenticateBasic, api.strictLimiter, async (req, res) => {
+		try {
+			const { id } = req.params;
+			const MemoryService = require("../../services/MemoryService");
+			const memoryService = MemoryService.getInstance();
+			const user360 = await memoryService.getUser360(id);
+			if (!user360) {
+				return res
+					.status(404)
+					.json({ status: "error", message: "Usuário não encontrado na memória" });
+			}
+			res.json(user360);
+		} catch (error) {
+			api.logger.error(`Erro na rota /api/dossies/user/${req.params.id}:`, error);
+			res.status(500).json({ status: "error", message: "Erro ao buscar dossiê do usuário" });
+		}
+	});
+
 	// Dados de configuração de um grupo
 	app.get("/api/group", async (req, res) => {
 		const { id, token } = req.query;

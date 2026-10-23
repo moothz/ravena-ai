@@ -8,6 +8,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const fs = require("fs").promises;
 const { extractFrames } = require("../utils/Conversions");
 const NSFWPredict = require("../utils/NSFWPredict");
+const MemoryService = require("../services/MemoryService");
 
 const logger = new Logger("summary-commands");
 const database = Database.getInstance();
@@ -241,6 +242,26 @@ async function summarizeConversation(bot, message, args, group) {
 
 		logger.info(`[${group.id}] Resumindo conversa para o grupo ${message.group}`);
 
+		// 1. Tenta obter o Rolling Summary quente do MemoryService
+		try {
+			const memoryService = MemoryService.getInstance();
+			const rollingSummary = await memoryService.getRollingSummary(message.group, bot);
+			if (rollingSummary && typeof rollingSummary === "string" && rollingSummary.length > 20) {
+				logger.info(`[${group.id}] Resumo rolling entregue com sucesso para ${message.group}`);
+				return new ReturnMessage({
+					chatId: message.group,
+					content: `📋 *Resumo da conversa:*
+
+${rollingSummary}`
+				});
+			}
+		} catch (rollingErr) {
+			logger.warn(
+				`[${group.id}] Falha ao buscar rolling summary, caindo para cálculo sob demanda:`,
+				rollingErr.message
+			);
+		}
+
 		let recentMessages;
 		try {
 			// Recorre a mensagens armazenadas
@@ -281,12 +302,9 @@ Resumo:`;
 			});
 		}
 
-		// Já que deu certo, limpa o historico
-		await clearRecentMessages(message.group);
-
 		logger.info(`[${group.id}]Resumo de conversa enviado com sucesso para ${message.group}`);
 
-		// Envia o resumo
+		// Envia o resumo (sem deletar histórico destrutivamente)
 		return new ReturnMessage({
 			chatId: message.group,
 			content: `📋 *Resumo da conversa:*
@@ -372,13 +390,38 @@ ${formattedLatest}`;
 				? `\n\n((Sua personalidade: '${group.customAIPrompt}'))\n\n`
 				: "";
 
+		// Enriquecimento com Ravena Memory Engine
+		let memoryEnrichment = "";
+		try {
+			const memoryService = MemoryService.getInstance();
+			const memContext = await memoryService.getInteractionContext(message.group);
+			if (memContext.groupVibe) {
+				memoryEnrichment += `\n[Vibe do Grupo: ${memContext.groupVibe}]`;
+			}
+			if (memContext.latestSummary) {
+				memoryEnrichment += `\n[Contexto Prévio do Grupo: ${memContext.latestSummary}]`;
+			}
+			if (memContext.speakerFacts && memContext.speakerFacts.length > 0) {
+				memoryEnrichment += `\n[Fatos Conhecidos dos Participantes (use sutilmente se fizer sentido):`;
+				for (const sf of memContext.speakerFacts) {
+					memoryEnrichment += `\n • ${sf.author_name}: ${sf.facts.join("; ")}`;
+				}
+				memoryEnrichment += `]`;
+			}
+		} catch (mErr) {
+			logger.warn(
+				`[${group.id}] Falha ao buscar contexto de memória para interação:`,
+				mErr.message
+			);
+		}
+
 		// Cria prompt para LLM
 		const prompt = `Responda apenas em português do brasil. A seguir anexei a conversa recente de um grupo de WhatsApp.
 
 SUA TAREFA:
 Foque o seu comentário/interação PRINCIPALMENTE nas últimas 15 mensagens enviadas (incluindo descrições de imagens, áudios, vídeos e textos) para garantir que sua resposta seja sobre o tópico ATUAL do grupo e não sobre algo atrasado. As mensagens anteriores foram incluídas apenas para você contextualizar de onde veio o assunto.
 
-Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural.${customPersonalidade}${otherAIsPrompt}
+Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural.${customPersonalidade}${otherAIsPrompt}${memoryEnrichment}
 
 ${historyFormatted}`;
 
@@ -417,10 +460,7 @@ ${historyFormatted}`;
 			});
 			logger.info(`[${group.id}] Mensagem de interação gerada com sucesso para '${message.group}'`);
 
-			// Já que deu certo, limpa o historico
-			await clearRecentMessages(message.group);
-
-			//logger.info(`[${group.id}] Limpas mensagens recentes de  '${message.group}'`);
+			// Não limpamos mais destrutivamente o histórico para permitir continuidade
 			return resultado;
 		}
 	} catch (error) {
@@ -1094,6 +1134,25 @@ async function storeMessage(message, chatId, bot) {
 					// Dispara análise sem dar await para não travar a resposta
 					runGroupAnalysis(chatId, dossierStatus.pending_text, bot);
 				}
+			}
+
+			// 4. Ingestão no Ravena Memory Engine (RME)
+			try {
+				const memoryService = MemoryService.getInstance();
+				memoryService
+					.ingestMessage(bot, {
+						...message,
+						authorName,
+						content: textContent,
+						type: "text",
+						group:
+							chatId && (chatId.includes("@g.us") || String(chatId).startsWith("-"))
+								? chatId
+								: message.group
+					})
+					.catch((mErr) => logger.warn("Erro ao ingerir no MemoryService:", mErr.message));
+			} catch (mErr) {
+				logger.warn("Erro ao chamar MemoryService:", mErr.message);
 			}
 
 			// Legado: Salva na tabela antiga como redundância por enquanto ou se necessário
