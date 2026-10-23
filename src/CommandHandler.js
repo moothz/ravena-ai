@@ -24,6 +24,7 @@ class CommandHandler {
 		this.adminUtils = AdminUtils.getInstance();
 		this.cmdUsage = CmdUsage.getInstance();
 		this.customCommands = {}; // Agrupados por groupId
+		this.cooldownCache = new Map(); // "botId_groupId|comando" -> timestamp do ultimo uso
 		this.privateManagement = {}; // Para gerenciar grupos a partir de chats privados
 		this.cooldownMessages = {}; // Rastreia quando a última mensagem de cooldown foi enviada
 
@@ -165,13 +166,17 @@ class CommandHandler {
 		const finalId = `${botId}_${groupId}`;
 
 		try {
-			const row = await this.database.dbGet(
-				"cooldowns",
-				"SELECT timestamp FROM cooldowns WHERE context_key = ? AND command = ?",
-				[finalId, commandName]
-			);
-
-			const lastUsed = row ? row.timestamp : 0;
+			const memKey = `${finalId}|${commandName}`;
+			let lastUsed = this.cooldownCache.get(memKey);
+			if (lastUsed === undefined) {
+				const row = await this.database.dbGet(
+					"cooldowns",
+					"SELECT timestamp FROM cooldowns WHERE context_key = ? AND command = ?",
+					[finalId, commandName]
+				);
+				lastUsed = row ? row.timestamp : 0;
+				this._setCooldownCache(memKey, lastUsed);
+			}
 			const now = Date.now();
 
 			let cooldownValue = 0;
@@ -228,9 +233,21 @@ class CommandHandler {
 	 * @param {Command|string} command - Comando ou nome do comando
 	 * @param {string} groupId - ID do grupo ou chat
 	 */
+	_setCooldownCache(key, timestamp) {
+		this.cooldownCache.set(key, timestamp);
+		if (this.cooldownCache.size > 5000) {
+			// Map preserva ordem de insercao: descarta as entradas mais antigas
+			for (const k of this.cooldownCache.keys()) {
+				this.cooldownCache.delete(k);
+				if (this.cooldownCache.size <= 4000) break;
+			}
+		}
+	}
+
 	async updateCooldown(command, groupId, botId) {
 		const commandName = typeof command === "string" ? command : command.name;
 		const finalId = `${botId}_${groupId}`;
+		this._setCooldownCache(`${finalId}|${commandName}`, Date.now());
 
 		try {
 			await this.database.dbRun(
