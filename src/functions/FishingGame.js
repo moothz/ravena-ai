@@ -393,7 +393,8 @@ const UPGRADES = [
 		effect: "guaranteed_weight",
 		minValue: 40,
 		maxValue: 90,
-		description: "Garante que o próximo peixe tenha entre 40kg e 90kg."
+		description:
+			"Garante que o peso base do próximo peixe seja de 40kg a 90kg (antes dos outros buffs aumentarem ainda mais!)."
 	},
 	{
 		name: "Minhocão",
