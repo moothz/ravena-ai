@@ -93,20 +93,41 @@ async function removeBackground(inputPath) {
 		rembgUrl = rembgUrl.replace(/\/$/, "") + "/api/remove";
 	}
 
+	// O rembg dorme quando ocioso (Railway Serverless): a primeira requisição pode
+	// retornar 502/503 ou falhar a conexão enquanto o container acorda e carrega o modelo
+	const maxAttempts = 4;
+	const isWakingUp = (err) =>
+		[502, 503, 504].includes(err.response?.status) ||
+		["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "EAI_AGAIN"].includes(err.code);
+
 	try {
 		const buffer = await fs.readFile(inputPath);
 
-		// Use built-in FormData (Node 20+)
-		const formData = new FormData();
-		const blob = new Blob([buffer], { type: "image/png" });
-		formData.append("file", blob, "image.png");
+		let response;
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				// Use built-in FormData (Node 20+) - recriado a cada tentativa
+				const formData = new FormData();
+				const blob = new Blob([buffer], { type: "image/png" });
+				formData.append("file", blob, "image.png");
+				if (process.env.REMBG_MODEL) formData.append("model", process.env.REMBG_MODEL);
 
-		const response = await axios.post(rembgUrl, formData, {
-			responseType: "arraybuffer",
-			headers: {
-				"Content-Type": "multipart/form-data"
+				response = await axios.post(rembgUrl, formData, {
+					responseType: "arraybuffer",
+					timeout: 120000,
+					headers: {
+						"Content-Type": "multipart/form-data"
+					}
+				});
+				break;
+			} catch (err) {
+				if (attempt === maxAttempts || !isWakingUp(err)) throw err;
+				logger.warn(
+					`rembg indisponível (${err.response?.status || err.code}), tentativa ${attempt}/${maxAttempts}. Aguardando o serviço acordar...`
+				);
+				await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
 			}
-		});
+		}
 
 		await fs.writeFile(outputPath, response.data);
 		return outputPath;
