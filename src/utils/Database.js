@@ -677,6 +677,14 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.updateDonorBonusProcessed(name, amount);
 	}
+	async updateDonorZinthosProcessed(name, amount) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonorZinthosProcessed() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonorZinthosProcessed(name, amount);
+	}
 	async updateDonationAmount(name, amount) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] updateDonationAmount() bloqueado");

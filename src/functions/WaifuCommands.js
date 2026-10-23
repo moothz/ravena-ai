@@ -2445,6 +2445,38 @@ async function saldoKakera(bot, message) {
 }
 
 /**
+ * Concede Zinthos (Kakera) para um usuário via API administrativa do Waifuletes
+ * @param {string} userId - ID ou número do usuário (WhatsApp)
+ * @param {number} amount - Quantidade de Zinthos a conceder
+ * @param {Object} [metadata={}] - Metadados adicionais (ex: donorName, totalAmount)
+ * @returns {Promise<Object>}
+ */
+async function grantZinthos(userId, amount, metadata = {}) {
+	try {
+		const cleanId = normalizeUserId(String(userId));
+		if (!cleanId || !amount || amount <= 0) {
+			return { success: false, reason: "Parâmetros inválidos para concessão de Zinthos" };
+		}
+		const response = await api.post("/admin/kakera/give", {
+			userId: cleanId,
+			amount: Math.round(amount),
+			reason: "ADMIN_GRANT",
+			metadata: {
+				source: "DONOR_BONUS",
+				...metadata
+			}
+		});
+		return response.data;
+	} catch (err) {
+		logger.error(
+			`[grantZinthos] Erro ao creditar ${amount} Zinthos para ${userId}:`,
+			err?.response?.data || err.message
+		);
+		throw err;
+	}
+}
+
+/**
  * Lista o harém do usuário de forma paginada
  */
 async function verHarem(bot, message, args) {
@@ -5884,6 +5916,7 @@ module.exports = {
 	likeWaifu,
 	diariosKakera,
 	saldoKakera,
+	grantZinthos,
 	verHarem,
 	verPerfil,
 	painelWebAdmin,

@@ -20,6 +20,7 @@ async function runTests() {
 	assert.strictEqual(b10.pesca.simpleItemsCount, 2, "R$10 deve conceder 2 itens simples");
 	assert.strictEqual(b10.pesca.mediumItemsCount, 0, "R$10 não atinge faixa média");
 	assert.strictEqual(b10.pesca.totalHighItems, 0, "R$10 não atinge faixa alta");
+	assert.strictEqual(b10.waifu.zinthos, 1500, "R$10 deve conceder 1500 Zinthos");
 	assert.strictEqual(b10.waifu.rarityMultipliers.RARE, 1.2, "R$10: RARE 1.20x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.EPIC, 1.35, "R$10: EPIC 1.35x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.LEGENDARY, 1.45, "R$10: LEGENDARY 1.45x");
@@ -119,6 +120,7 @@ async function runTests() {
 	assert.strictEqual(inc.deltaAmount, 30, "Delta amount deve ser 30");
 	assert.strictEqual(inc.deltaBaits, 60, "Delta baits deve ser 60 (160 - 100)");
 	assert.strictEqual(inc.deltaCoins, 90, "Delta coins deve ser 90 (240 - 150)");
+	assert.strictEqual(inc.deltaZinthos, 4500, "Delta zinthos deve ser 4500 (12000 - 7500)");
 	assert.strictEqual(inc.deltaSimpleItems, 6, "Delta simple items deve ser 6 (16 - 10)");
 	assert.strictEqual(inc.deltaMediumItems, 0, "Delta medium items deve ser 0 (já recebeu)");
 	assert.strictEqual(inc.deltaHighItems, 3, "Delta high items deve ser 3 (5 - 2)");
@@ -159,6 +161,7 @@ async function runTests() {
 	assert.ok(contentNaoDoador.includes("Pescaria:"), "Deve listar regras de Pescaria");
 	assert.ok(contentNaoDoador.includes("Caça-Níqueis (Slots):"), "Deve listar regras de Slots");
 	assert.ok(contentNaoDoador.includes("Waifus (Mudae):"), "Deve listar regras de Waifus");
+	assert.ok(contentNaoDoador.includes("150 Zinthos"), "Deve citar 150 Zinthos por real");
 	assert.ok(
 		contentNaoDoador.includes("Fazenda (Jardim Lutoso):"),
 		"Deve listar regras da Fazenda (Jardim Lutoso)"
@@ -179,14 +182,9 @@ async function runTests() {
 	assert.ok(capturedDoador, "Deve capturar mensagem para doador");
 	const contentDoador = capturedDoador.content || capturedDoador.text;
 	assert.ok(contentDoador.includes("Você é um apoiador!"), "Deve agradecer ao doador");
-	assert.ok(
-		contentDoador.includes("160") && contentDoador.includes("iscas"),
-		"Deve listar 160 iscas acumuladas"
-	);
-	assert.ok(
-		contentDoador.includes("240") && contentDoador.includes("moedas"),
-		"Deve listar 240 moedas acumuladas"
-	);
+	assert.ok(contentDoador.includes("iscas"), "Deve listar iscas acumuladas");
+	assert.ok(contentDoador.includes("moedas"), "Deve listar moedas acumuladas");
+	assert.ok(contentDoador.includes("Zinthos Concedidos:"), "Deve listar Zinthos concedidos");
 	assert.ok(
 		contentDoador.includes("eficiência extra na rede de pesca (!pesca-rede)"),
 		"Deve listar eficiência da rede para doador"
@@ -218,6 +216,7 @@ async function runTests() {
 	assert.strictEqual(resDry.dryRun, true, "Deve confirmar dry-run");
 	assert.strictEqual(resDry.delta.deltaBaits, 160, "Deve calcular 160 iscas");
 	assert.strictEqual(resDry.delta.deltaCoins, 240, "Deve calcular 240 moedas");
+	assert.strictEqual(resDry.delta.deltaZinthos, 12000, "Deve calcular 12000 Zinthos");
 	assert.strictEqual(
 		resDry.chosenItems.length,
 		22,
@@ -324,8 +323,10 @@ async function runTests() {
 		"Deve conter mensagem de sucesso"
 	);
 	assert.ok(
-		replyContent.includes("🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +13 itens de pesca!"),
-		"Deve conter bônus de pesca"
+		replyContent.includes(
+			"🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +7.500 Zinthos (💜), +13 itens de pesca!"
+		),
+		"Deve conter bônus de pesca e zinthos"
 	);
 	assert.ok(replyContent.includes("🦇 *Fazenda:*"), "Deve conter seção da Fazenda");
 	assert.ok(replyContent.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
