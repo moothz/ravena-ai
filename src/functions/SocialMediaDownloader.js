@@ -22,6 +22,7 @@ const {
 
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
+const storageService = require("../services/StorageService");
 
 // Inicializa o banco de dados de cache
 database.getSQLiteDb(
@@ -538,10 +539,28 @@ async function downloadHandler(bot, message, args, group) {
 								group
 							);
 						} catch (sendError) {
-							await bot.sendReturnMessages(
-								new ReturnMessage({ chatId, content: "Erro ao enviar vídeo." }),
-								group
-							);
+							let linkFallback = null;
+							if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+								try {
+									const cleanFileName = path.basename(result.arquivo);
+									const s3Key = `social/${cleanFileName}`;
+									await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+										bucket: storageService.bucketDownloads,
+										mimetype: "video/mp4"
+									});
+									linkFallback = await storageService.getPresignedUrl(s3Key, {
+										bucket: storageService.bucketDownloads
+									});
+								} catch (s3Err) {
+									logger.warn("Falha ao gerar link fallback no S3 para Social:", s3Err.message);
+								}
+							}
+
+							const errorMsg = linkFallback
+								? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+								: "Erro ao enviar vídeo.";
+
+							await bot.sendReturnMessages(new ReturnMessage({ chatId, content: errorMsg }), group);
 						}
 						resolve([]);
 					});
@@ -671,8 +690,36 @@ async function downloadHandler(bot, message, args, group) {
 											group
 										);
 									} catch (sendError) {
+										let linkFallback = null;
+										if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+											try {
+												const cleanFileName = path.basename(result.arquivo);
+												const s3Key = `social/${cleanFileName}`;
+												await storageService.upload(
+													fsSync.createReadStream(result.arquivo),
+													s3Key,
+													{
+														bucket: storageService.bucketDownloads,
+														mimetype: "video/mp4"
+													}
+												);
+												linkFallback = await storageService.getPresignedUrl(s3Key, {
+													bucket: storageService.bucketDownloads
+												});
+											} catch (s3Err) {
+												logger.warn(
+													"Falha ao gerar link fallback no S3 para Social:",
+													s3Err.message
+												);
+											}
+										}
+
+										const errorMsg = linkFallback
+											? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+											: "Erro ao enviar vídeo.";
+
 										await bot.sendReturnMessages(
-											new ReturnMessage({ chatId, content: "Erro ao enviar vídeo." }),
+											new ReturnMessage({ chatId, content: errorMsg }),
 											group
 										);
 									}

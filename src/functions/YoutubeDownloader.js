@@ -10,6 +10,8 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const { toMp3 } = require("../utils/Conversions");
 const fs = require("fs").promises;
+const fsSync = require("fs");
+const storageService = require("../services/StorageService");
 
 const logger = new Logger("youtube-downloader");
 const database = Database.getInstance();
@@ -240,11 +242,32 @@ async function processYoutubeReaction(bot, message, emoji) {
 					logger.error("Erro ao reagir à mensagem:", reactError);
 				}
 			} catch (sendError) {
-				logger.error("Erro ao enviar vídeo:", sendError);
+				logger.error("Erro ao enviar vídeo diretamente:", sendError);
+
+				let linkFallback = null;
+				if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+					try {
+						const cleanFileName = path.basename(result.arquivo);
+						const s3Key = `yt/${cleanFileName}`;
+						await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+							bucket: storageService.bucketDownloads,
+							mimetype: "video/mp4"
+						});
+						linkFallback = await storageService.getPresignedUrl(s3Key, {
+							bucket: storageService.bucketDownloads
+						});
+					} catch (s3Err) {
+						logger.warn("Falha ao gerar link fallback no S3 para YouTube:", s3Err.message);
+					}
+				}
+
+				const errorMsgContent = linkFallback
+					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+					: "Erro ao enviar vídeo.";
 
 				const errorMsg = new ReturnMessage({
 					chatId,
-					content: "Erro ao enviar vídeo.",
+					content: errorMsgContent,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -253,9 +276,9 @@ async function processYoutubeReaction(bot, message, emoji) {
 
 				await bot.sendReturnMessages(errorMsg);
 
-				// Reage com emoji de erro
+				// Reage com emoji indicativo
 				try {
-					await message.origin.react("❌");
+					await message.origin.react(linkFallback ? "🔗" : "❌");
 				} catch (reactError) {
 					logger.error("Erro ao reagir à mensagem:", reactError);
 				}
@@ -564,11 +587,32 @@ async function ytCommand(bot, message, args, group) {
 				await bot.sendReturnMessages(videoMsg, group);
 				resolve(returnMessages);
 			} catch (sendError) {
-				logger.error("Erro ao enviar vídeo:", sendError);
+				logger.error("Erro ao enviar vídeo diretamente:", sendError);
+
+				let linkFallback = null;
+				if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+					try {
+						const cleanFileName = path.basename(result.arquivo);
+						const s3Key = `yt/${cleanFileName}`;
+						await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+							bucket: storageService.bucketDownloads,
+							mimetype: "video/mp4"
+						});
+						linkFallback = await storageService.getPresignedUrl(s3Key, {
+							bucket: storageService.bucketDownloads
+						});
+					} catch (s3Err) {
+						logger.warn("Falha ao gerar link fallback no S3 para YouTube:", s3Err.message);
+					}
+				}
+
+				const errorMsgContent = linkFallback
+					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+					: "Erro ao enviar vídeo.";
 
 				const errorMsg = new ReturnMessage({
 					chatId,
-					content: "Erro ao enviar vídeo.",
+					content: errorMsgContent,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin

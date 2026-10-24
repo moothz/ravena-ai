@@ -9,6 +9,7 @@ const {
 	CreateBucketCommand,
 	HeadBucketCommand
 } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { Upload } = require("@aws-sdk/lib-storage");
 const fs = require("fs");
 const fsPromises = require("fs/promises");
@@ -29,8 +30,23 @@ class StorageService {
 
 		this.useSSL =
 			(options.useSSL ?? process.env.S3_USE_SSL ?? process.env.MINIO_USE_SSL ?? "false") === "true";
-		this.bucket =
-			options.bucket || process.env.S3_BUCKET || process.env.MINIO_BUCKET || "zap-media";
+
+		this.bucketMedia =
+			options.bucketMedia ||
+			options.bucket ||
+			process.env.S3_BUCKET_MEDIA ||
+			process.env.S3_BUCKET ||
+			process.env.MINIO_BUCKET ||
+			"zap-media";
+
+		this.bucketDownloads =
+			options.bucketDownloads || process.env.S3_BUCKET_DOWNLOADS || "downloads";
+
+		this.bucketBackups = options.bucketBackups || process.env.S3_BUCKET_BACKUPS || "backups";
+
+		// Retrocompatibilidade: this.bucket aponta para o bucket principal de mídia
+		this.bucket = this.bucketMedia;
+
 		this.region =
 			options.region || process.env.S3_REGION || process.env.MINIO_REGION || "us-east-1";
 
@@ -51,6 +67,27 @@ class StorageService {
 
 		this.endpoint = rawEndpoint;
 
+		this.publicDomain = (
+			options.publicDomain ||
+			process.env.S3_PUBLIC_DOMAIN ||
+			"https://s3-ravena.moothz.win"
+		).replace(/\/+$/, "");
+
+		this.presignedExpiresIn = parseInt(
+			options.presignedExpiresIn || process.env.S3_PRESIGNED_EXPIRES_IN || "21600",
+			10
+		);
+
+		this.downloadsRetentionHours = parseInt(
+			options.downloadsRetentionHours || process.env.S3_DOWNLOADS_RETENTION_HOURS || "48",
+			10
+		);
+
+		this.backupsRetentionDays = parseInt(
+			options.backupsRetentionDays || process.env.S3_BACKUPS_RETENTION_DAYS || "30",
+			10
+		);
+
 		// Diretórios locais para fallback e cache
 		this.localMediaDir = path.join(__dirname, "../../data/media");
 		this.migrationBackupDir =
@@ -65,7 +102,12 @@ class StorageService {
 			"farewells",
 			"group-photos",
 			"user-files",
-			"lembretes"
+			"lembretes",
+			"marriages",
+			"raffles",
+			"yt",
+			"social",
+			"attachments"
 		];
 
 		if (this.enabled) {
@@ -78,12 +120,25 @@ class StorageService {
 				},
 				forcePathStyle: true // Necessário para RustFS / MinIO / S3 compatível
 			});
+
+			// Client dedicado para geração de URLs assinadas compatíveis com o domínio público da Cloudflare
+			this.publicClient = new S3Client({
+				endpoint: this.publicDomain,
+				region: this.region,
+				credentials: {
+					accessKeyId,
+					secretAccessKey
+				},
+				forcePathStyle: true
+			});
+
 			this.logger.info(
-				`StorageService iniciado [S3 Habilitado: ${this.enabled}, Endpoint: ${this.endpoint}, Bucket: ${this.bucket}]`
+				`StorageService iniciado [S3 Habilitado: ${this.enabled}, Endpoint: ${this.endpoint}, Domínio Público: ${this.publicDomain}, Buckets: media='${this.bucketMedia}', dl='${this.bucketDownloads}', bk='${this.bucketBackups}']`
 			);
 		} else {
 			this.client = null;
-			this.logger.warn(`StorageService iniciado em modo LOCAL (S3 desabilitado)`);
+			this.publicClient = null;
+			this.logger.warn("StorageService iniciado em modo LOCAL (S3 desabilitado)");
 		}
 
 		this._initCacheDir().catch((err) => {
@@ -101,7 +156,7 @@ class StorageService {
 
 	/**
 	 * Constrói a chave padrão do S3 a partir do nome do arquivo e contexto
-	 * Formato: {groupId}/{categoria}/{fileName} ou legacy/{fileName}
+	 * Formato: {groupId}/{categoria}/{fileName}, {categoria}/{fileName} ou legacy/{fileName}
 	 */
 	buildKey(fileName, { groupId, category } = {}) {
 		if (!fileName) throw new Error("fileName é obrigatório");
@@ -118,41 +173,57 @@ class StorageService {
 			return `${groupId}/${cleanCategory}/${cleanFileName}`;
 		}
 
+		if (category) {
+			return `${category}/${cleanFileName}`;
+		}
+
 		return `legacy/${cleanFileName}`;
 	}
 
 	/**
 	 * Garante que o bucket configurado existe
 	 */
-	async ensureBucket() {
+	async ensureBucket(bucketName) {
 		if (!this.enabled || !this.client) return;
+		const targetBucket = bucketName || this.bucket;
 
 		try {
-			await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+			await this.client.send(new HeadBucketCommand({ Bucket: targetBucket }));
 		} catch (err) {
 			if (err.$metadata?.httpStatusCode === 404 || err.name === "NotFound") {
-				this.logger.info(`Bucket '${this.bucket}' não encontrado. Criando...`);
+				this.logger.info(`Bucket '${targetBucket}' não encontrado. Criando...`);
 				try {
-					await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
-					this.logger.info(`Bucket '${this.bucket}' criado com sucesso.`);
+					await this.client.send(new CreateBucketCommand({ Bucket: targetBucket }));
+					this.logger.info(`Bucket '${targetBucket}' criado com sucesso.`);
 				} catch (createErr) {
-					this.logger.error(`Erro ao criar bucket '${this.bucket}':`, createErr);
+					this.logger.error(`Erro ao criar bucket '${targetBucket}':`, createErr);
 					throw createErr;
 				}
 			} else {
-				this.logger.warn(`Verificação do bucket '${this.bucket}' retornou erro:`, err.message);
+				this.logger.warn(`Verificação do bucket '${targetBucket}' retornou erro:`, err.message);
 			}
 		}
+	}
+
+	/**
+	 * Garante a criação de todos os buckets do sistema
+	 */
+	async ensureAllBuckets() {
+		if (!this.enabled || !this.client) return;
+		await this.ensureBucket(this.bucketMedia);
+		await this.ensureBucket(this.bucketDownloads);
+		await this.ensureBucket(this.bucketBackups);
 	}
 
 	/**
 	 * Faz upload de dados para o S3
 	 * @param {Buffer|ReadableStream|string} data - Dados a serem gravados
 	 * @param {string} fileName - Nome do arquivo ou chave completa
-	 * @param {Object} options - { groupId, category, mimetype, metadata }
+	 * @param {Object} options - { groupId, category, mimetype, metadata, bucket }
 	 * @returns {Promise<{ key: string, bucket: string, size: number, mimetype: string, eTag: string }>}
 	 */
-	async upload(data, fileName, { groupId, category, mimetype, metadata = {} } = {}) {
+	async upload(data, fileName, { groupId, category, mimetype, metadata = {}, bucket } = {}) {
+		const targetBucket = bucket || this.bucket;
 		const key = this.buildKey(fileName, { groupId, category });
 
 		let bufferData;
@@ -185,7 +256,7 @@ class StorageService {
 		try {
 			if (bufferData) {
 				const command = new PutObjectCommand({
-					Bucket: this.bucket,
+					Bucket: targetBucket,
 					Key: key,
 					Body: bufferData,
 					ContentType: detectedMime,
@@ -198,14 +269,16 @@ class StorageService {
 				});
 
 				const response = await this.client.send(command);
-				this.logger.debug(`[upload] Objeto salvo no S3: ${key} (${bufferData.length} bytes)`);
+				this.logger.debug(
+					`[upload] Objeto salvo no S3 (${targetBucket}): ${key} (${bufferData.length} bytes)`
+				);
 
 				// Opcionalmente atualiza o cache local
-				await this._saveToCache(key, bufferData);
+				await this._saveToCache(key, bufferData, targetBucket);
 
 				return {
 					key,
-					bucket: this.bucket,
+					bucket: targetBucket,
 					size: bufferData.length,
 					mimetype: detectedMime,
 					eTag: response.ETag
@@ -215,7 +288,7 @@ class StorageService {
 				const uploadParallel = new Upload({
 					client: this.client,
 					params: {
-						Bucket: this.bucket,
+						Bucket: targetBucket,
 						Key: key,
 						Body: data,
 						ContentType: detectedMime,
@@ -229,17 +302,17 @@ class StorageService {
 				});
 
 				const result = await uploadParallel.done();
-				this.logger.debug(`[upload-stream] Objeto salvo no S3: ${key}`);
+				this.logger.debug(`[upload-stream] Objeto salvo no S3 (${targetBucket}): ${key}`);
 
 				return {
 					key,
-					bucket: this.bucket,
+					bucket: targetBucket,
 					mimetype: detectedMime,
 					eTag: result.ETag
 				};
 			}
 		} catch (error) {
-			this.logger.error(`Erro ao fazer upload no S3 (${key}):`, error);
+			this.logger.error(`Erro ao fazer upload no S3 (${targetBucket}/${key}):`, error);
 			throw error;
 		}
 	}
@@ -247,17 +320,18 @@ class StorageService {
 	/**
 	 * Recupera mídia do S3 com resolução inteligente, cache local e fallback
 	 * @param {string} fileNameOrKey - Nome do arquivo ou chave completa
-	 * @param {Object} options - { groupId, category }
-	 * @returns {Promise<{ buffer: Buffer, mimetype: string, size: number, key: string, source: string }>}
+	 * @param {Object} options - { groupId, category, bucket }
+	 * @returns {Promise<{ buffer: Buffer, mimetype: string, size: number, key: string, source: string, bucket: string }>}
 	 */
-	async get(fileNameOrKey, { groupId, category } = {}) {
+	async get(fileNameOrKey, { groupId, category, bucket } = {}) {
 		if (!fileNameOrKey) throw new Error("fileNameOrKey é obrigatório");
 
+		const targetBucket = bucket || this.bucket;
 		const cleanFileName = path.basename(fileNameOrKey);
 		const targetCategory = category || "custom-commands";
 
 		// 1. Checa o cache efêmero local primeiro
-		const cachedBuffer = await this._getFromCache(fileNameOrKey, groupId);
+		const cachedBuffer = await this._getFromCache(fileNameOrKey, targetBucket);
 		if (cachedBuffer) {
 			const detectedMime = mime.lookup(cleanFileName) || "application/octet-stream";
 			return {
@@ -265,7 +339,8 @@ class StorageService {
 				mimetype: detectedMime,
 				size: cachedBuffer.length,
 				key: fileNameOrKey,
-				source: "cache"
+				source: "cache",
+				bucket: targetBucket
 			};
 		}
 
@@ -273,39 +348,47 @@ class StorageService {
 		if (this.enabled && this.client) {
 			// Se já for uma chave com caminho completo
 			if (fileNameOrKey.includes("/")) {
-				const s3Obj = await this._fetchFromS3(fileNameOrKey);
+				const s3Obj = await this._fetchFromS3(fileNameOrKey, targetBucket);
 				if (s3Obj) {
-					await this._saveToCache(fileNameOrKey, s3Obj.buffer);
-					return { ...s3Obj, key: fileNameOrKey, source: "s3" };
+					await this._saveToCache(fileNameOrKey, s3Obj.buffer, targetBucket);
+					return { ...s3Obj, key: fileNameOrKey, source: "s3", bucket: targetBucket };
 				}
 			} else {
 				// Se groupId for fornecido, tenta na categoria solicitada: {groupId}/{categoria}/{fileName}
 				if (groupId) {
 					const primaryKey = `${groupId}/${targetCategory}/${cleanFileName}`;
-					const s3Obj = await this._fetchFromS3(primaryKey);
+					const s3Obj = await this._fetchFromS3(primaryKey, targetBucket);
 					if (s3Obj) {
-						await this._saveToCache(primaryKey, s3Obj.buffer);
-						return { ...s3Obj, key: primaryKey, source: "s3" };
+						await this._saveToCache(primaryKey, s3Obj.buffer, targetBucket);
+						return { ...s3Obj, key: primaryKey, source: "s3", bucket: targetBucket };
 					}
 
 					// Tenta outras categorias do mesmo grupo
 					for (const cat of this.knownCategories) {
 						if (cat === targetCategory) continue;
 						const candidateKey = `${groupId}/${cat}/${cleanFileName}`;
-						const candidateObj = await this._fetchFromS3(candidateKey);
+						const candidateObj = await this._fetchFromS3(candidateKey, targetBucket);
 						if (candidateObj) {
-							await this._saveToCache(candidateKey, candidateObj.buffer);
-							return { ...candidateObj, key: candidateKey, source: "s3" };
+							await this._saveToCache(candidateKey, candidateObj.buffer, targetBucket);
+							return { ...candidateObj, key: candidateKey, source: "s3", bucket: targetBucket };
 						}
+					}
+				} else if (category) {
+					// Categoria sem grupo (ex: marriages/characterId.jpg, lembretes/123.jpg)
+					const categoryKey = `${category}/${cleanFileName}`;
+					const s3Obj = await this._fetchFromS3(categoryKey, targetBucket);
+					if (s3Obj) {
+						await this._saveToCache(categoryKey, s3Obj.buffer, targetBucket);
+						return { ...s3Obj, key: categoryKey, source: "s3", bucket: targetBucket };
 					}
 				}
 
 				// Tenta na pasta legacy/
 				const legacyKey = `legacy/${cleanFileName}`;
-				const legacyObj = await this._fetchFromS3(legacyKey);
+				const legacyObj = await this._fetchFromS3(legacyKey, targetBucket);
 				if (legacyObj) {
-					await this._saveToCache(legacyKey, legacyObj.buffer);
-					return { ...legacyObj, key: legacyKey, source: "s3-legacy" };
+					await this._saveToCache(legacyKey, legacyObj.buffer, targetBucket);
+					return { ...legacyObj, key: legacyKey, source: "s3-legacy", bucket: targetBucket };
 				}
 			}
 		}
@@ -317,6 +400,13 @@ class StorageService {
 			path.join(this.localMediaDir, fileNameOrKey),
 			path.join(this.migrationBackupDir, fileNameOrKey)
 		];
+
+		if (category) {
+			localPathsToTry.unshift(
+				path.join(this.localMediaDir, category, cleanFileName),
+				path.join(this.migrationBackupDir, category, cleanFileName)
+			);
+		}
 
 		for (const candidatePath of localPathsToTry) {
 			try {
@@ -334,7 +424,8 @@ class StorageService {
 						this.upload(fileBuffer, cleanFileName, {
 							groupId,
 							category: targetCategory,
-							mimetype: detectedMime
+							mimetype: detectedMime,
+							bucket: targetBucket
 						}).catch((uploadErr) => {
 							this.logger.warn(
 								`[lazy-upload] Falha ao sincronizar ${targetKey} para o S3:`,
@@ -343,14 +434,15 @@ class StorageService {
 						});
 					}
 
-					await this._saveToCache(cleanFileName, fileBuffer);
+					await this._saveToCache(cleanFileName, fileBuffer, targetBucket);
 
 					return {
 						buffer: fileBuffer,
 						mimetype: detectedMime,
 						size: fileBuffer.length,
 						key: cleanFileName,
-						source: "disk"
+						source: "disk",
+						bucket: targetBucket
 					};
 				}
 			} catch (diskErr) {
@@ -361,13 +453,16 @@ class StorageService {
 			}
 		}
 
-		throw new Error(`Arquivo de mídia não encontrado no S3 nem no disco local: ${fileNameOrKey}`);
+		throw new Error(
+			`Arquivo de mídia não encontrado no S3 (${targetBucket}) nem no disco local: ${fileNameOrKey}`
+		);
 	}
 
-	async _fetchFromS3(key) {
+	async _fetchFromS3(key, bucket) {
+		const targetBucket = bucket || this.bucket;
 		try {
 			const command = new GetObjectCommand({
-				Bucket: this.bucket,
+				Bucket: targetBucket,
 				Key: key
 			});
 			const response = await this.client.send(command);
@@ -388,15 +483,106 @@ class StorageService {
 			if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
 				return null;
 			}
-			this.logger.debug(`Erro ao buscar chave S3 (${key}):`, err.message);
+			this.logger.debug(`Erro ao buscar chave S3 (${targetBucket}/${key}):`, err.message);
 			return null;
+		}
+	}
+
+	/**
+	 * Gera uma Presigned URL para download direto no navegador / WhatsApp
+	 * @param {string} fileNameOrKey - Nome do arquivo ou chave completa
+	 * @param {Object} options - { bucket, expiresIn, groupId, category }
+	 * @returns {Promise<string>} URL assinada válida para download
+	 */
+	async getPresignedUrl(fileNameOrKey, { bucket, expiresIn, groupId, category } = {}) {
+		if (!fileNameOrKey) throw new Error("fileNameOrKey é obrigatório para presigned URL");
+
+		const targetBucket = bucket || this.bucketDownloads;
+		const key = this.buildKey(fileNameOrKey, { groupId, category });
+		const ttl = typeof expiresIn === "number" ? expiresIn : this.presignedExpiresIn;
+
+		if (!this.enabled || !this.client) {
+			return `${this.publicDomain}/${targetBucket}/${key}`;
+		}
+
+		try {
+			const command = new GetObjectCommand({
+				Bucket: targetBucket,
+				Key: key
+			});
+
+			// Usa publicClient para que o cabeçalho Host na assinatura seja s3-ravena.moothz.win
+			const signer = this.publicClient || this.client;
+			const signedUrl = await getSignedUrl(signer, command, { expiresIn: ttl });
+			this.logger.debug(`[presigned-url] Gerada URL para ${targetBucket}/${key} (TTL ${ttl}s)`);
+			return signedUrl;
+		} catch (err) {
+			this.logger.error(`Erro ao gerar presigned URL para ${targetBucket}/${key}:`, err);
+			return `${this.publicDomain}/${targetBucket}/${key}`;
+		}
+	}
+
+	/**
+	 * Remove downloads expirados do HD secundário no bucket downloads
+	 * @param {number} maxAgeHours
+	 * @returns {Promise<number>} Quantidade de arquivos removidos
+	 */
+	async cleanupExpiredDownloads(maxAgeHours = this.downloadsRetentionHours) {
+		if (!this.enabled || !this.client) return 0;
+
+		const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+		const now = Date.now();
+		let deletedCount = 0;
+		let continuationToken = null;
+
+		try {
+			do {
+				const listCmd = new ListObjectsV2Command({
+					Bucket: this.bucketDownloads,
+					ContinuationToken: continuationToken
+				});
+				const listRes = await this.client.send(listCmd);
+
+				if (listRes.Contents && listRes.Contents.length > 0) {
+					const expiredObjects = listRes.Contents.filter(
+						(obj) => obj.LastModified && now - new Date(obj.LastModified).getTime() > maxAgeMs
+					).map((obj) => ({ Key: obj.Key }));
+
+					if (expiredObjects.length > 0) {
+						await this.client.send(
+							new DeleteObjectsCommand({
+								Bucket: this.bucketDownloads,
+								Delete: { Objects: expiredObjects }
+							})
+						);
+						deletedCount += expiredObjects.length;
+					}
+				}
+
+				continuationToken = listRes.NextContinuationToken;
+			} while (continuationToken);
+
+			if (deletedCount > 0) {
+				this.logger.info(
+					`[cleanupExpiredDownloads] ${deletedCount} arquivos expirados removidos de ${this.bucketDownloads}`
+				);
+			}
+			return deletedCount;
+		} catch (err) {
+			this.logger.warn(
+				`Erro na limpeza de downloads expirados (${this.bucketDownloads}):`,
+				err.message
+			);
+			return 0;
 		}
 	}
 
 	/**
 	 * Verifica existência de um objeto no S3
 	 */
-	async exists(fileNameOrKey, { groupId, category } = {}) {
+	async exists(fileNameOrKey, { groupId, category, bucket } = {}) {
+		const targetBucket = bucket || this.bucket;
+
 		if (!this.enabled || !this.client) {
 			const cleanFileName = path.basename(fileNameOrKey);
 			return (
@@ -409,7 +595,7 @@ class StorageService {
 		try {
 			await this.client.send(
 				new HeadObjectCommand({
-					Bucket: this.bucket,
+					Bucket: targetBucket,
 					Key: key
 				})
 			);
@@ -425,36 +611,41 @@ class StorageService {
 	/**
 	 * Remove um objeto do S3
 	 */
-	async delete(fileNameOrKey, { groupId, category } = {}) {
+	async delete(fileNameOrKey, { groupId, category, bucket } = {}) {
+		const targetBucket = bucket || this.bucket;
 		const key = this.buildKey(fileNameOrKey, { groupId, category });
 
 		if (this.enabled && this.client) {
 			try {
 				await this.client.send(
 					new DeleteObjectCommand({
-						Bucket: this.bucket,
+						Bucket: targetBucket,
 						Key: key
 					})
 				);
-				this.logger.debug(`[delete] Objeto removido do S3: ${key}`);
+				this.logger.debug(`[delete] Objeto removido do S3 (${targetBucket}): ${key}`);
 			} catch (err) {
-				this.logger.warn(`Erro ao deletar objeto do S3 (${key}):`, err.message);
+				this.logger.warn(`Erro ao deletar objeto do S3 (${targetBucket}/${key}):`, err.message);
 			}
 		}
 
 		// Remove também do cache se existir
-		await this._removeFromCache(key);
+		await this._removeFromCache(key, targetBucket);
 	}
 
 	/**
 	 * Deleta todos os arquivos sob o prefixo de um grupo no S3
 	 * @param {string} groupId
+	 * @param {string} bucket
 	 */
-	async deleteGroup(groupId) {
+	async deleteGroup(groupId, bucket) {
+		const targetBucket = bucket || this.bucket;
 		if (!this.enabled || !this.client || !groupId) return 0;
 
 		const prefix = `${groupId}/`;
-		this.logger.info(`[deleteGroup] Deletando todos os objetos do grupo: ${prefix}`);
+		this.logger.info(
+			`[deleteGroup] Deletando todos os objetos do grupo: ${prefix} (${targetBucket})`
+		);
 
 		let deletedCount = 0;
 		let continuationToken = null;
@@ -462,7 +653,7 @@ class StorageService {
 		try {
 			do {
 				const listCmd = new ListObjectsV2Command({
-					Bucket: this.bucket,
+					Bucket: targetBucket,
 					Prefix: prefix,
 					ContinuationToken: continuationToken
 				});
@@ -472,7 +663,7 @@ class StorageService {
 					const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key }));
 					await this.client.send(
 						new DeleteObjectsCommand({
-							Bucket: this.bucket,
+							Bucket: targetBucket,
 							Delete: { Objects: objectsToDelete }
 						})
 					);
@@ -482,10 +673,12 @@ class StorageService {
 				continuationToken = listRes.NextContinuationToken;
 			} while (continuationToken);
 
-			this.logger.info(`[deleteGroup] Total de ${deletedCount} objetos removidos para ${groupId}`);
+			this.logger.info(
+				`[deleteGroup] Total de ${deletedCount} objetos removidos para ${groupId} em ${targetBucket}`
+			);
 			return deletedCount;
 		} catch (err) {
-			this.logger.error(`Erro ao deletar grupo ${groupId} do S3:`, err);
+			this.logger.error(`Erro ao deletar grupo ${groupId} do S3 (${targetBucket}):`, err);
 			throw err;
 		}
 	}
@@ -493,8 +686,10 @@ class StorageService {
 	/**
 	 * Calcula o total de bytes e objetos consumidos por um grupo no S3
 	 * @param {string} groupId
+	 * @param {string} bucket
 	 */
-	async getGroupUsage(groupId) {
+	async getGroupUsage(groupId, bucket) {
+		const targetBucket = bucket || this.bucket;
 		if (!this.enabled || !this.client || !groupId) {
 			return { bytes: 0, count: 0 };
 		}
@@ -507,7 +702,7 @@ class StorageService {
 		try {
 			do {
 				const listCmd = new ListObjectsV2Command({
-					Bucket: this.bucket,
+					Bucket: targetBucket,
 					Prefix: prefix,
 					ContinuationToken: continuationToken
 				});
@@ -525,20 +720,21 @@ class StorageService {
 
 			return { bytes: totalBytes, count };
 		} catch (err) {
-			this.logger.error(`Erro ao calcular uso do grupo ${groupId}:`, err);
+			this.logger.error(`Erro ao calcular uso do grupo ${groupId} em ${targetBucket}:`, err);
 			return { bytes: 0, count: 0 };
 		}
 	}
 
 	// ── Métodos de Cache Efêmero ──
 
-	_cacheKey(keyOrFileName) {
-		return keyOrFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+	_cacheKey(keyOrFileName, bucket) {
+		const prefix = bucket && bucket !== this.bucketMedia ? `${bucket}_` : "";
+		return `${prefix}${keyOrFileName}`.replace(/[^a-zA-Z0-9._-]/g, "_");
 	}
 
-	async _getFromCache(fileNameOrKey) {
+	async _getFromCache(fileNameOrKey, bucket) {
 		try {
-			const safeName = this._cacheKey(fileNameOrKey);
+			const safeName = this._cacheKey(fileNameOrKey, bucket);
 			const cacheFilePath = path.join(this.cacheDir, safeName);
 			if (fs.existsSync(cacheFilePath)) {
 				const stat = await fsPromises.stat(cacheFilePath);
@@ -553,10 +749,10 @@ class StorageService {
 		return null;
 	}
 
-	async _saveToCache(fileNameOrKey, buffer) {
+	async _saveToCache(fileNameOrKey, buffer, bucket) {
 		try {
 			if (!buffer || buffer.length > 50 * 1024 * 1024) return; // Limite de 50MB por item no cache
-			const safeName = this._cacheKey(fileNameOrKey);
+			const safeName = this._cacheKey(fileNameOrKey, bucket);
 			const cacheFilePath = path.join(this.cacheDir, safeName);
 			await fsPromises.writeFile(cacheFilePath, buffer);
 		} catch {
@@ -564,9 +760,9 @@ class StorageService {
 		}
 	}
 
-	async _removeFromCache(fileNameOrKey) {
+	async _removeFromCache(fileNameOrKey, bucket) {
 		try {
-			const safeName = this._cacheKey(fileNameOrKey);
+			const safeName = this._cacheKey(fileNameOrKey, bucket);
 			const cacheFilePath = path.join(this.cacheDir, safeName);
 			if (fs.existsSync(cacheFilePath)) {
 				await fsPromises.unlink(cacheFilePath);

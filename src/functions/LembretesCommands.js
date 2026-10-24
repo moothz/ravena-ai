@@ -6,6 +6,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const storageService = require("../services/StorageService");
 
 const logger = new Logger("lembretes-commands");
 const database = Database.getInstance();
@@ -267,14 +268,24 @@ async function criarLembrete(bot, message, args, group) {
 					const fileName = `${lembreteId}.${fileExt || "bin"}`;
 					const mediaPath = path.join(LEMBRETES_MEDIA_DIR, fileName);
 
-					await fs.writeFile(mediaPath, Buffer.from(media.data, "base64"));
+					await fs.writeFile(mediaPath, Buffer.from(media.data, "base64")).catch(() => {});
+
+					// Upload para o S3
+					await storageService
+						.upload(media.data, fileName, {
+							category: "lembretes",
+							mimetype: media.mimetype
+						})
+						.catch((err) => {
+							logger.warn(`Falha ao enviar mídia do lembrete ${fileName} ao S3:`, err.message);
+						});
 
 					lembrete.hasMedia = true;
 					lembrete.mediaPath = fileName;
 					lembrete.mediaType = media.mimetype;
 					lembrete.mediaCaption = quotedMsg.caption || "";
 
-					logger.info(`Mídia salva para lembrete: ${mediaPath}`);
+					logger.info(`Mídia salva para lembrete (S3/disco): ${fileName}`);
 				}
 			} catch (mediaError) {
 				logger.error("Erro ao salvar mídia para lembrete:", mediaError);
@@ -454,7 +465,8 @@ async function cancelarLembrete(bot, message, args, group) {
 
 		if (lembrete.hasMedia && lembrete.mediaPath) {
 			try {
-				await fs.unlink(path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath));
+				await storageService.delete(lembrete.mediaPath, { category: "lembretes" }).catch(() => {});
+				await fs.unlink(path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath)).catch(() => {});
 			} catch (unlinkError) {
 				logger.error("Erro ao excluir mídia do lembrete:", unlinkError);
 			}
@@ -625,9 +637,21 @@ async function dispararLembrete(bot, lembreteId) {
 
 		if (lembrete.hasMedia && lembrete.mediaPath) {
 			try {
-				await garantirDiretorios();
-				const mediaPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
-				const mediaData = await fs.readFile(mediaPath);
+				let mediaData = null;
+				try {
+					const s3Item = await storageService.get(lembrete.mediaPath, { category: "lembretes" });
+					if (s3Item && s3Item.buffer) {
+						mediaData = s3Item.buffer;
+					}
+				} catch {
+					// Fallback para disco local
+				}
+
+				if (!mediaData) {
+					await garantirDiretorios();
+					const mediaPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
+					mediaData = await fs.readFile(mediaPath);
+				}
 
 				const media = {
 					mimetype: lembrete.mediaType || "application/octet-stream",
@@ -647,8 +671,15 @@ async function dispararLembrete(bot, lembreteId) {
 
 				await bot.sendReturnMessages(returnMessage, group);
 
+				// Limpeza pós-envio no S3 e disco
 				try {
-					await fs.unlink(mediaPath);
+					await storageService
+						.delete(lembrete.mediaPath, { category: "lembretes" })
+						.catch(() => {});
+					const localPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
+					if (await fs.stat(localPath).catch(() => null)) {
+						await fs.unlink(localPath).catch(() => {});
+					}
 				} catch (unlinkError) {
 					logger.error("Erro ao excluir mídia do lembrete após envio:", unlinkError);
 				}

@@ -10,6 +10,7 @@ const Logger = require("../utils/Logger");
 const AdminUtils = require("../utils/AdminUtils");
 const RaffleMonitor = require("../services/RaffleMonitor");
 const GroupContextHelper = require("../utils/GroupContextHelper");
+const storageService = require("../services/StorageService");
 
 const logger = new Logger("raffles");
 const database = Database.getInstance();
@@ -38,7 +39,18 @@ async function getOrDownloadRaffleImage(imageUrl) {
 	try {
 		await garantirDiretorioMidia();
 		const hash = crypto.createHash("md5").update(imageUrl).digest("hex");
-		const localPath = path.join(RAFFLES_MEDIA_DIR, `${hash}.jpg`);
+		const fileName = `${hash}.jpg`;
+		const localPath = path.join(RAFFLES_MEDIA_DIR, fileName);
+
+		// 1. Tenta carregar do StorageService (S3 ou cache local)
+		try {
+			const s3Item = await storageService.get(fileName, { category: "raffles" });
+			if (s3Item && s3Item.filePath && fs.existsSync(s3Item.filePath)) {
+				return s3Item.filePath;
+			}
+		} catch {
+			// Não encontrado no S3
+		}
 
 		// Se já existe localmente, retorna o caminho do arquivo
 		if (fs.existsSync(localPath)) {
@@ -46,7 +58,7 @@ async function getOrDownloadRaffleImage(imageUrl) {
 		}
 
 		logger.info(
-			`[Raffles] Baixando imagem da rifa para cache local em data/media/raffles/: ${imageUrl}`
+			`[Raffles] Baixando imagem da rifa para cache em data/media/raffles/ e S3: ${imageUrl}`
 		);
 		const response = await axios.get(imageUrl, {
 			responseType: "arraybuffer",
@@ -58,7 +70,16 @@ async function getOrDownloadRaffleImage(imageUrl) {
 		});
 
 		if (response.data && response.data.length > 0) {
-			await fs.promises.writeFile(localPath, Buffer.from(response.data));
+			const buf = Buffer.from(response.data);
+			await fs.promises.writeFile(localPath, buf);
+
+			// Upload para o S3 (categoria: raffles)
+			await storageService
+				.upload(buf, fileName, { category: "raffles", mimetype: "image/jpeg" })
+				.catch((err) => {
+					logger.warn(`Falha ao subir imagem da rifa ${fileName} ao S3:`, err.message);
+				});
+
 			return localPath;
 		}
 	} catch (err) {

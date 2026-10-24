@@ -5,6 +5,7 @@ const BetterSQLite = require("better-sqlite3");
 const Logger = require("./Logger");
 const zlib = require("zlib");
 const { pipeline } = require("stream/promises");
+const storageService = require("../services/StorageService");
 
 class DatabaseBackup {
 	constructor(databaseInstance) {
@@ -117,6 +118,28 @@ class DatabaseBackup {
 			if (this.backupGzip) await this.compressBackupDir(path.join(backupDir, "sqlites"));
 
 			this.logger.info(`File backup created: ${backupDir}`);
+
+			// Sincroniza snapshot com o S3 (bucket backups no HD secundário)
+			try {
+				const destSqlitesDir = path.join(backupDir, "sqlites");
+				if (fs.existsSync(destSqlitesDir)) {
+					const filesToUpload = fs.readdirSync(destSqlitesDir);
+					for (const file of filesToUpload) {
+						const filePath = path.join(destSqlitesDir, file);
+						const s3Key = `sqlite/${timestamp}/${file}`;
+						await storageService.upload(fs.createReadStream(filePath), s3Key, {
+							bucket: storageService.bucketBackups,
+							mimetype: file.endsWith(".gz") ? "application/gzip" : "application/x-sqlite3"
+						});
+					}
+					this.logger.info(
+						`[S3 Backup] ${filesToUpload.length} bancos de dados sincronizados para s3://${storageService.bucketBackups}/sqlite/${timestamp}/`
+					);
+				}
+			} catch (s3BackupErr) {
+				this.logger.warn("[S3 Backup] Falha ao enviar backup ao S3:", s3BackupErr.message);
+			}
+
 			this.cleanupOldScheduledBackups();
 
 			// Arquiva relatórios antigos com mais de 30 dias automaticamente

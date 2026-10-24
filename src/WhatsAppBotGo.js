@@ -29,6 +29,7 @@ const { llmTranslate } = require("./utils/LLMTranslate");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const MemoryCache = require("./utils/MemoryCache");
+const storageService = require("./services/StorageService");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -3141,13 +3142,34 @@ class WhatsAppBotGo {
 					}
 
 					const cttSize = content.size ?? (await this.getFileSizeByURL(content.url)) ?? 0;
-					const urlPublica = process.env.BOT_DOMAIN_LOCAL
+					let urlPublica = process.env.BOT_DOMAIN_LOCAL
 						? payload.url.replace(process.env.BOT_DOMAIN_LOCAL, process.env.BOT_DOMAIN)
 						: payload.url;
+
 					if (options.sendMediaAsDocument || cttSize > 60 * 1024 * 1024) {
 						mediaType = "document";
-						// Se enviar como doc, manda a nossa URL publica junto também
-						payload.caption += `\n\n> Link temporário: ${urlPublica}`;
+						// Se arquivo no disco existir e for grande, sobe para o bucket downloads do HD secundário
+						if (content.filePath && fs.existsSync(content.filePath)) {
+							try {
+								const cleanName = path.basename(content.filePath);
+								const key = `attachments/${cleanName}`;
+								await storageService.upload(fs.createReadStream(content.filePath), key, {
+									bucket: storageService.bucketDownloads,
+									mimetype: content.mimetype
+								});
+								const presigned = await storageService.getPresignedUrl(key, {
+									bucket: storageService.bucketDownloads
+								});
+								if (presigned) {
+									urlPublica = presigned;
+								}
+							} catch (s3Err) {
+								this.logger.debug(
+									`[sendMessage] Fallback para link local em vez do S3: ${s3Err.message}`
+								);
+							}
+						}
+						payload.caption += `\n\n> 📥 Link direto (válido por 6h): ${urlPublica}`;
 					}
 
 					let typeStr = mediaType.split("/")[0];

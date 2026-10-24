@@ -8,6 +8,7 @@ const Database = require("./Database");
 const LLMService = require("../services/LLMService");
 const ProfilePictureHelper = require("./ProfilePictureHelper");
 const bonsaiModule = require("../functions/BonsaiCommands");
+const storageService = require("../services/StorageService");
 
 const logger = new Logger("waifu-marriage-photo");
 const database = Database.getInstance();
@@ -398,11 +399,21 @@ async function generateAndSaveMarriageImage(bot, message, character, userId, use
 		const rawBuffer = Buffer.from(bonsaiResult.content.data, "base64");
 		const framedBuffer = await module.exports.compositeMarriageBorder(rawBuffer);
 
-		// 6. Salvar imagem no diretório permanente
+		// 6. Salvar imagem no diretório permanente e S3
 		await ensureMarriagesDir();
 		const photoPath = path.join(getMarriagesDir(), `${character.id}.jpg`);
 		await fs.writeFile(photoPath, framedBuffer);
 		logger.info(`[generateAndSaveMarriageImage] Foto de casamento salva em: ${photoPath}`);
+
+		// Upload para o S3 (categoria: marriages)
+		await storageService
+			.upload(framedBuffer, `${character.id}.jpg`, {
+				category: "marriages",
+				mimetype: "image/jpeg"
+			})
+			.catch((err) => {
+				logger.warn(`Falha ao enviar foto de casamento ${character.id}.jpg ao S3:`, err.message);
+			});
 
 		// 7. Salvar/Atualizar no banco de dados SQLite
 		const now = Date.now();
@@ -450,15 +461,15 @@ async function generateAndSaveMarriageImage(bot, message, character, userId, use
 }
 
 /**
- * Consulta a foto de casamento salva no disco / SQLite
+ * Consulta a foto de casamento salva no S3 / disco / SQLite
  * @param {string} characterId
- * @returns {Promise<{ exists: boolean, photoPath?: string, record?: Object }>}
+ * @returns {Promise<{ exists: boolean, photoPath?: string, buffer?: Buffer, record?: Object }>}
  */
 async function getMarriagePhoto(characterId) {
 	if (!characterId) return { exists: false };
 
-	const photoPath = path.join(getMarriagesDir(), `${characterId}.jpg`);
-	const fileExists = fsSync.existsSync(photoPath);
+	const fileName = `${characterId}.jpg`;
+	const photoPath = path.join(getMarriagesDir(), fileName);
 
 	let record = null;
 	try {
@@ -471,6 +482,22 @@ async function getMarriagePhoto(characterId) {
 		logger.warn("Erro ao consultar registro de foto no SQLite:", e.message);
 	}
 
+	// 1. Tenta buscar no StorageService (S3 com fallback local e cache)
+	try {
+		const s3Item = await storageService.get(fileName, { category: "marriages" });
+		if (s3Item && s3Item.buffer) {
+			return {
+				exists: true,
+				photoPath: s3Item.filePath || photoPath,
+				buffer: s3Item.buffer,
+				record
+			};
+		}
+	} catch {
+		// Fallback para verificação direta no disco
+	}
+
+	const fileExists = fsSync.existsSync(photoPath);
 	if (fileExists) {
 		return { exists: true, photoPath, record };
 	}
@@ -479,11 +506,17 @@ async function getMarriagePhoto(characterId) {
 }
 
 /**
- * Remove a foto de casamento do disco e do SQLite (usado no divórcio)
+ * Remove a foto de casamento do S3, do disco e do SQLite (usado no divórcio)
  * @param {string} characterId
  */
 async function removeMarriagePhoto(characterId) {
 	if (!characterId) return;
+
+	try {
+		await storageService.delete(`${characterId}.jpg`, { category: "marriages" }).catch(() => {});
+	} catch (s3Err) {
+		logger.warn(`Erro ao excluir foto de casamento do S3 (${characterId}):`, s3Err.message);
+	}
 
 	try {
 		const photoPath = path.join(getMarriagesDir(), `${characterId}.jpg`);
