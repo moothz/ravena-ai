@@ -1275,6 +1275,31 @@ function makeRollHandler(genderFilter) {
 				}
 				text += "\n";
 
+				if (firstRollData?.instantMarriage) {
+					const shares = firstRollData.instantMarriageShares || 1;
+					const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+					let marryText = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
+					marryText += `⚡ *CASAMENTO INSTANTÂNEO POR COTA!* Você possuía *${shares}/4 cotas* (${shares * 25}%) e o casamento ocorreu imediatamente sem consumir cooldown!\n`;
+					marryText += `🔑 Chaves: *1/10*\n`;
+					if (firstRollData.refundedCompetitorsCount > 0) {
+						marryText += `⚠️ *${firstRollData.refundedCompetitorsCount} competidor(es)* que investiram nesta waifu foram reembolsados integralmente em Zinthos.\n`;
+					}
+					if (rollReward) {
+						marryText += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos`;
+					}
+					if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
+						marryText += `\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
+					}
+
+					return wrapReturn(
+						await buildMarriageReturnMessage(bot, message, character, userId, name, marryText, {
+							quotedMessageId: message.origin?.id?._serialized,
+							goReply: message.origin,
+							mentions: [toJid(userId)]
+						})
+					);
+				}
+
 				let exclusiveUntil = null;
 				if (available) {
 					const now = Date.now();
@@ -1467,6 +1492,8 @@ function makeRollHandler(genderFilter) {
 					rarity,
 					available: Boolean(r.available),
 					isOwner: Boolean(r.isOwner),
+					instantMarriage: Boolean(r.instantMarriage),
+					instantMarriageShares: r.instantMarriageShares,
 					isWishlist: Boolean(r.isWishlist),
 					isStarWish: Boolean(r.isStarWish),
 					wishlistUsers: r.wishlistUsers || [],
@@ -1525,12 +1552,14 @@ function makeRollHandler(genderFilter) {
 				text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n${firstRollData.marketNotification}\n\n`;
 			}
 
-			// Categorias na ordem solicitada:
-			// 1. Personagens que a pessoa que usou o mu-roll já tem alguma chave pelo menos (isOwner)
-			// 2. Personagens da wishlist de alguém do grupo (solteiros)
-			// 3. Solteiros
-			// 4. Casados
-			const rollerKeysSlots = multiRollSlots.filter((s) => s.isOwner);
+			// Categorias na ordem:
+			// 1. Casamentos Instantâneos (via cota comprada)
+			// 2. Personagens que a pessoa que usou o mu-roll já tem alguma chave (isOwner)
+			// 3. Personagens da wishlist de alguém do grupo (solteiros)
+			// 4. Solteiros
+			// 5. Casados
+			const instantMarriageSlots = multiRollSlots.filter((s) => s.instantMarriage);
+			const rollerKeysSlots = multiRollSlots.filter((s) => s.isOwner && !s.instantMarriage);
 			const groupWishlistFreeSlots = multiRollSlots.filter(
 				(s) =>
 					!s.isOwner &&
@@ -1545,6 +1574,18 @@ function makeRollHandler(genderFilter) {
 					!s.isWishlist
 			);
 			const casadosSlots = multiRollSlots.filter((s) => !s.available && !s.isOwner);
+
+			if (instantMarriageSlots.length > 0) {
+				text += `💍 *Casamentos Instantâneos (via Cota):*\n`;
+				instantMarriageSlots.forEach((s) => {
+					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
+					const normRarity = String(s.rarity).toUpperCase();
+					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
+					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""} (🎉 Casado com você sem cooldown!)\n`;
+				});
+				text += "\n";
+			}
 
 			if (rollerKeysSlots.length > 0) {
 				text += `🔑 *Com chaves:*\n`;
@@ -4161,7 +4202,13 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist, classificados e fotos).\n`;
 	text += `• \`!mu-share\` (alias: \`!mu-compartilhar\`) — Exibe o link público do seu harém para compartilhar com amigos.\n\n`;
 
-	text += `🏷️ *Classificados & Mercado:*\n`;
+	text += `📈 *Investimentos & Mercado de Waifus:*\n`;
+	text += `• \`!mu-investir <id/nome> [cotas]\` (aliases: \`!mu-lance\`, \`!mu-cota\`) — Adquire cotas de 25% de uma waifu livre. Cada cota dá super bônus no roll (+300%, 10x, 25x) e *casamento instantâneo sem cooldown*! Com 4 cotas (100%), adquire a waifu na hora!\n`;
+	text += `• \`!mu-investimentos\` (aliases: \`!mu-cotas\`, \`!mu-meus-investimentos\`) — Lista suas waifus investidas, porcentagem acumulada e bônus ativos.\n`;
+	text += `• \`!mu-cotacao <id/nome>\` (aliases: \`!mu-preco\`, \`!mu-valor\`) — Consulta o valor de compra integral e da cota de 25%, detalhando inflação e escassez.\n`;
+	text += `• \`!mu-mercado\` (alias: \`!mu-economia\`) — Panorama macroeconômico do servidor, tabela de preços por raridade e negociações dos últimos 30 dias.\n\n`;
+
+	text += `🏷️ *Classificados & Trocas P2P:*\n`;
 	text += `• \`!mu-vender <id> <o que procura>\` (alias: \`!mu-anunciar\`) — Anuncia uma waifu do seu harém nos classificados globais.\n`;
 	text += `• \`!mu-classificados\` — Lista as waifus disponíveis nos classificados globais.\n`;
 	text += `• \`!mu-ofertas\` — Lista ofertas pendentes enviadas por outros jogadores para suas waifus.\n`;
@@ -4698,6 +4745,315 @@ async function cobicarWaifuCmd(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content: `❌ ${msg}`
+		});
+	}
+}
+
+/**
+ * Investe em cotas de 25% de uma waifu livre ou adquire definitivamente com 4 cotas
+ * !mu-investir <personagem> [quantidade_cotas (1 a 4, padrão 1)]
+ */
+async function investirWaifuCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const name = getUserName(message);
+
+	if (!args || args.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Uso: `!mu-investir <nome/id da waifu> [quantidade de cotas (1 a 4)]`\nExemplos:\n• `!mu-investir makima` (compra 1 cota de 25%)\n• `!mu-investir makima 2` (compra 2 cotas)\n• `!mu-investir makima 4` (compra 100% à vista)\nAliases: `!mu-lance`, `!mu-cota`",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	let shares = 1;
+	let charQuery = args.join(" ").trim();
+	const lastArg = args.length > 1 ? args[args.length - 1].trim() : null;
+	if (lastArg && /^[1-4]$/.test(lastArg)) {
+		shares = parseInt(lastArg, 10);
+		charQuery = args
+			.slice(0, args.length - 1)
+			.join(" ")
+			.trim();
+	}
+
+	try {
+		await ensureUser(userId, groupId, name);
+
+		const { data } = await api.post("/market/invest", {
+			userId,
+			characterId: charQuery,
+			shares,
+			groupId
+		});
+
+		const res = data.data;
+		const character = res.character;
+
+		if (res.acquired) {
+			// Casamento concluído com 4 cotas (100%)!
+			const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+			let text = `💍 *Parabéns, ${userMention}!* Você adquiriu as 4 cotas (100%) e se casou com *${character.name}*! 🎉\n`;
+			text += `💎 Investimento total: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
+			text += `🔑 Chaves: *1/10*\n`;
+			text += `💜 Saldo atual: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*`;
+			if (res.refundedCompetitors && res.refundedCompetitors.length > 0) {
+				text += `\n⚠️ *${res.refundedCompetitors.length} competidor(es)* que investiram nesta waifu foram reembolsados integralmente em Zinthos.`;
+			}
+
+			return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [toJid(userId)]
+			});
+		}
+
+		// Cotas parciais adquiridas (1 a 3 cotas)
+		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+		const emoji = RARITY_EMOJI[character.baseRarity] || "⚪";
+		const label = RARITY_LABEL[character.baseRarity] || character.baseRarity;
+		const filledBlocks = "█".repeat(res.totalShares);
+		const emptyBlocks = "░".repeat(res.remainingShares);
+		const progressBar = `[${filledBlocks}${emptyBlocks}]`;
+
+		let text = `📈 *INVESTIMENTO CONFIRMADO!* 📈\n\n`;
+		text += `👤 *${character.name}* — _${character.series}_\n`;
+		text += `${emoji} Raridade: *${label}*\n`;
+		text += `🎫 Cotas adquiridas: *+${res.sharesBought} cota(s)*\n`;
+		text += `📊 Progresso: ${progressBar} *${res.totalShares}/4 cotas* (*${res.totalShares * 25}%*)\n`;
+		text += `💰 Valor pago: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
+		text += `💜 Saldo restante: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*\n\n`;
+		text += `🎯 *Super Bônus Ativo:*\n`;
+		text += `• Drop pessoal no \`!mu-roll\`: *+${res.boostPercent}%* de chance!\n`;
+		text += `• ⚡ *Casamento Instantâneo:* Se ela sair no seu \`!mu-roll\`, o casamento ocorre na hora, *sem consumir cooldown*!\n\n`;
+		text += `💡 Faltam *${res.remainingShares} cota(s)* para a aquisição definitiva automática!`;
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [toJid(userId)]
+			}
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao investir no personagem.", {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		});
+	}
+}
+
+/**
+ * Lista todos os investimentos ativos do usuário
+ * !mu-investimentos (aliases: !mu-cotas, !mu-meus-investimentos)
+ */
+async function listarInvestimentosCmd(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	try {
+		const { data } = await api.get("/market/investments", { params: { userId } });
+		const investments = data?.data || [];
+
+		if (investments.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"💼 Você ainda não possui nenhum investimento ativo em waifus.\n\n💡 Use `!mu-cotacao <personagem>` para consultar o preço de mercado e `!mu-investir <personagem>` para adquirir cotas de 25%!",
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		let text = `💼 *SEUS INVESTIMENTOS EM WAIFUS* (${investments.length}) 💼\n\n`;
+		let totalZinthosInvestedAll = 0;
+
+		investments.forEach((inv, index) => {
+			totalZinthosInvestedAll += inv.totalZinthosInvested;
+			const emoji = RARITY_EMOJI[inv.character.baseRarity] || "⚪";
+			const label = RARITY_LABEL[inv.character.baseRarity] || inv.character.baseRarity;
+			const filledBlocks = "█".repeat(inv.shares);
+			const emptyBlocks = "░".repeat(inv.remainingShares);
+			const progressBar = `[${filledBlocks}${emptyBlocks}]`;
+
+			text += `${index + 1}️⃣ ${emoji} *${inv.character.name}* — _${inv.character.series}_\n`;
+			text += `   📊 Cotas: ${progressBar} *${inv.shares}/4* (${inv.percent}%)\n`;
+			text += `   💎 Zinthos investidos: *${inv.totalZinthosInvested.toLocaleString("pt-BR")} Z*\n`;
+			text += `   🎯 Bônus de Drop: *+${inv.boostPercent}%* (⚡ Casa instantâneo no roll!)\n`;
+			text += `   💰 Próxima cota: *${inv.cotaPriceCurrent.toLocaleString("pt-BR")} Z*\n\n`;
+		});
+
+		text += `💰 *Total investido em carteira:* ${totalZinthosInvestedAll.toLocaleString("pt-BR")} Zinthos\n`;
+		text += `💡 _Use \`!mu-investir <nome>\` para adquirir a próxima cota de qualquer uma delas!_`;
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao listar investimentos.", {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		});
+	}
+}
+
+/**
+ * Consulta a cotação dinâmica de compra e cotas de um personagem
+ * !mu-cotacao <personagem> (aliases: !mu-preco, !mu-valor)
+ */
+async function cotarWaifuCmd(bot, message, args) {
+	const chatId = message.group ?? message.author;
+
+	if (!args || args.length === 0) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Uso: `!mu-cotacao <nome ou id do personagem>`\nExemplo: `!mu-cotacao makima`\nAliases: `!mu-preco`, `!mu-valor`",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	const charQuery = args.join(" ").trim();
+
+	try {
+		const { data } = await api.get(`/market/quote/${encodeURIComponent(charQuery)}`);
+		const quote = data?.data;
+		if (!quote) throw new Error("Cotação não disponível");
+
+		const char = quote.character;
+		const pricing = quote.pricing;
+		const emoji = RARITY_EMOJI[char.baseRarity] || "⚪";
+		const label = RARITY_LABEL[char.baseRarity] || char.baseRarity;
+
+		let text = `📊 *COTAÇÃO DE MERCADO* — Waifuletes\n\n`;
+		text += `👤 *${char.name}* — _${char.series}_\n`;
+		text += `${emoji} Raridade: *${label}*\n`;
+		if (char.isClaimed) {
+			text += `🔒 *Status:* Já casada com *${char.owner?.name || "Outro jogador"}*\n\n`;
+		} else {
+			text += `💍 *Status:* LIVRE para compra e investimento!\n\n`;
+		}
+
+		text += `💰 *Preço Integral (100%):* ${pricing.dynamicPrice.toLocaleString("pt-BR")} Zinthos\n`;
+		text += `🎫 *Valor por Cota (25%):* ${pricing.cotaPrice.toLocaleString("pt-BR")} Zinthos\n\n`;
+
+		text += `📈 *Indicadores Econômicos:*\n`;
+		text += `• Base da Raridade: *${pricing.basePrice.toLocaleString("pt-BR")} Z* (${pricing.days} dias de Zinthos)\n`;
+		text += `• Inflação Monetária (M2): *+${pricing.inflationPercent}%*\n`;
+		const scarcityPct = Number(((pricing.scarcityMultiplier - 1) * 100).toFixed(1));
+		text += `• Escassez da Categoria: *+${scarcityPct}%* (${quote.rarityStats.claimed.toLocaleString("pt-BR")}/${quote.rarityStats.total.toLocaleString("pt-BR")} casados)\n\n`;
+
+		if (quote.investments && quote.investments.length > 0) {
+			text += `⚖️ *Disputa em Aberto:*\n`;
+			quote.investments.forEach((inv) => {
+				text += `• *${inv.userName}:* ${inv.shares}/4 cotas (${inv.percent}%)\n`;
+			});
+			text += `\n`;
+		}
+
+		if (!char.isClaimed) {
+			text += `💡 _Use \`!mu-investir ${char.id}\` para comprar 1 cota de 25%_\n`;
+			text += `💡 _Use \`!mu-investir ${char.id} 4\` para comprar 100% à vista_`;
+		}
+
+		const imageBase64 = await downloadImageAsBase64(char.imageUrl);
+		if (imageBase64) {
+			return new ReturnMessage({
+				chatId,
+				content: {
+					mimetype: "image/jpeg",
+					data: imageBase64,
+					filename: "quote.jpg",
+					isMessageMedia: true
+				},
+				options: {
+					caption: text,
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao obter cotação do personagem.", {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		});
+	}
+}
+
+/**
+ * Panorama macroeconômico global e estatísticas dos últimos 30 dias de anúncios
+ * !mu-mercado (alias: !mu-economia)
+ */
+async function mercadoInfoCmd(bot, message) {
+	const chatId = message.group ?? message.author;
+
+	try {
+		const { data } = await api.get("/market/stats");
+		const stats = data?.data;
+		if (!stats) throw new Error("Estatísticas não disponíveis");
+
+		let text = `🏛️ *MERCADO & ECONOMIA GLOBAL* — Waifuletes\n\n`;
+		text += `💰 *Massa Monetária em Circulação (M2):* ${stats.circulatingKakera.toLocaleString("pt-BR")} Zinthos\n`;
+		text += `📈 *Taxa de Inflação Atual:* +${stats.inflationPercent}% (Base: ${stats.baseMoneySupply.toLocaleString("pt-BR")} Z)\n\n`;
+
+		text += `🏷️ *Negociações nos Últimos 30 Dias (Anúncios):*\n`;
+		text += `• Waifus transferidas: *${stats.thirtyDaysStats.tradedWaifus} waifus*\n`;
+		text += `• Volume transacionado: *${stats.thirtyDaysStats.tradedZinthos.toLocaleString("pt-BR")} Zinthos*\n`;
+		text += `• Propostas aceitas: *${stats.thirtyDaysStats.acceptedOffersCount} negociações*\n\n`;
+
+		text += `📊 *Tabela de Cotação por Raridade:*\n`;
+		const rList = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
+		rList.forEach((r) => {
+			const info = stats.rarityStats[r];
+			const emoji = RARITY_EMOJI[r] || "⚪";
+			const label = RARITY_LABEL[r] || r;
+			text += `${emoji} *${label} (${info.days}d):*\n`;
+			text += `   • 100%: *${info.dynamicPrice.toLocaleString("pt-BR")} Z* | Cota (25%): *${info.cotaPrice.toLocaleString("pt-BR")} Z*\n`;
+			text += `   • Estoque: ${info.available.toLocaleString("pt-BR")} livres (${info.percentageClaimed}% casados)\n`;
+		});
+
+		text += `\n💡 _Use \`!mu-cotacao <personagem>\` para ver a cotação de qualquer waifu._\n`;
+		text += `💡 _Use \`!mu-investir <personagem>\` para investir em cotas de 25%._`;
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao carregar dados do mercado.", {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
 		});
 	}
 }
@@ -5709,10 +6065,61 @@ const commands = [
 		description: "Lista personagens disponíveis nos classificados globais",
 		category: "mudae",
 		group: "muwaifu-market",
-		aliases: ["muclassificados", "mu-mercado", "mumercado"],
+		aliases: ["muclassificados", "mu-anuncios"],
 		reactions: { before: "🛍️", after: "✅", error: "❌" },
 		reply: true,
 		method: listarClassificadosCmd
+	}),
+	new Command({
+		name: "mu-mercado",
+		description: "Panorama macroeconômico, inflação, preços e negociações dos últimos 30 dias",
+		category: "mudae",
+		group: "muwaifu-market",
+		aliases: ["mu-economia", "mumercado", "mueconomia"],
+		reactions: { before: "🏛️", after: "📊", error: "❌" },
+		reply: true,
+		method: mercadoInfoCmd
+	}),
+	new Command({
+		name: "mu-economia",
+		description: "Alias de !mu-mercado",
+		category: "mudae",
+		group: "muwaifu-market",
+		reactions: { before: "🏛️", after: "📊", error: "❌" },
+		reply: true,
+		method: mercadoInfoCmd
+	}),
+	new Command({
+		name: "mu-investir",
+		description: "Adquire cotas de 25% de uma waifu livre ou adquire 100% com 4 cotas",
+		category: "mudae",
+		group: "muwaifu-investment",
+		needsArgs: true,
+		aliases: ["mu-lance", "mu-cota", "muinvestir", "mulance", "mucota"],
+		reactions: { before: "📈", after: "✅", error: "❌" },
+		reply: true,
+		method: investirWaifuCmd
+	}),
+	new Command({
+		name: "mu-investimentos",
+		description: "Lista todas as waifus em que você possui investimento ativo em cotas",
+		category: "mudae",
+		group: "muwaifu-investment",
+		aliases: ["mu-cotas", "mu-meus-investimentos", "muinvestimentos", "mucotas"],
+		reactions: { before: "💼", after: "✅", error: "❌" },
+		reply: true,
+		method: listarInvestimentosCmd
+	}),
+	new Command({
+		name: "mu-cotacao",
+		description: "Consulta cotação dinâmica de compra e cotas (25%) de um personagem",
+		category: "mudae",
+		group: "muwaifu-investment",
+		needsArgs: true,
+		aliases: ["mu-preco", "mu-valor", "mucotacao", "mupreco", "muvalor"],
+		reactions: { before: "📊", after: "✅", error: "❌" },
+		reply: true,
+		method: cotarWaifuCmd
 	}),
 	new Command({
 		name: "mu-ofertas",
@@ -6111,5 +6518,9 @@ module.exports = {
 	listarClassificadosCmd,
 	listarOfertasRecebidasCmd,
 	aceitarOfertaCmd,
-	negarOfertaCmd
+	negarOfertaCmd,
+	investirWaifuCmd,
+	listarInvestimentosCmd,
+	cotarWaifuCmd,
+	mercadoInfoCmd
 };
