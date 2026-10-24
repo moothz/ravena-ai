@@ -747,11 +747,13 @@ function registerInstancesRoutes(api) {
 				const fileContent = await fs.readFile(botsJsonPath, "utf8");
 				data = JSON.parse(fileContent);
 			} catch (readErr) {
-				if (readErr.code === "ENOENT") {
+				if (readErr.code !== "ENOENT") throw readErr;
+				if (!process.env.BOTS_JSON) {
 					api.logger.warn("bots.json not found, returning empty array.");
 					return res.json([]);
 				}
-				throw readErr;
+				// Sem bots.json: usa a variável BOTS_JSON (mesma regra do index.js)
+				data = JSON.parse(process.env.BOTS_JSON);
 			}
 
 			if (!Array.isArray(data)) {

@@ -2,69 +2,87 @@ const fs = require("fs");
 const path = require("path");
 const util = require("util");
 
-const logDir = path.join(__dirname, "../../logs");
-const fileDescriptors = new Map(); // name -> fd
-let rotationTimer = null;
-let currentDay = new Date().toISOString().split("T")[0];
+const LOG_DIR = path.join(__dirname, "../../logs");
+const FLUSH_INTERVAL_MS = 250;
+const MAX_BUFFER_BYTES = 256 * 1024;
+
+const today = () => new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+/**
+ * Arquivos de log compartilhados por nome: dezenas de Loggers com o mesmo nome
+ * usam um unico descritor, um buffer e uma unica rotacao.
+ * @type {Map<string, {fd: number|null, date: string, buffer: string[], size: number}>}
+ */
+const sinks = new Map();
+let flushTimer = null;
+let dirReady = false;
 
 function ensureLogDirectory() {
-	if (!fs.existsSync(logDir)) {
-		fs.mkdirSync(logDir, { recursive: true });
-	}
+	if (dirReady) return;
+	if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+	dirReady = true;
 }
 
-function getLogFile(name) {
-	if (fileDescriptors.has(name)) {
-		return fileDescriptors.get(name);
-	}
-	ensureLogDirectory();
-	const logFileName = `${currentDay}-${name}.log`;
-	const logFilePath = path.join(logDir, logFileName);
-	try {
-		const fd = fs.openSync(logFilePath, "a");
-		fileDescriptors.set(name, fd);
-		return fd;
-	} catch (error) {
-		console.error(`Erro ao abrir arquivo de log (${name}):`, error);
-		return null;
-	}
-}
-
-function closeAllLogFiles() {
-	for (const [name, fd] of fileDescriptors.entries()) {
+function openSink(name, sink) {
+	if (sink.fd !== null) {
 		try {
-			if (fd) fs.closeSync(fd);
+			fs.closeSync(sink.fd);
 		} catch (error) {
-			console.error(`Erro ao fechar arquivo de log (${name}):`, error);
+			console.error("Erro ao fechar arquivo de log:", error);
+		}
+		sink.fd = null;
+	}
+	try {
+		sink.fd = fs.openSync(path.join(LOG_DIR, `${sink.date}-${name}.log`), "a");
+	} catch (error) {
+		console.error("Erro ao abrir arquivo de log:", error);
+	}
+}
+
+function flushSink(name, sink) {
+	if (sink.buffer.length === 0) return;
+	const chunk = sink.buffer.join("");
+	sink.buffer = [];
+	sink.size = 0;
+	if (sink.fd === null) return;
+	try {
+		fs.writeSync(sink.fd, chunk);
+	} catch (error) {
+		console.error("Erro ao escrever no arquivo de log:", error);
+		openSink(name, sink); // tenta reabrir; o lote perdido nao e reenviado
+	}
+}
+
+function flushAll() {
+	for (const [name, sink] of sinks) flushSink(name, sink);
+}
+
+function tick() {
+	const date = today();
+	for (const [name, sink] of sinks) {
+		flushSink(name, sink);
+		if (sink.date !== date) {
+			sink.date = date;
+			openSink(name, sink);
 		}
 	}
-	fileDescriptors.clear();
 }
 
-function setupGlobalRotation() {
-	if (rotationTimer) return;
-	const now = new Date();
-	const tomorrow = new Date(now);
-	tomorrow.setDate(now.getDate() + 1);
-	tomorrow.setHours(0, 0, 0, 0);
-
-	const timeUntilMidnight = tomorrow - now;
-
-	rotationTimer = setTimeout(() => {
-		currentDay = new Date().toISOString().split("T")[0];
-		closeAllLogFiles();
-		rotationTimer = null;
-		setupGlobalRotation();
-	}, timeUntilMidnight);
-
-	if (rotationTimer.unref) {
-		rotationTimer.unref();
+function getSink(name) {
+	let sink = sinks.get(name);
+	if (!sink) {
+		ensureLogDirectory();
+		sink = { fd: null, date: today(), buffer: [], size: 0 };
+		sinks.set(name, sink);
+		openSink(name, sink);
+		if (!flushTimer) {
+			flushTimer = setInterval(tick, FLUSH_INTERVAL_MS);
+			flushTimer.unref();
+			process.on("exit", flushAll);
+		}
 	}
+	return sink;
 }
-
-// Inicializa diretório e agendador global de rotação
-ensureLogDirectory();
-setupGlobalRotation();
 
 /**
  * Utilitário de Logger para registrar mensagens no console e arquivo
@@ -77,6 +95,7 @@ class Logger {
 	constructor(name) {
 		this.name = name;
 		this.debugMode = process.env.DEBUG === "true";
+		this.sink = getSink(name);
 	}
 
 	/**
@@ -117,14 +136,10 @@ class Logger {
 		console[consoleMethod](logMessage);
 
 		// Registra no arquivo
-		const logFd = getLogFile(this.name);
-		if (logFd) {
-			try {
-				fs.writeSync(logFd, logMessage + "\n");
-			} catch (error) {
-				console.error("Erro ao escrever no arquivo de log:", error);
-			}
-		}
+		const sink = this.sink;
+		sink.buffer.push(logMessage + "\n");
+		sink.size += logMessage.length;
+		if (sink.size >= MAX_BUFFER_BYTES) flushSink(this.name, sink);
 	}
 
 	/**

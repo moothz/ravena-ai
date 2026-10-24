@@ -1,5 +1,3 @@
-const qrcode = require("qrcode-terminal");
-const qrimg = require("qr-image");
 const { randomBytes } = require("crypto");
 const imagemagick = require("imagemagick");
 const ffmpeg = require("fluent-ffmpeg");
@@ -1787,7 +1785,9 @@ class WhatsAppBotGo {
 			const statusData = response?.data;
 			// Connected = websocket WA estabelecido; LoggedIn = sessão autenticada
 			const wsConnected = !!statusData?.Connected;
-			this.isConnected = wsConnected && !!statusData?.LoggedIn;
+			const loggedIn = wsConnected && !!statusData?.LoggedIn;
+			// isConnected = true fica a cargo do _onInstanceConnected, senão ele retorna cedo e não dispara onConnected
+			if (!loggedIn) this.isConnected = false;
 
 			const instanceDetails = { version: this.version, tipo: "whatsgoapi" };
 			const extra = {};
@@ -1797,7 +1797,7 @@ class WhatsAppBotGo {
 			}
 
 			// Totalmente conectado e logado
-			if (this.isConnected) {
+			if (loggedIn) {
 				this._onInstanceConnected();
 				extra.ok = true;
 				this.connectDataCache = null;
@@ -2038,7 +2038,7 @@ class WhatsAppBotGo {
 
 				case "Message": // Mensagens e reactions
 				case "SendMessage": {
-					this.isConnected = true;
+					if (!this.isConnected) this._onInstanceConnected();
 					this.lastMessageReceived = Date.now();
 					const msgData = payload.data;
 

@@ -1,6 +1,10 @@
 // Carrega variáveis de ambiente do arquivo .env
 require("dotenv").config();
 
+// Axios nao tem timeout por padrao: uma API externa travada deixaria o comando pendurado para sempre.
+// O timeout do axios (Node) e de inatividade do socket, entao downloads grandes que fluem nao sao afetados.
+require("axios").defaults.timeout = parseInt(process.env.HTTP_DEFAULT_TIMEOUT_MS, 10) || 60000;
+
 const TelegramBot = require("./src/TelegramBot");
 const WhatsAppBotGo = require("./src/WhatsAppBotGo");
 const DiscordBot = require("./src/DiscordBot");
@@ -58,7 +62,21 @@ async function main() {
 		// Monitor de estabilidade também é compartilhado
 		//const stabilityMonitor = new StabilityMonitor({instances: botInstances})
 
-		const rBots = JSON.parse(fs.readFileSync("bots.json", "utf8")) || [];
+		// bots.json tem prioridade; sem ele (ex: deploy em container/PaaS), usa a variável BOTS_JSON
+		let botsSource = "bots.json";
+		let botsRaw;
+		if (fs.existsSync("bots.json")) {
+			botsRaw = fs.readFileSync("bots.json", "utf8");
+		} else if (process.env.BOTS_JSON) {
+			botsSource = "BOTS_JSON";
+			botsRaw = process.env.BOTS_JSON;
+		} else {
+			throw new Error(
+				"Nenhuma configuração de bots: crie o bots.json ou defina a variável BOTS_JSON."
+			);
+		}
+		logger.info(`Carregando configuração de bots de ${botsSource}`);
+		const rBots = JSON.parse(botsRaw) || [];
 
 		if (rBots.length == 0) {
 			logger.info(`Nenhum bot definido no bots.json.`);
@@ -312,8 +330,17 @@ async function main() {
 	}
 
 	// Manipula encerramento do programa sequencialmente para evitar corrupção de arquivos
+	let shuttingDown = false;
 	const shutdown = async (signal) => {
+		if (shuttingDown) return;
+		shuttingDown = true;
 		logger.info(`Desligando bots e servidor API (${signal})...`);
+
+		// Garante que o processo termina mesmo se algum passo travar (evita processo zumbi segurando os bancos SQLite)
+		setTimeout(() => {
+			logger.error("Encerramento excedeu o tempo limite, forcando saida.");
+			process.exit(1);
+		}, 25000).unref();
 
 		// Para o scheduler de status
 		if (statusScheduler) {
@@ -374,16 +401,15 @@ async function main() {
 	process.on("SIGINT", () => shutdown("SIGINT"));
 	process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-	process.on("unhandledRejection", (reason, p) => {
+	process.on("unhandledRejection", (reason) => {
 		logger.warn("---- Rejection não tratada ");
-		logger.warn(p);
-		logger.warn(reason.stack);
+		logger.warn(reason instanceof Error ? reason.stack : String(reason));
 		logger.warn("---- Fim ");
 	});
 
 	process.on("uncaughtException", (err) => {
 		logger.error("---- Erro Não tratado ");
-		logger.error(err.stack);
+		logger.error(err instanceof Error ? err.stack : String(err));
 		logger.error("---- Fim ");
 	});
 }

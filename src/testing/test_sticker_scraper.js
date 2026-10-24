@@ -20,6 +20,7 @@ async function runTests() {
 	function clearCooldowns() {
 		try {
 			cmdHandler.database.mappers.run("cooldowns", "DELETE FROM cooldowns");
+			cmdHandler.cooldownCache.clear();
 		} catch {}
 	}
 

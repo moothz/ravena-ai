@@ -158,6 +158,14 @@ database.addLoadReport(reportObj)
 - **Local**: cópias agendadas em `data/backups/` (0h, 6h, 12h, 18h por padrão)
 - **Remoto**: sincronização MySQL via `SQLITE_REMOTE_SERVERS` no `.env` (inicia **5 minutos** após o bot subir)
 - **Restauração**: em caso de corrupção (`SQLITE_CORRUPT`), o `DatabaseBackup` restaura automaticamente do backup mais recente
+- **Compactação**: com `BACKUP_GZIP=true` cada `.db` do backup é salvo como `.db.gz`. A restauração aceita `.db` e `.db.gz` (descompacta para um temporário, roda `integrity_check` e remove o temporário)
+- Os `-wal`/`-shm`/`-journal` de bancos copiados pela API de backup online não são copiados (já estão incluídos no backup)
+
+## Journal (WAL)
+
+Todas as conexões passam por `DatabaseMappers._applyPragmas()`: `journal_mode=WAL`, `synchronous=NORMAL` e `busy_timeout=5000`.
+Para voltar ao modo antigo use `SQLITE_JOURNAL_MODE=DELETE` (aplica `synchronous=FULL`).
+Os prepared statements são reutilizados por conexão (cache de até 500 SQLs distintos).
 
 Para resetar o banco remoto após migrações de schema:
 ```bash

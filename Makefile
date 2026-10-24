@@ -77,7 +77,7 @@ generate-secrets: ## Gera o .env a partir do .env.example com segredos e inputs 
 		sed -i "s|POSTGRES_PASSWORD=whatsgo_password|POSTGRES_PASSWORD=$$PG_PASS|g" .env; \
 		printf "$(GREEN)  POSTGRES_PASSWORD gerada$(NC)\n"
 	@MINIO_PASS=$$(openssl rand -hex 16); \
-		sed -i "s|MINIO_SECRET_KEY=minioadmin_password|MINIO_SECRET_KEY=$$MINIO_PASS|g" .env; \
+		sed -i "s|MINIO_SECRET_KEY=storage_password|MINIO_SECRET_KEY=$$MINIO_PASS|g" .env; \
 		printf "$(GREEN)  MINIO_SECRET_KEY gerada$(NC)\n"
 	@printf "\n"
 	@printf "$(YELLOW)⚠️  Arquivo .env criado com suas preferências.$(NC)\n"
@@ -116,8 +116,8 @@ restart-api: ## Reinicia apenas o whatsgoapi
 restart-db: ## Reinicia apenas o banco de dados (postgres)
 	docker compose restart postgres
 
-restart-minio: ## Reinicia apenas o storage (minio)
-	docker compose restart minio
+restart-storage: ## Reinicia apenas o storage S3 (rustfs)
+	docker compose restart rustfs
 
 restart-rembg: ## Reinicia apenas o serviço rembg
 	docker compose restart rembg
@@ -145,7 +145,7 @@ build: ## Constrói todas as imagens Docker
 	docker compose build
 
 pull: ## Baixa as imagens base mais recentes
-	docker compose pull postgres minio
+	docker compose pull postgres rustfs
 
 logs: ## Exibe os logs de todos os serviços
 	docker compose logs -f --tail 100
@@ -162,8 +162,8 @@ logs-api: ## Exibe os logs do whatsgoapi
 logs-db: ## Exibe os logs do banco de dados (postgres)
 	docker compose logs -f --tail 100 postgres
 
-logs-minio: ## Exibe os logs do storage (minio)
-	docker compose logs -f --tail 100 minio
+logs-storage: ## Exibe os logs do storage S3 (rustfs)
+	docker compose logs -f --tail 100 rustfs
 
 logs-rembg: ## Exibe os logs do serviço de remoção de fundo (rembg)
 	docker compose logs -f --tail 100 rembg
