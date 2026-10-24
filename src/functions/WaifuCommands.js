@@ -76,7 +76,7 @@ function getExclusiveClaimWindowMs(rarity) {
 
 // Emojis numéricos para reações e identificadores visuais (1 a 9)
 const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣"];
 const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️"];
 
 /**
@@ -86,6 +86,9 @@ const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", 
  */
 function getSlotNumberFromEmoji(emoji) {
 	if (!emoji || typeof emoji !== "string") return null;
+	const clean = emoji.replace(/[\uFE0F\u200D]/g, "");
+	const match = clean.match(/^([1-9])\u20E3?$/);
+	if (match) return parseInt(match[1], 10);
 	let idx = NUMBER_EMOJIS.indexOf(emoji);
 	if (idx === -1) idx = NUMBER_EMOJIS2.indexOf(emoji);
 	if (idx === -1) idx = NUMBER_EMOJIS3.indexOf(emoji);
@@ -1808,7 +1811,7 @@ async function casarWaifu(bot, message, args) {
 	// 1. Se informou um ID/slug de personagem ou número de slot diretamente como argumento
 	if (args && args[0]) {
 		const argVal = args[0].trim();
-		if (/^[1-9]$/.test(argVal)) {
+		if (/^\d+$/.test(argVal)) {
 			const slotNum = parseInt(argVal, 10);
 			let targetSlots = null;
 			let quotedMsg = null;
@@ -1821,6 +1824,17 @@ async function casarWaifu(bot, message, args) {
 				if (rollData?.slots || rollData?.characters) {
 					targetSlots = rollData.slots || rollData.characters;
 				}
+				if (!targetSlots) {
+					const quotedText =
+						quotedMsg.caption ||
+						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+						quotedMsg.body ||
+						"";
+					const extracted = extractMultiRollSlotsFromText(quotedText);
+					if (extracted && extracted.length > 0) {
+						targetSlots = extracted;
+					}
+				}
 			}
 			if (!targetSlots) {
 				const pending = pendingClaims.get(groupId);
@@ -1831,9 +1845,35 @@ async function casarWaifu(bot, message, args) {
 			if (targetSlots) {
 				const foundSlot = targetSlots.find((s) => s.slot === slotNum);
 				if (foundSlot) {
-					characterId = foundSlot.characterId;
+					if (foundSlot.available === false) {
+						return new ReturnMessage({
+							chatId,
+							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já possui um dono!`,
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
+					}
+					if (foundSlot.claimed) {
+						return new ReturnMessage({
+							chatId,
+							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já foi casado por outro jogador!`,
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
+					}
+					characterId = foundSlot.characterId || foundSlot.characterName;
 					matchedRoll = foundSlot;
+				} else {
+					return new ReturnMessage({
+						chatId,
+						content: `❌ Slot ${slotNum} não encontrado nesta rolagem!`,
+						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+					});
 				}
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Nenhuma rolagem com múltiplos personagens encontrada para o slot ${slotNum}!`,
+					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+				});
 			}
 		} else if (/^[a-zA-Z0-9_-]+$/.test(argVal)) {
 			characterId = argVal;
@@ -1842,6 +1882,31 @@ async function casarWaifu(bot, message, args) {
 				(pendingClaims.get(groupId)?.characterId === characterId
 					? pendingClaims.get(groupId)
 					: null);
+			if (!matchedRoll) {
+				let quotedMsg = null;
+				if (typeof message.origin?.getQuotedMessage === "function") {
+					quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+				}
+				if (quotedMsg) {
+					const quotedText =
+						quotedMsg.caption ||
+						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+						quotedMsg.body ||
+						"";
+					const extracted = extractMultiRollSlotsFromText(quotedText);
+					if (extracted && extracted.length > 0) {
+						const found = extracted.find(
+							(s) =>
+								s.characterId?.toLowerCase() === characterId.toLowerCase() ||
+								s.characterName?.toLowerCase() === characterId.toLowerCase()
+						);
+						if (found) {
+							matchedRoll = found;
+							if (found.characterId) characterId = found.characterId;
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -1863,6 +1928,15 @@ async function casarWaifu(bot, message, args) {
 				(typeof message.content === "string" ? message.content : "") ||
 				message.body ||
 				"";
+			// Se o texto indicar multi-roll e a reação for 💍, ignorar!
+			const textSlots = extractMultiRollSlotsFromText(text);
+			if (
+				textSlots.length > 1 ||
+				/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
+				(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1
+			) {
+				return false;
+			}
 			const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
 			if (match) {
 				characterId = match[1];
@@ -1875,8 +1949,8 @@ async function casarWaifu(bot, message, args) {
 		}
 	}
 
-	// 3. Se a chamada citou uma mensagem (quotedMessage)
-	if (!characterId) {
+	// 3. Se a chamada citou uma mensagem (quotedMessage) SEM argumentos
+	if (!characterId && (!args || !args[0])) {
 		let quotedMsg = null;
 		if (typeof message.origin?.getQuotedMessage === "function") {
 			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
@@ -1899,6 +1973,12 @@ async function casarWaifu(bot, message, args) {
 								"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
 							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 						});
+					} else {
+						return new ReturnMessage({
+							chatId,
+							content: "❌ Todos os personagens desta rolagem já foram casados!",
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
 					}
 				} else {
 					characterId = rollData.characterId;
@@ -1910,21 +1990,35 @@ async function casarWaifu(bot, message, args) {
 					(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
 					quotedMsg.body ||
 					"";
-				const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
-				if (match) {
-					characterId = match[1];
-					matchedRoll =
-						activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
-						(pendingClaims.get(groupId)?.characterId === characterId
-							? pendingClaims.get(groupId)
-							: null);
+				const textSlots = extractMultiRollSlotsFromText(text);
+				if (
+					textSlots.length > 1 ||
+					/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
+					(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1
+				) {
+					return new ReturnMessage({
+						chatId,
+						content:
+							"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+					});
+				} else {
+					const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
+					if (match) {
+						characterId = match[1];
+						matchedRoll =
+							activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+							(pendingClaims.get(groupId)?.characterId === characterId
+								? pendingClaims.get(groupId)
+								: null);
+					}
 				}
 			}
 		}
 	}
 
-	// 4. Fallback: busca na janela de claim mais recente do grupo
-	if (!characterId) {
+	// 4. Fallback: busca na janela de claim mais recente do grupo SEM argumentos
+	if (!characterId && (!args || !args[0])) {
 		const pending = pendingClaims.get(groupId);
 		if (!pending || Date.now() > pending.expiresAt) {
 			return new ReturnMessage({
@@ -2000,7 +2094,19 @@ async function casarWaifu(bot, message, args) {
 			platform: "WHATSAPP"
 		});
 
-		pendingClaims.delete(groupId);
+		if (matchedRoll?.isMultiRoll || pendingClaims.get(groupId)?.isMultiRoll) {
+			const pending = pendingClaims.get(groupId);
+			if (pending?.slots) {
+				const s = pending.slots.find((x) => x.characterId === characterId);
+				if (s) s.claimed = true;
+				const allFreeClaimed = pending.slots.filter((x) => x.available).every((x) => x.claimed);
+				if (allFreeClaimed) {
+					pendingClaims.delete(groupId);
+				}
+			}
+		} else {
+			pendingClaims.delete(groupId);
+		}
 		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
@@ -2036,7 +2142,46 @@ async function processWaifuReaction(bot, message, args, group) {
 	if (!slot) return false;
 
 	const targetMsgId = message.id || reaction.msgId?._serialized || reaction.msgId;
-	const rollData = getRollByMessageId(targetMsgId);
+	let rollData = getRollByMessageId(targetMsgId);
+
+	// Se não encontrou no cache de mensagem, tenta reconstruir a partir do texto
+	if (!rollData) {
+		const text =
+			message.caption ||
+			(typeof message.content === "string" ? message.content : "") ||
+			message.body ||
+			"";
+		const textSlots = extractMultiRollSlotsFromText(text);
+		if (textSlots.length > 0) {
+			rollData = {
+				isMultiRoll: true,
+				groupId: getGroupId(message),
+				slots: textSlots.map((s) => {
+					const exclMs = getExclusiveClaimWindowMs(s.rarity);
+					return {
+						slot: s.slot,
+						characterId: s.characterId,
+						characterName: s.characterName,
+						series: s.series,
+						rarity: s.rarity,
+						available: true,
+						claimed: false,
+						exclusiveUntil: exclMs > 0 ? Date.now() + exclMs : null
+					};
+				})
+			};
+		} else if (slot === 1) {
+			const singleCharId = extractCharacterFromRollText(text);
+			if (singleCharId) {
+				rollData = {
+					isMultiRoll: false,
+					characterId: singleCharId,
+					groupId: getGroupId(message)
+				};
+			}
+		}
+	}
+
 	if (!rollData) return false;
 
 	const chatId = message.group ?? message.author;
@@ -5939,6 +6084,9 @@ module.exports = {
 	EXCLUSIVE_CLAIM_WINDOWS,
 	getExclusiveClaimWindowMs,
 	NUMBER_EMOJIS,
+	NUMBER_EMOJIS2,
+	NUMBER_EMOJIS3,
+	getSlotNumberFromEmoji,
 	buildRollGridImage,
 	downloadImageBuffer,
 	processWaifuReaction,
