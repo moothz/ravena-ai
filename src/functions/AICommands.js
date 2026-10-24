@@ -783,6 +783,32 @@ async function aiCommand(bot, message, args, group) {
 		systemContext = `Nome de quem enviou o prompt: ${promptAutor}\n\n` + systemContext;
 	}
 
+	// Injeção de Memória Semântica Contínua (RME)
+	let userMemoryCtx = "";
+	let groupMemoryCtx = "";
+	try {
+		const MemoryService = require("../services/MemoryService");
+		const memoryService = MemoryService.getInstance();
+
+		userMemoryCtx = await memoryService.getUserContextForPrompt(message.author, question);
+
+		if (message.group) {
+			groupMemoryCtx = await memoryService.getGroupContextForPrompt(message.group);
+		}
+	} catch (memErr) {
+		logger.debug(`[aiCommand] Erro ao recuperar memória RME: ${memErr.message}`);
+	}
+
+	const memoryGuidelines = `
+((DIRETRIZES DE USO DA MEMÓRIA)):
+- Você possui memórias reais sobre este interlocutor e este grupo listadas acima.
+- Use essas informações de maneira sutil, orgânica e bem-humorada, de acordo com a sua personalidade.
+- Se a pessoa perguntar diretamente o que você sabe sobre ela, quem ela é, ou pedir opiniões pessoais, cite os fatos memorizados com naturalidade.
+- NUNCA mencione termos técnicos como "banco de dados", "fatos gravados", "tabela", "embeddings" ou "sistema de memória". Fale como se você realmente convivesse com a pessoa e lembrasse das conversas.
+`;
+
+	systemContext = `${systemContext}\n${userMemoryCtx}\n${groupMemoryCtx}\n${memoryGuidelines}`;
+
 	// Execute LLM Request
 	const completionOptions = {
 		prompt: question,

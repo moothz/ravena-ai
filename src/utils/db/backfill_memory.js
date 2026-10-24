@@ -71,6 +71,7 @@ async function runPhase2(maxUsers = 30) {
 			if (sampleText.length < 20) continue;
 
 			const canonicalId = `user_${a.author.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+			await memoryService.resolveCanonicalUserId("whatsapp", a.author, "pushname", a.author);
 
 			const prompt = `Analise as mensagens abaixo enviadas por "${a.author}" em grupos de WhatsApp.
 Extraia de 2 a 3 fatos objetivos, preferências, profissão, hobbies ou traços de comportamento duráveis sobre essa pessoa.

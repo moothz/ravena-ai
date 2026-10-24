@@ -75,6 +75,8 @@ class Group {
 		this.nicks = data.nicks ?? [];
 		this.warnings = data.warnings ?? [];
 		this.customAIPrompt = data.customAIPrompt ?? [];
+		this.dinamicPersonality =
+			data.dinamicPersonality !== undefined ? Boolean(data.dinamicPersonality) : true;
 		this.notificaGrupoFechado = data.notificaGrupoFechado ?? false;
 		this.notificaGrupoAberto = data.notificaGrupoAberto ?? false;
 		this.banirSpammers = data.banirSpammers ?? false;
@@ -124,6 +126,7 @@ class Group {
 			nicks: this.nicks,
 			warnings: this.warnings,
 			customAIPrompt: this.customAIPrompt,
+			dinamicPersonality: this.dinamicPersonality,
 			notificaGrupoFechado: this.notificaGrupoFechado,
 			notificaGrupoAberto: this.notificaGrupoAberto,
 			banirSpammers: this.banirSpammers,
@@ -212,6 +215,8 @@ class Group {
 		if (data.nicks) this.nicks = data.nicks;
 		if (data.warnings) this.warnings = data.warnings;
 		if (data.customAIPrompt) this.customAIPrompt = data.customAIPrompt;
+		if (typeof data.dinamicPersonality === "boolean")
+			this.dinamicPersonality = data.dinamicPersonality;
 		if (typeof data.notificaGrupoFechado === "boolean")
 			this.notificaGrupoFechado = data.notificaGrupoFechado;
 		if (typeof data.notificaGrupoAberto === "boolean")

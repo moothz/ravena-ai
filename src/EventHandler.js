@@ -1977,6 +1977,7 @@ Retorne um JSON com dois campos:
 												.toWellFormed();
 										}
 										group.customAIPrompt = personality;
+										group.dinamicPersonality = true;
 										await this.database.saveGroup(group);
 										this.logger.info(
 											`[groupJoin] Personalidade definida para '${group.name}': ${group.customAIPrompt}`

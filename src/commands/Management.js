@@ -322,6 +322,11 @@ class Management {
 				method: "setPersonalidadeIA",
 				description: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)"
 			},
+			personalidadeDinamica: {
+				method: "togglePersonalidadeDinamica",
+				description:
+					"Ativa/desativa a personalidade dinâmica da IA (adaptação contínua conforme o grupo)"
+			},
 			setApelido: {
 				method: "setUserNicknameAdmin",
 				description: "Define apelido de *outro membro* no grupo (@marcar_pessoa)"
@@ -3199,18 +3204,57 @@ class Management {
 			group.customAIPrompt = newPrompt;
 		}
 
-		// Alterna estado do filtro
+		// Desativa personalidade dinâmica ao definir manualmente
+		group.dinamicPersonality = false;
 		await this.database.saveGroup(group);
+
+		const avisoDinamica =
+			"\n\n🔒 _Personalidade dinâmica desativada para manter sua configuração manual. Use !g-personalidadeDinamica para reativar._";
 
 		if (group.customAIPrompt.length > 0) {
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `✅🤖 Personalidade IA definida como: \`${group.customAIPrompt}\``
+				content: `✅🤖 Personalidade IA definida como: \`${group.customAIPrompt}\`${avisoDinamica}`
 			});
 		} else {
 			return new ReturnMessage({
 				chatId: group.id,
-				content: "❌🤖 A personalidade IA foi removida, usando padrão"
+				content: `❌🤖 A personalidade IA foi removida, usando padrão.${avisoDinamica}`
+			});
+		}
+	}
+
+	/**
+	 * Alterna a personalidade dinâmica da IA no grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async togglePersonalidadeDinamica(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		group.dinamicPersonality =
+			group.dinamicPersonality === undefined ? false : !group.dinamicPersonality;
+		await this.database.saveGroup(group);
+
+		if (group.dinamicPersonality) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"✅🤖 *Personalidade Dinâmica ATIVADA!*\nA Ravena agora irá atualizar e adaptar sua personalidade periodicamente com base nas conversas, gírias e cultura observadas no grupo."
+			});
+		} else {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"🔒🤖 *Personalidade Dinâmica DESATIVADA!*\nA personalidade atual da Ravena neste grupo foi congelada e não mudará mais automaticamente."
 			});
 		}
 	}
@@ -9637,6 +9681,12 @@ const helper = {
 			cmd: "!g-setPersonalidade",
 			desc: "Define uma personalidade para os comandos de IA (max. 1500 caracteres)",
 			usage: ["!g-setPersonalidade"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-personalidadeDinamica",
+			desc: "Ativa/desativa a personalidade dinâmica da IA (adaptação contínua ao grupo)",
+			usage: ["!g-personalidadeDinamica"],
 			category: "gerenciamento"
 		},
 		{

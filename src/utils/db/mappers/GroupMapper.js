@@ -96,6 +96,10 @@ const GroupMapper = {
 			})(),
 			notificaGrupoFechado: !!row.notifica_grupo_fechado,
 			notificaGrupoAberto: !!row.notifica_grupo_aberto,
+			dinamicPersonality:
+				row.dinamic_personality !== undefined && row.dinamic_personality !== null
+					? Boolean(row.dinamic_personality)
+					: (parse(row.json_data, {}).dinamicPersonality ?? true),
 			banirSpammers: !!row.banir_spammers,
 			spammerWhitelist: parse(row.spammer_whitelist, []),
 			bannedUsers: parse(row.banned_users, parse(row.json_data, {}).bannedUsers || []),
@@ -171,6 +175,8 @@ const GroupMapper = {
 			})(),
 			notifica_grupo_fechado: obj.notificaGrupoFechado ? 1 : 0,
 			notifica_grupo_aberto: obj.notificaGrupoAberto ? 1 : 0,
+			dinamic_personality:
+				obj.dinamicPersonality !== undefined ? (obj.dinamicPersonality ? 1 : 0) : 1,
 			banir_spammers: obj.banirSpammers ? 1 : 0,
 			spammer_whitelist: s(obj.spammerWhitelist || obj.allowedSpammers || []),
 			banned_users: s(obj.bannedUsers || []),

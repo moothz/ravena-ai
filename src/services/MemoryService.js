@@ -389,6 +389,7 @@ class MemoryService {
    - 'type': uma palavra que define o tema (ex: 'jogos', 'politica', 'escola', 'musica', 'zoeira', 'geral').
    - 'summary': resumo conciso em até 200 caracteres dos assuntos principais discutidos.
    - 'vibe': atmosfera observada (ex: 'amigável', 'debochado', 'tenso', 'estudioso').
+   - 'suggested_bot_personality': instrução de 1 a 3 frases em pt-BR definindo como o bot Ravena deve se comportar e falar neste grupo específico, incorporando a vibe, gírias e humor observados.
    - 'frequent_topics': lista de até 4 tópicos debatidos (ex: ['Steam', 'Counter-Strike', 'Faculdade']).
    - 'is_underage': marque como true SOMENTE se comprovadamente for grupo de crianças ou adolescentes de ATÉ 16 ANOS. (ATENÇÃO: pessoas de 17 anos ou mais NUNCA são adolescentes/crianças!).
    - 'underage_indicators': lista de evidências de idade até 16 anos se is_underage for true.
@@ -420,6 +421,7 @@ ${textToAnalyze}`;
 									type: { type: "string" },
 									summary: { type: "string" },
 									vibe: { type: "string" },
+									suggested_bot_personality: { type: "string" },
 									frequent_topics: { type: "array", items: { type: "string" } },
 									is_underage: { type: "boolean" },
 									underage_indicators: { type: "array", items: { type: "string" } },
@@ -544,6 +546,26 @@ ${textToAnalyze}`;
 						targetId
 					]
 				);
+
+				// Atualização da Personalidade Dinâmica do Grupo
+				try {
+					const groupObj = await this.database.getGroup(targetId);
+					if (groupObj && groupObj.dinamicPersonality !== false) {
+						const dynamicHint = groupEval.suggested_bot_personality;
+						if (dynamicHint && typeof dynamicHint === "string" && dynamicHint.trim().length > 10) {
+							groupObj.customAIPrompt = dynamicHint.trim().slice(0, 1500);
+							await this.database.saveGroup(groupObj);
+							this.logger.info(
+								`[${targetId}] Personalidade dinâmica adaptada com sucesso: "${groupObj.customAIPrompt}"`
+							);
+						}
+					}
+				} catch (dynErr) {
+					this.logger.warn(
+						`[${targetId}] Falha ao adaptar personalidade dinâmica:`,
+						dynErr.message
+					);
+				}
 
 				// Dispara alerta se elegível
 				if (bot && isAlertEligible) {
@@ -770,44 +792,87 @@ ${textToAnalyze}`;
 	}
 
 	/**
-	 * Compila o Dossiê 360 Completo de uma pessoa
-	 * @param {string} query - Telefone, JID, LID, Telegram ID, nome ou canonical_user_id
+	 * Compila o Dossiê 360 Completo de uma pessoa buscando estritamente pelo canonical_user_id
+	 * @param {string} target - canonical_user_id (ex: 'wa_55...', 'user_...'), platform_id (JID, LID) ou telefone
 	 * @returns {Promise<Object|null>} Dossiê 360 estruturado
 	 */
-	async getUser360(query) {
-		if (!query) return null;
-		const cleanQuery = String(query).trim();
-		const cleanPhone = this.cleanPhone(cleanQuery);
+	async getUser360(target) {
+		if (!target) return null;
+		const cleanTarget = String(target).trim();
 
 		try {
-			// 1. Localiza a identidade
-			const identity = await this.database.dbGet(
+			let canonicalId = null;
+			let primaryIdentity = null;
+
+			// 1. Prioridade Máxima: Correspondência EXATA por canonical_user_id
+			primaryIdentity = await this.database.dbGet(
 				DB_NAME,
-				`SELECT * FROM memory_identities 
-				 WHERE canonical_user_id = ? OR platform_id = ? OR platform_id LIKE ? OR display_name LIKE ?
-				 LIMIT 1`,
-				[cleanQuery, cleanQuery, `%${cleanPhone}%`, `%${cleanQuery}%`]
+				"SELECT * FROM memory_identities WHERE canonical_user_id = ? LIMIT 1",
+				[cleanTarget]
 			);
 
-			const canonicalId =
-				identity?.canonical_user_id || (cleanPhone ? `wa_${cleanPhone}` : cleanQuery);
+			if (primaryIdentity) {
+				canonicalId = primaryIdentity.canonical_user_id;
+			} else {
+				// 2. Correspondência EXATA por platform_id (JID ou LID exatos)
+				primaryIdentity = await this.database.dbGet(
+					DB_NAME,
+					"SELECT * FROM memory_identities WHERE platform_id = ? LIMIT 1",
+					[cleanTarget]
+				);
+				if (primaryIdentity) {
+					canonicalId = primaryIdentity.canonical_user_id;
+				}
+			}
 
-			// 2. Busca todas as identidades vinculadas
+			// 3. Telefone numérico limpo (apenas se tiver 8+ dígitos)
+			if (!canonicalId) {
+				const cleanPhone = this.cleanPhone(cleanTarget);
+				if (cleanPhone && cleanPhone.length >= 8) {
+					primaryIdentity = await this.database.dbGet(
+						DB_NAME,
+						"SELECT * FROM memory_identities WHERE canonical_user_id = ? OR platform_id LIKE ? LIMIT 1",
+						[`wa_${cleanPhone}`, `%${cleanPhone}%`]
+					);
+					canonicalId = primaryIdentity ? primaryIdentity.canonical_user_id : `wa_${cleanPhone}`;
+				}
+			}
+
+			// 4. Verificação direta em fatos semânticos caso a identidade não tenha sido persistida
+			if (!canonicalId) {
+				const factExists = await this.database.dbGet(
+					DB_NAME,
+					"SELECT id FROM memory_user_facts WHERE canonical_user_id = ? LIMIT 1",
+					[cleanTarget]
+				);
+				if (factExists) {
+					canonicalId = cleanTarget;
+				}
+			}
+
+			if (!canonicalId) return null;
+
+			// 5. Busca todas as identidades vinculadas
 			const allIdentities = await this.database.dbAll(
 				DB_NAME,
 				"SELECT platform, platform_id, id_type, display_name FROM memory_identities WHERE canonical_user_id = ?",
 				[canonicalId]
 			);
 
-			// 3. Fatos semânticos memorizados
+			// 6. Fatos semânticos memorizados (busca estrita pelo canonicalId)
 			const facts = await this.database.dbAll(
 				DB_NAME,
-				"SELECT fact_text, category, confidence, source_type, last_confirmed_at FROM memory_user_facts WHERE canonical_user_id = ? ORDER BY last_confirmed_at DESC LIMIT 20",
+				`SELECT fact_text, category, confidence, source_type, last_confirmed_at 
+				 FROM memory_user_facts 
+				 WHERE canonical_user_id = ? 
+				 ORDER BY last_confirmed_at DESC LIMIT 30`,
 				[canonicalId]
 			);
 
-			// 4. Jogos da Ravena (Pesca, Slots, Roleta, Doações)
-			const userPhone = cleanPhone || (identity ? this.cleanPhone(identity.platform_id) : "");
+			// 7. Jogos da Ravena (Pesca, Slots, Roleta, Doações)
+			const userPhone =
+				this.cleanPhone(canonicalId) ||
+				(primaryIdentity ? this.cleanPhone(primaryIdentity.platform_id) : "");
 			let fishingData = null;
 			let slotsData = null;
 			let donationData = null;
@@ -815,7 +880,7 @@ ${textToAnalyze}`;
 			let afkData = [];
 			let relationshipData = [];
 
-			if (userPhone) {
+			if (userPhone && userPhone.length >= 8) {
 				try {
 					fishingData = await this.database.dbGet(
 						"fishing",
@@ -836,7 +901,7 @@ ${textToAnalyze}`;
 					donationData = await this.database.dbGet(
 						"core",
 						"SELECT name, valor, timestamp FROM donations WHERE numero = ? OR name = ?",
-						[userPhone, identity?.display_name || ""]
+						[userPhone, primaryIdentity?.display_name || ""]
 					);
 				} catch (e) {}
 
@@ -865,7 +930,7 @@ ${textToAnalyze}`;
 				} catch (e) {}
 			}
 
-			// 5. Grupos onde já interagiu no buffer
+			// 8. Grupos onde já interagiu no buffer
 			const activeGroups = await this.database.dbAll(
 				DB_NAME,
 				`SELECT target_id, COUNT(*) as msgs_count 
@@ -877,7 +942,10 @@ ${textToAnalyze}`;
 
 			return {
 				canonical_user_id: canonicalId,
-				display_name: identity?.display_name || userPhone || "Membro",
+				display_name:
+					primaryIdentity?.display_name ||
+					userPhone ||
+					canonicalId.replace(/^user_/, "").replace(/_/g, " "),
 				identities: allIdentities || [],
 				facts: facts || [],
 				games: {
@@ -891,8 +959,163 @@ ${textToAnalyze}`;
 				active_groups: activeGroups || []
 			};
 		} catch (error) {
-			this.logger.error(`Erro ao gerar User360 para ${query}:`, error);
+			this.logger.error(`Erro ao gerar User360 para ${target}:`, error);
 			return null;
+		}
+	}
+
+	/**
+	 * Busca fatos semânticos de um usuário mais relevantes para uma determinada pergunta
+	 * @param {string} canonicalUserId
+	 * @param {string} queryText
+	 * @param {number} [topK=6]
+	 * @returns {Promise<Array<Object>>}
+	 */
+	async searchRelevantUserFacts(canonicalUserId, queryText, topK = 6) {
+		try {
+			const facts = await this.database.dbAll(
+				DB_NAME,
+				"SELECT id, fact_text, embedding, category, last_confirmed_at FROM memory_user_facts WHERE canonical_user_id = ?",
+				[canonicalUserId]
+			);
+			if (!facts || facts.length === 0) return [];
+
+			if (!queryText || queryText.trim().length < 4) {
+				return facts.sort((a, b) => b.last_confirmed_at - a.last_confirmed_at).slice(0, topK);
+			}
+
+			const queryVec = await this.embeddingService.getEmbedding(queryText);
+			if (!queryVec) {
+				return facts.sort((a, b) => b.last_confirmed_at - a.last_confirmed_at).slice(0, topK);
+			}
+
+			const scored = [];
+			for (const f of facts) {
+				let score = 0;
+				if (f.embedding) {
+					const fVec = this.embeddingService.bufferToVector(f.embedding);
+					if (fVec) {
+						score = this.embeddingService.cosineSimilarity(queryVec, fVec);
+					}
+				}
+				scored.push({ ...f, similarity: score });
+			}
+
+			scored.sort((a, b) => b.similarity - a.similarity);
+			return scored.slice(0, topK);
+		} catch (error) {
+			this.logger.warn(`Erro ao buscar fatos semânticos para ${canonicalUserId}:`, error.message);
+			return [];
+		}
+	}
+
+	/**
+	 * Compila o contexto de memória do usuário pronto para injeção no prompt da IA
+	 * @param {string} rawUserId - JID, LID, número ou canonical_user_id
+	 * @param {string} [queryText] - Pergunta atual para busca vetorial
+	 * @returns {Promise<string>}
+	 */
+	async getUserContextForPrompt(rawUserId, queryText = "") {
+		if (!rawUserId) return "";
+		try {
+			const canonicalId = await this.resolveCanonicalUserId("whatsapp", rawUserId, "jid");
+			const identity = await this.database.dbGet(
+				DB_NAME,
+				"SELECT display_name FROM memory_identities WHERE canonical_user_id = ? LIMIT 1",
+				[canonicalId]
+			);
+
+			let facts = await this.searchRelevantUserFacts(canonicalId, queryText, 8);
+			if (!facts || facts.length === 0) {
+				facts = await this.database.dbAll(
+					DB_NAME,
+					"SELECT fact_text FROM memory_user_facts WHERE canonical_user_id = ? ORDER BY last_confirmed_at DESC LIMIT 8",
+					[canonicalId]
+				);
+			}
+
+			const userPhone = this.cleanPhone(canonicalId) || this.cleanPhone(rawUserId);
+			const gameDetails = [];
+			if (userPhone && userPhone.length >= 8) {
+				try {
+					const fishing = await this.database.dbGet(
+						"fishing",
+						"SELECT level, legendary_fishes_caught FROM fishing_users WHERE user_id = ?",
+						[userPhone]
+					);
+					if (fishing && fishing.level > 1) {
+						gameDetails.push(
+							`Pesca: Nível ${fishing.level} (Lendários fisgados: ${fishing.legendary_fishes_caught || 0})`
+						);
+					}
+				} catch (e) {}
+
+				try {
+					const donation = await this.database.dbGet(
+						"core",
+						"SELECT valor FROM donations WHERE numero = ? LIMIT 1",
+						[userPhone]
+					);
+					if (donation) {
+						gameDetails.push("Apoiador/Doador do RavenaBot");
+					}
+				} catch (e) {}
+			}
+
+			if ((!facts || facts.length === 0) && gameDetails.length === 0) {
+				return "";
+			}
+
+			const nameStr = identity?.display_name || "Membro";
+			let ctx = `\n[MEMÓRIA E FATOS SOBRE O INTERLOCUTOR (${nameStr})]:\n`;
+			if (facts && facts.length > 0) {
+				for (const f of facts) {
+					ctx += `• ${f.fact_text}\n`;
+				}
+			}
+			if (gameDetails.length > 0) {
+				ctx += `• Dados nos jogos da Ravena: ${gameDetails.join(" | ")}\n`;
+			}
+			return ctx;
+		} catch (err) {
+			this.logger.warn("Erro ao obter contexto de usuário para prompt:", err.message);
+			return "";
+		}
+	}
+
+	/**
+	 * Compila o contexto vivo e cultura do grupo para injeção no prompt da IA
+	 * @param {string} groupId
+	 * @returns {Promise<string>}
+	 */
+	async getGroupContextForPrompt(groupId) {
+		if (!groupId) return "";
+		try {
+			const profile = await this.database.dbGet(
+				DB_NAME,
+				"SELECT vibe_summary, frequent_topics, latest_summary FROM memory_group_profiles WHERE group_id = ?",
+				[groupId]
+			);
+			if (!profile) return "";
+
+			let ctx = "\n[CONTEXTO VIVO DO GRUPO]:\n";
+			if (profile.vibe_summary) {
+				ctx += `• Vibe do grupo: ${profile.vibe_summary}\n`;
+			}
+			if (profile.frequent_topics) {
+				try {
+					const topics = JSON.parse(profile.frequent_topics);
+					if (Array.isArray(topics) && topics.length > 0) {
+						ctx += `• Assuntos comuns no grupo: ${topics.join(", ")}\n`;
+					}
+				} catch (e) {}
+			}
+			if (profile.latest_summary) {
+				ctx += `• O que rolou recentemente no grupo: ${profile.latest_summary}\n`;
+			}
+			return ctx;
+		} catch (err) {
+			return "";
 		}
 	}
 

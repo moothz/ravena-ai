@@ -495,6 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
             prefix: 'Prefixo',
             paused: 'Status do Bot (Pausado/Ativo)',
             customAIPrompt: 'Personalidade da IA',
+            dinamicPersonality: 'Personalidade Dinâmica (IA)',
             customIgnoresPrefix: 'Comandos sem Prefixo',
             filters: 'Filtros (Links / NSFW / Palavras / Regex)',
             ignoredNumbers: 'Números Ignorados',
@@ -620,6 +621,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('bot-enabled').checked = !isPaused;
 
         groupData.customAIPrompt = document.getElementById('bot-personality').value;
+        const dynPersEl = document.getElementById('dinamic-personality');
+        if (dynPersEl) {
+            groupData.dinamicPersonality = dynPersEl.checked;
+        }
         groupData.customIgnoresPrefix = document.getElementById('custom-ignores-prefix').checked;
 
         const groupRulesEl = document.getElementById('group-rules');
@@ -768,6 +773,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('bot-personality').value = groupData.customAIPrompt || '';
         document.getElementById('personality-count').textContent = (groupData.customAIPrompt || '').length;
+        const dynPersCheckEl = document.getElementById('dinamic-personality');
+        if (dynPersCheckEl) {
+            dynPersCheckEl.checked = groupData.dinamicPersonality !== false;
+        }
         document.getElementById('custom-ignores-prefix').checked = !!groupData.customIgnoresPrefix;
 
         const rulesVal = groupData.regras || '';
@@ -3237,6 +3246,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (botPersonalityInput) {
             botPersonalityInput.addEventListener('input', (e) => {
                 document.getElementById('personality-count').textContent = e.target.value.length;
+                const dynEl = document.getElementById('dinamic-personality');
+                if (dynEl) dynEl.checked = false;
             });
         }
 

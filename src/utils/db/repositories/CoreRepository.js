@@ -73,6 +73,7 @@ class CoreRepository {
 				nicks TEXT,
 				warnings TEXT,
 				custom_ai_prompt TEXT,
+				dinamic_personality INTEGER DEFAULT 1,
 				notifica_grupo_fechado INTEGER DEFAULT 0,
 				notifica_grupo_aberto INTEGER DEFAULT 0,
 				banir_spammers INTEGER DEFAULT 0,
@@ -152,6 +153,12 @@ class CoreRepository {
 			this.mappers.exec(this.DB, createSql);
 			this._ensureTableSchema(this.DB, tableName, createSql);
 		}
+		try {
+			this.mappers.exec(
+				this.DB,
+				"UPDATE groups SET dinamic_personality = 1 WHERE dinamic_personality IS NULL"
+			);
+		} catch (e) {}
 		this._ensureUniqueGroupNames();
 		this.mappers.exec(
 			this.DB,
@@ -369,14 +376,14 @@ class CoreRepository {
           filters, twitch, kick, youtube, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
           ignored_numbers, ignored_users, muted_commands, muted_categories,
-          nicks, warnings, custom_ai_prompt, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, created_at, updated_at, json_data
+          nicks, warnings, custom_ai_prompt, dinamic_personality, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, created_at, updated_at, json_data
         ) VALUES (
           @id, @name, @titulo, @descricao, @regras, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
           @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
           @ignored_numbers, @ignored_users, @muted_commands, @muted_categories,
-          @nicks, @warnings, @custom_ai_prompt, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @created_at, @updated_at, @json_data
+          @nicks, @warnings, @custom_ai_prompt, @dinamic_personality, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @created_at, @updated_at, @json_data
         )
         ON CONFLICT(id) DO UPDATE SET
           name                  = excluded.name,
@@ -408,6 +415,7 @@ class CoreRepository {
           nicks                 = excluded.nicks,
           warnings              = excluded.warnings,
           custom_ai_prompt      = excluded.custom_ai_prompt,
+          dinamic_personality   = excluded.dinamic_personality,
           notifica_grupo_fechado = excluded.notifica_grupo_fechado,
           notifica_grupo_aberto  = excluded.notifica_grupo_aberto,
           banir_spammers         = excluded.banir_spammers,
