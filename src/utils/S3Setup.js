@@ -7,21 +7,23 @@ const hmac = (key, data) => crypto.createHmac("sha256", key).update(data).digest
 
 /**
  * Configura o storage S3 de mídia da whatsgoapi (RustFS, ou qualquer servidor compatível com S3).
- * Usa a API S3 diretamente (assinatura SigV4), sem depender do MinIO Client (mc).
- * As variáveis continuam com o prefixo MINIO_ por compatibilidade com a whatsgoapi.
+ * Usa a API S3 diretamente (assinatura SigV4), sem depender de binários externos (mc, aws-cli).
+ * As variáveis S3_* têm prioridade; MINIO_* são aceitas como fallback para retrocompatibilidade
+ * com a whatsgoapi (que usa o cliente minio-go e lê MINIO_*).
  */
-class MinioSetup {
+class S3Setup {
 	constructor() {
-		this.logger = new Logger("MinioSetup");
-		this.enabled = process.env.MINIO_ENABLED === "true";
-		this.endpoint = process.env.MINIO_ENDPOINT || "rustfs:9000";
-		this.accessKey = process.env.MINIO_ACCESS_KEY;
-		this.secretKey = process.env.MINIO_SECRET_KEY;
-		this.bucket = process.env.MINIO_BUCKET || "zap-media";
-		this.region = process.env.MINIO_REGION || "us-east-1";
-		this.protocol = process.env.MINIO_USE_SSL === "true" ? "https" : "http";
-		this.retentionDays = parseInt(process.env.MINIO_RETENTION_DAYS) || 0;
-		this.storageLimitGb = parseInt(process.env.MINIO_STORAGE_LIMIT_GB) || 0;
+		this.logger = new Logger("S3Setup");
+		// S3_* tem prioridade; cai para MINIO_* se não definido (retrocompatibilidade com whatsgoapi)
+		this.enabled = (process.env.S3_ENABLED ?? process.env.MINIO_ENABLED) === "true";
+		this.endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT || "rustfs:9000";
+		this.accessKey = process.env.S3_ACCESS_KEY || process.env.MINIO_ACCESS_KEY;
+		this.secretKey = process.env.S3_SECRET_KEY || process.env.MINIO_SECRET_KEY;
+		this.bucket = process.env.S3_BUCKET || process.env.MINIO_BUCKET || "zap-media";
+		this.region = process.env.S3_REGION || process.env.MINIO_REGION || "us-east-1";
+		this.protocol = (process.env.S3_USE_SSL || process.env.MINIO_USE_SSL) === "true" ? "https" : "http";
+		this.retentionDays = parseInt(process.env.S3_RETENTION_DAYS || process.env.MINIO_RETENTION_DAYS) || 0;
+		this.storageLimitGb = parseInt(process.env.S3_STORAGE_LIMIT_GB || process.env.MINIO_STORAGE_LIMIT_GB) || 0;
 	}
 
 	/**
@@ -76,7 +78,7 @@ class MinioSetup {
 			if (this.storageLimitGb > 0) {
 				// Quota não faz parte da API S3; cada servidor configura do seu jeito
 				this.logger.warn(
-					"MINIO_STORAGE_LIMIT_GB não é aplicado automaticamente: configure a quota no próprio storage."
+					"S3_STORAGE_LIMIT_GB não é aplicado automaticamente: configure a quota no próprio storage."
 				);
 			}
 
@@ -134,4 +136,4 @@ class MinioSetup {
 	}
 }
 
-module.exports = new MinioSetup();
+module.exports = new S3Setup();

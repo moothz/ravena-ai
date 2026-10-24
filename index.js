@@ -16,7 +16,7 @@ const ytdlUpdater = require("./src/utils/YtdlUpdater");
 
 const BotAPI = require("./src/BotAPI");
 const Database = require("./src/utils/Database");
-const minioSetup = require("./src/utils/MinioSetup");
+const s3Setup = require("./src/utils/S3Setup");
 const StabilityMonitor = require("./src/services/StabilityMonitor");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
@@ -35,8 +35,8 @@ async function main() {
 	logCleaner.start();
 	ytdlUpdater.start();
 
-	// Configura políticas de retenção do MinIO (Background)
-	minioSetup.init().catch((err) => console.error("[MinioSetup Error]", err));
+	// Configura políticas de retenção do storage S3 (Background)
+	s3Setup.init().catch((err) => console.error("[S3Setup Error]", err));
 
 	// Atualiza cotação do dólar na inicialização
 	await CurrencyConverter.updateRate();

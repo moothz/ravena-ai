@@ -76,9 +76,9 @@ generate-secrets: ## Gera o .env a partir do .env.example com segredos e inputs 
 	@PG_PASS=$$(openssl rand -hex 16); \
 		sed -i "s|POSTGRES_PASSWORD=whatsgo_password|POSTGRES_PASSWORD=$$PG_PASS|g" .env; \
 		printf "$(GREEN)  POSTGRES_PASSWORD gerada$(NC)\n"
-	@MINIO_PASS=$$(openssl rand -hex 16); \
-		sed -i "s|MINIO_SECRET_KEY=storage_password|MINIO_SECRET_KEY=$$MINIO_PASS|g" .env; \
-		printf "$(GREEN)  MINIO_SECRET_KEY gerada$(NC)\n"
+	@S3_PASS=$$(openssl rand -hex 16); \
+		sed -i "s|S3_SECRET_KEY=storage_password|S3_SECRET_KEY=$$S3_PASS|g" .env; \
+		printf "$(GREEN)  S3_SECRET_KEY gerada$(NC)\n"
 	@printf "\n"
 	@printf "$(YELLOW)⚠️  Arquivo .env criado com suas preferências.$(NC)\n"
 	@printf "$(CYAN)   Lembre-se de editar o .env para preencher outras chaves de API se necessário.$(NC)\n"
