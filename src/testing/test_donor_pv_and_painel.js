@@ -260,7 +260,7 @@ async function runTests() {
 			"Deve enviar o link do painel no PV do admin"
 		);
 
-		// 4B: No PV sem argumentos -> auto-seleciona se tiver 1 grupo administrado
+		// 4B: No PV sem argumentos -> auto-seleciona se tiver 1 grupo administrado chamando g-manage
 		const msgPV = createMessage({
 			content: "!g-painel",
 			group: null,
@@ -276,6 +276,89 @@ async function runTests() {
 		assert.ok(
 			pvAutoReply,
 			"No PV sem args com 1 único grupo administrado, deve auto-selecionar e gerar o painel"
+		);
+		assert.ok(
+			!bot.capturedMessages.some((m) => m.content.includes("enviado no seu chat privado")),
+			"No PV sem args NÃO deve enviar 'enviado no seu chat privado'"
+		);
+
+		// 4C: No PV com nome do grupo -> deve chamar g-manage automaticamente
+		bot.resetCapture();
+		commandHandler.privateManagement = {}; // Reseta gerenciamento
+		const msgPVComNome = createMessage({
+			content: "!g-painel Grupo Painel Teste",
+			group: null,
+			author: "5547984023920@s.whatsapp.net"
+		});
+
+		await commandHandler.processCommand(
+			bot,
+			msgPVComNome,
+			"g-painel",
+			["Grupo", "Painel", "Teste"],
+			null
+		);
+
+		assert.ok(
+			bot.capturedMessages.some((m) => m.content.includes("agora está gerenciando o grupo")),
+			"Deve chamar o g-manage automaticamente e avisar no PV que agora está gerenciando o grupo"
+		);
+		assert.ok(
+			bot.capturedMessages.some((m) => m.content.includes("Link para gerenciamento do grupo")),
+			"Deve enviar o link do painel no PV"
+		);
+		assert.ok(
+			!bot.capturedMessages.some((m) => m.content.includes("enviado no seu chat privado")),
+			"Não deve enviar 'enviado no seu chat privado' quando o comando veio do PV"
+		);
+		assert.strictEqual(
+			commandHandler.privateManagement["5547984023920@s.whatsapp.net"],
+			painelGroup.id,
+			"Deve ter configurado privateManagement para o grupo alvo"
+		);
+
+		// 4D: No PV com grupo inexistente -> deve retornar grupo não encontrado via g-manage
+		bot.resetCapture();
+		const msgPVInexistente = createMessage({
+			content: "!g-painel Grupo Inexistente XYZ",
+			group: null,
+			author: "5547984023920@s.whatsapp.net"
+		});
+
+		await commandHandler.processCommand(
+			bot,
+			msgPVInexistente,
+			"g-painel",
+			["Grupo", "Inexistente", "XYZ"],
+			null
+		);
+
+		assert.ok(
+			bot.capturedMessages.some((m) => m.content.includes("Grupo não encontrado")),
+			"Deve informar que o grupo não foi encontrado"
+		);
+		assert.ok(
+			!bot.capturedMessages.some((m) => m.content.includes("Link para gerenciamento do grupo")),
+			"Não deve gerar link para grupo não encontrado"
+		);
+
+		// 4E: No PV já gerenciando o grupo -> gera link sem chamar g-manage novamente
+		bot.resetCapture();
+		commandHandler.privateManagement["5547984023920@s.whatsapp.net"] = painelGroup.id;
+		const msgPVJaGerenciando = createMessage({
+			content: "!g-painel",
+			group: null,
+			author: "5547984023920@s.whatsapp.net"
+		});
+
+		await commandHandler.processCommand(bot, msgPVJaGerenciando, "g-painel", [], null);
+		assert.ok(
+			bot.capturedMessages.some((m) => m.content.includes("Link para gerenciamento do grupo")),
+			"Deve gerar link do painel para o grupo ativo"
+		);
+		assert.ok(
+			!bot.capturedMessages.some((m) => m.content.includes("enviado no seu chat privado")),
+			"Não deve enviar confirmação de envio no chat privado quando chamado pelo PV"
 		);
 
 		console.log("✓ !g-painel no grupo e no PV passou em todos os testes!");

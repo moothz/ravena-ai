@@ -762,50 +762,36 @@ class CommandHandler {
 					}
 				} else if (command === "g-painel") {
 					const groupSearchQuery = args.join(" ").trim();
-					const activeId =
+					let activeId =
 						this.privateManagement[message.author] ||
 						(cleanAuthor && this.privateManagement[cleanAuthor]);
 
 					if (groupSearchQuery.length > 0) {
-						// Permite !g-painel nomegrupo diretamente no PV
-						const groups = await this.database.getGroups();
-						const targetGroup = findTargetGroup(groups, groupSearchQuery);
+						// Permite !g-painel nomegrupo chamando g-manage automaticamente
+						const manageResult = await this.processCommand(bot, message, "g-manage", args, null, {
+							silent
+						});
 
-						if (targetGroup) {
-							const isUserAdminInTarget = await this.adminUtils.isAdmin(
-								message.author,
-								targetGroup,
-								false,
-								bot
-							);
-							if (isUserAdminInTarget) {
-								this.privateManagement[message.author] = targetGroup.id;
-								if (cleanAuthor) this.privateManagement[cleanAuthor] = targetGroup.id;
-								this.logger.info(
-									`Usuário ${message.author} agora está gerenciando o grupo (via g-painel): ${targetGroup.name} (${targetGroup.id})`
-								);
-								group = targetGroup;
-								replyToChat = message.author;
-								isManagingFromPrivate = true;
-							} else {
-								const returnMessage = new ReturnMessage({
-									chatId: message.author,
-									content: `Você *NÃO É* administrador do grupo '${targetGroup.name}'.`,
-									reaction: "🙅‍♂️"
-								});
-								if (!silent) await bot.sendReturnMessages(returnMessage, group);
-								return returnMessage;
-							}
+						const isSuccess =
+							manageResult &&
+							typeof manageResult.content === "string" &&
+							manageResult.content.startsWith("Você agora está gerenciando o grupo:");
+
+						activeId =
+							this.privateManagement[message.author] ||
+							(cleanAuthor && this.privateManagement[cleanAuthor]);
+
+						if (!isSuccess || !activeId) {
+							return manageResult;
+						}
+
+						const managedGroup = await this.database.getGroup(activeId);
+						if (managedGroup) {
+							group = managedGroup;
+							replyToChat = message.author;
+							isManagingFromPrivate = true;
 						} else {
-							this.logger.warn(`Grupo não encontrado: ${groupSearchQuery}`);
-
-							const returnMessage = new ReturnMessage({
-								chatId: message.author,
-								content: `Grupo não encontrado: ${groupSearchQuery}`,
-								reaction: this.defaultReactions.after
-							});
-							if (!silent) await bot.sendReturnMessages(returnMessage, group);
-							return returnMessage;
+							return manageResult;
 						}
 					} else if (activeId) {
 						// Já está gerenciando um grupo no PV
@@ -814,8 +800,14 @@ class CommandHandler {
 							group = managedGroup;
 							replyToChat = message.author;
 							isManagingFromPrivate = true;
+						} else {
+							this.privateManagement[message.author] = undefined;
+							if (cleanAuthor) this.privateManagement[cleanAuthor] = undefined;
+							activeId = null;
 						}
-					} else {
+					}
+
+					if (!group && !activeId) {
 						// Sem argumentos no PV e sem grupo ativo: verifica se há grupo administrado pelo autor
 						const groups = await this.database.getGroups();
 						const userGroups = groups.filter((g) => {
@@ -835,8 +827,16 @@ class CommandHandler {
 						});
 
 						if (userGroups.length === 1) {
-							// Exatamente 1 grupo: seleciona automaticamente
+							// Exatamente 1 grupo: ativa g-manage automaticamente para ele
 							const targetGroup = userGroups[0];
+							await this.processCommand(
+								bot,
+								message,
+								"g-manage",
+								[targetGroup.name || targetGroup.id],
+								null,
+								{ silent }
+							);
 							this.privateManagement[message.author] = targetGroup.id;
 							if (cleanAuthor) this.privateManagement[cleanAuthor] = targetGroup.id;
 							group = targetGroup;
@@ -1069,6 +1069,7 @@ class CommandHandler {
 				// Força o grupo para o comando
 				if (message.managementResponseChatId) {
 					messageClone.group = group.id; // Importante: garante que o grupo correto seja usado
+					messageClone.isManagingFromPrivate = true;
 				}
 
 				messageClone.origin = message.origin; // Aqui precisa, obrigatoriamente, ser a referência, não cópia

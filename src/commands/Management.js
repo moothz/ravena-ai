@@ -7876,7 +7876,7 @@ class Management {
 		let targetGroup = group;
 
 		// Se veio no PV, não há grupo ativo ou o usuário quer acessar outro grupo diretamente por g-painel nomegrupo
-		if (!message.group && args.length > 0) {
+		if (!targetGroup && !message.group && args.length > 0) {
 			const groupQuery = args.join(" ").trim().toLowerCase();
 			const groups = await this.database.getGroups();
 			targetGroup =
@@ -7959,7 +7959,12 @@ class Management {
 			})
 		];
 
-		if (message.group) {
+		const isFromPrivate =
+			!message.group ||
+			Boolean(message.managementResponseChatId) ||
+			Boolean(message.isManagingFromPrivate);
+
+		if (!isFromPrivate && message.group) {
 			returnMessages.push(
 				new ReturnMessage({
 					chatId: message.group,
