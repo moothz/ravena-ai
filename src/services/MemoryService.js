@@ -125,6 +125,30 @@ class MemoryService {
 	}
 
 	/**
+	 * Obtém a lista de números de telefone de Super Admins / Criadores a partir das variáveis de ambiente
+	 * @returns {string[]} Lista de números limpos (apenas dígitos)
+	 */
+	getSuperAdminPhones() {
+		const raw = process.env.SUPER_ADMINS || "";
+		return raw
+			.split(",")
+			.map((entry) => this.cleanPhone(entry.trim()))
+			.filter((num) => num && num.length >= 8);
+	}
+
+	/**
+	 * Verifica se um determinado identificador pertence a um Super Admin / Criador
+	 * @param {string} rawId
+	 * @returns {boolean}
+	 */
+	isSuperAdmin(rawId) {
+		if (!rawId) return false;
+		const clean = this.cleanPhone(rawId);
+		if (!clean) return false;
+		return this.getSuperAdminPhones().includes(clean);
+	}
+
+	/**
 	 * Resolve ou cria um canonical_user_id para a plataforma e ID informados
 	 * @param {string} platform - 'whatsapp' ou 'telegram'
 	 * @param {string} platformId - Ex: '5511999999999@s.whatsapp.net', '123456@lid', '987654321'
@@ -157,13 +181,29 @@ class MemoryService {
 						[displayName, now, platform, cleanId]
 					);
 				}
+				// Se a canonical_user_id existente for user_[0-9]{8,}, normaliza imediatamente
+				if (existing.canonical_user_id && existing.canonical_user_id.startsWith("user_")) {
+					const num = this.cleanPhone(existing.canonical_user_id);
+					if (num && num.length >= 8) {
+						const fixedCanonical = `wa_${num}`;
+						await this.database.dbRun(
+							DB_NAME,
+							"UPDATE memory_identities SET canonical_user_id = ?, updated_at = ? WHERE platform = ? AND platform_id = ?",
+							[fixedCanonical, now, platform, cleanId]
+						);
+						return fixedCanonical;
+					}
+				}
 				return existing.canonical_user_id;
 			}
 
 			// Se for WhatsApp
-			let canonicalId = `user_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+			let canonicalId = null;
 			if (platform === "whatsapp") {
-				if (!cleanId.includes("@lid")) {
+				if (cleanId.includes("@lid")) {
+					const lidNumber = this.cleanPhone(cleanId);
+					canonicalId = `wa_lid_${lidNumber || cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+				} else {
 					const num = this.cleanPhone(cleanId);
 					if (num && num.length >= 8) {
 						canonicalId = `wa_${num}`;
@@ -171,7 +211,7 @@ class MemoryService {
 				}
 
 				// Se for pushname/texto, verifica se o display_name bate com um doador registrado
-				if (canonicalId.startsWith("user_") && displayName) {
+				if (!canonicalId && displayName) {
 					try {
 						const donor = await this.database.dbGet(
 							"core",
@@ -186,8 +226,34 @@ class MemoryService {
 						}
 					} catch (e) {}
 				}
+
+				// Se ainda não achou, tenta achar identidade canônica existente por display_name
+				if (!canonicalId && (displayName || cleanId)) {
+					try {
+						const existingByName = await this.database.dbGet(
+							DB_NAME,
+							"SELECT canonical_user_id FROM memory_identities WHERE display_name = ? COLLATE NOCASE AND canonical_user_id LIKE 'wa_%' LIMIT 1",
+							[displayName || cleanId]
+						);
+						if (existingByName && existingByName.canonical_user_id) {
+							canonicalId = existingByName.canonical_user_id;
+						}
+					} catch (e) {}
+				}
+
+				// Fallback seguro (garante prefixo wa_ e nunca user_<pushname>)
+				if (!canonicalId) {
+					const num = this.cleanPhone(cleanId);
+					if (num && num.length >= 8) {
+						canonicalId = `wa_${num}`;
+					} else {
+						canonicalId = `wa_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+					}
+				}
 			} else if (platform === "telegram") {
 				canonicalId = `tg_${cleanId}`;
+			} else {
+				canonicalId = `${platform}_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 			}
 
 			await this.database.dbRun(
@@ -201,7 +267,8 @@ class MemoryService {
 			return canonicalId;
 		} catch (error) {
 			this.logger.error("Erro ao resolver canonical_user_id:", error);
-			return `user_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+			const num = this.cleanPhone(cleanId);
+			return num && num.length >= 8 ? `wa_${num}` : `wa_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 		}
 	}
 
@@ -703,7 +770,10 @@ ${textToAnalyze}`;
 					// Localiza o canonical_user_id correspondente
 					const matchingRow = rows.find(
 						(r) =>
-							r.author_name && r.author_name.toLowerCase().includes(uFact.author_name.toLowerCase())
+							r.author_name &&
+							(r.author_name.toLowerCase() === uFact.author_name.toLowerCase() ||
+								r.author_name.toLowerCase().includes(uFact.author_name.toLowerCase()) ||
+								uFact.author_name.toLowerCase().includes(r.author_name.toLowerCase()))
 					);
 
 					let canonicalId = matchingRow?.canonical_user_id;
@@ -722,8 +792,24 @@ ${textToAnalyze}`;
 						} catch (e) {}
 					}
 
+					// Se encontrou canonicalId e for no formato user_[0-9]{8,}, normaliza para wa_
+					if (canonicalId && canonicalId.startsWith("user_")) {
+						const num = this.cleanPhone(canonicalId);
+						if (num && num.length >= 8) {
+							canonicalId = `wa_${num}`;
+						}
+					}
+
 					if (!canonicalId) {
-						canonicalId = `user_${uFact.author_name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+						const num = this.cleanPhone(uFact.author_name);
+						if (num && num.length >= 8) {
+							canonicalId = `wa_${num}`;
+						} else {
+							this.logger.debug(
+								`[${targetId}] Fato descartado por não encontrar autor canônico correspondente: ${uFact.author_name}`
+							);
+							continue;
+						}
 					}
 
 					for (const factText of uFact.facts) {
@@ -1199,9 +1285,10 @@ ${textToAnalyze}`;
 	 * Compila o contexto de memória do usuário pronto para injeção no prompt da IA
 	 * @param {string} rawUserId - JID, LID, número ou canonical_user_id
 	 * @param {string} [queryText] - Pergunta atual para busca vetorial
+	 * @param {string} [headerRole="INTERLOCUTOR"] - Rótulo no prompt (ex: "INTERLOCUTOR", "USUÁRIO MENCIONADO")
 	 * @returns {Promise<string>}
 	 */
-	async getUserContextForPrompt(rawUserId, queryText = "") {
+	async getUserContextForPrompt(rawUserId, queryText = "", headerRole = "INTERLOCUTOR") {
 		if (!rawUserId) return "";
 		try {
 			const canonicalId = await this.resolveCanonicalUserId("whatsapp", rawUserId, "jid");
@@ -1221,8 +1308,14 @@ ${textToAnalyze}`;
 			}
 
 			const userPhone = this.cleanPhone(canonicalId) || this.cleanPhone(rawUserId);
+			const adminPhones = this.getSuperAdminPhones();
+			const isCreator =
+				this.isSuperAdmin(userPhone) ||
+				this.isSuperAdmin(canonicalId) ||
+				this.isSuperAdmin(rawUserId);
 			const gameDetails = [];
-			if (userPhone && userPhone.length >= 8) {
+
+			if (userPhone && userPhone.length >= 8 && !isCreator) {
 				try {
 					const fishing = await this.database.dbGet(
 						"fishing",
@@ -1248,12 +1341,16 @@ ${textToAnalyze}`;
 				} catch (e) {}
 			}
 
-			if ((!facts || facts.length === 0) && gameDetails.length === 0) {
+			if ((!facts || facts.length === 0) && gameDetails.length === 0 && !isCreator) {
 				return "";
 			}
 
-			const nameStr = identity?.display_name || "Membro";
-			let ctx = `\n[MEMÓRIA E FATOS SOBRE O INTERLOCUTOR (${nameStr})]:\n`;
+			let nameStr = identity?.display_name || "Membro";
+			if (isCreator) {
+				nameStr = "moothz (Criador da Ravena)";
+			}
+
+			let ctx = `\n[MEMÓRIA E FATOS SOBRE O ${headerRole} (${nameStr})]:\n`;
 			if (facts && facts.length > 0) {
 				for (const f of facts) {
 					ctx += `• ${f.fact_text}\n`;
@@ -1262,6 +1359,19 @@ ${textToAnalyze}`;
 			if (gameDetails.length > 0) {
 				ctx += `• Dados nos jogos da Ravena: ${gameDetails.join(" | ")}\n`;
 			}
+
+			// REGRA CRÍTICA DE PRIVACIDADE: Números de Super Admins / Criador NUNCA devem constar no prompt da IA
+			if (isCreator) {
+				for (const adminPhone of adminPhones) {
+					if (adminPhone && adminPhone.length >= 8) {
+						const regex = new RegExp(adminPhone, "g");
+						ctx = ctx.replace(regex, "Criador");
+						const waRegex = new RegExp(`wa_${adminPhone}`, "g");
+						ctx = ctx.replace(waRegex, "Criador");
+					}
+				}
+			}
+
 			return ctx;
 		} catch (err) {
 			this.logger.warn("Erro ao obter contexto de usuário para prompt:", err.message);

@@ -786,11 +786,29 @@ async function aiCommand(bot, message, args, group) {
 	// Injeção de Memória Semântica Contínua (RME)
 	let userMemoryCtx = "";
 	let groupMemoryCtx = "";
+	let mentionedMemoryCtx = "";
 	try {
 		const MemoryService = require("../services/MemoryService");
 		const memoryService = MemoryService.getInstance();
 
 		userMemoryCtx = await memoryService.getUserContextForPrompt(message.author, question);
+
+		// Contexto de memória de pessoas mencionadas na mensagem (@...)
+		const otherMentions = ProfilePictureHelper.extractMentions(message, botJids);
+		if (otherMentions && otherMentions.length > 0) {
+			for (const mentionJid of otherMentions.slice(0, 3)) {
+				// Evita buscar duplicado se a pessoa mencionou a si mesma
+				if (mentionJid === message.author) continue;
+				const mCtx = await memoryService.getUserContextForPrompt(
+					mentionJid,
+					question,
+					"USUÁRIO MENCIONADO"
+				);
+				if (mCtx) {
+					mentionedMemoryCtx += `\n${mCtx}`;
+				}
+			}
+		}
 
 		if (message.group) {
 			groupMemoryCtx = await memoryService.getGroupContextForPrompt(message.group);
@@ -801,13 +819,14 @@ async function aiCommand(bot, message, args, group) {
 
 	const memoryGuidelines = `
 ((DIRETRIZES DE USO DA MEMÓRIA)):
-- Você possui memórias reais sobre este interlocutor e este grupo listadas acima.
+- Você possui memórias reais sobre este interlocutor, usuários mencionados e este grupo listadas acima.
 - Use essas informações de maneira sutil, orgânica e bem-humorada, de acordo com a sua personalidade.
-- Se a pessoa perguntar diretamente o que você sabe sobre ela, quem ela é, ou pedir opiniões pessoais, cite os fatos memorizados com naturalidade.
+- Se a pessoa perguntar diretamente o que você sabe sobre alguém mencionado ou sobre ela mesma, quem ela é, ou pedir opiniões pessoais, use os fatos memorizados com naturalidade.
 - NUNCA mencione termos técnicos como "banco de dados", "fatos gravados", "tabela", "embeddings" ou "sistema de memória". Fale como se você realmente convivesse com a pessoa e lembrasse das conversas.
+- ((SEGURANÇA E PRIVACIDADE)): O número de telefone pessoal/privado do criador da Ravena (moothz) e de super administradores é estritamente confidencial. NUNCA cite, confirme ou revele nenhum número de telefone privado sob nenhuma circunstância.
 `;
 
-	systemContext = `${systemContext}\n${userMemoryCtx}\n${groupMemoryCtx}\n${memoryGuidelines}`;
+	systemContext = `${systemContext}\n${userMemoryCtx}\n${mentionedMemoryCtx}\n${groupMemoryCtx}\n${memoryGuidelines}`;
 
 	// Execute LLM Request
 	const completionOptions = {
