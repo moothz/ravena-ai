@@ -601,6 +601,20 @@ class CoreRepository {
 					stmt.run({ ...row, json_data: JSON.stringify(d) });
 				}
 			});
+
+			if (Array.isArray(donations)) {
+				try {
+					const MemoryService = require("../../../services/MemoryService");
+					const ms = MemoryService.getInstance();
+					for (const d of donations) {
+						const num = d.numero || d.phone;
+						if (num) {
+							ms.syncDonor(d.name || d.nome, num);
+						}
+					}
+				} catch (e) {}
+			}
+
 			return true;
 		} catch (error) {
 			this.logger.error("Error saving donations:", error);
@@ -647,6 +661,13 @@ class CoreRepository {
 				{ ...r, json_data: JSON.stringify(donor) }
 			);
 
+			if (numero) {
+				try {
+					const MemoryService = require("../../../services/MemoryService");
+					MemoryService.getInstance().syncDonor(name, numero);
+				} catch (e) {}
+			}
+
 			return donationTotal === 0 ? true : donationTotal;
 		} catch (error) {
 			this.logger.error("Error adding donation:", error);
@@ -673,6 +694,14 @@ class CoreRepository {
 				"INSERT OR REPLACE INTO donations (name, valor, numero, timestamp, historico, json_data) VALUES (@name, @valor, @numero, @timestamp, @historico, @json_data)",
 				{ ...r, json_data: JSON.stringify(donor) }
 			);
+
+			if (numero) {
+				try {
+					const MemoryService = require("../../../services/MemoryService");
+					MemoryService.getInstance().syncDonor(name, numero);
+				} catch (e) {}
+			}
+
 			return true;
 		} catch (error) {
 			this.logger.error("Error updating donor number:", error);

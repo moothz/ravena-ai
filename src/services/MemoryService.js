@@ -160,12 +160,31 @@ class MemoryService {
 				return existing.canonical_user_id;
 			}
 
-			// Se for WhatsApp JID/LID e tiver número limpo
+			// Se for WhatsApp
 			let canonicalId = `user_${cleanId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-			if (platform === "whatsapp" && (idType === "jid" || cleanId.includes("@s.whatsapp.net"))) {
-				const num = this.cleanPhone(cleanId);
-				if (num.length >= 8) {
-					canonicalId = `wa_${num}`;
+			if (platform === "whatsapp") {
+				if (!cleanId.includes("@lid")) {
+					const num = this.cleanPhone(cleanId);
+					if (num && num.length >= 8) {
+						canonicalId = `wa_${num}`;
+					}
+				}
+
+				// Se for pushname/texto, verifica se o display_name bate com um doador registrado
+				if (canonicalId.startsWith("user_") && displayName) {
+					try {
+						const donor = await this.database.dbGet(
+							"core",
+							"SELECT numero FROM donations WHERE name = ? COLLATE NOCASE AND numero IS NOT NULL LIMIT 1",
+							[displayName]
+						);
+						if (donor && donor.numero) {
+							const dNum = this.cleanPhone(donor.numero);
+							if (dNum && dNum.length >= 8) {
+								canonicalId = `wa_${dNum}`;
+							}
+						}
+					} catch (e) {}
 				}
 			} else if (platform === "telegram") {
 				canonicalId = `tg_${cleanId}`;
@@ -220,6 +239,105 @@ class MemoryService {
 			);
 		} catch (err) {
 			this.logger.warn(`Erro ao vincular LID ${cleanLid} a PN ${cleanNum}:`, err.message);
+		}
+	}
+
+	/**
+	 * Sincroniza e unifica um doador (novo ou existente) no sistema de memória
+	 * @param {string} donorName
+	 * @param {string} donorNumber
+	 */
+	async syncDonor(donorName, donorNumber) {
+		if (!donorNumber) return;
+		const phone = this.cleanPhone(donorNumber);
+		if (!phone || phone.length < 8) return;
+
+		const targetCanonical = `wa_${phone}`;
+		const fullJid = `${phone}@s.whatsapp.net`;
+		const now = Date.now();
+		const name = donorName ? donorName.trim() : "";
+
+		try {
+			// 1. Garante que a identidade canônica principal existe
+			await this.database.dbRun(
+				DB_NAME,
+				`INSERT INTO memory_identities (canonical_user_id, platform, platform_id, id_type, display_name, created_at, updated_at)
+				 VALUES (?, 'whatsapp', ?, 'jid', ?, ?, ?)
+				 ON CONFLICT(platform, platform_id) DO UPDATE SET 
+				    canonical_user_id = excluded.canonical_user_id,
+				    display_name = COALESCE(NULLIF(excluded.display_name, ''), memory_identities.display_name),
+				    updated_at = excluded.updated_at`,
+				[targetCanonical, fullJid, name || phone, now, now]
+			);
+
+			// 2. Busca e unifica identidades anteriores baseadas no número ou nome
+			const sourceCanonicals = new Set([`user_${phone}`]);
+
+			// Busca canonical_ids anteriores no buffer de mensagens desse número
+			const bufferCanonicals = await this.database.dbAll(
+				DB_NAME,
+				"SELECT DISTINCT canonical_user_id FROM memory_message_buffer WHERE author_id LIKE ?",
+				[`%${phone}%`]
+			);
+			for (const b of bufferCanonicals || []) {
+				if (b.canonical_user_id && b.canonical_user_id !== targetCanonical) {
+					sourceCanonicals.add(b.canonical_user_id);
+				}
+			}
+
+			if (name && name.length > 2) {
+				const rawSlug = `user_${name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+				const compactSlug = `user_${name.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+				sourceCanonicals.add(rawSlug);
+				sourceCanonicals.add(`${rawSlug}_`);
+				sourceCanonicals.add(compactSlug);
+			}
+
+			// Busca possíveis pushnames no buffer de mensagens desse número
+			const bufferNames = await this.database.dbAll(
+				DB_NAME,
+				"SELECT DISTINCT author_name FROM memory_message_buffer WHERE author_id LIKE ?",
+				[`%${phone}%`]
+			);
+			for (const b of bufferNames || []) {
+				if (b.author_name && b.author_name.length > 2) {
+					const bSlug = `user_${b.author_name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+					const bCompact = `user_${b.author_name.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+					sourceCanonicals.add(bSlug);
+					sourceCanonicals.add(`${bSlug}_`);
+					sourceCanonicals.add(bCompact);
+				}
+			}
+
+			sourceCanonicals.delete(targetCanonical);
+
+			for (const src of sourceCanonicals) {
+				await this.database.dbRun(
+					DB_NAME,
+					"UPDATE memory_user_facts SET canonical_user_id = ? WHERE canonical_user_id = ?",
+					[targetCanonical, src]
+				);
+				await this.database.dbRun(
+					DB_NAME,
+					"UPDATE memory_message_buffer SET canonical_user_id = ? WHERE canonical_user_id = ?",
+					[targetCanonical, src]
+				);
+				await this.database.dbRun(
+					DB_NAME,
+					"UPDATE memory_identities SET canonical_user_id = ? WHERE canonical_user_id = ?",
+					[targetCanonical, src]
+				);
+			}
+
+			// Remove duplicidades
+			await this.database.dbRun(
+				DB_NAME,
+				`DELETE FROM memory_identities WHERE rowid NOT IN (
+					SELECT MIN(rowid) FROM memory_identities GROUP BY platform, platform_id
+				)`
+			);
+		} catch (err) {
+			this.logger.warn(`Erro ao sincronizar doador ${name} (${phone}) na memória:`, err.message);
 		}
 	}
 
@@ -588,9 +706,25 @@ ${textToAnalyze}`;
 							r.author_name && r.author_name.toLowerCase().includes(uFact.author_name.toLowerCase())
 					);
 
-					const canonicalId =
-						matchingRow?.canonical_user_id ||
-						`user_${uFact.author_name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+					let canonicalId = matchingRow?.canonical_user_id;
+
+					if (!canonicalId) {
+						// Tenta localizar por identidade existente no banco
+						try {
+							const ident = await this.database.dbGet(
+								DB_NAME,
+								"SELECT canonical_user_id FROM memory_identities WHERE display_name = ? COLLATE NOCASE LIMIT 1",
+								[uFact.author_name]
+							);
+							if (ident) {
+								canonicalId = ident.canonical_user_id;
+							}
+						} catch (e) {}
+					}
+
+					if (!canonicalId) {
+						canonicalId = `user_${uFact.author_name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+					}
 
 					for (const factText of uFact.facts) {
 						if (!factText || typeof factText !== "string" || factText.trim().length < 5) {
