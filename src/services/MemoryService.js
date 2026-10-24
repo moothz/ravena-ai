@@ -965,6 +965,58 @@ ${textToAnalyze}`;
 	}
 
 	/**
+	 * Compila o Dossiê 360 Completo de um grupo (perfil + histórico de dossiês)
+	 * @param {string} groupId - JID do grupo (ex: '120363...@g.us')
+	 * @returns {Promise<Object|null>} Dossiê 360 do grupo
+	 */
+	async getGroup360(groupId) {
+		if (!groupId) return null;
+		const cleanGroupId = String(groupId).trim();
+
+		try {
+			// 1. Perfil vivo em memory_group_profiles
+			const profile = await this.database.dbGet(
+				DB_NAME,
+				"SELECT * FROM memory_group_profiles WHERE group_id = ? LIMIT 1",
+				[cleanGroupId]
+			);
+
+			// 2. Dossiês em memory_group_dossiers
+			let dossiers = await this.database.dbAll(
+				DB_NAME,
+				`SELECT dossier_json, conversation_sample, problematic_score, is_problematic, is_underage, created_at 
+				 FROM memory_group_dossiers 
+				 WHERE group_id = ? 
+				 ORDER BY created_at DESC LIMIT 5`,
+				[cleanGroupId]
+			);
+
+			// 3. Fallback para summaries.db se não houver em memory.db
+			if (!dossiers || dossiers.length === 0) {
+				try {
+					const oldDossiers = await this.database.getLastGroupDossiers(cleanGroupId, 5);
+					if (oldDossiers && oldDossiers.length > 0) {
+						dossiers = oldDossiers;
+					}
+				} catch (e) {}
+			}
+
+			if (!profile && (!dossiers || dossiers.length === 0)) {
+				return null;
+			}
+
+			return {
+				group_id: cleanGroupId,
+				profile: profile || null,
+				dossiers: dossiers || []
+			};
+		} catch (error) {
+			this.logger.error(`Erro ao gerar Group360 para ${groupId}:`, error);
+			return null;
+		}
+	}
+
+	/**
 	 * Busca fatos semânticos de um usuário mais relevantes para uma determinada pergunta
 	 * @param {string} canonicalUserId
 	 * @param {string} queryText

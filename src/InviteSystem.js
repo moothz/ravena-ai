@@ -760,6 +760,231 @@ class InviteSystem {
 	}
 
 	/**
+	 * Formata o Dossiê do Solicitante para exibição nos logs do WhatsApp
+	 * @param {Object|null} user360 - Dossiê 360 do usuário retornado pelo MemoryService
+	 * @param {string} [authorId] - JID/LID do solicitante
+	 * @returns {string} Texto formatado para o log
+	 */
+	formatUserDossierForLog(user360, authorId) {
+		if (
+			!user360 ||
+			(!user360.facts?.length && !user360.active_groups?.length && !user360.games?.donation)
+		) {
+			return `\n📋 *Dossiê do Solicitante:* Sem histórico prévio memorizado.\n`;
+		}
+
+		let text = `\n📋 *Dossiê do Solicitante:*\n`;
+		text += `• *ID Canônico:* ${user360.canonical_user_id || authorId}\n`;
+		if (user360.display_name && user360.display_name !== user360.canonical_user_id) {
+			text += `• *Nome Conhecido:* ${user360.display_name}\n`;
+		}
+
+		// Fatos memorizados
+		if (Array.isArray(user360.facts) && user360.facts.length > 0) {
+			text += `• *Fatos Memorizados (${user360.facts.length}):*\n`;
+			const shownFacts = user360.facts.slice(0, 5);
+			shownFacts.forEach((f) => {
+				const cat = f.category && f.category !== "general" ? `[${f.category}] ` : "";
+				text += `  - ${cat}${f.fact_text}\n`;
+			});
+			if (user360.facts.length > 5) {
+				text += `  _(+${user360.facts.length - 5} outros fatos no dossiê)_\n`;
+			}
+
+			// Verificação heurística de alertas para os moderadores
+			const factsBlob = user360.facts
+				.map((f) => f.fact_text || "")
+				.join(" ")
+				.toLowerCase();
+			const hasUnderageClues =
+				/\b(menor de idade|crian[cç]a|anos de idade|estuda no \d|ensino fundamental|ensino m[eé]dio|escola|col[eé]gio)\b/i.test(
+					factsBlob
+				);
+			const hasProblematicClues =
+				/\b(banido|trava zap|travazap|ofens|racis|gore|spam|toxic|flood|xing|problem[aá]tic)\b/i.test(
+					factsBlob
+				);
+
+			if (hasUnderageClues) {
+				text += `  ⚠️ *Alerta:* Menção a possível menor de idade ou escola nos fatos!\n`;
+			}
+			if (hasProblematicClues) {
+				text += `  🚨 *Alerta:* Menção a comportamento de risco nos fatos!\n`;
+			}
+		} else {
+			text += `• *Fatos Memorizados:* Nenhum fato semântico extraído.\n`;
+		}
+
+		// Atividade / Jogos
+		const extra = [];
+		if (user360.games?.donation) {
+			extra.push(`Doador R$${user360.games.donation.valor}`);
+		}
+		if (user360.games?.fishing?.level > 1) {
+			extra.push(`Pesca Nv.${user360.games.fishing.level}`);
+		}
+		if (Array.isArray(user360.active_groups) && user360.active_groups.length > 0) {
+			const totalMsgs = user360.active_groups.reduce((acc, g) => acc + (g.msgs_count || 0), 0);
+			extra.push(`${user360.active_groups.length} grupos ativos (${totalMsgs} msgs)`);
+		}
+		if (extra.length > 0) {
+			text += `• *Atividade:* ${extra.join(" | ")}\n`;
+		}
+
+		return text;
+	}
+
+	/**
+	 * Formata o resumo do Dossiê do Solicitante para o prompt da LLM
+	 * @param {Object|null} user360
+	 * @returns {string}
+	 */
+	formatUserDossierForPrompt(user360) {
+		if (
+			!user360 ||
+			(!user360.facts?.length && !user360.active_groups?.length && !user360.games?.donation)
+		) {
+			return "Nenhum histórico ou fato prévio memorizado sobre este usuário (usuário novo ou sem interações registradas).";
+		}
+
+		const lines = [];
+		lines.push(`ID Canônico: ${user360.canonical_user_id}`);
+		if (user360.display_name) {
+			lines.push(`Nome(s) conhecido(s): ${user360.display_name}`);
+		}
+
+		if (Array.isArray(user360.facts) && user360.facts.length > 0) {
+			lines.push("Fatos memorizados sobre o usuário:");
+			user360.facts.slice(0, 8).forEach((f) => {
+				lines.push(`- [${f.category || "geral"}] ${f.fact_text}`);
+			});
+		} else {
+			lines.push("Fatos conhecidos: Nenhum fato memorizado.");
+		}
+
+		if (user360.games?.donation) {
+			lines.push(`Histórico de doação: R$${user360.games.donation.valor}`);
+		}
+		if (Array.isArray(user360.active_groups) && user360.active_groups.length > 0) {
+			lines.push(`Interações recentes: Presente em ${user360.active_groups.length} grupos.`);
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Formata o Dossiê do Grupo para exibição nos logs do WhatsApp
+	 * @param {Object|null} group360 - Dossiê do grupo retornado pelo MemoryService
+	 * @param {string} [groupJid] - JID do grupo (@g.us)
+	 * @returns {string} Texto formatado para o log
+	 */
+	formatGroupDossierForLog(group360, groupJid) {
+		if (
+			!group360 ||
+			(!group360.profile && (!group360.dossiers || group360.dossiers.length === 0))
+		) {
+			return "";
+		}
+
+		let text = `\n🏛️ *Dossiê do Grupo (@g.us):*\n`;
+		const p = group360.profile;
+		if (p) {
+			if (p.vibe_summary) {
+				text += `• *Vibe:* ${p.vibe_summary}\n`;
+			}
+			if (typeof p.average_problematic_score === "number") {
+				text += `• *Nota Média de Risco:* ${p.average_problematic_score.toFixed(1)}/10\n`;
+			}
+			if (p.frequent_topics) {
+				try {
+					const topics =
+						typeof p.frequent_topics === "string"
+							? JSON.parse(p.frequent_topics)
+							: p.frequent_topics;
+					if (Array.isArray(topics) && topics.length > 0) {
+						text += `• *Tópicos Recorrentes:* ${topics.join(", ")}\n`;
+					}
+				} catch (e) {}
+			}
+			if (p.latest_summary) {
+				text += `• *Último Resumo:* ${p.latest_summary}\n`;
+			}
+		}
+
+		// Histórico de avaliações / dossiês de moderação
+		if (Array.isArray(group360.dossiers) && group360.dossiers.length > 0) {
+			text += `• *Dossiês de Moderação (${group360.dossiers.length}):*\n`;
+			group360.dossiers.slice(0, 3).forEach((d, idx) => {
+				try {
+					const dj =
+						typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
+					const dateStr = d.created_at
+						? ` (${new Date(d.created_at).toLocaleDateString("pt-BR")})`
+						: "";
+					const underageTag = d.is_underage || dj?.is_underage ? " 👶 [Menores]" : "";
+					const score =
+						typeof d.problematic_score === "number"
+							? d.problematic_score
+							: (dj?.problematic_score ?? 0);
+					let evText = "";
+					if (Array.isArray(dj?.classified_items) && dj.classified_items.length > 0) {
+						evText =
+							"\n" +
+							dj.classified_items
+								.map((it) => `    • *${it.category}:* "${it.evidence}"`)
+								.join("\n");
+					}
+					text += `  ${idx + 1}. *[${dj?.type || "geral"}]* Nota: *${score}/10*${underageTag}${dateStr}\n  - Resumo: ${dj?.summary || "Sem resumo"}${evText}\n`;
+				} catch (e) {}
+			});
+		}
+
+		return text;
+	}
+
+	/**
+	 * Formata o resumo do Dossiê do Grupo para o prompt da LLM
+	 * @param {Object|null} group360
+	 * @returns {string}
+	 */
+	formatGroupDossierForPrompt(group360) {
+		if (
+			!group360 ||
+			(!group360.profile && (!group360.dossiers || group360.dossiers.length === 0))
+		) {
+			return "Nenhum dossiê prévio registrado para este grupo na memória.";
+		}
+
+		const lines = [];
+		lines.push(`ID do Grupo: ${group360.group_id}`);
+		const p = group360.profile;
+		if (p) {
+			if (p.vibe_summary) lines.push(`Vibe observada: ${p.vibe_summary}`);
+			if (typeof p.average_problematic_score === "number") {
+				lines.push(`Nota média de risco histórica: ${p.average_problematic_score.toFixed(1)}/10`);
+			}
+			if (p.latest_summary) lines.push(`Último resumo das atividades: ${p.latest_summary}`);
+		}
+
+		if (Array.isArray(group360.dossiers) && group360.dossiers.length > 0) {
+			lines.push("Histórico de dossiês de moderação anteriores:");
+			group360.dossiers.slice(0, 3).forEach((d) => {
+				try {
+					const dj =
+						typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
+					const underageInfo =
+						d.is_underage || dj?.is_underage ? " [MENORES DE IDADE DETECTADOS]" : "";
+					lines.push(
+						`- Tipo: ${dj?.type || "geral"} | Risco: ${d.problematic_score ?? dj?.problematic_score ?? 0}/10${underageInfo}: ${dj?.summary || ""}`
+					);
+				} catch (e) {}
+			});
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
 	 * Avalia a solicitação de convite com a LLM
 	 * @param {Object} params
 	 * @returns {Promise<{ shouldAutoAccept: boolean, reason: string, rawResponse?: string }>}
@@ -774,8 +999,32 @@ class InviteSystem {
 		isDonator = false,
 		donateValue = 0,
 		wasInGroupBefore = false,
-		hasBotInGroup = false
+		hasBotInGroup = false,
+		userDossier = null,
+		groupDossier = null,
+		groupJid = null
 	}) {
+		if (!userDossier && authorId) {
+			try {
+				const MemoryService = require("./services/MemoryService");
+				userDossier = await MemoryService.getInstance().getUser360(authorId);
+			} catch (dossierErr) {
+				this.logger.warn(
+					`Erro ao carregar dossiê de usuário no evaluateAutoAcceptWithLLM: ${dossierErr.message}`
+				);
+			}
+		}
+
+		if (!groupDossier && groupJid) {
+			try {
+				const MemoryService = require("./services/MemoryService");
+				groupDossier = await MemoryService.getInstance().getGroup360(groupJid);
+			} catch (groupDossierErr) {
+				this.logger.warn(
+					`Erro ao carregar dossiê de grupo no evaluateAutoAcceptWithLLM: ${groupDossierErr.message}`
+				);
+			}
+		}
 		if (
 			process.env.DISABLE_INVITE_AUTO_ACCEPT === "true" ||
 			process.env.DISABLE_AUTO_ACCEPT === "true"
@@ -938,12 +1187,15 @@ Seu objetivo é decidir se um grupo deve ser ACEITO AUTOMATICAMENTE ou se deve s
 REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 1. Caracteres estranhos/fontes ornamentais/zalgo no nome da pessoa, grupo ou descrição (desconsiderar se o usuário for doador — se for doador, caracteres estranhos NÃO são um problema). (OBS: emojis normais e símbolos comuns como ®, ©, ™, etc. NÃO são caracteres estranhos. Caracteres estranhos referem-se a fontes modificadas/personalizadas como 𝓡, 𝓑, 𝖲, 𝗔, 𝕝, 𝚐, alfabetos exóticos usados apenas para enfeitar letras, ou zalgo/combinações abusivas de acentos decorativos).
 2. Grupos com menos de 3 pessoas (a menos que o usuário seja doador R$10+).
-3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, 5° ano, 6° ano, 8° ano, série, vocabulário infantil/underage).
-4. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
-5. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
-6. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
-7. Já existe um bot no grupo atualmente (NUNCA aceitar outro, independente do convite).
-8. O bot já esteve no grupo anteriormente (se saiu/removeram, não deve ser aceito, a menos que o solicitante seja doador).
+3. Grupos que pareçam ser de menor de idade (turmas de colégio, escola, 5° ano, 6° ano, 8° ano, série, vocabulário infantil/underage) ou cujo Dossiê Histórico do Grupo registre presença comprovada de menores de até 16 anos ('is_underage').
+4. Solicitante identificado como CRIANÇA OU ADOLESCENTE (até 16 anos) no dossiê de memória (ex: menção a idade < 17 anos, séries escolares/ensino fundamental, comportamento declaradamente infantil). NUNCA aceitar convite enviado por menor de idade! (Atenção: 17 anos ou mais é considerado jovem adulto/adulto).
+5. Solicitante identificado como PROBLEMÁTICO no dossiê de memória (histórico de toxicidade, banimentos de outros grupos, assédio, spam, travazap, racismo, gore, pornografia, ofensas graves ou invasão de grupos). NUNCA aceitar se o solicitante for problemático!
+6. Grupo com histórico problemático no dossiê (nota média de risco > 6/10, histórico de 'is_problematic', ou evidências graves de crimes, racismo, gore, ódio, assédio). NUNCA aceitar grupo de risco!
+7. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
+8. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
+9. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
+10. Já existe um bot no grupo atualmente (NUNCA aceitar outro, independente do convite).
+11. O bot já esteve no grupo anteriormente (se saiu/removeram, não deve ser aceito, a menos que o solicitante seja doador).
 
 CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
 1. Usuário Doador (grande peso):
@@ -951,24 +1203,32 @@ CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
    - R$1 a R$10: Aceitar mesmo com motivo intermediário/simples se a descrição for coerente.
    - R$10 a R$30: Aceitar independente da quantidade de membros.
    - R$30 a R$49: Aceitar mesmo com motivo ruim/fraco.
-   - Acima de R$49: Sempre aceitar (desde que sem conteúdo ilegal/ódio).
+   - Acima de R$49: Sempre aceitar (desde que sem conteúdo ilegal/ódio/menores/usuário problemático).
 2. Motivo bem escrito, educado e detalhado, justificando o uso das funções do bot sem quebrar regras.
 3. Grupo de streamer: possui nome ou link de canal (Twitch, YouTube, Kick) na descrição ou tags "[OFF]" ou "[ON]" no título.
+4. Usuário ou grupo conhecido positivamente na comunidade (dossiê indica usuários ativos, respeitosos, jogos).
 
 Seja exigente: em caso de dúvida, falta de clareza ou risco potencial, recuse (should_auto_accept: false).
 Responda APENAS com um objeto JSON no formato especificado.`;
 
 			const donorInfo = isDonator ? `Sim (💸 R$${donateValue} 💰)` : "Não";
+			const userDossierPromptSummary = this.formatUserDossierForPrompt(userDossier);
+			const groupDossierPromptSummary = this.formatGroupDossierForPrompt(groupDossier);
 
 			const prompt = `Analise a solicitação de convite abaixo:
 
 - Usuário solicitante: "${userName}" (${authorId.split("@")[0]})
 - Doador: ${donorInfo}
+- Dossiê do Solicitante na Memória:
+${userDossierPromptSummary}
 - Nome do Grupo: "${groupName || "Desconhecido"}"
+- ID do Grupo: ${groupJid || "Desconhecido"}
 - Membros: ${participantCount ?? "Desconhecido"}
 - Já existe bot no grupo atualmente: ${hasBotInGroup ? "Sim" : "Não"}
 - Bot já esteve neste grupo antes: ${wasInGroupBefore ? "Sim" : "Não"}
 - Descrição do Grupo: "${description || "Sem descrição"}"
+- Dossiê Histórico do Grupo na Memória:
+${groupDossierPromptSummary}
 - Motivo enviado pelo usuário:
 "${reason}"
 
@@ -1778,8 +2038,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			// Verifica se o bot já esteve no grupo anteriormente
 			let wasInGroupBefore = false;
 			let manualLeaveInfo = null;
-			let lastDossiersText = "";
 			let groupPeriods = [];
+			let groupDossier = null;
+			let groupDossierText = "";
 
 			if (inviteInfoData?.JID) {
 				const bannedDisabledBotIds = this.getBannedDisabledBotIds();
@@ -1833,33 +2094,29 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					this.logger.warn(`Erro ao verificar grupo na base: ${groupCheckErr.message}`);
 				}
 
+				// Carrega Dossiê do Grupo na memória se houver JID (@g.us)
 				try {
-					const lastDossiers = await this.database.getLastGroupDossiers(inviteInfoData.JID, 3);
-					if (lastDossiers && lastDossiers.length > 0) {
-						lastDossiersText = "\n📊 *Últimos Dossiês Registrados:*\n";
-						lastDossiers.forEach((d, idx) => {
-							try {
-								const p =
-									typeof d.dossier_json === "string" ? JSON.parse(d.dossier_json) : d.dossier_json;
-								const dateStr = d.created_at
-									? ` (${new Date(d.created_at).toLocaleDateString("pt-BR")})`
-									: "";
-								let evText = "";
-								if (Array.isArray(p.classified_items) && p.classified_items.length > 0) {
-									evText =
-										"\n" +
-										p.classified_items
-											.map((it) => `  • *${it.category}:* "${it.evidence}"`)
-											.join("\n");
-								}
-								const underageTag = p.is_underage ? " 👶 [Menores]" : "";
-								lastDossiersText += `${idx + 1}. *[${p.type || "geral"}]* Nota: *${p.problematic_score}/10*${underageTag}${dateStr}\n- Resumo: ${p.summary}${evText}\n`;
-							} catch (e) {}
-						});
+					const MemoryService = require("./services/MemoryService");
+					const memoryService = MemoryService.getInstance();
+					groupDossier = await memoryService.getGroup360(inviteInfoData.JID);
+					if (groupDossier) {
+						groupDossierText = this.formatGroupDossierForLog(groupDossier, inviteInfoData.JID);
 					}
-				} catch (dossierErr) {
-					this.logger.error("Erro ao carregar últimos dossiês do grupo:", dossierErr);
+				} catch (groupDossierErr) {
+					this.logger.error("Erro ao carregar dossiê do grupo:", groupDossierErr);
 				}
+			}
+
+			// Carrega Dossiê do Solicitante na memória
+			let userDossier = null;
+			let userDossierText = "";
+			try {
+				const MemoryService = require("./services/MemoryService");
+				const memoryService = MemoryService.getInstance();
+				userDossier = await memoryService.getUser360(authorId);
+				userDossierText = this.formatUserDossierForLog(userDossier, authorId);
+			} catch (userDossierErr) {
+				this.logger.error("Erro ao carregar dossiê do solicitante:", userDossierErr);
 			}
 
 			// Verifica se o autor está na lista de doadores
@@ -1945,7 +2202,10 @@ Decida se este grupo deve ser aceito automaticamente.`;
 							isDonator,
 							donateValue,
 							wasInGroupBefore,
-							hasBotInGroup: otherBotsInGroup.length > 0
+							hasBotInGroup: otherBotsInGroup.length > 0,
+							userDossier,
+							groupDossier,
+							groupJid: inviteInfoData?.JID || null
 						});
 					}
 
@@ -2232,11 +2492,12 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						otherInvitersText +
 						membershipHistoryText +
 						`\n💬 *Motivo:*\n${reason}\n` +
+						userDossierText +
+						groupDossierText +
 						botWarning +
 						(!autoAccepted && !enqueuedAutoAccept && llmReason
 							? `\n🤖 *Análise IA (Não aceito auto):* ${llmReason}\n`
 							: "") +
-						lastDossiersText +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);
 
 					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
