@@ -1416,3 +1416,136 @@ hr, .divider {
     color: var(--text-muted);
     font-weight: 600;
 }
+
+/* Moderação / Monitoramento */
+.monitoring-occurrences-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.monitoring-occurrences-header label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.monitoring-occurrences-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.monitoring-empty-msg {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 10px 0;
+}
+
+.monitoring-occurrence-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.monitoring-occ-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.monitoring-occ-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.monitoring-occ-badge.word {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.monitoring-occ-badge.regex {
+    background: #8b5cf6;
+    color: #fff;
+}
+
+.monitoring-occ-author {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.monitoring-occ-date {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.monitoring-messages-box {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.monitoring-line-before,
+.monitoring-line-after {
+    color: var(--text-muted);
+}
+
+.monitoring-line-trigger {
+    background: rgba(239, 68, 68, 0.2);
+    border-left: 3px solid #ef4444;
+    padding-left: 6px;
+    color: #fca5a5;
+    font-weight: bold;
+}
+
+.monitoring-occ-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.btn-mark-seen {
+    background-color: #10b981 !important;
+    border-color: #10b981 !important;
+    color: #fff !important;
+    font-size: 0.8rem;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s;
+    border: none;
+}
+
+.btn-mark-seen:hover {
+    background-color: #059669 !important;
+}
+
+.btn-mark-seen.seen {
+    background-color: #6b7280 !important;
+    border-color: #6b7280 !important;
+    cursor: default;
+    opacity: 0.7;
+}

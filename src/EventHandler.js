@@ -28,6 +28,7 @@ const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
 const EventEmitter = require("events");
 const { buildRegex } = require("./utils/RegexFilterValidator");
+const GroupMonitoringService = require("./services/GroupMonitoringService");
 const {
 	downloadHandler,
 	detectPlatform,
@@ -569,6 +570,17 @@ class EventHandler extends EventEmitter {
 						this.logger.debug(`Ignorando mensagem de ${message.author} (ignorado no grupo)`);
 						return; // Skip processing this message
 					}
+				}
+
+				// Monitoramento de palavras e regexes do grupo
+				try {
+					GroupMonitoringService.getInstance()
+						.processMessage(bot, message, group)
+						.catch((mErr) => {
+							this.logger.error("Erro no processamento de monitoramento:", mErr);
+						});
+				} catch (mErr) {
+					this.logger.error("Erro ao chamar serviço de monitoramento:", mErr);
 				}
 
 				// Aplica filtros

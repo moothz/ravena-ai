@@ -21,6 +21,7 @@ const StabilityMonitor = require("./src/services/StabilityMonitor");
 const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
 const ChatCleanerScheduler = require("./src/services/ChatCleanerScheduler");
+const GroupMonitoringService = require("./src/services/GroupMonitoringService");
 const fs = require("fs");
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,6 +48,7 @@ async function main() {
 	let statusScheduler;
 	let llmDailyReportService;
 	let chatCleanerScheduler;
+	let groupMonitoringService;
 
 	try {
 		const disableActivity = process.env.DISABLE_ACTIVITY === "true";
@@ -314,6 +316,12 @@ async function main() {
 			chatCleanerScheduler.start();
 		}
 
+		// Inicializa serviço de monitoramento de grupos e cleaner
+		groupMonitoringService = GroupMonitoringService.getInstance();
+		if (!disableActivity) {
+			groupMonitoringService.startCleaner();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,
@@ -350,6 +358,11 @@ async function main() {
 		// Para o scheduler de relatório diário de LLM
 		if (llmDailyReportService) {
 			llmDailyReportService.stop();
+		}
+
+		// Para o cleaner de monitoramento
+		if (groupMonitoringService) {
+			groupMonitoringService.stop();
 		}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões

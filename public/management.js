@@ -949,6 +949,307 @@ document.addEventListener('DOMContentLoaded', () => {
         renderStreamSection('kick');
         renderStreamSection('youtube_video');
         renderStreamSection('youtube_live');
+        renderMonitoringSection();
+    }
+
+    // --- MONITORAMENTO / MODERAÇÃO ---
+    function renderMonitoringSection() {
+        if (!groupData.monitoring) {
+            groupData.monitoring = { rules: [], occurrences: [] };
+        }
+        renderMonitoredRules();
+        renderMonitoredOccurrences();
+    }
+
+    function renderMonitoredRules() {
+        const rules = groupData.monitoring?.rules || [];
+        const words = rules.filter((r) => r.type === "word");
+        const regexes = rules.filter((r) => r.type === "regex");
+
+        // Render Words Tags
+        const wordsContainer = document.getElementById("monitored-words-list");
+        if (wordsContainer) {
+            wordsContainer.innerHTML = "";
+            if (words.length === 0) {
+                const empty = document.createElement("div");
+                empty.className = "regex-empty-msg";
+                empty.textContent = "Nenhuma palavra ou frase monitorada.";
+                wordsContainer.appendChild(empty);
+            } else {
+                words.forEach((r) => {
+                    const tag = document.createElement("span");
+                    tag.className = "tag";
+                    tag.innerHTML = `${escapeHtml(r.pattern)} <span class="remove">&times;</span>`;
+                    tag.querySelector(".remove").onclick = () => deleteMonitoringRule(r.id);
+                    wordsContainer.appendChild(tag);
+                });
+            }
+        }
+
+        // Render Regexes List
+        const regexContainer = document.getElementById("monitored-regexes-list");
+        if (regexContainer) {
+            regexContainer.innerHTML = "";
+            if (regexes.length === 0) {
+                const empty = document.createElement("div");
+                empty.className = "regex-empty-msg";
+                empty.textContent = "Nenhum regex monitorado.";
+                regexContainer.appendChild(empty);
+            } else {
+                regexes.forEach((r) => {
+                    const row = document.createElement("div");
+                    row.className = "regex-row-item";
+
+                    const patternEl = document.createElement("div");
+                    patternEl.className = "regex-pattern-display";
+                    const code = document.createElement("code");
+                    code.textContent = r.pattern;
+                    patternEl.appendChild(code);
+
+                    const testContainer = document.createElement("div");
+                    testContainer.className = "regex-test-container";
+
+                    const testInput = document.createElement("input");
+                    testInput.type = "text";
+                    testInput.placeholder = "Testar texto...";
+                    testInput.className = "form-control regex-test-input";
+
+                    const testResult = document.createElement("span");
+                    testResult.className = "regex-test-result";
+
+                    const testRegex = () => {
+                        const sample = testInput.value;
+                        if (!sample) {
+                            testResult.textContent = "";
+                            testResult.className = "regex-test-result";
+                            return;
+                        }
+                        try {
+                            const re = buildRegexClient(r.pattern);
+                            if (re && re.test(sample)) {
+                                testResult.textContent = "✓ Detectado";
+                                testResult.className = "regex-test-result match";
+                            } else {
+                                testResult.textContent = "✗ Não detectado";
+                                testResult.className = "regex-test-result no-match";
+                            }
+                        } catch {
+                            testResult.textContent = "! Erro";
+                            testResult.className = "regex-test-result no-match";
+                        }
+                    };
+
+                    testInput.addEventListener("input", testRegex);
+                    testContainer.appendChild(testInput);
+                    testContainer.appendChild(testResult);
+
+                    const delBtn = document.createElement("button");
+                    delBtn.type = "button";
+                    delBtn.className = "btn-regex-delete";
+                    delBtn.title = "Remover Regex";
+                    delBtn.innerHTML = "&times;";
+                    delBtn.onclick = () => deleteMonitoringRule(r.id);
+
+                    row.appendChild(patternEl);
+                    row.appendChild(testContainer);
+                    row.appendChild(delBtn);
+
+                    regexContainer.appendChild(row);
+                });
+            }
+        }
+    }
+
+    async function addMonitoringRule(type, pattern) {
+        try {
+            const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, groupId, type, pattern })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || "Erro ao adicionar regra.");
+            }
+            if (!groupData.monitoring) groupData.monitoring = {};
+            groupData.monitoring.rules = data.rules;
+            renderMonitoredRules();
+        } catch (err) {
+            showCustomAlert(err.message, "Erro ao Adicionar Regra");
+        }
+    }
+
+    async function deleteMonitoringRule(ruleId) {
+        try {
+            const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, groupId, ruleId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || "Erro ao remover regra.");
+            }
+            if (!groupData.monitoring) groupData.monitoring = {};
+            groupData.monitoring.rules = data.rules;
+            renderMonitoredRules();
+        } catch (err) {
+            showCustomAlert(err.message, "Erro ao Remover Regra");
+        }
+    }
+
+    function renderMonitoredOccurrences() {
+        const occurrences = groupData.monitoring?.occurrences || [];
+        const container = document.getElementById("monitoring-occurrences-list");
+        const countEl = document.getElementById("occurrences-count");
+        const btnMarkAll = document.getElementById("btn-mark-all-seen");
+
+        const unreadCount = occurrences.filter((o) => !o.is_read).length;
+        if (countEl) countEl.textContent = unreadCount;
+        if (btnMarkAll) btnMarkAll.style.display = unreadCount > 0 ? "inline-flex" : "none";
+
+        if (!container) return;
+        container.innerHTML = "";
+
+        if (occurrences.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "monitoring-empty-msg";
+            empty.textContent = "Nenhuma ocorrência registrada no grupo.";
+            container.appendChild(empty);
+            return;
+        }
+
+        occurrences.forEach((occ) => {
+            const card = document.createElement("div");
+            card.className = "monitoring-occurrence-card";
+
+            const top = document.createElement("div");
+            top.className = "monitoring-occ-top";
+
+            const leftInfo = document.createElement("div");
+            leftInfo.style.display = "flex";
+            leftInfo.style.alignItems = "center";
+            leftInfo.style.gap = "8px";
+
+            const badge = document.createElement("span");
+            badge.className = `monitoring-occ-badge ${occ.rule_type}`;
+            badge.textContent = occ.rule_type === "regex" ? "Regex" : "Palavra";
+
+            const patternCode = document.createElement("code");
+            patternCode.textContent = occ.pattern;
+
+            leftInfo.appendChild(badge);
+            leftInfo.appendChild(patternCode);
+
+            const rightInfo = document.createElement("div");
+            rightInfo.style.display = "flex";
+            rightInfo.style.alignItems = "center";
+            rightInfo.style.gap = "12px";
+
+            const authorSpan = document.createElement("span");
+            authorSpan.className = "monitoring-occ-author";
+            authorSpan.textContent = `${occ.author_name || "Desconhecido"} (${occ.author_number || ""})`;
+
+            const dateSpan = document.createElement("span");
+            dateSpan.className = "monitoring-occ-date";
+            dateSpan.textContent = occ.created_at || "";
+
+            rightInfo.appendChild(authorSpan);
+            rightInfo.appendChild(dateSpan);
+
+            top.appendChild(leftInfo);
+            top.appendChild(rightInfo);
+
+            const msgBox = document.createElement("div");
+            msgBox.className = "monitoring-messages-box";
+
+            if (Array.isArray(occ.before_messages)) {
+                occ.before_messages.forEach((msg) => {
+                    const line = document.createElement("div");
+                    line.className = "monitoring-line-before";
+                    line.textContent = msg;
+                    msgBox.appendChild(line);
+                });
+            }
+
+            const triggerLine = document.createElement("div");
+            triggerLine.className = "monitoring-line-trigger";
+            triggerLine.textContent = occ.trigger_message;
+            msgBox.appendChild(triggerLine);
+
+            if (Array.isArray(occ.after_messages)) {
+                occ.after_messages.forEach((msg) => {
+                    const line = document.createElement("div");
+                    line.className = "monitoring-line-after";
+                    line.textContent = msg;
+                    msgBox.appendChild(line);
+                });
+            }
+
+            const footer = document.createElement("div");
+            footer.className = "monitoring-occ-footer";
+
+            const markBtn = document.createElement("button");
+            markBtn.type = "button";
+            markBtn.className = `btn-mark-seen ${occ.is_read ? "seen" : ""}`;
+            markBtn.textContent = occ.is_read ? "✓ Visto" : "Marca Visto";
+            if (!occ.is_read) {
+                markBtn.onclick = async () => {
+                    await markOccurrenceSeen(occ.id);
+                };
+            }
+
+            footer.appendChild(markBtn);
+
+            card.appendChild(top);
+            card.appendChild(msgBox);
+            card.appendChild(footer);
+
+            container.appendChild(card);
+        });
+    }
+
+    async function markOccurrenceSeen(occurrenceId) {
+        try {
+            const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, groupId, occurrenceId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || "Erro ao marcar visto.");
+            }
+            if (groupData.monitoring?.occurrences) {
+                const target = groupData.monitoring.occurrences.find((o) => o.id === occurrenceId);
+                if (target) target.is_read = 1;
+            }
+            renderMonitoredOccurrences();
+        } catch (err) {
+            showCustomAlert(err.message, "Erro ao Atualizar");
+        }
+    }
+
+    async function markAllOccurrencesSeen() {
+        try {
+            const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, groupId, all: true })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || "Erro ao marcar todas como vistas.");
+            }
+            if (groupData.monitoring?.occurrences) {
+                groupData.monitoring.occurrences.forEach((o) => {
+                    o.is_read = 1;
+                });
+            }
+            renderMonitoredOccurrences();
+        } catch (err) {
+            showCustomAlert(err.message, "Erro ao Atualizar");
+        }
     }
 
     function renderTags(containerId, dataList, updateCallback) {
@@ -3219,6 +3520,83 @@ document.addEventListener('DOMContentLoaded', () => {
         setupListAdder('add-muted-command', 'new-muted-command', 'mutedCommands');
         setupListAdder('add-additional-admin', 'new-additional-admin', 'additionalAdmins');
         setupListAdder('add-allowed-link', 'new-allowed-link', 'filters.allowedLinks');
+
+        // Monitoramento
+        const btnAddMonWord = document.getElementById('add-monitored-word');
+        const inputMonWord = document.getElementById('new-monitored-word');
+        const errMonWord = document.getElementById('monitored-word-error');
+        if (btnAddMonWord && inputMonWord) {
+            const handleAddWord = () => {
+                const val = inputMonWord.value.trim();
+                if (!val) return;
+                if (errMonWord) errMonWord.style.display = 'none';
+                if (val.length < 5) {
+                    if (errMonWord) {
+                        errMonWord.textContent = 'A palavra ou frase deve ter no mínimo 5 caracteres.';
+                        errMonWord.style.display = 'block';
+                    }
+                    return;
+                }
+                const totalRules = (groupData.monitoring?.rules || []).length;
+                if (totalRules >= 15) {
+                    if (errMonWord) {
+                        errMonWord.textContent = 'Limite atingido: máximo de 15 regras por grupo.';
+                        errMonWord.style.display = 'block';
+                    }
+                    return;
+                }
+                inputMonWord.value = '';
+                addMonitoringRule('word', val);
+            };
+            btnAddMonWord.onclick = handleAddWord;
+            inputMonWord.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddWord();
+                }
+            });
+        }
+
+        const btnAddMonRegex = document.getElementById('add-monitored-regex');
+        const inputMonRegex = document.getElementById('new-monitored-regex');
+        const errMonRegex = document.getElementById('monitored-regex-error');
+        if (btnAddMonRegex && inputMonRegex) {
+            const handleAddRegex = () => {
+                const val = inputMonRegex.value.trim();
+                if (!val) return;
+                if (errMonRegex) errMonRegex.style.display = 'none';
+                const validation = validateRegexClient(val);
+                if (!validation.valid) {
+                    if (errMonRegex) {
+                        errMonRegex.textContent = validation.error;
+                        errMonRegex.style.display = 'block';
+                    }
+                    return;
+                }
+                const totalRules = (groupData.monitoring?.rules || []).length;
+                if (totalRules >= 15) {
+                    if (errMonRegex) {
+                        errMonRegex.textContent = 'Limite atingido: máximo de 15 regras por grupo.';
+                        errMonRegex.style.display = 'block';
+                    }
+                    return;
+                }
+                inputMonRegex.value = '';
+                addMonitoringRule('regex', val);
+            };
+            btnAddMonRegex.onclick = handleAddRegex;
+            inputMonRegex.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddRegex();
+                }
+            });
+        }
+
+        const btnMarkAllOccs = document.getElementById('btn-mark-all-seen');
+        if (btnMarkAllOccs) {
+            btnMarkAllOccs.onclick = markAllOccurrencesSeen;
+        }
 
         const btnAddTrustedLinks = document.getElementById('btn-add-trusted-links');
         if (btnAddTrustedLinks) {

@@ -21,9 +21,12 @@ class S3Setup {
 		this.secretKey = process.env.S3_SECRET_KEY || process.env.MINIO_SECRET_KEY;
 		this.bucket = process.env.S3_BUCKET || process.env.MINIO_BUCKET || "zap-media";
 		this.region = process.env.S3_REGION || process.env.MINIO_REGION || "us-east-1";
-		this.protocol = (process.env.S3_USE_SSL || process.env.MINIO_USE_SSL) === "true" ? "https" : "http";
-		this.retentionDays = parseInt(process.env.S3_RETENTION_DAYS || process.env.MINIO_RETENTION_DAYS) || 0;
-		this.storageLimitGb = parseInt(process.env.S3_STORAGE_LIMIT_GB || process.env.MINIO_STORAGE_LIMIT_GB) || 0;
+		this.protocol =
+			(process.env.S3_USE_SSL || process.env.MINIO_USE_SSL) === "true" ? "https" : "http";
+		this.retentionDays =
+			parseInt(process.env.S3_RETENTION_DAYS || process.env.MINIO_RETENTION_DAYS) || 0;
+		this.storageLimitGb =
+			parseInt(process.env.S3_STORAGE_LIMIT_GB || process.env.MINIO_STORAGE_LIMIT_GB) || 0;
 	}
 
 	/**

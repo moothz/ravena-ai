@@ -165,10 +165,10 @@
                     </div>
                 </div>
 
-                <!-- Accordion 2: Funções Administrativas & Moderação -->
+                <!-- Accordion 2: Administração & Segurança -->
                 <div class="accordion-item">
                     <div class="accordion-header">
-                        <h3><i class="fas fa-shield-halved"></i> Moderação & Segurança</h3>
+                        <h3><i class="fas fa-shield-halved"></i> Administração & Segurança</h3>
                         <i class="fas fa-chevron-down arrow"></i>
                     </div>
                     <div class="accordion-content">
@@ -322,8 +322,58 @@
 
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary btn-save-section" data-section="admin">
-                                <i class="fas fa-save"></i> Salvar Moderação
+                                <i class="fas fa-save"></i> Salvar Administração & Segurança
                             </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Moderação / Monitoramento -->
+                <div class="accordion-item" id="accordion-monitoring">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-eye"></i> Moderação/Monitoramento</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <!-- Palavras Monitoradas -->
+                        <div class="list-manager-section">
+                            <label id="lbl-monitored-words">Palavras e Frases Monitoradas</label>
+                            <div class="field-hint">O bot registrará a mensagem disparadora, 5 mensagens antes e 5 depois quando estes termos forem enviados (mínimo 5 caracteres). Máximo de 15 regras por grupo.</div>
+                            <div class="input-group mt-1">
+                                <input type="text" id="new-monitored-word" placeholder="Palavra ou frase (mínimo 5 caracteres)..." class="form-control">
+                                <button type="button" id="add-monitored-word" class="btn btn-secondary"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div id="monitored-word-error" class="field-hint mt-1" style="color: #e53e3e; display: none;"></div>
+                            <div id="monitored-words-list" class="tags-container"></div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Regex Monitoradas -->
+                        <div class="list-manager-section">
+                            <label id="lbl-monitored-regexes">Filtro por Expressões Regulares (Regex) Monitoradas</label>
+                            <div class="field-hint">Expressões regulares para monitoramento de padrões complexos. Padrões muito abertos serão bloqueados por segurança.</div>
+                            <div class="input-group mt-1">
+                                <input type="text" id="new-monitored-regex" placeholder="Ex: \b(cassino|aposta)\b ou /padrão/i" class="form-control">
+                                <button type="button" id="add-monitored-regex" class="btn btn-secondary" title="Adicionar Regex"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div id="monitored-regex-error" class="field-hint mt-1" style="color: #e53e3e; display: none;"></div>
+                            <div id="monitored-regexes-list" class="regex-list-container"></div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Ocorrências Registradas -->
+                        <div class="monitoring-occurrences-section">
+                            <div class="monitoring-occurrences-header">
+                                <label><i class="fas fa-history"></i> Ocorrências Registradas (<span id="occurrences-count">0</span>)</label>
+                                <button type="button" id="btn-mark-all-seen" class="btn btn-sm btn-success">
+                                    <i class="fas fa-check-double"></i> Marcar Todos como Visto
+                                </button>
+                            </div>
+                            <div id="monitoring-occurrences-list" class="monitoring-occurrences-list-container">
+                                <!-- Cards renderizados via JS -->
+                            </div>
                         </div>
                     </div>
                 </div>

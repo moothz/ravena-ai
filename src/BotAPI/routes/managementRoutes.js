@@ -434,6 +434,14 @@ function registerManagementRoutes(api) {
 				groupData.roleta = { timeoutTime: 300, silenciar: false };
 			}
 
+			try {
+				const GroupMonitoringService = require("../../services/GroupMonitoringService");
+				groupData.monitoring = await GroupMonitoringService.getInstance().getGroupData(id);
+			} catch (e) {
+				api.logger.error("Error fetching group monitoring data:", e);
+				groupData.monitoring = { rules: [], occurrences: [] };
+			}
+
 			api.logger.info(`[management][${token}][${id}] Group ${groupData.name}`);
 			return res.json(groupData);
 		} catch (error) {
@@ -602,6 +610,10 @@ function registerManagementRoutes(api) {
 					api.logger.error("Erro ao salvar configurações da roleta:", err);
 				}
 				delete changes.roleta;
+			}
+
+			if (changes.monitoring !== undefined) {
+				delete changes.monitoring;
 			}
 			api.logger.info(
 				`[management][${token}][${groupId}] UPDATED Group data:\n${JSON.stringify(changes, null, 2)}`
@@ -1162,6 +1174,84 @@ function registerManagementRoutes(api) {
 		} catch (e) {
 			api.logger.error("Erro ao verificar nome do grupo:", e);
 			return res.status(500).json({ success: false, message: e.message });
+		}
+	});
+
+	// Adicionar regra de monitoramento
+	app.post("/api/group-monitoring/rule", api.strictLimiter, async (req, res) => {
+		const { token, groupId, type, pattern } = req.body;
+		if (!token || !groupId || !type || !pattern) {
+			return res.status(400).json({ success: false, message: "Parâmetros obrigatórios ausentes." });
+		}
+		try {
+			const webManagementData = await api.readWebManagementToken(token);
+			if (!webManagementData || webManagementData.groupId !== groupId) {
+				return res.status(401).json({ success: false, message: "Não autorizado." });
+			}
+			const GroupMonitoringService = require("../../services/GroupMonitoringService");
+			const service = GroupMonitoringService.getInstance();
+			let rules;
+			if (type === "word") {
+				rules = await service.addWordRule(groupId, pattern, webManagementData.authorName);
+			} else if (type === "regex") {
+				rules = await service.addRegexRule(groupId, pattern, webManagementData.authorName);
+			} else {
+				return res.status(400).json({ success: false, message: "Tipo de regra inválido." });
+			}
+			return res.json({ success: true, rules });
+		} catch (error) {
+			api.logger.error("Erro ao adicionar regra de monitoramento:", error);
+			return res.status(400).json({ success: false, message: error.message });
+		}
+	});
+
+	// Remover regra de monitoramento
+	app.delete("/api/group-monitoring/rule", api.strictLimiter, async (req, res) => {
+		const { token, groupId, ruleId } = req.body;
+		if (!token || !groupId || !ruleId) {
+			return res.status(400).json({ success: false, message: "Parâmetros obrigatórios ausentes." });
+		}
+		try {
+			const webManagementData = await api.readWebManagementToken(token);
+			if (!webManagementData || webManagementData.groupId !== groupId) {
+				return res.status(401).json({ success: false, message: "Não autorizado." });
+			}
+			const GroupMonitoringService = require("../../services/GroupMonitoringService");
+			const service = GroupMonitoringService.getInstance();
+			const { updatedRules } = await service.deleteRule(groupId, ruleId);
+			return res.json({ success: true, rules: updatedRules });
+		} catch (error) {
+			api.logger.error("Erro ao remover regra de monitoramento:", error);
+			return res.status(400).json({ success: false, message: error.message });
+		}
+	});
+
+	// Marcar ocorrência(s) de monitoramento como lida(s)
+	app.post("/api/group-monitoring/mark-read", api.strictLimiter, async (req, res) => {
+		const { token, groupId, occurrenceId, all } = req.body;
+		if (!token || !groupId) {
+			return res.status(400).json({ success: false, message: "Parâmetros obrigatórios ausentes." });
+		}
+		try {
+			const webManagementData = await api.readWebManagementToken(token);
+			if (!webManagementData || webManagementData.groupId !== groupId) {
+				return res.status(401).json({ success: false, message: "Não autorizado." });
+			}
+			const GroupMonitoringService = require("../../services/GroupMonitoringService");
+			const service = GroupMonitoringService.getInstance();
+			if (all) {
+				const count = await service.markAllAsRead(groupId);
+				return res.json({ success: true, count });
+			} else if (occurrenceId) {
+				const marked = await service.markAsRead(groupId, occurrenceId);
+				return res.json({ success: true, occurrence: marked });
+			}
+			return res
+				.status(400)
+				.json({ success: false, message: "Informe occurrenceId ou all: true." });
+		} catch (error) {
+			api.logger.error("Erro ao marcar ocorrência como lida:", error);
+			return res.status(400).json({ success: false, message: error.message });
 		}
 	});
 }

@@ -535,3 +535,38 @@ Armazena a relação de bots e grupos que devem ser ignorados em envios de mensa
 | `bot_id` | TEXT PK | Identificador da instância do bot (ex: 'rav-enculinha') |
 | `group_id` | TEXT PK | JID do grupo ignorado/sem participação (ex: `120363...@g.us`) |
 
+### `group_monitoring.db`
+Banco de dados dedicado ao monitoramento de palavras, frases e regexes nos grupos, com captura de contexto (+5 / -5 mensagens).
+Isolado de backups automáticos (`noBackup: true`) e com rotina noturna de limpeza ao atingir 2.5 GB.
+
+#### `monitoring_rules`
+Armazena as regras ativas de monitoramento por grupo (máximo de 15 regras por grupo).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo (ex: `120363...@g.us`) |
+| `type` | TEXT | Tipo de regra: 'word' ou 'regex' |
+| `pattern` | TEXT | Palavra/frase ou expressão regular cadastrada |
+| `created_at` | DATETIME | Data e hora de criação da regra |
+| `created_by` | TEXT | JID ou número do autor que configurou |
+
+#### `monitoring_occurrences`
+Armazena as ocorrências capturadas quando uma mensagem bate com uma regra ativa.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `group_id` | TEXT | JID do grupo |
+| `rule_type` | TEXT | 'word' ou 'regex' |
+| `pattern` | TEXT | Padrão coincidente |
+| `trigger_message` | TEXT | Mensagem disparadora formatada |
+| `author_name` | TEXT | Nome do remetente |
+| `author_number` | TEXT | Telefone do remetente |
+| `before_messages` | TEXT | JSON array com as 5 mensagens anteriores do contexto |
+| `after_messages` | TEXT | JSON array com as 5 mensagens posteriores do contexto |
+| `is_read` | INTEGER | Flag de visualização: 0 = não lida, 1 = lida |
+| `created_at` | DATETIME | Data e hora de detecção |
+| `completed_at` | DATETIME | Data e hora em que as 5 mensagens posteriores foram concluídas |
+
+

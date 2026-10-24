@@ -11,6 +11,7 @@ const WebManagement = require("../utils/WebManagement");
 const StreamSystem = require("../StreamSystem");
 const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../utils/RegexFilterValidator");
+const GroupMonitoringService = require("../services/GroupMonitoringService");
 
 class Management {
 	constructor() {
@@ -148,6 +149,22 @@ class Management {
 				method: "filterRegex",
 				description:
 					"Detecta e Apaga mensagens que correspondam à expressão regular (regex) especificada"
+			},
+			monitorar: {
+				method: "monitorarWord",
+				description: "Configura ou lista palavras/frases monitoradas no grupo"
+			},
+			"monitorar-regex": {
+				method: "monitorarRegex",
+				description: "Configura expressões regulares (regex) monitoradas no grupo"
+			},
+			"monitorar-del": {
+				method: "monitorarDelete",
+				description: "Remove uma regra de monitoramento por ID"
+			},
+			"monitorar-ver": {
+				method: "monitorarVer",
+				description: "Lista ocorrências de monitoramento capturadas ou marca como lidas"
 			},
 			"filtro-links": {
 				method: "filterLinks",
@@ -2582,6 +2599,197 @@ class Management {
 				content: `✅ Regex adicionado ao filtro: \`${pattern}\`\n\n*Regex filtrados atualmente:*\n${regexFilters}`
 			});
 		}
+	}
+
+	/**
+	 * Configura ou lista palavras/frases monitoradas no grupo
+	 */
+	async monitorarWord(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const service = GroupMonitoringService.getInstance();
+		const targetChat = message.group ?? group.id;
+
+		if (args.length === 0) {
+			const rules = await service.getRules(group.id);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `ℹ️ *Monitoramento de Palavras e Frases*\nPermite monitorar palavras ou frases nas mensagens do grupo. Quando detectado, o bot grava a mensagem, 5 mensagens antes e 5 mensagens depois para conferência.\n\n*Uso:*\n• \`!g-monitorar <palavra ou frase>\`: Adiciona palavra/frase (mínimo 5 caracteres)\n• \`!g-monitorar-regex <regex>\`: Adiciona expressão regular\n• \`!g-monitorar-del <id>\`: Remove uma regra pelo número\n• \`!g-monitorar-ver\`: Visualiza ocorrências capturadas\n\n📌 *Regras ativas no grupo (${rules.length}/15):*\n${service.formatRuleList(rules)}`
+			});
+		}
+
+		const word = args.join(" ").trim();
+		try {
+			const updatedRules = await service.addWordRule(group.id, word, message.author);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `✅ Palavra/frase adicionada ao monitoramento: "${word}"\n\n📌 *Regras ativas no grupo (${updatedRules.length}/15):*\n${service.formatRuleList(updatedRules)}`
+			});
+		} catch (error) {
+			const currentRules = await service.getRules(group.id);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `⚠️ Não foi possível adicionar a regra:\n${error.message}\n\n📌 *Regras ativas no grupo (${currentRules.length}/15):*\n${service.formatRuleList(currentRules)}`
+			});
+		}
+	}
+
+	/**
+	 * Configura ou lista expressões regulares (regex) monitoradas no grupo
+	 */
+	async monitorarRegex(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const service = GroupMonitoringService.getInstance();
+		const targetChat = message.group ?? group.id;
+
+		if (args.length === 0) {
+			const rules = await service.getRules(group.id);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `ℹ️ *Monitoramento por Expressão Regular (Regex)*\nPermite monitorar padrões regex nas mensagens do grupo. Quando detectado, o bot grava a mensagem, 5 mensagens antes e 5 depois.\n\n*Uso:*\n• \`!g-monitorar-regex <regex>\`: Adiciona regex (ex: \`\\b(cassino|aposta)\\b\` ou \`/padrão/i\`)\n• \`!g-monitorar-del <id>\`: Remove uma regra pelo número\n• \`!g-monitorar-ver\`: Visualiza ocorrências capturadas\n\n📌 *Regras ativas no grupo (${rules.length}/15):*\n${service.formatRuleList(rules)}`
+			});
+		}
+
+		const pattern = args.join(" ").trim();
+		try {
+			const updatedRules = await service.addRegexRule(group.id, pattern, message.author);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `✅ Expressão regular (regex) adicionada ao monitoramento: \`${pattern}\`\n\n📌 *Regras ativas no grupo (${updatedRules.length}/15):*\n${service.formatRuleList(updatedRules)}`
+			});
+		} catch (error) {
+			const currentRules = await service.getRules(group.id);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `⚠️ Não foi possível adicionar o regex:\n${error.message}\n\n📌 *Regras ativas no grupo (${currentRules.length}/15):*\n${service.formatRuleList(currentRules)}`
+			});
+		}
+	}
+
+	/**
+	 * Remove regra de monitoramento por ID
+	 */
+	async monitorarDelete(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const service = GroupMonitoringService.getInstance();
+		const targetChat = message.group ?? group.id;
+		const rules = await service.getRules(group.id);
+
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `ℹ️ *Remover Regra de Monitoramento*\nEnvie \`!g-monitorar-del <número>\` com o número da regra que deseja remover.\n\n📌 *Regras ativas no grupo (${rules.length}/15):*\n${service.formatRuleList(rules)}`
+			});
+		}
+
+		try {
+			const { deletedRule, updatedRules } = await service.deleteRule(group.id, args[0]);
+			const typeLabel = deletedRule.type === "regex" ? "Regex" : "Palavra";
+			const displayPattern =
+				deletedRule.type === "regex" ? `\`${deletedRule.pattern}\`` : `"${deletedRule.pattern}"`;
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `✅ Regra removida com sucesso: [${typeLabel}] ${displayPattern}\n\n📌 *Regras ativas no grupo (${updatedRules.length}/15):*\n${service.formatRuleList(updatedRules)}`
+			});
+		} catch (error) {
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `⚠️ Não foi possível remover a regra:\n${error.message}\n\n📌 *Regras ativas no grupo (${rules.length}/15):*\n${service.formatRuleList(rules)}`
+			});
+		}
+	}
+
+	/**
+	 * Lista ocorrências de monitoramento capturadas ou marca como lidas
+	 */
+	async monitorarVer(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const service = GroupMonitoringService.getInstance();
+		const targetChat = message.group ?? group.id;
+
+		const header =
+			"📋 *Ocorrências de Monitoramento:*\nPara marcar todos como lido, envie:\n!g-monitorar-ver lidos\n\nOu para marcar apenas um específico:\n!g-monitorar-ver 3";
+
+		const firstArg = (args[0] || "").toLowerCase().trim();
+
+		// Marcar todos como lidos
+		if (firstArg === "lidos" || firstArg === "lido" || firstArg === "todos") {
+			const count = await service.markAllAsRead(group.id);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `${header}\n────────────────────────────\n✅ Todas as ocorrências (${count}) foram marcadas como lidas!`
+			});
+		}
+
+		// Marcar um específico
+		if (args.length > 0 && !isNaN(parseInt(firstArg, 10))) {
+			try {
+				const marked = await service.markAsRead(group.id, firstArg);
+				const typeLabel = marked.rule_type === "regex" ? "Regex" : "Palavra";
+				return new ReturnMessage({
+					chatId: targetChat,
+					content: `${header}\n────────────────────────────\n✅ Ocorrência #${firstArg} ([${typeLabel}] "${marked.pattern}") marcada como lida!`
+				});
+			} catch (error) {
+				return new ReturnMessage({
+					chatId: targetChat,
+					content: `${header}\n────────────────────────────\n⚠️ ${error.message}`
+				});
+			}
+		}
+
+		// Listagem das ocorrências não lidas
+		const occurrences = await service.getOccurrences(group.id, { unreadOnly: true, limit: 10 });
+		if (occurrences.length === 0) {
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `${header}\n────────────────────────────\n✅ Nenhuma ocorrência não lida no momento.`
+			});
+		}
+
+		const formattedList = occurrences
+			.map((occ, idx) => {
+				const typeLabel = occ.rule_type === "regex" ? "Regex" : "Palavra";
+				const lines = [];
+				lines.push(`📌 *Ocorrência #${idx + 1}* ([${typeLabel}] "${occ.pattern}"):`);
+				if (occ.before_messages && occ.before_messages.length > 0) {
+					lines.push(occ.before_messages.join("\n"));
+				}
+				lines.push(`👉 *${occ.trigger_message}*`);
+				if (occ.after_messages && occ.after_messages.length > 0) {
+					lines.push(occ.after_messages.join("\n"));
+				}
+				return lines.join("\n");
+			})
+			.join("\n\n────────────────────────────\n\n");
+
+		return new ReturnMessage({
+			chatId: targetChat,
+			content: `${header}\n────────────────────────────\n\n${formattedList}`
+		});
 	}
 
 	/**
@@ -9943,6 +10151,30 @@ const helper = {
 			cmd: "!g-copiarCmds",
 			desc: "Copia os comandos do grupoOrigem pro grupoDestino",
 			usage: ["!g-copiarCmds"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-monitorar",
+			desc: "Configura ou lista palavras/frases monitoradas no grupo",
+			usage: ["!g-monitorar <palavra ou frase>"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-monitorar-regex",
+			desc: "Configura expressões regulares (regex) monitoradas no grupo",
+			usage: ["!g-monitorar-regex <regex>"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-monitorar-del",
+			desc: "Remove uma regra de monitoramento pelo número",
+			usage: ["!g-monitorar-del <id>"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-monitorar-ver",
+			desc: "Lista ocorrências de monitoramento capturadas ou marca como lidas",
+			usage: ["!g-monitorar-ver", "!g-monitorar-ver <id>", "!g-monitorar-ver lidos"],
 			category: "gerenciamento"
 		},
 		{

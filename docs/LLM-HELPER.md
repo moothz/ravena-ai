@@ -1800,6 +1800,42 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-monitorar`
+**Descrição:** Configura ou lista palavras/frases monitoradas no grupo (mínimo 5 caracteres, máximo 15 regras). Grava mensagem disparadora e o contexto de 5 mensagens antes e 5 depois.
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-monitorar <palavra ou frase>`
+
+---
+
+#### `!g-monitorar-regex`
+**Descrição:** Configura expressões regulares (regex) monitoradas no grupo.
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-monitorar-regex \b(termo1|termo2)\b`
+
+---
+
+#### `!g-monitorar-del`
+**Descrição:** Remove uma regra de monitoramento ativa pelo número da lista (1 a N).
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-monitorar-del 2`
+
+---
+
+#### `!g-monitorar-ver`
+**Descrição:** Lista ocorrências capturadas pelo monitoramento ou marca como lidas.
+
+**Categoria:** gerenciamento
+
+**Exemplo de uso:** `!g-monitorar-ver`, `!g-monitorar-ver 3` ou `!g-monitorar-ver lidos`
+
+---
+
 #### `!g-banirSpammers`
 **Descrição:** Ativa/desativa o monitoramento e banimento de spammers (DDI 62/63/380) no grupo
 
