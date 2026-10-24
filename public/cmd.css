@@ -357,6 +357,11 @@ body {
     color: var(--text-highlight);
 }
 
+/* Category Select Wrapper (Mobile only) */
+.category-select-wrapper {
+    display: none;
+}
+
 /* Category Quick Filter Pills Bar */
 .category-pills-bar {
     padding: 0 1rem 0.75rem 1rem;
@@ -935,7 +940,68 @@ body {
     }
 
     .category-pills-bar {
-        padding: 0 0.75rem 0.5rem 0.75rem;
+        display: none;
+    }
+
+    .category-select-wrapper {
+        display: block;
+        padding: 0 0.75rem 0.6rem 0.75rem;
+    }
+
+    .category-select-box {
+        position: relative;
+        width: 100%;
+    }
+
+    .category-select-box .select-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--primary-color);
+        font-size: 0.9rem;
+        pointer-events: none;
+    }
+
+    .category-select-box .select-arrow {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        pointer-events: none;
+    }
+
+    .category-select {
+        width: 100%;
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding: 11px 38px 11px 38px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: rgba(26, 15, 60, 0.75);
+        color: var(--text-highlight);
+        font-size: 0.9rem;
+        font-weight: 500;
+        font-family: var(--font-family);
+        outline: none;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+    }
+
+    .category-select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(4, 169, 240, 0.2), var(--shadow-glow);
+        background: rgba(35, 6, 109, 0.9);
+    }
+
+    .category-select option {
+        background-color: #0c0920;
+        color: #ffffff;
+        padding: 8px;
     }
 
     .main-content {

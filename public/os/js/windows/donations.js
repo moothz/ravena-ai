@@ -7,6 +7,10 @@ WindowManager.register('donations', {
     height: '600px',
     singleton: true,
 
+    onclose(wb) {
+        if (wb && typeof wb.cleanup === 'function') wb.cleanup();
+    },
+
     render(wb) {
         const body = wb.body;
 
@@ -54,10 +58,29 @@ WindowManager.register('donations', {
 
         this.loadData(body);
 
+        const onDonations = () => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'donations') return;
+            this.renderTable(body);
+        };
+        const onRecent = () => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'donations') return;
+            this.renderMeta(body);
+        };
+
         if (window.RavenaOS) {
-            window.RavenaOS.on('donationsUpdate', () => this.renderTable(body));
-            window.RavenaOS.on('recentDonationsUpdate', () => this.renderMeta(body));
+            window.RavenaOS.on('donationsUpdate', onDonations);
+            window.RavenaOS.on('recentDonationsUpdate', onRecent);
         }
+
+        const cleanup = () => {
+            if (window.RavenaOS) {
+                window.RavenaOS.off('donationsUpdate', onDonations);
+                window.RavenaOS.off('recentDonationsUpdate', onRecent);
+            }
+        };
+
+        wb.cleanup = cleanup;
+        wb.onclose = cleanup;
     },
 
     async loadData(body) {

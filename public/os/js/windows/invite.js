@@ -113,8 +113,22 @@ WindowManager.register('invite', {
 
         renderPage();
 
+        const onHealth = () => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'invite') return;
+            renderPage();
+        };
+
         if (window.RavenaOS) {
-            window.RavenaOS.on('healthUpdate', renderPage);
+            window.RavenaOS.on('healthUpdate', onHealth);
         }
+
+        const cleanup = () => {
+            if (window.RavenaOS) {
+                window.RavenaOS.off('healthUpdate', onHealth);
+            }
+        };
+
+        wb.cleanup = cleanup;
+        wb.onclose = cleanup;
     }
 });

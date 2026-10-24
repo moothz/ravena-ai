@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const noResults = document.getElementById('no-results');
     const searchTermSpan = document.getElementById('search-term');
     const categoryPillsContainer = document.getElementById('category-pills');
+    const categorySelect = document.getElementById('category-select');
     const btnExpandAll = document.getElementById('btn-expand-all');
     const btnCollapseAll = document.getElementById('btn-collapse-all');
     const statTotalCmds = document.getElementById('stat-total-cmds');
@@ -26,9 +27,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Configuração do select "Filtrar por Categoria" no Mobile
+    if (categorySelect) {
+        categorySelect.addEventListener('change', (e) => {
+            const cat = e.target.value;
+            document.querySelectorAll('.cat-pill').forEach(p => {
+                if (p.dataset.cat === cat) {
+                    p.classList.add('active');
+                } else {
+                    p.classList.remove('active');
+                }
+            });
+            filterByCategory(cat);
+        });
+    }
+
     function resetCategoryFilterToAll() {
         document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
         if (allPill) allPill.classList.add('active');
+        if (categorySelect) categorySelect.value = 'all';
         filterByCategory('all');
     }
 
@@ -65,6 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Limpa lista mantendo banners de aviso e info
         const existingSections = commandList.querySelectorAll('.category-section');
         existingSections.forEach(s => s.remove());
+
+        if (categorySelect) {
+            categorySelect.innerHTML = '<option value="all">🌟 Filtrar por Categoria (Todas)</option>';
+        }
 
         // 1. Processa Categorias Fixas
         if (Array.isArray(data.categories)) {
@@ -153,6 +174,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         categoryPillsContainer.appendChild(pill);
+
+        if (categorySelect) {
+            const opt = document.createElement('option');
+            opt.value = name.toLowerCase();
+            opt.textContent = `${emoji} ${name} (${count})`;
+            categorySelect.appendChild(opt);
+        }
     }
 
     function createCategorySection(category, isOpen) {
@@ -379,9 +407,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return li;
     }
 
-    // Filtro por Categoria via Pills
+    // Filtro por Categoria via Pills e Select Mobile
     function filterByCategory(catName) {
         activeCategoryFilter = catName;
+        if (categorySelect && categorySelect.value !== catName) {
+            categorySelect.value = catName;
+        }
         const categories = document.querySelectorAll('.category-section');
 
         categories.forEach(category => {

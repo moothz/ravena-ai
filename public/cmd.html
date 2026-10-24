@@ -29,7 +29,7 @@
     <meta itemprop="description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta itemprop="image" content="https://ravena.moothz.win/android-chrome-512x512.png">
 
-    <link rel="stylesheet" href="/cmd.css?v=4">
+    <link rel="stylesheet" href="/cmd.css?v=5">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -63,6 +63,17 @@
             <div class="toolbar-actions">
                 <button id="btn-expand-all" class="btn-tool" title="Expandir todas as categorias"><i class="fas fa-angle-double-down"></i> Expandir</button>
                 <button id="btn-collapse-all" class="btn-tool" title="Recolher todas as categorias"><i class="fas fa-angle-double-up"></i> Recolher</button>
+            </div>
+        </div>
+
+        <!-- Category Filter: Select on mobile, Pills on desktop -->
+        <div class="category-select-wrapper" id="category-select-wrapper">
+            <div class="category-select-box">
+                <i class="fas fa-filter select-icon"></i>
+                <select id="category-select" class="category-select" aria-label="Filtrar por Categoria">
+                    <option value="all">🌟 Filtrar por Categoria (Todas)</option>
+                </select>
+                <i class="fas fa-chevron-down select-arrow"></i>
             </div>
         </div>
 
@@ -116,6 +127,6 @@
         </div>
     </div>
 
-    <script src="/cmd.js?v=4"></script>
+    <script src="/cmd.js?v=5"></script>
 </body>
 </html>

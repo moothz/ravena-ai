@@ -155,15 +155,17 @@ const MobileApp = {
             this.updateMsgsWidget(initialRate || window.RavenaOS.state.averageMsgsHr || 0);
         }
 
-        // Auto-open status or requested app after 1 second
+        // Auto-open requested app only if explicitly requested in URL query params
         if (this.autoOpenTimer) clearTimeout(this.autoOpenTimer);
         this.autoOpenTimer = setTimeout(() => {
             if (!this.currentAppId) {
                 const urlParams = new URLSearchParams(window.location.search);
                 const reqApp = urlParams.get('app');
-                this.openApp(reqApp || 'status');
+                if (reqApp) {
+                    this.openApp(reqApp);
+                }
             }
-        }, 1000);
+        }, 500);
     },
 
     renderAppGrid() {
@@ -226,8 +228,13 @@ const MobileApp = {
         if (!appViewEl || !bodyEl) return;
 
         // Cleanup previous app if open
-        if (this.currentHost && typeof this.currentHost.onclose === 'function') {
-            try { this.currentHost.onclose(); } catch (err) { console.error('Error in previous app onclose:', err); }
+        if (this.currentHost) {
+            if (typeof this.currentHost.cleanup === 'function') {
+                try { this.currentHost.cleanup(); } catch (err) { console.error('Error in previous app cleanup:', err); }
+            }
+            if (typeof this.currentHost.onclose === 'function') {
+                try { this.currentHost.onclose(); } catch (err) { console.error('Error in previous app onclose:', err); }
+            }
         }
 
         const config = (window.WindowManager && window.WindowManager.configs[appId]) || {};
@@ -248,6 +255,7 @@ const MobileApp = {
         const host = {
             body: bodyEl,
             onclose: null,
+            cleanup: null,
             setTitle(t) {
                 if (titleEl) titleEl.textContent = t;
             },
@@ -265,6 +273,9 @@ const MobileApp = {
                 params.customRender(host);
             } else if (typeof config.render === 'function') {
                 config.render(host, params);
+            }
+            if (typeof config.onclose === 'function' && !host.onclose) {
+                host.onclose = () => config.onclose(host);
             }
         } catch (err) {
             console.error(`Error rendering mobile app ${appId}:`, err);
@@ -289,9 +300,14 @@ const MobileApp = {
 
         if (!appViewEl || appViewEl.classList.contains('hidden')) return;
 
-        // Trigger onclose callback if provided
-        if (this.currentHost && typeof this.currentHost.onclose === 'function') {
-            try { this.currentHost.onclose(); } catch (err) { console.error('Error closing app:', err); }
+        // Trigger onclose & cleanup callbacks if provided
+        if (this.currentHost) {
+            if (typeof this.currentHost.cleanup === 'function') {
+                try { this.currentHost.cleanup(); } catch (err) { console.error('Error in app cleanup:', err); }
+            }
+            if (typeof this.currentHost.onclose === 'function') {
+                try { this.currentHost.onclose(); } catch (err) { console.error('Error closing app:', err); }
+            }
         }
 
         // Pop current app from stack

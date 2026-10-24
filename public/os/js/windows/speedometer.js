@@ -154,6 +154,7 @@ WindowManager.register('speedometer', {
         };
 
         const onRateUpdate = (rate) => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'speedometer') return;
             targetVal = rate;
             cancelAnimationFrame(animFrame);
             updateAnimation();
@@ -169,9 +170,14 @@ WindowManager.register('speedometer', {
             drawGauge(0);
         }
 
-        wb.onclose = () => {
+        const cleanup = () => {
             cancelAnimationFrame(animFrame);
-            return false;
+            if (window.RavenaOS) {
+                window.RavenaOS.off('realtimeRate', onRateUpdate);
+            }
         };
+
+        wb.cleanup = cleanup;
+        wb.onclose = cleanup;
     }
 });

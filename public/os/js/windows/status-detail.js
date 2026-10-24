@@ -7,6 +7,10 @@ WindowManager.register('status-detail', {
     height: '495px',
     singleton: false,
 
+    onclose(wb) {
+        if (wb && typeof wb.cleanup === 'function') wb.cleanup();
+    },
+
     render(wb, params) {
         const botId = params.botId;
         const data = window.RavenaOS ? window.RavenaOS.state.healthData : null;
@@ -102,17 +106,31 @@ WindowManager.register('status-detail', {
             </div>
         `;
 
-        if (window.RavenaOS) {
-            window.RavenaOS.on('activity', (act) => {
-                if (act && act.botId === bot.id) {
-                    const avatar = body.querySelector('.bot-detail-avatar');
-                    if (avatar) {
-                        avatar.classList.remove('avatar-flash');
-                        void avatar.offsetWidth;
-                        avatar.classList.add('avatar-flash');
-                    }
+        const onActivity = (act) => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'status-detail') {
+                return;
+            }
+            if (act && act.botId === bot.id) {
+                const avatar = body.querySelector('.bot-detail-avatar');
+                if (avatar) {
+                    avatar.classList.remove('avatar-flash');
+                    void avatar.offsetWidth;
+                    avatar.classList.add('avatar-flash');
                 }
-            });
+            }
+        };
+
+        if (window.RavenaOS) {
+            window.RavenaOS.on('activity', onActivity);
         }
+
+        const cleanup = () => {
+            if (window.RavenaOS) {
+                window.RavenaOS.off('activity', onActivity);
+            }
+        };
+
+        wb.cleanup = cleanup;
+        wb.onclose = cleanup;
     }
 });

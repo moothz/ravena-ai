@@ -13,6 +13,12 @@ WindowManager.register('status', {
     y: '20px',
     singleton: true,
 
+    onclose(wb) {
+        if (wb && typeof wb.cleanup === 'function') {
+            wb.cleanup();
+        }
+    },
+
     render(wb) {
         const body = wb.body;
 
@@ -94,22 +100,50 @@ WindowManager.register('status', {
 
         update();
 
-        // Subscribe to updates
+        // Subscribe to updates with mobile-safe guards
+        const onHealth = () => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'status') {
+                return;
+            }
+            update();
+        };
+
+        const onRate = () => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'status') {
+                return;
+            }
+            this.updateLiveBarValues(body);
+        };
+
+        const onActivity = (data) => {
+            if (window.MobileApp && window.MobileApp.currentAppId && window.MobileApp.currentAppId !== 'status') {
+                return;
+            }
+            if (!data || !data.botId) return;
+            const iconEl = body.querySelector(`.drive-item[data-bot-id="${data.botId}"] .drive-icon`);
+            if (iconEl) {
+                iconEl.classList.remove('avatar-flash');
+                void iconEl.offsetWidth;
+                iconEl.classList.add('avatar-flash');
+            }
+        };
+
         if (window.RavenaOS) {
-            window.RavenaOS.on('healthUpdate', update);
-            window.RavenaOS.on('realtimeRate', () => {
-                this.updateLiveBarValues(body);
-            });
-            window.RavenaOS.on('activity', (data) => {
-                if (!data || !data.botId) return;
-                const iconEl = body.querySelector(`.drive-item[data-bot-id="${data.botId}"] .drive-icon`);
-                if (iconEl) {
-                    iconEl.classList.remove('avatar-flash');
-                    void iconEl.offsetWidth;
-                    iconEl.classList.add('avatar-flash');
-                }
-            });
+            window.RavenaOS.on('healthUpdate', onHealth);
+            window.RavenaOS.on('realtimeRate', onRate);
+            window.RavenaOS.on('activity', onActivity);
         }
+
+        const cleanup = () => {
+            if (window.RavenaOS) {
+                window.RavenaOS.off('healthUpdate', onHealth);
+                window.RavenaOS.off('realtimeRate', onRate);
+                window.RavenaOS.off('activity', onActivity);
+            }
+        };
+
+        wb.cleanup = cleanup;
+        wb.onclose = cleanup;
     },
 
     renderDriveItem(bot) {
