@@ -52,8 +52,11 @@ services:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-${MINIO_ACCESS_KEY:-ravenaadmin}}
       RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-${MINIO_SECRET_KEY}}
       RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports:
       - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - rustfs-data:/data
       - ${S3_DOWNLOADS_PATH:-./data/s3-downloads}:/data/downloads
