@@ -7,6 +7,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
 const GroupContextHelper = require("../utils/GroupContextHelper");
+const storageService = require("../services/StorageService");
 
 const logger = new Logger("canais-commands");
 const database = Database.getInstance();
@@ -461,7 +462,7 @@ function classifyMessageType(msgType) {
 }
 
 /**
- * Salva um arquivo de mídia no diretório seguro de canais
+ * Salva um arquivo de mídia no diretório seguro de canais e no S3
  */
 function saveMediaFile(canalJid, msgId, bufferOrBase64, extension) {
 	try {
@@ -481,6 +482,16 @@ function saveMediaFile(canalJid, msgId, bufferOrBase64, extension) {
 			const cleanBase64 = bufferOrBase64.replace(/^data:.*?;base64,/, "");
 			fs.writeFileSync(targetPath, Buffer.from(cleanBase64, "base64"));
 		}
+
+		// Upload assíncrono para o S3
+		storageService
+			.upload(bufferOrBase64, fileName, {
+				groupId: safeJid,
+				category: "canais"
+			})
+			.catch((err) => {
+				logger.warn(`[Canais] Erro no upload S3 de ${fileName}:`, err.message);
+			});
 
 		return path.relative(path.join(__dirname, "../.."), targetPath);
 	} catch (error) {
@@ -689,9 +700,24 @@ async function detectPost(bot, message) {
 						const safeJid = channelJid.replace(/[^a-zA-Z0-9_-]/g, "_");
 						const channelDir = path.join(MEDIA_DIR, safeJid);
 						if (!fs.existsSync(channelDir)) fs.mkdirSync(channelDir, { recursive: true });
-						const targetPath = path.join(channelDir, `${msgId}.${ext.replace(/^\./, "")}`);
+						const fileName = `${msgId}.${ext.replace(/^\./, "")}`;
+						const targetPath = path.join(channelDir, fileName);
 						fs.copyFileSync(media.filePath, targetPath);
 						arquivo = path.relative(path.join(__dirname, "../.."), targetPath);
+
+						// Upload assíncrono para o S3
+						try {
+							const fileBuffer = fs.readFileSync(targetPath);
+							storageService
+								.upload(fileBuffer, fileName, {
+									groupId: safeJid,
+									category: "canais",
+									mimetype
+								})
+								.catch((err) => {
+									logger.warn(`[Canais] Erro no upload S3 de ${fileName}:`, err.message);
+								});
+						} catch {}
 					} else if (media.data) {
 						arquivo = saveMediaFile(channelJid, msgId, media.data, ext);
 					}
@@ -924,17 +950,44 @@ async function createPostReturnMessage(
 		});
 	}
 
-	const absPath = path.isAbsolute(post.arquivo)
-		? post.arquivo
-		: path.join(__dirname, "../..", post.arquivo);
+	let mediaObj = null;
+	const safeJid = post.canal_jid ? post.canal_jid.replace(/[^a-zA-Z0-9_-]/g, "_") : null;
 
-	if (!fs.existsSync(absPath)) {
-		// Arquivo não está no disco, envia como texto
+	// Tenta carregar do StorageService (S3 / cache efêmero / fallback)
+	try {
+		const storageItem = await storageService.get(post.arquivo, {
+			groupId: safeJid,
+			category: "canais"
+		});
+		if (typeof bot?.createMediaFromBase64 === "function") {
+			mediaObj = await bot.createMediaFromBase64(
+				storageItem.buffer.toString("base64"),
+				post.mimetype || storageItem.mimetype,
+				path.basename(post.arquivo)
+			);
+		}
+	} catch (storageErr) {
+		// Fallback para arquivo direto em disco legado
+		const absPath = path.isAbsolute(post.arquivo)
+			? post.arquivo
+			: path.join(__dirname, "../..", post.arquivo);
+
+		if (fs.existsSync(absPath) && typeof bot?.createMedia === "function") {
+			try {
+				mediaObj = await bot.createMedia(absPath, post.mimetype);
+			} catch (diskErr) {
+				logger.warn(`[Canais] Erro ao carregar mídia do disco (${absPath}):`, diskErr.message);
+			}
+		}
+	}
+
+	if (!mediaObj) {
+		// Mídia não disponível nem no S3 nem no disco, envia como texto
 		const fallbackContent = showHeader
-			? `${captionText}\n_(Mídia não disponível no disco)_`.trim()
+			? `${captionText}\n_(Mídia não disponível)_`.trim()
 			: captionText
-				? `${captionText}\n_(Mídia não disponível no disco)_`
-				: "_(Mídia não disponível no disco)_";
+				? `${captionText}\n_(Mídia não disponível)_`
+				: "_(Mídia não disponível)_";
 		return new ReturnMessage({
 			chatId,
 			content: fallbackContent,
@@ -945,64 +998,52 @@ async function createPostReturnMessage(
 	}
 
 	try {
-		if (typeof bot?.createMedia === "function") {
-			const mediaObj = await bot.createMedia(absPath, post.mimetype);
-			if (post.tipo === "sticker") {
-				const stickerMsg = new ReturnMessage({
-					chatId,
-					content: mediaObj,
-					options: {
-						sendMediaAsSticker: true
-					}
-				});
-				if (showHeader && options.includeHeader) {
-					const headerMsg = new ReturnMessage({
-						chatId,
-						content: captionText || `📢 *${apelido}*`,
-						options: {
-							linkPreview: true
-						}
-					});
-					stickerMsg.delay = 1000;
-					return [headerMsg, stickerMsg];
+		if (post.tipo === "sticker") {
+			const stickerMsg = new ReturnMessage({
+				chatId,
+				content: mediaObj,
+				options: {
+					sendMediaAsSticker: true
 				}
-				return stickerMsg;
-			} else if (post.tipo === "audio") {
-				const audioMsg = new ReturnMessage({
+			});
+			if (showHeader && options.includeHeader) {
+				const headerMsg = new ReturnMessage({
 					chatId,
-					content: mediaObj,
+					content: captionText || `📢 *${apelido}*`,
 					options: {
-						sendAudioAsVoice: true
-					}
-				});
-				if (showHeader && options.includeHeader) {
-					const headerMsg = new ReturnMessage({
-						chatId,
-						content: captionText || `📢 *${apelido}*`,
-						options: {
-							linkPreview: true
-						}
-					});
-					audioMsg.delay = 1000;
-					return [headerMsg, audioMsg];
-				}
-				return audioMsg;
-			} else {
-				return new ReturnMessage({
-					chatId,
-					content: mediaObj,
-					options: {
-						caption: showHeader ? captionText || (isForward ? `📢 *${apelido}*` : "") : captionText,
 						linkPreview: true
 					}
 				});
+				stickerMsg.delay = 1000;
+				return [headerMsg, stickerMsg];
 			}
+			return stickerMsg;
+		} else if (post.tipo === "audio") {
+			const audioMsg = new ReturnMessage({
+				chatId,
+				content: mediaObj,
+				options: {
+					sendAudioAsVoice: true
+				}
+			});
+			if (showHeader && options.includeHeader) {
+				const headerMsg = new ReturnMessage({
+					chatId,
+					content: captionText || `📢 *${apelido}*`,
+					options: {
+						linkPreview: true
+					}
+				});
+				audioMsg.delay = 1000;
+				return [headerMsg, audioMsg];
+			}
+			return audioMsg;
 		} else {
-			// Fallback para texto se o bot não suportar createMedia
 			return new ReturnMessage({
 				chatId,
-				content: showHeader ? captionText || `📢 *${apelido}*` : captionText,
+				content: mediaObj,
 				options: {
+					caption: showHeader ? captionText || (isForward ? `📢 *${apelido}*` : "") : captionText,
 					linkPreview: true
 				}
 			});

@@ -28,6 +28,7 @@ const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
 const EventEmitter = require("events");
 const { buildRegex } = require("./utils/RegexFilterValidator");
+const storageService = require("./services/StorageService");
 const GroupMonitoringService = require("./services/GroupMonitoringService");
 const {
 	downloadHandler,
@@ -3048,20 +3049,25 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 				// Se for mídia (image, video, audio, sticker)
 				else if (greetingData && greetingData.file) {
-					const mediaPath = path.join(this.database.databasePath, "media", greetingData.file);
-
 					try {
-						// Verifica se arquivo existe
-						await fs.access(mediaPath);
+						const storageItem = await storageService.get(greetingData.file, {
+							groupId: group?.id,
+							category: "greetings"
+						});
 
-						const fileBuffer = require("fs").readFileSync(mediaPath);
-						const mimeType = require("mime-types").lookup(mediaPath) || "application/octet-stream";
-						const media = {
-							mimetype: mimeType,
-							data: fileBuffer.toString("base64"),
-							filename: require("path").basename(mediaPath),
-							isMessageMedia: true
-						};
+						const media =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										storageItem.buffer.toString("base64"),
+										storageItem.mimetype,
+										require("path").basename(greetingData.file)
+									)
+								: {
+										mimetype: storageItem.mimetype,
+										data: storageItem.buffer.toString("base64"),
+										filename: require("path").basename(greetingData.file),
+										isMessageMedia: true
+									};
 
 						// Processa caption se houver (audio e sticker ignoram caption no envio, mas a gente processa igual)
 						let caption = "";
@@ -3083,13 +3089,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								sendMediaAsSticker: type === "sticker",
 								sendVideoAsGif:
 									type === "gif" ||
-									mimeType === "image/gif" ||
+									storageItem.mimetype === "image/gif" ||
 									Boolean(greetingData.file && greetingData.file.toLowerCase().endsWith(".gif"))
 							},
 							mentions: currentMentions
 						});
 					} catch (err) {
-						this.logger.error(`Erro ao carregar mídia de greeting (${mediaPath}):`, err);
+						this.logger.error(`Erro ao carregar mídia de greeting (${greetingData.file}):`, err);
 					}
 				}
 			}
@@ -3183,18 +3189,25 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 				// Se for mídia
 				else if (farewellData && farewellData.file) {
-					const mediaPath = path.join(this.database.databasePath, "media", farewellData.file);
-
 					try {
-						await fs.access(mediaPath);
-						const fileBuffer = require("fs").readFileSync(mediaPath);
-						const mimeType = require("mime-types").lookup(mediaPath) || "application/octet-stream";
-						const media = {
-							mimetype: mimeType,
-							data: fileBuffer.toString("base64"),
-							filename: require("path").basename(mediaPath),
-							isMessageMedia: true
-						};
+						const storageItem = await storageService.get(farewellData.file, {
+							groupId: group?.id,
+							category: "farewells"
+						});
+
+						const media =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										storageItem.buffer.toString("base64"),
+										storageItem.mimetype,
+										require("path").basename(farewellData.file)
+									)
+								: {
+										mimetype: storageItem.mimetype,
+										data: storageItem.buffer.toString("base64"),
+										filename: require("path").basename(farewellData.file),
+										isMessageMedia: true
+									};
 
 						let caption = "";
 						if (type !== "audio" && type !== "sticker") {
@@ -3214,13 +3227,13 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								sendMediaAsSticker: type === "sticker",
 								sendVideoAsGif:
 									type === "gif" ||
-									mimeType === "image/gif" ||
+									storageItem.mimetype === "image/gif" ||
 									Boolean(farewellData.file && farewellData.file.toLowerCase().endsWith(".gif"))
 							},
 							mentions: currentMentions
 						});
 					} catch (err) {
-						this.logger.error(`Erro ao carregar mídia de farewell (${mediaPath}):`, err);
+						this.logger.error(`Erro ao carregar mídia de farewell (${farewellData.file}):`, err);
 					}
 				}
 			}

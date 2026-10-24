@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs").promises;
 const express = require("express");
+const storageService = require("../../services/StorageService");
 
 /**
  * Registra rotas de páginas web estáticas, interfaces e dashboards da BotAPI
@@ -390,44 +391,28 @@ function registerIndexRoutes(api) {
 				return res.status(403).send("Forbidden");
 			}
 
-			const filePath = path.join(api.database.databasePath, "media", fileName);
-
-			try {
-				await fs.access(filePath);
-			} catch {
-				return res.status(404).send("File not found");
-			}
-
-			const ext = path.extname(fileName).toLowerCase();
+			let mediaBuffer = null;
 			let contentType = "application/octet-stream";
 
-			switch (ext) {
-				case ".jpg":
-				case ".jpeg":
-					contentType = "image/jpeg";
-					break;
-				case ".png":
-					contentType = "image/png";
-					break;
-				case ".gif":
-					contentType = "image/gif";
-					break;
-				case ".mp4":
-					contentType = "video/mp4";
-					break;
-				case ".mp3":
-					contentType = "audio/mpeg";
-					break;
-				case ".wav":
-					contentType = "audio/wav";
-					break;
-				case ".webp":
-					contentType = "image/webp";
-					break;
+			try {
+				const storageItem = await storageService.get(fileName, {
+					groupId: webManagementData.groupId
+				});
+				mediaBuffer = storageItem.buffer;
+				contentType = storageItem.mimetype || contentType;
+			} catch (storageErr) {
+				const filePath = path.join(api.database.databasePath, "media", fileName);
+				try {
+					await fs.access(filePath);
+					return res.sendFile(filePath);
+				} catch {
+					return res.status(404).send("File not found");
+				}
 			}
 
 			res.setHeader("Content-Type", contentType);
-			res.sendFile(filePath);
+			res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+			return res.send(mediaBuffer);
 		} catch (error) {
 			api.logger.error("Error serving direct media:", error);
 			return res.status(500).send("Server error");

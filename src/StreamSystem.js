@@ -8,6 +8,7 @@ const fsSync = require("fs");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const Database = require("./utils/Database");
 const AdminUtils = require("./utils/AdminUtils");
+const storageService = require("./services/StorageService");
 
 /**
  * Sistema para gerenciamento de monitoramento de streams (Singleton)
@@ -1084,16 +1085,36 @@ class StreamSystem {
 						return true;
 					}
 				} else {
-					// É um nome de arquivo salvo no disco
-					const mediaPath = path.join(this.mediaPath, photoData);
-					if (fsSync.existsSync(mediaPath)) {
-						const media = await bot.createMedia(mediaPath);
-						if (typeof chat.setPicture === "function") {
-							await chat.setPicture(media);
-							return true;
+					// Busca via storageService (com fallback para disco local)
+					let media = null;
+					const chatId = chat?.id?._serialized || chat?.id;
+					try {
+						const storageItem = await storageService.get(photoData, {
+							groupId: chatId,
+							category: "group-photos"
+						});
+						media =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										storageItem.buffer.toString("base64"),
+										storageItem.mimetype || "image/jpeg",
+										"fotoGrupo.jpg"
+									)
+								: null;
+					} catch (storageErr) {
+						const mediaPath = path.join(this.mediaPath, photoData);
+						if (fsSync.existsSync(mediaPath)) {
+							media = await bot.createMedia(mediaPath);
+						} else {
+							this.logger.warn(
+								`[changeGroupPhoto] Foto não encontrada no storage nem no disco: ${photoData}`
+							);
 						}
-					} else {
-						this.logger.warn(`[changeGroupPhoto] Arquivo de mídia não encontrado: ${mediaPath}`);
+					}
+
+					if (media && typeof chat.setPicture === "function") {
+						await chat.setPicture(media);
+						return true;
 					}
 				}
 			} else if (photoData && photoData.data && photoData.mimetype) {
@@ -1160,11 +1181,29 @@ class StreamSystem {
 					});
 				}
 			} else if (["image", "video", "gif", "audio", "sticker"].includes(mediaItem.type)) {
-				const mediaPath = path.join(this.mediaPath, mediaItem.content);
 				try {
-					const media = mediaItem.content.startsWith("http")
-						? mediaItem.content
-						: await bot.createMedia(mediaPath);
+					let media;
+					if (mediaItem.content.startsWith("http")) {
+						media = mediaItem.content;
+					} else {
+						const storageItem = await storageService.get(mediaItem.content, {
+							groupId: group.id,
+							category: "livestream"
+						});
+						media =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										storageItem.buffer.toString("base64"),
+										storageItem.mimetype,
+										mediaItem.content
+									)
+								: {
+										mimetype: storageItem.mimetype,
+										data: storageItem.buffer.toString("base64"),
+										filename: mediaItem.content,
+										isMessageMedia: true
+									};
+					}
 
 					const caption = replaceVars(mediaItem.caption ?? "");
 
@@ -1179,7 +1218,7 @@ class StreamSystem {
 						}
 					});
 				} catch (error) {
-					this.logger.error(`Erro ao enviar notificação de mídia (${mediaPath}):`, error);
+					this.logger.error(`Erro ao enviar notificação de mídia (${mediaItem.content}):`, error);
 					return null;
 				}
 			}

@@ -142,7 +142,9 @@ dist
 
 # Scripts e coisas locais
 nssm-service.bat
-/scripts/
+/scripts/*
+!/scripts/migrate_media_to_s3.js
+!/scripts/compensate_fichas_slots.js
 data/textos/*.txt
 !data/textos/*.example.txt
 /src/scripts

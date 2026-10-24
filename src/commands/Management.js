@@ -12,6 +12,7 @@ const StreamSystem = require("../StreamSystem");
 const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../utils/RegexFilterValidator");
 const GroupMonitoringService = require("../services/GroupMonitoringService");
+const storageService = require("../services/StorageService");
 
 class Management {
 	constructor() {
@@ -817,15 +818,15 @@ class Management {
 					}
 					const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
 
-					// Cria diretório de mídia se não existir
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "custom-commands",
+						mimetype: media.mimetype
+					});
 
-					// Salva arquivo de mídia (sem base64 na resposta)
-					const filePath = path.join(mediaDir, fileName);
-					await fs.writeFile(filePath, Buffer.from(media.data, "base64"));
-
-					this.logger.info(`Arquivo de mídia salvo para comando: ${filePath}`);
+					this.logger.info(
+						`Arquivo de mídia salvo no storage para comando: ${fileName} (${group.id})`
+					);
 
 					// Formata a resposta adequadamente para sendCustomCommandResponse
 					// Este é o formato: {mediaType-fileName} Caption
@@ -1016,15 +1017,15 @@ class Management {
 					}
 					const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
 
-					// Cria diretório de mídia se não existir
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "custom-commands",
+						mimetype: media.mimetype
+					});
 
-					// Salva arquivo de mídia
-					const filePath = path.join(mediaDir, fileName);
-					await fs.writeFile(filePath, Buffer.from(media.data, "base64"));
-
-					this.logger.info(`Arquivo de mídia salvo para resposta de comando: ${filePath}`);
+					this.logger.info(
+						`Arquivo de mídia salvo no storage para resposta de comando: ${fileName} (${group.id})`
+					);
 
 					// Formata a resposta adequadamente para sendCustomCommandResponse
 					responseContent = `{${mediaType}-${fileName}}${quotedMsg.caption ? " " + quotedMsg.caption : ""}`;
@@ -1533,15 +1534,15 @@ class Management {
 					}
 					const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
 
-					// Cria diretório de mídia se não existir
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "greetings",
+						mimetype: media.mimetype
+					});
 
-					// Salva arquivo de mídia
-					const filePath = path.join(mediaDir, fileName);
-					await fs.writeFile(filePath, Buffer.from(media.data, "base64"));
-
-					this.logger.info(`[setWelcome] Mídia salva: ${filePath} (${mediaType})`);
+					this.logger.info(
+						`[setWelcome] Mídia salva no storage: ${fileName} (${mediaType}, ${group.id})`
+					);
 
 					// Define o objeto de mídia
 					group.greetings[mediaType] = {
@@ -1731,15 +1732,15 @@ class Management {
 					}
 					const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
 
-					// Cria diretório de mídia se não existir
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "farewells",
+						mimetype: media.mimetype
+					});
 
-					// Salva arquivo de mídia
-					const filePath = path.join(mediaDir, fileName);
-					await fs.writeFile(filePath, Buffer.from(media.data, "base64"));
-
-					this.logger.info(`[setFarewell] Mídia salva: ${filePath} (${mediaType})`);
+					this.logger.info(
+						`[setFarewell] Mídia salva no storage: ${fileName} (${mediaType}, ${group.id})`
+					);
 
 					// Define o objeto de mídia
 					group.farewells[mediaType] = {
@@ -6215,11 +6216,14 @@ class Management {
 					mediaConfig.content = mediaUrl;
 				} else {
 					const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
 
-					const filePath = path.join(mediaDir, fileName);
-					await fs.writeFile(filePath, Buffer.from(media.data, "base64"));
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "livestream",
+						mimetype: media.mimetype
+					});
+
+					this.logger.info(`[channelConfig] Mídia salva no storage: ${fileName} (${group.id})`);
 
 					mediaConfig.content = fileName;
 					mediaConfig.caption = quotedMsg.caption ?? "";
@@ -6478,10 +6482,12 @@ class Management {
 					// Salva arquivo no disco em vez de base64 no banco
 					const ext = media.mimetype.split("/")[1].split(";")[0] || "jpg";
 					const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
-					const mediaDir = path.join(this.dataPath, "media");
-					await fs.mkdir(mediaDir, { recursive: true });
 
-					await fs.writeFile(path.join(mediaDir, fileName), Buffer.from(media.data, "base64"));
+					await storageService.upload(media.data, fileName, {
+						groupId: group.id,
+						category: "group-photos",
+						mimetype: media.mimetype
+					});
 					mediaData = fileName;
 				}
 			} catch (error) {
@@ -6505,10 +6511,12 @@ class Management {
 				const ext =
 					(message.content.mimetype || "image/jpeg").split("/")[1]?.split(";")[0] || "jpg";
 				const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
-				const mediaDir = path.join(this.dataPath, "media");
-				await fs.mkdir(mediaDir, { recursive: true });
 
-				await fs.writeFile(path.join(mediaDir, fileName), Buffer.from(imageData, "base64"));
+				await storageService.upload(imageData, fileName, {
+					groupId: group.id,
+					category: "group-photos",
+					mimetype: message.content.mimetype || "image/jpeg"
+				});
 				mediaData = fileName;
 			}
 		}
@@ -6527,9 +6535,12 @@ class Management {
 					});
 					if (response.data && response.data.length > 0) {
 						const fileName = `group-photo-${Date.now()}-${Math.floor(Math.random() * 1000)}.jpg`;
-						const mediaDir = path.join(this.dataPath, "media");
-						await fs.mkdir(mediaDir, { recursive: true });
-						await fs.writeFile(path.join(mediaDir, fileName), Buffer.from(response.data));
+
+						await storageService.upload(response.data, fileName, {
+							groupId: group.id,
+							category: "group-photos",
+							mimetype: "image/jpeg"
+						});
 						mediaData = fileName;
 						capturedFromCurrentGroup = true;
 					}

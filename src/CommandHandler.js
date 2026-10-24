@@ -12,6 +12,7 @@ const CacheManager = require("./services/CacheManager");
 const CmdUsage = require("./utils/CmdUsage");
 const ProfilePictureHelper = require("./utils/ProfilePictureHelper");
 const PhoneUtils = require("./utils/PhoneUtils");
+const storageService = require("./services/StorageService");
 
 class CommandHandler {
 	constructor() {
@@ -1981,10 +1982,7 @@ class CommandHandler {
 			if (mediaMatch) {
 				const [, mediaType, fileName, caption] = mediaMatch;
 
-				// Atualiza caminho para procurar no diretório de mídia
-				const mediaPath = path.join(__dirname, "..", "data", "media", fileName);
-
-				this.logger.debug(`Enviando resposta de mídia (${mediaType}): ${mediaPath}`);
+				this.logger.debug(`Enviando resposta de mídia (${mediaType}): ${fileName}`);
 
 				try {
 					if (mediaType === "stickerGif") {
@@ -2006,7 +2004,27 @@ class CommandHandler {
 						if (mediaType === "audio") {
 							customMime = "audio/mpeg";
 						}
-						const media = await bot.createMedia(mediaPath, customMime);
+
+						// Busca do storage (S3 particionado por grupo, cache ou fallback)
+						const storageItem = await storageService.get(fileName, {
+							groupId: group?.id || message.group,
+							category: "custom-commands"
+						});
+
+						const effectiveMime = customMime || storageItem.mimetype;
+						const media =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										storageItem.buffer.toString("base64"),
+										effectiveMime,
+										fileName
+									)
+								: {
+										mimetype: effectiveMime,
+										data: storageItem.buffer.toString("base64"),
+										filename: fileName,
+										isMessageMedia: true
+									};
 
 						return new ReturnMessage({
 							chatId: message.group,
@@ -2023,7 +2041,7 @@ class CommandHandler {
 					}
 				} catch (error) {
 					this.logger.error(
-						`Erro ao enviar resposta de mídia (${mediaPath}):`,
+						`Erro ao enviar resposta de mídia (${fileName}):`,
 						error.message ?? "xxx"
 					);
 
