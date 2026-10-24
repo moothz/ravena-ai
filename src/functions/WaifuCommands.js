@@ -1282,7 +1282,7 @@ function makeRollHandler(genderFilter) {
 					marryText += `⚡ *CASAMENTO INSTANTÂNEO POR COTA!* Você possuía *${shares}/4 cotas* (${shares * 25}%) e o casamento ocorreu imediatamente sem consumir cooldown!\n`;
 					marryText += `🔑 Chaves: *1/10*\n`;
 					if (firstRollData.refundedCompetitorsCount > 0) {
-						marryText += `⚠️ *${firstRollData.refundedCompetitorsCount} competidor(es)* que investiram nesta waifu foram reembolsados integralmente em Zinthos.\n`;
+						marryText += `⚠️ *${firstRollData.refundedCompetitorsCount} competidor(es)* que investiram nesta waifu receberam 50% de reembolso em Zinthos.\n`;
 					}
 					if (rollReward) {
 						marryText += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos`;
@@ -4803,7 +4803,7 @@ async function investirWaifuCmd(bot, message, args) {
 			text += `🔑 Chaves: *1/10*\n`;
 			text += `💜 Saldo atual: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*`;
 			if (res.refundedCompetitors && res.refundedCompetitors.length > 0) {
-				text += `\n⚠️ *${res.refundedCompetitors.length} competidor(es)* que investiram nesta waifu foram reembolsados integralmente em Zinthos.`;
+				text += `\n⚠️ *${res.refundedCompetitors.length} competidor(es)* que investiram nesta waifu receberam 50% de reembolso em Zinthos.`;
 			}
 
 			return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
@@ -6454,6 +6454,96 @@ async function notifySpecialMarriage(
 	}
 }
 
+/**
+ * Obtém estatísticas semanais de Waifus (Waifuletes)
+ * @param {number} [sinceMs]
+ * @param {Object} [bot=null]
+ * @returns {Promise<Object|null>}
+ */
+async function getWeeklyWaifuStats(sinceMs = null, bot = null) {
+	try {
+		const since = sinceMs || Date.now() - 7 * 24 * 3600 * 1000;
+
+		// 1. Rolls calculados no cmd_usage_log
+		let rollsData = { total_commands: 0, total_rolls: 0, distinct_rollers: 0 };
+		try {
+			const rollRow = await database.dbGet(
+				"cmd_usage",
+				`SELECT 
+					COUNT(*) as total_commands,
+					SUM(
+						CASE 
+							WHEN args GLOB '[1-9]' THEN CAST(args AS INTEGER)
+							WHEN args GLOB '[1-9][0-9]' THEN CAST(args AS INTEGER)
+							ELSE 1 
+						END
+					) as total_rolls,
+					COUNT(DISTINCT user) as distinct_rollers
+				 FROM cmd_usage_log
+				 WHERE command IN ('mu-roll', 'mu-r', 'mu-w', 'mu-waifu', 'mu-rollm', 'mu-rm', 'mu-rollf', 'mu-rf')
+				   AND timestamp >= ?`,
+				[since]
+			);
+			if (rollRow) {
+				rollsData = {
+					total_commands: Number(rollRow.total_commands) || 0,
+					total_rolls: Number(rollRow.total_rolls) || 0,
+					distinct_rollers: Number(rollRow.distinct_rollers) || 0
+				};
+			}
+		} catch (dbErr) {
+			logger.warn("[getWeeklyWaifuStats] Erro ao consultar rolls no cmd_usage:", dbErr.message);
+		}
+
+		// 2. Consulta API do Waifuletes
+		let apiData = null;
+		try {
+			const { data: apiRes } = await api.get("/admin/stats/weekly");
+			if (apiRes?.success && apiRes?.data) {
+				apiData = apiRes.data;
+			}
+		} catch (apiErr) {
+			logger.warn(
+				"[getWeeklyWaifuStats] Rota /admin/stats/weekly não disponível, usando fallback:",
+				apiErr.message
+			);
+		}
+
+		// Fallback caso a rota /admin/stats/weekly ainda não esteja no ar no container
+		if (!apiData) {
+			try {
+				const [haremRes] = await Promise.all([
+					api.get("/leaderboard/harem?limit=1").catch(() => ({ data: {} }))
+				]);
+				const topHaremUser = haremRes?.data?.data?.topHarem?.[0] || null;
+				apiData = {
+					weeklyMarriagesByRarity: [],
+					weeklyNegotiationsCount: 0,
+					weeklySoulmatesCount: 0,
+					topMarrier: topHaremUser
+						? { name: topHaremUser.name, count: topHaremUser.totalMarriages }
+						: null,
+					mostCoveted: null,
+					categoryStats: []
+				};
+			} catch (_) {}
+		}
+
+		return {
+			rolls: rollsData,
+			marriagesByRarity: apiData?.weeklyMarriagesByRarity || [],
+			negotiationsCount: apiData?.weeklyNegotiationsCount || 0,
+			weeklySoulmatesCount: apiData?.weeklySoulmatesCount || 0,
+			topMarrier: apiData?.topMarrier || null,
+			mostCoveted: apiData?.mostCoveted || null,
+			categoryStats: apiData?.categoryStats || []
+		};
+	} catch (err) {
+		logger.error("[getWeeklyWaifuStats] Erro geral ao obter estatísticas de waifus:", err);
+		return null;
+	}
+}
+
 module.exports = {
 	helper,
 	commands,
@@ -6463,6 +6553,7 @@ module.exports = {
 	rollMale,
 	rollFemale,
 	casarWaifu,
+	getWeeklyWaifuStats,
 	consultarOuGerarFotoCasamento,
 	divorciarWaifu,
 	likeWaifu,

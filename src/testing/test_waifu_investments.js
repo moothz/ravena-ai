@@ -303,10 +303,7 @@ async function runTests() {
 		const caption4 = resInvestir4.options?.caption || resInvestir4.content;
 		assert(caption4.includes("se casou com *Makima*!"), "Deve disparar celebração de casamento");
 		assert(caption4.includes("Chaves: *1/10*"), "Deve conter status de chaves");
-		assert(
-			caption4.includes("reembolsados integralmente"),
-			"Deve informar estorno de concorrentes"
-		);
+		assert(caption4.includes("50% de reembolso"), "Deve informar estorno de concorrentes");
 		console.log(
 			"✅ [TESTE 5 PASSOU] Casamento definitivo por cotas formatado com foto e estorno de concorrentes!"
 		);
