@@ -5,6 +5,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const FishingGame = require("./FishingGame");
 const GameEventService = require("../services/GameEventService");
+const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 
 const logger = new Logger("slots-game");
 const database = Database.getInstance();
@@ -748,7 +749,10 @@ async function slotsCommand(bot, message, args, group) {
 				const ShadowGardenClient = require("../services/ShadowGardenClient");
 				const jardimClient = new ShadowGardenClient();
 				if (totalJardimCoinsWon > 0) {
-					await jardimClient.adminGive(userId, { coins: totalJardimCoinsWon, reason: "slots_prize" });
+					await jardimClient.adminGive(userId, {
+						coins: totalJardimCoinsWon,
+						reason: "slots_prize"
+					});
 				}
 				if (totalJardimBagsWon > 0) {
 					allOpenedSeeds = openSacolasDoCoveiro(totalJardimBagsWon);

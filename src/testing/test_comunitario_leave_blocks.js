@@ -24,7 +24,7 @@ async function main() {
 
 	// Mock do database para controlar retorno de consultas
 	let mockInviteHistory = [];
-	let mockDonations = [];
+	const mockDonations = [];
 	let mockMembershipPeriods = [];
 	const groupsMap = {};
 
@@ -88,7 +88,11 @@ async function main() {
 	await eventHandler.processGroupLeave(fakeBot, leaveData1);
 	await new Promise((r) => setTimeout(r, 100));
 
-	assert.strictEqual(fakeBot.capturedMessages.length, 2, "Deveria ter enviado 2 mensagens para o grupo de logs");
+	assert.strictEqual(
+		fakeBot.capturedMessages.length,
+		2,
+		"Deveria ter enviado 2 mensagens para o grupo de logs"
+	);
 	assert.strictEqual(fakeBot.capturedMessages[0].chatId, "logs@g.us");
 	assert.ok(
 		fakeBot.capturedMessages[0].content.includes("saiu do grupo"),
@@ -249,11 +253,17 @@ async function main() {
 	// Mock dos métodos correspondentes no superAdmin
 	eventHandler.commandHandler.superAdmin.blockList = async (bot, msg, args) => {
 		executedCommands.push({ cmd: "blockList", args });
-		return new ReturnMessage({ chatId: msg.group ?? msg.author, content: "BlockList executado com sucesso" });
+		return new ReturnMessage({
+			chatId: msg.group ?? msg.author,
+			content: "BlockList executado com sucesso"
+		});
 	};
 	eventHandler.commandHandler.superAdmin.blockInvites = async (bot, msg, args) => {
 		executedCommands.push({ cmd: "blockInvites", args });
-		return new ReturnMessage({ chatId: msg.group ?? msg.author, content: "BlockInvites executado com sucesso" });
+		return new ReturnMessage({
+			chatId: msg.group ?? msg.author,
+			content: "BlockInvites executado com sucesso"
+		});
 	};
 
 	// Mensagem simulando o admin encaminhando o texto copiado / forwarded

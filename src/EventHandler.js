@@ -2378,23 +2378,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 									: false;
 
 						const removerId = data.responsavel?.id || null;
-						const cleanRemoverPhone = removerId
-							? removerId.replace(/\D/g, "").split("@")[0]
-							: null;
+						const cleanRemoverPhone = removerId ? removerId.replace(/\D/g, "").split("@")[0] : null;
 						const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
 						const isRemovedBySelf =
 							cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
-						const isRemoverSuperAdmin = removerId
-							? this.adminUtils.isSuperAdmin(removerId)
-							: false;
+						const isRemoverSuperAdmin = removerId ? this.adminUtils.isSuperAdmin(removerId) : false;
 
 						let isRemoverDonator = false;
-						if (
-							isLessThan7Days &&
-							cleanRemoverPhone &&
-							!isRemovedBySelf &&
-							!isRemoverSuperAdmin
-						) {
+						if (isLessThan7Days && cleanRemoverPhone && !isRemovedBySelf && !isRemoverSuperAdmin) {
 							try {
 								const donations = await this.database.getDonations();
 								if (donations && donations.length > 0) {
@@ -2435,8 +2426,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							try {
 								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
 								if (inviteHistory && inviteHistory.length > 0) {
-									const latestInvite =
-										inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+									const latestInvite = inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
 									if (latestInvite) {
 										if (!inviteCode && latestInvite.invite_code) {
 											inviteCode = latestInvite.invite_code;
@@ -2447,10 +2437,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 									}
 								}
 							} catch (invErr) {
-								this.logger.error(
-									"Erro ao buscar histórico de convites para auto-block:",
-									invErr
-								);
+								this.logger.error("Erro ao buscar histórico de convites para auto-block:", invErr);
 							}
 
 							const cleanInviterPhone = inviterId
@@ -2516,8 +2503,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							try {
 								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
 								if (inviteHistory && inviteHistory.length > 0) {
-									const latestInvite =
-										inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+									const latestInvite = inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
 									if (latestInvite) {
 										if (!inviteCode && latestInvite.invite_code) {
 											inviteCode = latestInvite.invite_code;
@@ -2603,7 +2589,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 						*/
 
-						bot.sendMessage(bot.grupoLogs, msgLeave)
+						bot
+							.sendMessage(bot.grupoLogs, msgLeave)
 							.then(() => {
 								if (msgSubsequentCommands) {
 									return bot.sendMessage(bot.grupoLogs, msgSubsequentCommands);

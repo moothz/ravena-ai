@@ -588,7 +588,10 @@ class CommandHandler {
 			}
 
 			// Suporte a mensagens multilinha com comandos sa- (ex: lista encaminhada de bloqueios)
-			const lines = commandText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+			const lines = commandText
+				.split(/\r?\n/)
+				.map((l) => l.trim())
+				.filter(Boolean);
 			if (lines.length > 1) {
 				const botPrefix = (group && group.prefix !== undefined ? group.prefix : bot.prefix) || "!";
 				const isMultiSa = lines.every((line) => {

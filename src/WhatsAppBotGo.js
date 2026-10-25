@@ -3075,6 +3075,13 @@ class WhatsAppBotGo {
 					} else {
 						payload.sticker = content.url ?? content.data;
 					}
+
+					const defaultAuthor = this.nomeExibir || this.nome || "Ravena";
+					payload.sticker_author = options.stickerAuthor || defaultAuthor;
+					payload.sticker_name = options.stickerName || payload.sticker_author;
+					if (Array.isArray(options.stickerCategories) && options.stickerCategories.length > 0) {
+						payload.emojis = options.stickerCategories;
+					}
 				} else {
 					endpoint = "/send/media";
 
