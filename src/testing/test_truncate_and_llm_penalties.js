@@ -156,16 +156,25 @@ async function main() {
 	);
 	assert(postedPayload.text.endsWith("... [truncado]"));
 
-	// 2.4 Envio de texto superior a 15000 caracteres deve ser truncado pelo wrapper
+	// 2.4 Envio de texto longo padrão NÃO deve ser truncado pelo wrapper (ex: !cmd)
 	postedPayload = null;
 	await bot.sendMessage("5511999999999@s.whatsapp.net", huge16kText);
+	assert.strictEqual(
+		postedPayload.text,
+		huge16kText,
+		"payload.text padrão não deve ser truncado pelo wrapper"
+	);
+
+	// 2.5 Envio com maxChars=15000 explícito deve ser truncado
+	postedPayload = null;
+	await bot.sendMessage("5511999999999@s.whatsapp.net", huge16kText, { maxChars: 15000 });
 	assert(
 		postedPayload.text.length <= 15000,
-		`payload.text deve respeitar limite padrão de 15000 caracteres, obteve ${postedPayload.text.length}`
+		`payload.text deve respeitar limite explícito de 15000 caracteres, obteve ${postedPayload.text.length}`
 	);
 	assert(postedPayload.text.endsWith("... [truncado]"));
 
-	// 2.5 Envio de mídia com caption longa (LLM maxChars: 3000)
+	// 2.6 Envio de mídia com caption longa (LLM maxChars: 3000)
 	postedPayload = null;
 	await bot.sendMessage(
 		"5511999999999@s.whatsapp.net",

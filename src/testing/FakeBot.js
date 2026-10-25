@@ -177,8 +177,8 @@ class FakeBot {
 				});
 				continue;
 			}
-			const maxChars = msg.options?.maxChars !== undefined ? msg.options.maxChars : 15000;
-			const maxLines = msg.options?.maxLines !== undefined ? msg.options.maxLines : 200;
+			const maxChars = msg.options?.maxChars !== undefined ? msg.options.maxChars : 0;
+			const maxLines = msg.options?.maxLines !== undefined ? msg.options.maxLines : 0;
 			const maxCharRepeats =
 				msg.options?.maxCharRepeats !== undefined ? msg.options.maxCharRepeats : 15;
 
@@ -337,8 +337,8 @@ class FakeBot {
 			err.status = 403;
 			throw err;
 		}
-		const maxChars = options.maxChars !== undefined ? options.maxChars : 15000;
-		const maxLines = options.maxLines !== undefined ? options.maxLines : 200;
+		const maxChars = options.maxChars !== undefined ? options.maxChars : 0;
+		const maxLines = options.maxLines !== undefined ? options.maxLines : 0;
 		const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
 
 		const ReturnMessage = require("../models/ReturnMessage");

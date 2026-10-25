@@ -726,8 +726,8 @@ class WhatsAppBotTelegram {
 				);
 			}
 
-			const maxChars = options.maxChars !== undefined ? options.maxChars : 15000;
-			const maxLines = options.maxLines !== undefined ? options.maxLines : 200;
+			const maxChars = options.maxChars !== undefined ? options.maxChars : 0;
+			const maxLines = options.maxLines !== undefined ? options.maxLines : 0;
 			const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
 
 			// Format Content (Text)

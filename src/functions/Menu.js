@@ -455,10 +455,14 @@ async function sendCommandList(bot, message, args, group) {
 			menuText += `> Use os comandos de gerencia ou o !g-painel para ignorar/designorar comandos e categorias`;
 		}
 
-		// Retorna a mensagem com o menu
+		// Retorna a mensagem com o menu sem truncamento
 		return new ReturnMessage({
 			chatId,
-			content: menuText
+			content: menuText,
+			options: {
+				maxChars: 0,
+				maxLines: 0
+			}
 		});
 	} catch (error) {
 		logger.error("Erro ao enviar lista de comandos:", error);
