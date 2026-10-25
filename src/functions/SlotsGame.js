@@ -137,8 +137,8 @@ function openSacolasDoCoveiro(numBags) {
 	return droppedSeeds;
 }
 
-function rollSingleReward(isPartial = false, isTriple = false) {
-	const mult = isTriple ? 3 : 1;
+function rollSingleReward(isPartial = false, isDiamond = false) {
+	const mult = isDiamond ? 5 : 1;
 	const cashbackPercent = isPartial ? Math.floor(Math.random() * (10 - 5 + 1)) + 5 : 0; // 5% a 10% (inteiros)
 	const cashbackRate = cashbackPercent / 100;
 	const r = Math.random() * 110;
@@ -800,18 +800,12 @@ async function slotsCommand(bot, message, args, group) {
 
 		// Formata cabeçalho do resultado
 		if (hasDiamondJackpot) {
-			resultMessage += `${actionPrefix}💎 *JACKPOT LENDÁRIO DE DIAMANTES! (Prêmios TRIPLICADOS!)* 💎\n\n`;
+			resultMessage += `${actionPrefix}💎 *JACKPOT LENDÁRIO DE DIAMANTES! (Prêmios QUINTUPLICADOS!)* 💎\n\n`;
 		} else if (totalWins > 0) {
 			const winMsg = WIN_MESSAGES[Math.floor(Math.random() * WIN_MESSAGES.length)];
 			resultMessage += `${actionPrefix}🎊 *${winMsg}* 🎊\n\n`;
 		} else {
-			const cbText =
-				partialCashbackPercents.length === 1
-					? `${partialCashbackPercents[0]}%`
-					: partialCashbackPercents.length > 1
-						? `${Math.min(...partialCashbackPercents)}% a ${Math.max(...partialCashbackPercents)}%`
-						: "5% a 10%";
-			resultMessage += `${actionPrefix}✨ *Vitória Parcial! Você acertou 2 símbolos e garantiu cashback de ${cbText}!* ✨\n\n`;
+			resultMessage += `${actionPrefix}✨ *Vitória Parcial! Você acertou 2 símbolos e garantiu cashback!* ✨\n\n`;
 		}
 
 		resultMessage += `🎁 *Resumo dos Prêmios Conquistados:*\n`;
@@ -890,7 +884,7 @@ async function slotsHelpCommand(bot, message, args, group) {
 
 🎯 *Probabilidades por Giro:*
 • 🏆 *Jackpot (3 símbolos iguais):* 1% (1 em 100 giros)
-• 💎 *Jackpot Lendário (3x 💎):* 0,1% (1 em 1.000 giros) — *TRIPLICA O PRÊMIO!*
+• 💎 *Jackpot Lendário (3x 💎):* 0,1% (1 em 1.000 giros) — *QUINTUPLICA O PRÊMIO!*
 • 🥈 *Vitória Parcial (2 símbolos iguais):* 27% — *Ganha de 5% a 10% de cashback do prêmio numérico sorteado*
 • ❌ *Derrota (3 diferentes):* 72%
 
