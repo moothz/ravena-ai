@@ -139,6 +139,8 @@ function openSacolasDoCoveiro(numBags) {
 
 function rollSingleReward(isPartial = false, isTriple = false) {
 	const mult = isTriple ? 3 : 1;
+	const cashbackPercent = isPartial ? Math.floor(Math.random() * (10 - 5 + 1)) + 5 : 0; // 5% a 10% (inteiros)
+	const cashbackRate = cashbackPercent / 100;
 	const r = Math.random() * 110;
 
 	if (r < 10) {
@@ -153,14 +155,15 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			jardimCoins: 0,
 			jardimBags: 0,
 			zinthos: 0,
-			waifuTickets: 0
+			waifuTickets: 0,
+			cashbackPercent
 		};
 	} else if (r < 30) {
 		// 20%: 10 a 80 moedas
 		let coins = Math.floor(Math.random() * (80 - 10 + 1)) + 10;
 		coins *= mult;
 		if (isPartial) {
-			coins = Math.max(1, Math.floor(coins * 0.2));
+			coins = Math.max(1, Math.floor(coins * cashbackRate));
 		}
 		return {
 			category: "coins",
@@ -171,7 +174,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			jardimCoins: 0,
 			jardimBags: 0,
 			zinthos: 0,
-			waifuTickets: 0
+			waifuTickets: 0,
+			cashbackPercent
 		};
 	} else if (r < 50) {
 		// 20%: 5 a 25 iscas + 1 buff aleatório de pesca
@@ -179,7 +183,7 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 		baits *= mult;
 		let buffs = [];
 		if (isPartial) {
-			baits = Math.max(1, Math.floor(baits * 0.2));
+			baits = Math.max(1, Math.floor(baits * cashbackRate));
 		} else {
 			const countBuffs = 1 * mult;
 			buffs = pickFishingBuffs(countBuffs);
@@ -193,7 +197,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			jardimCoins: 0,
 			jardimBags: 0,
 			zinthos: 0,
-			waifuTickets: 0
+			waifuTickets: 0,
+			cashbackPercent
 		};
 	} else if (r < 65) {
 		// 15%: 15 a 50 iscas, 2 a 5 buffs aleatórios de pesca
@@ -201,7 +206,7 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 		baits *= mult;
 		let buffs = [];
 		if (isPartial) {
-			baits = Math.max(1, Math.floor(baits * 0.2));
+			baits = Math.max(1, Math.floor(baits * cashbackRate));
 		} else {
 			const countBuffs = (Math.floor(Math.random() * (5 - 2 + 1)) + 2) * mult;
 			buffs = pickFishingBuffs(countBuffs);
@@ -215,7 +220,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			jardimCoins: 0,
 			jardimBags: 0,
 			zinthos: 0,
-			waifuTickets: 0
+			waifuTickets: 0,
+			cashbackPercent
 		};
 	} else if (r < 85) {
 		// 20%: 300 a 2500 moedas do jardim e 1 a 5 sacolas do coveiro
@@ -223,7 +229,7 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 		jardimCoins *= mult;
 		let jardimBags = 0;
 		if (isPartial) {
-			jardimCoins = Math.max(1, Math.floor(jardimCoins * 0.2));
+			jardimCoins = Math.max(1, Math.floor(jardimCoins * cashbackRate));
 		} else {
 			jardimBags = (Math.floor(Math.random() * (5 - 1 + 1)) + 1) * mult;
 		}
@@ -236,7 +242,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			baits: 0,
 			buffs: [],
 			zinthos: 0,
-			waifuTickets: 0
+			waifuTickets: 0,
+			cashbackPercent
 		};
 	} else if (r < 100) {
 		// 15%: 2100 a 7000 zinthos (-30%), 3 tickets de waifus
@@ -244,7 +251,7 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 		zinthos *= mult;
 		let waifuTickets = 0;
 		if (isPartial) {
-			zinthos = Math.max(1, Math.floor(zinthos * 0.2));
+			zinthos = Math.max(1, Math.floor(zinthos * cashbackRate));
 		} else {
 			waifuTickets = 3 * mult;
 		}
@@ -257,7 +264,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			baits: 0,
 			buffs: [],
 			jardimCoins: 0,
-			jardimBags: 0
+			jardimBags: 0,
+			cashbackPercent
 		};
 	} else {
 		// 10%: 5600 a 10500 zinthos (-30%), 5 tickets de waifus
@@ -265,7 +273,7 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 		zinthos *= mult;
 		let waifuTickets = 0;
 		if (isPartial) {
-			zinthos = Math.max(1, Math.floor(zinthos * 0.2));
+			zinthos = Math.max(1, Math.floor(zinthos * cashbackRate));
 		} else {
 			waifuTickets = 5 * mult;
 		}
@@ -278,7 +286,8 @@ function rollSingleReward(isPartial = false, isTriple = false) {
 			baits: 0,
 			buffs: [],
 			jardimCoins: 0,
-			jardimBags: 0
+			jardimBags: 0,
+			cashbackPercent
 		};
 	}
 }
@@ -682,6 +691,7 @@ async function slotsCommand(bot, message, args, group) {
 		let totalZinthosWon = 0;
 		let totalTicketsWon = 0;
 		const junkItemsWon = [];
+		const partialCashbackPercents = [];
 
 		for (const roll of rollResults) {
 			if (roll.isWin) {
@@ -701,6 +711,7 @@ async function slotsCommand(bot, message, args, group) {
 				totalJardimCoinsWon += reward.jardimCoins;
 				totalZinthosWon += reward.zinthos;
 				if (reward.junkItem) junkItemsWon.push(reward.junkItem);
+				if (reward.cashbackPercent) partialCashbackPercents.push(reward.cashbackPercent);
 			}
 		}
 
@@ -794,7 +805,13 @@ async function slotsCommand(bot, message, args, group) {
 			const winMsg = WIN_MESSAGES[Math.floor(Math.random() * WIN_MESSAGES.length)];
 			resultMessage += `${actionPrefix}🎊 *${winMsg}* 🎊\n\n`;
 		} else {
-			resultMessage += `${actionPrefix}✨ *Vitória Parcial! Você acertou 2 símbolos e garantiu cashback de 20%!* ✨\n\n`;
+			const cbText =
+				partialCashbackPercents.length === 1
+					? `${partialCashbackPercents[0]}%`
+					: partialCashbackPercents.length > 1
+						? `${Math.min(...partialCashbackPercents)}% a ${Math.max(...partialCashbackPercents)}%`
+						: "5% a 10%";
+			resultMessage += `${actionPrefix}✨ *Vitória Parcial! Você acertou 2 símbolos e garantiu cashback de ${cbText}!* ✨\n\n`;
 		}
 
 		resultMessage += `🎁 *Resumo dos Prêmios Conquistados:*\n`;
@@ -874,7 +891,7 @@ async function slotsHelpCommand(bot, message, args, group) {
 🎯 *Probabilidades por Giro:*
 • 🏆 *Jackpot (3 símbolos iguais):* 1% (1 em 100 giros)
 • 💎 *Jackpot Lendário (3x 💎):* 0,1% (1 em 1.000 giros) — *TRIPLICA O PRÊMIO!*
-• 🥈 *Vitória Parcial (2 símbolos iguais):* 27% — *Ganha 20% do prêmio numérico sorteado*
+• 🥈 *Vitória Parcial (2 símbolos iguais):* 27% — *Ganha de 5% a 10% de cashback do prêmio numérico sorteado*
 • ❌ *Derrota (3 diferentes):* 72%
 
 🎁 *Tabela de Prêmios por Vitória:*
@@ -889,7 +906,7 @@ async function slotsHelpCommand(bot, message, args, group) {
 ⚙️ *Regras e Funcionamento:*
 • 🪙 *Custo:* 1 moedinha por giro.
 • ⏳ *Recarga passiva:* 1 moedinha a cada 2 minutos (acumula até 5 passivas).
-• 🥈 *Vitória Parcial (2 símbolos):* Concede 20% de moedas, iscas, moedas do jardim ou zinthos (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
+• 🥈 *Vitória Parcial (2 símbolos):* Concede de 5% a 10% (aleatório) de moedas, iscas, moedas do jardim ou zinthos (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
 • 📜 Para consultar seu histórico de prêmios pessoais: \`!slots-historico\` ou \`!slots-premios historico\``;
 
 	return new ReturnMessage({
