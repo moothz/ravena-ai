@@ -258,6 +258,43 @@ class ShadowGardenClient {
 	}
 
 	/**
+	 * Busca dados consolidados de todos os jogadores para o resumo semanal
+	 * Caso a rota /rankings/digest retorne 404, cai para /rankings/farmers
+	 */
+	async getDigestStats() {
+		try {
+			const res = await fetch(`${this.baseUrl}/rankings/digest`, {
+				headers: this._headers()
+			});
+			if (res.ok) {
+				return await res.json();
+			}
+		} catch (_) {}
+
+		// Fallback gracioso para /rankings/farmers e /rankings/wealth
+		const [farmersRes, wealthRes] = await Promise.all([
+			this.getFarmersRanking(50).catch(() => ({ ranking: [] })),
+			this.getWealthRanking(1).catch(() => ({ ranking: [] }))
+		]);
+
+		const farmers = farmersRes?.ranking || [];
+		const wealthiest = wealthRes?.ranking?.[0] || null;
+
+		return {
+			players: farmers.map((f) => ({
+				id: f.userId,
+				coins: f.coins || 0,
+				totalHarvested: f.totalHarvested || 0,
+				totalPlanted: f.totalPlanted || 0,
+				totalWithered: 0
+			})),
+			topCrop: null,
+			topDecorator: null,
+			richest: wealthiest ? { id: wealthiest.userId, coins: wealthiest.coins } : null
+		};
+	}
+
+	/**
 	 * Concede moedas, itens ou decorações via painel administrativo
 	 * @param {string} userId
 	 * @param {Object} options - { coins, itemId, amount, reason }

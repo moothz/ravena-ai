@@ -794,7 +794,25 @@ async function getWeeklySlotsStats(sinceMs) {
 			 LIMIT 10`,
 			[sinceMs]
 		);
-		return (rows || [])
+		const mostUnlucky = await database.dbGet(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        SUM(coins_spent) as coins_spent,
+			        COUNT(*) as plays
+			 FROM slots_history
+			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2')
+			   AND group_id != '123@g.us'
+			   AND group_id NOT LIKE 'test_%'
+			 GROUP BY user_id
+			 HAVING SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) = 0
+			 ORDER BY coins_spent DESC
+			 LIMIT 1`,
+			[sinceMs]
+		);
+		const result = (rows || [])
 			.filter((r) => (Number(r.wins) || 0) > 0)
 			.map((r) => ({
 				user_id: r.user_id,
@@ -803,6 +821,14 @@ async function getWeeklySlotsStats(sinceMs) {
 				plays: Number(r.plays) || 0,
 				coins_spent: Number(r.coins_spent) || 0
 			}));
+		if (mostUnlucky && (Number(mostUnlucky.coins_spent) || 0) > 0) {
+			result.mostUnlucky = {
+				user_name: mostUnlucky.user_name || "Jogador",
+				coins_spent: Number(mostUnlucky.coins_spent) || 0,
+				plays: Number(mostUnlucky.plays) || 0
+			};
+		}
+		return result;
 	} catch (error) {
 		logger.error("Erro ao buscar estatísticas semanais de Slots:", error);
 		return [];

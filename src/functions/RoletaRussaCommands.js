@@ -889,13 +889,25 @@ async function getWeeklyRoletaStats(sinceMs) {
 			 LIMIT 10`,
 			[sinceMs]
 		);
-		return (rows || []).map((r) => ({
+		const deathRow = await database.dbGet(
+			dbName,
+			`SELECT COUNT(*) as total_deaths
+			 FROM roleta_history
+			 WHERE timestamp >= ?
+			   AND action = 'death'
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2')`,
+			[sinceMs]
+		);
+		const result = (rows || []).map((r) => ({
 			user_id: r.user_id,
 			user_name: r.user_name || "Jogador",
 			survivals: Number(r.survivals) || 0,
 			deaths: Number(r.deaths) || 0,
 			isAlive: (Number(r.deaths) || 0) === 0
 		}));
+		result.totalDeaths = Number(deathRow?.total_deaths) || 0;
+		return result;
 	} catch (error) {
 		logger.error("Erro ao buscar estatísticas semanais de Roleta Russa:", error);
 		return [];

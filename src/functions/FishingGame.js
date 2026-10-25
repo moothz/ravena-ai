@@ -4000,7 +4000,22 @@ async function getWeeklyFishingStats(sinceMs) {
 			 LIMIT 10`,
 			[sinceMs]
 		);
-		return (rows || []).map((r) => {
+		const biggestRow = await database.dbGet(
+			dbName,
+			`SELECT i.user_id,
+			        COALESCE(u.name, 'Pescador') as user_name,
+			        i.fish_name,
+			        i.weight
+			 FROM fishing_inventory i
+			 LEFT JOIN fishing_users u ON i.user_id = u.user_id
+			 WHERE i.timestamp >= ?
+			   AND i.user_id NOT LIKE 'user_%'
+			   AND i.user_id NOT IN ('user1', 'user2', '5511999999999@s.whatsapp.net', 'test_abandonar_user')
+			 ORDER BY i.weight DESC
+			 LIMIT 1`,
+			[sinceMs]
+		);
+		const result = (rows || []).map((r) => {
 			const catches = Number(r.total_catches) || 0;
 			const weight = Number(r.total_weight) || 0;
 			return {
@@ -4011,6 +4026,14 @@ async function getWeeklyFishingStats(sinceMs) {
 				score: Number((weight + catches * 5).toFixed(2))
 			};
 		});
+		if (biggestRow && biggestRow.weight) {
+			result.biggestCatch = {
+				user_name: biggestRow.user_name || "Pescador",
+				fish_name: biggestRow.fish_name || "Peixe",
+				weight: Number(biggestRow.weight) || 0
+			};
+		}
+		return result;
 	} catch (error) {
 		logger.error("Erro ao buscar estatísticas semanais de pesca:", error);
 		return [];

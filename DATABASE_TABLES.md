@@ -273,6 +273,21 @@ Histórico de temporadas encerradas por grupo.
 
 ## 🎮 Jogos
 
+### `fazenda.db`
+Minigame Jardim das Sombras.
+
+#### `fazenda_player_snapshots`
+Snapshots das estatísticas dos jogadores para cálculo de deltas do resumo semanal.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `player_id` | TEXT PK | ID ou telefone do jogador |
+| `total_planted` | INTEGER | Total de sementes plantadas no momento do snapshot |
+| `total_harvested` | INTEGER | Total de colheitas realizadas no momento do snapshot |
+| `total_withered` | INTEGER | Total de plantas apodrecidas no momento do snapshot |
+| `coins` | INTEGER | Saldo de moedas no Jardim |
+| `snapshot_at` | INTEGER PK | Timestamp da captura do snapshot (ms) |
+
 ### `slots.db`
 Caça-níqueis. Tabelas: `slots_users` (perfil do jogador), `slots_group_stats` (ranking por grupo).
 

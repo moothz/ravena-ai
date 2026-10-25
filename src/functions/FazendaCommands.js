@@ -12,9 +12,45 @@ const Logger = require("../utils/Logger");
 const { resolveMentionName } = require("../utils/ProfilePictureHelper");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+const Database = require("../utils/Database");
 
 const logger = new Logger("fazenda-commands");
 const jardimClient = new ShadowGardenClient();
+const database = Database.getInstance();
+const DB_FAZENDA = "fazenda";
+
+// Inicializa banco para snapshots semanais da fazenda
+database.getSQLiteDb(
+	DB_FAZENDA,
+	`
+  CREATE TABLE IF NOT EXISTS fazenda_player_snapshots (
+    player_id TEXT NOT NULL,
+    total_planted INTEGER NOT NULL DEFAULT 0,
+    total_harvested INTEGER NOT NULL DEFAULT 0,
+    total_withered INTEGER NOT NULL DEFAULT 0,
+    coins INTEGER NOT NULL DEFAULT 0,
+    snapshot_at INTEGER NOT NULL,
+    PRIMARY KEY (player_id, snapshot_at)
+  );
+  CREATE INDEX IF NOT EXISTS idx_fazenda_snapshot_time ON fazenda_player_snapshots(snapshot_at);
+`
+);
+
+// Mapeamento amigável de nomes de plantas
+const PLANT_NAMES = {
+	"01_nightshade": "Erva-Moura",
+	"02_tomb_shroom": "Cogumelo Tumular",
+	"03_corpse_lily": "Lírio Cadáver",
+	"04_black_lotus": "Lótus Negra",
+	"05_mist_crawler_v2": "Rastejante de Névoa",
+	"06_styx_kelp_v2": "Alga do Estige",
+	"07_spectral_gourd_v2": "Cabaça Espectral",
+	"08_devouring_root_v2": "Raiz Devoradora",
+	"09_obsidian_clover": "Trevo de Obsidiana",
+	"10_golden_clover": "Trevo Dourado",
+	"11_purple_heart": "Coração Púrpuro",
+	"12_blood_rose": "Rosa de Sangue"
+};
 
 // Regex para detecção de emojis Unicode
 const EMOJI_REGEX = /\p{Extended_Pictographic}/gu;
@@ -1618,8 +1654,174 @@ const commands = [
 	})
 ];
 
+/**
+ * Obtém estatísticas e deltas semanais da Fazenda (Jardim das Sombras)
+ * @param {number} [sinceMs]
+ * @param {boolean} [saveSnapshot=false]
+ * @param {Object} [bot=null]
+ * @returns {Promise<Object|null>}
+ */
+async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot = null) {
+	try {
+		const digest = await jardimClient.getDigestStats();
+		if (!digest || !Array.isArray(digest.players) || digest.players.length === 0) {
+			return null;
+		}
+
+		const threshold = sinceMs || Date.now() - 7 * 24 * 3600 * 1000;
+
+		// Busca o snapshot mais recente anterior ou igual ao início da semana
+		const prevSnapshots = await database.dbAll(
+			DB_FAZENDA,
+			`SELECT s1.player_id, s1.total_planted, s1.total_harvested, s1.total_withered, s1.coins
+			 FROM fazenda_player_snapshots s1
+			 INNER JOIN (
+				SELECT player_id, MAX(snapshot_at) as max_snap
+				FROM fazenda_player_snapshots
+				WHERE snapshot_at <= ?
+				GROUP BY player_id
+			 ) s2 ON s1.player_id = s2.player_id AND s1.snapshot_at = s2.max_snap`,
+			[threshold]
+		);
+
+		const countRow = await database.dbGet(
+			DB_FAZENDA,
+			"SELECT COUNT(*) as c FROM fazenda_player_snapshots"
+		);
+		const isFirstRun = (countRow?.c || 0) === 0;
+
+		const snapMap = new Map();
+		if (Array.isArray(prevSnapshots)) {
+			for (const s of prevSnapshots) {
+				snapMap.set(String(s.player_id), s);
+			}
+		}
+
+		// Calcula os deltas de cada jogador
+		const validPlayers = [];
+		for (const p of digest.players) {
+			if (isTestUser(p.id)) continue;
+
+			const prev = snapMap.get(String(p.id));
+			const deltaPlanted = prev
+				? Math.max(0, (p.totalPlanted || 0) - prev.total_planted)
+				: p.totalPlanted || 0;
+			const deltaHarvested = prev
+				? Math.max(0, (p.totalHarvested || 0) - prev.total_harvested)
+				: p.totalHarvested || 0;
+			const deltaWithered = prev
+				? Math.max(0, (p.totalWithered || 0) - prev.total_withered)
+				: p.totalWithered || 0;
+
+			validPlayers.push({
+				userId: String(p.id),
+				userName: await resolvePlayerRankingName(bot, p.id, null, null),
+				coins: p.coins || 0,
+				totalPlanted: p.totalPlanted || 0,
+				totalHarvested: p.totalHarvested || 0,
+				totalWithered: p.totalWithered || 0,
+				deltaPlanted,
+				deltaHarvested,
+				deltaWithered
+			});
+		}
+
+		// Top 3 de cada categoria
+		const topPlanted = [...validPlayers]
+			.filter((p) => p.deltaPlanted > 0)
+			.sort((a, b) => b.deltaPlanted - a.deltaPlanted)
+			.slice(0, 3);
+
+		const topHarvested = [...validPlayers]
+			.filter((p) => p.deltaHarvested > 0)
+			.sort((a, b) => b.deltaHarvested - a.deltaHarvested)
+			.slice(0, 3);
+
+		const topWithered = [...validPlayers]
+			.filter((p) => p.deltaWithered > 0)
+			.sort((a, b) => b.deltaWithered - a.deltaWithered)
+			.slice(0, 3);
+
+		// Jogador mais rico
+		let richest = null;
+		if (digest.richest && digest.richest.id) {
+			richest = {
+				userId: String(digest.richest.id),
+				userName: await resolvePlayerRankingName(bot, digest.richest.id, null, null),
+				coins: digest.richest.coins || 0
+			};
+		} else if (validPlayers.length > 0) {
+			const topMoney = [...validPlayers].sort((a, b) => b.coins - a.coins)[0];
+			if (topMoney) richest = topMoney;
+		}
+
+		// Planta mais colhida
+		let topCrop = null;
+		if (digest.topCrop && digest.topCrop.itemId) {
+			const rawId = digest.topCrop.itemId.replace(/^crop_/, "");
+			const plantName = PLANT_NAMES[rawId] || rawId.replace(/_/g, " ");
+			topCrop = {
+				name: plantName,
+				count: digest.topCrop.count || 0
+			};
+		}
+
+		// Jogador com mais decorações equipadas
+		let topDecorator = null;
+		if (digest.topDecorator && digest.topDecorator.playerId) {
+			topDecorator = {
+				userId: String(digest.topDecorator.playerId),
+				userName: await resolvePlayerRankingName(bot, digest.topDecorator.playerId, null, null),
+				count: digest.topDecorator.count || 0
+			};
+		}
+
+		// Salva snapshot caso solicitado (ex: no envio oficial de domingo)
+		if (saveSnapshot) {
+			const now = Date.now();
+			for (const p of digest.players) {
+				await database
+					.dbRun(
+						DB_FAZENDA,
+						`INSERT OR REPLACE INTO fazenda_player_snapshots (player_id, total_planted, total_harvested, total_withered, coins, snapshot_at)
+					 VALUES (?, ?, ?, ?, ?, ?)`,
+						[
+							String(p.id),
+							p.totalPlanted || 0,
+							p.totalHarvested || 0,
+							p.totalWithered || 0,
+							p.coins || 0,
+							now
+						]
+					)
+					.catch(() => {});
+			}
+			// Limpa snapshots com mais de 60 dias
+			await database
+				.dbRun(DB_FAZENDA, "DELETE FROM fazenda_player_snapshots WHERE snapshot_at < ?", [
+					now - 60 * 24 * 3600 * 1000
+				])
+				.catch(() => {});
+		}
+
+		return {
+			topPlanted,
+			topHarvested,
+			topWithered,
+			richest,
+			topCrop,
+			topDecorator,
+			isFirstRun
+		};
+	} catch (err) {
+		logger.warn("Erro ao obter estatísticas semanais da fazenda:", err.message);
+		return null;
+	}
+}
+
 module.exports = {
 	commands,
+	getWeeklyFazendaStats,
 	getFarmWaifuRollBonus,
 	consumeFarmWaifuRoll,
 	getUserDisplayName,

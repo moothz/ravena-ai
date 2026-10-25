@@ -763,12 +763,34 @@ async function getWeeklyPintoStats(sinceMs) {
 			 LIMIT 10`,
 			[sinceMs]
 		);
-		return (rows || []).map((r) => ({
+		const smallestRow = await database.dbGet(
+			dbName,
+			`SELECT user_id,
+			        MAX(user_name) as user_name,
+			        MIN(erect) as erect
+			 FROM pinto_history
+			 WHERE timestamp >= ?
+			   AND user_id NOT LIKE 'user_%'
+			   AND user_id NOT IN ('user1', 'user2', '5511999999999@s.whatsapp.net')
+			   AND erect > 0
+			 GROUP BY user_id
+			 ORDER BY erect ASC
+			 LIMIT 1`,
+			[sinceMs]
+		);
+		const result = (rows || []).map((r) => ({
 			user_id: r.user_id,
 			user_name: r.user_name || "Jogador",
 			erect: Number(r.erect) || 0,
 			score: Number(r.score) || 0
 		}));
+		if (smallestRow && Number(smallestRow.erect) > 0) {
+			result.smallest = {
+				user_name: smallestRow.user_name || "Jogador",
+				erect: Number(smallestRow.erect) || 0
+			};
+		}
+		return result;
 	} catch (error) {
 		logger.error("Erro ao buscar estatísticas semanais do PintoGame:", error);
 		return [];

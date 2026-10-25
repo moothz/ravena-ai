@@ -137,6 +137,10 @@ class SuperAdmin {
 				method: "fixGroupNames",
 				description: "Escaneia e sugere correção para nomes de grupos (dry run)"
 			},
+			resumosemanal: {
+				method: "handleResumoSemanal",
+				description: "Gera o resumo semanal da Ravena (!sa-resumosemanal [enviar])"
+			},
 			dumpdbs: {
 				method: "dumpDbs",
 				description:
@@ -5900,6 +5904,54 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Erro ao remover personagem do Waifuletes: ${errorMsg}`
+			});
+		}
+	}
+
+	/**
+	 * Gera ou dispara o resumo semanal da Ravena
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async handleResumoSemanal(bot, message, args, group) {
+		const targetChat = message.group || message.author;
+		const action = (args[0] || "").toLowerCase().trim();
+
+		try {
+			const WeeklyGameDigestService = require("../services/WeeklyGameDigestService");
+			const digestService = WeeklyGameDigestService.getInstance();
+
+			if (action === "enviar" || action === "send") {
+				const sent = await digestService.sendDigest();
+				return new ReturnMessage({
+					chatId: targetChat,
+					content: sent
+						? "✅ *Resumo semanal disparado com sucesso para os grupos oficiais de anúncios/avisos!*"
+						: "⚠️ *Falha ao disparar resumo semanal. Verifique se os grupos de anúncios/avisos estão configurados.*"
+				});
+			}
+
+			// Gera preview sob demanda
+			const digestText = await digestService.generateWeeklyDigest(null, false);
+			if (!digestText) {
+				return new ReturnMessage({
+					chatId: targetChat,
+					content: "⚠️ *Nenhum dado registrado na semana para gerar o resumo.*"
+				});
+			}
+
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: digestText
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando !sa-resumosemanal:", error);
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: `❌ *Erro ao gerar resumo semanal:* ${error.message}`
 			});
 		}
 	}
