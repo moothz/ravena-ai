@@ -2711,6 +2711,36 @@ async function grantZinthosAll(amount, metadata = {}) {
 }
 
 /**
+ * Retorna todos os IDs de usuários cadastrados no Waifuletes
+ * @returns {Promise<string[]>}
+ */
+async function getAllWaifuUserIds() {
+	try {
+		const res = await api.get("/admin/users/ids");
+		if (res.data?.success && Array.isArray(res.data.userIds)) {
+			return res.data.userIds.map((id) => normalizeUserId(String(id))).filter(Boolean);
+		}
+	} catch (_) {}
+
+	// Fallback via leaderboard de usuários
+	try {
+		const { data: usersData } = await api.get("/leaderboard/users", { params: { limit: 500 } });
+		const users = Array.isArray(usersData)
+			? usersData
+			: usersData?.data?.topRich || usersData?.data || [];
+		const ids = new Set();
+		for (const u of users) {
+			const uId = normalizeUserId(String(u.id || u.userId || ""));
+			if (uId) ids.add(uId);
+		}
+		return Array.from(ids);
+	} catch (err) {
+		logger.error(`[getAllWaifuUserIds] Erro ao buscar lista de usuários: ${err.message}`);
+		return [];
+	}
+}
+
+/**
  * Lista o harém do usuário de forma paginada
  */
 async function verHarem(bot, message, args) {
@@ -6609,6 +6639,7 @@ module.exports = {
 	saldoKakera,
 	grantZinthos,
 	grantZinthosAll,
+	getAllWaifuUserIds,
 	verHarem,
 	verPerfil,
 	painelWebAdmin,

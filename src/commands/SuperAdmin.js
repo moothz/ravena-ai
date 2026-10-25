@@ -540,15 +540,35 @@ class SuperAdmin {
 					cleanType === "giros" ||
 					cleanType === "giro"
 				) {
-					// Atualiza farm_bonus_inventory no core.db para todos os usuários registrados
+					// Obtém todos os IDs cadastrados na base de Waifus
+					const userIds = await WaifuCommands.getAllWaifuUserIds();
+					const now = Date.now();
+
+					// Atualiza todos os usuários já existentes em farm_bonus_inventory
 					await this.database.dbRun(
 						"core",
 						"UPDATE farm_bonus_inventory SET rolls = COALESCE(rolls, 0) + ?, updated_at = ?",
-						[amount, Date.now()]
+						[amount, now]
 					);
+
+					// Insere ou incrementa os usuários do Waifuletes que ainda não tinham registro no banco local
+					if (userIds && userIds.length > 0) {
+						for (const uId of userIds) {
+							await this.database.dbRun(
+								"core",
+								`INSERT INTO farm_bonus_inventory (user_id, rolls, tickets, updated_at)
+								 VALUES (?, ?, 0, ?)
+								 ON CONFLICT(user_id) DO UPDATE SET rolls = COALESCE(rolls, 0) + excluded.rolls, updated_at = excluded.updated_at`,
+								[uId, amount, now]
+							);
+						}
+					}
+
 					const count =
 						(await this.database.dbGet("core", "SELECT COUNT(*) as c FROM farm_bonus_inventory"))
-							?.c || 0;
+							?.c ||
+						userIds.length ||
+						"todos os";
 					return new ReturnMessage({
 						chatId,
 						content: `🌸 *EVENTO INSTANTÂNEO DE WAIFUS!* 🌸\n\n🎲 Foram distribuídos *+${amount} rolls extras* para *${count} jogadores* da comunidade!\n_Use \`!roll\` para aproveitar seus giros gratuitos!_`
