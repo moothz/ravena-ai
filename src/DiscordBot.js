@@ -24,6 +24,7 @@ const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
+const storageService = require("./services/StorageService");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -493,9 +494,10 @@ class DiscordBot {
 		}
 	}
 
-	_storePublicAttachment(buffer, filename) {
+	async _storePublicAttachment(buffer, filename) {
 		try {
-			const outputDir = path.join(__dirname, "..", "public", "attachments");
+			const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "downloads");
+			const outputDir = path.join(dlFolder, "attachments");
 			if (!fs.existsSync(outputDir)) {
 				fs.mkdirSync(outputDir, { recursive: true });
 			}
@@ -518,6 +520,21 @@ class DiscordBot {
 				30 * 60 * 1000,
 				outputFilePath
 			);
+
+			try {
+				const s3Key = `attachments/${outputFileName}`;
+				const detectedMime = mime.lookup(outputFileName) || "application/octet-stream";
+				await storageService.upload(buffer, s3Key, {
+					bucket: storageService.bucketDownloads,
+					mimetype: detectedMime
+				});
+				const presigned = await storageService.getPresignedUrl(s3Key, {
+					bucket: storageService.bucketDownloads
+				});
+				if (presigned) return presigned;
+			} catch (s3Err) {
+				this.logger.warn(`[_storePublicAttachment] Falha ao subir para S3: ${s3Err.message}`);
+			}
 
 			const domain = process.env.BOT_DOMAIN || "http://localhost:5000";
 			return `${domain}/attachments/${outputFileName}`;
@@ -631,7 +648,7 @@ class DiscordBot {
 					this.logger.warn(
 						`[sendMessage] Arquivo muito grande (${fileSizeMB.toFixed(2)}MB). Gerando link de fallback.`
 					);
-					const publicUrl = this._storePublicAttachment(fileBuffer, filename);
+					const publicUrl = await this._storePublicAttachment(fileBuffer, filename);
 
 					if (publicUrl) {
 						let fallbackText = `⚠️ **O arquivo é muito grande para o Discord (${fileSizeMB.toFixed(2)}MB)**\n`;

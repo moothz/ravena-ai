@@ -1242,7 +1242,8 @@ class WhatsAppBotGo {
 				const extension = mime.extension(mimetype) ?? "bin";
 				const tempId = randomBytes(8).toString("hex");
 				const fileName = `${tempId}.${extension}`;
-				const outputDir = path.join(__dirname, "..", "public", "attachments");
+				const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "downloads");
+				const outputDir = path.join(dlFolder, "attachments");
 				if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 				const filePath = path.join(outputDir, fileName);
 
@@ -1259,7 +1260,22 @@ class WhatsAppBotGo {
 					filePath
 				);
 
-				const fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
+				let fileUrl = null;
+				try {
+					const s3Key = `attachments/${fileName}`;
+					await storageService.upload(Buffer.from(base64Data, "base64"), s3Key, {
+						bucket: storageService.bucketDownloads,
+						mimetype
+					});
+					fileUrl = await storageService.getPresignedUrl(s3Key, {
+						bucket: storageService.bucketDownloads
+					});
+				} catch (s3Err) {
+					this.logger.warn(
+						`[_downloadMediaFromWhatsgo] Falha ao subir anexo para S3: ${s3Err.message}`
+					);
+					fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
+				}
 
 				const media = {
 					url: fileUrl,
@@ -1278,8 +1294,9 @@ class WhatsAppBotGo {
 		return null;
 	}
 
-	_storeMediaFile(source, extension) {
-		const outputDir = path.join(__dirname, "..", "public", "attachments");
+	async _storeMediaFile(source, extension, mimetype = null) {
+		const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "downloads");
+		const outputDir = path.join(dlFolder, "attachments");
 		if (!fs.existsSync(outputDir)) {
 			fs.mkdirSync(outputDir, { recursive: true });
 		}
@@ -1288,10 +1305,15 @@ class WhatsAppBotGo {
 		const outputFileName = `${tempId}${extension}`;
 		const outputFilePath = path.join(outputDir, outputFileName);
 
+		let buffer = null;
 		if (Buffer.isBuffer(source)) {
+			buffer = source;
 			fs.writeFileSync(outputFilePath, source);
 		} else if (typeof source === "string" && fs.existsSync(source)) {
 			fs.copyFileSync(source, outputFilePath);
+			try {
+				buffer = fs.readFileSync(outputFilePath);
+			} catch {}
 		} else {
 			throw new Error("Invalid source for _storeMediaFile");
 		}
@@ -1304,6 +1326,28 @@ class WhatsAppBotGo {
 			outputFilePath
 		);
 
+		try {
+			const s3Key = `attachments/${outputFileName}`;
+			const detectedMime = mimetype || mime.lookup(outputFileName) || "application/octet-stream";
+			if (buffer) {
+				await storageService.upload(buffer, s3Key, {
+					bucket: storageService.bucketDownloads,
+					mimetype: detectedMime
+				});
+			} else {
+				await storageService.upload(fs.createReadStream(outputFilePath), s3Key, {
+					bucket: storageService.bucketDownloads,
+					mimetype: detectedMime
+				});
+			}
+			const presignedUrl = await storageService.getPresignedUrl(s3Key, {
+				bucket: storageService.bucketDownloads
+			});
+			if (presignedUrl) return presignedUrl;
+		} catch (s3Err) {
+			this.logger.warn(`[_storeMediaFile] Falha ao subir para S3: ${s3Err.message}`);
+		}
+
 		return `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${outputFileName}`;
 	}
 
@@ -1314,7 +1358,7 @@ class WhatsAppBotGo {
 				typeof base64Data === "string" ? base64Data.replace(/^data:[^;]+;base64,/, "") : base64Data;
 			const buffer = Buffer.from(cleanBase64, "base64");
 			const size = buffer.length;
-			const url = this._storeMediaFile(buffer, `.${extension}`);
+			const url = await this._storeMediaFile(buffer, `.${extension}`, mimetype);
 
 			// Fixes
 			if (mimetype === "application/mp4") {
@@ -1347,7 +1391,11 @@ class WhatsAppBotGo {
 			const stats = fs.statSync(filePath);
 			const size = stats.size;
 			const extension = path.extname(filePath);
-			const fileUrl = this._storeMediaFile(filePath, extension);
+			const resolvedMime =
+				typeof customMime === "string"
+					? customMime
+					: mime.lookup(filePath) || "application/octet-stream";
+			const fileUrl = await this._storeMediaFile(filePath, extension, resolvedMime);
 
 			let data = null;
 			const sizeLimit = 200 * 1024 * 1024; // 200MB
@@ -3154,6 +3202,7 @@ class WhatsAppBotGo {
 						: payload.url;
 
 					if (options.sendMediaAsDocument || cttSize > 60 * 1024 * 1024) {
+						const isVideoMedia = mediaType === "video" || currentMime.startsWith("video");
 						mediaType = "document";
 						// Se arquivo no disco existir e for grande, sobe para o bucket downloads do HD secundário
 						if (content.filePath && fs.existsSync(content.filePath)) {
@@ -3176,7 +3225,15 @@ class WhatsAppBotGo {
 								);
 							}
 						}
-						payload.caption += `\n\n> 📥 Link direto (válido por 6h): ${urlPublica}`;
+						if (!payload.caption.includes("Link direto")) {
+							payload.caption += `\n\n> 📥 Link direto (válido por 6h): ${urlPublica}`;
+						}
+						if (
+							isVideoMedia &&
+							!payload.caption.includes("Enviado como arquivo devido ao limite")
+						) {
+							payload.caption += `\n📂 Enviado como arquivo devido ao limite de tamanho para vídeos no WhatsApp`;
+						}
 					}
 
 					let typeStr = mediaType.split("/")[0];

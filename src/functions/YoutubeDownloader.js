@@ -399,7 +399,8 @@ async function baixarMusicaYoutube(idVideo, dadosSolicitante, callback) {
 					);
 				}
 
-				const outputDir = path.join(__dirname, "..", "..", "public", "audios");
+				const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "..", "downloads");
+				const outputDir = path.join(dlFolder, "audios");
 				await fs.mkdir(outputDir, { recursive: true });
 				const outputFileName = `${crypto.randomUUID()}.mp3`;
 				const destinoMp3 = path.join(outputDir, outputFileName);
