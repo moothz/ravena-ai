@@ -1447,8 +1447,9 @@ async function applyBuffs(userData, fish) {
 	// 1. Aplica buffs (modelo aditivo para evitar multiplicação exponencial descontrolada)
 	if (userData.buffs) {
 		let totalFlatBonus = 0;
+		let flatBonusCount = 0;
 		let totalWeightBoost = 0;
-		const weightBoostNames = [];
+		const activeWeightBuffs = [];
 
 		for (const buff of userData.buffs) {
 			if (buff.remainingUses <= 0) continue;
@@ -1457,11 +1458,15 @@ async function applyBuffs(userData, fish) {
 					totalWeightBoost += buff.value;
 					const buffName = buff.originalName || "Buff de Peso";
 					appliedModifiers.push(buffName);
-					weightBoostNames.push(buffName);
+					activeWeightBuffs.push({
+						name: buffName,
+						value: buff.value
+					});
 					break;
 				}
 				case "next_fish_bonus": {
 					totalFlatBonus += buff.value;
+					flatBonusCount += 1;
 					const buffName = buff.originalName || "Minhocão";
 					appliedModifiers.push(buffName);
 					break;
@@ -1473,8 +1478,9 @@ async function applyBuffs(userData, fish) {
 			const beforeBonus = modifiedFish.weight;
 			modifiedFish.weight += totalFlatBonus;
 			modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
+			const countSuffix = flatBonusCount > 1 ? ` (${flatBonusCount}x)` : "";
 			buffMessages.push(
-				`🎯 Buff do Minhocão: +${totalFlatBonus}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
+				`🎯 Buff do Minhocão${countSuffix}: +${totalFlatBonus}kg (${beforeBonus}kg → ${modifiedFish.weight}kg)`
 			);
 		}
 
@@ -1483,13 +1489,32 @@ async function applyBuffs(userData, fish) {
 			modifiedFish.weight *= 1 + totalWeightBoost;
 			modifiedFish.weight = parseFloat(modifiedFish.weight.toFixed(2));
 
-			if (weightBoostNames.length === 1) {
+			const grouped = new Map();
+			for (const b of activeWeightBuffs) {
+				const existing = grouped.get(b.name);
+				if (existing) {
+					existing.count += 1;
+					existing.totalValue += b.value;
+				} else {
+					grouped.set(b.name, { count: 1, totalValue: b.value });
+				}
+			}
+
+			if (grouped.size === 1) {
+				const [buffName, info] = grouped.entries().next().value;
+				const countSuffix = info.count > 1 ? ` (${info.count}x)` : "";
 				buffMessages.push(
-					`🎯 Buff do ${weightBoostNames[0]}: +${Math.round(totalWeightBoost * 100)}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
+					`🎯 Buff do ${buffName}${countSuffix}: +${Math.round(totalWeightBoost * 100)}% de peso (${originalWeight}kg → ${modifiedFish.weight}kg)`
 				);
 			} else {
+				const breakdown = Array.from(grouped.entries()).map(([buffName, info]) => {
+					const refItem = UPGRADES.find((u) => u.name === buffName);
+					const icon = refItem?.emoji ? `${refItem.emoji} ` : "";
+					const countPrefix = info.count > 1 ? `${info.count}x ` : "";
+					return `${icon}${countPrefix}${buffName} (+${Math.round(info.totalValue * 100)}%)`;
+				});
 				buffMessages.push(
-					`🎯 Buffs de Peso somados (+${Math.round(totalWeightBoost * 100)}%): ${originalWeight}kg → ${modifiedFish.weight}kg`
+					`🎯 Buffs de Peso somados (+${Math.round(totalWeightBoost * 100)}%): ${originalWeight}kg → ${modifiedFish.weight}kg\n> 🎯 Ativos: ${breakdown.join(", ")}`
 				);
 			}
 		}
@@ -2090,7 +2115,7 @@ async function fishCommand(bot, message, args, group) {
 				await removeFishFromInventory(userId, removed.dbId);
 				userData.fishes.splice(smallestIndex, 1);
 				if (removed.weight <= 35000) userData.inventoryWeight -= removed.weight;
-				effectMessage += `\n\n⚠️ Inventário cheio! O peixe *${removed.name}* (${removed.weight.toFixed(2)}kg) foi solto.`;
+				effectMessage += `\n\n> ⚠️ Inventário cheio! O peixe *${removed.name}* (${removed.weight.toFixed(2)}kg) foi solto.`;
 			} else {
 				// Safety fallback if DB sync failed, just remove from memory array to avoid infinite loop
 				userData.fishes.splice(smallestIndex, 1);
