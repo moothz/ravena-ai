@@ -34,6 +34,17 @@ async function runTests() {
 	assert.strictEqual(GameEventService.normalizeType("slots", "vitoria"), "vitoria");
 	assert.strictEqual(GameEventService.normalizeType("slots", "moedas"), "moedas");
 	assert.strictEqual(GameEventService.normalizeType("slots", "iscas"), "iscas");
+
+	// Testes para Fazenda
+	assert.strictEqual(GameEventService.normalizeGame("fazenda"), "fazenda");
+	assert.strictEqual(GameEventService.normalizeGame("farm"), "fazenda");
+	assert.strictEqual(GameEventService.normalizeGame("jardim"), "fazenda");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "apodrecer"), "apodrecer");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "rot"), "apodrecer");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "wither"), "apodrecer");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "fortuna"), "fortuna");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "moedas"), "fortuna");
+	assert.strictEqual(GameEventService.normalizeType("fazenda", "coins"), "fortuna");
 	console.log("✓ Normalização funcionando perfeitamente.");
 
 	// 2. Teste do GameEventService (setEvent, getMultiplier, getEventBanner, removeEvent)
@@ -59,6 +70,21 @@ async function runTests() {
 	assert.strictEqual(resSlots.success, true);
 	assert.strictEqual(GameEventService.getMultiplier("slots", "vitoria"), 1.1);
 
+	// Criar eventos de fazenda: +30% apodrecer e +30% fortuna
+	const resApodrecer = await GameEventService.setEvent(
+		"fazenda",
+		"apodrecer",
+		30,
+		24,
+		"5511999999999"
+	);
+	assert.strictEqual(resApodrecer.success, true);
+	assert.strictEqual(GameEventService.getMultiplier("fazenda", "apodrecer"), 1.3);
+
+	const resFortuna = await GameEventService.setEvent("fazenda", "fortuna", 30, 12, "5511999999999");
+	assert.strictEqual(resFortuna.success, true);
+	assert.strictEqual(GameEventService.getMultiplier("fazenda", "fortuna"), 1.3);
+
 	// Multiplicador padrão para evento inexistente deve ser 1.0
 	assert.strictEqual(GameEventService.getMultiplier("pesca", "lendario"), 1.0);
 	assert.strictEqual(GameEventService.getMultiplier("waifu", "wish"), 1.0);
@@ -78,6 +104,16 @@ async function runTests() {
 	assert.ok(
 		bannerSlots.includes("+10% chance de vitória no caça-coisas"),
 		"Banner de slots deve conter vitória"
+	);
+
+	const bannerFazenda = GameEventService.getEventBanner("fazenda");
+	assert.ok(
+		bannerFazenda.includes("+30% tempo antes das plantas apodrecerem"),
+		"Banner de fazenda deve conter apodrecimento"
+	);
+	assert.ok(
+		bannerFazenda.includes("+30% ganho de moedas na fazenda"),
+		"Banner de fazenda deve conter fortuna"
 	);
 	console.log("✓ GameEventService e banners funcionando perfeitamente.");
 
@@ -189,6 +225,151 @@ async function runTests() {
 	assert.strictEqual(GameEventService.getMultiplier("pesca", "lendario"), 1.0);
 	console.log("✓ Remoção de evento com valor 0 executada com sucesso.");
 
+	// 3.5 SuperAdmin: !sa-evento fazenda apodrecer e fortuna
+	console.log("\n3.5 Testando criação de eventos da Fazenda via !sa-evento...");
+	bot.resetCapture();
+	const msgFazApodrecer = createMessage({
+		content: "!sa-evento fazenda apodrecer 30 24",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgFazApodrecer,
+		"sa-evento fazenda apodrecer 30 24",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0, "Deve responder ao comando !sa-evento fazenda");
+	assert.ok(bot.capturedMessages[0].content.includes("Evento ativado com sucesso"));
+	assert.strictEqual(GameEventService.getMultiplier("fazenda", "apodrecer"), 1.3);
+
+	bot.resetCapture();
+	const msgFazFortuna = createMessage({
+		content: "!sa-evento fazenda fortuna 30 12",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgFazFortuna,
+		"sa-evento fazenda fortuna 30 12",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0);
+	assert.ok(bot.capturedMessages[0].content.includes("Evento ativado com sucesso"));
+	assert.strictEqual(GameEventService.getMultiplier("fazenda", "fortuna"), 1.3);
+	console.log("✓ Eventos da Fazenda ativados via !sa-evento com sucesso.");
+
+	// 3.6 Teste de Eventos Instantâneos (!sa-instantaneo)
+	console.log("\n3.6 Testando eventos instantâneos (!sa-instantaneo)...");
+
+	// Inserir usuários sintéticos para testes de banco nos jogos
+	await database.dbRun(
+		"slots",
+		"INSERT OR IGNORE INTO slots_users (user_id, coins) VALUES (?, ?)",
+		["5511999990001", 10]
+	);
+	await database.dbRun(
+		"fishing",
+		"INSERT OR IGNORE INTO fishing_users (user_id, baits) VALUES (?, ?)",
+		["5511999990001", 5]
+	);
+	await database.dbRun(
+		"core",
+		"INSERT OR IGNORE INTO farm_bonus_inventory (user_id, rolls, tickets, updated_at) VALUES (?, ?, ?, ?)",
+		["5511999990001", 1, 0, Date.now()]
+	);
+
+	// A) Slots Moedas
+	bot.resetCapture();
+	const msgInstantSlots = createMessage({
+		content: "!sa-instantaneo slots moedas 50",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgInstantSlots,
+		"sa-instantaneo slots moedas 50",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0, "Deve responder ao !sa-instantaneo slots");
+	assert.ok(bot.capturedMessages[0].content.includes("EVENTO INSTANTÂNEO DE SLOTS"));
+	assert.ok(bot.capturedMessages[0].content.includes("+50 moedas"));
+	console.log("✓ !sa-instantaneo slots moedas executado com sucesso.");
+
+	// B) Pesca Iscas
+	bot.resetCapture();
+	const msgInstantPescaIscas = createMessage({
+		content: "!sa-instantaneo pesca iscas 15",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgInstantPescaIscas,
+		"sa-instantaneo pesca iscas 15",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0);
+	assert.ok(bot.capturedMessages[0].content.includes("EVENTO INSTANTÂNEO DE PESCA"));
+	assert.ok(bot.capturedMessages[0].content.includes("+15 iscas"));
+	console.log("✓ !sa-instantaneo pesca iscas executado com sucesso.");
+
+	// C) Pesca Buff
+	bot.resetCapture();
+	const msgInstantPescaBuff = createMessage({
+		content: "!sa-instantaneo pesca buff 3",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgInstantPescaBuff,
+		"sa-instantaneo pesca buff 3",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0);
+	assert.ok(bot.capturedMessages[0].content.includes("EVENTO INSTANTÂNEO DE PESCA"));
+	assert.ok(bot.capturedMessages[0].content.includes("Foi concedido o buff"));
+	console.log("✓ !sa-instantaneo pesca buff executado com sucesso.");
+
+	// D) Waifu Rolls
+	bot.resetCapture();
+	const msgInstantWaifuRolls = createMessage({
+		content: "!sa-instantaneo waifu rolls 5",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgInstantWaifuRolls,
+		"sa-instantaneo waifu rolls 5",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0);
+	assert.ok(bot.capturedMessages[0].content.includes("EVENTO INSTANTÂNEO DE WAIFUS"));
+	assert.ok(bot.capturedMessages[0].content.includes("+5 rolls extras"));
+	console.log("✓ !sa-instantaneo waifu rolls executado com sucesso.");
+
+	// E) Atalhos por jogo (!sa-dropSlots, !sa-dropPesca)
+	bot.resetCapture();
+	const msgDropSlots = createMessage({
+		content: "!sa-dropSlots moedas 20",
+		author: ownerJid,
+		group: testGroupId
+	});
+	await eventHandler.commandHandler.handleCommand(
+		bot,
+		msgDropSlots,
+		"sa-dropSlots moedas 20",
+		null
+	);
+	assert.ok(bot.capturedMessages.length > 0);
+	assert.ok(bot.capturedMessages[0].content.includes("EVENTO INSTANTÂNEO DE SLOTS"));
+	assert.ok(bot.capturedMessages[0].content.includes("+20 moedas"));
+	console.log("✓ Atalho !sa-dropSlots executado com sucesso.");
+
 	// 4. Teste de banner nos jogos (Slots)
 	console.log("\n4. Testando banner em tempo real nos jogos (Slots)...");
 	await GameEventService.setEvent("slots", "vitoria", 30, 4, "5511999999999");
@@ -212,6 +393,8 @@ async function runTests() {
 	await GameEventService.removeEvent("pesca", "peso");
 	await GameEventService.removeEvent("waifu", "raros");
 	await GameEventService.removeEvent("slots", "vitoria");
+	await GameEventService.removeEvent("fazenda", "apodrecer");
+	await GameEventService.removeEvent("fazenda", "fortuna");
 
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 }

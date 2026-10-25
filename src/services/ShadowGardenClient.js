@@ -80,11 +80,15 @@ class ShadowGardenClient {
 	 * @param {string|number} itemId
 	 * @param {number|null} [slot]
 	 * @param {number|null} [amount]
+	 * @param {number|null} [witherMultiplier]
 	 */
-	async plant(userId, itemId, slot = null, amount = null) {
+	async plant(userId, itemId, slot = null, amount = null, witherMultiplier = null) {
 		const body = { itemId };
 		if (slot !== null && slot !== undefined) body.slot = slot;
 		if (amount !== null && amount !== undefined) body.amount = amount;
+		if (witherMultiplier !== null && witherMultiplier !== undefined) {
+			body.witherMultiplier = Number(witherMultiplier);
+		}
 
 		const res = await fetch(`${this.baseUrl}/farm/${encodeURIComponent(userId)}/plant`, {
 			method: "POST",
@@ -306,6 +310,56 @@ class ShadowGardenClient {
 			body: JSON.stringify({ userId, ...options })
 		});
 		return this._handleResponse(res, "Falha ao conceder itens via admin");
+	}
+
+	/**
+	 * Concede moedas ou itens para toda a comunidade de jogadores da fazenda
+	 * @param {Object} options - { coins, itemId, amount, items, reason }
+	 */
+	async adminGiveAll(options = {}) {
+		try {
+			const res = await fetch(`${this.baseUrl}/admin/give-all`, {
+				method: "POST",
+				headers: this._headers(),
+				body: JSON.stringify(options)
+			});
+			if (res.ok) {
+				return await res.json();
+			}
+		} catch (_) {}
+
+		// Fallback gracioso: busca lista consolidada de jogadores e concede individualmente
+		const digest = await this.getDigestStats();
+		const players = digest?.players || [];
+		let affected = 0;
+		for (const p of players) {
+			if (!p.id) continue;
+			try {
+				if (options.coins) {
+					await this.adminGive(p.id, {
+						coins: options.coins,
+						reason: options.reason || "instant_event"
+					});
+				}
+				if (options.items && Array.isArray(options.items)) {
+					for (const it of options.items) {
+						await this.adminGive(p.id, {
+							itemId: it.itemId,
+							amount: it.amount || 1,
+							reason: options.reason || "instant_event"
+						});
+					}
+				} else if (options.itemId) {
+					await this.adminGive(p.id, {
+						itemId: options.itemId,
+						amount: options.amount || 1,
+						reason: options.reason || "instant_event"
+					});
+				}
+				affected++;
+			} catch (_) {}
+		}
+		return { success: true, playersAffected: affected };
 	}
 
 	/**

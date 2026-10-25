@@ -22,7 +22,8 @@ async function eventosCommand(bot, message) {
 	const eventsByGame = {
 		pesca: events.filter((e) => e.game === "pesca"),
 		waifu: events.filter((e) => e.game === "waifu"),
-		slots: events.filter((e) => e.game === "slots")
+		slots: events.filter((e) => e.game === "slots"),
+		fazenda: events.filter((e) => e.game === "fazenda")
 	};
 
 	let text = "🎉 *EVENTOS ESPECIAIS ATIVOS NA RAVENA* 🎉\n\n";
@@ -67,6 +68,21 @@ async function eventosCommand(bot, message) {
 				text += `• *+${ev.value}%* de moedas ganhas nos prêmios _(restam ${ev.remainingText})_\n`;
 			} else if (ev.type === "iscas") {
 				text += `• *+${ev.value}%* de iscas de pesca ganhas nos prêmios _(restam ${ev.remainingText})_\n`;
+			}
+		}
+	} else {
+		text += "• Nenhum evento ativo no momento.\n";
+	}
+	text += "\n";
+
+	// Fazenda
+	text += "🌱 *Jardim das Sombras (Fazenda):*\n";
+	if (eventsByGame.fazenda.length > 0) {
+		for (const ev of eventsByGame.fazenda) {
+			if (ev.type === "apodrecer") {
+				text += `• *+${ev.value}%* no tempo que as plantas demoram para apodrecer _(restam ${ev.remainingText})_\n`;
+			} else if (ev.type === "fortuna") {
+				text += `• *+${ev.value}%* no ganho de moedas em todas as fontes da fazenda _(restam ${ev.remainingText})_\n`;
 			}
 		}
 	} else {

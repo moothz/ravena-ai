@@ -13,6 +13,7 @@ const { resolveMentionName } = require("../utils/ProfilePictureHelper");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 const Database = require("../utils/Database");
+const GameEventService = require("../services/GameEventService");
 
 const logger = new Logger("fazenda-commands");
 const jardimClient = new ShadowGardenClient();
@@ -525,6 +526,11 @@ async function handleFazenda(bot, message, _args, group) {
 			text += `\n\n💡 _Dica: Digite \`!faz-adm\` para receber o link do Farm Admin no seu privado!_`;
 		}
 
+		const eventBanner = GameEventService.getEventBanner("fazenda");
+		if (eventBanner) {
+			text += eventBanner;
+		}
+
 		const returns = [];
 
 		// Envia a imagem com a legenda principal se tiver, ou apenas texto se falhou a imagem
@@ -551,9 +557,30 @@ async function handleFazenda(bot, message, _args, group) {
 
 		// Se coletou diário nesta chamada, envia segunda mensagem com o prêmio
 		if (dailyClaimResult) {
+			const eventFortuneMult = GameEventService.getMultiplier("fazenda", "fortuna");
+			let extraFortuneCoins = 0;
+			if (eventFortuneMult > 1.0 && (dailyClaimResult.coinsWon || 0) > 0) {
+				extraFortuneCoins = Math.round(dailyClaimResult.coinsWon * (eventFortuneMult - 1));
+				if (extraFortuneCoins > 0) {
+					try {
+						await jardimClient.adminGive(userId, {
+							coins: extraFortuneCoins,
+							reason: "evento_fortuna"
+						});
+					} catch (e) {
+						logger.warn(`[handleFazenda] Falha ao creditar bônus fortuna no diário: ${e.message}`);
+					}
+				}
+			}
+
 			let dailyText = `🎁 *SACOLA DO COVEIRO RESGATADA!* 🎁\n\n`;
 			dailyText += `Você abriu sua sacola diária e encontrou:\n`;
-			dailyText += `• *+${dailyClaimResult.coinsWon || 0} Moedas*\n`;
+			dailyText += `• *+${dailyClaimResult.coinsWon || 0} Moedas*`;
+			if (extraFortuneCoins > 0) {
+				dailyText += ` _(+${extraFortuneCoins} bônus do evento Fortuna! 💰)_\n`;
+			} else {
+				dailyText += `\n`;
+			}
 			if (dailyClaimResult.itemsWon?.length > 0) {
 				dailyClaimResult.itemsWon.forEach((it) => {
 					dailyText += `• *${it.name || it.itemId}* (x${it.count || 1})\n`;
@@ -690,7 +717,36 @@ async function handleFazColher(bot, message, _args, group) {
 			text += `🎁 *BÔNUS ESPECIAIS CONCEDIDOS:*\n${allBonusMsgs.join("\n")}\n\n`;
 		}
 
+		const eventFortuneMult = GameEventService.getMultiplier("fazenda", "fortuna");
+		let fortuneCoins = 0;
+		if (eventFortuneMult > 1.0 && (harvestRes.totalCoinsEarned || 0) > 0) {
+			fortuneCoins = Math.round(harvestRes.totalCoinsEarned * (eventFortuneMult - 1));
+			if (fortuneCoins > 0) {
+				try {
+					await jardimClient.adminGive(userId, { coins: fortuneCoins, reason: "evento_fortuna" });
+					if (harvestRes.coins !== undefined) harvestRes.coins += fortuneCoins;
+					else if (harvestRes.currentCoins !== undefined) harvestRes.currentCoins += fortuneCoins;
+				} catch (e) {
+					logger.warn(`[handleFazColher] Falha ao creditar bônus fortuna: ${e.message}`);
+				}
+			}
+		}
+
+		if (harvestRes.totalCoinsEarned > 0) {
+			text += `💰 *Moedas Ganhas:* +${harvestRes.totalCoinsEarned}`;
+			if (fortuneCoins > 0) {
+				text += ` _(+${fortuneCoins} bônus do evento Fortuna! 💰)_\n`;
+			} else {
+				text += `\n`;
+			}
+		}
+
 		text += `💰 *Saldo Atual:* ${harvestRes.coins ?? harvestRes.currentCoins ?? 0} moedas`;
+
+		const eventBanner = GameEventService.getEventBanner("fazenda");
+		if (eventBanner) {
+			text += eventBanner;
+		}
 
 		// Tenta renderizar imagem atualizada pós-colheita com efeito de fantasma dourado
 		let imageBuffer = null;
@@ -803,8 +859,9 @@ async function handleFazPlantar(bot, message, _args, group) {
 	}
 
 	try {
+		const eventWitherMult = GameEventService.getMultiplier("fazenda", "apodrecer");
 		const [plantRes, userName] = await Promise.all([
-			jardimClient.plant(userId, itemParam, slotParam, amountParam),
+			jardimClient.plant(userId, itemParam, slotParam, amountParam, eventWitherMult),
 			getUserDisplayName(bot, message, group)
 		]);
 
@@ -835,6 +892,15 @@ async function handleFazPlantar(bot, message, _args, group) {
 		}
 
 		text += `💡 _Você pode usar \`!faz-plantar ${itemParam} <qtd>\` para escolher quantas plantar (padrão: 3)._`;
+
+		if (eventWitherMult > 1.0) {
+			text += `\n\n⏳ *Evento Ativo:* Suas plantas demoram +${Math.round((eventWitherMult - 1) * 100)}% de tempo antes de apodrecer!`;
+		}
+
+		const eventBanner = GameEventService.getEventBanner("fazenda");
+		if (eventBanner) {
+			text += eventBanner;
+		}
 
 		// Tenta renderizar imagem atualizada pós-plantio destacando os canteiros recém-plantados em verde
 		let imageBuffer = null;
@@ -1163,9 +1229,27 @@ async function handleFazVender(bot, message) {
 		const earned = sellRes.totalCoinsEarned ?? sellRes.earnedCoins ?? sellRes.totalGained ?? 0;
 		const balance = sellRes.newCoinsBalance ?? sellRes.currentCoins ?? sellRes.coins ?? 0;
 
+		const eventFortuneMult = GameEventService.getMultiplier("fazenda", "fortuna");
+		let fortuneCoins = 0;
+		if (eventFortuneMult > 1.0 && earned > 0) {
+			fortuneCoins = Math.round(earned * (eventFortuneMult - 1));
+			if (fortuneCoins > 0) {
+				try {
+					await jardimClient.adminGive(userId, { coins: fortuneCoins, reason: "evento_fortuna" });
+				} catch (e) {
+					logger.warn(`[handleFazVender] Falha ao creditar bônus fortuna: ${e.message}`);
+				}
+			}
+		}
+
 		let text = `💰 *VENDA REALIZADA COM SUCESSO!* 💰\n\n`;
-		text += `• Moedas Ganhas: *+${earned} moedas*\n`;
-		text += `• Saldo Atual: *${balance} moedas*\n`;
+		text += `• Moedas Ganhas: *+${earned + fortuneCoins} moedas*`;
+		if (fortuneCoins > 0) {
+			text += ` _(+${fortuneCoins} bônus do evento Fortuna! 💰)_\n`;
+		} else {
+			text += `\n`;
+		}
+		text += `• Saldo Atual: *${balance + fortuneCoins} moedas*\n`;
 
 		if (sellRes.soldItems?.length > 0) {
 			text += `\nItens vendidos:\n`;
@@ -1176,6 +1260,11 @@ async function handleFazVender(bot, message) {
 
 		if (bonusMsgs.length > 0) {
 			text += `\n🎁 *BÔNUS DAS COLHEITAS VENDIDAS:*\n${bonusMsgs.join("\n")}\n`;
+		}
+
+		const eventBanner = GameEventService.getEventBanner("fazenda");
+		if (eventBanner) {
+			text += eventBanner;
 		}
 
 		return replyReturnMessage(chatId, text, message);

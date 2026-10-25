@@ -745,6 +745,10 @@ async function slotsCommand(bot, message, args, group) {
 		// Credita moedas do jardim e sacolas do coveiro
 		let allOpenedSeeds = null;
 		if (totalJardimCoinsWon > 0 || totalJardimBagsWon > 0) {
+			const farmFortuneMult = GameEventService.getMultiplier("fazenda", "fortuna");
+			if (farmFortuneMult > 1 && totalJardimCoinsWon > 0) {
+				totalJardimCoinsWon = Math.max(1, Math.round(totalJardimCoinsWon * farmFortuneMult));
+			}
 			try {
 				const ShadowGardenClient = require("../services/ShadowGardenClient");
 				const jardimClient = new ShadowGardenClient();

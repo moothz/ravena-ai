@@ -2663,6 +2663,54 @@ async function grantZinthos(userId, amount, metadata = {}) {
 }
 
 /**
+ * Concede Zinthos para toda a comunidade de jogadores de Waifus
+ * @param {number} amount
+ * @param {Object} [metadata={}]
+ * @returns {Promise<{ success: boolean, count: number }>}
+ */
+async function grantZinthosAll(amount, metadata = {}) {
+	const cleanAmount = Math.max(0, Math.round(Number(amount) || 0));
+	if (cleanAmount <= 0) {
+		return { success: false, count: 0, reason: "Quantidade inválida" };
+	}
+
+	try {
+		const response = await api.post("/admin/kakera/give-all", {
+			amount: cleanAmount,
+			reason: "EVENT_REWARD",
+			metadata: { source: "INSTANT_EVENT", ...metadata }
+		});
+		if (response.data?.success) {
+			return { success: true, count: response.data.count ?? response.data.data?.count ?? 0 };
+		}
+	} catch (_) {}
+
+	// Fallback caso /admin/kakera/give-all não esteja implementada ou ativa na imagem:
+	try {
+		const { data: usersData } = await api.get("/leaderboard/users", { params: { limit: 1000 } });
+		const users = Array.isArray(usersData) ? usersData : usersData?.data || [];
+		let count = 0;
+		for (const u of users) {
+			const uId = u.id || u.userId;
+			if (!uId) continue;
+			try {
+				await api.post("/admin/kakera/give", {
+					userId: String(uId),
+					amount: cleanAmount,
+					reason: "EVENT_REWARD",
+					metadata: { source: "INSTANT_EVENT", ...metadata }
+				});
+				count++;
+			} catch (_) {}
+		}
+		return { success: true, count };
+	} catch (err) {
+		logger.error(`[grantZinthosAll] Erro ao creditar Zinthos em massa: ${err.message}`);
+		return { success: false, count: 0, error: err.message };
+	}
+}
+
+/**
  * Lista o harém do usuário de forma paginada
  */
 async function verHarem(bot, message, args) {
@@ -6560,6 +6608,7 @@ module.exports = {
 	diariosKakera,
 	saldoKakera,
 	grantZinthos,
+	grantZinthosAll,
 	verHarem,
 	verPerfil,
 	painelWebAdmin,

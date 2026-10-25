@@ -16,7 +16,8 @@ let isInitialized = false;
 const SUPPORTED_GAMES = {
 	pesca: ["peso", "lendario"],
 	waifu: ["raros", "wish"],
-	slots: ["vitoria", "moedas", "iscas"]
+	slots: ["vitoria", "moedas", "iscas"],
+	fazenda: ["apodrecer", "fortuna"]
 };
 
 /**
@@ -30,6 +31,7 @@ function normalizeGame(game) {
 	if (g === "pesca" || g === "fishing") return "pesca";
 	if (g === "waifu" || g === "waifus" || g === "mudae" || g === "munae") return "waifu";
 	if (g === "slots" || g === "slot") return "slots";
+	if (g === "fazenda" || g === "farm" || g === "jardim") return "fazenda";
 	return null;
 }
 
@@ -54,6 +56,11 @@ function normalizeType(game, type) {
 		if (t === "vitoria" || t === "vitorias" || t === "win") return "vitoria";
 		if (t === "moeda" || t === "moedas" || t === "coins") return "moedas";
 		if (t === "isca" || t === "iscas" || t === "baits") return "iscas";
+	} else if (normGame === "fazenda") {
+		if (t === "apodrecer" || t === "rot" || t === "wither" || t === "apodrecimento")
+			return "apodrecer";
+		if (t === "fortuna" || t === "moedas" || t === "moeda" || t === "coins" || t === "ouro")
+			return "fortuna";
 	}
 
 	return null;
@@ -308,6 +315,12 @@ function getEventBanner(game) {
 				label = `+${ev.value}% moedas em prêmios`;
 			} else if (ev.type === "iscas") {
 				label = `+${ev.value}% iscas em prêmios`;
+			}
+		} else if (ev.game === "fazenda") {
+			if (ev.type === "apodrecer") {
+				label = `+${ev.value}% tempo antes das plantas apodrecerem`;
+			} else if (ev.type === "fortuna") {
+				label = `+${ev.value}% ganho de moedas na fazenda`;
 			}
 		}
 

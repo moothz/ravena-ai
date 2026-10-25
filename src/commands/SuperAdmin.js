@@ -32,6 +32,34 @@ class SuperAdmin {
 		this.commandMap = {
 			evento: { method: "manageGameEvent", description: "Cria ou cancela evento temporário" },
 			eventos: { method: "listGameEvents", description: "Lista eventos temporários ativos" },
+			instantaneo: {
+				method: "instantGameEvent",
+				description: "Distribui evento instantâneo (recompensas) para a comunidade"
+			},
+			drop: {
+				method: "instantGameEvent",
+				description: "Distribui evento instantâneo (recompensas) para a comunidade"
+			},
+			presente: {
+				method: "instantGameEvent",
+				description: "Distribui evento instantâneo (recompensas) para a comunidade"
+			},
+			dropSlots: {
+				method: "instantSlotsEvent",
+				description: "Distribui evento instantâneo de slots"
+			},
+			dropFazenda: {
+				method: "instantFazendaEvent",
+				description: "Distribui evento instantâneo da fazenda"
+			},
+			dropWaifu: {
+				method: "instantWaifuEvent",
+				description: "Distribui evento instantâneo de waifus"
+			},
+			dropPesca: {
+				method: "instantPescaEvent",
+				description: "Distribui evento instantâneo de pesca"
+			},
 			retrospectiva: { method: "endYearMsg", description: "Retrospectiva" },
 			testeMsg: { method: "testeMsg", description: "Testar Retorno msg" },
 			sendMsg: { method: "sendMsg", description: "Envia mensagem para chatId" },
@@ -281,13 +309,16 @@ class SuperAdmin {
 						"📌 *Jogos e Tipos suportados:*\n" +
 						"• *pesca*: `peso` (aumenta o peso dos peixes), `lendario` (aumenta chance de lendários)\n" +
 						"• *waifu*: `raros` (aumenta chance de raros/épicos/lendários), `wish` (aumenta wishlist)\n" +
-						"• *slots*: `vitoria` (aumenta chance de vitória), `moedas` (prêmio em moedas), `iscas` (prêmio em iscas)\n\n" +
+						"• *slots*: `vitoria` (aumenta chance de vitória), `moedas` (prêmio em moedas), `iscas` (prêmio em iscas)\n" +
+						"• *fazenda*: `apodrecer` (aumenta o tempo que as plantas demoram para apodrecer), `fortuna` (aumenta ganho de moedas em todas as fontes)\n\n" +
 						"📌 *Exemplos:*\n" +
 						"• `!sa-evento pesca peso 15 4` (+15% peso por 4h)\n" +
 						"• `!sa-evento pesca lendario 50 24` (+50% lendários por 24h)\n" +
 						"• `!sa-evento waifus raros 50 12` (+50% raros por 12h)\n" +
 						"• `!sa-evento waifus wish 25 6` (+25% wishlist por 6h)\n" +
 						"• `!sa-evento slots vitoria 30 8` (+30% vitória por 8h)\n" +
+						"• `!sa-evento fazenda apodrecer 30 24` (+30% tempo de apodrecimento por 24h)\n" +
+						"• `!sa-evento fazenda fortuna 30 12` (+30% moedas por 12h)\n" +
 						"• `!sa-evento pesca peso 0` (Cancela o evento)"
 				});
 			}
@@ -360,6 +391,264 @@ class SuperAdmin {
 				content: "❌ Erro ao listar eventos temporários."
 			});
 		}
+	}
+
+	async instantGameEvent(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ *Uso do comando de Evento Instantâneo:*\n" +
+						"`!sa-instantaneo <jogo> <tipo> <quantidade>`\n\n" +
+						"📌 *Jogos e Tipos suportados:*\n" +
+						"• *slots*: `moedas` (adiciona moedas do slots para toda a comunidade)\n" +
+						"• *fazenda*: `moedas` (adiciona moedas da fazenda para todos), `bags` (distribui sacolas com sementes)\n" +
+						"• *waifu*: `zinthos` (adiciona zinthos para toda a comunidade), `rolls` (adiciona rolls extras)\n" +
+						"• *pesca*: `iscas` (adiciona iscas para todos os pescadores), `buff` (concede buff aleatório com N usos)\n\n" +
+						"📌 *Exemplos:*\n" +
+						"• `!sa-instantaneo slots moedas 500`\n" +
+						"• `!sa-instantaneo fazenda moedas 1000`\n" +
+						"• `!sa-instantaneo fazenda bags 3`\n" +
+						"• `!sa-instantaneo waifu zinthos 50`\n" +
+						"• `!sa-instantaneo waifu rolls 5`\n" +
+						"• `!sa-instantaneo pesca iscas 20`\n" +
+						"• `!sa-instantaneo pesca buff 3`"
+				});
+			}
+
+			const [gameInput, typeInput, amountInput] = args;
+			const normGame = GameEventService.normalizeGame(gameInput);
+			if (!normGame) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Jogo inválido. Jogos suportados: `slots`, `fazenda`, `waifu`, `pesca`."
+				});
+			}
+
+			const cleanType = String(typeInput).toLowerCase().trim();
+			const amount = amountInput ? parseInt(String(amountInput).replace(/\D/g, ""), 10) : 0;
+			if (isNaN(amount) || amount <= 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Quantidade inválida. Informe um número inteiro positivo."
+				});
+			}
+
+			// Slots
+			if (normGame === "slots") {
+				if (cleanType === "moedas" || cleanType === "moeda" || cleanType === "coins") {
+					await this.database.dbRun("slots", "UPDATE slots_users SET coins = coins + ?", [amount]);
+					const count =
+						(await this.database.dbGet("slots", "SELECT COUNT(*) as c FROM slots_users"))?.c || 0;
+					return new ReturnMessage({
+						chatId,
+						content: `🎰 *EVENTO INSTANTÂNEO DE SLOTS!* 🎰\n\n💰 Foram distribuídas *+${amount} moedas de slots* para todos os *${count} jogadores* da comunidade!`
+					});
+				}
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Tipo inválido para slots. Tipos suportados: `moedas`."
+				});
+			}
+
+			// Fazenda
+			if (normGame === "fazenda") {
+				const ShadowGardenClient = require("../services/ShadowGardenClient");
+				const jardimClient = new ShadowGardenClient();
+
+				if (
+					cleanType === "moedas" ||
+					cleanType === "moeda" ||
+					cleanType === "coins" ||
+					cleanType === "fortuna"
+				) {
+					const res = await jardimClient.adminGiveAll({
+						coins: amount,
+						reason: "evento_instantaneo_fazenda"
+					});
+					const count = res.playersAffected || res.count || "todos os";
+					return new ReturnMessage({
+						chatId,
+						content: `🌱 *EVENTO INSTANTÂNEO DA FAZENDA!* 🌱\n\n💰 Foram distribuídas *+${amount} moedas do Jardim* para *${count} fazendeiros* da comunidade!`
+					});
+				}
+
+				if (
+					cleanType === "bags" ||
+					cleanType === "bag" ||
+					cleanType === "sacola" ||
+					cleanType === "sacolas"
+				) {
+					const { openSacolasDoCoveiro } = require("../functions/SlotsGame");
+					const openedSeeds = openSacolasDoCoveiro(amount);
+					const items = Object.entries(openedSeeds).map(([itemId, data]) => ({
+						itemId,
+						amount: data.count
+					}));
+
+					const res = await jardimClient.adminGiveAll({
+						items,
+						reason: "evento_instantaneo_bags"
+					});
+					const count = res.playersAffected || res.count || "todos os";
+					const seedsSummary = Object.values(openedSeeds)
+						.map((s) => `• ${s.name}: *+${s.count}x*`)
+						.join("\n");
+
+					return new ReturnMessage({
+						chatId,
+						content: `🌱 *EVENTO INSTANTÂNEO DA FAZENDA!* 🌱\n\n🎒 Foram distribuídas *${amount} Sacolas do Coveiro* para *${count} fazendeiros* da comunidade!\n\n🌾 *Sementes entregues em cada mochila:*\n${seedsSummary}`
+					});
+				}
+
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Tipo inválido para fazenda. Tipos suportados: `moedas`, `bags`."
+				});
+			}
+
+			// Waifu
+			if (normGame === "waifu") {
+				const WaifuCommands = require("../functions/WaifuCommands");
+
+				if (
+					cleanType === "zinthos" ||
+					cleanType === "zintho" ||
+					cleanType === "kakera" ||
+					cleanType === "moedas"
+				) {
+					const res = await WaifuCommands.grantZinthosAll(amount, { source: "INSTANT_EVENT" });
+					const count = res.count || "todos os";
+					return new ReturnMessage({
+						chatId,
+						content: `🌸 *EVENTO INSTANTÂNEO DE WAIFUS!* 🌸\n\n🪙 Foram distribuídos *+${amount} Zinthos* para *${count} jogadores* da comunidade!`
+					});
+				}
+
+				if (
+					cleanType === "rolls" ||
+					cleanType === "roll" ||
+					cleanType === "giros" ||
+					cleanType === "giro"
+				) {
+					// Atualiza farm_bonus_inventory no core.db para todos os usuários registrados
+					await this.database.dbRun(
+						"core",
+						"UPDATE farm_bonus_inventory SET rolls = COALESCE(rolls, 0) + ?, updated_at = ?",
+						[amount, Date.now()]
+					);
+					const count =
+						(await this.database.dbGet("core", "SELECT COUNT(*) as c FROM farm_bonus_inventory"))
+							?.c || 0;
+					return new ReturnMessage({
+						chatId,
+						content: `🌸 *EVENTO INSTANTÂNEO DE WAIFUS!* 🌸\n\n🎲 Foram distribuídos *+${amount} rolls extras* para *${count} jogadores* da comunidade!\n_Use \`!roll\` para aproveitar seus giros gratuitos!_`
+					});
+				}
+
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Tipo inválido para waifus. Tipos suportados: `zinthos`, `rolls`."
+				});
+			}
+
+			// Pesca
+			if (normGame === "pesca") {
+				const FishingGame = require("../functions/FishingGame");
+
+				if (
+					cleanType === "iscas" ||
+					cleanType === "isca" ||
+					cleanType === "baits" ||
+					cleanType === "bait"
+				) {
+					await this.database.dbRun(
+						"fishing",
+						"UPDATE fishing_users SET baits = baits + ?, last_bait_regen = ?",
+						[amount, Date.now()]
+					);
+					const count =
+						(await this.database.dbGet("fishing", "SELECT COUNT(*) as c FROM fishing_users"))?.c ||
+						0;
+					return new ReturnMessage({
+						chatId,
+						content: `🎣 *EVENTO INSTANTÂNEO DE PESCA!* 🎣\n\n🪱 Foram distribuídas *+${amount} iscas* para *${count} pescadores* da comunidade!`
+					});
+				}
+
+				if (cleanType === "buff" || cleanType === "buffs") {
+					// Sorteia um buff positivo da lista UPGRADES do FishingGame
+					const validUpgrades = FishingGame.UPGRADES.filter(
+						(u) => u.effect !== "slots_coins" && u.effect !== "extra_baits"
+					);
+					const chosen = validUpgrades[Math.floor(Math.random() * validUpgrades.length)];
+					const uses = amount > 0 ? amount : 3;
+
+					// Insere o buff para todos os usuários registrados em fishing_users
+					await this.database.dbRun(
+						"fishing",
+						`INSERT INTO fishing_buffs (user_id, effect_type, is_debuff, value, min_value, max_value, remaining_uses, original_name)
+						 SELECT user_id, ?, 0, ?, ?, ?, ?, ? FROM fishing_users`,
+						[
+							chosen.effect,
+							chosen.value ?? 0,
+							chosen.minValue ?? 0,
+							chosen.maxValue ?? 0,
+							uses,
+							chosen.name
+						]
+					);
+					const count =
+						(await this.database.dbGet("fishing", "SELECT COUNT(*) as c FROM fishing_users"))?.c ||
+						0;
+					return new ReturnMessage({
+						chatId,
+						content: `🎣 *EVENTO INSTANTÂNEO DE PESCA!* 🎣\n\n✨ Foi concedido o buff *${chosen.emoji} ${chosen.name}* (${uses} usos) para *${count} pescadores* da comunidade!\n_${chosen.description}_`
+					});
+				}
+
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Tipo inválido para pesca. Tipos suportados: `iscas`, `buff`."
+				});
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Jogo ou tipo não suportado."
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando instantGameEvent:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao distribuir evento instantâneo: ${error.message}`
+			});
+		}
+	}
+
+	async instantSlotsEvent(bot, message, args) {
+		return this.instantGameEvent(bot, message, ["slots", ...args]);
+	}
+
+	async instantFazendaEvent(bot, message, args) {
+		return this.instantGameEvent(bot, message, ["fazenda", ...args]);
+	}
+
+	async instantWaifuEvent(bot, message, args) {
+		return this.instantGameEvent(bot, message, ["waifu", ...args]);
+	}
+
+	async instantPescaEvent(bot, message, args) {
+		return this.instantGameEvent(bot, message, ["pesca", ...args]);
 	}
 
 	async wakeOnLan(bot, message, args) {
