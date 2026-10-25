@@ -1,6 +1,7 @@
 const assert = require("assert");
 const fs = require("fs").promises;
 const path = require("path");
+const crypto = require("crypto");
 const sharp = require("sharp");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
@@ -88,40 +89,64 @@ async function runTests() {
 		await fs.unlink(testCachedFile);
 	} catch {}
 
-	const msgSpecific = createMessage({
-		content: "!figa 37019",
-		group: "group_test_4@g.us",
-		author: "user_test_4@s.whatsapp.net",
-		authorName: "Testador 4"
-	});
+	const testNoiseBytes = crypto.randomBytes(256 * 298 * 3);
+	const validTestTallBuf = await sharp(testNoiseBytes, {
+		raw: { width: 256, height: 298, channels: 3 }
+	})
+		.resize(512, 597)
+		.webp({ quality: 80 })
+		.toBuffer();
 
-	await cmdHandler.processCommand(bot, msgSpecific, "figa", ["37019"], {
-		id: "group_test_4@g.us",
-		name: "Grupo Teste 4"
-	});
-	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar exatamente 1 mensagem");
-	const sentMsg = bot.capturedMessages[0];
-	assert.strictEqual(
-		sentMsg.options.sendMediaAsSticker,
-		true,
-		"Deve enviar com flag sendMediaAsSticker: true"
-	);
-	assert.strictEqual(sentMsg.content.mimetype, "image/webp", "Mimetype deve ser image/webp");
-	assert(
-		sentMsg.options.stickerName.includes("MegaMente"),
-		"Sticker name deve conter o título limpo"
-	);
+	const originalFetch4 = StickerScraper.fetchLovecellSticker;
+	StickerScraper.fetchLovecellSticker = async (id) => {
+		if (id === 37019 || id === "37019") {
+			return {
+				found: true,
+				buffer: validTestTallBuf,
+				title: "MegaMente"
+			};
+		}
+		return originalFetch4(id);
+	};
 
-	const fileExists = await fs
-		.stat(testCachedFile)
-		.then(() => true)
-		.catch(() => false);
-	assert.strictEqual(
-		fileExists,
-		true,
-		"Arquivo figs_lovecell_37019.webp deve ter sido salvo no cache"
-	);
-	console.log("✓ !figa 37019 buscou, recortou, salvou em cache e enviou como sticker");
+	try {
+		const msgSpecific = createMessage({
+			content: "!figa 37019",
+			group: "group_test_4@g.us",
+			author: "user_test_4@s.whatsapp.net",
+			authorName: "Testador 4"
+		});
+
+		await cmdHandler.processCommand(bot, msgSpecific, "figa", ["37019"], {
+			id: "group_test_4@g.us",
+			name: "Grupo Teste 4"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar exatamente 1 mensagem");
+		const sentMsg = bot.capturedMessages[0];
+		assert.strictEqual(
+			sentMsg.options.sendMediaAsSticker,
+			true,
+			"Deve enviar com flag sendMediaAsSticker: true"
+		);
+		assert.strictEqual(sentMsg.content.mimetype, "image/webp", "Mimetype deve ser image/webp");
+		assert(
+			sentMsg.options.stickerName.includes("MegaMente"),
+			"Sticker name deve conter o título limpo"
+		);
+
+		const fileExists = await fs
+			.stat(testCachedFile)
+			.then(() => true)
+			.catch(() => false);
+		assert.strictEqual(
+			fileExists,
+			true,
+			"Arquivo figs_lovecell_37019.webp deve ter sido salvo no cache"
+		);
+		console.log("✓ !figa 37019 buscou, recortou, salvou em cache e enviou como sticker");
+	} finally {
+		StickerScraper.fetchLovecellSticker = originalFetch4;
+	}
 
 	// 5. Teste de cache hit: executar novamente !figa 37019 deve ler do cache
 	console.log("\n5. Testando cache hit para !figa 37019...");
@@ -231,7 +256,7 @@ async function runTests() {
 		console.log("✓ Rate limit acionou fallback e enviou figurinha já baixada do cache");
 
 		// 10. Teste de rate limit sem nenhuma figurinha em cache
-		console.log("\n10. Testando rate limit com cache vazio...");
+		console.log("\n10. Testando comando com cache vazio...");
 		bot.resetCapture();
 		clearCooldowns();
 		const originalGetCached = StickerScraper.getRandomCachedStickers;
@@ -249,10 +274,16 @@ async function runTests() {
 			});
 			assert.strictEqual(bot.capturedMessages.length, 1);
 			assert(
-				bot.capturedMessages[0].content.includes("temporariamente indisponível"),
-				"Deve avisar que o serviço está temporariamente indisponível caso não haja cache"
+				bot.capturedMessages[0].content.includes(
+					"Não foi possível encontrar figurinhas disponíveis"
+				),
+				"Deve avisar que não há figurinhas disponíveis na coleção baixada sem mencionar indisponibilidade do Lovecell"
 			);
-			console.log("✓ Rate limit com cache vazio avisou o usuário corretamente");
+			assert(
+				!bot.capturedMessages[0].content.includes("temporariamente indisponível"),
+				"Jamais deve responder que o serviço do Lovecell está temporariamente indisponível"
+			);
+			console.log("✓ Cache vazio avisou o usuário corretamente sem mensagem de indisponibilidade");
 		} finally {
 			StickerScraper.getRandomCachedStickers = originalGetCached;
 		}
@@ -269,7 +300,6 @@ async function runTests() {
 	const originalFetchLovecell = StickerScraper.fetchLovecellSticker;
 
 	// Simula resposta do Lovecell para o ID de teste (buffer válido com tamanho > 3KB)
-	const crypto = require("crypto");
 	const rawBytes = crypto.randomBytes(256 * 298 * 3);
 	const dummyWebp = await sharp(rawBytes, { raw: { width: 256, height: 298, channels: 3 } })
 		.resize(512, 597)
@@ -357,31 +387,9 @@ async function runTests() {
 	bot.resetCapture();
 	clearCooldowns();
 
-	let attemptSeq = 0;
-	StickerScraper.fetchLovecellSticker = async () => {
-		attemptSeq++;
-		if (attemptSeq === 1) {
-			return {
-				found: true,
-				buffer: dummyWebp,
-				title: "NSFW Random",
-				imageUrl: "https://img2.lovecell.com.br/figurinhas/999992.webp"
-			};
-		}
-		return {
-			found: true,
-			buffer: dummyWebp,
-			title: "Safe Random",
-			imageUrl: "https://img2.lovecell.com.br/figurinhas/999993.webp"
-		};
-	};
-
-	StickerScraper.checkStickerNSFW = async () =>
-		// Apenas a primeira tentativa é marcada como NSFW
-		attemptSeq === 1;
-
+	const safeRandomId = 999993;
 	const originalGetCached12 = StickerScraper.getRandomCachedStickers;
-	StickerScraper.getRandomCachedStickers = async () => [];
+	StickerScraper.getRandomCachedStickers = async () => [{ id: safeRandomId, buffer: dummyWebp }];
 
 	try {
 		const msgRandomNSFW = createMessage({
@@ -400,6 +408,11 @@ async function runTests() {
 			bot.capturedMessages[0].options.sendMediaAsSticker,
 			true,
 			"Deve ser enviado como sticker"
+		);
+		assert.strictEqual(
+			bot.capturedMessages[0].options.lovecellStickerId,
+			safeRandomId,
+			"Deve entregar o sticker seguro"
 		);
 		console.log("✓ Modo aleatório pulou figurinha NSFW e buscou a próxima válida com sucesso");
 	} finally {

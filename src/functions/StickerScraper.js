@@ -988,10 +988,8 @@ async function saveStickerToCache(stickerId, buffer, tags = []) {
 async function getRandomCachedStickers(count = 1, excludeIds = new Set(), tagsArray = []) {
 	try {
 		if (!fs.existsSync(LOVECELL_DIR)) return [];
-		const files = await fs.promises.readdir(LOVECELL_DIR);
-		const stickerFiles = files.filter((f) => f.startsWith("figs_lovecell_") && f.endsWith(".webp"));
 
-		// Se tagsArray foi fornecido, consulta no SQLite quais IDs possuem pelo menos uma dessas tags (expandindo por sinônimos)
+		// Se tagsArray foi fornecido, consulta no SQLite quais IDs possuem pelo menos uma dessas tags
 		let matchingTagIds = null;
 		if (Array.isArray(tagsArray) && tagsArray.length > 0) {
 			const requestedSet = new Set();
@@ -1007,128 +1005,141 @@ async function getRandomCachedStickers(count = 1, excludeIds = new Set(), tagsAr
 
 			matchingTagIds = new Set();
 			try {
+				const likeClauses = Array.from(requestedSet)
+					.map(() => "tags LIKE ?")
+					.join(" OR ");
+				const likeParams = Array.from(requestedSet).map((t) => `%"${t}"%`);
 				const rows = database.mappers.all(
 					"lovecell",
-					"SELECT id, tags FROM lovecell_stats WHERE tags IS NOT NULL"
+					`SELECT id FROM lovecell_stats WHERE tags IS NOT NULL AND (${likeClauses})`,
+					likeParams
 				);
 				if (Array.isArray(rows)) {
 					for (const row of rows) {
-						try {
-							const itemTags = JSON.parse(row.tags);
-							if (Array.isArray(itemTags)) {
-								const hasMatch = itemTags.some((t) =>
-									requestedSet.has(String(t).toLowerCase().trim())
-								);
-								if (hasMatch) {
-									matchingTagIds.add(row.id);
-								}
-							}
-						} catch {}
+						matchingTagIds.add(row.id);
 					}
 				}
 			} catch (dbErr) {
 				logger.warn(`Erro ao filtrar por tags no SQLite: ${dbErr.message}`);
 			}
+
+			if (matchingTagIds.size === 0) {
+				return [];
+			}
 		}
 
-		const filterValidFile = (f, checkExclude = true) => {
-			const match = f.match(/^figs_lovecell_(\d+)\.webp$/);
-			if (!match) return false;
-			const id = parseInt(match[1], 10);
-			if (checkExclude && excludeIds.has(id)) return false;
-			if (module.exports.isBlacklisted(id)) return false;
-			if (matchingTagIds !== null && !matchingTagIds.has(id)) return false;
-
+		// Garante que o conjunto de IDs baixados esteja carregado
+		if (downloadedIds.size === 0 && fs.existsSync(LOVECELL_DIR)) {
 			try {
-				const fullPath = path.join(LOVECELL_DIR, f);
-				const stat = fs.statSync(fullPath);
-				if (stat.size < MIN_STICKER_BYTES) {
-					try {
-						fs.unlinkSync(fullPath);
-					} catch {}
-					downloadedIds.delete(id);
-					return false;
+				const files = await fs.promises.readdir(LOVECELL_DIR);
+				for (const f of files) {
+					const m = f.match(/^figs_lovecell_(\d+)\.webp$/);
+					if (m) downloadedIds.add(parseInt(m[1], 10));
 				}
-				return true;
+			} catch {}
+		}
+
+		// Filtra candidatos em memória (ultra-rápido, sem statSync síncrono em disco)
+		const pool = [];
+		if (matchingTagIds !== null) {
+			for (const id of matchingTagIds) {
+				if (!excludeIds.has(id) && !module.exports.isBlacklisted(id)) {
+					if (downloadedIds.size === 0 || downloadedIds.has(id)) {
+						pool.push(id);
+					}
+				}
+			}
+		} else {
+			for (const id of downloadedIds) {
+				if (!excludeIds.has(id) && !module.exports.isBlacklisted(id)) {
+					pool.push(id);
+				}
+			}
+		}
+
+		if (pool.length === 0 && downloadedIds.size > 0 && matchingTagIds === null) {
+			// Se todos foram excluídos, tenta novamente sem excludeIds
+			for (const id of downloadedIds) {
+				if (!module.exports.isBlacklisted(id)) {
+					pool.push(id);
+				}
+			}
+		}
+
+		if (pool.length === 0) return [];
+
+		// Consulta estatísticas de envio no SQLite para os candidatos
+		let candidateList = [];
+		if (pool.length <= 500) {
+			const placeholders = pool.map(() => "?").join(",");
+			try {
+				const rows = database.mappers.all(
+					"lovecell",
+					`SELECT id, sent_count FROM lovecell_stats WHERE id IN (${placeholders}) ORDER BY sent_count ASC`,
+					pool
+				);
+				const foundMap = new Map();
+				if (Array.isArray(rows)) {
+					for (const r of rows) {
+						foundMap.set(r.id, r.sent_count);
+					}
+				}
+				const withStats = pool.map((id) => ({
+					id,
+					sentCount: foundMap.has(id) ? foundMap.get(id) : 1
+				}));
+				withStats.sort((a, b) => a.sentCount - b.sentCount);
+				candidateList = withStats.map((item) => item.id);
 			} catch {
-				return false;
+				candidateList = pool;
 			}
-		};
-
-		let available = stickerFiles.filter((f) => filterValidFile(f, true));
-
-		if (available.length === 0 && stickerFiles.length > 0 && matchingTagIds === null) {
-			available = stickerFiles.filter((f) => filterValidFile(f, false));
-		}
-
-		if (available.length === 0) return [];
-
-		// Carrega estatísticas de envio do SQLite para priorizar figurinhas nunca ou pouco enviadas
-		const statsMap = new Map();
-		try {
-			const rows = database.mappers.all(
-				"lovecell",
-				"SELECT id, sent_count, last_sent_at FROM lovecell_stats"
-			);
-			if (Array.isArray(rows)) {
-				for (const row of rows) {
-					statsMap.set(row.id, {
-						sentCount: typeof row.sent_count === "number" ? row.sent_count : 0,
-						lastSentAt: row.last_sent_at || null
-					});
+		} else {
+			// Pool grande: busca primeiro os que têm menor sent_count no SQLite
+			try {
+				const sampleRows = database.mappers.all(
+					"lovecell",
+					"SELECT id FROM lovecell_stats ORDER BY sent_count ASC, RANDOM() LIMIT ?",
+					[Math.max(100, count * 10)]
+				);
+				if (Array.isArray(sampleRows) && sampleRows.length > 0) {
+					for (const r of sampleRows) {
+						if (
+							!excludeIds.has(r.id) &&
+							!module.exports.isBlacklisted(r.id) &&
+							downloadedIds.has(r.id)
+						) {
+							candidateList.push(r.id);
+						}
+					}
+				}
+			} catch {}
+			if (candidateList.length < count) {
+				const remaining = pool.filter((id) => !candidateList.includes(id));
+				for (let i = remaining.length - 1; i > 0 && candidateList.length < count * 3; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					candidateList.push(remaining[j]);
 				}
 			}
-		} catch (dbErr) {
-			logger.warn(`Não foi possível ler lovecell_stats no SQLite: ${dbErr.message}`);
-		}
-
-		// Mapeia os candidatos válidos com seus contadores de envio
-		const candidates = available.map((filename) => {
-			const match = filename.match(/^figs_lovecell_(\d+)\.webp$/);
-			const id = match ? parseInt(match[1], 10) : filename;
-			const stats = statsMap.get(id);
-			// Se o arquivo existe no disco mas ainda não está registrado, considera como 1
-			const sentCount = stats ? stats.sentCount : 1;
-			const lastSentAt = stats?.lastSentAt || null;
-			return { filename, id, sentCount, lastSentAt };
-		});
-
-		// Agrupa candidatos por faixa de envio (sentCount: 0, 1, 2, ...)
-		const groupsByCount = new Map();
-		for (const cand of candidates) {
-			if (!groupsByCount.has(cand.sentCount)) {
-				groupsByCount.set(cand.sentCount, []);
-			}
-			groupsByCount.get(cand.sentCount).push(cand);
-		}
-
-		// Ordena os níveis de prioridade do menor para o maior (0 = nunca enviadas, depois 1, 2, etc.)
-		const sortedLevels = Array.from(groupsByCount.keys()).sort((a, b) => a - b);
-
-		const selectedCandidates = [];
-		for (const level of sortedLevels) {
-			if (selectedCandidates.length >= count) break;
-
-			const tierItems = groupsByCount.get(level);
-
-			// Embaralha aleatoriamente (Fisher-Yates) os itens dentro do mesmo nível para variar a ordem
-			for (let i = tierItems.length - 1; i > 0; i--) {
-				const j = Math.floor(Math.random() * (i + 1));
-				[tierItems[i], tierItems[j]] = [tierItems[j], tierItems[i]];
-			}
-
-			const needed = count - selectedCandidates.length;
-			selectedCandidates.push(...tierItems.slice(0, needed));
 		}
 
 		const results = [];
-		for (const item of selectedCandidates) {
-			const fullPath = path.join(LOVECELL_DIR, item.filename);
-			const buffer = await fs.promises.readFile(fullPath);
-			if (buffer.length >= MIN_STICKER_BYTES) {
-				results.push({ id: item.id, buffer });
-			}
+		for (const id of candidateList) {
+			if (results.length >= count) break;
+			const fullPath = path.join(LOVECELL_DIR, `figs_lovecell_${id}.webp`);
+			try {
+				const buffer = await fs.promises.readFile(fullPath);
+				if (buffer.length >= MIN_STICKER_BYTES) {
+					results.push({ id, buffer });
+					excludeIds.add(id);
+				} else {
+					downloadedIds.delete(id);
+					try {
+						await fs.promises.unlink(fullPath);
+					} catch {}
+				}
+			} catch {}
 		}
+
 		return results;
 	} catch (err) {
 		logger.error(`Erro ao obter figurinhas aleatórias do cache: ${err.message}`);
@@ -1583,72 +1594,87 @@ async function stickerScraperCommand(bot, message, args, group) {
 				);
 			}
 
-			const result = await module.exports.fetchLovecellSticker(specificId);
-			if (result.rateLimit) {
-				const fallback = await module.exports.getRandomCachedStickers(1);
-				if (fallback.length > 0) {
-					logger.info(
-						`Rate limit atingido para ID ${specificId}. Usando figurinha #${fallback[0].id} do cache local como fallback.`
-					);
-					module.exports.recordStickerSent(fallback[0].id);
+			// Tenta buscar sob demanda caso o método fetchLovecellSticker esteja mockado ou disponível
+			let fetchedResult = null;
+			try {
+				fetchedResult = await module.exports.fetchLovecellSticker(specificId);
+			} catch (fetchErr) {
+				logger.warn(`Erro ao consultar Lovecell para ID ${specificId}: ${fetchErr.message}`);
+			}
+
+			if (
+				fetchedResult &&
+				fetchedResult.found &&
+				fetchedResult.buffer &&
+				fetchedResult.buffer.length >= MIN_STICKER_BYTES
+			) {
+				const croppedBuffer = await module.exports.cropLovecellBanner(fetchedResult.buffer);
+				if (croppedBuffer.length >= MIN_STICKER_BYTES) {
+					// Verificação NSFW e moderação Laya -> NSFWPredict
+					const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, specificId, {
+						title: fetchedResult.title
+					});
+					if (checkRes.isNSFW) {
+						await module.exports.addToBlacklist(specificId);
+						return new ReturnMessage({
+							chatId,
+							content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW, apologia a ódio/abuso ou violação de diretrizes).`
+						});
+					}
+
+					await module.exports.saveStickerToCache(specificId, croppedBuffer, checkRes.tags);
+					module.exports.recordStickerSent(specificId);
+
 					return buildStickerReturnMessage(
 						chatId,
-						fallback[0].buffer,
-						fallback[0].id,
-						`Lovecell #${fallback[0].id}`,
+						croppedBuffer,
+						specificId,
+						fetchedResult.title || `Lovecell #${specificId}`,
 						bot,
 						message
 					);
 				}
-
-				return new ReturnMessage({
-					chatId,
-					content:
-						"⚠️ O serviço do Lovecell está temporariamente indisponível no momento devido a limite de requisições. Tente novamente mais tarde."
-				});
 			}
 
-			if (!result.found || !result.buffer || result.buffer.length < MIN_STICKER_BYTES) {
+			// Se a figurinha foi explicitamente identificada como não encontrada ou inválida (< 3KB)
+			if (
+				fetchedResult &&
+				(!fetchedResult.found ||
+					fetchedResult.invalid ||
+					fetchedResult.tooSmall ||
+					(fetchedResult.buffer && fetchedResult.buffer.length < MIN_STICKER_BYTES)) &&
+				!fetchedResult.rateLimit
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: `Figurinha #${specificId} não foi encontrada ou é inválida no Lovecell.`
 				});
 			}
 
-			const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
-			if (croppedBuffer.length < MIN_STICKER_BYTES) {
-				return new ReturnMessage({
+			// Se não foi encontrada ou falhou/rate limited, usa figurinha do cache local como fallback
+			const fallback = await module.exports.getRandomCachedStickers(1);
+			if (fallback.length > 0) {
+				logger.info(
+					`Figurinha #${specificId} não encontrada localmente/online. Usando figurinha #${fallback[0].id} do cache local como fallback.`
+				);
+				module.exports.recordStickerSent(fallback[0].id);
+				return buildStickerReturnMessage(
 					chatId,
-					content: `Figurinha #${specificId} é inválida.`
-				});
+					fallback[0].buffer,
+					fallback[0].id,
+					`Lovecell #${fallback[0].id}`,
+					bot,
+					message
+				);
 			}
 
-			// Verificação NSFW e moderação Laya -> NSFWPredict
-			const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, specificId, {
-				title: result.title
-			});
-			if (checkRes.isNSFW) {
-				await module.exports.addToBlacklist(specificId);
-				return new ReturnMessage({
-					chatId,
-					content: `⚠️ A figurinha #${specificId} foi bloqueada por conter conteúdo impróprio (NSFW, apologia a ódio/abuso ou violação de diretrizes).`
-				});
-			}
-
-			await module.exports.saveStickerToCache(specificId, croppedBuffer, checkRes.tags);
-			module.exports.recordStickerSent(specificId);
-
-			return buildStickerReturnMessage(
+			return new ReturnMessage({
 				chatId,
-				croppedBuffer,
-				specificId,
-				result.title || `Lovecell #${specificId}`,
-				bot,
-				message
-			);
+				content: `Figurinha #${specificId} não foi encontrada na nossa coleção baixada.`
+			});
 		}
 
-		// 2. Modo aleatório com suporte a filtro por Tags
+		// 2. Modo aleatório com suporte a filtro por Tags (sempre da coleção baixada)
 		const returnMessages = [];
 		const usedIds = new Set();
 
@@ -1673,76 +1699,6 @@ async function stickerScraperCommand(bot, message, args, group) {
 			);
 		}
 
-		// Fallback: se o estoque local estiver vazio ou não houver figurinhas com a tag solicitada
-		if (returnMessages.length < targetQuantity) {
-			let rateLimited = false;
-			const needed = targetQuantity - returnMessages.length;
-			const maxAttempts = 15 * needed;
-
-			for (
-				let attempt = 1;
-				attempt <= maxAttempts && returnMessages.length < targetQuantity;
-				attempt++
-			) {
-				const randomId =
-					Math.floor(Math.random() * (MAX_STICKER_ID - MIN_STICKER_ID + 1)) + MIN_STICKER_ID;
-
-				if (usedIds.has(randomId) || module.exports.isBlacklisted(randomId)) continue;
-				usedIds.add(randomId);
-
-				const result = await module.exports.fetchLovecellSticker(randomId);
-				if (result.rateLimit) {
-					rateLimited = true;
-					break;
-				}
-
-				if (result.found && result.buffer && result.buffer.length >= MIN_STICKER_BYTES) {
-					const croppedBuffer = await module.exports.cropLovecellBanner(result.buffer);
-					if (croppedBuffer.length < MIN_STICKER_BYTES) continue;
-
-					// Verificação NSFW e moderação Laya -> NSFWPredict
-					const checkRes = await module.exports.checkStickerNSFW(croppedBuffer, randomId, {
-						title: result.title
-					});
-					if (checkRes.isNSFW) {
-						await module.exports.addToBlacklist(randomId);
-						continue;
-					}
-
-					await module.exports.saveStickerToCache(randomId, croppedBuffer, checkRes.tags);
-
-					// Se o usuário solicitou tags específicas online, verifica se bate
-					if (requestedTags.length > 0) {
-						const hasTagMatch = checkRes.tags.some((t) =>
-							requestedTags.includes(t.toLowerCase().trim())
-						);
-						if (!hasTagMatch) continue;
-					}
-
-					module.exports.recordStickerSent(randomId);
-
-					returnMessages.push(
-						buildStickerReturnMessage(
-							chatId,
-							croppedBuffer,
-							randomId,
-							result.title || `Lovecell #${randomId}`,
-							bot,
-							message
-						)
-					);
-				}
-			}
-
-			if (returnMessages.length === 0 && rateLimited) {
-				return new ReturnMessage({
-					chatId,
-					content:
-						"⚠️ O serviço do Lovecell está temporariamente indisponível no momento devido a limite de requisições. Tente novamente mais tarde."
-				});
-			}
-		}
-
 		if (returnMessages.length > 0) {
 			return returnMessages;
 		}
@@ -1754,7 +1710,7 @@ async function stickerScraperCommand(bot, message, args, group) {
 			try {
 				const rows = database.mappers.all(
 					"lovecell",
-					"SELECT tags FROM lovecell_stats WHERE tags IS NOT NULL"
+					"SELECT tags FROM lovecell_stats WHERE tags IS NOT NULL LIMIT 1000"
 				);
 				const tagCounts = {};
 				if (Array.isArray(rows)) {
