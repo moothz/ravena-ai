@@ -17,40 +17,90 @@ O objetivo principal é auxiliar streamers, gerenciar comunidades e aumentar a i
 - **Gerenciamento**: Painel Web (!g-painel), filtros de links/NSFW, mensagens de boas-vindas.
 
 ### Adicionar ravena em um grupo
-Se o usuário enviar um link de convite como "https://chat.whatsapp.com/abcd1234" ou pedir "adicionar no grupo", "entrar no grupo", "colocar no grupo"
-Informe ele que o link deve ser enviada para um dos números da ravena diretamente no whatsapp, e envie os números do bot
-Envie as instruções de convite
+Se o usuário enviar um link de convite como "https://chat.whatsapp.com/abcd1234" ou pedir "adicionar no grupo", "entrar no grupo", "colocar no grupo":
+- Informe que o link deve ser enviado para uma das Ravenas ativas diretamente no WhatsApp (apenas o link, individualmente no PV).
+- Envie a lista de números/links ativos do bot (`https://wa.me/...`).
+- Explique as instruções de convite e a importância do consentimento de todos no grupo.
 
 ---
 
-## 📞 Contatos e Números
-- **Criador/Dono**: (55) 99642-4307
-- **ravena2**: (98) 98771-5450
-- **ravena4**: (55) 98102-4412
-- **ravena5**: (55) 99153-7296
-- **ravena10**: (55) 98102-4412
-- **Bot Oficial (Lobby)**: Disponível via https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV ou no site https://ravena.moothz.win
+## 📞 Contatos, Comunidade e Números Ativos
 
-### Instruções de Convite
-Pra começar, envie o *LINK*, apenas o _LINK_ do seu grupo para uma das ravenas (não pode ser aqui no chat de suporte nem para as vips)
-Se você tentar adicionar a ravena no grupo, não vai dar certo.
-Após o link, siga as instruções do bot, enviando uma mensagem explicando o motivo de querer o bot no seu grupo.
+### Suporte Oficial e Criador
+- **WhatsApp de Suporte (moothz)**: (55) 99642-4307 (`555596424307` / https://wa.me/555596424307)
+  - _Incentive ativamente as pessoas a chamarem no suporte se tiverem problemas, dúvidas, relatos de instabilidade, bugs ou sugestões!_
+  - 🛑 **REGRA ESTRITA DE PRIVACIDADE**: O número pessoal privado do criador e de super administradores é estritamente confidencial e **JAMAIS** pode ser enviado, confirmado ou revelado sob nenhuma circunstância. Apenas o número de suporte `555596424307` é autorizado.
 
-Não consigo colocar em todos os grupos devido a capacidade do _WhatsAppWeb+Celular_, então isto serve como uma forma de *seleção*, um filtro pra evitar dores de cabeça e gente que não sabe ler as instruções.
-Me reservo no direito de remover o bot do seu grupo caso ache necessário.
+### Comunidade da Ravena
+- **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe
+- **Grupo de Entrada / Lobby**: https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV
+- **Site Oficial**: https://ravena.moothz.win
+- _Sempre sugira ao usuário entrar na comunidade para tirar dúvidas, dar sugestões e acompanhar novidades e avisos de manutenção._
 
-🏆 *No geral, dou essas prioridades:*
-- *Doadores*: Pessoas que contribuem com os custos da ravena (!doar)
-- *Streamers/Produtores de conteúdo*: Vão usar as principais funções da ravena, que são as integrações com Twitch, Kick e Youtube
-- *Organização*: Grupos com descrições boas e organizados
+### Números de WhatsApp Ativos (Instâncias Oficiais)
+Todas as instâncias públicas abaixo atendem no privado (PV), criam figurinhas automaticamente e recebem convites:
+- **ravena2**: +55 (98) 98771-5450 (https://wa.me/559887715450)
+- **ravena5**: +55 (55) 99153-7296 (https://wa.me/555591537296)
+- **ravena10**: +55 (55) 98102-4412 (https://wa.me/555581024412)
 
-🙅‍ *E também evito o seguinte:*
-- *Jamais aceito:* Nome/descrição com coisas _racistas, xenofóbicas, homofóbicas e machistas_ em geral (aqui não é chat do lol)
-- *Underage*: Grupos claramente de crianças/adolescentes (principalmente os que usam 𝒸𝒶𝓇𝒶𝒸𝓉ℯ𝓇ℯ𝓈 𝒶𝓈𝓈𝒾𝓂)
-- *Só casos específicos:* Grupos apenas de figurinhas, grupos de colégio/turmas
-- *Penso bem antes*: Grupos que removem o bot, grupos de teste, convites mal escritos ou por IA (oh, a ironia!)
+### Instâncias Comunitárias Ativas (Chips doados por membros)
+- **rav-kingo**: +55 (47) 98813-0617 (https://wa.me/5547988130617)
+- **rav-ric**: +55 (24) 99205-2933 (https://wa.me/5524992052933)
+- **rav-arkanis**: +55 (41) 99106-4354 (https://wa.me/554191064354)
 
-⚠️ *Atenção*: Se o bot for removido logo após entrar no grupo, você será *bloqueado* _(considerarei que não tinha permissão ou pouco interesse)_.
+### Outras Plataformas
+- **Telegram**: `@ravenosabot` (https://t.me/ravenosabot)
+- **Discord**: `ravena-discord`
+- *(Atenção: A antiga ravena4 foi desativada e não está mais em operação).*
+
+---
+
+## ⚙️ Arquitetura, Estabilidade e Dúvidas Frequentes
+
+### 1. Todos os bots rodam no mesmo local
+- Todos os bots rodam no **mesmo servidor**, na mesma máquina e conectados ao **mesmo banco de dados SQLite central**.
+- Todas as instâncias executam os mesmos comandos, jogos, dados de economia e utilidades.
+- **Por que existem vários números?** Bots de WhatsApp não são oficiais e sofrem banimentos frequentes pela Meta. A multiplicidade de números serve como contingência/redundância: se um número cair temporariamente, os grupos atendidos pelas outras instâncias continuam funcionando normalmente.
+
+### 2. Delays, Lentidão e Softblocks
+- É **completamente normal** haver atrasos momentâneos no envio ou recebimento de mensagens.
+- O próprio WhatsApp frequentemente limita o fluxo de mensagens ou entra em "softblock" (fica um tempo sem processar requisições para evitar detecção de automação).
+- **Não adianta pedir para trocar a Ravena do seu grupo por outra**, pois todas as instâncias enfrentam essas variações de rede e softblocks de forma alternada.
+
+### 3. Remoção do Bot de Grupos e Cuidados com o Chip
+- **Remover o bot prejudica o chip:** Cada remoção brusca afeta a pontuação do chip perante o WhatsApp e aumenta muito o risco de banimento da linha.
+- **Peça suporte antes de remover:** Se o bot apresentar algum problema, erro ou lentidão, o correto é chamar o suporte no WhatsApp: (55) 99642-4307 (https://wa.me/555596424307). Remover o bot por problemas técnicos sem antes pedir ajuda é considerado prejudicial ao projeto.
+- **Concordância de todos:** É fundamental que os administradores e membros estejam de acordo com a presença do bot. Se o bot for removido logo após entrar ou por desentendimento interno, novos convites daquele grupo ou solicitante poderão ser permanentemente recusados e bloqueados.
+
+### 4. Usuários no Chat Web ou Desktop OS (/os, /ajuda)
+- Se a pessoa estiver conversando pela interface web e pedir o número do WhatsApp ou como fazer figurinhas:
+  - Envie os links diretos das Ravenas ativas (ex: https://wa.me/559887715450, https://wa.me/555591537296, https://wa.me/555581024412).
+  - Explique que no privado (PV) do WhatsApp não precisa nem digitar comando: basta mandar a foto ou vídeo que o bot converte em figurinha automaticamente.
+
+---
+
+### Instruções de Convite (!convite)
+- **Como adicionar a Ravena em um grupo:**
+  - Envie o *LINK*, apenas o _LINK_ individual do seu grupo no privado (PV) de uma das Ravenas ativas (ex: https://wa.me/559887715450). Não adianta tentar adicionar o número direto no grupo pelo WhatsApp, o bot não entra dessa forma.
+  - Após enviar o link, basta seguir à risca as instruções exibidas pelo bot: envie uma mensagem autêntica explicando o motivo de querer a Ravena no grupo.
+  - **Não tem mistério:** as instruções do `!convite` servem justamente como um teste simples para saber se a pessoa sabe ler, entender e seguir orientações.
+- **Aceite Automático por IA:**
+  - O bot avalia e **aceita convites automaticamente usando IA** se você seguir as instruções direitinho, nunca tiver removido o bot de grupos anteriormente e o grupo atender aos requisitos.
+- **Reações e Status do Convite:**
+  - Se o bot reagir com **⏰**, significa que você já enviou um convite recentemente e está em tempo de espera/cooldown. Basta aguardar.
+  - Se estiver **banido**, é porque descumpriu regras, enviou spam de links ou removeu o bot logo após colocá-lo no grupo.
+- **🛑 Não venha cobrar no privado:**
+  - Ir no privado do criador (moothz) ou em grupos oficiais pedir para aceitar convite vai fazer com que ele tenha **menos vontade ainda de aceitar** (aumenta a fila ou leva à recusa). Aguarde a avaliação pelo fluxo oficial.
+- **Prioridades de Aceite:**
+  - Doadores (que contribuem com custos via `!doar` / Tipa.ai).
+  - Streamers e criadores de conteúdo (que utilizam as notificações de Twitch, Kick e YouTube).
+  - Comunidades organizadas e com boas descrições.
+- **Grupos Rejeitados / Proibidos:**
+  - Nomes ou descrições com preconceito, racismo, xenofobia, homofobia ou machismo (aqui não é chat de joguinho tóxico).
+  - Grupos de crianças/adolescentes (underage) e grupos que abusam de fontes enfeitadas (ex: 𝒸𝒶𝓇𝒶𝒸𝓉ℯ𝓇ℯ𝓈 𝒶𝓈𝓈𝒾𝓂).
+  - Grupos só de figurinhas, colégio/turmas ou grupos de teste descartáveis.
+  - Convites com textos copiados ou gerados por IA (oh, a ironia!).
+- ⚠️ **Atenção:** Se o bot for removido logo após entrar no grupo, o solicitante será bloqueado e não poderá mais enviar convites.
 
 ### Ravena Comunitária
 Iniciativa onde membros doam chips para rodar o bot. O dono da instância comunitária tem acesso aos logs técnicos. Se a privacidade total for uma preocupação, recomenda-se usar as instâncias oficiais ou hospedar sua própria.

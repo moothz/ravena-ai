@@ -626,22 +626,41 @@ function registerServicesRoutes(api) {
 		res.status(500).json({ error: "Comandos ainda não carregados" });
 	});
 
-	// Chat API de Ajuda (LLM Assistant com CommandsHelper)
+	// Chat API de Ajuda (LLM Assistant com CommandsHelper e memória por sessão)
 	app.post(
 		"/api/ajuda/chat",
 		api.externalAuth.requireAccess("llm"),
 		api.strictLimiter,
 		async (req, res) => {
-			const { message, sessionId } = req.body;
+			const { message } = req.body;
+			let { sessionId } = req.body;
 
 			if (!message || message.trim().length < 2) {
 				return res.status(400).json({ error: "Mensagem muito curta ou ausente." });
 			}
 
+			// Tenta recuperar do cookie caso não tenha sessionId no body
+			if (!sessionId && req.headers && req.headers.cookie) {
+				const cookieMatch = req.headers.cookie.match(/ravena_help_session=([^;]+)/);
+				if (cookieMatch) {
+					sessionId = decodeURIComponent(cookieMatch[1].trim());
+				}
+			}
+
+			if (!sessionId) {
+				sessionId = "web-" + Math.random().toString(36).substring(2, 9);
+			}
+
+			// Seta cookie na resposta (30 dias) para persistência de sessão web
+			res.setHeader(
+				"Set-Cookie",
+				`ravena_help_session=${encodeURIComponent(sessionId)}; Path=/; Max-Age=2592000; SameSite=Lax`
+			);
+
 			try {
 				const { askHelp } = require("../../functions/Ajuda");
 				const answer = await askHelp(message, sessionId, req.apiUser || null);
-				res.json({ answer });
+				res.json({ answer, sessionId });
 			} catch (error) {
 				api.logger.error("Erro na API de ajuda chat:", error);
 				res.status(500).json({ error: error.message });

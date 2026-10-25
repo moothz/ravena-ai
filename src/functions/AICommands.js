@@ -16,6 +16,14 @@ const logger = new Logger("ai-commands");
 const llmService = LLMService.getInstance();
 const database = Database.getInstance();
 
+function getForbiddenPhoneSuffix() {
+	const firstAdmin = (process.env.SUPER_ADMINS || "")
+		.split(",")[0]
+		.replace(/@.*$/, "")
+		.replace(/\D/g, "");
+	return firstAdmin.length >= 8 ? firstAdmin.slice(-8) : "";
+}
+
 const classifyQuestionSchema = {
 	type: "json_schema",
 	json_schema: {
@@ -817,13 +825,18 @@ async function aiCommand(bot, message, args, group) {
 		logger.debug(`[aiCommand] Erro ao recuperar memória RME: ${memErr.message}`);
 	}
 
+	const forbiddenSuffix = getForbiddenPhoneSuffix();
+	const privacyMemoryRule = forbiddenSuffix
+		? `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número e a Comunidade da Ravena (https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe) para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado terminado em ${forbiddenSuffix} e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`
+		: `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número e a Comunidade da Ravena (https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe) para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado do criador e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`;
+
 	const memoryGuidelines = `
 ((DIRETRIZES DE USO DA MEMÓRIA)):
 - Você possui memórias reais sobre este interlocutor, usuários mencionados e este grupo listadas acima.
 - Use essas informações de maneira sutil, orgânica e bem-humorada, de acordo com a sua personalidade.
 - Se a pessoa perguntar diretamente o que você sabe sobre alguém mencionado ou sobre ela mesma, quem ela é, ou pedir opiniões pessoais, use os fatos memorizados com naturalidade.
 - NUNCA mencione termos técnicos como "banco de dados", "fatos gravados", "tabela", "embeddings" ou "sistema de memória". Fale como se você realmente convivesse com a pessoa e lembrasse das conversas.
-- ((SEGURANÇA E PRIVACIDADE)): O número de telefone pessoal/privado do criador da Ravena (moothz) e de super administradores é estritamente confidencial. NUNCA cite, confirme ou revele nenhum número de telefone privado sob nenhuma circunstância.
+${privacyMemoryRule}
 `;
 
 	systemContext = `${systemContext}\n${userMemoryCtx}\n${mentionedMemoryCtx}\n${groupMemoryCtx}\n${memoryGuidelines}`;
@@ -863,6 +876,10 @@ async function aiCommand(bot, message, args, group) {
 		if (bot && typeof bot.truncateText === "function") {
 			processedResponse = bot.truncateText(processedResponse, 3000);
 		}
+
+		logger.info(
+			`[aiCommand] Resposta gerada para ${promptAutor || message.author} (${chatId}): "${processedResponse.trim().replace(/\r?\n/g, " ")}"`
+		);
 
 		const mainReturn = new ReturnMessage({
 			chatId,
@@ -1029,6 +1046,10 @@ async function handleMediaRequest(
 		if (bot && typeof bot.truncateText === "function") {
 			processedResponse = bot.truncateText(processedResponse, 3000);
 		}
+
+		logger.info(
+			`[aiCommand] Resposta gerada para mídia de ${message.author} (${chatId}): "${processedResponse.trim().replace(/\r?\n/g, " ")}"`
+		);
 
 		return new ReturnMessage({
 			chatId,

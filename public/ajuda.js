@@ -3,8 +3,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
 
-    // Generate a simple session ID for this page load
-    const sessionId = 'web-' + Math.random().toString(36).substr(2, 9);
+    // Obtém sessionId persistente via cookie ou gera uma nova
+    function getHelpSessionId() {
+        const match = document.cookie.match(/ravena_help_session=([^;]+)/);
+        if (match && match[1]) {
+            return decodeURIComponent(match[1].trim());
+        }
+        const newId = 'web-' + Math.random().toString(36).substr(2, 9);
+        document.cookie = `ravena_help_session=${encodeURIComponent(newId)}; path=/; max-age=2592000; SameSite=Lax`;
+        return newId;
+    }
+    const sessionId = getHelpSessionId();
     
     let isProcessing = false;
     let messageCount = 0;

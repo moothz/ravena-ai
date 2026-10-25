@@ -8,7 +8,11 @@ WindowManager.register('help', {
     singleton: true,
 
     render(wb) {
-        const sessionId = 'session-' + Math.random().toString(36).substring(2, 9);
+        const match = document.cookie.match(/ravena_help_session=([^;]+)/);
+        const sessionId = (match && match[1])
+            ? decodeURIComponent(match[1].trim())
+            : 'session-' + Math.random().toString(36).substring(2, 9);
+        document.cookie = `ravena_help_session=${encodeURIComponent(sessionId)}; path=/; max-age=2592000; SameSite=Lax`;
         const body = wb.body;
 
         body.innerHTML = `
