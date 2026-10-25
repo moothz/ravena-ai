@@ -61,8 +61,11 @@ async function runTests() {
 
 	assert(response1.includes("🎰 *CAÇA-COISAS* 🎰"), "Deve conter o título do jogo");
 	assert(
-		response1.includes("| ❌") || response1.includes("| ✅"),
-		"Deve exibir o status ❌ ou ✅ ao lado dos rolos"
+		response1.includes("| ❌") ||
+			response1.includes("| ✅") ||
+			response1.includes("| 🟡") ||
+			response1.includes("| 💎"),
+		"Deve exibir o status ❌, ✅, 🟡 ou 💎 ao lado dos rolos"
 	);
 	assert(response1.includes("girou e..."), "Em 1 giro deve usar 'girou e...'");
 	assert(response1.includes("> 🪙 Moedinhas: 4/5"), "Deve ter consumido 1 moeda (4/5)");

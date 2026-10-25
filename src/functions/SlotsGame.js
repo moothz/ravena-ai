@@ -75,6 +75,214 @@ const JUNK_PRIZES = [
 	"Bateria de 9V lambida"
 ];
 
+const JARDIM_COMMON_SEEDS = [
+	{ id: "01_nightshade", name: "Erva-Moura" },
+	{ id: "02_mandrake", name: "Mandrágora" },
+	{ id: "03_shadow_fern", name: "Samambaia Sombria" },
+	{ id: "04_spectral_spores", name: "Esporos Espectrais" }
+];
+
+const JARDIM_BONUS_SEEDS = [
+	{ id: "05_blood_lily", name: "Lírio de Sangue", tier: "uncommon" },
+	{ id: "06_ghost_pepper", name: "Pimenta Fantasma", tier: "uncommon" },
+	{ id: "07_abyssal_moss", name: "Musgo Abissal", tier: "uncommon" },
+	{ id: "08_devouring_root_v2", name: "Raiz Devoradora", tier: "uncommon" },
+	{ id: "09_grave_rose", name: "Rosa da Tumba", tier: "rare" },
+	{ id: "10_golden_clover", name: "Trevo Dourado", tier: "rare" },
+	{ id: "11_purple_heart", name: "Coração Púrpuro", tier: "rare" },
+	{ id: "12_blood_rose", name: "Rosa de Sangue", tier: "rare" },
+	{ id: "13_whispering_willow", name: "Salgueiro Sussurrante", tier: "epic" },
+	{ id: "14_obsidian_cactus", name: "Cacto de Obsidiana", tier: "epic" },
+	{ id: "15_lich_crown", name: "Coroa do Lich", tier: "epic" },
+	{ id: "16_crystal_lotus", name: "Lótus de Cristal", tier: "epic" }
+];
+
+function pickFishingBuffs(count) {
+	const fishingUpgrades = FishingGame.UPGRADES.filter((u) => u.effect !== "slots_coins");
+	const chosen = [];
+	for (let b = 0; b < count; b++) {
+		const upgrade = fishingUpgrades[Math.floor(Math.random() * fishingUpgrades.length)];
+		const buff = {
+			type: upgrade.effect,
+			value: upgrade.value || 0,
+			minValue: upgrade.minValue || 0,
+			maxValue: upgrade.maxValue || 0,
+			remainingUses: upgrade.duration || 1,
+			originalName: upgrade.name,
+			emoji: upgrade.emoji || "🛠️",
+			description: upgrade.description || ""
+		};
+		if (upgrade.effect === "extra_baits" || upgrade.effect === "next_fish_bonus") {
+			buff.value =
+				Math.floor(Math.random() * (upgrade.maxValue - upgrade.minValue + 1)) + upgrade.minValue;
+		}
+		chosen.push(buff);
+	}
+	return chosen;
+}
+
+function openSacolasDoCoveiro(numBags) {
+	const droppedSeeds = {};
+	for (let i = 0; i < numBags; i++) {
+		const common = JARDIM_COMMON_SEEDS[Math.floor(Math.random() * JARDIM_COMMON_SEEDS.length)];
+		if (!droppedSeeds[common.id]) droppedSeeds[common.id] = { name: common.name, count: 0 };
+		droppedSeeds[common.id].count += 3;
+
+		if (Math.random() < 0.33) {
+			const bonus = JARDIM_BONUS_SEEDS[Math.floor(Math.random() * JARDIM_BONUS_SEEDS.length)];
+			if (!droppedSeeds[bonus.id]) droppedSeeds[bonus.id] = { name: bonus.name, count: 0 };
+			droppedSeeds[bonus.id].count += 1;
+		}
+	}
+	return droppedSeeds;
+}
+
+function rollSingleReward(isPartial = false, isTriple = false) {
+	const mult = isTriple ? 3 : 1;
+	const r = Math.random() * 110;
+
+	if (r < 10) {
+		// 10%: Lixo
+		const prize = JUNK_PRIZES[Math.floor(Math.random() * JUNK_PRIZES.length)];
+		return {
+			category: "junk",
+			junkItem: prize,
+			coins: 0,
+			baits: 0,
+			buffs: [],
+			jardimCoins: 0,
+			jardimBags: 0,
+			zinthos: 0,
+			waifuTickets: 0
+		};
+	} else if (r < 30) {
+		// 20%: 10 a 80 moedas
+		let coins = Math.floor(Math.random() * (80 - 10 + 1)) + 10;
+		coins *= mult;
+		if (isPartial) {
+			coins = Math.max(1, Math.floor(coins * 0.2));
+		}
+		return {
+			category: "coins",
+			coins,
+			junkItem: null,
+			baits: 0,
+			buffs: [],
+			jardimCoins: 0,
+			jardimBags: 0,
+			zinthos: 0,
+			waifuTickets: 0
+		};
+	} else if (r < 50) {
+		// 20%: 5 a 25 iscas + 1 buff aleatório de pesca
+		let baits = Math.floor(Math.random() * (25 - 5 + 1)) + 5;
+		baits *= mult;
+		let buffs = [];
+		if (isPartial) {
+			baits = Math.max(1, Math.floor(baits * 0.2));
+		} else {
+			const countBuffs = 1 * mult;
+			buffs = pickFishingBuffs(countBuffs);
+		}
+		return {
+			category: "baits_single_buff",
+			baits,
+			buffs,
+			junkItem: null,
+			coins: 0,
+			jardimCoins: 0,
+			jardimBags: 0,
+			zinthos: 0,
+			waifuTickets: 0
+		};
+	} else if (r < 65) {
+		// 15%: 15 a 50 iscas, 2 a 5 buffs aleatórios de pesca
+		let baits = Math.floor(Math.random() * (50 - 15 + 1)) + 15;
+		baits *= mult;
+		let buffs = [];
+		if (isPartial) {
+			baits = Math.max(1, Math.floor(baits * 0.2));
+		} else {
+			const countBuffs = (Math.floor(Math.random() * (5 - 2 + 1)) + 2) * mult;
+			buffs = pickFishingBuffs(countBuffs);
+		}
+		return {
+			category: "baits_multi_buffs",
+			baits,
+			buffs,
+			junkItem: null,
+			coins: 0,
+			jardimCoins: 0,
+			jardimBags: 0,
+			zinthos: 0,
+			waifuTickets: 0
+		};
+	} else if (r < 85) {
+		// 20%: 300 a 2500 moedas do jardim e 1 a 5 sacolas do coveiro
+		let jardimCoins = Math.floor(Math.random() * (2500 - 300 + 1)) + 300;
+		jardimCoins *= mult;
+		let jardimBags = 0;
+		if (isPartial) {
+			jardimCoins = Math.max(1, Math.floor(jardimCoins * 0.2));
+		} else {
+			jardimBags = (Math.floor(Math.random() * (5 - 1 + 1)) + 1) * mult;
+		}
+		return {
+			category: "jardim",
+			jardimCoins,
+			jardimBags,
+			junkItem: null,
+			coins: 0,
+			baits: 0,
+			buffs: [],
+			zinthos: 0,
+			waifuTickets: 0
+		};
+	} else if (r < 100) {
+		// 15%: 2100 a 7000 zinthos (-30%), 3 tickets de waifus
+		let zinthos = Math.floor(Math.random() * (7000 - 2100 + 1)) + 2100;
+		zinthos *= mult;
+		let waifuTickets = 0;
+		if (isPartial) {
+			zinthos = Math.max(1, Math.floor(zinthos * 0.2));
+		} else {
+			waifuTickets = 3 * mult;
+		}
+		return {
+			category: "zinthos_tier1",
+			zinthos,
+			waifuTickets,
+			junkItem: null,
+			coins: 0,
+			baits: 0,
+			buffs: [],
+			jardimCoins: 0,
+			jardimBags: 0
+		};
+	} else {
+		// 10%: 5600 a 10500 zinthos (-30%), 5 tickets de waifus
+		let zinthos = Math.floor(Math.random() * (10500 - 5600 + 1)) + 5600;
+		zinthos *= mult;
+		let waifuTickets = 0;
+		if (isPartial) {
+			zinthos = Math.max(1, Math.floor(zinthos * 0.2));
+		} else {
+			waifuTickets = 5 * mult;
+		}
+		return {
+			category: "zinthos_tier2",
+			zinthos,
+			waifuTickets,
+			junkItem: null,
+			coins: 0,
+			baits: 0,
+			buffs: [],
+			jardimCoins: 0,
+			jardimBags: 0
+		};
+	}
+}
+
 const WIN_MESSAGES = [
 	"INACREDITÁVEL! Você limpou a banca! 🎰💰",
 	"Hoje é seu dia de sorte! O jackpot é seu! ✨",
@@ -386,6 +594,8 @@ async function slotsCommand(bot, message, args, group) {
 
 	const rollResults = [];
 	let totalWins = 0;
+	let totalPartialWins = 0;
+	let hasDiamondJackpot = false;
 	const winMult = GameEventService.getMultiplier("slots", "vitoria");
 
 	for (let i = 0; i < rollsCount; i++) {
@@ -405,15 +615,24 @@ async function slotsCommand(bot, message, args, group) {
 			}
 		}
 
+		const isDiamond = isWin && roll1 === 9; // 9 = "💎"
+		if (isDiamond) hasDiamondJackpot = true;
+
+		const isPartial = !isWin && (roll1 === roll2 || roll2 === roll3 || roll1 === roll3);
+
 		if (isWin) {
 			totalWins++;
+		} else if (isPartial) {
+			totalPartialWins++;
 		}
 
 		rollResults.push({
 			emoji1: SLOT_EMOJIS[roll1],
 			emoji2: SLOT_EMOJIS[roll2],
 			emoji3: SLOT_EMOJIS[roll3],
-			isWin
+			isWin,
+			isPartial,
+			isDiamond
 		});
 	}
 
@@ -437,7 +656,7 @@ async function slotsCommand(bot, message, args, group) {
 	let resultMessage = `🎰 *CAÇA-COISAS* 🎰\n`;
 	resultMessage += `\`\`\`---------------\n`;
 	for (const roll of rollResults) {
-		const mark = roll.isWin ? "✅" : "❌";
+		const mark = roll.isDiamond ? "💎" : roll.isWin ? "✅" : roll.isPartial ? "🟡" : "❌";
 		resultMessage += `|  [ ${roll.emoji1} ] [ ${roll.emoji2} ] [ ${roll.emoji3} ]  | ${mark}\n`;
 	}
 	resultMessage += `---------------\`\`\`\n\n`;
@@ -452,109 +671,160 @@ async function slotsCommand(bot, message, args, group) {
 		? `${authorMention} pegou na alavanca de ${targetText}, ${spinText} e... `
 		: `${authorMention} ${spinText} e... `;
 
-	if (totalWins > 0) {
+	if (totalWins > 0 || totalPartialWins > 0) {
 		userData.total_wins += totalWins;
 
-		const winMsg = WIN_MESSAGES[Math.floor(Math.random() * WIN_MESSAGES.length)];
-		resultMessage += `${actionPrefix}🎊 *${winMsg}* 🎊\n\n`;
+		let totalCoinsWon = 0;
+		let totalBaitsWon = 0;
+		const totalBuffsWon = [];
+		let totalJardimCoinsWon = 0;
+		let totalJardimBagsWon = 0;
+		let totalZinthosWon = 0;
+		let totalTicketsWon = 0;
+		const junkItemsWon = [];
 
-		const prizesWon = [];
-		for (let w = 0; w < totalWins; w++) {
-			// Determina o prêmio (30% lixo, 70% bom)
-			const prizeRand = Math.random();
-			if (prizeRand < 0.3) {
-				// Prêmio Normal (Lixo)
-				const prize = JUNK_PRIZES[Math.floor(Math.random() * JUNK_PRIZES.length)];
-				await savePrize(userId, prize, "normal");
-				prizesWon.push({
-					type: "junk",
-					title: prize,
-					detail: "Incrível como você tem sorte pra ganhar porcaria. 🙄"
-				});
-			} else {
-				// Prêmio Bom (Pesca ou Moedas)
-				const goodRand = Math.random();
-				if (goodRand < 0.4) {
-					// Moedinhas (1-5)
-					let coinsWon = Math.floor(Math.random() * 5) + 1;
-					const coinMult = GameEventService.getMultiplier("slots", "moedas");
-					if (coinMult > 1) {
-						coinsWon = Math.max(1, Math.round(coinsWon * coinMult));
-					}
-					userData.coins = Math.min((userData.coins || 0) + coinsWon, MAX_STORED_COINS);
-					await savePrize(userId, `${coinsWon} Moedinhas`, "bom");
-					prizesWon.push({
-						type: "coins",
-						title: `${coinsWon} Moedinhas`,
-						detail: "Mais chances de girar a sorte!"
-					});
-				} else if (goodRand < 0.8) {
-					// Iscas (1-10)
-					let baits = Math.floor(Math.random() * 10) + 1;
-					const baitMult = GameEventService.getMultiplier("slots", "iscas");
-					if (baitMult > 1) {
-						baits = Math.max(1, Math.round(baits * baitMult));
-					}
-					await FishingGame.addBaits(userId, baits);
-					await savePrize(userId, `${baits} Iscas`, "bom");
-					prizesWon.push({
-						type: "baits",
-						title: `${baits} Iscas de Pesca`,
-						detail: "Vão direto pro seu balde de pesca."
-					});
-				} else {
-					// Upgrade de Pesca (ignora Ficha de Cassino pois já é prêmio de moedas)
-					const fishingUpgrades = FishingGame.UPGRADES.filter((u) => u.effect !== "slots_coins");
-					const upgrade = fishingUpgrades[Math.floor(Math.random() * fishingUpgrades.length)];
-
-					const buff = {
-						type: upgrade.effect,
-						value: upgrade.value || 0,
-						minValue: upgrade.minValue || 0,
-						maxValue: upgrade.maxValue || 0,
-						remainingUses: upgrade.duration || 1,
-						originalName: upgrade.name
-					};
-
-					if (upgrade.effect === "extra_baits" || upgrade.effect === "next_fish_bonus") {
-						buff.value =
-							Math.floor(Math.random() * (upgrade.maxValue - upgrade.minValue + 1)) +
-							upgrade.minValue;
-					}
-
-					await FishingGame.addBuff(userId, buff, false);
-					await savePrize(userId, upgrade.name, "bom");
-					prizesWon.push({
-						type: "upgrade",
-						title: `${upgrade.emoji} ${upgrade.name}`,
-						detail: "Um item de elite para sua pescaria!"
-					});
-				}
+		for (const roll of rollResults) {
+			if (roll.isWin) {
+				const reward = rollSingleReward(false, roll.isDiamond);
+				totalCoinsWon += reward.coins;
+				totalBaitsWon += reward.baits;
+				if (reward.buffs.length > 0) totalBuffsWon.push(...reward.buffs);
+				totalJardimCoinsWon += reward.jardimCoins;
+				totalJardimBagsWon += reward.jardimBags;
+				totalZinthosWon += reward.zinthos;
+				totalTicketsWon += reward.waifuTickets;
+				if (reward.junkItem) junkItemsWon.push(reward.junkItem);
+			} else if (roll.isPartial) {
+				const reward = rollSingleReward(true, false);
+				totalCoinsWon += reward.coins;
+				totalBaitsWon += reward.baits;
+				totalJardimCoinsWon += reward.jardimCoins;
+				totalZinthosWon += reward.zinthos;
+				if (reward.junkItem) junkItemsWon.push(reward.junkItem);
 			}
 		}
 
-		if (totalWins === 1) {
-			const singlePrize = prizesWon[0];
-			if (singlePrize.type === "junk") {
-				resultMessage += `🎁 Você ganhou: *${singlePrize.title}*!\n`;
-				resultMessage += `_${singlePrize.detail}_`;
-			} else if (singlePrize.type === "coins") {
-				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🪙\n`;
-				resultMessage += `_${singlePrize.detail}_`;
-			} else if (singlePrize.type === "baits") {
-				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🎣\n`;
-				resultMessage += `_${singlePrize.detail}_`;
-			} else {
-				resultMessage += `🎁 VOCÊ GANHOU: *${singlePrize.title}*! 🛠️\n`;
-				resultMessage += `_${singlePrize.detail}_`;
+		// Credita moedas de slots
+		if (totalCoinsWon > 0) {
+			const coinMult = GameEventService.getMultiplier("slots", "moedas");
+			if (coinMult > 1) {
+				totalCoinsWon = Math.max(1, Math.round(totalCoinsWon * coinMult));
 			}
+			userData.coins = Math.min((userData.coins || 0) + totalCoinsWon, MAX_STORED_COINS);
+			await savePrize(userId, `${totalCoinsWon} Moedinhas`, "bom");
+		}
+
+		// Credita iscas de pesca
+		if (totalBaitsWon > 0) {
+			const baitMult = GameEventService.getMultiplier("slots", "iscas");
+			if (baitMult > 1) {
+				totalBaitsWon = Math.max(1, Math.round(totalBaitsWon * baitMult));
+			}
+			await FishingGame.addBaits(userId, totalBaitsWon);
+			await savePrize(userId, `${totalBaitsWon} Iscas`, "bom");
+		}
+
+		// Credita buffs de pesca
+		for (const buff of totalBuffsWon) {
+			await FishingGame.addBuff(userId, buff, false);
+			await savePrize(userId, buff.originalName || "Buff de Pesca", "bom");
+		}
+
+		// Credita moedas do jardim e sacolas do coveiro
+		let allOpenedSeeds = null;
+		if (totalJardimCoinsWon > 0 || totalJardimBagsWon > 0) {
+			try {
+				const ShadowGardenClient = require("../services/ShadowGardenClient");
+				const jardimClient = new ShadowGardenClient();
+				if (totalJardimCoinsWon > 0) {
+					await jardimClient.adminGive(userId, { coins: totalJardimCoinsWon, reason: "slots_prize" });
+				}
+				if (totalJardimBagsWon > 0) {
+					allOpenedSeeds = openSacolasDoCoveiro(totalJardimBagsWon);
+					for (const seedId of Object.keys(allOpenedSeeds)) {
+						await jardimClient.adminGive(userId, {
+							itemId: seedId,
+							amount: allOpenedSeeds[seedId].count,
+							reason: "slots_sacola"
+						});
+					}
+				}
+				await savePrize(
+					userId,
+					`${totalJardimCoinsWon} Moedas do Jardim + ${totalJardimBagsWon} Sacolas`,
+					"bom"
+				);
+			} catch (jardimErr) {
+				logger.warn(`[slots] Falha ao entregar prêmio do Jardim: ${jardimErr.message}`);
+			}
+		}
+
+		// Credita Zinthos
+		if (totalZinthosWon > 0) {
+			try {
+				const WaifuCommands = require("./WaifuCommands");
+				if (typeof WaifuCommands.grantZinthos === "function") {
+					await WaifuCommands.grantZinthos(userId, totalZinthosWon, { source: "SLOTS_PRIZE" });
+				}
+				await savePrize(userId, `${totalZinthosWon} Zinthos`, "bom");
+			} catch (zErr) {
+				logger.warn(`[slots] Falha ao entregar Zinthos: ${zErr.message}`);
+			}
+		}
+
+		// Credita Tickets de Waifus
+		if (totalTicketsWon > 0) {
+			try {
+				await ShadowGardenBonusService.addWaifuBonus(userId, { rolls: totalTicketsWon });
+				await savePrize(userId, `${totalTicketsWon} Tickets de Waifu`, "bom");
+			} catch (tErr) {
+				logger.warn(`[slots] Falha ao entregar Tickets de Waifu: ${tErr.message}`);
+			}
+		}
+
+		// Salva itens de lixo
+		for (const junk of junkItemsWon) {
+			await savePrize(userId, junk, "normal");
+		}
+
+		// Formata cabeçalho do resultado
+		if (hasDiamondJackpot) {
+			resultMessage += `${actionPrefix}💎 *JACKPOT LENDÁRIO DE DIAMANTES! (Prêmios TRIPLICADOS!)* 💎\n\n`;
+		} else if (totalWins > 0) {
+			const winMsg = WIN_MESSAGES[Math.floor(Math.random() * WIN_MESSAGES.length)];
+			resultMessage += `${actionPrefix}🎊 *${winMsg}* 🎊\n\n`;
 		} else {
-			resultMessage += `🎁 *Prêmios Conquistados (${totalWins} vitórias):*\n`;
-			for (const p of prizesWon) {
-				const icon =
-					p.type === "junk" ? "🗑️" : p.type === "coins" ? "🪙" : p.type === "baits" ? "🎣" : "🛠️";
-				resultMessage += `• ${icon} *${p.title}*\n`;
+			resultMessage += `${actionPrefix}✨ *Vitória Parcial! Você acertou 2 símbolos e garantiu cashback de 20%!* ✨\n\n`;
+		}
+
+		resultMessage += `🎁 *Resumo dos Prêmios Conquistados:*\n`;
+		if (totalCoinsWon > 0) resultMessage += `• 🪙 *+${totalCoinsWon} Moedinhas do Slots*\n`;
+		if (totalBaitsWon > 0) resultMessage += `• 🎣 *+${totalBaitsWon} Iscas de Pesca*\n`;
+		if (totalBuffsWon.length > 0) {
+			resultMessage += `• 🛠️ *Buffs de Pesca (${totalBuffsWon.length}):*\n`;
+			for (const b of totalBuffsWon) {
+				resultMessage += `  - ${b.emoji} *${b.originalName}:* _${b.description || "Aprimoramento de Pesca"}_\n`;
 			}
+		}
+		if (totalJardimCoinsWon > 0 || totalJardimBagsWon > 0) {
+			let jDesc = `• 🌾 *+${totalJardimCoinsWon.toLocaleString("pt-BR")} Moedas do Jardim*`;
+			if (totalJardimBagsWon > 0) {
+				jDesc += ` e *${totalJardimBagsWon} Sacola${totalJardimBagsWon > 1 ? "s" : ""} do Coveiro*`;
+				if (allOpenedSeeds && Object.keys(allOpenedSeeds).length > 0) {
+					const seedParts = Object.values(allOpenedSeeds).map((s) => `${s.count}x ${s.name}`);
+					jDesc += `\n  _Drops das sacolas: ${seedParts.join(", ")}_`;
+				}
+			}
+			resultMessage += `${jDesc}\n`;
+		}
+		if (totalZinthosWon > 0) {
+			resultMessage += `• 💜 *+${totalZinthosWon.toLocaleString("pt-BR")} Zinthos*\n`;
+		}
+		if (totalTicketsWon > 0) {
+			resultMessage += `• 🎫 *+${totalTicketsWon} Ticket${totalTicketsWon > 1 ? "s" : ""} de Waifus*\n`;
+		}
+		if (junkItemsWon.length > 0) {
+			resultMessage += `• 🗑️ *Lixo de Colecionador:* ${junkItemsWon.join(", ")}\n`;
 		}
 	} else {
 		const loseMsg =
@@ -586,6 +856,45 @@ async function slotsCommand(bot, message, args, group) {
 			goReply: message.origin,
 			mentions: mentionsList
 		}
+	});
+}
+
+/**
+ * Exibe a tabela de probabilidades, prêmios e regras do caça-coisas
+ */
+async function slotsHelpCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const sub = Array.isArray(args) && args.length > 0 ? args[0].toLowerCase() : "";
+	if (sub === "historico" || sub === "history" || sub === "meus") {
+		return await slotsPrizesCommand(bot, message, args, group);
+	}
+
+	const helpMessage = `🎰 *TABELA DE PROBABILIDADES E PRÊMIOS — CAÇA-COISAS* 🎰
+
+🎯 *Probabilidades por Giro:*
+• 🏆 *Jackpot (3 símbolos iguais):* 1% (1 em 100 giros)
+• 💎 *Jackpot Lendário (3x 💎):* 0,1% (1 em 1.000 giros) — *TRIPLICA O PRÊMIO!*
+• 🥈 *Vitória Parcial (2 símbolos iguais):* 27% — *Ganha 20% do prêmio numérico sorteado*
+• ❌ *Derrota (3 diferentes):* 72%
+
+🎁 *Tabela de Prêmios por Vitória:*
+• 🗑️ *10%* — Lixo (1 item inútil de colecionador)
+• 🪙 *20%* — 10 a 80 Moedinhas do Slots
+• 🎣 *20%* — 5 a 25 Iscas de Pesca + 1 Buff Aleatório
+• 🎣 *15%* — 15 a 50 Iscas de Pesca + 2 a 5 Buffs Aleatórios (com descrição de efeitos)
+• 🌾 *20%* — 300 a 2.500 Moedas do Jardim + 1 a 5 Sacolas do Coveiro
+• 💜 *15%* — 2.100 a 7.000 Zinthos + 3 Tickets de Waifus
+• 💜 *10%* — 5.600 a 10.500 Zinthos + 5 Tickets de Waifus
+
+⚙️ *Regras e Funcionamento:*
+• 🪙 *Custo:* 1 moedinha por giro.
+• ⏳ *Recarga passiva:* 1 moedinha a cada 2 minutos (acumula até 5 passivas).
+• 🥈 *Vitória Parcial (2 símbolos):* Concede 20% de moedas, iscas, moedas do jardim ou zinthos (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
+• 📜 Para consultar seu histórico de prêmios pessoais: \`!slots-historico\` ou \`!slots-premios historico\``;
+
+	return new ReturnMessage({
+		chatId,
+		content: helpMessage
 	});
 }
 
@@ -725,10 +1034,18 @@ const commands = [
 	}),
 	new Command({
 		name: "slots-premios",
-		description: "Lista seus prêmios do caça-coisas",
+		description: "Mostra tabela de prêmios e probabilidades do caça-coisas",
+		category: "jogos",
+		cooldown: 5,
+		reactions: { after: "🏆", error: "❌" },
+		method: slotsHelpCommand
+	}),
+	new Command({
+		name: "slots-historico",
+		description: "Lista seus prêmios conquistados no caça-coisas",
 		category: "jogos",
 		cooldown: 10,
-		reactions: { after: "🏆", error: "❌" },
+		reactions: { after: "📜", error: "❌" },
 		method: slotsPrizesCommand
 	}),
 	new Command({
@@ -755,8 +1072,14 @@ const helper = {
 		},
 		{
 			cmd: "!slots-premios",
-			desc: "Exibe a sua coleção de prêmios conquistados no caça-níqueis",
+			desc: "Mostra a tabela de probabilidades, prêmios e regras do caça-coisas",
 			usage: ["!slots-premios"],
+			category: "jogos"
+		},
+		{
+			cmd: "!slots-historico",
+			desc: "Exibe a sua coleção de prêmios conquistados no caça-níqueis",
+			usage: ["!slots-historico", "!slots-premios historico"],
 			category: "jogos"
 		},
 		{
