@@ -1,4 +1,5 @@
 const Redis = require("ioredis");
+const cron = require("node-cron");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const { safeJsonParse } = require("../utils/JsonUtils");
@@ -136,6 +137,18 @@ class CacheManager {
 
 		// Start vacuum timer (every 6 hours)
 		this.vacuumTimer = setInterval(() => this.runVacuum(), 6 * 60 * 60 * 1000);
+
+		// Scheduled weekly full VACUUM on Tuesdays at 04:15 BRT
+		this.weeklyVacuumJob = cron.schedule(
+			"15 4 * * 2",
+			async () => {
+				await this.runFullVacuum();
+			},
+			{
+				scheduled: true,
+				timezone: "America/Sao_Paulo"
+			}
+		);
 
 		// Setup shutdown hook
 		this.setupShutdown();
@@ -315,9 +328,23 @@ class CacheManager {
 	async runVacuum() {
 		try {
 			this.logger.info("CacheManager: Running scheduled vacuum (incremental)...");
-			await this.database.dbRun(this.DB_NAME, "PRAGMA incremental_vacuum(5000)");
+			await this.database.dbRun(this.DB_NAME, "PRAGMA incremental_vacuum");
 		} catch (e) {
 			this.logger.error("CacheManager: Error during scheduled vacuum:", e);
+		}
+	}
+
+	/**
+	 * Run weekly full vacuum and truncate WAL
+	 */
+	async runFullVacuum() {
+		try {
+			this.logger.info("CacheManager: Running weekly full VACUUM and WAL truncate...");
+			await this.database.dbRun(this.DB_NAME, "VACUUM");
+			await this.database.dbRun(this.DB_NAME, "PRAGMA wal_checkpoint(TRUNCATE)");
+			this.logger.info("CacheManager: Weekly full VACUUM completed successfully.");
+		} catch (e) {
+			this.logger.error("CacheManager: Error during full VACUUM:", e);
 		}
 	}
 
