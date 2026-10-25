@@ -466,7 +466,8 @@ Interações cômicas automáticas do bot.
 | `media_stats.db` | `comfy_stats`, `speech_transcription_stats`, `speech_generation_stats` | Uso de geração de imagem, transcrição e síntese de voz (com `api_user`) |
 | `bonsai_stats.db` | `bonsai_stats` | Uso de geração de imagem Bonsai SDXL (com `api_user`) |
 | `files.db` | `managed_files` | Arquivos gerenciados pelo FileManager |
-| `lists.db` | `user_lists` | Listas criadas por usuários nos grupos |
+| `lists_v2.db` | `lists`, `list_items`, `list_members`, `list_messages` | Listas de itens/compras e pessoas com checklist e rastreamento de mensagens |
+| `lists.db` | `user_lists` | Listas legadas criadas por usuários nos grupos (migrado para `lists_v2.db`) |
 | `lembretes.db` | `lembretes` | Lembretes agendados por usuário |
 | `greeted_users.db` | `greeted_users` | Controle de saudação (evita repetição) |
 | `skip_groups.db` | `skipped_groups` | Grupos ignorados onde o bot não participa ou excluídos de envios |

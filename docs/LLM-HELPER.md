@@ -621,37 +621,61 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `ListCommands.js`
-**Sobre:** Criação e gerenciamento de listas interativas e votações no grupo
+**Sobre:** Criação e gerenciamento de listas interativas de itens/compras e listas de membros no grupo
 
-**Tags:** `listas,lista,compras,tarefas,afazeres,votacao,organizacao`
+**Tags:** `listas,lista,compras,tarefas,afazeres,mercado,checklist,votacao,organizacao`
 
-**Detalhes Técnicos:** Gerencia listas compartilhadas com itens marcáveis, adição dinâmica e suporte a reações por emoji
+**Detalhes Técnicos:** Gerencia listas com itens marcáveis, adição dinâmica por citação de mensagens, zero spam com edições in-place e suporte a reações por emoji
 
 #### Comandos:
-- **`!listas`**: Mostra todas as listas ativas no grupo
+- **`!listas`**: Mostra todas as listas ativas no grupo (Itens e Pessoas)
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!listas`
-- **`!lc`**: Cria uma nova lista simples
+  - *Uso/Exemplos:* `!listas`, `!ll`
+- **`!lista`**: Exibe detalhes completos de uma lista específica
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!lc Mercado (arroz, feijao, carne)`
-- **`!lct`**: Cria uma lista de tarefas interativa
+  - *Uso/Exemplos:* `!lista compras`, `!lista fut`
+- **`!lci`**: Cria uma nova lista de itens/compras interativa com checklist
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!lct Preparativos da festa`
-- **`!ld`**: Deleta uma lista existente
+  - *Uso/Exemplos:* `!lci compras Mercado da Semana`, `!lci tarefas`
+- **`!add`**: Adiciona itens a uma lista (suporta citação de mensagens e separação por vírgula ou Enter)
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!ld 1`
-- **`!le`**: Exibe os itens detalhados de uma lista
+  - *Uso/Exemplos:* `!add compras Arroz, Feijão, Macarrão`, `!add Leite, Café (respondendo à lista)`, `!add compras (respondendo a qualquer mensagem com itens)`
+- **`!check`**: Marca item pendente como concluído e o move para o final da lista
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!le 1`
-- **`!ls`**: Adiciona um novo item a uma lista existente
+  - *Uso/Exemplos:* `!check compras 1`, `!check 2 (respondendo à lista)`
+- **`!uncheck`**: Desmarca um item concluído e o devolve para os pendentes
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!ls 1 Comprar refrigerante`
-- **`!lt`**: Alterna a marcação de conclusão de um item da lista
+  - *Uso/Exemplos:* `!uncheck compras café`, `!uncheck café`
+- **`!rem`**: Remove um item específico da lista
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!lt 1 2`
-- **`!lr`**: Remove um item específico de uma lista
+  - *Uso/Exemplos:* `!rem compras 1`, `!rem 2 (respondendo à lista)`
+- **`!limpar`**: Esvazia todos os itens de uma lista aberta
   - *Categoria:* listas
-  - *Uso/Exemplos:* `!lr 1 2`
+  - *Uso/Exemplos:* `!limpar compras`, `!limpar (respondendo à lista)`
+- **`!lp`**: Define modo de permissão da lista (todos ou admin)
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lp compras admin`, `!lp compras todos`
+- **`!lc`**: Cria uma nova lista clássica de pessoas
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lc fut`, `!lc churrasco festa`
+- **`!lct`**: Cria uma lista de pessoas com título
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lct fut Pelada de Quinta`
+- **`!le`**: Entra em uma lista de pessoas
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!le fut`
+- **`!ls`**: Sai de uma lista de pessoas
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!ls fut`
+- **`!lt`**: Altera o título de exibição de uma lista
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lt compras Feira de Sábado`
+- **`!lr`**: Remove um participante de uma lista (somente administradores)
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lr fut 5511999999999`
+- **`!ld`**: Exclui uma lista definitivamente
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!ld compras`, `!ld lista1 lista2`
 
 ---
 
