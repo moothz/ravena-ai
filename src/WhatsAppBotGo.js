@@ -262,17 +262,17 @@ class WhatsAppBotGo {
 		if (process.env.DISABLE_ACTIVITY === "true") return;
 		const agora = new Date();
 		const proximaExecucao = new Date(agora);
-		proximaExecucao.setHours(3, 0, 0, 0); // 3 AM
+		proximaExecucao.setHours(4, 30, 0, 0); // 04:30 AM
 
-		// Se já passou das 3 AM hoje, agenda para amanhã
+		// Se já passou das 04:30 AM hoje, agenda para amanhã
 		if (agora > proximaExecucao) {
 			proximaExecucao.setDate(proximaExecucao.getDate() + 1);
 		}
 
 		let tempoAteExecucao = proximaExecucao.getTime() - agora.getTime();
 
-		// Adiciona delay aleatório entre 0 e 30 minutos (0 a 1800000 ms)
-		const delayAleatorio = Math.floor(Math.random() * 1800000);
+		// Adiciona delay aleatório entre 0 e 10 minutos (0 a 600000 ms)
+		const delayAleatorio = Math.floor(Math.random() * 600000);
 		tempoAteExecucao += delayAleatorio;
 
 		this.logger.info(

@@ -41,9 +41,9 @@ function start() {
 	// Run once on startup to ensure we are up to date
 	runUpdate().catch((err) => logger.error("Initial yt-dlp update failed", err));
 
-	// Schedule to run daily at 04:00 AM (usually a low traffic time)
+	// Schedule to run daily at 05:00 AM (low traffic time)
 	cron.schedule(
-		"0 4 * * *",
+		"0 5 * * *",
 		() => {
 			logger.info("Cron job triggered: Running nightly yt-dlp update.");
 			runUpdate().catch((err) => {
