@@ -410,6 +410,7 @@ function saveSearchSession(botMsgId, chatId, sessionData) {
 	cleanExpiredSearchSessions();
 	const session = {
 		...sessionData,
+		botMsgId: botMsgId || sessionData?.botMsgId,
 		createdAt: Date.now()
 	};
 	if (botMsgId) {
@@ -418,6 +419,7 @@ function saveSearchSession(botMsgId, chatId, sessionData) {
 	if (chatId) {
 		searchSessions.set(`chat:${chatId}`, session);
 	}
+	return session;
 }
 
 function getSearchSession(msgId, chatId) {
@@ -432,9 +434,131 @@ function getSearchSession(msgId, chatId) {
 }
 
 /**
+ * Converte string de duração ("MM:SS" ou "HH:MM:SS") para segundos inteiros
+ */
+function parseDurationToSeconds(durationStr) {
+	if (!durationStr || typeof durationStr !== "string") return 0;
+	const parts = durationStr
+		.trim()
+		.split(":")
+		.map((p) => parseInt(p, 10));
+	if (parts.some((p) => isNaN(p))) return 0;
+
+	if (parts.length === 3) {
+		return parts[0] * 3600 + parts[1] * 60 + parts[2];
+	} else if (parts.length === 2) {
+		return parts[0] * 60 + parts[1];
+	} else if (parts.length === 1) {
+		return parts[0];
+	}
+	return 0;
+}
+
+/**
+ * Seleciona o índice do vídeo padrão:
+ * - O mais longo da lista com duração <= 5 minutos (300 segundos)
+ * - Se não houver nenhum <= 5 min, pega o menor da lista
+ */
+function selectDefaultVideoIndex(items) {
+	if (!items || items.length === 0) return 0;
+
+	const withDuration = items.map((item, index) => ({
+		index,
+		seconds: parseDurationToSeconds(item.duration)
+	}));
+
+	const underFiveMins = withDuration.filter((it) => it.seconds > 0 && it.seconds <= 300);
+	if (underFiveMins.length > 0) {
+		underFiveMins.sort((a, b) => b.seconds - a.seconds);
+		return underFiveMins[0].index;
+	}
+
+	const withValid = withDuration.filter((it) => it.seconds > 0);
+	if (withValid.length > 0) {
+		withValid.sort((a, b) => a.seconds - b.seconds);
+		return withValid[0].index;
+	}
+
+	return 0;
+}
+
+/**
+ * Monta o texto da lista de busca com formatação de status (⏳ em andamento, ✅ concluído)
+ */
+function buildSearchListText(session) {
+	const {
+		query,
+		commandName,
+		prefix,
+		items = [],
+		inProgressIndex,
+		completedIndices = []
+	} = session;
+	let listText = `⏬ *rav-downloader* Buscando por _"${query}"_ no *YouTube* 🔍\n\nEncontrados:\n`;
+
+	items.forEach((v, idx) => {
+		const num = idx + 1;
+		const channel = v.channelTitle || "Canal";
+		const duration = v.duration ? ` (${v.duration})` : "";
+		const title = v.title || "Sem título";
+		const lineContent = `${num}. [${channel}] ${title}${duration}`;
+
+		if (idx === inProgressIndex) {
+			listText += `⏳ *${lineContent}*\n`;
+		} else if (completedIndices.includes(idx)) {
+			listText += `✅ *${lineContent}*\n`;
+		} else {
+			listText += `${lineContent}\n`;
+		}
+	});
+
+	const activeNum =
+		inProgressIndex !== null && inProgressIndex !== undefined ? inProgressIndex + 1 : 1;
+	const suggestedNum = activeNum === 1 ? 2 : 1;
+	const cmdPrefix = prefix || "!";
+	const cmd = commandName || "yt";
+
+	if (inProgressIndex !== null && inProgressIndex !== undefined) {
+		listText += `\nBaixando opção ${activeNum}! Para outra opção, reaja à esta mensagem com os emojis de numeros ou com *${cmdPrefix}${cmd} ${suggestedNum}*`;
+	} else {
+		listText += `\nPara baixar outra opção, reaja à esta mensagem com os emojis de numeros ou com *${cmdPrefix}${cmd} ${suggestedNum}*`;
+	}
+
+	return listText;
+}
+
+/**
+ * Atualiza via edição a mensagem da lista no WhatsApp
+ */
+async function updateSearchListMessage(bot, chatId, session) {
+	if (!bot || !chatId || !session?.botMsgId) return;
+	try {
+		const newText = buildSearchListText(session);
+		if (typeof bot.editMessage === "function") {
+			await bot.editMessage(chatId, session.botMsgId, newText);
+		}
+	} catch (err) {
+		logger.debug(
+			`[updateSearchListMessage] Falha ao editar mensagem ${session.botMsgId}: ${err.message}`
+		);
+	}
+}
+
+/**
  * Executa o download de um vídeo ou áudio do YouTube e entrega formatado com links S3
  */
-async function executeYoutubeDownload(bot, chatId, group, message, item, isAudioOnly, wantLyrics) {
+async function executeYoutubeDownload(
+	bot,
+	chatId,
+	group,
+	message,
+	item,
+	isAudioOnly,
+	wantLyrics,
+	session = null,
+	itemIndex = null,
+	videoHD = false
+) {
 	const author = message.author || "Desconhecido";
 	const videoId = item.id;
 
@@ -442,6 +566,12 @@ async function executeYoutubeDownload(bot, chatId, group, message, item, isAudio
 		return new Promise((resolve) => {
 			YoutubeDownloader.baixarMusicaYoutube(videoId, author, async (error, result) => {
 				if (error) {
+					if (session && itemIndex !== null && itemIndex !== undefined) {
+						if (session.inProgressIndex === itemIndex) {
+							session.inProgressIndex = null;
+						}
+						await updateSearchListMessage(bot, chatId, session);
+					}
 					await bot.sendReturnMessages(
 						new ReturnMessage({
 							chatId,
@@ -504,6 +634,17 @@ async function executeYoutubeDownload(bot, chatId, group, message, item, isAudio
 						}),
 						group
 					);
+
+					if (session && itemIndex !== null && itemIndex !== undefined) {
+						if (!session.completedIndices) session.completedIndices = [];
+						if (!session.completedIndices.includes(itemIndex)) {
+							session.completedIndices.push(itemIndex);
+						}
+						if (session.inProgressIndex === itemIndex) {
+							session.inProgressIndex = null;
+						}
+						await updateSearchListMessage(bot, chatId, session);
+					}
 				} catch (sendError) {
 					logger.error("Erro ao enviar áudio do YouTube:", sendError);
 					await bot.sendReturnMessages(
@@ -516,8 +657,14 @@ async function executeYoutubeDownload(bot, chatId, group, message, item, isAudio
 		});
 	} else if (typeof YoutubeDownloader.baixarVideoYoutube === "function") {
 		return new Promise((resolve) => {
-			YoutubeDownloader.baixarVideoYoutube(videoId, author, false, async (error, result) => {
+			YoutubeDownloader.baixarVideoYoutube(videoId, author, videoHD, async (error, result) => {
 				if (error) {
+					if (session && itemIndex !== null && itemIndex !== undefined) {
+						if (session.inProgressIndex === itemIndex) {
+							session.inProgressIndex = null;
+						}
+						await updateSearchListMessage(bot, chatId, session);
+					}
 					await bot.sendReturnMessages(
 						new ReturnMessage({
 							chatId,
@@ -576,6 +723,17 @@ async function executeYoutubeDownload(bot, chatId, group, message, item, isAudio
 						}),
 						group
 					);
+
+					if (session && itemIndex !== null && itemIndex !== undefined) {
+						if (!session.completedIndices) session.completedIndices = [];
+						if (!session.completedIndices.includes(itemIndex)) {
+							session.completedIndices.push(itemIndex);
+						}
+						if (session.inProgressIndex === itemIndex) {
+							session.inProgressIndex = null;
+						}
+						await updateSearchListMessage(bot, chatId, session);
+					}
 				} catch (sendError) {
 					logger.error("Erro ao enviar vídeo do YouTube:", sendError);
 					let linkFallback = null;
@@ -630,6 +788,10 @@ async function processYoutubeSearchReaction(bot, message, args, group) {
 		}
 	} catch {}
 
+	// Marca o item como em andamento e atualiza a mensagem da lista
+	session.inProgressIndex = emojiIndex;
+	await updateSearchListMessage(bot, session.chatId, session);
+
 	await executeYoutubeDownload(
 		bot,
 		session.chatId,
@@ -637,7 +799,10 @@ async function processYoutubeSearchReaction(bot, message, args, group) {
 		message,
 		item,
 		session.isAudioOnly,
-		session.wantLyrics
+		session.wantLyrics,
+		session,
+		emojiIndex,
+		session.videoHD || false
 	);
 	return true;
 }
@@ -700,9 +865,14 @@ async function downloadHandler(bot, message, args, group) {
 		args.includes("-musica") ||
 		// Se for SoundCloud e for audio, também busca letra
 		(commandName.includes("sc") && isAudioOnly);
+	const isHD = args.includes("-hd") || args.includes("hd") || commandName.includes("hd");
 
 	// Se o comando for apenas um número de 1 a 9, verifica se é seleção de opção de busca
-	if (args.length === 1 && /^[1-9]$/.test(args[0])) {
+	const isNumericChoice =
+		/^[1-9]$/.test(args[0]) &&
+		(args.length === 1 || (args.length === 2 && (args[1] === "-hd" || args[1] === "hd")));
+
+	if (isNumericChoice) {
 		let quotedId = null;
 		if (typeof message.origin?.getQuotedMessage === "function") {
 			try {
@@ -720,6 +890,9 @@ async function downloadHandler(bot, message, args, group) {
 						await message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
 					}
 				} catch {}
+				session.inProgressIndex = idx;
+				await updateSearchListMessage(bot, chatId, session);
+
 				await executeYoutubeDownload(
 					bot,
 					chatId,
@@ -727,7 +900,10 @@ async function downloadHandler(bot, message, args, group) {
 					message,
 					item,
 					session.isAudioOnly,
-					session.wantLyrics
+					session.wantLyrics,
+					session,
+					idx,
+					session.videoHD || isHD
 				);
 				return [];
 			}
@@ -751,7 +927,10 @@ async function downloadHandler(bot, message, args, group) {
 				message,
 				{ id: videoId, title: "Vídeo do YouTube" },
 				isAudioOnly,
-				wantLyrics
+				wantLyrics,
+				null,
+				null,
+				isHD
 			);
 			return [];
 		}
@@ -761,7 +940,8 @@ async function downloadHandler(bot, message, args, group) {
 	// Se não tem URL, busca interativa no YouTube (1 mensagem com lista de até 9)
 	// ==============================
 	if (!url) {
-		const query = input ? input.trim() : "";
+		const rawQuery = input ? input.trim() : "";
+		const query = rawQuery.replace(/\b-?hd\b/gi, "").trim();
 		if (query && query.length > 0) {
 			try {
 				const searchResults = await yts.GetListByKeyword(query, false, 15);
@@ -775,14 +955,10 @@ async function downloadHandler(bot, message, args, group) {
 					});
 				}
 
-				let listText = `⏬ *rav-downloader* Buscando por _"${query}"_ no *YouTube* 🔍\n\nEncontrados:\n`;
 				const sessionItems = [];
-
-				videos.forEach((v, idx) => {
+				videos.forEach((v) => {
 					const channel = v.channelTitle || v.shortBylineText?.runs?.[0]?.text || "Canal";
-					const duration = v.length?.simpleText ? ` (${v.length.simpleText})` : "";
 					const title = v.title || "Sem título";
-					listText += `${idx + 1}. [${channel}] ${title}${duration}\n`;
 					sessionItems.push({
 						id: v.id,
 						title,
@@ -793,7 +969,23 @@ async function downloadHandler(bot, message, args, group) {
 				});
 
 				const invokedCmd = commandName || "yt";
-				listText += `\nBaixando opção 1! Para outra opção, reaja à esta mensagem com os emojis de numeros ou com *${bot.prefix}${invokedCmd} 2*`;
+				const chosenIdx = selectDefaultVideoIndex(sessionItems);
+
+				const sessionData = {
+					query,
+					commandName: invokedCmd,
+					prefix: bot.prefix || "!",
+					isAudioOnly,
+					wantLyrics,
+					videoHD: isHD,
+					author: message.author,
+					chatId,
+					items: sessionItems,
+					inProgressIndex: chosenIdx,
+					completedIndices: []
+				};
+
+				const listText = buildSearchListText(sessionData);
 
 				const sentMsgs = await bot.sendReturnMessages(
 					new ReturnMessage({
@@ -806,18 +998,11 @@ async function downloadHandler(bot, message, args, group) {
 				const sentMsgId =
 					sentMsgs?.[0]?.id?._serialized || sentMsgs?.[0]?.id?.id || sentMsgs?.[0]?.id;
 
-				saveSearchSession(sentMsgId, chatId, {
-					query,
-					commandName: invokedCmd,
-					isAudioOnly,
-					wantLyrics,
-					author: message.author,
-					chatId,
-					items: sessionItems
-				});
+				sessionData.botMsgId = sentMsgId;
+				saveSearchSession(sentMsgId, chatId, sessionData);
 
-				// Dispara imediatamente o download da Opção 1
-				const selectedItem = sessionItems[0];
+				// Dispara imediatamente o download da opção selecionada
+				const selectedItem = sessionItems[chosenIdx];
 				await executeYoutubeDownload(
 					bot,
 					chatId,
@@ -825,7 +1010,10 @@ async function downloadHandler(bot, message, args, group) {
 					message,
 					selectedItem,
 					isAudioOnly,
-					wantLyrics
+					wantLyrics,
+					sessionData,
+					chosenIdx,
+					isHD
 				);
 				return [];
 			} catch (searchError) {
@@ -1215,5 +1403,9 @@ module.exports = {
 	saveSearchSession,
 	getSearchSession,
 	executeYoutubeDownload,
-	processYoutubeSearchReaction
+	processYoutubeSearchReaction,
+	parseDurationToSeconds,
+	selectDefaultVideoIndex,
+	buildSearchListText,
+	updateSearchListMessage
 };

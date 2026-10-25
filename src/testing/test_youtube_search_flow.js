@@ -13,7 +13,10 @@ const {
 	saveSearchSession,
 	getSearchSession,
 	processYoutubeSearchReaction,
-	searchSessions
+	searchSessions,
+	parseDurationToSeconds,
+	selectDefaultVideoIndex,
+	buildSearchListText
 } = SocialMediaDownloader;
 
 async function runTests() {
@@ -47,7 +50,37 @@ async function runTests() {
 		});
 	};
 
-	// 1. Testa que a busca por keywords (!yt pudim) envia 1 única mensagem consolidada
+	// 0. Testes unitários de duração e seleção inteligente de vídeo
+	console.log("[Teste 0] Duração e seleção inteligente de vídeo...");
+	assert.strictEqual(parseDurationToSeconds("3:38"), 218);
+	assert.strictEqual(parseDurationToSeconds("1:05:10"), 3910);
+	assert.strictEqual(parseDurationToSeconds("45"), 45);
+
+	const itemsWithUnder5 = [
+		{ duration: "2:00" },
+		{ duration: "4:50" }, // 290s (mais longo <= 5 min)
+		{ duration: "1:30" },
+		{ duration: "8:00" }
+	];
+	assert.strictEqual(
+		selectDefaultVideoIndex(itemsWithUnder5),
+		1,
+		"Deve selecionar o mais longo com duração <= 5 min (290s)"
+	);
+
+	const itemsAllOver5 = [
+		{ duration: "12:00" },
+		{ duration: "6:15" }, // 375s (menor da lista)
+		{ duration: "18:30" }
+	];
+	assert.strictEqual(
+		selectDefaultVideoIndex(itemsAllOver5),
+		1,
+		"Se nenhum <= 5 min, deve selecionar o menor da lista"
+	);
+	console.log("✓ Teste 0 passou: parseDurationToSeconds e selectDefaultVideoIndex validados");
+
+	// 1. Testa que a busca por keywords (!yt pudim) envia 1 única mensagem consolidada com seleção inteligente
 	console.log("[Teste 1] Busca por palavra-chave (!yt pudim)...");
 	const msgYt = createMessage({
 		content: "!yt pudim",
@@ -61,13 +94,14 @@ async function runTests() {
 	});
 
 	bot.resetCapture();
+	bot.editedMessages = [];
 	await downloadHandler(bot, msgYt, ["pudim"], null);
 
 	const captured = bot.capturedMessages;
 	console.log(`Mensagens capturadas para !yt pudim: ${captured.length}`);
 	assert.ok(
 		captured.length >= 2,
-		"Deve ter capturado a mensagem consolidada + a entrega da opção 1"
+		"Deve ter capturado a mensagem consolidada + a entrega da opção selecionada"
 	);
 
 	const searchMsg = captured[0];
@@ -77,18 +111,25 @@ async function runTests() {
 	);
 	assert.ok(searchMsg.content.includes("Encontrados:"), "Deve conter a seção 'Encontrados:'");
 	assert.ok(
-		searchMsg.content.includes("1. ["),
-		"Deve listar os itens no formato '1. [Canal] Título'"
+		searchMsg.content.includes("⏳ *"),
+		"Linha selecionada inicialmente deve estar com ⏳ e em negrito"
 	);
 	assert.ok(
-		searchMsg.content.includes(
-			"Baixando opção 1! Para outra opção, reaja à esta mensagem com os emojis de numeros ou com *!yt 2*"
-		),
-		"Rodapé deve instruir download da opção 1 e sugerir *!yt 2*"
+		/Baixando opção \d+!/.test(searchMsg.content),
+		"Rodapé deve instruir download da opção escolhida"
 	);
-	assert.ok(baixarVideoChamadoCom, "Opção 1 deve ter sido baixada automaticamente");
+	assert.ok(baixarVideoChamadoCom, "Opção selecionada deve ter sido baixada automaticamente");
+	assert.ok(
+		bot.editedMessages.length >= 1,
+		"Mensagem da lista deve ter sido editada após conclusão do download"
+	);
+	const lastEditMsg = bot.editedMessages[bot.editedMessages.length - 1];
+	assert.ok(
+		lastEditMsg.text.includes("✅ *"),
+		"Mensagem editada deve conter ✅ e negrito na linha concluída"
+	);
 	console.log(
-		"✓ Teste 1 passou: Busca consolidada em mensagem única com 9 itens e download automático da opção 1"
+		"✓ Teste 1 passou: Busca consolidada com seleção inteligente, ⏳ inicial e edição com ✅ após download"
 	);
 
 	// 2. Testa sugestão dinâmica de comando para !musica
@@ -165,6 +206,7 @@ async function runTests() {
 		wantLyrics: false,
 		author: "5511999999999@s.whatsapp.net",
 		chatId: "123456@g.us",
+		botMsgId: fakeSessionId,
 		items: fakeItems
 	});
 
@@ -183,11 +225,16 @@ async function runTests() {
 	});
 
 	bot.resetCapture();
+	bot.editedMessages = [];
 	baixarVideoChamadoCom = null;
 	await downloadHandler(bot, msgOptionCmd, ["2"], null);
 	assert.ok(baixarVideoChamadoCom, "Deve disparar download para opção 2");
 	assert.strictEqual(baixarVideoChamadoCom.idVideo, "id2", "ID baixado deve ser 'id2'");
-	console.log("✓ Teste 4 passou: Seleção de opção via !yt 2 processada para item 'id2'");
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("✅ *2.")),
+		"Deve editar mensagem com ✅ *2. ao concluir download via comando"
+	);
+	console.log("✓ Teste 4 passou: Seleção de opção via !yt 2 processada e editada para item 'id2'");
 
 	// 5. Testa seleção via reação numérica (2️⃣)
 	console.log("[Teste 5] Troca de opção via reação numérica (2️⃣)...");
@@ -207,6 +254,7 @@ async function runTests() {
 	};
 
 	bot.resetCapture();
+	bot.editedMessages = [];
 	baixarVideoChamadoCom = null;
 	const reactionResult = await processYoutubeSearchReaction(bot, reactionMessage, [], null);
 	assert.strictEqual(reactionResult, true, "Reação 2️⃣ deve ser reconhecida e tratada");
@@ -218,7 +266,39 @@ async function runTests() {
 	);
 	assert.ok(baixarVideoChamadoCom, "Reação deve disparar download do vídeo");
 	assert.strictEqual(baixarVideoChamadoCom.idVideo, "id2", "ID baixado pela reação deve ser 'id2'");
-	console.log("✓ Teste 5 passou: Reação 2️⃣ tratada com sucesso e confirmada com ⌛️");
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("⏳ *2.")),
+		"Deve editar mensagem com ⏳ *2. ao iniciar reação"
+	);
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("✅ *2.")),
+		"Deve editar mensagem com ✅ *2. ao concluir download da reação"
+	);
+	console.log(
+		"✓ Teste 5 passou: Reação 2️⃣ tratada com sucesso, confirmada com ⌛️ e editada com ⏳ e ✅"
+	);
+
+	// 6. Testa flag -hd e formato mínimo 720p
+	console.log("[Teste 6] Flag -hd...");
+	const msgHd = createMessage({
+		content: "!yt 2 -hd",
+		group: "123456@g.us",
+		author: "5511999999999@s.whatsapp.net",
+		origin: {
+			body: "!yt 2 -hd",
+			getQuotedMessage: async () => ({ id: fakeSessionId }),
+			react: async () => {}
+		}
+	});
+	baixarVideoChamadoCom = null;
+	await downloadHandler(bot, msgHd, ["2", "-hd"], null);
+	assert.ok(baixarVideoChamadoCom, "Deve disparar download");
+	assert.strictEqual(
+		baixarVideoChamadoCom.videoHD,
+		true,
+		"videoHD deve ser true quando -hd especificado"
+	);
+	console.log("✓ Teste 6 passou: Opção -hd repassada com sucesso para o downloader");
 
 	// Limpeza do arquivo simulado
 	if (fs.existsSync(fakeMediaFile)) fs.unlinkSync(fakeMediaFile);

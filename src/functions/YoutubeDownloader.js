@@ -325,9 +325,13 @@ async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, ca
 						null
 					);
 				} else {
+					const formatSelector = videoHD
+						? "(bv*[height>=1080][vcodec~='^(avc|h264)']+ba) / (bv*[height>=1080]+ba) / (bv*[height>=720][vcodec~='^(avc|h264)']+ba) / (bv*[height>=720]+ba) / (bv*+ba/b)"
+						: "(bv*[height>=720][vcodec~='^(avc|h264)']+ba) / (bv*[height>=720]+ba) / (bv*[vcodec~='^(avc|h264)']+ba) / (bv*+ba/b)";
+
 					downloadWithRetry(urlSafe, {
 						o: destinoVideo,
-						f: "(bv*[vcodec~='^(avc|h264)'][filesize<60M]+ba) / (bv*+ba/b)",
+						f: formatSelector,
 						remuxVideo: "mp4",
 						audioFormat: "aac",
 						ffmpegLocation: process.env.FFMPEG_PATH,
