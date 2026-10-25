@@ -789,7 +789,9 @@ class StreamSystem {
 					participant.phoneNumber
 				];
 				const isIgnored = userIdentifiers.some(
-					(id) => id && ignoredUsers.some((iU) => id.startsWith(iU))
+					(id) =>
+						(id && ignoredUsers.some((iU) => id.startsWith(iU))) ||
+						(id && (this.database?.isGlobalIgnored?.(id) || bot?.database?.isGlobalIgnored?.(id)))
 				);
 				return !isIgnored;
 			});

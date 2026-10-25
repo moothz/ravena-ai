@@ -390,8 +390,12 @@ async function handleSortear(bot, message, args, group) {
 			const ignoredUsers = group.ignoredUsers || [];
 			const participants =
 				chat.participants?.filter((p) => {
-					const id = p.id?._serialized;
-					return id && !ignoredUsers.some((ignored) => id.startsWith(ignored));
+					const id = p.id?._serialized || p.phoneNumber || p.lid;
+					return (
+						id &&
+						!ignoredUsers.some((ignored) => id.startsWith(ignored)) &&
+						!bot?.database?.isGlobalIgnored?.(id)
+					);
 				}) ?? [];
 
 			if (participants.length === 0) {

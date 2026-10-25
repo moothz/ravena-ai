@@ -6,6 +6,7 @@ const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
+const PhoneUtils = require("../utils/PhoneUtils");
 
 const logger = new Logger("group-commands");
 const database = Database.getInstance();
@@ -52,9 +53,11 @@ async function mentionAllMembers(bot, message, args, group) {
 					participant.phoneNumber
 				];
 
-				// Verifica se ALGUM (some) dos identificadores está na lista de ignorados
+				// Verifica se ALGUM (some) dos identificadores está na lista de ignorados local ou global
 				const isIgnored = userIdentifiers.some(
-					(id) => id && ignoredUsers.some((iU) => id.startsWith(iU))
+					(id) =>
+						(id && ignoredUsers.some((iU) => id.startsWith(iU))) ||
+						(id && (bot?.database || database)?.isGlobalIgnored?.(id))
 				);
 
 				// Retorna true apenas se NÃO for ignorado
@@ -145,84 +148,153 @@ async function mentionAllMembers(bot, message, args, group) {
  */
 async function toggleIgnore(bot, message, args, group) {
 	try {
-		if (!message.group) {
-			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+		const db = bot?.database || database;
+		const rawIdentifiers = [];
+
+		if (message.author) rawIdentifiers.push(message.author);
+		if (message.authorAlt) rawIdentifiers.push(message.authorAlt);
+		if (message.sender) rawIdentifiers.push(message.sender);
+		if (message.senderAlt) rawIdentifiers.push(message.senderAlt);
+		if (message.origin?.key?.participant) rawIdentifiers.push(message.origin.key.participant);
+		if (message.origin?.key?.participantAlt) rawIdentifiers.push(message.origin.key.participantAlt);
+
+		// Se estiver em um grupo, busca detalhes dos participantes no chat para capturar o LID daquele grupo
+		let chat = null;
+		if (message.origin?.getChat && typeof message.origin.getChat === "function") {
+			try {
+				chat = await message.origin.getChat();
+			} catch {}
+		}
+		if (!chat && message.group && bot?.client?.getChatDetails) {
+			try {
+				chat = await bot.client.getChatDetails(message.group);
+			} catch {}
+		}
+
+		if (chat?.participants && Array.isArray(chat.participants)) {
+			const cleanRaw = rawIdentifiers.map((id) => PhoneUtils.cleanPhone(id)).filter(Boolean);
+			const matchingParticipant = chat.participants.find((p) => {
+				const pJid = p.id?._serialized || p.JID;
+				const pPhone = p.phoneNumber || p.PhoneNumber;
+				const pLid = p.lid || p.LID;
+
+				return (
+					(pJid && (rawIdentifiers.includes(pJid) || cleanRaw.some((c) => pJid.includes(c)))) ||
+					(pPhone && cleanRaw.includes(PhoneUtils.cleanPhone(pPhone))) ||
+					(pLid &&
+						(rawIdentifiers.includes(pLid) || cleanRaw.includes(PhoneUtils.cleanPhone(pLid))))
+				);
 			});
-		}
 
-		// Inicializa array de usuários ignorados se não existir
-		if (!group.ignoredUsers) {
-			group.ignoredUsers = [];
-		}
-
-		let numerosPraIgnorar = [];
-
-		// Rainha dos fallback
-		if (message.author) {
-			numerosPraIgnorar.push(message.author.split("@")[0]);
-		}
-
-		if (message.authorAlt) {
-			numerosPraIgnorar.push(message.authorAlt.split("@")[0]);
-		}
-
-		if (message.sender) {
-			numerosPraIgnorar.push(message.sender.split("@")[0]);
-		}
-
-		if (message.senderAlt) {
-			numerosPraIgnorar.push(message.senderAlt.split("@")[0]);
-		}
-
-		if (message.origin) {
-			if (message.origin.key.participant) {
-				numerosPraIgnorar.push(message.origin.key.participant.split("@")[0]);
-			}
-			if (message.origin.key.participantAlt) {
-				numerosPraIgnorar.push(message.origin.key.participant.split("@")[0]);
+			if (matchingParticipant) {
+				if (matchingParticipant.id?._serialized)
+					rawIdentifiers.push(matchingParticipant.id._serialized);
+				if (matchingParticipant.phoneNumber) rawIdentifiers.push(matchingParticipant.phoneNumber);
+				if (matchingParticipant.lid) rawIdentifiers.push(matchingParticipant.lid);
 			}
 		}
 
-		numerosPraIgnorar = [...new Set(numerosPraIgnorar)];
-		const jaIgnorado = numerosPraIgnorar.some((numero) => group.ignoredUsers.includes(numero));
+		// Consulta o cache de LID <-> PN do bot caso disponível
+		if (bot?.client) {
+			for (const raw of [...rawIdentifiers]) {
+				const clean = PhoneUtils.cleanPhone(raw);
+				if (raw.includes("@lid") || (clean && clean.length > 14)) {
+					const pn = bot.client.getPnFromLid ? bot.client.getPnFromLid(clean, message.group) : null;
+					if (pn) rawIdentifiers.push(pn);
+				}
+				if (raw.includes("@s.whatsapp.net") || (clean && clean.length <= 13)) {
+					const lid = bot.client.getLidFromPn
+						? bot.client.getLidFromPn(clean, message.group)
+						: null;
+					if (lid) rawIdentifiers.push(lid);
+				}
+			}
+		}
+
+		// Normaliza todos os identificadores (dígitos limpos e com sufixos)
+		const allIds = new Set();
+		let primaryPhone = null;
+		for (const id of rawIdentifiers) {
+			if (!id) continue;
+			const strId = String(id).trim();
+			if (!strId) continue;
+			allIds.add(strId);
+			const clean = PhoneUtils.cleanPhone(strId);
+			if (clean) {
+				allIds.add(clean);
+				if (strId.includes("@lid")) {
+					allIds.add(`${clean}@lid`);
+				} else {
+					allIds.add(`${clean}@s.whatsapp.net`);
+				}
+				if (clean.length <= 13 && !primaryPhone) {
+					primaryPhone = clean;
+				}
+			}
+		}
+
+		const primaryUserId = primaryPhone || PhoneUtils.cleanPhone(message.author) || message.author;
+		const normalizedList = Array.from(allIds);
+
+		// Verifica se o usuário já está ignorado globalmente ou localmente no grupo
+		const jaIgnoradoGlobal = normalizedList.some((id) => db?.isGlobalIgnored?.(id));
+		const jaIgnoradoGrupo =
+			group?.ignoredUsers &&
+			Array.isArray(group.ignoredUsers) &&
+			normalizedList.some(
+				(id) =>
+					group.ignoredUsers.includes(id) || group.ignoredUsers.includes(PhoneUtils.cleanPhone(id))
+			);
+		const jaIgnorado = jaIgnoradoGlobal || jaIgnoradoGrupo;
 
 		logger.info(
-			`Status de ignorar alternado para usuário '${numerosPraIgnorar.join("/")}' no grupo ${message.group}`
+			`Status de ignorar (Global) alternado para usuário '${primaryUserId}' (IDs: ${normalizedList.join(", ")}) no chat ${message.group || message.author}`
 		);
 
 		if (jaIgnorado) {
-			logger.debug(
-				`[toggleIgnore][${group.name}] Removendo dos ignorados: '${numerosPraIgnorar.join(",")}'`
-			);
-			// Remove todos os "números" do usuário da lista de ignorados
-			group.ignoredUsers = group.ignoredUsers.filter(
-				(ignoredUser) => !numerosPraIgnorar.includes(ignoredUser)
-			);
-			await database.saveGroup(group);
+			logger.debug(`[toggleIgnore] Removendo dos ignorados globais: '${normalizedList.join(",")}'`);
+			await db?.removeGlobalIgnored?.(normalizedList, primaryUserId);
+
+			if (group) {
+				if (!group.ignoredUsers) group.ignoredUsers = [];
+				group.ignoredUsers = group.ignoredUsers.filter(
+					(ignoredUser) =>
+						!normalizedList.some(
+							(id) => id === ignoredUser || PhoneUtils.cleanPhone(id) === ignoredUser
+						)
+				);
+				await db?.saveGroup?.(group);
+			}
 
 			return new ReturnMessage({
-				chatId: message.group,
-				content: "Você agora será *incluído* nas menções de grupo.",
+				chatId: message.group ?? message.author,
+				content: "Você agora será *incluído* nas menções da Ravena.",
 				options: {
-					quotedMessageId: message.origin.id._serialized,
+					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
 				}
 			});
 		} else {
-			// Adiciona todos os "números" do usuário à lista de ignorados
 			logger.debug(
-				`[toggleIgnore][${group.name}] Adicionado aos ignorados: '${numerosPraIgnorar.join(",")}'`
+				`[toggleIgnore] Adicionado aos ignorados globais: '${normalizedList.join(",")}'`
 			);
-			group.ignoredUsers = [...new Set([...group.ignoredUsers, ...numerosPraIgnorar])]; // Set pra evitar duplicados
-			await database.saveGroup(group);
+			await db?.addGlobalIgnored?.(normalizedList, {
+				userId: primaryUserId,
+				groupJid: message.group || null
+			});
+
+			if (group) {
+				if (!group.ignoredUsers) group.ignoredUsers = [];
+				const cleanForGroup = normalizedList.map((id) => PhoneUtils.cleanPhone(id)).filter(Boolean);
+				group.ignoredUsers = [...new Set([...group.ignoredUsers, primaryUserId, ...cleanForGroup])];
+				await db?.saveGroup?.(group);
+			}
 
 			return new ReturnMessage({
-				chatId: message.group,
-				content: "Você agora será *ignorado* nas menções de grupo.",
+				chatId: message.group ?? message.author,
+				content: "Você agora será *ignorado* nas menções da Ravena (Global).",
 				options: {
-					quotedMessageId: message.origin.id._serialized,
+					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
 				}
 			});

@@ -115,6 +115,12 @@ class CoreRepository {
 				number TEXT PRIMARY KEY,
 				timestamp INTEGER
 			)`,
+			global_ignored_users: `CREATE TABLE IF NOT EXISTS global_ignored_users (
+				identifier TEXT PRIMARY KEY,
+				user_id TEXT,
+				group_jid TEXT,
+				created_at INTEGER
+			)`,
 			invite_history: `CREATE TABLE IF NOT EXISTS invite_history (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				invite_code TEXT,
@@ -182,6 +188,11 @@ class CoreRepository {
 			this.DB,
 			"CREATE INDEX IF NOT EXISTS idx_group_periods_jid ON group_membership_periods(group_jid)"
 		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_global_ignored_user_id ON global_ignored_users(user_id)"
+		);
+		this._loadGlobalIgnoredCache();
 
 		// custom_commands.db
 		this.mappers.exec(
@@ -1250,6 +1261,132 @@ class CoreRepository {
 			return rows;
 		} catch (error) {
 			this.logger.error("Error getting local blocks:", error);
+			return [];
+		}
+	}
+
+	// --- Global Ignored Users ---
+
+	_loadGlobalIgnoredCache() {
+		this.globalIgnoredSet = new Set();
+		try {
+			const rows = this.mappers.all(this.DB, "SELECT identifier FROM global_ignored_users");
+			if (Array.isArray(rows)) {
+				for (const row of rows) {
+					if (row.identifier) {
+						this.globalIgnoredSet.add(row.identifier);
+					}
+				}
+			}
+			this.logger.info(
+				`Cache de usuários ignorados globais carregado com ${this.globalIgnoredSet.size} registros.`
+			);
+		} catch (e) {
+			this.logger.error("Erro ao carregar global_ignored_users para memória:", e);
+		}
+	}
+
+	async addGlobalIgnored(identifiers, { userId = null, groupJid = null } = {}) {
+		if (!this.globalIgnoredSet) this.globalIgnoredSet = new Set();
+		const list = Array.isArray(identifiers) ? identifiers : identifiers ? [identifiers] : [];
+		const now = Date.now();
+		for (const raw of list) {
+			if (!raw) continue;
+			const idStr = String(raw).trim();
+			if (!idStr) continue;
+			const clean = PhoneUtils.cleanPhone(idStr);
+			const toAdd = [idStr];
+			if (clean && clean !== idStr) toAdd.push(clean);
+			if (clean && !idStr.includes("@")) {
+				toAdd.push(`${clean}@s.whatsapp.net`);
+			}
+
+			for (const item of toAdd) {
+				try {
+					this.mappers.run(
+						this.DB,
+						"INSERT OR REPLACE INTO global_ignored_users (identifier, user_id, group_jid, created_at) VALUES (?, ?, ?, ?)",
+						[item, userId ? String(userId) : null, groupJid ? String(groupJid) : null, now]
+					);
+					this.globalIgnoredSet.add(item);
+				} catch (err) {
+					this.logger.error(`Erro ao adicionar usuário ignorado global ${item}:`, err);
+				}
+			}
+		}
+		return true;
+	}
+
+	async removeGlobalIgnored(identifiers, userId = null) {
+		if (!this.globalIgnoredSet) this.globalIgnoredSet = new Set();
+		const list = Array.isArray(identifiers) ? identifiers : identifiers ? [identifiers] : [];
+		const itemsToRemove = new Set();
+
+		for (const raw of list) {
+			if (!raw) continue;
+			const idStr = String(raw).trim();
+			if (!idStr) continue;
+			itemsToRemove.add(idStr);
+			const clean = PhoneUtils.cleanPhone(idStr);
+			if (clean) {
+				itemsToRemove.add(clean);
+				itemsToRemove.add(`${clean}@s.whatsapp.net`);
+				itemsToRemove.add(`${clean}@lid`);
+			}
+		}
+
+		if (userId) {
+			const uStr = String(userId).trim();
+			const uClean = PhoneUtils.cleanPhone(uStr);
+			try {
+				const rows = this.mappers.all(
+					this.DB,
+					"SELECT identifier FROM global_ignored_users WHERE user_id = ? OR user_id = ?",
+					[uStr, uClean]
+				);
+				if (Array.isArray(rows)) {
+					rows.forEach((r) => itemsToRemove.add(r.identifier));
+				}
+				this.mappers.run(
+					this.DB,
+					"DELETE FROM global_ignored_users WHERE user_id = ? OR user_id = ?",
+					[uStr, uClean]
+				);
+			} catch (err) {
+				this.logger.error("Erro ao deletar por userId em global_ignored_users:", err);
+			}
+		}
+
+		for (const item of itemsToRemove) {
+			try {
+				this.mappers.run(this.DB, "DELETE FROM global_ignored_users WHERE identifier = ?", [item]);
+				this.globalIgnoredSet.delete(item);
+			} catch (err) {
+				this.logger.error(`Erro ao remover identifier ${item} de global_ignored_users:`, err);
+			}
+		}
+		return true;
+	}
+
+	isGlobalIgnored(identifier) {
+		if (!identifier) return false;
+		const str = String(identifier).trim();
+		if (!str) return false;
+		if (!this.globalIgnoredSet) this.globalIgnoredSet = new Set();
+
+		if (this.globalIgnoredSet.has(str)) return true;
+		const clean = PhoneUtils.cleanPhone(str);
+		if (clean && this.globalIgnoredSet.has(clean)) return true;
+		if (clean && this.globalIgnoredSet.has(`${clean}@s.whatsapp.net`)) return true;
+		if (clean && this.globalIgnoredSet.has(`${clean}@lid`)) return true;
+		return false;
+	}
+
+	async getGlobalIgnoredUsers() {
+		try {
+			return this.mappers.all(this.DB, "SELECT * FROM global_ignored_users");
+		} catch (e) {
+			this.logger.error("Erro ao listar global_ignored_users:", e);
 			return [];
 		}
 	}

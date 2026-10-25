@@ -193,6 +193,12 @@ class FakeBot {
 					maxCharRepeats
 				);
 			}
+			if (msg.options?.mentions && Array.isArray(msg.options.mentions)) {
+				msg.options.mentions = msg.options.mentions.filter(
+					(m) => !this.isMentionIgnored(m, msg.chatId)
+				);
+				msg.options.mentionedJid = msg.options.mentions.join(",");
+			}
 			this.capturedMessages.push(msg);
 			this.logger.debug(`[FakeBot] Capturado ReturnMessage → chatId=${msg.chatId}`);
 			if (msg.options?.sendMediaAsSticker && msg.options?.quotedMessageId) {
@@ -320,6 +326,18 @@ class FakeBot {
 		return true;
 	}
 
+	isMentionIgnored(mention, chatId = null) {
+		if (!mention) return false;
+		const str = String(mention).trim();
+		if (!str) return false;
+		const clean = str.split("@")[0].replace(/\D/g, "");
+		if (this.database?.isGlobalIgnored?.(str)) return true;
+		if (clean && this.database?.isGlobalIgnored?.(clean)) return true;
+		if (clean && this.database?.isGlobalIgnored?.(`${clean}@s.whatsapp.net`)) return true;
+		if (clean && this.database?.isGlobalIgnored?.(`${clean}@lid`)) return true;
+		return false;
+	}
+
 	/**
 	 * Simula envio direto de mensagem de texto.
 	 * @param {string} chatId
@@ -341,6 +359,14 @@ class FakeBot {
 		const maxLines = options.maxLines !== undefined ? options.maxLines : 0;
 		const maxCharRepeats = options.maxCharRepeats !== undefined ? options.maxCharRepeats : 15;
 
+		const optionsClone = { ...options };
+		if (optionsClone.mentions && Array.isArray(optionsClone.mentions)) {
+			optionsClone.mentions = optionsClone.mentions.filter(
+				(m) => !this.isMentionIgnored(m, chatId)
+			);
+			optionsClone.mentionedJid = optionsClone.mentions.join(",");
+		}
+
 		const ReturnMessage = require("../models/ReturnMessage");
 		const msg = new ReturnMessage({
 			chatId,
@@ -348,7 +374,7 @@ class FakeBot {
 				typeof content === "string"
 					? this.truncateText(content, maxChars, maxLines, maxCharRepeats)
 					: content,
-			options,
+			options: optionsClone,
 			metadata: { direct: true }
 		});
 		this.capturedMessages.push(msg);

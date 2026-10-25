@@ -3263,15 +3263,41 @@ class WhatsAppBotGo {
 			}
 
 			if (options.mentionAll) {
-				payload.mentionAll = true;
+				const allowedMentions = [];
+				try {
+					const chat = await this.getChatDetails(chatId);
+					const participants = chat?.participants || [];
+					for (const p of participants) {
+						const pJid = p.id?._serialized || p.JID;
+						const pPhone = p.phoneNumber || p.PhoneNumber;
+						const pLid = p.lid || p.LID;
+						const isIgnored =
+							(pJid && this.isMentionIgnored(pJid, chatId)) ||
+							(pPhone && this.isMentionIgnored(pPhone, chatId)) ||
+							(pLid && this.isMentionIgnored(pLid, chatId));
+						if (!isIgnored && pJid) {
+							allowedMentions.push(pJid);
+						}
+					}
+				} catch (err) {
+					this.logger.warn(`[sendMessage] Erro ao filtrar mentionAll em ${chatId}:`, err);
+				}
+
+				if (allowedMentions.length > 0) {
+					payload.mentionedJid = allowedMentions.join(",");
+				}
 			} else if (options.mentions) {
 				const mentionsList = Array.isArray(options.mentions)
 					? options.mentions
 					: [options.mentions];
-				const sanitizedMentions = mentionsList.map((m) =>
-					typeof m === "string" && !m.includes("@") && /^\d+$/.test(m) ? `${m}@s.whatsapp.net` : m
-				);
-				payload.mentionedJid = sanitizedMentions.join(",");
+				const sanitizedMentions = mentionsList
+					.filter((m) => !this.isMentionIgnored(m, chatId))
+					.map((m) =>
+						typeof m === "string" && !m.includes("@") && /^\d+$/.test(m) ? `${m}@s.whatsapp.net` : m
+					);
+				if (sanitizedMentions.length > 0) {
+					payload.mentionedJid = sanitizedMentions.join(",");
+				}
 			}
 
 			//this.logger.debug(`[sendMessage] '${endpoint}'`, { contentType: typeof content, content, payload });
@@ -4180,6 +4206,70 @@ class WhatsAppBotGo {
 
 		// 4. Return: The normalized PhoneNumber, or fallback to the input lid
 		return lid;
+	}
+
+	isMentionIgnored(mention, chatId = null) {
+		if (!mention) return false;
+		const strMention = String(mention).trim();
+		if (!strMention) return false;
+
+		// 1. Checa banco global diretamente com a string original
+		if (this.database?.isGlobalIgnored?.(strMention)) return true;
+
+		const clean = PhoneUtils.cleanPhone(strMention);
+		if (clean && this.database?.isGlobalIgnored?.(clean)) return true;
+		if (clean && this.database?.isGlobalIgnored?.(`${clean}@s.whatsapp.net`)) return true;
+		if (clean && this.database?.isGlobalIgnored?.(`${clean}@lid`)) return true;
+
+		// 2. Se for LID, tenta resolver para PN e verificar o número de telefone
+		if (strMention.includes("@lid") || (clean && clean.length > 14)) {
+			const resolvedPn =
+				this.lidToPnCache?.get?.(clean) ||
+				this.lidToPnCache?.get?.(`${clean}@lid`) ||
+				(typeof this.getPnFromLid === "function" ? this.getPnFromLid(strMention, chatId) : null);
+			if (resolvedPn) {
+				const cleanPn = PhoneUtils.cleanPhone(resolvedPn);
+				if (
+					this.database?.isGlobalIgnored?.(resolvedPn) ||
+					(cleanPn && this.database?.isGlobalIgnored?.(cleanPn)) ||
+					(cleanPn && this.database?.isGlobalIgnored?.(`${cleanPn}@s.whatsapp.net`))
+				) {
+					return true;
+				}
+			}
+		}
+
+		// 3. Se for PN, tenta resolver para LID e verificar
+		if (strMention.includes("@s.whatsapp.net") || (clean && clean.length <= 13)) {
+			const resolvedLid =
+				typeof this.getLidFromPn === "function" ? this.getLidFromPn(clean, chatId) : null;
+			if (resolvedLid) {
+				const cleanLid = PhoneUtils.cleanPhone(resolvedLid);
+				if (
+					this.database?.isGlobalIgnored?.(resolvedLid) ||
+					(cleanLid && this.database?.isGlobalIgnored?.(cleanLid)) ||
+					(cleanLid && this.database?.isGlobalIgnored?.(`${cleanLid}@lid`))
+				) {
+					return true;
+				}
+			}
+		}
+
+		// 4. Checa lista de ignorados local do grupo caso chatId seja um grupo
+		if (chatId && chatId.includes("@g.us")) {
+			const cachedGroup = this.groupCache?.get?.(chatId);
+			const ignoredList = cachedGroup?.ignoredUsers;
+			if (Array.isArray(ignoredList) && ignoredList.length > 0) {
+				const checkVariants = [strMention, clean];
+				if (
+					ignoredList.some((u) => checkVariants.some((cv) => cv && (cv === u || cv.startsWith(u))))
+				) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	notInWhitelist(author) {

@@ -795,6 +795,34 @@ class Database {
 		return this.coreRepo.getLocalBlocks();
 	}
 
+	// --- Global Ignored Users ---
+
+	async addGlobalIgnored(identifiers, meta = {}) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addGlobalIgnored()");
+		} else {
+			this.triggerBackupStart();
+		}
+		return this.coreRepo.addGlobalIgnored(identifiers, meta);
+	}
+
+	async removeGlobalIgnored(identifiers, userId = null) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] removeGlobalIgnored()");
+		} else {
+			this.triggerBackupStart();
+		}
+		return this.coreRepo.removeGlobalIgnored(identifiers, userId);
+	}
+
+	isGlobalIgnored(identifier) {
+		return this.coreRepo.isGlobalIgnored(identifier);
+	}
+
+	async getGlobalIgnoredUsers() {
+		return this.coreRepo.getGlobalIgnoredUsers();
+	}
+
 	// --- Invite History ---
 
 	async addInviteHistory(invite) {

@@ -75,7 +75,9 @@ function createMessage(overrides = {}) {
 		// getQuotedMessage stub
 		getQuotedMessage: async () => {
 			throw new Error("getQuotedMessage is not available on this message");
-		}
+		},
+
+		...(overrides.origin ?? {})
 	};
 
 	const message = {
