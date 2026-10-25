@@ -587,6 +587,35 @@ class CommandHandler {
 				}
 			}
 
+			// Suporte a mensagens multilinha com comandos sa- (ex: lista encaminhada de bloqueios)
+			const lines = commandText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+			if (lines.length > 1) {
+				const botPrefix = (group && group.prefix !== undefined ? group.prefix : bot.prefix) || "!";
+				const isMultiSa = lines.every((line) => {
+					let l = line;
+					if (botPrefix && l.startsWith(botPrefix)) {
+						l = l.substring(botPrefix.length).trimStart();
+					} else if (l.startsWith("!")) {
+						l = l.substring(1).trimStart();
+					}
+					return l.startsWith("sa-");
+				});
+
+				if (isMultiSa) {
+					this.logger.info(`[CommandHandler] Executando ${lines.length} comandos sa- multilinhas`);
+					for (const line of lines) {
+						let cleanCmd = line;
+						if (botPrefix && cleanCmd.startsWith(botPrefix)) {
+							cleanCmd = cleanCmd.substring(botPrefix.length).trimStart();
+						} else if (cleanCmd.startsWith("!")) {
+							cleanCmd = cleanCmd.substring(1).trimStart();
+						}
+						await this.handleCommand(bot, message, cleanCmd, group);
+					}
+					return;
+				}
+			}
+
 			// Obtém a primeira palavra como nome do comando
 			const [command, ...args] = commandText.trim().split(/\s+/);
 

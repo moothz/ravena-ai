@@ -2360,139 +2360,218 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 
 						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
-						// Aplica-se apenas às ravenas normais (não processar para vip, comunitárias e privadas)
+						// Aplica-se apenas às ravenas normais (para comunitárias, gera mensagem subsequente de sugestão com comandos)
 						let blockLogsText = "";
+						let msgSubsequentCommands = "";
 						const isNormalBot = !bot.vip && !bot.comunitario && !bot.privado;
 
-						if (isNormalBot) {
-							const currentPeriod =
-								periods && periods.length > 0 ? periods[periods.length - 1] : null;
-							const durationMs =
-								currentPeriod?.duration ??
-								(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
-							const isLessThan7Days =
-								durationMs !== null
-									? durationMs < 7 * 24 * 60 * 60 * 1000
-									: group.date
-										? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
-										: false;
+						const currentPeriod =
+							periods && periods.length > 0 ? periods[periods.length - 1] : null;
+						const durationMs =
+							currentPeriod?.duration ??
+							(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
+						const isLessThan7Days =
+							durationMs !== null
+								? durationMs < 7 * 24 * 60 * 60 * 1000
+								: group.date
+									? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
+									: false;
 
-							const removerId = data.responsavel?.id || null;
-							const cleanRemoverPhone = removerId
-								? removerId.replace(/\D/g, "").split("@")[0]
+						const removerId = data.responsavel?.id || null;
+						const cleanRemoverPhone = removerId
+							? removerId.replace(/\D/g, "").split("@")[0]
+							: null;
+						const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
+						const isRemovedBySelf =
+							cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
+						const isRemoverSuperAdmin = removerId
+							? this.adminUtils.isSuperAdmin(removerId)
+							: false;
+
+						let isRemoverDonator = false;
+						if (
+							isLessThan7Days &&
+							cleanRemoverPhone &&
+							!isRemovedBySelf &&
+							!isRemoverSuperAdmin
+						) {
+							try {
+								const donations = await this.database.getDonations();
+								if (donations && donations.length > 0) {
+									isRemoverDonator = donations.some((donation) => {
+										if (donation.numero) {
+											const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
+											if (cleanDonorNumber.length > 10) {
+												return (
+													cleanDonorNumber.includes(cleanRemoverPhone) ||
+													cleanRemoverPhone.includes(cleanDonorNumber)
+												);
+											}
+										}
+										return false;
+									});
+								}
+							} catch (donErr) {
+								this.logger.error("Erro ao verificar doador para quem removeu o bot:", donErr);
+							}
+						}
+
+						if (
+							isNormalBot &&
+							isLessThan7Days &&
+							cleanRemoverPhone &&
+							!isRemovedBySelf &&
+							!isRemoverSuperAdmin &&
+							!isRemoverDonator
+						) {
+							this.logger.info(
+								`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+							);
+
+							// 1. Busca código de convite e autor do convite
+							let inviteCode = group.inviteCode || null;
+							let inviterId = group.addedBy || null;
+
+							try {
+								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
+								if (inviteHistory && inviteHistory.length > 0) {
+									const latestInvite =
+										inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+									if (latestInvite) {
+										if (!inviteCode && latestInvite.invite_code) {
+											inviteCode = latestInvite.invite_code;
+										}
+										if (!inviterId && latestInvite.author_id) {
+											inviterId = latestInvite.author_id;
+										}
+									}
+								}
+							} catch (invErr) {
+								this.logger.error(
+									"Erro ao buscar histórico de convites para auto-block:",
+									invErr
+								);
+							}
+
+							const cleanInviterPhone = inviterId
+								? inviterId.replace(/\D/g, "").split("@")[0]
 								: null;
-							const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
-							const isRemovedBySelf =
-								cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
-							const isRemoverSuperAdmin = removerId
-								? this.adminUtils.isSuperAdmin(removerId)
-								: false;
 
-							if (
-								isLessThan7Days &&
-								cleanRemoverPhone &&
-								!isRemovedBySelf &&
-								!isRemoverSuperAdmin
-							) {
-								let isRemoverDonator = false;
+							const blockLogParts = [];
+
+							// 2. Executa block no convite
+							if (cleanInviterPhone || inviteCode) {
+								const inviteArgs = [];
+								if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+								if (inviteCode) inviteArgs.push(inviteCode);
+
+								const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
 								try {
-									const donations = await this.database.getDonations();
-									if (donations && donations.length > 0) {
-										isRemoverDonator = donations.some((donation) => {
-											if (donation.numero) {
-												const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
-												if (cleanDonorNumber.length > 10) {
-													return (
-														cleanDonorNumber.includes(cleanRemoverPhone) ||
-														cleanRemoverPhone.includes(cleanDonorNumber)
-													);
-												}
-											}
-											return false;
-										});
-									}
-								} catch (donErr) {
-									this.logger.error("Erro ao verificar doador para quem removeu o bot:", donErr);
-								}
-
-								if (!isRemoverDonator) {
-									this.logger.info(
-										`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+									const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+										bot,
+										{ group: groupId, author: cleanInviterPhone, isSystem: true },
+										inviteArgs
 									);
-
-									// 1. Busca código de convite e autor do convite
-									let inviteCode = group.inviteCode || null;
-									let inviterId = group.addedBy || null;
-
-									try {
-										const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
-										if (inviteHistory && inviteHistory.length > 0) {
-											const latestInvite =
-												inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
-											if (latestInvite) {
-												if (!inviteCode && latestInvite.invite_code) {
-													inviteCode = latestInvite.invite_code;
-												}
-												if (!inviterId && latestInvite.author_id) {
-													inviterId = latestInvite.author_id;
-												}
-											}
-										}
-									} catch (invErr) {
-										this.logger.error(
-											"Erro ao buscar histórico de convites para auto-block:",
-											invErr
-										);
+									if (inviteBlockRes && inviteBlockRes.content) {
+										blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
 									}
+								} catch (cmdErr) {
+									this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+								}
+							}
 
-									const cleanInviterPhone = inviterId
-										? inviterId.replace(/\D/g, "").split("@")[0]
-										: null;
-
-									const blockLogParts = [];
-
-									// 2. Executa block no convite
-									if (cleanInviterPhone || inviteCode) {
-										const inviteArgs = [];
-										if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
-										if (inviteCode) inviteArgs.push(inviteCode);
-
-										const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
-										try {
-											const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
-												bot,
-												{ group: groupId, author: cleanInviterPhone, isSystem: true },
-												inviteArgs
-											);
-											if (inviteBlockRes && inviteBlockRes.content) {
-												blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
-											}
-										} catch (cmdErr) {
-											this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
-										}
+							// 3. Executa block em quem removeu
+							if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
+								const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
+								try {
+									const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
+										bot,
+										{ group: groupId, author: cleanRemoverPhone, isSystem: true },
+										[cleanRemoverPhone]
+									);
+									if (removerBlockRes && removerBlockRes.content) {
+										blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
 									}
+								} catch (cmdErr) {
+									this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
+								}
+							}
 
-									// 3. Executa block em quem removeu
-									if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
-										const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
-										try {
-											const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
-												bot,
-												{ group: groupId, author: cleanRemoverPhone, isSystem: true },
-												[cleanRemoverPhone]
-											);
-											if (removerBlockRes && removerBlockRes.content) {
-												blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
-											}
-										} catch (cmdErr) {
-											this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
+							if (blockLogParts.length > 0) {
+								blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
+							}
+						} else if (
+							bot.comunitario &&
+							isLessThan7Days &&
+							cleanRemoverPhone &&
+							!isRemovedBySelf &&
+							!isRemoverSuperAdmin &&
+							!isRemoverDonator
+						) {
+							// Para ravenas comunitárias, não bloqueia automaticamente, mas monta os comandos
+							// para que o admin possa encaminhar diretamente para o bot
+							let inviteCode = group.inviteCode || null;
+							let inviterId = group.addedBy || null;
+
+							try {
+								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
+								if (inviteHistory && inviteHistory.length > 0) {
+									const latestInvite =
+										inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+									if (latestInvite) {
+										if (!inviteCode && latestInvite.invite_code) {
+											inviteCode = latestInvite.invite_code;
 										}
-									}
-
-									if (blockLogParts.length > 0) {
-										blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
+										if (!inviterId && latestInvite.author_id) {
+											inviterId = latestInvite.author_id;
+										}
 									}
 								}
+							} catch (invErr) {
+								this.logger.error(
+									"Erro ao buscar histórico de convites para comandos de saída comunitária:",
+									invErr
+								);
+							}
+
+							const cleanInviterPhone = inviterId
+								? inviterId.replace(/\D/g, "").split("@")[0]
+								: null;
+
+							const targetNumbers = [];
+							if (cleanRemoverPhone && !this.adminUtils.isSuperAdmin(cleanRemoverPhone)) {
+								targetNumbers.push(cleanRemoverPhone);
+							}
+							if (
+								cleanInviterPhone &&
+								cleanInviterPhone !== cleanRemoverPhone &&
+								!this.adminUtils.isSuperAdmin(cleanInviterPhone)
+							) {
+								targetNumbers.push(cleanInviterPhone);
+							}
+
+							const commands = [];
+							if (targetNumbers.length === 1) {
+								commands.push(`!sa-block ${targetNumbers[0]}`);
+							} else if (targetNumbers.length > 1) {
+								commands.push(`!sa-blockList ${targetNumbers.join(", ")}`);
+							}
+
+							if (cleanRemoverPhone) {
+								if ((!cleanInviterPhone || cleanInviterPhone === cleanRemoverPhone) && inviteCode) {
+									commands.push(`!sa-blockInvites ${cleanRemoverPhone} ${inviteCode}`);
+								} else {
+									commands.push(`!sa-blockInvites ${cleanRemoverPhone}`);
+								}
+							}
+							if (cleanInviterPhone && cleanInviterPhone !== cleanRemoverPhone) {
+								commands.push(
+									`!sa-blockInvites ${cleanInviterPhone}${inviteCode ? ` ${inviteCode}` : ""}`.trim()
+								);
+							}
+
+							if (commands.length > 0) {
+								msgSubsequentCommands = commands.join("\n");
 							}
 						}
 
@@ -2524,12 +2603,18 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 						*/
 
-						bot.sendMessage(bot.grupoLogs, msgLeave).catch((error) => {
-							this.logger.error(
-								"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
-								error
-							);
-						});
+						bot.sendMessage(bot.grupoLogs, msgLeave)
+							.then(() => {
+								if (msgSubsequentCommands) {
+									return bot.sendMessage(bot.grupoLogs, msgSubsequentCommands);
+								}
+							})
+							.catch((error) => {
+								this.logger.error(
+									"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
+									error
+								);
+							});
 					}
 				} catch (error) {
 					this.logger.error(
