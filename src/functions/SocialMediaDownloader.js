@@ -12,13 +12,8 @@ const yts = require("youtube-search-api");
 const { pipeline } = require("stream/promises");
 
 // Importa métodos do YoutubeDownloader para roteamento de YouTube
-const {
-	baixarVideoYoutube,
-	baixarMusicaYoutube,
-	extractYoutubeVideoId,
-	searchYoutubeVideo,
-	extractURLFromString
-} = require("./YoutubeDownloader");
+const YoutubeDownloader = require("./YoutubeDownloader");
+const { extractYoutubeVideoId, searchYoutubeVideo, extractURLFromString } = YoutubeDownloader;
 
 const logger = new Logger("social-media-downloader");
 const database = Database.getInstance();
@@ -391,6 +386,262 @@ async function cobaltRequest(url, options = {}, authorInfo = null) {
 	);
 }
 
+// ==============================
+// Emojis numéricos para reações interativas (1 a 9)
+// ==============================
+const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣"];
+const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️"];
+
+// Gerenciador em memória das sessões de busca do YouTube (TTL 10 minutos)
+const searchSessions = new Map();
+const SEARCH_SESSION_TTL_MS = 10 * 60 * 1000;
+
+function cleanExpiredSearchSessions() {
+	const now = Date.now();
+	for (const [key, session] of searchSessions.entries()) {
+		if (now - session.createdAt > SEARCH_SESSION_TTL_MS) {
+			searchSessions.delete(key);
+		}
+	}
+}
+
+function saveSearchSession(botMsgId, chatId, sessionData) {
+	cleanExpiredSearchSessions();
+	const session = {
+		...sessionData,
+		createdAt: Date.now()
+	};
+	if (botMsgId) {
+		searchSessions.set(`msg:${botMsgId}`, session);
+	}
+	if (chatId) {
+		searchSessions.set(`chat:${chatId}`, session);
+	}
+}
+
+function getSearchSession(msgId, chatId) {
+	cleanExpiredSearchSessions();
+	if (msgId && searchSessions.has(`msg:${msgId}`)) {
+		return searchSessions.get(`msg:${msgId}`);
+	}
+	if (chatId && searchSessions.has(`chat:${chatId}`)) {
+		return searchSessions.get(`chat:${chatId}`);
+	}
+	return null;
+}
+
+/**
+ * Executa o download de um vídeo ou áudio do YouTube e entrega formatado com links S3
+ */
+async function executeYoutubeDownload(bot, chatId, group, message, item, isAudioOnly, wantLyrics) {
+	const author = message.author || "Desconhecido";
+	const videoId = item.id;
+
+	if (isAudioOnly && typeof YoutubeDownloader.baixarMusicaYoutube === "function") {
+		return new Promise((resolve) => {
+			YoutubeDownloader.baixarMusicaYoutube(videoId, author, async (error, result) => {
+				if (error) {
+					await bot.sendReturnMessages(
+						new ReturnMessage({
+							chatId,
+							content: `❌ Erro ao baixar áudio do YouTube: ${error.message}`
+						}),
+						group
+					);
+					resolve([]);
+					return;
+				}
+
+				try {
+					let s3Url = null;
+					if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+						try {
+							const cleanFileName = path.basename(result.arquivo);
+							const s3Key = `yt/${cleanFileName}`;
+							await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+								bucket: storageService.bucketDownloads,
+								mimetype: "audio/mpeg"
+							});
+							s3Url = await storageService.getPresignedUrl(s3Key, {
+								bucket: storageService.bucketDownloads
+							});
+						} catch (s3Err) {
+							logger.warn("Falha ao subir áudio para S3:", s3Err.message);
+						}
+					}
+
+					// 1. Envia áudio
+					const media = await bot.createMedia(result.arquivo, "audio/mp3");
+					await bot.sendReturnMessages(
+						new ReturnMessage({
+							chatId,
+							content: media
+						}),
+						group
+					);
+
+					// 2. Envia segunda mensagem formatada como a legenda do vídeo com link S3
+					let msg2Text = `✅ *Download Concluído!*\n\n🌐 *Fonte:* YouTube\n📝 *Título:* ${result.legenda || item.title || videoId}`;
+					if (s3Url) {
+						msg2Text += `\n📥 *Link direto (válido por 6h):* ${s3Url}`;
+					}
+
+					// 2.1 Se comando foi !sr ou !musica, busca letra
+					if (wantLyrics) {
+						const rawTitle = result.legenda || item.title || "";
+						const cleanQuery = rawTitle.replace(/^\[.*?\]\s*/, "");
+						const lyricsData = (await searchLyrics(cleanQuery)) || (await searchLyrics(rawTitle));
+						if (lyricsData && lyricsData.lyrics) {
+							msg2Text += `\n\n🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`;
+						}
+					}
+
+					await bot.sendReturnMessages(
+						new ReturnMessage({
+							chatId,
+							content: msg2Text
+						}),
+						group
+					);
+				} catch (sendError) {
+					logger.error("Erro ao enviar áudio do YouTube:", sendError);
+					await bot.sendReturnMessages(
+						new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
+						group
+					);
+				}
+				resolve([]);
+			});
+		});
+	} else if (typeof YoutubeDownloader.baixarVideoYoutube === "function") {
+		return new Promise((resolve) => {
+			YoutubeDownloader.baixarVideoYoutube(videoId, author, false, async (error, result) => {
+				if (error) {
+					await bot.sendReturnMessages(
+						new ReturnMessage({
+							chatId,
+							content: `❌ Erro ao baixar vídeo do YouTube: ${error.message}`
+						}),
+						group
+					);
+					resolve([]);
+					return;
+				}
+
+				try {
+					let isTooLargeForWaVideo = false;
+					if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+						try {
+							const stats = fsSync.statSync(result.arquivo);
+							isTooLargeForWaVideo = stats.size > 60 * 1024 * 1024;
+						} catch {}
+					}
+
+					let s3Url = null;
+					if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+						try {
+							const cleanFileName = path.basename(result.arquivo);
+							const s3Key = `yt/${cleanFileName}`;
+							await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+								bucket: storageService.bucketDownloads,
+								mimetype: "video/mp4"
+							});
+							s3Url = await storageService.getPresignedUrl(s3Key, {
+								bucket: storageService.bucketDownloads
+							});
+						} catch (s3Err) {
+							logger.warn("Falha ao subir vídeo para S3:", s3Err.message);
+						}
+					}
+
+					let caption = `✅ *Download Concluído!*\n\n🌐 *Fonte:* YouTube\n📝 *Título:* ${result.legenda || item.title || videoId}`;
+					if (s3Url) {
+						caption += `\n📥 *Link direto (válido por 6h):* ${s3Url}`;
+					}
+					if (isTooLargeForWaVideo) {
+						caption += `\n\n📂 Enviado como arquivo devido ao limite de tamanho para vídeos no WhatsApp`;
+					}
+					caption += `\n\n> *Dica:* Se quiser apenas o áudio, responda este vídeo com \`${bot.prefix}extractaudio\``;
+
+					const media = await bot.createMedia(result.arquivo, "video/mp4");
+					await bot.sendReturnMessages(
+						new ReturnMessage({
+							chatId,
+							content: media,
+							options: {
+								caption,
+								sendMediaAsDocument: isTooLargeForWaVideo
+							}
+						}),
+						group
+					);
+				} catch (sendError) {
+					logger.error("Erro ao enviar vídeo do YouTube:", sendError);
+					let linkFallback = null;
+					if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+						try {
+							const cleanFileName = path.basename(result.arquivo);
+							const s3Key = `yt/${cleanFileName}`;
+							linkFallback = await storageService.getPresignedUrl(s3Key, {
+								bucket: storageService.bucketDownloads
+							});
+						} catch {}
+					}
+
+					const errorMsg = linkFallback
+						? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+						: "Erro ao enviar vídeo.";
+
+					await bot.sendReturnMessages(new ReturnMessage({ chatId, content: errorMsg }), group);
+				}
+				resolve([]);
+			});
+		});
+	} else {
+		logger.warn("Métodos do YoutubeDownloader indisponíveis");
+	}
+}
+
+/**
+ * Handler de reação para seleção numérica das buscas do YouTube
+ */
+async function processYoutubeSearchReaction(bot, message, args, group) {
+	if (!message.originReaction) return false;
+	const reaction = message.originReaction;
+	let emojiIndex = NUMBER_EMOJIS.indexOf(reaction.reaction);
+	if (emojiIndex === -1) emojiIndex = NUMBER_EMOJIS2.indexOf(reaction.reaction);
+	if (emojiIndex === -1) emojiIndex = NUMBER_EMOJIS3.indexOf(reaction.reaction);
+	if (emojiIndex === -1) return false;
+
+	const targetMsgId = reaction.msgId?._serialized || reaction.msgId?.id || reaction.msgId;
+	const chatId = message.group ?? message.author;
+	const session = getSearchSession(targetMsgId, chatId);
+	if (!session) return false;
+
+	const item = session.items[emojiIndex];
+	if (!item) return false;
+
+	try {
+		if (typeof message.origin?.react === "function") {
+			await message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
+		} else if (typeof bot.react === "function") {
+			await bot.react(reaction.msgId, process.env.LOADING_EMOJI ?? "⌛️");
+		}
+	} catch {}
+
+	await executeYoutubeDownload(
+		bot,
+		session.chatId,
+		group,
+		message,
+		item,
+		session.isAudioOnly,
+		session.wantLyrics
+	);
+	return true;
+}
+
 /**
  * Handler principal de downloads via Cobalt (para redes sociais, SoundCloud, etc.)
  * YouTube é roteado para os métodos do YoutubeDownloader.
@@ -445,9 +696,43 @@ async function downloadHandler(bot, message, args, group) {
 		args.includes("-musica");
 	const wantLyrics =
 		commandName.includes("musica") ||
+		commandName === "sr" ||
 		args.includes("-musica") ||
 		// Se for SoundCloud e for audio, também busca letra
 		(commandName.includes("sc") && isAudioOnly);
+
+	// Se o comando for apenas um número de 1 a 9, verifica se é seleção de opção de busca
+	if (args.length === 1 && /^[1-9]$/.test(args[0])) {
+		let quotedId = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			try {
+				const qm = await message.origin.getQuotedMessage();
+				quotedId = qm?.id?._serialized || qm?.id?.id || qm?.id;
+			} catch {}
+		}
+		const session = getSearchSession(quotedId, chatId);
+		if (session) {
+			const idx = parseInt(args[0], 10) - 1;
+			const item = session.items[idx];
+			if (item) {
+				try {
+					if (typeof message.origin?.react === "function") {
+						await message.origin.react(process.env.LOADING_EMOJI ?? "⌛️");
+					}
+				} catch {}
+				await executeYoutubeDownload(
+					bot,
+					chatId,
+					group,
+					message,
+					item,
+					session.isAudioOnly,
+					session.wantLyrics
+				);
+				return [];
+			}
+		}
+	}
 
 	// ==============================
 	// ROTEAMENTO: YouTube → YoutubeDownloader
@@ -459,278 +744,96 @@ async function downloadHandler(bot, message, args, group) {
 				`Roteando YouTube para YoutubeDownloader: ${videoId} (audio=${isAudioOnly}) (Autor: ${authorInfo})`
 			);
 
-			bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: `⏳ Baixando ${isAudioOnly ? "áudio" : "vídeo"} do YouTube...`
-				}),
-				group
+			await executeYoutubeDownload(
+				bot,
+				chatId,
+				group,
+				message,
+				{ id: videoId, title: "Vídeo do YouTube" },
+				isAudioOnly,
+				wantLyrics
 			);
-
-			if (isAudioOnly && typeof baixarMusicaYoutube === "function") {
-				return new Promise((resolve) => {
-					baixarMusicaYoutube(videoId, message.author, async (error, result) => {
-						if (error) {
-							await bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: `❌ Erro ao baixar áudio do YouTube: ${error.message}`
-								}),
-								group
-							);
-							resolve([]);
-							return;
-						}
-						try {
-							const media = await bot.createMedia(result.arquivo, "audio/mp3");
-							await bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: media,
-									options: { caption: result.legenda }
-								}),
-								group
-							);
-
-							if (wantLyrics) {
-								const lyricsData = await searchLyrics(result.legenda || "");
-								if (lyricsData) {
-									await bot.sendReturnMessages(
-										new ReturnMessage({
-											chatId,
-											content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
-										}),
-										group
-									);
-								}
-							}
-						} catch (sendError) {
-							await bot.sendReturnMessages(
-								new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
-								group
-							);
-						}
-						resolve([]);
-					});
-				});
-			} else if (typeof baixarVideoYoutube === "function") {
-				return new Promise((resolve) => {
-					baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
-						if (error) {
-							await bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: `❌ Erro ao baixar vídeo do YouTube: ${error.message}`
-								}),
-								group
-							);
-							resolve([]);
-							return;
-						}
-						try {
-							const media = await bot.createMedia(result.arquivo, "video/mp4");
-							const dicaAudio = `\n\n> *Dica:* Se quiser apenas o áudio, responda esta mensagem com \`${bot.prefix}extractaudio\``;
-							await bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: media,
-									options: { caption: result.legenda + dicaAudio }
-								}),
-								group
-							);
-						} catch (sendError) {
-							let linkFallback = null;
-							if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
-								try {
-									const cleanFileName = path.basename(result.arquivo);
-									const s3Key = `social/${cleanFileName}`;
-									await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
-										bucket: storageService.bucketDownloads,
-										mimetype: "video/mp4"
-									});
-									linkFallback = await storageService.getPresignedUrl(s3Key, {
-										bucket: storageService.bucketDownloads
-									});
-								} catch (s3Err) {
-									logger.warn("Falha ao gerar link fallback no S3 para Social:", s3Err.message);
-								}
-							}
-
-							const errorMsg = linkFallback
-								? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
-								: "Erro ao enviar vídeo.";
-
-							await bot.sendReturnMessages(new ReturnMessage({ chatId, content: errorMsg }), group);
-						}
-						resolve([]);
-					});
-				});
-			} else {
-				// Fallback: se os métodos do YoutubeDownloader não estiverem disponíveis,
-				// tenta usar o Cobalt para YouTube também
-				logger.warn("Métodos do YoutubeDownloader indisponíveis, usando Cobalt para YouTube");
-			}
+			return [];
 		}
 	}
 
 	// ==============================
-	// Se não tem URL, tenta busca no YouTube (fallback do .bak)
+	// Se não tem URL, busca interativa no YouTube (1 mensagem com lista de até 9)
 	// ==============================
 	if (!url) {
 		const query = input ? input.trim() : "";
-		if (query && query.length > 2) {
-			bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: `🔍 Buscando por "*${query}*" no YouTube...`
-				}),
-				group
-			);
-
+		if (query && query.length > 0) {
 			try {
-				const searchResults = await yts.GetListByKeyword(query, false, 5);
-				if (searchResults && searchResults.items && searchResults.items.length > 0) {
-					const count = Math.min(searchResults.items.length, 5);
-					// Para áudio/música, pega o primeiro resultado (mais relevante); para vídeo usa aleatório
-					const selectedIndex = isAudioOnly ? 0 : Math.floor(Math.random() * count);
-					const item = searchResults.items[selectedIndex];
-					url = `https://www.youtube.com/watch?v=${item.id}`;
+				const searchResults = await yts.GetListByKeyword(query, false, 15);
+				const rawVideos = (searchResults?.items || []).filter((item) => item.type === "video");
+				const videos = rawVideos.slice(0, 9);
 
-					// Roteia a URL do YouTube encontrada para o YoutubeDownloader
-					if (isYoutubeUrl(url)) {
-						const videoId = extractYoutubeVideoId(url);
-						if (videoId && isAudioOnly && typeof baixarMusicaYoutube === "function") {
-							logger.info(
-								`Roteando busca de YouTube (áudio) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`
-							);
-							bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: `⏳ Baixando áudio do YouTube: *${item.title || videoId}*...`
-								}),
-								group
-							);
-							return new Promise((resolve) => {
-								baixarMusicaYoutube(videoId, message.author, async (error, result) => {
-									if (error) {
-										await bot.sendReturnMessages(
-											new ReturnMessage({
-												chatId,
-												content: `❌ Erro ao baixar áudio: ${error.message}`
-											}),
-											group
-										);
-										resolve([]);
-										return;
-									}
-									try {
-										const media = await bot.createMedia(result.arquivo, "audio/mp3");
-										await bot.sendReturnMessages(
-											new ReturnMessage({
-												chatId,
-												content: media,
-												options: { caption: result.legenda }
-											}),
-											group
-										);
-										if (wantLyrics) {
-											const lyricsData = await searchLyrics(result.legenda || "");
-											if (lyricsData) {
-												await bot.sendReturnMessages(
-													new ReturnMessage({
-														chatId,
-														content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
-													}),
-													group
-												);
-											}
-										}
-									} catch (sendError) {
-										await bot.sendReturnMessages(
-											new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
-											group
-										);
-									}
-									resolve([]);
-								});
-							});
-						} else if (videoId && typeof baixarVideoYoutube === "function") {
-							logger.info(
-								`Roteando busca de YouTube (vídeo) para YoutubeDownloader: ${videoId} (Autor: ${authorInfo})`
-							);
-							bot.sendReturnMessages(
-								new ReturnMessage({
-									chatId,
-									content: `⏳ Baixando vídeo do YouTube: *${item.title || videoId}*...`
-								}),
-								group
-							);
-							return new Promise((resolve) => {
-								baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
-									if (error) {
-										await bot.sendReturnMessages(
-											new ReturnMessage({
-												chatId,
-												content: `❌ Erro ao baixar vídeo: ${error.message}`
-											}),
-											group
-										);
-										resolve([]);
-										return;
-									}
-									try {
-										const media = await bot.createMedia(result.arquivo, "video/mp4");
-										const dicaAudio = `\n\n> *Dica:* Se quiser apenas o áudio, responda esta mensagem com \`${bot.prefix}extractaudio\``;
-										await bot.sendReturnMessages(
-											new ReturnMessage({
-												chatId,
-												content: media,
-												options: { caption: result.legenda + dicaAudio }
-											}),
-											group
-										);
-									} catch (sendError) {
-										let linkFallback = null;
-										if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
-											try {
-												const cleanFileName = path.basename(result.arquivo);
-												const s3Key = `social/${cleanFileName}`;
-												await storageService.upload(
-													fsSync.createReadStream(result.arquivo),
-													s3Key,
-													{
-														bucket: storageService.bucketDownloads,
-														mimetype: "video/mp4"
-													}
-												);
-												linkFallback = await storageService.getPresignedUrl(s3Key, {
-													bucket: storageService.bucketDownloads
-												});
-											} catch (s3Err) {
-												logger.warn(
-													"Falha ao gerar link fallback no S3 para Social:",
-													s3Err.message
-												);
-											}
-										}
-
-										const errorMsg = linkFallback
-											? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
-											: "Erro ao enviar vídeo.";
-
-										await bot.sendReturnMessages(
-											new ReturnMessage({ chatId, content: errorMsg }),
-											group
-										);
-									}
-									resolve([]);
-								});
-							});
-						}
-					}
+				if (videos.length === 0) {
+					return new ReturnMessage({
+						chatId,
+						content: `❌ Nenhum vídeo encontrado para "_${query}_" no YouTube.`
+					});
 				}
+
+				let listText = `⏬ *rav-downloader* Buscando por _"${query}"_ no *YouTube* 🔍\n\nEncontrados:\n`;
+				const sessionItems = [];
+
+				videos.forEach((v, idx) => {
+					const channel = v.channelTitle || v.shortBylineText?.runs?.[0]?.text || "Canal";
+					const duration = v.length?.simpleText ? ` (${v.length.simpleText})` : "";
+					const title = v.title || "Sem título";
+					listText += `${idx + 1}. [${channel}] ${title}${duration}\n`;
+					sessionItems.push({
+						id: v.id,
+						title,
+						channelTitle: channel,
+						duration: v.length?.simpleText || "",
+						url: `https://www.youtube.com/watch?v=${v.id}`
+					});
+				});
+
+				const invokedCmd = commandName || "yt";
+				listText += `\nBaixando opção 1! Para outra opção, reaja à esta mensagem com os emojis de numeros ou com *${bot.prefix}${invokedCmd} 2*`;
+
+				const sentMsgs = await bot.sendReturnMessages(
+					new ReturnMessage({
+						chatId,
+						content: listText
+					}),
+					group
+				);
+
+				const sentMsgId =
+					sentMsgs?.[0]?.id?._serialized || sentMsgs?.[0]?.id?.id || sentMsgs?.[0]?.id;
+
+				saveSearchSession(sentMsgId, chatId, {
+					query,
+					commandName: invokedCmd,
+					isAudioOnly,
+					wantLyrics,
+					author: message.author,
+					chatId,
+					items: sessionItems
+				});
+
+				// Dispara imediatamente o download da Opção 1
+				const selectedItem = sessionItems[0];
+				await executeYoutubeDownload(
+					bot,
+					chatId,
+					group,
+					message,
+					selectedItem,
+					isAudioOnly,
+					wantLyrics
+				);
+				return [];
 			} catch (searchError) {
 				logger.error(`Erro na busca do YouTube: ${searchError.message}`);
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Erro ao buscar por "_${query}_" no YouTube: ${searchError.message}`
+				});
 			}
 		}
 	}
@@ -957,6 +1060,10 @@ const downloadCommands = [
 	"download",
 	"download-audio",
 	"download-musica",
+	"baixar",
+	"baixar-audio",
+	"baixar-musica",
+	"musica",
 	"yt",
 	"yt-audio",
 	"yt-musica",
@@ -1045,6 +1152,19 @@ const commands = downloadCommands.map(
 commands[0].reactions.trigger = "⬇️";
 commands[1].reactions.trigger = "⏬";
 
+commands.push(
+	new Command({
+		name: "reactionYoutubeSearchHelper",
+		description: "Invocado apenas pelo ReactionsHandler para selecionar vídeos da busca do YouTube",
+		reactions: {
+			trigger: NUMBER_EMOJIS.concat(NUMBER_EMOJIS2, NUMBER_EMOJIS3)
+		},
+		usage: "",
+		hidden: true,
+		method: processYoutubeSearchReaction
+	})
+);
+
 // Expõe as funções de extração de URL e detecção de YouTube para outros módulos
 const helper = {
 	about: "Download unificado de vídeos, fotos e áudios de mais de 30 plataformas de redes sociais",
@@ -1090,5 +1210,10 @@ module.exports = {
 	detectPlatform,
 	extractURLFromString,
 	isYoutubeUrl,
-	extractYoutubeVideoId
+	extractYoutubeVideoId,
+	searchSessions,
+	saveSearchSession,
+	getSearchSession,
+	executeYoutubeDownload,
+	processYoutubeSearchReaction
 };
