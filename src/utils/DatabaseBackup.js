@@ -5,7 +5,6 @@ const BetterSQLite = require("better-sqlite3");
 const Logger = require("./Logger");
 const zlib = require("zlib");
 const { pipeline } = require("stream/promises");
-const storageService = require("../services/StorageService");
 
 class DatabaseBackup {
 	constructor(databaseInstance) {
@@ -40,6 +39,9 @@ class DatabaseBackup {
 		if (filename === "cache.db" || filename.startsWith("cache.db-")) return true;
 		if (filename.includes("corrupt") || filename.includes("corrupted")) return true;
 		if (filename.endsWith("-wal") || filename.endsWith("-shm")) return true;
+		if (filename.includes(".bak") || filename.includes("_backup_") || filename.endsWith(".tmp")) {
+			return true;
+		}
 
 		// Ignore databases flagged as noBackup (and their companion files like -wal, -shm)
 		if (this.db && this.db.noBackupDatabases) {
@@ -107,6 +109,7 @@ class DatabaseBackup {
 
 					const items = fs.readdirSync(target);
 					for (const item of items) {
+						if (this.shouldIgnoreFile(item)) continue;
 						if (backedUpFiles.has(item)) continue; // Already backed up safely
 						// -wal/-shm/-journal de bancos ja copiados via backup online ja estao incluidos nele
 						if (backedUpFiles.has(item.replace(/-(wal|shm|journal)$/, ""))) continue;
@@ -119,25 +122,36 @@ class DatabaseBackup {
 
 			this.logger.info(`File backup created: ${backupDir}`);
 
-			// Sincroniza snapshot com o S3 (bucket backups no HD secundário)
+			// Sincroniza snapshot diretamente com o SSD secundário (/mnt/ks500gb/backups/sqlite/<timestamp>)
 			try {
 				const destSqlitesDir = path.join(backupDir, "sqlites");
+				const secondaryBaseDir =
+					process.env.SECONDARY_BACKUP_PATH || "/app/downloads/backups/sqlite";
+				const secondarySnapshotDir = path.join(secondaryBaseDir, timestamp);
+
 				if (fs.existsSync(destSqlitesDir)) {
-					const filesToUpload = fs.readdirSync(destSqlitesDir);
-					for (const file of filesToUpload) {
-						const filePath = path.join(destSqlitesDir, file);
-						const s3Key = `sqlite/${timestamp}/${file}`;
-						await storageService.upload(fs.createReadStream(filePath), s3Key, {
-							bucket: storageService.bucketBackups,
-							mimetype: file.endsWith(".gz") ? "application/gzip" : "application/x-sqlite3"
-						});
+					fs.mkdirSync(secondarySnapshotDir, { recursive: true });
+					const filesToCopy = fs
+						.readdirSync(destSqlitesDir)
+						.filter(
+							(file) => !file.startsWith(".") && (file.endsWith(".gz") || file.endsWith(".db"))
+						);
+
+					for (const file of filesToCopy) {
+						fs.copyFileSync(path.join(destSqlitesDir, file), path.join(secondarySnapshotDir, file));
 					}
 					this.logger.info(
-						`[S3 Backup] ${filesToUpload.length} bancos de dados sincronizados para s3://${storageService.bucketBackups}/sqlite/${timestamp}/`
+						`[Secondary Backup] ${filesToCopy.length} bancos sincronizados diretamente para ${secondarySnapshotDir}`
 					);
+
+					// Limpa snapshots mais antigos que 30 dias no SSD secundário
+					this.cleanupSecondaryBackups(secondaryBaseDir, 30);
 				}
-			} catch (s3BackupErr) {
-				this.logger.warn("[S3 Backup] Falha ao enviar backup ao S3:", s3BackupErr.message);
+			} catch (secBackupErr) {
+				this.logger.warn(
+					"[Secondary Backup] Falha ao sincronizar com SSD secundário:",
+					secBackupErr.message
+				);
 			}
 
 			this.cleanupOldScheduledBackups();
@@ -215,7 +229,7 @@ class DatabaseBackup {
 			try {
 				await pipeline(
 					fs.createReadStream(src),
-					zlib.createGzip({ level: 9 }),
+					zlib.createGzip({ level: 1 }),
 					fs.createWriteStream(dest)
 				);
 				fs.unlinkSync(src);
@@ -253,6 +267,34 @@ class DatabaseBackup {
 			}
 		} catch (error) {
 			this.logger.error("Error cleaning up old backups:", error);
+		}
+	}
+
+	cleanupSecondaryBackups(baseDir, retentionDays = 30) {
+		try {
+			if (!fs.existsSync(baseDir)) return;
+			const now = Date.now();
+			const retentionPeriod = retentionDays * 24 * 60 * 60 * 1000;
+			const items = fs.readdirSync(baseDir);
+
+			for (const item of items) {
+				const fullPath = path.join(baseDir, item);
+				if (!fs.statSync(fullPath).isDirectory()) continue;
+				if (!/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/.test(item)) continue;
+
+				const dirDate = new Date(
+					item.replace(/-/g, (m, i) =>
+						i === 4 || i === 7 || i === 10 ? m : i === 13 || i === 16 ? ":" : i === 19 ? "." : m
+					)
+				).getTime();
+
+				if (isNaN(dirDate) || now - dirDate > retentionPeriod) {
+					this.deleteDirectory(fullPath);
+					this.logger.info(`[Secondary Backup] Old backup removed: ${item}`);
+				}
+			}
+		} catch (error) {
+			this.logger.error("Error cleaning up secondary backups:", error);
 		}
 	}
 
