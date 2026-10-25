@@ -59,8 +59,6 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - rustfs-data:/data
-      - ${S3_DOWNLOADS_PATH:-./data/s3-downloads}:/data/downloads
-      - ${S3_BACKUPS_PATH:-./data/s3-backups}:/data/backups
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
@@ -124,6 +122,9 @@ services:
       dockerfile: Dockerfile
     container_name: ravena-ai
     env_file: .env
+    environment:
+      - DL_FOLDER=/app/downloads
+      - SECONDARY_BACKUP_PATH=/app/downloads/backups/sqlite
     restart: unless-stopped
     logging: *default-logging
     stop_grace_period: 30s
