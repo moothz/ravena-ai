@@ -1,12 +1,14 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
+const Database = require("../utils/Database");
+Database.getInstance({ testMode: true });
+
 const assert = require("assert");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
 const GameEventService = require("../services/GameEventService");
-const Database = require("../utils/Database");
 const AdminUtils = require("../utils/AdminUtils");
 
 async function runTests() {
@@ -262,23 +264,6 @@ async function runTests() {
 
 	// 3.6 Teste de Eventos Instantâneos (!sa-instantaneo)
 	console.log("\n3.6 Testando eventos instantâneos (!sa-instantaneo)...");
-
-	// Inserir usuários sintéticos para testes de banco nos jogos
-	await database.dbRun(
-		"slots",
-		"INSERT OR IGNORE INTO slots_users (user_id, coins) VALUES (?, ?)",
-		["5511999990001", 10]
-	);
-	await database.dbRun(
-		"fishing",
-		"INSERT OR IGNORE INTO fishing_users (user_id, baits) VALUES (?, ?)",
-		["5511999990001", 5]
-	);
-	await database.dbRun(
-		"core",
-		"INSERT OR IGNORE INTO farm_bonus_inventory (user_id, rolls, tickets, updated_at) VALUES (?, ?, ?, ?)",
-		["5511999990001", 1, 0, Date.now()]
-	);
 
 	// A) Slots Moedas
 	bot.resetCapture();

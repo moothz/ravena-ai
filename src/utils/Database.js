@@ -170,6 +170,13 @@ class Database {
 	static getInstance(options = {}) {
 		if (!Database.instance) {
 			Database.instance = new Database(options);
+		} else {
+			if (options.testMode !== undefined) {
+				Database.instance.testMode = options.testMode;
+			}
+			if (options.disableBackup !== undefined) {
+				Database.instance.options.disableBackup = options.disableBackup;
+			}
 		}
 		return Database.instance;
 	}
