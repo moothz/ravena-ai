@@ -5,7 +5,6 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const FishingGame = require("./FishingGame");
 const GameEventService = require("../services/GameEventService");
-const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 
 const logger = new Logger("slots-game");
 const database = Database.getInstance();
@@ -794,6 +793,7 @@ async function slotsCommand(bot, message, args, group) {
 		// Credita Tickets de Waifus
 		if (totalTicketsWon > 0) {
 			try {
+				const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 				await ShadowGardenBonusService.addWaifuBonus(userId, { rolls: totalTicketsWon });
 				await savePrize(userId, `${totalTicketsWon} Tickets de Waifu`, "bom");
 			} catch (tErr) {

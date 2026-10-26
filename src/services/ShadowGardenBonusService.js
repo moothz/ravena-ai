@@ -14,8 +14,11 @@
 const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const FishingGame = require("../functions/FishingGame");
-const SlotsGame = require("../functions/SlotsGame");
 const ShadowGardenClient = require("./ShadowGardenClient");
+
+function getSlotsGame() {
+	return require("../functions/SlotsGame");
+}
 
 const logger = new Logger("shadow-garden-bonus");
 const database = Database.getInstance();
@@ -369,7 +372,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
 			case "casino_standard_chips": {
 				// ID 9: Trevo de Obsidiana — concede 5 moedas de slots por planta
 				const coinsToAdd = 5 * count;
-				await SlotsGame.addCoins(cId, coinsToAdd, true);
+				await getSlotsGame().addCoins(cId, coinsToAdd, true);
 				dispatchedMessages.push(
 					`• *${plantDisplayName}* (x${count}) ➔ +${coinsToAdd} moedinhas adicionadas para jogar no !slots!`
 				);
@@ -379,7 +382,7 @@ async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
 			case "casino_gold_chips": {
 				// ID 10: Trevo Dourado — concede 25 moedas de ouro de slots por planta
 				const coinsToAdd = 25 * count;
-				await SlotsGame.addCoins(cId, coinsToAdd, true);
+				await getSlotsGame().addCoins(cId, coinsToAdd, true);
 				dispatchedMessages.push(
 					`• *${plantDisplayName}* (x${count}) ➔ +${coinsToAdd} moedas de ouro creditadas no !slots!`
 				);

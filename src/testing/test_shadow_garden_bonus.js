@@ -90,6 +90,41 @@ async function runBonusTests() {
 	assert.strictEqual(consumedRoll.type, "roll", "Deveria consumir roll após esgotar tickets");
 	console.log("   ✓ Prioridade de consumo testada com sucesso!");
 
+	// 5. Teste de despacho de bônus de Cassino / Slots (Trevo de Obsidiana e Trevo Dourado)
+	console.log("5. Testando despacho de bônus de Slots (Clover 9 e 10)...");
+	const slotsDb = Database.getInstance();
+	try {
+		slotsDb.mappers.run("slots", "DELETE FROM slots_users WHERE user_id = ?", [cleanId]);
+	} catch (e) {}
+
+	const msgsSlots = await ShadowGardenBonusService.dispatchHarvestDrops(cleanId, [
+		{ plantId: "crop_09_obsidian_clover", count: 2 },
+		{ plantId: "crop_10_golden_clover", count: 1 }
+	]);
+	assert.strictEqual(msgsSlots.length, 2, "Deveria despachar 2 mensagens para bônus de slots");
+	assert.strictEqual(
+		msgsSlots[0].includes("+10 moedinhas"),
+		true,
+		"Deveria conceder 10 moedas de slots (2x5)"
+	);
+	assert.strictEqual(
+		msgsSlots[1].includes("+25 moedas de ouro"),
+		true,
+		"Deveria conceder 25 moedas de ouro (1x25)"
+	);
+
+	const slotsUser = slotsDb.mappers.get(
+		"slots",
+		"SELECT coins FROM slots_users WHERE user_id = ?",
+		[cleanId]
+	);
+	assert.strictEqual(
+		slotsUser !== null && slotsUser.coins >= 35,
+		true,
+		"Deveria ter acumulado pelo menos 35 moedas no slots"
+	);
+	console.log("   ✓ Bônus de Slots creditado com sucesso sem erro de dependência circular!");
+
 	console.log("\n==================================================================");
 	console.log("🎉 TODOS OS TESTES ESPECÍFICOS DE BÔNUS PASSARAM COM SUCESSO!");
 	console.log("==================================================================");
