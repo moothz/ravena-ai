@@ -3393,6 +3393,62 @@ async function verTopCharacters(bot, message) {
 }
 
 /**
+ * Consulta o ranking exclusivo do grupo (jogadores e waifus locais)
+ */
+async function verRankingGrupo(bot, message) {
+	const chatId = message.group ?? message.author;
+	const groupId = getGroupId(message);
+
+	if (!message.group) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Este comando só pode ser utilizado dentro de um grupo do WhatsApp!"
+		});
+	}
+
+	try {
+		const { data } = await api.get(`/groups/${encodeURIComponent(groupId)}/leaderboard`, { params: { limit: 10 } });
+		const { totalMembers, totalClaimsInGroup, topKakera, topHarem, topCharacters } = data.data || {};
+
+		if (!topKakera || topKakera.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: `👥 *Ranking do Grupo*\n\nAinda não há membros com atividade registrada neste grupo!`
+			});
+		}
+
+		const medals = ["🥇", "🥈", "🥉"];
+
+		let text = `🏆 *Ranking do Grupo:*\n`;
+		text += `👥 Membros ativos: *${totalMembers}* | 💍 Casamentos no grupo: *${totalClaimsInGroup}*\n\n`;
+
+		text += `💰 *Mais Ricos (Zinthos):*\n`;
+		topKakera.slice(0, 5).forEach((u, i) => {
+			const medal = medals[i] || `${i + 1}º`;
+			text += `${medal} *${u.name}* — ${u.kakera.toLocaleString("pt-BR")} 💎\n`;
+		});
+
+		text += `\n🏰 *Maiores Haréns:*\n`;
+		topHarem.slice(0, 5).forEach((u, i) => {
+			const medal = medals[i] || `${i + 1}º`;
+			text += `${medal} *${u.name}* — ${u.haremCount} waifus\n`;
+		});
+
+		if (topCharacters && topCharacters.length > 0) {
+			text += `\n🌟 *Waifus Conquistadas no Grupo:*\n`;
+			topCharacters.slice(0, 5).forEach((entry, i) => {
+				const medal = medals[i] || `${i + 1}º`;
+				text += `${medal} *${entry.character.name}* (🔑 ${entry.keys}) — Dono: ${entry.owner?.name || "Alguém"}\n`;
+			});
+		}
+
+		return new ReturnMessage({ chatId, content: text });
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao consultar ranking do grupo.");
+	}
+}
+
+/**
  * Busca personagens no catálogo por nome ou série
  */
 async function buscarPersonagens(bot, message, args) {
@@ -4317,6 +4373,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-saldo\` (aliases: \`!mu-zinthos\`, \`!mu-z\`, \`!mu-k\`) — Consulta seu saldo atual de Zinthos.\n`;
 	text += `• \`!mu-perfil\` (aliases: \`!mu-p\`, \`!mu-eu\`) — Exibe seu perfil de jogador, estatísticas e favorita.\n`;
 	text += `• \`!mu-ranking [top]\` (aliases: \`!mu-top\`, \`!mu-rank\`) — Ranking dos jogadores mais ricos em Zinthos.\n`;
+	text += `• \`!mu-topgrupo\` (aliases: \`!mu-rankgrupo\`, \`!mu-topg\`) — Ranking de jogadores e waifus exclusivo do grupo atual.\n`;
 	text += `• \`!mu-cooldowns\` (aliases: \`!mu-cd\`, \`!mu-tempo\`) — Consulta o tempo restante dos seus cooldowns.\n\n`;
 
 	text += `🌟 *Wishlist e Catálogo:*\n`;
@@ -5874,6 +5931,33 @@ const commands = [
 		reactions: { before: "🏆", after: "✅", error: "❌" },
 		reply: true,
 		method: verRanking
+	}),
+	new Command({
+		name: "mu-topgrupo",
+		description: "Ranking de jogadores e waifus exclusivo do grupo",
+		category: "mudae",
+		group: "muwaifu-rank",
+		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
+		method: verRankingGrupo
+	}),
+	new Command({
+		name: "mu-rankgrupo",
+		description: "Alias de !mu-topgrupo",
+		category: "mudae",
+		group: "muwaifu-rank",
+		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
+		method: verRankingGrupo
+	}),
+	new Command({
+		name: "mu-topg",
+		description: "Alias de !mu-topgrupo",
+		category: "mudae",
+		group: "muwaifu-rank",
+		reactions: { before: "🏆", after: "✅", error: "❌" },
+		reply: true,
+		method: verRankingGrupo
 	}),
 
 	// ── TOP PERSONAGENS ─────────────────────────────────────────────────────
