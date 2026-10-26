@@ -385,6 +385,82 @@ input:checked + .slider-round:before {
     animation: fadeIn 0.25s ease-out;
 }
 
+/* Accordion Danger (Remover Bot do Grupo) */
+.accordion-item.accordion-danger {
+    background: var(--surface-card);
+    border: 1px solid var(--danger-color);
+}
+
+.accordion-item.accordion-danger:hover {
+    border-color: #ff6b6b;
+    box-shadow: 0 2px 10px rgba(229, 62, 62, 0.2);
+}
+
+.accordion-item.accordion-danger .accordion-header h3 {
+    color: var(--danger-color);
+}
+
+.accordion-item.accordion-danger .accordion-header .arrow {
+    color: var(--danger-color);
+}
+
+.accordion-item.accordion-danger.active .arrow {
+    color: #ff6b6b;
+}
+
+.leave-group-section {
+    padding: 1.75rem 1.25rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.leave-group-title {
+    color: var(--danger-color);
+    margin-bottom: 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.leave-group-desc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    max-width: 440px;
+    margin: 0 auto 1.5rem auto;
+    text-align: center;
+}
+
+.leave-group-action {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+.leave-group-action .btn-danger {
+    padding: 10px 24px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.leave-group-action .btn-danger:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(229, 62, 62, 0.45);
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }

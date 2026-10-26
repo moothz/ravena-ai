@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel de Gerenciamento - RavenaBot</title>
-    <link rel="stylesheet" href="/management.css?v=23">
+    <link rel="stylesheet" href="/management.css?v=24">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -989,15 +989,25 @@
                     </div>
                 </div>
 
-                <!-- Zona de Remoção Amigável do Bot -->
-                <div class="danger-zone-card mt-4 mb-4 p-4 text-center" style="border: 1px dashed var(--danger, #ff4d4f); border-radius: 12px; background: rgba(255, 77, 79, 0.05);">
-                    <h4 style="color: var(--danger, #ff4d4f); margin-bottom: 8px;"><i class="fas fa-door-open"></i> Deseja remover o bot do grupo?</h4>
-                    <p class="text-muted text-sm" style="max-width: 600px; margin: 0 auto 16px auto;">
-                        Caso seu grupo não queira mais a permanência da Ravena, utilize o botão abaixo para uma saída amigável sem precisar removê-la forçadamente.
-                    </p>
-                    <button type="button" id="btn-remover-bot-grupo" class="btn btn-danger" style="font-weight: 600; padding: 10px 24px;">
-                        <i class="fas fa-sign-out-alt"></i> Remover Bot do Grupo
-                    </button>
+                <!-- Accordion: Remover Bot do Grupo (Saída Amigável) -->
+                <div class="accordion-item accordion-danger" id="accordion-leave-group">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-door-open"></i> Remover Bot do Grupo</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="leave-group-section">
+                            <h4 class="leave-group-title"><i class="fas fa-triangle-exclamation"></i> Deseja remover o bot do grupo?</h4>
+                            <p class="leave-group-desc">
+                                Caso seu grupo não queira mais a permanência da Ravena, utilize o botão abaixo para uma saída amigável sem precisar removê-la forçadamente.
+                            </p>
+                            <div class="leave-group-action">
+                                <button type="button" id="btn-remover-bot-grupo" class="btn btn-danger">
+                                    <i class="fas fa-sign-out-alt"></i> Remover Bot do Grupo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
             </div>
