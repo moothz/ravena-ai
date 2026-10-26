@@ -84,7 +84,7 @@ class WhatsAppBotGo {
 		this.id = options.id;
 		this.enabled = options.enabled !== undefined ? Boolean(options.enabled) : true;
 		this.nomeExibir = options.nomeExibir;
-		this.sendJoinInfo = options.sendJoinInfo;
+		this.sendJoinInfo = options.sendJoinInfo !== undefined ? Boolean(options.sendJoinInfo) : true;
 		this.vip = options.vip;
 		this.comunitario = options.comunitario;
 		this.numeroResponsavel = options.numeroResponsavel;
@@ -3392,18 +3392,29 @@ class WhatsAppBotGo {
 					}
 				}
 
+				const isParticipantBot =
+					Boolean(groupData.isBotJoining) ||
+					Boolean(groupDetails?.isBotJoining) ||
+					(this.phoneNumber && PhoneUtils.isSamePhone(participant, this.phoneNumber)) ||
+					(this.myLid &&
+						(PhoneUtils.isSamePhone(participant, this.myLid) ||
+							participant.includes(this.myLid))) ||
+					(participantPhone &&
+						this.phoneNumber &&
+						PhoneUtils.isSamePhone(participantPhone, this.phoneNumber));
+
 				const eventData = {
 					group: {
 						id: groupId,
 						name: groupName,
 						notInGroup: groupDetails.notInGroup,
-						isBotJoining: groupData.isBotJoining ?? groupDetails.isBotJoining,
+						isBotJoining: isParticipantBot,
 						isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
 						isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce
 					},
 					isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
 					isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce,
-					isBotJoining: groupData.isBotJoining ?? groupDetails.isBotJoining,
+					isBotJoining: isParticipantBot,
 					user: {
 						id: participant,
 						name: contact?.name ?? participant.split("@")[0],

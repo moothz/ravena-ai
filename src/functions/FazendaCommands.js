@@ -1354,9 +1354,28 @@ function isTestUser(userId) {
 		s.startsWith("sim") ||
 		s.includes("test") ||
 		s.includes("sim") ||
+		s.includes("cultivador") ||
 		s === "calibrate" ||
 		s === "1"
 	);
+}
+
+/**
+ * Verifica se o usuário é superadmin ou conta de teste/dono (ex: moothz)
+ * @param {string} userIdOrName
+ * @returns {boolean}
+ */
+function isSuperAdminUser(userIdOrName) {
+	if (!userIdOrName) return false;
+	const s = String(userIdOrName).trim().toLowerCase();
+	if (s.includes("moothz") || s === "382359487") return true;
+	const digits = s.split("@")[0].replace(/\D/g, "");
+	const superAdmins = (process.env.SUPER_ADMINS || "")
+		.split(",")
+		.map((a) => a.split("@")[0].replace(/\D/g, ""))
+		.filter(Boolean);
+	if (digits && superAdmins.includes(digits)) return true;
+	return false;
 }
 
 /**
@@ -1789,7 +1808,18 @@ async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot =
 		// Calcula os deltas de cada jogador
 		const validPlayers = [];
 		for (const p of digest.players) {
-			if (isTestUser(p.id)) continue;
+			if (isTestUser(p.id) || isSuperAdminUser(p.id)) continue;
+
+			const resolvedName = await resolvePlayerRankingName(bot, p.id, null, null);
+			const cleanNameLower = (resolvedName || "").trim().toLowerCase();
+			if (
+				isTestUser(resolvedName) ||
+				isSuperAdminUser(resolvedName) ||
+				cleanNameLower.startsWith("cultivador") ||
+				cleanNameLower === "cultivador"
+			) {
+				continue;
+			}
 
 			const prev = snapMap.get(String(p.id));
 			const deltaPlanted = prev
@@ -1804,7 +1834,7 @@ async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot =
 
 			validPlayers.push({
 				userId: String(p.id),
-				userName: await resolvePlayerRankingName(bot, p.id, null, null),
+				userName: resolvedName,
 				coins: p.coins || 0,
 				totalPlanted: p.totalPlanted || 0,
 				totalHarvested: p.totalHarvested || 0,
@@ -1831,15 +1861,27 @@ async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot =
 			.sort((a, b) => b.deltaWithered - a.deltaWithered)
 			.slice(0, 3);
 
-		// Jogador mais rico
+		// Jogador mais rico (ignora contas de teste, cultivador e superadmin)
 		let richest = null;
 		if (digest.richest && digest.richest.id) {
-			richest = {
-				userId: String(digest.richest.id),
-				userName: await resolvePlayerRankingName(bot, digest.richest.id, null, null),
-				coins: digest.richest.coins || 0
-			};
-		} else if (validPlayers.length > 0) {
+			const rId = String(digest.richest.id);
+			const rName = await resolvePlayerRankingName(bot, digest.richest.id, null, null);
+			const rNameLower = (rName || "").trim().toLowerCase();
+			if (
+				!isTestUser(rId) &&
+				!isSuperAdminUser(rId) &&
+				!isTestUser(rName) &&
+				!isSuperAdminUser(rName) &&
+				!rNameLower.startsWith("cultivador")
+			) {
+				richest = {
+					userId: rId,
+					userName: rName,
+					coins: digest.richest.coins || 0
+				};
+			}
+		}
+		if (!richest && validPlayers.length > 0) {
 			const topMoney = [...validPlayers].sort((a, b) => b.coins - a.coins)[0];
 			if (topMoney) richest = topMoney;
 		}
@@ -1855,14 +1897,30 @@ async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot =
 			};
 		}
 
-		// Jogador com mais decorações equipadas
+		// Jogador com mais decorações equipadas (ignora contas de teste, cultivador e superadmin/moothz)
 		let topDecorator = null;
-		if (digest.topDecorator && digest.topDecorator.playerId) {
+		const candidateDecorators =
+			Array.isArray(digest.topDecorators) && digest.topDecorators.length > 0
+				? digest.topDecorators
+				: digest.topDecorator && digest.topDecorator.playerId
+					? [digest.topDecorator]
+					: [];
+
+		for (const dec of candidateDecorators) {
+			if (!dec || !dec.playerId) continue;
+			const pId = String(dec.playerId);
+			if (isTestUser(pId) || isSuperAdminUser(pId)) continue;
+			const pName = await resolvePlayerRankingName(bot, pId, null, null);
+			const pNameLower = (pName || "").trim().toLowerCase();
+			if (isTestUser(pName) || isSuperAdminUser(pName) || pNameLower.startsWith("cultivador")) {
+				continue;
+			}
 			topDecorator = {
-				userId: String(digest.topDecorator.playerId),
-				userName: await resolvePlayerRankingName(bot, digest.topDecorator.playerId, null, null),
-				count: digest.topDecorator.count || 0
+				userId: pId,
+				userName: pName,
+				count: dec.count || 0
 			};
+			break;
 		}
 
 		// Salva snapshot caso solicitado (ex: no envio oficial de domingo)
@@ -1916,6 +1974,7 @@ module.exports = {
 	getUserDisplayName,
 	resolvePlayerRankingName,
 	isTestUser,
+	isSuperAdminUser,
 	optimizeFarmImage,
 	extractQualityFlag
 };

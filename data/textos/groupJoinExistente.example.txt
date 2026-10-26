@@ -1,2 +1,9 @@
-# Exemplo de groupJoinExistente.txt
-# Adicione seu texto customizado aqui
+🦇 Olá novamente, grupo! Eu sou a *ravenabot*! 🐦‍⬛️
+Já estive neste grupo antes! Para ver todos os comandos disponíveis, envie *{prefix}cmd*.
+
+• *Site oficial:* https://ravena.moothz.win
+❓ *Dúvidas ou problemas?* Envie *{prefix}ajuda* ou venha falar conosco no *!grupao*.
+👋 *Não deseja mais o bot?* Administradores podem usar *{prefix}g-sair* para uma saída amigável sem precisar me remover.
+
+🚨 _Canal de *AVISOS* com novidades, avisos e atualizações:_ ⚠️
+> https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f

@@ -80,8 +80,7 @@ async function main() {
 		const welcomeExistente = sentToGroup.find(
 			(m) =>
 				typeof m.content === "string" &&
-				(m.content.includes("Já estive aqui neste grupo antes") ||
-					m.content.includes("Olá, grupo!"))
+				(m.content.includes("Já estive") || m.content.includes("Olá, grupo!"))
 		);
 		assert.ok(
 			welcomeExistente,

@@ -40,7 +40,7 @@ class WhatsAppBotTelegram {
 
 		// Opções compartilhadas utilizadas
 		this.nomeExibir = options.nomeExibir;
-		this.sendJoinInfo = options.sendJoinInfo;
+		this.sendJoinInfo = options.sendJoinInfo !== undefined ? Boolean(options.sendJoinInfo) : true;
 		this.pvAI = options.pvAI ?? true;
 		this.ignorePV = options.ignorePV || false;
 		this.updateStatus = options.updateStatus ?? true;

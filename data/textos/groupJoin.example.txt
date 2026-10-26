@@ -1,2 +1,11 @@
-# Exemplo de groupJoin.txt
-# Adicione seu texto customizado aqui
+🦇 Olá, grupo! Eu sou a *ravenabot*, um bot _grátis_ para WhatsApp! 🐦‍⬛️
+
+• Use *{prefix}cmd* para ver todos os comandos disponíveis.
+• *Site oficial:* https://ravena.moothz.win
+• Sou mantida por doações! Conheça os apoiadores e contribua enviando *{prefix}doar*
+
+❓ *Dúvidas ou problemas?* Envie *{prefix}ajuda* ou entre no *!grupao* para suporte com a comunidade e o criador!
+👋 *Não deseja a Ravena no grupo?* Não precisa me remover ou bloquear! Administradores podem usar o comando *{prefix}g-sair* para uma saída amigável.
+
+🚨 _Entre no canal de *AVISOS* da Ravena para novidades, instabilidades e atualizações:_ ⚠️
+> https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f

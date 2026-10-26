@@ -526,8 +526,14 @@ class Management {
 			regras: {
 				method: "handleGroupRules",
 				description: "Define, exibe ou remove as regras do grupo"
+			},
+			sair: {
+				method: "sairGrupo",
+				description: "Solicita a saída amigável da Ravena do grupo (requer confirmação em 60s)"
 			}
 		};
+
+		this.pendingSairConfirmations = new Map();
 
 		this.help = {
 			naoEncontrado:
@@ -9530,6 +9536,101 @@ class Management {
 			content: `✅ Usuário(s) desbanido(s) com sucesso: ${unbanned.join(", ")}.\nAgora ele(a) pode entrar no grupo novamente.`
 		});
 	}
+
+	/**
+	 * Solicita a saída amigável da Ravena do grupo com confirmação de 60 segundos
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage|null>}
+	 */
+	async sairGrupo(bot, message, args, group) {
+		const chatId = message.group ?? group?.id;
+		if (!chatId) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "❌ Este comando só pode ser utilizado dentro de um grupo."
+			});
+		}
+
+		const now = Date.now();
+		const pending = this.pendingSairConfirmations.get(chatId);
+		const isConfirmed = pending && now - pending.timestamp <= 60000;
+
+		if (!isConfirmed) {
+			this.pendingSairConfirmations.set(chatId, {
+				timestamp: now,
+				author: message.author
+			});
+
+			const msgConfirmacao =
+				`🥺 *Poxa! A Ravena fica triste, mas é uma opção do grupo.* 💔\n\n` +
+				`Saindo desta maneira amigável, sem me remover ou bloquear, sou livre para voltar no futuro caso queiram me convidar de novo — *sem ressentimentos*! 💜✨\n\n` +
+				`Agradeço de coração pelo tempo e momentos que passamos juntos! Se tiverem qualquer dificuldade ou dúvidas, chame meu criador *moothz* no *!grupao*.\n\n` +
+				`⚠️ *Para confirmar a minha saída, envie novamente:*\n` +
+				`👉 \`!g-sair\` _(dentro de 60 segundos)_`;
+
+			return new ReturnMessage({
+				chatId,
+				content: msgConfirmacao
+			});
+		}
+
+		// Confirmação validada
+		this.pendingSairConfirmations.delete(chatId);
+
+		try {
+			// Marca a flag amigável no banco de dados
+			const groupData = (await this.database.getGroup(chatId)) || group || { id: chatId };
+			groupData.removidoAmigavel = true;
+			groupData.saidaAmigavel = {
+				timestamp: now,
+				author: message.author || message.from || null,
+				authorName: message.authorName || message.name || null,
+				via: "comando"
+			};
+			await this.database.saveGroup(groupData);
+
+			const msgDespedida =
+				`👋 *Despedida da Ravena* 💜\n\n` +
+				`Agradeço a todos pela convivência e pelas conversas até aqui! Saindo de cabeça erguida e com portas abertas para nos reencontrarmos um dia.\n\n` +
+				`Fiquem bem e até a próxima! Se precisarem de suporte, falem com meu criador *moothz* no *!grupao*. 🌸🕊️`;
+
+			// Envia a mensagem antes de sair
+			await bot.sendMessage(chatId, msgDespedida).catch((err) => {
+				this.logger.error(
+					`[sairGrupo] Erro ao enviar mensagem de despedida no grupo ${chatId}:`,
+					err
+				);
+			});
+
+			// Pequeno delay para garantir entrega da mensagem via WebSocket/API
+			setTimeout(async () => {
+				try {
+					if (typeof bot.leaveGroup === "function") {
+						await bot.leaveGroup(chatId);
+					} else if (typeof bot.client?.leaveGroup === "function") {
+						await bot.client.leaveGroup(chatId);
+					}
+					this.logger.info(`[sairGrupo] Bot saiu amigavelmente do grupo ${chatId}`);
+				} catch (leaveErr) {
+					this.logger.error(
+						`[sairGrupo] Erro ao executar leaveGroup no grupo ${chatId}:`,
+						leaveErr
+					);
+				}
+			}, 1500);
+
+			return null;
+		} catch (error) {
+			this.logger.error(`[sairGrupo] Erro ao processar saída amigável do grupo ${chatId}:`, error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Ocorreu um erro ao tentar sair do grupo: ${error.message}`
+			});
+		}
+	}
 }
 
 const helper = {
@@ -10192,6 +10293,12 @@ const helper = {
 			cmd: "!g-regras",
 			desc: "Define, exibe ou remove as regras deste grupo",
 			usage: ["!g-regras", "!g-regras <texto>", "!g-regras (em resposta a uma mensagem)"],
+			category: "gerenciamento"
+		},
+		{
+			cmd: "!g-sair",
+			desc: "Solicita a saída amigável da Ravena do grupo (requer confirmação em 60s)",
+			usage: ["!g-sair"],
 			category: "gerenciamento"
 		}
 	]

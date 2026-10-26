@@ -1444,9 +1444,15 @@ class EventHandler extends EventEmitter {
 	async processGroupJoin(bot, data) {
 		const groupId = data.group.id;
 		const isBotJoining =
-			data?.isBotJoining ||
-			data?.group?.isBotJoining ||
-			data?.user?.id?.startsWith(bot.phoneNumber);
+			Boolean(data?.isBotJoining) ||
+			Boolean(data?.group?.isBotJoining) ||
+			Boolean(
+				data?.user?.id &&
+				((bot.phoneNumber && data.user.id.startsWith(bot.phoneNumber)) ||
+					(bot.id && data.user.id.startsWith(bot.id)) ||
+					(bot.myLid && (data.user.id.startsWith(bot.myLid) || data.user.id.includes(bot.myLid))) ||
+					(bot.client?.info?.wid?._serialized && data.user.id === bot.client.info.wid._serialized))
+			);
 		if (bot.markInGroup) {
 			await bot.markInGroup(groupId);
 		} else if (bot.removeSkipGroup) {
@@ -1820,7 +1826,7 @@ class EventHandler extends EventEmitter {
 					} else {
 						this.logger.debug(`[groupJoin] Novo grupo, enviando toda mensagem de boas vindas`);
 						const botDisplayName = bot.nomeExibir || "ravenabot";
-						botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*, um bot de WhatsApp. Use "${group.prefix}cmd" para ver os comandos disponíveis.`;
+						botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*, um bot de WhatsApp. Use "${group.prefix}cmd" para ver os comandos disponíveis.\n\n❓ Dúvidas ou suporte? Envie ${group.prefix}ajuda ou entre no !grupao.\n👋 Para uma saída amigável sem precisar me remover, administradores podem usar ${group.prefix}g-sair.`;
 						try {
 							const groupJoinPath = path.join(
 								this.database.databasePath,
@@ -2059,7 +2065,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								readError
 							);
 							const botDisplayName = bot.nomeExibir || "ravenabot";
-							botInfoMessage = `🦇 Olá, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes, mas se tiverem dúvidas, é só mandar um *!cmd*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
+							botInfoMessage = `🦇 Olá novamente, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes!\n\n• Comandos: *${group.prefix}cmd*\n• Suporte/Dúvidas: *${group.prefix}ajuda* ou *!grupao*\n• Saída amigável: *${group.prefix}g-sair*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
 						}
 					}
 				}

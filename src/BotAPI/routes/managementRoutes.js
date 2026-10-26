@@ -637,6 +637,81 @@ function registerManagementRoutes(api) {
 		}
 	});
 
+	// Saída amigável do bot pelo painel web
+	app.post("/api/group/leave-friendly", api.strictLimiter, async (req, res) => {
+		const { token, groupId } = req.body;
+
+		if (!token || !groupId) {
+			return res.status(400).json({ success: false, message: "Parâmetros obrigatórios ausentes" });
+		}
+
+		try {
+			const webManagementData = await api.readWebManagementToken(token);
+			if (!webManagementData || webManagementData.groupId !== groupId) {
+				return res.status(401).json({ success: false, message: "Não autorizado" });
+			}
+
+			if (new Date() > new Date(webManagementData.expiresAt)) {
+				return res.status(401).json({ success: false, message: "Token expirado" });
+			}
+
+			const groupData = (await api.database.getGroup(groupId)) || { id: groupId };
+			groupData.removidoAmigavel = true;
+			groupData.saidaAmigavel = {
+				timestamp: Date.now(),
+				via: "web_panel",
+				token
+			};
+			await api.database.saveGroup(groupData);
+
+			const bot =
+				api.bots.find((b) => b.groups && b.groups[groupId]) ||
+				api.bots.find((b) => b.isConnected) ||
+				api.bots[0];
+
+			const msgDespedida =
+				`👋 *Despedida da Ravena* 💜\n\n` +
+				`Agradeço a todos pela convivência e pelas conversas até aqui! Saindo de cabeça erguida e com portas abertas para nos reencontrarmos um dia.\n\n` +
+				`Fiquem bem e até a próxima! Se precisarem de suporte, falem com meu criador *moothz* no *!grupao*. 🌸🕊️`;
+
+			if (bot) {
+				await bot.sendMessage(groupId, msgDespedida).catch((err) => {
+					api.logger.error(
+						`[leave-friendly] Erro ao enviar mensagem de despedida no grupo ${groupId}:`,
+						err
+					);
+				});
+
+				setTimeout(async () => {
+					try {
+						if (typeof bot.leaveGroup === "function") {
+							await bot.leaveGroup(groupId);
+						} else if (typeof bot.client?.leaveGroup === "function") {
+							await bot.client.leaveGroup(groupId);
+						}
+						api.logger.info(`[leave-friendly] Bot saiu amigavelmente do grupo ${groupId}`);
+					} catch (leaveErr) {
+						api.logger.error(`[leave-friendly] Erro ao sair do grupo ${groupId}:`, leaveErr);
+					}
+				}, 1500);
+			}
+
+			// Invalida o token para não permitir novos usos
+			try {
+				const tokenFilePath = path.join(api.dataPath, "webTokens", `${token}.json`);
+				await fs.unlink(tokenFilePath).catch(() => {});
+			} catch (_) {}
+
+			return res.json({
+				success: true,
+				message: "A Ravena foi removida do grupo amigavelmente com sucesso."
+			});
+		} catch (error) {
+			api.logger.error("[leave-friendly] Erro ao processar saída amigável:", error);
+			return res.status(500).json({ success: false, message: error.message });
+		}
+	});
+
 	// Upload de mídia de grupo
 	app.post(
 		"/api/upload-media",

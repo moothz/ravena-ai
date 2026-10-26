@@ -15,6 +15,7 @@ async function runTests() {
 	console.log("=== Iniciando Testes do Sistema de Eventos Temporários ===");
 
 	const database = Database.getInstance({ testMode: true });
+	await GameEventService.init();
 
 	// 1. Teste de Normalização de Nomes e Tipos
 	console.log("\n1. Testando normalização de jogos e tipos...");
@@ -52,10 +53,11 @@ async function runTests() {
 	// 2. Teste do GameEventService (setEvent, getMultiplier, getEventBanner, removeEvent)
 	console.log("\n2. Testando criação e leitura de eventos no GameEventService...");
 	// Limpar eventos prévios
-	await GameEventService.removeEvent("pesca", "peso");
-	await GameEventService.removeEvent("pesca", "lendario");
-	await GameEventService.removeEvent("waifu", "raros");
-	await GameEventService.removeEvent("slots", "vitoria");
+	for (const game of Object.keys(GameEventService.SUPPORTED_GAMES)) {
+		for (const type of GameEventService.SUPPORTED_GAMES[game]) {
+			await GameEventService.removeEvent(game, type);
+		}
+	}
 
 	// Criar evento de pesca: +25% peso por 5 horas
 	const resPesca = await GameEventService.setEvent("pesca", "peso", 25, 5, "5511999999999");

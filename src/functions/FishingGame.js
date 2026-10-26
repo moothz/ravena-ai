@@ -2735,32 +2735,53 @@ async function netFishCommand(bot, message, args, group) {
 			contentMsg += `\n🐟 _Nenhuma criatura fisgada nesta puxada de rede._\n`;
 		}
 
-		// Itens / Buffs obtidos
+		// Itens / Buffs obtidos agrupados por quantidade decrescente
 		if (caughtItems.length > 0) {
+			const itemMap = new Map();
+			for (const item of caughtItems) {
+				const key = item.name;
+				if (!itemMap.has(key)) {
+					itemMap.set(key, { count: 0, emoji: item.emoji || "🎁", name: item.name });
+				}
+				itemMap.get(key).count += 1;
+			}
+			const aggregatedItems = Array.from(itemMap.values()).sort(
+				(a, b) => b.count - a.count || a.name.localeCompare(b.name)
+			);
 			contentMsg += `\n✨ *Itens & Buffs Obtidos:*\n`;
-			caughtItems.forEach((item) => {
-				contentMsg += `  • ${item.emoji || "🎁"} *${item.name}*\n`;
+			aggregatedItems.forEach((item) => {
+				contentMsg += `  • ${item.count}x ${item.emoji} *${item.name}*\n`;
 			});
 		}
 
-		// Lixos pescados
+		// Lixos pescados agrupados por quantidade decrescente
 		if (caughtTrash.length > 0) {
+			const trashMap = new Map();
+			for (const trash of caughtTrash) {
+				const key = trash.name;
+				if (!trashMap.has(key)) {
+					trashMap.set(key, { count: 0, emoji: trash.emoji || "👞", name: trash.name });
+				}
+				trashMap.get(key).count += 1;
+			}
+			const aggregatedTrash = Array.from(trashMap.values()).sort(
+				(a, b) => b.count - a.count || a.name.localeCompare(b.name)
+			);
 			contentMsg += `\n🗑️ *Lixos Recolhidos:*\n`;
-			caughtTrash.forEach((trash) => {
-				contentMsg += `  • ${trash.emoji || "👞"} ${trash.name}\n`;
+			aggregatedTrash.forEach((trash) => {
+				contentMsg += `  • ${trash.count}x ${trash.emoji} ${trash.name}\n`;
 			});
 		}
 
-		// Criaturas descartadas (inventário cheio)
+		// Criaturas descartadas (inventário cheio - exibe apenas quantidade e peso total)
 		if (discardedFishes.length > 0) {
+			const totalDiscardedWeight = discardedFishes.reduce(
+				(acc, f) => acc + (Number(f.weight) || 0),
+				0
+			);
+			const fishWord = discardedFishes.length === 1 ? "criatura" : "criaturas";
 			contentMsg += `\n⚠️ *Criaturas Descartadas (inventário cheio):*\n`;
-			discardedFishes.forEach((fish) => {
-				const modText =
-					fish.appliedModifiers && fish.appliedModifiers.length > 0
-						? ` _(${fish.appliedModifiers.join(", ")})_`
-						: "";
-				contentMsg += `  • *${fish.name}* (_${fish.weight.toFixed(2)} kg_)${modText}\n`;
-			});
+			contentMsg += `  • ${discardedFishes.length} ${fishWord} descartadas (Total: _${totalDiscardedWeight.toFixed(2)} kg_)\n`;
 		}
 
 		contentMsg += `\n> 🎒 Inventário: ${userData.fishes.length}/${maxInventory} | 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;

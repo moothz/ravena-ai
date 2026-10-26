@@ -1042,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pvAI: true,
             notificarDonate: false,
             updateStatus: true,
-            sendJoinInfo: false,
+            sendJoinInfo: true,
             aiPersonality: '',
             msgSuporte: '',
             extras: {},

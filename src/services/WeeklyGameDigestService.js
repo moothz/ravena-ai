@@ -53,6 +53,7 @@ class WeeklyGameDigestService {
 		const now = new Date();
 		const startOfWeek = sinceMs || now.getTime() - 7 * 24 * 60 * 60 * 1000;
 		const database = Database.getInstance();
+		const defaultBot = Array.from(this.registeredBots)[0] || null;
 
 		const [
 			slotsStats,
@@ -72,13 +73,18 @@ class WeeklyGameDigestService {
 			AnagramGame.getWeeklyAnagramStats(startOfWeek).catch(() => []),
 			StopGame.getWeeklyStopStats(startOfWeek).catch(() => []),
 			PintoGame.getWeeklyPintoStats(startOfWeek).catch(() => []),
-			FazendaCommands.getWeeklyFazendaStats(startOfWeek, saveSnapshot).catch(() => null),
-			WaifuCommands.getWeeklyWaifuStats(startOfWeek).catch(() => null),
+			FazendaCommands.getWeeklyFazendaStats(startOfWeek, saveSnapshot, defaultBot).catch(
+				() => null
+			),
+			WaifuCommands.getWeeklyWaifuStats(startOfWeek, defaultBot).catch(() => null),
 			database
 				.dbGet(
 					"cmd_usage",
 					`SELECT COUNT(*) as total_cmds, COUNT(DISTINCT user) as active_users
-					 FROM cmd_usage_log WHERE timestamp >= ?`,
+					 FROM cmd_usage_log
+					 WHERE timestamp >= ?
+					   AND type NOT IN ('auto')
+					   AND NOT (command = 'interagir' AND args = 'false')`,
 					[startOfWeek]
 				)
 				.catch(() => null),
@@ -86,7 +92,10 @@ class WeeklyGameDigestService {
 				.dbGet(
 					"cmd_usage",
 					`SELECT command, COUNT(*) as uses
-					 FROM cmd_usage_log WHERE timestamp >= ?
+					 FROM cmd_usage_log
+					 WHERE timestamp >= ?
+					   AND type NOT IN ('auto')
+					   AND NOT (command = 'interagir' AND args = 'false')
 					 GROUP BY command ORDER BY uses DESC LIMIT 1`,
 					[startOfWeek]
 				)

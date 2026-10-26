@@ -33,9 +33,9 @@ async function eventosCommand(bot, message) {
 	if (eventsByGame.pesca.length > 0) {
 		for (const ev of eventsByGame.pesca) {
 			if (ev.type === "peso") {
-				text += `• *+${ev.value}%* no peso de todos os peixes pescados _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* no peso de todos os peixes pescados _(${ev.remainingText})_\n`;
 			} else if (ev.type === "lendario") {
-				text += `• *+${ev.value}%* na chance de capturar peixes lendários _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* na chance de capturar peixes lendários _(${ev.remainingText})_\n`;
 			}
 		}
 	} else {
@@ -48,9 +48,9 @@ async function eventosCommand(bot, message) {
 	if (eventsByGame.waifu.length > 0) {
 		for (const ev of eventsByGame.waifu) {
 			if (ev.type === "raros") {
-				text += `• *+${ev.value}%* de chance para personagens raros, épicos e lendários _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* de chance para personagens raros, épicos e lendários _(${ev.remainingText})_\n`;
 			} else if (ev.type === "wish") {
-				text += `• *+${ev.value}%* de chance extra para personagens da sua wishlist _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* de chance extra para personagens da sua wishlist _(${ev.remainingText})_\n`;
 			}
 		}
 	} else {
@@ -63,11 +63,11 @@ async function eventosCommand(bot, message) {
 	if (eventsByGame.slots.length > 0) {
 		for (const ev of eventsByGame.slots) {
 			if (ev.type === "vitoria") {
-				text += `• *+${ev.value}%* de chance de vitória nos giros _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* de chance de vitória nos giros _(${ev.remainingText})_\n`;
 			} else if (ev.type === "moedas") {
-				text += `• *+${ev.value}%* de moedas ganhas nos prêmios _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* de moedas ganhas nos prêmios _(${ev.remainingText})_\n`;
 			} else if (ev.type === "iscas") {
-				text += `• *+${ev.value}%* de iscas de pesca ganhas nos prêmios _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* de iscas de pesca ganhas nos prêmios _(${ev.remainingText})_\n`;
 			}
 		}
 	} else {
@@ -80,9 +80,9 @@ async function eventosCommand(bot, message) {
 	if (eventsByGame.fazenda.length > 0) {
 		for (const ev of eventsByGame.fazenda) {
 			if (ev.type === "apodrecer") {
-				text += `• *+${ev.value}%* no tempo que as plantas demoram para apodrecer _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* no tempo que as plantas demoram para apodrecer _(${ev.remainingText})_\n`;
 			} else if (ev.type === "fortuna") {
-				text += `• *+${ev.value}%* no ganho de moedas em todas as fontes da fazenda _(restam ${ev.remainingText})_\n`;
+				text += `• *+${ev.value}%* no ganho de moedas em todas as fontes da fazenda _(${ev.remainingText})_\n`;
 			}
 		}
 	} else {

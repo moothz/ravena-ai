@@ -989,6 +989,17 @@
                     </div>
                 </div>
 
+                <!-- Zona de Remoção Amigável do Bot -->
+                <div class="danger-zone-card mt-4 mb-4 p-4 text-center" style="border: 1px dashed var(--danger, #ff4d4f); border-radius: 12px; background: rgba(255, 77, 79, 0.05);">
+                    <h4 style="color: var(--danger, #ff4d4f); margin-bottom: 8px;"><i class="fas fa-door-open"></i> Deseja remover o bot do grupo?</h4>
+                    <p class="text-muted text-sm" style="max-width: 600px; margin: 0 auto 16px auto;">
+                        Caso seu grupo não queira mais a permanência da Ravena, utilize o botão abaixo para uma saída amigável sem precisar removê-la forçadamente.
+                    </p>
+                    <button type="button" id="btn-remover-bot-grupo" class="btn btn-danger" style="font-weight: 600; padding: 10px 24px;">
+                        <i class="fas fa-sign-out-alt"></i> Remover Bot do Grupo
+                    </button>
+                </div>
+
             </div>
         </main>
 
@@ -1444,6 +1455,34 @@
         </div>
     </div>
 
+    <!-- Modal Confirmação de Saída Amigável do Bot -->
+    <div id="modal-confirmar-saida" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-heart-broken" style="color: #ff4d4f;"></i> Remover Bot do Grupo</h2>
+                <span class="close-saida-modal cursor-pointer" style="font-size: 1.5rem; line-height: 1;">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3" style="background: rgba(250, 173, 20, 0.1); border: 1px solid rgba(250, 173, 20, 0.3); border-radius: 8px; padding: 14px;">
+                    <p style="font-size: 1rem; line-height: 1.6; margin: 0;">
+                        <strong>Poxa! A Ravena fica triste, mas é uma opção do grupo.</strong><br><br>
+                        Saindo desta maneira amigável, sem me remover forçadamente, sou livre para voltar no futuro caso queiram me adicionar novamente — sem nenhum ressentimento! 💜<br><br>
+                        Agradeço de coração pelo tempo que passamos juntos! Se tiver qualquer dificuldade ou dúvidas, chame meu criador <strong>moothz</strong> no <strong>!grupao</strong>.
+                    </p>
+                </div>
+                <p style="color: #ff4d4f; font-weight: bold; text-align: center; margin-top: 14px;">
+                    Tem certeza de que deseja que a Ravena saia deste grupo agora?
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-saida-modal">Cancelar</button>
+                <button type="button" id="btn-confirmar-saida-grupo" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Confirmar Saída do Bot
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Custom Alert/Confirm/Prompt Modal -->
     <div id="custom-dialog-modal" class="modal hidden" style="z-index: 3000;">
         <div class="modal-content small-modal">
@@ -1524,6 +1563,6 @@
         </div>
     </div>
 
-    <script src="/management.js?v=27"></script>
+    <script src="/management.js?v=28"></script>
 </body>
 </html>

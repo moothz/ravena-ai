@@ -3407,8 +3407,11 @@ async function verRankingGrupo(bot, message) {
 	}
 
 	try {
-		const { data } = await api.get(`/groups/${encodeURIComponent(groupId)}/leaderboard`, { params: { limit: 10 } });
-		const { totalMembers, totalClaimsInGroup, topKakera, topHarem, topCharacters } = data.data || {};
+		const { data } = await api.get(`/groups/${encodeURIComponent(groupId)}/leaderboard`, {
+			params: { limit: 10 }
+		});
+		const { totalMembers, totalClaimsInGroup, topKakera, topHarem, topCharacters } =
+			data.data || {};
 
 		if (!topKakera || topKakera.length === 0) {
 			return new ReturnMessage({

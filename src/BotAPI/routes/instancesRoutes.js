@@ -972,7 +972,8 @@ function registerInstancesRoutes(api) {
 					liveBot.notificarDonate = Boolean(botConfig.notificarDonate);
 					liveBot.updateStatus =
 						botConfig.updateStatus !== undefined ? Boolean(botConfig.updateStatus) : true;
-					liveBot.sendJoinInfo = Boolean(botConfig.sendJoinInfo);
+					liveBot.sendJoinInfo =
+						botConfig.sendJoinInfo !== undefined ? Boolean(botConfig.sendJoinInfo) : true;
 					liveBot.aiPersonality = botConfig.aiPersonality || "";
 					liveBot.supportMsg = botConfig.msgSuporte || botConfig.supportMsg || null;
 					liveBot.numeroResponsavel = botConfig.numeroResponsavel || null;

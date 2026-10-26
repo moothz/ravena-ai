@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         webhookModal: document.getElementById('webhook-modal'),
         scheduleModal: document.getElementById('schedule-modal'),
         
-        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal'),
+        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal, .close-saida-modal'),
         closeUploadBtns: document.querySelectorAll('.close-upload'),
 
         // Schedules
@@ -3720,6 +3720,60 @@ document.addEventListener('DOMContentLoaded', () => {
         const roletaSilenciarInput = document.getElementById('roleta-silenciar');
         if (roletaSilenciarInput) {
             roletaSilenciarInput.addEventListener('change', () => setDirty(true));
+        }
+
+        // Saída amigável do bot
+        const btnRemoverBot = document.getElementById('btn-remover-bot-grupo');
+        const modalSaida = document.getElementById('modal-confirmar-saida');
+        const btnConfirmarSaida = document.getElementById('btn-confirmar-saida-grupo');
+        const closeSaidaBtns = document.querySelectorAll('.close-saida-modal');
+
+        if (btnRemoverBot && modalSaida) {
+            btnRemoverBot.addEventListener('click', () => {
+                modalSaida.classList.remove('hidden');
+            });
+        }
+
+        closeSaidaBtns.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                if (modalSaida) modalSaida.classList.add('hidden');
+            });
+        });
+
+        if (btnConfirmarSaida) {
+            btnConfirmarSaida.addEventListener('click', async () => {
+                btnConfirmarSaida.disabled = true;
+                btnConfirmarSaida.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saindo do grupo...';
+
+                try {
+                    const res = await fetch(`${API_BASE}/group/leave-friendly`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token, groupId })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                        throw new Error(data.message || 'Erro ao solicitar remoção do bot');
+                    }
+
+                    if (modalSaida) modalSaida.classList.add('hidden');
+                    await customAlert(
+                        'A Ravena saiu do grupo amigavelmente. As portas ficam abertas para nos reencontrarmos no futuro! Agradecemos o tempo juntos.',
+                        'Saída Concluída'
+                    );
+                    document.body.innerHTML = `
+                        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;">
+                            <h1 style="color:#a78bfa;margin-bottom:12px;">💜 Até a próxima!</h1>
+                            <p style="color:#9ca3af;max-width:500px;line-height:1.6;">O bot saiu amigavelmente deste grupo. Se precisar de ajuda ou suporte com meu criador moothz, você pode nos encontrar no !grupao.</p>
+                        </div>
+                    `;
+                } catch (err) {
+                    console.error(err);
+                    await customAlert(`Falha ao remover o bot: ${err.message}`, 'Erro');
+                    btnConfirmarSaida.disabled = false;
+                    btnConfirmarSaida.innerHTML = '<i class="fas fa-sign-out-alt"></i> Confirmar Saída do Bot';
+                }
+            });
         }
     }
 

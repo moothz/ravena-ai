@@ -53,7 +53,7 @@ class DiscordBot {
 
 		// Opções existentes adaptadas
 		this.nomeExibir = options.nomeExibir;
-		this.sendJoinInfo = options.sendJoinInfo;
+		this.sendJoinInfo = options.sendJoinInfo !== undefined ? Boolean(options.sendJoinInfo) : true;
 		this.phoneNumber = null; // Will be set when ready
 		this.pvAI = options.pvAI !== undefined ? options.pvAI : true;
 		this.ignorePV = options.ignorePV || false;

@@ -1218,7 +1218,8 @@ class CommandHandler {
 		args,
 		group,
 		silent = false,
-		silentReaction = false
+		silentReaction = false,
+		isAuto = false
 	) {
 		try {
 			// this.logger.info(
@@ -1409,11 +1410,11 @@ class CommandHandler {
 				// Log usage
 				this.cmdUsage.logCommand({
 					timestamp: Date.now(),
-					type: "fixed",
+					type: isAuto ? "auto" : "fixed",
 					command: command.name,
 					user: message.author,
 					groupId: groupId || "private",
-					args: args.join(" "),
+					args: isAuto ? "auto" : args.join(" "),
 					returnData: result
 						? result.content || (Array.isArray(result) ? "Array" : "Object")
 						: "void"
@@ -1582,7 +1583,8 @@ class CommandHandler {
 		args,
 		group,
 		silent = false,
-		silentReaction = false
+		silentReaction = false,
+		isAuto = false
 	) {
 		try {
 			//this.logger.info(`Executando comando personalizado: ${command.startsWith}`);
@@ -1684,11 +1686,11 @@ class CommandHandler {
 			// Log usage
 			this.cmdUsage.logCommand({
 				timestamp: Date.now(),
-				type: "custom",
+				type: isAuto ? "auto" : "custom",
 				command: command.startsWith,
 				user: message.author,
 				groupId: group.id,
-				args: args.join(" "),
+				args: isAuto ? "auto" : args.join(" "),
 				returnData: `Responses: ${responses.length}`
 			});
 
@@ -2172,7 +2174,16 @@ class CommandHandler {
 							const interactCommand = this.fixedCommands.getCommand("interagir");
 							this.logger.info(`[interagir] Acionando LLM-Interagir`);
 
-							this.executeFixedCommand(bot, message, interactCommand, [false], group, false, true);
+							this.executeFixedCommand(
+								bot,
+								message,
+								interactCommand,
+								[false],
+								group,
+								false,
+								true,
+								true
+							);
 							return;
 						} else {
 							const randomCommand = autoCommands[Math.floor(Math.random() * autoCommands.length)];
@@ -2181,7 +2192,7 @@ class CommandHandler {
 							);
 
 							// Executa o comando
-							this.executeCustomCommand(bot, message, randomCommand, [], group, false, true);
+							this.executeCustomCommand(bot, message, randomCommand, [], group, false, true, true);
 							return;
 						}
 					}
