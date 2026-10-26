@@ -125,6 +125,22 @@ class MemoryService {
 	}
 
 	/**
+	 * Normaliza o nome do autor removendo fontes estilizadas (Unicode NFKC),
+	 * emojis e caracteres decorativos para buscas flexíveis
+	 * @param {string} name
+	 * @returns {string}
+	 */
+	normalizeAuthorName(name) {
+		if (!name || typeof name !== "string") return "";
+		return name
+			.normalize("NFKC")
+			.toLowerCase()
+			.replace(/[\u200B-\u200D\uFEFF]/g, "")
+			.replace(/[^\p{L}\p{N}]/gu, "")
+			.trim();
+	}
+
+	/**
 	 * Obtém a lista de números de telefone de Super Admins / Criadores a partir das variáveis de ambiente
 	 * @returns {string[]} Lista de números limpos (apenas dígitos)
 	 */
@@ -565,7 +581,13 @@ class MemoryService {
 				return;
 			}
 
-			const conversationText = rows.map((r) => `${r.author_name}: ${r.text_content}`).join("\n");
+			const conversationText = rows
+				.map((r) => {
+					const userTag =
+						r.canonical_user_id || (r.author_id ? this.cleanPhone(r.author_id) : "desconhecido");
+					return `[ID: ${userTag}] ${r.author_name}: ${r.text_content}`;
+				})
+				.join("\n");
 			const textToAnalyze =
 				conversationText.length > 25000 ? conversationText.slice(-25000) : conversationText;
 
@@ -584,11 +606,13 @@ class MemoryService {
    Formato: array de objetos:
    [
      {
+       "user_id": "wa_5511999999999",
        "author_name": "Nome",
        "facts": ["Gosta de pescar", "Trabalha com TI", "Torce pro Palmeiras"],
        "category": "hobby|work|preference|personality"
      }
    ]
+   IMPORTANTE: Em 'user_id', use exatamente o ID informado entre colchetes [ID: ...] da mensagem de quem falou.
 
 Conversa:
 ${textToAnalyze}`;
@@ -630,11 +654,12 @@ ${textToAnalyze}`;
 								items: {
 									type: "object",
 									properties: {
+										user_id: { type: "string" },
 										author_name: { type: "string" },
 										facts: { type: "array", items: { type: "string" } },
 										category: { type: "string" }
 									},
-									required: ["author_name", "facts"]
+									required: ["user_id", "facts"]
 								}
 							}
 						},
@@ -762,34 +787,81 @@ ${textToAnalyze}`;
 
 			// 2. Processa Fatos de Usuários (Global)
 			if (Array.isArray(parsed.user_facts) && parsed.user_facts.length > 0) {
+				const validCanonicals = new Set(rows.map((r) => r.canonical_user_id).filter(Boolean));
+
 				for (const uFact of parsed.user_facts) {
-					if (!uFact.author_name || !Array.isArray(uFact.facts) || uFact.facts.length === 0) {
+					if (
+						(!uFact.user_id && !uFact.author_name) ||
+						!Array.isArray(uFact.facts) ||
+						uFact.facts.length === 0
+					) {
 						continue;
 					}
 
-					// Localiza o canonical_user_id correspondente
-					const matchingRow = rows.find(
-						(r) =>
-							r.author_name &&
-							(r.author_name.toLowerCase() === uFact.author_name.toLowerCase() ||
-								r.author_name.toLowerCase().includes(uFact.author_name.toLowerCase()) ||
-								uFact.author_name.toLowerCase().includes(r.author_name.toLowerCase()))
-					);
+					let canonicalId = null;
 
-					let canonicalId = matchingRow?.canonical_user_id;
+					// 1. Prioridade máxima: ID canônico direto informado pela IA (ex: wa_5511..., 5511...)
+					if (uFact.user_id && typeof uFact.user_id === "string") {
+						const rawUserId = uFact.user_id
+							.trim()
+							.replace(/^\[(?:ID:\s*)?/i, "")
+							.replace(/\]$/, "")
+							.trim();
 
-					if (!canonicalId) {
-						// Tenta localizar por identidade existente no banco
-						try {
-							const ident = await this.database.dbGet(
-								DB_NAME,
-								"SELECT canonical_user_id FROM memory_identities WHERE display_name = ? COLLATE NOCASE LIMIT 1",
-								[uFact.author_name]
-							);
-							if (ident) {
-								canonicalId = ident.canonical_user_id;
+						if (validCanonicals.has(rawUserId)) {
+							canonicalId = rawUserId;
+						} else {
+							// Normaliza telefone se veio apenas os dígitos
+							const num = this.cleanPhone(rawUserId);
+							if (num && num.length >= 8) {
+								if (validCanonicals.has(`wa_${num}`)) {
+									canonicalId = `wa_${num}`;
+								} else if (validCanonicals.has(`user_${num}`)) {
+									canonicalId = `wa_${num}`;
+								} else {
+									canonicalId = `wa_${num}`;
+								}
+							} else if (rawUserId.startsWith("wa_") || rawUserId.startsWith("tg_")) {
+								canonicalId = rawUserId;
 							}
-						} catch (e) {}
+						}
+					}
+
+					// 2. Fallback: Se não encontrou por user_id, tenta localizar por author_name
+					if (!canonicalId && uFact.author_name) {
+						const targetNameNorm = this.normalizeAuthorName(uFact.author_name);
+
+						// 2.1 Busca exata ou por normalização Unicode/símbolos nos participantes do lote
+						const matchingRow = rows.find((r) => {
+							if (!r.author_name) return false;
+							if (r.author_name.toLowerCase() === uFact.author_name.toLowerCase()) return true;
+							const rowNameNorm = this.normalizeAuthorName(r.author_name);
+							if (rowNameNorm && targetNameNorm) {
+								if (rowNameNorm === targetNameNorm) return true;
+								if (rowNameNorm.length >= 3 && targetNameNorm.length >= 3) {
+									return (
+										rowNameNorm.includes(targetNameNorm) || targetNameNorm.includes(rowNameNorm)
+									);
+								}
+							}
+							return false;
+						});
+
+						canonicalId = matchingRow?.canonical_user_id || null;
+
+						// 2.2 Tenta localizar no banco por display_name
+						if (!canonicalId) {
+							try {
+								const ident = await this.database.dbGet(
+									DB_NAME,
+									"SELECT canonical_user_id FROM memory_identities WHERE display_name = ? COLLATE NOCASE LIMIT 1",
+									[uFact.author_name]
+								);
+								if (ident) {
+									canonicalId = ident.canonical_user_id;
+								}
+							} catch (e) {}
+						}
 					}
 
 					// Se encontrou canonicalId e for no formato user_[0-9]{8,}, normaliza para wa_
@@ -800,16 +872,18 @@ ${textToAnalyze}`;
 						}
 					}
 
-					if (!canonicalId) {
+					if (!canonicalId && uFact.author_name) {
 						const num = this.cleanPhone(uFact.author_name);
 						if (num && num.length >= 8) {
 							canonicalId = `wa_${num}`;
-						} else {
-							this.logger.debug(
-								`[${targetId}] Fato descartado por não encontrar autor canônico correspondente: ${uFact.author_name}`
-							);
-							continue;
 						}
+					}
+
+					if (!canonicalId) {
+						this.logger.debug(
+							`[${targetId}] Fato descartado por não encontrar autor canônico correspondente: ID="${uFact.user_id || ""}", Nome="${uFact.author_name || ""}"`
+						);
+						continue;
 					}
 
 					for (const factText of uFact.facts) {
