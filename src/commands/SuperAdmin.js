@@ -435,23 +435,33 @@ class SuperAdmin {
 			}
 
 			const cleanType = String(typeInput).toLowerCase().trim();
-			const amount = amountInput ? parseInt(String(amountInput).replace(/\D/g, ""), 10) : 0;
-			if (isNaN(amount) || amount <= 0) {
+			const rawAmount = String(amountInput || "").trim();
+			const amount = parseInt(rawAmount, 10);
+			if (isNaN(amount) || amount === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: "❌ Quantidade inválida. Informe um número inteiro positivo."
+					content:
+						"❌ Quantidade inválida. Informe um número inteiro diferente de zero (positivo para conceder ou negativo para remover)."
 				});
 			}
+			const isDeduction = amount < 0;
+			const absAmount = Math.abs(amount);
+			const actionWord = isDeduction ? `recolhidas *-${absAmount}` : `distribuídas *+${absAmount}`;
+			const actionWordMasc = isDeduction
+				? `recolhidos *-${absAmount}`
+				: `distribuídos *+${absAmount}`;
 
 			// Slots
 			if (normGame === "slots") {
 				if (cleanType === "moedas" || cleanType === "moeda" || cleanType === "coins") {
-					await this.database.dbRun("slots", "UPDATE slots_users SET coins = coins + ?", [amount]);
+					await this.database.dbRun("slots", "UPDATE slots_users SET coins = MAX(0, coins + ?)", [
+						amount
+					]);
 					const count =
 						(await this.database.dbGet("slots", "SELECT COUNT(*) as c FROM slots_users"))?.c || 0;
 					return new ReturnMessage({
 						chatId,
-						content: `🎰 *EVENTO INSTANTÂNEO DE SLOTS!* 🎰\n\n💰 Foram distribuídas *+${amount} moedas de slots* para todos os *${count} jogadores* da comunidade!`
+						content: `🎰 *${isDeduction ? "REMOÇÃO DE MOEDAS DE SLOTS" : "EVENTO INSTANTÂNEO DE SLOTS"}!* 🎰\n\n💰 Foram ${actionWord} moedas de slots* para todos os *${count} jogadores* da comunidade!${isDeduction ? "\n_Nenhum saldo foi deixado negativo._" : ""}`
 					});
 				}
 				return new ReturnMessage({
@@ -593,7 +603,7 @@ class SuperAdmin {
 				) {
 					await this.database.dbRun(
 						"fishing",
-						"UPDATE fishing_users SET baits = baits + ?, last_bait_regen = ?",
+						"UPDATE fishing_users SET baits = MAX(0, baits + ?), last_bait_regen = ?",
 						[amount, Date.now()]
 					);
 					const count =
@@ -601,11 +611,17 @@ class SuperAdmin {
 						0;
 					return new ReturnMessage({
 						chatId,
-						content: `🎣 *EVENTO INSTANTÂNEO DE PESCA!* 🎣\n\n🪱 Foram distribuídas *+${amount} iscas* para *${count} pescadores* da comunidade!`
+						content: `🎣 *${isDeduction ? "REMOÇÃO DE ISCAS" : "EVENTO INSTANTÂNEO DE PESCA"}!* 🎣\n\n🪱 Foram ${actionWord} iscas* para *${count} pescadores* da comunidade!${isDeduction ? "\n_Nenhum saldo foi deixado negativo._" : ""}`
 					});
 				}
 
 				if (cleanType === "buff" || cleanType === "buffs") {
+					if (isDeduction) {
+						return new ReturnMessage({
+							chatId,
+							content: "❌ Concessão de buffs aceita apenas valores positivos (quantidade de usos)."
+						});
+					}
 					// Sorteia um buff positivo da lista UPGRADES do FishingGame
 					const validUpgrades = FishingGame.UPGRADES.filter(
 						(u) => u.effect !== "slots_coins" && u.effect !== "extra_baits"

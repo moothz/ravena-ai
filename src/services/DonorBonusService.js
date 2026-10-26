@@ -62,14 +62,14 @@ function calculateBonuses(totalAmount) {
 	const netEfficiencyBonus = totalAmount > 20 ? 1 + Math.floor((totalAmount - 21) / 5) : 0;
 
 	// Waifus:
-	// RARE: +2.0% por R$1 -> 1 + total * 0.02 (aos R$100: 3.0x ou +200%)
-	// EPIC: +3.5% por R$1 -> 1 + total * 0.035 (aos R$100: 4.5x ou +350%)
-	// LEGENDARY: +4.5% por R$1 -> 1 + total * 0.045 (aos R$100: 5.5x ou +450%)
+	// RARE: +2.0% por R$1 -> 1 + total * 0.02 (aos R$100: 3.0x ou +200%, teto 10.0)
+	// EPIC: +3.5% por R$1 -> 1 + total * 0.035 (aos R$100: 4.5x ou +350%, teto 10.0)
+	// LEGENDARY: +4.5% por R$1 -> 1 + total * 0.045 (aos R$100: 5.5x ou +450%, teto 10.0)
 	// Resultado ponderado: chance de lendário sobe de 2.38% para ~8.0% aos R$100
 	const rarityMultipliers = {
-		RARE: Number((1 + totalAmount * 0.02).toFixed(3)),
-		EPIC: Number((1 + totalAmount * 0.035).toFixed(3)),
-		LEGENDARY: Number((1 + totalAmount * 0.045).toFixed(3))
+		RARE: Math.min(10.0, Number((1 + totalAmount * 0.02).toFixed(3))),
+		EPIC: Math.min(10.0, Number((1 + totalAmount * 0.035).toFixed(3))),
+		LEGENDARY: Math.min(10.0, Number((1 + totalAmount * 0.045).toFixed(3)))
 	};
 
 	let wishlistMultiplier = null;

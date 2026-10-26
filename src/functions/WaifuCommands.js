@@ -1106,6 +1106,54 @@ function formatDailyRewardMessage(chatId, dailyData) {
 }
 
 /**
+ * Sanitiza e aplica tetos estritos aos bônus de roll para respeitar o schema da API do Mudae
+ * @param {Object} bonuses
+ * @returns {Object}
+ */
+function sanitizeRollBonuses(bonuses) {
+	if (!bonuses || typeof bonuses !== "object") return bonuses;
+	const sanitized = { ...bonuses };
+
+	if (sanitized.rarityMultipliers && typeof sanitized.rarityMultipliers === "object") {
+		const mults = { ...sanitized.rarityMultipliers };
+		for (const key of Object.keys(mults)) {
+			const val = Number(mults[key]);
+			if (!isNaN(val)) {
+				// API schema: minimum 0.1, maximum 10
+				mults[key] = Math.min(10.0, Math.max(0.1, Number(val.toFixed(3))));
+			}
+		}
+		sanitized.rarityMultipliers = mults;
+	}
+
+	if (sanitized.wishlistMultiplier !== undefined && sanitized.wishlistMultiplier !== null) {
+		const val = Number(sanitized.wishlistMultiplier);
+		if (!isNaN(val)) {
+			// API schema: minimum 0.1, maximum 100
+			sanitized.wishlistMultiplier = Math.min(100.0, Math.max(0.1, Number(val.toFixed(3))));
+		}
+	}
+
+	if (sanitized.starWishMultiplier !== undefined && sanitized.starWishMultiplier !== null) {
+		const val = Number(sanitized.starWishMultiplier);
+		if (!isNaN(val)) {
+			// API schema: minimum 0.1, maximum 10
+			sanitized.starWishMultiplier = Math.min(10.0, Math.max(0.1, Number(val.toFixed(3))));
+		}
+	}
+
+	if (sanitized.extraMaxRolls !== undefined && sanitized.extraMaxRolls !== null) {
+		const val = Number(sanitized.extraMaxRolls);
+		if (!isNaN(val)) {
+			// API schema: minimum 0, maximum 50
+			sanitized.extraMaxRolls = Math.min(50, Math.max(0, Math.round(val)));
+		}
+	}
+
+	return sanitized;
+}
+
+/**
  * Cria função de roll com ou sem filtro de gênero
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
@@ -1200,13 +1248,14 @@ function makeRollHandler(genderFilter) {
 				}
 			}
 
+			const finalBonuses = sanitizeRollBonuses(rollBonuses);
 			const payload = {
 				userId,
 				groupId,
 				name,
 				platform: "WHATSAPP",
 				...(genderFilter && { gender: genderFilter }),
-				...(rollBonuses ? { bonuses: rollBonuses } : {})
+				...(finalBonuses ? { bonuses: finalBonuses } : {})
 			};
 
 			const { data } = await api.post("/roll", payload);
@@ -1455,9 +1504,12 @@ function makeRollHandler(genderFilter) {
 						delete stepBonuses.isFreeRoll;
 					}
 
+					const finalStepBonuses = sanitizeRollBonuses(stepBonuses);
 					const stepPayload = {
 						...payload,
-						...(Object.keys(stepBonuses).length > 0 ? { bonuses: stepBonuses } : {})
+						...(finalStepBonuses && Object.keys(finalStepBonuses).length > 0
+							? { bonuses: finalStepBonuses }
+							: {})
 					};
 
 					const nextRes = await api.post("/roll", stepPayload);
