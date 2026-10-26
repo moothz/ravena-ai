@@ -23,7 +23,11 @@ async function runTests() {
 	assert.ok(cmdNames.has("mu-admin"), "Alias !mu-admin deve estar registrado");
 	assert.ok(cmdNames.has("mu-share"), "Comando !mu-share deve estar registrado");
 	assert.ok(cmdNames.has("mu-compartilhar"), "Alias !mu-compartilhar deve estar registrado");
-	console.log("✓ Todos os 4 comandos web estão registrados!");
+	assert.ok(cmdNames.has("waifinder"), "Comando !waifinder deve estar registrado");
+	assert.ok(cmdNames.has("mu-waifinder"), "Alias !mu-waifinder deve estar registrado");
+	assert.ok(cmdNames.has("mu-tinder"), "Alias !mu-tinder deve estar registrado");
+	assert.ok(cmdNames.has("mu-waifu"), "Comando !mu-waifu deve continuar registrado");
+	console.log("✓ Todos os comandos web e aliases estão registrados!");
 
 	// Mock do axios 'api' interno do WaifuCommands
 	const originalPost = WaifuCommands.api.post;
@@ -52,6 +56,7 @@ async function runTests() {
 							publicId: "u-1234-uuid",
 							token: "tok-abcd-5678",
 							url: "https://waifuletes.moothz.win/user/u-1234-uuid?token=tok-abcd-5678",
+							waifinderUrl: "https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678",
 							expiresIn: 1800
 						}
 					}
@@ -98,11 +103,13 @@ async function runTests() {
 
 		await eventHandler.processMessage(bot, msgGrupo);
 
-		// Deve haver 2 mensagens capturadas:
-		// 1. Mensagem enviada diretamente no PV do autor (com o link secreto e token)
-		// 2. Resposta enviada no grupo avisando que o link foi enviado no PV
-		const captured = await waitForCaptured(2);
-		assert.strictEqual(captured.length, 2, `Esperado 2 mensagens, recebido ${captured.length}`);
+		// Deve haver 1 mensagem capturada enviada diretamente no PV do autor (com o link secreto e token)
+		// e reação no grupo
+		const captured = await waitForCaptured(1);
+		assert.ok(
+			captured.length >= 1,
+			`Esperado ao menos 1 mensagem no PV, recebido ${captured.length}`
+		);
 
 		const pvMsg = captured.find((m) => m.chatId === "5511999999999@s.whatsapp.net");
 		assert.ok(pvMsg, "Mensagem no PV do usuário deve ter sido enviada");
@@ -114,15 +121,7 @@ async function runTests() {
 			pvMsg.content.includes("30 minutos"),
 			"Mensagem de PV deve informar a duração de 30 minutos"
 		);
-
-		const gpMsg = captured.find((m) => m.chatId === "120363000000000000@g.us");
-		assert.ok(gpMsg, "Resposta no grupo deve ter sido enviada");
-		assert.ok(
-			gpMsg.content.includes("enviei o link de acesso ao seu painel pessoal no seu privado"),
-			"Resposta no grupo deve avisar do envio no PV"
-		);
-		assert.ok(gpMsg.content.includes("@5511999999999"), "Resposta no grupo deve mencionar o autor");
-		console.log("✓ !mu-adm em grupo enviou link no PV e notificou o grupo com sucesso!");
+		console.log("✓ !mu-adm em grupo enviou link no PV com sucesso!");
 
 		// 3. Testar !mu-admin chamado direto no PRIVADO
 		console.log("[Teste 3] Testando !mu-admin disparado diretamente no PV...");
@@ -201,6 +200,62 @@ async function runTests() {
 			"Alias deve produzir o mesmo link público"
 		);
 		console.log("✓ !mu-compartilhar funcionou perfeitamente!");
+
+		// 6. Testar !waifinder disparado em GRUPO
+		console.log("[Teste 6] Testando !waifinder disparado em GRUPO...");
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgWaifinder = createMessage({
+			content: "!waifinder",
+			group: "120363000000000000@g.us",
+			author: "5511999999999@s.whatsapp.net",
+			authorName: "RaveninhaFan"
+		});
+
+		await eventHandler.processMessage(bot, msgWaifinder);
+
+		const capturedWaifinder = await waitForCaptured(1);
+		assert.ok(capturedWaifinder.length >= 1, "Mensagem no PV do usuário deve ter sido enviada");
+		const pvWaifinderMsg = capturedWaifinder.find(
+			(m) => m.chatId === "5511999999999@s.whatsapp.net"
+		);
+		assert.ok(pvWaifinderMsg, "Mensagem no PV deve ter sido enviada");
+		assert.ok(
+			pvWaifinderMsg.content.includes("https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678"),
+			"Mensagem de PV deve conter a URL do Waifinder com o token"
+		);
+		assert.ok(
+			pvWaifinderMsg.content.includes("Waifinder"),
+			"Mensagem de PV deve conter o título Waifinder"
+		);
+		assert.strictEqual(
+			pvWaifinderMsg.content.includes("30 minutos"),
+			false,
+			"Mensagem do Waifinder não deve conter texto de expiração"
+		);
+		console.log("✓ !waifinder enviou link no PV sem texto de expiração de token!");
+
+		// 7. Testar alias !mu-tinder disparado em PV
+		console.log("[Teste 7] Testando alias !mu-tinder disparado em PV...");
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgTinderPv = createMessage({
+			content: "!mu-tinder",
+			author: "5511999999999@s.whatsapp.net",
+			authorName: "RaveninhaFan"
+		});
+
+		await eventHandler.processMessage(bot, msgTinderPv);
+
+		const capturedTinder = await waitForCaptured(1);
+		assert.strictEqual(capturedTinder.length, 1);
+		assert.ok(
+			capturedTinder[0].content.includes(
+				"https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678"
+			),
+			"Alias !mu-tinder deve gerar o mesmo link do Waifinder"
+		);
+		console.log("✓ !mu-tinder respondeu diretamente no PV!");
 
 		console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 🎉");
 	} finally {

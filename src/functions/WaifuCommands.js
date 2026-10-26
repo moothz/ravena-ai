@@ -4390,6 +4390,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-char <busca>\` (aliases: \`!mu-info\`, \`!mu-winfo\`) — Exibe foto, raridade e detalhes de um personagem (busca ampla por nome, série, descrição ou ID).\n`;
 	text += `• \`!mu-topchars\` (aliases: \`!mu-topwaifus\`, \`!mu-populares\`) — Mostra os personagens mais casados e curtidos no jogo.\n`;
 	text += `• \`!mu-adm\` (alias: \`!mu-admin\`) — Envia no privado seu link para o painel web (divórcios, wishlist, classificados e fotos).\n`;
+	text += `• \`!waifinder\` (aliases: \`!mu-waifinder\`, \`!mu-tinder\`) — Envia no privado seu link de acesso ao Waifinder estilo "Tinder" (cards, swipes, likes e wishlist).\n`;
 	text += `• \`!mu-share\` (alias: \`!mu-compartilhar\`) — Exibe o link público do seu harém para compartilhar com amigos.\n\n`;
 
 	text += `📈 *Investimentos & Mercado de Waifus:*\n`;
@@ -4568,6 +4569,74 @@ async function painelWebAdmin(bot, message) {
 			err,
 			chatId,
 			"❌ Não foi possível gerar o link do painel pessoal no momento. Tente novamente mais tarde."
+		);
+	}
+}
+
+/**
+ * Gera e envia no PV do usuário o link de acesso ao Waifinder (modo catálogo estilo Tinder)
+ * @param {object} bot
+ * @param {object} message
+ * @returns {Promise<ReturnMessage>}
+ */
+async function waifinderWeb(bot, message) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const groupId = getGroupId(message);
+	const userName = getUserName(message);
+
+	try {
+		await ensureUser(userId, groupId, userName);
+
+		const { data } = await api.post("/user/session", {
+			userId
+		});
+		const session = data?.data || {};
+		const token = session.token;
+		const waifinderUrl = formatWebUrl(
+			session.waifinderUrl,
+			token ? `/catalogo?token=${token}` : "/catalogo"
+		);
+
+		let pvText = `✨ *Waifinder — Descoberta de Waifus* ✨\n\n`;
+		pvText += `Olá, *${userName}*! Aqui está o seu link de acesso:\n`;
+		pvText += `🔗 ${waifinderUrl}\n\n`;
+		pvText += `🔥 *Como navegar no Waifinder:*\n`;
+		pvText += `• *Arrastar p/ Direita* (ou tecla *D* / *→*): Curtir ❤️\n`;
+		pvText += `• *Arrastar p/ Esquerda* (ou tecla *A* / *←*): Passar ✖\n`;
+		pvText += `• *Botão + Wishlist* (ou tecla *W*): Salva na Wishlist ⭐\n`;
+		pvText += `• *Botão Gênero* (ou tecla *G* / *S*): Alterna Waifus ♀ / Husbandos ♂ / Todos ⚧\n`;
+
+		// Se a mensagem veio de um grupo, envia no privado e apenas reage com emoji no grupo
+		if (message.group && message.group !== message.author) {
+			const pvMsg = new ReturnMessage({
+				chatId: message.author,
+				content: pvText
+			});
+
+			if (bot && typeof bot.sendReturnMessages === "function") {
+				await bot.sendReturnMessages(pvMsg);
+			} else if (bot && typeof bot.sendMessage === "function") {
+				await bot.sendMessage(message.author, pvText);
+			}
+
+			if (message.origin && typeof message.origin.react === "function") {
+				await message.origin.react("🔥").catch(() => {});
+			}
+
+			return null;
+		}
+
+		// Se já foi executado no privado, responde diretamente no PV
+		return new ReturnMessage({
+			chatId: message.author,
+			content: pvText
+		});
+	} catch (err) {
+		return handleApiError(
+			err,
+			chatId,
+			"❌ Não foi possível gerar o link do Waifinder no momento. Tente novamente mais tarde."
 		);
 	}
 }
@@ -6232,6 +6301,36 @@ const commands = [
 		reactions: { before: "⏳", after: "🔗", error: "❌" },
 		reply: true,
 		method: painelWebAdmin
+	}),
+
+	// ── WAIFINDER (MODO CATÁLOGO TINDER) ────────────────────────────────────
+	new Command({
+		name: "waifinder",
+		description: "Envia no seu privado o link de acesso ao Waifinder (modo catálogo estilo Tinder)",
+		category: "mudae",
+		group: "muwaifu-web",
+		aliases: ["mu-waifinder", "mu-tinder"],
+		reactions: { before: "⏳", after: "🔥", error: "❌" },
+		reply: true,
+		method: waifinderWeb
+	}),
+	new Command({
+		name: "mu-waifinder",
+		description: "Alias de !waifinder",
+		category: "mudae",
+		group: "muwaifu-web",
+		reactions: { before: "⏳", after: "🔥", error: "❌" },
+		reply: true,
+		method: waifinderWeb
+	}),
+	new Command({
+		name: "mu-tinder",
+		description: "Alias de !waifinder",
+		category: "mudae",
+		group: "muwaifu-web",
+		reactions: { before: "⏳", after: "🔥", error: "❌" },
+		reply: true,
+		method: waifinderWeb
 	}),
 
 	// ── COMPARTILHAR HARÉM (VITRINE PÚBLICA) ────────────────────────────────
