@@ -80,6 +80,8 @@ class SuperAdmin {
 			addDonateNumero: { method: "addDonorNumber", description: "Adiciona número de um doador" },
 			addDonateValor: { method: "updateDonationAmount", description: "Atualiza valor de doação" },
 			mergeDonates: { method: "mergeDonors", description: "Une dois doadores em um" },
+			renameDonate: { method: "renameDonor", description: "Renomeia um doador" },
+			renameDonor: { method: "renameDonor", description: "Renomeia um doador" },
 			block: { method: "blockUser", description: "Bloqueia um usuário" },
 			unblock: { method: "unblockUser", description: "Desbloqueia um usuário" },
 			leaveGrupo: {
@@ -266,7 +268,12 @@ class SuperAdmin {
 	 * @returns {string|null} - Nome do método ou null se não encontrado
 	 */
 	getCommandMethod(command) {
-		return this.commandMap[command]?.method || null;
+		if (this.commandMap[command]) {
+			return this.commandMap[command].method;
+		}
+		const lower = command.toLowerCase();
+		const entry = Object.entries(this.commandMap).find(([k]) => k.toLowerCase() === lower);
+		return entry ? entry[1].method : null;
 	}
 
 	/**
@@ -1777,6 +1784,72 @@ Break down the cost by category and provide a total estimated cost.`;
 			}
 		} catch (error) {
 			this.logger.error("Erro no comando mergeDonors:", error);
+			return new ReturnMessage({
+				chatId: message.group ?? message.author,
+				content: "Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Renomeia um doador
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async renameDonor(bot, message, args, group) {
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId: message.group ?? message.author,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+			const chatId = message.group ?? message.author;
+
+			const fullText = args.join(" ");
+
+			if (!fullText.includes("##")) {
+				return new ReturnMessage({
+					chatId,
+					content: "Por favor, use o formato: !sa-renameDonate Nome Original##Novo Nome"
+				});
+			}
+
+			const [oldName, newName] = fullText.split("##").map((name) => name.trim());
+
+			if (!oldName || !newName) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Ambos os nomes devem ser fornecidos. Formato: !sa-renameDonate Nome Original##Novo Nome"
+				});
+			}
+
+			if (oldName === newName) {
+				return new ReturnMessage({
+					chatId,
+					content: "O novo nome é idêntico ao nome original."
+				});
+			}
+
+			const result = await this.database.renameDonor(oldName, newName);
+
+			if (result.success) {
+				return new ReturnMessage({
+					chatId,
+					content: `✅ Doador "${oldName}" renomeado com sucesso para "${newName}".`
+				});
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ ${result.error || `Falha ao renomear doador "${oldName}".`}`
+				});
+			}
+		} catch (error) {
+			this.logger.error("Erro no comando renameDonor:", error);
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content: "Erro ao processar comando."

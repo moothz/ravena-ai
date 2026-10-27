@@ -858,6 +858,63 @@ class CoreRepository {
 		}
 	}
 
+	async renameDonor(oldName, newName) {
+		try {
+			const sourceRow = this.mappers.get(
+				this.DB,
+				"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+				[oldName]
+			);
+			if (!sourceRow) {
+				return {
+					success: false,
+					error: `Doador "${oldName}" não encontrado no banco de dados de doações.`
+				};
+			}
+
+			const isSameCaseInsensitive = oldName.toLowerCase() === newName.toLowerCase();
+			if (!isSameCaseInsensitive) {
+				const targetRow = this.mappers.get(
+					this.DB,
+					"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+					[newName]
+				);
+				if (targetRow) {
+					return {
+						success: false,
+						error: `Já existe um doador cadastrado com o nome "${newName}". Use !sa-mergeDonates para unir os dois se for o caso.`
+					};
+				}
+			}
+
+			const donor = DonationMapper.fromRow(sourceRow);
+			donor.nome = newName;
+
+			this.mappers.transaction(this.DB, () => {
+				const conn = this.mappers.getConnection(this.DB);
+				conn.prepare("DELETE FROM donations WHERE name = ? COLLATE NOCASE").run(oldName);
+				const r = DonationMapper.toRow(donor);
+				conn
+					.prepare(
+						"INSERT OR REPLACE INTO donations (name, valor, numero, timestamp, historico, json_data) VALUES (@name, @valor, @numero, @timestamp, @historico, @json_data)"
+					)
+					.run({ ...r, json_data: JSON.stringify(donor) });
+			});
+
+			if (donor.numero) {
+				try {
+					const MemoryService = require("../../../services/MemoryService");
+					MemoryService.getInstance().syncDonor(newName, donor.numero);
+				} catch (e) {}
+			}
+
+			return { success: true, donor };
+		} catch (error) {
+			this.logger.error("Error renaming donor:", error);
+			return { success: false, error: "Erro interno no banco de dados ao renomear doador." };
+		}
+	}
+
 	// ===========================================================================
 	// Pending Joins
 	// ===========================================================================

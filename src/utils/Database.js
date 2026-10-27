@@ -708,6 +708,14 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.mergeDonors(targetName, sourceName);
 	}
+	async renameDonor(oldName, newName) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] renameDonor() bloqueado");
+			return { success: true };
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.renameDonor(oldName, newName);
+	}
 
 	// --- Game Events ---
 	async saveGameEvent(event) {
