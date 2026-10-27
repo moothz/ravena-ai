@@ -77,24 +77,20 @@ const JUNK_PRIZES = [
 
 const JARDIM_COMMON_SEEDS = [
 	{ id: "01_nightshade", name: "Erva-Moura" },
-	{ id: "02_mandrake", name: "Mandrágora" },
-	{ id: "03_shadow_fern", name: "Samambaia Sombria" },
-	{ id: "04_spectral_spores", name: "Esporos Espectrais" }
+	{ id: "02_tomb_shroom", name: "Cogumelo Tumular" },
+	{ id: "03_corpse_lily", name: "Lírio Cadáver" }
 ];
 
 const JARDIM_BONUS_SEEDS = [
-	{ id: "05_blood_lily", name: "Lírio de Sangue", tier: "uncommon" },
-	{ id: "06_ghost_pepper", name: "Pimenta Fantasma", tier: "uncommon" },
-	{ id: "07_abyssal_moss", name: "Musgo Abissal", tier: "uncommon" },
+	{ id: "04_black_lotus", name: "Lótus Negra", tier: "rare" },
+	{ id: "05_mist_crawler_v2", name: "Rastejante de Névoa", tier: "uncommon" },
+	{ id: "06_styx_kelp_v2", name: "Alga do Estige", tier: "uncommon" },
+	{ id: "07_spectral_gourd_v2", name: "Cabaça Espectral", tier: "rare" },
 	{ id: "08_devouring_root_v2", name: "Raiz Devoradora", tier: "uncommon" },
-	{ id: "09_grave_rose", name: "Rosa da Tumba", tier: "rare" },
+	{ id: "09_obsidian_clover", name: "Trevo de Obsidiana", tier: "rare" },
 	{ id: "10_golden_clover", name: "Trevo Dourado", tier: "rare" },
 	{ id: "11_purple_heart", name: "Coração Púrpuro", tier: "rare" },
-	{ id: "12_blood_rose", name: "Rosa de Sangue", tier: "rare" },
-	{ id: "13_whispering_willow", name: "Salgueiro Sussurrante", tier: "epic" },
-	{ id: "14_obsidian_cactus", name: "Cacto de Obsidiana", tier: "epic" },
-	{ id: "15_lich_crown", name: "Coroa do Lich", tier: "epic" },
-	{ id: "16_crystal_lotus", name: "Lótus de Cristal", tier: "epic" }
+	{ id: "12_blood_rose", name: "Rosa de Sangue", tier: "rare" }
 ];
 
 function pickFishingBuffs(count) {
@@ -1181,5 +1177,6 @@ module.exports = {
 	helper,
 	commands,
 	addCoins,
-	getWeeklySlotsStats
+	getWeeklySlotsStats,
+	openSacolasDoCoveiro
 };
