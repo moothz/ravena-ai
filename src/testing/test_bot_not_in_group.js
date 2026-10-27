@@ -112,7 +112,8 @@ async function runTests() {
 		whatsgoApiKey: "test-key",
 		instanceName: "rav-enculinha",
 		webhookHost: "localhost",
-		grupoLogs: "logs@g.us"
+		grupoLogs: "logs@g.us",
+		grupoInvites: "120363404892583431@g.us"
 	});
 
 	// Check goBot methods exist
@@ -120,6 +121,76 @@ async function runTests() {
 	assert.strictEqual(typeof goBot.isInGroup, "function");
 	assert.strictEqual(typeof goBot.markNotInGroup, "function");
 	assert.strictEqual(typeof goBot.markInGroup, "function");
+	assert.strictEqual(typeof goBot.isSystemGroup, "function");
+
+	// 9. System groups protection test
+	const sysBot = new FakeBot({
+		id: "rav-kingo",
+		grupoLogs: "120363404892583431@g.us",
+		grupoInvites: "120363404892583431@g.us",
+		grupoAvisos: "avisos@g.us",
+		dossieGroups: "dossie@g.us"
+	});
+
+	const sysGroup = "120363404892583431@g.us";
+	assert.strictEqual(
+		sysBot.isSystemGroup(sysGroup),
+		true,
+		"Should identify grupoInvites/Logs as system group"
+	);
+	assert.strictEqual(
+		sysBot.isSystemGroup("avisos@g.us"),
+		true,
+		"Should identify grupoAvisos as system group"
+	);
+	assert.strictEqual(
+		sysBot.isSystemGroup("dossie@g.us"),
+		true,
+		"Should identify dossieGroups as system group"
+	);
+	assert.strictEqual(
+		sysBot.isSystemGroup("other@g.us"),
+		false,
+		"Other groups should not be system groups"
+	);
+
+	// Trying to markNotInGroup on a system group must be ignored
+	await sysBot.markNotInGroup(sysGroup);
+	assert.strictEqual(
+		sysBot.isParticipating(sysGroup),
+		true,
+		"System group must always be participating"
+	);
+	assert.strictEqual(
+		sysBot.skipGroupInfo.includes(sysGroup),
+		false,
+		"System group must not be added to skipGroupInfo"
+	);
+
+	// Even if forcibly placed in skipGroupInfo, isParticipating must return true for system groups
+	sysBot.skipGroupInfo.push(sysGroup);
+	assert.strictEqual(
+		sysBot.isParticipating(sysGroup),
+		true,
+		"isParticipating must override skipGroupInfo for system groups"
+	);
+
+	// Test WhatsAppBotGo isSystemGroup
+	assert.strictEqual(
+		goBot.isSystemGroup("logs@g.us"),
+		true,
+		"goBot should identify logs@g.us as system group"
+	);
+	assert.strictEqual(
+		goBot.isSystemGroup("120363404892583431@g.us"),
+		true,
+		"goBot should identify grupoInvites as system group"
+	);
+	assert.strictEqual(
+		goBot.isParticipating("120363404892583431@g.us"),
+		true,
+		"goBot isParticipating should be true for grupoInvites"
+	);
 
 	console.log("✓ All bot_not_in_group tests passed successfully!");
 	process.exit(0);

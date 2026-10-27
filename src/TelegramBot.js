@@ -1052,7 +1052,19 @@ class WhatsAppBotTelegram {
 
 	async _loadSkipGroupInfo() {
 		try {
-			this.skipGroupInfo = await SkipGroups.getInstance().getSkippedGroups(this.id);
+			const skipped = await SkipGroups.getInstance().getSkippedGroups(this.id);
+			const cleaned = [];
+			for (const gid of skipped) {
+				if (this.isSystemGroup(gid)) {
+					this.logger.warn(
+						`[SkipGroups] Removendo grupo de sistema (${gid}) da skip list do bot ${this.id}.`
+					);
+					await SkipGroups.getInstance().removeSkippedGroup(this.id, gid);
+				} else {
+					cleaned.push(gid);
+				}
+			}
+			this.skipGroupInfo = cleaned;
 			this.logger.info(
 				`[SkipGroups] Loaded ${this.skipGroupInfo.length} skipped groups for bot ${this.id}.`
 			);
@@ -1085,6 +1097,9 @@ class WhatsAppBotTelegram {
 
 	isParticipating(groupId) {
 		if (!groupId) return false;
+		if (this.isSystemGroup(groupId)) {
+			return true;
+		}
 		if (this.skipGroupInfo && this.skipGroupInfo.includes(groupId)) {
 			return false;
 		}
@@ -1097,6 +1112,10 @@ class WhatsAppBotTelegram {
 
 	async markNotInGroup(groupId) {
 		if (!groupId) return;
+		if (this.isSystemGroup(groupId)) {
+			this.logger.warn(`[${this.id}] Ignorando markNotInGroup para grupo de sistema: ${groupId}`);
+			return;
+		}
 		await this.addSkipGroup(groupId);
 		try {
 			if (this.eventHandler?.groups?.[groupId]) {
@@ -1315,6 +1334,37 @@ class WhatsAppBotTelegram {
 	}
 	getPnFromLid(lid, chat) {
 		return lid;
+	}
+
+	/**
+	 * Verifica se um chat/grupo é um grupo de sistema do bot (logs, invites, avisos, anúncios, dossiês, estabilidade).
+	 * Grupos de sistema nunca devem ser adicionados à skip list nem bloqueados em isParticipating.
+	 * @param {string|number} groupId - ID do grupo a verificar
+	 * @returns {boolean}
+	 */
+	isSystemGroup(groupId) {
+		if (!groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const targetRaw = String(groupId).trim();
+
+		const matches = (sysConfig) => {
+			if (!sysConfig) return false;
+			const list = Array.isArray(sysConfig)
+				? sysConfig
+				: typeof sysConfig === "string" && sysConfig.includes(",")
+					? sysConfig.split(",").map((g) => g.trim())
+					: [sysConfig];
+			return list.some((g) => clean(g) === targetClean || String(g).trim() === targetRaw);
+		};
+
+		return (
+			matches(this.grupoLogs) ||
+			matches(this.grupoInvites) ||
+			matches(this.grupoAvisos) ||
+			matches(this.grupoEstabilidade) ||
+			this.isDossieGroup(groupId)
+		);
 	}
 
 	/**

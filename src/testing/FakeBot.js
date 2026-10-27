@@ -594,6 +594,9 @@ class FakeBot {
 
 	isParticipating(groupId) {
 		if (!groupId) return false;
+		if (this.isSystemGroup(groupId)) {
+			return true;
+		}
 		if (this.skipGroupInfo && this.skipGroupInfo.includes(groupId)) {
 			return false;
 		}
@@ -616,6 +619,10 @@ class FakeBot {
 
 	async markNotInGroup(groupId) {
 		if (!groupId) return;
+		if (this.isSystemGroup(groupId)) {
+			this.logger.warn(`[${this.id}] Ignorando markNotInGroup para grupo de sistema: ${groupId}`);
+			return;
+		}
 		await this.addSkipGroup(groupId);
 		try {
 			if (this.eventHandler?.groups?.[groupId]) {
@@ -664,6 +671,37 @@ class FakeBot {
 
 	/** Compatibilidade com destruição no SIGINT */
 	async destroy() {}
+
+	/**
+	 * Verifica se um chat/grupo é um grupo de sistema do bot (logs, invites, avisos, anúncios, dossiês, estabilidade).
+	 * Grupos de sistema nunca devem ser adicionados à skip list nem bloqueados em isParticipating.
+	 * @param {string} groupId - ID do grupo a verificar
+	 * @returns {boolean}
+	 */
+	isSystemGroup(groupId) {
+		if (!groupId) return false;
+		const clean = (id) => String(id).split("@")[0].trim();
+		const targetClean = clean(groupId);
+		const targetRaw = String(groupId).trim();
+
+		const matches = (sysConfig) => {
+			if (!sysConfig) return false;
+			const list = Array.isArray(sysConfig)
+				? sysConfig
+				: typeof sysConfig === "string" && sysConfig.includes(",")
+					? sysConfig.split(",").map((g) => g.trim())
+					: [sysConfig];
+			return list.some((g) => clean(g) === targetClean || String(g).trim() === targetRaw);
+		};
+
+		return (
+			matches(this.grupoLogs) ||
+			matches(this.grupoInvites) ||
+			matches(this.grupoAvisos) ||
+			matches(this.grupoEstabilidade) ||
+			this.isDossieGroup(groupId)
+		);
+	}
 
 	/**
 	 * Verifica se um chat/grupo é o grupo de dossiês do bot
