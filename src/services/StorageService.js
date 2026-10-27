@@ -16,6 +16,7 @@ const fsPromises = require("fs/promises");
 const path = require("path");
 const mime = require("mime-types");
 const Logger = require("../utils/Logger");
+const urlShortenerService = require("./UrlShortenerService");
 
 class StorageService {
 	constructor(options = {}) {
@@ -491,10 +492,13 @@ class StorageService {
 	/**
 	 * Gera uma Presigned URL para download direto no navegador / WhatsApp
 	 * @param {string} fileNameOrKey - Nome do arquivo ou chave completa
-	 * @param {Object} options - { bucket, expiresIn, groupId, category }
+	 * @param {Object} options - { bucket, expiresIn, groupId, category, shorten }
 	 * @returns {Promise<string>} URL assinada válida para download
 	 */
-	async getPresignedUrl(fileNameOrKey, { bucket, expiresIn, groupId, category } = {}) {
+	async getPresignedUrl(
+		fileNameOrKey,
+		{ bucket, expiresIn, groupId, category, shorten = false } = {}
+	) {
 		if (!fileNameOrKey) throw new Error("fileNameOrKey é obrigatório para presigned URL");
 
 		const targetBucket = bucket || this.bucketDownloads;
@@ -502,7 +506,11 @@ class StorageService {
 		const ttl = typeof expiresIn === "number" ? expiresIn : this.presignedExpiresIn;
 
 		if (!this.enabled || !this.client) {
-			return `${this.publicDomain}/${targetBucket}/${key}`;
+			const fallbackUrl = `${this.publicDomain}/${targetBucket}/${key}`;
+			if (shorten) {
+				return await urlShortenerService.shorten(fallbackUrl);
+			}
+			return fallbackUrl;
 		}
 
 		try {
@@ -515,11 +523,28 @@ class StorageService {
 			const signer = this.publicClient || this.client;
 			const signedUrl = await getSignedUrl(signer, command, { expiresIn: ttl });
 			this.logger.debug(`[presigned-url] Gerada URL para ${targetBucket}/${key} (TTL ${ttl}s)`);
+			if (shorten) {
+				return await urlShortenerService.shorten(signedUrl);
+			}
 			return signedUrl;
 		} catch (err) {
 			this.logger.error(`Erro ao gerar presigned URL para ${targetBucket}/${key}:`, err);
-			return `${this.publicDomain}/${targetBucket}/${key}`;
+			const fallbackUrl = `${this.publicDomain}/${targetBucket}/${key}`;
+			if (shorten) {
+				return await urlShortenerService.shorten(fallbackUrl);
+			}
+			return fallbackUrl;
 		}
+	}
+
+	/**
+	 * Gera uma Presigned URL já encurtada via Sink (https://s.moothz.win)
+	 * @param {string} fileNameOrKey - Nome do arquivo ou chave completa
+	 * @param {Object} options - { bucket, expiresIn, groupId, category }
+	 * @returns {Promise<string>} URL encurtada ou presigned original
+	 */
+	async getShortPresignedUrl(fileNameOrKey, options = {}) {
+		return this.getPresignedUrl(fileNameOrKey, { ...options, shorten: true });
 	}
 
 	/**
