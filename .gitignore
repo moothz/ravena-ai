@@ -212,4 +212,5 @@ data/geoguesser.json
 SKIP_HEALTH_CHECK
 data/status_motivo.txt
 data/chat-cleaner-state.json
+data/orphan-media-cleaner-state.json
 .ai-memory.toml

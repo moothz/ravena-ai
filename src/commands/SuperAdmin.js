@@ -192,6 +192,21 @@ class SuperAdmin {
 				description:
 					"Limpa canais inexistentes de Twitch/Kick e remove canais de grupos sem bots presentes"
 			},
+			cleanOrphanMedia: {
+				method: "cleanOrphanMedia",
+				description:
+					"Limpa mídias S3 e comandos com mídia de grupos sem bots há > 30 dias: !sa-cleanOrphanMedia [--dry-run] [--days=30]"
+			},
+			"clean-orphan-media": {
+				method: "cleanOrphanMedia",
+				description:
+					"Limpa mídias S3 e comandos com mídia de grupos sem bots há > 30 dias: !sa-cleanOrphanMedia [--dry-run] [--days=30]"
+			},
+			limparMidiasOrfas: {
+				method: "cleanOrphanMedia",
+				description:
+					"Limpa mídias S3 e comandos com mídia de grupos sem bots há > 30 dias: !sa-cleanOrphanMedia [--dry-run] [--days=30]"
+			},
 			"streams-rate": {
 				method: "streamsRate",
 				description: "Exibe métricas de velocidade de busca e rate limit do StreamMonitor"
@@ -6277,6 +6292,77 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId: targetChat,
 				content: `❌ *Erro ao gerar resumo semanal:* ${error.message}`
+			});
+		}
+	}
+
+	/**
+	 * Dispara sob demanda o ciclo de limpeza de mídias de grupos inativos há > 30 dias.
+	 * Preserva comandos e configurações de texto intactos.
+	 * Uso: !sa-cleanOrphanMedia [--dry-run] [--days=30]
+	 */
+	async cleanOrphanMedia(bot, message, args = []) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
+				});
+			}
+
+			const isDryRun = args.includes("--dry-run") || args.includes("--simular");
+			const daysArg = args.find((a) => a.startsWith("--days="));
+			const retentionDays = daysArg ? parseInt(daysArg.split("=")[1], 10) || 30 : 30;
+
+			if (typeof bot.sendMessage === "function") {
+				await bot.sendMessage(
+					chatId,
+					`⏳ *Iniciando varredura de mídias de grupos órfãos...*\nModo: ${isDryRun ? "Simulação (DRY-RUN)" : "Real (Exclusão definitiva)"}\nCarência: ${retentionDays} dias sem bots no grupo.\nIsso pode levar alguns instantes.`
+				);
+			}
+
+			const GroupMediaRetentionService = require("../services/GroupMediaRetentionService");
+			const retentionService = GroupMediaRetentionService.getInstance();
+
+			// Garante que o bot executor ou lista completa esteja vinculada
+			if (!retentionService.bots || retentionService.bots.length === 0) {
+				const StreamSystem = require("../StreamSystem");
+				const streamSystem = StreamSystem.getInstance();
+				retentionService.bots = streamSystem.bots || [bot];
+			}
+
+			const summary = await retentionService.runCleanupCycle({
+				dryRun: isDryRun,
+				retentionDays
+			});
+
+			let report = `🧹 *Relatório de Limpeza de Mídias de Grupos Órfãos*\n\n`;
+			report += `• *Modo:* ${summary.dryRun ? "Simulação (Dry-Run)" : "Execução Real"}\n`;
+			report += `• *Carência considerada:* ${summary.retentionDays} dias\n`;
+			report += `• *Grupos com bots ativos:* ${summary.totalActiveGroups}\n`;
+			report += `• *Grupos órfãos avaliados:* ${summary.orphanGroupsFound}\n`;
+			report += `• *Elegíveis para limpeza:* ${summary.eligibleForCleanup}\n`;
+			report += `• *Comandos de mídia removidos:* ${summary.totalMediaCommandsDeleted}\n`;
+			report += `• *Objetos S3 (zap-media) excluídos:* ${summary.totalS3ObjectsDeleted}\n`;
+
+			if (summary.errors && summary.errors.length > 0) {
+				report += `\n⚠️ *Erros encontrados:* ${summary.errors.length}\n`;
+			}
+
+			if (summary.dryRun && summary.eligibleForCleanup > 0) {
+				report += `\n💡 Para executar de verdade, rode:\n*!sa-cleanOrphanMedia --days=${retentionDays}*`;
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: report
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando !sa-cleanOrphanMedia:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ *Erro ao executar limpeza de mídias:* ${error.message || JSON.stringify(error)}`
 			});
 		}
 	}

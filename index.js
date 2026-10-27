@@ -22,6 +22,7 @@ const ProfileStatusScheduler = require("./src/services/ProfileStatusScheduler");
 const LLMDailyReportService = require("./src/services/LLMDailyReportService");
 const ChatCleanerScheduler = require("./src/services/ChatCleanerScheduler");
 const GroupMonitoringService = require("./src/services/GroupMonitoringService");
+const GroupMediaRetentionService = require("./src/services/GroupMediaRetentionService");
 const fs = require("fs");
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +49,7 @@ async function main() {
 	let statusScheduler;
 	let llmDailyReportService;
 	let chatCleanerScheduler;
+	let groupMediaRetentionService;
 	let groupMonitoringService;
 
 	try {
@@ -320,6 +322,14 @@ async function main() {
 		groupMonitoringService = GroupMonitoringService.getInstance();
 		if (!disableActivity) {
 			groupMonitoringService.startCleaner();
+		}
+
+		// Inicializa scheduler de retenção de mídias de grupos órfãos (domingo 04:00 BRT)
+		groupMediaRetentionService = GroupMediaRetentionService.getInstance({
+			bots: botInstances
+		});
+		if (!disableActivity) {
+			groupMediaRetentionService.start();
 		}
 
 		// Inicializa servidor da API
