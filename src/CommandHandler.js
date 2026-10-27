@@ -991,6 +991,32 @@ class CommandHandler {
 		// Verifica se é um comando fixo
 		const fixedCommand = this.fixedCommands.getCommand(command);
 		if (fixedCommand) {
+			const isCommandMuted =
+				group &&
+				((Array.isArray(group.mutedCommands) && group.mutedCommands.includes(fixedCommand.name)) ||
+					(Array.isArray(group.mutedCategories) &&
+						fixedCommand.category &&
+						group.mutedCategories.includes(fixedCommand.category.toLowerCase())));
+
+			// Se o comando fixo estiver silenciado no grupo, verifica se há um comando customizado para substituí-lo
+			if (isCommandMuted && group && this.customCommands[group.id] && !skipCustom) {
+				const matchResult = this.findCustomCommand(command, this.customCommands[group.id], args);
+				if (matchResult) {
+					const { customCommand, newArgs } = matchResult;
+					this.logger.debug(
+						`[${gidDebug}][${message.author}/${message.authorName}] Comando fixo '${command}' silenciado, executando comando custom (${customCommand.startsWith})`
+					);
+					return await this.executeCustomCommand(
+						bot,
+						message,
+						customCommand,
+						newArgs,
+						group,
+						silent
+					);
+				}
+			}
+
 			this.logger.debug(
 				`[${gidDebug}][${message.author}/${message.authorName}] Comando fixo '${command}' '${args.join(" ")}'`
 			);

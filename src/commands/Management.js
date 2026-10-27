@@ -781,6 +781,43 @@ class Management {
 			});
 		}
 
+		// Verifica se já existe um comando fixo do bot com esse nome
+		const fixedCommandsHandler = bot?.eventHandler?.commandHandler?.fixedCommands;
+		let targetFixedCmd = fixedCommandsHandler?.getCommand(commandTrigger);
+
+		// Se não encontrou pelo nome, tenta verificar por reação mapeada
+		if (!targetFixedCmd && bot?.eventHandler?.reactionsHandler) {
+			const reactionMap = bot.eventHandler.reactionsHandler.reactionCommands;
+			if (reactionMap && reactionMap[commandTrigger]) {
+				const mappedName = reactionMap[commandTrigger];
+				targetFixedCmd = fixedCommandsHandler?.getCommand(mappedName);
+			}
+		}
+
+		if (targetFixedCmd) {
+			const isMuted =
+				Array.isArray(group.mutedCommands) && group.mutedCommands.includes(targetFixedCmd.name);
+			if (!isMuted) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `⚠️ Já existe um comando fixo do bot com o mesmo nome ('${targetFixedCmd.name}').\n\nPor favor, escolha outro nome para o seu comando ou silencie o comando fixo com '${prefix}g-mute ${targetFixedCmd.name}' antes de criá-lo.`
+				});
+			}
+		}
+
+		// Verifica se já existe um comando personalizado com esse gatilho no grupo
+		const existingCommands = await this.database.getCustomCommands(group.id);
+		const existingCustom = existingCommands?.find(
+			(cmd) => cmd.startsWith?.trim().toLowerCase() === commandTrigger && !cmd.deleted
+		);
+
+		if (existingCustom) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `⚠️ Já existe um comando personalizado com o nome '${commandTrigger}' neste grupo.\n\nPor favor, escolha outro nome ou use '${prefix}g-addCmdReply ${commandTrigger}' para adicionar mais respostas a ele.`
+			});
+		}
+
 		// Obtém o conteúdo da mensagem citada
 		let responseContent = false;
 
