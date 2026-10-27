@@ -403,7 +403,8 @@ async function buildOverviewMessage(targetGroup, allLists) {
 
 	if (itemLists.length > 0) {
 		text += `📦 *Listas de Itens / Compras:*\n`;
-		for (const list of itemLists) {
+		for (let i = 0; i < itemLists.length; i++) {
+			const list = itemLists[i];
 			const emoji =
 				globalIndex < NUMBER_EMOJIS.length ? NUMBER_EMOJIS[globalIndex] : `${globalIndex + 1}.`;
 			const items = await getListItems(list.id);
@@ -416,6 +417,18 @@ async function buildOverviewMessage(targetGroup, allLists) {
 					: `${pending} pendente${pending !== 1 ? "s" : ""}${done > 0 ? ` / ${done} feito${done !== 1 ? "s" : ""}` : ""}`;
 
 			text += `${emoji} *${list.name}* — ${list.title || list.name} (${statusText})\n`;
+			if (items.length > 0) {
+				for (let j = 0; j < items.length; j++) {
+					const item = items[j];
+					const connector = j === items.length - 1 ? "└─" : "├─";
+					const itemIcon = item.checked ? "✅" : "▫️";
+					const itemText = item.checked ? `~${item.item_text}~` : item.item_text;
+					text += `   ${connector} ${itemIcon} ${itemText}\n`;
+				}
+			}
+			if (i < itemLists.length - 1) {
+				text += `\n`;
+			}
 			globalIndex++;
 		}
 		text += `\n`;
@@ -423,7 +436,8 @@ async function buildOverviewMessage(targetGroup, allLists) {
 
 	if (memberLists.length > 0) {
 		text += `👥 *Listas de Pessoas / Eventos:*\n`;
-		for (const list of memberLists) {
+		for (let i = 0; i < memberLists.length; i++) {
+			const list = memberLists[i];
 			const emoji =
 				globalIndex < NUMBER_EMOJIS.length ? NUMBER_EMOJIS[globalIndex] : `${globalIndex + 1}.`;
 			const members = await getListMembers(list.id);
@@ -431,9 +445,15 @@ async function buildOverviewMessage(targetGroup, allLists) {
 
 			text += `${emoji} *${list.name}* — ${list.title || list.name} (${count} membro${count !== 1 ? "s" : ""})\n`;
 			if (count > 0) {
-				const names = members.map((m) => m.user_name || m.user_id).slice(0, 5);
-				const extra = count > 5 ? `, +${count - 5}` : "";
-				text += `   ↳ Membros: ${names.join(", ")}${extra}\n`;
+				for (let j = 0; j < members.length; j++) {
+					const member = members[j];
+					const connector = j === members.length - 1 ? "└─" : "├─";
+					const name = member.user_name || member.user_id;
+					text += `   ${connector} ${name}\n`;
+				}
+			}
+			if (i < memberLists.length - 1) {
+				text += `\n`;
 			}
 			globalIndex++;
 		}
