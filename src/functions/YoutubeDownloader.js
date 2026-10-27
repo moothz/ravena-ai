@@ -194,7 +194,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 		bot.sendReturnMessages(processingMsg);
 
 		// Baixa como vídeo
-		baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
+		baixarVideoYoutube(videoId, message.author, true, async (error, result) => {
 			if (error) {
 				logger.error("Erro ao baixar vídeo:", error.message);
 
@@ -218,16 +218,40 @@ async function processYoutubeReaction(bot, message, emoji) {
 				return;
 			}
 
+			// Sempre disponibiliza o vídeo em alta qualidade no S3
+			let s3Url = null;
+			if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+				try {
+					const cleanFileName = path.basename(result.arquivo);
+					const s3Key = `yt/${cleanFileName}`;
+					await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+						bucket: storageService.bucketDownloads,
+						mimetype: "video/mp4"
+					});
+					s3Url = await storageService.getPresignedUrl(s3Key, {
+						bucket: storageService.bucketDownloads,
+						shorten: true
+					});
+				} catch (s3Err) {
+					logger.warn("Falha ao subir vídeo para S3 na reação do YouTube:", s3Err.message);
+				}
+			}
+
 			try {
 				// Cria objeto de mídia
 				const media = await bot.createMedia(result.arquivo, "video/mp4");
+
+				let caption = result.legenda;
+				if (s3Url) {
+					caption += `\n\n📥 *Vídeo em alta qualidade:* ${s3Url}`;
+				}
 
 				// Envia vídeo
 				const videoMsg = new ReturnMessage({
 					chatId,
 					content: media,
 					options: {
-						caption: result.legenda,
+						caption,
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
 					}
@@ -244,8 +268,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 			} catch (sendError) {
 				logger.error("Erro ao enviar vídeo diretamente:", sendError);
 
-				let linkFallback = null;
-				if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+				if (!s3Url && result?.arquivo && fsSync.existsSync(result.arquivo)) {
 					try {
 						const cleanFileName = path.basename(result.arquivo);
 						const s3Key = `yt/${cleanFileName}`;
@@ -253,16 +276,17 @@ async function processYoutubeReaction(bot, message, emoji) {
 							bucket: storageService.bucketDownloads,
 							mimetype: "video/mp4"
 						});
-						linkFallback = await storageService.getPresignedUrl(s3Key, {
-							bucket: storageService.bucketDownloads
+						s3Url = await storageService.getPresignedUrl(s3Key, {
+							bucket: storageService.bucketDownloads,
+							shorten: true
 						});
 					} catch (s3Err) {
 						logger.warn("Falha ao gerar link fallback no S3 para YouTube:", s3Err.message);
 					}
 				}
 
-				const errorMsgContent = linkFallback
-					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+				const errorMsgContent = s3Url
+					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe em alta qualidade aqui (válido por 6h):*\n${s3Url}`
 					: "Erro ao enviar vídeo.";
 
 				const errorMsg = new ReturnMessage({
@@ -278,7 +302,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 
 				// Reage com emoji indicativo
 				try {
-					await message.origin.react(linkFallback ? "🔗" : "❌");
+					await message.origin.react(s3Url ? "🔗" : "❌");
 				} catch (reactError) {
 					logger.error("Erro ao reagir à mensagem:", reactError);
 				}
@@ -292,7 +316,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 	}
 }
 
-async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = false, callback) {
+async function baixarVideoYoutube(idVideo, dadosSolicitante, videoHD = true, callback) {
 	try {
 		idVideo = idVideo.replace(/[^a-z0-9_-]/gi, "");
 		const urlSafe = `https://www.youtube.com/watch?v=${idVideo}`;
@@ -555,7 +579,7 @@ async function ytCommand(bot, message, args, group) {
 	// Retorna as mensagens de processamento e deixa que o callback do baixarVideoYoutube
 	// se encarregue de enviar o vídeo final ao usuário
 	return new Promise((resolve) => {
-		baixarVideoYoutube(videoId, message.author, false, async (error, result) => {
+		baixarVideoYoutube(videoId, message.author, true, async (error, result) => {
 			if (error) {
 				logger.error("Erro ao baixar vídeo:", error.message);
 
@@ -573,17 +597,42 @@ async function ytCommand(bot, message, args, group) {
 				return;
 			}
 
+			// Sempre disponibiliza o vídeo em alta qualidade no S3
+			let s3Url = null;
+			if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+				try {
+					const cleanFileName = path.basename(result.arquivo);
+					const s3Key = `yt/${cleanFileName}`;
+					await storageService.upload(fsSync.createReadStream(result.arquivo), s3Key, {
+						bucket: storageService.bucketDownloads,
+						mimetype: "video/mp4"
+					});
+					s3Url = await storageService.getPresignedUrl(s3Key, {
+						bucket: storageService.bucketDownloads,
+						shorten: true
+					});
+				} catch (s3Err) {
+					logger.warn("Falha ao subir vídeo para S3 no YoutubeDownloader:", s3Err.message);
+				}
+			}
+
 			try {
 				// Cria objeto de mídia
 				const media = await bot.createMedia(result.arquivo, "video/mp4");
 
 				// Envia vídeo
-				const dicaAudio = `\n\n> *Dica:* Se vocẽ quiser apenas o áudio deste vídeo, responda esta mensagem com \`${bot.prefix}extractaudio\` (MP3) ou \`${bot.prefix}extractvoice\``;
+				let caption = result.legenda;
+				if (s3Url) {
+					caption += `\n\n📥 *Vídeo em alta qualidade:* ${s3Url}`;
+				}
+				const dicaAudio = `\n\n> *Dica:* Se você quiser apenas o áudio deste vídeo, responda esta mensagem com \`${bot.prefix}extractaudio\` (MP3) ou \`${bot.prefix}extractvoice\``;
+				caption += dicaAudio;
+
 				const videoMsg = new ReturnMessage({
 					chatId,
 					content: media,
 					options: {
-						caption: result.legenda + dicaAudio,
+						caption,
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
 					}
@@ -594,8 +643,7 @@ async function ytCommand(bot, message, args, group) {
 			} catch (sendError) {
 				logger.error("Erro ao enviar vídeo diretamente:", sendError);
 
-				let linkFallback = null;
-				if (result?.arquivo && fsSync.existsSync(result.arquivo)) {
+				if (!s3Url && result?.arquivo && fsSync.existsSync(result.arquivo)) {
 					try {
 						const cleanFileName = path.basename(result.arquivo);
 						const s3Key = `yt/${cleanFileName}`;
@@ -603,16 +651,17 @@ async function ytCommand(bot, message, args, group) {
 							bucket: storageService.bucketDownloads,
 							mimetype: "video/mp4"
 						});
-						linkFallback = await storageService.getPresignedUrl(s3Key, {
-							bucket: storageService.bucketDownloads
+						s3Url = await storageService.getPresignedUrl(s3Key, {
+							bucket: storageService.bucketDownloads,
+							shorten: true
 						});
 					} catch (s3Err) {
 						logger.warn("Falha ao gerar link fallback no S3 para YouTube:", s3Err.message);
 					}
 				}
 
-				const errorMsgContent = linkFallback
-					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
+				const errorMsgContent = s3Url
+					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe em alta qualidade aqui (válido por 6h):*\n${s3Url}`
 					: "Erro ao enviar vídeo.";
 
 				const errorMsg = new ReturnMessage({
@@ -785,22 +834,6 @@ async function srCommand(bot, message, args, group) {
 				});
 
 				await bot.sendReturnMessages(audioMsg, group);
-
-				// Busca e envia letra da música
-				try {
-					const lyricsData = await searchLyrics(result.legenda || "");
-					if (lyricsData) {
-						await bot.sendReturnMessages(
-							new ReturnMessage({
-								chatId,
-								content: `🎶 *Letra:* ${lyricsData.title} - ${lyricsData.artist}\n\n${lyricsData.lyrics}`
-							}),
-							group
-						);
-					}
-				} catch (lyricsError) {
-					logger.error("Erro ao enviar letra:", lyricsError.message);
-				}
 
 				resolve(returnMessages);
 			} catch (sendError) {

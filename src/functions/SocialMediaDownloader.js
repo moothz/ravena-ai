@@ -557,7 +557,7 @@ async function executeYoutubeDownload(
 	wantLyrics,
 	session = null,
 	itemIndex = null,
-	videoHD = false
+	videoHD = true
 ) {
 	const author = message.author || "Desconhecido";
 	const videoId = item.id;
@@ -594,7 +594,8 @@ async function executeYoutubeDownload(
 								mimetype: "audio/mpeg"
 							});
 							s3Url = await storageService.getPresignedUrl(s3Key, {
-								bucket: storageService.bucketDownloads
+								bucket: storageService.bucketDownloads,
+								shorten: true
 							});
 						} catch (s3Err) {
 							logger.warn("Falha ao subir áudio para S3:", s3Err.message);
@@ -617,7 +618,7 @@ async function executeYoutubeDownload(
 						msg2Text += `\n📥 *Link direto (válido por 6h):* ${s3Url}`;
 					}
 
-					// 2.1 Se comando foi !sr ou !musica, busca letra
+					// 2.1 Se comando foi !musica, busca letra
 					if (wantLyrics) {
 						const rawTitle = result.legenda || item.title || "";
 						const cleanQuery = rawTitle.replace(/^\[.*?\]\s*/, "");
@@ -695,7 +696,8 @@ async function executeYoutubeDownload(
 								mimetype: "video/mp4"
 							});
 							s3Url = await storageService.getPresignedUrl(s3Key, {
-								bucket: storageService.bucketDownloads
+								bucket: storageService.bucketDownloads,
+								shorten: true
 							});
 						} catch (s3Err) {
 							logger.warn("Falha ao subir vídeo para S3:", s3Err.message);
@@ -704,7 +706,7 @@ async function executeYoutubeDownload(
 
 					let caption = `✅ *Download Concluído!*\n\n🌐 *Fonte:* YouTube\n📝 *Título:* ${result.legenda || item.title || videoId}`;
 					if (s3Url) {
-						caption += `\n📥 *Link direto (válido por 6h):* ${s3Url}`;
+						caption += `\n📥 *Vídeo em alta qualidade:* ${s3Url}`;
 					}
 					if (isTooLargeForWaVideo) {
 						caption += `\n\n📂 Enviado como arquivo devido ao limite de tamanho para vídeos no WhatsApp`;
@@ -742,7 +744,8 @@ async function executeYoutubeDownload(
 							const cleanFileName = path.basename(result.arquivo);
 							const s3Key = `yt/${cleanFileName}`;
 							linkFallback = await storageService.getPresignedUrl(s3Key, {
-								bucket: storageService.bucketDownloads
+								bucket: storageService.bucketDownloads,
+								shorten: true
 							});
 						} catch {}
 					}
@@ -861,7 +864,6 @@ async function downloadHandler(bot, message, args, group) {
 		args.includes("-musica");
 	const wantLyrics =
 		commandName.includes("musica") ||
-		commandName === "sr" ||
 		args.includes("-musica") ||
 		// Se for SoundCloud e for audio, também busca letra
 		(commandName.includes("sc") && isAudioOnly);
@@ -903,7 +905,7 @@ async function downloadHandler(bot, message, args, group) {
 					session.wantLyrics,
 					session,
 					idx,
-					session.videoHD || isHD
+					session.videoHD !== undefined ? session.videoHD : true
 				);
 				return [];
 			}
@@ -930,7 +932,7 @@ async function downloadHandler(bot, message, args, group) {
 				wantLyrics,
 				null,
 				null,
-				isHD
+				true
 			);
 			return [];
 		}
@@ -977,7 +979,7 @@ async function downloadHandler(bot, message, args, group) {
 					prefix: bot.prefix || "!",
 					isAudioOnly,
 					wantLyrics,
-					videoHD: isHD,
+					videoHD: true,
 					author: message.author,
 					chatId,
 					items: sessionItems,
