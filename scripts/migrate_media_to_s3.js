@@ -30,9 +30,13 @@ function getArg(name, defaultValue) {
 
 const isDryRun = args.includes("--dry-run");
 const concurrencyLimit = Math.max(1, parseInt(getArg("concurrency", "10"), 10));
-const defaultSourceDir = fs.existsSync("/app/data/media")
-	? "/app/data/media"
-	: path.join(__dirname, "../data/media");
+const defaultSourceDir = fs.existsSync("/app/downloads/ravena_data_migration")
+	? "/app/downloads/ravena_data_migration"
+	: fs.existsSync("/mnt/ks500gb/ravena_data_migration")
+		? "/mnt/ks500gb/ravena_data_migration"
+		: fs.existsSync("/app/data/media")
+			? "/app/data/media"
+			: path.join(__dirname, "../data/media");
 const sourceDir = getArg("source-dir", defaultSourceDir);
 const sqliteDir = fs.existsSync("/app/data/sqlites")
 	? "/app/data/sqlites"

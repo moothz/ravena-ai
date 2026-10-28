@@ -92,7 +92,12 @@ class StorageService {
 		// Diretórios locais para fallback e cache
 		this.localMediaDir = path.join(__dirname, "../../data/media");
 		this.migrationBackupDir =
-			process.env.STORAGE_MIGRATION_PATH || "/home/moothz/ravena_data_migration";
+			process.env.STORAGE_MIGRATION_PATH ||
+			(fs.existsSync("/app/downloads/ravena_data_migration")
+				? "/app/downloads/ravena_data_migration"
+				: fs.existsSync("/mnt/ks500gb/ravena_data_migration")
+					? "/mnt/ks500gb/ravena_data_migration"
+					: "/home/moothz/ravena_data_migration");
 		this.cacheDir = path.join(__dirname, "../../temp/s3-cache");
 
 		// Categorias padrão para resolução por grupo
@@ -395,18 +400,28 @@ class StorageService {
 		}
 
 		// 3. Fallback: Disco local (data/media ou pasta de migração)
+		const migrationDirs = [
+			this.migrationBackupDir,
+			"/app/downloads/ravena_data_migration",
+			"/mnt/ks500gb/ravena_data_migration",
+			"/home/moothz/ravena_data_migration"
+		].filter((dir, idx, arr) => dir && arr.indexOf(dir) === idx && fs.existsSync(dir));
+
 		const localPathsToTry = [
 			path.join(this.localMediaDir, cleanFileName),
-			path.join(this.migrationBackupDir, cleanFileName),
-			path.join(this.localMediaDir, fileNameOrKey),
-			path.join(this.migrationBackupDir, fileNameOrKey)
+			path.join(this.localMediaDir, fileNameOrKey)
 		];
 
+		for (const mDir of migrationDirs) {
+			localPathsToTry.push(path.join(mDir, cleanFileName));
+			localPathsToTry.push(path.join(mDir, fileNameOrKey));
+		}
+
 		if (category) {
-			localPathsToTry.unshift(
-				path.join(this.localMediaDir, category, cleanFileName),
-				path.join(this.migrationBackupDir, category, cleanFileName)
-			);
+			localPathsToTry.unshift(path.join(this.localMediaDir, category, cleanFileName));
+			for (const mDir of migrationDirs) {
+				localPathsToTry.unshift(path.join(mDir, category, cleanFileName));
+			}
 		}
 
 		for (const candidatePath of localPathsToTry) {
