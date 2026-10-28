@@ -16,10 +16,14 @@ class S3Setup {
 		this.logger = new Logger("S3Setup");
 		// S3_* tem prioridade; cai para MINIO_* se não definido (retrocompatibilidade com whatsgoapi)
 		this.enabled = (process.env.S3_ENABLED ?? process.env.MINIO_ENABLED) === "true";
-		this.endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT || "rustfs:9000";
+		this.endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT || "minio:9000";
 		this.accessKey = process.env.S3_ACCESS_KEY || process.env.MINIO_ACCESS_KEY;
 		this.secretKey = process.env.S3_SECRET_KEY || process.env.MINIO_SECRET_KEY;
-		this.bucket = process.env.S3_BUCKET || process.env.MINIO_BUCKET || "zap-media";
+		this.bucket =
+			process.env.S3_BUCKET_MEDIA ||
+			process.env.S3_BUCKET ||
+			process.env.MINIO_BUCKET ||
+			"zap-media";
 		this.region = process.env.S3_REGION || process.env.MINIO_REGION || "us-east-1";
 		this.protocol =
 			(process.env.S3_USE_SSL || process.env.MINIO_USE_SSL) === "true" ? "https" : "http";

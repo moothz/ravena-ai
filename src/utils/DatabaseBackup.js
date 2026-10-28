@@ -1,10 +1,12 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const mysql = require("mysql2/promise");
 const BetterSQLite = require("better-sqlite3");
 const Logger = require("./Logger");
 const zlib = require("zlib");
 const { pipeline } = require("stream/promises");
+const storageService = require("../services/StorageService");
 
 class DatabaseBackup {
 	constructor(databaseInstance) {
@@ -12,12 +14,19 @@ class DatabaseBackup {
 		this.logger = new Logger("database-backup");
 
 		this.databasePath = path.join(__dirname, "../../data");
-		this.backupPath = path.join(__dirname, "../../data/backups");
+		this.backupToFs = process.env.BACKUP_TO_FS === "true"; // false por padrão: zero arquivos mantidos em disco
+		this.backupToS3 = (process.env.BACKUP_TO_S3 ?? "true") === "true"; // true por padrão: backups no S3
+		this.backupPath =
+			process.env.PRIMARY_BACKUP_PATH ||
+			process.env.BACKUP_PATH ||
+			(fs.existsSync("/app/downloads/backups/sqlite")
+				? "/app/downloads/backups/sqlite"
+				: path.join(__dirname, "../../data/backups"));
 
 		this.maxBackups = parseInt(process.env.MAX_BACKUPS) || 120;
 		this.backupRetentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS) || 30;
 		// Compacta os .db de cada backup em .db.gz (a restauracao aceita os dois formatos)
-		this.backupGzip = process.env.BACKUP_GZIP === "true";
+		this.backupGzip = process.env.BACKUP_GZIP !== "false"; // true por padrão
 
 		// Remote Backup Config
 		this.remoteEnabled = process.env.SQLITE_REMOTE_BACKUP === "true";
@@ -25,7 +34,14 @@ class DatabaseBackup {
 			? process.env.SQLITE_REMOTE_SERVERS.split(",")
 			: [];
 
-		this.backupIgnoreFiles = ["cache.db"];
+		this.backupIgnoreFiles = [
+			"cache.db",
+			"rate_limits.db",
+			"video_cache.db",
+			"smd_cache.db",
+			"translation-cache.db",
+			"raffle_cache.db"
+		];
 		this.backupTargets = [path.join(this.databasePath, "sqlites")];
 
 		this.remoteBackupInterval =
@@ -35,8 +51,16 @@ class DatabaseBackup {
 	}
 
 	shouldIgnoreFile(filename) {
+		if (!filename || filename.startsWith(".")) return true;
 		if (this.backupIgnoreFiles.includes(filename)) return true;
-		if (filename === "cache.db" || filename.startsWith("cache.db-")) return true;
+		if (
+			filename.startsWith("cache.db-") ||
+			filename.startsWith("rate_limits.db-") ||
+			filename.startsWith("video_cache.db-") ||
+			filename.startsWith("smd_cache.db-")
+		) {
+			return true;
+		}
 		if (filename.includes("corrupt") || filename.includes("corrupted")) return true;
 		if (filename.endsWith("-wal") || filename.endsWith("-shm")) return true;
 		if (filename.includes(".bak") || filename.includes("_backup_") || filename.endsWith(".tmp")) {
@@ -60,21 +84,16 @@ class DatabaseBackup {
 		try {
 			const now = new Date();
 			const timestamp = now.toISOString().replace(/[:.]/g, "-");
-			const backupDir = path.join(this.backupPath, timestamp);
-
-			if (!fs.existsSync(backupDir)) {
-				fs.mkdirSync(backupDir, { recursive: true });
-			}
+			// Diretório temporário efêmero de trabalho (no /tmp, não polui nem desgasta os SSDs de dados)
+			const tmpWorkDir = path.join(os.tmpdir(), `ravena-bkp-${timestamp}`);
+			fs.mkdirSync(tmpWorkDir, { recursive: true });
 
 			const backedUpFiles = new Set();
+			const destSqlitesDir = path.join(tmpWorkDir, "sqlites");
+			fs.mkdirSync(destSqlitesDir, { recursive: true });
 
 			// 1. Safe SQLite Backups for active better-sqlite3 connections
 			if (this.db.mappers && this.db.mappers.connections) {
-				const destSqlitesDir = path.join(backupDir, "sqlites");
-				if (!fs.existsSync(destSqlitesDir)) {
-					fs.mkdirSync(destSqlitesDir, { recursive: true });
-				}
-
 				for (const [name, conn] of Object.entries(this.db.mappers.connections)) {
 					if (
 						name === "cooldowns" ||
@@ -92,7 +111,7 @@ class DatabaseBackup {
 						// Perform a safe SQLite online backup of the live database connection
 						await conn.backup(destPath);
 						backedUpFiles.add(dbFile);
-						this.logger.info(`Safe online backup created for connection '${name}' to ${destPath}`);
+						this.logger.info(`Safe online backup created for connection '${name}'`);
 					} catch (backupErr) {
 						this.logger.error(`Failed to create safe online backup for '${name}':`, backupErr);
 					}
@@ -102,59 +121,73 @@ class DatabaseBackup {
 			// 2. Fallback: Copy any other database files not currently open
 			for (const target of this.backupTargets) {
 				if (fs.existsSync(target)) {
-					const dest = path.join(backupDir, path.basename(target));
-					if (!fs.existsSync(dest)) {
-						fs.mkdirSync(dest, { recursive: true });
-					}
-
 					const items = fs.readdirSync(target);
 					for (const item of items) {
 						if (this.shouldIgnoreFile(item)) continue;
 						if (backedUpFiles.has(item)) continue; // Already backed up safely
-						// -wal/-shm/-journal de bancos ja copiados via backup online ja estao incluidos nele
 						if (backedUpFiles.has(item.replace(/-(wal|shm|journal)$/, ""))) continue;
-						this.backupDirectory(path.join(target, item), path.join(dest, item));
+						this.backupDirectory(path.join(target, item), path.join(destSqlitesDir, item));
 					}
 				}
 			}
 
-			if (this.backupGzip) await this.compressBackupDir(path.join(backupDir, "sqlites"));
+			if (this.backupGzip) await this.compressBackupDir(destSqlitesDir);
 
-			this.logger.info(`File backup created: ${backupDir}`);
+			// Metadados do backup
+			const backupFiles = fs.readdirSync(destSqlitesDir);
+			const backupInfo = {
+				timestamp,
+				createdAt: now.toISOString(),
+				fileCount: backupFiles.length,
+				files: backupFiles
+			};
+			const infoPath = path.join(tmpWorkDir, "backup-info.json");
+			fs.writeFileSync(infoPath, JSON.stringify(backupInfo, null, 2), "utf8");
 
-			// Sincroniza snapshot diretamente com o SSD secundário (/mnt/ks500gb/backups/sqlite/<timestamp>)
-			try {
-				const destSqlitesDir = path.join(backupDir, "sqlites");
-				const secondaryBaseDir =
-					process.env.SECONDARY_BACKUP_PATH || "/app/downloads/backups/sqlite";
-				const secondarySnapshotDir = path.join(secondaryBaseDir, timestamp);
+			// 3. Upload para o S3 (bucket 'backups') se habilitado
+			if (this.backupToS3 && storageService.enabled) {
+				await this.uploadBackupToS3(tmpWorkDir, timestamp);
+				await this.cleanupOldS3Backups(this.backupRetentionDays);
+			}
 
-				if (fs.existsSync(destSqlitesDir)) {
-					fs.mkdirSync(secondarySnapshotDir, { recursive: true });
-					const filesToCopy = fs
-						.readdirSync(destSqlitesDir)
-						.filter(
-							(file) => !file.startsWith(".") && (file.endsWith(".gz") || file.endsWith(".db"))
+			// 4. Se backup no sistema de arquivos estiver ativado (BACKUP_TO_FS=true)
+			if (this.backupToFs) {
+				const finalBackupDir = path.join(this.backupPath, timestamp);
+				fs.mkdirSync(finalBackupDir, { recursive: true });
+				const finalSqlitesDir = path.join(finalBackupDir, "sqlites");
+				fs.mkdirSync(finalSqlitesDir, { recursive: true });
+
+				for (const f of backupFiles) {
+					fs.copyFileSync(path.join(destSqlitesDir, f), path.join(finalSqlitesDir, f));
+				}
+				fs.copyFileSync(infoPath, path.join(finalBackupDir, "backup-info.json"));
+				this.logger.info(`File backup preserved on disk: ${finalBackupDir}`);
+
+				// Cópia secundária se SECONDARY_BACKUP_PATH estiver configurado e diferente do destino principal
+				if (
+					process.env.SECONDARY_BACKUP_PATH &&
+					process.env.SECONDARY_BACKUP_PATH !== this.backupPath
+				) {
+					try {
+						const secSnapshotDir = path.join(process.env.SECONDARY_BACKUP_PATH, timestamp);
+						fs.mkdirSync(secSnapshotDir, { recursive: true });
+						for (const f of backupFiles) {
+							fs.copyFileSync(path.join(destSqlitesDir, f), path.join(secSnapshotDir, f));
+						}
+						this.cleanupSecondaryBackups(process.env.SECONDARY_BACKUP_PATH, 30);
+					} catch (secErr) {
+						this.logger.warn(
+							"[Secondary Backup] Falha ao copiar para destino secundário:",
+							secErr.message
 						);
-
-					for (const file of filesToCopy) {
-						fs.copyFileSync(path.join(destSqlitesDir, file), path.join(secondarySnapshotDir, file));
 					}
-					this.logger.info(
-						`[Secondary Backup] ${filesToCopy.length} bancos sincronizados diretamente para ${secondarySnapshotDir}`
-					);
-
-					// Limpa snapshots mais antigos que 30 dias no SSD secundário
-					this.cleanupSecondaryBackups(secondaryBaseDir, 30);
 				}
-			} catch (secBackupErr) {
-				this.logger.warn(
-					"[Secondary Backup] Falha ao sincronizar com SSD secundário:",
-					secBackupErr.message
-				);
+
+				this.cleanupOldScheduledBackups();
 			}
 
-			this.cleanupOldScheduledBackups();
+			// 5. Limpeza do diretório temporário no /tmp (zero lixo em disco)
+			this.deleteDirectory(tmpWorkDir);
 
 			// Arquiva relatórios antigos com mais de 30 dias automaticamente
 			await this.db.archiveOldLoadReports(30).catch((err) => {
@@ -686,6 +719,12 @@ Error: \`${error.message}\``);
 				}
 			}
 
+			// 6. Fallback to S3 Backups
+			if (!restored && this.backupToS3 && storageService.enabled) {
+				restored = await this.restoreFromS3(dbName);
+				if (restored) backupUsed = "S3 Object Storage";
+			}
+
 			if (restored) {
 				await this.reportToTelegram(`✅ *Backup Restored*
 Source: \`${backupUsed}\``);
@@ -869,6 +908,191 @@ ${err.message}`);
 		}
 
 		this.logger.info(`Reinitialized connection for ${dbName}`);
+	}
+
+	/**
+	 * Faz upload dos arquivos de backup (.db.gz, json) para o bucket S3 de backups
+	 */
+	async uploadBackupToS3(tmpWorkDir, timestamp) {
+		try {
+			const destSqlitesDir = path.join(tmpWorkDir, "sqlites");
+			const files = fs.readdirSync(destSqlitesDir);
+			const targetBucket = storageService.bucketBackups;
+
+			this.logger.info(
+				`[S3 Backup] Iniciando upload de ${files.length} bancos para s3://${targetBucket}/sqlite/${timestamp}/...`
+			);
+
+			for (const file of files) {
+				const fullPath = path.join(destSqlitesDir, file);
+				const s3Key = `sqlite/${timestamp}/${file}`;
+				const fileStream = fs.createReadStream(fullPath);
+				await storageService.upload(fileStream, s3Key, {
+					bucket: targetBucket,
+					mimetype: file.endsWith(".gz") ? "application/gzip" : "application/x-sqlite3"
+				});
+			}
+
+			// Envia backup-info.json
+			const infoPath = path.join(tmpWorkDir, "backup-info.json");
+			if (fs.existsSync(infoPath)) {
+				const infoStream = fs.createReadStream(infoPath);
+				await storageService.upload(infoStream, `sqlite/${timestamp}/backup-info.json`, {
+					bucket: targetBucket,
+					mimetype: "application/json"
+				});
+			}
+
+			this.logger.info(
+				`[S3 Backup] Backup '${timestamp}' enviado com sucesso para o bucket '${targetBucket}'.`
+			);
+			return true;
+		} catch (err) {
+			this.logger.error("[S3 Backup] Falha no upload para o S3:", err);
+			return false;
+		}
+	}
+
+	/**
+	 * Remove snapshots antigos do S3 excedendo a política de retenção
+	 */
+	async cleanupOldS3Backups(retentionDays = this.backupRetentionDays) {
+		try {
+			if (!storageService.enabled) return 0;
+			const targetBucket = storageService.bucketBackups;
+			const objects = await storageService.listObjects("sqlite/", targetBucket);
+			if (objects.length === 0) return 0;
+
+			const now = Date.now();
+			const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+			const snapshots = new Map(); // timestamp -> Array of keys
+
+			for (const obj of objects) {
+				const parts = obj.key.split("/");
+				if (parts.length >= 3) {
+					const ts = parts[1];
+					if (!snapshots.has(ts)) snapshots.set(ts, []);
+					snapshots.get(ts).push(obj.key);
+				}
+			}
+
+			const keysToDelete = [];
+			let deletedSnapshots = 0;
+
+			for (const [ts, keys] of snapshots.entries()) {
+				const isoTs = ts.replace(/-/g, (m, i) =>
+					i === 4 || i === 7 || i === 10 ? m : i === 13 || i === 16 ? ":" : i === 19 ? "." : m
+				);
+				const tsDate = new Date(isoTs).getTime();
+				if (!isNaN(tsDate) && now - tsDate > retentionMs) {
+					keysToDelete.push(...keys);
+					deletedSnapshots++;
+					this.logger.info(`[S3 Backup] Snapshot antigo expirado para remoção: ${ts}`);
+				}
+			}
+
+			if (keysToDelete.length > 0) {
+				await storageService.deleteObjects(keysToDelete, targetBucket);
+				this.logger.info(
+					`[S3 Backup] Retenção concluída: ${deletedSnapshots} snapshots (${keysToDelete.length} objetos) removidos de '${targetBucket}'.`
+				);
+			}
+
+			return deletedSnapshots;
+		} catch (err) {
+			this.logger.error("[S3 Backup] Erro na limpeza de backups antigos no S3:", err);
+			return 0;
+		}
+	}
+
+	/**
+	 * Restaura um banco SQLite diretamente a partir do snapshot mais recente no S3
+	 * @param {string} dbName - Nome do banco (ex: "core", "waifus")
+	 * @returns {Promise<boolean>}
+	 */
+	async restoreFromS3(dbName) {
+		try {
+			if (!storageService.enabled) return false;
+			const targetBucket = storageService.bucketBackups;
+			const dbFile = dbName === "core" ? "core.db" : `${dbName}.db`;
+			const gzFile = `${dbFile}.gz`;
+
+			this.logger.info(`[restoreFromS3] Buscando snapshots no S3 para restaurar '${dbFile}'...`);
+			const objects = await storageService.listObjects("sqlite/", targetBucket);
+			if (objects.length === 0) {
+				this.logger.warn(`[restoreFromS3] Nenhum backup encontrado no bucket '${targetBucket}'.`);
+				return false;
+			}
+
+			// Agrupa snapshots disponíveis ordenados do mais recente para o mais antigo
+			const snapshotTimestamps = [
+				...new Set(
+					objects
+						.map((o) => o.key.split("/")[1])
+						.filter((ts) => ts && /^\d{4}-\d{2}-\d{2}T/.test(ts))
+				)
+			].sort((a, b) => b.localeCompare(a));
+
+			const targetDbPath = path.join(this.databasePath, "sqlites", dbFile);
+
+			for (const ts of snapshotTimestamps) {
+				const candidateGzKey = `sqlite/${ts}/${gzFile}`;
+				const candidateRawKey = `sqlite/${ts}/${dbFile}`;
+
+				let s3Key = null;
+				let isGz = false;
+
+				if (objects.some((o) => o.key === candidateGzKey)) {
+					s3Key = candidateGzKey;
+					isGz = true;
+				} else if (objects.some((o) => o.key === candidateRawKey)) {
+					s3Key = candidateRawKey;
+					isGz = false;
+				}
+
+				if (!s3Key) continue;
+
+				this.logger.info(`[restoreFromS3] Baixando ${s3Key} do bucket '${targetBucket}'...`);
+				try {
+					const s3Obj = await storageService.get(s3Key, { bucket: targetBucket });
+					if (!s3Obj || !s3Obj.buffer) continue;
+
+					let dbBuffer = s3Obj.buffer;
+					if (isGz) {
+						dbBuffer = zlib.gunzipSync(dbBuffer);
+					}
+
+					const tmpCheckPath = path.join(os.tmpdir(), `.restore-s3-${process.pid}-${dbFile}`);
+					fs.writeFileSync(tmpCheckPath, dbBuffer);
+
+					if (this.isBackupFileHealthy(tmpCheckPath)) {
+						fs.mkdirSync(path.dirname(targetDbPath), { recursive: true });
+						fs.copyFileSync(tmpCheckPath, targetDbPath);
+						for (const suffix of ["", "-wal", "-shm"]) {
+							fs.rmSync(tmpCheckPath + suffix, { force: true });
+						}
+						this.logger.info(
+							`[restoreFromS3] Banco '${dbName}' restaurado com sucesso a partir de snapshot S3: ${ts}`
+						);
+						return true;
+					} else {
+						this.logger.warn(
+							`[restoreFromS3] Snapshot S3 corrompido: ${s3Key}. Tentando anterior...`
+						);
+						for (const suffix of ["", "-wal", "-shm"]) {
+							fs.rmSync(tmpCheckPath + suffix, { force: true });
+						}
+					}
+				} catch (downloadErr) {
+					this.logger.error(`[restoreFromS3] Erro ao processar ${s3Key}:`, downloadErr.message);
+				}
+			}
+
+			return false;
+		} catch (err) {
+			this.logger.error(`[restoreFromS3] Falha geral ao tentar restaurar '${dbName}' do S3:`, err);
+			return false;
+		}
 	}
 }
 

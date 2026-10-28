@@ -49,8 +49,8 @@ services:
         aliases:
           - minio
     environment:
-      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-${MINIO_ACCESS_KEY:-ravenaadmin}}
-      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-${MINIO_SECRET_KEY}}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-ravenaadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
       RUSTFS_VOLUMES: /data
       RUSTFS_CONSOLE_ENABLE: "true"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
@@ -91,6 +91,15 @@ services:
       dockerfile: Dockerfile
     container_name: whatsgoapi
     env_file: .env
+    environment:
+      # Mapeamento de retrocompatibilidade para que a WhatsGoAPI continue funcionando sem rebuild imediato
+      - MINIO_ENABLED=${S3_ENABLED:-true}
+      - MINIO_ENDPOINT=${S3_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${S3_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${S3_SECRET_KEY}
+      - MINIO_BUCKET=${S3_BUCKET_MEDIA:-${S3_BUCKET:-zap-media}}
+      - MINIO_USE_SSL=${S3_USE_SSL:-false}
+      - MINIO_REGION=${S3_REGION:-}
     restart: unless-stopped
     logging: *default-logging
     stop_grace_period: 30s
@@ -124,7 +133,9 @@ services:
     env_file: .env
     environment:
       - DL_FOLDER=/app/downloads
-      - SECONDARY_BACKUP_PATH=/app/downloads/backups/sqlite
+      - PRIMARY_BACKUP_PATH=/app/downloads/backups/sqlite
+      - BACKUP_TO_FS=${BACKUP_TO_FS:-false}
+      - BACKUP_TO_S3=${BACKUP_TO_S3:-true}
     restart: unless-stopped
     logging: *default-logging
     stop_grace_period: 30s

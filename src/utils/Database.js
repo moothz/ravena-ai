@@ -87,7 +87,10 @@ class Database {
 		this.testMode = options.testMode ?? false;
 		this.logger = new Logger("database");
 		this.databasePath = path.join(__dirname, "../../data");
-		this.backupPath = path.join(__dirname, "../../data/backups");
+		this.backupPath =
+			process.env.PRIMARY_BACKUP_PATH ||
+			process.env.BACKUP_PATH ||
+			path.join(__dirname, "../../data/backups");
 
 		this.sqlites = {}; // Cache for other sqlite connections (like 'pinto')
 		this.noBackupDatabases = new Set(); // Track databases that should not be backed up

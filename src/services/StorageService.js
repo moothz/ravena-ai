@@ -89,6 +89,18 @@ class StorageService {
 			10
 		);
 
+		// Cache local em disco (desabilitado por padrão se S3 for local)
+		this.localCacheEnabled =
+			(options.localCacheEnabled ?? process.env.S3_LOCAL_CACHE ?? "false") === "true";
+		this.localCacheTtlHours = parseInt(
+			options.localCacheTtlHours || process.env.S3_LOCAL_CACHE_TTL_HOURS || "2",
+			10
+		);
+		this.localCacheMaxMb = parseInt(
+			options.localCacheMaxMb || process.env.S3_LOCAL_CACHE_MAX_MB || "500",
+			10
+		);
+
 		// Diretórios locais para fallback e cache
 		this.localMediaDir = path.join(__dirname, "../../data/media");
 		this.migrationBackupDir =
@@ -155,6 +167,22 @@ class StorageService {
 	async _initCacheDir() {
 		try {
 			await fsPromises.mkdir(this.cacheDir, { recursive: true });
+			if (this.localCacheEnabled) {
+				await this.pruneExpiredCache().catch(() => {});
+				if (
+					process.env.DISABLE_ACTIVITY !== "true" &&
+					process.env.DISABLE_STICKER_SCRAPER_TIMER !== "true" &&
+					!this.cachePruneTimer
+				) {
+					this.cachePruneTimer = setInterval(
+						() => {
+							this.pruneExpiredCache().catch(() => {});
+						},
+						60 * 60 * 1000
+					);
+					if (this.cachePruneTimer.unref) this.cachePruneTimer.unref();
+				}
+			}
 		} catch (err) {
 			this.logger.debug("Diretório de cache já existente ou erro ao criar:", err.message);
 		}
@@ -765,6 +793,80 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Lista todos os objetos sob um determinado prefixo no bucket
+	 * @param {string} prefix
+	 * @param {string} bucket
+	 * @returns {Promise<Array<{ key: string, size: number, lastModified: Date }>>}
+	 */
+	async listObjects(prefix = "", bucket) {
+		const targetBucket = bucket || this.bucket;
+		if (!this.enabled || !this.client) return [];
+
+		const results = [];
+		let continuationToken = null;
+
+		try {
+			do {
+				const listCmd = new ListObjectsV2Command({
+					Bucket: targetBucket,
+					Prefix: prefix,
+					ContinuationToken: continuationToken
+				});
+				const listRes = await this.client.send(listCmd);
+
+				if (listRes.Contents) {
+					for (const obj of listRes.Contents) {
+						results.push({
+							key: obj.Key,
+							size: obj.Size || 0,
+							lastModified: obj.LastModified
+						});
+					}
+				}
+
+				continuationToken = listRes.NextContinuationToken;
+			} while (continuationToken);
+
+			return results;
+		} catch (err) {
+			this.logger.error(`Erro ao listar objetos no S3 (${targetBucket}/${prefix}):`, err);
+			return [];
+		}
+	}
+
+	/**
+	 * Remove múltiplos objetos de uma vez do S3
+	 * @param {string[]} keys
+	 * @param {string} bucket
+	 * @returns {Promise<number>}
+	 */
+	async deleteObjects(keys = [], bucket) {
+		const targetBucket = bucket || this.bucket;
+		if (!this.enabled || !this.client || !keys || keys.length === 0) return 0;
+
+		try {
+			const chunks = [];
+			for (let i = 0; i < keys.length; i += 1000) {
+				chunks.push(keys.slice(i, i + 1000));
+			}
+
+			let totalDeleted = 0;
+			for (const chunk of chunks) {
+				const deleteCmd = new DeleteObjectsCommand({
+					Bucket: targetBucket,
+					Delete: { Objects: chunk.map((k) => ({ Key: k })) }
+				});
+				await this.client.send(deleteCmd);
+				totalDeleted += chunk.length;
+			}
+			return totalDeleted;
+		} catch (err) {
+			this.logger.error(`Erro ao deletar múltiplos objetos no S3 (${targetBucket}):`, err);
+			return 0;
+		}
+	}
+
 	// ── Métodos de Cache Efêmero ──
 
 	_cacheKey(keyOrFileName, bucket) {
@@ -773,13 +875,14 @@ class StorageService {
 	}
 
 	async _getFromCache(fileNameOrKey, bucket) {
+		if (!this.localCacheEnabled) return null;
 		try {
 			const safeName = this._cacheKey(fileNameOrKey, bucket);
 			const cacheFilePath = path.join(this.cacheDir, safeName);
 			if (fs.existsSync(cacheFilePath)) {
 				const stat = await fsPromises.stat(cacheFilePath);
-				// TTL de 2 horas no cache local
-				if (Date.now() - stat.mtimeMs < 2 * 60 * 60 * 1000) {
+				// TTL no cache local configurável
+				if (Date.now() - stat.mtimeMs < this.localCacheTtlHours * 60 * 60 * 1000) {
 					return await fsPromises.readFile(cacheFilePath);
 				}
 			}
@@ -790,6 +893,7 @@ class StorageService {
 	}
 
 	async _saveToCache(fileNameOrKey, buffer, bucket) {
+		if (!this.localCacheEnabled) return;
 		try {
 			if (!buffer || buffer.length > 50 * 1024 * 1024) return; // Limite de 50MB por item no cache
 			const safeName = this._cacheKey(fileNameOrKey, bucket);
@@ -809,6 +913,59 @@ class StorageService {
 			}
 		} catch {
 			// Ignora falhas
+		}
+	}
+
+	/**
+	 * Remove arquivos expirados ou além da cota máxima do cache efêmero local
+	 */
+	async pruneExpiredCache() {
+		try {
+			if (!fs.existsSync(this.cacheDir)) return 0;
+			const files = await fsPromises.readdir(this.cacheDir);
+			if (files.length === 0) return 0;
+
+			const now = Date.now();
+			const maxAgeMs = this.localCacheTtlHours * 60 * 60 * 1000;
+			const maxSizeBytes = this.localCacheMaxMb * 1024 * 1024;
+			let totalSize = 0;
+			let prunedCount = 0;
+			const fileStats = [];
+
+			for (const file of files) {
+				const filePath = path.join(this.cacheDir, file);
+				try {
+					const stat = await fsPromises.stat(filePath);
+					if (now - stat.mtimeMs > maxAgeMs) {
+						await fsPromises.unlink(filePath).catch(() => {});
+						prunedCount++;
+					} else {
+						totalSize += stat.size;
+						fileStats.push({ filePath, size: stat.size, mtimeMs: stat.mtimeMs });
+					}
+				} catch {
+					// Ignora arquivos já deletados
+				}
+			}
+
+			// Se ainda exceder a cota máxima em MB, elimina os mais antigos (LRU)
+			if (totalSize > maxSizeBytes && fileStats.length > 0) {
+				fileStats.sort((a, b) => a.mtimeMs - b.mtimeMs);
+				for (const item of fileStats) {
+					if (totalSize <= maxSizeBytes) break;
+					await fsPromises.unlink(item.filePath).catch(() => {});
+					totalSize -= item.size;
+					prunedCount++;
+				}
+			}
+
+			if (prunedCount > 0) {
+				this.logger.info(`[pruneExpiredCache] ${prunedCount} arquivos purgados do cache S3 local`);
+			}
+			return prunedCount;
+		} catch (err) {
+			this.logger.warn("Erro ao purgar cache local:", err.message);
+			return 0;
 		}
 	}
 }
