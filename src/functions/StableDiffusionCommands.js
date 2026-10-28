@@ -15,38 +15,33 @@ const LLMService = require("../services/LLMService");
 const llmService = LLMService.getInstance();
 const ServiceProviderService = require("../services/ServiceProviderService");
 const serviceProviderService = ServiceProviderService.getInstance();
-const sdWebUIToken = `Basic ${process.env.SDWEBUI_TOKEN ?? ""}`;
 
 //logger.info('Módulo StableDiffusionCommands carregado');
 
-// Configuração da API SD WebUI
-function getApiUrl() {
+// Configuração da API SD WebUI via service-providers.json
+function getSdProvider() {
 	const providers = serviceProviderService.getProviders("sdwebui");
-	return providers[0]?.url || "http://localhost:7860";
+	return providers[0] || {};
 }
-/* Parametros bons pra lightning
-const DEFAULT_PARAMS = {
-  width: 832,
-  height: 1216,
-  steps: 10,
-  cfg_scale: ,
-  sampler_name: 'k_euler_a',
-  batch_size: 1,
-  n_iter: 1,
-  negative_prompt: "ass bum poop woman dick nsfw porn boobs tits vagina child kid gore infant"
-};
-*/
-const DEFAULT_PARAMS = {
-	width: process.env.SD_width ?? 1200,
-	height: process.env.SD_height ?? 1200,
-	steps: process.env.SD_steps ?? 40,
-	cfg_scale: process.env.SD_cfg_scale ?? 2,
-	sampler_name: process.env.SD_sampler_name ?? "k_dpmpp_2m_sde",
-	batch_size: 1,
-	n_iter: 1,
-	negative_prompt:
-		"low quality pixelated blurry bad missing fingers ass bum poop woman dick nsfw porn boobs tits vagina child kid gore infant"
-};
+
+function getApiUrl() {
+	return getSdProvider().url || "http://localhost:7860";
+}
+
+function getDefaultParams() {
+	const provider = getSdProvider();
+	return {
+		width: provider.width ?? 1200,
+		height: provider.height ?? 1200,
+		steps: provider.steps ?? 40,
+		cfg_scale: provider.cfg_scale ?? 2,
+		sampler_name: provider.sampler_name ?? "k_dpmpp_2m_sde",
+		batch_size: 1,
+		n_iter: 1,
+		negative_prompt:
+			"low quality pixelated blurry bad missing fingers ass bum poop woman dick nsfw porn boobs tits vagina child kid gore infant"
+	};
+}
 
 /**
  * Gera uma imagem usando a API do Stable Diffusion
@@ -215,18 +210,24 @@ async function generateImage(bot, message, args, group, skipNotify = false) {
 		// 2. Promise de Geração de Imagem
 		const generationPromise = (async () => {
 			const startTime = Date.now();
+			const provider = getSdProvider();
+			const token = provider.apiKey || provider.token || "";
 			const payload = {
 				prompt,
 				negative_prompt:
 					"bad anatomy, bad hands, text, missing fingers, extra digit, fewer digits, cropped, low-res, worst quality, jpeg artifacts, signature, watermark, username, blurry",
-				...DEFAULT_PARAMS
+				...getDefaultParams()
 			};
 
+			const headers = {
+				"Content-Type": "application/json"
+			};
+			if (token) {
+				headers.Authorization = token.startsWith("Basic ") ? token : `Basic ${token}`;
+			}
+
 			const response = await axios.post(`${getApiUrl()}/sdapi/v1/txt2img`, payload, {
-				headers: {
-					Authorization: sdWebUIToken,
-					"Content-Type": "application/json"
-				},
+				headers,
 				timeout: 120000 // 2 minutos de timeout
 			});
 

@@ -380,9 +380,22 @@
                 </div>
                 <div id="nudenet-extra-fields" class="hidden">
                     <div class="form-group">
+                        <label>Threshold Padrão (0.0 a 1.0)</label>
+                        <input type="number" id="prov-nudenet-threshold" class="form-control" placeholder="0.8" min="0" max="1" step="0.05">
+                        <small style="color: #888; font-size: 0.8em;">Sensibilidade padrão quando o grupo não define um threshold específico (ex: 0.75 ou 0.8).</small>
+                    </div>
+                    <div class="form-group">
                         <label>Timeout Circuit Breaker (Segundos)</label>
                         <input type="number" id="prov-circuit-breaker" class="form-control" placeholder="15" min="1" step="1">
                         <small style="color: #888; font-size: 0.8em;">Tempo de pausa para retentativas se a API ficar offline ou inacessível (padrão: 15s).</small>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="prov-nudenet-debug">
+                        <label for="prov-nudenet-debug">Modo Debug (salvar mídias e logs em data/nudenet_debug)</label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="prov-nudenet-detect-all">
+                        <label for="prov-nudenet-detect-all">Detectar em Todas as Mídias (mesmo sem filtro NSFW ativo no grupo)</label>
                     </div>
                 </div>
 

@@ -1076,14 +1076,11 @@ class EventHandler extends EventEmitter {
 	}
 
 	/**
-	 * Verifica se a detecção de NSFW em todas as mídias está ativada via .env
+	 * Verifica se a detecção de NSFW em todas as mídias está ativada via provedor NudeNet
 	 * @returns {boolean}
 	 */
 	isNudenetDetectAll() {
-		const envVal = process.env.NUDENET_DETECT_ALL;
-		if (!envVal) return false;
-		const val = envVal.toString().trim().toLowerCase();
-		return val !== "0" && val !== "false" && val !== "undefined";
+		return this.nsfwPredict.isDetectAll();
 	}
 
 	/**

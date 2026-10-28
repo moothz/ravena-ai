@@ -18,16 +18,54 @@ class NSFWPredict {
 		this.database = Database.getInstance();
 		this.llmService = LLMService.getInstance();
 		this.serviceProviderService = ServiceProviderService.getInstance();
-		this.threshold = parseFloat(process.env.NSFW_THRESHOLD || "0.7");
-		this.nudenetThreshold = process.env.NUDENET_THRESHOLD
-			? parseFloat(process.env.NUDENET_THRESHOLD)
-			: 0.8;
-		this.nudenetTimeout = parseInt(process.env.NUDENET_TIMEOUT, 10) || 15000;
-		this.nudenetVideoTimeout = parseInt(process.env.NUDENET_VIDEO_TIMEOUT, 10) || 45000;
-		this.nudenetVideoFps = parseFloat(process.env.NUDENET_VIDEO_FPS || "1.0");
-		this.nudenetVideoMaxFrames = parseInt(process.env.NUDENET_VIDEO_MAX_FRAMES, 10) || 180;
+		this.threshold = 0.7;
+		this.defaultNudenetThreshold = 0.8;
+		this.defaultNudenetTimeout = 15000;
+		this.defaultNudenetVideoTimeout = 45000;
+		this.defaultNudenetVideoFps = 1.0;
+		this.defaultNudenetVideoMaxFrames = 180;
 		this.defaultCircuitBreakerDuration = 15000; // 15 segundos padrão
 		this.providerOfflineUntil = new Map();
+	}
+
+	/**
+	 * Retorna o provedor NudeNet principal (primeiro disponível ou primeiro habilitado)
+	 * @returns {Object}
+	 */
+	getPrimaryProvider() {
+		return this.getAvailableProviders()[0] || this.getEnabledProviders()[0] || {};
+	}
+
+	get nudenetThreshold() {
+		const p = this.getPrimaryProvider();
+		if (p.threshold !== undefined && !isNaN(p.threshold)) {
+			return parseFloat(p.threshold);
+		}
+		return this.defaultNudenetThreshold;
+	}
+
+	set nudenetThreshold(val) {
+		this.defaultNudenetThreshold = parseFloat(val);
+	}
+
+	get nudenetTimeout() {
+		const p = this.getPrimaryProvider();
+		return parseInt(p.timeout, 10) || this.defaultNudenetTimeout;
+	}
+
+	get nudenetVideoTimeout() {
+		const p = this.getPrimaryProvider();
+		return parseInt(p.videoTimeout, 10) || this.defaultNudenetVideoTimeout;
+	}
+
+	get nudenetVideoFps() {
+		const p = this.getPrimaryProvider();
+		return parseFloat(p.videoFps) || this.defaultNudenetVideoFps;
+	}
+
+	get nudenetVideoMaxFrames() {
+		const p = this.getPrimaryProvider();
+		return parseInt(p.videoMaxFrames, 10) || this.defaultNudenetVideoMaxFrames;
 	}
 
 	/**
@@ -124,16 +162,33 @@ class NSFWPredict {
 	}
 
 	/**
+	 * Verifica se a detecção de NSFW em todas as mídias (detectAll) está ativada no provedor NudeNet
+	 * @returns {boolean}
+	 */
+	isDetectAll() {
+		const p = this.getPrimaryProvider();
+		if (p.detectAll !== undefined) {
+			return Boolean(p.detectAll && String(p.detectAll).toLowerCase() !== "false");
+		}
+		return this.getEnabledProviders().some((prov) =>
+			Boolean(prov.detectAll && String(prov.detectAll).toLowerCase() !== "false")
+		);
+	}
+
+	/**
 	 * Verifica se o modo debug do NudeNet está ativado
 	 * @param {Object} [context] - Metadados de contexto (detectAll/isDetectAll ativa debug)
 	 * @returns {boolean}
 	 */
 	isNudenetDebug(context = {}) {
 		if (context?.detectAll || context?.isDetectAll) return true;
-		const debug = process.env.NUDENET_DEBUG;
-		if (!debug) return false;
-		const val = debug.toString().trim().toLowerCase();
-		return val !== "0" && val !== "false" && val !== "undefined";
+		const p = this.getPrimaryProvider();
+		if (p.debug !== undefined) {
+			return Boolean(p.debug && String(p.debug).toLowerCase() !== "false");
+		}
+		return this.getEnabledProviders().some((prov) =>
+			Boolean(prov.debug && String(prov.debug).toLowerCase() !== "false")
+		);
 	}
 
 	/**
@@ -1200,12 +1255,7 @@ CRITICAL RULES:
 			}
 
 			const isGroupFilter = Boolean(group?.filters?.nsfw);
-			const envVal = process.env.NUDENET_DETECT_ALL;
-			const isDetectAll =
-				envVal &&
-				envVal.toString().trim().toLowerCase() !== "0" &&
-				envVal.toString().trim().toLowerCase() !== "false" &&
-				envVal.toString().trim().toLowerCase() !== "undefined";
+			const isDetectAll = this.isDetectAll();
 
 			const groupName = group?.name || chatId;
 			const authorName =

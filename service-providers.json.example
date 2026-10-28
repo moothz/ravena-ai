@@ -87,6 +87,12 @@
 		{
 			"name": "primary",
 			"url": "http://localhost:7860",
+			"apiKey": "",
+			"width": 1200,
+			"height": 1200,
+			"steps": 40,
+			"cfg_scale": 2,
+			"sampler_name": "k_dpmpp_2m_sde",
 			"enabled": true
 		}
 	],
@@ -103,6 +109,13 @@
 			"url": "http://192.168.1.10:6969",
 			"apiKey": "your-api-key-here",
 			"circuitBreakerDuration": 15000,
+			"threshold": 0.8,
+			"debug": false,
+			"detectAll": false,
+			"timeout": 15000,
+			"videoTimeout": 45000,
+			"videoFps": 1.0,
+			"videoMaxFrames": 180,
 			"enabled": true
 		}
 	]

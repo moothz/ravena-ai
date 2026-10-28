@@ -278,8 +278,8 @@ async function runTests() {
 		console.log(
 			"\n9. Testando salvamento de imagem no handleExternalDetection com isNudenetDebug=true..."
 		);
-		const originalNudenetDebug = process.env.NUDENET_DEBUG;
-		process.env.NUDENET_DEBUG = "true";
+		const originalGetPrimaryProvider = nsfwPredict.getPrimaryProvider.bind(nsfwPredict);
+		nsfwPredict.getPrimaryProvider = () => ({ debug: true, detectAll: false });
 
 		const debugDir = path.join(__dirname, "../../data/nudenet_debug");
 		await fs.promises.mkdir(debugDir, { recursive: true });
@@ -341,8 +341,7 @@ async function runTests() {
 		console.log(
 			"\n10. Testando que handleExternalDetection NÃO salva imagem com isNudenetDebug=false..."
 		);
-		process.env.NUDENET_DEBUG = "false";
-		process.env.NUDENET_DETECT_ALL = "false";
+		nsfwPredict.getPrimaryProvider = () => ({ debug: false, detectAll: false });
 
 		const filesBeforeDisabled = new Set(await fs.promises.readdir(debugDir));
 
@@ -436,7 +435,7 @@ async function runTests() {
 		);
 		console.log("✓ Falso positivo do Vision AI filtrado e ignorado com sucesso em storeMessage!");
 
-		process.env.NUDENET_DEBUG = originalNudenetDebug;
+		nsfwPredict.getPrimaryProvider = originalGetPrimaryProvider;
 
 		// Restaura stubs
 		llmService.getCompletion = originalGetCompletion;

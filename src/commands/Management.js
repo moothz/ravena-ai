@@ -3342,7 +3342,7 @@ class Management {
 			group.filters = {};
 		}
 
-		const defaultThreshold = parseFloat(process.env.NUDENET_THRESHOLD || "0.8");
+		const defaultThreshold = NSFWPredict.getInstance().getThreshold();
 		const calcIntensityFromThreshold = (t) => {
 			const intensity = Math.round(((0.95 - t) / 0.75) * 100);
 			return Math.max(0, Math.min(100, intensity));

@@ -172,6 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     : (p.circuitBreaker || 15);
                 const cbInput = document.getElementById('prov-circuit-breaker');
                 if (cbInput) cbInput.value = cbSeconds;
+                const threshInput = document.getElementById('prov-nudenet-threshold');
+                if (threshInput) threshInput.value = p.threshold !== undefined ? p.threshold : 0.8;
+                const debugInput = document.getElementById('prov-nudenet-debug');
+                if (debugInput) debugInput.checked = !!p.debug;
+                const detectAllInput = document.getElementById('prov-nudenet-detect-all');
+                if (detectAllInput) detectAllInput.checked = !!p.detectAll;
             }
            } else {
             document.getElementById('prov-name').value = '';
@@ -192,6 +198,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (layaTimeoutInput) layaTimeoutInput.value = 3000;
             const cbInput = document.getElementById('prov-circuit-breaker');
             if (cbInput) cbInput.value = 15;
+            const threshInput = document.getElementById('prov-nudenet-threshold');
+            if (threshInput) threshInput.value = 0.8;
+            const debugInput = document.getElementById('prov-nudenet-debug');
+            if (debugInput) debugInput.checked = false;
+            const detectAllInput = document.getElementById('prov-nudenet-detect-all');
+            if (detectAllInput) detectAllInput.checked = false;
            }
 
         providerModal.classList.remove('hidden');
@@ -274,11 +286,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 provider.timeoutMs = timeoutVal;
             }
         } else if (category === 'nudenet') {
+            if (isEdit && config[category][index]) {
+                Object.assign(provider, config[category][index], {
+                    name: provider.name,
+                    url: provider.url,
+                    apiKey: provider.apiKey,
+                    enabled: provider.enabled
+                });
+            }
             const cbInput = document.getElementById('prov-circuit-breaker');
             const cbVal = cbInput ? parseFloat(cbInput.value) : 15;
             if (!isNaN(cbVal) && cbVal > 0) {
                 provider.circuitBreakerDuration = cbVal * 1000;
             }
+            const threshInput = document.getElementById('prov-nudenet-threshold');
+            const threshVal = threshInput ? parseFloat(threshInput.value) : 0.8;
+            if (!isNaN(threshVal)) {
+                provider.threshold = threshVal;
+            }
+            const debugInput = document.getElementById('prov-nudenet-debug');
+            if (debugInput) provider.debug = debugInput.checked;
+            const detectAllInput = document.getElementById('prov-nudenet-detect-all');
+            if (detectAllInput) provider.detectAll = detectAllInput.checked;
+        } else if (category === 'sdwebui' && isEdit && config[category][index]) {
+            Object.assign(provider, config[category][index], {
+                name: provider.name,
+                url: provider.url,
+                apiKey: provider.apiKey,
+                enabled: provider.enabled
+            });
         }
 
         if (index === -1) {
