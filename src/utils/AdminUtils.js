@@ -1,6 +1,7 @@
 const Database = require("./Database");
 const Logger = require("./Logger");
 const PhoneUtils = require("./PhoneUtils");
+const MemoryCache = require("./MemoryCache");
 
 /**
  * Classe utilitária para verificação de permissões administrativas
@@ -14,6 +15,8 @@ class AdminUtils {
 					.map((s) => s.trim())
 					.filter(Boolean)
 			: [];
+		// Cache de fallback de 12 horas para status de admin (usado APENAS em caso de fallback)
+		this.adminFallbackCache = new MemoryCache(12 * 60 * 60 * 1000, 5000);
 	}
 
 	_normalizeId(id, logger) {
@@ -88,7 +91,7 @@ class AdminUtils {
 			let chatInstance = chat;
 			const client = botOrClient?.client || botOrClient;
 
-			const hasParticipants =
+			let hasParticipants =
 				chatInstance &&
 				((Array.isArray(chatInstance.participants) && chatInstance.participants.length > 0) ||
 					(Array.isArray(chatInstance._rawGroup?.participants) &&
@@ -104,7 +107,11 @@ class AdminUtils {
 			) {
 				try {
 					chatInstance = await client.getChatById(group.id);
-					//this.logger.debug(`[isAdmin] Sem chat ou PV, buscando: `, {chatInstance});
+					hasParticipants =
+						chatInstance &&
+						((Array.isArray(chatInstance.participants) && chatInstance.participants.length > 0) ||
+							(Array.isArray(chatInstance._rawGroup?.participants) &&
+								chatInstance._rawGroup.participants.length > 0));
 				} catch (chatError) {
 					this.logger.error(
 						`Erro ao buscar chat ${group.id} para verificação de admin:`,
@@ -154,7 +161,7 @@ class AdminUtils {
 			}
 
 			// 6. Verifica se é admin no chatInstance obtido pelo bot atual
-			if (this._isUserAdminInChat(normalizedUserId, chatInstance, debug)) {
+			if (this._isUserAdminInChat(normalizedUserId, chatInstance, debug, group?.id)) {
 				this.logger.debug(
 					`Usuário ${normalizedUserId} é admin no WhatsApp para o grupo ${group.id}.`
 				);
@@ -175,6 +182,19 @@ class AdminUtils {
 				}
 			}
 
+			// 8. Fallback Cache (12 horas): Usado APENAS em caso de falha na verificação em tempo real
+			// (ex: erro de rede, timeout ao buscar chat, participantes indisponíveis ou desconectado).
+			// Se o chat tinha participantes válidos e o usuário simplesmente não era admin, o fallback NÃO é usado.
+			if (group && group.id && !hasParticipants) {
+				const isCachedAdmin = this.adminFallbackCache?.get(`${group.id}:${normalizedUserId}`);
+				if (isCachedAdmin === true) {
+					this.logger.info(
+						`[AdminUtils] [Fallback Cache 12h] Usuário/Bot ${normalizedUserId} considerado admin no grupo ${group.id} via cache de fallback.`
+					);
+					return true;
+				}
+			}
+
 			// Se nenhuma das verificações acima passou, o usuário não é admin.
 			return false;
 		} catch (error) {
@@ -184,9 +204,30 @@ class AdminUtils {
 	}
 
 	/**
+	 * Atualiza o cache de fallback de 12 horas com todos os admins presentes nos participantes
+	 */
+	_updateFallbackCacheFromParticipants(groupId, participantes) {
+		if (!groupId || !Array.isArray(participantes) || participantes.length === 0) return;
+		for (const p of participantes) {
+			if (!p) continue;
+			const isAdmin = !!(p.isAdmin || p.admin === "admin" || p.isSuperAdmin);
+			if (isAdmin) {
+				const numbers = [p.id?._serialized, p.id, p.phoneNumber, p.lid, p.number];
+				for (const num of numbers) {
+					if (!num) continue;
+					const clean = this._normalizeId(num);
+					if (clean) {
+						this.adminFallbackCache.set(`${groupId}:${clean}`, true);
+					}
+				}
+			}
+		}
+	}
+
+	/**
 	 * Verifica se o usuário é admin em um objeto de chat com participantes
 	 */
-	_isUserAdminInChat(normalizedUserId, chatInstance, debug = false) {
+	_isUserAdminInChat(normalizedUserId, chatInstance, debug = false, groupId = null) {
 		if (!chatInstance || !chatInstance.isGroup) return false;
 
 		let participantes = [];
@@ -198,6 +239,11 @@ class AdminUtils {
 		}
 
 		if (participantes.length === 0) return false;
+
+		const targetGroupId = groupId || chatInstance.id?._serialized || chatInstance.id;
+		if (targetGroupId && this.adminFallbackCache) {
+			this._updateFallbackCacheFromParticipants(targetGroupId, participantes);
+		}
 
 		const participant = participantes.find((p) => {
 			if (!p) return false;
@@ -216,7 +262,10 @@ class AdminUtils {
 			});
 		}
 
-		return !!(participant && (participant.isAdmin || participant.admin === "admin"));
+		return !!(
+			participant &&
+			(participant.isAdmin || participant.admin === "admin" || participant.isSuperAdmin)
+		);
 	}
 
 	/**

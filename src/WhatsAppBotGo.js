@@ -138,6 +138,8 @@ class WhatsAppBotGo {
 		const userCacheTtlSec = parseInt(process.env.USER_CACHE_TTL_SEC, 10) || 60;
 		this.groupCache = new MemoryCache(groupCacheTtlSec * 1000, 500);
 		this.userCache = new MemoryCache(userCacheTtlSec * 1000, 5000);
+		// Cache de fallback de longa duração (12 horas) para metadados de grupos, usado APENAS quando a API falhar
+		this.groupFallbackCache = new MemoryCache(12 * 60 * 60 * 1000, 500);
 
 		if (!this.whatsgoApiUrl || !this.whatsgoApiKey || !this.instanceName || !this.webhookHost) {
 			const errMsg =
@@ -3781,6 +3783,9 @@ class WhatsAppBotGo {
 					if (this.groupCache) {
 						this.groupCache.set(chatId, chatResult);
 					}
+					if (this.groupFallbackCache) {
+						this.groupFallbackCache.set(chatId, chatResult);
+					}
 
 					return chatResult;
 				}
@@ -3797,6 +3802,9 @@ class WhatsAppBotGo {
 				this.groupCache.delete(chatId);
 			}
 			if (e.status === 500 && e.data?.error === "that group does not exist") {
+				if (this.groupFallbackCache && chatId.includes("@g.us")) {
+					this.groupFallbackCache.delete(chatId);
+				}
 				this.logger.warn(
 					`[getChatDetails] Group ${chatId} does not exist (status 500). Adding to skip list.`
 				);
@@ -3812,6 +3820,9 @@ class WhatsAppBotGo {
 				};
 			} else {
 				if (isNotInGroupError(e)) {
+					if (this.groupFallbackCache && chatId.includes("@g.us")) {
+						this.groupFallbackCache.delete(chatId);
+					}
 					this.logger.info(`[getChatDetails] Error fetching ${chatId}, bot não está no grupo`);
 					await this.markNotInGroup(chatId);
 					return {
@@ -3823,6 +3834,17 @@ class WhatsAppBotGo {
 						participants: [],
 						setSubject: async (title) => await this.setGroupName(chatId, title)
 					};
+				}
+
+				// Fallback cache de 12 horas: usado APENAS se a consulta em tempo real falhou
+				if (this.groupFallbackCache && chatId.includes("@g.us")) {
+					const fallbackChat = this.groupFallbackCache.get(chatId);
+					if (fallbackChat) {
+						this.logger.warn(
+							`[getChatDetails] Falha ao obter dados ao vivo do grupo '${chatId}': ${e.message || e}. Usando cache de fallback (12h).`
+						);
+						return fallbackChat;
+					}
 				}
 
 				this.logger.error(`[getChatDetails] Error fetching ${chatId}`, e);
@@ -3914,6 +3936,9 @@ class WhatsAppBotGo {
 		if (this.isSystemGroup(groupId)) {
 			this.logger.warn(`[${this.id}] Ignorando markNotInGroup para grupo de sistema: ${groupId}`);
 			return;
+		}
+		if (this.groupFallbackCache) {
+			this.groupFallbackCache.delete(groupId);
 		}
 		await this.addSkipGroup(groupId);
 

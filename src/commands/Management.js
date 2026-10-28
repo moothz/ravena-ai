@@ -2462,8 +2462,14 @@ class Management {
 
 			return await this.adminUtils.isAdmin(bot.phoneNumber, group, chat, bot, false);
 		} catch (error) {
-			this.logger.error(`Erro ao verificar se o bot é admin em ${group.id}:`, error);
-			return false;
+			this.logger.warn(
+				`Erro ao verificar se o bot é admin em ${group?.id}: ${error?.message || error}. Tentando fallback...`
+			);
+			try {
+				return await this.adminUtils.isAdmin(bot.phoneNumber, group, null, bot, false);
+			} catch (fallbackError) {
+				return false;
+			}
 		}
 	}
 

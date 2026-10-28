@@ -341,9 +341,19 @@ async function apagarMensagem(bot, message, args, group) {
 
 		// A. É admin?
 		if (message.group) {
-			const chat = await message.origin.getChat();
-			if (chat.isGroup) {
+			let chat = null;
+			try {
+				chat = await message.origin.getChat();
+			} catch (chatError) {
+				logger.warn(
+					"Erro ao obter chat em apagarMensagem, tentando fallback:",
+					chatError?.message || chatError
+				);
+			}
+			if (chat && chat.isGroup) {
 				temPermissao = await adminUtils.isAdmin(quemPediu, group, chat, bot);
+			} else {
+				temPermissao = await adminUtils.isAdmin(quemPediu, group, null, bot);
 			}
 		} else if (isBotMsg) {
 			// No PV, permite apagar se for mensagem do bot
@@ -400,20 +410,34 @@ async function apagarMensagem(bot, message, args, group) {
 		} catch (error) {
 			logger.error("Erro ao apagar mensagem:", error);
 
-			// Se não conseguiu apagar e não é mensagem do bot, provavelmente falta permissão de admin para o bot
-			if (!isBotMsg && message.group) {
-				return new ReturnMessage({
-					chatId: message.group,
-					content:
-						"Não foi possível apagar a mensagem. Verifique se o bot é admin do grupo (necessário para apagar mensagens de terceiros)."
-				});
-			}
-
 			// Reage com emoji de erro
 			try {
 				await message.origin.react("❌");
 			} catch (reactError) {
 				logger.error("Erro ao aplicar reação de erro:", reactError);
+			}
+
+			const isTimeout =
+				error.message?.includes("timeout") ||
+				error.code === "ECONNABORTED" ||
+				error.status === 408 ||
+				error.data?.error?.includes("timeout");
+
+			if (isTimeout && message.group) {
+				return new ReturnMessage({
+					chatId: message.group,
+					content:
+						"⏱️ Não consegui apagar a mensagem a tempo! O WhatsApp demorou para responder (timeout), possivelmente estamos passando por uma instabilidade. Tente novamente em instantes."
+				});
+			}
+
+			// Se não conseguiu apagar e não é mensagem do bot, provavelmente falta permissão de admin para o bot
+			if (!isBotMsg && message.group) {
+				return new ReturnMessage({
+					chatId: message.group,
+					content:
+						"Não consegui apagar a mensagem! O whatsapp retornou que eu não sou admin e não tenho permissão.\nVerifique se sou admin do grupo mesmo, se não, possivelmente estamos passando por uma instabilidade."
+				});
 			}
 
 			return null;
