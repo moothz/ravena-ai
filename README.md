@@ -15,10 +15,9 @@ A **RavenaBot** foi desenvolvida para potencializar a dinâmica de grupos e cana
 - **Streaming:** Notificações automáticas em tempo real de lives da Twitch, Kick e YouTube.
 - **Inteligência Artificial:** Resumo de mensagens, transcrição de voz (Whisper/F5-TTS), OCR e respostas inteligentes via LLMs (Gemini, Claude, GPT, Ollama).
 
-### 🌐 Teste a Ravena
+### 🌐 Use a Ravena agora!
 Você pode testar a Ravena acessando o site oficial em [**ravena.moothz.win**](https://ravena.moothz.win) ou enviando uma mensagem no WhatsApp diretamente para uma das instâncias:
 - **Ravena 2:** [+55 (98) 8771-5450](https://wa.me/559887715450)
-- **Ravena 4:** [+55 (55) 9205-8360](https://wa.me/555592058360)
 - **Ravena 5:** [+55 (55) 9153-7296](https://wa.me/555591537296)
 - **Ravena 10:** [+55 (55) 8102-4412](https://wa.me/555581024412)
 
@@ -39,7 +38,11 @@ O repositório possui uma documentação técnica completa consolidada no arquiv
 
 ## 🚀 Como Hospedar (Quickstart)
 
-> **Requisito único:** [Docker](https://docs.docker.com/engine/install/) e [Docker Compose](https://docs.docker.com/compose/install/) instalados na máquina.
+> **Requisito mínimo:** [Docker](https://docs.docker.com/engine/install/) e [Docker Compose](https://docs.docker.com/compose/install/) instalados na máquina.
+
+A Ravena foi disponibilizada em Docker para facilitar a instalação, mas muitas partes dela ainda rodam em "módulos" que devem ser hospedados separadamente. A grande maioria dos comandos não precisa de módulos/APIs externas, mas notoriamente qualquer comando que use IA (interações, resumos, geração de imagens, geração de voz, transcrição, etc.) e também alguns jogos (waifuletes/mudae e fazenda) vão precisar de configuração no arquivo `.env`.
+
+Se você pedir pra um agente de IA (Antigravity, Codex, Claude, etc.), ele vai facilmente ler o repositório e te guiar nestas partes.
 
 ### 1. Clonar o repositório
 ```bash
@@ -74,19 +77,20 @@ http://localhost:5001/qrcode/<nome-do-bot>
 
 ---
 
-## 🛠️ Comandos Rápidos do `Makefile`
+## 🔌 Dependências Externas & APIs
 
-| Comando | Descrição |
-| :--- | :--- |
-| `make up-build` | Constrói e inicializa todos os containers em segundo plano |
-| `make up` | Inicia os containers existentes sem reconstruir imagens |
-| `make down` | Para e remove todos os containers |
-| `make restart-bot` | Reinicia apenas o container da Ravena |
-| `make logs-bot` | Exibe os logs em tempo real do bot (`--tail 100`) |
-| `make sync` | Sincroniza arquivos modificados no host diretamente para o container |
-| `make test` | Executa o harness de testes automatizados com `FakeBot` no container |
-| `make get-doador <termo>` | Consulta doadores cadastrados por nome ou número |
-| `make clean` | Limpa containers parados, imagens antigas e cache de build |
+A Ravena conta com uma arquitetura modular que permite estender suas funcionalidades através de APIs e serviços externos. Esses serviços podem ser configurados no arquivo `service-providers.json` (ou no `.env` em integrações específicas) ou gerenciados dinamicamente via painel web no endpoint `/service-providers` da API do bot.
+
+As dependências dividem-se em duas categorias principais:
+
+- **APIs prontas de fornecedores:** Provedores de nuvem prontos para uso através de chave de API (OpenAI, Google Gemini, OpenRouter, DeepSeek, além de serviços como OpenWeather, Twitch, Kick, etc.).
+- **APIs com repositório para auto-hospedagem (Self-Hosted):** Microsserviços com repositórios fornecidos para hospedagem própria:
+  - **Whisper (STT):** [moothz/faster-whisper-api](https://github.com/moothz/faster-whisper-api) — Transcrição de áudio e mensagens de voz em alta velocidade.
+  - **laya-api:** *(Em breve)* — Classificação ultra-rápida de intenções, embeddings e System One.
+  - **bonsai-api:** *(Em breve)* — Geração de imagens via difusão e arte generativa.
+  - **f5-tts:** *(Em breve)* — Síntese de voz neural (Text-to-Speech) e clonagem vocal.
+
+👉 Para uma explicação detalhada sobre o que faz cada API, como configurá-las passo a passo e quais partes do código as utilizam, consulte: **[`docs/EXTERNAL-APIS.md`](docs/EXTERNAL-APIS.md)**.
 
 ---
 
@@ -94,6 +98,8 @@ http://localhost:5001/qrcode/<nome-do-bot>
 
 - 📖 **[Manual de Comandos e IA (LLM-HELPER)](docs/LLM-HELPER.md)**: Relação exaustiva de mais de 70 módulos de comandos e variáveis personalizadas.
 - 🤝 **[Guia de Contribuição e Testes](CONTRIBUTING.md)**: Padrões de código, ESLint e uso do harness `FakeBot` / `FakeMessage`.
+- 🛠️ **[Automação e Comandos do Makefile](docs/MAKEFILE.md)**: Guia completo e detalhado com todas as tarefas de build, inicialização, testes, gerenciamento de instâncias e manutenção via Makefile.
+- 🔌 **[Dependências Externas & APIs](docs/EXTERNAL-APIS.md)**: Documentação completa sobre configuração de provedores de IA, APIs auto-hospedadas e integrações do ecossistema.
 - 🗄️ **[Estrutura de Banco de Dados](DATABASES.md)**: Mapeamento de tabelas SQLite e PostgreSQL.
 
 ---
