@@ -2807,16 +2807,26 @@ async function verHarem(bot, message, args) {
 	const limit = 15;
 
 	try {
-		const { data } = await api.get(`/harem/${userId}`, {
-			params: { page, limit, sort: "keys" }
-		});
+		const [haremRes, colsRes] = await Promise.all([
+			api.get(`/harem/${userId}`, {
+				params: { page, limit, sort: "keys", withoutCollection: true }
+			}),
+			page === 1
+				? api.get(`/user/${userId}/collections`).catch(() => ({ data: { data: [] } }))
+				: Promise.resolve({ data: { data: [] } })
+		]);
 
-		const haremData = data.data;
+		const haremData = haremRes.data.data;
 		const entries = haremData.data || [];
-		const total = haremData.total || 0;
+		const totalGeneral = haremData.total || 0;
 		const totalPages = haremData.totalPages || 1;
+		const collections = colsRes.data?.data || [];
 
-		if (entries.length === 0) {
+		// Soma total do harém (geral + coleções)
+		const totalInCols = collections.reduce((acc, col) => acc + (col.characterCount || 0), 0);
+		const total = totalGeneral + totalInCols;
+
+		if (entries.length === 0 && totalInCols === 0) {
 			return new ReturnMessage({
 				chatId,
 				content:
@@ -2826,16 +2836,81 @@ async function verHarem(bot, message, args) {
 
 		let text = `👰 *Seu Harém* (Total: ${total} | Pág ${page}/${totalPages}):\n\n`;
 
-		entries.forEach((item, index) => {
-			const char = item.character;
-			const pos = (page - 1) * limit + index + 1;
-			const fav = item.isFavorite ? "⭐ " : "";
-			const sm = item.keys >= 10 ? " 💖" : "";
-			const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+		// Se for a primeira página, agrupa favoritas e lista coleções completas com árvore
+		if (page === 1) {
+			const favorites = entries.filter((item) => item.isFavorite);
+			// As que estão em alguma pasta NÃO aparecem em demais personagens
+			const rest = entries.filter((item) => !item.isFavorite && !item.collectionId);
 
-			text += `${pos}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
-			text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
-		});
+			if (favorites.length > 0) {
+				text += `⭐ *Favoritas em Destaque:*\n`;
+				favorites.forEach((item, index) => {
+					const char = item.character;
+					const sm = item.keys >= 10 ? " 💖" : "";
+					const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+
+					text += `${index + 1}. ⭐ ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+					text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
+				});
+				text += `\n`;
+			}
+
+			// Coleções com árvore de personagens (estilo FileManager / ListCommands)
+			if (collections.length > 0) {
+				text += `📁 *Coleções (${collections.length}/15):*\n`;
+				collections.forEach((col) => {
+					const chars = col.characters || [];
+					text += `📂 *${col.name}* (${chars.length} waifu${chars.length !== 1 ? "s" : ""}):\n`;
+					if (chars.length === 0) {
+						text += `   └─ _(pasta vazia)_\n`;
+					} else {
+						const maxVisible = 15;
+						const visibleChars = chars.slice(0, maxVisible);
+						const remaining = chars.length - maxVisible;
+
+						visibleChars.forEach((char, j) => {
+							const isLast = j === visibleChars.length - 1 && remaining <= 0;
+							const connector = isLast ? "└─" : "├─";
+							const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+							const fav = char.isFavorite ? "⭐ " : "";
+							const sm = char.keys >= 10 ? " 💖" : "";
+							text += `   ${connector} ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_ (\`${char.id}\` | 🔑 *${char.keys || 0}/10*)\n`;
+						});
+
+						if (remaining > 0) {
+							text += `   └─ _... e mais ${remaining} waifus (digite \`!mu-colecoes ${col.name}\` para ver todas)_\n`;
+						}
+					}
+				});
+				text += `\n`;
+			}
+
+			if (rest.length > 0) {
+				text += `👰 *Demais Personagens (Harém Geral):*\n`;
+				rest.forEach((item, index) => {
+					const char = item.character;
+					const pos = favorites.length + index + 1;
+					const sm = item.keys >= 10 ? " 💖" : "";
+					const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+
+					text += `${pos}. ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+					text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
+				});
+			}
+		} else {
+			// Páginas seguintes (page > 1): omite as que estão em coleção
+			const pageEntries = entries.filter((item) => !item.collectionId);
+			pageEntries.forEach((item, index) => {
+				const char = item.character;
+				const pos = (page - 1) * limit + index + 1;
+				const fav = item.isFavorite ? "⭐ " : "";
+				const sm = item.keys >= 10 ? " 💖" : "";
+				const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+
+				text += `${pos}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+				text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
+			});
+		}
 
 		if (page < totalPages) {
 			text += `\n_Digite \`!mu-harem ${page + 1}\` para a próxima página._`;
@@ -3128,6 +3203,319 @@ async function verSoulmates(bot, message) {
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar soulmates.");
+	}
+}
+
+/**
+ * Lista as coleções (pastas) de waifus do usuário ou os personagens de uma pasta específica
+ */
+async function listarColecoes(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const query = (args || []).join(" ").trim();
+
+	try {
+		const { data } = await api.get(`/user/${userId}/collections`);
+		const collections = data.data || [];
+
+		if (!query) {
+			if (collections.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"📁 *Você ainda não possui nenhuma coleção de waifus!* (0/15)\n\nCrie uma pasta com: `!mu-col-nova <nome>`\nExemplo: `!mu-col-nova Isekai`"
+				});
+			}
+
+			let text = `📁 *Suas Coleções de Waifus (${collections.length}/15):*\n\n`;
+			collections.forEach((col, idx) => {
+				text += `${idx + 1}. 📂 *${col.name}* — ${col.characterCount} personagem(ns)\n`;
+				if (col.description) {
+					text += `   📝 _${col.description}_\n`;
+				}
+			});
+			text += `\n💡 _Dicas:_\n`;
+			text += `• Ver personagens da pasta: \`!mu-colecoes <nome ou número>\`\n`;
+			text += `• Criar pasta: \`!mu-col-nova <nome>\`\n`;
+			text += `• Adicionar waifu: \`!mu-col-add <pasta> | <personagem>\`\n`;
+			text += `• Remover waifu: \`!mu-col-rem <personagem>\`\n`;
+			text += `• Apagar pasta: \`!mu-col-del <nome ou número>\``;
+
+			return new ReturnMessage({ chatId, content: text });
+		}
+
+		// Se forneceu argumento, busca a coleção por índice ou nome
+		const idx = parseInt(query, 10);
+		let selected = null;
+		if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
+			selected = collections[idx - 1];
+		} else {
+			const qLower = query.toLowerCase();
+			selected =
+				collections.find((c) => c.id === query || c.name.toLowerCase() === qLower) ||
+				collections.find((c) => c.name.toLowerCase().includes(qLower));
+		}
+
+		if (!selected) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Coleção "${query}" não encontrada.\nUse \`!mu-colecoes\` para listar suas pastas cadastradas.`
+			});
+		}
+
+		let text = `📂 *Coleção: ${selected.name}* (${selected.characterCount} personagem(ns)):\n`;
+		if (selected.description) {
+			text += `📝 _${selected.description}_\n\n`;
+		} else {
+			text += `\n`;
+		}
+
+		if (!selected.characters || selected.characters.length === 0) {
+			text += `_Esta pasta ainda está vazia!_\n\n💡 Para adicionar uma waifu do seu harém, use:\n\`!mu-col-add ${selected.name} | <personagem>\``;
+		} else {
+			selected.characters.forEach((char, i) => {
+				const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+				const fav = char.isFavorite ? "⭐ " : "";
+				const sm = char.keys >= 10 ? " 💖" : "";
+				text += `${i + 1}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+				text += `   ↳ ID: \`${char.id}\` | 🔑 *${char.keys}/10*\n`;
+			});
+
+			text += `\n💡 _Dicas:_\n`;
+			text += `• Adicionar waifu: \`!mu-col-add ${selected.name} | <personagem>\`\n`;
+			text += `• Remover da pasta: \`!mu-col-rem <personagem>\`\n`;
+			text += `• Apagar pasta: \`!mu-col-del ${selected.name}\``;
+		}
+
+		return new ReturnMessage({ chatId, content: text });
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao consultar coleções.");
+	}
+}
+
+/**
+ * Cria uma nova coleção de waifus para o jogador (limite de 15)
+ */
+async function criarColecao(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const rawInput = (args || []).join(" ").trim();
+
+	if (!rawInput) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Informe o nome da coleção a ser criada.\nExemplo: `!mu-col-nova Favoritas de Ação`\nOpcional com descrição: `!mu-col-nova Isekai | Waifus de outro mundo`"
+		});
+	}
+
+	let name = rawInput;
+	let description;
+	if (rawInput.includes("|")) {
+		const parts = rawInput.split("|");
+		name = parts[0].trim();
+		description = parts.slice(1).join("|").trim();
+	}
+
+	try {
+		const { data } = await api.post(`/user/${userId}/collections`, {
+			name,
+			description
+		});
+		const col = data.data;
+
+		let msg = `📂 *Coleção "${col.name}" criada com sucesso!*\n`;
+		if (col.description) msg += `📝 _${col.description}_\n`;
+		msg += `\n💡 Para adicionar personagens à pasta, use:\n\`!mu-col-add ${col.name} | <personagem>\``;
+
+		return new ReturnMessage({ chatId, content: msg });
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao criar coleção.");
+	}
+}
+
+/**
+ * Apaga uma coleção (os personagens permanecem no harém geral)
+ */
+async function apagarColecao(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const query = (args || []).join(" ").trim();
+
+	if (!query) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Informe o nome ou número da coleção que deseja apagar.\nExemplo: `!mu-col-del 1` ou `!mu-col-del Isekai`"
+		});
+	}
+
+	try {
+		const { data } = await api.get(`/user/${userId}/collections`);
+		const collections = data.data || [];
+
+		const idx = parseInt(query, 10);
+		let target = null;
+		if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
+			target = collections[idx - 1];
+		} else {
+			const qLower = query.toLowerCase();
+			target =
+				collections.find((c) => c.id === query || c.name.toLowerCase() === qLower) ||
+				collections.find((c) => c.name.toLowerCase().includes(qLower));
+		}
+
+		if (!target) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Coleção "${query}" não encontrada.\nUse \`!mu-colecoes\` para listar suas pastas.`
+			});
+		}
+
+		await api.delete(`/user/${userId}/collections/${target.id}`);
+
+		return new ReturnMessage({
+			chatId,
+			content: `🗑️ *Coleção "${target.name}" apagada com sucesso!*\nOs personagens permanecem intactos no seu harém geral.`
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao apagar coleção.");
+	}
+}
+
+/**
+ * Adiciona um personagem do harém a uma coleção
+ */
+async function adicionarPersonagemColecao(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const rawInput = (args || []).join(" ").trim();
+
+	let colInput = "";
+	let charInput = "";
+
+	if (rawInput.includes("|")) {
+		const parts = rawInput.split("|");
+		colInput = parts[0].trim();
+		charInput = parts.slice(1).join("|").trim();
+	} else if (args && args.length >= 2) {
+		colInput = args[0].trim();
+		charInput = args.slice(1).join(" ").trim();
+	}
+
+	if (!colInput || !charInput) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Formato inválido.\nUse: `!mu-col-add <pasta> | <personagem>`\nExemplo: `!mu-col-add Isekai | Rem`"
+		});
+	}
+
+	try {
+		const { data: colData } = await api.get(`/user/${userId}/collections`);
+		const collections = colData.data || [];
+
+		const idx = parseInt(colInput, 10);
+		let targetCol = null;
+		if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
+			targetCol = collections[idx - 1];
+		} else {
+			const qLower = colInput.toLowerCase();
+			targetCol =
+				collections.find((c) => c.id === colInput || c.name.toLowerCase() === qLower) ||
+				collections.find((c) => c.name.toLowerCase().includes(qLower));
+		}
+
+		if (!targetCol) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Coleção "${colInput}" não encontrada.\nUse \`!mu-colecoes\` para ver suas pastas cadastradas.`
+			});
+		}
+
+		// Resolve personagem por slug/ID ou busca
+		let character = null;
+		try {
+			const { data: charData } = await api.get(`/characters/${encodeURIComponent(charInput)}`, {
+				timeout: 4000
+			});
+			if (charData?.data?.id) character = charData.data;
+		} catch (_) {
+			try {
+				const { data: searchData } = await api.get("/characters", {
+					params: { search: charInput, limit: 1 },
+					timeout: 4000
+				});
+				if (searchData?.data?.data?.[0]?.id) character = searchData.data.data[0];
+			} catch (__) {}
+		}
+
+		const targetCharId = character?.id || charInput;
+		const targetCharName = character?.name || targetCharId;
+
+		await api.post(`/user/${userId}/collections/${targetCol.id}/characters`, {
+			characterId: targetCharId
+		});
+
+		return new ReturnMessage({
+			chatId,
+			content: `✅ *${targetCharName}* foi adicionada à coleção 📂 *${targetCol.name}*!\n\n💡 _Dica: cada waifu pode estar em apenas uma pasta por vez._`
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao adicionar personagem à coleção.");
+	}
+}
+
+/**
+ * Remove um personagem de sua coleção atual, retornando-o ao harém geral
+ */
+async function removerPersonagemColecao(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const rawChar = (args || []).join(" ").trim();
+
+	if (!rawChar) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Informe o personagem que deseja remover de sua coleção.\nExemplo: `!mu-col-rem Rem` ou `!mu-col-rem rem-re-zero`"
+		});
+	}
+
+	try {
+		let character = null;
+		try {
+			const { data: charData } = await api.get(`/characters/${encodeURIComponent(rawChar)}`, {
+				timeout: 4000
+			});
+			if (charData?.data?.id) character = charData.data;
+		} catch (_) {
+			try {
+				const { data: searchData } = await api.get("/characters", {
+					params: { search: rawChar, limit: 1 },
+					timeout: 4000
+				});
+				if (searchData?.data?.data?.[0]?.id) character = searchData.data.data[0];
+			} catch (__) {}
+		}
+
+		const targetCharId = character?.id || rawChar;
+		const targetCharName = character?.name || targetCharId;
+
+		const { data } = await api.delete(
+			`/user/${userId}/collections/characters/${encodeURIComponent(targetCharId)}`
+		);
+
+		const msgText =
+			data.data?.message ||
+			`*${targetCharName}* foi removida da coleção e voltou ao harém geral!`;
+
+		return new ReturnMessage({
+			chatId,
+			content: `📤 ${msgText}`
+		});
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao remover personagem da coleção.");
 	}
 }
 
@@ -3597,6 +3985,7 @@ async function detalhesPersonagem(bot, message, args) {
 		}
 
 		text += `\n🆔 ID: \`${char.id}\``;
+		text += `\n🌐 Página: ${WAIFULETES_WEB_URL}/character/${encodeURIComponent(char.id)}`;
 
 		// Se houver mais resultados correspondentes na busca ampla, lista como sugestão
 		if (otherResults.length > 0) {
@@ -4367,9 +4756,16 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos.\n`;
-	text += `• \`!mu-harem [página]\` (aliases: \`!mu-h\`, \`!mu-colecao\`) — Lista todas as waifus/husbandos que você possui.\n`;
+	text += `• \`!mu-harem [página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você possui.\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
 	text += `• \`!mu-soulmates\` (aliases: \`!mu-sm\`, \`!mu-almas\`) — Lista seus parceiros com 10+ chaves.\n\n`;
+
+	text += `📁 *Coleções (Pastas):*\n`;
+	text += `• \`!mu-colecoes [nome/nº]\` (aliases: \`!mu-colecao\`, \`!mu-cols\`) — Lista suas pastas ou exibe os personagens de uma coleção.\n`;
+	text += `• \`!mu-col-nova <nome>\` (aliases: \`!mu-col-criar\`, \`!mu-col-new\`) — Cria uma nova coleção para organizar o harém (até 15).\n`;
+	text += `• \`!mu-col-del <nome/nº>\` (aliases: \`!mu-col-rm\`) — Apaga uma pasta (personagens voltam ao harém geral).\n`;
+	text += `• \`!mu-col-add <pasta> | <personagem>\` — Move uma waifu do harém para a pasta.\n`;
+	text += `• \`!mu-col-rem <personagem>\` — Remove a waifu de sua pasta atual.\n\n`;
 
 	text += `💰 *Economia & Perfil:*\n`;
 	text += `• \`!mu-diario\` (aliases: \`!mu-daily\`, \`!mu-dz\`, \`!mu-dk\`) — Coleta sua recompensa diária de Zinthos.\n`;
@@ -5702,14 +6098,73 @@ const commands = [
 		reply: true,
 		method: verHarem
 	}),
+	// ── COLEÇÕES (PASTAS) ───────────────────────────────────────────────────
+	new Command({
+		name: "mu-colecoes",
+		description: "Lista suas pastas de waifus ou os personagens de uma coleção",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		reactions: { before: "📁", after: "📂", error: "❌" },
+		reply: true,
+		method: listarColecoes
+	}),
 	new Command({
 		name: "mu-colecao",
-		description: "Alias de !mu-harem",
+		description: "Alias de !mu-colecoes",
 		category: "mudae",
-		group: "muwaifu-harem",
-		reactions: { before: "👰", after: "✅", error: "❌" },
+		group: "muwaifu-colecoes",
+		reactions: { before: "📁", after: "📂", error: "❌" },
 		reply: true,
-		method: verHarem
+		method: listarColecoes
+	}),
+	new Command({
+		name: "mu-cols",
+		description: "Alias curto de !mu-colecoes",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		reactions: { before: "📁", after: "📂", error: "❌" },
+		reply: true,
+		method: listarColecoes
+	}),
+	new Command({
+		name: "mu-col-nova",
+		description: "Cria uma nova coleção para organizar suas waifus (máx 15)",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "📁", after: "✅", error: "❌" },
+		reply: true,
+		method: criarColecao
+	}),
+	new Command({
+		name: "mu-col-del",
+		description: "Apaga uma coleção mantendo os personagens no harém geral",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "🗑️", after: "✅", error: "❌" },
+		reply: true,
+		method: apagarColecao
+	}),
+	new Command({
+		name: "mu-col-add",
+		description: "Adiciona uma waifu à pasta especificada (!mu-col-add <pasta> | <personagem>)",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "📥", after: "✅", error: "❌" },
+		reply: true,
+		method: adicionarPersonagemColecao
+	}),
+	new Command({
+		name: "mu-col-rem",
+		description: "Remove uma waifu de sua pasta atual e retorna ao harém geral",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "📤", after: "✅", error: "❌" },
+		reply: true,
+		method: removerPersonagemColecao
 	}),
 
 	// ── PERFIL ──────────────────────────────────────────────────────────────
@@ -6879,6 +7334,11 @@ module.exports = {
 	grantZinthosAll,
 	getAllWaifuUserIds,
 	verHarem,
+	listarColecoes,
+	criarColecao,
+	apagarColecao,
+	adicionarPersonagemColecao,
+	removerPersonagemColecao,
 	verPerfil,
 	painelWebAdmin,
 	compartilharHarem,
