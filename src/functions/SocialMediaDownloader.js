@@ -387,11 +387,11 @@ async function cobaltRequest(url, options = {}, authorInfo = null) {
 }
 
 // ==============================
-// Emojis numéricos para reações interativas (1 a 9)
+// Emojis numéricos para reações interativas (1 a 10)
 // ==============================
-const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣"];
-const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️"];
+const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "🔟"];
+const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️", "🔟"];
 
 // Gerenciador em memória das sessões de busca do YouTube (TTL 10 minutos)
 const searchSessions = new Map();
@@ -456,29 +456,9 @@ function parseDurationToSeconds(durationStr) {
 
 /**
  * Seleciona o índice do vídeo padrão:
- * - O mais longo da lista com duração <= 5 minutos (300 segundos)
- * - Se não houver nenhum <= 5 min, pega o menor da lista
+ * Sempre a opção 1 (índice 0)
  */
 function selectDefaultVideoIndex(items) {
-	if (!items || items.length === 0) return 0;
-
-	const withDuration = items.map((item, index) => ({
-		index,
-		seconds: parseDurationToSeconds(item.duration)
-	}));
-
-	const underFiveMins = withDuration.filter((it) => it.seconds > 0 && it.seconds <= 300);
-	if (underFiveMins.length > 0) {
-		underFiveMins.sort((a, b) => b.seconds - a.seconds);
-		return underFiveMins[0].index;
-	}
-
-	const withValid = withDuration.filter((it) => it.seconds > 0);
-	if (withValid.length > 0) {
-		withValid.sort((a, b) => a.seconds - b.seconds);
-		return withValid[0].index;
-	}
-
 	return 0;
 }
 
@@ -869,9 +849,9 @@ async function downloadHandler(bot, message, args, group) {
 		(commandName.includes("sc") && isAudioOnly);
 	const isHD = args.includes("-hd") || args.includes("hd") || commandName.includes("hd");
 
-	// Se o comando for apenas um número de 1 a 9, verifica se é seleção de opção de busca
+	// Se o comando for apenas um número de 1 a 10, verifica se é seleção de opção de busca
 	const isNumericChoice =
-		/^[1-9]$/.test(args[0]) &&
+		/^([1-9]|10)$/.test(args[0]) &&
 		(args.length === 1 || (args.length === 2 && (args[1] === "-hd" || args[1] === "hd")));
 
 	if (isNumericChoice) {
@@ -939,7 +919,7 @@ async function downloadHandler(bot, message, args, group) {
 	}
 
 	// ==============================
-	// Se não tem URL, busca interativa no YouTube (1 mensagem com lista de até 9)
+	// Se não tem URL, busca interativa no YouTube (1 mensagem com lista de até 10)
 	// ==============================
 	if (!url) {
 		const rawQuery = input ? input.trim() : "";
@@ -948,7 +928,7 @@ async function downloadHandler(bot, message, args, group) {
 			try {
 				const searchResults = await yts.GetListByKeyword(query, false, 15);
 				const rawVideos = (searchResults?.items || []).filter((item) => item.type === "video");
-				const videos = rawVideos.slice(0, 9);
+				const videos = rawVideos.slice(0, 10);
 
 				if (videos.length === 0) {
 					return new ReturnMessage({

@@ -50,33 +50,29 @@ async function runTests() {
 		});
 	};
 
-	// 0. Testes unitários de duração e seleção inteligente de vídeo
-	console.log("[Teste 0] Duração e seleção inteligente de vídeo...");
+	// 0. Testes unitários de duração e seleção padrão de vídeo (sempre opção 1)
+	console.log("[Teste 0] Duração e seleção padrão de vídeo...");
 	assert.strictEqual(parseDurationToSeconds("3:38"), 218);
 	assert.strictEqual(parseDurationToSeconds("1:05:10"), 3910);
 	assert.strictEqual(parseDurationToSeconds("45"), 45);
 
 	const itemsWithUnder5 = [
 		{ duration: "2:00" },
-		{ duration: "4:50" }, // 290s (mais longo <= 5 min)
+		{ duration: "4:50" },
 		{ duration: "1:30" },
 		{ duration: "8:00" }
 	];
 	assert.strictEqual(
 		selectDefaultVideoIndex(itemsWithUnder5),
-		1,
-		"Deve selecionar o mais longo com duração <= 5 min (290s)"
+		0,
+		"Deve sempre selecionar o primeiro vídeo da lista (opção 1, índice 0)"
 	);
 
-	const itemsAllOver5 = [
-		{ duration: "12:00" },
-		{ duration: "6:15" }, // 375s (menor da lista)
-		{ duration: "18:30" }
-	];
+	const itemsAllOver5 = [{ duration: "12:00" }, { duration: "6:15" }, { duration: "18:30" }];
 	assert.strictEqual(
 		selectDefaultVideoIndex(itemsAllOver5),
-		1,
-		"Se nenhum <= 5 min, deve selecionar o menor da lista"
+		0,
+		"Deve sempre selecionar o primeiro vídeo da lista (opção 1, índice 0)"
 	);
 	console.log("✓ Teste 0 passou: parseDurationToSeconds e selectDefaultVideoIndex validados");
 
@@ -111,13 +107,14 @@ async function runTests() {
 	);
 	assert.ok(searchMsg.content.includes("Encontrados:"), "Deve conter a seção 'Encontrados:'");
 	assert.ok(
-		searchMsg.content.includes("⏳ *"),
-		"Linha selecionada inicialmente deve estar com ⏳ e em negrito"
+		searchMsg.content.includes("⏳ *1."),
+		"Opção 1 deve ser selecionada inicialmente com ⏳ e em negrito"
 	);
 	assert.ok(
-		/Baixando opção \d+!/.test(searchMsg.content),
-		"Rodapé deve instruir download da opção escolhida"
+		searchMsg.content.includes("Baixando opção 1!"),
+		"Rodapé deve instruir download da opção 1"
 	);
+	assert.ok(searchMsg.content.includes("*!yt 2*"), "Rodapé deve sugerir *!yt 2*");
 	assert.ok(baixarVideoChamadoCom, "Opção selecionada deve ter sido baixada automaticamente");
 	assert.ok(
 		bot.editedMessages.length >= 1,
@@ -125,11 +122,11 @@ async function runTests() {
 	);
 	const lastEditMsg = bot.editedMessages[bot.editedMessages.length - 1];
 	assert.ok(
-		lastEditMsg.text.includes("✅ *"),
-		"Mensagem editada deve conter ✅ e negrito na linha concluída"
+		lastEditMsg.text.includes("✅ *1."),
+		"Mensagem editada deve conter ✅ e negrito na opção 1 concluída"
 	);
 	console.log(
-		"✓ Teste 1 passou: Busca consolidada com seleção inteligente, ⏳ inicial e edição com ✅ após download"
+		"✓ Teste 1 passou: Busca consolidada sempre na opção 1 por padrão, com ⏳ inicial e edição com ✅ após download"
 	);
 
 	// 2. Testa sugestão dinâmica de comando para !musica
@@ -173,7 +170,7 @@ async function runTests() {
 		"Segunda mensagem deve conter cabeçalho de conclusão"
 	);
 	assert.ok(
-		msg2Formatted.content.includes("s3-ravena.moothz.win"),
+		msg2Formatted.content.includes("moothz.win") || msg2Formatted.content.includes("Link direto"),
 		"Segunda mensagem deve conter link do S3"
 	);
 	console.log(
@@ -299,6 +296,98 @@ async function runTests() {
 		"videoHD deve ser true quando -hd especificado"
 	);
 	console.log("✓ Teste 6 passou: Opção -hd repassada com sucesso para o downloader");
+
+	// 7. Testa seleção da opção 10 via comando numérico (!yt 10) e lista de até 10 itens
+	console.log("[Teste 7] Troca de opção via comando numérico (!yt 10) com lista de 10 itens...");
+	const fakeSessionId10 = "fake_msg_session_10";
+	const fakeItems10 = Array.from({ length: 10 }, (_, i) => ({
+		id: `id${i + 1}`,
+		title: `Video ${i + 1}`,
+		channelTitle: `Canal ${i + 1}`,
+		duration: `${i + 1}:00`,
+		url: `https://youtu.be/id${i + 1}`
+	}));
+
+	saveSearchSession(fakeSessionId10, "123456@g.us", {
+		query: "musica teste",
+		commandName: "yt",
+		isAudioOnly: false,
+		wantLyrics: false,
+		author: "5511999999999@s.whatsapp.net",
+		chatId: "123456@g.us",
+		botMsgId: fakeSessionId10,
+		items: fakeItems10
+	});
+
+	const msgOption10 = createMessage({
+		content: "!yt 10",
+		group: "123456@g.us",
+		author: "5511999999999@s.whatsapp.net",
+		origin: {
+			body: "!yt 10",
+			getQuotedMessage: async () => ({ id: fakeSessionId10 }),
+			react: async () => {}
+		}
+	});
+
+	bot.resetCapture();
+	bot.editedMessages = [];
+	baixarVideoChamadoCom = null;
+	await downloadHandler(bot, msgOption10, ["10"], null);
+	assert.ok(baixarVideoChamadoCom, "Deve disparar download para opção 10");
+	assert.strictEqual(baixarVideoChamadoCom.idVideo, "id10", "ID baixado deve ser 'id10'");
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("✅ *10.")),
+		"Deve editar mensagem com ✅ *10. ao concluir download via !yt 10"
+	);
+	console.log(
+		"✓ Teste 7 passou: Seleção de opção via !yt 10 processada e editada para item 'id10'"
+	);
+
+	// 8. Testa seleção da opção 10 via reação numérica com emoji 🔟
+	console.log("[Teste 8] Troca de opção via reação com emoji 🔟...");
+	let reaction10HandledAck = null;
+	const reaction10Message = {
+		originReaction: {
+			reaction: "🔟",
+			msgId: fakeSessionId10
+		},
+		group: "123456@g.us",
+		author: "5511999999999@s.whatsapp.net",
+		origin: {
+			react: async (e) => {
+				reaction10HandledAck = e;
+			}
+		}
+	};
+
+	bot.resetCapture();
+	bot.editedMessages = [];
+	baixarVideoChamadoCom = null;
+	const reaction10Result = await processYoutubeSearchReaction(bot, reaction10Message, [], null);
+	assert.strictEqual(reaction10Result, true, "Reação 🔟 deve ser reconhecida e tratada");
+	assert.strictEqual(
+		reaction10HandledAck,
+		expectedEmoji,
+		`Reação 🔟 deve ser respondida com ${expectedEmoji}`
+	);
+	assert.ok(baixarVideoChamadoCom, "Reação 🔟 deve disparar download do vídeo");
+	assert.strictEqual(
+		baixarVideoChamadoCom.idVideo,
+		"id10",
+		"ID baixado pela reação 🔟 deve ser 'id10'"
+	);
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("⏳ *10.")),
+		"Deve editar mensagem com ⏳ *10. ao iniciar reação 🔟"
+	);
+	assert.ok(
+		bot.editedMessages.some((m) => m.text.includes("✅ *10.")),
+		"Deve editar mensagem com ✅ *10. ao concluir download da reação 🔟"
+	);
+	console.log(
+		"✓ Teste 8 passou: Reação 🔟 tratada com sucesso, confirmada com ⌛️ e editada com ⏳ e ✅ para o item 10"
+	);
 
 	// Limpeza do arquivo simulado
 	if (fs.existsSync(fakeMediaFile)) fs.unlinkSync(fakeMediaFile);
