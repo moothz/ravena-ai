@@ -1246,11 +1246,14 @@ ${textToAnalyze}`;
 				} catch (e) {}
 
 				try {
-					donationData = await this.database.dbGet(
-						"core",
-						"SELECT name, valor, timestamp FROM donations WHERE numero = ? OR name = ?",
-						[userPhone, primaryIdentity?.display_name || ""]
-					);
+					const donor = await this.database.getDonorByNumber(userPhone);
+					if (donor) {
+						donationData = {
+							name: donor.nome,
+							valor: donor.valor,
+							timestamp: donor.timestamp
+						};
+					}
 				} catch (e) {}
 
 				try {
@@ -1458,11 +1461,7 @@ ${textToAnalyze}`;
 				} catch (e) {}
 
 				try {
-					const donation = await this.database.dbGet(
-						"core",
-						"SELECT valor FROM donations WHERE numero = ? LIMIT 1",
-						[userPhone]
-					);
+					const donation = await this.database.getDonorByNumber(userPhone);
 					if (donation) {
 						gameDetails.push("Apoiador/Doador do RavenaBot");
 					}
