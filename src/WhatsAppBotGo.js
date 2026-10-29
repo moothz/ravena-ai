@@ -1734,7 +1734,7 @@ class WhatsAppBotGo {
 					return msg ?? null;
 				}
 
-				const recovered = await this.formatMessageFromGo(msg.goMessageData);
+				const recovered = await this.formatMessageFromGo(msg.goMessageData, true, true);
 				//this.logger.debug(`[recoverMsgFromCache] `, { actualId, recovered });
 				if (!recovered) {
 					return msg;
@@ -2667,7 +2667,7 @@ class WhatsAppBotGo {
 		return formattedQuoted;
 	}
 
-	async formatMessageFromGo(goMessageData, skipCache = false) {
+	async formatMessageFromGo(goMessageData, skipCache = false, isRecovered = false) {
 		try {
 			if (!goMessageData) {
 				return null;
@@ -2729,9 +2729,9 @@ class WhatsAppBotGo {
 
 			//this.logger.debug(`[formatMessageFromGo] `, {goMessageData, contextInfo, quotedMessageId});
 
-			const responseTime = Math.max(0, this.getCurrentTimestamp() - timestamp);
+			const responseTime = isRecovered ? 0 : Math.max(0, this.getCurrentTimestamp() - timestamp);
 
-			if (!fromMe) {
+			if (!fromMe && !isRecovered) {
 				this.loadReport.trackReceivedMessage(isGroup, responseTime, chatId);
 			}
 
@@ -2970,7 +2970,10 @@ class WhatsAppBotGo {
 				this.cacheManager.putGoMessageInCache(cachedMessage);
 			}
 
-			if (goMessageData.newsletterAdminInvite || messageContent.newsletterAdminInviteMessage) {
+			if (
+				!isRecovered &&
+				(goMessageData.newsletterAdminInvite || messageContent.newsletterAdminInviteMessage)
+			) {
 				const invite =
 					goMessageData.newsletterAdminInvite || messageContent.newsletterAdminInviteMessage;
 				const inviteJid = invite.newsletterJID || invite.newsletterJid || invite.NewsletterJID;

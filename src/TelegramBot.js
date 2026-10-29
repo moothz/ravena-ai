@@ -450,7 +450,10 @@ class WhatsAppBotTelegram {
 				const authorId = `${message.from.id}`;
 				const authorName = message.from.first_name || message.from.username || "Unknown User";
 
-				this.loadReport.trackReceivedMessage(isGroup, 0, chatId);
+				const responseTime = message.date
+					? Math.max(0, this.getCurrentTimestamp() - message.date)
+					: 0;
+				this.loadReport.trackReceivedMessage(isGroup, responseTime, chatId);
 
 				let type = "unknown";
 				let content = null;

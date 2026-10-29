@@ -35,9 +35,10 @@ class LoadReport {
 	/**
 	 * Rastreia mensagem recebida
 	 * @param {boolean} isGroup - Se a mensagem foi em um grupo
-	 * @param {number} responseTime - Tempo de resposta em segundos
+	 * @param {number|null} [responseTime=null] - Tempo de resposta em segundos
+	 * @param {string} [msgFrom="123@c.us"] - Remetente ou grupo
 	 */
-	trackReceivedMessage(isGroup, responseTime = 0, msgFrom = "123@c.us") {
+	trackReceivedMessage(isGroup, responseTime = null, msgFrom = "123@c.us") {
 		//this.logger.debug(`[trackReceivedMessage][${this.bot.id}] ${msgFrom} (${isGroup ? "Group" : "PV"}), ${responseTime}ms`);
 		if (isGroup) {
 			this.stats.receivedGroup++;
@@ -51,8 +52,8 @@ class LoadReport {
 			this.stats.receivedPrivate++;
 		}
 
-		// Rastreia tempo de resposta
-		if (responseTime > 0) {
+		// Rastreia tempo de resposta (aceita >= 0 para incluir respostas instantâneas de 0s)
+		if (typeof responseTime === "number" && !isNaN(responseTime) && responseTime >= 0) {
 			this.stats.responseTimes.push(responseTime);
 			this.stats.totalResponseTime += responseTime;
 
@@ -176,8 +177,11 @@ class LoadReport {
 		return {
 			msgsHr: currentMsgsHr || (this.lastReport?.messages?.messagesPerHour ?? 0),
 			responseTime: {
-				avg: parseFloat(avgResponseTime.toFixed(2)) || fallbackAvg,
-				max: this.stats.maxResponseTime || (this.lastReport?.responseTime?.max ?? 0)
+				avg: responseTimeCount > 0 ? parseFloat(avgResponseTime.toFixed(2)) : fallbackAvg,
+				max:
+					responseTimeCount > 0
+						? this.stats.maxResponseTime
+						: (this.lastReport?.responseTime?.max ?? 0)
 			}
 		};
 	}
