@@ -52,6 +52,7 @@ async function runTests() {
 	};
 
 	const db = Database.getInstance();
+	db.testMode = false;
 
 	// ─── TESTE 1: Migração de Dados Legados ─────────────────────────────────
 	console.log("\n[Teste 1] Validando migração de dados legados do lists.db...");
@@ -454,8 +455,117 @@ async function runTests() {
 	assert.strictEqual(listDeleted, undefined, "Lista 'compras' deve ter sido excluída");
 	console.log("✓ Exclusão de lista (!ld) validada com sucesso.");
 
+	// ─── TESTE 13: Lista com Espaços no Nome e Adição Multilinhas (!add) ────
+	console.log(
+		"\n[Teste 13] Validando criação com espaços e !add multilinhas respondendo com nova mensagem..."
+	);
+	bot.resetCapture();
+	const msgCreateEspaco = createMessage({
+		content: '!lci "compras do mes" Compras do Mês da Casa',
+		group: groupId,
+		author: userAdmin
+	});
+	await cmdLci.execute(
+		bot,
+		msgCreateEspaco,
+		['"compras', "do", 'mes"', "Compras", "do", "Mês", "da", "Casa"],
+		mockGroup
+	);
+
+	const listComprasMes = await db.dbGet(
+		"lists_v2",
+		"SELECT * FROM lists WHERE group_id = ? AND name = ?",
+		[groupId, "compras do mes"]
+	);
+	assert.ok(listComprasMes, "Lista 'compras do mes' deve existir");
+
+	bot.resetCapture();
+	const msgAddMultilinha = createMessage({
+		content: "!add compras do mes arroz 5kg\nfeijão carioca\nmacarrão espaguete",
+		group: groupId,
+		author: userCommon
+	});
+	await cmdAdd.execute(bot, msgAddMultilinha, ["compras", "do", "mes", "arroz", "5kg"], mockGroup);
+
+	// Deve ter respondido com nova mensagem
+	assert.ok(bot.capturedMessages.length > 0, "Deve responder com nova mensagem");
+	const lastSentMsg = bot.capturedMessages[bot.capturedMessages.length - 1];
+	assert.ok(
+		lastSentMsg.content.includes("arroz 5kg") &&
+			lastSentMsg.content.includes("feijão carioca") &&
+			lastSentMsg.content.includes("macarrão espaguete"),
+		"Nova mensagem deve conter os 3 itens atualizados"
+	);
+
+	const itemsMes = await db.dbAll(
+		"lists_v2",
+		"SELECT * FROM list_items WHERE list_id = ? ORDER BY id ASC",
+		[listComprasMes.id]
+	);
+	assert.strictEqual(itemsMes.length, 3, "Devem haver 3 itens cadastrados");
+	console.log("✓ Lista com espaços e multilinhas no !add validada com sucesso.");
+
+	// ─── TESTE 14: !add com Quote na Lista (Edição) e !lista (Nova Mensagem) ──
+	console.log(
+		"\n[Teste 14] Validando !add em quote (edição in-place) e !lista (sempre nova mensagem)..."
+	);
+	bot.resetCapture();
+	bot.editedMessages = [];
+
+	const updatedListRow = await db.dbGet("lists_v2", "SELECT * FROM lists WHERE id = ?", [
+		listComprasMes.id
+	]);
+	const listMsgId = updatedListRow.last_message_id;
+
+	let reactedEmoji = null;
+	const msgAddQuote = createMessage({
+		content: "!add azeite\nsal",
+		group: groupId,
+		author: userCommon
+	});
+	msgAddQuote.origin.getQuotedMessage = async () => ({
+		id: listMsgId,
+		body: "🛒 *Lista de Compras/Itens — Compras do Mês da Casa*",
+		author: bot.phoneNumber
+	});
+	msgAddQuote.origin.react = async (emoji) => {
+		reactedEmoji = emoji;
+	};
+
+	await cmdAdd.execute(bot, msgAddQuote, ["azeite"], mockGroup);
+
+	assert.strictEqual(
+		bot.capturedMessages.length,
+		0,
+		"Não deve enviar mensagem nova ao responder em quote"
+	);
+	assert.strictEqual(bot.editedMessages.length, 1, "Deve editar in-place a mensagem citada");
+	assert.strictEqual(reactedEmoji, "✅", "Deve reagir com ✅");
+
+	// Testando !lista
+	bot.resetCapture();
+	bot.editedMessages = [];
+	const cmdLista = ListCommands.commands.find((c) => c.name === "lista");
+	const msgLista = createMessage({
+		content: "!lista compras do mes",
+		group: groupId,
+		author: userCommon
+	});
+	await cmdLista.execute(bot, msgLista, ["compras", "do", "mes"], mockGroup);
+
+	assert.strictEqual(bot.editedMessages.length, 0, "!lista nunca deve editar");
+	assert.strictEqual(bot.capturedMessages.length, 1, "!lista deve sempre enviar nova mensagem");
+	assert.ok(
+		bot.capturedMessages[0].content.includes("Compras do Mês da Casa"),
+		"!lista deve conter os dados atualizados da lista"
+	);
+	console.log("✓ !add em quote editou in-place e !lista enviou mensagem nova com sucesso.");
+
+	// Limpeza da lista de teste
+	await cmdLd.execute(bot, msgLd, ["compras do mes"], mockGroup);
+
 	console.log("\n=======================================================");
-	console.log("✓ TODOS OS 12 TESTES DO ListCommands v2 PASSARAM COM SUCESSO!");
+	console.log("✓ TODOS OS 14 TESTES DO ListCommands v2 PASSARAM COM SUCESSO!");
 	console.log("=======================================================");
 }
 

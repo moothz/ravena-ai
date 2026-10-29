@@ -162,13 +162,41 @@ async function ensureMigrated() {
 
 // ─── HELPERS DE BANCO DE DADOS ─────────────────────────────────────────────
 
+function normalizeForMatch(str) {
+	return String(str || "")
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.trim();
+}
+
+function escapeRegex(string) {
+	return String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function getListByName(groupId, name) {
 	await ensureMigrated();
 	if (!groupId || !name) return null;
-	return await database.dbGet(DB_NAME, "SELECT * FROM lists WHERE group_id = ? AND name = ?", [
+	const clean = String(name).toLowerCase().trim();
+	let row = await database.dbGet(DB_NAME, "SELECT * FROM lists WHERE group_id = ? AND name = ?", [
 		groupId,
-		String(name).toLowerCase().trim()
+		clean
 	]);
+	if (!row) {
+		row = await database.dbGet(
+			DB_NAME,
+			"SELECT * FROM lists WHERE group_id = ? AND LOWER(title) = ?",
+			[groupId, clean]
+		);
+	}
+	if (!row) {
+		const all = await getGroupLists(groupId);
+		const normClean = normalizeForMatch(clean);
+		row = all.find(
+			(l) => normalizeForMatch(l.name) === normClean || normalizeForMatch(l.title) === normClean
+		);
+	}
+	return row || null;
 }
 
 async function getListById(listId) {
@@ -265,6 +293,110 @@ function parseItemsFromText(rawText) {
 	}
 
 	return items;
+}
+
+/**
+ * Identifica a lista alvo e o texto remanescente da primeira linha.
+ * Suporta listas com nomes ou títulos contendo espaços e caracteres especiais.
+ *
+ * @param {string} firstLine - Texto da primeira linha (já sem o comando !add)
+ * @param {Array} groupItemLists - Lista de todas as listas de itens do grupo
+ * @returns {{ list: Object|null, firstLineItems: string }}
+ */
+function identifyListFromFirstLine(firstLine, groupItemLists) {
+	if (!firstLine || typeof firstLine !== "string") {
+		return { list: null, firstLineItems: "" };
+	}
+
+	const trimmedFirstLine = firstLine.trim();
+	if (!trimmedFirstLine) {
+		return { list: null, firstLineItems: "" };
+	}
+
+	// Monta candidatos de todas as listas do grupo (name e title)
+	const candidates = [];
+	for (const l of groupItemLists) {
+		if (l.name) {
+			candidates.push({
+				list: l,
+				raw: l.name,
+				normalized: normalizeForMatch(l.name)
+			});
+		}
+		if (l.title && normalizeForMatch(l.title) !== normalizeForMatch(l.name)) {
+			candidates.push({
+				list: l,
+				raw: l.title,
+				normalized: normalizeForMatch(l.title)
+			});
+		}
+	}
+
+	// Ordena os candidatos pelo tamanho decrescente (longest match first)
+	candidates.sort((a, b) => b.normalized.length - a.normalized.length);
+
+	// Caso 1: Nome entre aspas no início: ex: !"compras do mes" arroz
+	const quoteMatch = trimmedFirstLine.match(/^["'“]([^"'”]+)["'”]\s*(.*)$/);
+	if (quoteMatch) {
+		const quotedNameNorm = normalizeForMatch(quoteMatch[1]);
+		const rem = quoteMatch[2] ? quoteMatch[2].trim() : "";
+		const match = candidates.find((c) => c.normalized === quotedNameNorm);
+		if (match) {
+			return { list: match.list, firstLineItems: rem };
+		}
+	}
+
+	// Caso 2: Match no início da primeira linha (com separador)
+	const normFirstLine = normalizeForMatch(trimmedFirstLine);
+
+	for (const cand of candidates) {
+		const candNorm = cand.normalized;
+		if (!candNorm) continue;
+
+		// Match exato de toda a primeira linha com o nome da lista
+		if (normFirstLine === candNorm) {
+			return { list: cand.list, firstLineItems: "" };
+		}
+
+		if (normFirstLine.startsWith(candNorm)) {
+			const nextChar = normFirstLine.charAt(candNorm.length);
+			// Deve ser seguido por separador (espaço, vírgula, dois pontos, ponto e vírgula, traço)
+			if (/[\s,;:-]/.test(nextChar)) {
+				let matchedPos = -1;
+				for (let i = 1; i <= trimmedFirstLine.length; i++) {
+					if (normalizeForMatch(trimmedFirstLine.slice(0, i)) === candNorm) {
+						matchedPos = i;
+						break;
+					}
+				}
+				const cutIdx = matchedPos !== -1 ? matchedPos : candNorm.length;
+				let remainder = trimmedFirstLine.slice(cutIdx).trim();
+				remainder = remainder.replace(/^[,;:\s-]+/, "").trim();
+
+				return { list: cand.list, firstLineItems: remainder };
+			}
+		}
+	}
+
+	// Caso 3: Fallback - se há apenas 1 lista de itens no grupo
+	if (groupItemLists.length === 1) {
+		return { list: groupItemLists[0], firstLineItems: trimmedFirstLine };
+	}
+
+	// Caso 4: Se o nome da lista aparece como expressão completa na primeira linha
+	for (const cand of candidates) {
+		const candNorm = cand.normalized;
+		if (candNorm.length < 3) continue;
+		const regex = new RegExp(`(?:^|[\\s,;:-])${escapeRegex(candNorm)}(?:$|[\\s,;:-])`);
+		if (regex.test(normFirstLine)) {
+			const rawRegex = new RegExp(escapeRegex(cand.raw), "i");
+			let remainder = trimmedFirstLine.replace(rawRegex, "").trim();
+			remainder = remainder.replace(/^[,;:\s-]+|[,;:\s-]+$/g, "").trim();
+			return { list: cand.list, firstLineItems: remainder };
+		}
+	}
+
+	return { list: null, firstLineItems: trimmedFirstLine };
 }
 
 /**
@@ -475,7 +607,7 @@ async function buildOverviewMessage(targetGroup, allLists) {
  */
 async function updateOrSendListMessage(bot, chatId, list, text, options = {}) {
 	let edited = false;
-	const targetMsgId = options.targetMsgId || list?.last_message_id;
+	const targetMsgId = options.forceNew ? null : options.targetMsgId || list?.last_message_id;
 
 	if (targetMsgId && typeof bot.editMessage === "function") {
 		try {
@@ -587,20 +719,40 @@ async function showSingleList(bot, message, args, group) {
 		});
 		if (errorResponse) return errorResponse;
 
-		if (!args || args.length === 0) {
-			return new ReturnMessage({
-				chatId,
-				content: "Por favor, informe o nome da lista. Exemplo: !lista compras"
-			});
+		let list = null;
+		if (args && args.length > 0) {
+			const query = args.join(" ").trim();
+			list = await getListByName(targetGroup.id, query);
+			if (!list && args.length > 1) {
+				list = await getListByName(targetGroup.id, args[0].trim());
+			}
+			if (!list) {
+				const groupLists = await getGroupLists(targetGroup.id);
+				const normQuery = normalizeForMatch(query);
+				list = groupLists.find(
+					(l) =>
+						normalizeForMatch(l.name) === normQuery ||
+						normalizeForMatch(l.title) === normQuery ||
+						normalizeForMatch(l.name).startsWith(normQuery)
+				);
+			}
+		} else {
+			const groupLists = await getGroupLists(targetGroup.id);
+			if (groupLists.length === 1) {
+				list = groupLists[0];
+			}
 		}
 
-		const listName = args[0].trim().toLowerCase();
-		const list = await getListByName(targetGroup.id, listName);
-
 		if (!list) {
+			if (!args || args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "Por favor, informe o nome da lista. Exemplo: !lista compras"
+				});
+			}
 			return new ReturnMessage({
 				chatId,
-				content: `Lista "${listName}" não encontrada no grupo.`
+				content: `Lista "${args.join(" ")}" não encontrada no grupo.`
 			});
 		}
 
@@ -609,10 +761,11 @@ async function showSingleList(bot, message, args, group) {
 
 		const text = buildSingleListMessage(list, itemsOrMembers);
 
-		const res = await updateOrSendListMessage(bot, chatId, list, text, { group: targetGroup });
-		if (!res.edited && res.sentMessages) {
-			return [];
-		}
+		// O comando !lista deve SEMPRE enviar uma mensagem nova com a lista atualizada
+		await updateOrSendListMessage(bot, chatId, list, text, {
+			group: targetGroup,
+			forceNew: true
+		});
 
 		return [];
 	} catch (error) {
@@ -648,14 +801,24 @@ async function createItemList(bot, message, args, group) {
 			});
 		}
 
-		const listName = args[0].trim().toLowerCase();
-		const listTitle = args.slice(1).join(" ").trim() || listName;
+		let listName = "";
+		let listTitle = "";
+
+		const rawContent = message?.content || message?.body || "";
+		const quoteMatch = rawContent.match(/lci\s+["'“]([^"'”]+)["'”](?:\s+(.*))?/i);
+		if (quoteMatch) {
+			listName = quoteMatch[1].trim().toLowerCase();
+			listTitle = (quoteMatch[2] || quoteMatch[1]).trim();
+		} else {
+			listName = args[0].trim().toLowerCase();
+			listTitle = args.slice(1).join(" ").trim() || listName;
+		}
 
 		const existing = await getListByName(targetGroup.id, listName);
 		if (existing) {
 			return new ReturnMessage({
 				chatId,
-				content: `A lista "${args[0].trim()}" já existe neste grupo.`
+				content: `A lista "${listName}" já existe neste grupo.`
 			});
 		}
 
@@ -669,7 +832,10 @@ async function createItemList(bot, message, args, group) {
 		const newList = await getListByName(targetGroup.id, listName);
 		const text = buildSingleListMessage(newList, []);
 
-		await updateOrSendListMessage(bot, chatId, newList, text, { group: targetGroup });
+		await updateOrSendListMessage(bot, chatId, newList, text, {
+			group: targetGroup,
+			forceNew: true
+		});
 
 		if (message.origin && typeof message.origin.react === "function") {
 			await message.origin.react("🛒").catch(() => {});
@@ -701,71 +867,131 @@ async function addItemsToList(bot, message, args, group) {
 		});
 		if (errorResponse) return errorResponse;
 
-		let targetList = null;
-		let rawItemsText = "";
-		let quotedMsg = null;
+		// 1. Obtém o texto original da mensagem para preservar quebras de linha (\n)
+		const rawContent = message?.content || message?.body || message?.caption || "";
+		let bodyText = "";
+		if (typeof rawContent === "string" && rawContent.trim()) {
+			const match = rawContent.match(/^[^\w\s]*\s*add(?:\s+([\s\S]*)|$)/i);
+			if (match) {
+				bodyText = match[1] !== undefined ? match[1] : "";
+			} else {
+				bodyText = rawContent;
+			}
+		}
+		if (!bodyText && Array.isArray(args)) {
+			bodyText = args.join(" ");
+		}
 
+		const normalizedBody = bodyText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+
+		// 2. Verifica se a mensagem está respondendo a uma mensagem em quote
+		let quotedMsg = null;
 		if (typeof message.origin?.getQuotedMessage === "function") {
 			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
 		}
 
 		const quotedMsgId = quotedMsg?.id?._serialized || quotedMsg?.id?.id || quotedMsg?.id;
 
-		// 1. Verifica se a mensagem citada é uma lista mapeada no banco
+		let targetList = null;
+		let isQuotingList = false;
+
 		if (quotedMsgId) {
+			// A) Mensagem citada registrada na tabela list_messages
 			const tracked = await getTrackedMessage(quotedMsgId);
 			if (tracked && tracked.list_id) {
 				targetList = await getListById(tracked.list_id);
 			}
-		}
 
-		// 2. Se a mensagem citada for uma lista, o corpo dos args contém os itens
-		if (targetList && targetList.type === "items") {
-			rawItemsText = args.join(" ");
-		} else if (quotedMsg && (quotedMsg.body || quotedMsg.caption || quotedMsg.content)) {
-			// 3. Usuário citou uma mensagem de texto qualquer e passou o nome da lista no comando
-			const quotedText = quotedMsg.body || quotedMsg.caption || quotedMsg.content || "";
-			if (args.length > 0) {
-				const candidateName = args[0].trim().toLowerCase();
-				targetList = await getListByName(targetGroup.id, candidateName);
-				if (targetList) {
-					rawItemsText = quotedText + "\n" + args.slice(1).join(" ");
-				}
-			}
+			// B) Fallback: última mensagem conhecida da lista no grupo
 			if (!targetList) {
-				// Se o grupo tiver apenas 1 lista de itens ativa, assume ela
-				const groupItemLists = (await getGroupLists(targetGroup.id)).filter(
-					(l) => l.type === "items"
+				targetList = await database.dbGet(
+					DB_NAME,
+					"SELECT * FROM lists WHERE group_id = ? AND (last_message_id = ? OR last_message_id LIKE ?)",
+					[targetGroup.id, quotedMsgId, `%${quotedMsgId}%`]
 				);
-				if (groupItemLists.length === 1) {
-					targetList = groupItemLists[0];
-					rawItemsText = quotedText + "\n" + args.join(" ");
+			}
+
+			// C) Fallback: inspeciona o corpo da mensagem citada caso seja mensagem da bot com texto de lista
+			if (!targetList && quotedMsg) {
+				const qBody = quotedMsg.body || quotedMsg.caption || quotedMsg.content || "";
+				if (typeof qBody === "string" && qBody.includes("Lista de Compras/Itens")) {
+					const allLists = await getGroupLists(targetGroup.id);
+					for (const gl of allLists) {
+						if (
+							gl.type === "items" &&
+							(qBody.includes(gl.name) || (gl.title && qBody.includes(gl.title)))
+						) {
+							targetList = gl;
+							await trackListMessage(quotedMsgId, targetGroup.id, "single", gl.id);
+							break;
+						}
+					}
 				}
 			}
-		} else if (args.length > 0) {
-			// 4. Comando direto sem quote: !add compras arroz, feijao
-			const candidateName = args[0].trim().toLowerCase();
-			targetList = await getListByName(targetGroup.id, candidateName);
-			if (targetList) {
-				rawItemsText = args.slice(1).join(" ");
-			} else {
-				// Fallback: se houver apenas 1 lista de itens ativa no grupo
-				const groupItemLists = (await getGroupLists(targetGroup.id)).filter(
-					(l) => l.type === "items"
-				);
-				if (groupItemLists.length === 1) {
-					targetList = groupItemLists[0];
-					rawItemsText = args.join(" ");
-				}
+
+			if (targetList && targetList.type === "items") {
+				isQuotingList = true;
 			}
 		}
 
-		if (!targetList) {
-			return new ReturnMessage({
-				chatId,
-				content:
-					"Por favor, indique a lista ou responda à mensagem de uma lista de compras. Exemplo: `!add compras Arroz, Feijão, Macarrão`"
-			});
+		const groupItemLists = (await getGroupLists(targetGroup.id)).filter((l) => l.type === "items");
+		let rawItemsText = "";
+
+		if (isQuotingList && targetList) {
+			// Cenário 1: Respondendo à mensagem da lista em quote -> todo o conteúdo é tratado como itens
+			let itemsSource = normalizedBody;
+			const cleanName = normalizeForMatch(targetList.name);
+			const cleanTitle = normalizeForMatch(targetList.title);
+			const firstWord = itemsSource.split(/\s+/)[0];
+			if (
+				normalizeForMatch(firstWord) === cleanName ||
+				normalizeForMatch(firstWord) === cleanTitle
+			) {
+				itemsSource = itemsSource.substring(firstWord.length).trim();
+			}
+			rawItemsText = itemsSource;
+		} else {
+			// Cenário 2: Sem quote de lista (ou citando mensagem de texto externa)
+			const lines = normalizedBody.split("\n");
+			const firstLine = lines[0] ? lines[0].trim() : "";
+			const subsequentLines = lines.slice(1);
+
+			let externalQuotedText = "";
+			if (quotedMsg && !isQuotingList) {
+				externalQuotedText = quotedMsg.body || quotedMsg.caption || quotedMsg.content || "";
+			}
+
+			// Identifica a lista através do informado na primeira linha (suporta nomes com espaços)
+			const idResult = identifyListFromFirstLine(firstLine, groupItemLists);
+			targetList = idResult.list;
+			const firstLineItems = idResult.firstLineItems;
+
+			if (!targetList) {
+				if (groupItemLists.length === 0) {
+					return new ReturnMessage({
+						chatId,
+						content:
+							"Não há listas de compras/itens criadas no grupo. Use `!lci <nome>` para criar uma."
+					});
+				}
+				return new ReturnMessage({
+					chatId,
+					content: `Por favor, indique o nome da lista. Exemplo:\n\`!add compras Arroz\nFeijão\nMacarrão\`\n\nListas disponíveis: ${groupItemLists.map((l) => l.name).join(", ")}`
+				});
+			}
+
+			const itemsParts = [];
+			if (firstLineItems) {
+				itemsParts.push(firstLineItems);
+			}
+			if (subsequentLines.length > 0) {
+				itemsParts.push(...subsequentLines);
+			}
+			if (externalQuotedText) {
+				itemsParts.push(externalQuotedText);
+			}
+
+			rawItemsText = itemsParts.join("\n");
 		}
 
 		if (targetList.type !== "items") {
@@ -807,14 +1033,22 @@ async function addItemsToList(bot, message, args, group) {
 			);
 		}
 
-		// Atualiza mensagem in-place
 		const updatedItems = await getListItems(targetList.id);
 		const newContent = buildSingleListMessage(targetList, updatedItems);
 
-		await updateOrSendListMessage(bot, chatId, targetList, newContent, {
-			group: targetGroup,
-			targetMsgId: quotedMsgId && trackedListIsSelf(targetList, quotedMsgId) ? quotedMsgId : null
-		});
+		if (isQuotingList && quotedMsgId) {
+			// Respondendo à mensagem da lista em quote -> edita a mensagem e reage
+			await updateOrSendListMessage(bot, chatId, targetList, newContent, {
+				group: targetGroup,
+				targetMsgId: quotedMsgId
+			});
+		} else {
+			// Comando normal -> responde com nova mensagem com a lista atualizada
+			await updateOrSendListMessage(bot, chatId, targetList, newContent, {
+				group: targetGroup,
+				forceNew: true
+			});
+		}
 
 		if (message.origin && typeof message.origin.react === "function") {
 			await message.origin.react("✅").catch(() => {});
