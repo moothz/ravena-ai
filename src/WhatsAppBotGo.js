@@ -1,4 +1,4 @@
-const { randomBytes } = require("crypto");
+const { randomBytes, createHash } = require("crypto");
 const imagemagick = require("imagemagick");
 const ffmpeg = require("fluent-ffmpeg");
 const { promisify } = require("util");
@@ -140,6 +140,10 @@ class WhatsAppBotGo {
 		this.userCache = new MemoryCache(userCacheTtlSec * 1000, 5000);
 		// Cache de fallback de longa duração (12 horas) para metadados de grupos, usado APENAS quando a API falhar
 		this.groupFallbackCache = new MemoryCache(12 * 60 * 60 * 1000, 500);
+		// Failsafe de deduplicação de mensagens recebidas (webhook retries) e enviadas (checksum de saída)
+		const outboundDedupTtlSec = parseInt(process.env.OUTBOUND_DEDUP_TTL_SEC, 10) || 45;
+		this.outboundDedupCache = new MemoryCache(outboundDedupTtlSec * 1000, 2000);
+		this.inboundDedupCache = new MemoryCache(5 * 60 * 1000, 5000);
 
 		if (!this.whatsgoApiUrl || !this.whatsgoApiKey || !this.instanceName || !this.webhookHost) {
 			const errMsg =
@@ -2169,6 +2173,9 @@ class WhatsAppBotGo {
 			return res.sendStatus(200);
 		}
 
+		// Responde 200 imediatamente para evitar timeout (10s) e retentativas de webhook no whatsgoapi durante picos de carga
+		res.sendStatus(200);
+
 		try {
 			switch (payload.event) {
 				case "Connection": // Verificar nome correto do evento na V3
@@ -2186,6 +2193,19 @@ class WhatsAppBotGo {
 						const info = msgData.Info;
 						const msg = msgData.Message;
 						const reactionData = msg?.reactionMessage;
+
+						if (info?.ID) {
+							const inboundKey = reactionData
+								? `react:${info.Chat || ""}:${info.ID}:${reactionData.key?.ID || ""}:${reactionData.text || ""}`
+								: `msg:${payload.event}:${info.Chat || ""}:${info.ID}`;
+							if (this.inboundDedupCache.has(inboundKey)) {
+								this.logger.warn(
+									`[${this.id}] [DEDUP-INBOUND] Ignorando webhook duplicado (${inboundKey})`
+								);
+								break;
+							}
+							this.inboundDedupCache.set(inboundKey, true);
+						}
 
 						if (info.PushName && info.PushName.length > 0) {
 							if (info.Sender) {
@@ -2452,7 +2472,6 @@ class WhatsAppBotGo {
 				payload
 			});
 		}
-		res.sendStatus(200);
 	}
 
 	async fetchAndPrepareBlockedContacts() {
@@ -3065,7 +3084,61 @@ class WhatsAppBotGo {
 		return typeof result.toWellFormed === "function" ? result.toWellFormed() : result;
 	}
 
+	/**
+	 * Gera um checksum SHA-256 determinístico para deduplicar envios idênticos (mesmo destinatário,
+	 * conteúdo, quote e opções de mídia) dentro da janela de proteção contra delays/retentativas.
+	 */
+	_computeOutboundChecksum(chatId, content, options = {}) {
+		try {
+			const quotedMsgId = options.quotedMessageId
+				? this.getActualMsgId(options.quotedMessageId)
+				: "";
+			const asSticker = options.sendMediaAsSticker ? "1" : "0";
+			const caption = typeof options.caption === "string" ? options.caption.trim() : "";
+
+			let contentFingerprint = "";
+			if (typeof content === "string") {
+				contentFingerprint = `str:${content.trim()}`;
+			} else if (content && typeof content === "object") {
+				if (content.data) {
+					if (typeof content.data === "string") {
+						const len = content.data.length;
+						const head = content.data.slice(0, 256);
+						const tail = content.data.slice(-256);
+						contentFingerprint = `b64:${content.mimetype || ""}:${len}:${head}:${tail}`;
+					} else if (Buffer.isBuffer(content.data)) {
+						const len = content.data.length;
+						const head = content.data.subarray(0, 128).toString("hex");
+						const tail = content.data.subarray(Math.max(0, len - 128)).toString("hex");
+						contentFingerprint = `buf:${content.mimetype || ""}:${len}:${head}:${tail}`;
+					} else {
+						contentFingerprint = `data:${content.mimetype || ""}:${String(content.data).slice(0, 256)}`;
+					}
+				} else if (content.url) {
+					contentFingerprint = `url:${String(content.url).split("?")[0]}`;
+				} else if (content.isLocation) {
+					contentFingerprint = `loc:${content.latitude}:${content.longitude}:${content.name || ""}`;
+				} else if (content.isContact) {
+					contentFingerprint = `ctc:${content.name || ""}:${content.number || ""}`;
+				} else if (content.isPoll) {
+					contentFingerprint = `poll:${content.name || ""}:${JSON.stringify(content.pollOptions || [])}`;
+				} else {
+					contentFingerprint = `obj:${JSON.stringify(content).slice(0, 512)}`;
+				}
+			} else {
+				contentFingerprint = `other:${String(content)}`;
+			}
+
+			const rawKey = `${this.id}|${chatId}|${quotedMsgId}|${asSticker}|${caption}|${contentFingerprint}`;
+			return createHash("sha256").update(rawKey).digest("hex");
+		} catch (err) {
+			this.logger.debug(`[${this.id}] Erro ao calcular checksum de envio: ${err.message}`);
+			return null;
+		}
+	}
+
 	async sendMessage(chatId, content, options = {}) {
+		let outboundChecksum = null;
 		try {
 			if (!this.isConnected) throw new Error("Not connected");
 
@@ -3077,6 +3150,36 @@ class WhatsAppBotGo {
 				err.notInGroup = true;
 				err.status = 403;
 				throw err;
+			}
+
+			if (!options.skipDedup) {
+				outboundChecksum = this._computeOutboundChecksum(chatId, content, options);
+				if (outboundChecksum) {
+					const existingSend = this.outboundDedupCache.get(outboundChecksum);
+					if (existingSend) {
+						const elapsedMs = Date.now() - existingSend.timestamp;
+						this.logger.warn(
+							`[${this.id}] [DEDUP-FAILSAFE] Bloqueando envio duplicado para ${chatId} (checksum=${outboundChecksum.slice(0, 12)}, status=${existingSend.status}, há ${elapsedMs}ms)`
+						);
+						if (existingSend.result) {
+							return existingSend.result;
+						}
+						return {
+							id: { _serialized: `dedup_${outboundChecksum.slice(0, 12)}` },
+							ack: 1,
+							deduplicated: true,
+							timestamp: Math.floor(Date.now() / 1000),
+							_data: null,
+							getInfo: () => ({ delivery: [1], played: [1], read: [1] }),
+							pin: () => true
+						};
+					}
+					this.outboundDedupCache.set(outboundChecksum, {
+						status: "in_flight",
+						timestamp: Date.now(),
+						chatId
+					});
+				}
 			}
 
 			let isGroup = false;
@@ -3420,7 +3523,7 @@ class WhatsAppBotGo {
 			}
 			this.loadReport.trackSentMessage(isGroup);
 
-			return {
+			const returnObj = {
 				id: { _serialized: response.data?.Info?.ID ?? "unknown" },
 				ack: 1,
 				timestamp: Math.floor(Date.now() / 1000),
@@ -3435,7 +3538,34 @@ class WhatsAppBotGo {
 					return true;
 				}
 			};
+
+			if (outboundChecksum) {
+				this.outboundDedupCache.set(outboundChecksum, {
+					status: "sent",
+					timestamp: Date.now(),
+					chatId,
+					result: returnObj
+				});
+			}
+
+			return returnObj;
 		} catch (error) {
+			if (outboundChecksum) {
+				const isTimeoutError =
+					error?.code === "ECONNABORTED" ||
+					error?.code === "ETIMEDOUT" ||
+					/timeout/i.test(String(error?.message || ""));
+				if (isTimeoutError) {
+					this.outboundDedupCache.set(outboundChecksum, {
+						status: "timed_out",
+						timestamp: Date.now(),
+						chatId
+					});
+				} else {
+					this.outboundDedupCache.delete(outboundChecksum);
+				}
+			}
+
 			if (chatId && chatId.includes("@g.us") && isNotInGroupError(error)) {
 				this.logger.warn(
 					`[${this.id}] Falha enviando mensagem para ${chatId}: bot não participa do grupo. Marcando como fora do grupo.`
