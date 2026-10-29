@@ -459,6 +459,7 @@ class WhatsAppBotGo {
 			clearTimeout(this._disconnectTimer);
 			this._disconnectTimer = null;
 		}
+		this._hasEmittedConnected = false;
 
 		const results = [];
 		let instance = await this.getGoInstance(this.instanceName);
@@ -528,9 +529,26 @@ class WhatsAppBotGo {
 			results.push({ action: "connect", status: "error", error: err.message });
 		}
 
-		await sleep(2000);
+		await sleep(1500);
+
+		// 4. Se ainda não estiver conectado no WhatsGoAPI, forçar /instance/reconnect
+		try {
+			const preStatus = await this.apiClient.get(`/instance/status`);
+			if (!preStatus?.data?.Connected) {
+				this.logger.info(
+					`[tryReconnect] WS ainda desconectado após connect. Chamando /instance/reconnect para ${this.instanceName}...`
+				);
+				const reconnectResult = await this.apiClient.post(`/instance/reconnect`, {}, false);
+				results.push({ action: "reconnect", status: "success", result: reconnectResult });
+				await sleep(2500);
+			}
+		} catch (err) {
+			this.logger.warn(`[tryReconnect] Aviso ao chamar /instance/reconnect:`, err.message);
+			results.push({ action: "reconnect", status: "error", error: err.message });
+		}
+
 		const status = await this._checkInstanceStatusAndConnect(true, false);
-		return { results, status };
+		return { results, status, isConnected: this.isConnected };
 	}
 
 	async instanceAdvSettings(
@@ -1803,6 +1821,7 @@ class WhatsAppBotGo {
 			} catch (e) {
 				if (e && e.status === 401) {
 					this.isConnected = false;
+					this._hasEmittedConnected = false;
 					if (forceConnect) {
 						this.logger.info(
 							`[${this.id}] Instância não existe na WhatsGoAPI (401). Criando instância automaticamente...`
@@ -1836,9 +1855,13 @@ class WhatsAppBotGo {
 			const statusData = response?.data;
 			// Connected = websocket WA estabelecido; LoggedIn = sessão autenticada
 			const wsConnected = !!statusData?.Connected;
-			const loggedIn = wsConnected && !!statusData?.LoggedIn;
+			const sessionLoggedIn = !!statusData?.LoggedIn;
+			const loggedIn = wsConnected && sessionLoggedIn;
 			// isConnected = true fica a cargo do _onInstanceConnected, senão ele retorna cedo e não dispara onConnected
-			if (!loggedIn) this.isConnected = false;
+			if (!loggedIn) {
+				this.isConnected = false;
+				this._hasEmittedConnected = false;
+			}
 
 			const instanceDetails = { version: this.version, tipo: "whatsgoapi" };
 			const extra = {};
@@ -1854,6 +1877,36 @@ class WhatsAppBotGo {
 				this.connectDataCache = null;
 				this._connectingPromise = null;
 				return { instanceDetails, extra };
+			}
+
+			// Se a sessão já está autenticada (LoggedIn=true no whatsmeow) mas o WS caiu (Connected=false),
+			// tenta reconectar o socket sem gerar novo QR/Pairing Code
+			if (sessionLoggedIn && !wsConnected) {
+				this.logger.info(
+					`[${this.id}] Sessão autenticada mas WS desconectado. Solicitando /instance/reconnect...`
+				);
+				try {
+					await this.apiClient.post(`/instance/reconnect`, {}, false);
+					if (forceConnect) {
+						await sleep(2500);
+						const retryStatus = await this.apiClient.get(`/instance/status`);
+						if (retryStatus?.data?.Connected && retryStatus?.data?.LoggedIn) {
+							this._onInstanceConnected();
+							extra.ok = true;
+							this.connectDataCache = null;
+							this._connectingPromise = null;
+							return { instanceDetails, extra };
+						}
+					}
+				} catch (reconnErr) {
+					this.logger.warn(
+						`[${this.id}] Falha ao solicitar /instance/reconnect automático: ${reconnErr.message}`
+					);
+				}
+				if (!forceConnect) {
+					extra.connectData = this.connectDataCache?.data || {};
+					return { instanceDetails, extra };
+				}
 			}
 
 			// Se forceConnect for false, apenas retorna o status sem solicitar QR / pairing code
@@ -1918,9 +1971,23 @@ class WhatsAppBotGo {
 
 									// Aguarda o WS do WA inicializar antes de pedir pair
 									this.logger.info(
-										`[${this.id}] Connect ok. Aguardando 8s para o WA inicializar...`
+										`[${this.id}] Connect ok. Aguardando 5s para o WA inicializar...`
 									);
-									await new Promise((resolve) => setTimeout(resolve, 8000));
+									await new Promise((resolve) => setTimeout(resolve, 5000));
+
+									// Verifica se a instância já reconectou com sessão existente após o connect
+									try {
+										const postConnectStatus = await this.apiClient.get(`/instance/status`);
+										if (postConnectStatus?.data?.LoggedIn) {
+											if (postConnectStatus?.data?.Connected) {
+												this._onInstanceConnected();
+											}
+											this.connectDataCache = null;
+											return;
+										}
+									} catch (_errStatus) {
+										// Prossegue para pair/qr se falhar checagem
+									}
 								} else {
 									// WS já está up (Connected=true, LoggedIn=false)
 									// Só precisa buscar pair/qr, sem reconectar
@@ -1973,6 +2040,11 @@ class WhatsAppBotGo {
 				}
 			}
 
+			if (this.isConnected) {
+				extra.ok = true;
+				return { instanceDetails, extra };
+			}
+
 			extra.connectData = this.connectDataCache?.data || {};
 			return { instanceDetails, extra };
 		} catch (error) {
@@ -1986,6 +2058,7 @@ class WhatsAppBotGo {
 			this._disconnectTimer = null;
 		}
 		this.disconnectedAt = null;
+		this.isConnected = true;
 
 		if (this.streamSystem) {
 			this.streamSystem.initialize();
@@ -1997,7 +2070,6 @@ class WhatsAppBotGo {
 
 		if (this._hasEmittedConnected) return;
 		this._hasEmittedConnected = true;
-		this.isConnected = true;
 		this.logger.info(`[${this.id}] Successfully connected to WhatsApp via WhatsgoGO API.`);
 		this.broadcastQRUpdate({ type: "connected", botId: this.id });
 
@@ -2007,9 +2079,10 @@ class WhatsAppBotGo {
 	}
 
 	_onInstanceDisconnected(reason = "Unknown") {
-		if (!this.isConnected && reason !== "INITIALIZING") return;
+		const wasConnected = this.isConnected;
 		this.isConnected = false;
 		this._hasEmittedConnected = false;
+		if (!wasConnected && reason !== "INITIALIZING") return;
 		this.disconnectedAt = Date.now();
 		this.logger.info(`[${this.id}] Disconnected from WhatsApp. Reason: ${reason}`);
 		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
@@ -2022,20 +2095,36 @@ class WhatsAppBotGo {
 			this._disconnectTimer = null;
 		}
 
-		// Após 15 minutos desconectado, apagar a instância (sem recriar)
-		// O fluxo de conexão só é iniciado quando a página /qrcode/:botId é aberta
+		// Após 15 minutos desconectado, verificar se ainda está deslogado antes de apagar a instância
 		const DISCONNECT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
 		this._disconnectTimer = setTimeout(async () => {
 			try {
-				this.logger.info(`[${this.id}] 15 minutos desconectado. Apagando instância...`);
+				this._disconnectTimer = null;
+				const statusRes = await this.apiClient.get(`/instance/status`).catch(() => null);
+				if (statusRes?.data?.Connected && statusRes?.data?.LoggedIn) {
+					this.logger.info(
+						`[${this.id}] Instância já está conectada na WhatsGoAPI no disparo do timer. Sincronizando estado.`
+					);
+					this._onInstanceConnected();
+					return;
+				}
+				if (statusRes?.data?.LoggedIn) {
+					this.logger.info(
+						`[${this.id}] 15 minutos desconectado, mas sessão segue autenticada (LoggedIn=true). Tentando reconectar em vez de apagar...`
+					);
+					await this.tryReconnect();
+					return;
+				}
+				this.logger.info(
+					`[${this.id}] 15 minutos desconectado e sem sessão ativa. Apagando instância...`
+				);
 				await this.deleteInstance();
 				this.connectDataCache = null;
-				this._disconnectTimer = null;
 				this.logger.info(`[${this.id}] Instância apagada após timeout de desconexão.`);
 				// Notificar clientes SSE
 				this.broadcastQRUpdate({ type: "instance_deleted", botId: this.id });
 			} catch (err) {
-				this.logger.error(`[${this.id}] Erro ao apagar instância após timeout:`, err);
+				this.logger.error(`[${this.id}] Erro ao processar timeout de desconexão:`, err);
 			}
 		}, DISCONNECT_TIMEOUT_MS);
 	}
@@ -2262,6 +2351,7 @@ class WhatsAppBotGo {
 				case "QRCode": {
 					// Atualiza o cache local com o QRCode mais recente recebido via webhook
 					this.isConnected = false;
+					this._hasEmittedConnected = false;
 					const qrData = payload.data;
 					if (qrData) {
 						const qrCodeBase64 = qrData.qrcode || ""; // data:image/png;base64,...

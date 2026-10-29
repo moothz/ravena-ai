@@ -298,7 +298,7 @@ function registerInstancesRoutes(api) {
 			} catch {
 				instanceExists = false;
 			}
-			res.json({ ...instanceStatus, instanceExists });
+			res.json({ ...instanceStatus, instanceExists, connected: Boolean(bot.isConnected) });
 		} catch (e) {
 			api.logger.error("Error checking qrcode status:", e);
 			res.status(500).json({ status: "error", message: e.message });
@@ -326,7 +326,7 @@ function registerInstancesRoutes(api) {
 			} catch {
 				instanceExists = false;
 			}
-			res.json({ ...instanceStatus, instanceExists });
+			res.json({ ...instanceStatus, instanceExists, connected: Boolean(bot.isConnected) });
 		} catch (e) {
 			api.logger.error("Error initiating connect for bot:", e);
 			res.status(500).json({ status: "error", message: e.message });
@@ -663,6 +663,10 @@ function registerInstancesRoutes(api) {
       try {
         const r = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
+        if (d.connected || (d.extra && d.extra.ok)) {
+          window.location.reload();
+          return;
+        }
         if (d.extra && d.extra.connectData) { applyConnectData(d.extra.connectData); }
         if (msg) msg.textContent = 'Fluxo de conexão iniciado.';
       } catch(e) { if (msg) msg.textContent = 'Erro ao iniciar conexão: ' + e.message; }
