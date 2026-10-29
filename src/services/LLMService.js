@@ -1590,8 +1590,17 @@ class LLMService {
 						completionOptions.toolCalling = toolCalling;
 					}
 
-					const validateJsonResponse = (content) => {
+					const validateJsonResponse = (content, responseObj = null) => {
 						if (!content || typeof content !== "string") return content;
+
+						const attachUsageMeta = (err) => {
+							err.isFormatError = true;
+							if (responseObj && typeof responseObj === "object") {
+								err.usageTracked = Boolean(responseObj._usageTracked);
+								err.usageStatId = responseObj._usageStatId || null;
+							}
+							return err;
+						};
 
 						const hasImages =
 							(completionOptions.images && completionOptions.images.length > 0) ||
@@ -1605,11 +1614,11 @@ class LLMService {
 								lower.includes("could not process image") ||
 								lower.includes("cannot process this image")
 							) {
-								const err = new Error(
-									`Provedor (${config.name}) indicou incapacidade de processar visão: ${content.slice(0, 150)}...`
+								throw attachUsageMeta(
+									new Error(
+										`Provedor (${config.name}) indicou incapacidade de processar visão: ${content.slice(0, 150)}...`
+									)
 								);
-								err.isFormatError = true;
-								throw err;
 							}
 						}
 
@@ -1628,11 +1637,11 @@ class LLMService {
 										parsed.classification === "UNAVAILABLE" ||
 										parsed.classification === "unknown"
 									) {
-										const err = new Error(
-											`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+										throw attachUsageMeta(
+											new Error(
+												`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+											)
 										);
-										err.isFormatError = true;
-										throw err;
 									}
 								}
 							} catch (jsonErr) {
@@ -1652,22 +1661,22 @@ class LLMService {
 												parsed.classification === "UNAVAILABLE" ||
 												parsed.classification === "unknown")
 										) {
-											const err = new Error(
-												`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+											throw attachUsageMeta(
+												new Error(
+													`Provedor (${config.name}) retornou status de erro/indisponibilidade no JSON: ${JSON.stringify(parsed)}`
+												)
 											);
-											err.isFormatError = true;
-											throw err;
 										}
 										return content;
 									} catch (innerErr) {
 										if (innerErr.isFormatError) throw innerErr;
 									}
 								}
-								const err = new Error(
-									`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
+								throw attachUsageMeta(
+									new Error(
+										`Provedor (${config.name}) retornou resposta fora do formato JSON esperado: ${content.slice(0, 150)}...`
+									)
 								);
-								err.isFormatError = true;
-								throw err;
 							}
 						}
 						return content;
@@ -1678,7 +1687,7 @@ class LLMService {
 						case "ollama":
 							response = await this.ollamaCompletion(completionOptions);
 							if (response && response.message && response.message.content) {
-								return validateJsonResponse(response.message.content);
+								return validateJsonResponse(response.message.content, response);
 							}
 							if (
 								response &&
@@ -1686,7 +1695,7 @@ class LLMService {
 								response.choices[0] &&
 								response.choices[0].message
 							) {
-								return validateJsonResponse(response.choices[0].message.content);
+								return validateJsonResponse(response.choices[0].message.content, response);
 							}
 							throw new Error(`Resposta inválida ou vazia do Ollama (${config.name})`);
 						case "openai":
@@ -1701,7 +1710,7 @@ class LLMService {
 									response.choices[0] &&
 									response.choices[0].message
 								) {
-									return validateJsonResponse(response.choices[0].message.content);
+									return validateJsonResponse(response.choices[0].message.content, response);
 								}
 								return response;
 							}
@@ -1739,12 +1748,15 @@ class LLMService {
 		}
 
 		// OpenAI / compatible APIs
-		if (response.usage) {
+		if (response && response.usage) {
 			promptTokens = response.usage.prompt_tokens || 0;
 			completionTokens = response.usage.completion_tokens || 0;
 		}
 		// Ollama (standard /api/chat)
-		else if (response.prompt_eval_count !== undefined || response.eval_count !== undefined) {
+		else if (
+			response &&
+			(response.prompt_eval_count !== undefined || response.eval_count !== undefined)
+		) {
 			promptTokens = response.prompt_eval_count || 0;
 			completionTokens = response.eval_count || 0;
 		}
@@ -1757,8 +1769,11 @@ class LLMService {
 			);
 
 			const apiUser = options.apiUser || null;
+			if (response && typeof response === "object") {
+				response._usageTracked = true;
+			}
 			try {
-				await this.database.dbRun(
+				const res = await this.database.dbRun(
 					this.DB_NAME,
 					`INSERT INTO usage_stats (timestamp, provider, model, request_type, input_tokens, output_tokens, is_success, api_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 					[
@@ -1772,6 +1787,9 @@ class LLMService {
 						apiUser
 					]
 				);
+				if (response && typeof response === "object" && res?.lastID) {
+					response._usageStatId = res.lastID;
+				}
 			} catch (e) {
 				this.logger.error("Error saving LLM stats:", e);
 			}
@@ -2249,7 +2267,7 @@ class LLMService {
 				const maxContext = parseInt(tokenMatch[1], 10);
 				const requestedTokens = parseInt(tokenMatch[2], 10);
 				const inputTokens = parseInt(tokenMatch[3], 10);
-				const availableTokens = maxContext - inputTokens - 20;
+				const availableTokens = maxContext - inputTokens - 100;
 
 				if (availableTokens >= 30) {
 					this.logger.warn(
@@ -2284,7 +2302,7 @@ class LLMService {
 					}
 				}
 
-				payload.max_tokens = Math.max(100, maxContext - boundTokens - 50);
+				payload.max_tokens = Math.max(100, maxContext - boundTokens - 100);
 				return await axios.post(endpoint, payload, { headers, timeout });
 			}
 
@@ -2429,22 +2447,23 @@ class LLMService {
 			const contextLength = options.contextLength;
 			if (contextLength && typeof contextLength === "number") {
 				let estimatedPromptTokens = 0;
-				if (typeof userContent === "string") {
-					estimatedPromptTokens += Math.ceil(userContent.length / 3);
-				} else if (Array.isArray(userContent)) {
-					for (const item of userContent) {
-						if (item.type === "text" && item.text) {
-							estimatedPromptTokens += Math.ceil(item.text.length / 3);
-						} else if (item.type === "image_url") {
-							estimatedPromptTokens += 1000;
+				if (Array.isArray(messages)) {
+					for (const msg of messages) {
+						if (typeof msg.content === "string") {
+							estimatedPromptTokens += Math.ceil(msg.content.length / 3);
+						} else if (Array.isArray(msg.content)) {
+							for (const item of msg.content) {
+								if (item.type === "text" && item.text) {
+									estimatedPromptTokens += Math.ceil(item.text.length / 3);
+								} else if (item.type === "image_url") {
+									estimatedPromptTokens += 1000;
+								}
+							}
 						}
 					}
 				}
-				if (typeof ctxInclude === "string") {
-					estimatedPromptTokens += Math.ceil(ctxInclude.length / 3);
-				}
 
-				const available = contextLength - estimatedPromptTokens - 30;
+				const available = contextLength - estimatedPromptTokens - 100;
 				if (available > 30 && available < maxTokens) {
 					this.logger.warn(
 						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
@@ -2503,7 +2522,7 @@ class LLMService {
 				providerName
 			);
 
-			this._trackUsage(providerName, currentResponse.data, model, options);
+			await this._trackUsage(providerName, currentResponse.data, model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -2601,7 +2620,7 @@ class LLMService {
 					providerName
 				);
 
-				this._trackUsage(providerName, currentResponse.data, model, options);
+				await this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
 			const finalMessage = currentResponse.data?.choices?.[0]?.message;
@@ -2722,22 +2741,23 @@ class LLMService {
 			const contextLength = options.contextLength;
 			if (contextLength && typeof contextLength === "number") {
 				let estimatedPromptTokens = 0;
-				if (typeof userContent === "string") {
-					estimatedPromptTokens += Math.ceil(userContent.length / 3);
-				} else if (Array.isArray(userContent)) {
-					for (const item of userContent) {
-						if (item.type === "text" && item.text) {
-							estimatedPromptTokens += Math.ceil(item.text.length / 3);
-						} else if (item.type === "image_url") {
-							estimatedPromptTokens += 1000;
+				if (Array.isArray(messages)) {
+					for (const msg of messages) {
+						if (typeof msg.content === "string") {
+							estimatedPromptTokens += Math.ceil(msg.content.length / 3);
+						} else if (Array.isArray(msg.content)) {
+							for (const item of msg.content) {
+								if (item.type === "text" && item.text) {
+									estimatedPromptTokens += Math.ceil(item.text.length / 3);
+								} else if (item.type === "image_url") {
+									estimatedPromptTokens += 1000;
+								}
+							}
 						}
 					}
 				}
-				if (typeof ctxInclude === "string") {
-					estimatedPromptTokens += Math.ceil(ctxInclude.length / 3);
-				}
 
-				const available = contextLength - estimatedPromptTokens - 30;
+				const available = contextLength - estimatedPromptTokens - 100;
 				if (available > 30 && available < maxTokens) {
 					this.logger.warn(
 						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
@@ -2798,7 +2818,7 @@ class LLMService {
 				providerName
 			);
 
-			this._trackUsage(providerName, currentResponse.data, model, options);
+			await this._trackUsage(providerName, currentResponse.data, model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -2898,7 +2918,7 @@ class LLMService {
 					providerName
 				);
 
-				this._trackUsage(providerName, currentResponse.data, model, options);
+				await this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
 			const finalMessage = currentResponse.data?.choices?.[0]?.message;
@@ -3173,7 +3193,7 @@ class LLMService {
 				timeout: toTime
 			});
 
-			this._trackUsage(providerName, currentResponse.data, payload.model, options);
+			await this._trackUsage(providerName, currentResponse.data, payload.model, options);
 
 			let turn = 0;
 			const maxTurns = 4;
@@ -3246,7 +3266,7 @@ class LLMService {
 					timeout: toTime
 				});
 
-				this._trackUsage(providerName, currentResponse.data, payload.model, options);
+				await this._trackUsage(providerName, currentResponse.data, payload.model, options);
 			}
 
 			const finalMsg = currentResponse.data?.message;
@@ -3503,7 +3523,15 @@ class LLMService {
 					this.logger.warn(
 						`[LLMService] Provedor ${provider.name} retornou formato inválido (${error.message}). Repassando para o próximo modelo sem rebaixá-lo na fila global.`
 					);
-					this._trackUsage(provider.name, {}, "Unknown", options, false);
+					if (error.usageStatId) {
+						this.database
+							.dbRun(this.DB_NAME, "UPDATE usage_stats SET is_success = 0 WHERE id = ?", [
+								error.usageStatId
+							])
+							.catch(() => {});
+					} else if (!error.usageTracked) {
+						this._trackUsage(provider.name, {}, "Unknown", options, false);
+					}
 					// Dá oportunidade ao próximo modelo de atender a requisição atual
 					if (maxAttempts <= i + 1 && i < candidateProviders.length - 1) {
 						maxAttempts = i + 2;

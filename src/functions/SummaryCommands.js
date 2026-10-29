@@ -701,7 +701,7 @@ ${textToAnalyze}`;
 			systemContext: systemPrompt,
 			response_format: dossierSchema,
 			priority: 0, // Baixa prioridade de background (0 = menor, 5 = maior)
-			maxTokens: 500,
+			maxTokens: 2048,
 			debugPrompt: false
 		});
 

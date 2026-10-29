@@ -24,6 +24,7 @@ class MemoryService {
 		this.llmService = LLMService.getInstance();
 		this.embeddingService = EmbeddingService.getInstance();
 		this.activeAnalyses = new Set();
+		this.lastDistillationAttempt = new Map();
 
 		this._initDatabase();
 	}
@@ -533,17 +534,33 @@ class MemoryService {
 					[targetId, platform, groupTitle, timestamp]
 				);
 
-				// Verifica tamanho acumulado de caracteres para disparar destilação periódica
+				// Verifica apenas mensagens novas acumuladas desde a última destilação
+				const profileRow = await this.database.dbGet(
+					DB_NAME,
+					"SELECT last_summarized_at, messages_since_summary FROM memory_group_profiles WHERE group_id = ?",
+					[targetId]
+				);
+				const lastSummarizedAt = profileRow?.last_summarized_at || 0;
+				const msgsSinceSummary = profileRow?.messages_since_summary || 0;
+
 				const charCountRow = await this.database.dbGet(
 					DB_NAME,
-					"SELECT SUM(LENGTH(text_content)) as total_chars, COUNT(*) as total_msgs FROM memory_message_buffer WHERE target_id = ?",
-					[targetId]
+					"SELECT SUM(LENGTH(text_content)) as total_chars, COUNT(*) as total_msgs FROM memory_message_buffer WHERE target_id = ? AND timestamp > ?",
+					[targetId, lastSummarizedAt]
 				);
 
 				const totalChars = charCountRow?.total_chars || 0;
 				const isDossierEligible = !bot || (!bot.privado && !bot.vip);
+				const lastAttempt = this.lastDistillationAttempt.get(targetId) || 0;
+				const cooldownElapsed = timestamp - lastAttempt >= 10 * 60 * 1000;
 
-				if (isDossierEligible && totalChars >= 10000 && !this.activeAnalyses.has(targetId)) {
+				if (
+					isDossierEligible &&
+					totalChars >= 10000 &&
+					msgsSinceSummary >= 30 &&
+					cooldownElapsed &&
+					!this.activeAnalyses.has(targetId)
+				) {
 					// Dispara destilação em lote sem await
 					this.triggerBatchDistillation(targetId, false, bot).catch((err) =>
 						this.logger.error(`[${targetId}] Erro no gatilho de destilação:`, err)
@@ -566,16 +583,34 @@ class MemoryService {
 			return;
 		}
 		this.activeAnalyses.add(targetId);
+		this.lastDistillationAttempt.set(targetId, Date.now());
 
 		try {
 			this.logger.info(`[${targetId}] Iniciando destilação de memória (Tier 2 Gemma 12B)...`);
 
-			// Busca mensagens acumuladas no buffer
-			const rows = await this.database.dbAll(
+			const profileRow = !isPv
+				? await this.database.dbGet(
+						DB_NAME,
+						"SELECT last_summarized_at FROM memory_group_profiles WHERE group_id = ?",
+						[targetId]
+					)
+				: null;
+			const lastSummarizedAt = profileRow?.last_summarized_at || 0;
+
+			// Busca mensagens novas acumuladas no buffer desde a última destilação
+			let rows = await this.database.dbAll(
 				DB_NAME,
-				"SELECT author_name, author_id, canonical_user_id, text_content, timestamp FROM memory_message_buffer WHERE target_id = ? ORDER BY timestamp ASC",
-				[targetId]
+				"SELECT author_name, author_id, canonical_user_id, text_content, timestamp FROM memory_message_buffer WHERE target_id = ? AND timestamp > ? ORDER BY timestamp ASC",
+				[targetId, lastSummarizedAt]
 			);
+
+			if (!rows || rows.length < 5) {
+				rows = await this.database.dbAll(
+					DB_NAME,
+					"SELECT author_name, author_id, canonical_user_id, text_content, timestamp FROM memory_message_buffer WHERE target_id = ? ORDER BY timestamp ASC",
+					[targetId]
+				);
+			}
 
 			if (!rows || rows.length < 5) {
 				return;
@@ -602,7 +637,7 @@ class MemoryService {
    - 'underage_indicators': lista de evidências de idade até 16 anos se is_underage for true.
    - 'problematic_score': nota de 0 a 10 (0: neutro/jogos/amizade; 2: discussões leves, xingamentos; 4: nsfw, drogas; 6 a 10: crimes, racismo, gore, assédio, pedofilia).
    - 'classified_items': lista de ocorrências graves no formato [{ "category": "...", "evidence": "Autor: fala" }].
-2. 'user_facts': extraia fatos e curiosidades duráveis observados sobre as pessoas que falaram (ex: profissão, hobbies, time de futebol, preferências, hábitos, apelidos recebidos).
+2. 'user_facts': extraia apenas fatos e curiosidades duráveis observados sobre as pessoas que falaram (ex: profissão, hobbies, time de futebol, preferências, hábitos, apelidos recebidos). Limite a no máximo 15 participantes relevantes do lote e até 3 fatos concisos por pessoa.
    Formato: array de objetos:
    [
      {
@@ -672,7 +707,7 @@ ${textToAnalyze}`;
 				prompt,
 				response_format: responseFormat,
 				priority: 0,
-				maxTokens: 1000,
+				maxTokens: 4096,
 				debugPrompt: false
 			});
 
@@ -686,6 +721,13 @@ ${textToAnalyze}`;
 				parsed = JSON.parse(clean);
 			} catch (e) {
 				this.logger.warn(`[${targetId}] Resposta da IA na destilação não é JSON válido:`, response);
+				if (!isPv) {
+					await this.database.dbRun(
+						DB_NAME,
+						"UPDATE memory_group_profiles SET last_summarized_at = ?, messages_since_summary = 0, updated_at = ? WHERE group_id = ?",
+						[Date.now(), Date.now(), targetId]
+					);
+				}
 				return;
 			}
 
@@ -900,6 +942,18 @@ ${textToAnalyze}`;
 					}
 				}
 			}
+
+			// 3. Limpa o excesso de mensagens já destiladas do buffer, mantendo apenas as 25 mais recentes para contexto imediato
+			await this.database.dbRun(
+				DB_NAME,
+				`DELETE FROM memory_message_buffer WHERE rowid IN (
+					SELECT rowid FROM memory_message_buffer
+					WHERE target_id = ?
+					ORDER BY timestamp DESC
+					LIMIT -1 OFFSET 25
+				)`,
+				[targetId]
+			);
 
 			this.logger.info(
 				`[${targetId}] Destilação concluída com sucesso! (${(parsed.user_facts || []).length} perfis enriquecidos)`
