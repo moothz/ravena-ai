@@ -1219,6 +1219,20 @@ textarea.form-control {
     padding: 0;
 }
 
+#upload-modal {
+    z-index: 2500;
+}
+
+#variable-modal,
+#emoji-modal {
+    z-index: 2600;
+}
+
+#modal-confirmar-saida,
+#custom-dialog-modal {
+    z-index: 3000;
+}
+
 .modal-content {
     background: #120b29;
     border: 1px solid var(--border-highlight);
