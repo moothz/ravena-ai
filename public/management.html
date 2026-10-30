@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel de Gerenciamento - RavenaBot</title>
-    <link rel="stylesheet" href="/management.css?v=24">
+    <link rel="stylesheet" href="/management.css?v=30">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -1180,41 +1180,6 @@
         </div>
     </div>
 
-    <!-- Media Upload Modal (Generic) -->
-    <div id="upload-modal" class="modal hidden">
-        <div class="modal-content small-modal">
-            <div class="modal-header">
-                <h2>Upload de Mídia</h2>
-                <span class="close-upload">&times;</span>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="upload-type">
-                <input type="hidden" id="upload-context">
-                
-                <div class="form-group">
-                    <label>Selecione o Arquivo</label>
-                    <input type="file" id="media-file-input" class="form-control">
-                </div>
-                <div class="form-group" id="caption-group">
-                    <label>Legenda (Opcional)</label>
-                    <textarea id="media-caption" class="form-control" rows="2" placeholder="Texto da legenda que acompanha a mídia..."></textarea>
-                </div>
-                <div class="form-group toggle-row-compact hidden" id="as-sticker-group">
-                    <span class="toggle-label" for="convert-sticker">Converter para Sticker</span>
-                    <label class="switch-toggle">
-                        <input type="checkbox" id="convert-sticker">
-                        <span class="slider-round"></span>
-                    </label>
-                </div>
-                <div id="upload-status" class="text-center mt-3"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary close-upload">Cancelar</button>
-                <button type="button" id="btn-confirm-upload" class="btn btn-primary">Fazer Upload</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Stream/Channel Modal -->
     <div id="stream-modal" class="modal hidden">
         <div class="modal-content">
@@ -1466,7 +1431,7 @@
     </div>
 
     <!-- Modal Confirmação de Saída Amigável do Bot -->
-    <div id="modal-confirmar-saida" class="modal hidden">
+    <div id="modal-confirmar-saida" class="modal hidden" style="z-index: 3000;">
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-heart-broken" style="color: #ff4d4f;"></i> Remover Bot do Grupo</h2>
@@ -1512,7 +1477,7 @@
     </div>
 
     <!-- Variable Picker Modal -->
-    <div id="variable-modal" class="modal hidden">
+    <div id="variable-modal" class="modal hidden" style="z-index: 2600;">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="variable-modal-title">Variáveis Disponíveis</h2>
@@ -1531,7 +1496,7 @@
     </div>
 
     <!-- Emoji Picker Modal -->
-    <div id="emoji-modal" class="modal hidden">
+    <div id="emoji-modal" class="modal hidden" style="z-index: 2600;">
         <div class="modal-content small-modal">
             <div class="modal-header">
                 <h2>Escolher Emoji</h2>
@@ -1573,6 +1538,41 @@
         </div>
     </div>
 
-    <script src="/management.js?v=28"></script>
+    <!-- Media Upload Modal (Generic) -->
+    <div id="upload-modal" class="modal hidden" style="z-index: 2500;">
+        <div class="modal-content small-modal">
+            <div class="modal-header">
+                <h2>Upload de Mídia</h2>
+                <span class="close-upload">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="upload-type">
+                <input type="hidden" id="upload-context">
+                
+                <div class="form-group">
+                    <label>Selecione o Arquivo</label>
+                    <input type="file" id="media-file-input" class="form-control">
+                </div>
+                <div class="form-group" id="caption-group">
+                    <label>Legenda (Opcional)</label>
+                    <textarea id="media-caption" class="form-control" rows="2" placeholder="Texto da legenda que acompanha a mídia..."></textarea>
+                </div>
+                <div class="form-group toggle-row-compact hidden" id="as-sticker-group">
+                    <span class="toggle-label" for="convert-sticker">Converter para Sticker</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="convert-sticker">
+                        <span class="slider-round"></span>
+                    </label>
+                </div>
+                <div id="upload-status" class="text-center mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-upload">Cancelar</button>
+                <button type="button" id="btn-confirm-upload" class="btn btn-primary">Fazer Upload</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/management.js?v=30"></script>
 </body>
 </html>

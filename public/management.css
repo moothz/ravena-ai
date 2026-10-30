@@ -1220,17 +1220,17 @@ textarea.form-control {
 }
 
 #upload-modal {
-    z-index: 2500;
+    z-index: 2500 !important;
 }
 
 #variable-modal,
 #emoji-modal {
-    z-index: 2600;
+    z-index: 2600 !important;
 }
 
 #modal-confirmar-saida,
 #custom-dialog-modal {
-    z-index: 3000;
+    z-index: 3000 !important;
 }
 
 .modal-content {

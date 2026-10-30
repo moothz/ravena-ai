@@ -2054,6 +2054,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function setupMediaAccept(type) {
+        if (els.uploadModal) els.uploadModal.style.zIndex = '2500';
         if(type === 'image') els.mediaFileInput.setAttribute('accept', 'image/*');
         else if(type === 'video') els.mediaFileInput.setAttribute('accept', 'video/*');
         else if(type === 'audio') els.mediaFileInput.setAttribute('accept', 'audio/*');
@@ -2407,6 +2408,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (els.btnEmojiPicker) {
         els.btnEmojiPicker.onclick = () => {
+            if (els.emojiModal) els.emojiModal.style.zIndex = '2600';
             activeEmojiTarget = 'cmd-emoji';
             renderEmojiGrid();
             els.emojiModal.classList.remove('hidden');
@@ -2415,6 +2417,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (els.btnStartEmojiPicker) {
         els.btnStartEmojiPicker.onclick = () => {
+            if (els.emojiModal) els.emojiModal.style.zIndex = '2600';
             activeEmojiTarget = 'cmd-start-emoji';
             renderEmojiGrid();
             els.emojiModal.classList.remove('hidden');
@@ -2479,6 +2482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openVariableModal(targetInput) {
+        if (els.variableModal) els.variableModal.style.zIndex = '2600';
         lastFocusedInput = targetInput;
         document.getElementById('variable-modal-title').textContent = 'Variáveis Disponíveis';
         document.getElementById('variable-search').value = '';
