@@ -1424,7 +1424,11 @@ class WhatsAppBotGo {
 			let data = null;
 			const sizeLimit = 200 * 1024 * 1024; // 200MB
 			if (size < sizeLimit) {
-				data = fs.readFileSync(filePath, { encoding: "base64" });
+				try {
+					data = fs.readFileSync(filePath, { encoding: "base64" });
+				} catch (readErr) {
+					this.logger.warn(`[createMedia] Falha ao ler base64 de ${filePath}: ${readErr.message}`);
+				}
 			} else {
 				this.logger.info(
 					`[createMedia] File size (${size} bytes) exceeds limit, not reading to base64.`

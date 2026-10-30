@@ -38,8 +38,8 @@ database.getSQLiteDb(
 class SMDCacheManager {
 	constructor() {
 		this.dbName = "smd_cache";
-		this.maxAgeDays = 30;
-		this.maxSizeGB = 30;
+		this.maxAgeDays = 7;
+		this.maxSizeGB = 10;
 	}
 
 	async getCache(url) {
@@ -47,22 +47,26 @@ class SMDCacheManager {
 			url
 		]);
 		if (row) {
-			const data = JSON.parse(row.json_data);
-			const allFilesExist = await Promise.all(
-				data.files.map(async (f) => {
-					try {
-						await fs.access(f.path);
-						return true;
-					} catch {
-						return false;
-					}
-				})
-			);
+			try {
+				const data = JSON.parse(row.json_data);
+				const allFilesExist = await Promise.all(
+					data.files.map(async (f) => {
+						try {
+							await fs.access(f.path);
+							return true;
+						} catch {
+							return false;
+						}
+					})
+				);
 
-			if (allFilesExist.every((exists) => exists)) {
-				return data;
+				if (allFilesExist.every((exists) => exists)) {
+					return data;
+				}
+				await this.deleteCache(url);
+			} catch {
+				await this.deleteCache(url);
 			}
-			await this.deleteCache(url);
 		}
 		return null;
 	}
@@ -83,41 +87,75 @@ class SMDCacheManager {
 
 	async cleanup() {
 		try {
-			const thirtyDaysAgo = Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000;
+			// 1. Remove entradas com mais de maxAgeDays (padrão 7 dias)
+			const cutoffTime = Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000;
 			const oldEntries = await database.dbAll(
 				this.dbName,
 				"SELECT url, json_data FROM smd_cache WHERE timestamp < ?",
-				[thirtyDaysAgo]
+				[cutoffTime]
 			);
 
 			for (const entry of oldEntries) {
-				const data = JSON.parse(entry.json_data);
-				for (const file of data.files) {
-					await fs.unlink(file.path).catch(() => {});
-				}
+				try {
+					const data = JSON.parse(entry.json_data);
+					if (data.files && Array.isArray(data.files)) {
+						for (const file of data.files) {
+							if (file.path) await fs.unlink(file.path).catch(() => {});
+						}
+					}
+				} catch {}
 				await this.deleteCache(entry.url);
 			}
 
-			const stats = await this.getFolderStats(process.env.DL_FOLDER || "/app/downloads");
-			const maxSizeBytes = this.maxSizeGB * 1024 * 1024 * 1024;
+			// 2. Limpeza LRU por tamanho considerando APENAS arquivos registrados no smd_cache
+			// Período de segurança (2 horas): nunca apaga arquivos de downloads recentes
+			const gracePeriodMs = 2 * 60 * 60 * 1000;
+			const safeTimestamp = Date.now() - gracePeriodMs;
 
-			if (stats.totalSize > maxSizeBytes) {
-				const targetSize = maxSizeBytes * 0.8;
-				const allEntries = await database.dbAll(
-					this.dbName,
-					"SELECT url, json_data FROM smd_cache ORDER BY timestamp ASC"
-				);
+			const allEntries = await database.dbAll(
+				this.dbName,
+				"SELECT url, json_data, timestamp FROM smd_cache ORDER BY timestamp ASC"
+			);
 
-				let currentSize = stats.totalSize;
-				for (const entry of allEntries) {
-					if (currentSize <= targetSize) break;
+			let totalSmdSize = 0;
+			const entryStats = [];
+			for (const entry of allEntries) {
+				try {
 					const data = JSON.parse(entry.json_data);
-					for (const file of data.files) {
-						const fileSize = await this.getFileSize(file.path);
-						await fs.unlink(file.path).catch(() => {});
-						currentSize -= fileSize;
+					let entrySize = 0;
+					if (data.files && Array.isArray(data.files)) {
+						for (const file of data.files) {
+							if (file.path) {
+								entrySize += await this.getFileSize(file.path);
+							}
+						}
 					}
-					await this.deleteCache(entry.url);
+					totalSmdSize += entrySize;
+					entryStats.push({
+						url: entry.url,
+						files: data.files,
+						timestamp: entry.timestamp,
+						size: entrySize
+					});
+				} catch {}
+			}
+
+			const maxSizeBytes = this.maxSizeGB * 1024 * 1024 * 1024;
+			if (totalSmdSize > maxSizeBytes) {
+				const targetSize = maxSizeBytes * 0.8;
+				let currentSize = totalSmdSize;
+				for (const item of entryStats) {
+					if (currentSize <= targetSize) break;
+					// Nunca apaga arquivos criados nas últimas 2 horas
+					if (item.timestamp && item.timestamp > safeTimestamp) continue;
+
+					if (item.files && Array.isArray(item.files)) {
+						for (const file of item.files) {
+							if (file.path) await fs.unlink(file.path).catch(() => {});
+						}
+					}
+					await this.deleteCache(item.url);
+					currentSize -= item.size;
 				}
 			}
 		} catch (error) {
@@ -1126,10 +1164,28 @@ async function downloadHandler(bot, message, args, group) {
 						fs.unlink(filePath).catch(() => {});
 					}
 
-					processedFiles.push({ path: finalFilePath, mimetype: finalMime });
-				}
+					// S3 Upload (como no YoutubeDownloader)
+					let s3Url = null;
+					let s3Key = null;
+					if (fsSync.existsSync(finalFilePath)) {
+						try {
+							const cleanFileName = path.basename(finalFilePath);
+							s3Key = `social/${cleanFileName}`;
+							await storageService.upload(fsSync.createReadStream(finalFilePath), s3Key, {
+								bucket: storageService.bucketDownloads,
+								mimetype: finalMime
+							});
+							s3Url = await storageService.getPresignedUrl(s3Key, {
+								bucket: storageService.bucketDownloads,
+								shorten: true
+							});
+						} catch (s3Err) {
+							logger.warn("Falha ao subir arquivo social para S3:", s3Err.message);
+						}
+					}
 
-				await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
+					processedFiles.push({ path: finalFilePath, mimetype: finalMime, s3Key, s3Url });
+				}
 
 				await sendProcessedMedia(
 					bot,
@@ -1142,6 +1198,8 @@ async function downloadHandler(bot, message, args, group) {
 					wantLyrics,
 					bot.prefix
 				);
+
+				await cacheManager.setCache(cacheKey, platform, displayFilename, processedFiles);
 			},
 			3,
 			5000
@@ -1180,32 +1238,49 @@ async function sendProcessedMedia(
 		returnMessages.push(media);
 	}
 
-	const caption = `✅ *Download Concluído!*${
+	const primaryS3Url = files[0]?.s3Url;
+	let caption = `✅ *Download Concluído!*${
 		files.length > 1 ? ` (${files.length} itens)` : ""
-	}\n\n🌐 *Fonte:* ${platform}\n📝 *Título:* ${filename}${
+	}\n\n🌐 *Fonte:* ${platform}\n📝 *Título:* ${filename}`;
+
+	if (primaryS3Url) {
+		caption += `\n📥 *Link direto (válido por 6h):* ${primaryS3Url}`;
+	}
+
+	if (
 		!isAudioOnly &&
 		returnMessages[0] &&
 		returnMessages[0].mimetype &&
 		!returnMessages[0].mimetype.startsWith("image")
-			? `\n\n> *Dica:* Responda este vídeo com \`${prefix}extractaudio\` para obter apenas o áudio.`
-			: ""
-	}`;
+	) {
+		caption += `\n\n> *Dica:* Responda este vídeo com \`${prefix}extractaudio\` para obter apenas o áudio.`;
+	}
 
-	if (isAudioOnly) {
-		await bot.sendReturnMessages(new ReturnMessage({ chatId, content: caption }), group);
-		for (const media of returnMessages) {
-			await bot.sendReturnMessages(new ReturnMessage({ chatId, content: media }), group);
+	try {
+		if (isAudioOnly) {
+			await bot.sendReturnMessages(new ReturnMessage({ chatId, content: caption }), group);
+			for (const media of returnMessages) {
+				await bot.sendReturnMessages(new ReturnMessage({ chatId, content: media }), group);
+			}
+		} else {
+			for (let i = 0; i < returnMessages.length; i++) {
+				await bot.sendReturnMessages(
+					new ReturnMessage({
+						chatId,
+						content: returnMessages[i],
+						options: i === 0 ? { caption } : {}
+					}),
+					group
+				);
+			}
 		}
-	} else {
-		for (let i = 0; i < returnMessages.length; i++) {
-			await bot.sendReturnMessages(
-				new ReturnMessage({
-					chatId,
-					content: returnMessages[i],
-					options: i === 0 ? { caption } : {}
-				}),
-				group
-			);
+	} catch (sendError) {
+		logger.error("Erro ao enviar mídia diretamente via bot:", sendError);
+		if (primaryS3Url) {
+			const fallbackMsg = `⚠️ O arquivo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${primaryS3Url}`;
+			await bot.sendReturnMessages(new ReturnMessage({ chatId, content: fallbackMsg }), group);
+		} else {
+			throw sendError;
 		}
 	}
 
@@ -1389,5 +1464,8 @@ module.exports = {
 	parseDurationToSeconds,
 	selectDefaultVideoIndex,
 	buildSearchListText,
-	updateSearchListMessage
+	updateSearchListMessage,
+	SMDCacheManager,
+	cacheManager,
+	sendProcessedMedia
 };
