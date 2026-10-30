@@ -98,8 +98,34 @@ class RateLimitTracker {
 				CREATE INDEX IF NOT EXISTS idx_rm_endpoint_method ON request_metrics(endpoint, method, total_requests);
 			`);
 
-			// Limpeza automática de dados antigos (> 14 dias) na inicialização
-			this.cleanupOldData(14);
+			// Prepara statements reutilizáveis para máxima performance
+			this._insertMetricStmt = this.db.prepare(`
+				INSERT INTO request_metrics (minute_bucket, bot_name, method, endpoint, total_requests, rate_limit_hits)
+				VALUES (?, ?, ?, ?, 1, 0)
+				ON CONFLICT(minute_bucket, bot_name, method, endpoint) DO UPDATE SET
+					total_requests = total_requests + 1
+			`);
+
+			this._updateRateLimitHitStmt = this.db.prepare(`
+				INSERT INTO request_metrics (minute_bucket, bot_name, method, endpoint, total_requests, rate_limit_hits)
+				VALUES (?, ?, ?, ?, 1, 1)
+				ON CONFLICT(minute_bucket, bot_name, method, endpoint) DO UPDATE SET
+					total_requests = total_requests + 1,
+					rate_limit_hits = rate_limit_hits + 1
+			`);
+
+			this._deleteRateLimitEventsStmt = this.db.prepare(
+				"DELETE FROM rate_limit_events WHERE timestamp_ms < ?"
+			);
+			this._deleteRequestMetricsStmt = this.db.prepare(
+				"DELETE FROM request_metrics WHERE minute_bucket < ?"
+			);
+
+			// Limpeza automática de dados antigos (> 3 dias) na inicialização
+			this.cleanupOldData(3);
+
+			// Rotina periódica de expurgo automático a cada 6 horas
+			this.cleanupInterval = setInterval(() => this.cleanupOldData(3), 6 * 60 * 60 * 1000);
 		} catch (err) {
 			this.logger.error("Erro ao inicializar banco de rate limits:", err);
 			this.db = null;
@@ -143,13 +169,9 @@ class RateLimitTracker {
 
 		try {
 			const minuteBucket = new Date().toISOString().substring(0, 16);
-			const stmt = this.db.prepare(`
-				INSERT INTO request_metrics (minute_bucket, bot_name, method, endpoint, total_requests, rate_limit_hits)
-				VALUES (?, ?, ?, ?, 1, 0)
-				ON CONFLICT(minute_bucket, bot_name, method, endpoint) DO UPDATE SET
-					total_requests = total_requests + 1
-			`);
-			stmt.run(minuteBucket, context.botName, context.method, context.endpoint);
+			if (this._insertMetricStmt) {
+				this._insertMetricStmt.run(minuteBucket, context.botName, context.method, context.endpoint);
+			}
 		} catch (err) {
 			this.logger.error("Erro ao registrar métrica de sucesso:", err);
 		}
@@ -343,14 +365,9 @@ class RateLimitTracker {
 
 			// Atualiza request_metrics com hit
 			const minuteBucket = timestampIso.substring(0, 16);
-			const metricsStmt = this.db.prepare(`
-				INSERT INTO request_metrics (minute_bucket, bot_name, method, endpoint, total_requests, rate_limit_hits)
-				VALUES (?, ?, ?, ?, 1, 1)
-				ON CONFLICT(minute_bucket, bot_name, method, endpoint) DO UPDATE SET
-					total_requests = total_requests + 1,
-					rate_limit_hits = rate_limit_hits + 1
-			`);
-			metricsStmt.run(minuteBucket, botName, method, endpoint);
+			if (this._updateRateLimitHitStmt) {
+				this._updateRateLimitHitStmt.run(minuteBucket, botName, method, endpoint);
+			}
 
 			const event = {
 				id: info.lastInsertRowid,
@@ -574,14 +591,25 @@ class RateLimitTracker {
 	 * Remove dados anteriores a N dias
 	 * @param {number} days
 	 */
-	cleanupOldData(days = 14) {
+	cleanupOldData(days = 3) {
 		if (!this.db) return;
 		try {
 			const thresholdMs = Date.now() - days * 24 * 3600 * 1000;
 			const thresholdBucket = new Date(thresholdMs).toISOString().substring(0, 16);
 
-			this.db.prepare("DELETE FROM rate_limit_events WHERE timestamp_ms < ?").run(thresholdMs);
-			this.db.prepare("DELETE FROM request_metrics WHERE minute_bucket < ?").run(thresholdBucket);
+			if (this._deleteRateLimitEventsStmt) {
+				this._deleteRateLimitEventsStmt.run(thresholdMs);
+			} else {
+				this.db.prepare("DELETE FROM rate_limit_events WHERE timestamp_ms < ?").run(thresholdMs);
+			}
+
+			if (this._deleteRequestMetricsStmt) {
+				this._deleteRequestMetricsStmt.run(thresholdBucket);
+			} else {
+				this.db.prepare("DELETE FROM request_metrics WHERE minute_bucket < ?").run(thresholdBucket);
+			}
+
+			this.db.pragma("wal_checkpoint(TRUNCATE)");
 		} catch (err) {
 			this.logger.error("Erro na limpeza de histórico antigo:", err);
 		}
@@ -591,6 +619,10 @@ class RateLimitTracker {
 	 * Fecha a conexão com o banco SQLite
 	 */
 	close() {
+		if (this.cleanupInterval) {
+			clearInterval(this.cleanupInterval);
+			this.cleanupInterval = null;
+		}
 		if (this.db) {
 			try {
 				this.db.close();

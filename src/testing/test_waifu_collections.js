@@ -279,18 +279,12 @@ async function runTests() {
 			haremContent.indexOf("📁 *Coleções") > haremContent.indexOf("⭐ *Favoritas"),
 			"Coleções devem aparecer ABAIXO das favoritas"
 		);
-		assert.ok(
-			haremContent.includes("📂 *Isekai* (1 waifu):"),
-			"Deveria listar a pasta Isekai"
-		);
+		assert.ok(haremContent.includes("📂 *Isekai* (1 waifu):"), "Deveria listar a pasta Isekai");
 		assert.ok(
 			haremContent.includes("└─") || haremContent.includes("├─"),
 			"Deveria conter caracteres de árvore de pasta"
 		);
-		assert.ok(
-			haremContent.includes("Rem"),
-			"Deveria listar Rem dentro da pasta"
-		);
+		assert.ok(haremContent.includes("Rem"), "Deveria listar Rem dentro da pasta");
 		console.log("✓ !mu-harem exibe coleções abaixo de favoritas perfeitamente!");
 
 		// [Teste 4] !mu-colecoes lista coleções existentes

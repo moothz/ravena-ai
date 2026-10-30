@@ -2,6 +2,7 @@ const Redis = require("ioredis");
 const cron = require("node-cron");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
+const MemoryCache = require("../utils/MemoryCache");
 const { safeJsonParse } = require("../utils/JsonUtils");
 
 const CACHE_CONFIG = {
@@ -24,21 +25,24 @@ class CacheManager {
 		this.redisURL = redisURL;
 		this.redisDB = (redisDB ?? 0) % 15;
 		this.redisTTL = parseInt(redisTTL, 10) || 3600;
-		this.maxCacheSize = parseInt(maxCacheSize, 10) || 100;
+		this.maxCacheSize = parseInt(maxCacheSize, 10) || 10000;
 
-		// in-memory main cache / fallback
-		this.messageCache = [];
-		this.contactCache = [];
-		this.chatCache = [];
-		this.pushnameCache = [];
-		this.telegramNameCache = [];
+		// in-memory main cache / fallback com LRU O(1) e capacidade elevada
+		this.messageCache = new MemoryCache(2 * 60 * 60 * 1000, Math.min(this.maxCacheSize, 5000));
+		this.contactCache = new MemoryCache(24 * 60 * 60 * 1000, Math.min(this.maxCacheSize, 5000));
+		this.chatCache = new MemoryCache(4 * 60 * 60 * 1000, Math.min(this.maxCacheSize, 2000));
+		this.pushnameCache = new MemoryCache(24 * 60 * 60 * 1000, this.maxCacheSize);
+		this.telegramNameCache = new MemoryCache(
+			24 * 60 * 60 * 1000,
+			Math.min(this.maxCacheSize, 2000)
+		);
 
 		// Pending writes for SQLite batching
 		// Map<table_name, Map<key, { value, expiresAt, ...extraFields }>>
 		this.pendingWrites = new Map();
 
 		this.unsavedChangesCount = 0;
-		this.FLUSH_THRESHOLD = 500; // Increased threshold for centralized manager
+		this.FLUSH_THRESHOLD = 2000; // Agrupa mais gravações para reduzir I/O de disco
 		this.FLUSH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes flush interval
 
 		// Database setup
@@ -143,6 +147,24 @@ class CacheManager {
 			"15 4 * * 2",
 			async () => {
 				await this.runFullVacuum();
+			},
+			{
+				scheduled: true,
+				timezone: "America/Sao_Paulo"
+			}
+		);
+
+		// Scheduled daily maintenance at 05:15 BRT (limpeza de expirados e truncamento de WAL)
+		this.dailyMaintenanceJob = cron.schedule(
+			"15 5 * * *",
+			async () => {
+				try {
+					this.logger.info("CacheManager: Running daily maintenance (05:15 BRT)...");
+					await this.cleanExpired();
+					await this.runFullVacuum();
+				} catch (err) {
+					this.logger.error("CacheManager: Error during daily maintenance:", err);
+				}
 			},
 			{
 				scheduled: true,
@@ -352,7 +374,7 @@ class CacheManager {
 
 	async putPushnameInCache(data) {
 		if (!data || typeof data.id === "undefined") return;
-		const userId = data.id;
+		const userId = String(data.id);
 		const redisKey = `pushName:${userId}`; // Keep redis key format for consistency
 		const tableKey = userId; // Use ID as key for specific table
 		const config = CACHE_CONFIG["pushName"];
@@ -369,8 +391,7 @@ class CacheManager {
 		}
 
 		// Memory
-		this.pushnameCache.push(data);
-		if (this.pushnameCache.length > this.maxCacheSize) this.pushnameCache.shift();
+		this.pushnameCache.set(userId, data);
 
 		// SQLite Persistence
 		this._scheduleWrite(tableKey, data, "pushnames");
@@ -378,8 +399,9 @@ class CacheManager {
 
 	async getPushnameFromCache(id) {
 		if (!id) return null;
-		const redisKey = `pushName:${id}`;
-		const tableKey = id;
+		const strId = String(id);
+		const redisKey = `pushName:${strId}`;
+		const tableKey = strId;
 
 		// Redis
 		if (this.redisClient) {
@@ -392,23 +414,23 @@ class CacheManager {
 		}
 
 		// Memory
-		const memItem = this.pushnameCache.find((m) => m.id == id);
+		const memItem = this.pushnameCache.get(strId);
 		if (memItem) return memItem;
 
 		// SQLite
 		const dbItem = await this._dbGet(tableKey, "pushnames");
 		if (dbItem) {
 			// Promote to memory
-			this.pushnameCache.push(dbItem);
-			if (this.pushnameCache.length > this.maxCacheSize) this.pushnameCache.shift();
+			this.pushnameCache.set(strId, dbItem);
 			return dbItem;
 		}
 		return null;
 	}
 
 	async putChatInCache(data) {
-		if (!data || !data.id || typeof data.id._serialized === "undefined") return;
-		const chatId = data.id._serialized;
+		if (!data || !data.id) return;
+		const chatId = String(typeof data.id === "object" ? data.id._serialized : data.id);
+		if (!chatId) return;
 		const redisKey = `chat:${chatId}`;
 		const tableKey = redisKey; // 'chat:ID'
 		const config = CACHE_CONFIG["chat"];
@@ -423,15 +445,15 @@ class CacheManager {
 			}
 		}
 
-		this.chatCache.push(data);
-		if (this.chatCache.length > this.maxCacheSize) this.chatCache.shift();
+		this.chatCache.set(chatId, data);
 
 		this._scheduleWrite(tableKey, data, "chats");
 	}
 
 	async getChatFromCache(id) {
 		if (!id) return null;
-		const redisKey = `chat:${id}`;
+		const strId = String(id);
+		const redisKey = `chat:${strId}`;
 		const tableKey = redisKey;
 
 		if (this.redisClient) {
@@ -443,22 +465,21 @@ class CacheManager {
 			}
 		}
 
-		const memItem = this.chatCache.find((m) => m.key && m.key.id == id);
-
+		const memItem = this.chatCache.get(strId);
 		if (memItem) return memItem;
 
 		const dbItem = await this._dbGet(tableKey, "chats");
 		if (dbItem) {
-			this.chatCache.push(dbItem);
-			if (this.chatCache.length > this.maxCacheSize) this.chatCache.shift();
+			this.chatCache.set(strId, dbItem);
 			return dbItem;
 		}
 		return null;
 	}
 
 	async putMessageInCache(data) {
-		if (!data || !data.key || typeof data.key.id === "undefined") return;
-		const messageId = data.key.id;
+		if (!data) return;
+		const messageId = String(data.key?.id || data.id || "");
+		if (!messageId) return;
 		const redisKey = `message:${messageId}`;
 		const tableKey = redisKey;
 		const config = CACHE_CONFIG["message"];
@@ -473,15 +494,14 @@ class CacheManager {
 			}
 		}
 
-		this.messageCache.push(data);
-		if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+		this.messageCache.set(messageId, data);
 
 		this._scheduleWrite(tableKey, data, "messages");
 	}
 
 	async putSentMessageInCache(key) {
 		if (!key || !key.id) return;
-		const messageId = key.id;
+		const messageId = String(key.id);
 		const redisKey = `message:${messageId}`;
 		const tableKey = redisKey;
 		const config = CACHE_CONFIG["message"];
@@ -496,15 +516,15 @@ class CacheManager {
 			}
 		}
 
-		this.messageCache.push(key);
-		if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+		this.messageCache.set(messageId, key);
 
 		this._scheduleWrite(tableKey, key, "messages");
 	}
 
 	async getMessageFromCache(id) {
 		if (!id) return null;
-		const redisKey = `message:${id}`;
+		const strId = String(id);
+		const redisKey = `message:${strId}`;
 		const tableKey = redisKey;
 
 		if (this.redisClient) {
@@ -516,13 +536,12 @@ class CacheManager {
 			}
 		}
 
-		const memItem = this.messageCache.find((m) => m.key && m.key.id == id);
+		const memItem = this.messageCache.get(strId);
 		if (memItem) return memItem;
 
 		const dbItem = await this._dbGet(tableKey, "messages");
 		if (dbItem) {
-			this.messageCache.push(dbItem);
-			if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+			this.messageCache.set(strId, dbItem);
 			return dbItem;
 		}
 		return null;
@@ -531,7 +550,7 @@ class CacheManager {
 	// V3 Methods
 	async putGoMessageInCache(data) {
 		if (!data || !data.id) return;
-		const messageId = data.id;
+		const messageId = String(data.id);
 		const redisKey = `message:${messageId}`;
 		const tableKey = redisKey;
 		const config = CACHE_CONFIG["message"];
@@ -546,15 +565,14 @@ class CacheManager {
 			}
 		}
 
-		this.messageCache.push(data);
-		if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+		this.messageCache.set(messageId, data);
 
 		this._scheduleWrite(tableKey, data, "messages");
 	}
 
 	async putGoSentMessageInCache(message) {
 		if (!message || !message.id) return;
-		const messageId = typeof message.id === "object" ? message.id._serialized : message.id;
+		const messageId = String(typeof message.id === "object" ? message.id._serialized : message.id);
 		if (!messageId) return;
 		const redisKey = `message:${messageId}`;
 		const tableKey = redisKey;
@@ -570,15 +588,15 @@ class CacheManager {
 			}
 		}
 
-		this.messageCache.push(message);
-		if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+		this.messageCache.set(messageId, message);
 
 		this._scheduleWrite(tableKey, message, "messages");
 	}
 
 	async getGoMessageFromCache(id) {
 		if (!id) return null;
-		const redisKey = `message:${id}`;
+		const strId = String(id);
+		const redisKey = `message:${strId}`;
 		const tableKey = redisKey;
 
 		if (this.redisClient) {
@@ -590,13 +608,12 @@ class CacheManager {
 			}
 		}
 
-		const memItem = this.messageCache.find((m) => m.id == id || (m.key && m.key.id == id));
+		const memItem = this.messageCache.get(strId);
 		if (memItem) return memItem;
 
 		const dbItem = await this._dbGet(tableKey, "messages");
 		if (dbItem) {
-			this.messageCache.push(dbItem);
-			if (this.messageCache.length > this.maxCacheSize) this.messageCache.shift();
+			this.messageCache.set(strId, dbItem);
 			return dbItem;
 		}
 		return null;
@@ -604,7 +621,7 @@ class CacheManager {
 
 	async putContactInCache(data) {
 		if (!data || typeof data.number === "undefined") return;
-		const contactNumber = data.number;
+		const contactNumber = String(data.number);
 		const redisKey = `contact:${contactNumber}`;
 		const tableKey = redisKey;
 		const config = CACHE_CONFIG["contact"];
@@ -619,15 +636,15 @@ class CacheManager {
 			}
 		}
 
-		this.contactCache.push(data);
-		if (this.contactCache.length > this.maxCacheSize) this.contactCache.shift();
+		this.contactCache.set(contactNumber, data);
 
 		this._scheduleWrite(tableKey, data, "contacts");
 	}
 
 	async getContactFromCache(id) {
 		if (!id) return null;
-		const redisKey = `contact:${id}`;
+		const strId = String(id);
+		const redisKey = `contact:${strId}`;
 		const tableKey = redisKey;
 
 		if (this.redisClient) {
@@ -639,13 +656,12 @@ class CacheManager {
 			}
 		}
 
-		const memItem = this.contactCache.find((c) => c.number == id);
+		const memItem = this.contactCache.get(strId);
 		if (memItem) return memItem;
 
 		const dbItem = await this._dbGet(tableKey, "contacts");
 		if (dbItem) {
-			this.contactCache.push(dbItem);
-			if (this.contactCache.length > this.maxCacheSize) this.contactCache.shift();
+			this.contactCache.set(strId, dbItem);
 			return dbItem;
 		}
 		return null;
@@ -653,7 +669,8 @@ class CacheManager {
 
 	async putTelegramNameInCache(userId, name) {
 		if (!userId || !name) return;
-		const redisKey = `tg_name:${userId}`;
+		const strId = String(userId);
+		const redisKey = `tg_name:${strId}`;
 		const tableKey = redisKey;
 		const config = CACHE_CONFIG["tg_name"];
 		const ttl = config ? config.ttl : 86400; // 24h default fallback
@@ -667,11 +684,7 @@ class CacheManager {
 			}
 		}
 
-		const existingIndex = this.telegramNameCache.findIndex((i) => i.id === userId);
-		if (existingIndex > -1) this.telegramNameCache.splice(existingIndex, 1);
-
-		this.telegramNameCache.push({ id: userId, name, timestamp: Date.now() });
-		if (this.telegramNameCache.length > this.maxCacheSize) this.telegramNameCache.shift();
+		this.telegramNameCache.set(strId, name, ttl * 1000);
 
 		// Store as JSON string in value/json_data to be consistent
 		this._scheduleWrite(tableKey, name, "tg_names");
@@ -679,7 +692,8 @@ class CacheManager {
 
 	async getTelegramNameFromCache(userId) {
 		if (!userId) return null;
-		const redisKey = `tg_name:${userId}`;
+		const strId = String(userId);
+		const redisKey = `tg_name:${strId}`;
 		const tableKey = redisKey;
 
 		if (this.redisClient) {
@@ -691,17 +705,12 @@ class CacheManager {
 			}
 		}
 
-		const item = this.telegramNameCache.find((i) => i.id === userId);
-		if (item) {
-			if (Date.now() - item.timestamp > 86400 * 1000) return null;
-			return item.name;
-		}
+		const memName = this.telegramNameCache.get(strId);
+		if (memName) return memName;
 
 		const dbName = await this._dbGet(tableKey, "tg_names");
 		if (dbName) {
-			// Promote to memory
-			this.telegramNameCache.push({ id: userId, name: dbName, timestamp: Date.now() });
-			if (this.telegramNameCache.length > this.maxCacheSize) this.telegramNameCache.shift();
+			this.telegramNameCache.set(strId, dbName);
 			return dbName;
 		}
 		return null;

@@ -3507,8 +3507,7 @@ async function removerPersonagemColecao(bot, message, args) {
 		);
 
 		const msgText =
-			data.data?.message ||
-			`*${targetCharName}* foi removida da coleção e voltou ao harém geral!`;
+			data.data?.message || `*${targetCharName}* foi removida da coleção e voltou ao harém geral!`;
 
 		return new ReturnMessage({
 			chatId,
