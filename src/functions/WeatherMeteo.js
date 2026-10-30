@@ -311,7 +311,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"❌ Por favor, digite uma cidade ou responda a uma localização.\nEx: `!clima Santa Maria, RS`",
+						"❌ Por favor, digite uma cidade ou responda a uma localização.\nEx: `!clima Curitba, PR`",
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
