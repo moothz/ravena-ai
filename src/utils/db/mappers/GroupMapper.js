@@ -48,7 +48,8 @@ const GroupMapper = {
 				regexes: [],
 				people: [],
 				allowAdmins: false,
-				allowedLinks: []
+				allowedLinks: [],
+				waifuRollMarcar: true
 			}),
 			twitch: parse(row.twitch, []),
 			kick: parse(row.kick, []),

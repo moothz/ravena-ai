@@ -30,6 +30,7 @@ class Group {
 			people: [],
 			allowAdmins: false,
 			allowedLinks: [],
+			waifuRollMarcar: true,
 			...(data.filters || {})
 		};
 		if (!Array.isArray(this.filters.allowedLinks)) {

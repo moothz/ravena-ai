@@ -15,9 +15,12 @@ const {
 	getMarriagePhoto,
 	removeMarriagePhoto
 } = require("../utils/WaifuMarriagePhotoHelper");
+const AdminUtils = require("../utils/AdminUtils");
+const PhoneUtils = require("../utils/PhoneUtils");
 const jardimClient = new ShadowGardenClient();
 
 const database = Database.getInstance();
+const adminUtils = AdminUtils.getInstance();
 const logger = new Logger("waifu-commands");
 
 // ─── Configurações da API ───────────────────────────────────────────────────
@@ -642,6 +645,111 @@ function toJid(id) {
 	return id.includes("@") ? id : `${id}@s.whatsapp.net`;
 }
 
+/**
+ * Obtém a lista de participantes de um grupo usando múltiplos fallbacks
+ * @param {Object} bot
+ * @param {Object} message
+ * @param {string} groupId
+ * @returns {Promise<Array|null>}
+ */
+async function getGroupParticipants(bot, message, groupId) {
+	if (!groupId) return null;
+
+	if (Array.isArray(message?.groupParticipants) && message.groupParticipants.length > 0) {
+		return message.groupParticipants;
+	}
+	if (Array.isArray(message?.chat?.participants) && message.chat.participants.length > 0) {
+		return message.chat.participants;
+	}
+
+	let chat = null;
+	if (message?.origin && typeof message.origin.getChat === "function") {
+		try {
+			chat = await message.origin.getChat();
+		} catch (e) {
+			logger.debug(`[getGroupParticipants] Erro em message.origin.getChat: ${e.message}`);
+		}
+	}
+	if (!chat && bot?.client && typeof bot.client.getChatById === "function") {
+		try {
+			chat = await bot.client.getChatById(groupId);
+		} catch (e) {
+			logger.debug(`[getGroupParticipants] Erro em bot.client.getChatById: ${e.message}`);
+		}
+	}
+	if (!chat && bot && typeof bot.getChatDetails === "function") {
+		try {
+			chat = await bot.getChatDetails(groupId);
+		} catch (e) {
+			logger.debug(`[getGroupParticipants] Erro em bot.getChatDetails: ${e.message}`);
+		}
+	}
+	if (!chat && bot?.client && typeof bot.client.getChatDetails === "function") {
+		try {
+			chat = await bot.client.getChatDetails(groupId);
+		} catch (e) {
+			logger.debug(`[getGroupParticipants] Erro em bot.client.getChatDetails: ${e.message}`);
+		}
+	}
+
+	const participants =
+		chat?.participants ||
+		chat?.Participants ||
+		chat?._rawGroup?.participants ||
+		chat?._rawGroup?.Participants;
+
+	if (Array.isArray(participants) && participants.length > 0) {
+		return participants;
+	}
+	return null;
+}
+
+/**
+ * Verifica se um usuário está presente na lista de participantes ativos do grupo
+ * @param {string} targetUserId
+ * @param {Array|null} participants
+ * @returns {boolean}
+ */
+function isUserActiveInGroup(targetUserId, participants) {
+	if (!participants || !Array.isArray(participants) || participants.length === 0) {
+		// Se não foi possível obter os participantes atuais, não filtra por padrão
+		return true;
+	}
+	const normTarget = normalizeUserId(targetUserId);
+	const cleanTarget = PhoneUtils.cleanPhone(targetUserId);
+	if (!normTarget && !cleanTarget) return false;
+
+	return participants.some((p) => {
+		if (typeof p === "string") {
+			const pNorm = normalizeUserId(p);
+			if (normTarget && pNorm === normTarget) return true;
+			if (cleanTarget && PhoneUtils.isSamePhone(p, cleanTarget)) return true;
+			return false;
+		}
+		if (p && typeof p === "object") {
+			const candidateFields = [
+				p.PhoneNumber,
+				p.phoneNumber,
+				p.JID,
+				p.jid,
+				p.id?._serialized,
+				p.id,
+				p.lid,
+				p.LID
+			];
+			if (normTarget) {
+				for (const field of candidateFields) {
+					if (field && normalizeUserId(field) === normTarget) return true;
+				}
+			}
+			if (cleanTarget && PhoneUtils.matchesParticipant(p, cleanTarget)) {
+				return true;
+			}
+		}
+		return false;
+	});
+}
+
 function getUserId(message) {
 	const rawId = message?.originReaction?.senderId || message?.author;
 	return normalizeUserId(rawId);
@@ -1158,11 +1266,23 @@ function sanitizeRollBonuses(bonuses) {
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
 function makeRollHandler(genderFilter) {
-	return async function rollWaifu(bot, message, args) {
+	return async function rollWaifu(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		const userId = getUserId(message);
 		const groupId = getGroupId(message);
 		const name = getUserName(message);
+
+		const isGroup = Boolean(message.group);
+		let groupObj = group;
+		if (isGroup && (!groupObj || !groupObj.filters)) {
+			try {
+				groupObj = await (bot?.database || database)?.getGroup?.(message.group);
+			} catch (_) {}
+		}
+		const shouldMentionWishlist = isGroup ? groupObj?.filters?.waifuRollMarcar !== false : true;
+		const currentParticipants = isGroup
+			? await getGroupParticipants(bot, message, message.group)
+			: null;
 
 		// Extrai quantidade solicitada (1 a 9)
 		let requestedRolls = 1;
@@ -1428,6 +1548,16 @@ function makeRollHandler(genderFilter) {
 				const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
 
 				if (Array.isArray(firstRollData.wishlistUsers) && firstRollData.wishlistUsers.length > 0) {
+					firstRollData.wishlistUsers = firstRollData.wishlistUsers.filter((u) =>
+						isUserActiveInGroup(u.userId, currentParticipants)
+					);
+				}
+
+				if (
+					shouldMentionWishlist &&
+					Array.isArray(firstRollData.wishlistUsers) &&
+					firstRollData.wishlistUsers.length > 0
+				) {
 					const listMentions = firstRollData.wishlistUsers
 						.map((u) => `@${normalizeUserId(u.userId)}`)
 						.join(", ");
@@ -1527,6 +1657,14 @@ function makeRollHandler(genderFilter) {
 					break;
 				}
 			}
+
+			allRollResults.forEach((r) => {
+				if (Array.isArray(r.wishlistUsers) && r.wishlistUsers.length > 0) {
+					r.wishlistUsers = r.wishlistUsers.filter((u) =>
+						isUserActiveInGroup(u.userId, currentParticipants)
+					);
+				}
+			});
 
 			const now = Date.now();
 			const multiRollSlots = allRollResults.map((r, idx) => {
@@ -1720,19 +1858,23 @@ function makeRollHandler(genderFilter) {
 
 			// Coleta todos os usuários do grupo que têm algum dos personagens na wishlist
 			const wishlistUsersMap = new Map();
-			allRollResults.forEach((r) => {
-				if (Array.isArray(r.wishlistUsers)) {
-					r.wishlistUsers.forEach((u) => {
-						const cleanId = normalizeUserId(u.userId);
-						if (cleanId) {
-							wishlistUsersMap.set(cleanId, u);
-						}
-					});
-				}
-			});
+			if (shouldMentionWishlist) {
+				allRollResults.forEach((r) => {
+					if (Array.isArray(r.wishlistUsers)) {
+						r.wishlistUsers.forEach((u) => {
+							if (isUserActiveInGroup(u.userId, currentParticipants)) {
+								const cleanId = normalizeUserId(u.userId);
+								if (cleanId) {
+									wishlistUsersMap.set(cleanId, u);
+								}
+							}
+						});
+					}
+				});
+			}
 
 			const multiMentions = [];
-			if (wishlistUsersMap.size > 0) {
+			if (shouldMentionWishlist && wishlistUsersMap.size > 0) {
 				const listMentions = Array.from(wishlistUsersMap.values())
 					.map((u) => `@${normalizeUserId(u.userId)}`)
 					.join(", ");
@@ -4680,6 +4822,116 @@ async function verChances(bot, message) {
 }
 
 /**
+ * Alterna a menção/marcação de membros da wishlist durante rolls no grupo
+ * @param {Object} bot
+ * @param {Object} message
+ * @param {Array} args
+ * @param {Object} group
+ */
+async function toggleRollMarcar(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	if (!message.group) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Este comando só pode ser usado em grupos.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	let groupObj = group;
+	if (!groupObj || !groupObj.filters) {
+		try {
+			groupObj = await (bot?.database || database)?.getGroup?.(message.group);
+		} catch (err) {
+			logger.error(`[toggleRollMarcar] Erro ao carregar grupo ${message.group}:`, err);
+		}
+	}
+
+	if (!groupObj) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Não foi possível carregar as configurações deste grupo.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	let chat = null;
+	if (message?.origin && typeof message.origin.getChat === "function") {
+		try {
+			chat = await message.origin.getChat();
+		} catch (_) {}
+	}
+
+	const senderId = message.author || getUserId(message);
+	const isAdmin = await adminUtils.isAdmin(senderId, groupObj, chat, bot);
+	if (!isAdmin) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Apenas administradores do grupo podem alterar essa configuração.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	if (!groupObj.filters) {
+		groupObj.filters = {};
+	}
+
+	const currentStatus = groupObj.filters.waifuRollMarcar !== false;
+	let newStatus;
+
+	if (args && args.length > 0) {
+		const arg = String(args[0]).toLowerCase().trim();
+		if (["on", "ligar", "ativar", "sim", "1", "true"].includes(arg)) {
+			newStatus = true;
+		} else if (["off", "desligar", "desativar", "nao", "não", "0", "false"].includes(arg)) {
+			newStatus = false;
+		} else {
+			newStatus = !currentStatus;
+		}
+	} else {
+		newStatus = !currentStatus;
+	}
+
+	groupObj.filters.waifuRollMarcar = newStatus;
+
+	try {
+		await (bot?.database || database).saveGroup(groupObj);
+	} catch (err) {
+		logger.error(`[toggleRollMarcar] Erro ao salvar grupo ${message.group}:`, err);
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Erro ao salvar configuração do grupo no banco de dados.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	const statusText = newStatus
+		? "✅ *Menções de Wishlist no Roll ATIVADAS neste grupo!*\n\nQuando um personagem da wishlist de algum membro for sorteado, ele será mencionado com @."
+		: "❌ *Menções de Wishlist no Roll DESATIVADAS neste grupo!*\n\nPersonagens da wishlist continuarão sendo sorteados e bonificados normalmente, mas nenhum membro será marcado com @.";
+
+	return new ReturnMessage({
+		chatId,
+		content: statusText,
+		options: {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		}
+	});
+}
+
+/**
  * Explica o jogo (clone não-oficial de Mudae), suas mecânicas e lista todos os comandos
  */
 async function ajudaWaifus(bot, message) {
@@ -4800,6 +5052,9 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-ofertas\` — Lista ofertas pendentes enviadas por outros jogadores para suas waifus.\n`;
 	text += `• \`!mu-of-aceitar <id>\` — Aceita uma proposta de troca (transfere waifus, itens ou zinthos).\n`;
 	text += `• \`!mu-of-negar <id>\` — Nega uma proposta de troca recebida.\n\n`;
+
+	text += `⚙️ *Configurações do Grupo:*\n`;
+	text += `• \`!mu-roll-marcar\` (alias: \`!mu-rollmarcar\`) — Alterna a marcação (@) de membros do grupo quando um personagem da wishlist for rolado (Apenas Admins).\n\n`;
 
 	text += `ℹ️ *Ajuda do Jogo:*\n`;
 	text += `• \`!waifus\` ou \`!mudae\` — Abre este menu explicativo com regras e comandos.`;
@@ -6619,6 +6874,28 @@ const commands = [
 		method: verCooldowns
 	}),
 
+	// ── CONFIGURAÇÕES DO GRUPO (TOGGLE MARCAR WISHLIST NO ROLL) ───────────────
+	new Command({
+		name: "mu-roll-marcar",
+		aliases: ["mu-rollmarcar", "roll-marcar", "rollmarcar"],
+		description:
+			"Ativa ou desativa a menção de membros quando um personagem da sua wishlist for sorteado no grupo (Apenas Admins)",
+		category: "mudae",
+		group: "muwaifu-rollmarcar",
+		reactions: { before: "⚙️", after: "✅", error: "❌" },
+		reply: true,
+		method: toggleRollMarcar
+	}),
+	new Command({
+		name: "mu-rollmarcar",
+		description: "Alias de !mu-roll-marcar",
+		category: "mudae",
+		group: "muwaifu-rollmarcar",
+		reactions: { before: "⚙️", after: "✅", error: "❌" },
+		reply: true,
+		method: toggleRollMarcar
+	}),
+
 	// ── AJUDA / GUIA DO JOGO (WAIFUS / MUNAE) ───────────────────────────────
 	new Command({
 		name: "waifus",
@@ -6941,6 +7218,12 @@ const helper = {
 			cmd: "!mu-roll",
 			desc: "Sorteia um personagem aleatório para o grupo (waifus e husbandos)",
 			usage: ["!mu-roll", "!mu-r", "!mu-rollm (só homens)", "!mu-rollf (só mulheres)"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-roll-marcar",
+			desc: "Alterna se o bot deve marcar (@) membros que têm o personagem sorteado na wishlist (Apenas Admins)",
+			usage: ["!mu-roll-marcar", "!mu-rollmarcar", "!mu-roll-marcar on/off"],
 			category: "mudae"
 		},
 		{
@@ -7390,5 +7673,8 @@ module.exports = {
 	investirWaifuCmd,
 	listarInvestimentosCmd,
 	cotarWaifuCmd,
-	mercadoInfoCmd
+	mercadoInfoCmd,
+	toggleRollMarcar,
+	getGroupParticipants,
+	isUserActiveInGroup
 };
