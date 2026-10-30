@@ -201,6 +201,10 @@ services:
       HEALTH_CHECK_DISK_RECOVER: ${HEALTH_CHECK_DISK_RECOVER:-90}
       HEALTH_CHECK_DISK_MONITOR_INTERVAL: ${HEALTH_CHECK_DISK_MONITOR_INTERVAL:-120}
       HEALTH_CHECK_DISK_MOUNT: ${HEALTH_CHECK_DISK_MOUNT:-/}
+      # Secondary disk monitoring (warning only at 85%)
+      HEALTH_CHECK_DISK_SEC_WARN: ${HEALTH_CHECK_DISK_SEC_WARN:-85}
+      HEALTH_CHECK_DISK_SEC_RECOVER: ${HEALTH_CHECK_DISK_SEC_RECOVER:-80}
+      HEALTH_CHECK_DISK_SEC_MOUNT: "/mnt/secondary-disk"
       # WhatsApp notification (uses the internal whatsgoapi)
       HEALTH_CHECK_WA_BOT_INSTANCE: ${HEALTH_CHECK_WA_BOT_INSTANCE:-ravenavip}
       HEALTH_CHECK_WA_GROUP: ${HEALTH_CHECK_WA_GROUP:-${GRUPO_ANUNCIOS:-}}
@@ -209,6 +213,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
       - ./:/app:ro
+      - ${SECONDARY_STORAGE_PATH:-./data}:/mnt/secondary-disk:ro
     entrypoint: >
       sh -c "apk add --no-cache curl jq docker-cli procps && sh /check-health.sh"
     depends_on:

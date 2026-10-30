@@ -143,6 +143,7 @@ dist
 # Scripts e coisas locais
 nssm-service.bat
 /scripts/*
+!/scripts/check-health.sh
 !/scripts/migrate_media_to_s3.js
 !/scripts/sync_minio_to_rustfs.js
 !/scripts/compensate_fichas_slots.js
