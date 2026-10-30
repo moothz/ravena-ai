@@ -8,7 +8,9 @@ const WaifuCommands = require("../functions/WaifuCommands");
 const Group = require("../models/Group");
 
 async function runTests() {
-	console.log("=== Iniciando testes de filtragem de membros ausentes e comando !mu-roll-marcar ===");
+	console.log(
+		"=== Iniciando testes de filtragem de membros ausentes e comando !mu-roll-marcar ==="
+	);
 
 	const bot = new FakeBot({ id: "teste", grupoLogs: "123@g.us" });
 	const groupId = "12036302@g.us";
@@ -206,7 +208,9 @@ async function runTests() {
 			!rollResultOn.options.mentions.includes(`${userLeft}@s.whatsapp.net`),
 			"Mentions NÃO deve incluir o membro que saiu"
 		);
-		console.log("✓ 4.1. Roll com marcar=true: apenas membros ativos foram mencionados e tagueados.");
+		console.log(
+			"✓ 4.1. Roll com marcar=true: apenas membros ativos foram mencionados e tagueados."
+		);
 
 		// Configura waifuRollMarcar = false
 		groupObj.filters.waifuRollMarcar = false;
@@ -260,7 +264,9 @@ async function runTests() {
 				!multiResOn.options.mentions.includes(`${userLeft}@s.whatsapp.net`),
 				"Mentions do multi-roll NÃO deve incluir membro ausente"
 			);
-			console.log("✓ 5.1. Multi-roll com marcar=true: apenas membros ativos foram mencionados e tagueados.");
+			console.log(
+				"✓ 5.1. Multi-roll com marcar=true: apenas membros ativos foram mencionados e tagueados."
+			);
 
 			groupObj.filters.waifuRollMarcar = false;
 			const multiResOff = await WaifuCommands.rollAny(bot, msgMultiRoll, ["2"], groupObj);
@@ -278,7 +284,6 @@ async function runTests() {
 		} finally {
 			WaifuCommands.buildRollGridImage = origGrid;
 		}
-
 	} finally {
 		WaifuCommands.api.post = originalPost;
 	}

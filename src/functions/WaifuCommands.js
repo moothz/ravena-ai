@@ -321,7 +321,9 @@ function recordRollMessage(
 				rarity: item.rarity || item.baseRarity || "COMMON",
 				available: item.available !== false,
 				exclusiveUntil: item.exclusiveUntil || null,
-				claimed: Boolean(item.claimed)
+				claimed: Boolean(item.claimed),
+				rollerUserId: finalRollerUserId,
+				rollerUserName
 			};
 		});
 
@@ -357,6 +359,7 @@ function recordRollMessage(
 		slots.forEach((s) => {
 			if (s.characterId) {
 				const charClaim = {
+					isMultiRoll: true,
 					characterId: s.characterId,
 					characterName: s.characterName,
 					groupId,
@@ -1152,8 +1155,10 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 	}
 
 	const customMsgs = {
-		LOCK_EXPIRED: "⌛ A janela de 300 segundos para casar expirou!",
-		CHARACTER_ALREADY_CLAIMED: "🚫 Este personagem já foi reivindicado por outro jogador!",
+		LOCK_EXPIRED:
+			"⌛ A janela de 300 segundos para casar expirou ou o personagem não foi rolado neste grupo!",
+		CHARACTER_ALREADY_CLAIMED:
+			apiErr?.message || "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		WISHLIST_LIMIT_REACHED: `⚠️ Sua wishlist está cheia (máximo de ${WISHLIST_MAX_ITEMS}). Remova um item antes com \`!mu-removerdesejo <id>\`.`,
@@ -1585,6 +1590,7 @@ function makeRollHandler(genderFilter) {
 								waifuCharacterId: character.id,
 								waifuGroupId: groupId,
 								waifuRollerUserId: userId,
+								waifuRollerUserName: name,
 								waifuExclusiveUntil: exclusiveUntil,
 								waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
 								mentions: uniqueMentions
@@ -1601,6 +1607,7 @@ function makeRollHandler(genderFilter) {
 							waifuCharacterId: character.id,
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
+							waifuRollerUserName: name,
 							waifuExclusiveUntil: exclusiveUntil,
 							waifuExpiresAt: Date.now() + CLAIM_WINDOW_MS,
 							mentions: uniqueMentions
@@ -1700,6 +1707,7 @@ function makeRollHandler(genderFilter) {
 			multiRollSlots.forEach((s) => {
 				if (s.available) {
 					const claimData = {
+						isMultiRoll: true,
 						characterId: s.characterId,
 						characterName: s.characterName,
 						groupId,
@@ -1792,7 +1800,7 @@ function makeRollHandler(genderFilter) {
 
 			const hasFreeSlots = groupWishlistFreeSlots.length > 0 || solteirosSlots.length > 0;
 			if (hasFreeSlots) {
-				text += `_Reaja com o emoji do número para casar!_\n\n`;
+				text += `_Reaja com o emoji do número para casar! (Janela total de 300s)_\n\n`;
 			}
 
 			if (groupWishlistFreeSlots.length > 0) {
@@ -1802,7 +1810,12 @@ function makeRollHandler(genderFilter) {
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}\n`;
+					const exclSecs =
+						s.exclusiveUntil && s.exclusiveUntil > now
+							? Math.ceil((s.exclusiveUntil - now) / 1000)
+							: 0;
+					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${exclTag}\n`;
 					text += `> !mu-casar ${s.characterId}\n\n`;
 				});
 			}
@@ -1814,7 +1827,12 @@ function makeRollHandler(genderFilter) {
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}\n`;
+					const exclSecs =
+						s.exclusiveUntil && s.exclusiveUntil > now
+							? Math.ceil((s.exclusiveUntil - now) / 1000)
+							: 0;
+					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${exclTag}\n`;
 					text += `> !mu-casar ${s.characterId}\n\n`;
 				});
 			}
@@ -1924,6 +1942,7 @@ function makeRollHandler(genderFilter) {
 							waifuRolls: multiRollSlots,
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
+							waifuRollerUserName: name,
 							waifuExpiresAt: now + CLAIM_WINDOW_MS,
 							waifuGridBase64: gridBase64,
 							mentions: uniqueMultiMentions
@@ -1940,6 +1959,7 @@ function makeRollHandler(genderFilter) {
 						waifuRolls: multiRollSlots,
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
+						waifuRollerUserName: name,
 						waifuExpiresAt: now + CLAIM_WINDOW_MS,
 						mentions: uniqueMultiMentions
 					}
@@ -2043,110 +2063,12 @@ async function casarWaifu(bot, message, args) {
 	let characterId = null;
 	let matchedRoll = null;
 
-	// 1. Se informou um ID/slug de personagem ou número de slot diretamente como argumento
-	if (args && args[0]) {
-		const argVal = args[0].trim();
-		if (/^\d+$/.test(argVal)) {
-			const slotNum = parseInt(argVal, 10);
-			let targetSlots = null;
-			let quotedMsg = null;
-			if (typeof message.origin?.getQuotedMessage === "function") {
-				quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-			}
-			if (quotedMsg) {
-				const qId = quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id;
-				const rollData = getRollByMessageId(qId);
-				if (rollData?.slots || rollData?.characters) {
-					targetSlots = rollData.slots || rollData.characters;
-				}
-				if (!targetSlots) {
-					const quotedText =
-						quotedMsg.caption ||
-						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
-						quotedMsg.body ||
-						"";
-					const extracted = extractMultiRollSlotsFromText(quotedText);
-					if (extracted && extracted.length > 0) {
-						targetSlots = extracted;
-					}
-				}
-			}
-			if (!targetSlots) {
-				const pending = pendingClaims.get(groupId);
-				if (pending?.slots || pending?.characters) {
-					targetSlots = pending.slots || pending.characters;
-				}
-			}
-			if (targetSlots) {
-				const foundSlot = targetSlots.find((s) => s.slot === slotNum);
-				if (foundSlot) {
-					if (foundSlot.available === false) {
-						return new ReturnMessage({
-							chatId,
-							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já possui um dono!`,
-							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
-						});
-					}
-					if (foundSlot.claimed) {
-						return new ReturnMessage({
-							chatId,
-							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já foi casado por outro jogador!`,
-							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
-						});
-					}
-					characterId = foundSlot.characterId || foundSlot.characterName;
-					matchedRoll = foundSlot;
-				} else {
-					return new ReturnMessage({
-						chatId,
-						content: `❌ Slot ${slotNum} não encontrado nesta rolagem!`,
-						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
-					});
-				}
-			} else {
-				return new ReturnMessage({
-					chatId,
-					content: `❌ Nenhuma rolagem com múltiplos personagens encontrada para o slot ${slotNum}!`,
-					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
-				});
-			}
-		} else if (/^[a-zA-Z0-9_-]+$/.test(argVal)) {
-			characterId = argVal;
-			matchedRoll =
-				activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
-				(pendingClaims.get(groupId)?.characterId === characterId
-					? pendingClaims.get(groupId)
-					: null);
-			if (!matchedRoll) {
-				let quotedMsg = null;
-				if (typeof message.origin?.getQuotedMessage === "function") {
-					quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
-				}
-				if (quotedMsg) {
-					const quotedText =
-						quotedMsg.caption ||
-						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
-						quotedMsg.body ||
-						"";
-					const extracted = extractMultiRollSlotsFromText(quotedText);
-					if (extracted && extracted.length > 0) {
-						const found = extracted.find(
-							(s) =>
-								s.characterId?.toLowerCase() === characterId.toLowerCase() ||
-								s.characterName?.toLowerCase() === characterId.toLowerCase()
-						);
-						if (found) {
-							matchedRoll = found;
-							if (found.characterId) characterId = found.characterId;
-						}
-					}
-				}
-			}
-		}
-	}
+	const isReactionCall = Boolean(
+		message.originReaction || (args && args.length === 1 && args[0] === "💍")
+	);
 
-	// 2. Se a chamada foi disparada por uma reação (originReaction na mensagem de roll)
-	if (!characterId && message.originReaction) {
+	// 1. Se a chamada foi disparada por uma reação (💍) ou originReaction na mensagem de roll
+	if (isReactionCall) {
 		const targetMsgId =
 			message.id || message.originReaction?.msgId?._serialized || message.originReaction?.msgId;
 		const rollData = getRollByMessageId(targetMsgId);
@@ -2172,14 +2094,153 @@ async function casarWaifu(bot, message, args) {
 			) {
 				return false;
 			}
-			const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
-			if (match) {
-				characterId = match[1];
+			const extractedChar = extractCharacterFromRollText(text);
+			if (extractedChar) {
+				characterId = extractedChar;
 				matchedRoll =
 					activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
 					(pendingClaims.get(groupId)?.characterId === characterId
 						? pendingClaims.get(groupId)
 						: null);
+			}
+		}
+	}
+
+	// 2. Se informou um ID/slug de personagem ou número de slot diretamente como argumento
+	if (!characterId && !isReactionCall && args && args.length > 0 && args[0]) {
+		const fullInput = args
+			.join(" ")
+			.trim()
+			.replace(/^["']|["']$/g, "");
+		const firstArg = args[0].trim();
+		if (/^\d+$/.test(firstArg) && args.length === 1) {
+			const slotNum = parseInt(firstArg, 10);
+			let targetSlots = null;
+			let quotedMsg = null;
+			let parentRoll = null;
+			if (typeof message.origin?.getQuotedMessage === "function") {
+				quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+			}
+			if (quotedMsg) {
+				const qId = quotedMsg.id?._serialized || quotedMsg.id?.id || quotedMsg.id;
+				const rollData = getRollByMessageId(qId);
+				if (rollData?.slots || rollData?.characters) {
+					targetSlots = rollData.slots || rollData.characters;
+					parentRoll = rollData;
+				}
+				if (!targetSlots) {
+					const quotedText =
+						quotedMsg.caption ||
+						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+						quotedMsg.body ||
+						"";
+					const extracted = extractMultiRollSlotsFromText(quotedText);
+					if (extracted && extracted.length > 0) {
+						targetSlots = extracted;
+					}
+				}
+			}
+			if (!targetSlots) {
+				const pending = pendingClaims.get(groupId);
+				if (pending?.slots || pending?.characters) {
+					targetSlots = pending.slots || pending.characters;
+					parentRoll = pending;
+				}
+			}
+			if (targetSlots) {
+				const foundSlot = targetSlots.find((s) => s.slot === slotNum);
+				if (foundSlot) {
+					if (foundSlot.available === false) {
+						return new ReturnMessage({
+							chatId,
+							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já possui um dono!`,
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
+					}
+					if (foundSlot.claimed) {
+						return new ReturnMessage({
+							chatId,
+							content: `❌ O personagem do slot ${slotNum} (*${foundSlot.characterName}*) já foi casado por outro jogador!`,
+							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+						});
+					}
+					characterId = foundSlot.characterId || foundSlot.characterName;
+					matchedRoll = {
+						...foundSlot,
+						isMultiRoll: true,
+						rollerUserId: parentRoll?.rollerUserId || foundSlot.rollerUserId,
+						rollerUserName: parentRoll?.rollerUserName || foundSlot.rollerUserName
+					};
+				} else {
+					return new ReturnMessage({
+						chatId,
+						content: `❌ Slot ${slotNum} não encontrado nesta rolagem!`,
+						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+					});
+				}
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Nenhuma rolagem com múltiplos personagens encontrada para o slot ${slotNum}!`,
+					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+				});
+			}
+		} else {
+			// Busca por ID ou Nome em activeClaimsByCharGroup do grupo
+			let matchedActive =
+				activeClaimsByCharGroup.get(`${groupId}:${fullInput}`) ||
+				activeClaimsByCharGroup.get(`${groupId}:${firstArg}`);
+
+			if (!matchedActive) {
+				const lowerFull = fullInput.toLowerCase();
+				const lowerFirst = firstArg.toLowerCase();
+				for (const [key, claim] of activeClaimsByCharGroup.entries()) {
+					if (key.startsWith(`${groupId}:`)) {
+						if (
+							claim.characterId?.toLowerCase() === lowerFull ||
+							claim.characterName?.toLowerCase() === lowerFull ||
+							claim.characterId?.toLowerCase() === lowerFirst ||
+							claim.characterName?.toLowerCase() === lowerFirst
+						) {
+							matchedActive = claim;
+							break;
+						}
+					}
+				}
+			}
+
+			if (matchedActive) {
+				characterId = matchedActive.characterId;
+				matchedRoll = matchedActive;
+			} else {
+				characterId = /^[a-zA-Z0-9_-]+$/.test(firstArg) && args.length === 1 ? firstArg : fullInput;
+			}
+
+			if (!matchedRoll) {
+				let quotedMsg = null;
+				if (typeof message.origin?.getQuotedMessage === "function") {
+					quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+				}
+				if (quotedMsg) {
+					const quotedText =
+						quotedMsg.caption ||
+						(typeof quotedMsg.content === "string" ? quotedMsg.content : "") ||
+						quotedMsg.body ||
+						"";
+					const extracted = extractMultiRollSlotsFromText(quotedText);
+					if (extracted && extracted.length > 0) {
+						const found = extracted.find(
+							(s) =>
+								s.characterId?.toLowerCase() === characterId.toLowerCase() ||
+								s.characterName?.toLowerCase() === characterId.toLowerCase() ||
+								s.characterName?.toLowerCase() === fullInput.toLowerCase()
+						);
+						if (found) {
+							matchedRoll = found;
+							if (found.characterId) characterId = found.characterId;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -2200,7 +2261,12 @@ async function casarWaifu(bot, message, args) {
 					);
 					if (free.length === 1) {
 						characterId = free[0].characterId;
-						matchedRoll = free[0];
+						matchedRoll = {
+							...free[0],
+							isMultiRoll: true,
+							rollerUserId: rollData.rollerUserId || free[0].rollerUserId,
+							rollerUserName: rollData.rollerUserName || free[0].rollerUserName
+						};
 					} else if (free.length > 1) {
 						return new ReturnMessage({
 							chatId,
@@ -2238,9 +2304,9 @@ async function casarWaifu(bot, message, args) {
 						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 					});
 				} else {
-					const match = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/);
-					if (match) {
-						characterId = match[1];
+					const extractedChar = extractCharacterFromRollText(text);
+					if (extractedChar) {
+						characterId = extractedChar;
 						matchedRoll =
 							activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
 							(pendingClaims.get(groupId)?.characterId === characterId
@@ -2269,7 +2335,12 @@ async function casarWaifu(bot, message, args) {
 			);
 			if (free.length === 1) {
 				characterId = free[0].characterId;
-				matchedRoll = free[0];
+				matchedRoll = {
+					...free[0],
+					isMultiRoll: true,
+					rollerUserId: pending.rollerUserId || free[0].rollerUserId,
+					rollerUserName: pending.rollerUserName || free[0].rollerUserName
+				};
 			} else if (free.length > 1) {
 				return new ReturnMessage({
 					chatId,
@@ -2340,7 +2411,10 @@ async function casarWaifu(bot, message, args) {
 				}
 			}
 		} else {
-			pendingClaims.delete(groupId);
+			const pending = pendingClaims.get(groupId);
+			if (pending && (!pending.characterId || pending.characterId === characterId)) {
+				pendingClaims.delete(groupId);
+			}
 		}
 		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
