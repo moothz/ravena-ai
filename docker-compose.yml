@@ -58,7 +58,7 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     volumes:
-      - rustfs-data:/data
+      - ${RUSTFS_DATA_PATH:-./data/rustfs}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
@@ -241,7 +241,6 @@ services:
 # ─────────────────────────────────────────────────────────────
 volumes:
   postgres-data:
-  rustfs-data:
 
 # ─────────────────────────────────────────────────────────────
 # NETWORKS — all services communicate internally
