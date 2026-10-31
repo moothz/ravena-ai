@@ -5699,8 +5699,13 @@ async function listarOfertasRecebidasCmd(bot, message) {
 					parts.push(`${offered.fishes.length} peixe(s)`);
 				if (Array.isArray(offered.fishingBuffs) && offered.fishingBuffs.length > 0)
 					parts.push(`${offered.fishingBuffs.length} buff(s)`);
-				if (Array.isArray(offered.farmItems) && offered.farmItems.length > 0)
-					parts.push(`${offered.farmItems.length} item(ns) de fazenda`);
+				if (Array.isArray(offered.farmItems) && offered.farmItems.length > 0) {
+					const totalFarmQty = offered.farmItems.reduce(
+						(acc, it) => acc + (Number(it.amount) || 1),
+						0
+					);
+					parts.push(`${totalFarmQty} item(ns) de fazenda`);
+				}
 				if (offered.zinthos && Number(offered.zinthos) > 0)
 					parts.push(`🪙 ${Number(offered.zinthos).toLocaleString("pt-BR")} Zinthos`);
 				itemsDesc = parts.join(", ") || "Nenhum item";
