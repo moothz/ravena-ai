@@ -162,6 +162,38 @@ class StorageService {
 		this._initCacheDir().catch((err) => {
 			this.logger.warn("Falha ao inicializar pasta de cache:", err.message);
 		});
+
+		// Agendamento periódico de expurgo de downloads S3 expirados (TTL 48h)
+		if (
+			this.enabled &&
+			process.env.DISABLE_ACTIVITY !== "true" &&
+			process.env.DISABLE_STICKER_SCRAPER_TIMER !== "true" &&
+			!this.downloadsCleanupTimer
+		) {
+			const initialTimer = setTimeout(
+				() => {
+					this.cleanupExpiredDownloads().catch((err) => {
+						this.logger.warn(
+							`[StorageService] Falha na limpeza inicial de downloads expirados: ${err.message}`
+						);
+					});
+				},
+				2 * 60 * 1000
+			);
+			if (initialTimer.unref) initialTimer.unref();
+
+			this.downloadsCleanupTimer = setInterval(
+				() => {
+					this.cleanupExpiredDownloads().catch((err) => {
+						this.logger.warn(
+							`[StorageService] Falha na limpeza periódica de downloads expirados: ${err.message}`
+						);
+					});
+				},
+				6 * 60 * 60 * 1000
+			);
+			if (this.downloadsCleanupTimer.unref) this.downloadsCleanupTimer.unref();
+		}
 	}
 
 	async _initCacheDir() {
