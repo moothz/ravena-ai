@@ -1661,6 +1661,9 @@ function makeRollHandler(genderFilter) {
 					text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
 					if (keyProgress?.becameSoulmateNow) {
 						text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
+						notifySoulmateAchievement(bot, character, name).catch((eNotif) => {
+							logger.error("Erro ao notificar conquista de Soulmate:", eNotif);
+						});
 					}
 				} else {
 					text += `🔒 Já pertence a: *${owner?.name || "Outro jogador"}*`;
@@ -1955,7 +1958,24 @@ function makeRollHandler(genderFilter) {
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const keysCount = s.keyProgress?.currentKeys || 1;
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""} (🔑 Chaves: ${keysCount}/10)\n`;
+					const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
+					const soulmateTag = isSoulmateNow ? " (💖 SOULMATE ALCANÇADO! 10/10)" : ` (🔑 Chaves: ${keysCount}/10)`;
+					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
+					if (isSoulmateNow) {
+						notifySoulmateAchievement(
+							bot,
+							{
+								id: s.characterId,
+								name: s.characterName,
+								series: s.series,
+								rarity: s.rarity,
+								imageUrl: s.imageUrl
+							},
+							name
+						).catch((eNotif) => {
+							logger.error("Erro ao notificar conquista de Soulmate em multiroll:", eNotif);
+						});
+					}
 				});
 				text += "\n";
 			}
@@ -5289,13 +5309,17 @@ async function ajudaWaifus(bot, message) {
 	text += `🔑 *3. Chaves (Keys) & Soulmates*\n`;
 	text += `• Se você rolar um personagem que *já pertence a você*, você ganha *+1 Chave (Key)*!\n`;
 	text += `• Ao acumular *10 Chaves*, esse personagem é promovido a *💖 Soulmate definitivo*!\n`;
-	text += `• Soulmates são seus parceiros eternos e podem receber apelidos e notas.\n\n`;
+	text += `• *Vantagens exclusivas de Soulmate:*\n`;
+	text += `  🏆 *Bônus no Rank:* Adiciona +25 pontos extras de valor da coleção no ranking geral!\n`;
+	text += `  📝 *Personalização Total:* Permite definir apelido afetuoso e nota carinhosa no painel web!\n`;
+	text += `  ✨ *Cristais Raros Turbinados:* Bônus massivo em Zinthos ao ser rolado por outros jogadores!\n`;
+	text += `  💰 *Divórcio Dourado:* Em caso de divórcio, devolve o valor integral de 4 cotas (450k a 6,3M Zinthos) + 30k por chave!\n\n`;
 
 	text += `💜 *4. Economia Zinthos*\n`;
 	text += `• *Zinthos (💜)* é a moeda oficial do jogo.\n`;
 	text += `• Resgate sua recompensa diária (reseta todos os dias às 04:00) usando \`!mu-diario\`.\n`;
 	text += `• Quando alguém rola um personagem que já é seu, um cristal de Zinthos é gerado com base no valor da sua waifu.\n`;
-	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos proporcional à raridade e chaves.\n\n`;
+	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor agora equivale a 4 cotas completas (de 450.000 a 6.300.000 Zinthos dependendo da raridade) mais 30.000 Zinthos por chave acumulada!\n\n`;
 
 	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
 	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
@@ -5317,8 +5341,9 @@ async function ajudaWaifus(bot, message) {
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
-	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos.\n`;
+	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (valor de 4 cotas + bônus de chaves).\n`;
 	text += `• \`!mu-harem [página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você possui.\n`;
+	text += `• \`!mu-harem-nome <nome>\` (aliases: \`!mu-hnome\`, \`!mu-nomeharem\`) — Define um nome personalizado para o seu harém (até 20 caracteres).\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
 	text += `• \`!mu-soulmates\` (aliases: \`!mu-sm\`, \`!mu-almas\`) — Lista seus parceiros com 10+ chaves.\n\n`;
 
@@ -7844,6 +7869,187 @@ async function notifySpecialMarriage(
 }
 
 /**
+ * Notifica canal/grupo de avisos quando um jogador atinge 10 chaves (Soulmate) com seu personagem.
+ * Notificação ricamente decorada com todos os tipos de corações.
+ *
+ * @param {Object} bot
+ * @param {Object} character
+ * @param {string} userName
+ * @param {string} [customDateStr]
+ * @param {string} [customChatId]
+ * @param {Object} [customMedia]
+ * @returns {Promise<boolean>}
+ */
+async function notifySoulmateAchievement(
+	bot,
+	character,
+	userName,
+	customDateStr = null,
+	customChatId = null,
+	customMedia = null
+) {
+	try {
+		if (!character) return false;
+
+		const targetChats = [];
+		if (customChatId) {
+			targetChats.push(customChatId);
+		} else if (bot) {
+			if (bot.grupoAnuncios) targetChats.push(bot.grupoAnuncios);
+			if (bot.grupoAvisos) targetChats.push(bot.grupoAvisos);
+			if (targetChats.length === 0 && bot.grupoLogs) {
+				targetChats.push(bot.grupoLogs);
+			}
+			if (targetChats.length === 0) {
+				if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
+					targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
+				}
+				if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+					targetChats.push(process.env.GRUPO_AVISOS.trim());
+				}
+			}
+		} else {
+			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
+				targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
+			}
+			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+				targetChats.push(process.env.GRUPO_AVISOS.trim());
+			}
+		}
+
+		if (targetChats.length === 0) {
+			logger.warn(
+				"[notifySoulmateAchievement] Nenhum canal/grupo configurado (GRUPO_ANUNCIOS / GRUPO_AVISOS). Envio ignorado."
+			);
+			return false;
+		}
+
+		const dateStr =
+			customDateStr ||
+			new Date().toLocaleDateString("pt-BR", {
+				timeZone: "America/Sao_Paulo"
+			});
+
+		const rawRarity = String(character.rarity || character.baseRarity || "COMMON").toUpperCase();
+		const emojiRarity = RARITY_EMOJI[rawRarity] || "⚪";
+		const labelRarity = RARITY_LABEL[rawRarity] || rawRarity;
+
+		let caption = "";
+		caption += `💖 💕 💓 💗 💞 💘 💝 💟 💌 🫀 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 🩵 🩶 🩷\n`;
+		caption += `✨ 🌟 💖 *NOVO LAÇO SUPREMO: SOULMATE ATINGIDO!* 💖 🌟 ✨\n`;
+		caption += `💖 💕 💓 💗 💞 💘 💝 💟 💌 🫀 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 🩵 🩶 🩷\n\n`;
+		caption += `🌹 ══════════════════════════════ 🌹\n`;
+		caption += `   💞 *DUAS ALMAS ENTRELAÇADAS PELA ETERNIDADE!* 💞\n`;
+		caption += `🌹 ══════════════════════════════ 🌹\n\n`;
+		caption += `✨ Com devoção e lealdade inabaláveis ao longo de incontáveis jornadas, acumulando todas as *10 Chaves do Destino (🔑 10/10)*, o jogador:\n\n`;
+		caption += `👑 ➔ *${userName}*\n\n`;
+		caption += `Despertou a sintonia cósmica absoluta e consagrou-se oficialmente como *ALMA GÊMEA (SOULMATE)* de:\n\n`;
+		caption += `💖 🌸 *${character.name}* 🌸 💖\n`;
+		caption += `⭐ *Raridade:* ${emojiRarity} ${labelRarity}\n`;
+		if (character.series) {
+			caption += `📺 *Universo:* ${character.series}\n`;
+		}
+		caption += `📅 *Data da Consagração:* ${dateStr}\n\n`;
+		caption += `💎 *Privilégios Celestiais Desbloqueados:*\n`;
+		caption += `  🏆 *Bônus no Ranking:* +25 pontos de valor da coleção no ranking geral!\n`;
+		caption += `  📝 *Personalização Exclusiva:* Apelido carinhoso e nota especial configuráveis no painel web!\n`;
+		caption += `  ✨ *Cristais Turbinados:* Bônus multiplicador massivo de cristais Zinthos ao ser rolado por outros jogadores!\n`;
+		caption += `  💰 *Divórcio Dourado:* Em caso de divórcio, devolve o valor integral de 4 cotas completas (450k a 6.3M) mais 30k por chave!\n\n`;
+		caption += `💌 ══════════════════════════════ 💌\n`;
+		caption += `💖 *Que este amor lendário resplandeça por todas as eras com bênçãos infinitas, fidelidade inquebrantável e vitórias épicas!* 🥂🍾💐✨\n`;
+		caption += `💖 💕 💓 💗 💞 💘 💝 💟 💌 🫀 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 🩵 🩶 🩷`;
+
+		// 1. Prioridade: foto gerada do casamento (se disponível)
+		let imageBase64 = null;
+		if (customMedia && typeof customMedia === "object") {
+			if (customMedia.data && typeof customMedia.data === "string") {
+				imageBase64 = customMedia.data;
+			} else if (customMedia.photoPath) {
+				try {
+					const buf = await fs.readFile(customMedia.photoPath);
+					imageBase64 = buf.toString("base64");
+				} catch (eRead) {
+					logger.debug(`[notifySoulmateAchievement] Erro ao ler photoPath: ${eRead.message}`);
+				}
+			}
+		}
+
+		if (!imageBase64 && character.id) {
+			try {
+				const savedPhoto = await getMarriagePhoto(character.id);
+				if (savedPhoto && savedPhoto.exists && savedPhoto.photoPath) {
+					const buf = await fs.readFile(savedPhoto.photoPath);
+					imageBase64 = buf.toString("base64");
+				}
+			} catch (errSaved) {
+				logger.debug(
+					`[notifySoulmateAchievement] Foto de casamento salva não encontrada para ${character.id}: ${errSaved.message}`
+				);
+			}
+		}
+
+		// 2. Fallback: usar a foto original do personagem
+		if (!imageBase64 && character.imageUrl) {
+			imageBase64 = await module.exports.downloadImageAsBase64(character.imageUrl);
+		}
+
+		let sentAny = false;
+
+		for (const targetChat of targetChats) {
+			try {
+				let retMsg;
+				if (imageBase64) {
+					retMsg = new ReturnMessage({
+						chatId: targetChat,
+						content: {
+							mimetype: "image/jpeg",
+							data: imageBase64,
+							filename: `soulmate_${character.id || "waifu"}.jpg`,
+							isMessageMedia: true
+						},
+						options: {
+							caption
+						}
+					});
+				} else {
+					retMsg = new ReturnMessage({
+						chatId: targetChat,
+						content: caption
+					});
+				}
+
+				if (bot && typeof bot.sendReturnMessages === "function") {
+					await bot.sendReturnMessages(retMsg);
+					sentAny = true;
+				} else if (bot && typeof bot.sendMessage === "function") {
+					if (imageBase64) {
+						const media = await bot.createMedia(
+							Buffer.from(imageBase64, "base64"),
+							"image/jpeg",
+							`soulmate_${character.id || "waifu"}.jpg`
+						);
+						await bot.sendMessage(targetChat, media, { caption });
+					} else {
+						await bot.sendMessage(targetChat, caption);
+					}
+					sentAny = true;
+				}
+			} catch (errSend) {
+				logger.error(
+					`[notifySoulmateAchievement] Erro ao enviar notificação para ${targetChat}:`,
+					errSend
+				);
+			}
+		}
+
+		return sentAny;
+	} catch (err) {
+		logger.error("Erro ao notificar conquista de Soulmate:", err);
+		return false;
+	}
+}
+
+/**
  * Obtém estatísticas semanais de Waifus (Waifuletes)
  * @param {number} [sinceMs]
  * @param {Object} [bot=null]
@@ -7994,6 +8200,7 @@ module.exports = {
 	processMultiRollReport,
 	multiRollHistoryByMsgId,
 	notifySpecialMarriage,
+	notifySoulmateAchievement,
 	downloadImageAsBase64,
 	handleApiError,
 	api,
