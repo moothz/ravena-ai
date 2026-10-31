@@ -79,7 +79,11 @@ services:
       - 8.8.8.8
     networks:
       - ravena-net
+    ports:
+      - "${REMBG_LOCAL:-7000}:7000"
     command: s --port 7000
+    profiles:
+      - rembg
 
   # ───────────────────────────────────────────────────────────
   # whatsgoapi — WhatsApp REST API (Go / whatsmeow)
@@ -170,6 +174,7 @@ services:
         condition: service_started
       rembg:
         condition: service_started
+        required: false
       cobalt:
         condition: service_started
 

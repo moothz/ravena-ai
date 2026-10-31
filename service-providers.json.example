@@ -118,5 +118,12 @@
 			"videoMaxFrames": 180,
 			"enabled": true
 		}
+	],
+	"rembg": [
+		{
+			"name": "local",
+			"url": "http://rembg:7000",
+			"enabled": true
+		}
 	]
 }

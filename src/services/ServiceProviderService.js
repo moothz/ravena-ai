@@ -128,7 +128,8 @@ class ServiceProviderService {
 			bonsai: [],
 			sdwebui: [],
 			f5tts: [],
-			nudenet: []
+			nudenet: [],
+			rembg: []
 		};
 	}
 }

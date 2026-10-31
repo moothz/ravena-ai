@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'laya', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet'];
+    const categories = ['llm', 'laya', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet', 'rembg'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
         'laya': 'Decisão Rápida / Intenção (Laya System One)',
@@ -17,7 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'bonsai': 'Geração de Imagens (Bonsai)',
         'sdwebui': 'Geração de Imagens (SD WebUI)',
         'f5tts': 'Conversão de Texto em Fala (F5-TTS)',
-        'nudenet': 'Detecção de Conteúdo NSFW (NudeNet)'
+        'nudenet': 'Detecção de Conteúdo NSFW (NudeNet)',
+        'rembg': 'Remoção de Fundo de Imagem (rembg)'
     };
 
     // Basic auth is handled by the browser since the page itself is protected.

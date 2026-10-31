@@ -164,7 +164,7 @@ Alguns jogos e funcionalidades avançadas rodam como serviços independentes e s
 
 ### 🛡️ NudeNet (Filtro NSFW) & rembg (Remoção de Fundo)
 - **NudeNet:** Configurado em `service-providers.json` (`"nudenet"`) para análise de quarentena de fotos adultas indesejadas em grupos.
-- **rembg:** Já embutido no Docker Compose (`rembg:7000`) para remoção de fundos em stickers via `REMBG_API_URL`.
+- **rembg:** Configurado em `service-providers.json` (`"rembg"`) com múltiplos provedores e fallback transparente (ex.: Hyperion remoto e/ou container local). O container Docker local é opcional e gerenciado via `REMBG_LOCAL=7000` no `.env`.
 
 ---
 

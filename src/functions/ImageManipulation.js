@@ -11,10 +11,12 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const CmdUsage = require("../utils/CmdUsage");
+const ServiceProviderService = require("../services/ServiceProviderService");
 
 const execPromise = util.promisify(exec);
 const logger = new Logger("image-commands");
 const cmdUsage = CmdUsage.getInstance();
+const serviceProviderService = ServiceProviderService.getInstance();
 
 // Encapsule os comandos do imagemagick em promessas
 const convertPromise = util.promisify(imagemagick.convert);
@@ -83,62 +85,74 @@ function saveMediaToTemp(media, extension = "png") {
 		});
 }
 
-// Auxiliar para remover fundo usando rembg API (Sidecar)
+// Auxiliar para remover fundo usando rembg API (Sidecar ou Provedores externos)
 async function removeBackground(inputPath) {
 	const outputPath = inputPath.replace(/\.[^/.]+$/, "") + "_nobg.png";
 
-	// Se a URL do .env não tiver o endpoint, adiciona /api/remove
-	let rembgUrl = process.env.REMBG_API_URL || "http://rembg:7000/api/remove";
-	if (rembgUrl && !rembgUrl.includes("/api/remove") && !rembgUrl.includes("/remove")) {
-		rembgUrl = rembgUrl.replace(/\/$/, "") + "/api/remove";
+	const providers = serviceProviderService.getProviders("rembg");
+	if (!providers || providers.length === 0) {
+		const err = new Error("Problema removendo fundo da imagem: Nenhum serviço de rembg rodando");
+		err.isRembgUserError = true;
+		throw err;
 	}
 
-	// O rembg dorme quando ocioso (Railway Serverless): a primeira requisição pode
-	// retornar 502/503 ou falhar a conexão enquanto o container acorda e carrega o modelo
-	const maxAttempts = 4;
-	const isWakingUp = (err) =>
-		[502, 503, 504].includes(err.response?.status) ||
-		["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "EAI_AGAIN"].includes(err.code);
+	const buffer = await fs.readFile(inputPath);
+	let response = null;
+	let lastError = null;
 
-	try {
-		const buffer = await fs.readFile(inputPath);
+	for (const provider of providers) {
+		let rembgUrl = (provider.url || "").trim();
+		if (!rembgUrl) continue;
 
-		let response;
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			try {
-				// Use built-in FormData (Node 20+) - recriado a cada tentativa
-				const formData = new FormData();
-				const blob = new Blob([buffer], { type: "image/png" });
-				formData.append("file", blob, "image.png");
-				if (process.env.REMBG_MODEL) formData.append("model", process.env.REMBG_MODEL);
+		if (!rembgUrl.includes("/api/remove") && !rembgUrl.includes("/remove")) {
+			rembgUrl = rembgUrl.replace(/\/+$/, "") + "/api/remove";
+		}
 
-				response = await axios.post(rembgUrl, formData, {
-					responseType: "arraybuffer",
-					timeout: 120000,
-					headers: {
-						"Content-Type": "multipart/form-data"
-					}
-				});
+		const model = provider.model || process.env.REMBG_MODEL;
+		const timeout = Number(provider.timeout) || 60000;
+		const providerName = provider.name || rembgUrl;
+
+		try {
+			const formData = new FormData();
+			const blob = new Blob([buffer], { type: "image/png" });
+			formData.append("file", blob, "image.png");
+			if (model) formData.append("model", model);
+
+			const res = await axios.post(rembgUrl, formData, {
+				responseType: "arraybuffer",
+				timeout,
+				headers: {
+					"Content-Type": "multipart/form-data"
+				}
+			});
+
+			if (res && res.status === 200 && res.data && res.data.byteLength > 0) {
+				logger.info(`Fundo removido com sucesso via rembg provider '${providerName}'`);
+				response = res;
 				break;
-			} catch (err) {
-				if (attempt === maxAttempts || !isWakingUp(err)) throw err;
-				logger.warn(
-					`rembg indisponível (${err.response?.status || err.code}), tentativa ${attempt}/${maxAttempts}. Aguardando o serviço acordar...`
-				);
-				await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
+			}
+		} catch (err) {
+			lastError = err;
+			logger.warn(
+				`Provider rembg '${providerName}' falhou (${err.response?.status || err.code || err.message}). Tentando próximo provedor se disponível...`
+			);
+			if (err.response?.data) {
+				logger.debug(`Detalhes do erro API (${providerName}):`, err.response.data.toString());
 			}
 		}
-
-		await fs.writeFile(outputPath, response.data);
-		return outputPath;
-	} catch (error) {
-		logger.error("Erro ao remover fundo via rembg API:", error.message);
-		// Fallback para log detalhado se disponível
-		if (error.response && error.response.data) {
-			logger.error("Detalhes do erro API:", error.response.data.toString());
-		}
-		throw error;
 	}
+
+	if (!response || !response.data) {
+		logger.error("Todos os provedores de rembg falharam. Último erro:", lastError?.message);
+		const err = new Error(
+			"Problema removendo fundo da imagem: Nenhum servidor de *rembg* retornou a imagem recortada"
+		);
+		err.isRembgUserError = true;
+		throw err;
+	}
+
+	await fs.writeFile(outputPath, response.data);
+	return outputPath;
 }
 
 // Auxiliar para recortar imagem usando sharp
@@ -437,9 +451,14 @@ async function handleRemoveBg(bot, message, args, group) {
 			logger.error("Erro ao aplicar reação de erro:", reactError);
 		}
 
+		const content =
+			error.isRembgUserError || error.message?.startsWith("Problema removendo fundo da imagem:")
+				? error.message
+				: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente.";
+
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente."
+			content
 		});
 	}
 }
@@ -643,9 +662,14 @@ async function handleStickerBg(bot, message, args, group) {
 			logger.error("Erro ao aplicar reação de erro:", reactError);
 		}
 
+		const content =
+			error.isRembgUserError || error.message?.startsWith("Problema removendo fundo da imagem:")
+				? error.message
+				: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente.";
+
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente."
+			content
 		});
 	}
 }
