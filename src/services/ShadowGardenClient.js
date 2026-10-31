@@ -215,6 +215,20 @@ class ShadowGardenClient {
 	}
 
 	/**
+	 * Atualiza o nome personalizado da fazenda do jogador (máx 20 chars)
+	 * @param {string} userId
+	 * @param {string|null} farmName
+	 */
+	async updateFarmName(userId, farmName) {
+		const res = await fetch(`${this.baseUrl}/farm/${encodeURIComponent(userId)}/name`, {
+			method: "PATCH",
+			headers: this._headers(),
+			body: JSON.stringify({ farmName })
+		});
+		return this._handleResponse(res, "Falha ao atualizar nome da fazenda");
+	}
+
+	/**
 	 * Posiciona item decorativo no terreno
 	 * @param {string} userId
 	 * @param {Object} options - { decorId, slotIndex, x, y }

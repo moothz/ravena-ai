@@ -283,7 +283,9 @@ function recordRollMessage(
 	exclusiveUntil = null,
 	rollerUserName = null,
 	extraRollsData = null,
-	gridBase64 = null
+	gridBase64 = null,
+	isAvailable = true,
+	ownerName = null
 ) {
 	if (!messageId || !characterIdOrRolls) return;
 	const strId = String(messageId);
@@ -394,6 +396,8 @@ function recordRollMessage(
 		isMultiRoll: false,
 		characterId,
 		groupId,
+		available: isAvailable !== false,
+		owner: ownerName || null,
 		rollerUserId:
 			finalRollerUserId || (existing?.rollerUserId ? normalizeUserId(existing.rollerUserId) : null),
 		rollerUserName: finalRollerName,
@@ -764,14 +768,26 @@ function getGroupId(message) {
 	return message.group ?? message.author;
 }
 
-function getUserName(message) {
-	if (message?.originReaction?.userName) {
-		return message.originReaction.userName;
+async function getUserName(message, group = null) {
+	const rawFallback =
+		message?.originReaction?.userName ||
+		message.authorName ||
+		(message?.originReaction?.senderId ? message.originReaction.senderId.split("@")[0] : null) ||
+		(message.author ? message.author.split("@")[0] : "Jogador");
+	const userId = getUserId(message);
+	let targetGroup = group;
+	if (!targetGroup && message.group) {
+		try {
+			const Database = require("../utils/Database");
+			targetGroup = await Database.getInstance().getGroup(message.group);
+		} catch (_) {}
 	}
-	if (message?.originReaction?.senderId) {
-		return message.originReaction.senderId.split("@")[0];
+	try {
+		const { resolveUserNickname } = require("./GeneralCommands");
+		return await resolveUserNickname(targetGroup, userId, rawFallback);
+	} catch (_) {
+		return rawFallback;
 	}
-	return message.authorName || (message.author ? message.author.split("@")[0] : "Jogador");
 }
 
 async function ensureUser(userId, groupId, name) {
@@ -1286,7 +1302,9 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 		LOCK_EXPIRED:
 			"⌛ A janela de 300 segundos para casar expirou ou o personagem não foi rolado neste grupo!",
 		CHARACTER_ALREADY_CLAIMED:
-			apiErr?.message || "🚫 Este personagem já foi reivindicado por outro jogador!",
+			apiErr?.owner?.name
+				? `🚫 Este personagem já pertence a *${apiErr.owner.name}*!`
+				: apiErr?.message || "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		WISHLIST_LIMIT_REACHED: `⚠️ Sua wishlist está cheia (máximo de ${WISHLIST_MAX_ITEMS}). Remova um item antes com \`!mu-removerdesejo <id>\`.`,
@@ -1303,7 +1321,8 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 		defaultMsg;
 
 	logger.error("Erro na chamada Waifuletes:", apiErr || resData?.message || err.message);
-	return new ReturnMessage({ chatId, content: `❌ ${message}`, options });
+	const prefix = /^[⌛🚫❓⚠️🔍👤❌]/.test(message) ? "" : "❌ ";
+	return new ReturnMessage({ chatId, content: `${prefix}${message}`, options });
 }
 
 // ─── Handlers de Comandos ───────────────────────────────────────────────────
@@ -1403,7 +1422,7 @@ function makeRollHandler(genderFilter) {
 		const chatId = message.group ?? message.author;
 		const userId = getUserId(message);
 		const groupId = getGroupId(message);
-		const name = getUserName(message);
+		const name = await getUserName(message, group);
 
 		const isGroup = Boolean(message.group);
 		let groupObj = group;
@@ -1727,6 +1746,8 @@ function makeRollHandler(genderFilter) {
 							options: {
 								caption: text,
 								waifuCharacterId: character.id,
+								waifuAvailable: available,
+								waifuOwner: owner?.name || (isOwner ? name : null),
 								waifuGroupId: groupId,
 								waifuRollerUserId: userId,
 								waifuRollerUserName: name,
@@ -1744,6 +1765,8 @@ function makeRollHandler(genderFilter) {
 						content: text,
 						options: {
 							waifuCharacterId: character.id,
+							waifuAvailable: available,
+							waifuOwner: owner?.name || (isOwner ? name : null),
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
 							waifuRollerUserName: name,
@@ -2197,7 +2220,7 @@ async function casarWaifu(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const groupId = getGroupId(message);
 	const userId = getUserId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	let characterId = null;
 	let matchedRoll = null;
@@ -2530,6 +2553,19 @@ async function casarWaifu(bot, message, args) {
 		});
 	}
 
+	// Validação de Disponibilidade: se já rolou como casado/pertencente a outro jogador
+	if (matchedRoll && matchedRoll.available === false) {
+		const ownerText = matchedRoll.owner ? `*${matchedRoll.owner}*` : "outro jogador";
+		return new ReturnMessage({
+			chatId,
+			content: `🚫 Este personagem já pertence a ${ownerText}! Use *!mu-roll* para encontrar personagens livres.`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
 	try {
 		const { data } = await api.post("/marry", {
 			userId,
@@ -2635,7 +2671,7 @@ async function processWaifuReaction(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 	const groupId = getGroupId(message);
 	const userId = getUserId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	// Se for roll individual (1 roll) e reagiu com 1️⃣
 	if (!rollData.isMultiRoll) {
@@ -2768,7 +2804,7 @@ async function divorciarWaifu(bot, message, args) {
 async function consultarOuGerarFotoCasamento(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	const rawArgs = [...(args || [])];
 	let forceNew = false;
@@ -3007,7 +3043,7 @@ async function diariosKakera(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	try {
 		const { data } = await api.post("/kakera/daily", { userId, groupId, name });
@@ -3181,15 +3217,17 @@ async function verHarem(bot, message, args) {
 		const totalInCols = collections.reduce((acc, col) => acc + (col.characterCount || 0), 0);
 		const total = totalGeneral + totalInCols;
 
+		const haremTitle = haremData.haremName ? `*${haremData.haremName}*` : "*Seu Harém*";
+
 		if (entries.length === 0 && totalInCols === 0) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"👰 *Seu Harém está vazio!* Use *!mu-roll* para encontrar e casar com waifus e husbandos."
+					`👰 ${haremTitle} está vazio! Use *!mu-roll* para encontrar e casar com waifus e husbandos.`
 			});
 		}
 
-		let text = `👰 *Seu Harém* (Total: ${total} | Pág ${page}/${totalPages}):\n\n`;
+		let text = `👰 ${haremTitle} (Total: ${total} | Pág ${page}/${totalPages}):\n\n`;
 
 		// Se for a primeira página, agrupa favoritas e lista coleções completas com árvore
 		if (page === 1) {
@@ -3274,6 +3312,64 @@ async function verHarem(bot, message, args) {
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar harém.");
+	}
+}
+
+/**
+ * Define ou altera o nome personalizado do harém (máx 20 caracteres)
+ * !mu-harem-nome [novo nome | reset]
+ */
+async function definirNomeHarem(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	// Se não passou argumentos, busca o nome atual
+	if (!args || args.length === 0) {
+		try {
+			const { data } = await api.get(`/user/${userId}`);
+			const currentName = data?.data?.haremName;
+			if (currentName) {
+				return new ReturnMessage({
+					chatId,
+					content: `👑 Seu harém se chama *${currentName}*.\nPara alterar, use: \`!mu-harem-nome <novo nome>\` (máx 20 caracteres)\nPara restaurar o padrão: \`!mu-harem-nome reset\``
+				});
+			} else {
+				return new ReturnMessage({
+					chatId,
+					content: `👑 Seu harém ainda não possui um nome personalizado.\nDefina usando: \`!mu-harem-nome <nome>\` (máx 20 caracteres)`
+				});
+			}
+		} catch (err) {
+			return handleApiError(err, chatId, "Erro ao consultar nome do harém.");
+		}
+	}
+
+	const rawInput = args.join(" ").trim();
+	const isReset = /^(reset|padrao|padrão|limpar|remover)$/i.test(rawInput);
+	const newName = isReset ? null : rawInput;
+
+	if (newName && newName.length > 20) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ O nome do harém deve ter no máximo 20 caracteres! (O seu tem ${newName.length})`
+		});
+	}
+
+	try {
+		await api.patch(`/user/${userId}/harem-name`, { haremName: newName });
+		if (isReset) {
+			return new ReturnMessage({
+				chatId,
+				content: `👑 O nome do seu harém foi restaurado para o padrão (*Seu Harém*)!`
+			});
+		} else {
+			return new ReturnMessage({
+				chatId,
+				content: `👑 O nome do seu harém foi definido para *${newName}*!`
+			});
+		}
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao atualizar nome do harém.");
 	}
 }
 
@@ -3382,7 +3478,7 @@ async function adicionarDesejo(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	if (!args[0]) {
 		return new ReturnMessage({
@@ -3444,7 +3540,7 @@ async function limparWishlistCasadas(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	try {
 		await ensureUser(userId, groupId, name);
@@ -5325,7 +5421,7 @@ async function painelWebAdmin(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const userName = getUserName(message);
+	const userName = await getUserName(message);
 
 	try {
 		await ensureUser(userId, groupId, userName);
@@ -5450,7 +5546,7 @@ async function waifinderWeb(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const userName = getUserName(message);
+	const userName = await getUserName(message);
 
 	try {
 		await ensureUser(userId, groupId, userName);
@@ -5518,7 +5614,7 @@ async function compartilharHarem(bot, message) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const userName = getUserName(message);
+	const userName = await getUserName(message);
 
 	try {
 		await ensureUser(userId, groupId, userName);
@@ -5576,7 +5672,7 @@ async function venderWaifuCmd(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const userName = getUserName(message);
+	const userName = await getUserName(message);
 
 	if (!args || args.length < 2) {
 		return new ReturnMessage({
@@ -5888,7 +5984,7 @@ async function investirWaifuCmd(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
-	const name = getUserName(message);
+	const name = await getUserName(message);
 
 	if (!args || args.length === 0) {
 		return new ReturnMessage({
@@ -6573,6 +6669,24 @@ const commands = [
 		reactions: { before: "👰", after: "✅", error: "❌" },
 		reply: true,
 		method: verHarem
+	}),
+	new Command({
+		name: "mu-harem-nome",
+		description: "Define ou altera o nome personalizado do seu harém (máx 20 caracteres)",
+		category: "mudae",
+		group: "muwaifu-harem",
+		reactions: { before: "👑", after: "✅", error: "❌" },
+		reply: true,
+		method: definirNomeHarem
+	}),
+	new Command({
+		name: "mu-hnome",
+		description: "Alias curto para !mu-harem-nome",
+		category: "mudae",
+		group: "muwaifu-harem",
+		reactions: { before: "👑", after: "✅", error: "❌" },
+		reply: true,
+		method: definirNomeHarem
 	}),
 	// ── COLEÇÕES (PASTAS) ───────────────────────────────────────────────────
 	new Command({
@@ -7838,6 +7952,7 @@ module.exports = {
 	grantZinthosAll,
 	getAllWaifuUserIds,
 	verHarem,
+	definirNomeHarem,
 	listarColecoes,
 	criarColecao,
 	apagarColecao,

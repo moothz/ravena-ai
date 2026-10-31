@@ -1616,7 +1616,9 @@ class WhatsAppBotGo {
 								options.waifuExclusiveUntil,
 								options.waifuRollerUserName,
 								null,
-								options.waifuGridBase64
+								options.waifuGridBase64,
+								options.waifuAvailable,
+								options.waifuOwner
 							);
 						}
 					} catch (regErr) {

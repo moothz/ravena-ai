@@ -486,7 +486,10 @@ async function handleFazenda(bot, message, _args, group) {
 			else emptyCount++;
 		});
 
-		let text = `${gameEmoji} *${gameName.toUpperCase()}* ${gameEmoji}\n\n`;
+		const farmTitle = status.farmName
+			? `${gameEmoji} *${status.farmName.toUpperCase()}* ${gameEmoji}`
+			: `${gameEmoji} *${gameName.toUpperCase()}* ${gameEmoji}`;
+		let text = `${farmTitle}\n\n`;
 		text += `💰 *Moedas:* ${status.coins ?? 0}\n`;
 		text += `🌾 *Canteiros (9):* ${readyCount} prontos | ${growingCount} crescendo | ${dryCount} secos | ${emptyCount} livres\n`;
 
@@ -638,6 +641,70 @@ async function handleFazAdm(bot, message) {
 			`❌ Não foi possível gerar seu link de acesso: ${err.message}`,
 			message
 		);
+	}
+}
+
+/**
+ * !faz-nome: Define ou exibe o nome personalizado do seu jardim (máx 20 caracteres)
+ */
+async function handleFazNome(bot, message) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+	const rawArgs = getArgsText(message).trim();
+
+	// Sem argumentos: consulta o nome atual
+	if (!rawArgs) {
+		try {
+			const status = await jardimClient.getStatus(userId);
+			const currentName = status.farmName;
+			if (currentName) {
+				return replyReturnMessage(
+					chatId,
+					`🌱 Seu jardim se chama *${currentName}*.\nPara alterar, use: \`!faz-nome <novo nome>\` (máx 20 caracteres)\nPara restaurar o padrão: \`!faz-nome reset\``,
+					message
+				);
+			} else {
+				return replyReturnMessage(
+					chatId,
+					`🌱 Seu jardim ainda não possui um nome personalizado.\nDefina usando: \`!faz-nome <nome>\` (máx 20 caracteres)`,
+					message
+				);
+			}
+		} catch (err) {
+			logger.error(`[handleFazNome] Erro ao consultar nome: ${err.message}`);
+			return replyReturnMessage(chatId, `❌ Erro ao consultar nome da fazenda: ${err.message}`, message);
+		}
+	}
+
+	const isReset = /^(reset|padrao|padrão|limpar|remover)$/i.test(rawArgs);
+	const newName = isReset ? null : rawArgs;
+
+	if (newName && newName.length > 20) {
+		return replyReturnMessage(
+			chatId,
+			`❌ O nome da fazenda deve ter no máximo 20 caracteres! (O seu tem ${newName.length})`,
+			message
+		);
+	}
+
+	try {
+		await jardimClient.updateFarmName(userId, newName);
+		if (isReset) {
+			return replyReturnMessage(
+				chatId,
+				`🌱 O nome do seu jardim foi restaurado para o padrão (*Jardim das Sombras*)!`,
+				message
+			);
+		} else {
+			return replyReturnMessage(
+				chatId,
+				`🌱 O nome do seu jardim foi definido para *${newName}*!`,
+				message
+			);
+		}
+	} catch (err) {
+		logger.error(`[handleFazNome] Erro ao atualizar nome: ${err.message}`);
+		return replyReturnMessage(chatId, `❌ Falha ao atualizar nome da fazenda: ${err.message}`, message);
 	}
 }
 
@@ -1022,7 +1089,8 @@ async function handleFazComprar(bot, message) {
 
 		let text = `🛍️ *COMPRA REALIZADA COM SUCESSO!* 🛍️\n\n`;
 		text += `• Item: *${buyRes.itemName || buyRes.item?.name || itemParam}*\n`;
-		text += `• Quantidade: *${buyRes.quantityBought || quantity}x*\n`;
+		const totalQtyText = buyRes.newInventoryQuantity !== undefined ? ` (Total: ${buyRes.newInventoryQuantity})` : "";
+		text += `• Quantidade: *${buyRes.quantityBought || quantity}x*${totalQtyText}\n`;
 		text += `• Total Pago: *${buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
 		text += `• Saldo Restante: *${buyRes.remainingCoins ?? buyRes.coins ?? 0} moedas*`;
 
@@ -1751,6 +1819,16 @@ const commands = [
 		method: handleFazRanking
 	}),
 	new Command({
+		name: "faz-nome",
+		aliases: ["faz-fnome"],
+		description: "Define ou altera o nome personalizado do seu jardim (máx 20 caracteres)",
+		usage: "!faz-nome <nome>",
+		category: "jogos",
+		reply: true,
+		cooldown: 5,
+		method: handleFazNome
+	}),
+	new Command({
 		name: "faz-ajuda",
 		aliases: ["faz-help"],
 		description: "Exibe guia de comandos e mecânicas do Jardim das Sombras",
@@ -1968,6 +2046,7 @@ async function getWeeklyFazendaStats(sinceMs = null, saveSnapshot = false, bot =
 
 module.exports = {
 	commands,
+	handleFazNome,
 	getWeeklyFazendaStats,
 	getFarmWaifuRollBonus,
 	consumeFarmWaifuRoll,

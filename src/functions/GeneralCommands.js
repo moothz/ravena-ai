@@ -271,8 +271,103 @@ Aqui vai as principais diferenças pra antiga:
 	});
 }
 
+const GLOBAL_NICKS_PATH = path.join(__dirname, "../../data/global-nicks.json");
+let globalNicksCache = null;
+
+async function loadGlobalNicks() {
+	if (globalNicksCache !== null) return globalNicksCache;
+	try {
+		const content = await fs.readFile(GLOBAL_NICKS_PATH, "utf8");
+		globalNicksCache = JSON.parse(content);
+	} catch (e) {
+		globalNicksCache = {};
+	}
+	return globalNicksCache;
+}
+
+async function saveGlobalNick(userId, nickname) {
+	const nicks = await loadGlobalNicks();
+	const cleanUser = String(userId).trim();
+	if (nickname) {
+		nicks[cleanUser] = nickname;
+	} else {
+		delete nicks[cleanUser];
+	}
+	globalNicksCache = nicks;
+	try {
+		await fs.writeFile(GLOBAL_NICKS_PATH, JSON.stringify(nicks, null, 2), "utf8");
+	} catch (e) {
+		logger.error("Erro ao salvar apelido global:", e.message);
+	}
+}
+
+async function getGlobalNick(userId) {
+	const nicks = await loadGlobalNicks();
+	const cleanUser = String(userId).trim();
+	const rawPhone = cleanUser.replace(/\D/g, "");
+	return nicks[cleanUser] || (rawPhone ? nicks[rawPhone] : null) || null;
+}
+
 /**
- * Define um apelido para o usuário em um grupo
+ * Resolve o apelido do usuário seguindo a hierarquia estrita:
+ * 1. Apelido definido no grupo atual (se em grupo)
+ * 2. Apelido global definido no PV da Ravena
+ * 3. Último apelido definido pelo usuário em qualquer outro grupo
+ * 4. Fallback: nome do WhatsApp (pushName / authorName / "Jogador")
+ *
+ * @param {Object} [group] - Objeto do grupo atual (opcional)
+ * @param {string} userId - ID do usuário (ex: 5511...@c.us ou número puro)
+ * @param {string} [fallbackName] - Nome fallback (pushName ou authorName)
+ * @returns {Promise<string>}
+ */
+async function resolveUserNickname(group, userId, fallbackName = null) {
+	if (!userId) return fallbackName || "Jogador";
+	const cleanUser = String(userId).trim();
+	const rawPhone = cleanUser.replace(/\D/g, "");
+
+	// 1. Apelido definido no grupo atual
+	if (group && group.nicks && Array.isArray(group.nicks)) {
+		const match = group.nicks.find(
+			(n) => n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
+		);
+		if (match && match.apelido) {
+			return match.apelido;
+		}
+	}
+
+	// 2. Apelido global (definido no PV)
+	const globalNick = (await getGlobalNick(cleanUser)) || (rawPhone ? await getGlobalNick(rawPhone) : null);
+	if (globalNick) {
+		return globalNick;
+	}
+
+	// 3. Fallback: último apelido definido em qualquer grupo
+	try {
+		const groups = await database.getGroups();
+		if (Array.isArray(groups)) {
+			// Itera do fim para o começo para pegar o mais recente/último
+			for (let i = groups.length - 1; i >= 0; i--) {
+				const g = groups[i];
+				if (g && Array.isArray(g.nicks)) {
+					const m = g.nicks.find(
+						(n) => n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
+					);
+					if (m && m.apelido) {
+						return m.apelido;
+					}
+				}
+			}
+		}
+	} catch (e) {
+		logger.debug("Erro ao buscar apelido em outros grupos:", e.message);
+	}
+
+	// 4. Nome no WhatsApp ou ID
+	return fallbackName || (rawPhone ? rawPhone : "Jogador");
+}
+
+/**
+ * Define um apelido para o usuário em um grupo ou globalmente (no PV)
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Mensagem formatada
  * @param {Array} args - Argumentos do comando
@@ -281,96 +376,142 @@ Aqui vai as principais diferenças pra antiga:
  */
 async function apelidoCommand(bot, message, args, group) {
 	try {
-		// Verifica se está em um grupo
-		if (!message.group) {
+		const isPV = !message.group;
+		const chatId = isPV ? message.author : group.id;
+		const replyOptions = {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		};
+
+		// Fluxo no PV: Gerencia apelido GLOBAL
+		if (isPV) {
+			if (args.length === 0) {
+				const currentGlobal = await getGlobalNick(message.author);
+				if (currentGlobal) {
+					return new ReturnMessage({
+						chatId,
+						content: `Seu apelido global atual é: *${currentGlobal}*\n> Este apelido é usado em todos os grupos onde você não definiu um apelido específico.\n> Para alterar: !apelido [novo]\n> Para remover: !apelido remover`,
+						options: replyOptions
+					});
+				} else {
+					// Mostra se existe algum apelido em grupo servindo de fallback
+					const resolvedFallback = await resolveUserNickname(null, message.author, null);
+					const hasGroupFallback = resolvedFallback && resolvedFallback !== message.author.replace(/\D/g, "") && resolvedFallback !== "Jogador";
+					let msg = "Você ainda não definiu um apelido global.\nUse *!apelido [apelido]* para definir um apelido global usado em todos os grupos!";
+					if (hasGroupFallback) {
+						msg += `\n\n> Atualmente você está herdando o apelido: *${resolvedFallback}* (definido em um de seus grupos).`;
+					}
+					return new ReturnMessage({
+						chatId,
+						content: msg,
+						options: replyOptions
+					});
+				}
+			}
+
+			let nickname = args.join(" ").trim();
+			if (nickname.toLowerCase() === "remover" || nickname.toLowerCase() === "deletar") {
+				await saveGlobalNick(message.author, null);
+				return new ReturnMessage({
+					chatId,
+					content: "✅ Apelido global removido com sucesso!",
+					options: replyOptions
+				});
+			}
+
+			if (nickname.length < 2) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ O apelido deve ter pelo menos 2 caracteres.",
+					options: replyOptions
+				});
+			}
+
+			if (nickname.length > 20) {
+				nickname = nickname.substring(0, 20);
+			}
+
+			await saveGlobalNick(message.author, nickname);
+
 			return new ReturnMessage({
-				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				chatId,
+				content: `👑 Apelido global definido: *${nickname}*\n\n> Ele será usado em todos os grupos onde você não definiu um apelido específico e no seu harém!\n> Para grupos específicos, use !apelido dentro do próprio grupo.`,
+				options: replyOptions
 			});
 		}
 
-		// Se não há argumentos, mostrar o apelido atual
+		// Fluxo em Grupo: Gerencia apelido LOCAL do grupo
+		const psNote = "\n\n> Ps.: Um apelido global pode ser definido no meu pv!";
+
 		if (args.length === 0) {
 			const userNick = getUserNickname(group, message.author);
 			if (userNick) {
 				return new ReturnMessage({
-					chatId: group.id,
-					content: `Seu apelido atual é: *${userNick}*`,
-					options: {
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
+					chatId,
+					content: `Seu apelido neste grupo é: *${userNick}*${psNote}`,
+					options: replyOptions
 				});
 			} else {
+				const fallbackNick = await resolveUserNickname(null, message.author, null);
+				const hasFallback = fallbackNick && fallbackNick !== message.author.replace(/\D/g, "") && fallbackNick !== "Jogador";
+				let content = "Você não tem um apelido específico definido neste grupo.\nUse *!apelido [apelido]* para definir um.";
+				if (hasFallback) {
+					content += `\n> Apelido ativo herdado: *${fallbackNick}*`;
+				}
+				content += psNote;
 				return new ReturnMessage({
-					chatId: group.id,
-					content: "Você não tem um apelido definido.\nUse !apelido [apelido] para definir um.",
-					options: {
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
+					chatId,
+					content,
+					options: replyOptions
 				});
 			}
 		}
 
-		// Obter o apelido dos argumentos
-		let nickname = args.join(" ");
+		let nickname = args.join(" ").trim();
+		if (nickname.toLowerCase() === "remover" || nickname.toLowerCase() === "deletar") {
+			if (group.nicks) {
+				group.nicks = group.nicks.filter((nick) => nick.numero !== message.author);
+				await database.saveGroup(group);
+			}
+			return new ReturnMessage({
+				chatId,
+				content: `✅ Apelido deste grupo removido! Agora você usará seu apelido global ou nome do WhatsApp.${psNote}`,
+				options: replyOptions
+			});
+		}
 
-		// Verificar o comprimento mínimo
 		if (nickname.length < 2) {
 			return new ReturnMessage({
-				chatId: group.id,
+				chatId,
 				content: "O apelido deve ter pelo menos 2 caracteres.",
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
+				options: replyOptions
 			});
 		}
 
-		// Limitar a 20 caracteres
 		if (nickname.length > 20) {
 			nickname = nickname.substring(0, 20);
-
-			return new ReturnMessage({
-				chatId: group.id,
-				content: `O apelido foi limitado a 20 caracteres: *${nickname}*`,
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
 		}
 
-		// Inicializar nicks array se não existir
 		if (!group.nicks) {
 			group.nicks = [];
 		}
 
-		// Verificar se o usuário já tem um apelido
 		const existingIndex = group.nicks.findIndex((nick) => nick.numero === message.author);
-
 		if (existingIndex !== -1) {
-			// Atualizar apelido existente
 			group.nicks[existingIndex].apelido = nickname;
 		} else {
-			// Adicionar novo apelido
 			group.nicks.push({
 				numero: message.author,
 				apelido: nickname
 			});
 		}
 
-		// Salvar grupo
 		await database.saveGroup(group);
 
 		return new ReturnMessage({
-			chatId: group.id,
-			content: `Apelido definido: *${nickname}*`,
-			options: {
-				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
-			}
+			chatId,
+			content: `Apelido definido: *${nickname}*${psNote}`,
+			options: replyOptions
 		});
 	} catch (error) {
 		logger.error("Erro ao definir apelido:", error);
@@ -706,5 +847,8 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
-	getUserNickname
+	getUserNickname,
+	resolveUserNickname,
+	getGlobalNick,
+	saveGlobalNick
 };
