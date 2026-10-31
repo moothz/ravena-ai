@@ -14,7 +14,10 @@ const logger = new Logger("waifu-marriage-photo");
 const database = Database.getInstance();
 
 const DB_NAME = "waifu_marriage_photos";
-const WAIFULETES_BASE_URL = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+const WAIFULETES_BASE_URL = (
+	process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030"
+).replace(/\/+$/, "");
+const WAIFULETES_WEB_URL = (process.env.WAIFULETES_WEB_URL || "").replace(/\/+$/, "");
 
 // Inicializa tabela SQLite para persistência e metadados das fotos de casamento
 database.getSQLiteDb(
@@ -75,17 +78,47 @@ function getBorderPath() {
  * @returns {Promise<Buffer|null>}
  */
 async function downloadCharacterImageBuffer(imageUrl) {
-	if (!imageUrl) return null;
+	if (!imageUrl || typeof imageUrl !== "string") return null;
+	const trimmed = imageUrl.trim();
+	if (!trimmed || trimmed.toLowerCase().includes("none.png")) {
+		return null;
+	}
+
 	try {
-		let resolvedUrl = imageUrl;
-		if (resolvedUrl.startsWith("/") || resolvedUrl.includes("localhost:")) {
-			const pathPart = resolvedUrl.replace(/^https?:\/\/[^/]+/, "");
-			resolvedUrl = `${WAIFULETES_BASE_URL}${pathPart.startsWith("/") ? "" : "/"}${pathPart}`;
+		let resolvedUrl = trimmed;
+		if (trimmed.startsWith("/")) {
+			const cleanPath = trimmed.replace(/^\/+/, "");
+			resolvedUrl = `${WAIFULETES_BASE_URL}/${cleanPath}`;
+		} else {
+			try {
+				const parsed = new URL(trimmed);
+				let webHost = null;
+				if (WAIFULETES_WEB_URL) {
+					try {
+						webHost = new URL(WAIFULETES_WEB_URL).host;
+					} catch {
+						// ignore
+					}
+				}
+
+				if (
+					parsed.hostname === "localhost" ||
+					parsed.hostname === "127.0.0.1" ||
+					parsed.hostname === "host.docker.internal" ||
+					(webHost && parsed.host === webHost)
+				) {
+					const cleanPath = parsed.pathname.replace(/^\/+/, "");
+					resolvedUrl = `${WAIFULETES_BASE_URL}/${cleanPath}${parsed.search}`;
+				}
+			} catch {
+				const cleanPath = trimmed.replace(/^https?:\/\/[^/]+\/?/, "").replace(/^\/+/, "");
+				resolvedUrl = `${WAIFULETES_BASE_URL}/${cleanPath}`;
+			}
 		}
 
 		const response = await axios.get(resolvedUrl, {
 			responseType: "arraybuffer",
-			timeout: 15000
+			timeout: 10000
 		});
 		return Buffer.from(response.data);
 	} catch (err) {

@@ -24,9 +24,11 @@ const adminUtils = AdminUtils.getInstance();
 const logger = new Logger("waifu-commands");
 
 // ─── Configurações da API ───────────────────────────────────────────────────
-const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030";
+const WAIFULETES_URL = (
+	process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030"
+).replace(/\/+$/, "");
 const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY;
-const WAIFULETES_WEB_URL = process.env.WAIFULETES_WEB_URL || "https://waifuletes.moothz.win";
+const WAIFULETES_WEB_URL = (process.env.WAIFULETES_WEB_URL || "").replace(/\/+$/, "");
 
 if (!WAIFULETES_KEY) {
 	logger.error(
@@ -816,20 +818,77 @@ function formatDateTimeBR(date, options = {}) {
 }
 
 /**
+ * Escapa caracteres especiais para inserção segura em XML / SVG
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeXml(str) {
+	if (!str) return "";
+	return String(str)
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&apos;");
+}
+
+/**
+ * Resolve e normaliza a URL da imagem de waifu para acessar diretamente a API interna
+ * @param {string} imageUrl
+ * @returns {string|null} URL resolvida ou null se for imagem inválida/placeholder inexistente
+ */
+function resolveWaifuImageUrl(imageUrl) {
+	if (!imageUrl || typeof imageUrl !== "string") return null;
+	const trimmed = imageUrl.trim();
+	if (!trimmed || trimmed.toLowerCase().includes("none.png")) {
+		return null;
+	}
+
+	try {
+		// Se for caminho relativo (ex: /media/characters/... ou media/characters/...)
+		if (trimmed.startsWith("/")) {
+			const cleanPath = trimmed.replace(/^\/+/, "");
+			return `${WAIFULETES_URL}/${cleanPath}`;
+		}
+
+		const parsed = new URL(trimmed);
+		let webHost = null;
+		if (WAIFULETES_WEB_URL) {
+			try {
+				webHost = new URL(WAIFULETES_WEB_URL).host;
+			} catch {
+				// ignore
+			}
+		}
+
+		// Se a URL apontar para o domínio web configurado, localhost, 127.0.0.1 ou host.docker.internal
+		if (
+			parsed.hostname === "localhost" ||
+			parsed.hostname === "127.0.0.1" ||
+			parsed.hostname === "host.docker.internal" ||
+			(webHost && parsed.host === webHost)
+		) {
+			const cleanPath = parsed.pathname.replace(/^\/+/, "");
+			return `${WAIFULETES_URL}/${cleanPath}${parsed.search}`;
+		}
+
+		return trimmed;
+	} catch {
+		// Se falhar o parse da URL, tenta normalizar como caminho relativo
+		const cleanPath = trimmed.replace(/^https?:\/\/[^/]+\/?/, "").replace(/^\/+/, "");
+		return `${WAIFULETES_URL}/${cleanPath}`;
+	}
+}
+
+/**
  * Baixa o buffer binário da imagem do personagem
  * @param {string} imageUrl
  * @returns {Promise<Buffer|null>}
  */
 async function downloadImageBuffer(imageUrl) {
-	if (!imageUrl) return null;
+	const resolvedUrl = resolveWaifuImageUrl(imageUrl);
+	if (!resolvedUrl) return null;
 	try {
-		let resolvedUrl = imageUrl;
-		// Se a URL apontar para localhost ou vier relativa, substitui para a base configurada
-		if (resolvedUrl.startsWith("/") || resolvedUrl.includes("localhost:")) {
-			const pathPart = resolvedUrl.replace(/^https?:\/\/[^/]+/, "");
-			resolvedUrl = `${WAIFULETES_URL}${pathPart.startsWith("/") ? "" : "/"}${pathPart}`;
-		}
-
 		const response = await axios.get(resolvedUrl, {
 			responseType: "arraybuffer",
 			timeout: 10000
@@ -849,6 +908,72 @@ async function downloadImageBuffer(imageUrl) {
 async function downloadImageAsBase64(imageUrl) {
 	const buf = await downloadImageBuffer(imageUrl);
 	return buf ? buf.toString("base64") : null;
+}
+
+/**
+ * Gera um cartão visual (Buffer JPEG) para personagem quando não há imagem cadastrada
+ * @param {object} character
+ * @returns {Promise<Buffer>}
+ */
+async function generateSingleRollPlaceholderBuffer(character) {
+	if (!character) return null;
+	const cardW = 500;
+	const cardH = 700;
+
+	const rawRarity = String(character.rarity || character.baseRarity || "COMMON")
+		.toUpperCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "");
+
+	let rarityKey = "COMMON";
+	let rarityLabel = "COMUM";
+	if (rawRarity.includes("LEGEND") || rawRarity.includes("LEND")) {
+		rarityKey = "LEGENDARY";
+		rarityLabel = "LENDÁRIO";
+	} else if (rawRarity.includes("EPIC")) {
+		rarityKey = "EPIC";
+		rarityLabel = "ÉPICO";
+	} else if (rawRarity.includes("RAR")) {
+		rarityKey = "RARE";
+		rarityLabel = "RARO";
+	} else if (rawRarity.includes("INCOM") || rawRarity.includes("UNCOM")) {
+		rarityKey = "UNCOMMON";
+		rarityLabel = "INCOMUM";
+	}
+
+	const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
+	const charName = escapeXml(
+		String(character.characterName || character.name || "Personagem").substring(0, 26)
+	);
+	const charSeries = escapeXml(String(character.series || "Sem Série").substring(0, 30));
+	const genderEmoji = character.gender === "FEMALE" ? "♀" : character.gender === "MALE" ? "♂" : "⚧";
+
+	const cardSvg = Buffer.from(`
+		<svg width="${cardW}" height="${cardH}" xmlns="http://www.w3.org/2000/svg">
+			<defs>
+				<linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+					<stop offset="0%" stop-color="#1e212b"/>
+					<stop offset="100%" stop-color="#0f1117"/>
+				</linearGradient>
+			</defs>
+			<rect width="${cardW}" height="${cardH}" rx="16" fill="url(#bgGrad)" stroke="${style.stroke}" stroke-width="4"/>
+			
+			<circle cx="${cardW / 2}" cy="250" r="105" fill="#282b36" stroke="${style.stroke}" stroke-width="2"/>
+			<text x="${cardW / 2}" y="270" font-size="80" text-anchor="middle" dominant-baseline="central" fill="${style.stroke}">👤</text>
+			
+			<rect x="${(cardW - 200) / 2}" y="36" width="200" height="42" rx="10" fill="${style.bg}" stroke="${style.stroke}" stroke-width="2"/>
+			<text x="${cardW / 2}" y="58" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">★ ${rarityLabel} ★</text>
+
+			<text x="${cardW / 2}" y="435" font-size="28" font-weight="bold" text-anchor="middle" fill="#FFFFFF" font-family="DejaVu Sans, Arial, sans-serif">${charName}</text>
+			<text x="${cardW / 2}" y="480" font-size="20" text-anchor="middle" fill="#9CA3AF" font-family="DejaVu Sans, Arial, sans-serif">${charSeries}</text>
+			<text x="${cardW / 2}" y="520" font-size="18" text-anchor="middle" fill="${style.stroke}" font-family="DejaVu Sans, Arial, sans-serif">Gênero: ${genderEmoji}</text>
+
+			<rect x="50" y="605" width="${cardW - 100}" height="42" rx="8" fill="#181a21" stroke="#374151" stroke-width="1"/>
+			<text x="${cardW / 2}" y="626" font-size="15" text-anchor="middle" dominant-baseline="central" fill="#9CA3AF" font-family="DejaVu Sans, Arial, sans-serif">Foto indisponível no catálogo</text>
+		</svg>
+	`);
+
+	return await sharp(cardSvg).jpeg({ quality: 85 }).toBuffer();
 }
 
 // Estilos visuais de badges numéricos no grid por Raridade
@@ -966,10 +1091,13 @@ async function buildRollGridImage(items) {
 
 			let baseImageBuffer = item.imageBuffer;
 			if (!baseImageBuffer) {
-				const charName = String(
-					item.character?.characterName || item.character?.name || "Personagem"
-				).substring(0, 20);
-				const charSeries = String(item.character?.series || "").substring(0, 22);
+				const charName = escapeXml(
+					String(item.character?.characterName || item.character?.name || "Personagem").substring(
+						0,
+						20
+					)
+				);
+				const charSeries = escapeXml(String(item.character?.series || "").substring(0, 22));
 				const placeholderSvg = Buffer.from(`
 					<svg width="${cellW}" height="${cellH}" xmlns="http://www.w3.org/2000/svg">
 						<rect width="${cellW}" height="${cellH}" fill="#1e212b"/>
@@ -1574,7 +1702,18 @@ function makeRollHandler(genderFilter) {
 
 				const uniqueMentions = [...new Set(mentions)];
 
-				const imageBase64 = await downloadImageAsBase64(character.imageUrl);
+				let imageBase64 = await downloadImageAsBase64(character.imageUrl);
+				if (!imageBase64) {
+					try {
+						const placeholderBuf = await generateSingleRollPlaceholderBuffer(character);
+						if (placeholderBuf) {
+							imageBase64 = placeholderBuf.toString("base64");
+						}
+					} catch (placeholderErr) {
+						logger.debug("Falha ao gerar placeholder para single roll:", placeholderErr.message);
+					}
+				}
+
 				if (imageBase64) {
 					return wrapReturn(
 						new ReturnMessage({
@@ -4200,7 +4339,9 @@ async function detalhesPersonagem(bot, message, args) {
 		}
 
 		text += `\n🆔 ID: \`${char.id}\``;
-		text += `\n🌐 Página: ${WAIFULETES_WEB_URL}/character/${encodeURIComponent(char.id)}`;
+		if (WAIFULETES_WEB_URL) {
+			text += `\n🌐 Página: ${WAIFULETES_WEB_URL}/character/${encodeURIComponent(char.id)}`;
+		}
 
 		// Se houver mais resultados correspondentes na busca ampla, lista como sugestão
 		if (otherResults.length > 0) {
@@ -5158,10 +5299,12 @@ function formatWebUrl(rawUrl, path) {
 				u.hostname === "127.0.0.1" ||
 				u.hostname === "host.docker.internal"
 			) {
-				const base = new URL(WAIFULETES_WEB_URL);
-				u.protocol = base.protocol;
-				u.host = base.host;
-				return u.toString();
+				if (WAIFULETES_WEB_URL) {
+					const base = new URL(WAIFULETES_WEB_URL);
+					u.protocol = base.protocol;
+					u.host = base.host;
+					return u.toString();
+				}
 			}
 			return rawUrl;
 		} catch {
@@ -5169,7 +5312,7 @@ function formatWebUrl(rawUrl, path) {
 		}
 	}
 	const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-	return `${WAIFULETES_WEB_URL}${cleanPath}`;
+	return WAIFULETES_WEB_URL ? `${WAIFULETES_WEB_URL}${cleanPath}` : cleanPath;
 }
 
 /**
@@ -7750,5 +7893,8 @@ module.exports = {
 	mercadoInfoCmd,
 	toggleRollMarcar,
 	getGroupParticipants,
-	isUserActiveInGroup
+	isUserActiveInGroup,
+	escapeXml,
+	resolveWaifuImageUrl,
+	generateSingleRollPlaceholderBuffer
 };
