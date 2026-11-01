@@ -764,6 +764,92 @@ function getUserId(message) {
 	return normalizeUserId(rawId);
 }
 
+/**
+ * Extrai o 1º mention do comando (via message.mentions, args ou quoted)
+ * @param {Object} message - Objeto da mensagem
+ * @param {Array} args - Argumentos do comando
+ * @param {string} [botWid] - Wid do bot para ignorar citação do próprio bot
+ * @returns {string|null} ID normalizado do usuário alvo ou null
+ */
+function extractFirstMention(message, args, botWid = null) {
+	let targetJid = null;
+
+	const rawMentions =
+		Array.isArray(message.mentions) && message.mentions.length > 0
+			? message.mentions
+			: Array.isArray(message.origin?.mentionedIds) && message.origin.mentionedIds.length > 0
+				? message.origin.mentionedIds
+				: [];
+
+	if (rawMentions.length > 0) {
+		targetJid = rawMentions[0];
+	}
+
+	const mentionArg = Array.isArray(args)
+		? args.find((a) => typeof a === "string" && a.startsWith("@"))
+		: null;
+
+	if (mentionArg) {
+		const cleanDigits = mentionArg.replace(/^@/, "").replace(/\D/g, "");
+		if (!targetJid && cleanDigits.length >= 7) {
+			targetJid = `${cleanDigits}@s.whatsapp.net`;
+		}
+	}
+
+	if (!targetJid) {
+		const quotedParticipant =
+			message.quotedMsg?.author ||
+			message.quotedMsg?.participant ||
+			message.origin?.quotedMsg?.author ||
+			message.origin?.quotedMsg?.participant ||
+			message.origin?._data?.quotedParticipant;
+		if (quotedParticipant) {
+			const botJid = botWid || message.originBotWid;
+			if (!botJid || normalizeUserId(quotedParticipant) !== normalizeUserId(botJid)) {
+				targetJid = quotedParticipant;
+			}
+		}
+	}
+
+	return targetJid ? normalizeUserId(targetJid) : null;
+}
+
+/**
+ * Resolve um personagem por ID exato, slug ou busca por nome no catálogo
+ * @param {string} query - Termo de busca ou ID
+ * @returns {Promise<Object|null>} Personagem encontrado ou null
+ */
+async function resolveCharacter(query) {
+	if (!query || typeof query !== "string") return null;
+	const trimmed = query.trim();
+	if (!trimmed) return null;
+
+	// 1. Busca direta por ID/slug exato se não contiver espaços
+	if (!/\s/.test(trimmed)) {
+		try {
+			const { data } = await api.get(`/characters/${encodeURIComponent(trimmed)}`);
+			if (data?.data) return data.data;
+		} catch (_) {}
+	}
+
+	// 2. Busca ampla no catálogo
+	try {
+		const { data } = await api.get("/characters", {
+			params: { search: trimmed, limit: 6 }
+		});
+		const results = data.data?.data || [];
+		if (results.length > 0) {
+			const normQ = trimmed.toLowerCase();
+			const exactId = results.find((c) => c.id?.toLowerCase() === normQ);
+			const exactName = results.find((c) => c.name?.toLowerCase() === normQ);
+			const startsName = results.find((c) => c.name?.toLowerCase().startsWith(normQ));
+			return exactId || exactName || startsName || results[0];
+		}
+	} catch (_) {}
+
+	return null;
+}
+
 function getGroupId(message) {
 	return message.group ?? message.author;
 }
@@ -1320,7 +1406,7 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 		defaultMsg;
 
 	logger.error("Erro na chamada Waifuletes:", apiErr || resData?.message || err.message);
-	const prefix = /^[⌛🚫❓⚠️🔍👤❌]/.test(message) ? "" : "❌ ";
+	const prefix = /^(?:⌛|🚫|❓|⚠️|🔍|👤|❌)/u.test(message) ? "" : "❌ ";
 	return new ReturnMessage({ chatId, content: `${prefix}${message}`, options });
 }
 
@@ -3207,55 +3293,82 @@ async function getAllWaifuUserIds() {
 }
 
 /**
- * Lista o harém do usuário de forma paginada
+ * Lista o harém do usuário de forma paginada (próprio ou de outro usuário com @)
  */
 async function verHarem(bot, message, args) {
 	const chatId = message.group ?? message.author;
-	const userId = getUserId(message);
+	const senderId = getUserId(message);
+	const targetUserId = extractFirstMention(message, args, bot?.wid) || senderId;
+	const isSelf = normalizeUserId(targetUserId) === normalizeUserId(senderId);
 
 	const page =
 		parseInt(
-			args.find((a) => /^\d+$/.test(a)),
+			(args || []).find((a) => /^\d+$/.test(a)),
 			10
 		) || 1;
 	const limit = 15;
 
 	try {
 		const [haremRes, colsRes] = await Promise.all([
-			api.get(`/harem/${userId}`, {
+			api.get(`/harem/${targetUserId}`, {
 				params: { page, limit, sort: "keys", withoutCollection: true }
 			}),
-			page === 1
-				? api.get(`/user/${userId}/collections`).catch(() => ({ data: { data: [] } }))
-				: Promise.resolve({ data: { data: [] } })
+			api.get(`/user/${targetUserId}/collections`).catch(() => ({ data: { data: [] } }))
 		]);
 
-		const haremData = haremRes.data.data;
+		const haremData = haremRes.data?.data || {};
 		const entries = haremData.data || [];
 		const totalGeneral = haremData.total || 0;
 		const totalPages = haremData.totalPages || 1;
 		const collections = colsRes.data?.data || [];
 
-		// Soma total do harém (geral + coleções)
-		const totalInCols = collections.reduce((acc, col) => acc + (col.characterCount || 0), 0);
-		const total = totalGeneral + totalInCols;
-
-		const haremTitle = haremData.haremName ? `*${haremData.haremName}*` : "*Seu Harém*";
-
-		if (entries.length === 0 && totalInCols === 0) {
+		// Se o usuário alvo privou seu harém e o solicitante não for o próprio dono
+		if (!isSelf && haremData.haremPrivate) {
+			const targetName = haremData.userName || "O usuário";
 			return new ReturnMessage({
 				chatId,
-				content: `👰 ${haremTitle} está vazio! Use *!mu-roll* para encontrar e casar com waifus e husbandos.`
+				content: `🔒 *Harém Privado!*\n\n${targetName} optou por privar seu harém e seus personagens não estão visíveis.`
 			});
 		}
 
-		let text = `👰 ${haremTitle} (Total: ${total} | Pág ${page}/${totalPages}):\n\n`;
+		// Filtra coleções e waifus privadas se for outro usuário visualizando
+		const visibleCollections = isSelf ? collections : collections.filter((col) => !col.isPrivate);
+
+		// Filtra waifus de coleções privadas se for outro usuário visualizando
+		const visibleEntries = isSelf ? entries : entries.filter((item) => !item.collection?.isPrivate);
+
+		// Soma total do harém (geral + coleções visíveis)
+		const totalInCols = visibleCollections.reduce((acc, col) => acc + (col.characterCount || 0), 0);
+		const total = totalGeneral + totalInCols;
+
+		let haremTitle;
+		if (isSelf) {
+			haremTitle = haremData.haremName ? `*${haremData.haremName}*` : "*Seu Harém*";
+		} else {
+			const targetName = haremData.userName || "Jogador";
+			haremTitle = haremData.haremName ? `*${haremData.haremName}*` : `*Harém de ${targetName}*`;
+		}
+
+		if (visibleEntries.length === 0 && totalInCols === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: isSelf
+					? `👰 ${haremTitle} está vazio! Use *!mu-roll* para encontrar e casar com waifus e husbandos.`
+					: `👰 ${haremTitle} está vazio!`
+			});
+		}
+
+		let text = `👰 ${haremTitle} (Total: ${total} | Pág ${page}/${totalPages}):\n`;
+		if (isSelf && haremData.haremPrivate) {
+			text += `🔒 _(Seu harém está privado para outros jogadores)_\n`;
+		}
+		text += `\n`;
 
 		// Se for a primeira página, agrupa favoritas e lista coleções completas com árvore
 		if (page === 1) {
-			const favorites = entries.filter((item) => item.isFavorite);
+			const favorites = visibleEntries.filter((item) => item.isFavorite);
 			// As que estão em alguma pasta NÃO aparecem em demais personagens
-			const rest = entries.filter((item) => !item.isFavorite && !item.collectionId);
+			const rest = visibleEntries.filter((item) => !item.isFavorite && !item.collectionId);
 
 			if (favorites.length > 0) {
 				text += `⭐ *Favoritas em Destaque:*\n`;
@@ -3271,11 +3384,12 @@ async function verHarem(bot, message, args) {
 			}
 
 			// Coleções com árvore de personagens (estilo FileManager / ListCommands)
-			if (collections.length > 0) {
-				text += `📁 *Coleções (${collections.length}/15):*\n`;
-				collections.forEach((col) => {
+			if (visibleCollections.length > 0) {
+				text += `📁 *Coleções (${visibleCollections.length}/15):*\n`;
+				visibleCollections.forEach((col) => {
 					const chars = col.characters || [];
-					text += `📂 *${col.name}* (${chars.length} waifu${chars.length !== 1 ? "s" : ""}):\n`;
+					const lock = isSelf && col.isPrivate ? " 🔒" : "";
+					text += `📂 *${col.name}*${lock} (${chars.length} waifu${chars.length !== 1 ? "s" : ""}):\n`;
 					if (chars.length === 0) {
 						text += `   └─ _(pasta vazia)_\n`;
 					} else {
@@ -3314,7 +3428,7 @@ async function verHarem(bot, message, args) {
 			}
 		} else {
 			// Páginas seguintes (page > 1): omite as que estão em coleção
-			const pageEntries = entries.filter((item) => !item.collectionId);
+			const pageEntries = visibleEntries.filter((item) => !item.collectionId);
 			pageEntries.forEach((item, index) => {
 				const char = item.character;
 				const pos = (page - 1) * limit + index + 1;
@@ -3328,10 +3442,16 @@ async function verHarem(bot, message, args) {
 		}
 
 		if (page < totalPages) {
-			text += `\n_Digite \`!mu-harem ${page + 1}\` para a próxima página._`;
+			if (isSelf) {
+				text += `\n_Digite \`!mu-harem ${page + 1}\` para a próxima página._`;
+			} else {
+				const targetPhone = targetUserId.split("@")[0];
+				text += `\n_Digite \`!mu-harem @${targetPhone} ${page + 1}\` para a próxima página._`;
+			}
 		}
 
-		return new ReturnMessage({ chatId, content: text });
+		const returnOpts = !isSelf ? { mentions: [toJid(targetUserId)] } : {};
+		return new ReturnMessage({ chatId, content: text, options: returnOpts });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar harém.");
 	}
@@ -3392,6 +3512,201 @@ async function definirNomeHarem(bot, message, args) {
 		}
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao atualizar nome do harém.");
+	}
+}
+
+/**
+ * Alterna ou define a privacidade do harém (!mu-harem-privado [on|off])
+ */
+async function alternarPrivacidadeHarem(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	try {
+		// 1. Busca dados atuais do harém para saber o estado atual
+		const { data } = await api.get(`/harem/${userId}`, {
+			params: { page: 1, limit: 1 }
+		});
+		const currentPrivate = Boolean(data?.data?.haremPrivate);
+
+		let targetState;
+		const arg = (args?.[0] || "").toLowerCase();
+		if (["on", "privado", "sim", "true", "1", "ativar"].includes(arg)) {
+			targetState = true;
+		} else if (
+			["off", "publico", "público", "nao", "não", "false", "0", "desativar"].includes(arg)
+		) {
+			targetState = false;
+		} else {
+			targetState = !currentPrivate;
+		}
+
+		await api.patch(`/harem/${userId}/privacy`, { isPrivate: targetState });
+
+		if (targetState) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🔒 *Seu harém agora é PRIVADO!*\n\nOutros usuários não poderão ver seus personagens através de `!mu-harem @você` nem na versão web pública."
+			});
+		} else {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🔓 *Seu harém agora é PÚBLICO!*\n\nOutros usuários podem visualizar seus personagens e coleções públicas através de `!mu-harem @você`."
+			});
+		}
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao alterar privacidade do harém.");
+	}
+}
+
+/**
+ * Consulta fotos disponíveis ou fixa uma foto no card do harém
+ * !mu-harem-foto <personagem> [índice | casamento | reset]
+ */
+async function gerenciarFotoHarem(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+
+	const rawStr = (args || []).join(" ").trim();
+	if (!rawStr) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"📸 *Gerenciamento de Foto no Card do Harém*\n\n" +
+				"• Consultar fotos: `!mu-harem-foto <personagem>`\n" +
+				"• Fixar foto do catálogo: `!mu-harem-foto <personagem> <número>`\n" +
+				"• Fixar foto de casamento: `!mu-harem-foto <personagem> casamento`\n" +
+				"• Voltar para fotos aleatórias: `!mu-harem-foto <personagem> reset`"
+		});
+	}
+
+	let charQuery = "";
+	let actionArg = null;
+
+	if (rawStr.includes("|")) {
+		const parts = rawStr.split("|");
+		charQuery = parts[0].trim();
+		actionArg = parts.slice(1).join("|").trim();
+	} else if (args && args.length >= 2) {
+		const last = args[args.length - 1];
+		if (
+			/^\d+$/.test(last) ||
+			/^(casamento|marriage|reset|random|aleatoria|aleatória|padrao|padrão|none|remover)$/i.test(
+				last
+			)
+		) {
+			actionArg = last;
+			charQuery = args.slice(0, -1).join(" ").trim();
+		} else {
+			charQuery = rawStr;
+		}
+	} else {
+		charQuery = rawStr;
+	}
+
+	if (!charQuery) {
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Informe o nome ou ID do personagem do seu harém."
+		});
+	}
+
+	try {
+		const char = await resolveCharacter(charQuery);
+		if (!char) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Personagem "${charQuery}" não encontrado.`
+			});
+		}
+
+		// Se nenhuma ação informada, consulta fotos disponíveis (GET /harem/:userId/:charId/photos)
+		if (!actionArg) {
+			const { data: res } = await api.get(
+				`/harem/${encodeURIComponent(userId)}/${encodeURIComponent(char.id)}/photos`
+			);
+			const photoData = res.data;
+
+			let text = `📸 *Opções de Foto para ${photoData.characterName} no seu Harém:*\n\n`;
+
+			if (photoData.pinnedPhoto) {
+				const pinType = photoData.marriage?.isPinned
+					? "💒 Foto de Casamento"
+					: "🖼️ Foto Fixa do Catálogo";
+				text += `📌 *Status atual:* ${pinType} fixada.\n\n`;
+			} else {
+				text += `🎲 *Status atual:* Exibindo fotos aleatórias a cada consulta.\n\n`;
+			}
+
+			text += `🖼️ *Fotos do Catálogo (${photoData.photos.length}):*\n`;
+			photoData.photos.forEach((p) => {
+				const pin = p.isPinned ? " 📌 (FIXADA)" : "";
+				text += `  • Foto *${p.index}*${pin}\n`;
+			});
+
+			text += `\n💒 *Foto de Casamento:*\n`;
+			if (photoData.marriage?.exists) {
+				const pin = photoData.marriage.isPinned ? " 📌 (FIXADA)" : "";
+				text += `  • Disponível${pin}\n`;
+			} else {
+				text += `  • _Ainda não gerada (use \`!mu-foto ${char.name}\` para pedir)_\n`;
+			}
+
+			text += `\n💡 *Para alterar a foto exibida:*\n`;
+			text += `• Fixar foto do catálogo: \`!mu-harem-foto ${char.name} <1-${photoData.photos.length}>\`\n`;
+			if (photoData.marriage?.exists) {
+				text += `• Fixar foto de casamento: \`!mu-harem-foto ${char.name} casamento\`\n`;
+			}
+			text += `• Restaurar fotos aleatórias: \`!mu-harem-foto ${char.name} reset\``;
+
+			return new ReturnMessage({ chatId, content: text });
+		}
+
+		// Se ação informada, fixa ou remove foto (PUT /harem/:userId/:charId/photo)
+		let photoPayload;
+		if (/^(reset|random|aleatoria|aleatória|padrao|padrão|none|remover)$/i.test(actionArg)) {
+			photoPayload = null;
+		} else if (/^(casamento|marriage)$/i.test(actionArg)) {
+			photoPayload = "marriage";
+		} else if (/^\d+$/.test(actionArg)) {
+			photoPayload = parseInt(actionArg, 10);
+		} else {
+			photoPayload = actionArg;
+		}
+
+		const { data: putRes } = await api.put(
+			`/harem/${encodeURIComponent(userId)}/${encodeURIComponent(char.id)}/photo`,
+			{ photo: photoPayload }
+		);
+
+		const resultMessage = putRes.message || putRes.data?.message;
+		let replyMsg = "";
+		if (photoPayload === null) {
+			replyMsg = `🎲 *${char.name}* voltou a exibir fotos aleatórias no seu card do harém!`;
+		} else if (photoPayload === "marriage") {
+			replyMsg = `💒 A foto oficial de casamento de *${char.name}* foi fixada no card do harém!`;
+		} else {
+			replyMsg =
+				resultMessage || `📌 Foto fixa definida com sucesso para *${char.name}* no seu harém!`;
+		}
+
+		return new ReturnMessage({ chatId, content: replyMsg });
+	} catch (err) {
+		if (err.response?.data?.error?.code === "NO_MARRIAGE_PHOTO") {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Este casal ainda não possui foto de casamento salva! Use \`!mu-foto ${charQuery}\` para gerar uma primeiro.`
+			});
+		}
+		if (err.response?.data?.error?.code === "NOT_IN_HAREM") {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ *${charQuery}* não faz parte do seu harém!`
+			});
+		}
+		return handleApiError(err, chatId, "Erro ao gerenciar foto do harém.");
 	}
 }
 
@@ -3702,7 +4017,8 @@ async function listarColecoes(bot, message, args) {
 
 			let text = `📁 *Suas Coleções de Waifus (${collections.length}/15):*\n\n`;
 			collections.forEach((col, idx) => {
-				text += `${idx + 1}. 📂 *${col.name}* — ${col.characterCount} personagem(ns)\n`;
+				const lock = col.isPrivate ? " 🔒" : "";
+				text += `${idx + 1}. 📂 *${col.name}*${lock} — ${col.characterCount} personagem(ns)\n`;
 				if (col.description) {
 					text += `   📝 _${col.description}_\n`;
 				}
@@ -3712,6 +4028,8 @@ async function listarColecoes(bot, message, args) {
 			text += `• Criar pasta: \`!mu-col-nova <nome>\`\n`;
 			text += `• Adicionar waifu: \`!mu-col-add <pasta> | <personagem>\`\n`;
 			text += `• Remover waifu: \`!mu-col-rem <personagem>\`\n`;
+			text += `• Reordenar pastas: \`!mu-col-ordem <pasta1> | <pasta2>\`\n`;
+			text += `• Alternar privacidade: \`!mu-col-privada <pasta>\`\n`;
 			text += `• Apagar pasta: \`!mu-col-del <nome ou número>\``;
 
 			return new ReturnMessage({ chatId, content: text });
@@ -3736,7 +4054,8 @@ async function listarColecoes(bot, message, args) {
 			});
 		}
 
-		let text = `📂 *Coleção: ${selected.name}* (${selected.characterCount} personagem(ns)):\n`;
+		const lock = selected.isPrivate ? " 🔒" : "";
+		let text = `📂 *Coleção: ${selected.name}*${lock} (${selected.characterCount} personagem(ns)):\n`;
 		if (selected.description) {
 			text += `📝 _${selected.description}_\n\n`;
 		} else {
@@ -3988,6 +4307,170 @@ async function removerPersonagemColecao(bot, message, args) {
 		});
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao remover personagem da coleção.");
+	}
+}
+
+/**
+ * Alterna a privacidade de uma coleção de waifus (!mu-col-privada <pasta>)
+ */
+async function alternarPrivacidadeColecao(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const query = (args || []).join(" ").trim();
+
+	if (!query) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Informe o nome ou número da coleção para alterar a privacidade.\nExemplo: `!mu-col-privada Isekai` ou `!mu-col-privada 1`"
+		});
+	}
+
+	try {
+		const { data } = await api.get(`/user/${userId}/collections`);
+		const collections = data.data || [];
+
+		const idx = parseInt(query, 10);
+		let target = null;
+		if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
+			target = collections[idx - 1];
+		} else {
+			const qLower = query.toLowerCase();
+			target =
+				collections.find((c) => c.id === query || c.name.toLowerCase() === qLower) ||
+				collections.find((c) => c.name.toLowerCase().includes(qLower));
+		}
+
+		if (!target) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Coleção "${query}" não encontrada.\nUse \`!mu-colecoes\` para listar suas pastas.`
+			});
+		}
+
+		const res = await api.patch(
+			`/user/${userId}/collections/${encodeURIComponent(target.id)}/privacy`,
+			{}
+		);
+		const isNowPrivate = res.data?.data?.isPrivate;
+
+		if (isNowPrivate) {
+			return new ReturnMessage({
+				chatId,
+				content: `🔒 *Coleção "${target.name}" agora é PRIVADA!*\n\nEsta pasta e suas waifus não serão exibidas quando outros jogadores visualizarem o seu harém.`
+			});
+		} else {
+			return new ReturnMessage({
+				chatId,
+				content: `🔓 *Coleção "${target.name}" agora é PÚBLICA!*\n\nEsta pasta voltará a ser visível para outros jogadores.`
+			});
+		}
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao alterar privacidade da coleção.");
+	}
+}
+
+/**
+ * Reordena as coleções de waifus do jogador (!mu-col-ordem <pasta1> | <pasta2> | ...)
+ */
+async function reordenarColecoes(bot, message, args) {
+	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
+	const rawInput = (args || []).join(" ").trim();
+
+	if (!rawInput) {
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Informe a nova ordem das coleções separadas por barra vertical (`|`).\nExemplo: `!mu-col-ordem Isekai | Shonen | Waifus`\nOu por número: `!mu-col-ordem 3 | 1 | 2`"
+		});
+	}
+
+	try {
+		const { data } = await api.get(`/user/${userId}/collections`);
+		const collections = data.data || [];
+
+		if (collections.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: "📁 Você ainda não possui nenhuma coleção criada para reordenar."
+			});
+		}
+
+		let parts = [];
+		if (rawInput.includes("|")) {
+			parts = rawInput
+				.split("|")
+				.map((p) => p.trim())
+				.filter(Boolean);
+		} else if (args.length > 1) {
+			parts = args.map((a) => a.trim()).filter(Boolean);
+		} else {
+			parts = [rawInput];
+		}
+
+		if (parts.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Nenhuma pasta válida informada na ordem."
+			});
+		}
+
+		const resolvedIds = [];
+		const usedIds = new Set();
+
+		for (const part of parts) {
+			const idx = parseInt(part, 10);
+			let target = null;
+			if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
+				target = collections[idx - 1];
+			} else {
+				const pLower = part.toLowerCase();
+				target =
+					collections.find((c) => c.id === part || c.name.toLowerCase() === pLower) ||
+					collections.find((c) => c.name.toLowerCase().includes(pLower));
+			}
+
+			if (!target) {
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Coleção "${part}" não encontrada.\nUse \`!mu-colecoes\` para ver suas pastas cadastradas.`
+				});
+			}
+
+			if (!usedIds.has(target.id)) {
+				usedIds.add(target.id);
+				resolvedIds.push(target.id);
+			}
+		}
+
+		// Adiciona as coleções não mencionadas ao final, mantendo sua ordem original
+		for (const col of collections) {
+			if (!usedIds.has(col.id)) {
+				usedIds.add(col.id);
+				resolvedIds.push(col.id);
+			}
+		}
+
+		const putRes = await api.put(`/user/${userId}/collections/order`, {
+			order: resolvedIds
+		});
+		const updatedCols = putRes.data?.data?.collections || putRes.data?.data || [];
+
+		let msg = `📋 *Ordem das coleções atualizada com sucesso!*\n\n`;
+		const listToDisplay =
+			Array.isArray(updatedCols) && updatedCols.length > 0
+				? updatedCols
+				: resolvedIds.map((id) => collections.find((c) => c.id === id));
+		listToDisplay.forEach((col, idx) => {
+			if (!col) return;
+			const lock = col.isPrivate ? " 🔒" : "";
+			msg += `${idx + 1}. 📂 *${col.name}* (${col.characterCount || 0} waifus)${lock}\n`;
+		});
+
+		return new ReturnMessage({ chatId, content: msg });
+	} catch (err) {
+		return handleApiError(err, chatId, "Erro ao reordenar coleções.");
 	}
 }
 
@@ -5369,8 +5852,10 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (ajustado à raridade, chaves e inflação; 4 cotas para Soulmates).\n`;
-	text += `• \`!mu-harem [página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você possui.\n`;
+	text += `• \`!mu-harem [@usuário | página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você ou outro usuário possui.\n`;
 	text += `• \`!mu-harem-nome <nome>\` (aliases: \`!mu-hnome\`, \`!mu-nomeharem\`) — Define um nome personalizado para o seu harém (até 20 caracteres).\n`;
+	text += `• \`!mu-harem-privado\` (alias: \`!mu-hprivado\`) — Alterna a privacidade do seu harém entre público e privado.\n`;
+	text += `• \`!mu-harem-foto <personagem> [índice | casamento | reset]\` (alias: \`!mu-hfoto\`) — Consulta fotos ou fixa uma foto no card do harém.\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
 	text += `• \`!mu-soulmates\` (aliases: \`!mu-sm\`, \`!mu-almas\`) — Lista seus parceiros com 10+ chaves.\n\n`;
 
@@ -5379,7 +5864,9 @@ async function ajudaWaifus(bot, message) {
 	text += `• \`!mu-col-nova <nome>\` (aliases: \`!mu-col-criar\`, \`!mu-col-new\`) — Cria uma nova coleção para organizar o harém (até 15).\n`;
 	text += `• \`!mu-col-del <nome/nº>\` (aliases: \`!mu-col-rm\`) — Apaga uma pasta (personagens voltam ao harém geral).\n`;
 	text += `• \`!mu-col-add <pasta> | <personagem>\` — Move uma waifu do harém para a pasta.\n`;
-	text += `• \`!mu-col-rem <personagem>\` — Remove a waifu de sua pasta atual.\n\n`;
+	text += `• \`!mu-col-rem <personagem>\` — Remove a waifu de sua pasta atual.\n`;
+	text += `• \`!mu-col-privada <pasta>\` (alias: \`!mu-col-priv\`) — Alterna a visibilidade privada de uma coleção.\n`;
+	text += `• \`!mu-col-ordem <pasta1> | <pasta2> | ...\` (alias: \`!mu-col-ordenar\`) — Define a ordem de exibição das coleções.\n\n`;
 
 	text += `💰 *Economia & Perfil:*\n`;
 	text += `• \`!mu-diario\` (aliases: \`!mu-daily\`, \`!mu-dz\`, \`!mu-dk\`) — Coleta sua recompensa diária de Zinthos.\n`;
@@ -6740,6 +7227,45 @@ const commands = [
 		reply: true,
 		method: definirNomeHarem
 	}),
+	new Command({
+		name: "mu-harem-privado",
+		description: "Alterna a privacidade do seu harém entre público e privado",
+		category: "mudae",
+		group: "muwaifu-harem",
+		reactions: { before: "🔒", after: "✅", error: "❌" },
+		reply: true,
+		method: alternarPrivacidadeHarem
+	}),
+	new Command({
+		name: "mu-hprivado",
+		description: "Alias curto para !mu-harem-privado",
+		category: "mudae",
+		group: "muwaifu-harem",
+		reactions: { before: "🔒", after: "✅", error: "❌" },
+		reply: true,
+		method: alternarPrivacidadeHarem
+	}),
+	new Command({
+		name: "mu-harem-foto",
+		description:
+			"Consulta fotos ou fixa uma foto no card do harém (!mu-harem-foto <personagem> [índice | casamento | reset])",
+		category: "mudae",
+		group: "muwaifu-harem",
+		needsArgs: true,
+		reactions: { before: "📸", after: "✅", error: "❌" },
+		reply: true,
+		method: gerenciarFotoHarem
+	}),
+	new Command({
+		name: "mu-hfoto",
+		description: "Alias curto para !mu-harem-foto",
+		category: "mudae",
+		group: "muwaifu-harem",
+		needsArgs: true,
+		reactions: { before: "📸", after: "✅", error: "❌" },
+		reply: true,
+		method: gerenciarFotoHarem
+	}),
 	// ── COLEÇÕES (PASTAS) ───────────────────────────────────────────────────
 	new Command({
 		name: "mu-colecoes",
@@ -6807,6 +7333,47 @@ const commands = [
 		reactions: { before: "📤", after: "✅", error: "❌" },
 		reply: true,
 		method: removerPersonagemColecao
+	}),
+	new Command({
+		name: "mu-col-privada",
+		description: "Alterna a privacidade de uma coleção de waifus (!mu-col-privada <pasta>)",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "🔒", after: "✅", error: "❌" },
+		reply: true,
+		method: alternarPrivacidadeColecao
+	}),
+	new Command({
+		name: "mu-col-priv",
+		description: "Alias curto para !mu-col-privada",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "🔒", after: "✅", error: "❌" },
+		reply: true,
+		method: alternarPrivacidadeColecao
+	}),
+	new Command({
+		name: "mu-col-ordem",
+		description:
+			"Define a ordem de exibição das coleções (!mu-col-ordem <pasta1> | <pasta2> | ...)",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "📋", after: "✅", error: "❌" },
+		reply: true,
+		method: reordenarColecoes
+	}),
+	new Command({
+		name: "mu-col-ordenar",
+		description: "Alias de !mu-col-ordem",
+		category: "mudae",
+		group: "muwaifu-colecoes",
+		needsArgs: true,
+		reactions: { before: "📋", after: "✅", error: "❌" },
+		reply: true,
+		method: reordenarColecoes
 	}),
 
 	// ── PERFIL ──────────────────────────────────────────────────────────────
@@ -7634,8 +8201,37 @@ const helper = {
 		},
 		{
 			cmd: "!mu-harem",
-			desc: "Lista os personagens que você possui em seu harém",
-			usage: ["!mu-harem", "!mu-h 2"],
+			desc: "Lista os personagens que você ou outro usuário possui em seu harém",
+			usage: ["!mu-harem", "!mu-h 2", "!mu-harem @usuario"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-harem-privado",
+			desc: "Alterna a privacidade do seu harém entre público e privado",
+			usage: ["!mu-harem-privado", "!mu-hprivado", "!mu-harem-privado on/off"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-harem-foto",
+			desc: "Consulta fotos disponíveis ou fixa uma foto específica (catálogo/casamento) no card do harém",
+			usage: [
+				"!mu-harem-foto Rem",
+				"!mu-harem-foto Rem 2",
+				"!mu-harem-foto Rem casamento",
+				"!mu-harem-foto Rem reset"
+			],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-col-privada",
+			desc: "Alterna a visibilidade privada de uma coleção (pasta) do seu harém",
+			usage: ["!mu-col-privada Isekai", "!mu-col-priv 1"],
+			category: "mudae"
+		},
+		{
+			cmd: "!mu-col-ordem",
+			desc: "Define a ordem de exibição das suas coleções (pastas)",
+			usage: ["!mu-col-ordem Isekai | Shonen | Waifus", "!mu-col-ordem 3 | 1 | 2"],
 			category: "mudae"
 		},
 		{
@@ -8186,11 +8782,17 @@ module.exports = {
 	getAllWaifuUserIds,
 	verHarem,
 	definirNomeHarem,
+	alternarPrivacidadeHarem,
+	gerenciarFotoHarem,
 	listarColecoes,
 	criarColecao,
 	apagarColecao,
 	adicionarPersonagemColecao,
 	removerPersonagemColecao,
+	alternarPrivacidadeColecao,
+	reordenarColecoes,
+	extractFirstMention,
+	resolveCharacter,
 	verPerfil,
 	painelWebAdmin,
 	compartilharHarem,
