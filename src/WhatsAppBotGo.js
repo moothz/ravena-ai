@@ -30,6 +30,7 @@ const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const MemoryCache = require("./utils/MemoryCache");
 const storageService = require("./services/StorageService");
+const SenderDropMonitor = require("./services/SenderDropMonitor");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -2467,6 +2468,13 @@ class WhatsAppBotGo {
 					break;
 				case "Receipt":
 					break;
+
+				case "UndecryptableMessage": {
+					if (payload.data?.UnavailableType === "sender_drop") {
+						SenderDropMonitor.getInstance().recordDrop(this, payload.data);
+					}
+					break;
+				}
 
 				default:
 					this.logger.debug(`[_handleWebhook] Unhandled event: '${payload.event}'`, { payload });
