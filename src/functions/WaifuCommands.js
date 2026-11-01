@@ -4086,6 +4086,16 @@ async function resolveUserDisplayName(user, currentGroup) {
 }
 
 /**
+ * Determina se um usuário retornado da API é uma conta de teste que não deve figurar em rankings
+ */
+function isTestRankingUser(u) {
+	if (!u) return false;
+	const name = String(u.name || "").toLowerCase();
+	const id = String(u.id || "").toLowerCase();
+	return id === "test_web_user_1" || name.includes("jogador web teste");
+}
+
+/**
  * Exibe ranking global consolidado (Zinthos e Casamentos) ou detalhado com 'all'
  */
 async function verRanking(bot, message, args, group) {
@@ -4105,7 +4115,8 @@ async function verRanking(bot, message, args, group) {
 	) {
 		try {
 			const { data } = await api.get("/leaderboard/harem", { params: { limit } });
-			const topHarem = data.data?.topHarem || [];
+			const rawTopHarem = data.data?.topHarem || [];
+			const topHarem = rawTopHarem.filter((u) => !isTestRankingUser(u));
 
 			if (topHarem.length === 0) {
 				return new ReturnMessage({
@@ -4140,7 +4151,8 @@ async function verRanking(bot, message, args, group) {
 	if (["zinthos", "z", "moeda", "saldo"].includes(subcmd)) {
 		try {
 			const { data } = await api.get("/leaderboard/users", { params: { limit } });
-			const topRich = data.data?.topRich || [];
+			const rawTopRich = data.data?.topRich || [];
+			const topRich = rawTopRich.filter((u) => !isTestRankingUser(u));
 
 			if (topRich.length === 0) {
 				return new ReturnMessage({
@@ -4176,8 +4188,10 @@ async function verRanking(bot, message, args, group) {
 			api.get("/leaderboard/harem", { params: { limit: 10 } }).catch(() => null)
 		]);
 
-		const topRich = usersRes?.data?.data?.topRich || [];
-		const topHarem = haremRes?.data?.data?.topHarem || [];
+		const rawTopRich = usersRes?.data?.data?.topRich || [];
+		const rawTopHarem = haremRes?.data?.data?.topHarem || [];
+		const topRich = rawTopRich.filter((u) => !isTestRankingUser(u));
+		const topHarem = rawTopHarem.filter((u) => !isTestRankingUser(u));
 
 		let text = `🏆 *PAINEL DE LIDERANÇA WAIFULETES* 🏆\n\n`;
 
@@ -4268,8 +4282,14 @@ async function verRankingGrupo(bot, message) {
 		const { data } = await api.get(`/groups/${encodeURIComponent(groupId)}/leaderboard`, {
 			params: { limit: 10 }
 		});
-		const { totalMembers, totalClaimsInGroup, topKakera, topHarem, topCharacters } =
+		const { totalMembers, totalClaimsInGroup, topKakera: rawTopKakera, topHarem: rawTopHarem, topCharacters: rawTopCharacters } =
 			data.data || {};
+
+		const topKakera = (rawTopKakera || []).filter((u) => !isTestRankingUser(u));
+		const topHarem = (rawTopHarem || []).filter((u) => !isTestRankingUser(u));
+		const topCharacters = (rawTopCharacters || []).filter(
+			(entry) => !isTestRankingUser(entry.owner) && !isTestRankingUser(entry.user)
+		);
 
 		if (!topKakera || topKakera.length === 0) {
 			return new ReturnMessage({
