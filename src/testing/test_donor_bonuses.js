@@ -23,7 +23,7 @@ async function runTests() {
 	assert.strictEqual(b10.waifu.zinthos, 1500, "R$10 deve conceder 1500 Zinthos");
 	assert.strictEqual(b10.waifu.rarityMultipliers.RARE, 1.2, "R$10: RARE 1.20x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.EPIC, 1.35, "R$10: EPIC 1.35x");
-	assert.strictEqual(b10.waifu.rarityMultipliers.LEGENDARY, 1.45, "R$10: LEGENDARY 1.45x");
+	assert.strictEqual(b10.waifu.rarityMultipliers.LEGENDARY, 1.2, "R$10: LEGENDARY 1.20x");
 	assert.strictEqual(b10.waifu.wishlistMultiplier, null, "R$10: wishlist não ativada");
 	assert.strictEqual(b10.pinto.bonusPercent, 10, "R$10: pinto +10%");
 	console.log("✓ R$ 10 cálculos OK");
@@ -93,7 +93,7 @@ async function runTests() {
 	assert.strictEqual(b100.slots.coins, 300, "R$100 deve conceder 300 moedas");
 	assert.strictEqual(b100.waifu.rarityMultipliers.RARE, 3.0, "R$100: RARE 3.0x");
 	assert.strictEqual(b100.waifu.rarityMultipliers.EPIC, 4.5, "R$100: EPIC 4.5x");
-	assert.strictEqual(b100.waifu.rarityMultipliers.LEGENDARY, 5.5, "R$100: LEGENDARY 5.5x");
+	assert.strictEqual(b100.waifu.rarityMultipliers.LEGENDARY, 3.0, "R$100: LEGENDARY 3.0x");
 	assert.strictEqual(b100.waifu.wishlistMultiplier, 8.0, "R$100: Wishlist 8.0x (+700%)");
 	const b300 = DonorBonusService.calculateBonuses(300);
 	assert.strictEqual(
@@ -103,15 +103,15 @@ async function runTests() {
 	);
 
 	// Cálculo da probabilidade ponderada de lendário
-	const legWeight = 5 * b100.waifu.rarityMultipliers.LEGENDARY; // 27.5
-	const epicWeight = 15 * b100.waifu.rarityMultipliers.EPIC; // 67.5
-	const rareWeight = 30 * b100.waifu.rarityMultipliers.RARE; // 90
+	const legWeight = 2.5 * b100.waifu.rarityMultipliers.LEGENDARY; // 7.5
+	const epicWeight = 8 * b100.waifu.rarityMultipliers.EPIC; // 36
+	const rareWeight = 25 * b100.waifu.rarityMultipliers.RARE; // 75
 	const uncomWeight = 60;
 	const comWeight = 100;
 	const totalWeight = legWeight + epicWeight + rareWeight + uncomWeight + comWeight;
 	const legChance = (legWeight / totalWeight) * 100;
-	console.log(`Chance calculada de Lendário aos R$100: ${legChance.toFixed(2)}% (esperado ~8.0%)`);
-	assert.ok(legChance >= 7.8 && legChance <= 8.2, "Chance de lendário deve estar em torno de 8%");
+	console.log(`Chance calculada de Lendário aos R$100: ${legChance.toFixed(2)}% (esperado ~2.7%)`);
+	assert.ok(legChance >= 2.5 && legChance <= 3.0, "Chance de lendário deve estar em torno de 2.7%");
 	console.log("✓ R$ 100 e calibração de Waifus OK");
 
 	// 2. Testes de cálculo incremental (delta)

@@ -500,9 +500,9 @@ const WISHLIST_MAX_ITEMS = 1000;
 const RARITY_WEIGHTS = {
 	COMMON: 100,
 	UNCOMMON: 60,
-	RARE: 30,
-	EPIC: 15,
-	LEGENDARY: 5
+	RARE: 25,
+	EPIC: 8,
+	LEGENDARY: 2.5
 };
 
 // Cache de estatísticas e probabilidades de drop
@@ -5524,7 +5524,7 @@ async function verChances(bot, message) {
 		donorBonuses = DonorBonusService.calculateBonuses(donorTotal).waifu;
 		donorHeader = `💎 *Doador, obrigado!* 💎\n`;
 		donorHeader += `> _Seus benefícios de apoiador (R$ ${donorTotal.toFixed(2)}) estão ativos:_\n`;
-		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 4.5)}%\n`;
+		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 2.0)}%\n`;
 		if (donorBonuses.extraMaxRolls > 0) {
 			donorHeader += `> • 🎟️ *Rolls Máximos:* ${9 + donorBonuses.extraMaxRolls} rolls (9 base + ${donorBonuses.extraMaxRolls} extras por doação)\n`;
 		}

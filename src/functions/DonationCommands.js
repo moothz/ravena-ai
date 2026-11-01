@@ -304,9 +304,9 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `🌸 *Waifus (Mudae):*\n`;
 		msg += `• *150 Zinthos (💜)* a cada R$ 1 doado entregues na sua carteira do Waifuletes!\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
-		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros, +3.5% em Épicos e +4.5% em Lendários por R$ 1.\n`;
+		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
-		msg += `• *Aos R$ 100:* Lendários atingem ~8% de chance e Wishlist chega a 8x (+700%)!\n`;
+		msg += `• *Aos R$ 100:* Multiplicador de Lendários atinge 3x (+200%) e Wishlist chega a 8x (+700%)!\n`;
 		msg += `• *!mu-chances exclusivo:* Mostra suas probabilidades personalizadas ativas.\n\n`;
 
 		msg += `🩺 *Jogo do Pinto:*\n`;
