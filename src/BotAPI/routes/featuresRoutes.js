@@ -3,6 +3,7 @@ const fs = require("fs").promises;
 const axios = require("axios");
 const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
+const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
 const jardimClient = new ShadowGardenClient();
 
 // Caches locais para Waifuletes (detalhes de personagens e nomes de grupos)
@@ -21,6 +22,7 @@ const waifuGroupCache = new Map();
  * - GET  /api/waifuletes/group/:groupId      - Resolução e cache do nome de grupos para o Waifuletes
  * - GET  /api/waifuletes/characters/:id      - Detalhes completos e casamento de um personagem específico
  * - GET  /api/waifuletes/media/*mediaPath    - Proxy de streaming das imagens locais do Waifuletes
+ * - GET  /api/waifuletes/marriage-photo/:characterId - Streaming de fotos de casamento geradas
  * - GET  /analytics                          - Gráficos analíticos de tráfego de mensagens por período
  *
  * @param {Object} api - Instância da BotAPI
@@ -307,6 +309,41 @@ function registerFeaturesRoutes(api) {
 			response.data.pipe(res);
 		} catch {
 			res.status(404).send("Imagem não encontrada");
+		}
+	});
+
+	// Streaming de foto de casamento gerada
+	app.get("/api/waifuletes/marriage-photo/:characterId", async (req, res) => {
+		const { characterId } = req.params;
+		if (
+			!characterId ||
+			typeof characterId !== "string" ||
+			characterId.includes("..") ||
+			characterId.includes("/") ||
+			characterId.includes("\\")
+		) {
+			return res.status(400).send("ID de personagem inválido");
+		}
+
+		try {
+			const photo = await getMarriagePhoto(characterId);
+			if (!photo || !photo.exists) {
+				return res.status(404).send("Foto de casamento não encontrada");
+			}
+
+			res.setHeader("Content-Type", "image/jpeg");
+			res.setHeader("Cache-Control", "public, max-age=3600");
+
+			if (photo.buffer) {
+				return res.send(photo.buffer);
+			} else if (photo.photoPath) {
+				return res.sendFile(photo.photoPath);
+			}
+
+			return res.status(404).send("Foto de casamento não encontrada");
+		} catch (error) {
+			api.logger.error("Erro ao entregar foto de casamento:", error);
+			return res.status(500).send("Erro interno ao buscar foto de casamento");
 		}
 	});
 
