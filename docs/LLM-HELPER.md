@@ -1391,9 +1391,21 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜)
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-diario`, `!mu-dz`, `!mu-dk`
-- **`!mu-harem`**: Lista os personagens que você possui em seu harém
+- **`!mu-harem`**: Lista os personagens que você ou outro usuário possui em seu harém
   - *Categoria:* mudae
-  - *Uso/Exemplos:* `!mu-harem`, `!mu-h 2`
+  - *Uso/Exemplos:* `!mu-harem`, `!mu-h 2`, `!mu-harem @usuario`
+- **`!mu-harem-privado`**: Alterna a privacidade do seu harém entre público e privado
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-harem-privado`, `!mu-hprivado`
+- **`!mu-harem-foto`**: Consulta fotos ou fixa uma foto no card do personagem no harém
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-harem-foto Rem`, `!mu-harem-foto Rem 2`, `!mu-harem-foto Rem casamento`, `!mu-harem-foto Rem reset`
+- **`!mu-col-privada`**: Alterna a visibilidade privada de uma coleção
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-col-privada Isekai`, `!mu-col-priv 1`
+- **`!mu-col-ordem`**: Define a ordem de exibição das coleções
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-col-ordem Isekai | Shonen | Waifus`, `!mu-col-ordem 3 | 1 | 2`
 - **`!mu-saldo`**: Consulta seu saldo atual de Zinthos (💜)
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-saldo`, `!mu-zinthos`, `!mu-z`, `!mu-k`
