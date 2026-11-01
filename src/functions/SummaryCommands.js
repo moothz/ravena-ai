@@ -1248,6 +1248,7 @@ module.exports.getRecentMessages = getRecentMessages;
 module.exports.clearRecentMessages = clearRecentMessages;
 module.exports.runGroupAnalysis = runGroupAnalysis;
 module.exports.formatMessagesForPrompt = formatMessagesForPrompt;
+module.exports.analyzeVideo = analyzeVideo;
 
 // Exporta comandos
 const helper = {

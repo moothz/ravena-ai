@@ -35,6 +35,7 @@ const {
 	detectPlatform,
 	extractURLFromString
 } = require("./functions/SocialMediaDownloader");
+const ReportAnalyzerService = require("./services/ReportAnalyzerService");
 
 class EventHandler extends EventEmitter {
 	static instance = null;
@@ -54,6 +55,7 @@ class EventHandler extends EventEmitter {
 		this.adminUtils = AdminUtils.getInstance();
 		this.rankingMessages = RankingMessages;
 		this.userGreetingManager = require("./utils/UserGreetingManager").getInstance();
+		this.reportAnalyzerService = ReportAnalyzerService.getInstance();
 		this.groups = {};
 		this.comandosWhitelist = process.env.CMD_WHITELIST
 			? process.env.CMD_WHITELIST.split(",")
@@ -614,6 +616,15 @@ class EventHandler extends EventEmitter {
 					this.checkNSFW(bot, message, null, true).catch((err) => {
 						this.logger.error("Erro em background checkNSFW (detectAll PV):", err);
 					});
+				}
+			}
+
+			// Intercepta mensagens no PV se o SuperAdmin estiver em uma sessão ativa de report
+			if (!message.group && this.reportAnalyzerService.hasActiveSession(bot.id, message)) {
+				const isReportCmd = this.reportAnalyzerService.isReportCommand(textContent, bot.prefix);
+				if (!isReportCmd) {
+					await this.reportAnalyzerService.recordMessage(bot, message);
+					return;
 				}
 			}
 

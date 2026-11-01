@@ -252,6 +252,19 @@ class SuperAdmin {
 			"remover-mudae": {
 				method: "removerMudaePersonagem",
 				description: "Alias de remudae"
+			},
+			analisaReport: {
+				method: "analisaReport",
+				description:
+					"Coleta e analisa report de erros com OCR, Whisper e IA local: !sa-analisaReport [numero]"
+			},
+			analisareport: {
+				method: "analisaReport",
+				description: "Alias de analisaReport"
+			},
+			"analisa-report": {
+				method: "analisaReport",
+				description: "Alias de analisaReport"
 			}
 		};
 
@@ -6436,6 +6449,125 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ *Erro ao executar limpeza de mídias:* ${error.message || JSON.stringify(error)}`
+			});
+		}
+	}
+
+	/**
+	 * Comando SuperAdmin: analisaReport
+	 * Inicia ou finaliza coleta e análise de mensagens de report com OCR, Whisper e IA local
+	 * Uso: !sa-analisaReport [numero_do_usuario] | !sa-analisaReport cancelar
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+	 */
+	async analisaReport(bot, message, args = [], group = null) {
+		const chatId = message.group ?? message.author;
+
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
+				});
+			}
+
+			// Deve ser executado apenas em PV (conversa privada com o bot)
+			if (message.group) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⚠️ O comando *!sa-analisaReport* deve ser executado no privado (PV) com o bot para permitir o encaminhamento das mensagens sem poluir o grupo."
+				});
+			}
+
+			const ReportAnalyzerService = require("../services/ReportAnalyzerService");
+			const reportService = ReportAnalyzerService.getInstance();
+
+			const subCommand = args[0] ? String(args[0]).toLowerCase().trim() : "";
+
+			// Opção de cancelamento
+			if (subCommand === "cancelar" || subCommand === "cancel") {
+				const existed = reportService.cancelSession(bot.id, message);
+				if (existed) {
+					return new ReturnMessage({
+						chatId,
+						content:
+							"❌ *Sessão de análise de report cancelada.* As mensagens recebidas foram descartadas."
+					});
+				}
+				return new ReturnMessage({
+					chatId,
+					content: "ℹ️ Nenhuma sessão de análise de report ativa para cancelar."
+				});
+			}
+
+			// Verifica se já existe sessão ativa
+			if (reportService.hasActiveSession(bot.id, message)) {
+				const session = reportService.getSession(bot.id, message);
+
+				if (!session || !session.messages || session.messages.length === 0) {
+					return new ReturnMessage({
+						chatId,
+						content:
+							"⚠️ *Aguardando mensagens do report!*\n\nNenhuma mensagem foi encaminhada ainda. Encaminhe mensagens de texto, prints/imagens, áudios ou vídeos.\n\n• Envie *!sa-analisaReport* novamente quando terminar de encaminhar tudo.\n• Ou envie *!sa-analisaReport cancelar* para abortar."
+					});
+				}
+
+				// Envia aviso preliminar de que o processamento começou
+				await bot.sendReturnMessages(
+					new ReturnMessage({
+						chatId,
+						content: `⏳ *Processando ${session.messages.length} mensagem(ns) do report...*\nExecutando OCR, Whisper e análise de vídeo. Isso pode levar alguns segundos.`
+					})
+				);
+
+				const optionalTarget = args[0] ? args[0] : null;
+				const { promptMessage, aiMessage } = await reportService.finalizeSession(
+					bot,
+					bot.id,
+					message,
+					optionalTarget
+				);
+
+				return [
+					new ReturnMessage({
+						chatId,
+						content: promptMessage
+					}),
+					new ReturnMessage({
+						chatId,
+						content: aiMessage
+					})
+				];
+			}
+
+			// Inicia nova sessão
+			const targetUser = args[0] || null;
+			reportService.startSession(bot.id, message, targetUser);
+
+			let welcome = "📋 *Modo de Análise de Report Iniciado!*\n\n";
+			if (targetUser) {
+				welcome += `• *Usuário alvo:* ${String(targetUser).replace(/\D/g, "")}\n`;
+			}
+			welcome +=
+				"• Encaminhe para este chat privado todas as mensagens do problema (textos, imagens/prints, áudios e vídeos).\n";
+			welcome += "• O bot reagirá com 📥 em cada mensagem recebida.\n";
+			welcome +=
+				"• Quando terminar de encaminhar tudo, envie *!sa-analisaReport* novamente para gerar o relatório consolidado.\n";
+			welcome += "• Para cancelar a qualquer momento, envie *!sa-analisaReport cancelar*.";
+
+			return new ReturnMessage({
+				chatId,
+				content: welcome
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando !sa-analisaReport:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ *Erro ao processar comando de análise de report:* ${error.message}`
 			});
 		}
 	}
