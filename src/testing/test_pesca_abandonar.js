@@ -11,6 +11,7 @@ async function runTests() {
 	const eventHandler = new EventHandler();
 	await eventHandler.commandHandler.loadAllCommands();
 	const database = Database.getInstance();
+	database.testMode = false;
 	const testUser = "5511999999999@s.whatsapp.net";
 	const testGroup = "120363000000000000@g.us";
 

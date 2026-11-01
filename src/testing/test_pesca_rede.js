@@ -211,6 +211,7 @@ async function runTests() {
 		await eventHandler.commandHandler.processCommand(bot, msgItem, "pesca-rede", ["8"], null);
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta5 = bot.capturedMessages[0].content;
+		if (resposta5) console.log("DEBUG RESPOSTA 5:", resposta5);
 		assert.ok(
 			!resposta5.includes("Eficiência da rede"),
 			"Não deve conter linha de eficiência da rede"
@@ -359,6 +360,7 @@ async function runTests() {
 			bot.resetCapture();
 		} finally {
 			FishingGame.RARE_FISH[0].monthlyLimit = originalMonthlyLimit;
+			FishingGame.RARE_FISH[0].chance = originalChances[0];
 		}
 
 		// -------------------------------------------------------------
@@ -458,6 +460,155 @@ async function runTests() {
 		assert.strictEqual(FishingGame.formatRemainingTime(3660), "1h 1min");
 		assert.strictEqual(FishingGame.formatRemainingTime(120), "2min");
 		console.log("✓ Teste 10 passou: Sugestão de melhor hora para !pesca-rede testada com sucesso!");
+		bot.resetCapture();
+
+		// -------------------------------------------------------------
+		// Teste 11: Proteção de peixes raros no descarte por inventário cheio
+		// -------------------------------------------------------------
+		resetCooldown();
+		await database.dbRun("fishing", "DELETE FROM fishing_inventory WHERE user_id = ?", [testUser]);
+		await database.dbRun("fishing", "DELETE FROM fishing_buffs WHERE user_id = ?", [testUser]);
+
+		// Insere um peixe raro pré-existente
+		await database.dbRun(
+			"fishing",
+			`INSERT INTO fishing_inventory (user_id, name, weight, is_rare, timestamp, emoji, data_json)
+			VALUES (?, 'Leviathan', 7293.5, 1, ?, '🐉', '{"isRare":true,"name":"Leviathan"}')`,
+			[testUser, Date.now() - 50000]
+		);
+		// E vários peixes comuns
+		for (let i = 0; i < 15; i++) {
+			await database.dbRun(
+				"fishing",
+				`INSERT INTO fishing_inventory (user_id, name, weight, is_rare, timestamp, emoji, data_json)
+				VALUES (?, 'PeixeComum', ?, 0, ?, '🐟', '{}')`,
+				[testUser, 5 + i, Date.now() - 10000]
+			);
+		}
+		await database.dbRun(
+			"fishing",
+			"UPDATE fishing_users SET baits = 10, last_bait_regen = ? WHERE user_id = ?",
+			[Date.now(), testUser]
+		);
+
+		const msgCheioComRaro = createMessage({
+			content: "!pesca-rede 10",
+			group: testGroup,
+			author: testUser,
+			authorName: "PescadorRede"
+		});
+
+		await eventHandler.commandHandler.processCommand(
+			bot,
+			msgCheioComRaro,
+			"pesca-rede",
+			["10"],
+			null
+		);
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
+
+		const fishesAposDescarte = await database.dbAll(
+			"fishing",
+			"SELECT * FROM fishing_inventory WHERE user_id = ?",
+			[testUser]
+		);
+		const rarePreserved = fishesAposDescarte.find((f) => f.name === "Leviathan" && f.is_rare === 1);
+		assert.ok(rarePreserved, "Peixe raro Leviathan DEVE ser preservado e NUNCA descartado");
+		console.log(
+			"✓ Teste 11 passou: Peixe raro foi protegido com sucesso durante descarte por inventário cheio no !pesca-rede."
+		);
+		bot.resetCapture();
+
+		// -------------------------------------------------------------
+		// Teste 12: Efeito Mina Aquática (clear_inventory) preserva peixes raros
+		// -------------------------------------------------------------
+		resetCooldown();
+		await database.dbRun("fishing", "DELETE FROM fishing_inventory WHERE user_id = ?", [testUser]);
+		await database.dbRun(
+			"fishing",
+			`INSERT INTO fishing_inventory (user_id, name, weight, is_rare, timestamp, emoji, data_json)
+			VALUES (?, 'Leviathan', 7293.5, 1, ?, '🐉', '{"isRare":true,"name":"Leviathan"}')`,
+			[testUser, Date.now() - 50000]
+		);
+		await database.dbRun(
+			"fishing",
+			`INSERT INTO fishing_inventory (user_id, name, weight, is_rare, timestamp, emoji, data_json)
+			VALUES (?, 'Lambari', 25.0, 0, ?, '🐟', '{}')`,
+			[testUser, Date.now() - 10000]
+		);
+
+		const fakeUser = await FishingGame.getUserData(testUser);
+		const itemMina = {
+			name: "Mina Aquática",
+			emoji: "💣",
+			effect: "clear_inventory",
+			type: "downgrade"
+		};
+		const resMina = await FishingGame.applyItemEffect(fakeUser, itemMina);
+		assert.ok(
+			resMina.effectMessage.includes("sobreviveram"),
+			"Mensagem deve informar que peixes raros sobreviveram à Mina Aquática"
+		);
+
+		const fishesAposMina = await database.dbAll(
+			"fishing",
+			"SELECT * FROM fishing_inventory WHERE user_id = ?",
+			[testUser]
+		);
+		assert.strictEqual(fishesAposMina.length, 1, "Apenas o peixe raro deve permanecer no banco");
+		assert.strictEqual(fishesAposMina[0].name, "Leviathan", "Peixe mantido deve ser o Leviathan");
+		console.log(
+			"✓ Teste 12 passou: Mina Aquática destruiu apenas peixes comuns e preservou o peixe raro."
+		);
+		bot.resetCapture();
+
+		// -------------------------------------------------------------
+		// Teste 13: Mensagem de lixo/item exibe 'Seu maior peixe'
+		// -------------------------------------------------------------
+		resetCooldown();
+		await database.dbRun(
+			"fishing",
+			"UPDATE fishing_users SET baits = 5, biggest_fish_json = ? WHERE user_id = ?",
+			[
+				JSON.stringify({
+					name: "Leviathan",
+					weight: 7293.5,
+					isRare: true
+				}),
+				testUser
+			]
+		);
+
+		const msgPescaItem = createMessage({
+			content: "!pesca",
+			group: testGroup,
+			author: testUser,
+			authorName: "PescadorRede"
+		});
+
+		// Força checkRandomItem a retornar um lixo/item para testar caughtFishes.length === 0
+		const origCheckRandomItem = FishingGame.checkRandomItem;
+		FishingGame.checkRandomItem = () => ({
+			name: "Relógio Enferrujado",
+			emoji: "⏰",
+			type: "trash",
+			effect: "none"
+		});
+
+		try {
+			await eventHandler.commandHandler.processCommand(bot, msgPescaItem, "pesca", [], null);
+			assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem de pesca");
+			const conteudoPescaItem = bot.capturedMessages[0].content;
+			assert.ok(
+				conteudoPescaItem.includes("Seu maior peixe: Leviathan (7293.50 kg)"),
+				"Mensagem de pesca de item/lixo deve incluir 'Seu maior peixe:' para não causar confusão ao usuário"
+			);
+			console.log(
+				"✓ Teste 13 passou: Mensagem de pesca de lixo/item exibe 'Seu maior peixe' corretamente."
+			);
+		} finally {
+			FishingGame.checkRandomItem = origCheckRandomItem;
+		}
 		bot.resetCapture();
 	} finally {
 		FishingGame.RARE_FISH.forEach((f, idx) => {

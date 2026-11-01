@@ -804,8 +804,16 @@ async function removeFishFromInventory(userId, fishDbId) {
 	}
 }
 
-async function clearInventory(userId) {
-	await database.dbRun(dbName, "DELETE FROM fishing_inventory WHERE user_id = ?", [userId]);
+async function clearInventory(userId, keepRares = false) {
+	if (keepRares) {
+		await database.dbRun(
+			dbName,
+			"DELETE FROM fishing_inventory WHERE user_id = ? AND (is_rare = 0 OR is_rare IS NULL)",
+			[userId]
+		);
+	} else {
+		await database.dbRun(dbName, "DELETE FROM fishing_inventory WHERE user_id = ?", [userId]);
+	}
 }
 
 async function transferFish(fromUserId, toUserId, fishDbId) {
@@ -1361,13 +1369,25 @@ async function applyItemEffect(userData, item) {
 					);
 					effectMessage = `\n\n${item.emoji} 𝕍𝕠𝕔ê 𝕡𝕖𝕤𝕔𝕠𝕦 𝕦𝕞𝕒... 🕯️𝕍𝔼𝕃𝔸 𝔸ℂ𝔼𝕊𝔸?! 😱 𝒪𝒷𝓇𝒶 𝒹𝑜 𝒸𝒶𝓅𝒾𝓇𝑜𝓉𝑜! 🔥👹🩸`;
 					break;
-				case "clear_inventory":
-					await clearInventory(userData.userId);
-					userData.fishes = [];
-					userData.totalWeight -= userData.inventoryWeight ?? 0;
-					userData.inventoryWeight = 0;
-					effectMessage = `\n\n${item.emoji} OH NÃO! Você encontrou uma ${item.name}! Seu inventário de peixes foi destruído!`;
+				case "clear_inventory": {
+					await clearInventory(userData.userId, true);
+					const keptRares = (userData.fishes || []).filter((f) => f.isRare);
+					const lostFishes = (userData.fishes || []).filter((f) => !f.isRare);
+					const lostWeight = lostFishes.reduce(
+						(sum, f) => sum + (f.weight <= 35000 ? f.weight : 0),
+						0
+					);
+					userData.fishes = keptRares;
+					userData.totalWeight = Math.max(0, (userData.totalWeight || 0) - lostWeight);
+					userData.inventoryWeight = keptRares.reduce(
+						(sum, f) => sum + (f.weight <= 35000 ? f.weight : 0),
+						0
+					);
+					const rareNote =
+						keptRares.length > 0 ? " Seus peixes raros sobreviveram à explosão! 🛡️" : "";
+					effectMessage = `\n\n${item.emoji} OH NÃO! Você encontrou uma ${item.name}! Seus peixes comuns foram destruídos!${rareNote}`;
 					break;
+				}
 				case "remove_baits":
 					const baitsLost = Math.min(userData.baits, item.value);
 					userData.baits -= baitsLost;
@@ -1391,9 +1411,15 @@ async function applyItemEffect(userData, item) {
 							: "Proteção contra lixo (estranhamente).";
 					effectMessage = `\n\n${item.emoji} Você pescou um ${item.name}! ${msg}`;
 					break;
-				case "lose_smallest_fish":
-					if (userData.fishes.length > 0) {
-						const candidates = userData.fishes.map((f, i) => ({ index: i, fish: f }));
+				case "lose_smallest_fish": {
+					const candidates = [];
+					for (let i = 0; i < (userData.fishes || []).length; i++) {
+						if (!userData.fishes[i].isRare) {
+							candidates.push({ index: i, fish: userData.fishes[i] });
+						}
+					}
+
+					if (candidates.length > 0) {
 						candidates.sort((a, b) => a.fish.weight - b.fish.weight);
 
 						const poolSize = Math.min(3, candidates.length);
@@ -1401,14 +1427,17 @@ async function applyItemEffect(userData, item) {
 						const chosenCandidate = candidates[randomIndex];
 
 						const removedFish = chosenCandidate.fish;
-						await removeFishFromInventory(userData.userId, removedFish.dbId);
+						if (removedFish.dbId) {
+							await removeFishFromInventory(userData.userId, removedFish.dbId);
+						}
 						userData.fishes.splice(chosenCandidate.index, 1);
 						if (removedFish.weight <= 35000) userData.inventoryWeight -= removedFish.weight;
 						effectMessage = `\n\n${item.emoji} Uma ${item.name} levou seu ${removedFish.name} embora!`;
 					} else {
-						effectMessage = `\n\n${item.emoji} Uma ${item.name} revirou suas coisas, mas não havia peixes para levar.`;
+						effectMessage = `\n\n${item.emoji} Uma ${item.name} revirou suas coisas, mas não havia peixes comuns para levar.`;
 					}
 					break;
+				}
 				case "lose_recent_fish":
 					// Handled in main loop
 					effectMessage = `\n\n${item.emoji} Maldito ${item.name}! Ele roubou o peixe que você acabou de pegar!`;
@@ -2085,19 +2114,26 @@ async function fishCommand(bot, message, args, group) {
 		const currentMaxInventory = getMaxInventory(userData);
 
 		while (userData.fishes.length > currentMaxInventory) {
-			// Find candidates: prioritize old fish
+			// Find candidates: prioritize old common fish (never rare)
 			const candidates = [];
 			for (let i = 0; i < userData.fishes.length; i++) {
-				if (!caughtFishes.includes(userData.fishes[i])) {
+				if (!caughtFishes.includes(userData.fishes[i]) && !userData.fishes[i].isRare) {
 					candidates.push({ index: i, fish: userData.fishes[i] });
 				}
 			}
 
-			// If no old fish (only new ones), consider all fish
+			// If no old common fish, consider newly caught common fish
 			if (candidates.length === 0) {
 				for (let i = 0; i < userData.fishes.length; i++) {
-					candidates.push({ index: i, fish: userData.fishes[i] });
+					if (!userData.fishes[i].isRare) {
+						candidates.push({ index: i, fish: userData.fishes[i] });
+					}
 				}
+			}
+
+			// Se todos os peixes forem raros, interrompe o descarte para não perder raros!
+			if (candidates.length === 0) {
+				break;
 			}
 
 			// Sort candidates by weight
@@ -2174,10 +2210,15 @@ async function fishCommand(bot, message, args, group) {
 		const extraMsg = targetText ? `, segurando firme na vara de ${targetText},` : "";
 
 		if (caughtFishes.length === 0) {
+			let biggestFishLine = "";
+			if (userData.biggestFish) {
+				biggestFishLine = `\n\n> 🐳 Seu maior peixe: ${userData.biggestFish.name} (${userData.biggestFish.weight.toFixed(2)} kg)`;
+			}
+
 			return new ReturnMessage({
 				chatId,
 
-				content: `🎣 ${userName} jogou a linha${extraMsg} e... ${effectMessage}\n\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`,
+				content: `🎣 ${userName} jogou a linha${extraMsg} e... ${effectMessage}${biggestFishLine}\n\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`,
 
 				reaction: "🎣",
 
@@ -2682,12 +2723,23 @@ async function netFishCommand(bot, message, args, group) {
 			}
 		}
 
-		// Descarte de peixes se inventário estiver cheio
+		// Descarte de peixes se inventário estiver cheio (protegendo peixes raros)
 		const maxInventory = getMaxInventory(userData);
 		const discardedFishes = [];
 
 		while (userData.fishes.length > maxInventory) {
-			const candidates = userData.fishes.map((f, idx) => ({ index: idx, fish: f }));
+			const candidates = [];
+			for (let i = 0; i < userData.fishes.length; i++) {
+				if (!userData.fishes[i].isRare) {
+					candidates.push({ index: i, fish: userData.fishes[i] });
+				}
+			}
+
+			// Se todos os peixes forem raros, interrompe o descarte para não perder peixes raros!
+			if (candidates.length === 0) {
+				break;
+			}
+
 			candidates.sort((a, b) => a.fish.weight - b.fish.weight);
 
 			const poolSize = Math.min(3, candidates.length);
@@ -4104,5 +4156,8 @@ module.exports = {
 	formatRemainingTime,
 	transferFish,
 	transferBuff,
-	removeBuff
+	removeBuff,
+	applyItemEffect,
+	clearInventory,
+	checkRandomItem
 };
