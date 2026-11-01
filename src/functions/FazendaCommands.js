@@ -672,7 +672,11 @@ async function handleFazNome(bot, message) {
 			}
 		} catch (err) {
 			logger.error(`[handleFazNome] Erro ao consultar nome: ${err.message}`);
-			return replyReturnMessage(chatId, `❌ Erro ao consultar nome da fazenda: ${err.message}`, message);
+			return replyReturnMessage(
+				chatId,
+				`❌ Erro ao consultar nome da fazenda: ${err.message}`,
+				message
+			);
 		}
 	}
 
@@ -704,7 +708,11 @@ async function handleFazNome(bot, message) {
 		}
 	} catch (err) {
 		logger.error(`[handleFazNome] Erro ao atualizar nome: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao atualizar nome da fazenda: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Falha ao atualizar nome da fazenda: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -1089,7 +1097,8 @@ async function handleFazComprar(bot, message) {
 
 		let text = `🛍️ *COMPRA REALIZADA COM SUCESSO!* 🛍️\n\n`;
 		text += `• Item: *${buyRes.itemName || buyRes.item?.name || itemParam}*\n`;
-		const totalQtyText = buyRes.newInventoryQuantity !== undefined ? ` (Total: ${buyRes.newInventoryQuantity})` : "";
+		const totalQtyText =
+			buyRes.newInventoryQuantity !== undefined ? ` (Total: ${buyRes.newInventoryQuantity})` : "";
 		text += `• Quantidade: *${buyRes.quantityBought || quantity}x*${totalQtyText}\n`;
 		text += `• Total Pago: *${buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
 		text += `• Saldo Restante: *${buyRes.remainingCoins ?? buyRes.coins ?? 0} moedas*`;

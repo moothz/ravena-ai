@@ -328,7 +328,8 @@ async function resolveUserNickname(group, userId, fallbackName = null) {
 	// 1. Apelido definido no grupo atual
 	if (group && group.nicks && Array.isArray(group.nicks)) {
 		const match = group.nicks.find(
-			(n) => n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
+			(n) =>
+				n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
 		);
 		if (match && match.apelido) {
 			return match.apelido;
@@ -336,7 +337,8 @@ async function resolveUserNickname(group, userId, fallbackName = null) {
 	}
 
 	// 2. Apelido global (definido no PV)
-	const globalNick = (await getGlobalNick(cleanUser)) || (rawPhone ? await getGlobalNick(rawPhone) : null);
+	const globalNick =
+		(await getGlobalNick(cleanUser)) || (rawPhone ? await getGlobalNick(rawPhone) : null);
 	if (globalNick) {
 		return globalNick;
 	}
@@ -350,7 +352,9 @@ async function resolveUserNickname(group, userId, fallbackName = null) {
 				const g = groups[i];
 				if (g && Array.isArray(g.nicks)) {
 					const m = g.nicks.find(
-						(n) => n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
+						(n) =>
+							n.numero === cleanUser ||
+							(rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
 					);
 					if (m && m.apelido) {
 						return m.apelido;
@@ -396,8 +400,12 @@ async function apelidoCommand(bot, message, args, group) {
 				} else {
 					// Mostra se existe algum apelido em grupo servindo de fallback
 					const resolvedFallback = await resolveUserNickname(null, message.author, null);
-					const hasGroupFallback = resolvedFallback && resolvedFallback !== message.author.replace(/\D/g, "") && resolvedFallback !== "Jogador";
-					let msg = "Você ainda não definiu um apelido global.\nUse *!apelido [apelido]* para definir um apelido global usado em todos os grupos!";
+					const hasGroupFallback =
+						resolvedFallback &&
+						resolvedFallback !== message.author.replace(/\D/g, "") &&
+						resolvedFallback !== "Jogador";
+					let msg =
+						"Você ainda não definiu um apelido global.\nUse *!apelido [apelido]* para definir um apelido global usado em todos os grupos!";
 					if (hasGroupFallback) {
 						msg += `\n\n> Atualmente você está herdando o apelido: *${resolvedFallback}* (definido em um de seus grupos).`;
 					}
@@ -453,8 +461,12 @@ async function apelidoCommand(bot, message, args, group) {
 				});
 			} else {
 				const fallbackNick = await resolveUserNickname(null, message.author, null);
-				const hasFallback = fallbackNick && fallbackNick !== message.author.replace(/\D/g, "") && fallbackNick !== "Jogador";
-				let content = "Você não tem um apelido específico definido neste grupo.\nUse *!apelido [apelido]* para definir um.";
+				const hasFallback =
+					fallbackNick &&
+					fallbackNick !== message.author.replace(/\D/g, "") &&
+					fallbackNick !== "Jogador";
+				let content =
+					"Você não tem um apelido específico definido neste grupo.\nUse *!apelido [apelido]* para definir um.";
 				if (hasFallback) {
 					content += `\n> Apelido ativo herdado: *${fallbackNick}*`;
 				}

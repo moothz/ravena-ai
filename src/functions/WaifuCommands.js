@@ -1301,10 +1301,9 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 	const customMsgs = {
 		LOCK_EXPIRED:
 			"⌛ A janela de 300 segundos para casar expirou ou o personagem não foi rolado neste grupo!",
-		CHARACTER_ALREADY_CLAIMED:
-			apiErr?.owner?.name
-				? `🚫 Este personagem já pertence a *${apiErr.owner.name}*!`
-				: apiErr?.message || "🚫 Este personagem já foi reivindicado por outro jogador!",
+		CHARACTER_ALREADY_CLAIMED: apiErr?.owner?.name
+			? `🚫 Este personagem já pertence a *${apiErr.owner.name}*!`
+			: apiErr?.message || "🚫 Este personagem já foi reivindicado por outro jogador!",
 		CHARACTER_NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		NOT_IN_HAREM: "❓ Este personagem não faz parte do seu harém.",
 		WISHLIST_LIMIT_REACHED: `⚠️ Sua wishlist está cheia (máximo de ${WISHLIST_MAX_ITEMS}). Remova um item antes com \`!mu-removerdesejo <id>\`.`,
@@ -1959,7 +1958,9 @@ function makeRollHandler(genderFilter) {
 					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const keysCount = s.keyProgress?.currentKeys || 1;
 					const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
-					const soulmateTag = isSoulmateNow ? " (💖 SOULMATE ALCANÇADO! 10/10)" : ` (🔑 Chaves: ${keysCount}/10)`;
+					const soulmateTag = isSoulmateNow
+						? " (💖 SOULMATE ALCANÇADO! 10/10)"
+						: ` (🔑 Chaves: ${keysCount}/10)`;
 					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
 					if (isSoulmateNow) {
 						notifySoulmateAchievement(
@@ -3244,8 +3245,7 @@ async function verHarem(bot, message, args) {
 		if (entries.length === 0 && totalInCols === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					`👰 ${haremTitle} está vazio! Use *!mu-roll* para encontrar e casar com waifus e husbandos.`
+				content: `👰 ${haremTitle} está vazio! Use *!mu-roll* para encontrar e casar com waifus e husbandos.`
 			});
 		}
 
@@ -4284,8 +4284,13 @@ async function verRankingGrupo(bot, message) {
 		const { data } = await api.get(`/groups/${encodeURIComponent(groupId)}/leaderboard`, {
 			params: { limit: 10 }
 		});
-		const { totalMembers, totalClaimsInGroup, topKakera: rawTopKakera, topHarem: rawTopHarem, topCharacters: rawTopCharacters } =
-			data.data || {};
+		const {
+			totalMembers,
+			totalClaimsInGroup,
+			topKakera: rawTopKakera,
+			topHarem: rawTopHarem,
+			topCharacters: rawTopCharacters
+		} = data.data || {};
 
 		const topKakera = (rawTopKakera || []).filter((u) => !isTestRankingUser(u));
 		const topHarem = (rawTopHarem || []).filter((u) => !isTestRankingUser(u));
