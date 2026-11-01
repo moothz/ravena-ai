@@ -2804,11 +2804,13 @@ async function divorciarWaifu(bot, message, args) {
 
 	try {
 		const { data } = await api.post("/divorce", { userId, characterId });
-		const { character, refundedKakera, keysLost, newKakeraBalance } = data.data;
+		const { character, refundedKakera, keysLost, newKakeraBalance, isSoulmate } = data.data;
 
 		await removeMarriagePhoto(character.id || characterId).catch(() => {});
 
-		let text = `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n`;
+		let text = isSoulmate
+			? `💖 *Divórcio Dourado (Soulmate)!*\nVocê se separou de *${character.name}*.\n`
+			: `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n`;
 		text += `💜 Reembolso: *+${refundedKakera} Zinthos* (perdidas ${keysLost} chaves)\n`;
 		text += `💰 Novo saldo: *${newKakeraBalance} Zinthos*`;
 
@@ -5333,13 +5335,13 @@ async function ajudaWaifus(bot, message) {
 	text += `  🏆 *Bônus no Rank:* Adiciona +25 pontos extras de valor da coleção no ranking geral!\n`;
 	text += `  📝 *Personalização Total:* Permite definir apelido afetuoso e nota carinhosa no painel web!\n`;
 	text += `  ✨ *Cristais Raros Turbinados:* Bônus massivo em Zinthos ao ser rolado por outros jogadores!\n`;
-	text += `  💰 *Divórcio Dourado:* Em caso de divórcio, devolve o valor integral de 4 cotas (450k a 6,3M Zinthos) + 30k por chave!\n\n`;
+	text += `  💰 *Divórcio Dourado:* Em caso de divórcio, devolve o valor integral de 4 cotas dinâmicas (450k a 6,3M Zinthos + inflação) + 30k por chave!\n\n`;
 
 	text += `💜 *4. Economia Zinthos*\n`;
 	text += `• *Zinthos (💜)* é a moeda oficial do jogo.\n`;
 	text += `• Resgate sua recompensa diária (reseta todos os dias às 04:00) usando \`!mu-diario\`.\n`;
 	text += `• Quando alguém rola um personagem que já é seu, um cristal de Zinthos é gerado com base no valor da sua waifu.\n`;
-	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor agora equivale a 4 cotas completas (de 450.000 a 6.300.000 Zinthos dependendo da raridade) mais 30.000 Zinthos por chave acumulada!\n\n`;
+	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor considera a raridade base, bônus por chave escalonado (500 a 75k) e a inflação atual de mercado. Se for Soulmate, concede o Divórcio Dourado (4 cotas)!\n\n`;
 
 	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
 	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
@@ -5361,7 +5363,7 @@ async function ajudaWaifus(bot, message) {
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
-	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (valor de 4 cotas + bônus de chaves).\n`;
+	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (ajustado à raridade, chaves e inflação; 4 cotas para Soulmates).\n`;
 	text += `• \`!mu-harem [página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você possui.\n`;
 	text += `• \`!mu-harem-nome <nome>\` (aliases: \`!mu-hnome\`, \`!mu-nomeharem\`) — Define um nome personalizado para o seu harém (até 20 caracteres).\n`;
 	text += `• \`!mu-favorito <id>\` (aliases: \`!mu-fav\`) — Alterna personagens favoritos em destaque (até 5 favoritas).\n`;
