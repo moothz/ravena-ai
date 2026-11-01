@@ -39,6 +39,22 @@ class ReportAnalyzerService {
 	}
 
 	/**
+	 * Extrai o número do usuário reportante dos argumentos do comando (apenas dígitos).
+	 * Aceita formatos como "555596810000", "+55 55 9681-0000" ou "@555596810000".
+	 * @param {Array<string>|string|null} args
+	 * @returns {string|null} Número só com dígitos (mín. 8) ou null se não informado/inválido
+	 */
+	parseTargetUser(args) {
+		if (!args) return null;
+		const list = Array.isArray(args) ? args : [args];
+		const digits = list
+			.filter((a) => a && !/^(cancelar|cancel)$/i.test(String(a).trim()))
+			.map((a) => String(a).replace(/\D/g, ""))
+			.join("");
+		return digits.length >= 8 ? digits : null;
+	}
+
+	/**
 	 * Constrói a chave única da sessão
 	 * @param {string} botId
 	 * @param {string} author
@@ -122,10 +138,7 @@ class ReportAnalyzerService {
 		const from = typeof messageOrAuthor === "object" ? messageOrAuthor.from : null;
 
 		const key = this.getSessionKey(botId, author);
-		let cleanTarget = targetUser;
-		if (cleanTarget) {
-			cleanTarget = String(cleanTarget).replace(/\D/g, "");
-		}
+		const cleanTarget = this.parseTargetUser(targetUser);
 
 		const session = {
 			key,
@@ -423,8 +436,9 @@ class ReportAnalyzerService {
 			throw new Error("Nenhuma sessão ativa encontrada para este usuário.");
 		}
 
-		if (optionalTargetUser && !session.targetUser) {
-			session.targetUser = String(optionalTargetUser).replace(/\D/g, "");
+		// O número informado no primeiro comando tem prioridade; só usa o do segundo se não houver
+		if (!session.targetUser) {
+			session.targetUser = this.parseTargetUser(optionalTargetUser);
 		}
 
 		// Ordena mensagens cronologicamente
@@ -499,6 +513,7 @@ class ReportAnalyzerService {
 		const botContext = await this.loadBotContext();
 
 		// Monta o prompt inicial contendo estritamente o cabeçalho e o histórico cronológico de mensagens
+		// Sem número informado no comando, o prompt fica sem o número
 		const userIdentifier = session.targetUser ? `Usuario ${session.targetUser}` : "Usuario";
 		const promptHeader = `${userIdentifier} reporta um problema. Analise o conteúdo enviado e descreva o problema que será enviado ao agent de correção de erros do código, de foma que fique organizada e facil para o agent entender o que acontece, com horários, etc.`;
 

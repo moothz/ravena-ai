@@ -347,6 +347,30 @@ async function runTests() {
 	llmService.getCompletion = originalGetCompletion;
 	SummaryCommands.analyzeVideo = originalAnalyzeVideo;
 
+	// --------------------------------------------------------------------------
+	// 7. Número do reportante: parse e prompt sem número quando não informado
+	// --------------------------------------------------------------------------
+	console.log("\n[7] Testando captura do número do reportante...");
+	assert.strictEqual(reportService.parseTargetUser(["555596810000"]), "555596810000");
+	assert.strictEqual(reportService.parseTargetUser(["+55", "55", "9681-0000"]), "555596810000");
+	assert.strictEqual(reportService.parseTargetUser(["cancelar"]), null);
+	assert.strictEqual(reportService.parseTargetUser([]), null);
+
+	const sessSemNumero = reportService.startSession(bot.id, adminPhone, null);
+	assert.strictEqual(sessSemNumero.targetUser, null, "Sem número informado deve ficar nulo");
+	await reportService.recordMessage(
+		bot,
+		createMessage({ content: "teste", type: "text", author: adminPhone, group: null })
+	);
+	llmService.getCompletion = async () => "ok";
+	const semNumero = await reportService.finalizeSession(bot, bot.id, adminPhone, null);
+	llmService.getCompletion = originalGetCompletion;
+	assert.ok(
+		semNumero.promptMessage.startsWith("Usuario reporta um problema"),
+		"Prompt deve ficar sem número quando não informado"
+	);
+	console.log("✓ Número do reportante capturado/omitido corretamente.");
+
 	console.log("\n✅ TODOS OS TESTES PASSARAM COM SUCESSO!");
 }
 

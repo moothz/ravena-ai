@@ -6524,7 +6524,7 @@ Retorne no formato JSON rigoroso:
 					})
 				);
 
-				const optionalTarget = args[0] ? args[0] : null;
+				const optionalTarget = reportService.parseTargetUser(args);
 				const { promptMessage, aiMessage } = await reportService.finalizeSession(
 					bot,
 					bot.id,
@@ -6544,13 +6544,15 @@ Retorne no formato JSON rigoroso:
 				];
 			}
 
-			// Inicia nova sessão
-			const targetUser = args[0] || null;
-			reportService.startSession(bot.id, message, targetUser);
+			// Inicia nova sessão (número do reportante é opcional e vem no primeiro comando)
+			const session = reportService.startSession(bot.id, message, args);
 
 			let welcome = "📋 *Modo de Análise de Report Iniciado!*\n\n";
-			if (targetUser) {
-				welcome += `• *Usuário alvo:* ${String(targetUser).replace(/\D/g, "")}\n`;
+			if (session.targetUser) {
+				welcome += `• *Usuário reportante:* ${session.targetUser}\n`;
+			} else {
+				welcome +=
+					"• *Usuário reportante:* não informado (use *!sa-analisaReport 5555999999999* para incluí-lo no prompt)\n";
 			}
 			welcome +=
 				"• Encaminhe para este chat privado todas as mensagens do problema (textos, imagens/prints, áudios e vídeos).\n";
