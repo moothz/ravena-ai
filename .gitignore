@@ -166,6 +166,7 @@ test-output-*
 bots.json
 service-providers.json
 temp
+data/global-nicks.json
 data/nudenet_debug
 data/sqlites
 data/backups

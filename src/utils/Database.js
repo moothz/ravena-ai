@@ -788,6 +788,23 @@ class Database {
 		return this.coreRepo.isUserInviteBlocked(phoneNumber);
 	}
 
+	// --- Global Nicks ---
+
+	async getGlobalNick(userId) {
+		return this.coreRepo.getGlobalNick(userId);
+	}
+	async saveGlobalNick(userId, nickname) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] saveGlobalNick() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.saveGlobalNick(userId, nickname);
+	}
+	async getAllGlobalNicks() {
+		return this.coreRepo.getAllGlobalNicks();
+	}
+
 	// --- Local Blocks ---
 
 	async addLocalBlock(phoneNumber) {

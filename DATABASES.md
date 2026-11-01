@@ -139,6 +139,11 @@ database.getSoftblocks()
 database.toggleUserInvites(number, block)
 database.isUserInviteBlocked(number)
 
+// Apelidos globais
+database.getGlobalNick(userId)
+database.saveGlobalNick(userId, nickname)
+database.getAllGlobalNicks()
+
 // Relatórios de carga
 database.getLoadReports(since?)
 database.addLoadReport(reportObj)

@@ -10,6 +10,7 @@
 
 "use strict";
 
+const fs = require("fs");
 const path = require("path");
 const Logger = require("../../Logger");
 const GroupMapper = require("../mappers/GroupMapper");
@@ -152,6 +153,11 @@ class CoreRepository {
 				end_time INTEGER NOT NULL,
 				created_by TEXT,
 				UNIQUE(game, type)
+			)`,
+			global_nicks: `CREATE TABLE IF NOT EXISTS global_nicks (
+				user_id TEXT PRIMARY KEY,
+				nickname TEXT NOT NULL,
+				updated_at INTEGER
 			)`
 		};
 
@@ -192,6 +198,11 @@ class CoreRepository {
 			this.DB,
 			"CREATE INDEX IF NOT EXISTS idx_global_ignored_user_id ON global_ignored_users(user_id)"
 		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_global_nicks_user_id ON global_nicks(user_id)"
+		);
+		this._migrateLegacyGlobalNicks();
 		this._loadGlobalIgnoredCache();
 
 		// custom_commands.db
@@ -1765,6 +1776,103 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error getting active game events:", error);
 			return [];
+		}
+	}
+
+	// ===========================================================================
+	// Global Nicks
+	// ===========================================================================
+
+	_migrateLegacyGlobalNicks() {
+		const legacyJsonPath = path.join(__dirname, "../../../../data/global-nicks.json");
+		try {
+			if (fs.existsSync(legacyJsonPath)) {
+				const raw = fs.readFileSync(legacyJsonPath, "utf8");
+				const data = JSON.parse(raw);
+				if (data && typeof data === "object") {
+					const now = Math.floor(Date.now() / 1000);
+					for (const [userId, nick] of Object.entries(data)) {
+						if (userId && nick) {
+							const clean = String(userId).trim();
+							const rawPhone = clean.replace(/\D/g, "");
+							const primaryId = rawPhone || clean;
+							this.mappers.run(
+								this.DB,
+								"INSERT OR IGNORE INTO global_nicks (user_id, nickname, updated_at) VALUES (?, ?, ?)",
+								[primaryId, String(nick).trim(), now]
+							);
+						}
+					}
+				}
+				fs.unlinkSync(legacyJsonPath);
+				this.logger.info(
+					"Migração de data/global-nicks.json para SQLite concluída e arquivo legado removido."
+				);
+			}
+		} catch (e) {
+			this.logger.error("Erro ao migrar global-nicks.json para SQLite:", e);
+		}
+	}
+
+	async getGlobalNick(userId) {
+		if (!userId) return null;
+		const cleanUser = String(userId).trim();
+		const rawPhone = cleanUser.replace(/\D/g, "");
+		try {
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT nickname FROM global_nicks WHERE user_id = ? OR (user_id = ? AND ? != '')",
+				[cleanUser, rawPhone, rawPhone]
+			);
+			return row ? row.nickname : null;
+		} catch (error) {
+			this.logger.error("Error getting global nick:", error);
+			return null;
+		}
+	}
+
+	async saveGlobalNick(userId, nickname) {
+		if (!userId) return false;
+		const cleanUser = String(userId).trim();
+		const rawPhone = cleanUser.replace(/\D/g, "");
+		const primaryId = rawPhone || cleanUser;
+		const now = Math.floor(Date.now() / 1000);
+
+		try {
+			if (nickname) {
+				this.mappers.run(
+					this.DB,
+					"INSERT INTO global_nicks (user_id, nickname, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET nickname = excluded.nickname, updated_at = excluded.updated_at",
+					[primaryId, String(nickname).trim(), now]
+				);
+			} else {
+				this.mappers.run(
+					this.DB,
+					"DELETE FROM global_nicks WHERE user_id = ? OR (user_id = ? AND ? != '')",
+					[cleanUser, rawPhone, rawPhone]
+				);
+			}
+			return true;
+		} catch (error) {
+			this.logger.error("Error saving global nick:", error);
+			return false;
+		}
+	}
+
+	async getAllGlobalNicks() {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT user_id, nickname, updated_at FROM global_nicks"
+			);
+			const map = {};
+			for (const row of rows) {
+				map[row.user_id] = row.nickname;
+			}
+			return map;
+		} catch (error) {
+			this.logger.error("Error getting all global nicks:", error);
+			return {};
 		}
 	}
 }

@@ -15,6 +15,7 @@ graph TD
         pending_joins["pending_joins\nConvites pendentes"]
         soft_blocks["soft_blocks\nBloqueios suaves"]
         blocked_invites["blocked_invites\nInvites banidos"]
+        global_nicks["global_nicks\nApelidos globais de usuários"]
     end
 
     subgraph CMDS ["💬 Comandos (custom_commands.db)"]
@@ -151,6 +152,15 @@ Números ou LIDs bloqueados localmente que o bot ignora completamente.
 |---|---|---|
 | `number` | TEXT PK | Número de telefone ou LID (sem @c.us/@s.w.net) |
 | `timestamp` | INTEGER | Data do bloqueio (ms) |
+
+### `global_nicks`
+Apelidos globais de usuários definidos via PV, utilizados como fallback em qualquer grupo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `user_id` | TEXT PK | Número de telefone limpo ou JID do usuário |
+| `nickname` | TEXT | Apelido global definido |
+| `updated_at` | INTEGER | Timestamp da última alteração (Unix epoch em segundos) |
 
 ### `invite_history`
 Histórico completo de convites de grupo recebidos pelo bot.

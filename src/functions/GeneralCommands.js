@@ -271,41 +271,22 @@ Aqui vai as principais diferenças pra antiga:
 	});
 }
 
-const GLOBAL_NICKS_PATH = path.join(__dirname, "../../data/global-nicks.json");
-let globalNicksCache = null;
-
-async function loadGlobalNicks() {
-	if (globalNicksCache !== null) return globalNicksCache;
-	try {
-		const content = await fs.readFile(GLOBAL_NICKS_PATH, "utf8");
-		globalNicksCache = JSON.parse(content);
-	} catch (e) {
-		globalNicksCache = {};
-	}
-	return globalNicksCache;
-}
-
 async function saveGlobalNick(userId, nickname) {
-	const nicks = await loadGlobalNicks();
-	const cleanUser = String(userId).trim();
-	if (nickname) {
-		nicks[cleanUser] = nickname;
-	} else {
-		delete nicks[cleanUser];
-	}
-	globalNicksCache = nicks;
 	try {
-		await fs.writeFile(GLOBAL_NICKS_PATH, JSON.stringify(nicks, null, 2), "utf8");
+		return await database.saveGlobalNick(userId, nickname);
 	} catch (e) {
 		logger.error("Erro ao salvar apelido global:", e.message);
+		return false;
 	}
 }
 
 async function getGlobalNick(userId) {
-	const nicks = await loadGlobalNicks();
-	const cleanUser = String(userId).trim();
-	const rawPhone = cleanUser.replace(/\D/g, "");
-	return nicks[cleanUser] || (rawPhone ? nicks[rawPhone] : null) || null;
+	try {
+		return await database.getGlobalNick(userId);
+	} catch (e) {
+		logger.error("Erro ao obter apelido global:", e.message);
+		return null;
+	}
 }
 
 /**
