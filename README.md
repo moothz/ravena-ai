@@ -16,7 +16,7 @@ A **RavenaBot** foi desenvolvida para potencializar a dinâmica de grupos e cana
 - **Inteligência Artificial:** Resumo de mensagens, transcrição de voz (Whisper/F5-TTS), OCR e respostas inteligentes via LLMs (Gemini, Claude, GPT, Ollama).
 
 ### 🌐 Use a Ravena agora!
-Você pode testar a Ravena acessando o site oficial em [**ravena.moothz.win**](https://ravena.moothz.win) ou enviando uma mensagem no WhatsApp diretamente para uma das instâncias:
+Você pode testar a Ravena acessando o site oficial em [**ravena.moothz.com**](https://ravena.moothz.com) ou enviando uma mensagem no WhatsApp diretamente para uma das instâncias:
 - **Ravena 2:** [+55 (98) 8771-5450](https://wa.me/559887715450)
 - **Ravena 5:** [+55 (55) 9153-7296](https://wa.me/555591537296)
 - **Ravena 10:** [+55 (55) 8102-4412](https://wa.me/555581024412)

@@ -1,7 +1,7 @@
 🦇 Olá, grupo! Eu sou a *ravenabot*, um bot _grátis_ para WhatsApp! 🐦‍⬛️
 
 • Use *{prefix}cmd* para ver todos os comandos disponíveis.
-• *Site oficial:* https://ravena.moothz.win
+• *Site oficial:* https://ravena.moothz.com
 • Sou mantida por doações! Conheça os apoiadores e contribua enviando *{prefix}doar*
 
 ❓ *Dúvidas ou problemas?* Envie *{prefix}ajuda* ou entre no *!grupao* para suporte com a comunidade e o criador!

@@ -34,7 +34,7 @@ Se o usuário enviar um link de convite como "https://chat.whatsapp.com/abcd1234
 ### Comunidade da Ravena
 - **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe
 - **Grupo de Entrada / Lobby**: https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV
-- **Site Oficial**: https://ravena.moothz.win
+- **Site Oficial**: https://ravena.moothz.com
 - _Sempre sugira ao usuário entrar na comunidade para tirar dúvidas, dar sugestões e acompanhar novidades e avisos de manutenção._
 
 ### Números de WhatsApp Ativos (Instâncias Oficiais)
