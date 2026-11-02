@@ -171,6 +171,32 @@ async function getGameTexts() {
 	return cachedTexts || { name: "Jardim Lutoso", emoji: "🦇" };
 }
 
+const farmMessageTracker = new Map();
+const FARM_EDIT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos
+
+function getFarmTrackerKey(chatId, userId) {
+	return `${chatId}:${userId}`;
+}
+
+function recordFarmMessage(chatId, userId, messageId) {
+	if (!chatId || !userId || !messageId) return;
+	farmMessageTracker.set(getFarmTrackerKey(chatId, userId), {
+		messageId,
+		timestamp: Date.now()
+	});
+}
+
+function getActiveFarmMessageId(chatId, userId) {
+	const key = getFarmTrackerKey(chatId, userId);
+	const entry = farmMessageTracker.get(key);
+	if (!entry) return null;
+	if (Date.now() - entry.timestamp > FARM_EDIT_MAX_AGE_MS) {
+		farmMessageTracker.delete(key);
+		return null;
+	}
+	return entry.messageId;
+}
+
 /**
  * Cria uma instância de ReturnMessage com citação (reply) à mensagem de origem
  * @param {string} chatId
@@ -188,7 +214,9 @@ function replyReturnMessage(chatId, content, message, extraOptions = {}) {
 	return new ReturnMessage({
 		chatId,
 		content,
-		options
+		options,
+		telegram: extraOptions.telegram || options.telegram,
+		buttons: extraOptions.buttons || options.buttons
 	});
 }
 
@@ -506,7 +534,7 @@ async function handleFazenda(bot, message, _args, group) {
 
 		// Link público da fazenda
 		const shareUrl =
-			status.shareUrl || (status.uuid ? `https://jds.moothz.win/farm?id=${status.uuid}` : null);
+			status.shareUrl || (status.uuid ? `https://jds.moothz.com/farm?id=${status.uuid}` : null);
 		if (shareUrl) {
 			text += `\n\n🌐 *Ver Fazenda Online:* ${shareUrl}`;
 		}
@@ -534,6 +562,25 @@ async function handleFazenda(bot, message, _args, group) {
 			text += eventBanner;
 		}
 
+		const canHarvest = readyCount > 0 || dryCount > 0;
+		const farmButtons = [];
+		if (canHarvest) {
+			farmButtons.push([
+				{
+					text: `🌾 Colher Tudo${readyCount > 0 ? ` (${readyCount})` : ""}`,
+					action: "/faz-colher"
+				}
+			]);
+		}
+
+		const farmOptions = {
+			farmData: { userId },
+			telegram: {
+				buttons: farmButtons.length > 0 ? farmButtons : null
+			},
+			...(canHarvest ? { reaction: "🌾" } : {})
+		};
+
 		const returns = [];
 
 		// Envia a imagem com a legenda principal se tiver, ou apenas texto se falhou a imagem
@@ -550,12 +597,13 @@ async function handleFazenda(bot, message, _args, group) {
 					},
 					message,
 					{
-						caption: text
+						caption: text,
+						...farmOptions
 					}
 				)
 			);
 		} else {
-			returns.push(replyReturnMessage(chatId, text, message));
+			returns.push(replyReturnMessage(chatId, text, message, farmOptions));
 		}
 
 		// Se coletou diário nesta chamada, envia segunda mensagem com o prêmio
@@ -856,6 +904,25 @@ async function handleFazColher(bot, message, _args, group) {
 
 		if (imageBuffer) {
 			const finalBuffer = await optimizeFarmImage(imageBuffer, isHighQuality);
+
+			const colherOptions = {
+				farmData: { userId }
+			};
+
+			if (bot && bot.useTelegram) {
+				const activeFarmId = getActiveFarmMessageId(chatId, userId);
+				colherOptions.telegram = {
+					editMessageId: activeFarmId || null,
+					buttons: [
+						[
+							{ text: "🌱 Plantar", action: "/faz-plantar" },
+							{ text: "🛒 Loja", action: "/faz-loja" },
+							{ text: "🎒 Mochila", action: "/faz-inv" }
+						]
+					]
+				};
+			}
+
 			return replyReturnMessage(
 				chatId,
 				{
@@ -866,12 +933,13 @@ async function handleFazColher(bot, message, _args, group) {
 				},
 				message,
 				{
-					caption: text
+					caption: text,
+					...colherOptions
 				}
 			);
 		}
 
-		return replyReturnMessage(chatId, text, message);
+		return replyReturnMessage(chatId, text, message, { farmData: { userId } });
 	} catch (err) {
 		// Sem plantas prontas no terreno: ainda assim vale reconciliar colheitas antigas
 		// não creditadas (ex: colhidas pelo painel web e já vendidas por lá).
@@ -905,6 +973,52 @@ async function handleFazPlantar(bot, message, _args, group) {
 	const { isHighQuality, remainingArgs: args } = extractQualityFlag(rawArgs);
 
 	if (args.length === 0) {
+		if (bot && bot.useTelegram) {
+			try {
+				const inv = await jardimClient.getInventory(userId);
+				const items = inv.items || inv.inventory || [];
+				const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
+				if (seeds.length > 0) {
+					let seedText =
+						`🌱 *ESCOLHA O QUE DESEJA PLANTAR:*\n\n` +
+						`Você possui as seguintes sementes na mochila:\n`;
+					const buttons = [];
+					let currentRow = [];
+					for (const s of seeds) {
+						const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
+						seedText += `• *${s.name}*: ${s.quantity}x (ID: #${seedId})\n`;
+						currentRow.push({
+							text: `🌱 ${s.name} (${s.quantity}x)`,
+							action: `/faz-plantar ${seedId}`
+						});
+						if (currentRow.length === 2) {
+							buttons.push(currentRow);
+							currentRow = [];
+						}
+					}
+					if (currentRow.length > 0) buttons.push(currentRow);
+					buttons.push([{ text: "🛒 Ir para a Loja", action: "/faz-loja" }]);
+
+					return replyReturnMessage(chatId, seedText, message, {
+						telegram: { buttons }
+					});
+				} else {
+					return replyReturnMessage(
+						chatId,
+						`🌱 *Você não possui sementes na mochila!*\nVisite a loja com \`/faz_loja\` para adquirir sementes antes de plantar.`,
+						message,
+						{
+							telegram: {
+								buttons: [[{ text: "🛒 Ir para a Loja", action: "/faz-loja" }]]
+							}
+						}
+					);
+				}
+			} catch (e) {
+				logger.warn(`[handleFazPlantar] Erro ao buscar sementes para botões: ${e.message}`);
+			}
+		}
+
 		return replyReturnMessage(
 			chatId,
 			`🌱 *Como plantar:*\n• \`!faz-plantar <semente>\` (planta até 3 nos canteiros livres)\n• \`!faz-plantar <semente> <qtd>\` (ex: \`!faz-plantar 3 5\` ou \`!faz-plantar 3 tudo\`)\n\nVeja suas sementes com \`!faz-inv\`.`,
@@ -995,6 +1109,25 @@ async function handleFazPlantar(bot, message, _args, group) {
 
 		if (imageBuffer) {
 			const finalBuffer = await optimizeFarmImage(imageBuffer, isHighQuality);
+
+			const plantarOptions = {
+				farmData: { userId }
+			};
+
+			if (bot && bot.useTelegram) {
+				const activeFarmId = getActiveFarmMessageId(chatId, userId);
+				plantarOptions.telegram = {
+					editMessageId: activeFarmId || null,
+					buttons: [
+						[
+							{ text: "🌾 Ver Fazenda", action: "/fazenda" },
+							{ text: "🛒 Loja", action: "/faz-loja" },
+							{ text: "🎒 Mochila", action: "/faz-inv" }
+						]
+					]
+				};
+			}
+
 			return replyReturnMessage(
 				chatId,
 				{
@@ -1005,12 +1138,13 @@ async function handleFazPlantar(bot, message, _args, group) {
 				},
 				message,
 				{
-					caption: text
+					caption: text,
+					...plantarOptions
 				}
 			);
 		}
 
-		return replyReturnMessage(chatId, text, message);
+		return replyReturnMessage(chatId, text, message, { farmData: { userId } });
 	} catch (err) {
 		logger.error(`[handleFazPlantar] Erro ao plantar: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha ao plantar: ${err.message}`, message);
@@ -1064,7 +1198,45 @@ async function handleFazLoja(bot, message) {
 
 		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\``;
 
-		return replyReturnMessage(chatId, text, message);
+		const extraOpts = {};
+		if (bot && bot.useTelegram) {
+			const lojaButtons = [];
+			let seedRow = [];
+			if (shop.seeds?.length > 0) {
+				for (const s of shop.seeds) {
+					seedRow.push({
+						text: `🌱 #${s.index} ${s.name}`,
+						action: `/faz-comprar ${s.index} 1`
+					});
+					if (seedRow.length === 2) {
+						lojaButtons.push(seedRow);
+						seedRow = [];
+					}
+				}
+				if (seedRow.length > 0) lojaButtons.push(seedRow);
+			}
+
+			let consRow = [];
+			if (shop.consumables?.length > 0) {
+				for (const c of shop.consumables) {
+					consRow.push({
+						text: `🧪 #${c.index} ${c.name}`,
+						action: `/faz-comprar ${c.index} 1`
+					});
+					if (consRow.length === 2) {
+						lojaButtons.push(consRow);
+						consRow = [];
+					}
+				}
+				if (consRow.length > 0) lojaButtons.push(consRow);
+			}
+
+			if (lojaButtons.length > 0) {
+				extraOpts.telegram = { buttons: lojaButtons };
+			}
+		}
+
+		return replyReturnMessage(chatId, text, message, extraOpts);
 	} catch (err) {
 		logger.error(`[handleFazLoja] Erro ao carregar loja: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha ao carregar loja: ${err.message}`, message);
@@ -1175,7 +1347,13 @@ async function handleFazInventario(bot, message) {
 		const items = inv.items || inv.inventory || [];
 		if (items.length === 0) {
 			text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
-			return replyReturnMessage(chatId, `${text}${bonusBlock}`, message);
+			const extraOpts = {};
+			if (bot && bot.useTelegram) {
+				extraOpts.telegram = {
+					buttons: [[{ text: "🛒 Ir para a Loja", action: "/faz-loja" }]]
+				};
+			}
+			return replyReturnMessage(chatId, `${text}${bonusBlock}`, message, extraOpts);
 		}
 
 		const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
@@ -1231,7 +1409,64 @@ async function handleFazInventario(bot, message) {
 
 		text += `💡 *Ações:* \`!faz-plantar\`, \`!faz-usar\`, \`!faz-vender\`, \`!faz-decorar\``;
 
-		return replyReturnMessage(chatId, `${text}${bonusBlock}`, message);
+		const extraOpts = {};
+		if (bot && bot.useTelegram) {
+			const invButtons = [];
+
+			// Botões para plantar sementes disponíveis
+			if (seeds.length > 0) {
+				let seedRow = [];
+				for (const s of seeds) {
+					const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
+					seedRow.push({
+						text: `🌱 Plantar ${s.name} (${s.quantity}x)`,
+						action: `/faz-plantar ${seedId}`
+					});
+					if (seedRow.length === 2) {
+						invButtons.push(seedRow);
+						seedRow = [];
+					}
+				}
+				if (seedRow.length > 0) invButtons.push(seedRow);
+			}
+
+			// Botões para usar elixires disponíveis
+			if (consumables.length > 0) {
+				let consRow = [];
+				for (const c of consumables) {
+					const consId = c.catalogIndex ?? c.index ?? c.id ?? c.itemId;
+					consRow.push({
+						text: `🧪 Usar ${c.name} (${c.quantity}x)`,
+						action: `/faz-usar ${consId}`
+					});
+					if (consRow.length === 2) {
+						invButtons.push(consRow);
+						consRow = [];
+					}
+				}
+				if (consRow.length > 0) invButtons.push(consRow);
+			}
+
+			// Botão para vender tudo se tiver colheitas
+			if (crops.length > 0) {
+				invButtons.push([
+					{
+						text: `💰 Vender Todas as Colheitas`,
+						action: `/faz-vender tudo`
+					}
+				]);
+			}
+
+			// Navegação rápida
+			invButtons.push([
+				{ text: "🌾 Ver Fazenda", action: "/fazenda" },
+				{ text: "🛒 Loja", action: "/faz-loja" }
+			]);
+
+			extraOpts.telegram = { buttons: invButtons };
+		}
+
+		return replyReturnMessage(chatId, `${text}${bonusBlock}`, message, extraOpts);
 	} catch (err) {
 		logger.error(`[handleFazInventario] Erro ao carregar inventário: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha ao buscar inventário: ${err.message}`, message);
@@ -1678,6 +1913,196 @@ async function handleFazRanking(bot, message, args = [], group = null) {
 	}
 }
 
+const FAZENDA_CATEGORY_BUTTONS = [
+	[
+		{
+			text: "🌱 Cultivo & Canteiros",
+			action: { type: "fazenda_menu", category: "cultivo", page: 0 }
+		},
+		{ text: "🛒 Loja & Economia", action: { type: "fazenda_menu", category: "mercado", page: 0 } }
+	],
+	[
+		{
+			text: "🏺 Terreno & Decorações",
+			action: { type: "fazenda_menu", category: "terreno", page: 0 }
+		},
+		{ text: "🏆 Rankings & Gestão", action: { type: "fazenda_menu", category: "gestao", page: 0 } }
+	],
+	[{ text: "📋 Todos os Comandos", action: { type: "fazenda_menu", category: "todos", page: 0 } }]
+];
+
+const FAZENDA_CATEGORY_DETAILS = {
+	cultivo: {
+		title: "🌱 Cultivo & Canteiros",
+		description: "Comandos para plantar, regar, cuidar e colher suas plantas mágicas:",
+		commands: [
+			{
+				cmd: "/fazenda [hd]",
+				aliases: ["/faz", "/farm"],
+				desc: "Visualiza sua fazenda (9 canteiros) e coleta o diário."
+			},
+			{
+				cmd: "/faz_colheita [canteiro]",
+				aliases: ["/faz_colher"],
+				desc: "Colhe plantas maduras e limpa canteiros secos."
+			},
+			{
+				cmd: "/faz_plantar <semente> [qtd]",
+				desc: "Planta sementes nos canteiros livres ou específico."
+			}
+		]
+	},
+	mercado: {
+		title: "🛒 Loja & Economia",
+		description: "Comandos de moedas, catálogo de sementes, compras e venda de colheitas:",
+		commands: [
+			{
+				cmd: "/faz_loja",
+				aliases: ["/faz_shop"],
+				desc: "Catálogo de sementes, elixires e decorações."
+			},
+			{
+				cmd: "/faz_comprar <item> [qtd]",
+				aliases: ["/faz_buy"],
+				desc: "Compra itens da loja com suas moedas."
+			},
+			{
+				cmd: "/faz_inv",
+				aliases: ["/faz_inventario"],
+				desc: "Exibe sua mochila com sementes e bônus."
+			},
+			{
+				cmd: "/faz_usar <elixir> [slot]",
+				aliases: ["/faz_use"],
+				desc: "Consome elixires (aceleração, proteção contra secar)."
+			},
+			{
+				cmd: "/faz_vender [item ou tudo]",
+				aliases: ["/faz_vendertudo"],
+				desc: "Vende suas colheitas por moedas."
+			}
+		]
+	},
+	terreno: {
+		title: "🏺 Terreno & Decorações",
+		description: "Comandos para personalizar o visual e nome do seu Jardim:",
+		commands: [
+			{
+				cmd: "/faz_decorar <enfeite> [slot]",
+				aliases: ["/faz_enfeitar"],
+				desc: "Posiciona ou move decorações no terreno."
+			},
+			{
+				cmd: "/faz_nome <nome>",
+				aliases: ["/faz_fnome"],
+				desc: "Define um nome personalizado para o seu jardim (máx 20 chars)."
+			}
+		]
+	},
+	gestao: {
+		title: "🏆 Rankings & Gestão",
+		description: "Comandos de líderes do jogo e acesso administrativo web:",
+		commands: [
+			{
+				cmd: "/faz_ranking [riqueza|colheitas]",
+				aliases: ["/faz_rank"],
+				desc: "Exibe os melhores fazendeiros do servidor."
+			},
+			{
+				cmd: "/faz_adm",
+				aliases: ["/faz_admin"],
+				desc: "Gera link de acesso seguro ao Farm Admin web no privado."
+			}
+		]
+	},
+	todos: {
+		title: "📋 Todos os Comandos",
+		description: "Lista rápida de todos os comandos do Jardim das Sombras:",
+		commands: [
+			{ cmd: "/fazenda", desc: "Ver fazenda e diário" },
+			{ cmd: "/faz_colheita", desc: "Colher plantas e limpar secos" },
+			{ cmd: "/faz_plantar <semente>", desc: "Semear nos canteiros" },
+			{ cmd: "/faz_loja", desc: "Ver loja de sementes e poções" },
+			{ cmd: "/faz_comprar <item>", desc: "Comprar na loja" },
+			{ cmd: "/faz_inv", desc: "Ver mochila de itens" },
+			{ cmd: "/faz_usar <elixir>", desc: "Usar poções mágicas" },
+			{ cmd: "/faz_vender [tudo]", desc: "Vender colheitas por moedas" },
+			{ cmd: "/faz_decorar <item>", desc: "Decorar terreno" },
+			{ cmd: "/faz_ranking", desc: "Ver ranking de fazendeiros" },
+			{ cmd: "/faz_nome <nome>", desc: "Alterar nome do jardim" },
+			{ cmd: "/faz_adm", desc: "Painel Farm Admin no privado" },
+			{ cmd: "/faz_help", desc: "Guia completo e mecânicas" }
+		]
+	}
+};
+
+/**
+ * Trata callbacks de navegação interativa no menu da Fazenda para o TelegramBot
+ * @param {Object} bot - Instância do bot Telegram
+ * @param {Object} callbackQuery - Objeto callback_query da API do Telegram
+ * @param {string} category - Categoria solicitada ou 'root'
+ * @param {number} [page=0] - Página atual
+ */
+async function handleFazendaMenuCallback(bot, callbackQuery, category, page = 0) {
+	try {
+		const message = callbackQuery.message;
+		if (!message || !message.chat) return;
+
+		const chatId = message.chat.id;
+		const messageId = message.message_id;
+
+		if (category === "root") {
+			const text =
+				`📋 *NAVEGADOR DE COMANDOS DO JARDIM DAS SOMBRAS*\n\n` +
+				`Toque em uma categoria abaixo para ver os comandos e explicações detalhadas:`;
+			const inlineKeyboard =
+				typeof bot._buildInlineKeyboard === "function"
+					? bot._buildInlineKeyboard(FAZENDA_CATEGORY_BUTTONS)
+					: [];
+			const formattedText =
+				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
+
+			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+				parse_mode: "HTML",
+				reply_markup: { inline_keyboard: inlineKeyboard }
+			});
+			return;
+		}
+
+		const catInfo = FAZENDA_CATEGORY_DETAILS[category];
+		if (!catInfo) return;
+
+		let catText = `*${catInfo.title}*\n\n${catInfo.description}\n\n`;
+		for (const c of catInfo.commands) {
+			const aliasStr = c.aliases?.length ? ` (aliases: \`${c.aliases.join("`, `")}\`)` : "";
+			catText += `• \`${c.cmd}\`${aliasStr} — ${c.desc}\n`;
+		}
+
+		const navButtons = [
+			[
+				{
+					text: "⬅️ Voltar ao Navegador de Comandos",
+					action: { type: "fazenda_menu", category: "root", page: 0 }
+				}
+			]
+		];
+
+		const inlineKeyboard =
+			typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
+		const formattedText =
+			typeof bot._formatMessage === "function" ? bot._formatMessage(catText) : catText;
+
+		await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+			parse_mode: "HTML",
+			reply_markup: { inline_keyboard: inlineKeyboard }
+		});
+	} catch (err) {
+		if (bot?.logger?.error) {
+			bot.logger.error(`[handleFazendaMenuCallback] Erro: ${err.message}`, err);
+		}
+	}
+}
+
 /**
  * !faz-ajuda: Guia geral dos comandos da Fazenda
  */
@@ -1685,22 +2110,71 @@ async function handleFazAjuda(bot, message) {
 	const chatId = getChatId(message);
 	const { name: gameName, emoji: gameEmoji } = await getGameTexts();
 
-	const text =
-		`${gameEmoji} *GUIA DO ${gameName.toUpperCase()}* ${gameEmoji}\n\n` +
-		`• \`!fazenda [hd]\` — Ver a sua fazenda (adicione \`hd\` para resolução máxima) e resgatar diário\n` +
-		`• \`!faz-adm\` — Obter link do painel web Farm Admin no privado\n` +
-		`• \`!faz-colheita [canteiro] [hd]\` — Colher plantas maduras e limpar canteiros secos\n` +
-		`• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n` +
-		`• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n` +
-		`• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n` +
-		`• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n` +
-		`• \`!faz-usar <elixir> [canteiro]\` — Ativar poções mágicas\n` +
-		`• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por moedas\n` +
-		`• \`!faz-decorar <enfeite> [slot]\` — Posicionar itens decorativos\n` +
-		`• \`!faz-ranking\` — Ver o ranking dos melhores fazendeiros\n` +
-		`• \`!faz-ajuda\` — Exibir este menu de ajuda`;
+	let mechanicsText = `${gameEmoji} *GUIA DO ${gameName.toUpperCase()}* ${gameEmoji}\n\n`;
+	mechanicsText += `O *${gameName}* é um jogo de fazenda e cultivo integrado à Ravena, onde você planta sementes raras, colhe frutos mágicos e desbloqueia bônus para outros jogos do bot (Waifus, Pesca e Slots)!\n\n`;
 
-	return replyReturnMessage(chatId, text, message);
+	mechanicsText += `━━━━━━━━━━━━━━━━━━━━━\n`;
+	mechanicsText += `📖 *MECÂNICAS DO JOGO*\n`;
+	mechanicsText += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+	mechanicsText += `🌾 *1. Canteiros & Cultivo*\n`;
+	mechanicsText += `• Você possui *9 canteiros mágicos* para cultivar plantas simultaneamente.\n`;
+	mechanicsText += `• Use \`!faz-plantar <semente>\` para plantar sementes nos canteiros livres.\n`;
+	mechanicsText += `• Cada planta possui um tempo próprio de crescimento (de minutos a horas).\n\n`;
+
+	mechanicsText += `🧺 *2. Colheita & Apodrecimento*\n`;
+	mechanicsText += `• Plantas maduras devem ser colhidas com \`!faz-colheita\` (ou \`!faz-colher\`).\n`;
+	mechanicsText += `• ⚠️ *Atenção:* Se demorar muito para colher, as plantas secam! O comando de colheita também limpa canteiros secos para liberar espaço.\n\n`;
+
+	mechanicsText += `🎁 *3. Bônus Cross-Game Integrados*\n`;
+	mechanicsText += `• Colher plantas especiais concede bônus reais em outros jogos:\n`;
+	mechanicsText += `  💖 *Waifuletes:* Rolls gratuitos e tickets raros para sorteios!\n`;
+	mechanicsText += `  🎣 *Pesca:* Iscas especiais e bônus de captura!\n`;
+	mechanicsText += `  🎰 *Slots:* Fichas extras da sorte!\n\n`;
+
+	mechanicsText += `💰 *4. Economia & Loja*\n`;
+	mechanicsText += `• Resgate suas moedas diárias com a sacola do coveiro usando \`!fazenda\`.\n`;
+	mechanicsText += `• Compre sementes, elixires e decorações com \`!faz-loja\` e \`!faz-comprar\`.\n`;
+	mechanicsText += `• Veja sua mochila com \`!faz-inv\` e venda suas colheitas por moedas com \`!faz-vender\`.\n\n`;
+
+	mechanicsText += `🧪 *5. Elixires Mágicos*\n`;
+	mechanicsText += `• Consuma elixires do inventário com \`!faz-usar <elixir>\` para acelerar o crescimento ou proteger contra o secamento.`;
+
+	if (bot && bot.useTelegram) {
+		const navigatorText =
+			`📋 *NAVEGADOR DE COMANDOS DO JARDIM DAS SOMBRAS*\n\n` +
+			`Toque em uma categoria abaixo para ver os comandos e explicações detalhadas:`;
+
+		const msg1 = replyReturnMessage(chatId, mechanicsText, message);
+		const msg2 = new ReturnMessage({
+			chatId,
+			content: navigatorText,
+			telegram: {
+				buttons: FAZENDA_CATEGORY_BUTTONS
+			}
+		});
+
+		return [msg1, msg2];
+	}
+
+	let commandsText = `\n\n━━━━━━━━━━━━━━━━━━━━━\n`;
+	commandsText += `📋 *LISTA DE COMANDOS*\n`;
+	commandsText += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+	commandsText += `• \`!fazenda [hd]\` — Ver a sua fazenda (adicione \`hd\` para resolução máxima) e resgatar diário\n`;
+	commandsText += `• \`!faz-adm\` — Obter link do painel web Farm Admin no privado\n`;
+	commandsText += `• \`!faz-colheita [canteiro] [hd]\` — Colher plantas maduras e limpar canteiros secos\n`;
+	commandsText += `• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n`;
+	commandsText += `• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n`;
+	commandsText += `• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n`;
+	commandsText += `• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n`;
+	commandsText += `• \`!faz-usar <elixir> [canteiro]\` — Ativar poções mágicas\n`;
+	commandsText += `• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por moedas\n`;
+	commandsText += `• \`!faz-decorar <enfeite> [slot]\` — Posicionar itens decorativos\n`;
+	commandsText += `• \`!faz-ranking\` — Ver o ranking dos melhores fazendeiros\n`;
+	commandsText += `• \`!faz-ajuda\` — Exibir este menu de ajuda`;
+
+	const fullText = mechanicsText + commandsText;
+	return replyReturnMessage(chatId, fullText, message);
 }
 
 // ─── DEFINIÇÃO DOS COMANDOS EXPORTADOS ──────────────────────────────────────
@@ -1708,7 +2182,7 @@ async function handleFazAjuda(bot, message) {
 const commands = [
 	new Command({
 		name: "fazenda",
-		aliases: ["jardim"],
+		aliases: ["faz", "farm"],
 		description: "Visualiza a fazenda atual no Jardim das Sombras e coleta o diário",
 		usage: "!fazenda [hd]",
 		category: "jogos",
@@ -1734,6 +2208,7 @@ const commands = [
 		category: "jogos",
 		reply: true,
 		cooldown: 3,
+		reactions: { trigger: ["🌾", "🧺"], before: "⏳", after: "🌾", error: "❌" },
 		method: handleFazColher
 	}),
 	new Command({
@@ -1745,6 +2220,7 @@ const commands = [
 		reply: true,
 		hidden: true,
 		cooldown: 3,
+		reactions: { trigger: ["🌾", "🧺"], before: "⏳", after: "🌾", error: "❌" },
 		method: handleFazColher
 	}),
 	new Command({
@@ -1839,9 +2315,19 @@ const commands = [
 	}),
 	new Command({
 		name: "faz-ajuda",
-		aliases: ["faz-help"],
+		aliases: ["faz-help", "jardim", "fazhelp", "fazajuda"],
 		description: "Exibe guia de comandos e mecânicas do Jardim das Sombras",
 		usage: "!faz-ajuda",
+		category: "jogos",
+		reply: true,
+		cooldown: 5,
+		method: handleFazAjuda
+	}),
+	new Command({
+		name: "faz-help",
+		aliases: ["jardim-ajuda"],
+		description: "Guia completo de comandos e mecânicas do Jardim das Sombras",
+		usage: "!faz-help",
 		category: "jogos",
 		reply: true,
 		cooldown: 5,
@@ -2064,5 +2550,8 @@ module.exports = {
 	isTestUser,
 	isSuperAdminUser,
 	optimizeFarmImage,
-	extractQualityFlag
+	extractQualityFlag,
+	recordFarmMessage,
+	getActiveFarmMessageId,
+	handleFazendaMenuCallback
 };

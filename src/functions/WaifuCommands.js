@@ -5811,6 +5811,363 @@ async function toggleRollMarcar(bot, message, args, group) {
 	});
 }
 
+const WAIFU_CATEGORY_BUTTONS = [
+	[
+		{ text: "🎲 Sorteio & Taxas", action: { type: "waifu_menu", category: "sorteio", page: 0 } },
+		{ text: "💍 Casamento & Harém", action: { type: "waifu_menu", category: "casamento", page: 0 } }
+	],
+	[
+		{ text: "📁 Coleções / Pastas", action: { type: "waifu_menu", category: "colecoes", page: 0 } },
+		{ text: "💰 Economia & Perfil", action: { type: "waifu_menu", category: "economia", page: 0 } }
+	],
+	[
+		{
+			text: "🌟 Wishlist & Catálogo",
+			action: { type: "waifu_menu", category: "wishlist", page: 0 }
+		},
+		{ text: "📈 Mercado & Investir", action: { type: "waifu_menu", category: "mercado", page: 0 } }
+	],
+	[
+		{
+			text: "🏷️ Classificados & Trocas",
+			action: { type: "waifu_menu", category: "trocas", page: 0 }
+		},
+		{ text: "⚙️ Configurações", action: { type: "waifu_menu", category: "configs", page: 0 } }
+	]
+];
+
+const WAIFU_CATEGORY_DETAILS = {
+	sorteio: {
+		title: "🎲 Sorteio (Rolls) & Taxas",
+		description:
+			"Comandos para invocar novas waifus e husbandos ou consultar suas chances de drop:",
+		commands: [
+			{
+				cmd: "/mu_roll",
+				aliases: ["/mu_r", "/mu_w", "/mu_waifu"],
+				desc: "Sorteia waifus e husbandos misturados."
+			},
+			{
+				cmd: "/mu_rollm",
+				aliases: ["/mu_rm", "/mu_husbando"],
+				desc: "Sorteia apenas personagens masculinos."
+			},
+			{ cmd: "/mu_rollf", aliases: ["/mu_rf"], desc: "Sorteia apenas personagens femininos." },
+			{
+				cmd: "/mu_chances",
+				aliases: ["/mu_taxas", "/mu_prob"],
+				desc: "Consulta as taxas de drop e probabilidade da sua wishlist."
+			}
+		]
+	},
+	casamento: {
+		title: "💍 Casamento & Harém",
+		description: "Comandos para casar, gerenciar seu harém e celebrar sua união:",
+		commands: [
+			{
+				cmd: "/mu_casar",
+				aliases: ["/mu_c", "/mu_claim"],
+				desc: "Casa com o personagem rolado nos últimos 300s."
+			},
+			{
+				cmd: "/mu_foto [nova] <nome>",
+				aliases: ["/mu_photo", "/mu_fotocasal"],
+				desc: "Gera a foto oficial de casamento do casal."
+			},
+			{
+				cmd: "/mu_divorciar <id>",
+				aliases: ["/mu_div", "/mu_d"],
+				desc: "Divorcia um personagem e resgata Zinthos."
+			},
+			{
+				cmd: "/mu_harem [@user | pág]",
+				aliases: ["/mu_h"],
+				desc: "Lista todas as waifus/husbandos do seu harém."
+			},
+			{
+				cmd: "/mu_harem_nome <nome>",
+				aliases: ["/mu_hnome"],
+				desc: "Define um nome personalizado para o harém."
+			},
+			{
+				cmd: "/mu_harem_privado",
+				aliases: ["/mu_hprivado"],
+				desc: "Alterna visibilidade do harém (público/privado)."
+			},
+			{
+				cmd: "/mu_harem_foto <char> [idx]",
+				aliases: ["/mu_hfoto"],
+				desc: "Fixa uma foto de destaque no card do harém."
+			},
+			{
+				cmd: "/mu_favorito <id>",
+				aliases: ["/mu_fav"],
+				desc: "Alterna waifus favoritas em destaque (até 5)."
+			},
+			{
+				cmd: "/mu_soulmates",
+				aliases: ["/mu_sm", "/mu_almas"],
+				desc: "Lista seus parceiros com 10+ chaves."
+			}
+		]
+	},
+	colecoes: {
+		title: "📁 Coleções (Pastas)",
+		description: "Comandos para organizar suas waifus em pastas temáticas personalizadas:",
+		commands: [
+			{
+				cmd: "/mu_colecoes [nome/nº]",
+				aliases: ["/mu_cols"],
+				desc: "Lista suas pastas ou exibe waifus de uma coleção."
+			},
+			{
+				cmd: "/mu_col_nova <nome>",
+				aliases: ["/mu_col_criar"],
+				desc: "Cria uma nova coleção para organizar o harém."
+			},
+			{
+				cmd: "/mu_col_del <nome/nº>",
+				aliases: ["/mu_col_rm"],
+				desc: "Apaga uma pasta (personagens voltam ao harém)."
+			},
+			{ cmd: "/mu_col_add <pasta> | <char>", desc: "Move uma waifu do harém para a pasta." },
+			{ cmd: "/mu_col_rem <char>", desc: "Remove a waifu de sua pasta atual." },
+			{
+				cmd: "/mu_col_privada <pasta>",
+				aliases: ["/mu_col_priv"],
+				desc: "Alterna visibilidade privada de uma coleção."
+			},
+			{
+				cmd: "/mu_col_ordem <p1> | <p2>",
+				aliases: ["/mu_col_ordenar"],
+				desc: "Define a ordem de exibição das coleções."
+			}
+		]
+	},
+	economia: {
+		title: "💰 Economia & Perfil",
+		description: "Comandos de moedas Zinthos, diário, estatísticas e rankings:",
+		commands: [
+			{
+				cmd: "/mu_diario",
+				aliases: ["/mu_daily", "/mu_dz"],
+				desc: "Coleta sua recompensa diária de Zinthos."
+			},
+			{
+				cmd: "/mu_saldo",
+				aliases: ["/mu_zinthos", "/mu_z"],
+				desc: "Consulta seu saldo atual de Zinthos."
+			},
+			{
+				cmd: "/mu_perfil",
+				aliases: ["/mu_p", "/mu_eu"],
+				desc: "Exibe seu perfil de jogador, stats e favorita."
+			},
+			{
+				cmd: "/mu_ranking [top]",
+				aliases: ["/mu_top", "/mu_rank"],
+				desc: "Ranking dos jogadores mais ricos em Zinthos."
+			},
+			{
+				cmd: "/mu_topgrupo",
+				aliases: ["/mu_rankgrupo"],
+				desc: "Ranking exclusivo do grupo atual."
+			},
+			{
+				cmd: "/mu_cooldowns",
+				aliases: ["/mu_cd", "/mu_tempo"],
+				desc: "Consulta o tempo restante dos cooldowns."
+			}
+		]
+	},
+	wishlist: {
+		title: "🌟 Wishlist & Catálogo",
+		description: "Comandos para desejar personagens (+50% no drop), buscar e explorar o catálogo:",
+		commands: [
+			{
+				cmd: "/mu_wishlist",
+				aliases: ["/mu_wl", "/mu_desejos"],
+				desc: "Lista seus personagens desejados."
+			},
+			{
+				cmd: "/mu_desejar <id>",
+				aliases: ["/mu_wish", "/mu_add"],
+				desc: "Adiciona waifu à sua wishlist (+50% no drop)."
+			},
+			{
+				cmd: "/mu_cobiçar <id>",
+				aliases: ["/mu_cobicar"],
+				desc: "Cobiça waifu casada de outro jogador."
+			},
+			{
+				cmd: "/mu_removerdesejo <id>",
+				aliases: ["/mu_rmwish"],
+				desc: "Remove um personagem da wishlist."
+			},
+			{
+				cmd: "/mu_wishlist_limpar",
+				aliases: ["/mu_wllimpar"],
+				desc: "Remove waifus já casadas da sua wishlist."
+			},
+			{
+				cmd: "/mu_like <id>",
+				aliases: ["/mu_l"],
+				desc: "Dá like em um personagem para subir no ranking."
+			},
+			{
+				cmd: "/mu_personagens <busca>",
+				aliases: ["/mu_chars"],
+				desc: "Pesquisa personagens no catálogo por nome/série."
+			},
+			{
+				cmd: "/mu_char <busca>",
+				aliases: ["/mu_info"],
+				desc: "Exibe foto e detalhes de um personagem."
+			},
+			{
+				cmd: "/mu_topchars",
+				aliases: ["/mu_topwaifus"],
+				desc: "Mostra os personagens mais populares do jogo."
+			},
+			{
+				cmd: "/mu_adm",
+				aliases: ["/mu_admin"],
+				desc: "Envia link privado do Painel Web (30 min)."
+			},
+			{
+				cmd: "/waifinder",
+				aliases: ["/mu_tinder"],
+				desc: "Envia link de acesso ao Waifinder estilo Tinder."
+			},
+			{
+				cmd: "/mu_share",
+				aliases: ["/mu_compartilhar"],
+				desc: "Exibe o link público do seu harém."
+			}
+		]
+	},
+	mercado: {
+		title: "📈 Mercado & Investimentos",
+		description:
+			"Comandos para adquirir cotas de 25% de waifus e acompanhar a cotação macroeconômica:",
+		commands: [
+			{
+				cmd: "/mu_investir <id> [cotas]",
+				aliases: ["/mu_cota"],
+				desc: "Adquire cotas de 25% (super bônus de drop + claim)."
+			},
+			{
+				cmd: "/mu_investimentos",
+				aliases: ["/mu_cotas"],
+				desc: "Lista suas waifus investidas e bônus ativos."
+			},
+			{
+				cmd: "/mu_cotacao <id>",
+				aliases: ["/mu_preco"],
+				desc: "Consulta cotação integral e por cota de 25%."
+			},
+			{
+				cmd: "/mu_mercado",
+				aliases: ["/mu_economia"],
+				desc: "Panorama macroeconômico e tabela por raridade."
+			}
+		]
+	},
+	trocas: {
+		title: "🏷️ Classificados & Trocas",
+		description: "Comandos para anunciar waifus e negociar trocas P2P:",
+		commands: [
+			{
+				cmd: "/mu_vender <id> <procura>",
+				aliases: ["/mu_anunciar"],
+				desc: "Anuncia uma waifu nos classificados globais."
+			},
+			{ cmd: "/mu_classificados", desc: "Lista as waifus disponíveis nos classificados." },
+			{ cmd: "/mu_ofertas", desc: "Lista ofertas de troca recebidas para suas waifus." },
+			{ cmd: "/mu_of_aceitar <id>", desc: "Aceita uma proposta de troca recebida." },
+			{ cmd: "/mu_of_negar <id>", desc: "Nega uma proposta de troca recebida." }
+		]
+	},
+	configs: {
+		title: "⚙️ Configurações do Grupo",
+		description: "Comandos de gestão do jogo no grupo (Apenas Admins):",
+		commands: [
+			{
+				cmd: "/mu_roll_marcar",
+				aliases: ["/mu_rollmarcar"],
+				desc: "Alterna menção (@) quando waifu da wishlist for rolada."
+			}
+		]
+	}
+};
+
+/**
+ * Trata callbacks de navegação interativa no menu de Waifus para o TelegramBot
+ * @param {Object} bot - Instância do bot Telegram
+ * @param {Object} callbackQuery - Objeto callback_query da API do Telegram
+ * @param {string} category - Categoria solicitada ou 'root'
+ * @param {number} [page=0] - Página atual
+ */
+async function handleWaifuMenuCallback(bot, callbackQuery, category, page = 0) {
+	try {
+		const message = callbackQuery.message;
+		if (!message || !message.chat) return;
+
+		const chatId = message.chat.id;
+		const messageId = message.message_id;
+
+		if (category === "root") {
+			const text =
+				`📋 *NAVEGADOR DE COMANDOS DO WAIFULETES*\n\n` +
+				`Toque em uma categoria abaixo para ver a explicação e lista detalhada de comandos:`;
+			const inlineKeyboard =
+				typeof bot._buildInlineKeyboard === "function"
+					? bot._buildInlineKeyboard(WAIFU_CATEGORY_BUTTONS)
+					: [];
+			const formattedText =
+				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
+
+			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+				parse_mode: "HTML",
+				reply_markup: { inline_keyboard: inlineKeyboard }
+			});
+			return;
+		}
+
+		const catInfo = WAIFU_CATEGORY_DETAILS[category];
+		if (!catInfo) return;
+
+		let catText = `*${catInfo.title}*\n\n${catInfo.description}\n\n`;
+		for (const c of catInfo.commands) {
+			const aliasStr = c.aliases?.length ? ` (aliases: \`${c.aliases.join("`, `")}\`)` : "";
+			catText += `• \`${c.cmd}\`${aliasStr} — ${c.desc}\n`;
+		}
+
+		const navButtons = [
+			[
+				{
+					text: "⬅️ Voltar ao Navegador de Comandos",
+					action: { type: "waifu_menu", category: "root", page: 0 }
+				}
+			]
+		];
+
+		const inlineKeyboard =
+			typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
+		const formattedText =
+			typeof bot._formatMessage === "function" ? bot._formatMessage(catText) : catText;
+
+		await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+			parse_mode: "HTML",
+			reply_markup: { inline_keyboard: inlineKeyboard }
+		});
+	} catch (err) {
+		if (bot?.logger?.error) {
+			bot.logger.error(`[handleWaifuMenuCallback] Erro: ${err.message}`, err);
+		}
+	}
+}
+
 /**
  * Explica o jogo (clone não-oficial de Mudae), suas mecânicas e lista todos os comandos
  */
@@ -5876,6 +6233,32 @@ async function ajudaWaifus(bot, message) {
 	text += `• *Bônus de Zinthos Proporcional:* Cada waifu na Wishlist adiciona *+0,1% de Zinthos* em rolls e diários (+1/1000 por item), dobrando o valor adquirido (2.0x) ao atingir 1000 desejos!\n\n`;
 	text += `❤️ *6. Curtidas (Likes)*\n`;
 	text += `• Dê like nos seus personagens favoritos com \`!mu-like <id>\` para aumentar a popularidade global deles.\n\n`;
+
+	// Se for no Telegram, divide em 2 mensagens: 1 com introdução/mecânicas e outra com o menu interativo de comandos
+	if (bot && bot.useTelegram) {
+		const navigatorText =
+			`📋 *NAVEGADOR DE COMANDOS DO WAIFULETES*\n\n` +
+			`Toque em uma categoria abaixo para ver a explicação e lista detalhada de comandos:`;
+
+		const msg1 = new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+
+		const msg2 = new ReturnMessage({
+			chatId,
+			content: navigatorText,
+			telegram: {
+				buttons: WAIFU_CATEGORY_BUTTONS
+			}
+		});
+
+		return [msg1, msg2];
+	}
 
 	text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 	text += `📋 *LISTA COMPLETA DE COMANDOS*\n`;
@@ -8895,5 +9278,6 @@ module.exports = {
 	isUserActiveInGroup,
 	escapeXml,
 	resolveWaifuImageUrl,
-	generateSingleRollPlaceholderBuffer
+	generateSingleRollPlaceholderBuffer,
+	handleWaifuMenuCallback
 };

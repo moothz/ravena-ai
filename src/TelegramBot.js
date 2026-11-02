@@ -479,6 +479,36 @@ class WhatsAppBotTelegram {
 				return;
 			}
 
+			// 1.1 Ação de Menu Interativo de Waifus (ex: !waifus)
+			if (decoded.type === "waifu_menu") {
+				await this.apiClient.answerCallbackQuery(queryId);
+				const WaifuCommands = require("./functions/WaifuCommands");
+				if (typeof WaifuCommands.handleWaifuMenuCallback === "function") {
+					await WaifuCommands.handleWaifuMenuCallback(
+						this,
+						callbackQuery,
+						decoded.category,
+						decoded.page
+					);
+				}
+				return;
+			}
+
+			// 1.2 Ação de Menu Interativo da Fazenda (ex: !faz-ajuda / !jardim)
+			if (decoded.type === "fazenda_menu") {
+				await this.apiClient.answerCallbackQuery(queryId);
+				const FazendaCommands = require("./functions/FazendaCommands");
+				if (typeof FazendaCommands.handleFazendaMenuCallback === "function") {
+					await FazendaCommands.handleFazendaMenuCallback(
+						this,
+						callbackQuery,
+						decoded.category,
+						decoded.page
+					);
+				}
+				return;
+			}
+
 			// 2. Ação de Comando Executável (ex: /mu_casar 1)
 			if (decoded.type === "command") {
 				await this.apiClient.answerCallbackQuery(queryId);
@@ -886,6 +916,9 @@ class WhatsAppBotTelegram {
 			if (options.caption) {
 				options.caption = this._formatMessage(options.caption, mentionMap);
 				options.caption = this.truncateText(options.caption, maxChars, maxLines, maxCharRepeats);
+				if (options.caption.length > 1024) {
+					options.caption = options.caption.substring(0, 1020) + "...";
+				}
 			}
 
 			// Resolva botões (explícitos ou automáticos como waifu rolls)
@@ -900,38 +933,56 @@ class WhatsAppBotTelegram {
 				tgOptions.reply_markup = options.telegram.reply_markup;
 			}
 
-			const editMessageId = options.telegram?.editMessageId || options.editMessageId;
+			let editMessageId = options.telegram?.editMessageId || options.editMessageId;
 			if (editMessageId) {
-				let editResp;
-				if (typeof content === "string") {
-					editResp = await this.apiClient.editMessageText(
-						chatId,
-						editMessageId,
-						content,
-						tgOptions
+				try {
+					let editResp;
+					if (typeof content === "string") {
+						editResp = await this.apiClient.editMessageText(
+							chatId,
+							editMessageId,
+							content,
+							tgOptions
+						);
+					} else if (content.isMessageMedia || (content.data && content.mimetype)) {
+						const mediaBuffer = Buffer.from(content.data, "base64");
+						tgOptions.caption = options.caption;
+						editResp = await this.apiClient.editMessageMedia(
+							chatId,
+							editMessageId,
+							mediaBuffer,
+							tgOptions
+						);
+					} else if (options.caption) {
+						editResp = await this.apiClient.editMessageCaption(
+							chatId,
+							editMessageId,
+							options.caption,
+							tgOptions
+						);
+					} else if (tgOptions.reply_markup) {
+						editResp = await this.apiClient.editMessageReplyMarkup(
+							chatId,
+							editMessageId,
+							tgOptions.reply_markup
+						);
+					}
+					return {
+						id: { _serialized: `${chatId}_${this.botInfo?.id || ""}_${editMessageId}` },
+						messageId: editMessageId,
+						ack: 1,
+						body: content,
+						_data: editResp,
+						isEdited: true,
+						react: async () => true
+					};
+				} catch (editError) {
+					this.logger.warn(
+						`[sendMessage] Falha ao editar mensagem ${editMessageId} em ${chatId}: ${editError.message}. Enviando como nova mensagem.`
 					);
-				} else if (options.caption) {
-					editResp = await this.apiClient.editMessageCaption(
-						chatId,
-						editMessageId,
-						options.caption,
-						tgOptions
-					);
-				} else if (tgOptions.reply_markup) {
-					editResp = await this.apiClient.editMessageReplyMarkup(
-						chatId,
-						editMessageId,
-						tgOptions.reply_markup
-					);
+					editMessageId = null;
+					// Fallback para envio como nova mensagem abaixo
 				}
-				return {
-					id: { _serialized: `${chatId}_${this.botInfo?.id || ""}_${editMessageId}` },
-					ack: 1,
-					body: content,
-					_data: editResp,
-					isEdited: true,
-					react: async () => true
-				};
 			}
 
 			let response;
@@ -961,6 +1012,7 @@ class WhatsAppBotTelegram {
 
 			return {
 				id: { _serialized: `${response.chat.id}_${response.from.id}_${response.message_id}` },
+				messageId: response.message_id,
 				ack: 1, // Simula o envio
 				body: content,
 				_data: response,
@@ -1228,10 +1280,34 @@ class WhatsAppBotTelegram {
 				const messageOptions = {
 					...message.options,
 					telegram: message.telegram || message.options?.telegram,
-					buttons: message.buttons || message.options?.buttons
+					buttons: message.buttons || message.options?.buttons,
+					farmData: message.farmData || message.options?.farmData
 				};
 				const result = await this.sendMessage(message.chatId, message.content, messageOptions);
 				results.push(result);
+
+				if (messageOptions.farmData?.userId) {
+					try {
+						const FazendaCommands = require("./functions/FazendaCommands");
+						if (typeof FazendaCommands.recordFarmMessage === "function") {
+							const sentMsgId =
+								result?.messageId ||
+								result?._data?.message_id ||
+								messageOptions.telegram?.editMessageId;
+							if (sentMsgId) {
+								FazendaCommands.recordFarmMessage(
+									message.chatId,
+									messageOptions.farmData.userId,
+									sentMsgId
+								);
+							}
+						}
+					} catch (farmTrackErr) {
+						this.logger.debug(
+							`[sendReturnMessages] Erro ao registrar mensagem da fazenda: ${farmTrackErr.message}`
+						);
+					}
+				}
 
 				// FIX REACTIONS
 				// if (message.reaction && result && result.id?._serialized) {

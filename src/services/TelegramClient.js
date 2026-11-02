@@ -283,6 +283,49 @@ class TelegramClient {
 	}
 
 	/**
+	 * Edits media (photo) of a sent message.
+	 * @param {string|number} chatId - The chat ID.
+	 * @param {number} messageId - The message ID to edit.
+	 * @param {Buffer} mediaBuffer - Buffer containing the new photo data.
+	 * @param {object} options - Telegram API options (caption, parse_mode, reply_markup).
+	 */
+	async editMessageMedia(chatId, messageId, mediaBuffer, options = {}) {
+		const tempId = randomBytes(6).toString("hex");
+		const tempFile = path.join(os.tmpdir(), `tg_edit_${Date.now()}_${process.pid}_${tempId}.jpg`);
+		await fs.promises.writeFile(tempFile, mediaBuffer);
+		try {
+			const form = {
+				chat_id: chatId,
+				message_id: messageId
+			};
+			if (options.reply_markup) {
+				form.reply_markup =
+					typeof options.reply_markup === "string"
+						? options.reply_markup
+						: JSON.stringify(options.reply_markup);
+			}
+
+			// Telegram Bot API limits caption to 1024 characters for media
+			let caption = options.caption || "";
+			if (caption.length > 1024) {
+				caption = caption.substring(0, 1020) + "...";
+			}
+
+			return await this.bot.editMessageMedia(
+				{
+					type: "photo",
+					media: "attach://" + tempFile,
+					caption,
+					parse_mode: options.parse_mode || "HTML"
+				},
+				form
+			);
+		} finally {
+			fs.promises.unlink(tempFile).catch(() => {});
+		}
+	}
+
+	/**
 	 * Acknowledges a callback query.
 	 * @param {string} callbackQueryId - The callback query ID.
 	 * @param {object} options - Callback response options (text, show_alert, url, cache_time).

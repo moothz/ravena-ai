@@ -42,7 +42,11 @@ class TelegramCallbackManager {
 		// Se já for string compacta conhecida
 		if (typeof action === "string") {
 			if (
-				(action.startsWith("c:") || action.startsWith("m:") || action.startsWith("r:")) &&
+				(action.startsWith("c:") ||
+					action.startsWith("m:") ||
+					action.startsWith("w:") ||
+					action.startsWith("f:") ||
+					action.startsWith("r:")) &&
 				Buffer.byteLength(action, "utf8") <= 64
 			) {
 				return action;
@@ -63,6 +67,14 @@ class TelegramCallbackManager {
 			const cat = action.category || "root";
 			const page = action.page !== undefined ? action.page : 0;
 			compact = `m:${cat}:${page}`;
+		} else if (action.type === "waifu_menu") {
+			const cat = action.category || "root";
+			const page = action.page !== undefined ? action.page : 0;
+			compact = `w:${cat}:${page}`;
+		} else if (action.type === "fazenda_menu") {
+			const cat = action.category || "root";
+			const page = action.page !== undefined ? action.page : 0;
+			compact = `f:${cat}:${page}`;
 		}
 
 		if (compact && Buffer.byteLength(compact, "utf8") <= 64) {
@@ -99,11 +111,31 @@ class TelegramCallbackManager {
 			};
 		}
 
-		// Menu interativo
+		// Menu interativo geral
 		if (callbackData.startsWith("m:")) {
 			const parts = callbackData.substring(2).split(":");
 			return {
 				type: "menu",
+				category: parts[0] || "root",
+				page: parseInt(parts[1] || "0", 10)
+			};
+		}
+
+		// Menu interativo de Waifus
+		if (callbackData.startsWith("w:")) {
+			const parts = callbackData.substring(2).split(":");
+			return {
+				type: "waifu_menu",
+				category: parts[0] || "root",
+				page: parseInt(parts[1] || "0", 10)
+			};
+		}
+
+		// Menu interativo da Fazenda
+		if (callbackData.startsWith("f:")) {
+			const parts = callbackData.substring(2).split(":");
+			return {
+				type: "fazenda_menu",
 				category: parts[0] || "root",
 				page: parseInt(parts[1] || "0", 10)
 			};

@@ -48,6 +48,43 @@ class FakeBot {
 		this.grupoInvites = options.grupoInvites ?? null;
 		this.grupoAnuncios = options.grupoAnuncios ?? null;
 		this.grupoInteracao = options.grupoInteracao ?? null;
+
+		// Stubs de API para testes em modo Telegram
+		this.apiClient = options.apiClient || {
+			editMessageMedia: async (chatId, messageId, mediaBuffer, opts) => {
+				this.editedMediaMessages = this.editedMediaMessages || [];
+				this.editedMediaMessages.push({ chatId, messageId, mediaBuffer, opts });
+				return { message_id: messageId, chat: { id: chatId } };
+			},
+			editMessageText: async (chatId, messageId, text, opts) => {
+				this.editedTextMessages = this.editedTextMessages || [];
+				this.editedTextMessages.push({ chatId, messageId, text, opts });
+				return { message_id: messageId, chat: { id: chatId } };
+			},
+			editMessageCaption: async (chatId, messageId, caption, opts) => {
+				this.editedCaptionMessages = this.editedCaptionMessages || [];
+				this.editedCaptionMessages.push({ chatId, messageId, caption, opts });
+				return { message_id: messageId, chat: { id: chatId } };
+			},
+			editMessageReplyMarkup: async (chatId, messageId, replyMarkup, opts) => {
+				this.editedMarkupMessages = this.editedMarkupMessages || [];
+				this.editedMarkupMessages.push({ chatId, messageId, replyMarkup, opts });
+				return { message_id: messageId, chat: { id: chatId } };
+			},
+			answerCallbackQuery: async (queryId, opts) => {
+				this.answeredCallbackQueries = this.answeredCallbackQueries || [];
+				this.answeredCallbackQueries.push({ queryId, opts });
+				return true;
+			},
+			sendMessage: async (chatId, text, opts) => ({
+				message_id: Math.floor(Math.random() * 10000),
+				chat: { id: chatId }
+			}),
+			sendPhoto: async (chatId, photo, opts) => ({
+				message_id: Math.floor(Math.random() * 10000),
+				chat: { id: chatId }
+			})
+		};
 		this.linkGrupao = options.linkGrupao ?? null;
 		this.linkAvisos = null;
 
@@ -286,7 +323,16 @@ class FakeBot {
 				} catch {}
 			}
 
-			results.push({ id: { _serialized: fakeMsgId }, ack: 1 });
+			if (msg.options?.farmData?.userId) {
+				try {
+					const FazendaCommands = require("../functions/FazendaCommands");
+					if (typeof FazendaCommands.recordFarmMessage === "function") {
+						FazendaCommands.recordFarmMessage(msg.chatId, msg.options.farmData.userId, fakeMsgId);
+					}
+				} catch {}
+			}
+
+			results.push({ id: { _serialized: fakeMsgId }, messageId: fakeMsgId, ack: 1 });
 		}
 		return results;
 	}
@@ -324,6 +370,24 @@ class FakeBot {
 
 	async formatMessage(msg) {
 		return msg;
+	}
+
+	_formatMessage(text) {
+		return typeof text === "string" ? text : String(text || "");
+	}
+
+	_buildInlineKeyboard(buttons) {
+		if (!Array.isArray(buttons) || buttons.length === 0) return [];
+		const is2D = Array.isArray(buttons[0]);
+		const rows = is2D ? buttons : [buttons];
+		const TelegramCallbackManager = require("../services/TelegramCallbackManager");
+		return rows.map((row) =>
+			row.map((btn) => ({
+				text: btn.text,
+				callback_data: btn.action ? TelegramCallbackManager.encode(btn.action) : undefined,
+				url: btn.url
+			}))
+		);
 	}
 
 	async sendReaction(chatId, messageId, emoji) {
