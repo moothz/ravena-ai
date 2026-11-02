@@ -248,6 +248,7 @@ class TelegramClient {
 		return this.bot.editMessageText(text, {
 			chat_id: chatId,
 			message_id: messageId,
+			parse_mode: options.parse_mode !== undefined ? options.parse_mode : "HTML",
 			...options
 		});
 	}
@@ -263,6 +264,7 @@ class TelegramClient {
 		return this.bot.editMessageCaption(caption, {
 			chat_id: chatId,
 			message_id: messageId,
+			parse_mode: options.parse_mode !== undefined ? options.parse_mode : "HTML",
 			...options
 		});
 	}

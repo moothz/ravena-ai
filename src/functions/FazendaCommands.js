@@ -1560,8 +1560,14 @@ async function refreshTelegramInventoryMessage(bot, chatId, userId) {
 				inline_keyboard: bot._buildInlineKeyboard(buttons)
 			};
 		}
-		if (bot.apiClient && typeof bot.apiClient.editMessageText === "function") {
-			await bot.apiClient.editMessageText(chatId, invMsgId, text, tgOptions);
+		if (typeof bot.editMessageText === "function") {
+			await bot.editMessageText(chatId, invMsgId, text, tgOptions);
+			return true;
+		} else if (bot.apiClient && typeof bot.apiClient.editMessageText === "function") {
+			const formattedText =
+				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
+			tgOptions.parse_mode = "HTML";
+			await bot.apiClient.editMessageText(chatId, invMsgId, formattedText, tgOptions);
 			return true;
 		}
 	} catch (err) {

@@ -376,7 +376,7 @@ async function sendCommandList(bot, message, args, group) {
 		if (!group) {
 			menuText += `> _PV de *${bot?.nomeExibir || bot.id}*_\n`;
 		} else {
-			menuText += `> _Grupo ${group.name} _\n`;
+			menuText += `> _Grupo ${group.name}_\n`;
 		}
 		menuText += header + "\n";
 
@@ -823,7 +823,7 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 			const botDisplayName = bot?.nomeExibir || "Ravenabot";
 			let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
 			if (message.chat.type === "group" || message.chat.type === "supergroup") {
-				menuText += `> _Grupo ${message.chat.title || ""} _\n`;
+				menuText += `> _Grupo ${message.chat.title || ""}_\n`;
 			}
 			menuText += header + "\n\n";
 			menuText += "💡 *Navegação Interativa:*\n";

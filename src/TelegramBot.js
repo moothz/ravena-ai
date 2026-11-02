@@ -18,6 +18,7 @@ const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const AccountLinkService = require("./services/AccountLinkService");
+const TelegramMarkupHelper = require("./utils/TelegramMarkupHelper");
 const { promisify } = require("util");
 
 // Utils
@@ -1006,22 +1007,76 @@ class WhatsAppBotTelegram {
 			let response;
 			if (typeof content === "string") {
 				this.logger.debug(`[sendMessage] Text to '${chatId}'`, { content, options, tgOptions });
-				response = await this.apiClient.sendMessage(chatId, content, tgOptions);
+				try {
+					response = await this.apiClient.sendMessage(chatId, content, tgOptions);
+				} catch (sendErr) {
+					if (
+						sendErr.message &&
+						(sendErr.message.includes("can't parse entities") ||
+							sendErr.message.includes("parse_mode"))
+					) {
+						this.logger.warn(
+							`[sendMessage] Erro de parse HTML no Telegram. Enviando fallback em texto puro: ${sendErr.message}`
+						);
+						const fallbackOpts = { ...tgOptions };
+						delete fallbackOpts.parse_mode;
+						response = await this.apiClient.sendMessage(
+							chatId,
+							TelegramMarkupHelper.stripHtml(content),
+							fallbackOpts
+						);
+					} else {
+						throw sendErr;
+					}
+				}
 			} else if (content.isMessageMedia || (content.data && content.mimetype)) {
 				const mediaBuffer = Buffer.from(content.data, "base64");
 				tgOptions.caption = options.caption;
 
+				const sendMediaWithFallback = async (sendFn) => {
+					try {
+						return await sendFn(tgOptions);
+					} catch (sendErr) {
+						if (
+							sendErr.message &&
+							(sendErr.message.includes("can't parse entities") ||
+								sendErr.message.includes("parse_mode"))
+						) {
+							this.logger.warn(
+								`[sendMessage] Erro de parse HTML na legenda da mídia. Enviando legenda em texto puro: ${sendErr.message}`
+							);
+							const fallbackOpts = { ...tgOptions };
+							delete fallbackOpts.parse_mode;
+							if (fallbackOpts.caption) {
+								fallbackOpts.caption = TelegramMarkupHelper.stripHtml(fallbackOpts.caption);
+							}
+							return await sendFn(fallbackOpts);
+						}
+						throw sendErr;
+					}
+				};
+
 				if (options.sendMediaAsSticker || content.mimetype.includes("webp")) {
-					response = await this.apiClient.sendSticker(chatId, mediaBuffer, tgOptions);
+					response = await sendMediaWithFallback((opts) =>
+						this.apiClient.sendSticker(chatId, mediaBuffer, opts)
+					);
 				} else if (content.mimetype.includes("image")) {
-					response = await this.apiClient.sendPhoto(chatId, mediaBuffer, tgOptions);
+					response = await sendMediaWithFallback((opts) =>
+						this.apiClient.sendPhoto(chatId, mediaBuffer, opts)
+					);
 				} else if (content.mimetype.includes("video")) {
-					response = await this.apiClient.sendVideo(chatId, mediaBuffer, tgOptions);
+					response = await sendMediaWithFallback((opts) =>
+						this.apiClient.sendVideo(chatId, mediaBuffer, opts)
+					);
 				} else if (content.mimetype.includes("audio")) {
-					response = await this.apiClient.sendAudio(chatId, mediaBuffer, tgOptions);
+					response = await sendMediaWithFallback((opts) =>
+						this.apiClient.sendAudio(chatId, mediaBuffer, opts)
+					);
 				} else {
 					tgOptions.filename = content.filename || "file";
-					response = await this.apiClient.sendDocument(chatId, mediaBuffer, tgOptions);
+					response = await sendMediaWithFallback((opts) =>
+						this.apiClient.sendDocument(chatId, mediaBuffer, opts)
+					);
 				}
 			} else {
 				this.logger.error("sendMessage: Unhandled content type for Telegram.", content);
@@ -1224,78 +1279,7 @@ class WhatsAppBotTelegram {
 	}
 
 	_formatMessage(text, mentionMap = {}) {
-		if (typeof text !== "string") return text;
-
-		// 1. Escape HTML special characters to prevent injection/breakage
-		let formatted = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-		// 2. Handle Mentions
-		// Replaces @123456789 with <a href="tg://user?id=123456789">@Name</a>
-		if (Array.isArray(mentionMap)) {
-			// Legacy array support (just IDs)
-			for (const mentionId of mentionMap) {
-				const mentionRegex = new RegExp(`@${mentionId}\\b`, "g");
-				formatted = formatted.replace(
-					mentionRegex,
-					`<a href="tg://user?id=${mentionId}">@${mentionId}</a>`
-				);
-			}
-		} else if (typeof mentionMap === "object") {
-			// Map support (ID -> Name or ID -> { id, name })
-			for (const [id, value] of Object.entries(mentionMap)) {
-				const mentionRegex = new RegExp(`@${id}\\b`, "g");
-				const displayName = (typeof value === "object" ? value.name : value) || id;
-				const tgId = typeof value === "object" ? value.id : id;
-				formatted = formatted.replace(
-					mentionRegex,
-					`<a href="tg://user?id=${tgId}">@${displayName}</a>`
-				);
-			}
-		}
-
-		// 3. Convert WhatsApp Markup to Telegram HTML
-		formatted = formatted
-			// Bold: *text* -> <b>text</b>
-			.replace(/\*([^*\n]+?)\*/g, "<b>$1</b>")
-			// Italic: _text_ -> <i>text</i>
-			.replace(/_([^_]+?)_/g, "<i>$1</i>")
-			// Strikethrough: ~text~ -> <s>text</s>
-			.replace(/~([^~]+?)~/g, "<s>$1</s>")
-			// Monospace: ```text``` -> <pre>text</pre>
-			.replace(/```([\s\S]+?)```/g, "<pre>$1</pre>")
-			// Inline Code: `text` -> <code>text</code>
-			.replace(/`([^`]+?)`/g, "<code>$1</code>");
-
-		// 4. Convert trailing URL to "Link Direto"
-		const urlRegex = /(https?:\/\/[^\s<]+)\s*$/i;
-		formatted = formatted.replace(urlRegex, '<a href="$1">Link Direto</a>');
-
-		// 5. Converte comandos com hífen para comandos válidos do Telegram com underscore (/cmd_name)
-		formatted = formatted.replace(
-			/(^|[\s>(])([!/])([a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+)(?=[^\w-]|$)/g,
-			(match, prefixChar, trigger, cmdName, offset, fullStr) => {
-				const textBefore = fullStr.substring(Math.max(0, offset - 100), offset);
-				if (/https?:\/\/[^\s<]*$/i.test(textBefore)) {
-					return match; // Dentro de uma URL, não modifica
-				}
-				return `${prefixChar}/${cmdName.replace(/-/g, "_")}`;
-			}
-		);
-
-		// 6. Converte comandos simples comuns iniciados com '!' para '/' para ficarem clicáveis no Telegram
-		formatted = formatted.replace(
-			/(^|[\s>(])!([a-zA-Z0-9]+)(?=[^\w-]|$)/g,
-			(match, prefixChar, cmdName, offset, fullStr) => {
-				const textBefore = fullStr.substring(Math.max(0, offset - 100), offset);
-				if (/https?:\/\/[^\s<]*$/i.test(textBefore)) {
-					return match;
-				}
-				if (/^\d+$/.test(cmdName)) return match;
-				return `${prefixChar}/${cmdName}`;
-			}
-		);
-
-		return formatted;
+		return TelegramMarkupHelper.formatWhatsAppToTelegram(text, mentionMap);
 	}
 
 	async sendReturnMessages(returnMessages) {
@@ -1869,6 +1853,42 @@ class WhatsAppBotTelegram {
 				`[getProfilePictureUrl] Erro ao obter foto do usuário ${userId}: ${error.message}`
 			);
 			return null;
+		}
+	}
+
+	/**
+	 * Edita o texto de uma mensagem no Telegram com formatação e fallback automático
+	 * @param {string|number} chatId
+	 * @param {string|number} messageId
+	 * @param {string} text
+	 * @param {Object} [options={}]
+	 * @returns {Promise<Object>}
+	 */
+	async editMessageText(chatId, messageId, text, options = {}) {
+		const formattedText = options.skipFormatting ? text : this._formatMessage(text);
+		const tgOptions = {
+			parse_mode: options.parse_mode || "HTML",
+			...options
+		};
+		delete tgOptions.skipFormatting;
+
+		try {
+			return await this.apiClient.editMessageText(chatId, messageId, formattedText, tgOptions);
+		} catch (err) {
+			if (
+				err.message &&
+				(err.message.includes("can't parse entities") || err.message.includes("parse_mode"))
+			) {
+				const fallbackOpts = { ...tgOptions };
+				delete fallbackOpts.parse_mode;
+				return await this.apiClient.editMessageText(
+					chatId,
+					messageId,
+					TelegramMarkupHelper.stripHtml(formattedText),
+					fallbackOpts
+				);
+			}
+			throw err;
 		}
 	}
 
