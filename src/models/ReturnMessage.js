@@ -48,6 +48,10 @@ class ReturnMessage {
 		this.reaction = data.reaction ?? null;
 		this.delay = data.delay ?? 0; // Milissegundos para atrasar antes de enviar
 		this.metadata = data.metadata ?? {}; // Metadados personalizados para rastreamento ou outros fins
+
+		// Recursos interativos e específicos de plataformas (Telegram / Discord)
+		this.telegram = data.telegram ?? null;
+		this.buttons = data.buttons ?? data.telegram?.buttons ?? null;
 	}
 
 	/**
@@ -69,7 +73,9 @@ class ReturnMessage {
 			options: this.options,
 			reaction: this.reaction,
 			delay: this.delay,
-			metadata: this.metadata
+			metadata: this.metadata,
+			telegram: this.telegram,
+			buttons: this.buttons
 		};
 	}
 

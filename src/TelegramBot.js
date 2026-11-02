@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 
 const TelegramClient = require("./services/TelegramClient");
+const TelegramCallbackManager = require("./services/TelegramCallbackManager");
 const CacheManager = require("./services/CacheManager");
 const ReturnMessage = require("./models/ReturnMessage");
 const ReactionsHandler = require("./ReactionsHandler");
@@ -52,7 +53,7 @@ class WhatsAppBotTelegram {
 			(process.env.TELEGRAM_GRUPO_DOSSIES ? parseInt(process.env.TELEGRAM_GRUPO_DOSSIES) : null);
 		this.grupoAvisos = parseInt(options.grupoAvisos || process.env.TELEGRAM_GRUPO_AVISOS);
 		this.notificarDonate = options.notificarDonate;
-		this.webhookHost = options.webhookHost; // ex: ravena.moothz.win
+		this.webhookHost = options.webhookHost; // ex: ravena.moothz.com
 		this.webhookPort = options.webhookPort || 9001;
 		this.pollingInterval = null; // Para armazenar o ID do intervalo de polling
 		this.webhookMonitorInterval = null;
@@ -364,6 +365,10 @@ class WhatsAppBotTelegram {
 			return this._handleGroupParticipantsUpdate(update.chat_member);
 		}
 
+		if (update.callback_query) {
+			return this._handleCallbackQuery(update.callback_query);
+		}
+
 		if (update.message) {
 			const message = update.message;
 
@@ -438,6 +443,117 @@ class WhatsAppBotTelegram {
 		}
 	}
 
+	async _handleCallbackQuery(callbackQuery) {
+		try {
+			const queryId = callbackQuery.id;
+			const from = callbackQuery.from;
+			const message = callbackQuery.message;
+			const chatId = message?.chat?.id;
+			const data = callbackQuery.data;
+
+			this.lastMessageReceived = Date.now();
+
+			if (!data) {
+				await this.apiClient.answerCallbackQuery(queryId);
+				return;
+			}
+
+			const decoded = TelegramCallbackManager.decode(data);
+			if (!decoded) {
+				await this.apiClient.answerCallbackQuery(queryId, {
+					text: "Ação não reconhecida ou expirada.",
+					show_alert: true
+				});
+				return;
+			}
+
+			// 1. Ação de Menu Interativo (ex: !cmd)
+			if (decoded.type === "menu") {
+				await this.apiClient.answerCallbackQuery(queryId);
+				const Menu = require("./functions/Menu");
+				if (typeof Menu.handleMenuCallback === "function") {
+					await Menu.handleMenuCallback(this, callbackQuery, decoded.category, decoded.page);
+				}
+				return;
+			}
+
+			// 2. Ação de Comando Executável (ex: /mu_casar 1)
+			if (decoded.type === "command") {
+				await this.apiClient.answerCallbackQuery(queryId);
+
+				const commandText = this.normalizeInboundCommand(decoded.value);
+				const authorId = `${from.id}`;
+				const authorName = from.first_name || from.username || "Unknown User";
+				const isGroup = message.chat.type === "group" || message.chat.type === "supergroup";
+
+				const syntheticMessage = {
+					telegramMessage: message,
+					id: message.message_id,
+					key: { id: message.message_id },
+					fromMe: from.id === this.botInfo?.id,
+					group: isGroup ? `${chatId}` : null,
+					from: isGroup ? `${chatId}` : authorId,
+					author: authorId,
+					name: authorName,
+					authorName,
+					pushname: authorName,
+					type: "text",
+					content: commandText,
+					body: commandText,
+					mentions: [],
+					caption: null,
+					timestamp: Math.round(Date.now() / 1000),
+					hasMedia: false,
+					quotedMsgId: `${chatId}_${from.id}_${message.message_id}`,
+					isCallbackQuery: true,
+					callbackQueryId: queryId,
+					react: () => true,
+					getContact: async () => this.getContactDetails(authorId, authorName),
+					getChat: async () => this.getChatDetails(chatId),
+					delete: async () => this.apiClient.deleteMessage(chatId, message.message_id),
+					downloadMedia: async () => null,
+					origin: {
+						id: { _serialized: `${chatId}_${from.id}_${message.message_id}` },
+						author: authorId,
+						from: `${chatId}`,
+						react: () => true,
+						getChat: async () => this.getChatDetails(chatId),
+						getQuotedMessage: async () => this.formatMessageFromTelegram(message),
+						delete: async () => this.apiClient.deleteMessage(chatId, message.message_id),
+						body: commandText
+					}
+				};
+
+				if (this.eventHandler && typeof this.eventHandler.onMessage === "function") {
+					this.eventHandler.onMessage(this, syntheticMessage);
+				}
+				return;
+			}
+
+			await this.apiClient.answerCallbackQuery(queryId);
+		} catch (error) {
+			this.logger.error(`[callback_query] Erro ao tratar callback_query: ${error.message}`, error);
+		}
+	}
+
+	/**
+	 * Normaliza comandos recebidos do Telegram: converte underscores no comando em hífens.
+	 * Ex: "/mu_casar 1" -> "/mu-casar 1", "/g_addcmd teste" -> "/g-addcmd teste".
+	 * Argumentos e parâmetros subsequentes permanecem intocados.
+	 */
+	normalizeInboundCommand(text) {
+		if (typeof text !== "string") return text;
+		const match = text.match(/^(\s*)([/!])([a-zA-Z0-9_]+)(\s*[\s\S]*)$/);
+		if (match) {
+			const [_, leadingWs, prefix, cmdName, rest] = match;
+			if (cmdName.includes("_")) {
+				const normalizedCmd = cmdName.replace(/_/g, "-");
+				return `${leadingWs}${prefix}${normalizedCmd}${rest}`;
+			}
+		}
+		return text;
+	}
+
 	async formatMessageFromTelegram(message, skipCache = false) {
 		return new Promise(async (resolve, reject) => {
 			try {
@@ -460,15 +576,17 @@ class WhatsAppBotTelegram {
 				let caption = null;
 				let mediaInfo = null;
 
-				// remove o @nomedobot pra facilitar
+				// remove o @nomedobot pra facilitar e normaliza comando inbound (underscore -> hífen)
 				if (message.text) {
 					type = "text";
 					content = message.text.replace(`@${this.telegramBotName}`, "");
+					content = this.normalizeInboundCommand(content);
 				} else if (message.photo) {
 					type = "image";
 					const photo = message.photo[message.photo.length - 1]; // Pega a maior resolução
 					mediaInfo = { fileId: photo.file_id, mimetype: "image/jpeg", type: "photo" };
 					caption = message.caption?.replace(`@${this.telegramBotName}`, "") ?? false;
+					if (caption) caption = this.normalizeInboundCommand(caption);
 					content = mediaInfo;
 				} else if (message.video) {
 					type = "video";
@@ -478,6 +596,7 @@ class WhatsAppBotTelegram {
 						type: "video"
 					};
 					caption = message.caption?.replace(`@${this.telegramBotName}`, "") ?? false;
+					if (caption) caption = this.normalizeInboundCommand(caption);
 					content = mediaInfo;
 				} else if (message.sticker) {
 					type = "sticker";
@@ -513,6 +632,7 @@ class WhatsAppBotTelegram {
 						type: "document"
 					};
 					caption = message.caption?.replace(`@${this.telegramBotName}`, "") ?? false;
+					if (caption) caption = this.normalizeInboundCommand(caption);
 					content = mediaInfo;
 				} else {
 					this.logger.debug("Unhandled Telegram message type:", message);
@@ -745,6 +865,51 @@ class WhatsAppBotTelegram {
 				options.caption = this.truncateText(options.caption, maxChars, maxLines, maxCharRepeats);
 			}
 
+			// Resolva botões (explícitos ou automáticos como waifu rolls)
+			const buttons =
+				options.telegram?.buttons || options.buttons || this._generateAutomaticButtons(options);
+
+			if (buttons && Array.isArray(buttons) && buttons.length > 0) {
+				tgOptions.reply_markup = {
+					inline_keyboard: this._buildInlineKeyboard(buttons)
+				};
+			} else if (options.telegram?.reply_markup) {
+				tgOptions.reply_markup = options.telegram.reply_markup;
+			}
+
+			const editMessageId = options.telegram?.editMessageId || options.editMessageId;
+			if (editMessageId) {
+				let editResp;
+				if (typeof content === "string") {
+					editResp = await this.apiClient.editMessageText(
+						chatId,
+						editMessageId,
+						content,
+						tgOptions
+					);
+				} else if (options.caption) {
+					editResp = await this.apiClient.editMessageCaption(
+						chatId,
+						editMessageId,
+						options.caption,
+						tgOptions
+					);
+				} else if (tgOptions.reply_markup) {
+					editResp = await this.apiClient.editMessageReplyMarkup(
+						chatId,
+						editMessageId,
+						tgOptions.reply_markup
+					);
+				}
+				return {
+					id: { _serialized: `${chatId}_${this.botInfo?.id || ""}_${editMessageId}` },
+					ack: 1,
+					body: content,
+					_data: editResp,
+					isEdited: true
+				};
+			}
+
 			let response;
 			if (typeof content === "string") {
 				this.logger.debug(`[sendMessage] Text to '${chatId}'`, { content, options, tgOptions });
@@ -780,6 +945,79 @@ class WhatsAppBotTelegram {
 			this.logger.error(`Error sending message to ${chatId} via Telegram:`);
 			throw error;
 		}
+	}
+
+	/**
+	 * Constrói uma matriz de botões inline para a Telegram Bot API.
+	 * @param {Array} buttons - Array 1D ou 2D de objetos de botão.
+	 * @returns {Array<Array<Object>>}
+	 */
+	_buildInlineKeyboard(buttons) {
+		if (!Array.isArray(buttons) || buttons.length === 0) return [];
+
+		const is2D = Array.isArray(buttons[0]);
+		const rows = is2D ? buttons : [buttons];
+
+		return rows
+			.map((row) => {
+				if (!Array.isArray(row)) row = [row];
+				return row
+					.map((btn) => {
+						if (!btn || !btn.text) return null;
+						if (btn.url) {
+							return { text: btn.text, url: btn.url };
+						}
+						const action = btn.action || btn.command || btn.value || "";
+						const callbackData = TelegramCallbackManager.encode(action);
+						return {
+							text: btn.text,
+							callback_data: callbackData
+						};
+					})
+					.filter(Boolean);
+			})
+			.filter((r) => r.length > 0);
+	}
+
+	/**
+	 * Gera botões automáticos para mensagens conhecidas (como rolls de waifus).
+	 * @param {Object} options - Opções do ReturnMessage.
+	 * @returns {Array<Array<Object>>|null}
+	 */
+	_generateAutomaticButtons(options) {
+		if (!options) return null;
+
+		// 1. Multi-roll de Waifus (options.waifuRolls)
+		if (Array.isArray(options.waifuRolls) && options.waifuRolls.length > 0) {
+			const availableSlots = options.waifuRolls.filter(
+				(s) => s.available && !s.isOwner && !s.claimed
+			);
+			if (availableSlots.length > 0) {
+				const buttons = availableSlots.map((s) => ({
+					text: `💍 ${s.slot}`,
+					action: { type: "command", value: `/mu-casar ${s.characterId}` }
+				}));
+				const rows = [];
+				for (let i = 0; i < buttons.length; i += 4) {
+					rows.push(buttons.slice(i, i + 4));
+				}
+				return rows;
+			}
+		}
+
+		// 2. Single roll de Waifu (options.waifuCharacterId e options.waifuAvailable)
+		if (options.waifuCharacterId && options.waifuAvailable) {
+			return [
+				[
+					{
+						text: "💍 Casar",
+						action: { type: "command", value: `/mu-casar ${options.waifuCharacterId}` }
+					}
+				]
+			];
+		}
+
+		return null;
 	}
 
 	splitContent(text = "", maxLength = 4000) {
@@ -891,6 +1129,31 @@ class WhatsAppBotTelegram {
 		const urlRegex = /(https?:\/\/[^\s<]+)\s*$/i;
 		formatted = formatted.replace(urlRegex, '<a href="$1">Link Direto</a>');
 
+		// 5. Converte comandos com hífen para comandos válidos do Telegram com underscore (/cmd_name)
+		formatted = formatted.replace(
+			/(^|[\s>(])([!/])([a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+)(?=[^\w-]|$)/g,
+			(match, prefixChar, trigger, cmdName, offset, fullStr) => {
+				const textBefore = fullStr.substring(Math.max(0, offset - 100), offset);
+				if (/https?:\/\/[^\s<]*$/i.test(textBefore)) {
+					return match; // Dentro de uma URL, não modifica
+				}
+				return `${prefixChar}/${cmdName.replace(/-/g, "_")}`;
+			}
+		);
+
+		// 6. Converte comandos simples comuns iniciados com '!' para '/' para ficarem clicáveis no Telegram
+		formatted = formatted.replace(
+			/(^|[\s>(])!([a-zA-Z0-9]+)(?=[^\w-]|$)/g,
+			(match, prefixChar, cmdName, offset, fullStr) => {
+				const textBefore = fullStr.substring(Math.max(0, offset - 100), offset);
+				if (/https?:\/\/[^\s<]*$/i.test(textBefore)) {
+					return match;
+				}
+				if (/^\d+$/.test(cmdName)) return match;
+				return `${prefixChar}/${cmdName}`;
+			}
+		);
+
 		return formatted;
 	}
 
@@ -936,7 +1199,12 @@ class WhatsAppBotTelegram {
 			if (message.delay > 0) await sleep(message.delay);
 
 			try {
-				const result = await this.sendMessage(message.chatId, message.content, message.options);
+				const messageOptions = {
+					...message.options,
+					telegram: message.telegram || message.options?.telegram,
+					buttons: message.buttons || message.options?.buttons
+				};
+				const result = await this.sendMessage(message.chatId, message.content, messageOptions);
 				results.push(result);
 
 				// FIX REACTIONS

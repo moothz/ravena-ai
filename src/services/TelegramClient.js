@@ -236,6 +236,60 @@ class TelegramClient {
 	async setChatPhoto(chatId, photo) {
 		return this.bot.setChatPhoto(chatId, photo);
 	}
+
+	/**
+	 * Edits text of a sent message.
+	 * @param {string|number} chatId - The chat ID.
+	 * @param {number} messageId - The message ID to edit.
+	 * @param {string} text - New text content.
+	 * @param {object} options - Telegram API options.
+	 */
+	async editMessageText(chatId, messageId, text, options = {}) {
+		return this.bot.editMessageText(text, {
+			chat_id: chatId,
+			message_id: messageId,
+			...options
+		});
+	}
+
+	/**
+	 * Edits caption of a sent media message.
+	 * @param {string|number} chatId - The chat ID.
+	 * @param {number} messageId - The message ID to edit.
+	 * @param {string} caption - New caption content.
+	 * @param {object} options - Telegram API options.
+	 */
+	async editMessageCaption(chatId, messageId, caption, options = {}) {
+		return this.bot.editMessageCaption(caption, {
+			chat_id: chatId,
+			message_id: messageId,
+			...options
+		});
+	}
+
+	/**
+	 * Edits reply markup of a sent message.
+	 * @param {string|number} chatId - The chat ID.
+	 * @param {number} messageId - The message ID to edit.
+	 * @param {object} replyMarkup - New reply markup object.
+	 * @param {object} options - Telegram API options.
+	 */
+	async editMessageReplyMarkup(chatId, messageId, replyMarkup, options = {}) {
+		return this.bot.editMessageReplyMarkup(replyMarkup, {
+			chat_id: chatId,
+			message_id: messageId,
+			...options
+		});
+	}
+
+	/**
+	 * Acknowledges a callback query.
+	 * @param {string} callbackQueryId - The callback query ID.
+	 * @param {object} options - Callback response options (text, show_alert, url, cache_time).
+	 */
+	async answerCallbackQuery(callbackQueryId, options = {}) {
+		return this.bot.answerCallbackQuery(callbackQueryId, options);
+	}
 }
 
 module.exports = TelegramClient;

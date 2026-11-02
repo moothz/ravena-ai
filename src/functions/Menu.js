@@ -327,28 +327,28 @@ async function sendCommandList(bot, message, args, group) {
 
 		// Obtém todos os comandos fixos e filtra com deduplicação por nome
 		const seenFixedCmds = new Set();
-		const fixedCommands = bot.eventHandler.commandHandler.fixedCommands
-			.getAllCommands()
-			.filter((cmd) => {
-				// Evita comandos duplicados com o mesmo nome
-				const cmdKey = cmd.name?.toLowerCase();
-				if (cmdKey) {
-					if (seenFixedCmds.has(cmdKey)) return false;
-					seenFixedCmds.add(cmdKey);
-				}
+		const rawFixedCommands =
+			bot?.eventHandler?.commandHandler?.fixedCommands?.getAllCommands?.() || [];
+		const fixedCommands = rawFixedCommands.filter((cmd) => {
+			// Evita comandos duplicados com o mesmo nome
+			const cmdKey = cmd.name?.toLowerCase();
+			if (cmdKey) {
+				if (seenFixedCmds.has(cmdKey)) return false;
+				seenFixedCmds.add(cmdKey);
+			}
 
-				// Filtra por categoria
-				if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
-					return false;
-				}
+			// Filtra por categoria
+			if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
+				return false;
+			}
 
-				// Filtra por comando silenciado
-				if (mutedCommands.includes(cmd.name)) {
-					return false;
-				}
+			// Filtra por comando silenciado
+			if (mutedCommands.includes(cmd.name)) {
+				return false;
+			}
 
-				return true;
-			});
+			return true;
+		});
 
 		// Obtém comandos personalizados para este grupo e filtra
 		const customCommands = group
@@ -379,6 +379,58 @@ async function sendCommandList(bot, message, args, group) {
 			menuText += `> _Grupo ${group.name} _\n`;
 		}
 		menuText += header + "\n";
+
+		// Para Telegram: menu interativo com botões de categoria e edição in-place
+		if (bot && bot.useTelegram) {
+			menuText += "\n💡 *Navegação Interativa:*\n";
+			menuText += "Toque em um botão abaixo para ver os comandos da categoria correspondente:\n";
+
+			const categoryButtons = [];
+			const catKeys = Object.keys(CATEGORY_EMOJIS);
+			let currentRow = [];
+
+			for (const cat of catKeys) {
+				const emoji = CATEGORY_EMOJIS[cat] || "📦";
+				const customNames = {
+					interacao: "Interação",
+					integracao: "Interação",
+					ia: "IA"
+				};
+				const catLabel = customNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+				currentRow.push({
+					text: `${emoji} ${catLabel}`,
+					action: { type: "menu", category: cat, page: 0 }
+				});
+
+				if (currentRow.length === 3) {
+					categoryButtons.push(currentRow);
+					currentRow = [];
+				}
+			}
+
+			if (currentRow.length > 0) {
+				currentRow.push({
+					text: "⚙️ Gerência",
+					action: { type: "menu", category: "gerenciamento", page: 0 }
+				});
+				categoryButtons.push(currentRow);
+			} else {
+				categoryButtons.push([
+					{
+						text: "⚙️ Gerência",
+						action: { type: "menu", category: "gerenciamento", page: 0 }
+					}
+				]);
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: menuText,
+				telegram: {
+					buttons: categoryButtons
+				}
+			});
+		}
 
 		// 1. Comandos Fixos por categoria
 		// Processa cada categoria na ordem definida em CATEGORY_EMOJIS
@@ -751,7 +803,183 @@ const helper = {
 	]
 };
 
+/**
+ * Trata callbacks de navegação interativa no menu para o TelegramBot
+ * @param {Object} bot - Instância do bot Telegram
+ * @param {Object} callbackQuery - Objeto callback_query da API do Telegram
+ * @param {string} category - Categoria solicitada ou 'root'
+ * @param {number} page - Página atual
+ */
+async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
+	try {
+		const message = callbackQuery.message;
+		if (!message || !message.chat) return;
+
+		const chatId = message.chat.id;
+		const messageId = message.message_id;
+
+		if (category === "root") {
+			const header = await readMenuHeader();
+			const botDisplayName = bot?.nomeExibir || "Ravenabot";
+			let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
+			if (message.chat.type === "group" || message.chat.type === "supergroup") {
+				menuText += `> _Grupo ${message.chat.title || ""} _\n`;
+			}
+			menuText += header + "\n\n";
+			menuText += "💡 *Navegação Interativa:*\n";
+			menuText += "Toque em um botão abaixo para ver os comandos da categoria correspondente:\n";
+
+			const categoryButtons = [];
+			const catKeys = Object.keys(CATEGORY_EMOJIS);
+			let currentRow = [];
+
+			for (const cat of catKeys) {
+				const emoji = CATEGORY_EMOJIS[cat] || "📦";
+				const customNames = {
+					interacao: "Interação",
+					integracao: "Interação",
+					ia: "IA"
+				};
+				const catLabel = customNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+				currentRow.push({
+					text: `${emoji} ${catLabel}`,
+					action: { type: "menu", category: cat, page: 0 }
+				});
+
+				if (currentRow.length === 3) {
+					categoryButtons.push(currentRow);
+					currentRow = [];
+				}
+			}
+
+			if (currentRow.length > 0) {
+				currentRow.push({
+					text: "⚙️ Gerência",
+					action: { type: "menu", category: "gerenciamento", page: 0 }
+				});
+				categoryButtons.push(currentRow);
+			} else {
+				categoryButtons.push([
+					{
+						text: "⚙️ Gerência",
+						action: { type: "menu", category: "gerenciamento", page: 0 }
+					}
+				]);
+			}
+
+			const formattedText =
+				typeof bot._formatMessage === "function" ? bot._formatMessage(menuText) : menuText;
+			const inlineKeyboard =
+				typeof bot._buildInlineKeyboard === "function"
+					? bot._buildInlineKeyboard(categoryButtons)
+					: [];
+
+			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+				parse_mode: "HTML",
+				reply_markup: { inline_keyboard: inlineKeyboard }
+			});
+			return;
+		}
+
+		if (category === "gerenciamento" || category === "g") {
+			const managementCommands = bot.eventHandler.commandHandler.management.getManagementCommands();
+			const prefix = "/";
+			let text = "⚙️ *Comandos de Gerenciamento:*\n\n";
+			for (const cmdName of Object.keys(managementCommands).sort()) {
+				const cmdInfo = managementCommands[cmdName];
+				text += `• *${prefix}g_${cmdName.replace(/-/g, "_")}*: ${cmdInfo.description}\n`;
+			}
+
+			const navButtons = [
+				[
+					{
+						text: "⬅️ Voltar ao Menu Principal",
+						action: { type: "menu", category: "root", page: 0 }
+					}
+				]
+			];
+
+			const formattedText =
+				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
+			const inlineKeyboard =
+				typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
+
+			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+				parse_mode: "HTML",
+				reply_markup: { inline_keyboard: inlineKeyboard }
+			});
+			return;
+		}
+
+		// Categorias padrão
+		const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
+		const seenCommands = new Set();
+		const commandsInCategory = fixedCommands.filter((cmd) => {
+			if (!cmd.category || cmd.category.toLowerCase() !== category.toLowerCase() || cmd.hidden) {
+				return false;
+			}
+			const cmdKey = cmd.name?.toLowerCase();
+			if (cmdKey) {
+				if (seenCommands.has(cmdKey)) return false;
+				seenCommands.add(cmdKey);
+			}
+			return true;
+		});
+
+		const emoji = CATEGORY_EMOJIS[category] || "📦";
+		const customNames = {
+			interacao: "Interação",
+			integracao: "Interação",
+			ia: "IA"
+		};
+		const displayCategory =
+			customNames[category] || category.charAt(0).toUpperCase() + category.slice(1);
+		let categoryText = `${emoji} *Comandos na categoria '${displayCategory}'*\n\n`;
+
+		if (commandsInCategory.length === 0) {
+			categoryText += "Nenhum comando encontrado nesta categoria.\n";
+		} else {
+			const prefix = "/";
+			const groupedCommands = groupRelatedCommands(commandsInCategory);
+			const sortedGroups = sortCommands(groupedCommands);
+
+			for (const cmdGroup of sortedGroups) {
+				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
+					categoryText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
+				} else {
+					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
+					categoryText += `${formatSingleCommand(cmd, prefix)}\n`;
+				}
+			}
+		}
+
+		const navButtons = [
+			[
+				{
+					text: "⬅️ Voltar ao Menu Principal",
+					action: { type: "menu", category: "root", page: 0 }
+				}
+			]
+		];
+
+		const formattedText =
+			typeof bot._formatMessage === "function" ? bot._formatMessage(categoryText) : categoryText;
+		const inlineKeyboard =
+			typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
+
+		await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
+			parse_mode: "HTML",
+			reply_markup: { inline_keyboard: inlineKeyboard }
+		});
+	} catch (err) {
+		if (bot.logger && typeof bot.logger.error === "function") {
+			bot.logger.error(`[handleMenuCallback] Erro ao editar menu: ${err.message}`, err);
+		}
+	}
+}
+
 module.exports = {
 	helper,
-	commands
+	commands,
+	handleMenuCallback
 };
