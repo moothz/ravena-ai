@@ -1103,9 +1103,30 @@ class WhatsAppBotTelegram {
 					text: `💍 ${s.slot}`,
 					action: { type: "command", value: `/mu-casar ${s.characterId}` }
 				}));
+
+				const len = buttons.length;
+				if (len <= 4) {
+					return [buttons];
+				}
+				if (len === 5) {
+					return [buttons.slice(0, 3), buttons.slice(3, 5)];
+				}
+				if (len === 6) {
+					return [buttons.slice(0, 3), buttons.slice(3, 6)];
+				}
+				if (len === 7) {
+					return [buttons.slice(0, 4), buttons.slice(4, 7)];
+				}
+				if (len === 8) {
+					return [buttons.slice(0, 4), buttons.slice(4, 8)];
+				}
+				if (len === 9) {
+					return [buttons.slice(0, 3), buttons.slice(3, 6), buttons.slice(6, 9)];
+				}
+
 				const rows = [];
-				for (let i = 0; i < buttons.length; i += 4) {
-					rows.push(buttons.slice(i, i + 4));
+				for (let i = 0; i < len; i += 3) {
+					rows.push(buttons.slice(i, i + 3));
 				}
 				return rows;
 			}

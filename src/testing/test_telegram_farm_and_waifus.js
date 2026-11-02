@@ -307,7 +307,68 @@ async function runTests() {
 	assert.strictEqual(hasSlot4, false, "Slot 4 (próprio) NÃO deve ter botão");
 	assert.strictEqual(hasSlot5, false, "Slot 5 (instantâneo) NÃO deve ter botão");
 
-	console.log("✓ 7. Waifus casadas e não disponíveis filtradas com sucesso sem gerar botões.\n");
+	// Validação do layout balanceado por quantidade de botões (<=4, 5, 6, 7, 8, 9)
+	const makeRolls = (n) =>
+		Array.from({ length: n }, (_, i) => ({
+			slot: i + 1,
+			characterId: 200 + i,
+			available: true,
+			isOwner: false
+		}));
+
+	// <= 4 botões -> 1 linha
+	const layout4 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(4) });
+	assert.strictEqual(layout4.length, 1, "4 botões devem ter 1 linha");
+	assert.strictEqual(layout4[0].length, 4);
+
+	// 5 botões -> [3, 2]
+	const layout5 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(5) });
+	assert.strictEqual(layout5.length, 2, "5 botões devem ter 2 linhas");
+	assert.deepStrictEqual(
+		layout5.map((r) => r.length),
+		[3, 2],
+		"5 botões devem ser distribuídos em 3, 2"
+	);
+
+	// 6 botões -> [3, 3]
+	const layout6 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(6) });
+	assert.strictEqual(layout6.length, 2, "6 botões devem ter 2 linhas");
+	assert.deepStrictEqual(
+		layout6.map((r) => r.length),
+		[3, 3],
+		"6 botões devem ser distribuídos em 3, 3"
+	);
+
+	// 7 botões -> [4, 3]
+	const layout7 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(7) });
+	assert.strictEqual(layout7.length, 2, "7 botões devem ter 2 linhas");
+	assert.deepStrictEqual(
+		layout7.map((r) => r.length),
+		[4, 3],
+		"7 botões devem ser distribuídos em 4, 3"
+	);
+
+	// 8 botões -> [4, 4]
+	const layout8 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(8) });
+	assert.strictEqual(layout8.length, 2, "8 botões devem ter 2 linhas");
+	assert.deepStrictEqual(
+		layout8.map((r) => r.length),
+		[4, 4],
+		"8 botões devem ser distribuídos em 4, 4"
+	);
+
+	// 9 botões -> [3, 3, 3]
+	const layout9 = tgProto._generateAutomaticButtons({ waifuRolls: makeRolls(9) });
+	assert.strictEqual(layout9.length, 3, "9 botões devem ter 3 linhas");
+	assert.deepStrictEqual(
+		layout9.map((r) => r.length),
+		[3, 3, 3],
+		"9 botões devem ser distribuídos em 3, 3, 3"
+	);
+
+	console.log(
+		"✓ 7. Waifus casadas filtradas e layout balanceado (3x3, 4x4, etc.) validado com sucesso.\n"
+	);
 
 	// ---------------------------------------------------------------------------
 	// 8. !faz-inv: Atualização in-place da lista e botões pós-uso/plantio
