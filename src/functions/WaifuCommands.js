@@ -1362,7 +1362,14 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 			(typeof apiErr.message === "string" && apiErr.message.includes("casamento"))
 		) {
 			const waitTime = remaining || "um momento";
-			msg = `💍 *Cooldown de Casamento ativo!*\n• Você precisa aguardar *${waitTime}* para realizar outro casamento${timeStr}.`;
+			if (apiErr.rarity) {
+				const normRarity = String(apiErr.rarity).toUpperCase();
+				const emoji = RARITY_EMOJI[normRarity] || "⚪";
+				const label = RARITY_LABEL[normRarity] || apiErr.rarity;
+				msg = `💍 *Cooldown de Casamento ativo [${emoji} ${label}]!*\n• Você precisa aguardar *${waitTime}* para realizar outro casamento com personagens *${label}*${timeStr}.\n💡 Personagens de outras raridades ainda podem estar disponíveis para casamento!`;
+			} else {
+				msg = `💍 *Cooldown de Casamento ativo!*\n• Você precisa aguardar *${waitTime}* para realizar outro casamento${timeStr}.`;
+			}
 		} else if (
 			apiErr.code === "DAILY_COOLDOWN_ACTIVE" ||
 			(typeof apiErr.message === "string" && apiErr.message.includes("diária"))
@@ -5495,9 +5502,41 @@ async function verCooldowns(bot, message) {
 			text += `🌱 Bônus da Fazenda: 🎁 ${parts.join(" | ")} acumulados e prontos para uso!\n`;
 		}
 
-		text += claim.active
-			? `💍 Casamento (Claim): ❌ Aguarde *${formatRemainingSeconds(claim.remainingSeconds)}*\n`
-			: `💍 Casamento (Claim): ✅ *Disponível agora!*\n`;
+		if (claim?.byRarity) {
+			text += `💍 *Casamentos por Raridade:*\n`;
+			const rarities = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
+			for (const r of rarities) {
+				const info = claim.byRarity[r];
+				const label = RARITY_LABEL[r] || r;
+				const emoji = RARITY_EMOJI[r] || "⚪";
+				if (info?.active) {
+					const retryAt = info.retryAfter ? new Date(info.retryAfter) : null;
+					const timeStr =
+						retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
+					text += `• ${emoji} *${label}:* ❌ Aguarde *${formatRemainingSeconds(info.remainingSeconds)}*${timeStr}\n`;
+				} else {
+					const defaultMinutes = info?.cooldownSeconds
+						? Math.floor(info.cooldownSeconds / 60)
+						: null;
+					let durStr = "";
+					if (defaultMinutes) {
+						if (defaultMinutes >= 60) {
+							const h = Math.floor(defaultMinutes / 60);
+							const m = defaultMinutes % 60;
+							durStr = m > 0 ? ` (${h}h ${m}m)` : ` (${h}h)`;
+						} else {
+							durStr = ` (${defaultMinutes}m)`;
+						}
+					}
+					text += `• ${emoji} *${label}:* ✅ *Disponível agora!*${durStr}\n`;
+				}
+			}
+			text += "\n";
+		} else if (claim) {
+			text += claim.active
+				? `💍 Casamento (Claim): ❌ Aguarde *${formatRemainingSeconds(claim.remainingSeconds)}*\n`
+				: `💍 Casamento (Claim): ✅ *Disponível agora!*\n`;
+		}
 
 		text += daily.active
 			? `💜 Recompensa Diária (Zinthos): ❌ Aguarde *${formatRemainingSeconds(daily.remainingSeconds)}*\n`
@@ -5814,7 +5853,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *300 segundos (5 minutos)*.\n`;
 	text += `• O primeiro jogador a enviar \`!mu-casar\` (ou \`!mu-c\`) se casa com a waifu/husbando!\n`;
 	text += `• O personagem passa a pertencer ao seu Harém global (em todos os grupos do bot).\n`;
-	text += `• *Cooldown de casamento:* 2 horas.\n\n`;
+	text += `• *Cooldown de casamento:* Individual por raridade (Comum: 30m, Incomum: 45m, Raro: 1h, Épico: 1h30m, Lendário: 2h). Casar com uma waifu não bloqueia as demais raridades!\n\n`;
 
 	text += `🔑 *3. Chaves (Keys) & Soulmates*\n`;
 	text += `• Se você rolar um personagem que *já pertence a você*, você ganha *+1 Chave (Key)*!\n`;

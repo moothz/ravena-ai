@@ -121,6 +121,61 @@ async function main() {
 		"Roll cooldown deve conter contagem de rolls (0/10)!"
 	);
 
+	// Teste 4: Marry Cooldown com raridade COMMON
+	console.log("[Teste 4] Testando marry cooldown com raridade COMMON...");
+	const commonCooldownError = {
+		response: {
+			data: {
+				success: false,
+				error: {
+					code: "CLAIM_COOLDOWN_ACTIVE",
+					message:
+						"Você precisa aguardar 25min para realizar outro casamento com waifus de raridade COMMON.",
+					remainingSeconds: 1500,
+					rarity: "COMMON"
+				}
+			}
+		}
+	};
+	const retCommon = WaifuCommands.handleApiError(
+		commonCooldownError,
+		"group123@g.us",
+		"Erro ao realizar casamento."
+	);
+	console.log("Resposta:", retCommon.content);
+	assert.ok(
+		retCommon.content.includes("[⚪ Comum]"),
+		"Deve identificar a raridade Comum no título!"
+	);
+	assert.ok(
+		retCommon.content.includes("outras raridades ainda podem estar disponíveis"),
+		"Deve informar que outras raridades estão disponíveis!"
+	);
+
+	// Teste 5: Marry Cooldown com raridade EPIC
+	console.log("[Teste 5] Testando marry cooldown com raridade EPIC...");
+	const epicCooldownError = {
+		response: {
+			data: {
+				success: false,
+				error: {
+					code: "CLAIM_COOLDOWN_ACTIVE",
+					message:
+						"Você precisa aguardar 1h 20min para realizar outro casamento com waifus de raridade EPIC.",
+					remainingSeconds: 4800,
+					rarity: "EPIC"
+				}
+			}
+		}
+	};
+	const retEpic = WaifuCommands.handleApiError(
+		epicCooldownError,
+		"group123@g.us",
+		"Erro ao realizar casamento."
+	);
+	console.log("Resposta:", retEpic.content);
+	assert.ok(retEpic.content.includes("[🟣 Épico]"), "Deve identificar a raridade Épico no título!");
+
 	console.log("=== Todos os testes de Cooldown passaram com sucesso! ===");
 }
 
