@@ -121,9 +121,11 @@ async function runTests() {
 	console.log("✓ 2. Waifus no Telegram e WhatsApp validado com sucesso.\n");
 
 	// ---------------------------------------------------------------------------
-	// 3. Fazenda: Botão de Colheita Condicional no !fazenda
+	// 3. Fazenda: Botões Padronizados da Visualização da Fazenda
 	// ---------------------------------------------------------------------------
-	console.log("3. Testando botão de colheita condicional no !fazenda...");
+	console.log(
+		"3. Testando botões da visualização da fazenda (Colheita condicional + Loja e Mochila)..."
+	);
 
 	const cmdFazenda = FazendaCommands.commands.find((c) => c.name === "fazenda");
 	assert.ok(cmdFazenda, "Comando fazenda deve existir");
@@ -134,7 +136,31 @@ async function runTests() {
 	);
 	assert.ok(cmdFazenda.aliases.includes("faz"), "Deve conter alias 'faz'");
 
-	console.log("✓ 3. Botão condicional e aliases do !fazenda validados.\n");
+	// Testa buildFarmViewButtons com colheita pronta
+	const btnsWithHarvest = FazendaCommands.buildFarmViewButtons(true, 3);
+	assert.strictEqual(btnsWithHarvest.length, 2, "Com colheita, deve ter 2 linhas de botões");
+	assert.strictEqual(btnsWithHarvest[0][0].text, "🌾 Colher Tudo (3)");
+	assert.strictEqual(btnsWithHarvest[1][0].text, "🛒 Loja");
+	assert.strictEqual(btnsWithHarvest[1][1].text, "🎒 Mochila");
+
+	// Testa buildFarmViewButtons sem colheita pronta
+	const btnsNoHarvest = FazendaCommands.buildFarmViewButtons(false, 0);
+	assert.strictEqual(btnsNoHarvest.length, 1, "Sem colheita, deve ter 1 linha de botões");
+	assert.strictEqual(btnsNoHarvest[0][0].text, "🛒 Loja");
+	assert.strictEqual(btnsNoHarvest[0][1].text, "🎒 Mochila");
+	const flatNoHarvest = btnsNoHarvest.flat();
+	assert.strictEqual(
+		flatNoHarvest.some((b) => b.text.includes("Ver Fazenda")),
+		false,
+		"Não deve ter botão redundante 'Ver Fazenda'"
+	);
+	assert.strictEqual(
+		flatNoHarvest.some((b) => b.text.includes("Colher")),
+		false,
+		"Não deve ter botão Colher quando não há o que colher"
+	);
+
+	console.log("✓ 3. Botões da visualização da fazenda e aliases validados com sucesso.\n");
 
 	// ---------------------------------------------------------------------------
 	// 4. Fazenda: Edição de Mensagem Recente (<= 15 min) e Expiração (> 15 min)
@@ -324,6 +350,18 @@ async function runTests() {
 	assert.strictEqual(invEdited, true, "apiClient.editMessageText deve ser invocado");
 	assert.ok(invEditedText.includes("MOCHILA"), "Texto editado deve conter a mochila");
 	assert.ok(invEditedOpts?.reply_markup?.inline_keyboard, "Deve incluir botões atualizados");
+
+	const flatInvBtns = (invEditedOpts?.reply_markup?.inline_keyboard || []).flat();
+	assert.strictEqual(
+		flatInvBtns.some((b) => b.text && b.text.includes("Ver Fazenda")),
+		false,
+		"Mochila NÃO deve conter botão 'Ver Fazenda'"
+	);
+	assert.strictEqual(
+		flatInvBtns.some((b) => b.text && b.text.includes("(0x)")),
+		false,
+		"Mochila NÃO deve conter botões com '0x'"
+	);
 
 	console.log("✓ 8. !faz-inv atualizado in-place com sucesso no Telegram.\n");
 

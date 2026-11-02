@@ -220,6 +220,30 @@ function getActiveInvMessageId(chatId, userId) {
 }
 
 /**
+ * Constrói os botões padrão da visualização da fazenda no Telegram
+ * (Colheita condicional se houver canteiros prontos/secos + Loja e Mochila sempre presentes)
+ * @param {boolean} canHarvest
+ * @param {number} readyCount
+ * @returns {Array<Array<Object>>}
+ */
+function buildFarmViewButtons(canHarvest = false, readyCount = 0) {
+	const buttons = [];
+	if (canHarvest) {
+		buttons.push([
+			{
+				text: `🌾 Colher Tudo${readyCount > 0 ? ` (${readyCount})` : ""}`,
+				action: "/faz-colher"
+			}
+		]);
+	}
+	buttons.push([
+		{ text: "🛒 Loja", action: "/faz-loja" },
+		{ text: "🎒 Mochila", action: "/faz-inv" }
+	]);
+	return buttons;
+}
+
+/**
  * Cria uma instância de ReturnMessage com citação (reply) à mensagem de origem
  * @param {string} chatId
  * @param {string|Object} content
@@ -585,20 +609,12 @@ async function handleFazenda(bot, message, _args, group) {
 		}
 
 		const canHarvest = readyCount > 0 || dryCount > 0;
-		const farmButtons = [];
-		if (canHarvest) {
-			farmButtons.push([
-				{
-					text: `🌾 Colher Tudo${readyCount > 0 ? ` (${readyCount})` : ""}`,
-					action: "/faz-colher"
-				}
-			]);
-		}
+		const farmButtons = buildFarmViewButtons(canHarvest, readyCount);
 
 		const farmOptions = {
 			farmData: { userId },
 			telegram: {
-				buttons: farmButtons.length > 0 ? farmButtons : null
+				buttons: farmButtons
 			},
 			...(canHarvest ? { reaction: "🌾" } : {})
 		};
@@ -999,7 +1015,9 @@ async function handleFazPlantar(bot, message, _args, group) {
 			try {
 				const inv = await jardimClient.getInventory(userId);
 				const items = inv.items || inv.inventory || [];
-				const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
+				const seeds = items.filter(
+					(i) => (i.type === "seed" || i.category === "seed") && (Number(i.quantity) || 0) > 0
+				);
 				if (seeds.length > 0) {
 					let seedText =
 						`🌱 *ESCOLHA O QUE DESEJA PLANTAR:*\n\n` +
@@ -1007,10 +1025,12 @@ async function handleFazPlantar(bot, message, _args, group) {
 					const buttons = [];
 					let currentRow = [];
 					for (const s of seeds) {
+						const qty = Number(s.quantity) || 0;
+						if (qty <= 0) continue;
 						const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
-						seedText += `• *${s.name}*: ${s.quantity}x (ID: #${seedId})\n`;
+						seedText += `• *${s.name}*: ${qty}x (ID: #${seedId})\n`;
 						currentRow.push({
-							text: `🌱 ${s.name} (${s.quantity}x)`,
+							text: `🌱 ${s.name} (${qty}x)`,
 							action: `/faz-plantar ${seedId}`
 						});
 						if (currentRow.length === 2) {
@@ -1140,15 +1160,24 @@ async function handleFazPlantar(bot, message, _args, group) {
 
 			if (bot && bot.useTelegram) {
 				const activeFarmId = getActiveFarmMessageId(chatId, userId);
+				let canHarvest = false;
+				let readyCount = 0;
+				try {
+					const status = await jardimClient.getStatus(userId);
+					if (status?.slots && Array.isArray(status.slots)) {
+						readyCount = status.slots.filter((s) => s.status === "ready" || s.isReady).length;
+						const dryCount = status.slots.filter(
+							(s) => s.status === "dry" || s.isDry || s.isWithered
+						).length;
+						canHarvest = readyCount > 0 || dryCount > 0;
+					}
+				} catch (stErr) {
+					logger.debug(`[handleFazPlantar] Erro ao consultar status para botões: ${stErr.message}`);
+				}
+
 				plantarOptions.telegram = {
 					editMessageId: activeFarmId || null,
-					buttons: [
-						[
-							{ text: "🌾 Ver Fazenda", action: "/fazenda" },
-							{ text: "🛒 Loja", action: "/faz-loja" },
-							{ text: "🎒 Mochila", action: "/faz-inv" }
-						]
-					]
+					buttons: buildFarmViewButtons(canHarvest, readyCount)
 				};
 			}
 
@@ -1372,10 +1401,18 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 		return { text: `${text}${bonusBlock}`, buttons, isEmpty: true };
 	}
 
-	const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
-	const crops = items.filter((i) => i.type === "crop" || i.category === "crop");
-	const consumables = items.filter((i) => i.type === "consumable" || i.category === "consumable");
-	const decors = items.filter((i) => i.type === "decoration" || i.category === "decoration");
+	const seeds = items.filter(
+		(i) => (i.type === "seed" || i.category === "seed") && (Number(i.quantity) || 0) > 0
+	);
+	const crops = items.filter(
+		(i) => (i.type === "crop" || i.category === "crop") && (Number(i.quantity) || 0) > 0
+	);
+	const consumables = items.filter(
+		(i) => (i.type === "consumable" || i.category === "consumable") && (Number(i.quantity) || 0) > 0
+	);
+	const decors = items.filter(
+		(i) => (i.type === "decoration" || i.category === "decoration") && (Number(i.quantity) || 0) > 0
+	);
 
 	const getItemPrefix = (item) => {
 		const id = item.catalogIndex ?? item.index ?? item.id ?? item.itemId;
@@ -1385,7 +1422,10 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 	if (seeds.length > 0) {
 		text += `🌱 *Sementes:*\n`;
 		seeds.forEach((s) => {
-			text += `• ${getItemPrefix(s)}${s.name}: *${s.quantity}x*\n`;
+			const qty = Number(s.quantity) || 0;
+			if (qty > 0) {
+				text += `• ${getItemPrefix(s)}${s.name}: *${qty}x*\n`;
+			}
 		});
 		text += "\n";
 	}
@@ -1393,7 +1433,10 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 	if (crops.length > 0) {
 		text += `🌾 *Colheitas Prontas (Venda com !faz-vender):*\n`;
 		crops.forEach((c) => {
-			text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x* (💰 ${c.sellPrice || 0} cada)\n`;
+			const qty = Number(c.quantity) || 0;
+			if (qty > 0) {
+				text += `• ${getItemPrefix(c)}${c.name}: *${qty}x* (💰 ${c.sellPrice || 0} cada)\n`;
+			}
 		});
 		text += "\n";
 	}
@@ -1401,7 +1444,10 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 	if (consumables.length > 0) {
 		text += `🧪 *Elixires & Poções:*\n`;
 		consumables.forEach((c) => {
-			text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x*\n`;
+			const qty = Number(c.quantity) || 0;
+			if (qty > 0) {
+				text += `• ${getItemPrefix(c)}${c.name}: *${qty}x*\n`;
+			}
 		});
 		text += "\n";
 	}
@@ -1409,7 +1455,10 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 	if (decors.length > 0) {
 		text += `🏺 *Decorações:*\n`;
 		decors.forEach((d) => {
-			text += `• ${getItemPrefix(d)}${d.name}: *${d.quantity}x*\n`;
+			const qty = Number(d.quantity) || 0;
+			if (qty > 0) {
+				text += `• ${getItemPrefix(d)}${d.name}: *${qty}x*\n`;
+			}
 		});
 		text += "\n";
 	}
@@ -1432,9 +1481,11 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 		if (seeds.length > 0) {
 			let seedRow = [];
 			for (const s of seeds) {
+				const qty = Number(s.quantity) || 0;
+				if (qty <= 0) continue;
 				const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
 				seedRow.push({
-					text: `🌱 Plantar ${s.name} (${s.quantity}x)`,
+					text: `🌱 Plantar ${s.name} (${qty}x)`,
 					action: `/faz-plantar ${seedId}`
 				});
 				if (seedRow.length === 2) {
@@ -1449,9 +1500,11 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 		if (consumables.length > 0) {
 			let consRow = [];
 			for (const c of consumables) {
+				const qty = Number(c.quantity) || 0;
+				if (qty <= 0) continue;
 				const consId = c.catalogIndex ?? c.index ?? c.id ?? c.itemId;
 				consRow.push({
-					text: `🧪 Usar ${c.name} (${c.quantity}x)`,
+					text: `🧪 Usar ${c.name} (${qty}x)`,
 					action: `/faz-usar ${consId}`
 				});
 				if (consRow.length === 2) {
@@ -1472,11 +1525,8 @@ async function buildInventoryContentAndButtons(userId, useTelegram = false) {
 			]);
 		}
 
-		// Navegação rápida
-		invButtons.push([
-			{ text: "🌾 Ver Fazenda", action: "/fazenda" },
-			{ text: "🛒 Loja", action: "/faz-loja" }
-		]);
+		// Navegação rápida (sem 'Ver Fazenda' a pedido do usuário)
+		invButtons.push([{ text: "🛒 Loja", action: "/faz-loja" }]);
 	}
 
 	return { text: `${text}${bonusBlock}`, buttons: invButtons, isEmpty: false };
@@ -2636,5 +2686,6 @@ module.exports = {
 	getActiveInvMessageId,
 	refreshTelegramInventoryMessage,
 	buildInventoryContentAndButtons,
+	buildFarmViewButtons,
 	handleFazendaMenuCallback
 };
