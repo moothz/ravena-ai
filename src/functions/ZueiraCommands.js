@@ -180,7 +180,7 @@ async function gerarTicket(dados) {
 	ctx.fillText("Este é o seu comprovante, guarde com cuidado e não compartilhe", largura / 2, y);
 	y += 25;
 	ctx.font = "14px Arial";
-	ctx.fillText(`ravena.moothz.win`, largura / 2, y);
+	ctx.fillText(`ravena.moothz.com`, largura / 2, y);
 
 	return canvas.toDataURL("image/png");
 }

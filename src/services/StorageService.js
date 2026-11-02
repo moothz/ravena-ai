@@ -71,7 +71,7 @@ class StorageService {
 		this.publicDomain = (
 			options.publicDomain ||
 			process.env.S3_PUBLIC_DOMAIN ||
-			"https://s3-ravena.moothz.win"
+			"https://s3-ravena.moothz.com"
 		).replace(/\/+$/, "");
 
 		this.presignedExpiresIn = parseInt(
@@ -594,7 +594,7 @@ class StorageService {
 				Key: key
 			});
 
-			// Usa publicClient para que o cabeçalho Host na assinatura seja s3-ravena.moothz.win
+			// Usa publicClient para que o cabeçalho Host na assinatura seja s3-ravena.moothz.com
 			const signer = this.publicClient || this.client;
 			const signedUrl = await getSignedUrl(signer, command, { expiresIn: ttl });
 			this.logger.debug(`[presigned-url] Gerada URL para ${targetBucket}/${key} (TTL ${ttl}s)`);
@@ -613,7 +613,7 @@ class StorageService {
 	}
 
 	/**
-	 * Gera uma Presigned URL já encurtada via Sink (https://s.moothz.win)
+	 * Gera uma Presigned URL já encurtada via Sink (https://s.moothz.com)
 	 * @param {string} fileNameOrKey - Nome do arquivo ou chave completa
 	 * @param {Object} options - { bucket, expiresIn, groupId, category }
 	 * @returns {Promise<string>} URL encurtada ou presigned original

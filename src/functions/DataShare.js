@@ -20,7 +20,7 @@ function fetchDataRavena(groupId, variable, startCell) {
     return "Error: Missing parameters.";
   }
 
-  const url = `https://ravena.moothz.win/getData/${encodeURIComponent(groupId)}/${encodeURIComponent(variable)}`;
+  const url = `https://ravena.moothz.com/getData/${encodeURIComponent(groupId)}/${encodeURIComponent(variable)}`;
   let sheet;
   let startRow;
   let startCol;

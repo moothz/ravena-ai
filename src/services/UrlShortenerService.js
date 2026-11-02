@@ -4,7 +4,7 @@ const Logger = require("../utils/Logger");
 class UrlShortenerService {
 	constructor() {
 		this.logger = new Logger("url-shortener");
-		this.endpoint = (process.env.SINK_URL || "https://s.moothz.win").replace(/\/+$/, "");
+		this.endpoint = (process.env.SINK_URL || "https://s.moothz.com").replace(/\/+$/, "");
 	}
 
 	/**
@@ -16,7 +16,7 @@ class UrlShortenerService {
 	}
 
 	/**
-	 * Encurta uma URL utilizando o serviço Sink (https://s.moothz.win)
+	 * Encurta uma URL utilizando o serviço Sink (https://s.moothz.com)
 	 * @param {string} url - URL longa para encurtar
 	 * @returns {Promise<string>} - URL encurtada ou a URL original em caso de erro
 	 */

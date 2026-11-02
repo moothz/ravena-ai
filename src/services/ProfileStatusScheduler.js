@@ -84,7 +84,7 @@ class ProfileStatusScheduler {
 		const timeString = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
 
 		const msgPv = bot.ignorePV ? "PV desabilitado" : "Envie !cmd";
-		return `${msgPv} | https://ravena.moothz.win | ${dateString} ${timeString}`;
+		return `${msgPv} | https://ravena.moothz.com | ${dateString} ${timeString}`;
 	}
 
 	/**

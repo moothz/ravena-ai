@@ -572,7 +572,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 					if (estimatedTime > 15 || audioDuration > 900) {
 						let etaContent = `🔉 Transcrevendo áudio com _${audioDuration}s_, estimativa de _${estimatedTime}s_ até concluir.`;
 						if (audioDuration > 900) {
-							etaContent += `\n\n> Ps.: Você pode transcrever diretamente no site da ravena! Útil pra áudios grandes assim: https://ravena.moothz.win/?app=stt`;
+							etaContent += `\n\n> Ps.: Você pode transcrever diretamente no site da ravena! Útil pra áudios grandes assim: https://ravena.moothz.com/?app=stt`;
 						}
 						bot.sendReturnMessages(
 							new ReturnMessage({
