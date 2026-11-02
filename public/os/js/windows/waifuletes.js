@@ -29,11 +29,11 @@ WindowManager.register('waifuletes', {
                 <div class="waifu-redirect-cta-section">
                     <span class="waifu-redirect-cta-label">Acesse agora:</span>
                     <div class="waifu-redirect-links">
-                        <a href="https://waifuletes.moothz.win/" target="_blank" rel="noopener noreferrer" class="waifu-redirect-icon-link" title="Acessar Waifuletes (waifuletes.moothz.win)">
+                        <a href="https://waifuletes.moothz.com/" target="_blank" rel="noopener noreferrer" class="waifu-redirect-icon-link" title="Acessar Waifuletes (waifuletes.moothz.com)">
                             <img src="img/icons/waifuletes.svg" alt="Waifuletes" class="waifu-redirect-icon">
                         </a>
-                        <a href="https://waifuletes.moothz.win/" target="_blank" rel="noopener noreferrer" class="waifu-redirect-url-link">
-                            <span>https://waifuletes.moothz.win/</span>
+                        <a href="https://waifuletes.moothz.com/" target="_blank" rel="noopener noreferrer" class="waifu-redirect-url-link">
+                            <span>https://waifuletes.moothz.com/</span>
                             <i class="fas fa-external-link-alt"></i>
                         </a>
                     </div>

@@ -181,7 +181,7 @@ Header: Authorization: Bearer rav_live_sua_chave_aqui
                 </div>
                 <div class="section-label">Exemplo cURL</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/imagine/generate \
+curl -X POST https://ravena.moothz.com/api/imagine/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: SUA_CHAVE_API" \
   -d '{"prompt": "gato cibernético neon"}' \
@@ -210,7 +210,7 @@ curl -X POST https://ravena.moothz.win/api/imagine/generate \
                 </div>
                 <div class="section-label">Exemplo cURL</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/tts/generate \
+curl -X POST https://ravena.moothz.com/api/tts/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: SUA_CHAVE_API" \
   -d '{"text": "Bom dia a todos!", "voice": "ravena"}' \
@@ -236,7 +236,7 @@ Campo: "audio" (Arquivo de áudio/vídeo, máx 50MB)
                 </div>
                 <div class="section-label">Exemplo cURL</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/stt/transcrever \
+curl -X POST https://ravena.moothz.com/api/stt/transcrever \
   -H "X-API-Key: SUA_CHAVE_API" \
   -F "audio=@gravacao.ogg"
                 </div>
@@ -260,7 +260,7 @@ curl -X POST https://ravena.moothz.win/api/stt/transcrever \
                 <p class="endpoint-desc">Consulta o status de processamento e o resultado de uma transcrição STT.</p>
                 <div class="section-label">Exemplo cURL</div>
                 <div class="code-box">
-curl https://ravena.moothz.win/api/stt/status/c56a4180-65aa-42ec-a945-5fd21dec0538
+curl https://ravena.moothz.com/api/stt/status/c56a4180-65aa-42ec-a945-5fd21dec0538
                 </div>
                 <div class="section-label">Resposta</div>
                 <div class="code-box">
@@ -292,7 +292,7 @@ curl https://ravena.moothz.win/api/stt/status/c56a4180-65aa-42ec-a945-5fd21dec05
                 </div>
                 <div class="section-label">Exemplo cURL</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/ajuda/chat \
+curl -X POST https://ravena.moothz.com/api/ajuda/chat \
   -H "Content-Type: application/json" \
   -H "X-API-Key: SUA_CHAVE_API" \
   -d '{"message": "Quais são os comandos de administração?"}'
@@ -317,7 +317,7 @@ curl -X POST https://ravena.moothz.win/api/ajuda/chat \
                 <p class="endpoint-desc">Classifica imagens quanto à presença de conteúdo adulto/NSFW via NudeNet. Suporta tanto envio em JSON (base64 ou URL) quanto upload de arquivo via <code>multipart/form-data</code>. Limite: máx. 3MB por arquivo e até 16 imagens por requisição.</p>
                 <div class="section-label">Opção 1: Upload via multipart/form-data</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/nsfw-detect \
+curl -X POST https://ravena.moothz.com/api/nsfw-detect \
   -F "file=@foto.jpg" \
   -F "threshold=0.7"
                 </div>
@@ -330,7 +330,7 @@ curl -X POST https://ravena.moothz.win/api/nsfw-detect \
                 </div>
                 <div class="section-label">Exemplo cURL (JSON)</div>
                 <div class="code-box">
-curl -X POST https://ravena.moothz.win/api/nsfw-detect \
+curl -X POST https://ravena.moothz.com/api/nsfw-detect \
   -H "Content-Type: application/json" \
   -d '{"image": "data:image/jpeg;base64,...", "threshold": 0.7}'
                 </div>
