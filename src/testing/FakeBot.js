@@ -22,6 +22,7 @@ class FakeBot {
 		this.prefix = options.prefix ?? "!";
 		this.phoneNumber = options.phoneNumber ?? "5511999990000";
 		this.useTelegram = options.useTelegram ?? false;
+		this.useDiscord = options.useDiscord ?? false;
 
 		// Flags lidas pelo EventHandler / CommandHandler
 		this.ignorePV = false;

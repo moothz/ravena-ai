@@ -17,6 +17,7 @@ const Database = require("./utils/Database");
 const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
+const AccountLinkService = require("./services/AccountLinkService");
 const { promisify } = require("util");
 
 // Utils
@@ -33,6 +34,7 @@ class WhatsAppBotTelegram {
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "/";
 		this.logger = new Logger(`bot-telegram-${this.id}`);
+		this.accountLinkService = AccountLinkService.getInstance();
 
 		// Opções específicas do Telegram
 		this.useTelegram = true;
@@ -639,6 +641,9 @@ class WhatsAppBotTelegram {
 					return resolve(null);
 				}
 
+				const linkedWaId = this.accountLinkService.getLinkedWhatsApp("telegram", authorId);
+				const finalAuthor = linkedWaId || authorId;
+
 				const formattedMessage = {
 					telegramMessage: message,
 					id: message.message_id,
@@ -646,7 +651,10 @@ class WhatsAppBotTelegram {
 					fromMe: message.from.id === this.botInfo?.id,
 					group: isGroup ? chatId : null,
 					from: isGroup ? chatId : authorId,
-					author: authorId,
+					author: finalAuthor,
+					platformAuthor: authorId,
+					platform: "telegram",
+					isLinkedAccount: Boolean(linkedWaId),
 					name: authorName,
 					authorName,
 					pushname: authorName,
@@ -678,7 +686,8 @@ class WhatsAppBotTelegram {
 					},
 					origin: {
 						id: { _serialized: `${chatId}_${message.from.id}_${message.message_id}` },
-						author: authorId,
+						author: finalAuthor,
+						platformAuthor: authorId,
 						from: chatId,
 						react: async () => true,
 						getChat: async () => this.getChatDetails(chatId),
@@ -811,6 +820,14 @@ class WhatsAppBotTelegram {
 	}
 
 	async sendMessage(chatId, content, options = {}) {
+		if (chatId) {
+			const cleanChatId = String(chatId).split("@")[0].replace(/\D/g, "");
+			const linkedTgId = this.accountLinkService.getLinkedPlatformUser("telegram", cleanChatId);
+			if (linkedTgId) {
+				chatId = linkedTgId;
+			}
+		}
+
 		const ignored = chatId?.toString().includes?.("@") ?? false;
 
 		chatId = parseInt(chatId);
@@ -843,8 +860,14 @@ class WhatsAppBotTelegram {
 			if (options.mentions && Array.isArray(options.mentions)) {
 				await Promise.all(
 					options.mentions.map(async (mentionedId) => {
-						const name = await this.resolveMentionName(mentionedId, chatId);
-						if (name) mentionMap[mentionedId] = name;
+						const cleanId = String(mentionedId).split("@")[0].replace(/\D/g, "");
+						const tgId =
+							this.accountLinkService.getLinkedPlatformUser("telegram", cleanId) || cleanId;
+						const name = await this.resolveMentionName(tgId, chatId);
+						if (name) {
+							mentionMap[cleanId] = { id: tgId, name };
+							mentionMap[tgId] = { id: tgId, name };
+						}
 					})
 				);
 			}
@@ -1103,13 +1126,14 @@ class WhatsAppBotTelegram {
 				);
 			}
 		} else if (typeof mentionMap === "object") {
-			// Map support (ID -> Name)
-			for (const [id, name] of Object.entries(mentionMap)) {
+			// Map support (ID -> Name or ID -> { id, name })
+			for (const [id, value] of Object.entries(mentionMap)) {
 				const mentionRegex = new RegExp(`@${id}\\b`, "g");
-				const displayName = name || id;
+				const displayName = (typeof value === "object" ? value.name : value) || id;
+				const tgId = typeof value === "object" ? value.id : id;
 				formatted = formatted.replace(
 					mentionRegex,
-					`<a href="tg://user?id=${id}">@${displayName}</a>`
+					`<a href="tg://user?id=${tgId}">@${displayName}</a>`
 				);
 			}
 		}

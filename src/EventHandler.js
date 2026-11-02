@@ -36,6 +36,7 @@ const {
 	extractURLFromString
 } = require("./functions/SocialMediaDownloader");
 const ReportAnalyzerService = require("./services/ReportAnalyzerService");
+const AccountLinkService = require("./services/AccountLinkService");
 
 class EventHandler extends EventEmitter {
 	static instance = null;
@@ -56,10 +57,11 @@ class EventHandler extends EventEmitter {
 		this.rankingMessages = RankingMessages;
 		this.userGreetingManager = require("./utils/UserGreetingManager").getInstance();
 		this.reportAnalyzerService = ReportAnalyzerService.getInstance();
+		this.accountLinkService = AccountLinkService.getInstance();
 		this.groups = {};
 		this.comandosWhitelist = process.env.CMD_WHITELIST
 			? process.env.CMD_WHITELIST.split(",")
-			: ["sa-", "anoni"];
+			: ["sa-", "anoni", "vincular", "desvincular"];
 
 		this.PV_AI_DEBOUNCE_MS = 8000;
 		this.pvDebounce = {};
@@ -341,6 +343,24 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 			// --------------------------------
+
+			// --- Resolução Transparente de Contas Vinculadas (Telegram/Discord -> WhatsApp) ---
+			const platform = bot?.useTelegram ? "telegram" : bot?.useDiscord ? "discord" : null;
+			if (platform && message.author && !message.isLinkedAccount) {
+				const cleanPlatformAuthor = String(message.author).split("@")[0];
+				const linkedWaId = this.accountLinkService.getLinkedWhatsApp(platform, cleanPlatformAuthor);
+				if (linkedWaId) {
+					message.platformAuthor = message.author;
+					message.platform = platform;
+					message.isLinkedAccount = true;
+					message.author = linkedWaId;
+					if (message.origin) {
+						message.origin.platformAuthor = message.platformAuthor;
+						message.origin.author = linkedWaId;
+					}
+				}
+			}
+			// ----------------------------------------------------------------------------------
 
 			// Newsletter/Canais: Apenas pra detectar jrmunews, horóscopos, etc.
 			if (message.isNewsletter) {
@@ -2073,7 +2093,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								readError
 							);
 							const botDisplayName = bot.nomeExibir || "ravenabot";
-							botInfoMessage = `🦇 Olá novamente, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes!\n\n• Comandos: *${group.prefix}cmd*\n• Suporte/Dúvidas: *${group.prefix}ajuda* ou *!grupao*\n• Saída amigável: *${group.prefix}g-sair*\n\nFique por dentro das novidades:\n- https://ravena.moothz.win`;
+							botInfoMessage = `🦇 Olá novamente, grupo! Eu sou a *${botDisplayName}*. Já estive aqui neste grupo antes!\n\n• Comandos: *${group.prefix}cmd*\n• Suporte/Dúvidas: *${group.prefix}ajuda* ou *!grupao*\n• Saída amigável: *${group.prefix}g-sair*\n\nFique por dentro das novidades:\n- https://ravena.moothz.com`;
 						}
 					}
 				}

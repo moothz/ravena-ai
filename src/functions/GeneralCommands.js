@@ -53,7 +53,7 @@ async function grupaoCommand(bot, message, args, group) {
 		content += `🟣 *Discord*\n${discordLink}\n_Atualmente em fase de testes!_\n\n`;
 	}
 
-	content += `_Sinta-se em casa!_ 🐦‍⬛✨`;
+	content += `_Sinta-se em casa!_ 🐦‍⬛✨\n\n> Ps.: Você pode vincular sua conta do whatsapp da ravena com as outras plataformas enviando !vincular`;
 
 	return new ReturnMessage({
 		chatId,
@@ -207,7 +207,9 @@ async function discordCommand(bot, message, args, group) {
 
 	if (invite) content += `🔗 *Adicionar Bot:* ${invite}\n\n`;
 	if (community)
-		content += `🟣 *Comunidade Discord:* ${community}\n_Atualmente em fase de testes!_`;
+		content += `🟣 *Comunidade Discord:* ${community}\n_Atualmente em fase de testes!_\n\n`;
+
+	content += `> Ps.: Você pode vincular sua conta do whatsapp da ravena com as outras plataformas enviando !vincular`;
 
 	return new ReturnMessage({
 		chatId,
@@ -230,7 +232,9 @@ async function telegramCommand(bot, message, args, group) {
 	let content = `✈️ *Ravena no Telegram* 🤖\n\nA Ravena também está presente no Telegram! Uma experiência rápida e integrada para seus grupos e conversas privadas.\n\n`;
 
 	if (invite) content += `🔗 *Conversar com o Bot:* ${invite}\n\n`;
-	if (community) content += `🔵 *Canal/Comunidade:* ${community}`;
+	if (community) content += `🔵 *Canal/Comunidade:* ${community}\n\n`;
+
+	content += `> Ps.: Você pode vincular sua conta do whatsapp da ravena com as outras plataformas enviando !vincular`;
 
 	return new ReturnMessage({
 		chatId,
@@ -613,7 +617,7 @@ async function statusCommand(bot, message, args, group) {
 		const response = await axios.get(url);
 
 		let statusMessage =
-			"🕸 *Status das Ravenas* 🔄\n> https://ravena.moothz.win\n\n" + servicesHeader;
+			"🕸 *Status das Ravenas* 🔄\n> https://ravena.moothz.com\n\n" + servicesHeader;
 
 		const botsNormais = response.data.bots.filter((b) => !b.comunitario && !b.vip);
 		const botsComunitarios = response.data.bots.filter((b) => b.comunitario);

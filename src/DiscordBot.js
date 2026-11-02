@@ -25,6 +25,7 @@ const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const storageService = require("./services/StorageService");
+const AccountLinkService = require("./services/AccountLinkService");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +44,7 @@ class DiscordBot {
 		this.eventHandler = options.eventHandler;
 		this.prefix = options.prefix || process.env.DEFAULT_PREFIX || "!";
 		this.logger = new Logger(`bot-discord-${this.id}`);
+		this.accountLinkService = AccountLinkService.getInstance();
 		this.debugEvents = options.debugEvents ?? process.env.DISCORD_DEBUG_EVENTS === "true";
 
 		// Opções específicas do Discord
@@ -412,6 +414,8 @@ class DiscordBot {
 			};
 
 			const botUserId = this.discordClient.user?.id ?? this.discordBotId;
+			const linkedWaId = this.accountLinkService.getLinkedWhatsApp("discord", authorId);
+			const finalAuthor = linkedWaId || authorId;
 
 			const formattedMessage = {
 				discordMessage: message,
@@ -420,7 +424,10 @@ class DiscordBot {
 				group: isGroup ? channelId : null,
 				from: channelId, // No Discord, 'from' é o canal
 				guildId, // Necessário pro discord
-				author: authorId,
+				author: finalAuthor,
+				platformAuthor: authorId,
+				platform: "discord",
+				isLinkedAccount: Boolean(linkedWaId),
 				name: message.member ? message.member.displayName : message.author.username,
 				authorName: message.member ? message.member.displayName : message.author.username,
 				pushname: message.author.username,
@@ -463,7 +470,8 @@ class DiscordBot {
 
 			formattedMessage.origin = {
 				id: { _serialized: message.id },
-				author: authorId,
+				author: finalAuthor,
+				platformAuthor: authorId,
 				from: channelId,
 				react: async (emoji) => {
 					try {
@@ -545,6 +553,14 @@ class DiscordBot {
 	}
 
 	async sendMessage(chatId, content, options = {}) {
+		if (chatId) {
+			const cleanChatId = String(chatId).split("@")[0].replace(/\D/g, "");
+			const linkedDcId = this.accountLinkService.getLinkedPlatformUser("discord", cleanChatId);
+			if (linkedDcId) {
+				chatId = linkedDcId;
+			}
+		}
+
 		this.logger.debug(`[sendMessage] to ${chatId} (Type: ${typeof content})`, options);
 		try {
 			if (!this.isConnected) {
@@ -688,21 +704,25 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 					const cleanId = String(id)
 						.split("@")[0]
 						.replace(/[<@!>]/g, "");
+					const targetDiscordId =
+						this.accountLinkService.getLinkedPlatformUser("discord", cleanId) || cleanId;
 					// Try to resolve a display name from the Discord client cache or fetch from API
 					let displayName = cleanId;
 					try {
-						let user = this.discordClient.users.cache.get(cleanId);
+						let user = this.discordClient.users.cache.get(targetDiscordId);
 						if (!user) {
-							user = await this.discordClient.users.fetch(cleanId).catch(() => null);
+							user = await this.discordClient.users.fetch(targetDiscordId).catch(() => null);
 						}
-						if (user) displayName = user.globalName || user.username || cleanId;
+						if (user) displayName = user.globalName || user.username || targetDiscordId;
 					} catch (_) {
 						/* ignore */
 					}
 					// Replace any @id or <@id> patterns in the content
 					discordPayload.content = discordPayload.content
 						.replace(new RegExp(`<@!?${cleanId}>`, "g"), `@${displayName}`)
-						.replace(new RegExp(`@${cleanId}\\b`, "g"), `@${displayName}`);
+						.replace(new RegExp(`@${cleanId}\\b`, "g"), `@${displayName}`)
+						.replace(new RegExp(`<@!?${targetDiscordId}>`, "g"), `@${displayName}`)
+						.replace(new RegExp(`@${targetDiscordId}\\b`, "g"), `@${displayName}`);
 				}
 			}
 

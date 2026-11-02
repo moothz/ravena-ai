@@ -169,7 +169,19 @@ async function getDonorByNumber(number) {
 	if (!number) return null;
 	const clean = String(number).replace(/\D/g, "");
 	if (!clean) return null;
-	return database.getDonorByNumber(clean);
+	let donor = await database.getDonorByNumber(clean);
+	if (!donor) {
+		try {
+			const AccountLinkService = require("./AccountLinkService");
+			const linkedWaId =
+				AccountLinkService.getInstance().getLinkedWhatsApp("telegram", clean) ||
+				AccountLinkService.getInstance().getLinkedWhatsApp("discord", clean);
+			if (linkedWaId) {
+				donor = await database.getDonorByNumber(linkedWaId);
+			}
+		} catch (_) {}
+	}
+	return donor;
 }
 
 /**
