@@ -14,15 +14,15 @@ async function runTests() {
 	const dlFolder = process.env.DL_FOLDER || "/app/downloads";
 	console.log(`[Config] DL_FOLDER: ${dlFolder}`);
 
-	// 1. Testa que storageService possui o bucket downloads e domínio público s3-ravena.moothz.win
+	// 1. Testa que storageService possui o bucket downloads e domínio público s3-ravena.moothz.com
 	assert.strictEqual(
 		storageService.bucketDownloads,
 		"downloads",
 		"Bucket de downloads deve ser 'downloads'"
 	);
 	assert.ok(
-		storageService.publicDomain.includes("s3-ravena.moothz.win"),
-		`Domínio público deve ser s3-ravena.moothz.win (atual: ${storageService.publicDomain})`
+		storageService.publicDomain.includes("s3-ravena.moothz.com"),
+		`Domínio público deve ser s3-ravena.moothz.com (atual: ${storageService.publicDomain})`
 	);
 	console.log("✓ Teste 1 passou: Configuração do storageService verificada");
 
@@ -42,7 +42,7 @@ async function runTests() {
 	console.log("URL gerada por _storeMediaFile:", presignedUrl);
 	assert.ok(typeof presignedUrl === "string", "Retorno de _storeMediaFile deve ser uma string URL");
 	assert.ok(
-		presignedUrl.includes("s3-ravena.moothz.win") || presignedUrl.includes("downloads"),
+		presignedUrl.includes("s3-ravena.moothz.com") || presignedUrl.includes("downloads"),
 		`URL deve apontar para S3/downloads (atual: ${presignedUrl})`
 	);
 
@@ -72,7 +72,7 @@ async function runTests() {
 	const fakeVideoMedia = {
 		isMessageMedia: true,
 		mimetype: "video/mp4",
-		url: "https://s3-ravena.moothz.win/downloads/attachments/sample_video.mp4",
+		url: "https://s3-ravena.moothz.com/downloads/attachments/sample_video.mp4",
 		size: 70 * 1024 * 1024, // 70MB
 		filename: "sample_video.mp4"
 	};
@@ -111,7 +111,7 @@ async function runTests() {
 	console.log("URL gerada pelo DiscordBot:", discordAttachmentUrl);
 	assert.ok(typeof discordAttachmentUrl === "string", "DiscordBot deve retornar string URL válida");
 	assert.ok(
-		discordAttachmentUrl.includes("s3-ravena.moothz.win") ||
+		discordAttachmentUrl.includes("s3-ravena.moothz.com") ||
 			discordAttachmentUrl.includes("downloads"),
 		`URL do Discord deve apontar para S3/downloads (atual: ${discordAttachmentUrl})`
 	);

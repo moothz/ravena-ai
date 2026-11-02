@@ -55,8 +55,8 @@ async function runTests() {
 						data: {
 							publicId: "u-1234-uuid",
 							token: "tok-abcd-5678",
-							url: "https://waifuletes.moothz.win/user/u-1234-uuid?token=tok-abcd-5678",
-							waifinderUrl: "https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678",
+							url: "https://waifuletes.moothz.com/user/u-1234-uuid?token=tok-abcd-5678",
+							waifinderUrl: "https://waifuletes.moothz.com/catalogo?token=tok-abcd-5678",
 							expiresIn: 1800
 						}
 					}
@@ -74,7 +74,7 @@ async function runTests() {
 							id: "5511999999999",
 							name: "RaveninhaFan",
 							publicId: "u-1234-uuid",
-							publicUrl: "https://waifuletes.moothz.win/user/u-1234-uuid",
+							publicUrl: "https://waifuletes.moothz.com/user/u-1234-uuid",
 							haremCount: 25,
 							soulmateCount: 2,
 							wishlistCount: 5,
@@ -114,7 +114,7 @@ async function runTests() {
 		const pvMsg = captured.find((m) => m.chatId === "5511999999999@s.whatsapp.net");
 		assert.ok(pvMsg, "Mensagem no PV do usuário deve ter sido enviada");
 		assert.ok(
-			pvMsg.content.includes("https://waifuletes.moothz.win/user/u-1234-uuid?token=tok-abcd-5678"),
+			pvMsg.content.includes("https://waifuletes.moothz.com/user/u-1234-uuid?token=tok-abcd-5678"),
 			"Mensagem de PV deve conter a URL com o token de 30 minutos"
 		);
 		assert.ok(
@@ -142,7 +142,7 @@ async function runTests() {
 		assert.strictEqual(directPvMsg.chatId, "5511999999999@s.whatsapp.net");
 		assert.ok(
 			directPvMsg.content.includes(
-				"https://waifuletes.moothz.win/user/u-1234-uuid?token=tok-abcd-5678"
+				"https://waifuletes.moothz.com/user/u-1234-uuid?token=tok-abcd-5678"
 			),
 			"Resposta direta no PV deve conter o link do painel"
 		);
@@ -166,7 +166,7 @@ async function runTests() {
 		const shareMsg = capturedShare[0];
 		assert.strictEqual(shareMsg.chatId, "120363000000000000@g.us");
 		assert.ok(
-			shareMsg.content.includes("https://waifuletes.moothz.win/user/u-1234-uuid"),
+			shareMsg.content.includes("https://waifuletes.moothz.com/user/u-1234-uuid"),
 			"Mensagem deve conter o link público sem token"
 		);
 		assert.ok(
@@ -196,7 +196,7 @@ async function runTests() {
 		const capturedCompartilhar = await waitForCaptured(1);
 		assert.strictEqual(capturedCompartilhar.length, 1);
 		assert.ok(
-			capturedCompartilhar[0].content.includes("https://waifuletes.moothz.win/user/u-1234-uuid"),
+			capturedCompartilhar[0].content.includes("https://waifuletes.moothz.com/user/u-1234-uuid"),
 			"Alias deve produzir o mesmo link público"
 		);
 		console.log("✓ !mu-compartilhar funcionou perfeitamente!");
@@ -221,7 +221,7 @@ async function runTests() {
 		);
 		assert.ok(pvWaifinderMsg, "Mensagem no PV deve ter sido enviada");
 		assert.ok(
-			pvWaifinderMsg.content.includes("https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678"),
+			pvWaifinderMsg.content.includes("https://waifuletes.moothz.com/catalogo?token=tok-abcd-5678"),
 			"Mensagem de PV deve conter a URL do Waifinder com o token"
 		);
 		assert.ok(
@@ -251,7 +251,7 @@ async function runTests() {
 		assert.strictEqual(capturedTinder.length, 1);
 		assert.ok(
 			capturedTinder[0].content.includes(
-				"https://waifuletes.moothz.win/catalogo?token=tok-abcd-5678"
+				"https://waifuletes.moothz.com/catalogo?token=tok-abcd-5678"
 			),
 			"Alias !mu-tinder deve gerar o mesmo link do Waifinder"
 		);

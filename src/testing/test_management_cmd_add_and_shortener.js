@@ -20,7 +20,7 @@ async function main() {
 	// -------------------------------------------------------------
 	console.log("\n1. Testando UrlShortenerService...");
 	// 1.1 URL já encurtada
-	const alreadyShort = "https://s.moothz.win/xyz123";
+	const alreadyShort = "https://s.moothz.com/xyz123";
 	const resAlreadyShort = await urlShortenerService.shorten(alreadyShort);
 	assert.strictEqual(resAlreadyShort, alreadyShort, "URL já encurtada não deve ser alterada");
 
@@ -49,14 +49,14 @@ async function main() {
 	// -------------------------------------------------------------
 	console.log("\n2. Testando StorageService Presigned URL...");
 	const fakePresigned =
-		"https://s3-ravena.moothz.win/downloads/yt/sample.mp4?X-Amz-Signature=abc123longsignature";
+		"https://s3-ravena.moothz.com/downloads/yt/sample.mp4?X-Amz-Signature=abc123longsignature";
 
 	// Mock temporário do urlShortenerService.shorten para teste determinístico de integração do StorageService
 	const originalShorten = urlShortenerService.shorten.bind(urlShortenerService);
 	let shortenCalledWith = null;
 	urlShortenerService.shorten = async (url) => {
 		shortenCalledWith = url;
-		return "https://s.moothz.win/short1";
+		return "https://s.moothz.com/short1";
 	};
 
 	try {
@@ -73,13 +73,13 @@ async function main() {
 		const shortUrl = await storageService.getPresignedUrl("yt/sample.mp4", {
 			shorten: true
 		});
-		assert.strictEqual(shortUrl, "https://s.moothz.win/short1", "Deve retornar URL encurtada");
+		assert.strictEqual(shortUrl, "https://s.moothz.com/short1", "Deve retornar URL encurtada");
 		assert.ok(shortenCalledWith, "shorten() deve ter sido invocado");
 
 		// 2.3 getShortPresignedUrl
 		shortenCalledWith = null;
 		const shortViaHelper = await storageService.getShortPresignedUrl("yt/sample.mp4");
-		assert.strictEqual(shortViaHelper, "https://s.moothz.win/short1");
+		assert.strictEqual(shortViaHelper, "https://s.moothz.com/short1");
 		assert.ok(shortenCalledWith, "getShortPresignedUrl deve invocar encurtador");
 	} finally {
 		urlShortenerService.shorten = originalShorten;
@@ -221,7 +221,7 @@ async function main() {
 	};
 	storageService.getPresignedUrl = async (key, opts) => {
 		presignedShortenParam = opts?.shorten;
-		return "https://s.moothz.win/ytHdShort";
+		return "https://s.moothz.com/ytHdShort";
 	};
 
 	try {
@@ -250,7 +250,7 @@ async function main() {
 		);
 		assert.ok(sentVideo, "Mensagem enviada deve conter legenda com 'Vídeo em alta qualidade'");
 		assert.ok(
-			sentVideo.options.caption.includes("https://s.moothz.win/ytHdShort"),
+			sentVideo.options.caption.includes("https://s.moothz.com/ytHdShort"),
 			"Legenda deve conter o link encurtado do S3"
 		);
 		console.log("✓ YoutubeDownloader via SocialMediaDownloader validado.");

@@ -170,7 +170,7 @@ async function runTests() {
 		"Segunda mensagem deve conter cabeçalho de conclusão"
 	);
 	assert.ok(
-		msg2Formatted.content.includes("moothz.win") || msg2Formatted.content.includes("Link direto"),
+		msg2Formatted.content.includes("moothz.com") || msg2Formatted.content.includes("Link direto"),
 		"Segunda mensagem deve conter link do S3"
 	);
 	console.log(

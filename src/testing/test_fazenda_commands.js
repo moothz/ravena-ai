@@ -302,7 +302,7 @@ async function runTests() {
 		"O link não deve conter [object Object]"
 	);
 	assert(
-		bot.capturedMessages[0].content.includes("https://jds.moothz.win/farm?id="),
+		bot.capturedMessages[0].content.includes("https://jds.moothz.com/farm?id="),
 		"Deve conter link público válido"
 	);
 	console.log("✓ !faz-adm em grupo reagiu e despachou no PV sem poluir o grupo!");

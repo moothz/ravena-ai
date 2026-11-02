@@ -49,7 +49,7 @@ async function runTests() {
 	// 3. Formatação da mensagem de status
 	const statusMsg1 = scheduler.formatStatus(botWhatsAppNormal);
 	assert.ok(statusMsg1.includes("Envie !cmd"), "Deve conter 'Envie !cmd' quando ignorePV=false");
-	assert.ok(statusMsg1.includes("https://ravena.moothz.win"), "Deve conter o link ravena");
+	assert.ok(statusMsg1.includes("https://ravena.moothz.com"), "Deve conter o link ravena");
 
 	botWhatsAppNormal.ignorePV = true;
 	const statusMsg2 = scheduler.formatStatus(botWhatsAppNormal);

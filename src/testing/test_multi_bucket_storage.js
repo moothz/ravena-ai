@@ -36,8 +36,8 @@ async function main() {
 
 	console.log("Presigned URL gerada:", presignedUrl);
 	assert.ok(
-		presignedUrl.includes("s3-ravena.moothz.win"),
-		"URL deveria conter s3-ravena.moothz.win"
+		presignedUrl.includes("s3-ravena.moothz.com"),
+		"URL deveria conter s3-ravena.moothz.com"
 	);
 	assert.ok(
 		presignedUrl.includes("downloads/yt/teste_video.mp4"),

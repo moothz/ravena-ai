@@ -31,7 +31,7 @@ async function runTests() {
 			{
 				path: testFilePath,
 				mimetype: "video/mp4",
-				s3Url: "https://s3-ravena.moothz.win/downloads/social/test_video.mp4"
+				s3Url: "https://s3-ravena.moothz.com/downloads/social/test_video.mp4"
 			}
 		];
 
@@ -92,7 +92,7 @@ async function runTests() {
 			{
 				path: testFilePath,
 				mimetype: "video/mp4",
-				s3Url: "https://s.moothz.win/insta123"
+				s3Url: "https://s.moothz.com/insta123"
 			}
 		];
 
@@ -112,7 +112,7 @@ async function runTests() {
 		const sentCaption = bot.capturedMessages[0].options?.caption || "";
 		assert.ok(sentCaption.includes("Instagram"), "Legenda deve conter a fonte");
 		assert.ok(
-			sentCaption.includes("https://s.moothz.win/insta123"),
+			sentCaption.includes("https://s.moothz.com/insta123"),
 			`Legenda deve conter o link S3 direto. Atual: ${sentCaption}`
 		);
 		console.log("✓ Teste 4 passou: Legenda com link S3 validada com sucesso");
