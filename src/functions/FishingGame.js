@@ -12,6 +12,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
 const LLMService = require("../services/LLMService");
 const GameEventService = require("../services/GameEventService");
+const { broadcastToWhatsAppNoticeChannels } = require("../utils/BroadcastHelper");
 
 const logger = new Logger("fishing-game");
 
@@ -2261,7 +2262,7 @@ async function fishCommand(bot, message, args, group) {
 		fishMessage += `\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
 
 		if (caughtFishes.length === 1 && caughtFishes[0].isRare) {
-			fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca`;
+			fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca`;
 		}
 
 		fishMessage += effectMessage;
@@ -2328,7 +2329,7 @@ async function processLegendaryFishCatch({
 
 	fishMessage += `\n\n> 🐳 Seu maior peixe: ${userData.biggestFish ? userData.biggestFish.name : rareFish.name} (${(userData.biggestFish ? userData.biggestFish.weight : rareFish.weight).toFixed(2)} kg)`;
 	fishMessage += `\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
-	fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca`;
+	fishMessage += `\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca`;
 
 	if (effectMessage) {
 		fishMessage += effectMessage;
@@ -2391,7 +2392,7 @@ async function processLegendaryFishCatch({
 	const notificacaoPeixeRaro = new ReturnMessage({
 		content: rareFishImage,
 		options: {
-			caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.win/pesca\n\n> ${bot.id}`,
+			caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`,
 			mentions: mentionPessoa
 		}
 	});
@@ -2424,6 +2425,25 @@ async function processLegendaryFishCatch({
 		notificacaoPeixeRaro.chatId = bot.grupoAnuncios;
 		const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
 		if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);
+	}
+
+	// Se a pescaria lendária ocorreu no Telegram ou Discord, envia também para os canais de avisos do WhatsApp
+	if (bot && (bot.useTelegram || bot.useDiscord)) {
+		try {
+			await broadcastToWhatsAppNoticeChannels({
+				content: rareFishImage,
+				options: {
+					caption:
+						notificacaoPeixeRaro.options?.caption ||
+						`🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`
+				},
+				pinDuration: 260000
+			});
+		} catch (eWa) {
+			logger.error(
+				`[FishingGame] Erro ao sincronizar pesca lendária para WhatsApp: ${eWa.message || eWa}`
+			);
+		}
 	}
 
 	return new ReturnMessage({
@@ -3144,7 +3164,7 @@ async function legendaryFishCommand(bot, message, args, group) {
 			textMessage += `   Data: ${date}\n\n`;
 		}
 
-		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.win";
+		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.com";
 		textMessage += `_Veja a galeria completa com imagens em:_\n🔗 ${botDomain}/pesca`;
 
 		const messages = [];
@@ -3364,7 +3384,7 @@ async function fishingInfoCommand(bot, message) {
 			infoMessage += `🥇 *Pescador Mais Dedicado:* _${stats.mostFishCaughtByUser.userName}_ com \`${stats.mostFishCaughtByUser.totalCatches}\` peixes pescados\n`;
 		}
 
-		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.win";
+		const botDomain = process.env.BOT_DOMAIN || "https://ravena.moothz.com";
 		infoMessage += `\n_Veja a galeria completa em:_\n🔗 ${botDomain}/pesca`;
 
 		return new ReturnMessage({ chatId, content: infoMessage });

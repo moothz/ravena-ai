@@ -92,15 +92,15 @@ class CustomVariableProcessor {
 					// Fallback: se não achou alvo, usa o autor da mensagem
 					if (!targetJid) {
 						targetJid =
-							context.message.authorAlt ||
 							context.message.author ||
+							context.message.authorAlt ||
 							context.message.sender ||
 							context.message.from;
 					}
 				} else {
 					targetJid =
-						context.message.authorAlt ||
 						context.message.author ||
+						context.message.authorAlt ||
 						context.message.sender ||
 						context.message.from;
 				}
@@ -1621,7 +1621,16 @@ class CustomVariableProcessor {
 	 */
 	async handleProfilePictureResponse(processedText, targetJid, context) {
 		try {
-			const media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, targetJid);
+			let media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, targetJid);
+
+			// Se falhou e houver um ID alternativo (authorAlt/author), tenta o alternativo
+			if (!media && context.message) {
+				const altJid =
+					targetJid === context.message.author ? context.message.authorAlt : context.message.author;
+				if (altJid && altJid !== targetJid) {
+					media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, altJid);
+				}
+			}
 
 			if (!media) {
 				throw new Error("Nenhuma URL de imagem de perfil encontrada");

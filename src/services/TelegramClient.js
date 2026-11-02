@@ -333,6 +333,39 @@ class TelegramClient {
 	async answerCallbackQuery(callbackQueryId, options = {}) {
 		return this.bot.answerCallbackQuery(callbackQueryId, options);
 	}
+
+	/**
+	 * Gets the profile photo link for a user.
+	 * @param {string|number} userId - Telegram user ID
+	 * @returns {Promise<string|null>} - Direct URL to the largest profile picture, or null
+	 */
+	async getUserProfilePhotoUrl(userId) {
+		try {
+			const cleanId = String(userId)
+				.split("@")[0]
+				.replace(/[^\d-]/g, "");
+			if (!cleanId || isNaN(cleanId)) return null;
+			const photos = await this.bot.getUserProfilePhotos(parseInt(cleanId, 10), { limit: 1 });
+			if (
+				!photos ||
+				!Array.isArray(photos.photos) ||
+				photos.photos.length === 0 ||
+				!Array.isArray(photos.photos[0]) ||
+				photos.photos[0].length === 0
+			) {
+				return null;
+			}
+			const bestPhoto = photos.photos[0][photos.photos[0].length - 1];
+			if (!bestPhoto || !bestPhoto.file_id) return null;
+			const link = await this.bot.getFileLink(bestPhoto.file_id);
+			return link || null;
+		} catch (error) {
+			this.logger.debug(
+				`[getUserProfilePhotoUrl] Erro ao buscar foto do usuário ${userId}: ${error.message}`
+			);
+			return null;
+		}
+	}
 }
 
 module.exports = TelegramClient;

@@ -129,6 +129,7 @@ class DiscordBot {
 			getInviteInfo: (arg) => this.inviteInfo(arg),
 			getMessageById: async (messageId) => this.recoverMsgFromCache(messageId),
 			setStatus: (arg) => this.updateProfileStatus(arg),
+			getProfilePictureUrl: (arg) => this.getProfilePictureUrl(arg),
 			// Funções não aplicáveis
 			leaveGroup: (arg) => this.leaveGroup(arg),
 			setProfilePicture: (arg) => this.updateProfilePicture(arg),
@@ -914,6 +915,36 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 				isUser: true,
 				_isPartial: true
 			};
+		}
+	}
+
+	/**
+	 * Obtém a URL do avatar de um usuário no Discord
+	 * @param {string|number} userId
+	 * @returns {Promise<string|null>}
+	 */
+	async getProfilePictureUrl(userId) {
+		try {
+			if (!userId) return null;
+			const cleanId = String(userId)
+				.split("@")[0]
+				.replace(/[<@!>]/g, "")
+				.trim();
+			if (!cleanId) return null;
+			const user = await this.discordClient.users.fetch(cleanId).catch(() => null);
+			if (!user) return null;
+			return (
+				user.displayAvatarURL({
+					extension: "png",
+					size: 512,
+					forceStatic: false
+				}) || null
+			);
+		} catch (error) {
+			this.logger.debug(
+				`[getProfilePictureUrl] Erro ao obter avatar do Discord para ${userId}: ${error.message}`
+			);
+			return null;
 		}
 	}
 

@@ -136,6 +136,7 @@ class WhatsAppBotTelegram {
 			getInviteInfo: (arg) => this.inviteInfo(arg),
 			getMessageById: async (messageId) => this.recoverMsgFromCache(messageId),
 			setStatus: (arg) => this.updateProfileStatus(arg),
+			getProfilePictureUrl: (arg) => this.getProfilePictureUrl(arg),
 			leaveGroup: (arg) => this.leaveGroup(arg),
 			setProfilePicture: (arg) => this.updateProfilePicture(arg),
 			setPrivacySettings: (arg) => this.updatePrivacySettings(arg),
@@ -1852,6 +1853,23 @@ class WhatsAppBotTelegram {
 		return groups.some(
 			(g) => clean(g) === targetClean || String(g).trim() === String(groupId).trim()
 		);
+	}
+
+	/**
+	 * Obtém a URL da foto de perfil de um usuário no Telegram
+	 * @param {string|number} userId
+	 * @returns {Promise<string|null>}
+	 */
+	async getProfilePictureUrl(userId) {
+		try {
+			if (!userId) return null;
+			return await this.apiClient.getUserProfilePhotoUrl(userId);
+		} catch (error) {
+			this.logger.debug(
+				`[getProfilePictureUrl] Erro ao obter foto do usuário ${userId}: ${error.message}`
+			);
+			return null;
+		}
 	}
 
 	async destroy() {

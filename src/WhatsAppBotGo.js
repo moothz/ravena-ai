@@ -4795,10 +4795,28 @@ class WhatsAppBotGo {
 				}
 			}
 
-			const response = await this.apiClient.post("/user/avatar", {
-				number: jid,
-				preview
-			});
+			let response = null;
+			try {
+				response = await this.apiClient.post("/user/avatar", {
+					number: jid,
+					preview
+				});
+			} catch (postErr) {
+				// Se falhou e for LID, tenta fallback com PN caso mapeado
+				if (jid.endsWith("@lid") || (jid.startsWith("3") && jid.length >= 14)) {
+					let pn = typeof this.getPnFromLid === "function" ? this.getPnFromLid(jid) : null;
+					if (!pn && this.lidToPnCache) {
+						const cleanLid = jid.split("@")[0].replace(/\D/g, "");
+						pn = this.lidToPnCache.get(cleanLid) || this.lidToPnCache.get(`${cleanLid}@lid`);
+					}
+					if (pn) {
+						const pnJid = pn.includes("@") ? pn : `${pn}@s.whatsapp.net`;
+						response = await this.apiClient
+							.post("/user/avatar", { number: pnJid, preview })
+							.catch(() => null);
+					}
+				}
+			}
 
 			if (response?.data?.url) {
 				return response.data.url;

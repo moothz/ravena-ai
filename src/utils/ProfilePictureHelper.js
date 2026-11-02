@@ -23,6 +23,13 @@ async function fetchUserProfilePictureMedia(bot, targetJid) {
 		jid = jid.trim();
 		if (!jid) return null;
 
+		// Normaliza sufixo de device (ex: 551199999999:2@s.whatsapp.net -> 551199999999@s.whatsapp.net)
+		if (jid.includes(":") && jid.includes("@")) {
+			const [userPart, domain] = jid.split("@");
+			const cleanUser = userPart.split(":")[0];
+			jid = `${cleanUser}@${domain}`;
+		}
+
 		const fetchPhoto =
 			typeof bot.getProfilePictureUrl === "function"
 				? bot.getProfilePictureUrl.bind(bot)
@@ -37,7 +44,31 @@ async function fetchUserProfilePictureMedia(bot, targetJid) {
 			profileUrl = await fetchPhoto(jid);
 		} catch (err) {
 			logger.debug(`[fetchUserProfilePictureMedia] Erro ao obter URL para ${jid}: ${err.message}`);
-			return null;
+		}
+
+		// Se falhou e for WhatsApp e o JID for LID, tenta converter para PN se o bot tiver o mapeamento
+		if (!profileUrl && !bot.useTelegram && !bot.useDiscord) {
+			const isLid = jid.endsWith("@lid") || (jid.startsWith("3") && jid.length >= 14);
+			if (isLid) {
+				let pn = null;
+				if (typeof bot.getPnFromLid === "function") {
+					pn = bot.getPnFromLid(jid);
+				}
+				if (!pn && bot.lidToPnCache) {
+					const cleanLid = jid.split("@")[0].replace(/\D/g, "");
+					pn = bot.lidToPnCache.get(cleanLid) || bot.lidToPnCache.get(`${cleanLid}@lid`);
+				}
+				if (pn) {
+					try {
+						const pnJid = pn.includes("@") ? pn : `${pn}@s.whatsapp.net`;
+						profileUrl = await fetchPhoto(pnJid);
+					} catch (errPn) {
+						logger.debug(
+							`[fetchUserProfilePictureMedia] Erro no fallback de PN para ${pn}: ${errPn.message}`
+						);
+					}
+				}
+			}
 		}
 
 		if (!profileUrl || typeof profileUrl !== "string") {

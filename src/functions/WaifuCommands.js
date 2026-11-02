@@ -17,6 +17,7 @@ const {
 } = require("../utils/WaifuMarriagePhotoHelper");
 const AdminUtils = require("../utils/AdminUtils");
 const PhoneUtils = require("../utils/PhoneUtils");
+const { broadcastToWhatsAppNoticeChannels } = require("../utils/BroadcastHelper");
 const jardimClient = new ShadowGardenClient();
 
 const database = Database.getInstance();
@@ -8930,6 +8931,30 @@ async function notifySpecialMarriage(
 			}
 		}
 
+		// Se o casamento lendário ocorreu no Telegram ou Discord, envia também para os canais de avisos do WhatsApp
+		if (bot && (bot.useTelegram || bot.useDiscord)) {
+			try {
+				const waContent = imageBase64
+					? {
+							mimetype: "image/jpeg",
+							data: imageBase64,
+							filename: `marriage_${character.id || "waifu"}.jpg`,
+							isMessageMedia: true
+						}
+					: caption;
+
+				await broadcastToWhatsAppNoticeChannels({
+					content: waContent,
+					options: imageBase64 ? { caption } : {},
+					pinDuration: 260000
+				});
+			} catch (eWa) {
+				logger.error(
+					`[notifySpecialMarriage] Erro ao sincronizar casamento lendário para WhatsApp: ${eWa.message || eWa}`
+				);
+			}
+		}
+
 		return sentAny;
 	} catch (err) {
 		logger.error("Erro ao notificar casamento especial:", err);
@@ -9107,6 +9132,30 @@ async function notifySoulmateAchievement(
 				logger.error(
 					`[notifySoulmateAchievement] Erro ao enviar notificação para ${targetChat}:`,
 					errSend
+				);
+			}
+		}
+
+		// Se a consagração de Soulmate ocorreu no Telegram ou Discord, envia também para os canais de avisos do WhatsApp
+		if (bot && (bot.useTelegram || bot.useDiscord)) {
+			try {
+				const waContent = imageBase64
+					? {
+							mimetype: "image/jpeg",
+							data: imageBase64,
+							filename: `soulmate_${character.id || "waifu"}.jpg`,
+							isMessageMedia: true
+						}
+					: caption;
+
+				await broadcastToWhatsAppNoticeChannels({
+					content: waContent,
+					options: imageBase64 ? { caption } : {},
+					pinDuration: 260000
+				});
+			} catch (eWa) {
+				logger.error(
+					`[notifySoulmateAchievement] Erro ao sincronizar soulmate para WhatsApp: ${eWa.message || eWa}`
 				);
 			}
 		}
