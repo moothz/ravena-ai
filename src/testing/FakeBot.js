@@ -332,6 +332,15 @@ class FakeBot {
 				} catch {}
 			}
 
+			if (msg.options?.invData?.userId) {
+				try {
+					const FazendaCommands = require("../functions/FazendaCommands");
+					if (typeof FazendaCommands.recordInvMessage === "function") {
+						FazendaCommands.recordInvMessage(msg.chatId, msg.options.invData.userId, fakeMsgId);
+					}
+				} catch {}
+			}
+
 			results.push({ id: { _serialized: fakeMsgId }, messageId: fakeMsgId, ack: 1 });
 		}
 		return results;

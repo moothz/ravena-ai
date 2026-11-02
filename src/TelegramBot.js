@@ -518,6 +518,23 @@ class WhatsAppBotTelegram {
 				const authorName = from.first_name || from.username || "Unknown User";
 				const isGroup = message.chat.type === "group" || message.chat.type === "supergroup";
 
+				if (
+					decoded.value &&
+					/^\/faz-(plantar|usar|vender|decorar)/i.test(decoded.value) &&
+					message?.message_id
+				) {
+					try {
+						const FazendaCommands = require("./functions/FazendaCommands");
+						if (typeof FazendaCommands.recordInvMessage === "function") {
+							FazendaCommands.recordInvMessage(chatId, authorId, message.message_id);
+						}
+					} catch (trackInvErr) {
+						this.logger.debug(
+							`[_handleCallbackQuery] Erro ao registrar inv message via callback: ${trackInvErr.message}`
+						);
+					}
+				}
+
 				const syntheticMessage = {
 					telegramMessage: message,
 					id: message.message_id,
@@ -1066,9 +1083,21 @@ class WhatsAppBotTelegram {
 
 		// 1. Multi-roll de Waifus (options.waifuRolls)
 		if (Array.isArray(options.waifuRolls) && options.waifuRolls.length > 0) {
-			const availableSlots = options.waifuRolls.filter(
-				(s) => s.available && !s.isOwner && !s.claimed
-			);
+			const availableSlots = options.waifuRolls.filter((s) => {
+				if (!s) return false;
+				const hasOwner = Boolean(
+					s.owner && (typeof s.owner === "string" || s.owner.name || s.owner.id)
+				);
+				const isMarried = Boolean(s.isMarried || s.character?.isMarried || hasOwner);
+				const isAvailable = s.available !== false && Boolean(s.available);
+				const isClaimed = Boolean(s.claimed);
+				const isInstantMarriage = Boolean(s.instantMarriage);
+				const isOwner = Boolean(s.isOwner);
+
+				return (
+					isAvailable && !isMarried && !hasOwner && !isOwner && !isClaimed && !isInstantMarriage
+				);
+			});
 			if (availableSlots.length > 0) {
 				const buttons = availableSlots.map((s) => ({
 					text: `💍 ${s.slot}`,
@@ -1082,16 +1111,28 @@ class WhatsAppBotTelegram {
 			}
 		}
 
-		// 2. Single roll de Waifu (options.waifuCharacterId e options.waifuAvailable)
-		if (options.waifuCharacterId && options.waifuAvailable) {
-			return [
-				[
-					{
-						text: "💍 Casar",
-						action: { type: "command", value: `/mu-casar ${options.waifuCharacterId}` }
-					}
-				]
-			];
+		// 2. Single roll de Waifu (options.waifuCharacterId e opções de disponibilidade)
+		if (options.waifuCharacterId) {
+			const hasOwner = Boolean(
+				options.waifuOwner &&
+				(typeof options.waifuOwner === "string" || options.waifuOwner.name || options.waifuOwner.id)
+			);
+			const isMarried = Boolean(options.waifuIsMarried || hasOwner);
+			const isAvailable = options.waifuAvailable !== false && Boolean(options.waifuAvailable);
+			const isClaimed = Boolean(options.waifuClaimed);
+			const isInstantMarriage = Boolean(options.waifuInstantMarriage);
+			const isOwner = Boolean(options.waifuIsOwner);
+
+			if (isAvailable && !isMarried && !hasOwner && !isOwner && !isClaimed && !isInstantMarriage) {
+				return [
+					[
+						{
+							text: "💍 Casar",
+							action: { type: "command", value: `/mu-casar ${options.waifuCharacterId}` }
+						}
+					]
+				];
+			}
 		}
 
 		return null;
@@ -1281,7 +1322,8 @@ class WhatsAppBotTelegram {
 					...message.options,
 					telegram: message.telegram || message.options?.telegram,
 					buttons: message.buttons || message.options?.buttons,
-					farmData: message.farmData || message.options?.farmData
+					farmData: message.farmData || message.options?.farmData,
+					invData: message.invData || message.options?.invData
 				};
 				const result = await this.sendMessage(message.chatId, message.content, messageOptions);
 				results.push(result);
@@ -1305,6 +1347,29 @@ class WhatsAppBotTelegram {
 					} catch (farmTrackErr) {
 						this.logger.debug(
 							`[sendReturnMessages] Erro ao registrar mensagem da fazenda: ${farmTrackErr.message}`
+						);
+					}
+				}
+
+				if (messageOptions.invData?.userId) {
+					try {
+						const FazendaCommands = require("./functions/FazendaCommands");
+						if (typeof FazendaCommands.recordInvMessage === "function") {
+							const sentMsgId =
+								result?.messageId ||
+								result?._data?.message_id ||
+								messageOptions.telegram?.editMessageId;
+							if (sentMsgId) {
+								FazendaCommands.recordInvMessage(
+									message.chatId,
+									messageOptions.invData.userId,
+									sentMsgId
+								);
+							}
+						}
+					} catch (invTrackErr) {
+						this.logger.debug(
+							`[sendReturnMessages] Erro ao registrar mensagem do inventário: ${invTrackErr.message}`
 						);
 					}
 				}

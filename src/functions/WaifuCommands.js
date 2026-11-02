@@ -1841,8 +1841,15 @@ function makeRollHandler(genderFilter) {
 							options: {
 								caption: text,
 								waifuCharacterId: character.id,
-								waifuAvailable: available,
+								waifuAvailable: Boolean(
+									available && !owner && !isOwner && !firstRollData?.instantMarriage
+								),
+								waifuIsMarried: Boolean(
+									owner || isOwner || firstRollData?.isMarried || character?.isMarried
+								),
 								waifuOwner: owner?.name || (isOwner ? name : null),
+								waifuIsOwner: Boolean(isOwner),
+								waifuInstantMarriage: Boolean(firstRollData?.instantMarriage),
 								waifuGroupId: groupId,
 								waifuRollerUserId: userId,
 								waifuRollerUserName: name,
@@ -1860,8 +1867,15 @@ function makeRollHandler(genderFilter) {
 						content: text,
 						options: {
 							waifuCharacterId: character.id,
-							waifuAvailable: available,
+							waifuAvailable: Boolean(
+								available && !owner && !isOwner && !firstRollData?.instantMarriage
+							),
+							waifuIsMarried: Boolean(
+								owner || isOwner || firstRollData?.isMarried || character?.isMarried
+							),
 							waifuOwner: owner?.name || (isOwner ? name : null),
+							waifuIsOwner: Boolean(isOwner),
+							waifuInstantMarriage: Boolean(firstRollData?.instantMarriage),
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
 							waifuRollerUserName: name,
@@ -1935,7 +1949,12 @@ function makeRollHandler(genderFilter) {
 				const slot = idx + 1;
 				const char = r.character;
 				const rarity = char.rarity || char.baseRarity || "COMMON";
-				const exclMs = r.available ? getExclusiveClaimWindowMs(rarity) : 0;
+				const hasOwner = Boolean(
+					r.owner && (typeof r.owner === "string" || r.owner.name || r.owner.id)
+				);
+				const isMarried = Boolean(r.isMarried || char?.isMarried || hasOwner);
+				const isAvailable = Boolean(r.available) && !isMarried && !r.instantMarriage;
+				const exclMs = isAvailable ? getExclusiveClaimWindowMs(rarity) : 0;
 				const exclusiveUntil = exclMs > 0 ? now + exclMs : null;
 
 				return {
@@ -1944,7 +1963,8 @@ function makeRollHandler(genderFilter) {
 					characterName: char.name,
 					series: char.series,
 					rarity,
-					available: Boolean(r.available),
+					available: isAvailable,
+					isMarried,
 					isOwner: Boolean(r.isOwner),
 					instantMarriage: Boolean(r.instantMarriage),
 					instantMarriageShares: r.instantMarriageShares,

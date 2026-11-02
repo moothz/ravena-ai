@@ -236,6 +236,97 @@ async function runTests() {
 
 	console.log("✓ 6. !faz-help / !jardim no Telegram e WhatsApp validado com sucesso.\n");
 
+	// ---------------------------------------------------------------------------
+	// 7. !mu-rf / Rolls: Casados NÃO devem gerar botões numéricos no Telegram
+	// ---------------------------------------------------------------------------
+	console.log("7. Testando que waifus casadas não geram botões de número no Telegram...");
+
+	const TelegramBotClass = require("../TelegramBot");
+	const tgProto = TelegramBotClass.prototype;
+
+	// Simula multiroll com 4 slots: 1 livre, 2 casado (com dono), 3 livre, 4 já casado pelo roller (isOwner), 5 instantâneo
+	const rollsData = {
+		waifuRolls: [
+			{ slot: 1, characterId: 101, available: true, isOwner: false, claimed: false },
+			{
+				slot: 2,
+				characterId: 102,
+				available: false,
+				owner: { name: "Outro Player", id: "999" },
+				isOwner: false,
+				isMarried: true
+			},
+			{ slot: 3, characterId: 103, available: true, isOwner: false, claimed: false },
+			{ slot: 4, characterId: 104, available: true, isOwner: true, claimed: false },
+			{ slot: 5, characterId: 105, available: true, isOwner: false, instantMarriage: true }
+		]
+	};
+
+	const generatedButtons = tgProto._generateAutomaticButtons(rollsData);
+	assert.ok(Array.isArray(generatedButtons), "Deve retornar linhas de botões");
+	const flatButtons = generatedButtons.flat();
+
+	// Apenas os slots 1 e 3 devem ter botões
+	assert.strictEqual(flatButtons.length, 2, "Apenas os slots 1 e 3 devem gerar botões");
+	assert.strictEqual(flatButtons[0].text, "💍 1", "Primeiro botão deve ser do slot 1");
+	assert.strictEqual(flatButtons[1].text, "💍 3", "Segundo botão deve ser do slot 3");
+
+	// Garante que nenhum botão 2, 4 ou 5 foi criado
+	const hasSlot2 = flatButtons.some((b) => b.text.includes("2"));
+	const hasSlot4 = flatButtons.some((b) => b.text.includes("4"));
+	const hasSlot5 = flatButtons.some((b) => b.text.includes("5"));
+	assert.strictEqual(hasSlot2, false, "Slot 2 (casada) NÃO deve ter botão");
+	assert.strictEqual(hasSlot4, false, "Slot 4 (próprio) NÃO deve ter botão");
+	assert.strictEqual(hasSlot5, false, "Slot 5 (instantâneo) NÃO deve ter botão");
+
+	console.log("✓ 7. Waifus casadas e não disponíveis filtradas com sucesso sem gerar botões.\n");
+
+	// ---------------------------------------------------------------------------
+	// 8. !faz-inv: Atualização in-place da lista e botões pós-uso/plantio
+	// ---------------------------------------------------------------------------
+	console.log("8. Testando atualização in-place de !faz-inv no Telegram...");
+
+	const fakeChatId = "tg_chat_123";
+	const fakeUserId = "tg_user_456";
+	const fakeInvMsgId = "98765";
+
+	// Registra mensagem ativa do inventário
+	FazendaCommands.recordInvMessage(fakeChatId, fakeUserId, fakeInvMsgId);
+	assert.strictEqual(
+		FazendaCommands.getActiveInvMessageId(fakeChatId, fakeUserId),
+		fakeInvMsgId,
+		"ID da mensagem de inventário deve estar ativo no rastreador"
+	);
+
+	let invEdited = false;
+	let invEditedText = "";
+	let invEditedOpts = null;
+
+	const testBotTg = {
+		useTelegram: true,
+		apiClient: {
+			editMessageText: async (chatId, messageId, text, opts) => {
+				invEdited = true;
+				invEditedText = text;
+				invEditedOpts = opts;
+				return { message_id: messageId };
+			}
+		},
+		_buildInlineKeyboard: (btns) => btns
+	};
+
+	const refreshSuccess = await FazendaCommands.refreshTelegramInventoryMessage(
+		testBotTg,
+		fakeChatId,
+		fakeUserId
+	);
+	assert.strictEqual(refreshSuccess, true, "refreshTelegramInventoryMessage deve retornar true");
+	assert.strictEqual(invEdited, true, "apiClient.editMessageText deve ser invocado");
+	assert.ok(invEditedText.includes("MOCHILA"), "Texto editado deve conter a mochila");
+	assert.ok(invEditedOpts?.reply_markup?.inline_keyboard, "Deve incluir botões atualizados");
+
+	console.log("✓ 8. !faz-inv atualizado in-place com sucesso no Telegram.\n");
+
 	console.log("==================================================================");
 	console.log(" TODOS OS TESTES FORAM CONCLUÍDOS COM 100% DE SUCESSO! ");
 	console.log("==================================================================");

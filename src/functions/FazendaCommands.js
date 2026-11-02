@@ -174,6 +174,9 @@ async function getGameTexts() {
 const farmMessageTracker = new Map();
 const FARM_EDIT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos
 
+const invMessageTracker = new Map();
+const INV_EDIT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos
+
 function getFarmTrackerKey(chatId, userId) {
 	return `${chatId}:${userId}`;
 }
@@ -192,6 +195,25 @@ function getActiveFarmMessageId(chatId, userId) {
 	if (!entry) return null;
 	if (Date.now() - entry.timestamp > FARM_EDIT_MAX_AGE_MS) {
 		farmMessageTracker.delete(key);
+		return null;
+	}
+	return entry.messageId;
+}
+
+function recordInvMessage(chatId, userId, messageId) {
+	if (!chatId || !userId || !messageId) return;
+	invMessageTracker.set(getFarmTrackerKey(chatId, userId), {
+		messageId,
+		timestamp: Date.now()
+	});
+}
+
+function getActiveInvMessageId(chatId, userId) {
+	const key = getFarmTrackerKey(chatId, userId);
+	const entry = invMessageTracker.get(key);
+	if (!entry) return null;
+	if (Date.now() - entry.timestamp > INV_EDIT_MAX_AGE_MS) {
+		invMessageTracker.delete(key);
 		return null;
 	}
 	return entry.messageId;
@@ -1054,6 +1076,8 @@ async function handleFazPlantar(bot, message, _args, group) {
 			getUserDisplayName(bot, message, group)
 		]);
 
+		refreshTelegramInventoryMessage(bot, chatId, userId).catch(() => {});
+
 		const planted = plantRes.planted || (plantRes.slot ? [plantRes] : []);
 		const plantedCount =
 			plantRes.plantedCount || (plantRes.slots ? plantRes.slots.length : planted.length || 1);
@@ -1319,6 +1343,187 @@ async function handleFazComprar(bot, message) {
 }
 
 /**
+ * Constrói o texto e botões (se Telegram) do inventário
+ * @param {string} userId
+ * @param {boolean} useTelegram
+ * @returns {Promise<{ text: string, buttons: Array<Array<Object>>|null, isEmpty: boolean }>}
+ */
+async function buildInventoryContentAndButtons(userId, useTelegram = false) {
+	const [{ name: gameName }, inv] = await Promise.all([
+		getGameTexts(),
+		jardimClient.getInventory(userId)
+	]);
+
+	let bonusMsgs = [];
+	try {
+		bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+	} catch (syncErr) {
+		logger.warn(`[buildInventoryContentAndButtons] Falha ao reconciliar bônus: ${syncErr.message}`);
+	}
+	const bonusBlock =
+		bonusMsgs.length > 0 ? `\n🎁 *BÔNUS DAS SUAS COLHEITAS:*\n${bonusMsgs.join("\n")}\n` : "";
+
+	let text = `🎒 *MOCHILA DO ${gameName.toUpperCase()}* 🎒\n\n`;
+
+	const items = inv.items || inv.inventory || [];
+	if (items.length === 0) {
+		text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
+		const buttons = useTelegram ? [[{ text: "🛒 Ir para a Loja", action: "/faz-loja" }]] : null;
+		return { text: `${text}${bonusBlock}`, buttons, isEmpty: true };
+	}
+
+	const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
+	const crops = items.filter((i) => i.type === "crop" || i.category === "crop");
+	const consumables = items.filter((i) => i.type === "consumable" || i.category === "consumable");
+	const decors = items.filter((i) => i.type === "decoration" || i.category === "decoration");
+
+	const getItemPrefix = (item) => {
+		const id = item.catalogIndex ?? item.index ?? item.id ?? item.itemId;
+		return id !== undefined && id !== null && id !== "" ? `[${id}] ` : "";
+	};
+
+	if (seeds.length > 0) {
+		text += `🌱 *Sementes:*\n`;
+		seeds.forEach((s) => {
+			text += `• ${getItemPrefix(s)}${s.name}: *${s.quantity}x*\n`;
+		});
+		text += "\n";
+	}
+
+	if (crops.length > 0) {
+		text += `🌾 *Colheitas Prontas (Venda com !faz-vender):*\n`;
+		crops.forEach((c) => {
+			text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x* (💰 ${c.sellPrice || 0} cada)\n`;
+		});
+		text += "\n";
+	}
+
+	if (consumables.length > 0) {
+		text += `🧪 *Elixires & Poções:*\n`;
+		consumables.forEach((c) => {
+			text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x*\n`;
+		});
+		text += "\n";
+	}
+
+	if (decors.length > 0) {
+		text += `🏺 *Decorações:*\n`;
+		decors.forEach((d) => {
+			text += `• ${getItemPrefix(d)}${d.name}: *${d.quantity}x*\n`;
+		});
+		text += "\n";
+	}
+
+	const waifuBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
+	if (waifuBonus.rolls > 0 || waifuBonus.tickets > 0) {
+		text += `💖 *Bônus Especiais para Waifus:*\n`;
+		if (waifuBonus.rolls > 0) text += `• Rolls Gratuitos da Fazenda: *${waifuBonus.rolls}*\n`;
+		if (waifuBonus.tickets > 0) text += `• Tickets Raros de Waifus: *${waifuBonus.tickets}*\n`;
+		text += "\n";
+	}
+
+	text += `💡 *Ações:* \`!faz-plantar\`, \`!faz-usar\`, \`!faz-vender\`, \`!faz-decorar\``;
+
+	let invButtons = null;
+	if (useTelegram) {
+		invButtons = [];
+
+		// Botões para plantar sementes disponíveis
+		if (seeds.length > 0) {
+			let seedRow = [];
+			for (const s of seeds) {
+				const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
+				seedRow.push({
+					text: `🌱 Plantar ${s.name} (${s.quantity}x)`,
+					action: `/faz-plantar ${seedId}`
+				});
+				if (seedRow.length === 2) {
+					invButtons.push(seedRow);
+					seedRow = [];
+				}
+			}
+			if (seedRow.length > 0) invButtons.push(seedRow);
+		}
+
+		// Botões para usar elixires disponíveis
+		if (consumables.length > 0) {
+			let consRow = [];
+			for (const c of consumables) {
+				const consId = c.catalogIndex ?? c.index ?? c.id ?? c.itemId;
+				consRow.push({
+					text: `🧪 Usar ${c.name} (${c.quantity}x)`,
+					action: `/faz-usar ${consId}`
+				});
+				if (consRow.length === 2) {
+					invButtons.push(consRow);
+					consRow = [];
+				}
+			}
+			if (consRow.length > 0) invButtons.push(consRow);
+		}
+
+		// Botão para vender tudo se tiver colheitas
+		if (crops.length > 0) {
+			invButtons.push([
+				{
+					text: `💰 Vender Todas as Colheitas`,
+					action: `/faz-vender tudo`
+				}
+			]);
+		}
+
+		// Navegação rápida
+		invButtons.push([
+			{ text: "🌾 Ver Fazenda", action: "/fazenda" },
+			{ text: "🛒 Loja", action: "/faz-loja" }
+		]);
+	}
+
+	return { text: `${text}${bonusBlock}`, buttons: invButtons, isEmpty: false };
+}
+
+/**
+ * Atualiza in-place a mensagem de inventário no Telegram se houver uma ativa para o usuário
+ * @param {Object} bot
+ * @param {string} chatId
+ * @param {string} userId
+ * @returns {Promise<boolean>}
+ */
+async function refreshTelegramInventoryMessage(bot, chatId, userId) {
+	if (!bot || !bot.useTelegram) return false;
+	const invMsgId = getActiveInvMessageId(chatId, userId);
+	if (!invMsgId) return false;
+
+	try {
+		const { text, buttons } = await buildInventoryContentAndButtons(userId, true);
+		const tgOptions = {};
+		if (buttons && Array.isArray(buttons) && typeof bot._buildInlineKeyboard === "function") {
+			tgOptions.reply_markup = {
+				inline_keyboard: bot._buildInlineKeyboard(buttons)
+			};
+		}
+		if (bot.apiClient && typeof bot.apiClient.editMessageText === "function") {
+			await bot.apiClient.editMessageText(chatId, invMsgId, text, tgOptions);
+			return true;
+		}
+	} catch (err) {
+		logger.debug(
+			`[refreshTelegramInventoryMessage] Falha ao atualizar mensagem do inventário: ${err.message}`
+		);
+		if (
+			err.message &&
+			(err.message.includes("message to edit not found") ||
+				err.message.includes("message is not modified"))
+		) {
+			if (err.message.includes("message to edit not found")) {
+				invMessageTracker.delete(getFarmTrackerKey(chatId, userId));
+			}
+		}
+	}
+	return false;
+}
+
+/**
  * !faz-inventario: Exibe o inventário do jogador (sementes, consumíveis, colheitas e decorações)
  */
 async function handleFazInventario(bot, message) {
@@ -1326,147 +1531,18 @@ async function handleFazInventario(bot, message) {
 	const chatId = getChatId(message);
 
 	try {
-		const [{ name: gameName }, inv] = await Promise.all([
-			getGameTexts(),
-			jardimClient.getInventory(userId)
-		]);
-
-		// Credita bônus pendentes (colheitas antigas, inclusive as feitas no painel web)
-		// antes de montar a tela, para o jogador ver o resumo junto da mochila.
-		let bonusMsgs = [];
-		try {
-			bonusMsgs = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
-		} catch (syncErr) {
-			logger.warn(`[handleFazInventario] Falha ao reconciliar bônus: ${syncErr.message}`);
-		}
-		const bonusBlock =
-			bonusMsgs.length > 0 ? `\n🎁 *BÔNUS DAS SUAS COLHEITAS:*\n${bonusMsgs.join("\n")}\n` : "";
-
-		let text = `🎒 *MOCHILA DO ${gameName.toUpperCase()}* 🎒\n\n`;
-
-		const items = inv.items || inv.inventory || [];
-		if (items.length === 0) {
-			text += `Sua mochila está completamente vazia no momento.\nVisite a loja com \`!faz-loja\` para adquirir sementes!`;
-			const extraOpts = {};
-			if (bot && bot.useTelegram) {
-				extraOpts.telegram = {
-					buttons: [[{ text: "🛒 Ir para a Loja", action: "/faz-loja" }]]
-				};
-			}
-			return replyReturnMessage(chatId, `${text}${bonusBlock}`, message, extraOpts);
-		}
-
-		const seeds = items.filter((i) => i.type === "seed" || i.category === "seed");
-		const crops = items.filter((i) => i.type === "crop" || i.category === "crop");
-		const consumables = items.filter((i) => i.type === "consumable" || i.category === "consumable");
-		const decors = items.filter((i) => i.type === "decoration" || i.category === "decoration");
-
-		const getItemPrefix = (item) => {
-			const id = item.catalogIndex ?? item.index ?? item.id ?? item.itemId;
-			return id !== undefined && id !== null && id !== "" ? `[${id}] ` : "";
+		const { text, buttons } = await buildInventoryContentAndButtons(
+			userId,
+			Boolean(bot && bot.useTelegram)
+		);
+		const extraOpts = {
+			invData: { userId }
 		};
-
-		if (seeds.length > 0) {
-			text += `🌱 *Sementes:*\n`;
-			seeds.forEach((s) => {
-				text += `• ${getItemPrefix(s)}${s.name}: *${s.quantity}x*\n`;
-			});
-			text += "\n";
+		if (bot && bot.useTelegram && buttons) {
+			extraOpts.telegram = { buttons };
 		}
 
-		if (crops.length > 0) {
-			text += `🌾 *Colheitas Prontas (Venda com !faz-vender):*\n`;
-			crops.forEach((c) => {
-				text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x* (💰 ${c.sellPrice || 0} cada)\n`;
-			});
-			text += "\n";
-		}
-
-		if (consumables.length > 0) {
-			text += `🧪 *Elixires & Poções:*\n`;
-			consumables.forEach((c) => {
-				text += `• ${getItemPrefix(c)}${c.name}: *${c.quantity}x*\n`;
-			});
-			text += "\n";
-		}
-
-		if (decors.length > 0) {
-			text += `🏺 *Decorações:*\n`;
-			decors.forEach((d) => {
-				text += `• ${getItemPrefix(d)}${d.name}: *${d.quantity}x*\n`;
-			});
-			text += "\n";
-		}
-
-		// Checa também se possui bônus acumulados de Waifus ganhos da fazenda
-		const waifuBonus = await ShadowGardenBonusService.getWaifuBonus(userId);
-		if (waifuBonus.rolls > 0 || waifuBonus.tickets > 0) {
-			text += `💖 *Bônus Especiais para Waifus:*\n`;
-			if (waifuBonus.rolls > 0) text += `• Rolls Gratuitos da Fazenda: *${waifuBonus.rolls}*\n`;
-			if (waifuBonus.tickets > 0) text += `• Tickets Raros de Waifus: *${waifuBonus.tickets}*\n`;
-			text += "\n";
-		}
-
-		text += `💡 *Ações:* \`!faz-plantar\`, \`!faz-usar\`, \`!faz-vender\`, \`!faz-decorar\``;
-
-		const extraOpts = {};
-		if (bot && bot.useTelegram) {
-			const invButtons = [];
-
-			// Botões para plantar sementes disponíveis
-			if (seeds.length > 0) {
-				let seedRow = [];
-				for (const s of seeds) {
-					const seedId = s.catalogIndex ?? s.index ?? s.id ?? s.itemId;
-					seedRow.push({
-						text: `🌱 Plantar ${s.name} (${s.quantity}x)`,
-						action: `/faz-plantar ${seedId}`
-					});
-					if (seedRow.length === 2) {
-						invButtons.push(seedRow);
-						seedRow = [];
-					}
-				}
-				if (seedRow.length > 0) invButtons.push(seedRow);
-			}
-
-			// Botões para usar elixires disponíveis
-			if (consumables.length > 0) {
-				let consRow = [];
-				for (const c of consumables) {
-					const consId = c.catalogIndex ?? c.index ?? c.id ?? c.itemId;
-					consRow.push({
-						text: `🧪 Usar ${c.name} (${c.quantity}x)`,
-						action: `/faz-usar ${consId}`
-					});
-					if (consRow.length === 2) {
-						invButtons.push(consRow);
-						consRow = [];
-					}
-				}
-				if (consRow.length > 0) invButtons.push(consRow);
-			}
-
-			// Botão para vender tudo se tiver colheitas
-			if (crops.length > 0) {
-				invButtons.push([
-					{
-						text: `💰 Vender Todas as Colheitas`,
-						action: `/faz-vender tudo`
-					}
-				]);
-			}
-
-			// Navegação rápida
-			invButtons.push([
-				{ text: "🌾 Ver Fazenda", action: "/fazenda" },
-				{ text: "🛒 Loja", action: "/faz-loja" }
-			]);
-
-			extraOpts.telegram = { buttons: invButtons };
-		}
-
-		return replyReturnMessage(chatId, `${text}${bonusBlock}`, message, extraOpts);
+		return replyReturnMessage(chatId, text, message, extraOpts);
 	} catch (err) {
 		logger.error(`[handleFazInventario] Erro ao carregar inventário: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha ao buscar inventário: ${err.message}`, message);
@@ -1494,6 +1570,7 @@ async function handleFazUsar(bot, message) {
 
 	try {
 		const useRes = await jardimClient.useConsumable(userId, itemParam, slotParam);
+		refreshTelegramInventoryMessage(bot, chatId, userId).catch(() => {});
 
 		let text = `🧪 *ELIXIR UTILIZADO!* 🧪\n\n`;
 		text += `• Efeito: *${useRes.message || useRes.effect || "Elixir ativado com sucesso!"}*\n`;
@@ -1537,6 +1614,8 @@ async function handleFazVender(bot, message) {
 			...(itemParam && { itemId: itemParam }),
 			...(quantity && { quantity })
 		});
+
+		refreshTelegramInventoryMessage(bot, chatId, userId).catch(() => {});
 
 		const earned = sellRes.totalCoinsEarned ?? sellRes.earnedCoins ?? sellRes.totalGained ?? 0;
 		const balance = sellRes.newCoinsBalance ?? sellRes.currentCoins ?? sellRes.coins ?? 0;
@@ -2553,5 +2632,9 @@ module.exports = {
 	extractQualityFlag,
 	recordFarmMessage,
 	getActiveFarmMessageId,
+	recordInvMessage,
+	getActiveInvMessageId,
+	refreshTelegramInventoryMessage,
+	buildInventoryContentAndButtons,
 	handleFazendaMenuCallback
 };
