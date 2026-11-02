@@ -2136,6 +2136,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 					}
 				}
 
+				if ((bot.useTelegram || bot.useDiscord) && botInfoMessage) {
+					botInfoMessage += `\n\n> Ps.: Você pode vincular sua conta do whatsapp da ravena com as outras plataformas enviando !vincular`;
+				}
+
 				if (!joinSilencioso && botInfoMessage && bot.sendJoinInfo !== false) {
 					bot.sendMessage(targetId, botInfoMessage).catch((error) => {
 						this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);

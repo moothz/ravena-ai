@@ -160,8 +160,24 @@ async function desvincularCommand(bot, message, args, group) {
 
 		const whatsappId = String(message.author).split("@")[0].replace(/\D/g, "");
 		const platformArg = args && args[0] ? args[0].toLowerCase().trim() : null;
+		const links = accountLinkService.getAllLinksForWhatsApp(whatsappId);
+
+		if (!links.telegram && !links.discord) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content:
+					"ℹ️ Você não possui nenhuma conta de Telegram ou Discord vinculada ao seu WhatsApp."
+			});
+		}
 
 		if (platformArg === "telegram" || platformArg === "discord") {
+			if (!links[platformArg]) {
+				return new ReturnMessage({
+					chatId: message.author,
+					content: `ℹ️ Você não possui nenhuma conta do **${platformArg.toUpperCase()}** vinculada ao seu WhatsApp.`
+				});
+			}
+
 			await accountLinkService.unlinkWhatsApp(whatsappId, platformArg);
 			return new ReturnMessage({
 				chatId: message.author,
