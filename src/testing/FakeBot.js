@@ -302,6 +302,13 @@ class FakeBot {
 	}
 
 	/**
+	 * Stub de reação
+	 */
+	async react() {
+		return true;
+	}
+
+	/**
 	 * Simula edição de mensagem no WhatsApp
 	 * @param {string} chat - JID do chat
 	 * @param {string} messageId - ID da mensagem editada

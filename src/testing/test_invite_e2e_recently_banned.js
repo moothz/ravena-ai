@@ -93,7 +93,7 @@ async function runTests() {
 		name: "Pessoa Nova",
 		content: "https://chat.whatsapp.com/grupo_novo",
 		type: "text",
-		origin: { react: () => {} }
+		origin: { react: async () => {} }
 	};
 
 	await inviteSystem.handleInviteRequest(
@@ -125,7 +125,7 @@ async function runTests() {
 		name: "Admin Grupo Grande",
 		content: "https://chat.whatsapp.com/grupo_com_banido_grande",
 		type: "text",
-		origin: { react: () => {} }
+		origin: { react: async () => {} }
 	};
 
 	await inviteSystem.handleInviteRequest(
@@ -155,7 +155,7 @@ async function runTests() {
 		name: "Admin Grupo Pequeno",
 		content: "https://chat.whatsapp.com/grupo_com_banido_pequeno",
 		type: "text",
-		origin: { react: () => {} }
+		origin: { react: async () => {} }
 	};
 
 	await inviteSystem.handleInviteRequest(
@@ -229,7 +229,7 @@ async function runTests() {
 		name: "Super Doador",
 		content: "https://chat.whatsapp.com/grupo_novo",
 		type: "text",
-		origin: { react: () => {} }
+		origin: { react: async () => {} }
 	};
 
 	await inviteSystem.handleInviteRequest(

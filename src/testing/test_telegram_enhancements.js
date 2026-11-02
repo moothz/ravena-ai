@@ -306,6 +306,74 @@ async function runTests() {
 
 	console.log("✓ 6. Menu interativo no Telegram validado com sucesso.");
 
+	// ---------------------------------------------------------------------------
+	// 7. Testes de fallback assíncrono para reactions (message.origin.react(...).catch())
+	// ---------------------------------------------------------------------------
+	console.log(
+		"\n7. Testando fallback assíncrono de reactions no TelegramBot (evita erro .catch is not a function)..."
+	);
+
+	const dummyTelegramBot = new WhatsAppBotTelegram({
+		telegramBotToken: "123456:dummy_test_token",
+		id: "test-tg-bot"
+	});
+	dummyTelegramBot.botInfo = { id: 999999, username: "test_tg_bot" };
+
+	const rawTgMsg = {
+		message_id: 999,
+		date: Math.floor(Date.now() / 1000),
+		chat: { id: 12345, type: "supergroup", title: "Grupo Teste" },
+		from: { id: 54321, first_name: "Usuario", username: "usuario" },
+		text: "/imagine batata frita"
+	};
+
+	const formattedTgMsg = await dummyTelegramBot.formatMessageFromTelegram(rawTgMsg);
+
+	assert.ok(typeof formattedTgMsg.react === "function", "formattedTgMsg.react deve ser função");
+	assert.ok(
+		typeof formattedTgMsg.origin.react === "function",
+		"formattedTgMsg.origin.react deve ser função"
+	);
+
+	// Valida que .catch() funciona normalmente (Promise válida retornada)
+	let reactCatchCalled = false;
+	const p1 = formattedTgMsg.origin.react("⌛️").catch(() => {
+		reactCatchCalled = true;
+	});
+	assert.ok(p1 && typeof p1.then === "function", "origin.react deve retornar uma Promise");
+	const res1 = await p1;
+	assert.strictEqual(res1, true, "origin.react deve resolver para true");
+	assert.strictEqual(reactCatchCalled, false, "Catch não deve ser chamado em sucesso");
+
+	// Valida no nível da raiz da mensagem também
+	const p2 = formattedTgMsg.react("⌛️").catch(() => {});
+	assert.ok(p2 && typeof p2.then === "function", "msg.react deve retornar uma Promise");
+	const res2 = await p2;
+	assert.strictEqual(res2, true, "msg.react deve resolver para true");
+
+	// Valida método bot.react(...)
+	assert.ok(typeof dummyTelegramBot.react === "function", "bot.react deve ser função");
+	const p3 = dummyTelegramBot.react(rawTgMsg, "🔗").catch(() => {});
+	assert.ok(p3 && typeof p3.then === "function", "bot.react deve retornar uma Promise");
+	const res3 = await p3;
+	assert.strictEqual(res3, true, "bot.react deve resolver para true");
+
+	// Simula a chamada exata do /mu-adm (linha 6058 do WaifuCommands)
+	let muAdmReactionSucceeded = false;
+	try {
+		await formattedTgMsg.origin.react("🔗").catch(() => {});
+		muAdmReactionSucceeded = true;
+	} catch (e) {
+		muAdmReactionSucceeded = false;
+	}
+	assert.strictEqual(
+		muAdmReactionSucceeded,
+		true,
+		"A reação do /mu-adm não pode disparar erro no Telegram"
+	);
+
+	console.log("✓ 7. Fallback assíncrono de reactions no Telegram validado com sucesso.");
+
 	console.log("\n=======================================================");
 	console.log(" TODOS OS TESTES FORAM CONCLUÍDOS COM SUCESSO (100%)! ");
 	console.log("=======================================================");

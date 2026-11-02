@@ -6055,7 +6055,9 @@ async function painelWebAdmin(bot, message) {
 			}
 
 			if (message.origin && typeof message.origin.react === "function") {
-				await message.origin.react("🔗").catch(() => {});
+				try {
+					await Promise.resolve(message.origin.react("🔗")).catch(() => {});
+				} catch (_) {}
 			}
 
 			return null;
@@ -6123,7 +6125,9 @@ async function waifinderWeb(bot, message) {
 			}
 
 			if (message.origin && typeof message.origin.react === "function") {
-				await message.origin.react("🔥").catch(() => {});
+				try {
+					await Promise.resolve(message.origin.react("🔥")).catch(() => {});
+				} catch (_) {}
 			}
 
 			return null;

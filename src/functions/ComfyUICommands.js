@@ -458,7 +458,11 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 
 	try {
 		// Reação inicial de carregamento (assíncrona)
-		message.origin.react(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
+		if (typeof message.origin?.react === "function") {
+			try {
+				Promise.resolve(message.origin.react(process.env.LOADING_EMOJI ?? "⌛️")).catch(() => {});
+			} catch (_) {}
+		}
 
 		const EventHandler = require("../EventHandler");
 		EventHandler.getInstance().emit("activity", { type: "imagine" });

@@ -111,7 +111,10 @@ function createMessage(overrides = {}) {
 			: null,
 
 		// Permite que os testes adicionem campos extras
-		...overrides
+		...overrides,
+
+		// Métodos seguros na raiz da mensagem
+		react: async (emoji) => true
 	};
 
 	// Garante que author/group/type/content/origin não sejam sobrescritos acidentalmente

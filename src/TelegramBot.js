@@ -36,7 +36,7 @@ class WhatsAppBotTelegram {
 
 		// Opções específicas do Telegram
 		this.useTelegram = true;
-		this.telegramBotToken = options.telegramBotToken;
+		this.telegramBotToken = options.telegramBotToken || options.token;
 		this.telegramSecretToken = options.telegramSecretToken || "";
 
 		// Opções compartilhadas utilizadas
@@ -507,7 +507,7 @@ class WhatsAppBotTelegram {
 					quotedMsgId: `${chatId}_${from.id}_${message.message_id}`,
 					isCallbackQuery: true,
 					callbackQueryId: queryId,
-					react: () => true,
+					react: async () => true,
 					getContact: async () => this.getContactDetails(authorId, authorName),
 					getChat: async () => this.getChatDetails(chatId),
 					delete: async () => this.apiClient.deleteMessage(chatId, message.message_id),
@@ -516,7 +516,7 @@ class WhatsAppBotTelegram {
 						id: { _serialized: `${chatId}_${from.id}_${message.message_id}` },
 						author: authorId,
 						from: `${chatId}`,
-						react: () => true,
+						react: async () => true,
 						getChat: async () => this.getChatDetails(chatId),
 						getQuotedMessage: async () => this.formatMessageFromTelegram(message),
 						delete: async () => this.apiClient.deleteMessage(chatId, message.message_id),
@@ -643,7 +643,7 @@ class WhatsAppBotTelegram {
 					telegramMessage: message,
 					id: message.message_id,
 					key: { id: message.message_id }, // Fallback pro redis cache
-					fromMe: message.from.id === this.botInfo.id,
+					fromMe: message.from.id === this.botInfo?.id,
 					group: isGroup ? chatId : null,
 					from: isGroup ? chatId : authorId,
 					author: authorId,
@@ -660,7 +660,7 @@ class WhatsAppBotTelegram {
 					timestamp: message.date,
 					hasMedia: !!mediaInfo,
 
-					react: () => true,
+					react: async () => true,
 					getContact: async () => this.getContactDetails(authorId, authorName),
 					getChat: async () => this.getChatDetails(chatId),
 					delete: async () => this.apiClient.deleteMessage(chatId, message.message_id),
@@ -680,7 +680,7 @@ class WhatsAppBotTelegram {
 						id: { _serialized: `${chatId}_${message.from.id}_${message.message_id}` },
 						author: authorId,
 						from: chatId,
-						react: () => true,
+						react: async () => true,
 						getChat: async () => this.getChatDetails(chatId),
 						getQuotedMessage: async () => {
 							if (message.reply_to_message) {
@@ -906,7 +906,8 @@ class WhatsAppBotTelegram {
 					ack: 1,
 					body: content,
 					_data: editResp,
-					isEdited: true
+					isEdited: true,
+					react: async () => true
 				};
 			}
 
@@ -939,7 +940,8 @@ class WhatsAppBotTelegram {
 				id: { _serialized: `${response.chat.id}_${response.from.id}_${response.message_id}` },
 				ack: 1, // Simula o envio
 				body: content,
-				_data: response
+				_data: response,
+				react: async () => true
 			};
 		} catch (error) {
 			this.logger.error(`Error sending message to ${chatId} via Telegram:`);
@@ -1226,6 +1228,15 @@ class WhatsAppBotTelegram {
 			}
 		}
 		return results;
+	}
+
+	/**
+	 * Reação de fallback (Telegram não possui reações nativas tratadas desta forma).
+	 * Retorna Promise resolvida com true para garantir compatibilidade com chamadas assíncronas e .catch().
+	 * @returns {Promise<boolean>}
+	 */
+	async react() {
+		return true;
 	}
 
 	// --- Funções de Grupo ---
