@@ -140,14 +140,16 @@ async function runTests() {
 	const btnsWithHarvest = FazendaCommands.buildFarmViewButtons(true, 3);
 	assert.strictEqual(btnsWithHarvest.length, 2, "Com colheita, deve ter 2 linhas de botões");
 	assert.strictEqual(btnsWithHarvest[0][0].text, "🌾 Colher Tudo (3)");
-	assert.strictEqual(btnsWithHarvest[1][0].text, "🛒 Loja");
-	assert.strictEqual(btnsWithHarvest[1][1].text, "🎒 Mochila");
+	assert.strictEqual(btnsWithHarvest[1][0].text, "🔄 Atualizar");
+	assert.strictEqual(btnsWithHarvest[1][1].text, "🛒 Loja");
+	assert.strictEqual(btnsWithHarvest[1][2].text, "🎒 Mochila");
 
 	// Testa buildFarmViewButtons sem colheita pronta
 	const btnsNoHarvest = FazendaCommands.buildFarmViewButtons(false, 0);
 	assert.strictEqual(btnsNoHarvest.length, 1, "Sem colheita, deve ter 1 linha de botões");
-	assert.strictEqual(btnsNoHarvest[0][0].text, "🛒 Loja");
-	assert.strictEqual(btnsNoHarvest[0][1].text, "🎒 Mochila");
+	assert.strictEqual(btnsNoHarvest[0][0].text, "🔄 Atualizar");
+	assert.strictEqual(btnsNoHarvest[0][1].text, "🛒 Loja");
+	assert.strictEqual(btnsNoHarvest[0][2].text, "🎒 Mochila");
 	const flatNoHarvest = btnsNoHarvest.flat();
 	assert.strictEqual(
 		flatNoHarvest.some((b) => b.text.includes("Ver Fazenda")),

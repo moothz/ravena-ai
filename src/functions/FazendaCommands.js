@@ -237,6 +237,7 @@ function buildFarmViewButtons(canHarvest = false, readyCount = 0) {
 		]);
 	}
 	buttons.push([
+		{ text: "🔄 Atualizar", action: "/fazenda" },
 		{ text: "🛒 Loja", action: "/faz-loja" },
 		{ text: "🎒 Mochila", action: "/faz-inv" }
 	]);
@@ -611,9 +612,15 @@ async function handleFazenda(bot, message, _args, group) {
 		const canHarvest = readyCount > 0 || dryCount > 0;
 		const farmButtons = buildFarmViewButtons(canHarvest, readyCount);
 
+		let activeFarmId = null;
+		if (bot && bot.useTelegram) {
+			activeFarmId = getActiveFarmMessageId(chatId, userId);
+		}
+
 		const farmOptions = {
 			farmData: { userId },
 			telegram: {
+				editMessageId: activeFarmId || null,
 				buttons: farmButtons
 			},
 			...(canHarvest ? { reaction: "🌾" } : {})
@@ -952,8 +959,9 @@ async function handleFazColher(bot, message, _args, group) {
 				colherOptions.telegram = {
 					editMessageId: activeFarmId || null,
 					buttons: [
+						[{ text: "🌱 Plantar", action: "/faz-plantar" }],
 						[
-							{ text: "🌱 Plantar", action: "/faz-plantar" },
+							{ text: "🔄 Atualizar", action: "/fazenda" },
 							{ text: "🛒 Loja", action: "/faz-loja" },
 							{ text: "🎒 Mochila", action: "/faz-inv" }
 						]
