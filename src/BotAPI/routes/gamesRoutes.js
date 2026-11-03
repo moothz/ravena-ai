@@ -21,6 +21,12 @@
 
 const ShadowGardenBonusService = require("../../services/ShadowGardenBonusService");
 const FishingGame = require("../../functions/FishingGame");
+const bankService = require("../../services/BankService");
+const Database = require("../../utils/Database");
+const ShadowGardenClient = require("../../services/ShadowGardenClient");
+
+const database = Database.getInstance();
+const jardimClient = new ShadowGardenClient();
 
 const NOTICE_HEADER = "🌑 *Jardim das Sombras* — bônus da sua colheita!";
 
@@ -163,6 +169,170 @@ function registerGamesRoutes(api) {
 		} catch (error) {
 			api.logger.error("[gamesRoutes] Erro ao consultar bônus da fazenda:", error);
 			return res.status(500).json({ ok: false, error: "Falha ao consultar os bônus." });
+		}
+	});
+
+	// =========================================================================
+	// ROTAS DO RAVENABANK
+	// =========================================================================
+
+	// GET /api/games/bank/public — dados macroeconômicos e cotações públicas
+	app.get("/api/games/bank/public", api.generalLimiter, async (req, res) => {
+		try {
+			const macro = await bankService.getMacroEconomics();
+			return res.json({ ok: true, data: macro });
+		} catch (error) {
+			api.logger.error("[gamesRoutes] Erro ao carregar dados do banco:", error);
+			return res.status(500).json({ ok: false, error: "Falha ao carregar dados do banco." });
+		}
+	});
+
+	// GET /api/games/bank/session — valida e renova sessão por 3 dias
+	app.get("/api/games/bank/session", api.generalLimiter, async (req, res) => {
+		const token = req.query.token || req.headers["x-bank-token"];
+		if (!token) {
+			return res.json({ ok: true, authenticated: false });
+		}
+
+		try {
+			const session = await bankService.verifyAndExtendSession(token);
+			if (!session) {
+				return res.json({ ok: true, authenticated: false, reason: "Sessão expirada ou inválida." });
+			}
+
+			const userId = session.userId;
+			const [account, quota, txs] = await Promise.all([
+				bankService.getAccount(userId),
+				bankService.getDailyQuota(userId),
+				bankService.getTransactions(userId, 8)
+			]);
+
+			// Saldos nos jogos
+			let fishWeight = 0;
+			let fishCount = 0;
+			try {
+				const fishRow = await database.dbGet(
+					"fishing",
+					"SELECT COUNT(*) as c, SUM(weight) as w FROM fishing_inventory WHERE user_id = ? AND (is_rare = 0 OR is_rare IS NULL)",
+					[userId]
+				);
+				fishWeight = fishRow?.w || 0;
+				fishCount = fishRow?.c || 0;
+			} catch (e) {}
+
+			let zinthos = 0;
+			try {
+				const axios = require("axios");
+				const wUrl = (process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030").replace(
+					/\/+$/,
+					""
+				);
+				const { data } = await axios.get(`${wUrl}/kakera/${userId}`, {
+					headers: { Authorization: `Bearer ${process.env.WAIFULETES_API_KEY || ""}` },
+					timeout: 4000
+				});
+				zinthos = data?.data?.balance ?? data?.data?.kakera ?? 0;
+			} catch (e) {}
+
+			let gardenCoins = 0;
+			try {
+				const status = await jardimClient.getStatus(userId);
+				gardenCoins = status?.coins || 0;
+			} catch (e) {}
+
+			return res.json({
+				ok: true,
+				authenticated: true,
+				user: {
+					userId,
+					expiresAt: session.expiresAt,
+					account,
+					quota,
+					transactions: txs,
+					holdings: {
+						fishWeight,
+						fishCount,
+						zinthos,
+						gardenCoins
+					}
+				}
+			});
+		} catch (error) {
+			api.logger.error("[gamesRoutes] Erro na sessão do banco:", error);
+			return res.status(500).json({ ok: false, error: "Falha ao validar sessão." });
+		}
+	});
+
+	// POST /api/games/bank/logout — encerra sessão
+	app.post("/api/games/bank/logout", api.generalLimiter, async (req, res) => {
+		const token = req.body?.token || req.headers["x-bank-token"];
+		if (!token) return res.json({ ok: true });
+
+		try {
+			await bankService.destroySession(token);
+			return res.json({ ok: true });
+		} catch (error) {
+			return res.status(500).json({ ok: false, error: "Falha ao encerrar sessão." });
+		}
+	});
+
+	// POST /api/games/bank/trade — executa câmbio a partir da web autenticada
+	app.post("/api/games/bank/trade", api.generalLimiter, async (req, res) => {
+		const token = req.body?.token || req.headers["x-bank-token"];
+		if (!token) {
+			return res.status(401).json({ ok: false, error: "Sessão não autenticada." });
+		}
+
+		try {
+			const session = await bankService.verifyAndExtendSession(token);
+			if (!session) {
+				return res
+					.status(401)
+					.json({ ok: false, error: "Sessão expirada. Solicite novo link via !banco-adm." });
+			}
+
+			const userId = session.userId;
+			const { operation, game, amount } = req.body;
+
+			if (!operation || !game) {
+				return res
+					.status(400)
+					.json({ ok: false, error: "Parâmetros 'operation' e 'game' são obrigatórios." });
+			}
+
+			let result;
+			if (operation === "deposit") {
+				if (game === "pesca" || game === "peixe") {
+					result = await bankService.depositFish(userId, amount);
+				} else if (game === "zinthos" || game === "waifu") {
+					result = await bankService.depositZinthos(userId, amount);
+				} else if (game === "jardim" || game === "fazenda") {
+					result = await bankService.depositJardim(userId, amount);
+				} else {
+					return res.status(400).json({ ok: false, error: "Jogo inválido para depósito." });
+				}
+			} else if (operation === "withdraw") {
+				if (game === "zinthos" || game === "waifu") {
+					result = await bankService.withdrawZinthos(userId, amount);
+				} else if (game === "jardim" || game === "fazenda") {
+					result = await bankService.withdrawJardim(userId, amount);
+				} else if (game === "pesca" || game === "peixe") {
+					return res
+						.status(400)
+						.json({ ok: false, error: "Não é permitido converter Runas para peixes." });
+				} else {
+					return res.status(400).json({ ok: false, error: "Destino inválido para saque." });
+				}
+			} else {
+				return res
+					.status(400)
+					.json({ ok: false, error: "Operação inválida. Use 'deposit' ou 'withdraw'." });
+			}
+
+			return res.json({ ok: true, result });
+		} catch (error) {
+			api.logger.warn(`[gamesRoutes] Falha no trade do banco: ${error.message}`);
+			return res.status(400).json({ ok: false, error: error.message });
 		}
 	});
 }

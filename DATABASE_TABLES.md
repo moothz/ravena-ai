@@ -595,4 +595,73 @@ Armazena as ocorrências capturadas quando uma mensagem bate com uma regra ativa
 | `created_at` | DATETIME | Data e hora de detecção |
 | `completed_at` | DATETIME | Data e hora em que as 5 mensagens posteriores foram concluídas |
 
+### `bank.db`
+Banco de dados central do sistema econômico **RavenaBank** (moeda global Runas).
+
+#### `bank_accounts`
+Contas bancárias dos usuários com saldo de Runas e histórico acumulado.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `user_id` | TEXT PK | JID ou número do usuário |
+| `runas` | REAL | Saldo atual de Runas |
+| `total_deposited_runas` | REAL | Total histórico de Runas recebidas em depósitos |
+| `total_withdrawn_runas` | REAL | Total histórico de Runas debitadas em saques |
+| `created_at` | INTEGER | Timestamp de criação da conta (ms) |
+| `updated_at` | INTEGER | Timestamp da última atualização (ms) |
+
+#### `bank_daily_rates`
+Histórico das cotações oficiais diárias recalculadas às 04:00 AM BRT.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `date` | TEXT PK | Data de vigência no formato `YYYY-MM-DD` |
+| `runas_per_kg_fish` | REAL | Valor de 1 kg de peixe comum em Runas |
+| `runas_per_zinthos` | REAL | Valor de 1 Zinthos em Runas |
+| `runas_per_jardim_coin` | REAL | Valor de 1 Moeda do Jardim em Runas |
+| `fish_multiplier` | REAL | Multiplicador de mercado aplicado à Pesca |
+| `waifu_multiplier` | REAL | Multiplicador de mercado aplicado ao Waifuletes |
+| `jardim_multiplier` | REAL | Multiplicador de mercado aplicado ao Jardim |
+| `updated_at` | INTEGER | Timestamp da rotação cambial (ms) |
+
+#### `bank_sessions`
+Sessões autenticadas do web app com prazo de validade deslizante de 3 dias (`!banco-adm`).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `token` | TEXT PK | Token efémero seguro de autenticação (hex 48 chars) |
+| `user_id` | TEXT | JID ou número do usuário associado |
+| `created_at` | INTEGER | Timestamp de emissão (ms) |
+| `last_accessed_at` | INTEGER | Timestamp do último acesso ou trade web (ms) |
+| `expires_at` | INTEGER | Timestamp de expiração (renovado em +3 dias a cada acesso) |
+
+#### `bank_transactions`
+Histórico de transações de câmbio (depósitos e saques).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `user_id` | TEXT | JID ou número do usuário |
+| `type` | TEXT | 'DEPOSIT' ou 'WITHDRAW' |
+| `game` | TEXT | 'pesca', 'waifu' ou 'jardim' |
+| `game_amount` | REAL | Quantidade do recurso do jogo envolvida |
+| `runas_amount` | REAL | Quantidade de Runas movimentadas |
+| `spread_rate` | REAL | Taxa percentual de spread aplicada (0.03 a 0.10) |
+| `spread_fee_runas` | REAL | Valor em Runas destruído pelo spread deflacionário |
+| `details_json` | TEXT | Metadados JSON adicionais da transação |
+| `timestamp` | INTEGER | Timestamp da transação (ms) |
+
+#### `bank_daily_quotas`
+Rastreamento do consumo das cotas diárias de câmbio por usuário (reset às 04:00 AM).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `user_id` | TEXT | JID ou número do usuário |
+| `date` | TEXT | Data da cota (`YYYY-MM-DD`) |
+| `fish_kg_used` | REAL | Total de kg de peixe vendidos hoje (teto: 1.500 kg) |
+| `zinthos_used` | REAL | Total de Zinthos convertidos hoje (teto: 9.000 Z) |
+| `jardim_coins_used` | REAL | Total de moedas do Jardim convertidas hoje (teto: 30.000 MJ) |
+
+
+
 

@@ -14,6 +14,7 @@ const MobileApp = {
         { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.png',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
         { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.png',    window: 'fishing',    iconFa: 'fa-fish' },
         { id: 'waifuletes', label: 'Waifuletes',   icon: 'img/icons/waifuletes.svg', window: 'waifuletes', iconFa: 'fa-heart' },
+        { id: 'ravenabank', label: 'RavenaBank',   icon: 'img/icons/commands.svg',   window: 'ravenabank', iconFa: 'fa-landmark' },
         { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.png',     window: 'invite',     iconFa: 'fa-envelope' },
         { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
         { id: 'reload',     label: 'Recarregar',   action: 'reload',                 iconFa: 'fa-rotate-right' }

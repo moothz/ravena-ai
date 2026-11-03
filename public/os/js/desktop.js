@@ -14,6 +14,7 @@ const Desktop = {
         { id: 'nudenet',    label: 'Detector NSFW', tooltip: 'Detecção e moderação de conteúdo adulto / NSFW', icon: 'img/icons/nudenet.png', window: 'nudenet' },
         { id: 'fishing',    label: 'Pesca',         tooltip: 'Hall da fama dos peixes lendários pescados',  icon: 'img/icons/fishing.png',    window: 'fishing' },
         { id: 'waifuletes', label: 'Waifuletes',    tooltip: 'Catálogo de waifus, husbandos e personagens', icon: 'img/icons/waifuletes.svg', window: 'waifuletes' },
+        { id: 'ravenabank', label: 'RavenaBank',    tooltip: 'Banco Central, câmbio de moedas e economia de Runas', icon: 'img/icons/commands.svg', window: 'ravenabank' },
         { id: 'github',     label: 'GitHub',        tooltip: 'Código-fonte oficial da RavenaBot',           icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai' },
         { id: 'invite',     label: 'Quero Uma!',    tooltip: 'Instruções para adicionar o bot no seu grupo', icon: 'img/icons/invite.png',     window: 'invite' }
     ],

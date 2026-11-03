@@ -274,6 +274,12 @@ function registerIndexRoutes(api) {
 		res.redirect("/?app=waifuletes");
 	});
 
+	// Página do RavenaBank (HTML e Web App)
+	const serveBanco = (req, res) => {
+		res.sendFile(path.join(__dirname, "../../../public/banco.html"));
+	};
+	app.get(["/ravenabank", "/banco"], serveBanco);
+
 	// Página de Dossier dos Grupos (HTML)
 	app.get("/groups-dossier", api.authenticateBasic, (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/groups-dossier.html"));

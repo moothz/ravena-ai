@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RavenaBank — Banco Central & Câmbio de Runas</title>
+    
+    <meta name="description" content="Banco central, cotações e conversão de moedas entre os jogos da Ravena: Pesca, Waifus e Jardim das Sombras.">
+    <meta name="author" content="moothz">
+    
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --primary-dark: #0388c2;
+            --secondary-color: #7928ca;
+            --background-color: #05060d;
+            --surface-color: #0d101d;
+            --card-color: #141728;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #242945;
+            --accent-gold: #ffd700;
+            --accent-purple: #9d4edd;
+            --accent-green: #10b981;
+            --accent-cyan: #06b6d4;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px 10px;
+        }
+
+        .bank-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: var(--surface-color);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            border: 1px solid var(--border-color);
+        }
+
+        .header-title {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header-title h1 {
+            font-size: 26px;
+            color: #fff;
+            margin: 0 0 8px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .header-title p {
+            margin: 0;
+            font-size: 13px;
+            color: #8b8ea8;
+        }
+
+        /* Banner de Runas */
+        .runas-banner {
+            background: linear-gradient(135deg, rgba(121, 40, 202, 0.25) 0%, rgba(4, 169, 240, 0.25) 100%);
+            border: 1px solid rgba(121, 40, 202, 0.5);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 20px rgba(121, 40, 202, 0.2);
+        }
+
+        .runas-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #a78bfa;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .runas-val {
+            font-size: 32px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: #ffffff;
+            text-shadow: 0 0 15px rgba(167, 139, 250, 0.6);
+        }
+
+        /* 3 Cards dos Jogos */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .game-card {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .game-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(4, 169, 240, 0.6);
+        }
+
+        .game-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .game-card-header i {
+            font-size: 20px;
+        }
+
+        .game-card-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: #ffffff;
+        }
+
+        .rate-badge {
+            background: rgba(4, 169, 240, 0.15);
+            border: 1px solid rgba(4, 169, 240, 0.3);
+            border-radius: 8px;
+            padding: 10px 12px;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: #38bdf8;
+            font-weight: 600;
+        }
+
+        .game-stats {
+            font-size: 12px;
+            color: #94a3b8;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .game-stats-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .game-stats-item strong {
+            color: #e2e8f0;
+        }
+
+        /* Seção Transparência */
+        .transparency-box {
+            background: #090c17;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .transparency-box h2 {
+            font-size: 16px;
+            margin: 0 0 14px 0;
+            color: #f1f5f9;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .transparency-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 14px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .rule-item {
+            background: rgba(255, 255, 255, 0.02);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .rule-item strong {
+            color: #e2e8f0;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        /* Área de Autenticação / Carteira */
+        .auth-panel {
+            background: #11152a;
+            border: 1px solid rgba(121, 40, 202, 0.4);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .auth-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .auth-user {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .btn-logout {
+            background: #ef4444;
+            color: #fff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+        }
+
+        .user-holdings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .holding-card {
+            background: #090c17;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #1f243c;
+            text-align: center;
+        }
+
+        .holding-card .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        .holding-card .val {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: #fff;
+        }
+
+        /* Formulário de Câmbio */
+        .trade-box {
+            background: #0b0f20;
+            border: 1px solid #232948;
+            border-radius: 10px;
+            padding: 18px;
+        }
+
+        .trade-box h3 {
+            margin: 0 0 14px 0;
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 11px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .form-control {
+            background: #151a30;
+            border: 1px solid #2c3358;
+            border-radius: 6px;
+            padding: 10px;
+            color: #fff;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .btn-trade {
+            background: linear-gradient(135deg, #04a9f0 0%, #7928ca 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+        }
+
+        .btn-trade:hover {
+            opacity: 0.9;
+        }
+
+        .btn-trade:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Alertas e Mensagens */
+        .prompt-guest {
+            text-align: center;
+            background: rgba(4, 169, 240, 0.08);
+            border: 1px dashed rgba(4, 169, 240, 0.4);
+            border-radius: 12px;
+            padding: 20px;
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-bottom: 25px;
+        }
+
+        .prompt-guest code {
+            background: #11152a;
+            color: #38bdf8;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Tabela de Extrato */
+        .tx-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-top: 14px;
+        }
+
+        .tx-table th, .tx-table td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #1c223d;
+        }
+
+        .tx-table th {
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        .footer-note {
+            text-align: center;
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 25px;
+        }
+    </style>
+</head>
+<body>
+    <div class="bank-container">
+        <!-- Título -->
+        <div class="header-title">
+            <h1><i class="fas fa-landmark" style="color: var(--primary-color);"></i> RAVENABANK</h1>
+            <p>Banco Central & Câmbio de Moedas da RavenaBot</p>
+        </div>
+
+        <!-- Banner de Runas em Circulação -->
+        <div class="runas-banner">
+            <div class="runas-label">Massa Global de Runas em Circulação</div>
+            <div class="runas-val" id="total-runas">... ᚱ</div>
+            <div style="font-size: 11px; color: #cbd5e1; margin-top: 6px;" id="total-accounts">Carregando dados da rede...</div>
+        </div>
+
+        <!-- 3 Cards dos Jogos -->
+        <div class="games-grid">
+            <!-- Pesca -->
+            <div class="game-card">
+                <div class="game-card-header">
+                    <i class="fas fa-fish" style="color: var(--accent-cyan);"></i>
+                    <h3>Pesca Comum</h3>
+                </div>
+                <div class="rate-badge" id="rate-fish">1.000 ᚱ = ... kg</div>
+                <div class="game-stats">
+                    <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-fish">1 kg = ... ᚱ</strong></div>
+                    <div class="game-stats-item"><span>Estoque em Inventários:</span> <strong id="stock-fish">... kg</strong></div>
+                    <div class="game-stats-item"><span>Regra:</span> <strong style="color: #f59e0b;">Venda de Mão Única</strong></div>
+                </div>
+            </div>
+
+            <!-- Waifus -->
+            <div class="game-card">
+                <div class="game-card-header">
+                    <i class="fas fa-heart" style="color: var(--accent-purple);"></i>
+                    <h3>Waifuletes</h3>
+                </div>
+                <div class="rate-badge" id="rate-waifu">1.000 ᚱ = ... Z</div>
+                <div class="game-stats">
+                    <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-waifu">1 Z = ... ᚱ</strong></div>
+                    <div class="game-stats-item"><span>Massa Monetária (M2):</span> <strong id="stock-waifu">... Z</strong></div>
+                    <div class="game-stats-item"><span>Inflação Atual:</span> <strong id="inflation-waifu" style="color: #ec4899;">...%</strong></div>
+                </div>
+            </div>
+
+            <!-- Jardim das Sombras -->
+            <div class="game-card">
+                <div class="game-card-header">
+                    <i class="fas fa-seedling" style="color: var(--accent-green);"></i>
+                    <h3>Jardim das Sombras</h3>
+                </div>
+                <div class="rate-badge" id="rate-jardim">1.000 ᚱ = ... Moedas</div>
+                <div class="game-stats">
+                    <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-jardim">1 MJ = ... ᚱ</strong></div>
+                    <div class="game-stats-item"><span>Moedas em Circulação:</span> <strong id="stock-jardim">... moedas</strong></div>
+                    <div class="game-stats-item"><span>Capacidade:</span> <strong style="color: #10b981;">9 canteiros 3x3</strong></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prompt para Convidados (Sem Token) -->
+        <div id="guest-prompt" class="prompt-guest">
+            <i class="fas fa-key" style="margin-right: 6px; color: var(--primary-color);"></i>
+            Para gerenciar sua conta e realizar câmbios pelo navegador, envie <code>!banco-adm</code> para a Ravena no WhatsApp ou Telegram para receber seu link de acesso seguro!
+        </div>
+
+        <!-- Área Autenticada (Visível se tiver token) -->
+        <div id="auth-panel" class="auth-panel" style="display: none;">
+            <div class="auth-header">
+                <div class="auth-user">
+                    <i class="fas fa-user-circle" style="font-size: 20px; color: var(--primary-color);"></i>
+                    <span>Conta: <span id="user-phone">...</span></span>
+                </div>
+                <button class="btn-logout" id="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+
+            <div class="user-holdings">
+                <div class="holding-card" style="border-color: rgba(121, 40, 202, 0.4);">
+                    <div class="label">Saldo de Runas</div>
+                    <div class="val" id="my-runas" style="color: #c084fc;">0.00 ᚱ</div>
+                </div>
+                <div class="holding-card">
+                    <div class="label">Peixes Comuns</div>
+                    <div class="val" id="my-fish" style="color: #38bdf8;">0.00 kg</div>
+                </div>
+                <div class="holding-card">
+                    <div class="label">Zinthos</div>
+                    <div class="val" id="my-zinthos" style="color: #f472b6;">0 Z</div>
+                </div>
+                <div class="holding-card">
+                    <div class="label">Moedas do Jardim</div>
+                    <div class="val" id="my-jardim" style="color: #4ade80;">0 moedas</div>
+                </div>
+            </div>
+
+            <!-- Formulário de Câmbio Web -->
+            <div class="trade-box">
+                <h3><i class="fas fa-exchange-alt" style="margin-right: 6px; color: var(--primary-color);"></i> Troca de Moedas pelo Navegador</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="trade-operation">Operação</label>
+                        <select id="trade-operation" class="form-control">
+                            <option value="deposit">Depositar no Banco (Receber Runas)</option>
+                            <option value="withdraw">Sacar do Banco (Gastar Runas)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="trade-game">Recurso / Jogo</label>
+                        <select id="trade-game" class="form-control">
+                            <option value="pesca">🎣 Peixes Comuns (Vender kg)</option>
+                            <option value="zinthos">💜 Zinthos (Waifuletes)</option>
+                            <option value="jardim">🌱 Moedas do Jardim (Fazenda)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="trade-amount">Quantidade</label>
+                        <input type="text" id="trade-amount" class="form-control" placeholder="Ex: 300 ou 'tudo'">
+                    </div>
+                </div>
+
+                <div id="trade-preview" style="background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; font-size: 12px; margin-bottom: 14px; color: #94a3b8;">
+                    💡 Digite a quantidade acima para simular o recebimento com spread.
+                </div>
+
+                <button class="btn-trade" id="btn-trade-execute">
+                    <i class="fas fa-check-circle" style="margin-right: 6px;"></i> Confirmar Câmbio
+                </button>
+            </div>
+
+            <!-- Extrato Recente -->
+            <div style="margin-top: 25px;">
+                <h4 style="font-size: 13px; color: #e2e8f0; margin: 0 0 10px 0;"><i class="fas fa-history"></i> Suas Últimas Transações</h4>
+                <div style="overflow-x: auto;">
+                    <table class="tx-table" id="tx-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tipo</th>
+                                <th>Jogo</th>
+                                <th>Quantidade</th>
+                                <th>Runas</th>
+                                <th>Spread</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tx-body">
+                            <tr><td colspan="6" style="text-align: center; color: #64748b;">Nenhuma movimentação registrada.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seção de Transparência -->
+        <div class="transparency-box">
+            <h2><i class="fas fa-shield-alt" style="color: var(--primary-color);"></i> Transparência Econômica & Regras</h2>
+            <div class="transparency-grid">
+                <div class="rule-item">
+                    <strong>📅 Rotação Diária às 04:00 AM</strong>
+                    As cotações oficiais são recalculadas todo dia às 04:00 BRT com base nas emissões e inflações das últimas 24h.
+                </div>
+                <div class="rule-item">
+                    <strong>📈 Spread Progressivo (3% a 10%)</strong>
+                    A taxa varia conforme o uso da sua cota diária: 3% no início, escalando suavemente até 10% no teto. Toda a taxa é destruída (deflação).
+                </div>
+                <div class="rule-item">
+                    <strong>🛡️ Cotas Diárias de Câmbio</strong>
+                    Limites de segurança por dia: 1.500 kg de peixe, 9.000 Zinthos e 30.000 Moedas do Jardim.
+                </div>
+                <div class="rule-item">
+                    <strong>🚫 Blindagem de Peixes Lendários</strong>
+                    Peixes lendários não podem ser vendidos. Apenas peixes comuns entram no câmbio (arredondado para baixo via knapsack).
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            RavenaBot &copy; 2026 — Documentação completa em <a href="https://github.com/moothz/ravena-ai/blob/main/docs/RAVENABANK.md" target="_blank" style="color: var(--primary-color);">docs/RAVENABANK.md</a>
+        </div>
+    </div>
+
+    <script src="/banco.js?v=1"></script>
+</body>
+</html>
