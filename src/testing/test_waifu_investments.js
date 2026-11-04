@@ -367,8 +367,90 @@ async function runTests() {
 		);
 		console.log("✅ [TESTE 6 PASSOU] Casamento instantâneo no roll validado com sucesso!");
 
+		// ─── TESTE 7: Compra de cotas para waifu casada (+1 chave) ───────────────
+		console.log("\n[TESTE 7] Compra de 4 cotas para waifu casada (+1 Chave com 80% OFF)");
+		WaifuCommands.api.post = async (url, data) => {
+			if (url === "/user/ensure") return { data: { success: true } };
+			if (url === "/market/invest") {
+				return {
+					data: {
+						success: true,
+						data: {
+							acquired: false,
+							isMarried: true,
+							keyEarned: true,
+							currentKeys: 2,
+							becameSoulmate: false,
+							character: {
+								id: "makima",
+								name: "Makima",
+								series: "Chainsaw Man",
+								baseRarity: "EPIC"
+							},
+							sharesBought: 4,
+							totalShares: 0,
+							cost: 624000,
+							remainingShares: 4,
+							discountPercent: 80,
+							newBalance: 576000
+						}
+					}
+				};
+			}
+			throw new Error(`URL não mockada: ${url}`);
+		};
+
+		const msgInvestirCasada = createMessage({
+			content: "!mu-investir makima 4",
+			group: groupId,
+			author: userId
+		});
+		const resInvestirCasada = await WaifuCommands.investirWaifuCmd(bot, msgInvestirCasada, [
+			"makima",
+			"4"
+		]);
+		assert(
+			resInvestirCasada.content.includes("CHAVE ADQUIRIDA COM COTAS"),
+			"Deve anunciar ganho de chave"
+		);
+		assert(resInvestirCasada.content.includes("2/10"), "Deve mostrar 2/10 chaves");
+		console.log("✅ [TESTE 7 PASSOU] Aquisição de chave com 80% de desconto validada!");
+
+		// ─── TESTE 8: Divórcio destacando rendimento ──────────────────────────────
+		console.log("\n[TESTE 8] Rendimento do divórcio exibido com destaque (!mu-divorciar)");
+		WaifuCommands.api.post = async (url) => {
+			if (url === "/divorce") {
+				return {
+					data: {
+						success: true,
+						data: {
+							character: { id: "makima", name: "Makima", rarity: "EPIC" },
+							refundedKakera: 24415,
+							keysLost: 1,
+							newKakeraBalance: 600415,
+							isSoulmate: false
+						}
+					}
+				};
+			}
+			throw new Error(`URL não mockada: ${url}`);
+		};
+
+		const msgDiv = createMessage({
+			content: "!mu-divorciar makima",
+			group: groupId,
+			author: userId
+		});
+		const resDiv = await WaifuCommands.divorciarWaifu(bot, msgDiv, ["makima"]);
+		assert(resDiv.content.includes("Rendimento do Divórcio"), "Deve conter Rendimento do Divórcio");
+		assert(
+			resDiv.content.includes("+24.415 Zinthos"),
+			"Deve conter o valor de rendimento formatado"
+		);
+		console.log("✅ [TESTE 8 PASSOU] Rendimento do divórcio exibido com clareza!");
+
 		console.log("\n========================================================");
-		console.log("🎉 TODOS OS 6 TESTES DE INVESTIMENTO E MERCADO PASSARAM! 🎉");
+		console.log("🎉 TODOS OS 8 TESTES DE INVESTIMENTO E MERCADO PASSARAM! 🎉");
 		console.log("========================================================\n");
 		process.exit(0);
 	} catch (err) {

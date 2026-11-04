@@ -2924,10 +2924,11 @@ async function divorciarWaifu(bot, message, args) {
 		await removeMarriagePhoto(character.id || characterId).catch(() => {});
 
 		let text = isSoulmate
-			? `💖 *Divórcio Dourado (Soulmate)!*\nVocê se separou de *${character.name}*.\n`
-			: `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n`;
-		text += `💜 Reembolso: *+${refundedKakera} Zinthos* (perdidas ${keysLost} chaves)\n`;
-		text += `💰 Novo saldo: *${newKakeraBalance} Zinthos*`;
+			? `💖 *Divórcio Dourado (Soulmate)!*\nVocê se separou de *${character.name}*.\n\n`
+			: `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n\n`;
+		text += `💰 *Rendimento do Divórcio:* *+${Number(refundedKakera).toLocaleString("pt-BR")} Zinthos*\n`;
+		text += `🔑 Chaves perdidas: ${keysLost}\n`;
+		text += `💜 Novo saldo: *${Number(newKakeraBalance).toLocaleString("pt-BR")} Zinthos*`;
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
@@ -7009,7 +7010,7 @@ async function investirWaifuCmd(bot, message, args) {
 		const character = res.character;
 
 		if (res.acquired) {
-			// Casamento concluído com 4 cotas (100%)!
+			// Casamento concluído com 4 cotas (100%) em waifu livre!
 			const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 			let text = `💍 *Parabéns, ${userMention}!* Você adquiriu as 4 cotas (100%) e se casou com *${character.name}*! 🎉\n`;
 			text += `💎 Investimento total: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
@@ -7026,7 +7027,57 @@ async function investirWaifuCmd(bot, message, args) {
 			});
 		}
 
-		// Cotas parciais adquiridas (1 a 3 cotas)
+		if (res.isMarried) {
+			const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+			if (res.keyEarned) {
+				let text = `🔑 *CHAVE ADQUIRIDA COM COTAS!* 🔑\n\n`;
+				text += `💍 Parabéns, ${userMention}! Você completou as 4 cotas da sua esposa *${character.name}* com 80% de desconto!\n`;
+				text += `🔑 Total de Chaves: *${res.currentKeys}/10*\n`;
+				text += `💰 Valor pago: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
+				text += `💜 Saldo restante: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*\n`;
+				if (res.becameSoulmate) {
+					text += `\n💖✨ *ALMA GÊMEA (SOULMATE) ALCANÇADA!* ✨💖\nSeu laço com *${character.name}* atingiu o ápice! Ela agora é um Soulmate e vale *3.000 pontos* no Ranking de Colecionadores! 👑`;
+				} else {
+					text += `\n💡 Faltam *${10 - res.currentKeys} chave(s)* para ela se tornar sua *💖 Soulmate*!`;
+				}
+
+				return new ReturnMessage({
+					chatId,
+					content: text,
+					options: {
+						quotedMessageId: message.origin?.id?._serialized,
+						goReply: message.origin,
+						mentions: [toJid(userId)]
+					}
+				});
+			}
+
+			// Cotas parciais em waifu já casada (1 a 3 cotas)
+			const filledBlocks = "█".repeat(res.totalShares);
+			const emptyBlocks = "░".repeat(res.remainingShares);
+			const progressBar = `[${filledBlocks}${emptyBlocks}]`;
+
+			let text = `📈 *INVESTIMENTO EM ESPOSA CONFIRMADO!* 📈\n\n`;
+			text += `👤 *${character.name}* — _${character.series}_\n`;
+			text += `💍 *Desconto de Casamento:* 80% OFF\n`;
+			text += `🎫 Cotas adquiridas: *+${res.sharesBought} cota(s)*\n`;
+			text += `📊 Progresso para a Chave ${res.currentKeys + 1}/10: ${progressBar} *${res.totalShares}/4 cotas*\n`;
+			text += `💰 Valor pago: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
+			text += `💜 Saldo restante: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*\n\n`;
+			text += `💡 Faltam *${res.remainingShares} cota(s)* para desbloquear a chave *${res.currentKeys + 1}/10*!`;
+
+			return new ReturnMessage({
+				chatId,
+				content: text,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin,
+					mentions: [toJid(userId)]
+				}
+			});
+		}
+
+		// Cotas parciais adquiridas em waifu livre (1 a 3 cotas)
 		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 		const emoji = RARITY_EMOJI[character.baseRarity] || "⚪";
 		const label = RARITY_LABEL[character.baseRarity] || character.baseRarity;
@@ -7056,6 +7107,16 @@ async function investirWaifuCmd(bot, message, args) {
 			}
 		});
 	} catch (err) {
+		if (err.response?.data?.error?.code === "ALREADY_SOULMATE") {
+			return new ReturnMessage({
+				chatId,
+				content: `💖 *${charQuery}* já é sua Alma Gêmea (Soulmate)! O vínculo está no nível máximo e não é possível adquirir mais cotas.`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
 		return handleApiError(err, chatId, "Erro ao investir no personagem.", {
 			quotedMessageId: message.origin?.id?._serialized,
 			goReply: message.origin
@@ -7101,8 +7162,13 @@ async function listarInvestimentosCmd(bot, message) {
 			text += `${index + 1}️⃣ ${emoji} *${inv.character.name}* — _${inv.character.series}_\n`;
 			text += `   📊 Cotas: ${progressBar} *${inv.shares}/4* (${inv.percent}%)\n`;
 			text += `   💎 Zinthos investidos: *${inv.totalZinthosInvested.toLocaleString("pt-BR")} Z*\n`;
-			text += `   🎯 Bônus de Drop: *+${inv.boostPercent}%* (⚡ Casa instantâneo no roll!)\n`;
-			text += `   💰 Próxima cota: *${inv.cotaPriceCurrent.toLocaleString("pt-BR")} Z*\n\n`;
+			if (inv.isMarried) {
+				text += `   💍 *Casada (80% OFF)* • Chaves: ${inv.currentKeys}/10\n`;
+				text += `   💰 Próxima cota (+25% chave): *${inv.cotaPriceCurrent.toLocaleString("pt-BR")} Z*\n\n`;
+			} else {
+				text += `   🎯 Bônus de Drop: *+${inv.boostPercent}%* (⚡ Casa instantâneo no roll!)\n`;
+				text += `   💰 Próxima cota: *${inv.cotaPriceCurrent.toLocaleString("pt-BR")} Z*\n\n`;
+			}
 		});
 
 		text += `💰 *Total investido em carteira:* ${totalZinthosInvestedAll.toLocaleString("pt-BR")} Zinthos\n`;
@@ -7130,6 +7196,7 @@ async function listarInvestimentosCmd(bot, message) {
  */
 async function cotarWaifuCmd(bot, message, args) {
 	const chatId = message.group ?? message.author;
+	const userId = getUserId(message);
 
 	if (!args || args.length === 0) {
 		return new ReturnMessage({
@@ -7146,7 +7213,9 @@ async function cotarWaifuCmd(bot, message, args) {
 	const charQuery = args.join(" ").trim();
 
 	try {
-		const { data } = await api.get(`/market/quote/${encodeURIComponent(charQuery)}`);
+		const { data } = await api.get(`/market/quote/${encodeURIComponent(charQuery)}`, {
+			params: { userId }
+		});
 		const quote = data?.data;
 		if (!quote) throw new Error("Cotação não disponível");
 
@@ -7158,14 +7227,23 @@ async function cotarWaifuCmd(bot, message, args) {
 		let text = `📊 *COTAÇÃO DE MERCADO* — Waifuletes\n\n`;
 		text += `👤 *${char.name}* — _${char.series}_\n`;
 		text += `${emoji} Raridade: *${label}*\n`;
-		if (char.isClaimed) {
+		if (char.isSoulmate) {
+			text += `💖 *Status:* Sua Alma Gêmea (Soulmate)! (Vínculo Máximo - Cotas Encerradas)\n\n`;
+		} else if (char.isOwner) {
+			text += `💍 *Status:* Casada com você! (Chaves: ${char.currentKeys}/10)\n`;
+			text += `🎁 *Desconto de Cônjuge:* 80% OFF ativo nas cotas!\n\n`;
+		} else if (char.isClaimed) {
 			text += `🔒 *Status:* Já casada com *${char.owner?.name || "Outro jogador"}*\n\n`;
 		} else {
 			text += `💍 *Status:* LIVRE para compra e investimento!\n\n`;
 		}
 
 		text += `💰 *Preço Integral (100%):* ${pricing.dynamicPrice.toLocaleString("pt-BR")} Zinthos\n`;
-		text += `🎫 *Valor por Cota (25%):* ${pricing.cotaPrice.toLocaleString("pt-BR")} Zinthos\n\n`;
+		if (pricing.discountPercent) {
+			text += `🎫 *Valor por Cota (25%):* ${pricing.cotaPrice.toLocaleString("pt-BR")} Zinthos *(80% OFF!)*\n\n`;
+		} else {
+			text += `🎫 *Valor por Cota (25%):* ${pricing.cotaPrice.toLocaleString("pt-BR")} Zinthos\n\n`;
+		}
 
 		text += `📈 *Indicadores Econômicos:*\n`;
 		text += `• Base da Raridade: *${pricing.basePrice.toLocaleString("pt-BR")} Z* (${pricing.days} dias de Zinthos)\n`;
@@ -7181,7 +7259,12 @@ async function cotarWaifuCmd(bot, message, args) {
 			text += `\n`;
 		}
 
-		if (!char.isClaimed) {
+		if (char.isSoulmate) {
+			text += `👑 _Vínculo Soulmate atingido (3.000 pts no Ranking). Não são necessárias novas cotas._`;
+		} else if (char.isOwner) {
+			text += `💡 _Use \`!mu-investir ${char.id}\` para comprar 1 cota (+25% chave) com 80% OFF_\n`;
+			text += `💡 _Use \`!mu-investir ${char.id} 4\` para comprar 4 cotas e liberar +1 Chave!_`;
+		} else if (!char.isClaimed) {
 			text += `💡 _Use \`!mu-investir ${char.id}\` para comprar 1 cota de 25%_\n`;
 			text += `💡 _Use \`!mu-investir ${char.id} 4\` para comprar 100% à vista_`;
 		}
