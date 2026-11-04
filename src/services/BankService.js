@@ -33,21 +33,39 @@ const waifuApi = axios.create({
 	timeout: 8000
 });
 
-// Constantes econômicas base (1.000 Runas = 800 kg = 3.500 Z = 8.000 MJ)
+// Constantes econômicas base (1.000 Runas = 800 kg = 3.500 Z = 8.000 Ptl)
 const BASE_RUNAS_PER_KG_FISH = 1000 / 800; // 1.25 Runas / kg
 const BASE_RUNAS_PER_ZINTHOS = 1000 / 3500; // ~0.2857 Runas / Zinthos
-const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Moeda Jardim
+const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
 
-// Cotas diárias ampliadas (3x) e limite de compra em Runas
+// Cotas diárias ampliadas e limite de compra em Runas
 const DAILY_LIMITS = {
 	pesca: 1500, // 1.500 kg/dia (venda de peixes)
 	zinthos: 9000, // 9.000 Zinthos/dia (venda de Zinthos)
 	jardim: 30000, // 30.000 Petalitas/dia (venda de Petalitas)
-	compra: 3000 // 3.000 ᚱ/dia (limite diário de compra de outras moedas com Runas)
+	compra: 15000 // 15.000 ᚱ/dia (limite diário de compra de outras moedas com Runas)
 };
 
 // Duração da sessão web (3 dias em milissegundos)
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+function parseBankAmount(input) {
+	if (typeof input === "number") return input;
+	if (!input) return 0;
+	let str = String(input).trim().toLowerCase();
+	str = str.replace(/\s+/g, "");
+	if (str.includes(",") && str.includes(".")) {
+		str = str.replace(/\./g, "").replace(",", ".");
+	} else if (str.includes(",")) {
+		str = str.replace(",", ".");
+	} else if (str.includes(".")) {
+		const parts = str.split(".");
+		if (parts.length > 1 && parts.slice(1).every((p) => p.length === 3)) {
+			str = str.replace(/\./g, "");
+		}
+	}
+	return parseFloat(str);
+}
 
 class BankService {
 	constructor() {
@@ -111,6 +129,7 @@ class BankService {
 					zinthos_used REAL DEFAULT 0,
 					jardim_coins_used REAL DEFAULT 0,
 					runas_compra_used REAL DEFAULT 0,
+					initial_runas REAL DEFAULT NULL,
 					PRIMARY KEY (user_id, date)
 				);
 				`
@@ -119,6 +138,11 @@ class BankService {
 				database
 					.getSQLiteDb(dbName)
 					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN runas_compra_used REAL DEFAULT 0;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN initial_runas REAL DEFAULT NULL;");
 			} catch (_) {}
 			this._initialized = true;
 			logger.info("Banco bank.db inicializado com sucesso.");
@@ -135,6 +159,14 @@ class BankService {
 			);
 			try {
 				await this.calculateDailyRates(true);
+				const newDate = this.getTodayDateString();
+				await database.dbRun(
+					dbName,
+					`INSERT INTO bank_daily_quotas (user_id, date, initial_runas)
+					SELECT user_id, ?, runas FROM bank_accounts
+					ON CONFLICT(user_id, date) DO UPDATE SET initial_runas = excluded.initial_runas`,
+					[newDate]
+				);
 				logger.info(
 					"[RavenaBank] Cotações rotacionadas e novas cotas diárias liberadas com sucesso."
 				);
@@ -160,6 +192,72 @@ class BankService {
 		// UTC-3 menos 4 horas = UTC-7.
 		const bankingTime = new Date(date.getTime() - 7 * 3600 * 1000);
 		return bankingTime.toISOString().split("T")[0];
+	}
+
+	getLastResetTimestamp(date = new Date()) {
+		const todayDateStr = this.getTodayDateString(date);
+		return Date.parse(`${todayDateStr}T07:00:00.000Z`);
+	}
+
+	/**
+	 * Retorna o saldo anterior (no reset das 04:00 AM) e o saldo atual do usuário
+	 */
+	async getDailyBalanceSnapshot(userId) {
+		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+		const account = await this.getAccount(cleanUser);
+		const currentRunas = Number(account?.runas || 0);
+		const today = this.getTodayDateString();
+		const resetTs = this.getLastResetTimestamp();
+
+		const quotaRow = await database.dbGet(
+			dbName,
+			"SELECT initial_runas FROM bank_daily_quotas WHERE (user_id = ? OR user_id = ?) AND date = ?",
+			[userId, cleanUser, today]
+		);
+
+		if (quotaRow && quotaRow.initial_runas !== null && quotaRow.initial_runas !== undefined) {
+			return {
+				previousRunas: Number(quotaRow.initial_runas),
+				currentRunas,
+				resetDate: today,
+				resetTimestamp: resetTs
+			};
+		}
+
+		// Se ainda não temos initial_runas gravado para hoje, calculamos retroativamente a partir das transações pós-reset:
+		const txs = await database.dbAll(
+			dbName,
+			"SELECT type, runas_amount FROM bank_transactions WHERE (user_id = ? OR user_id = ?) AND timestamp >= ?",
+			[userId, cleanUser, resetTs]
+		);
+
+		let calculatedInitial = currentRunas;
+		for (const t of txs || []) {
+			const amt = Number(t.runas_amount || 0);
+			if (t.type === "DEPOSIT" || t.type === "BONUS") {
+				calculatedInitial -= amt;
+			} else if (t.type === "WITHDRAW") {
+				calculatedInitial += amt;
+			}
+		}
+		calculatedInitial = Math.max(0, calculatedInitial);
+
+		// Grava/atualiza em bank_daily_quotas
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_daily_quotas (user_id, date, initial_runas)
+			VALUES (?, ?, ?)
+			ON CONFLICT(user_id, date) DO UPDATE SET 
+				initial_runas = COALESCE(bank_daily_quotas.initial_runas, excluded.initial_runas)`,
+			[cleanUser, today, calculatedInitial]
+		);
+
+		return {
+			previousRunas: calculatedInitial,
+			currentRunas,
+			resetDate: today,
+			resetTimestamp: resetTs
+		};
 	}
 
 	/**
@@ -633,16 +731,33 @@ class BankService {
 	 */
 	async depositZinthos(userId, amountInput) {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
-		const amount = parseInt(amountInput, 10);
-		if (isNaN(amount) || amount <= 0) {
-			throw new Error("Informe uma quantidade válida e positiva de Zinthos.");
-		}
-
 		const quota = await this.getDailyQuota(cleanUser);
-		if (amount > quota.remaining.zinthos) {
-			throw new Error(
-				`Essa quantidade excede sua cota diária de Zinthos restante (${quota.remaining.zinthos.toLocaleString("pt-BR")} Z). Limite diário: ${DAILY_LIMITS.zinthos.toLocaleString("pt-BR")} Z.`
-			);
+
+		let amount;
+		const isAll = String(amountInput).trim().toLowerCase() === "tudo";
+		if (isAll) {
+			let userBalance = 0;
+			try {
+				const { data } = await waifuApi.get(`/kakera/${cleanUser}`);
+				userBalance = data?.data?.balance ?? data?.data?.kakera ?? 0;
+			} catch (_) {}
+			amount = Math.min(userBalance, quota.remaining.zinthos);
+			if (amount <= 0) {
+				if (userBalance <= 0) {
+					throw new Error("Você não possui Zinthos para vender.");
+				}
+				throw new Error("Sua cota diária de venda de Zinthos já foi esgotada hoje.");
+			}
+		} else {
+			amount = Math.floor(parseBankAmount(amountInput));
+			if (isNaN(amount) || amount <= 0) {
+				throw new Error("Informe uma quantidade válida e positiva de Zinthos.");
+			}
+			if (amount > quota.remaining.zinthos) {
+				throw new Error(
+					`Essa quantidade excede sua cota diária de Zinthos restante (${quota.remaining.zinthos.toLocaleString("pt-BR")} Z). Limite diário: ${DAILY_LIMITS.zinthos.toLocaleString("pt-BR")} Z.`
+				);
+			}
 		}
 
 		// 1. Debita Zinthos via Waifuletes API
@@ -709,20 +824,37 @@ class BankService {
 	}
 
 	/**
-	 * Depósito de Moedas do Jardim -> Converte para Runas
+	 * Depósito de Petalitas -> Converte para Runas
 	 */
 	async depositJardim(userId, amountInput) {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
-		const amount = parseInt(amountInput, 10);
-		if (isNaN(amount) || amount <= 0) {
-			throw new Error("Informe uma quantidade válida e positiva de Moedas do Jardim.");
-		}
-
 		const quota = await this.getDailyQuota(cleanUser);
-		if (amount > quota.remaining.jardim) {
-			throw new Error(
-				`Essa quantidade excede sua cota diária do Jardim restante (${quota.remaining.jardim.toLocaleString("pt-BR")} moedas). Limite diário: ${DAILY_LIMITS.jardim.toLocaleString("pt-BR")}.`
-			);
+
+		let amount;
+		const isAll = String(amountInput).trim().toLowerCase() === "tudo";
+		if (isAll) {
+			let gardenCoins = 0;
+			try {
+				const status = await jardimClient.getStatus(cleanUser);
+				gardenCoins = status?.coins || 0;
+			} catch (_) {}
+			amount = Math.min(gardenCoins, quota.remaining.jardim);
+			if (amount <= 0) {
+				if (gardenCoins <= 0) {
+					throw new Error("Você não possui Petalitas para vender.");
+				}
+				throw new Error("Sua cota diária de venda de Petalitas já foi esgotada hoje.");
+			}
+		} else {
+			amount = Math.floor(parseBankAmount(amountInput));
+			if (isNaN(amount) || amount <= 0) {
+				throw new Error("Informe uma quantidade válida e positiva de Petalitas.");
+			}
+			if (amount > quota.remaining.jardim) {
+				throw new Error(
+					`Essa quantidade excede sua cota diária de Petalitas restante (${quota.remaining.jardim.toLocaleString("pt-BR")} Ptl). Limite diário: ${DAILY_LIMITS.jardim.toLocaleString("pt-BR")} Ptl.`
+				);
+			}
 		}
 
 		// 1. Verifica saldo e debita no Jardim das Sombras
@@ -730,7 +862,7 @@ class BankService {
 			const status = await jardimClient.getStatus(cleanUser);
 			if ((status?.coins || 0) < amount) {
 				throw new Error(
-					`Você possui apenas ${(status?.coins || 0).toLocaleString("pt-BR")} moedas no Jardim das Sombras.`
+					`Você possui apenas ${(status?.coins || 0).toLocaleString("pt-BR")} Petalitas na Fazenda.`
 				);
 			}
 
@@ -739,7 +871,7 @@ class BankService {
 				reason: "bank_deposit_runas"
 			});
 		} catch (err) {
-			throw new Error(`Falha ao debitar moedas no Jardim: ${err.message}`);
+			throw new Error(`Falha ao debitar Petalitas no Jardim: ${err.message}`);
 		}
 
 		// 2. Calcula Runas com spread dinâmico
@@ -798,23 +930,35 @@ class BankService {
 	 */
 	async withdrawZinthos(userId, runasInput) {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
-		const runasAmount = parseFloat(runasInput);
-		if (isNaN(runasAmount) || runasAmount <= 0) {
-			throw new Error("Informe uma quantidade válida de Runas para comprar Zinthos.");
-		}
-
 		const account = await this.getAccount(cleanUser);
-		if (account.runas < runasAmount) {
-			throw new Error(
-				`Saldo insuficiente de Runas! Você possui ${account.runas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ.`
-			);
-		}
-
 		const quota = await this.getDailyQuota(cleanUser);
-		if (runasAmount > quota.remaining.compra) {
-			throw new Error(
-				`Essa operação excede sua cota diária de compra de outras moedas (${quota.remaining.compra.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ restantes hoje de ${DAILY_LIMITS.compra.toLocaleString("pt-BR")} ᚱ).`
-			);
+
+		let runasAmount;
+		const isAll = String(runasInput).trim().toLowerCase() === "tudo";
+		if (isAll) {
+			runasAmount = Math.min(account.runas, quota.remaining.compra);
+			runasAmount = Number(runasAmount.toFixed(2));
+			if (runasAmount <= 0) {
+				if (account.runas <= 0) {
+					throw new Error("Você não possui Runas suficientes para realizar compras.");
+				}
+				throw new Error("Sua cota diária de compra de moedas já foi esgotada hoje.");
+			}
+		} else {
+			runasAmount = Number(parseBankAmount(runasInput).toFixed(2));
+			if (isNaN(runasAmount) || runasAmount <= 0) {
+				throw new Error("Informe uma quantidade válida de Runas para comprar Zinthos.");
+			}
+			if (account.runas < runasAmount) {
+				throw new Error(
+					`Saldo insuficiente de Runas! Você possui ${account.runas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ.`
+				);
+			}
+			if (runasAmount > quota.remaining.compra) {
+				throw new Error(
+					`Essa operação excede sua cota diária de compra de outras moedas (${quota.remaining.compra.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ restantes hoje de ${DAILY_LIMITS.compra.toLocaleString("pt-BR")} ᚱ).`
+				);
+			}
 		}
 
 		const rates = await this.getRates();
@@ -891,23 +1035,35 @@ class BankService {
 	 */
 	async withdrawJardim(userId, runasInput) {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
-		const runasAmount = parseFloat(runasInput);
-		if (isNaN(runasAmount) || runasAmount <= 0) {
-			throw new Error("Informe uma quantidade válida de Runas para comprar Petalitas.");
-		}
-
 		const account = await this.getAccount(cleanUser);
-		if (account.runas < runasAmount) {
-			throw new Error(
-				`Saldo insuficiente de Runas! Você possui ${account.runas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ.`
-			);
-		}
-
 		const quota = await this.getDailyQuota(cleanUser);
-		if (runasAmount > quota.remaining.compra) {
-			throw new Error(
-				`Essa operação excede sua cota diária de compra de outras moedas (${quota.remaining.compra.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ restantes hoje de ${DAILY_LIMITS.compra.toLocaleString("pt-BR")} ᚱ).`
-			);
+
+		let runasAmount;
+		const isAll = String(runasInput).trim().toLowerCase() === "tudo";
+		if (isAll) {
+			runasAmount = Math.min(account.runas, quota.remaining.compra);
+			runasAmount = Number(runasAmount.toFixed(2));
+			if (runasAmount <= 0) {
+				if (account.runas <= 0) {
+					throw new Error("Você não possui Runas suficientes para realizar compras.");
+				}
+				throw new Error("Sua cota diária de compra de moedas já foi esgotada hoje.");
+			}
+		} else {
+			runasAmount = Number(parseBankAmount(runasInput).toFixed(2));
+			if (isNaN(runasAmount) || runasAmount <= 0) {
+				throw new Error("Informe uma quantidade válida de Runas para comprar Petalitas.");
+			}
+			if (account.runas < runasAmount) {
+				throw new Error(
+					`Saldo insuficiente de Runas! Você possui ${account.runas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ.`
+				);
+			}
+			if (runasAmount > quota.remaining.compra) {
+				throw new Error(
+					`Essa operação excede sua cota diária de compra de outras moedas (${quota.remaining.compra.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ restantes hoje de ${DAILY_LIMITS.compra.toLocaleString("pt-BR")} ᚱ).`
+				);
+			}
 		}
 
 		const rates = await this.getRates();

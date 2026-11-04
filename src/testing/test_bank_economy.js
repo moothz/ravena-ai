@@ -199,10 +199,14 @@ async function runTests() {
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "!banco-extrato deve responder");
 	assert.ok(
-		bot.capturedMessages[0].content.includes("EXTRATO RECENTE"),
+		bot.capturedMessages[0].content.includes("EXTRATO BANCÁRIO"),
 		"!banco-extrato deve exibir as transações"
 	);
-	console.log("✓ Comando !banco-extrato respondeu com histórico de transações.");
+	assert.ok(
+		bot.capturedMessages[0].content.includes("Saldo Anterior"),
+		"!banco-extrato deve exibir o Saldo Anterior"
+	);
+	console.log("✓ Comando !banco-extrato respondeu com histórico de transações e saldo anterior.");
 
 	// Teste !banco-comprar bloqueio de peixe
 	prepareStep();
@@ -223,8 +227,12 @@ async function runTests() {
 	// 8. Teste de Cota Diária de Compra e Rotação
 	const quota = await bankService.getDailyQuota(testUserId);
 	console.log("8. Cota diária obtida:", quota);
-	assert.strictEqual(quota.limits.compra, 3000, "Limite de compra deve ser 3.000 Runas/dia");
-	assert.ok(quota.remaining.compra <= 3000, "Cota restante de compra deve ser até 3.000");
+	assert.strictEqual(quota.limits.compra, 15000, "Limite de compra deve ser 15.000 Runas/dia");
+	assert.ok(quota.remaining.compra <= 15000, "Cota restante de compra deve ser até 15.000");
+
+	const snapshot = await bankService.getDailyBalanceSnapshot(testUserId);
+	assert.ok(snapshot && snapshot.previousRunas !== undefined, "Snapshot deve conter previousRunas");
+	console.log("✓ Snapshot de saldo anterior obtido:", snapshot);
 
 	// Testa reset de cotas para hoje
 	const resetCount = await bankService.resetQuotasForDate();

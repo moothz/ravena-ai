@@ -201,10 +201,11 @@ function registerGamesRoutes(api) {
 			}
 
 			const userId = session.userId;
-			const [account, quota, txs] = await Promise.all([
+			const [account, quota, txs, balanceSnapshot] = await Promise.all([
 				bankService.getAccount(userId),
 				bankService.getDailyQuota(userId),
-				bankService.getTransactions(userId, 8)
+				bankService.getTransactions(userId, 8),
+				bankService.getDailyBalanceSnapshot(userId)
 			]);
 
 			// Saldos nos jogos
@@ -248,6 +249,7 @@ function registerGamesRoutes(api) {
 					expiresAt: session.expiresAt,
 					account,
 					quota,
+					balanceSnapshot,
 					transactions: txs,
 					holdings: {
 						fishWeight,

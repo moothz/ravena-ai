@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RavenaBank — Banco Central & Câmbio de Runas</title>
     
-    <meta name="description" content="Banco central, cotações e conversão de moedas entre os jogos da Ravena: Pesca, Waifus e Jardim das Sombras.">
+    <meta name="description" content="Banco central, cotações e conversão de moedas entre os jogos da Ravena: Pesca, Waifuletes e Fazenda (Jardim das Sombras).">
     <meta name="author" content="moothz">
     
     <link rel="stylesheet" href="/cmd.css?v=2">
@@ -285,6 +285,13 @@
             color: #fff;
         }
 
+        .holding-card .sub {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 5px;
+            font-weight: 500;
+        }
+
         /* Formulário de Câmbio */
         .trade-box {
             background: #0b0f20;
@@ -482,18 +489,22 @@
                 <div class="holding-card" style="border-color: rgba(121, 40, 202, 0.4);">
                     <div class="label">Saldo de Runas</div>
                     <div class="val" id="my-runas" style="color: #c084fc;">0,00 ᚱ</div>
+                    <div class="sub" id="my-runas-quota">Cota usada: 0,00 / 15.000 ᚱ</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Peixes Comuns</div>
                     <div class="val" id="my-fish" style="color: #38bdf8;">0,00 kg</div>
+                    <div class="sub" id="my-fish-quota">Cota usada: 0,0 / 1.500 kg</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Zinthos</div>
                     <div class="val" id="my-zinthos" style="color: #f472b6;">0 Z</div>
+                    <div class="sub" id="my-zinthos-quota">Cota usada: 0 / 9.000 Z</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Petalitas (Fazenda)</div>
                     <div class="val" id="my-jardim" style="color: #4ade80;">0 Ptl</div>
+                    <div class="sub" id="my-jardim-quota">Cota usada: 0 / 30.000 Ptl</div>
                 </div>
             </div>
 
@@ -520,7 +531,7 @@
                         <label for="trade-amount">Quantidade</label>
                         <div style="display: flex; gap: 6px;">
                             <input type="text" id="trade-amount" class="form-control" placeholder="Ex: 300 ou 'tudo'">
-                            <button type="button" id="btn-use-all" style="background: #1f2747; color: #38bdf8; border: 1px solid #323b63; border-radius: 6px; padding: 0 12px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;">Tudo</button>
+                            <button type="button" id="btn-use-all" onclick="window.handleUseAll && window.handleUseAll(event)" style="background: #1f2747; color: #38bdf8; border: 1px solid #323b63; border-radius: 6px; padding: 0 12px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;">Tudo</button>
                         </div>
                     </div>
                 </div>
@@ -536,7 +547,7 @@
 
             <!-- Extrato Recente -->
             <div style="margin-top: 25px;">
-                <h4 style="font-size: 13px; color: #e2e8f0; margin: 0 0 10px 0;"><i class="fas fa-history"></i> Suas Últimas Transações</h4>
+                <h4 style="font-size: 13px; color: #e2e8f0; margin: 0 0 10px 0;"><i class="fas fa-file-invoice-dollar"></i> Extrato</h4>
                 <div style="overflow-x: auto;">
                     <table class="tx-table" id="tx-table">
                         <thead>
@@ -571,7 +582,12 @@
                 </div>
                 <div class="rule-item">
                     <strong>🛡️ Cotas Diárias de Câmbio</strong>
-                    Limites de segurança por dia: Compra até 3.000 ᚱ | Venda até 1.500 kg de peixe, 9.000 Zinthos e 30.000 Petalitas.
+                    <div style="margin-top: 6px; line-height: 1.6; color: #cbd5e1;">
+                        • 🛒 <strong>Compra com Runas:</strong> até 15.000 ᚱ/dia<br>
+                        • 🎣 <strong>Venda de Peixes:</strong> até 1.500 kg/dia<br>
+                        • 💜 <strong>Venda de Zinthos:</strong> até 9.000 Z/dia<br>
+                        • 🌱 <strong>Venda de Petalitas:</strong> até 30.000 Ptl/dia
+                    </div>
                 </div>
                 <div class="rule-item">
                     <strong>🚫 Blindagem de Peixes Lendários</strong>
@@ -585,6 +601,6 @@
         </div>
     </div>
 
-    <script src="/banco.js?v=1"></script>
+    <script src="/banco.js?v=20261104_5"></script>
 </body>
 </html>

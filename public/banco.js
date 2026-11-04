@@ -117,6 +117,28 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("my-zinthos").textContent = `${formatInt(currentUserData.holdings.zinthos)} Z`;
             document.getElementById("my-jardim").textContent = `${formatInt(currentUserData.holdings.gardenCoins)} Ptl`;
 
+            // Atualiza cotas diárias utilizadas abaixo dos saldos
+            const q = currentUserData.quota || { used: {}, limits: {} };
+            const qUsed = q.used || {};
+            const qLimits = q.limits || {};
+
+            const elRunasQ = document.getElementById("my-runas-quota");
+            if (elRunasQ) {
+                elRunasQ.textContent = `Cota usada: ${formatPtBr(qUsed.compra || 0, 2)} / ${formatPtBr(qLimits.compra || 15000, 0)} ᚱ`;
+            }
+            const elFishQ = document.getElementById("my-fish-quota");
+            if (elFishQ) {
+                elFishQ.textContent = `Cota usada: ${formatPtBr(qUsed.pesca || 0, 1)} / ${formatPtBr(qLimits.pesca || 1500, 0)} kg`;
+            }
+            const elZinthosQ = document.getElementById("my-zinthos-quota");
+            if (elZinthosQ) {
+                elZinthosQ.textContent = `Cota usada: ${formatInt(qUsed.zinthos || 0)} / ${formatInt(qLimits.zinthos || 9000)} Z`;
+            }
+            const elJardimQ = document.getElementById("my-jardim-quota");
+            if (elJardimQ) {
+                elJardimQ.textContent = `Cota usada: ${formatInt(qUsed.jardim || 0)} / ${formatInt(qLimits.jardim || 30000)} Ptl`;
+            }
+
             // Renderiza extrato
             renderTransactions(currentUserData.transactions);
             updatePreview();
@@ -134,20 +156,45 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         tbody.innerHTML = txs.map(t => {
             const isVenda = t.type === "DEPOSIT";
-            const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-            const typeBadge = isVenda ? `<span style="color: #4ade80; font-weight: 600;">📥 Venda</span>` : `<span style="color: #38bdf8; font-weight: 600;">📤 Compra</span>`;
-            const gameBadge = t.game === "pesca" ? "🎣 Pesca" : t.game === "waifu" ? "💜 Waifus" : "🌱 Jardim";
+            const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", { 
+                day: "2-digit", 
+                month: "2-digit", 
+                hour: "2-digit", 
+                minute: "2-digit" 
+            });
+            const typeBadge = isVenda 
+                ? `<span style="color: #4ade80; font-weight: 600;">📥 Venda</span>` 
+                : `<span style="color: #38bdf8; font-weight: 600;">📤 Compra</span>`;
+
+            let gameBadge = "Desconhecido";
+            let formattedAmount = "";
+
+            if (t.game === "pesca") {
+                gameBadge = "🎣 Pesca";
+                formattedAmount = `${formatPtBr(t.game_amount, 2)} kg`;
+            } else if (t.game === "waifu") {
+                gameBadge = "💜 Waifuletes (Z)";
+                formattedAmount = `${formatInt(t.game_amount)} Z`;
+            } else if (t.game === "jardim") {
+                gameBadge = "🌱 Petalitas (Ptl)";
+                formattedAmount = `${formatInt(t.game_amount)} Ptl`;
+            } else {
+                gameBadge = t.game;
+                formattedAmount = formatPtBr(t.game_amount, 2);
+            }
+
             const sign = isVenda ? "+" : "-";
-            const unit = t.game === "pesca" ? "kg" : t.game === "jardim" ? "Ptl" : "Z";
+            const spreadFee = formatPtBr(t.spread_fee_runas, 2);
+            const spreadPct = formatPtBr(t.spread_rate * 100, 1);
 
             return `
                 <tr>
                     <td>${dateStr}</td>
                     <td>${typeBadge}</td>
                     <td>${gameBadge}</td>
-                    <td>${t.game === "pesca" ? formatPtBr(t.game_amount, 2) : formatInt(t.game_amount)} ${unit}</td>
+                    <td>${formattedAmount}</td>
                     <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff;">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
-                    <td style="color: #94a3b8;">${formatPtBr(t.spread_rate * 100, 1)}%</td>
+                    <td style="color: #cbd5e1; font-family: 'JetBrains Mono', monospace;">${spreadFee} (${spreadPct}%)</td>
                 </tr>
             `;
         }).join("");
@@ -190,23 +237,50 @@ document.addEventListener("DOMContentLoaded", async () => {
         return 0;
     }
 
-    if (btnUseAll) {
-        btnUseAll.addEventListener("click", () => {
-            const op = opSelect.value;
-            const game = gameSelect.value;
-            const maxVal = getUserMaxAmount(op, game);
-            if (game === "pesca" || op === "withdraw") {
-                amountInput.value = Number(maxVal).toFixed(2);
-            } else {
-                amountInput.value = String(Math.floor(maxVal));
+    function parseInputAmount(raw) {
+        if (!raw) return 0;
+        let str = String(raw).trim().toLowerCase();
+        if (str === "tudo" || str === "all" || str === "max") {
+            return getUserMaxAmount(opSelect.value, gameSelect.value);
+        }
+        str = str.replace(/\s+/g, "");
+        if (str.includes(",") && str.includes(".")) {
+            str = str.replace(/\./g, "").replace(",", ".");
+        } else if (str.includes(",")) {
+            str = str.replace(",", ".");
+        } else if (str.includes(".")) {
+            const parts = str.split(".");
+            if (parts.length > 1 && parts.slice(1).every(p => p.length === 3)) {
+                str = str.replace(/\./g, "");
             }
-            updatePreview();
-        });
+        }
+        return parseFloat(str);
+    }
+
+    function handleUseAll(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const op = opSelect.value;
+        const game = gameSelect.value;
+        const maxVal = getUserMaxAmount(op, game);
+        if (maxVal <= 0) {
+            amountInput.value = "0";
+        } else if (game === "pesca" || op === "withdraw") {
+            amountInput.value = Number(maxVal).toFixed(2);
+        } else {
+            amountInput.value = String(Math.floor(Number(maxVal) || 0));
+        }
+        amountInput.dispatchEvent(new Event("input"));
+        updatePreview();
+    }
+    window.handleUseAll = handleUseAll;
+
+    if (btnUseAll) {
+        btnUseAll.addEventListener("click", handleUseAll);
     }
 
     opSelect.addEventListener("change", () => {
         if (opSelect.value === "withdraw") {
-            // Remove pesca da lista de saques/compras
+            // Remove pesca da lista de compras
             const fishOpt = gameSelect.querySelector("option[value='pesca']");
             if (fishOpt) fishOpt.disabled = true;
             if (gameSelect.value === "pesca") gameSelect.value = "zinthos";
@@ -240,7 +314,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const isAll = rawVal === "tudo" || rawVal === "all" || rawVal === "max";
-        let amount = isAll ? getUserMaxAmount(op, game) : parseFloat(rawVal.replace(",", "."));
+        const amount = parseInputAmount(rawVal);
 
         if (isNaN(amount) || amount <= 0) {
             previewDiv.innerHTML = "<span style='color: #f59e0b;'>⚠️ Digite um valor numérico positivo.</span>";
@@ -310,7 +384,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
         } else {
             // Compra com Runas
-            const limit = quota.limits?.compra || 3000;
+            const limit = quota.limits?.compra || 15000;
             const used = quota.used?.compra || 0;
             const spread = calculateDynamicSpread(used, amount, limit);
             const remQuota = Math.max(0, (quota.remaining?.compra ?? limit) - amount);
@@ -354,10 +428,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const op = opSelect.value;
         const game = gameSelect.value;
-        const amount = (amountInput.value || "").trim();
+        const rawAmount = (amountInput.value || "").trim();
 
-        if (!amount) {
+        if (!rawAmount) {
             alert("Por favor, informe a quantidade!");
+            return;
+        }
+
+        const amount = parseInputAmount(rawAmount);
+        if (isNaN(amount) || amount <= 0) {
+            alert("Por favor, informe uma quantidade válida e positiva!");
             return;
         }
 

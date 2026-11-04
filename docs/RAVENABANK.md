@@ -74,7 +74,7 @@ $$\text{Taxa}(u) = 0,03 + 0,07 \times \left( \frac{\text{Volume Convertido Hoje}
 ## 🛡️ 6. Cotas Diárias de Câmbio (Reset às 04:00 AM)
 
 Cada jogador possui limites diários de segurança que renovam todo dia às 04:00 AM BRT:
-* **🛒 Compra com Runas:** até **3.000 ᚱ**/dia em moedas.
+* **🛒 Compra com Runas:** até **15.000 ᚱ**/dia em moedas.
 * **🎣 Venda de Peixes:** até **1.500 kg**/dia de peixe comum.
 * **💜 Venda de Zinthos:** até **9.000 Z**/dia.
 * **🌱 Venda de Petalitas:** até **30.000 Ptl**/dia.

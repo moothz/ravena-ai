@@ -413,15 +413,28 @@ async function handleExtrato(bot, message) {
 	const chatId = getChatId(message);
 
 	try {
-		const txs = await bankService.getTransactions(userId, 6);
+		const [snapshot, txs] = await Promise.all([
+			bankService.getDailyBalanceSnapshot(userId),
+			bankService.getTransactions(userId, 6)
+		]);
+
+		let text = `📜 *EXTRATO BANCÁRIO — RAVENABANK*\n\n`;
+		text += `💰 *Saldo Anterior (04:00):* \`${formatPtBr(snapshot.previousRunas, 2, 2)} ᚱ\`\n`;
+		text += `💠 *Saldo Atual:* \`${formatPtBr(snapshot.currentRunas, 2, 2)} ᚱ\`\n\n`;
+
 		if (!txs || txs.length === 0) {
+			text += `_Você ainda não realizou movimentações no RavenaBank hoje._`;
 			return new ReturnMessage({
 				chatId,
-				content: `📜 *EXTRATO BANCÁRIO*\n\nVocê ainda não realizou movimentações no RavenaBank.`
+				content: text,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
 			});
 		}
 
-		let text = `📜 *EXTRATO RECENTE — RAVENABANK*\n\n`;
+		text += `📋 *Últimas Movimentações:*\n`;
 		for (const t of txs) {
 			const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", {
 				day: "2-digit",
@@ -433,7 +446,7 @@ async function handleExtrato(bot, message) {
 			const emoji = isVenda ? "📥" : "📤";
 			const sign = isVenda ? "+" : "-";
 			const gameLabel =
-				t.game === "pesca" ? "🎣 Pesca" : t.game === "waifu" ? "💜 Waifus" : "🌱 Jardim";
+				t.game === "pesca" ? "🎣 Pesca" : t.game === "waifu" ? "💜 Waifuletes" : "🌱 Petalitas";
 			const unit = t.game === "pesca" ? "kg" : t.game === "jardim" ? "Ptl" : "Z";
 
 			text += `${emoji} *${isVenda ? "Venda" : "Compra"} (${gameLabel})* — ${dateStr}\n`;
@@ -443,7 +456,7 @@ async function handleExtrato(bot, message) {
 
 		return new ReturnMessage({
 			chatId,
-			content: text,
+			content: text.trim(),
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

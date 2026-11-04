@@ -292,7 +292,7 @@ async function showDonationPerks(bot, message, args, group) {
 
 		msg += `🏦 *RavenaBank & Câmbio Global:*\n`;
 		msg += `• *50 Runas (ᚱ)* a cada R$ 1 doado creditadas na sua conta bancária (\`!banco\`)!\n`;
-		msg += `  _Use suas Runas para sacar Zinthos, Moedas do Jardim ou guardar no banco!_\n\n`;
+		msg += `  _Use suas Runas para comprar Zinthos, Petalitas ou guardar no banco!_\n\n`;
 
 		msg += `🎣 *Pescaria:*\n`;
 		msg += `• *2 Iscas* no balde a cada R$ 1 doado.\n`;
