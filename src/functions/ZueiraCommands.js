@@ -470,7 +470,7 @@ const commands = [
 
 	new Command({
 		name: "pix",
-		description: "Faz uma transferência pela Ravenabank",
+		description: "Simula uma transferência fictícia por Pix",
 		category: "zoeira",
 		reactions: {
 			after: "💸"
@@ -586,7 +586,7 @@ const helper = {
 		},
 		{
 			cmd: "!pix",
-			desc: "Simula uma transferência fictícia pelo Ravenabank",
+			desc: "Simula uma transferência fictícia por Pix",
 			usage: ["!pix 1000 @fulano"],
 			category: "zoeira"
 		},

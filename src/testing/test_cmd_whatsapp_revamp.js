@@ -376,8 +376,100 @@ async function runTests() {
 	assert.strictEqual(bot.editedMessages.length, 0, "Não deve editar mensagem que não é do menu");
 	console.log("✓ Reação em mensagem não-menu ignorada com sucesso.");
 
+	// ─── TESTE 9: Categoria RavenaBank no Menu ───────────────────
+	console.log("\n[Teste 9] Validando categoria RavenaBank no menu e navegação...");
+	assert.ok(
+		menuText.includes("🏦 *RavenaBank*"),
+		"Menu inicial deve listar a categoria 🏦 RavenaBank"
+	);
+	assert.ok(
+		menuText.includes("!cmd-ravenabank para ver todos"),
+		"Menu inicial deve conter instrução !cmd-ravenabank"
+	);
+
+	// 9.1 !cmd-ravenabank solto
+	const cmdRavenaBank = Menu.commands.find((c) => c.name === "cmd-ravenabank");
+	assert.ok(cmdRavenaBank, "cmd-ravenabank deve estar registrado");
+	const msgBankSolto = createMessage({
+		content: "!cmd-ravenabank",
+		group: groupId,
+		author: userAdmin,
+		authorName: "Tester"
+	});
+	const resBankSolto = await cmdRavenaBank.method(bot, msgBankSolto, [], mockGroup);
+	assert.ok(resBankSolto, "Deve retornar ReturnMessage");
+	assert.ok(
+		resBankSolto.content.includes("🏦 *Comandos na categoria 'RavenaBank'*"),
+		"Deve exibir título da categoria RavenaBank"
+	);
+	assert.ok(resBankSolto.content.includes("!banco"), "Deve listar comando !banco");
+	assert.ok(resBankSolto.content.includes("!economia"), "Deve listar comando !economia");
+	assert.ok(
+		resBankSolto.content.includes("!banco-depositar"),
+		"Deve listar comando !banco-depositar"
+	);
+
+	// 9.2 !cmd banco (alias)
+	const msgCmdBanco = createMessage({
+		content: "!cmd banco",
+		group: groupId,
+		author: userAdmin,
+		authorName: "Tester"
+	});
+	const resCmdBanco = await cmdMenu.method(bot, msgCmdBanco, ["banco"], mockGroup);
+	assert.ok(resCmdBanco, "Deve retornar ReturnMessage para alias !cmd banco");
+	assert.ok(
+		resCmdBanco.content.includes("🏦 *Comandos na categoria 'RavenaBank'*"),
+		"Alias !cmd banco deve exibir comandos da categoria RavenaBank"
+	);
+
+	// 9.3 Reação 🏦 no menu !cmd
+	bot.editedMessages = [];
+	const msgReactBank = {
+		id: menuSentMsgId,
+		group: groupId,
+		originReaction: {
+			reaction: "🏦",
+			senderId: userAdmin,
+			userName: "Tester",
+			chatId: groupId,
+			msgId: { _serialized: menuSentMsgId }
+		}
+	};
+	const handledBank = await cmdReaction.method(bot, msgReactBank, [], mockGroup);
+	assert.strictEqual(handledBank, true, "Reação 🏦 no menu deve ser tratada");
+	assert.ok(
+		bot.editedMessages[0].text.includes("🏦 *RavenaBank:*"),
+		"Mensagem editada por reação 🏦 deve conter RavenaBank no topo"
+	);
+	assert.ok(
+		bot.editedMessages[0].text.includes("!banco"),
+		"Mensagem editada deve listar os comandos do RavenaBank"
+	);
+
+	// 9.4 Reação 🏛️ alternativa no menu !cmd
+	bot.editedMessages = [];
+	const msgReactBankAlt = {
+		id: menuSentMsgId,
+		group: groupId,
+		originReaction: {
+			reaction: "🏛️",
+			senderId: userAdmin,
+			userName: "Tester",
+			chatId: groupId,
+			msgId: { _serialized: menuSentMsgId }
+		}
+	};
+	const handledBankAlt = await cmdReaction.method(bot, msgReactBankAlt, [], mockGroup);
+	assert.strictEqual(handledBankAlt, true, "Reação 🏛️ no menu deve ser tratada");
+	assert.ok(
+		bot.editedMessages[0].text.includes("🏦 *RavenaBank:*"),
+		"Mensagem editada por reação 🏛️ deve conter RavenaBank no topo"
+	);
+	console.log("✓ Categoria RavenaBank e navegação por comando/reação validadas com sucesso!");
+
 	console.log("\n=======================================================");
-	console.log("TODOS OS 8 TESTES DO REVAMP DO !CMD PASSARAM COM SUCESSO!");
+	console.log("TODOS OS 9 TESTES DO REVAMP DO !CMD PASSARAM COM SUCESSO!");
 	console.log("=======================================================\n");
 }
 

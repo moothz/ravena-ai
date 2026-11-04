@@ -166,7 +166,7 @@ async function handleBancoAdm(bot, message) {
 }
 
 /**
- * !economia: Painel transparente de cotações, inflações e regras
+ * !economia: Painel de cotações, inflações e regras do sistema
  */
 async function handleEconomia(bot, message) {
 	const chatId = getChatId(message);
@@ -193,7 +193,7 @@ async function handleEconomia(bot, message) {
 		text += `• 💜 *Massa de Zinthos (M2):* ${macro.waifu.circulatingZinthos.toLocaleString("pt-BR")} Z (Inflação: +${macro.waifu.inflationPercent}%)\n`;
 		text += `• 🌱 *Moedas no Jardim das Sombras:* ${macro.jardim.totalCoins.toLocaleString("pt-BR")} moedas\n\n`;
 
-		text += `🛡️ *COMO FUNCIONA O SISTEMA (TRANSPARÊNCIA TOTAL):*\n`;
+		text += `🛡️ *COMO FUNCIONA O SISTEMA:*\n`;
 		text += `1. *Spread Progressivo:* Varia de *3% a 10%* com base na sua cota diária usada. Pequenos câmbios pagam a menor taxa; grandes trocas pagam spread progressivo. Todo o spread é destruído (deflação).\n`;
 		text += `2. *Venda de Peixes (Mão Única):* Peixes podem ser vendidos por aproximação para baixo (knapsack). Peixes lendários são 100% protegidos contra venda. Não é permitido converter Runas para peixes.\n`;
 		text += `3. *Cotas Diárias (24h):* Máx. ${macro.rules.dailyLimits.pesca.toLocaleString("pt-BR")} kg peixe | ${macro.rules.dailyLimits.zinthos.toLocaleString("pt-BR")} Zinthos | ${macro.rules.dailyLimits.jardim.toLocaleString("pt-BR")} Moedas Jardim.\n`;
@@ -465,7 +465,7 @@ const commands = [
 	new Command({
 		name: "economia",
 		aliases: ["banco-economia", "banco-cotacao", "cotacao", "bancocotacao"],
-		description: "Panorama macroeconômico, cotações do dia das Runas e transparência de regras",
+		description: "Panorama macroeconômico, cotações do dia das Runas e regras do sistema",
 		category: "ravenabank",
 		group: "bank-core",
 		cooldown: 5,
@@ -530,7 +530,7 @@ const helper = {
 		},
 		{
 			cmd: "!economia",
-			desc: "Exibe panorama macroeconômico, cotações do dia das Runas, spread e regras transparentes",
+			desc: "Exibe panorama macroeconômico, cotações do dia das Runas, spread e regras do sistema",
 			usage: ["!economia", "!banco-cotacao"],
 			category: "ravenabank"
 		},

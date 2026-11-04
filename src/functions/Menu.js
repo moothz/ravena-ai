@@ -333,6 +333,10 @@ async function showCommandsByCategory(bot, message, args, group, explicitCategor
 			return null;
 		}
 
+		if (category === "banco") {
+			category = "ravenabank";
+		}
+
 		// Skip if it's the management commands (already handled by cmd-g)
 		if (category === "g" || category === "gerenciamento") {
 			return await sendManagementCommandList(bot, message, args, group);
@@ -803,9 +807,16 @@ async function sendCommandList(bot, message, args, group) {
 				CATEGORY_EMOJIS[targetCat] ||
 				targetCat === "g" ||
 				targetCat === "gerenciamento" ||
-				targetCat === "grupo"
+				targetCat === "grupo" ||
+				targetCat === "banco"
 			) {
-				return await showCommandsByCategory(bot, message, args, group, targetCat);
+				return await showCommandsByCategory(
+					bot,
+					message,
+					args,
+					group,
+					targetCat === "banco" ? "ravenabank" : targetCat
+				);
 			}
 		}
 
@@ -1043,6 +1054,10 @@ async function processMenuReaction(bot, message, args, group) {
 			selectedCategory = "gerenciamento";
 		}
 
+		if (!selectedCategory && (rawEmoji === "🏛️" || rawEmoji === "🏛" || rawEmoji === "🏦")) {
+			selectedCategory = "ravenabank";
+		}
+
 		if (!selectedCategory) {
 			return false;
 		}
@@ -1273,10 +1288,21 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 
 commands.push(
 	new Command({
+		name: "cmd-banco",
+		description: "Mostra comandos do RavenaBank",
+		category: "geral",
+		hidden: true,
+		method: async (bot, message, args, group) =>
+			await showCommandsByCategory(bot, message, args, group, "ravenabank")
+	})
+);
+
+commands.push(
+	new Command({
 		name: "reactionMenuHelper",
 		description: "Invocado apenas pelo ReactionsHandler para navegação do menu por emojis",
 		reactions: {
-			trigger: [...new Set([...Object.values(CATEGORY_EMOJIS), "⚙️", "⚙"])]
+			trigger: [...new Set([...Object.values(CATEGORY_EMOJIS), "⚙️", "⚙", "🏛️", "🏛", "🏦"])]
 		},
 		usage: "",
 		hidden: true,
