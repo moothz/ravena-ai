@@ -407,9 +407,106 @@
             color: #64748b;
             margin-top: 25px;
         }
+
+        /* Notificações Modernas (Toasts) */
+        .bank-toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+            width: calc(100% - 48px);
+            pointer-events: none;
+        }
+
+        .bank-toast {
+            pointer-events: auto;
+            background: #0d1224;
+            border: 1px solid #1f2747;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            color: #e2e8f0;
+            font-size: 13px;
+            line-height: 1.45;
+            animation: toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        @keyframes toast-in {
+            from {
+                opacity: 0;
+                transform: translateY(-12px) scale(0.96);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .bank-toast.toast-error {
+            border-left: 4px solid #ef4444;
+        }
+        .bank-toast.toast-error .toast-icon {
+            color: #ef4444;
+        }
+
+        .bank-toast.toast-success {
+            border-left: 4px solid #10b981;
+        }
+        .bank-toast.toast-success .toast-icon {
+            color: #10b981;
+        }
+
+        .bank-toast.toast-warning {
+            border-left: 4px solid #f59e0b;
+        }
+        .bank-toast.toast-warning .toast-icon {
+            color: #f59e0b;
+        }
+
+        .bank-toast.toast-info {
+            border-left: 4px solid #38bdf8;
+        }
+        .bank-toast.toast-info .toast-icon {
+            color: #38bdf8;
+        }
+
+        .bank-toast .toast-icon {
+            font-size: 16px;
+            margin-top: 1px;
+            flex-shrink: 0;
+        }
+
+        .bank-toast .toast-body {
+            flex-grow: 1;
+            word-break: break-word;
+        }
+
+        .bank-toast .toast-close {
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0 4px;
+            margin-top: -2px;
+            margin-right: -4px;
+            line-height: 1;
+        }
+        .bank-toast .toast-close:hover {
+            color: #cbd5e1;
+        }
     </style>
 </head>
 <body>
+    <div id="bank-toast-container" class="bank-toast-container"></div>
     <div class="bank-container">
         <!-- Título -->
         <div class="header-title">
@@ -494,17 +591,17 @@
                 <div class="holding-card">
                     <div class="label">Peixes Comuns</div>
                     <div class="val" id="my-fish" style="color: #38bdf8;">0,00 kg</div>
-                    <div class="sub" id="my-fish-quota">Cota usada: 0,0 / 1.500 kg</div>
+                    <div class="sub" id="my-fish-quota">Cota usada: 0,0 / 3.000 kg</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Zinthos</div>
                     <div class="val" id="my-zinthos" style="color: #f472b6;">0 Z</div>
-                    <div class="sub" id="my-zinthos-quota">Cota usada: 0 / 9.000 Z</div>
+                    <div class="sub" id="my-zinthos-quota">Cota usada: 0 / 15.000 Z</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Petalitas (Fazenda)</div>
                     <div class="val" id="my-jardim" style="color: #4ade80;">0 Ptl</div>
-                    <div class="sub" id="my-jardim-quota">Cota usada: 0 / 30.000 Ptl</div>
+                    <div class="sub" id="my-jardim-quota">Cota usada: 0 / 12.000 Ptl</div>
                 </div>
             </div>
 
@@ -573,25 +670,25 @@
             <h2><i class="fas fa-shield-alt" style="color: var(--primary-color);"></i> Economia & Regras do Sistema</h2>
             <div class="transparency-grid">
                 <div class="rule-item">
-                    <strong>📅 Rotação Diária às 04:00 AM</strong>
-                    As cotações oficiais e as cotas dos jogadores renovam todo dia às 04:00 BRT com base na atividade das últimas 24h.
-                </div>
-                <div class="rule-item">
                     <strong>📈 Taxa Progressiva (3% a 10%)</strong>
-                    A taxa (spread) varia de 3% a 10% conforme o uso da sua cota diária: começa em 3%, escalando suavemente até 10% no limite. Toda a taxa é destruída (deflação).
+                    É uma taxa (spread) que varia de 3% a 10% com base na sua cota diária usada. Pequenos câmbios pagam a menor taxa; grandes trocas pagam taxa progressiva. Toda a taxa é destruída (deflação).
                 </div>
                 <div class="rule-item">
-                    <strong>🛡️ Cotas Diárias de Câmbio</strong>
+                    <strong>🐟 Venda de Peixes</strong>
+                    Peixes podem ser vendidos por kg, não podem ser comprados com Runas. Peixes lendários não podem ser vendidos.
+                </div>
+                <div class="rule-item">
+                    <strong>🛡️ Cotas Diárias</strong>
                     <div style="margin-top: 6px; line-height: 1.6; color: #cbd5e1;">
-                        • 🛒 <strong>Compra com Runas:</strong> até 15.000 ᚱ/dia<br>
-                        • 🎣 <strong>Venda de Peixes:</strong> até 1.500 kg/dia<br>
-                        • 💜 <strong>Venda de Zinthos:</strong> até 9.000 Z/dia<br>
-                        • 🌱 <strong>Venda de Petalitas:</strong> até 30.000 Ptl/dia
+                        • 🛒 <strong>Compra:</strong> Máx. 15.000 ᚱ/dia<br>
+                        • 🎣 <strong>Venda de Peixe:</strong> Máx. 3.000 kg/dia<br>
+                        • 💜 <strong>Venda de Zinthos:</strong> Máx. 15.000 Z/dia<br>
+                        • 🌱 <strong>Venda de Petalitas:</strong> Máx. 12.000 Ptl/dia
                     </div>
                 </div>
                 <div class="rule-item">
-                    <strong>🚫 Blindagem de Peixes Lendários</strong>
-                    Peixes lendários são 100% protegidos contra venda. Apenas peixes comuns entram no câmbio. Não é permitido converter Runas para peixes.
+                    <strong>📅 Estabilidade & Rotação (04:00 AM)</strong>
+                    A variação máxima diária de cotação é limitada a ±10% por segurança. As cotações oficiais e as cotas dos jogadores renovam todo dia às 04:00 BRT com base na atividade das últimas 24h.
                 </div>
             </div>
         </div>
@@ -601,6 +698,6 @@
         </div>
     </div>
 
-    <script src="/banco.js?v=20261104_5"></script>
+    <script src="/banco.js?v=20261104_7"></script>
 </body>
 </html>

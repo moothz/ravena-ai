@@ -658,9 +658,9 @@ Rastreamento do consumo das cotas diárias de câmbio por usuário (reset às 04
 |---|---|---|
 | `user_id` | TEXT | JID ou número do usuário |
 | `date` | TEXT | Data da cota (`YYYY-MM-DD`) |
-| `fish_kg_used` | REAL | Total de kg de peixe vendidos hoje (teto: 1.500 kg) |
-| `zinthos_used` | REAL | Total de Zinthos convertidos hoje (teto: 9.000 Z) |
-| `jardim_coins_used` | REAL | Total de Petalitas da Fazenda convertidas hoje (teto: 30.000 Ptl) |
+| `fish_kg_used` | REAL | Total de kg de peixe vendidos hoje (teto: 3.000 kg) |
+| `zinthos_used` | REAL | Total de Zinthos convertidos hoje (teto: 15.000 Z) |
+| `jardim_coins_used` | REAL | Total de Petalitas da Fazenda convertidas hoje (teto: 12.000 Ptl) |
 | `runas_compra_used` | REAL | Total de Runas gastas em compras hoje (teto: 15.000 ᚱ) |
 | `initial_runas` | REAL | Saldo inicial de Runas gravado no reset das 04:00 AM |
 

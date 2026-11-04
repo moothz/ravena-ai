@@ -40,9 +40,9 @@ const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
 
 // Cotas diárias ampliadas e limite de compra em Runas
 const DAILY_LIMITS = {
-	pesca: 1500, // 1.500 kg/dia (venda de peixes)
-	zinthos: 9000, // 9.000 Zinthos/dia (venda de Zinthos)
-	jardim: 30000, // 30.000 Petalitas/dia (venda de Petalitas)
+	pesca: 3000, // 3.000 kg/dia (venda de peixes)
+	zinthos: 15000, // 15.000 Zinthos/dia (venda de Zinthos)
+	jardim: 12000, // 12.000 Petalitas/dia (venda de Petalitas)
 	compra: 15000 // 15.000 ᚱ/dia (limite diário de compra de outras moedas com Runas)
 };
 
@@ -1138,7 +1138,7 @@ class BankService {
 	 */
 	withdrawFish() {
 		throw new Error(
-			"Não é permitido converter Runas para peixes. Peixes só podem ser vendidos para o banco."
+			"Não é permitido comprar peixes com Runas. Peixes só podem ser vendidos para o banco."
 		);
 	}
 

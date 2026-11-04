@@ -90,7 +90,7 @@ async function runTests() {
 		() => {
 			bankService.withdrawFish();
 		},
-		/Não é permitido converter Runas para peixes/i,
+		/Não é permitido comprar peixes/i,
 		"Saque de peixe deve lançar erro expressamente proibido"
 	);
 	console.log("✓ Regra de mão única para peixes validada.");
@@ -227,6 +227,17 @@ async function runTests() {
 	// 8. Teste de Cota Diária de Compra e Rotação
 	const quota = await bankService.getDailyQuota(testUserId);
 	console.log("8. Cota diária obtida:", quota);
+	assert.strictEqual(quota.limits.pesca, 3000, "Limite de venda de peixes deve ser 3.000 kg/dia");
+	assert.strictEqual(
+		quota.limits.zinthos,
+		15000,
+		"Limite de venda de zinthos deve ser 15.000 Z/dia"
+	);
+	assert.strictEqual(
+		quota.limits.jardim,
+		12000,
+		"Limite de venda de petalitas deve ser 12.000 Ptl/dia"
+	);
 	assert.strictEqual(quota.limits.compra, 15000, "Limite de compra deve ser 15.000 Runas/dia");
 	assert.ok(quota.remaining.compra <= 15000, "Cota restante de compra deve ser até 15.000");
 

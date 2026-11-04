@@ -324,7 +324,7 @@ function registerGamesRoutes(api) {
 				} else if (g === "pesca" || g === "peixe" || g === "peixes") {
 					return res
 						.status(400)
-						.json({ ok: false, error: "Não é permitido converter Runas para peixes." });
+						.json({ ok: false, error: "Não é permitido comprar peixes com Runas." });
 				} else {
 					return res.status(400).json({ ok: false, error: "Destino inválido para compra." });
 				}

@@ -47,6 +47,43 @@ document.addEventListener("DOMContentLoaded", async () => {
         return Math.min(0.10, Math.max(0.03, spread));
     }
 
+    // Sistema moderno de notificações visuais (Toasts)
+    function showNotification(message, type = "info", duration = 4500) {
+        const container = document.getElementById("bank-toast-container");
+        if (!container) {
+            console.log(`[Notification ${type}] ${message}`);
+            return;
+        }
+
+        const toast = document.createElement("div");
+        toast.className = `bank-toast toast-${type}`;
+
+        let iconClass = "fa-info-circle";
+        if (type === "success") iconClass = "fa-check-circle";
+        else if (type === "error") iconClass = "fa-exclamation-circle";
+        else if (type === "warning") iconClass = "fa-exclamation-triangle";
+
+        toast.innerHTML = `
+            <i class="fas ${iconClass} toast-icon"></i>
+            <div class="toast-body">${message}</div>
+            <button type="button" class="toast-close" aria-label="Fechar">&times;</button>
+        `;
+
+        const closeBtn = toast.querySelector(".toast-close");
+        const removeToast = () => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translateY(-8px) scale(0.95)";
+            setTimeout(() => toast.remove(), 300);
+        };
+
+        closeBtn.addEventListener("click", removeToast);
+        if (duration > 0) {
+            setTimeout(removeToast, duration);
+        }
+
+        container.appendChild(toast);
+    }
+
     // 2. Carrega Dados Públicos
     async function loadPublicData() {
         try {
@@ -128,15 +165,15 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             const elFishQ = document.getElementById("my-fish-quota");
             if (elFishQ) {
-                elFishQ.textContent = `Cota usada: ${formatPtBr(qUsed.pesca || 0, 1)} / ${formatPtBr(qLimits.pesca || 1500, 0)} kg`;
+                elFishQ.textContent = `Cota usada: ${formatPtBr(qUsed.pesca || 0, 1)} / ${formatPtBr(qLimits.pesca || 3000, 0)} kg`;
             }
             const elZinthosQ = document.getElementById("my-zinthos-quota");
             if (elZinthosQ) {
-                elZinthosQ.textContent = `Cota usada: ${formatInt(qUsed.zinthos || 0)} / ${formatInt(qLimits.zinthos || 9000)} Z`;
+                elZinthosQ.textContent = `Cota usada: ${formatInt(qUsed.zinthos || 0)} / ${formatInt(qLimits.zinthos || 15000)} Z`;
             }
             const elJardimQ = document.getElementById("my-jardim-quota");
             if (elJardimQ) {
-                elJardimQ.textContent = `Cota usada: ${formatInt(qUsed.jardim || 0)} / ${formatInt(qLimits.jardim || 30000)} Ptl`;
+                elJardimQ.textContent = `Cota usada: ${formatInt(qUsed.jardim || 0)} / ${formatInt(qLimits.jardim || 12000)} Ptl`;
             }
 
             // Renderiza extrato
@@ -259,6 +296,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function handleUseAll(e) {
         if (e && e.preventDefault) e.preventDefault();
+        if (!currentUserData) {
+            showNotification("Acesse sua conta com o link do !banco-adm para usar o botão Tudo com seus saldos reais.", "warning");
+            return;
+        }
+
         const op = opSelect.value;
         const game = gameSelect.value;
         const maxVal = getUserMaxAmount(op, game);
@@ -294,6 +336,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     gameSelect.addEventListener("change", updatePreview);
     amountInput.addEventListener("input", updatePreview);
 
+    function renderQuotaBadge(label, availableQuota, requestedAmount, unit, isInteger = false) {
+        const formatFn = isInteger ? formatInt : (v) => formatPtBr(v, 2);
+        const excess = requestedAmount - availableQuota;
+        const isExceeded = excess > 0.0001;
+
+        if (isExceeded) {
+            return {
+                isExceeded: true,
+                html: `
+                    <div style="font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin-top: 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); color: #f87171;">
+                        🛡️ <strong>${label}:</strong> 0 ${unit} <span style="font-size: 14px; font-weight: 700; color: #ef4444;">(-${formatFn(excess)} ${unit})</span>
+                        <div style="font-size: 11px; font-weight: 500; color: #fca5a5; margin-top: 3px;">⚠️ A quantidade informada ultrapassa sua cota disponível de ${formatFn(availableQuota)} ${unit}.</div>
+                    </div>
+                `
+            };
+        }
+
+        const remQuota = Math.max(0, availableQuota - requestedAmount);
+        return {
+            isExceeded: false,
+            html: `
+                <div style="font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8;">
+                    🛡️ <strong>${label}:</strong> ${formatFn(remQuota)} ${unit}
+                </div>
+            `
+        };
+    }
+
     function updatePreview() {
         if (!globalRates) return;
 
@@ -324,61 +394,65 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const quota = currentUserData?.quota || { used: {}, limits: {}, remaining: {} };
         let previewHtml = "";
+        let quotaBadge = { isExceeded: false, html: "" };
 
         if (op === "deposit") {
             // Venda para o banco
             if (game === "pesca") {
-                const limit = quota.limits?.pesca || 1500;
+                const limit = quota.limits?.pesca || 3000;
                 const used = quota.used?.pesca || 0;
+                const available = Math.max(0, quota.remaining?.pesca ?? (limit - used));
                 const rate = globalRates.runasPerKgFish;
                 const spread = calculateDynamicSpread(used, amount, limit);
                 const rawRunas = amount * rate;
                 const spreadRunas = rawRunas * spread;
                 const netRunas = rawRunas - spreadRunas;
-                const remQuota = Math.max(0, (quota.remaining?.pesca ?? limit) - amount);
+                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "kg", false);
 
                 previewHtml = `
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <div>📦 <strong>Vender:</strong> ${formatPtBr(amount, 2)} kg de Peixe Comum ${isAll ? "<em>(Todo o seu inventário comum)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
                         <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatPtBr(remQuota, 1)} kg</div>
+                        ${quotaBadge.html}
                     </div>
                 `;
             } else if (game === "zinthos") {
-                const limit = quota.limits?.zinthos || 9000;
+                const limit = quota.limits?.zinthos || 15000;
                 const used = quota.used?.zinthos || 0;
+                const available = Math.max(0, quota.remaining?.zinthos ?? (limit - used));
                 const rate = globalRates.runasPerZinthos;
                 const spread = calculateDynamicSpread(used, amount, limit);
                 const rawRunas = amount * rate;
                 const spreadRunas = rawRunas * spread;
                 const netRunas = rawRunas - spreadRunas;
-                const remQuota = Math.max(0, (quota.remaining?.zinthos ?? limit) - amount);
+                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "Z", true);
 
                 previewHtml = `
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <div>💜 <strong>Vender:</strong> ${formatInt(amount)} Zinthos ${isAll ? "<em>(Todo o seu saldo de Zinthos)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
                         <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatInt(remQuota)} Z</div>
+                        ${quotaBadge.html}
                     </div>
                 `;
             } else if (game === "jardim") {
-                const limit = quota.limits?.jardim || 30000;
+                const limit = quota.limits?.jardim || 12000;
                 const used = quota.used?.jardim || 0;
+                const available = Math.max(0, quota.remaining?.jardim ?? (limit - used));
                 const rate = globalRates.runasPerJardimCoin;
                 const spread = calculateDynamicSpread(used, amount, limit);
                 const rawRunas = amount * rate;
                 const spreadRunas = rawRunas * spread;
                 const netRunas = rawRunas - spreadRunas;
-                const remQuota = Math.max(0, (quota.remaining?.jardim ?? limit) - amount);
+                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "Ptl", true);
 
                 previewHtml = `
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <div>🌱 <strong>Vender:</strong> ${formatInt(amount)} Petalitas ${isAll ? "<em>(Todas as suas Petalitas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
                         <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatInt(remQuota)} Ptl</div>
+                        ${quotaBadge.html}
                     </div>
                 `;
             }
@@ -386,8 +460,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             // Compra com Runas
             const limit = quota.limits?.compra || 15000;
             const used = quota.used?.compra || 0;
+            const available = Math.max(0, quota.remaining?.compra ?? (limit - used));
             const spread = calculateDynamicSpread(used, amount, limit);
-            const remQuota = Math.max(0, (quota.remaining?.compra ?? limit) - amount);
+            quotaBadge = renderQuotaBadge("Cota de compra restante hoje", available, amount, "ᚱ", false);
 
             if (game === "zinthos") {
                 const rate = globalRates.runasPerZinthos;
@@ -397,9 +472,9 @@ document.addEventListener("DOMContentLoaded", async () => {
                 previewHtml = `
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}%</div>
+                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}%</div>
                         <div style="font-size: 14px; color: #f472b6; font-weight: 700;">💎 <strong>Você Receberá:</strong> ~+${formatInt(netZinthos)} Zinthos</div>
-                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de compra restante hoje: ${formatPtBr(remQuota, 2)} ᚱ</div>
+                        ${quotaBadge.html}
                     </div>
                 `;
             } else if (game === "jardim") {
@@ -410,16 +485,32 @@ document.addEventListener("DOMContentLoaded", async () => {
                 previewHtml = `
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}%</div>
+                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}%</div>
                         <div style="font-size: 14px; color: #4ade80; font-weight: 700;">🌱 <strong>Você Receberá:</strong> ~+${formatInt(netCoins)} Petalitas</div>
-                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de compra restante hoje: ${formatPtBr(remQuota, 2)} ᚱ</div>
+                        ${quotaBadge.html}
+                    </div>
+                `;
+            }
+        }
+
+        // Validação de saldo da conta
+        let exceedsBalance = false;
+        if (currentUserData) {
+            const maxVal = getUserMaxAmount(op, game);
+            if (amount > maxVal) {
+                exceedsBalance = true;
+                const unit = op === "deposit" ? (game === "pesca" ? "kg" : game === "zinthos" ? "Z" : "Ptl") : "ᚱ";
+                const formattedMax = game === "pesca" || op === "withdraw" ? formatPtBr(maxVal, 2) : formatInt(maxVal);
+                previewHtml += `
+                    <div style="font-size: 12px; color: #f87171; font-weight: 600; margin-top: 6px;">
+                        ⚠️ Quantidade solicitada excede seu saldo disponível (${formattedMax} ${unit}).
                     </div>
                 `;
             }
         }
 
         previewDiv.innerHTML = previewHtml;
-        btnExecute.disabled = false;
+        btnExecute.disabled = quotaBadge.isExceeded || exceedsBalance;
     }
 
     // Executar Transação Web
@@ -431,13 +522,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         const rawAmount = (amountInput.value || "").trim();
 
         if (!rawAmount) {
-            alert("Por favor, informe a quantidade!");
+            showNotification("Por favor, informe a quantidade!", "warning");
             return;
         }
 
         const amount = parseInputAmount(rawAmount);
         if (isNaN(amount) || amount <= 0) {
-            alert("Por favor, informe uma quantidade válida e positiva!");
+            showNotification("Por favor, informe uma quantidade válida e positiva!", "warning");
+            return;
+        }
+
+        const maxVal = getUserMaxAmount(op, game);
+        if (amount > maxVal) {
+            showNotification("Quantidade solicitada excede o saldo disponível na sua conta!", "error");
             return;
         }
 
@@ -453,15 +550,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const json = await res.json();
             if (!json.ok) {
-                alert(`❌ Erro no câmbio: ${json.error}`);
+                showNotification(`Não foi possível realizar o câmbio: ${json.error}`, "error");
             } else {
-                alert("🎉 Câmbio realizado com sucesso!");
+                showNotification("🎉 Câmbio realizado com sucesso!", "success");
                 amountInput.value = "";
                 // Recarrega dados e sessão
                 await Promise.all([loadPublicData(), loadSession()]);
             }
         } catch (err) {
-            alert(`❌ Falha de comunicação: ${err.message}`);
+            showNotification(`Falha de comunicação: ${err.message}`, "error");
         } finally {
             btnExecute.disabled = false;
             btnExecute.innerHTML = `<i class="fas fa-check-circle" style="margin-right: 6px;"></i> Confirmar Câmbio`;
