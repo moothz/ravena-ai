@@ -6,9 +6,256 @@ const fs = require("fs").promises;
 const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
-const { COMMAND_ORDER, CATEGORY_EMOJIS } = require("./MenuOrder");
+const {
+	COMMAND_ORDER,
+	CATEGORY_EMOJIS,
+	CATEGORY_DESCRIPTIONS,
+	CATEGORY_NAMES,
+	MENU_INITIAL_COMMANDS,
+	MENU_EXCLUDE_FROM_GETTOKNOW
+} = require("./MenuOrder");
 const logger = new Logger("menu-commands");
 const database = Database.getInstance();
+
+const DB_NAME = "cmd_menu";
+try {
+	database.getSQLiteDb(
+		DB_NAME,
+		`
+		CREATE TABLE IF NOT EXISTS menu_messages (
+			message_id       TEXT PRIMARY KEY,
+			chat_id          TEXT NOT NULL,
+			current_category TEXT DEFAULT 'initial',
+			created_at       INTEGER,
+			updated_at       INTEGER
+		);
+		CREATE INDEX IF NOT EXISTS idx_menu_messages_chat ON menu_messages(chat_id);
+		`,
+		true
+	);
+} catch (dbErr) {
+	logger.warn("Erro ao inicializar tabela menu_messages no SQLite:", dbErr);
+}
+
+const trackedMenuMessages = new Map();
+
+/**
+ * Registra o ID de uma mensagem de menu enviada para controle de edição in-place
+ * @param {string|Object} messageId
+ * @param {string} chatId
+ * @param {string} category
+ */
+async function recordSentMenuMessage(messageId, chatId, category = "initial") {
+	if (!messageId || !chatId) return;
+	const cleanId =
+		typeof messageId === "object" ? messageId._serialized || messageId.id : String(messageId);
+	trackedMenuMessages.set(cleanId, {
+		chatId,
+		currentCategory: category,
+		timestamp: Date.now()
+	});
+
+	if (trackedMenuMessages.size > 500) {
+		const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+		for (const [key, val] of trackedMenuMessages.entries()) {
+			if (val.timestamp < cutoff) trackedMenuMessages.delete(key);
+		}
+	}
+
+	try {
+		await database.dbRun(
+			DB_NAME,
+			`INSERT OR REPLACE INTO menu_messages (message_id, chat_id, current_category, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			[cleanId, chatId, category, Date.now(), Date.now()]
+		);
+	} catch (err) {
+		logger.debug(`[recordSentMenuMessage] Erro ao registrar mensagem ${cleanId}: ${err.message}`);
+	}
+}
+
+/**
+ * Verifica se uma mensagem referenciada é uma mensagem do menu !cmd
+ * @param {Object} message
+ * @param {string} messageId
+ * @returns {Promise<boolean>}
+ */
+async function isMenuMessage(message, messageId) {
+	const cleanId = messageId
+		? typeof messageId === "object"
+			? messageId._serialized || messageId.id
+			: String(messageId)
+		: null;
+
+	if (cleanId && trackedMenuMessages.has(cleanId)) {
+		return true;
+	}
+
+	if (cleanId) {
+		try {
+			const row = await database.dbGet(
+				DB_NAME,
+				"SELECT * FROM menu_messages WHERE message_id = ?",
+				[cleanId]
+			);
+			if (row) {
+				trackedMenuMessages.set(cleanId, {
+					chatId: row.chat_id,
+					currentCategory: row.current_category,
+					timestamp: row.updated_at
+				});
+				return true;
+			}
+		} catch (err) {
+			logger.debug(`[isMenuMessage] Erro ao consultar SQLite: ${err.message}`);
+		}
+	}
+
+	const content =
+		typeof message?.body === "string"
+			? message.body
+			: typeof message?.content === "string"
+				? message.content
+				: typeof message?.caption === "string"
+					? message.caption
+					: "";
+
+	if (
+		content.includes("Comandos") &&
+		(content.includes("Reagir à esta mensagem com o emoji da categoria") ||
+			content.includes("Comandos em Destaque") ||
+			content.includes("Conheça também"))
+	) {
+		if (cleanId && message?.chatId) {
+			await recordSentMenuMessage(cleanId, message.chatId, "initial");
+		}
+		return true;
+	}
+
+	return false;
+}
+
+/**
+ * Retorna amostra aleatória de comandos de uma categoria
+ * @param {Array} commands
+ * @param {string} prefix
+ * @param {number} count
+ * @returns {string}
+ */
+function getSampleCommands(commands, prefix, count = 5) {
+	if (!Array.isArray(commands) || commands.length === 0) return "";
+	const visibleCmds = commands.filter((c) => !c.hidden && c.name);
+	const seen = new Set();
+	const uniqueNames = [];
+	for (const c of visibleCmds) {
+		const name = c.name?.toLowerCase();
+		if (name && !seen.has(name)) {
+			seen.add(name);
+			uniqueNames.push(c.name);
+		}
+	}
+	const shuffled = [...uniqueNames].sort(() => 0.5 - Math.random());
+	const selected = shuffled.slice(0, count);
+	return selected.map((name) => `${prefix}${name}`).join(", ");
+}
+
+/**
+ * Formata os comandos em destaque para o topo do menu inicial
+ * @param {Object} bot
+ * @param {string} prefix
+ * @returns {string}
+ */
+function getInitialHighlightsText(bot, prefix) {
+	let text = `📌 *Comandos em Destaque:*\n`;
+	const fixedCommands = bot?.eventHandler?.commandHandler?.fixedCommands?.getAllCommands?.() || [];
+	const managementCommands =
+		bot?.eventHandler?.commandHandler?.management?.getManagementCommands?.() || {};
+
+	for (const cmdItem of MENU_INITIAL_COMMANDS) {
+		const name = cmdItem;
+		let desc = "";
+		let isMgmt = false;
+
+		if (name.startsWith("g-")) {
+			const mgmtKey = name.substring(2);
+			if (managementCommands[mgmtKey]) {
+				desc = managementCommands[mgmtKey].description || "";
+				isMgmt = true;
+			}
+		} else if (managementCommands[name]) {
+			desc = managementCommands[name].description || "";
+			isMgmt = true;
+		}
+
+		if (!desc) {
+			const found = fixedCommands.find(
+				(c) =>
+					c.name?.toLowerCase() === name.toLowerCase() ||
+					(Array.isArray(c.aliases) && c.aliases.includes(name.toLowerCase()))
+			);
+			if (found) {
+				desc = found.description || "";
+			}
+		}
+
+		const displayTrigger = isMgmt
+			? name.startsWith("g-")
+				? `${prefix}${name}`
+				: `${prefix}g-${name}`
+			: `${prefix}${name}`;
+		text += `• *${displayTrigger}*${desc ? `: ${desc}` : ""}\n`;
+	}
+	return text;
+}
+
+/**
+ * Formata 3 comandos aleatórios para a seção "Conheça também"
+ * @param {Object} bot
+ * @param {string} prefix
+ * @param {number} count
+ * @returns {string}
+ */
+function getGetToKnowText(bot, prefix, count = 3) {
+	const fixedCommands = bot?.eventHandler?.commandHandler?.fixedCommands?.getAllCommands?.() || [];
+	const excludeSet = new Set([
+		...MENU_INITIAL_COMMANDS.map((c) => c.toLowerCase()),
+		...MENU_EXCLUDE_FROM_GETTOKNOW.map((c) => c.toLowerCase()),
+		"gerenciamento",
+		"g"
+	]);
+
+	const seen = new Set();
+	const eligible = [];
+
+	for (const cmd of fixedCommands) {
+		if (cmd.hidden) continue;
+		if (!cmd.name) continue;
+		const nameLow = cmd.name.toLowerCase();
+		if (seen.has(nameLow)) continue;
+		seen.add(nameLow);
+
+		if (
+			cmd.category &&
+			(cmd.category.toLowerCase() === "gerenciamento" || cmd.category.toLowerCase() === "admin")
+		) {
+			continue;
+		}
+		if (excludeSet.has(nameLow)) continue;
+		if (nameLow.startsWith("cmd-") || nameLow.startsWith("g-")) continue;
+
+		eligible.push(cmd);
+	}
+
+	if (eligible.length === 0) return "";
+
+	const shuffled = [...eligible].sort(() => 0.5 - Math.random());
+	const selected = shuffled.slice(0, count);
+
+	let text = `\n✨ *Conheça também:*\n`;
+	for (const cmd of selected) {
+		text += `${formatSingleCommand(cmd, prefix)}\n`;
+	}
+	return text;
+}
 
 /**
  * Lê o arquivo de cabeçalho do menu
@@ -60,115 +307,170 @@ function groupCommandsByCategory(commands) {
 	return categories;
 }
 
-async function showCommandsByCategory(bot, message, args, group) {
+async function showCommandsByCategory(bot, message, args, group, explicitCategory = null) {
 	try {
-		// Extract the category from the command
-		const fullCommand = message.content.trim();
+		const fullCommand = message.content ? message.content.trim() : "";
 		const prefix = group && group.prefix ? group.prefix : bot.prefix;
 
-		// Check if it's a category command (cmd-xxx)
-		if (fullCommand.startsWith(`${prefix}cmd-`) && fullCommand.length > prefix.length + 4) {
-			const category = fullCommand.substring(prefix.length + 4).toLowerCase();
+		let category = explicitCategory ? explicitCategory.toLowerCase() : null;
 
-			// Skip if it's the management commands (already handled by cmd-g)
-			if (category === "g" || category === "gerenciamento") {
-				return await sendManagementCommandList(bot, message, args, group);
-			}
+		if (
+			!category &&
+			fullCommand.startsWith(`${prefix}cmd-`) &&
+			fullCommand.length > prefix.length + 4
+		) {
+			category = fullCommand.substring(prefix.length + 4).toLowerCase();
+		} else if (
+			!category &&
+			(fullCommand.startsWith(`${prefix}cmd `) || fullCommand === `${prefix}cmd`) &&
+			args &&
+			args.length > 0
+		) {
+			category = args[0].toLowerCase().replace(/^cmd-/, "");
+		}
 
-			// Get fixed commands
-			const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
+		if (!category) {
+			return null;
+		}
 
-			// Filter commands by category with deduplication
-			const seenCommands = new Set();
-			const commandsInCategory = fixedCommands.filter((cmd) => {
-				if (!cmd.category || cmd.category.toLowerCase() !== category || cmd.hidden) {
-					return false;
-				}
-				const cmdKey = cmd.name?.toLowerCase();
-				if (cmdKey) {
-					if (seenCommands.has(cmdKey)) return false;
-					seenCommands.add(cmdKey);
-				}
-				return true;
-			});
+		// Skip if it's the management commands (already handled by cmd-g)
+		if (category === "g" || category === "gerenciamento") {
+			return await sendManagementCommandList(bot, message, args, group);
+		}
 
-			// Get custom commands for this group
-			const customCommands = group
-				? (await database.getCustomCommands(group.id)).filter(
-						(cmd) =>
-							cmd.active && !cmd.deleted && cmd.category && cmd.category.toLowerCase() === category
-					)
-				: [];
+		// Se o usuário pedir cmd-grupo (comandos customizados do grupo)
+		if (category === "grupo" && fullCommand === `${prefix}cmd-grupo` && !explicitCategory) {
+			return await sendGroupCommandList(bot, message, args, group);
+		}
 
-			// If no commands found in this category
-			if (commandsInCategory.length === 0 && customCommands.length === 0) {
-				return new ReturnMessage({
-					chatId: message.group ?? message.author,
-					content: `Nenhum comando encontrado na categoria '${category}'.`
-				});
-			}
+		// ─── VERIFICAÇÃO DE REPLY AO !cmd (EDIÇÃO IN-PLACE) ───
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		} else if (typeof message.getQuotedMessage === "function") {
+			quotedMsg = await message.getQuotedMessage().catch(() => null);
+		}
 
-			// Build message
-			const customNames = {
-				interacao: "Interação",
-				integracao: "Interação",
-				ia: "IA"
-			};
-			const displayCategory = customNames[category] || category;
-			let menuText = `🤖 *Comandos na categoria '${displayCategory}'*\n\n`;
+		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+		const quotedId =
+			directQuotedId ||
+			(quotedMsg?.id?._serialized
+				? quotedMsg.id._serialized
+				: quotedMsg?.id?.id
+					? quotedMsg.id.id
+					: quotedMsg?.id);
 
-			// Add fixed commands
-			if (commandsInCategory.length > 0) {
-				// Group related commands
-				const groupedCommands = groupRelatedCommands(commandsInCategory);
-
-				// Sort commands
-				const sortedGroups = sortCommands(groupedCommands);
-
-				// Format each command group
-				for (const cmdGroup of sortedGroups) {
-					if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
-						// Group of related commands
-						menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
-					} else {
-						// Individual command
-						const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
-						menuText += `${formatSingleCommand(cmd, prefix)}\n`;
-					}
+		if (quotedMsg || quotedId) {
+			const isMenu = await isMenuMessage(quotedMsg, quotedId);
+			if (isMenu && typeof bot.editMessage === "function") {
+				try {
+					const chatId = message.group ?? message.author;
+					const newMenuText = await buildMenuText(bot, group, category);
+					await bot.editMessage(chatId, quotedId, newMenuText);
+					await recordSentMenuMessage(quotedId, chatId, category);
+					return null; // Editou in-place com sucesso, sem nova mensagem
+				} catch (editError) {
+					logger.warn(
+						`[showCommandsByCategory] Erro ao editar mensagem citada ${quotedId}: ${editError.message}. Enviando como nova mensagem.`
+					);
+					// Fallback: continua para envio "solto"
 				}
 			}
+		}
 
-			// Add custom commands
-			if (customCommands.length > 0) {
-				if (commandsInCategory.length > 0) {
-					menuText += "\n";
-				}
+		// ─── ENVIO "SOLTO" DA CATEGORIA ───
+		const fixedCommands = bot.eventHandler.commandHandler.fixedCommands.getAllCommands();
 
-				menuText += `*Comandos personalizados na categoria '${category}'*:\n`;
-
-				for (const cmd of customCommands) {
-					menuText += `• *${prefix}${cmd.startsWith}*`;
-
-					if (cmd.reactions && cmd.reactions.trigger) {
-						menuText += ` (${cmd.reactions.trigger})`;
-					}
-
-					if (cmd.description) {
-						menuText += `: ${cmd.description}`;
-					}
-
-					menuText += "\n";
-				}
+		// Filter commands by category with deduplication
+		const seenCommands = new Set();
+		const commandsInCategory = fixedCommands.filter((cmd) => {
+			if (!cmd.category || cmd.category.toLowerCase() !== category || cmd.hidden) {
+				return false;
 			}
+			const cmdKey = cmd.name?.toLowerCase();
+			if (cmdKey) {
+				if (seenCommands.has(cmdKey)) return false;
+				seenCommands.add(cmdKey);
+			}
+			return true;
+		});
 
+		// Get custom commands for this group
+		const customCommands = group
+			? (await database.getCustomCommands(group.id)).filter(
+					(cmd) =>
+						cmd.active && !cmd.deleted && cmd.category && cmd.category.toLowerCase() === category
+				)
+			: [];
+
+		// If no commands found in this category
+		if (commandsInCategory.length === 0 && customCommands.length === 0) {
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
-				content: menuText
+				content: `Nenhum comando encontrado na categoria '${category}'.`
 			});
 		}
 
-		// If not a category command, return null to let other handlers process it
-		return null;
+		// Build message
+		const emoji = CATEGORY_EMOJIS[category] || "📦";
+		const desc = CATEGORY_DESCRIPTIONS[category] || "";
+		const displayCategory =
+			CATEGORY_NAMES[category] || category.charAt(0).toUpperCase() + category.slice(1);
+
+		let menuText = `${emoji} *Comandos na categoria '${displayCategory}'*\n`;
+		if (desc) {
+			menuText += `> _${desc}_\n`;
+		}
+		menuText += "\n";
+
+		// Add fixed commands
+		if (commandsInCategory.length > 0) {
+			// Group related commands
+			const groupedCommands = groupRelatedCommands(commandsInCategory);
+
+			// Sort commands
+			const sortedGroups = sortCommands(groupedCommands);
+
+			// Format each command group
+			for (const cmdGroup of sortedGroups) {
+				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
+					// Group of related commands
+					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
+				} else {
+					// Individual command
+					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
+					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
+				}
+			}
+		}
+
+		// Add custom commands
+		if (customCommands.length > 0) {
+			if (commandsInCategory.length > 0) {
+				menuText += "\n";
+			}
+
+			menuText += `*Comandos personalizados na categoria '${category}'*:\n`;
+
+			for (const cmd of customCommands) {
+				menuText += `• *${prefix}${cmd.startsWith}*`;
+
+				if (cmd.reactions && cmd.reactions.trigger) {
+					menuText += ` (${cmd.reactions.trigger})`;
+				}
+
+				if (cmd.description) {
+					menuText += `: ${cmd.description}`;
+				}
+
+				menuText += "\n";
+			}
+		}
+
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: menuText
+		});
 	} catch (error) {
 		logger.error("Erro ao enviar lista de comandos por categoria:", error);
 		return new ReturnMessage({
@@ -305,6 +607,183 @@ function formatSingleCommand(cmd, prefix) {
 }
 
 /**
+ * Constrói o texto formatado do menu para WhatsApp (topo dinâmico + lista de categorias)
+ * @param {Object} bot
+ * @param {Object} group
+ * @param {string} activeCategory - 'initial', 'geral', 'jogos', 'gerenciamento', etc.
+ * @returns {Promise<string>}
+ */
+async function buildMenuText(bot, group, activeCategory = "initial") {
+	const prefix = group?.prefix || bot?.prefix || "!";
+	const header = await readMenuHeader();
+	const botDisplayName = bot?.nomeExibir || "Ravenabot";
+
+	let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
+	if (!group) {
+		menuText += `> _PV de *${bot?.nomeExibir || bot.id}*_\n`;
+	} else {
+		menuText += `> _Grupo ${group.name}_\n`;
+	}
+	if (header) {
+		menuText += header + "\n";
+	}
+
+	const mutedCategories =
+		group && Array.isArray(group.mutedCategories) ? group.mutedCategories : [];
+	const mutedCommands = group && Array.isArray(group.mutedCommands) ? group.mutedCommands : [];
+
+	// Obtém comandos fixos deduplicados
+	const seenFixedCmds = new Set();
+	const rawFixedCommands =
+		bot?.eventHandler?.commandHandler?.fixedCommands?.getAllCommands?.() || [];
+	const fixedCommands = rawFixedCommands.filter((cmd) => {
+		const cmdKey = cmd.name?.toLowerCase();
+		if (cmdKey) {
+			if (seenFixedCmds.has(cmdKey)) return false;
+			seenFixedCmds.add(cmdKey);
+		}
+		if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) return false;
+		if (mutedCommands.includes(cmd.name)) return false;
+		return true;
+	});
+
+	// Comandos customizados do grupo
+	const customCommands = group
+		? (await database.getCustomCommands(group.id)).filter((cmd) => {
+				if (!cmd.active || cmd.deleted) return false;
+				if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) return false;
+				return true;
+			})
+		: [];
+
+	// ─── 1. SEÇÃO DO TOPO (activeCategory) ───
+	if (activeCategory === "initial") {
+		menuText += "\n" + getInitialHighlightsText(bot, prefix);
+		menuText += getGetToKnowText(bot, prefix, 3);
+	} else if (activeCategory === "g" || activeCategory === "gerenciamento") {
+		menuText += `\n⚙️ *Gerenciamento:*\n`;
+		const desc = CATEGORY_DESCRIPTIONS.gerenciamento;
+		if (desc) menuText += `> _${desc}_\n\n`;
+
+		const managementCommands =
+			bot?.eventHandler?.commandHandler?.management?.getManagementCommands?.() || {};
+		const sortedCmdNames = Object.keys(managementCommands).sort((a, b) => {
+			const indexA = COMMAND_ORDER.indexOf(a);
+			const indexB = COMMAND_ORDER.indexOf(b);
+			if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+			if (indexA !== -1) return -1;
+			if (indexB !== -1) return 1;
+			return a.localeCompare(b);
+		});
+		for (const cmdName of sortedCmdNames) {
+			const cmdInfo = managementCommands[cmdName];
+			menuText += `• *${prefix}g-${cmdName}*: ${cmdInfo.description}\n`;
+		}
+	} else {
+		const catKey = activeCategory.toLowerCase();
+		const emoji = CATEGORY_EMOJIS[catKey] || "📦";
+		const catDisplayName =
+			CATEGORY_NAMES[catKey] || catKey.charAt(0).toUpperCase() + catKey.slice(1);
+		const desc = CATEGORY_DESCRIPTIONS[catKey];
+
+		menuText += `\n${emoji} *${catDisplayName}:*\n`;
+		if (desc) menuText += `> _${desc}_\n\n`;
+
+		const commandsInCategory = fixedCommands.filter(
+			(cmd) => cmd.category && cmd.category.toLowerCase() === catKey && !cmd.hidden
+		);
+		const customInCategory = customCommands.filter(
+			(cmd) => cmd.category && cmd.category.toLowerCase() === catKey
+		);
+
+		if (commandsInCategory.length > 0) {
+			const groupedCommands = groupRelatedCommands(commandsInCategory);
+			const sortedGroups = sortCommands(groupedCommands);
+			for (const cmdGroup of sortedGroups) {
+				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
+					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
+				} else {
+					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
+					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
+				}
+			}
+		}
+
+		if (customInCategory.length > 0) {
+			if (commandsInCategory.length > 0) menuText += "\n";
+			menuText += `*Comandos personalizados:*\n`;
+			for (const cmd of customInCategory) {
+				menuText += `• *${prefix}${cmd.startsWith}*`;
+				if (cmd.reactions && cmd.reactions.trigger) menuText += ` (${cmd.reactions.trigger})`;
+				if (cmd.description) menuText += `: ${cmd.description}`;
+				menuText += "\n";
+			}
+		}
+
+		if (commandsInCategory.length === 0 && customInCategory.length === 0) {
+			menuText += `_Nenhum comando disponível nesta categoria._\n`;
+		}
+	}
+
+	// ─── 2. SEÇÃO DE CATEGORIAS (HEADERS INFERIORES) ───
+	menuText += `\n> Reagir à esta mensagem com o emoji da categoria pra listar os comandos\n\n`;
+
+	const categorized = groupCommandsByCategory(fixedCommands);
+	const allCatKeys = Object.keys(CATEGORY_EMOJIS);
+
+	for (const cat of allCatKeys) {
+		if (mutedCategories.includes(cat.toLowerCase())) continue;
+
+		const emoji = CATEGORY_EMOJIS[cat] || "📦";
+		const catDisplayName = CATEGORY_NAMES[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+		const desc = CATEGORY_DESCRIPTIONS[cat] || "";
+		const catCmds = categorized[cat] || [];
+
+		// Se a categoria não tem comandos visíveis, pula (exceto geral)
+		if (catCmds.length === 0 && cat !== "geral") continue;
+
+		const samples = getSampleCommands(catCmds, prefix, 5);
+
+		menuText += `${emoji} *${catDisplayName}*${desc ? ` - ${desc}` : ""}\n`;
+		if (samples) {
+			menuText += `${samples}\n`;
+		}
+		menuText += `${prefix}cmd-${cat} para ver todos\n\n`;
+	}
+
+	// Gerenciamento no final
+	if (!mutedCategories.includes("gerenciamento") && !mutedCategories.includes("g")) {
+		const mgmtCommands =
+			bot?.eventHandler?.commandHandler?.management?.getManagementCommands?.() || {};
+		const mgmtNames = Object.keys(mgmtCommands);
+		const shuffledMgmt = [...mgmtNames].sort(() => 0.5 - Math.random()).slice(0, 5);
+		const mgmtSamples = shuffledMgmt.map((n) => `${prefix}g-${n}`).join(", ");
+		const mgmtDesc =
+			CATEGORY_DESCRIPTIONS.gerenciamento || "Administração e configurações do grupo";
+
+		menuText += `⚙️ *Gerenciamento* - ${mgmtDesc}\n`;
+		if (mgmtSamples) {
+			menuText += `${mgmtSamples}\n`;
+		}
+		menuText += `${prefix}cmd-g para ver todos\n`;
+	}
+
+	// 3. Informações sobre itens ignorados/silenciados
+	if (mutedCategories.length > 0 || mutedCommands.length > 0) {
+		menuText += "\n🚫 *Ignorados/Silenciados:*\n";
+		if (mutedCategories.length > 0) {
+			menuText += `• *Categorias:* ${mutedCategories.join(", ")}\n`;
+		}
+		if (mutedCommands.length > 0) {
+			menuText += `• *Comandos:* ${mutedCommands.join(", ")}\n`;
+		}
+		menuText += `> Use os comandos de gerencia ou o !g-painel para ignorar/designorar comandos e categorias\n`;
+	}
+
+	return menuText.trimEnd();
+}
+
+/**
  * Envia uma lista de todos os comandos disponíveis
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
@@ -317,71 +796,30 @@ async function sendCommandList(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		logger.debug(`Enviando lista de comandos para ${chatId}`);
 
-		// Define o prefixo do comando
-		const prefix = group && group.prefix ? group.prefix : bot.prefix;
-
-		// Obtém configurações de silenciamento
-		const mutedCategories =
-			group && Array.isArray(group.mutedCategories) ? group.mutedCategories : [];
-		const mutedCommands = group && Array.isArray(group.mutedCommands) ? group.mutedCommands : [];
-
-		// Obtém todos os comandos fixos e filtra com deduplicação por nome
-		const seenFixedCmds = new Set();
-		const rawFixedCommands =
-			bot?.eventHandler?.commandHandler?.fixedCommands?.getAllCommands?.() || [];
-		const fixedCommands = rawFixedCommands.filter((cmd) => {
-			// Evita comandos duplicados com o mesmo nome
-			const cmdKey = cmd.name?.toLowerCase();
-			if (cmdKey) {
-				if (seenFixedCmds.has(cmdKey)) return false;
-				seenFixedCmds.add(cmdKey);
+		// Suporte a !cmd <categoria> (ex: !cmd jogos, !cmd ia, !cmd midia, !cmd g)
+		if (args && args.length > 0) {
+			const targetCat = args[0].toLowerCase().replace(/^cmd-/, "");
+			if (
+				CATEGORY_EMOJIS[targetCat] ||
+				targetCat === "g" ||
+				targetCat === "gerenciamento" ||
+				targetCat === "grupo"
+			) {
+				return await showCommandsByCategory(bot, message, args, group, targetCat);
 			}
-
-			// Filtra por categoria
-			if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
-				return false;
-			}
-
-			// Filtra por comando silenciado
-			if (mutedCommands.includes(cmd.name)) {
-				return false;
-			}
-
-			return true;
-		});
-
-		// Obtém comandos personalizados para este grupo e filtra
-		const customCommands = group
-			? (await database.getCustomCommands(group.id)).filter((cmd) => {
-					if (!cmd.active || cmd.deleted) return false;
-
-					// Filtra por categoria (se houver)
-					if (cmd.category && mutedCategories.includes(cmd.category.toLowerCase())) {
-						return false;
-					}
-
-					return true;
-				})
-			: [];
-
-		// Lê o cabeçalho do menu
-		const header = await readMenuHeader();
-
-		// Agrupa comandos fixos por categoria
-		const categorizedCommands = groupCommandsByCategory(fixedCommands);
-
-		// Constrói mensagem
-		const botDisplayName = bot?.nomeExibir || "Ravenabot";
-		let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
-		if (!group) {
-			menuText += `> _PV de *${bot?.nomeExibir || bot.id}*_\n`;
-		} else {
-			menuText += `> _Grupo ${group.name}_\n`;
 		}
-		menuText += header + "\n";
 
 		// Para Telegram: menu interativo com botões de categoria e edição in-place
 		if (bot && bot.useTelegram) {
+			const header = await readMenuHeader();
+			const botDisplayName = bot?.nomeExibir || "Ravenabot";
+			let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;
+			if (!group) {
+				menuText += `> _PV de *${bot?.nomeExibir || bot.id}*_\n`;
+			} else {
+				menuText += `> _Grupo ${group.name}_\n`;
+			}
+			menuText += header + "\n";
 			menuText += "\n💡 *Navegação Interativa:*\n";
 			menuText += "Toque em um botão abaixo para ver os comandos da categoria correspondente:\n";
 
@@ -391,12 +829,7 @@ async function sendCommandList(bot, message, args, group) {
 
 			for (const cat of catKeys) {
 				const emoji = CATEGORY_EMOJIS[cat] || "📦";
-				const customNames = {
-					interacao: "Interação",
-					integracao: "Interação",
-					ia: "IA"
-				};
-				const catLabel = customNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+				const catLabel = CATEGORY_NAMES[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
 				currentRow.push({
 					text: `${emoji} ${catLabel}`,
 					action: { type: "menu", category: cat, page: 0 }
@@ -432,88 +865,51 @@ async function sendCommandList(bot, message, args, group) {
 			});
 		}
 
-		// 1. Comandos Fixos por categoria
-		// Processa cada categoria na ordem definida em CATEGORY_EMOJIS
-		for (const category in CATEGORY_EMOJIS) {
-			const commands = categorizedCommands[category] || [];
-			if (commands.length === 0) continue;
+		// Para WhatsApp / outros:
+		// Verifica se foi enviado em resposta (reply) a uma mensagem de menu !cmd: restaura ao estado inicial
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		} else if (typeof message.getQuotedMessage === "function") {
+			quotedMsg = await message.getQuotedMessage().catch(() => null);
+		}
 
-			// Adiciona cabeçalho da categoria com emoji
-			const emoji = CATEGORY_EMOJIS[category];
-			const customNames = {
-				interacao: "Interação",
-				integracao: "Interação",
-				ia: "IA"
-			};
-			const nomeCategoria =
-				customNames[category] || category.charAt(0).toUpperCase() + category.slice(1);
-			menuText += `\n${emoji} *${nomeCategoria}:*\n`;
+		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+		const quotedId =
+			directQuotedId ||
+			(quotedMsg?.id?._serialized
+				? quotedMsg.id._serialized
+				: quotedMsg?.id?.id
+					? quotedMsg.id.id
+					: quotedMsg?.id);
 
-			// Agrupa comandos relacionados
-			const groupedCommands = groupRelatedCommands(commands);
-
-			// Ordena conforme COMMAND_ORDER
-			const sortedGroups = sortCommands(groupedCommands);
-
-			// Formata cada grupo de comandos
-			for (const cmdGroup of sortedGroups) {
-				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
-					// Grupo de comandos relacionados
-					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
-				} else {
-					// Comando individual
-					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
-					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
+		if (quotedMsg || quotedId) {
+			const isMenu = await isMenuMessage(quotedMsg, quotedId);
+			if (isMenu && typeof bot.editMessage === "function") {
+				try {
+					const newMenuText = await buildMenuText(bot, group, "initial");
+					await bot.editMessage(chatId, quotedId, newMenuText);
+					await recordSentMenuMessage(quotedId, chatId, "initial");
+					return null;
+				} catch (editError) {
+					logger.warn(
+						`[sendCommandList] Erro ao editar mensagem citada ${quotedId}: ${editError.message}. Enviando novo menu.`
+					);
 				}
 			}
 		}
 
-		// Fallback para comandos em categorias não mapeadas ou 'resto'
-		const unmappedCommands = [];
-		for (const cat in categorizedCommands) {
-			if (!CATEGORY_EMOJIS[cat] && categorizedCommands[cat]?.length > 0) {
-				unmappedCommands.push(...categorizedCommands[cat]);
-			}
-		}
+		// Constrói o menu interativo com destaques e lista de categorias
+		const menuText = await buildMenuText(bot, group, "initial");
 
-		if (unmappedCommands.length > 0) {
-			menuText += `\n❓ *Outros:*\n`;
-			const groupedCommands = groupRelatedCommands(unmappedCommands);
-			const sortedGroups = sortCommands(groupedCommands);
-			for (const cmdGroup of sortedGroups) {
-				if (Array.isArray(cmdGroup) && cmdGroup.length > 1) {
-					menuText += `${formatCommandGroup(cmdGroup, prefix)}\n`;
-				} else {
-					const cmd = Array.isArray(cmdGroup) ? cmdGroup[0] : cmdGroup;
-					menuText += `${formatSingleCommand(cmd, prefix)}\n`;
-				}
-			}
-		}
-
-		// 2. Comandos de gerenciamento
-		// Ocupam muito espaço, movidos para o !cmd-g
-		menuText += "\n⚙️ *Comandos de Gerenciamento:*\n";
-		menuText += `• *Movidos!* Consulte enviando \`!cmd-g\`\n`;
-
-		// 3. Informações sobre itens ignorados
-		if (mutedCategories.length > 0 || mutedCommands.length > 0) {
-			menuText += "\n🚫 *Ignorados/Silenciados:*\n";
-			if (mutedCategories.length > 0) {
-				menuText += `• *Categorias:* ${mutedCategories.join(", ")}\n`;
-			}
-			if (mutedCommands.length > 0) {
-				menuText += `• *Comandos:* ${mutedCommands.join(", ")}\n`;
-			}
-			menuText += `> Use os comandos de gerencia ou o !g-painel para ignorar/designorar comandos e categorias`;
-		}
-
-		// Retorna a mensagem com o menu sem truncamento
 		return new ReturnMessage({
 			chatId,
 			content: menuText,
 			options: {
 				maxChars: 0,
-				maxLines: 0
+				maxLines: 0,
+				isMenuMessage: true,
+				currentCategory: "initial"
 			}
 		});
 	} catch (error) {
@@ -540,43 +936,68 @@ async function sendManagementCommandList(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		logger.debug(`Enviando lista de comandos de gerenciamento para ${chatId}`);
 
-		// Lê o cabeçalho do menu
-		const header = await readMenuHeader();
+		// ─── VERIFICAÇÃO DE REPLY AO !cmd (EDIÇÃO IN-PLACE) ───
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		} else if (typeof message.getQuotedMessage === "function") {
+			quotedMsg = await message.getQuotedMessage().catch(() => null);
+		}
 
-		// Define o prefixo do comando
+		const directQuotedId = message.quotedMessageId || message.origin?.quotedMessageId;
+		const quotedId =
+			directQuotedId ||
+			(quotedMsg?.id?._serialized
+				? quotedMsg.id._serialized
+				: quotedMsg?.id?.id
+					? quotedMsg.id.id
+					: quotedMsg?.id);
+
+		if (quotedMsg || quotedId) {
+			const isMenu = await isMenuMessage(quotedMsg, quotedId);
+			if (isMenu && typeof bot.editMessage === "function") {
+				try {
+					const newMenuText = await buildMenuText(bot, group, "gerenciamento");
+					await bot.editMessage(chatId, quotedId, newMenuText);
+					await recordSentMenuMessage(quotedId, chatId, "gerenciamento");
+					return null;
+				} catch (editError) {
+					logger.warn(
+						`[sendManagementCommandList] Erro ao editar mensagem citada ${quotedId}: ${editError.message}. Enviando como nova mensagem.`
+					);
+				}
+			}
+		}
+
+		// Envio solto
+		const header = await readMenuHeader();
 		const prefix = group && group.prefix ? group.prefix : bot.prefix;
 
-		// Constrói mensagem
-		let menuText = header + "\n\n";
+		let menuText = header ? header + "\n\n" : "";
 		menuText += "⚙️ *Comandos de Gerenciamento:*\n";
+		const desc = CATEGORY_DESCRIPTIONS.gerenciamento;
+		if (desc) {
+			menuText += `> _${desc}_\n\n`;
+		} else {
+			menuText += "\n";
+		}
 
-		// Obtém comandos de gerenciamento dinamicamente
 		const managementCommands = bot.eventHandler.commandHandler.management.getManagementCommands();
 
-		// Ordena os comandos: primeiro os prioritários, depois os demais em ordem alfabética
 		const sortedCmdNames = Object.keys(managementCommands).sort((a, b) => {
 			const indexA = COMMAND_ORDER.indexOf(a);
 			const indexB = COMMAND_ORDER.indexOf(b);
-
-			// Se ambos estão na lista de prioridade, usa a posição na lista
-			if (indexA !== -1 && indexB !== -1) {
-				return indexA - indexB;
-			}
-			// Se apenas um está na lista, este vem primeiro
+			if (indexA !== -1 && indexB !== -1) return indexA - indexB;
 			if (indexA !== -1) return -1;
 			if (indexB !== -1) return 1;
-
-			// Caso contrário, usa ordem alfabética
 			return a.localeCompare(b);
 		});
 
-		// Adiciona cada comando formatado ao menu
 		for (const cmdName of sortedCmdNames) {
 			const cmdInfo = managementCommands[cmdName];
 			menuText += `• *${prefix}g-${cmdName}*: ${cmdInfo.description}\n`;
 		}
 
-		// Retorna a mensagem com o menu de gerenciamento
 		return new ReturnMessage({
 			chatId,
 			content: menuText
@@ -589,6 +1010,80 @@ async function sendManagementCommandList(bot, message, args, group) {
 			chatId,
 			content: "Erro ao recuperar lista de comandos de gerenciamento. Por favor, tente novamente."
 		});
+	}
+}
+
+/**
+ * Trata reações de emoji a mensagens do menu !cmd para navegação interativa
+ * @param {Object} bot
+ * @param {Object} message
+ * @param {Array} args
+ * @param {Object} group
+ * @returns {Promise<boolean>}
+ */
+async function processMenuReaction(bot, message, args, group) {
+	try {
+		if (!message.originReaction) {
+			return false;
+		}
+
+		const reaction = message.originReaction;
+		const rawEmoji = reaction.reaction;
+		if (!rawEmoji) return false;
+
+		let selectedCategory = null;
+		for (const [cat, emoji] of Object.entries(CATEGORY_EMOJIS)) {
+			if (emoji === rawEmoji) {
+				selectedCategory = cat;
+				break;
+			}
+		}
+
+		if (!selectedCategory && (rawEmoji === "⚙️" || rawEmoji === "⚙")) {
+			selectedCategory = "gerenciamento";
+		}
+
+		if (!selectedCategory) {
+			return false;
+		}
+
+		const targetMsgId =
+			reaction.msgId?._serialized ||
+			reaction.msgId?.id ||
+			(typeof reaction.msgId === "string" ? reaction.msgId : null) ||
+			message.id;
+
+		if (!targetMsgId) return false;
+
+		const isMenu = await isMenuMessage(message, targetMsgId);
+		if (!isMenu) {
+			return false;
+		}
+
+		const tracked = trackedMenuMessages.get(targetMsgId);
+		const chatId =
+			message.group ||
+			reaction.chatId ||
+			message.chatId ||
+			tracked?.chatId ||
+			group?.id ||
+			reaction.key?.remoteJID ||
+			reaction.key?.remoteJid ||
+			message.author;
+
+		if (!chatId) return false;
+
+		if (typeof bot.editMessage === "function") {
+			const newMenuText = await buildMenuText(bot, group, selectedCategory);
+			await bot.editMessage(chatId, targetMsgId, newMenuText);
+			await recordSentMenuMessage(targetMsgId, chatId, selectedCategory);
+			return true;
+		}
+
+		return false;
+	} catch (error) {
+		logger.error("Erro ao processar reação no menu:", error);
+		return false;
 	}
 }
 
@@ -775,6 +1270,19 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 		})
 	);
 });
+
+commands.push(
+	new Command({
+		name: "reactionMenuHelper",
+		description: "Invocado apenas pelo ReactionsHandler para navegação do menu por emojis",
+		reactions: {
+			trigger: [...new Set([...Object.values(CATEGORY_EMOJIS), "⚙️", "⚙"])]
+		},
+		usage: "",
+		hidden: true,
+		method: processMenuReaction
+	})
+);
 
 const helper = {
 	about: "Menu de comandos dinâmico e categorizado com navegação completa",
@@ -981,5 +1489,8 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 module.exports = {
 	helper,
 	commands,
-	handleMenuCallback
+	handleMenuCallback,
+	recordSentMenuMessage,
+	buildMenuText,
+	isMenuMessage
 };

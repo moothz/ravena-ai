@@ -1677,6 +1677,24 @@ class WhatsAppBotGo {
 					}
 				}
 
+				if (options.isMenuMessage && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const Menu = require("./functions/Menu");
+						if (typeof Menu.recordSentMenuMessage === "function") {
+							Menu.recordSentMenuMessage(
+								sentMsgId,
+								message.chatId,
+								options.currentCategory || "initial"
+							);
+						}
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar menu message: ${regErr.message}`
+						);
+					}
+				}
+
 				if (result && result.id?._serialized) {
 					// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
 					/*

@@ -241,8 +241,86 @@ const helper = {
 	cmds: []
 };
 
+/**
+ * Breves descrições para cada categoria de comandos (exibidas nos headers do menu e no topo de cmd-categoria)
+ */
+const CATEGORY_DESCRIPTIONS = {
+	geral: "Comandos básicos e utilitários gerais do bot",
+	grupo: "Ferramentas para membros e interação no grupo",
+	stickers: "Criação e manipulação de figurinhas",
+	ia: "Inteligência artificial, imagens e conversação",
+	interacao: "Interações sociais, casamentos e brincadeiras",
+	midia: "Download e edição de fotos, vídeos e áudios",
+	voz: "Síntese e transcrição de mensagens de voz",
+	utilidades: "Ferramentas práticas e consultas do dia a dia",
+	downloaders: "Baixar mídias do YouTube, TikTok e redes sociais",
+	jogos: "Mini-games, apostas, pesca e roleta russa",
+	streams: "Notificações e busca de transmissões ao vivo",
+	zoeira: "Comandos engraçados, memes e diversão",
+	mudae: "Sistema de waifus, rolagens e coleção",
+	busca: "Pesquisas na web, Wikipedia e informações",
+	cultura: "Cinema, séries, curiosidades e horóscopo",
+	audio: "Efeitos sonoros, MyInstants e músicas",
+	listas: "Listas de compras, tarefas e participantes",
+	arquivos: "Conversão e gerenciamento de arquivos",
+	canais: "Acompanhamento e notícias de canais",
+	outros: "Outros comandos diversos",
+	gerenciamento: "Administração e configurações do grupo"
+};
+
+/**
+ * Nomes formatados e acentuados para as categorias
+ */
+const CATEGORY_NAMES = {
+	geral: "Geral",
+	grupo: "Grupo",
+	stickers: "Figurinhas",
+	ia: "IA",
+	interacao: "Interação",
+	midia: "Mídia",
+	voz: "Voz",
+	utilidades: "Utilidades",
+	downloaders: "Downloads",
+	jogos: "Jogos",
+	streams: "Streams",
+	zoeira: "Zoeira",
+	mudae: "Mudae / Waifus",
+	busca: "Busca",
+	cultura: "Cultura",
+	audio: "Áudio",
+	listas: "Listas",
+	arquivos: "Arquivos",
+	canais: "Canais",
+	outros: "Outros",
+	gerenciamento: "Gerenciamento"
+};
+
+/**
+ * Comandos em destaque exibidos no topo do envio inicial do !cmd
+ */
+const MENU_INITIAL_COMMANDS = ["comunidade", "doar", "ajuda", "convite", "g-painel"];
+
+/**
+ * Comandos excluídos da seção "Conheça também" (para evitar comandos internos, de navegação ou irrelevantes)
+ */
+const MENU_EXCLUDE_FROM_GETTOKNOW = [
+	"cmd",
+	"comandos",
+	"menu",
+	"info",
+	"cmd-categoria",
+	"cmd-grupo",
+	"cmd-gerenciamento",
+	"cmd-g",
+	"reactionMenuHelper"
+];
+
 module.exports = {
 	helper,
 	COMMAND_ORDER,
-	CATEGORY_EMOJIS
+	CATEGORY_EMOJIS,
+	CATEGORY_DESCRIPTIONS,
+	CATEGORY_NAMES,
+	MENU_INITIAL_COMMANDS,
+	MENU_EXCLUDE_FROM_GETTOKNOW
 };

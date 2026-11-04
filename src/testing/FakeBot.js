@@ -21,6 +21,7 @@ class FakeBot {
 		this.testMode = options.testMode !== undefined ? Boolean(options.testMode) : true;
 		this.prefix = options.prefix ?? "!";
 		this.phoneNumber = options.phoneNumber ?? "5511999990000";
+		this.nomeExibir = options.nomeExibir ?? options.nome ?? options.name ?? null;
 		this.useTelegram = options.useTelegram ?? false;
 		this.useDiscord = options.useDiscord ?? false;
 
@@ -337,6 +338,19 @@ class FakeBot {
 					const FazendaCommands = require("../functions/FazendaCommands");
 					if (typeof FazendaCommands.recordInvMessage === "function") {
 						FazendaCommands.recordInvMessage(msg.chatId, msg.options.invData.userId, fakeMsgId);
+					}
+				} catch {}
+			}
+
+			if (msg.options?.isMenuMessage) {
+				try {
+					const Menu = require("../functions/Menu");
+					if (typeof Menu.recordSentMenuMessage === "function") {
+						Menu.recordSentMenuMessage(
+							fakeMsgId,
+							msg.chatId,
+							msg.options.currentCategory || "initial"
+						);
 					}
 				} catch {}
 			}
