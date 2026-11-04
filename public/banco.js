@@ -17,6 +17,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     let globalRates = null;
     let currentUserData = null;
 
+    // Funções utilitárias de formatação brasileira
+    function formatPtBr(val, decimals = 2) {
+        if (val === null || val === undefined || isNaN(val)) return "0";
+        return Number(val).toLocaleString("pt-BR", {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+    }
+
+    function formatInt(val) {
+        if (val === null || val === undefined || isNaN(val)) return "0";
+        return Math.round(Number(val)).toLocaleString("pt-BR");
+    }
+
+    function formatPhone(phone) {
+        if (!phone) return "Desconhecido";
+        const clean = String(phone).replace(/\D/g, "");
+        if (clean.length === 13 && clean.startsWith("55")) {
+            return `+${clean.slice(0, 2)} (${clean.slice(2, 4)}) ${clean.slice(4, 9)}-${clean.slice(9)}`;
+        }
+        return phone;
+    }
+
+    function calculateDynamicSpread(usedToday, addAmount, limit) {
+        const total = (Number(usedToday) || 0) + (Number(addAmount) || 0);
+        const ratio = Math.min(1.0, Math.max(0, total / (Number(limit) || 1)));
+        const spread = 0.03 + 0.07 * Math.pow(ratio, 1.5);
+        return Math.min(0.10, Math.max(0.03, spread));
+    }
+
     // 2. Carrega Dados Públicos
     async function loadPublicData() {
         try {
@@ -28,27 +58,27 @@ document.addEventListener("DOMContentLoaded", async () => {
             globalRates = d.rates;
 
             // Banner
-            document.getElementById("total-runas").textContent = `${d.totalRunas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ᚱ`;
-            document.getElementById("total-accounts").textContent = `Distribuídas entre ${d.totalAccounts} contas cadastradas na rede`;
+            document.getElementById("total-runas").textContent = `💠 ${formatPtBr(d.totalRunas, 2)} ᚱ`;
+            document.getElementById("total-accounts").textContent = `Distribuídas entre ${formatInt(d.totalAccounts)} contas cadastradas na rede`;
 
             // Card Pesca
             const kgPer1000 = Math.round(1000 / d.rates.runasPerKgFish);
-            document.getElementById("rate-fish").textContent = `1.000 ᚱ = ${kgPer1000.toLocaleString("pt-BR")} kg`;
-            document.getElementById("unit-fish").textContent = `1 kg = ${d.rates.runasPerKgFish.toFixed(2)} ᚱ`;
-            document.getElementById("stock-fish").textContent = `${d.fish.totalWeight.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg (${d.fish.totalCount} peixes)`;
+            document.getElementById("rate-fish").textContent = `1.000 ᚱ = ${formatInt(kgPer1000)} kg`;
+            document.getElementById("unit-fish").textContent = `1 kg = ${formatPtBr(d.rates.runasPerKgFish, 2)} ᚱ`;
+            document.getElementById("stock-fish").textContent = `${formatPtBr(d.fish.totalWeight, 1)} kg (${formatInt(d.fish.totalCount)} peixes)`;
 
             // Card Waifus
             const zPer1000 = Math.round(1000 / d.rates.runasPerZinthos);
-            document.getElementById("rate-waifu").textContent = `1.000 ᚱ = ${zPer1000.toLocaleString("pt-BR")} Z`;
-            document.getElementById("unit-waifu").textContent = `1 Z = ${d.rates.runasPerZinthos.toFixed(4)} ᚱ`;
-            document.getElementById("stock-waifu").textContent = `${d.waifu.circulatingZinthos.toLocaleString("pt-BR")} Zinthos`;
-            document.getElementById("inflation-waifu").textContent = `+${d.waifu.inflationPercent}%`;
+            document.getElementById("rate-waifu").textContent = `1.000 ᚱ = ${formatInt(zPer1000)} Z`;
+            document.getElementById("unit-waifu").textContent = `1 Z = ${formatPtBr(d.rates.runasPerZinthos, 4)} ᚱ`;
+            document.getElementById("stock-waifu").textContent = `${formatInt(d.waifu.circulatingZinthos)} Zinthos`;
+            document.getElementById("inflation-waifu").textContent = `+${formatPtBr(d.waifu.inflationPercent, 2)}%`;
 
-            // Card Jardim
+            // Card Jardim (Fazenda)
             const mjPer1000 = Math.round(1000 / d.rates.runasPerJardimCoin);
-            document.getElementById("rate-jardim").textContent = `1.000 ᚱ = ${mjPer1000.toLocaleString("pt-BR")} Moedas`;
-            document.getElementById("unit-jardim").textContent = `1 MJ = ${d.rates.runasPerJardimCoin.toFixed(4)} ᚱ`;
-            document.getElementById("stock-jardim").textContent = `${d.jardim.totalCoins.toLocaleString("pt-BR")} moedas`;
+            document.getElementById("rate-jardim").textContent = `1.000 ᚱ = ${formatInt(mjPer1000)} Ptl`;
+            document.getElementById("unit-jardim").textContent = `1 Ptl = ${formatPtBr(d.rates.runasPerJardimCoin, 4)} ᚱ`;
+            document.getElementById("stock-jardim").textContent = `${formatInt(d.jardim.totalCoins)} Ptl`;
         } catch (err) {
             console.error("Erro ao carregar dados públicos do banco:", err);
         }
@@ -82,10 +112,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             // Preenche dados do usuário
             document.getElementById("user-phone").textContent = formatPhone(currentUserData.userId);
-            document.getElementById("my-runas").textContent = `${currentUserData.account.runas.toFixed(2)} ᚱ`;
-            document.getElementById("my-fish").textContent = `${currentUserData.holdings.fishWeight.toFixed(2)} kg (${currentUserData.holdings.fishCount} peixes)`;
-            document.getElementById("my-zinthos").textContent = `${currentUserData.holdings.zinthos.toLocaleString("pt-BR")} Z`;
-            document.getElementById("my-jardim").textContent = `${currentUserData.holdings.gardenCoins.toLocaleString("pt-BR")} moedas`;
+            document.getElementById("my-runas").textContent = `${formatPtBr(currentUserData.account.runas, 2)} ᚱ`;
+            document.getElementById("my-fish").textContent = `${formatPtBr(currentUserData.holdings.fishWeight, 2)} kg (${formatInt(currentUserData.holdings.fishCount)} peixes)`;
+            document.getElementById("my-zinthos").textContent = `${formatInt(currentUserData.holdings.zinthos)} Z`;
+            document.getElementById("my-jardim").textContent = `${formatInt(currentUserData.holdings.gardenCoins)} Ptl`;
 
             // Renderiza extrato
             renderTransactions(currentUserData.transactions);
@@ -93,15 +123,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch (err) {
             console.error("Erro ao verificar sessão do banco:", err);
         }
-    }
-
-    function formatPhone(phone) {
-        if (!phone) return "Desconhecido";
-        const clean = String(phone).replace(/\D/g, "");
-        if (clean.length === 13 && clean.startsWith("55")) {
-            return `+${clean.slice(0, 2)} (${clean.slice(2, 4)}) ${clean.slice(4, 9)}-${clean.slice(9)}`;
-        }
-        return phone;
     }
 
     function renderTransactions(txs) {
@@ -112,20 +133,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         tbody.innerHTML = txs.map(t => {
-            const isDeposit = t.type === "DEPOSIT";
+            const isVenda = t.type === "DEPOSIT";
             const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-            const typeBadge = isDeposit ? `<span style="color: #4ade80; font-weight: 600;">📥 Depósito</span>` : `<span style="color: #f87171; font-weight: 600;">📤 Saque</span>`;
+            const typeBadge = isVenda ? `<span style="color: #4ade80; font-weight: 600;">📥 Venda</span>` : `<span style="color: #38bdf8; font-weight: 600;">📤 Compra</span>`;
             const gameBadge = t.game === "pesca" ? "🎣 Pesca" : t.game === "waifu" ? "💜 Waifus" : "🌱 Jardim";
-            const sign = isDeposit ? "+" : "-";
+            const sign = isVenda ? "+" : "-";
+            const unit = t.game === "pesca" ? "kg" : t.game === "jardim" ? "Ptl" : "Z";
 
             return `
                 <tr>
                     <td>${dateStr}</td>
                     <td>${typeBadge}</td>
                     <td>${gameBadge}</td>
-                    <td>${t.game_amount.toLocaleString("pt-BR")} ${t.game === "pesca" ? "kg" : ""}</td>
-                    <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff;">${sign}${t.runas_amount.toFixed(2)} ᚱ</td>
-                    <td style="color: #94a3b8;">${(t.spread_rate * 100).toFixed(1)}%</td>
+                    <td>${t.game === "pesca" ? formatPtBr(t.game_amount, 2) : formatInt(t.game_amount)} ${unit}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff;">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
+                    <td style="color: #94a3b8;">${formatPtBr(t.spread_rate * 100, 1)}%</td>
                 </tr>
             `;
         }).join("");
@@ -152,12 +174,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     const opSelect = document.getElementById("trade-operation");
     const gameSelect = document.getElementById("trade-game");
     const amountInput = document.getElementById("trade-amount");
+    const btnUseAll = document.getElementById("btn-use-all");
     const previewDiv = document.getElementById("trade-preview");
     const btnExecute = document.getElementById("btn-trade-execute");
 
+    function getUserMaxAmount(op, game) {
+        if (!currentUserData) return 0;
+        if (op === "deposit") {
+            if (game === "pesca") return currentUserData.holdings?.fishWeight || 0;
+            if (game === "zinthos") return currentUserData.holdings?.zinthos || 0;
+            if (game === "jardim") return currentUserData.holdings?.gardenCoins || 0;
+        } else {
+            return currentUserData.account?.runas || 0;
+        }
+        return 0;
+    }
+
+    if (btnUseAll) {
+        btnUseAll.addEventListener("click", () => {
+            const op = opSelect.value;
+            const game = gameSelect.value;
+            const maxVal = getUserMaxAmount(op, game);
+            if (game === "pesca" || op === "withdraw") {
+                amountInput.value = Number(maxVal).toFixed(2);
+            } else {
+                amountInput.value = String(Math.floor(maxVal));
+            }
+            updatePreview();
+        });
+    }
+
     opSelect.addEventListener("change", () => {
         if (opSelect.value === "withdraw") {
-            // Remove pesca da lista de saques se presente
+            // Remove pesca da lista de saques/compras
             const fishOpt = gameSelect.querySelector("option[value='pesca']");
             if (fishOpt) fishOpt.disabled = true;
             if (gameSelect.value === "pesca") gameSelect.value = "zinthos";
@@ -176,57 +225,126 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const op = opSelect.value;
         const game = gameSelect.value;
-        const valStr = (amountInput.value || "").trim().toLowerCase();
+        const rawVal = (amountInput.value || "").trim().toLowerCase();
 
-        if (!valStr) {
-            previewDiv.innerHTML = "💡 Digite a quantidade acima para simular o recebimento.";
+        if (!rawVal) {
+            previewDiv.innerHTML = "💡 Digite a quantidade acima para simular a prévia de valores e taxas.";
             btnExecute.disabled = false;
             return;
         }
 
         if (op === "withdraw" && game === "pesca") {
-            previewDiv.innerHTML = "<span style='color: #ef4444;'>❌ Não é permitido converter Runas para peixes (apenas venda).</span>";
+            previewDiv.innerHTML = "<span style='color: #ef4444;'>❌ Não é permitido comprar peixes com Runas (peixes são apenas para venda).</span>";
             btnExecute.disabled = true;
             return;
         }
 
-        const isAll = valStr === "tudo" || valStr === "all";
-        let amount = isAll ? 999999 : parseFloat(valStr);
+        const isAll = rawVal === "tudo" || rawVal === "all" || rawVal === "max";
+        let amount = isAll ? getUserMaxAmount(op, game) : parseFloat(rawVal.replace(",", "."));
 
-        if (!isAll && (isNaN(amount) || amount <= 0)) {
+        if (isNaN(amount) || amount <= 0) {
             previewDiv.innerHTML = "<span style='color: #f59e0b;'>⚠️ Digite um valor numérico positivo.</span>";
+            btnExecute.disabled = true;
             return;
         }
 
-        let previewText = "";
+        const quota = currentUserData?.quota || { used: {}, limits: {}, remaining: {} };
+        let previewHtml = "";
+
         if (op === "deposit") {
+            // Venda para o banco
             if (game === "pesca") {
+                const limit = quota.limits?.pesca || 1500;
+                const used = quota.used?.pesca || 0;
                 const rate = globalRates.runasPerKgFish;
-                const estRunas = (isAll ? (currentUserData?.holdings?.fishWeight || 0) : amount) * rate * 0.96;
-                previewText = `🐟 Você venderá aproximadamente <strong>${isAll ? "todos os seus peixes comuns" : `${amount} kg`}</strong> e receberá cerca de <strong>+${estRunas.toFixed(2)} ᚱ</strong> (Spread estimado: ~4%).`;
+                const spread = calculateDynamicSpread(used, amount, limit);
+                const rawRunas = amount * rate;
+                const spreadRunas = rawRunas * spread;
+                const netRunas = rawRunas - spreadRunas;
+                const remQuota = Math.max(0, (quota.remaining?.pesca ?? limit) - amount);
+
+                previewHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>📦 <strong>Vender:</strong> ${formatPtBr(amount, 2)} kg de Peixe Comum ${isAll ? "<em>(Todo o seu inventário comum)</em>" : ""}</div>
+                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
+                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatPtBr(remQuota, 1)} kg</div>
+                    </div>
+                `;
             } else if (game === "zinthos") {
+                const limit = quota.limits?.zinthos || 9000;
+                const used = quota.used?.zinthos || 0;
                 const rate = globalRates.runasPerZinthos;
-                const estRunas = amount * rate * 0.96;
-                previewText = `💜 Você depositará <strong>${amount.toLocaleString("pt-BR")} Zinthos</strong> e receberá cerca de <strong>+${estRunas.toFixed(2)} ᚱ</strong>.`;
+                const spread = calculateDynamicSpread(used, amount, limit);
+                const rawRunas = amount * rate;
+                const spreadRunas = rawRunas * spread;
+                const netRunas = rawRunas - spreadRunas;
+                const remQuota = Math.max(0, (quota.remaining?.zinthos ?? limit) - amount);
+
+                previewHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>💜 <strong>Vender:</strong> ${formatInt(amount)} Zinthos ${isAll ? "<em>(Todo o seu saldo de Zinthos)</em>" : ""}</div>
+                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
+                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatInt(remQuota)} Z</div>
+                    </div>
+                `;
             } else if (game === "jardim") {
+                const limit = quota.limits?.jardim || 30000;
+                const used = quota.used?.jardim || 0;
                 const rate = globalRates.runasPerJardimCoin;
-                const estRunas = amount * rate * 0.96;
-                previewText = `🌱 Você depositará <strong>${amount.toLocaleString("pt-BR")} Moedas</strong> e receberá cerca de <strong>+${estRunas.toFixed(2)} ᚱ</strong>.`;
+                const spread = calculateDynamicSpread(used, amount, limit);
+                const rawRunas = amount * rate;
+                const spreadRunas = rawRunas * spread;
+                const netRunas = rawRunas - spreadRunas;
+                const remQuota = Math.max(0, (quota.remaining?.jardim ?? limit) - amount);
+
+                previewHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>🌱 <strong>Vender:</strong> ${formatInt(amount)} Petalitas ${isAll ? "<em>(Todas as suas Petalitas)</em>" : ""}</div>
+                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
+                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
+                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de venda restante hoje: ${formatInt(remQuota)} Ptl</div>
+                    </div>
+                `;
             }
         } else {
-            // Withdraw (gastando Runas)
+            // Compra com Runas
+            const limit = quota.limits?.compra || 3000;
+            const used = quota.used?.compra || 0;
+            const spread = calculateDynamicSpread(used, amount, limit);
+            const remQuota = Math.max(0, (quota.remaining?.compra ?? limit) - amount);
+
             if (game === "zinthos") {
                 const rate = globalRates.runasPerZinthos;
-                const estZinthos = Math.floor((amount / rate) * 0.96);
-                previewText = `💜 Você gastará <strong>${amount} ᚱ</strong> e receberá cerca de <strong>+${estZinthos.toLocaleString("pt-BR")} Zinthos</strong>.`;
+                const rawZinthos = amount / rate;
+                const netZinthos = Math.floor(rawZinthos * (1 - spread));
+
+                previewHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
+                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}%</div>
+                        <div style="font-size: 14px; color: #f472b6; font-weight: 700;">💎 <strong>Você Receberá:</strong> ~+${formatInt(netZinthos)} Zinthos</div>
+                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de compra restante hoje: ${formatPtBr(remQuota, 2)} ᚱ</div>
+                    </div>
+                `;
             } else if (game === "jardim") {
                 const rate = globalRates.runasPerJardimCoin;
-                const estCoins = Math.floor((amount / rate) * 0.96);
-                previewText = `🌱 Você gastará <strong>${amount} ᚱ</strong> e receberá cerca de <strong>+${estCoins.toLocaleString("pt-BR")} Moedas do Jardim</strong>.`;
+                const rawCoins = amount / rate;
+                const netCoins = Math.floor(rawCoins * (1 - spread));
+
+                previewHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
+                        <div>📈 <strong>Taxa Estimada:</strong> ${formatPtBr(spread * 100, 1)}%</div>
+                        <div style="font-size: 14px; color: #4ade80; font-weight: 700;">🌱 <strong>Você Receberá:</strong> ~+${formatInt(netCoins)} Petalitas</div>
+                        <div style="font-size: 11px; color: #94a3b8;">🛡️ Cota de compra restante hoje: ${formatPtBr(remQuota, 2)} ᚱ</div>
+                    </div>
+                `;
             }
         }
 
-        previewDiv.innerHTML = previewText;
+        previewDiv.innerHTML = previewHtml;
         btnExecute.disabled = false;
     }
 

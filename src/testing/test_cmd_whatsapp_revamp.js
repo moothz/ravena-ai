@@ -404,10 +404,7 @@ async function runTests() {
 	);
 	assert.ok(resBankSolto.content.includes("!banco"), "Deve listar comando !banco");
 	assert.ok(resBankSolto.content.includes("!economia"), "Deve listar comando !economia");
-	assert.ok(
-		resBankSolto.content.includes("!banco-depositar"),
-		"Deve listar comando !banco-depositar"
-	);
+	assert.ok(resBankSolto.content.includes("!banco-vender"), "Deve listar comando !banco-vender");
 
 	// 9.2 !cmd banco (alias)
 	const msgCmdBanco = createMessage({

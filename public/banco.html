@@ -98,12 +98,18 @@
             text-shadow: 0 0 15px rgba(167, 139, 250, 0.6);
         }
 
-        /* 3 Cards dos Jogos */
+        /* 3 Cards dos Jogos - Na mesma linha no desktop */
         .games-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 16px;
             margin-bottom: 30px;
+        }
+
+        @media (max-width: 860px) {
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .game-card {
@@ -406,12 +412,12 @@
 
         <!-- Banner de Runas em Circulação -->
         <div class="runas-banner">
-            <div class="runas-label">Massa Global de Runas em Circulação</div>
+            <div class="runas-label">Total Acumulado de Runas em Circulação</div>
             <div class="runas-val" id="total-runas">... ᚱ</div>
             <div style="font-size: 11px; color: #cbd5e1; margin-top: 6px;" id="total-accounts">Carregando dados da rede...</div>
         </div>
 
-        <!-- 3 Cards dos Jogos -->
+        <!-- 3 Cards dos Jogos (Na mesma linha) -->
         <div class="games-grid">
             <!-- Pesca -->
             <div class="game-card">
@@ -423,7 +429,6 @@
                 <div class="game-stats">
                     <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-fish">1 kg = ... ᚱ</strong></div>
                     <div class="game-stats-item"><span>Estoque em Inventários:</span> <strong id="stock-fish">... kg</strong></div>
-                    <div class="game-stats-item"><span>Regra:</span> <strong style="color: #f59e0b;">Venda de Mão Única</strong></div>
                 </div>
             </div>
 
@@ -436,22 +441,21 @@
                 <div class="rate-badge" id="rate-waifu">1.000 ᚱ = ... Z</div>
                 <div class="game-stats">
                     <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-waifu">1 Z = ... ᚱ</strong></div>
-                    <div class="game-stats-item"><span>Massa Monetária (M2):</span> <strong id="stock-waifu">... Z</strong></div>
+                    <div class="game-stats-item"><span>Total Acumulado (M2):</span> <strong id="stock-waifu">... Z</strong></div>
                     <div class="game-stats-item"><span>Inflação Atual:</span> <strong id="inflation-waifu" style="color: #ec4899;">...%</strong></div>
                 </div>
             </div>
 
-            <!-- Jardim das Sombras -->
+            <!-- Jardim das Sombras (Fazenda) -->
             <div class="game-card">
                 <div class="game-card-header">
                     <i class="fas fa-seedling" style="color: var(--accent-green);"></i>
                     <h3>Jardim das Sombras</h3>
                 </div>
-                <div class="rate-badge" id="rate-jardim">1.000 ᚱ = ... Moedas</div>
+                <div class="rate-badge" id="rate-jardim">1.000 ᚱ = ... Ptl</div>
                 <div class="game-stats">
-                    <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-jardim">1 MJ = ... ᚱ</strong></div>
-                    <div class="game-stats-item"><span>Moedas em Circulação:</span> <strong id="stock-jardim">... moedas</strong></div>
-                    <div class="game-stats-item"><span>Capacidade:</span> <strong style="color: #10b981;">9 canteiros 3x3</strong></div>
+                    <div class="game-stats-item"><span>Cotação Unitária:</span> <strong id="unit-jardim">1 Ptl = ... ᚱ</strong></div>
+                    <div class="game-stats-item"><span>Petalitas em Circulação:</span> <strong id="stock-jardim">... Ptl</strong></div>
                 </div>
             </div>
         </div>
@@ -477,19 +481,19 @@
             <div class="user-holdings">
                 <div class="holding-card" style="border-color: rgba(121, 40, 202, 0.4);">
                     <div class="label">Saldo de Runas</div>
-                    <div class="val" id="my-runas" style="color: #c084fc;">0.00 ᚱ</div>
+                    <div class="val" id="my-runas" style="color: #c084fc;">0,00 ᚱ</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Peixes Comuns</div>
-                    <div class="val" id="my-fish" style="color: #38bdf8;">0.00 kg</div>
+                    <div class="val" id="my-fish" style="color: #38bdf8;">0,00 kg</div>
                 </div>
                 <div class="holding-card">
                     <div class="label">Zinthos</div>
                     <div class="val" id="my-zinthos" style="color: #f472b6;">0 Z</div>
                 </div>
                 <div class="holding-card">
-                    <div class="label">Moedas do Jardim</div>
-                    <div class="val" id="my-jardim" style="color: #4ade80;">0 moedas</div>
+                    <div class="label">Petalitas (Fazenda)</div>
+                    <div class="val" id="my-jardim" style="color: #4ade80;">0 Ptl</div>
                 </div>
             </div>
 
@@ -500,8 +504,8 @@
                     <div class="form-group">
                         <label for="trade-operation">Operação</label>
                         <select id="trade-operation" class="form-control">
-                            <option value="deposit">Depositar no Banco (Receber Runas)</option>
-                            <option value="withdraw">Sacar do Banco (Gastar Runas)</option>
+                            <option value="deposit">Vender para o Banco (Receber Runas)</option>
+                            <option value="withdraw">Comprar com Runas (Gastar Runas)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -509,17 +513,20 @@
                         <select id="trade-game" class="form-control">
                             <option value="pesca">🎣 Peixes Comuns (Vender kg)</option>
                             <option value="zinthos">💜 Zinthos (Waifuletes)</option>
-                            <option value="jardim">🌱 Moedas do Jardim (Fazenda)</option>
+                            <option value="jardim">🌱 Petalitas (Fazenda)</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="trade-amount">Quantidade</label>
-                        <input type="text" id="trade-amount" class="form-control" placeholder="Ex: 300 ou 'tudo'">
+                        <div style="display: flex; gap: 6px;">
+                            <input type="text" id="trade-amount" class="form-control" placeholder="Ex: 300 ou 'tudo'">
+                            <button type="button" id="btn-use-all" style="background: #1f2747; color: #38bdf8; border: 1px solid #323b63; border-radius: 6px; padding: 0 12px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;">Tudo</button>
+                        </div>
                     </div>
                 </div>
 
-                <div id="trade-preview" style="background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; font-size: 12px; margin-bottom: 14px; color: #94a3b8;">
-                    💡 Digite a quantidade acima para simular o recebimento com spread.
+                <div id="trade-preview" style="background: rgba(0,0,0,0.3); border: 1px solid #1c223d; border-radius: 8px; padding: 12px; font-size: 13px; margin-bottom: 14px; color: #cbd5e1; line-height: 1.5;">
+                    💡 Digite a quantidade acima para simular a prévia de valores e taxas.
                 </div>
 
                 <button class="btn-trade" id="btn-trade-execute">
@@ -535,11 +542,11 @@
                         <thead>
                             <tr>
                                 <th>Data</th>
-                                <th>Tipo</th>
+                                <th>Operação</th>
                                 <th>Jogo</th>
                                 <th>Quantidade</th>
                                 <th>Runas</th>
-                                <th>Spread</th>
+                                <th>Taxa</th>
                             </tr>
                         </thead>
                         <tbody id="tx-body">
@@ -556,19 +563,19 @@
             <div class="transparency-grid">
                 <div class="rule-item">
                     <strong>📅 Rotação Diária às 04:00 AM</strong>
-                    As cotações oficiais são recalculadas todo dia às 04:00 BRT com base nas emissões e inflações das últimas 24h.
+                    As cotações oficiais e as cotas dos jogadores renovam todo dia às 04:00 BRT com base na atividade das últimas 24h.
                 </div>
                 <div class="rule-item">
-                    <strong>📈 Spread Progressivo (3% a 10%)</strong>
-                    A taxa varia conforme o uso da sua cota diária: 3% no início, escalando suavemente até 10% no teto. Toda a taxa é destruída (deflação).
+                    <strong>📈 Taxa Progressiva (3% a 10%)</strong>
+                    A taxa (spread) varia de 3% a 10% conforme o uso da sua cota diária: começa em 3%, escalando suavemente até 10% no limite. Toda a taxa é destruída (deflação).
                 </div>
                 <div class="rule-item">
                     <strong>🛡️ Cotas Diárias de Câmbio</strong>
-                    Limites de segurança por dia: 1.500 kg de peixe, 9.000 Zinthos e 30.000 Moedas do Jardim.
+                    Limites de segurança por dia: Compra até 3.000 ᚱ | Venda até 1.500 kg de peixe, 9.000 Zinthos e 30.000 Petalitas.
                 </div>
                 <div class="rule-item">
                     <strong>🚫 Blindagem de Peixes Lendários</strong>
-                    Peixes lendários não podem ser vendidos. Apenas peixes comuns entram no câmbio (arredondado para baixo via knapsack).
+                    Peixes lendários são 100% protegidos contra venda. Apenas peixes comuns entram no câmbio. Não é permitido converter Runas para peixes.
                 </div>
             </div>
         </div>

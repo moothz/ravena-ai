@@ -301,32 +301,35 @@ function registerGamesRoutes(api) {
 			}
 
 			let result;
-			if (operation === "deposit") {
-				if (game === "pesca" || game === "peixe") {
+			const op = String(operation).toLowerCase().trim();
+			const g = String(game).toLowerCase().trim();
+
+			if (op === "deposit" || op === "venda" || op === "vender") {
+				if (g === "pesca" || g === "peixe" || g === "peixes") {
 					result = await bankService.depositFish(userId, amount);
-				} else if (game === "zinthos" || game === "waifu") {
+				} else if (g === "zinthos" || g === "waifu" || g === "waifus") {
 					result = await bankService.depositZinthos(userId, amount);
-				} else if (game === "jardim" || game === "fazenda") {
+				} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
 					result = await bankService.depositJardim(userId, amount);
 				} else {
-					return res.status(400).json({ ok: false, error: "Jogo inválido para depósito." });
+					return res.status(400).json({ ok: false, error: "Jogo inválido para venda." });
 				}
-			} else if (operation === "withdraw") {
-				if (game === "zinthos" || game === "waifu") {
+			} else if (op === "withdraw" || op === "compra" || op === "comprar") {
+				if (g === "zinthos" || g === "waifu" || g === "waifus") {
 					result = await bankService.withdrawZinthos(userId, amount);
-				} else if (game === "jardim" || game === "fazenda") {
+				} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
 					result = await bankService.withdrawJardim(userId, amount);
-				} else if (game === "pesca" || game === "peixe") {
+				} else if (g === "pesca" || g === "peixe" || g === "peixes") {
 					return res
 						.status(400)
 						.json({ ok: false, error: "Não é permitido converter Runas para peixes." });
 				} else {
-					return res.status(400).json({ ok: false, error: "Destino inválido para saque." });
+					return res.status(400).json({ ok: false, error: "Destino inválido para compra." });
 				}
 			} else {
 				return res
 					.status(400)
-					.json({ ok: false, error: "Operação inválida. Use 'deposit' ou 'withdraw'." });
+					.json({ ok: false, error: "Operação inválida. Use 'venda' ou 'compra'." });
 			}
 
 			return res.json({ ok: true, result });

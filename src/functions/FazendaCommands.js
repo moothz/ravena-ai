@@ -278,7 +278,7 @@ function formatActiveBuffs(buffsData) {
 	const parts = [];
 
 	if (buffsData.effectiveCoinMultiplier && buffsData.effectiveCoinMultiplier > 1.0) {
-		parts.push(`💰 Moedas ${buffsData.effectiveCoinMultiplier}x`);
+		parts.push(`💰 Petalitas ${buffsData.effectiveCoinMultiplier}x`);
 	}
 	if (buffsData.effectiveGrowthMultiplier && buffsData.effectiveGrowthMultiplier < 1.0) {
 		const pct = Math.round((1.0 - buffsData.effectiveGrowthMultiplier) * 100);
@@ -299,8 +299,8 @@ function formatActiveBuffs(buffsData) {
 		if (!Array.isArray(list) || list.length === 0) return null;
 
 		const typeLabels = {
-			coin_multiplier: "💰 Bônus de Moedas",
-			coin_factor: "💰 Multiplicador de Moedas",
+			coin_multiplier: "💰 Bônus de Petalitas",
+			coin_factor: "💰 Multiplicador de Petalitas",
 			growth_speed: "⚡ Velocidade de Crescimento",
 			growth_reduction: "⚡ Redução de Tempo",
 			growth_factor: "⚡ Aceleração do Vazio",
@@ -565,7 +565,7 @@ async function handleFazenda(bot, message, _args, group) {
 			? `${gameEmoji} *${status.farmName.toUpperCase()}* ${gameEmoji}`
 			: `${gameEmoji} *${gameName.toUpperCase()}* ${gameEmoji}`;
 		let text = `${farmTitle}\n\n`;
-		text += `💰 *Moedas:* ${status.coins ?? 0}\n`;
+		text += `💰 *Petalitas:* ${(status.coins ?? 0).toLocaleString("pt-BR")} Ptl\n`;
 		text += `🌾 *Canteiros (9):* ${readyCount} prontos | ${growingCount} crescendo | ${dryCount} secos | ${emptyCount} livres\n`;
 
 		const buffsFormatted = formatActiveBuffs(status.buffs);
@@ -671,7 +671,7 @@ async function handleFazenda(bot, message, _args, group) {
 
 			let dailyText = `🎁 *SACOLA DO COVEIRO RESGATADA!* 🎁\n\n`;
 			dailyText += `Você abriu sua sacola diária e encontrou:\n`;
-			dailyText += `• *+${dailyClaimResult.coinsWon || 0} Moedas*`;
+			dailyText += `• *+${(dailyClaimResult.coinsWon || 0).toLocaleString("pt-BR")} Petalitas*`;
 			if (extraFortuneCoins > 0) {
 				dailyText += ` _(+${extraFortuneCoins} bônus do evento Fortuna! 💰)_\n`;
 			} else {
@@ -901,15 +901,15 @@ async function handleFazColher(bot, message, _args, group) {
 		}
 
 		if (harvestRes.totalCoinsEarned > 0) {
-			text += `💰 *Moedas Ganhas:* +${harvestRes.totalCoinsEarned}`;
+			text += `💰 *Petalitas Ganhas:* +${harvestRes.totalCoinsEarned.toLocaleString("pt-BR")} Ptl`;
 			if (fortuneCoins > 0) {
-				text += ` _(+${fortuneCoins} bônus do evento Fortuna! 💰)_\n`;
+				text += ` _(+${fortuneCoins.toLocaleString("pt-BR")} bônus do evento Fortuna! 💰)_\n`;
 			} else {
 				text += `\n`;
 			}
 		}
 
-		text += `💰 *Saldo Atual:* ${harvestRes.coins ?? harvestRes.currentCoins ?? 0} moedas`;
+		text += `💰 *Saldo Atual:* ${(harvestRes.coins ?? harvestRes.currentCoins ?? 0).toLocaleString("pt-BR")} Ptl`;
 
 		const eventBanner = GameEventService.getEventBanner("fazenda");
 		if (eventBanner) {
@@ -1244,7 +1244,7 @@ async function handleFazLoja(bot, message) {
 			shop.consumables.forEach((c) => {
 				const rem =
 					c.remainingToday !== undefined ? ` [${c.remainingToday}/${c.dailyLimit} hoje]` : "";
-				text += `• *#${c.index} ${c.name}* — 💰 ${c.price} moedas${rem}\n  _${c.description || ""}_\n`;
+				text += `• *#${c.index} ${c.name}* — 💰 ${Number(c.price).toLocaleString("pt-BR")} Ptl${rem}\n  _${c.description || ""}_\n`;
 			});
 			text += "\n";
 		}
@@ -1252,7 +1252,7 @@ async function handleFazLoja(bot, message) {
 		if (shop.decorations?.length > 0) {
 			text += `🏺 *DECORAÇÕES:*\n`;
 			shop.decorations.forEach((d) => {
-				text += `• *#${d.index} ${d.name}* — 💰 ${d.price} moedas [Tier: ${d.tier}]\n`;
+				text += `• *#${d.index} ${d.name}* — 💰 ${Number(d.price).toLocaleString("pt-BR")} Ptl [Tier: ${d.tier}]\n`;
 			});
 			text += "\n";
 		}
@@ -1333,8 +1333,8 @@ async function handleFazComprar(bot, message) {
 		const totalQtyText =
 			buyRes.newInventoryQuantity !== undefined ? ` (Total: ${buyRes.newInventoryQuantity})` : "";
 		text += `• Quantidade: *${buyRes.quantityBought || quantity}x*${totalQtyText}\n`;
-		text += `• Total Pago: *${buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0} moedas*\n`;
-		text += `• Saldo Restante: *${buyRes.remainingCoins ?? buyRes.coins ?? 0} moedas*`;
+		text += `• Total Pago: *${Number(buyRes.totalCost || buyRes.totalPrice || buyRes.cost || 0).toLocaleString("pt-BR")} Ptl*\n`;
+		text += `• Saldo Restante: *${Number(buyRes.remainingCoins ?? buyRes.coins ?? 0).toLocaleString("pt-BR")} Ptl*`;
 
 		returns.push(replyReturnMessage(chatId, text, message));
 
@@ -1650,7 +1650,7 @@ async function handleFazUsar(bot, message) {
 }
 
 /**
- * !faz-vender: Vende colheitas do inventário por moedas
+ * !faz-vender: Vende colheitas do inventário por Petalitas
  */
 async function handleFazVender(bot, message) {
 	const userId = getUserId(message);
@@ -1698,13 +1698,13 @@ async function handleFazVender(bot, message) {
 		}
 
 		let text = `💰 *VENDA REALIZADA COM SUCESSO!* 💰\n\n`;
-		text += `• Moedas Ganhas: *+${earned + fortuneCoins} moedas*`;
+		text += `• Petalitas Ganhas: *+${Number(earned + fortuneCoins).toLocaleString("pt-BR")} Ptl*`;
 		if (fortuneCoins > 0) {
-			text += ` _(+${fortuneCoins} bônus do evento Fortuna! 💰)_\n`;
+			text += ` _(+${Number(fortuneCoins).toLocaleString("pt-BR")} bônus do evento Fortuna! 💰)_\n`;
 		} else {
 			text += `\n`;
 		}
-		text += `• Saldo Atual: *${balance + fortuneCoins} moedas*\n`;
+		text += `• Saldo Atual: *${Number(balance + fortuneCoins).toLocaleString("pt-BR")} Ptl*\n`;
 
 		if (sellRes.soldItems?.length > 0) {
 			text += `\nItens vendidos:\n`;
@@ -2029,7 +2029,7 @@ async function handleFazRanking(bot, message, args = [], group = null) {
 				const name = resolvedNames[idx];
 				text += `${medal} *${name}* — *${f.harvestCount || f.totalHarvested || 0} colheitas*\n`;
 			});
-			text += `\n_Para ver o ranking de moedas, digite \`!faz-ranking riqueza\`_`;
+			text += `\n_Para ver o ranking de Petalitas, digite \`!faz-ranking riqueza\`_`;
 		} else {
 			const wealth = await jardimClient.getWealthRanking(25);
 			text += `🏆 *TOP 10 FAZENDEIROS MAIS RICOS* 🏆\n\n`;
@@ -2044,7 +2044,7 @@ async function handleFazRanking(bot, message, args = [], group = null) {
 			topList.forEach((w, idx) => {
 				const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}º.`;
 				const name = resolvedNames[idx];
-				text += `${medal} *${name}* — 💰 *${w.coins || 0} moedas*\n`;
+				text += `${medal} *${name}* — 💰 *${Number(w.coins || 0).toLocaleString("pt-BR")} Ptl*\n`;
 			});
 			text += `\n_Para ver o ranking de colheitas, digite \`!faz-ranking colheitas\`_`;
 		}
@@ -2097,7 +2097,7 @@ const FAZENDA_CATEGORY_DETAILS = {
 	},
 	mercado: {
 		title: "🛒 Loja & Economia",
-		description: "Comandos de moedas, catálogo de sementes, compras e venda de colheitas:",
+		description: "Comandos de Petalitas, catálogo de sementes, compras e venda de colheitas:",
 		commands: [
 			{
 				cmd: "/faz_loja",
@@ -2107,7 +2107,7 @@ const FAZENDA_CATEGORY_DETAILS = {
 			{
 				cmd: "/faz_comprar <item> [qtd]",
 				aliases: ["/faz_buy"],
-				desc: "Compra itens da loja com suas moedas."
+				desc: "Compra itens da loja com suas Petalitas."
 			},
 			{
 				cmd: "/faz_inv",
@@ -2122,7 +2122,7 @@ const FAZENDA_CATEGORY_DETAILS = {
 			{
 				cmd: "/faz_vender [item ou tudo]",
 				aliases: ["/faz_vendertudo"],
-				desc: "Vende suas colheitas por moedas."
+				desc: "Vende suas colheitas por Petalitas."
 			}
 		]
 	},
@@ -2169,7 +2169,7 @@ const FAZENDA_CATEGORY_DETAILS = {
 			{ cmd: "/faz_comprar <item>", desc: "Comprar na loja" },
 			{ cmd: "/faz_inv", desc: "Ver mochila de itens" },
 			{ cmd: "/faz_usar <elixir>", desc: "Usar poções mágicas" },
-			{ cmd: "/faz_vender [tudo]", desc: "Vender colheitas por moedas" },
+			{ cmd: "/faz_vender [tudo]", desc: "Vender colheitas por Petalitas" },
 			{ cmd: "/faz_decorar <item>", desc: "Decorar terreno" },
 			{ cmd: "/faz_ranking", desc: "Ver ranking de fazendeiros" },
 			{ cmd: "/faz_nome <nome>", desc: "Alterar nome do jardim" },
@@ -2276,9 +2276,9 @@ async function handleFazAjuda(bot, message) {
 	mechanicsText += `  🎰 *Slots:* Fichas extras da sorte!\n\n`;
 
 	mechanicsText += `💰 *4. Economia & Loja*\n`;
-	mechanicsText += `• Resgate suas moedas diárias com a sacola do coveiro usando \`!fazenda\`.\n`;
+	mechanicsText += `• Resgate suas Petalitas diárias com a sacola do coveiro usando \`!fazenda\`.\n`;
 	mechanicsText += `• Compre sementes, elixires e decorações com \`!faz-loja\` e \`!faz-comprar\`.\n`;
-	mechanicsText += `• Veja sua mochila com \`!faz-inv\` e venda suas colheitas por moedas com \`!faz-vender\`.\n\n`;
+	mechanicsText += `• Veja sua mochila com \`!faz-inv\` e venda suas colheitas por Petalitas com \`!faz-vender\`.\n\n`;
 
 	mechanicsText += `🧪 *5. Elixires Mágicos*\n`;
 	mechanicsText += `• Consuma elixires do inventário com \`!faz-usar <elixir>\` para acelerar o crescimento ou proteger contra o secamento.`;
@@ -2311,7 +2311,7 @@ async function handleFazAjuda(bot, message) {
 	commandsText += `• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n`;
 	commandsText += `• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n`;
 	commandsText += `• \`!faz-usar <elixir> [canteiro]\` — Ativar poções mágicas\n`;
-	commandsText += `• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por moedas\n`;
+	commandsText += `• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por Petalitas\n`;
 	commandsText += `• \`!faz-decorar <enfeite> [slot]\` — Posicionar itens decorativos\n`;
 	commandsText += `• \`!faz-ranking\` — Ver o ranking dos melhores fazendeiros\n`;
 	commandsText += `• \`!faz-ajuda\` — Exibir este menu de ajuda`;
@@ -2419,7 +2419,7 @@ const commands = [
 	new Command({
 		name: "faz-vender",
 		aliases: ["faz-vendertudo"],
-		description: "Vende colheitas do inventário por moedas",
+		description: "Vende colheitas do inventário por Petalitas",
 		usage: "!faz-vender [item ou tudo]",
 		category: "jogos",
 		reply: true,

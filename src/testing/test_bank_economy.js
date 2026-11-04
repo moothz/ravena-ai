@@ -204,6 +204,34 @@ async function runTests() {
 	);
 	console.log("✓ Comando !banco-extrato respondeu com histórico de transações.");
 
+	// Teste !banco-comprar bloqueio de peixe
+	prepareStep();
+	const msgComprarPeixe = createMessage({
+		content: "!banco-comprar peixe 100",
+		group: testGroupId,
+		author: testUserId
+	});
+	await eventHandler.processMessage(bot, msgComprarPeixe);
+	await waitForReply();
+	assert.ok(bot.capturedMessages.length > 0, "!banco-comprar peixe deve responder");
+	assert.ok(
+		bot.capturedMessages[0].content.includes("Não é possível comprar peixes"),
+		"!banco-comprar deve proibir compra de peixes com Runas"
+	);
+	console.log("✓ Comando !banco-comprar peixe bloqueado com sucesso.");
+
+	// 8. Teste de Cota Diária de Compra e Rotação
+	const quota = await bankService.getDailyQuota(testUserId);
+	console.log("8. Cota diária obtida:", quota);
+	assert.strictEqual(quota.limits.compra, 3000, "Limite de compra deve ser 3.000 Runas/dia");
+	assert.ok(quota.remaining.compra <= 3000, "Cota restante de compra deve ser até 3.000");
+
+	// Testa reset de cotas para hoje
+	const resetCount = await bankService.resetQuotasForDate();
+	console.log(
+		`✓ bankService.resetQuotasForDate() executado com sucesso (resetados: ${resetCount}).`
+	);
+
 	// 8. Limpeza final
 	await db.dbRun("bank", "DELETE FROM bank_accounts WHERE user_id = ?", [testUserId]);
 	await db.dbRun("bank", "DELETE FROM bank_transactions WHERE user_id = ?", [testUserId]);
