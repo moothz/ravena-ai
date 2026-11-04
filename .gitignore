@@ -148,6 +148,7 @@ nssm-service.bat
 !/scripts/sync_minio_to_rustfs.js
 !/scripts/compensate_fichas_slots.js
 !/scripts/compensate_slots_jardim.js
+!/scripts/convert_zinthos_to_runas_zero_waifus.js
 data/textos/*.txt
 !data/textos/*.example.txt
 /src/scripts
@@ -218,4 +219,5 @@ SKIP_HEALTH_CHECK
 data/status_motivo.txt
 data/chat-cleaner-state.json
 data/orphan-media-cleaner-state.json
+data/zero_waifus_zinthos.json
 .ai-memory.toml

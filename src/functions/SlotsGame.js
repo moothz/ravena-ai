@@ -150,6 +150,7 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			buffs: [],
 			jardimCoins: 0,
 			jardimBags: 0,
+			runas: 0,
 			zinthos: 0,
 			waifuTickets: 0,
 			cashbackPercent
@@ -169,6 +170,7 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			buffs: [],
 			jardimCoins: 0,
 			jardimBags: 0,
+			runas: 0,
 			zinthos: 0,
 			waifuTickets: 0,
 			cashbackPercent
@@ -192,6 +194,7 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			coins: 0,
 			jardimCoins: 0,
 			jardimBags: 0,
+			runas: 0,
 			zinthos: 0,
 			waifuTickets: 0,
 			cashbackPercent
@@ -215,6 +218,7 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			coins: 0,
 			jardimCoins: 0,
 			jardimBags: 0,
+			runas: 0,
 			zinthos: 0,
 			waifuTickets: 0,
 			cashbackPercent
@@ -237,23 +241,25 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			coins: 0,
 			baits: 0,
 			buffs: [],
+			runas: 0,
 			zinthos: 0,
 			waifuTickets: 0,
 			cashbackPercent
 		};
 	} else if (r < 100) {
-		// 15%: 2100 a 7000 zinthos (-30%), 3 tickets de waifus
-		let zinthos = Math.floor(Math.random() * (7000 - 2100 + 1)) + 2100;
-		zinthos *= mult;
+		// 15%: 600 a 2000 Runas (ᚱ) no RavenaBank, 3 tickets de waifus
+		let runas = Math.floor(Math.random() * (2000 - 600 + 1)) + 600;
+		runas *= mult;
 		let waifuTickets = 0;
 		if (isPartial) {
-			zinthos = Math.max(1, Math.floor(zinthos * cashbackRate));
+			runas = Math.max(1, Math.floor(runas * cashbackRate));
 		} else {
 			waifuTickets = 3 * mult;
 		}
 		return {
-			category: "zinthos_tier1",
-			zinthos,
+			category: "runas_tier1",
+			runas,
+			zinthos: 0,
 			waifuTickets,
 			junkItem: null,
 			coins: 0,
@@ -264,18 +270,19 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			cashbackPercent
 		};
 	} else {
-		// 10%: 5600 a 10500 zinthos (-30%), 5 tickets de waifus
-		let zinthos = Math.floor(Math.random() * (10500 - 5600 + 1)) + 5600;
-		zinthos *= mult;
+		// 10%: 1600 a 3000 Runas (ᚱ) no RavenaBank, 5 tickets de waifus
+		let runas = Math.floor(Math.random() * (3000 - 1600 + 1)) + 1600;
+		runas *= mult;
 		let waifuTickets = 0;
 		if (isPartial) {
-			zinthos = Math.max(1, Math.floor(zinthos * cashbackRate));
+			runas = Math.max(1, Math.floor(runas * cashbackRate));
 		} else {
 			waifuTickets = 5 * mult;
 		}
 		return {
-			category: "zinthos_tier2",
-			zinthos,
+			category: "runas_tier2",
+			runas,
+			zinthos: 0,
 			waifuTickets,
 			junkItem: null,
 			coins: 0,
@@ -684,6 +691,7 @@ async function slotsCommand(bot, message, args, group) {
 		const totalBuffsWon = [];
 		let totalJardimCoinsWon = 0;
 		let totalJardimBagsWon = 0;
+		let totalRunasWon = 0;
 		let totalZinthosWon = 0;
 		let totalTicketsWon = 0;
 		const junkItemsWon = [];
@@ -697,7 +705,8 @@ async function slotsCommand(bot, message, args, group) {
 				if (reward.buffs.length > 0) totalBuffsWon.push(...reward.buffs);
 				totalJardimCoinsWon += reward.jardimCoins;
 				totalJardimBagsWon += reward.jardimBags;
-				totalZinthosWon += reward.zinthos;
+				totalRunasWon += reward.runas || 0;
+				totalZinthosWon += reward.zinthos || 0;
 				totalTicketsWon += reward.waifuTickets;
 				if (reward.junkItem) junkItemsWon.push(reward.junkItem);
 			} else if (roll.isPartial) {
@@ -705,7 +714,8 @@ async function slotsCommand(bot, message, args, group) {
 				totalCoinsWon += reward.coins;
 				totalBaitsWon += reward.baits;
 				totalJardimCoinsWon += reward.jardimCoins;
-				totalZinthosWon += reward.zinthos;
+				totalRunasWon += reward.runas || 0;
+				totalZinthosWon += reward.zinthos || 0;
 				if (reward.junkItem) junkItemsWon.push(reward.junkItem);
 				if (reward.cashbackPercent) partialCashbackPercents.push(reward.cashbackPercent);
 			}
@@ -773,7 +783,21 @@ async function slotsCommand(bot, message, args, group) {
 			}
 		}
 
-		// Credita Zinthos
+		// Credita Runas no RavenaBank
+		if (totalRunasWon > 0) {
+			try {
+				const BankService = require("../services/BankService");
+				await BankService.creditRunas(userId, totalRunasWon, {
+					recordTransaction: true,
+					source: "slots_prize"
+				});
+				await savePrize(userId, `${totalRunasWon} Runas`, "bom");
+			} catch (rErr) {
+				logger.warn(`[slots] Falha ao entregar Runas: ${rErr.message}`);
+			}
+		}
+
+		// Credita Zinthos (caso haja remanescente)
 		if (totalZinthosWon > 0) {
 			try {
 				const WaifuCommands = require("./WaifuCommands");
@@ -831,6 +855,9 @@ async function slotsCommand(bot, message, args, group) {
 				}
 			}
 			resultMessage += `${jDesc}\n`;
+		}
+		if (totalRunasWon > 0) {
+			resultMessage += `• ᚱ *+${totalRunasWon.toLocaleString("pt-BR")} Runas no RavenaBank*\n`;
 		}
 		if (totalZinthosWon > 0) {
 			resultMessage += `• 💜 *+${totalZinthosWon.toLocaleString("pt-BR")} Zinthos*\n`;
@@ -898,13 +925,13 @@ async function slotsHelpCommand(bot, message, args, group) {
 • 🎣 *20%* — 5 a 25 Iscas de Pesca + 1 Buff Aleatório
 • 🎣 *15%* — 15 a 50 Iscas de Pesca + 2 a 5 Buffs Aleatórios (com descrição de efeitos)
 • 🌾 *20%* — 300 a 2.500 Moedas do Jardim + 1 a 5 Sacolas do Coveiro
-• 💜 *15%* — 2.100 a 7.000 Zinthos + 3 Tickets de Waifus
-• 💜 *10%* — 5.600 a 10.500 Zinthos + 5 Tickets de Waifus
+• ᚱ *15%* — 600 a 2.000 Runas (ᚱ) + 3 Tickets de Waifus
+• ᚱ *10%* — 1.600 a 3.000 Runas (ᚱ) + 5 Tickets de Waifus
 
 ⚙️ *Regras e Funcionamento:*
 • 🪙 *Custo:* 1 moedinha por giro.
 • ⏳ *Recarga passiva:* 1 moedinha a cada 2 minutos (acumula até 5 passivas).
-• 🥈 *Vitória Parcial (2 símbolos):* Concede de 5% a 10% (aleatório) de moedas, iscas, moedas do jardim ou zinthos (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
+• 🥈 *Vitória Parcial (2 símbolos):* Concede de 5% a 10% (aleatório) de moedas, iscas, moedas do jardim ou Runas (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
 • 📜 Para consultar seu histórico de prêmios pessoais: \`!slots-historico\` ou \`!slots-premios historico\``;
 
 	return new ReturnMessage({

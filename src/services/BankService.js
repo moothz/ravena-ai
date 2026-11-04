@@ -314,6 +314,49 @@ class BankService {
 	}
 
 	/**
+	 * Credita Runas diretamente na conta bancária de um usuário (bônus de doação, prêmios de slots, etc.)
+	 * @param {string} userId
+	 * @param {number} amount
+	 * @param {Object} options
+	 * @returns {Promise<Object>} Conta atualizada
+	 */
+	async creditRunas(userId, amount, options = {}) {
+		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+		amount = Math.max(0, Number(amount) || 0);
+		if (amount <= 0) return await this.getAccount(cleanUser);
+
+		const now = Date.now();
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
+			VALUES (?, ?, ?, 0, ?, ?)
+			ON CONFLICT(user_id) DO UPDATE SET 
+				runas = runas + excluded.runas,
+				total_deposited_runas = total_deposited_runas + excluded.runas,
+				updated_at = excluded.updated_at`,
+			[cleanUser, amount, amount, now, now]
+		);
+
+		if (options.recordTransaction) {
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions (user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
+				VALUES (?, 'BONUS', ?, ?, ?, 0, 0, ?, ?)`,
+				[
+					cleanUser,
+					options.source || "bonus",
+					0,
+					amount,
+					JSON.stringify(options.details || {}),
+					now
+				]
+			);
+		}
+
+		return await this.getAccount(cleanUser);
+	}
+
+	/**
 	 * Consulta as cotas diárias de câmbio usadas e restantes
 	 */
 	async getDailyQuota(userId) {

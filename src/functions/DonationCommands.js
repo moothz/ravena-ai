@@ -290,6 +290,10 @@ async function showDonationPerks(bot, message, args, group) {
 		let msg = `✨ *VANTAGENS & BÔNUS PARA APOIADORES* ✨\n\n`;
 		msg += `Suas doações cobrem os custos de manutenção da Ravena _(servidores, APIs, números e recargas)_ e garantem bônus incríveis em todos os jogos!\n\n`;
 
+		msg += `🏦 *RavenaBank & Câmbio Global:*\n`;
+		msg += `• *50 Runas (ᚱ)* a cada R$ 1 doado creditadas na sua conta bancária (\`!banco\`)!\n`;
+		msg += `  _Use suas Runas para sacar Zinthos, Moedas do Jardim ou guardar no banco!_\n\n`;
+
 		msg += `🎣 *Pescaria:*\n`;
 		msg += `• *2 Iscas* no balde a cada R$ 1 doado.\n`;
 		msg += `• *1 Item Simples* a cada R$ 5 doados _(Anzol de Titânio, Bolso de Pesca ou Pochete de Iscas)_.\n`;
@@ -302,7 +306,6 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
 
 		msg += `🌸 *Waifus (Mudae):*\n`;
-		msg += `• *150 Zinthos (💜)* a cada R$ 1 doado entregues na sua carteira do Waifuletes!\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
 		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
@@ -333,7 +336,8 @@ async function showDonationPerks(bot, message, args, group) {
 			msg += `💖 *Você é um apoiador! Agradeço de coração sua ajuda e por acreditar no projeto.*\n\n`;
 			msg += `📊 *Seus Benefícios Acumulados (Total doado: R$ ${totalAmount.toFixed(2)}):*\n\n`;
 
-			msg += `⚡ *Bônus Efêmeros Concedidos:*\n`;
+			msg += `⚡ *Bônus Concedidos:*\n`;
+			msg += `  • ᚱ *${(bonuses.bank?.runas || bonuses.runas || 0).toLocaleString("pt-BR")}* Runas creditadas na sua conta do RavenaBank (\`!banco\`).\n`;
 			msg += `  • 🐛 *${bonuses.pesca.baits}* iscas de pesca entregues no seu balde.\n`;
 			msg += `  • 🪙 *${bonuses.slots.coins}* moedas entregues no seu cofrinho de slots.\n\n`;
 
@@ -348,7 +352,6 @@ async function showDonationPerks(bot, message, args, group) {
 			}
 
 			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
-			msg += `  • 💜 Zinthos Concedidos: *${(bonuses.waifu.zinthos || 0).toLocaleString("pt-BR")} Zinthos* na sua carteira (!mu-saldo)\n`;
 			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (10 base + ${extraRolls} extras por doação)\n`;
 			msg += `  • 🔵 Raros: *+${Math.round(totalAmount * 2.0)}%* | 🟣 Épicos: *+${Math.round(totalAmount * 3.5)}%* | ⭐ Lendários: *+${Math.round(totalAmount * 4.5)}%*\n`;
 			if (bonuses.waifu.wishlistMultiplier) {

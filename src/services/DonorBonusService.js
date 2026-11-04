@@ -77,7 +77,7 @@ function calculateBonuses(totalAmount) {
 		wishlistMultiplier = Math.min(20.0, Number((4.0 + (totalAmount - 50) * 0.08).toFixed(3)));
 	}
 
-	const zinthos = Math.round(totalAmount * 150);
+	const runas = Math.round(totalAmount * 50); // 50 Runas por R$ 1 doado (moeda global RavenaBank)
 
 	// Pinto Game (+1% de tamanho por R$1)
 	const pintoBonusPercent = Math.round(totalAmount * 1);
@@ -99,12 +99,16 @@ function calculateBonuses(totalAmount) {
 		slots: {
 			coins
 		},
+		bank: {
+			runas
+		},
+		runas,
 		waifu: {
 			donorBadge: "VIP Doador 💎",
 			rarityMultipliers,
 			wishlistMultiplier,
 			extraMaxRolls: Math.floor(totalAmount / 10),
-			zinthos
+			runas
 		},
 		pinto: {
 			bonusPercent: pintoBonusPercent,
@@ -130,7 +134,10 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 	const deltaAmount = Math.max(0, totalAmount - previousAmount);
 	const deltaBaits = Math.max(0, current.pesca.baits - previous.pesca.baits);
 	const deltaCoins = Math.max(0, current.slots.coins - previous.slots.coins);
-	const deltaZinthos = Math.max(0, (current.waifu?.zinthos || 0) - (previous.waifu?.zinthos || 0));
+	const deltaRunas = Math.max(
+		0,
+		(current.bank?.runas || current.runas || 0) - (previous.bank?.runas || previous.runas || 0)
+	);
 	const deltaSimpleItems = Math.max(
 		0,
 		current.pesca.simpleItemsCount - previous.pesca.simpleItemsCount
@@ -150,7 +157,7 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		deltaAmount,
 		deltaBaits,
 		deltaCoins,
-		deltaZinthos,
+		deltaRunas,
 		deltaSimpleItems,
 		deltaMediumItems,
 		deltaHighItems,
@@ -266,19 +273,21 @@ async function awardDonorBonuses(
 			previousAmount = Number(donor.bonusesProcessedAmount) || 0;
 		}
 
-		const previousZinthosAmount =
-			donor.zinthosProcessedAmount !== undefined && donor.zinthosProcessedAmount !== null
-				? Number(donor.zinthosProcessedAmount) || 0
-				: 0;
+		const previousRunasAmount =
+			donor.runasProcessedAmount !== undefined && donor.runasProcessedAmount !== null
+				? Number(donor.runasProcessedAmount) || 0
+				: donor.zinthosProcessedAmount !== undefined && donor.zinthosProcessedAmount !== null
+					? Number(donor.zinthosProcessedAmount) || 0
+					: 0;
 
 		const delta = calculateIncrementalBonuses(totalAmount, previousAmount);
-		const deltaZinthos = Math.max(
+		const deltaRunas = Math.max(
 			0,
-			Math.round(totalAmount * 150) - Math.round(previousZinthosAmount * 150)
+			Math.round(totalAmount * 50) - Math.round(previousRunasAmount * 50)
 		);
-		delta.deltaZinthos = deltaZinthos;
+		delta.deltaRunas = deltaRunas;
 
-		if (delta.deltaAmount <= 0 && deltaZinthos <= 0) {
+		if (delta.deltaAmount <= 0 && deltaRunas <= 0) {
 			return {
 				success: true,
 				dryRun: !!options.dryRun,
@@ -361,18 +370,19 @@ async function awardDonorBonuses(
 				}
 			}
 
-			// 5. Concede Zinthos na API do Waifuletes
-			if (deltaZinthos > 0) {
+			// 5. Concede Runas no RavenaBank
+			if (deltaRunas > 0) {
 				try {
-					const WaifuCommands = require("../functions/WaifuCommands");
-					await WaifuCommands.grantZinthos(cleanNumber, deltaZinthos, {
-						donorName: donor.nome,
-						totalAmount
+					const BankService = require("./BankService");
+					await BankService.creditRunas(cleanNumber, deltaRunas, {
+						recordTransaction: true,
+						source: "donor_bonus",
+						details: { donorName: donor.nome, totalAmount }
 					});
 					await database.updateDonorZinthosProcessed(donor.nome, totalAmount);
-				} catch (wErr) {
+				} catch (bErr) {
 					logger.warn(
-						`[DonorBonusService] Falha ao creditar Zinthos para ${cleanNumber}: ${wErr.message}`
+						`[DonorBonusService] Falha ao creditar Runas para ${cleanNumber}: ${bErr.message}`
 					);
 				}
 			}
@@ -382,10 +392,7 @@ async function awardDonorBonuses(
 				await database.updateDonorBonusProcessed(donor.nome, totalAmount);
 			}
 
-			let logDetails = `+${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${chosenItems.length} itens`;
-			if (deltaZinthos > 0) {
-				logDetails += `, +${deltaZinthos} Zinthos`;
-			}
+			let logDetails = `+${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${deltaRunas} Runas, +${chosenItems.length} itens`;
 			if (delta.deltaFazenda) {
 				const fLog = [];
 				if (delta.deltaFazenda.dailyLuck > 0) fLog.push(`+${delta.deltaFazenda.dailyLuck} cinzas`);
@@ -402,7 +409,7 @@ async function awardDonorBonuses(
 			);
 		} else {
 			logger.info(
-				`[DonorBonusService] [DRY-RUN] Simulação de bônus para ${donor.nome} (${cleanNumber}): +${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${deltaZinthos} Zinthos, +${chosenItems.length} itens.`
+				`[DonorBonusService] [DRY-RUN] Simulação de bônus para ${donor.nome} (${cleanNumber}): +${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${deltaRunas} Runas, +${chosenItems.length} itens.`
 			);
 		}
 
@@ -435,7 +442,7 @@ function formatBonusMessage(bonusRes) {
 		!bonusRes ||
 		!bonusRes.success ||
 		!bonusRes.delta ||
-		(bonusRes.delta.deltaAmount <= 0 && (bonusRes.delta.deltaZinthos || 0) <= 0)
+		(bonusRes.delta.deltaAmount <= 0 && (bonusRes.delta.deltaRunas || 0) <= 0)
 	) {
 		return "";
 	}
@@ -449,8 +456,8 @@ function formatBonusMessage(bonusRes) {
 	if (delta.deltaCoins > 0) {
 		parts.push(`+${delta.deltaCoins} moedas`);
 	}
-	if (delta.deltaZinthos > 0) {
-		parts.push(`+${delta.deltaZinthos.toLocaleString("pt-BR")} Zinthos (💜)`);
+	if (delta.deltaRunas > 0) {
+		parts.push(`+${delta.deltaRunas.toLocaleString("pt-BR")} Runas (ᚱ)`);
 	}
 	const itemsCount = chosenItems?.length || 0;
 	if (itemsCount > 0) {

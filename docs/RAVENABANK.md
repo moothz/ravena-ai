@@ -110,3 +110,18 @@ Para acessar o painel de gerenciamento e câmbio pelo navegador:
   * `GET /api/games/bank/session` — Validação e renovação da sessão deslizante.
   * `POST /api/games/bank/logout` — Revogação de sessão.
   * `POST /api/games/bank/trade` — Execução de depósitos e saques pelo navegador.
+
+---
+
+## 🎁 10. Normalização de Bônus e Prêmios Globais
+
+Para proteger os subsistemas de inflação descontrolada, premiações e bônus monetários de outros jogos foram centralizados na moeda global **Runas ($ᚱ$)**:
+
+1. **Apoio & Doações (`!doar-vantagens`)**:
+   * O bônus financeiro concedido a apoiadores agora é de **50 Runas por R$ 1 doado** (creditadas diretamente na conta do banco).
+   * O doador tem total liberdade de manter suas Runas valorizando no banco ou convertê-las em Zinthos ou Moedas do Jardim através de `!banco-sacar`.
+2. **Caça-Níqueis (`!slots`)**:
+   * Os tiers de vitória monetária que concediam Zinthos agora concedem **600 a 2.000 Runas (Tier 1)** e **1.600 a 3.000 Runas (Tier 2)** diretamente na conta do banco, juntamente com os tickets de waifu.
+   * Evita a injeção inflacionária direta de Zinthos no ecossistema do Mudae.
+3. **Pescaria (`!pescar`)**:
+   * Não possui premiações financeiras de outros jogos (apenas fichas de fliperama para jogar no próprio `!slots`), mantendo sua rota de mão única de exportação de peixes para Runas intacta.
