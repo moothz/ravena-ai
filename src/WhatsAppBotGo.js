@@ -4484,11 +4484,15 @@ class WhatsAppBotGo {
 		try {
 			const optionsList = Array.isArray(selectedOptions) ? selectedOptions : [selectedOptions];
 			const actualPollId = this.getActualMsgId(pollId);
+			let normalizedSender = pollSender || chatId;
+			if (normalizedSender && !normalizedSender.includes("@")) {
+				normalizedSender = `${normalizedSender}@s.whatsapp.net`;
+			}
 
 			await this.apiClient.post("/send/poll/vote", {
 				number: chatId,
 				pollId: actualPollId,
-				pollSender: pollSender || chatId,
+				pollSender: normalizedSender,
 				selectedOptions: optionsList,
 				fromMe: Boolean(fromMe),
 				delay: 0
