@@ -416,8 +416,8 @@ async function runTests() {
 		assert(resInvestirCasada.content.includes("2/10"), "Deve mostrar 2/10 chaves");
 		console.log("✅ [TESTE 7 PASSOU] Aquisição de chave com 80% de desconto validada!");
 
-		// ─── TESTE 8: Divórcio destacando rendimento ──────────────────────────────
-		console.log("\n[TESTE 8] Rendimento do divórcio exibido com destaque (!mu-divorciar)");
+		// ─── TESTE 8: Divórcio destacando rendimento e Soft Limite ───────────────
+		console.log("\n[TESTE 8] Rendimento do divórcio e Soft Limite diário (!mu-divorciar)");
 		WaifuCommands.api.post = async (url) => {
 			if (url === "/divorce") {
 				return {
@@ -428,7 +428,11 @@ async function runTests() {
 							refundedKakera: 24415,
 							keysLost: 1,
 							newKakeraBalance: 600415,
-							isSoulmate: false
+							isSoulmate: false,
+							dailyDivorceCount: 1,
+							refundRate: 1.0,
+							refundRatePercent: "100%",
+							nextTierRefundRate: 0.8
 						}
 					}
 				};
@@ -447,7 +451,40 @@ async function runTests() {
 			resDiv.content.includes("+24.415 Zinthos"),
 			"Deve conter o valor de rendimento formatado"
 		);
-		console.log("✅ [TESTE 8 PASSOU] Rendimento do divórcio exibido com clareza!");
+		assert(
+			resDiv.content.includes("100% integral — 1º divórcio Épico hoje"),
+			"Deve indicar 100% integral para o 1º divórcio da raridade hoje"
+		);
+		assert(
+			resDiv.content.includes("Aviso de Soft Limite") && resDiv.content.includes("80%"),
+			"Deve alertar que o próximo divórcio renderá 80%"
+		);
+
+		// Subteste 8.2: 2º divórcio com taxa reduzida (80%)
+		WaifuCommands.api.post = async () => ({
+			data: {
+				success: true,
+				data: {
+					character: { id: "makima", name: "Makima", rarity: "EPIC" },
+					refundedKakera: 19532,
+					keysLost: 1,
+					newKakeraBalance: 619947,
+					isSoulmate: false,
+					dailyDivorceCount: 2,
+					refundRate: 0.8,
+					refundRatePercent: "80%",
+					nextTierRefundRate: 0.5
+				}
+			}
+		});
+		const resDiv2 = await WaifuCommands.divorciarWaifu(bot, msgDiv, ["makima"]);
+		assert(
+			resDiv2.content.includes("80% de reembolso — 2º divórcio Épico hoje"),
+			"Deve indicar 80% de reembolso no 2º divórcio"
+		);
+		assert(resDiv2.content.includes("50%"), "Deve alertar que o próximo divórcio renderá 50%");
+
+		console.log("✅ [TESTE 8 PASSOU] Rendimento do divórcio e Soft Limite validados com sucesso!");
 
 		console.log("\n========================================================");
 		console.log("🎉 TODOS OS 8 TESTES DE INVESTIMENTO E MERCADO PASSARAM! 🎉");

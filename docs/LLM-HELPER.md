@@ -1388,6 +1388,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-casar`**: Casa com o personagem recém-sorteado dentro da janela de 300 segundos
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-casar`, `!mu-c`, `!mu-casar rem-re-zero`
+- **`!mu-divorciar`**: Divorcia um personagem do seu harém e resgata Zinthos (💜) baseado na raridade, chaves e inflação. Possui soft limite diário por raridade (1º = 100%, 2º = 80%, 3º = 50%, 4º = 20%, 5º+ = 5%; reseta às 04:00 BRT)
+  - *Categoria:* mudae
+  - *Uso/Exemplos:* `!mu-divorciar rem-re-zero`, `!mu-div rem`, `!mu-d rem`
 - **`!mu-foto`**: Exibe a foto oficial do casamento do casal gerada por IA ou gera uma nova com o modificador 'nova'
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-foto Rem`, `!mu-foto nova Rem`, `!mu-foto rem-re-zero`

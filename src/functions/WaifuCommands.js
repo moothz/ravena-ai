@@ -2919,16 +2919,42 @@ async function divorciarWaifu(bot, message, args) {
 
 	try {
 		const { data } = await api.post("/divorce", { userId, characterId });
-		const { character, refundedKakera, keysLost, newKakeraBalance, isSoulmate } = data.data;
+		const {
+			character,
+			refundedKakera,
+			keysLost,
+			newKakeraBalance,
+			isSoulmate,
+			dailyDivorceCount,
+			refundRate,
+			refundRatePercent,
+			nextTierRefundRate
+		} = data.data;
 
 		await removeMarriagePhoto(character.id || characterId).catch(() => {});
+
+		const normRarity = String(character.rarity || character.baseRarity || "").toUpperCase();
+		const rarityLabel = RARITY_LABEL[normRarity] || normRarity;
 
 		let text = isSoulmate
 			? `💖 *Divórcio Dourado (Soulmate)!*\nVocê se separou de *${character.name}*.\n\n`
 			: `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n\n`;
-		text += `💰 *Rendimento do Divórcio:* *+${Number(refundedKakera).toLocaleString("pt-BR")} Zinthos*\n`;
+
+		text += `💰 *Rendimento do Divórcio:* *+${Number(refundedKakera).toLocaleString("pt-BR")} Zinthos*`;
+		if (typeof refundRate === "number" && refundRate < 1) {
+			text += ` _(${refundRatePercent || `${Math.round(refundRate * 100)}%`} de reembolso — ${dailyDivorceCount}º divórcio ${rarityLabel} hoje)_\n`;
+		} else if (dailyDivorceCount === 1) {
+			text += ` _(100% integral — 1º divórcio ${rarityLabel} hoje)_\n`;
+		} else {
+			text += `\n`;
+		}
+
 		text += `🔑 Chaves perdidas: ${keysLost}\n`;
 		text += `💜 Novo saldo: *${Number(newKakeraBalance).toLocaleString("pt-BR")} Zinthos*`;
+
+		if (typeof nextTierRefundRate === "number") {
+			text += `\n\n⚠️ *Aviso de Soft Limite:* O próximo divórcio de raridade *${rarityLabel}* hoje renderá *${Math.round(nextTierRefundRate * 100)}%* do reembolso. O limite reseta às 04:00 BRT.`;
+		}
 
 		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
@@ -6247,7 +6273,7 @@ async function ajudaWaifus(bot, message) {
 	text += `• *Zinthos (💜)* é a moeda oficial do jogo.\n`;
 	text += `• Resgate sua recompensa diária (reseta todos os dias às 04:00) usando \`!mu-diario\`.\n`;
 	text += `• Quando alguém rola um personagem que já é seu, um cristal de Zinthos é gerado com base no valor da sua waifu.\n`;
-	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor considera a raridade base, bônus por chave escalonado (500 a 75k) e a inflação atual de mercado. Se for Soulmate, concede o Divórcio Dourado (4 cotas)!\n\n`;
+	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor considera a raridade base, bônus por chave escalonado (500 a 75k) e a inflação atual de mercado. Se for Soulmate, concede o Divórcio Dourado (4 cotas)! (Possui soft limite diário por raridade: 1º 100%, 2º 80%, 3º 50%, 4º 20%, 5º+ 5%; reseta às 04:00 BRT).\n\n`;
 
 	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
 	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
@@ -6295,7 +6321,7 @@ async function ajudaWaifus(bot, message) {
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
 	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
-	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (ajustado à raridade, chaves e inflação; 4 cotas para Soulmates).\n`;
+	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (com soft limite diário por raridade; 4 cotas para Soulmates).\n`;
 	text += `• \`!mu-harem [@usuário | página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você ou outro usuário possui.\n`;
 	text += `• \`!mu-harem-nome <nome>\` (aliases: \`!mu-hnome\`, \`!mu-nomeharem\`) — Define um nome personalizado para o seu harém (até 20 caracteres).\n`;
 	text += `• \`!mu-harem-privado\` (alias: \`!mu-hprivado\`) — Alterna a privacidade do seu harém entre público e privado.\n`;
