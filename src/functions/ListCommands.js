@@ -777,6 +777,124 @@ async function showSingleList(bot, message, args, group) {
 	}
 }
 
+/**
+ * Exporta os itens de uma lista como mensagem de texto simples (!lix <nome>)
+ * Formato retornado: "item1,item2,item 3"
+ */
+async function exportList(bot, message, args, group) {
+	try {
+		await ensureMigrated();
+		const {
+			targetGroup,
+			responseChatId: chatId,
+			errorResponse
+		} = await GroupContextHelper.resolveGroup(bot, message, group, {
+			featureName: "exportar lista"
+		});
+		if (errorResponse) return errorResponse;
+
+		let list = null;
+
+		// 1. Verifica se a mensagem está respondendo a uma mensagem em quote
+		let quotedMsg = null;
+		if (typeof message.origin?.getQuotedMessage === "function") {
+			quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+		}
+
+		const quotedMsgId = quotedMsg?.id?._serialized || quotedMsg?.id?.id || quotedMsg?.id;
+		if (quotedMsgId) {
+			const tracked = await getTrackedMessage(quotedMsgId);
+			if (tracked && tracked.list_id) {
+				list = await getListById(tracked.list_id);
+			}
+
+			if (!list) {
+				list = await database.dbGet(
+					DB_NAME,
+					"SELECT * FROM lists WHERE group_id = ? AND (last_message_id = ? OR last_message_id LIKE ?)",
+					[targetGroup.id, quotedMsgId, `%${quotedMsgId}%`]
+				);
+			}
+		}
+
+		// 2. Busca pelo nome nos argumentos
+		if (!list && args && args.length > 0) {
+			const query = args.join(" ").trim();
+			list = await getListByName(targetGroup.id, query);
+			if (!list && args.length > 1) {
+				list = await getListByName(targetGroup.id, args[0].trim());
+			}
+			if (!list) {
+				const groupLists = await getGroupLists(targetGroup.id);
+				const normQuery = normalizeForMatch(query);
+				list = groupLists.find(
+					(l) =>
+						normalizeForMatch(l.name) === normQuery ||
+						normalizeForMatch(l.title) === normQuery ||
+						normalizeForMatch(l.name).startsWith(normQuery)
+				);
+			}
+		}
+
+		// 3. Fallback: se não passou argumentos nem quote, e só existe 1 lista no grupo
+		if (!list && (!args || args.length === 0)) {
+			const groupLists = await getGroupLists(targetGroup.id);
+			if (groupLists.length === 1) {
+				list = groupLists[0];
+			}
+		}
+
+		if (!list) {
+			if (!args || args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "Por favor, informe o nome da lista. Exemplo: !lix compras"
+				});
+			}
+			return new ReturnMessage({
+				chatId,
+				content: `Lista "${args.join(" ")}" não encontrada no grupo.`
+			});
+		}
+
+		let rawValues = [];
+		if (list.type === "items") {
+			const items = await database.dbAll(
+				DB_NAME,
+				"SELECT item_text FROM list_items WHERE list_id = ? ORDER BY id ASC",
+				[list.id]
+			);
+			rawValues = items.map((it) => it.item_text);
+		} else {
+			const members = await getListMembers(list.id);
+			rawValues = members.map((m) => m.user_name || m.user_id);
+		}
+
+		if (!rawValues || rawValues.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: `A lista "${list.title || list.name}" está vazia.`
+			});
+		}
+
+		const exportText = rawValues
+			.map((v) => String(v).trim())
+			.filter(Boolean)
+			.join(",");
+
+		return new ReturnMessage({
+			chatId,
+			content: exportText
+		});
+	} catch (error) {
+		logger.error("Error exporting list:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "Erro ao exportar a lista. Por favor, tente novamente."
+		});
+	}
+}
+
 // ─── COMANDOS DE LISTAS DE ITENS (COMPRAS / TAREFAS) ────────────────────────
 
 /**
@@ -2630,6 +2748,17 @@ const commands = [
 		method: deleteList
 	}),
 
+	new Command({
+		name: "lix",
+		description: "Exporta os itens de uma lista como mensagem de texto",
+		category: "listas",
+		reactions: {
+			before: "⌛️",
+			after: "📋"
+		},
+		method: exportList
+	}),
+
 	// ── Helper de Reações ──
 	new Command({
 		name: "reactionListHelper",
@@ -2757,6 +2886,12 @@ const helper = {
 			desc: "Exclui uma lista definitivamente",
 			usage: ["!ld compras", "!ld lista1 lista2"],
 			category: "listas"
+		},
+		{
+			cmd: "!lix",
+			desc: "Exporta os itens de uma lista como mensagem de texto",
+			usage: ["!lix compras", "!lix (respondendo à lista)"],
+			category: "listas"
 		}
 	]
 };
@@ -2764,5 +2899,6 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
-	processListReaction
+	processListReaction,
+	exportList
 };

@@ -564,8 +564,90 @@ async function runTests() {
 	// Limpeza da lista de teste
 	await cmdLd.execute(bot, msgLd, ["compras do mes"], mockGroup);
 
+	// ─── TESTE 15: Exportação de Lista em Formato Simples (!lix) ───────────
+	console.log("\n[Teste 15] Validando exportação de lista (!lix)...");
+	const cmdLix = ListCommands.commands.find((c) => c.name === "lix");
+	assert.ok(cmdLix, "Comando !lix deve estar registrado");
+
+	// 15.1 Cria lista e adiciona itens
+	const msgLciExport = createMessage({
+		content: "!lci compras_export Lista de Exportação",
+		group: groupId,
+		author: userAdmin
+	});
+	await cmdLci.execute(
+		bot,
+		msgLciExport,
+		["compras_export", "Lista", "de", "Exportação"],
+		mockGroup
+	);
+
+	const msgAddExport = createMessage({
+		content: "!add compras_export item1, item2, item 3",
+		group: groupId,
+		author: userCommon
+	});
+	await cmdAdd.execute(
+		bot,
+		msgAddExport,
+		["compras_export", "item1,", "item2,", "item", "3"],
+		mockGroup
+	);
+
+	// 15.2 Executa !lix compras_export e verifica formato exato "item1,item2,item 3"
+	const msgLix = createMessage({
+		content: "!lix compras_export",
+		group: groupId,
+		author: userCommon
+	});
+	const resLix = await cmdLix.execute(bot, msgLix, ["compras_export"], mockGroup);
+	assert.ok(resLix, "Deve retornar um ReturnMessage");
+	assert.strictEqual(
+		resLix.content,
+		"item1,item2,item 3",
+		"Conteúdo exportado deve ser 'item1,item2,item 3'"
+	);
+
+	// 15.3 Exportação de lista vazia
+	const msgLciVazia = createMessage({
+		content: "!lci vazia_export Vazia",
+		group: groupId,
+		author: userAdmin
+	});
+	await cmdLci.execute(bot, msgLciVazia, ["vazia_export", "Vazia"], mockGroup);
+
+	const msgLixVazia = createMessage({
+		content: "!lix vazia_export",
+		group: groupId,
+		author: userCommon
+	});
+	const resLixVazia = await cmdLix.execute(bot, msgLixVazia, ["vazia_export"], mockGroup);
+	assert.ok(resLixVazia.content.includes("está vazia"), "Deve informar que a lista está vazia");
+
+	// 15.4 Exportação de lista inexistente
+	const msgLixInexistente = createMessage({
+		content: "!lix inexistente_123",
+		group: groupId,
+		author: userCommon
+	});
+	const resLixInexistente = await cmdLix.execute(
+		bot,
+		msgLixInexistente,
+		["inexistente_123"],
+		mockGroup
+	);
+	assert.ok(
+		resLixInexistente.content.includes("não encontrada"),
+		"Deve informar que a lista não foi encontrada"
+	);
+
+	// Limpeza das listas do Teste 15
+	await cmdLd.execute(bot, msgLd, ["compras_export"], mockGroup);
+	await cmdLd.execute(bot, msgLd, ["vazia_export"], mockGroup);
+	console.log("✓ !lix exportou itens no formato 'item1,item2,item 3' com sucesso.");
+
 	console.log("\n=======================================================");
-	console.log("✓ TODOS OS 14 TESTES DO ListCommands v2 PASSARAM COM SUCESSO!");
+	console.log("✓ TODOS OS 15 TESTES DO ListCommands v2 PASSARAM COM SUCESSO!");
 	console.log("=======================================================");
 }
 

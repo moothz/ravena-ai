@@ -171,6 +171,7 @@ const COMMAND_ORDER = [
 	"ls",
 	"lt",
 	"lr",
+	"lix",
 	"pastas",
 	"p-enviar",
 	"p-criar",

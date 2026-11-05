@@ -726,6 +726,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!ld`**: Exclui uma lista definitivamente
   - *Categoria:* listas
   - *Uso/Exemplos:* `!ld compras`, `!ld lista1 lista2`
+- **`!lix`**: Exporta os itens de uma lista como mensagem de texto
+  - *Categoria:* listas
+  - *Uso/Exemplos:* `!lix compras`, `!lix (respondendo à lista)`
 
 ---
 
