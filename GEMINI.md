@@ -118,6 +118,21 @@ test();
 ## Reinicialização e Rebuild de Containers (REGRA ESTRITA)
 - **NUNCA execute restart ou rebuild automaticamente:** Comandos como `docker restart`, `docker compose restart`, `docker compose down`, `docker compose up --build`, rebuild de imagens ou reinício de containers NUNCA devem ser executados pelo assistente.
 - **SEMPRE SOLICITAR AO USUÁRIO:** Qualquer necessidade de reiniciar ou reconstruir containers deve SEMPRE ser solicitada ao usuário, explicando o motivo e sugerindo o comando adequado para que o usuário execute por conta própria.
+- **SEMPRE SUGERIR REBUILD (`--build`) PARA ALTERAÇÕES DE CÓDIGO (OBRIGATÓRIO):**
+  - **`docker restart` NÃO APLICA MUDANÇAS DE CÓDIGO** em containers sem volume vivo mapeado ou com compilação interna (TypeScript, Go, Rust, etc.).
+  - Em `ravena-ai`, os volumes de código (`./src` e `./index.js`) estão comentados por padrão no `docker-compose.yml` para isolamento de produção. Qualquer alteração de código ou dependência EXIGE rebuild da imagem:
+    ```bash
+    docker compose up -d --build ravena-ai
+    ```
+  - Em `waifuletes`, a API roda em TypeScript compilado no Docker multi-stage (`RUN npm run build` -> `dist/`) e não mapeia `src/` nem `dist/`. Qualquer alteração de backend EXIGE rebuild:
+    ```bash
+    docker compose -f /home/moothz/waifuletes/docker-compose.yml up -d --build api
+    ```
+  - Em `whatsgoapi`, a aplicação é compilada em binário Go. Qualquer alteração em Go EXIGE rebuild:
+    ```bash
+    docker compose up -d --build whatsgoapi
+    ```
+  - **REGRA DE OURO:** NUNCA sugira apenas `docker restart` quando arquivos de código, serviços, rotas ou dependências forem modificados. Sempre forneça diretamente os comandos completos com `--build`, evitando que o usuário precise intervir para questionar se precisa de rebuild.
 
 # Commands
 ## SuperAdmin
