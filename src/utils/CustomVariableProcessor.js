@@ -148,6 +148,14 @@ class CustomVariableProcessor {
 				}
 			}
 
+			// Verifica se é uma variável de enquete {poll-...}
+			if (typeof processedText === "string" && processedText.includes("{poll-")) {
+				const pollResult = await this.processPollVariable(processedText, context);
+				if (pollResult) {
+					return pollResult;
+				}
+			}
+
 			// Carrega variáveis personalizadas se não estiverem em cache ou o cache estiver obsoleto
 			if (!this.cache.variables || Date.now() - this.cache.lastFetch > 300000) {
 				// 5 minutos
@@ -355,13 +363,13 @@ class CustomVariableProcessor {
 		const dayIndex = new Date(now.toLocaleString("en-US", { timeZone })).getDay();
 		text = text.replace(/{day}/g, days[dayIndex]);
 
-		// Substitui {date} pela data atual
+		// Substitui {date} e {data} pela data atual
 		const dateStr = `${map.day}/${map.month}/${map.year}`;
-		text = text.replace(/{date}/g, dateStr);
+		text = text.replace(/{(?:date|data)}/g, dateStr);
 
-		// Substitui {time} pela hora atual
+		// Substitui {time} e {hora} pela hora atual
 		const timeStr = `${map.hour}:${map.minute}:${map.second}`;
-		text = text.replace(/{time}/g, timeStr);
+		text = text.replace(/{(?:time|hora)}/g, timeStr);
 
 		// NOVAS VARIÁVEIS DE DATA E HORA DETALHADAS
 		// Substitui {data-hora} pela hora atual
@@ -1658,6 +1666,143 @@ class CustomVariableProcessor {
 				"> não foi possível baixar a foto de perfil deste usuário"
 			);
 		}
+	}
+
+	/**
+	 * Processa variável de enquete {poll-Nome da enquete|Opcao 1#Opcao 2|$mult,$anon}
+	 * @param {string} text - Texto contendo a variável {poll-...}
+	 * @param {Object} context - Contexto de execução
+	 * @returns {Promise<Object|null>} - Objeto de enquete ou null se inválido
+	 */
+	async processPollVariable(text, context) {
+		if (typeof text !== "string" || !text.includes("{poll-")) {
+			return null;
+		}
+
+		const startIdx = text.indexOf("{poll-");
+		let depth = 0;
+		let endIdx = -1;
+		for (let i = startIdx; i < text.length; i++) {
+			if (text[i] === "{") depth++;
+			else if (text[i] === "}") {
+				depth--;
+				if (depth === 0) {
+					endIdx = i;
+					break;
+				}
+			}
+		}
+
+		if (endIdx === -1) {
+			return null;
+		}
+
+		const rawTag = text.substring(startIdx, endIdx + 1);
+		const inner = rawTag.substring(6, rawTag.length - 1); // remove "{poll-" e "}"
+
+		// Divide inner por '|' respeitando chaves aninhadas {...}
+		const parts = [];
+		let currentPart = "";
+		let braceDepth = 0;
+		for (let i = 0; i < inner.length; i++) {
+			const char = inner[i];
+			if (char === "{") {
+				braceDepth++;
+				currentPart += char;
+			} else if (char === "}") {
+				if (braceDepth > 0) braceDepth--;
+				currentPart += char;
+			} else if (char === "|" && braceDepth === 0) {
+				parts.push(currentPart);
+				currentPart = "";
+			} else {
+				currentPart += char;
+			}
+		}
+		parts.push(currentPart);
+
+		if (parts.length < 2) {
+			return null;
+		}
+
+		const rawQuestion = parts[0].trim();
+		const rawOptionsStr = parts[1].trim();
+		const rawConfigsStr = (parts[2] || "").trim();
+
+		// Divide rawOptionsStr por '#' respeitando chaves aninhadas {...}
+		const rawOptions = [];
+		let currentOpt = "";
+		let optBraceDepth = 0;
+		for (let i = 0; i < rawOptionsStr.length; i++) {
+			const char = rawOptionsStr[i];
+			if (char === "{") {
+				optBraceDepth++;
+				currentOpt += char;
+			} else if (char === "}") {
+				if (optBraceDepth > 0) optBraceDepth--;
+				currentOpt += char;
+			} else if (char === "#" && optBraceDepth === 0) {
+				if (currentOpt.trim()) {
+					rawOptions.push(currentOpt.trim());
+				}
+				currentOpt = "";
+			} else {
+				currentOpt += char;
+			}
+		}
+		if (currentOpt.trim()) {
+			rawOptions.push(currentOpt.trim());
+		}
+
+		if (rawOptions.length < 2) {
+			this.logger.warn("[processPollVariable] Enquete precisa de no mínimo 2 opções");
+			return null;
+		}
+
+		// Importa helpers de configs
+		const { parsePollConfigs } = require("../functions/PollCommands");
+		const configs = parsePollConfigs(rawConfigsStr);
+
+		// Processa variáveis na pergunta e nas opções
+		const processedQuestion = await this.process(rawQuestion, context);
+		const question =
+			typeof processedQuestion === "string"
+				? processedQuestion.trim()
+				: String(processedQuestion || "");
+
+		const processedOptions = [];
+		for (const opt of rawOptions) {
+			const res = await this.process(opt, context);
+			const textOpt = typeof res === "string" ? res.trim() : String(res || "");
+			if (textOpt) {
+				processedOptions.push(textOpt);
+			}
+		}
+
+		// Desduplicação de opções para o WhatsApp
+		const seen = new Map();
+		const uniqueOptions = [];
+		for (const opt of processedOptions) {
+			const count = (seen.get(opt) || 0) + 1;
+			seen.set(opt, count);
+			if (count === 1) {
+				uniqueOptions.push(opt);
+			} else {
+				uniqueOptions.push(`${opt} (${count})`);
+			}
+		}
+
+		return {
+			type: "poll",
+			isPoll: true,
+			poll: {
+				question,
+				options: uniqueOptions,
+				allowMultipleAnswers: configs.allowMultipleAnswers,
+				hideVoters: configs.hideVoters,
+				endTime: configs.endTime
+			}
+		};
 	}
 }
 

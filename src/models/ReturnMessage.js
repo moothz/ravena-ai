@@ -8,7 +8,7 @@ class ReturnMessage {
 	 */
 	constructor(data = {}) {
 		this.chatId = data.chatId ?? null;
-		this.content = data.content ?? "";
+		this.content = data.content ?? (data.poll ? null : "");
 
 		// Configurações padrão completas
 		this.options = data.options ?? {
@@ -52,6 +52,7 @@ class ReturnMessage {
 		// Recursos interativos e específicos de plataformas (Telegram / Discord)
 		this.telegram = data.telegram ?? null;
 		this.buttons = data.buttons ?? data.telegram?.buttons ?? null;
+		this.poll = data.poll ?? null;
 	}
 
 	/**
@@ -59,7 +60,7 @@ class ReturnMessage {
 	 * @returns {boolean} - Verdadeiro se válido, falso caso contrário
 	 */
 	isValid() {
-		return this.chatId !== null && this.content !== null;
+		return this.chatId !== null && (this.content !== null || this.poll !== null);
 	}
 
 	/**
@@ -71,6 +72,7 @@ class ReturnMessage {
 			chatId: this.chatId,
 			content: this.content,
 			options: this.options,
+			poll: this.poll,
 			reaction: this.reaction,
 			delay: this.delay,
 			metadata: this.metadata,

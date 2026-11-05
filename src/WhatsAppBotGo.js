@@ -1564,6 +1564,9 @@ class WhatsAppBotGo {
 
 			const contentToSend = message.content;
 			const options = { ...(message.options ?? {}) }; // Clone options
+			if (message.poll) {
+				options.poll = message.poll;
+			}
 
 			try {
 				const result = await this.sendMessage(message.chatId, contentToSend, options);
@@ -3144,7 +3147,15 @@ class WhatsAppBotGo {
 			const caption = typeof options.caption === "string" ? options.caption.trim() : "";
 
 			let contentFingerprint = "";
-			if (typeof content === "string") {
+			const pollData = options.poll || (content && (content.isPoll ? content : content.poll));
+			if (pollData) {
+				const q = pollData.question || pollData.name || "";
+				const opts = pollData.options || pollData.pollOptions || [];
+				const hide = Boolean(pollData.hideVoters ?? pollData.hideParticipantName);
+				const mult = Boolean(pollData.allowMultipleAnswers);
+				const end = pollData.endTime || 0;
+				contentFingerprint = `poll:${q}:${JSON.stringify(opts)}:${hide}:${mult}:${end}`;
+			} else if (typeof content === "string") {
 				contentFingerprint = `str:${content.trim()}`;
 			} else if (content && typeof content === "object") {
 				if (content.data) {
@@ -3167,8 +3178,6 @@ class WhatsAppBotGo {
 					contentFingerprint = `loc:${content.latitude}:${content.longitude}:${content.name || ""}`;
 				} else if (content.isContact) {
 					contentFingerprint = `ctc:${content.name || ""}:${content.number || ""}`;
-				} else if (content.isPoll) {
-					contentFingerprint = `poll:${content.name || ""}:${JSON.stringify(content.pollOptions || [])}`;
 				} else {
 					contentFingerprint = `obj:${JSON.stringify(content).slice(0, 512)}`;
 				}
@@ -3271,7 +3280,34 @@ class WhatsAppBotGo {
 				content.isMessageMedia = true;
 			}
 
-			if (typeof content === "string") {
+			if (options.poll || content?.isPoll || content?.poll) {
+				const poll = options.poll || (content?.isPoll ? content : content?.poll);
+				endpoint = "/send/poll";
+				payload.question =
+					poll.question || poll.name || (typeof content === "string" && content ? content : "");
+				payload.options = (poll.options || poll.pollOptions || [])
+					.map((o) => String(o).trim())
+					.filter(Boolean);
+				const allowMultiple =
+					poll.allowMultipleAnswers ??
+					poll.options?.allowMultipleAnswers ??
+					(poll.maxAnswer !== undefined ? poll.maxAnswer === 0 || poll.maxAnswer > 1 : false);
+				payload.maxAnswer = allowMultiple ? 0 : 1;
+				payload.hideVoters = Boolean(poll.hideVoters ?? poll.hideParticipantName ?? poll.anonimo);
+				if (poll.endTime) {
+					const endSec =
+						typeof poll.endTime === "number"
+							? poll.endTime > 1e11
+								? Math.floor(poll.endTime / 1000)
+								: Math.floor(poll.endTime)
+							: poll.endTime instanceof Date
+								? Math.floor(poll.endTime.getTime() / 1000)
+								: 0;
+					if (endSec > 0) {
+						payload.endTime = endSec;
+					}
+				}
+			} else if (typeof content === "string") {
 				if (this.validURL(content)) {
 					// Facilidade pra enviar mídia
 					endpoint = "/send/media";
@@ -3492,11 +3528,6 @@ class WhatsAppBotGo {
 					fullName: content.name,
 					phone: content.number
 				};
-			} else if (content.isPoll) {
-				endpoint = "/send/poll";
-				payload.question = content.name;
-				payload.options = content.pollOptions;
-				payload.maxAnswer = content.options.allowMultipleAnswers ? content.pollOptions.length : 1;
 			}
 
 			if (options.mentionAll) {

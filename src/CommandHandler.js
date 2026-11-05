@@ -2010,6 +2010,24 @@ class CommandHandler {
 				return returnMessages;
 			}
 
+			// Verifica se a resposta é um objeto Poll (caso de variável {poll-...})
+			if (
+				processedResponse &&
+				typeof processedResponse === "object" &&
+				(processedResponse.isPoll || processedResponse.poll || processedResponse.type === "poll")
+			) {
+				const pollData = processedResponse.poll || processedResponse;
+				return new ReturnMessage({
+					chatId: message.group ?? message.author,
+					poll: pollData,
+					options: {
+						quotedMessageId: command.reply ? message.origin.id._serialized : undefined,
+						goReply: message.origin,
+						...options
+					}
+				});
+			}
+
 			// Verifica se a resposta é um objeto MessageMedia (caso de variável {file-...}, api de arquivo como {reddit-})
 			this.logger.debug("Processed response for command:", processedResponse);
 			if (
