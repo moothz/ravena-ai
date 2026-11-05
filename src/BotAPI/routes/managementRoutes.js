@@ -682,6 +682,18 @@ function registerManagementRoutes(api) {
 					);
 				});
 
+				if (bot.grupoLogs) {
+					const groupName = groupData.name || groupData.titulo || groupId;
+					const botTag = bot.id ? ` (*${bot.id}*)` : "";
+					const logMsg = `🕊️ Saída amigável do bot${botTag} do grupo '${groupId}' (${groupName}) solicitada via painel web.`;
+					bot.sendMessage(bot.grupoLogs, logMsg).catch((err) => {
+						api.logger.error(
+							`[leave-friendly] Erro ao enviar notificação de saída amigável para grupoLogs (${bot.grupoLogs}):`,
+							err
+						);
+					});
+				}
+
 				setTimeout(async () => {
 					try {
 						if (typeof bot.leaveGroup === "function") {

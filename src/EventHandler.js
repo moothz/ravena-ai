@@ -1792,6 +1792,8 @@ class EventHandler extends EventEmitter {
 					`Bot entrou no grupo ${data.group.name} (${nomeGrupo}/${data.group.id}, ${groupData.newGroup ? "novo" : "antigo"})`
 				);
 				group.paused = false; // Sempre que o bot entra no grupo, tira o pause (para grupos em que saiu/foi removido)
+				group.removidoAmigavel = false;
+				delete group.saidaAmigavel;
 				await this.database.recordGroupJoin(
 					group.id,
 					group.name,
@@ -2599,11 +2601,16 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							}
 						}
 
+						const saidaAmigavelText =
+							group.removidoAmigavel || group.saidaAmigavel
+								? `\n- 🕊️ *Tipo:* Saída amigável (!g-sair${group.saidaAmigavel?.author ? ` por ${group.saidaAmigavel.author.replace(/\D/g, "").split("@")[0]}` : ""})`
+								: "";
+
 						const msgLeave = `🚪🔴 *${bot.id}* saiu do grupo:
 - 🆔 *ID:* \`${group.id}\`
 - 📃 *Nome:* \`${group.name}\`
 - 👷‍♂️ *Responsável:*
-\`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`
+\`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`${saidaAmigavelText}
 - 👨‍💻 *Raw Data*:
 \`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${streamsRemovedText}${blockLogsText}`;
 

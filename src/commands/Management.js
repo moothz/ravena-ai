@@ -9648,6 +9648,20 @@ class Management {
 				);
 			});
 
+			// Notifica o grupo de logs (legionlog) sobre a saída amigável solicitada
+			if (bot.grupoLogs) {
+				const userClean = (message.author || message.from || "").replace(/\D/g, "").split("@")[0];
+				const groupName = groupData.name || groupData.titulo || chatId;
+				const botTag = bot.id ? ` (*${bot.id}*)` : "";
+				const logMsg = `🕊️ Usuário (${userClean}) solicitou a saída amigável do bot${botTag} do grupo '${chatId}' (${groupName}).`;
+				await bot.sendMessage(bot.grupoLogs, logMsg).catch((err) => {
+					this.logger.error(
+						`[sairGrupo] Erro ao enviar notificação de saída amigável para grupoLogs (${bot.grupoLogs}):`,
+						err
+					);
+				});
+			}
+
 			// Pequeno delay para garantir entrega da mensagem via WebSocket/API
 			setTimeout(async () => {
 				try {
