@@ -3336,40 +3336,91 @@ async function fishingInfoCommand(bot, message) {
 		const customVariables = await database.getCustomVariables();
 		const fishVariety = customVariables.peixes?.length || 0;
 
+		const eventLegendaryMult = GameEventService.getMultiplier("pesca", "lendario");
+
+		// Consultas agregadas para contagem de lendários (histórico total e mês atual)
+		const allTimeRows = await database.dbAll(
+			dbName,
+			"SELECT fish_name, COUNT(*) as c FROM fishing_legendary_history GROUP BY fish_name"
+		);
+		const allTimeMap = new Map((allTimeRows || []).map((r) => [r.fish_name, r.c]));
+
+		const now = new Date();
+		const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+		const monthlyRows = await database.dbAll(
+			dbName,
+			"SELECT fish_name, COUNT(*) as c FROM fishing_legendary_history WHERE timestamp >= ? GROUP BY fish_name",
+			[startOfMonth]
+		);
+		const monthlyMap = new Map((monthlyRows || []).map((r) => [r.fish_name, r.c]));
+
+		let totalAvailableMonth = 0;
+		let totalMonthlyLimit = 0;
+		for (const fish of RARE_FISH) {
+			const limit = fish.monthlyLimit || 1;
+			totalMonthlyLimit += limit;
+			const caughtThisMonth = monthlyMap.get(fish.name) || 0;
+			if (caughtThisMonth < limit) {
+				totalAvailableMonth += limit - caughtThisMonth;
+			}
+		}
+
 		let infoMessage = "🎣 *Informações & Estatísticas do Jogo da Pesca* 🎣\n\n";
 
 		infoMessage += "📜 *Regras e Informações Gerais*\n";
 		infoMessage += `- *Iscas Máximas:* \`${MAX_BAITS}\` (expansível com itens)\n`;
 		infoMessage += `- *Recarga de Isca:* 1 a cada ${BAIT_REGEN_TIME / 60} minutos. _(Não é possível alterar este tempo)_\n`;
-		infoMessage += `-  *Peso dos Peixes:* de \`${MIN_FISH_WEIGHT}kg\` a \`${MAX_FISH_WEIGHT}kg\`\n`;
-		infoMessage += `- *Peixes:* \`${fishVariety}\` tipos (\`!pesca-peixes\` para ver)\n\n`;
+		infoMessage += `- *Peso dos Peixes:* de \`${MIN_FISH_WEIGHT}kg\` a \`${MAX_FISH_WEIGHT}kg\`\n`;
+		infoMessage += `- *Peixes Comuns:* \`${fishVariety}\` espécies (\`!pesca-peixes\` para ver)\n`;
+		infoMessage += `- *Chance de Lixo:* \`${(0.15 * DEFAULT_GLOBAL_FACTORS.trashChance * 100).toFixed(0)}%\` por arremesso\n\n`;
 
-		// Legendary counts
-		infoMessage += "🐲 *Peixes Lendários*\n_Chance de encontrar um destes seres místicos:_\n";
+		// Legendary counts and monthly availability
+		infoMessage += `🐲 *Peixes Lendários* (${totalAvailableMonth}/${totalMonthlyLimit} disponíveis este mês)\n`;
+		if (eventLegendaryMult > 1.0) {
+			infoMessage += `🔥 _Evento ativo: chance de lendários multiplicada por ${eventLegendaryMult}x!_\n`;
+		} else {
+			infoMessage += "_Chance por arremesso, disponibilidade no mês e histórico total:_\n";
+		}
+
 		for (const fish of RARE_FISH) {
-			// Count from DB
-			const countRow = await database.dbGet(
-				dbName,
-				"SELECT COUNT(*) as c FROM fishing_legendary_history WHERE fish_name = ?",
-				[fish.name]
-			);
-			infoMessage += `  ${fish.emoji} *${fish.name}*: \`${(fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(4)}%\` de chance, ${countRow?.c || 0} pescados até hoje\n`;
+			const allTime = allTimeMap.get(fish.name) || 0;
+			const monthlyCaught = monthlyMap.get(fish.name) || 0;
+			const limit = fish.monthlyLimit || 1;
+			const remaining = Math.max(0, limit - monthlyCaught);
+			const statusStr = remaining > 0 ? `🟢 \`${remaining}/${limit} disp.\`` : "🔴 *Esgotado*";
+
+			const chancePct =
+				fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance * eventLegendaryMult;
+			const chanceStr =
+				(chancePct < 0.001 ? chancePct.toFixed(6) : chancePct.toFixed(5))
+					.replace(/0+$/, "")
+					.replace(/\.$/, "") + "%";
+
+			infoMessage += `  ${fish.emoji} *${fish.name}*: \`${chanceStr}\` | ${statusStr} | Total: ${allTime}\n`;
 		}
 		infoMessage += "\n";
 
-		infoMessage += "✨ *Buffs*\n_Itens que te ajudam na pescaria:_\n";
+		infoMessage +=
+			"✨ *Buffs (Itens Benéficos)*\n_Chance por arremesso e melhorias na pescaria:_\n";
 		UPGRADES.forEach((item) => {
-			infoMessage += `  ${item.emoji} *${item.name}*: ${item.description}\n`;
+			const pct = item.chance * DEFAULT_GLOBAL_FACTORS.buffChance * 100;
+			const pctStr =
+				(pct < 0.1 ? pct.toFixed(3) : pct.toFixed(2)).replace(/0+$/, "").replace(/\.$/, "") + "%";
+			infoMessage += `  ${item.emoji} *${item.name}* (\`${pctStr}\`): ${item.description}\n`;
 		});
 		infoMessage += "\n";
 
-		infoMessage += "🔥 *Debuffs*\n_Cuidado com o que você fisga!_\n";
+		infoMessage += "🔥 *Debuffs (Penalidades)*\n_Chance por arremesso e perigos da pescaria:_\n";
 		DOWNGRADES.forEach((item) => {
-			infoMessage += `  ${item.emoji} *${item.name}*: ${item.description}\n`;
+			const pct = item.chance * DEFAULT_GLOBAL_FACTORS.debuffChance * 100;
+			const pctStr =
+				(pct < 0.1 ? pct.toFixed(3) : pct.toFixed(2)).replace(/0+$/, "").replace(/\.$/, "") + "%";
+			infoMessage += `  ${item.emoji} *${item.name}* (\`${pctStr}\`): ${item.description}\n`;
 		});
 		infoMessage += "\n";
 
-		infoMessage += "🧹 *Lixos Pescáveis*\n_Nem tudo que reluz é peixe..._\n";
+		infoMessage += `🧹 *Lixos Pescáveis* (\`${(0.15 * DEFAULT_GLOBAL_FACTORS.trashChance * 100).toFixed(0)}%\` de chance)\n`;
+		infoMessage += `_Ao pescar lixo, você não ganha peixe nem perde buffs de peso (${TRASH_ITEMS.length} variedades):_\n`;
 		infoMessage += `\`${TRASH_ITEMS.map((item) => item.emoji + " " + item.name).join(", ")}\`\n\n`;
 
 		infoMessage += "📊 *Estatísticas Globais de Pesca*\n";
