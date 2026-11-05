@@ -2330,7 +2330,7 @@ const commands = [
 		usage: "!fazenda [hd]",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazenda
 	}),
 	new Command({
@@ -2340,7 +2340,7 @@ const commands = [
 		usage: "!faz-adm",
 		category: "jogos",
 		reply: true,
-		cooldown: 10,
+		cooldown: 3,
 		method: handleFazAdm
 	}),
 	new Command({
@@ -2383,7 +2383,7 @@ const commands = [
 		usage: "!faz-loja",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazLoja
 	}),
 	new Command({
@@ -2433,7 +2433,7 @@ const commands = [
 		usage: "!faz-decorar <enfeite> [slot ou com imagem marcada]",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazDecorar
 	}),
 	new Command({
@@ -2443,7 +2443,7 @@ const commands = [
 		usage: "!faz-ranking [riqueza|colheitas]",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazRanking
 	}),
 	new Command({
@@ -2453,7 +2453,7 @@ const commands = [
 		usage: "!faz-nome <nome>",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazNome
 	}),
 	new Command({
@@ -2463,7 +2463,7 @@ const commands = [
 		usage: "!faz-ajuda",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazAjuda
 	}),
 	new Command({
@@ -2473,7 +2473,7 @@ const commands = [
 		usage: "!faz-help",
 		category: "jogos",
 		reply: true,
-		cooldown: 5,
+		cooldown: 3,
 		method: handleFazAjuda
 	})
 ];

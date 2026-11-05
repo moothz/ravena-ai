@@ -490,7 +490,7 @@ const commands = [
 		description: "Envia link seguro no PV para gerenciar conta e trocar moedas pela web",
 		category: "ravenabank",
 		group: "bank-adm",
-		cooldown: 10,
+		cooldown: 3,
 		reply: true,
 		reactions: { before: "⏳", after: "🔗", error: "❌" },
 		method: handleBancoAdm
@@ -501,7 +501,7 @@ const commands = [
 		description: "Panorama econômico, cotações do dia das Runas e regras do sistema",
 		category: "ravenabank",
 		group: "bank-eco",
-		cooldown: 5,
+		cooldown: 3,
 		reply: true,
 		reactions: { before: "📊", after: "📈", error: "❌" },
 		method: handleEconomia
@@ -536,7 +536,7 @@ const commands = [
 		description: "Consulta o histórico das suas últimas transações no RavenaBank",
 		category: "ravenabank",
 		group: "bank-extrato",
-		cooldown: 5,
+		cooldown: 3,
 		reply: true,
 		reactions: { before: "📜", after: "📋", error: "❌" },
 		method: handleExtrato
