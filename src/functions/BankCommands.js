@@ -92,15 +92,16 @@ async function handleBanco(bot, message) {
 		text += `• 🌱 *Jardim das Sombras:* ${formatPtBr(gardenCoins, 0, 0)} Ptl\n\n`;
 
 		text += `🛡️ *Cotas Diárias Restantes:*\n`;
-		text += `• 🛒 Compra: *${formatPtBr(quota.remaining.compra, 2, 2)}* / ${formatPtBr(quota.limits.compra, 0, 0)} ᚱ\n`;
-		text += `• 🎣 Pesca: *${formatPtBr(quota.remaining.pesca, 1, 1)}* / ${formatPtBr(quota.limits.pesca, 0, 0)} kg\n`;
-		text += `• 💜 Zinthos: *${formatPtBr(quota.remaining.zinthos, 0, 0)}* / ${formatPtBr(quota.limits.zinthos, 0, 0)} Z\n`;
-		text += `• 🌱 Jardim: *${formatPtBr(quota.remaining.jardim, 0, 0)}* / ${formatPtBr(quota.limits.jardim, 0, 0)} Ptl\n\n`;
+		text += `• 📥 Venda (Ganhar Runas): *${formatPtBr(quota.remaining.venda_runas, 2, 2)}* / ${formatPtBr(quota.limits.venda_runas, 0, 0)} ᚱ (unificado)\n`;
+		text += `• 💜 Compra Zinthos: *${formatPtBr(quota.remaining.compra_zinthos, 0, 0)}* / ${formatPtBr(quota.limits.compra_zinthos, 0, 0)} Z\n`;
+		text += `• 🌱 Compra Petalitas: *${formatPtBr(quota.remaining.compra_jardim, 0, 0)}* / ${formatPtBr(quota.limits.compra_jardim, 0, 0)} Ptl\n\n`;
 
 		text += `💡 *Comandos Rápidos:*\n`;
 		text += `• \`!banco-vender peixe <kg|tudo>\` — Vende peixes por Runas\n`;
 		text += `• \`!banco-vender <zinthos|jardim> <qtd>\` — Vende zinthos e petalitas\n`;
 		text += `• \`!banco-comprar <zinthos|jardim> <runas>\` — Compra zinthos e petalitas com Runas\n`;
+		text += `• \`!banco-loja\` — Loja de moedas de Slots e iscas de Pesca\n`;
+		text += `• \`!banco-comprar <moeda|isca> <qtd>\` — Compra consumíveis dos jogos\n`;
 		text += `• \`!banco-adm\` — Link privado para gerenciar e trocar na web!\n`;
 		text += `• \`!economia\` — Cotações do dia e explicações completas`;
 
@@ -205,7 +206,7 @@ async function handleEconomia(bot, message) {
 		text += `🛡️ *SOBRE O SISTEMA:*\n`;
 		text += `1. *Taxa Progressiva:* É uma taxa (spread) que varia de *3% a 10%* com base na sua cota diária usada. Pequenos câmbios pagam a menor taxa; grandes trocas pagam taxa progressiva. Toda a taxa é destruída (deflação);\n`;
 		text += `2. *Venda de Peixes:* Peixes podem ser vendidos por kg, não podem ser comprados com Runas. Peixes lendários não podem ser vendidos;\n`;
-		text += `3. *Cotas Diárias:* Compra: Máx. ${formatPtBr(macro.rules.dailyLimits.compra, 0, 0)} ᚱ | Venda: Máx. ${formatPtBr(macro.rules.dailyLimits.pesca, 0, 0)} kg peixe | ${formatPtBr(macro.rules.dailyLimits.zinthos, 0, 0)} Zinthos | ${formatPtBr(macro.rules.dailyLimits.jardim, 0, 0)} Petalitas;\n`;
+		text += `3. *Cotas Diárias:* Venda (ganhar Runas): Máx. ${formatPtBr(macro.rules.dailyLimits.venda_runas, 0, 0)} ᚱ (unificada de qualquer origem) | Compra Zinthos: Máx. ${formatPtBr(macro.rules.dailyLimits.compra_zinthos, 0, 0)} Z | Compra Petalitas: Máx. ${formatPtBr(macro.rules.dailyLimits.compra_jardim, 0, 0)} Ptl;\n`;
 		text += `4. *Estabilidade:* A variação máxima diária de cotação é limitada a +-10% por segurança.\n\n`;
 
 		text += `💡 _Para realizar trocas pelo navegador com facilidade, use \`!banco-adm\`!_`;
@@ -259,7 +260,7 @@ async function handleDepositar(bot, message, args) {
 			reply += `📈 *Taxa:* ${formatPtBr(res.spreadRate * 100, 1, 1)}% (-${formatPtBr(res.spreadFeeRunas, 2, 2)} ᚱ)\n`;
 			reply += `💠 *Runas Creditadas:* *+${formatPtBr(res.netRunas, 2, 2)} ᚱ*\n`;
 			reply += `✨ *Novo Saldo:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\`\n\n`;
-			reply += `🛡️ Cota restante de peixe hoje: ${formatPtBr(res.quotaRemaining, 1, 1)} kg`;
+			reply += `🛡️ Cota restante de venda hoje: ${formatPtBr(res.quotaRemaining, 2, 2)} ᚱ`;
 
 			return new ReturnMessage({
 				chatId,
@@ -276,7 +277,7 @@ async function handleDepositar(bot, message, args) {
 			reply += `📈 *Taxa:* ${formatPtBr(res.spreadRate * 100, 1, 1)}% (-${formatPtBr(res.spreadFeeRunas, 2, 2)} ᚱ)\n`;
 			reply += `💠 *Runas Creditadas:* *+${formatPtBr(res.netRunas, 2, 2)} ᚱ*\n`;
 			reply += `✨ *Novo Saldo no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\`\n\n`;
-			reply += `🛡️ Cota restante de Zinthos hoje: ${formatPtBr(res.quotaRemaining, 0, 0)} Z`;
+			reply += `🛡️ Cota restante de venda hoje: ${formatPtBr(res.quotaRemaining, 2, 2)} ᚱ`;
 
 			return new ReturnMessage({
 				chatId,
@@ -298,7 +299,7 @@ async function handleDepositar(bot, message, args) {
 			reply += `📈 *Taxa:* ${formatPtBr(res.spreadRate * 100, 1, 1)}% (-${formatPtBr(res.spreadFeeRunas, 2, 2)} ᚱ)\n`;
 			reply += `💠 *Runas Creditadas:* *+${formatPtBr(res.netRunas, 2, 2)} ᚱ*\n`;
 			reply += `✨ *Novo Saldo no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\`\n\n`;
-			reply += `🛡️ Cota restante de Petalitas hoje: ${formatPtBr(res.quotaRemaining, 0, 0)} Ptl`;
+			reply += `🛡️ Cota restante de venda hoje: ${formatPtBr(res.quotaRemaining, 2, 2)} ᚱ`;
 
 			return new ReturnMessage({
 				chatId,
@@ -323,43 +324,102 @@ async function handleDepositar(bot, message, args) {
 }
 
 /**
- * !banco-comprar <zinthos|jardim> <quantidade de runas>
+ * !banco-comprar <zinthos|jardim|moeda|isca> <quantidade>
  */
 async function handleSacar(bot, message, args) {
 	const userId = getUserId(message);
 	const chatId = getChatId(message);
 
-	if (!args || args.length < 2) {
+	if (!args || args.length < 1) {
 		return new ReturnMessage({
 			chatId,
 			content:
 				`❌ *Uso incorreto!*\n\n` +
-				`Exemplos:\n` +
+				`Exemplos de Câmbio de Moedas:\n` +
 				`• \`!banco-comprar zinthos 100\` (gasta 100 Runas e recebe Zinthos)\n` +
 				`• \`!banco-comprar jardim 250\` (gasta 250 Runas e recebe Petalitas)\n\n` +
+				`🛍️ *Loja RavenaBank (Consumíveis de Jogos):*\n` +
+				`• \`!banco-comprar moeda 5\` (gasta 300 ᚱ cada moeda do Slots, máx 30)\n` +
+				`• \`!banco-comprar isca 3\` (gasta 100 ᚱ cada isca de Pesca, máx 1.5x inventário)\n` +
+				`• \`!banco-loja\` (exibe o catálogo completo da loja)\n\n` +
 				`⚠️ _Nota: Não é possível comprar peixes com Runas._`
 		});
 	}
 
 	const game = String(args[0]).toLowerCase().trim();
-	const runasAmount = args[1];
+
+	if (game === "loja") {
+		if (args.length >= 3) {
+			const itemTarget = String(args[1]).toLowerCase().trim();
+			const qtd = args[2];
+			if (
+				itemTarget === "moeda" ||
+				itemTarget === "moedas" ||
+				itemTarget === "slots" ||
+				itemTarget === "ficha" ||
+				itemTarget === "fichas"
+			) {
+				return await processBuyCoins(userId, chatId, qtd, message);
+			} else if (itemTarget === "isca" || itemTarget === "iscas" || itemTarget === "pesca") {
+				return await processBuyBaits(userId, chatId, qtd, message);
+			}
+		}
+		return await handleLoja(bot, message);
+	}
+
+	if (args.length < 2) {
+		if (
+			game === "moeda" ||
+			game === "moedas" ||
+			game === "slots" ||
+			game === "isca" ||
+			game === "iscas"
+		) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Informe a quantidade que deseja comprar. Exemplo: \`!banco-comprar ${game} 5\``
+			});
+		}
+		return new ReturnMessage({
+			chatId,
+			content:
+				`❌ *Uso incorreto!*\n\n` +
+				`Exemplos:\n` +
+				`• \`!banco-comprar zinthos 100\`\n` +
+				`• \`!banco-comprar jardim 250\`\n` +
+				`• \`!banco-comprar moeda 5\`\n` +
+				`• \`!banco-comprar isca 3\``
+		});
+	}
+
+	const amount = args[1];
 
 	try {
-		if (game === "peixe" || game === "pesca" || game === "peixes") {
+		if (game === "peixe" || game === "peixes") {
 			return new ReturnMessage({
 				chatId,
 				content:
 					`❌ *Operação não permitida!*\n` +
 					`Não é possível comprar peixes usando Runas. Peixes só podem ser vendidos para o banco.`
 			});
+		} else if (
+			game === "moeda" ||
+			game === "moedas" ||
+			game === "slots" ||
+			game === "ficha" ||
+			game === "fichas"
+		) {
+			return await processBuyCoins(userId, chatId, amount, message);
+		} else if (game === "isca" || game === "iscas") {
+			return await processBuyBaits(userId, chatId, amount, message);
 		} else if (game === "zinthos" || game === "waifu" || game === "waifus") {
-			const res = await bankService.withdrawZinthos(userId, runasAmount);
+			const res = await bankService.withdrawZinthos(userId, amount);
 			let reply = `💜 *COMPRA DE ZINTHOS CONCLUÍDA!* ✨\n\n`;
 			reply += `💠 *Runas Gastas:* ${formatPtBr(res.runasSpent, 2, 2)} ᚱ\n`;
 			reply += `📈 *Taxa:* ${formatPtBr(res.spreadRate * 100, 1, 1)}%\n`;
 			reply += `💎 *Zinthos Recebidos:* *+${formatPtBr(res.netZinthos, 0, 0)} Z*\n`;
 			reply += `✨ *Saldo Restante no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\`\n\n`;
-			reply += `🛡️ Cota restante de compra hoje: ${formatPtBr(res.quotaRemaining, 2, 2)} ᚱ`;
+			reply += `🛡️ Cota restante de Zinthos hoje: ${formatPtBr(res.quotaRemaining, 0, 0)} Z`;
 
 			return new ReturnMessage({
 				chatId,
@@ -375,13 +435,13 @@ async function handleSacar(bot, message, args) {
 			game === "petalita" ||
 			game === "petalitas"
 		) {
-			const res = await bankService.withdrawJardim(userId, runasAmount);
+			const res = await bankService.withdrawJardim(userId, amount);
 			let reply = `🌱 *COMPRA DE PETALITAS CONCLUÍDA!* ✨\n\n`;
 			reply += `💠 *Runas Gastas:* ${formatPtBr(res.runasSpent, 2, 2)} ᚱ\n`;
 			reply += `📈 *Taxa:* ${formatPtBr(res.spreadRate * 100, 1, 1)}%\n`;
 			reply += `🌱 *Petalitas Recebidas:* *+${formatPtBr(res.netCoins, 0, 0)} Ptl*\n`;
 			reply += `✨ *Saldo Restante no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\`\n\n`;
-			reply += `🛡️ Cota restante de compra hoje: ${formatPtBr(res.quotaRemaining, 2, 2)} ᚱ`;
+			reply += `🛡️ Cota restante de Petalitas hoje: ${formatPtBr(res.quotaRemaining, 0, 0)} Ptl`;
 
 			return new ReturnMessage({
 				chatId,
@@ -394,13 +454,109 @@ async function handleSacar(bot, message, args) {
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Destino de compra inválido: "${game}". Escolha entre: \`zinthos\` ou \`jardim\`.`
+				content: `❌ Destino de compra inválido: "${game}". Escolha entre: \`zinthos\`, \`jardim\`, \`moeda\` ou \`isca\`. Veja \`!banco-loja\` para mais detalhes.`
 			});
 		}
 	} catch (err) {
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Falha na compra: ${err.message}`
+		});
+	}
+}
+
+async function processBuyCoins(userId, chatId, amount, message) {
+	try {
+		const res = await bankService.buySlotsCoins(userId, amount);
+		let reply = `🎰 *COMPRA DE MOEDINHAS CONCLUÍDA!* ✨\n\n`;
+		reply += `🪙 *Moedas Compradas:* *+${res.count}*\n`;
+		reply += `💠 *Runas Gastas:* ${formatPtBr(res.costRunas, 2, 2)} ᚱ (300 ᚱ cada)\n`;
+		reply += `🎰 *Saldo Atual no Slots:* ${res.currentCoins} / ${res.maxCoins} moedas\n`;
+		reply += `✨ *Saldo Restante no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\``;
+
+		return new ReturnMessage({
+			chatId,
+			content: reply,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Falha na compra de moedinhas: ${err.message}`
+		});
+	}
+}
+
+async function processBuyBaits(userId, chatId, amount, message) {
+	try {
+		const res = await bankService.buyFishingBaits(userId, amount);
+		let reply = `🐛 *COMPRA DE ISCAS CONCLUÍDA!* ✨\n\n`;
+		reply += `🎣 *Iscas Compradas:* *+${res.count}*\n`;
+		reply += `💠 *Runas Gastas:* ${formatPtBr(res.costRunas, 2, 2)} ᚱ (100 ᚱ cada)\n`;
+		reply += `🐛 *Saldo Atual na Pesca:* ${res.currentBaits} / ${res.limitBaits} iscas (capacidade: ${res.maxBaits})\n`;
+		reply += `✨ *Saldo Restante no Banco:* \`${formatPtBr(res.newBalance, 2, 2)} ᚱ\``;
+
+		return new ReturnMessage({
+			chatId,
+			content: reply,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Falha na compra de iscas: ${err.message}`
+		});
+	}
+}
+
+/**
+ * !banco-loja: Exibe a loja de consumíveis do RavenaBank
+ */
+async function handleLoja(bot, message) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+
+	try {
+		const catalog = await bankService.getStoreCatalog(userId);
+		let text = `🏪 *LOJA RAVENABANK* 🛍️\n`;
+		text += `Gaste suas Runas para adquirir consumíveis nos jogos!\n\n`;
+		text += `💰 *Seu Saldo:* \`${formatPtBr(catalog.userRunas, 2, 2)} ᚱ\`\n\n`;
+
+		for (const item of catalog.items) {
+			text += `${item.emoji} *${item.name}*\n`;
+			text += `• Preço: *${formatPtBr(item.priceRunas, 0, 0)} ᚱ* cada\n`;
+			text += `• Saldo atual: *${item.current}*\n`;
+			text += `• Limite máximo permitido: *${item.limit}*\n`;
+			text += `• Disponível para compra: *${item.maxCanBuy}*\n`;
+			if (item.id === "moedas") {
+				text += `• Comando: \`!banco-comprar moeda <quantidade>\`\n\n`;
+			} else {
+				text += `• Comando: \`!banco-comprar isca <quantidade>\`\n\n`;
+			}
+		}
+
+		text += `💡 *Exemplos de compra:*\n`;
+		text += `• \`!banco-comprar moeda 5\`\n`;
+		text += `• \`!banco-comprar isca 3\``;
+
+		return new ReturnMessage({
+			chatId,
+			content: text,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (err) {
+		return new ReturnMessage({
+			chatId,
+			content: `❌ Falha ao abrir a loja: ${err.message}`
 		});
 	}
 }
@@ -521,14 +677,26 @@ const commands = [
 	new Command({
 		name: "banco-comprar",
 		aliases: ["banco-sacar", "banco-resgatar"],
-		description: "Usa Runas do banco para comprar Zinthos ou Petalitas",
-		usage: "!banco-comprar <zinthos|jardim> <runas>",
+		description: "Usa Runas para comprar Zinthos, Petalitas, Moedinhas do Slots ou Iscas",
+		usage: "!banco-comprar <zinthos|jardim|moeda|isca> <quantidade>",
 		category: "ravenabank",
 		group: "bank-comprar",
 		cooldown: 3,
 		reply: true,
 		reactions: { before: "⏳", after: "💸", error: "❌" },
 		method: handleSacar
+	}),
+	new Command({
+		name: "banco-loja",
+		aliases: ["loja-banco"],
+		description: "Exibe a loja de itens e consumíveis compráveis com Runas",
+		usage: "!banco-loja",
+		category: "ravenabank",
+		group: "bank-loja",
+		cooldown: 3,
+		reply: true,
+		reactions: { before: "⏳", after: "🏪", error: "❌" },
+		method: handleLoja
 	}),
 	new Command({
 		name: "banco-extrato",
@@ -574,9 +742,20 @@ const helper = {
 			category: "ravenabank"
 		},
 		{
-			cmd: "!banco-comprar <zinthos|jardim> <runas>",
-			desc: "Usa Runas para comprar Zinthos do Waifuletes ou Petalitas da Fazenda",
-			usage: ["!banco-comprar zinthos 100", "!banco-comprar jardim 250"],
+			cmd: "!banco-comprar <zinthos|jardim|moeda|isca> <quantidade>",
+			desc: "Usa Runas para comprar Zinthos, Petalitas, Moedinhas do Slots ou Iscas",
+			usage: [
+				"!banco-comprar zinthos 100",
+				"!banco-comprar jardim 250",
+				"!banco-comprar moeda 5",
+				"!banco-comprar isca 3"
+			],
+			category: "ravenabank"
+		},
+		{
+			cmd: "!banco-loja",
+			desc: "Exibe a loja de consumíveis (moedas e iscas) compráveis com Runas",
+			usage: ["!banco-loja"],
 			category: "ravenabank"
 		},
 		{

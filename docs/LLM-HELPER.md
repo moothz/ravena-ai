@@ -232,6 +232,38 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `BankCommands.js`
+**Sobre:** Sistema central de economia e câmbio "RavenaBank" entre mini-games via Runas (ᚱ) e loja de consumíveis
+
+**Tags:** `banco,ravenabank,runas,cambio,economia,pesca,zinthos,waifu,jardim,petalita,loja,slots`
+
+**Detalhes Técnicos:** Câmbio progressivo ancorado em Runas, rotação diária 04:00 AM BRT, venda knapsack de peixes, loja de consumíveis (moedas e iscas) e sessões web seguras
+
+#### Comandos:
+- **`!banco`**: Consulta saldo em Runas, patrimônio e cotas diárias
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco`
+- **`!banco-loja`**: Exibe a loja de consumíveis (moedas e iscas) compráveis com Runas
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco-loja`
+- **`!banco-comprar`**: Compra Zinthos, Petalitas, moedas de slots ou iscas de pesca com Runas
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco-comprar zinthos 100`, `!banco-comprar moeda 5`, `!banco-comprar isca 3`
+- **`!banco-vender`**: Vende recursos dos mini-games (peixes, zinthos ou petalitas) por Runas
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco-vender peixe 300`, `!banco-vender peixe tudo`, `!banco-vender zinthos 1500`
+- **`!banco-adm`**: Envia link seguro no PV para gerenciar conta e realizar trocas no navegador
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco-adm`
+- **`!economia`**: Exibe panorama macroeconômico, cotações do dia e regras do sistema
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!economia`
+- **`!banco-extrato`**: Consulta o histórico das suas últimas transações no RavenaBank
+  - *Categoria:* ravenabank
+  - *Uso/Exemplos:* `!banco-extrato`
+
+---
+
 ### 📁 Módulo: `BiscoitoDaSorte.js`
 **Sobre:** Gera frases motivacionais ou bem-humoradas de biscoito da sorte
 

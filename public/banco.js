@@ -16,6 +16,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     let globalRates = null;
     let currentUserData = null;
+    let allTransactions = [];
+    let txCurrentPage = 1;
+    const TX_PAGE_SIZE = 10;
 
     // Funções utilitárias de formatação brasileira
     function formatPtBr(val, decimals = 2) {
@@ -95,30 +98,62 @@ document.addEventListener("DOMContentLoaded", async () => {
             globalRates = d.rates;
 
             // Banner
-            document.getElementById("total-runas").textContent = `💠 ${formatPtBr(d.totalRunas, 2)} ᚱ`;
-            document.getElementById("total-accounts").textContent = `Distribuídas entre ${formatInt(d.totalAccounts)} contas cadastradas na rede`;
+            const elTotalRunas = document.getElementById("total-runas");
+            if (elTotalRunas) elTotalRunas.textContent = `💠 ${formatPtBr(d.totalRunas, 2)} ᚱ`;
+            const elTotalAccounts = document.getElementById("total-accounts");
+            if (elTotalAccounts) elTotalAccounts.textContent = `Distribuídas entre ${formatInt(d.totalAccounts)} contas cadastradas na rede`;
 
             // Card Pesca
             const kgPer1000 = Math.round(1000 / d.rates.runasPerKgFish);
-            document.getElementById("rate-fish").textContent = `1.000 ᚱ = ${formatInt(kgPer1000)} kg`;
-            document.getElementById("unit-fish").textContent = `1 kg = ${formatPtBr(d.rates.runasPerKgFish, 2)} ᚱ`;
-            document.getElementById("stock-fish").textContent = `${formatPtBr(d.fish.totalWeight, 1)} kg (${formatInt(d.fish.totalCount)} peixes)`;
+            const elRateFish = document.getElementById("rate-fish");
+            if (elRateFish) elRateFish.textContent = `1.000 ᚱ = ${formatInt(kgPer1000)} kg`;
+            const elUnitFish = document.getElementById("unit-fish");
+            if (elUnitFish) elUnitFish.textContent = `1 kg = ${formatPtBr(d.rates.runasPerKgFish, 2)} ᚱ`;
+            const elStockFish = document.getElementById("stock-fish");
+            if (elStockFish) elStockFish.textContent = `${formatPtBr(d.fish.totalWeight, 1)} kg (${formatInt(d.fish.totalCount)} peixes)`;
 
             // Card Waifus
             const zPer1000 = Math.round(1000 / d.rates.runasPerZinthos);
-            document.getElementById("rate-waifu").textContent = `1.000 ᚱ = ${formatInt(zPer1000)} Z`;
-            document.getElementById("unit-waifu").textContent = `1 Z = ${formatPtBr(d.rates.runasPerZinthos, 4)} ᚱ`;
-            document.getElementById("stock-waifu").textContent = `${formatInt(d.waifu.circulatingZinthos)} Zinthos`;
-            document.getElementById("inflation-waifu").textContent = `+${formatPtBr(d.waifu.inflationPercent, 2)}%`;
+            const elRateWaifu = document.getElementById("rate-waifu");
+            if (elRateWaifu) elRateWaifu.textContent = `1.000 ᚱ = ${formatInt(zPer1000)} Z`;
+            const elUnitWaifu = document.getElementById("unit-waifu");
+            if (elUnitWaifu) elUnitWaifu.textContent = `1 Z = ${formatPtBr(d.rates.runasPerZinthos, 4)} ᚱ`;
+            const elStockWaifu = document.getElementById("stock-waifu");
+            if (elStockWaifu) elStockWaifu.textContent = `${formatInt(d.waifu.circulatingZinthos)} Zinthos`;
+            const elInflationWaifu = document.getElementById("inflation-waifu");
+            if (elInflationWaifu) elInflationWaifu.textContent = `+${formatPtBr(d.waifu.inflationPercent, 2)}%`;
 
             // Card Jardim (Fazenda)
             const mjPer1000 = Math.round(1000 / d.rates.runasPerJardimCoin);
-            document.getElementById("rate-jardim").textContent = `1.000 ᚱ = ${formatInt(mjPer1000)} Ptl`;
-            document.getElementById("unit-jardim").textContent = `1 Ptl = ${formatPtBr(d.rates.runasPerJardimCoin, 4)} ᚱ`;
-            document.getElementById("stock-jardim").textContent = `${formatInt(d.jardim.totalCoins)} Ptl`;
+            const elRateJardim = document.getElementById("rate-jardim");
+            if (elRateJardim) elRateJardim.textContent = `1.000 ᚱ = ${formatInt(mjPer1000)} Ptl`;
+            const elUnitJardim = document.getElementById("unit-jardim");
+            if (elUnitJardim) elUnitJardim.textContent = `1 Ptl = ${formatPtBr(d.rates.runasPerJardimCoin, 4)} ᚱ`;
+            const elStockJardim = document.getElementById("stock-jardim");
+            if (elStockJardim) elStockJardim.textContent = `${formatInt(d.jardim.totalCoins)} Ptl`;
+
+            updateShopCardsStatic();
         } catch (err) {
             console.error("Erro ao carregar dados públicos do banco:", err);
         }
+    }
+
+    function updateShopCardsStatic() {
+        if (!globalRates) return;
+        const elPriceZ = document.getElementById("buy-price-zinthos");
+        if (elPriceZ) elPriceZ.innerHTML = `${formatPtBr(globalRates.runasPerZinthos, 4)} ᚱ <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">cada</span>`;
+
+        const elPriceJ = document.getElementById("buy-price-jardim");
+        if (elPriceJ) elPriceJ.innerHTML = `${formatPtBr(globalRates.runasPerJardimCoin, 4)} ᚱ <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">cada</span>`;
+
+        const elRateF = document.getElementById("sell-rate-fish");
+        if (elRateF) elRateF.textContent = `1 kg = ${formatPtBr(globalRates.runasPerKgFish, 2)} ᚱ`;
+
+        const elRateZ = document.getElementById("sell-rate-zinthos");
+        if (elRateZ) elRateZ.textContent = `1 Z = ${formatPtBr(globalRates.runasPerZinthos, 4)} ᚱ`;
+
+        const elRateJ = document.getElementById("sell-rate-jardim");
+        if (elRateJ) elRateJ.textContent = `1 Ptl = ${formatPtBr(globalRates.runasPerJardimCoin, 4)} ᚱ`;
     }
 
     // 3. Carrega Sessão do Usuário
@@ -148,50 +183,138 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("auth-panel").style.display = "block";
 
             // Preenche dados do usuário
-            document.getElementById("user-phone").textContent = formatPhone(currentUserData.userId);
-            document.getElementById("my-runas").textContent = `${formatPtBr(currentUserData.account.runas, 2)} ᚱ`;
-            document.getElementById("my-fish").textContent = `${formatPtBr(currentUserData.holdings.fishWeight, 2)} kg (${formatInt(currentUserData.holdings.fishCount)} peixes)`;
-            document.getElementById("my-zinthos").textContent = `${formatInt(currentUserData.holdings.zinthos)} Z`;
-            document.getElementById("my-jardim").textContent = `${formatInt(currentUserData.holdings.gardenCoins)} Ptl`;
+            const elUserPhone = document.getElementById("user-phone");
+            if (elUserPhone) elUserPhone.textContent = formatPhone(currentUserData.userId);
 
-            // Atualiza cotas diárias utilizadas abaixo dos saldos
-            const q = currentUserData.quota || { used: {}, limits: {} };
-            const qUsed = q.used || {};
-            const qLimits = q.limits || {};
+            const elMyRunas = document.getElementById("my-runas");
+            if (elMyRunas) elMyRunas.textContent = `${formatPtBr(currentUserData.account.runas, 2)} ᚱ`;
 
-            const elRunasQ = document.getElementById("my-runas-quota");
-            if (elRunasQ) {
-                elRunasQ.textContent = `Cota usada: ${formatPtBr(qUsed.compra || 0, 2)} / ${formatPtBr(qLimits.compra || 15000, 0)} ᚱ`;
-            }
-            const elFishQ = document.getElementById("my-fish-quota");
-            if (elFishQ) {
-                elFishQ.textContent = `Cota usada: ${formatPtBr(qUsed.pesca || 0, 1)} / ${formatPtBr(qLimits.pesca || 3000, 0)} kg`;
-            }
-            const elZinthosQ = document.getElementById("my-zinthos-quota");
-            if (elZinthosQ) {
-                elZinthosQ.textContent = `Cota usada: ${formatInt(qUsed.zinthos || 0)} / ${formatInt(qLimits.zinthos || 15000)} Z`;
-            }
-            const elJardimQ = document.getElementById("my-jardim-quota");
-            if (elJardimQ) {
-                elJardimQ.textContent = `Cota usada: ${formatInt(qUsed.jardim || 0)} / ${formatInt(qLimits.jardim || 12000)} Ptl`;
-            }
+            updateUserDataDisplays();
 
-            // Renderiza extrato
-            renderTransactions(currentUserData.transactions);
-            updatePreview();
+            // Extrato com paginação
+            allTransactions = Array.isArray(currentUserData.transactions) ? [...currentUserData.transactions] : [];
+            allTransactions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            txCurrentPage = 1;
+            renderTransactionsPage();
+
+            updateBuyCart();
+            updateSellCart();
         } catch (err) {
             console.error("Erro ao verificar sessão do banco:", err);
         }
     }
 
-    function renderTransactions(txs) {
+    function updateUserDataDisplays() {
+        if (!currentUserData) return;
+
+        const h = currentUserData.holdings || {};
+        const q = currentUserData.quota || { used: {}, limits: {}, remaining: {} };
+        const qRemaining = q.remaining || {};
+
+        // 1. Aba Compra - Limites e Disponibilidades
+        const currentCoins = h.slotsCoins || 0;
+        const availCoins = Math.max(0, 30 - currentCoins);
+        const elAvailCoins = document.getElementById("buy-avail-moedas");
+        if (elAvailCoins) {
+            elAvailCoins.textContent = `${availCoins}`;
+            elAvailCoins.style.color = availCoins === 0 ? "#ef4444" : "#facc15";
+        }
+
+        const currentBaits = h.baits || 0;
+        const maxBaits = h.maxBaits || 5;
+        const maxLimitBaits = Math.ceil(maxBaits * 1.5);
+        const availBaits = Math.max(0, maxLimitBaits - currentBaits);
+        const elAvailBaits = document.getElementById("buy-avail-iscas");
+        if (elAvailBaits) {
+            elAvailBaits.textContent = `${availBaits}`;
+            elAvailBaits.style.color = availBaits === 0 ? "#ef4444" : "#38bdf8";
+        }
+
+        const availZinthos = Math.max(0, qRemaining.compra_zinthos ?? (200000 - (q.used?.compra_zinthos || 0)));
+        const elAvailZ = document.getElementById("buy-avail-zinthos");
+        if (elAvailZ) {
+            elAvailZ.textContent = `${formatInt(availZinthos)} Z`;
+            elAvailZ.style.color = availZinthos === 0 ? "#ef4444" : "#f472b6";
+        }
+
+        const availJardim = Math.max(0, qRemaining.compra_jardim ?? (150000 - (q.used?.compra_jardim || 0)));
+        const elAvailJ = document.getElementById("buy-avail-jardim");
+        if (elAvailJ) {
+            elAvailJ.textContent = `${formatInt(availJardim)} Ptl`;
+            elAvailJ.style.color = availJardim === 0 ? "#ef4444" : "#4ade80";
+        }
+
+        // 2. Aba Venda - Saldos do Usuário
+        const elHoldingsFish = document.getElementById("sell-holdings-fish");
+        if (elHoldingsFish) {
+            elHoldingsFish.textContent = `${formatPtBr(h.fishWeight || 0, 2)} kg (${formatInt(h.fishCount || 0)} peixes)`;
+        }
+
+        const elHoldingsZ = document.getElementById("sell-holdings-zinthos");
+        if (elHoldingsZ) {
+            elHoldingsZ.textContent = `${formatInt(h.zinthos || 0)} Z`;
+        }
+
+        const elHoldingsJ = document.getElementById("sell-holdings-jardim");
+        if (elHoldingsJ) {
+            elHoldingsJ.textContent = `${formatInt(h.gardenCoins || 0)} Ptl`;
+        }
+
+        const availVendaRunas = Math.max(0, qRemaining.venda_runas ?? (300000 - (q.used?.venda_runas || 0)));
+        const elCartQuota = document.getElementById("sell-cart-quota");
+        if (elCartQuota) {
+            elCartQuota.innerHTML = `Cota unificada restante: <strong style="color: #c084fc;">${formatPtBr(availVendaRunas, 2)} ᚱ</strong> / dia`;
+        }
+    }
+
+    // 4. Alternância de Abas: Compra e Venda
+    const tabBtnCompra = document.getElementById("tab-btn-compra");
+    const tabBtnVenda = document.getElementById("tab-btn-venda");
+    const tabContentCompra = document.getElementById("tab-compra-content");
+    const tabContentVenda = document.getElementById("tab-venda-content");
+
+    function switchTradeTab(tab) {
+        if (tab === "compra") {
+            tabBtnCompra.classList.add("active");
+            tabBtnVenda.classList.remove("active");
+            tabContentCompra.style.display = "block";
+            tabContentVenda.style.display = "none";
+        } else {
+            tabBtnVenda.classList.add("active");
+            tabBtnCompra.classList.remove("active");
+            tabContentVenda.style.display = "block";
+            tabContentCompra.style.display = "none";
+        }
+    }
+
+    if (tabBtnCompra) tabBtnCompra.addEventListener("click", () => switchTradeTab("compra"));
+    if (tabBtnVenda) tabBtnVenda.addEventListener("click", () => switchTradeTab("venda"));
+
+    // 5. Extrato de Transações com Paginação
+    function renderTransactionsPage() {
         const tbody = document.getElementById("tx-body");
-        if (!txs || txs.length === 0) {
+        const prevBtn = document.getElementById("tx-prev");
+        const nextBtn = document.getElementById("tx-next");
+        const pageInfo = document.getElementById("tx-page-info");
+
+        if (!tbody) return;
+
+        if (!allTransactions || allTransactions.length === 0) {
             tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b;">Nenhuma movimentação registrada.</td></tr>`;
+            if (prevBtn) prevBtn.disabled = true;
+            if (nextBtn) nextBtn.disabled = true;
+            if (pageInfo) pageInfo.textContent = "Página 1 de 1";
             return;
         }
 
-        tbody.innerHTML = txs.map(t => {
+        const totalPages = Math.max(1, Math.ceil(allTransactions.length / TX_PAGE_SIZE));
+        if (txCurrentPage > totalPages) txCurrentPage = totalPages;
+        if (txCurrentPage < 1) txCurrentPage = 1;
+
+        const startIndex = (txCurrentPage - 1) * TX_PAGE_SIZE;
+        const pageItems = allTransactions.slice(startIndex, startIndex + TX_PAGE_SIZE);
+
+        tbody.innerHTML = pageItems.map(t => {
             const isVenda = t.type === "DEPOSIT";
             const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", { 
                 day: "2-digit", 
@@ -209,20 +332,26 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (t.game === "pesca") {
                 gameBadge = "🎣 Pesca";
                 formattedAmount = `${formatPtBr(t.game_amount, 2)} kg`;
-            } else if (t.game === "waifu") {
-                gameBadge = "💜 Waifuletes (Z)";
+            } else if (t.game === "waifu" || t.game === "zinthos") {
+                gameBadge = "💜 Waifus (Z)";
                 formattedAmount = `${formatInt(t.game_amount)} Z`;
-            } else if (t.game === "jardim") {
+            } else if (t.game === "jardim" || t.game === "fazenda") {
                 gameBadge = "🌱 Petalitas (Ptl)";
                 formattedAmount = `${formatInt(t.game_amount)} Ptl`;
+            } else if (t.game === "moedas" || t.game === "slots") {
+                gameBadge = "🎰 Slots (Moedas)";
+                formattedAmount = `${formatInt(t.game_amount)} un.`;
+            } else if (t.game === "iscas") {
+                gameBadge = "🐛 Pesca (Iscas)";
+                formattedAmount = `${formatInt(t.game_amount)} un.`;
             } else {
                 gameBadge = t.game;
                 formattedAmount = formatPtBr(t.game_amount, 2);
             }
 
             const sign = isVenda ? "+" : "-";
-            const spreadFee = formatPtBr(t.spread_fee_runas, 2);
-            const spreadPct = formatPtBr(t.spread_rate * 100, 1);
+            const spreadFee = t.spread_fee_runas !== undefined ? formatPtBr(t.spread_fee_runas, 2) : "0,00";
+            const spreadPct = t.spread_rate !== undefined ? formatPtBr(t.spread_rate * 100, 1) : "0,0";
 
             return `
                 <tr>
@@ -235,10 +364,513 @@ document.addEventListener("DOMContentLoaded", async () => {
                 </tr>
             `;
         }).join("");
+
+        if (prevBtn) prevBtn.disabled = txCurrentPage <= 1;
+        if (nextBtn) nextBtn.disabled = txCurrentPage >= totalPages;
+        if (pageInfo) pageInfo.textContent = `Página ${txCurrentPage} de ${totalPages} (${allTransactions.length} transações)`;
     }
 
-    // 4. Logout
-    document.getElementById("btn-logout").addEventListener("click", async () => {
+    const prevBtn = document.getElementById("tx-prev");
+    const nextBtn = document.getElementById("tx-next");
+    if (prevBtn) {
+        prevBtn.addEventListener("click", () => {
+            if (txCurrentPage > 1) {
+                txCurrentPage--;
+                renderTransactionsPage();
+            }
+        });
+    }
+    if (nextBtn) {
+        nextBtn.addEventListener("click", () => {
+            const totalPages = Math.max(1, Math.ceil(allTransactions.length / TX_PAGE_SIZE));
+            if (txCurrentPage < totalPages) {
+                txCurrentPage++;
+                renderTransactionsPage();
+            }
+        });
+    }
+
+    // 6. Lógica de Carrinho e Controles — ABA COMPRA
+    const buyInputs = {
+        moedas: document.getElementById("buy-qty-moedas"),
+        iscas: document.getElementById("buy-qty-iscas"),
+        zinthos: document.getElementById("buy-qty-zinthos"),
+        jardim: document.getElementById("buy-qty-jardim")
+    };
+
+    function parsePositiveNumber(val) {
+        if (!val) return 0;
+        const n = parseFloat(String(val).replace(",", "."));
+        return isNaN(n) || n < 0 ? 0 : n;
+    }
+
+    function setupStepper(minusId, plusId, inputEl, step, maxFn) {
+        const minus = document.getElementById(minusId);
+        const plus = document.getElementById(plusId);
+
+        if (minus) {
+            minus.addEventListener("click", () => {
+                const current = parsePositiveNumber(inputEl.value);
+                const next = Math.max(0, current - step);
+                inputEl.value = next;
+                inputEl.dispatchEvent(new Event("input"));
+            });
+        }
+
+        if (plus) {
+            plus.addEventListener("click", () => {
+                const current = parsePositiveNumber(inputEl.value);
+                const max = maxFn ? maxFn() : Infinity;
+                const next = Math.min(max, current + step);
+                inputEl.value = next;
+                inputEl.dispatchEvent(new Event("input"));
+            });
+        }
+    }
+
+    // Steppers da Compra
+    setupStepper("buy-minus-moedas", "buy-plus-moedas", buyInputs.moedas, 1, () => {
+        const current = currentUserData?.holdings?.slotsCoins || 0;
+        return Math.max(0, 30 - current);
+    });
+
+    setupStepper("buy-minus-iscas", "buy-plus-iscas", buyInputs.iscas, 1, () => {
+        const current = currentUserData?.holdings?.baits || 0;
+        const maxBaits = currentUserData?.holdings?.maxBaits || 5;
+        return Math.max(0, Math.ceil(maxBaits * 1.5) - current);
+    });
+
+    setupStepper("buy-minus-zinthos", "buy-plus-zinthos", buyInputs.zinthos, 1000, () => {
+        const quota = currentUserData?.quota?.remaining?.compra_zinthos ?? 200000;
+        return Math.max(0, quota);
+    });
+
+    setupStepper("buy-minus-jardim", "buy-plus-jardim", buyInputs.jardim, 1000, () => {
+        const quota = currentUserData?.quota?.remaining?.compra_jardim ?? 150000;
+        return Math.max(0, quota);
+    });
+
+    // Botões "Max" da Compra
+    document.getElementById("buy-max-moedas")?.addEventListener("click", () => {
+        if (!currentUserData) return;
+        const currentCoins = currentUserData.holdings?.slotsCoins || 0;
+        const maxByLimit = Math.max(0, 30 - currentCoins);
+        const userRunas = currentUserData.account?.runas || 0;
+        const maxByRunas = Math.floor(userRunas / 300);
+        buyInputs.moedas.value = Math.min(maxByLimit, maxByRunas);
+        buyInputs.moedas.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("buy-max-iscas")?.addEventListener("click", () => {
+        if (!currentUserData) return;
+        const currentBaits = currentUserData.holdings?.baits || 0;
+        const maxBaits = currentUserData.holdings?.maxBaits || 5;
+        const maxLimit = Math.ceil(maxBaits * 1.5);
+        const maxByLimit = Math.max(0, maxLimit - currentBaits);
+        const userRunas = currentUserData.account?.runas || 0;
+        const maxByRunas = Math.floor(userRunas / 100);
+        buyInputs.iscas.value = Math.min(maxByLimit, maxByRunas);
+        buyInputs.iscas.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("buy-max-zinthos")?.addEventListener("click", () => {
+        if (!currentUserData || !globalRates) return;
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_zinthos ?? 200000);
+        const userRunas = currentUserData.account?.runas || 0;
+        const maxByRunas = Math.floor((userRunas * 0.97) / globalRates.runasPerZinthos);
+        buyInputs.zinthos.value = Math.min(maxByQuota, maxByRunas);
+        buyInputs.zinthos.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("buy-max-jardim")?.addEventListener("click", () => {
+        if (!currentUserData || !globalRates) return;
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_jardim ?? 150000);
+        const userRunas = currentUserData.account?.runas || 0;
+        const maxByRunas = Math.floor((userRunas * 0.97) / globalRates.runasPerJardimCoin);
+        buyInputs.jardim.value = Math.min(maxByQuota, maxByRunas);
+        buyInputs.jardim.dispatchEvent(new Event("input"));
+    });
+
+    // Atualização em Tempo Real do Carrinho de Compra
+    function updateBuyCart() {
+        const listEl = document.getElementById("buy-cart-items");
+        const totalEl = document.getElementById("buy-cart-total");
+        const statusEl = document.getElementById("buy-cart-status");
+        const confirmBtn = document.getElementById("btn-confirm-buy");
+
+        if (!listEl || !totalEl || !statusEl || !confirmBtn) return;
+
+        const qtyMoedas = Math.floor(parsePositiveNumber(buyInputs.moedas?.value));
+        const qtyIscas = Math.floor(parsePositiveNumber(buyInputs.iscas?.value));
+        const qtyZinthos = Math.floor(parsePositiveNumber(buyInputs.zinthos?.value));
+        const qtyJardim = Math.floor(parsePositiveNumber(buyInputs.jardim?.value));
+
+        let totalCostRunas = 0;
+        const cartRows = [];
+        let hasError = false;
+        let errorMessage = "";
+
+        const userRunas = currentUserData?.account?.runas || 0;
+
+        // Validação Moedas
+        if (qtyMoedas > 0) {
+            const cost = qtyMoedas * 300;
+            totalCostRunas += cost;
+            const currentCoins = currentUserData?.holdings?.slotsCoins || 0;
+            if (currentCoins + qtyMoedas > 30) {
+                hasError = true;
+                errorMessage = `Moedas ultrapassam o limite máx. de 30 (saldo atual: ${currentCoins}).`;
+            }
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>🎰 <strong>${formatInt(qtyMoedas)}x</strong> Moedinha(s) do Slots</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #facc15;">${formatPtBr(cost, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        // Validação Iscas
+        if (qtyIscas > 0) {
+            const cost = qtyIscas * 100;
+            totalCostRunas += cost;
+            const currentBaits = currentUserData?.holdings?.baits || 0;
+            const maxBaits = currentUserData?.holdings?.maxBaits || 5;
+            const maxLimit = Math.ceil(maxBaits * 1.5);
+            if (currentBaits + qtyIscas > maxLimit) {
+                hasError = true;
+                errorMessage = `Iscas ultrapassam o limite máx. de ${maxLimit} (1.5x seu inventário).`;
+            }
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>🐛 <strong>${formatInt(qtyIscas)}x</strong> Isca(s) de Pesca</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #38bdf8;">${formatPtBr(cost, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        // Validação Zinthos
+        if (qtyZinthos > 0 && globalRates) {
+            const quotaRem = currentUserData?.quota?.remaining?.compra_zinthos ?? 200000;
+            if (qtyZinthos > quotaRem) {
+                hasError = true;
+                errorMessage = `Quantidade de Zinthos excede a cota restante de ${formatInt(quotaRem)} Z.`;
+            }
+            // Cálculo de Runas considerando taxa progressiva
+            const usedQuota = currentUserData?.quota?.used?.compra_zinthos || 0;
+            const spread = calculateDynamicSpread(usedQuota, qtyZinthos, 200000);
+            const cost = (qtyZinthos * globalRates.runasPerZinthos) / (1 - spread);
+            totalCostRunas += cost;
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>💜 <strong>${formatInt(qtyZinthos)}</strong> Zinthos (taxa ~${formatPtBr(spread * 100, 1)}%)</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #f472b6;">~${formatPtBr(cost, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        // Validação Petalitas
+        if (qtyJardim > 0 && globalRates) {
+            const quotaRem = currentUserData?.quota?.remaining?.compra_jardim ?? 150000;
+            if (qtyJardim > quotaRem) {
+                hasError = true;
+                errorMessage = `Quantidade de Petalitas excede a cota restante de ${formatInt(quotaRem)} Ptl.`;
+            }
+            const usedQuota = currentUserData?.quota?.used?.compra_jardim || 0;
+            const spread = calculateDynamicSpread(usedQuota, qtyJardim, 150000);
+            const cost = (qtyJardim * globalRates.runasPerJardimCoin) / (1 - spread);
+            totalCostRunas += cost;
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>🌱 <strong>${formatInt(qtyJardim)}</strong> Petalitas (taxa ~${formatPtBr(spread * 100, 1)}%)</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #4ade80;">~${formatPtBr(cost, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        if (cartRows.length === 0) {
+            listEl.innerHTML = `<span style="color: #64748b; font-style: italic;">Nenhum item selecionado. Adicione produtos acima para comprar.</span>`;
+            totalEl.textContent = `0,00 ᚱ`;
+            statusEl.innerHTML = `Seu saldo: <strong style="color: #c084fc;">${formatPtBr(userRunas, 2)} ᚱ</strong>`;
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        listEl.innerHTML = cartRows.join("");
+        totalEl.textContent = `${formatPtBr(totalCostRunas, 2)} ᚱ`;
+
+        if (totalCostRunas > userRunas) {
+            hasError = true;
+            errorMessage = `Saldo de Runas insuficiente! Saldo: ${formatPtBr(userRunas, 2)} ᚱ, Custo: ${formatPtBr(totalCostRunas, 2)} ᚱ.`;
+        }
+
+        if (hasError) {
+            statusEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ ${errorMessage}</span>`;
+            confirmBtn.disabled = true;
+        } else {
+            statusEl.innerHTML = `Seu saldo: <strong style="color: #c084fc;">${formatPtBr(userRunas, 2)} ᚱ</strong> (Saldo pós-compra: ${formatPtBr(userRunas - totalCostRunas, 2)} ᚱ)`;
+            confirmBtn.disabled = false;
+        }
+    }
+
+    Object.values(buyInputs).forEach(input => {
+        if (input) input.addEventListener("input", updateBuyCart);
+    });
+
+    // Confirmar Compra
+    document.getElementById("btn-confirm-buy")?.addEventListener("click", async () => {
+        if (!token) return;
+
+        const qtyMoedas = Math.floor(parsePositiveNumber(buyInputs.moedas?.value));
+        const qtyIscas = Math.floor(parsePositiveNumber(buyInputs.iscas?.value));
+        const qtyZinthos = Math.floor(parsePositiveNumber(buyInputs.zinthos?.value));
+        const qtyJardim = Math.floor(parsePositiveNumber(buyInputs.jardim?.value));
+
+        const orders = [];
+        if (qtyMoedas > 0) orders.push({ game: "moedas", amount: qtyMoedas, label: `${qtyMoedas}x Moedas` });
+        if (qtyIscas > 0) orders.push({ game: "iscas", amount: qtyIscas, label: `${qtyIscas}x Iscas` });
+        if (qtyZinthos > 0 && globalRates) {
+            const used = currentUserData?.quota?.used?.compra_zinthos || 0;
+            const spread = calculateDynamicSpread(used, qtyZinthos, 200000);
+            const cost = Number(((qtyZinthos * globalRates.runasPerZinthos) / (1 - spread)).toFixed(2));
+            orders.push({ game: "zinthos", amount: cost, label: `${formatInt(qtyZinthos)} Zinthos` });
+        }
+        if (qtyJardim > 0 && globalRates) {
+            const used = currentUserData?.quota?.used?.compra_jardim || 0;
+            const spread = calculateDynamicSpread(used, qtyJardim, 150000);
+            const cost = Number(((qtyJardim * globalRates.runasPerJardimCoin) / (1 - spread)).toFixed(2));
+            orders.push({ game: "jardim", amount: cost, label: `${formatInt(qtyJardim)} Petalitas` });
+        }
+
+        if (orders.length === 0) return;
+
+        const btn = document.getElementById("btn-confirm-buy");
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+
+        try {
+            for (const order of orders) {
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Comprando ${order.label}...`;
+                const res = await fetch("/api/games/bank/trade", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token, operation: "compra", game: order.game, amount: order.amount })
+                });
+                const json = await res.json();
+                if (!json.ok) {
+                    showNotification(`Erro ao comprar ${order.label}: ${json.error}`, "error");
+                } else {
+                    showNotification(`🎉 ${order.label} comprado(s) com sucesso!`, "success");
+                }
+            }
+            // Zera inputs
+            Object.values(buyInputs).forEach(inp => { if (inp) inp.value = "0"; });
+            await Promise.all([loadPublicData(), loadSession()]);
+        } catch (err) {
+            showNotification(`Falha na comunicação: ${err.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fas fa-shopping-bag"></i> Confirmar Compra`;
+            updateBuyCart();
+        }
+    });
+
+    // 7. Lógica de Carrinho e Controles — ABA VENDA
+    const sellInputs = {
+        pesca: document.getElementById("sell-qty-pesca"),
+        zinthos: document.getElementById("sell-qty-zinthos"),
+        jardim: document.getElementById("sell-qty-jardim")
+    };
+
+    // Steppers da Venda
+    setupStepper("sell-minus-pesca", "sell-plus-pesca", sellInputs.pesca, 1, () => {
+        return currentUserData?.holdings?.fishWeight || 0;
+    });
+
+    setupStepper("sell-minus-zinthos", "sell-plus-zinthos", sellInputs.zinthos, 1000, () => {
+        return currentUserData?.holdings?.zinthos || 0;
+    });
+
+    setupStepper("sell-minus-jardim", "sell-plus-jardim", sellInputs.jardim, 1000, () => {
+        return currentUserData?.holdings?.gardenCoins || 0;
+    });
+
+    // Botões "Tudo" da Venda
+    document.getElementById("sell-all-pesca")?.addEventListener("click", () => {
+        if (!currentUserData) return;
+        sellInputs.pesca.value = Number(currentUserData.holdings?.fishWeight || 0).toFixed(2);
+        sellInputs.pesca.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("sell-all-zinthos")?.addEventListener("click", () => {
+        if (!currentUserData) return;
+        sellInputs.zinthos.value = Math.floor(currentUserData.holdings?.zinthos || 0);
+        sellInputs.zinthos.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("sell-all-jardim")?.addEventListener("click", () => {
+        if (!currentUserData) return;
+        sellInputs.jardim.value = Math.floor(currentUserData.holdings?.gardenCoins || 0);
+        sellInputs.jardim.dispatchEvent(new Event("input"));
+    });
+
+    // Atualização em Tempo Real do Carrinho de Venda
+    function updateSellCart() {
+        const listEl = document.getElementById("sell-cart-items");
+        const totalEl = document.getElementById("sell-cart-total");
+        const quotaEl = document.getElementById("sell-cart-quota");
+        const confirmBtn = document.getElementById("btn-confirm-sell");
+
+        if (!listEl || !totalEl || !quotaEl || !confirmBtn) return;
+
+        const qtyFish = parsePositiveNumber(sellInputs.pesca?.value);
+        const qtyZinthos = Math.floor(parsePositiveNumber(sellInputs.zinthos?.value));
+        const qtyJardim = Math.floor(parsePositiveNumber(sellInputs.jardim?.value));
+
+        let totalRunasToReceive = 0;
+        const cartRows = [];
+        let hasError = false;
+        let errorMessage = "";
+
+        const holdings = currentUserData?.holdings || {};
+        const qUsed = currentUserData?.quota?.used?.venda_runas || 0;
+        const qLimit = currentUserData?.quota?.limits?.venda_runas || 300000;
+        const qRemaining = Math.max(0, qLimit - qUsed);
+
+        // Validação Peixes
+        if (qtyFish > 0 && globalRates) {
+            const stockFish = holdings.fishWeight || 0;
+            if (qtyFish > stockFish + 0.001) {
+                hasError = true;
+                errorMessage = `Quantidade de peixe (${formatPtBr(qtyFish, 2)} kg) excede seu estoque de ${formatPtBr(stockFish, 2)} kg.`;
+            }
+            const rawRunas = qtyFish * globalRates.runasPerKgFish;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>🎣 <strong>${formatPtBr(qtyFish, 2)} kg</strong> de Peixe (taxa ~${formatPtBr(spread * 100, 1)}%)</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #38bdf8;">~+${formatPtBr(netRunas, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        // Validação Zinthos
+        if (qtyZinthos > 0 && globalRates) {
+            const stockZ = holdings.zinthos || 0;
+            if (qtyZinthos > stockZ) {
+                hasError = true;
+                errorMessage = `Quantidade de Zinthos (${formatInt(qtyZinthos)}) excede seu saldo de ${formatInt(stockZ)} Z.`;
+            }
+            const rawRunas = qtyZinthos * globalRates.runasPerZinthos;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>💜 <strong>${formatInt(qtyZinthos)}</strong> Zinthos (taxa ~${formatPtBr(spread * 100, 1)}%)</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #f472b6;">~+${formatPtBr(netRunas, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        // Validação Petalitas
+        if (qtyJardim > 0 && globalRates) {
+            const stockJ = holdings.gardenCoins || 0;
+            if (qtyJardim > stockJ) {
+                hasError = true;
+                errorMessage = `Quantidade de Petalitas (${formatInt(qtyJardim)}) excede seu saldo de ${formatInt(stockJ)} Ptl.`;
+            }
+            const rawRunas = qtyJardim * globalRates.runasPerJardimCoin;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            cartRows.push(`
+                <div class="cart-item-row">
+                    <span>🌱 <strong>${formatInt(qtyJardim)}</strong> Petalitas (taxa ~${formatPtBr(spread * 100, 1)}%)</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #4ade80;">~+${formatPtBr(netRunas, 2)} ᚱ</span>
+                </div>
+            `);
+        }
+
+        if (cartRows.length === 0) {
+            listEl.innerHTML = `<span style="color: #64748b; font-style: italic;">Nenhum recurso selecionado. Informe as quantidades acima para vender.</span>`;
+            totalEl.textContent = `~+0,00 ᚱ`;
+            quotaEl.innerHTML = `Cota unificada restante: <strong style="color: #c084fc;">${formatPtBr(qRemaining, 2)} ᚱ</strong> / dia`;
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        listEl.innerHTML = cartRows.join("");
+        totalEl.textContent = `~+${formatPtBr(totalRunasToReceive, 2)} ᚱ`;
+
+        if (totalRunasToReceive > qRemaining + 0.01) {
+            hasError = true;
+            errorMessage = `A venda total ultrapassa sua cota diária restante de ${formatPtBr(qRemaining, 2)} ᚱ!`;
+        }
+
+        if (hasError) {
+            quotaEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ ${errorMessage}</span>`;
+            confirmBtn.disabled = true;
+        } else {
+            const remainingAfter = Math.max(0, qRemaining - totalRunasToReceive);
+            quotaEl.innerHTML = `Cota restante hoje: <strong style="color: #c084fc;">${formatPtBr(remainingAfter, 2)} ᚱ</strong> (Usada hoje: ${formatPtBr(qUsed, 2)} / ${formatPtBr(qLimit, 0)} ᚱ)`;
+            confirmBtn.disabled = false;
+        }
+    }
+
+    Object.values(sellInputs).forEach(input => {
+        if (input) input.addEventListener("input", updateSellCart);
+    });
+
+    // Confirmar Venda
+    document.getElementById("btn-confirm-sell")?.addEventListener("click", async () => {
+        if (!token) return;
+
+        const qtyFish = parsePositiveNumber(sellInputs.pesca?.value);
+        const qtyZinthos = Math.floor(parsePositiveNumber(sellInputs.zinthos?.value));
+        const qtyJardim = Math.floor(parsePositiveNumber(sellInputs.jardim?.value));
+
+        const orders = [];
+        if (qtyFish > 0) orders.push({ game: "pesca", amount: qtyFish, label: `${formatPtBr(qtyFish, 2)} kg de Peixe` });
+        if (qtyZinthos > 0) orders.push({ game: "zinthos", amount: qtyZinthos, label: `${formatInt(qtyZinthos)} Zinthos` });
+        if (qtyJardim > 0) orders.push({ game: "jardim", amount: qtyJardim, label: `${formatInt(qtyJardim)} Petalitas` });
+
+        if (orders.length === 0) return;
+
+        const btn = document.getElementById("btn-confirm-sell");
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+
+        try {
+            for (const order of orders) {
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Vendendo ${order.label}...`;
+                const res = await fetch("/api/games/bank/trade", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token, operation: "venda", game: order.game, amount: order.amount })
+                });
+                const json = await res.json();
+                if (!json.ok) {
+                    showNotification(`Erro ao vender ${order.label}: ${json.error}`, "error");
+                } else {
+                    showNotification(`🎉 ${order.label} vendido(s) com sucesso!`, "success");
+                }
+            }
+            // Zera inputs
+            Object.values(sellInputs).forEach(inp => { if (inp) inp.value = "0"; });
+            await Promise.all([loadPublicData(), loadSession()]);
+        } catch (err) {
+            showNotification(`Falha na comunicação: ${err.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fas fa-hand-holding-usd"></i> Confirmar Venda`;
+            updateSellCart();
+        }
+    });
+
+    // 8. Logout
+    document.getElementById("btn-logout")?.addEventListener("click", async () => {
         if (token) {
             try {
                 await fetch("/api/games/bank/logout", {
@@ -252,317 +884,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         token = null;
         document.getElementById("guest-prompt").style.display = "block";
         document.getElementById("auth-panel").style.display = "none";
-    });
-
-    // 5. Câmbio Web e Preview Dinâmico
-    const opSelect = document.getElementById("trade-operation");
-    const gameSelect = document.getElementById("trade-game");
-    const amountInput = document.getElementById("trade-amount");
-    const btnUseAll = document.getElementById("btn-use-all");
-    const previewDiv = document.getElementById("trade-preview");
-    const btnExecute = document.getElementById("btn-trade-execute");
-
-    function getUserMaxAmount(op, game) {
-        if (!currentUserData) return 0;
-        if (op === "deposit") {
-            if (game === "pesca") return currentUserData.holdings?.fishWeight || 0;
-            if (game === "zinthos") return currentUserData.holdings?.zinthos || 0;
-            if (game === "jardim") return currentUserData.holdings?.gardenCoins || 0;
-        } else {
-            return currentUserData.account?.runas || 0;
-        }
-        return 0;
-    }
-
-    function parseInputAmount(raw) {
-        if (!raw) return 0;
-        let str = String(raw).trim().toLowerCase();
-        if (str === "tudo" || str === "all" || str === "max") {
-            return getUserMaxAmount(opSelect.value, gameSelect.value);
-        }
-        str = str.replace(/\s+/g, "");
-        if (str.includes(",") && str.includes(".")) {
-            str = str.replace(/\./g, "").replace(",", ".");
-        } else if (str.includes(",")) {
-            str = str.replace(",", ".");
-        } else if (str.includes(".")) {
-            const parts = str.split(".");
-            if (parts.length > 1 && parts.slice(1).every(p => p.length === 3)) {
-                str = str.replace(/\./g, "");
-            }
-        }
-        return parseFloat(str);
-    }
-
-    function handleUseAll(e) {
-        if (e && e.preventDefault) e.preventDefault();
-        if (!currentUserData) {
-            showNotification("Acesse sua conta com o link do !banco-adm para usar o botão Tudo com seus saldos reais.", "warning");
-            return;
-        }
-
-        const op = opSelect.value;
-        const game = gameSelect.value;
-        const maxVal = getUserMaxAmount(op, game);
-        if (maxVal <= 0) {
-            amountInput.value = "0";
-        } else if (game === "pesca" || op === "withdraw") {
-            amountInput.value = Number(maxVal).toFixed(2);
-        } else {
-            amountInput.value = String(Math.floor(Number(maxVal) || 0));
-        }
-        amountInput.dispatchEvent(new Event("input"));
-        updatePreview();
-    }
-    window.handleUseAll = handleUseAll;
-
-    if (btnUseAll) {
-        btnUseAll.addEventListener("click", handleUseAll);
-    }
-
-    opSelect.addEventListener("change", () => {
-        if (opSelect.value === "withdraw") {
-            // Remove pesca da lista de compras
-            const fishOpt = gameSelect.querySelector("option[value='pesca']");
-            if (fishOpt) fishOpt.disabled = true;
-            if (gameSelect.value === "pesca") gameSelect.value = "zinthos";
-        } else {
-            const fishOpt = gameSelect.querySelector("option[value='pesca']");
-            if (fishOpt) fishOpt.disabled = false;
-        }
-        updatePreview();
-    });
-
-    gameSelect.addEventListener("change", updatePreview);
-    amountInput.addEventListener("input", updatePreview);
-
-    function renderQuotaBadge(label, availableQuota, requestedAmount, unit, isInteger = false) {
-        const formatFn = isInteger ? formatInt : (v) => formatPtBr(v, 2);
-        const excess = requestedAmount - availableQuota;
-        const isExceeded = excess > 0.0001;
-
-        if (isExceeded) {
-            return {
-                isExceeded: true,
-                html: `
-                    <div style="font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin-top: 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); color: #f87171;">
-                        🛡️ <strong>${label}:</strong> 0 ${unit} <span style="font-size: 14px; font-weight: 700; color: #ef4444;">(-${formatFn(excess)} ${unit})</span>
-                        <div style="font-size: 11px; font-weight: 500; color: #fca5a5; margin-top: 3px;">⚠️ A quantidade informada ultrapassa sua cota disponível de ${formatFn(availableQuota)} ${unit}.</div>
-                    </div>
-                `
-            };
-        }
-
-        const remQuota = Math.max(0, availableQuota - requestedAmount);
-        return {
-            isExceeded: false,
-            html: `
-                <div style="font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8;">
-                    🛡️ <strong>${label}:</strong> ${formatFn(remQuota)} ${unit}
-                </div>
-            `
-        };
-    }
-
-    function updatePreview() {
-        if (!globalRates) return;
-
-        const op = opSelect.value;
-        const game = gameSelect.value;
-        const rawVal = (amountInput.value || "").trim().toLowerCase();
-
-        if (!rawVal) {
-            previewDiv.innerHTML = "💡 Digite a quantidade acima para simular a prévia de valores e taxas.";
-            btnExecute.disabled = false;
-            return;
-        }
-
-        if (op === "withdraw" && game === "pesca") {
-            previewDiv.innerHTML = "<span style='color: #ef4444;'>❌ Não é permitido comprar peixes com Runas (peixes são apenas para venda).</span>";
-            btnExecute.disabled = true;
-            return;
-        }
-
-        const isAll = rawVal === "tudo" || rawVal === "all" || rawVal === "max";
-        const amount = parseInputAmount(rawVal);
-
-        if (isNaN(amount) || amount <= 0) {
-            previewDiv.innerHTML = "<span style='color: #f59e0b;'>⚠️ Digite um valor numérico positivo.</span>";
-            btnExecute.disabled = true;
-            return;
-        }
-
-        const quota = currentUserData?.quota || { used: {}, limits: {}, remaining: {} };
-        let previewHtml = "";
-        let quotaBadge = { isExceeded: false, html: "" };
-
-        if (op === "deposit") {
-            // Venda para o banco
-            if (game === "pesca") {
-                const limit = quota.limits?.pesca || 3000;
-                const used = quota.used?.pesca || 0;
-                const available = Math.max(0, quota.remaining?.pesca ?? (limit - used));
-                const rate = globalRates.runasPerKgFish;
-                const spread = calculateDynamicSpread(used, amount, limit);
-                const rawRunas = amount * rate;
-                const spreadRunas = rawRunas * spread;
-                const netRunas = rawRunas - spreadRunas;
-                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "kg", false);
-
-                previewHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <div>📦 <strong>Vender:</strong> ${formatPtBr(amount, 2)} kg de Peixe Comum ${isAll ? "<em>(Todo o seu inventário comum)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
-                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        ${quotaBadge.html}
-                    </div>
-                `;
-            } else if (game === "zinthos") {
-                const limit = quota.limits?.zinthos || 15000;
-                const used = quota.used?.zinthos || 0;
-                const available = Math.max(0, quota.remaining?.zinthos ?? (limit - used));
-                const rate = globalRates.runasPerZinthos;
-                const spread = calculateDynamicSpread(used, amount, limit);
-                const rawRunas = amount * rate;
-                const spreadRunas = rawRunas * spread;
-                const netRunas = rawRunas - spreadRunas;
-                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "Z", true);
-
-                previewHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <div>💜 <strong>Vender:</strong> ${formatInt(amount)} Zinthos ${isAll ? "<em>(Todo o seu saldo de Zinthos)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
-                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        ${quotaBadge.html}
-                    </div>
-                `;
-            } else if (game === "jardim") {
-                const limit = quota.limits?.jardim || 12000;
-                const used = quota.used?.jardim || 0;
-                const available = Math.max(0, quota.remaining?.jardim ?? (limit - used));
-                const rate = globalRates.runasPerJardimCoin;
-                const spread = calculateDynamicSpread(used, amount, limit);
-                const rawRunas = amount * rate;
-                const spreadRunas = rawRunas * spread;
-                const netRunas = rawRunas - spreadRunas;
-                quotaBadge = renderQuotaBadge("Cota de venda restante hoje", available, amount, "Ptl", true);
-
-                previewHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <div>🌱 <strong>Vender:</strong> ${formatInt(amount)} Petalitas ${isAll ? "<em>(Todas as suas Petalitas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}% (-${formatPtBr(spreadRunas, 2)} ᚱ)</div>
-                        <div style="font-size: 14px; color: #a78bfa; font-weight: 700;">💠 <strong>Você Receberá:</strong> ~+${formatPtBr(netRunas, 2)} ᚱ</div>
-                        ${quotaBadge.html}
-                    </div>
-                `;
-            }
-        } else {
-            // Compra com Runas
-            const limit = quota.limits?.compra || 15000;
-            const used = quota.used?.compra || 0;
-            const available = Math.max(0, quota.remaining?.compra ?? (limit - used));
-            const spread = calculateDynamicSpread(used, amount, limit);
-            quotaBadge = renderQuotaBadge("Cota de compra restante hoje", available, amount, "ᚱ", false);
-
-            if (game === "zinthos") {
-                const rate = globalRates.runasPerZinthos;
-                const rawZinthos = amount / rate;
-                const netZinthos = Math.floor(rawZinthos * (1 - spread));
-
-                previewHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}%</div>
-                        <div style="font-size: 14px; color: #f472b6; font-weight: 700;">💎 <strong>Você Receberá:</strong> ~+${formatInt(netZinthos)} Zinthos</div>
-                        ${quotaBadge.html}
-                    </div>
-                `;
-            } else if (game === "jardim") {
-                const rate = globalRates.runasPerJardimCoin;
-                const rawCoins = amount / rate;
-                const netCoins = Math.floor(rawCoins * (1 - spread));
-
-                previewHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <div>💠 <strong>Gastar:</strong> ${formatPtBr(amount, 2)} ᚱ ${isAll ? "<em>(Todo o seu saldo de Runas)</em>" : ""}</div>
-                        <div>📈 <strong>Taxa:</strong> ${formatPtBr(spread * 100, 1)}%</div>
-                        <div style="font-size: 14px; color: #4ade80; font-weight: 700;">🌱 <strong>Você Receberá:</strong> ~+${formatInt(netCoins)} Petalitas</div>
-                        ${quotaBadge.html}
-                    </div>
-                `;
-            }
-        }
-
-        // Validação de saldo da conta
-        let exceedsBalance = false;
-        if (currentUserData) {
-            const maxVal = getUserMaxAmount(op, game);
-            if (amount > maxVal) {
-                exceedsBalance = true;
-                const unit = op === "deposit" ? (game === "pesca" ? "kg" : game === "zinthos" ? "Z" : "Ptl") : "ᚱ";
-                const formattedMax = game === "pesca" || op === "withdraw" ? formatPtBr(maxVal, 2) : formatInt(maxVal);
-                previewHtml += `
-                    <div style="font-size: 12px; color: #f87171; font-weight: 600; margin-top: 6px;">
-                        ⚠️ Quantidade solicitada excede seu saldo disponível (${formattedMax} ${unit}).
-                    </div>
-                `;
-            }
-        }
-
-        previewDiv.innerHTML = previewHtml;
-        btnExecute.disabled = quotaBadge.isExceeded || exceedsBalance;
-    }
-
-    // Executar Transação Web
-    btnExecute.addEventListener("click", async () => {
-        if (!token) return;
-
-        const op = opSelect.value;
-        const game = gameSelect.value;
-        const rawAmount = (amountInput.value || "").trim();
-
-        if (!rawAmount) {
-            showNotification("Por favor, informe a quantidade!", "warning");
-            return;
-        }
-
-        const amount = parseInputAmount(rawAmount);
-        if (isNaN(amount) || amount <= 0) {
-            showNotification("Por favor, informe uma quantidade válida e positiva!", "warning");
-            return;
-        }
-
-        const maxVal = getUserMaxAmount(op, game);
-        if (amount > maxVal) {
-            showNotification("Quantidade solicitada excede o saldo disponível na sua conta!", "error");
-            return;
-        }
-
-        btnExecute.disabled = true;
-        btnExecute.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
-
-        try {
-            const res = await fetch("/api/games/bank/trade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, operation: op, game, amount })
-            });
-
-            const json = await res.json();
-            if (!json.ok) {
-                showNotification(`Não foi possível realizar o câmbio: ${json.error}`, "error");
-            } else {
-                showNotification("🎉 Câmbio realizado com sucesso!", "success");
-                amountInput.value = "";
-                // Recarrega dados e sessão
-                await Promise.all([loadPublicData(), loadSession()]);
-            }
-        } catch (err) {
-            showNotification(`Falha de comunicação: ${err.message}`, "error");
-        } finally {
-            btnExecute.disabled = false;
-            btnExecute.innerHTML = `<i class="fas fa-check-circle" style="margin-right: 6px;"></i> Confirmar Câmbio`;
-        }
     });
 
     // Inicia carregamento

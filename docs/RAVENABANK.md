@@ -74,23 +74,50 @@ $$\text{Taxa}(u) = 0,03 + 0,07 \times \left( \frac{\text{Volume Convertido Hoje}
 ## 🛡️ 6. Cotas Diárias de Câmbio (Reset às 04:00 AM)
 
 Cada jogador possui limites diários de segurança que renovam todo dia às 04:00 AM BRT:
-* **🛒 Compra com Runas:** até **15.000 ᚱ**/dia em moedas.
-* **🎣 Venda de Peixes:** até **3.000 kg**/dia de peixe comum.
-* **💜 Venda de Zinthos:** até **15.000 Z**/dia.
-* **🌱 Venda de Petalitas:** até **12.000 Ptl**/dia.
+* **📥 Venda de Itens/Moedas para ganhar Runas:** Limite de **300.000 ᚱ**/dia, unificado (não importa a origem: peixes comuns, Zinthos ou Petalitas). O jogador pode liquidar tudo o que quiser até o teto diário de 300.000 Runas ganhas.
+* **📤 Caminho Inverso (Runas para Jogos):**
+  * **💜 Compra de Zinthos:** até **200.000 Z**/dia.
+  * **🌱 Compra de Petalitas:** até **150.000 Ptl**/dia.
+  * **🎣 Peixes:** Mão única (não é possível comprar peixes com Runas).
 
 ---
 
-## 🔐 7. Comando `!banco-adm` & Sessões Deslizantes (Sliding Session)
+## 🛍️ 7. Loja RavenaBank (Consumíveis de Jogos)
 
-Para acessar o painel de gerenciamento e câmbio pelo navegador:
+Permite aos jogadores investir suas Runas acumuladas diretamente em consumíveis essenciais dos mini-games:
+
+1. **🎰 Moedinhas (SlotsGame / Caça-coisas)**:
+   * **Preço:** `300 ᚱ` por moeda.
+   * **Limite:** Máximo **30 moedas** acumuladas no saldo do jogador.
+   * **Regra:** Se `saldo_atual + tentativa_de_compra > 30`, a compra é estritamente bloqueada para evitar acúmulo excessivo.
+   * **Comando:** `!banco-comprar moeda <quantidade>`
+
+2. **🐛 Iscas (FishingGame / Pescaria)**:
+   * **Preço:** `100 ᚱ` por isca.
+   * **Limite:** Máximo **1.5x a capacidade de iscas do inventário** do usuário, arredondado para cima (`Math.ceil(maxBaits * 1.5)`). Para pescadores com capacidade padrão de 5 iscas, o limite é de **8 iscas**.
+   * **Regra:** Se `saldo_atual + tentativa_de_compra > limite`, a compra é bloqueada com a mesma lógica do Slots.
+   * **Comando:** `!banco-comprar isca <quantidade>`
+
+3. **Catálogo Geral:**
+   * O comando `!banco-loja` (ou `!banco-comprar loja`) exibe o catálogo completo com preços, limites e quantidade disponível para compra no momento.
+
+---
+
+## 🔐 8. Painel Web (`/ravenabank`) & Sessões Deslizantes (Sliding Session)
+
+Para acessar o painel de gerenciamento, loja e câmbio pelo navegador:
 * O comando `!banco-adm` gera um link pessoal seguro com token: `https://site/ravenabank?token=...`
 * **Sessão Deslizante:** A sessão permanece ativa por **3 dias sem acessar**. Cada novo acesso ou troca pelo navegador renova a validade por mais 3 dias automaticamente.
+* **Interface Moderna com Abas (Loja & Câmbio):**
+  * **Saldo Consolidado:** Card de topo exclusivo exibindo o saldo em Runas com largura total.
+  * **Aba Compra:** Lojinha virtual com cards de produtos (Moedinhas do Slots, Iscas de Pesca, Zinthos de Waifuletes e Petalitas da Fazenda), botões de ajuste de quantidade (`-`, `+`, `Max`), indicadores de estoque e limite disponível, e carrinho de compras na barra inferior com subtotal, total e confirmação atômica de pedido.
+  * **Aba Venda:** Painel de liquidação de ativos (Peixes comuns por peso, Zinthos e Petalitas) com exibição de estoques atuais, cotação unitária, controles de quantidade (`-`, `+`, `Tudo`) e carrinho inferior estimando o total a receber já descontando a taxa progressiva.
+  * **Extrato Paginado:** Histórico de transações detalhado com paginação nativa de 10 movimentações por página, exibindo as mais recentes primeiro.
 * **Botão de Logout:** Na interface web, o botão de logout encerra a sessão imediatamente no banco de dados.
 
 ---
 
-## 💬 8. Comandos Disponíveis (Categoria: `ravenabank`)
+## 💬 9. Comandos Disponíveis (Categoria: `ravenabank`)
 
 | Comando | Aliases | Descrição |
 | :--- | :--- | :--- |
@@ -98,20 +125,9 @@ Para acessar o painel de gerenciamento e câmbio pelo navegador:
 | `!banco-adm` | `!bancoadm`, `!banco-web` | Envia link seguro no PV para gerenciar conta e realizar trocas no navegador |
 | `!economia` | `!cotacao`, `!banco-economia` | Painel macroeconômico com cotações do dia, totais acumulados e explicações |
 | `!banco-vender` | `!banco-depositar`, `!vender-peixe` | Vende recursos de jogos para receber Runas (`!banco-vender peixe 300`, `!banco-vender zinthos 1500`) |
-| `!banco-comprar` | `!banco-sacar`, `!banco-resgatar` | Compra recursos de jogos usando Runas (`!banco-comprar zinthos 100`, `!banco-comprar jardim 250`) |
+| `!banco-comprar` | `!banco-sacar`, `!banco-resgatar` | Compra recursos de jogos usando Runas (`!banco-comprar zinthos 100`, `!banco-comprar moeda 5`, `!banco-comprar isca 3`) |
+| `!banco-loja` | `!loja-banco` | Exibe a loja de consumíveis (moedas e iscas) compráveis com Runas |
 | `!banco-extrato` | `!extrato`, `!extrato-banco` | Lista as últimas movimentações e extrato bancário |
-
----
-
-## 🌐 9. API REST & Web App
-
-* **Endpoint Standalone:** `/ravenabank`
-* **Ravena Desktop OS & Mobile:** Atalho nativo na área de trabalho e gaveta de aplicativos.
-* **Endpoints REST na BotAPI:**
-  * `GET /api/games/bank/public` — Métricas globais, cotações oficiais e estoque.
-  * `GET /api/games/bank/session` — Validação e renovação da sessão deslizante.
-  * `POST /api/games/bank/logout` — Revogação de sessão.
-  * `POST /api/games/bank/trade` — Execução de vendas e compras pelo navegador.
 
 ---
 
@@ -124,5 +140,5 @@ Para proteger os subsistemas de inflação descontrolada, premiações e bônus 
    * O doador tem total liberdade de manter suas Runas valorizando no banco ou utilizá-las para comprar Zinthos ou Petalitas através de `!banco-comprar`.
 2. **Slots (`!slots`)**:
    * Prêmios de alto escalão pagam diretamente em Runas (600 ᚱ a 3.000 ᚱ).
-3. **Pesca & Outros Jogos**:
-   * Prêmios globais unificados em Runas.
+3. **Pesca & Novo Buff Carteira Furada (`!pescar`)**:
+   * **👛 Carteira Furada:** Novo item especial na pescaria com chance `0.04` (4%). Concede de **50 a 500 Runas** creditadas diretamente no RavenaBank do pescador!

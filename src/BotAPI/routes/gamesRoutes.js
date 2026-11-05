@@ -204,7 +204,7 @@ function registerGamesRoutes(api) {
 			const [account, quota, txs, balanceSnapshot] = await Promise.all([
 				bankService.getAccount(userId),
 				bankService.getDailyQuota(userId),
-				bankService.getTransactions(userId, 8),
+				bankService.getTransactions(userId, 100),
 				bankService.getDailyBalanceSnapshot(userId)
 			]);
 
@@ -241,6 +241,21 @@ function registerGamesRoutes(api) {
 				gardenCoins = status?.coins || 0;
 			} catch (e) {}
 
+			let slotsCoins = 0;
+			try {
+				const SlotsGame = require("../../functions/SlotsGame");
+				slotsCoins = await SlotsGame.getUserCoins(userId);
+			} catch (e) {}
+
+			let baits = 0;
+			let maxBaits = 5;
+			try {
+				const FishingGame = require("../../functions/FishingGame");
+				const baitInfo = await FishingGame.getUserBaitsInfo(userId);
+				baits = baitInfo.baits;
+				maxBaits = baitInfo.maxBaits;
+			} catch (e) {}
+
 			return res.json({
 				ok: true,
 				authenticated: true,
@@ -255,7 +270,10 @@ function registerGamesRoutes(api) {
 						fishWeight,
 						fishCount,
 						zinthos,
-						gardenCoins
+						gardenCoins,
+						slotsCoins,
+						baits,
+						maxBaits
 					}
 				}
 			});
@@ -316,11 +334,27 @@ function registerGamesRoutes(api) {
 				} else {
 					return res.status(400).json({ ok: false, error: "Jogo inválido para venda." });
 				}
-			} else if (op === "withdraw" || op === "compra" || op === "comprar") {
+			} else if (
+				op === "withdraw" ||
+				op === "compra" ||
+				op === "comprar" ||
+				op === "loja" ||
+				op === "store"
+			) {
 				if (g === "zinthos" || g === "waifu" || g === "waifus") {
 					result = await bankService.withdrawZinthos(userId, amount);
 				} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
 					result = await bankService.withdrawJardim(userId, amount);
+				} else if (
+					g === "moedas" ||
+					g === "moeda" ||
+					g === "slots" ||
+					g === "ficha" ||
+					g === "fichas"
+				) {
+					result = await bankService.buySlotsCoins(userId, amount);
+				} else if (g === "iscas" || g === "isca") {
+					result = await bankService.buyFishingBaits(userId, amount);
 				} else if (g === "pesca" || g === "peixe" || g === "peixes") {
 					return res
 						.status(400)

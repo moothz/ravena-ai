@@ -446,6 +446,15 @@ const UPGRADES = [
 		description: "Ganha de 1 a 5 moedinhas para usar no !slots!"
 	},
 	{
+		name: "Carteira Furada",
+		chance: 0.04,
+		emoji: "👛",
+		effect: "bank_runas",
+		minValue: 50,
+		maxValue: 500,
+		description: "Ganha de 50 a 500 Runas creditadas no RavenaBank!"
+	},
+	{
 		name: "Balança Adulterada",
 		chance: 0.01,
 		emoji: "⚖️",
@@ -1219,7 +1228,8 @@ function checkRandomItem() {
 			if (
 				upgrade.effect === "extra_baits" ||
 				upgrade.effect === "next_fish_bonus" ||
-				upgrade.effect === "slots_coins"
+				upgrade.effect === "slots_coins" ||
+				upgrade.effect === "bank_runas"
 			) {
 				itemData.value =
 					Math.floor(Math.random() * (upgrade.maxValue - upgrade.minValue + 1)) + upgrade.minValue;
@@ -1297,6 +1307,25 @@ async function applyItemEffect(userData, item) {
 					const saldoInfo =
 						slotsData && slotsData.coins !== undefined ? ` (Saldo: ${slotsData.coins})` : "";
 					effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! +${item.value} moedinhas adicionadas ao seu saldo do !slots.${saldoInfo}`;
+					break;
+				}
+				case "bank_runas": {
+					try {
+						const BankService = require("../services/BankService");
+						const bankData = await BankService.creditRunas(userData.userId, item.value, {
+							source: "fishing_carteira_furada"
+						});
+						const saldoInfo =
+							bankData && bankData.runas !== undefined
+								? ` (Saldo: ${bankData.runas.toLocaleString("pt-BR")} ᚱ)`
+								: "";
+						effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! +${item.value} Runas creditadas no seu RavenaBank!${saldoInfo}`;
+					} catch (bankErr) {
+						logger.error(
+							`[FishingGame] Falha ao creditar runas de Carteira Furada: ${bankErr.message}`
+						);
+						effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! +${item.value} Runas no RavenaBank!`;
+					}
 					break;
 				}
 				case "fishing_net": {
@@ -4209,6 +4238,23 @@ async function getWeeklyFishingStats(sinceMs) {
 	}
 }
 
+/**
+ * Retorna as informações de iscas e limites do usuário com regeneração aplicada
+ * @param {string} userId
+ * @returns {Promise<{baits: number, maxBaits: number}>}
+ */
+async function getUserBaitsInfo(userId) {
+	userId = `${userId}`.replace(/\D/g, "");
+	let userData = await getUserData(userId);
+	if (!userData) {
+		return { baits: MAX_BAITS, maxBaits: MAX_BAITS };
+	}
+	userData = regenerateBaits(userData);
+	await saveUserData(userData);
+	const maxBaits = getMaxBaits(userData);
+	return { baits: userData.baits ?? maxBaits, maxBaits };
+}
+
 module.exports = {
 	helper,
 	commands,
@@ -4220,6 +4266,8 @@ module.exports = {
 	RARE_FISH,
 	fishingCooldowns,
 	getUserData,
+	getUserBaitsInfo,
+	getMaxBaits,
 	getMaxInventory,
 	generateRareFishImage,
 	getWeeklyFishingStats,

@@ -974,6 +974,19 @@ async function slotsPrizesCommand(bot, message, args, group) {
 }
 
 /**
+ * Retorna o saldo atualizado de moedas do usuário (com regeneração por tempo)
+ * @param {string} userId
+ * @returns {Promise<number>}
+ */
+async function getUserCoins(userId) {
+	userId = `${userId}`.replace(/\D/g, "");
+	let userData = await getUserData(userId);
+	userData = regenerateCoins(userData);
+	await saveUserData(userData);
+	return userData.coins || 0;
+}
+
+/**
  * Adiciona moedinhas a um usuário (usado por outros módulos)
  * @param {string} userId - ID ou telefone do usuário
  * @param {number} amount - Quantidade de moedas
@@ -1204,6 +1217,7 @@ module.exports = {
 	helper,
 	commands,
 	addCoins,
+	getUserCoins,
 	getWeeklySlotsStats,
 	openSacolasDoCoveiro
 };
