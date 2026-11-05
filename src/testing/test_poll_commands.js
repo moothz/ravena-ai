@@ -363,6 +363,160 @@ async function runTests() {
 		console.log("✓ Pipeline completo do caso real validado com sucesso.");
 	}
 
+	// 10. Teste do comando !g-interagir-poll em Management.js
+	console.log("\n[10] Testando comando !g-interagir-poll em Management.js...");
+	{
+		const Management = require("../commands/Management");
+		const Group = require("../models/Group");
+		const management = new Management();
+		const bot = new FakeBot({ id: "test-bot" });
+
+		const group = new Group({
+			id: "123456@g.us",
+			name: "Grupo Teste",
+			interact: { enabled: true, voteInPolls: true }
+		});
+
+		const userMsg = createMessage({
+			content: "!g-interagir-poll",
+			group: "123456@g.us",
+			author: "5511999999999@s.whatsapp.net"
+		});
+
+		// 1º Toggle: de true -> false
+		const res1 = await management.togglePollInteraction(bot, userMsg, [], group);
+		assert.strictEqual(group.interact.voteInPolls, false);
+		assert.ok(res1.content.includes("desativada"));
+
+		// 2º Toggle: de false -> true
+		const res2 = await management.togglePollInteraction(bot, userMsg, [], group);
+		assert.strictEqual(group.interact.voteInPolls, true);
+		assert.ok(res2.content.includes("ativada"));
+
+		console.log("✓ !g-interagir-poll alternando voteInPolls com sucesso.");
+	}
+
+	// 11. Teste da escolha de opção com personalidade e fallback em PollVoteService
+	console.log("\n[11] Testando PollVoteService.chooseOption...");
+	{
+		const PollVoteService = require("../services/PollVoteService");
+		const bot = new FakeBot({ id: "test-bot" });
+		bot.aiPersonality = "Ravena: personalidade gótica, sarcástica, fã de animes e pizza";
+
+		const pollData = {
+			question: "Qual sua comida favorita?",
+			options: ["Salada", "Pizza de 4 queijos", "Sopa fria"]
+		};
+
+		const choice = await PollVoteService.chooseOption(bot, null, pollData);
+		assert.ok(choice.option, "Deve retornar uma opção");
+		assert.ok(
+			pollData.options.includes(choice.option),
+			"A opção escolhida deve pertencer à lista da enquete"
+		);
+		assert.ok(["laya", "fallback"].includes(choice.source));
+
+		console.log(`✓ Opção escolhida: "${choice.option}" (origem: ${choice.source})`);
+	}
+
+	// 12. Teste do fluxo completo de votação automática e votePoll
+	console.log("\n[12] Testando fluxo de votação automática e WhatsAppBotGo.votePoll...");
+	{
+		const PollVoteService = require("../services/PollVoteService");
+		const WhatsAppBotGo = require("../WhatsAppBotGo");
+		let votePayload = null;
+		let voteEndpoint = null;
+
+		const mockBot = Object.create(WhatsAppBotGo.prototype);
+		mockBot.id = "test-go-vote";
+		mockBot.isConnected = true;
+		mockBot.isParticipating = () => true;
+		mockBot.getActualMsgId = (id) => id;
+		mockBot.logger = {
+			warn: () => {},
+			debug: () => {},
+			error: (...args) => console.error("mockBot.error:", ...args),
+			info: () => {}
+		};
+		mockBot.apiClient = {
+			post: async (endpoint, payload) => {
+				voteEndpoint = endpoint;
+				votePayload = payload;
+				return { data: { message: "success" } };
+			}
+		};
+
+		// A: Enquete válida com voteInPolls: true
+		const pollMsg = createMessage({
+			id: "POLL_MSG_001",
+			group: "1203639999@g.us",
+			author: "551188888888@s.whatsapp.net",
+			fromMe: false,
+			type: "poll_creation"
+		});
+		pollMsg.poll = {
+			question: "Quem vence o campeonato?",
+			options: ["Time Alpha", "Time Beta"]
+		};
+
+		const groupEnabled = {
+			id: "1203639999@g.us",
+			interact: { enabled: true, voteInPolls: true }
+		};
+
+		await PollVoteService.handleIncomingPoll(mockBot, pollMsg, groupEnabled);
+		assert.strictEqual(voteEndpoint, "/send/poll/vote");
+		assert.strictEqual(votePayload.number, "1203639999@g.us");
+		assert.strictEqual(votePayload.pollId, "POLL_MSG_001");
+		assert.ok(["Time Alpha", "Time Beta"].includes(votePayload.selectedOptions[0]));
+
+		// B: Dedup - tentar votar na mesma enquete não deve chamar API novamente
+		voteEndpoint = null;
+		await PollVoteService.handleIncomingPoll(mockBot, pollMsg, groupEnabled);
+		assert.strictEqual(voteEndpoint, null, "Enquete repetida deve ser ignorada pelo dedup");
+
+		// C: Enquete com voteInPolls: false deve ser ignorada
+		const pollMsgDisabled = createMessage({
+			id: "POLL_MSG_002",
+			group: "1203639999@g.us",
+			author: "551188888888@s.whatsapp.net",
+			fromMe: false,
+			type: "poll_creation"
+		});
+		pollMsgDisabled.poll = {
+			question: "Outra enquete?",
+			options: ["Opção 1", "Opção 2"]
+		};
+
+		const groupDisabled = {
+			id: "1203639999@g.us",
+			interact: { enabled: true, voteInPolls: false }
+		};
+
+		voteEndpoint = null;
+		await PollVoteService.handleIncomingPoll(mockBot, pollMsgDisabled, groupDisabled);
+		assert.strictEqual(voteEndpoint, null, "Enquete com voteInPolls: false não deve disparar voto");
+
+		// D: Enquete fromMe: true deve ser ignorada (não votar na própria enquete)
+		const pollMsgFromMe = createMessage({
+			id: "POLL_MSG_003",
+			group: "1203639999@g.us",
+			author: "551199999999@s.whatsapp.net",
+			fromMe: true,
+			type: "poll_creation"
+		});
+		pollMsgFromMe.poll = {
+			question: "Minha própria enquete?",
+			options: ["Sim", "Não"]
+		};
+
+		voteEndpoint = null;
+		await PollVoteService.handleIncomingPoll(mockBot, pollMsgFromMe, groupEnabled);
+		assert.strictEqual(voteEndpoint, null, "Enquete fromMe: true não deve votar em si mesma");
+
+		console.log("✓ Fluxo de votação automática, dedup e votePoll validados com sucesso.");
+	}
+
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 }
 

@@ -224,6 +224,10 @@ class Management {
 				method: "toggleCmdInteraction",
 				description: "Ativa/desativa interações automáticas do bot usando comandos do grupo"
 			},
+			"interagir-poll": {
+				method: "togglePollInteraction",
+				description: "Ativa/desativa votos automáticos do bot em enquetes"
+			},
 			"interagir-cd": {
 				method: "setInteractionCooldown",
 				description: "Define o tempo de espera entre interações automáticas"
@@ -5849,6 +5853,51 @@ class Management {
 	}
 
 	/**
+	 * Ativa/desativa votos automáticos do bot em enquetes no grupo
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Object} group - Dados do grupo
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async togglePollInteraction(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (!group.interact) {
+			group.interact = {
+				enabled: false,
+				useCmds: true,
+				voteInPolls: true,
+				chance: 100,
+				cooldown: 30,
+				lastInteraction: 0,
+				proporcao: 50
+			};
+		}
+
+		if (group.interact.voteInPolls === undefined) {
+			group.interact.voteInPolls = true;
+		}
+
+		group.interact.voteInPolls = !group.interact.voteInPolls;
+		await this.database.saveGroup(group);
+
+		const response = group.interact.voteInPolls
+			? "📊 Votação automática em enquetes **ativada** para este grupo.\n\nO bot escolherá uma opção e votará nas enquetes recebidas."
+			: "📊 Votação automática em enquetes **desativada** para este grupo.";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: response
+		});
+	}
+
+	/**
 	 * Define o cooldown para interações automáticas
 	 * @param {WhatsAppBot} bot - Instância do bot
 	 * @param {Object} message - Dados da mensagem
@@ -9986,6 +10035,12 @@ const helper = {
 			cmd: "!g-interagir-cmd",
 			desc: "Ativa/desativa interações automáticas do bot usando comandos do grupo",
 			usage: ["!g-interagir-cmd"],
+			category: "interacao"
+		},
+		{
+			cmd: "!g-interagir-poll",
+			desc: "Ativa/desativa votos automáticos do bot em enquetes recebidas",
+			usage: ["!g-interagir-poll"],
 			category: "interacao"
 		},
 		{

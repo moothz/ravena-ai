@@ -659,6 +659,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!groupData.interact) groupData.interact = {};
         groupData.interact.enabled = document.getElementById('auto-interaction').checked;
         groupData.interact.useCmds = document.getElementById('interact-use-cmds').checked;
+        const votePollsEl = document.getElementById('interact-vote-polls');
+        if (votePollsEl) {
+            groupData.interact.voteInPolls = votePollsEl.checked;
+        }
         const percentVal = parseInt(document.getElementById('interaction-chance').value, 10) || 1;
         groupData.interact.chance = Math.min(100, Math.max(1, percentVal)) * 100;
         const cdVal = parseInt(document.getElementById('interaction-cooldown').value, 10) || 30;
@@ -886,6 +890,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const interact = groupData.interact || {};
         document.getElementById('auto-interaction').checked = !!interact.enabled;
         document.getElementById('interact-use-cmds').checked = interact.useCmds !== false;
+        const votePollsEl = document.getElementById('interact-vote-polls');
+        if (votePollsEl) {
+            votePollsEl.checked = interact.voteInPolls !== false;
+        }
         
         const chanceRaw = interact.chance !== undefined ? interact.chance : 100;
         let percentVal = 1;
@@ -3471,6 +3479,15 @@ document.addEventListener('DOMContentLoaded', () => {
             interactUseCmdsCheckbox.addEventListener('change', (e) => {
                 if (!groupData.interact) groupData.interact = {};
                 groupData.interact.useCmds = e.target.checked;
+                setDirty(true);
+            });
+        }
+
+        const interactVotePollsCheckbox = document.getElementById('interact-vote-polls');
+        if (interactVotePollsCheckbox) {
+            interactVotePollsCheckbox.addEventListener('change', (e) => {
+                if (!groupData.interact) groupData.interact = {};
+                groupData.interact.voteInPolls = e.target.checked;
                 setDirty(true);
             });
         }

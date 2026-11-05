@@ -55,6 +55,7 @@ class Group {
 		this.interact = data.interact ?? {
 			enabled: true,
 			useCmds: true,
+			voteInPolls: true,
 			lastInteraction: 0,
 			cooldown: 30,
 			chance: 100,
@@ -62,6 +63,9 @@ class Group {
 		};
 		if (this.interact.proporcao === undefined) {
 			this.interact.proporcao = 50;
+		}
+		if (this.interact.voteInPolls === undefined) {
+			this.interact.voteInPolls = true;
 		}
 
 		// Auto translate todas returnMessage

@@ -2871,6 +2871,29 @@ class WhatsAppBotGo {
 				};
 			}
 
+			let pollData = null;
+			const pollCreation =
+				messageContent.pollCreationMessage ||
+				messageContent.pollCreationMessageV2 ||
+				messageContent.pollCreationMessageV3;
+
+			if (pollCreation) {
+				type = "poll_creation";
+				const rawOptions = pollCreation.options || [];
+				const optionsList = rawOptions
+					.map((opt) => opt.optionName || opt.name || (typeof opt === "string" ? opt : ""))
+					.filter(Boolean);
+				content = pollCreation.name || "";
+				pollData = {
+					name: pollCreation.name || "",
+					question: pollCreation.name || "",
+					options: optionsList,
+					selectableOptionsCount: pollCreation.selectableOptionsCount ?? 1,
+					allowMultipleAnswers: (pollCreation.selectableOptionsCount ?? 1) !== 1,
+					hideParticipantName: Boolean(pollCreation.hideParticipantName)
+				};
+			}
+
 			let authorJid = sender;
 			if (String(sender).includes("@lid")) {
 				if (senderAlt && !String(senderAlt).includes("@lid")) {
@@ -2897,6 +2920,9 @@ class WhatsAppBotGo {
 				type,
 				content,
 				body: content,
+				poll: pollData,
+				pollData,
+				isPoll: !!pollCreation,
 				caption,
 				timestamp,
 				responseTime,
@@ -2950,6 +2976,8 @@ class WhatsAppBotGo {
 				key: { remoteJid: chatId, fromMe, id },
 				author: this._normalizeId(formattedMessage.author),
 				from: formattedMessage.from,
+				poll: pollData,
+				vote: (options) => this.votePoll(chatId, id, formattedMessage.author, options, fromMe),
 				react: (emoji) => this.sendReaction(chatId, id, emoji),
 				getContact: formattedMessage.getContact,
 				getChat: formattedMessage.getChat,
@@ -4432,6 +4460,48 @@ class WhatsAppBotGo {
 				await this.markNotInGroup(chatId);
 			}
 			this.logger.error(`[sendReaction] Error`, e);
+			return false;
+		}
+	}
+
+	/**
+	 * Vota em uma enquete no WhatsApp
+	 * @param {string} chatId - JID da conversa (grupo ou PV)
+	 * @param {string} pollId - ID da mensagem da enquete
+	 * @param {string} pollSender - Remetente da enquete
+	 * @param {Array<string>|string} selectedOptions - Opção(ões) para votar
+	 * @param {boolean} [fromMe=false] - Se a enquete foi criada pelo próprio bot
+	 * @returns {Promise<boolean>}
+	 */
+	async votePoll(chatId, pollId, pollSender, selectedOptions, fromMe = false) {
+		if (chatId && chatId.includes("@g.us") && !this.isParticipating(chatId)) {
+			this.logger.warn(
+				`[${this.id}] Ignorando votePoll para ${chatId}: bot não participa deste grupo.`
+			);
+			return false;
+		}
+
+		try {
+			const optionsList = Array.isArray(selectedOptions) ? selectedOptions : [selectedOptions];
+			const actualPollId = this.getActualMsgId(pollId);
+
+			await this.apiClient.post("/send/poll/vote", {
+				number: chatId,
+				pollId: actualPollId,
+				pollSender: pollSender || chatId,
+				selectedOptions: optionsList,
+				fromMe: Boolean(fromMe),
+				delay: 0
+			});
+			return true;
+		} catch (e) {
+			if (chatId && chatId.includes("@g.us") && isNotInGroupError(e)) {
+				await this.markNotInGroup(chatId);
+			}
+			this.logger.error(
+				`[votePoll] Erro ao votar na enquete ${pollId} em ${chatId}:`,
+				e.message || e
+			);
 			return false;
 		}
 	}

@@ -37,6 +37,7 @@ const {
 } = require("./functions/SocialMediaDownloader");
 const ReportAnalyzerService = require("./services/ReportAnalyzerService");
 const AccountLinkService = require("./services/AccountLinkService");
+const PollVoteService = require("./services/PollVoteService");
 
 class EventHandler extends EventEmitter {
 	static instance = null;
@@ -654,6 +655,13 @@ class EventHandler extends EventEmitter {
 					`[${bot.id}] Mensagem recebida no grupo de dossiês (${message.group}). Comandos ignorados.`
 				);
 				return;
+			}
+
+			// Intercepta enquetes recebidas para votação automática (se habilitada)
+			if (message.type === "poll_creation" || message.isPoll || message.poll) {
+				PollVoteService.handleIncomingPoll(bot, message, group).catch((err) => {
+					this.logger.error("[EventHandler] Erro ao processar voto automático na enquete:", err);
+				});
 			}
 
 			// Se não houver conteúdo de texto, não pode ser um comando ou menção

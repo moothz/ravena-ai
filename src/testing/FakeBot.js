@@ -431,6 +431,15 @@ class FakeBot {
 		return true;
 	}
 
+	async votePoll(chatId, pollId, pollSender, selectedOptions, fromMe = false) {
+		this.sentPollVotes = this.sentPollVotes || [];
+		this.sentPollVotes.push({ chatId, pollId, pollSender, selectedOptions, fromMe });
+		this.logger.debug(
+			`[FakeBot] votePoll() → chatId=${chatId}, id=${pollId}, options=${JSON.stringify(selectedOptions)}`
+		);
+		return true;
+	}
+
 	isMentionIgnored(mention, chatId = null) {
 		if (!mention) return false;
 		const str = String(mention).trim();
@@ -838,6 +847,7 @@ class FakeBot {
 		this.promotedParticipants = [];
 		this.demotedParticipants = [];
 		this.pinnedMessages = [];
+		this.sentPollVotes = [];
 	}
 
 	async tryReconnect() {
