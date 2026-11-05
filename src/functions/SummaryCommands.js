@@ -242,18 +242,25 @@ async function summarizeConversation(bot, message, args, group) {
 
 		logger.info(`[${group.id}] Resumindo conversa para o grupo ${message.group}`);
 
+		let cachedRollingSummary = null;
 		// 1. Tenta obter o Rolling Summary quente do MemoryService
 		try {
 			const memoryService = MemoryService.getInstance();
 			const rollingSummary = await memoryService.getRollingSummary(message.group, bot);
 			if (rollingSummary && typeof rollingSummary === "string" && rollingSummary.length > 20) {
-				logger.info(`[${group.id}] Resumo rolling entregue com sucesso para ${message.group}`);
-				return new ReturnMessage({
-					chatId: message.group,
-					content: `📋 *Resumo da conversa:*
+				// Se já tiver os tópicos detalhados (- Tópico: detalhes), entrega instantâneo
+				if (rollingSummary.includes("\n- ") || rollingSummary.includes("\n* ")) {
+					logger.info(
+						`[${group.id}] Resumo rolling com tópicos entregue com sucesso para ${message.group}`
+					);
+					return new ReturnMessage({
+						chatId: message.group,
+						content: `📋 *Resumo da conversa:*
 
 ${rollingSummary}`
-				});
+					});
+				}
+				cachedRollingSummary = rollingSummary;
 			}
 		} catch (rollingErr) {
 			logger.warn(
@@ -272,6 +279,18 @@ ${rollingSummary}`
 		}
 
 		if (!recentMessages || recentMessages.length === 0) {
+			if (
+				cachedRollingSummary &&
+				typeof cachedRollingSummary === "string" &&
+				cachedRollingSummary.length > 10
+			) {
+				return new ReturnMessage({
+					chatId: message.group,
+					content: `📋 *Resumo da conversa:*
+
+${cachedRollingSummary}`
+				});
+			}
 			return new ReturnMessage({
 				chatId: message.group,
 				content: "Nenhuma mensagem recente para resumir."
@@ -286,8 +305,25 @@ ${rollingSummary}`
 				? `\n\n((Sua personalidade: '${group.customAIPrompt}'))\n\n`
 				: "";
 
-		// Cria prompt para LLM
-		const prompt = `Abaixo está uma conversa recente de um grupo de WhatsApp. ${customPersonalidade}. Por favor, resuma os principais pontos discutidos de forma concisa:
+		// Cria prompt para LLM com visão geral e tópicos detalhados
+		const prompt = `Abaixo está uma conversa recente de um grupo de WhatsApp. ${customPersonalidade}
+Analise a conversa e elabore um resumo estruturado no seguinte padrão exato:
+1. Uma frase inicial concisa resumindo o panorama geral da conversa (o tema central e o que aconteceu).
+2. Pule uma linha.
+3. Liste todos os temas específicos discutidos em tópicos (um por linha iniciando com "- [Nome do Tema]: [Breve frase resumindo o que falaram sobre ele]").
+
+Exemplo de formato esperado:
+Discussão técnica sobre manutenção e modificação de carros, especificamente sobre substituição de parafusos e uso de espaçadores.
+
+- Espaçadores: pessoa tal recomenda o espaçador certo
+- Parafuso: Sugestão de lojas xxxx e yyyy para comprar
+- Confusão: pessoas não acham o parafuso correto
+
+Regras importantes:
+- Não inclua saudações, introduções ou títulos adicionais (como "Resumo da conversa:" ou "Resumo:"). Comece diretamente pela frase de panorama geral.
+- Se houver apenas um assunto debatido, liste-o nos tópicos detalhando os pontos discutidos.
+
+Conversa:
 ${formattedMessages}
 
 Resumo:`;
@@ -295,21 +331,81 @@ Resumo:`;
 		// Obtém resumo do LLM
 		const summary = await llmService.getCompletion({ prompt, priority: 4 });
 
-		if (!summary) {
+		if (!summary || typeof summary !== "string") {
+			if (
+				cachedRollingSummary &&
+				typeof cachedRollingSummary === "string" &&
+				cachedRollingSummary.length > 10
+			) {
+				return new ReturnMessage({
+					chatId: message.group,
+					content: `📋 *Resumo da conversa:*
+
+${cachedRollingSummary}`
+				});
+			}
 			return new ReturnMessage({
 				chatId: message.group,
 				content: "Falha ao gerar resumo. Por favor, tente novamente."
 			});
 		}
 
-		logger.info(`[${group.id}]Resumo de conversa enviado com sucesso para ${message.group}`);
+		const cleanSummary = summary
+			.replace(/^(📋\s*\*?Resumo da conversa:\*?\s*|Resumo:\s*)/i, "")
+			.trim();
+
+		// Tenta atualizar o cache do MemoryService em background para reaproveitar
+		try {
+			const overview = cleanSummary.split(/\n\s*\n/)[0]?.trim();
+			const bulletLines = cleanSummary.match(/^[*-]\s*(.+)$/gm);
+			if (overview && bulletLines && bulletLines.length > 0) {
+				const topicsArr = bulletLines.map((line) => {
+					const cleanLine = line.replace(/^[*-]\s*/, "");
+					const colonIdx = cleanLine.indexOf(":");
+					if (colonIdx > 0) {
+						return {
+							topic: cleanLine.slice(0, colonIdx).trim(),
+							details: cleanLine.slice(colonIdx + 1).trim()
+						};
+					}
+					return { topic: cleanLine, details: "" };
+				});
+				const memoryService = MemoryService.getInstance();
+				memoryService.database
+					.dbRun(
+						"memory",
+						`INSERT INTO memory_group_profiles (group_id, platform, title, latest_summary, topic_breakdown, last_summarized_at, messages_since_summary, total_messages_analyzed, average_problematic_score, updated_at)
+						 VALUES (?, ?, ?, ?, ?, ?, 0, 1, 0, ?)
+						 ON CONFLICT(group_id) DO UPDATE SET 
+							latest_summary = excluded.latest_summary,
+							topic_breakdown = excluded.topic_breakdown,
+							last_summarized_at = excluded.last_summarized_at,
+							messages_since_summary = 0,
+							updated_at = excluded.updated_at`,
+						[
+							message.group,
+							bot?.useTelegram ? "telegram" : "whatsapp",
+							message.groupName || message.group,
+							overview,
+							JSON.stringify(topicsArr),
+							Date.now(),
+							Date.now()
+						]
+					)
+					.catch(() => {});
+			}
+		} catch (cacheErr) {
+			logger.warn("Erro ao sincronizar resumo com MemoryService:", cacheErr.message);
+		}
+
+		logger.info(`[${group.id}] Resumo de conversa enviado com sucesso para ${message.group}`);
 
 		// Envia o resumo (sem deletar histórico destrutivamente)
 		return new ReturnMessage({
 			chatId: message.group,
 			content: `📋 *Resumo da conversa:*
 
-${summary}`
+${cleanSummary}`
 		});
 	} catch (error) {
 		logger.error("Erro ao resumir conversa:", error);

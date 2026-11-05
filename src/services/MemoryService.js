@@ -76,6 +76,7 @@ class MemoryService {
 				group_rules_culture TEXT,
 				bot_personality_hint TEXT,
 				latest_summary TEXT,
+				topic_breakdown TEXT,
 				last_summarized_at INTEGER DEFAULT 0,
 				messages_since_summary INTEGER DEFAULT 0,
 				total_messages_analyzed INTEGER DEFAULT 0,
@@ -113,6 +114,10 @@ class MemoryService {
 			`,
 			false
 		);
+
+		this.database
+			.dbRun(DB_NAME, "ALTER TABLE memory_group_profiles ADD COLUMN topic_breakdown TEXT")
+			.catch(() => {});
 	}
 
 	/**
@@ -629,7 +634,8 @@ class MemoryService {
 			const prompt = `Analise atentamente a conversa abaixo e extraia inteligência estruturada em formato JSON estrito:
 1. 'group_evaluation': (se for grupo de chat)
    - 'type': uma palavra que define o tema (ex: 'jogos', 'politica', 'escola', 'musica', 'zoeira', 'geral').
-   - 'summary': resumo conciso em até 200 caracteres dos assuntos principais discutidos.
+   - 'summary': resumo conciso em 1 a 2 frases dos assuntos principais discutidos.
+   - 'topic_breakdown': lista de todos os temas/assuntos específicos discutidos na conversa. Para cada tema, inclua o nome do tópico e uma breve frase explicando o que falaram sobre ele (ex: [{"topic": "Espaçadores", "details": "pessoa tal recomenda o espaçador certo"}, {"topic": "Parafuso", "details": "Sugestão de lojas xxxx e yyyy para comprar"}]).
    - 'vibe': atmosfera observada (ex: 'amigável', 'debochado', 'tenso', 'estudioso').
    - 'suggested_bot_personality': instrução de 1 a 3 frases em pt-BR definindo como o bot Ravena deve se comportar e falar neste grupo específico, incorporando a vibe, gírias e humor observados.
    - 'frequent_topics': lista de até 4 tópicos debatidos (ex: ['Steam', 'Counter-Strike', 'Faculdade']).
@@ -664,6 +670,17 @@ ${textToAnalyze}`;
 								properties: {
 									type: { type: "string" },
 									summary: { type: "string" },
+									topic_breakdown: {
+										type: "array",
+										items: {
+											type: "object",
+											properties: {
+												topic: { type: "string" },
+												details: { type: "string" }
+											},
+											required: ["topic", "details"]
+										}
+									},
 									vibe: { type: "string" },
 									suggested_bot_personality: { type: "string" },
 									frequent_topics: { type: "array", items: { type: "string" } },
@@ -781,6 +798,7 @@ ${textToAnalyze}`;
 						vibe_summary = ?,
 						frequent_topics = ?,
 						latest_summary = ?,
+						topic_breakdown = ?,
 						last_summarized_at = ?,
 						messages_since_summary = 0,
 						total_messages_analyzed = total_messages_analyzed + ?,
@@ -791,6 +809,7 @@ ${textToAnalyze}`;
 						groupEval.vibe || "descontraído",
 						JSON.stringify(groupEval.frequent_topics || []),
 						groupEval.summary,
+						groupEval.topic_breakdown ? JSON.stringify(groupEval.topic_breakdown) : null,
 						now,
 						rows.length,
 						groupEval.problematic_score,
@@ -1035,6 +1054,61 @@ ${textToAnalyze}`;
 	}
 
 	/**
+	 * Formata o resumo geral e os tópicos detalhados no padrão do !resumo
+	 * @param {string} summary
+	 * @param {Array|string} topicBreakdown
+	 * @returns {string}
+	 */
+	formatFullSummary(summary, topicBreakdown) {
+		const baseSummary = summary ? String(summary).trim() : "";
+		if (!topicBreakdown) {
+			return baseSummary;
+		}
+
+		let topics = [];
+		if (typeof topicBreakdown === "string") {
+			try {
+				topics = JSON.parse(topicBreakdown);
+			} catch {
+				if (topicBreakdown.trim().length > 0) {
+					return baseSummary ? `${baseSummary}\n\n${topicBreakdown.trim()}` : topicBreakdown.trim();
+				}
+			}
+		} else if (Array.isArray(topicBreakdown)) {
+			topics = topicBreakdown;
+		}
+
+		if (Array.isArray(topics) && topics.length > 0) {
+			const formattedTopics = topics
+				.map((t) => {
+					if (!t) return null;
+					if (typeof t === "string") {
+						return t.trim().startsWith("-") ? t.trim() : `- ${t.trim()}`;
+					}
+					const name = (t.topic || t.tema || t.name || "").trim();
+					const desc = (t.details || t.summary || t.resumo || t.description || "").trim();
+					if (name && desc) {
+						return `- ${name}: ${desc}`;
+					} else if (name) {
+						return `- ${name}`;
+					} else if (desc) {
+						return `- ${desc}`;
+					}
+					return null;
+				})
+				.filter(Boolean);
+
+			if (formattedTopics.length > 0) {
+				return baseSummary
+					? `${baseSummary}\n\n${formattedTopics.join("\n")}`
+					: formattedTopics.join("\n");
+			}
+		}
+
+		return baseSummary;
+	}
+
+	/**
 	 * Recupera o resumo rolling do grupo (instantâneo se recente, on-demand se defasado)
 	 * @param {string} groupId
 	 * @param {Object} [bot]
@@ -1044,7 +1118,7 @@ ${textToAnalyze}`;
 		const now = Date.now();
 		const profile = await this.database.dbGet(
 			DB_NAME,
-			"SELECT latest_summary, last_summarized_at, messages_since_summary FROM memory_group_profiles WHERE group_id = ?",
+			"SELECT latest_summary, topic_breakdown, last_summarized_at, messages_since_summary FROM memory_group_profiles WHERE group_id = ?",
 			[groupId]
 		);
 
@@ -1055,7 +1129,7 @@ ${textToAnalyze}`;
 			now - (profile.last_summarized_at || 0) > 15 * 60 * 1000;
 
 		if (!isStale) {
-			return profile.latest_summary;
+			return this.formatFullSummary(profile.latest_summary, profile.topic_breakdown);
 		}
 
 		// Se estiver defasado, tenta gerar sob demanda
@@ -1063,12 +1137,22 @@ ${textToAnalyze}`;
 			await this.triggerBatchDistillation(groupId, false, bot);
 			const updated = await this.database.dbGet(
 				DB_NAME,
-				"SELECT latest_summary FROM memory_group_profiles WHERE group_id = ?",
+				"SELECT latest_summary, topic_breakdown FROM memory_group_profiles WHERE group_id = ?",
 				[groupId]
 			);
-			return updated?.latest_summary || profile?.latest_summary || "Conversa recente em andamento.";
+			return (
+				this.formatFullSummary(updated?.latest_summary, updated?.topic_breakdown) ||
+				updated?.latest_summary ||
+				this.formatFullSummary(profile?.latest_summary, profile?.topic_breakdown) ||
+				profile?.latest_summary ||
+				"Conversa recente em andamento."
+			);
 		} catch (e) {
-			return profile?.latest_summary || "Nenhum resumo disponível no momento.";
+			return (
+				this.formatFullSummary(profile?.latest_summary, profile?.topic_breakdown) ||
+				profile?.latest_summary ||
+				"Nenhum resumo disponível no momento."
+			);
 		}
 	}
 

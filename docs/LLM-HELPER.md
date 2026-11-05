@@ -1331,7 +1331,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 **Detalhes Técnicos:** Armazena histórico recente de mensagens do chat e utiliza LLMs para gerar resumos concisos e intervenções bem-humoradas
 
 #### Comandos:
-- **`!resumo`**: Gera um resumo das conversas recentes e assuntos debatidos no grupo
+- **`!resumo`**: Gera um resumo das conversas recentes e assuntos debatidos no grupo (panorama geral e tópicos detalhados)
   - *Categoria:* ia
   - *Uso/Exemplos:* `!resumo`
 - **`!interagir`**: Faz o bot interagir e comentar sobre os tópicos atuais da conversa
