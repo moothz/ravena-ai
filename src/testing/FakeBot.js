@@ -333,6 +333,15 @@ class FakeBot {
 				} catch {}
 			}
 
+			if (msg.options?.boletoData) {
+				try {
+					const ZueiraCommands = require("../functions/ZueiraCommands");
+					if (typeof ZueiraCommands.recordBoletoMessage === "function") {
+						ZueiraCommands.recordBoletoMessage(fakeMsgId, msg.options.boletoData);
+					}
+				} catch {}
+			}
+
 			if (msg.options?.invData?.userId) {
 				try {
 					const FazendaCommands = require("../functions/FazendaCommands");

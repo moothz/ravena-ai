@@ -1629,6 +1629,18 @@ class WhatsAppBotGo {
 					}
 				}
 
+				if (options.boletoData && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const ZueiraCommands = require("./functions/ZueiraCommands");
+						if (typeof ZueiraCommands.recordBoletoMessage === "function") {
+							ZueiraCommands.recordBoletoMessage(sentMsgId, options.boletoData);
+						}
+					} catch (regErr) {
+						this.logger.warn(`[sendReturnMessages] Erro ao registrar boleto: ${regErr.message}`);
+					}
+				}
+
 				if (options.stickerReportId && result?.id) {
 					const sentMsgId = result.id._serialized || result.id.id || result.id;
 					try {
