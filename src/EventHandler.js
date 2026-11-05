@@ -132,6 +132,28 @@ class EventHandler extends EventEmitter {
 	}
 
 	/**
+	 * Retorna a lista de prefixos aceitos para um bot e grupo.
+	 * No Telegram, aceita tanto o prefixo nativo da plataforma ('/') quanto o prefixo tradicional da Ravena ('!'),
+	 * além de qualquer prefixo customizado configurado no grupo.
+	 *
+	 * @param {WhatsAppBot} bot
+	 * @param {Group|null} group
+	 * @returns {string[]}
+	 */
+	getCommandPrefixes(bot, group) {
+		const primaryPrefix = group && group.prefix !== undefined ? group.prefix : (bot?.prefix ?? "!");
+		if (primaryPrefix === "") {
+			return [""];
+		}
+		const prefixes = [primaryPrefix];
+		if (bot?.useTelegram) {
+			if (!prefixes.includes("/")) prefixes.push("/");
+			if (!prefixes.includes("!")) prefixes.push("!");
+		}
+		return prefixes.sort((a, b) => b.length - a.length);
+	}
+
+	/**
 	 * Obtém grupo por ID, cria se não existir
 	 * @param {string} groupId - O ID do grupo
 	 * @param {string} name - O nome do grupo (opcional)
@@ -556,11 +578,16 @@ class EventHandler extends EventEmitter {
 				// Verifica se o grupo está pausado
 				if (group.paused) {
 					// Verifica se é o comando g-pausar antes de ignorar completamente
-					const prefix = group && group.prefix !== undefined ? group.prefix : bot.prefix;
+					const prefixes = this.getCommandPrefixes(bot, group);
 					const isPauseCommand =
 						textContent &&
-						textContent.startsWith(prefix) &&
-						textContent.substring(prefix.length).startsWith("g-pausar");
+						prefixes.some((p) => {
+							if (p === "") return textContent.trimStart().startsWith("g-pausar");
+							return (
+								textContent.startsWith(p) &&
+								textContent.substring(p.length).trimStart().startsWith("g-pausar")
+							);
+						});
 
 					// Só continua o processamento se for o comando g-pausar
 					if (!isPauseCommand) {
@@ -678,16 +705,28 @@ class EventHandler extends EventEmitter {
 			);
 			if (isMentionHandled) return;
 
-			// Obtém prefixo do grupo ou prefixo padrão do bot
-			const prefix = group && group.prefix !== undefined ? group.prefix : bot.prefix;
+			// Obtém prefixos aceitos (no Telegram, suporta tanto '/' quanto '!')
+			const prefixes = this.getCommandPrefixes(bot, group);
+			let matchedPrefix = null;
+			let isCommand = false;
 
-			// CORREÇÃO: Verificação adequada para prefixo vazio
-			const isCommand = prefix === "" || textContent.startsWith(prefix);
+			if (prefixes.includes("")) {
+				isCommand = true;
+				matchedPrefix = "";
+			} else {
+				for (const p of prefixes) {
+					if (textContent.startsWith(p)) {
+						isCommand = true;
+						matchedPrefix = p;
+						break;
+					}
+				}
+			}
 
 			if (isCommand) {
 				// Se o prefixo for vazio, usa o texto completo como comando
-				// Se não, remove o prefixo do início
-				let commandText = prefix === "" ? textContent : textContent.substring(prefix.length);
+				// Se não, remove o prefixo correspondente do início
+				let commandText = matchedPrefix ? textContent.substring(matchedPrefix.length) : textContent;
 
 				// Remove espaços extras após o prefixo (ex: "! ping" -> "ping")
 				commandText = commandText.trimStart();
@@ -1330,9 +1369,7 @@ class EventHandler extends EventEmitter {
 		const textContent = (message.type === "text" ? message.content : message.caption) ?? "";
 		if (!textContent || typeof textContent !== "string") return false;
 
-		const prefix = group?.prefix ?? bot?.prefix ?? "!";
-		const botPrefix = bot?.prefix ?? "!";
-		const prefixes = Array.from(new Set([prefix, botPrefix, "!"])).filter(Boolean);
+		const prefixes = this.getCommandPrefixes(bot, group).filter(Boolean);
 
 		const stickerCommands = new Set([
 			"s",

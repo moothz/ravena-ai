@@ -600,6 +600,8 @@ class CommandHandler {
 						l = l.substring(botPrefix.length).trimStart();
 					} else if (l.startsWith("!")) {
 						l = l.substring(1).trimStart();
+					} else if (l.startsWith("/")) {
+						l = l.substring(1).trimStart();
 					}
 					return l.startsWith("sa-");
 				});
@@ -611,6 +613,8 @@ class CommandHandler {
 						if (botPrefix && cleanCmd.startsWith(botPrefix)) {
 							cleanCmd = cleanCmd.substring(botPrefix.length).trimStart();
 						} else if (cleanCmd.startsWith("!")) {
+							cleanCmd = cleanCmd.substring(1).trimStart();
+						} else if (cleanCmd.startsWith("/")) {
 							cleanCmd = cleanCmd.substring(1).trimStart();
 						}
 						await this.handleCommand(bot, message, cleanCmd, group);
@@ -1908,6 +1912,8 @@ class CommandHandler {
 						} else if (cmdText.startsWith("!")) {
 							// Trata caso especial onde o comando está com prefixo padrão
 							cmdText = cmdText.substring(1);
+						} else if (cmdText.startsWith("/")) {
+							cmdText = cmdText.substring(1);
 						}
 
 						// Divide o comando em nome e argumentos
@@ -1949,6 +1955,8 @@ class CommandHandler {
 						cmdText = cmdText.substring(prefix.length);
 					} else if (cmdText.startsWith("!")) {
 						// Trata caso especial onde o comando está com prefixo padrão
+						cmdText = cmdText.substring(1);
+					} else if (cmdText.startsWith("/")) {
 						cmdText = cmdText.substring(1);
 					}
 
