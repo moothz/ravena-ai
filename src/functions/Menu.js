@@ -730,7 +730,7 @@ async function buildMenuText(bot, group, activeCategory = "initial") {
 	}
 
 	// ─── 2. SEÇÃO DE CATEGORIAS (HEADERS INFERIORES) ───
-	menuText += `\n> Reagir à esta mensagem com o emoji da categoria pra listar os comandos\n\n`;
+	menuText += `\n> Você pode reagir nesta mensagem com o emoji da categoria!\n\n`;
 
 	const categorized = groupCommandsByCategory(fixedCommands);
 	const allCatKeys = Object.keys(CATEGORY_EMOJIS);
@@ -750,9 +750,9 @@ async function buildMenuText(bot, group, activeCategory = "initial") {
 
 		menuText += `${emoji} *${catDisplayName}*${desc ? ` - ${desc}` : ""}\n`;
 		if (samples) {
-			menuText += `${samples}\n`;
+			menuText += `> ${samples}\n`;
 		}
-		menuText += `${prefix}cmd-${cat} para ver todos\n\n`;
+		menuText += `- *${prefix}cmd-${cat}* para ver todos\n\n`;
 	}
 
 	// Gerenciamento no final
