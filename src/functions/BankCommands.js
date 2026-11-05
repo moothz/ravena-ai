@@ -131,7 +131,7 @@ async function handleBancoAdm(bot, message) {
 
 	try {
 		const session = await bankService.createSession(userId);
-		const webUrl = `${BOT_DOMAIN}/ravenabank?token=${session.token}`;
+		const webUrl = `${BOT_DOMAIN}/ravenabank?token=${session.token}&_cb=${Date.now()}`;
 
 		const content =
 			`🔐 *ACESSO PESSOAL AO RAVENABANK WEB* 🔐\n\n` +
@@ -339,8 +339,8 @@ async function handleSacar(bot, message, args) {
 				`• \`!banco-comprar zinthos 100\` (gasta 100 Runas e recebe Zinthos)\n` +
 				`• \`!banco-comprar jardim 250\` (gasta 250 Runas e recebe Petalitas)\n\n` +
 				`🛍️ *Loja RavenaBank (Consumíveis de Jogos):*\n` +
-				`• \`!banco-comprar moeda 5\` (gasta 300 ᚱ cada moeda do Slots, máx 30)\n` +
-				`• \`!banco-comprar isca 3\` (gasta 100 ᚱ cada isca de Pesca, máx 1.5x inventário)\n` +
+				`• \`!banco-comprar moeda 5\` (gasta 55 ᚱ cada moeda do Slots, máx 300/dia)\n` +
+				`• \`!banco-comprar isca 3\` (gasta 45 ᚱ cada isca de Pesca, máx 200/dia)\n` +
 				`• \`!banco-loja\` (exibe o catálogo completo da loja)\n\n` +
 				`⚠️ _Nota: Não é possível comprar peixes com Runas._`
 		});
@@ -532,8 +532,8 @@ async function handleLoja(bot, message) {
 			text += `${item.emoji} *${item.name}*\n`;
 			text += `• Preço: *${formatPtBr(item.priceRunas, 0, 0)} ᚱ* cada\n`;
 			text += `• Saldo atual: *${item.current}*\n`;
-			text += `• Limite máximo permitido: *${item.limit}*\n`;
-			text += `• Disponível para compra: *${item.maxCanBuy}*\n`;
+			text += `• Limite diário: *${item.dailyLimit} /dia* (usado hoje: ${item.dailyUsed})\n`;
+			text += `• Disponível para compra hoje: *${item.maxCanBuy}*\n`;
 			if (item.id === "moedas") {
 				text += `• Comando: \`!banco-comprar moeda <quantidade>\`\n\n`;
 			} else {

@@ -87,15 +87,13 @@ Cada jogador possui limites diários de segurança que renovam todo dia às 04:0
 Permite aos jogadores investir suas Runas acumuladas diretamente em consumíveis essenciais dos mini-games:
 
 1. **🎰 Moedinhas (SlotsGame / Caça-coisas)**:
-   * **Preço:** `300 ᚱ` por moeda.
-   * **Limite:** Máximo **30 moedas** acumuladas no saldo do jogador.
-   * **Regra:** Se `saldo_atual + tentativa_de_compra > 30`, a compra é estritamente bloqueada para evitar acúmulo excessivo.
+   * **Preço:** `55 ᚱ` por moeda.
+   * **Limite Diário:** Máximo **300 moedas compradas por dia** (reset às 04:00 AM BRT).
    * **Comando:** `!banco-comprar moeda <quantidade>`
 
 2. **🐛 Iscas (FishingGame / Pescaria)**:
-   * **Preço:** `100 ᚱ` por isca.
-   * **Limite:** Máximo **1.5x a capacidade de iscas do inventário** do usuário, arredondado para cima (`Math.ceil(maxBaits * 1.5)`). Para pescadores com capacidade padrão de 5 iscas, o limite é de **8 iscas**.
-   * **Regra:** Se `saldo_atual + tentativa_de_compra > limite`, a compra é bloqueada com a mesma lógica do Slots.
+   * **Preço:** `45 ᚱ` por isca.
+   * **Limite Diário:** Máximo **200 iscas compradas por dia** (reset às 04:00 AM BRT).
    * **Comando:** `!banco-comprar isca <quantidade>`
 
 3. **Catálogo Geral:**

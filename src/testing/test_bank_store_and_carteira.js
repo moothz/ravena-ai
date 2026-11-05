@@ -58,55 +58,52 @@ async function main() {
 	console.log("✓ Crédito de Runas da Carteira Furada verificado:", bankAccount.runas, "ᚱ");
 
 	// 2. Teste da Loja: Compra de Moedinhas do Slots
-	console.log("\n--- Teste 2: Loja - Compra de Moedinhas do Slots (300 ᚱ cada, máx 30) ---");
+	console.log("\n--- Teste 2: Loja - Compra de Moedinhas do Slots (55 ᚱ cada, máx 300/dia) ---");
 	// Adiciona saldo para testes
-	await bankService.creditRunas(testUserId, 20000);
+	await bankService.creditRunas(testUserId, 50000);
 
 	// Inicializa usuário no slots com 5 moedas
 	await SlotsGame.addCoins(testUserId, 0);
 	const initialCoins = await SlotsGame.getUserCoins(testUserId);
 	console.log("Moedas iniciais:", initialCoins);
 
-	// Compra 10 moedas (custo: 3.000 ᚱ)
+	// Compra 10 moedas (custo: 550 ᚱ)
 	const buyCoinsRes = await bankService.buySlotsCoins(testUserId, 10);
 	assert.strictEqual(buyCoinsRes.count, 10);
-	assert.strictEqual(buyCoinsRes.costRunas, 3000);
+	assert.strictEqual(buyCoinsRes.costRunas, 550);
 	assert.strictEqual(buyCoinsRes.currentCoins, initialCoins + 10);
 	console.log(
 		`✓ Compra de 10 moedas concluída com sucesso. Novo saldo: ${buyCoinsRes.currentCoins}`
 	);
 
-	// Tenta comprar mais 25 moedas (atual: initialCoins + 10. Se passar de 30, deve bloquear)
+	// Tenta comprar mais 295 moedas (10 + 295 = 305 > 300/dia -> deve bloquear)
 	let blockedCoins = false;
 	try {
-		await bankService.buySlotsCoins(testUserId, 25);
+		await bankService.buySlotsCoins(testUserId, 295);
 	} catch (err) {
 		blockedCoins = true;
-		console.log("✓ Bloqueio esperado por limite de 30 moedas capturado:", err.message);
+		console.log("✓ Bloqueio esperado por limite diário de 300 moedas capturado:", err.message);
 	}
-	assert.ok(blockedCoins, "Tentativa de compra que ultrapassa 30 moedas DEVE ser bloqueada!");
+	assert.ok(blockedCoins, "Tentativa de compra que ultrapassa 300 moedas/dia DEVE ser bloqueada!");
 
-	// Compra exatamente até o limite de 30
-	const currentCoinsBeforeMax = await SlotsGame.getUserCoins(testUserId);
-	const neededToMax = 30 - currentCoinsBeforeMax;
-	if (neededToMax > 0) {
-		const fillRes = await bankService.buySlotsCoins(testUserId, neededToMax);
-		assert.strictEqual(fillRes.currentCoins, 30);
-	}
-	console.log("✓ Limite máximo de 30 moedas atingido com sucesso.");
+	// Compra até o limite diário de 300 moedas (já comprou 10, faltam 290)
+	const fillRes = await bankService.buySlotsCoins(testUserId, 290);
+	assert.strictEqual(fillRes.count, 290);
+	assert.strictEqual(fillRes.costRunas, 290 * 55);
+	console.log("✓ Limite diário de 300 moedas atingido com sucesso.");
 
-	// Agora no limite de 30, qualquer tentativa de compra de 1 moeda deve falhar
-	let blockedAt30 = false;
+	// Agora no limite diário de 300, qualquer tentativa de compra de 1 moeda deve falhar
+	let blockedAt300 = false;
 	try {
 		await bankService.buySlotsCoins(testUserId, 1);
 	} catch (err) {
-		blockedAt30 = true;
-		console.log("✓ Bloqueio com saldo já em 30 capturado:", err.message);
+		blockedAt300 = true;
+		console.log("✓ Bloqueio com cota diária de moedas esgotada capturado:", err.message);
 	}
-	assert.ok(blockedAt30, "Tentativa de compra quando já possui 30 moedas DEVE ser bloqueada!");
+	assert.ok(blockedAt300, "Tentativa de compra quando cota diária esgotou DEVE ser bloqueada!");
 
 	// 3. Teste da Loja: Compra de Iscas de Pesca
-	console.log("\n--- Teste 3: Loja - Compra de Iscas (100 ᚱ cada, máx 1.5x inventário) ---");
+	console.log("\n--- Teste 3: Loja - Compra de Iscas (45 ᚱ cada, máx 200/dia) ---");
 	// Inicializa usuário na pesca com 2 iscas (capacidade padrão: 5 iscas)
 	await db.dbRun(
 		"fishing",
@@ -116,37 +113,42 @@ async function main() {
 
 	const baitInfo = await FishingGame.getUserBaitsInfo(testUserId);
 	assert.strictEqual(baitInfo.baits, 2);
-	assert.strictEqual(baitInfo.maxBaits, 5);
-	const maxAllowedBaits = Math.ceil(baitInfo.maxBaits * 1.5); // Math.ceil(5 * 1.5) = 8
-	assert.strictEqual(maxAllowedBaits, 8, "Limite de iscas para capacidade 5 deve ser 8");
 
-	// Tenta comprar 7 iscas (2 + 7 = 9 > 8) -> DEVE bloquear
+	// Tenta comprar 205 iscas (ultrapassa cota diária de 200) -> DEVE bloquear
 	let blockedBaits = false;
 	try {
-		await bankService.buyFishingBaits(testUserId, 7);
+		await bankService.buyFishingBaits(testUserId, 205);
 	} catch (err) {
 		blockedBaits = true;
-		console.log("✓ Bloqueio esperado por limite de 1.5x iscas capturado:", err.message);
+		console.log("✓ Bloqueio esperado por limite diário de 200 iscas capturado:", err.message);
 	}
-	assert.ok(blockedBaits, "Tentativa de compra que ultrapassa 1.5x inventário DEVE ser bloqueada!");
+	assert.ok(blockedBaits, "Tentativa de compra que ultrapassa 200 iscas/dia DEVE ser bloqueada!");
 
-	// Compra 6 iscas (2 + 6 = 8 <= 8) -> DEVE suceder (custo: 6 * 100 = 600 ᚱ)
-	const buyBaitsRes = await bankService.buyFishingBaits(testUserId, 6);
-	assert.strictEqual(buyBaitsRes.count, 6);
-	assert.strictEqual(buyBaitsRes.costRunas, 600);
-	assert.strictEqual(buyBaitsRes.currentBaits, 8);
-	assert.strictEqual(buyBaitsRes.limitBaits, 8);
-	console.log("✓ Compra de 6 iscas concluída. Saldo resultante:", buyBaitsRes.currentBaits);
+	// Compra 10 iscas (custo: 10 * 45 = 450 ᚱ)
+	const buyBaitsRes = await bankService.buyFishingBaits(testUserId, 10);
+	assert.strictEqual(buyBaitsRes.count, 10);
+	assert.strictEqual(buyBaitsRes.costRunas, 450);
+	assert.strictEqual(buyBaitsRes.currentBaits, 12);
+	console.log("✓ Compra de 10 iscas concluída. Saldo resultante:", buyBaitsRes.currentBaits);
 
-	// Agora com 8 iscas, compra de 1 isca deve falhar
-	let blockedAt8 = false;
+	// Compra as 190 iscas restantes para atingir o teto diário de 200
+	const fillBaitsRes = await bankService.buyFishingBaits(testUserId, 190);
+	assert.strictEqual(fillBaitsRes.count, 190);
+	assert.strictEqual(fillBaitsRes.costRunas, 190 * 45);
+	console.log("✓ Limite diário de 200 iscas atingido com sucesso.");
+
+	// Agora com 200 iscas compradas hoje, compra de 1 isca deve falhar
+	let blockedAt200 = false;
 	try {
 		await bankService.buyFishingBaits(testUserId, 1);
 	} catch (err) {
-		blockedAt8 = true;
-		console.log("✓ Bloqueio com teto de iscas atingido capturado:", err.message);
+		blockedAt200 = true;
+		console.log("✓ Bloqueio com cota diária de iscas esgotada capturado:", err.message);
 	}
-	assert.ok(blockedAt8, "Tentativa de compra com teto de iscas atingido DEVE ser bloqueada!");
+	assert.ok(
+		blockedAt200,
+		"Tentativa de compra com cota diária de iscas esgotada DEVE ser bloqueada!"
+	);
 
 	// 4. Teste de Saldo Insuficiente
 	console.log("\n--- Teste 4: Saldo Insuficiente de Runas ---");
@@ -184,8 +186,8 @@ async function main() {
 	const catalog = await bankService.getStoreCatalog(testUserId);
 	assert.ok(catalog.userRunas > 0, "Saldo do usuário no catálogo deve ser positivo");
 	assert.strictEqual(catalog.items.length, 2, "Catálogo deve conter 2 itens (moedas e iscas)");
-	assert.strictEqual(catalog.items[0].priceRunas, 300);
-	assert.strictEqual(catalog.items[1].priceRunas, 100);
+	assert.strictEqual(catalog.items[0].priceRunas, 55);
+	assert.strictEqual(catalog.items[1].priceRunas, 45);
 	console.log(
 		"✓ Catálogo da loja obtido com sucesso:",
 		catalog.items.map((i) => `${i.name}: ${i.priceRunas}ᚱ`)

@@ -274,9 +274,25 @@ function registerIndexRoutes(api) {
 		res.redirect("/?app=waifuletes");
 	});
 
-	// Página do RavenaBank (HTML e Web App)
-	const serveBanco = (req, res) => {
-		res.sendFile(path.join(__dirname, "../../../public/banco.html"));
+	// Página do RavenaBank (HTML e Web App com cache buster ativo)
+	const serveBanco = async (req, res) => {
+		res.set({
+			"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+			Pragma: "no-cache",
+			Expires: "0",
+			"Surrogate-Control": "no-store"
+		});
+		try {
+			const htmlPath = path.join(__dirname, "../../../public/banco.html");
+			let html = await fs.readFile(htmlPath, "utf-8");
+			const now = Date.now();
+			html = html.replace(/banco\.js\?v=[^"']+/g, `banco.js?v=${now}`);
+			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${now}`);
+			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${now}`);
+			return res.type("html").send(html);
+		} catch (_) {
+			return res.sendFile(path.join(__dirname, "../../../public/banco.html"));
+		}
 	};
 	app.get(["/ravenabank", "/banco"], serveBanco);
 

@@ -212,18 +212,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         const qRemaining = q.remaining || {};
 
         // 1. Aba Compra - Limites e Disponibilidades
-        const currentCoins = h.slotsCoins || 0;
-        const availCoins = Math.max(0, 30 - currentCoins);
+        const availCoins = Math.max(0, qRemaining.compra_moedas ?? (300 - (q.used?.compra_moedas || 0)));
         const elAvailCoins = document.getElementById("buy-avail-moedas");
         if (elAvailCoins) {
             elAvailCoins.textContent = `${availCoins}`;
             elAvailCoins.style.color = availCoins === 0 ? "#ef4444" : "#facc15";
         }
 
-        const currentBaits = h.baits || 0;
-        const maxBaits = h.maxBaits || 5;
-        const maxLimitBaits = Math.ceil(maxBaits * 1.5);
-        const availBaits = Math.max(0, maxLimitBaits - currentBaits);
+        const availBaits = Math.max(0, qRemaining.compra_iscas ?? (200 - (q.used?.compra_iscas || 0)));
         const elAvailBaits = document.getElementById("buy-avail-iscas");
         if (elAvailBaits) {
             elAvailBaits.textContent = `${availBaits}`;
@@ -430,14 +426,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Steppers da Compra
     setupStepper("buy-minus-moedas", "buy-plus-moedas", buyInputs.moedas, 1, () => {
-        const current = currentUserData?.holdings?.slotsCoins || 0;
-        return Math.max(0, 30 - current);
+        const quota = currentUserData?.quota?.remaining?.compra_moedas ?? 300;
+        return Math.max(0, quota);
     });
 
     setupStepper("buy-minus-iscas", "buy-plus-iscas", buyInputs.iscas, 1, () => {
-        const current = currentUserData?.holdings?.baits || 0;
-        const maxBaits = currentUserData?.holdings?.maxBaits || 5;
-        return Math.max(0, Math.ceil(maxBaits * 1.5) - current);
+        const quota = currentUserData?.quota?.remaining?.compra_iscas ?? 200;
+        return Math.max(0, quota);
     });
 
     setupStepper("buy-minus-zinthos", "buy-plus-zinthos", buyInputs.zinthos, 1000, () => {
@@ -453,23 +448,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Botões "Max" da Compra
     document.getElementById("buy-max-moedas")?.addEventListener("click", () => {
         if (!currentUserData) return;
-        const currentCoins = currentUserData.holdings?.slotsCoins || 0;
-        const maxByLimit = Math.max(0, 30 - currentCoins);
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_moedas ?? 300);
         const userRunas = currentUserData.account?.runas || 0;
-        const maxByRunas = Math.floor(userRunas / 300);
-        buyInputs.moedas.value = Math.min(maxByLimit, maxByRunas);
+        const maxByRunas = Math.floor(userRunas / 55);
+        buyInputs.moedas.value = Math.min(maxByQuota, maxByRunas);
         buyInputs.moedas.dispatchEvent(new Event("input"));
     });
 
     document.getElementById("buy-max-iscas")?.addEventListener("click", () => {
         if (!currentUserData) return;
-        const currentBaits = currentUserData.holdings?.baits || 0;
-        const maxBaits = currentUserData.holdings?.maxBaits || 5;
-        const maxLimit = Math.ceil(maxBaits * 1.5);
-        const maxByLimit = Math.max(0, maxLimit - currentBaits);
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_iscas ?? 200);
         const userRunas = currentUserData.account?.runas || 0;
-        const maxByRunas = Math.floor(userRunas / 100);
-        buyInputs.iscas.value = Math.min(maxByLimit, maxByRunas);
+        const maxByRunas = Math.floor(userRunas / 45);
+        buyInputs.iscas.value = Math.min(maxByQuota, maxByRunas);
         buyInputs.iscas.dispatchEvent(new Event("input"));
     });
 
@@ -514,16 +505,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         // Validação Moedas
         if (qtyMoedas > 0) {
-            const cost = qtyMoedas * 300;
+            const cost = qtyMoedas * 55;
             totalCostRunas += cost;
-            const currentCoins = currentUserData?.holdings?.slotsCoins || 0;
-            if (currentCoins + qtyMoedas > 30) {
+            const remMoedas = currentUserData?.quota?.remaining?.compra_moedas ?? 300;
+            if (qtyMoedas > remMoedas) {
                 hasError = true;
-                errorMessage = `Moedas ultrapassam o limite máx. de 30 (saldo atual: ${currentCoins}).`;
+                errorMessage = `Moedas ultrapassam o limite diário restante de ${remMoedas} moedas.`;
             }
             cartRows.push(`
                 <div class="cart-item-row">
-                    <span>🎰 <strong>${formatInt(qtyMoedas)}x</strong> Moedinha(s) do Slots</span>
+                    <span>🎰 <strong>${formatInt(qtyMoedas)}x</strong> Moedinha(s) do Slots (55 ᚱ cada)</span>
                     <span style="font-family: 'JetBrains Mono', monospace; color: #facc15;">${formatPtBr(cost, 2)} ᚱ</span>
                 </div>
             `);
@@ -531,18 +522,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         // Validação Iscas
         if (qtyIscas > 0) {
-            const cost = qtyIscas * 100;
+            const cost = qtyIscas * 45;
             totalCostRunas += cost;
-            const currentBaits = currentUserData?.holdings?.baits || 0;
-            const maxBaits = currentUserData?.holdings?.maxBaits || 5;
-            const maxLimit = Math.ceil(maxBaits * 1.5);
-            if (currentBaits + qtyIscas > maxLimit) {
+            const remIscas = currentUserData?.quota?.remaining?.compra_iscas ?? 200;
+            if (qtyIscas > remIscas) {
                 hasError = true;
-                errorMessage = `Iscas ultrapassam o limite máx. de ${maxLimit} (1.5x seu inventário).`;
+                errorMessage = `Iscas ultrapassam o limite diário restante de ${remIscas} iscas.`;
             }
             cartRows.push(`
                 <div class="cart-item-row">
-                    <span>🐛 <strong>${formatInt(qtyIscas)}x</strong> Isca(s) de Pesca</span>
+                    <span>🐛 <strong>${formatInt(qtyIscas)}x</strong> Isca(s) de Pesca (45 ᚱ cada)</span>
                     <span style="font-family: 'JetBrains Mono', monospace; color: #38bdf8;">${formatPtBr(cost, 2)} ᚱ</span>
                 </div>
             `);

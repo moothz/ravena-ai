@@ -38,11 +38,13 @@ const BASE_RUNAS_PER_KG_FISH = 1000 / 800; // 1.25 Runas / kg
 const BASE_RUNAS_PER_ZINTHOS = 1000 / 3500; // ~0.2857 Runas / Zinthos
 const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
 
-// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (200k Zinthos, 150k Petalitas)
+// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (200k Zinthos, 150k Petalitas, 300 moedas, 200 iscas)
 const DAILY_LIMITS = {
 	venda_runas: 300000, // 300.000 ᚱ/dia (limite unificado para ganhar Runas vendendo peixes, zinthos ou petalitas)
 	compra_zinthos: 200000, // 200.000 Zinthos/dia (limite diário de conversão de Runas em Zinthos)
 	compra_jardim: 150000, // 150.000 Petalitas/dia (limite diário de conversão de Runas em Petalitas)
+	compra_moedas: 300, // 300 moedas/dia no SlotsGame
+	compra_iscas: 200, // 200 iscas/dia no FishingGame
 	// Legado para compatibilidade:
 	pesca: 300000,
 	zinthos: 200000,
@@ -52,12 +54,13 @@ const DAILY_LIMITS = {
 
 // Configurações da Loja do RavenaBank (compra de consumíveis com Runas)
 const STORE_PRICES = {
-	moeda: 300, // 300 Runas por moedinha de Slots
-	isca: 100 // 100 Runas por isca de Pesca
+	moeda: 55, // 55 Runas por moedinha de Slots
+	isca: 45 // 45 Runas por isca de Pesca
 };
 
 const STORE_LIMITS = {
-	maxSlotsCoins: 30 // Limite de 30 moedas acumuladas no saldo
+	dailySlotsCoins: 300, // Limite diário de 300 moedas compradas
+	dailyFishingBaits: 200 // Limite diário de 200 iscas compradas
 };
 
 // Duração da sessão web (3 dias em milissegundos)
@@ -148,6 +151,8 @@ class BankService {
 					runas_venda_used REAL DEFAULT 0,
 					zinthos_compra_used REAL DEFAULT 0,
 					jardim_compra_used REAL DEFAULT 0,
+					moedas_compra_used INTEGER DEFAULT 0,
+					iscas_compra_used INTEGER DEFAULT 0,
 					initial_runas REAL DEFAULT NULL,
 					PRIMARY KEY (user_id, date)
 				);
@@ -172,6 +177,16 @@ class BankService {
 				database
 					.getSQLiteDb(dbName)
 					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN jardim_compra_used REAL DEFAULT 0;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN moedas_compra_used INTEGER DEFAULT 0;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN iscas_compra_used INTEGER DEFAULT 0;");
 			} catch (_) {}
 			try {
 				database
@@ -521,6 +536,8 @@ class BankService {
 		const runasVendaUsed = Number(row?.runas_venda_used || 0);
 		const zinthosCompraUsed = Number(row?.zinthos_compra_used || 0);
 		const jardimCompraUsed = Number(row?.jardim_compra_used || 0);
+		const moedasCompraUsed = Number(row?.moedas_compra_used || 0);
+		const iscasCompraUsed = Number(row?.iscas_compra_used || 0);
 
 		return {
 			date: today,
@@ -529,6 +546,8 @@ class BankService {
 				venda_runas: runasVendaUsed,
 				compra_zinthos: zinthosCompraUsed,
 				compra_jardim: jardimCompraUsed,
+				compra_moedas: moedasCompraUsed,
+				compra_iscas: iscasCompraUsed,
 				pesca: fishUsed,
 				zinthos: zinthosUsed,
 				jardim: jardimUsed,
@@ -538,6 +557,8 @@ class BankService {
 				venda_runas: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
 				compra_zinthos: Math.max(0, DAILY_LIMITS.compra_zinthos - zinthosCompraUsed),
 				compra_jardim: Math.max(0, DAILY_LIMITS.compra_jardim - jardimCompraUsed),
+				compra_moedas: Math.max(0, DAILY_LIMITS.compra_moedas - moedasCompraUsed),
+				compra_iscas: Math.max(0, DAILY_LIMITS.compra_iscas - iscasCompraUsed),
 				venda: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
 				compra: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
 				pesca: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
@@ -1260,8 +1281,8 @@ class BankService {
 
 	/**
 	 * Compra moedinhas para o Caça-coisas (SlotsGame) usando Runas do RavenaBank.
-	 * Regra: 300 Runas por moeda.
-	 * Limite: max 30 moedas acumuladas no saldo (se atual + compra > 30, bloqueia).
+	 * Regra: 55 Runas por moeda.
+	 * Limite: máx 300 moedas compradas por dia.
 	 * @param {string} userId
 	 * @param {number|string} countInput
 	 * @returns {Promise<Object>}
@@ -1275,17 +1296,15 @@ class BankService {
 			);
 		}
 
-		const SlotsGame = require("../functions/SlotsGame");
-		const currentCoins = await SlotsGame.getUserCoins(cleanUser);
-		const maxAllowed = STORE_LIMITS.maxSlotsCoins; // 30
+		const quota = await this.getDailyQuota(cleanUser);
+		const remainingQuota = quota.remaining.compra_moedas;
 
-		if (currentCoins + count > maxAllowed) {
-			const maxCanBuy = Math.max(0, maxAllowed - currentCoins);
+		if (count > remainingQuota) {
 			throw new Error(
-				`Limite de moedas atingido! Você possui ${currentCoins} moedinha(s) e o limite máximo permitido com compras é de ${maxAllowed} moedas. ` +
-					(maxCanBuy > 0
-						? `Você pode comprar no máximo ${maxCanBuy} moedinha(s).`
-						: "Você já atingiu o limite máximo.")
+				`Limite diário de compra atingido! Você já comprou ${quota.used.compra_moedas} moedas hoje de um limite de ${DAILY_LIMITS.compra_moedas} moedas/dia. ` +
+					(remainingQuota > 0
+						? `Você pode comprar no máximo mais ${remainingQuota} moedinha(s) hoje.`
+						: "Você já atingiu sua cota diária de compra de moedinhas.")
 			);
 		}
 
@@ -1299,6 +1318,7 @@ class BankService {
 		}
 
 		const now = Date.now();
+		const today = this.getTodayDateString();
 
 		// 1. Debita Runas da conta
 		await database.dbRun(
@@ -1311,7 +1331,17 @@ class BankService {
 			[totalCost, totalCost, now, cleanUser]
 		);
 
-		// 2. Registra transação
+		// 2. Atualiza cota diária
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_daily_quotas (user_id, date, moedas_compra_used)
+			VALUES (?, ?, ?)
+			ON CONFLICT(user_id, date) DO UPDATE SET 
+				moedas_compra_used = moedas_compra_used + excluded.moedas_compra_used`,
+			[cleanUser, today, count]
+		);
+
+		// 3. Registra transação
 		await database.dbRun(
 			dbName,
 			`INSERT INTO bank_transactions 
@@ -1326,7 +1356,8 @@ class BankService {
 			]
 		);
 
-		// 3. Credita moedas no SlotsGame
+		// 4. Credita moedas no SlotsGame
+		const SlotsGame = require("../functions/SlotsGame");
 		await SlotsGame.addCoins(cleanUser, count, true);
 		const newCoins = await SlotsGame.getUserCoins(cleanUser);
 		const updatedAccount = await this.getAccount(cleanUser);
@@ -1336,16 +1367,16 @@ class BankService {
 			count,
 			costRunas: totalCost,
 			currentCoins: newCoins,
-			maxCoins: maxAllowed,
+			dailyLimit: DAILY_LIMITS.compra_moedas,
+			remainingDaily: Math.max(0, remainingQuota - count),
 			newBalance: updatedAccount.runas
 		};
 	}
 
 	/**
 	 * Compra iscas para o Jogo de Pesca usando Runas do RavenaBank.
-	 * Regra: 100 Runas por isca.
-	 * Limite: max 1.5x a capacidade do inventário de iscas do usuário, arredondado para cima.
-	 * Se atual + compra > limite, bloqueia.
+	 * Regra: 45 Runas por isca.
+	 * Limite: máx 200 iscas compradas por dia.
 	 * @param {string} userId
 	 * @param {number|string} countInput
 	 * @returns {Promise<Object>}
@@ -1359,19 +1390,15 @@ class BankService {
 			);
 		}
 
-		const FishingGame = require("../functions/FishingGame");
-		const baitInfo = await FishingGame.getUserBaitsInfo(cleanUser);
-		const currentBaits = baitInfo.baits;
-		const maxBaits = baitInfo.maxBaits;
-		const maxAllowed = Math.ceil(maxBaits * 1.5);
+		const quota = await this.getDailyQuota(cleanUser);
+		const remainingQuota = quota.remaining.compra_iscas;
 
-		if (currentBaits + count > maxAllowed) {
-			const maxCanBuy = Math.max(0, maxAllowed - currentBaits);
+		if (count > remainingQuota) {
 			throw new Error(
-				`Limite de iscas atingido! Você possui ${currentBaits} isca(s) e o limite máximo permitido com compras é de ${maxAllowed} iscas (1.5x seu limite de inventário de ${maxBaits}). ` +
-					(maxCanBuy > 0
-						? `Você pode comprar no máximo ${maxCanBuy} isca(s).`
-						: "Você já atingiu o limite máximo.")
+				`Limite diário de compra atingido! Você já comprou ${quota.used.compra_iscas} iscas hoje de um limite de ${DAILY_LIMITS.compra_iscas} iscas/dia. ` +
+					(remainingQuota > 0
+						? `Você pode comprar no máximo mais ${remainingQuota} isca(s) hoje.`
+						: "Você já atingiu sua cota diária de compra de iscas.")
 			);
 		}
 
@@ -1385,6 +1412,7 @@ class BankService {
 		}
 
 		const now = Date.now();
+		const today = this.getTodayDateString();
 
 		// 1. Debita Runas da conta
 		await database.dbRun(
@@ -1397,7 +1425,17 @@ class BankService {
 			[totalCost, totalCost, now, cleanUser]
 		);
 
-		// 2. Registra transação
+		// 2. Atualiza cota diária
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_daily_quotas (user_id, date, iscas_compra_used)
+			VALUES (?, ?, ?)
+			ON CONFLICT(user_id, date) DO UPDATE SET 
+				iscas_compra_used = iscas_compra_used + excluded.iscas_compra_used`,
+			[cleanUser, today, count]
+		);
+
+		// 3. Registra transação
 		await database.dbRun(
 			dbName,
 			`INSERT INTO bank_transactions 
@@ -1412,7 +1450,8 @@ class BankService {
 			]
 		);
 
-		// 3. Credita iscas no FishingGame
+		// 4. Credita iscas no FishingGame
+		const FishingGame = require("../functions/FishingGame");
 		await FishingGame.addBaits(cleanUser, count);
 		const updatedBaitInfo = await FishingGame.getUserBaitsInfo(cleanUser);
 		const updatedAccount = await this.getAccount(cleanUser);
@@ -1422,8 +1461,8 @@ class BankService {
 			count,
 			costRunas: totalCost,
 			currentBaits: updatedBaitInfo.baits,
-			maxBaits,
-			limitBaits: maxAllowed,
+			dailyLimit: DAILY_LIMITS.compra_iscas,
+			remainingDaily: Math.max(0, remainingQuota - count),
 			newBalance: updatedAccount.runas
 		};
 	}
@@ -1438,15 +1477,12 @@ class BankService {
 		const SlotsGame = require("../functions/SlotsGame");
 		const FishingGame = require("../functions/FishingGame");
 
-		const [account, slotsCoins, baitInfo] = await Promise.all([
+		const [account, quota, slotsCoins, baitInfo] = await Promise.all([
 			this.getAccount(cleanUser),
+			this.getDailyQuota(cleanUser),
 			SlotsGame.getUserCoins(cleanUser),
 			FishingGame.getUserBaitsInfo(cleanUser)
 		]);
-
-		const maxCoins = STORE_LIMITS.maxSlotsCoins;
-		const maxBaits = baitInfo.maxBaits;
-		const limitBaits = Math.ceil(maxBaits * 1.5);
 
 		return {
 			userRunas: account.runas,
@@ -1457,8 +1493,9 @@ class BankService {
 					emoji: "🎰",
 					priceRunas: STORE_PRICES.moeda,
 					current: slotsCoins,
-					limit: maxCoins,
-					maxCanBuy: Math.max(0, maxCoins - slotsCoins),
+					dailyLimit: DAILY_LIMITS.compra_moedas,
+					dailyUsed: quota.used.compra_moedas,
+					maxCanBuy: quota.remaining.compra_moedas,
 					description: "Fichas para rodar no !slots (Caça-coisas)"
 				},
 				{
@@ -1467,9 +1504,9 @@ class BankService {
 					emoji: "🐛",
 					priceRunas: STORE_PRICES.isca,
 					current: baitInfo.baits,
-					limit: limitBaits,
-					maxBaitsInventory: maxBaits,
-					maxCanBuy: Math.max(0, limitBaits - baitInfo.baits),
+					dailyLimit: DAILY_LIMITS.compra_iscas,
+					dailyUsed: quota.used.compra_iscas,
+					maxCanBuy: quota.remaining.compra_iscas,
 					description: "Iscas para pescar peixes e itens no !pescar"
 				}
 			]
