@@ -46,6 +46,7 @@ class CustomVariableProcessor {
 			const hasFotoPerfil = /\{fotoPerfil\}/.test(processedText);
 			const hasFotoPerfilMention = /\{fotoPerfilMention\}/.test(processedText);
 			let targetJid = null;
+			let targetExtraCandidates = [];
 
 			if ((hasFotoPerfil || hasFotoPerfilMention) && context && context.message) {
 				if (hasFotoPerfilMention) {
@@ -70,7 +71,19 @@ class CustomVariableProcessor {
 						try {
 							const quoted = await context.message.origin.getQuotedMessage().catch(() => null);
 							if (quoted) {
-								targetJid = quoted.authorAlt || quoted.author || quoted.sender || quoted.from;
+								targetJid =
+									quoted.authorAlt ||
+									quoted.author ||
+									quoted.platformAuthor ||
+									quoted.sender ||
+									quoted.from;
+								targetExtraCandidates = [
+									quoted.authorAlt,
+									quoted.author,
+									quoted.platformAuthor,
+									quoted.sender,
+									quoted.from
+								];
 							}
 						} catch (e) {}
 					}
@@ -237,7 +250,8 @@ class CustomVariableProcessor {
 				const mediaResult = await this.handleProfilePictureResponse(
 					processedText,
 					targetJid,
-					context
+					context,
+					targetExtraCandidates
 				);
 				return mediaResult;
 			}
@@ -1627,30 +1641,52 @@ class CustomVariableProcessor {
 	 * envia a imagem diretamente e retorna o restante do texto (legenda > 1000).
 	 * Em caso de erro, anexa uma mensagem informativa ao final.
 	 */
-	async handleProfilePictureResponse(processedText, targetJid, context) {
+	async handleProfilePictureResponse(processedText, targetJid, context, extraCandidates = []) {
 		try {
 			// Lista de identificadores candidatos para a mesma pessoa.
 			// Em Telegram/Discord com conta vinculada (!vincular), message.author passa a ser o
 			// JID/número do WhatsApp, o que quebra a API da plataforma (ex: getUserProfilePhotos
 			// retorna "user not found"). O ID nativo da plataforma fica em message.platformAuthor.
 			const candidates = [];
-			const pushCandidate = (value) => {
-				if (value === null || value === undefined) return;
+			const toCleanId = (value) => {
+				if (value === null || value === undefined) return "";
 				const raw =
 					typeof value === "object"
 						? value._serialized || value.id?._serialized || value.id || value.user || String(value)
 						: String(value);
-				const clean = raw.trim();
+				return raw.trim();
+			};
+			const pushCandidate = (value) => {
+				const clean = toCleanId(value);
 				if (!clean) return;
 				if (!candidates.includes(clean)) candidates.push(clean);
 			};
 
 			pushCandidate(targetJid);
+			if (Array.isArray(extraCandidates)) {
+				for (const extra of extraCandidates) {
+					pushCandidate(extra);
+				}
+			}
+
 			if (context.message) {
-				const altJid =
-					targetJid === context.message.author ? context.message.authorAlt : context.message.author;
-				pushCandidate(altJid);
-				pushCandidate(context.message.platformAuthor);
+				const cleanTarget = toCleanId(targetJid);
+				const senderIds = [
+					context.message.author,
+					context.message.authorAlt,
+					context.message.platformAuthor,
+					context.message.sender,
+					context.message.from
+				]
+					.map(toCleanId)
+					.filter(Boolean);
+
+				// Só inclui IDs alternativos do autor da mensagem se o alvo for o próprio autor
+				if (cleanTarget && senderIds.includes(cleanTarget)) {
+					pushCandidate(context.message.authorAlt);
+					pushCandidate(context.message.author);
+					pushCandidate(context.message.platformAuthor);
+				}
 			}
 
 			let media = null;

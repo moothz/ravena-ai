@@ -5123,6 +5123,13 @@ function detectRarityFromRollLine(rawLine) {
 	const fromLabel = normalizeRarityKey(rawLine.match(/\[([^\]]+)\]/)?.[1]);
 	if (fromLabel) return fromLabel;
 
+	const slotPrefixEmoji = rawLine.match(/^[1-9](?:️⃣|\uFE0F?\u20E3)\s*(\S+)/)?.[1];
+	if (slotPrefixEmoji) {
+		for (const [rarity, emoji] of Object.entries(RARITY_EMOJI)) {
+			if (slotPrefixEmoji.includes(emoji)) return rarity;
+		}
+	}
+
 	for (const [rarity, emoji] of Object.entries(RARITY_EMOJI)) {
 		if (rawLine.includes(emoji)) return rarity;
 	}
