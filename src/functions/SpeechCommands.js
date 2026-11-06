@@ -59,19 +59,12 @@ database
 
 const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
 
-// Definição dos personagens para TTS
+
+// Definição dos personagens para TTS (Kokoro-TTS)
 const ttsCharacters = [
-	{ name: "ravena", emoji: ["🗣", "🦇"], voice: "ravena_sample.wav" },
-	{ name: "rubao", emoji: "🤠", voice: "rubao.wav" },
-	{ name: "mulher", emoji: "👩", voice: "female_01.wav" },
-	{ name: "carioca", voice: "female_02.wav" },
-	{ name: "carioco", voice: "male_02.wav" },
-	{ name: "sensual", emoji: "💋", voice: "female_03.wav" },
-	{ name: "sensuel", voice: "male_04.wav" },
-	{ name: "homem", emoji: "👨", voice: "male_01.wav" },
-	{ name: "clint", voice: "Clint_Eastwood CC3 (enhanced).wav" },
-	{ name: "morgan", voice: "Morgan_Freeman CC3.wav" },
-	{ name: "narrador", emoji: "🎙", voice: "James_Earl_Jones CC3.wav" }
+	{ name: "mulher", emoji: "👩", voice: "pf_dora" },
+	{ name: "homem", emoji: "👨", voice: "pm_alex" },
+	{ name: "narrador", emoji: "🎙", voice: "pm_santa" }
 ];
 
 // Cria diretório temporário para arquivos de áudio
@@ -218,15 +211,15 @@ function removeWhatsAppMarkup(text) {
 }
 
 /**
- * Converte texto para voz usando F5-TTS API (OpenAI-compatible)
+ * Converte texto para voz usando Kokoro-TTS API (OpenAI-compatible)
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
  * @param {Array} args - Argumentos do comando
  * @param {Object} group - Dados do grupo
- * @param {string} character - Personagem a ser usado (opcional)
+ * @param {string|null} char - Personagem a ser usado (opcional; quando nulo sorteia e aplica blend aleatório)
  * @returns {Promise<ReturnMessage|Array<ReturnMessage>>} - ReturnMessage ou array de ReturnMessages
  */
-async function textToSpeech(bot, message, args, group, char = "ravena") {
+async function textToSpeech(bot, message, args, group, char = null) {
 	try {
 		const chatId = message.group ?? message.author;
 
@@ -263,10 +256,13 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 			});
 		}
 
-		// Limpa as marcações do WhatsApp antes de processar com F5-TTS
+		// Limpa as marcações do WhatsApp antes de processar com Kokoro-TTS
 		text = removeWhatsAppMarkup(text);
 
-		const character = ttsCharacters.find((ttsC) => ttsC.name === char);
+		const isRandom = !char;
+		const character =
+			(char && ttsCharacters.find((ttsC) => ttsC.name === char)) ||
+			ttsCharacters[Math.floor(Math.random() * ttsCharacters.length)];
 		if (text.length > 250) {
 			await bot.sendReturnMessages(
 				new ReturnMessage({
@@ -281,34 +277,37 @@ async function textToSpeech(bot, message, args, group, char = "ravena") {
 			);
 		}
 
-		logger.debug(`Convertendo texto para voz (${JSON.stringify(character)}): ${text}`);
+		logger.debug(
+			`Convertendo texto para voz (${JSON.stringify(character)}, random_blend=${isRandom}): ${text}`
+		);
 		const EventHandler = require("../EventHandler");
-		EventHandler.getInstance().emit("activity", { type: "f5tts" });
+		EventHandler.getInstance().emit("activity", { type: "kokorotts" });
 
 		// Nome do arquivo temporário
 		const hash = crypto.randomBytes(2).toString("hex");
 		const tempFilename = `tts_audio_${hash}.mp3`;
 		const tempFilePath = path.join(tempDir, tempFilename);
 
-		// Monta a URL para a API do F5-TTS
-		const f5ttsProviders = serviceProviderService.getProviders("f5tts");
-		const f5ttsUrl = f5ttsProviders[0]?.url || "http://localhost:5050";
-		const f5ttsApiKey = f5ttsProviders[0]?.apiKey || "";
-		const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
+		// Monta a URL para a API do Kokoro-TTS
+		const kokoroProviders = serviceProviderService.getProviders("kokorotts");
+		const kokoroUrl = kokoroProviders[0]?.url || "http://localhost:5050";
+		const kokoroApiKey = kokoroProviders[0]?.apiKey || "";
+		const apiUrl = `${kokoroUrl}/v1/audio/speech`;
 
-		// Faz a requisição para a API F5-TTS (OpenAI-compatible)
+		// Faz a requisição para a API Kokoro-TTS (OpenAI-compatible)
 		const audioResponse = await axios({
 			method: "post",
 			url: apiUrl,
 			data: {
-				model: "f5-tts",
+				model: "kokoro-tts",
 				input: text,
 				voice: character.name,
+				random_blend: isRandom,
 				response_format: "mp3"
 			},
 			headers: {
 				"Content-Type": "application/json",
-				...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
+				...(kokoroApiKey ? { Authorization: `Bearer ${kokoroApiKey}` } : {})
 			},
 			responseType: "arraybuffer"
 		});
@@ -923,14 +922,14 @@ const commands = [
 	new Command({
 		name: "tts",
 		cooldown: 30,
-		description: `Converte texto para voz usando personagem 'ravena'`,
+		description: `Converte texto para voz com personagem e blend aleatórios`,
 		category: "voz",
 		reactions: {
 			trigger: ["🗣️", "🦇"],
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🔊"
 		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "ravena")
+		method: (bot, message, args, group) => textToSpeech(bot, message, args, group)
 	}),
 	new Command({
 		name: "tts-mulher",
@@ -946,58 +945,6 @@ const commands = [
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "mulher")
 	}),
 	new Command({
-		name: "tts-carioca",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem feminina`,
-		group: "ttsMulher",
-		category: "voz",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "carioca")
-	}),
-
-	new Command({
-		name: "tts-carioco",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem masculino`,
-		group: "ttsHomem",
-		category: "voz",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "carioco")
-	}),
-
-	new Command({
-		name: "tts-sensual",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem feminina`,
-		group: "ttsMulher",
-		category: "voz",
-		reactions: {
-			trigger: "💋",
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "sensual")
-	}),
-	new Command({
-		name: "tts-sensuel",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem masculino`,
-		category: "voz",
-		group: "ttsHomem",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "sensuel")
-	}),
-
-	new Command({
 		name: "tts-homem",
 		cooldown: 30,
 		description: `Converte texto para voz usando personagem masculino`,
@@ -1011,35 +958,9 @@ const commands = [
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "homem")
 	}),
 	new Command({
-		name: "tts-clint",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem masculino`,
-		category: "voz",
-		group: "ttsHomem",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "clint")
-	}),
-
-	new Command({
-		name: "tts-morgan",
-		cooldown: 30,
-		description: `Converte texto para voz usando personagem masculino`,
-		category: "voz",
-		group: "ttsHomem",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "morgan")
-	}),
-
-	new Command({
 		name: "tts-narrador",
 		cooldown: 30,
-		description: `Converte texto para voz usando personagem masculino`,
+		description: `Converte texto para voz usando narrador grave`,
 		group: "ttsHomem",
 		category: "voz",
 		reactions: {
@@ -1048,29 +969,15 @@ const commands = [
 			after: "🔊"
 		},
 		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "narrador")
-	}),
-
-	new Command({
-		name: "tts-rubao",
-		cooldown: 30,
-		description: `Converte texto para voz usando do Rubão do Pontaço`,
-		group: "ttsHomem",
-		category: "voz",
-		reactions: {
-			trigger: "🎙️",
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🔊"
-		},
-		method: (bot, message, args, group) => textToSpeech(bot, message, args, group, "rubao")
 	})
 ];
 
 // Exporta função para ser usada em EventHandler
 const helper = {
-	about: "Síntese de voz (TTS) com diferentes personagens e transcrição de áudio (STT)",
+	about: "Síntese de voz (Kokoro-TTS) e transcrição de áudio (Whisper STT)",
 	implementation:
-		"Executa TTS com vozes locais/remotas e modelos Whisper para Speech-To-Text com estatísticas em SQLite",
-	tags: "tts,stt,voz,falar,transcrever,audio,narrador,rubao,ravena",
+		"Executa TTS com Kokoro ONNX (vozes e blends) e modelos Whisper para Speech-To-Text com estatísticas em SQLite",
+	tags: "tts,stt,voz,falar,transcrever,audio,narrador,mulher,homem",
 	cmds: [
 		{
 			cmd: "!stt",
@@ -1080,7 +987,7 @@ const helper = {
 		},
 		{
 			cmd: "!tts",
-			desc: "Converte texto em áudio falado com voz padrão (Ravena)",
+			desc: "Converte texto em áudio falado (sorteia voz com blend sutil)",
 			usage: ["!tts Olá pessoal do grupo!"],
 			category: "voz"
 		},
@@ -1097,14 +1004,8 @@ const helper = {
 			category: "voz"
 		},
 		{
-			cmd: "!tts-rubao",
-			desc: "Converte texto em áudio com a voz cômica do Rubão do Pontaço",
-			usage: ["!tts-rubao Fala minha galera do zapzap!"],
-			category: "voz"
-		},
-		{
 			cmd: "!tts-narrador",
-			desc: "Converte texto em áudio com voz de narrador de documentário",
+			desc: "Converte texto em áudio com voz de narrador grave",
 			usage: ["!tts-narrador E assim a história começou..."],
 			category: "voz"
 		}
@@ -1113,6 +1014,7 @@ const helper = {
 
 module.exports.helper = helper;
 module.exports.commands = commands;
+module.exports.ttsCharacters = ttsCharacters;
 module.exports.processAutoSTT = processAutoSTT;
 module.exports.transcribeViaAPI = transcribeViaAPI;
 module.exports.getAudioDuration = getAudioDuration;

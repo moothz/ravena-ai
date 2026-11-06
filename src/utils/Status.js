@@ -32,6 +32,7 @@ class Status {
 				imagine: "down",
 				llm: "down",
 				whisper: "down",
+				kokorotts: "down",
 				f5tts: "down"
 			};
 		}

@@ -53,7 +53,7 @@ const MobileApp = {
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> Imagine</div>
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> LLM</div>
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> Whisper</div>
-                <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> F5-TTS</div>
+                <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> Kokoro-TTS</div>
                 <div class="mobile-service-pill"><span class="service-status-dot dot-unknown"></span> NSFW</div>
             </div>
 
@@ -364,7 +364,7 @@ const MobileApp = {
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.imagine)}"></span> Imagine</div>
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.llm)}"></span> LLM</div>
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.whisper)}"></span> Whisper</div>
-            <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.f5tts)}"></span> F5-TTS</div>
+            <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.kokorotts || status.f5tts)}"></span> Kokoro-TTS</div>
             <div class="mobile-service-pill"><span class="service-status-dot ${getDotClass(status.nudenet || status.nsfw)}"></span> NSFW</div>
         `;
     },

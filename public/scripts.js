@@ -1347,6 +1347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'imagine': 'api-imagine',
                 'llm': 'api-llm',
                 'whisper': 'api-whisper',
+                'kokorotts': 'api-f5tts',
                 'f5tts': 'api-f5tts',
                 'nudenet': 'api-nsfw',
                 'nsfw': 'api-nsfw'
@@ -1397,7 +1398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatusLight('api-imagine', services.imagine);
             updateStatusLight('api-llm', services.llm);
             updateStatusLight('api-whisper', services.whisper);
-            updateStatusLight('api-f5tts', services.f5tts);
+            updateStatusLight('api-f5tts', services.kokorotts || services.f5tts);
             updateStatusLight('api-nsfw', services.nudenet || services.nsfw);
         });
         

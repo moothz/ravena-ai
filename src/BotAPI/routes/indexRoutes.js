@@ -253,7 +253,7 @@ function registerIndexRoutes(api) {
 
 	// Serve página de TTS
 	const serveTTS = (req, res) => {
-		const providers = api.serviceProviderService.getProviders("f5tts");
+		const providers = api.serviceProviderService.getProviders("kokorotts");
 		if (providers.length === 0) {
 			return res.status(503).send("Serviço de TTS não disponível (nenhum provider configurado).");
 		}

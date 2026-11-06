@@ -191,7 +191,7 @@ const Taskbar = {
             'tray-imagine':    { name: 'Imagine (Bonsai AI)', st: status.imagine },
             'tray-llm':        { name: 'LLM (IA / Resumos)', st: status.llm },
             'tray-whisper':    { name: 'Whisper (Áudio STT)', st: status.whisper },
-            'tray-f5tts':      { name: 'F5-TTS (Voz TTS)', st: status.f5tts },
+            'tray-f5tts':      { name: 'Kokoro-TTS (Voz TTS)', st: status.kokorotts || status.f5tts },
             'tray-nudenet':    { name: 'Detector NSFW (NudeNet)', st: status.nudenet || status.nsfw }
         };
 
@@ -226,6 +226,7 @@ const Taskbar = {
             imagine: 'tray-imagine',
             llm: 'tray-llm',
             whisper: 'tray-whisper',
+            kokorotts: 'tray-f5tts',
             f5tts: 'tray-f5tts',
             nudenet: 'tray-nudenet',
             nsfw: 'tray-nudenet'
@@ -375,7 +376,7 @@ const Taskbar = {
                     </div>
                     <div class="submenu-item" style="cursor: default;">
                         <span class="service-status-dot dot-up" id="sm-dot-f5tts"></span>
-                        <span>F5-TTS (Voz)</span>
+                        <span>Kokoro-TTS (Voz)</span>
                     </div>
                     <div class="submenu-item" style="cursor: default;">
                         <span class="service-status-dot dot-up" id="sm-dot-nsfw"></span>
@@ -559,7 +560,7 @@ const Taskbar = {
         updateDot('sm-dot-imagine', status.imagine);
         updateDot('sm-dot-llm', status.llm);
         updateDot('sm-dot-whisper', status.whisper);
-        updateDot('sm-dot-f5tts', status.f5tts);
+        updateDot('sm-dot-f5tts', status.kokorotts || status.f5tts);
         updateDot('sm-dot-nsfw', status.nudenet || status.nsfw);
     },
 

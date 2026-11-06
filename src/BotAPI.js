@@ -290,7 +290,7 @@ class BotAPI {
 	 *    - POST /api/stt/transcrever               -> Iniciar transcrição de áudio (STT)
 	 *    - GET  /api/stt/status/:jobId             -> Consultar progresso da transcrição
 	 *    - POST /api/imagine/generate              -> Geração de imagem via IA
-	 *    - POST /api/tts/generate                  -> Síntese de voz com F5-TTS
+	 *    - POST /api/tts/generate                  -> Síntese de voz com Kokoro-TTS
 	 *    - GET  /api/services/status               -> Status operacional dos serviços externos
 	 *    - POST /api/nsfw-detect                   -> Detecção de nudez/NSFW em imagens
 	 *    - GET  /api/service-providers             -> Listar provedores de IA cadastrados
@@ -418,6 +418,7 @@ class BotAPI {
 			imagine: "down",
 			llm: "down",
 			whisper: "down",
+			kokorotts: "down",
 			f5tts: "down",
 			sdwebui: "down"
 		};
@@ -474,7 +475,8 @@ class BotAPI {
 		const LLMService = require("./services/LLMService");
 		services.llm = LLMService.getInstance().getDetailedStatus();
 		services.whisper = await checkCategoryStatus("whisper");
-		services.f5tts = await checkCategoryStatus("f5tts");
+		services.kokorotts = await checkCategoryStatus("kokorotts");
+		services.f5tts = services.kokorotts;
 		services.sdwebui = await checkCategoryStatus("sdwebui");
 		services.nudenet = await checkCategoryStatus("nudenet");
 

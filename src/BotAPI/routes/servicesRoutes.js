@@ -28,8 +28,8 @@ function getBase64ByteSize(str) {
  * - POST /api/stt/transcrever       - Transcreve áudio/vídeo enviado via Whisper API
  * - GET  /api/stt/status/:jobId     - Consulta o status de um job de transcrição assíncrona
  * - POST /api/imagine/generate      - Proxy de geração de imagens via Bonsai/SD
- * - POST /api/tts/generate          - Proxy de síntese de voz (TTS) via F5-TTS
- * - GET  /api/services/status       - Retorna o status em cache dos serviços externos (LLM, Whisper, F5TTS, etc.)
+ * - POST /api/tts/generate          - Proxy de síntese de voz (TTS) via Kokoro-TTS
+ * - GET  /api/services/status       - Retorna o status em cache dos serviços externos (LLM, Whisper, KokoroTTS, etc.)
  * - POST /api/nsfw-detect           - Detecção de conteúdo adulto/NSFW via NudeNet e LLM Vision
  * - GET  /api/service-providers     - Consulta a lista e configuração dos provedores externos de IA
  * - POST /api/service-providers     - Atualiza os provedores de serviços externos de IA
@@ -237,7 +237,7 @@ function registerServicesRoutes(api) {
 		api.externalAuth.requireAccess("tts"),
 		api.strictLimiter,
 		async (req, res) => {
-			const { text, voice } = req.body;
+			const { text, voice, random_blend } = req.body;
 
 			if (!text || text.trim().length < 1) {
 				return res.status(400).json({ error: "Texto ausente." });
@@ -247,10 +247,11 @@ function registerServicesRoutes(api) {
 				return res.status(400).json({ error: "Texto muito longo (máximo 1000 caracteres)." });
 			}
 
-			const providers = api.serviceProviderService.getProviders("f5tts");
+			const providers = api.serviceProviderService.getProviders("kokorotts");
 			if (
 				providers.length === 0 ||
-				(api.lastServicesStatus && api.lastServicesStatus.f5tts === "down")
+				(api.lastServicesStatus &&
+					(api.lastServicesStatus.kokorotts || api.lastServicesStatus.f5tts) === "down")
 			) {
 				return res.status(503).json({ error: "Serviço de TTS não disponível." });
 			}
@@ -258,26 +259,33 @@ function registerServicesRoutes(api) {
 			const startTime = Date.now();
 
 			try {
-				const f5ttsUrl = providers[0].url || "http://localhost:5050";
-				const f5ttsApiKey = providers[0].apiKey || "";
-				const apiUrl = `${f5ttsUrl}/v1/audio/speech`;
+				const kokoroUrl = providers[0].url || "http://localhost:5050";
+				const kokoroApiKey = providers[0].apiKey || "";
+				const apiUrl = `${kokoroUrl}/v1/audio/speech`;
+
+				const isRandom = !voice || voice === "random";
+				const voicePool = ["mulher", "homem", "narrador"];
+				const selectedVoice = isRandom
+					? voicePool[Math.floor(Math.random() * voicePool.length)]
+					: voice;
 
 				api.logger.info(
-					`Web request: Gerando TTS com voz ${voice}, texto: '${text.substring(0, 30)}...'${req.apiUser ? ` | User: ${req.apiUser}` : ""}`
+					`Web request: Gerando TTS com voz ${selectedVoice} (random_blend=${isRandom || Boolean(random_blend)}), texto: '${text.substring(0, 30)}...'${req.apiUser ? ` | User: ${req.apiUser}` : ""}`
 				);
 
 				const audioResponse = await axios({
 					method: "post",
 					url: apiUrl,
 					data: {
-						model: "f5-tts",
+						model: "kokoro-tts",
 						input: text,
-						voice: voice || "ravena",
+						voice: selectedVoice,
+						random_blend: isRandom || Boolean(random_blend),
 						response_format: "mp3"
 					},
 					headers: {
 						"Content-Type": "application/json",
-						...(f5ttsApiKey ? { Authorization: `Bearer ${f5ttsApiKey}` } : {})
+						...(kokoroApiKey ? { Authorization: `Bearer ${kokoroApiKey}` } : {})
 					},
 					responseType: "arraybuffer"
 				});
@@ -321,6 +329,7 @@ function registerServicesRoutes(api) {
 			api.lastServicesStatus || {
 				whisper: "unknown",
 				imagine: "unknown",
+				kokorotts: "unknown",
 				f5tts: "unknown",
 				llm: "unknown",
 				nudenet: "unknown"

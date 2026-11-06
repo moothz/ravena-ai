@@ -1,7 +1,7 @@
-// windows/tts.js - Text-to-Speech (F5-TTS) window
+// windows/tts.js - Text-to-Speech (Kokoro-TTS) window
 
 WindowManager.register('tts', {
-    title: 'TTS — Texto para Voz (F5-TTS)',
+    title: 'TTS — Texto para Voz (Kokoro-TTS)',
     taskbarIcon: 'fa-volume-up',
     width: '630px',
     height: '530px',
@@ -20,9 +20,11 @@ WindowManager.register('tts', {
                 <div style="display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <label style="font-size: 11px; color: var(--light-gray);">Voz:</label>
-                        <select class="os-select" id="tts-voice" style="width: 140px;">
-                            <option value="ravena">Ravena (Padrão)</option>
-                            <option value="bot">Assistente</option>
+                        <select class="os-select" id="tts-voice" style="width: 160px;">
+                            <option value="mulher">Mulher (Padrão)</option>
+                            <option value="homem">Homem</option>
+                            <option value="narrador">Narrador</option>
+                            <option value="random">Aleatória (Blend)</option>
                         </select>
                     </div>
 
@@ -55,7 +57,7 @@ WindowManager.register('tts', {
             generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sintetizando...';
             playerBox.innerHTML = `
                 <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: var(--bright-blue);"></i>
-                <span style="font-size: 11px; color: var(--light-gray);">Gerando áudio com F5-TTS...</span>
+                <span style="font-size: 11px; color: var(--light-gray);">Gerando áudio com Kokoro-TTS...</span>
             `;
 
             try {

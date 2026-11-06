@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/services/status');
             const services = await response.json();
-            ttsAvailable = services.f5tts !== 'down';
+            ttsAvailable = (services.kokorotts || services.f5tts) !== 'down';
             updateAvailabilityUI();
         } catch (error) {
             console.error('Status check failed:', error);

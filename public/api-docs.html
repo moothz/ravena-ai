@@ -200,12 +200,12 @@ curl -X POST https://ravena.moothz.com/api/imagine/generate \
                 <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> 20 req / min</span>
             </div>
             <div class="endpoint-body">
-                <p class="endpoint-desc">Sintetiza texto em fala humana natural (F5-TTS).</p>
+                <p class="endpoint-desc">Sintetiza texto em fala humana natural (Kokoro-TTS).</p>
                 <div class="section-label">Request Body (JSON)</div>
                 <div class="code-box">
 {
   "text": "Olá! Esta é uma demonstração de síntese de voz da Ravena.",
-  "voice": "ravena" // Opcional: "ravena", "rubao", "mulher", "homem", "carioca", "narrador"
+  "voice": "mulher" // Opcional: "mulher", "homem", "narrador" ou "random"
 }
                 </div>
                 <div class="section-label">Exemplo cURL</div>
@@ -213,7 +213,7 @@ curl -X POST https://ravena.moothz.com/api/imagine/generate \
 curl -X POST https://ravena.moothz.com/api/tts/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: SUA_CHAVE_API" \
-  -d '{"text": "Bom dia a todos!", "voice": "ravena"}' \
+  -d '{"text": "Bom dia a todos!", "voice": "mulher"}' \
   --output audio.mp3
                 </div>
                 <div class="section-label">Resposta</div>
@@ -354,13 +354,13 @@ curl -X POST https://ravena.moothz.com/api/nsfw-detect \
                 <span class="endpoint-rate"><i class="fas fa-tachometer-alt"></i> Monitoramento</span>
             </div>
             <div class="endpoint-body">
-                <p class="endpoint-desc">Retorna o status em tempo real dos serviços (whisper, imagine, f5tts, llm, nudenet).</p>
+                <p class="endpoint-desc">Retorna o status em tempo real dos serviços (whisper, imagine, kokorotts, llm, nudenet).</p>
                 <div class="section-label">Resposta</div>
                 <div class="code-box">
 {
   "whisper": "up",
   "imagine": "up",
-  "f5tts": "up",
+  "kokorotts": "up",
   "llm": "up",
   "nudenet": "up"
 }

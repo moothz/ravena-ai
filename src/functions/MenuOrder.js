@@ -148,6 +148,7 @@ const COMMAND_ORDER = [
 	"tts",
 	"tts-mulher",
 	"tts-homem",
+	"tts-narrador",
 	"buscar",
 	"buscar-img",
 	"gif",

@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let config = {};
     let costData = {};
-    const categories = ['llm', 'laya', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'f5tts', 'nudenet', 'rembg'];
+    const categories = ['llm', 'laya', 'whisper', 'comfyui', 'bonsai', 'sdwebui', 'kokorotts', 'nudenet', 'rembg'];
     const categoryNames = {
         'llm': 'Inteligência Artificial (LLM)',
         'laya': 'Decisão Rápida / Intenção (Laya System One)',
@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'comfyui': 'Geração de Imagens (ComfyUI)',
         'bonsai': 'Geração de Imagens (Bonsai)',
         'sdwebui': 'Geração de Imagens (SD WebUI)',
-        'f5tts': 'Conversão de Texto em Fala (F5-TTS)',
+        'kokorotts': 'Conversão de Texto em Fala (Kokoro-TTS)',
         'nudenet': 'Detecção de Conteúdo NSFW (NudeNet)',
         'rembg': 'Remoção de Fundo de Imagem (rembg)'
     };

@@ -110,10 +110,19 @@ class ServiceProviderService {
 	 * @returns {Array} - Array of enabled providers.
 	 */
 	getProviders(category) {
-		if (!this.config || !Array.isArray(this.config[category])) {
+		if (!this.config) {
 			return [];
 		}
-		return this.config[category].filter((p) => p.enabled !== false);
+		let list = this.config[category];
+		if (!Array.isArray(list)) {
+			if (category === "kokorotts" || category === "kokoro-tts" || category === "f5tts") {
+				list = this.config.kokorotts || this.config["kokoro-tts"] || this.config.f5tts;
+			}
+		}
+		if (!Array.isArray(list)) {
+			return [];
+		}
+		return list.filter((p) => p.enabled !== false);
 	}
 
 	/**
@@ -127,7 +136,7 @@ class ServiceProviderService {
 			comfyui: [],
 			bonsai: [],
 			sdwebui: [],
-			f5tts: [],
+			kokorotts: [],
 			nudenet: [],
 			rembg: []
 		};
