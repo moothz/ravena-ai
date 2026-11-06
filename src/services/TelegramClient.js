@@ -343,11 +343,30 @@ class TelegramClient {
 	 */
 	async getUserProfilePhotoUrl(userId) {
 		try {
-			const cleanId = String(userId)
-				.split("@")[0]
-				.replace(/[^\d-]/g, "");
-			if (!cleanId || isNaN(cleanId)) return null;
-			const photos = await this.bot.getUserProfilePhotos(parseInt(cleanId, 10), { limit: 1 });
+			const rawId = String(userId || "").trim();
+			if (!rawId) return null;
+
+			const cleanId = rawId.split("@")[0].replace(/[^\d-]/g, "");
+			let numericId = cleanId && !isNaN(cleanId) ? parseInt(cleanId, 10) : null;
+
+			// Suporte a @username (ex: menções do {fotoPerfilMention}): resolve para o ID numérico.
+			// Só funciona para usuários que o bot já conhece (getChat do Bot API).
+			if (!numericId) {
+				const usernameMatch = rawId.match(/^@?([A-Za-z][A-Za-z0-9_]{3,31})$/);
+				if (!usernameMatch) return null;
+				try {
+					const chat = await this.bot.getChat(`@${usernameMatch[1]}`);
+					numericId = chat && chat.id ? parseInt(chat.id, 10) : null;
+				} catch (resolveErr) {
+					this.logger.debug(
+						`[getUserProfilePhotoUrl] Não foi possível resolver @${usernameMatch[1]}: ${resolveErr.message}`
+					);
+					return null;
+				}
+				if (!numericId) return null;
+			}
+
+			const photos = await this.bot.getUserProfilePhotos(numericId, { limit: 1 });
 			if (
 				!photos ||
 				!Array.isArray(photos.photos) ||

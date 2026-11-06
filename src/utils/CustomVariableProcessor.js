@@ -1629,18 +1629,43 @@ class CustomVariableProcessor {
 	 */
 	async handleProfilePictureResponse(processedText, targetJid, context) {
 		try {
-			let media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, targetJid);
+			// Lista de identificadores candidatos para a mesma pessoa.
+			// Em Telegram/Discord com conta vinculada (!vincular), message.author passa a ser o
+			// JID/número do WhatsApp, o que quebra a API da plataforma (ex: getUserProfilePhotos
+			// retorna "user not found"). O ID nativo da plataforma fica em message.platformAuthor.
+			const candidates = [];
+			const pushCandidate = (value) => {
+				if (value === null || value === undefined) return;
+				const raw =
+					typeof value === "object"
+						? value._serialized || value.id?._serialized || value.id || value.user || String(value)
+						: String(value);
+				const clean = raw.trim();
+				if (!clean) return;
+				if (!candidates.includes(clean)) candidates.push(clean);
+			};
 
-			// Se falhou e houver um ID alternativo (authorAlt/author), tenta o alternativo
-			if (!media && context.message) {
+			pushCandidate(targetJid);
+			if (context.message) {
 				const altJid =
 					targetJid === context.message.author ? context.message.authorAlt : context.message.author;
-				if (altJid && altJid !== targetJid) {
-					media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, altJid);
-				}
+				pushCandidate(altJid);
+				pushCandidate(context.message.platformAuthor);
 			}
 
-			if (!media) {
+			let media = null;
+			for (const candidate of candidates) {
+				try {
+					media = await ProfilePictureHelper.fetchUserProfilePictureMedia(context.bot, candidate);
+				} catch (candidateErr) {
+					this.logger.debug(
+						`[handleProfilePictureResponse] Falha ao tentar ${candidate}: ${candidateErr.message}`
+					);
+				}
+				if (media?.data) break;
+			}
+
+			if (!media?.data) {
 				throw new Error("Nenhuma URL de imagem de perfil encontrada");
 			}
 
