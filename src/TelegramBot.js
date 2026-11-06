@@ -666,6 +666,20 @@ class WhatsAppBotTelegram {
 						type: "voice"
 					};
 					content = mediaInfo;
+				} else if (message.video_note) {
+					// "Video redondo" (video note) do Telegram: Behaves like a voice message,
+					// so it is treated as audio for transcription (auto-STT / !stt) and not as a normal video.
+					type = "video_note";
+					mediaInfo = {
+						fileId: message.video_note.file_id,
+						mimetype: "video/mp4",
+						type: "video_note",
+						duration: message.video_note.duration ?? null,
+						fileSize: message.video_note.file_size ?? null
+					};
+					caption = message.caption?.replace(`@${this.telegramBotName}`, "") ?? false;
+					if (caption) caption = this.normalizeInboundCommand(caption);
+					content = mediaInfo;
 				} else if (message.audio) {
 					type = "audio";
 					mediaInfo = {
@@ -716,6 +730,7 @@ class WhatsAppBotTelegram {
 					caption,
 					timestamp: message.date,
 					hasMedia: !!mediaInfo,
+					hasQuotedMsg: !!message.reply_to_message,
 
 					react: async () => true,
 					getContact: async () => this.getContactDetails(authorId, authorName),
@@ -868,6 +883,80 @@ class WhatsAppBotTelegram {
 		return typeof result.toWellFormed === "function" ? result.toWellFormed() : result;
 	}
 
+	/**
+	 * Extrai o ID numérico da mensagem no Telegram a partir de formatos variados de ID
+	 * (`chatId_userId_messageId`, `MessageId` do wwebjs, objeto `goReply`, message_id puro).
+	 * @param {string|number|Object} raw - Referência à mensagem original.
+	 * @returns {number|null} - ID numérico da mensagem ou null.
+	 */
+	_extractTelegramMessageId(raw) {
+		if (raw === null || raw === undefined) return null;
+
+		let value = raw;
+		if (typeof value === "object") {
+			value =
+				value.id?._serialized ??
+				value.key?.id ??
+				value.message_id ??
+				(typeof value.id === "string" || typeof value.id === "number" ? value.id : null);
+		}
+
+		if (value === null || value === undefined) return null;
+
+		const str = String(value).trim();
+		if (!str) return null;
+
+		// IDs serializados no Telegram seguem o padrão `${chatId}_${userId}_${messageId}`
+		const lastPart = str.includes("_") ? str.split("_").pop() : str;
+		const digits = String(lastPart).replace(/\D/g, "");
+		if (!digits) return null;
+
+		const messageId = parseInt(digits, 10);
+		return Number.isFinite(messageId) && messageId > 0 ? messageId : null;
+	}
+
+	/**
+	 * Resolve a mensagem que deve ser respondida ("reply") em uma mensagem enviada pelo bot.
+	 * Aceita as opções usadas pelos comandos em qualquer plataforma:
+	 * `quotedMsgId`, `quotedMessageId`, `goReply` e `telegram.replyToMessageId`.
+	 * @param {Object} options - Opções do ReturnMessage / sendMessage.
+	 * @returns {number|null} - ID numérico da mensagem a responder.
+	 */
+	_resolveReplyMessageId(options = {}) {
+		const candidates = [
+			options.quotedMsgId,
+			options.quotedMessageId,
+			options.replyToMessageId,
+			options.telegram?.replyToMessageId,
+			options.goReply
+		];
+
+		for (const candidate of candidates) {
+			try {
+				const messageId = this._extractTelegramMessageId(candidate);
+				if (messageId) return messageId;
+			} catch (e) {
+				// Objetos de outras plataformas podem ter getters instáveis; apenas ignora a candidata
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Indica se o erro da API do Telegram foi causado pela mensagem que estava sendo respondida.
+	 * @param {string} errorMessage - Mensagem do erro.
+	 * @returns {boolean}
+	 */
+	_isReplyTargetError(errorMessage = "") {
+		const msg = String(errorMessage).toLowerCase();
+		return (
+			msg.includes("reply message not found") ||
+			msg.includes("message to reply not found") ||
+			msg.includes("chat not found for the message to reply")
+		);
+	}
+
 	async sendMessage(chatId, content, options = {}) {
 		if (chatId) {
 			const cleanChatId = String(chatId).split("@")[0].replace(/\D/g, "");
@@ -898,10 +987,14 @@ class WhatsAppBotTelegram {
 			}
 
 			const tgOptions = { parse_mode: "HTML" };
-			if (options.quotedMsgId) {
-				// O ID da mensagem no Telegram é apenas o número
-				const messageId = options.quotedMsgId.split("_").pop();
-				if (messageId) tgOptions.reply_to_message_id = messageId;
+
+			// Responde a mensagem original sempre que ela for referenciada
+			// (quotedMsgId / quotedMessageId / goReply), para o texto não ficar solto no chat.
+			const replyToMessageId = this._resolveReplyMessageId(options);
+			if (replyToMessageId) {
+				tgOptions.reply_to_message_id = replyToMessageId;
+				// Evita falha do envio quando a mensagem respondida foi apagada / é de outro chat
+				tgOptions.allow_sending_without_reply = true;
 			}
 
 			// Resolve Mentions
@@ -1010,24 +1103,35 @@ class WhatsAppBotTelegram {
 				try {
 					response = await this.apiClient.sendMessage(chatId, content, tgOptions);
 				} catch (sendErr) {
-					if (
-						sendErr.message &&
-						(sendErr.message.includes("can't parse entities") ||
-							sendErr.message.includes("parse_mode"))
-					) {
-						this.logger.warn(
-							`[sendMessage] Erro de parse HTML no Telegram. Enviando fallback em texto puro: ${sendErr.message}`
-						);
-						const fallbackOpts = { ...tgOptions };
-						delete fallbackOpts.parse_mode;
-						response = await this.apiClient.sendMessage(
-							chatId,
-							TelegramMarkupHelper.stripHtml(content),
-							fallbackOpts
-						);
-					} else {
+					const errorMsg = sendErr?.message || "";
+					const isParseError =
+						errorMsg.includes("can't parse entities") || errorMsg.includes("parse_mode");
+					const isReplyError =
+						Boolean(tgOptions.reply_to_message_id) && this._isReplyTargetError(errorMsg);
+
+					if (!isParseError && !isReplyError) {
 						throw sendErr;
 					}
+
+					const fallbackOpts = { ...tgOptions };
+
+					if (isReplyError) {
+						this.logger.warn(
+							`[sendMessage] Mensagem respondida indisponível em ${chatId}. Reenviando sem reply: ${errorMsg}`
+						);
+						delete fallbackOpts.reply_to_message_id;
+						delete fallbackOpts.allow_sending_without_reply;
+					}
+
+					if (isParseError) {
+						this.logger.warn(
+							`[sendMessage] Erro de parse HTML no Telegram. Enviando fallback em texto puro: ${errorMsg}`
+						);
+						delete fallbackOpts.parse_mode;
+						content = TelegramMarkupHelper.stripHtml(content);
+					}
+
+					response = await this.apiClient.sendMessage(chatId, content, fallbackOpts);
 				}
 			} else if (content.isMessageMedia || (content.data && content.mimetype)) {
 				const mediaBuffer = Buffer.from(content.data, "base64");
@@ -1037,22 +1141,37 @@ class WhatsAppBotTelegram {
 					try {
 						return await sendFn(tgOptions);
 					} catch (sendErr) {
-						if (
-							sendErr.message &&
-							(sendErr.message.includes("can't parse entities") ||
-								sendErr.message.includes("parse_mode"))
-						) {
+						const errorMsg = sendErr?.message || "";
+						const isParseError =
+							errorMsg.includes("can't parse entities") || errorMsg.includes("parse_mode");
+						const isReplyError =
+							Boolean(tgOptions.reply_to_message_id) && this._isReplyTargetError(errorMsg);
+
+						if (!isParseError && !isReplyError) {
+							throw sendErr;
+						}
+
+						const fallbackOpts = { ...tgOptions };
+
+						if (isReplyError) {
 							this.logger.warn(
-								`[sendMessage] Erro de parse HTML na legenda da mídia. Enviando legenda em texto puro: ${sendErr.message}`
+								`[sendMessage] Mensagem respondida indisponível em ${chatId}. Reenviando mídia sem reply: ${errorMsg}`
 							);
-							const fallbackOpts = { ...tgOptions };
+							delete fallbackOpts.reply_to_message_id;
+							delete fallbackOpts.allow_sending_without_reply;
+						}
+
+						if (isParseError) {
+							this.logger.warn(
+								`[sendMessage] Erro de parse HTML na legenda da mídia. Enviando legenda em texto puro: ${errorMsg}`
+							);
 							delete fallbackOpts.parse_mode;
 							if (fallbackOpts.caption) {
 								fallbackOpts.caption = TelegramMarkupHelper.stripHtml(fallbackOpts.caption);
 							}
-							return await sendFn(fallbackOpts);
 						}
-						throw sendErr;
+
+						return await sendFn(fallbackOpts);
 					}
 				};
 
@@ -1309,10 +1428,20 @@ class WhatsAppBotTelegram {
 
 				const contentChunks = this.splitContent(msg.content, MAX_LENGTH);
 
-				return contentChunks.map((chunk) => ({
-					...msg,
-					content: chunk
-				}));
+				return contentChunks.map((chunk, index) => {
+					if (index === 0) {
+						return { ...msg, content: chunk };
+					}
+
+					// Apenas o primeiro pedaço responde a mensagem original,
+					// evitando vários replies para a mesma mensagem.
+					const baseOptions = msg.options ? { ...msg.options } : {};
+					delete baseOptions.quotedMsgId;
+					delete baseOptions.quotedMessageId;
+					delete baseOptions.goReply;
+
+					return { ...msg, content: chunk, options: baseOptions };
+				});
 			} else {
 				return msg;
 			}
