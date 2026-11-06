@@ -1278,6 +1278,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			const text = message.type === "text" ? message.content : message.caption;
 			if (!text) return false;
 
+			// Ignora mensagens que são comandos (começam com !) - evita processar convites em comandos de super admin ou outros
+			if (text.trimStart().startsWith("!")) return false;
+
 			// Verifica se a mensagem contém um link de convite do WhatsApp
 			const inviteMatch = text.match(/chat.whatsapp.com\/([a-zA-Z0-9]{10,50})/i);
 			if (!inviteMatch) return false;
@@ -2149,6 +2152,15 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				this.logger.error("Erro ao verificar se o autor é doador:", donationError);
 			}
 
+			// Doadores com valor menor que R$9,99 não são tratados como doadores para análise de auto-accept
+			const MIN_DONATE_VALUE = 9.99;
+			if (isDonator && donateValue < MIN_DONATE_VALUE) {
+				this.logger.info(
+					`[InviteSystem] Autor ${authorId} tem doacão de R$${donateValue} (< R$${MIN_DONATE_VALUE}), não será tratado como doador para auto-accept.`
+				);
+				isDonator = false;
+			}
+
 			// Avaliação para Auto-Accept (LLM normal ou RECENTLY_BANNED)
 			let autoAccepted = false;
 			let autoAcceptBot = null;
@@ -2178,134 +2190,146 @@ Decida se este grupo deve ser aceito automaticamente.`;
 				);
 			} else {
 				try {
-					const hasBannedBotInGroup = this.hasBannedBotInGroup(inviteInfoData);
-
-					if (isRecentlyBanned) {
-						evalResult = await this.evaluateAutoAcceptRecentlyBanned({
-							isDonator,
-							donateValue,
-							wasInGroupBefore,
-							hasBotInGroup: otherBotsInGroup.length > 0,
-							hasBannedBotInGroup,
-							participantCount: this.getParticipantCount(inviteInfoData) ?? 0,
-							groupJid: inviteInfoData?.JID || null
-						});
+					// Sem inviteInfoData não temos o JID do grupo, impossibilitando análise segura
+					if (!inviteInfoData) {
+						llmReason =
+							"Não foi possível obter informações do convite (link expirado, API indisponível ou grupo inexistente). Sem o JID, é impossível verificar se já existe bot no grupo ou histórico.";
+						this.logger.warn(
+							`[AutoAccept] Convite ${inviteCode} NÃO aceito automaticamente: ${llmReason}`
+						);
 					} else {
-						evalResult = await this.evaluateAutoAcceptWithLLM({
-							userName,
-							authorId,
-							groupName: inviteInfoData?.Name,
-							participantCount: inviteInfoData?.ParticipantCount,
-							description:
-								inviteInfoData?.Description || inviteInfoData?.Desc || inviteInfoData?.Topic || "",
-							reason,
-							isDonator,
-							donateValue,
-							wasInGroupBefore,
-							hasBotInGroup: otherBotsInGroup.length > 0,
-							userDossier,
-							groupDossier,
-							groupJid: inviteInfoData?.JID || null
-						});
-					}
+						const hasBannedBotInGroup = this.hasBannedBotInGroup(inviteInfoData);
 
-					llmReason = evalResult.reason;
-
-					if (evalResult.shouldAutoAccept) {
-						let selectedBot = null;
-
-						if (this.bot?.comunitario) {
-							// Bots comunitários: convites só devem ser aceitos automaticamente pelo próprio bot recebido, nunca por outros bots
-							const isEligible =
-								!this.bot.banido &&
-								!this.bot.ignoreInvites &&
-								!this.bot.useTelegram &&
-								!this.bot.useDiscord &&
-								this.bot.client &&
-								typeof this.bot.client.acceptInvite === "function";
-
-							if (isEligible) {
-								if (InviteSystem.canBotJoin(this.bot.id)) {
-									selectedBot = this.bot;
-								} else {
-									this.logger.warn(
-										`[AutoAccept] Bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`
-									);
-									llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`;
-								}
-							} else {
-								this.logger.warn(
-									`[AutoAccept] Bot comunitário ${this.bot.id} não está elegível/disponível para auto-join`
-								);
-								llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} não está disponível para entrar`;
-							}
+						if (isRecentlyBanned) {
+							evalResult = await this.evaluateAutoAcceptRecentlyBanned({
+								isDonator,
+								donateValue,
+								wasInGroupBefore,
+								hasBotInGroup: otherBotsInGroup.length > 0,
+								hasBannedBotInGroup,
+								participantCount: this.getParticipantCount(inviteInfoData) ?? 0,
+								groupJid: inviteInfoData?.JID || null
+							});
 						} else {
-							// Se donate R$100 ou acima: Aceitar sempre no bot vip que está enabled
-							if (isDonator && donateValue >= 100) {
-								selectedBot = this.selectVipBot();
-								if (selectedBot) {
-									this.logger.info(
-										`[AutoAccept] Convite ${inviteCode} direcionado para bot VIP (${selectedBot.id}) devido a donate R$${donateValue}`
-									);
-								} else {
-									this.logger.warn(
-										`[AutoAccept] Doador R$100+ (${donateValue}), mas nenhum bot VIP disponível. Tentando seleção normal.`
-									);
-								}
-							}
-
-							if (!selectedBot) {
-								selectedBot = await this.selectBestBotForAutoJoin();
-							}
+							evalResult = await this.evaluateAutoAcceptWithLLM({
+								userName,
+								authorId,
+								groupName: inviteInfoData?.Name,
+								participantCount: inviteInfoData?.ParticipantCount,
+								description:
+									inviteInfoData?.Description ||
+									inviteInfoData?.Desc ||
+									inviteInfoData?.Topic ||
+									"",
+								reason,
+								isDonator,
+								donateValue,
+								wasInGroupBefore,
+								hasBotInGroup: otherBotsInGroup.length > 0,
+								userDossier,
+								groupDossier,
+								groupJid: inviteInfoData?.JID || null
+							});
 						}
 
-						if (selectedBot) {
-							this.logger.info(
-								`[AutoAccept] Convite ${inviteCode} aceito automaticamente pelo bot ${selectedBot.id}. Motivo: ${evalResult.reason}`
-							);
-							const joinResult = await selectedBot.client.acceptInvite(inviteCode);
-							if (joinResult && joinResult.accepted) {
-								autoAccepted = true;
-								autoAcceptBot = selectedBot;
-								InviteSystem.recordBotJoin(selectedBot.id);
-								InviteSystem._pushRecentlyAccepted({
+						llmReason = evalResult.reason;
+
+						if (evalResult.shouldAutoAccept) {
+							let selectedBot = null;
+
+							if (this.bot?.comunitario) {
+								// Bots comunitários: convites só devem ser aceitos automaticamente pelo próprio bot recebido, nunca por outros bots
+								const isEligible =
+									!this.bot.banido &&
+									!this.bot.ignoreInvites &&
+									!this.bot.useTelegram &&
+									!this.bot.useDiscord &&
+									this.bot.client &&
+									typeof this.bot.client.acceptInvite === "function";
+
+								if (isEligible) {
+									if (InviteSystem.canBotJoin(this.bot.id)) {
+										selectedBot = this.bot;
+									} else {
+										this.logger.warn(
+											`[AutoAccept] Bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`
+										);
+										llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} atingiu o limite de 3 grupos em 30 minutos`;
+									}
+								} else {
+									this.logger.warn(
+										`[AutoAccept] Bot comunitário ${this.bot.id} não está elegível/disponível para auto-join`
+									);
+									llmReason = `Aprovado pela IA (${evalResult.reason}), mas o bot comunitário ${this.bot.id} não está disponível para entrar`;
+								}
+							} else {
+								// Se donate R$100 ou acima: Aceitar sempre no bot vip que está enabled
+								if (isDonator && donateValue >= 100) {
+									selectedBot = this.selectVipBot();
+									if (selectedBot) {
+										this.logger.info(
+											`[AutoAccept] Convite ${inviteCode} direcionado para bot VIP (${selectedBot.id}) devido a donate R$${donateValue}`
+										);
+									} else {
+										this.logger.warn(
+											`[AutoAccept] Doador R$100+ (${donateValue}), mas nenhum bot VIP disponível. Tentando seleção normal.`
+										);
+									}
+								}
+
+								if (!selectedBot) {
+									selectedBot = await this.selectBestBotForAutoJoin();
+								}
+							}
+
+							if (selectedBot) {
+								this.logger.info(
+									`[AutoAccept] Convite ${inviteCode} aceito automaticamente pelo bot ${selectedBot.id}. Motivo: ${evalResult.reason}`
+								);
+								const joinResult = await selectedBot.client.acceptInvite(inviteCode);
+								if (joinResult && joinResult.accepted) {
+									autoAccepted = true;
+									autoAcceptBot = selectedBot;
+									InviteSystem.recordBotJoin(selectedBot.id);
+									InviteSystem._pushRecentlyAccepted({
+										inviteCode,
+										authorId,
+										authorName: userName,
+										botId: selectedBot.id,
+										groupName: inviteInfoData?.Name
+									});
+									await this.database.savePendingJoin(inviteCode, {
+										authorId,
+										authorName: userName,
+										groupJid: inviteInfoData?.JID || null
+									});
+								} else {
+									this.logger.warn(
+										`[AutoAccept] Falha do bot ${selectedBot.id} ao aceitar convite: ${joinResult?.error || "Erro desconhecido"}`
+									);
+									llmReason = `Aprovado pela IA, mas bot ${selectedBot.id} falhou ao entrar (${joinResult?.error || "Erro"})`;
+								}
+							} else if (!this.bot?.comunitario) {
+								// Nenhum bot disponível para entrar agora: criar fila com timer para ir aceitando aos poucos
+								queuePosition = InviteSystem.enqueueInvite({
 									inviteCode,
 									authorId,
 									authorName: userName,
-									botId: selectedBot.id,
-									groupName: inviteInfoData?.Name
+									groupName: inviteInfoData?.Name,
+									groupJid: inviteInfoData?.JID || null,
+									reason,
+									enqueuedAt: Date.now(),
+									inviteSystem: this
 								});
-								await this.database.savePendingJoin(inviteCode, {
-									authorId,
-									authorName: userName,
-									groupJid: inviteInfoData?.JID || null
-								});
-							} else {
-								this.logger.warn(
-									`[AutoAccept] Falha do bot ${selectedBot.id} ao aceitar convite: ${joinResult?.error || "Erro desconhecido"}`
+								enqueuedAutoAccept = true;
+								const eta = InviteSystem.getETA(queuePosition);
+								llmReason = `Aprovado para auto accept → Enfileirado na posição ${queuePosition} (Previsão: ${eta.tempo}, às ${eta.horaPrevista})`;
+								this.logger.info(
+									`[AutoAccept] Convite ${inviteCode} colocado na fila de espera na posição ${queuePosition}. ETA: ${eta.formatted}`
 								);
-								llmReason = `Aprovado pela IA, mas bot ${selectedBot.id} falhou ao entrar (${joinResult?.error || "Erro"})`;
 							}
-						} else if (!this.bot?.comunitario) {
-							// Nenhum bot disponível para entrar agora: criar fila com timer para ir aceitando aos poucos
-							queuePosition = InviteSystem.enqueueInvite({
-								inviteCode,
-								authorId,
-								authorName: userName,
-								groupName: inviteInfoData?.Name,
-								groupJid: inviteInfoData?.JID || null,
-								reason,
-								enqueuedAt: Date.now(),
-								inviteSystem: this
-							});
-							enqueuedAutoAccept = true;
-							const eta = InviteSystem.getETA(queuePosition);
-							llmReason = `Aprovado para auto accept → Enfileirado na posição ${queuePosition} (Previsão: ${eta.tempo}, às ${eta.horaPrevista})`;
-							this.logger.info(
-								`[AutoAccept] Convite ${inviteCode} colocado na fila de espera na posição ${queuePosition}. ETA: ${eta.formatted}`
-							);
 						}
-					}
+					} // end else (inviteInfoData existe)
 				} catch (evalErr) {
 					this.logger.error("Erro no fluxo de auto-accept:", evalErr);
 					llmReason = `Falha na avaliação: ${evalErr.message}`;
@@ -2381,6 +2405,12 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					}
 					if (isDonator) {
 						infoMessageHeader = `💸💸 R$${donateValue} 💸💸\n` + infoMessageHeader;
+					}
+					// Avisa quando não há dados do convite (sem JID): jamais auto-aceitar
+					if (!inviteInfoData) {
+						infoMessageHeader =
+							`⚠️ *SEM DADOS DO CONVITE* — Não foi possível obter informações do link. Auto-accept bloqueado por segurança.\n` +
+							infoMessageHeader;
 					}
 					const ownerMark = ownerMatch ? " ✅" : "";
 
@@ -2522,6 +2552,11 @@ Decida se este grupo deve ser aceito automaticamente.`;
 					if (!autoAccepted && otherBotsInGroup.length === 0) {
 						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
 						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
+						// Se não há dados do convite, envia comando de inspecião para o super admin analisar manualmente
+						if (!inviteInfoData) {
+							const inspectCommand = `!sa-inviteInfo ${inviteCode}`;
+							await this.bot.sendMessage(this.bot.grupoInvites, inspectCommand);
+						}
 					}
 
 					// Envia comando para bloquear convites (apenas se não houver bot no grupo)

@@ -68,6 +68,10 @@ class SuperAdmin {
 				method: "joinGroupSilent",
 				description: "Entra em um grupo via link de convite SEM enviar mensagem de boas-vindas"
 			},
+			inviteInfo: {
+				method: "inviteInfo",
+				description: "Mostra informações de um convite: !sa-inviteInfo <link ou codigo>"
+			},
 			filaInvites: {
 				method: "filaInvites",
 				description: "Mostra os últimos 10 aceitos e a fila de invites pendentes com ETA"
@@ -1097,7 +1101,53 @@ Break down the cost by category and provide a total estimated cost.`;
 			let msg = "Teste";
 			let caption = undefined;
 
-			if (args.length > 1) {
+			// Se há mensagem em quote, usa o conteúdo da mensagem quotada
+			const hasQuote =
+				message.hasQuotedMsg || typeof message.origin?.getQuotedMessage === "function";
+			if (hasQuote) {
+				try {
+					const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+					if (quotedMsg) {
+						// Determina se é mídia
+						const isMidiaQuote =
+							quotedMsg.hasMedia ||
+							(quotedMsg.type && quotedMsg.type !== "text" && quotedMsg.type !== "chat");
+
+						if (isMidiaQuote) {
+							// Baixa e usa a mídia da mensagem quotada
+							let mediaBaixada = null;
+							if (typeof quotedMsg.downloadMedia === "function") {
+								mediaBaixada = await quotedMsg.downloadMedia();
+							} else if (quotedMsg.content && (quotedMsg.content.data || quotedMsg.content.url)) {
+								mediaBaixada = quotedMsg.content;
+							}
+							if (mediaBaixada) {
+								msg = mediaBaixada;
+								// Usa a legenda da mensagem quotada (se houver); args[1+] sobrescrevem
+								const captionQuote =
+									(args.length > 1 ? args.slice(1).join(" ") : null) ||
+									quotedMsg.caption ||
+									quotedMsg.body ||
+									null;
+								if (captionQuote) {
+									caption = captionQuote;
+								}
+							}
+						} else {
+							// Mensagem de texto: usa o conteúdo textual
+							const textoQuote = quotedMsg.body || quotedMsg.content || quotedMsg.text || "";
+							if (textoQuote) {
+								msg = textoQuote;
+							}
+						}
+						this.logger.info(
+							`[sendMsg] Usando conteúdo de mensagem quotada (tipo: ${quotedMsg.type}) para enviar a ${chatToSend}`
+						);
+					}
+				} catch (err) {
+					this.logger.warn("[sendMsg] Erro ao obter mensagem quotada:", err);
+				}
+			} else if (args.length > 1) {
 				msg = args.slice(1).join(" ");
 			}
 
@@ -1406,6 +1456,158 @@ Break down the cost by category and provide a total estimated cost.`;
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content: "❌ Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Exibe informações de um convite de grupo (histórico, bot, estadias etc)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando [link ou codigo]
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async inviteInfo(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Por favor, forneça um link ou código de convite. Exemplo: !sa-inviteInfo https://chat.whatsapp.com/abcd1234"
+				});
+			}
+
+			const inviteCode = this.extractInviteCode(args[0]);
+			if (!inviteCode) {
+				return new ReturnMessage({
+					chatId,
+					content: "Código de convite inválido."
+				});
+			}
+
+			const lines = [];
+			lines.push(`🔗 *Convite:* chat.whatsapp.com/${inviteCode}`);
+
+			// Busca informações do convite via API
+			let inviteInfoData = null;
+			try {
+				inviteInfoData = await bot.client.getInviteInfo(inviteCode);
+			} catch (e) {
+				this.logger.warn(`[inviteInfo] Erro ao buscar invite info para ${inviteCode}:`, e.message);
+			}
+
+			if (inviteInfoData) {
+				if (inviteInfoData.Name) lines.push(`🏷️ *Nome:* ${inviteInfoData.Name}`);
+				if (inviteInfoData.JID) lines.push(`🫆 *ID:* ${inviteInfoData.JID}`);
+				const pc = inviteInfoData.ParticipantCount ?? inviteInfoData.participantCount ?? null;
+				if (pc !== null) lines.push(`👥 *Membros:* ${pc}`);
+				const desc =
+					inviteInfoData.Description || inviteInfoData.Desc || inviteInfoData.Topic || null;
+				if (desc) lines.push(`📝 *Descrição:* ${desc}`);
+			} else {
+				lines.push(
+					`⚠️ Não foi possível obter informações do convite via API (link expirado ou API indisponível).`
+				);
+			}
+
+			// Busca histórico no banco de dados
+			const groupJid = inviteInfoData?.JID || null;
+
+			try {
+				// Histórico de convites (quem já enviou este link)
+				const inviteHistory = await this.database.getInviteHistoryByGroup(groupJid, inviteCode);
+				if (inviteHistory && inviteHistory.length > 0) {
+					lines.push(`\n📋 *Histórico de solicitações (${inviteHistory.length}):*`);
+					inviteHistory.slice(0, 5).forEach((h, i) => {
+						const dt = h.timestamp
+							? new Date(h.timestamp).toLocaleString("pt-BR", {
+									timeZone: "America/Sao_Paulo"
+								})
+							: "?";
+						lines.push(
+							`  ${i + 1}. ${h.author_name || "?"} (${(h.author_id || "").split("@")[0]}) - ${dt}`
+						);
+						if (h.reason) lines.push(`     _Motivo: ${h.reason}_`);
+					});
+					if (inviteHistory.length > 5) {
+						lines.push(`  _(...mais ${inviteHistory.length - 5} registros)_`);
+					}
+				} else {
+					lines.push(`\n📋 *Histórico de solicitações:* Nenhuma solicitação registrada.`);
+				}
+
+				// Histórico de estadias do bot no grupo
+				if (groupJid) {
+					const periods = await this.database.getGroupMembershipPeriods(groupJid);
+					if (periods && periods.length > 0) {
+						lines.push(`\n🚪 *Histórico de estadias do bot:*`);
+						periods.forEach((p, idx) => {
+							const joinDate = p.join_timestamp
+								? new Date(p.join_timestamp).toLocaleString("pt-BR", {
+										timeZone: "America/Sao_Paulo"
+									})
+								: "Desconhecido";
+							const leaveDate = p.leave_timestamp
+								? new Date(p.leave_timestamp).toLocaleString("pt-BR", {
+										timeZone: "America/Sao_Paulo"
+									})
+								: "Ainda no grupo";
+							let durationText = "";
+							if (p.duration) {
+								const sec = Math.floor(p.duration / 1000);
+								const days = Math.floor(sec / 86400);
+								const hours = Math.floor((sec % 86400) / 3600);
+								const minutes = Math.floor((sec % 3600) / 60);
+								const parts = [];
+								if (days > 0) parts.push(`${days}d`);
+								if (hours > 0) parts.push(`${hours}h`);
+								if (minutes > 0) parts.push(`${minutes}m`);
+								if (parts.length === 0) parts.push("menos de 1m");
+								durationText = ` (${parts.join(" ")})`;
+							}
+							const botTag = p.bot_id ? ` [🤖 ${p.bot_id}]` : "";
+							lines.push(
+								`  ${idx + 1}.${botTag} 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}`
+							);
+						});
+					} else {
+						lines.push(`\n🚪 *Histórico de estadias:* Nenhuma estadia registrada neste grupo.`);
+					}
+
+					// Verifica saída manual
+					const manualLeave = await this.database.getManualGroupLeave(groupJid).catch(() => null);
+					if (manualLeave) {
+						lines.push(
+							`⚠️ *Saída manual registrada:* ${manualLeave.group_name || "Desconhecido"} [${manualLeave.bot_id || "?"}]`
+						);
+					}
+				} else {
+					lines.push(
+						`\n🚪 *Histórico de estadias:* JID do grupo desconhecido (não foi possível consultar).`
+					);
+				}
+			} catch (dbErr) {
+				this.logger.error("[inviteInfo] Erro ao consultar banco de dados:", dbErr);
+				lines.push(`❌ Erro ao consultar banco de dados: ${dbErr.message}`);
+			}
+
+			return new ReturnMessage({
+				chatId,
+				content: lines.join("\n")
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando inviteInfo:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao processar comando: ${error.message}`
 			});
 		}
 	}
