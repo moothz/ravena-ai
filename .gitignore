@@ -220,4 +220,6 @@ data/status_motivo.txt
 data/chat-cleaner-state.json
 data/orphan-media-cleaner-state.json
 data/zero_waifus_zinthos.json
+# Binário do yt-dlp (nightly) persistido no host e montado no container
+data/ytdlp/
 .ai-memory.toml

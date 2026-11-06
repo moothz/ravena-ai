@@ -97,7 +97,7 @@ O `Makefile` abstrai a complexidade do Docker Compose, facilitando inicializaç�
 | `make sync` | Executa `./scripts/sync-to-docker.sh` para sincronizar arquivos do host diretamente no container `ravena-ai` sem necessidade de rebuild. |
 | `make update-whatsgoapi` | Atualiza e inicializa os submódulos git do `whatsgoapi`, busca a última versão de `origin/main` e reconstrói o container da API Go. |
 | `make update-allm` | Executa `scripts/update-allm-cmds.js` no container para atualizar a documentação de comandos e contexto para o AnythingLLM. |
-| `make update-ytdl` | Atualiza o binário do `yt-dlp` para a versão *nightly* mais recente dentro do container da Ravena. |
+| `make update-ytdl` | Atualiza o binário do `yt-dlp` para a versão *nightly* mais recente dentro do container da Ravena. O binário vive em `data/ytdlp/bin` (volume), sobrevive a rebuilds e é auto-atualizado pelo bot no boot e no cron 05:00/17:00 — o comando manual só é necessário para forçar/verificar. |
 | `make update-donates` | Executa `./scripts/update-donates.sh` para puxar e atualizar a lista de doadores no repositório. |
 
 ---
