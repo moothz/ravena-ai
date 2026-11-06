@@ -921,6 +921,16 @@ function formatDateTimeBR(date, options = {}) {
 }
 
 /**
+ * Monta o link público da página do personagem no portal web do Waifuletes
+ * @param {string} characterId
+ * @returns {string|null} URL completa ou null se WAIFULETES_WEB_URL não estiver configurada
+ */
+function getCharacterWebUrl(characterId) {
+	if (!WAIFULETES_WEB_URL || !characterId) return null;
+	return `${WAIFULETES_WEB_URL}/character/${encodeURIComponent(String(characterId).trim())}`;
+}
+
+/**
  * Escapa caracteres especiais para inserção segura em XML / SVG
  * @param {string} str
  * @returns {string}
@@ -1765,6 +1775,11 @@ function makeRollHandler(genderFilter) {
 					}
 				}
 
+				const singleRollWebUrl = getCharacterWebUrl(character.id);
+				if (singleRollWebUrl) {
+					text += `\n🔗 ${singleRollWebUrl}`;
+				}
+
 				if (rollReward) {
 					text += `\n✨ *Fragmentos colhidos:* +${rollReward.totalScrap} Zinthos`;
 					if (rollReward.rarityBonus > 0) {
@@ -2057,8 +2072,7 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""} (🎉 Casado com você sem cooldown!)\n`;
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🎉 Casado com você sem cooldown!)\n`;
 				});
 				text += "\n";
 			}
@@ -2069,13 +2083,12 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const keysCount = s.keyProgress?.currentKeys || 1;
 					const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
 					const soulmateTag = isSoulmateNow
 						? " (💖 SOULMATE ALCANÇADO! 10/10)"
 						: ` (🔑 Chaves: ${keysCount}/10)`;
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
 					if (isSoulmateNow) {
 						notifySoulmateAchievement(
 							bot,
@@ -2096,9 +2109,6 @@ function makeRollHandler(genderFilter) {
 			}
 
 			const hasFreeSlots = groupWishlistFreeSlots.length > 0 || solteirosSlots.length > 0;
-			if (hasFreeSlots) {
-				text += `_Reaja com o emoji do número para casar! (Janela total de 300s)_\n\n`;
-			}
 
 			if (groupWishlistFreeSlots.length > 0) {
 				text += `⭐ *Wishlist do grupo:*\n`;
@@ -2106,14 +2116,17 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const exclSecs =
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n\n`;
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
+					const wishSlotWebUrl = getCharacterWebUrl(s.characterId);
+					if (wishSlotWebUrl) {
+						text += `> ${wishSlotWebUrl}\n`;
+					}
+					text += "\n";
 				});
 			}
 
@@ -2123,15 +2136,22 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const exclSecs =
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n\n`;
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
+					const singleSlotWebUrl = getCharacterWebUrl(s.characterId);
+					if (singleSlotWebUrl) {
+						text += `> ${singleSlotWebUrl}\n`;
+					}
+					text += "\n";
 				});
+			}
+
+			if (hasFreeSlots) {
+				text += `*Para Casar*: Reagir com o emoji do número ou responder a mensagem com !mu-c # (número do personagem)\n\n`;
 			}
 
 			if (casadosSlots.length > 0) {
@@ -2140,9 +2160,8 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const labelRarity = RARITY_LABEL[normRarity] || s.rarity;
 					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
-					text += `${emojiNum} ${emojiRarity} [${labelRarity}] ${s.characterName} — ${s.series || ""}${ownerInfo}\n`;
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${ownerInfo}\n`;
 				});
 				text += "\n";
 			}
@@ -2568,7 +2587,7 @@ async function casarWaifu(bot, message, args) {
 						return new ReturnMessage({
 							chatId,
 							content:
-								"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+								"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou responda a mensagem com !mu-c # (número do personagem).",
 							options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 						});
 					} else {
@@ -2597,7 +2616,7 @@ async function casarWaifu(bot, message, args) {
 					return new ReturnMessage({
 						chatId,
 						content:
-							"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+							"⚠️ Há múltiplos personagens livres nesta rolagem citada! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou responda a mensagem com !mu-c # (número do personagem).",
 						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 					});
 				} else {
@@ -2642,7 +2661,7 @@ async function casarWaifu(bot, message, args) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Há múltiplos personagens livres nesta rolagem! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou use `!mu-casar <id>` ou `!mu-casar <número>`.",
+						"⚠️ Há múltiplos personagens livres nesta rolagem! Reaja com o número do personagem (ex: 1️⃣, 2️⃣) ou responda a mensagem com !mu-c # (número do personagem).",
 					options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
 				});
 			} else {
@@ -5059,6 +5078,73 @@ async function detalhesPersonagem(bot, message, args) {
 	}
 }
 
+// Aliases de rótulos de raridade (PT/EN, com ou sem acento) para a chave interna
+const RARITY_KEY_ALIASES = (() => {
+	const map = {};
+	const plain = (v) =>
+		String(v)
+			.toUpperCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.trim();
+	for (const [rarity, label] of Object.entries(RARITY_LABEL)) {
+		map[plain(rarity)] = rarity;
+		map[plain(label)] = rarity;
+	}
+	return map;
+})();
+
+/**
+ * Normaliza um rótulo de raridade ("Raro", "ÉPICO", "LEGENDARY"...) para a chave interna
+ * @param {string} value
+ * @returns {string|null}
+ */
+function normalizeRarityKey(value) {
+	if (!value) return null;
+	return (
+		RARITY_KEY_ALIASES[
+			String(value)
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "")
+				.trim()
+				.toUpperCase()
+		] || null
+	);
+}
+
+/**
+ * Detecta a raridade de uma linha de slot: aceita o rótulo antigo "[Raro]" e o emoji atual (⚪🟢🔵🟣⭐)
+ * @param {string} rawLine
+ * @returns {string|null}
+ */
+function detectRarityFromRollLine(rawLine) {
+	if (!rawLine) return null;
+
+	const fromLabel = normalizeRarityKey(rawLine.match(/\[([^\]]+)\]/)?.[1]);
+	if (fromLabel) return fromLabel;
+
+	for (const [rarity, emoji] of Object.entries(RARITY_EMOJI)) {
+		if (rawLine.includes(emoji)) return rarity;
+	}
+	return null;
+}
+
+/**
+ * Extrai o ID/slug do personagem a partir da linha com o link da página web
+ * @param {string} rawLine
+ * @returns {string|null}
+ */
+function extractCharacterIdFromWebLink(rawLine) {
+	if (!rawLine) return null;
+	const match = rawLine.match(/\/character\/([^/\s"'<>|]+)/i);
+	if (!match || !match[1]) return null;
+	try {
+		return decodeURIComponent(match[1]);
+	} catch {
+		return match[1];
+	}
+}
+
 /**
  * Extrai o ID ou nome do personagem a partir do texto/legenda de uma mensagem de roll
  * @param {string} text
@@ -5073,7 +5159,13 @@ function extractCharacterFromRollText(text) {
 		return matchCasar[1].trim();
 	}
 
-	// 2. Procura pelo cabeçalho: 🎲 *Nome* — _Serie_ ou 🎲 Nome — Serie
+	// 2. Procura pelo link da página do personagem no portal web
+	const linkId = extractCharacterIdFromWebLink(text);
+	if (linkId) {
+		return linkId;
+	}
+
+	// 3. Procura pelo cabeçalho: 🎲 *Nome* — _Serie_ ou 🎲 Nome — Serie
 	const matchHeader = text.match(/🎲\s*\*?([^*\n—–-]+?)\*?\s*[—–-]/);
 	if (matchHeader && matchHeader[1]) {
 		const name = matchHeader[1].trim();
@@ -5096,7 +5188,8 @@ function extractMultiRollSlotsFromText(text) {
 	const isMulti =
 		/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
 		(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1 ||
-		(text.match(/[1-9](?:️⃣|\uFE0F?\u20E3)/g) || []).length > 1;
+		(text.match(/[1-9](?:️⃣|\uFE0F?\u20E3)/g) || []).length > 1 ||
+		(text.match(/\/character\//gi) || []).length > 1;
 
 	if (!isMulti) return [];
 
@@ -5108,14 +5201,13 @@ function extractMultiRollSlotsFromText(text) {
 		const rawLine = lines[i].trim();
 		if (!rawLine) continue;
 
-		// Verifica se a linha indica um slot numerado: ex: 1️⃣ ⚪ [Comum] Nome — Serie
+		// Verifica se a linha indica um slot numerado: ex: 1️⃣ ⚪ Nome — Serie
 		const slotMatch = rawLine.match(
 			/^([1-9])(?:️⃣|\uFE0F?\u20E3)\s*(?:[^\s[*]*\s*)?(?:\[([^\]]+)\]\s*)?\*?([^*\n—–-]+?)\*?\s*(?:[—–-]\s*([^\n(]+))?(?:\s*\((.*)\))?$/
 		);
 
 		if (slotMatch) {
 			const slotNum = parseInt(slotMatch[1], 10);
-			const labelRarity = slotMatch[2]?.trim() || "COMMON";
 			const name = slotMatch[3]?.trim();
 			let series = slotMatch[4]?.trim() || "";
 			// Limpa markdown formatting
@@ -5125,17 +5217,25 @@ function extractMultiRollSlotsFromText(text) {
 				slot: slotNum,
 				characterName: name,
 				series,
-				rarity: labelRarity,
+				rarity:
+					detectRarityFromRollLine(rawLine) || normalizeRarityKey(slotMatch[2]?.trim()) || "COMMON",
 				characterId: null
 			};
 			slots.push(currentSlot);
 			continue;
 		}
 
-		// Se for comando de casar: > !mu-casar <id>
+		// Se for comando de casar (formato antigo): > !mu-casar <id>
 		const casarMatch = rawLine.match(/^>?\s*!mu-casar\s+([a-zA-Z0-9_-]+)/i);
 		if (casarMatch && currentSlot) {
 			currentSlot.characterId = casarMatch[1].trim();
+			continue;
+		}
+
+		// Se for o link da página do personagem: > https://.../character/<id>
+		const linkedId = extractCharacterIdFromWebLink(rawLine);
+		if (linkedId && currentSlot && !currentSlot.characterId) {
+			currentSlot.characterId = linkedId;
 		}
 	}
 
@@ -9455,6 +9555,7 @@ module.exports = {
 	getGroupParticipants,
 	isUserActiveInGroup,
 	escapeXml,
+	getCharacterWebUrl,
 	resolveWaifuImageUrl,
 	generateSingleRollPlaceholderBuffer,
 	handleWaifuMenuCallback
