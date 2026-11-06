@@ -59,6 +59,61 @@ database
 
 const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
 
+// Limite de tamanho de mídia aceita para transcrição (proteção de memória/GPU)
+const MAX_STT_MEDIA_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Tipos de mensagem considerados "mensagem de voz" para transcrição automática.
+ * Inclui o "video note" (vídeo redondo) do Telegram, mas NÃO vídeos normais.
+ * @param {string} type - Tipo da mensagem de origem da mídia
+ * @returns {boolean}
+ */
+function isVoiceLikeType(type) {
+	return ["voice", "ptt", "audio", "video_note"].includes(type);
+}
+
+/**
+ * Escolhe a extensão de arquivo adequada ao mimetype da mídia baixada.
+ * @param {string} mimetype - Mime type da mídia
+ * @returns {string} - Extensão sem ponto
+ */
+function getExtensionForMimetype(mimetype = "") {
+	const base = String(mimetype).split(";")[0].trim().toLowerCase();
+	const map = {
+		"audio/ogg": "ogg",
+		"application/ogg": "ogg",
+		"audio/opus": "ogg",
+		"audio/mpeg": "mp3",
+		"audio/mp3": "mp3",
+		"audio/mp4": "m4a",
+		"audio/aac": "m4a",
+		"audio/x-m4a": "m4a",
+		"audio/amr": "amr",
+		"audio/webm": "webm",
+		"audio/wav": "wav",
+		"audio/x-wav": "wav",
+		"video/mp4": "mp4",
+		"video/webm": "webm",
+		"video/quicktime": "mov"
+	};
+	return map[base] || "ogg";
+}
+
+/**
+ * Verifica se a mídia pode ser transcrita (áudio, voz ou vídeo redondo do Telegram).
+ * @param {Object} media - Objeto de mídia (mimetype)
+ * @param {string} sourceType - Tipo da mensagem que originou a mídia
+ * @returns {boolean}
+ */
+function isTranscribableMedia(media, sourceType) {
+	if (!media?.mimetype) return false;
+	const base = String(media.mimetype).split(";")[0].trim().toLowerCase();
+
+	if (base.startsWith("audio/") || base === "application/ogg") return true;
+
+	// "Video note" do Telegram (mensagem de voz em vídeo redondo), não vídeos comuns
+	return base.startsWith("video/") && isVoiceLikeType(sourceType);
+}
 
 // Definição dos personagens para TTS (Kokoro-TTS)
 const ttsCharacters = [
@@ -116,27 +171,37 @@ async function getAudioDuration(filePath) {
 
 /**
  * Obtém mídia da mensagem.
- * Retorna { media, hadQuoted, quotedHadMedia } para distinguir erros.
+ * Retorna { media, hadQuoted, quotedHadMedia, sourceType } para distinguir erros.
  * @param {Object} message - O objeto da mensagem
- * @returns {Promise<{media: MessageMedia|null, hadQuoted: boolean, quotedHadMedia: boolean|null}>}
+ * @returns {Promise<{media: MessageMedia|null, hadQuoted: boolean, quotedHadMedia: boolean|null, sourceType: string}>}
  */
 async function getMediaFromMessage(message) {
 	// Se a mensagem tem mídia direta
 	if (message.type !== "text") {
 		// Lazy loading: só usa content direto se já tiver .data (base64)
 		if (message.content && message.content.data) {
-			return { media: message.content, hadQuoted: false, quotedHadMedia: false };
+			return {
+				media: message.content,
+				hadQuoted: false,
+				quotedHadMedia: false,
+				sourceType: message.type
+			};
 		}
 		if (typeof message.downloadMedia === "function") {
 			try {
 				const media = await message.downloadMedia();
-				return { media, hadQuoted: false, quotedHadMedia: false };
+				return { media, hadQuoted: false, quotedHadMedia: false, sourceType: message.type };
 			} catch (e) {
 				logger.error("[getMediaFromMessage] Erro ao baixar mídia:", e);
-				return { media: null, hadQuoted: false, quotedHadMedia: false };
+				return { media: null, hadQuoted: false, quotedHadMedia: false, sourceType: message.type };
 			}
 		}
-		return { media: message.content ?? null, hadQuoted: false, quotedHadMedia: false };
+		return {
+			media: message.content ?? null,
+			hadQuoted: false,
+			quotedHadMedia: false,
+			sourceType: message.type
+		};
 	}
 
 	const hadQuoted = !!message.hasQuotedMsg;
@@ -146,14 +211,19 @@ async function getMediaFromMessage(message) {
 		const quotedMsg = await message.origin.getQuotedMessage();
 		if (quotedMsg && quotedMsg.hasMedia) {
 			const media = await quotedMsg.downloadMedia();
-			return { media, hadQuoted, quotedHadMedia: true };
+			return {
+				media,
+				hadQuoted,
+				quotedHadMedia: true,
+				sourceType: quotedMsg.type ?? "unknown"
+			};
 		}
-		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null };
+		return { media: null, hadQuoted, quotedHadMedia: quotedMsg ? false : null, sourceType: "text" };
 	} catch (error) {
 		logger.error("Erro ao obter mídia da mensagem citada:", error);
 	}
 
-	return { media: null, hadQuoted, quotedHadMedia: null };
+	return { media: null, hadQuoted, quotedHadMedia: null, sourceType: "text" };
 }
 
 /**
@@ -507,7 +577,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 
 	try {
 		// Obtém mídia da mensagem
-		const { media, hadQuoted, quotedHadMedia } = await getMediaFromMessage(message);
+		const { media, hadQuoted, quotedHadMedia, sourceType } = await getMediaFromMessage(message);
 		if (!media) {
 			if (hadQuoted && quotedHadMedia !== false) {
 				return new ReturnMessage({
@@ -530,10 +600,8 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 			});
 		}
 
-		// Verifica se a mídia é áudio
-		const isAudio = media.mimetype.startsWith("audio/") || media.mimetype === "application/ogg";
-
-		if (!isAudio) {
+		// Verifica se a mídia é transcrevível (áudio, voz ou "video note" do Telegram)
+		if (!isTranscribableMedia(media, sourceType)) {
 			return new ReturnMessage({
 				chatId,
 				content: "Por favor, forneça um áudio ou mensagem de voz.",
@@ -547,7 +615,26 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 		logger.debug("[speechToText] Convertendo voz para texto");
 
 		// Salva áudio em arquivo temporário
-		audioPath = await saveMediaToTemp(media, "ogg");
+		audioPath = await saveMediaToTemp(media, getExtensionForMimetype(media.mimetype));
+
+		// Bloqueia arquivos excessivamente grandes (ex: vídeos longos)
+		try {
+			const stat = await fs.stat(audioPath);
+			if (stat.size > MAX_STT_MEDIA_BYTES) {
+				return new ReturnMessage({
+					chatId,
+					content: `⚠️ Mídia muito grande (${(stat.size / 1024 / 1024).toFixed(1)} MB) para transcrever. Máximo de ${Math.floor(MAX_STT_MEDIA_BYTES / 1024 / 1024)} MB.`,
+					options: {
+						quotedMessageId: message.origin.id._serialized,
+						goReply: message.origin
+					}
+				});
+			}
+		} catch (statErr) {
+			logger.warn(
+				`[speechToText] Não foi possível verificar o tamanho da mídia: ${statErr.message}`
+			);
+		}
 
 		// Get Duration
 		let audioDuration = await getAudioDuration(audioPath);
@@ -711,7 +798,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
  * @param {Object} group - Dados do grupo
  * @returns {Promise<boolean>} - Se a mensagem foi processada
  */
-async function processAutoSTT(bot, message, group, opts) {
+async function processAutoSTT(bot, message, group, opts = {}) {
 	const startProcess = Date.now();
 	const chatId = message.group ?? message.author;
 	let audioPath = null;
@@ -723,8 +810,9 @@ async function processAutoSTT(bot, message, group, opts) {
 			return false;
 		}
 
-		// Pula se não for mensagem de voz/áudio
-		if (message.type !== "voice" && message.type !== "audio" && message.type !== "ptt") {
+		// Pula se não for mensagem de voz/áudio.
+		// Aceita também o "video note" (vídeo redondo) do Telegram; vídeos comuns ficam de fora.
+		if (!isVoiceLikeType(message.type)) {
 			return false;
 		}
 
@@ -741,11 +829,38 @@ async function processAutoSTT(bot, message, group, opts) {
 		}
 		*/
 
-		logger.debug(`[processAutoSTT] Processamento Auto-STT para mensagem no chat ${chatId}`);
+		logger.debug(
+			`[processAutoSTT] Processamento Auto-STT (${message.type}) para mensagem no chat ${chatId}`
+		);
 
 		// Salva áudio em arquivo temporário
 		const media = await message.downloadMedia();
-		audioPath = await saveMediaToTemp(media, "ogg");
+		if (!media || !media.data) {
+			logger.warn(`[processAutoSTT] Nenhuma mídia disponível para o chat ${chatId}`);
+			return false;
+		}
+
+		if (!isTranscribableMedia(media, message.type)) {
+			logger.debug(
+				`[processAutoSTT] Mídia não transcrevível (${media.mimetype}/${message.type}) no chat ${chatId}`
+			);
+			return false;
+		}
+
+		audioPath = await saveMediaToTemp(media, getExtensionForMimetype(media.mimetype));
+
+		// Evita transcrever arquivos excessivamente grandes no fluxo automático
+		try {
+			const stat = await fs.stat(audioPath);
+			if (stat.size > MAX_STT_MEDIA_BYTES) {
+				logger.warn(
+					`[processAutoSTT] Mídia ignorada por tamanho (${(stat.size / 1024 / 1024).toFixed(1)} MB) no chat ${chatId}`
+				);
+				return false;
+			}
+		} catch (statErr) {
+			logger.warn(`[processAutoSTT] Falha ao verificar tamanho da mídia: ${statErr.message}`);
+		}
 
 		// Get Duration
 		let audioDuration = await getAudioDuration(audioPath);
@@ -981,8 +1096,8 @@ const helper = {
 	cmds: [
 		{
 			cmd: "!stt",
-			desc: "Transcreve uma mensagem de voz ou áudio para texto",
-			usage: ["!stt (em resposta a um áudio de voz)"],
+			desc: "Transcreve áudio, mensagem de voz ou vídeo redondo (Telegram) para texto",
+			usage: ["!stt (no próprio áudio/voz ou respondendo a ele)"],
 			category: "voz"
 		},
 		{
@@ -1018,3 +1133,6 @@ module.exports.ttsCharacters = ttsCharacters;
 module.exports.processAutoSTT = processAutoSTT;
 module.exports.transcribeViaAPI = transcribeViaAPI;
 module.exports.getAudioDuration = getAudioDuration;
+module.exports.isVoiceLikeType = isVoiceLikeType;
+module.exports.isTranscribableMedia = isTranscribableMedia;
+module.exports.getExtensionForMimetype = getExtensionForMimetype;

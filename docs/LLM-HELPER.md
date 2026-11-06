@@ -1222,9 +1222,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 **Detalhes Técnicos:** Executa TTS com vozes locais/remotas e modelos Whisper para Speech-To-Text com estatísticas em SQLite
 
 #### Comandos:
-- **`!stt`**: Transcreve uma mensagem de voz ou áudio para texto
+- **`!stt`**: Transcreve áudio, mensagem de voz ou vídeo redondo (Telegram) para texto
   - *Categoria:* voz
-  - *Uso/Exemplos:* `!stt (em resposta a um áudio de voz)`
+  - *Uso/Exemplos:* `!stt (no próprio áudio/voz ou respondendo a ele)`
 - **`!tts`**: Converte texto em áudio falado com voz padrão (Ravena)
   - *Categoria:* voz
   - *Uso/Exemplos:* `!tts Olá pessoal do grupo!`
@@ -1682,7 +1682,7 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 ---
 
 #### `!g-autoStt`
-**Descrição:** Ativa/desativa conversão automática de voz para texto
+**Descrição:** Ativa/desativa conversão automática de voz para texto (áudios, voz e vídeo redondo do Telegram)
 
 **Categoria:** gerenciamento
 

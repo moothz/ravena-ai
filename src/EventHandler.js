@@ -1057,6 +1057,7 @@ class EventHandler extends EventEmitter {
 			(message.type === "image" ||
 				message.type === "sticker" ||
 				message.type === "video" ||
+				message.type === "video_note" ||
 				message.type === "gif" ||
 				message.content?.mimetype === "image/gif")
 		) {
@@ -1181,7 +1182,7 @@ class EventHandler extends EventEmitter {
 			message.type === "gif" ||
 			message.content?.mimetype === "image/gif" ||
 			message.content?._mediaDetails?.gifPlayback === true;
-		const isVideo = message.type === "video";
+		const isVideo = message.type === "video" || message.type === "video_note";
 		const isImage = message.type === "image";
 		const isSticker = message.type === "sticker";
 

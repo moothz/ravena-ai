@@ -9819,7 +9819,7 @@ const helper = {
 		},
 		{
 			cmd: "!g-autoStt",
-			desc: "Ativa/desativa conversão automática de voz para texto",
+			desc: "Ativa/desativa conversão automática de voz para texto (áudios, voz e vídeo redondo do Telegram)",
 			usage: ["!g-autoStt"],
 			category: "gerenciamento"
 		},
