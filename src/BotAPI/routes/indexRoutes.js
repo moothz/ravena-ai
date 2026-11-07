@@ -296,6 +296,31 @@ function registerIndexRoutes(api) {
 	};
 	app.get(["/ravenabank", "/banco"], serveBanco);
 
+	// Painel Administrativo do RavenaBank (HTML)
+	const serveBancoAdmin = async (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+		}
+		res.set({
+			"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+			Pragma: "no-cache",
+			Expires: "0",
+			"Surrogate-Control": "no-store"
+		});
+		try {
+			const htmlPath = path.join(__dirname, "../../../public/banco-admin.html");
+			let html = await fs.readFile(htmlPath, "utf-8");
+			const now = Date.now();
+			html = html.replace(/banco-admin\.js\?v=[^"']+/g, `banco-admin.js?v=${now}`);
+			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${now}`);
+			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${now}`);
+			return res.type("html").send(html);
+		} catch (_) {
+			return res.sendFile(path.join(__dirname, "../../../public/banco-admin.html"));
+		}
+	};
+	app.get(["/ravenabank/admin", "/banco/admin"], api.authenticateBasic, serveBancoAdmin);
+
 	// Página de Dossier dos Grupos (HTML)
 	app.get("/groups-dossier", api.authenticateBasic, (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/groups-dossier.html"));

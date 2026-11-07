@@ -851,59 +851,78 @@ class BankService {
 			throw new Error(`Falha ao debitar Zinthos no Waifuletes: ${errMsg}`);
 		}
 
-		// 2. Calcula Runas com spread dinâmico
-		const rawRunas = amount * rates.runasPerZinthos;
-		const spreadRate = this.calculateSpread(
-			quota.used.venda_runas,
-			rawRunas,
-			DAILY_LIMITS.venda_runas
-		);
-		const spreadFeeRunas = Number((rawRunas * spreadRate).toFixed(2));
-		const netRunas = Number((rawRunas - spreadFeeRunas).toFixed(2));
-		const now = Date.now();
+		try {
+			// 2. Calcula Runas com spread dinâmico
+			const rawRunas = amount * rates.runasPerZinthos;
+			const spreadRate = this.calculateSpread(
+				quota.used.venda_runas,
+				rawRunas,
+				DAILY_LIMITS.venda_runas
+			);
+			const spreadFeeRunas = Number((rawRunas * spreadRate).toFixed(2));
+			const netRunas = Number((rawRunas - spreadFeeRunas).toFixed(2));
+			const now = Date.now();
 
-		// 3. Credita Runas
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
-			VALUES (?, ?, ?, 0, ?, ?)
-			ON CONFLICT(user_id) DO UPDATE SET 
-				runas = runas + excluded.runas,
-				total_deposited_runas = total_deposited_runas + excluded.runas,
-				updated_at = excluded.updated_at`,
-			[cleanUser, netRunas, netRunas, now, now]
-		);
+			// 3. Credita Runas
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
+				VALUES (?, ?, ?, 0, ?, ?)
+				ON CONFLICT(user_id) DO UPDATE SET 
+					runas = runas + excluded.runas,
+					total_deposited_runas = total_deposited_runas + excluded.runas,
+					updated_at = excluded.updated_at`,
+				[cleanUser, netRunas, netRunas, now, now]
+			);
 
-		// 4. Atualiza cota e registra transação
-		const today = this.getTodayDateString();
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_daily_quotas (user_id, date, fish_kg_used, zinthos_used, jardim_coins_used, runas_compra_used, runas_venda_used, zinthos_compra_used, jardim_compra_used)
-			VALUES (?, ?, 0, ?, 0, 0, ?, 0, 0)
-			ON CONFLICT(user_id) DO UPDATE SET 
-				zinthos_used = zinthos_used + excluded.zinthos_used,
-				runas_venda_used = runas_venda_used + excluded.runas_venda_used`,
-			[cleanUser, today, amount, netRunas]
-		);
+			// 4. Atualiza cota e registra transação
+			const today = this.getTodayDateString();
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_daily_quotas (user_id, date, fish_kg_used, zinthos_used, jardim_coins_used, runas_compra_used, runas_venda_used, zinthos_compra_used, jardim_compra_used)
+				VALUES (?, ?, 0, ?, 0, 0, ?, 0, 0)
+				ON CONFLICT(user_id, date) DO UPDATE SET 
+					zinthos_used = zinthos_used + excluded.zinthos_used,
+					runas_venda_used = runas_venda_used + excluded.runas_venda_used`,
+				[cleanUser, today, amount, netRunas]
+			);
 
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_transactions 
-			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
-			VALUES (?, 'DEPOSIT', 'waifu', ?, ?, ?, ?, ?, ?)`,
-			[cleanUser, amount, netRunas, spreadRate, spreadFeeRunas, JSON.stringify({ amount }), now]
-		);
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions 
+				(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
+				VALUES (?, 'DEPOSIT', 'waifu', ?, ?, ?, ?, ?, ?)`,
+				[cleanUser, amount, netRunas, spreadRate, spreadFeeRunas, JSON.stringify({ amount }), now]
+			);
 
-		const updatedAccount = await this.getAccount(cleanUser);
-		return {
-			game: "waifu",
-			amountDeposited: amount,
-			spreadRate,
-			spreadFeeRunas,
-			netRunas,
-			newBalance: updatedAccount.runas,
-			quotaRemaining: Math.max(0, quotaRemainingRunas - netRunas)
-		};
+			const updatedAccount = await this.getAccount(cleanUser);
+			return {
+				game: "waifu",
+				amountDeposited: amount,
+				spreadRate,
+				spreadFeeRunas,
+				netRunas,
+				newBalance: updatedAccount.runas,
+				quotaRemaining: Math.max(0, quotaRemainingRunas - netRunas)
+			};
+		} catch (err) {
+			try {
+				await waifuApi.post("/admin/kakera/give", {
+					userId: cleanUser,
+					amount,
+					reason: "ADMIN_GRANT",
+					metadata: { reason: "bank_deposit_rollback_error" }
+				});
+				logger.warn(
+					`[RavenaBank] Rollback de depósito de Zinthos executado para ${cleanUser} (${amount} Z reembolsados devido a falha: ${err.message})`
+				);
+			} catch (rollbackErr) {
+				logger.error(
+					`[RavenaBank] FALHA CRÍTICA no rollback de Zinthos para ${cleanUser} (${amount} Z): ${rollbackErr.message}`
+				);
+			}
+			throw err;
+		}
 	}
 
 	/**
@@ -969,59 +988,76 @@ class BankService {
 			throw new Error(`Falha ao debitar Petalitas no Jardim: ${err.message}`);
 		}
 
-		// 2. Calcula Runas com spread dinâmico
-		const rawRunas = amount * rates.runasPerJardimCoin;
-		const spreadRate = this.calculateSpread(
-			quota.used.venda_runas,
-			rawRunas,
-			DAILY_LIMITS.venda_runas
-		);
-		const spreadFeeRunas = Number((rawRunas * spreadRate).toFixed(2));
-		const netRunas = Number((rawRunas - spreadFeeRunas).toFixed(2));
-		const now = Date.now();
+		try {
+			// 2. Calcula Runas com spread dinâmico
+			const rawRunas = amount * rates.runasPerJardimCoin;
+			const spreadRate = this.calculateSpread(
+				quota.used.venda_runas,
+				rawRunas,
+				DAILY_LIMITS.venda_runas
+			);
+			const spreadFeeRunas = Number((rawRunas * spreadRate).toFixed(2));
+			const netRunas = Number((rawRunas - spreadFeeRunas).toFixed(2));
+			const now = Date.now();
 
-		// 3. Credita Runas
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
-			VALUES (?, ?, ?, 0, ?, ?)
-			ON CONFLICT(user_id) DO UPDATE SET 
-				runas = runas + excluded.runas,
-				total_deposited_runas = total_deposited_runas + excluded.runas,
-				updated_at = excluded.updated_at`,
-			[cleanUser, netRunas, netRunas, now, now]
-		);
+			// 3. Credita Runas
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
+				VALUES (?, ?, ?, 0, ?, ?)
+				ON CONFLICT(user_id) DO UPDATE SET 
+					runas = runas + excluded.runas,
+					total_deposited_runas = total_deposited_runas + excluded.runas,
+					updated_at = excluded.updated_at`,
+				[cleanUser, netRunas, netRunas, now, now]
+			);
 
-		// 4. Atualiza cota e transação
-		const today = this.getTodayDateString();
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_daily_quotas (user_id, date, fish_kg_used, zinthos_used, jardim_coins_used, runas_compra_used, runas_venda_used, zinthos_compra_used, jardim_compra_used)
-			VALUES (?, ?, 0, 0, ?, 0, ?, 0, 0)
-			ON CONFLICT(user_id, date) DO UPDATE SET 
-				jardim_coins_used = jardim_coins_used + excluded.jardim_coins_used,
-				runas_venda_used = runas_venda_used + excluded.runas_venda_used`,
-			[cleanUser, today, amount, netRunas]
-		);
+			// 4. Atualiza cota e transação
+			const today = this.getTodayDateString();
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_daily_quotas (user_id, date, fish_kg_used, zinthos_used, jardim_coins_used, runas_compra_used, runas_venda_used, zinthos_compra_used, jardim_compra_used)
+				VALUES (?, ?, 0, 0, ?, 0, ?, 0, 0)
+				ON CONFLICT(user_id, date) DO UPDATE SET 
+					jardim_coins_used = jardim_coins_used + excluded.jardim_coins_used,
+					runas_venda_used = runas_venda_used + excluded.runas_venda_used`,
+				[cleanUser, today, amount, netRunas]
+			);
 
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_transactions 
-			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
-			VALUES (?, 'DEPOSIT', 'jardim', ?, ?, ?, ?, ?, ?)`,
-			[cleanUser, amount, netRunas, spreadRate, spreadFeeRunas, JSON.stringify({ amount }), now]
-		);
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions 
+				(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
+				VALUES (?, 'DEPOSIT', 'jardim', ?, ?, ?, ?, ?, ?)`,
+				[cleanUser, amount, netRunas, spreadRate, spreadFeeRunas, JSON.stringify({ amount }), now]
+			);
 
-		const updatedAccount = await this.getAccount(cleanUser);
-		return {
-			game: "jardim",
-			amountDeposited: amount,
-			spreadRate,
-			spreadFeeRunas,
-			netRunas,
-			newBalance: updatedAccount.runas,
-			quotaRemaining: Math.max(0, quotaRemainingRunas - netRunas)
-		};
+			const updatedAccount = await this.getAccount(cleanUser);
+			return {
+				game: "jardim",
+				amountDeposited: amount,
+				spreadRate,
+				spreadFeeRunas,
+				netRunas,
+				newBalance: updatedAccount.runas,
+				quotaRemaining: Math.max(0, quotaRemainingRunas - netRunas)
+			};
+		} catch (err) {
+			try {
+				await jardimClient.adminGive(cleanUser, {
+					coins: amount,
+					reason: "bank_deposit_rollback_error"
+				});
+				logger.warn(
+					`[RavenaBank] Rollback de depósito de Petalitas executado para ${cleanUser} (${amount} Ptl reembolsadas devido a falha: ${err.message})`
+				);
+			} catch (rollbackErr) {
+				logger.error(
+					`[RavenaBank] FALHA CRÍTICA no rollback de Petalitas para ${cleanUser} (${amount} Ptl): ${rollbackErr.message}`
+				);
+			}
+			throw err;
+		}
 	}
 
 	/**
@@ -1614,6 +1650,327 @@ class BankService {
 			`[RavenaBank] Cotas diárias liberadas para a data ${targetDate}. Registros resetados: ${res?.changes || 0}`
 		);
 		return res?.changes || 0;
+	}
+
+	/**
+	 * Mapeia apelidos dos usuários priorizando estritamente:
+	 * 1. Apelido global (core.db -> global_nicks)
+	 * 2. Primeiro apelido de grupo encontrado (core.db -> groups.nicks)
+	 * 3. Fallback: pushName da memória/ranking ou número puro
+	 *
+	 * @param {Array<string>} [userIds] - Lista opcional de user_ids para resolução com fallback
+	 * @returns {Promise<Map<string, string>>} Mapa de rawUserId -> nickname
+	 */
+	async getUserNicknamesMap(userIds = null) {
+		const nickMap = new Map();
+
+		try {
+			// 1. Carrega apelidos globais
+			const globalNicks = await database.getAllGlobalNicks();
+			if (globalNicks && typeof globalNicks === "object") {
+				for (const [uid, nick] of Object.entries(globalNicks)) {
+					if (nick && String(nick).trim()) {
+						const clean = String(uid).replace(/\D/g, "") || String(uid);
+						nickMap.set(clean, String(nick).trim());
+					}
+				}
+			}
+
+			// 2. Carrega apelidos de grupos (apenas para quem ainda não tem apelido global definido)
+			const groupRows = await database.dbAll(
+				"core",
+				"SELECT nicks FROM groups WHERE nicks IS NOT NULL AND nicks != '[]' AND nicks != ''"
+			);
+
+			for (const row of groupRows || []) {
+				try {
+					const arr = typeof row.nicks === "string" ? JSON.parse(row.nicks) : row.nicks;
+					if (Array.isArray(arr)) {
+						for (const n of arr) {
+							if (n && n.numero && n.apelido && String(n.apelido).trim()) {
+								const clean = String(n.numero).replace(/\D/g, "") || String(n.numero);
+								if (clean && !nickMap.has(clean)) {
+									nickMap.set(clean, String(n.apelido).trim());
+								}
+							}
+						}
+					}
+				} catch (_) {}
+			}
+
+			// 3. Se userIds foi especificado, para os que ainda não têm apelido, busca fallback de pushName
+			if (Array.isArray(userIds) && userIds.length > 0) {
+				const missingUsers = userIds.filter((uid) => {
+					const clean = String(uid).replace(/\D/g, "") || String(uid);
+					return !nickMap.has(clean);
+				});
+
+				if (missingUsers.length > 0) {
+					for (const uid of missingUsers) {
+						const clean = String(uid).replace(/\D/g, "") || String(uid);
+						try {
+							const memRow = await database.dbGet(
+								"memory",
+								"SELECT display_name FROM memory_identities WHERE platform_id LIKE ? OR canonical_user_id = ? LIMIT 1",
+								[`${clean}%`, `wa_${clean}`]
+							);
+							if (memRow?.display_name && String(memRow.display_name).trim()) {
+								nickMap.set(clean, String(memRow.display_name).trim());
+								continue;
+							}
+							const rankRow = await database.dbGet(
+								"msgranking",
+								"SELECT user_name FROM ranking WHERE user_id = ? LIMIT 1",
+								[clean]
+							);
+							if (rankRow?.user_name && String(rankRow.user_name).trim()) {
+								nickMap.set(clean, String(rankRow.user_name).trim());
+							}
+						} catch (_) {}
+					}
+				}
+			}
+		} catch (err) {
+			logger.error(`[getUserNicknamesMap] Erro ao mapear apelidos: ${err.message}`);
+		}
+
+		return nickMap;
+	}
+
+	/**
+	 * Listagem paginada e busca de usuários para o painel administrativo do RavenaBank.
+	 * O nome exibido é estritamente o apelido do usuário (global ou 1º de grupo, com fallback de pushName).
+	 */
+	async adminGetUsers({ query = "", page = 1, limit = 20, sort = "runas_desc" } = {}) {
+		const safePage = Math.max(1, parseInt(page, 10) || 1);
+		const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+		const offset = (safePage - 1) * safeLimit;
+		const cleanQ = String(query || "")
+			.trim()
+			.toLowerCase();
+
+		// Mapeador de apelidos
+		const nicknamesMap = await this.getUserNicknamesMap();
+
+		let accounts = [];
+		let total = 0;
+
+		if (!cleanQ) {
+			// Sem busca: paginação padrão por saldo de Runas decrescente
+			const countRow = await database.dbGet(dbName, "SELECT COUNT(*) as total FROM bank_accounts");
+			total = countRow?.total || 0;
+
+			let orderSql = "runas DESC";
+			if (sort === "runas_asc") orderSql = "runas ASC";
+			else if (sort === "id_asc") orderSql = "user_id ASC";
+			else if (sort === "updated_desc") orderSql = "updated_at DESC";
+
+			accounts = await database.dbAll(
+				dbName,
+				`SELECT user_id, runas, total_deposited_runas, total_withdrawn_runas, updated_at
+				 FROM bank_accounts
+				 ORDER BY ${orderSql}
+				 LIMIT ? OFFSET ?`,
+				[safeLimit, offset]
+			);
+		} else {
+			// Com busca: verifica se busca por número ou por apelido
+			const cleanDigits = cleanQ.replace(/\D/g, "");
+
+			// Identifica IDs cujos apelidos casam com a busca
+			const matchingUserIdsFromNicknames = new Set();
+			for (const [uid, nick] of nicknamesMap.entries()) {
+				if (nick.toLowerCase().includes(cleanQ)) {
+					matchingUserIdsFromNicknames.add(uid);
+				}
+			}
+
+			// Busca também em pushNames da memória para ampliar cobertura
+			try {
+				const memMatches = await database.dbAll(
+					"memory",
+					"SELECT platform_id, display_name FROM memory_identities WHERE display_name LIKE ? GROUP BY platform_id LIMIT 50",
+					[`%${cleanQ}%`]
+				);
+				for (const m of memMatches || []) {
+					const clean = String(m.platform_id).replace(/\D/g, "");
+					if (clean) matchingUserIdsFromNicknames.add(clean);
+				}
+			} catch (_) {}
+
+			// Constrói lista de IDs candidatos
+			const candidateIds = Array.from(matchingUserIdsFromNicknames);
+
+			const whereClauses = [];
+			const params = [];
+
+			if (cleanDigits.length >= 2) {
+				whereClauses.push("user_id LIKE ?");
+				params.push(`%${cleanDigits}%`);
+			}
+
+			if (candidateIds.length > 0) {
+				// Chunk para não estourar placeholders
+				const placeholders = candidateIds.map(() => "?").join(",");
+				whereClauses.push(`user_id IN (${placeholders})`);
+				params.push(...candidateIds);
+			}
+
+			if (whereClauses.length === 0) {
+				whereClauses.push("user_id LIKE ?");
+				params.push(`%${cleanQ}%`);
+			}
+
+			const whereSql = whereClauses.join(" OR ");
+
+			const countRow = await database.dbGet(
+				dbName,
+				`SELECT COUNT(*) as total FROM bank_accounts WHERE ${whereSql}`,
+				params
+			);
+			total = countRow?.total || 0;
+
+			accounts = await database.dbAll(
+				dbName,
+				`SELECT user_id, runas, total_deposited_runas, total_withdrawn_runas, updated_at
+				 FROM bank_accounts
+				 WHERE ${whereSql}
+				 ORDER BY runas DESC
+				 LIMIT ? OFFSET ?`,
+				[...params, safeLimit, offset]
+			);
+
+			// Se a busca por apelido encontrou usuários que AINDA NÃO têm conta bancária aberta, inclui-os na lista com 0 Runas
+			if (accounts.length < safeLimit && candidateIds.length > 0) {
+				const existingAccountIds = new Set(accounts.map((a) => a.user_id));
+				const missingCandidateIds = candidateIds.filter((cid) => !existingAccountIds.has(cid));
+
+				for (const cid of missingCandidateIds) {
+					if (accounts.length >= safeLimit) break;
+					accounts.push({
+						user_id: cid,
+						runas: 0,
+						total_deposited_runas: 0,
+						total_withdrawn_runas: 0,
+						updated_at: null
+					});
+					total++;
+				}
+			}
+		}
+
+		// Resolve os apelidos para a lista atual
+		const currentIds = accounts.map((a) => a.user_id);
+		const fullNickMap = await this.getUserNicknamesMap(currentIds);
+
+		const formattedUsers = accounts.map((acc) => {
+			const clean = String(acc.user_id).replace(/\D/g, "") || String(acc.user_id);
+			const nick = fullNickMap.get(clean) || fullNickMap.get(acc.user_id) || "Sem apelido";
+
+			return {
+				userId: acc.user_id,
+				name: nick,
+				runas: Number(acc.runas || 0),
+				totalDeposited: Number(acc.total_deposited_runas || 0),
+				totalWithdrawn: Number(acc.total_withdrawn_runas || 0),
+				updatedAt: acc.updated_at
+			};
+		});
+
+		return {
+			users: formattedUsers,
+			total,
+			page: safePage,
+			limit: safeLimit,
+			totalPages: Math.ceil(total / safeLimit) || 1
+		};
+	}
+
+	/**
+	 * Ajusta administrativamente o saldo de Runas de um usuário e registra transação de auditoria contábil.
+	 * @param {string} userId
+	 * @param {number|string} newAmount
+	 * @param {string} [adminUser]
+	 * @returns {Promise<Object>}
+	 */
+	async adminSetUserRunas(userId, newAmount, adminUser = "admin") {
+		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+		const parsedRunas = parseFloat(newAmount);
+		if (isNaN(parsedRunas) || parsedRunas < 0) {
+			throw new Error("Saldo de Runas inválido. Deve ser um número maior ou igual a zero.");
+		}
+
+		const targetRunas = Math.round(parsedRunas * 100) / 100;
+		const account = await this.getAccount(cleanUser);
+		const previousRunas = Number(account?.runas || 0);
+		const diff = Math.round((targetRunas - previousRunas) * 100) / 100;
+		const now = Date.now();
+
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_accounts (user_id, runas, total_deposited_runas, total_withdrawn_runas, created_at, updated_at)
+			 VALUES (?, ?, 0, 0, ?, ?)
+			 ON CONFLICT(user_id) DO UPDATE SET 
+				runas = excluded.runas,
+				updated_at = excluded.updated_at`,
+			[cleanUser, targetRunas, now, now]
+		);
+
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_transactions 
+			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
+			VALUES (?, 'ADMIN_ADJUST', 'admin', 0, ?, 0, 0, ?, ?)`,
+			[
+				cleanUser,
+				diff,
+				JSON.stringify({
+					previousRunas,
+					newRunas: targetRunas,
+					difference: diff,
+					adminUser
+				}),
+				now
+			]
+		);
+
+		logger.info(
+			`[RavenaBank Admin] Saldo de Runas do usuário ${cleanUser} alterado por ${adminUser}: ${previousRunas} -> ${targetRunas} (dif: ${diff})`
+		);
+
+		return await this.getAccount(cleanUser);
+	}
+
+	/**
+	 * Retorna as configurações econômicas consolidadas e métricas de auditoria para o painel de admin.
+	 */
+	async adminGetConfigAndStats() {
+		const macro = await this.getMacroEconomics();
+
+		// Estatísticas de transações e taxas destruídas
+		const txStats = await database.dbGet(
+			dbName,
+			"SELECT COUNT(*) as totalTransactions, SUM(spread_fee_runas) as totalBurnedRunas FROM bank_transactions"
+		);
+
+		const totalTransactions = Number(txStats?.totalTransactions || 0);
+		const totalBurnedRunas = Number(txStats?.totalBurnedRunas || 0);
+
+		// Contagem de contas
+		const countRow = await database.dbGet(
+			dbName,
+			"SELECT COUNT(*) as totalAccounts, SUM(runas) as totalRunas FROM bank_accounts"
+		);
+
+		return {
+			...macro,
+			totalTransactions,
+			totalBurnedRunas,
+			totalAccounts: Number(countRow?.totalAccounts || 0),
+			totalRunas: Number(countRow?.totalRunas || 0),
+			storePrices: this.STORE_PRICES,
+			storeLimits: this.STORE_LIMITS
+		};
 	}
 }
 

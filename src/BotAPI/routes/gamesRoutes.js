@@ -374,6 +374,141 @@ function registerGamesRoutes(api) {
 			return res.status(400).json({ ok: false, error: error.message });
 		}
 	});
+
+	// =========================================================================
+	// ROTAS ADMINISTRATIVAS DO RAVENABANK (/ravenabank/admin)
+	// =========================================================================
+
+	// GET /api/games/bank/admin/users — listagem paginada e busca por apelido/número
+	app.get(
+		"/api/games/bank/admin/users",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { q = "", page = 1, limit = 20, sort = "runas_desc" } = req.query;
+				const data = await bankService.adminGetUsers({
+					query: q,
+					page,
+					limit,
+					sort
+				});
+				return res.json({ ok: true, data });
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao listar usuários do banco:", error);
+				return res
+					.status(500)
+					.json({ ok: false, error: "Falha ao listar usuários do RavenaBank." });
+			}
+		}
+	);
+
+	// POST /api/games/bank/admin/user-runas — edição direta de saldo de Runas
+	app.post(
+		"/api/games/bank/admin/user-runas",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { userId, runas } = req.body || {};
+				if (!userId) {
+					return res.status(400).json({ ok: false, error: "Parâmetro 'userId' é obrigatório." });
+				}
+				if (runas === undefined || runas === null || isNaN(Number(runas))) {
+					return res
+						.status(400)
+						.json({ ok: false, error: "Parâmetro 'runas' deve ser um número válido." });
+				}
+
+				const updatedAccount = await bankService.adminSetUserRunas(
+					userId,
+					Number(runas),
+					req.headers.authorization ? "basic_admin" : "session_admin"
+				);
+
+				return res.json({
+					ok: true,
+					data: {
+						userId: updatedAccount.user_id,
+						runas: updatedAccount.runas,
+						updatedAt: updatedAccount.updated_at
+					}
+				});
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao atualizar Runas do usuário:", error);
+				return res.status(400).json({ ok: false, error: error.message });
+			}
+		}
+	);
+
+	// POST /api/games/bank/admin/impersonate — gera sessão e link transparente [Acessar]
+	app.post(
+		"/api/games/bank/admin/impersonate",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { userId } = req.body || {};
+				if (!userId) {
+					return res.status(400).json({ ok: false, error: "Parâmetro 'userId' é obrigatório." });
+				}
+
+				const session = await bankService.createSession(userId);
+				const redirectUrl = `/ravenabank?token=${session.token}&_cb=${Date.now()}`;
+
+				api.logger.info(
+					`[gamesRoutes] Admin impersonando usuário ${userId} via token ${session.token.slice(0, 8)}...`
+				);
+
+				return res.json({
+					ok: true,
+					token: session.token,
+					expiresAt: session.expiresAt,
+					redirectUrl
+				});
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao gerar impersonação no banco:", error);
+				return res.status(500).json({ ok: false, error: "Falha ao gerar sessão de acesso." });
+			}
+		}
+	);
+
+	// GET /api/games/bank/admin/config — estatísticas macroeconômicas e configurações
+	app.get(
+		"/api/games/bank/admin/config",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const config = await bankService.adminGetConfigAndStats();
+				return res.json({ ok: true, data: config });
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao carregar configurações do banco:", error);
+				return res
+					.status(500)
+					.json({ ok: false, error: "Falha ao carregar configurações do banco." });
+			}
+		}
+	);
+
+	// POST /api/games/bank/admin/recalculate-rates — força recálculo diário sob demanda
+	app.post(
+		"/api/games/bank/admin/recalculate-rates",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const rates = await bankService.getRates(true);
+				api.logger.info(
+					"[gamesRoutes] Cotações diárias do RavenaBank recalculadas manualmente pelo admin."
+				);
+				return res.json({ ok: true, data: rates });
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao recalcular cotações do banco:", error);
+				return res.status(500).json({ ok: false, error: error.message });
+			}
+		}
+	);
 }
 
 module.exports = { registerGamesRoutes, sendGameNotice };

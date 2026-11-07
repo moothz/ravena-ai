@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RavenaBank Admin — Gestão Central & Usuários</title>
+    
+    <meta name="description" content="Painel administrativo do RavenaBank: controle de contas, edição de Runas, login transparente e configurações macroeconômicas.">
+    <meta name="author" content="moothz">
+    
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --primary-dark: #0388c2;
+            --secondary-color: #7928ca;
+            --background-color: #05060d;
+            --surface-color: #0d101d;
+            --card-color: #141728;
+            --card-hover: #191e33;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #242945;
+            --border-highlight: #3b436d;
+            --accent-gold: #ffd700;
+            --accent-purple: #9d4edd;
+            --accent-green: #10b981;
+            --accent-cyan: #06b6d4;
+            --accent-red: #ef4444;
+            --accent-orange: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 24px 12px;
+            min-height: 100vh;
+        }
+
+        .admin-container {
+            max-width: 1120px;
+            margin: 0 auto;
+            background: var(--surface-color);
+            border-radius: 16px;
+            padding: 26px;
+            box-shadow: 0 12px 50px rgba(0,0,0,0.85);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Top Bar & Header */
+        .top-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .brand-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-badge i.logo-icon {
+            font-size: 28px;
+            color: var(--accent-gold);
+            background: rgba(255, 215, 0, 0.12);
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .brand-text h1 {
+            font-size: 22px;
+            color: #ffffff;
+            margin: 0 0 3px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .admin-pill {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(121, 40, 202, 0.3));
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .brand-text p {
+            margin: 0;
+            font-size: 12px;
+            color: #8b8ea8;
+        }
+
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-nav {
+            background: var(--card-color);
+            color: #e2e8f0;
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-nav:hover {
+            background: rgba(4, 169, 240, 0.15);
+            border-color: var(--primary-color);
+            color: #ffffff;
+        }
+
+        .btn-nav.danger:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: var(--accent-red);
+            color: #fca5a5;
+        }
+
+        /* Tabs Header */
+        .tabs-header {
+            display: flex;
+            gap: 12px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: #8b8ea8;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 12px 20px;
+            cursor: pointer;
+            border-radius: 10px 10px 0 0;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            top: 2px;
+        }
+
+        .tab-btn:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: #ffffff;
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-bottom: 2px solid var(--primary-color);
+            box-shadow: 0 -4px 15px rgba(4, 169, 240, 0.15);
+        }
+
+        .tab-btn.active i {
+            color: var(--primary-color);
+        }
+
+        /* Tab Content Containers */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.25s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Search & Control Bar */
+        .controls-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0 14px;
+            flex: 1;
+            min-width: 280px;
+            max-width: 520px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .search-box:focus-within {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(4, 169, 240, 0.15);
+        }
+
+        .search-box i.search-icon {
+            color: #64748b;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+
+        .search-box input {
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            font-size: 13.5px;
+            padding: 10px 0;
+            width: 100%;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .search-box input::placeholder {
+            color: #64748b;
+        }
+
+        .btn-clear-search {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .btn-clear-search:hover {
+            color: #ffffff;
+        }
+
+        .controls-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .badge-count {
+            background: rgba(4, 169, 240, 0.12);
+            color: #38bdf8;
+            border: 1px solid rgba(4, 169, 240, 0.25);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .btn-refresh {
+            background: var(--card-color);
+            color: #94a3b8;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-refresh:hover {
+            color: #ffffff;
+            border-color: var(--primary-color);
+            background: rgba(4, 169, 240, 0.1);
+        }
+
+        /* Users Table */
+        .table-wrapper {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow-x: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        table.bank-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        table.bank-table th {
+            background: rgba(255, 255, 255, 0.02);
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        table.bank-table td {
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(36, 41, 69, 0.6);
+            color: #cbd5e1;
+            vertical-align: middle;
+        }
+
+        table.bank-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        table.bank-table tbody tr:hover {
+            background: var(--card-hover);
+        }
+
+        .col-user-name {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .user-avatar-circle {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(121, 40, 202, 0.4), rgba(4, 169, 240, 0.4));
+            border: 1px solid rgba(121, 40, 202, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e2e8f0;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .user-id-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-copy-id {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            padding: 2px;
+            font-size: 11px;
+            transition: color 0.15s;
+        }
+
+        .btn-copy-id:hover {
+            color: var(--primary-color);
+        }
+
+        /* Editable Runas Cell */
+        .runas-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: #ffffff;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .runas-cell:hover .btn-edit-trigger {
+            opacity: 1;
+        }
+
+        .runas-value {
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+
+        .btn-edit-trigger {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+            border-radius: 6px;
+            width: 26px;
+            height: 26px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 11px;
+            opacity: 0.6;
+            transition: all 0.2s;
+        }
+
+        .btn-edit-trigger:hover {
+            background: var(--primary-color);
+            color: #ffffff;
+            border-color: var(--primary-color);
+            opacity: 1;
+        }
+
+        .runas-edit-inline {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .runas-edit-input {
+            width: 120px;
+            background: #090c17;
+            border: 1.5px solid var(--primary-color);
+            border-radius: 6px;
+            color: #ffffff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 8px;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(4, 169, 240, 0.2);
+        }
+
+        .btn-inline-action {
+            border: none;
+            border-radius: 6px;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            transition: transform 0.1s;
+        }
+
+        .btn-inline-action:active {
+            transform: scale(0.95);
+        }
+
+        .btn-inline-save {
+            background: var(--accent-green);
+            color: #ffffff;
+        }
+
+        .btn-inline-cancel {
+            background: #475569;
+            color: #ffffff;
+        }
+
+        /* Action Column [Acessar] */
+        .btn-impersonate {
+            background: linear-gradient(135deg, rgba(121, 40, 202, 0.8), rgba(4, 169, 240, 0.8));
+            border: 1px solid rgba(4, 169, 240, 0.5);
+            color: #ffffff;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 10px rgba(121, 40, 202, 0.3);
+            transition: all 0.2s;
+        }
+
+        .btn-impersonate:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(4, 169, 240, 0.4);
+            border-color: #38bdf8;
+        }
+
+        .btn-impersonate:active {
+            transform: translateY(1px);
+        }
+
+        /* Pagination Controls */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 12.5px;
+            color: #94a3b8;
+        }
+
+        .pagination-buttons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-page {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            color: #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .btn-page:hover:not(:disabled) {
+            background: rgba(4, 169, 240, 0.15);
+            border-color: var(--primary-color);
+            color: #ffffff;
+        }
+
+        .btn-page:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-page.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        /* Config Tab Styles */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 26px;
+        }
+
+        .metric-card {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .metric-card:hover {
+            border-color: rgba(4, 169, 240, 0.5);
+        }
+
+        .metric-icon-box {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .icon-runas {
+            background: rgba(255, 215, 0, 0.15);
+            color: #ffd700;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .icon-users {
+            background: rgba(4, 169, 240, 0.15);
+            color: #38bdf8;
+            border: 1px solid rgba(4, 169, 240, 0.3);
+        }
+
+        .icon-burned {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .icon-txs {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .metric-info h4 {
+            margin: 0 0 4px 0;
+            font-size: 11.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #8b8ea8;
+        }
+
+        .metric-info .metric-num {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: #ffffff;
+        }
+
+        /* Config Sections */
+        .config-section {
+            background: #090c17;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 22px;
+            margin-bottom: 22px;
+        }
+
+        .config-section h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            color: #f1f5f9;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px;
+        }
+
+        .rate-box {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rate-box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .rate-value-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--primary-color);
+            background: rgba(4, 169, 240, 0.12);
+            border: 1px solid rgba(4, 169, 240, 0.25);
+            padding: 6px 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .rate-details {
+            font-size: 12px;
+            color: #94a3b8;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 12px;
+            font-size: 12.5px;
+        }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-left: 3px solid var(--primary-color);
+            padding: 12px 14px;
+            border-radius: 8px;
+        }
+
+        .info-item strong {
+            color: #f1f5f9;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .btn-recalculate {
+            background: linear-gradient(135deg, rgba(4, 169, 240, 0.8), rgba(16, 185, 129, 0.8));
+            border: 1px solid rgba(4, 169, 240, 0.6);
+            color: #ffffff;
+            font-weight: 600;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-recalculate:hover {
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+            transform: translateY(-1px);
+        }
+
+        /* Toasts Container */
+        #bank-toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .bank-toast {
+            pointer-events: auto;
+            background: #11152a;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            padding: 14px 18px;
+            color: #ffffff;
+            font-size: 13px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 280px;
+            max-width: 440px;
+            animation: toastIn 0.3s ease-out;
+            transition: all 0.3s ease;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-12px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .toast-success { border-color: rgba(16, 185, 129, 0.6); }
+        .toast-success .toast-icon { color: #10b981; }
+        .toast-error { border-color: rgba(239, 68, 68, 0.6); }
+        .toast-error .toast-icon { color: #ef4444; }
+        .toast-info { border-color: rgba(4, 169, 240, 0.6); }
+        .toast-info .toast-icon { color: #04a9f0; }
+
+        .toast-close {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            margin-left: auto;
+            font-size: 16px;
+        }
+
+        /* Empty / Loading States */
+        .state-container {
+            padding: 40px 20px;
+            text-align: center;
+            color: #8b8ea8;
+        }
+
+        .state-container i {
+            font-size: 32px;
+            margin-bottom: 12px;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Top Navbar -->
+        <header class="top-navbar">
+            <div class="brand-badge">
+                <i class="fas fa-landmark logo-icon"></i>
+                <div class="brand-text">
+                    <h1>RavenaBank <span class="admin-pill">Admin</span></h1>
+                    <p>Gestão de Usuários, Economia Central e Acesso Transparente</p>
+                </div>
+            </div>
+            <div class="top-actions">
+                <a href="/ravenabank" target="_blank" class="btn-nav" title="Abrir interface do usuário">
+                    <i class="fas fa-external-link-alt"></i> Ir ao Banco Comum
+                </a>
+                <a href="/instances" class="btn-nav" title="Painel de Instâncias">
+                    <i class="fas fa-server"></i> Instâncias
+                </a>
+                <a href="/logout" class="btn-nav danger" title="Encerrar sessão de administrador">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </a>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs-header">
+            <button type="button" class="tab-btn active" id="btn-tab-users" data-tab="tab-users">
+                <i class="fas fa-users"></i> Usuários
+            </button>
+            <button type="button" class="tab-btn" id="btn-tab-config" data-tab="tab-config">
+                <i class="fas fa-sliders-h"></i> Configurações & Economia
+            </button>
+        </nav>
+
+        <!-- TAB 1: USUÁRIOS -->
+        <main id="tab-users" class="tab-content active">
+            <!-- Controls / Search Bar -->
+            <div class="controls-bar">
+                <div class="search-box">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="user-search-input" placeholder="Buscar por apelido ou número/ID..." autocomplete="off">
+                    <button type="button" id="btn-clear-search" class="btn-clear-search" title="Limpar busca">&times;</button>
+                </div>
+                <div class="controls-right">
+                    <span class="badge-count" id="users-count-badge">Carregando contas...</span>
+                    <button type="button" id="btn-refresh-users" class="btn-refresh" title="Atualizar listagem">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Users Table -->
+            <div class="table-wrapper">
+                <table class="bank-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 32%;">Nome / Apelido</th>
+                            <th style="width: 28%;">Número / ID</th>
+                            <th style="width: 25%;">Runas (ᚱ)</th>
+                            <th style="width: 15%; text-align: center;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body">
+                        <tr>
+                            <td colspan="4" class="state-container">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Carregando usuários do RavenaBank...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="pagination-container" id="pagination-controls" style="display: none;">
+                <div class="pagination-info" id="pagination-info">
+                    Mostrando 0 de 0 usuários
+                </div>
+                <div class="pagination-buttons" id="pagination-buttons">
+                    <!-- Gerado dinamicamente -->
+                </div>
+            </div>
+        </main>
+
+        <!-- TAB 2: CONFIGURAÇÕES & ECONOMIA -->
+        <section id="tab-config" class="tab-content">
+            <!-- Top Metric Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon-box icon-runas">
+                        <i class="fas fa-gem"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h4>M1 Circulante</h4>
+                        <p class="metric-num" id="stat-total-runas">0 ᚱ</p>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box icon-users">
+                        <i class="fas fa-wallet"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h4>Contas Cadastradas</h4>
+                        <p class="metric-num" id="stat-total-accounts">0</p>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box icon-burned">
+                        <i class="fas fa-fire"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h4>Spread Queimado</h4>
+                        <p class="metric-num" id="stat-burned-runas">0 ᚱ</p>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box icon-txs">
+                        <i class="fas fa-receipt"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h4>Transações Registradas</h4>
+                        <p class="metric-num" id="stat-total-txs">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rates Box -->
+            <div class="config-section">
+                <h3><i class="fas fa-coins" style="color: var(--accent-gold);"></i> Cotações Oficiais do Dia</h3>
+                <div class="rates-grid" id="rates-grid-container">
+                    <!-- Gerado dinamicamente via banco-admin.js -->
+                </div>
+            </div>
+
+            <!-- Rules & Parameters -->
+            <div class="config-section">
+                <h3><i class="fas fa-balance-scale" style="color: var(--primary-color);"></i> Parâmetros Macroeconômicos & Cotas</h3>
+                <div class="info-list">
+                    <div class="info-item">
+                        <strong>📈 Taxa Progressiva (Spread): 3% a 10%</strong>
+                        Dreno monetário deflacionário. Varia conforme o consumo da cota diária: <code>Taxa = 3% + 7% * (Volume/Cota)^1.5</code>. Todo o valor arrecadado é permanentemente destruído.
+                    </div>
+                    <div class="info-item">
+                        <strong>🛡️ Circuit Breaker (Trava de Segurança)</strong>
+                        A variação de qualquer cotação de mercado é limitada a no máximo <code>±10%</code> por dia contra o valor de ontem.
+                    </div>
+                    <div class="info-item">
+                        <strong>⏰ Reset Diário de Cotas & Cotações</strong>
+                        Todos os dias às <code>04:00 AM BRT</code> o scheduler recalcula as cotações oficiais e renova as cotas de todos os jogadores.
+                    </div>
+                    <div class="info-item">
+                        <strong>🛍️ Loja de Consumíveis (Preços Atuais)</strong>
+                        Moedinhas (Slots): <code>55 ᚱ</code> (limite 300/dia)<br>
+                        Iscas (Pesca): <code>45 ᚱ</code> (limite 200/dia)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Rates Action -->
+            <div class="config-section" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                <div>
+                    <h3 style="margin: 0 0 4px 0;"><i class="fas fa-bolt" style="color: var(--accent-orange);"></i> Sincronização & Rotação Manual</h3>
+                    <p style="margin: 0; font-size: 12.5px; color: #8b8ea8;">Força o recálculo imediato de mercado para atualizar multiplicadores e cotações sem aguardar as 04:00 AM.</p>
+                </div>
+                <button type="button" id="btn-recalculate-rates" class="btn-recalculate">
+                    <i class="fas fa-sync-alt"></i> Forçar Recálculo de Cotações
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="bank-toast-container"></div>
+
+    <script src="/banco-admin.js?v=1"></script>
+</body>
+</html>
