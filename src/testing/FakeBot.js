@@ -324,6 +324,15 @@ class FakeBot {
 				} catch {}
 			}
 
+			if (msg.options?.waifuCharSearch) {
+				try {
+					const WaifuCommands = require("../functions/WaifuCommands");
+					if (typeof WaifuCommands.recordCharSearchMessage === "function") {
+						WaifuCommands.recordCharSearchMessage(fakeMsgId, msg.options.waifuCharSearch);
+					}
+				} catch {}
+			}
+
 			if (msg.options?.farmData?.userId) {
 				try {
 					const FazendaCommands = require("../functions/FazendaCommands");

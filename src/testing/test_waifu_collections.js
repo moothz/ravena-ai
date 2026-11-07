@@ -62,6 +62,33 @@ async function runTests() {
 		}
 	];
 
+	const mockHaremEntries = [
+		{
+			id: "h-1",
+			isFavorite: true,
+			keys: 10,
+			collection: { id: "col-1", name: "Isekai" },
+			character: {
+				id: "rem-re-zero",
+				name: "Rem",
+				series: "Re:Zero",
+				baseRarity: "LEGENDARY"
+			}
+		},
+		{
+			id: "h-2",
+			isFavorite: false,
+			keys: 5,
+			collection: null,
+			character: {
+				id: "emilia-re-zero",
+				name: "Emilia",
+				series: "Re:Zero",
+				baseRarity: "LEGENDARY"
+			}
+		}
+	];
+
 	WaifuCommands.api.get = async (url, config) => {
 		if (url.startsWith("/characters/")) {
 			const idOrQuery = decodeURIComponent(url.replace("/characters/", ""));
@@ -79,6 +106,25 @@ async function runTests() {
 							likeCount: 99,
 							description: "Empregada demônio leal a Subaru",
 							tags: ["oni", "maid", "blue hair"],
+							imageUrl: ""
+						}
+					}
+				};
+			}
+			if (idOrQuery === "artoria-mythic" || idOrQuery.toLowerCase().includes("artoria")) {
+				return {
+					data: {
+						success: true,
+						data: {
+							id: "artoria-mythic",
+							name: "Artoria Pendragon",
+							series: "Fate",
+							baseRarity: "MYTHIC",
+							rarity: "MYTHIC",
+							isMythic: true,
+							gender: "FEMALE",
+							claimCount: 1,
+							likeCount: 1,
 							imageUrl: ""
 						}
 					}
@@ -122,35 +168,10 @@ async function runTests() {
 				data: {
 					success: true,
 					data: {
-						total: 2,
+						total: mockHaremEntries.length,
 						page: 1,
 						totalPages: 1,
-						data: [
-							{
-								id: "h-1",
-								isFavorite: true,
-								keys: 10,
-								collection: { id: "col-1", name: "Isekai" },
-								character: {
-									id: "rem-re-zero",
-									name: "Rem",
-									series: "Re:Zero",
-									baseRarity: "LEGENDARY"
-								}
-							},
-							{
-								id: "h-2",
-								isFavorite: false,
-								keys: 5,
-								collection: null,
-								character: {
-									id: "emilia-re-zero",
-									name: "Emilia",
-									series: "Re:Zero",
-									baseRarity: "LEGENDARY"
-								}
-							}
-						]
+						data: mockHaremEntries
 					}
 				}
 			};
@@ -285,6 +306,11 @@ async function runTests() {
 			"Deveria conter caracteres de árvore de pasta"
 		);
 		assert.ok(haremContent.includes("Rem"), "Deveria listar Rem dentro da pasta");
+		assert.ok(haremContent.includes("💞"), "Deveria conter coração de soulmate para 10/10 chaves");
+		assert.ok(
+			haremContent.includes("/character/rem-re-zero"),
+			"Deveria conter o link do personagem"
+		);
 		console.log("✓ !mu-harem exibe coleções abaixo de favoritas perfeitamente!");
 
 		// [Teste 4] !mu-colecoes lista coleções existentes
@@ -401,6 +427,118 @@ async function runTests() {
 		);
 		assert.strictEqual(mockCollections.length, 1, "Deveria ter restado 1 coleção");
 		console.log("✓ !mu-col-del apaga pasta com sucesso!");
+
+		// [Teste 10] Míticos aparecem como primeira coleção na lista quando o usuário possui
+		console.log("[Teste 10] Testando Míticos como primeira coleção em !mu-harem e !mu-colecoes...");
+		mockHaremEntries.unshift({
+			id: "h-mythic",
+			isFavorite: false,
+			keys: 0,
+			collection: null,
+			character: {
+				id: "artoria-mythic",
+				name: "Artoria Pendragon",
+				series: "Fate",
+				baseRarity: "MYTHIC",
+				rarity: "MYTHIC",
+				isMythic: true
+			}
+		});
+
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgHaremWithMythic = createMessage({
+			content: "!mu-harem",
+			author: "5511999999999@s.whatsapp.net",
+			group: "120363000000000000@g.us"
+		});
+		await eventHandler.processMessage(bot, msgHaremWithMythic);
+		const capHaremMythic = await waitForCaptured(1);
+		assert.ok(capHaremMythic.length >= 1, "Deveria capturar resposta de !mu-harem com mítico");
+		const haremMythicContent = capHaremMythic[0]?.content || "";
+		assert.ok(
+			haremMythicContent.includes("📂 *Míticos* (1 waifu):"),
+			`Deveria listar Míticos como primeira pasta, recebido: ${haremMythicContent}`
+		);
+		assert.ok(
+			haremMythicContent.includes("🔮 *Artoria Pendragon*"),
+			"Deveria conter emoji 🔮 e nome da Artoria na coleção"
+		);
+		assert.ok(
+			haremMythicContent.includes("/character/artoria-mythic"),
+			"Deveria conter o link da waifu mítica"
+		);
+
+		// Testa !mu-colecoes com mítico
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgColsWithMythic = createMessage({
+			content: "!mu-colecoes",
+			author: "5511999999999@s.whatsapp.net",
+			group: "120363000000000000@g.us"
+		});
+		await eventHandler.processMessage(bot, msgColsWithMythic);
+		const capColsMythic = await waitForCaptured(1);
+		assert.ok(capColsMythic.length >= 1, "Deveria capturar resposta de !mu-colecoes com mítico");
+		const colsMythicContent = capColsMythic[0]?.content || "";
+		assert.ok(
+			colsMythicContent.includes("1. 📂 🔮 *Míticos* — 1 personagem(ns)"),
+			`Deveria listar pasta Míticos como número 1, recebido: ${colsMythicContent}`
+		);
+		assert.ok(
+			colsMythicContent.includes("2. 📂 *Isekai*"),
+			`Deveria listar pasta Isekai como número 2, recebido: ${colsMythicContent}`
+		);
+
+		// Testa ver pasta Míticos: !mu-colecoes miticos
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgVerMiticos = createMessage({
+			content: "!mu-colecoes miticos",
+			author: "5511999999999@s.whatsapp.net",
+			group: "120363000000000000@g.us"
+		});
+		await eventHandler.processMessage(bot, msgVerMiticos);
+		const capVerMiticos = await waitForCaptured(1);
+		assert.ok(capVerMiticos.length >= 1, "Deveria capturar resposta de !mu-colecoes miticos");
+		const verMiticosContent = capVerMiticos[0]?.content || "";
+		assert.ok(
+			verMiticosContent.includes("📂 *Coleção: Míticos*"),
+			`Deveria exibir cabeçalho de Míticos, recebido: ${verMiticosContent}`
+		);
+		assert.ok(
+			verMiticosContent.includes("🔮 *Artoria Pendragon*"),
+			"Deveria exibir Artoria com 🔮"
+		);
+		assert.ok(
+			verMiticosContent.includes("/character/artoria-mythic"),
+			"Deveria exibir o link web de Artoria"
+		);
+		console.log("✓ Míticos como primeira coleção em !mu-harem e !mu-colecoes verificado!");
+
+		// [Teste 11] !mu-col-add com waifu mítica deve ser rejeitado
+		console.log("[Teste 11] Testando bloqueio de adicionar mítico em pasta...");
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
+		const msgAddMythic = createMessage({
+			content: "!mu-col-add Isekai | artoria-mythic",
+			author: "5511999999999@s.whatsapp.net",
+			group: "120363000000000000@g.us"
+		});
+		await eventHandler.processMessage(bot, msgAddMythic);
+		const capAddMythic = await waitForCaptured(1);
+		assert.ok(
+			capAddMythic.length >= 1,
+			"Deveria capturar resposta de erro para !mu-col-add mítico"
+		);
+		const addMythicContent = capAddMythic[0]?.content || "";
+		assert.ok(
+			addMythicContent.includes(
+				"Personagens míticos não podem ser colocados em coleções ou pastas"
+			),
+			`Deveria conter mensagem de bloqueio, recebido: ${addMythicContent}`
+		);
+		console.log("✓ Bloqueio de adicionar mítico a coleções verificado com sucesso!");
 
 		console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 🎉");
 		process.exit(0);

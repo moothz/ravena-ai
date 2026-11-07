@@ -1632,6 +1632,20 @@ class WhatsAppBotGo {
 					}
 				}
 
+				if (options.waifuCharSearch && result?.id) {
+					const sentMsgId = result.id._serialized || result.id.id || result.id;
+					try {
+						const WaifuCommands = require("./functions/WaifuCommands");
+						if (typeof WaifuCommands.recordCharSearchMessage === "function") {
+							WaifuCommands.recordCharSearchMessage(sentMsgId, options.waifuCharSearch);
+						}
+					} catch (regErr) {
+						this.logger.warn(
+							`[sendReturnMessages] Erro ao registrar waifu char search message: ${regErr.message}`
+						);
+					}
+				}
+
 				if (options.boletoData && result?.id) {
 					const sentMsgId = result.id._serialized || result.id.id || result.id;
 					try {

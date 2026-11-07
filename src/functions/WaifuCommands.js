@@ -80,20 +80,21 @@ function getExclusiveClaimWindowMs(rarity) {
 	return EXCLUSIVE_CLAIM_WINDOWS[norm] || 0;
 }
 
-// Emojis numéricos para reações e identificadores visuais (1 a 9)
-const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣"];
-const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️"];
+// Emojis numéricos para reações e identificadores visuais (1 a 10)
+const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+const NUMBER_EMOJIS2 = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "🔟"];
+const NUMBER_EMOJIS3 = ["1️", "2️", "3️", "4️", "5️", "6️", "7️", "8️", "9️", "10"];
 
 /**
- * Converte emoji numérico (1️⃣ a 9️⃣) no índice de slot correspondente (1 a 9)
+ * Converte emoji numérico (1️⃣ a 🔟) no índice de slot correspondente (1 a 10)
  * @param {string} emoji
  * @returns {number|null}
  */
 function getSlotNumberFromEmoji(emoji) {
 	if (!emoji || typeof emoji !== "string") return null;
 	const clean = emoji.replace(/[\uFE0F\u200D]/g, "");
-	const match = clean.match(/^([1-9])\u20E3?$/);
+	if (clean === "🔟" || clean === "10" || clean === "10\u20E3") return 10;
+	const match = clean.match(/^([1-9]|10)\u20E3?$/);
 	if (match) return parseInt(match[1], 10);
 	let idx = NUMBER_EMOJIS.indexOf(emoji);
 	if (idx === -1) idx = NUMBER_EMOJIS2.indexOf(emoji);
@@ -117,6 +118,73 @@ const rollHistoryByMsgId = new Map();
 const MAX_ROLL_HISTORY = 1000;
 // Histórico de mensagens de rolls múltiplos para moderação/denúncias
 const multiRollHistoryByMsgId = new Map();
+
+// Cache em memória de buscas de personagens por mensagem enviada (para navegação via reações)
+// Map<messageId, { characters: Array<{ slot: number, id: string, name: string }>, allResults?: Array<object>, expiresAt: number }>
+const charSearchByMsgId = new Map();
+
+/**
+ * Registra o mapeamento de resultados de uma busca por ID de mensagem
+ * @param {string} messageId
+ * @param {object} searchData
+ */
+function recordCharSearchMessage(messageId, searchData) {
+	if (!messageId || !searchData) return;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+	const data = {
+		...searchData,
+		expiresAt: Date.now() + 60 * 60 * 1000 // 1 hora de TTL
+	};
+	charSearchByMsgId.set(strId, data);
+	charSearchByMsgId.set(stanzaId, data);
+	if (charSearchByMsgId.size > 1000) {
+		const firstKey = charSearchByMsgId.keys().next().value;
+		charSearchByMsgId.delete(firstKey);
+	}
+}
+
+/**
+ * Recupera os dados da busca por ID de mensagem
+ * @param {string} messageId
+ * @returns {object|null}
+ */
+function getCharSearchByMessageId(messageId) {
+	if (!messageId) return null;
+	const strId = String(messageId);
+	const stanzaId = strId.includes("_") ? strId.split("_").pop() : strId;
+	const data = charSearchByMsgId.get(strId) || charSearchByMsgId.get(stanzaId);
+	if (!data) return null;
+	if (data.expiresAt && Date.now() > data.expiresAt) {
+		charSearchByMsgId.delete(strId);
+		charSearchByMsgId.delete(stanzaId);
+		return null;
+	}
+	return data;
+}
+
+/**
+ * Extrai os slots e IDs de personagens de um texto contendo a seção "Outros resultados da busca"
+ * @param {string} text
+ * @returns {{ characters: Array<{ slot: number, id: string }> } | null}
+ */
+function extractCharSearchResultsFromText(text) {
+	if (!text || typeof text !== "string") return null;
+	const dividerIdx = text.indexOf("Outros resultados da busca:");
+	if (dividerIdx === -1) return null;
+	const searchSection = text.slice(dividerIdx);
+	const regex = /(?:^|\n)(\d+)\.\s+.*?\(([^()\s]+)\)/g;
+	const characters = [];
+	let m;
+	while ((m = regex.exec(searchSection)) !== null) {
+		characters.push({
+			slot: parseInt(m[1], 10),
+			id: m[2]
+		});
+	}
+	if (characters.length === 0) return null;
+	return { characters };
+}
 
 // Inicializa banco de relatórios para mensagens de denúncia
 try {
@@ -483,7 +551,8 @@ const RARITY_EMOJI = {
 	UNCOMMON: "🟢",
 	RARE: "🔵",
 	EPIC: "🟣",
-	LEGENDARY: "⭐"
+	LEGENDARY: "⭐",
+	MYTHIC: "🔮"
 };
 
 const RARITY_LABEL = {
@@ -491,7 +560,8 @@ const RARITY_LABEL = {
 	UNCOMMON: "Incomum",
 	RARE: "Raro",
 	EPIC: "Épico",
-	LEGENDARY: "Lendário"
+	LEGENDARY: "Lendário",
+	MYTHIC: "Mítico"
 };
 
 // Limite máximo de itens na Wishlist
@@ -1140,6 +1210,16 @@ const GRID_RARITY_STYLES = {
 		badgeH: 70,
 		fontSize: 52,
 		rx: 18
+	},
+	MYTHIC: {
+		bg: "rgba(147, 51, 234, 0.96)", // Púrpura Mágico / Violeta Fluorescente (#9333ea)
+		stroke: "#c084fc", // Púrpura Fluorescente (#a855f7 / #c084fc)
+		strokeWidth: 4,
+		textColor: "#FFFFFF",
+		badgeW: 104,
+		badgeH: 72,
+		fontSize: 52,
+		rx: 18
 	}
 };
 
@@ -1173,8 +1253,17 @@ async function buildRollGridImage(items) {
 				.normalize("NFD")
 				.replace(/[\u0300-\u036f]/g, "");
 
+			const isMythic = Boolean(
+				item.character?.isMythic ||
+				item.isMythic ||
+				rawRarity.includes("MYTH") ||
+				rawRarity.includes("MITIC")
+			);
+
 			let rarityKey = "COMMON";
-			if (rawRarity.includes("LEGEND") || rawRarity.includes("LEND")) {
+			if (isMythic) {
+				rarityKey = "MYTHIC";
+			} else if (rawRarity.includes("LEGEND") || rawRarity.includes("LEND")) {
 				rarityKey = "LEGENDARY";
 			} else if (rawRarity.includes("EPIC")) {
 				rarityKey = "EPIC";
@@ -1186,14 +1275,19 @@ async function buildRollGridImage(items) {
 
 			const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
 			const isRollerWishlist = Boolean(item.character?.isWishlist || item.isWishlist);
-			const badgeW = isRollerWishlist ? Math.max(style.badgeW + 60, 116) : style.badgeW;
+			const badgeW = isMythic
+				? Math.max(style.badgeW + 40, 110)
+				: isRollerWishlist
+					? Math.max(style.badgeW + 60, 116)
+					: style.badgeW;
 			const badgeH = style.badgeH;
-			const fontSize = isRollerWishlist
-				? Math.max(22, Math.round(style.fontSize * 0.76))
-				: style.fontSize;
+			const fontSize =
+				isMythic || isRollerWishlist
+					? Math.max(22, Math.round(style.fontSize * 0.76))
+					: style.fontSize;
 			const badgeTop = cellH - badgeH - 12;
 			const badgeLeft = Math.floor((cellW - badgeW) / 2);
-			const badgeText = isRollerWishlist ? `⭐ ${slot} ⭐` : `${slot}`;
+			const badgeText = isMythic ? `🔮 ${slot} 🔮` : isRollerWishlist ? `⭐ ${slot} ⭐` : `${slot}`;
 
 			const badgeSvg = Buffer.from(`
 				<svg width="${badgeW}" height="${badgeH}" xmlns="http://www.w3.org/2000/svg">
@@ -1413,7 +1507,13 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 		WISHLIST_LIMIT_REACHED: `⚠️ Sua wishlist está cheia (máximo de ${WISHLIST_MAX_ITEMS}). Remova um item antes com \`!mu-removerdesejo <id>\`.`,
 		ENTRY_NOT_FOUND: "🔍 Este personagem não está na sua Wishlist.",
 		CHARACTER_NOT_FOUND: "🔍 Personagem não encontrado. Verifique o ID informado.",
-		USER_NOT_FOUND: "👤 Usuário não cadastrado ainda. Use *!mu-roll* para começar!"
+		USER_NOT_FOUND: "👤 Usuário não cadastrado ainda. Use *!mu-roll* para começar!",
+		CANNOT_DIVORCE_MYTHIC:
+			"🔮 Personagens Míticos possuem laço sagrado e eterno com seu criador e não podem ser divorciados!",
+		CANNOT_WISHLIST_MYTHIC:
+			"🔮 Personagens Míticos já pertencem eternamente ao seu criador e não podem ser adicionados à Wishlist!",
+		CANNOT_COVET_MYTHIC:
+			"🔮 Personagens Míticos pertencem eternamente ao seu criador e não podem ser cobiçados!"
 	};
 
 	const message =
@@ -1508,8 +1608,8 @@ function sanitizeRollBonuses(bonuses) {
 	if (sanitized.extraMaxRolls !== undefined && sanitized.extraMaxRolls !== null) {
 		const val = Number(sanitized.extraMaxRolls);
 		if (!isNaN(val)) {
-			// API schema: minimum 0, maximum 50
-			sanitized.extraMaxRolls = Math.min(50, Math.max(0, Math.round(val)));
+			// API schema: minimum 0, maximum 500
+			sanitized.extraMaxRolls = Math.min(500, Math.max(0, Math.round(val)));
 		}
 	}
 
@@ -1666,7 +1766,12 @@ function makeRollHandler(genderFilter) {
 					maxRolls
 				} = firstRollData;
 
-				const rarity = character.rarity || character.baseRarity || "COMMON";
+				const isMythic = Boolean(
+					character.isMythic ||
+					firstRollData?.isMythic ||
+					String(character.rarity || "").toUpperCase() === "MYTHIC"
+				);
+				const rarity = isMythic ? "MYTHIC" : character.rarity || character.baseRarity || "COMMON";
 				const normalizedRarity = String(rarity).toUpperCase();
 				const emojiRarity = RARITY_EMOJI[normalizedRarity] || RARITY_EMOJI[rarity] || "⚪";
 				const labelRarity = RARITY_LABEL[normalizedRarity] || RARITY_LABEL[rarity] || rarity;
@@ -1760,13 +1865,25 @@ function makeRollHandler(genderFilter) {
 						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
 					}
 				} else if (isOwner) {
-					const keys = keyProgress?.currentKeys ?? 1;
-					text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
-					if (keyProgress?.becameSoulmateNow) {
-						text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
-						notifySoulmateAchievement(bot, character, name).catch((eNotif) => {
-							logger.error("Erro ao notificar conquista de Soulmate:", eNotif);
-						});
+					if (isMythic) {
+						text += `✨ *Você rolou sua própria criação mítica!*\n🔮 *Vínculo Sagrado e Eterno!* _(Personagens míticos não acumulam chaves nem viram soulmate, pois já possuem devoção plena ao criador!)_`;
+					} else {
+						const keys = keyProgress?.currentKeys ?? 1;
+						text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
+						if (keyProgress?.becameSoulmateNow) {
+							text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
+							notifySoulmateAchievement(bot, character, name).catch((eNotif) => {
+								logger.error("Erro ao notificar conquista de Soulmate:", eNotif);
+							});
+						}
+					}
+				} else if (isMythic) {
+					const creatorName = owner?.name || "Outro jogador";
+					const creatorMention =
+						owner?.id && owner.id.includes("@") ? `@${owner.id.split("@")[0]}` : creatorName;
+					text += `🔮 *CRIAÇÃO MÍTICA!* Forjada por ${creatorMention}\n🔒 Casamento eterno com seu criador.`;
+					if (kakeraValue) {
+						text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
 					}
 				} else {
 					text += `🔒 Já pertence a: *${owner?.name || "Outro jogador"}*`;
@@ -1809,6 +1926,9 @@ function makeRollHandler(genderFilter) {
 				}
 
 				const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
+				if (isMythic && !isOwner && owner?.id) {
+					mentions.push(toJid(owner.id));
+				}
 
 				if (Array.isArray(firstRollData.wishlistUsers) && firstRollData.wishlistUsers.length > 0) {
 					firstRollData.wishlistUsers = firstRollData.wishlistUsers.filter((u) =>
@@ -1964,7 +2084,10 @@ function makeRollHandler(genderFilter) {
 			const multiRollSlots = allRollResults.map((r, idx) => {
 				const slot = idx + 1;
 				const char = r.character;
-				const rarity = char.rarity || char.baseRarity || "COMMON";
+				const isMythic = Boolean(
+					char.isMythic || r.isMythic || String(char.rarity || "").toUpperCase() === "MYTHIC"
+				);
+				const rarity = isMythic ? "MYTHIC" : char.rarity || char.baseRarity || "COMMON";
 				const hasOwner = Boolean(
 					r.owner && (typeof r.owner === "string" || r.owner.name || r.owner.id)
 				);
@@ -1979,6 +2102,7 @@ function makeRollHandler(genderFilter) {
 					characterName: char.name,
 					series: char.series,
 					rarity,
+					isMythic,
 					available: isAvailable,
 					isMarried,
 					isOwner: Boolean(r.isOwner),
@@ -2078,31 +2202,35 @@ function makeRollHandler(genderFilter) {
 			}
 
 			if (rollerKeysSlots.length > 0) {
-				text += `🔑 *Com chaves:*\n`;
+				text += `🔑 *Com chaves / Vínculo:*\n`;
 				rollerKeysSlots.forEach((s) => {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					const keysCount = s.keyProgress?.currentKeys || 1;
-					const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
-					const soulmateTag = isSoulmateNow
-						? " (💖 SOULMATE ALCANÇADO! 10/10)"
-						: ` (🔑 Chaves: ${keysCount}/10)`;
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
-					if (isSoulmateNow) {
-						notifySoulmateAchievement(
-							bot,
-							{
-								id: s.characterId,
-								name: s.characterName,
-								series: s.series,
-								rarity: s.rarity,
-								imageUrl: s.imageUrl
-							},
-							name
-						).catch((eNotif) => {
-							logger.error("Erro ao notificar conquista de Soulmate em multiroll:", eNotif);
-						});
+					if (s.isMythic) {
+						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🔮 Criação Mítica — Vínculo Sagrado)\n`;
+					} else {
+						const keysCount = s.keyProgress?.currentKeys || 1;
+						const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
+						const soulmateTag = isSoulmateNow
+							? " (💖 SOULMATE ALCANÇADO! 10/10)"
+							: ` (🔑 Chaves: ${keysCount}/10)`;
+						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
+						if (isSoulmateNow) {
+							notifySoulmateAchievement(
+								bot,
+								{
+									id: s.characterId,
+									name: s.characterName,
+									series: s.series,
+									rarity: s.rarity,
+									imageUrl: s.imageUrl
+								},
+								name
+							).catch((eNotif) => {
+								logger.error("Erro ao notificar conquista de Soulmate em multiroll:", eNotif);
+							});
+						}
 					}
 				});
 				text += "\n";
@@ -2161,7 +2289,8 @@ function makeRollHandler(genderFilter) {
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${ownerInfo}\n`;
+					const mythicTag = s.isMythic ? " 🔮 [Mítico]" : "";
+					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${ownerInfo}${mythicTag}\n`;
 				});
 				text += "\n";
 			}
@@ -2809,18 +2938,46 @@ async function processWaifuReaction(bot, message, args, group) {
 				})
 			};
 		} else if (slot === 1) {
-			const singleCharId = extractCharacterFromRollText(text);
-			if (singleCharId) {
-				rollData = {
-					isMultiRoll: false,
-					characterId: singleCharId,
-					groupId: getGroupId(message)
-				};
+			const isCharSearch =
+				getCharSearchByMessageId(targetMsgId) ||
+				text.includes("Outros resultados da busca:") ||
+				text.includes("👤");
+			if (!isCharSearch) {
+				const singleCharId = extractCharacterFromRollText(text);
+				if (singleCharId) {
+					rollData = {
+						isMultiRoll: false,
+						characterId: singleCharId,
+						groupId: getGroupId(message)
+					};
+				}
 			}
 		}
 	}
 
-	if (!rollData) return false;
+	if (!rollData) {
+		const text =
+			message.caption ||
+			(typeof message.content === "string" ? message.content : "") ||
+			message.body ||
+			"";
+
+		const searchData =
+			getCharSearchByMessageId(targetMsgId) || extractCharSearchResultsFromText(text);
+		if (searchData && searchData.characters && searchData.characters.length > 0) {
+			const targetItem =
+				searchData.characters.find((c) => c.slot === slot) || searchData.characters[slot - 1];
+			if (targetItem && targetItem.id) {
+				return await detalhesPersonagem(bot, message, [targetItem.id], group, {
+					quotedMessageId: targetMsgId,
+					allResults: searchData.allResults || null
+				});
+			}
+			return false;
+		}
+
+		return false;
+	}
 
 	const chatId = message.group ?? message.author;
 	const groupId = getGroupId(message);
@@ -3438,11 +3595,27 @@ async function verHarem(bot, message, args) {
 		}
 		text += `\n`;
 
-		// Se for a primeira página, agrupa favoritas e lista coleções completas com árvore
+		// Se for a primeira página, agrupa míticos, favoritas e lista coleções completas com árvore
 		if (page === 1) {
-			const favorites = visibleEntries.filter((item) => item.isFavorite);
-			// As que estão em alguma pasta NÃO aparecem em demais personagens
-			const rest = visibleEntries.filter((item) => !item.isFavorite && !item.collectionId);
+			const mythics = visibleEntries.filter(
+				(item) =>
+					item.character?.isMythic ||
+					String(item.character?.rarity || "").toUpperCase() === "MYTHIC"
+			);
+			const favorites = visibleEntries.filter(
+				(item) =>
+					item.isFavorite &&
+					!item.character?.isMythic &&
+					String(item.character?.rarity || "").toUpperCase() !== "MYTHIC"
+			);
+			// As que estão em alguma pasta ou são míticas NÃO aparecem em demais personagens
+			const rest = visibleEntries.filter(
+				(item) =>
+					!item.isFavorite &&
+					!item.collectionId &&
+					!item.character?.isMythic &&
+					String(item.character?.rarity || "").toUpperCase() !== "MYTHIC"
+			);
 
 			if (favorites.length > 0) {
 				text += `⭐ *Favoritas em Destaque:*\n`;
@@ -3458,8 +3631,26 @@ async function verHarem(bot, message, args) {
 			}
 
 			// Coleções com árvore de personagens (estilo FileManager / ListCommands)
-			if (visibleCollections.length > 0) {
-				text += `📁 *Coleções (${visibleCollections.length}/15):*\n`;
+			const hasMythics = mythics.length > 0;
+			const totalColecoesCount = visibleCollections.length + (hasMythics ? 1 : 0);
+
+			if (totalColecoesCount > 0) {
+				text += `📁 *Coleções (${totalColecoesCount}/15):*\n`;
+
+				// Se o usuário tiver míticos, a primeira coleção da lista deve ser "Míticos"
+				if (hasMythics) {
+					text += `📂 *Míticos* (${mythics.length} waifu${mythics.length !== 1 ? "s" : ""}):\n`;
+					mythics.forEach((item, j) => {
+						const char = item.character;
+						const isLast = j === mythics.length - 1;
+						const connector = isLast ? "└─" : "├─";
+						const charLink =
+							getCharacterWebUrl(char.id) ||
+							`https://waifuletes.moothz.com/character/${encodeURIComponent(char.id)}`;
+						text += `   ${connector} 🔮 *${char.name}* — _${char.series || "Sem Série"}_ (${charLink})\n`;
+					});
+				}
+
 				visibleCollections.forEach((col) => {
 					const chars = col.characters || [];
 					const lock = isSelf && col.isPrivate ? " 🔒" : "";
@@ -3474,10 +3665,26 @@ async function verHarem(bot, message, args) {
 						visibleChars.forEach((char, j) => {
 							const isLast = j === visibleChars.length - 1 && remaining <= 0;
 							const connector = isLast ? "└─" : "├─";
-							const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+							const isCharMythic = Boolean(
+								char.isMythic || String(char.rarity || "").toUpperCase() === "MYTHIC"
+							);
+							const emojiRarity = isCharMythic
+								? "🔮"
+								: RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
 							const fav = char.isFavorite ? "⭐ " : "";
-							const sm = char.keys >= 10 ? " 💖" : "";
-							text += `   ${connector} ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_ (\`${char.id}\` | 🔑 *${char.keys || 0}/10*)\n`;
+							const charLink =
+								getCharacterWebUrl(char.id) ||
+								`https://waifuletes.moothz.com/character/${encodeURIComponent(char.id)}`;
+
+							const keys = Number(char.keys ?? 0);
+							let tagInfo = charLink;
+							if (keys >= 10) {
+								tagInfo = `${charLink} | 💞`;
+							} else if (keys >= 2) {
+								tagInfo = `${charLink} | 🔑 *${keys}/10*`;
+							}
+
+							text += `   ${connector} ${fav}${emojiRarity} *${char.name}* — _${char.series}_ (${tagInfo})\n`;
 						});
 
 						if (remaining > 0) {
@@ -4077,11 +4284,31 @@ async function listarColecoes(bot, message, args) {
 	const query = (args || []).join(" ").trim();
 
 	try {
-		const { data } = await api.get(`/user/${userId}/collections`);
-		const collections = data.data || [];
+		const [colsRes, haremRes] = await Promise.all([
+			api.get(`/user/${userId}/collections`),
+			api
+				.get(`/harem/${userId}`, {
+					params: { page: 1, limit: 100, sort: "keys", withoutCollection: true }
+				})
+				.catch(() => ({ data: { data: { data: [] } } }))
+		]);
+		const collections = colsRes.data?.data || [];
+		const haremEntries = haremRes.data?.data?.data || [];
+		const mythicChars = haremEntries
+			.filter(
+				(e) => e.character?.isMythic || String(e.character?.rarity || "").toUpperCase() === "MYTHIC"
+			)
+			.map((e) => ({
+				...e.character,
+				keys: 0,
+				isMythic: true
+			}));
 
 		if (!query) {
-			if (collections.length === 0) {
+			const hasMythics = mythicChars.length > 0;
+			const totalCols = collections.length + (hasMythics ? 1 : 0);
+
+			if (totalCols === 0) {
 				return new ReturnMessage({
 					chatId,
 					content:
@@ -4089,10 +4316,15 @@ async function listarColecoes(bot, message, args) {
 				});
 			}
 
-			let text = `📁 *Suas Coleções de Waifus (${collections.length}/15):*\n\n`;
-			collections.forEach((col, idx) => {
+			let text = `📁 *Suas Coleções de Waifus (${totalCols}/15):*\n\n`;
+			let listIdx = 1;
+			if (hasMythics) {
+				text += `${listIdx++}. 📂 🔮 *Míticos* — ${mythicChars.length} personagem(ns)\n`;
+				text += `   📝 _Personagens lendários forjados por você_\n`;
+			}
+			collections.forEach((col) => {
 				const lock = col.isPrivate ? " 🔒" : "";
-				text += `${idx + 1}. 📂 *${col.name}*${lock} — ${col.characterCount} personagem(ns)\n`;
+				text += `${listIdx++}. 📂 *${col.name}*${lock} — ${col.characterCount} personagem(ns)\n`;
 				if (col.description) {
 					text += `   📝 _${col.description}_\n`;
 				}
@@ -4110,15 +4342,36 @@ async function listarColecoes(bot, message, args) {
 		}
 
 		// Se forneceu argumento, busca a coleção por índice ou nome
+		const hasMythics = mythicChars.length > 0;
 		const idx = parseInt(query, 10);
 		let selected = null;
-		if (!isNaN(idx) && idx >= 1 && idx <= collections.length) {
-			selected = collections[idx - 1];
+		const qLower = query.toLowerCase();
+
+		if (
+			hasMythics &&
+			(idx === 1 ||
+				qLower === "miticos" ||
+				qLower === "míticos" ||
+				qLower === "mitico" ||
+				qLower === "mítico")
+		) {
+			selected = {
+				name: "Míticos",
+				characterCount: mythicChars.length,
+				description: "Personagens lendários forjados por você",
+				characters: mythicChars,
+				isMythicCol: true
+			};
 		} else {
-			const qLower = query.toLowerCase();
-			selected =
-				collections.find((c) => c.id === query || c.name.toLowerCase() === qLower) ||
-				collections.find((c) => c.name.toLowerCase().includes(qLower));
+			const colOffset = hasMythics ? 1 : 0;
+			const colIdx = idx - colOffset;
+			if (!isNaN(colIdx) && colIdx >= 1 && colIdx <= collections.length) {
+				selected = collections[colIdx - 1];
+			} else {
+				selected =
+					collections.find((c) => c.id === query || c.name.toLowerCase() === qLower) ||
+					collections.find((c) => c.name.toLowerCase().includes(qLower));
+			}
 		}
 
 		if (!selected) {
@@ -4140,17 +4393,37 @@ async function listarColecoes(bot, message, args) {
 			text += `_Esta pasta ainda está vazia!_\n\n💡 Para adicionar uma waifu do seu harém, use:\n\`!mu-col-add ${selected.name} | <personagem>\``;
 		} else {
 			selected.characters.forEach((char, i) => {
-				const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+				const isCharMythic = Boolean(
+					selected.isMythicCol ||
+					char.isMythic ||
+					String(char.rarity || "").toUpperCase() === "MYTHIC"
+				);
+				const emojiRarity = isCharMythic
+					? "🔮"
+					: RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
 				const fav = char.isFavorite ? "⭐ " : "";
-				const sm = char.keys >= 10 ? " 💖" : "";
-				text += `${i + 1}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
-				text += `   ↳ ID: \`${char.id}\` | 🔑 *${char.keys}/10*\n`;
+				const charLink =
+					getCharacterWebUrl(char.id) ||
+					`https://waifuletes.moothz.com/character/${encodeURIComponent(char.id)}`;
+				const keys = Number(char.keys ?? 0);
+				let keyText = "";
+				if (!isCharMythic) {
+					if (keys >= 10) {
+						keyText = " | 💞";
+					} else if (keys >= 2) {
+						keyText = ` | 🔑 *${keys}/10*`;
+					}
+				}
+				text += `${i + 1}. ${fav}${emojiRarity} *${char.name}* — _${char.series || "Sem Série"}_\n`;
+				text += `   ↳ ${charLink}${keyText}\n`;
 			});
 
-			text += `\n💡 _Dicas:_\n`;
-			text += `• Adicionar waifu: \`!mu-col-add ${selected.name} | <personagem>\`\n`;
-			text += `• Remover da pasta: \`!mu-col-rem <personagem>\`\n`;
-			text += `• Apagar pasta: \`!mu-col-del ${selected.name}\``;
+			if (!selected.isMythicCol) {
+				text += `\n💡 _Dicas:_\n`;
+				text += `• Adicionar waifu: \`!mu-col-add ${selected.name} | <personagem>\`\n`;
+				text += `• Remover da pasta: \`!mu-col-rem <personagem>\`\n`;
+				text += `• Apagar pasta: \`!mu-col-del ${selected.name}\``;
+			}
 		}
 
 		return new ReturnMessage({ chatId, content: text });
@@ -4318,6 +4591,13 @@ async function adicionarPersonagemColecao(bot, message, args) {
 
 		const targetCharId = character?.id || charInput;
 		const targetCharName = character?.name || targetCharId;
+
+		if (character?.isMythic || String(character?.rarity || "").toUpperCase() === "MYTHIC") {
+			return new ReturnMessage({
+				chatId,
+				content: "❌ *Personagens míticos não podem ser colocados em coleções ou pastas.*"
+			});
+		}
 
 		await api.post(`/user/${userId}/collections/${targetCol.id}/characters`, {
 			characterId: targetCharId
@@ -4910,7 +5190,7 @@ async function buscarPersonagens(bot, message, args) {
 
 	try {
 		const { data } = await api.get("/characters", {
-			params: { search, limit: 10 }
+			params: { search, sort: "popularity", limit: 10 }
 		});
 
 		const resultData = data.data;
@@ -4926,7 +5206,9 @@ async function buscarPersonagens(bot, message, args) {
 
 		let text = `🔍 *Resultados para "${search}"* (Total: ${total}):\n\n`;
 		chars.forEach((c, idx) => {
-			const emojiRarity = RARITY_EMOJI[c.baseRarity || c.rarity] || "⚪";
+			const isMythic = Boolean(c.isMythic || String(c.rarity || "").toUpperCase() === "MYTHIC");
+			const rarity = isMythic ? "MYTHIC" : c.baseRarity || c.rarity || "COMMON";
+			const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
 			text += `${idx + 1}. ${emojiRarity} *${c.name}* — _${c.series}_\n`;
 			text += `   ↳ ID: \`${c.id}\` | 💍 ${c.claimCount} | ❤️ ${c.likeCount}\n`;
 		});
@@ -4940,8 +5222,9 @@ async function buscarPersonagens(bot, message, args) {
 
 /**
  * Exibe detalhes e imagem de um personagem com suporte a busca ampla (ID, nome, série, descrição)
+ * e paginação interativa via reações numéricas (1 a 10).
  */
-async function detalhesPersonagem(bot, message, args) {
+async function detalhesPersonagem(bot, message, args, group = null, navContext = null) {
 	const chatId = message.group ?? message.author;
 
 	if (!args[0]) {
@@ -4954,46 +5237,71 @@ async function detalhesPersonagem(bot, message, args) {
 
 	const query = args.join(" ").trim();
 	let char = null;
+	let allResults = [];
 	let otherResults = [];
 
-	// 1. Se o termo não contiver espaços, tenta buscar direto por ID/slug exato
-	if (!/\s/.test(query)) {
+	if (
+		navContext?.allResults &&
+		Array.isArray(navContext.allResults) &&
+		navContext.allResults.length > 0
+	) {
+		allResults = navContext.allResults;
+		const found = allResults.find((c) => c.id === query);
+		if (found) {
+			char = found;
+		}
+	}
+
+	// 1. Tenta buscar direto por ID/slug exato (mesmo com espaços, a API normaliza com slugify)
+	if (!char) {
 		try {
 			const { data } = await api.get(`/characters/${encodeURIComponent(query)}`);
 			if (data?.data) {
 				char = data.data;
 			}
 		} catch (idErr) {
-			// Se 404, não é erro crítico: prossegue normalmente para a busca ampla
 			if (idErr.response?.status !== 404) {
 				logger.debug(`[detalhesPersonagem] Falha na consulta por ID: ${idErr.message}`);
 			}
 		}
 	}
 
-	// 2. Se não encontrou por ID exato, executa busca ampla no catálogo
-	if (!char) {
+	// 2. Executa busca ampla no catálogo se não temos resultados de contexto
+	let searchResults = [];
+	if (allResults.length === 0) {
 		try {
 			const { data } = await api.get("/characters", {
-				params: { search: query, limit: 6 }
+				params: { search: query, sort: "popularity", limit: 15 }
 			});
-			const results = data.data?.data || [];
-			if (results.length > 0) {
-				const normQ = query.toLowerCase();
-				// Prioridade inteligente:
-				// 1) ID exato (case-insensitive)
-				// 2) Nome exato (case-insensitive)
-				// 3) Nome começando com a busca
-				// 4) Primeiro resultado mais popular (ordenado por claimCount / likeCount desc na API)
-				const exactId = results.find((c) => c.id?.toLowerCase() === normQ);
-				const exactName = results.find((c) => c.name?.toLowerCase() === normQ);
-				const startsName = results.find((c) => c.name?.toLowerCase().startsWith(normQ));
-				char = exactId || exactName || startsName || results[0];
-				otherResults = results.filter((c) => c.id !== char.id);
-			}
+			searchResults = data.data?.data || [];
 		} catch (searchErr) {
 			logger.error(`[detalhesPersonagem] Erro na busca ampla: ${searchErr.message}`);
 		}
+	}
+
+	// 3. Se não encontrou por ID exato, seleciona o melhor match da busca
+	if (!char && searchResults.length > 0) {
+		const normQ = query.toLowerCase();
+		const clean = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+		const cleanQ = clean(query);
+
+		const exactId = searchResults.find((c) => clean(c.id) === cleanQ);
+		const exactName = searchResults.find((c) => clean(c.name) === cleanQ);
+		const startsName = searchResults.find(
+			(c) => clean(c.name).startsWith(cleanQ) || clean(c.id).startsWith(cleanQ)
+		);
+		const includesName = searchResults.find((c) => c.name?.toLowerCase().includes(normQ));
+		char = exactId || exactName || startsName || includesName || searchResults[0];
+	}
+
+	// Se char foi encontrado por ID mas ainda precisamos de detalhes completos via /characters/:id
+	if (char && (!char.gender || !char.baseRarity) && char.id) {
+		try {
+			const { data } = await api.get(`/characters/${encodeURIComponent(char.id)}`);
+			if (data?.data) {
+				char = data.data;
+			}
+		} catch (_) {}
 	}
 
 	if (!char) {
@@ -5003,8 +5311,35 @@ async function detalhesPersonagem(bot, message, args) {
 		});
 	}
 
+	// Monta lista allResults consolidada
+	if (allResults.length === 0) {
+		const baseList = searchResults.length > 0 ? searchResults : [char];
+		if (!baseList.some((c) => c.id === char.id)) {
+			allResults = [char, ...baseList];
+		} else {
+			allResults = baseList;
+		}
+	}
+
+	otherResults = allResults.filter((c) => c.id !== char.id);
+
+	// Se não achou outros resultados e o personagem tem série, busca mais da mesma série
+	if (otherResults.length === 0 && char.series) {
+		try {
+			const { data: relData } = await api.get("/characters", {
+				params: { search: char.series, sort: "popularity", limit: 11 }
+			});
+			const seriesResults = relData.data?.data || [];
+			otherResults = seriesResults.filter((c) => c.id !== char.id);
+			if (otherResults.length > 0) {
+				allResults = [char, ...otherResults];
+			}
+		} catch (_) {}
+	}
+
 	try {
-		const rarity = char.baseRarity || char.rarity || "COMMON";
+		const isMythic = Boolean(char.isMythic || String(char.rarity || "").toUpperCase() === "MYTHIC");
+		const rarity = isMythic ? "MYTHIC" : char.baseRarity || char.rarity || "COMMON";
 		const emojiRarity = RARITY_EMOJI[rarity] || "⚪";
 		const labelRarity = RARITY_LABEL[rarity] || rarity;
 
@@ -5012,23 +5347,30 @@ async function detalhesPersonagem(bot, message, args) {
 		text += `⭐ Raridade: ${emojiRarity} *${labelRarity}*\n`;
 		text += `⚧ Gênero: *${char.gender === "FEMALE" ? "Feminino" : char.gender === "MALE" ? "Masculino" : "Outro"}*\n`;
 
-		const stats = await getDropRateStats();
-		const rarityStat = stats?.breakdown?.find((b) => b.rarity === rarity);
-		if (rarityStat) {
-			const singleBaseStr =
-				rarityStat.singleBaseChance < 0.001
-					? rarityStat.singleBaseChance.toFixed(4)
-					: rarityStat.singleBaseChance.toFixed(3);
-			const singleWishStr =
-				rarityStat.singleWishChance < 0.001
-					? rarityStat.singleWishChance.toFixed(4)
-					: rarityStat.singleWishChance.toFixed(3);
-			text += `🎯 Chance no roll: *${singleBaseStr}%* (1 em ${rarityStat.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
-			text += `🌟 Com Wishlist: *${singleWishStr}%* (*+50%* | 1 em ${rarityStat.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+		if (isMythic) {
+			const creator = char.owner?.name || char.creatorUserId || "Apoiador Ravena";
+			text += `👑 Criador Original: *${creator}*\n`;
+			text += `💍 Vínculo: *Casamento Sagrado e Eterno com o criador*\n`;
+		} else {
+			const stats = await getDropRateStats();
+			const rarityStat = stats?.breakdown?.find((b) => b.rarity === rarity);
+			if (rarityStat) {
+				const singleBaseStr =
+					rarityStat.singleBaseChance < 0.001
+						? rarityStat.singleBaseChance.toFixed(4)
+						: rarityStat.singleBaseChance.toFixed(3);
+				const singleWishStr =
+					rarityStat.singleWishChance < 0.001
+						? rarityStat.singleWishChance.toFixed(4)
+						: rarityStat.singleWishChance.toFixed(3);
+				text += `🎯 Chance no roll: *${singleBaseStr}%* (1 em ${rarityStat.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+				text += `🌟 Com Wishlist: *${singleWishStr}%* (*+50%* | 1 em ${rarityStat.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n`;
+			}
+
+			text += `💍 Total de casamentos: *${char.claimCount ?? 0}*\n`;
 		}
 
-		text += `💍 Total de casamentos: *${char.claimCount}*\n`;
-		text += `❤️ Curtidas: *${char.likeCount}*\n`;
+		text += `❤️ Curtidas: *${char.likeCount ?? 0}*\n`;
 
 		if (char.description) {
 			text += `\n📝 _${char.description}_\n`;
@@ -5039,20 +5381,47 @@ async function detalhesPersonagem(bot, message, args) {
 		}
 
 		text += `\n🆔 ID: \`${char.id}\``;
-		if (WAIFULETES_WEB_URL) {
-			text += `\n🌐 Página: ${WAIFULETES_WEB_URL}/character/${encodeURIComponent(char.id)}`;
+		const mainPageUrl =
+			getCharacterWebUrl(char.id) ||
+			(WAIFULETES_WEB_URL
+				? `${WAIFULETES_WEB_URL}/character/${encodeURIComponent(char.id)}`
+				: null);
+		if (mainPageUrl) {
+			text += `\n🌐 Página: ${mainPageUrl}`;
 		}
 
-		// Se houver mais resultados correspondentes na busca ampla, lista como sugestão
-		if (otherResults.length > 0) {
-			const topOthers = otherResults.slice(0, 4);
-			text += `\n\n🔍 *Outros resultados para "${query}":*\n`;
-			topOthers.forEach((o) => {
-				const oEmoji = RARITY_EMOJI[o.baseRarity || o.rarity] || "⚪";
-				text += `• ${oEmoji} *${o.name}* (${o.series}) ➔ \`!mu-char ${o.id}\`\n`;
+		// Se houver mais resultados correspondentes na busca ampla, lista até 10 resultados no novo formato
+		const topOthers = otherResults.slice(0, 10);
+		if (topOthers.length > 0) {
+			text += `\n\n---------\nOutros resultados da busca:\n`;
+			topOthers.forEach((o, idx) => {
+				const oIsMythic = Boolean(o.isMythic || String(o.rarity || "").toUpperCase() === "MYTHIC");
+				const oRarity = oIsMythic ? "MYTHIC" : o.baseRarity || o.rarity || "COMMON";
+				const oEmoji = RARITY_EMOJI[oRarity] || "⚪";
+				const link =
+					getCharacterWebUrl(o.id) ||
+					`https://waifuletes.moothz.com/character/${encodeURIComponent(o.id)}`;
+				text += `${idx + 1}. ${oEmoji} ${o.name} (${o.id})\n${link}\n\n`;
 			});
-			if (otherResults.length > 4) {
-				text += `_... e mais ${otherResults.length - 4} encontrado(s). Use \`!mu-chars ${query}\` para ver todos._\n`;
+			text += `💡 _Reaja com o número (1 a ${topOthers.length}) para ver outro da lista._\n`;
+		}
+
+		const options = {
+			caption: text,
+			waifuCharSearch: {
+				characters: topOthers.map((o, idx) => ({
+					slot: idx + 1,
+					id: o.id,
+					name: o.name
+				})),
+				allResults
+			}
+		};
+
+		if (navContext?.quotedMessageId) {
+			options.quotedMessageId = navContext.quotedMessageId;
+			if (message.origin) {
+				options.goReply = message.origin;
 			}
 		}
 
@@ -5066,13 +5435,11 @@ async function detalhesPersonagem(bot, message, args) {
 					filename: `${char.id}.jpg`,
 					isMessageMedia: true
 				},
-				options: {
-					caption: text
-				}
+				options
 			});
 		}
 
-		return new ReturnMessage({ chatId, content: text });
+		return new ReturnMessage({ chatId, content: text, options });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao formatar detalhes do personagem.");
 	}
@@ -5159,6 +5526,7 @@ function extractCharacterIdFromWebLink(rawLine) {
  */
 function extractCharacterFromRollText(text) {
 	if (!text || typeof text !== "string") return null;
+	if (text.includes("Outros resultados da busca:")) return null;
 
 	// 1. Procura pelo comando de casamento na legenda: !mu-casar <slug>
 	const matchCasar = text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/i);
@@ -7068,6 +7436,14 @@ async function cobicarWaifuCmd(bot, message, args) {
 		const code = errData?.code;
 		const msg = errData?.message || err?.message || "Erro ao cobiçar personagem.";
 
+		if (code === "CANNOT_COVET_MYTHIC") {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"🔮 Personagens Míticos pertencem eternamente ao seu criador e não podem ser cobiçados!"
+			});
+		}
+
 		if (code === "NOT_MARRIED") {
 			return new ReturnMessage({
 				chatId,
@@ -7487,9 +7863,36 @@ async function mercadoInfoCmd(bot, message) {
 	}
 }
 
+/**
+ * Instrução sobre criação e forja de Personagens Míticos
+ */
+async function infoCriacaoMitico(bot, message) {
+	const chatId = message.group ?? message.author;
+	return new ReturnMessage({
+		chatId,
+		content:
+			"🔮 *Personagens Míticos são forjados exclusivamente pelo painel web! Acesse seu link via !mu-adm*",
+		options: {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		}
+	});
+}
+
 // ─── Registro dos Comandos e Aliases (Padrão Stickers.js) ───────────────────
 
 const commands = [
+	// ── MÍTICOS ─────────────────────────────────────────────────────────────
+	new Command({
+		name: "mu-mitico",
+		aliases: ["mu-miticos", "mu-criar-mitico", "mu-forjar", "mu-forjarmitico", "mu-mythic"],
+		description: "Instruções sobre como forjar personagens míticos exclusivos",
+		category: "mudae",
+		group: "muwaifu-mitico",
+		reactions: { before: "🔮", after: "✅", error: "❌" },
+		reply: true,
+		method: infoCriacaoMitico
+	}),
 	// ── ROLL (Geral) ────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-roll",
@@ -8827,6 +9230,12 @@ const helper = {
 	tags: "waifu,mudae,munae,jogo,anime,harem,zinthos,kakera,roleta,casamento",
 	cmds: [
 		{
+			cmd: "!mu-mitico",
+			desc: "Instruções sobre a forja de personagens míticos lendários exclusivos",
+			usage: ["!mu-mitico", "!mu-forjar"],
+			category: "mudae"
+		},
+		{
 			cmd: "!waifus / !munae",
 			desc: "Explica as mecânicas do jogo e lista todos os comandos e filtros disponíveis",
 			usage: ["!waifus", "!munae", "!mu-ajuda"],
@@ -9532,6 +9941,9 @@ module.exports = {
 	downloadImageBuffer,
 	processWaifuReaction,
 	recordRollMessage,
+	recordCharSearchMessage,
+	getCharSearchByMessageId,
+	extractCharSearchResultsFromText,
 	getRollByMessageId,
 	getMultiRollByMessageId,
 	getCharacterIdFromMessageId,
@@ -9565,5 +9977,6 @@ module.exports = {
 	getCharacterWebUrl,
 	resolveWaifuImageUrl,
 	generateSingleRollPlaceholderBuffer,
+	infoCriacaoMitico,
 	handleWaifuMenuCallback
 };
