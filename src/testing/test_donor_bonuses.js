@@ -21,6 +21,7 @@ async function runTests() {
 	assert.strictEqual(b10.pesca.mediumItemsCount, 0, "R$10 não atinge faixa média");
 	assert.strictEqual(b10.pesca.totalHighItems, 0, "R$10 não atinge faixa alta");
 	assert.strictEqual(b10.runas, 500, "R$10 deve conceder 500 Runas");
+	assert.strictEqual(b10.mythicSlots, 0, "R$10: 0 slots míticos");
 	assert.strictEqual(b10.waifu.rarityMultipliers.RARE, 1.2, "R$10: RARE 1.20x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.EPIC, 1.35, "R$10: EPIC 1.35x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.LEGENDARY, 1.2, "R$10: LEGENDARY 1.20x");
@@ -64,6 +65,7 @@ async function runTests() {
 	);
 	assert.strictEqual(b50.pesca.highItemsAbove50Count, 1, "R$50 base acima de 50 = 1 item alto");
 	assert.strictEqual(b50.pesca.totalHighItems, 2, "R$50 total itens altos = 2");
+	assert.strictEqual(b50.mythicSlots, 1, "R$50: 1 slot mítico");
 	assert.strictEqual(b50.waifu.wishlistMultiplier, 4.0, "R$50 wishlist base = 4.0x (+300%)");
 	console.log("✓ R$ 50 cálculos OK");
 
@@ -91,6 +93,7 @@ async function runTests() {
 	const b100 = DonorBonusService.calculateBonuses(100);
 	assert.strictEqual(b100.pesca.baits, 200, "R$100 deve conceder 200 iscas");
 	assert.strictEqual(b100.slots.coins, 300, "R$100 deve conceder 300 moedas");
+	assert.strictEqual(b100.mythicSlots, 2, "R$100: 2 slots míticos");
 	assert.strictEqual(b100.waifu.rarityMultipliers.RARE, 3.0, "R$100: RARE 3.0x");
 	assert.strictEqual(b100.waifu.rarityMultipliers.EPIC, 4.5, "R$100: EPIC 4.5x");
 	assert.strictEqual(b100.waifu.rarityMultipliers.LEGENDARY, 3.0, "R$100: LEGENDARY 3.0x");
@@ -124,6 +127,12 @@ async function runTests() {
 	assert.strictEqual(inc.deltaSimpleItems, 6, "Delta simple items deve ser 6 (16 - 10)");
 	assert.strictEqual(inc.deltaMediumItems, 0, "Delta medium items deve ser 0 (já recebeu)");
 	assert.strictEqual(inc.deltaHighItems, 3, "Delta high items deve ser 3 (5 - 2)");
+	assert.strictEqual(inc.deltaMythicSlots, 0, "Delta mythic slots deve ser 0 (80 e 50 têm 1)");
+	assert.strictEqual(
+		DonorBonusService.calculateIncrementalBonuses(100, 50).deltaMythicSlots,
+		1,
+		"Delta de 50 para 100 deve conceder 1 slot mítico"
+	);
 	console.log("✓ Cálculo incremental OK");
 
 	// 3. Teste do comando !doar-vantagens via EventHandler e FakeBot

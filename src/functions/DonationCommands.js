@@ -310,6 +310,7 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
 		msg += `• *Aos R$ 100:* Multiplicador de Lendários atinge 3x (+200%) e Wishlist chega a 8x (+700%)!\n`;
+		msg += `• *🔮 Personagens Míticos:* 1 slot mítico a cada R$ 50 doados para forjar seu personagem lendário exclusivo e eternamente casado no painel web!\n`;
 		msg += `• *!mu-chances exclusivo:* Mostra suas probabilidades personalizadas ativas.\n\n`;
 
 		msg += `🩺 *Jogo do Pinto:*\n`;
@@ -359,6 +360,11 @@ async function showDonationPerks(bot, message, args, group) {
 				msg += `  • 🌟 Wishlist: *+${wishPct}%* de multiplicador (${bonuses.waifu.wishlistMultiplier.toFixed(1)}x)!\n`;
 			} else {
 				msg += `  • 🌟 Wishlist VIP: _Desbloqueada ao atingir R$ 50 no total!_\n`;
+			}
+			if (bonuses.waifu.mythicSlots > 0) {
+				msg += `  • 🔮 *${bonuses.waifu.mythicSlots}* slot(s) de Personagens Míticos desbloqueado(s) para forjar no painel web (\`!mu-adm\`)!\n`;
+			} else {
+				msg += `  • 🔮 Slots Míticos: _Desbloqueados a cada R$ 50 acumulados no total!_\n`;
 			}
 
 			msg += `\n🩺 *Bônus no !pinto:* +${bonuses.pinto.bonusPercent}% de potencial estético!\n`;

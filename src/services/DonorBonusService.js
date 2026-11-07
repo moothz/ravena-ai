@@ -1,3 +1,4 @@
+const axios = require("axios");
 const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const FishingGame = require("../functions/FishingGame");
@@ -8,6 +9,11 @@ const ShadowGardenClient = require("./ShadowGardenClient");
 const logger = new Logger("donor-bonus-service");
 const database = Database.getInstance();
 const jardimClient = new ShadowGardenClient();
+
+const WAIFULETES_URL = (
+	process.env.WAIFULETES_API_URL || "http://host.docker.internal:3030"
+).replace(/\/+$/, "");
+const WAIFULETES_KEY = process.env.WAIFULETES_API_KEY;
 
 const SIMPLE_ITEMS = ["Anzol de Titânio", "Bolso de Pesca", "Pochete de Iscas"];
 const MEDIUM_ITEMS = ["Calça de Pesca", "Caixa de Iscas"];
@@ -78,6 +84,7 @@ function calculateBonuses(totalAmount) {
 	}
 
 	const runas = Math.round(totalAmount * 50); // 50 Runas por R$ 1 doado (moeda global RavenaBank)
+	const mythicSlots = Math.floor(totalAmount / 50); // 1 Slot Mítico a cada R$ 50 doados
 
 	// Pinto Game (+1% de tamanho por R$1)
 	const pintoBonusPercent = Math.round(totalAmount * 1);
@@ -108,8 +115,10 @@ function calculateBonuses(totalAmount) {
 			rarityMultipliers,
 			wishlistMultiplier,
 			extraMaxRolls: Math.floor(totalAmount / 10),
-			runas
+			runas,
+			mythicSlots
 		},
+		mythicSlots,
 		pinto: {
 			bonusPercent: pintoBonusPercent,
 			multiplier: pintoMultiplier
@@ -147,6 +156,10 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		current.pesca.mediumItemsCount - previous.pesca.mediumItemsCount
 	);
 	const deltaHighItems = Math.max(0, current.pesca.totalHighItems - previous.pesca.totalHighItems);
+	const deltaMythicSlots = Math.max(
+		0,
+		(current.waifu.mythicSlots || 0) - (previous.waifu.mythicSlots || 0)
+	);
 
 	const farmDelta = ShadowGardenBonusService.calculateFarmDonationBonuses(
 		totalAmount,
@@ -162,6 +175,7 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		deltaMediumItems,
 		deltaHighItems,
 		deltaFazenda: farmDelta,
+		deltaMythicSlots,
 		current,
 		previous
 	};
@@ -208,6 +222,30 @@ async function getDonorByUserId(userId) {
 async function getDonorTotal(userId) {
 	const donor = await getDonorByUserId(userId);
 	return donor ? Number(donor.valor) || 0 : 0;
+}
+
+/**
+ * Credita slots de personagens míticos para o usuário na API do Waifuletes
+ * @param {string} cleanNumber
+ * @param {number} amount
+ * @param {number} totalAmount
+ * @param {string} [reason="DONATE_R$50"]
+ * @returns {Promise<Object|null>}
+ */
+async function creditMythicSlots(cleanNumber, amount, totalAmount, reason = "DONATE_R$50") {
+	if (!amount || amount <= 0 || !cleanNumber) return null;
+	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
+	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/mythic-slots`;
+	const headers = {
+		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
+		"Content-Type": "application/json"
+	};
+	const payload = {
+		amount,
+		reason,
+		donateValue: totalAmount
+	};
+	return await axios.post(url, payload, { headers, timeout: 10000 });
 }
 
 /**
@@ -287,7 +325,7 @@ async function awardDonorBonuses(
 		);
 		delta.deltaRunas = deltaRunas;
 
-		if (delta.deltaAmount <= 0 && deltaRunas <= 0) {
+		if (delta.deltaAmount <= 0 && deltaRunas <= 0 && (delta.deltaMythicSlots || 0) <= 0) {
 			return {
 				success: true,
 				dryRun: !!options.dryRun,
@@ -387,12 +425,26 @@ async function awardDonorBonuses(
 				}
 			}
 
-			// 6. Atualiza o valor processado no banco de doações (pesca e slots)
+			// 6. Concede Slots Míticos no Waifuletes
+			if (delta.deltaMythicSlots > 0) {
+				try {
+					await creditMythicSlots(cleanNumber, delta.deltaMythicSlots, totalAmount, "DONATE_R$50");
+				} catch (mErr) {
+					logger.warn(
+						`[DonorBonusService] Falha ao creditar ${delta.deltaMythicSlots} slot(s) mítico(s) para ${cleanNumber}: ${mErr.message}`
+					);
+				}
+			}
+
+			// 7. Atualiza o valor processado no banco de doações (pesca e slots)
 			if (delta.deltaAmount > 0) {
 				await database.updateDonorBonusProcessed(donor.nome, totalAmount);
 			}
 
 			let logDetails = `+${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${deltaRunas} Runas, +${chosenItems.length} itens`;
+			if (delta.deltaMythicSlots > 0) {
+				logDetails += `, +${delta.deltaMythicSlots} slots míticos`;
+			}
 			if (delta.deltaFazenda) {
 				const fLog = [];
 				if (delta.deltaFazenda.dailyLuck > 0) fLog.push(`+${delta.deltaFazenda.dailyLuck} cinzas`);
@@ -442,7 +494,9 @@ function formatBonusMessage(bonusRes) {
 		!bonusRes ||
 		!bonusRes.success ||
 		!bonusRes.delta ||
-		(bonusRes.delta.deltaAmount <= 0 && (bonusRes.delta.deltaRunas || 0) <= 0)
+		(bonusRes.delta.deltaAmount <= 0 &&
+			(bonusRes.delta.deltaRunas || 0) <= 0 &&
+			(bonusRes.delta.deltaMythicSlots || 0) <= 0)
 	) {
 		return "";
 	}
@@ -503,6 +557,12 @@ function formatBonusMessage(bonusRes) {
 		}
 	}
 
+	// Bônus de Slots Míticos (Waifuletes)
+	if (delta.deltaMythicSlots > 0) {
+		const count = delta.deltaMythicSlots;
+		msg += `\n🔮 *Personagens Míticos:* +${count} ${count === 1 ? "slot liberado" : "slots liberados"} para forjar no painel web!`;
+	}
+
 	return msg;
 }
 
@@ -517,5 +577,6 @@ module.exports = {
 	getDonorTotal,
 	getWaifuRollBonuses,
 	awardDonorBonuses,
+	creditMythicSlots,
 	formatBonusMessage
 };
