@@ -32,7 +32,7 @@ Se o usuário enviar um link de convite como "https://chat.whatsapp.com/abcd1234
   - 🛑 **REGRA ESTRITA DE PRIVACIDADE**: O número pessoal privado do criador e de super administradores é estritamente confidencial e **JAMAIS** pode ser enviado, confirmado ou revelado sob nenhuma circunstância. Apenas o número de suporte `555596424307` é autorizado.
 
 ### Comunidade da Ravena
-- **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe
+- **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz
 - **Grupo de Entrada / Lobby**: https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV
 - **Site Oficial**: https://ravena.moothz.com
 - _Sempre sugira ao usuário entrar na comunidade para tirar dúvidas, dar sugestões e acompanhar novidades e avisos de manutenção._
@@ -1191,9 +1191,12 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!sorteio-sair`**: Sai da lista de participantes do sorteio ativo
   - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteio-sair`
-- **`!sortear`**: Finaliza o sorteio ativo ou sorteia um membro aleatório do grupo imediatamente
+- **`!sorteio-limpar`**: Remove do sorteio ativo os participantes que já saíram do grupo
   - *Categoria:* grupo
-  - *Uso/Exemplos:* `!sortear`
+  - *Uso/Exemplos:* `!sorteio-limpar`
+- **`!sortear`**: Finaliza o sorteio ativo ou sorteia membros aleatórios do grupo imediatamente (permite passar quantidade de ganhadores)
+  - *Categoria:* grupo
+  - *Uso/Exemplos:* `!sortear`, `!sortear 3`, `!sortear 2 Prêmio Especial`
 - **`!sorteios`**: Exibe o histórico de sorteios já realizados no grupo
   - *Categoria:* grupo
   - *Uso/Exemplos:* `!sorteios`

@@ -4,6 +4,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
+const PhoneUtils = require("../utils/PhoneUtils");
 
 const logger = new Logger("sorteio-commands");
 const database = Database.getInstance();
@@ -61,6 +62,32 @@ async function getUserDisplayName(bot, group, userId, fallbackName) {
 }
 
 /**
+ * Formata lista de vencedores com numeração de 1 a N
+ * (1º 🥇, 2º 🥈, 3º 🥉, 4º em diante numérico normal)
+ * @param {Array<{user_id: string, user_name: string}>} winners
+ * @returns {string} Lista formatada
+ */
+function formatWinnerList(winners) {
+	return winners
+		.map((winner, index) => {
+			const winnerNumber = (winner.user_id || winner.id?._serialized || "").split("@")[0];
+			const winnerName = winner.user_name || winner.name || `Usuário_${winnerNumber}`;
+			let prefix = "";
+			if (index === 0) {
+				prefix = "🥇 1.";
+			} else if (index === 1) {
+				prefix = "🥈 2.";
+			} else if (index === 2) {
+				prefix = "🥉 3.";
+			} else {
+				prefix = `${index + 1}.`;
+			}
+			return `${prefix} @${winnerNumber} (*${winnerName}*)`;
+		})
+		.join("\n");
+}
+
+/**
  * Creates or shows the active raffle in a group
  * @param {WhatsAppBot} bot - Bot instance
  * @param {Object} message - Message data
@@ -103,7 +130,8 @@ async function handleSorteio(bot, message, args, group) {
 			}
 			content += `\nPara entrar, digite *!sorteio-entrar* ou reaja com 🎲 na mensagem do sorteio.\n`;
 			content += `Para sair, digite *!sorteio-sair*.\n`;
-			content += `Para realizar o sorteio, use *!sortear*.`;
+			content += `Para realizar o sorteio, use *!sortear [quantidade]*.\n`;
+			content += `Para remover quem já saiu do grupo, use *!sorteio-limpar*.`;
 
 			const mentions = participants.map((p) => p.user_id);
 			return new ReturnMessage({
@@ -285,7 +313,7 @@ async function handleSorteioSair(bot, message, args, group) {
 }
 
 /**
- * Draws a winner from the active raffle or performs an instant raffle of all group members
+ * Draws winners from the active raffle or performs an instant raffle of all group members
  * @param {WhatsAppBot} bot - Bot instance
  * @param {Object} message - Message data
  * @param {Array} args - Command arguments
@@ -331,6 +359,14 @@ async function handleSortear(bot, message, args, group) {
 			});
 		}
 
+		let count = 1;
+		if (args && args.length > 0) {
+			const parsed = parseInt(args[0], 10);
+			if (!isNaN(parsed) && parsed > 0) {
+				count = parsed;
+			}
+		}
+
 		if (raffle) {
 			// Draw from active raffle participants
 			const participants = await database.dbAll(
@@ -346,14 +382,28 @@ async function handleSortear(bot, message, args, group) {
 				});
 			}
 
-			const randomIndex = Math.floor(Math.random() * participants.length);
-			const winner = participants[randomIndex];
+			const numWinners = Math.min(count, participants.length);
+			const pool = [...participants];
+			const winners = [];
+
+			for (let i = 0; i < numWinners; i++) {
+				const randomIndex = Math.floor(Math.random() * pool.length);
+				winners.push(pool[randomIndex]);
+				pool.splice(randomIndex, 1);
+			}
+
+			for (const winner of winners) {
+				winner.user_name = await getUserDisplayName(bot, group, winner.user_id, winner.user_name);
+			}
+
+			const winnerIds = winners.map((w) => w.user_id).join(",");
+			const winnerNames = winners.map((w) => w.user_name).join(", ");
 
 			// Mark raffle as finished with winner details
 			await database.dbRun(
 				DB_NAME,
 				"UPDATE sorteios SET status = 'finished', winner_id = ?, winner_name = ? WHERE id = ?",
-				[winner.user_id, winner.user_name, raffle.id]
+				[winnerIds, winnerNames, raffle.id]
 			);
 
 			// Clean up participants table for this raffle
@@ -361,23 +411,33 @@ async function handleSortear(bot, message, args, group) {
 				raffle.id
 			]);
 
-			const winnerNumber = winner.user_id.split("@")[0];
+			const winnerHeading =
+				winners.length === 1 ? "*Ganhador(a):*" : `*Ganhadores (${winners.length}):*`;
 			const text =
 				`🎉 *SORTEIO REALIZADO!* 🎉\n\n` +
 				`Sorteio: *${raffle.title}*\n` +
-				`Ganhador(a): @${winnerNumber} (*${winner.user_name}*)! 🎁\n\n` +
+				`${winnerHeading}\n` +
+				`${formatWinnerList(winners)}\n\n` +
 				`Parabéns! 📦`;
 
 			return new ReturnMessage({
 				chatId: message.group,
 				content: text,
 				options: {
-					mentions: [winner.user_id]
+					mentions: winners.map((w) => w.user_id)
 				}
 			});
 		} else {
 			// Draw instant winner from active group members
-			const title = args.length > 0 ? args.join(" ") : "Sorteio Rápido";
+			let instantTitle = "Sorteio Rápido";
+			if (args && args.length > 0) {
+				const parsed = parseInt(args[0], 10);
+				if (!isNaN(parsed) && parsed > 0) {
+					instantTitle = args.slice(1).join(" ") || "Sorteio Rápido";
+				} else {
+					instantTitle = args.join(" ");
+				}
+			}
 
 			const chat = await message.origin.getChat();
 			if (!chat || !chat.isGroup) {
@@ -387,15 +447,19 @@ async function handleSortear(bot, message, args, group) {
 				});
 			}
 
-			const ignoredUsers = group.ignoredUsers || [];
+			const ignoredUsers = group?.ignoredUsers || [];
+			const botJid = bot?.client?.info?.wid?._serialized;
+			const botPhone = bot?.phoneNumber ? PhoneUtils.cleanPhone(bot.phoneNumber) : null;
+
 			const participants =
 				chat.participants?.filter((p) => {
 					const id = p.id?._serialized || p.phoneNumber || p.lid;
-					return (
-						id &&
-						!ignoredUsers.some((ignored) => id.startsWith(ignored)) &&
-						!bot?.database?.isGlobalIgnored?.(id)
-					);
+					if (!id) return false;
+					if (botJid && id === botJid) return false;
+					if (botPhone && PhoneUtils.cleanPhone(id) === botPhone) return false;
+					if (ignoredUsers.some((ignored) => id.startsWith(ignored))) return false;
+					if (bot?.database?.isGlobalIgnored?.(id)) return false;
+					return true;
 				}) ?? [];
 
 			if (participants.length === 0) {
@@ -405,31 +469,52 @@ async function handleSortear(bot, message, args, group) {
 				});
 			}
 
-			const randomIndex = Math.floor(Math.random() * participants.length);
-			const winner = participants[randomIndex];
-			const winnerId = winner.id._serialized;
-			const winnerNumber = winnerId.split("@")[0];
+			const numWinners = Math.min(count, participants.length);
+			const pool = [...participants];
+			const winners = [];
 
-			const winnerName = await getUserDisplayName(bot, group, winnerId, null);
+			for (let i = 0; i < numWinners; i++) {
+				const randomIndex = Math.floor(Math.random() * pool.length);
+				winners.push(pool[randomIndex]);
+				pool.splice(randomIndex, 1);
+			}
+
+			const resolvedWinners = [];
+			for (const winner of winners) {
+				const winnerId = winner.id?._serialized || winner.phoneNumber || winner.lid;
+				const winnerName = await getUserDisplayName(bot, group, winnerId, null);
+				resolvedWinners.push({
+					user_id: winnerId,
+					user_name: winnerName
+				});
+			}
+
+			const winnerIds = resolvedWinners.map((w) => w.user_id).join(",");
+			const winnerNames = resolvedWinners.map((w) => w.user_name).join(", ");
 
 			// Save the instant drawing to database history
 			await database.dbRun(
 				DB_NAME,
 				"INSERT INTO sorteios (group_id, title, status, created_at, winner_id, winner_name) VALUES (?, ?, 'finished', ?, ?, ?)",
-				[message.group, title, Date.now(), winnerId, winnerName]
+				[message.group, instantTitle, Date.now(), winnerIds, winnerNames]
 			);
 
+			const winnerHeading =
+				resolvedWinners.length === 1
+					? "*Ganhador(a):*"
+					: `*Ganhadores (${resolvedWinners.length}):*`;
 			const text =
 				`⚡ *SORTEIO INSTANTÂNEO REALIZADO!* ⚡\n\n` +
-				`Sorteio: *${title}*\n` +
-				`Ganhador(a): @${winnerNumber} (*${winnerName}*)! 🎁\n\n` +
+				`Sorteio: *${instantTitle}*\n` +
+				`${winnerHeading}\n` +
+				`${formatWinnerList(resolvedWinners)}\n\n` +
 				`Parabéns! 📦`;
 
 			return new ReturnMessage({
 				chatId: message.group,
 				content: text,
 				options: {
-					mentions: [winnerId]
+					mentions: resolvedWinners.map((w) => w.user_id)
 				}
 			});
 		}
@@ -438,6 +523,180 @@ async function handleSortear(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: message.group,
 			content: "Erro ao realizar o sorteio."
+		});
+	}
+}
+
+/**
+ * Removes participants from active raffles who have left the group
+ * @param {WhatsAppBot} bot - Bot instance
+ * @param {Object} message - Message data
+ * @param {Array} args - Command arguments
+ * @param {Object} group - Group data
+ * @returns {Promise<ReturnMessage>}
+ */
+async function handleSorteioLimpar(bot, message, args, group) {
+	try {
+		if (!message.group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		// Check if active raffles exist
+		const activeRaffles = await database.dbAll(
+			DB_NAME,
+			"SELECT * FROM sorteios WHERE group_id = ? AND status = 'active'",
+			[message.group]
+		);
+
+		if (!activeRaffles || activeRaffles.length === 0) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content: "Não há nenhum sorteio ativo neste grupo no momento."
+			});
+		}
+
+		// Permission check: group admin OR creator of any active raffle
+		const requesterId = message.author;
+		let isAllowed = activeRaffles.some((r) => r.creator_id === requesterId);
+
+		let chat = null;
+		try {
+			chat = await message.origin.getChat();
+		} catch (e) {
+			logger.warn("Erro ao obter chat via message.origin:", e);
+		}
+
+		if (!isAllowed) {
+			const AdminUtils = require("../utils/AdminUtils");
+			const adminUtils = AdminUtils.getInstance();
+			const isUserAdmin = await adminUtils.isAdmin(requesterId, group, chat, bot);
+			isAllowed = isUserAdmin;
+		}
+
+		if (!isAllowed) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content:
+					"⚠️ Apenas administradores do grupo ou o criador deste sorteio podem usar o comando *!sorteio-limpar*."
+			});
+		}
+
+		if (!chat?.participants && bot?.client?.getChatById) {
+			try {
+				chat = await bot.client.getChatById(message.group);
+			} catch (e) {
+				logger.warn("Erro ao obter chat via getChatById:", e);
+			}
+		}
+
+		const groupParticipants = chat?.participants || chat?.Participants || [];
+		if (groupParticipants.length === 0) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content: "Erro ao acessar os membros do grupo para verificar os participantes."
+			});
+		}
+
+		const memberIdentifiers = new Set();
+		for (const p of groupParticipants) {
+			const pJid = p.id?._serialized || p.JID;
+			const pLid = p.lid || p.LID;
+			const pPhone = p.phoneNumber || p.PhoneNumber;
+			const pUser = p.id?.user;
+
+			if (pJid) memberIdentifiers.add(pJid);
+			if (pLid) memberIdentifiers.add(pLid);
+			if (pPhone) memberIdentifiers.add(String(pPhone));
+			if (pUser) {
+				memberIdentifiers.add(`${pUser}@s.whatsapp.net`);
+				memberIdentifiers.add(pUser);
+			}
+
+			const clean = PhoneUtils.cleanPhone(pJid || pPhone || pLid);
+			if (clean) {
+				const variants = PhoneUtils.getPhoneVariants(clean);
+				for (const v of variants) {
+					memberIdentifiers.add(v);
+				}
+			}
+		}
+
+		function isMemberInGroup(userId) {
+			if (!userId) return false;
+			if (memberIdentifiers.has(userId)) return true;
+			const cleanId = PhoneUtils.cleanPhone(userId);
+			if (cleanId) {
+				const variants = PhoneUtils.getPhoneVariants(cleanId);
+				for (const v of variants) {
+					if (memberIdentifiers.has(v)) return true;
+				}
+			}
+			return false;
+		}
+
+		let totalRemoved = 0;
+		const removedParticipants = [];
+
+		for (const raffle of activeRaffles) {
+			const participants = await database.dbAll(
+				DB_NAME,
+				"SELECT * FROM sorteio_participants WHERE sorteio_id = ?",
+				[raffle.id]
+			);
+
+			const left = participants.filter((p) => !isMemberInGroup(p.user_id));
+
+			for (const p of left) {
+				await database.dbRun(
+					DB_NAME,
+					"DELETE FROM sorteio_participants WHERE sorteio_id = ? AND user_id = ?",
+					[raffle.id, p.user_id]
+				);
+				totalRemoved++;
+				if (!removedParticipants.some((rp) => rp.user_id === p.user_id)) {
+					removedParticipants.push(p);
+				}
+			}
+		}
+
+		if (totalRemoved === 0) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content:
+					"🧹 *Limpeza de Sorteio:*\n\nNenhum participante inativo encontrado. Todos os inscritos continuam no grupo!"
+			});
+		}
+
+		let content = `🧹 *Limpeza de Sorteio Concluída!*\n\n`;
+		content += `Foram removidos *${totalRemoved}* participante(s) que já saíram do grupo:\n`;
+		removedParticipants.forEach((p, idx) => {
+			content += `${idx + 1}. ${p.user_name} (@${p.user_id.split("@")[0]})\n`;
+		});
+
+		if (activeRaffles.length === 1) {
+			const remaining = await database.dbAll(
+				DB_NAME,
+				"SELECT * FROM sorteio_participants WHERE sorteio_id = ?",
+				[activeRaffles[0].id]
+			);
+			content += `\nO sorteio "*${activeRaffles[0].title}*" agora conta com *${remaining.length}* participante(s).`;
+		}
+
+		return new ReturnMessage({
+			chatId: message.group,
+			content,
+			options: {
+				mentions: removedParticipants.map((p) => p.user_id)
+			}
+		});
+	} catch (error) {
+		logger.error("Erro no comando !sorteio-limpar:", error);
+		return new ReturnMessage({
+			chatId: message.group,
+			content: "Erro ao tentar limpar participantes inativos do sorteio."
 		});
 	}
 }
@@ -473,12 +732,25 @@ async function handleSorteios(bot, message, args, group) {
 		}
 
 		let content = `📋 *Histórico de Sorteios* 📋\n\n`;
+		const mentions = [];
 		raffles.forEach((r, idx) => {
 			const dateStr = new Date(r.created_at).toLocaleDateString("pt-BR");
-			content += `${idx + 1}. *${r.title}* - Vencedor(a): *${r.winner_name}* (@${r.winner_id.split("@")[0]}) em ${dateStr}\n`;
+			const ids = (r.winner_id || "")
+				.split(",")
+				.map((id) => id.trim())
+				.filter(Boolean);
+			mentions.push(...ids);
+
+			if (ids.length > 1) {
+				const tags = ids.map((id) => `@${id.split("@")[0]}`).join(", ");
+				content += `${idx + 1}. *${r.title}* - Vencedores: *${r.winner_name}* (${tags}) em ${dateStr}\n`;
+			} else if (ids.length === 1) {
+				content += `${idx + 1}. *${r.title}* - Vencedor(a): *${r.winner_name}* (@${ids[0].split("@")[0]}) em ${dateStr}\n`;
+			} else {
+				content += `${idx + 1}. *${r.title}* - Vencedor(a): *${r.winner_name || "Desconhecido"}* em ${dateStr}\n`;
+			}
 		});
 
-		const mentions = raffles.map((r) => r.winner_id).filter((id) => id);
 		return new ReturnMessage({
 			chatId: message.group,
 			content,
@@ -604,8 +876,19 @@ const commands = [
 		method: handleSorteioSair
 	}),
 	new Command({
+		name: "sorteio-limpar",
+		description: "Remove do sorteio ativo os participantes que já saíram do grupo",
+		category: "grupo",
+		reactions: {
+			before: "⌛️",
+			after: "🧹"
+		},
+		method: handleSorteioLimpar
+	}),
+	new Command({
 		name: "sortear",
-		description: "Realiza o sorteio ativo ou sorteia alguém aleatório no grupo instantaneamente",
+		description:
+			"Realiza o sorteio ativo ou sorteia membros aleatórios no grupo (permite definir quantidade)",
 		category: "grupo",
 		reactions: {
 			before: "⌛️",
@@ -660,9 +943,15 @@ const helper = {
 			category: "grupo"
 		},
 		{
+			cmd: "!sorteio-limpar",
+			desc: "Remove do sorteio ativo os participantes que já saíram do grupo",
+			usage: ["!sorteio-limpar"],
+			category: "grupo"
+		},
+		{
 			cmd: "!sortear",
-			desc: "Finaliza o sorteio ativo ou sorteia um membro aleatório do grupo imediatamente",
-			usage: ["!sortear"],
+			desc: "Finaliza o sorteio ativo ou sorteia membros aleatórios do grupo imediatamente",
+			usage: ["!sortear", "!sortear 3", "!sortear 2 Prêmio"],
 			category: "grupo"
 		},
 		{
