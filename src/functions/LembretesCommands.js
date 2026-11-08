@@ -1,3 +1,6 @@
+// Garante fuso horário do Brasil (America/Sao_Paulo)
+process.env.TZ = process.env.TZ || "America/Sao_Paulo";
+
 const fs = require("fs").promises;
 const path = require("path");
 const chrono = require("chrono-node");
@@ -97,14 +100,58 @@ function gerarId() {
 }
 
 /**
+ * Normaliza termos de data/hora populares no Brasil para interpretação correta pelo chrono
+ * Converte "14h" -> "14:00", "14h30" -> "14:30", "as 14h" -> "às 14:00"
+ */
+function normalizarHorarioTexto(texto) {
+	if (!texto || typeof texto !== "string") return "";
+	return texto
+		.replace(/\b(\d{1,2})h(\d{2})\b/gi, "$1:$2")
+		.replace(/\b(\d{1,2})h\b/gi, "$1:00")
+		.replace(/\bas\s+(\d{1,2}:\d{2})\b/gi, "às $1");
+}
+
+/**
+ * Interpreta durações relativas como "em 10 minutos", "daqui a 2 horas", "15m", "10 minutos"
+ */
+function interpretarDuracaoRelativa(texto) {
+	if (!texto || typeof texto !== "string") return null;
+	// 1. Prefixado por "em", "daqui a", "daqui em" (ex: "em 10 minutos", "daqui a 2 horas", "em 30m")
+	let m = texto.match(
+		/(?:^|\b)(?:em|daqui\s+a|daqui\s+em)\s+(\d+)\s*(minutos?|mins?|m|horas?|hrs?|h|dias?|d)\b/i
+	);
+	// 2. Ou minutos/dias explícitos no início: "10 minutos tirar o lixo", "10m tirar o lixo"
+	if (!m) {
+		m = texto.match(/^(?:(\d+)\s*(minutos?|mins?|m|dias?|d)\b)/i);
+	}
+	if (!m) return null;
+	const num = parseInt(m[1], 10);
+	const unit = m[2].toLowerCase();
+	let addMs = 0;
+	if (unit.startsWith("m")) addMs = num * 60 * 1000;
+	else if (unit.startsWith("h")) addMs = num * 3600 * 1000;
+	else if (unit.startsWith("d")) addMs = num * 86400 * 1000;
+	return {
+		date: new Date(Date.now() + addMs),
+		matchedText: m[0].trim()
+	};
+}
+
+/**
  * Interpreta a data/hora de um lembrete
  * @param {string} texto - Texto que contém a data
  * @returns {Date|null} - Data interpretada ou null se não for possível interpretar
  */
 function interpretarData(texto) {
 	try {
+		const duracao = interpretarDuracaoRelativa(texto);
+		if (duracao) {
+			return duracao.date;
+		}
+
+		const textoNormalizado = normalizarHorarioTexto(texto);
 		const customChrono = chrono.pt.casual;
-		const results = customChrono.parse(texto, { forwardDate: true });
+		const results = customChrono.parse(textoNormalizado, new Date(), { forwardDate: true });
 
 		if (results.length > 0) {
 			const data = results[0].start.date();
@@ -113,12 +160,12 @@ function interpretarData(texto) {
 			if (
 				results[0].start.impliedValues &&
 				results[0].start.impliedValues.day &&
-				data.getHours() < agora.getHours()
+				data.getTime() <= agora.getTime()
 			) {
 				data.setDate(data.getDate() + 1);
 			}
 
-			if (data < new Date()) {
+			if (data.getTime() < agora.getTime()) {
 				return null;
 			}
 
@@ -133,7 +180,7 @@ function interpretarData(texto) {
 }
 
 /**
- * Formata uma data para exibição amigável
+ * Formata uma data para exibição amigável no fuso horário do Brasil
  * @param {Date} data - A data a ser formatada
  * @returns {string} - String formatada da data
  */
@@ -145,7 +192,8 @@ function formatarData(data) {
 			month: "long",
 			day: "numeric",
 			hour: "2-digit",
-			minute: "2-digit"
+			minute: "2-digit",
+			timeZone: process.env.TZ || "America/Sao_Paulo"
 		};
 
 		return data.toLocaleDateString("pt-BR", options);
@@ -186,17 +234,16 @@ async function criarLembrete(bot, message, args, group) {
 
 		// Se não conseguir interpretar a data, ou for no passado
 		if (!dataLembrete) {
-			// Se apenas a hora for fornecida, tenta definir para hoje
-			if (textoData.match(/^\d{1,2}(:|h)\d{2}$/)) {
-				const [hora, minuto] = textoData
-					.replace("h", ":")
-					.split(":")
-					.map((n) => parseInt(n));
+			// Se apenas a hora for fornecida, tenta definir para hoje (ex: 15:00, 15h, 15h30)
+			const horaMinMatch = textoData.match(/^(\d{1,2})(?::|h)(\d{2})?$/i);
+			if (horaMinMatch) {
+				const hora = parseInt(horaMinMatch[1], 10);
+				const minuto = horaMinMatch[2] ? parseInt(horaMinMatch[2], 10) : 0;
 				if (hora >= 0 && hora < 24 && minuto >= 0 && minuto < 60) {
 					dataLembrete = new Date();
 					dataLembrete.setHours(hora, minuto, 0, 0);
 
-					if (dataLembrete < new Date()) {
+					if (dataLembrete.getTime() <= Date.now()) {
 						dataLembrete.setDate(dataLembrete.getDate() + 1);
 					}
 				}
@@ -212,7 +259,7 @@ async function criarLembrete(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						'Não foi possível interpretar a data/hora. Use formatos como "amanhã às 10:00" ou "17/04/2025 07:30".'
+						'Não foi possível interpretar a data/hora. Use formatos como "em 10 minutos", "amanhã às 10:00" ou "17/04/2025 07:30".'
 				});
 			}
 		}
@@ -220,12 +267,22 @@ async function criarLembrete(bot, message, args, group) {
 		// Extrai mensagem do quotedMsg ou dos argumentos
 		let mensagemTexto = getQuotedText(quotedMsg);
 		if (!mensagemTexto) {
-			const chronoMatch = chrono.pt.casual.parse(textoData, { forwardDate: true });
-			if (chronoMatch && chronoMatch.length > 0) {
-				const matchedText = chronoMatch[0].text;
-				const resto = textoData.replace(matchedText, "").trim();
+			const duracao = interpretarDuracaoRelativa(textoData);
+			if (duracao && duracao.matchedText) {
+				const resto = textoData.replace(duracao.matchedText, "").trim();
 				if (resto) {
 					mensagemTexto = resto;
+				}
+			}
+			if (!mensagemTexto) {
+				const textoNorm = normalizarHorarioTexto(textoData);
+				const chronoMatch = chrono.pt.casual.parse(textoNorm, new Date(), { forwardDate: true });
+				if (chronoMatch && chronoMatch.length > 0) {
+					const matchedText = chronoMatch[0].text;
+					const resto = textoNorm.replace(matchedText, "").trim();
+					if (resto) {
+						mensagemTexto = resto;
+					}
 				}
 			}
 		}

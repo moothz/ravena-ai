@@ -1,5 +1,6 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
+process.env.TZ = "America/Sao_Paulo";
 
 const assert = require("assert");
 const FakeBot = require("./FakeBot");

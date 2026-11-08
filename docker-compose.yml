@@ -24,6 +24,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-whatsgo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-whatsgo_db}
+      TZ: ${TZ:-America/Sao_Paulo}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -96,6 +97,7 @@ services:
     container_name: whatsgoapi
     env_file: .env
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       # Mapeamento de retrocompatibilidade para que a WhatsGoAPI continue funcionando sem rebuild imediato
       - MINIO_ENABLED=${S3_ENABLED:-true}
       - MINIO_ENDPOINT=${S3_ENDPOINT:-minio:9000}
@@ -136,6 +138,7 @@ services:
     container_name: ravena-ai
     env_file: .env
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       - DL_FOLDER=/app/downloads
       - PRIMARY_BACKUP_PATH=/app/downloads/backups/sqlite
       - BACKUP_TO_FS=${BACKUP_TO_FS:-false}

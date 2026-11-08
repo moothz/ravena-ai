@@ -35,6 +35,7 @@ FROM node:20-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
     ffmpeg \
     imagemagick \
     curl \
@@ -45,6 +46,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fonts-urw-base35 \
     fonts-droid-fallback \
     fonts-noto-mono
+
+ENV TZ=America/Sao_Paulo
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules

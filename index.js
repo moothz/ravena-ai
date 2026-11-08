@@ -1,5 +1,6 @@
 // Carrega variáveis de ambiente do arquivo .env
 require("dotenv").config();
+process.env.TZ = process.env.TZ || "America/Sao_Paulo";
 
 // Axios nao tem timeout por padrao: uma API externa travada deixaria o comando pendurado para sempre.
 // O timeout do axios (Node) e de inatividade do socket, entao downloads grandes que fluem nao sao afetados.

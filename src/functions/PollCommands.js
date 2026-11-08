@@ -1,3 +1,6 @@
+// Garante fuso horário do Brasil (America/Sao_Paulo)
+process.env.TZ = process.env.TZ || "America/Sao_Paulo";
+
 const chrono = require("chrono-node");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
@@ -32,19 +35,39 @@ function parseEndTime(text) {
 		return Math.floor(target.getTime() / 1000);
 	}
 
-	// 3. Duração simples: 30m, 1h, 2d
-	const durMatch = clean.match(/^(\d+)(m|h|d)$/i);
+	// 3. hoje/amanhã com horário específico (ex: "hoje às 15:00", "hoje 15h", "amanhã 10:00", "amanha as 10h")
+	const relDayTimeMatch = clean.match(
+		/^(hoje|amanh[aã])\s+(?:[àa]s\s+)?(\d{1,2})(?::|h)(\d{2})?$/i
+	);
+	if (relDayTimeMatch) {
+		const dayWord = relDayTimeMatch[1].toLowerCase();
+		const hour = parseInt(relDayTimeMatch[2], 10);
+		const min = relDayTimeMatch[3] ? parseInt(relDayTimeMatch[3], 10) : 0;
+		if (hour >= 0 && hour < 24 && min >= 0 && min < 60) {
+			const target = new Date();
+			if (dayWord.startsWith("amanh")) {
+				target.setDate(target.getDate() + 1);
+			}
+			target.setHours(hour, min, 0, 0);
+			if (target.getTime() > now.getTime()) {
+				return Math.floor(target.getTime() / 1000);
+			}
+		}
+	}
+
+	// 4. Duração simples: 30m, 1h, 2d, 10min, 10 minutos
+	const durMatch = clean.match(/^(\d+)\s*(m|min|mins|minutos?|h|hrs?|horas?|d|dias?)$/i);
 	if (durMatch) {
 		const num = parseInt(durMatch[1], 10);
 		const unit = durMatch[2].toLowerCase();
 		let addMs = 0;
-		if (unit === "m") addMs = num * 60 * 1000;
-		else if (unit === "h") addMs = num * 3600 * 1000;
-		else if (unit === "d") addMs = num * 86400 * 1000;
+		if (unit.startsWith("m")) addMs = num * 60 * 1000;
+		else if (unit.startsWith("h")) addMs = num * 3600 * 1000;
+		else if (unit.startsWith("d")) addMs = num * 86400 * 1000;
 		return Math.floor((Date.now() + addMs) / 1000);
 	}
 
-	// 4. Apenas horário: HH:mm ou HHhmm (ex: 12:50, 12h50, 12h)
+	// 5. Apenas horário: HH:mm ou HHhmm (ex: 12:50, 12h50, 12h)
 	const timeMatch = clean.match(/^(\d{1,2})(?::|h)(\d{2})?$/i);
 	if (timeMatch) {
 		const hour = parseInt(timeMatch[1], 10);
@@ -60,9 +83,9 @@ function parseEndTime(text) {
 		}
 	}
 
-	// 5. Horário + Data: ex: "13:30 06/11/2026" ou "06/11/2026 13:30" ou "13:30 06/11"
-	const dtMatch1 = clean.match(/^(\d{1,2}):(\d{2})\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
-	const dtMatch2 = clean.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s+(\d{1,2}):(\d{2})$/);
+	// 6. Horário + Data: ex: "13:30 06/11/2026" ou "06/11/2026 13:30" ou "13h30 06/11/2026"
+	const dtMatch1 = clean.match(/^(\d{1,2})(?::|h)(\d{2})?\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/i);
+	const dtMatch2 = clean.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s+(\d{1,2})(?::|h)(\d{2})?$/i);
 	if (dtMatch1 || dtMatch2) {
 		const m = dtMatch1 || dtMatch2;
 		let hour;
@@ -72,7 +95,7 @@ function parseEndTime(text) {
 		let year;
 		if (dtMatch1) {
 			hour = parseInt(m[1], 10);
-			min = parseInt(m[2], 10);
+			min = m[2] ? parseInt(m[2], 10) : 0;
 			day = parseInt(m[3], 10);
 			month = parseInt(m[4], 10) - 1;
 			year = m[5] ? parseInt(m[5], 10) : now.getFullYear();
@@ -81,17 +104,17 @@ function parseEndTime(text) {
 			month = parseInt(m[2], 10) - 1;
 			year = m[3] ? parseInt(m[3], 10) : now.getFullYear();
 			hour = parseInt(m[4], 10);
-			min = parseInt(m[5], 10);
+			min = m[5] ? parseInt(m[5], 10) : 0;
 		}
 		const target = new Date(year, month, day, hour, min, 0, 0);
-		if (!isNaN(target.getTime()) && target.getTime() > now.getTime()) {
+		if (!isNaN(target.getTime())) {
 			return Math.floor(target.getTime() / 1000);
 		}
 	}
 
-	// 6. Chrono fallback (para expressões em português, ex: "amanhã às 10:00")
+	// 7. Chrono fallback (para expressões em português, ex: "amanhã às 10:00")
 	try {
-		const results = chrono.pt.casual.parse(clean, { forwardDate: true });
+		const results = chrono.pt.casual.parse(clean, new Date(), { forwardDate: true });
 		if (results && results.length > 0) {
 			const date = results[0].start.date();
 			if (date.getTime() > now.getTime()) {
