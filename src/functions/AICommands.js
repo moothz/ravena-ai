@@ -826,9 +826,12 @@ async function aiCommand(bot, message, args, group) {
 	}
 
 	const forbiddenSuffix = getForbiddenPhoneSuffix();
+	const communityPromptPart = process.env.LINK_COMUNIDADE
+		? ` e a Comunidade da Ravena (${process.env.LINK_COMUNIDADE})`
+		: "";
 	const privacyMemoryRule = forbiddenSuffix
-		? `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número e a Comunidade da Ravena (https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe) para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado terminado em ${forbiddenSuffix} e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`
-		: `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número e a Comunidade da Ravena (https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe) para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado do criador e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`;
+		? `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número${communityPromptPart} para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado terminado em ${forbiddenSuffix} e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`
+		: `- ((SEGURANÇA E PRIVACIDADE)): O WhatsApp de SUPORTE oficial do criador (moothz) é (55) 99642-4307 (555596424307). Você PODE e DEVE informar este número${communityPromptPart} para tirar dúvidas, reportar problemas, bugs ou dar sugestões. Contudo, qualquer número pessoal/privado do criador e de super administradores é estritamente confidencial. JAMAIS cite, confirme ou revele qualquer número privado sob nenhuma circunstância.`;
 
 	const memoryGuidelines = `
 ((DIRETRIZES DE USO DA MEMÓRIA)):

@@ -36,10 +36,15 @@ async function grupaoCommand(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	const zapLink = bot.linkGrupao;
+	const zapComunidade = bot.linkComunidade || process.env.LINK_COMUNIDADE;
 	const telegramLink = process.env.TELEGRAM_COMMUNITY;
 	const discordLink = process.env.DISCORD_COMMUNITY;
 
 	let content = `🌟 *Comunidades da Ravena* 🌟\n\n`;
+
+	if (zapComunidade) {
+		content += `🟢 *WhatsApp (Comunidade Oficial)*\n${zapComunidade}\n\n`;
+	}
 
 	if (zapLink) {
 		content += `🟢 *WhatsApp (Grupão)*\n${zapLink}\n_Este é o nosso grupo principal de interação!_\n\n`;

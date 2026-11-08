@@ -361,11 +361,7 @@ class InviteSystem {
 	}
 
 	getCommunityLink() {
-		return (
-			this.bot?.linkComunidade ||
-			process.env.LINK_COMUNIDADE ||
-			"https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe"
-		);
+		return this.bot?.linkComunidade || process.env.LINK_COMUNIDADE || "";
 	}
 
 	getBotAlreadyInGroupMessage() {

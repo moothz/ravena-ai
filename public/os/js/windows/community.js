@@ -15,7 +15,7 @@ WindowManager.register('community', {
                 </p>
 
                 <div class="community-grid">
-                    <a href="https://chat.whatsapp.com/C47W0n3Bp9Z9Ra2ifzDDQe" target="_blank" class="community-card">
+                    <a href="https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz" target="_blank" class="community-card">
                         <img src="img/icons/community.png" alt="Comunidade">
                         <span>Comunidade Ravenabot</span>
                     </a>

@@ -189,6 +189,7 @@ class WhatsAppBotGo {
 		this.grupoAnuncios = options.grupoAnuncios || process.env.GRUPO_ANUNCIOS;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
+		this.linkComunidade = options.linkComunidade ?? process.env.LINK_COMUNIDADE;
 
 		this.joinSilencioso = false;
 

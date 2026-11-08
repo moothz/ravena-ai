@@ -64,6 +64,7 @@ class WhatsAppBotTelegram {
 		this.isPolling = false;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
+		this.linkComunidade = options.linkComunidade ?? process.env.LINK_COMUNIDADE;
 
 		// Opções do Whatsgo ignoradas (mantidas para consistência de inicialização)
 		this.vip = options.vip;

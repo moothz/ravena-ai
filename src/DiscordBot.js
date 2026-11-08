@@ -72,6 +72,7 @@ class DiscordBot {
 		this.notificarDonate = options.notificarDonate;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
+		this.linkComunidade = options.linkComunidade ?? process.env.LINK_COMUNIDADE;
 
 		this.version = "Discord";
 		this.wwebversion = require("discord.js").version;

@@ -88,6 +88,7 @@ class FakeBot {
 		};
 		this.linkGrupao = options.linkGrupao ?? null;
 		this.linkAvisos = null;
+		this.linkComunidade = options.linkComunidade ?? process.env.LINK_COMUNIDADE ?? null;
 
 		// DB compartilhado com o sistema real (leitura), testMode bloqueia escritas
 		this.database = Database.getInstance({
