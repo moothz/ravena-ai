@@ -39,6 +39,7 @@ class LayaService {
 			this.providers = (rawProviders || []).map((p) => ({
 				name: p.name || "default",
 				url: (p.url || "").replace(/\/+$/, ""),
+				apiKey: p.apiKey || "",
 				model: p.model || "ravena-bgem3",
 				enabled: p.enabled !== false,
 				timeoutMs: p.timeoutMs || p.timeout || this.defaultTimeoutMs,
@@ -133,9 +134,17 @@ class LayaService {
 		};
 
 		const timeout = options.timeoutMs || provider.timeoutMs || this.defaultTimeoutMs;
+		const headers = {
+			"Content-Type": "application/json",
+			...(provider.apiKey
+				? {
+						Authorization: `Bearer ${provider.apiKey}`
+					}
+				: {})
+		};
 
 		try {
-			const res = await axios.post(url, payload, { timeout });
+			const res = await axios.post(url, payload, { headers, timeout });
 			this._markSuccess(provider);
 			return res.data;
 		} catch (err) {
@@ -233,9 +242,18 @@ class LayaService {
 		});
 		form.append("questions", JSON.stringify(questions));
 
+		const headers = {
+			...form.getHeaders(),
+			...(provider.apiKey
+				? {
+						Authorization: `Bearer ${provider.apiKey}`
+					}
+				: {})
+		};
+
 		try {
 			const res = await axios.post(url, form, {
-				headers: form.getHeaders(),
+				headers,
 				timeout
 			});
 			this._markSuccess(provider);
@@ -256,8 +274,16 @@ class LayaService {
 			return { status: "offline", error: "Nenhum provedor configurado" };
 		}
 
+		const headers = {
+			...(provider.apiKey
+				? {
+						Authorization: `Bearer ${provider.apiKey}`
+					}
+				: {})
+		};
+
 		try {
-			const res = await axios.get(`${provider.url}/health`, { timeout: 3000 });
+			const res = await axios.get(`${provider.url}/health`, { headers, timeout: 3000 });
 			return res.data;
 		} catch (err) {
 			return { status: "error", error: err.message, provider: provider.name };

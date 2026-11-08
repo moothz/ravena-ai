@@ -118,12 +118,15 @@ async function removeBackground(inputPath) {
 			formData.append("file", blob, "image.png");
 			if (model) formData.append("model", model);
 
+			const headers = {
+				"Content-Type": "multipart/form-data",
+				...(provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {})
+			};
+
 			const res = await axios.post(rembgUrl, formData, {
 				responseType: "arraybuffer",
 				timeout,
-				headers: {
-					"Content-Type": "multipart/form-data"
-				}
+				headers
 			});
 
 			if (res && res.status === 200 && res.data && res.data.byteLength > 0) {

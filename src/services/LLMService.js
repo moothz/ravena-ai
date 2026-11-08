@@ -3185,11 +3185,13 @@ class LLMService {
 			}
 
 			const toTime = options.timeout ?? this.apiTimeout ?? 60000;
+			const ollamaHeaders = {
+				"Content-Type": "application/json",
+				...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {})
+			};
 
 			let currentResponse = await axios.post(endpoint, payload, {
-				headers: {
-					"Content-Type": "application/json"
-				},
+				headers: ollamaHeaders,
 				timeout: toTime
 			});
 
@@ -3260,9 +3262,7 @@ class LLMService {
 				}
 
 				currentResponse = await axios.post(endpoint, nextPayload, {
-					headers: {
-						"Content-Type": "application/json"
-					},
+					headers: ollamaHeaders,
 					timeout: toTime
 				});
 

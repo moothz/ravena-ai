@@ -499,6 +499,7 @@ class NSFWPredict {
 			const headers = { "Content-Type": "application/json" };
 			if (apiKey) {
 				headers["X-API-Key"] = apiKey;
+				headers.Authorization = `Bearer ${apiKey}`;
 			}
 
 			const response = await axios.post(`${baseUrl}/api/v1/classify`, payload, {
@@ -621,6 +622,7 @@ class NSFWPredict {
 		const headers = {};
 		if (apiKey) {
 			headers["X-API-Key"] = apiKey;
+			headers.Authorization = `Bearer ${apiKey}`;
 		}
 
 		const response = await axios.post(`${baseUrl}/api/v1/classify/video/upload`, form, {

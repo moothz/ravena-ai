@@ -65,13 +65,21 @@ async function trackBonsaiStats(
 	}
 }
 
-function getBonsaiUrl() {
+function getBonsaiProvider() {
 	const providers = serviceProviderService.getProviders("bonsai");
-	let url = providers[0]?.url || "http://192.168.195.212:13434";
+	const p = providers[0] || {};
+	let url = p.url || "http://192.168.195.212:13434";
 	if (!url.match(/^https?:\/\//)) {
 		url = "http://" + url;
 	}
-	return url;
+	return {
+		url,
+		apiKey: p.apiKey || ""
+	};
+}
+
+function getBonsaiUrl() {
+	return getBonsaiProvider().url;
 }
 
 const aesthetic = "\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
@@ -280,8 +288,18 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 				guidance: targetGuidance
 			};
 
+			const bonsaiProvider = getBonsaiProvider();
+			const bonsaiHeaders = {
+				...(bonsaiProvider.apiKey
+					? {
+							Authorization: `Bearer ${bonsaiProvider.apiKey}`
+						}
+					: {})
+			};
+
 			try {
 				response = await axios.post(`${bonsaiUrl}/generate`, requestPayload, {
+					headers: bonsaiHeaders,
 					responseType: "arraybuffer",
 					timeout: 60000
 				});
@@ -294,6 +312,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 					requestPayload.width = 768;
 					requestPayload.height = 768;
 					response = await axios.post(`${bonsaiUrl}/generate`, requestPayload, {
+						headers: bonsaiHeaders,
 						responseType: "arraybuffer",
 						timeout: 60000
 					});

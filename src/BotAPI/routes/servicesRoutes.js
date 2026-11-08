@@ -191,6 +191,7 @@ function registerServicesRoutes(api) {
 
 			try {
 				const bonsaiUrl = providers[0].url;
+				const bonsaiApiKey = providers[0].apiKey || "";
 				const aesthetic = "\n\n(Aesthetic: Gothic, lightly purple-ish tinted atmosphere, cartoony)";
 
 				api.logger.info(
@@ -208,6 +209,9 @@ function registerServicesRoutes(api) {
 						guidance: 3.5
 					},
 					{
+						headers: {
+							...(bonsaiApiKey ? { Authorization: `Bearer ${bonsaiApiKey}` } : {})
+						},
 						responseType: "arraybuffer",
 						timeout: 60000
 					}

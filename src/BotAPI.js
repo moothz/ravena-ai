@@ -423,10 +423,14 @@ class BotAPI {
 			sdwebui: "down"
 		};
 
-		const checkUrl = async (url) => {
+		const checkUrl = async (url, apiKey = null) => {
 			if (!url) return false;
 			try {
+				const headers = {
+					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+				};
 				await axios.get(url, {
+					headers,
 					timeout: 2000,
 					validateStatus: (status) => status >= 200 && status < 500
 				});
@@ -461,11 +465,11 @@ class BotAPI {
 			const providers = this.serviceProviderService.getProviders(category);
 			if (providers.length === 0) return "down";
 
-			const mainUp = await checkUrl(providers[0].url);
+			const mainUp = await checkUrl(providers[0].url, providers[0].apiKey);
 			if (mainUp) return "up";
 
 			for (let i = 1; i < providers.length; i++) {
-				if (await checkUrl(providers[i].url)) return "backup";
+				if (await checkUrl(providers[i].url, providers[i].apiKey)) return "backup";
 			}
 
 			return "down";

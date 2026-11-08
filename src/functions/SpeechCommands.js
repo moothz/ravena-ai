@@ -464,15 +464,20 @@ async function textToSpeech(bot, message, args, group, char = null) {
  */
 async function transcribeViaAPI(audioPath, onEstimation, onStatus) {
 	const whisperProviders = serviceProviderService.getProviders("whisper");
-	const urls = whisperProviders.map((p) => p.url);
 
-	if (urls.length === 0) {
+	if (whisperProviders.length === 0) {
 		throw new Error("WHISPER_API_URL not configured");
 	}
 
 	let lastError = null;
 
-	for (const url of urls) {
+	for (const provider of whisperProviders) {
+		const url = provider.url;
+		const apiKey = provider.apiKey || "";
+		const headers = {
+			...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+		};
+
 		try {
 			logger.debug(`[transcribe] Trying URL: ${url}`);
 			const audioBuffer = await fs.readFile(audioPath);
@@ -482,6 +487,7 @@ async function transcribeViaAPI(audioPath, onEstimation, onStatus) {
 			};
 
 			const postResponse = await axios.post(`${url}/transcribe`, requestBody, {
+				headers,
 				timeout: 30000 // 30s timeout for initial request
 			});
 
@@ -512,6 +518,7 @@ async function transcribeViaAPI(audioPath, onEstimation, onStatus) {
 				firstCheck = false;
 
 				const statusResponse = await axios.get(`${url}/status/${executionId}`, {
+					headers,
 					timeout: 10000
 				});
 				const result = statusResponse.data;
