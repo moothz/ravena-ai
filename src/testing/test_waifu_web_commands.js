@@ -191,14 +191,20 @@ async function runTests() {
 			shareMsg.content.includes("💖 *Soulmates:* 2"),
 			"Deve informar quantidade de soulmates"
 		);
-		assert.ok(shareMsg.content.includes("Morgan le Fay"), "Deve listar os personagens míticos");
-		assert.ok(shareMsg.content.includes("Frieren"), "Deve informar a waifu favorita");
+		assert.ok(
+			shareMsg.content.includes("01. 🔮 *Morgan le Fay*"),
+			"Deve exibir numeração com leading zero (01) nos míticos"
+		);
+		assert.ok(
+			shareMsg.content.includes("01. *Frieren*"),
+			"Deve exibir numeração com leading zero (01) nas favoritas"
+		);
 		assert.ok(
 			shareMsg.content.indexOf("Morgan le Fay") < shareMsg.content.indexOf("Frieren"),
 			"Lista de míticos deve vir antes da lista de favoritas"
 		);
 		console.log(
-			"✓ !mu-share gerou link público sem token, com míticos e favoritas na ordem correta!"
+			"✓ !mu-share gerou link público sem token, com míticos e favoritas na ordem correta e leading zero!"
 		);
 
 		// 5. Testar alias !mu-compartilhar

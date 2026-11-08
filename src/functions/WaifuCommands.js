@@ -3624,7 +3624,8 @@ async function verHarem(bot, message, args) {
 					const sm = item.keys >= 10 ? " 💖" : "";
 					const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
 
-					text += `${index + 1}. ⭐ ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+					const numStr = String(index + 1).padStart(2, "0");
+					text += `${numStr}. ⭐ ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
 					text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
 				});
 				text += `\n`;
@@ -3703,7 +3704,8 @@ async function verHarem(bot, message, args) {
 					const sm = item.keys >= 10 ? " 💖" : "";
 					const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
 
-					text += `${pos}. ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+					const numStr = String(pos).padStart(2, "0");
+					text += `${numStr}. ${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
 					text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
 				});
 			}
@@ -3716,8 +3718,9 @@ async function verHarem(bot, message, args) {
 				const fav = item.isFavorite ? "⭐ " : "";
 				const sm = item.keys >= 10 ? " 💖" : "";
 				const emojiRarity = RARITY_EMOJI[char.baseRarity || char.rarity] || "⚪";
+				const numStr = String(pos).padStart(2, "0");
 
-				text += `${pos}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
+				text += `${numStr}. ${fav}${emojiRarity} *${char.name}*${sm} — _${char.series}_\n`;
 				text += `   ↳ ID: \`${char.id}\` | 🔑 *${item.keys}/10*\n`;
 			});
 		}
@@ -4022,7 +4025,8 @@ async function verPerfil(bot, message) {
 		if (favoriteChars.length > 0) {
 			text += `💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
 			favoriteChars.forEach((f, idx) => {
-				text += `  ${idx + 1}. *${f.name}* (${f.series || "Sem série"})\n`;
+				const numStr = String(idx + 1).padStart(2, "0");
+				text += `  ${numStr}. *${f.name}* (${f.series || "Sem série"})\n`;
 			});
 		}
 
@@ -4264,7 +4268,8 @@ async function verSoulmates(bot, message) {
 		let text = `💖 *Seus Soulmates* (${soulmates.length}):\n\n`;
 		soulmates.forEach((sm, idx) => {
 			const char = sm.character;
-			text += `${idx + 1}. 💖 *${char.name}* — _${char.series}_\n`;
+			const numStr = String(idx + 1).padStart(2, "0");
+			text += `${numStr}. 💖 *${char.name}* — _${char.series}_\n`;
 			if (sm.alias) text += `   ↳ Apelido: "${sm.alias}"\n`;
 			if (sm.note) text += `   ↳ Nota: _${sm.note}_\n`;
 		});
@@ -4284,25 +4289,34 @@ async function listarColecoes(bot, message, args) {
 	const query = (args || []).join(" ").trim();
 
 	try {
-		const [colsRes, haremRes] = await Promise.all([
-			api.get(`/user/${userId}/collections`),
+		const [colsRes, haremRes, userRes] = await Promise.all([
+			api.get(`/user/${userId}/collections`).catch(() => ({ data: { data: [] } })),
 			api
 				.get(`/harem/${userId}`, {
-					params: { page: 1, limit: 100, sort: "keys", withoutCollection: true }
+					params: { page: 1, limit: 100, sort: "keys" }
 				})
-				.catch(() => ({ data: { data: { data: [] } } }))
+				.catch(() => ({ data: { data: { data: [] } } })),
+			api.get(`/user/${userId}`).catch(() => null)
 		]);
 		const collections = colsRes.data?.data || [];
 		const haremEntries = haremRes.data?.data?.data || [];
-		const mythicChars = haremEntries
+		const userMythics = userRes?.data?.data?.mythicCharacters || [];
+
+		// Combina os míticos retornados pelo perfil do usuário e pelo harém
+		const mythicMap = new Map();
+		userMythics.forEach((m) => {
+			mythicMap.set(m.id, { ...m, keys: 0, isMythic: true });
+		});
+		haremEntries
 			.filter(
 				(e) => e.character?.isMythic || String(e.character?.rarity || "").toUpperCase() === "MYTHIC"
 			)
-			.map((e) => ({
-				...e.character,
-				keys: 0,
-				isMythic: true
-			}));
+			.forEach((e) => {
+				if (!mythicMap.has(e.character.id)) {
+					mythicMap.set(e.character.id, { ...e.character, keys: 0, isMythic: true });
+				}
+			});
+		const mythicChars = Array.from(mythicMap.values());
 
 		if (!query) {
 			const hasMythics = mythicChars.length > 0;
@@ -4319,12 +4333,14 @@ async function listarColecoes(bot, message, args) {
 			let text = `📁 *Suas Coleções de Waifus (${totalCols}/15):*\n\n`;
 			let listIdx = 1;
 			if (hasMythics) {
-				text += `${listIdx++}. 📂 🔮 *Míticos* — ${mythicChars.length} personagem(ns)\n`;
+				const numStr = String(listIdx++).padStart(2, "0");
+				text += `${numStr}. 📂 🔮 *Míticos* — ${mythicChars.length} personagem(ns)\n`;
 				text += `   📝 _Personagens lendários forjados por você_\n`;
 			}
 			collections.forEach((col) => {
 				const lock = col.isPrivate ? " 🔒" : "";
-				text += `${listIdx++}. 📂 *${col.name}*${lock} — ${col.characterCount} personagem(ns)\n`;
+				const numStr = String(listIdx++).padStart(2, "0");
+				text += `${numStr}. 📂 *${col.name}*${lock} — ${col.characterCount} personagem(ns)\n`;
 				if (col.description) {
 					text += `   📝 _${col.description}_\n`;
 				}
@@ -4414,7 +4430,8 @@ async function listarColecoes(bot, message, args) {
 						keyText = ` | 🔑 *${keys}/10*`;
 					}
 				}
-				text += `${i + 1}. ${fav}${emojiRarity} *${char.name}* — _${char.series || "Sem Série"}_\n`;
+				const numStr = String(i + 1).padStart(2, "0");
+				text += `${numStr}. ${fav}${emojiRarity} *${char.name}* — _${char.series || "Sem Série"}_\n`;
 				text += `   ↳ ${charLink}${keyText}\n`;
 			});
 
@@ -7184,14 +7201,16 @@ async function compartilharHarem(bot, message) {
 		if (mythicChars.length > 0) {
 			text += `\n🔮 *Personagens Míticos (${mythicChars.length}):*\n`;
 			mythicChars.forEach((m, idx) => {
-				text += `  ${idx + 1}. 🔮 *${m.name}* (${m.series || "Sem série"})\n`;
+				const numStr = String(idx + 1).padStart(2, "0");
+				text += `  ${numStr}. 🔮 *${m.name}* (${m.series || "Sem série"})\n`;
 			});
 		}
 
 		if (favoriteChars.length > 0) {
 			text += `\n💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
 			favoriteChars.forEach((f, idx) => {
-				text += `  ${idx + 1}. *${f.name}* (${f.series || "Sem série"})\n`;
+				const numStr = String(idx + 1).padStart(2, "0");
+				text += `  ${numStr}. *${f.name}* (${f.series || "Sem série"})\n`;
 			});
 		}
 
