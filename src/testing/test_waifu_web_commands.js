@@ -76,6 +76,15 @@ async function runTests() {
 							publicId: "u-1234-uuid",
 							publicUrl: "https://waifuletes.moothz.com/user/u-1234-uuid",
 							haremCount: 25,
+							mythicCount: 1,
+							mythicCharacters: [
+								{
+									id: "mythic-1",
+									name: "Morgan le Fay",
+									series: "Fate/Grand Order",
+									isMythic: true
+								}
+							],
 							soulmateCount: 2,
 							wishlistCount: 5,
 							favoriteCharacter: {
@@ -177,8 +186,20 @@ async function runTests() {
 			shareMsg.content.includes("25 waifus/husbandos"),
 			"Deve informar quantidade de colecionados"
 		);
+		assert.ok(shareMsg.content.includes("🔮 *Míticos:* 1"), "Deve informar quantidade de míticos");
+		assert.ok(
+			shareMsg.content.includes("💖 *Soulmates:* 2"),
+			"Deve informar quantidade de soulmates"
+		);
+		assert.ok(shareMsg.content.includes("Morgan le Fay"), "Deve listar os personagens míticos");
 		assert.ok(shareMsg.content.includes("Frieren"), "Deve informar a waifu favorita");
-		console.log("✓ !mu-share gerou link público sem token e com estatísticas do harém!");
+		assert.ok(
+			shareMsg.content.indexOf("Morgan le Fay") < shareMsg.content.indexOf("Frieren"),
+			"Lista de míticos deve vir antes da lista de favoritas"
+		);
+		console.log(
+			"✓ !mu-share gerou link público sem token, com míticos e favoritas na ordem correta!"
+		);
 
 		// 5. Testar alias !mu-compartilhar
 		console.log("[Teste 5] Testando alias !mu-compartilhar...");

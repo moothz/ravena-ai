@@ -4002,9 +4002,9 @@ async function verPerfil(bot, message) {
 		const { data } = await api.get(`/user/${userId}`);
 		const user = data.data;
 
-		const haremCount = user._count?.harem ?? 0;
-		const soulmateCount = user._count?.soulmates ?? 0;
-		const wishlistCount = user._count?.wishlist ?? 0;
+		const haremCount = user.haremCount ?? user._count?.harem ?? 0;
+		const soulmateCount = user.soulmateCount ?? user._count?.soulmates ?? 0;
+		const wishlistCount = user.wishlistCount ?? user._count?.wishlist ?? 0;
 		const favoriteChars =
 			user.favoriteCharacters ||
 			(user.harem
@@ -7113,30 +7113,88 @@ async function compartilharHarem(bot, message) {
 		const publicUrl = formatWebUrl(user.publicUrl, publicId ? `/user/${publicId}` : "");
 
 		const haremCount = user.haremCount ?? user._count?.harem ?? 0;
-		const soulmateCount = user.soulmateCount ?? user._count?.soulmates ?? 0;
+		let soulmateCount = user.soulmateCount ?? user._count?.soulmates ?? 0;
 		const wishlistCount = user.wishlistCount ?? user._count?.wishlist ?? 0;
-		const favoriteChar = user.favoriteCharacter || user.harem?.[0]?.character;
 
-		const favoriteChars =
+		let mythicChars = Array.isArray(user.mythicCharacters) ? user.mythicCharacters : [];
+		let mythicCount = user.mythicCount ?? mythicChars.length;
+
+		// Fallback resiliente: se a API ainda não retornar míticos ou soulmateCount for 0,
+		// busca no harém e soulmates para garantir integridade imediata
+		if (mythicChars.length === 0 || soulmateCount === 0) {
+			try {
+				const [haremRes, smRes] = await Promise.all([
+					api
+						.get(`/harem/${userId}`, {
+							params: { page: 1, limit: 100, sort: "keys" }
+						})
+						.catch(() => null),
+					soulmateCount === 0
+						? api.get(`/soulmates/${userId}`).catch(() => null)
+						: Promise.resolve(null)
+				]);
+
+				const entries = haremRes?.data?.data?.data || [];
+				if (mythicChars.length === 0 && entries.length > 0) {
+					const foundMythics = entries
+						.filter(
+							(e) =>
+								e.character?.isMythic ||
+								String(e.character?.rarity || "").toUpperCase() === "MYTHIC"
+						)
+						.map((e) => e.character);
+					if (foundMythics.length > 0) {
+						mythicChars = foundMythics;
+						mythicCount = mythicChars.length;
+					}
+				}
+
+				if (soulmateCount === 0) {
+					const highKeyCount = entries.filter(
+						(e) => (e.keys >= 10 || e.isSoulmate) && !e.character?.isMythic
+					).length;
+					const smApiCount = smRes?.data?.data?.length || 0;
+					soulmateCount = Math.max(highKeyCount, smApiCount);
+				}
+			} catch (_) {
+				// Mantém os valores já obtidos de user
+			}
+		}
+
+		// Favoritas (excluindo míticos da lista de favoritas para não duplicar exibição)
+		const rawFavoriteChars =
 			user.favoriteCharacters ||
 			(user.harem
 				? user.harem.filter((h) => h.isFavorite).map((h) => h.character)
-				: favoriteChar
-					? [favoriteChar]
+				: user.favoriteCharacter
+					? [user.favoriteCharacter]
 					: []);
+
+		const mythicIds = new Set(mythicChars.map((m) => m.id));
+		const favoriteChars = rawFavoriteChars.filter((f) => !mythicIds.has(f.id));
 
 		let text = `✨ *Harém de ${user.name || userName} — Waifuletes* ✨\n\n`;
 		text += `Acesse a vitrine pública de personagens no catálogo web:\n`;
 		text += `🔗 ${publicUrl}\n\n`;
 		text += `👰 *Colecionados:* ${haremCount} waifus/husbandos\n`;
+		text += `🔮 *Míticos:* ${mythicCount}\n`;
 		text += `💖 *Soulmates:* ${soulmateCount}\n`;
 		text += `🌟 *Wishlist:* ${wishlistCount}/${WISHLIST_MAX_ITEMS}\n`;
+
+		if (mythicChars.length > 0) {
+			text += `\n🔮 *Personagens Míticos (${mythicChars.length}):*\n`;
+			mythicChars.forEach((m, idx) => {
+				text += `  ${idx + 1}. 🔮 *${m.name}* (${m.series || "Sem série"})\n`;
+			});
+		}
+
 		if (favoriteChars.length > 0) {
-			text += `💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
+			text += `\n💖 *Favoritas em Destaque (${favoriteChars.length}/5):*\n`;
 			favoriteChars.forEach((f, idx) => {
 				text += `  ${idx + 1}. *${f.name}* (${f.series || "Sem série"})\n`;
 			});
 		}
+
 		text += `\n💡 _Compartilhe este link com amigos para exibir sua coleção!_`;
 
 		return new ReturnMessage({
