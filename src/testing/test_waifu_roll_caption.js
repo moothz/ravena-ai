@@ -124,7 +124,7 @@ async function runTests() {
 	);
 	console.log("✓ 1.2. extractCharacterFromRollText continua funcionando após o link.");
 
-	// ─── 2. Multi-roll: sem [Raridade], sem !mu-casar, com link e dica !mu-c ─
+	// ─── 2. Multi-roll: sem [Raridade], com !mu-casar <id>, link e dica !mu-c ─
 	console.log("2. Testando !mu-roll 3 (rolls múltiplos)...");
 	rollCallIndex = 0;
 	const msgMulti = createMessage({
@@ -145,11 +145,13 @@ async function runTests() {
 	});
 	console.log("✓ 2.1. Multi-roll traz o link da página de cada personagem livre.");
 
-	assert.ok(
-		!multiText.includes("!mu-casar"),
-		`Multi-roll não deve mais listar "!mu-casar <id>". Texto:\n${multiText}`
-	);
-	console.log('✓ 2.2. Linha "> !mu-casar <id>" removida do multi-roll.');
+	["momoka-sagara", "artoria-pendragon"].forEach((id) => {
+		assert.ok(
+			multiText.includes(`> !mu-casar ${id}`),
+			`Multi-roll deve listar "> !mu-casar ${id}" para casar pelo nome. Texto:\n${multiText}`
+		);
+	});
+	console.log('✓ 2.2. Linha "> !mu-casar <id>" presente para cada personagem livre.');
 
 	assert.ok(
 		!/\[(Comum|Raro|Incomum|Épico|Lendário)\]/.test(multiText),
@@ -162,7 +164,7 @@ async function runTests() {
 	console.log("✓ 2.3. Raridade exibida apenas pelo emoji (⚪🔵...) sem [Comum]/[Raro].");
 
 	const hint =
-		"*Para Casar*: Reagir com o emoji do número ou responder a mensagem com !mu-c # (número do personagem)";
+		"*Para Casar*: Reagir com o emoji do número, responder a mensagem com !mu-c # (número do personagem) ou usar !mu-casar <nome>";
 	assert.ok(
 		multiText.includes(hint),
 		`Multi-roll deve trazer a dica de casamento. Texto:\n${multiText}`
