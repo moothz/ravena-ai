@@ -110,6 +110,54 @@ const pendingClaims = new Map();
 // Map<string, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const activeClaimsByCharGroup = new Map();
 
+// Histórico dos multi-rolls ainda dentro da janela de claim, por grupo (mais recente no fim).
+// Permite casar por número (!mu-c N) com slots de rolagens anteriores, e não só a última.
+// Map<groupId, Array<{ isMultiRoll: true, slots: Array<object>, rollerUserId, rollerUserName, expiresAt }>>
+const recentMultiRollsByGroup = new Map();
+const MAX_RECENT_MULTI_ROLLS = 10;
+
+/**
+ * Registra um multi-roll no histórico recente do grupo
+ */
+function addRecentMultiRoll(groupId, rollData) {
+	if (!groupId || !rollData) return;
+	const now = Date.now();
+	const list = (recentMultiRollsByGroup.get(groupId) || []).filter((r) => r.expiresAt > now);
+	list.push(rollData);
+	while (list.length > MAX_RECENT_MULTI_ROLLS) list.shift();
+	recentMultiRollsByGroup.set(groupId, list);
+}
+
+/**
+ * Retorna os multi-rolls ainda ativos do grupo, do mais recente para o mais antigo
+ */
+function getActiveMultiRolls(groupId) {
+	const now = Date.now();
+	const list = (recentMultiRollsByGroup.get(groupId) || []).filter((r) => r.expiresAt > now);
+	if (list.length > 0) {
+		recentMultiRollsByGroup.set(groupId, list);
+	} else {
+		recentMultiRollsByGroup.delete(groupId);
+	}
+	return [...list].reverse();
+}
+
+/**
+ * Marca um personagem como casado em todos os multi-rolls ativos do grupo (histórico e mensagens)
+ */
+function markMultiRollCharacterClaimed(groupId, characterId) {
+	if (!groupId || !characterId) return;
+	const mark = (slots) => {
+		(slots || []).forEach((s) => {
+			if (s.characterId === characterId) s.claimed = true;
+		});
+	};
+	(recentMultiRollsByGroup.get(groupId) || []).forEach((r) => mark(r.slots));
+	for (const claim of rollClaimsByMsgId.values()) {
+		if (claim?.isMultiRoll && claim.groupId === groupId) mark(claim.slots);
+	}
+}
+
 // Cache em memória de mensagens de roll ativas (por ID de mensagem enviado)
 // Map<messageId, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const rollClaimsByMsgId = new Map();
@@ -2144,7 +2192,7 @@ function makeRollHandler(genderFilter) {
 				}
 			});
 
-			pendingClaims.set(groupId, {
+			const multiRollClaim = {
 				isMultiRoll: true,
 				groupId,
 				characters: multiRollSlots,
@@ -2152,7 +2200,9 @@ function makeRollHandler(genderFilter) {
 				rollerUserId: userId,
 				rollerUserName: name,
 				expiresAt: now + CLAIM_WINDOW_MS
-			});
+			};
+			pendingClaims.set(groupId, multiRollClaim);
+			addRecentMultiRoll(groupId, multiRollClaim);
 
 			setTimeout(() => {
 				const cur = pendingClaims.get(groupId);
@@ -2250,6 +2300,7 @@ function makeRollHandler(genderFilter) {
 							: 0;
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
 					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
+					text += `> !mu-casar ${s.characterId}\n`;
 					const wishSlotWebUrl = getCharacterWebUrl(s.characterId);
 					if (wishSlotWebUrl) {
 						text += `> ${wishSlotWebUrl}\n`;
@@ -2270,6 +2321,7 @@ function makeRollHandler(genderFilter) {
 							: 0;
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
 					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
+					text += `> !mu-casar ${s.characterId}\n`;
 					const singleSlotWebUrl = getCharacterWebUrl(s.characterId);
 					if (singleSlotWebUrl) {
 						text += `> ${singleSlotWebUrl}\n`;
@@ -2279,7 +2331,7 @@ function makeRollHandler(genderFilter) {
 			}
 
 			if (hasFreeSlots) {
-				text += `*Para Casar*: Reagir com o emoji do número ou responder a mensagem com !mu-c # (número do personagem)\n\n`;
+				text += `*Para Casar*: Reagir com o emoji do número, responder a mensagem com !mu-c # (número do personagem) ou usar !mu-casar <nome>\n\n`;
 			}
 
 			if (casadosSlots.length > 0) {
@@ -2586,10 +2638,47 @@ async function casarWaifu(bot, message, args) {
 				}
 			}
 			if (!targetSlots) {
-				const pending = pendingClaims.get(groupId);
-				if (pending?.slots || pending?.characters) {
-					targetSlots = pending.slots || pending.characters;
-					parentRoll = pending;
+				// Sem citação: considera todos os multi-rolls ainda ativos no grupo, não só o último.
+				const activeRolls = getActiveMultiRolls(groupId);
+				const isClaimableBy = (roll, s) =>
+					s.available !== false &&
+					!s.claimed &&
+					!(
+						s.exclusiveUntil &&
+						Date.now() < s.exclusiveUntil &&
+						roll.rollerUserId &&
+						normalizeUserId(roll.rollerUserId) !== userId
+					);
+				const candidates = [];
+				activeRolls.forEach((roll) => {
+					const s = (roll.slots || roll.characters || []).find((x) => x.slot === slotNum);
+					if (s && isClaimableBy(roll, s)) candidates.push({ roll, slot: s });
+				});
+
+				if (candidates.length === 1) {
+					targetSlots = candidates[0].roll.slots || candidates[0].roll.characters;
+					parentRoll = candidates[0].roll;
+				} else if (candidates.length > 1) {
+					let text = `⚠️ Há *${candidates.length}* rolagens ativas com o slot ${slotNum} livre! Responda a mensagem da rolagem com \`!mu-c ${slotNum}\` ou case pelo nome:\n\n`;
+					candidates.forEach(({ roll, slot: s }) => {
+						const by = roll.rollerUserName ? ` _(rolado por ${roll.rollerUserName})_` : "";
+						text += `• *${s.characterName}* — ${s.series || ""}${by}\n> !mu-casar ${s.characterId}\n`;
+					});
+					return new ReturnMessage({
+						chatId,
+						content: text.trim(),
+						options: { quotedMessageId: message.origin?.id?._serialized, goReply: message.origin }
+					});
+				} else {
+					// Nenhum candidato livre: usa a rolagem mais recente que tenha o slot para dar o erro adequado
+					const withSlot = activeRolls.find((r) =>
+						(r.slots || r.characters || []).some((x) => x.slot === slotNum)
+					);
+					const fallback = withSlot || activeRolls[0] || pendingClaims.get(groupId);
+					if (fallback?.slots || fallback?.characters) {
+						targetSlots = fallback.slots || fallback.characters;
+						parentRoll = fallback;
+					}
 				}
 			}
 			if (targetSlots) {
@@ -2876,6 +2965,11 @@ async function casarWaifu(bot, message, args) {
 		}
 		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
+		markMultiRollCharacterClaimed(groupId, characterId);
+		if (character?.id && character.id !== characterId) {
+			markMultiRollCharacterClaimed(groupId, character.id);
+			activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
+		}
 
 		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
@@ -3047,6 +3141,7 @@ async function processWaifuReaction(bot, message, args, group) {
 
 		slotData.claimed = true;
 		activeClaimsByCharGroup.delete(`${groupId}:${slotData.characterId}`);
+		markMultiRollCharacterClaimed(groupId, slotData.characterId);
 
 		const allFreeClaimed = slots.filter((s) => s.available).every((s) => s.claimed);
 		if (allFreeClaimed) {
@@ -10006,6 +10101,7 @@ module.exports = {
 	denunciarWaifu,
 	verCooldowns,
 	pendingClaims,
+	recentMultiRollsByGroup,
 	activeClaimsByCharGroup,
 	EXCLUSIVE_CLAIM_WINDOW_MS,
 	EXCLUSIVE_CLAIM_WINDOWS,
