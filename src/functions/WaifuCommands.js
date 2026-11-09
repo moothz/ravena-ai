@@ -581,7 +581,7 @@ let cachedDropStats = null;
 let cachedDropStatsAt = 0;
 const DROP_STATS_CACHE_TTL = 15 * 60 * 1000; // 15 minutos
 
-async function getUserWishlistStats(userId, totalWeight) {
+async function getUserWishlistStats(userId, totalWeight, donorBonuses = null) {
 	try {
 		const { data } = await api.get(`/wishlist/${userId}`);
 		const wishlist = data?.data || [];
@@ -596,15 +596,49 @@ async function getUserWishlistStats(userId, totalWeight) {
 		}
 
 		let totalWishWeight = 0;
+		let legWishWeight = 0;
+		const defaultWishMult = donorBonuses?.wishlistMultiplier || 1.5;
+		const defaultStarMult = donorBonuses?.wishlistMultiplier
+			? donorBonuses.wishlistMultiplier * (2.0 / 1.5)
+			: 2.0;
+
 		for (const item of wishlist) {
 			const char = item.character;
 			const r = char?.baseRarity || char?.rarity || "COMMON";
 			const baseW = RARITY_WEIGHTS[r] || 100;
-			const multiplier = item.isStarWish ? 2.0 : 1.5;
-			totalWishWeight += Math.max(1, Math.round(baseW * multiplier));
+
+			let itemWeight;
+			if (donorBonuses) {
+				const rMult = donorBonuses.rarityMultipliers?.[r] || 1.0;
+				const wMult = item.isStarWish ? defaultStarMult : defaultWishMult;
+				if (r === "LEGENDARY") {
+					// Desacoplamento para Lendários conforme Waifuletes
+					const combinedMult = Math.max(1.0, rMult + Math.max(0, wMult - 1.0));
+					itemWeight = Math.max(1, Math.round(baseW * combinedMult));
+					legWishWeight += itemWeight;
+				} else {
+					itemWeight = Math.max(1, Math.round(baseW * rMult * wMult));
+				}
+			} else {
+				const multiplier = item.isStarWish ? 2.0 : 1.5;
+				itemWeight = Math.max(1, Math.round(baseW * multiplier));
+				if (r === "LEGENDARY") {
+					legWishWeight += itemWeight;
+				}
+			}
+			totalWishWeight += itemWeight;
 		}
 
-		const anyWishChance = totalWeight > 0 ? (totalWishWeight / totalWeight) * 100 : 0;
+		// Cap de 0.80% para Lendários no roll caso o peso de Lendários na Wishlist supere o teto
+		if (totalWeight > 0 && legWishWeight > 0) {
+			const maxLegAllowed = totalWeight * 0.008; // 0.80% cap
+			if (legWishWeight > maxLegAllowed) {
+				totalWishWeight -= legWishWeight - maxLegAllowed;
+			}
+		}
+
+		const anyWishChance =
+			totalWeight > 0 ? Math.min(100, (totalWishWeight / totalWeight) * 100) : 0;
 		return {
 			count: wishlist.length,
 			maxItems: WISHLIST_MAX_ITEMS,
@@ -6103,13 +6137,22 @@ async function verChances(bot, message) {
 		donorBonuses = DonorBonusService.calculateBonuses(donorTotal).waifu;
 		donorHeader = `💎 *Doador, obrigado!* 💎\n`;
 		donorHeader += `> _Seus benefícios de apoiador (R$ ${donorTotal.toFixed(2)}) estão ativos:_\n`;
-		donorHeader += `> • 🔵 *Raro:* +${Math.round(donorTotal * 2.0)}% | 🟣 *Épico:* +${Math.round(donorTotal * 3.5)}% | ⭐ *Lendário:* +${Math.round(donorTotal * 2.0)}%\n`;
+		const legMult = donorBonuses.rarityMultipliers.LEGENDARY;
+		const legPct = Math.round((legMult - 1) * 100);
+		const rareMult = donorBonuses.rarityMultipliers.RARE;
+		const rarePct = Math.round((rareMult - 1) * 100);
+		const epicMult = donorBonuses.rarityMultipliers.EPIC;
+		const epicPct = Math.round((epicMult - 1) * 100);
+		const legCapTag = donorTotal >= 450 ? " _(Cap 10x)_" : " _(Cap 10x em R$ 450)_";
+
+		donorHeader += `> • 🔵 *Raro:* +${rarePct}% | 🟣 *Épico:* +${epicPct}% | ⭐ *Lendário:* +${legPct}% (${legMult.toFixed(1)}x)${legCapTag}\n`;
 		if (donorBonuses.extraMaxRolls > 0) {
 			donorHeader += `> • 🎟️ *Rolls Máximos:* ${9 + donorBonuses.extraMaxRolls} rolls (9 base + ${donorBonuses.extraMaxRolls} extras por doação)\n`;
 		}
 		if (donorBonuses.wishlistMultiplier) {
 			const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
-			donorHeader += `> • 🌟 *Wishlist:* +${wishBonusPct}% de peso em desejos!\n`;
+			const wishCapTag = donorTotal >= 250 ? " _(Cap 20x)_" : " _(Cap 20x em R$ 250)_";
+			donorHeader += `> • 🌟 *Wishlist:* +${wishBonusPct}% (${donorBonuses.wishlistMultiplier.toFixed(1)}x) de peso em desejos!${wishCapTag}\n`;
 		}
 		donorHeader += `\n`;
 	}
@@ -6154,8 +6197,22 @@ async function verChances(bot, message) {
 		breakdown = adjustedList.map((b) => {
 			const catChance = donorTotalWeight > 0 ? (b.donorCatWeight / donorTotalWeight) * 100 : 0;
 			const singleBaseChance = donorTotalWeight > 0 ? (b.donorWeight / donorTotalWeight) * 100 : 0;
+
+			let singleWishWeight;
+			let singleWishLabel = null;
+			if (b.rarity === "LEGENDARY") {
+				// Desacoplamento para Lendários conforme regra do Waifuletes
+				const rMult = donorBonuses.rarityMultipliers?.LEGENDARY || 1.0;
+				const combinedMult = Math.max(1.0, rMult + Math.max(0, wishMult - 1.0));
+				singleWishWeight = Math.round(b.baseWeight * combinedMult);
+				singleWishLabel = `*+${Math.round((combinedMult - 1) * 100)}% (desacoplado)*`;
+			} else {
+				singleWishWeight = Math.round(b.donorWeight * wishMult);
+				singleWishLabel = `*+${Math.round((wishMult - 1) * 100)}%*`;
+			}
+
 			const singleWishChance =
-				donorTotalWeight > 0 ? (Math.round(b.donorWeight * wishMult) / donorTotalWeight) * 100 : 0;
+				donorTotalWeight > 0 ? (singleWishWeight / donorTotalWeight) * 100 : 0;
 			const oneInX = catChance > 0 ? Math.round(100 / catChance) : null;
 			const singleBaseOneInX = singleBaseChance > 0 ? Math.round(100 / singleBaseChance) : null;
 			const singleWishOneInX = singleWishChance > 0 ? Math.round(100 / singleWishChance) : null;
@@ -6166,11 +6223,23 @@ async function verChances(bot, message) {
 				categoryChance: catChance,
 				singleBaseChance,
 				singleWishChance,
+				singleWishLabel,
 				oneInX,
 				singleBaseOneInX,
 				singleWishOneInX
 			};
 		});
+
+		if (userId) {
+			const recalculatedWishlist = await getUserWishlistStats(
+				userId,
+				donorTotalWeight,
+				donorBonuses
+			);
+			if (recalculatedWishlist) {
+				stats.userWishlistStats = recalculatedWishlist;
+			}
+		}
 	}
 
 	text += `📊 *Chances por Categoria de Personagem:*\n`;
@@ -6185,36 +6254,44 @@ async function verChances(bot, message) {
 			const singleWishStr =
 				b.singleWishChance < 0.001 ? b.singleWishChance.toFixed(4) : b.singleWishChance.toFixed(3);
 
+			const isLeg = b.rarity === "LEGENDARY";
+			const legRollCapNote = isLeg ? " _(Cap no roll: 0,80%)_" : "";
+
 			text += `${emoji} *${label}* (${b.count.toLocaleString("pt-BR")} no banco | Peso ${b.baseWeight})\n`;
-			text += `   ↳ Drop da categoria: *${catChanceStr}%* ${b.oneInX ? `(~1 a cada ${b.oneInX.toLocaleString("pt-BR")} rolls)` : ""}\n`;
+			text += `   ↳ Drop da categoria: *${catChanceStr}%* ${b.oneInX ? `(~1 a cada ${b.oneInX.toLocaleString("pt-BR")} rolls)` : ""}${legRollCapNote}\n`;
 			text += `   ↳ 1 específico (base): *${singleBaseStr}%* (1 em ${b.singleBaseOneInX?.toLocaleString("pt-BR") || "?"})\n`;
-			const wishBonusLabel = donorBonuses?.wishlistMultiplier
-				? `*+${Math.round((donorBonuses.wishlistMultiplier - 1) * 100)}%*`
-				: `*+50%*`;
+			const wishBonusLabel =
+				b.singleWishLabel ||
+				(donorBonuses?.wishlistMultiplier
+					? `*+${Math.round((donorBonuses.wishlistMultiplier - 1) * 100)}%*`
+					: `*+50%*`);
 			text += `   ↳ Com Wishlist: *${singleWishStr}%* (${wishBonusLabel} | 1 em ${b.singleWishOneInX?.toLocaleString("pt-BR") || "?"})\n\n`;
 		}
 	} else {
 		text += `⚪ *Comum:* ~93,30% (peso 100 | 1 específico: 0,0039%)\n`;
 		text += `🟢 *Incomum:* ~5,59% (peso 60 | 1 específico: 0,0023%)\n`;
-		text += `🔵 *Raro:* ~0,98% (peso 30 | 1 específico: 0,0012%)\n`;
-		text += `🟣 *Épico:* ~0,13% (peso 15 | 1 específico: 0,0006%)\n`;
-		text += `⭐ *Lendário:* ~0,011% (peso 5 | 1 específico: 0,0002%)\n\n`;
+		text += `🔵 *Raro:* ~0,98% (peso 25 | 1 específico: 0,0010%)\n`;
+		text += `🟣 *Épico:* ~0,07% (peso 8 | 1 específico: 0,0003%)\n`;
+		text += `⭐ *Lendário:* ~0,005% (peso 2.5 | 1 específico: 0,0001% | Cap no roll: 0,80%)\n\n`;
 	}
 
 	if (donorBonuses?.wishlistMultiplier) {
 		const wishMultVal = donorBonuses.wishlistMultiplier.toFixed(1);
 		const wishBonusPct = Math.round((donorBonuses.wishlistMultiplier - 1) * 100);
+		const wishCapTag = donorTotal >= 250 ? " _(Cap 20x atingido!)_" : " _(Cap 20x em R$ 250)_";
 		text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos) [BÔNUS VIP ATIVO]:*\n`;
-		text += `• Cada personagem desejado tem o peso multiplicado por *${wishMultVal}x (+${wishBonusPct}%)*!\n`;
+		text += `• Cada personagem desejado tem o peso multiplicado por *${wishMultVal}x (+${wishBonusPct}%)*${wishCapTag}!\n`;
+		text += `• _Regra de Lendários:_ Bônus de wishlist desacoplado (soma ao bônus de raridade sem cascata) e sujeito ao teto máximo de 0,80% por roll.\n`;
 	} else {
 		text += `🌟 *Efeito da Wishlist (Até ${maxWl} Desejos):*\n`;
 		text += `• Cada personagem desejado tem o peso multiplicado por *1.5x (+50%)*.\n`;
 		text += `• Se for marcado como Star Wish, o multiplicador é de *2.0x (+100%)*.\n`;
+		text += `• _Caps do Waifuletes:_ Lendários possuem cap em R$ 450 (10x), Wishlist cap em R$ 250 (20x) e teto de drop de Lendários em 0,80% no roll.\n`;
 	}
 
 	if (stats?.userWishlistStats && stats.userWishlistStats.count > 0) {
 		let anyWishChance = stats.userWishlistStats.anyWishChance;
-		if (donorBonuses?.wishlistMultiplier) {
+		if (donorBonuses?.wishlistMultiplier && !donorTotal) {
 			anyWishChance = Math.min(100, anyWishChance * (donorBonuses.wishlistMultiplier / 1.5));
 		}
 		const wishChanceStr =

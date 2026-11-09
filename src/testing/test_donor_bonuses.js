@@ -224,6 +224,28 @@ async function runTests() {
 	);
 	console.log("✓ !doar-vantagens para apoiador OK");
 
+	// 3.1 Teste do comando !mu-chances para apoiador com caps
+	console.log("\n--- 3.1. Testando comando !mu-chances com caps para apoiador ---");
+	eventHandler.commandHandler.userDebounceMap?.clear();
+	bot.resetCapture();
+	const msgChancesDoador = createMessage({
+		content: "!mu-chances",
+		group: "120363000000000000@g.us",
+		author: "5511981010487@s.whatsapp.net"
+	});
+	await eventHandler.processMessage(bot, msgChancesDoador);
+	await waitForReply();
+	const capturedChances = bot.capturedMessages[bot.capturedMessages.length - 1];
+	assert.ok(capturedChances, "Deve responder ao comando !mu-chances");
+	const textChances = capturedChances.content || capturedChances.text;
+	assert.ok(textChances.includes("Doador, obrigado!"), "Deve conter header de doador");
+	assert.ok(textChances.includes("Lendário"), "Deve conter menção a Lendário");
+	assert.ok(textChances.includes("Cap 10x"), "Deve conter menção ao cap de 10x de lendários");
+	assert.ok(textChances.includes("Cap 20x"), "Deve conter menção ao cap de 20x de wishlist");
+	assert.ok(textChances.includes("Cap no roll: 0,80%"), "Deve indicar cap no roll de lendários");
+	assert.ok(textChances.includes("desacoplado"), "Deve indicar bônus desacoplado de lendários");
+	console.log("✓ !mu-chances com caps para apoiador OK");
+
 	// 4. Teste de concessão simulada (dry-run)
 	console.log("\n--- 4. Testando concessão simulada (awardDonorBonuses dryRun) ---");
 	const resDry = await DonorBonusService.awardDonorBonuses("Agrius Metamorphosis", 80, 0, {

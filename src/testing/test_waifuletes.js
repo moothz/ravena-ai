@@ -263,6 +263,18 @@ async function runTests() {
 	const chancesContent = bot.capturedMessages[0]?.content || "";
 	assert.ok(chancesContent.includes("PROBABILIDADES"), "!mu-chances deveria exibir probabilidades");
 	assert.ok(chancesContent.includes("100"), "!mu-chances deveria mencionar limite de 100");
+	assert.ok(
+		chancesContent.includes("0,80%"),
+		"!mu-chances deve informar o cap de 0,80% no roll para lendários"
+	);
+	assert.ok(
+		chancesContent.includes("R$ 450 (10x)"),
+		"!mu-chances deve informar o cap de lendários em R$ 450 (10x)"
+	);
+	assert.ok(
+		chancesContent.includes("R$ 250 (20x)"),
+		"!mu-chances deve informar o cap da wishlist em R$ 250 (20x)"
+	);
 	console.log(`✓ Comando !mu-chances passou.`);
 
 	// 11. Testar Roll de personagem (!mu-roll)
@@ -296,7 +308,11 @@ async function runTests() {
 	await eventHandler.processMessage(bot, msgCasar);
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "Deveria responder ao comando !mu-casar");
-	console.log(`✓ Resposta de casamento: ${bot.capturedMessages[0]?.content?.substring(0, 60)}...`);
+	const casarText =
+		typeof bot.capturedMessages[0]?.content === "string"
+			? bot.capturedMessages[0]?.content
+			: bot.capturedMessages[0]?.caption || "";
+	console.log(`✓ Resposta de casamento: ${casarText.substring(0, 60)}...`);
 
 	// 12.1. Testar Favoritar Waifu do Harém (!mu-favorito)
 	console.log(`[Teste 11.1] Executando !mu-favorito...`);
