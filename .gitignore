@@ -149,6 +149,7 @@ nssm-service.bat
 !/scripts/compensate_fichas_slots.js
 !/scripts/compensate_slots_jardim.js
 !/scripts/convert_zinthos_to_runas_zero_waifus.js
+!/scripts/apply_retroactive_farm_donations.js
 data/textos/*.txt
 !data/textos/*.example.txt
 /src/scripts
