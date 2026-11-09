@@ -307,9 +307,10 @@ async function showDonationPerks(bot, message, args, group) {
 
 		msg += `🌸 *Waifus (Mudae):*\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
-		msg += `• *Abaixo de R$ 50:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1.\n`;
+		msg += `• *Bônus de Raridade:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1 doado.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
 		msg += `• *Aos R$ 100:* Multiplicador de Lendários atinge 3x (+200%) e Wishlist chega a 8x (+700%)!\n`;
+		msg += `• *Caps de Chance no Waifuletes:* Multiplicador de Lendários tem cap em R$ 450 (10x) e multiplicador da Wishlist tem cap em R$ 250 (20x).\n`;
 		msg += `• *🔮 Personagens Míticos:* 1 slot mítico a cada R$ 50 doados para forjar seu personagem lendário exclusivo e eternamente casado no painel web!\n`;
 		msg += `• *!mu-chances exclusivo:* Mostra suas probabilidades personalizadas ativas.\n\n`;
 
@@ -352,14 +353,25 @@ async function showDonationPerks(bot, message, args, group) {
 				msg += `  • 🕸️ Eficiência na rede (!pesca-rede): _Desbloqueada ao doar acima de R$ 20!_\n\n`;
 			}
 
+			const legMult = bonuses.waifu.rarityMultipliers.LEGENDARY;
+			const legPct = Math.round((legMult - 1) * 100);
+			const rareMult = bonuses.waifu.rarityMultipliers.RARE;
+			const rarePct = Math.round((rareMult - 1) * 100);
+			const epicMult = bonuses.waifu.rarityMultipliers.EPIC;
+			const epicPct = Math.round((epicMult - 1) * 100);
+			const legCapTag =
+				totalAmount >= 450 ? " _(Cap 10x em R$ 450 atingido!)_" : " _(Cap 10x em R$ 450)_";
+
 			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
 			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (10 base + ${extraRolls} extras por doação)\n`;
-			msg += `  • 🔵 Raros: *+${Math.round(totalAmount * 2.0)}%* | 🟣 Épicos: *+${Math.round(totalAmount * 3.5)}%* | ⭐ Lendários: *+${Math.round(totalAmount * 4.5)}%*\n`;
+			msg += `  • 🔵 Raros: *+${rarePct}%* | 🟣 Épicos: *+${epicPct}%* | ⭐ Lendários: *+${legPct}%* (${legMult.toFixed(1)}x)${legCapTag}\n`;
 			if (bonuses.waifu.wishlistMultiplier) {
 				const wishPct = Math.round((bonuses.waifu.wishlistMultiplier - 1) * 100);
-				msg += `  • 🌟 Wishlist: *+${wishPct}%* de multiplicador (${bonuses.waifu.wishlistMultiplier.toFixed(1)}x)!\n`;
+				const wishCapTag =
+					totalAmount >= 250 ? " _(Cap 20x em R$ 250 atingido!)_" : " _(Cap 20x em R$ 250)_";
+				msg += `  • 🌟 Wishlist: *+${wishPct}%* de multiplicador (${bonuses.waifu.wishlistMultiplier.toFixed(1)}x)${wishCapTag}!\n`;
 			} else {
-				msg += `  • 🌟 Wishlist VIP: _Desbloqueada ao atingir R$ 50 no total!_\n`;
+				msg += `  • 🌟 Wishlist VIP: _Desbloqueada ao atingir R$ 50 no total (Cap 20x em R$ 250)!_\n`;
 			}
 			if (bonuses.waifu.mythicSlots > 0) {
 				msg += `  • 🔮 *${bonuses.waifu.mythicSlots}* slot(s) de Personagens Míticos desbloqueado(s) para forjar no painel web (\`!mu-adm\`)!\n`;

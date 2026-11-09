@@ -175,6 +175,14 @@ async function runTests() {
 		contentNaoDoador.includes("Fazenda (Jardim Lutoso):"),
 		"Deve listar regras da Fazenda (Jardim Lutoso)"
 	);
+	assert.ok(
+		contentNaoDoador.includes("cap em R$ 450 (10x)"),
+		"Deve informar o cap de lendários em R$ 450 (10x)"
+	);
+	assert.ok(
+		contentNaoDoador.includes("cap em R$ 250 (20x)"),
+		"Deve informar o cap de wishlist em R$ 250 (20x)"
+	);
 	console.log("✓ !doar-vantagens para não-doador OK");
 
 	// Teste com doador conhecido (Agrius / 5511981010487)
