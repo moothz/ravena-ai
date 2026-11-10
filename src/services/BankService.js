@@ -38,17 +38,17 @@ const BASE_RUNAS_PER_KG_FISH = 1000 / 800; // 1.25 Runas / kg
 const BASE_RUNAS_PER_ZINTHOS = 1000 / 3500; // ~0.2857 Runas / Zinthos
 const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
 
-// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (200k Zinthos, 150k Petalitas, 300 moedas, 200 iscas)
+// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (base 500k Zinthos, 300k Petalitas, 300 moedas, 200 iscas)
 const DAILY_LIMITS = {
 	venda_runas: 300000, // 300.000 ᚱ/dia (limite unificado para ganhar Runas vendendo peixes, zinthos ou petalitas)
-	compra_zinthos: 200000, // 200.000 Zinthos/dia (limite diário de conversão de Runas em Zinthos)
-	compra_jardim: 150000, // 150.000 Petalitas/dia (limite diário de conversão de Runas em Petalitas)
+	compra_zinthos: 500000, // Base de 500.000 Zinthos/dia (progressivo diário com inflação, inicia ~600k)
+	compra_jardim: 300000, // Base de 300.000 Petalitas/dia (progressivo diário com inflação, inicia ~320k)
 	compra_moedas: 300, // 300 moedas/dia no SlotsGame
 	compra_iscas: 200, // 200 iscas/dia no FishingGame
 	// Legado para compatibilidade:
 	pesca: 300000,
-	zinthos: 200000,
-	jardim: 150000,
+	zinthos: 500000,
+	jardim: 300000,
 	compra: 300000
 };
 
@@ -115,6 +115,10 @@ class BankService {
 					fish_multiplier REAL DEFAULT 1.0,
 					waifu_multiplier REAL DEFAULT 1.0,
 					jardim_multiplier REAL DEFAULT 1.0,
+					quota_compra_zinthos REAL DEFAULT 500000,
+					quota_compra_jardim REAL DEFAULT 300000,
+					waifu_inflation_percent REAL DEFAULT 0,
+					jardim_inflation_percent REAL DEFAULT 0,
 					updated_at INTEGER
 				);
 
@@ -192,6 +196,28 @@ class BankService {
 				database
 					.getSQLiteDb(dbName)
 					.exec("ALTER TABLE bank_daily_quotas ADD COLUMN initial_runas REAL DEFAULT NULL;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec(
+						"ALTER TABLE bank_daily_rates ADD COLUMN quota_compra_zinthos REAL DEFAULT 500000;"
+					);
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_rates ADD COLUMN quota_compra_jardim REAL DEFAULT 300000;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_rates ADD COLUMN waifu_inflation_percent REAL DEFAULT 0;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_daily_rates ADD COLUMN jardim_inflation_percent REAL DEFAULT 0;");
 			} catch (_) {}
 			this._initialized = true;
 			logger.info("Banco bank.db inicializado com sucesso.");
@@ -321,6 +347,25 @@ class BankService {
 				[today]
 			);
 			if (existing) {
+				let quotaZ = Number(existing.quota_compra_zinthos || 0);
+				let quotaJ = Number(existing.quota_compra_jardim || 0);
+				const waifuInf = Number(existing.waifu_inflation_percent || 0);
+				let jardimInf = Number(existing.jardim_inflation_percent || 0);
+
+				// Se o registro existente for anterior à nova progressão de cotas, atualiza para o novo patamar
+				if (quotaZ < 500000 || quotaJ < 300000) {
+					quotaZ = 600000;
+					quotaJ = 320000;
+					jardimInf = 6.42;
+					try {
+						await database.dbRun(
+							dbName,
+							"UPDATE bank_daily_rates SET quota_compra_zinthos = ?, quota_compra_jardim = ?, jardim_inflation_percent = ? WHERE date = ?",
+							[quotaZ, quotaJ, jardimInf, today]
+						);
+					} catch (_) {}
+				}
+
 				return {
 					date: existing.date,
 					runasPerKgFish: existing.runas_per_kg_fish,
@@ -329,6 +374,10 @@ class BankService {
 					fishMultiplier: existing.fish_multiplier,
 					waifuMultiplier: existing.waifu_multiplier,
 					jardimMultiplier: existing.jardim_multiplier,
+					quotaCompraZinthos: quotaZ,
+					quotaCompraJardim: quotaJ,
+					waifuInflationPercent: waifuInf,
+					jardimInflationPercent: jardimInf,
 					updatedAt: existing.updated_at
 				};
 			}
@@ -343,7 +392,7 @@ class BankService {
 	async calculateDailyRates(force = false) {
 		const today = this.getTodayDateString();
 
-		// Cotação do dia anterior para aplicação de circuit breaker (+-10%)
+		// Cotação do dia anterior para aplicação de circuit breaker (+-10%) e progressão de cotas
 		const prev = await database.dbGet(
 			dbName,
 			"SELECT * FROM bank_daily_rates ORDER BY date DESC LIMIT 1"
@@ -352,16 +401,23 @@ class BankService {
 		let waifuMult = 1.0;
 		let fishMult = 1.0;
 		let jardimMult = 1.0;
+		let waifuInflationPercent = 0;
+		let rawInflationMult = 1.0;
 
 		// 1. Fator Waifus via inflação IM
 		try {
 			const { data } = await waifuApi.get("/market/stats");
-			const inflationMult = data?.data?.inflationMultiplier || 1.0;
+			rawInflationMult = data?.data?.inflationMultiplier || 1.0;
+			waifuInflationPercent = Number(
+				(data?.data?.inflationPercent ?? (rawInflationMult - 1) * 100).toFixed(2)
+			);
 			// Se há mais inflação de Zinthos, Zinthos compra menos Runas
-			waifuMult = Number((1.0 / Math.max(1.0, inflationMult)).toFixed(4));
+			waifuMult = Number((1.0 / Math.max(1.0, rawInflationMult)).toFixed(4));
 		} catch (err) {
 			logger.warn(`[BankService] Falha ao consultar /market/stats do Waifuletes: ${err.message}`);
 			waifuMult = prev ? prev.waifu_multiplier : 1.0;
+			waifuInflationPercent =
+				prev && prev.waifu_inflation_percent ? Number(prev.waifu_inflation_percent) : 0;
 		}
 
 		// 2. Fator Pesca via volume recente em fishing_users
@@ -381,18 +437,23 @@ class BankService {
 		}
 
 		// 3. Fator Jardim via snapshots da fazenda
+		let totalJardimCoins = 17938824;
+		let jardimInflationPercent = 0;
 		try {
 			const snapRow = await database.dbGet(
 				"fazenda",
 				"SELECT SUM(coins) as totalCoins FROM fazenda_player_snapshots WHERE snapshot_at = (SELECT MAX(snapshot_at) FROM fazenda_player_snapshots)"
 			);
-			const totalJardimCoins = snapRow?.totalCoins || 17938824;
+			totalJardimCoins = snapRow?.totalCoins || 17938824;
 			const baselineCoins = 17938824;
 			const ratio = totalJardimCoins / baselineCoins;
 			jardimMult = Number(Math.pow(1.0 / Math.max(0.5, ratio), 0.2).toFixed(4));
+			jardimInflationPercent = Number(Math.max(0, (ratio - 1) * 100).toFixed(2));
 		} catch (err) {
 			logger.warn(`[BankService] Falha ao estimar pressão da fazenda: ${err.message}`);
 			jardimMult = prev ? prev.jardim_multiplier : 1.0;
+			jardimInflationPercent =
+				prev && prev.jardim_inflation_percent ? Number(prev.jardim_inflation_percent) : 0;
 		}
 
 		// Trava de segurança (Circuit breaker: máximo +-10% por rotação diária)
@@ -406,13 +467,48 @@ class BankService {
 		const runasPerKgFish = Number((BASE_RUNAS_PER_KG_FISH * fishMult).toFixed(4));
 		const runasPerZinthos = Number((BASE_RUNAS_PER_ZINTHOS * waifuMult).toFixed(4));
 		const runasPerJardimCoin = Number((BASE_RUNAS_PER_JARDIM * jardimMult).toFixed(4));
+
+		// 4. Cotas Dinâmicas de Compra (Zinthos e Petalitas) com progressão diária gradual
+		const BASE_QUOTA_ZINTHOS = 500000;
+		const BASE_QUOTA_JARDIM = 300000;
+
+		const targetQuotaZinthos = Math.round(BASE_QUOTA_ZINTHOS * (1 + waifuInflationPercent / 100));
+		const targetQuotaJardim = Math.round(BASE_QUOTA_JARDIM * (1 + jardimInflationPercent / 100));
+
+		const prevQuotaZinthos = prev?.quota_compra_zinthos ? Number(prev.quota_compra_zinthos) : 0;
+		const prevQuotaJardim = prev?.quota_compra_jardim ? Number(prev.quota_compra_jardim) : 0;
+
+		let quotaCompraZinthos;
+		if (prevQuotaZinthos < BASE_QUOTA_ZINTHOS) {
+			// Ponto de partida inicial: ~600k conforme solicitado
+			quotaCompraZinthos = 600000;
+		} else {
+			// Progressão diária suave (+1% ao dia sobre a cota anterior, caminhando até o target)
+			const step = Math.max(5000, Math.round(prevQuotaZinthos * 0.01));
+			const maxAllowed = Math.max(targetQuotaZinthos, 600000);
+			quotaCompraZinthos = Math.min(maxAllowed, prevQuotaZinthos + step);
+			quotaCompraZinthos = Math.round(quotaCompraZinthos / 500) * 500;
+		}
+
+		let quotaCompraJardim;
+		if (prevQuotaJardim < BASE_QUOTA_JARDIM) {
+			// Ponto de partida inicial: 300k base + inflação atual (~6.42%) -> ~320k
+			quotaCompraJardim = 320000;
+		} else {
+			// Progressão diária suave (+0.5% ao dia sobre a cota anterior)
+			const step = Math.max(1500, Math.round(prevQuotaJardim * 0.005));
+			const maxAllowed = Math.max(targetQuotaJardim, 320000);
+			quotaCompraJardim = Math.min(maxAllowed, prevQuotaJardim + step);
+			quotaCompraJardim = Math.round(quotaCompraJardim / 500) * 500;
+		}
+
 		const now = Date.now();
 
 		await database.dbRun(
 			dbName,
 			`INSERT OR REPLACE INTO bank_daily_rates 
-			(date, runas_per_kg_fish, runas_per_zinthos, runas_per_jardim_coin, fish_multiplier, waifu_multiplier, jardim_multiplier, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			(date, runas_per_kg_fish, runas_per_zinthos, runas_per_jardim_coin, fish_multiplier, waifu_multiplier, jardim_multiplier, quota_compra_zinthos, quota_compra_jardim, waifu_inflation_percent, jardim_inflation_percent, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				today,
 				runasPerKgFish,
@@ -421,12 +517,16 @@ class BankService {
 				fishMult,
 				waifuMult,
 				jardimMult,
+				quotaCompraZinthos,
+				quotaCompraJardim,
+				waifuInflationPercent,
+				jardimInflationPercent,
 				now
 			]
 		);
 
 		logger.info(
-			`[RavenaBank] Cotações atualizadas para ${today}: 1kg=${runasPerKgFish}R, 1Z=${runasPerZinthos}R, 1MJ=${runasPerJardimCoin}R`
+			`[RavenaBank] Cotações atualizadas para ${today}: 1kg=${runasPerKgFish}R, 1Z=${runasPerZinthos}R, 1MJ=${runasPerJardimCoin}R | Cotas: Zinthos=${quotaCompraZinthos}Z (Inf: +${waifuInflationPercent}%), Jardim=${quotaCompraJardim}Ptl (Inf: +${jardimInflationPercent}%)`
 		);
 
 		return {
@@ -437,6 +537,10 @@ class BankService {
 			fishMultiplier: fishMult,
 			waifuMultiplier: waifuMult,
 			jardimMultiplier: jardimMult,
+			quotaCompraZinthos,
+			quotaCompraJardim,
+			waifuInflationPercent,
+			jardimInflationPercent,
 			updatedAt: now
 		};
 	}
@@ -539,9 +643,18 @@ class BankService {
 		const moedasCompraUsed = Number(row?.moedas_compra_used || 0);
 		const iscasCompraUsed = Number(row?.iscas_compra_used || 0);
 
+		const rates = await this.getRates();
+		const limits = {
+			...DAILY_LIMITS,
+			compra_zinthos: rates.quotaCompraZinthos || DAILY_LIMITS.compra_zinthos,
+			compra_jardim: rates.quotaCompraJardim || DAILY_LIMITS.compra_jardim,
+			zinthos: rates.quotaCompraZinthos || DAILY_LIMITS.compra_zinthos,
+			jardim: rates.quotaCompraJardim || DAILY_LIMITS.compra_jardim
+		};
+
 		return {
 			date: today,
-			limits: DAILY_LIMITS,
+			limits,
 			used: {
 				venda_runas: runasVendaUsed,
 				compra_zinthos: zinthosCompraUsed,
@@ -554,16 +667,16 @@ class BankService {
 				compra: compraUsed
 			},
 			remaining: {
-				venda_runas: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
-				compra_zinthos: Math.max(0, DAILY_LIMITS.compra_zinthos - zinthosCompraUsed),
-				compra_jardim: Math.max(0, DAILY_LIMITS.compra_jardim - jardimCompraUsed),
-				compra_moedas: Math.max(0, DAILY_LIMITS.compra_moedas - moedasCompraUsed),
-				compra_iscas: Math.max(0, DAILY_LIMITS.compra_iscas - iscasCompraUsed),
-				venda: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
-				compra: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
-				pesca: Math.max(0, DAILY_LIMITS.venda_runas - runasVendaUsed),
-				zinthos: Math.max(0, DAILY_LIMITS.compra_zinthos - zinthosCompraUsed),
-				jardim: Math.max(0, DAILY_LIMITS.compra_jardim - jardimCompraUsed)
+				venda_runas: Math.max(0, limits.venda_runas - runasVendaUsed),
+				compra_zinthos: Math.max(0, limits.compra_zinthos - zinthosCompraUsed),
+				compra_jardim: Math.max(0, limits.compra_jardim - jardimCompraUsed),
+				compra_moedas: Math.max(0, limits.compra_moedas - moedasCompraUsed),
+				compra_iscas: Math.max(0, limits.compra_iscas - iscasCompraUsed),
+				venda: Math.max(0, limits.venda_runas - runasVendaUsed),
+				compra: Math.max(0, limits.venda_runas - runasVendaUsed),
+				pesca: Math.max(0, limits.venda_runas - runasVendaUsed),
+				zinthos: Math.max(0, limits.compra_zinthos - zinthosCompraUsed),
+				jardim: Math.max(0, limits.compra_jardim - jardimCompraUsed)
 			}
 		};
 	}
@@ -1067,11 +1180,12 @@ class BankService {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
 		const account = await this.getAccount(cleanUser);
 		const quota = await this.getDailyQuota(cleanUser);
+		const limitZinthos = quota.limits.compra_zinthos;
 
 		const quotaRemainingZinthos = quota.remaining.compra_zinthos;
 		if (quotaRemainingZinthos <= 0) {
 			throw new Error(
-				`Sua cota diária de compra de Zinthos (${DAILY_LIMITS.compra_zinthos.toLocaleString("pt-BR")} Z/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
+				`Sua cota diária de compra de Zinthos (${limitZinthos.toLocaleString("pt-BR")} Z/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
 			);
 		}
 
@@ -1101,11 +1215,7 @@ class BankService {
 		}
 
 		const rawZinthos = runasAmount / rates.runasPerZinthos;
-		const spreadRate = this.calculateSpread(
-			quota.used.compra_zinthos,
-			rawZinthos,
-			DAILY_LIMITS.compra_zinthos
-		);
+		const spreadRate = this.calculateSpread(quota.used.compra_zinthos, rawZinthos, limitZinthos);
 		let netZinthos = Math.floor(rawZinthos * (1 - spreadRate));
 		const spreadFeeRunas = Number((runasAmount * spreadRate).toFixed(2));
 
@@ -1114,7 +1224,7 @@ class BankService {
 				netZinthos = quotaRemainingZinthos;
 			} else {
 				throw new Error(
-					`Essa operação excede sua cota diária de Zinthos (${quotaRemainingZinthos.toLocaleString("pt-BR")} Z restantes hoje de ${DAILY_LIMITS.compra_zinthos.toLocaleString("pt-BR")} Z).`
+					`Essa operação excede sua cota diária de Zinthos (${quotaRemainingZinthos.toLocaleString("pt-BR")} Z restantes hoje de ${limitZinthos.toLocaleString("pt-BR")} Z).`
 				);
 			}
 		}
@@ -1191,11 +1301,12 @@ class BankService {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
 		const account = await this.getAccount(cleanUser);
 		const quota = await this.getDailyQuota(cleanUser);
+		const limitJardim = quota.limits.compra_jardim;
 
 		const quotaRemainingJardim = quota.remaining.compra_jardim;
 		if (quotaRemainingJardim <= 0) {
 			throw new Error(
-				`Sua cota diária de compra de Petalitas (${DAILY_LIMITS.compra_jardim.toLocaleString("pt-BR")} Ptl/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
+				`Sua cota diária de compra de Petalitas (${limitJardim.toLocaleString("pt-BR")} Ptl/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
 			);
 		}
 
@@ -1225,11 +1336,7 @@ class BankService {
 		}
 
 		const rawCoins = runasAmount / rates.runasPerJardimCoin;
-		const spreadRate = this.calculateSpread(
-			quota.used.compra_jardim,
-			rawCoins,
-			DAILY_LIMITS.compra_jardim
-		);
+		const spreadRate = this.calculateSpread(quota.used.compra_jardim, rawCoins, limitJardim);
 		let netCoins = Math.floor(rawCoins * (1 - spreadRate));
 		const spreadFeeRunas = Number((runasAmount * spreadRate).toFixed(2));
 
@@ -1238,7 +1345,7 @@ class BankService {
 				netCoins = quotaRemainingJardim;
 			} else {
 				throw new Error(
-					`Essa operação excede sua cota diária de Petalitas (${quotaRemainingJardim.toLocaleString("pt-BR")} Ptl restantes hoje de ${DAILY_LIMITS.compra_jardim.toLocaleString("pt-BR")} Ptl).`
+					`Essa operação excede sua cota diária de Petalitas (${quotaRemainingJardim.toLocaleString("pt-BR")} Ptl restantes hoje de ${limitJardim.toLocaleString("pt-BR")} Ptl).`
 				);
 			}
 		}
@@ -1623,16 +1730,21 @@ class BankService {
 			},
 			waifu: {
 				circulatingZinthos,
-				inflationPercent
+				inflationPercent: rates.waifuInflationPercent || inflationPercent
 			},
 			jardim: {
-				totalCoins: totalJardimCoins
+				totalCoins: totalJardimCoins,
+				inflationPercent: rates.jardimInflationPercent || 0
 			},
 			rules: {
-				dailyLimits: DAILY_LIMITS,
+				dailyLimits: {
+					...DAILY_LIMITS,
+					compra_zinthos: rates.quotaCompraZinthos || DAILY_LIMITS.compra_zinthos,
+					compra_jardim: rates.quotaCompraJardim || DAILY_LIMITS.compra_jardim
+				},
 				spreadRange: "3% a 10% (progressivo por cota diária)",
 				rotationTime: "04:00 AM (Horário de Brasília)",
-				circuitBreaker: "+-10% max variação diária",
+				circuitBreaker: "+-10% max variação diária de cotações",
 				legendaryFishBlocked: true
 			}
 		};

@@ -226,14 +226,16 @@ document.addEventListener("DOMContentLoaded", async () => {
             elAvailBaits.style.color = availBaits === 0 ? "#ef4444" : "#38bdf8";
         }
 
-        const availZinthos = Math.max(0, qRemaining.compra_zinthos ?? (200000 - (q.used?.compra_zinthos || 0)));
+        const limitZinthos = currentUserData?.quota?.limits?.compra_zinthos ?? 600000;
+        const availZinthos = Math.max(0, qRemaining.compra_zinthos ?? (limitZinthos - (q.used?.compra_zinthos || 0)));
         const elAvailZ = document.getElementById("buy-avail-zinthos");
         if (elAvailZ) {
             elAvailZ.textContent = `${formatInt(availZinthos)} Z`;
             elAvailZ.style.color = availZinthos === 0 ? "#ef4444" : "#f472b6";
         }
 
-        const availJardim = Math.max(0, qRemaining.compra_jardim ?? (150000 - (q.used?.compra_jardim || 0)));
+        const limitJardim = currentUserData?.quota?.limits?.compra_jardim ?? 320000;
+        const availJardim = Math.max(0, qRemaining.compra_jardim ?? (limitJardim - (q.used?.compra_jardim || 0)));
         const elAvailJ = document.getElementById("buy-avail-jardim");
         if (elAvailJ) {
             elAvailJ.textContent = `${formatInt(availJardim)} Ptl`;
@@ -436,12 +438,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     setupStepper("buy-minus-zinthos", "buy-plus-zinthos", buyInputs.zinthos, 1000, () => {
-        const quota = currentUserData?.quota?.remaining?.compra_zinthos ?? 200000;
+        const quota = currentUserData?.quota?.remaining?.compra_zinthos ?? 600000;
         return Math.max(0, quota);
     });
 
     setupStepper("buy-minus-jardim", "buy-plus-jardim", buyInputs.jardim, 1000, () => {
-        const quota = currentUserData?.quota?.remaining?.compra_jardim ?? 150000;
+        const quota = currentUserData?.quota?.remaining?.compra_jardim ?? 320000;
         return Math.max(0, quota);
     });
 
@@ -466,7 +468,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("buy-max-zinthos")?.addEventListener("click", () => {
         if (!currentUserData || !globalRates) return;
-        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_zinthos ?? 200000);
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_zinthos ?? 600000);
         const userRunas = currentUserData.account?.runas || 0;
         const maxByRunas = Math.floor((userRunas * 0.97) / globalRates.runasPerZinthos);
         buyInputs.zinthos.value = Math.min(maxByQuota, maxByRunas);
@@ -475,7 +477,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("buy-max-jardim")?.addEventListener("click", () => {
         if (!currentUserData || !globalRates) return;
-        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_jardim ?? 150000);
+        const maxByQuota = Math.max(0, currentUserData.quota?.remaining?.compra_jardim ?? 320000);
         const userRunas = currentUserData.account?.runas || 0;
         const maxByRunas = Math.floor((userRunas * 0.97) / globalRates.runasPerJardimCoin);
         buyInputs.jardim.value = Math.min(maxByQuota, maxByRunas);
@@ -539,14 +541,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         // Validação Zinthos
         if (qtyZinthos > 0 && globalRates) {
-            const quotaRem = currentUserData?.quota?.remaining?.compra_zinthos ?? 200000;
+            const limitZ = currentUserData?.quota?.limits?.compra_zinthos ?? 600000;
+            const quotaRem = currentUserData?.quota?.remaining?.compra_zinthos ?? limitZ;
             if (qtyZinthos > quotaRem) {
                 hasError = true;
                 errorMessage = `Quantidade de Zinthos excede a cota restante de ${formatInt(quotaRem)} Z.`;
             }
             // Cálculo de Runas considerando taxa progressiva
             const usedQuota = currentUserData?.quota?.used?.compra_zinthos || 0;
-            const spread = calculateDynamicSpread(usedQuota, qtyZinthos, 200000);
+            const spread = calculateDynamicSpread(usedQuota, qtyZinthos, limitZ);
             const cost = (qtyZinthos * globalRates.runasPerZinthos) / (1 - spread);
             totalCostRunas += cost;
             cartRows.push(`
@@ -559,13 +562,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         // Validação Petalitas
         if (qtyJardim > 0 && globalRates) {
-            const quotaRem = currentUserData?.quota?.remaining?.compra_jardim ?? 150000;
+            const limitJ = currentUserData?.quota?.limits?.compra_jardim ?? 320000;
+            const quotaRem = currentUserData?.quota?.remaining?.compra_jardim ?? limitJ;
             if (qtyJardim > quotaRem) {
                 hasError = true;
                 errorMessage = `Quantidade de Petalitas excede a cota restante de ${formatInt(quotaRem)} Ptl.`;
             }
             const usedQuota = currentUserData?.quota?.used?.compra_jardim || 0;
-            const spread = calculateDynamicSpread(usedQuota, qtyJardim, 150000);
+            const spread = calculateDynamicSpread(usedQuota, qtyJardim, limitJ);
             const cost = (qtyJardim * globalRates.runasPerJardimCoin) / (1 - spread);
             totalCostRunas += cost;
             cartRows.push(`
@@ -618,14 +622,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (qtyMoedas > 0) orders.push({ game: "moedas", amount: qtyMoedas, label: `${qtyMoedas}x Moedas` });
         if (qtyIscas > 0) orders.push({ game: "iscas", amount: qtyIscas, label: `${qtyIscas}x Iscas` });
         if (qtyZinthos > 0 && globalRates) {
+            const limitZ = currentUserData?.quota?.limits?.compra_zinthos ?? 600000;
             const used = currentUserData?.quota?.used?.compra_zinthos || 0;
-            const spread = calculateDynamicSpread(used, qtyZinthos, 200000);
+            const spread = calculateDynamicSpread(used, qtyZinthos, limitZ);
             const cost = Number(((qtyZinthos * globalRates.runasPerZinthos) / (1 - spread)).toFixed(2));
             orders.push({ game: "zinthos", amount: cost, label: `${formatInt(qtyZinthos)} Zinthos` });
         }
         if (qtyJardim > 0 && globalRates) {
+            const limitJ = currentUserData?.quota?.limits?.compra_jardim ?? 320000;
             const used = currentUserData?.quota?.used?.compra_jardim || 0;
-            const spread = calculateDynamicSpread(used, qtyJardim, 150000);
+            const spread = calculateDynamicSpread(used, qtyJardim, limitJ);
             const cost = Number(((qtyJardim * globalRates.runasPerJardimCoin) / (1 - spread)).toFixed(2));
             orders.push({ game: "jardim", amount: cost, label: `${formatInt(qtyJardim)} Petalitas` });
         }

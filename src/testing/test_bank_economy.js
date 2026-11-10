@@ -232,27 +232,25 @@ async function runTests() {
 		300000,
 		"Limite de venda para ganhar Runas deve ser 300.000 ᚱ/dia"
 	);
-	assert.strictEqual(
-		quota.limits.compra_zinthos,
-		200000,
-		"Limite de compra de Zinthos deve ser 200.000 Z/dia"
+	assert.ok(
+		quota.limits.compra_zinthos >= 500000,
+		"Limite de compra de Zinthos deve ser no mínimo a base de 500.000 Z/dia"
 	);
-	assert.strictEqual(
-		quota.limits.compra_jardim,
-		150000,
-		"Limite de compra de Petalitas deve ser 150.000 Ptl/dia"
+	assert.ok(
+		quota.limits.compra_jardim >= 300000,
+		"Limite de compra de Petalitas deve ser no mínimo a base de 300.000 Ptl/dia"
 	);
 	assert.ok(
 		quota.remaining.venda_runas <= 300000,
 		"Cota restante de venda de Runas deve ser até 300.000 ᚱ"
 	);
 	assert.ok(
-		quota.remaining.compra_zinthos <= 200000,
-		"Cota restante de compra de Zinthos deve ser até 200.000 Z"
+		quota.remaining.compra_zinthos <= quota.limits.compra_zinthos,
+		"Cota restante de compra de Zinthos deve respeitar o limite diário"
 	);
 	assert.ok(
-		quota.remaining.compra_jardim <= 150000,
-		"Cota restante de compra de Petalitas deve ser até 150.000 Ptl"
+		quota.remaining.compra_jardim <= quota.limits.compra_jardim,
+		"Cota restante de compra de Petalitas deve respeitar o limite diário"
 	);
 
 	const snapshot = await bankService.getDailyBalanceSnapshot(testUserId);
@@ -298,11 +296,13 @@ async function runTests() {
 	);
 	console.log("✓ Bloqueios de venda de qualquer origem ao atingir 300k validados com sucesso!");
 
-	// Simula cota de compra esgotada (200k Zinthos e 150k Petalitas)
+	// Simula cota de compra esgotada (teto dinâmico de Zinthos e Petalitas)
+	const currentLimitZ = quota.limits.compra_zinthos;
+	const currentLimitJ = quota.limits.compra_jardim;
 	await db.dbRun(
 		"bank",
-		`UPDATE bank_daily_quotas SET zinthos_compra_used = 200000, jardim_compra_used = 150000 WHERE user_id = ? AND date = ?`,
-		[testUserId, today]
+		`UPDATE bank_daily_quotas SET zinthos_compra_used = ?, jardim_compra_used = ? WHERE user_id = ? AND date = ?`,
+		[currentLimitZ, currentLimitJ, testUserId, today]
 	);
 
 	await assert.rejects(
@@ -310,7 +310,7 @@ async function runTests() {
 			await bankService.withdrawZinthos(testUserId, "100");
 		},
 		/cota diária de compra de Zinthos/i,
-		"Compra de Zinthos deve ser bloqueada quando a cota de 200k Z estiver esgotada"
+		"Compra de Zinthos deve ser bloqueada quando a cota de Zinthos estiver esgotada"
 	);
 
 	await assert.rejects(
@@ -318,9 +318,11 @@ async function runTests() {
 			await bankService.withdrawJardim(testUserId, "100");
 		},
 		/cota diária de compra de Petalitas/i,
-		"Compra de Petalitas deve ser bloqueada quando a cota de 150k Ptl estiver esgotada"
+		"Compra de Petalitas deve ser bloqueada quando a cota de Petalitas estiver esgotada"
 	);
-	console.log("✓ Bloqueios de compra (200k Zinthos e 150k Petalitas) validados com sucesso!");
+	console.log(
+		`✓ Bloqueios de compra (${currentLimitZ} Zinthos e ${currentLimitJ} Petalitas) validados com sucesso!`
+	);
 
 	// Testa reset de cotas para hoje
 	const resetCount = await bankService.resetQuotasForDate();

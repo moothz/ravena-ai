@@ -71,14 +71,57 @@ $$\text{Taxa}(u) = 0,03 + 0,07 \times \left( \frac{\text{Volume Convertido Hoje}
 
 ---
 
-## 🛡️ 6. Cotas Diárias de Câmbio (Reset às 04:00 AM)
+## 🛡️ 6. Cotas Diárias de Câmbio & Progressão Dinâmica (Reset às 04:00 AM)
 
-Cada jogador possui limites diários de segurança que renovam todo dia às 04:00 AM BRT:
-* **📥 Venda de Itens/Moedas para ganhar Runas:** Limite de **300.000 ᚱ**/dia, unificado (não importa a origem: peixes comuns, Zinthos ou Petalitas). O jogador pode liquidar tudo o que quiser até o teto diário de 300.000 Runas ganhas.
-* **📤 Caminho Inverso (Runas para Jogos):**
-  * **💜 Compra de Zinthos:** até **200.000 Z**/dia.
-  * **🌱 Compra de Petalitas:** até **150.000 Ptl**/dia.
-  * **🎣 Peixes:** Mão única (não é possível comprar peixes com Runas).
+Para impedir inundações descontroladas (dumping) de recursos nos jogos por acumuladores de Runas, o RavenaBank opera com **cotas diárias dinâmicas** que se ajustam automaticamente à inflação e crescem diariamente através de um mecanismo de **Crawling Peg**:
+
+### 📥 A. Cota de Venda (Ganhar Runas)
+* **Limite Unificado:** **300.000 ᚱ**/dia por usuário (soma consolidada de qualquer origem: peixes comuns, Zinthos ou Petalitas).
+
+### 📤 B. Cotas de Compra (Inversão: Runas para Jogos)
+As cotas de conversão de Runas para os jogos não são estáticas. Elas possuem **bases mínimas garantidas** e são indexadas à inflação real de cada subsistema com expansão diária gradual:
+
+| Ativo | Cota Base Mínima | Ponto de Partida Inicial | Mecanismo de Inflação | Ritmo de Expansão Diária |
+| :--- | :---: | :---: | :---: | :---: |
+| 💜 **Waifuletes (Zinthos)** | **500.000 Z**/dia | **~600.000 Z**/dia | Fator logarítmico M2 ($I_M$) | $+1{,}0\%/\text{dia}$ (~$+5\text{k a }+7\text{k Z/dia}$) |
+| 🌱 **Jardim (Petalitas)** | **300.000 Ptl**/dia | **~320.000 Ptl**/dia | Razão de Snapshots ($P/P_0$) | $+0{,}5\%/\text{dia}$ (~$+1{,}5\text{k a }+2\text{k Ptl/dia}$) |
+| 🎣 **Pesca (Peixes)** | — | — | Mão única (compra desativada) | — |
+
+---
+
+### 🧮 6.1. Equações de Inflação & Cálculo das Cotas Alvo
+
+#### 1. Inflação do Waifuletes ($I_M$):
+Calculada em tempo real com base na massa monetária em circulação ($M_2$):
+$$I_M = 1 + \alpha \cdot \ln\left(\max\left(1, \frac{M_2}{M_0}\right)\right)$$
+* $M_0 = 4.000.000\text{ Zinthos}$ (Massa monetária de ancoragem).
+* $\alpha = 0{,}25$ (Elasticidade monetária).
+* **Taxa Percentual:** $\text{Inflação}_Z (\%) = (I_M - 1) \times 100\%$.
+* **Cota Alvo:** $C_{\text{target, Z}} = 500.000 \times \left(1 + \frac{\text{Inflação}_Z}{100}\right) = 500.000 \times I_M$.
+
+#### 2. Inflação do Jardim das Sombras (Petalitas):
+Calculada a partir dos snapshots periódicos de saldos dos jogadores (`fazenda_player_snapshots`):
+$$\text{Inflação}_{\text{Ptl}} (\%) = \max\left(0, \frac{P_{\text{circulante}} - P_0}{P_0}\right) \times 100\%$$
+* $P_0 = 17.938.824\text{ Petalitas}$ (Patrimônio de referência histórico).
+* $P_{\text{circulante}}$ = Saldo total somado de todas as fazendas ativas no snapshot mais recente.
+* **Cota Alvo:** $C_{\text{target, Ptl}} = 300.000 \times \left(1 + \frac{\text{Inflação}_{\text{Ptl}}}{100}\right)$.
+
+---
+
+### 📈 6.2. Algoritmo de Progressão Diária ("Crawling Peg")
+
+Às **04:00 AM (Horário de Brasília)** de cada dia, durante a rotação oficial executada por `calculateDailyRates()`, o banco consulta o histórico do dia anterior e aplica o avanço gradual:
+
+1. **Zinthos:**
+   * Se a cota do dia anterior for inferior à base ($< 500.000$), inicia em **600.000 Z**.
+   * Nos dias subsequentes, a cota avança suavemente $+1{,}0\%$ ao dia em direção à cota alvo:
+     $$C_Z(t) = \min\Big(\max(C_{\text{target, Z}}, 600.000), \; C_Z(t-1) + \max(5.000, \text{round}(C_Z(t-1) \times 0{,}01))\Big)$$
+2. **Petalitas:**
+   * Se a cota do dia anterior for inferior à base ($< 300.000$), inicia em **320.000 Ptl**.
+   * Nos dias subsequentes, a cota avança suavemente $+0{,}5\%$ ao dia:
+     $$C_{\text{Ptl}}(t) = \min\Big(\max(C_{\text{target, Ptl}}, 320.000), \; C_{\text{Ptl}}(t-1) + \max(1.500, \text{round}(C_{\text{Ptl}}(t-1) \times 0{,}005))\Big)$$
+3. **Persistência no Banco de Dados:**
+   Todas as cotas oficiais calculadas para cada data são salvas na tabela `bank_daily_rates` (`quota_compra_zinthos`, `quota_compra_jardim`, `waifu_inflation_percent`, `jardim_inflation_percent`), assegurando integridade histórica e transparência para a interface web e para o comando `!economia`.
 
 ---
 
@@ -140,3 +183,44 @@ Para proteger os subsistemas de inflação descontrolada, premiações e bônus 
    * Prêmios de alto escalão pagam diretamente em Runas (600 ᚱ a 3.000 ᚱ).
 3. **Pesca & Novo Buff Carteira Furada (`!pescar`)**:
    * **👛 Carteira Furada:** Novo item especial na pescaria com chance `0.04` (4%). Concede de **50 a 500 Runas** creditadas diretamente no RavenaBank do pescador!
+
+---
+
+## 🗄️ 11. Estrutura de Dados & Tabelas (`bank.db`)
+
+O banco SQLite dedicado `bank.db` reside em `data/sqlites/bank.db` e possui 5 tabelas fundamentais:
+
+1. **`bank_accounts`**: Saldos de Runas e histórico acumulado de depósitos/saques:
+   * `user_id` (PK, string limpa do número)
+   * `runas` (saldo líquido atual em float)
+   * `total_deposited_runas` (histórico de vendas para o banco)
+   * `total_withdrawn_runas` (histórico de compras com Runas)
+   * `created_at`, `updated_at` (timestamps Unix em ms)
+
+2. **`bank_daily_rates`**: Registro histórico diário das cotações, inflações e cotas dinâmicas:
+   * `date` (PK, formato `YYYY-MM-DD`)
+   * `runas_per_kg_fish` (Cotação oficial de 1 kg de peixe comum)
+   * `runas_per_zinthos` (Cotação oficial de 1 Zinthos)
+   * `runas_per_jardim_coin` (Cotação oficial de 1 Petalita)
+   * `fish_multiplier`, `waifu_multiplier`, `jardim_multiplier` (Multiplicadores dinâmicos)
+   * `quota_compra_zinthos` (Cota diária de compra de Zinthos calculada para a data)
+   * `quota_compra_jardim` (Cota diária de compra de Petalitas calculada para a data)
+   * `waifu_inflation_percent` (Taxa percentual de inflação do Waifuletes do dia)
+   * `jardim_inflation_percent` (Taxa percentual de inflação de Petalitas do dia)
+   * `updated_at` (timestamp da rotação)
+
+3. **`bank_daily_quotas`**: Acompanhamento do consumo de cotas por usuário em cada dia:
+   * `user_id`, `date` (PK Composta)
+   * `runas_venda_used` (Runas obtidas vendendo peixes/zinthos/petalitas, máx 300.000)
+   * `zinthos_compra_used` (Zinthos resgatados no dia, limitado à cota dinâmica do dia)
+   * `jardim_compra_used` (Petalitas resgatadas no dia, limitado à cota dinâmica do dia)
+   * `moedas_compra_used` (Moedas de slots compradas, máx 300)
+   * `iscas_compra_used` (Iscas de pesca compradas, máx 200)
+
+4. **`bank_transactions`**: Livro-razão contábil com auditoria de cada operação:
+   * `id` (PK autoincrement)
+   * `user_id`, `type` (`DEPOSIT`, `WITHDRAW`, `STORE_BUY`, `BONUS`), `game` (`fishing`, `waifu`, `jardim`, `slots`)
+   * `game_amount`, `runas_amount`, `spread_rate`, `spread_fee_runas`, `details_json`, `timestamp`
+
+5. **`bank_sessions`**: Tokens de autenticação segura para o painel web `/ravenabank`:
+   * `token` (PK), `user_id`, `created_at`, `last_accessed_at`, `expires_at` (Sliding 3 dias)

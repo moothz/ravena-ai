@@ -201,7 +201,10 @@ async function handleEconomia(bot, message) {
 		text += `• 💠 *Runas:* ${formatPtBr(macro.totalRunas, 2, 2)} ᚱ em ${macro.totalAccounts} contas\n`;
 		text += `• 🎣 *Peixes:* ${formatPtBr(macro.fish.totalCount, 0, 0)} peixes (${formatPtBr(macro.fish.totalWeight, 1, 1)} kg)\n`;
 		text += `• 💜 *Zinthos:* ${formatPtBr(macro.waifu.circulatingZinthos, 0, 0)} Z (Inflação: +${macro.waifu.inflationPercent}%)\n`;
-		text += `• 🌱 *Petalitas:* ${formatPtBr(macro.jardim.totalCoins, 0, 0)} Ptl\n\n`;
+		const jardimInfText = macro.jardim?.inflationPercent
+			? ` (Inflação: +${macro.jardim.inflationPercent}%)`
+			: "";
+		text += `• 🌱 *Petalitas:* ${formatPtBr(macro.jardim.totalCoins, 0, 0)} Ptl${jardimInfText}\n\n`;
 
 		text += `🛡️ *SOBRE O SISTEMA:*\n`;
 		text += `1. *Taxa Progressiva:* É uma taxa (spread) que varia de *3% a 10%* com base na sua cota diária usada. Pequenos câmbios pagam a menor taxa; grandes trocas pagam taxa progressiva. Toda a taxa é destruída (deflação);\n`;
