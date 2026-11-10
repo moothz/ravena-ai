@@ -1655,21 +1655,67 @@ class EventHandler extends EventEmitter {
 			);
 		}
 
-		if (!isBotJoining) {
-			const group =
-				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
-			if (data.user && this.isSpamMonitoredGroup(groupId, group)) {
-				const isSpammer = await this.isSpammerUser(bot, data.user, groupId, null, group);
+		// Carrega o grupo para validações
+		let group = this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
+		let chat = null;
+
+		// Verificação de spammers em grupos monitorados (3 steps: instant query, 1s, 5s)
+		if (!isBotJoining && data.user && this.isSpamMonitoredGroup(groupId, group)) {
+			const steps = [
+				{ name: "instant", delay: 0, forceRefresh: false },
+				{ name: "1s", delay: 1000, forceRefresh: true },
+				{ name: "5s", delay: 4000, forceRefresh: true }
+			];
+
+			const userId =
+				data.user?.id?._serialized ||
+				data.user?.id ||
+				(typeof data.user === "string" ? data.user : "");
+			const isLid = Boolean(userId && (userId.endsWith("@lid") || userId.includes("@lid")));
+
+			for (let i = 0; i < steps.length; i++) {
+				const currentStep = steps[i];
+				if (currentStep.delay > 0) {
+					await new Promise((resolve) => setTimeout(resolve, currentStep.delay));
+				}
+
+				// Busca dados do chat atualizados
+				if (currentStep.forceRefresh && bot.getChatDetails) {
+					chat = await bot.getChatDetails(groupId, { forceRefresh: true }).catch(() => null);
+				}
+				if (!chat) {
+					chat = await data.origin?.getChat?.().catch(() => null);
+				}
+
+				const isSpammer = await this.isSpammerUser(bot, data.user, groupId, chat, group);
 				if (isSpammer) {
-					const userId = data.user.id;
 					const userPhone =
-						(await this.resolveSpammerPhone(bot, data.user)) ||
+						(await this.resolveSpammerPhone(bot, data.user, chat)) ||
 						this.extractPhoneNumber(data.user) ||
-						this.extractPhoneNumber(userId);
-					const userLid = userId && userId.endsWith("@lid") ? userId : null;
-					this.logger.warn(
-						`[processGroupJoin] Spammer detectado via join event: ${userId} (telefone: ${userPhone || "não identificado"}) no grupo monitorado ${groupId}. Removendo imediatamente sem enviar boas-vindas.`
-					);
+						(isLid ? null : this.extractPhoneNumber(userId));
+					const userLid = isLid ? userId : null;
+					const userName =
+						this.extractUserName(data.user) ||
+						(chat
+							? this.extractUserName(
+									(chat.Participants || chat.participants || []).find(
+										(p) => p.id === userId || p.lid === userId
+									)
+								)
+							: "");
+					const reason = this.getSpammerReason(data.user, userPhone, userName);
+
+					this.logSpammerBan({
+						groupId,
+						groupName: group?.name || chat?.name,
+						userId,
+						phone: userPhone,
+						name: userName,
+						reason,
+						step: currentStep.name,
+						action: "Removido & Boas-Vindas Suprimidas"
+					});
+
 					this.registerSpammer(userId, userPhone, userLid);
 
 					try {
@@ -1682,7 +1728,6 @@ class EventHandler extends EventEmitter {
 					}
 
 					try {
-						const chat = await data.origin?.getChat?.();
 						if (chat?.linkedParentJid) {
 							await bot.removeFromCommunity(chat.linkedParentJid, [userId]).catch(() => {});
 						}
@@ -1695,41 +1740,80 @@ class EventHandler extends EventEmitter {
 
 					return;
 				}
+
+				// Se não é spammer, verifica se precisamos continuar para o próximo step:
+				// Se já é um número normal conhecido (não é LID, ou é LID cujo telefone já foi resolvido para outro DDI),
+				// não há necessidade de esperar 1s ou 5s.
+				const knownPhone =
+					(await this.resolveSpammerPhone(bot, data.user, chat)) ||
+					this.extractPhoneNumber(data.user) ||
+					(!isLid ? this.extractPhoneNumber(userId) : null);
+
+				if (!isLid || knownPhone) {
+					// Usuário já tem identidade/telefone confirmada e não é spammer
+					break;
+				}
 			}
 		}
 
 		//this.logger.info(`Usuário ${data.user.name} (${data.user.id}) entrou no grupo ${data.group.name} (${data.group.id}). Quem adicionou: ${data.responsavel.name}/${data.responsavel.id}`);
 
 		try {
-			// Obtém os dados completos do chat
-			const chat = await data.origin?.getChat?.().catch(() => null);
-
-			//this.logger.info(`[processGroupJoin] Chat `, { chat });
-
-			// Carrega o grupo para validações posteriores
-			let group =
-				this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
-
-			// Verifica se há spammers para banir (62/63/380 ou padrão MI###) nos grupos monitorados
-			if (chat) {
-				await this.checkAutoBanSpammers(bot, chat);
+			// Obtém os dados completos do chat se ainda não foram obtidos
+			if (!chat) {
+				chat = await data.origin?.getChat?.().catch(() => null);
 			}
 
-			if (!isBotJoining && (await this.isSpammerUser(bot, data.user, groupId, chat, group))) {
-				const userId = data.user?.id;
-				const userPhone =
-					(await this.resolveSpammerPhone(bot, data.user, chat)) ||
-					this.extractPhoneNumber(data.user) ||
-					this.extractPhoneNumber(userId);
-				const userLid = userId && userId.endsWith("@lid") ? userId : null;
-				this.logger.warn(
-					`[processGroupJoin] Spammer detectado após verificação do chat no grupo monitorado ${groupId}: ${data.user?.id} (telefone: ${userPhone || "não identificado"}). Removendo e interrompendo boas-vindas.`
-				);
-				this.registerSpammer(userId, userPhone, userLid);
-				if (userId) {
-					await bot.removeFromGroup(groupId, [userId]).catch(() => {});
+			// Carrega o grupo para validações posteriores se ainda não foi carregado
+			if (!group) {
+				group = this.groups[groupId] || (await this.database?.getGroup(groupId).catch(() => null));
+			}
+
+			// Verifica se há spammers para banir (62/63/380 ou padrão MI###) nos grupos monitorados
+			let bannedInScan = [];
+			if (chat) {
+				bannedInScan = await this.checkAutoBanSpammers(bot, chat);
+			}
+
+			if (!isBotJoining && data.user) {
+				const uId =
+					data.user?.id?._serialized ||
+					data.user?.id ||
+					(typeof data.user === "string" ? data.user : "");
+				const uPhone = this.extractPhoneNumber(data.user);
+				const wasBannedInScan = bannedInScan.some((bannedJid) => {
+					if (!bannedJid) return false;
+					if (uId && (bannedJid === uId || bannedJid.startsWith(uId))) return true;
+					if (uPhone && (bannedJid === uPhone || bannedJid.startsWith(uPhone))) return true;
+					return false;
+				});
+
+				if (wasBannedInScan || (await this.isSpammerUser(bot, data.user, groupId, chat, group))) {
+					const userPhone =
+						(await this.resolveSpammerPhone(bot, data.user, chat)) ||
+						this.extractPhoneNumber(data.user) ||
+						this.extractPhoneNumber(uId);
+					const userLid = uId && uId.endsWith("@lid") ? uId : null;
+					const userName = this.extractUserName(data.user);
+					const reason = this.getSpammerReason(data.user, userPhone, userName);
+
+					this.logSpammerBan({
+						groupId,
+						groupName: group?.name || chat?.name,
+						userId: uId,
+						phone: userPhone,
+						name: userName,
+						reason,
+						step: "scan",
+						action: "Removido via Scan & Boas-Vindas Suprimidas"
+					});
+
+					this.registerSpammer(uId, userPhone, userLid);
+					if (uId) {
+						await bot.removeFromGroup(groupId, [uId]).catch(() => {});
+					}
+					return;
 				}
-				return;
 			}
 
 			if (chat?.isCommunity) {
@@ -2235,9 +2319,27 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 			} else {
 				// Caso 2: Outra pessoa entrou no grupo
-				if (await this.isSpammerUser(bot, data.user, groupId, chat, group)) {
+				const candidateId =
+					data.user?.id?._serialized ||
+					data.user?.id ||
+					(typeof data.user === "string" ? data.user : "");
+				const candidatePhone =
+					(await this.resolveSpammerPhone(bot, data.user, chat)) ||
+					this.extractPhoneNumber(data.user) ||
+					(candidateId && !candidateId.includes("@lid")
+						? this.extractPhoneNumber(candidateId)
+						: null);
+
+				const isWhitelisted = this.isSpammerWhitelisted(group, candidateId, candidatePhone);
+				const isSpammer =
+					!isWhitelisted &&
+					((candidateId && this.activeSpammers.has(candidateId)) ||
+						(candidatePhone && this.activeSpammers.has(candidatePhone)) ||
+						(await this.isSpammerUser(bot, data.user, groupId, chat, group)));
+
+				if (isSpammer) {
 					this.logger.info(
-						`[processGroupJoin] Usuário ${data.user?.id} é spammer no grupo ${groupId}. Boas-vindas suprimidas.`
+						`[processGroupJoin] Usuário ${candidateId || "desconhecido"} é spammer no grupo ${groupId}. Boas-vindas suprimidas com sucesso.`
 					);
 					return;
 				}
@@ -2894,6 +2996,19 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo monitorado ${data.group.id} (telefone: ${cleanPhone || "não identificado"}). Enviando aviso de spammer e suprimindo despedida padrão.`
 					);
 
+					const userName = this.extractUserName(data.user);
+					const reason = this.getSpammerReason(data.user, cleanPhone, userName);
+					this.logSpammerBan({
+						groupId: data.group.id,
+						groupName: data.group.name || group?.name,
+						userId: data.user?.id,
+						phone: cleanPhone,
+						name: userName,
+						reason,
+						step: "leave",
+						action: "Aviso de Spammer Enviado (Despedida Suprimida)"
+					});
+
 					const noticeKey = `${data.group.id}:${cleanPhone || data.user?.id}`;
 					const now = Date.now();
 					const lastSent = this.recentSpammerLeaveNotices.get(noticeKey) || 0;
@@ -3114,7 +3229,16 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		group.greetingAccumulationState = state;
 		await this.database.saveGroup(group);
 
-		if (queue.length === 0) return;
+		const cleanQueue = queue.filter((u) => {
+			const uId = u?.id?._serialized || u?.id || (typeof u === "string" ? u : "");
+			const uPhone = this.extractPhoneNumber(u);
+			if (this.isSpammerWhitelisted(group, uId, uPhone)) return true;
+			if (uId && this.activeSpammers.has(uId)) return false;
+			if (uPhone && this.activeSpammers.has(uPhone)) return false;
+			return true;
+		});
+
+		if (cleanQueue.length === 0) return;
 
 		// Localiza bot apropriado se não fornecido ou desconectado
 		let botToUse = bot;
@@ -3130,12 +3254,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		}
 
 		this.logger.info(
-			`[greetingAccumulation] Enviando ${type} acumulado para ${queue.length} membro(s) no grupo ${groupId} (${group.name || "sem nome"}).`
+			`[greetingAccumulation] Enviando ${type} acumulado para ${cleanQueue.length} membro(s) no grupo ${groupId} (${group.name || "sem nome"}).`
 		);
 
 		if (type === "welcome" && group.greetings) {
 			try {
-				const welcomes = await this.generateGreetingMessage(botToUse, group, queue, chatData);
+				const welcomes = await this.generateGreetingMessage(botToUse, group, cleanQueue, chatData);
 				if (welcomes && Array.isArray(welcomes)) {
 					for (const welcome of welcomes) {
 						const options = welcome.options ?? {};
@@ -3151,7 +3275,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 			}
 		} else if (type === "farewell" && group.farewells) {
 			try {
-				const farewells = await this.processFarewellMessage(group, queue, botToUse);
+				const farewells = await this.processFarewellMessage(group, cleanQueue, botToUse);
 				if (farewells && Array.isArray(farewells)) {
 					for (const farewell of farewells) {
 						const options = farewell.options ?? {};
@@ -3739,6 +3863,69 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	/**
+	 * Log estruturado simples de banimento ou detecção de spammer
+	 * @param {Object} params
+	 * @param {string} params.groupId - ID do grupo
+	 * @param {string} [params.groupName] - Nome do grupo
+	 * @param {string} params.userId - JID ou LID do usuário
+	 * @param {string} [params.phone] - Telefone celular resolvido
+	 * @param {string} [params.name] - Pushname / Nome do usuário
+	 * @param {string} params.reason - Motivo do ban (DDI_62, DDI_63, DDI_380, Nome_MI, Spammer_Ativo_Cache)
+	 * @param {string} [params.step] - Step em que foi detectado (instant, 1s, 5s, scan, leave)
+	 * @param {string} [params.action] - Ação executada (Removido & Boas-Vindas Suprimidas, Removido, etc.)
+	 */
+	logSpammerBan({
+		groupId,
+		groupName,
+		userId,
+		phone,
+		name,
+		reason,
+		step = null,
+		action = "Removido"
+	}) {
+		const groupDesc = `"${groupName || "sem nome"}" (${groupId || "desconhecido"})`;
+		const userDesc = userId || "desconhecido";
+		const telDesc = phone || "LID-sem-PN";
+		const nameDesc = `"${name || "sem nome"}"`;
+		const stepDesc = step ? ` | Step: ${step}` : "";
+		this.logger.warn(
+			`[SPAMMER_BAN] 🚫 Grupo: ${groupDesc} | User: ${userDesc} | Tel: ${telDesc} | Nome: ${nameDesc} | Motivo: ${reason}${stepDesc} | Ação: ${action}`
+		);
+	}
+
+	/**
+	 * Determina a descrição textual do motivo pelo qual o usuário é considerado spammer
+	 * @param {Object|string} user
+	 * @param {string} [phone]
+	 * @param {string} [name]
+	 * @returns {string}
+	 */
+	getSpammerReason(user, phone = null, name = null) {
+		const userName = name || this.extractUserName(user);
+		if (userName && this.isSpammerName(userName)) {
+			return `Nome_MI (${userName.trim()})`;
+		}
+
+		const cleanPhone = phone || this.extractPhoneNumber(user);
+		if (cleanPhone) {
+			if (cleanPhone.startsWith("62")) return "DDI_62";
+			if (cleanPhone.startsWith("63")) return "DDI_63";
+			if (cleanPhone.startsWith("380")) return "DDI_380";
+		}
+
+		const userId = typeof user === "string" ? user : user?.id?._serialized || user?.id || "";
+		if (
+			(userId && this.activeSpammers.has(userId)) ||
+			(cleanPhone && this.activeSpammers.has(cleanPhone))
+		) {
+			return "Spammer_Ativo_Cache";
+		}
+
+		return "Prefixo_Spammer";
+	}
+
+	/**
 	 * Extrai o nome de exibição / pushname de um usuário ou participante
 	 * @param {Object|string} userOrParticipant
 	 * @returns {string}
@@ -4151,7 +4338,21 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 					this.extractPhoneNumber(spammer.phoneNumber) ||
 					this.extractPhoneNumber(spammer.PhoneNumber);
 				const sLid = spammer.lid || spammer.LID || (sId.endsWith("@lid") ? sId : null);
+				const sName = this.extractUserName(spammer);
+				const reason = this.getSpammerReason(spammer, sPhone, sName);
+
 				this.registerSpammer(sId, sPhone, sLid);
+
+				this.logSpammerBan({
+					groupId: chatId,
+					groupName: chat.name || group?.name,
+					userId: sId,
+					phone: sPhone,
+					name: sName,
+					reason,
+					step: "scan",
+					action: "Removido via Scan do Grupo"
+				});
 			}
 
 			// Remove do grupo

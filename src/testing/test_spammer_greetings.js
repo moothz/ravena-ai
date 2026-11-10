@@ -792,6 +792,183 @@ async function runTests() {
 		"✓ processGroupLeave: fallback handles unknown phone without empty '@' or empty command argument"
 	);
 
+	// 19. Test getSpammerReason
+	assert.strictEqual(
+		eventHandler.getSpammerReason("628123456789"),
+		"DDI_62",
+		"Should identify DDI_62"
+	);
+	assert.strictEqual(
+		eventHandler.getSpammerReason("639123456789"),
+		"DDI_63",
+		"Should identify DDI_63"
+	);
+	assert.strictEqual(
+		eventHandler.getSpammerReason("380679523508"),
+		"DDI_380",
+		"Should identify DDI_380"
+	);
+	assert.strictEqual(
+		eventHandler.getSpammerReason({ id: "123@lid", name: "MI999888" }),
+		"Nome_MI (MI999888)",
+		"Should identify MI### name pattern"
+	);
+	eventHandler.activeSpammers.add("cached_spammer_id");
+	assert.strictEqual(
+		eventHandler.getSpammerReason("cached_spammer_id"),
+		"Spammer_Ativo_Cache",
+		"Should identify cached active spammer"
+	);
+	console.log("✓ getSpammerReason correctly classifies all reasons");
+
+	// 20. Test logSpammerBan format
+	const loggedWarns = [];
+	const origWarn = eventHandler.logger.warn;
+	eventHandler.logger.warn = (msg, ...args) => {
+		loggedWarns.push(msg);
+		origWarn.apply(eventHandler.logger, [msg, ...args]);
+	};
+
+	eventHandler.logSpammerBan({
+		groupId: "120363023705826791@g.us",
+		groupName: "gp_zuera",
+		userId: "98677628604668@lid",
+		phone: "6283878464488",
+		name: "Budi",
+		reason: "DDI_62",
+		step: "1s",
+		action: "Removido & Boas-Vindas Suprimidas"
+	});
+
+	assert.strictEqual(loggedWarns.length, 1);
+	assert.strictEqual(
+		loggedWarns[0],
+		'[SPAMMER_BAN] 🚫 Grupo: "gp_zuera" (120363023705826791@g.us) | User: 98677628604668@lid | Tel: 6283878464488 | Nome: "Budi" | Motivo: DDI_62 | Step: 1s | Ação: Removido & Boas-Vindas Suprimidas'
+	);
+	console.log("✓ logSpammerBan matches exact required format");
+
+	// 21. Test 3-step detection: Step 2 (1s) detection when initial join had LID without phone
+	loggedWarns.length = 0;
+	bot.resetCapture();
+	bot.removedParticipants = [];
+
+	let fetchCount = 0;
+	const dynamicChatBot = new FakeBot({ id: "teste", grupoLogs: "logs@g.us" });
+	dynamicChatBot.getChatDetails = async (gId, options = {}) => {
+		fetchCount++;
+		if (fetchCount === 1) {
+			// Step 1 (0s): WhatsApp ainda não sincronizou o telefone no chat
+			return {
+				id: { _serialized: stickerGroupId },
+				name: "Grupo Stickers",
+				participants: [
+					{
+						id: { _serialized: "777888999@lid" },
+						lid: "777888999@lid",
+						name: "Spammer Anonimo"
+					}
+				]
+			};
+		}
+		// Step 2 (1s): WhatsApp agora sincronizou o telefone 6283878464488!
+		return {
+			id: { _serialized: stickerGroupId },
+			name: "Grupo Stickers",
+			participants: [
+				{
+					id: { _serialized: "777888999@lid" },
+					lid: "777888999@lid",
+					phoneNumber: "6283878464488",
+					name: "Spammer Anonimo"
+				}
+			]
+		};
+	};
+
+	const delayedSpammerJoin = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: "777888999@lid", name: "Spammer Anonimo" },
+		responsavel: { id: "admin@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => dynamicChatBot.getChatDetails(stickerGroupId)
+		}
+	};
+
+	await eventHandler.processGroupJoin(dynamicChatBot, delayedSpammerJoin);
+
+	// Valida que foi removido no step 2
+	assert(
+		dynamicChatBot.removedParticipants.length >= 1,
+		"Delayed spammer must be removed from group"
+	);
+	assert(
+		dynamicChatBot.removedParticipants.some((r) =>
+			Array.isArray(r.participants)
+				? r.participants.includes("777888999@lid")
+				: r.participants === "777888999@lid"
+		),
+		"Delayed spammer LID must be in removed participants"
+	);
+
+	// Valida que o log com Step: 1s foi emitido
+	const step1sLog = loggedWarns.find((w) => w.includes("[SPAMMER_BAN]") && w.includes("Step: 1s"));
+	assert(step1sLog, "Log must record ban at Step: 1s");
+	assert(step1sLog.includes("Tel: 6283878464488"), "Log must record resolved phone");
+
+	// Valida que nenhuma mensagem de boas-vindas foi enviada
+	const delayedWelcomeMsgs = dynamicChatBot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("Bem-vindo")
+	);
+	assert.strictEqual(
+		delayedWelcomeMsgs.length,
+		0,
+		"No welcome message should be sent to delayed spammer"
+	);
+	console.log(
+		"✓ 3-step detection: Step 2 (1s) caught delayed LID spammer and suppressed greetings"
+	);
+
+	// 22. Test legitimate user: no delay and receives welcome message
+	loggedWarns.length = 0;
+	bot.resetCapture();
+	const legitJoinData = {
+		group: { id: stickerGroupId, name: "Grupo Stickers" },
+		user: { id: "5511999998888@s.whatsapp.net", name: "Usuario Normal" },
+		responsavel: { id: "admin@s.whatsapp.net", name: "Admin" },
+		origin: {
+			getChat: async () => ({
+				id: { _serialized: stickerGroupId },
+				name: "Grupo Stickers",
+				participants: [
+					{
+						id: { _serialized: "5511999998888@s.whatsapp.net" },
+						phoneNumber: "5511999998888",
+						name: "Usuario Normal"
+					}
+				]
+			})
+		}
+	};
+
+	const startTime = Date.now();
+	await eventHandler.processGroupJoin(bot, legitJoinData);
+	const elapsed = Date.now() - startTime;
+
+	// Deve ter processado imediatamente (sem delay de 1s ou 5s)
+	assert(elapsed < 800, `Legitimate user should not wait for 1s/5s steps, took ${elapsed}ms`);
+
+	// Deve ter enviado mensagem de boas-vindas
+	const legitWelcome = bot.capturedMessages.filter(
+		(m) => m.content && m.content.includes("Bem-vindo")
+	);
+	assert.strictEqual(legitWelcome.length, 1, "Legitimate user must receive welcome message");
+	console.log(
+		"✓ Legitimate user: processed immediately without delay and received welcome message"
+	);
+
+	// Restaura logger
+	eventHandler.logger.warn = origWarn;
+
 	console.log("--- All spammer greetings suppression tests passed successfully! ---");
 	process.exit(0);
 }
