@@ -612,6 +612,15 @@ const RARITY_LABEL = {
 	MYTHIC: "Mítico"
 };
 
+const RARITY_LABEL_PLURAL = {
+	COMMON: "Comuns",
+	UNCOMMON: "Incomuns",
+	RARE: "Raros",
+	EPIC: "Épicos",
+	LEGENDARY: "Lendários",
+	MYTHIC: "Míticos"
+};
+
 // Limite máximo de itens na Wishlist
 const WISHLIST_MAX_ITEMS = 1000;
 
@@ -1535,6 +1544,17 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 			});
 		}
 
+		if (apiErr.code === "DAILY_MARRY_LIMIT_REACHED") {
+			const normRarity = apiErr.rarity ? String(apiErr.rarity).toUpperCase() : "";
+			const label = RARITY_LABEL_PLURAL[normRarity] || RARITY_LABEL[normRarity] || "esta categoria";
+			const emoji = RARITY_EMOJI[normRarity] || "💍";
+			return new ReturnMessage({
+				chatId,
+				content: `⚠️ *Limite diário de casamentos atingido [${emoji} ${label}]!*\n• Você já atingiu seu limite diário de casamentos para esta raridade hoje.\n💡 O limite diário reseta às 04:00 BRT. Personagens de outras categorias ainda podem estar disponíveis para casamento!`,
+				options
+			});
+		}
+
 		// Cooldown de Casamento (Claim) ou Diário (Daily)
 		const retryAt = apiErr.retryAfter ? new Date(apiErr.retryAfter) : null;
 		const timeStr = retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
@@ -1872,6 +1892,14 @@ function makeRollHandler(genderFilter) {
 					text += ` 💎 *[VIP]*`;
 				}
 				text += "\n";
+
+				if (firstRollData?.dailyMarryLimit?.limitReached) {
+					const pluralLabel =
+						RARITY_LABEL_PLURAL[normalizedRarity] ||
+						RARITY_LABEL_PLURAL[character.baseRarity] ||
+						labelRarity;
+					text += `⚠️ Limite diário de casamentos atingido para ${pluralLabel}!\n`;
+				}
 
 				if (firstRollData?.isWishlist) {
 					text += `✨ *DESEJO REALIZADO!* Este personagem estava na sua Wishlist (+50% de bônus no sorteio)!\n`;
@@ -2249,6 +2277,20 @@ function makeRollHandler(genderFilter) {
 			let text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n\n`;
 			if (firstRollData?.marketNotification) {
 				text = `🎲 Waifuletes! *${allRollResults.length}* rolls:\n${firstRollData.marketNotification}\n\n`;
+			}
+
+			const limitReachedRarities = [];
+			for (const r of allRollResults) {
+				if (r?.dailyMarryLimit?.limitReached && r?.character?.baseRarity) {
+					const norm = String(r.character.baseRarity).toUpperCase();
+					const plural = RARITY_LABEL_PLURAL[norm] || norm;
+					if (!limitReachedRarities.includes(plural)) {
+						limitReachedRarities.push(plural);
+					}
+				}
+			}
+			if (limitReachedRarities.length > 0) {
+				text += `⚠️ Limite diário de casamentos atingido para ${limitReachedRarities.join(", ")}!\n\n`;
 			}
 
 			// Categorias na ordem:
@@ -6144,7 +6186,7 @@ async function verCooldowns(bot, message) {
 		const donorBonuses = await DonorBonusService.getWaifuRollBonuses(userId);
 		const extraMaxRolls = donorBonuses?.extraMaxRolls || 0;
 		const { data } = await api.get(`/user/${userId}/cooldowns?extraMaxRolls=${extraMaxRolls}`);
-		const { roll, claim, daily } = data.data;
+		const { roll, claim, daily, dailyMarry } = data.data;
 
 		let text = `⏳ *Seus Cooldowns Atuais:*\n\n`;
 
@@ -6178,26 +6220,61 @@ async function verCooldowns(bot, message) {
 				const info = claim.byRarity[r];
 				const label = RARITY_LABEL[r] || r;
 				const emoji = RARITY_EMOJI[r] || "⚪";
-				if (info?.active) {
-					const retryAt = info.retryAfter ? new Date(info.retryAfter) : null;
-					const timeStr =
-						retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
-					text += `• ${emoji} *${label}:* ❌ Aguarde *${formatRemainingSeconds(info.remainingSeconds)}*${timeStr}\n`;
-				} else {
-					const defaultMinutes = info?.cooldownSeconds
-						? Math.floor(info.cooldownSeconds / 60)
-						: null;
-					let durStr = "";
-					if (defaultMinutes) {
-						if (defaultMinutes >= 60) {
-							const h = Math.floor(defaultMinutes / 60);
-							const m = defaultMinutes % 60;
-							durStr = m > 0 ? ` (${h}h ${m}m)` : ` (${h}h)`;
-						} else {
-							durStr = ` (${defaultMinutes}m)`;
+				const dm = dailyMarry?.byRarity?.[r];
+
+				if (r === "LEGENDARY") {
+					const tradeInfo =
+						typeof dm?.tradeUsed === "number"
+							? ` — Diário: Sem limite (trocas: ${dm.tradeUsed}/10)`
+							: ` — Diário: Sem limite`;
+					if (info?.active) {
+						const retryAt = info.retryAfter ? new Date(info.retryAfter) : null;
+						const timeStr =
+							retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
+						text += `• ${emoji} *${label}:* ❌ Aguarde *${formatRemainingSeconds(info.remainingSeconds)}*${timeStr}${tradeInfo}\n`;
+					} else {
+						const defaultMinutes = info?.cooldownSeconds
+							? Math.floor(info.cooldownSeconds / 60)
+							: null;
+						let durStr = "";
+						if (defaultMinutes) {
+							if (defaultMinutes >= 60) {
+								const h = Math.floor(defaultMinutes / 60);
+								const m = defaultMinutes % 60;
+								durStr = m > 0 ? ` (${h}h ${m}m)` : ` (${h}h)`;
+							} else {
+								durStr = ` (${defaultMinutes}m)`;
+							}
 						}
+						text += `• ${emoji} *${label}:* ✅ *Disponível agora!*${durStr}${tradeInfo}\n`;
 					}
-					text += `• ${emoji} *${label}:* ✅ *Disponível agora!*${durStr}\n`;
+				} else if (dm && dm.canMarry === false) {
+					text += `• ${emoji} *${label}:* ❌ *Limite diário atingido!* (${dm.limit}/${dm.limit} casados hoje | reseta às 04:00)\n`;
+				} else {
+					const dailyInfo = dm
+						? ` — Diário: ${dm.effectiveUsed}/${dm.limit} casados (${dm.remaining} restantes)`
+						: "";
+					if (info?.active) {
+						const retryAt = info.retryAfter ? new Date(info.retryAfter) : null;
+						const timeStr =
+							retryAt && !isNaN(retryAt.getTime()) ? ` (às ${formatTimeBR(retryAt)})` : "";
+						text += `• ${emoji} *${label}:* ❌ Aguarde *${formatRemainingSeconds(info.remainingSeconds)}*${timeStr}${dailyInfo}\n`;
+					} else {
+						const defaultMinutes = info?.cooldownSeconds
+							? Math.floor(info.cooldownSeconds / 60)
+							: null;
+						let durStr = "";
+						if (defaultMinutes) {
+							if (defaultMinutes >= 60) {
+								const h = Math.floor(defaultMinutes / 60);
+								const m = defaultMinutes % 60;
+								durStr = m > 0 ? ` (${h}h ${m}m)` : ` (${h}h)`;
+							} else {
+								durStr = ` (${defaultMinutes}m)`;
+							}
+						}
+						text += `• ${emoji} *${label}:* ✅ *Disponível agora!*${durStr}${dailyInfo}\n`;
+					}
 				}
 			}
 			text += "\n";
@@ -6918,11 +6995,15 @@ async function ajudaWaifus(bot, message) {
 	text += `• Você pode filtrar apenas homens com \`!mu-rollm\` ou apenas mulheres com \`!mu-rollf\` (quase triplica a chance individual ao reduzir o pool de personagens).\n`;
 	text += `• *Sistema de Rolls:* Cada jogador possui até 9 rolls no banco (recarrega 1 roll a cada 5 minutos até o limite — doadores ganham +1 roll máximo a cada R$ 10 doados!).\n\n`;
 
-	text += `💍 *2. Casamento (Claim)*\n`;
+	text += `💍 *2. Casamento (Claim) & Limites Diários*\n`;
 	text += `• Quando um personagem *livre* é rolado no grupo, abre-se uma janela de *300 segundos (5 minutos)*.\n`;
 	text += `• O primeiro jogador a enviar \`!mu-casar\` (ou \`!mu-c\`) se casa com a waifu/husbando!\n`;
 	text += `• O personagem passa a pertencer ao seu Harém global (em todos os grupos do bot).\n`;
-	text += `• *Cooldown de casamento:* Individual por raridade (Comum: 30m, Incomum: 45m, Raro: 1h, Épico: 1h30m, Lendário: 2h). Casar com uma waifu não bloqueia as demais raridades!\n\n`;
+	text += `• *Cooldown de casamento:* Individual por raridade (Comum: 30m, Incomum: 45m, Raro: 1h, Épico: 1h30m, Lendário: 2h). Casar com uma waifu não bloqueia as demais raridades!\n`;
+	text += `• *Limites Diários de Casamento:* Por raridade (reseta todo dia às 04:00 BRT):\n`;
+	text += `  ⚪ *Comum:* 25/dia | 🟢 *Incomum:* 20/dia | 🔵 *Raro:* 15/dia | 🟣 *Épico:* 10/dia\n`;
+	text += `  ⭐ *Lendário:* Sem limite no roll (máximo 10 recebidas por dia em trocas dos classificados)\n`;
+	text += `• *Classificados & Trocas:* Receber um personagem em troca consome 50% da cota da raridade (2 trocas = 1 casamento). Arredonda para cima (0.5 conta como 1, mas se você tiver 0.5 consumido o \`!mu-casar\` é permitido).\n\n`;
 
 	text += `🔑 *3. Chaves (Keys) & Soulmates*\n`;
 	text += `• Se você rolar um personagem que *já pertence a você*, você ganha *+1 Chave (Key)*!\n`;
