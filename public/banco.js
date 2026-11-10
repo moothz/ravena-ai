@@ -298,7 +298,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!tbody) return;
 
         if (!allTransactions || allTransactions.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b;">Nenhuma movimentação registrada.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #64748b;">Nenhuma movimentação registrada.</td></tr>`;
             if (prevBtn) prevBtn.disabled = true;
             if (nextBtn) nextBtn.disabled = true;
             if (pageInfo) pageInfo.textContent = "Página 1 de 1";
@@ -314,15 +314,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         tbody.innerHTML = pageItems.map(t => {
             const isVenda = t.type === "DEPOSIT";
+            const isUndone = t.status === "UNDONE";
             const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", { 
                 day: "2-digit", 
                 month: "2-digit", 
                 hour: "2-digit", 
                 minute: "2-digit" 
             });
-            const typeBadge = isVenda 
-                ? `<span style="color: #4ade80; font-weight: 600;">📥 Venda</span>` 
-                : `<span style="color: #38bdf8; font-weight: 600;">📤 Compra</span>`;
+            const typeBadge = isUndone
+                ? `<span style="color: #94a3b8; font-weight: 600; text-decoration: line-through;"><i class="fas fa-history"></i> Desfeita</span>`
+                : (isVenda 
+                    ? `<span style="color: #4ade80; font-weight: 600;">📥 Venda</span>` 
+                    : `<span style="color: #38bdf8; font-weight: 600;">📤 Compra</span>`);
 
             let gameBadge = "Desconhecido";
             let formattedAmount = "";
@@ -351,17 +354,37 @@ document.addEventListener("DOMContentLoaded", async () => {
             const spreadFee = t.spread_fee_runas !== undefined ? formatPtBr(t.spread_fee_runas, 2) : "0,00";
             const spreadPct = t.spread_rate !== undefined ? formatPtBr(t.spread_rate * 100, 1) : "0,0";
 
+            const ageMs = Date.now() - Number(t.timestamp);
+            const isEligible = !isUndone && ageMs >= 0 && ageMs <= 5 * 60 * 1000 && ["DEPOSIT", "WITHDRAW", "STORE_BUY"].includes(t.type);
+            const rowClass = isEligible ? 'class="tx-row-undoable"' : '';
+
+            let actionCol = `<span style="color: #475569;">—</span>`;
+            if (isEligible) {
+                actionCol = `<button type="button" class="btn-undo-action" data-tx-id="${t.id}" title="Desfazer transação (Segunda Chance - 5 min)"><i class="fas fa-undo"></i> Desfazer</button>`;
+            } else if (isUndone) {
+                actionCol = `<span style="color: #94a3b8; font-size: 10.5px; font-weight: 600;"><i class="fas fa-check-circle" style="color: #64748b;"></i> Revertida</span>`;
+            }
+
             return `
-                <tr>
+                <tr ${rowClass}>
                     <td>${dateStr}</td>
                     <td>${typeBadge}</td>
                     <td>${gameBadge}</td>
                     <td>${formattedAmount}</td>
-                    <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff;">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff; ${isUndone ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
                     <td style="color: #cbd5e1; font-family: 'JetBrains Mono', monospace;">${spreadFee} (${spreadPct}%)</td>
+                    <td>${actionCol}</td>
                 </tr>
             `;
         }).join("");
+
+        tbody.querySelectorAll(".btn-undo-action").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const txId = parseInt(btn.getAttribute("data-tx-id"), 10);
+                const tx = allTransactions.find(x => x.id === txId);
+                if (tx) openUndoModal(tx);
+            });
+        });
 
         if (prevBtn) prevBtn.disabled = txCurrentPage <= 1;
         if (nextBtn) nextBtn.disabled = txCurrentPage >= totalPages;
@@ -609,8 +632,291 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (input) input.addEventListener("input", updateBuyCart);
     });
 
+    // ==========================================
+    // MODAIS DE CONFIRMAÇÃO & SEGUNDA CHANCE
+    // ==========================================
+    const modalTradeOverlay = document.getElementById("bank-trade-confirm-modal");
+    const modalTradeIcon = document.getElementById("modal-trade-icon");
+    const modalTradeTitle = document.getElementById("modal-trade-title");
+    const modalTradeBody = document.getElementById("modal-trade-body");
+    const btnModalCloseTrade = document.getElementById("btn-modal-close-trade");
+    const btnModalCancelTrade = document.getElementById("btn-modal-cancel-trade");
+    const btnModalConfirmTrade = document.getElementById("btn-modal-confirm-trade");
+
+    const modalUndoOverlay = document.getElementById("bank-undo-confirm-modal");
+    const modalUndoBody = document.getElementById("modal-undo-body");
+    const btnModalCloseUndo = document.getElementById("btn-modal-close-undo");
+    const btnModalCancelUndo = document.getElementById("btn-modal-cancel-undo");
+    const btnModalConfirmUndo = document.getElementById("btn-modal-confirm-undo");
+
+    let activeTradeConfirmCallback = null;
+    let activeUndoConfirmCallback = null;
+
+    function closeAllModals() {
+        if (modalTradeOverlay) modalTradeOverlay.classList.remove("active");
+        if (modalUndoOverlay) modalUndoOverlay.classList.remove("active");
+        activeTradeConfirmCallback = null;
+        activeUndoConfirmCallback = null;
+    }
+
+    [btnModalCloseTrade, btnModalCancelTrade, btnModalCloseUndo, btnModalCancelUndo].forEach(b => {
+        b?.addEventListener("click", closeAllModals);
+    });
+
+    modalTradeOverlay?.addEventListener("click", (e) => {
+        if (e.target === modalTradeOverlay) closeAllModals();
+    });
+    modalUndoOverlay?.addEventListener("click", (e) => {
+        if (e.target === modalUndoOverlay) closeAllModals();
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeAllModals();
+    });
+
+    btnModalConfirmTrade?.addEventListener("click", async () => {
+        if (typeof activeTradeConfirmCallback === "function") {
+            const cb = activeTradeConfirmCallback;
+            closeAllModals();
+            await cb();
+        }
+    });
+
+    btnModalConfirmUndo?.addEventListener("click", async () => {
+        if (typeof activeUndoConfirmCallback === "function") {
+            const cb = activeUndoConfirmCallback;
+            closeAllModals();
+            await cb();
+        }
+    });
+
+    function openTradeConfirmModal({ operation, orders, totalRunas, onConfirm }) {
+        if (!orders || orders.length === 0) return;
+        const isVenda = operation === "venda";
+        const holdings = currentUserData?.holdings || {};
+        const curRunas = Number(currentUserData?.account?.runas || 0);
+
+        if (modalTradeIcon) {
+            modalTradeIcon.className = `fas ${isVenda ? "fa-hand-holding-usd" : "fa-shopping-bag"}`;
+            modalTradeIcon.style.color = isVenda ? "#ef4444" : "#22c55e";
+        }
+        if (modalTradeTitle) {
+            modalTradeTitle.textContent = "Confirmação de Transação";
+        }
+
+        if (btnModalConfirmTrade) {
+            btnModalConfirmTrade.className = isVenda ? "btn-modal-confirm danger" : "btn-modal-confirm";
+            btnModalConfirmTrade.innerHTML = isVenda
+                ? `<i class="fas fa-hand-holding-usd"></i> Confirmar Venda`
+                : `<i class="fas fa-shopping-bag"></i> Confirmar Compra`;
+        }
+
+        const itemsHtml = orders.map(order => {
+            let curBal = 0;
+            if (order.game === "pesca") curBal = holdings.fishWeight || 0;
+            else if (order.game === "zinthos") curBal = holdings.zinthos || 0;
+            else if (order.game === "jardim") curBal = holdings.gardenCoins || 0;
+            else if (order.game === "moedas") curBal = holdings.slotsCoins || 0;
+            else if (order.game === "iscas") curBal = holdings.fishingBaits || 0;
+
+            const isPesca = order.game === "pesca";
+            const qtyFormatted = isPesca ? formatPtBr(order.qty, 2) : formatInt(order.qty);
+
+            let futureBal;
+            let diffFormatted;
+            let actionVerb;
+            let highlightClass;
+
+            if (isVenda) {
+                futureBal = Math.max(0, curBal - order.qty);
+                diffFormatted = `-${qtyFormatted}`;
+                actionVerb = "vendendo";
+                highlightClass = "modal-highlight-red";
+            } else {
+                futureBal = curBal + order.qty;
+                diffFormatted = `+${qtyFormatted}`;
+                actionVerb = "comprando";
+                highlightClass = "modal-highlight-green";
+            }
+
+            const futureFormatted = isPesca ? formatPtBr(futureBal, 2) : formatInt(futureBal);
+
+            return `
+                <div class="modal-trade-item-box">
+                    <div class="modal-trade-item-title">
+                        Você está ${actionVerb} <span class="${highlightClass}">${qtyFormatted} ${order.name}</span>
+                    </div>
+                    <div class="modal-trade-item-balance">
+                        Após isto, você ficará com <strong>${futureFormatted}</strong> <span class="${highlightClass}">(${diffFormatted})</span> ${order.name} na sua conta!
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        const runasBoxHtml = isVenda
+            ? `
+                <div class="modal-runas-box">
+                    <div class="modal-runas-headline" style="color: #4ade80;">
+                        🎉 Você irá receber <span style="font-family: 'JetBrains Mono', monospace; font-size: 19px;">+${formatPtBr(totalRunas, 2)} ᚱ</span>!
+                    </div>
+                    <div style="font-size: 12.5px; color: #94a3b8; margin-top: 4px;">
+                        Saldo de Runas: ${formatPtBr(curRunas, 2)} ᚱ ➔ <strong style="color: #fff;">${formatPtBr(curRunas + totalRunas, 2)} ᚱ</strong>
+                    </div>
+                </div>
+            `
+            : `
+                <div class="modal-runas-box paying">
+                    <div class="modal-runas-headline" style="color: #f87171;">
+                        🛒 Você irá pagar <span style="font-family: 'JetBrains Mono', monospace; font-size: 19px;">-${formatPtBr(totalRunas, 2)} ᚱ</span>!
+                    </div>
+                    <div style="font-size: 12.5px; color: #94a3b8; margin-top: 4px;">
+                        Saldo de Runas: ${formatPtBr(curRunas, 2)} ᚱ ➔ <strong style="color: #fff;">${formatPtBr(curRunas - totalRunas, 2)} ᚱ</strong>
+                    </div>
+                </div>
+            `;
+
+        const warningBannerHtml = `
+            <div class="modal-warning-banner">
+                &gt; Esta transação não poderá ser desfeita &lt;
+            </div>
+        `;
+
+        if (modalTradeBody) {
+            modalTradeBody.innerHTML = `
+                ${itemsHtml}
+                ${runasBoxHtml}
+                ${warningBannerHtml}
+            `;
+        }
+
+        activeTradeConfirmCallback = onConfirm;
+        if (modalTradeOverlay) modalTradeOverlay.classList.add("active");
+    }
+
+    function openUndoModal(tx) {
+        if (!tx) return;
+        const isVenda = tx.type === "DEPOSIT";
+        const dateStr = new Date(tx.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const minutesAgo = Math.max(0, Math.floor((Date.now() - Number(tx.timestamp)) / 60000));
+
+        let assetName = "itens";
+        let formattedAmount = "";
+        if (tx.game === "pesca") {
+            assetName = "kg de Peixes";
+            formattedAmount = `${formatPtBr(tx.game_amount, 2)} kg`;
+        } else if (tx.game === "waifu" || tx.game === "zinthos") {
+            assetName = "Zinthos";
+            formattedAmount = `${formatInt(tx.game_amount)} Z`;
+        } else if (tx.game === "jardim" || tx.game === "fazenda") {
+            assetName = "Petalitas";
+            formattedAmount = `${formatInt(tx.game_amount)} Ptl`;
+        } else if (tx.game === "slots" || tx.game === "moedas") {
+            assetName = "Moedas de Slots";
+            formattedAmount = `${formatInt(tx.game_amount)} un.`;
+        } else if (tx.game === "fishing" || tx.game === "iscas") {
+            assetName = "Iscas de Pesca";
+            formattedAmount = `${formatInt(tx.game_amount)} un.`;
+        }
+
+        const spreadFee = Number((Number(tx.runas_amount) * 0.05).toFixed(2));
+        const finalDebit = Number((Number(tx.runas_amount) + spreadFee).toFixed(2));
+        const finalRefund = Number(Math.max(0, Number(tx.runas_amount) - spreadFee).toFixed(2));
+        const curRunas = Number(currentUserData?.account?.runas || 0);
+
+        let detailsHtml = "";
+        if (isVenda) {
+            detailsHtml = `
+                <div class="modal-trade-item-box">
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 8px;">
+                        Operação Original: <span style="color: #4ade80;">Venda de ${formattedAmount} ${assetName}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
+                        <span>Runas recebidas na venda:</span>
+                        <strong style="color: #4ade80; font-family: 'JetBrains Mono', monospace;">+${formatPtBr(tx.runas_amount, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
+                        <span>Taxa de spread retida (5%):</span>
+                        <strong style="color: #f87171; font-family: 'JetBrains Mono', monospace;">-${formatPtBr(spreadFee, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                        <span>Total de Runas a devolver:</span>
+                        <strong style="color: #ef4444; font-family: 'JetBrains Mono', monospace; font-size: 14.5px;">-${formatPtBr(finalDebit, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                        <span>Ativos que retornarão à sua conta:</span>
+                        <strong style="color: #38bdf8;">+${formattedAmount}</strong>
+                    </div>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8; text-align: center;">
+                    Saldo de Runas: ${formatPtBr(curRunas, 2)} ᚱ ➔ <strong style="color: #fff;">${formatPtBr(curRunas - finalDebit, 2)} ᚱ</strong>
+                </div>
+            `;
+        } else {
+            detailsHtml = `
+                <div class="modal-trade-item-box">
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 8px;">
+                        Operação Original: <span style="color: #38bdf8;">Compra de ${formattedAmount} ${assetName}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
+                        <span>Runas gastas na compra:</span>
+                        <strong style="color: #f87171; font-family: 'JetBrains Mono', monospace;">-${formatPtBr(tx.runas_amount, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
+                        <span>Taxa de spread retida (5%):</span>
+                        <strong style="color: #f87171; font-family: 'JetBrains Mono', monospace;">-${formatPtBr(spreadFee, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                        <span>Total a receber de volta em Runas:</span>
+                        <strong style="color: #4ade80; font-family: 'JetBrains Mono', monospace; font-size: 14.5px;">+${formatPtBr(finalRefund, 2)} ᚱ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                        <span>Ativos que serão devolvidos ao banco:</span>
+                        <strong style="color: #ef4444;">-${formattedAmount}</strong>
+                    </div>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8; text-align: center;">
+                    Saldo de Runas: ${formatPtBr(curRunas, 2)} ᚱ ➔ <strong style="color: #fff;">${formatPtBr(curRunas + finalRefund, 2)} ᚱ</strong>
+                </div>
+            `;
+        }
+
+        if (modalUndoBody) {
+            modalUndoBody.innerHTML = `
+                <div style="font-size: 13.5px; color: #e2e8f0;">
+                    Você solicitou o estorno da transação <strong>#${tx.id}</strong> realizada às <strong>${dateStr}</strong> (há ~${minutesAgo} min).
+                </div>
+                <div style="background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 10px; padding: 12px 14px; color: #fde047; font-size: 13px;">
+                    ⚠️ <strong>Segunda Chance:</strong> A transação será desfeita, mas <strong>será cobrado 5% do valor como taxa (spread, perdido)</strong>.
+                </div>
+                ${detailsHtml}
+            `;
+        }
+
+        activeUndoConfirmCallback = async () => {
+            try {
+                showNotification(`Processando cancelamento da transação #${tx.id}...`, "info");
+                const res = await fetch("/api/games/bank/undo-trade", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token, transactionId: tx.id })
+                });
+                const json = await res.json();
+                if (!json.ok) {
+                    showNotification(`Erro ao desfazer: ${json.error}`, "error");
+                } else {
+                    showNotification(`🎉 Transação #${tx.id} desfeita com sucesso!`, "success");
+                    await Promise.all([loadPublicData(), loadSession()]);
+                }
+            } catch (err) {
+                showNotification(`Falha na comunicação: ${err.message}`, "error");
+            }
+        };
+
+        if (modalUndoOverlay) modalUndoOverlay.classList.add("active");
+    }
+
     // Confirmar Compra
-    document.getElementById("btn-confirm-buy")?.addEventListener("click", async () => {
+    document.getElementById("btn-confirm-buy")?.addEventListener("click", () => {
         if (!token) return;
 
         const qtyMoedas = Math.floor(parsePositiveNumber(buyInputs.moedas?.value));
@@ -619,54 +925,76 @@ document.addEventListener("DOMContentLoaded", async () => {
         const qtyJardim = Math.floor(parsePositiveNumber(buyInputs.jardim?.value));
 
         const orders = [];
-        if (qtyMoedas > 0) orders.push({ game: "moedas", amount: qtyMoedas, label: `${qtyMoedas}x Moedas` });
-        if (qtyIscas > 0) orders.push({ game: "iscas", amount: qtyIscas, label: `${qtyIscas}x Iscas` });
+        let totalCostRunas = 0;
+
+        if (qtyMoedas > 0) {
+            const cost = qtyMoedas * 55;
+            totalCostRunas += cost;
+            orders.push({ game: "moedas", qty: qtyMoedas, amount: qtyMoedas, name: "Moedas de Slots", label: `${qtyMoedas}x Moedas`, cost });
+        }
+        if (qtyIscas > 0) {
+            const cost = qtyIscas * 45;
+            totalCostRunas += cost;
+            orders.push({ game: "iscas", qty: qtyIscas, amount: qtyIscas, name: "Iscas de Pesca", label: `${qtyIscas}x Iscas`, cost });
+        }
         if (qtyZinthos > 0 && globalRates) {
             const limitZ = currentUserData?.quota?.limits?.compra_zinthos ?? 600000;
             const used = currentUserData?.quota?.used?.compra_zinthos || 0;
             const spread = calculateDynamicSpread(used, qtyZinthos, limitZ);
             const cost = Number(((qtyZinthos * globalRates.runasPerZinthos) / (1 - spread)).toFixed(2));
-            orders.push({ game: "zinthos", amount: cost, label: `${formatInt(qtyZinthos)} Zinthos` });
+            totalCostRunas += cost;
+            orders.push({ game: "zinthos", qty: qtyZinthos, amount: cost, name: "Zinthos", label: `${formatInt(qtyZinthos)} Zinthos`, cost });
         }
         if (qtyJardim > 0 && globalRates) {
             const limitJ = currentUserData?.quota?.limits?.compra_jardim ?? 320000;
             const used = currentUserData?.quota?.used?.compra_jardim || 0;
             const spread = calculateDynamicSpread(used, qtyJardim, limitJ);
             const cost = Number(((qtyJardim * globalRates.runasPerJardimCoin) / (1 - spread)).toFixed(2));
-            orders.push({ game: "jardim", amount: cost, label: `${formatInt(qtyJardim)} Petalitas` });
+            totalCostRunas += cost;
+            orders.push({ game: "jardim", qty: qtyJardim, amount: cost, name: "Petalitas", label: `${formatInt(qtyJardim)} Petalitas`, cost });
         }
 
         if (orders.length === 0) return;
 
-        const btn = document.getElementById("btn-confirm-buy");
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+        openTradeConfirmModal({
+            operation: "compra",
+            orders,
+            totalRunas: totalCostRunas,
+            onConfirm: async () => {
+                const btn = document.getElementById("btn-confirm-buy");
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+                }
 
-        try {
-            for (const order of orders) {
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Comprando ${order.label}...`;
-                const res = await fetch("/api/games/bank/trade", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ token, operation: "compra", game: order.game, amount: order.amount })
-                });
-                const json = await res.json();
-                if (!json.ok) {
-                    showNotification(`Erro ao comprar ${order.label}: ${json.error}`, "error");
-                } else {
-                    showNotification(`🎉 ${order.label} comprado(s) com sucesso!`, "success");
+                try {
+                    for (const order of orders) {
+                        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Comprando ${order.label}...`;
+                        const res = await fetch("/api/games/bank/trade", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ token, operation: "compra", game: order.game, amount: order.amount })
+                        });
+                        const json = await res.json();
+                        if (!json.ok) {
+                            showNotification(`Erro ao comprar ${order.label}: ${json.error}`, "error");
+                        } else {
+                            showNotification(`🎉 ${order.label} comprado(s) com sucesso!`, "success");
+                        }
+                    }
+                    Object.values(buyInputs).forEach(inp => { if (inp) inp.value = "0"; });
+                    await Promise.all([loadPublicData(), loadSession()]);
+                } catch (err) {
+                    showNotification(`Falha na comunicação: ${err.message}`, "error");
+                } finally {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = `<i class="fas fa-shopping-bag"></i> Confirmar Compra`;
+                    }
+                    updateBuyCart();
                 }
             }
-            // Zera inputs
-            Object.values(buyInputs).forEach(inp => { if (inp) inp.value = "0"; });
-            await Promise.all([loadPublicData(), loadSession()]);
-        } catch (err) {
-            showNotification(`Falha na comunicação: ${err.message}`, "error");
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = `<i class="fas fa-shopping-bag"></i> Confirmar Compra`;
-            updateBuyCart();
-        }
+        });
     });
 
     // 7. Lógica de Carrinho e Controles — ABA VENDA
@@ -819,7 +1147,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     // Confirmar Venda
-    document.getElementById("btn-confirm-sell")?.addEventListener("click", async () => {
+    document.getElementById("btn-confirm-sell")?.addEventListener("click", () => {
         if (!token) return;
 
         const qtyFish = parsePositiveNumber(sellInputs.pesca?.value);
@@ -827,41 +1155,74 @@ document.addEventListener("DOMContentLoaded", async () => {
         const qtyJardim = Math.floor(parsePositiveNumber(sellInputs.jardim?.value));
 
         const orders = [];
-        if (qtyFish > 0) orders.push({ game: "pesca", amount: qtyFish, label: `${formatPtBr(qtyFish, 2)} kg de Peixe` });
-        if (qtyZinthos > 0) orders.push({ game: "zinthos", amount: qtyZinthos, label: `${formatInt(qtyZinthos)} Zinthos` });
-        if (qtyJardim > 0) orders.push({ game: "jardim", amount: qtyJardim, label: `${formatInt(qtyJardim)} Petalitas` });
+        let totalRunasToReceive = 0;
+        const qUsed = currentUserData?.quota?.used?.venda_runas || 0;
+        const qLimit = currentUserData?.quota?.limits?.venda_runas || 300000;
+
+        if (qtyFish > 0 && globalRates) {
+            const rawRunas = qtyFish * globalRates.runasPerKgFish;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            orders.push({ game: "pesca", qty: qtyFish, amount: qtyFish, name: "kg de Peixes", label: `${formatPtBr(qtyFish, 2)} kg de Peixe` });
+        }
+        if (qtyZinthos > 0 && globalRates) {
+            const rawRunas = qtyZinthos * globalRates.runasPerZinthos;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            orders.push({ game: "zinthos", qty: qtyZinthos, amount: qtyZinthos, name: "Zinthos", label: `${formatInt(qtyZinthos)} Zinthos` });
+        }
+        if (qtyJardim > 0 && globalRates) {
+            const rawRunas = qtyJardim * globalRates.runasPerJardimCoin;
+            const spread = calculateDynamicSpread(qUsed + totalRunasToReceive, rawRunas, qLimit);
+            const netRunas = rawRunas * (1 - spread);
+            totalRunasToReceive += netRunas;
+            orders.push({ game: "jardim", qty: qtyJardim, amount: qtyJardim, name: "Petalitas", label: `${formatInt(qtyJardim)} Petalitas` });
+        }
 
         if (orders.length === 0) return;
 
-        const btn = document.getElementById("btn-confirm-sell");
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+        openTradeConfirmModal({
+            operation: "venda",
+            orders,
+            totalRunas: totalRunasToReceive,
+            onConfirm: async () => {
+                const btn = document.getElementById("btn-confirm-sell");
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+                }
 
-        try {
-            for (const order of orders) {
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Vendendo ${order.label}...`;
-                const res = await fetch("/api/games/bank/trade", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ token, operation: "venda", game: order.game, amount: order.amount })
-                });
-                const json = await res.json();
-                if (!json.ok) {
-                    showNotification(`Erro ao vender ${order.label}: ${json.error}`, "error");
-                } else {
-                    showNotification(`🎉 ${order.label} vendido(s) com sucesso!`, "success");
+                try {
+                    for (const order of orders) {
+                        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Vendendo ${order.label}...`;
+                        const res = await fetch("/api/games/bank/trade", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ token, operation: "venda", game: order.game, amount: order.amount })
+                        });
+                        const json = await res.json();
+                        if (!json.ok) {
+                            showNotification(`Erro ao vender ${order.label}: ${json.error}`, "error");
+                        } else {
+                            showNotification(`🎉 ${order.label} vendido(s) com sucesso!`, "success");
+                        }
+                    }
+                    // Zera inputs
+                    Object.values(sellInputs).forEach(inp => { if (inp) inp.value = "0"; });
+                    await Promise.all([loadPublicData(), loadSession()]);
+                } catch (err) {
+                    showNotification(`Falha na comunicação: ${err.message}`, "error");
+                } finally {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = `<i class="fas fa-hand-holding-usd"></i> Confirmar Venda`;
+                    }
+                    updateSellCart();
                 }
             }
-            // Zera inputs
-            Object.values(sellInputs).forEach(inp => { if (inp) inp.value = "0"; });
-            await Promise.all([loadPublicData(), loadSession()]);
-        } catch (err) {
-            showNotification(`Falha na comunicação: ${err.message}`, "error");
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = `<i class="fas fa-hand-holding-usd"></i> Confirmar Venda`;
-            updateSellCart();
-        }
+        });
     });
 
     // 8. Logout

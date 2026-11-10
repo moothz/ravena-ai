@@ -602,13 +602,15 @@ async function handleExtrato(bot, message) {
 				minute: "2-digit"
 			});
 			const isVenda = t.type === "DEPOSIT";
-			const emoji = isVenda ? "📥" : "📤";
+			const isUndone = t.status === "UNDONE";
+			const emoji = isUndone ? "↩️" : isVenda ? "📥" : "📤";
 			const sign = isVenda ? "+" : "-";
 			const gameLabel =
 				t.game === "pesca" ? "🎣 Pesca" : t.game === "waifu" ? "💜 Waifuletes" : "🌱 Petalitas";
 			const unit = t.game === "pesca" ? "kg" : t.game === "jardim" ? "Ptl" : "Z";
+			const undoneSuffix = isUndone ? " *(DESFEITA)*" : "";
 
-			text += `${emoji} *${isVenda ? "Venda" : "Compra"} (${gameLabel})* — ${dateStr}\n`;
+			text += `${emoji} *${isVenda ? "Venda" : "Compra"} (${gameLabel})* — ${dateStr}${undoneSuffix}\n`;
 			text += `   • Movimentação: ${formatPtBr(t.game_amount, t.game === "pesca" ? 2 : 0, t.game === "pesca" ? 2 : 0)} ${unit} ➔ *${sign}${formatPtBr(t.runas_amount, 2, 2)} ᚱ*\n`;
 			text += `   • Taxa: ${formatPtBr(t.spread_rate * 100, 1, 1)}% (-${formatPtBr(t.spread_fee_runas, 2, 2)} ᚱ)\n\n`;
 		}

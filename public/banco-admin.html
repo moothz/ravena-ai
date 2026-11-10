@@ -802,6 +802,166 @@
             margin-bottom: 12px;
             opacity: 0.6;
         }
+
+        /* Modal Fullscreen com Blur */
+        .bank-modal-overlay {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(3, 6, 15, 0.84);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            padding: 16px;
+            box-sizing: border-box;
+            animation: bankModalFadeIn 0.2s ease-out;
+        }
+
+        .bank-modal-overlay.active {
+            display: flex;
+        }
+
+        @keyframes bankModalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .bank-modal-card {
+            background: linear-gradient(145deg, #101426 0%, #0d101d 100%);
+            border: 1px solid rgba(99, 102, 241, 0.28);
+            border-radius: 18px;
+            max-width: 540px;
+            width: 100%;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(99, 102, 241, 0.18);
+            overflow: hidden;
+            animation: bankModalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+
+        @keyframes bankModalScaleUp {
+            from { transform: scale(0.92) translateY(12px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .bank-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 22px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .bank-modal-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .bank-modal-close {
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 4px;
+            transition: color 0.2s ease;
+        }
+
+        .bank-modal-close:hover {
+            color: #ffffff;
+        }
+
+        .bank-modal-body {
+            padding: 22px;
+            overflow-y: auto;
+            color: #cbd5e1;
+            font-size: 13.5px;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .bank-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 16px 22px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-modal-cancel {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #cbd5e1;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-modal-cancel:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+        }
+
+        .btn-modal-confirm {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border: none;
+            color: #000;
+            padding: 10px 22px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-modal-confirm:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+        }
+
+        .btn-admin-undo {
+            background: rgba(234, 179, 8, 0.15);
+            border: 1px solid rgba(234, 179, 8, 0.4);
+            color: #fef08a;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-admin-undo:hover {
+            background: rgba(234, 179, 8, 0.3);
+            border-color: #eab308;
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -832,6 +992,9 @@
         <nav class="tabs-header">
             <button type="button" class="tab-btn active" id="btn-tab-users" data-tab="tab-users">
                 <i class="fas fa-users"></i> Usuários
+            </button>
+            <button type="button" class="tab-btn" id="btn-tab-transactions" data-tab="tab-transactions">
+                <i class="fas fa-receipt"></i> Transações
             </button>
             <button type="button" class="tab-btn" id="btn-tab-config" data-tab="tab-config">
                 <i class="fas fa-sliders-h"></i> Configurações & Economia
@@ -883,6 +1046,83 @@
                     Mostrando 0 de 0 usuários
                 </div>
                 <div class="pagination-buttons" id="pagination-buttons">
+                    <!-- Gerado dinamicamente -->
+                </div>
+            </div>
+        </main>
+
+        <!-- TAB 2: TRANSAÇÕES -->
+        <main id="tab-transactions" class="tab-content">
+            <!-- Controls / Filter Bar -->
+            <div class="controls-bar" style="flex-wrap: wrap; gap: 10px;">
+                <div class="search-box" style="flex: 1; min-width: 220px;">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="tx-search-input" placeholder="Buscar por número ou ID do usuário..." autocomplete="off">
+                    <button type="button" id="btn-clear-tx-search" class="btn-clear-search" title="Limpar busca">&times;</button>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <select id="tx-filter-type" style="background: var(--card-color); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none;">
+                        <option value="ALL">Todas as Operações</option>
+                        <option value="DEPOSIT">📥 Vendas (DEPOSIT)</option>
+                        <option value="WITHDRAW">📤 Compras (WITHDRAW)</option>
+                        <option value="STORE_BUY">🛍️ Loja (STORE_BUY)</option>
+                        <option value="BONUS">🎁 Bônus Diário</option>
+                        <option value="ADMIN_ADJUST">⚙️ Ajustes Admin</option>
+                        <option value="UNDO_TRADE">↩️ Estornos</option>
+                    </select>
+                    <select id="tx-filter-game" style="background: var(--card-color); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none;">
+                        <option value="ALL">Todos os Jogos</option>
+                        <option value="waifu">Waifus (Zinthos)</option>
+                        <option value="jardim">Jardim (Petalitas)</option>
+                        <option value="pesca">Pesca (Peixes/Iscas)</option>
+                        <option value="slots">Slots (Moedas)</option>
+                    </select>
+                    <select id="tx-filter-status" style="background: var(--card-color); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none;">
+                        <option value="ALL">Todos os Status</option>
+                        <option value="COMPLETED">Ativas (Concluídas)</option>
+                        <option value="UNDONE">Desfeitas (Estornadas)</option>
+                    </select>
+                    <span class="badge-count" id="tx-count-badge">Carregando...</span>
+                    <button type="button" id="btn-refresh-txs" class="btn-refresh" title="Atualizar transações">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Transactions Table -->
+            <div class="table-wrapper">
+                <table class="bank-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 70px;">ID</th>
+                            <th>Data / Hora</th>
+                            <th>Usuário</th>
+                            <th>Operação</th>
+                            <th>Jogo / Ativo</th>
+                            <th>Qtd Ativo</th>
+                            <th>Runas</th>
+                            <th>Spread Original</th>
+                            <th>Status</th>
+                            <th style="text-align: right; width: 130px;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-table-body">
+                        <tr>
+                            <td colspan="10" class="state-container">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Carregando histórico de transações...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="pagination-container" id="tx-pagination-controls" style="display: none;">
+                <div class="pagination-info" id="tx-pagination-info">
+                    Mostrando 0 de 0 transações
+                </div>
+                <div class="pagination-buttons" id="tx-pagination-buttons">
                     <!-- Gerado dinamicamente -->
                 </div>
             </div>
@@ -978,9 +1218,31 @@
         </section>
     </div>
 
+    <!-- Modal Administrativo de Desfazer Transação -->
+    <div id="admin-undo-modal" class="bank-modal-overlay">
+        <div class="bank-modal-card">
+            <div class="bank-modal-header">
+                <div class="bank-modal-title">
+                    <i class="fas fa-undo" style="color: var(--accent-orange, #f59e0b);"></i>
+                    <span id="admin-modal-title">Desfazer Transação</span>
+                </div>
+                <button type="button" class="bank-modal-close" id="btn-admin-modal-close" title="Fechar">&times;</button>
+            </div>
+            <div class="bank-modal-body" id="admin-modal-body">
+                <!-- Preenchido via JS -->
+            </div>
+            <div class="bank-modal-footer">
+                <button type="button" class="btn-modal-cancel" id="btn-admin-modal-cancel">Cancelar</button>
+                <button type="button" class="btn-modal-confirm warning" id="btn-admin-modal-confirm">
+                    <i class="fas fa-undo"></i> Confirmar Desfazer
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications Container -->
     <div id="bank-toast-container"></div>
 
-    <script src="/banco-admin.js?v=1"></script>
+    <script src="/banco-admin.js?v=20261110_1"></script>
 </body>
 </html>

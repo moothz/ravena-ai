@@ -10,13 +10,26 @@ document.addEventListener("DOMContentLoaded", () => {
         totalUsers: 0,
         isLoading: false,
         activeTab: "tab-users",
-        editingUserId: null
+        editingUserId: null,
+        // Estado de Transações
+        txCurrentPage: 1,
+        txPageSize: 20,
+        txTotalPages: 1,
+        txTotal: 0,
+        txQuery: "",
+        txFilterType: "ALL",
+        txFilterGame: "ALL",
+        txFilterStatus: "ALL",
+        isLoadingTx: false,
+        currentTransactions: []
     };
 
     // Elementos DOM
     const tabUsersBtn = document.getElementById("btn-tab-users");
+    const tabTransactionsBtn = document.getElementById("btn-tab-transactions");
     const tabConfigBtn = document.getElementById("btn-tab-config");
     const tabUsersContent = document.getElementById("tab-users");
+    const tabTransactionsContent = document.getElementById("tab-transactions");
     const tabConfigContent = document.getElementById("tab-config");
 
     const searchInput = document.getElementById("user-search-input");
@@ -27,6 +40,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const paginationControls = document.getElementById("pagination-controls");
     const paginationInfo = document.getElementById("pagination-info");
     const paginationButtons = document.getElementById("pagination-buttons");
+
+    // Elementos da Aba de Transações
+    const txSearchInput = document.getElementById("tx-search-input");
+    const btnClearTxSearch = document.getElementById("btn-clear-tx-search");
+    const txFilterType = document.getElementById("tx-filter-type");
+    const txFilterGame = document.getElementById("tx-filter-game");
+    const txFilterStatus = document.getElementById("tx-filter-status");
+    const btnRefreshTxs = document.getElementById("btn-refresh-txs");
+    const txCountBadge = document.getElementById("tx-count-badge");
+    const txTableBody = document.getElementById("tx-table-body");
+    const txPaginationControls = document.getElementById("tx-pagination-controls");
+    const txPaginationInfo = document.getElementById("tx-pagination-info");
+    const txPaginationButtons = document.getElementById("tx-pagination-buttons");
+
+    // Modal de Estorno Admin
+    const adminUndoModal = document.getElementById("admin-undo-modal");
+    const adminModalTitle = document.getElementById("admin-modal-title");
+    const adminModalBody = document.getElementById("admin-modal-body");
+    const btnAdminModalClose = document.getElementById("btn-admin-modal-close");
+    const btnAdminModalCancel = document.getElementById("btn-admin-modal-cancel");
+    const btnAdminModalConfirm = document.getElementById("btn-admin-modal-confirm");
 
     const btnRecalculateRates = document.getElementById("btn-recalculate-rates");
 
@@ -91,21 +125,25 @@ document.addEventListener("DOMContentLoaded", () => {
     // 1. Gerenciamento de Abas
     function switchTab(tabId) {
         state.activeTab = tabId;
+        tabUsersBtn.classList.toggle("active", tabId === "tab-users");
+        if (tabTransactionsBtn) tabTransactionsBtn.classList.toggle("active", tabId === "tab-transactions");
+        tabConfigBtn.classList.toggle("active", tabId === "tab-config");
+
+        tabUsersContent.classList.toggle("active", tabId === "tab-users");
+        if (tabTransactionsContent) tabTransactionsContent.classList.toggle("active", tabId === "tab-transactions");
+        tabConfigContent.classList.toggle("active", tabId === "tab-config");
+
         if (tabId === "tab-users") {
-            tabUsersBtn.classList.add("active");
-            tabConfigBtn.classList.remove("active");
-            tabUsersContent.classList.add("active");
-            tabConfigContent.classList.remove("active");
-        } else {
-            tabConfigBtn.classList.add("active");
-            tabUsersBtn.classList.remove("active");
-            tabConfigContent.classList.add("active");
-            tabUsersContent.classList.remove("active");
+            loadUsers(state.currentPage);
+        } else if (tabId === "tab-transactions") {
+            loadTransactions(state.txCurrentPage);
+        } else if (tabId === "tab-config") {
             loadConfigData();
         }
     }
 
     tabUsersBtn.addEventListener("click", () => switchTab("tab-users"));
+    if (tabTransactionsBtn) tabTransactionsBtn.addEventListener("click", () => switchTab("tab-transactions"));
     tabConfigBtn.addEventListener("click", () => switchTab("tab-config"));
 
     // 2. Carregamento da Lista de Usuários
@@ -595,6 +633,388 @@ document.addEventListener("DOMContentLoaded", () => {
             btnRecalculateRates.innerHTML = originalHtml;
             btnRecalculateRates.disabled = false;
         }
+    });
+
+    // ==========================================
+    // ABA DE TRANSAÇÕES DO ADMIN & ESTORNO
+    // ==========================================
+
+    let activeAdminUndoTx = null;
+
+    function closeAdminModal() {
+        if (adminUndoModal) adminUndoModal.classList.remove("active");
+        activeAdminUndoTx = null;
+    }
+
+    btnAdminModalClose?.addEventListener("click", closeAdminModal);
+    btnAdminModalCancel?.addEventListener("click", closeAdminModal);
+    adminUndoModal?.addEventListener("click", (e) => {
+        if (e.target === adminUndoModal) closeAdminModal();
+    });
+
+    async function loadTransactions(page = 1) {
+        if (!txTableBody) return;
+        state.isLoadingTx = true;
+        state.txCurrentPage = page;
+
+        txTableBody.innerHTML = `
+            <tr>
+                <td colspan="10" class="state-container">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Consultando histórico de transações...</p>
+                </td>
+            </tr>
+        `;
+
+        try {
+            const queryParams = new URLSearchParams({
+                page: String(state.txCurrentPage),
+                limit: String(state.txPageSize),
+                q: state.txQuery || "",
+                type: state.txFilterType || "ALL",
+                game: state.txFilterGame || "ALL",
+                status: state.txFilterStatus || "ALL"
+            });
+
+            const res = await fetch(`/api/games/bank/admin/transactions?${queryParams.toString()}`);
+            if (res.status === 401) {
+                window.location.reload();
+                return;
+            }
+
+            const json = await res.json();
+            if (!json.ok || !json.data) {
+                throw new Error(json.error || "Erro ao consultar transações");
+            }
+
+            const { transactions, total, totalPages } = json.data;
+            state.txTotal = total;
+            state.txTotalPages = totalPages;
+            state.currentTransactions = transactions || [];
+
+            if (txCountBadge) {
+                txCountBadge.textContent = `${formatInt(total)} ${total === 1 ? "transação" : "transações"}`;
+            }
+
+            renderTransactionsTable(state.currentTransactions);
+            renderTxPagination();
+        } catch (err) {
+            console.error("Erro ao carregar transações:", err);
+            txTableBody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="state-container" style="color: var(--accent-red);">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p>Falha ao carregar transações: ${err.message}</p>
+                    </td>
+                </tr>
+            `;
+            showToast(`Erro ao carregar transações: ${err.message}`, "error");
+        } finally {
+            state.isLoadingTx = false;
+        }
+    }
+
+    function renderTransactionsTable(transactions) {
+        if (!transactions || transactions.length === 0) {
+            txTableBody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="state-container">
+                        <i class="fas fa-file-invoice"></i>
+                        <p>Nenhuma transação encontrada com os filtros aplicados.</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        txTableBody.innerHTML = transactions.map(t => {
+            const dateStr = new Date(t.timestamp).toLocaleDateString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit"
+            });
+
+            const isVenda = t.type === "DEPOSIT";
+            const isCompra = t.type === "WITHDRAW";
+            const isStore = t.type === "STORE_BUY";
+            const isUndone = t.status === "UNDONE";
+            const isBonus = t.type === "BONUS";
+            const isAdjust = t.type === "ADMIN_ADJUST";
+            const isUndoAudit = t.type === "UNDO_TRADE";
+
+            let typeBadge = `<span class="badge secondary">${escapeHtml(t.type)}</span>`;
+            if (isVenda) typeBadge = `<span class="badge success">📥 Venda</span>`;
+            else if (isCompra) typeBadge = `<span class="badge info">📤 Compra</span>`;
+            else if (isStore) typeBadge = `<span class="badge info">🛍️ Loja</span>`;
+            else if (isBonus) typeBadge = `<span class="badge warning">🎁 Bônus</span>`;
+            else if (isAdjust) typeBadge = `<span class="badge secondary">⚙️ Ajuste</span>`;
+            else if (isUndoAudit) typeBadge = `<span class="badge secondary">↩️ Estorno</span>`;
+
+            let gameLabel = t.game;
+            let formattedAmount = "";
+            if (t.game === "pesca") {
+                gameLabel = "🎣 Pesca";
+                formattedAmount = `${formatPtBr(t.game_amount, 2)} kg`;
+            } else if (t.game === "waifu" || t.game === "zinthos") {
+                gameLabel = "💜 Waifus (Z)";
+                formattedAmount = `${formatInt(t.game_amount)} Z`;
+            } else if (t.game === "jardim" || t.game === "fazenda") {
+                gameLabel = "🌱 Petalitas (Ptl)";
+                formattedAmount = `${formatInt(t.game_amount)} Ptl`;
+            } else if (t.game === "moedas" || t.game === "slots") {
+                gameLabel = "🎰 Slots (Moedas)";
+                formattedAmount = `${formatInt(t.game_amount)} un.`;
+            } else if (t.game === "iscas") {
+                gameLabel = "🐛 Pesca (Iscas)";
+                formattedAmount = `${formatInt(t.game_amount)} un.`;
+            } else {
+                formattedAmount = formatPtBr(t.game_amount, 2);
+            }
+
+            const sign = isVenda ? "+" : "-";
+            const spreadFee = t.spread_fee_runas !== undefined ? formatPtBr(t.spread_fee_runas, 2) : "0,00";
+            const spreadPct = t.spread_rate !== undefined ? formatPtBr(t.spread_rate * 100, 1) : "0,0";
+
+            let statusBadge = `<span class="badge success" style="font-size: 11px;">Ativa</span>`;
+            if (isUndone) {
+                const undoneInfo = t.undone_at ? ` em ${new Date(t.undone_at).toLocaleDateString('pt-BR')}` : "";
+                statusBadge = `<span class="badge danger" style="font-size: 11px;" title="Desfeita por ${escapeHtml(t.undone_by || 'admin')}${undoneInfo}">↩️ Desfeita</span>`;
+            }
+
+            const canUndo = !isUndone && !isUndoAudit && !isBonus && !isAdjust && ["DEPOSIT", "WITHDRAW", "STORE_BUY"].includes(t.type);
+
+            let actionHtml = `<span style="color: #64748b;">—</span>`;
+            if (canUndo) {
+                actionHtml = `<button type="button" class="btn-admin-undo" data-id="${t.id}" title="Desfazer transação (Ação Administrativa)"><i class="fas fa-undo"></i> Desfazer</button>`;
+            } else if (isUndone) {
+                actionHtml = `<span style="color: #94a3b8; font-size: 11px; text-decoration: line-through;"><i class="fas fa-history"></i> Revertida</span>`;
+            }
+
+            const userDisplayName = t.userName ? `${escapeHtml(t.userName)}` : formatPhone(t.user_id);
+            const userSub = t.userName ? `<span style="font-size: 11px; color: #64748b;">${formatPhone(t.user_id)}</span>` : "";
+
+            return `
+                <tr style="${isUndone ? 'opacity: 0.65; background: rgba(0,0,0,0.15);' : ''}">
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #94a3b8;">#${t.id}</td>
+                    <td style="font-size: 12px; white-space: nowrap;">${dateStr}</td>
+                    <td>
+                        <div style="display: flex; flex-direction: column;">
+                            <strong style="color: #fff; font-size: 13px;">${userDisplayName}</strong>
+                            ${userSub}
+                        </div>
+                    </td>
+                    <td>${typeBadge}</td>
+                    <td style="font-size: 12.5px;">${gameLabel}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">${formattedAmount}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #ffd700; ${isUndone ? 'text-decoration: line-through;' : ''}">
+                        ${sign}${formatPtBr(t.runas_amount, 2)} ᚱ
+                    </td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #94a3b8;">
+                        ${spreadFee} ᚱ (${spreadPct}%)
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td style="text-align: right;">${actionHtml}</td>
+                </tr>
+            `;
+        }).join("");
+
+        txTableBody.querySelectorAll(".btn-admin-undo").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const txId = parseInt(btn.getAttribute("data-id"), 10);
+                const tx = state.currentTransactions.find(x => x.id === txId);
+                if (tx) openAdminUndoModal(tx);
+            });
+        });
+    }
+
+    function renderTxPagination() {
+        if (!txPaginationControls || !txPaginationInfo || !txPaginationButtons) return;
+
+        if (state.txTotalPages <= 1) {
+            txPaginationControls.style.display = "none";
+            return;
+        }
+
+        txPaginationControls.style.display = "flex";
+        txPaginationInfo.textContent = `Página ${state.txCurrentPage} de ${state.txTotalPages} (${formatInt(state.txTotal)} transações)`;
+
+        let buttonsHtml = "";
+        buttonsHtml += `
+            <button type="button" class="btn-page" ${state.txCurrentPage <= 1 ? "disabled" : ""} id="btn-tx-prev">
+                <i class="fas fa-chevron-left"></i> Anterior
+            </button>
+        `;
+
+        const startPage = Math.max(1, state.txCurrentPage - 2);
+        const endPage = Math.min(state.txTotalPages, state.txCurrentPage + 2);
+
+        for (let p = startPage; p <= endPage; p++) {
+            buttonsHtml += `
+                <button type="button" class="btn-page ${p === state.txCurrentPage ? "active" : ""}" data-page="${p}">
+                    ${p}
+                </button>
+            `;
+        }
+
+        buttonsHtml += `
+            <button type="button" class="btn-page" ${state.txCurrentPage >= state.txTotalPages ? "disabled" : ""} id="btn-tx-next">
+                Próximo <i class="fas fa-chevron-right"></i>
+            </button>
+        `;
+
+        txPaginationButtons.innerHTML = buttonsHtml;
+
+        document.getElementById("btn-tx-prev")?.addEventListener("click", () => {
+            if (state.txCurrentPage > 1) loadTransactions(state.txCurrentPage - 1);
+        });
+
+        document.getElementById("btn-tx-next")?.addEventListener("click", () => {
+            if (state.txCurrentPage < state.txTotalPages) loadTransactions(state.txCurrentPage + 1);
+        });
+
+        txPaginationButtons.querySelectorAll(".btn-page[data-page]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const p = parseInt(btn.getAttribute("data-page"), 10);
+                if (p && p !== state.txCurrentPage) loadTransactions(p);
+            });
+        });
+    }
+
+    function openAdminUndoModal(tx) {
+        if (!tx) return;
+        activeAdminUndoTx = tx;
+
+        const isVenda = tx.type === "DEPOSIT";
+        const spreadFee = Number((Number(tx.runas_amount) * 0.05).toFixed(2));
+
+        let defaultFinalRunas;
+        let explanationText;
+
+        if (isVenda) {
+            defaultFinalRunas = Number((Number(tx.runas_amount) + spreadFee).toFixed(2));
+            explanationText = `Transação original foi uma <strong>Venda</strong>. O usuário recebeu ${formatPtBr(tx.runas_amount, 2)} ᚱ. Ao desfazer, os ativos serão devolvidos para o jogo e as Runas serão debitadas. Valor pré-calculado com taxa de spread de 5% (${formatPtBr(spreadFee, 2)} ᚱ): ${formatPtBr(tx.runas_amount, 2)} + ${formatPtBr(spreadFee, 2)} = <strong>${formatPtBr(defaultFinalRunas, 2)} ᚱ a debitar</strong>.`;
+        } else {
+            defaultFinalRunas = Number(Math.max(0, Number(tx.runas_amount) - spreadFee).toFixed(2));
+            explanationText = `Transação original foi uma <strong>Compra</strong>. O usuário pagou ${formatPtBr(tx.runas_amount, 2)} ᚱ. Ao desfazer, os ativos retornam ao banco e o usuário recebe as Runas de volta com desconto de 5% de taxa (${formatPtBr(spreadFee, 2)} ᚱ). Valor pré-calculado: ${formatPtBr(tx.runas_amount, 2)} - ${formatPtBr(spreadFee, 2)} = <strong>${formatPtBr(defaultFinalRunas, 2)} ᚱ a reembolsar</strong>.`;
+        }
+
+        if (adminModalTitle) {
+            adminModalTitle.textContent = `Desfazer Transação #${tx.id}`;
+        }
+
+        const dateStr = new Date(tx.timestamp).toLocaleString("pt-BR");
+
+        if (adminModalBody) {
+            adminModalBody.innerHTML = `
+                <div style="font-size: 13.5px; color: #cbd5e1; line-height: 1.6;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                        <div><strong>ID Transação:</strong> #${tx.id}</div>
+                        <div><strong>Data:</strong> ${dateStr}</div>
+                        <div><strong>Usuário:</strong> ${escapeHtml(tx.userName || formatPhone(tx.user_id))}</div>
+                        <div><strong>Jogo/Ativo:</strong> ${escapeHtml(tx.game)} (${formatPtBr(tx.game_amount, 2)})</div>
+                        <div><strong>Tipo Original:</strong> ${escapeHtml(tx.type)}</div>
+                        <div><strong>Valor Original:</strong> <span style="color: #ffd700; font-weight: 700;">${formatPtBr(tx.runas_amount, 2)} ᚱ</span></div>
+                    </div>
+
+                    <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.35); border-radius: 10px; padding: 12px 14px; color: #fde047; font-size: 12.5px; margin-bottom: 14px;">
+                        👑 <strong>Painel Administrativo:</strong> Sem limite de 5 minutos. A taxa spread (5%) foi calculada automaticamente abaixo.
+                    </div>
+
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 16px;">
+                        <label for="admin-input-final-runas" style="display: block; font-weight: 600; color: #fff; margin-bottom: 8px; font-size: 13.5px;">
+                            Valor Final em Runas (${isVenda ? 'a ser debitado do usuário' : 'a ser reembolsado ao usuário'}):
+                        </label>
+                        <input type="number" step="0.01" min="0" id="admin-input-final-runas" value="${defaultFinalRunas}" class="bank-input" style="width: 100%; box-sizing: border-box; font-size: 18px; padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #ffd700; background: #080c18; border: 1.5px solid #6366f1; border-radius: 8px; outline: none;">
+                        <div style="font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.5;">
+                            ${explanationText}
+                            <div style="margin-top: 6px; color: #fde047;">
+                                ✏️ <em>Você pode digitar qualquer valor final em Runas acima antes de confirmar.</em>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (adminUndoModal) adminUndoModal.classList.add("active");
+    }
+
+    btnAdminModalConfirm?.addEventListener("click", async () => {
+        if (!activeAdminUndoTx) return;
+
+        const inputEl = document.getElementById("admin-input-final-runas");
+        const finalRunas = inputEl ? parseFloat(inputEl.value) : undefined;
+
+        if (finalRunas === undefined || isNaN(finalRunas) || finalRunas < 0) {
+            showToast("Informe um valor final válido de Runas (maior ou igual a zero).", "error");
+            return;
+        }
+
+        const txId = activeAdminUndoTx.id;
+        const originalBtnHtml = btnAdminModalConfirm.innerHTML;
+        btnAdminModalConfirm.disabled = true;
+        btnAdminModalConfirm.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processando...`;
+
+        try {
+            const res = await fetch("/api/games/bank/admin/undo-transaction", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    transactionId: txId,
+                    finalRunas
+                })
+            });
+
+            const json = await res.json();
+            if (!json.ok) {
+                throw new Error(json.error || "Falha ao desfazer transação.");
+            }
+
+            showToast(`🎉 Transação #${txId} desfeita com sucesso! Saldo e ativos atualizados.`, "success");
+            closeAdminModal();
+            loadTransactions(state.txCurrentPage);
+        } catch (err) {
+            showToast(`Erro ao desfazer transação: ${err.message}`, "error");
+        } finally {
+            btnAdminModalConfirm.disabled = false;
+            btnAdminModalConfirm.innerHTML = originalBtnHtml;
+        }
+    });
+
+    // Filtros e Busca da Aba de Transações
+    let txSearchDebounceTimer = null;
+    txSearchInput?.addEventListener("input", (e) => {
+        clearTimeout(txSearchDebounceTimer);
+        txSearchDebounceTimer = setTimeout(() => {
+            state.txQuery = e.target.value.trim();
+            loadTransactions(1);
+        }, 400);
+    });
+
+    btnClearTxSearch?.addEventListener("click", () => {
+        if (txSearchInput) txSearchInput.value = "";
+        state.txQuery = "";
+        loadTransactions(1);
+    });
+
+    txFilterType?.addEventListener("change", (e) => {
+        state.txFilterType = e.target.value;
+        loadTransactions(1);
+    });
+
+    txFilterGame?.addEventListener("change", (e) => {
+        state.txFilterGame = e.target.value;
+        loadTransactions(1);
+    });
+
+    txFilterStatus?.addEventListener("change", (e) => {
+        state.txFilterStatus = e.target.value;
+        loadTransactions(1);
+    });
+
+    btnRefreshTxs?.addEventListener("click", () => {
+        loadTransactions(state.txCurrentPage);
     });
 
     // Função utilitária de sanitização HTML

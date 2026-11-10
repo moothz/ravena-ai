@@ -142,7 +142,12 @@ class BankService {
 					spread_rate REAL NOT NULL,
 					spread_fee_runas REAL NOT NULL,
 					details_json TEXT,
-					timestamp INTEGER NOT NULL
+					timestamp INTEGER NOT NULL,
+					status TEXT DEFAULT 'COMPLETED',
+					undone_at INTEGER DEFAULT NULL,
+					undone_by TEXT DEFAULT NULL,
+					undo_fee_runas REAL DEFAULT NULL,
+					undo_final_runas REAL DEFAULT NULL
 				);
 
 				CREATE TABLE IF NOT EXISTS bank_daily_quotas (
@@ -218,6 +223,31 @@ class BankService {
 				database
 					.getSQLiteDb(dbName)
 					.exec("ALTER TABLE bank_daily_rates ADD COLUMN jardim_inflation_percent REAL DEFAULT 0;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_transactions ADD COLUMN status TEXT DEFAULT 'COMPLETED';");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_transactions ADD COLUMN undone_at INTEGER DEFAULT NULL;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_transactions ADD COLUMN undone_by TEXT DEFAULT NULL;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_transactions ADD COLUMN undo_fee_runas REAL DEFAULT NULL;");
+			} catch (_) {}
+			try {
+				database
+					.getSQLiteDb(dbName)
+					.exec("ALTER TABLE bank_transactions ADD COLUMN undo_final_runas REAL DEFAULT NULL;");
 			} catch (_) {}
 			this._initialized = true;
 			logger.info("Banco bank.db inicializado com sucesso.");
@@ -2082,6 +2112,445 @@ class BankService {
 			totalRunas: Number(countRow?.totalRunas || 0),
 			storePrices: this.STORE_PRICES,
 			storeLimits: this.STORE_LIMITS
+		};
+	}
+
+	/**
+	 * Desfaz uma transação financeira de compra ou venda (Segunda Chance ou Ação Administrativa).
+	 * Regra de Spread: 5% de taxa cobrada/retida sobre o valor da transação.
+	 * Regra de Tempo: 5 minutos para usuários comuns; sem limite de tempo para administradores.
+	 *
+	 * @param {number|string} transactionId
+	 * @param {Object} [options]
+	 * @param {string} [options.userId] - Usuário solicitante (se chamado por usuário)
+	 * @param {boolean} [options.isAdmin=false] - Se true, ignora janela de 5 min e autoriza customFinalRunas
+	 * @param {number} [options.customFinalRunas] - Valor final em Runas digitado pelo admin
+	 * @param {string} [options.adminUser="admin"] - Identificador do admin
+	 */
+	async undoTransaction(transactionId, options = {}) {
+		const {
+			userId = null,
+			isAdmin = false,
+			customFinalRunas = undefined,
+			adminUser = "admin"
+		} = options;
+
+		const txId = parseInt(transactionId, 10);
+		if (isNaN(txId) || txId <= 0) {
+			throw new Error("ID de transação inválido.");
+		}
+
+		const tx = await database.dbGet(dbName, "SELECT * FROM bank_transactions WHERE id = ?", [txId]);
+
+		if (!tx) {
+			throw new Error(`Transação #${txId} não encontrada.`);
+		}
+
+		const cleanUser = String(tx.user_id).replace(/\D/g, "") || String(tx.user_id);
+		if (!isAdmin && userId) {
+			const cleanReqUser = String(userId).replace(/\D/g, "") || String(userId);
+			if (cleanUser !== cleanReqUser) {
+				throw new Error("Você não possui permissão para desfazer esta transação.");
+			}
+		}
+
+		if (tx.status === "UNDONE") {
+			throw new Error(`A transação #${txId} já foi desfeita anteriormente.`);
+		}
+
+		// Se for usuário comum, valida tolerância de 5 minutos
+		if (!isAdmin) {
+			const ageMs = Date.now() - Number(tx.timestamp);
+			const FIVE_MINUTES_MS = 5 * 60 * 1000;
+			if (ageMs > FIVE_MINUTES_MS) {
+				throw new Error("O prazo de 5 minutos para desfazer esta transação expirou.");
+			}
+		}
+
+		const reversibleTypes = ["DEPOSIT", "WITHDRAW", "STORE_BUY"];
+		if (!reversibleTypes.includes(tx.type)) {
+			throw new Error(`Transações do tipo '${tx.type}' não podem ser desfeitas.`);
+		}
+
+		// Cálculo da taxa de spread de 5%
+		const SPREAD_FEE_RATE = 0.05;
+		const spreadFeeRunas = Number((Number(tx.runas_amount) * SPREAD_FEE_RATE).toFixed(2));
+
+		let finalRunas;
+		if (
+			isAdmin &&
+			customFinalRunas !== undefined &&
+			customFinalRunas !== null &&
+			!isNaN(Number(customFinalRunas))
+		) {
+			finalRunas = Number(Math.max(0, Number(customFinalRunas)).toFixed(2));
+		} else {
+			if (tx.type === "DEPOSIT") {
+				// Venda original: usuário recebeu tx.runas_amount.
+				// Para desfazer, devolve as Runas recebidas + paga 5% de taxa spread.
+				finalRunas = Number((Number(tx.runas_amount) + spreadFeeRunas).toFixed(2));
+			} else {
+				// Compra original: usuário gastou tx.runas_amount.
+				// Para desfazer, recebe as Runas de volta com retenção de 5% de spread.
+				finalRunas = Number(Math.max(0, Number(tx.runas_amount) - spreadFeeRunas).toFixed(2));
+			}
+		}
+
+		const account = await this.getAccount(cleanUser);
+
+		// Se for débito de Runas (Venda original sendo revertida), valida saldo em conta
+		if (tx.type === "DEPOSIT") {
+			if (account.runas < finalRunas) {
+				throw new Error(
+					`Saldo insuficiente de Runas para desfazer esta transação. Você precisa de ${finalRunas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ, mas possui apenas ${account.runas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ.`
+				);
+			}
+		}
+
+		const now = Date.now();
+		const g = String(tx.game).toLowerCase().trim();
+
+		// 1. Reversão dos ativos nos respectivos jogos
+		if (g === "waifu" || g === "zinthos" || g === "waifus") {
+			const amount = Math.floor(tx.game_amount);
+			if (tx.type === "DEPOSIT") {
+				// Devolve Zinthos ao usuário
+				try {
+					await waifuApi.post("/admin/kakera/give", {
+						userId: cleanUser,
+						amount,
+						reason: "ADMIN_GRANT",
+						metadata: { reason: "bank_undo_deposit_zinthos", txId }
+					});
+				} catch (err) {
+					throw new Error(`Falha ao devolver Zinthos no Waifuletes: ${err.message}`);
+				}
+			} else if (tx.type === "WITHDRAW") {
+				// Retira Zinthos comprados
+				let curZ = 0;
+				try {
+					const { data } = await waifuApi.get(`/kakera/${cleanUser}`);
+					curZ = data?.data?.balance ?? data?.data?.kakera ?? 0;
+				} catch (_) {}
+				if (curZ < amount) {
+					throw new Error(
+						`Saldo insuficiente de Zinthos no Waifuletes para devolução. O usuário possui ${curZ.toLocaleString("pt-BR")} Z, mas a compra foi de ${amount.toLocaleString("pt-BR")} Z.`
+					);
+				}
+				try {
+					await waifuApi.post("/admin/kakera/take", {
+						userId: cleanUser,
+						amount,
+						metadata: { reason: "bank_undo_withdraw_zinthos", txId }
+					});
+				} catch (err) {
+					throw new Error(`Falha ao retirar Zinthos no Waifuletes: ${err.message}`);
+				}
+			}
+		} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
+			const amount = Math.floor(tx.game_amount);
+			if (tx.type === "DEPOSIT") {
+				// Devolve Petalitas
+				try {
+					await jardimClient.adminGive(cleanUser, {
+						coins: amount,
+						reason: "bank_undo_deposit_jardim"
+					});
+				} catch (err) {
+					throw new Error(`Falha ao devolver Petalitas no Jardim: ${err.message}`);
+				}
+			} else if (tx.type === "WITHDRAW") {
+				// Retira Petalitas compradas
+				let curCoins = 0;
+				try {
+					const status = await jardimClient.getStatus(cleanUser);
+					curCoins = status?.coins || 0;
+				} catch (_) {}
+				if (curCoins < amount) {
+					throw new Error(
+						`Saldo insuficiente de Petalitas na Fazenda para devolução. O usuário possui ${curCoins.toLocaleString("pt-BR")} Ptl, mas a compra foi de ${amount.toLocaleString("pt-BR")} Ptl.`
+					);
+				}
+				try {
+					await jardimClient.adminGive(cleanUser, {
+						coins: -amount,
+						reason: "bank_undo_withdraw_jardim"
+					});
+				} catch (err) {
+					throw new Error(`Falha ao retirar Petalitas no Jardim: ${err.message}`);
+				}
+			}
+		} else if (g === "slots" || g === "moedas" || g === "moeda") {
+			const count = Math.floor(tx.game_amount);
+			const SlotsGame = require("../functions/SlotsGame");
+			const curCoins = await SlotsGame.getUserCoins(cleanUser);
+			if (curCoins < count) {
+				throw new Error(
+					`Saldo insuficiente de moedas nos Slots para devolução. O usuário possui ${curCoins} moedas, mas a compra foi de ${count} moedas.`
+				);
+			}
+			await SlotsGame.addCoins(cleanUser, -count, true);
+		} else if (g === "fishing" || g === "iscas" || g === "isca") {
+			const count = Math.floor(tx.game_amount);
+			const FishingGame = require("../functions/FishingGame");
+			const baitInfo = await FishingGame.getUserBaitsInfo(cleanUser);
+			if (baitInfo.baits < count) {
+				throw new Error(
+					`Saldo insuficiente de iscas de pesca para devolução. O usuário possui ${baitInfo.baits} iscas, mas a compra foi de ${count} iscas.`
+				);
+			}
+			await FishingGame.addBaits(cleanUser, -count);
+		} else if (g === "pesca" || g === "peixe" || g === "peixes") {
+			// Venda de peixes -> devolve peso ao inventário
+			await database.dbRun(
+				"fishing",
+				"UPDATE fishing_users SET inventory_weight = inventory_weight + ? WHERE user_id = ? OR user_id = ?",
+				[tx.game_amount, cleanUser, cleanUser]
+			);
+		}
+
+		// 2. Ajuste de Runas na conta do RavenaBank
+		if (tx.type === "DEPOSIT") {
+			// Debita Runas da conta
+			await database.dbRun(
+				dbName,
+				`UPDATE bank_accounts SET 
+					runas = runas - ?, 
+					total_deposited_runas = MAX(0, total_deposited_runas - ?), 
+					updated_at = ? 
+				WHERE user_id = ?`,
+				[finalRunas, tx.runas_amount, now, cleanUser]
+			);
+		} else {
+			// Credita Runas de volta
+			await database.dbRun(
+				dbName,
+				`UPDATE bank_accounts SET 
+					runas = runas + ?, 
+					total_withdrawn_runas = MAX(0, total_withdrawn_runas - ?), 
+					updated_at = ? 
+				WHERE user_id = ?`,
+				[finalRunas, tx.runas_amount, now, cleanUser]
+			);
+		}
+
+		// 3. Estorno de cota diária se a transação ocorreu hoje
+		const txDateStr = new Date(tx.timestamp).toLocaleDateString("pt-BR", {
+			timeZone: "America/Sao_Paulo"
+		});
+		const todayStr = new Date().toLocaleDateString("pt-BR", {
+			timeZone: "America/Sao_Paulo"
+		});
+
+		if (txDateStr === todayStr) {
+			const todayDb = this.getTodayDateString();
+			if (tx.type === "DEPOSIT") {
+				if (g === "waifu" || g === "zinthos" || g === "waifus") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET 
+							runas_venda_used = MAX(0, runas_venda_used - ?),
+							zinthos_used = MAX(0, zinthos_used - ?)
+						WHERE user_id = ? AND date = ?`,
+						[tx.runas_amount, tx.game_amount, cleanUser, todayDb]
+					);
+				} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET 
+							runas_venda_used = MAX(0, runas_venda_used - ?),
+							jardim_coins_used = MAX(0, jardim_coins_used - ?)
+						WHERE user_id = ? AND date = ?`,
+						[tx.runas_amount, tx.game_amount, cleanUser, todayDb]
+					);
+				} else if (g === "pesca" || g === "peixe" || g === "peixes") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET 
+							runas_venda_used = MAX(0, runas_venda_used - ?),
+							fish_kg_used = MAX(0, fish_kg_used - ?)
+						WHERE user_id = ? AND date = ?`,
+						[tx.runas_amount, tx.game_amount, cleanUser, todayDb]
+					);
+				}
+			} else if (tx.type === "WITHDRAW") {
+				if (g === "waifu" || g === "zinthos" || g === "waifus") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET 
+							runas_compra_used = MAX(0, runas_compra_used - ?),
+							zinthos_compra_used = MAX(0, zinthos_compra_used - ?)
+						WHERE user_id = ? AND date = ?`,
+						[tx.runas_amount, tx.game_amount, cleanUser, todayDb]
+					);
+				} else if (g === "jardim" || g === "fazenda" || g === "petalita" || g === "petalitas") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET 
+							runas_compra_used = MAX(0, runas_compra_used - ?),
+							jardim_compra_used = MAX(0, jardim_compra_used - ?)
+						WHERE user_id = ? AND date = ?`,
+						[tx.runas_amount, tx.game_amount, cleanUser, todayDb]
+					);
+				}
+			} else if (tx.type === "STORE_BUY") {
+				if (g === "slots" || g === "moedas" || g === "moeda") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET moedas_compra_used = MAX(0, moedas_compra_used - ?) WHERE user_id = ? AND date = ?`,
+						[tx.game_amount, cleanUser, todayDb]
+					);
+				} else if (g === "fishing" || g === "iscas" || g === "isca") {
+					await database.dbRun(
+						dbName,
+						`UPDATE bank_daily_quotas SET iscas_compra_used = MAX(0, iscas_compra_used - ?) WHERE user_id = ? AND date = ?`,
+						[tx.game_amount, cleanUser, todayDb]
+					);
+				}
+			}
+		}
+
+		// 4. Marca a transação original como desfeita
+		const undoneBy = isAdmin ? `admin:${adminUser}` : `user:${cleanUser}`;
+		await database.dbRun(
+			dbName,
+			`UPDATE bank_transactions SET 
+				status = 'UNDONE', 
+				undone_at = ?, 
+				undone_by = ?, 
+				undo_fee_runas = ?, 
+				undo_final_runas = ? 
+			WHERE id = ?`,
+			[now, undoneBy, spreadFeeRunas, finalRunas, txId]
+		);
+
+		// 5. Registra transação de auditoria
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_transactions 
+			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
+			VALUES (?, 'UNDO_TRADE', ?, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
+			[
+				cleanUser,
+				tx.game,
+				tx.game_amount,
+				finalRunas,
+				SPREAD_FEE_RATE,
+				spreadFeeRunas,
+				JSON.stringify({
+					originalTxId: tx.id,
+					originalType: tx.type,
+					undoneBy,
+					spreadFeeRunas,
+					finalRunas,
+					timestamp: now
+				}),
+				now
+			]
+		);
+
+		logger.info(
+			`[RavenaBank] Transação #${txId} (${tx.type} ${tx.game}) desfeita com sucesso por ${undoneBy}. Final Runas: ${finalRunas} (spread fee: ${spreadFeeRunas})`
+		);
+
+		const updatedAccount = await this.getAccount(cleanUser);
+		return {
+			transactionId: txId,
+			undone: true,
+			undoneBy,
+			originalType: tx.type,
+			game: tx.game,
+			gameAmount: tx.game_amount,
+			spreadFeeRunas,
+			finalRunas,
+			newBalance: updatedAccount.runas
+		};
+	}
+
+	/**
+	 * Listagem paginada e busca de transações para o painel administrativo do RavenaBank.
+	 */
+	async adminGetTransactions({
+		page = 1,
+		limit = 20,
+		query = "",
+		type = "",
+		game = "",
+		status = ""
+	} = {}) {
+		const pageNum = Math.max(1, parseInt(page, 10) || 1);
+		const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+		const offset = (pageNum - 1) * limitNum;
+
+		const whereClauses = [];
+		const params = [];
+
+		if (query && String(query).trim()) {
+			const clean = String(query).trim().replace(/\D/g, "");
+			if (clean) {
+				whereClauses.push("(user_id LIKE ? OR user_id LIKE ?)");
+				params.push(`%${clean}%`, `%${String(query).trim()}%`);
+			} else {
+				whereClauses.push("user_id LIKE ?");
+				params.push(`%${String(query).trim()}%`);
+			}
+		}
+
+		if (type && String(type).trim() && type !== "ALL") {
+			whereClauses.push("type = ?");
+			params.push(String(type).trim().toUpperCase());
+		}
+
+		if (game && String(game).trim() && game !== "ALL") {
+			whereClauses.push("game = ?");
+			params.push(String(game).trim().toLowerCase());
+		}
+
+		if (status && String(status).trim() && status !== "ALL") {
+			if (status.toUpperCase() === "UNDONE") {
+				whereClauses.push("status = 'UNDONE'");
+			} else if (status.toUpperCase() === "COMPLETED") {
+				whereClauses.push("(status IS NULL OR status = 'COMPLETED')");
+			}
+		}
+
+		const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+		const countRow = await database.dbGet(
+			dbName,
+			`SELECT COUNT(*) as total FROM bank_transactions ${whereSql}`,
+			params
+		);
+		const total = Number(countRow?.total || 0);
+		const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
+		const rows = await database.dbAll(
+			dbName,
+			`SELECT * FROM bank_transactions ${whereSql} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+			[...params, limitNum, offset]
+		);
+
+		// Resolve apelidos globais dos usuários
+		const uniqueUserIds = [...new Set((rows || []).map((r) => r.user_id))];
+		const nicksMap = {};
+		for (const u of uniqueUserIds) {
+			try {
+				const nick = await database.getGlobalNick(u);
+				if (nick) nicksMap[u] = nick;
+			} catch (_) {}
+		}
+
+		const transactions = (rows || []).map((r) => ({
+			...r,
+			userName: nicksMap[r.user_id] || null
+		}));
+
+		return {
+			transactions,
+			total,
+			page: pageNum,
+			limit: limitNum,
+			totalPages
 		};
 	}
 }

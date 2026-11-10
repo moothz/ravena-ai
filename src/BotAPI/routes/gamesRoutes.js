@@ -375,6 +375,40 @@ function registerGamesRoutes(api) {
 		}
 	});
 
+	// POST /api/games/bank/undo-trade — Segunda Chance para desfazer compras e vendas (máx 5 min)
+	app.post("/api/games/bank/undo-trade", api.generalLimiter, async (req, res) => {
+		const token = req.body?.token || req.headers["x-bank-token"];
+		if (!token) {
+			return res.status(401).json({ ok: false, error: "Sessão não autenticada." });
+		}
+
+		try {
+			const session = await bankService.verifyAndExtendSession(token);
+			if (!session) {
+				return res
+					.status(401)
+					.json({ ok: false, error: "Sessão expirada. Solicite novo link via !banco-adm." });
+			}
+
+			const { transactionId } = req.body || {};
+			if (!transactionId) {
+				return res
+					.status(400)
+					.json({ ok: false, error: "Parâmetro 'transactionId' é obrigatório." });
+			}
+
+			const result = await bankService.undoTransaction(transactionId, {
+				userId: session.userId,
+				isAdmin: false
+			});
+
+			return res.json({ ok: true, result });
+		} catch (error) {
+			api.logger.warn(`[gamesRoutes] Falha ao desfazer transação: ${error.message}`);
+			return res.status(400).json({ ok: false, error: error.message });
+		}
+	});
+
 	// =========================================================================
 	// ROTAS ADMINISTRATIVAS DO RAVENABANK (/ravenabank/admin)
 	// =========================================================================
@@ -506,6 +540,60 @@ function registerGamesRoutes(api) {
 			} catch (error) {
 				api.logger.error("[gamesRoutes] Erro ao recalcular cotações do banco:", error);
 				return res.status(500).json({ ok: false, error: error.message });
+			}
+		}
+	);
+
+	// GET /api/games/bank/admin/transactions — listagem paginada e filtros de transações
+	app.get(
+		"/api/games/bank/admin/transactions",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { page = 1, limit = 20, q = "", type = "", game = "", status = "" } = req.query;
+				const data = await bankService.adminGetTransactions({
+					page,
+					limit,
+					query: q,
+					type,
+					game,
+					status
+				});
+				return res.json({ ok: true, data });
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao listar transações no admin do banco:", error);
+				return res.status(500).json({ ok: false, error: "Falha ao listar transações." });
+			}
+		}
+	);
+
+	// POST /api/games/bank/admin/undo-transaction — estorno administrativo de transação (sem limite de tempo)
+	app.post(
+		"/api/games/bank/admin/undo-transaction",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { transactionId, finalRunas } = req.body || {};
+				if (!transactionId) {
+					return res
+						.status(400)
+						.json({ ok: false, error: "Parâmetro 'transactionId' é obrigatório." });
+				}
+
+				const result = await bankService.undoTransaction(transactionId, {
+					userId: null,
+					isAdmin: true,
+					customFinalRunas:
+						finalRunas !== undefined && finalRunas !== null ? Number(finalRunas) : undefined,
+					adminUser: req.headers.authorization ? "basic_admin" : "session_admin"
+				});
+
+				return res.json({ ok: true, result });
+			} catch (error) {
+				api.logger.error("[gamesRoutes] Erro ao desfazer transação administrativamente:", error);
+				return res.status(400).json({ ok: false, error: error.message });
 			}
 		}
 	);
