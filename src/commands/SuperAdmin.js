@@ -1082,7 +1082,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -1210,7 +1214,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -1344,7 +1352,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -1776,7 +1788,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -1867,7 +1883,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2084,7 +2104,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2510,7 +2534,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2635,7 +2663,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2747,7 +2779,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2893,7 +2929,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2949,7 +2989,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3123,7 +3167,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3259,7 +3307,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3356,7 +3408,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3469,7 +3525,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3661,7 +3721,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4141,7 +4205,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4317,7 +4385,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4415,7 +4487,11 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -5053,7 +5129,11 @@ Retorne no formato JSON rigoroso:
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (
+				!message.isSystem &&
+				!this.isSuperAdmin(message.author) &&
+				!this.isComuAdmin(bot, message.author)
+			) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."

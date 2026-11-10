@@ -81,6 +81,8 @@ class CoreRepository {
 				spammer_whitelist TEXT,
 				banned_users TEXT,
 				minecraft_server TEXT,
+				members TEXT,
+				admins TEXT,
 				created_at INTEGER,
 				updated_at INTEGER,
 				json_data TEXT
@@ -398,14 +400,14 @@ class CoreRepository {
           filters, twitch, kick, youtube, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
           ignored_numbers, ignored_users, muted_commands, muted_categories,
-          nicks, warnings, custom_ai_prompt, dinamic_personality, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, created_at, updated_at, json_data
+          nicks, warnings, custom_ai_prompt, dinamic_personality, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, members, admins, created_at, updated_at, json_data
         ) VALUES (
           @id, @name, @titulo, @descricao, @regras, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
           @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
           @ignored_numbers, @ignored_users, @muted_commands, @muted_categories,
-          @nicks, @warnings, @custom_ai_prompt, @dinamic_personality, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @created_at, @updated_at, @json_data
+          @nicks, @warnings, @custom_ai_prompt, @dinamic_personality, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @members, @admins, @created_at, @updated_at, @json_data
         )
         ON CONFLICT(id) DO UPDATE SET
           name                  = excluded.name,
@@ -444,6 +446,8 @@ class CoreRepository {
           spammer_whitelist      = excluded.spammer_whitelist,
           banned_users           = excluded.banned_users,
           minecraft_server       = excluded.minecraft_server,
+          members               = excluded.members,
+          admins                = excluded.admins,
           updated_at            = excluded.updated_at,
           json_data             = excluded.json_data`,
 				{ ...row, json_data: jsonData }

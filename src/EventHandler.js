@@ -1853,10 +1853,46 @@ class EventHandler extends EventEmitter {
 				const pendingJoins = await this.database.getPendingJoins();
 				let foundInviter = null;
 
-				// Obtém todos os membros do grupo para verificação
-				const members = (chat?.participants || [])
+				// Obtém todos os membros do grupo para verificação e snapshot
+				let chatParticipants = chat?.participants || [];
+				if ((!chatParticipants || chatParticipants.length === 0) && bot.client?.getChatById) {
+					try {
+						const fullChat = await bot.client.getChatById(group.id);
+						if (fullChat?.participants && fullChat.participants.length > 0) {
+							chatParticipants = fullChat.participants;
+						}
+					} catch (chatFetchErr) {
+						this.logger.debug(
+							`[processGroupJoin] Erro ao buscar participantes via getChatById para snapshot: ${chatFetchErr.message}`
+						);
+					}
+				}
+
+				const snapshotMembers = [];
+				const snapshotAdmins = [];
+
+				for (const p of chatParticipants) {
+					if (!p) continue;
+					const jid = p.phoneNumber
+						? `${String(p.phoneNumber).replace(/\D/g, "")}@s.whatsapp.net`
+						: p.id?._serialized ||
+							(typeof p.id === "string" ? p.id : typeof p === "string" ? p : null);
+					if (!jid) continue;
+
+					snapshotMembers.push(jid);
+					if (p.isAdmin || p.isSuperAdmin) {
+						snapshotAdmins.push(jid);
+					}
+				}
+
+				if (snapshotMembers.length > 0) {
+					group.members = snapshotMembers;
+					group.admins = snapshotAdmins;
+				}
+
+				const members = (chatParticipants || [])
 					.filter((p) => p && p.id)
-					.map((p) => p.id._serialized);
+					.map((p) => p.id._serialized || p.id);
 				const stringifiedData = JSON.stringify(data);
 
 				for (const pendingJoin of pendingJoins) {
@@ -2456,6 +2492,12 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						const durationMs =
 							currentPeriod?.duration ??
 							(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
+						const isLessThan24Hours =
+							durationMs !== null
+								? durationMs < 24 * 60 * 60 * 1000
+								: group.date
+									? Date.now() - group.date < 24 * 60 * 60 * 1000
+									: false;
 						const isLessThan7Days =
 							durationMs !== null
 								? durationMs < 7 * 24 * 60 * 60 * 1000
@@ -2469,11 +2511,19 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						const isRemovedBySelf =
 							cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
 						const isRemoverSuperAdmin = removerId ? this.adminUtils.isSuperAdmin(removerId) : false;
+						const isAmigavel = !!(group.removidoAmigavel || group.saidaAmigavel);
 
 						let isRemoverDonator = false;
-						if (isLessThan7Days && cleanRemoverPhone && !isRemovedBySelf && !isRemoverSuperAdmin) {
+						let donations = [];
+						if (
+							isLessThan7Days &&
+							cleanRemoverPhone &&
+							!isRemovedBySelf &&
+							!isRemoverSuperAdmin &&
+							!isAmigavel
+						) {
 							try {
-								const donations = await this.database.getDonations();
+								donations = (await this.database.getDonations()) || [];
 								if (donations && donations.length > 0) {
 									isRemoverDonator = donations.some((donation) => {
 										if (donation.numero) {
@@ -2493,16 +2543,38 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							}
 						}
 
+						const isDonorNumber = (phone) => {
+							if (!phone || !donations || donations.length === 0) return false;
+							const clean = String(phone).replace(/\D/g, "");
+							return donations.some((donation) => {
+								if (donation.numero) {
+									const cleanDonor = donation.numero.replace(/\D/g, "");
+									if (cleanDonor.length > 10) {
+										return cleanDonor.includes(clean) || clean.includes(cleanDonor);
+									}
+								}
+								return false;
+							});
+						};
+
+						const botNumbers = [
+							botCleanPhone,
+							bot.id ? String(bot.id).replace(/\D/g, "") : null,
+							bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : null,
+							bot.myLid ? String(bot.myLid).replace(/\D/g, "") : null
+						].filter(Boolean);
+
 						if (
 							isNormalBot &&
 							isLessThan7Days &&
 							cleanRemoverPhone &&
 							!isRemovedBySelf &&
 							!isRemoverSuperAdmin &&
-							!isRemoverDonator
+							!isRemoverDonator &&
+							!isAmigavel
 						) {
 							this.logger.info(
-								`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+								`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms, <24h: ${isLessThan24Hours}) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
 							);
 
 							// 1. Busca código de convite e autor do convite
@@ -2532,46 +2604,122 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 							const blockLogParts = [];
 
-							// 2. Executa block no convite
-							if (cleanInviterPhone || inviteCode) {
-								const inviteArgs = [];
-								if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
-								if (inviteCode) inviteArgs.push(inviteCode);
+							if (isLessThan24Hours) {
+								// Nova punição (< 24 horas): Block geral (sa-block) em quem convidou, quem removeu e todos os admins do grupo
+								const targetNumbersSet = new Set();
+								if (cleanRemoverPhone) targetNumbersSet.add(cleanRemoverPhone);
+								if (cleanInviterPhone) targetNumbersSet.add(cleanInviterPhone);
 
-								const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
-								try {
-									const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
-										bot,
-										{ group: groupId, author: cleanInviterPhone, isSystem: true },
-										inviteArgs
-									);
-									if (inviteBlockRes && inviteBlockRes.content) {
-										blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+								let adminEntries = [];
+								if (Array.isArray(group.admins)) {
+									adminEntries = group.admins;
+								} else if (typeof group.admins === "string") {
+									try {
+										adminEntries = JSON.parse(group.admins);
+									} catch (e) {
+										adminEntries = [];
 									}
-								} catch (cmdErr) {
-									this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
 								}
-							}
 
-							// 3. Executa block em quem removeu
-							if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
-								const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
-								try {
-									const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
-										bot,
-										{ group: groupId, author: cleanRemoverPhone, isSystem: true },
-										[cleanRemoverPhone]
-									);
-									if (removerBlockRes && removerBlockRes.content) {
-										blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
+								for (const adminEntry of adminEntries) {
+									if (!adminEntry) continue;
+									const adminClean = String(adminEntry).replace(/\D/g, "").split("@")[0];
+									if (adminClean && adminClean.length >= 8) {
+										targetNumbersSet.add(adminClean);
 									}
-								} catch (cmdErr) {
-									this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
 								}
-							}
 
-							if (blockLogParts.length > 0) {
-								blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
+								const filteredTargets = Array.from(targetNumbersSet).filter((num) => {
+									if (!num) return false;
+									if (botNumbers.includes(num)) return false;
+									if (this.adminUtils.isSuperAdmin(num)) return false;
+									if (isDonorNumber(num)) return false;
+									return true;
+								});
+
+								if (filteredTargets.length > 0) {
+									const blockCmd = `!sa-blockList ${filteredTargets.join(", ")}`;
+									try {
+										const blockRes = await this.commandHandler.superAdmin.blockList(
+											bot,
+											{ group: groupId, author: cleanRemoverPhone || "system", isSystem: true },
+											[filteredTargets.join(", ")]
+										);
+										if (blockRes && blockRes.content) {
+											blockLogParts.push(`> *${blockCmd}*\n${blockRes.content}`);
+										}
+									} catch (cmdErr) {
+										this.logger.error("Erro ao rodar blockList (<24h):", cmdErr);
+									}
+								}
+
+								// Invalida convites do grupo e do convidador
+								if (cleanInviterPhone || inviteCode) {
+									const inviteArgs = [];
+									if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+									if (inviteCode) inviteArgs.push(inviteCode);
+
+									const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
+									try {
+										const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+											bot,
+											{ group: groupId, author: cleanInviterPhone, isSystem: true },
+											inviteArgs
+										);
+										if (inviteBlockRes && inviteBlockRes.content) {
+											blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+										}
+									} catch (cmdErr) {
+										this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+									}
+								}
+
+								if (blockLogParts.length > 0) {
+									blockLogsText = `\n\n🛡️ *Bloqueio GERAL (< 24h & não doador - Admins + Remover + Inviter):*\n${blockLogParts.join("\n\n")}`;
+								}
+							} else {
+								// Punição padrão (24h a 7 dias): Apenas bloqueio de invites
+								// 2. Executa block no convite
+								if (cleanInviterPhone || inviteCode) {
+									const inviteArgs = [];
+									if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+									if (inviteCode) inviteArgs.push(inviteCode);
+
+									const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
+									try {
+										const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+											bot,
+											{ group: groupId, author: cleanInviterPhone, isSystem: true },
+											inviteArgs
+										);
+										if (inviteBlockRes && inviteBlockRes.content) {
+											blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+										}
+									} catch (cmdErr) {
+										this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+									}
+								}
+
+								// 3. Executa block em quem removeu
+								if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
+									const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
+									try {
+										const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
+											bot,
+											{ group: groupId, author: cleanRemoverPhone, isSystem: true },
+											[cleanRemoverPhone]
+										);
+										if (removerBlockRes && removerBlockRes.content) {
+											blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
+										}
+									} catch (cmdErr) {
+										this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
+									}
+								}
+
+								if (blockLogParts.length > 0) {
+									blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
+								}
 							}
 						} else if (
 							bot.comunitario &&
@@ -2579,7 +2727,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							cleanRemoverPhone &&
 							!isRemovedBySelf &&
 							!isRemoverSuperAdmin &&
-							!isRemoverDonator
+							!isRemoverDonator &&
+							!isAmigavel
 						) {
 							// Para ravenas comunitárias, não bloqueia automaticamente, mas monta os comandos
 							// para que o admin possa encaminhar diretamente para o bot
@@ -2610,17 +2759,38 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								? inviterId.replace(/\D/g, "").split("@")[0]
 								: null;
 
-							const targetNumbers = [];
-							if (cleanRemoverPhone && !this.adminUtils.isSuperAdmin(cleanRemoverPhone)) {
-								targetNumbers.push(cleanRemoverPhone);
+							const targetNumbersSet = new Set();
+							if (cleanRemoverPhone) targetNumbersSet.add(cleanRemoverPhone);
+							if (cleanInviterPhone) targetNumbersSet.add(cleanInviterPhone);
+
+							if (isLessThan24Hours) {
+								let adminEntries = [];
+								if (Array.isArray(group.admins)) {
+									adminEntries = group.admins;
+								} else if (typeof group.admins === "string") {
+									try {
+										adminEntries = JSON.parse(group.admins);
+									} catch (e) {
+										adminEntries = [];
+									}
+								}
+
+								for (const adminEntry of adminEntries) {
+									if (!adminEntry) continue;
+									const adminClean = String(adminEntry).replace(/\D/g, "").split("@")[0];
+									if (adminClean && adminClean.length >= 8) {
+										targetNumbersSet.add(adminClean);
+									}
+								}
 							}
-							if (
-								cleanInviterPhone &&
-								cleanInviterPhone !== cleanRemoverPhone &&
-								!this.adminUtils.isSuperAdmin(cleanInviterPhone)
-							) {
-								targetNumbers.push(cleanInviterPhone);
-							}
+
+							const targetNumbers = Array.from(targetNumbersSet).filter(
+								(num) =>
+									num &&
+									!botNumbers.includes(num) &&
+									!this.adminUtils.isSuperAdmin(num) &&
+									!isDonorNumber(num)
+							);
 
 							const commands = [];
 							if (targetNumbers.length === 1) {

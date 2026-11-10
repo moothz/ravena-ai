@@ -104,6 +104,8 @@ const GroupMapper = {
 			banirSpammers: !!row.banir_spammers,
 			spammerWhitelist: parse(row.spammer_whitelist, []),
 			bannedUsers: parse(row.banned_users, parse(row.json_data, {}).bannedUsers || []),
+			members: parse(row.members, parse(row.json_data, {}).members || []),
+			admins: parse(row.admins, parse(row.json_data, {}).admins || []),
 			removidoAmigavel: !!parse(row.json_data, {}).removidoAmigavel,
 			saidaAmigavel: parse(row.json_data, {}).saidaAmigavel ?? null,
 			createdAt: row.created_at ?? Date.now(),
@@ -183,6 +185,8 @@ const GroupMapper = {
 			banir_spammers: obj.banirSpammers ? 1 : 0,
 			spammer_whitelist: s(obj.spammerWhitelist || obj.allowedSpammers || []),
 			banned_users: s(obj.bannedUsers || []),
+			members: s(obj.members || []),
+			admins: s(obj.admins || []),
 			created_at: obj.createdAt ?? Date.now(),
 			updated_at: Date.now()
 		};
