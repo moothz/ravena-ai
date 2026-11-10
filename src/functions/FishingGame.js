@@ -2444,7 +2444,7 @@ async function processLegendaryFishCatch({
 		}
 	}
 
-	if (bot.grupoAvisos) {
+	if (bot.grupoAvisos && !String(bot.grupoAvisos).includes("newsletter")) {
 		notificacaoPeixeRaro.chatId = bot.grupoAvisos;
 		const msgsEnviadas = await bot.sendReturnMessages(notificacaoPeixeRaro);
 		if (msgsEnviadas[0] && msgsEnviadas[0].pin) msgsEnviadas[0].pin(260000);

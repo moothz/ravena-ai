@@ -634,7 +634,7 @@ class BotAPI {
 			}
 		}
 
-		if (bot.grupoAvisos) {
+		if (bot.grupoAvisos && !String(bot.grupoAvisos).includes("newsletter")) {
 			try {
 				await bot.sendMessage(bot.grupoAvisos, message, { marcarTodos: true });
 			} catch (error) {
@@ -690,30 +690,62 @@ class BotAPI {
 				return;
 			}
 
-			if (bot.grupoLogs) {
+			const logsChat = bot.grupoLogs || process.env.GRUPO_LOGS;
+			const anunciosChat = bot.grupoAnuncios || process.env.GRUPO_ANUNCIOS;
+			const avisosChat = bot.grupoAvisos || process.env.GRUPO_AVISOS;
+			const interacaoChat = bot.grupoInteracao || process.env.GRUPO_INTERACAO;
+
+			if (logsChat) {
 				try {
-					await bot.sendMessage(bot.grupoLogs, donationMsg, { marcarTodos: true });
+					await bot.sendMessage(logsChat, donationMsg, { marcarTodos: true });
 				} catch (error) {
 					this.logger.error(
-						`Erro ao enviar notificação de doação para grupoLogs (${bot.grupoLogs}):`,
+						`Erro ao enviar notificação de doação para grupoLogs (${logsChat}):`,
 						error
 					);
 				}
 			}
 
-			if (bot.grupoAnuncios && !ignorar) {
+			if (anunciosChat && !ignorar) {
 				try {
-					await bot.sendMessage(bot.grupoAnuncios, donationMsg, { marcarTodos: true });
+					await bot.sendMessage(anunciosChat, donationMsg, { marcarTodos: true });
 				} catch (e) {
 					this.logger.error(
-						`Erro ao enviar notificação de doação para grupoAnuncios (${bot.grupoAnuncios})`
+						`Erro ao enviar notificação de doação para grupoAnuncios (${anunciosChat})`
 					);
 				}
 			}
 
-			if (bot.grupoAvisos && !ignorar) {
+			if (avisosChat && !ignorar) {
 				try {
-					const sentMsg = await bot.sendMessage(bot.grupoAvisos, donationMsg, {
+					const isNewsletter =
+						String(avisosChat).endsWith("@newsletter") || String(avisosChat).includes("newsletter");
+					const sentMsg = await bot.sendMessage(
+						avisosChat,
+						donationMsg,
+						isNewsletter ? {} : { marcarTodos: true }
+					);
+
+					if (!isNewsletter) {
+						try {
+							if (sentMsg && sentMsg.pin) {
+								await sentMsg.pin(pinDuration);
+							}
+						} catch (pinError) {
+							this.logger.error("Erro ao fixar mensagem no grupoAvisos:", pinError);
+						}
+					}
+				} catch (error) {
+					this.logger.error(
+						`Erro ao enviar notificação de doação para grupoAvisos (${avisosChat}):`,
+						error
+					);
+				}
+			}
+
+			if (interacaoChat && !ignorar) {
+				try {
+					const sentMsg = await bot.sendMessage(interacaoChat, donationMsg, {
 						marcarTodos: true
 					});
 
@@ -722,34 +754,13 @@ class BotAPI {
 							await sentMsg.pin(pinDuration);
 						}
 					} catch (pinError) {
-						this.logger.error("Erro ao fixar mensagem no grupoAvisos:", pinError);
+						this.logger.error("Erro ao fixar mensagem no grupoInteracao:", pinError);
 					}
 				} catch (error) {
 					this.logger.error(
-						`Erro ao enviar notificação de doação para grupoAvisos (${bot.grupoAvisos}):`,
+						`Erro ao enviar notificação de doação para grupoInteracao (${interacaoChat}):`,
 						error
 					);
-				}
-
-				if (bot.grupoInteracao && !ignorar) {
-					try {
-						const sentMsg = await bot.sendMessage(bot.grupoInteracao, donationMsg, {
-							marcarTodos: true
-						});
-
-						try {
-							if (sentMsg && sentMsg.pin) {
-								await sentMsg.pin(pinDuration);
-							}
-						} catch (pinError) {
-							this.logger.error("Erro ao fixar mensagem no grupoInteracao:", pinError);
-						}
-					} catch (error) {
-						this.logger.error(
-							`Erro ao enviar notificação de doação para grupoInteracao (${bot.grupoInteracao}):`,
-							error
-						);
-					}
 				}
 			}
 		} catch (error) {

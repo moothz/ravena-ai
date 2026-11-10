@@ -94,6 +94,24 @@ async function runTests() {
 		assert.ok(targetChats.includes("avisos@g.us"), "Deve incluir avisos@g.us");
 		assert.ok(targetChats.includes("anuncios@g.us"), "Deve incluir anuncios@g.us");
 		assert.strictEqual(pinnedDuration, 260000, "Deve fixar a mensagem com a duração correta");
+
+		// Subteste: Se grupoAvisos for newsletter, deve filtrar e enviar apenas para grupoAnuncios
+		waBot.grupoAvisos = "120363425083483471@newsletter";
+		waBot.resetCapture();
+		const successNewsletterFilter = await broadcastToWhatsAppNoticeChannels({
+			content: { mimetype: "image/jpeg", data: "fake-jpg", isMessageMedia: true },
+			options: { caption: "🏆 Pesca Lendária!" },
+			botList: [waBot]
+		});
+		assert.strictEqual(successNewsletterFilter, true);
+		assert.strictEqual(
+			waBot.capturedMessages.length,
+			1,
+			"Deve enviar apenas para grupoAnuncios, filtrando a newsletter"
+		);
+		assert.strictEqual(waBot.capturedMessages[0].chatId, "anuncios@g.us");
+		waBot.grupoAvisos = "avisos@g.us";
+
 		console.log("✓ Broadcast para canais de avisos do WhatsApp validado.");
 	}
 

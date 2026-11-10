@@ -57,18 +57,27 @@ async function broadcastToWhatsAppNoticeChannels({
 		}
 
 		const targetChats = [];
-		if (waBot.grupoAvisos) targetChats.push(waBot.grupoAvisos);
 		if (waBot.grupoAnuncios) targetChats.push(waBot.grupoAnuncios);
+		if (waBot.grupoAvisos && !String(waBot.grupoAvisos).includes("newsletter")) {
+			targetChats.push(waBot.grupoAvisos);
+		}
 		if (targetChats.length === 0) {
-			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
-				targetChats.push(process.env.GRUPO_AVISOS.trim());
-			}
 			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
 				targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
 			}
+			if (
+				process.env.GRUPO_AVISOS &&
+				process.env.GRUPO_AVISOS.trim() &&
+				!process.env.GRUPO_AVISOS.includes("newsletter")
+			) {
+				targetChats.push(process.env.GRUPO_AVISOS.trim());
+			}
 		}
 
-		const uniqueChats = [...new Set(targetChats.filter(Boolean))];
+		// Canais de newsletter (@newsletter) são reservados exclusivamente para resumos semanais e doações
+		const uniqueChats = [...new Set(targetChats.filter(Boolean))].filter(
+			(chatId) => !String(chatId).endsWith("@newsletter") && !String(chatId).includes("newsletter")
+		);
 		if (uniqueChats.length === 0) {
 			logger.warn(
 				"[broadcastToWhatsAppNoticeChannels] Nenhum grupo de avisos/anúncios configurado no WhatsApp."

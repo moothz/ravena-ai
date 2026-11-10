@@ -9754,7 +9754,9 @@ async function notifySpecialMarriage(
 			targetChats.push(customChatId);
 		} else if (bot) {
 			if (bot.grupoAnuncios) targetChats.push(bot.grupoAnuncios);
-			if (bot.grupoAvisos) targetChats.push(bot.grupoAvisos);
+			if (bot.grupoAvisos && !String(bot.grupoAvisos).includes("newsletter")) {
+				targetChats.push(bot.grupoAvisos);
+			}
 			if (targetChats.length === 0 && bot.grupoLogs) {
 				targetChats.push(bot.grupoLogs);
 			}
@@ -9762,7 +9764,11 @@ async function notifySpecialMarriage(
 				if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
 					targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
 				}
-				if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+				if (
+					process.env.GRUPO_AVISOS &&
+					process.env.GRUPO_AVISOS.trim() &&
+					!process.env.GRUPO_AVISOS.includes("newsletter")
+				) {
 					targetChats.push(process.env.GRUPO_AVISOS.trim());
 				}
 			}
@@ -9770,12 +9776,21 @@ async function notifySpecialMarriage(
 			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
 				targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
 			}
-			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+			if (
+				process.env.GRUPO_AVISOS &&
+				process.env.GRUPO_AVISOS.trim() &&
+				!process.env.GRUPO_AVISOS.includes("newsletter")
+			) {
 				targetChats.push(process.env.GRUPO_AVISOS.trim());
 			}
 		}
 
-		if (targetChats.length === 0) {
+		// Filtra canais do tipo newsletter (exclusivos para resumos semanais e doações)
+		const validTargetChats = [...new Set(targetChats.filter(Boolean))].filter(
+			(chatId) => !String(chatId).endsWith("@newsletter") && !String(chatId).includes("newsletter")
+		);
+
+		if (validTargetChats.length === 0) {
 			logger.warn(
 				"[notifySpecialMarriage] Nenhum canal/grupo configurado (GRUPO_ANUNCIOS / GRUPO_AVISOS). Envio ignorado."
 			);
@@ -9839,7 +9854,7 @@ async function notifySpecialMarriage(
 
 		let sentAny = false;
 
-		for (const targetChat of targetChats) {
+		for (const targetChat of validTargetChats) {
 			try {
 				let retMsg;
 				if (imageBase64) {
@@ -9945,7 +9960,9 @@ async function notifySoulmateAchievement(
 			targetChats.push(customChatId);
 		} else if (bot) {
 			if (bot.grupoAnuncios) targetChats.push(bot.grupoAnuncios);
-			if (bot.grupoAvisos) targetChats.push(bot.grupoAvisos);
+			if (bot.grupoAvisos && !String(bot.grupoAvisos).includes("newsletter")) {
+				targetChats.push(bot.grupoAvisos);
+			}
 			if (targetChats.length === 0 && bot.grupoLogs) {
 				targetChats.push(bot.grupoLogs);
 			}
@@ -9953,7 +9970,11 @@ async function notifySoulmateAchievement(
 				if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
 					targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
 				}
-				if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+				if (
+					process.env.GRUPO_AVISOS &&
+					process.env.GRUPO_AVISOS.trim() &&
+					!process.env.GRUPO_AVISOS.includes("newsletter")
+				) {
 					targetChats.push(process.env.GRUPO_AVISOS.trim());
 				}
 			}
@@ -9961,12 +9982,21 @@ async function notifySoulmateAchievement(
 			if (process.env.GRUPO_ANUNCIOS && process.env.GRUPO_ANUNCIOS.trim()) {
 				targetChats.push(process.env.GRUPO_ANUNCIOS.trim());
 			}
-			if (process.env.GRUPO_AVISOS && process.env.GRUPO_AVISOS.trim()) {
+			if (
+				process.env.GRUPO_AVISOS &&
+				process.env.GRUPO_AVISOS.trim() &&
+				!process.env.GRUPO_AVISOS.includes("newsletter")
+			) {
 				targetChats.push(process.env.GRUPO_AVISOS.trim());
 			}
 		}
 
-		if (targetChats.length === 0) {
+		// Filtra canais do tipo newsletter (exclusivos para resumos semanais e doações)
+		const validTargetChats = [...new Set(targetChats.filter(Boolean))].filter(
+			(chatId) => !String(chatId).endsWith("@newsletter") && !String(chatId).includes("newsletter")
+		);
+
+		if (validTargetChats.length === 0) {
 			logger.warn(
 				"[notifySoulmateAchievement] Nenhum canal/grupo configurado (GRUPO_ANUNCIOS / GRUPO_AVISOS). Envio ignorado."
 			);
@@ -10044,7 +10074,7 @@ async function notifySoulmateAchievement(
 
 		let sentAny = false;
 
-		for (const targetChat of targetChats) {
+		for (const targetChat of validTargetChats) {
 			try {
 				let retMsg;
 				if (imageBase64) {

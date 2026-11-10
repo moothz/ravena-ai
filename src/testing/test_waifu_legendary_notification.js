@@ -150,6 +150,41 @@ async function runTests() {
 	// Restaura mock
 	WaifuCommands.downloadImageAsBase64 = origDownload;
 
+	// 5. Teste de isolamento de Newsletter: casamento lendário NUNCA deve ser enviado para canais @newsletter
+	console.log("\n--- 5. Testando isolamento de Newsletter para casamentos lendários ---");
+	const newsletterBot = new FakeBot({
+		id: "newsletter-test-bot",
+		grupoAvisos: "120363425083483471@newsletter",
+		grupoAnuncios: "120363424275235658@g.us",
+		grupoLogs: "logs@g.us"
+	});
+
+	const resNewsletterIsolation = await notifySpecialMarriage(
+		newsletterBot,
+		legendaryChar,
+		"TestPlayer",
+		"10/11/2026",
+		null,
+		customMedia
+	);
+
+	assert.ok(resNewsletterIsolation, "notifySpecialMarriage deve enviar para os canais válidos");
+	assert.strictEqual(
+		newsletterBot.capturedMessages.length,
+		1,
+		"Deve enviar apenas para grupoAnuncios, filtrando a newsletter"
+	);
+	assert.strictEqual(
+		newsletterBot.capturedMessages[0].chatId,
+		"120363424275235658@g.us",
+		"Destino deve ser o grupo de anúncios e não a newsletter"
+	);
+	assert.ok(
+		!newsletterBot.capturedMessages.some((m) => m.chatId.includes("newsletter")),
+		"NENHUMA mensagem de casamento deve ter ido para a newsletter"
+	);
+	console.log("✓ 5. Isolamento de Newsletter validado com sucesso (apenas grupoAnuncios recebeu)!");
+
 	console.log("--- ALL TESTS PASSED SUCCESSFULLY! ---");
 	process.exit(0);
 }
