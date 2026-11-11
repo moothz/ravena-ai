@@ -7,6 +7,10 @@ const Database = require("../utils/Database");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const {
+	editInteractiveMenuMessage,
+	getMenuCommandPrefix
+} = require("../utils/InteractiveButtonsHelper");
+const {
 	COMMAND_ORDER,
 	CATEGORY_EMOJIS,
 	CATEGORY_DESCRIPTIONS,
@@ -1338,9 +1342,9 @@ const helper = {
 };
 
 /**
- * Trata callbacks de navegação interativa no menu para o TelegramBot
- * @param {Object} bot - Instância do bot Telegram
- * @param {Object} callbackQuery - Objeto callback_query da API do Telegram
+ * Trata callbacks de navegação interativa no menu (TelegramBot e DiscordBot)
+ * @param {Object} bot - Instância do bot Telegram ou Discord
+ * @param {Object} callbackQuery - callback_query do Telegram (ou adaptador equivalente do Discord)
  * @param {string} category - Categoria solicitada ou 'root'
  * @param {number} page - Página atual
  */
@@ -1348,9 +1352,6 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 	try {
 		const message = callbackQuery.message;
 		if (!message || !message.chat) return;
-
-		const chatId = message.chat.id;
-		const messageId = message.message_id;
 
 		if (category === "root") {
 			const header = await readMenuHeader();
@@ -1401,27 +1402,19 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 				]);
 			}
 
-			const formattedText =
-				typeof bot._formatMessage === "function" ? bot._formatMessage(menuText) : menuText;
-			const inlineKeyboard =
-				typeof bot._buildInlineKeyboard === "function"
-					? bot._buildInlineKeyboard(categoryButtons)
-					: [];
-
-			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
-				parse_mode: "HTML",
-				reply_markup: { inline_keyboard: inlineKeyboard }
-			});
+			await editInteractiveMenuMessage(bot, callbackQuery, menuText, categoryButtons);
 			return;
 		}
 
 		if (category === "gerenciamento" || category === "g") {
 			const managementCommands = bot.eventHandler.commandHandler.management.getManagementCommands();
-			const prefix = "/";
+			const prefix = getMenuCommandPrefix(bot, callbackQuery);
 			let text = "⚙️ *Comandos de Gerenciamento:*\n\n";
 			for (const cmdName of Object.keys(managementCommands).sort()) {
 				const cmdInfo = managementCommands[cmdName];
-				text += `• *${prefix}g_${cmdName.replace(/-/g, "_")}*: ${cmdInfo.description}\n`;
+				// Telegram usa underscores (/g_cmd); Discord usa o prefixo do grupo com hífens (!g-cmd)
+				const mgmtName = bot?.useDiscord ? `g-${cmdName}` : `g_${cmdName.replace(/-/g, "_")}`;
+				text += `• *${prefix}${mgmtName}*: ${cmdInfo.description}\n`;
 			}
 
 			const navButtons = [
@@ -1433,15 +1426,7 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 				]
 			];
 
-			const formattedText =
-				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
-			const inlineKeyboard =
-				typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
-
-			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
-				parse_mode: "HTML",
-				reply_markup: { inline_keyboard: inlineKeyboard }
-			});
+			await editInteractiveMenuMessage(bot, callbackQuery, text, navButtons);
 			return;
 		}
 
@@ -1473,7 +1458,7 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 		if (commandsInCategory.length === 0) {
 			categoryText += "Nenhum comando encontrado nesta categoria.\n";
 		} else {
-			const prefix = "/";
+			const prefix = getMenuCommandPrefix(bot, callbackQuery);
 			const groupedCommands = groupRelatedCommands(commandsInCategory);
 			const sortedGroups = sortCommands(groupedCommands);
 
@@ -1496,15 +1481,7 @@ async function handleMenuCallback(bot, callbackQuery, category, page = 0) {
 			]
 		];
 
-		const formattedText =
-			typeof bot._formatMessage === "function" ? bot._formatMessage(categoryText) : categoryText;
-		const inlineKeyboard =
-			typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
-
-		await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
-			parse_mode: "HTML",
-			reply_markup: { inline_keyboard: inlineKeyboard }
-		});
+		await editInteractiveMenuMessage(bot, callbackQuery, categoryText, navButtons);
 	} catch (err) {
 		if (bot.logger && typeof bot.logger.error === "function") {
 			bot.logger.error(`[handleMenuCallback] Erro ao editar menu: ${err.message}`, err);

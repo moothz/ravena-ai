@@ -14,6 +14,10 @@ const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 const Database = require("../utils/Database");
 const GameEventService = require("../services/GameEventService");
+const {
+	editInteractiveMenuMessage,
+	formatMenuCommand
+} = require("../utils/InteractiveButtonsHelper");
 
 const logger = new Logger("fazenda-commands");
 const jardimClient = new ShadowGardenClient();
@@ -3146,9 +3150,9 @@ const FAZENDA_CATEGORY_DETAILS = {
 };
 
 /**
- * Trata callbacks de navegação interativa no menu da Fazenda para o TelegramBot
- * @param {Object} bot - Instância do bot Telegram
- * @param {Object} callbackQuery - Objeto callback_query da API do Telegram
+ * Trata callbacks de navegação interativa no menu da Fazenda (TelegramBot e DiscordBot)
+ * @param {Object} bot - Instância do bot Telegram ou Discord
+ * @param {Object} callbackQuery - callback_query do Telegram (ou adaptador equivalente do Discord)
  * @param {string} category - Categoria solicitada ou 'root'
  * @param {number} [page=0] - Página atual
  */
@@ -3157,34 +3161,25 @@ async function handleFazendaMenuCallback(bot, callbackQuery, category, page = 0)
 		const message = callbackQuery.message;
 		if (!message || !message.chat) return;
 
-		const chatId = message.chat.id;
-		const messageId = message.message_id;
-
 		if (category === "root") {
 			const text =
 				`📋 *NAVEGADOR DE COMANDOS DO JARDIM DAS SOMBRAS*\n\n` +
 				`Toque em uma categoria abaixo para ver os comandos e explicações detalhadas:`;
-			const inlineKeyboard =
-				typeof bot._buildInlineKeyboard === "function"
-					? bot._buildInlineKeyboard(FAZENDA_CATEGORY_BUTTONS)
-					: [];
-			const formattedText =
-				typeof bot._formatMessage === "function" ? bot._formatMessage(text) : text;
-
-			await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
-				parse_mode: "HTML",
-				reply_markup: { inline_keyboard: inlineKeyboard }
-			});
+			await editInteractiveMenuMessage(bot, callbackQuery, text, FAZENDA_CATEGORY_BUTTONS);
 			return;
 		}
 
 		const catInfo = FAZENDA_CATEGORY_DETAILS[category];
 		if (!catInfo) return;
 
+		// Comandos são escritos no estilo Telegram (/faz_loja); no Discord exibe com o prefixo do grupo (!faz-loja)
+		const fmtCmd = (cmd) => formatMenuCommand(bot, cmd, callbackQuery);
 		let catText = `*${catInfo.title}*\n\n${catInfo.description}\n\n`;
 		for (const c of catInfo.commands) {
-			const aliasStr = c.aliases?.length ? ` (aliases: \`${c.aliases.join("`, `")}\`)` : "";
-			catText += `• \`${c.cmd}\`${aliasStr} — ${c.desc}\n`;
+			const aliasStr = c.aliases?.length
+				? ` (aliases: \`${c.aliases.map(fmtCmd).join("`, `")}\`)`
+				: "";
+			catText += `• \`${fmtCmd(c.cmd)}\`${aliasStr} — ${c.desc}\n`;
 		}
 
 		const navButtons = [
@@ -3196,15 +3191,7 @@ async function handleFazendaMenuCallback(bot, callbackQuery, category, page = 0)
 			]
 		];
 
-		const inlineKeyboard =
-			typeof bot._buildInlineKeyboard === "function" ? bot._buildInlineKeyboard(navButtons) : [];
-		const formattedText =
-			typeof bot._formatMessage === "function" ? bot._formatMessage(catText) : catText;
-
-		await bot.apiClient.editMessageText(chatId, messageId, formattedText, {
-			parse_mode: "HTML",
-			reply_markup: { inline_keyboard: inlineKeyboard }
-		});
+		await editInteractiveMenuMessage(bot, callbackQuery, catText, navButtons);
 	} catch (err) {
 		if (bot?.logger?.error) {
 			bot.logger.error(`[handleFazendaMenuCallback] Erro: ${err.message}`, err);

@@ -19,6 +19,7 @@ const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const AccountLinkService = require("./services/AccountLinkService");
 const TelegramMarkupHelper = require("./utils/TelegramMarkupHelper");
+const { generateAutomaticButtons } = require("./utils/InteractiveButtonsHelper");
 const { promisify } = require("util");
 
 // Utils
@@ -1251,88 +1252,12 @@ class WhatsAppBotTelegram {
 
 	/**
 	 * Gera botões automáticos para mensagens conhecidas (como rolls de waifus).
+	 * A lógica é compartilhada com o DiscordBot via InteractiveButtonsHelper.
 	 * @param {Object} options - Opções do ReturnMessage.
 	 * @returns {Array<Array<Object>>|null}
 	 */
 	_generateAutomaticButtons(options) {
-		if (!options) return null;
-
-		// 1. Multi-roll de Waifus (options.waifuRolls)
-		if (Array.isArray(options.waifuRolls) && options.waifuRolls.length > 0) {
-			const availableSlots = options.waifuRolls.filter((s) => {
-				if (!s) return false;
-				const hasOwner = Boolean(
-					s.owner && (typeof s.owner === "string" || s.owner.name || s.owner.id)
-				);
-				const isMarried = Boolean(s.isMarried || s.character?.isMarried || hasOwner);
-				const isAvailable = s.available !== false && Boolean(s.available);
-				const isClaimed = Boolean(s.claimed);
-				const isInstantMarriage = Boolean(s.instantMarriage);
-				const isOwner = Boolean(s.isOwner);
-
-				return (
-					isAvailable && !isMarried && !hasOwner && !isOwner && !isClaimed && !isInstantMarriage
-				);
-			});
-			if (availableSlots.length > 0) {
-				const buttons = availableSlots.map((s) => ({
-					text: `💍 ${s.slot}`,
-					action: { type: "command", value: `/mu-casar ${s.characterId}` }
-				}));
-
-				const len = buttons.length;
-				if (len <= 4) {
-					return [buttons];
-				}
-				if (len === 5) {
-					return [buttons.slice(0, 3), buttons.slice(3, 5)];
-				}
-				if (len === 6) {
-					return [buttons.slice(0, 3), buttons.slice(3, 6)];
-				}
-				if (len === 7) {
-					return [buttons.slice(0, 4), buttons.slice(4, 7)];
-				}
-				if (len === 8) {
-					return [buttons.slice(0, 4), buttons.slice(4, 8)];
-				}
-				if (len === 9) {
-					return [buttons.slice(0, 3), buttons.slice(3, 6), buttons.slice(6, 9)];
-				}
-
-				const rows = [];
-				for (let i = 0; i < len; i += 3) {
-					rows.push(buttons.slice(i, i + 3));
-				}
-				return rows;
-			}
-		}
-
-		// 2. Single roll de Waifu (options.waifuCharacterId e opções de disponibilidade)
-		if (options.waifuCharacterId) {
-			const hasOwner = Boolean(
-				options.waifuOwner &&
-				(typeof options.waifuOwner === "string" || options.waifuOwner.name || options.waifuOwner.id)
-			);
-			const isMarried = Boolean(options.waifuIsMarried || hasOwner);
-			const isAvailable = options.waifuAvailable !== false && Boolean(options.waifuAvailable);
-			const isClaimed = Boolean(options.waifuClaimed);
-			const isInstantMarriage = Boolean(options.waifuInstantMarriage);
-			const isOwner = Boolean(options.waifuIsOwner);
-
-			if (isAvailable && !isMarried && !hasOwner && !isOwner && !isClaimed && !isInstantMarriage) {
-				return [
-					[
-						{
-							text: "💍 Casar",
-							action: { type: "command", value: `/mu-casar ${options.waifuCharacterId}` }
-						}
-					]
-				];
-			}
-		}
-
-		return null;
+		return generateAutomaticButtons(options);
 	}
 
 	splitContent(text = "", maxLength = 4000) {
