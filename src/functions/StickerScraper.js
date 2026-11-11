@@ -2155,14 +2155,10 @@ async function removerFigCommand(bot, message, args = [], group = null, superAdm
 		message.group ?? (message.originReaction ? message.originReaction.senderId : message.author);
 
 	try {
-		// 1. Verificação de permissões de SuperAdmin / ComuAdmin
+		// 1. Verificação de permissões de SuperAdmin
 		let isAuthorized = false;
 		if (superAdminContext && typeof superAdminContext.isSuperAdmin === "function") {
-			isAuthorized =
-				superAdminContext.isSuperAdmin(authorId) ||
-				(superAdminContext.adminUtils &&
-					typeof superAdminContext.adminUtils.isComuAdmin === "function" &&
-					superAdminContext.adminUtils.isComuAdmin(authorId, bot));
+			isAuthorized = superAdminContext.isSuperAdmin(authorId);
 		}
 		if (!isAuthorized && bot?.eventHandler?.commandHandler?.superAdmin) {
 			const sa = bot.eventHandler.commandHandler.superAdmin;
@@ -2175,10 +2171,7 @@ async function removerFigCommand(bot, message, args = [], group = null, superAdm
 		}
 		if (!isAuthorized) {
 			const adminUtilsInstance = AdminUtils.getInstance();
-			if (
-				adminUtilsInstance.isSuperAdmin(authorId) ||
-				adminUtilsInstance.isComuAdmin(authorId, bot)
-			) {
+			if (adminUtilsInstance.isSuperAdmin(authorId)) {
 				isAuthorized = true;
 			}
 		}

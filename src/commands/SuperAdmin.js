@@ -32,6 +32,11 @@ class SuperAdmin {
 		this.commandMap = {
 			evento: { method: "manageGameEvent", description: "Cria ou cancela evento temporário" },
 			eventos: { method: "listGameEvents", description: "Lista eventos temporários ativos" },
+			comu: {
+				method: "comuHelp",
+				description:
+					"Lista comandos de SuperAdmin permitidos para responsáveis de bots comunitários"
+			},
 			instantaneo: {
 				method: "instantGameEvent",
 				description: "Distribui evento instantâneo (recompensas) para a comunidade"
@@ -390,7 +395,7 @@ class SuperAdmin {
 	async listGameEvents(bot, message) {
 		const chatId = message.group ?? message.author;
 		try {
-			if (!this.isSuperAdmin(message.author) && !this.adminUtils.isComuAdmin(message.author, bot)) {
+			if (!this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas administradores podem usar este comando."
@@ -1788,11 +1793,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -1883,11 +1884,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2104,11 +2101,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2389,11 +2382,7 @@ Break down the cost by category and provide a total estimated cost.`;
 		const chatId = message.group ?? message.author;
 
 		// Verifica se o usuário é um super admin
-		if (
-			!message.isSystem &&
-			!this.isSuperAdmin(message.author) &&
-			!this.isComuAdmin(bot, message.author)
-		) {
+		if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 			return new ReturnMessage({
 				chatId,
 				content: "⛔ Apenas super administradores podem usar este comando."
@@ -2495,7 +2484,7 @@ Break down the cost by category and provide a total estimated cost.`;
 		const chatId = message.group ?? message.author;
 
 		// Verifica se o usuário é um super admin
-		if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+		if (!this.isSuperAdmin(message.author)) {
 			return new ReturnMessage({
 				chatId,
 				content: "⛔ Apenas super administradores podem usar este comando."
@@ -2534,11 +2523,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2663,11 +2648,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -2989,11 +2970,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3167,11 +3144,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3307,11 +3280,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3525,11 +3494,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -3721,11 +3686,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4205,11 +4166,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4385,11 +4342,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -4487,11 +4440,7 @@ Break down the cost by category and provide a total estimated cost.`;
 			const chatId = message.group ?? message.author;
 
 			// Verifica se o usuário é um super admin
-			if (
-				!message.isSystem &&
-				!this.isSuperAdmin(message.author) &&
-				!this.isComuAdmin(bot, message.author)
-			) {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "⛔ Apenas super administradores podem usar este comando."
@@ -6264,6 +6213,12 @@ Retorne no formato JSON rigoroso:
 	 */
 	async streamsRate(bot, message, args) {
 		const chatId = message.group || message.author;
+		if (!this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
 
 		const StreamSystem = require("../StreamSystem");
 		const streamSystem = StreamSystem.getInstance();
@@ -6336,6 +6291,13 @@ Retorne no formato JSON rigoroso:
 	 * @returns {Promise<ReturnMessage>}
 	 */
 	async removerFig(bot, message, args, group) {
+		const chatId = message.group ?? message.author;
+		if (!this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
 		const StickerScraper = require("../functions/StickerScraper");
 		return await StickerScraper.removerFigCommand(bot, message, args, group, this);
 	}
@@ -6358,7 +6320,7 @@ Retorne no formato JSON rigoroso:
 		const chatId = message.group ?? message.author;
 
 		try {
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (!this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
@@ -6460,7 +6422,7 @@ Retorne no formato JSON rigoroso:
 		const chatId = message.group ?? message.author;
 
 		try {
-			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+			if (!this.isSuperAdmin(message.author)) {
 				return new ReturnMessage({
 					chatId,
 					content: "❌ Este comando é exclusivo para SuperAdministradores do sistema."
@@ -6626,6 +6588,12 @@ Retorne no formato JSON rigoroso:
 	 */
 	async handleResumoSemanal(bot, message, args, group) {
 		const targetChat = message.group || message.author;
+		if (!this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId: targetChat,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
 		const action = (args[0] || "").toLowerCase().trim();
 
 		try {
@@ -6852,6 +6820,90 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: `❌ *Erro ao processar comando de análise de report:* ${error.message}`
+			});
+		}
+	}
+
+	/**
+	 * Lista comandos de SuperAdmin permitidos para o responsável do bot comunitário (ComuAdmin)
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array<string>} args
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async comuHelp(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author) && !this.isComuAdmin(bot, message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"⛔ Apenas super administradores ou responsáveis pelo bot podem usar este comando."
+				});
+			}
+
+			let helpText = `👑 *COMANDOS SUPERADMIN PARA RESPONSÁVEIS (ComuAdmin)* 👑\n\n`;
+			helpText += `Estes são os comandos administrativos (\`!sa-\`) disponíveis para o número responsável deste bot:\n\n`;
+
+			helpText += `📋 *GERAL & AJUDA*\n`;
+			helpText += `• *!sa-comu*\n`;
+			helpText += `  └ Exibe esta lista de comandos permitidos e instruções de uso.\n\n`;
+
+			helpText += `🚪 *GESTÃO DE GRUPOS & CONVITES*\n`;
+			helpText += `• *!sa-joinGrupo <link>*\n`;
+			helpText += `  └ Entra em um grupo pelo link de convite do WhatsApp.\n`;
+			helpText += `  _Ex: !sa-joinGrupo https://chat.whatsapp.com/AbCdEf12345_\n\n`;
+
+			helpText += `• *!sa-joinGrupoSilencioso <link>*\n`;
+			helpText += `  └ Entra no grupo sem disparar mensagem de boas-vindas.\n`;
+			helpText += `  _Ex: !sa-joinGrupoSilencioso https://chat.whatsapp.com/AbCdEf12345_\n\n`;
+
+			helpText += `• *!sa-leaveGrupo [idGrupo]*\n`;
+			helpText += `  └ Faz o bot sair de um grupo (especifique o JID ou execute direto no grupo).\n`;
+			helpText += `  _Ex: !sa-leaveGrupo 1234567890@g.us_\n\n`;
+
+			helpText += `• *!sa-inviteInfo <link ou código>*\n`;
+			helpText += `  └ Mostra diagnóstico detalhado e status de um convite.\n`;
+			helpText += `  _Ex: !sa-inviteInfo AbCdEf12345_\n\n`;
+
+			helpText += `• *!sa-filaInvites*\n`;
+			helpText += `  └ Mostra os últimos grupos aceitos e a fila de convites pendentes com previsão (ETA).\n\n`;
+
+			helpText += `• *!sa-getGroupInfo <nomeCadastro>*\n`;
+			helpText += `  └ Consulta configurações e dados salvos de um grupo pelo nome cadastrado.\n`;
+			helpText += `  _Ex: !sa-getGroupInfo MeuGrupo_\n\n`;
+
+			helpText += `• *!sa-getMembros [idGrupo]*\n`;
+			helpText += `  └ Lista administradores e participantes comuns do grupo.\n`;
+			helpText += `  _Ex: !sa-getMembros_\n\n`;
+
+			helpText += `⚙️ *CONFIGURAÇÃO & OPERAÇÃO*\n`;
+			helpText += `• *!sa-stats*\n`;
+			helpText += `  └ Exibe status, uptime e estatísticas de grupos do bot.\n\n`;
+
+			helpText += `• *!sa-status <texto>*\n`;
+			helpText += `  └ Altera o recado/status do perfil do WhatsApp do bot.\n`;
+			helpText += `  _Ex: !sa-status Online 24h_\n\n`;
+
+			helpText += `• *!sa-privacidade*\n`;
+			helpText += `  └ Redefine as configurações padrão de privacidade da conta do WhatsApp.\n\n`;
+
+			helpText += `• *!sa-sendMsg <chatId> <mensagem>*\n`;
+			helpText += `  └ Envia mensagem administrativa para o chat ou grupo informado.\n`;
+			helpText += `  _Ex: !sa-sendMsg 1234567890@g.us Olá grupo_\n\n`;
+
+			helpText += `• *!sa-reagir [emoji] [citando mensagem]*\n`;
+			helpText += `  └ Reage à mensagem citada com um emoji (padrão: ✅).`;
+
+			return new ReturnMessage({
+				chatId,
+				content: helpText
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando comuHelp:", error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao gerar lista de comandos ComuAdmin."
 			});
 		}
 	}
