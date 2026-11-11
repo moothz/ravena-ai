@@ -125,6 +125,7 @@ const COMMAND_ORDER = [
 	"faz-plantar",
 	"faz-loja",
 	"faz-comprar",
+	"faz-carrinho",
 	"faz-inventario",
 	"faz-usar",
 	"faz-vender",

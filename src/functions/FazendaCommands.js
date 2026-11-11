@@ -1268,7 +1268,8 @@ async function handleFazLoja(bot, message) {
 			text += "\n";
 		}
 
-		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\``;
+		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\`\n`;
+		text += `🧺 *Carrinho:* salve suas compras diárias com \`!faz-carrinho add <item> [qtd]\` e compre tudo com \`!faz-comprar carrinho\``;
 
 		const extraOpts = {};
 		if (bot && bot.useTelegram) {
@@ -1302,6 +1303,11 @@ async function handleFazLoja(bot, message) {
 				}
 				if (consRow.length > 0) lojaButtons.push(consRow);
 			}
+
+			lojaButtons.push([
+				{ text: "➕ Adicionar ao Carrinho", action: "/faz-carrinho add" },
+				{ text: "🧺 Meu Carrinho", action: "/faz-carrinho" }
+			]);
 
 			if (lojaButtons.length > 0) {
 				extraOpts.telegram = { buttons: lojaButtons };
@@ -3058,6 +3064,16 @@ const FAZENDA_CATEGORY_DETAILS = {
 				desc: "Compra itens da loja com suas Petalitas."
 			},
 			{
+				cmd: "/faz_carrinho [add|rem|limpar] [item] [qtd]",
+				aliases: ["/faz_cart"],
+				desc: "Salva sua lista de compras diárias (sementes e elixires)."
+			},
+			{
+				cmd: "/faz_comprar carrinho",
+				aliases: ["/faz_carrinho comprar"],
+				desc: "Compra tudo o que estiver disponível no carrinho (limite diário e saldo)."
+			},
+			{
 				cmd: "/faz_inv",
 				aliases: ["/faz_inventario"],
 				desc: "Exibe sua mochila com sementes e bônus."
@@ -3115,6 +3131,8 @@ const FAZENDA_CATEGORY_DETAILS = {
 			{ cmd: "/faz_plantar <semente>", desc: "Semear nos canteiros" },
 			{ cmd: "/faz_loja", desc: "Ver loja de sementes e poções" },
 			{ cmd: "/faz_comprar <item>", desc: "Comprar na loja" },
+			{ cmd: "/faz_carrinho", desc: "Ver e editar o carrinho de compras" },
+			{ cmd: "/faz_comprar carrinho", desc: "Comprar tudo do carrinho" },
 			{ cmd: "/faz_inv", desc: "Ver mochila de itens" },
 			{ cmd: "/faz_usar <elixir>", desc: "Usar poções mágicas" },
 			{ cmd: "/faz_vender [tudo]", desc: "Vender colheitas por Petalitas" },
@@ -3226,6 +3244,7 @@ async function handleFazAjuda(bot, message) {
 	mechanicsText += `💰 *4. Economia & Loja*\n`;
 	mechanicsText += `• Resgate suas Petalitas diárias com a sacola do coveiro usando \`!fazenda\`.\n`;
 	mechanicsText += `• Compre sementes, elixires e decorações com \`!faz-loja\` e \`!faz-comprar\`.\n`;
+	mechanicsText += `• Monte um *carrinho* com suas compras diárias (\`!faz-carrinho add <item> [qtd]\`) e compre tudo de uma vez com \`!faz-comprar carrinho\` — ele nunca se esgota, só guarda sua lista!\n`;
 	mechanicsText += `• Veja sua mochila com \`!faz-inv\` e venda suas colheitas por Petalitas com \`!faz-vender\`.\n\n`;
 
 	mechanicsText += `🧪 *5. Elixires Mágicos*\n`;
@@ -3257,6 +3276,8 @@ async function handleFazAjuda(bot, message) {
 	commandsText += `• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n`;
 	commandsText += `• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n`;
 	commandsText += `• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n`;
+	commandsText += `• \`!faz-carrinho [add|rem|limpar] [item] [qtd]\` — Ver e editar seu carrinho de compras diárias\n`;
+	commandsText += `• \`!faz-comprar carrinho\` — Comprar tudo o que estiver disponível no carrinho\n`;
 	commandsText += `• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n`;
 	commandsText += `• \`!faz-usar <elixir> [canteiro]\` — Ativar poções mágicas\n`;
 	commandsText += `• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por Petalitas\n`;
