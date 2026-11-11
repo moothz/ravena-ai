@@ -824,8 +824,8 @@ async function sendCommandList(bot, message, args, group) {
 			}
 		}
 
-		// Para Telegram: menu interativo com botões de categoria e edição in-place
-		if (bot && bot.useTelegram) {
+		// Para Telegram/Discord: menu interativo com botões de categoria e edição in-place
+		if (bot && (bot.useTelegram || bot.useDiscord)) {
 			const header = await readMenuHeader();
 			const botDisplayName = bot?.nomeExibir || "Ravenabot";
 			let menuText = `🤖 *Comandos ${botDisplayName}*🐦‍⬛\n`;

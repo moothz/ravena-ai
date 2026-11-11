@@ -3237,7 +3237,7 @@ async function handleFazAjuda(bot, message) {
 	mechanicsText += `🧪 *5. Elixires Mágicos*\n`;
 	mechanicsText += `• Consuma elixires do inventário com \`!faz-usar <elixir>\` para acelerar o crescimento ou proteger contra o secamento.`;
 
-	if (bot && bot.useTelegram) {
+	if (bot && (bot.useTelegram || bot.useDiscord)) {
 		const navigatorText =
 			`📋 *NAVEGADOR DE COMANDOS DO JARDIM DAS SOMBRAS*\n\n` +
 			`Toque em uma categoria abaixo para ver os comandos e explicações detalhadas:`;

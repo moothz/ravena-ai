@@ -7020,8 +7020,8 @@ async function ajudaWaifus(bot, message) {
 	text += `❤️ *7. Curtidas (Likes)*\n`;
 	text += `• Dê like nos seus personagens favoritos com \`!mu-like <id>\` para aumentar a popularidade global deles.\n\n`;
 
-	// Se for no Telegram, divide em 2 mensagens: 1 com introdução/mecânicas e outra com o menu interativo de comandos
-	if (bot && bot.useTelegram) {
+	// Se for no Telegram/Discord, divide em 2 mensagens: 1 com introdução/mecânicas e outra com o menu interativo de comandos
+	if (bot && (bot.useTelegram || bot.useDiscord)) {
 		const navigatorText =
 			`📋 *NAVEGADOR DE COMANDOS DO WAIFULETES*\n\n` +
 			`Toque em uma categoria abaixo para ver a explicação e lista detalhada de comandos:`;
