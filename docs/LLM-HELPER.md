@@ -477,13 +477,13 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 **Tags:** `pesca,pescaria,peixe,iscas,game,ranking,inventario,rpg`
 
-**Detalhes Técnicos:** Sistema de probabilidades por bioma e horário, loja de equipamentos, buffs, persistência SQLite e comércio de peixes
+**Detalhes Técnicos:** Sistema de probabilidades por bioma e horário, loja de equipamentos, buffs, persistência SQLite e comércio de peixes. Tetos: inventário de até 500 slots e até 300 iscas (limite e iscas guardadas) — itens que passariam do teto viram Runas no RavenaBank. Lendários têm chance reduzida durante o mês e voltam à chance original nos últimos 5 dias.
 
 #### Comandos:
 - **`!pescar`**: Lança a linha na água para pescar peixes, itens ou tesouros
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pescar`
-- **`!pesca-rede [iscas]`**: Lança uma rede de pesca para capturar criaturas em lote gastando múltiplas iscas
+- **`!pesca-rede [iscas]`**: Lança uma rede de pesca para capturar criaturas em lote gastando múltiplas iscas (no máximo o tamanho do inventário)
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pesca-rede`, `!pesca-rede 10`
 - **`!pesca-iscas`**: Exibe seu inventário de iscas e opções de compra/coleta
@@ -498,7 +498,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!pesca-info`**: Mostra informações, guia de varas, iscas e biomas da pescaria
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pesca-info`
-- **`!pesca-lendas`**: Exibe o livro de peixes lendários capturados
+- **`!pesca-lendas`**: Exibe o livro de peixes lendários capturados, com chance atual e disponibilidade no mês
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!pesca-lendas`
 - **`!pesca-reset`**: Reseta os dados de pescaria do grupo (Apenas Administradores)

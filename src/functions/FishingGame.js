@@ -622,8 +622,165 @@ const DEFAULT_GLOBAL_FACTORS = {
 	buffChance: 1.0,
 	debuffChance: 0.8,
 	rareFishChance: 1.65,
+	// Redutor aplicado à chance dos lendários fora da "reta final" do mês (ver getLegendaryChanceFactor).
+	legendaryPaceFactor: 0.3,
 	weightFactor: 1.0
 };
+
+// --- RITMO MENSAL DOS LENDÁRIOS ---
+// Com a chance cheia (rareFishChance 1.65), o estoque mensal de lendários (21 unidades) se esgotava
+// por volta do dia 11. Modelando cada lendário como um processo de Poisson (taxa = chance × arremessos/dia),
+// isso equivale a ~20 mil arremessos/dia. Como o tempo de esgotamento escala com 1/chance, aplicar
+// o fator 0.3 leva a mediana de esgotamento para ~37 dias (P(acabar antes do dia 25) ≈ 24%), garantindo
+// que os lendários durem pelo menos ~25 dias na maioria dos meses. Nos últimos 5 dias do mês a chance
+// original volta a valer (boost) para que o estoque restante seja disputado antes da virada.
+const LEGENDARY_BOOST_DAYS = 5;
+
+function getDaysInMonth(date = new Date()) {
+	return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+/**
+ * Início (00:00) do período de boost dos lendários no mês da data informada.
+ */
+function getLegendaryBoostStart(date = new Date()) {
+	const firstBoostDay = getDaysInMonth(date) - LEGENDARY_BOOST_DAYS + 1;
+	return new Date(date.getFullYear(), date.getMonth(), firstBoostDay);
+}
+
+function isLegendaryBoostActive(date = new Date()) {
+	return date.getTime() >= getLegendaryBoostStart(date).getTime();
+}
+
+/**
+ * Fator multiplicativo efetivo aplicado à chance base de cada lendário.
+ * Fora do boost: rareFishChance × legendaryPaceFactor. Nos últimos 5 dias: rareFishChance (chance original).
+ */
+function getLegendaryChanceFactor(date = new Date()) {
+	const base = DEFAULT_GLOBAL_FACTORS.rareFishChance;
+	if (isLegendaryBoostActive(date)) return base;
+	const pace = Number(DEFAULT_GLOBAL_FACTORS.legendaryPaceFactor);
+	return base * (Number.isFinite(pace) && pace > 0 ? pace : 1);
+}
+
+/**
+ * Linha informativa sobre a fase atual da chance dos lendários (para !pesca-info / !pesca-lendas).
+ */
+function getLegendaryPhaseLine(date = new Date()) {
+	const boostStart = getLegendaryBoostStart(date);
+	const monthEnd = new Date(date.getFullYear(), date.getMonth(), getDaysInMonth(date));
+	const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+	if (isLegendaryBoostActive(date)) {
+		return `🔥 _Reta final do mês: chance dos lendários restaurada ao valor original até ${fmt(monthEnd)}!_`;
+	}
+	return `🌙 _Chance dos lendários reduzida até ${fmt(new Date(boostStart.getTime() - 1))}. De ${fmt(boostStart)} a ${fmt(monthEnd)} ela volta ao valor original!_`;
+}
+
+/**
+ * Formata a chance percentual de um lendário com o fator vigente (e multiplicador de evento).
+ */
+function formatLegendaryChance(fish, eventMult = 1) {
+	return formatTinyPercent(fish.chance * 100 * getLegendaryChanceFactor() * eventMult);
+}
+
+function formatTinyPercent(chancePct) {
+	return (
+		(chancePct < 0.001 ? chancePct.toFixed(6) : chancePct.toFixed(5))
+			.replace(/0+$/, "")
+			.replace(/\.$/, "") + "%"
+	);
+}
+
+/**
+ * Chance efetiva (em %) com que um lendário foi fisgado. getRandomFish já devolve `chance` com todos os
+ * fatores aplicados (ritmo do mês, buffs e eventos); para peixes sem esse dado usa a chance vigente.
+ */
+function getCaughtLegendaryChanceText(rareFish) {
+	if (typeof rareFish?.chance === "number" && rareFish.chance > 0) {
+		return formatTinyPercent(rareFish.chance * 100);
+	}
+	const def = RARE_FISH.find((f) => f.name === rareFish?.name);
+	return def ? formatLegendaryChance(def) : "?%";
+}
+
+// --- LIMITES ABSOLUTOS DE ITENS DE PESCA ---
+const INVENTORY_HARD_CAP = 500; // Capacidade máxima do inventário de peixes (base + itens de espaço)
+const BAITS_HARD_CAP = 300; // Teto de iscas: limite de capacidade e de iscas guardadas
+
+// Ao atingir o teto, itens de capacidade/iscas viram Runas. Calibração pela Carteira Furada: ela rende em
+// média (50+500)/2 × 4% ≈ 11 ᚱ por arremesso. Cada grupo de teto (slots de inventário, limite de iscas e
+// iscas guardadas) passa a render, somado, no máximo esse mesmo valor esperado por arremesso — dividido
+// igualmente entre os itens do grupo, então o valor de cada item é inversamente proporcional à sua chance:
+//   runas(item) = 11 ᚱ / nº de itens do grupo / chance(item)   (arredondado para múltiplos de 50)
+// Assim, quem está no teto ganha ~22 ᚱ extras por arremesso (~33 ᚱ por isca na rede), abaixo do preço da
+// isca no RavenaBank (45 ᚱ): não há arbitragem de comprar iscas para "farmar" conversões.
+const CAP_CONVERTIBLE_EFFECTS = ["inventory_slot", "max_baits", "extra_baits"];
+
+function getCarteiraRunasPerCast() {
+	const carteira = UPGRADES.find((u) => u.effect === "bank_runas");
+	if (!carteira) return 0;
+	return ((carteira.minValue + carteira.maxValue) / 2) * carteira.chance;
+}
+
+function computeOverflowRunasValue(item) {
+	const groupSize = UPGRADES.filter((u) => u.effect === item?.effect).length || 1;
+	if (!item?.chance) return 50;
+	return Math.max(50, Math.round(getCarteiraRunasPerCast() / groupSize / item.chance / 50) * 50);
+}
+
+// Inventário: Bolso 450 | Calça 900 | Mochilão 36.650 — Limite de iscas: Pochete 650 | Caixa 1.300 |
+// Viveiro 7.350 — Iscas guardadas: Pacote de Iscas 100 (≈50 ᚱ por isca)
+const CAP_OVERFLOW_RUNAS = Object.fromEntries(
+	UPGRADES.filter((u) => CAP_CONVERTIBLE_EFFECTS.includes(u.effect)).map((u) => [
+		u.name,
+		computeOverflowRunasValue(u)
+	])
+);
+
+function getItemUnits(item) {
+	if (item.effect === "extra_baits") return (item.minValue + item.maxValue) / 2;
+	return item.value || 1;
+}
+
+/**
+ * Runas por unidade excedente de um efeito (slot, capacidade de isca ou isca avulsa).
+ * Com itemName (item pescado), usa o valor daquele item. Sem ele (bônus de doação, colheita da fazenda,
+ * admin), usa o item mais comum do efeito — o valor por unidade mais conservador, para que fontes que
+ * sorteiam itens raros com chance alta (ex.: Mochilão na fazenda) não gerem Runas em excesso.
+ */
+function getOverflowRunasPerUnit(effect, itemName = null) {
+	const candidates = UPGRADES.filter((u) => u.effect === effect);
+	if (candidates.length === 0) return 0;
+	const item =
+		(itemName && candidates.find((u) => u.name === itemName)) ||
+		candidates.reduce((best, u) => (u.chance > best.chance ? u : best), candidates[0]);
+	return CAP_OVERFLOW_RUNAS[item.name] / getItemUnits(item);
+}
+
+/**
+ * Credita no RavenaBank as runas da conversão de itens que excederam o teto.
+ * @returns {Promise<{runas:number, balance:number|null}>}
+ */
+async function creditOverflowRunas(userId, effect, excessUnits, itemName, source) {
+	const runas = Math.round(getOverflowRunasPerUnit(effect, itemName) * excessUnits);
+	if (runas <= 0) return { runas: 0, balance: null };
+	try {
+		const BankService = require("../services/BankService");
+		const bankData = await BankService.creditRunas(userId, runas, {
+			source: source || `fishing_cap_${effect}`
+		});
+		return { runas, balance: bankData?.runas ?? null };
+	} catch (bankErr) {
+		logger.error(
+			`[FishingGame] Falha ao creditar ${runas} runas de conversão (${effect}) para ${userId}: ${bankErr.message}`
+		);
+		return { runas: 0, balance: null };
+	}
+}
+
+function formatRunas(value) {
+	return `${Number(value || 0).toLocaleString("pt-BR")} ᚱ`;
+}
 
 // --- HELPER FUNCTIONS FOR DB ---
 
@@ -754,7 +911,68 @@ async function updateGroupStats(groupId, userId, userName, weightToAdd, isCatch,
 	);
 }
 
-async function addBuff(userId, buff, isDebuff) {
+/**
+ * Soma no banco o valor de buffs permanentes de capacidade (inventory_slot / max_baits) do usuário.
+ */
+async function getPermanentBuffTotal(userId, effectType) {
+	const userIds = getAllFishingUserIds(userId);
+	const placeholders = userIds.map(() => "?").join(",");
+	const row = await database.dbGet(
+		dbName,
+		`SELECT COALESCE(SUM(value), 0) as total FROM fishing_buffs
+		 WHERE user_id IN (${placeholders}) AND is_debuff = 0 AND effect_type = ? AND remaining_uses > 0`,
+		[...userIds, effectType]
+	);
+	return Number(row?.total) || 0;
+}
+
+/**
+ * Quanto ainda cabe de um buff de capacidade antes de atingir o teto absoluto.
+ */
+async function getCapacityRoom(userId, effectType) {
+	const current = await getPermanentBuffTotal(userId, effectType);
+	if (effectType === "inventory_slot") {
+		return Math.max(0, INVENTORY_HARD_CAP - MAX_FISH_PER_USER - current);
+	}
+	if (effectType === "max_baits") {
+		return Math.max(0, BAITS_HARD_CAP - MAX_BAITS - current);
+	}
+	return Infinity;
+}
+
+/**
+ * Adiciona um buff/debuff. Buffs de capacidade (inventory_slot / max_baits) respeitam os tetos
+ * INVENTORY_HARD_CAP / BAITS_HARD_CAP: o excedente é convertido em Runas no RavenaBank.
+ * Vale para qualquer origem (pescaria, bônus de doação, colheita da fazenda, admin).
+ * options.valueByItem: converte pelo valor do item específico (só para itens pescados).
+ * @returns {Promise<{applied:number, overflow:number, runas:number, balance:number|null}>}
+ */
+async function addBuff(userId, buff, isDebuff, options = {}) {
+	const result = { applied: buff?.value ?? 0, overflow: 0, runas: 0, balance: null };
+
+	if (!isDebuff && (buff?.type === "inventory_slot" || buff?.type === "max_baits")) {
+		const units = Number(buff.value) || 0;
+		const room = await getCapacityRoom(userId, buff.type);
+		const applied = Math.max(0, Math.min(units, room));
+		const overflow = units - applied;
+		result.applied = applied;
+		result.overflow = overflow;
+
+		if (overflow > 0) {
+			const credit = await creditOverflowRunas(
+				userId,
+				buff.type,
+				overflow,
+				options.valueByItem ? buff.originalName : null,
+				options.source || `fishing_cap_${buff.type}`
+			);
+			result.runas = credit.runas;
+			result.balance = credit.balance;
+		}
+		if (applied <= 0) return result;
+		buff = { ...buff, value: applied };
+	}
+
 	await database.dbRun(
 		dbName,
 		`INSERT INTO fishing_buffs 
@@ -771,6 +989,7 @@ async function addBuff(userId, buff, isDebuff) {
 			buff.originalName
 		]
 	);
+	return result;
 }
 
 async function updateBuffUses(buffId, remainingUses) {
@@ -876,7 +1095,47 @@ function getAllFishingUserIds(userId) {
 	return Array.from(set);
 }
 
-async function transferBuff(fromUserId, toUserId, buffDbId) {
+/**
+ * Verifica se o destinatário comporta receber os buffs informados sem ultrapassar os tetos
+ * de inventário (INVENTORY_HARD_CAP) e iscas (BAITS_HARD_CAP). Usado pelo mercado antes de transferir:
+ * itens de jogador para jogador não são convertidos em Runas (evita criar Runas do nada), então
+ * a transferência é recusada se não houver espaço.
+ * @returns {Promise<{ok:boolean, reason?:string}>}
+ */
+async function checkBuffTransferCapacity(toUserId, buffDbIds = []) {
+	const ids = (buffDbIds || []).map((id) => Number(id)).filter(Boolean);
+	if (ids.length === 0) return { ok: true };
+
+	const placeholders = ids.map(() => "?").join(",");
+	const rows = await database.dbAll(
+		dbName,
+		`SELECT effect_type, value FROM fishing_buffs WHERE id IN (${placeholders}) AND is_debuff = 0`,
+		ids
+	);
+
+	const incoming = { inventory_slot: 0, max_baits: 0 };
+	for (const r of rows || []) {
+		if (r.effect_type in incoming) incoming[r.effect_type] += Number(r.value) || 0;
+	}
+
+	for (const [type, amount] of Object.entries(incoming)) {
+		if (amount <= 0) continue;
+		const room = await getCapacityRoom(toUserId, type);
+		if (amount > room) {
+			const label =
+				type === "inventory_slot"
+					? `inventário (máx. ${INVENTORY_HARD_CAP} slots)`
+					: `iscas (máx. ${BAITS_HARD_CAP})`;
+			return {
+				ok: false,
+				reason: `O destinatário não tem espaço para receber +${amount} de ${label}. Espaço restante: ${room}.`
+			};
+		}
+	}
+	return { ok: true };
+}
+
+async function transferBuff(fromUserId, toUserId, buffDbId, options = {}) {
 	const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
 	const fromIds = getAllFishingUserIds(fromUserId);
 	const placeholders = fromIds.map(() => "?").join(",");
@@ -891,6 +1150,13 @@ async function transferBuff(fromUserId, toUserId, buffDbId) {
 			success: false,
 			reason: `Buff ID ${buffDbId} não encontrado no inventário de ${fromUserId}`
 		};
+	}
+
+	if (!options.skipCapCheck) {
+		const capCheck = await checkBuffTransferCapacity(toUserId, [buffDbId]);
+		if (!capCheck.ok) {
+			return { success: false, reason: capCheck.reason };
+		}
 	}
 
 	await database.dbRun(dbName, "UPDATE fishing_buffs SET user_id = ? WHERE id = ?", [
@@ -961,7 +1227,8 @@ async function getRandomFish(fishArray, isMultiCatch = false, userData = null) {
 			}
 
 			// Aplica fator global e evento temporário
-			currentChance *= DEFAULT_GLOBAL_FACTORS.rareFishChance;
+			// Fator global + ritmo do mês (reduzido até a reta final, original nos últimos 5 dias)
+			currentChance *= getLegendaryChanceFactor();
 			const eventLegendaryMult = GameEventService.getMultiplier("pesca", "lendario");
 			currentChance *= eventLegendaryMult;
 
@@ -1086,9 +1353,12 @@ function regenerateBaits(userData) {
 }
 
 /**
- * Comando restrito que permite adicionar iscas
+ * Adiciona (ou remove, se negativo) iscas de um jogador.
+ * Ganhos respeitam o teto BAITS_HARD_CAP: o excedente é convertido em Runas (valor por isca do Pacote de Iscas),
+ * a menos que options.convertOverflow === false (aí o excedente é apenas descartado).
+ * @returns {Promise<{userId, userData, added:number, overflow:number, runas:number, balance:number|null}>}
  */
-async function addBaits(userId, baitsNum) {
+async function addBaits(userId, baitsNum, options = {}) {
 	userId = `${userId}`.replace(/\D/g, "");
 	//userId = userId.split("@")[0] + "@c.us";
 
@@ -1111,12 +1381,35 @@ async function addBaits(userId, baitsNum) {
 		};
 	}
 
-	userData.baits += baitsNum;
+	const currentBaits = Number(userData.baits) || 0;
+	let added = baitsNum;
+	let overflow = 0;
+	let runas = 0;
+	let balance = null;
+
+	if (baitsNum > 0) {
+		const room = Math.max(0, BAITS_HARD_CAP - currentBaits);
+		added = Math.min(baitsNum, room);
+		overflow = baitsNum - added;
+		if (overflow > 0 && options.convertOverflow !== false) {
+			const credit = await creditOverflowRunas(
+				userId,
+				"extra_baits",
+				overflow,
+				options.itemName ?? null,
+				options.source ?? "fishing_cap_baits"
+			);
+			runas = credit.runas;
+			balance = credit.balance;
+		}
+	}
+
+	userData.baits = Math.max(0, currentBaits + added);
 	userData.lastBaitRegen = Date.now(); // Reset regeneration timer when modified manually? Or keep it? Keeping it simple.
 
 	await saveUserData(userData);
 
-	return { userId, userData };
+	return { userId, userData, added, overflow, runas, balance };
 }
 
 async function addBaitsCmd(bot, message, args, group) {
@@ -1137,12 +1430,16 @@ async function addBaitsCmd(bot, message, args, group) {
 		if (target.toLowerCase() === "global") {
 			await database.dbRun(
 				dbName,
-				"UPDATE fishing_users SET baits = baits + ?, last_bait_regen = ?",
-				[baitsNum, Date.now()]
+				// Ganhos globais respeitam o teto de iscas (sem rebaixar quem já está acima dele)
+				`UPDATE fishing_users SET baits = CASE
+					WHEN ? > 0 THEN MAX(baits, MIN(baits + ?, ?))
+					ELSE MAX(0, baits + ?)
+				END, last_bait_regen = ?`,
+				[baitsNum, baitsNum, BAITS_HARD_CAP, baitsNum, Date.now()]
 			);
 			return new ReturnMessage({
 				chatId,
-				content: `🎣 ${baitsNum} iscas adicionadas para TODOS os jogadores!`,
+				content: `🎣 ${baitsNum} iscas adicionadas para TODOS os jogadores! _(teto de ${BAITS_HARD_CAP} iscas)_`,
 				reaction: "🎣"
 			});
 		}
@@ -1158,7 +1455,11 @@ async function addBaitsCmd(bot, message, args, group) {
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `🎣 Iscas de '${target}' ajustadas para ${dados.userData.baits}`,
+				content:
+					`🎣 Iscas de '${target}' ajustadas para ${dados.userData.baits}` +
+					(dados.overflow > 0
+						? ` (${dados.overflow} acima do teto de ${BAITS_HARD_CAP} convertidas em ${formatRunas(dados.runas)})`
+						: ""),
 				reaction: "🎣"
 			});
 		}
@@ -1309,10 +1610,26 @@ async function applyItemEffect(userData, item) {
 					await addBuff(userData.userId, buff, false);
 					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! ${item.description}`;
 					break;
-				case "extra_baits":
-					userData.baits = userData.baits + item.value;
-					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${item.value} iscas adicionadas (${userData.baits}/${MAX_BAITS}).`;
+				case "extra_baits": {
+					const currentBaits = Number(userData.baits) || 0;
+					const room = Math.max(0, BAITS_HARD_CAP - currentBaits);
+					const added = Math.min(item.value, room);
+					const overflow = item.value - added;
+					userData.baits = currentBaits + added;
+					effectMessage = `\n\n${item.emoji} Você encontrou um ${item.name}! +${added} iscas adicionadas (${userData.baits}/${getMaxBaits(userData)}).`;
+					if (overflow > 0) {
+						const credit = await creditOverflowRunas(
+							userData.userId,
+							item.effect,
+							overflow,
+							item.name,
+							"fishing_cap_extra_baits"
+						);
+						item.convertedRunas = (item.convertedRunas || 0) + credit.runas;
+						effectMessage += `\n> 💱 Você já está no teto de ${BAITS_HARD_CAP} iscas: ${overflow} isca(s) virou(aram) *${formatRunas(credit.runas)}* no RavenaBank!`;
+					}
 					break;
+				}
 				case "slots_coins": {
 					const slotsData = await require("./SlotsGame").addCoins(
 						userData.userId,
@@ -1366,23 +1683,10 @@ async function applyItemEffect(userData, item) {
 					effectMessage = `\n\n${item.emoji} Você encontrou uma ${item.name}! ${item.description}`;
 					break;
 				}
-				case "inventory_slot": {
-					if (!userData.buffs) userData.buffs = [];
-					const buff = {
-						type: item.effect,
-						value: item.value,
-						remainingUses: 999999,
-						originalName: item.name,
-						minValue: 0,
-						maxValue: 0
-					};
-					await addBuff(userData.userId, buff, false);
-					userData.buffs.push(buff);
-					effectMessage = `\n\n${item.emoji} Você equipou ${item.name}! Espaço extra: +${item.value}`;
-					break;
-				}
+				case "inventory_slot":
 				case "max_baits": {
 					if (!userData.buffs) userData.buffs = [];
+					const isSlot = item.effect === "inventory_slot";
 					const buff = {
 						type: item.effect,
 						value: item.value,
@@ -1391,9 +1695,22 @@ async function applyItemEffect(userData, item) {
 						minValue: 0,
 						maxValue: 0
 					};
-					await addBuff(userData.userId, buff, false);
-					userData.buffs.push(buff);
-					effectMessage = `\n\n${item.emoji} Você equipou ${item.name}! Limite de iscas aumentado: +${item.value}`;
+					const grant = await addBuff(userData.userId, buff, false, { valueByItem: true });
+					if (grant.applied > 0) {
+						userData.buffs.push({ ...buff, value: grant.applied });
+						effectMessage = isSlot
+							? `\n\n${item.emoji} Você equipou ${item.name}! Espaço extra: +${grant.applied}`
+							: `\n\n${item.emoji} Você equipou ${item.name}! Limite de iscas aumentado: +${grant.applied}`;
+					} else {
+						effectMessage = `\n\n${item.emoji} Você encontrou um(a) ${item.name}!`;
+					}
+					if (grant.overflow > 0) {
+						item.convertedRunas = (item.convertedRunas || 0) + grant.runas;
+						const capLabel = isSlot
+							? `${INVENTORY_HARD_CAP} slots de inventário`
+							: `${BAITS_HARD_CAP} iscas de limite`;
+						effectMessage += `\n> 💱 Você já está no teto de ${capLabel}: o item foi convertido em *${formatRunas(grant.runas)}* no RavenaBank!`;
+					}
 					break;
 				}
 			}
@@ -1436,7 +1753,7 @@ async function applyItemEffect(userData, item) {
 				case "remove_baits":
 					const baitsLost = Math.min(userData.baits, item.value);
 					userData.baits -= baitsLost;
-					effectMessage = `\n\n${item.emoji} Uma ${item.name} apareceu e comeu ${baitsLost} de suas iscas! (${userData.baits}/${MAX_BAITS} iscas restantes).`;
+					effectMessage = `\n\n${item.emoji} Uma ${item.name} apareceu e comeu ${baitsLost} de suas iscas! (${userData.baits}/${getMaxBaits(userData)} iscas restantes).`;
 					break;
 				case "bait_on_trash":
 				case "longer_cooldown":
@@ -1863,7 +2180,7 @@ function getMaxInventory(userData) {
 			}
 		});
 	}
-	return limit;
+	return Math.min(limit, INVENTORY_HARD_CAP);
 }
 
 function getMaxBaits(userData) {
@@ -1875,7 +2192,7 @@ function getMaxBaits(userData) {
 			}
 		});
 	}
-	return limit;
+	return Math.min(limit, BAITS_HARD_CAP);
 }
 
 async function handleBuffDecrement(userData, context) {
@@ -2287,8 +2604,8 @@ async function fishCommand(bot, message, args, group) {
 			const fish = caughtFishes[0];
 
 			if (fish.isRare) {
-				const chanceFinal = (fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(5);
-				fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${fish.name}* de _${fish.weight.toFixed(2)} kg_! (${fish.emoji} ${chanceFinal}% de chance)`;
+				const chanceFinal = getCaughtLegendaryChanceText(fish);
+				fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${fish.name}* de _${fish.weight.toFixed(2)} kg_! (${fish.emoji} ${chanceFinal} de chance)`;
 			} else {
 				fishMessage = `🎣 ${userName}${extraMsg} pescou um *${fish.name}* de _${fish.weight.toFixed(2)} kg_!`;
 			}
@@ -2368,8 +2685,8 @@ async function processLegendaryFishCatch({
 	effectMessage = "",
 	reaction = "🎣"
 }) {
-	const chanceFinal = (rareFish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(5);
-	let fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${rareFish.name}* de _${rareFish.weight.toFixed(2)} kg_! (${rareFish.emoji} ${chanceFinal}% de chance)`;
+	const chanceFinal = getCaughtLegendaryChanceText(rareFish);
+	let fishMessage = `🏆 INCRÍVEL! _${userName}_${extraMsg} capturou um(a) _raríssimo_ *${rareFish.name}* de _${rareFish.weight.toFixed(2)} kg_! (${rareFish.emoji} ${chanceFinal} de chance)`;
 
 	fishMessage += `\n\n> 🐳 Seu maior peixe: ${userData.biggestFish ? userData.biggestFish.name : rareFish.name} (${(userData.biggestFish ? userData.biggestFish.weight : rareFish.weight).toFixed(2)} kg)`;
 	fishMessage += `\n> 🐛 Iscas restantes: ${userData.baits}/${getMaxBaits(userData)}`;
@@ -2436,7 +2753,7 @@ async function processLegendaryFishCatch({
 	const notificacaoPeixeRaro = new ReturnMessage({
 		content: rareFishImage,
 		options: {
-			caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`,
+			caption: `🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal} de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`,
 			mentions: mentionPessoa
 		}
 	});
@@ -2479,7 +2796,7 @@ async function processLegendaryFishCatch({
 				options: {
 					caption:
 						notificacaoPeixeRaro.options?.caption ||
-						`🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal}% de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`
+						`🏆 *${userName}*${extraMsg} capturou um(a) _*${rareFish.name}* LENDÁRIO(A)_ pesando *${rareFish.weight.toFixed(2)} kg* no grupo "${groupName}"! (${rareFish.emoji} ${chanceFinal} de chance)\n\n> 🐲 *Galeria de lendários:* ✨ https://ravena.moothz.com/pesca\n\n> ${bot.id}`
 				},
 				pinDuration: 260000
 			});
@@ -2606,8 +2923,9 @@ async function netFishCommand(bot, message, args, group) {
 			return null;
 		}
 
-		// Iscas a gastar
-		let iscasUsadas = userData.baits;
+		// Iscas a gastar: nunca mais do que o tamanho máximo do inventário (o excedente viraria descarte)
+		const netInventoryLimit = getMaxInventory(userData);
+		let iscasUsadas = Math.min(userData.baits, netInventoryLimit);
 		if (args && args.length > 0) {
 			const requested = parseInt(args[0], 10);
 			if (!isNaN(requested)) {
@@ -2617,9 +2935,11 @@ async function netFishCommand(bot, message, args, group) {
 						content: "❌ Quantidade inválida de iscas. Informe um número maior que zero."
 					});
 				}
-				iscasUsadas = Math.min(requested, userData.baits);
+				iscasUsadas = Math.min(requested, userData.baits, netInventoryLimit);
 			}
 		}
+		const limitedByInventory =
+			iscasUsadas === netInventoryLimit && userData.baits > netInventoryLimit;
 
 		// Cálculo de eficiência
 		const baseEfficiency = iscasUsadas < 8 ? 0.5 : 0.75;
@@ -2835,6 +3155,10 @@ async function netFishCommand(bot, message, args, group) {
 		const headerMsg = flavorTemplates[Math.floor(Math.random() * flavorTemplates.length)];
 
 		let contentMsg = `${headerMsg}\n`;
+		contentMsg += `> Você pode usar !pesca-rede 100 para especificar quantas iscas usar\n`;
+		if (limitedByInventory) {
+			contentMsg += `> 🎒 _Iscas limitadas ao tamanho do seu inventário (${netInventoryLimit})._\n`;
+		}
 
 		// Criaturas capturadas ordenadas por peso decrescente
 		if (caughtFishes.length > 0) {
@@ -2857,16 +3181,18 @@ async function netFishCommand(bot, message, args, group) {
 			for (const item of caughtItems) {
 				const key = item.name;
 				if (!itemMap.has(key)) {
-					itemMap.set(key, { count: 0, emoji: item.emoji || "🎁", name: item.name });
+					itemMap.set(key, { count: 0, emoji: item.emoji || "🎁", name: item.name, runas: 0 });
 				}
 				itemMap.get(key).count += 1;
+				itemMap.get(key).runas += item.convertedRunas || 0;
 			}
 			const aggregatedItems = Array.from(itemMap.values()).sort(
 				(a, b) => b.count - a.count || a.name.localeCompare(b.name)
 			);
 			contentMsg += `\n✨ *Itens & Buffs Obtidos:*\n`;
 			aggregatedItems.forEach((item) => {
-				contentMsg += `  • ${item.count}x ${item.emoji} *${item.name}*\n`;
+				const runasNote = item.runas > 0 ? ` _(teto atingido ➔ +${formatRunas(item.runas)})_` : "";
+				contentMsg += `  • ${item.count}x ${item.emoji} *${item.name}*${runasNote}\n`;
 			});
 		}
 
@@ -3152,6 +3478,38 @@ async function abandonFishCommand(bot, message, args, group) {
 }
 
 /**
+ * Disponibilidade mensal dos lendários (mesma regra do limite mensal aplicado em getRandomFish).
+ * @returns {Promise<{monthlyMap: Map, totalAvailableMonth: number, totalMonthlyLimit: number}>}
+ */
+async function getLegendaryMonthlyAvailability(date = new Date()) {
+	const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+	const monthlyRows = await database.dbAll(
+		dbName,
+		"SELECT fish_name, COUNT(*) as c FROM fishing_legendary_history WHERE timestamp >= ? GROUP BY fish_name",
+		[startOfMonth]
+	);
+	const monthlyMap = new Map((monthlyRows || []).map((r) => [r.fish_name, r.c]));
+
+	let totalAvailableMonth = 0;
+	let totalMonthlyLimit = 0;
+	for (const fish of RARE_FISH) {
+		const limit = fish.monthlyLimit || 1;
+		totalMonthlyLimit += limit;
+		totalAvailableMonth += Math.max(0, limit - (monthlyMap.get(fish.name) || 0));
+	}
+	return { monthlyMap, totalAvailableMonth, totalMonthlyLimit };
+}
+
+/**
+ * Status de disponibilidade no mês de um lendário: "🟢 `1/1 disp.`" ou "🔴 *Esgotado*".
+ */
+function formatLegendaryStatus(fish, monthlyMap) {
+	const limit = fish.monthlyLimit || 1;
+	const remaining = Math.max(0, limit - (monthlyMap.get(fish.name) || 0));
+	return remaining > 0 ? `🟢 \`${remaining}/${limit} disp.\`` : "🔴 *Esgotado*";
+}
+
+/**
  * Mostra os peixes lendários que foram pescados
  */
 async function legendaryFishCommand(bot, message, args, group) {
@@ -3179,6 +3537,10 @@ async function legendaryFishCommand(bot, message, args, group) {
 			});
 		}
 
+		const eventLegendaryMult = GameEventService.getMultiplier("pesca", "lendario");
+		const { monthlyMap, totalAvailableMonth, totalMonthlyLimit } =
+			await getLegendaryMonthlyAvailability();
+
 		const rareFishListItems = await Promise.all(
 			RARE_FISH.map(async (f) => {
 				let countQuery = "SELECT COUNT(*) as c FROM fishing_legendary_history WHERE fish_name = ?";
@@ -3190,12 +3552,16 @@ async function legendaryFishCommand(bot, message, args, group) {
 
 				const countRow = await database.dbGet(dbName, countQuery, countParams);
 
-				return `\t${f.emoji} ${f.name} _(~${f.weightBonus}kg, ${(f.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance).toFixed(5)}%\` de chance, ${countRow?.c || 0} pescados${yearFilter ? ` em ${yearFilter}` : ""})_`;
+				return `  ${f.emoji} *${f.name}*: \`${formatLegendaryChance(f, eventLegendaryMult)}\` | ${formatLegendaryStatus(f, monthlyMap)} | ~${f.weightBonus}kg | ${countRow?.c || 0} pescados${yearFilter ? ` em ${yearFilter}` : ""}`;
 			})
 		);
 		const rareFishList = rareFishListItems.join("\n");
 
-		let textMessage = `🌊 *Lista de Peixes Lendários* 🎣\n${rareFishList}\n\n🏆 *REGISTRO DE PEIXES LENDÁRIOS _${yearFilter}_* 🎖️\n\n`;
+		let textMessage = `🌊 *Lista de Peixes Lendários* 🎣 (${totalAvailableMonth}/${totalMonthlyLimit} disponíveis este mês)\n`;
+		if (eventLegendaryMult > 1.0) {
+			textMessage += `🔥 _Evento ativo: chance de lendários multiplicada por ${eventLegendaryMult}x!_\n`;
+		}
+		textMessage += `${getLegendaryPhaseLine()}\n${rareFishList}\n\n🏆 *REGISTRO DE PEIXES LENDÁRIOS _${yearFilter}_* 🎖️\n\n`;
 
 		for (let i = 0; i < legendaryFishes.length; i++) {
 			const legendary = legendaryFishes[i];
@@ -3389,30 +3755,19 @@ async function fishingInfoCommand(bot, message) {
 		);
 		const allTimeMap = new Map((allTimeRows || []).map((r) => [r.fish_name, r.c]));
 
-		const now = new Date();
-		const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-		const monthlyRows = await database.dbAll(
-			dbName,
-			"SELECT fish_name, COUNT(*) as c FROM fishing_legendary_history WHERE timestamp >= ? GROUP BY fish_name",
-			[startOfMonth]
-		);
-		const monthlyMap = new Map((monthlyRows || []).map((r) => [r.fish_name, r.c]));
-
-		let totalAvailableMonth = 0;
-		let totalMonthlyLimit = 0;
-		for (const fish of RARE_FISH) {
-			const limit = fish.monthlyLimit || 1;
-			totalMonthlyLimit += limit;
-			const caughtThisMonth = monthlyMap.get(fish.name) || 0;
-			if (caughtThisMonth < limit) {
-				totalAvailableMonth += limit - caughtThisMonth;
-			}
-		}
+		const { monthlyMap, totalAvailableMonth, totalMonthlyLimit } =
+			await getLegendaryMonthlyAvailability();
 
 		let infoMessage = "🎣 *Informações & Estatísticas do Jogo da Pesca* 🎣\n\n";
 
 		infoMessage += "📜 *Regras e Informações Gerais*\n";
-		infoMessage += `- *Iscas Máximas:* \`${MAX_BAITS}\` (expansível com itens)\n`;
+		infoMessage += `- *Iscas Máximas:* \`${MAX_BAITS}\` (expansível com itens até \`${BAITS_HARD_CAP}\`)\n`;
+		infoMessage += `- *Inventário:* \`${MAX_FISH_PER_USER}\` peixes (expansível com itens até \`${INVENTORY_HARD_CAP}\`)\n`;
+		infoMessage += `- *Teto atingido:* itens de inventário/iscas viram Runas no RavenaBank _(${UPGRADES.filter(
+			(u) => CAP_OVERFLOW_RUNAS[u.name]
+		)
+			.map((u) => `${u.emoji} ${u.name}: ${formatRunas(CAP_OVERFLOW_RUNAS[u.name])}`)
+			.join(", ")})_\n`;
 		infoMessage += `- *Recarga de Isca:* 1 a cada ${BAIT_REGEN_TIME / 60} minutos. _(Não é possível alterar este tempo)_\n`;
 		infoMessage += `- *Peso dos Peixes:* de \`${MIN_FISH_WEIGHT}kg\` a \`${MAX_FISH_WEIGHT}kg\`\n`;
 		infoMessage += `- *Peixes Comuns:* \`${fishVariety}\` espécies (\`!pesca-peixes\` para ver)\n`;
@@ -3425,20 +3780,12 @@ async function fishingInfoCommand(bot, message) {
 		} else {
 			infoMessage += "_Chance por arremesso, disponibilidade no mês e histórico total:_\n";
 		}
+		infoMessage += `${getLegendaryPhaseLine()}\n`;
 
 		for (const fish of RARE_FISH) {
 			const allTime = allTimeMap.get(fish.name) || 0;
-			const monthlyCaught = monthlyMap.get(fish.name) || 0;
-			const limit = fish.monthlyLimit || 1;
-			const remaining = Math.max(0, limit - monthlyCaught);
-			const statusStr = remaining > 0 ? `🟢 \`${remaining}/${limit} disp.\`` : "🔴 *Esgotado*";
-
-			const chancePct =
-				fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance * eventLegendaryMult;
-			const chanceStr =
-				(chancePct < 0.001 ? chancePct.toFixed(6) : chancePct.toFixed(5))
-					.replace(/0+$/, "")
-					.replace(/\.$/, "") + "%";
+			const statusStr = formatLegendaryStatus(fish, monthlyMap);
+			const chanceStr = formatLegendaryChance(fish, eventLegendaryMult);
 
 			infoMessage += `  ${fish.emoji} *${fish.name}*: \`${chanceStr}\` | ${statusStr} | Total: ${allTime}\n`;
 		}
@@ -3608,7 +3955,7 @@ async function listFishTypesCommand(bot, message, args, group) {
 
 		fishMessage += `\n*Peixes Raríssimos*:\n`;
 		for (const fish of RARE_FISH) {
-			const chancePercent = fish.chance * 100 * DEFAULT_GLOBAL_FACTORS.rareFishChance;
+			const chancePercent = fish.chance * 100 * getLegendaryChanceFactor();
 			const countRow = await database.dbGet(
 				dbName,
 				"SELECT COUNT(*) as c FROM fishing_legendary_history WHERE fish_name = ?",
@@ -4290,7 +4637,14 @@ module.exports = {
 	formatRemainingTime,
 	transferFish,
 	transferBuff,
+	checkBuffTransferCapacity,
 	removeBuff,
+	INVENTORY_HARD_CAP,
+	BAITS_HARD_CAP,
+	CAP_OVERFLOW_RUNAS,
+	getLegendaryChanceFactor,
+	isLegendaryBoostActive,
+	getLegendaryBoostStart,
 	getAllFishingUserIds,
 	applyItemEffect,
 	clearInventory,

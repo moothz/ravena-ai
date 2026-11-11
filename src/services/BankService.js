@@ -1575,6 +1575,21 @@ class BankService {
 			);
 		}
 
+		// Teto absoluto de iscas guardadas no FishingGame (não vende iscas que seriam descartadas)
+		const FishingGameCap = require("../functions/FishingGame");
+		const baitsCap = FishingGameCap.BAITS_HARD_CAP;
+		if (baitsCap) {
+			const { baits: currentBaits } = await FishingGameCap.getUserBaitsInfo(cleanUser);
+			const room = Math.max(0, baitsCap - (Number(currentBaits) || 0));
+			if (count > room) {
+				throw new Error(
+					room > 0
+						? `Limite de iscas! O máximo que um pescador pode guardar é ${baitsCap} iscas e você tem ${currentBaits}. Você pode comprar no máximo mais ${room} isca(s).`
+						: `Limite de iscas! Você já tem ${currentBaits} iscas (máximo de ${baitsCap}). Use algumas antes de comprar mais.`
+				);
+			}
+		}
+
 		const totalCost = count * STORE_PRICES.isca;
 		const account = await this.getAccount(cleanUser);
 
@@ -1679,7 +1694,15 @@ class BankService {
 					current: baitInfo.baits,
 					dailyLimit: DAILY_LIMITS.compra_iscas,
 					dailyUsed: quota.used.compra_iscas,
-					maxCanBuy: quota.remaining.compra_iscas,
+					maxCanBuy: FishingGame.BAITS_HARD_CAP
+						? Math.max(
+								0,
+								Math.min(
+									quota.remaining.compra_iscas,
+									FishingGame.BAITS_HARD_CAP - (Number(baitInfo.baits) || 0)
+								)
+							)
+						: quota.remaining.compra_iscas,
 					description: "Iscas para pescar peixes e itens no !pescar"
 				}
 			]

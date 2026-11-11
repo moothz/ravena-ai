@@ -328,14 +328,19 @@ async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
 			case "fishing_inventory_boost": {
 				// ID 7: Cabaça Espectral — sorteia da lista restrita canônica de expansão
 				const itemsWon = [];
+				let capRunas = 0;
 				for (let i = 0; i < count; i++) {
 					const chosenName = pickRandom(FISHING_INVENTORY_BOOST_POOL);
 					const buff = createBuffForItem(chosenName);
-					await FishingGame.addBuff(cId, buff, false);
+					const grant = await FishingGame.addBuff(cId, buff, false);
 					itemsWon.push(chosenName);
+					capRunas += grant?.runas || 0;
 				}
 				dispatchedMessages.push(
-					`• *${plantDisplayName}* (x${count}) ➔ Equipamentos de pesca equipados: ${itemsWon.join(", ")}`
+					`• *${plantDisplayName}* (x${count}) ➔ Equipamentos de pesca equipados: ${itemsWon.join(", ")}` +
+						(capRunas > 0
+							? ` _(teto de pesca atingido: excedente convertido em ${capRunas.toLocaleString("pt-BR")} ᚱ)_`
+							: "")
 				);
 				break;
 			}
@@ -362,9 +367,15 @@ async function dispatchHarvestDrops(userId, harvestedDrops = [], options = {}) {
 			case "fishing_baits_5": {
 				// ID 8: Raiz Devoradora — concede 5 iscas vivas por planta colhida
 				const baitsToAdd = 5 * count;
-				await FishingGame.addBaits(cId, baitsToAdd);
+				const baitRes = await FishingGame.addBaits(cId, baitsToAdd, {
+					source: "fishing_cap_baits_fazenda"
+				});
+				const addedBaits = baitRes?.added ?? baitsToAdd;
 				dispatchedMessages.push(
-					`• *${plantDisplayName}* (x${count}) ➔ +${baitsToAdd} iscas vivas adicionadas ao seu balde de pesca!`
+					`• *${plantDisplayName}* (x${count}) ➔ +${addedBaits} iscas vivas adicionadas ao seu balde de pesca!` +
+						(baitRes?.overflow > 0
+							? ` _(teto de ${FishingGame.BAITS_HARD_CAP} iscas: ${baitRes.overflow} viraram ${Number(baitRes.runas || 0).toLocaleString("pt-BR")} ᚱ)_`
+							: "")
 				);
 				break;
 			}
