@@ -435,7 +435,7 @@ function registerFeaturesRoutes(api) {
 
 				const rows = await api.database.dbAll(
 					"fishing",
-					`SELECT id, effect_type as type, original_name as originalName, remaining_uses as remainingUses, description 
+					`SELECT id, effect_type as type, original_name as originalName, remaining_uses as remainingUses, value 
 					 FROM fishing_buffs 
 					 WHERE user_id IN (${placeholders}) 
 					   AND is_debuff = 0 
@@ -444,13 +444,22 @@ function registerFeaturesRoutes(api) {
 					userIds
 				);
 
-				fishingBuffs = (rows || []).map((r) => ({
-					id: r.id,
-					type: r.type,
-					originalName: r.originalName || (r.type === 'inventory_slot' ? 'Slot de Inventário' : 'Iscas Extras'),
-					remainingUses: r.remainingUses,
-					description: r.description || ''
-				}));
+				fishingBuffs = (rows || []).map((r) => {
+					let desc = '';
+					if (r.type === 'inventory_slot') {
+						desc = `Aumenta capacidade permanente da mochila (+${r.value || 1} inv)`;
+					} else if (r.type === 'max_baits') {
+						desc = `Aumenta limite permanente de iscas (+${r.value || 1} iscas)`;
+					}
+					return {
+						id: r.id,
+						type: r.type,
+						originalName: r.originalName || (r.type === 'inventory_slot' ? 'Slot de Inventário' : 'Iscas Extras'),
+						remainingUses: r.remainingUses,
+						value: r.value,
+						description: desc
+					};
+				});
 			} catch (fishErr) {
 				api.logger.warn(`Erro ao buscar buffs de pesca para ${userId}: ${fishErr.message}`);
 			}
