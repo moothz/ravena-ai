@@ -7020,11 +7020,17 @@ async function ajudaWaifus(bot, message) {
 	text += `• Quando alguém rola um personagem que já é seu, um cristal de Zinthos é gerado com base no valor da sua waifu.\n`;
 	text += `• Você também pode divorciar personagens com \`!mu-divorciar <id>\` para resgatar Zinthos: o valor considera a raridade base, bônus por chave escalonado (500 a 75k) e a inflação atual de mercado. Se for Soulmate, concede o Divórcio Dourado (4 cotas)! (Possui soft limite diário por raridade: 1º 100%, 2º 80%, 3º 50%, 4º 20%, 5º+ 5%; reseta às 04:00 BRT).\n\n`;
 
-	text += `🌟 *5. Lista de Desejos (Wishlist)*\n`;
+	text += `🏠 *5. Sistema de Hospedagem & Inatividade*\n`;
+	text += `• Manter seu harém exige recursos! Todo dia às 04:00 BRT é cobrada uma taxa de hospedagem:\n`;
+	text += `  • *Jogadores Ativos:* ⚪ 1z | 🟢 3z | 🔵 8z | 🟣 15z | ⭐ 40z por waifu/dia.\n`;
+	text += `  • *Inativos (>72h sem jogar):* ⚪ 10z | 🟢 60z | 🔵 200z | 🟣 350z | ⭐ 1.000z por waifu/dia.\n`;
+	text += `• *Sem saldo suficiente?* Waifus são confiscadas automaticamente da menor para a maior raridade para quitar a dívida (abatendo 30% do valor de divórcio da waifu). A sobra permanece com você!\n\n`;
+
+	text += `🌟 *6. Lista de Desejos (Wishlist)*\n`;
 	text += `• Adicione até *${WISHLIST_MAX_ITEMS}* personagens à sua wishlist com \`!mu-desejar <id>\`.\n`;
 	text += `• *Bônus no Roll:* Cada personagem na sua lista ganha *+50% de peso* (multiplicador 1.5x) nos seus sorteios! (Star Wish ganha +100% / 2.0x).\n`;
 	text += `• *Bônus de Zinthos Proporcional:* Cada waifu na Wishlist adiciona *+0,1% de Zinthos* em rolls e diários (+1/1000 por item), dobrando o valor adquirido (2.0x) ao atingir 1000 desejos!\n\n`;
-	text += `❤️ *6. Curtidas (Likes)*\n`;
+	text += `❤️ *7. Curtidas (Likes)*\n`;
 	text += `• Dê like nos seus personagens favoritos com \`!mu-like <id>\` para aumentar a popularidade global deles.\n\n`;
 
 	// Se for no Telegram, divide em 2 mensagens: 1 com introdução/mecânicas e outra com o menu interativo de comandos
