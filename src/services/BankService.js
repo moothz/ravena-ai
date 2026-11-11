@@ -2468,6 +2468,96 @@ class BankService {
 	}
 
 	/**
+	 * Transfere Runas entre usuários diretamente (ex: negociações no mercado)
+	 * @param {string} fromUserId
+	 * @param {string} toUserId
+	 * @param {number} amount
+	 * @param {string} reason
+	 */
+	async transferRunas(fromUserId, toUserId, amount, reason = "MARKET_TRANSFER") {
+		const runas = Number(amount);
+		if (isNaN(runas) || runas <= 0) {
+			throw new Error("A quantidade de Runas para transferência deve ser maior que zero.");
+		}
+
+		const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
+		const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+
+		if (cleanFrom === cleanTo) {
+			throw new Error("Não é possível transferir Runas para si mesmo.");
+		}
+
+		const fromAccount = await this.getAccount(cleanFrom);
+		if (!fromAccount || fromAccount.runas < runas) {
+			throw new Error(
+				`Saldo insuficiente de Runas. Você possui ${(fromAccount?.runas || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ, mas tentou transferir ${runas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ.`
+			);
+		}
+
+		// Garante que o destinatário tem conta
+		await this.getAccount(cleanTo);
+
+		const now = Date.now();
+
+		// Debita com CAS (Compare-And-Swap garantindo runas >= ?)
+		const debitRes = await database.dbRun(
+			dbName,
+			`UPDATE bank_accounts SET 
+				runas = runas - ?, 
+				total_withdrawn_runas = total_withdrawn_runas + ?, 
+				updated_at = ? 
+			WHERE (user_id = ? OR user_id = ?) AND runas >= ?`,
+			[runas, runas, now, fromUserId, cleanFrom, runas]
+		);
+
+		if (!debitRes || debitRes.changes === 0) {
+			throw new Error("Falha de concorrência ou saldo insuficiente de Runas no momento da transferência.");
+		}
+
+		// Credita na conta do destinatário
+		await database.dbRun(
+			dbName,
+			`UPDATE bank_accounts SET 
+				runas = runas + ?, 
+				total_deposited_runas = total_deposited_runas + ?, 
+				updated_at = ? 
+			WHERE user_id = ? OR user_id = ?`,
+			[runas, runas, now, toUserId, cleanTo]
+		);
+
+		// Registra transação de débito e crédito
+		try {
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions 
+				(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
+				VALUES (?, 'TRANSFER_OUT', 'market', ?, ?, 1.0, 0, ?, ?, 'COMPLETED')`,
+				[cleanFrom, runas, runas, JSON.stringify({ to: cleanTo, reason }), now]
+			);
+
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions 
+				(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
+				VALUES (?, 'TRANSFER_IN', 'market', ?, ?, 1.0, 0, ?, ?, 'COMPLETED')`,
+				[cleanTo, runas, runas, JSON.stringify({ from: cleanFrom, reason }), now]
+			);
+		} catch (auditErr) {
+			logger.warn(`Erro ao registrar log de transação de transferência de Runas: ${auditErr.message}`);
+		}
+
+		const updatedFrom = await this.getAccount(cleanFrom);
+		const updatedTo = await this.getAccount(cleanTo);
+
+		return {
+			success: true,
+			transferred: runas,
+			fromNewBalance: updatedFrom.runas,
+			toNewBalance: updatedTo.runas
+		};
+	}
+
+	/**
 	 * Listagem paginada e busca de transações para o painel administrativo do RavenaBank.
 	 */
 	async adminGetTransactions({
