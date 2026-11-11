@@ -428,9 +428,10 @@ function registerFeaturesRoutes(api) {
 			// 2. Buffs de Pesca Permanentes (com normalização de JID)
 			let fishingBuffs = [];
 			try {
-				const userIds = typeof FishingGame.getAllFishingUserIds === "function"
-					? FishingGame.getAllFishingUserIds(userId)
-					: [userId, cleanUser, `${cleanUser}@c.us`, `${cleanUser}:54@c.us`];
+				const userIds =
+					typeof FishingGame.getAllFishingUserIds === "function"
+						? FishingGame.getAllFishingUserIds(userId)
+						: [userId, cleanUser, `${cleanUser}@c.us`, `${cleanUser}:54@c.us`];
 				const placeholders = userIds.map(() => "?").join(",");
 
 				const rows = await api.database.dbAll(
@@ -445,16 +446,18 @@ function registerFeaturesRoutes(api) {
 				);
 
 				fishingBuffs = (rows || []).map((r) => {
-					let desc = '';
-					if (r.type === 'inventory_slot') {
+					let desc = "";
+					if (r.type === "inventory_slot") {
 						desc = `Aumenta capacidade permanente da mochila (+${r.value || 1} inv)`;
-					} else if (r.type === 'max_baits') {
+					} else if (r.type === "max_baits") {
 						desc = `Aumenta limite permanente de iscas (+${r.value || 1} iscas)`;
 					}
 					return {
 						id: r.id,
 						type: r.type,
-						originalName: r.originalName || (r.type === 'inventory_slot' ? 'Slot de Inventário' : 'Iscas Extras'),
+						originalName:
+							r.originalName ||
+							(r.type === "inventory_slot" ? "Slot de Inventário" : "Iscas Extras"),
 						remainingUses: r.remainingUses,
 						value: r.value,
 						description: desc
@@ -491,7 +494,9 @@ function registerFeaturesRoutes(api) {
 					items: filteredItems
 				};
 			} catch (farmErr) {
-				api.logger.warn(`Jardim indisponível para consulta de inventário de ${userId}: ${farmErr.message}`);
+				api.logger.warn(
+					`Jardim indisponível para consulta de inventário de ${userId}: ${farmErr.message}`
+				);
 				farmUnavailable = true;
 			}
 
@@ -535,16 +540,18 @@ function registerFeaturesRoutes(api) {
 			const petalitasAmount = Number(petalitas) || 0;
 
 			// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}])
-			const targetBuffIds = (Array.isArray(fishingBuffIds) && fishingBuffIds.length > 0)
-				? fishingBuffIds.map(b => typeof b === "object" ? b.id : Number(b)).filter(Boolean)
-				: (Array.isArray(buffs) && buffs.length > 0)
-					? buffs.map(b => typeof b === "object" ? b.id : Number(b)).filter(Boolean)
-					: [];
+			const targetBuffIds =
+				Array.isArray(fishingBuffIds) && fishingBuffIds.length > 0
+					? fishingBuffIds.map((b) => (typeof b === "object" ? b.id : Number(b))).filter(Boolean)
+					: Array.isArray(buffs) && buffs.length > 0
+						? buffs.map((b) => (typeof b === "object" ? b.id : Number(b))).filter(Boolean)
+						: [];
 
 			// JIDs normalizados para checagem de pesca
-			const fromUserIds = typeof FishingGame.getAllFishingUserIds === "function"
-				? FishingGame.getAllFishingUserIds(fromUserId)
-				: [fromUserId, cleanFrom, `${cleanFrom}@c.us`, `${cleanFrom}:54@c.us`];
+			const fromUserIds =
+				typeof FishingGame.getAllFishingUserIds === "function"
+					? FishingGame.getAllFishingUserIds(fromUserId)
+					: [fromUserId, cleanFrom, `${cleanFrom}@c.us`, `${cleanFrom}:54@c.us`];
 
 			// ==========================================
 			// 1. PRÉ-VALIDAÇÃO ESTREITA (NENHUM WRITE ANTES)
@@ -594,7 +601,9 @@ function registerFeaturesRoutes(api) {
 
 					if (Array.isArray(farmItems) && farmItems.length > 0) {
 						const inv = await jardimClient.getInventory(cleanFrom);
-						const itemsMap = new Map((inv?.items || []).map(it => [it.itemId, Number(it.quantity) || 0]));
+						const itemsMap = new Map(
+							(inv?.items || []).map((it) => [it.itemId, Number(it.quantity) || 0])
+						);
 						for (const reqItem of farmItems) {
 							const currentQty = itemsMap.get(reqItem.itemId) || 0;
 							const needQty = Number(reqItem.amount || reqItem.quantity) || 1;
@@ -619,7 +628,7 @@ function registerFeaturesRoutes(api) {
 			// ==========================================
 
 			let runasTransferred = false;
-			let buffsTransferred = [];
+			const buffsTransferred = [];
 			let farmTransferred = false;
 
 			try {
@@ -639,7 +648,7 @@ function registerFeaturesRoutes(api) {
 
 				// 2.3. Transfere Fazenda (Petalitas + Itens)
 				if (petalitasAmount > 0 || (Array.isArray(farmItems) && farmItems.length > 0)) {
-					const itemsToTransfer = (farmItems || []).map(it => ({
+					const itemsToTransfer = (farmItems || []).map((it) => ({
 						itemId: it.itemId,
 						amount: Number(it.amount || it.quantity) || 1
 					}));
@@ -654,7 +663,10 @@ function registerFeaturesRoutes(api) {
 					farmTransferred
 				});
 			} catch (execErr) {
-				api.logger.error("Erro durante execução da transferência de mercado, iniciando reversão:", execErr);
+				api.logger.error(
+					"Erro durante execução da transferência de mercado, iniciando reversão:",
+					execErr
+				);
 
 				// REVERSÃO CASO ALGUM PASSO POSTERIOR TENHA FALHADO
 				if (buffsTransferred.length > 0) {
@@ -669,9 +681,16 @@ function registerFeaturesRoutes(api) {
 
 				if (runasTransferred) {
 					try {
-						await bankService.transferRunas(cleanTo, cleanFrom, runasAmount, "MARKET_TRANSFER_ROLLBACK");
+						await bankService.transferRunas(
+							cleanTo,
+							cleanFrom,
+							runasAmount,
+							"MARKET_TRANSFER_ROLLBACK"
+						);
 					} catch (revRunasErr) {
-						api.logger.error(`Falha crítica ao reverter Runas (${runasAmount}): ${revRunasErr.message}`);
+						api.logger.error(
+							`Falha crítica ao reverter Runas (${runasAmount}): ${revRunasErr.message}`
+						);
 					}
 				}
 

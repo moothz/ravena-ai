@@ -2511,7 +2511,9 @@ class BankService {
 		);
 
 		if (!debitRes || debitRes.changes === 0) {
-			throw new Error("Falha de concorrência ou saldo insuficiente de Runas no momento da transferência.");
+			throw new Error(
+				"Falha de concorrência ou saldo insuficiente de Runas no momento da transferência."
+			);
 		}
 
 		// Credita na conta do destinatário
@@ -2543,7 +2545,9 @@ class BankService {
 				[cleanTo, runas, runas, JSON.stringify({ from: cleanFrom, reason }), now]
 			);
 		} catch (auditErr) {
-			logger.warn(`Erro ao registrar log de transação de transferência de Runas: ${auditErr.message}`);
+			logger.warn(
+				`Erro ao registrar log de transação de transferência de Runas: ${auditErr.message}`
+			);
 		}
 
 		const updatedFrom = await this.getAccount(cleanFrom);
