@@ -33,6 +33,47 @@ const storageService = require("../../services/StorageService");
  *
  * @param {Object} api - Instância da BotAPI
  */
+const PUBLIC_DIR = path.join(__dirname, "../../../public");
+const ONE_WEEK_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * Política de cache dos arquivos estáticos (express.static):
+ * - HTML: "no-cache" (sempre revalida via ETag), para que referências novas com ?v= sejam vistas
+ *   imediatamente após um deploy em vez de servir a página antiga por até 1 dia;
+ * - assets versionados (URL com ?v=...): 7 dias, já que qualquer mudança troca a URL;
+ * - demais assets: mantém o maxAge padrão (1 dia) definido nas opções.
+ * @param {import("express").Response} res
+ * @param {string} filePath
+ */
+function setStaticCacheHeaders(res, filePath) {
+	if (filePath.endsWith(".html")) {
+		res.setHeader("Cache-Control", "no-cache");
+		return;
+	}
+	const query = (res.req?.originalUrl || res.req?.url || "").split("?")[1] || "";
+	if (/(^|&)v=/.test(query)) {
+		res.setHeader("Cache-Control", `public, max-age=${ONE_WEEK_SECONDS}`);
+	}
+}
+
+const STATIC_OPTIONS = { maxAge: "1d", etag: true, setHeaders: setStaticCacheHeaders };
+
+/**
+ * Versão de cache-busting baseada no mtime do arquivo em public/.
+ * Muda somente quando o arquivo muda (deploy), permitindo que o navegador reutilize o cache
+ * entre visitas — ao contrário de Date.now(), que forçava novo download a cada acesso.
+ * @param {string} relPath - Caminho relativo a public/
+ * @returns {Promise<string>}
+ */
+async function assetVersion(relPath) {
+	try {
+		const stat = await fs.stat(path.join(PUBLIC_DIR, relPath));
+		return Math.floor(stat.mtimeMs).toString(36);
+	} catch {
+		return Date.now().toString(36);
+	}
+}
+
 function registerIndexRoutes(api) {
 	const app = api.app;
 
@@ -90,29 +131,13 @@ function registerIndexRoutes(api) {
 	app.get(["/", "/os", "/os/", "/index.html", "/os/index.html"], handleIndex);
 
 	// Entrega da interface Desktop OS como homepage principal (/)
-	app.use(
-		express.static(path.join(__dirname, "../../../public/os"), {
-			maxAge: "1d",
-			etag: true
-		})
-	);
+	app.use(express.static(path.join(PUBLIC_DIR, "os"), STATIC_OPTIONS));
 
 	// Mantém compatibilidade com a rota /os
-	app.use(
-		"/os",
-		express.static(path.join(__dirname, "../../../public/os"), {
-			maxAge: "1d",
-			etag: true
-		})
-	);
+	app.use("/os", express.static(path.join(PUBLIC_DIR, "os"), STATIC_OPTIONS));
 
-	// Entrega de arquivos estáticos gerais com cache de 1 dia e ETag
-	app.use(
-		express.static(path.join(__dirname, "../../../public"), {
-			maxAge: "1d",
-			etag: true
-		})
-	);
+	// Entrega de arquivos estáticos gerais (HTML revalida; assets com cache de 1 dia, ou 7 com ?v=)
+	app.use(express.static(PUBLIC_DIR, STATIC_OPTIONS));
 
 	// Endpoint de verificação de saúde (100% em memória, ultra-rápido)
 	app.get("/health", (req, res) => {
@@ -285,10 +310,14 @@ function registerIndexRoutes(api) {
 		try {
 			const htmlPath = path.join(__dirname, "../../../public/banco.html");
 			let html = await fs.readFile(htmlPath, "utf-8");
-			const now = Date.now();
-			html = html.replace(/banco\.js\?v=[^"']+/g, `banco.js?v=${now}`);
-			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${now}`);
-			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${now}`);
+			const [vJs, vCmd, vAjuda] = await Promise.all([
+				assetVersion("banco.js"),
+				assetVersion("cmd.css"),
+				assetVersion("ajuda.css")
+			]);
+			html = html.replace(/banco\.js\?v=[^"']+/g, `banco.js?v=${vJs}`);
+			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${vCmd}`);
+			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${vAjuda}`);
 			return res.type("html").send(html);
 		} catch (_) {
 			return res.sendFile(path.join(__dirname, "../../../public/banco.html"));
@@ -310,10 +339,14 @@ function registerIndexRoutes(api) {
 		try {
 			const htmlPath = path.join(__dirname, "../../../public/banco-admin.html");
 			let html = await fs.readFile(htmlPath, "utf-8");
-			const now = Date.now();
-			html = html.replace(/banco-admin\.js\?v=[^"']+/g, `banco-admin.js?v=${now}`);
-			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${now}`);
-			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${now}`);
+			const [vJs, vCmd, vAjuda] = await Promise.all([
+				assetVersion("banco-admin.js"),
+				assetVersion("cmd.css"),
+				assetVersion("ajuda.css")
+			]);
+			html = html.replace(/banco-admin\.js\?v=[^"']+/g, `banco-admin.js?v=${vJs}`);
+			html = html.replace(/cmd\.css\?v=[^"']+/g, `cmd.css?v=${vCmd}`);
+			html = html.replace(/ajuda\.css\?v=[^"']+/g, `ajuda.css?v=${vAjuda}`);
 			return res.type("html").send(html);
 		} catch (_) {
 			return res.sendFile(path.join(__dirname, "../../../public/banco-admin.html"));
