@@ -571,6 +571,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!codigo`**: Exibe o link do repositório de código-fonte do bot
   - *Categoria:* geral
   - *Uso/Exemplos:* `!codigo`
+- **`!updates`**: Mostra as novidades dos últimos 7 dias nos projetos da ravena (bot, waifuletes e jardim das sombras): resumo feito por IA e lista de commits do GitHub
+  - *Categoria:* geral
+  - *Uso/Exemplos:* `!updates`, `!novidades`
 - **`!atencao`**: Envia um alerta sonoro/visual para chamar a atenção no chat
   - *Categoria:* geral
   - *Uso/Exemplos:* `!atencao`

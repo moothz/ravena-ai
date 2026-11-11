@@ -4,6 +4,8 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const Status = require("../utils/Status");
+const MemoryCache = require("../utils/MemoryCache");
+const LLMService = require("../services/LLMService");
 const fs = require("fs").promises;
 const axios = require("axios");
 
@@ -662,6 +664,614 @@ async function statusCommand(bot, message, args, group) {
 	}
 }
 
+// ============================================================
+// !updates — Resumo semanal dos commits dos repositórios
+// ============================================================
+
+/**
+ * Repositórios exibidos no !updates (edite aqui para incluir/remover projetos).
+ * `about` é usado apenas como contexto para o resumo gerado pela IA.
+ */
+const UPDATES_REPOS = [
+	{
+		owner: "moothz",
+		repo: "ravena-ai",
+		emoji: "🐦‍⬛",
+		about:
+			"o bot ravena (WhatsApp, Telegram e Discord): comandos, jogos, IA, figurinhas, banco e painel web"
+	},
+	{
+		owner: "moothz",
+		repo: "waifuletes",
+		emoji: "🌸",
+		about: "o jogo de gacha e harém de personagens da ravena (comandos !mu-...) e seu site"
+	},
+	{
+		owner: "moothz",
+		repo: "jardim-das-sombras",
+		emoji: "🦇",
+		about: "o minigame de fazenda gótica da ravena (comandos !fazenda e !faz-...) e seu painel web"
+	}
+];
+
+const UPDATES_DAYS = 7;
+const UPDATES_DAY_MS = 24 * 60 * 60 * 1000;
+const UPDATES_TIMEZONE = "America/Sao_Paulo";
+const UPDATES_CACHE_TTL_MS = 30 * 60 * 1000; // Resultado completo (GitHub + resumos da IA)
+const UPDATES_PARTIAL_CACHE_TTL_MS = 5 * 60 * 1000; // Quando algum repositório ou resumo falhou
+const UPDATES_HTTP_TIMEOUT_MS = 15 * 1000;
+const UPDATES_MAX_PAGES = 3; // Até 300 commits por repositório (100 por página)
+const UPDATES_LLM_TIMEOUT_MS = 45 * 1000;
+const UPDATES_LLM_INPUT_MAX_CHARS = 6000;
+const UPDATES_SUMMARY_MAX_CHARS = 400;
+const UPDATES_TITLE_MAX_CHARS = 100;
+const UPDATES_BODY_LINE_MAX_CHARS = 90;
+const UPDATES_MAX_MESSAGE_CHARS = 5000;
+// Níveis de detalhe da listagem: usa o primeiro que couber em UPDATES_MAX_MESSAGE_CHARS
+const UPDATES_RENDER_LEVELS = [
+	{ maxCommits: 10, maxBodyLines: 2 },
+	{ maxCommits: 8, maxBodyLines: 1 },
+	{ maxCommits: 6, maxBodyLines: 0 },
+	{ maxCommits: 4, maxBodyLines: 0 }
+];
+
+const COMMIT_TYPE_EMOJIS = {
+	feat: "✨",
+	fix: "🐛",
+	perf: "⚡",
+	refactor: "♻️",
+	style: "🎨",
+	docs: "📝",
+	test: "🧪",
+	build: "📦",
+	ci: "⚙️",
+	chore: "🔧",
+	revert: "⏪"
+};
+// Trailers de commit que não interessam a quem lê (coautoria, assinatura, links de sessão, etc.)
+const COMMIT_TRAILER_REGEX =
+	/^(co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by|reported-by|suggested-by|helped-by|change-id|[\w-]+-session)\s*:/i;
+const COMMIT_GENERATED_LINE_REGEX = /^(?:🤖\s*)?generated with\b/iu;
+const MERGE_TITLE_REGEX = /^Merge (pull request|branch|remote-tracking branch)\b/i;
+
+const UPDATES_SYSTEM_CONTEXT =
+	"Você escreve notas de atualização curtas e amigáveis, em português do Brasil, para usuários de um bot de WhatsApp. Seja direto e factual, sem inventar nada além do que está nos commits.";
+
+const updatesCache = new MemoryCache(UPDATES_CACHE_TTL_MS, 5);
+let updatesInFlight = null;
+
+function pluralizeUpdates(count, singular, pluralForm) {
+	return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+function truncateUpdatesText(text, maxChars) {
+	const clean = String(text ?? "").trim();
+	if (clean.length <= maxChars) return clean;
+	const cut = clean.slice(0, maxChars - 1);
+	const lastSpace = cut.lastIndexOf(" ");
+	let base = (lastSpace > maxChars * 0.6 ? cut.slice(0, lastSpace) : cut).replace(
+		/[\s,;:.-]+$/,
+		""
+	);
+	// Não deixa um `código` aberto pela metade (quebraria a formatação do WhatsApp)
+	if ((base.match(/`/g) ?? []).length % 2 === 1) {
+		const lastTick = base.lastIndexOf("`");
+		base = base.slice(0, lastTick) + base.slice(lastTick + 1);
+	}
+	return `${base}…`;
+}
+
+function formatUpdatesDay(date) {
+	return new Intl.DateTimeFormat("pt-BR", {
+		day: "2-digit",
+		month: "2-digit",
+		timeZone: UPDATES_TIMEZONE
+	}).format(date);
+}
+
+function formatUpdatesTime(date) {
+	return new Intl.DateTimeFormat("pt-BR", {
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+		timeZone: UPDATES_TIMEZONE
+	}).format(date);
+}
+
+function formatUpdatesDateKey(date) {
+	// en-CA gera AAAA-MM-DD
+	return new Intl.DateTimeFormat("en-CA", { timeZone: UPDATES_TIMEZONE }).format(date);
+}
+
+/**
+ * Extrai a URL rel="next" do header Link de paginação do GitHub
+ * @param {string} linkHeader
+ * @returns {string|null}
+ */
+function parseNextLink(linkHeader) {
+	if (!linkHeader || typeof linkHeader !== "string") return null;
+	const match = linkHeader.match(/<([^>]+)>\s*;\s*rel="next"/);
+	return match ? match[1] : null;
+}
+
+/**
+ * Converte as linhas do corpo do commit em itens legíveis: cada tópico (- / * / 1.) ou parágrafo
+ * vira um item, juntando as linhas quebradas em 72 colunas e descartando trailers.
+ * @param {string[]} lines
+ * @returns {string[]}
+ */
+function extractCommitBodyItems(lines) {
+	const items = [];
+	let current = null;
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (
+			!line ||
+			/^[-=_*~.]{3,}$/.test(line) ||
+			COMMIT_TRAILER_REGEX.test(line) ||
+			COMMIT_GENERATED_LINE_REGEX.test(line)
+		) {
+			current = null;
+			continue;
+		}
+
+		const bullet = line.match(/^(?:[-*•+]|\d+[.)])\s+(.+)$/);
+		if (bullet) {
+			current = [bullet[1]];
+			items.push(current);
+		} else if (current) {
+			current.push(line);
+		} else {
+			current = [line];
+			items.push(current);
+		}
+	}
+
+	return items
+		.map((parts) =>
+			parts
+				.join(" ")
+				.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // [texto](link) -> texto
+				.replace(/\s+/g, " ")
+				.trim()
+		)
+		.filter(Boolean);
+}
+
+/**
+ * Normaliza um commit da API REST do GitHub
+ * @param {Object} raw - Item de GET /repos/{owner}/{repo}/commits
+ * @returns {{sha: string, url: string|null, date: Date|null, title: string, body: string[], isMerge: boolean, isBot: boolean}}
+ */
+function parseGitHubCommit(raw) {
+	const message = String(raw?.commit?.message ?? "").replace(/\r\n?/g, "\n");
+	const [firstLine = "", ...bodyLines] = message.split("\n");
+	const title = firstLine.trim();
+	const authorName = raw?.commit?.author?.name ?? "";
+	const isBot = /\[bot\]$/i.test(authorName) || /\[bot\]$/i.test(raw?.author?.login ?? "");
+	const dateStr = raw?.commit?.author?.date ?? raw?.commit?.committer?.date;
+	const date = dateStr ? new Date(dateStr) : null;
+
+	return {
+		sha: raw?.sha ?? "",
+		url: raw?.html_url ?? null,
+		date: date && !isNaN(date.getTime()) ? date : null,
+		title,
+		// Commits de bots (dependabot etc.) têm corpo gigante e pouco útil: mostra só o título
+		body: isBot ? [] : extractCommitBodyItems(bodyLines),
+		isMerge:
+			(Array.isArray(raw?.parents) && raw.parents.length > 1) || MERGE_TITLE_REGEX.test(title),
+		isBot
+	};
+}
+
+/**
+ * Separa tipo/escopo/assunto de títulos no padrão conventional commits (feat(escopo): assunto)
+ * @param {string} title
+ * @returns {{type: string|null, scope: string|null, subject: string}}
+ */
+function parseConventionalTitle(title) {
+	const match = String(title ?? "").match(/^([a-z]+)(?:\(([^)]*)\))?!?:\s*(.+)$/i);
+	const type = match?.[1]?.toLowerCase();
+	if (!match || !COMMIT_TYPE_EMOJIS[type]) {
+		return { type: null, scope: null, subject: title };
+	}
+	return { type, scope: match[2]?.trim() || null, subject: match[3].trim() };
+}
+
+/**
+ * Busca os commits de um repositório desde `since` (branch padrão), seguindo a paginação.
+ * @param {{owner: string, repo: string}} repoDef
+ * @param {Object} [options]
+ * @param {Object} [options.http=axios] - Cliente HTTP com método get(url, config) no formato do axios
+ * @param {string} [options.since] - Data ISO inicial
+ * @param {string} [options.token] - Token do GitHub (opcional, padrão GITHUB_TOKEN)
+ * @param {number} [options.maxPages]
+ * @param {number} [options.httpTimeoutMs]
+ * @returns {Promise<{commits: Object[], truncated: boolean}>}
+ */
+async function fetchRepoCommits(repoDef, options = {}) {
+	const {
+		http = axios,
+		since = new Date(Date.now() - UPDATES_DAYS * UPDATES_DAY_MS).toISOString(),
+		token = process.env.GITHUB_TOKEN,
+		maxPages = UPDATES_MAX_PAGES,
+		httpTimeoutMs = UPDATES_HTTP_TIMEOUT_MS
+	} = options;
+
+	const headers = {
+		"User-Agent": "ravena-bot",
+		Accept: "application/vnd.github+json",
+		"X-GitHub-Api-Version": "2022-11-28"
+	};
+	if (token) {
+		headers.Authorization = `Bearer ${token}`;
+	}
+
+	let url = `https://api.github.com/repos/${repoDef.owner}/${repoDef.repo}/commits`;
+	let params = { since, per_page: 100 };
+	const commits = [];
+	let pages = 0;
+
+	while (url && pages < maxPages) {
+		const response = await http.get(url, { params, headers, timeout: httpTimeoutMs });
+		pages++;
+		if (!Array.isArray(response?.data)) {
+			throw new Error("Resposta inesperada da API do GitHub");
+		}
+		commits.push(...response.data);
+		url = parseNextLink(response.headers?.link);
+		params = undefined; // O link "next" já traz since/per_page/page
+	}
+
+	return { commits, truncated: Boolean(url) };
+}
+
+/**
+ * Traduz erros do axios/GitHub para uma frase curta para o usuário
+ * @param {Error} error
+ * @returns {string}
+ */
+function describeGitHubError(error) {
+	const status = error?.response?.status;
+	const remaining = error?.response?.headers?.["x-ratelimit-remaining"];
+
+	if (status === 404) return "repositório não encontrado ou privado";
+	if (status === 429 || (status === 403 && String(remaining) === "0")) {
+		return "limite de consultas ao GitHub atingido, tente mais tarde";
+	}
+	if (status === 401) return "token do GitHub inválido";
+	if (status) return `o GitHub respondeu com erro HTTP ${status}`;
+	if (error?.code === "ECONNABORTED" || /timeout/i.test(error?.message ?? "")) {
+		return "o GitHub demorou demais para responder";
+	}
+	return "falha ao conectar no GitHub";
+}
+
+function buildUpdatesSummaryPrompt(repoDef, commits) {
+	const entries = [];
+	let used = 0;
+
+	for (let i = 0; i < commits.length; i++) {
+		const commit = commits[i];
+		let entry = `- ${commit.title}`;
+		if (commit.body.length > 0) {
+			entry += `\n  ${commit.body
+				.slice(0, 4)
+				.map((item) => truncateUpdatesText(item, 200))
+				.join(" | ")}`;
+		}
+		if (used + entry.length > UPDATES_LLM_INPUT_MAX_CHARS) {
+			entries.push(`(+${commits.length - i} commits mais antigos omitidos)`);
+			break;
+		}
+		entries.push(entry);
+		used += entry.length + 1;
+	}
+
+	return `Repositório ${repoDef.owner}/${repoDef.repo}: ${repoDef.about}.
+Commits dos últimos ${UPDATES_DAYS} dias (do mais recente para o mais antigo):
+${entries.join("\n")}
+
+Escreva um resumo de 1 a 3 frases curtas (no máximo ${UPDATES_SUMMARY_MAX_CHARS - 50} caracteres) contando o que mudou nesta semana para quem usa o bot ou joga: novidades, correções e melhorias perceptíveis.
+- Ignore detalhes puramente técnicos (refatoração, lint, testes, CI, docker, dependências), a não ser que sejam tudo o que foi feito.
+- Não use títulos, listas, markdown, hashes de commit, nomes de arquivos nem emojis.
+- Responda somente com o resumo, em português do Brasil.`;
+}
+
+/**
+ * Limpa a resposta da IA para caber em uma linha de citação do WhatsApp.
+ * @param {*} response
+ * @returns {string|null} - null se a resposta for vazia ou uma mensagem de erro do LLMService
+ */
+function cleanUpdatesSummary(response) {
+	if (typeof response !== "string") return null;
+
+	const text = response
+		.split("\n")
+		.filter((line) => !/^\s*#{1,6}\s/.test(line)) // Títulos markdown não fazem parte do resumo
+		.map((line) => line.replace(/^\s*(?:>\s*|[-*•]\s+)/, "").trim())
+		.filter(Boolean)
+		.join(" ")
+		.replace(/\*\*(.+?)\*\*/g, "*$1*")
+		.replace(/^(?:resumo|summary)\s*:\s*/i, "")
+		.replace(/^["“](.+)["”]$/, "$1")
+		.replace(/\s{2,}/g, " ")
+		.trim();
+
+	if (
+		text.length < 10 ||
+		/^erro\b/i.test(text) ||
+		/não foi possível gerar|solicitação cancelada/i.test(text)
+	) {
+		return null;
+	}
+	return truncateUpdatesText(text, UPDATES_SUMMARY_MAX_CHARS);
+}
+
+/**
+ * Gera o resumo de 1-3 frases dos commits com a IA. Nunca lança: retorna null em falha/timeout.
+ * @param {Object} repoDef
+ * @param {Object[]} commits - Commits normalizados (sem merges)
+ * @param {Object} [options]
+ * @param {Object} [options.llm] - Instância com getCompletion(options) (padrão LLMService)
+ * @param {number} [options.llmTimeoutMs]
+ * @returns {Promise<string|null>}
+ */
+async function summarizeRepoCommits(repoDef, commits, options = {}) {
+	if (!commits || commits.length === 0) return null;
+
+	const { llmTimeoutMs = UPDATES_LLM_TIMEOUT_MS } = options;
+	let timer = null;
+
+	try {
+		const llm = options.llm ?? LLMService.getInstance();
+		const response = await Promise.race([
+			llm.getCompletion({
+				prompt: buildUpdatesSummaryPrompt(repoDef, commits),
+				systemContext: UPDATES_SYSTEM_CONTEXT,
+				temperature: 0.4,
+				priority: 4
+			}),
+			new Promise((_, reject) => {
+				timer = setTimeout(
+					() => reject(new Error(`tempo limite de ${llmTimeoutMs}ms excedido`)),
+					llmTimeoutMs
+				);
+			})
+		]);
+
+		const summary = cleanUpdatesSummary(response);
+		if (!summary) {
+			logger.warn(`[updates] Resumo inválido da IA para ${repoDef.repo}:`, response);
+		}
+		return summary;
+	} catch (error) {
+		logger.warn(`[updates] Falha ao resumir ${repoDef.repo} com IA: ${error.message}`);
+		return null;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/**
+ * Cabeçalho usado quando a IA não respondeu: contagem de novidades/correções/outros
+ * @param {Object[]} commits
+ * @returns {string}
+ */
+function buildUpdatesFallbackSummary(commits) {
+	let feats = 0;
+	let fixes = 0;
+	for (const commit of commits) {
+		const { type } = parseConventionalTitle(commit.title);
+		if (type === "feat") feats++;
+		else if (type === "fix") fixes++;
+	}
+	const others = commits.length - feats - fixes;
+
+	const parts = [];
+	if (feats) parts.push(pluralizeUpdates(feats, "novidade", "novidades"));
+	if (fixes) parts.push(pluralizeUpdates(fixes, "correção", "correções"));
+	if (others) {
+		parts.push(
+			feats || fixes
+				? pluralizeUpdates(others, "outra mudança", "outras mudanças")
+				: pluralizeUpdates(others, "mudança", "mudanças")
+		);
+	}
+
+	const joined = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}` : parts[0];
+	return `${joined} nesta semana.`;
+}
+
+/**
+ * Busca e resume um repositório. Nunca lança: falhas viram { ok: false, error }.
+ * @param {Object} repoDef
+ * @param {Object} [options] - Repassado para fetchRepoCommits e summarizeRepoCommits
+ * @returns {Promise<Object>}
+ */
+async function buildRepoUpdates(repoDef, options = {}) {
+	let fetched;
+	try {
+		fetched = await fetchRepoCommits(repoDef, options);
+	} catch (error) {
+		logger.warn(
+			`[updates] Falha ao buscar commits de ${repoDef.owner}/${repoDef.repo}: ${error.message}`
+		);
+		return { repo: repoDef, ok: false, error: describeGitHubError(error) };
+	}
+
+	const parsed = fetched.commits.map(parseGitHubCommit);
+	const commits = parsed.filter((commit) => !commit.isMerge);
+	const summary = await summarizeRepoCommits(repoDef, commits, options);
+
+	return {
+		repo: repoDef,
+		ok: true,
+		commits,
+		mergeCount: parsed.length - commits.length,
+		truncated: fetched.truncated,
+		summary
+	};
+}
+
+function formatUpdatesCommitTitle(commit) {
+	const date = commit.date ? `\`${formatUpdatesDay(commit.date)}\` ` : "";
+	const { type, scope, subject } = parseConventionalTitle(commit.title);
+	const emoji = COMMIT_TYPE_EMOJIS[type] ?? "🔹";
+	const text = truncateUpdatesText(subject || "(sem mensagem)", UPDATES_TITLE_MAX_CHARS);
+	return `${emoji} ${date}${scope ? `*${scope}*: ` : ""}${text}`;
+}
+
+/**
+ * Formata a seção de um repositório em árvore (├ └ │)
+ * @param {Object} result - Retorno de buildRepoUpdates
+ * @param {{maxCommits: number, maxBodyLines: number}} level
+ * @returns {string}
+ */
+function formatRepoUpdatesSection(result, level) {
+	const { repo } = result;
+	const commitsUrl = `https://github.com/${repo.owner}/${repo.repo}/commits`;
+	const lines = [];
+
+	if (!result.ok) {
+		lines.push(`${repo.emoji} *${repo.repo}*`);
+		lines.push(`> ⚠️ Não consegui buscar os commits: ${result.error}.`);
+		lines.push(`🔗 ${commitsUrl}`);
+		return lines.join("\n");
+	}
+
+	const total = result.commits.length;
+	const totalLabel = `${total}${result.truncated ? "+" : ""} ${total === 1 ? "commit" : "commits"}`;
+	let header = `${repo.emoji} *${repo.repo}* · ${totalLabel}`;
+	if (result.mergeCount > 0) {
+		header += ` _(+${pluralizeUpdates(result.mergeCount, "merge", "merges")})_`;
+	}
+	lines.push(header);
+
+	if (total === 0) {
+		lines.push(`> Nenhum commit nos últimos ${UPDATES_DAYS} dias.`);
+		lines.push(`🔗 ${commitsUrl}`);
+		return lines.join("\n");
+	}
+
+	lines.push(`> ${result.summary || buildUpdatesFallbackSummary(result.commits)}`);
+	lines.push("");
+
+	const shown = result.commits.slice(0, level.maxCommits);
+	shown.forEach((commit, index) => {
+		const isLastCommit = index === shown.length - 1;
+		lines.push(`${isLastCommit ? "└" : "├"} ${formatUpdatesCommitTitle(commit)}`);
+
+		const items = commit.body.slice(0, level.maxBodyLines);
+		const hiddenItems = commit.body.length - items.length;
+		items.forEach((item, itemIndex) => {
+			const isLastItem = itemIndex === items.length - 1;
+			const indent = isLastCommit ? "    " : "│   ";
+			const suffix = isLastItem && hiddenItems > 0 ? ` _(+${hiddenItems})_` : "";
+			lines.push(
+				`${indent}${isLastItem ? "└" : "├"} ${truncateUpdatesText(item, UPDATES_BODY_LINE_MAX_CHARS)}${suffix}`
+			);
+		});
+	});
+
+	const remaining = total - shown.length;
+	if (remaining > 0) {
+		const moreLabel = pluralizeUpdates(remaining, "commit", "commits");
+		lines.push(result.truncated ? `_…e mais de ${moreLabel}_` : `_…e mais ${moreLabel}_`);
+	}
+	lines.push(`🔗 ${commitsUrl}`);
+
+	return lines.join("\n");
+}
+
+/**
+ * Monta a mensagem final do !updates (pura: sem rede). Reduz o nível de detalhe até caber no limite.
+ * @param {Object[]} repoResults - Retornos de buildRepoUpdates
+ * @param {Object} [options]
+ * @param {Date} [options.now]
+ * @param {number} [options.maxChars]
+ * @returns {string}
+ */
+function formatUpdatesMessage(repoResults, options = {}) {
+	const { now = new Date(), maxChars = UPDATES_MAX_MESSAGE_CHARS } = options;
+	const since = new Date(now.getTime() - UPDATES_DAYS * UPDATES_DAY_MS);
+	const usedAI = repoResults.some((result) => result.ok && result.summary);
+
+	const header = `📰 *Novidades da semana*\n_Commits de ${formatUpdatesDay(since)} a ${formatUpdatesDay(now)} nos projetos da ravena_`;
+	const footer = `> Atualizado em ${formatUpdatesDay(now)} às ${formatUpdatesTime(now)}${usedAI ? " · resumos gerados por IA" : ""}`;
+
+	let content = "";
+	for (const level of UPDATES_RENDER_LEVELS) {
+		const sections = repoResults.map((result) => formatRepoUpdatesSection(result, level));
+		content = [header, ...sections, footer].join("\n\n");
+		if (content.length <= maxChars) break;
+	}
+	return content;
+}
+
+/**
+ * Busca os repositórios em paralelo, resume com IA e formata. Resultado em cache por ~30 min
+ * (5 min se algo falhou) e requisições simultâneas compartilham a mesma busca.
+ * @param {Object} [options] - { now, useCache, repos, http, llm, token, ... }
+ * @returns {Promise<string>}
+ */
+async function getUpdatesReport(options = {}) {
+	const { now = new Date(), useCache = true, repos = UPDATES_REPOS } = options;
+	const cacheKey = `updates:${formatUpdatesDateKey(now)}`;
+
+	if (useCache) {
+		const cached = updatesCache.get(cacheKey);
+		if (cached) return cached;
+		if (updatesInFlight) return updatesInFlight;
+	}
+
+	const run = (async () => {
+		const since = new Date(now.getTime() - UPDATES_DAYS * UPDATES_DAY_MS).toISOString();
+		const results = await Promise.all(
+			repos.map((repoDef) => buildRepoUpdates(repoDef, { ...options, since }))
+		);
+		const content = formatUpdatesMessage(results, { now });
+
+		if (useCache) {
+			const complete = results.every(
+				(result) => result.ok && (result.commits.length === 0 || result.summary)
+			);
+			updatesCache.set(
+				cacheKey,
+				content,
+				complete ? UPDATES_CACHE_TTL_MS : UPDATES_PARTIAL_CACHE_TTL_MS
+			);
+		}
+		return content;
+	})();
+
+	if (!useCache) return run;
+
+	updatesInFlight = run;
+	try {
+		return await run;
+	} finally {
+		updatesInFlight = null;
+	}
+}
+
+async function updatesCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+
+	try {
+		const content = await getUpdatesReport();
+		return new ReturnMessage({ chatId, content });
+	} catch (error) {
+		logger.error("Erro ao montar o !updates:", error);
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Não consegui buscar as atualizações agora. Tente novamente mais tarde."
+		});
+	}
+}
+
 // Criar array de comandos usando a classe Command
 const commands = [
 	new Command({
@@ -686,6 +1296,19 @@ const commands = [
 		description: "Define seu apelido no grupo",
 		category: "grupo",
 		method: apelidoCommand
+	}),
+	new Command({
+		name: "updates",
+		aliases: ["novidades", "atualizacoes", "atualizações"],
+		description: "Novidades da semana nos projetos da ravena (resumo + commits)",
+		usage: "!updates",
+		category: "geral",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "📰"
+		},
+		cooldown: 30,
+		method: updatesCommand
 	}),
 
 	// new Command({
@@ -838,6 +1461,12 @@ const helper = {
 			category: "geral"
 		},
 		{
+			cmd: "!updates",
+			desc: "Mostra as novidades dos últimos 7 dias nos projetos da ravena (bot, waifuletes e jardim das sombras): resumo feito por IA e lista de commits do GitHub",
+			usage: ["!updates", "!novidades"],
+			category: "geral"
+		},
+		{
 			cmd: "!atencao",
 			desc: "Envia um alerta sonoro/visual para chamar a atenção no chat",
 			usage: ["!atencao"],
@@ -852,5 +1481,13 @@ module.exports = {
 	getUserNickname,
 	resolveUserNickname,
 	getGlobalNick,
-	saveGlobalNick
+	saveGlobalNick,
+	// !updates (exportados para testes)
+	UPDATES_REPOS,
+	fetchRepoCommits,
+	parseGitHubCommit,
+	summarizeRepoCommits,
+	buildRepoUpdates,
+	formatUpdatesMessage,
+	getUpdatesReport
 };

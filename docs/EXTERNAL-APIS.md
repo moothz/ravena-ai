@@ -60,6 +60,7 @@ Configurados na chave `"llm"` do `service-providers.json`.
 | **Unsplash** | `UNSPLASH_API_KEY` | Busca e download de fotos artísticas em alta definição. | [`src/functions/MediaCommands.js`](../src/functions/MediaCommands.js) |
 | **NASA** | `NASA_API` | Imagem astronômica do dia (APOD) e dados de missões espaciais. | [`src/functions/GeneralCommands.js`](../src/functions/GeneralCommands.js) |
 | **Jina AI** | `JINA_API_KEY` | Extração limpa de conteúdo web e busca contextual profunda para a IA. | [`src/services/LLMService.js`](../src/services/LLMService.js) |
+| **GitHub REST API** | `GITHUB_TOKEN` _(opcional)_ | Commits dos últimos 7 dias dos repositórios da ravena para o `!updates`. Sem token usa a API anônima (60 req/h); resultado fica em cache por 30 min. | [`src/functions/GeneralCommands.js`](../src/functions/GeneralCommands.js) |
 
 ---
 
