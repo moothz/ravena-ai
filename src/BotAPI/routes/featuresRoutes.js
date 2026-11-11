@@ -584,6 +584,14 @@ function registerFeaturesRoutes(api) {
 						});
 					}
 				}
+
+				// Tetos de inventário (500) e iscas (300) do destinatário
+				if (typeof FishingGame.checkBuffTransferCapacity === "function") {
+					const capCheck = await FishingGame.checkBuffTransferCapacity(toUserId, targetBuffIds);
+					if (!capCheck.ok) {
+						return res.status(400).json({ success: false, reason: capCheck.reason });
+					}
+				}
 			}
 
 			// 1.3. Valida Farm (Petalitas e Itens) no Jardim
@@ -641,7 +649,10 @@ function registerFeaturesRoutes(api) {
 				// 2.2. Transfere Buffs
 				if (targetBuffIds.length > 0) {
 					for (const buffId of targetBuffIds) {
-						await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+						const transferRes = await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+						if (transferRes && transferRes.success === false) {
+							throw new Error(transferRes.reason || `Falha ao transferir buff ${buffId}`);
+						}
 						buffsTransferred.push(buffId);
 					}
 				}
@@ -672,7 +683,7 @@ function registerFeaturesRoutes(api) {
 				if (buffsTransferred.length > 0) {
 					for (const buffId of buffsTransferred) {
 						try {
-							await FishingGame.transferBuff(toUserId, fromUserId, buffId);
+							await FishingGame.transferBuff(toUserId, fromUserId, buffId, { skipCapCheck: true });
 						} catch (revBuffErr) {
 							api.logger.error(`Falha crítica ao reverter buff ${buffId}: ${revBuffErr.message}`);
 						}

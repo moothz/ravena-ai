@@ -298,6 +298,20 @@ Snapshots das estatísticas dos jogadores para cálculo de deltas do resumo sema
 | `coins` | INTEGER | Saldo de moedas no Jardim |
 | `snapshot_at` | INTEGER PK | Timestamp da captura do snapshot (ms) |
 
+#### `fazenda_cart_items`
+Carrinho de compras diárias de cada jogador (`!faz-carrinho` / `!faz-comprar carrinho`). Persistente: comprar não esvazia o carrinho.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `user_id` | TEXT PK | ID do jogador (apenas dígitos, mesmo ID usado na API do Jardim) |
+| `item_id` | TEXT PK | ID estável do item na loja (ex: `01_nightshade`, `blood_ruby`) |
+| `item_name` | TEXT | Nome do item (cache de exibição) |
+| `item_type` | TEXT | `seed` ou `consumable` (decorações não entram no carrinho) |
+| `item_index` | INTEGER | Número do item na loja (cache de exibição) |
+| `quantity` | INTEGER | Quantidade desejada por compra (limitada ao limite diário do item) |
+| `created_at` | INTEGER | Quando o item entrou no carrinho (ms) — define a ordem de compra |
+| `updated_at` | INTEGER | Última alteração da linha (ms) |
+
 ### `slots.db`
 Caça-níqueis. Tabelas: `slots_users` (perfil do jogador), `slots_group_stats` (ranking por grupo).
 

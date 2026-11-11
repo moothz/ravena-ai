@@ -20,7 +20,7 @@ const jardimClient = new ShadowGardenClient();
 const database = Database.getInstance();
 const DB_FAZENDA = "fazenda";
 
-// Inicializa banco para snapshots semanais da fazenda
+// Inicializa banco para snapshots semanais e carrinho de compras da fazenda
 database.getSQLiteDb(
 	DB_FAZENDA,
 	`
@@ -34,6 +34,17 @@ database.getSQLiteDb(
     PRIMARY KEY (player_id, snapshot_at)
   );
   CREATE INDEX IF NOT EXISTS idx_fazenda_snapshot_time ON fazenda_player_snapshots(snapshot_at);
+  CREATE TABLE IF NOT EXISTS fazenda_cart_items (
+    user_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_name TEXT,
+    item_type TEXT,
+    item_index INTEGER,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
 `
 );
 
@@ -1257,7 +1268,8 @@ async function handleFazLoja(bot, message) {
 			text += "\n";
 		}
 
-		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\``;
+		text += `🛍️ *Para comprar:* \`!faz-comprar <número ou nome> [quantidade]\`\n`;
+		text += `🧺 *Carrinho:* salve suas compras diárias com \`!faz-carrinho add <item> [qtd]\` e compre tudo com \`!faz-comprar carrinho\``;
 
 		const extraOpts = {};
 		if (bot && bot.useTelegram) {
@@ -1292,6 +1304,11 @@ async function handleFazLoja(bot, message) {
 				if (consRow.length > 0) lojaButtons.push(consRow);
 			}
 
+			lojaButtons.push([
+				{ text: "➕ Adicionar ao Carrinho", action: "/faz-carrinho add" },
+				{ text: "🧺 Meu Carrinho", action: "/faz-carrinho" }
+			]);
+
 			if (lojaButtons.length > 0) {
 				extraOpts.telegram = { buttons: lojaButtons };
 			}
@@ -1315,9 +1332,15 @@ async function handleFazComprar(bot, message) {
 	if (args.length === 0) {
 		return replyReturnMessage(
 			chatId,
-			`🛒 *Como comprar:*\n• \`!faz-comprar <id ou número do item> [quantidade]\`\nExemplo: \`!faz-comprar 1 5\` (compra 5 sementes do item #1)`,
+			`🛒 *Como comprar:*\n• \`!faz-comprar <id ou número do item> [quantidade]\`\nExemplo: \`!faz-comprar 1 5\` (compra 5 sementes do item #1)\n• \`!faz-comprar carrinho\` (compra tudo o que estiver disponível no seu carrinho)`,
 			message
 		);
+	}
+
+	// "!faz-comprar carrinho" (sozinho) compra o carrinho salvo. Com mais palavras
+	// (ex: "carrinho do coveiro") segue o fluxo normal e compra o item da loja.
+	if (args.length === 1 && CART_KEYWORDS.has(args[0].toLowerCase())) {
+		return handleCartPurchase(bot, message);
 	}
 
 	const itemParam = args[0];
@@ -1376,6 +1399,937 @@ async function handleFazComprar(bot, message) {
 	} catch (err) {
 		logger.error(`[handleFazComprar] Erro ao comprar: ${err.message}`);
 		return replyReturnMessage(chatId, `❌ Falha na compra: ${err.message}`, message);
+	}
+}
+
+// ─── CARRINHO DE COMPRAS ─────────────────────────────────────────────────────
+//
+// Lista persistente (por usuário) de itens da loja + quantidades, no estilo do
+// carrinho do Farm Admin web. O carrinho nunca se esgota: comprar não o esvazia,
+// ele só "salva" o padrão de compras diárias. Na compra, leva-se o máximo
+// disponível de cada linha (limite diário restante e saldo), na ordem do carrinho.
+
+const CART_KEYWORDS = new Set(["carrinho", "cart"]);
+const CART_MAX_QUANTITY = 999;
+const CART_QTY_MAX_WORDS = new Set(["max", "tudo", "all", "todas", "todos"]);
+const CART_SUBCOMMANDS = {
+	ver: ["ver", "listar", "lista", "mostrar", "show", "list"],
+	add: ["add", "adicionar", "adiciona", "colocar", "coloca", "por", "salvar", "+"],
+	rem: ["rem", "remover", "remove", "tirar", "tira", "rm", "del", "deletar", "excluir", "-"],
+	limpar: ["limpar", "limpa", "esvaziar", "zerar", "clear"],
+	comprar: ["comprar", "compra", "buy", "finalizar", "pagar"],
+	ajuda: ["ajuda", "help", "?"]
+};
+const CART_ALLOWED_TYPES = new Set(["seed", "consumable"]);
+const CART_TYPE_EMOJI = { seed: "🌱", consumable: "🧪", decoration: "🏺" };
+
+// Evita duas compras de carrinho simultâneas do mesmo usuário (ex: clique duplo no botão)
+const cartPurchasesInFlight = new Set();
+
+/**
+ * Normaliza texto para comparação de nomes/IDs de itens (sem acentos, _ e - viram espaço)
+ * @param {string} str
+ * @returns {string}
+ */
+function normalizeItemText(str) {
+	return String(str ?? "")
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[̀-ͯ]/g, "")
+		.replace(/[-_]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/**
+ * Achata o catálogo retornado por getShop numa lista única com o tipo de cada item
+ * @param {Object} shop
+ * @returns {Array<Object>}
+ */
+function flattenShopCatalog(shop) {
+	const items = [];
+	const pushAll = (list, itemType) => {
+		if (!Array.isArray(list)) return;
+		for (const it of list) {
+			if (it && it.id) items.push({ ...it, itemType });
+		}
+	};
+	pushAll(shop?.seeds, "seed");
+	pushAll(shop?.consumables, "consumable");
+	pushAll(shop?.decorations, "decoration");
+	return items;
+}
+
+/**
+ * Resolve um item da loja por número (#index), ID ou nome (exato, depois parcial),
+ * na mesma ordem de prioridade da API (sementes → consumíveis → decorações)
+ * @param {Object} shop
+ * @param {string|number} query
+ * @returns {Object|null}
+ */
+function findShopCatalogItem(shop, query) {
+	const raw = String(query ?? "")
+		.trim()
+		.replace(/^#/, "");
+	if (!raw) return null;
+	const items = flattenShopCatalog(shop);
+
+	if (/^\d+$/.test(raw)) {
+		const idx = parseInt(raw, 10);
+		return items.find((it) => Number(it.index) === idx) || null;
+	}
+
+	const q = normalizeItemText(raw);
+	return (
+		items.find((it) => normalizeItemText(it.id) === q || normalizeItemText(it.name) === q) ||
+		items.find(
+			(it) => normalizeItemText(it.name).includes(q) || normalizeItemText(it.id).includes(q)
+		) ||
+		null
+	);
+}
+
+/**
+ * Separa "<item...> [qtd]" — a quantidade é o último token se for número, "5x", "x5" ou "max"/"tudo"
+ * @param {string[]} tokens
+ * @returns {{ itemQuery: string, qtyToken: string|null }}
+ */
+function splitItemAndQuantity(tokens) {
+	if (tokens.length >= 2) {
+		const last = tokens[tokens.length - 1].toLowerCase();
+		if (/^x?\d+x?$/.test(last) || CART_QTY_MAX_WORDS.has(last)) {
+			return { itemQuery: tokens.slice(0, -1).join(" "), qtyToken: last };
+		}
+	}
+	return { itemQuery: tokens.join(" "), qtyToken: null };
+}
+
+/**
+ * Converte o token de quantidade em número ("max"/"tudo" → maxWordValue)
+ * @param {string|null} qtyToken
+ * @param {number|null} maxWordValue
+ * @returns {number|null} null se ausente; NaN se inválido
+ */
+function parseCartQuantity(qtyToken, maxWordValue = null) {
+	if (!qtyToken) return null;
+	if (CART_QTY_MAX_WORDS.has(qtyToken)) return maxWordValue;
+	const n = parseInt(qtyToken.replace(/x/g, ""), 10);
+	return Number.isFinite(n) && n > 0 ? n : NaN;
+}
+
+/**
+ * Retorna o nome de exibição de um item com seu número da loja
+ * @param {{ index?: number|null, name?: string, itemId?: string }} item
+ * @returns {string}
+ */
+function formatCartItemLabel(item) {
+	const idx = item.index !== undefined && item.index !== null ? `#${item.index} ` : "";
+	return `${idx}${item.name || item.itemId}`;
+}
+
+function formatPtl(value) {
+	return `${Number(value || 0).toLocaleString("pt-BR")} Ptl`;
+}
+
+/**
+ * Lê as linhas do carrinho do usuário (ordem de inserção)
+ * @param {string} userId
+ * @returns {Promise<Array<{ itemId: string, name: string, itemType: string, index: number|null, quantity: number }>>}
+ */
+async function getCartItems(userId) {
+	const rows = await database.dbAll(
+		DB_FAZENDA,
+		`SELECT item_id, item_name, item_type, item_index, quantity
+		 FROM fazenda_cart_items
+		 WHERE user_id = ?
+		 ORDER BY created_at ASC, rowid ASC`,
+		[userId]
+	);
+	return (rows || [])
+		.map((r) => ({
+			itemId: r.item_id,
+			name: r.item_name || r.item_id,
+			itemType: r.item_type,
+			index: r.item_index ?? null,
+			quantity: Number(r.quantity) || 0
+		}))
+		.filter((l) => l.quantity > 0);
+}
+
+/**
+ * Soma quantidade a uma linha do carrinho (cria se não existir), limitada a maxQuantity
+ * @returns {Promise<number>} quantidade final da linha
+ */
+async function addCartItem(userId, meta, quantity, maxQuantity) {
+	const now = Date.now();
+	const capped = Math.min(quantity, maxQuantity);
+	await database.dbRun(
+		DB_FAZENDA,
+		`INSERT INTO fazenda_cart_items (user_id, item_id, item_name, item_type, item_index, quantity, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(user_id, item_id) DO UPDATE SET
+		   quantity = MIN(fazenda_cart_items.quantity + excluded.quantity, ?),
+		   item_name = excluded.item_name,
+		   item_type = excluded.item_type,
+		   item_index = excluded.item_index,
+		   updated_at = excluded.updated_at`,
+		[userId, meta.id, meta.name, meta.itemType, meta.index ?? null, capped, now, now, maxQuantity]
+	);
+	const row = await database.dbGet(
+		DB_FAZENDA,
+		"SELECT quantity FROM fazenda_cart_items WHERE user_id = ? AND item_id = ?",
+		[userId, meta.id]
+	);
+	return Number(row?.quantity) || capped;
+}
+
+/**
+ * Remove quantidade de uma linha (ou a linha inteira se quantity for null / >= atual)
+ * @returns {Promise<{ previous: number, remaining: number }|null>} null se não estava no carrinho
+ */
+async function removeCartItem(userId, itemId, quantity = null) {
+	const row = await database.dbGet(
+		DB_FAZENDA,
+		"SELECT quantity FROM fazenda_cart_items WHERE user_id = ? AND item_id = ?",
+		[userId, itemId]
+	);
+	if (!row) return null;
+	const previous = Number(row.quantity) || 0;
+
+	if (!quantity || quantity >= previous) {
+		await database.dbRun(
+			DB_FAZENDA,
+			"DELETE FROM fazenda_cart_items WHERE user_id = ? AND item_id = ?",
+			[userId, itemId]
+		);
+		return { previous, remaining: 0 };
+	}
+
+	await database.dbRun(
+		DB_FAZENDA,
+		"UPDATE fazenda_cart_items SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND item_id = ?",
+		[quantity, Date.now(), userId, itemId]
+	);
+	return { previous, remaining: previous - quantity };
+}
+
+/**
+ * Esvazia o carrinho do usuário
+ * @returns {Promise<number>} quantidade de linhas removidas
+ */
+async function clearCart(userId) {
+	const lines = await getCartItems(userId);
+	if (lines.length > 0) {
+		await database.dbRun(DB_FAZENDA, "DELETE FROM fazenda_cart_items WHERE user_id = ?", [userId]);
+	}
+	return lines.length;
+}
+
+/**
+ * Calcula quanto dá para comprar de uma linha do carrinho agora (função pura).
+ * Respeita o limite diário restante (remainingToday; ausente = ilimitado) e o saldo.
+ * @param {{ itemId: string, name?: string, index?: number|null, quantity: number }} line
+ * @param {Object|null} meta - Item correspondente no catálogo da loja (null = fora da loja)
+ * @param {number} coinsAvailable - Saldo disponível (Infinity se desconhecido)
+ * @returns {{ itemId: string, name: string, index: number|null, requested: number, quantity: number,
+ *   unitPrice: number, subtotal: number, remainingToday: number|null,
+ *   status: "full"|"partial"|"sold_out"|"no_coins"|"unavailable", limitedBy: "stock"|"coins"|null }}
+ */
+function resolveCartLinePurchase(line, meta, coinsAvailable) {
+	const requested = Math.max(0, Math.floor(Number(line.quantity) || 0));
+	const result = {
+		itemId: line.itemId,
+		name: meta?.name || line.name || line.itemId,
+		index: meta?.index ?? line.index ?? null,
+		requested,
+		quantity: 0,
+		unitPrice: 0,
+		subtotal: 0,
+		remainingToday: null,
+		status: "unavailable",
+		limitedBy: null
+	};
+	if (!meta || requested <= 0) return result;
+
+	result.unitPrice = Math.max(0, Number(meta.price) || 0);
+	const hasDailyLimit = meta.remainingToday !== undefined && meta.remainingToday !== null;
+	const remainingToday = hasDailyLimit ? Math.max(0, Number(meta.remainingToday) || 0) : Infinity;
+	result.remainingToday = hasDailyLimit ? remainingToday : null;
+
+	if (remainingToday <= 0) {
+		result.status = "sold_out";
+		return result;
+	}
+
+	const wanted = Math.min(requested, remainingToday);
+	const coins = Number.isFinite(coinsAvailable) ? Math.max(0, coinsAvailable) : Infinity;
+	const affordable = result.unitPrice > 0 ? Math.floor(coins / result.unitPrice) : wanted;
+	const quantity = Math.min(wanted, affordable);
+
+	if (quantity <= 0) {
+		result.status = "no_coins";
+		result.limitedBy = "coins";
+		return result;
+	}
+
+	result.quantity = quantity;
+	result.subtotal = quantity * result.unitPrice;
+	result.status = quantity < requested ? "partial" : "full";
+	result.limitedBy = quantity < wanted ? "coins" : wanted < requested ? "stock" : null;
+	return result;
+}
+
+/**
+ * Busca no catálogo o item de uma linha do carrinho (decorações não entram no carrinho)
+ * @param {Array<Object>} catalog - Saída de flattenShopCatalog
+ * @param {{ itemId: string }} line
+ * @returns {Object|null}
+ */
+function findCartLineMeta(catalog, line) {
+	return catalog.find((it) => it.id === line.itemId && CART_ALLOWED_TYPES.has(it.itemType)) || null;
+}
+
+/**
+ * Simula a compra do carrinho inteiro na ordem salva, descontando o saldo a cada linha (função pura)
+ * @param {Array<Object>} cartLines
+ * @param {Object} shop - Catálogo de getShop (com remainingToday do usuário)
+ * @param {number|null} coins - Saldo atual (null = desconhecido, não limita)
+ * @returns {{ lines: Array<Object>, totalCost: number, totalQuantity: number, coinsLeft: number }}
+ */
+function planCartPurchase(cartLines, shop, coins) {
+	const catalog = flattenShopCatalog(shop);
+	let coinsLeft =
+		coins === null || coins === undefined ? Infinity : Math.max(0, Number(coins) || 0);
+	let totalCost = 0;
+	let totalQuantity = 0;
+	const lines = cartLines.map((line) => {
+		const res = resolveCartLinePurchase(line, findCartLineMeta(catalog, line), coinsLeft);
+		if (res.quantity > 0) {
+			coinsLeft -= res.subtotal;
+			totalCost += res.subtotal;
+			totalQuantity += res.quantity;
+		}
+		return res;
+	});
+	return { lines, totalCost, totalQuantity, coinsLeft };
+}
+
+/**
+ * Executa a compra do carrinho: para cada linha, compra o máximo possível via API,
+ * atualizando o saldo pela resposta real de cada compra. Falhas não interrompem as demais.
+ * @param {string} userId
+ * @param {Array<Object>} cartLines
+ * @param {Object} shop
+ * @param {number|null} coins
+ * @returns {Promise<{ bought: Array<Object>, skipped: Array<Object>, failed: Array<Object>, totalSpent: number, balance: number|null }>}
+ */
+async function executeCartPurchase(userId, cartLines, shop, coins) {
+	const catalog = flattenShopCatalog(shop);
+	let coinsLeft =
+		coins === null || coins === undefined ? Infinity : Math.max(0, Number(coins) || 0);
+	const bought = [];
+	const skipped = [];
+	const failed = [];
+	let totalSpent = 0;
+
+	for (const line of cartLines) {
+		const res = resolveCartLinePurchase(line, findCartLineMeta(catalog, line), coinsLeft);
+		if (res.quantity <= 0) {
+			skipped.push(res);
+			continue;
+		}
+
+		try {
+			const buyRes = await jardimClient.buy(userId, res.itemId, res.quantity);
+			const qty = Number(buyRes?.quantityBought) || res.quantity;
+			const cost = Number(buyRes?.totalCost ?? res.subtotal) || 0;
+			totalSpent += cost;
+			if (buyRes?.remainingCoins !== undefined && buyRes?.remainingCoins !== null) {
+				coinsLeft = Number(buyRes.remainingCoins);
+			} else if (Number.isFinite(coinsLeft)) {
+				coinsLeft = Math.max(0, coinsLeft - cost);
+			}
+			bought.push({
+				...res,
+				name: buyRes?.itemName || res.name,
+				quantity: qty,
+				subtotal: cost,
+				inventoryTotal: buyRes?.newInventoryQuantity
+			});
+		} catch (err) {
+			logger.warn(
+				`[executeCartPurchase] Falha ao comprar ${res.itemId} x${res.quantity} para ${userId}: ${err.message}`
+			);
+			failed.push({ ...res, error: err.message });
+		}
+	}
+
+	return {
+		bought,
+		skipped,
+		failed,
+		totalSpent,
+		balance: Number.isFinite(coinsLeft) ? coinsLeft : null
+	};
+}
+
+/**
+ * Descreve em texto curto o motivo de uma linha não ter sido comprada (ou só em parte)
+ * @param {Object} res - Resultado de resolveCartLinePurchase
+ * @param {boolean} [afterPurchase=false] - Texto para o resumo pós-compra (em vez da prévia)
+ * @returns {string}
+ */
+function describeCartLineIssue(res, afterPurchase = false) {
+	switch (res.status) {
+		case "sold_out":
+			return "esgotado hoje";
+		case "no_coins":
+			return `saldo insuficiente (${formatPtl(res.unitPrice)}/un)`;
+		case "unavailable":
+			return "não está mais à venda na loja";
+		case "partial":
+			if (res.limitedBy === "stock") {
+				return afterPurchase ? "limite diário atingido" : "limite diário de hoje";
+			}
+			if (res.limitedBy === "coins") {
+				return afterPurchase ? "saldo insuficiente para o resto" : "saldo não cobre tudo";
+			}
+			return "";
+		default:
+			return "";
+	}
+}
+
+/**
+ * Resolve o subcomando do !faz-carrinho a partir do primeiro argumento
+ * @param {string} token
+ * @returns {string|null}
+ */
+function resolveCartSubcommand(token) {
+	if (!token) return "ver";
+	const t = token.toLowerCase();
+	for (const [sub, words] of Object.entries(CART_SUBCOMMANDS)) {
+		if (words.includes(t)) return sub;
+	}
+	return null;
+}
+
+function buildCartUsageText() {
+	return (
+		`🧺 *CARRINHO DE COMPRAS DO JARDIM* 🧺\n\n` +
+		`Salve sua lista de compras diárias e compre tudo com um comando só!\n\n` +
+		`• \`!faz-carrinho\` — Ver o carrinho, disponibilidade e total estimado\n` +
+		`• \`!faz-carrinho add <item> [qtd]\` — Adicionar (ex: \`!faz-carrinho add 1 10\`, \`!faz-carrinho add rosa max\`)\n` +
+		`• \`!faz-carrinho rem <item> [qtd]\` — Remover (sem qtd, tira o item inteiro)\n` +
+		`• \`!faz-carrinho limpar\` — Esvaziar o carrinho\n` +
+		`• \`!faz-comprar carrinho\` — Comprar tudo o que estiver disponível\n\n` +
+		`_💡 O carrinho nunca se esgota: ele só guarda sua lista. A cada compra, levamos o máximo disponível de cada item (limite diário e saldo), na ordem do carrinho. Apenas sementes e elixires podem ir pro carrinho._`
+	);
+}
+
+/**
+ * Botões padrão de atalho do carrinho no Telegram
+ * @param {boolean} withBuy
+ * @returns {Array<Array<Object>>}
+ */
+function buildCartShortcutButtons(withBuy = true) {
+	const row = [{ text: "🧺 Ver Carrinho", action: "/faz-carrinho" }];
+	if (withBuy) row.push({ text: "🛍️ Comprar Carrinho", action: "/faz-comprar carrinho" });
+	return [row];
+}
+
+/**
+ * Monta a visualização do carrinho (texto + botões Telegram)
+ * @param {string} userId
+ * @param {boolean} useTelegram
+ * @returns {Promise<{ text: string, buttons: Array<Array<Object>>|null }>}
+ */
+async function buildCartView(userId, useTelegram = false) {
+	const cartLines = await getCartItems(userId);
+
+	if (cartLines.length === 0) {
+		const text =
+			`🧺 *SEU CARRINHO ESTÁ VAZIO* 🧺\n\n` +
+			`Adicione os itens que você compra todo dia e depois compre tudo de uma vez:\n` +
+			`• \`!faz-carrinho add <item> [qtd]\` (ex: \`!faz-carrinho add 1 10\`)\n` +
+			`• \`!faz-comprar carrinho\`\n\n` +
+			`Veja os itens e números em \`!faz-loja\`.`;
+		const buttons = useTelegram
+			? [
+					[
+						{ text: "➕ Adicionar Itens", action: "/faz-carrinho add" },
+						{ text: "🛒 Loja", action: "/faz-loja" }
+					]
+				]
+			: null;
+		return { text, buttons };
+	}
+
+	const [shopRes, statusRes] = await Promise.allSettled([
+		jardimClient.getShop(userId),
+		jardimClient.getStatus(userId)
+	]);
+	const shop = shopRes.status === "fulfilled" ? shopRes.value : null;
+	const coins =
+		statusRes.status === "fulfilled" && statusRes.value?.coins !== undefined
+			? Number(statusRes.value.coins)
+			: null;
+
+	let text = `🧺 *SEU CARRINHO DE COMPRAS* 🧺\n\n`;
+	let plan = null;
+
+	if (!shop) {
+		logger.warn(`[buildCartView] Falha ao carregar loja: ${shopRes.reason?.message}`);
+		cartLines.forEach((l) => {
+			text += `• *${formatCartItemLabel(l)}* — x${l.quantity}\n`;
+		});
+		text += `\n⚠️ _Não foi possível consultar a loja agora para checar estoque e preços._\n`;
+	} else {
+		plan = planCartPurchase(cartLines, shop, coins);
+		const catalog = flattenShopCatalog(shop);
+		plan.lines.forEach((res) => {
+			const meta = catalog.find((it) => it.id === res.itemId);
+			const emoji = CART_TYPE_EMOJI[meta?.itemType] || "•";
+			const label = formatCartItemLabel(res);
+			if (res.quantity <= 0) {
+				text += `${emoji} ~${label}~ — x${res.requested} ❌ _${describeCartLineIssue(res)}_\n`;
+				return;
+			}
+			text += `${emoji} *${label}* — x${res.requested} · ${formatPtl(res.unitPrice)}/un → *${formatPtl(res.subtotal)}*`;
+			if (res.status === "partial") {
+				text += ` _(só ${res.quantity}x — ${describeCartLineIssue(res)})_`;
+			}
+			text += `\n`;
+		});
+
+		text += `\n🧾 *Total estimado agora:* ${formatPtl(plan.totalCost)} (${plan.totalQuantity} ${plan.totalQuantity === 1 ? "item" : "itens"})\n`;
+		if (coins !== null) {
+			text += `💰 *Seu saldo:* ${formatPtl(coins)}\n`;
+		}
+		if (plan.totalQuantity === 0) {
+			text += `\n✅ _Nada para comprar agora: tudo esgotado hoje ou fora do seu saldo._\n`;
+		}
+	}
+
+	text += `\n🛍️ *Comprar tudo:* \`!faz-comprar carrinho\`\n`;
+	text += `➕ \`!faz-carrinho add <item> [qtd]\` | ➖ \`!faz-carrinho rem <item> [qtd]\` | 🗑️ \`!faz-carrinho limpar\`\n\n`;
+	text += `_💡 O carrinho nunca se esgota: ele só guarda sua lista de compras diárias._`;
+
+	let buttons = null;
+	if (useTelegram) {
+		buttons = [];
+		if (!plan || plan.totalQuantity > 0) {
+			const buyLabel = plan
+				? `🛍️ Comprar Carrinho (${formatPtl(plan.totalCost)})`
+				: "🛍️ Comprar Carrinho";
+			buttons.push([{ text: buyLabel, action: "/faz-comprar carrinho" }]);
+		}
+		let row = [];
+		for (const l of cartLines) {
+			// Usa o ID estável do item (o número da loja é só cache de exibição)
+			row.push({ text: `➖ ${l.name}`, action: `/faz-carrinho rem ${l.itemId} 1` });
+			if (row.length === 2) {
+				buttons.push(row);
+				row = [];
+			}
+		}
+		if (row.length > 0) buttons.push(row);
+		buttons.push([
+			{ text: "➕ Adicionar", action: "/faz-carrinho add" },
+			{ text: "🔄 Atualizar", action: "/faz-carrinho" },
+			{ text: "🛒 Loja", action: "/faz-loja" }
+		]);
+	}
+
+	return { text, buttons };
+}
+
+/**
+ * Encontra a linha do carrinho referida pelo usuário (número da loja, ID ou nome).
+ * Tenta resolver pela loja primeiro; se não bater com o carrinho, procura direto nas linhas salvas.
+ * @param {Array<Object>} cartLines
+ * @param {Object|null} shop
+ * @param {string} query
+ * @returns {Object|null}
+ */
+function findCartLineByQuery(cartLines, shop, query) {
+	if (shop) {
+		const meta = findShopCatalogItem(shop, query);
+		const line = meta && cartLines.find((l) => l.itemId === meta.id);
+		if (line) return line;
+	}
+
+	const raw = String(query ?? "")
+		.trim()
+		.replace(/^#/, "");
+	if (!raw) return null;
+	if (/^\d+$/.test(raw)) {
+		const idx = parseInt(raw, 10);
+		return cartLines.find((l) => Number(l.index) === idx) || null;
+	}
+	const q = normalizeItemText(raw);
+	return (
+		cartLines.find((l) => normalizeItemText(l.itemId) === q || normalizeItemText(l.name) === q) ||
+		cartLines.find(
+			(l) => normalizeItemText(l.name).includes(q) || normalizeItemText(l.itemId).includes(q)
+		) ||
+		null
+	);
+}
+
+/**
+ * Subcomando "add": adiciona item ao carrinho (ou lista opções no Telegram se sem item)
+ */
+async function handleCartAdd(bot, message, tokens) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+	const useTelegram = Boolean(bot && bot.useTelegram);
+	const { itemQuery, qtyToken } = splitItemAndQuantity(tokens);
+
+	if (!itemQuery) {
+		if (useTelegram) {
+			try {
+				const shop = await jardimClient.getShop(userId);
+				const options = flattenShopCatalog(shop).filter((it) =>
+					CART_ALLOWED_TYPES.has(it.itemType)
+				);
+				if (options.length > 0) {
+					const buttons = [];
+					let row = [];
+					for (const it of options) {
+						row.push({
+							text: `${CART_TYPE_EMOJI[it.itemType]} #${it.index} ${it.name}`,
+							action: `/faz-carrinho add ${it.index} 1`
+						});
+						if (row.length === 2) {
+							buttons.push(row);
+							row = [];
+						}
+					}
+					if (row.length > 0) buttons.push(row);
+					buttons.push(...buildCartShortcutButtons(true));
+					return replyReturnMessage(
+						chatId,
+						`➕ *ADICIONAR AO CARRINHO*\n\nToque em um item para adicionar *1x* ao seu carrinho.\nPara várias unidades: \`!faz-carrinho add <item> <qtd>\` (ou \`max\`).`,
+						message,
+						{ telegram: { buttons } }
+					);
+				}
+			} catch (e) {
+				logger.warn(`[handleCartAdd] Erro ao buscar loja para botões: ${e.message}`);
+			}
+		}
+		return replyReturnMessage(
+			chatId,
+			`➕ *Como adicionar ao carrinho:*\n• \`!faz-carrinho add <número ou nome> [qtd]\`\nExemplos: \`!faz-carrinho add 1 10\`, \`!faz-carrinho add rosa max\`\n\nVeja os itens em \`!faz-loja\`.`,
+			message
+		);
+	}
+
+	let shop;
+	try {
+		shop = await jardimClient.getShop(userId);
+	} catch (err) {
+		logger.error(`[handleCartAdd] Erro ao carregar loja: ${err.message}`);
+		return replyReturnMessage(chatId, `❌ Falha ao consultar a loja: ${err.message}`, message);
+	}
+
+	const meta = findShopCatalogItem(shop, itemQuery);
+	if (!meta) {
+		return replyReturnMessage(
+			chatId,
+			`❌ Item *${itemQuery}* não encontrado na loja. Confira os números e nomes em \`!faz-loja\`.`,
+			message
+		);
+	}
+
+	if (!CART_ALLOWED_TYPES.has(meta.itemType)) {
+		return replyReturnMessage(
+			chatId,
+			`🏺 *${meta.name}* é uma decoração e não entra no carrinho (o carrinho é para compras diárias de sementes e elixires).\nCompre direto com \`!faz-comprar ${meta.index}\`.`,
+			message
+		);
+	}
+
+	const dailyLimit = Number(meta.dailyLimit) > 0 ? Number(meta.dailyLimit) : null;
+	const maxQuantity = dailyLimit ?? CART_MAX_QUANTITY;
+	const quantity = parseCartQuantity(qtyToken, maxQuantity) ?? 1;
+	if (!Number.isFinite(quantity) || quantity <= 0) {
+		return replyReturnMessage(
+			chatId,
+			`❌ Quantidade inválida: *${qtyToken}*. Use um número (ex: \`5\`) ou \`max\`.`,
+			message
+		);
+	}
+
+	try {
+		const before = (await getCartItems(userId)).find((l) => l.itemId === meta.id)?.quantity || 0;
+		const finalQty = await addCartItem(userId, meta, quantity, maxQuantity);
+		const added = Math.max(0, finalQty - before);
+
+		let text = `🧺 *CARRINHO ATUALIZADO!*\n\n`;
+		if (added > 0) {
+			text += `${CART_TYPE_EMOJI[meta.itemType]} *${formatCartItemLabel(meta)}*: +${added} → agora *${finalQty}x* no carrinho\n`;
+		} else {
+			text += `${CART_TYPE_EMOJI[meta.itemType]} *${formatCartItemLabel(meta)}* já está no máximo: *${finalQty}x* no carrinho\n`;
+		}
+		if (dailyLimit && !CART_QTY_MAX_WORDS.has(qtyToken) && before + quantity > finalQty) {
+			text += `_⚠️ Ajustado ao limite diário do item (${dailyLimit}/dia)._\n`;
+		}
+		text += `\n🛍️ Compre tudo com \`!faz-comprar carrinho\` ou veja o carrinho com \`!faz-carrinho\`.`;
+
+		return replyReturnMessage(chatId, text, message, {
+			...(useTelegram && { telegram: { buttons: buildCartShortcutButtons(true) } })
+		});
+	} catch (err) {
+		logger.error(`[handleCartAdd] Erro ao salvar carrinho: ${err.message}`);
+		return replyReturnMessage(chatId, `❌ Falha ao salvar o carrinho: ${err.message}`, message);
+	}
+}
+
+/**
+ * Subcomando "rem": remove quantidade (ou o item inteiro) do carrinho
+ */
+async function handleCartRemove(bot, message, tokens) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+	const useTelegram = Boolean(bot && bot.useTelegram);
+	const { itemQuery, qtyToken } = splitItemAndQuantity(tokens);
+
+	if (!itemQuery) {
+		return replyReturnMessage(
+			chatId,
+			`➖ *Como remover do carrinho:*\n• \`!faz-carrinho rem <número ou nome> [qtd]\`\nSem quantidade, o item sai inteiro do carrinho.`,
+			message
+		);
+	}
+
+	const quantity = parseCartQuantity(qtyToken, null);
+	if (Number.isNaN(quantity)) {
+		return replyReturnMessage(
+			chatId,
+			`❌ Quantidade inválida: *${qtyToken}*. Use um número (ex: \`2\`) ou \`tudo\`.`,
+			message
+		);
+	}
+
+	try {
+		const cartLines = await getCartItems(userId);
+		if (cartLines.length === 0) {
+			return replyReturnMessage(chatId, `🧺 Seu carrinho já está vazio!`, message);
+		}
+
+		let shop = null;
+		try {
+			shop = await jardimClient.getShop(userId);
+		} catch (shopErr) {
+			logger.debug(`[handleCartRemove] Loja indisponível, usando dados salvos: ${shopErr.message}`);
+		}
+
+		const line = findCartLineByQuery(cartLines, shop, itemQuery);
+		if (!line) {
+			return replyReturnMessage(
+				chatId,
+				`❌ *${itemQuery}* não está no seu carrinho. Veja o que tem nele com \`!faz-carrinho\`.`,
+				message
+			);
+		}
+
+		const result = await removeCartItem(userId, line.itemId, quantity);
+		if (!result) {
+			return replyReturnMessage(chatId, `❌ *${itemQuery}* não está no seu carrinho.`, message);
+		}
+
+		let text = `🧺 *CARRINHO ATUALIZADO!*\n\n`;
+		if (result.remaining > 0) {
+			text += `➖ *${formatCartItemLabel(line)}*: -${result.previous - result.remaining} → restam *${result.remaining}x* no carrinho`;
+		} else {
+			text += `🗑️ *${formatCartItemLabel(line)}* saiu do carrinho.`;
+		}
+
+		return replyReturnMessage(chatId, text, message, {
+			...(useTelegram && { telegram: { buttons: buildCartShortcutButtons(true) } })
+		});
+	} catch (err) {
+		logger.error(`[handleCartRemove] Erro ao remover do carrinho: ${err.message}`);
+		return replyReturnMessage(chatId, `❌ Falha ao atualizar o carrinho: ${err.message}`, message);
+	}
+}
+
+/**
+ * Compra tudo o que estiver disponível no carrinho (!faz-comprar carrinho / !faz-carrinho comprar).
+ * Responde só com texto (sem figurinha).
+ */
+async function handleCartPurchase(bot, message) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+	const useTelegram = Boolean(bot && bot.useTelegram);
+
+	if (cartPurchasesInFlight.has(userId)) {
+		return replyReturnMessage(
+			chatId,
+			`⏳ Já estou processando a compra do seu carrinho, aguarde um instante!`,
+			message
+		);
+	}
+	cartPurchasesInFlight.add(userId);
+
+	try {
+		const cartLines = await getCartItems(userId);
+		if (cartLines.length === 0) {
+			return replyReturnMessage(
+				chatId,
+				`🧺 *Seu carrinho está vazio!*\nAdicione itens com \`!faz-carrinho add <item> [qtd]\` e depois use \`!faz-comprar carrinho\`.\n\n_(Procurando o enfeite *Carrinho do Coveiro*? Use \`!faz-comprar coveiro\`.)_`,
+				message,
+				{
+					...(useTelegram && {
+						telegram: {
+							buttons: [
+								[
+									{ text: "➕ Adicionar Itens", action: "/faz-carrinho add" },
+									{ text: "🛒 Loja", action: "/faz-loja" }
+								]
+							]
+						}
+					})
+				}
+			);
+		}
+
+		const [shop, status] = await Promise.all([
+			jardimClient.getShop(userId),
+			jardimClient.getStatus(userId).catch((statusErr) => {
+				logger.warn(`[handleCartPurchase] Falha ao obter saldo: ${statusErr.message}`);
+				return null;
+			})
+		]);
+		const coins =
+			status?.coins !== undefined && status?.coins !== null ? Number(status.coins) : null;
+
+		const { bought, skipped, failed, totalSpent, balance } = await executeCartPurchase(
+			userId,
+			cartLines,
+			shop,
+			coins
+		);
+
+		let text;
+		if (bought.length > 0) {
+			text = `🛍️ *CARRINHO COMPRADO!* 🛍️\n\n✅ *Itens comprados:*\n`;
+			bought.forEach((b) => {
+				const ofRequested = b.quantity < b.requested ? ` de ${b.requested}` : "";
+				const reason = b.quantity < b.requested ? ` _(${describeCartLineIssue(b, true)})_` : "";
+				const invTotal =
+					b.inventoryTotal !== undefined && b.inventoryTotal !== null
+						? ` (Mochila: ${b.inventoryTotal})`
+						: "";
+				text += `• *${b.name}*: ${b.quantity}x${ofRequested} — ${formatPtl(b.subtotal)}${invTotal}${reason}\n`;
+			});
+		} else if (failed.length > 0) {
+			text = `❌ *NÃO FOI POSSÍVEL COMPRAR O CARRINHO*\n`;
+		} else {
+			text = `🧺 *NADA PARA COMPRAR AGORA*\n\nTodos os itens do seu carrinho estão esgotados hoje ou fora do seu saldo.\n`;
+		}
+
+		if (skipped.length > 0) {
+			text += `\n⏭️ *Pulados:*\n`;
+			skipped.forEach((s) => {
+				text += `• *${s.name}* — ${describeCartLineIssue(s)}\n`;
+			});
+		}
+
+		if (failed.length > 0) {
+			text += `\n❌ *Falharam:*\n`;
+			failed.forEach((f) => {
+				text += `• *${f.name}* (${f.quantity}x) — ${f.error}\n`;
+			});
+		}
+
+		if (bought.length > 0) {
+			text += `\n💸 *Total gasto:* ${formatPtl(totalSpent)}\n`;
+		}
+		if (balance !== null) {
+			text += `💰 *Saldo restante:* ${formatPtl(balance)}\n`;
+		}
+		text += `\n_🧺 Seu carrinho continua salvo para as próximas compras (\`!faz-carrinho\`)._`;
+
+		if (bought.length > 0) {
+			refreshTelegramInventoryMessage(bot, chatId, userId).catch(() => {});
+		}
+
+		return replyReturnMessage(chatId, text, message, {
+			...(useTelegram && {
+				telegram: {
+					buttons: [
+						[
+							{ text: "🌱 Plantar", action: "/faz-plantar" },
+							{ text: "🎒 Mochila", action: "/faz-inv" }
+						],
+						[{ text: "🧺 Ver Carrinho", action: "/faz-carrinho" }]
+					]
+				}
+			})
+		});
+	} catch (err) {
+		logger.error(`[handleCartPurchase] Erro ao comprar carrinho: ${err.message}`);
+		return replyReturnMessage(chatId, `❌ Falha ao comprar o carrinho: ${err.message}`, message);
+	} finally {
+		cartPurchasesInFlight.delete(userId);
+	}
+}
+
+/**
+ * !faz-carrinho: Ver, adicionar, remover, limpar e comprar o carrinho de compras diárias
+ */
+async function handleFazCarrinho(bot, message) {
+	const userId = getUserId(message);
+	const chatId = getChatId(message);
+	const useTelegram = Boolean(bot && bot.useTelegram);
+	const tokens = getArgsText(message).split(/\s+/).filter(Boolean);
+	const sub = resolveCartSubcommand(tokens[0]);
+	const rest = tokens.slice(1);
+
+	switch (sub) {
+		case "add":
+			return handleCartAdd(bot, message, rest);
+		case "rem":
+			return handleCartRemove(bot, message, rest);
+		case "comprar":
+			return handleCartPurchase(bot, message);
+		case "ajuda":
+			return replyReturnMessage(chatId, buildCartUsageText(), message);
+		case "limpar":
+			try {
+				const removed = await clearCart(userId);
+				const text =
+					removed > 0
+						? `🗑️ *Carrinho esvaziado!* (${removed} ${removed === 1 ? "item removido" : "itens removidos"})`
+						: `🧺 Seu carrinho já está vazio!`;
+				return replyReturnMessage(chatId, text, message);
+			} catch (err) {
+				logger.error(`[handleFazCarrinho] Erro ao limpar carrinho: ${err.message}`);
+				return replyReturnMessage(chatId, `❌ Falha ao limpar o carrinho: ${err.message}`, message);
+			}
+		case "ver":
+			try {
+				const { text, buttons } = await buildCartView(userId, useTelegram);
+				return replyReturnMessage(chatId, text, message, {
+					...(useTelegram && buttons && { telegram: { buttons } })
+				});
+			} catch (err) {
+				logger.error(`[handleFazCarrinho] Erro ao montar carrinho: ${err.message}`);
+				return replyReturnMessage(
+					chatId,
+					`❌ Falha ao carregar o carrinho: ${err.message}`,
+					message
+				);
+			}
+		default:
+			return replyReturnMessage(
+				chatId,
+				`❓ Opção *${tokens[0]}* desconhecida.\n\n${buildCartUsageText()}`,
+				message
+			);
 	}
 }
 
@@ -2110,6 +3064,16 @@ const FAZENDA_CATEGORY_DETAILS = {
 				desc: "Compra itens da loja com suas Petalitas."
 			},
 			{
+				cmd: "/faz_carrinho [add|rem|limpar] [item] [qtd]",
+				aliases: ["/faz_cart"],
+				desc: "Salva sua lista de compras diárias (sementes e elixires)."
+			},
+			{
+				cmd: "/faz_comprar carrinho",
+				aliases: ["/faz_carrinho comprar"],
+				desc: "Compra tudo o que estiver disponível no carrinho (limite diário e saldo)."
+			},
+			{
 				cmd: "/faz_inv",
 				aliases: ["/faz_inventario"],
 				desc: "Exibe sua mochila com sementes e bônus."
@@ -2167,6 +3131,8 @@ const FAZENDA_CATEGORY_DETAILS = {
 			{ cmd: "/faz_plantar <semente>", desc: "Semear nos canteiros" },
 			{ cmd: "/faz_loja", desc: "Ver loja de sementes e poções" },
 			{ cmd: "/faz_comprar <item>", desc: "Comprar na loja" },
+			{ cmd: "/faz_carrinho", desc: "Ver e editar o carrinho de compras" },
+			{ cmd: "/faz_comprar carrinho", desc: "Comprar tudo do carrinho" },
 			{ cmd: "/faz_inv", desc: "Ver mochila de itens" },
 			{ cmd: "/faz_usar <elixir>", desc: "Usar poções mágicas" },
 			{ cmd: "/faz_vender [tudo]", desc: "Vender colheitas por Petalitas" },
@@ -2278,6 +3244,7 @@ async function handleFazAjuda(bot, message) {
 	mechanicsText += `💰 *4. Economia & Loja*\n`;
 	mechanicsText += `• Resgate suas Petalitas diárias com a sacola do coveiro usando \`!fazenda\`.\n`;
 	mechanicsText += `• Compre sementes, elixires e decorações com \`!faz-loja\` e \`!faz-comprar\`.\n`;
+	mechanicsText += `• Monte um *carrinho* com suas compras diárias (\`!faz-carrinho add <item> [qtd]\`) e compre tudo de uma vez com \`!faz-comprar carrinho\` — ele nunca se esgota, só guarda sua lista!\n`;
 	mechanicsText += `• Veja sua mochila com \`!faz-inv\` e venda suas colheitas por Petalitas com \`!faz-vender\`.\n\n`;
 
 	mechanicsText += `🧪 *5. Elixires Mágicos*\n`;
@@ -2309,6 +3276,8 @@ async function handleFazAjuda(bot, message) {
 	commandsText += `• \`!faz-plantar <semente> [canteiro] [hd]\` — Semear nos canteiros livres ou específico\n`;
 	commandsText += `• \`!faz-loja\` — Ver catálogo de sementes, elixires e decorações\n`;
 	commandsText += `• \`!faz-comprar <item> [qtd]\` — Comprar itens na loja\n`;
+	commandsText += `• \`!faz-carrinho [add|rem|limpar] [item] [qtd]\` — Ver e editar seu carrinho de compras diárias\n`;
+	commandsText += `• \`!faz-comprar carrinho\` — Comprar tudo o que estiver disponível no carrinho\n`;
 	commandsText += `• \`!faz-inventario\` — Ver seus itens, sementes e bônus acumulados\n`;
 	commandsText += `• \`!faz-usar <elixir> [canteiro]\` — Ativar poções mágicas\n`;
 	commandsText += `• \`!faz-vender [item ou tudo]\` — Vender suas colheitas por Petalitas\n`;
@@ -2389,12 +3358,23 @@ const commands = [
 	new Command({
 		name: "faz-comprar",
 		aliases: ["faz-buy"],
-		description: "Compra sementes, elixires ou decorações da loja",
-		usage: "!faz-comprar <item> [quantidade]",
+		description: "Compra sementes, elixires ou decorações da loja (ou o carrinho inteiro)",
+		usage: "!faz-comprar <item> [quantidade] | !faz-comprar carrinho",
 		category: "jogos",
 		reply: true,
 		cooldown: 3,
 		method: handleFazComprar
+	}),
+	new Command({
+		name: "faz-carrinho",
+		aliases: ["faz-cart"],
+		description:
+			"Carrinho de compras diárias da loja: salve itens e compre tudo com !faz-comprar carrinho",
+		usage: "!faz-carrinho [add|rem|limpar|comprar] [item] [qtd]",
+		category: "jogos",
+		reply: true,
+		cooldown: 3,
+		method: handleFazCarrinho
 	}),
 	new Command({
 		name: "faz-inventario",
@@ -2701,5 +3681,10 @@ module.exports = {
 	refreshTelegramInventoryMessage,
 	buildInventoryContentAndButtons,
 	buildFarmViewButtons,
-	handleFazendaMenuCallback
+	handleFazendaMenuCallback,
+	// Carrinho de compras (helpers puros exportados para testes)
+	findShopCatalogItem,
+	splitItemAndQuantity,
+	resolveCartLinePurchase,
+	planCartPurchase
 };
