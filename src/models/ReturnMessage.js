@@ -50,7 +50,10 @@ class ReturnMessage {
 		this.metadata = data.metadata ?? {}; // Metadados personalizados para rastreamento ou outros fins
 
 		// Recursos interativos e específicos de plataformas (Telegram / Discord)
+		// Botões do Telegram também alimentam o atalho genérico `buttons` (usado pelo Discord);
+		// `discord` permite sobrescrever apenas no Discord (ex: discord.buttons / discord.editMessageId).
 		this.telegram = data.telegram ?? null;
+		this.discord = data.discord ?? null;
 		this.buttons = data.buttons ?? data.telegram?.buttons ?? null;
 		this.poll = data.poll ?? null;
 	}
@@ -77,6 +80,7 @@ class ReturnMessage {
 			delay: this.delay,
 			metadata: this.metadata,
 			telegram: this.telegram,
+			discord: this.discord,
 			buttons: this.buttons
 		};
 	}

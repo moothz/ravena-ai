@@ -1,7 +1,15 @@
 /*
   90% VIBE CODED!!! Apenas pela zuera, tem muita coisa que não faz sentido algum
 */
-const { AttachmentBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
+const {
+	AttachmentBuilder,
+	PermissionsBitField,
+	MessageFlags,
+	ActionRowBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	Events
+} = require("discord.js");
 const axios = require("axios");
 const mime = require("mime-types");
 const path = require("path");
@@ -26,12 +34,26 @@ const SkipGroups = require("./utils/SkipGroups");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const storageService = require("./services/StorageService");
 const AccountLinkService = require("./services/AccountLinkService");
+const {
+	generateAutomaticButtons,
+	normalizeButtonRows,
+	rewriteCommandPrefix
+} = require("./utils/InteractiveButtonsHelper");
+const {
+	DISCORD_LIMITS,
+	buildDiscordButtonSpecs,
+	decodeCustomId,
+	paginateText
+} = require("./utils/DiscordButtonsHelper");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const unlinkAsync = promisify(fs.unlink);
+
+// Tamanho de cada página quando um menu interativo excede o limite de 2000 caracteres do Discord
+const DISCORD_MENU_PAGE_LENGTH = 1800;
 
 class DiscordBot {
 	constructor(options) {
@@ -186,6 +208,8 @@ class DiscordBot {
 		});
 
 		this.discordClient.on("messageCreate", this._handleMessage.bind(this));
+		// Cliques em botões (Message Components): equivalente aos callback_query do Telegram
+		this.discordClient.on(Events.InteractionCreate, this._handleInteraction.bind(this));
 		this.discordClient.on("guildCreate", this._handleGroupJoin.bind(this));
 		this.discordClient.on("guildDelete", this._handleGroupLeave.bind(this));
 		this.discordClient.on("guildMemberAdd", this._handleParticipantUpdate.bind(this));
@@ -728,6 +752,42 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 				}
 			}
 
+			// --- Botões interativos (equivalente às reações do WhatsApp / inline keyboard do Telegram) ---
+			const buttons = this._resolveButtons(options);
+			if (Array.isArray(buttons) && buttons.length > 0) {
+				const components = this._buildMessageComponents(buttons);
+				if (components.length > 0) {
+					discordPayload.components = components;
+				}
+			} else if (Array.isArray(options.discord?.components)) {
+				discordPayload.components = options.discord.components;
+			}
+
+			// --- Edição in-place de uma mensagem existente (ex: atualizar conteúdo/botões) ---
+			const editMessageId = options.discord?.editMessageId || options.editMessageId;
+			if (editMessageId) {
+				try {
+					const editedMessage = await this._editExistingMessage(
+						channel,
+						editMessageId,
+						discordPayload
+					);
+					return {
+						id: { _serialized: editedMessage.id },
+						messageId: editedMessage.id,
+						ack: 3,
+						body: content,
+						_data: editedMessage,
+						isEdited: true
+					};
+				} catch (editError) {
+					this.logger.warn(
+						`[sendMessage] Falha ao editar mensagem ${editMessageId} em ${chatId}: ${editError.message}. Enviando como nova mensagem.`
+					);
+					// Fallback: envia como nova mensagem abaixo
+				}
+			}
+
 			if (options.quotedMsgId) {
 				const quoteId =
 					typeof options.quotedMsgId === "string"
@@ -740,6 +800,7 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 			return {
 				id: { _serialized: sentMessage.id },
+				messageId: sentMessage.id,
 				ack: 3, // No Discord, se não deu erro, foi entregue e lida (visível no canal)
 				body: content,
 				_data: sentMessage
@@ -831,12 +892,28 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 
 			// If content is long, split it
 			const contentChunks = this.splitContent(msg.content, MAX_LENGTH);
+			const lastIndex = contentChunks.length - 1;
 
 			// Map each string chunk back into a new message object
-			return contentChunks.map((chunk) => ({
-				...msg, // Copy all original message properties
-				content: chunk // Overwrite the content with the new chunk
-			}));
+			return contentChunks.map((chunk, index) => {
+				const chunkMsg = {
+					...msg, // Copy all original message properties
+					content: chunk // Overwrite the content with the new chunk
+				};
+				const discordOpts = { ...(msg.discord || msg.options?.discord || {}) };
+				// Botões apenas no último pedaço (logo abaixo do texto completo)
+				if (index !== lastIndex) {
+					discordOpts.buttons = null;
+				}
+				// Edição in-place apenas no primeiro pedaço; os demais são enviados como novas mensagens
+				if (index > 0) {
+					delete discordOpts.editMessageId;
+					chunkMsg.options = { ...(msg.options || {}) };
+					delete chunkMsg.options.editMessageId;
+				}
+				chunkMsg.discord = discordOpts;
+				return chunkMsg;
+			});
 		});
 
 		const results = [];
@@ -844,8 +921,14 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			if (message.delay > 0) await sleep(message.delay);
 
 			try {
-				const result = await this.sendMessage(message.chatId, message.content, message.options);
+				const messageOptions = {
+					...message.options,
+					discord: message.discord || message.options?.discord,
+					buttons: message.buttons || message.options?.buttons
+				};
+				const result = await this.sendMessage(message.chatId, message.content, messageOptions);
 				results.push(result);
+				this._registerSentRollMessage(message.chatId, messageOptions, result);
 
 				// O bot está reagindo à PRÓPRIA mensagem enviada, isto não é interessante. Deve ser commented out no código.
 				/*
@@ -871,6 +954,520 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			}
 		}
 		return results;
+	}
+
+	// --- Botões interativos (Message Components) ---
+
+	/**
+	 * Registra mensagens de roll de waifu enviadas (igual ao WhatsApp), permitindo casar
+	 * respondendo à mensagem do roll (ex: `!mu-c 2` citando o multi-roll).
+	 * @param {string} chatId
+	 * @param {Object} options
+	 * @param {Object} result - Retorno do sendMessage
+	 */
+	_registerSentRollMessage(chatId, options = {}, result = null) {
+		if (!(options.waifuCharacterId || options.waifuRolls) || !result?.id) return;
+		const sentMsgId = result.id._serialized || result.id;
+		try {
+			const WaifuCommands = require("./functions/WaifuCommands");
+			if (typeof WaifuCommands.recordRollMessage === "function") {
+				WaifuCommands.recordRollMessage(
+					sentMsgId,
+					options.waifuRolls || options.waifuCharacterId,
+					chatId,
+					options.waifuExpiresAt,
+					options.waifuRollerUserId,
+					options.waifuExclusiveUntil,
+					options.waifuRollerUserName,
+					null,
+					options.waifuGridBase64,
+					options.waifuAvailable,
+					options.waifuOwner
+				);
+			}
+		} catch (regErr) {
+			this.logger.warn(
+				`[sendReturnMessages] Erro ao registrar waifu roll message: ${regErr.message}`
+			);
+		}
+	}
+
+	/**
+	 * Resolve os botões de uma mensagem, na mesma ordem do Telegram:
+	 * discord.buttons (específico, aceita null para suprimir) > buttons (genérico, inclui os do Telegram)
+	 * > botões automáticos (ex: 💍 dos rolls de waifu).
+	 * @param {Object} options
+	 * @returns {Array|null}
+	 */
+	_resolveButtons(options = {}) {
+		if (options.discord && Object.prototype.hasOwnProperty.call(options.discord, "buttons")) {
+			return options.discord.buttons || null;
+		}
+		return options.buttons || this._generateAutomaticButtons(options);
+	}
+
+	/**
+	 * Gera botões automáticos para mensagens conhecidas (como rolls de waifus).
+	 * @param {Object} options - Opções do ReturnMessage.
+	 * @returns {Array<Array<Object>>|null}
+	 */
+	_generateAutomaticButtons(options) {
+		return generateAutomaticButtons(options);
+	}
+
+	/**
+	 * Constrói as Action Rows do Discord a partir de botões 1D/2D ({ text, action | url, emoji?, style? }).
+	 * Botões inválidos são descartados individualmente para não derrubar o envio da mensagem.
+	 * @param {Array} buttons
+	 * @returns {ActionRowBuilder[]}
+	 */
+	_buildMessageComponents(buttons) {
+		const { rows, dropped } = buildDiscordButtonSpecs(buttons);
+		if (dropped > 0) {
+			this.logger.warn(
+				`[buttons] ${dropped} botão(ões) descartado(s) pelo limite do Discord (5 linhas x 5 botões).`
+			);
+		}
+
+		const components = [];
+		for (const row of rows) {
+			const builders = row.map((spec) => this._buildButtonComponent(spec)).filter(Boolean);
+			if (builders.length > 0) {
+				components.push(new ActionRowBuilder().addComponents(builders));
+			}
+		}
+		return components;
+	}
+
+	/**
+	 * Converte a especificação de um botão em ButtonBuilder (validado).
+	 * @param {Object} spec
+	 * @returns {ButtonBuilder|null}
+	 */
+	_buildButtonComponent(spec) {
+		try {
+			const button = new ButtonBuilder();
+			if (spec.label) button.setLabel(spec.label);
+			if (spec.emoji) button.setEmoji(spec.emoji);
+			if (spec.disabled) button.setDisabled(true);
+			if (spec.url) {
+				button.setStyle(ButtonStyle.Link).setURL(spec.url);
+			} else {
+				button
+					.setStyle(ButtonStyle[spec.style] ?? ButtonStyle.Secondary)
+					.setCustomId(spec.customId);
+			}
+			button.toJSON(); // Valida agora (label/emoji/custom_id) em vez de falhar no envio
+			return button;
+		} catch (error) {
+			this.logger.warn(`[buttons] Botão inválido descartado (${spec?.label}): ${error.message}`);
+			return null;
+		}
+	}
+
+	/**
+	 * Edita uma mensagem existente do bot com o conteúdo/anexos/botões de um payload de envio.
+	 * Assim como no Telegram, a ausência de botões remove os componentes atuais.
+	 * @param {import("discord.js").TextBasedChannel} channel
+	 * @param {string} messageId
+	 * @param {Object} payload - Payload montado pelo sendMessage
+	 * @returns {Promise<import("discord.js").Message>}
+	 */
+	async _editExistingMessage(channel, messageId, payload) {
+		const editPayload = {
+			content: payload.content ?? "",
+			components: payload.components ?? []
+		};
+		if (payload.flags) editPayload.flags = payload.flags;
+		if (payload.files) {
+			editPayload.files = payload.files;
+			editPayload.attachments = []; // Substitui os anexos anteriores
+		}
+		return channel.messages.edit(String(messageId), editPayload);
+	}
+
+	/**
+	 * Edita in-place uma mensagem de menu interativo (usado pelos handlers de menu via
+	 * InteractiveButtonsHelper.editInteractiveMenuMessage). Textos maiores que o limite do Discord
+	 * são paginados com botões ◀️/▶️ quando o contexto do menu é conhecido.
+	 * @param {string} chatId - ID do canal
+	 * @param {string} messageId - ID da mensagem com os botões
+	 * @param {string} text - Texto (formato WhatsApp)
+	 * @param {Array} buttons - Botões 1D/2D
+	 * @param {Object} [context]
+	 * @param {import("discord.js").ButtonInteraction} [context.interaction] - Interação já reconhecida
+	 * @param {{type: string, category: string, page: number}} [context.menu] - Callback que originou a edição
+	 * @returns {Promise<any>}
+	 */
+	async editInteractiveMessage(chatId, messageId, text, buttons, context = {}) {
+		const { interaction = null, menu = null } = context;
+		let content = typeof text === "string" ? text : String(text ?? "");
+		let finalButtons = normalizeButtonRows(buttons);
+
+		if (content.length > DISCORD_LIMITS.maxContentLength) {
+			const pages = paginateText(content, DISCORD_MENU_PAGE_LENGTH);
+			if (menu?.type && pages.length > 1) {
+				const total = pages.length;
+				const page = Math.min(Math.max(parseInt(menu.page, 10) || 0, 0), total - 1);
+				content = `${pages[page]}\n\n📄 Página ${page + 1}/${total}`;
+				const navRow = [];
+				if (page > 0) {
+					navRow.push({
+						text: "◀️ Anterior",
+						action: { type: menu.type, category: menu.category, page: page - 1 }
+					});
+				}
+				if (page < total - 1) {
+					navRow.push({
+						text: "Próxima ▶️",
+						action: { type: menu.type, category: menu.category, page: page + 1 }
+					});
+				}
+				finalButtons = [navRow, ...finalButtons];
+			} else {
+				content = `${content.substring(0, DISCORD_LIMITS.maxContentLength - 1)}…`;
+			}
+		}
+
+		if (this.safeMode) {
+			this.logger.info(
+				`[SAFE MODE] Would edit ${messageId} in ${chatId}: ${content.substring(0, 70)}...`
+			);
+			return null;
+		}
+
+		const payload = { content, components: this._buildMessageComponents(finalButtons) };
+
+		const canUseInteraction =
+			interaction &&
+			(interaction.deferred || interaction.replied) &&
+			typeof interaction.editReply === "function" &&
+			String(interaction.message?.id) === String(messageId);
+		if (canUseInteraction) {
+			try {
+				return await interaction.editReply(payload);
+			} catch (interactionError) {
+				this.logger.warn(
+					`[editInteractiveMessage] Falha ao editar via interação (${interactionError.message}). Tentando pelo canal.`
+				);
+			}
+		}
+
+		const channel = await this.discordClient.channels.fetch(chatId);
+		if (!channel?.messages) {
+			throw new Error(`Canal ${chatId} não encontrado para editar a mensagem ${messageId}.`);
+		}
+		return channel.messages.edit(String(messageId), payload);
+	}
+
+	/**
+	 * Trata cliques em botões (Events.InteractionCreate). Equivalente ao _handleCallbackQuery do Telegram:
+	 * decodifica o custom_id e despacha para menus interativos ou executa o comando como se o usuário
+	 * que clicou o tivesse enviado. A interação é sempre reconhecida (deferUpdate) dentro de 3 segundos.
+	 * @param {import("discord.js").Interaction} interaction
+	 */
+	async _handleInteraction(interaction) {
+		if (!interaction || typeof interaction.isButton !== "function" || !interaction.isButton()) {
+			return;
+		}
+
+		try {
+			this.lastMessageReceived = Date.now();
+			if (this.debugEvents) {
+				this.logger.debug(`_handleInteraction`, {
+					customId: interaction.customId,
+					user: interaction.user?.id,
+					channel: interaction.channelId
+				});
+			}
+
+			const decoded = decodeCustomId(interaction.customId);
+			if (!decoded) {
+				await this._replyInteractionEphemeral(interaction, "⚠️ Ação não reconhecida ou expirada.");
+				return;
+			}
+
+			await this._deferInteractionUpdate(interaction);
+
+			if (["menu", "waifu_menu", "fazenda_menu"].includes(decoded.type)) {
+				await this._handleMenuInteraction(interaction, decoded);
+				return;
+			}
+
+			if (decoded.type === "command") {
+				await this._handleCommandInteraction(interaction, decoded.value);
+			}
+		} catch (error) {
+			this.logger.error(
+				`[interactionCreate] Erro ao tratar clique em botão: ${error.message}`,
+				error
+			);
+		}
+	}
+
+	/**
+	 * Reconhece a interação sem enviar nova mensagem (mantém a mensagem original e evita "Esta interação falhou").
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @returns {Promise<boolean>}
+	 */
+	async _deferInteractionUpdate(interaction) {
+		if (interaction.deferred || interaction.replied) return true;
+		try {
+			await interaction.deferUpdate();
+			return true;
+		} catch (error) {
+			this.logger.warn(
+				`[interactionCreate] Falha ao reconhecer a interação ${interaction.id}: ${error.message}`
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * Responde a interação com uma mensagem visível apenas para quem clicou.
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @param {string} content
+	 */
+	async _replyInteractionEphemeral(interaction, content) {
+		try {
+			const payload = { content, flags: MessageFlags.Ephemeral };
+			if (interaction.deferred || interaction.replied) {
+				await interaction.followUp(payload);
+			} else {
+				await interaction.reply(payload);
+			}
+		} catch (error) {
+			this.logger.warn(
+				`[interactionCreate] Falha ao responder a interação ${interaction.id}: ${error.message}`
+			);
+		}
+	}
+
+	/**
+	 * Despacha callbacks de menus interativos para os mesmos handlers usados pelo Telegram.
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @param {{type: string, category: string, page: number}} decoded
+	 */
+	async _handleMenuInteraction(interaction, decoded) {
+		const callbackQuery = await this._buildCallbackQueryAdapter(interaction, decoded);
+
+		if (decoded.type === "menu") {
+			const Menu = require("./functions/Menu");
+			if (typeof Menu.handleMenuCallback === "function") {
+				await Menu.handleMenuCallback(this, callbackQuery, decoded.category, decoded.page);
+			}
+		} else if (decoded.type === "waifu_menu") {
+			const WaifuCommands = require("./functions/WaifuCommands");
+			if (typeof WaifuCommands.handleWaifuMenuCallback === "function") {
+				await WaifuCommands.handleWaifuMenuCallback(
+					this,
+					callbackQuery,
+					decoded.category,
+					decoded.page
+				);
+			}
+		} else if (decoded.type === "fazenda_menu") {
+			const FazendaCommands = require("./functions/FazendaCommands");
+			if (typeof FazendaCommands.handleFazendaMenuCallback === "function") {
+				await FazendaCommands.handleFazendaMenuCallback(
+					this,
+					callbackQuery,
+					decoded.category,
+					decoded.page
+				);
+			}
+		}
+	}
+
+	/**
+	 * Executa o comando de um botão como se tivesse sido enviado por quem clicou.
+	 * O prefixo "/" (estilo Telegram) é trocado pelo prefixo do grupo no Discord.
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @param {string} rawValue - Ex: "/mu-casar abc123"
+	 */
+	async _handleCommandInteraction(interaction, rawValue) {
+		const channelId = interaction.channelId;
+		if (this.isSystemGroup(channelId)) {
+			if (this.debugEvents) {
+				this.logger.debug(
+					`[${this.id}] Ignorando clique em botão no canal de sistema: ${channelId}`
+				);
+			}
+			return;
+		}
+
+		const isGroup = this._isGuildInteraction(interaction);
+		const prefix = await this._resolveCommandPrefix(isGroup ? channelId : null);
+		const commandText = rewriteCommandPrefix(rawValue, prefix);
+		const syntheticMessage = this._buildInteractionMessage(interaction, commandText);
+
+		if (this.eventHandler && typeof this.eventHandler.onMessage === "function") {
+			this.eventHandler.onMessage(this, syntheticMessage);
+		}
+	}
+
+	/**
+	 * Monta um objeto no formato de callback_query do Telegram para reaproveitar os handlers de menu.
+	 * Campos extras: commandPrefix (prefixo do grupo), discordInteraction e discordMenu (paginação).
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @param {{type: string, category: string, page: number}} decoded
+	 * @returns {Promise<Object>}
+	 */
+	async _buildCallbackQueryAdapter(interaction, decoded) {
+		const channelId = interaction.channelId;
+		const isGroup = this._isGuildInteraction(interaction);
+		const groupId = isGroup ? channelId : null;
+		const commandPrefix = await this._resolveCommandPrefix(groupId);
+		const displayName = this._getInteractionUserName(interaction);
+		const title =
+			(groupId && this.eventHandler?.groups?.[groupId]?.name) ||
+			interaction.channel?.name ||
+			interaction.guild?.name ||
+			"";
+
+		return {
+			id: interaction.id,
+			data: interaction.customId,
+			from: {
+				id: interaction.user?.id,
+				first_name: displayName,
+				username: interaction.user?.username
+			},
+			message: {
+				message_id: interaction.message?.id,
+				chat: { id: channelId, type: isGroup ? "group" : "private", title }
+			},
+			platform: "discord",
+			commandPrefix,
+			discordInteraction: interaction,
+			discordMenu: {
+				type: decoded.type,
+				category: decoded.category,
+				page: decoded.page || 0
+			}
+		};
+	}
+
+	/**
+	 * Constrói a mensagem sintética de um clique em botão, no mesmo formato de formatMessageFromDiscord.
+	 * O autor é o usuário que clicou (não o bot) e a mensagem do bot com os botões é tratada como citada.
+	 * @param {import("discord.js").ButtonInteraction} interaction
+	 * @param {string} commandText
+	 * @returns {Object}
+	 */
+	_buildInteractionMessage(interaction, commandText) {
+		const user = interaction.user;
+		const authorId = user.id;
+		const channelId = interaction.channelId;
+		const isGroup = this._isGuildInteraction(interaction);
+		const guildId = isGroup ? interaction.guildId : null;
+		const botMessage = interaction.message || null;
+		const botMessageId = botMessage?.id || interaction.id;
+		const displayName = this._getInteractionUserName(interaction);
+
+		const linkedWaId = this.accountLinkService.getLinkedWhatsApp("discord", authorId);
+		const finalAuthor = linkedWaId || authorId;
+
+		const getContact = async () => this.getContactDetails(authorId);
+		const getChat = async () => this.getChatDetails(channelId);
+		const getQuotedMessage = async () =>
+			botMessage ? this.formatMessageFromDiscord(botMessage, true) : null;
+		// A mensagem "clicada" é do bot: apagar/reagir não deve afetá-la (igual ao Telegram)
+		const noop = async () => true;
+
+		const syntheticMessage = {
+			discordMessage: botMessage,
+			discordInteraction: interaction,
+			id: botMessageId,
+			fromMe: false,
+			group: isGroup ? channelId : null,
+			from: channelId,
+			guildId,
+			author: finalAuthor,
+			platformAuthor: authorId,
+			platform: "discord",
+			isLinkedAccount: Boolean(linkedWaId),
+			name: displayName,
+			authorName: displayName,
+			pushname: user.username,
+			type: "text",
+			content: commandText,
+			body: commandText,
+			mentions: [],
+			mentionedIds: [],
+			caption: null,
+			origin: {},
+			responseTime: 0,
+			timestamp: this.getCurrentTimestamp(),
+			key: {
+				id: botMessageId,
+				remoteJid: channelId,
+				fromMe: false
+			},
+			hasMedia: false,
+			hasQuotedMsg: Boolean(botMessage),
+			quotedMsgId: botMessageId,
+			isCallbackQuery: true,
+			isButtonInteraction: true,
+			callbackQueryId: interaction.id,
+			react: noop,
+			getContact,
+			getChat,
+			getQuotedMessage,
+			delete: noop,
+			downloadMedia: async () => null
+		};
+
+		syntheticMessage.origin = {
+			id: { _serialized: botMessageId },
+			author: finalAuthor,
+			platformAuthor: authorId,
+			from: channelId,
+			react: noop,
+			getContact,
+			getChat,
+			getQuotedMessage,
+			delete: noop,
+			body: commandText,
+			mentionedIds: []
+		};
+
+		return syntheticMessage;
+	}
+
+	/**
+	 * Prefixo de comandos usado no canal (mesma regra do EventHandler.getCommandPrefixes).
+	 * @param {string|null} groupId
+	 * @returns {Promise<string>}
+	 */
+	async _resolveCommandPrefix(groupId) {
+		const fallback = typeof this.prefix === "string" ? this.prefix : "!";
+		if (!groupId) return fallback;
+
+		let group = this.eventHandler?.groups?.[groupId] || null;
+		if (!group && typeof this.database?.getGroup === "function") {
+			try {
+				group = await this.database.getGroup(groupId);
+			} catch (_) {
+				group = null;
+			}
+		}
+		return typeof group?.prefix === "string" ? group.prefix : fallback;
+	}
+
+	_isGuildInteraction(interaction) {
+		return Boolean(interaction?.guildId);
+	}
+
+	_getInteractionUserName(interaction) {
+		const member = interaction?.member;
+		return (
+			member?.displayName ||
+			member?.nick ||
+			interaction?.user?.globalName ||
+			interaction?.user?.username ||
+			"Unknown User"
+		);
 	}
 
 	async destroy() {
