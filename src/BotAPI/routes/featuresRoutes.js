@@ -3,6 +3,7 @@ const fs = require("fs").promises;
 const axios = require("axios");
 const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
+const bankService = require("../../services/BankService");
 const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
 const jardimClient = new ShadowGardenClient();
 
@@ -397,10 +398,120 @@ function registerFeaturesRoutes(api) {
 		}
 	});
 
-	// Transferência de Itens do Mercado (Pesca & Fazenda)
+	// Endpoint de Inventário ao Vivo para o Mercado de Classificados
+	app.get("/api/market/user-inventory/:userId", async (req, res) => {
+		try {
+			const { userId } = req.params;
+			if (!userId) {
+				return res.status(400).json({ success: false, error: "userId obrigatório" });
+			}
+
+			const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+
+			// 1. Runas e Cotações do Banco
+			let runas = 0;
+			let rates = { runasPerZinthos: 0.2857, runasPerJardimCoin: 0.125 };
+			try {
+				const account = await bankService.getAccount(cleanUser);
+				runas = account?.runas || 0;
+				const bankRates = await bankService.getRates();
+				if (bankRates) {
+					rates = {
+						runasPerZinthos: bankRates.runasPerZinthos,
+						runasPerJardimCoin: bankRates.runasPerJardimCoin
+					};
+				}
+			} catch (bankErr) {
+				api.logger.warn(`Erro ao carregar saldo de Runas/taxas para ${userId}: ${bankErr.message}`);
+			}
+
+			// 2. Buffs de Pesca Permanentes (com normalização de JID)
+			let fishingBuffs = [];
+			try {
+				const userIds = typeof FishingGame.getAllFishingUserIds === "function"
+					? FishingGame.getAllFishingUserIds(userId)
+					: [userId, cleanUser, `${cleanUser}@c.us`, `${cleanUser}:54@c.us`];
+				const placeholders = userIds.map(() => "?").join(",");
+
+				const rows = await api.database.dbAll(
+					"fishing",
+					`SELECT id, effect_type as type, original_name as originalName, remaining_uses as remainingUses, description 
+					 FROM fishing_buffs 
+					 WHERE user_id IN (${placeholders}) 
+					   AND is_debuff = 0 
+					   AND effect_type IN ('inventory_slot', 'max_baits')
+					 ORDER BY id ASC`,
+					userIds
+				);
+
+				fishingBuffs = (rows || []).map((r) => ({
+					id: r.id,
+					type: r.type,
+					originalName: r.originalName || (r.type === 'inventory_slot' ? 'Slot de Inventário' : 'Iscas Extras'),
+					remainingUses: r.remainingUses,
+					description: r.description || ''
+				}));
+			} catch (fishErr) {
+				api.logger.warn(`Erro ao buscar buffs de pesca para ${userId}: ${fishErr.message}`);
+			}
+
+			// 3. Fazenda (Jardim das Sombras) - Moeda (Petalitas) + Consumíveis / Decorações
+			let farm = null;
+			let farmUnavailable = false;
+			try {
+				const [statusRes, invRes] = await Promise.all([
+					jardimClient.getStatus(cleanUser),
+					jardimClient.getInventory(cleanUser)
+				]);
+
+				const coins = Number(statusRes?.coins || 0);
+				const rawItems = Array.isArray(invRes?.items) ? invRes.items : [];
+
+				// Filtra apenas consumíveis e decorações
+				const filteredItems = rawItems
+					.filter((it) => it.type === "consumable" || it.type === "decoration")
+					.map((it) => ({
+						itemId: it.itemId,
+						name: it.name || it.itemId,
+						type: it.type,
+						quantity: Number(it.quantity) || 1
+					}));
+
+				farm = {
+					coins,
+					items: filteredItems
+				};
+			} catch (farmErr) {
+				api.logger.warn(`Jardim indisponível para consulta de inventário de ${userId}: ${farmErr.message}`);
+				farmUnavailable = true;
+			}
+
+			return res.json({
+				success: true,
+				runas,
+				rates,
+				fishingBuffs,
+				farm,
+				farmUnavailable
+			});
+		} catch (error) {
+			api.logger.error("Erro geral no endpoint /api/market/user-inventory/:userId:", error);
+			return res.status(500).json({ success: false, error: "Erro interno ao buscar inventário" });
+		}
+	});
+
+	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
 	app.post("/api/market/transfer", async (req, res) => {
 		try {
-			const { fromUserId, toUserId, fishes = [], buffs = [], farmItems = [] } = req.body;
+			const {
+				fromUserId,
+				toUserId,
+				runas = 0,
+				fishingBuffIds = [],
+				buffs = [],
+				farmItems = [],
+				petalitas = 0
+			} = req.body;
 
 			if (!fromUserId || !toUserId) {
 				return res
@@ -411,44 +522,44 @@ function registerFeaturesRoutes(api) {
 			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
 			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
 
-			// 1. Validação de Peixes (SQLite)
-			if (Array.isArray(fishes) && fishes.length > 0) {
-				for (const f of fishes) {
-					const fishId = typeof f === "object" ? f.id : f;
-					if (!fishId) {
-						return res.status(400).json({
-							success: false,
-							reason: "ID do peixe ofertado inválido ou nulo."
-						});
-					}
-					const row = await api.database.dbGet(
-						"fishing",
-						"SELECT id FROM fishing_inventory WHERE id = ? AND (user_id = ? OR user_id = ?)",
-						[fishId, fromUserId, cleanFrom]
-					);
-					if (!row) {
-						return res.status(400).json({
-							success: false,
-							reason: `Peixe (ID: ${fishId}) não encontrado no inventário de pesca do ofertante.`
-						});
-					}
+			const runasAmount = Number(runas) || 0;
+			const petalitasAmount = Number(petalitas) || 0;
+
+			// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}])
+			const targetBuffIds = (Array.isArray(fishingBuffIds) && fishingBuffIds.length > 0)
+				? fishingBuffIds.map(b => typeof b === "object" ? b.id : Number(b)).filter(Boolean)
+				: (Array.isArray(buffs) && buffs.length > 0)
+					? buffs.map(b => typeof b === "object" ? b.id : Number(b)).filter(Boolean)
+					: [];
+
+			// JIDs normalizados para checagem de pesca
+			const fromUserIds = typeof FishingGame.getAllFishingUserIds === "function"
+				? FishingGame.getAllFishingUserIds(fromUserId)
+				: [fromUserId, cleanFrom, `${cleanFrom}@c.us`, `${cleanFrom}:54@c.us`];
+
+			// ==========================================
+			// 1. PRÉ-VALIDAÇÃO ESTREITA (NENHUM WRITE ANTES)
+			// ==========================================
+
+			// 1.1. Valida Runas
+			if (runasAmount > 0) {
+				const fromAccount = await bankService.getAccount(cleanFrom);
+				if (!fromAccount || fromAccount.runas < runasAmount) {
+					return res.status(400).json({
+						success: false,
+						reason: `Saldo insuficiente de Runas do ofertante (${fromAccount?.runas || 0} / ${runasAmount} ᚱ).`
+					});
 				}
 			}
 
-			// 2. Validação de Buffs (SQLite)
-			if (Array.isArray(buffs) && buffs.length > 0) {
-				for (const b of buffs) {
-					const buffId = typeof b === "object" ? b.id : b;
-					if (!buffId) {
-						return res.status(400).json({
-							success: false,
-							reason: "ID do buff ofertado inválido ou nulo."
-						});
-					}
+			// 1.2. Valida Buffs no SQLite
+			if (targetBuffIds.length > 0) {
+				const placeholders = fromUserIds.map(() => "?").join(",");
+				for (const buffId of targetBuffIds) {
 					const row = await api.database.dbGet(
 						"fishing",
-						"SELECT id FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
-						[buffId, fromUserId, cleanFrom]
+						`SELECT id, effect_type FROM fishing_buffs WHERE id = ? AND user_id IN (${placeholders})`,
+						[buffId, ...fromUserIds]
 					);
 					if (!row) {
 						return res.status(400).json({
@@ -459,36 +570,107 @@ function registerFeaturesRoutes(api) {
 				}
 			}
 
-			// 3. Validação e Transferência de Fazenda (Jardim das Sombras)
-			if (Array.isArray(farmItems) && farmItems.length > 0) {
+			// 1.3. Valida Farm (Petalitas e Itens) no Jardim
+			if (petalitasAmount > 0 || (Array.isArray(farmItems) && farmItems.length > 0)) {
 				try {
-					await jardimClient.transferItems(cleanFrom, cleanTo, farmItems);
-				} catch (farmErr) {
-					api.logger.error("Erro ao transferir itens da fazenda no mercado:", farmErr);
+					if (petalitasAmount > 0) {
+						const status = await jardimClient.getStatus(cleanFrom);
+						if (!status || Number(status.coins || 0) < petalitasAmount) {
+							return res.status(400).json({
+								success: false,
+								reason: `Saldo insuficiente de Petalitas do ofertante (${status?.coins || 0} / ${petalitasAmount}).`
+							});
+						}
+					}
+
+					if (Array.isArray(farmItems) && farmItems.length > 0) {
+						const inv = await jardimClient.getInventory(cleanFrom);
+						const itemsMap = new Map((inv?.items || []).map(it => [it.itemId, Number(it.quantity) || 0]));
+						for (const reqItem of farmItems) {
+							const currentQty = itemsMap.get(reqItem.itemId) || 0;
+							const needQty = Number(reqItem.amount || reqItem.quantity) || 1;
+							if (currentQty < needQty) {
+								return res.status(400).json({
+									success: false,
+									reason: `Item da fazenda insuficiente (${reqItem.name || reqItem.itemId}: possui ${currentQty}, requer ${needQty}).`
+								});
+							}
+						}
+					}
+				} catch (farmValErr) {
 					return res.status(400).json({
 						success: false,
-						reason: `Item da fazenda não disponível: ${farmErr.message}`
+						reason: `Falha ao validar inventário do Jardim das Sombras: ${farmValErr.message}`
 					});
 				}
 			}
 
-			// 4. Executa transferência de Peixes (SQLite)
-			if (Array.isArray(fishes) && fishes.length > 0) {
-				for (const f of fishes) {
-					const fishId = typeof f === "object" ? f.id : f;
-					await FishingGame.transferFish(cleanFrom, cleanTo, fishId);
-				}
-			}
+			// ==========================================
+			// 2. EXECUÇÃO COM SUPORTE A COMPENSAÇÃO/ROLLBACK
+			// ==========================================
 
-			// 5. Executa transferência de Buffs (SQLite)
-			if (Array.isArray(buffs) && buffs.length > 0) {
-				for (const b of buffs) {
-					const buffId = typeof b === "object" ? b.id : b;
-					await FishingGame.transferBuff(cleanFrom, cleanTo, buffId);
-				}
-			}
+			let runasTransferred = false;
+			let buffsTransferred = [];
+			let farmTransferred = false;
 
-			return res.json({ success: true });
+			try {
+				// 2.1. Transfere Runas
+				if (runasAmount > 0) {
+					await bankService.transferRunas(cleanFrom, cleanTo, runasAmount, "MARKET_OFFER_ACCEPTED");
+					runasTransferred = true;
+				}
+
+				// 2.2. Transfere Buffs
+				if (targetBuffIds.length > 0) {
+					for (const buffId of targetBuffIds) {
+						await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+						buffsTransferred.push(buffId);
+					}
+				}
+
+				// 2.3. Transfere Fazenda (Petalitas + Itens)
+				if (petalitasAmount > 0 || (Array.isArray(farmItems) && farmItems.length > 0)) {
+					const itemsToTransfer = (farmItems || []).map(it => ({
+						itemId: it.itemId,
+						amount: Number(it.amount || it.quantity) || 1
+					}));
+					await jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount);
+					farmTransferred = true;
+				}
+
+				return res.json({
+					success: true,
+					runas: runasAmount,
+					buffsCount: targetBuffIds.length,
+					farmTransferred
+				});
+			} catch (execErr) {
+				api.logger.error("Erro durante execução da transferência de mercado, iniciando reversão:", execErr);
+
+				// REVERSÃO CASO ALGUM PASSO POSTERIOR TENHA FALHADO
+				if (buffsTransferred.length > 0) {
+					for (const buffId of buffsTransferred) {
+						try {
+							await FishingGame.transferBuff(toUserId, fromUserId, buffId);
+						} catch (revBuffErr) {
+							api.logger.error(`Falha crítica ao reverter buff ${buffId}: ${revBuffErr.message}`);
+						}
+					}
+				}
+
+				if (runasTransferred) {
+					try {
+						await bankService.transferRunas(cleanTo, cleanFrom, runasAmount, "MARKET_TRANSFER_ROLLBACK");
+					} catch (revRunasErr) {
+						api.logger.error(`Falha crítica ao reverter Runas (${runasAmount}): ${revRunasErr.message}`);
+					}
+				}
+
+				return res.status(500).json({
+					success: false,
+					reason: `Erro na transferência de itens externos: ${execErr.message}. Alterações prévias foram revertidas.`
+				});
+			}
 		} catch (error) {
 			api.logger.error("Erro geral na rota /api/market/transfer:", error);
 			return res
