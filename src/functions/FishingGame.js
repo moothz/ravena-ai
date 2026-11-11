@@ -863,14 +863,28 @@ async function transferFish(fromUserId, toUserId, fishDbId) {
 	return { success: true, fish };
 }
 
+function getAllFishingUserIds(userId) {
+	const raw = String(userId || "").trim();
+	const clean = raw.replace(/\D/g, "");
+	const set = new Set();
+	if (raw) set.add(raw);
+	if (clean) {
+		set.add(clean);
+		set.add(`${clean}@c.us`);
+		set.add(`${clean}:54@c.us`);
+	}
+	return Array.from(set);
+}
+
 async function transferBuff(fromUserId, toUserId, buffDbId) {
-	const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
 	const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+	const fromIds = getAllFishingUserIds(fromUserId);
+	const placeholders = fromIds.map(() => "?").join(",");
 
 	const buff = await database.dbGet(
 		dbName,
-		"SELECT * FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
-		[buffDbId, fromUserId, cleanFrom]
+		`SELECT * FROM fishing_buffs WHERE id = ? AND user_id IN (${placeholders})`,
+		[buffDbId, ...fromIds]
 	);
 	if (!buff) {
 		return {
@@ -888,11 +902,12 @@ async function transferBuff(fromUserId, toUserId, buffDbId) {
 }
 
 async function removeBuff(userId, buffDbId) {
-	const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+	const userIds = getAllFishingUserIds(userId);
+	const placeholders = userIds.map(() => "?").join(",");
 	const res = await database.dbRun(
 		dbName,
-		"DELETE FROM fishing_buffs WHERE id = ? AND (user_id = ? OR user_id = ?)",
-		[buffDbId, userId, cleanUser]
+		`DELETE FROM fishing_buffs WHERE id = ? AND user_id IN (${placeholders})`,
+		[buffDbId, ...userIds]
 	);
 	return { success: true, changes: res?.changes || 0 };
 }
@@ -4276,6 +4291,7 @@ module.exports = {
 	transferFish,
 	transferBuff,
 	removeBuff,
+	getAllFishingUserIds,
 	applyItemEffect,
 	clearInventory,
 	checkRandomItem
