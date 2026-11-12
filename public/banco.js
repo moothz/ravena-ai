@@ -164,6 +164,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
+        // Com token salvo, o painel da conta já ocupa seu lugar (em estado de carregamento)
+        // em vez de aparecer depois empurrando o resto da página para baixo.
+        const authPanel = document.getElementById("auth-panel");
+        document.getElementById("guest-prompt").style.display = "none";
+        authPanel.style.display = "block";
+        authPanel.classList.add("is-loading");
+
         try {
             const res = await fetch(`/api/games/bank/session?token=${encodeURIComponent(token)}`);
             const json = await res.json();
@@ -201,6 +208,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             updateSellCart();
         } catch (err) {
             console.error("Erro ao verificar sessão do banco:", err);
+            document.getElementById("guest-prompt").style.display = "block";
+            authPanel.style.display = "none";
+        } finally {
+            authPanel.classList.remove("is-loading");
         }
     }
 
@@ -365,15 +376,16 @@ document.addEventListener("DOMContentLoaded", async () => {
                 actionCol = `<span style="color: #94a3b8; font-size: 10.5px; font-weight: 600;"><i class="fas fa-check-circle" style="color: #64748b;"></i> Revertida</span>`;
             }
 
+            // data-label: rótulo exibido no layout em cartões do celular (CSS ::before)
             return `
                 <tr ${rowClass}>
-                    <td>${dateStr}</td>
-                    <td>${typeBadge}</td>
-                    <td>${gameBadge}</td>
-                    <td>${formattedAmount}</td>
-                    <td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff; ${isUndone ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
-                    <td style="color: #cbd5e1; font-family: 'JetBrains Mono', monospace;">${spreadFee} (${spreadPct}%)</td>
-                    <td>${actionCol}</td>
+                    <td data-label="Data">${dateStr}</td>
+                    <td data-label="Operação">${typeBadge}</td>
+                    <td data-label="Jogo">${gameBadge}</td>
+                    <td data-label="Quantidade">${formattedAmount}</td>
+                    <td data-label="Runas" style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #fff; ${isUndone ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${sign}${formatPtBr(t.runas_amount, 2)} ᚱ</td>
+                    <td data-label="Taxa" style="color: #cbd5e1; font-family: 'JetBrains Mono', monospace;">${spreadFee} (${spreadPct}%)</td>
+                    <td data-label="Ações"${isEligible || isUndone ? '' : ' class="tx-action-empty"'}>${actionCol}</td>
                 </tr>
             `;
         }).join("");

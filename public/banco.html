@@ -2,12 +2,16 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05060d">
     <title>RavenaBank — Banco Central & Câmbio de Runas</title>
     
     <meta name="description" content="Banco central, cotações e conversão de moedas entre os jogos da Ravena: Pesca, Waifuletes e Fazenda (Jardim das Sombras).">
     <meta name="author" content="moothz">
     
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
     <link rel="stylesheet" href="/cmd.css?v=2">
     <link rel="stylesheet" href="/ajuda.css?v=1">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -91,7 +95,9 @@
         }
 
         .runas-val {
-            font-size: 32px;
+            /* Encolhe no celular em vez de quebrar o "ᚱ" para outra linha */
+            font-size: clamp(20px, 6.4vw, 32px);
+            white-space: nowrap;
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
             color: #ffffff;
@@ -107,6 +113,16 @@
         }
 
         @media (max-width: 860px) {
+            .games-grid {
+                gap: 10px;
+            }
+
+            .game-card {
+                padding: 14px;
+            }
+        }
+
+        @media (max-width: 600px) {
             .games-grid {
                 grid-template-columns: 1fr;
             }
@@ -208,6 +224,11 @@
 
         .rule-item strong {
             color: #e2e8f0;
+        }
+
+        /* Só o título de cada regra vira bloco; os <strong> internos das listas de cotas
+           ficavam em linhas separadas ("• 📥" / "Venda (Ganhar Runas):") */
+        .rule-item > strong {
             display: block;
             margin-bottom: 4px;
         }
@@ -239,7 +260,7 @@
         }
 
         .btn-logout {
-            background: #ef4444;
+            background: #dc2626; /* #ef4444 com texto branco ficava em 3,8:1 */
             color: #fff;
             border: none;
             padding: 6px 14px;
@@ -253,7 +274,18 @@
         }
 
         .btn-logout:hover {
-            background: #dc2626;
+            background: #b91c1c;
+        }
+
+        /* Painel da conta já aparece enquanto a sessão é validada (evita salto de layout) */
+        .auth-panel.is-loading {
+            opacity: 0.55;
+            pointer-events: none;
+            animation: bank-pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes bank-pulse {
+            50% { opacity: 0.35; }
         }
 
         .user-holdings {
@@ -330,11 +362,25 @@
             box-shadow: 0 2px 10px rgba(4, 169, 240, 0.2);
         }
 
+        /* 4 itens da loja numa linha no desktop (antes: 3 + 1 sobrando), 2x2 em telas médias */
         .shop-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
             margin-bottom: 20px;
+        }
+
+        @media (max-width: 999px) {
+            .shop-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .shop-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         .shop-card {
@@ -436,7 +482,9 @@
             text-align: center;
             height: 32px;
             flex: 1;
-            min-width: 50px;
+            /* largura intrínseca do <input type=number> (~150px) alargava o card além da tela */
+            width: 0;
+            min-width: 44px;
         }
 
         .input-qty:focus {
@@ -635,7 +683,7 @@
         }
 
         .tx-table th {
-            color: #64748b;
+            color: #8b93a7;
             text-transform: uppercase;
         }
 
@@ -991,6 +1039,180 @@
         .bank-toast .toast-close:hover {
             color: #cbd5e1;
         }
+
+        .tx-table-wrap {
+            overflow-x: auto;
+        }
+
+        /* Telas de toque: botões de quantidade/paginação/logout com área de toque de ~40px */
+        @media (pointer: coarse) {
+            .btn-qty,
+            .input-qty {
+                height: 40px;
+            }
+
+            .btn-qty {
+                width: 40px;
+            }
+
+            .btn-qty-action,
+            .btn-page,
+            .btn-logout,
+            .btn-undo-action,
+            .tab-btn {
+                min-height: 40px;
+            }
+
+            .bank-toast .toast-close {
+                min-width: 32px;
+                min-height: 32px;
+            }
+        }
+
+        /* Celular: menos padding acumulado (body + container + painel + card) e extrato em cartões */
+        @media (max-width: 600px) {
+            body {
+                padding: 8px max(6px, env(safe-area-inset-right)) 16px max(6px, env(safe-area-inset-left));
+            }
+
+            .bank-container {
+                padding: 16px 12px;
+                border-radius: 12px;
+            }
+
+            .header-title h1 {
+                font-size: 22px;
+            }
+
+            .runas-banner {
+                padding: 16px 10px;
+            }
+
+            .auth-panel,
+            .trade-tabs-card,
+            .transparency-box {
+                padding: 12px;
+            }
+
+            .tabs-nav {
+                gap: 8px;
+            }
+
+            .tab-btn {
+                flex: 1;
+                justify-content: center;
+                padding: 10px 8px;
+                font-size: 13px;
+                text-align: center;
+            }
+
+            .cart-summary {
+                flex-wrap: wrap;
+            }
+
+            .btn-cart-confirm {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .transparency-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tx-table-wrap {
+                overflow-x: visible;
+            }
+
+            .tx-table thead {
+                display: none;
+            }
+
+            .tx-table,
+            .tx-table tbody,
+            .tx-table tr,
+            .tx-table td {
+                display: block;
+                width: 100%;
+            }
+
+            /* Cada transação vira um cartão compacto em 2 colunas (rótulo acima do valor) */
+            .tx-table tr {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 6px 10px;
+                border: 1px solid #1c223d;
+                border-radius: 10px;
+                padding: 10px 12px;
+                margin-bottom: 8px;
+                background: #0b0f20;
+            }
+
+            .tx-table td {
+                padding: 0;
+                border-bottom: 0;
+                font-size: 12px;
+                min-width: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .tx-table td::before {
+                content: attr(data-label);
+                display: block;
+                color: #8b93a7;
+                font-size: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+                margin-bottom: 1px;
+            }
+
+            .tx-table td.tx-action-empty {
+                display: none;
+            }
+
+            .tx-table td[data-label="Ações"] {
+                grid-column: 1 / -1;
+            }
+
+            .tx-table td[colspan] {
+                grid-column: 1 / -1;
+                text-align: center;
+            }
+
+            .tx-table td[colspan]::before {
+                content: none;
+            }
+
+            .tx-pagination {
+                gap: 8px;
+            }
+
+            .tx-page-info {
+                font-size: 10.5px;
+                text-align: center;
+            }
+
+            .bank-toast-container {
+                top: 12px;
+                right: 12px;
+                width: calc(100% - 24px);
+            }
+        }
+
+        /* Celular deitado: cards dos jogos lado a lado e cabeçalho mais baixo */
+        @media (max-height: 520px) and (orientation: landscape) {
+            .header-title {
+                margin-bottom: 12px;
+            }
+
+            .header-title h1 {
+                font-size: 22px;
+            }
+
+            .runas-banner {
+                padding: 12px;
+                margin-bottom: 16px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1108,7 +1330,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Disponível hoje: <strong id="buy-avail-moedas" style="color: #facc15;">0</strong> moedas</div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Limite máx.: 300 moedas / dia</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Limite máx.: 300 moedas / dia</div>
                             </div>
                         </div>
 
@@ -1129,7 +1351,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Disponível hoje: <strong id="buy-avail-iscas" style="color: #38bdf8;">0</strong> iscas</div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Limite máx.: 200 iscas / dia</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Limite máx.: 200 iscas / dia</div>
                             </div>
                         </div>
 
@@ -1150,7 +1372,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Cota restante: <strong id="buy-avail-zinthos" style="color: #f472b6;">0 Z</strong></div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Limite máx.: 200.000 Z / dia</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Limite máx.: 200.000 Z / dia</div>
                             </div>
                         </div>
 
@@ -1171,7 +1393,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Cota restante: <strong id="buy-avail-jardim" style="color: #4ade80;">0 Ptl</strong></div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Limite máx.: 150.000 Ptl / dia</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Limite máx.: 150.000 Ptl / dia</div>
                             </div>
                         </div>
                     </div>
@@ -1213,7 +1435,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Seu estoque: <strong id="sell-holdings-fish" style="color: #38bdf8;">0,00 kg (0 peixes)</strong></div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Venda por peso (peixes raros protegidos)</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Venda por peso (peixes raros protegidos)</div>
                             </div>
                         </div>
 
@@ -1234,7 +1456,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Seu saldo: <strong id="sell-holdings-zinthos" style="color: #f472b6;">0 Z</strong></div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Conversão oficial para Runas</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Conversão oficial para Runas</div>
                             </div>
                         </div>
 
@@ -1255,7 +1477,7 @@
                             </div>
                             <div class="shop-card-bottom">
                                 <div>Seu saldo: <strong id="sell-holdings-jardim" style="color: #4ade80;">0 Ptl</strong></div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Conversão oficial para Runas</div>
+                                <div style="font-size: 11px; color: #8b93a7; margin-top: 2px;">Conversão oficial para Runas</div>
                             </div>
                         </div>
                     </div>
@@ -1281,7 +1503,7 @@
             <!-- Extrato Recente com Paginação -->
             <div style="margin-top: 25px;">
                 <h4 style="font-size: 13px; color: #e2e8f0; margin: 0 0 10px 0;"><i class="fas fa-file-invoice-dollar"></i> Extrato de Transações</h4>
-                <div style="overflow-x: auto;">
+                <div class="tx-table-wrap">
                     <table class="tx-table" id="tx-table">
                         <thead>
                             <tr>
@@ -1306,6 +1528,19 @@
                 </div>
             </div>
         </div>
+
+        <script>
+            // Decide antes da primeira pintura entre o convite e o painel da conta (sem salto de layout).
+            // O banco.js valida a sessão em seguida e volta ao convite se o token for inválido.
+            try {
+                if (new URLSearchParams(location.search).get("token") || localStorage.getItem("ravenabank_token")) {
+                    document.getElementById("guest-prompt").style.display = "none";
+                    var bankAuthPanel = document.getElementById("auth-panel");
+                    bankAuthPanel.style.display = "block";
+                    bankAuthPanel.classList.add("is-loading");
+                }
+            } catch (e) {}
+        </script>
 
         <!-- Seção de Regras e Economia -->
         <div class="transparency-box">
@@ -1405,6 +1640,6 @@
         </div>
     </div>
 
-    <script src="/banco.js?v=20261110_1"></script>
+    <script src="/banco.js?v=20261112-banco" defer></script>
 </body>
 </html>
