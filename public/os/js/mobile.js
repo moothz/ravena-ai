@@ -397,7 +397,7 @@ const MobileApp = {
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
                     return `
                         <div class="mobile-donor-mini-item">
-                            <span>${medal} ${d.nome}</span>
+                            <span>${medal} ${Formatters.escapeHtml(d.nome)}</span>
                             <strong style="color: var(--gold-color);">${Formatters.currency(d.valor)}</strong>
                         </div>
                     `;

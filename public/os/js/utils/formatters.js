@@ -1,6 +1,22 @@
 // formatters.js - Utility formatters for dates, currency, phone numbers, and numbers
 
 const Formatters = {
+    /**
+     * Escapa texto para interpolação segura em innerHTML/atributos.
+     * Nomes e mensagens de doadores vêm de terceiros (webhook do tipa.ai) e não podem virar HTML.
+     * @param {*} value
+     * @returns {string}
+     */
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[c]);
+    },
+
     currency(val) {
         return new Intl.NumberFormat('pt-BR', {
             style: 'currency',

@@ -210,11 +210,12 @@ const RavenaOS = {
         } else {
             listHtml = donors.map((d, i) => {
                 const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•';
+                const nome = Formatters.escapeHtml(d.nome);
                 return `
                     <div class="widget-postit-item">
                         <span class="widget-postit-name">
                             <span>${medal}</span>
-                            <span title="${d.nome}">${d.nome}</span>
+                            <span title="${nome}">${nome}</span>
                         </span>
                         <span class="widget-postit-val">${Formatters.currency(d.valor)}</span>
                     </div>
