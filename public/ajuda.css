@@ -1,28 +1,42 @@
+/* ajuda.css - Chat de ajuda (/ajuda). Também é incluído por outras páginas (pesca, banco,
+   imagine, stt, tts) apenas pelo .copyright: os seletores de chat são escopados. */
+
+/* Página de chat ocupa exatamente a altura visível (dvh evita o salto da barra de endereço
+   no celular); só a lista de mensagens rola. */
+.container.chat-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+}
+
 .chat-main {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     padding: 0;
     overflow: hidden;
-    height: calc(100vh - 74px - 100px); /* Adjust based on header and footer height */
 }
 
 .chat-container {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 14px;
     scroll-behavior: smooth;
 }
 
 .message {
-    max-width: 85%;
+    max-width: min(85%, 720px);
     padding: 12px 16px;
     border-radius: 18px;
     font-size: 0.95rem;
-    line-height: 1.4;
-    word-wrap: break-word;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
     position: relative;
     animation: fadeIn 0.3s ease;
 }
@@ -43,23 +57,95 @@
 .user-message {
     align-self: flex-end;
     background-color: var(--primary-color);
-    color: white;
+    /* Texto escuro sobre o azul da marca: contraste ~8:1 (branco sobre #04a9f0 ficava em ~2.7:1) */
+    color: #05060d;
+    font-weight: 500;
     border-bottom-right-radius: 4px;
 }
 
+.bot-message.error-message {
+    border-color: rgba(229, 62, 62, 0.45);
+    background: rgba(229, 62, 62, 0.1);
+}
+
+/* Formatação estilo WhatsApp nas respostas */
+.message-content strong {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.message-content code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: rgba(4, 169, 240, 0.12);
+    border: 1px solid rgba(4, 169, 240, 0.25);
+    color: #7fd6ff;
+    padding: 1px 6px;
+    border-radius: 5px;
+}
+
+.message-content pre {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: #090a14;
+    border: 1px solid rgba(4, 169, 240, 0.25);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 6px 0;
+    white-space: pre-wrap;
+}
+
+.message-content a {
+    color: #5cc8ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.message-content a:hover {
+    color: #ffffff;
+}
+
+/* Sugestões de perguntas (somem após a primeira mensagem) */
+.chat-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-left: 2px;
+}
+
+.suggestion-chip {
+    font-family: var(--font-family);
+    font-size: 0.85rem;
+    color: var(--text-highlight);
+    background: rgba(4, 169, 240, 0.08);
+    border: 1px solid var(--border-highlight);
+    border-radius: 18px;
+    padding: 8px 14px;
+    min-height: 40px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.suggestion-chip:hover {
+    background: rgba(4, 169, 240, 0.2);
+    border-color: var(--primary-color);
+}
+
 .chat-footer {
-    background-color: var(--surface-color);
-    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    background-color: rgba(10, 8, 26, 0.95);
+    padding: 0.75rem max(1rem, env(safe-area-inset-right)) calc(0.6rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
     box-shadow: 0 -4px 6px rgba(0, 0, 0, 0.2);
     border-top: 2px solid var(--primary-color);
+    flex-shrink: 0;
 }
 
 .input-container {
     display: flex;
+    align-items: center;
     gap: 10px;
     background-color: rgba(255, 255, 255, 0.05);
-    padding: 5px 5px 5px 15px;
-    border-radius: 25px;
+    padding: 4px 4px 4px 16px;
+    border-radius: 26px;
     border: 2px solid var(--border-color);
     transition: border-color 0.3s;
 }
@@ -70,22 +156,29 @@
 
 #user-input {
     flex: 1;
+    min-width: 0;
     background: transparent;
     border: none;
     color: var(--text-highlight);
     padding: 10px 0;
-    font-size: 1rem;
+    font-size: 1rem; /* 16px evita zoom automático no iOS */
     outline: none;
     font-family: var(--font-family);
 }
 
+#user-input::placeholder {
+    color: var(--text-muted);
+}
+
 #send-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
     border-radius: 50%;
     border: none;
     background-color: var(--primary-color);
-    color: white;
+    color: #05060d;
+    font-size: 1rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -94,7 +187,7 @@
 }
 
 #send-btn:hover {
-    background-color: var(--primary-dark);
+    background-color: #38bdf8;
 }
 
 #send-btn:active {
@@ -103,14 +196,15 @@
 
 #send-btn:disabled {
     background-color: var(--border-color);
+    color: var(--text-muted);
     cursor: not-allowed;
 }
 
 .copyright {
     text-align: center;
     font-size: 0.75rem;
-    color: var(--text-color);
-    margin-top: 10px;
+    color: var(--text-muted);
+    margin-top: 8px;
 }
 
 /* Typing indicator */
@@ -137,10 +231,37 @@
 }
 
 @media (max-width: 600px) {
-    .chat-main {
-        height: calc(100vh - 180px); /* Increased to account for larger footer */
+    .chat-container {
+        padding: 0.75rem;
     }
+
+    .message {
+        max-width: 90%;
+    }
+}
+
+/* Celular deitado / telas baixas: cabeçalho e rodapé compactos para sobrar espaço para a conversa */
+@media (max-height: 520px) {
+    .chat-page .header {
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+    }
+
+    .chat-page .logo img {
+        width: 30px;
+        height: 30px;
+    }
+
+    .chat-page .logo-badge {
+        display: none;
+    }
+
+    .chat-page .copyright {
+        display: none;
+    }
+
     .chat-footer {
-        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+        padding-top: 0.5rem;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
     }
 }
