@@ -44,15 +44,19 @@ const WindowManager = {
             return null;
         }
 
-        // Singleton check: if already open, focus it
+        // Singleton check: if already open, focus it (or clean up stale entry if already closed)
         if (config.singleton && this.windows.has(type)) {
             const entry = this.windows.get(type);
-            if (entry && entry.winbox) {
+            if (entry && entry.winbox && entry.winbox.body) {
                 if (entry.winbox.min) {
                     entry.winbox.restore();
                 }
                 entry.winbox.focus();
                 return entry.winbox;
+            }
+            this.windows.delete(type);
+            if (window.Taskbar) {
+                window.Taskbar.removeWindow(type);
             }
         }
 
@@ -141,6 +145,8 @@ const WindowManager = {
                 }
                 if (typeof config.onclose === 'function') {
                     config.onclose(wb, params);
+                } else if (typeof wb.cleanup === 'function') {
+                    wb.cleanup();
                 }
                 return false;
             },

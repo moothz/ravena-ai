@@ -536,9 +536,8 @@ WindowManager.register('nudenet', {
         toggleOnlyNsfw.addEventListener('change', renderBoxes);
 
         // Cleanup on window close
-        wb.onclose = () => {
+        wb.cleanup = () => {
             body.removeEventListener('paste', pasteHandler);
-            return false;
         };
     }
 });

@@ -80,7 +80,6 @@ WindowManager.register('donations', {
         };
 
         wb.cleanup = cleanup;
-        wb.onclose = cleanup;
     },
 
     async loadData(body) {

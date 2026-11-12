@@ -178,6 +178,5 @@ WindowManager.register('speedometer', {
         };
 
         wb.cleanup = cleanup;
-        wb.onclose = cleanup;
     }
 });

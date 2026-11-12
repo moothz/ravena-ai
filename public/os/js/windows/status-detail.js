@@ -131,6 +131,5 @@ WindowManager.register('status-detail', {
         };
 
         wb.cleanup = cleanup;
-        wb.onclose = cleanup;
     }
 });

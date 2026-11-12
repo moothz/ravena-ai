@@ -129,6 +129,5 @@ WindowManager.register('invite', {
         };
 
         wb.cleanup = cleanup;
-        wb.onclose = cleanup;
     }
 });

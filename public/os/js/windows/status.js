@@ -143,7 +143,6 @@ WindowManager.register('status', {
         };
 
         wb.cleanup = cleanup;
-        wb.onclose = cleanup;
     },
 
     renderDriveItem(bot) {
