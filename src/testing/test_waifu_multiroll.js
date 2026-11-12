@@ -338,6 +338,180 @@ async function runTests() {
 	);
 	console.log("✓ 5.4 Fuso horário America/Sao_Paulo validado com sucesso (21:34).");
 
+	// ─── TESTE 6: Isolamento de isFreeRoll / bônus da fazenda em Multi-Roll ──
+	console.log("\n[Teste 6] Validando que isFreeRoll da fazenda não vaza para rolls 2..9...");
+	const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+	const DonorBonusService = require("../services/DonorBonusService");
+	const GameEventService = require("../services/GameEventService");
+
+	// 6.1 Unitário de buildStepRollBonuses
+	const bWithFarm = WaifuCommands.buildStepRollBonuses(null, { rolls: 1, tickets: 0 }, 1.0, 1.0);
+	assert.strictEqual(
+		bWithFarm.isFreeRoll,
+		true,
+		"Roll com bônus da fazenda deve marcar isFreeRoll"
+	);
+	const bWithoutFarm = WaifuCommands.buildStepRollBonuses(null, null, 1.0, 1.0);
+	assert.strictEqual(
+		bWithoutFarm,
+		null,
+		"Roll sem doador, sem fazenda e sem evento deve retornar null"
+	);
+	const bDonorWithoutFarm = WaifuCommands.buildStepRollBonuses(
+		{ donorBadge: "VIP", rarityMultipliers: { RARE: 1.2, EPIC: 1.3, LEGENDARY: 1.5 } },
+		null,
+		1.0,
+		1.0
+	);
+	assert.strictEqual(
+		bDonorWithoutFarm.isFreeRoll,
+		undefined,
+		"Roll de doador sem fazenda não deve ter isFreeRoll"
+	);
+
+	// 6.2 Simulação completa !mu-r 9 com 1 roll de fazenda (Coração Púrpuro) e 9/9 rolls normais
+	const origGetWaifuBonus = ShadowGardenBonusService.getWaifuBonus;
+	const origConsumeWaifuBonus = ShadowGardenBonusService.consumeWaifuBonus;
+	const origGetDonorBonuses = DonorBonusService.getWaifuRollBonuses;
+	const origGetEventMult = GameEventService.getMultiplier;
+	const origBuildGrid = WaifuCommands.buildRollGridImage;
+
+	try {
+		let farmRollsLeft = 1;
+		let farmTicketsLeft = 0;
+		let standardRollsLeft = 9;
+		const capturedPayloads = [];
+
+		ShadowGardenBonusService.getWaifuBonus = async () => ({
+			rolls: farmRollsLeft,
+			tickets: farmTicketsLeft
+		});
+		ShadowGardenBonusService.consumeWaifuBonus = async () => {
+			if (farmTicketsLeft > 0) {
+				farmTicketsLeft--;
+				return {
+					consumed: true,
+					type: "ticket",
+					remainingRolls: farmRollsLeft,
+					remainingTickets: farmTicketsLeft
+				};
+			}
+			if (farmRollsLeft > 0) {
+				farmRollsLeft--;
+				return {
+					consumed: true,
+					type: "roll",
+					remainingRolls: farmRollsLeft,
+					remainingTickets: farmTicketsLeft
+				};
+			}
+			return { consumed: false, remainingRolls: 0, remainingTickets: 0 };
+		};
+		DonorBonusService.getWaifuRollBonuses = async () => null;
+		GameEventService.getMultiplier = () => 1.0;
+		WaifuCommands.buildRollGridImage = async () => Buffer.from("fake-grid-leak-test");
+
+		WaifuCommands.api.post = async (path, body) => {
+			if (path === "/kakera/daily" || path === "/user/ensure") {
+				return { data: { success: true } };
+			}
+			if (path === "/roll") {
+				capturedPayloads.push(JSON.parse(JSON.stringify(body)));
+				const isFree = Boolean(body?.bonuses?.isFreeRoll);
+				if (!isFree) {
+					if (standardRollsLeft <= 0) {
+						return { data: { success: false, error: { code: "COOLDOWN_ACTIVE" } } };
+					}
+					standardRollsLeft--;
+				}
+				const idx = capturedPayloads.length;
+				return {
+					data: {
+						success: true,
+						data: {
+							character: {
+								id: `char-leak-${idx}`,
+								name: `Personagem ${idx}`,
+								series: "Série Teste",
+								rarity: "COMMON",
+								imageUrl: null
+							},
+							available: true,
+							isOwner: false,
+							rollsRemaining: standardRollsLeft,
+							maxRolls: 9
+						}
+					}
+				};
+			}
+			return originalPost.apply(WaifuCommands.api, [path, body]);
+		};
+
+		const multiRollMsg = createMessage({
+			content: "!mu-r 9",
+			group: testGroupId,
+			author: rollerUser
+		});
+		const leakRes = await WaifuCommands.rollAny(bot, multiRollMsg, ["9"], {
+			id: testGroupId,
+			filters: { waifuRollMarcar: false }
+		});
+		assert.ok(leakRes, "Deve retornar resultado do !mu-r 9");
+		assert.strictEqual(capturedPayloads.length, 9, "Deve executar os 9 rolls solicitados");
+		assert.strictEqual(
+			capturedPayloads[0]?.bonuses?.isFreeRoll,
+			true,
+			"Roll 1 (fazenda) deve enviar isFreeRoll: true"
+		);
+		for (let idx = 1; idx < capturedPayloads.length; idx++) {
+			assert.strictEqual(
+				Boolean(capturedPayloads[idx]?.bonuses?.isFreeRoll),
+				false,
+				`Roll ${idx + 1} NÃO pode vazar isFreeRoll: true após consumo do bônus da fazenda`
+			);
+		}
+		assert.strictEqual(farmRollsLeft, 0, "Deve ter consumido o 1 roll da fazenda");
+		assert.strictEqual(
+			standardRollsLeft,
+			1,
+			"Deve ter consumido 8 rolls do cooldown padrão (9 -> 1)"
+		);
+		console.log(
+			"✓ 6.2 !mu-r 9 consumiu 1 roll da fazenda + 8 rolls normais (isFreeRoll não vazou)."
+		);
+
+		// 6.3 Ticket da fazenda (Rosa de Sangue) também não pode vazar multiplicadores de raridade para rolls 2..9
+		farmRollsLeft = 0;
+		farmTicketsLeft = 1;
+		standardRollsLeft = 9;
+		capturedPayloads.length = 0;
+
+		await WaifuCommands.rollAny(bot, multiRollMsg, ["3"], {
+			id: testGroupId,
+			filters: { waifuRollMarcar: false }
+		});
+		assert.strictEqual(capturedPayloads.length, 3, "Deve executar 3 rolls");
+		assert.strictEqual(capturedPayloads[0]?.bonuses?.isFreeRoll, true);
+		assert.strictEqual(capturedPayloads[0]?.bonuses?.rarityMultipliers?.LEGENDARY, 2.0);
+		for (let idx = 1; idx < capturedPayloads.length; idx++) {
+			assert.strictEqual(Boolean(capturedPayloads[idx]?.bonuses?.isFreeRoll), false);
+			assert.strictEqual(
+				capturedPayloads[idx]?.bonuses?.rarityMultipliers,
+				undefined,
+				`Roll ${idx + 1} não pode herdar rarityMultipliers do ticket da fazenda`
+			);
+		}
+		assert.strictEqual(farmTicketsLeft, 0, "Deve ter consumido 1 ticket da fazenda");
+		assert.strictEqual(standardRollsLeft, 7, "Deve ter consumido 2 rolls normais (9 -> 7)");
+		console.log("✓ 6.3 Ticket (Rosa de Sangue) não vazou isFreeRoll nem rarityMultipliers.");
+	} finally {
+		ShadowGardenBonusService.getWaifuBonus = origGetWaifuBonus;
+		ShadowGardenBonusService.consumeWaifuBonus = origConsumeWaifuBonus;
+		DonorBonusService.getWaifuRollBonuses = origGetDonorBonuses;
+		GameEventService.getMultiplier = origGetEventMult;
+		WaifuCommands.buildRollGridImage = origBuildGrid;
+	}
+
 	// Restaura mock da API
 	WaifuCommands.api.post = originalPost;
 

@@ -1723,6 +1723,65 @@ function sanitizeRollBonuses(bonuses) {
 }
 
 /**
+ * Monta os bônus de um único roll combinando doador, bônus de fazenda do passo atual e eventos ativos.
+ * Mantém cada passo isolado para evitar vazamento de `isFreeRoll` ou multiplicadores de ticket entre rolls.
+ * @param {Object|null} donorBonuses
+ * @param {Object|null} farmBonus
+ * @param {number} [eventRarosMult=1.0]
+ * @param {number} [eventWishMult=1.0]
+ * @returns {Object|null}
+ */
+function buildStepRollBonuses(donorBonuses, farmBonus, eventRarosMult = 1.0, eventWishMult = 1.0) {
+	const hasFarm = (farmBonus?.rolls || 0) > 0 || (farmBonus?.tickets || 0) > 0;
+	const hasEvents = eventRarosMult !== 1.0 || eventWishMult !== 1.0;
+
+	if (!donorBonuses && !hasFarm && !hasEvents) {
+		return null;
+	}
+
+	const bonuses = donorBonuses ? { ...donorBonuses } : {};
+	if (bonuses.rarityMultipliers) {
+		bonuses.rarityMultipliers = { ...bonuses.rarityMultipliers };
+	}
+
+	if (hasFarm) {
+		// Concede roll gratuito da fazenda sem consumir o saldo de cooldown
+		bonuses.isFreeRoll = true;
+
+		// Se tiver ticket (Rosa de Sangue), concede bônus de raridade equivalente a doador alto
+		if ((farmBonus?.tickets || 0) > 0) {
+			const curMults = bonuses.rarityMultipliers
+				? { ...bonuses.rarityMultipliers }
+				: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
+			curMults.RARE = Math.max(curMults.RARE || 1.0, 1.4);
+			curMults.EPIC = Math.max(curMults.EPIC || 1.0, 1.7);
+			curMults.LEGENDARY = Math.max(curMults.LEGENDARY || 1.0, 2.0);
+			bonuses.rarityMultipliers = curMults;
+		}
+	}
+
+	if (hasEvents) {
+		const baseRarities = bonuses.rarityMultipliers
+			? { ...bonuses.rarityMultipliers }
+			: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
+
+		if (eventRarosMult !== 1.0) {
+			baseRarities.RARE = Number((baseRarities.RARE * eventRarosMult).toFixed(3));
+			baseRarities.EPIC = Number((baseRarities.EPIC * eventRarosMult).toFixed(3));
+			baseRarities.LEGENDARY = Number((baseRarities.LEGENDARY * eventRarosMult).toFixed(3));
+		}
+		bonuses.rarityMultipliers = baseRarities;
+
+		if (eventWishMult !== 1.0) {
+			const baseWish = bonuses.wishlistMultiplier || 1.0;
+			bonuses.wishlistMultiplier = Math.min(20.0, Number((baseWish * eventWishMult).toFixed(3)));
+		}
+	}
+
+	return sanitizeRollBonuses(bonuses);
+}
+
+/**
  * Cria função de roll com ou sem filtro de gênero
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
@@ -1776,7 +1835,6 @@ function makeRollHandler(genderFilter) {
 				claimDailyPromise
 			]);
 
-			let rollBonuses = rollBonusesRaw;
 			const hasFarmBonus = (farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0;
 			let consumedFarmBonus = null;
 
@@ -1787,56 +1845,26 @@ function makeRollHandler(genderFilter) {
 				return mainReturn;
 			};
 
-			if (hasFarmBonus) {
-				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
-				// Concede roll gratuito da fazenda sem consumir o saldo de cooldown
-				rollBonuses.isFreeRoll = true;
-
-				// Se tiver ticket (Rosa de Sangue), concede bônus de raridade equivalente a doador alto
-				if (farmBonus.tickets > 0) {
-					const curMults = rollBonuses.rarityMultipliers
-						? { ...rollBonuses.rarityMultipliers }
-						: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
-					curMults.RARE = Math.max(curMults.RARE || 1.0, 1.4);
-					curMults.EPIC = Math.max(curMults.EPIC || 1.0, 1.7);
-					curMults.LEGENDARY = Math.max(curMults.LEGENDARY || 1.0, 2.0);
-					rollBonuses.rarityMultipliers = curMults;
-				}
-			}
-
 			const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
 			const eventWishMult = GameEventService.getMultiplier("waifu", "wish");
 
-			if (eventRarosMult !== 1.0 || eventWishMult !== 1.0) {
-				rollBonuses = rollBonuses ? { ...rollBonuses } : {};
-				const baseRarities = rollBonuses.rarityMultipliers
-					? { ...rollBonuses.rarityMultipliers }
-					: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
-
-				if (eventRarosMult !== 1.0) {
-					baseRarities.RARE = Number((baseRarities.RARE * eventRarosMult).toFixed(3));
-					baseRarities.EPIC = Number((baseRarities.EPIC * eventRarosMult).toFixed(3));
-					baseRarities.LEGENDARY = Number((baseRarities.LEGENDARY * eventRarosMult).toFixed(3));
-				}
-				rollBonuses.rarityMultipliers = baseRarities;
-
-				if (eventWishMult !== 1.0) {
-					const baseWish = rollBonuses.wishlistMultiplier || 1.0;
-					rollBonuses.wishlistMultiplier = Math.min(
-						20.0,
-						Number((baseWish * eventWishMult).toFixed(3))
-					);
-				}
-			}
-
-			const finalBonuses = sanitizeRollBonuses(rollBonuses);
-			const payload = {
+			const basePayload = {
 				userId,
 				groupId,
 				name,
 				platform: "WHATSAPP",
-				...(genderFilter && { gender: genderFilter }),
-				...(finalBonuses ? { bonuses: finalBonuses } : {})
+				...(genderFilter && { gender: genderFilter })
+			};
+
+			const finalBonuses = buildStepRollBonuses(
+				rollBonusesRaw,
+				hasFarmBonus ? farmBonus : null,
+				eventRarosMult,
+				eventWishMult
+			);
+			const payload = {
+				...basePayload,
+				...(finalBonuses && Object.keys(finalBonuses).length > 0 ? { bonuses: finalBonuses } : {})
 			};
 
 			const { data } = await api.post("/roll", payload);
@@ -1892,7 +1920,7 @@ function makeRollHandler(genderFilter) {
 				if (firstRollData?.isWishlist) {
 					text += ` 🌟 *[SEU DESEJO!]*`;
 				}
-				if (firstRollData?.appliedBonuses?.donorBadge || rollBonuses?.donorBadge) {
+				if (firstRollData?.appliedBonuses?.donorBadge || rollBonusesRaw?.donorBadge) {
 					text += ` 💎 *[VIP]*`;
 				}
 				text += "\n";
@@ -2145,26 +2173,15 @@ function makeRollHandler(genderFilter) {
 				try {
 					const curFarm = await ShadowGardenBonusService.getWaifuBonus(userId);
 					const stillHasFarm = (curFarm.rolls || 0) > 0 || (curFarm.tickets || 0) > 0;
-					const stepBonuses = rollBonuses ? { ...rollBonuses } : {};
 
-					if (stillHasFarm) {
-						stepBonuses.isFreeRoll = true;
-						if (curFarm.tickets > 0) {
-							const curMults = stepBonuses.rarityMultipliers
-								? { ...stepBonuses.rarityMultipliers }
-								: { RARE: 1.0, EPIC: 1.0, LEGENDARY: 1.0 };
-							curMults.RARE = Math.max(curMults.RARE || 1.0, 1.4);
-							curMults.EPIC = Math.max(curMults.EPIC || 1.0, 1.7);
-							curMults.LEGENDARY = Math.max(curMults.LEGENDARY || 1.0, 2.0);
-							stepBonuses.rarityMultipliers = curMults;
-						}
-					} else {
-						delete stepBonuses.isFreeRoll;
-					}
-
-					const finalStepBonuses = sanitizeRollBonuses(stepBonuses);
+					const finalStepBonuses = buildStepRollBonuses(
+						rollBonusesRaw,
+						stillHasFarm ? curFarm : null,
+						eventRarosMult,
+						eventWishMult
+					);
 					const stepPayload = {
-						...payload,
+						...basePayload,
 						...(finalStepBonuses && Object.keys(finalStepBonuses).length > 0
 							? { bonuses: finalStepBonuses }
 							: {})
@@ -10332,5 +10349,6 @@ module.exports = {
 	resolveWaifuImageUrl,
 	generateSingleRollPlaceholderBuffer,
 	infoCriacaoMitico,
-	handleWaifuMenuCallback
+	handleWaifuMenuCallback,
+	buildStepRollBonuses
 };
