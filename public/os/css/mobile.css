@@ -668,6 +668,16 @@
     padding: 6px 8px;
 }
 
+/* Linhas clicáveis (ex: doadores) e botões dentro dos apps com alvo de toque de ~40px */
+.mobile-window-body .explorer-table tr.donation-row td {
+    padding-top: 11px;
+    padding-bottom: 11px;
+}
+
+.mobile-window-body .os-btn {
+    min-height: 40px;
+}
+
 .mobile-window-body input,
 .mobile-window-body textarea,
 .mobile-window-body select {
