@@ -92,3 +92,21 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Foco visível para navegação por teclado */
+:focus-visible {
+    outline: 2px solid var(--cyan-neon);
+    outline-offset: 2px;
+}
+
+/* Respeita "reduzir movimento" do sistema (animações/transições praticamente desligadas) */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

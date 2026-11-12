@@ -17,24 +17,32 @@
     <meta property="og:image" content="https://ravena.moothz.com/android-chrome-512x512.png">
     <meta property="og:site_name" content="RavenaBot">
 
-    <!-- Fonts -->
+    <!-- Conexões antecipadas com as CDNs de fontes e ícones -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+
+    <!-- Fonts e FontAwesome sem bloquear a primeira renderização (media=print -> all ao carregar) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    </noscript>
+    <!-- Ícones de marca em SVG (evita baixar a fonte fa-brands inteira) -->
+    <link rel="stylesheet" href="/brand-icons.css?v=20261111-perf">
     
     <!-- WinBox Vendor CSS -->
     <link rel="stylesheet" href="vendor/winbox.min.css">
     
     <!-- App CSS Files -->
-    <link rel="stylesheet" href="css/themes.css?v=20">
-    <link rel="stylesheet" href="css/desktop.css?v=20">
+    <link rel="stylesheet" href="css/themes.css?v=20261112-layout">
+    <link rel="stylesheet" href="css/desktop.css?v=20261112-layout">
     <link rel="stylesheet" href="css/taskbar.css?v=20">
     <link rel="stylesheet" href="css/windows.css?v=25">
     <link rel="stylesheet" href="css/context-menu.css?v=20">
-    <link rel="stylesheet" href="css/mobile.css?v=25">
+    <link rel="stylesheet" href="css/mobile.css?v=20261112-touch">
     
     <!-- Favicons -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -140,39 +148,38 @@
         </div>
     </div>
 
-    <!-- Vendor Scripts -->
-    <script src="vendor/winbox.bundle.min.js"></script>
-    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <!-- Vendor Scripts (Highcharts é carregado sob demanda pela janela de Estatísticas) -->
+    <script src="vendor/winbox.bundle.min.js" defer></script>
 
     <!-- App Utilities & Core -->
-    <script src="js/utils/formatters.js?v=20"></script>
-    <script src="js/utils/api.js?v=20"></script>
-    <script src="js/utils/trail.js?v=20"></script>
-    <script src="js/context-menu.js?v=20"></script>
-    <script src="js/window-manager.js?v=20"></script>
+    <script src="js/utils/formatters.js?v=20261112-xss" defer></script>
+    <script src="js/utils/api.js?v=20261111-perf" defer></script>
+    <script src="js/utils/trail.js?v=20261112-layout" defer></script>
+    <script src="js/context-menu.js?v=20" defer></script>
+    <script src="js/window-manager.js?v=20261112-layout" defer></script>
 
     <!-- Window Modules -->
-    <script src="js/windows/status.js?v=26"></script>
-    <script src="js/windows/status-detail.js?v=26"></script>
-    <script src="js/windows/commands.js?v=25"></script>
-    <script src="js/windows/donations.js?v=26"></script>
-    <script src="js/windows/community.js?v=20"></script>
-    <script src="js/windows/statistics.js?v=20"></script>
-    <script src="js/windows/help.js?v=20"></script>
-    <script src="js/windows/imagine.js?v=20"></script>
-    <script src="js/windows/tts.js?v=20"></script>
-    <script src="js/windows/stt.js?v=20"></script>
-    <script src="js/windows/nudenet.js?v=20"></script>
-    <script src="js/windows/fishing.js?v=20"></script>
-    <script src="js/windows/invite.js?v=26"></script>
-    <script src="js/windows/speedometer.js?v=26"></script>
-    <script src="js/windows/waifuletes.js?v=25"></script>
-    <script src="js/windows/ravenabank.js?v=1"></script>
+    <script src="js/windows/status.js?v=20261111-perf" defer></script>
+    <script src="js/windows/status-detail.js?v=26" defer></script>
+    <script src="js/windows/commands.js?v=25" defer></script>
+    <script src="js/windows/donations.js?v=20261112-xss" defer></script>
+    <script src="js/windows/community.js?v=20261111-perf" defer></script>
+    <script src="js/windows/statistics.js?v=20261111-perf" defer></script>
+    <script src="js/windows/help.js?v=20" defer></script>
+    <script src="js/windows/imagine.js?v=20" defer></script>
+    <script src="js/windows/tts.js?v=20" defer></script>
+    <script src="js/windows/stt.js?v=20" defer></script>
+    <script src="js/windows/nudenet.js?v=20" defer></script>
+    <script src="js/windows/fishing.js?v=20261112-pesca" defer></script>
+    <script src="js/windows/invite.js?v=26" defer></script>
+    <script src="js/windows/speedometer.js?v=26" defer></script>
+    <script src="js/windows/waifuletes.js?v=25" defer></script>
+    <script src="js/windows/ravenabank.js?v=1" defer></script>
 
     <!-- Desktop, Taskbar, Mobile & Main App -->
-    <script src="js/desktop.js?v=21"></script>
-    <script src="js/taskbar.js?v=21"></script>
-    <script src="js/mobile.js?v=26"></script>
-    <script src="js/app.js?v=26"></script>
+    <script src="js/desktop.js?v=20261112-layout" defer></script>
+    <script src="js/taskbar.js?v=20261112-xss" defer></script>
+    <script src="js/mobile.js?v=20261112-xss" defer></script>
+    <script src="js/app.js?v=20261112-xss" defer></script>
 </body>
 </html>

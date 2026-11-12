@@ -205,8 +205,9 @@ WindowManager.register('status', {
                 <img src="img/profiles/${bot.id}.jpg" 
                      class="drive-icon" 
                      onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
-                     alt="${bot.id}"
-                     loading="lazy">
+                     alt=""
+                     width="44" height="44"
+                     loading="lazy" decoding="async">
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${statusDotClass}"></span>

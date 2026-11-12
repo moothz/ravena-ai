@@ -2,51 +2,68 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05060d">
     <title>Ajuda RavenaBot - Chat Assistant</title>
-    
+
     <meta name="description" content="Tire suas dúvidas sobre a RavenaBot no chat de ajuda!">
     <meta name="author" content="moothz">
-    
-    <link rel="stylesheet" href="/cmd.css?v=2">
-    <link rel="stylesheet" href="/ajuda.css?v=1">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="stylesheet" href="/cmd.css?v=20261112-cmd">
+    <link rel="stylesheet" href="/ajuda.css?v=20261112-ajuda">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 </head>
 <body>
-    <div class="container">
+    <div class="container chat-page">
         <header class="header">
-            <div class="logo">
-                <img src="/android-chrome-192x192.png" alt="RavenaBot Logo">
-                <h1>RavenaBot</h1>
-            </div>
-            <div class="header-title">
-                Assistente de Ajuda
+            <div class="header-content">
+                <a href="/" class="logo" title="Página inicial da RavenaBot">
+                    <img src="/android-chrome-192x192.png" alt="" width="38" height="38">
+                    <div class="logo-text">
+                        <h1>RavenaBot</h1>
+                        <span class="logo-badge"><i class="fas fa-comment-dots" aria-hidden="true"></i> Assistente de Ajuda</span>
+                    </div>
+                </a>
+                <nav class="header-actions" aria-label="Navegação">
+                    <a href="/cmd" class="btn-header" title="Catálogo de comandos"><i class="fas fa-terminal" aria-hidden="true"></i> <span>Comandos</span></a>
+                    <a href="/" class="btn-header" title="Página inicial"><i class="fas fa-house" aria-hidden="true"></i> <span>Início</span></a>
+                </nav>
             </div>
         </header>
 
         <main class="main-content chat-main">
-            <div id="chat-container" class="chat-container">
+            <div id="chat-container" class="chat-container" role="log" aria-live="polite" aria-label="Conversa com a assistente">
                 <div class="message bot-message">
                     <div class="message-content">
                         Olá! Eu sou a assistente da RavenaBot. Como posso te ajudar hoje? Você pode perguntar sobre como configurar comandos, streams, ou qualquer outra funcionalidade!
                     </div>
                 </div>
+                <div id="chat-suggestions" class="chat-suggestions" aria-label="Sugestões de perguntas">
+                    <button type="button" class="suggestion-chip">Como faço figurinhas?</button>
+                    <button type="button" class="suggestion-chip">Como coloco a Ravena no meu grupo?</button>
+                    <button type="button" class="suggestion-chip">Como crio um comando personalizado?</button>
+                    <button type="button" class="suggestion-chip">Quais jogos a Ravena tem?</button>
+                </div>
             </div>
         </main>
 
         <footer class="chat-footer">
-            <div class="input-container">
-                <input type="text" id="user-input" placeholder="Digite sua dúvida aqui..." autocomplete="off">
-                <button id="send-btn" title="Enviar">
-                    <i class="fas fa-paper-plane"></i>
+            <form id="chat-form" class="input-container" autocomplete="off">
+                <label for="user-input" class="sr-only">Sua dúvida</label>
+                <input type="text" id="user-input" placeholder="Digite sua dúvida aqui..." autocomplete="off" enterkeyhint="send" maxlength="1000">
+                <button id="send-btn" type="submit" title="Enviar" aria-label="Enviar pergunta">
+                    <i class="fas fa-paper-plane" aria-hidden="true"></i>
                 </button>
-            </div>
-            <p class="copyright">RavenaBot © 2026</p>
+            </form>
+            <p class="copyright">RavenaBot © 2026 • As respostas são geradas por IA e podem conter erros.</p>
         </footer>
     </div>
 
-    <script src="/ajuda.js?v=1"></script>
+    <script src="/ajuda.js?v=20261112-ajuda" defer></script>
 </body>
 </html>

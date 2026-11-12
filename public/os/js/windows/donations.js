@@ -149,7 +149,7 @@ WindowManager.register('donations', {
                 <tr class="donation-row" data-name="${encodeURIComponent(d.nome)}">
                     <td class="col-rank">${index + 1}</td>
                     <td class="col-icon">${medal}</td>
-                    <td class="col-name" style="font-weight: 500;">${d.nome}</td>
+                    <td class="col-name" style="font-weight: 500;">${Formatters.escapeHtml(d.nome)}</td>
                     <td class="col-value">${Formatters.currency(d.valor)}</td>
                 </tr>
             `;
@@ -187,7 +187,7 @@ WindowManager.register('donations', {
                                     <span>${Formatters.formatDateTime(h.ts)}</span>
                                     <span>${Formatters.currency(h.valor)}</span>
                                 </div>
-                                ${h.msg ? `<div class="donor-entry-msg">"${h.msg}"</div>` : `<div style="font-size: 10px; color: #666; margin-top: 4px;">(Sem mensagem anexada)</div>`}
+                                ${h.msg ? `<div class="donor-entry-msg">"${Formatters.escapeHtml(h.msg)}"</div>` : `<div style="font-size: 10px; color: #666; margin-top: 4px;">(Sem mensagem anexada)</div>`}
                             </div>
                         `).join('');
                     }
@@ -195,7 +195,7 @@ WindowManager.register('donations', {
                     wb.body.innerHTML = `
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--win-border-subtle);">
-                                <h3 style="font-size: 14px; color: var(--bright-blue);">${donor.nome}</h3>
+                                <h3 style="font-size: 14px; color: var(--bright-blue);">${Formatters.escapeHtml(donor.nome)}</h3>
                                 <span style="font-size: 13px; font-weight: 700; color: var(--gold-color);">Total: ${Formatters.currency(donor.valor)}</span>
                             </div>
                             <div style="font-size: 11px; font-weight: 600; color: #ffffff;">Mensagens & Histórico:</div>

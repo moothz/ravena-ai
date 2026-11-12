@@ -601,8 +601,15 @@ class BotAPI {
 		return updatePublicCommandsCache(this);
 	}
 
-	async filterAnalyticsData(options) {
-		return filterAnalyticsData(this, options);
+	/**
+	 * Filtra o cache analítico por período e bots selecionados.
+	 * Síncrono: a rota /analytics serializa o retorno diretamente com res.json().
+	 * @param {string} period
+	 * @param {Array<string>} selectedBots
+	 * @returns {Object}
+	 */
+	filterAnalyticsData(period, selectedBots) {
+		return filterAnalyticsData(this, period, selectedBots);
 	}
 
 	/* ========================================================================== */

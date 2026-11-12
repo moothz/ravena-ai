@@ -1,6 +1,8 @@
-/* mobile.css - Responsive Smartphone OS Layout (< 768px) */
+/* mobile.css - Responsive Smartphone OS Layout
+ * Ativo em telas estreitas (< 768px) OU baixas (<= 520px, ex: celular deitado).
+ * Mantenha em sincronia com RavenaOS.MOBILE_QUERY (js/app.js). */
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 520px) {
     html, body {
         overflow: hidden !important;
         height: 100% !important;
@@ -53,7 +55,7 @@
     }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (min-height: 521px) {
     .mobile-app {
         display: none !important;
     }
@@ -116,8 +118,11 @@
 /* Header message rate widget: "só números" */
 .mobile-header-rate {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 4px;
+    min-height: 40px;
+    font: inherit;
+    color: inherit;
     background: rgba(4, 169, 240, 0.15);
     border: 1px solid rgba(4, 169, 240, 0.45);
     border-radius: 6px;
@@ -275,15 +280,18 @@
 
 .mobile-app-label {
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
     color: #ffffff;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
     line-height: 1.2;
-    white-space: nowrap;
+    max-width: 100%;
+    /* Rótulos longos ("Estatísticas", "Detector NSFW") quebram em 2 linhas em vez de virar "Estatístic…" */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 80px;
+    overflow-wrap: anywhere;
 }
 
 /* Recent Donations Card (Home Screen - Anchored near bottom) */
@@ -354,6 +362,7 @@
     font-size: 12px;
     font-weight: 700;
     padding: 5px 14px;
+    min-height: 40px;
     background: linear-gradient(180deg, #ff4081 0%, #c2185b 100%);
     color: #ffffff;
     border-radius: 6px;
@@ -458,7 +467,7 @@
 }
 
 .mobile-window-header {
-    height: 38px;
+    height: 42px;
     background: linear-gradient(180deg, #37118f 0%, #1c0558 100%);
     border-bottom: 1px solid var(--bright-blue);
     padding: 0 10px;
@@ -497,8 +506,9 @@
 }
 
 .mobile-window-close-btn {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 32px;
+    margin-right: -6px;
     background: rgba(229, 62, 62, 0.25);
     border: 1px solid rgba(229, 62, 62, 0.5);
     border-radius: 5px;
@@ -658,6 +668,16 @@
     padding: 6px 8px;
 }
 
+/* Linhas clicáveis (ex: doadores) e botões dentro dos apps com alvo de toque de ~40px */
+.mobile-window-body .explorer-table tr.donation-row td {
+    padding-top: 11px;
+    padding-bottom: 11px;
+}
+
+.mobile-window-body .os-btn {
+    min-height: 40px;
+}
+
 .mobile-window-body input,
 .mobile-window-body textarea,
 .mobile-window-body select {
@@ -748,3 +768,78 @@
     overflow: hidden !important;
 }
 
+
+/* ========================================================
+   CELULAR DEITADO (paisagem, altura <= 520px)
+   Usa a largura: grade de apps com mais colunas e o card de doações ao lado,
+   cabeçalho compacto e sem o botão flutuante "Fechar App" (o X do card basta).
+   ======================================================== */
+@media (max-height: 520px) and (orientation: landscape) {
+    .mobile-app {
+        padding-left: max(10px, env(safe-area-inset-left));
+        padding-right: max(10px, env(safe-area-inset-right));
+    }
+
+    .mobile-header {
+        padding: 0 4px 6px 4px;
+        margin-bottom: 6px;
+    }
+
+    .mobile-logo {
+        width: 32px;
+        height: 32px;
+    }
+
+    .mobile-subtitle {
+        display: none;
+    }
+
+    .mobile-services {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        margin-bottom: 6px;
+    }
+
+    .mobile-services::-webkit-scrollbar {
+        display: none;
+    }
+
+    .mobile-home {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 14px;
+    }
+
+    .mobile-app-grid {
+        flex: 1;
+        min-width: 0;
+        grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+        gap: 10px 4px;
+        padding: 0;
+    }
+
+    .mobile-app-img-wrap {
+        width: 50px;
+        height: 50px;
+        border-radius: 13px;
+        margin-bottom: 4px;
+    }
+
+    .mobile-donations-card {
+        width: 270px;
+        flex-shrink: 0;
+        margin-top: 0;
+        position: sticky;
+        top: 0;
+    }
+
+    .mobile-app.app-active .mobile-header {
+        display: none !important;
+    }
+
+    .mobile-home-bar {
+        display: none;
+    }
+}

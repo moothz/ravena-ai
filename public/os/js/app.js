@@ -41,8 +41,16 @@ const RavenaOS = {
         }
     },
 
+    // Layout "celular": telas estreitas OU baixas (ex: celular deitado, 844x390), onde janelas
+    // flutuantes + barra de tarefas não cabem. Mantenha em sincronia com os @media de mobile.css.
+    MOBILE_QUERY: '(max-width: 767px), (max-height: 520px)',
+
+    checkMobile() {
+        return window.matchMedia ? window.matchMedia(this.MOBILE_QUERY).matches : window.innerWidth < 768;
+    },
+
     async init() {
-        this.state.isMobile = window.innerWidth < 768;
+        this.state.isMobile = this.checkMobile();
 
         // Initialize UI components
         if (this.state.isMobile) {
@@ -70,7 +78,8 @@ const RavenaOS = {
             this.fetchServicesStatus()
         ]);
 
-        // Auto-open windows on desktop: Status (top-left, shifted right) and Mensagímetro (bottom-right), or requested app via query param
+        // Abre automaticamente no desktop: Status (ao lado dos ícones) e Mensagímetro (canto inferior
+        // direito, só se couber abaixo do post-it de doações), ou o app pedido via ?app=
         if (!this.state.isMobile && window.WindowManager) {
             setTimeout(() => {
                 const urlParams = new URLSearchParams(window.location.search);
@@ -78,23 +87,7 @@ const RavenaOS = {
                 if (reqApp) {
                     window.WindowManager.open(reqApp);
                 } else {
-                    // Open Status das Ravenas
-                    window.WindowManager.open('status');
-
-                    // Open Mensagímetro positioned safely in the bottom-right corner inside the screen
-                    const screenW = window.innerWidth;
-                    const screenH = window.innerHeight;
-                    const speedoW = 420;
-                    const speedoH = 400;
-                    const speedoX = Math.max(260, screenW - speedoW - 30);
-                    const speedoY = Math.max(20, screenH - speedoH - 60);
-
-                    window.WindowManager.open('speedometer', {
-                        width: `${speedoW}px`,
-                        height: `${speedoH}px`,
-                        x: `${speedoX}px`,
-                        y: `${speedoY}px`
-                    });
+                    this.openDefaultDesktopWindows();
                 }
             }, 100);
         }
@@ -108,7 +101,7 @@ const RavenaOS = {
         // Window resize handler (handling desktop <-> mobile transitions)
         window.addEventListener('resize', () => {
             const wasMobile = this.state.isMobile;
-            this.state.isMobile = window.innerWidth < 768;
+            this.state.isMobile = this.checkMobile();
             if (wasMobile !== this.state.isMobile) {
                 if (this.state.isMobile) {
                     document.getElementById('mobile-app')?.classList.remove('hidden');
@@ -128,6 +121,38 @@ const RavenaOS = {
         });
     },
 
+    openDefaultDesktopWindows() {
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+        const taskbarH = 48;
+        const margin = 16;
+        const left = window.Desktop ? window.Desktop.getIconsAreaRight() : 250;
+
+        const widget = document.getElementById('desktop-donates-widget');
+        const rect = widget ? widget.getBoundingClientRect() : null;
+        const widgetRect = rect && rect.width > 0 ? rect : null; // fixed: offsetParent é sempre null
+        const widgetSpace = widgetRect ? (screenW - widgetRect.left) + 12 : 0;
+
+        // Status: ocupa o espaço entre os ícones e o post-it; se não sobrar largura útil, cobre o post-it
+        const availW = screenW - left - margin;
+        const statusW = Math.min(1080, availW - widgetSpace >= 680 ? availW - widgetSpace : availW);
+        window.WindowManager.open('status', { x: `${left}px`, y: '20px', width: `${statusW}px` });
+
+        const speedoW = 420;
+        const speedoH = 400;
+        const top = widgetRect ? widgetRect.bottom + 12 : margin;
+        const fitsBelowWidget = screenH - taskbarH - margin - top >= speedoH;
+        const fitsBesideStatus = screenW - (left + statusW) - margin >= speedoW;
+        if (fitsBelowWidget || fitsBesideStatus) {
+            window.WindowManager.open('speedometer', {
+                width: `${speedoW}px`,
+                height: `${speedoH}px`,
+                x: `${screenW - speedoW - margin}px`,
+                y: `${Math.max(top, screenH - speedoH - taskbarH - margin)}px`
+            });
+        }
+    },
+
     initDesktopDonatesWidget() {
         let el = document.getElementById('desktop-donates-widget');
         if (!el) {
@@ -135,17 +160,37 @@ const RavenaOS = {
             el.id = 'desktop-donates-widget';
             el.className = 'desktop-widget-donates';
             el.title = 'Clique para abrir o painel completo de doações';
-            document.body.appendChild(el);
+        }
 
-            el.addEventListener('click', (e) => {
+        // O post-it fica dentro do #desktop para que as janelas (WinBox) fiquem por cima dele
+        // em vez de terem a barra de título coberta.
+        const desktop = document.getElementById('desktop');
+        if (desktop && el.parentElement !== desktop) desktop.appendChild(el);
+
+        if (!el.dataset.bound) {
+            el.dataset.bound = '1';
+            el.setAttribute('role', 'button');
+            el.tabIndex = 0;
+            el.setAttribute('aria-label', 'Top doadores — abrir mural de doações');
+            const open = (e) => {
                 e.stopPropagation();
                 WindowManager.open('donations');
+            };
+            el.addEventListener('click', open);
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    open(e);
+                }
             });
         }
 
         this.updateDesktopDonatesWidget();
-        this.on('recentDonationsUpdate', () => this.updateDesktopDonatesWidget());
-        this.on('donationsUpdate', () => this.updateDesktopDonatesWidget());
+        if (!this._widgetSubscribed) {
+            this._widgetSubscribed = true;
+            this.on('recentDonationsUpdate', () => this.updateDesktopDonatesWidget());
+            this.on('donationsUpdate', () => this.updateDesktopDonatesWidget());
+        }
     },
 
     updateDesktopDonatesWidget() {
@@ -165,11 +210,12 @@ const RavenaOS = {
         } else {
             listHtml = donors.map((d, i) => {
                 const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•';
+                const nome = Formatters.escapeHtml(d.nome);
                 return `
                     <div class="widget-postit-item">
                         <span class="widget-postit-name">
                             <span>${medal}</span>
-                            <span title="${d.nome}">${d.nome}</span>
+                            <span title="${nome}">${nome}</span>
                         </span>
                         <span class="widget-postit-val">${Formatters.currency(d.valor)}</span>
                     </div>
@@ -370,7 +416,7 @@ const RavenaOS = {
 
         let lastDraw = 0;
 
-        const draw = (timestamp) => {
+        const draw = (timestamp, once = false) => {
             const count = this.state.messageTimestamps ? this.state.messageTimestamps.length : 0;
             const currentMsgsHr = count * 60;
             const minMsgs = 500;
@@ -384,7 +430,7 @@ const RavenaOS = {
             const maxDelay = 70;
             const delay = maxDelay - (factor * (maxDelay - minDelay));
 
-            if (timestamp - lastDraw < delay) {
+            if (!once && timestamp - lastDraw < delay) {
                 requestAnimationFrame(draw);
                 return;
             }
@@ -413,15 +459,23 @@ const RavenaOS = {
                 state.charIdx++;
             }
 
-            requestAnimationFrame(draw);
+            if (!once) requestAnimationFrame(draw);
         };
 
-        requestAnimationFrame(draw);
+        // Com "reduzir movimento" ativo, desenha um quadro estático em vez de animar sem parar
+        const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const drawStatic = () => {
+            for (let i = 0; i < 60; i++) draw(Infinity, true);
+        };
+
+        if (reduceMotion) drawStatic();
+        else requestAnimationFrame(draw);
 
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             initColumns();
+            if (reduceMotion) drawStatic();
         });
     }
 };

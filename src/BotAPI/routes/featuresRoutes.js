@@ -34,9 +34,11 @@ function registerFeaturesRoutes(api) {
 	// Fishing API - Histórico de lendários
 	app.get("/api/fishing/legendary", async (req, res) => {
 		try {
+			// Rota pública: nunca expor user_id (telefone/JID) nem group_id dos pescadores
 			const rows = await api.database.dbAll(
 				"fishing",
-				"SELECT * FROM fishing_legendary_history ORDER BY weight DESC;"
+				`SELECT id, fish_name, weight, user_name, group_name, timestamp, image_name, year
+				 FROM fishing_legendary_history ORDER BY weight DESC;`
 			);
 			res.json(rows);
 		} catch (error) {

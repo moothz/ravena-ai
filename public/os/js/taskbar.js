@@ -174,7 +174,7 @@ const Taskbar = {
 
             textEl.style.opacity = '0';
             setTimeout(() => {
-                textEl.innerHTML = `<i class="fas fa-heart" style="color: #ff4081; margin-right: 4px;"></i> <strong>${donor.nome}</strong> — ${Formatters.currency(donor.valor)}`;
+                textEl.innerHTML = `<i class="fas fa-heart" style="color: #ff4081; margin-right: 4px;"></i> <strong>${Formatters.escapeHtml(donor.nome)}</strong> — ${Formatters.currency(donor.valor)}`;
                 textEl.style.opacity = '1';
             }, 250);
         };
@@ -252,7 +252,7 @@ const Taskbar = {
             btn = document.createElement('button');
             btn.id = `tb-btn-${id}`;
             btn.className = 'taskbar-win-btn active';
-            btn.innerHTML = `<i class="fas ${icon}"></i><span>${title}</span>`;
+            btn.innerHTML = `<i class="fas ${icon}"></i><span>${Formatters.escapeHtml(title)}</span>`;
 
             // Left click: focus, restore or minimize
             btn.addEventListener('click', (e) => {

@@ -2,7 +2,8 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05060d">
     <title>Comandos - RavenaBot</title>
     
     <!-- Meta Tags para Link Preview (WhatsApp, Facebook, Twitter, etc) -->
@@ -29,9 +30,13 @@
     <meta itemprop="description" content="Lista completa de comandos, sintaxe, instruções e exemplos de uso da Ravena no WhatsApp.">
     <meta itemprop="image" content="https://ravena.moothz.com/android-chrome-512x512.png">
 
-    <link rel="stylesheet" href="/cmd.css?v=5">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="stylesheet" href="/cmd.css?v=20261112-cmd">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/brand-icons.css?v=20261111-perf">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 </head>
 <body>
@@ -39,30 +44,30 @@
         <!-- Topbar Header com Glassmorphism (padrão !g-painel) -->
         <header class="header">
             <div class="header-content">
-                <div class="logo">
-                    <img src="/android-chrome-192x192.png" alt="RavenaBot Avatar">
+                <a href="/" class="logo" title="Página inicial da RavenaBot">
+                    <img src="/android-chrome-192x192.png" alt="" width="38" height="38">
                     <div class="logo-text">
                         <h1>RavenaBot</h1>
-                        <span class="logo-badge"><i class="fas fa-terminal"></i> Catálogo Oficial</span>
+                        <span class="logo-badge"><i class="fas fa-terminal" aria-hidden="true"></i> Catálogo Oficial</span>
                     </div>
-                </div>
-                <div class="header-actions">
-                    <a href="/ajuda" class="btn-header" title="Ajuda com IA"><i class="fas fa-question-circle"></i> <span>Ajuda</span></a>
-                    <a href="https://github.com/moothz/ravena-ai" target="_blank" rel="noopener" class="btn-header" title="GitHub"><i class="fab fa-github"></i> <span>Código</span></a>
-                </div>
+                </a>
+                <nav class="header-actions" aria-label="Navegação">
+                    <a href="/ajuda" class="btn-header" title="Ajuda com IA"><i class="fas fa-question-circle" aria-hidden="true"></i> <span>Ajuda</span></a>
+                    <a href="https://github.com/moothz/ravena-ai" target="_blank" rel="noopener" class="btn-header" title="Código no GitHub"><i class="fab fa-github" aria-hidden="true"></i> <span>Código</span></a>
+                </nav>
             </div>
         </header>
 
         <!-- Search Container -->
         <div class="search-container">
             <div class="search-box">
-                <i class="fas fa-search search-icon"></i>
-                <input type="text" id="command-search" class="search-input" placeholder="Buscar comando, exemplo ou descrição... (ex: !pescar, sticker, fipe)" autocomplete="off">
-                <button id="clear-search" class="clear-btn hidden" title="Limpar busca"><i class="fas fa-times"></i></button>
+                <i class="fas fa-search search-icon" aria-hidden="true"></i>
+                <input type="search" id="command-search" class="search-input" placeholder="Buscar comando, exemplo ou descrição... (ex: !pescar, sticker, fipe)" autocomplete="off" enterkeyhint="search" aria-label="Buscar comando">
+                <button type="button" id="clear-search" class="clear-btn hidden" title="Limpar busca" aria-label="Limpar busca"><i class="fas fa-times" aria-hidden="true"></i></button>
             </div>
             <div class="toolbar-actions">
-                <button id="btn-expand-all" class="btn-tool" title="Expandir todas as categorias"><i class="fas fa-angle-double-down"></i> Expandir</button>
-                <button id="btn-collapse-all" class="btn-tool" title="Recolher todas as categorias"><i class="fas fa-angle-double-up"></i> Recolher</button>
+                <button type="button" id="btn-expand-all" class="btn-tool" title="Expandir todas as categorias"><i class="fas fa-angle-double-down"></i> Expandir</button>
+                <button type="button" id="btn-collapse-all" class="btn-tool" title="Recolher todas as categorias"><i class="fas fa-angle-double-up"></i> Recolher</button>
             </div>
         </div>
 
@@ -79,18 +84,12 @@
 
         <!-- Category Quick Filter Pills -->
         <nav class="category-pills-bar" id="category-pills" aria-label="Filtro rápido por categoria">
-            <button class="cat-pill active" data-cat="all"><span>🌟</span> Todas <span class="badge-count" id="badge-all-count"></span></button>
+            <button type="button" class="cat-pill active" data-cat="all"><span aria-hidden="true">🌟</span> Todas <span class="badge-count" id="badge-all-count"></span></button>
             <!-- Pills geradas dinamicamente via JS -->
         </nav>
 
         <!-- Main Content -->
         <main id="command-list" class="main-content">
-            <!-- Loading State -->
-            <div id="loading" class="loading-container">
-                <div class="loading-spinner"></div>
-                <p>Carregando catálogo de comandos e exemplos...</p>
-            </div>
-
             <!-- No results banner -->
             <div id="no-results" class="info-banner warning hidden">
                 <i class="fas fa-search-minus"></i>
@@ -106,6 +105,11 @@
                 <div>
                     <strong>Dica rápida:</strong> Clique em qualquer comando para ver sua <strong>sintaxe e exemplos práticos</strong> prontos para copiar. Comandos marcados com emoji também podem ser acionados via <strong>reação de mensagem</strong> no WhatsApp!
                 </div>
+            </div>
+            <!-- Loading State -->
+            <div id="loading" class="loading-container">
+                <div class="loading-spinner"></div>
+                <p>Carregando catálogo de comandos e exemplos...</p>
             </div>
         </main>
 
@@ -127,6 +131,6 @@
         </div>
     </div>
 
-    <script src="/cmd.js?v=5"></script>
+    <script src="/cmd.js?v=20261112-cmd" defer></script>
 </body>
 </html>

@@ -2,21 +2,21 @@
 
 const MobileApp = {
     apps: [
-        { id: 'status',     label: 'Status',       icon: 'img/icons/status.png',     window: 'status',     iconFa: 'fa-desktop' },
+        { id: 'status',     label: 'Status',       icon: 'img/icons/status.webp',     window: 'status',     iconFa: 'fa-desktop' },
         { id: 'commands',   label: 'Comandos',     icon: 'img/icons/commands.svg',   window: 'commands',   iconFa: 'fa-terminal' },
-        { id: 'donations',  label: 'Doações',      icon: 'img/icons/donations.png',  window: 'donations',  iconFa: 'fa-heart' },
-        { id: 'community',  label: 'Comunidade',   icon: 'img/icons/community.png',  window: 'community',  iconFa: 'fa-users' },
-        { id: 'statistics', label: 'Estatísticas', icon: 'img/icons/statistics.png', window: 'statistics', iconFa: 'fa-chart-bar' },
-        { id: 'help',       label: 'Ajuda',        icon: 'img/icons/help.png',       window: 'help',       iconFa: 'fa-question-circle' },
-        { id: 'imagine',    label: 'Imagine',      icon: 'img/icons/imagine.png',    window: 'imagine',    iconFa: 'fa-palette' },
-        { id: 'tts',        label: 'TTS',          icon: 'img/icons/tts.png',        window: 'tts',        iconFa: 'fa-volume-up' },
-        { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.png',        window: 'stt',        iconFa: 'fa-microphone' },
-        { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.png',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
-        { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.png',    window: 'fishing',    iconFa: 'fa-fish' },
+        { id: 'donations',  label: 'Doações',      icon: 'img/icons/donations.webp',  window: 'donations',  iconFa: 'fa-heart' },
+        { id: 'community',  label: 'Comunidade',   icon: 'img/icons/community.webp',  window: 'community',  iconFa: 'fa-users' },
+        { id: 'statistics', label: 'Estatísticas', icon: 'img/icons/statistics.webp', window: 'statistics', iconFa: 'fa-chart-bar' },
+        { id: 'help',       label: 'Ajuda',        icon: 'img/icons/help.webp',       window: 'help',       iconFa: 'fa-question-circle' },
+        { id: 'imagine',    label: 'Imagine',      icon: 'img/icons/imagine.webp',    window: 'imagine',    iconFa: 'fa-palette' },
+        { id: 'tts',        label: 'TTS',          icon: 'img/icons/tts.webp',        window: 'tts',        iconFa: 'fa-volume-up' },
+        { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.webp',        window: 'stt',        iconFa: 'fa-microphone' },
+        { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.webp',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
+        { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.webp',    window: 'fishing',    iconFa: 'fa-fish' },
         { id: 'waifuletes', label: 'Waifuletes',   icon: 'img/icons/waifuletes.svg', window: 'waifuletes', iconFa: 'fa-heart' },
         { id: 'ravenabank', label: 'RavenaBank',   icon: 'img/icons/commands.svg',   window: 'ravenabank', iconFa: 'fa-landmark' },
-        { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.png',     window: 'invite',     iconFa: 'fa-envelope' },
-        { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
+        { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.webp',     window: 'invite',     iconFa: 'fa-envelope' },
+        { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.webp',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
         { id: 'reload',     label: 'Recarregar',   action: 'reload',                 iconFa: 'fa-rotate-right' }
     ],
 
@@ -35,16 +35,16 @@ const MobileApp = {
             <!-- Top Header (Logo + Title + Rate Widget) -->
             <header class="mobile-header">
                 <div class="mobile-header-brand">
-                    <img src="/android-chrome-192x192.png" class="mobile-logo" alt="RavenaBot">
+                    <img src="/android-chrome-192x192.png" class="mobile-logo" alt="" width="40" height="40">
                     <div class="mobile-title-group">
                         <span class="mobile-title">RavenaBot</span>
                         <span class="mobile-subtitle">Painel de Monitoramento</span>
                     </div>
                 </div>
-                <div class="mobile-header-rate" id="mobile-msgs-rate" title="Clique para abrir o mensagímetro">
+                <button type="button" class="mobile-header-rate" id="mobile-msgs-rate" title="Abrir o mensagímetro" aria-label="Mensagens por hora — abrir o mensagímetro">
                     <span class="mobile-rate-number" id="mobile-rate-val">0</span>
                     <span class="mobile-rate-unit">msgs/h</span>
-                </div>
+                </button>
             </header>
 
             <!-- Microservices Status Pills -->
@@ -65,12 +65,12 @@ const MobileApp = {
                     <div class="mobile-app-grid" id="mobile-app-grid"></div>
 
                     <!-- Recent Donations Card Widget -->
-                    <div class="mobile-donations-card" id="mobile-donations-card" title="Clique para ver detalhes de doações">
+                    <div class="mobile-donations-card" id="mobile-donations-card" role="button" tabindex="0" aria-label="Doações recentes — ver mural de doações">
                         <div class="mobile-donations-header">
                             <span class="mobile-donations-title">
                                 <i class="fas fa-heart" style="color: #ff4081;"></i> Doações Recentes
                             </span>
-                            <a href="https://tipa.ai/moothz" target="_blank" class="mobile-donate-btn" onclick="event.stopPropagation();">
+                            <a href="https://tipa.ai/moothz" target="_blank" rel="noopener" class="mobile-donate-btn" onclick="event.stopPropagation();">
                                 <i class="fas fa-heart"></i> Doar
                             </a>
                         </div>
@@ -127,6 +127,12 @@ const MobileApp = {
             donatesCard.addEventListener('click', () => {
                 this.openApp('donations');
             });
+            donatesCard.addEventListener('keydown', (e) => {
+                if (e.target === donatesCard && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    this.openApp('donations');
+                }
+            });
         }
 
         const closeBtn = document.getElementById('mobile-win-close-btn');
@@ -175,7 +181,7 @@ const MobileApp = {
 
         grid.innerHTML = this.apps.map(app => {
             const iconContent = app.icon
-                ? `<img src="${app.icon}" alt="${app.label}" draggable="false" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas ${app.iconFa || 'fa-cubes'}\\'></i>';">`
+                ? `<img src="${app.icon}" alt="" width="58" height="58" decoding="async" draggable="false" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas ${app.iconFa || 'fa-cubes'}\\'></i>';">`
                 : `<i class="fas ${app.iconFa || 'fa-rotate-right'}" style="font-size: 24px; color: var(--cyan-neon);"></i>`;
 
             return `
@@ -391,7 +397,7 @@ const MobileApp = {
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
                     return `
                         <div class="mobile-donor-mini-item">
-                            <span>${medal} ${d.nome}</span>
+                            <span>${medal} ${Formatters.escapeHtml(d.nome)}</span>
                             <strong style="color: var(--gold-color);">${Formatters.currency(d.valor)}</strong>
                         </div>
                     `;

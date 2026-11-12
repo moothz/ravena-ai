@@ -10,7 +10,7 @@
     --surface-expanded: rgba(14, 10, 32, 0.95);
     --text-color: #b7b7c5;
     --text-highlight: #ffffff;
-    --text-muted: #7d7d92;
+    --text-muted: #8f8fa8; /* era #7d7d92: ~4:1 nos selos pequenos; agora > 5:1 */
     --border-color: rgba(71, 72, 108, 0.45);
     --border-highlight: rgba(4, 169, 240, 0.35);
     --success-color: #00a884;
@@ -64,7 +64,43 @@ body {
     -webkit-backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border-highlight);
     box-shadow: var(--shadow-sm);
-    padding: 0.75rem 1.25rem;
+    padding: 0.75rem max(1.25rem, env(safe-area-inset-right)) 0.75rem max(1.25rem, env(safe-area-inset-left));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.header-content {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Logo clicável (volta para a home) */
+a.logo {
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+}
+
+/* Cabeçalho legado (imagine, stt, tts): <div class="logo"><img><h1></div><div class="header-title"> */
+.header > .logo h1 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.1;
+    text-shadow: 0 0 8px rgba(4, 169, 240, 0.4);
+}
+
+.header > .header-title {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-highlight);
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: rgba(4, 169, 240, 0.1);
+    border: 1px solid var(--border-highlight);
+    white-space: nowrap;
 }
 
 .header-content {
@@ -295,6 +331,13 @@ body {
     backdrop-filter: blur(8px);
 }
 
+/* type="search": usa o botão de limpar próprio em vez do "x" nativo */
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
 .search-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(4, 169, 240, 0.2), var(--shadow-glow);
@@ -309,6 +352,8 @@ body {
     color: var(--text-muted);
     font-size: 1rem;
     pointer-events: none;
+    /* Acima do input: o backdrop-filter do campo borrava a lupa até virar uma mancha */
+    z-index: 1;
 }
 
 .clear-btn {
@@ -367,7 +412,16 @@ body {
     padding: 0 1rem 0.75rem 1rem;
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 6px;
+}
+
+/* Reserva a altura das ~4 linhas de categorias enquanto os comandos carregam, evitando que a
+   lista "pule" para baixo quando as pílulas aparecem (CLS ~0.5 no desktop). */
+@media (min-width: 901px) {
+    .category-pills-bar:not(.is-loaded) {
+        min-height: 164px;
+    }
 }
 
 .cat-pill {
@@ -401,6 +455,10 @@ body {
 }
 
 /* Main Content */
+#command-list {
+    scroll-margin-top: 76px; /* filtro rola a lista sem escondê-la sob o cabeçalho fixo */
+}
+
 .main-content {
     flex: 1;
     padding: 0.5rem 1rem 2rem 1rem;
@@ -460,6 +518,12 @@ body {
     color: var(--text-muted);
 }
 
+/* Na lista de comandos o carregamento ocupa a dobra: o rodapé já nasce abaixo dela e não
+   "salta" para fora da tela quando os comandos chegam. */
+#command-list > .loading-container {
+    min-height: 75vh;
+}
+
 .loading-spinner {
     width: 44px;
     height: 44px;
@@ -504,6 +568,12 @@ body {
     background: rgba(255, 255, 255, 0.02);
     user-select: none;
     transition: background 0.2s ease;
+}
+
+.category-header:focus-visible,
+.cmd-summary-row:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
 }
 
 .category-header:hover {
@@ -919,6 +989,106 @@ body {
     display: none !important;
 }
 
+/* Foco visível para navegação por teclado */
+:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.search-input:focus-visible,
+.category-select:focus-visible {
+    outline: none; /* já possuem anel de foco próprio (box-shadow) */
+}
+
+/* Leitores de tela */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Respeita "reduzir movimento" do sistema */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Telas de toque (inclui celular deitado, > 600px): botões do cabeçalho com alvo de 40px */
+@media (pointer: coarse) {
+    .btn-header {
+        min-height: 40px;
+        min-width: 40px;
+        justify-content: center;
+    }
+}
+
+/* Telas de toque: botões de copiar e limpar busca com área de toque confortável */
+@media (pointer: coarse) {
+    .btn-copy-sm,
+    .clear-btn {
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .clear-btn {
+        right: 4px;
+    }
+
+    .btn-copy {
+        min-height: 36px;
+    }
+
+    .cat-pill,
+    .btn-tool {
+        min-height: 40px;
+    }
+}
+
+/* Celular deitado / telas baixas: categorias numa única linha com rolagem horizontal
+   (antes ocupavam 4 linhas, metade da altura da tela) e cabeçalho compacto. */
+@media (max-height: 520px) and (min-width: 601px) {
+    .category-pills-bar {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent);
+        mask-image: linear-gradient(90deg, #000 92%, transparent);
+    }
+
+    .category-pills-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .header {
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+    }
+
+    .logo-badge {
+        display: none;
+    }
+
+    .search-container {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+}
+
 /* Responsividade Mobile */
 @media (max-width: 600px) {
     .hero-card {
@@ -951,6 +1121,11 @@ body {
     .category-select-box {
         position: relative;
         width: 100%;
+    }
+
+    .category-select-box .select-icon,
+    .category-select-box .select-arrow {
+        z-index: 1; /* acima do backdrop-filter do select (senão o ícone é borrado) */
     }
 
     .category-select-box .select-icon {
@@ -1022,7 +1197,21 @@ body {
         display: none;
     }
 
+    /* Alvos de toque de pelo menos 40px */
     .btn-header {
         padding: 6px 9px;
+        min-width: 40px;
+        min-height: 40px;
+        justify-content: center;
+    }
+
+    .header {
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+    }
+
+    .header > .header-title {
+        font-size: 0.72rem;
+        padding: 4px 10px;
     }
 }

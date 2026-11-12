@@ -53,6 +53,12 @@
     transform: scale(0.96);
 }
 
+.desktop-icon:focus-visible {
+    outline: 2px solid var(--cyan-neon);
+    outline-offset: 2px;
+    background-color: rgba(4, 169, 240, 0.16);
+}
+
 .desktop-icon.selected {
     background-color: rgba(4, 169, 240, 0.3);
     border-color: var(--bright-blue);
@@ -158,6 +164,11 @@
     display: block !important;
 }
 
+.desktop-widget-donates:focus-visible {
+    outline: 2px solid var(--cyan-neon);
+    outline-offset: 3px;
+}
+
 .desktop-widget-donates:hover {
     transform: translateY(-2px);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.95), 0 0 22px rgba(255, 215, 0, 0.5);
@@ -206,6 +217,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     font-size: 13.5px;
     color: #e0e0ee;
     padding: 5px 0;
@@ -217,11 +229,18 @@
     align-items: center;
     gap: 6px;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 160px;
+    min-width: 0;
+    flex: 1;
     font-size: 13.5px;
     font-weight: 600;
+}
+
+/* Nome longo termina em "…" em vez de encostar no valor */
+.widget-postit-name span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .widget-postit-val {
@@ -240,4 +259,34 @@
     align-items: center;
     font-size: 10px;
     color: var(--bright-blue);
+}
+
+/* Telas baixas (ex: 1280x720, 1366x768): ícones compactos para os 15 atalhos caberem em
+   2 colunas, sem que a 3ª coluna fique escondida atrás das janelas abertas. */
+@media (max-height: 860px) {
+    .desktop {
+        padding: 12px;
+        gap: 4px 8px;
+    }
+
+    .desktop-icon {
+        width: 96px;
+        padding: 4px 4px;
+    }
+
+    .desktop-icon-img-wrap {
+        width: 44px;
+        height: 44px;
+        margin-bottom: 4px;
+    }
+
+    .desktop-icon-label {
+        font-size: 11px;
+    }
+
+    .desktop-widget-donates {
+        top: 12px;
+        right: 12px;
+        width: 260px;
+    }
 }

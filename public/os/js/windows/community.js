@@ -16,12 +16,12 @@ WindowManager.register('community', {
 
                 <div class="community-grid">
                     <a href="https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz" target="_blank" class="community-card">
-                        <img src="img/icons/community.png" alt="Comunidade">
+                        <img src="img/icons/community.webp" alt="" width="96" height="96" decoding="async">
                         <span>Comunidade Ravenabot</span>
                     </a>
 
                     <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" class="community-card">
-                        <img src="img/grupo-avisos-small.jpg" alt="Canal de Avisos" onerror="this.onerror=null;this.src='/public/grupo-avisos-small.jpg';">
+                        <img src="img/grupo-avisos-small.jpg" alt="" width="96" height="96" decoding="async" onerror="this.onerror=null;this.src='/public/grupo-avisos-small.jpg';">
                         <span>Canal de Avisos</span>
                     </a>
 
@@ -41,7 +41,7 @@ WindowManager.register('community', {
                     </a>
 
                     <a href="https://github.com/moothz/ravena-ai" target="_blank" class="community-card">
-                        <img src="img/icons/github.png" alt="GitHub">
+                        <img src="img/icons/github.webp" alt="" width="96" height="96" decoding="async">
                         <span>Código no GitHub</span>
                     </a>
                 </div>

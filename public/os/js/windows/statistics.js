@@ -109,17 +109,22 @@ WindowManager.register('statistics', {
         }
     },
 
-    async loadAnalyticsData(body) {
-        if (typeof Highcharts === 'undefined') {
-            console.warn('Highcharts not loaded');
-            return;
-        }
+    // Highcharts (~280 KB) só é baixado quando a janela de Estatísticas é aberta
+    highchartsSrc: 'https://code.highcharts.com/highcharts.js',
 
+    async loadAnalyticsData(body) {
         try {
-            const data = await Api.get('/analytics?period=today');
+            const [data] = await Promise.all([
+                Api.get('/analytics?period=today'),
+                typeof Highcharts === 'undefined' ? Api.loadScript(this.highchartsSrc) : null
+            ]);
+            if (typeof Highcharts === 'undefined') throw new Error('Highcharts indisponível');
             this.renderHighcharts(body, data);
         } catch (err) {
             console.error('Error loading analytics:', err);
+            body.querySelectorAll('.chart-container-inner').forEach((el) => {
+                el.innerHTML = `<div style="text-align: center; padding: 40px 10px; font-size: 11px; color: #ff8a8a;">Não foi possível carregar o gráfico. <br>Tente reabrir a janela.</div>`;
+            });
         }
     },
 

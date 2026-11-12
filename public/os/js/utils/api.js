@@ -36,6 +36,32 @@ const Api = {
         } else {
             return res.text();
         }
+    },
+
+    _scriptPromises: {},
+
+    /**
+     * Carrega um script externo sob demanda (uma única vez por URL).
+     * Usado para bibliotecas pesadas que só algumas janelas precisam (ex: Highcharts).
+     * @param {string} src
+     * @returns {Promise<void>}
+     */
+    loadScript(src) {
+        if (!this._scriptPromises[src]) {
+            this._scriptPromises[src] = new Promise((resolve, reject) => {
+                const el = document.createElement('script');
+                el.src = src;
+                el.async = true;
+                el.onload = () => resolve();
+                el.onerror = () => {
+                    delete this._scriptPromises[src];
+                    el.remove();
+                    reject(new Error(`Falha ao carregar ${src}`));
+                };
+                document.head.appendChild(el);
+            });
+        }
+        return this._scriptPromises[src];
     }
 };
 
