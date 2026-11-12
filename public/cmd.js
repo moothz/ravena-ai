@@ -14,6 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const statTotalCmds = document.getElementById('stat-total-cmds');
     const statTotalCats = document.getElementById('stat-total-cats');
 
+    // Nomes de exibição com acentuação/capitalização (as chaves das categorias vêm sem acento)
+    const CATEGORY_LABELS = {
+        interacao: 'Interação',
+        midia: 'Mídia',
+        voz: 'Voz',
+        audio: 'Áudio',
+        ravenabank: 'RavenaBank',
+        ia: 'IA'
+    };
+    const categoryLabel = (name) => CATEGORY_LABELS[String(name).toLowerCase()] || name;
+
     let allLoadedCommands = [];
     let activeCategoryFilter = 'all';
     let lastTap = 0;
@@ -154,13 +165,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (statTotalCats) statTotalCats.textContent = totalCatsCount;
         const allBadge = categoryPillsContainer.querySelector('#badge-all-count');
         if (allBadge) allBadge.textContent = totalCmdsCount;
+        categoryPillsContainer.classList.add('is-loaded');
     }
 
     function createCategoryPill(name, emoji, count) {
         const pill = document.createElement('button');
         pill.className = 'cat-pill';
         pill.dataset.cat = name.toLowerCase();
-        pill.innerHTML = `<span>${emoji}</span> ${name} <span class="badge-count">${count}</span>`;
+        pill.type = 'button';
+        pill.innerHTML = `<span aria-hidden="true">${emoji}</span> ${escapeHtml(categoryLabel(name))} <span class="badge-count">${count}</span>`;
 
         pill.addEventListener('click', () => {
             if (pill.classList.contains('active')) {
@@ -178,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (categorySelect) {
             const opt = document.createElement('option');
             opt.value = name.toLowerCase();
-            opt.textContent = `${emoji} ${name} (${count})`;
+            opt.textContent = `${emoji} ${categoryLabel(name)} (${count})`;
             categorySelect.appendChild(opt);
         }
     }
@@ -190,17 +203,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const header = document.createElement('div');
         header.className = 'category-header';
+        header.setAttribute('role', 'button');
+        header.tabIndex = 0;
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         header.innerHTML = `
-            <div class="category-title">
-                <span>${category.emoji}</span>
-                <span>${category.name}</span>
+            <h2 class="category-title">
+                <span aria-hidden="true">${category.emoji}</span>
+                <span>${escapeHtml(categoryLabel(category.name))}</span>
                 <span class="badge-count">${category.commands.length}</span>
-            </div>
-            <i class="fas fa-chevron-down arrow"></i>
+            </h2>
+            <i class="fas fa-chevron-down arrow" aria-hidden="true"></i>
         `;
 
-        header.addEventListener('click', () => {
+        const toggleSection = () => {
             section.classList.toggle('active');
+        };
+        header.addEventListener('click', toggleSection);
+        header.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleSection();
+            }
         });
 
         const content = document.createElement('div');
@@ -217,6 +240,11 @@ document.addEventListener('DOMContentLoaded', () => {
         content.appendChild(list);
         section.appendChild(header);
         section.appendChild(content);
+
+        // Mantém aria-expanded em sincronia (a classe .active também é alterada por filtros/busca)
+        new MutationObserver(() => {
+            header.setAttribute('aria-expanded', section.classList.contains('active') ? 'true' : 'false');
+        }).observe(section, { attributes: true, attributeFilter: ['class'] });
 
         return section;
     }
@@ -242,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Linha de aliases formatados
         let aliasesHtml = '';
         if (aliases.length > 0) {
-            aliasesHtml = aliases.map(a => `<span class="alias-badge">!${a}</span>`).join(' ');
+            aliasesHtml = aliases.map(a => `<span class="alias-badge">!${escapeHtml(a)}</span>`).join(' ');
         }
 
         // Badge de Administrador
@@ -254,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cmd.reaction) {
             reactionHtml = `
                 <div class="cmd-reaction-pill" title="Reação de atalho no WhatsApp">
-                    <span>${cmd.reaction}</span>
+                    <span>${escapeHtml(cmd.reaction)}</span>
                 </div>
             `;
         }
@@ -262,18 +290,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Linha Principal do Comando (Resumo)
         const summaryRow = document.createElement('div');
         summaryRow.className = 'cmd-summary-row';
+        summaryRow.setAttribute('role', 'button');
+        summaryRow.tabIndex = 0;
+        summaryRow.setAttribute('aria-expanded', 'false');
         summaryRow.innerHTML = `
             <div class="cmd-main-info">
                 <div class="cmd-name-line">
-                    <span class="cmd-name">!${cmd.name}</span>
+                    <span class="cmd-name">!${escapeHtml(cmd.name)}</span>
                     ${adminBadgeHtml}
                     ${aliasesHtml}
                 </div>
-                <div class="cmd-desc">${cmd.description || 'Sem descrição.'}</div>
+                <div class="cmd-desc">${escapeHtml(cmd.description || 'Sem descrição.')}</div>
             </div>
             <div class="cmd-right-info">
                 ${reactionHtml}
-                <i class="fas fa-chevron-down cmd-expand-icon"></i>
+                <i class="fas fa-chevron-down cmd-expand-icon" aria-hidden="true"></i>
             </div>
         `;
 
@@ -281,96 +312,122 @@ document.addEventListener('DOMContentLoaded', () => {
         const detailsDrawer = document.createElement('div');
         detailsDrawer.className = 'cmd-details-drawer';
 
-        // Sintaxe principal (primeiro usage ou !nome)
-        const mainSyntax = usages[0] || `!${cmd.name}`;
+        // O conteúdo detalhado só é montado na primeira vez que o comando é expandido:
+        // a página lista 400+ comandos e montar todos os drawers de início pesava no celular.
+        const renderDrawer = () => {
+            if (detailsDrawer.dataset.ready) return;
+            detailsDrawer.dataset.ready = '1';
 
-        // Exemplos adicionais
-        let examplesHtml = '';
-        if (usages.length > 1) {
-            examplesHtml = `
-                <div>
-                    <div class="detail-section-title"><i class="fas fa-list-ul"></i> Outros Exemplos de Uso:</div>
-                    <div class="examples-container">
-                        ${usages.slice(1).map(u => `
-                            <div class="example-row">
-                                <span class="example-text">${escapeHtml(u)}</span>
-                                <button class="btn-copy-sm" data-copy="${escapeHtml(u)}" title="Copiar este exemplo">
-                                    <i class="far fa-copy"></i>
-                                </button>
-                            </div>
-                        `).join('')}
+            // Sintaxe principal (primeiro usage ou !nome)
+            const mainSyntax = usages[0] || `!${cmd.name}`;
+
+            // Exemplos adicionais
+            let examplesHtml = '';
+            if (usages.length > 1) {
+                examplesHtml = `
+                    <div>
+                        <div class="detail-section-title"><i class="fas fa-list-ul"></i> Outros Exemplos de Uso:</div>
+                        <div class="examples-container">
+                            ${usages.slice(1).map(u => `
+                                <div class="example-row">
+                                    <span class="example-text">${escapeHtml(u)}</span>
+                                    <button class="btn-copy-sm" data-copy="${escapeHtml(u)}" title="Copiar este exemplo">
+                                        <i class="far fa-copy"></i>
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
-                </div>
-            `;
-        }
+                `;
+            }
 
-        // Sobre o módulo
-        let aboutHtml = '';
-        if (cmd.about) {
-            aboutHtml = `
+            // Sobre o módulo
+            let aboutHtml = '';
+            if (cmd.about) {
+                aboutHtml = `
+                    <div class="detail-pill">
+                        <i class="fas fa-info-circle"></i>
+                        <span><strong>Sobre:</strong> ${escapeHtml(cmd.about)}</span>
+                    </div>
+                `;
+            }
+
+            // Reação
+            let reactionNoticeHtml = '';
+            if (cmd.reaction) {
+                reactionNoticeHtml = `
+                    <div class="detail-pill reaction-pill">
+                        <i class="far fa-smile-wink"></i>
+                        <span>Atalho: Reaja à mensagem com <strong>${escapeHtml(cmd.reaction)}</strong> para executar automaticamente.</span>
+                    </div>
+                `;
+            }
+
+            // Permissão
+            const permissionNoticeHtml = isAdmin ? `
+                <div class="detail-pill admin-pill">
+                    <i class="fas fa-lock"></i>
+                    <span>Comando restrito aos administradores do grupo (prefixo <code>!g-</code>).</span>
+                </div>
+            ` : `
                 <div class="detail-pill">
-                    <i class="fas fa-info-circle"></i>
-                    <span><strong>Sobre:</strong> ${escapeHtml(cmd.about)}</span>
+                    <i class="fas fa-unlock"></i>
+                    <span>Comando livre para todos os membros do grupo e privado.</span>
                 </div>
             `;
-        }
 
-        // Reação
-        let reactionNoticeHtml = '';
-        if (cmd.reaction) {
-            reactionNoticeHtml = `
-                <div class="detail-pill reaction-pill">
-                    <i class="far fa-smile-wink"></i>
-                    <span>Atalho: Reaja à mensagem com <strong>${cmd.reaction}</strong> para executar automaticamente.</span>
-                </div>
-            `;
-        }
+            detailsDrawer.innerHTML = `
+                <div class="details-card">
+                    <div>
+                        <div class="detail-section-title"><i class="fas fa-terminal"></i> Como Usar (Sintaxe):</div>
+                        <div class="code-box">
+                            <code>${escapeHtml(mainSyntax)}</code>
+                            <button class="btn-copy btn-copy-action" data-copy="${escapeHtml(mainSyntax)}">
+                                <i class="far fa-copy"></i> Copiar
+                            </button>
+                        </div>
+                    </div>
 
-        // Permissão
-        const permissionNoticeHtml = isAdmin ? `
-            <div class="detail-pill admin-pill">
-                <i class="fas fa-lock"></i>
-                <span>Comando restrito aos administradores do grupo (prefixo <code>!g-</code>).</span>
-            </div>
-        ` : `
-            <div class="detail-pill">
-                <i class="fas fa-unlock"></i>
-                <span>Comando livre para todos os membros do grupo e privado.</span>
-            </div>
-        `;
+                    ${examplesHtml}
 
-        detailsDrawer.innerHTML = `
-            <div class="details-card">
-                <div>
-                    <div class="detail-section-title"><i class="fas fa-terminal"></i> Como Usar (Sintaxe):</div>
-                    <div class="code-box">
-                        <code>${escapeHtml(mainSyntax)}</code>
-                        <button class="btn-copy btn-copy-action" data-copy="${escapeHtml(mainSyntax)}">
-                            <i class="far fa-copy"></i> Copiar
+                    <div class="detail-notes">
+                        ${permissionNoticeHtml}
+                        ${reactionNoticeHtml}
+                        ${aboutHtml}
+                    </div>
+
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+                        <button class="btn-copy btn-copy-action" data-copy="!${escapeHtml(cmd.name)}" style="background: rgba(255,255,255,0.05); color: var(--text-highlight); border-color: var(--border-color);">
+                            <i class="fas fa-hashtag"></i> Copiar <code>!${escapeHtml(cmd.name)}</code>
                         </button>
+                        ${mainSyntax !== `!${cmd.name}` ? `
+                            <button class="btn-copy btn-copy-action" data-copy="${escapeHtml(mainSyntax)}">
+                                <i class="fas fa-play"></i> Copiar Exemplo Completo
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
+            `;
 
-                ${examplesHtml}
+            // Configura eventos de cópia dentro do drawer
+            detailsDrawer.querySelectorAll('.btn-copy-action, .btn-copy-sm').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const textToCopy = btn.dataset.copy;
+                    if (textToCopy) {
+                        copyToClipboard(textToCopy);
+                    }
+                });
+            });
+        };
+        li._renderDrawer = renderDrawer;
 
-                <div class="detail-notes">
-                    ${permissionNoticeHtml}
-                    ${reactionNoticeHtml}
-                    ${aboutHtml}
-                </div>
-
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
-                    <button class="btn-copy btn-copy-action" data-copy="!${escapeHtml(cmd.name)}" style="background: rgba(255,255,255,0.05); color: var(--text-highlight); border-color: var(--border-color);">
-                        <i class="fas fa-hashtag"></i> Copiar <code>!${escapeHtml(cmd.name)}</code>
-                    </button>
-                    ${mainSyntax !== `!${cmd.name}` ? `
-                        <button class="btn-copy btn-copy-action" data-copy="${escapeHtml(mainSyntax)}">
-                            <i class="fas fa-play"></i> Copiar Exemplo Completo
-                        </button>
-                    ` : ''}
-                </div>
-            </div>
-        `;
+        const setExpanded = (expanded) => {
+            if (expanded) renderDrawer();
+            li.classList.toggle('expanded', expanded);
+            summaryRow.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        };
+        li._setExpanded = setExpanded;
 
         // Interação de Clique para Expandir / Recolher
         summaryRow.addEventListener('click', (e) => {
@@ -387,18 +444,15 @@ document.addEventListener('DOMContentLoaded', () => {
             lastTap = now;
 
             // Toggle expansion
-            li.classList.toggle('expanded');
+            setExpanded(!li.classList.contains('expanded'));
         });
 
-        // Configura eventos de cópia dentro do drawer
-        detailsDrawer.querySelectorAll('.btn-copy-action, .btn-copy-sm').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const textToCopy = btn.dataset.copy;
-                if (textToCopy) {
-                    copyToClipboard(textToCopy);
-                }
-            });
+        summaryRow.addEventListener('keydown', (e) => {
+            if (e.target !== summaryRow) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setExpanded(!li.classList.contains('expanded'));
+            }
         });
 
         li.appendChild(summaryRow);
@@ -517,7 +571,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.category-section').forEach(sec => sec.classList.add('active'));
             document.querySelectorAll('.command-item').forEach(item => {
                 if (!item.classList.contains('hidden')) {
-                    item.classList.add('expanded');
+                    if (item._setExpanded) item._setExpanded(true);
+                    else item.classList.add('expanded');
                 }
             });
         });
@@ -525,7 +580,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnCollapseAll) {
         btnCollapseAll.addEventListener('click', () => {
-            document.querySelectorAll('.command-item').forEach(item => item.classList.remove('expanded'));
+            document.querySelectorAll('.command-item').forEach(item => {
+                if (item._setExpanded) item._setExpanded(false);
+                else item.classList.remove('expanded');
+            });
             document.querySelectorAll('.category-section').forEach(sec => sec.classList.remove('active'));
         });
     }
