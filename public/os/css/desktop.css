@@ -105,21 +105,21 @@
     color: #ffffff;
     text-align: center;
     text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.8);
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: break-word;
     width: 100%;
     max-width: 98px;
-    line-height: 1.3;
+    line-height: 1.25;
 }
 
-/* Instant Desktop Icon Tooltip */
-.desktop-icon[data-tooltip]::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(4px);
+/* Floating Desktop Icon Tooltip (viewport-clamped via Desktop.showTooltip) */
+.desktop-tooltip {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
     background: #0d0922;
     color: #ffffff;
     border: 1px solid var(--bright-blue);
@@ -127,20 +127,20 @@
     padding: 4px 9px;
     font-size: 11px;
     font-family: var(--font-mono);
-    white-space: nowrap;
+    max-width: min(360px, calc(100vw - 16px));
+    white-space: normal;
+    line-height: 1.35;
     pointer-events: none;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.08s ease, transform 0.08s ease;
+    transition: opacity 0.08s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.9), 0 0 8px rgba(4, 169, 240, 0.4);
-    z-index: 999;
+    z-index: 99999;
 }
 
-.desktop-icon[data-tooltip]:hover::after {
+.desktop-tooltip.visible {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(2px);
-    transition-delay: 50ms;
 }
 
 /* ========================================================

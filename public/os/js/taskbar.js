@@ -258,13 +258,19 @@ const Taskbar = {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const entry = WindowManager.windows.get(id);
-                if (entry && entry.winbox) {
+                if (entry && entry.winbox && entry.winbox.body) {
                     if (entry.winbox.min) {
                         entry.winbox.restore();
                     } else if (btn.classList.contains('active')) {
                         entry.winbox.minimize();
                     } else {
                         entry.winbox.focus();
+                    }
+                } else {
+                    WindowManager.windows.delete(id);
+                    this.removeWindow(id);
+                    if (WindowManager.configs[id]) {
+                        WindowManager.open(id);
                     }
                 }
             });
@@ -390,7 +396,12 @@ const Taskbar = {
             <!-- Regular Desktop Apps -->
             <div class="start-menu-item" data-action="status">
                 <i class="fas fa-desktop"></i>
-                <span>Status das Ravenas</span>
+                <span>Status</span>
+            </div>
+
+            <div class="start-menu-item" data-action="invite">
+                <i class="fas fa-envelope"></i>
+                <span>Quero Uma!</span>
             </div>
 
             <div class="start-menu-item" data-action="commands">
@@ -398,9 +409,19 @@ const Taskbar = {
                 <span>Comandos</span>
             </div>
 
-            <div class="start-menu-item" data-action="speedometer">
-                <i class="fas fa-gauge-high"></i>
-                <span>Mensagímetro</span>
+            <div class="start-menu-item" data-action="community">
+                <i class="fas fa-users"></i>
+                <span>Comunidade</span>
+            </div>
+
+            <div class="start-menu-item" data-url="https://github.com/moothz/ravena-ai">
+                <i class="fab fa-github"></i>
+                <span>GitHub</span>
+            </div>
+
+            <div class="start-menu-item" data-action="help">
+                <i class="fas fa-question-circle"></i>
+                <span>Ajuda</span>
             </div>
 
             <div class="start-menu-item" data-action="donations">
@@ -408,19 +429,19 @@ const Taskbar = {
                 <span>Doações</span>
             </div>
 
-            <div class="start-menu-item" data-action="community">
-                <i class="fas fa-users"></i>
-                <span>Comunidade</span>
+            <div class="start-menu-item" data-action="ravenabank">
+                <i class="fas fa-landmark"></i>
+                <span>RavenaBank</span>
             </div>
 
-            <div class="start-menu-item" data-action="statistics">
-                <i class="fas fa-chart-bar"></i>
-                <span>Estatísticas</span>
+            <div class="start-menu-item" data-action="fishing">
+                <i class="fas fa-fish"></i>
+                <span>Pesca</span>
             </div>
 
-            <div class="start-menu-item" data-action="help">
-                <i class="fas fa-question-circle"></i>
-                <span>Ajuda</span>
+            <div class="start-menu-item" data-action="waifuletes">
+                <i class="fas fa-heart" style="color: #ff2e93;"></i>
+                <span>Waifuletes</span>
             </div>
 
             <div class="start-menu-item" data-action="imagine">
@@ -430,12 +451,12 @@ const Taskbar = {
 
             <div class="start-menu-item" data-action="tts">
                 <i class="fas fa-volume-up"></i>
-                <span>TTS</span>
+                <span>Gerar Voz</span>
             </div>
 
             <div class="start-menu-item" data-action="stt">
                 <i class="fas fa-microphone"></i>
-                <span>STT</span>
+                <span>Transcrever Áudio</span>
             </div>
 
             <div class="start-menu-item" data-action="nudenet">
@@ -443,21 +464,16 @@ const Taskbar = {
                 <span>Detector NSFW</span>
             </div>
 
-            <div class="start-menu-item" data-action="fishing">
-                <i class="fas fa-fish"></i>
-                <span>Galeria de Pesca</span>
+            <div class="start-menu-item" data-action="statistics">
+                <i class="fas fa-chart-bar"></i>
+                <span>Estatísticas</span>
             </div>
 
             <div class="start-menu-separator"></div>
 
-            <div class="start-menu-item" data-url="https://github.com/moothz/ravena-ai">
-                <i class="fab fa-github"></i>
-                <span>Código no GitHub</span>
-            </div>
-
-            <div class="start-menu-item" data-action="invite">
-                <i class="fas fa-envelope"></i>
-                <span>Quero Uma!</span>
+            <div class="start-menu-item" data-action="speedometer">
+                <i class="fas fa-gauge-high"></i>
+                <span>Mensagímetro</span>
             </div>
         `;
 

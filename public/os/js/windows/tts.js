@@ -1,7 +1,7 @@
 // windows/tts.js - Text-to-Speech (Kokoro-TTS) window
 
 WindowManager.register('tts', {
-    title: 'TTS — Texto para Voz (Kokoro-TTS)',
+    title: 'Gerar Voz — Texto para Áudio (Kokoro-TTS)',
     taskbarIcon: 'fa-volume-up',
     width: '630px',
     height: '530px',

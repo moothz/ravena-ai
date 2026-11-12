@@ -1,7 +1,7 @@
 // windows/stt.js - Speech-to-Text (Whisper) audio transcriber window
 
 WindowManager.register('stt', {
-    title: 'STT — Transcrição de Áudio (Whisper)',
+    title: 'Transcrever Áudio — Whisper',
     taskbarIcon: 'fa-microphone',
     width: '650px',
     height: '580px',
@@ -147,9 +147,8 @@ WindowManager.register('stt', {
             }, 2000);
         });
 
-        wb.onclose = () => {
+        wb.cleanup = () => {
             if (pollInterval) clearInterval(pollInterval);
-            return false;
         };
     }
 });
