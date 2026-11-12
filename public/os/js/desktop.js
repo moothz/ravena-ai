@@ -2,21 +2,21 @@
 
 const Desktop = {
     icons: [
-        { id: 'status',     label: 'Status',        tooltip: 'Painel de status das instâncias da Ravena',  icon: 'img/icons/status.png',     window: 'status' },
+        { id: 'status',     label: 'Status',        tooltip: 'Painel de status das instâncias da Ravena',  icon: 'img/icons/status.webp',     window: 'status' },
         { id: 'commands',   label: 'Comandos',      tooltip: 'Catálogo de comandos e exemplos de uso',      icon: 'img/icons/commands.svg',   window: 'commands' },
-        { id: 'donations',  label: 'Doações',       tooltip: 'Mural de apoiadores e ranking de doações',    icon: 'img/icons/donations.png',  window: 'donations' },
-        { id: 'community',  label: 'Comunidade',    tooltip: 'Grupos no WhatsApp, Discord e Telegram',     icon: 'img/icons/community.png',  window: 'community' },
-        { id: 'statistics', label: 'Estatísticas',  tooltip: 'Métricas, fluxo e gráficos de mensagens',    icon: 'img/icons/statistics.png', window: 'statistics' },
-        { id: 'help',       label: 'Ajuda',         tooltip: 'Chatbot de ajuda com IA para dúvidas',       icon: 'img/icons/help.png',       window: 'help' },
-        { id: 'imagine',    label: 'Imagine',       tooltip: 'Gerador de imagens com inteligência artificial', icon: 'img/icons/imagine.png', window: 'imagine' },
-        { id: 'tts',        label: 'TTS',           tooltip: 'Conversor de texto em voz (Kokoro-TTS)',      icon: 'img/icons/tts.png',        window: 'tts' },
-        { id: 'stt',        label: 'STT',           tooltip: 'Transcritor de áudio em texto (Whisper)',     icon: 'img/icons/stt.png',        window: 'stt' },
-        { id: 'nudenet',    label: 'Detector NSFW', tooltip: 'Detecção e moderação de conteúdo adulto / NSFW', icon: 'img/icons/nudenet.png', window: 'nudenet' },
-        { id: 'fishing',    label: 'Pesca',         tooltip: 'Hall da fama dos peixes lendários pescados',  icon: 'img/icons/fishing.png',    window: 'fishing' },
+        { id: 'donations',  label: 'Doações',       tooltip: 'Mural de apoiadores e ranking de doações',    icon: 'img/icons/donations.webp',  window: 'donations' },
+        { id: 'community',  label: 'Comunidade',    tooltip: 'Grupos no WhatsApp, Discord e Telegram',     icon: 'img/icons/community.webp',  window: 'community' },
+        { id: 'statistics', label: 'Estatísticas',  tooltip: 'Métricas, fluxo e gráficos de mensagens',    icon: 'img/icons/statistics.webp', window: 'statistics' },
+        { id: 'help',       label: 'Ajuda',         tooltip: 'Chatbot de ajuda com IA para dúvidas',       icon: 'img/icons/help.webp',       window: 'help' },
+        { id: 'imagine',    label: 'Imagine',       tooltip: 'Gerador de imagens com inteligência artificial', icon: 'img/icons/imagine.webp', window: 'imagine' },
+        { id: 'tts',        label: 'TTS',           tooltip: 'Conversor de texto em voz (Kokoro-TTS)',      icon: 'img/icons/tts.webp',        window: 'tts' },
+        { id: 'stt',        label: 'STT',           tooltip: 'Transcritor de áudio em texto (Whisper)',     icon: 'img/icons/stt.webp',        window: 'stt' },
+        { id: 'nudenet',    label: 'Detector NSFW', tooltip: 'Detecção e moderação de conteúdo adulto / NSFW', icon: 'img/icons/nudenet.webp', window: 'nudenet' },
+        { id: 'fishing',    label: 'Pesca',         tooltip: 'Hall da fama dos peixes lendários pescados',  icon: 'img/icons/fishing.webp',    window: 'fishing' },
         { id: 'waifuletes', label: 'Waifuletes',    tooltip: 'Catálogo de waifus, husbandos e personagens', icon: 'img/icons/waifuletes.svg', window: 'waifuletes' },
         { id: 'ravenabank', label: 'RavenaBank',    tooltip: 'Banco Central, câmbio de moedas e economia de Runas', icon: 'img/icons/commands.svg', window: 'ravenabank' },
-        { id: 'github',     label: 'GitHub',        tooltip: 'Código-fonte oficial da RavenaBot',           icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai' },
-        { id: 'invite',     label: 'Quero Uma!',    tooltip: 'Instruções para adicionar o bot no seu grupo', icon: 'img/icons/invite.png',     window: 'invite' }
+        { id: 'github',     label: 'GitHub',        tooltip: 'Código-fonte oficial da RavenaBot',           icon: 'img/icons/github.webp',     url: 'https://github.com/moothz/ravena-ai' },
+        { id: 'invite',     label: 'Quero Uma!',    tooltip: 'Instruções para adicionar o bot no seu grupo', icon: 'img/icons/invite.webp',     window: 'invite' }
     ],
 
     init() {
@@ -101,7 +101,7 @@ const Desktop = {
 
         el.innerHTML = `
             <div class="desktop-icon-img-wrap">
-                <img src="${config.icon}" alt="${config.label}" draggable="false" loading="lazy">
+                <img src="${config.icon}" alt="" width="54" height="54" decoding="async" draggable="false">
             </div>
             <span class="desktop-icon-label">${config.label}</span>
         `;

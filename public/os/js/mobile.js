@@ -2,21 +2,21 @@
 
 const MobileApp = {
     apps: [
-        { id: 'status',     label: 'Status',       icon: 'img/icons/status.png',     window: 'status',     iconFa: 'fa-desktop' },
+        { id: 'status',     label: 'Status',       icon: 'img/icons/status.webp',     window: 'status',     iconFa: 'fa-desktop' },
         { id: 'commands',   label: 'Comandos',     icon: 'img/icons/commands.svg',   window: 'commands',   iconFa: 'fa-terminal' },
-        { id: 'donations',  label: 'Doações',      icon: 'img/icons/donations.png',  window: 'donations',  iconFa: 'fa-heart' },
-        { id: 'community',  label: 'Comunidade',   icon: 'img/icons/community.png',  window: 'community',  iconFa: 'fa-users' },
-        { id: 'statistics', label: 'Estatísticas', icon: 'img/icons/statistics.png', window: 'statistics', iconFa: 'fa-chart-bar' },
-        { id: 'help',       label: 'Ajuda',        icon: 'img/icons/help.png',       window: 'help',       iconFa: 'fa-question-circle' },
-        { id: 'imagine',    label: 'Imagine',      icon: 'img/icons/imagine.png',    window: 'imagine',    iconFa: 'fa-palette' },
-        { id: 'tts',        label: 'TTS',          icon: 'img/icons/tts.png',        window: 'tts',        iconFa: 'fa-volume-up' },
-        { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.png',        window: 'stt',        iconFa: 'fa-microphone' },
-        { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.png',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
-        { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.png',    window: 'fishing',    iconFa: 'fa-fish' },
+        { id: 'donations',  label: 'Doações',      icon: 'img/icons/donations.webp',  window: 'donations',  iconFa: 'fa-heart' },
+        { id: 'community',  label: 'Comunidade',   icon: 'img/icons/community.webp',  window: 'community',  iconFa: 'fa-users' },
+        { id: 'statistics', label: 'Estatísticas', icon: 'img/icons/statistics.webp', window: 'statistics', iconFa: 'fa-chart-bar' },
+        { id: 'help',       label: 'Ajuda',        icon: 'img/icons/help.webp',       window: 'help',       iconFa: 'fa-question-circle' },
+        { id: 'imagine',    label: 'Imagine',      icon: 'img/icons/imagine.webp',    window: 'imagine',    iconFa: 'fa-palette' },
+        { id: 'tts',        label: 'TTS',          icon: 'img/icons/tts.webp',        window: 'tts',        iconFa: 'fa-volume-up' },
+        { id: 'stt',        label: 'STT',          icon: 'img/icons/stt.webp',        window: 'stt',        iconFa: 'fa-microphone' },
+        { id: 'nudenet',    label: 'Detector NSFW', icon: 'img/icons/nudenet.webp',    window: 'nudenet',    iconFa: 'fa-shield-halved' },
+        { id: 'fishing',    label: 'Pesca',        icon: 'img/icons/fishing.webp',    window: 'fishing',    iconFa: 'fa-fish' },
         { id: 'waifuletes', label: 'Waifuletes',   icon: 'img/icons/waifuletes.svg', window: 'waifuletes', iconFa: 'fa-heart' },
         { id: 'ravenabank', label: 'RavenaBank',   icon: 'img/icons/commands.svg',   window: 'ravenabank', iconFa: 'fa-landmark' },
-        { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.png',     window: 'invite',     iconFa: 'fa-envelope' },
-        { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.png',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
+        { id: 'invite',     label: 'Quero Uma!',   icon: 'img/icons/invite.webp',     window: 'invite',     iconFa: 'fa-envelope' },
+        { id: 'github',     label: 'GitHub',       icon: 'img/icons/github.webp',     url: 'https://github.com/moothz/ravena-ai', iconFa: 'fab fa-github' },
         { id: 'reload',     label: 'Recarregar',   action: 'reload',                 iconFa: 'fa-rotate-right' }
     ],
 
@@ -175,7 +175,7 @@ const MobileApp = {
 
         grid.innerHTML = this.apps.map(app => {
             const iconContent = app.icon
-                ? `<img src="${app.icon}" alt="${app.label}" draggable="false" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas ${app.iconFa || 'fa-cubes'}\\'></i>';">`
+                ? `<img src="${app.icon}" alt="" width="58" height="58" decoding="async" draggable="false" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas ${app.iconFa || 'fa-cubes'}\\'></i>';">`
                 : `<i class="fas ${app.iconFa || 'fa-rotate-right'}" style="font-size: 24px; color: var(--cyan-neon);"></i>`;
 
             return `
