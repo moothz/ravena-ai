@@ -363,6 +363,11 @@ class CommandsHelper {
 						category: c.category || "resto",
 						file: h.file,
 						about: h.about || "",
+						implementation: h.implementation || "",
+						tags: h.tags || "",
+						relatedCmds: (h.cmds || [])
+							.filter((other) => other.cmd !== c.cmd)
+							.map((other) => other.cmd),
 						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
 					};
 				}
@@ -386,6 +391,11 @@ class CommandsHelper {
 						category: c.category || "resto",
 						file: h.file,
 						about: h.about || "",
+						implementation: h.implementation || "",
+						tags: h.tags || "",
+						relatedCmds: (h.cmds || [])
+							.filter((other) => other.cmd !== c.cmd)
+							.map((other) => other.cmd),
 						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
 					};
 				}
@@ -411,6 +421,11 @@ class CommandsHelper {
 						category: c.category || "resto",
 						file: h.file,
 						about: h.about || "",
+						implementation: h.implementation || "",
+						tags: h.tags || "",
+						relatedCmds: (h.cmds || [])
+							.filter((other) => other.cmd !== c.cmd)
+							.map((other) => other.cmd),
 						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
 					};
 				}
@@ -444,8 +459,12 @@ class CommandsHelper {
 			}
 
 			if (meta.about) text += `ℹ️ **Sobre o módulo:** ${meta.about}\n`;
+			if (meta.implementation) text += `⚙️ **Mecânicas/Implementação:** ${meta.implementation}\n`;
 			if (meta.isManagement) {
-				text += `🔒 **Acesso:** Exclusivo para administradores do grupo (inicia com \`!g-\`).\n`;
+				text += `🔒 **Acesso:** Exclusivo para administradores do grupo (inicia com \`!g-\`). No painel web: !g-painel.\n`;
+			}
+			if (meta.relatedCmds && meta.relatedCmds.length > 0) {
+				text += `🔗 **Outros comandos deste módulo:** ${meta.relatedCmds.map((r) => `\`${r}\``).join(", ")}\n`;
 			}
 
 			return text.trim();
@@ -457,7 +476,88 @@ class CommandsHelper {
 	}
 
 	/**
-	 * Ponto de entrada unificado para a ferramenta list_commands
+	 * Retorna um índice completo e compacto de todos os comandos organizados por categoria
+	 * @returns {string}
+	 */
+	getCommandsIndex() {
+		if (!this.initialized || this.helpers.length === 0) {
+			this.loadHelpers();
+		}
+
+		const catMap = {};
+		for (const h of this.helpers) {
+			for (const c of h.cmds) {
+				const cat = (c.category || "resto").toLowerCase();
+				if (!catMap[cat]) catMap[cat] = [];
+				if (!catMap[cat].includes(c.cmd)) catMap[cat].push(c.cmd);
+			}
+		}
+
+		let text = "## 📋 Índice de Comandos Disponíveis por Categoria:\n";
+		for (const [cat, cmds] of Object.entries(catMap)) {
+			const emoji = CATEGORY_EMOJIS[cat] || EXTRA_CATEGORY_EMOJIS[cat] || "📁";
+			text += `- ${emoji} **${cat}**: ${cmds.map((cmd) => `\`${cmd}\``).join(", ")}\n`;
+		}
+
+		return text.trim();
+	}
+
+	/**
+	 * Retorna o contexto base fundamental da Ravena para o assistente de ajuda
+	 * sem depender da leitura de arquivos externos pesados como LLM-HELPER.md.
+	 * @returns {string}
+	 */
+	getBaseHelpContext() {
+		const commandsIndex = this.getCommandsIndex();
+
+		return `# Ravena - Informações Base
+
+A **Ravena** é um bot de WhatsApp gratuito e de código aberto, desenvolvido por **moothz** (GitHub: https://github.com/moothz/ravena-ai).
+O objetivo é auxiliar grupos, comunidades e streamers com recursos de mídia (figurinhas/áudio/vídeo), inteligência artificial, jogos/economia (pesca, roleta, etc.), utilidades e moderação de grupos.
+
+---
+## 📞 Contatos e Suporte Oficial
+- **WhatsApp de Suporte Oficial (moothz)**: (55) 99642-4307 (https://wa.me/555596424307)
+  - _Incentive os usuários a chamarem no suporte oficial para relatar bugs, dúvidas técnicas ou sugestões._
+- **Comunidade Oficial da Ravena**: https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz
+- **Site Oficial**: https://ravena.moothz.com
+- **Números Ativos (PV cria figurinhas automáticas e aceita convites)**:
+  - ravena2: +55 (98) 98771-5450 (https://wa.me/559887715450)
+  - ravena5: +55 (55) 99153-7296 (https://wa.me/555591537296)
+  - ravena10: +55 (55) 98102-4412 (https://wa.me/555581024412)
+
+---
+## ⚙️ Arquitetura, Estabilidade e Dúvidas Frequentes
+- Todos os bots rodam no mesmo servidor e compartilham o mesmo banco de dados SQLite central.
+- A existência de múltiplos números serve como redundância/contingência contra banimentos do WhatsApp.
+- Delays, lentidão temporária ou softblocks ocorrem periodicamente por controle do próprio WhatsApp; não adianta trocar de Ravena no grupo por causa disso.
+- Nunca remova o bot de um grupo por instabilidade sem antes chamar o suporte: a remoção afeta o chip perante o WhatsApp e bloqueia convites futuros do grupo.
+
+---
+## 🚪 Instruções de Convite (!convite)
+- Para colocar a Ravena no grupo: envie APENAS o link individual do grupo no PV de uma das Ravenas ativas.
+- Após enviar o link, envie uma mensagem autêntica justificando o pedido. O bot avalia e aceita automaticamente por IA.
+- Grupos com nomes/descrições preconceituosos, com menores (underage), só de figurinhas ou descartáveis são recusados.
+
+---
+## 💖 Doações (!doar)
+- Mantido por doações voluntárias para custos de servidores e APIs: https://tipa.ai/moothz
+
+---
+## 🎲 Variáveis para Comandos Personalizados (!g-addCmd)
+- **Boas-vindas/despedidas**: \`{pessoa}\`, \`{tituloGrupo}\`
+- **Sistema**: \`{day}\`, \`{date}\`, \`{time}\`, \`{data-hora}\`, \`{data-dia}\`, \`{data-mes}\`, \`{data-ano}\`
+- **Aleatórios**: \`{randomPequeno}\` (1-10), \`{randomMedio}\` (1-100), \`{randomGrande}\` (1-1000), \`{rndDado-X}\`, \`{rndDadoRange-X-Y}\`
+- **Menções**: \`{pessoa}\`, \`{group}\`, \`{contador}\`, \`{mention}\`, \`{singleMention}\`, \`{mentionOuEu}\`, \`{membroRandom}\`
+- **Web/APIs**: \`{weather:cidade}\`, \`{reddit-subreddit}\`, \`{API#GET#TEXT#url}\`
+- **Outros**: \`{file-nome}\`, \`{cmd-comando}\` (executa outro comando como alias)
+
+---
+${commandsIndex}`;
+	}
+
+	/**
+	 * Ponto de entrada unificado para a ferramenta list_commands / search_commands
 	 * @param {Object|string} options - Parâmetros da tool: { category, command, query }
 	 * @returns {string}
 	 */
@@ -465,6 +565,10 @@ class CommandsHelper {
 		if (typeof options === "string") {
 			const str = options.trim();
 			if (str.startsWith("!") || str.startsWith("/")) {
+				return this.getCommandDetails(str);
+			}
+			const meta = this.findCommandMeta(str);
+			if (meta) {
 				return this.getCommandDetails(str);
 			}
 			return this.search(str);
@@ -482,7 +586,7 @@ class CommandsHelper {
 				category.trim().toLowerCase() === "todas" ||
 				category.trim().toLowerCase() === "todas as categorias"
 			) {
-				return this.listCategories();
+				return this.getCommandsIndex();
 			}
 			return this.getCommandsByCategory(category);
 		}
@@ -514,14 +618,18 @@ class CommandsHelper {
 			if (knownCategories.includes(cleanQuery)) {
 				return this.getCommandsByCategory(cleanQuery);
 			}
-			if (cleanQuery.startsWith("!") || cleanQuery.startsWith("g-")) {
+
+			// Se a busca for o nome exato de um comando, retorna os detalhes completos diretamente
+			const exactMeta = this.findCommandMeta(cleanQuery);
+			if (exactMeta) {
 				return this.getCommandDetails(cleanQuery);
 			}
+
 			return this.search(query);
 		}
 
-		// Padrão: visão geral das categorias
-		return this.listCategories();
+		// Padrão: índice de comandos por categoria
+		return this.getCommandsIndex();
 	}
 
 	/**

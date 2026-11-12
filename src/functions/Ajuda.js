@@ -72,7 +72,8 @@ function storeSessionTurn(sessionId, userQuestion, assistantResponse) {
 }
 
 /**
- * Lê o arquivo ravena-llm-helper.md consolidado como contexto de base da IA
+ * Retorna o contexto base fundamental e índice categorizado de comandos da Ravena
+ * gerado diretamente das definições do código via CommandsHelper.
  * @returns {Promise<string>}
  */
 async function loadBaseContext() {
@@ -82,17 +83,14 @@ async function loadBaseContext() {
 	}
 
 	try {
-		let docPath = path.join(process.cwd(), "docs", "LLM-HELPER.md");
-		if (!require("fs").existsSync(docPath)) {
-			docPath = path.join(process.cwd(), "ravena-llm-helper.md");
-		}
-		const content = await fs.readFile(docPath, "utf8");
-		baseContextCache = content;
+		// Carrega o contexto diretamente das definições dos comandos via CommandsHelper,
+		// sem ler o pesado LLM-HELPER.md, mantendo o índice compacto de todos os comandos.
+		baseContextCache = commandsHelper.getBaseHelpContext();
 		lastCacheRead = now;
-		return content;
+		return baseContextCache;
 	} catch (e) {
 		logger.warn(
-			`Não foi possível carregar ravena-llm-helper.md (${e.message}), usando contexto simplificado.`
+			`Não foi possível carregar contexto dinâmico de comandos (${e.message}), usando contexto simplificado.`
 		);
 		return "Você é a assistente oficial da Ravena (bot de WhatsApp). Ajude os usuários com dúvidas sobre comandos, configurações de grupo, criação de comandos personalizados e utilidades.";
 	}
@@ -131,7 +129,7 @@ async function askHelp(question, sessionId = null, apiUser = null) {
 ## INSTRUÇÕES ADICIONAIS PARA RESPOSTA:
 1. Responda de forma clara, educada, prestativa e amigável em Português do Brasil.
 2. Formate sua resposta em Markdown limpo compatível com WhatsApp (use *negrito*, _itálico_ e blocos de código com crases \`!comando\`).
-3. Quando o usuário perguntar sobre comandos ou recursos específicos, use a ferramenta 'commands_helper' para buscar a sintaxe exata, exemplos de uso e tags.
+3. Você tem o índice completo de comandos por categoria acima. Quando o usuário perguntar sobre o funcionamento, regras, opções ou sintaxe de um comando específico, use a ferramenta 'get_command_info' (ou 'commands_helper') com o nome do comando para obter a documentação detalhada, sintaxe exata e exemplos práticos antes de formular a resposta.
 4. Ao sugerir criação de comandos personalizados com !g-addCmd, sempre sugira o uso de variáveis dinâmicas (ex: {pessoa}, {tituloGrupo}, {membroRandom}, etc.).
 5. Se for uma dúvida de gerenciamento de grupo, lembre que comandos iniciados em !g- são apenas para administradores e mencione o painel web (!g-painel).
 6. Se o usuário estiver no chat web perguntando sobre números de WhatsApp, como usar no WhatsApp ou como fazer figurinhas, forneça os números/links ativos das Ravenas (ex: https://wa.me/559887715450, https://wa.me/555591537296, https://wa.me/555581024412) e informe que no privado (PV) basta enviar a foto ou vídeo para criar figurinhas.
@@ -160,7 +158,12 @@ ${privacyInstruction}
 
 		const elapsedMs = Date.now() - startTime;
 
-		if (!response || typeof response !== "string" || response.trim().length === 0) {
+		if (
+			!response ||
+			typeof response !== "string" ||
+			response.trim().length === 0 ||
+			response.startsWith("Erro: Não foi possível gerar uma resposta")
+		) {
 			// Fallback local direto se a IA não responder
 			const localSearch = commandsHelper.search(question);
 			const fallbackMsg = `Não foi possível consultar a IA no momento, mas encontrei os seguintes comandos relacionados:\n\n${localSearch}`;
