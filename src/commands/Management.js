@@ -5509,12 +5509,16 @@ class Management {
 			let targetCommand = fixedCommandsHandler.getCommand(cmdName);
 
 			// If not found by name, try to find by reaction emoji
-			if (!targetCommand && bot.eventHandler.reactionsHandler) {
-				const reactionMap = bot.eventHandler.reactionsHandler.reactionCommands;
+			const reactionsHandler = bot.reactionHandler ?? bot.eventHandler?.reactionsHandler;
+			if (!targetCommand && reactionsHandler) {
+				const reactionMap = reactionsHandler.reactionCommands;
 				// reactionMap is { "🎣": "pescar", ... }
 				if (reactionMap && reactionMap[cmdName]) {
-					const mappedName = reactionMap[cmdName];
-					targetCommand = fixedCommandsHandler.getCommand(mappedName);
+					const mapped = reactionMap[cmdName];
+					const mappedName = Array.isArray(mapped) ? mapped[0] : mapped;
+					if (mappedName) {
+						targetCommand = fixedCommandsHandler.getCommand(mappedName);
+					}
 				}
 			}
 

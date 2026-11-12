@@ -185,11 +185,34 @@ class ReactionsHandler {
 					continue;
 				}
 
+				const cmdLower = commandName.toLowerCase();
+
 				// Verifica se o comando específico está mutado
 				if (group?.mutedCommands && Array.isArray(group.mutedCommands)) {
-					if (group.mutedCommands.includes(commandName)) {
+					const isMutedCmd = group.mutedCommands.some(
+						(muted) => typeof muted === "string" && muted.toLowerCase() === cmdLower
+					);
+					if (isMutedCmd) {
 						this.logger.debug(
 							`Ignorando reação do comando '${commandName}' (${reaction.reaction}), comando silenciado no grupo '${group.name}'`
+						);
+						continue;
+					}
+				}
+
+				// Verifica se a categoria do comando está mutada
+				if (group?.mutedCategories && Array.isArray(group.mutedCategories)) {
+					const fixedCommand =
+						bot?.eventHandler?.commandHandler?.fixedCommands?.getCommand?.(commandName);
+					const cmdCategory = fixedCommand?.category?.toLowerCase();
+					const isMutedCat =
+						cmdCategory &&
+						group.mutedCategories.some(
+							(mutedCat) => typeof mutedCat === "string" && mutedCat.toLowerCase() === cmdCategory
+						);
+					if (isMutedCat) {
+						this.logger.debug(
+							`Ignorando reação do comando '${commandName}' (${reaction.reaction}), categoria '${cmdCategory}' silenciada no grupo '${group.name}'`
 						);
 						continue;
 					}
