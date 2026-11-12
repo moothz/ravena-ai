@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05060d">
+    <title>Status das Ravenas - RavenaBot</title>
+
+    <meta name="description" content="Acompanhe em tempo real o status, atividade e canais oficiais das instâncias da RavenaBot.">
+    <meta name="author" content="moothz">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="stylesheet" href="/cmd.css?v=20261112-cmd">
+    <link rel="stylesheet" href="/status.css?v=20261112-status">
+    <link rel="stylesheet" href="/brand-icons.css?v=20261111-perf">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+</head>
+<body class="status-page">
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <a href="/" class="logo" title="Página inicial da RavenaBot">
+                    <img src="/android-chrome-192x192.png" alt="" width="38" height="38">
+                    <div class="logo-text">
+                        <h1>Status das Ravenas</h1>
+                        <span class="logo-badge"><i class="fas fa-desktop" aria-hidden="true"></i> Monitoramento em Tempo Real</span>
+                    </div>
+                </a>
+                <nav class="header-actions" aria-label="Navegação">
+                    <a href="/cmd" class="btn-header" title="Catálogo de comandos"><i class="fas fa-terminal" aria-hidden="true"></i> <span>Comandos</span></a>
+                    <a href="/" class="btn-header" title="Página inicial"><i class="fas fa-house" aria-hidden="true"></i> <span>Início</span></a>
+                </nav>
+            </div>
+        </header>
+
+        <main class="status-main">
+            <div class="status-layout">
+                <!-- 1ª Parte (25%): Canal de avisos e Comunidade -->
+                <aside class="status-sidebar" aria-label="Avisos e Comunidade">
+                    <p class="status-notice-text">
+                        <i class="fas fa-bullhorn" aria-hidden="true"></i>
+                        Siga o canal de avisos para atualizações em tempo real
+                    </p>
+
+                    <div class="status-community-links">
+                        <a href="https://whatsapp.com/channel/0029VbBwXS7K5cDI4P8okp2f" target="_blank" rel="noopener noreferrer" class="status-community-card">
+                            <img src="/os/img/grupo-avisos-small.jpg" alt="" width="48" height="48" decoding="async" onerror="this.onerror=null;this.src='/grupo-avisos-small.jpg';">
+                            <div class="status-community-card-info">
+                                <span class="status-community-card-title">Canal de Avisos</span>
+                                <span class="status-community-card-sub">Atualizações e avisos oficiais</span>
+                            </div>
+                        </a>
+
+                        <a href="https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz" target="_blank" rel="noopener noreferrer" class="status-community-card">
+                            <img src="/os/img/icons/community.webp" alt="" width="48" height="48" decoding="async">
+                            <div class="status-community-card-info">
+                                <span class="status-community-card-title">Comunidade Ravenabot</span>
+                                <span class="status-community-card-sub">Grupo oficial no WhatsApp</span>
+                            </div>
+                        </a>
+                    </div>
+                </aside>
+
+                <!-- 2ª Parte (75%): Cards das instâncias -->
+                <section class="status-bots-section" id="status-bots-container" aria-label="Instâncias da Ravena">
+                    <div class="status-loading">
+                        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+                        <p>Carregando status das ravenas...</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p class="copyright">RavenaBot © 2026</p>
+        </footer>
+    </div>
+
+    <!-- Modal de detalhes da Ravena -->
+    <div id="bot-detail-modal" class="status-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bot-modal-title" hidden>
+        <div class="status-modal">
+            <div class="status-modal-header">
+                <div class="status-modal-title" id="bot-modal-title">Detalhes da Ravena</div>
+                <button type="button" id="bot-modal-close" class="status-modal-close" aria-label="Fechar">
+                    <i class="fas fa-times" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="status-modal-body" id="bot-modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/status.js?v=20261112-status" defer></script>
+</body>
+</html>

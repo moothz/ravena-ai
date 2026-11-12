@@ -24,6 +24,7 @@ const storageService = require("../../services/StorageService");
  * - GET  /imagine                     - Interface web de geração de imagens
  * - GET  /tts, /falar                 - Interface web de síntese de voz (TTS)
  * - GET  /pesca, /fishing             - Interface web do jogo de pesca
+ * - GET  /status                      - Página pública de status das instâncias e canais de aviso
  * - GET  /waifuletes, /waifus         - Atalho para o app de Waifuletes na OS
  * - GET  /groups-dossier              - Visualizador HTML de dossiês de grupos
  * - GET  /service-providers           - Interface de gerenciamento de provedores de IA
@@ -293,6 +294,15 @@ function registerIndexRoutes(api) {
 	};
 	app.get("/pesca", servePesca);
 	app.get("/fishing", servePesca);
+
+	// Serve página de Status das Ravenas
+	app.get(["/status", "/status.html"], (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+		}
+		res.setHeader("Cache-Control", "no-cache");
+		res.sendFile(path.join(__dirname, "../../../public/status.html"));
+	});
 
 	// Atalho para o aplicativo Waifuletes na OS
 	app.get(["/waifuletes", "/waifus"], (req, res) => {
