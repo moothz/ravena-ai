@@ -16,13 +16,16 @@ WindowManager.register('fishing', {
                     <span style="font-size: 11px; color: var(--light-gray);">
                         Hall da fama dos maiores peixes e criaturas lendárias pescadas com o comando <code>!pescar</code>! Clique em um peixe para ampliar.
                     </span>
-                    <div style="display: flex; gap: 6px;">
-                        <button class="os-btn btn-fish-sort active" data-sort="weight" style="font-size: 10px; padding: 3px 8px;">
-                            <i class="fas fa-weight-hanging"></i> Mais Pesados
-                        </button>
-                        <button class="os-btn btn-fish-sort" data-sort="date" style="font-size: 10px; padding: 3px 8px;">
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button class="os-btn btn-fish-sort active" data-sort="date" style="font-size: 10px; padding: 3px 8px;">
                             <i class="fas fa-calendar-alt"></i> Recentes
                         </button>
+                        <button class="os-btn btn-fish-sort" data-sort="weight" style="font-size: 10px; padding: 3px 8px;">
+                            <i class="fas fa-weight-hanging"></i> Mais Pesados
+                        </button>
+                        <a href="/pesca" target="_blank" rel="noopener noreferrer" class="os-btn" title="Abrir em Nova Aba" aria-label="Abrir em Nova Aba" style="font-size: 10px; padding: 3px 8px; text-decoration: none; color: #fff;">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
                     </div>
                 </div>
 
@@ -54,7 +57,7 @@ WindowManager.register('fishing', {
                 return;
             }
 
-            let currentSort = 'weight';
+            let currentSort = 'date';
             let sortedList = [];
             let displayedCount = 0;
             const chunkSize = 12;
