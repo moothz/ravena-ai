@@ -1016,6 +1016,32 @@ async function resolveCharacter(query) {
 	return null;
 }
 
+async function resolveDisplayName(messageOrGroup, targetUserId, fallbackName = null) {
+	const rawFallback =
+		(typeof fallbackName === "string" && fallbackName.trim()) ||
+		(targetUserId ? String(targetUserId).split("@")[0].split(":")[0] : null) ||
+		"Jogador";
+	if (!targetUserId) {
+		return rawFallback;
+	}
+	let targetGroup = messageOrGroup?.nicks ? messageOrGroup : null;
+	if (!targetGroup && messageOrGroup?.group) {
+		try {
+			const Database = require("../utils/Database");
+			targetGroup = await Database.getInstance().getGroup(messageOrGroup.group);
+		} catch (_) {}
+	}
+	if (!targetGroup) {
+		return rawFallback;
+	}
+	try {
+		const { resolveUserNickname } = require("./GeneralCommands");
+		return await resolveUserNickname(targetGroup, targetUserId, rawFallback);
+	} catch (_) {
+		return rawFallback;
+	}
+}
+
 function getGroupId(message) {
 	return message.group ?? message.author;
 }
@@ -1370,24 +1396,108 @@ async function buildRollGridImage(items) {
 
 			const style = GRID_RARITY_STYLES[rarityKey] || GRID_RARITY_STYLES.COMMON;
 			const isRollerWishlist = Boolean(item.character?.isWishlist || item.isWishlist);
-			const badgeW = isMythic
-				? Math.max(style.badgeW + 40, 110)
-				: isRollerWishlist
-					? Math.max(style.badgeW + 60, 116)
-					: style.badgeW;
+			const hasOwner = Boolean(
+				item.character?.owner &&
+				(typeof item.character.owner === "string" ||
+					item.character.owner.name ||
+					item.character.owner.id)
+			);
+			const isMarried = Boolean(
+				item.character?.isMarried ||
+				item.isMarried ||
+				item.character?.available === false ||
+				item.available === false ||
+				item.character?.instantMarriage ||
+				hasOwner
+			);
+
 			const badgeH = style.badgeH;
 			const fontSize =
-				isMythic || isRollerWishlist
-					? Math.max(22, Math.round(style.fontSize * 0.76))
+				isMythic || isRollerWishlist || isMarried
+					? Math.max(22, Math.round(style.fontSize * 0.78))
 					: style.fontSize;
+			const hasLeftIcon = isMythic || isRollerWishlist;
+			const leftPad = hasLeftIcon ? Math.round(badgeH * 0.56) : 0;
+			const rightPad = isMarried ? Math.round(badgeH * 0.64) : hasLeftIcon ? leftPad : 0;
+			const badgeW = Math.max(style.badgeW + leftPad + rightPad, style.badgeW);
 			const badgeTop = cellH - badgeH - 12;
 			const badgeLeft = Math.floor((cellW - badgeW) / 2);
-			const badgeText = isMythic ? `🔮 ${slot} 🔮` : isRollerWishlist ? `⭐ ${slot} ⭐` : `${slot}`;
+
+			const textCenterX = Math.round(leftPad + (badgeW - leftPad - rightPad) / 2);
+			const centerY = Math.round(badgeH / 2);
+
+			// Ícones vetoriais puros em SVG para evitar falhas de fonte/emoji no librsvg/Sharp
+			const renderArcaneCrystal = (cx, cy, r) => {
+				const pTop = `${cx},${cy - r}`;
+				const pRight = `${cx + r * 0.8},${cy}`;
+				const pBot = `${cx},${cy + r}`;
+				const pLeft = `${cx - r * 0.8},${cy}`;
+				return `<g>
+					<polygon points="${pTop} ${pRight} ${pBot} ${pLeft}" fill="#f0abfc" stroke="#ffffff" stroke-width="1.5"/>
+					<polygon points="${cx},${cy - r * 0.45} ${cx + r * 0.35},${cy} ${cx},${cy + r * 0.45} ${cx - r * 0.35},${cy}" fill="#ffffff" opacity="0.85"/>
+				</g>`;
+			};
+
+			const renderWishlistStar = (cx, cy, r) => {
+				const pts = [];
+				for (let k = 0; k < 10; k++) {
+					const rad = k % 2 === 0 ? r : r * 0.45;
+					const angle = (-90 + k * 36) * (Math.PI / 180);
+					pts.push(
+						`${(cx + rad * Math.cos(angle)).toFixed(1)},${(cy + rad * Math.sin(angle)).toFixed(1)}`
+					);
+				}
+				return `<polygon points="${pts.join(" ")}" fill="#fde047" stroke="#b45309" stroke-width="1.3"/>`;
+			};
+
+			const renderMarriageRing = (cx, cy, r) => {
+				const ringR = r * 0.62;
+				const ringCy = cy + r * 0.14;
+				const gemTop = ringCy - ringR;
+				return `<g>
+					<circle cx="${cx}" cy="${ringCy}" r="${ringR.toFixed(1)}" fill="none" stroke="#fde047" stroke-width="${Math.max(2.5, r * 0.28).toFixed(1)}"/>
+					<polygon points="${cx},${(gemTop - r * 0.46).toFixed(1)} ${(cx + r * 0.38).toFixed(1)},${(gemTop - r * 0.12).toFixed(1)} ${cx},${(gemTop + r * 0.15).toFixed(1)} ${(cx - r * 0.38).toFixed(1)},${(gemTop - r * 0.12).toFixed(1)}" fill="#bae6fd" stroke="#0284c7" stroke-width="1.2"/>
+				</g>`;
+			};
+
+			const iconR = Math.max(8, Math.round(badgeH * 0.24));
+			let iconsSvg = "";
+			if (isMythic) {
+				iconsSvg += renderArcaneCrystal(Math.round(leftPad * 0.62) + 4, centerY, iconR);
+				if (!isMarried) {
+					iconsSvg += renderArcaneCrystal(badgeW - Math.round(rightPad * 0.62) - 4, centerY, iconR);
+				}
+			} else if (isRollerWishlist) {
+				iconsSvg += renderWishlistStar(Math.round(leftPad * 0.62) + 4, centerY, iconR);
+				if (!isMarried) {
+					iconsSvg += renderWishlistStar(badgeW - Math.round(rightPad * 0.62) - 4, centerY, iconR);
+				}
+			}
+
+			if (isMarried) {
+				const ringCx = badgeW - Math.round(rightPad * 0.56) - 3;
+				iconsSvg += renderMarriageRing(ringCx, centerY, iconR);
+			}
+
+			const strikeSvg = isMarried
+				? (() => {
+						const halfW = Math.max(10, Math.round(fontSize * 0.44));
+						const halfH = Math.max(8, Math.round(fontSize * 0.34));
+						return `
+							<line x1="${textCenterX - halfW}" y1="${centerY + halfH}" x2="${textCenterX + halfW}" y2="${centerY - halfH}" stroke="#4c0519" stroke-width="6.5" stroke-linecap="round" opacity="0.9"/>
+							<line x1="${textCenterX - halfW}" y1="${centerY + halfH}" x2="${textCenterX + halfW}" y2="${centerY - halfH}" stroke="#fb7185" stroke-width="3.6" stroke-linecap="round"/>
+						`;
+					})()
+				: "";
+
+			const badgeBg = isMarried ? "rgba(30, 27, 36, 0.92)" : style.bg;
 
 			const badgeSvg = Buffer.from(`
 				<svg width="${badgeW}" height="${badgeH}" xmlns="http://www.w3.org/2000/svg">
-					<rect width="${badgeW}" height="${badgeH}" rx="${style.rx}" fill="${style.bg}" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"/>
-					<text x="${badgeW / 2}" y="${badgeH / 2}" font-size="${fontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">${badgeText}</text>
+					<rect width="${badgeW}" height="${badgeH}" rx="${style.rx}" fill="${badgeBg}" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"/>
+					${iconsSvg}
+					<text x="${textCenterX}" y="${centerY}" font-size="${fontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="${isMarried ? "#d1d5db" : style.textColor}" font-family="DejaVu Sans, Arial, sans-serif">${slot}</text>
+					${strikeSvg}
 				</svg>
 			`);
 
@@ -1869,11 +1979,17 @@ function makeRollHandler(genderFilter) {
 
 			const { data } = await api.post("/roll", payload);
 
-			if (hasFarmBonus) {
+			const firstRollData = data.data;
+			const firstIsMythic = Boolean(
+				firstRollData?.character?.isMythic ||
+				firstRollData?.isMythic ||
+				String(firstRollData?.character?.rarity || "").toUpperCase() === "MYTHIC"
+			);
+
+			if (hasFarmBonus && !firstIsMythic) {
 				consumedFarmBonus = await ShadowGardenBonusService.consumeWaifuBonus(userId);
 			}
 
-			const firstRollData = data.data;
 			const initialRollsRemaining = firstRollData.rollsRemaining;
 			const initialMaxRolls = firstRollData.maxRolls ?? 9;
 
@@ -1884,7 +2000,7 @@ function makeRollHandler(genderFilter) {
 			const standardRollsRemaining =
 				typeof initialRollsRemaining === "number" ? initialRollsRemaining : 0;
 			const maxPossibleRolls = 1 + farmRemainingCount + standardRollsRemaining;
-			const rollsToExecute = Math.min(requestedRolls, maxPossibleRolls);
+			let rollsToExecute = Math.min(requestedRolls, maxPossibleRolls);
 
 			// Se for apenas 1 roll (ou se o usuário só tinha 1 roll disponível)
 			if (rollsToExecute <= 1) {
@@ -2021,9 +2137,7 @@ function makeRollHandler(genderFilter) {
 					}
 				} else if (isMythic) {
 					const creatorName = owner?.name || "Outro jogador";
-					const creatorMention =
-						owner?.id && owner.id.includes("@") ? `@${owner.id.split("@")[0]}` : creatorName;
-					text += `🔮 *CRIAÇÃO MÍTICA!* Forjada por ${creatorMention}\n🔒 Casamento eterno com seu criador.`;
+					text += `🔮 *CRIAÇÃO MÍTICA!* Forjada por *${creatorName}*\n🔒 Casamento eterno com seu criador.`;
 					if (kakeraValue) {
 						text += `\n💜 Valor em cristal: *${kakeraValue} Zinthos*`;
 					}
@@ -2050,6 +2164,10 @@ function makeRollHandler(genderFilter) {
 					}
 				}
 
+				if (firstRollData?.mythicRollRefunded || isMythic) {
+					text += `\n\n🔮 *Roll Mítico!* Nenhum roll foi gasto (devolvido ao seu saldo).`;
+				}
+
 				if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
 					text += `\n\n🎟️ Rolls restantes: *${rollsRemaining}/${maxRolls}*`;
 				}
@@ -2068,9 +2186,6 @@ function makeRollHandler(genderFilter) {
 				}
 
 				const mentions = isSpecialRarity && available && userId ? [toJid(userId)] : [];
-				if (isMythic && !isOwner && owner?.id) {
-					mentions.push(toJid(owner.id));
-				}
 
 				if (Array.isArray(firstRollData.wishlistUsers) && firstRollData.wishlistUsers.length > 0) {
 					firstRollData.wishlistUsers = firstRollData.wishlistUsers.filter((u) =>
@@ -2189,10 +2304,19 @@ function makeRollHandler(genderFilter) {
 
 					const nextRes = await api.post("/roll", stepPayload);
 					if (nextRes.data?.success && nextRes.data?.data) {
-						allRollResults.push(nextRes.data.data);
-						if (stillHasFarm) {
+						const stepData = nextRes.data.data;
+						const stepIsMythic = Boolean(
+							stepData.character?.isMythic ||
+							stepData.isMythic ||
+							String(stepData.character?.rarity || "").toUpperCase() === "MYTHIC"
+						);
+						allRollResults.push(stepData);
+						if (stillHasFarm && !stepIsMythic) {
 							const cRes = await ShadowGardenBonusService.consumeWaifuBonus(userId);
 							if (cRes?.consumed) totalFarmConsumedInBatch++;
+						}
+						if (stepIsMythic && rollsToExecute < requestedRolls) {
+							rollsToExecute++;
 						}
 					} else {
 						break;
@@ -2456,7 +2580,18 @@ function makeRollHandler(genderFilter) {
 			const lastRemaining = lastRes.rollsRemaining ?? 0;
 			const lastMax = lastRes.maxRolls ?? initialMaxRolls;
 
+			const mythicRefundCount = allRollResults.filter(
+				(r) =>
+					r.mythicRollRefunded ||
+					r.isMythic ||
+					r.character?.isMythic ||
+					String(r.character?.rarity || "").toUpperCase() === "MYTHIC"
+			).length;
+
 			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos\n\n`;
+			if (mythicRefundCount > 0) {
+				text += `🔮 *${mythicRefundCount} Roll(s) Mítico(s) devolvido(s)!*\n`;
+			}
 			text += `🎟️ Rolls restantes: ${lastRemaining}/${lastMax}`;
 			if (totalFarmConsumedInBatch > 0) {
 				const finalFarm = await ShadowGardenBonusService.getWaifuBonus(userId);
@@ -3007,17 +3142,18 @@ async function casarWaifu(bot, message, args) {
 		normalizeUserId(matchedRoll.rollerUserId) !== userId
 	) {
 		const remainingSecs = Math.max(1, Math.ceil((matchedRoll.exclusiveUntil - Date.now()) / 1000));
-		const rollerMention = matchedRoll.rollerUserId.includes("@")
-			? `@${matchedRoll.rollerUserId.split("@")[0]}`
-			: `@${matchedRoll.rollerUserId}`;
+		const rollerDisplayName = await resolveDisplayName(
+			message,
+			matchedRoll.rollerUserId,
+			matchedRoll.rollerUserName
+		);
 
 		return new ReturnMessage({
 			chatId,
-			content: `⏳ *Personagem exclusivo!* Este personagem é exclusivo de ${rollerMention} por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
+			content: `⏳ *Personagem exclusivo!* Este personagem é exclusivo de *${rollerDisplayName}* por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin,
-				mentions: [toJid(matchedRoll.rollerUserId)]
+				goReply: message.origin
 			}
 		});
 	}
@@ -3212,17 +3348,18 @@ async function processWaifuReaction(bot, message, args, group) {
 		normalizeUserId(rollData.rollerUserId) !== userId
 	) {
 		const remainingSecs = Math.max(1, Math.ceil((slotData.exclusiveUntil - Date.now()) / 1000));
-		const rollerMention = rollData.rollerUserId.includes("@")
-			? `@${rollData.rollerUserId.split("@")[0]}`
-			: `@${rollData.rollerUserId}`;
+		const rollerDisplayName = await resolveDisplayName(
+			group,
+			rollData.rollerUserId,
+			rollData.rollerUserName
+		);
 
 		return new ReturnMessage({
 			chatId,
-			content: `⏳ *Personagem exclusivo!* O personagem do slot ${slot} (*${slotData.characterName}*) é exclusivo de ${rollerMention} por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
+			content: `⏳ *Personagem exclusivo!* O personagem do slot ${slot} (*${slotData.characterName}*) é exclusivo de *${rollerDisplayName}* por mais *${remainingSecs}s*!\nAguarde a exclusividade expirar para poder casar.`,
 			options: {
 				quotedMessageId: targetMsgId,
-				goReply: message.origin,
-				mentions: [toJid(rollData.rollerUserId)]
+				goReply: message.origin
 			}
 		});
 	}
@@ -3406,7 +3543,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 
 	const ownerId = char.owner.id || "";
 	const isOwner = normalizeUserId(ownerId) === normalizeUserId(userId);
-	const spouseMention = ownerId.includes("@") ? `@${ownerId.split("@")[0]}` : `@${ownerId}`;
+	const ownerDisplayName = char.owner.name || (await resolveDisplayName(message, ownerId, null));
 	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 
 	// 4. Se solicitou explicitamente nova foto com 'nova'
@@ -3414,11 +3551,10 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		if (!isOwner) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Apenas o cônjuge (${spouseMention}) pode gerar uma nova foto de casamento com *${char.name}*!`,
+				content: `❌ Apenas o cônjuge (*${ownerDisplayName}*) pode gerar uma nova foto de casamento com *${char.name}*!`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
-					goReply: message.origin,
-					mentions: [toJid(ownerId)]
+					goReply: message.origin
 				}
 			});
 		}
@@ -3475,8 +3611,9 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		}
 
 		if (media) {
+			const coupleLabel = isOwner ? userMention : `*${ownerDisplayName}*`;
 			let caption = `💍 *Álbum de Casamento* 📸\n`;
-			caption += `👰 Casal: ${spouseMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+			caption += `👰 Casal: ${coupleLabel} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
 			if (isOwner) {
 				caption += `💡 _Envie \`!mu-foto nova ${char.id}\` para gerar uma nova foto e substituir a atual._`;
 			}
@@ -3488,7 +3625,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 					caption,
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin,
-					mentions: [toJid(ownerId)]
+					...(isOwner ? { mentions: [toJid(userId)] } : {})
 				}
 			});
 		}
@@ -3498,11 +3635,10 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 	if (!isOwner) {
 		return new ReturnMessage({
 			chatId,
-			content: `📷 Este casamento ainda não possui uma foto oficial registrada no álbum, e apenas o cônjuge (${spouseMention}) pode tirar a primeira foto!`,
+			content: `📷 Este casamento ainda não possui uma foto oficial registrada no álbum, e apenas o cônjuge (*${ownerDisplayName}*) pode tirar a primeira foto!`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin,
-				mentions: [toJid(ownerId)]
+				goReply: message.origin
 			}
 		});
 	}
@@ -3926,8 +4062,7 @@ async function verHarem(bot, message, args) {
 			}
 		}
 
-		const returnOpts = !isSelf ? { mentions: [toJid(targetUserId)] } : {};
-		return new ReturnMessage({ chatId, content: text, options: returnOpts });
+		return new ReturnMessage({ chatId, content: text });
 	} catch (err) {
 		return handleApiError(err, chatId, "Erro ao consultar harém.");
 	}

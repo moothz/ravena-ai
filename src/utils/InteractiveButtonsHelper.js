@@ -20,10 +20,13 @@ function generateAutomaticButtons(options) {
 	if (Array.isArray(options.waifuRolls) && options.waifuRolls.length > 0) {
 		const availableSlots = options.waifuRolls.filter((s) => {
 			if (!s) return false;
+			const charOwner = s.owner || s.character?.owner;
 			const hasOwner = Boolean(
-				s.owner && (typeof s.owner === "string" || s.owner.name || s.owner.id)
+				charOwner && (typeof charOwner === "string" || charOwner.name || charOwner.id)
 			);
-			const isMarried = Boolean(s.isMarried || s.character?.isMarried || hasOwner);
+			const isMarried = Boolean(
+				s.isMarried || s.character?.isMarried || s.character?.isClaimed || s.isClaimed || hasOwner
+			);
 			const isAvailable = s.available !== false && Boolean(s.available);
 			const isClaimed = Boolean(s.claimed);
 			const isInstantMarriage = Boolean(s.instantMarriage);
