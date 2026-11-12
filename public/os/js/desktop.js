@@ -93,11 +93,28 @@ const Desktop = {
         });
     },
 
+    /**
+     * Borda direita (px) da área ocupada pelos ícones do desktop, para posicionar janelas sem cobri-los.
+     * @returns {number}
+     */
+    getIconsAreaRight() {
+        let right = 0;
+        document.querySelectorAll('#desktop .desktop-icon').forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.width) right = Math.max(right, r.right);
+        });
+        return right ? Math.round(right + 12) : 250;
+    },
+
     createIcon(config) {
         const el = document.createElement('div');
         el.className = 'desktop-icon';
         el.dataset.id = config.id;
         el.dataset.tooltip = `${config.label}: ${config.tooltip || ''}`;
+        // Acessível por teclado: Tab para focar, Enter/Espaço para abrir
+        el.tabIndex = 0;
+        el.setAttribute('role', config.url ? 'link' : 'button');
+        el.setAttribute('aria-label', `${config.label} — ${config.tooltip || ''}`);
 
         el.innerHTML = `
             <div class="desktop-icon-img-wrap">
@@ -116,6 +133,13 @@ const Desktop = {
                 window.open(config.url, '_blank');
             } else if (config.window) {
                 WindowManager.open(config.window);
+            }
+        });
+
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                el.click();
             }
         });
 

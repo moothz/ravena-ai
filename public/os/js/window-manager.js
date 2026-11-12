@@ -22,12 +22,19 @@ const WindowManager = {
         });
     },
 
+    isMobileLayout() {
+        if (window.RavenaOS && typeof window.RavenaOS.checkMobile === 'function') {
+            return window.RavenaOS.checkMobile();
+        }
+        return window.innerWidth < 768;
+    },
+
     register(type, config) {
         this.configs[type] = config;
     },
 
     open(type, params = {}) {
-        if ((window.innerWidth < 768 || (window.RavenaOS && window.RavenaOS.state.isMobile)) && window.MobileApp) {
+        if (this.isMobileLayout() && window.MobileApp) {
             return window.MobileApp.openApp(type, params);
         }
 
@@ -87,7 +94,7 @@ const WindowManager = {
         let posY = (params && params.y) || config.y;
 
         if (!posX && !posY) {
-            const leftMargin = screenW > 700 ? 250 : 20;
+            const leftMargin = screenW > 700 && window.Desktop ? window.Desktop.getIconsAreaRight() : 20;
             const maxWOffset = Math.max(20, screenW - leftMargin - parsedW);
             const maxHOffset = Math.max(20, screenH - 68 - parsedH);
             const offsetX = leftMargin + ((this.cascadeCount * 22) % maxWOffset);
@@ -216,7 +223,7 @@ const WindowManager = {
     },
 
     close(id) {
-        if ((window.innerWidth < 768 || (window.RavenaOS && window.RavenaOS.state.isMobile)) && window.MobileApp) {
+        if (this.isMobileLayout() && window.MobileApp) {
             window.MobileApp.closeApp();
             return;
         }

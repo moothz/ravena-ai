@@ -35,16 +35,16 @@ const MobileApp = {
             <!-- Top Header (Logo + Title + Rate Widget) -->
             <header class="mobile-header">
                 <div class="mobile-header-brand">
-                    <img src="/android-chrome-192x192.png" class="mobile-logo" alt="RavenaBot">
+                    <img src="/android-chrome-192x192.png" class="mobile-logo" alt="" width="40" height="40">
                     <div class="mobile-title-group">
                         <span class="mobile-title">RavenaBot</span>
                         <span class="mobile-subtitle">Painel de Monitoramento</span>
                     </div>
                 </div>
-                <div class="mobile-header-rate" id="mobile-msgs-rate" title="Clique para abrir o mensagímetro">
+                <button type="button" class="mobile-header-rate" id="mobile-msgs-rate" title="Abrir o mensagímetro" aria-label="Mensagens por hora — abrir o mensagímetro">
                     <span class="mobile-rate-number" id="mobile-rate-val">0</span>
                     <span class="mobile-rate-unit">msgs/h</span>
-                </div>
+                </button>
             </header>
 
             <!-- Microservices Status Pills -->
@@ -65,12 +65,12 @@ const MobileApp = {
                     <div class="mobile-app-grid" id="mobile-app-grid"></div>
 
                     <!-- Recent Donations Card Widget -->
-                    <div class="mobile-donations-card" id="mobile-donations-card" title="Clique para ver detalhes de doações">
+                    <div class="mobile-donations-card" id="mobile-donations-card" role="button" tabindex="0" aria-label="Doações recentes — ver mural de doações">
                         <div class="mobile-donations-header">
                             <span class="mobile-donations-title">
                                 <i class="fas fa-heart" style="color: #ff4081;"></i> Doações Recentes
                             </span>
-                            <a href="https://tipa.ai/moothz" target="_blank" class="mobile-donate-btn" onclick="event.stopPropagation();">
+                            <a href="https://tipa.ai/moothz" target="_blank" rel="noopener" class="mobile-donate-btn" onclick="event.stopPropagation();">
                                 <i class="fas fa-heart"></i> Doar
                             </a>
                         </div>
@@ -126,6 +126,12 @@ const MobileApp = {
         if (donatesCard) {
             donatesCard.addEventListener('click', () => {
                 this.openApp('donations');
+            });
+            donatesCard.addEventListener('keydown', (e) => {
+                if (e.target === donatesCard && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    this.openApp('donations');
+                }
             });
         }
 

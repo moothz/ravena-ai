@@ -9,7 +9,10 @@ const CursorTrail = {
     lastY: 0,
 
     init() {
-        if (window.innerWidth < 768) return; // Skip on mobile
+        if (this.canvas) return; // já inicializado (ex: voltou do layout mobile)
+        if (window.RavenaOS && window.RavenaOS.checkMobile()) return; // Skip on mobile
+        // Sem rastro em telas de toque ou com "reduzir movimento" ativo
+        if (window.matchMedia && window.matchMedia('(pointer: coarse), (prefers-reduced-motion: reduce)').matches) return;
 
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'cursor-trail-canvas';
