@@ -96,6 +96,157 @@ function hasStrangeCharacters(str) {
 class InviteSystem {
 	static frasesNaoSabeLer = frasesNaoSabeLer;
 
+	/**
+	 * Verifica se o motivo fornecido é fraco, genérico, incompleto ou não atende ao requisito
+	 * de ser pelo menos uma frase concisa e completa justificando o uso do bot.
+	 * Frases como "sou adm pode entrar", meras declarações de permissão/cargo ou frases vagas não são aceitas.
+	 * @param {string} reason
+	 * @returns {{ isWeak: boolean, reason?: string }}
+	 */
+	static isWeakOrGenericReason(reason) {
+		if (!reason || typeof reason !== "string") {
+			return { isWeak: true, reason: "Motivo não informado" };
+		}
+
+		const clean = reason.trim();
+		const lower = clean.toLowerCase();
+		const normalized = lower
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.replace(/[.,/#!$%^&*;:{}=\-_`~()?"'!]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+
+		// 1. Termos e frases curtas conhecidas como fracas/ruins
+		const exactWeakPhrases = new Set([
+			"sou adm pode entrar",
+			"sou adm pode entra",
+			"sou admin pode entrar",
+			"sou admin pode entra",
+			"sou dono pode entrar",
+			"sou o dono pode entrar",
+			"sou dona pode entrar",
+			"sou a dona pode entrar",
+			"sou adm pode colocar",
+			"sou adm pode botar",
+			"sou adm pode por",
+			"sou adm pode add",
+			"sou adm",
+			"sou admin",
+			"sou o adm",
+			"sou o admin",
+			"sou dono",
+			"sou o dono",
+			"sou dona",
+			"sou a dona",
+			"sou adm do grupo",
+			"sou admin do grupo",
+			"eu sou adm",
+			"eu sou o adm",
+			"eu sou admin",
+			"eu sou dono",
+			"eu sou o dono",
+			"sou administrador",
+			"sou administradora",
+			"sou mod",
+			"sou moderador",
+			"pode entrar sou adm",
+			"pode entrar sou admin",
+			"pode entrar sou dono",
+			"pode entra sou adm",
+			"pode entra sou admin",
+			"sou adm entra ai",
+			"sou adm entra",
+			"adm deixou",
+			"o adm deixou",
+			"permissao do adm",
+			"tenho permissao",
+			"com permissao",
+			"posso te colocar",
+			"entra ai",
+			"entra por favor",
+			"entra pfv",
+			"entra logo",
+			"coloca ai",
+			"bota ai",
+			"pode entrar",
+			"pode entra",
+			"pode colocar",
+			"pode botar",
+			"pode add",
+			"pode por",
+			"mandaram colocar",
+			"mandaram botar",
+			"mandaram adicionar",
+			"falaram pra colocar",
+			"falaram pra botar",
+			"quero testar",
+			"para testar",
+			"pra testar",
+			"so teste",
+			"apenas teste",
+			"quero prosseguir",
+			"quero que entre",
+			"quero o bot",
+			"quero a ravena",
+			"o grupo e meu",
+			"o grupo e meu pode entrar",
+			"sim",
+			"nao",
+			"legal",
+			"top",
+			"bom",
+			"show",
+			"ok",
+			"beleza",
+			"bora",
+			"vamos"
+		]);
+
+		if (exactWeakPhrases.has(normalized)) {
+			return {
+				isWeak: true,
+				reason: `Motivo genérico/fraco ("${clean}")`
+			};
+		}
+
+		// 2. Expressões regulares que apenas afirmam cargo, autoridade ou permissão sem justificar a utilidade do bot
+		const adminOrPermissionOnlyRegex =
+			/^(eu\s+)?(sou|e)\s+(o\s+|a\s+)?(adm|admin|administrador|administradora|dono|dona|mod|moderador)(\s+do\s+grupo)?(\s+(pode|pra)\s+(entrar|colocar|por|botar|add)(\s+(a[ií]|aqui|no\s+grupo))?|\s+entra\s+a[ií]|\s+pode\s+(vim|vir))?$/i;
+
+		if (adminOrPermissionOnlyRegex.test(normalized)) {
+			return {
+				isWeak: true,
+				reason: `Motivo apenas declara cargo/permissão ("${clean}")`
+			};
+		}
+
+		// 3. Menção exclusiva a teste
+		if (
+			/\b(testar|teste|testes|testando)\b/i.test(normalized) ||
+			normalized.includes("para testar") ||
+			normalized.includes("pra testar") ||
+			normalized.includes("so teste")
+		) {
+			return {
+				isWeak: true,
+				reason: `Motivo menciona teste ("${clean}")`
+			};
+		}
+
+		// 4. Frase concisa e completa:
+		// Deve ter pelo menos uma frase estruturada (mínimo de 4 palavras úteis e 20 caracteres)
+		const words = normalized.split(/\s+/).filter(Boolean);
+		if (words.length < 4 || clean.length < 20) {
+			return {
+				isWeak: true,
+				reason: `Motivo não forma pelo menos 1 frase concisa e completa ("${clean}")`
+			};
+		}
+
+		return { isWeak: false };
+	}
+
 	// Registro de entradas automáticas recentes por bot (botId -> [timestamp, ...]) para limite de 3/30m
 	static recentBotJoins = new Map();
 
@@ -466,22 +617,24 @@ class InviteSystem {
 	}
 
 	/**
-	 * Retorna todos os bots que estão habilitados e marcados como banidos
+	 * Retorna todos os bots que estão marcados como banidos
+	 * @param {Object} [options]
+	 * @param {boolean} [options.onlyEnabled=false]
 	 * @returns {Array<Object>}
 	 */
-	getBannedBots() {
+	getBannedBots({ onlyEnabled = false } = {}) {
 		try {
 			const botsPath = path.resolve(__dirname, "../bots.json");
 			const raw = require("fs").readFileSync(botsPath, "utf8");
 			const bots = JSON.parse(raw);
 			if (Array.isArray(bots)) {
-				return bots.filter((b) => b && b.enabled === true && b.banido === true);
+				return bots.filter((b) => b && b.banido === true && (!onlyEnabled || b.enabled === true));
 			}
 		} catch (e) {
 			this.logger.warn("Erro ao ler bots.json para getBannedBots:", e.message);
 		}
 		const allBots = this.database?.botInstances || [];
-		return allBots.filter((b) => b && b.enabled === true && b.banido === true);
+		return allBots.filter((b) => b && b.banido === true && (!onlyEnabled || b.enabled === true));
 	}
 
 	/**
@@ -676,8 +829,17 @@ class InviteSystem {
 			};
 		}
 
+		// Se a ravena que está no grupo está banida, só deve aceitar se for de donate
+		if (hasBannedBotInGroup) {
+			return {
+				shouldAutoAccept: false,
+				bannedModeReject: "banned_bot_requires_donation",
+				reason: "Ravena no grupo está banida (auto-accept permitido apenas para doadores)"
+			};
+		}
+
 		// 2. Grupos que nunca tiveram a ravena (novos): Não aceitar
-		const hadBot = hasBannedBotInGroup || wasInGroupBefore;
+		const hadBot = wasInGroupBefore;
 		if (!hadBot) {
 			return {
 				shouldAutoAccept: false,
@@ -686,7 +848,7 @@ class InviteSystem {
 			};
 		}
 
-		// 3. Grupos que tem a ravena que foi banida nos membros (ou histórico anterior comprovado):
+		// 3. Grupos com histórico anterior comprovado:
 		// Se >= 15 membros OU Grupo com canal twitch/kick/youtube configurado: aceitar automaticamente
 		const hasStreamChannel = await this.groupHasStreamChannel(groupJid);
 		const count = typeof participantCount === "number" ? participantCount : 0;
@@ -695,7 +857,7 @@ class InviteSystem {
 			const justification = count >= 15 ? `${count} membros` : "canal de live configurado";
 			return {
 				shouldAutoAccept: true,
-				reason: `Reposição de ravena banida (${justification})`
+				reason: `Reposição de ravena (${justification})`
 			};
 		}
 
@@ -996,6 +1158,7 @@ class InviteSystem {
 		donateValue = 0,
 		wasInGroupBefore = false,
 		hasBotInGroup = false,
+		hasBannedBotInGroup = false,
 		userDossier = null,
 		groupDossier = null,
 		groupJid = null
@@ -1036,6 +1199,14 @@ class InviteSystem {
 			return {
 				shouldAutoAccept: false,
 				reason: "Já existe um bot no grupo atualmente"
+			};
+		}
+
+		// Se a ravena que está no grupo está banida, só deve aceitar se for de donate
+		if (hasBannedBotInGroup && !isDonator) {
+			return {
+				shouldAutoAccept: false,
+				reason: "Ravena presente no grupo está banida (auto-accept permitido apenas para doadores)"
 			};
 		}
 
@@ -1122,30 +1293,11 @@ class InviteSystem {
 
 		// Se doador >= 30, aceita mesmo com motivo ruim
 		if (!isDonator || donateValue < 30) {
-			const cleanReason = (reason || "").trim().toLowerCase();
-			const badReasons = [
-				"tenho permissão",
-				"tenho permissao",
-				"sim",
-				"posso te colocar",
-				"entra aí",
-				"entra ai",
-				"entra por favor",
-				"entra pfv",
-				"coloca aí",
-				"quero testar",
-				"quero prosseguir",
-				"quero que entre",
-				"legal"
-			];
-			if (
-				badReasons.some(
-					(br) => cleanReason === br || cleanReason === `${br}.` || cleanReason === `${br}!`
-				)
-			) {
+			const weakCheck = InviteSystem.isWeakOrGenericReason(reason);
+			if (weakCheck.isWeak) {
 				return {
 					shouldAutoAccept: false,
-					reason: `Motivo genérico/fraco ("${reason}")`
+					reason: weakCheck.reason
 				};
 			}
 		}
@@ -1187,11 +1339,12 @@ REGRAS ESTRITAS DE REJEIÇÃO (NUNCA ACEITAR AUTOMATICAMENTE):
 4. Solicitante identificado como CRIANÇA OU ADOLESCENTE (até 16 anos) no dossiê de memória (ex: menção a idade < 17 anos, séries escolares/ensino fundamental, comportamento declaradamente infantil). NUNCA aceitar convite enviado por menor de idade! (Atenção: 17 anos ou mais é considerado jovem adulto/adulto).
 5. Solicitante identificado como PROBLEMÁTICO no dossiê de memória (histórico de toxicidade, banimentos de outros grupos, assédio, spam, travazap, racismo, gore, pornografia, ofensas graves ou invasão de grupos). NUNCA aceitar se o solicitante for problemático!
 6. Grupo com histórico problemático no dossiê (nota média de risco > 6/10, histórico de 'is_problematic', ou evidências graves de crimes, racismo, gore, ódio, assédio). NUNCA aceitar grupo de risco!
-7. Motivos ruins, preguiçosos ou genéricos ("tenho permissão", "sim", "posso te colocar", "entra aí", "entra por favor", etc., a menos que o usuário seja doador R$30+).
+7. Motivos ruins, preguiçosos, fracos ou incompletos: a frase do motivo DEVE ser pelo menos 1 frase concisa e completa explicando claramente a utilidade/finalidade do bot no grupo (ex: entretenimento dos membros, figurinhas, jogos, etc.). Frases como "sou adm pode entrar", "sou adm", "sou admin", "sou dono", "tenho permissão", "entra aí", "pode entrar", ou que apenas afirmem cargo/permissão SEM justificar o uso real do bot, NÃO são consideradas boas e NUNCA devem ser aceitas automaticamente (a menos que o usuário seja doador R$30+).
 8. Título, descrição ou motivo com qualquer sinal de racismo, homofobia, xenofobia, assédio, pedofilia, drogas ilícitas, gore, extremismo ou ódio (NUNCA aceitar, mesmo se for doador).
 9. Grupos de teste ou com finalidade de testes (palavra 'teste'/'testar' no nome do grupo, descrição ou motivo).
 10. Já existe um bot no grupo atualmente (NUNCA aceitar outro, independente do convite).
 11. O bot já esteve no grupo anteriormente (se saiu/removeram, não deve ser aceito, a menos que o solicitante seja doador).
+12. Se a ravena que está no grupo estiver banida, NUNCA aceitar automaticamente a menos que o solicitante seja doador.
 
 CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
 1. Usuário Doador (grande peso):
@@ -1200,7 +1353,7 @@ CRITÉRIOS POSITIVOS PARA ACEITAÇÃO AUTOMÁTICA:
    - R$10 a R$30: Aceitar independente da quantidade de membros.
    - R$30 a R$49: Aceitar mesmo com motivo ruim/fraco.
    - Acima de R$49: Sempre aceitar (desde que sem conteúdo ilegal/ódio/menores/usuário problemático).
-2. Motivo bem escrito, educado e detalhado, justificando o uso das funções do bot sem quebrar regras.
+2. Motivo conciso e completo: pelo menos uma frase completa, coerente e educada, explicando a finalidade ou função desejada no grupo (jogos, figurinhas, interação), sem se limitar a dizer que é adm ou tem permissão.
 3. Grupo de streamer: possui nome ou link de canal (Twitch, YouTube, Kick) na descrição ou tags "[OFF]" ou "[ON]" no título.
 4. Usuário ou grupo conhecido positivamente na comunidade (dossiê indica usuários ativos, respeitosos, jogos).
 
@@ -1221,6 +1374,7 @@ ${userDossierPromptSummary}
 - ID do Grupo: ${groupJid || "Desconhecido"}
 - Membros: ${participantCount ?? "Desconhecido"}
 - Já existe bot no grupo atualmente: ${hasBotInGroup ? "Sim" : "Não"}
+- Ravena banida presente no grupo: ${hasBannedBotInGroup ? "Sim" : "Não"}
 - Bot já esteve neste grupo antes: ${wasInGroupBefore ? "Sim" : "Não"}
 - Descrição do Grupo: "${description || "Sem descrição"}"
 - Dossiê Histórico do Grupo na Memória:
@@ -2222,6 +2376,7 @@ Decida se este grupo deve ser aceito automaticamente.`;
 								donateValue,
 								wasInGroupBefore,
 								hasBotInGroup: otherBotsInGroup.length > 0,
+								hasBannedBotInGroup,
 								userDossier,
 								groupDossier,
 								groupJid: inviteInfoData?.JID || null
@@ -2338,10 +2493,13 @@ Decida se este grupo deve ser aceito automaticamente.`;
 			let headerText = "";
 
 			if (evalResult?.bannedModeReject === "new_group" && !isDonator) {
-				const bannedBots = this.getBannedBots();
+				const bannedBots = this.getBannedBots({ onlyEnabled: true });
 				const bannedBotName =
 					bannedBots[0]?.nomeExibir || bannedBots[0]?.nome || this.bot.nomeExibir || "ravena";
 				headerText = `🚨 A *${bannedBotName}* foi banida recentemente - neste momento, não estou aceitando nenhum convite novo, apenas repondo as ravenas no grupo\n\n`;
+			} else if (evalResult?.bannedModeReject === "banned_bot_requires_donation" && !isDonator) {
+				extraText += "\n- ⚠️ Ravena no grupo banida (reposição automática apenas para doadores)";
+				addedAny = true;
 			} else if (evalResult?.bannedModeReject === "small_group" && !isDonator) {
 				extraText += "\n- ⚠️ Grupo pequeno pendente";
 				addedAny = true;

@@ -28,12 +28,12 @@ async function runTests() {
 					Participants: ["555592058360@s.whatsapp.net", "5511999999999@s.whatsapp.net"] // 555592058360 é o número da ravena4 banida
 				};
 			}
-			if (code === "grupo_com_banido_pequeno") {
+			if (code === "grupo_historico_pequeno") {
 				return {
 					JID: "grupo2@g.us",
 					Name: "Grupo Reposição Pequeno",
 					ParticipantCount: 8,
-					Participants: ["555592058360@s.whatsapp.net", "5511999999999@s.whatsapp.net"]
+					Participants: ["5511999999999@s.whatsapp.net", "5511888888888@s.whatsapp.net"]
 				};
 			}
 			if (code === "grupo_novo") {
@@ -116,10 +116,12 @@ async function runTests() {
 		"Mensagem deve conter aviso de ravena banida recentemente no topo"
 	);
 
-	// 2. Grupo com bot banido nos membros e >= 15 membros (deve aceitar)
-	console.log("\n[2] Testando convite de Grupo com Bot Banido e >= 15 membros (deve aceitar)...");
+	// 2. Grupo com bot banido nos membros e SEM donate (deve negar e avisar que apenas donate aceita)
+	console.log(
+		"\n[2] Testando convite de Grupo com Bot Banido sem donate (deve negar auto-accept)..."
+	);
 	bot.resetCapture();
-	const msgGrande = {
+	const msgGrandeSemDonate = {
 		author: "5511777777778@s.whatsapp.net",
 		authorName: "Admin Grupo Grande",
 		name: "Admin Grupo Grande",
@@ -129,40 +131,78 @@ async function runTests() {
 	};
 
 	await inviteSystem.handleInviteRequest(
-		msgGrande.author,
+		msgGrandeSemDonate.author,
 		"grupo_com_banido_grande",
-		msgGrande.content,
-		"Repondo a ravena banida no nosso grupo",
-		msgGrande
+		msgGrandeSemDonate.content,
+		"Repondo a ravena banida no nosso grupo com mais de vinte membros ativos",
+		msgGrandeSemDonate
 	);
 
-	const inviteLogsGrande = bot.capturedMessages.filter((m) => m.chatId === "invites@g.us");
-	assert.ok(inviteLogsGrande.length > 0, "Deve notificar grupoInvites");
-	console.log("Log enviado para grupo grande:\n", inviteLogsGrande[0].content);
+	const inviteLogsSemDonate = bot.capturedMessages.filter((m) => m.chatId === "invites@g.us");
+	assert.ok(inviteLogsSemDonate.length > 0, "Deve notificar grupoInvites");
+	console.log("Log enviado para grupo grande sem donate:\n", inviteLogsSemDonate[0].content);
 	assert.ok(
-		inviteLogsGrande[0].content.includes("ACEITO AUTOMATICAMENTE"),
-		"Deve ter sido aceito automaticamente"
+		!inviteLogsSemDonate[0].content.includes("ACEITO AUTOMATICAMENTE"),
+		"NÃO deve ter sido aceito automaticamente sem donate"
+	);
+	assert.ok(
+		inviteLogsSemDonate[0].content.includes("Ravena no grupo está banida"),
+		"Log deve indicar que a ravena no grupo está banida"
 	);
 
-	// 3. Grupo com bot banido nos membros e < 15 membros (deve negar e adicionar 'Grupo pequeno pendente')
+	// 2b. Grupo com bot banido nos membros e COM donate (deve aceitar)
+	console.log("\n[2b] Testando convite de Grupo com Bot Banido COM donate (deve aceitar)...");
+	bot.resetCapture();
+	inviteSystem.database.getDonations = async () => [{ numero: "5511777777778", valor: 50 }];
+	await inviteSystem.handleInviteRequest(
+		msgGrandeSemDonate.author,
+		"grupo_com_banido_grande",
+		msgGrandeSemDonate.content,
+		"Repondo a ravena banida no nosso grupo com mais de vinte membros ativos",
+		msgGrandeSemDonate
+	);
+
+	const inviteLogsComDonate = bot.capturedMessages.filter((m) => m.chatId === "invites@g.us");
+	assert.ok(inviteLogsComDonate.length > 0, "Deve notificar grupoInvites");
+	console.log("Log enviado para grupo grande COM donate:\n", inviteLogsComDonate[0].content);
+	assert.ok(
+		inviteLogsComDonate[0].content.includes("ACEITO AUTOMATICAMENTE"),
+		"Deve ter sido aceito automaticamente com donate"
+	);
+	inviteSystem.database.getDonations = async () => [];
+
+	// 3. Grupo que já teve ravena antes (histórico), sem bot banido atual e < 15 membros (deve negar e adicionar 'Grupo pequeno pendente')
 	console.log(
-		"\n[3] Testando convite de Grupo com Bot Banido e < 15 membros (deve negar com 'Grupo pequeno pendente')..."
+		"\n[3] Testando convite de Grupo que já teve bot e < 15 membros (deve negar com 'Grupo pequeno pendente')..."
 	);
 	bot.resetCapture();
+	// Configura que já esteve no grupo anteriormente
+	inviteSystem.database.getGroupMembershipPeriods = async (jid) => {
+		if (jid === "grupo2@g.us") {
+			return [
+				{
+					bot_id: "rav-normal",
+					join_timestamp: Date.now() - 100000,
+					leave_timestamp: Date.now() - 10000
+				}
+			];
+		}
+		return [];
+	};
 	const msgPequeno = {
 		author: "5511777777779@s.whatsapp.net",
 		authorName: "Admin Grupo Pequeno",
 		name: "Admin Grupo Pequeno",
-		content: "https://chat.whatsapp.com/grupo_com_banido_pequeno",
+		content: "https://chat.whatsapp.com/grupo_historico_pequeno",
 		type: "text",
 		origin: { react: async () => {} }
 	};
 
 	await inviteSystem.handleInviteRequest(
 		msgPequeno.author,
-		"grupo_com_banido_pequeno",
+		"grupo_historico_pequeno",
 		msgPequeno.content,
-		"Repondo ravena banida no grupo pequeno",
+		"Repondo ravena no grupo pequeno com amigos de jogos",
 		msgPequeno
 	);
 
@@ -171,7 +211,7 @@ async function runTests() {
 	console.log("Mensagem ao usuário para grupo pequeno:\n", userMsgPequeno[0].content);
 	assert.ok(
 		userMsgPequeno[0].content.includes("Grupo pequeno pendente"),
-		"Mensagem deve conter 'Grupo pequeno pendente'"
+		"Mensagem deve conter aviso de Grupo pequeno pendente"
 	);
 
 	const inviteLogsPequeno = bot.capturedMessages.filter((m) => m.chatId === "invites@g.us");

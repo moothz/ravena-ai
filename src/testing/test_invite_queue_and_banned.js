@@ -125,21 +125,41 @@ async function runTests() {
 	assert.strictEqual(resNovo.shouldAutoAccept, false, "Grupo novo deve ser rejeitado");
 	assert.strictEqual(resNovo.bannedModeReject, "new_group", "Deve ser marcado como new_group");
 
-	// Caso 5.4: Grupo com ravena banida nos membros e >= 15 membros deve ser aceito
-	const resGrande = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
+	// Caso 5.4: Grupo com ravena banida nos membros e NÃO doador: deve ser rejeitado (apenas donate aceita)
+	const resBanidoSemDonate = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
 		hasBannedBotInGroup: true,
+		isDonator: false,
 		participantCount: 20
 	});
 	assert.strictEqual(
-		resGrande.shouldAutoAccept,
-		true,
-		"Grupo grande com ravena banida deve ser aceito"
+		resBanidoSemDonate.shouldAutoAccept,
+		false,
+		"Grupo com ravena banida sem donate deve ser rejeitado"
+	);
+	assert.strictEqual(
+		resBanidoSemDonate.bannedModeReject,
+		"banned_bot_requires_donation",
+		"Deve ser marcado como banned_bot_requires_donation"
 	);
 
-	// Caso 5.5: Grupo com ravena banida nos membros e < 15 membros e sem canal deve ser rejeitado com small_group
+	// Caso 5.4b: Grupo com ravena banida nos membros E doador: deve ser aceito
+	const resBanidoComDonate = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
+		hasBannedBotInGroup: true,
+		isDonator: true,
+		donateValue: 50,
+		participantCount: 20
+	});
+	assert.strictEqual(
+		resBanidoComDonate.shouldAutoAccept,
+		true,
+		"Grupo com ravena banida e doador deve ser aceito"
+	);
+
+	// Caso 5.5: Grupo com histórico comprovado anterior (sem bot banido ativo no grupo), < 15 membros e sem canal deve ser rejeitado com small_group
 	inviteSystem.groupHasStreamChannel = async () => false;
 	const resPequeno = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
-		hasBannedBotInGroup: true,
+		wasInGroupBefore: true,
+		hasBannedBotInGroup: false,
 		participantCount: 10
 	});
 	assert.strictEqual(
@@ -154,13 +174,26 @@ async function runTests() {
 	);
 	assert.strictEqual(resPequeno.reason, "Grupo pequeno pendente");
 
-	// Caso 5.6: Grupo com ravena banida nos membros e canal stream configurado deve ser aceito mesmo pequeno
+	// Caso 5.6: Grupo com histórico anterior comprovado, < 15 membros e canal stream configurado deve ser aceito
 	inviteSystem.groupHasStreamChannel = async () => true;
 	const resCanal = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
-		hasBannedBotInGroup: true,
+		wasInGroupBefore: true,
+		hasBannedBotInGroup: false,
 		participantCount: 5
 	});
 	assert.strictEqual(resCanal.shouldAutoAccept, true, "Grupo com canal stream deve ser aceito");
+
+	// Caso 5.7: Grupo com histórico anterior comprovado e >= 15 membros deve ser aceito
+	const resGrande = await inviteSystem.evaluateAutoAcceptRecentlyBanned({
+		wasInGroupBefore: true,
+		hasBannedBotInGroup: false,
+		participantCount: 20
+	});
+	assert.strictEqual(
+		resGrande.shouldAutoAccept,
+		true,
+		"Grupo grande com histórico deve ser aceito"
+	);
 
 	// 6. Teste de SuperAdmin !sa-filaInvites
 	console.log("\n[6] Testando SuperAdmin.filaInvites...");
