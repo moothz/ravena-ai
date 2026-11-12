@@ -104,6 +104,33 @@ async function cleanupTempFiles(filePaths) {
 }
 
 /**
+ * Extrai mídia diretamente da mensagem (legenda) ou da mensagem citada.
+ * @param {Object} message - Objeto da mensagem recebida
+ * @returns {Promise<{media: Object|null, status: "ok"|"no_media"|"download_failed"}>}
+ */
+async function getMediaFromMessageOrQuote(message) {
+	if (message.type !== "text" && message.hasMedia && typeof message.downloadMedia === "function") {
+		const directMedia = await message.downloadMedia();
+		if (directMedia?.data && directMedia?.mimetype) {
+			return { media: directMedia, status: "ok" };
+		}
+		return { media: null, status: "download_failed" };
+	}
+
+	const quotedMsg = await message.origin?.getQuotedMessage();
+	if (!quotedMsg?.hasMedia) {
+		return { media: null, status: "no_media" };
+	}
+
+	const quotedMedia = await quotedMsg.downloadMedia();
+	if (!quotedMedia?.data || !quotedMedia?.mimetype) {
+		return { media: null, status: "download_failed" };
+	}
+
+	return { media: quotedMedia, status: "ok" };
+}
+
+/**
  * Implementação do comando getaudio
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
@@ -115,20 +142,23 @@ async function handleGetAudio(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		// Obtém mensagem citada
-		const quotedMsg = await message.origin.getQuotedMessage();
-
-		// Verifica se a mensagem citada tem mídia
-		if (!quotedMsg?.hasMedia) {
+		const { media: quotedMedia, status } = await getMediaFromMessageOrQuote(message);
+		if (status === "no_media") {
 			return new ReturnMessage({
 				chatId,
 				content:
 					"Para extrair áudio de um vídeo/voz você precisa responder à uma mensagem que possua esta mídia (ou colocar na legenda)."
 			});
 		}
+		if (status === "download_failed") {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
+			});
+		}
 
 		// Verifica tipo de mídia
-		const quotedMedia = await quotedMsg.downloadMedia();
 		const supportedTypes = ["audio", "voice", "video"];
 		const mediaType = quotedMedia.mimetype.split("/")[0];
 
@@ -178,20 +208,23 @@ async function handleGetVoice(bot, message, args, group) {
 	const chatId = message.group ?? message.author;
 
 	try {
-		// Obtém mensagem citada
-		const quotedMsg = await message.origin.getQuotedMessage();
-
-		// Verifica se a mensagem citada tem mídia
-		if (!quotedMsg.hasMedia) {
+		const { media: quotedMedia, status } = await getMediaFromMessageOrQuote(message);
+		if (status === "no_media") {
 			return new ReturnMessage({
 				chatId,
 				content:
 					"Para extrair áudio de um vídeo/voz você precisa responder à uma mensagem que possua esta mídia (ou colocar na legenda)."
 			});
 		}
+		if (status === "download_failed") {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
+			});
+		}
 
 		// Verifica tipo de mídia
-		const quotedMedia = await quotedMsg.downloadMedia();
 		const supportedTypes = ["audio", "voice", "video"];
 		const mediaType = quotedMedia.mimetype.split("/")[0];
 
@@ -260,19 +293,22 @@ async function handleVolumeAdjust(bot, message, args, group) {
 			});
 		}
 
-		// Obtém mensagem citada
-		const quotedMsg = await message.origin.getQuotedMessage();
-
-		// Verifica se a mensagem citada tem mídia
-		if (!quotedMsg.hasMedia) {
+		const { media: quotedMedia, status } = await getMediaFromMessageOrQuote(message);
+		if (status === "no_media") {
 			return new ReturnMessage({
 				chatId,
-				content: "A mensagem citada não contém mídia."
+				content: "A mensagem citada não contém mídia (você também pode enviar na legenda)."
+			});
+		}
+		if (status === "download_failed") {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
 			});
 		}
 
 		// Verifica tipo de mídia
-		const quotedMedia = await quotedMsg.downloadMedia();
 		const supportedTypes = ["audio", "voice", "video"];
 		const mediaType = quotedMedia.mimetype.split("/")[0];
 
@@ -348,7 +384,7 @@ const commands = [
 			after: "🎵",
 			error: "❌"
 		},
-		needsQuotedMsg: true,
+		needsMedia: true,
 		method: handleGetAudio
 	}),
 
@@ -361,7 +397,7 @@ const commands = [
 			after: "🎤",
 			error: "❌"
 		},
-		needsQuotedMsg: true,
+		needsMedia: true,
 		method: handleGetVoice
 	}),
 
@@ -374,7 +410,7 @@ const commands = [
 			after: "🔊",
 			error: "❌"
 		},
-		needsQuotedMsg: true,
+		needsMedia: true,
 		method: handleVolumeAdjust
 	})
 ];

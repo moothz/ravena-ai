@@ -605,6 +605,13 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			if (mediaType === "sticker") {
 				// Baixa o sticker original para extrair a mídia
 				const stickerMedia = await quotedMsg.downloadMedia();
+				if (!stickerMedia || !stickerMedia.data || !stickerMedia.mimetype) {
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "❌ Não foi possível baixar o sticker citado (mídia indisponível ou expirada)."
+					});
+				}
 
 				// Verifica se é WebP para processamento especial
 				if (stickerMedia.mimetype.includes("webp")) {
@@ -704,6 +711,14 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				});
 			} else if (["image", "video", "gif"].includes(mediaType)) {
 				const media = await quotedMsg.downloadMedia();
+				if (!media || !media.data || !media.mimetype) {
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content:
+							"❌ Não foi possível baixar a mídia citada (ela pode ter expirado ou ser de visualização única protegida)."
+					});
+				}
 				mediaBuffer = media;
 				mimeType = media.mimetype;
 				quotedMessageId = message.origin.id._serialized;

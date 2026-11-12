@@ -127,6 +127,7 @@ class WhatsAppBotGo {
 		this.contactCache = [];
 		this.sentMessagesCache = [];
 		this.lidToPnCache = new Map();
+		this.viewOnceMediaCache = new Map();
 		this.cacheManager = CacheManager.getInstance(
 			this.redisURL,
 			this.redisDB,
@@ -1246,76 +1247,116 @@ class WhatsAppBotGo {
 		}
 	}
 
-	async _downloadMediaFromWhatsgo(messageContent) {
+	async _materializeBase64Media(base64Str, mimetype = "application/octet-stream") {
+		const rawStr = String(base64Str || "");
+		const dataUrlMatch = /^data:([^;]+);base64,/i.exec(rawStr);
+		const base64Data = rawStr.replace(/^data:.*?;base64,/, "");
+		const cleanMime = ((mimetype || dataUrlMatch?.[1] || "application/octet-stream") + "").split(
+			";"
+		)[0];
+		const extension = mime.extension(cleanMime) ?? "bin";
+		const tempId = randomBytes(8).toString("hex");
+		const fileName = `${tempId}.${extension}`;
+		const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "downloads");
+		const outputDir = path.join(dlFolder, "attachments");
+		if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+		const filePath = path.join(outputDir, fileName);
+
+		if (extension === "bin") {
+			this.logger.debug(`[_materializeBase64Media] Arquivo bin? Mimetype ${cleanMime}`);
+		}
+		await writeFileAsync(filePath, base64Data, "base64");
+
+		setTimeout(
+			(fp) => {
+				if (fs.existsSync(fp)) fs.unlinkSync(fp);
+			},
+			10 * 60 * 1000,
+			filePath
+		);
+
+		let fileUrl = null;
 		try {
-			//this.logger.debug(`[_downloadMediaFromWhatsgo] POST /message/downloadmedia`, { message: messageContent });
+			const s3Key = `attachments/${fileName}`;
+			await storageService.upload(Buffer.from(base64Data, "base64"), s3Key, {
+				bucket: storageService.bucketDownloads,
+				mimetype: cleanMime
+			});
+			fileUrl = await storageService.getPresignedUrl(s3Key, {
+				bucket: storageService.bucketDownloads
+			});
+		} catch (s3Err) {
+			this.logger.warn(`[_materializeBase64Media] Falha ao subir anexo para S3: ${s3Err.message}`);
+			fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
+		}
+
+		return {
+			url: fileUrl,
+			mimetype: cleanMime,
+			filename: fileName,
+			filePath,
+			base64: base64Data,
+			data: base64Data
+		};
+	}
+
+	_cacheViewOnceMedia(messageId, viewOnceMedia) {
+		if (!messageId || !viewOnceMedia?.base64 || !this.viewOnceMediaCache) return;
+		const cleanId = this.getActualMsgId ? this.getActualMsgId(messageId) : String(messageId);
+		if (this.viewOnceMediaCache.has(cleanId)) {
+			this.viewOnceMediaCache.delete(cleanId);
+		}
+		this.viewOnceMediaCache.set(cleanId, {
+			base64: viewOnceMedia.base64,
+			mimetype: viewOnceMedia.mimetype || "application/octet-stream",
+			filename: viewOnceMedia.filename || null,
+			ts: Date.now()
+		});
+		while (this.viewOnceMediaCache.size > 100) {
+			const oldestKey = this.viewOnceMediaCache.keys().next().value;
+			this.viewOnceMediaCache.delete(oldestKey);
+		}
+	}
+
+	async _downloadMediaFromWhatsgo(messageContent, messageId = null) {
+		try {
+			const cleanId = messageId && this.getActualMsgId ? this.getActualMsgId(messageId) : messageId;
+			if (cleanId && this.viewOnceMediaCache?.has(cleanId)) {
+				const cached = this.viewOnceMediaCache.get(cleanId);
+				if (cached?.base64) {
+					return await this._materializeBase64Media(cached.base64, cached.mimetype);
+				}
+			}
+
+			const { unwrapped } = this._unwrapGoMessageContent(messageContent || {});
+			const payloadMsg = unwrapped || messageContent;
 			const response = await this.apiClient.post("/message/downloadmedia", {
-				message: messageContent
+				message: payloadMsg,
+				...(cleanId ? { messageId: cleanId } : {})
 			});
 			if (response?.data?.base64) {
-				const base64Data = response.data.base64.replace(/^data:.*?;base64,/, "");
-
 				const mimetype = [
-					messageContent,
-					messageContent.imageMessage,
-					messageContent.videoMessage,
-					messageContent.audioMessage,
-					messageContent.stickerMessage
+					payloadMsg,
+					payloadMsg?.imageMessage,
+					payloadMsg?.videoMessage,
+					payloadMsg?.audioMessage,
+					payloadMsg?.stickerMessage,
+					payloadMsg?.documentMessage
 				]
 					.find((msg) => msg?.mimetype)
 					?.mimetype?.split(";")[0];
 
-				const extension = mime.extension(mimetype) ?? "bin";
-				const tempId = randomBytes(8).toString("hex");
-				const fileName = `${tempId}.${extension}`;
-				const dlFolder = process.env.DL_FOLDER || path.join(__dirname, "..", "downloads");
-				const outputDir = path.join(dlFolder, "attachments");
-				if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-				const filePath = path.join(outputDir, fileName);
-
-				if (extension === "bin") {
-					this.logger.debug(`[_downloadMediaFromWhatsgo] Arquivo bin? Mimetype ${mimetype}`);
-				}
-				await writeFileAsync(filePath, base64Data, "base64");
-
-				setTimeout(
-					(fp) => {
-						if (fs.existsSync(fp)) fs.unlinkSync(fp);
-					},
-					10 * 60 * 1000,
-					filePath
-				);
-
-				let fileUrl = null;
-				try {
-					const s3Key = `attachments/${fileName}`;
-					await storageService.upload(Buffer.from(base64Data, "base64"), s3Key, {
-						bucket: storageService.bucketDownloads,
-						mimetype
-					});
-					fileUrl = await storageService.getPresignedUrl(s3Key, {
-						bucket: storageService.bucketDownloads
-					});
-				} catch (s3Err) {
-					this.logger.warn(
-						`[_downloadMediaFromWhatsgo] Falha ao subir anexo para S3: ${s3Err.message}`
-					);
-					fileUrl = `${process.env.BOT_DOMAIN_LOCAL ?? process.env.BOT_DOMAIN}/attachments/${fileName}`;
-				}
-
-				const media = {
-					url: fileUrl,
-					mimetype,
-					filename: fileName,
-					filePath,
-					base64: base64Data,
-					data: base64Data
-				};
-				//this.logger.debug(`[_downloadMediaFromWhatsgo] Res: ${fileUrl}`, media);
-				return media;
+				return await this._materializeBase64Media(response.data.base64, mimetype);
 			}
 		} catch (error) {
-			this.logger.error(`[${this.id}] Error downloading media from Whatsgo:`, error);
+			const errMsg = error?.response?.data?.error || error?.message || "";
+			if (String(errMsg).includes("no url present")) {
+				this.logger.warn(
+					`[${this.id}] Media URL missing and not in view-once cache (${messageId || "no-id"}): ${errMsg}`
+				);
+			} else {
+				this.logger.error(`[${this.id}] Error downloading media from Whatsgo:`, error);
+			}
 		}
 		return null;
 	}
@@ -2311,6 +2352,23 @@ class WhatsAppBotGo {
 									this.eventHandler.onReaction(this, reactionPayload);
 								}
 							}
+						} else if (msgData.isViewOnceUnavailable || msgData.UnavailableType === "view_once") {
+							if (info?.ID) {
+								this.formatMessageFromGo({
+									...msgData,
+									event: payload.event
+								})
+									.then((formattedStub) => {
+										if (formattedStub) {
+											this.logger.warn(
+												`[${this.id}] Cached unavailable view_once placeholder: ${info.ID} (${info.Chat})`
+											);
+										}
+									})
+									.catch((e) => {
+										this.logger.error(`[Message] Erro cacheando view_once unavailable`, e);
+									});
+							}
 						} else {
 							// Se não for reaction, é qualquer outro tipo de mensagem
 							// Adicionar campos para formatMessageFromGo
@@ -2583,20 +2641,49 @@ class WhatsAppBotGo {
 		return data;
 	}
 
+	_unwrapGoMessageContent(rawMsg) {
+		let curr = rawMsg;
+		let isViewOnce = false;
+		for (let i = 0; i < 10 && curr && typeof curr === "object"; i++) {
+			if (curr.viewOnceMessage?.message) {
+				isViewOnce = true;
+				curr = curr.viewOnceMessage.message;
+			} else if (curr.viewOnceMessageV2?.message) {
+				isViewOnce = true;
+				curr = curr.viewOnceMessageV2.message;
+			} else if (curr.viewOnceMessageV2Extension?.message) {
+				isViewOnce = true;
+				curr = curr.viewOnceMessageV2Extension.message;
+			} else if (curr.ephemeralMessage?.message) {
+				curr = curr.ephemeralMessage.message;
+			} else if (curr.documentWithCaptionMessage?.message) {
+				curr = curr.documentWithCaptionMessage.message;
+			} else if (curr.associatedChildMessage?.message) {
+				curr = curr.associatedChildMessage.message;
+			} else {
+				break;
+			}
+		}
+
+		if (curr && typeof curr === "object") {
+			if (
+				curr.imageMessage?.viewOnce ||
+				curr.videoMessage?.viewOnce ||
+				curr.audioMessage?.viewOnce
+			) {
+				isViewOnce = true;
+			}
+		}
+
+		return { unwrapped: curr, isViewOnce };
+	}
+
 	formatQuotedMessageFromContext(contextInfo, chatId, fromMe = false) {
 		if (!contextInfo?.quotedMessage) return null;
-		let quotedContent = contextInfo.quotedMessage;
-
-		// Desembrulha wrappers comuns do WhatsApp (viewOnce, ephemeral, etc.)
-		if (quotedContent.viewOnceMessage?.message) {
-			quotedContent = quotedContent.viewOnceMessage.message;
-		} else if (quotedContent.viewOnceMessageV2?.message) {
-			quotedContent = quotedContent.viewOnceMessageV2.message;
-		} else if (quotedContent.ephemeralMessage?.message) {
-			quotedContent = quotedContent.ephemeralMessage.message;
-		} else if (quotedContent.documentWithCaptionMessage?.message) {
-			quotedContent = quotedContent.documentWithCaptionMessage.message;
-		}
+		const { unwrapped: quotedContent, isViewOnce: quotedIsViewOnce } = this._unwrapGoMessageContent(
+			contextInfo.quotedMessage
+		);
+		if (!quotedContent) return null;
 
 		const stanzaId = contextInfo.stanzaID;
 		const participant = contextInfo.participant;
@@ -2678,6 +2765,7 @@ class WhatsAppBotGo {
 			caption,
 			timestamp: Date.now() / 1000,
 			hasMedia: !!mediaInfo,
+			isViewOnce: quotedIsViewOnce,
 			mentions: contextInfo.mentionedJID || [],
 			quotedParticipant: participant,
 			hasQuotedMsg: false,
@@ -2685,7 +2773,7 @@ class WhatsAppBotGo {
 			downloadMedia: async () => {
 				if (mediaInfo) {
 					try {
-						const downloaded = await this._downloadMediaFromWhatsgo(quotedContent);
+						const downloaded = await this._downloadMediaFromWhatsgo(quotedContent, stanzaId);
 						if (downloaded) {
 							return {
 								mimetype: downloaded.mimetype,
@@ -2715,6 +2803,7 @@ class WhatsAppBotGo {
 			key: { remoteJid: chatId, fromMe: false, id: stanzaId },
 			author,
 			from: formattedQuoted.from,
+			isViewOnce: quotedIsViewOnce,
 			react: (emoji) => this.sendReaction(chatId, stanzaId, emoji),
 			delete: async () =>
 				this.deleteMessageByKey({
@@ -2737,11 +2826,18 @@ class WhatsAppBotGo {
 
 			//this.logger.debug(`[formatMessageFromGo] `, {goMessageData});
 			const info = goMessageData.Info;
-			const messageContent = goMessageData.Message;
+			const rawMessageContent = goMessageData.Message;
+			const isViewOnceUnavailable = Boolean(
+				goMessageData.isViewOnceUnavailable || goMessageData.UnavailableType === "view_once"
+			);
 
-			if (!info || !messageContent) {
+			if (!info || (!rawMessageContent && !isViewOnceUnavailable)) {
 				return null;
 			}
+
+			const { unwrapped: unwrappedContent, isViewOnce: wrappedIsViewOnce } =
+				this._unwrapGoMessageContent(rawMessageContent || {});
+			const messageContent = unwrappedContent || rawMessageContent || {};
 
 			const chatId = info.Chat;
 			const isGroup = info.IsGroup || chatId.includes("@g.us") || chatId.includes("broadcast");
@@ -2797,7 +2893,7 @@ class WhatsAppBotGo {
 				this.loadReport.trackReceivedMessage(isGroup, responseTime, chatId);
 			}
 
-			let type = "unknown";
+			let type = isViewOnceUnavailable && !rawMessageContent ? "view_once_unavailable" : "unknown";
 			let content = null;
 			let caption = null;
 			let mediaInfo = null;
@@ -2921,6 +3017,19 @@ class WhatsAppBotGo {
 				}
 			}
 
+			const isViewOnce = Boolean(
+				goMessageData.IsViewOnce ||
+				goMessageData.isViewOnce ||
+				goMessageData.isViewOnceV2 ||
+				goMessageData.isViewOnceV2Extension ||
+				wrappedIsViewOnce ||
+				isViewOnceUnavailable
+			);
+
+			if (goMessageData.viewOnceMedia?.base64) {
+				this._cacheViewOnceMedia(id, goMessageData.viewOnceMedia);
+			}
+
 			const formattedMessage = {
 				goMessageData,
 				id,
@@ -2942,6 +3051,8 @@ class WhatsAppBotGo {
 				timestamp,
 				responseTime,
 				hasMedia: !!mediaInfo,
+				isViewOnce,
+				isViewOnceUnavailable,
 				mentions,
 				quotedParticipant,
 				hasQuotedMsg: !!quotedMessageId,
@@ -2959,9 +3070,29 @@ class WhatsAppBotGo {
 						participant: senderAlt
 					}),
 				downloadMedia: async () => {
+					if (goMessageData.viewOnceMedia?.base64) {
+						try {
+							const materialized = await this._materializeBase64Media(
+								goMessageData.viewOnceMedia.base64,
+								goMessageData.viewOnceMedia.mimetype || mediaInfo?.mimetype
+							);
+							if (materialized) {
+								return {
+									mimetype: materialized.mimetype,
+									url: materialized.url,
+									data: materialized.base64,
+									filename: materialized.filename,
+									isMessageMedia: true
+								};
+							}
+						} catch (e) {
+							this.logger.warn(`[downloadMedia] Falha materializando viewOnceMedia cached`, e);
+						}
+					}
+
 					if (mediaInfo) {
 						try {
-							const downloaded = await this._downloadMediaFromWhatsgo(messageContent);
+							const downloaded = await this._downloadMediaFromWhatsgo(messageContent, id);
 							if (downloaded) {
 								return {
 									mimetype: downloaded.mimetype,
@@ -2991,6 +3122,8 @@ class WhatsAppBotGo {
 				key: { remoteJid: chatId, fromMe, id },
 				author: this._normalizeId(formattedMessage.author),
 				from: formattedMessage.from,
+				isViewOnce,
+				isViewOnceUnavailable,
 				poll: pollData,
 				vote: (options) => this.votePoll(chatId, id, formattedMessage.author, options, fromMe),
 				react: (emoji) => this.sendReaction(chatId, id, emoji),
@@ -3048,13 +3181,19 @@ class WhatsAppBotGo {
 				};
 
 				// Limpa dados pesados antes de salvar no cache para economizar espaço e I/O
-				if (cachedMessage.goMessageData?.groupData) {
-					delete cachedMessage.goMessageData.groupData.Participants;
-					delete cachedMessage.goMessageData.groupData.Topic;
+				if (cachedMessage.goMessageData) {
+					delete cachedMessage.goMessageData.viewOnceMedia;
+					if (cachedMessage.goMessageData.groupData) {
+						delete cachedMessage.goMessageData.groupData.Participants;
+						delete cachedMessage.goMessageData.groupData.Topic;
+					}
 				}
-				if (cachedMessage.origin?.groupData) {
-					delete cachedMessage.origin.groupData.Participants;
-					delete cachedMessage.origin.groupData.Topic;
+				if (cachedMessage.origin) {
+					delete cachedMessage.origin.viewOnceMedia;
+					if (cachedMessage.origin.groupData) {
+						delete cachedMessage.origin.groupData.Participants;
+						delete cachedMessage.origin.groupData.Topic;
+					}
 				}
 
 				this.cacheManager.putGoMessageInCache(cachedMessage);
