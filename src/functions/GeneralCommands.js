@@ -624,7 +624,8 @@ async function statusCommand(bot, message, args, group) {
 		const response = await axios.get(url);
 
 		let statusMessage =
-			"🕸 *Status das Ravenas* 🔄\n> https://ravena.moothz.com\n\n" + servicesHeader;
+			"🕸 *Status das Ravenas* 🔄\n> ravena.moothz.com/status\n> https://ravena.moothz.com\n\n" +
+			servicesHeader;
 
 		const botsNormais = response.data.bots.filter((b) => !b.comunitario && !b.vip);
 		const botsComunitarios = response.data.bots.filter((b) => b.comunitario);
