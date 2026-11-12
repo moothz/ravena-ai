@@ -481,9 +481,11 @@ function registerFeaturesRoutes(api) {
 				const coins = Number(statusRes?.coins || 0);
 				const rawItems = Array.isArray(invRes?.items) ? invRes.items : [];
 
-				// Filtra apenas consumíveis e decorações
+				// Inclui consumíveis (elixires), sementes e decorações
 				const filteredItems = rawItems
-					.filter((it) => it.type === "consumable" || it.type === "decoration")
+					.filter(
+						(it) => it.type === "consumable" || it.type === "seed" || it.type === "decoration"
+					)
 					.map((it) => ({
 						itemId: it.itemId,
 						name: it.name || it.itemId,
