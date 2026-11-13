@@ -35,6 +35,12 @@ const PvSafetyService = require("./services/PvSafetyService");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Cache em RAM de mídias view-once (só usado com VIEW_ONCE_CAPTURE_ENABLED=true)
+const VIEW_ONCE_CACHE_MAX_ENTRIES = 100;
+const VIEW_ONCE_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+const VIEW_ONCE_CACHE_MAX_ITEM_BYTES = 16 * 1024 * 1024;
+const VIEW_ONCE_CACHE_TTL_MS = 10 * 60 * 1000;
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const unlinkAsync = promisify(fs.unlink);
@@ -129,6 +135,10 @@ class WhatsAppBotGo {
 		this.sentMessagesCache = [];
 		this.lidToPnCache = new Map();
 		this.viewOnceMediaCache = new Map();
+		// Captura/cache de mídia de visualização única (desligado por padrão: transformar view-once
+		// em conteúdo permanente sem o autor pedir é justamente o que a mídia não deveria permitir)
+		this.viewOnceCaptureEnabled =
+			options.viewOnceCaptureEnabled ?? process.env.VIEW_ONCE_CAPTURE_ENABLED === "true";
 		this.cacheManager = CacheManager.getInstance(
 			this.redisURL,
 			this.redisDB,
@@ -169,6 +179,9 @@ class WhatsAppBotGo {
 
 		this.database = Database.getInstance();
 		this.pvSafetyService = PvSafetyService.getInstance();
+		// vCard/lembrete de contato vai depois do lote de mensagens (debounce por chat)
+		this.pvVcardDebounceMs = options.pvVcardDebounceMs ?? 2000;
+		this._pvVcardTimers = new Map();
 		this.isConnected = false;
 		this.safeMode =
 			options.safeMode !== undefined ? options.safeMode : process.env.SAFE_MODE === "true";
@@ -1302,39 +1315,162 @@ class WhatsAppBotGo {
 		};
 	}
 
-	_cacheViewOnceMedia(messageId, viewOnceMedia) {
-		if (!messageId || !viewOnceMedia?.base64 || !this.viewOnceMediaCache) return;
-		const cleanId = this.getActualMsgId ? this.getActualMsgId(messageId) : String(messageId);
-		if (this.viewOnceMediaCache.has(cleanId)) {
-			this.viewOnceMediaCache.delete(cleanId);
-		}
-		this.viewOnceMediaCache.set(cleanId, {
-			base64: viewOnceMedia.base64,
-			mimetype: viewOnceMedia.mimetype || "application/octet-stream",
-			filename: viewOnceMedia.filename || null,
-			ts: Date.now()
-		});
-		while (this.viewOnceMediaCache.size > 100) {
-			const oldestKey = this.viewOnceMediaCache.keys().next().value;
-			this.viewOnceMediaCache.delete(oldestKey);
-		}
+	/**
+	 * Limites do cache de view-once em RAM (bytes totais, TTL e tamanho máximo por item).
+	 * @private
+	 */
+	_viewOnceCacheLimits() {
+		return {
+			maxEntries: this.viewOnceCacheMaxEntries ?? VIEW_ONCE_CACHE_MAX_ENTRIES,
+			maxBytes: this.viewOnceCacheMaxBytes ?? VIEW_ONCE_CACHE_MAX_BYTES,
+			maxItemBytes: this.viewOnceCacheMaxItemBytes ?? VIEW_ONCE_CACHE_MAX_ITEM_BYTES,
+			ttlMs: this.viewOnceCacheTtlMs ?? VIEW_ONCE_CACHE_TTL_MS
+		};
 	}
 
-	async _downloadMediaFromWhatsgo(messageContent, messageId = null) {
+	/**
+	 * Remove do cache de view-once os itens expirados e devolve o total de bytes restante.
+	 * @private
+	 */
+	_pruneViewOnceCache(now = Date.now()) {
+		if (!this.viewOnceMediaCache) return 0;
+		const { ttlMs } = this._viewOnceCacheLimits();
+		let total = 0;
+		for (const [key, entry] of this.viewOnceMediaCache) {
+			if (!entry || now - (entry.ts || 0) > ttlMs) {
+				this.viewOnceMediaCache.delete(key);
+				continue;
+			}
+			total += entry.bytes || 0;
+		}
+		return total;
+	}
+
+	_cacheViewOnceMedia(messageId, viewOnceMedia) {
+		if (!this.viewOnceCaptureEnabled) return false;
+		if (!messageId || !viewOnceMedia?.base64 || !this.viewOnceMediaCache) return false;
+		const cleanId = this.getActualMsgId ? this.getActualMsgId(messageId) : String(messageId);
+		const { maxEntries, maxBytes, maxItemBytes } = this._viewOnceCacheLimits();
+		const base64 = String(viewOnceMedia.base64);
+		const bytes = Math.floor((base64.replace(/^data:.*?;base64,/, "").length * 3) / 4);
+		if (bytes > maxItemBytes || bytes > maxBytes) {
+			this.logger.debug(
+				`[${this.id}] [VIEW-ONCE] Mídia ${cleanId} (${bytes} bytes) acima do limite do cache; ignorando.`
+			);
+			return false;
+		}
+
+		this.viewOnceMediaCache.delete(cleanId);
+		let total = this._pruneViewOnceCache();
+		// Evicção LRU por quantidade e por bytes totais
+		while (
+			this.viewOnceMediaCache.size > 0 &&
+			(this.viewOnceMediaCache.size >= maxEntries || total + bytes > maxBytes)
+		) {
+			const oldestKey = this.viewOnceMediaCache.keys().next().value;
+			total -= this.viewOnceMediaCache.get(oldestKey)?.bytes || 0;
+			this.viewOnceMediaCache.delete(oldestKey);
+		}
+
+		this.viewOnceMediaCache.set(cleanId, {
+			base64,
+			mimetype: viewOnceMedia.mimetype || "application/octet-stream",
+			filename: viewOnceMedia.filename || null,
+			bytes,
+			ts: Date.now()
+		});
+		return true;
+	}
+
+	/**
+	 * Lê a mídia view-once em cache (respeitando o TTL). Sempre null com a captura desligada.
+	 * @private
+	 */
+	_getCachedViewOnceMedia(messageId) {
+		if (!this.viewOnceCaptureEnabled || !messageId || !this.viewOnceMediaCache) return null;
+		const cleanId = this.getActualMsgId ? this.getActualMsgId(messageId) : String(messageId);
+		const entry = this.viewOnceMediaCache.get(cleanId);
+		if (!entry) return null;
+		const { ttlMs } = this._viewOnceCacheLimits();
+		if (Date.now() - (entry.ts || 0) > ttlMs) {
+			this.viewOnceMediaCache.delete(cleanId);
+			return null;
+		}
+		return entry;
+	}
+
+	/**
+	 * Indica se dois conjuntos de IDs (PN/LID, com ou sem sufixo) são da mesma pessoa.
+	 * @private
+	 */
+	_isSameViewOnceUser(idsA, idsB) {
+		const expand = (ids) => {
+			const set = new Set();
+			for (const id of ids || []) {
+				const digits = PhoneUtils.cleanPhone(id);
+				if (!digits) continue;
+				set.add(digits);
+				const mapped =
+					this.lidToPnCache?.get?.(digits) || this.lidToPnCache?.get?.(`${digits}@lid`);
+				const mappedDigits = mapped ? PhoneUtils.cleanPhone(mapped) : "";
+				if (mappedDigits) set.add(mappedDigits);
+			}
+			return Array.from(set);
+		};
+		const a = expand(idsA);
+		const b = expand(idsB);
+		return a.some((x) => b.some((y) => x === y || PhoneUtils.isSamePhone(x, y)));
+	}
+
+	/**
+	 * Com a captura de view-once desligada, mídia de visualização única só pode ser baixada a
+	 * pedido do próprio autor (ex.: !s na legenda da própria mídia). Pedidos de terceiros
+	 * (citando ou reagindo à mídia de outra pessoa) são recusados.
+	 * @private
+	 */
+	_isViewOnceDownloadAllowed(isViewOnce, requesterIds, authorIds, messageId) {
+		if (!isViewOnce || this.viewOnceCaptureEnabled) return true;
+		const requesters = (requesterIds || []).filter(Boolean);
+		if (requesters.length === 0) return true;
+		if (this._isSameViewOnceUser(requesters, authorIds)) return true;
+		this.logger.info(
+			`[${this.id}] [VIEW-ONCE] Download de mídia de visualização única ${messageId || ""} recusado: quem pediu não é o autor.`
+		);
+		return false;
+	}
+
+	/**
+	 * Faz o downloadMedia de uma mensagem citada carregar quem pediu (para a regra de view-once).
+	 * @private
+	 */
+	_bindViewOnceRequester(quotedMsg, requesterIds) {
+		if (!quotedMsg || typeof quotedMsg.downloadMedia !== "function") return quotedMsg;
+		if (this.viewOnceCaptureEnabled) return quotedMsg;
+		if (!(quotedMsg.isViewOnce || quotedMsg.origin?.isViewOnce)) return quotedMsg;
+		const originalDownload = quotedMsg.downloadMedia;
+		quotedMsg.downloadMedia = (downloadOptions = {}) =>
+			originalDownload({
+				...(downloadOptions || {}),
+				requesterIds: downloadOptions?.requesterIds || requesterIds
+			});
+		return quotedMsg;
+	}
+
+	async _downloadMediaFromWhatsgo(messageContent, messageId = null, { isViewOnce = false } = {}) {
 		try {
 			const cleanId = messageId && this.getActualMsgId ? this.getActualMsgId(messageId) : messageId;
-			if (cleanId && this.viewOnceMediaCache?.has(cleanId)) {
-				const cached = this.viewOnceMediaCache.get(cleanId);
-				if (cached?.base64) {
-					return await this._materializeBase64Media(cached.base64, cached.mimetype);
-				}
+			const cached = this._getCachedViewOnceMedia(cleanId);
+			if (cached?.base64) {
+				return await this._materializeBase64Media(cached.base64, cached.mimetype);
 			}
 
 			const { unwrapped } = this._unwrapGoMessageContent(messageContent || {});
 			const payloadMsg = unwrapped || messageContent;
+			// Sem a captura de view-once, não pede ao whatsgo a cópia guardada por messageId
+			const sendMessageId = cleanId && (!isViewOnce || this.viewOnceCaptureEnabled);
 			const response = await this.apiClient.post("/message/downloadmedia", {
 				message: payloadMsg,
-				...(cleanId ? { messageId: cleanId } : {})
+				...(sendMessageId ? { messageId: cleanId } : {})
 			});
 			if (response?.data?.base64) {
 				const mimetype = [
@@ -1582,6 +1718,8 @@ class WhatsAppBotGo {
 		}
 
 		const results = [];
+		// Chats de PV que receberam mensagem neste lote: o vCard (se devido) vai só no final
+		const pvVcardChats = new Map();
 		for (const message of validMessages) {
 			if (message.delay > 0) {
 				await sleep(message.delay);
@@ -1611,10 +1749,18 @@ class WhatsAppBotGo {
 			if (message.poll) {
 				options.poll = message.poll;
 			}
+			const isPvChat = Boolean(this.pvSafetyService?.isPvTarget(message.chatId));
+			const wantsVcard = isPvChat && !options.skipVcard;
+			if (isPvChat) {
+				options.skipVcard = true;
+			}
 
 			try {
 				const result = await this.sendMessage(message.chatId, contentToSend, options);
 				results.push(result);
+				if (wantsVcard) {
+					pvVcardChats.set(message.chatId, options);
+				}
 
 				if (options.sendMediaAsSticker && options.quotedMessageId && result?.id) {
 					const sentStickerId = result.id._serialized || result.id.id || result.id;
@@ -1793,6 +1939,18 @@ class WhatsAppBotGo {
 					}
 				}
 			} catch (sendError) {
+				if (PvSafetyService.isColdBlockedError(sendError)) {
+					// Envio frio no PV bloqueado: registra como não entregue sem tratar como falha do bot
+					results.push({
+						error: sendError,
+						blockedByPvSafety: true,
+						skipped: true,
+						messageContent: message.content,
+						getInfo: () => ({ delivery: [], played: [], read: [] })
+					});
+					continue;
+				}
+
 				const isNotInGroup = sendError?.notInGroup || isNotInGroupError(sendError);
 				if (isNotInGroup && message.chatId && message.chatId.includes("@g.us")) {
 					this.logger.warn(
@@ -1814,6 +1972,10 @@ class WhatsAppBotGo {
 						({ delivery: [], played: [], read: [] })
 				});
 			}
+		}
+
+		for (const [pvChatId, pvOptions] of pvVcardChats) {
+			this._queuePvVcardReminder(pvChatId, pvOptions);
 		}
 		return results;
 	}
@@ -2340,6 +2502,8 @@ class WhatsAppBotGo {
 								const reactionPayload = {
 									reaction: reactionData.text,
 									senderId: info.Sender ?? info.SenderAlt,
+									// Forma alternativa (PN/LID) de quem reagiu, usada para resolver identidade
+									senderIdAlt: info.Sender ? (info.SenderAlt ?? null) : null,
 									userName: info.PushName,
 									msgId: { _serialized: reactionData.key.ID },
 									chatId: targetChat,
@@ -2772,10 +2936,22 @@ class WhatsAppBotGo {
 			quotedParticipant: participant,
 			hasQuotedMsg: false,
 			isQuoted: true,
-			downloadMedia: async () => {
+			downloadMedia: async (downloadOptions = {}) => {
+				if (
+					!this._isViewOnceDownloadAllowed(
+						quotedIsViewOnce,
+						downloadOptions?.requesterIds,
+						[participant, author],
+						stanzaId
+					)
+				) {
+					return null;
+				}
 				if (mediaInfo) {
 					try {
-						const downloaded = await this._downloadMediaFromWhatsgo(quotedContent, stanzaId);
+						const downloaded = await this._downloadMediaFromWhatsgo(quotedContent, stanzaId, {
+							isViewOnce: quotedIsViewOnce
+						});
 						if (downloaded) {
 							return {
 								mimetype: downloaded.mimetype,
@@ -3028,8 +3204,15 @@ class WhatsAppBotGo {
 				isViewOnceUnavailable
 			);
 
-			if (goMessageData.viewOnceMedia?.base64) {
-				this._cacheViewOnceMedia(id, goMessageData.viewOnceMedia);
+			if (goMessageData.viewOnceMedia) {
+				if (this.viewOnceCaptureEnabled) {
+					if (goMessageData.viewOnceMedia.base64) {
+						this._cacheViewOnceMedia(id, goMessageData.viewOnceMedia);
+					}
+				} else {
+					// Captura desligada: não guarda o base64 nem no objeto da mensagem
+					delete goMessageData.viewOnceMedia;
+				}
 			}
 
 			const formattedMessage = {
@@ -3071,8 +3254,24 @@ class WhatsAppBotGo {
 						fromMe,
 						participant: senderAlt
 					}),
-				downloadMedia: async () => {
-					if (goMessageData.viewOnceMedia?.base64) {
+				downloadMedia: async (downloadOptions = {}) => {
+					// Em reações, quem pede é quem reagiu (originReaction é anexado pelo ReactionsHandler)
+					const reaction = formattedMessage.originReaction;
+					const requesterIds =
+						downloadOptions?.requesterIds ||
+						(reaction ? [reaction.senderId, reaction.senderIdAlt] : null);
+					if (
+						!this._isViewOnceDownloadAllowed(
+							isViewOnce,
+							requesterIds,
+							[authorJid, sender, senderAlt],
+							id
+						)
+					) {
+						return null;
+					}
+
+					if (this.viewOnceCaptureEnabled && goMessageData.viewOnceMedia?.base64) {
 						try {
 							const materialized = await this._materializeBase64Media(
 								goMessageData.viewOnceMedia.base64,
@@ -3094,7 +3293,9 @@ class WhatsAppBotGo {
 
 					if (mediaInfo) {
 						try {
-							const downloaded = await this._downloadMediaFromWhatsgo(messageContent, id);
+							const downloaded = await this._downloadMediaFromWhatsgo(messageContent, id, {
+								isViewOnce
+							});
 							if (downloaded) {
 								return {
 									mimetype: downloaded.mimetype,
@@ -3133,10 +3334,15 @@ class WhatsAppBotGo {
 				getChat: formattedMessage.getChat,
 				getQuotedMessage: async () => {
 					// this.logger.debug(`[getQuotedMessage] ${quotedMessageId}`);
+					// Quem pede a mídia citada: o autor desta mensagem (ou quem reagiu, em reações)
+					const reaction = formattedMessage.originReaction;
+					const requesterIds = reaction
+						? [reaction.senderId, reaction.senderIdAlt]
+						: [authorJid, sender, senderAlt];
 					if (quotedMessageId) {
 						const cached = await this.recoverMsgFromCache(quotedMessageId);
 						if (cached) {
-							return cached;
+							return this._bindViewOnceRequester(cached, requesterIds);
 						}
 					}
 					// Fallback: se a mensagem não estiver no cache (bot reiniciou ou expiração),
@@ -3145,7 +3351,10 @@ class WhatsAppBotGo {
 						// this.logger.debug(
 						// 	`[getQuotedMessage] Recuperando mensagem ${quotedMessageId} via contextInfo.quotedMessage (fallback de cache)`
 						// );
-						return this.formatQuotedMessageFromContext(contextInfo, chatId, fromMe);
+						return this._bindViewOnceRequester(
+							this.formatQuotedMessageFromContext(contextInfo, chatId, fromMe),
+							requesterIds
+						);
 					}
 					return null;
 				},
@@ -3378,6 +3587,37 @@ class WhatsAppBotGo {
 	}
 
 	/**
+	 * Agenda (com debounce por chat) o envio do vCard/lembrete para depois da última mensagem
+	 * enviada ao chat, sem bloquear quem chamou sendMessage.
+	 * @param {string} chatId
+	 * @param {Object} [options={}]
+	 */
+	_queuePvVcardReminder(chatId, options = {}) {
+		if (!this.pvSafetyService?.isPvTarget(chatId)) return;
+		if (!this.pvSafetyService.shouldSendVcard(this)) return;
+		if (!this._pvVcardTimers) this._pvVcardTimers = new Map();
+		const queueKey = PhoneUtils.cleanPhone(chatId) || String(chatId);
+		const pending = this._pvVcardTimers.get(queueKey);
+		if (pending) clearTimeout(pending);
+
+		const vcardOptions = {
+			vcardDelay: options.vcardDelay,
+			vcardReminderDelay: options.vcardReminderDelay
+		};
+		const timer = setTimeout(() => {
+			this._pvVcardTimers.delete(queueKey);
+			this._maybeSendPvVcardReminder(chatId, vcardOptions).catch((err) => {
+				this.logger.warn(
+					`[${this.id}] [PV-SAFETY] Falha no envio agendado do vCard para ${chatId}:`,
+					err?.message || err
+				);
+			});
+		}, this.pvVcardDebounceMs ?? 2000);
+		if (typeof timer.unref === "function") timer.unref();
+		this._pvVcardTimers.set(queueKey, timer);
+	}
+
+	/**
 	 * Envia vCard do bot e lembrete de salvar nos contatos no PV a cada 45 dias (apenas bots não-privados).
 	 * @param {string} chatId
 	 * @param {Object} [options={}]
@@ -3410,14 +3650,23 @@ class WhatsAppBotGo {
 				bypassPvSafety: true
 			});
 
-			await this.sendMessage(chatId, reminderText, {
-				delay: options.vcardReminderDelay ?? 500,
-				skipDedup: true,
-				_isVcardFlow: true,
-				bypassPvSafety: true
-			});
-
+			// vCard aceito: marca já, para uma falha no texto de lembrete não causar reenvio do
+			// vCard a cada mensagem no PV
 			await this.pvSafetyService.markVcardSent(this, chatId);
+
+			try {
+				await this.sendMessage(chatId, reminderText, {
+					delay: options.vcardReminderDelay ?? 500,
+					skipDedup: true,
+					_isVcardFlow: true,
+					bypassPvSafety: true
+				});
+			} catch (reminderErr) {
+				this.logger.warn(
+					`[${this.id}] [PV-SAFETY] vCard enviado, mas falhou o texto de lembrete para ${chatId}:`,
+					reminderErr?.message || reminderErr
+				);
+			}
 			return true;
 		} catch (err) {
 			this.logger.warn(
@@ -3451,20 +3700,24 @@ class WhatsAppBotGo {
 				!options._isVcardFlow &&
 				!this.pvSafetyService.isOwnBotNumber(this, chatId)
 			) {
-				const pvAllowed = await this.pvSafetyService.hasPvInteraction(this, chatId);
+				let pvAllowed = true;
+				try {
+					pvAllowed = await this.pvSafetyService.hasPvInteraction(this, chatId);
+				} catch (pvErr) {
+					// Fail-open: erro de consulta não pode silenciar respostas legítimas
+					this.logger.warn(
+						`[${this.id}] [PV-SAFETY] Falha ao verificar interação em PV para ${chatId} (liberando envio):`,
+						pvErr?.message || pvErr
+					);
+					pvAllowed = true;
+				}
 				if (!pvAllowed) {
 					this.logger.warn(
 						`[${this.id}] [PV-SAFETY] Bloqueando envio frio em PV para ${chatId}: sem interação prévia em PV com este bot.`
 					);
-					return {
-						id: { _serialized: `blocked_pv_${Date.now()}` },
-						ack: 0,
-						blockedByPvSafety: true,
-						timestamp: Math.floor(Date.now() / 1000),
-						_data: null,
-						getInfo: () => ({ delivery: [], played: [], read: [] }),
-						pin: () => false
-					};
+					// Erro tipado (code=PV_COLD_BLOCKED): loops de fallback tentam o próximo bot e
+					// ninguém registra um id de mensagem que nunca foi entregue.
+					throw this.pvSafetyService.createColdBlockedError(chatId, this);
 				}
 			}
 
@@ -3889,12 +4142,19 @@ class WhatsAppBotGo {
 				});
 			}
 
+			// Não bloqueia o retorno nem intercala no meio de respostas em várias partes:
+			// agenda o vCard para depois da última mensagem enviada a este chat.
 			if (this.pvSafetyService?.isPvTarget(chatId) && !options._isVcardFlow && !options.skipVcard) {
-				await this._maybeSendPvVcardReminder(chatId, options);
+				this._queuePvVcardReminder(chatId, options);
 			}
 
 			return returnObj;
 		} catch (error) {
+			// Bloqueio de PV já foi logado como warn; não é falha de envio
+			if (PvSafetyService.isColdBlockedError(error)) {
+				throw error;
+			}
+
 			if (outboundChecksum) {
 				const isTimeoutError =
 					error?.code === "ECONNABORTED" ||
@@ -4165,7 +4425,12 @@ class WhatsAppBotGo {
 	logMsgToGrupo(msg, extra = false) {
 		if (this.grupoLogs && msg) {
 			this.logger.info(`[logMsgToGrupo] ${msg}`, extra);
-			this.sendMessage(this.grupoLogs, msg);
+			this.sendMessage(this.grupoLogs, msg).catch((err) => {
+				this.logger.warn(
+					`[logMsgToGrupo] Falha ao enviar log para ${this.grupoLogs}:`,
+					err?.message || err
+				);
+			});
 		}
 	}
 

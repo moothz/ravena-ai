@@ -146,7 +146,7 @@ WindowManager.register('fishing', {
             });
 
         } catch (err) {
-            container.innerHTML = `<div style="text-align: center; color: #ff5555; padding: 20px;">Erro ao carregar pesca: ${err.message}</div>`;
+            container.innerHTML = `<div style="text-align: center; color: #ff5555; padding: 20px;">Erro ao carregar pesca: ${Formatters.escapeHtml(err && err.message)}</div>`;
         }
     },
 
@@ -188,7 +188,7 @@ WindowManager.register('fishing', {
                     </div>
 
                     <div style="display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;">
-                        <a href="${imgSrc}" download="${esc(item.fish_name || 'peixe-lendario')}.png" target="_blank" class="os-btn" style="background: linear-gradient(180deg, var(--bright-blue) 0%, var(--medium-purple) 100%);">
+                        <a href="${imgSrc}" download="${esc(item.fish_name || 'peixe-lendario')}.png" target="_blank" rel="noopener noreferrer" class="os-btn" style="background: linear-gradient(180deg, var(--bright-blue) 0%, var(--medium-purple) 100%);">
                             <i class="fas fa-download"></i> Baixar Imagem
                         </a>
                     </div>

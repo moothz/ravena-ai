@@ -5508,23 +5508,29 @@ class Management {
 
 			// Check if command exists in fixed commands
 			const fixedCommandsHandler = bot.eventHandler.commandHandler.fixedCommands;
-			let targetCommand = fixedCommandsHandler.getCommand(cmdName);
+			const targetCommands = [];
+			const directCommand = fixedCommandsHandler.getCommand(cmdName);
+			if (directCommand) targetCommands.push(directCommand);
 
-			// If not found by name, try to find by reaction emoji
+			// If not found by name, try to find by reaction emoji (um emoji pode acionar vários comandos)
 			const reactionsHandler = bot.reactionHandler ?? bot.eventHandler?.reactionsHandler;
-			if (!targetCommand && reactionsHandler) {
+			let mutedByEmoji = false;
+			if (targetCommands.length === 0 && reactionsHandler) {
 				const reactionMap = reactionsHandler.reactionCommands;
-				// reactionMap is { "🎣": "pescar", ... }
-				if (reactionMap && reactionMap[cmdName]) {
-					const mapped = reactionMap[cmdName];
-					const mappedName = Array.isArray(mapped) ? mapped[0] : mapped;
-					if (mappedName) {
-						targetCommand = fixedCommandsHandler.getCommand(mappedName);
-					}
-				}
+				// reactionMap is { "🎣": ["pescar"], "🔍": ["ocr", "buscar"], ... }
+				const mapped = reactionMap?.[cmdName];
+				const mappedNames = (Array.isArray(mapped) ? mapped : [mapped]).filter(Boolean);
+				const mappedCommands = mappedNames
+					.map((name) => fixedCommandsHandler.getCommand(name))
+					.filter(Boolean);
+				// Helpers ocultos compartilhados por vários emojis (ex.: reactionMenuHelper) só entram
+				// quando o emoji não aciona nenhum comando visível
+				const visibleCommands = mappedCommands.filter((cmd) => !cmd.hidden);
+				targetCommands.push(...(visibleCommands.length > 0 ? visibleCommands : mappedCommands));
+				mutedByEmoji = targetCommands.length > 0;
 			}
 
-			if (!targetCommand) {
+			if (targetCommands.length === 0) {
 				return new ReturnMessage({
 					chatId: group.id,
 					content: `❌ Comando '${cmdName}' não encontrado entre os comandos fixos do bot.\nPara ver todos os comandos, use !cmd.`
@@ -5536,18 +5542,28 @@ class Management {
 				group.mutedCommands = [];
 			}
 
-			// Find all commands that share the same method (aliases/siblings)
-			const relatedCommands = fixedCommandsHandler.getAllCommands().filter((cmd) => {
-				// Check for same method reference
-				if (targetCommand.method && cmd.method === targetCommand.method) {
-					return true;
+			// Find all commands that share the same method (aliases/siblings) of every target
+			const allCommands = fixedCommandsHandler.getAllCommands();
+			const relatedCommands = [];
+			for (const targetCommand of targetCommands) {
+				for (const cmd of allCommands) {
+					const isRelated = targetCommand.method
+						? cmd.method === targetCommand.method
+						: cmd.name === targetCommand.name;
+					if (isRelated && !relatedCommands.includes(cmd)) {
+						relatedCommands.push(cmd);
+					}
 				}
-				// Fallback: check by name if method is null (shouldn't happen for valid commands)
-				return cmd.name === targetCommand.name;
-			});
+				if (!relatedCommands.includes(targetCommand)) relatedCommands.push(targetCommand);
+			}
 
-			const commandNames = relatedCommands.map((c) => c.name);
-			const isMuted = group.mutedCommands.includes(targetCommand.name);
+			const commandNames = Array.from(new Set(relatedCommands.map((c) => c.name)));
+			const isNameMuted = (name) =>
+				group.mutedCommands.some(
+					(muted) => typeof muted === "string" && muted.toLowerCase() === name.toLowerCase()
+				);
+			// Alterna: se todos os comandos-alvo já estão silenciados, reativa; senão silencia todos
+			const isMuted = targetCommands.every((cmd) => isNameMuted(cmd.name));
 			const action = isMuted ? "reativado" : "silenciado";
 			const emoji = isMuted ? "✅" : "🔇";
 
@@ -5555,17 +5571,16 @@ class Management {
 
 			if (isMuted) {
 				// Unmute all related commands
-				commandNames.forEach((name) => {
-					const index = group.mutedCommands.indexOf(name);
-					if (index !== -1) {
-						group.mutedCommands.splice(index, 1);
-						changedCount++;
-					}
-				});
+				const namesLower = commandNames.map((name) => name.toLowerCase());
+				const before = group.mutedCommands.length;
+				group.mutedCommands = group.mutedCommands.filter(
+					(muted) => !(typeof muted === "string" && namesLower.includes(muted.toLowerCase()))
+				);
+				changedCount = before - group.mutedCommands.length;
 			} else {
 				// Mute all related commands
 				commandNames.forEach((name) => {
-					if (!group.mutedCommands.includes(name)) {
+					if (!isNameMuted(name)) {
 						group.mutedCommands.push(name);
 						changedCount++;
 					}
@@ -5577,7 +5592,7 @@ class Management {
 			const commandsList = commandNames.join(", ");
 			return new ReturnMessage({
 				chatId: group.id,
-				content: `${emoji} Comando(s) ${action}(s): ${commandsList}`
+				content: `${emoji} Comando(s) ${action}(s)${mutedByEmoji ? ` pelo emoji ${cmdName}` : ""}: ${commandsList}`
 			});
 		} catch (error) {
 			this.logger.error("Erro ao configurar mute:", error);

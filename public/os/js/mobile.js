@@ -25,6 +25,8 @@ const MobileApp = {
     currentHost: null,
     hasSubscribed: false,
     autoOpenTimer: null,
+    // Timer da animação de fechamento (volta à home). Cancelado se outro app abrir antes dele.
+    closeTimer: null,
 
     init() {
         const app = document.getElementById('mobile-app');
@@ -234,6 +236,13 @@ const MobileApp = {
 
         if (!appViewEl || !bodyEl) return;
 
+        // Um app aberto durante a animação de fechamento cancela o retorno à home pendente;
+        // senão o timer escondia o app novo, apagava seu conteúdo e descartava seu host/cleanup.
+        if (this.closeTimer) {
+            clearTimeout(this.closeTimer);
+            this.closeTimer = null;
+        }
+
         // Cleanup previous app if open
         if (this.currentHost) {
             if (typeof this.currentHost.cleanup === 'function') {
@@ -288,8 +297,8 @@ const MobileApp = {
             console.error(`Error rendering mobile app ${appId}:`, err);
             bodyEl.innerHTML = `
                 <div style="padding: 20px; color: #ff5555; text-align: center;">
-                    <p>❌ Erro ao renderizar ${title}</p>
-                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${err.message}</p>
+                    <p>❌ Erro ao renderizar ${Formatters.escapeHtml(title)}</p>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${Formatters.escapeHtml(err && err.message)}</p>
                 </div>
             `;
         }
@@ -306,6 +315,8 @@ const MobileApp = {
         const bodyEl = document.getElementById('mobile-win-body');
 
         if (!appViewEl || appViewEl.classList.contains('hidden')) return;
+        // Fechamento já em andamento (ex.: duplo clique no voltar): ignora
+        if (this.closeTimer) return;
 
         // Trigger onclose & cleanup callbacks if provided
         if (this.currentHost) {
@@ -315,6 +326,8 @@ const MobileApp = {
             if (typeof this.currentHost.onclose === 'function') {
                 try { this.currentHost.onclose(); } catch (err) { console.error('Error closing app:', err); }
             }
+            // Já finalizado: o próximo render não deve chamar cleanup/onclose dele de novo
+            this.currentHost = null;
         }
 
         // Pop current app from stack
@@ -330,7 +343,8 @@ const MobileApp = {
         // Stack is empty: Return to Home
         appViewEl.classList.add('sliding-down');
 
-        setTimeout(() => {
+        this.closeTimer = setTimeout(() => {
+            this.closeTimer = null;
             appViewEl.classList.add('hidden');
             appViewEl.classList.remove('sliding-down');
             if (bodyEl) bodyEl.innerHTML = '';

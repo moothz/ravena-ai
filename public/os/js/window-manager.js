@@ -125,6 +125,16 @@ const WindowManager = {
             else customClasses.push(params.class);
         }
 
+        // wb.cleanup idempotente: a janela atribui sua função de limpeza durante o render e ela
+        // roda no máximo uma vez, mesmo que o onclose da janela também a chame manualmente.
+        let cleanupFn = null;
+        let cleanupDone = false;
+        const runCleanup = () => {
+            if (cleanupDone || !cleanupFn) return;
+            cleanupDone = true;
+            cleanupFn();
+        };
+
         const wb = new WinBox({
             id: `wb-${id}`,
             title: title,
@@ -143,10 +153,20 @@ const WindowManager = {
                 if (window.Taskbar) {
                     window.Taskbar.removeWindow(id);
                 }
-                if (typeof config.onclose === 'function') {
-                    config.onclose(wb, params);
-                } else if (typeof wb.cleanup === 'function') {
-                    wb.cleanup();
+                // Um onclose que lança erro não pode impedir a limpeza (listeners/timers) nem o
+                // fechamento: se o erro subisse, o WinBox abortaria o close e a janela ficaria órfã.
+                try {
+                    if (typeof config.onclose === 'function') {
+                        config.onclose(wb, params);
+                    }
+                } catch (err) {
+                    console.error(`Error in onclose of window ${type}:`, err);
+                } finally {
+                    try {
+                        runCleanup();
+                    } catch (err) {
+                        console.error(`Error in cleanup of window ${type}:`, err);
+                    }
                 }
                 return false;
             },
@@ -183,6 +203,16 @@ const WindowManager = {
             }
         });
 
+        Object.defineProperty(wb, 'cleanup', {
+            configurable: true,
+            enumerable: true,
+            get: () => (cleanupFn ? runCleanup : undefined),
+            set: (fn) => {
+                cleanupFn = typeof fn === 'function' ? fn : null;
+                cleanupDone = false;
+            }
+        });
+
         // Store reference
         const entry = { id, winbox: wb, config, params };
         this.windows.set(id, entry);
@@ -204,7 +234,7 @@ const WindowManager = {
             wb.body.innerHTML = `
                 <div style="padding: 20px; color: #ff5555; text-align: center;">
                     <p>❌ Erro ao renderizar janela</p>
-                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${err.message}</p>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${Formatters.escapeHtml(err && err.message)}</p>
                 </div>
             `;
         }

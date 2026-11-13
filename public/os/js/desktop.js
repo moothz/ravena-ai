@@ -21,12 +21,20 @@ const Desktop = {
 
     tooltipEl: null,
     tooltipTimer: null,
+    tooltipOwner: null,
 
     init() {
         const desktop = document.getElementById('desktop');
         if (!desktop) return;
 
         this.ensureTooltipElement();
+
+        // WCAG 1.4.13: o tooltip pode ser dispensado com Esc sem mover o ponteiro ou o foco
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.isTooltipShown()) {
+                this.hideTooltip();
+            }
+        });
 
         desktop.innerHTML = '';
         this.icons.forEach((icon) => {
@@ -114,14 +122,27 @@ const Desktop = {
         return this.tooltipEl;
     },
 
+    isTooltipShown() {
+        return !!this.tooltipOwner || !!(this.tooltipEl && this.tooltipEl.classList.contains('visible'));
+    },
+
     showTooltip(iconEl) {
         const text = iconEl?.dataset?.tooltipText;
         if (!text) return;
 
         clearTimeout(this.tooltipTimer);
+
+        // Conteúdo e vínculo aria-describedby são definidos já no foco/hover, para o leitor de
+        // tela anunciar a descrição junto com o nome do ícone; só a exibição visual tem o atraso.
+        const tip = this.ensureTooltipElement();
+        if (this.tooltipOwner && this.tooltipOwner !== iconEl) {
+            this.tooltipOwner.removeAttribute('aria-describedby');
+        }
+        tip.textContent = text;
+        iconEl.setAttribute('aria-describedby', tip.id);
+        this.tooltipOwner = iconEl;
+
         this.tooltipTimer = setTimeout(() => {
-            const tip = this.ensureTooltipElement();
-            tip.textContent = text;
             tip.classList.add('visible');
 
             const iconRect = iconEl.getBoundingClientRect();
@@ -147,6 +168,10 @@ const Desktop = {
         if (this.tooltipEl) {
             this.tooltipEl.classList.remove('visible');
         }
+        if (this.tooltipOwner) {
+            this.tooltipOwner.removeAttribute('aria-describedby');
+            this.tooltipOwner = null;
+        }
     },
 
     /**
@@ -170,7 +195,8 @@ const Desktop = {
         // Acessível por teclado: Tab para focar, Enter/Espaço para abrir
         el.tabIndex = 0;
         el.setAttribute('role', config.url ? 'link' : 'button');
-        el.setAttribute('aria-label', `${config.label} — ${config.tooltip || ''}`);
+        // Nome acessível = rótulo; a descrição vem do tooltip via aria-describedby (showTooltip)
+        el.setAttribute('aria-label', config.label);
 
         el.innerHTML = `
             <div class="desktop-icon-img-wrap">

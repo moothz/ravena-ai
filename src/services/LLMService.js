@@ -151,7 +151,7 @@ class LLMService {
 				function: {
 					name: "commands_helper",
 					description:
-						"Busca comandos e funcionalidades do bot por palavra-chave ou categoria para descobrir quais comandos utilizar.",
+						"Busca comandos e funcionalidades do bot Ravena por palavra-chave, ou lista todos os comandos de uma categoria, para descobrir quais comandos utilizar. Para a sintaxe de um comando cujo nome você já sabe, use get_command_info.",
 					parameters: {
 						type: "object",
 						properties: {
@@ -163,39 +163,7 @@ class LLMService {
 							category: {
 								type: "string",
 								description:
-									"Categoria opcional para filtrar os comandos (ex: 'jogos', 'utilidades', 'gerenciamento', 'ia', 'stickers')"
-							},
-							command: {
-								type: "string",
-								description: "Nome de comando específico para buscar detalhes e exemplos de uso."
-							}
-						},
-						required: []
-					}
-				}
-			},
-			{
-				type: "function",
-				function: {
-					name: "list_commands",
-					description:
-						"Lista comandos reais do bot Ravena e suas instruções de uso por categoria ou busca por funcionalidade.",
-					parameters: {
-						type: "object",
-						properties: {
-							category: {
-								type: "string",
-								description:
-									"Nome da categoria para listar todos os seus comandos (ex: 'stickers', 'ia', 'jogos', 'downloaders', 'voz', 'utilidades', 'gerenciamento', 'mudae', 'busca', 'geral', 'midia', 'interacao', 'all')."
-							},
-							command: {
-								type: "string",
-								description:
-									"Nome de um comando específico para ver seus detalhes, descrição e exemplos de uso."
-							},
-							query: {
-								type: "string",
-								description: "Termo ou palavra-chave para buscar comandos e recursos relacionados."
+									"Categoria para listar todos os seus comandos (ex: 'stickers', 'ia', 'jogos', 'downloaders', 'voz', 'utilidades', 'gerenciamento', 'mudae', 'busca', 'geral', 'midia', 'interacao', 'all')"
 							}
 						},
 						required: []
@@ -943,6 +911,7 @@ class LLMService {
 				return res;
 			}
 
+			// Aliases legados (não são mais anunciados em getTools(), mas modelos/prompts antigos ainda chamam)
 			if (normalizedName === "list_commands" || normalizedName === "search_commands") {
 				this.logger.info(`[LLMService] Executando ${normalizedName} com args:`, args);
 				const res = await this.listCommands(args);
@@ -1063,7 +1032,9 @@ class LLMService {
 			}
 
 			if (normalizedName === "get_group_ranking_stats") {
-				const chatId = args.chatId || options.chatId || options.groupId || options.group?.id;
+				// O chat vem SEMPRE do contexto da requisição, nunca dos argumentos do modelo
+				// (args.chatId permitiria consultar o ranking de qualquer outro grupo)
+				const chatId = options.chatId || options.groupId || options.group?.id;
 				this.logger.info(
 					`[LLMService] Executando get_group_ranking_stats para chatId: "${chatId}"`
 				);
@@ -1083,9 +1054,11 @@ class LLMService {
 				return res;
 			}
 
-			if (typeof this[normalizedName] === "function") {
-				return await this[normalizedName](args);
-			}
+			// Sem fallback dinâmico (this[nome]): o nome da ferramenta vem do modelo e pode ser induzido por
+			// prompt injection a chamar qualquer método interno do serviço. Só as ferramentas acima são aceitas.
+			this.logger.warn(
+				`[LLMService] Ferramenta não reconhecida solicitada pelo modelo: "${fnName}"`
+			);
 
 			return "Ferramenta não reconhecida.";
 		} catch (err) {
@@ -1220,7 +1193,7 @@ class LLMService {
 				}
 			}
 
-			return `Comando '!${cmdName}' não encontrado no bot Ravena. Você pode usar a ferramenta 'list_commands' ou 'commands_helper' para verificar os comandos disponíveis.`;
+			return `Comando '!${cmdName}' não encontrado no bot Ravena. Você pode usar as ferramentas 'commands_helper' (busca) ou 'get_command_info' (detalhes) para verificar os comandos disponíveis.`;
 		}
 
 		try {
@@ -2639,9 +2612,20 @@ class LLMService {
 					nextPayload.repetition_penalty = options.repetition_penalty;
 				}
 
-				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				// No último turno permitido não envia tools: força a resposta final em texto
+				// (com tools o modelo pode devolver só outra tool_call e o usuário fica sem resposta)
+				const isFinalTurn = turn >= maxTurns;
+				const nextTools = isFinalTurn
+					? null
+					: Array.isArray(options.tools)
+						? options.tools
+						: this.getTools();
 				if (Array.isArray(nextTools) && nextTools.length > 0) {
 					nextPayload.tools = nextTools;
+				} else if (isFinalTurn) {
+					this.logger.info(
+						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
+					);
 				}
 
 				currentResponse = await this._postWithContextRetry(
@@ -2942,9 +2926,20 @@ class LLMService {
 					nextPayload.repetition_penalty = options.repetition_penalty;
 				}
 
-				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				// No último turno permitido não envia tools: força a resposta final em texto
+				// (com tools o modelo pode devolver só outra tool_call e o usuário fica sem resposta)
+				const isFinalTurn = turn >= maxTurns;
+				const nextTools = isFinalTurn
+					? null
+					: Array.isArray(options.tools)
+						? options.tools
+						: this.getTools();
 				if (Array.isArray(nextTools) && nextTools.length > 0) {
 					nextPayload.tools = nextTools;
+				} else if (isFinalTurn) {
+					this.logger.info(
+						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
+					);
 				}
 
 				currentResponse = await this._postWithContextRetry(
@@ -3298,9 +3293,20 @@ class LLMService {
 					options: nextOptions
 				};
 
-				const nextTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				// No último turno permitido não envia tools: força a resposta final em texto
+				// (com tools o modelo pode devolver só outra tool_call e o usuário fica sem resposta)
+				const isFinalTurn = turn >= maxTurns;
+				const nextTools = isFinalTurn
+					? null
+					: Array.isArray(options.tools)
+						? options.tools
+						: this.getTools();
 				if (Array.isArray(nextTools) && nextTools.length > 0) {
 					nextPayload.tools = nextTools;
+				} else if (isFinalTurn) {
+					this.logger.info(
+						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
+					);
 				}
 
 				currentResponse = await axios.post(endpoint, nextPayload, {

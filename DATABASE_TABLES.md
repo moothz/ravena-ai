@@ -688,14 +688,24 @@ Registro por `(bot_id, user_key)` de usuários que já iniciaram contato no priv
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| `bot_id` | TEXT PK | Identificador da instância do bot (`bot.id` ou `bot.instanceName`) |
-| `user_key` | TEXT PK | Telefone canônico limpo (sem `@s.whatsapp.net`) ou JID `@lid` quando ainda sem PN |
+| `bot_id` | TEXT PK | Número de telefone canônico do bot (`bot.phoneNumber`); `bot.id` apenas quando o bot não tem número configurado. Linhas antigas chaveadas pelo id são migradas uma vez na inicialização |
+| `user_key` | TEXT PK | Telefone canônico (variante mais longa, ex.: com o 9 adicional), JID `@lid` quando ainda sem PN, ou dígitos soltos ambíguos (backfill) |
 | `user_lid` | TEXT | JID `@lid` associado ao usuário, quando conhecido |
+| `user_pn` | TEXT | Telefone canônico associado ao usuário, quando conhecido (consultado junto com `user_key`/`user_lid`) |
 | `has_pv` | INTEGER | Flag binária (`1` = usuário já enviou mensagem no PV deste bot) |
 | `first_pv_at` | INTEGER | Timestamp (ms) da primeira interação em PV |
-| `last_pv_at` | INTEGER | Timestamp (ms) da última interação em PV |
+| `last_pv_at` | INTEGER | Timestamp (ms) da última interação em PV (gravado no máximo 1x/hora por usuário) |
 | `last_vcard_sent_at` | INTEGER | Timestamp (ms) do último envio do vCard + lembrete de contato (cooldown de 45 dias) |
 | `updated_at` | INTEGER | Timestamp (ms) da última atualização do registro |
+
+#### `pv_meta`
+Marcadores de manutenção executada uma única vez (`backfill_pv_users_v1`, `bot_key_phone_v1`).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `key` | TEXT PK | Nome do marcador |
+| `value` | TEXT | JSON com o resultado (contagens por fonte do backfill, linhas migradas) |
+| `updated_at` | INTEGER | Timestamp (ms) da execução |
 
 
 

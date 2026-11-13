@@ -40,8 +40,46 @@ const AccountLinkService = require("./services/AccountLinkService");
 const PollVoteService = require("./services/PollVoteService");
 const PvSafetyService = require("./services/PvSafetyService");
 
+// Comandos que precisam funcionar no PV mesmo com ignorePV (painéis, vínculo, anônimo, superadmin)
+const DEFAULT_CMD_WHITELIST = [
+	"sa-",
+	"anoni",
+	"anônimo",
+	"adminanon",
+	"mu-adm",
+	"muadm",
+	"mu-admin",
+	"muadmin",
+	"waifinder",
+	"mu-waifinder",
+	"mu-tinder",
+	"faz-adm",
+	"faz-admin",
+	"banco-adm",
+	"bancoadm",
+	"banco-web",
+	"vincular",
+	"desvincular",
+	"g-painel",
+	"g-manage"
+];
+
 class EventHandler extends EventEmitter {
 	static instance = null;
+
+	/**
+	 * Monta a whitelist de comandos do PV: padrões somados aos itens de CMD_WHITELIST.
+	 * @param {string} [envValue] - Lista separada por vírgula
+	 * @returns {string[]}
+	 */
+	static buildCommandWhitelist(envValue = "") {
+		const fromEnv = String(envValue || "").split(",");
+		return Array.from(
+			new Set(
+				[...DEFAULT_CMD_WHITELIST, ...fromEnv].map((c) => c.trim().toLowerCase()).filter(Boolean)
+			)
+		);
+	}
 
 	constructor() {
 		super();
@@ -62,29 +100,8 @@ class EventHandler extends EventEmitter {
 		this.accountLinkService = AccountLinkService.getInstance();
 		this.pvSafetyService = PvSafetyService.getInstance();
 		this.groups = {};
-		const rawWhitelist = process.env.CMD_WHITELIST
-			? process.env.CMD_WHITELIST.split(",")
-			: [
-					"sa-",
-					"anoni",
-					"mu-adm",
-					"muadm",
-					"mu-admin",
-					"muadmin",
-					"waifinder",
-					"mu-waifinder",
-					"mu-tinder",
-					"faz-adm",
-					"faz-admin",
-					"banco-adm",
-					"bancoadm",
-					"banco-web",
-					"vincular",
-					"desvincular",
-					"g-painel",
-					"g-manage"
-				];
-		this.comandosWhitelist = rawWhitelist.map((c) => c.trim().toLowerCase()).filter(Boolean);
+		// Comandos aceitos no PV mesmo com ignorePV: padrões + CMD_WHITELIST (somados, não substituídos)
+		this.comandosWhitelist = EventHandler.buildCommandWhitelist(process.env.CMD_WHITELIST);
 
 		this.PV_AI_DEBOUNCE_MS = 8000;
 		this.pvDebounce = {};
@@ -343,6 +360,23 @@ class EventHandler extends EventEmitter {
 	 * @param {WhatsAppBot} bot - A instância do bot
 	 * @param {Object} message - A mensagem formatada
 	 */
+	/**
+	 * Indica se o comando (texto após o prefixo) está na whitelist do PV.
+	 * Compara só o nome do comando (início), nunca os argumentos: "!tts vou vincular" não passa.
+	 * Itens como "sa-" ou "anoni" funcionam como prefixo do nome do comando.
+	 * @param {string} commandText
+	 * @returns {boolean}
+	 */
+	isWhitelistedPvCommand(commandText) {
+		const commandName =
+			String(commandText || "")
+				.trim()
+				.split(/\s+/)[0]
+				?.toLowerCase() || "";
+		if (!commandName) return false;
+		return this.comandosWhitelist.some((entry) => commandName.startsWith(entry));
+	}
+
 	async processMessage(bot, message) {
 		try {
 			// Se o bot estiver explicitamente desativado, descarta processamento
@@ -443,9 +477,23 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 
-			// Registra qualquer mensagem recebida no PV antes de aplicar ignorePV
+			// Registra qualquer mensagem recebida no PV antes de aplicar ignorePV.
+			// Fire-and-forget: a liberação em memória é síncrona e falhas no SQLite não podem
+			// derrubar o processamento da mensagem.
 			if (!message.group && !message.isNewsletter && !message.fromMe) {
-				await this.pvSafetyService.recordPvInteraction(bot, message);
+				try {
+					this.pvSafetyService.recordPvInteraction(bot, message).catch((err) => {
+						this.logger.warn(
+							`[PV-SAFETY] Falha ao registrar interação em PV de ${message.author}:`,
+							err?.message || err
+						);
+					});
+				} catch (err) {
+					this.logger.warn(
+						`[PV-SAFETY] Falha ao registrar interação em PV de ${message.author}:`,
+						err?.message || err
+					);
+				}
 			}
 
 			const ignorePV = bot.ignorePV && bot.notInWhitelist(message.author) && message.group === null;
@@ -771,11 +819,7 @@ class EventHandler extends EventEmitter {
 				}
 
 				// Processa comando normal
-				if (
-					!ignorePV ||
-					message.group ||
-					this.comandosWhitelist.some((cW) => textContent.toLowerCase().includes(cW))
-				) {
+				if (!ignorePV || message.group || this.isWhitelistedPvCommand(commandText)) {
 					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
 						this.logger.error("Erro em handleCommand:", error);
 					});

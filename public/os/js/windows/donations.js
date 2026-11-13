@@ -106,7 +106,7 @@ WindowManager.register('donations', {
             console.error('Error loading donations:', err);
             const tbody = body.querySelector('#donations-tbody');
             if (tbody) {
-                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #ff5555; padding: 15px;">Erro ao carregar doações: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #ff5555; padding: 15px;">Erro ao carregar doações: ${Formatters.escapeHtml(err && err.message)}</td></tr>`;
             }
         }
     },

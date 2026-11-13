@@ -371,7 +371,8 @@ async function runTests() {
 
 	// 6.2 Simulação completa !mu-r 9 com 1 roll de fazenda (Coração Púrpuro) e 9/9 rolls normais
 	const origGetWaifuBonus = ShadowGardenBonusService.getWaifuBonus;
-	const origConsumeWaifuBonus = ShadowGardenBonusService.consumeWaifuBonus;
+	const origReserveWaifuBonus = ShadowGardenBonusService.reserveWaifuBonus;
+	const origRefundWaifuBonus = ShadowGardenBonusService.refundWaifuBonus;
 	const origGetDonorBonuses = DonorBonusService.getWaifuRollBonuses;
 	const origGetEventMult = GameEventService.getMultiplier;
 	const origBuildGrid = WaifuCommands.buildRollGridImage;
@@ -386,37 +387,49 @@ async function runTests() {
 			rolls: farmRollsLeft,
 			tickets: farmTicketsLeft
 		});
-		ShadowGardenBonusService.consumeWaifuBonus = async () => {
+		const farmRefunds = [];
+		// Reserva atômica (ticket primeiro) e devolução, espelhando o ShadowGardenBonusService
+		ShadowGardenBonusService.reserveWaifuBonus = async () => {
 			if (farmTicketsLeft > 0) {
 				farmTicketsLeft--;
-				return {
-					consumed: true,
-					type: "ticket",
-					remainingRolls: farmRollsLeft,
-					remainingTickets: farmTicketsLeft
-				};
+				return { reserved: true, type: "ticket" };
 			}
 			if (farmRollsLeft > 0) {
 				farmRollsLeft--;
-				return {
-					consumed: true,
-					type: "roll",
-					remainingRolls: farmRollsLeft,
-					remainingTickets: farmTicketsLeft
-				};
+				return { reserved: true, type: "roll" };
 			}
-			return { consumed: false, remainingRolls: 0, remainingTickets: 0 };
+			return { reserved: false };
+		};
+		ShadowGardenBonusService.refundWaifuBonus = async (uid, type) => {
+			farmRefunds.push(type);
+			if (type === "ticket") farmTicketsLeft++;
+			if (type === "roll") farmRollsLeft++;
+			return true;
 		};
 		DonorBonusService.getWaifuRollBonuses = async () => null;
 		GameEventService.getMultiplier = () => 1.0;
-		WaifuCommands.buildRollGridImage = async () => Buffer.from("fake-grid-leak-test");
+		// O handler chama o renderizador via module.exports, então este mock evita rodar o sharp real
+		let gridRenderCalls = 0;
+		WaifuCommands.buildRollGridImage = async () => {
+			gridRenderCalls++;
+			return Buffer.from("fake-grid-leak-test");
+		};
 
+		// Comportamentos por chamada de /roll (índice 1-based): "mythic", "throw" ou "fail"
+		let rollScript = {};
 		WaifuCommands.api.post = async (path, body) => {
 			if (path === "/kakera/daily" || path === "/user/ensure") {
 				return { data: { success: true } };
 			}
 			if (path === "/roll") {
 				capturedPayloads.push(JSON.parse(JSON.stringify(body)));
+				const scripted = rollScript[capturedPayloads.length];
+				if (scripted === "throw") {
+					throw new Error("Waifuletes indisponível (simulado)");
+				}
+				if (scripted === "fail") {
+					return { data: { success: false, error: { code: "INTERNAL_ERROR" } } };
+				}
 				const isFree = Boolean(body?.bonuses?.isFreeRoll);
 				if (!isFree) {
 					if (standardRollsLeft <= 0) {
@@ -433,7 +446,7 @@ async function runTests() {
 								id: `char-leak-${idx}`,
 								name: `Personagem ${idx}`,
 								series: "Série Teste",
-								rarity: "COMMON",
+								rarity: scripted === "mythic" ? "MYTHIC" : "COMMON",
 								imageUrl: null
 							},
 							available: true,
@@ -457,6 +470,13 @@ async function runTests() {
 			filters: { waifuRollMarcar: false }
 		});
 		assert.ok(leakRes, "Deve retornar resultado do !mu-r 9");
+		assert.strictEqual(gridRenderCalls, 1, "O grid deve ser gerado pelo mock (sem sharp real)");
+		const leakMain = Array.isArray(leakRes) ? leakRes[0] : leakRes;
+		assert.strictEqual(
+			leakMain?.content?.data,
+			Buffer.from("fake-grid-leak-test").toString("base64"),
+			"A mensagem do multi-roll deve usar o grid mockado"
+		);
 		assert.strictEqual(capturedPayloads.length, 9, "Deve executar os 9 rolls solicitados");
 		assert.strictEqual(
 			capturedPayloads[0]?.bonuses?.isFreeRoll,
@@ -504,9 +524,61 @@ async function runTests() {
 		assert.strictEqual(farmTicketsLeft, 0, "Deve ter consumido 1 ticket da fazenda");
 		assert.strictEqual(standardRollsLeft, 7, "Deve ter consumido 2 rolls normais (9 -> 7)");
 		console.log("✓ 6.3 Ticket (Rosa de Sangue) não vazou isFreeRoll nem rarityMultipliers.");
+
+		// 6.4 Roll mítico com bônus da fazenda devolve a reserva (míticos não consomem o bônus)
+		farmRollsLeft = 1;
+		farmTicketsLeft = 0;
+		standardRollsLeft = 9;
+		capturedPayloads.length = 0;
+		farmRefunds.length = 0;
+		rollScript = { 1: "mythic" };
+		await WaifuCommands.rollAny(bot, multiRollMsg, ["2"], {
+			id: testGroupId,
+			filters: { waifuRollMarcar: false }
+		});
+		assert.strictEqual(capturedPayloads.length, 2, "Deve executar 2 rolls");
+		assert.strictEqual(capturedPayloads[0]?.bonuses?.isFreeRoll, true, "Roll 1 usa a fazenda");
+		assert.deepStrictEqual(farmRefunds, ["roll"], "Roll mítico devolve o bônus reservado");
+		assert.strictEqual(
+			capturedPayloads[1]?.bonuses?.isFreeRoll,
+			true,
+			"Bônus devolvido pelo mítico pode ser usado no roll seguinte"
+		);
+		assert.strictEqual(farmRollsLeft, 0, "Apenas o roll não-mítico consome a fazenda");
+		assert.strictEqual(standardRollsLeft, 9, "Nenhum roll normal gasto");
+		console.log("✓ 6.4 Roll mítico devolve a reserva da fazenda.");
+
+		// 6.5 Falha no /roll devolve a reserva (sem perder o bônus)
+		farmRollsLeft = 1;
+		farmTicketsLeft = 0;
+		standardRollsLeft = 9;
+		capturedPayloads.length = 0;
+		farmRefunds.length = 0;
+		rollScript = { 1: "throw" };
+		await WaifuCommands.rollAny(bot, multiRollMsg, ["1"], {
+			id: testGroupId,
+			filters: { waifuRollMarcar: false }
+		});
+		assert.deepStrictEqual(farmRefunds, ["roll"], "Erro no /roll deve devolver a reserva");
+		assert.strictEqual(farmRollsLeft, 1, "Bônus da fazenda preservado após erro");
+
+		farmRollsLeft = 2;
+		capturedPayloads.length = 0;
+		farmRefunds.length = 0;
+		rollScript = { 2: "fail" };
+		await WaifuCommands.rollAny(bot, multiRollMsg, ["3"], {
+			id: testGroupId,
+			filters: { waifuRollMarcar: false }
+		});
+		assert.strictEqual(capturedPayloads.length, 2, "Lote para no roll que falhou");
+		assert.deepStrictEqual(farmRefunds, ["roll"], "Roll 2 sem sucesso devolve a reserva");
+		assert.strictEqual(farmRollsLeft, 1, "Só o roll 1 consumiu a fazenda");
+		rollScript = {};
+		console.log("✓ 6.5 Falhas no /roll (exceção e success:false) devolvem a reserva.");
 	} finally {
 		ShadowGardenBonusService.getWaifuBonus = origGetWaifuBonus;
-		ShadowGardenBonusService.consumeWaifuBonus = origConsumeWaifuBonus;
+		ShadowGardenBonusService.reserveWaifuBonus = origReserveWaifuBonus;
+		ShadowGardenBonusService.refundWaifuBonus = origRefundWaifuBonus;
 		DonorBonusService.getWaifuRollBonuses = origGetDonorBonuses;
 		GameEventService.getMultiplier = origGetEventMult;
 		WaifuCommands.buildRollGridImage = origBuildGrid;

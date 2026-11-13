@@ -208,7 +208,16 @@ async function runTests() {
 			authorName: "PescadorRede"
 		});
 
-		await eventHandler.commandHandler.processCommand(bot, msgItem, "pesca-rede", ["8"], null);
+		// A própria rede pode pescar outro item "Rede de Pesca" (que soma um uso) e tornar o teste
+		// intermitente; a chance do item fica zerada só durante esta puxada.
+		const netUpgrade = FishingGame.UPGRADES.find((u) => u.effect === "fishing_net");
+		const netUpgradeChance = netUpgrade ? netUpgrade.chance : 0;
+		if (netUpgrade) netUpgrade.chance = 0;
+		try {
+			await eventHandler.commandHandler.processCommand(bot, msgItem, "pesca-rede", ["8"], null);
+		} finally {
+			if (netUpgrade) netUpgrade.chance = netUpgradeChance;
+		}
 		assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar 1 mensagem");
 		const resposta5 = bot.capturedMessages[0].content;
 		if (resposta5) console.log("DEBUG RESPOSTA 5:", resposta5);

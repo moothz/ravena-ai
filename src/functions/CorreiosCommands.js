@@ -152,13 +152,6 @@ async function checkAllPackages(bot) {
 						`[CorreiosCron] Atualização encontrada para ${track.code} (${track.description})`
 					);
 
-					// Update DB
-					await database.dbRun(
-						DB_NAME,
-						"UPDATE tracks SET last_event_text = ?, last_event_date = ?, last_check = ? WHERE id = ?",
-						[currentText, currentDate, Date.now(), track.id]
-					);
-
 					// Notify user
 					const statusEmoji = getStatusEmoji(currentText);
 					const locationText = formatEventLocation(lastEvent.unidade);
@@ -172,9 +165,34 @@ async function checkAllPackages(bot) {
 						`📍 *Local:* ${locationText}\n` +
 						`📅 *Data:* ${formattedDate}`;
 
-					bot
-						.sendMessage(track.chat_id, msg)
-						.catch((e) => logger.error(`Erro ao notificar ${track.chat_id}:`, e));
+					// Só avança o último evento depois que a notificação foi aceita; se o envio for
+					// bloqueado (PV sem interação prévia) ou falhar, a atualização é tentada de novo.
+					let delivered = false;
+					try {
+						await bot.sendMessage(track.chat_id, msg);
+						delivered = true;
+					} catch (e) {
+						if (e?.code === "PV_COLD_BLOCKED") {
+							logger.warn(
+								`[CorreiosCron] Notificação de ${track.code} bloqueada no PV de ${track.chat_id} (sem interação prévia). Evento mantido pendente.`
+							);
+						} else {
+							logger.error(`Erro ao notificar ${track.chat_id}:`, e);
+						}
+					}
+
+					if (delivered) {
+						await database.dbRun(
+							DB_NAME,
+							"UPDATE tracks SET last_event_text = ?, last_event_date = ?, last_check = ? WHERE id = ?",
+							[currentText, currentDate, Date.now(), track.id]
+						);
+					} else {
+						await database.dbRun(DB_NAME, "UPDATE tracks SET last_check = ? WHERE id = ?", [
+							Date.now(),
+							track.id
+						]);
+					}
 				} else {
 					// Just update last check
 					await database.dbRun(DB_NAME, "UPDATE tracks SET last_check = ? WHERE id = ?", [
@@ -535,5 +553,7 @@ const commands = [
 // module.exports = { commands, inicializarRastreio };
 module.exports = {
 	commands: [],
-	inicializarRastreio: async () => {}
+	inicializarRastreio: async () => {},
+	// Exposto para testes (o cron de verificação segue desativado)
+	checkAllPackages
 };

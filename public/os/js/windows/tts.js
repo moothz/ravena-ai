@@ -77,7 +77,7 @@ WindowManager.register('tts', {
                     playerBox.innerHTML = `<span style="color: #ff5555; font-size: 11px;">Resposta inesperada do servidor</span>`;
                 }
             } catch (err) {
-                playerBox.innerHTML = `<span style="color: #ff5555; font-size: 11px; padding: 15px; text-align: center;">Erro: ${err.message}</span>`;
+                playerBox.innerHTML = `<span style="color: #ff5555; font-size: 11px; padding: 15px; text-align: center;">Erro: ${Formatters.escapeHtml(err && err.message)}</span>`;
             } finally {
                 generateBtn.disabled = false;
                 generateBtn.innerHTML = '<i class="fas fa-play"></i> Gerar Áudio';

@@ -5,17 +5,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendBtn = document.getElementById('send-btn');
     const suggestions = document.getElementById('chat-suggestions');
 
-    // Obtém sessionId persistente via cookie ou gera uma nova
+    // Obtém o sessionId salvo no cookie. O id é gerado pelo servidor (web-<uuid>) na primeira
+    // resposta e devolvido no JSON/cookie; ids antigos ou inválidos são trocados pelo servidor.
     function getHelpSessionId() {
-        const match = document.cookie.match(/ravena_help_session=([^;]+)/);
-        if (match && match[1]) {
-            return decodeURIComponent(match[1].trim());
-        }
-        const newId = 'web-' + Math.random().toString(36).substr(2, 9);
-        document.cookie = `ravena_help_session=${encodeURIComponent(newId)}; path=/; max-age=2592000; SameSite=Lax`;
-        return newId;
+        try {
+            const match = document.cookie.match(/ravena_help_session=([^;]+)/);
+            if (match && match[1]) {
+                return decodeURIComponent(match[1].trim());
+            }
+        } catch (_) {}
+        return null;
     }
-    const sessionId = getHelpSessionId();
+    let sessionId = getHelpSessionId();
 
     let isProcessing = false;
     let messageCount = 0;
@@ -159,10 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message,
-                    sessionId
-                })
+                body: JSON.stringify(sessionId ? { message, sessionId } : { message })
             });
 
             let data = null;
@@ -173,6 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             removeTypingIndicator();
+
+            if (data && typeof data.sessionId === 'string') {
+                sessionId = data.sessionId;
+            }
 
             if (data.error) {
                 addMessage('❌ Desculpe, ocorreu um erro: ' + (data.message || data.error), true, true);

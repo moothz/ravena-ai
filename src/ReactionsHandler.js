@@ -185,39 +185,8 @@ class ReactionsHandler {
 					continue;
 				}
 
-				const cmdLower = commandName.toLowerCase();
-
-				// Verifica se o comando específico está mutado
-				if (group?.mutedCommands && Array.isArray(group.mutedCommands)) {
-					const isMutedCmd = group.mutedCommands.some(
-						(muted) => typeof muted === "string" && muted.toLowerCase() === cmdLower
-					);
-					if (isMutedCmd) {
-						this.logger.debug(
-							`Ignorando reação do comando '${commandName}' (${reaction.reaction}), comando silenciado no grupo '${group.name}'`
-						);
-						continue;
-					}
-				}
-
-				// Verifica se a categoria do comando está mutada
-				if (group?.mutedCategories && Array.isArray(group.mutedCategories)) {
-					const fixedCommand =
-						bot?.eventHandler?.commandHandler?.fixedCommands?.getCommand?.(commandName);
-					const cmdCategory = fixedCommand?.category?.toLowerCase();
-					const isMutedCat =
-						cmdCategory &&
-						group.mutedCategories.some(
-							(mutedCat) => typeof mutedCat === "string" && mutedCat.toLowerCase() === cmdCategory
-						);
-					if (isMutedCat) {
-						this.logger.debug(
-							`Ignorando reação do comando '${commandName}' (${reaction.reaction}), categoria '${cmdCategory}' silenciada no grupo '${group.name}'`
-						);
-						continue;
-					}
-				}
-
+				// Comando/categoria silenciados no grupo são ignorados pelo executeFixedCommand
+				// (retorna null sem reagir em reações), seguindo para o próximo comando do emoji.
 				this.logger.info(`Executando comando ${commandName} via reação ${reaction.reaction}`);
 
 				// Executa o comando

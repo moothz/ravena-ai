@@ -17,6 +17,8 @@ WindowManager.register('status-detail', {
         const bot = (data && data.bots && data.bots.find(b => b.id === botId)) || params.bot || { id: botId };
 
         const body = wb.body;
+        const esc = Formatters.escapeHtml;
+        const safeId = esc(bot.id);
         wb.setTitle(`Detalhes: ${bot.id}`);
 
         const phoneNumber = bot.phoneNumber ? Formatters.formatPhoneNumber(bot.phoneNumber) : 'Não informado';
@@ -48,12 +50,12 @@ WindowManager.register('status-detail', {
 
         let comunitContent = '';
         if (bot.comunitario || cleanRespPhone) {
-            const resp = respPhoneFormatted || 'Voluntário';
+            const resp = esc(respPhoneFormatted || 'Voluntário');
             comunitContent = `
                 <div class="detail-card" style="grid-column: span 2; border-left: 2px solid #ff6b6b;">
                     <div class="detail-card-label">Responsável pela Ravena</div>
                     <div class="detail-card-value" style="font-size: 11px;">${resp}</div>
-                    ${bot.supportMsg ? `<p style="font-size: 10px; color: var(--light-gray); margin-top: 4px; font-style: italic;">"${bot.supportMsg}"</p>` : ''}
+                    ${bot.supportMsg ? `<p style="font-size: 10px; color: var(--light-gray); margin-top: 4px; font-style: italic;">"${esc(bot.supportMsg)}"</p>` : ''}
                 </div>
             `;
         }
@@ -61,12 +63,12 @@ WindowManager.register('status-detail', {
         body.innerHTML = `
             <div class="bot-detail-view">
                 <div class="bot-detail-header">
-                    <img src="img/profiles/${bot.id}.jpg" 
+                    <img src="img/profiles/${encodeURIComponent(bot.id)}.jpg" 
                          class="bot-detail-avatar" 
                          onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
-                         alt="${bot.id}">
+                         alt="${safeId}">
                     <div class="bot-detail-title">
-                        <h2>${bot.id}</h2>
+                        <h2>${safeId}</h2>
                         <p>${typeBadge} &nbsp;|&nbsp; ${statusText}</p>
                     </div>
                 </div>
@@ -74,7 +76,7 @@ WindowManager.register('status-detail', {
                 <div class="bot-detail-grid">
                     <div class="detail-card">
                         <div class="detail-card-label">Telefone da Ravena</div>
-                        <div class="detail-card-value" style="font-size: 11px;">${phoneNumber}</div>
+                        <div class="detail-card-value" style="font-size: 11px;">${esc(phoneNumber)}</div>
                     </div>
                     <div class="detail-card">
                         <div class="detail-card-label">Fluxo / Hora</div>
@@ -86,19 +88,19 @@ WindowManager.register('status-detail', {
                     </div>
                     <div class="detail-card">
                         <div class="detail-card-label">Última Atividade</div>
-                        <div class="detail-card-value" style="font-size: 11px;">${lastSeenText}</div>
+                        <div class="detail-card-value" style="font-size: 11px;">${esc(lastSeenText)}</div>
                     </div>
                     ${comunitContent}
                 </div>
 
                 <div style="display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; flex-wrap: wrap;">
                     ${cleanRespPhone ? `
-                        <a href="https://wa.me/${cleanRespPhone}" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #f6ad55 0%, #d68910 100%); border-color: #f6ad55; color: #000; font-weight: 600;">
+                        <a href="https://wa.me/${cleanRespPhone}" target="_blank" rel="noopener noreferrer" class="os-btn" style="background: linear-gradient(180deg, #f6ad55 0%, #d68910 100%); border-color: #f6ad55; color: #000; font-weight: 600;">
                             <i class="fab fa-whatsapp"></i> Chamar Responsável
                         </a>
                     ` : ''}
                     ${cleanPhone ? `
-                        <a href="${waUrl}" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #25d366 0%, #128c7e 100%); border-color: #25d366;">
+                        <a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="os-btn" style="background: linear-gradient(180deg, #25d366 0%, #128c7e 100%); border-color: #25d366;">
                             <i class="fab fa-whatsapp"></i> Chamar no Whats
                         </a>
                     ` : ''}

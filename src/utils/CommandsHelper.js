@@ -1,12 +1,56 @@
 const fs = require("fs");
 const path = require("path");
 const Logger = require("./Logger");
+const { getPublicBotContacts, getSupportContact } = require("./RavenaContacts");
 
 let CATEGORY_EMOJIS = {};
 try {
 	CATEGORY_EMOJIS = require("../functions/MenuOrder").CATEGORY_EMOJIS || {};
 } catch (e) {
 	CATEGORY_EMOJIS = {};
+}
+
+/**
+ * Comandos restritos ao dono do bot (SuperAdmin) ou administrativos internos.
+ * NUNCA podem ser indexados no catálogo enviado à IA nem exibidos para usuários.
+ */
+const RESTRICTED_CMD_REGEX = /^[!/]?(sa-|admin-)/i;
+
+/**
+ * Indica se uma entrada de comando do helper deve ser ocultada do catálogo
+ * (prefixos !sa-/!admin- em qualquer alias, ou flags hidden/superadmin)
+ * @param {Object} cmdObj
+ * @returns {boolean}
+ */
+function isRestrictedHelperCmd(cmdObj) {
+	if (!cmdObj || typeof cmdObj !== "object") return true;
+	if (
+		cmdObj.hidden === true ||
+		cmdObj.superAdminOnly === true ||
+		cmdObj.superadminOnly === true ||
+		cmdObj.superAdmin === true ||
+		cmdObj.superadmin === true ||
+		String(cmdObj.category || "").toLowerCase() === "superadmin"
+	) {
+		return true;
+	}
+	const names = String(cmdObj.cmd || "")
+		.split("/")
+		.map((n) => n.trim())
+		.filter(Boolean);
+	const usages = Array.isArray(cmdObj.usage) ? cmdObj.usage : [];
+	return [...names, ...usages.map((u) => String(u).trim())].some((n) =>
+		RESTRICTED_CMD_REGEX.test(n)
+	);
+}
+
+/**
+ * Indica se o termo consultado é um comando restrito (ex: "sa-joinGrupo", "!admin-roubar")
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isRestrictedCommandName(name) {
+	return RESTRICTED_CMD_REGEX.test(String(name || "").trim());
 }
 
 const EXTRA_CATEGORY_EMOJIS = {
@@ -32,10 +76,11 @@ class CommandsHelper {
 	/**
 	 * Atalho estático para obter metadados de comando
 	 * @param {string} commandName
+	 * @param {Object} [options] - Ver findCommandMeta (ex: { exactOnly: true })
 	 * @returns {Object|null}
 	 */
-	static findCommandMeta(commandName) {
-		return CommandsHelper.getInstance().findCommandMeta(commandName);
+	static findCommandMeta(commandName, options = {}) {
+		return CommandsHelper.getInstance().findCommandMeta(commandName, options);
 	}
 
 	constructor() {
@@ -68,6 +113,24 @@ class CommandsHelper {
 	}
 
 	/**
+	 * Remove do catálogo comandos restritos (!sa-, !admin-, hidden/superadmin)
+	 * @param {Array} cmds
+	 * @param {string} file
+	 * @returns {Array}
+	 * @private
+	 */
+	_filterPublicCmds(cmds, file) {
+		if (!Array.isArray(cmds)) return [];
+		return cmds.filter((c) => {
+			if (isRestrictedHelperCmd(c)) {
+				this.logger.debug(`Comando restrito omitido do catálogo (${file}): ${c?.cmd}`);
+				return false;
+			}
+			return true;
+		});
+	}
+
+	/**
 	 * Carrega e indexa todos os helpers dos módulos da pasta functions e do Management.js
 	 */
 	loadHelpers() {
@@ -90,7 +153,7 @@ class CommandsHelper {
 							about: helperData.about || "",
 							implementation: helperData.implementation || "",
 							tags: helperData.tags || "",
-							cmds: Array.isArray(helperData.cmds) ? helperData.cmds : []
+							cmds: this._filterPublicCmds(helperData.cmds, file)
 						});
 					}
 				}
@@ -106,7 +169,7 @@ class CommandsHelper {
 						about: mgmtHelper.about || "",
 						implementation: mgmtHelper.implementation || "",
 						tags: mgmtHelper.tags || "",
-						cmds: Array.isArray(mgmtHelper.cmds) ? mgmtHelper.cmds : []
+						cmds: this._filterPublicCmds(mgmtHelper.cmds, "Management.js")
 					});
 				}
 			}
@@ -332,17 +395,51 @@ class CommandsHelper {
 	}
 
 	/**
+	 * Monta o objeto de metadados de um comando do catálogo
+	 * @param {Object} h - Módulo (helper) indexado
+	 * @param {Object} c - Entrada de comando do helper
+	 * @returns {Object}
+	 * @private
+	 */
+	_buildCommandMeta(h, c) {
+		return {
+			cmd: c.cmd,
+			desc: c.desc || "",
+			usage:
+				Array.isArray(c.usage) && c.usage.length > 0 ? c.usage : [`!${c.cmd.replace(/^[!/]/, "")}`],
+			category: c.category || "resto",
+			file: h.file,
+			about: h.about || "",
+			implementation: h.implementation || "",
+			tags: h.tags || "",
+			relatedCmds: (h.cmds || []).filter((other) => other.cmd !== c.cmd).map((other) => other.cmd),
+			isManagement: h.source === "management" || c.cmd.startsWith("!g-")
+		};
+	}
+
+	/**
 	 * Retorna os metadados brutos de um comando (nome, desc, usage, categoria, módulo)
+	 *
+	 * Ordem de busca:
+	 * 1. Nome exato do comando (com/sem prefixo `!`, `/` e `g-`)
+	 * 2. Primeira palavra dos exemplos de uso (aliases)
+	 * 3. (somente sem exactOnly) Tag do módulo -> primeiro comando do módulo.
+	 *    É um palpite grosseiro (ex: tag "pesca" pode cair em !banco); quem precisa
+	 *    do comando certo deve usar `{ exactOnly: true }` e recorrer ao search().
+	 *
 	 * @param {string} commandName
+	 * @param {Object} [options]
+	 * @param {boolean} [options.exactOnly=false] - Desliga o fallback por tags (passo 3)
 	 * @returns {Object|null}
 	 */
-	findCommandMeta(commandName = "") {
+	findCommandMeta(commandName = "", options = {}) {
 		if (!this.initialized || this.helpers.length === 0) {
 			this.loadHelpers();
 		}
 
+		const { exactOnly = false } = options || {};
 		const cleanCmd = (commandName || "").trim().toLowerCase().replace(/^[!/]/, "");
-		if (!cleanCmd) return null;
+		if (!cleanCmd || isRestrictedCommandName(cleanCmd)) return null;
 
 		// 1. Busca exata pelo nome do comando
 		for (const h of this.helpers) {
@@ -353,23 +450,7 @@ class CommandsHelper {
 					name === `g-${cleanCmd}` ||
 					(cleanCmd.startsWith("g-") && name === cleanCmd.slice(2))
 				) {
-					return {
-						cmd: c.cmd,
-						desc: c.desc || "",
-						usage:
-							Array.isArray(c.usage) && c.usage.length > 0
-								? c.usage
-								: [`!${c.cmd.replace(/^[!/]/, "")}`],
-						category: c.category || "resto",
-						file: h.file,
-						about: h.about || "",
-						implementation: h.implementation || "",
-						tags: h.tags || "",
-						relatedCmds: (h.cmds || [])
-							.filter((other) => other.cmd !== c.cmd)
-							.map((other) => other.cmd),
-						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
-					};
+					return this._buildCommandMeta(h, c);
 				}
 			}
 		}
@@ -381,54 +462,21 @@ class CommandsHelper {
 					(u) => u.toLowerCase().replace(/^[!/]/, "").split(/\s+/)[0]
 				);
 				if (usages.includes(cleanCmd) || usages.includes(`g-${cleanCmd}`)) {
-					return {
-						cmd: c.cmd,
-						desc: c.desc || "",
-						usage:
-							Array.isArray(c.usage) && c.usage.length > 0
-								? c.usage
-								: [`!${c.cmd.replace(/^[!/]/, "")}`],
-						category: c.category || "resto",
-						file: h.file,
-						about: h.about || "",
-						implementation: h.implementation || "",
-						tags: h.tags || "",
-						relatedCmds: (h.cmds || [])
-							.filter((other) => other.cmd !== c.cmd)
-							.map((other) => other.cmd),
-						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
-					};
+					return this._buildCommandMeta(h, c);
 				}
 			}
 		}
 
-		// 3. Busca nas tags do módulo
+		if (exactOnly) return null;
+
+		// 3. Busca nas tags do módulo (palpite: primeiro comando do módulo)
 		for (const h of this.helpers) {
 			const tags = (h.tags || "")
 				.toLowerCase()
 				.split(",")
 				.map((t) => t.trim());
-			if (tags.includes(cleanCmd)) {
-				if (h.cmds && h.cmds.length > 0) {
-					const c = h.cmds[0];
-					return {
-						cmd: c.cmd,
-						desc: c.desc || "",
-						usage:
-							Array.isArray(c.usage) && c.usage.length > 0
-								? c.usage
-								: [`!${c.cmd.replace(/^[!/]/, "")}`],
-						category: c.category || "resto",
-						file: h.file,
-						about: h.about || "",
-						implementation: h.implementation || "",
-						tags: h.tags || "",
-						relatedCmds: (h.cmds || [])
-							.filter((other) => other.cmd !== c.cmd)
-							.map((other) => other.cmd),
-						isManagement: h.source === "management" || c.cmd.startsWith("!g-")
-					};
-				}
+			if (tags.includes(cleanCmd) && h.cmds && h.cmds.length > 0) {
+				return this._buildCommandMeta(h, h.cmds[0]);
 			}
 		}
 
@@ -441,7 +489,14 @@ class CommandsHelper {
 	 * @returns {string}
 	 */
 	getCommandDetails(commandName = "") {
-		const meta = this.findCommandMeta(commandName);
+		if (isRestrictedCommandName(String(commandName || "").trim())) {
+			// Não ecoa o nome nem busca: comandos restritos não existem para usuários/IA
+			return "Comando não encontrado no catálogo público da Ravena.";
+		}
+
+		// Apenas correspondência exata: tags de módulo levariam ao comando errado
+		// (ex: "pesca" -> !banco); nesse caso a busca abaixo lista os candidatos certos.
+		const meta = this.findCommandMeta(commandName, { exactOnly: true });
 		if (meta) {
 			let text = `🤖 **Comando:** \`${meta.cmd}\`\n`;
 			if (meta.category) {
@@ -509,6 +564,10 @@ class CommandsHelper {
 	 */
 	getBaseHelpContext() {
 		const commandsIndex = this.getCommandsIndex();
+		const support = getSupportContact();
+		const activeBotsLines = getPublicBotContacts()
+			.map((b) => `  - ${b.id}: ${b.display} (${b.link})`)
+			.join("\n");
 
 		return `# Ravena - Informações Base
 
@@ -517,14 +576,12 @@ O objetivo é auxiliar grupos, comunidades e streamers com recursos de mídia (f
 
 ---
 ## 📞 Contatos e Suporte Oficial
-- **WhatsApp de Suporte Oficial (moothz)**: (55) 99642-4307 (https://wa.me/555596424307)
+- **WhatsApp de Suporte Oficial (moothz)**: ${support.display} (${support.link})
   - _Incentive os usuários a chamarem no suporte oficial para relatar bugs, dúvidas técnicas ou sugestões._
 - **Comunidade Oficial da Ravena**: https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz
 - **Site Oficial**: https://ravena.moothz.com
 - **Números Ativos (PV cria figurinhas automáticas e aceita convites)**:
-  - ravena2: +55 (98) 98771-5450 (https://wa.me/559887715450)
-  - ravena5: +55 (55) 99153-7296 (https://wa.me/555591537296)
-  - ravena10: +55 (55) 98102-4412 (https://wa.me/555581024412)
+${activeBotsLines}
 
 ---
 ## ⚙️ Arquitetura, Estabilidade e Dúvidas Frequentes
@@ -567,7 +624,7 @@ ${commandsIndex}`;
 			if (str.startsWith("!") || str.startsWith("/")) {
 				return this.getCommandDetails(str);
 			}
-			const meta = this.findCommandMeta(str);
+			const meta = this.findCommandMeta(str, { exactOnly: true });
 			if (meta) {
 				return this.getCommandDetails(str);
 			}
@@ -619,8 +676,9 @@ ${commandsIndex}`;
 				return this.getCommandsByCategory(cleanQuery);
 			}
 
-			// Se a busca for o nome exato de um comando, retorna os detalhes completos diretamente
-			const exactMeta = this.findCommandMeta(cleanQuery);
+			// Se a busca for o nome exato de um comando, retorna os detalhes completos diretamente.
+			// Termos que só batem com tags de módulo (ex: "pesca", "waifu") vão para o search().
+			const exactMeta = this.findCommandMeta(cleanQuery, { exactOnly: true });
 			if (exactMeta) {
 				return this.getCommandDetails(cleanQuery);
 			}

@@ -123,6 +123,51 @@
     font-family: var(--status-font-mono);
 }
 
+/* Horário dos dados exibidos e aviso de falha na atualização */
+.status-updated {
+    margin: 0 0 10px;
+    text-align: right;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.status-updated:empty {
+    display: none;
+}
+
+.status-stale-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #fde7c4;
+    background: rgba(246, 173, 85, 0.12);
+    border: 1px solid rgba(246, 173, 85, 0.55);
+    border-radius: 6px;
+}
+
+.status-stale-banner i {
+    color: var(--status-yellow);
+    margin-top: 2px;
+}
+
+.status-bots-section.is-stale .status-updated {
+    color: var(--status-yellow);
+}
+
+/* Dados desatualizados: não exibir "verde/online" com a mesma confiança */
+.status-bots-section.is-stale .drive-list {
+    opacity: 0.6;
+}
+
+.status-bots-section.is-stale .status-dot {
+    filter: grayscale(1);
+    box-shadow: none;
+}
+
 .status-loading {
     text-align: center;
     padding: 40px 16px;
@@ -335,6 +380,12 @@
     animation: avatar-pulse-flash 0.6s ease-out !important;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .avatar-flash {
+        animation: none !important;
+    }
+}
+
 /* Modal de Detalhes da Ravena */
 .status-modal-backdrop {
     position: fixed;
@@ -355,6 +406,11 @@
 .status-modal {
     width: 100%;
     max-width: 540px;
+    /* Cabe na tela (ex.: celular deitado): o cabeçalho com o "Fechar" fica sempre visível */
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    display: flex;
+    flex-direction: column;
     background: #0d0a1f;
     border: 2px solid var(--status-bright-blue);
     border-radius: 10px;
@@ -364,6 +420,7 @@
 }
 
 .status-modal-header {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -401,6 +458,10 @@
 
 .status-modal-body {
     padding: 16px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .bot-detail-view {

@@ -105,7 +105,7 @@ WindowManager.register('statistics', {
         } catch (err) {
             console.error('Error loading bot stats:', err);
             const tbody = body.querySelector('#os-bot-stats-table tbody');
-            if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #ff5555; padding: 15px;">Erro: ${err.message}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #ff5555; padding: 15px;">Erro: ${Formatters.escapeHtml(err && err.message)}</td></tr>`;
         }
     },
 

@@ -995,12 +995,7 @@ class CommandHandler {
 		// Verifica se é um comando fixo
 		const fixedCommand = this.fixedCommands.getCommand(command);
 		if (fixedCommand) {
-			const isCommandMuted =
-				group &&
-				((Array.isArray(group.mutedCommands) && group.mutedCommands.includes(fixedCommand.name)) ||
-					(Array.isArray(group.mutedCategories) &&
-						fixedCommand.category &&
-						group.mutedCategories.includes(fixedCommand.category.toLowerCase())));
+			const isCommandMuted = Boolean(this.getCommandMuteReason(fixedCommand, group));
 
 			// Se o comando fixo estiver silenciado no grupo, verifica se há um comando customizado para substituí-lo
 			if (isCommandMuted && group && this.customCommands[group.id] && !skipCustom) {
@@ -1233,6 +1228,33 @@ class CommandHandler {
 	}
 
 	/**
+	 * Indica se um comando fixo está silenciado no grupo (por categoria ou por nome).
+	 * Comparação sem diferenciar maiúsculas/minúsculas.
+	 * @param {Object} command - O objeto de comando
+	 * @param {Group|null} group - O objeto do grupo
+	 * @returns {"category"|"command"|null}
+	 */
+	getCommandMuteReason(command, group) {
+		if (!command || !group) return null;
+		const sameText = (value, target) =>
+			typeof value === "string" && typeof target === "string"
+				? value.toLowerCase() === target.toLowerCase()
+				: false;
+
+		if (Array.isArray(group.mutedCategories) && command.category) {
+			if (group.mutedCategories.some((cat) => sameText(cat, command.category))) {
+				return "category";
+			}
+		}
+		if (Array.isArray(group.mutedCommands) && command.name) {
+			if (group.mutedCommands.some((muted) => sameText(muted, command.name))) {
+				return "command";
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Executa um comando fixo
 	 * @param {WhatsAppBot} bot - A instância do bot
 	 * @param {Object} message - A mensagem formatada
@@ -1257,27 +1279,20 @@ class CommandHandler {
 			// 	{ args }
 			// );
 
-			// Verifica se a categoria de comando não está mutada
-			if (group && group.mutedCategories && Array.isArray(group.mutedCategories)) {
-				if (
-					command &&
-					command.category &&
-					group.mutedCategories.includes(command.category.toLowerCase())
-				) {
-					this.logger.debug(
-						`Ignorando comando '${command.name}' da categoria silenciada '${command.category}'`
-					);
-					return null;
-				}
+			// Verifica se a categoria ou o comando estão silenciados no grupo (também vale para
+			// comandos acionados por reação: o ReactionsHandler depende desta checagem)
+			const muteReason = this.getCommandMuteReason(command, group);
+			if (muteReason === "category") {
+				this.logger.debug(
+					`Ignorando comando '${command.name}' da categoria silenciada '${command.category}'`
+				);
+				return null;
 			}
-
-			// Verifica se o comando específico está mutado
-			if (group && group.mutedCommands && Array.isArray(group.mutedCommands)) {
-				if (command && group.mutedCommands.includes(command.name)) {
-					this.logger.debug(`Ignorando comando '${command.name}' pois está silenciado no grupo.`);
-					if (!silent && !silentReaction) message.origin.react("⛔️");
-					return null;
-				}
+			if (muteReason === "command") {
+				this.logger.debug(`Ignorando comando '${command.name}' pois está silenciado no grupo.`);
+				// Em reação, não reage na mensagem de outra pessoa: apenas ignora em silêncio
+				if (!silent && !silentReaction && !message.originReaction) message.origin.react("⛔️");
+				return null;
 			}
 
 			// Verifica se o comando requer mensagem citada

@@ -1052,7 +1052,10 @@ async function storeMessage(message, chatId, bot) {
 
 		if (message.type === "image" && llmUp) {
 			// Tenta interpretar a imagem usando Vision AI, menos se for pedido de sticker pra aliviar  a GPU
+			// (e nunca para visualização única: a descrição ficaria salva no histórico do grupo)
 			if (
+				!message.isViewOnce &&
+				!message.origin?.isViewOnce &&
 				message.content &&
 				!message.caption?.startsWith("!s") &&
 				!message.caption?.startsWith("!ia")

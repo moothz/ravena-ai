@@ -2,8 +2,6 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const fs = require("fs");
-const path = require("path");
 const { EventEmitter } = require("events");
 const FakeBot = require("./FakeBot");
 const { createMessage } = require("./FakeMessage");
@@ -15,12 +13,13 @@ const ReactionsHandler = require("../ReactionsHandler");
 const TINY_PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 
-function createMockWhatsAppBotGo() {
+function createMockWhatsAppBotGo({ viewOnceCaptureEnabled = true } = {}) {
 	const bot = Object.create(WhatsAppBotGo.prototype);
 	bot.id = "bot-go-teste";
 	bot.phoneNumber = "5511999999999";
 	bot.nomeExibir = "RavenaTest";
 	bot.viewOnceMediaCache = new Map();
+	bot.viewOnceCaptureEnabled = viewOnceCaptureEnabled;
 	bot.lidToPnCache = new Map([["999888777", "5511888888888"]]);
 	bot.downloadedPayloads = [];
 	bot.logger = {
@@ -64,8 +63,10 @@ function createMockWhatsAppBotGo() {
 }
 
 async function testWhatsAppBotGoViewOnce() {
-	console.log("[1/4] Testando WhatsAppBotGo unwrapping, cache e unavailable view-once...");
-	const bot = createMockWhatsAppBotGo();
+	console.log(
+		"[1/4] Testando WhatsAppBotGo unwrapping, cache e unavailable view-once (VIEW_ONCE_CAPTURE_ENABLED=true)..."
+	);
+	const bot = createMockWhatsAppBotGo({ viewOnceCaptureEnabled: true });
 
 	// 1.1 Unwrap viewOnceMessage, viewOnceMessageV2, viewOnceMessageV2Extension, ephemeral -> viewOnceV2
 	const wrapped1 = { viewOnceMessage: { message: { imageMessage: { mimetype: "image/jpeg" } } } };
@@ -203,6 +204,213 @@ async function testWhatsAppBotGoViewOnce() {
 	assert.strictEqual(unavailableStub.isViewOnceUnavailable, true);
 	assert.strictEqual(await unavailableStub.downloadMedia(), null);
 	console.log("✓ [1/4] OK");
+}
+
+function buildGoMessage({
+	id,
+	chat = "120363000111222@g.us",
+	sender,
+	senderAlt,
+	message,
+	isGroup = true,
+	extra = {}
+}) {
+	return {
+		Info: {
+			ID: id,
+			Chat: chat,
+			Sender: sender,
+			SenderAlt: senderAlt,
+			Timestamp: new Date().toISOString(),
+			PushName: "Pessoa",
+			IsGroup: isGroup,
+			IsFromMe: false
+		},
+		Message: message,
+		...extra
+	};
+}
+
+async function testViewOnceCaptureDisabled() {
+	console.log("[1b] Testando view-once com captura desligada (padrão)...");
+	const prevEnv = process.env.VIEW_ONCE_CAPTURE_ENABLED;
+	delete process.env.VIEW_ONCE_CAPTURE_ENABLED;
+	const realBot = new WhatsAppBotGo({
+		id: "vo-flag-default",
+		phoneNumber: "5511999990000",
+		whatsgoApiUrl: "http://localhost:8080",
+		whatsgoApiKey: "test-key",
+		instanceName: "vo-flag-default",
+		webhookHost: "http://localhost:3000"
+	});
+	assert.strictEqual(
+		realBot.viewOnceCaptureEnabled,
+		false,
+		"Captura deve vir desligada por padrão"
+	);
+	if (prevEnv !== undefined) process.env.VIEW_ONCE_CAPTURE_ENABLED = prevEnv;
+
+	const bot = createMockWhatsAppBotGo({ viewOnceCaptureEnabled: false });
+	const authorA = "5511777770001@s.whatsapp.net";
+	const userB = "5511777770002@s.whatsapp.net";
+
+	// 1. viewOnceMedia vindo do whatsgo não é guardada (nem no cache, nem no objeto)
+	const voGo = buildGoMessage({
+		id: "VO_OFF_1",
+		sender: authorA,
+		message: { imageMessage: { mimetype: "image/png", caption: "!s", viewOnce: true } },
+		extra: {
+			IsViewOnce: true,
+			viewOnceMedia: { base64: TINY_PNG_BASE64, mimetype: "image/png" }
+		}
+	});
+	const voMsg = await bot.formatMessageFromGo(voGo);
+	assert.strictEqual(voMsg.isViewOnce, true);
+	assert.strictEqual(bot.viewOnceMediaCache.size, 0, "Sem captura não há cache em RAM");
+	assert.strictEqual(voMsg.goMessageData.viewOnceMedia, undefined, "base64 não fica na mensagem");
+	assert.strictEqual(bot._cacheViewOnceMedia("X", { base64: TINY_PNG_BASE64 }), false);
+
+	// 2. O próprio autor (!s na legenda) ainda consegue baixar, sem pedir a cópia por messageId
+	bot.downloadedPayloads.length = 0;
+	const ownMedia = await voMsg.downloadMedia();
+	assert.ok(ownMedia?.data, "Autor pedindo a própria mídia deve conseguir baixar");
+	assert.strictEqual(bot.downloadedPayloads.length, 1);
+	assert.strictEqual(
+		bot.downloadedPayloads[0].body.messageId,
+		undefined,
+		"Sem captura não pede ao whatsgo a cópia guardada por messageId"
+	);
+
+	// 3. Outra pessoa citando a view-once (ex.: !s, !getaudio, !lembrete): recusado
+	const quoteContext = {
+		stanzaID: "VO_OFF_1",
+		participant: authorA,
+		quotedMessage: {
+			viewOnceMessageV2: {
+				message: { imageMessage: { mimetype: "image/png", viewOnce: true } }
+			}
+		}
+	};
+	const quotingByB = await bot.formatMessageFromGo(
+		buildGoMessage({
+			id: "CMD_B_1",
+			sender: userB,
+			message: { extendedTextMessage: { text: "!s", contextInfo: quoteContext } }
+		}),
+		true
+	);
+	bot.downloadedPayloads.length = 0;
+	const quotedForB = await quotingByB.origin.getQuotedMessage();
+	assert.strictEqual(quotedForB.isViewOnce, true);
+	assert.strictEqual(
+		await quotedForB.downloadMedia(),
+		null,
+		"Terceiro citando view-once não pode baixar a mídia"
+	);
+	assert.strictEqual(bot.downloadedPayloads.length, 0, "Nem chega a chamar o whatsgo");
+
+	// Mesmo fluxo, mas quem cita é o autor: permitido (via contextInfo e via cache)
+	const quotingByA = await bot.formatMessageFromGo(
+		buildGoMessage({
+			id: "CMD_A_1",
+			sender: "111222333444@lid",
+			senderAlt: authorA,
+			message: { extendedTextMessage: { text: "!s", contextInfo: quoteContext } }
+		}),
+		true
+	);
+	const quotedForA = await quotingByA.origin.getQuotedMessage();
+	assert.ok((await quotedForA.downloadMedia())?.data, "Autor citando a própria view-once baixa");
+
+	// 4. Reação de terceiro na view-once (mensagem recuperada do cache): recusado
+	const recovered = await bot.recoverMsgFromCache("VO_OFF_1");
+	recovered.originReaction = { senderId: userB, reaction: "👀" };
+	assert.strictEqual(await recovered.downloadMedia(), null, "Reação de terceiro não baixa");
+	recovered.originReaction = { senderId: authorA, reaction: "👀" };
+	assert.ok((await recovered.downloadMedia())?.data, "Reação do próprio autor baixa");
+
+	// 5. Mídia comum (não view-once) citada por terceiros continua funcionando
+	const normalQuote = await bot.formatMessageFromGo(
+		buildGoMessage({
+			id: "CMD_B_2",
+			sender: userB,
+			message: {
+				extendedTextMessage: {
+					text: "!s",
+					contextInfo: {
+						stanzaID: "IMG_NORMAL_1",
+						participant: authorA,
+						quotedMessage: { imageMessage: { mimetype: "image/png" } }
+					}
+				}
+			}
+		}),
+		true
+	);
+	const normalQuoted = await normalQuote.origin.getQuotedMessage();
+	assert.ok((await normalQuoted.downloadMedia())?.data, "Mídia normal citada deve baixar");
+
+	// 6. Auto-STT de grupo ignora áudio de visualização única
+	const SpeechCommands = require("../functions/SpeechCommands");
+	let sttDownloaded = false;
+	const sttResult = await SpeechCommands.processAutoSTT(
+		{ id: "stt-bot", ignorePV: false },
+		{
+			type: "voice",
+			isViewOnce: true,
+			group: "120363000111222@g.us",
+			author: authorA,
+			origin: { isViewOnce: true, react: async () => {} },
+			downloadMedia: async () => {
+				sttDownloaded = true;
+				return null;
+			}
+		},
+		{ id: "120363000111222@g.us", autoStt: true }
+	);
+	assert.strictEqual(sttResult, false, "Auto-STT não deve processar view-once");
+	assert.strictEqual(sttDownloaded, false, "Auto-STT nem baixa a mídia view-once");
+	console.log("✓ [1b] OK");
+}
+
+async function testViewOnceCacheBounds() {
+	console.log("[1c] Testando limites de bytes/TTL do cache de view-once...");
+	const bot = createMockWhatsAppBotGo({ viewOnceCaptureEnabled: true });
+	const payload = (bytes) => ({
+		base64: Buffer.alloc(bytes, 1).toString("base64"),
+		mimetype: "image/png"
+	});
+	bot.viewOnceCacheMaxBytes = 2500;
+	bot.viewOnceCacheMaxItemBytes = 2000;
+	bot.viewOnceCacheTtlMs = 60 * 1000;
+
+	assert.strictEqual(bot._cacheViewOnceMedia("A", payload(1000)), true);
+	assert.strictEqual(bot._cacheViewOnceMedia("B", payload(1000)), true);
+	assert.strictEqual(bot._cacheViewOnceMedia("C", payload(1000)), true);
+	const totalBytes = Array.from(bot.viewOnceMediaCache.values()).reduce((a, e) => a + e.bytes, 0);
+	assert.ok(totalBytes <= 2500, `Total em RAM (${totalBytes}) deve respeitar o limite de bytes`);
+	assert.strictEqual(bot.viewOnceMediaCache.has("A"), false, "Mais antigo é removido primeiro");
+	assert.ok(bot.viewOnceMediaCache.has("B") && bot.viewOnceMediaCache.has("C"));
+
+	assert.strictEqual(
+		bot._cacheViewOnceMedia("GRANDE", payload(2001)),
+		false,
+		"Item acima do limite individual não entra no cache"
+	);
+	assert.strictEqual(bot.viewOnceMediaCache.has("GRANDE"), false);
+
+	// TTL: item expirado não é usado e sai do cache
+	bot.viewOnceMediaCache.get("B").ts = Date.now() - 2 * 60 * 1000;
+	assert.strictEqual(bot._getCachedViewOnceMedia("B"), null);
+	assert.strictEqual(bot.viewOnceMediaCache.has("B"), false);
+	assert.ok(bot._getCachedViewOnceMedia("C"), "Item dentro do TTL continua disponível");
+
+	// Limite por quantidade continua valendo
+	bot.viewOnceCacheMaxBytes = 50 * 1024 * 1024;
+	bot.viewOnceCacheMaxEntries = 3;
+	for (const id of ["D", "E", "F", "G"]) bot._cacheViewOnceMedia(id, payload(10));
+	assert.ok(bot.viewOnceMediaCache.size <= 3);
+	console.log("✓ [1c] OK");
 }
 
 async function createTestPipeline() {
@@ -380,15 +588,24 @@ async function testDisabledCommandsAndRegistrations() {
 		"CommandsHelper não deve indexar !roubar enquanto desativado"
 	);
 
-	const llmHelper = fs.readFileSync(path.join(__dirname, "../../docs/LLM-HELPER.md"), "utf8");
+	// O contexto que a IA de ajuda recebe hoje vem do catálogo dinâmico (não mais do LLM-HELPER.md)
+	const aiBaseContext = commandsHelper.getBaseHelpContext();
 	assert.ok(
-		!llmHelper.includes("!roubar"),
-		"docs/LLM-HELPER.md não deve documentar !roubar desativado"
+		!aiBaseContext.includes("!roubar"),
+		"Contexto base da IA não deve documentar !roubar desativado"
 	);
 	assert.ok(
-		!llmHelper.includes("admin-roubar"),
-		"docs/LLM-HELPER.md NUNCA deve expor !admin-roubar"
+		!aiBaseContext.includes("admin-roubar"),
+		"Contexto base da IA NUNCA deve expor !admin-roubar"
 	);
+	assert.ok(!/!sa-/i.test(aiBaseContext), "Contexto base da IA NUNCA deve expor comandos !sa-");
+	for (const restricted of ["admin-roubar", "sa-joinGrupo", "!sa-addDonate"]) {
+		const details = commandsHelper.getCommandDetails(restricted);
+		assert.ok(
+			!details.includes("🤖 **Comando:**") && !/!sa-|!admin-/i.test(details),
+			`get_command_info não pode documentar comando restrito (${restricted}): ${details}`
+		);
+	}
 
 	const voReactions = [];
 	const voMsg = createMessage({
@@ -443,6 +660,43 @@ async function testPreservedViewOnceMethods() {
 	assert.strictEqual(typeof ViewOnceCommands.handleRoubarCommand, "function");
 	assert.strictEqual(typeof ViewOnceCommands.handleAdminRoubarCommand, "function");
 	assert.strictEqual(typeof ViewOnceCommands.forwardViewOnceToPv, "function");
+
+	// Se reativado, encaminhar no PV exige interação prévia no privado (PvSafety)
+	const PvSafetyService = require("../services/PvSafetyService");
+	const pvSafety = PvSafetyService.getInstance();
+	pvSafety.resetTestState();
+	const coldQuote = {
+		type: "image",
+		hasMedia: true,
+		isViewOnce: true,
+		content: { mimetype: "image/png", data: TINY_PNG_BASE64, isMessageMedia: true }
+	};
+	const coldCmd = createMessage({
+		id: "CMD_ROUBAR_COLD",
+		type: "text",
+		content: "!roubar",
+		group: groupId,
+		author: `${userPn}@s.whatsapp.net`
+	});
+	coldCmd.origin.getQuotedMessage = async () => coldQuote;
+	const coldRet = await ViewOnceCommands.handleRoubarCommand(bot, coldCmd, [], groupObj);
+	assert.strictEqual(coldRet.chatId, groupId, "Sem PV prévio responde no grupo");
+	assert.strictEqual(coldRet.content, pvSafety.PV_REQUIRED_MESSAGE);
+	const coldAdminCmd = createMessage({
+		id: "CMD_ADMIN_ROUBAR_COLD",
+		type: "text",
+		content: "!admin-roubar",
+		group: groupId,
+		author: `${adminPn}@s.whatsapp.net`
+	});
+	coldAdminCmd.origin.getQuotedMessage = async () => coldQuote;
+	assert.strictEqual(
+		await ViewOnceCommands.handleAdminRoubarCommand(bot, coldAdminCmd, [], groupObj),
+		false,
+		"Modo silencioso de admin sem PV prévio apenas ignora"
+	);
+	await pvSafety.recordPvInteraction(bot, `${userPn}@s.whatsapp.net`);
+	await pvSafety.recordPvInteraction(bot, `${adminPn}@s.whatsapp.net`);
 
 	// handleRoubarCommand via quote
 	const reactions = [];
@@ -535,6 +789,8 @@ async function testPreservedViewOnceMethods() {
 
 async function main() {
 	await testWhatsAppBotGoViewOnce();
+	await testViewOnceCaptureDisabled();
+	await testViewOnceCacheBounds();
 	await testCaptionMediaCommands();
 	await testDisabledCommandsAndRegistrations();
 	await testPreservedViewOnceMethods();
