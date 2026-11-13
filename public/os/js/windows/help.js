@@ -8,11 +8,10 @@ WindowManager.register('help', {
     singleton: true,
 
     render(wb) {
+        // O id de sessão é gerado pelo servidor (web-<uuid>) e devolvido na resposta/cookie;
+        // aqui só reaproveitamos o que já existe, sem inventar ids no navegador.
         const match = document.cookie.match(/ravena_help_session=([^;]+)/);
-        const sessionId = (match && match[1])
-            ? decodeURIComponent(match[1].trim())
-            : 'session-' + Math.random().toString(36).substring(2, 9);
-        document.cookie = `ravena_help_session=${encodeURIComponent(sessionId)}; path=/; max-age=2592000; SameSite=Lax`;
+        let sessionId = (match && match[1]) ? decodeURIComponent(match[1].trim()) : null;
         const body = wb.body;
 
         body.innerHTML = `
@@ -56,7 +55,8 @@ WindowManager.register('help', {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
             try {
-                const res = await Api.post('/api/ajuda/chat', { message: text, sessionId });
+                const res = await Api.post('/api/ajuda/chat', sessionId ? { message: text, sessionId } : { message: text });
+                if (res && res.sessionId) sessionId = res.sessionId;
                 // A resposta vem da IA: escapa antes de converter quebras de linha em <br>
                 loadingMsg.innerHTML = Formatters.escapeHtml(res.answer || 'Sem resposta').replace(/\n/g, '<br>');
             } catch (err) {
