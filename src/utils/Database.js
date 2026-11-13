@@ -741,6 +741,36 @@ class Database {
 		return this.coreRepo.getActiveGameEvents();
 	}
 
+	// --- Scheduled Events ---
+	async getScheduledEvents(options = {}) {
+		return this.coreRepo.getScheduledEvents(options);
+	}
+	async getScheduledEventById(id) {
+		return this.coreRepo.getScheduledEventById(id);
+	}
+	async createScheduledEvent(data) {
+		this.triggerBackupStart();
+		return this.coreRepo.createScheduledEvent(data);
+	}
+	async updateScheduledEvent(id, data, options = {}) {
+		this.triggerBackupStart();
+		return this.coreRepo.updateScheduledEvent(id, data, options);
+	}
+	async deleteScheduledEvent(id) {
+		this.triggerBackupStart();
+		return this.coreRepo.deleteScheduledEvent(id);
+	}
+	async getActiveScheduledEvents(now = Date.now()) {
+		return this.coreRepo.getActiveScheduledEvents(now);
+	}
+	async getPendingStartScheduledEvents(now = Date.now()) {
+		return this.coreRepo.getPendingStartScheduledEvents(now);
+	}
+	async claimScheduledEventStart(id, startedAt = Date.now()) {
+		this.triggerBackupStart();
+		return this.coreRepo.claimScheduledEventStart(id, startedAt);
+	}
+
 	// --- Pending Joins ---
 
 	async getPendingJoins() {

@@ -328,6 +328,16 @@ async function main() {
 			weeklyDigestService.start();
 		}
 
+		// Inicializa serviço de Eventos Programados
+		const ScheduledEventService = require("./src/services/ScheduledEventService");
+		const scheduledEventService = ScheduledEventService.getInstance();
+		botInstances.forEach((b) => scheduledEventService.registerBot(b));
+		if (!disableActivity) {
+			scheduledEventService.start();
+		} else {
+			await scheduledEventService.init().catch(() => {});
+		}
+
 		// Inicializa scheduler de limpeza automática de mensagens (ClearChat - 03:30 BRT)
 		chatCleanerScheduler = ChatCleanerScheduler.getInstance({
 			bots: botInstances
@@ -392,6 +402,11 @@ async function main() {
 		if (groupMonitoringService) {
 			groupMonitoringService.stop();
 		}
+
+		// Para o scheduler de eventos programados
+		try {
+			require("./src/services/ScheduledEventService").getInstance().stop();
+		} catch (_e) {}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
 		if (botAPI) {

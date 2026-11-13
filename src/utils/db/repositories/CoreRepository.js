@@ -204,6 +204,25 @@ class CoreRepository {
 			this.DB,
 			"CREATE INDEX IF NOT EXISTS idx_global_nicks_user_id ON global_nicks(user_id)"
 		);
+		this.mappers.exec(
+			this.DB,
+			`CREATE TABLE IF NOT EXISTS scheduled_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				start_time INTEGER NOT NULL,
+				end_time INTEGER NOT NULL,
+				start_grants TEXT NOT NULL DEFAULT '{}',
+				ongoing_buffs TEXT NOT NULL DEFAULT '{}',
+				message TEXT NOT NULL DEFAULT '',
+				started_at INTEGER,
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			)`
+		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_scheduled_events_times ON scheduled_events(start_time, end_time)"
+		);
 		this._migrateLegacyGlobalNicks();
 		this._loadGlobalIgnoredCache();
 
@@ -1877,6 +1896,182 @@ class CoreRepository {
 		} catch (error) {
 			this.logger.error("Error getting all global nicks:", error);
 			return {};
+		}
+	}
+
+	// --- Scheduled Events ---
+
+	_parseScheduledEventRow(row) {
+		if (!row) return null;
+		let startGrants = {};
+		let ongoingBuffs = {};
+		try {
+			startGrants = row.start_grants ? JSON.parse(row.start_grants) : {};
+		} catch (_e) {
+			startGrants = {};
+		}
+		try {
+			ongoingBuffs = row.ongoing_buffs ? JSON.parse(row.ongoing_buffs) : {};
+		} catch (_e) {
+			ongoingBuffs = {};
+		}
+		return {
+			id: row.id,
+			name: row.name,
+			startTime: Number(row.start_time),
+			endTime: Number(row.end_time),
+			startGrants: startGrants && typeof startGrants === "object" ? startGrants : {},
+			ongoingBuffs: ongoingBuffs && typeof ongoingBuffs === "object" ? ongoingBuffs : {},
+			message: row.message || "",
+			startedAt: row.started_at ? Number(row.started_at) : null,
+			createdAt: Number(row.created_at),
+			updatedAt: Number(row.updated_at)
+		};
+	}
+
+	async getScheduledEvents({ year = null } = {}) {
+		try {
+			if (year !== null && year !== undefined && /^\d{4}$/.test(String(year))) {
+				const y = Number(year);
+				const yearStart = Date.parse(`${y}-01-01T00:00:00-03:00`);
+				const yearEnd = Date.parse(`${y + 1}-01-01T00:00:00-03:00`);
+				const rows = this.mappers.all(
+					this.DB,
+					"SELECT * FROM scheduled_events WHERE end_time > ? AND start_time < ? ORDER BY start_time ASC, id ASC",
+					[yearStart, yearEnd]
+				);
+				return rows.map((r) => this._parseScheduledEventRow(r));
+			}
+
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM scheduled_events ORDER BY start_time ASC, id ASC"
+			);
+			return rows.map((r) => this._parseScheduledEventRow(r));
+		} catch (error) {
+			this.logger.error("Error getting scheduled events:", error);
+			return [];
+		}
+	}
+
+	async getScheduledEventById(id) {
+		try {
+			const row = this.mappers.get(this.DB, "SELECT * FROM scheduled_events WHERE id = ?", [
+				Number(id)
+			]);
+			return this._parseScheduledEventRow(row);
+		} catch (error) {
+			this.logger.error("Error getting scheduled event by id:", error);
+			return null;
+		}
+	}
+
+	async createScheduledEvent(data) {
+		try {
+			const now = Date.now();
+			const res = this.mappers.run(
+				this.DB,
+				`INSERT INTO scheduled_events
+					(name, start_time, end_time, start_grants, ongoing_buffs, message, started_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+				[
+					String(data.name || "").trim(),
+					Number(data.startTime),
+					Number(data.endTime),
+					JSON.stringify(data.startGrants || {}),
+					JSON.stringify(data.ongoingBuffs || {}),
+					String(data.message || ""),
+					now,
+					now
+				]
+			);
+			return this.getScheduledEventById(res.lastInsertRowid);
+		} catch (error) {
+			this.logger.error("Error creating scheduled event:", error);
+			throw error;
+		}
+	}
+
+	async updateScheduledEvent(id, data, { resetStartedAt = false } = {}) {
+		try {
+			const now = Date.now();
+			const sql = resetStartedAt
+				? `UPDATE scheduled_events
+				   SET name = ?, start_time = ?, end_time = ?, start_grants = ?, ongoing_buffs = ?, message = ?, started_at = NULL, updated_at = ?
+				   WHERE id = ?`
+				: `UPDATE scheduled_events
+				   SET name = ?, start_time = ?, end_time = ?, start_grants = ?, ongoing_buffs = ?, message = ?, updated_at = ?
+				   WHERE id = ?`;
+
+			const res = this.mappers.run(this.DB, sql, [
+				String(data.name || "").trim(),
+				Number(data.startTime),
+				Number(data.endTime),
+				JSON.stringify(data.startGrants || {}),
+				JSON.stringify(data.ongoingBuffs || {}),
+				String(data.message || ""),
+				now,
+				Number(id)
+			]);
+			if (!res || res.changes === 0) return null;
+			return this.getScheduledEventById(id);
+		} catch (error) {
+			this.logger.error("Error updating scheduled event:", error);
+			throw error;
+		}
+	}
+
+	async deleteScheduledEvent(id) {
+		try {
+			const res = this.mappers.run(this.DB, "DELETE FROM scheduled_events WHERE id = ?", [
+				Number(id)
+			]);
+			return Boolean(res && res.changes > 0);
+		} catch (error) {
+			this.logger.error("Error deleting scheduled event:", error);
+			return false;
+		}
+	}
+
+	async getActiveScheduledEvents(now = Date.now()) {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM scheduled_events WHERE start_time <= ? AND end_time > ? ORDER BY start_time ASC, id ASC",
+				[now, now]
+			);
+			return rows.map((r) => this._parseScheduledEventRow(r));
+		} catch (error) {
+			this.logger.error("Error getting active scheduled events:", error);
+			return [];
+		}
+	}
+
+	async getPendingStartScheduledEvents(now = Date.now()) {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM scheduled_events WHERE start_time <= ? AND end_time > ? AND started_at IS NULL ORDER BY start_time ASC, id ASC",
+				[now, now]
+			);
+			return rows.map((r) => this._parseScheduledEventRow(r));
+		} catch (error) {
+			this.logger.error("Error getting pending start scheduled events:", error);
+			return [];
+		}
+	}
+
+	async claimScheduledEventStart(id, startedAt = Date.now()) {
+		try {
+			const res = this.mappers.run(
+				this.DB,
+				"UPDATE scheduled_events SET started_at = ?, updated_at = ? WHERE id = ? AND started_at IS NULL",
+				[startedAt, startedAt, Number(id)]
+			);
+			return Boolean(res && res.changes === 1);
+		} catch (error) {
+			this.logger.error("Error claiming scheduled event start:", error);
+			return false;
 		}
 	}
 }

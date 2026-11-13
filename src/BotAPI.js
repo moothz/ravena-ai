@@ -53,6 +53,7 @@ const { registerServicesRoutes } = require("./BotAPI/routes/servicesRoutes");
 const { registerWebhooksRoutes } = require("./BotAPI/routes/webhooksRoutes");
 const { registerFeaturesRoutes } = require("./BotAPI/routes/featuresRoutes");
 const { registerGamesRoutes } = require("./BotAPI/routes/gamesRoutes");
+const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
 
 /**
  * Servidor API para o ecossistema do bot WhatsApp Ravena
@@ -332,6 +333,7 @@ class BotAPI {
 		registerWebhooksRoutes(this);
 		registerFeaturesRoutes(this);
 		registerGamesRoutes(this);
+		registerEventsRoutes(this);
 
 		// Middleware global de tratamento de erros para rotas da API
 		this.app.use((err, req, res, next) => {

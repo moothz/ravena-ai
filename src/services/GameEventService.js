@@ -96,6 +96,12 @@ async function init() {
 	} catch (error) {
 		logger.error("[GameEventService] Erro ao carregar eventos do SQLite:", error);
 	}
+	try {
+		const ScheduledEventService = require("./ScheduledEventService");
+		await ScheduledEventService.getInstance().init();
+	} catch (schedErr) {
+		logger.error("[GameEventService] Erro ao inicializar ScheduledEventService:", schedErr);
+	}
 }
 
 // Auto-inicialização assíncrona
@@ -133,17 +139,40 @@ function getEvent(game, type) {
 	const normType = normalizeType(normGame, type);
 	if (!normGame || !normType) return null;
 
+	const now = Date.now();
 	const key = `${normGame}:${normType}`;
 	const ev = activeEventsCache.get(key);
-	if (!ev) return null;
+	let validAdHoc = null;
 
-	if (ev.endTime <= Date.now()) {
-		activeEventsCache.delete(key);
-		database.deleteGameEvent(normGame, normType).catch(() => {});
-		return null;
+	if (ev) {
+		if (ev.endTime <= now) {
+			activeEventsCache.delete(key);
+			database.deleteGameEvent(normGame, normType).catch(() => {});
+		} else {
+			validAdHoc = ev;
+		}
 	}
 
-	return ev;
+	let schedBuff = null;
+	try {
+		const ScheduledEventService = require("./ScheduledEventService");
+		schedBuff = ScheduledEventService.getInstance().getActiveOngoingBuffs(normGame, normType, now);
+	} catch (_e) {
+		schedBuff = null;
+	}
+
+	if (!validAdHoc && !schedBuff) return null;
+	if (validAdHoc && !schedBuff) return validAdHoc;
+	if (!validAdHoc && schedBuff) return schedBuff;
+
+	return {
+		game: normGame,
+		type: normType,
+		value: Number(validAdHoc.value || 0) + Number(schedBuff.value || 0),
+		startTime: Math.min(validAdHoc.startTime, schedBuff.startTime),
+		endTime: Math.max(validAdHoc.endTime, schedBuff.endTime),
+		eventNames: schedBuff.eventNames
+	};
 }
 
 /**
@@ -167,7 +196,7 @@ function getMultiplier(game, type) {
 function getActiveEvents(gameFilter = null) {
 	const normGame = gameFilter ? normalizeGame(gameFilter) : null;
 	const now = Date.now();
-	const result = [];
+	const merged = new Map();
 
 	for (const [key, ev] of activeEventsCache.entries()) {
 		if (ev.endTime <= now) {
@@ -177,7 +206,7 @@ function getActiveEvents(gameFilter = null) {
 		}
 
 		if (!normGame || ev.game === normGame) {
-			result.push({
+			merged.set(`${ev.game}:${ev.type}`, {
 				...ev,
 				remainingText: formatRemainingTime(ev.endTime),
 				multiplier: Number((1 + ev.value / 100).toFixed(4))
@@ -185,7 +214,46 @@ function getActiveEvents(gameFilter = null) {
 		}
 	}
 
-	return result;
+	try {
+		const ScheduledEventService = require("./ScheduledEventService");
+		const scheduledList = ScheduledEventService.getInstance().getActiveScheduledEventsSnapshot(now);
+		for (const sev of scheduledList) {
+			for (const [buffId, rawVal] of Object.entries(sev.ongoingBuffs || {})) {
+				const val = Number(rawVal);
+				if (!val || val <= 0) continue;
+				const [g, t] = buffId.split(".");
+				if (normGame && g !== normGame) continue;
+				const key = `${g}:${t}`;
+				const existing = merged.get(key);
+				if (existing) {
+					const combinedVal = Number(existing.value || 0) + val;
+					const combinedEnd = Math.max(existing.endTime, sev.endTime);
+					existing.value = combinedVal;
+					existing.startTime = Math.min(existing.startTime, sev.startTime);
+					existing.endTime = combinedEnd;
+					existing.remainingText = formatRemainingTime(combinedEnd);
+					existing.multiplier = Number((1 + combinedVal / 100).toFixed(4));
+					existing.eventNames = [...(existing.eventNames || []), sev.name];
+				} else {
+					merged.set(key, {
+						game: g,
+						type: t,
+						value: val,
+						startTime: sev.startTime,
+						endTime: sev.endTime,
+						createdBy: "scheduled",
+						eventNames: [sev.name],
+						remainingText: formatRemainingTime(sev.endTime),
+						multiplier: Number((1 + val / 100).toFixed(4))
+					});
+				}
+			}
+		}
+	} catch (_e) {
+		// Ignora se ScheduledEventService ainda estiver inicializando
+	}
+
+	return Array.from(merged.values());
 }
 
 /**
