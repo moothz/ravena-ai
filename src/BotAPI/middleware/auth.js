@@ -233,7 +233,83 @@ function createAuthenticateUPS(api) {
 	};
 }
 
+/** Tamanho mínimo aceito para o segredo compartilhado com a API do Waifuletes */
+const MARKET_SECRET_MIN_LENGTH = 16;
+
+/**
+ * Lê o segredo compartilhado das rotas internas de mercado (/api/market/*).
+ * Retorna null quando ausente ou curto demais (a rota deve falhar fechada).
+ * @returns {string|null}
+ */
+function getMarketApiSecret() {
+	const raw = process.env.MARKET_API_SECRET;
+	if (typeof raw !== "string") return null;
+	const secret = raw.trim();
+	return secret.length >= MARKET_SECRET_MIN_LENGTH ? secret : null;
+}
+
+/**
+ * Compara dois segredos em tempo constante, sem vazar o tamanho esperado
+ * (os dois lados são reduzidos a um hash SHA-256 de 32 bytes antes do timingSafeEqual).
+ * @param {string} provided
+ * @param {string} expected
+ * @returns {boolean}
+ */
+function safeSecretEquals(provided, expected) {
+	if (typeof provided !== "string" || typeof expected !== "string") return false;
+	const a = crypto.createHash("sha256").update(provided, "utf8").digest();
+	const b = crypto.createHash("sha256").update(expected, "utf8").digest();
+	return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Cria o middleware que autentica chamadas servidor-a-servidor do Waifuletes
+ * às rotas internas de mercado via header `X-Market-Secret`.
+ *
+ * Falha fechada: sem MARKET_API_SECRET válido (>= 16 caracteres) responde 503.
+ * Não há fallback por IP: `trust proxy` está ativo e o app fica atrás de proxy reverso.
+ * @param {Object} api - Instância da BotAPI (usa api.logger)
+ * @returns {import("express").RequestHandler}
+ */
+function createAuthenticateMarket(api) {
+	let warnedMissingSecret = false;
+	const warnMissingSecretOnce = () => {
+		if (warnedMissingSecret) return;
+		warnedMissingSecret = true;
+		api.logger?.warn?.(
+			`MARKET_API_SECRET ausente ou com menos de ${MARKET_SECRET_MIN_LENGTH} caracteres: rotas /api/market/* respondem 503 até o segredo ser configurado (mesmo valor no .env do Waifuletes).`
+		);
+	};
+
+	if (!getMarketApiSecret()) {
+		warnMissingSecretOnce();
+	}
+
+	return (req, res, next) => {
+		const expected = getMarketApiSecret();
+		if (!expected) {
+			warnMissingSecretOnce();
+			return res.status(503).json({ success: false, reason: "MARKET_API_SECRET não configurado" });
+		}
+
+		const header = req.headers ? req.headers["x-market-secret"] : undefined;
+		const provided = typeof header === "string" ? header.trim() : "";
+		if (!provided || !safeSecretEquals(provided, expected)) {
+			api.logger?.warn?.(
+				`Acesso não autorizado à rota interna de mercado ${req.method} ${req.path} (IP: ${req.ip})`
+			);
+			return res.status(401).json({ success: false, reason: "Não autorizado" });
+		}
+
+		return next();
+	};
+}
+
 module.exports = {
+	MARKET_SECRET_MIN_LENGTH,
+	getMarketApiSecret,
+	safeSecretEquals,
+	createAuthenticateMarket,
 	getAdminSessionSecret,
 	createAdminSessionToken,
 	isValidAdminSession,

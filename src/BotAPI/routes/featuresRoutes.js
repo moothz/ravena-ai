@@ -5,6 +5,8 @@ const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
 const bankService = require("../../services/BankService");
 const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
+const { createAuthenticateMarket } = require("../middleware/auth");
+const { createMarketRateLimiters } = require("../middleware/rateLimiters");
 const jardimClient = new ShadowGardenClient();
 
 // Caches locais para Waifuletes (detalhes de personagens e nomes de grupos)
@@ -25,6 +27,11 @@ const waifuGroupCache = new Map();
  * - GET  /api/waifuletes/media/*mediaPath    - Proxy de streaming das imagens locais do Waifuletes
  * - GET  /api/waifuletes/marriage-photo/:characterId - Streaming de fotos de casamento geradas
  * - GET  /analytics                          - Gráficos analíticos de tráfego de mensagens por período
+ * - GET  /api/market/user-inventory/:userId  - [interna] Inventário ao vivo para o mercado do Waifuletes
+ * - POST /api/market/transfer                - [interna] Transferência de itens do mercado (com rollback)
+ *
+ * As rotas /api/market/* são servidor-a-servidor (somente a API do Waifuletes as chama):
+ * exigem o header `X-Market-Secret` igual a MARKET_API_SECRET e têm rate limit dedicado.
  *
  * @param {Object} api - Instância da BotAPI
  */
@@ -400,8 +407,17 @@ function registerFeaturesRoutes(api) {
 		}
 	});
 
+	// Guardas das rotas internas de mercado: limite de falhas de autenticação,
+	// teto geral por IP e segredo compartilhado (falha fechada com 503 se não configurado)
+	const marketLimiters = createMarketRateLimiters();
+	const marketGuards = [
+		marketLimiters.authFailureLimiter,
+		marketLimiters.limiter,
+		createAuthenticateMarket(api)
+	];
+
 	// Endpoint de Inventário ao Vivo para o Mercado de Classificados
-	app.get("/api/market/user-inventory/:userId", async (req, res) => {
+	app.get("/api/market/user-inventory/:userId", ...marketGuards, async (req, res) => {
 		try {
 			const { userId } = req.params;
 			if (!userId) {
@@ -519,7 +535,7 @@ function registerFeaturesRoutes(api) {
 	});
 
 	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
-	app.post("/api/market/transfer", async (req, res) => {
+	app.post("/api/market/transfer", ...marketGuards, async (req, res) => {
 		try {
 			const {
 				fromUserId,
