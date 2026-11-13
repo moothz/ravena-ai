@@ -365,6 +365,38 @@ function registerIndexRoutes(api) {
 	};
 	app.get(["/ravenabank/admin", "/banco/admin"], api.authenticateBasic, serveBancoAdmin);
 
+	// Eventos Programados (Público e Admin)
+	app.get(["/eventos", "/events"], async (req, res) => {
+		try {
+			const htmlPath = path.join(__dirname, "../../../public/eventos.html");
+			const [rawHtml, vJs] = await Promise.all([
+				fs.readFile(htmlPath, "utf-8"),
+				assetVersion("eventos.js")
+			]);
+			const html = rawHtml.replace(/eventos\.js\?v=[^"']+/g, `eventos.js?v=${vJs}`);
+			res.setHeader("Content-Type", "text/html; charset=utf-8");
+			return res.send(html);
+		} catch (err) {
+			return res.sendFile(path.join(__dirname, "../../../public/eventos.html"));
+		}
+	});
+
+	app.get(["/eventos/admin", "/events/admin"], api.authenticateBasic, async (req, res) => {
+		if (api.isAdmin(req)) api.setAdminSessionCookie(res);
+		try {
+			const htmlPath = path.join(__dirname, "../../../public/eventos-admin.html");
+			const [rawHtml, vJs] = await Promise.all([
+				fs.readFile(htmlPath, "utf-8"),
+				assetVersion("eventos-admin.js")
+			]);
+			const html = rawHtml.replace(/eventos-admin\.js\?v=[^"']+/g, `eventos-admin.js?v=${vJs}`);
+			res.setHeader("Content-Type", "text/html; charset=utf-8");
+			return res.send(html);
+		} catch (err) {
+			return res.sendFile(path.join(__dirname, "../../../public/eventos-admin.html"));
+		}
+	});
+
 	// Página de Dossier dos Grupos (HTML)
 	app.get("/groups-dossier", api.authenticateBasic, (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/groups-dossier.html"));

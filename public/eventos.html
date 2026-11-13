@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05060d">
+    <title>Calendário de Eventos Programados — RavenaBot</title>
+
+    <meta name="description" content="Calendário anual de eventos programados, recompensas iniciais e buffs ativos dos jogos da RavenaBot.">
+    <meta name="author" content="moothz">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="stylesheet" href="/cmd.css?v=2">
+    <link rel="stylesheet" href="/ajuda.css?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+
+    <style>
+        :root {
+            --primary-color: #04a9f0;
+            --primary-dark: #0388c2;
+            --secondary-color: #7928ca;
+            --background-color: #05060d;
+            --surface-color: #0d101d;
+            --card-color: #141728;
+            --card-hover: #191e33;
+            --text-color: #b7b7c5;
+            --text-highlight: #ffffff;
+            --border-color: #242945;
+            --accent-gold: #ffd700;
+            --accent-purple: #9d4edd;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-gray: #64748b;
+            --accent-cyan: #06b6d4;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px 10px 40px;
+            min-height: 100vh;
+        }
+
+        .events-container {
+            max-width: 1180px;
+            margin: 0 auto;
+            background: var(--surface-color);
+            border-radius: 16px;
+            padding: 26px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            border: 1px solid var(--border-color);
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+            padding-bottom: 20px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(121, 40, 202, 0.25), rgba(4, 169, 240, 0.25));
+            border: 1px solid rgba(4, 169, 240, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: var(--primary-color);
+        }
+
+        .header-brand h1 {
+            margin: 0 0 4px 0;
+            font-size: 23px;
+            color: #ffffff;
+        }
+
+        .header-brand p {
+            margin: 0;
+            font-size: 13px;
+            color: #8b8ea8;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .year-select {
+            background: var(--card-color);
+            color: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .year-select:focus {
+            border-color: var(--primary-color);
+        }
+
+        .btn-nav {
+            background: var(--card-color);
+            color: #cbd5e1;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: all 0.2s;
+        }
+
+        .btn-nav:hover {
+            color: #ffffff;
+            border-color: var(--primary-color);
+            background: rgba(4, 169, 240, 0.12);
+        }
+
+        .btn-nav.primary {
+            background: linear-gradient(135deg, rgba(121, 40, 202, 0.85), rgba(4, 169, 240, 0.85));
+            border-color: rgba(4, 169, 240, 0.5);
+            color: #ffffff;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .summary-card {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .summary-card .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #8b8ea8;
+            font-weight: 600;
+        }
+
+        .summary-card .value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .summary-card.active-card {
+            border-color: rgba(16, 185, 129, 0.45);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), var(--card-color));
+        }
+
+        .summary-card.next-card {
+            border-color: rgba(245, 158, 11, 0.45);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), var(--card-color));
+        }
+
+        .legend-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            background: rgba(20, 23, 40, 0.7);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 12.5px;
+        }
+
+        .legend-title {
+            font-weight: 700;
+            color: #cbd5e1;
+            margin-right: 4px;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .legend-ativo {
+            background: rgba(16, 185, 129, 0.18);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.45);
+        }
+
+        .legend-proximo {
+            background: rgba(245, 158, 11, 0.18);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.45);
+        }
+
+        .legend-normal {
+            background: rgba(56, 189, 248, 0.12);
+            color: #e2e8f0;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .legend-passado {
+            background: rgba(100, 116, 139, 0.18);
+            color: #94a3b8;
+            border: 1px solid rgba(100, 116, 139, 0.4);
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .dot-ativo { background: #10b981; box-shadow: 0 0 8px #10b981; }
+        .dot-proximo { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+        .dot-normal { background: #e2e8f0; }
+        .dot-passado { background: #64748b; }
+
+        .table-wrapper {
+            background: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow-x: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        table.events-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        table.events-table th {
+            background: rgba(255, 255, 255, 0.03);
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        table.events-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(36, 41, 69, 0.65);
+            vertical-align: top;
+        }
+
+        table.events-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Cores por status conforme solicitado:
+           - passado = cinza
+           - proximo = amarelo
+           - ativo   = verde
+           - normal  = padrão
+        */
+        tr.event-row-passado {
+            background: rgba(100, 116, 139, 0.09);
+            color: #64748b;
+            border-left: 4px solid #475569;
+        }
+
+        tr.event-row-passado .event-name,
+        tr.event-row-passado .mono-date,
+        tr.event-row-passado .buff-chip {
+            color: #94a3b8;
+            opacity: 0.72;
+        }
+
+        tr.event-row-proximo {
+            background: rgba(245, 158, 11, 0.13);
+            color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+
+        tr.event-row-proximo:hover {
+            background: rgba(245, 158, 11, 0.19);
+        }
+
+        tr.event-row-ativo {
+            background: rgba(16, 185, 129, 0.15);
+            color: #ecfdf5;
+            border-left: 4px solid #10b981;
+        }
+
+        tr.event-row-ativo:hover {
+            background: rgba(16, 185, 129, 0.22);
+        }
+
+        tr.event-row-normal {
+            background: transparent;
+            color: #e2e8f0;
+            border-left: 4px solid transparent;
+        }
+
+        tr.event-row-normal:hover {
+            background: var(--card-hover);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11.5px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-badge.ativo {
+            background: rgba(16, 185, 129, 0.22);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.55);
+        }
+
+        .status-badge.proximo {
+            background: rgba(245, 158, 11, 0.22);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.55);
+        }
+
+        .status-badge.passado {
+            background: rgba(100, 116, 139, 0.22);
+            color: #94a3b8;
+            border: 1px solid rgba(100, 116, 139, 0.45);
+        }
+
+        .status-badge.normal {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+        }
+
+        .event-name {
+            font-weight: 700;
+            font-size: 14px;
+            color: #ffffff;
+            margin-bottom: 3px;
+        }
+
+        .mono-date {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .buffs-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .buff-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            color: #e2e8f0;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            font-weight: 500;
+        }
+
+        .buff-chip.grant {
+            border-color: rgba(255, 215, 0, 0.35);
+            color: #fde68a;
+        }
+
+        .buff-chip.ongoing {
+            border-color: rgba(4, 169, 240, 0.35);
+            color: #7dd3fc;
+        }
+
+        .empty-state {
+            padding: 48px 20px;
+            text-align: center;
+            color: #8b8ea8;
+        }
+
+        .empty-state i {
+            font-size: 36px;
+            margin-bottom: 12px;
+            opacity: 0.6;
+        }
+
+        .footer-note {
+            margin-top: 18px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="events-container">
+        <header class="top-bar">
+            <div class="header-brand">
+                <div class="brand-icon"><i class="fas fa-calendar-star fa-calendar-alt"></i></div>
+                <div>
+                    <h1>Calendário de Eventos Programados</h1>
+                    <p>Cronograma anual oficial de bônus instantâneos e buffs ativos da RavenaBot (Horário de Brasília)</p>
+                </div>
+            </div>
+            <div class="header-controls">
+                <label for="year-select" style="font-size: 12.5px; color: #94a3b8; font-weight: 600;">Ano:</label>
+                <select id="year-select" class="year-select"></select>
+                <button type="button" id="btn-refresh" class="btn-nav" title="Atualizar lista">
+                    <i class="fas fa-sync-alt"></i> Atualizar
+                </button>
+                <a href="/eventos/admin" class="btn-nav primary">
+                    <i class="fas fa-user-shield"></i> Admin
+                </a>
+            </div>
+        </header>
+
+        <section class="summary-grid">
+            <div class="summary-card active-card">
+                <span class="label"><i class="fas fa-bolt"></i> Ativos Agora</span>
+                <span class="value" id="stat-active">—</span>
+            </div>
+            <div class="summary-card next-card">
+                <span class="label"><i class="fas fa-hourglass-half"></i> Próximo Evento</span>
+                <span class="value" id="stat-next">—</span>
+            </div>
+            <div class="summary-card">
+                <span class="label"><i class="fas fa-calendar-check"></i> Eventos em <span id="stat-year-label"></span></span>
+                <span class="value" id="stat-total">—</span>
+            </div>
+        </section>
+
+        <div class="legend-bar">
+            <span class="legend-title">Legenda:</span>
+            <span class="legend-item legend-ativo"><span class="dot dot-ativo"></span> Verde — Ativo agora</span>
+            <span class="legend-item legend-proximo"><span class="dot dot-proximo"></span> Amarelo — Próximo evento</span>
+            <span class="legend-item legend-normal"><span class="dot dot-normal"></span> Normal — Demais eventos futuros</span>
+            <span class="legend-item legend-passado"><span class="dot dot-passado"></span> Cinza — Já encerrado</span>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="events-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Evento</th>
+                        <th>Início (BRT)</th>
+                        <th>Término (BRT)</th>
+                        <th>Duração</th>
+                        <th>Ganho ao Iniciar</th>
+                        <th>Buffs Durante o Evento</th>
+                    </tr>
+                </thead>
+                <tbody id="events-tbody">
+                    <tr>
+                        <td colspan="7" class="empty-state">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <div>Carregando eventos programados...</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer-note">
+            Quando um evento inicia, os ganhos instantâneos são creditados automaticamente e o aviso oficial é enviado nos grupos de Avisos e Anúncios da Ravena.
+        </div>
+    </div>
+
+    <script src="/eventos.js?v=20261113-1"></script>
+</body>
+</html>
