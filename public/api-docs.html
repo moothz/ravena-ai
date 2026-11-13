@@ -287,7 +287,7 @@ curl https://ravena.moothz.com/api/stt/status/c56a4180-65aa-42ec-a945-5fd21dec05
                 <div class="code-box">
 {
   "message": "Como funciona o sistema de pescaria?",
-  "sessionId": "opcional_id_de_sessao"
+  "sessionId": "opcional: web-&lt;uuid&gt; devolvido na resposta anterior"
 }
                 </div>
                 <div class="section-label">Exemplo cURL</div>
@@ -300,7 +300,8 @@ curl -X POST https://ravena.moothz.com/api/ajuda/chat \
                 <div class="section-label">Resposta</div>
                 <div class="code-box">
 {
-  "answer": "Os comandos de administração iniciam com `!g-` como `!g-painel`, `!g-addCmd`..."
+  "answer": "Os comandos de administração iniciam com `!g-` como `!g-painel`, `!g-addCmd`...",
+  "sessionId": "web-3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b"
 }
                 </div>
             </div>

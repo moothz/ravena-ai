@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const fs = require("fs").promises;
 const path = require("path");
 const Logger = require("../utils/Logger");
@@ -19,6 +20,61 @@ let lastCacheRead = 0;
 const sessionMemoryCache = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutos
 const MAX_TURNS_PER_SESSION = 6; // até 6 mensagens (3 pares de perguntas/respostas)
+
+// Ids de sessão do chat web são gerados no servidor (web-<uuid v4>) e nunca escolhidos livremente
+// pelo cliente. As chaves de memória são separadas por namespace ("wa:" para chats do bot,
+// "web:" para o site/API) para que um visitante não leia nem envenene o histórico de um
+// grupo/contato enviando sessionId = "5511...@s.whatsapp.net".
+const WEB_HELP_SESSION_REGEX = /^web-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Gera um novo id de sessão web para o chat de ajuda
+ * @returns {string}
+ */
+function createWebHelpSessionId() {
+	return `web-${crypto.randomUUID()}`;
+}
+
+/**
+ * Valida o formato de um id de sessão web (web-<uuid>)
+ * @param {*} sessionId
+ * @returns {boolean}
+ */
+function isValidWebHelpSessionId(sessionId) {
+	return typeof sessionId === "string" && WEB_HELP_SESSION_REGEX.test(sessionId);
+}
+
+/**
+ * Chave de memória para uma sessão do chat web (null se o id for inválido)
+ * @param {string} webSessionId
+ * @returns {string|null}
+ */
+function webHelpSessionKey(webSessionId) {
+	return isValidWebHelpSessionId(webSessionId) ? `web:${webSessionId}` : null;
+}
+
+/**
+ * Chave de memória para um chat do bot (grupo ou PV)
+ * @param {string} chatId
+ * @returns {string|null}
+ */
+function chatHelpSessionKey(chatId) {
+	return chatId ? `wa:${chatId}` : null;
+}
+
+/**
+ * Aceita apenas chaves já com namespace conhecido; qualquer outra coisa fica sem memória
+ * @param {*} sessionKey
+ * @returns {string|null}
+ */
+function normalizeSessionKey(sessionKey) {
+	if (typeof sessionKey !== "string") return null;
+	if (sessionKey.startsWith("wa:") && sessionKey.length > 3) return sessionKey;
+	if (sessionKey.startsWith("web:") && isValidWebHelpSessionId(sessionKey.slice(4))) {
+		return sessionKey;
+	}
+	return null;
+}
 
 function getForbiddenPhoneSuffix() {
 	const firstAdmin = (process.env.SUPER_ADMINS || "")
@@ -100,14 +156,17 @@ async function loadBaseContext() {
 /**
  * Processa perguntas de ajuda e dúvidas sobre o bot usando o LLMService com tool calling (commands_helper)
  * @param {string} question - Pergunta do usuário
- * @param {string} [sessionId] - ID de sessão opcional (para chat web ou contexto por chat)
+ * @param {string} [sessionKey] - Chave de memória com namespace: chatHelpSessionKey(chatId) ("wa:...")
+ *   ou webHelpSessionKey(id) ("web:web-<uuid>"). Chaves sem namespace válido não usam memória.
  * @param {string|null} [apiUser] - Nome de usuário de API externa opcional
  * @returns {Promise<string>} - Resposta gerada pela IA
  */
-async function askHelp(question, sessionId = null, apiUser = null) {
+async function askHelp(question, sessionKey = null, apiUser = null) {
 	if (!question || typeof question !== "string" || question.trim().length < 2) {
 		return "O que você gostaria de saber? Exemplo: !ajuda como criar comandos personalizados ou !ajuda como funciona a pescaria";
 	}
+
+	const sessionId = normalizeSessionKey(sessionKey);
 
 	const baseContext = await loadBaseContext();
 	const history = getSessionHistory(sessionId);
@@ -222,7 +281,7 @@ async function handleAjuda(bot, message, args, group) {
 	}
 
 	try {
-		let answer = await askHelp(question, chatId);
+		let answer = await askHelp(question, chatHelpSessionKey(chatId));
 		if (bot && typeof bot.truncateText === "function") {
 			answer = bot.truncateText(answer, 3000);
 		}
@@ -282,5 +341,9 @@ module.exports = {
 	helper,
 	commands,
 	handleAjuda,
-	askHelp
+	askHelp,
+	createWebHelpSessionId,
+	isValidWebHelpSessionId,
+	webHelpSessionKey,
+	chatHelpSessionKey
 };

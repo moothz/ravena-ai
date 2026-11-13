@@ -4,6 +4,7 @@ const ffmpeg = require("fluent-ffmpeg");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const { upload, uploadNsfw, MAX_NSFW_FILE_SIZE } = require("../middleware/upload");
+const { getCookie } = require("../middleware/auth");
 const SpeechCommands = require("../../functions/SpeechCommands");
 
 function getBase64ByteSize(str) {
@@ -645,34 +646,41 @@ function registerServicesRoutes(api) {
 		api.externalAuth.requireAccess("llm"),
 		api.strictLimiter,
 		async (req, res) => {
-			const { message } = req.body;
-			let { sessionId } = req.body;
+			const body = req.body && typeof req.body === "object" ? req.body : {};
+			const { message } = body;
 
-			if (!message || message.trim().length < 2) {
+			if (typeof message !== "string" || message.trim().length < 2) {
 				return res.status(400).json({ error: "Mensagem muito curta ou ausente." });
 			}
 
-			// Tenta recuperar do cookie caso não tenha sessionId no body
-			if (!sessionId && req.headers && req.headers.cookie) {
-				const cookieMatch = req.headers.cookie.match(/ravena_help_session=([^;]+)/);
-				if (cookieMatch) {
-					sessionId = decodeURIComponent(cookieMatch[1].trim());
-				}
-			}
-
-			if (!sessionId) {
-				sessionId = "web-" + Math.random().toString(36).substring(2, 9);
-			}
-
-			// Seta cookie na resposta (30 dias) para persistência de sessão web
-			res.setHeader(
-				"Set-Cookie",
-				`ravena_help_session=${encodeURIComponent(sessionId)}; Path=/; Max-Age=2592000; SameSite=Lax`
-			);
-
 			try {
-				const { askHelp } = require("../../functions/Ajuda");
-				const answer = await askHelp(message, sessionId, req.apiUser || null);
+				const {
+					askHelp,
+					isValidWebHelpSessionId,
+					createWebHelpSessionId,
+					webHelpSessionKey
+				} = require("../../functions/Ajuda");
+
+				// Sessão web: só aceita ids gerados pelo servidor (web-<uuid>), vindos do body ou do
+				// cookie. Qualquer outro valor (ex: JID de grupo/contato) é ignorado e trocado por
+				// um id novo, devolvido no JSON e no cookie.
+				let cookieSessionId = null;
+				try {
+					cookieSessionId = getCookie(req, "ravena_help_session");
+				} catch (_) {
+					// Cookie malformado (ex: URI inválida): ignora e gera um novo id
+				}
+				const sessionId =
+					[body.sessionId, cookieSessionId].find(isValidWebHelpSessionId) ||
+					createWebHelpSessionId();
+
+				// Seta cookie na resposta (30 dias) para persistência de sessão web
+				res.setHeader(
+					"Set-Cookie",
+					`ravena_help_session=${sessionId}; Path=/; Max-Age=2592000; SameSite=Lax`
+				);
+
+				const answer = await askHelp(message, webHelpSessionKey(sessionId), req.apiUser || null);
 				res.json({ answer, sessionId });
 			} catch (error) {
 				api.logger.error("Erro na API de ajuda chat:", error);
