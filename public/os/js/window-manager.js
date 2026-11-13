@@ -125,6 +125,16 @@ const WindowManager = {
             else customClasses.push(params.class);
         }
 
+        // wb.cleanup idempotente: a janela atribui sua função de limpeza durante o render e ela
+        // roda no máximo uma vez, mesmo que o onclose da janela também a chame manualmente.
+        let cleanupFn = null;
+        let cleanupDone = false;
+        const runCleanup = () => {
+            if (cleanupDone || !cleanupFn) return;
+            cleanupDone = true;
+            cleanupFn();
+        };
+
         const wb = new WinBox({
             id: `wb-${id}`,
             title: title,
@@ -143,10 +153,20 @@ const WindowManager = {
                 if (window.Taskbar) {
                     window.Taskbar.removeWindow(id);
                 }
-                if (typeof config.onclose === 'function') {
-                    config.onclose(wb, params);
-                } else if (typeof wb.cleanup === 'function') {
-                    wb.cleanup();
+                // Um onclose que lança erro não pode impedir a limpeza (listeners/timers) nem o
+                // fechamento: se o erro subisse, o WinBox abortaria o close e a janela ficaria órfã.
+                try {
+                    if (typeof config.onclose === 'function') {
+                        config.onclose(wb, params);
+                    }
+                } catch (err) {
+                    console.error(`Error in onclose of window ${type}:`, err);
+                } finally {
+                    try {
+                        runCleanup();
+                    } catch (err) {
+                        console.error(`Error in cleanup of window ${type}:`, err);
+                    }
                 }
                 return false;
             },
@@ -180,6 +200,16 @@ const WindowManager = {
                 if (window.Taskbar) {
                     window.Taskbar.setActive(id);
                 }
+            }
+        });
+
+        Object.defineProperty(wb, 'cleanup', {
+            configurable: true,
+            enumerable: true,
+            get: () => (cleanupFn ? runCleanup : undefined),
+            set: (fn) => {
+                cleanupFn = typeof fn === 'function' ? fn : null;
+                cleanupDone = false;
             }
         });
 
