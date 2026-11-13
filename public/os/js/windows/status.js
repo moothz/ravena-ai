@@ -120,7 +120,7 @@ WindowManager.register('status', {
                 return;
             }
             if (!data || !data.botId) return;
-            const iconEl = body.querySelector(`.drive-item[data-bot-id="${data.botId}"] .drive-icon`);
+            const iconEl = body.querySelector(`.drive-item[data-bot-id="${CSS.escape(String(data.botId))}"] .drive-icon`);
             if (iconEl) {
                 iconEl.classList.remove('avatar-flash');
                 void iconEl.offsetWidth;
@@ -195,13 +195,15 @@ WindowManager.register('status', {
 
         const phone = bot.phoneNumber || '';
         const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
+        const esc = Formatters.escapeHtml;
+        const safeId = esc(bot.id);
 
         return `
             <div class="drive-item ${isOffline ? 'drive-offline' : ''}" 
-                 data-bot-id="${bot.id}" 
-                 data-phone="${phone}"
+                 data-bot-id="${safeId}" 
+                 data-phone="${esc(phone)}"
                  title="Clique para mais informações">
-                <img src="img/profiles/${bot.id}.jpg" 
+                <img src="img/profiles/${encodeURIComponent(bot.id)}.jpg" 
                      class="drive-icon" 
                      onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
                      alt=""
@@ -210,7 +212,7 @@ WindowManager.register('status', {
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${statusDotClass}"></span>
-                        <span>${bot.id}</span>
+                        <span>${safeId}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ''}
                     </div>
                     <div class="drive-bar">
@@ -219,7 +221,7 @@ WindowManager.register('status', {
                     </div>
                 </div>
                 ${cleanPhone ? `
-                    <a href="https://wa.me/${cleanPhone}" target="_blank" class="drive-wa-btn" title="Chamar no WhatsApp" onclick="event.stopPropagation();">
+                    <a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" onclick="event.stopPropagation();">
                         <i class="fab fa-whatsapp"></i>
                     </a>
                 ` : ''}
@@ -232,7 +234,7 @@ WindowManager.register('status', {
         const bots = window.RavenaOS.state.healthData.bots || [];
 
         bots.forEach(bot => {
-            const el = body.querySelector(`.drive-item[data-bot-id="${bot.id}"]`);
+            const el = body.querySelector(`.drive-item[data-bot-id="${CSS.escape(String(bot.id))}"]`);
             if (!el || !bot.connected || bot.banido) return;
 
             let msgsHr = Math.round(bot.msgsHr || 0);
