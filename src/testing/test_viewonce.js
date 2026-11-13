@@ -2,8 +2,6 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const fs = require("fs");
-const path = require("path");
 const { EventEmitter } = require("events");
 const FakeBot = require("./FakeBot");
 const { createMessage } = require("./FakeMessage");
@@ -380,15 +378,24 @@ async function testDisabledCommandsAndRegistrations() {
 		"CommandsHelper não deve indexar !roubar enquanto desativado"
 	);
 
-	const llmHelper = fs.readFileSync(path.join(__dirname, "../../docs/LLM-HELPER.md"), "utf8");
+	// O contexto que a IA de ajuda recebe hoje vem do catálogo dinâmico (não mais do LLM-HELPER.md)
+	const aiBaseContext = commandsHelper.getBaseHelpContext();
 	assert.ok(
-		!llmHelper.includes("!roubar"),
-		"docs/LLM-HELPER.md não deve documentar !roubar desativado"
+		!aiBaseContext.includes("!roubar"),
+		"Contexto base da IA não deve documentar !roubar desativado"
 	);
 	assert.ok(
-		!llmHelper.includes("admin-roubar"),
-		"docs/LLM-HELPER.md NUNCA deve expor !admin-roubar"
+		!aiBaseContext.includes("admin-roubar"),
+		"Contexto base da IA NUNCA deve expor !admin-roubar"
 	);
+	assert.ok(!/!sa-/i.test(aiBaseContext), "Contexto base da IA NUNCA deve expor comandos !sa-");
+	for (const restricted of ["admin-roubar", "sa-joinGrupo", "!sa-addDonate"]) {
+		const details = commandsHelper.getCommandDetails(restricted);
+		assert.ok(
+			!details.includes("🤖 **Comando:**") && !/!sa-|!admin-/i.test(details),
+			`get_command_info não pode documentar comando restrito (${restricted}): ${details}`
+		);
+	}
 
 	const voReactions = [];
 	const voMsg = createMessage({

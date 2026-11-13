@@ -269,7 +269,8 @@ function updatePublicCommandsCache(api) {
 				}
 
 				aliases = [...new Set(aliases)];
-				const meta = commandsHelper.findCommandMeta(cmd.name);
+				// Apenas correspondência exata: o fallback por tag devolveria uso/descrição de outro comando
+				const meta = commandsHelper.findCommandMeta(cmd.name, { exactOnly: true });
 				const usage =
 					meta?.usage && meta.usage.length > 0
 						? meta.usage
@@ -309,7 +310,8 @@ function updatePublicCommandsCache(api) {
 		sortedMgmtKeys.forEach((key) => {
 			const mgmtCmd = managementCommands[key];
 			const meta =
-				commandsHelper.findCommandMeta(`g-${key}`) || commandsHelper.findCommandMeta(key);
+				commandsHelper.findCommandMeta(`g-${key}`, { exactOnly: true }) ||
+				commandsHelper.findCommandMeta(key, { exactOnly: true });
 			const usage =
 				meta?.usage && meta.usage.length > 0
 					? meta.usage
