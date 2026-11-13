@@ -1017,11 +1017,29 @@ async function resolveCharacter(query) {
 	return null;
 }
 
+/**
+ * Nome genérico para um jogador sem nome conhecido, sem expor o telefone:
+ * "Jogador ••••1234" (só os 4 últimos dígitos) ou "Jogador".
+ * @param {string} userId
+ * @returns {string}
+ */
+function maskedPlayerName(userId) {
+	const digits = userId ? String(userId).split("@")[0].split(":")[0].replace(/\D/g, "") : "";
+	return digits.length >= 4 ? `Jogador ••••${digits.slice(-4)}` : "Jogador";
+}
+
+/**
+ * Nome de exibição de outro jogador no chat atual: apelido do grupo atual, apelido
+ * global (PV) ou o nome de fallback. Não varre outros grupos (caminho quente e evita
+ * mostrar um apelido definido em outro grupo) e nunca exibe o telefone em texto puro.
+ * @param {Object} messageOrGroup - Mensagem (com .group) ou objeto do grupo (com .nicks)
+ * @param {string} targetUserId
+ * @param {string|null} [fallbackName]
+ * @returns {Promise<string>}
+ */
 async function resolveDisplayName(messageOrGroup, targetUserId, fallbackName = null) {
 	const rawFallback =
-		(typeof fallbackName === "string" && fallbackName.trim()) ||
-		(targetUserId ? String(targetUserId).split("@")[0].split(":")[0] : null) ||
-		"Jogador";
+		(typeof fallbackName === "string" && fallbackName.trim()) || maskedPlayerName(targetUserId);
 	if (!targetUserId) {
 		return rawFallback;
 	}
@@ -1032,12 +1050,11 @@ async function resolveDisplayName(messageOrGroup, targetUserId, fallbackName = n
 			targetGroup = await Database.getInstance().getGroup(messageOrGroup.group);
 		} catch (_) {}
 	}
-	if (!targetGroup) {
-		return rawFallback;
-	}
 	try {
 		const { resolveUserNickname } = require("./GeneralCommands");
-		return await resolveUserNickname(targetGroup, targetUserId, rawFallback);
+		return await resolveUserNickname(targetGroup, targetUserId, rawFallback, {
+			scanOtherGroups: false
+		});
 	} catch (_) {
 		return rawFallback;
 	}
@@ -10509,6 +10526,8 @@ module.exports = {
 	NUMBER_EMOJIS3,
 	getSlotNumberFromEmoji,
 	buildRollGridImage,
+	resolveDisplayName,
+	maskedPlayerName,
 	downloadImageBuffer,
 	processWaifuReaction,
 	recordRollMessage,

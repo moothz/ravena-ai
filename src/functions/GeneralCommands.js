@@ -301,18 +301,62 @@ async function getGlobalNick(userId) {
 }
 
 /**
+ * Busca o último apelido que o usuário definiu em qualquer grupo.
+ * Consulta só as linhas cujo JSON de nicks contém o número (em vez de carregar e
+ * mapear a tabela de grupos inteira).
+ * @param {string} cleanUser
+ * @param {string} rawPhone
+ * @returns {Promise<string|null>}
+ */
+async function findNicknameInOtherGroups(cleanUser, rawPhone) {
+	const needle = rawPhone || cleanUser;
+	if (!needle) return null;
+	const pattern = `%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+	const rows = await database.dbAll(
+		"core",
+		"SELECT nicks FROM groups WHERE nicks LIKE ? ESCAPE '\\'",
+		[pattern]
+	);
+	if (!Array.isArray(rows)) return null;
+
+	// Itera do fim para o começo para pegar o mais recente/último
+	for (let i = rows.length - 1; i >= 0; i--) {
+		let nicks;
+		try {
+			nicks = JSON.parse(rows[i]?.nicks || "[]");
+		} catch (_) {
+			continue;
+		}
+		if (!Array.isArray(nicks)) continue;
+		const m = nicks.find(
+			(n) =>
+				n &&
+				(n.numero === cleanUser || (rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone))
+		);
+		if (m && m.apelido) {
+			return m.apelido;
+		}
+	}
+	return null;
+}
+
+/**
  * Resolve o apelido do usuário seguindo a hierarquia estrita:
  * 1. Apelido definido no grupo atual (se em grupo)
  * 2. Apelido global definido no PV da Ravena
- * 3. Último apelido definido pelo usuário em qualquer outro grupo
+ * 3. Último apelido definido pelo usuário em qualquer outro grupo — só quando não há
+ *    fallbackName (ex: !apelido no PV) ou com options.scanOtherGroups = true
  * 4. Fallback: nome do WhatsApp (pushName / authorName / "Jogador")
  *
  * @param {Object} [group] - Objeto do grupo atual (opcional)
  * @param {string} userId - ID do usuário (ex: 5511...@c.us ou número puro)
  * @param {string} [fallbackName] - Nome fallback (pushName ou authorName)
+ * @param {Object} [options]
+ * @param {boolean} [options.scanOtherGroups] - Consultar apelidos de outros grupos
+ *   (padrão: apenas quando não há fallbackName)
  * @returns {Promise<string>}
  */
-async function resolveUserNickname(group, userId, fallbackName = null) {
+async function resolveUserNickname(group, userId, fallbackName = null, options = {}) {
 	if (!userId) return fallbackName || "Jogador";
 	const cleanUser = String(userId).trim();
 	const rawPhone = cleanUser.replace(/\D/g, "");
@@ -335,27 +379,18 @@ async function resolveUserNickname(group, userId, fallbackName = null) {
 		return globalNick;
 	}
 
-	// 3. Fallback: último apelido definido em qualquer grupo
-	try {
-		const groups = await database.getGroups();
-		if (Array.isArray(groups)) {
-			// Itera do fim para o começo para pegar o mais recente/último
-			for (let i = groups.length - 1; i >= 0; i--) {
-				const g = groups[i];
-				if (g && Array.isArray(g.nicks)) {
-					const m = g.nicks.find(
-						(n) =>
-							n.numero === cleanUser ||
-							(rawPhone && String(n.numero).replace(/\D/g, "") === rawPhone)
-					);
-					if (m && m.apelido) {
-						return m.apelido;
-					}
-				}
+	// 3. Último apelido definido em qualquer grupo. Pulado quando já há um nome de fallback:
+	//    evita varrer a tabela de grupos em caminhos quentes e mostrar apelido de outro grupo.
+	const scanOtherGroups = options.scanOtherGroups ?? !fallbackName;
+	if (scanOtherGroups) {
+		try {
+			const otherGroupNick = await findNicknameInOtherGroups(cleanUser, rawPhone);
+			if (otherGroupNick) {
+				return otherGroupNick;
 			}
+		} catch (e) {
+			logger.debug("Erro ao buscar apelido em outros grupos:", e.message);
 		}
-	} catch (e) {
-		logger.debug("Erro ao buscar apelido em outros grupos:", e.message);
 	}
 
 	// 4. Nome no WhatsApp ou ID
