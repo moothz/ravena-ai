@@ -597,6 +597,15 @@ class CustomVariableProcessor {
 			}
 		}
 
+		// Variável {mentionAll} - menção silenciosa de todos os membros do grupo.
+		// O filtro de ignorados (!ignorar) é feito no envio pelo WhatsAppBotGo (options.mentionAll)
+		if (text.includes("{mentionAll}")) {
+			text = text.replace(/{mentionAll}/g, "");
+			if (context.options && context.message?.group) {
+				context.options.mentionAll = true;
+			}
+		}
+
 		// Variável {mention} - nome da pessoa mencionada ou um membro aleatório se não houver menção
 		if (context.message && context.message.origin) {
 			try {

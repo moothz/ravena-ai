@@ -2564,6 +2564,7 @@ Use estas variáveis ao sugerir a criação de comandos com `!g-addCmd`.
 - `{mention}`: Marca alguém (mencionado ou aleatório)
 - `{singleMention}`: Marca a mesma pessoa em todas as ocorrências
 - `{mentionOuEu}`: Marca alguém ou o autor se não houver menção
+- `{mentionAll}`: Marca todos os membros silenciosamente (exceto quem usou !ignorar), sem texto visível
 - `{membroRandom}`: Nome de um membro aleatório
 
 ### 🌐 APIs e Web

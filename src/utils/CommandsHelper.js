@@ -605,7 +605,7 @@ ${activeBotsLines}
 - **Boas-vindas/despedidas**: \`{pessoa}\`, \`{tituloGrupo}\`
 - **Sistema**: \`{day}\`, \`{date}\`, \`{time}\`, \`{data-hora}\`, \`{data-dia}\`, \`{data-mes}\`, \`{data-ano}\`
 - **Aleatórios**: \`{randomPequeno}\` (1-10), \`{randomMedio}\` (1-100), \`{randomGrande}\` (1-1000), \`{rndDado-X}\`, \`{rndDadoRange-X-Y}\`
-- **Menções**: \`{pessoa}\`, \`{group}\`, \`{contador}\`, \`{mention}\`, \`{singleMention}\`, \`{mentionOuEu}\`, \`{membroRandom}\`
+- **Menções**: \`{pessoa}\`, \`{group}\`, \`{contador}\`, \`{mention}\`, \`{singleMention}\`, \`{mentionOuEu}\`, \`{mentionAll}\`, \`{membroRandom}\`
 - **Web/APIs**: \`{weather:cidade}\`, \`{reddit-subreddit}\`, \`{API#GET#TEXT#url}\`
 - **Outros**: \`{file-nome}\`, \`{cmd-comando}\` (executa outro comando como alias)
 

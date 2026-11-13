@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { code: '{mention}', desc: 'Menciona usuário (autor/mencionado/aleatório)' },
         { code: '{singleMention}', desc: 'Mesma menção repetida' },
         { code: '{mentionOuEu}', desc: 'Menciona usuário ou autor' },
+        { code: '{mentionAll}', desc: 'Marca todos silenciosamente (exceto ignorados)' },
         { code: '{reddit-memes}', desc: 'Post aleatório do r/memes (exemplo)' },
         { code: '{nomeCanal}', desc: 'Stream: Nome do canal' },
         { code: '{titulo}', desc: 'Stream: Título da live' },

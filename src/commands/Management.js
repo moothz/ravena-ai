@@ -6937,6 +6937,11 @@ class Management {
 					description:
 						"Igual ao {singleMention}, mas ao invés de escolher um membro aleatório caso não exista mention, marca quem enviou a mensagem"
 				},
+				{
+					name: "{mentionAll}",
+					description:
+						"Marca silenciosamente todos os membros do grupo (exceto quem usou !ignorar), sem adicionar texto na mensagem"
+				},
 				{ name: "{mention-5511999999999@c.us}", description: "Menciona usuário específico" }
 			];
 
