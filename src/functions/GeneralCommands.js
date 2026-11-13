@@ -658,8 +658,10 @@ async function statusCommand(bot, message, args, group) {
 
 		const response = await axios.get(url);
 
+		// Link completo (com https://) para o Discord/Telegram também transformarem em link
+		const siteUrl = (process.env.BOT_DOMAIN || "https://ravena.moothz.com").replace(/\/+$/, "");
 		let statusMessage =
-			"🕸 *Status das Ravenas* 🔄\n> ravena.moothz.com/status\n> https://ravena.moothz.com\n\n" +
+			`🕸 *Status das Ravenas* 🔄\n> ${siteUrl}/status\n> https://ravena.moothz.com\n\n` +
 			servicesHeader;
 
 		const botsNormais = response.data.bots.filter((b) => !b.comunitario && !b.vip);
