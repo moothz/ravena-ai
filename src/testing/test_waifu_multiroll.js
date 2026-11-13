@@ -409,7 +409,12 @@ async function runTests() {
 		};
 		DonorBonusService.getWaifuRollBonuses = async () => null;
 		GameEventService.getMultiplier = () => 1.0;
-		WaifuCommands.buildRollGridImage = async () => Buffer.from("fake-grid-leak-test");
+		// O handler chama o renderizador via module.exports, então este mock evita rodar o sharp real
+		let gridRenderCalls = 0;
+		WaifuCommands.buildRollGridImage = async () => {
+			gridRenderCalls++;
+			return Buffer.from("fake-grid-leak-test");
+		};
 
 		WaifuCommands.api.post = async (path, body) => {
 			if (path === "/kakera/daily" || path === "/user/ensure") {
@@ -457,6 +462,13 @@ async function runTests() {
 			filters: { waifuRollMarcar: false }
 		});
 		assert.ok(leakRes, "Deve retornar resultado do !mu-r 9");
+		assert.strictEqual(gridRenderCalls, 1, "O grid deve ser gerado pelo mock (sem sharp real)");
+		const leakMain = Array.isArray(leakRes) ? leakRes[0] : leakRes;
+		assert.strictEqual(
+			leakMain?.content?.data,
+			Buffer.from("fake-grid-leak-test").toString("base64"),
+			"A mensagem do multi-roll deve usar o grid mockado"
+		);
 		assert.strictEqual(capturedPayloads.length, 9, "Deve executar os 9 rolls solicitados");
 		assert.strictEqual(
 			capturedPayloads[0]?.bonuses?.isFreeRoll,

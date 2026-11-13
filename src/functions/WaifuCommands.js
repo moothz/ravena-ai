@@ -2644,7 +2644,8 @@ function makeRollHandler(genderFilter) {
 
 			let gridBase64 = null;
 			try {
-				const gridBuf = await buildRollGridImage(downloadedBuffers);
+				// Via module.exports para que testes possam substituir o renderizador (sharp)
+				const gridBuf = await module.exports.buildRollGridImage(downloadedBuffers);
 				gridBase64 = gridBuf ? gridBuf.toString("base64") : null;
 			} catch (gridErr) {
 				logger.error(
@@ -6061,7 +6062,8 @@ async function processMultiRollReport({
 			);
 			const validBuffers = downloadedBuffers.filter((b) => Boolean(b.imageBuffer));
 			if (validBuffers.length > 0) {
-				const gridBuf = await buildRollGridImage(downloadedBuffers);
+				// Via module.exports para que testes possam substituir o renderizador (sharp)
+				const gridBuf = await module.exports.buildRollGridImage(downloadedBuffers);
 				if (gridBuf) {
 					gridBase64 = gridBuf.toString("base64");
 				}
