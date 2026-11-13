@@ -12,6 +12,7 @@ const StreamSystem = require("../StreamSystem");
 const GrupoAgendamentos = require("./modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../utils/RegexFilterValidator");
 const GroupMonitoringService = require("../services/GroupMonitoringService");
+const PvSafetyService = require("../services/PvSafetyService");
 const storageService = require("../services/StorageService");
 
 class Management {
@@ -21,6 +22,7 @@ class Management {
 		this.nsfwPredict = NSFWPredict.getInstance();
 		this.dataPath = this.database.databasePath;
 		this.adminUtils = AdminUtils.getInstance();
+		this.pvSafetyService = PvSafetyService.getInstance();
 
 		// Mapeamento de comando para método
 		this.commandMap = {
@@ -6125,6 +6127,11 @@ class Management {
 				});
 			}
 
+			const pvCheck = await this.pvSafetyService.ensureGroupPvAllowed(bot, message);
+			if (!pvCheck.allowed) {
+				return pvCheck.returnMessage;
+			}
+
 			// Configura o gerenciamento do grupo pelo PV
 			privateManagement[message.author] = group.id;
 			this.logger.info(
@@ -8240,6 +8247,11 @@ class Management {
 				content:
 					"Você precisa especificar um grupo ou estar em um grupo gerenciado. Exemplo: !g-painel [nomeDoGrupo]"
 			});
+		}
+
+		const pvCheck = await this.pvSafetyService.ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			return pvCheck.returnMessage;
 		}
 
 		// Generate token

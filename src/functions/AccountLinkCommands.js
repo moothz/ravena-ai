@@ -5,6 +5,7 @@ const Command = require("../models/Command");
 const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const AccountLinkService = require("../services/AccountLinkService");
+const PvSafetyService = require("../services/PvSafetyService");
 
 const logger = new Logger("account-link-commands");
 const database = Database.getInstance();
@@ -114,13 +115,27 @@ async function vincularCommand(bot, message, args, group) {
 				(b) => !b.useTelegram && !b.useDiscord && b.isConnected
 			);
 			if (waBots.length > 0) {
+				const pvSafetyService = PvSafetyService.getInstance();
 				const waTarget = `${result.whatsappId}@s.whatsapp.net`;
-				waBots[0]
-					.sendMessage(
-						waTarget,
-						`🔗 *Conta Vinculada com Sucesso!*\n\nSua conta do **${platformName}** (\`${platformAuthorId}\`) foi vinculada ao seu WhatsApp.\nAgora seus comandos, inventário e bônus de doador são compartilhados!`
-					)
-					.catch(() => {});
+				let allowedBot = null;
+				for (const candidateBot of waBots) {
+					if (await pvSafetyService.hasPvInteraction(candidateBot, waTarget)) {
+						allowedBot = candidateBot;
+						break;
+					}
+				}
+				if (allowedBot) {
+					allowedBot
+						.sendMessage(
+							waTarget,
+							`🔗 *Conta Vinculada com Sucesso!*\n\nSua conta do **${platformName}** (\`${platformAuthorId}\`) foi vinculada ao seu WhatsApp.\nAgora seus comandos, inventário e bônus de doador são compartilhados!`
+						)
+						.catch(() => {});
+				} else {
+					logger.info(
+						`[vincular] Pulando notificação em PV para ${waTarget}: sem interação prévia em PV.`
+					);
+				}
 			}
 		} catch (_) {}
 

@@ -14,6 +14,7 @@ const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 const Database = require("../utils/Database");
 const GameEventService = require("../services/GameEventService");
+const PvSafetyService = require("../services/PvSafetyService");
 const {
 	editInteractiveMenuMessage,
 	formatMenuCommand
@@ -715,6 +716,13 @@ async function handleFazenda(bot, message, _args, group) {
 async function handleFazAdm(bot, message) {
 	const userId = getUserId(message);
 	const inPrivate = isPrivateChat(message);
+
+	if (!inPrivate) {
+		const pvCheck = await PvSafetyService.getInstance().ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			return pvCheck.returnMessage;
+		}
+	}
 
 	try {
 		const adminRes = await jardimClient.getAdminUrl(userId);

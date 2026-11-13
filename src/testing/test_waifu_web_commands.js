@@ -7,6 +7,7 @@ const assert = require("assert");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
+const PvSafetyService = require("../services/PvSafetyService");
 const WaifuCommands = require("../functions/WaifuCommands");
 
 async function runTests() {
@@ -99,8 +100,11 @@ async function runTests() {
 			throw new Error(`Unexpected get url: ${url}`);
 		};
 
-		// 2. Testar !mu-adm chamado dentro de um GRUPO
+		// 2. Testar !mu-adm chamado dentro de um GRUPO (primeiro sem PV prévio -> bloqueia; depois com PV -> envia link no PV)
 		console.log("[Teste 2] Testando !mu-adm disparado em GRUPO...");
+		const pvSafety = PvSafetyService.getInstance();
+		pvSafety.resetTestState();
+
 		eventHandler.commandHandler.userDebounceMap.clear();
 		bot.resetCapture();
 		const msgGrupo = createMessage({
@@ -109,6 +113,20 @@ async function runTests() {
 			author: "5511999999999@s.whatsapp.net",
 			authorName: "RaveninhaFan"
 		});
+
+		await eventHandler.processMessage(bot, msgGrupo);
+		const blockedCapture = await waitForCaptured(1);
+		assert.strictEqual(blockedCapture.length, 1);
+		assert.strictEqual(blockedCapture[0].chatId, "120363000000000000@g.us");
+		assert.strictEqual(
+			blockedCapture[0].content,
+			pvSafety.PV_REQUIRED_MESSAGE,
+			"!mu-adm no grupo sem PV prévio deve solicitar contato no privado antes"
+		);
+
+		await pvSafety.recordPvInteraction(bot, "5511999999999@s.whatsapp.net");
+		eventHandler.commandHandler.userDebounceMap.clear();
+		bot.resetCapture();
 
 		await eventHandler.processMessage(bot, msgGrupo);
 

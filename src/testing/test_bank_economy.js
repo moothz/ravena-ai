@@ -6,6 +6,7 @@ const Database = require("../utils/Database");
 const bankService = require("../services/BankService");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
+const PvSafetyService = require("../services/PvSafetyService");
 const { createMessage } = require("./FakeMessage");
 
 async function runTests() {
@@ -170,13 +171,25 @@ async function runTests() {
 	);
 	console.log("✓ Comando !economia respondeu com transparência macroeconômica.");
 
-	// Teste !banco-adm em grupo (deve enviar no PV)
+	// Teste !banco-adm em grupo (sem PV bloqueia no grupo; após PV envia no PV)
+	const pvSafety = PvSafetyService.getInstance();
+	pvSafety.resetTestState();
 	prepareStep();
 	const msgAdm = createMessage({
 		content: "!banco-adm",
 		group: testGroupId,
 		author: testUserId
 	});
+	await eventHandler.processMessage(bot, msgAdm);
+	await waitForReply();
+	assert.strictEqual(
+		bot.capturedMessages[0]?.content,
+		pvSafety.PV_REQUIRED_MESSAGE,
+		"!banco-adm sem PV prévio deve instruir a chamar no privado"
+	);
+
+	await pvSafety.recordPvInteraction(bot, testUserId);
+	prepareStep();
 	await eventHandler.processMessage(bot, msgAdm);
 	await waitForReply();
 	assert.ok(bot.capturedMessages.length > 0, "!banco-adm deve enviar resposta");

@@ -73,6 +73,7 @@ graph TD
         horoscopo["horoscopo.db → horoscopo_cache"]
         placas["placas.db → placas_cache"]
         copa_seguir["copa_seguir.db → copa_seguindo"]
+        pv_users["pv_users.db → pv_users"]
     end
 ```
 
@@ -677,6 +678,24 @@ Rastreamento do consumo das cotas diárias de câmbio por usuário (reset às 04
 | `jardim_coins_used` | REAL | Total de Petalitas da Fazenda convertidas hoje (teto: 12.000 Ptl) |
 | `runas_compra_used` | REAL | Total de Runas gastas em compras hoje (teto: 15.000 ᚱ) |
 | `initial_runas` | REAL | Saldo inicial de Runas gravado no reset das 04:00 AM |
+
+---
+
+### `pv_users.db`
+Registro por `(bot_id, user_key)` de usuários que já iniciaram contato no privado (PV) com o bot e controle do envio periódico (45 dias) do vCard da Ravena.
+
+#### `pv_users`
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `bot_id` | TEXT PK | Identificador da instância do bot (`bot.id` ou `bot.instanceName`) |
+| `user_key` | TEXT PK | Telefone canônico limpo (sem `@s.whatsapp.net`) ou JID `@lid` quando ainda sem PN |
+| `user_lid` | TEXT | JID `@lid` associado ao usuário, quando conhecido |
+| `has_pv` | INTEGER | Flag binária (`1` = usuário já enviou mensagem no PV deste bot) |
+| `first_pv_at` | INTEGER | Timestamp (ms) da primeira interação em PV |
+| `last_pv_at` | INTEGER | Timestamp (ms) da última interação em PV |
+| `last_vcard_sent_at` | INTEGER | Timestamp (ms) do último envio do vCard + lembrete de contato (cooldown de 45 dias) |
+| `updated_at` | INTEGER | Timestamp (ms) da última atualização do registro |
 
 
 

@@ -11,6 +11,7 @@ const Logger = require("../utils/Logger");
 const Database = require("../utils/Database");
 const bankService = require("../services/BankService");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
+const PvSafetyService = require("../services/PvSafetyService");
 
 const logger = new Logger("bank-commands");
 const database = Database.getInstance();
@@ -128,6 +129,13 @@ async function handleBanco(bot, message) {
 async function handleBancoAdm(bot, message) {
 	const userId = getUserId(message);
 	const inPrivate = isPrivateChat(message);
+
+	if (!inPrivate) {
+		const pvCheck = await PvSafetyService.getInstance().ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			return pvCheck.returnMessage;
+		}
+	}
 
 	try {
 		const session = await bankService.createSession(userId);

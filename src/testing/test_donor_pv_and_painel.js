@@ -8,6 +8,7 @@ const WhatsAppBotGo = require("../WhatsAppBotGo");
 const FakeBot = require("./FakeBot");
 const EventHandler = require("../EventHandler");
 const CommandHandler = require("../CommandHandler");
+const PvSafetyService = require("../services/PvSafetyService");
 const { createMessage } = require("./FakeMessage");
 
 async function runTests() {
@@ -235,13 +236,25 @@ async function runTests() {
 		database.getGroups = async () => [painelGroup];
 		database.getAllGroups = async () => [painelGroup];
 
-		// 4A: No grupo -> deve enviar confirmação no grupo E link no PV
+		// 4A: No grupo sem PV prévio -> bloqueia e instrui a mandar no privado; após PV -> envia link no PV
+		const pvSafety = PvSafetyService.getInstance();
+		pvSafety.resetTestState();
 		const msgGroup = createMessage({
 			content: "!g-painel",
 			group: "grupo-painel@g.us",
 			author: "5547984023920@s.whatsapp.net"
 		});
 
+		bot.resetCapture();
+		await commandHandler.processCommand(bot, msgGroup, "g-painel", [], painelGroup);
+		assert.ok(
+			bot.capturedMessages.some(
+				(m) => m.chatId === "grupo-painel@g.us" && m.content === pvSafety.PV_REQUIRED_MESSAGE
+			),
+			"!g-painel no grupo sem PV prévio deve solicitar contato no privado antes"
+		);
+
+		await pvSafety.recordPvInteraction(bot, "5547984023920@s.whatsapp.net");
 		bot.resetCapture();
 		await commandHandler.processCommand(bot, msgGroup, "g-painel", [], painelGroup);
 

@@ -17,6 +17,7 @@ const {
 } = require("../utils/WaifuMarriagePhotoHelper");
 const AdminUtils = require("../utils/AdminUtils");
 const PhoneUtils = require("../utils/PhoneUtils");
+const PvSafetyService = require("../services/PvSafetyService");
 const { broadcastToWhatsAppNoticeChannels } = require("../utils/BroadcastHelper");
 const {
 	editInteractiveMenuMessage,
@@ -7317,6 +7318,13 @@ function formatWebUrl(rawUrl, path) {
  * @returns {Promise<ReturnMessage>}
  */
 async function painelWebAdmin(bot, message) {
+	if (message.group && message.group !== message.author) {
+		const pvCheck = await PvSafetyService.getInstance().ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			return pvCheck.returnMessage;
+		}
+	}
+
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);
@@ -7444,6 +7452,13 @@ async function painelWebAdmin(bot, message) {
  * @returns {Promise<ReturnMessage>}
  */
 async function waifinderWeb(bot, message) {
+	if (message.group && message.group !== message.author) {
+		const pvCheck = await PvSafetyService.getInstance().ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			return pvCheck.returnMessage;
+		}
+	}
+
 	const chatId = message.group ?? message.author;
 	const userId = getUserId(message);
 	const groupId = getGroupId(message);

@@ -38,6 +38,7 @@ const {
 const ReportAnalyzerService = require("./services/ReportAnalyzerService");
 const AccountLinkService = require("./services/AccountLinkService");
 const PollVoteService = require("./services/PollVoteService");
+const PvSafetyService = require("./services/PvSafetyService");
 
 class EventHandler extends EventEmitter {
 	static instance = null;
@@ -59,10 +60,31 @@ class EventHandler extends EventEmitter {
 		this.userGreetingManager = require("./utils/UserGreetingManager").getInstance();
 		this.reportAnalyzerService = ReportAnalyzerService.getInstance();
 		this.accountLinkService = AccountLinkService.getInstance();
+		this.pvSafetyService = PvSafetyService.getInstance();
 		this.groups = {};
-		this.comandosWhitelist = process.env.CMD_WHITELIST
+		const rawWhitelist = process.env.CMD_WHITELIST
 			? process.env.CMD_WHITELIST.split(",")
-			: ["sa-", "anoni", "vincular", "desvincular"];
+			: [
+					"sa-",
+					"anoni",
+					"mu-adm",
+					"muadm",
+					"mu-admin",
+					"muadmin",
+					"waifinder",
+					"mu-waifinder",
+					"mu-tinder",
+					"faz-adm",
+					"faz-admin",
+					"banco-adm",
+					"bancoadm",
+					"banco-web",
+					"vincular",
+					"desvincular",
+					"g-painel",
+					"g-manage"
+				];
+		this.comandosWhitelist = rawWhitelist.map((c) => c.trim().toLowerCase()).filter(Boolean);
 
 		this.PV_AI_DEBOUNCE_MS = 8000;
 		this.pvDebounce = {};
@@ -421,6 +443,11 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 
+			// Registra qualquer mensagem recebida no PV antes de aplicar ignorePV
+			if (!message.group && !message.isNewsletter && !message.fromMe) {
+				await this.pvSafetyService.recordPvInteraction(bot, message);
+			}
+
 			const ignorePV = bot.ignorePV && bot.notInWhitelist(message.author) && message.group === null;
 
 			// Verifica links de convite em chats privados
@@ -747,7 +774,7 @@ class EventHandler extends EventEmitter {
 				if (
 					!ignorePV ||
 					message.group ||
-					this.comandosWhitelist.some((cW) => textContent.includes(cW))
+					this.comandosWhitelist.some((cW) => textContent.toLowerCase().includes(cW))
 				) {
 					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
 						this.logger.error("Erro em handleCommand:", error);

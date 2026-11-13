@@ -94,6 +94,20 @@ function cleanId(id) {
  */
 async function anonymousMessage(bot, message, args, group) {
 	try {
+		if (message.group) {
+			const groupIdentifier = group?.id ?? message.group;
+			return new ReturnMessage({
+				chatId: message.group,
+				content: `O comando deve ser usado no meu privado!\n\nPara enviar uma mensagem anônima para este grupo, me chame no privado usando:\n*!anonimo ${groupIdentifier} sua mensagem*\n\nExemplo:\n*!anonimo ${groupIdentifier} Olá, esta é uma mensagem anônima!*`,
+				options: message.origin?.id?._serialized
+					? {
+							quotedMessageId: message.origin.id._serialized,
+							goReply: message.origin
+						}
+					: undefined
+			});
+		}
+
 		//logger.debug(`[anonymousMessage] `, {message, group, args});
 		// Verifica o ID do remetente
 		const senderIds = [
@@ -297,6 +311,19 @@ async function anonymousMessage(bot, message, args, group) {
  */
 async function adminAnonMessages(bot, message, args) {
 	try {
+		if (message.group) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content: "O comando deve ser usado no meu privado!",
+				options: message.origin?.id?._serialized
+					? {
+							quotedMessageId: message.origin.id._serialized,
+							goReply: message.origin
+						}
+					: undefined
+			});
+		}
+
 		// Verifica se é um administrador do bot
 		const isAdmin = await bot.isAdmin(message.author);
 		if (!isAdmin) {

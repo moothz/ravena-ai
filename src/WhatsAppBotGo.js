@@ -31,6 +31,7 @@ const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const MemoryCache = require("./utils/MemoryCache");
 const storageService = require("./services/StorageService");
 const SenderDropMonitor = require("./services/SenderDropMonitor");
+const PvSafetyService = require("./services/PvSafetyService");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -167,6 +168,7 @@ class WhatsAppBotGo {
 		);
 
 		this.database = Database.getInstance();
+		this.pvSafetyService = PvSafetyService.getInstance();
 		this.isConnected = false;
 		this.safeMode =
 			options.safeMode !== undefined ? options.safeMode : process.env.SAFE_MODE === "true";
@@ -3359,7 +3361,7 @@ class WhatsAppBotGo {
 				} else if (content.isLocation) {
 					contentFingerprint = `loc:${content.latitude}:${content.longitude}:${content.name || ""}`;
 				} else if (content.isContact) {
-					contentFingerprint = `ctc:${content.name || ""}:${content.number || ""}`;
+					contentFingerprint = `ctc:${content.name || ""}:${content.number || ""}:${content.organization || ""}`;
 				} else {
 					contentFingerprint = `obj:${JSON.stringify(content).slice(0, 512)}`;
 				}
@@ -3372,6 +3374,59 @@ class WhatsAppBotGo {
 		} catch (err) {
 			this.logger.debug(`[${this.id}] Erro ao calcular checksum de envio: ${err.message}`);
 			return null;
+		}
+	}
+
+	/**
+	 * Envia vCard do bot e lembrete de salvar nos contatos no PV a cada 45 dias (apenas bots não-privados).
+	 * @param {string} chatId
+	 * @param {Object} [options={}]
+	 * @returns {Promise<boolean>}
+	 */
+	async _maybeSendPvVcardReminder(chatId, options = {}) {
+		if (!this.pvSafetyService || !this.isConnected) return false;
+		if (!this.pvSafetyService.isPvTarget(chatId)) return false;
+		if (this.pvSafetyService.isOwnBotNumber(this, chatId)) return false;
+
+		let lockKey = null;
+		try {
+			const shouldSend = await this.pvSafetyService.shouldSendVcardNow(this, chatId);
+			if (!shouldSend) return false;
+
+			lockKey = await this.pvSafetyService.acquireVcardLock(this, chatId);
+			if (!lockKey) return false;
+
+			// Revalida após adquirir o lock para evitar envios duplicados concorrentes
+			const stillShouldSend = await this.pvSafetyService.shouldSendVcardNow(this, chatId);
+			if (!stillShouldSend) return false;
+
+			const vcardPayload = this.pvSafetyService.buildVcardPayload(this);
+			const reminderText = this.pvSafetyService.buildVcardReminderMessage();
+
+			await this.sendMessage(chatId, vcardPayload, {
+				delay: options.vcardDelay ?? 600,
+				skipDedup: true,
+				_isVcardFlow: true,
+				bypassPvSafety: true
+			});
+
+			await this.sendMessage(chatId, reminderText, {
+				delay: options.vcardReminderDelay ?? 500,
+				skipDedup: true,
+				_isVcardFlow: true,
+				bypassPvSafety: true
+			});
+
+			await this.pvSafetyService.markVcardSent(this, chatId);
+			return true;
+		} catch (err) {
+			this.logger.warn(
+				`[${this.id}] [PV-SAFETY] Falha ao enviar vCard/lembrete para ${chatId}:`,
+				err?.message || err
+			);
+			return false;
+		} finally {
+			this.pvSafetyService.releaseVcardLock(lockKey);
 		}
 	}
 
@@ -3388,6 +3443,29 @@ class WhatsAppBotGo {
 				err.notInGroup = true;
 				err.status = 403;
 				throw err;
+			}
+
+			if (
+				this.pvSafetyService?.isPvTarget(chatId) &&
+				!options.bypassPvSafety &&
+				!options._isVcardFlow &&
+				!this.pvSafetyService.isOwnBotNumber(this, chatId)
+			) {
+				const pvAllowed = await this.pvSafetyService.hasPvInteraction(this, chatId);
+				if (!pvAllowed) {
+					this.logger.warn(
+						`[${this.id}] [PV-SAFETY] Bloqueando envio frio em PV para ${chatId}: sem interação prévia em PV com este bot.`
+					);
+					return {
+						id: { _serialized: `blocked_pv_${Date.now()}` },
+						ack: 0,
+						blockedByPvSafety: true,
+						timestamp: Math.floor(Date.now() / 1000),
+						_data: null,
+						getInfo: () => ({ delivery: [], played: [], read: [] }),
+						pin: () => false
+					};
+				}
 			}
 
 			if (!options.skipDedup) {
@@ -3710,6 +3788,9 @@ class WhatsAppBotGo {
 					fullName: content.name,
 					phone: content.number
 				};
+				if (content.organization) {
+					payload.vcard.organization = content.organization;
+				}
 			}
 
 			if (options.mentionAll) {
@@ -3806,6 +3887,10 @@ class WhatsAppBotGo {
 					chatId,
 					result: returnObj
 				});
+			}
+
+			if (this.pvSafetyService?.isPvTarget(chatId) && !options._isVcardFlow && !options.skipVcard) {
+				await this._maybeSendPvVcardReminder(chatId, options);
 			}
 
 			return returnObj;
