@@ -4031,7 +4031,7 @@ async function verHarem(bot, message, args) {
 			const totalColecoesCount = visibleCollections.length + (hasMythics ? 1 : 0);
 
 			if (totalColecoesCount > 0) {
-				text += `📁 *Coleções (${totalColecoesCount}/15):*\n`;
+				text += `📁 *Coleções (${totalColecoesCount}/100):*\n`;
 
 				// Se o usuário tiver míticos, a primeira coleção da lista deve ser "Míticos"
 				if (hasMythics) {
@@ -4720,11 +4720,11 @@ async function listarColecoes(bot, message, args) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"📁 *Você ainda não possui nenhuma coleção de waifus!* (0/15)\n\nCrie uma pasta com: `!mu-col-nova <nome>`\nExemplo: `!mu-col-nova Isekai`"
+						"📁 *Você ainda não possui nenhuma coleção de waifus!* (0/100)\n\nCrie uma pasta com: `!mu-col-nova <nome>`\nExemplo: `!mu-col-nova Isekai`"
 				});
 			}
 
-			let text = `📁 *Suas Coleções de Waifus (${totalCols}/15):*\n\n`;
+			let text = `📁 *Suas Coleções de Waifus (${totalCols}/100):*\n\n`;
 			let listIdx = 1;
 			if (hasMythics) {
 				const numStr = String(listIdx++).padStart(2, "0");
@@ -4844,7 +4844,7 @@ async function listarColecoes(bot, message, args) {
 }
 
 /**
- * Cria uma nova coleção de waifus para o jogador (limite de 15)
+ * Cria uma nova coleção de waifus para o jogador (limite de 100)
  */
 async function criarColecao(bot, message, args) {
 	const chatId = message.group ?? message.author;
@@ -7289,7 +7289,7 @@ async function ajudaWaifus(bot, message) {
 
 	text += `📁 *Coleções (Pastas):*\n`;
 	text += `• \`!mu-colecoes [nome/nº]\` (aliases: \`!mu-colecao\`, \`!mu-cols\`) — Lista suas pastas ou exibe os personagens de uma coleção.\n`;
-	text += `• \`!mu-col-nova <nome>\` (aliases: \`!mu-col-criar\`, \`!mu-col-new\`) — Cria uma nova coleção para organizar o harém (até 15).\n`;
+	text += `• \`!mu-col-nova <nome>\` (aliases: \`!mu-col-criar\`, \`!mu-col-new\`) — Cria uma nova coleção para organizar o harém (até 100).\n`;
 	text += `• \`!mu-col-del <nome/nº>\` (aliases: \`!mu-col-rm\`) — Apaga uma pasta (personagens voltam ao harém geral).\n`;
 	text += `• \`!mu-col-add <pasta> | <personagem>\` — Move uma waifu do harém para a pasta.\n`;
 	text += `• \`!mu-col-rem <personagem>\` — Remove a waifu de sua pasta atual.\n`;
@@ -8919,7 +8919,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-nova",
-		description: "Cria uma nova coleção para organizar suas waifus (máx 15)",
+		description: "Cria uma nova coleção para organizar suas waifus (máx 100)",
 		category: "mudae",
 		group: "muwaifu-colecoes",
 		needsArgs: true,
