@@ -169,6 +169,9 @@ class WhatsAppBotGo {
 
 		this.database = Database.getInstance();
 		this.pvSafetyService = PvSafetyService.getInstance();
+		// vCard/lembrete de contato vai depois do lote de mensagens (debounce por chat)
+		this.pvVcardDebounceMs = options.pvVcardDebounceMs ?? 2000;
+		this._pvVcardTimers = new Map();
 		this.isConnected = false;
 		this.safeMode =
 			options.safeMode !== undefined ? options.safeMode : process.env.SAFE_MODE === "true";
@@ -1582,6 +1585,8 @@ class WhatsAppBotGo {
 		}
 
 		const results = [];
+		// Chats de PV que receberam mensagem neste lote: o vCard (se devido) vai só no final
+		const pvVcardChats = new Map();
 		for (const message of validMessages) {
 			if (message.delay > 0) {
 				await sleep(message.delay);
@@ -1611,10 +1616,18 @@ class WhatsAppBotGo {
 			if (message.poll) {
 				options.poll = message.poll;
 			}
+			const isPvChat = Boolean(this.pvSafetyService?.isPvTarget(message.chatId));
+			const wantsVcard = isPvChat && !options.skipVcard;
+			if (isPvChat) {
+				options.skipVcard = true;
+			}
 
 			try {
 				const result = await this.sendMessage(message.chatId, contentToSend, options);
 				results.push(result);
+				if (wantsVcard) {
+					pvVcardChats.set(message.chatId, options);
+				}
 
 				if (options.sendMediaAsSticker && options.quotedMessageId && result?.id) {
 					const sentStickerId = result.id._serialized || result.id.id || result.id;
@@ -1826,6 +1839,10 @@ class WhatsAppBotGo {
 						({ delivery: [], played: [], read: [] })
 				});
 			}
+		}
+
+		for (const [pvChatId, pvOptions] of pvVcardChats) {
+			this._queuePvVcardReminder(pvChatId, pvOptions);
 		}
 		return results;
 	}
@@ -3392,6 +3409,36 @@ class WhatsAppBotGo {
 	}
 
 	/**
+	 * Agenda (com debounce por chat) o envio do vCard/lembrete para depois da última mensagem
+	 * enviada ao chat, sem bloquear quem chamou sendMessage.
+	 * @param {string} chatId
+	 * @param {Object} [options={}]
+	 */
+	_queuePvVcardReminder(chatId, options = {}) {
+		if (!this.pvSafetyService?.isPvTarget(chatId)) return;
+		if (!this.pvSafetyService.shouldSendVcard(this)) return;
+		const queueKey = PhoneUtils.cleanPhone(chatId) || String(chatId);
+		const pending = this._pvVcardTimers.get(queueKey);
+		if (pending) clearTimeout(pending);
+
+		const vcardOptions = {
+			vcardDelay: options.vcardDelay,
+			vcardReminderDelay: options.vcardReminderDelay
+		};
+		const timer = setTimeout(() => {
+			this._pvVcardTimers.delete(queueKey);
+			this._maybeSendPvVcardReminder(chatId, vcardOptions).catch((err) => {
+				this.logger.warn(
+					`[${this.id}] [PV-SAFETY] Falha no envio agendado do vCard para ${chatId}:`,
+					err?.message || err
+				);
+			});
+		}, this.pvVcardDebounceMs);
+		if (typeof timer.unref === "function") timer.unref();
+		this._pvVcardTimers.set(queueKey, timer);
+	}
+
+	/**
 	 * Envia vCard do bot e lembrete de salvar nos contatos no PV a cada 45 dias (apenas bots não-privados).
 	 * @param {string} chatId
 	 * @param {Object} [options={}]
@@ -3424,14 +3471,23 @@ class WhatsAppBotGo {
 				bypassPvSafety: true
 			});
 
-			await this.sendMessage(chatId, reminderText, {
-				delay: options.vcardReminderDelay ?? 500,
-				skipDedup: true,
-				_isVcardFlow: true,
-				bypassPvSafety: true
-			});
-
+			// vCard aceito: marca já, para uma falha no texto de lembrete não causar reenvio do
+			// vCard a cada mensagem no PV
 			await this.pvSafetyService.markVcardSent(this, chatId);
+
+			try {
+				await this.sendMessage(chatId, reminderText, {
+					delay: options.vcardReminderDelay ?? 500,
+					skipDedup: true,
+					_isVcardFlow: true,
+					bypassPvSafety: true
+				});
+			} catch (reminderErr) {
+				this.logger.warn(
+					`[${this.id}] [PV-SAFETY] vCard enviado, mas falhou o texto de lembrete para ${chatId}:`,
+					reminderErr?.message || reminderErr
+				);
+			}
 			return true;
 		} catch (err) {
 			this.logger.warn(
@@ -3907,8 +3963,10 @@ class WhatsAppBotGo {
 				});
 			}
 
+			// Não bloqueia o retorno nem intercala no meio de respostas em várias partes:
+			// agenda o vCard para depois da última mensagem enviada a este chat.
 			if (this.pvSafetyService?.isPvTarget(chatId) && !options._isVcardFlow && !options.skipVcard) {
-				await this._maybeSendPvVcardReminder(chatId, options);
+				this._queuePvVcardReminder(chatId, options);
 			}
 
 			return returnObj;

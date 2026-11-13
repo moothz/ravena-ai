@@ -576,14 +576,19 @@ async function runTests() {
 		});
 		inst.isConnected = true;
 		inst.isParticipating = () => true;
+		inst.pvVcardDebounceMs = 0;
 		inst.apiClient = {
 			post: async (endpoint, payload) => {
+				if (typeof opts.failPost === "function" && opts.failPost(endpoint, payload)) {
+					throw new Error(`Falha simulada em ${endpoint}`);
+				}
 				calls.push({ endpoint, payload });
 				return { data: { Info: { ID: `msg-${calls.length}` } } };
 			}
 		};
 		return { inst, calls };
 	};
+	const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
 	const publicGo = createSpyBot({
 		id: "ravenavip-go",
@@ -665,6 +670,12 @@ async function runTests() {
 		vcardDelay: 0,
 		vcardReminderDelay: 0
 	});
+	assert.strictEqual(
+		publicGo.calls.length,
+		1,
+		"sendMessage não deve esperar o vCard (agendado para depois do envio)"
+	);
+	assert.strictEqual(await waitUntil(() => publicGo.calls.length >= 3), true);
 	assert.strictEqual(publicGo.calls.length, 3, "Deveria enviar resposta + vCard + lembrete");
 	assert.strictEqual(publicGo.calls[0].endpoint, "/send/text");
 	assert.strictEqual(publicGo.calls[0].payload.text, "Sua resposta aqui");
@@ -681,13 +692,97 @@ async function runTests() {
 	// 2ª mensagem antes de 45 dias NÃO envia vCard novamente
 	publicGo.calls.length = 0;
 	await publicGo.inst.sendMessage(coldTarget, "Segunda resposta");
+	await sleepMs(150);
 	assert.strictEqual(publicGo.calls.length, 1, "Dentro dos 45 dias não deve reenviar vCard");
 
 	// Bot privado NUNCA envia vCard mesmo após PV registrado
 	await pvSafety.recordPvInteraction(privGo.inst, coldTarget);
 	await privGo.inst.sendMessage(coldTarget, "Oi do bot privado");
+	await sleepMs(150);
 	assert.strictEqual(privGo.calls.length, 1, "Bot privado não deve enviar vCard");
 	assert.strictEqual(privGo.calls[0].endpoint, "/send/text");
+
+	// Resposta em várias partes: o vCard vai só depois da última parte (nunca no meio)
+	const multiTarget = "5521955554444@s.whatsapp.net";
+	await pvSafety.recordPvInteraction(publicGo.inst, multiTarget);
+	publicGo.calls.length = 0;
+	await publicGo.inst.sendReturnMessages([
+		new ReturnMessage({ chatId: multiTarget, content: "Parte 1" }),
+		new ReturnMessage({ chatId: multiTarget, content: "Parte 2", delay: 30 }),
+		new ReturnMessage({ chatId: multiTarget, content: "Parte 3", delay: 30 })
+	]);
+	assert.strictEqual(await waitUntil(() => publicGo.calls.length >= 5), true);
+	const describeCall = (c) =>
+		c.endpoint === "/send/contact"
+			? "vcard"
+			: String(c.payload.text || "").startsWith("Salve a ravena")
+				? "lembrete"
+				: c.payload.text;
+	assert.deepStrictEqual(
+		publicGo.calls.map(describeCall),
+		["Parte 1", "Parte 2", "Parte 3", "vcard", "lembrete"],
+		"vCard e lembrete devem vir depois de todas as partes"
+	);
+	// skipVcard explícito na ReturnMessage é respeitado
+	const skipTarget = "5521955553333@s.whatsapp.net";
+	await pvSafety.recordPvInteraction(publicGo.inst, skipTarget);
+	publicGo.calls.length = 0;
+	await publicGo.inst.sendReturnMessages(
+		new ReturnMessage({ chatId: skipTarget, content: "Sem vCard", options: { skipVcard: true } })
+	);
+	await sleepMs(150);
+	assert.strictEqual(publicGo.calls.length, 1, "skipVcard deve suprimir o vCard");
+
+	// Falha no texto de lembrete: o vCard já foi aceito, então fica marcado (sem reenvio a cada msg)
+	const flakyGo = createSpyBot({
+		id: "flaky-vcard-go",
+		nomeExibir: "Flaky",
+		phoneNumber: "5511900004444",
+		privado: false,
+		failPost: (endpoint, payload) =>
+			endpoint === "/send/text" && String(payload.text || "").startsWith("Salve a ravena")
+	});
+	const flakyTarget = "5521944443333@s.whatsapp.net";
+	await pvSafety.recordPvInteraction(flakyGo.inst, flakyTarget);
+	await flakyGo.inst.sendMessage(flakyTarget, "Primeira");
+	assert.strictEqual(
+		await waitUntil(() => flakyGo.calls.some((c) => c.endpoint === "/send/contact")),
+		true
+	);
+	await sleepMs(100);
+	assert.strictEqual(
+		await pvSafety.shouldSendVcardNow(flakyGo.inst, flakyTarget),
+		false,
+		"vCard aceito deve ser marcado mesmo se o texto de lembrete falhar"
+	);
+	flakyGo.calls.length = 0;
+	await flakyGo.inst.sendMessage(flakyTarget, "Segunda");
+	await sleepMs(150);
+	assert.deepStrictEqual(
+		flakyGo.calls.map((c) => c.endpoint),
+		["/send/text"],
+		"Não deve reenviar o vCard na mensagem seguinte"
+	);
+
+	// Lock pela identidade canônica: 12 x 13 dígitos do mesmo número disputam o mesmo lock
+	const lockGo = createSpyBot({
+		id: "lock-vcard-go",
+		nomeExibir: "Lock",
+		phoneNumber: "5511900005555",
+		privado: false
+	});
+	await Promise.all([
+		lockGo.inst._maybeSendPvVcardReminder("5521966665555@s.whatsapp.net", {
+			vcardDelay: 0,
+			vcardReminderDelay: 0
+		}),
+		lockGo.inst._maybeSendPvVcardReminder("552166665555", { vcardDelay: 0, vcardReminderDelay: 0 })
+	]);
+	assert.strictEqual(
+		lockGo.calls.filter((c) => c.endpoint === "/send/contact").length,
+		1,
+		"Variantes do mesmo número não podem gerar dois vCards"
+	);
 	console.log(
 		"✓ WhatsAppBotGo.sendMessage (bloqueio frio, vCard 45 dias e bots privados) validado!"
 	);
@@ -1058,8 +1153,12 @@ async function runTests() {
 	});
 	const lembTarget = "5511911119999@s.whatsapp.net";
 	const lembId = `test-pv-block-${Date.now()}`;
+	const cleanupBotRows = async (bot) =>
+		database.dbRun("pv_users", "DELETE FROM pv_users WHERE bot_id = ?", [pvSafety.getBotKey(bot)]);
+	pvSafety.resetTestState();
 	database.testMode = false;
 	try {
+		await cleanupBotRows(lembBot.inst);
 		await database
 			.dbRun("lembretes", "ALTER TABLE lembretes ADD COLUMN pv_block_retries INTEGER DEFAULT 0")
 			.catch(() => {});
@@ -1095,6 +1194,7 @@ async function runTests() {
 		assert.ok(lembBot.calls[0].payload.text.includes("pagar a conta"));
 	} finally {
 		await database.dbRun("lembretes", "DELETE FROM lembretes WHERE id = ?", [lembId]);
+		await cleanupBotRows(lembBot.inst);
 		database.testMode = true;
 	}
 
@@ -1126,8 +1226,10 @@ async function runTests() {
 			]
 		}
 	});
+	pvSafety.resetTestState();
 	database.testMode = false;
 	try {
+		await cleanupBotRows(corBot.inst);
 		database.getSQLiteDb(
 			"correios",
 			`CREATE TABLE IF NOT EXISTS tracks (
@@ -1159,6 +1261,7 @@ async function runTests() {
 		assert.strictEqual(track.last_event_text, "Objeto entregue ao destinatário");
 	} finally {
 		await database.dbRun("correios", "DELETE FROM tracks WHERE code = ?", [corCode]);
+		await cleanupBotRows(corBot.inst);
 		database.testMode = true;
 		axios.get = originalAxiosGet;
 		if (originalCorreiosApi === undefined) delete process.env.CORREIOS_API;
