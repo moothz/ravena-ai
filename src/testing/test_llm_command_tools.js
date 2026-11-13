@@ -159,6 +159,27 @@ async function testRankingUsesRequestChat(llm) {
 	console.log("✓ Ranking sempre do chat da requisição (args.chatId ignorado).");
 }
 
+async function testUnknownToolIsRejected(llm) {
+	// O modelo não pode invocar métodos internos do serviço pelo nome (ex.: via prompt injection)
+	let called = false;
+	const original = llm.getTools;
+	llm.__internalProbe = () => {
+		called = true;
+		return "nao deveria rodar";
+	};
+	try {
+		const out = await llm.executeToolCall("__internalProbe", {});
+		assert.strictEqual(called, false, "Método interno não deve ser executado");
+		assert.ok(/não reconhecida/i.test(out), `Resposta inesperada: ${out}`);
+		const out2 = await llm.executeToolCall("getTools", {});
+		assert.ok(/não reconhecida/i.test(out2), "getTools não pode ser chamado como ferramenta");
+		assert.strictEqual(llm.getTools, original);
+	} finally {
+		delete llm.__internalProbe;
+	}
+	console.log("✓ Ferramenta desconhecida é recusada (sem fallback para métodos internos)");
+}
+
 async function runTests() {
 	console.log("=== Testes das tools de comandos e do laço de tool calling do LLMService ===");
 	const llm = LLMService.getInstance();
@@ -167,6 +188,7 @@ async function runTests() {
 	await testLegacyAliases(llm);
 	await testFinalTurnWithoutTools(llm);
 	await testRankingUsesRequestChat(llm);
+	await testUnknownToolIsRejected(llm);
 
 	console.log("\n=== Todos os testes das tools do LLMService passaram! ===");
 }

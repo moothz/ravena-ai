@@ -1054,9 +1054,11 @@ class LLMService {
 				return res;
 			}
 
-			if (typeof this[normalizedName] === "function") {
-				return await this[normalizedName](args);
-			}
+			// Sem fallback dinâmico (this[nome]): o nome da ferramenta vem do modelo e pode ser induzido por
+			// prompt injection a chamar qualquer método interno do serviço. Só as ferramentas acima são aceitas.
+			this.logger.warn(
+				`[LLMService] Ferramenta não reconhecida solicitada pelo modelo: "${fnName}"`
+			);
 
 			return "Ferramenta não reconhecida.";
 		} catch (err) {
