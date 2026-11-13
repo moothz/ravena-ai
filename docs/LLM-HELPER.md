@@ -1409,20 +1409,6 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
-### 📁 Módulo: `ViewOnceCommands.js`
-**Sobre:** Download de mídias de visualização única para o privado do usuário
-
-**Tags:** `viewonce,visualizacao unica,roubar,privado,midia`
-
-**Detalhes Técnicos:** Recupera mídias de visualização única citadas, com legenda ou marcadas com reação 👀 e envia no chat privado do solicitante
-
-#### Comandos:
-- **`!roubar`**: Baixa uma mídia de visualização única e envia no seu chat privado (também funciona reagindo com 👀 à mídia)
-  - *Categoria:* grupo
-  - *Uso/Exemplos:* `!roubar (respondendo a uma mídia de visualização única)`, `!roubar (na legenda)`, `Reagir com 👀`
-
----
-
 ### 📁 Módulo: `WaifuCommands.js`
 **Sobre:** Jogo de sorteio de waifus/husbandos (estilo Mudae) integrado com a API Waifuletes
 

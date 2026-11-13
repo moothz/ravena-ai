@@ -354,53 +354,45 @@ async function testCaptionMediaCommands() {
 	console.log("✓ [2/4] OK");
 }
 
-async function testRoubarCommandAndEyeReaction() {
-	console.log("[3/4] Testando !roubar e reação 👀...");
-	const { bot, commandHandler, reactionHandler, groupObj, groupId, userPn } =
+async function testDisabledCommandsAndRegistrations() {
+	console.log("[3/4] Testando desativação dos comandos !roubar / !admin-roubar e reações...");
+	const { bot, commandHandler, reactionHandler, groupId, adminPn, userPn } =
 		await createTestPipeline();
 
-	// Verifica documentação no LLM-HELPER.md (apenas !roubar, nunca !admin-roubar)
+	// Comandos desativados não devem estar registrados nem expostos no helper/LLM-HELPER
+	assert.strictEqual(
+		commandHandler.fixedCommands.getCommand("roubar"),
+		null,
+		"Comando !roubar deve estar desativado"
+	);
+	assert.strictEqual(
+		commandHandler.fixedCommands.getCommand("admin-roubar"),
+		null,
+		"Comando !admin-roubar deve estar desativado"
+	);
+
+	const CommandsHelper = require("../utils/CommandsHelper");
+	const commandsHelper = CommandsHelper.getInstance();
+	commandsHelper.loadHelpers();
+	assert.strictEqual(
+		commandsHelper.findCommandMeta("roubar"),
+		null,
+		"CommandsHelper não deve indexar !roubar enquanto desativado"
+	);
+
 	const llmHelper = fs.readFileSync(path.join(__dirname, "../../docs/LLM-HELPER.md"), "utf8");
-	assert.ok(llmHelper.includes("!roubar"), "docs/LLM-HELPER.md deve documentar !roubar");
+	assert.ok(
+		!llmHelper.includes("!roubar"),
+		"docs/LLM-HELPER.md não deve documentar !roubar desativado"
+	);
 	assert.ok(
 		!llmHelper.includes("admin-roubar"),
 		"docs/LLM-HELPER.md NUNCA deve expor !admin-roubar"
 	);
 
-	// 3.1 Reação 👀 em mensagem NORMAL (não view-once) deve ignorar 100% em silêncio
-	const normalReactions = [];
-	const normalMsg = createMessage({
-		id: "MSG_NORMAL_1",
-		type: "image",
-		hasMedia: true,
-		isViewOnce: false,
-		group: groupId,
-		author: "5511555555555@s.whatsapp.net",
-		content: { mimetype: "image/png", data: TINY_PNG_BASE64, isMessageMedia: true }
-	});
-	normalMsg.origin.react = async (emoji) => normalReactions.push(emoji);
-	bot.client._cachedMessages.set("MSG_NORMAL_1", normalMsg);
-
-	bot.resetCapture();
-	const handledNormal = await reactionHandler.processReaction(bot, {
-		reaction: "👀",
-		senderId: `${userPn}@s.whatsapp.net`,
-		userName: "Curioso",
-		msgId: { _serialized: "MSG_NORMAL_1" },
-		chatId: groupId
-	});
-	assert.strictEqual(handledNormal, false, "👀 em mensagem normal deve retornar false");
-	assert.strictEqual(
-		bot.capturedMessages.length,
-		0,
-		"👀 em mensagem normal não deve enviar mensagens"
-	);
-	assert.strictEqual(normalReactions.length, 0, "👀 em mensagem normal não deve reagir");
-
-	// 3.2 Reação 👀 em mídia VIEW-ONCE (com LID mapeado para PN) deve enviar no PV do solicitante
 	const voReactions = [];
 	const voMsg = createMessage({
-		id: "MSG_VO_EYE_1",
+		id: "MSG_VO_DISABLED_1",
 		type: "image",
 		hasMedia: true,
 		isViewOnce: true,
@@ -412,37 +404,49 @@ async function testRoubarCommandAndEyeReaction() {
 	});
 	voMsg.origin.isViewOnce = true;
 	voMsg.origin.react = async (emoji) => voReactions.push(emoji);
-	bot.client._cachedMessages.set("MSG_VO_EYE_1", voMsg);
+	bot.client._cachedMessages.set("MSG_VO_DISABLED_1", voMsg);
 
+	// Reação 👀 não deve acionar nada enquanto desativado
 	bot.resetCapture();
-	const handledVO = await reactionHandler.processReaction(bot, {
+	const eyeHandled = await reactionHandler.processReaction(bot, {
 		reaction: "👀",
-		senderId: "999888777@lid",
-		userName: "Ladrao",
-		msgId: { _serialized: "MSG_VO_EYE_1" },
+		senderId: `${userPn}@s.whatsapp.net`,
+		userName: "Curioso",
+		msgId: { _serialized: "MSG_VO_DISABLED_1" },
 		chatId: groupId
 	});
-	assert.strictEqual(handledVO, true, "👀 em view-once deve ser tratado");
-	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar mídia no PV");
-	assert.strictEqual(
-		bot.capturedMessages[0].chatId,
-		`${userPn}@s.whatsapp.net`,
-		"Deve enviar no PV resolvido via LID->PN do usuário que reagiu, nunca no grupo"
-	);
-	assert.strictEqual(bot.capturedMessages[0].content.data, TINY_PNG_BASE64);
-	assert.ok(voReactions.includes("✅"), "Deve reagir ✅ na view-once");
+	assert.strictEqual(eyeHandled, false, "Reação 👀 deve retornar false quando desativada");
+	assert.strictEqual(bot.capturedMessages.length, 0);
+	assert.strictEqual(voReactions.length, 0);
 
-	// 3.3 Comando texto !roubar citando view-once áudio PTT
-	const audioReactions = [];
-	const quoteCmdMsg = createMessage({
-		id: "CMD_ROUBAR_AUDIO",
-		type: "text",
-		content: "!roubar",
-		group: groupId,
-		author: userPn
+	// Reação 👽 não deve acionar nada enquanto desativado
+	bot.resetCapture();
+	const alienHandled = await reactionHandler.processReaction(bot, {
+		reaction: "👽",
+		senderId: `${adminPn}@s.whatsapp.net`,
+		userName: "Admin",
+		msgId: { _serialized: "MSG_VO_DISABLED_1" },
+		chatId: groupId
 	});
-	quoteCmdMsg.origin.react = async (emoji) => audioReactions.push(emoji);
-	quoteCmdMsg.origin.getQuotedMessage = async () => ({
+	assert.strictEqual(alienHandled, false, "Reação 👽 deve retornar false quando desativada");
+	assert.strictEqual(bot.capturedMessages.length, 0);
+	assert.strictEqual(voReactions.length, 0);
+
+	console.log("✓ [3/4] OK");
+}
+
+async function testPreservedViewOnceMethods() {
+	console.log("[4/4] Testando métodos preservados de ViewOnceCommands para uso futuro...");
+	const ViewOnceCommands = require("../functions/ViewOnceCommands");
+	const { bot, groupObj, groupId, adminPn, userPn } = await createTestPipeline();
+
+	assert.strictEqual(typeof ViewOnceCommands.handleRoubarCommand, "function");
+	assert.strictEqual(typeof ViewOnceCommands.handleAdminRoubarCommand, "function");
+	assert.strictEqual(typeof ViewOnceCommands.forwardViewOnceToPv, "function");
+
+	// handleRoubarCommand via quote
+	const reactions = [];
+	const quotedVoAudio = {
 		type: "audio",
 		hasMedia: true,
 		isViewOnce: true,
@@ -454,32 +458,31 @@ async function testRoubarCommandAndEyeReaction() {
 			filename: "voice.ogg",
 			isMessageMedia: true
 		})
+	};
+	const quoteCmdMsg = createMessage({
+		id: "CMD_ROUBAR_PRESERVED",
+		type: "text",
+		content: "!roubar",
+		group: groupId,
+		author: userPn
 	});
+	quoteCmdMsg.origin.react = async (emoji) => reactions.push(emoji);
+	quoteCmdMsg.origin.getQuotedMessage = async () => quotedVoAudio;
 
-	const roubarCmd = commandHandler.fixedCommands.getCommand("roubar");
-	bot.resetCapture();
-	await commandHandler.executeFixedCommand(bot, quoteCmdMsg, roubarCmd, [], groupObj);
-	assert.strictEqual(bot.capturedMessages.length, 2, "Áudio VO deve enviar legenda + áudio no PV");
-	assert.strictEqual(bot.capturedMessages[0].chatId, `${userPn}@s.whatsapp.net`);
-	assert.strictEqual(bot.capturedMessages[1].chatId, `${userPn}@s.whatsapp.net`);
-	assert.strictEqual(bot.capturedMessages[1].options.sendAudioAsVoice, true);
+	const roubarRet = await ViewOnceCommands.handleRoubarCommand(bot, quoteCmdMsg, [], groupObj);
+	assert.ok(
+		Array.isArray(roubarRet) && roubarRet.length === 2,
+		"Áudio VO deve retornar legenda + áudio"
+	);
+	assert.strictEqual(roubarRet[0].chatId, `${userPn}@s.whatsapp.net`);
+	assert.strictEqual(roubarRet[1].chatId, `${userPn}@s.whatsapp.net`);
+	assert.strictEqual(roubarRet[1].options.sendAudioAsVoice, true);
+	assert.ok(reactions.includes("✅"));
 
-	console.log("✓ [3/4] OK");
-}
-
-async function testAdminRoubarCommandAndAlienReaction() {
-	console.log("[4/4] Testando !admin-roubar oculto e reação 👽 silenciosa...");
-	const { bot, commandHandler, reactionHandler, groupObj, groupId, adminPn, userPn } =
-		await createTestPipeline();
-
-	const adminCmd = commandHandler.fixedCommands.getCommand("admin-roubar");
-	assert.ok(adminCmd, "Comando !admin-roubar deve estar registrado");
-	assert.strictEqual(adminCmd.hidden, true, "!admin-roubar deve ter hidden: true");
-	assert.strictEqual(adminCmd.reply, false, "!admin-roubar deve ter reply: false");
-
-	const alienReactions = [];
-	const voAdminMsg = createMessage({
-		id: "MSG_VO_ALIEN_1",
+	// handleAdminRoubarCommand: ignora não-admin e encaminha em silêncio para admin
+	const adminReactions = [];
+	const voImage = createMessage({
+		id: "MSG_VO_PRESERVED_IMG",
 		type: "image",
 		hasMedia: true,
 		isViewOnce: true,
@@ -489,264 +492,52 @@ async function testAdminRoubarCommandAndAlienReaction() {
 		caption: "top secret",
 		content: { mimetype: "image/png", data: TINY_PNG_BASE64, isMessageMedia: true }
 	});
-	voAdminMsg.origin.isViewOnce = true;
-	voAdminMsg.origin.react = async (emoji) => alienReactions.push(emoji);
-	bot.client._cachedMessages.set("MSG_VO_ALIEN_1", voAdminMsg);
+	voImage.origin.isViewOnce = true;
+	voImage.origin.react = async (emoji) => adminReactions.push(emoji);
 
-	// 4.1 Não-admin reage 👽 -> ZERO resposta, ZERO PV, ZERO reação
-	bot.resetCapture();
-	const nonAdminHandled = await reactionHandler.processReaction(bot, {
-		reaction: "👽",
-		senderId: `${userPn}@s.whatsapp.net`,
-		userName: "Comum",
-		msgId: { _serialized: "MSG_VO_ALIEN_1" },
-		chatId: groupId
-	});
-	assert.strictEqual(nonAdminHandled, false, "Não-admin reagindo 👽 deve retornar false");
-	assert.strictEqual(bot.capturedMessages.length, 0, "Não-admin não deve receber nada");
-	assert.strictEqual(alienReactions.length, 0, "Não-admin não deve gerar reação no grupo");
-
-	// 4.2 Admin reage 👽 -> envia SOMENTE no PV do admin, ZERO reação/mensagem no grupo
-	bot.resetCapture();
-	const adminHandled = await reactionHandler.processReaction(bot, {
-		reaction: "👽",
-		senderId: `${adminPn}@s.whatsapp.net`,
-		userName: "Admin",
-		msgId: { _serialized: "MSG_VO_ALIEN_1" },
-		chatId: groupId
-	});
-	assert.strictEqual(adminHandled, true, "Admin reagindo 👽 em VO deve retornar true");
-	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar exatamente 1 mensagem no PV");
-	assert.strictEqual(bot.capturedMessages[0].chatId, `${adminPn}@s.whatsapp.net`);
-	assert.strictEqual(bot.capturedMessages[0].content.data, TINY_PNG_BASE64);
-	assert.strictEqual(
-		alienReactions.length,
-		0,
-		"!admin-roubar NUNCA deve reagir na mensagem do grupo"
-	);
-	assert.ok(
-		!bot.capturedMessages[0].options?.quotedMessageId,
-		"Não deve ter quotedMessageId ao encaminhar silenciosamente para PV"
-	);
-
-	// 4.3 Não-admin digita !admin-roubar citando VO -> ZERO resposta, ZERO reação
-	const nonAdminTextReactions = [];
-	const nonAdminTextCmd = createMessage({
-		id: "CMD_ADMIN_ROUBAR_FAIL",
+	const nonAdminQuotedMsg = createMessage({
+		id: "CMD_ADMIN_PRESERVED_FAIL",
 		type: "text",
 		content: "!admin-roubar",
 		group: groupId,
 		author: `${userPn}@s.whatsapp.net`
 	});
-	nonAdminTextCmd.origin.react = async (emoji) => nonAdminTextReactions.push(emoji);
-	nonAdminTextCmd.origin.getQuotedMessage = async () => voAdminMsg;
-
-	bot.resetCapture();
-	await commandHandler.executeFixedCommand(bot, nonAdminTextCmd, adminCmd, [], groupObj);
-	assert.strictEqual(bot.capturedMessages.length, 0);
-	assert.strictEqual(nonAdminTextReactions.length, 0);
-
-	console.log("✓ [4/5] OK");
-}
-
-async function testRoubarCategoryAndMute() {
-	console.log(
-		"\n--- [5/5] Testando categoria grupo e !g-mute / !g-muteCategoria para !roubar e 👀 ---"
+	nonAdminQuotedMsg.origin.getQuotedMessage = async () => voImage;
+	const nonAdminRet = await ViewOnceCommands.handleAdminRoubarCommand(
+		bot,
+		nonAdminQuotedMsg,
+		[],
+		groupObj
 	);
-	const { bot, commandHandler, reactionHandler, groupObj, groupId, adminPn, userPn } =
-		await createTestPipeline();
+	assert.strictEqual(nonAdminRet, false, "Não-admin deve retornar false silenciosamente");
 
-	// Em produção (WhatsAppBotGo), ReactionsHandler fica em bot.reactionHandler
-	bot.reactionHandler = reactionHandler;
-	if (!bot.eventHandler) {
-		bot.eventHandler = { commandHandler };
-	}
-	commandHandler.customCommands[groupObj.id] = [];
-	if (commandHandler.management?.database) {
-		commandHandler.management.database.saveGroup = async () => true;
-	}
-
-	// 5.1 Verificar categoria "grupo" no !roubar e !admin-roubar
-	const roubarCmd = commandHandler.fixedCommands.getCommand("roubar");
-	const adminRoubarCmd = commandHandler.fixedCommands.getCommand("admin-roubar");
-	assert.ok(roubarCmd, "Comando roubar deve estar registrado");
-	assert.strictEqual(roubarCmd.category, "grupo", "!roubar deve estar na categoria 'grupo'");
-	assert.strictEqual(
-		adminRoubarCmd.category,
-		"grupo",
-		"!admin-roubar deve estar na categoria 'grupo'"
-	);
-	assert.strictEqual(adminRoubarCmd.hidden, true, "!admin-roubar deve permanecer oculto");
-
-	const voMsgId = `vo-mute-target-${Date.now()}`;
-	const voTargetMsg = createMessage({
-		type: "image",
+	const adminQuotedMsg = createMessage({
+		id: "CMD_ADMIN_PRESERVED_OK",
+		type: "text",
+		content: "!admin-roubar",
 		group: groupId,
-		author: adminPn,
-		isViewOnce: true,
-		content: {
-			mimetype: "image/jpeg",
-			data: TINY_PNG_BASE64,
-			filename: "vo-mute.jpg"
-		},
-		origin: {
-			id: { id: voMsgId, _serialized: voMsgId },
-			type: "image",
-			isViewOnce: true,
-			downloadMedia: async () => ({
-				mimetype: "image/jpeg",
-				data: TINY_PNG_BASE64,
-				filename: "vo-mute.jpg"
-			})
-		}
+		author: `${adminPn}@s.whatsapp.net`
 	});
-	bot.recoverMsgFromCache = async () => voTargetMsg;
-	bot.client.getMessageById = async () => voTargetMsg;
-
-	const adminCmdMsg = createMessage({
-		content: "!g-mute roubar",
-		group: groupId,
-		author: adminPn,
-		authorName: "Admin"
-	});
-
-	// 5.2 !g-mute roubar bloqueia texto !roubar e reação 👀
-	const muteRes = await commandHandler.management.muteCommand(
+	adminQuotedMsg.origin.getQuotedMessage = async () => voImage;
+	const adminRet = await ViewOnceCommands.handleAdminRoubarCommand(
 		bot,
-		adminCmdMsg,
-		["roubar"],
+		adminQuotedMsg,
+		[],
 		groupObj
 	);
-	assert.ok(
-		muteRes.content.includes("silenciado") && muteRes.content.includes("roubar"),
-		`Deve confirmar mute do roubar. Recebido: ${muteRes.content}`
-	);
-	assert.ok(!muteRes.content.includes("admin-roubar"), "Mutar roubar não deve expor admin-roubar");
-	assert.ok(groupObj.mutedCommands.includes("roubar"), "group.mutedCommands deve conter roubar");
+	assert.ok(adminRet, "Admin deve receber ReturnMessage no PV");
+	assert.strictEqual(adminRet.chatId, `${adminPn}@s.whatsapp.net`);
+	assert.strictEqual(adminRet.content.data, TINY_PNG_BASE64);
+	assert.strictEqual(adminReactions.length, 0, "Admin silencioso não deve reagir no grupo");
 
-	const textReactions = [];
-	const textRoubarMsg = createMessage({
-		content: "!roubar",
-		group: groupId,
-		author: userPn,
-		authorName: "Membro",
-		hasQuotedMsg: true,
-		origin: {
-			react: async (emoji) => {
-				textReactions.push(emoji);
-			},
-			getQuotedMessage: async () => voTargetMsg.origin
-		}
-	});
-
-	bot.resetCapture();
-	await commandHandler.processCommand(bot, textRoubarMsg, "roubar", [], groupObj);
-	assert.strictEqual(bot.capturedMessages.length, 0, "!roubar mutado não deve enviar PV");
-	assert.ok(textReactions.includes("⛔️"), "!roubar mutado por texto deve reagir ⛔️");
-
-	bot.resetCapture();
-	const eyeReactionPayload = {
-		reaction: "👀",
-		senderId: userPn,
-		userName: "Membro",
-		msgId: { _serialized: voMsgId },
-		chatId: groupId,
-		targetFromMe: false
-	};
-	const handledMutedEye = await reactionHandler.processReaction(bot, eyeReactionPayload);
-	assert.strictEqual(handledMutedEye, false, "Reação 👀 deve ser ignorada com roubar mutado");
-	assert.strictEqual(bot.capturedMessages.length, 0, "Reação 👀 mutada não deve enviar PV");
-
-	// 5.3 !g-mute 👀 desmuta usando o próprio emoji e permite 👀 novamente
-	const unmuteByEmojiRes = await commandHandler.management.muteCommand(
-		bot,
-		adminCmdMsg,
-		["👀"],
-		groupObj
-	);
-	assert.ok(
-		unmuteByEmojiRes.content.includes("reativado"),
-		`!g-mute 👀 deve reativar roubar. Recebido: ${unmuteByEmojiRes.content}`
-	);
-	assert.ok(!groupObj.mutedCommands.includes("roubar"), "roubar deve sair de mutedCommands");
-
-	bot.resetCapture();
-	const handledUnmutedEye = await reactionHandler.processReaction(bot, eyeReactionPayload);
-	assert.strictEqual(handledUnmutedEye, true, "Reação 👀 deve voltar a funcionar após unmute");
-	assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar mídia no PV após unmute");
-	assert.strictEqual(
-		bot.capturedMessages[0].chatId,
-		`${userPn.split("@")[0]}@s.whatsapp.net`,
-		"Envio deve ir para PV do membro"
-	);
-
-	// 5.4 !g-mute 👀 muta novamente via emoji
-	const remuteByEmojiRes = await commandHandler.management.muteCommand(
-		bot,
-		adminCmdMsg,
-		["👀"],
-		groupObj
-	);
-	assert.ok(
-		remuteByEmojiRes.content.includes("silenciado") && groupObj.mutedCommands.includes("roubar"),
-		"!g-mute 👀 deve silenciar roubar novamente"
-	);
-	bot.resetCapture();
-	const handledRemutedEye = await reactionHandler.processReaction(bot, eyeReactionPayload);
-	assert.strictEqual(handledRemutedEye, false, "Reação 👀 mutada via emoji deve ser bloqueada");
-	assert.strictEqual(bot.capturedMessages.length, 0);
-
-	// 5.5 !g-muteCategoria grupo bloqueia !roubar (texto) e reação 👀
-	groupObj.mutedCommands = [];
-	const muteCatRes = await commandHandler.management.toggleMuteCategory(
-		bot,
-		adminCmdMsg,
-		["grupo"],
-		groupObj
-	);
-	assert.ok(
-		muteCatRes.content.includes("silenciada") && groupObj.mutedCategories.includes("grupo"),
-		"Categoria grupo deve ser silenciada via !g-muteCategoria grupo"
-	);
-
-	bot.resetCapture();
-	await commandHandler.processCommand(bot, textRoubarMsg, "roubar", [], groupObj);
-	assert.strictEqual(
-		bot.capturedMessages.length,
-		0,
-		"!roubar não deve executar com categoria grupo mutada"
-	);
-
-	bot.resetCapture();
-	const handledCatMutedEye = await reactionHandler.processReaction(bot, eyeReactionPayload);
-	assert.strictEqual(
-		handledCatMutedEye,
-		false,
-		"Reação 👀 deve ser ignorada quando categoria grupo está mutada"
-	);
-	assert.strictEqual(
-		bot.capturedMessages.length,
-		0,
-		"Reação 👀 com categoria grupo mutada não deve enviar PV"
-	);
-
-	// Reativa categoria grupo e confirma que 👀 funciona de novo
-	await commandHandler.management.toggleMuteCategory(bot, adminCmdMsg, ["grupo"], groupObj);
-	assert.ok(!groupObj.mutedCategories.includes("grupo"));
-	bot.resetCapture();
-	const handledCatUnmutedEye = await reactionHandler.processReaction(bot, eyeReactionPayload);
-	assert.strictEqual(handledCatUnmutedEye, true, "Reação 👀 deve voltar após reativar categoria");
-	assert.strictEqual(bot.capturedMessages.length, 1);
-
-	console.log("✓ [5/5] OK");
+	console.log("✓ [4/4] OK");
 }
 
 async function main() {
 	await testWhatsAppBotGoViewOnce();
 	await testCaptionMediaCommands();
-	await testRoubarCommandAndEyeReaction();
-	await testAdminRoubarCommandAndAlienReaction();
-	await testRoubarCategoryAndMute();
+	await testDisabledCommandsAndRegistrations();
+	await testPreservedViewOnceMethods();
 	console.log("\n✅ Todos os testes de view-once passaram!");
 }
 

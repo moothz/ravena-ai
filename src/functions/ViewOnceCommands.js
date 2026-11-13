@@ -1,4 +1,5 @@
 const Logger = require("../utils/Logger");
+
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
@@ -352,7 +353,10 @@ async function handleAdminRoubarCommand(bot, message, args, group) {
 	return forwardViewOnceToPv(bot, message, group, { silentAdmin: true });
 }
 
+// Comandos desativados temporariamente: o WhatsApp entrega view-once apenas como <unavailable type="view_once"/> para dispositivos Web.
+// Os métodos e declarações permanecem preservados para reativação futura caso o protocolo mude.
 const commands = [
+	/*
 	new Command({
 		name: "roubar",
 		description: "Baixa mídia de visualização única e envia no seu privado",
@@ -381,9 +385,12 @@ const commands = [
 		},
 		method: handleAdminRoubarCommand
 	})
+	*/
 ];
 
-const helper = {
+/*
+Helper desativado temporariamente junto com os comandos acima (renomeado para não disparar o parser de helper via regex):
+const viewOnceHelper = {
 	about: "Download de mídias de visualização única para o privado do solicitante",
 	implementation:
 		"Recupera mídias view-once a partir de mensagens citadas, legendas ou reações 👀 e envia no chat privado.",
@@ -397,10 +404,13 @@ const helper = {
 		}
 	]
 };
+*/
 
 module.exports = {
-	helper,
 	commands,
 	resolveRequesterPvJid,
-	isMessageViewOnce
+	isMessageViewOnce,
+	forwardViewOnceToPv,
+	handleRoubarCommand,
+	handleAdminRoubarCommand
 };
