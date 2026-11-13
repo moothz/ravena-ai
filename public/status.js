@@ -1,13 +1,41 @@
 document.addEventListener("DOMContentLoaded", () => {
 	const botsContainer = document.getElementById("status-bots-container");
+	const botsSection = botsContainer ? botsContainer.closest(".status-bots-section") : null;
+	const updatedEl = document.getElementById("status-updated");
+	const alertEl = document.getElementById("status-alert");
+	const pageContainer = document.querySelector("body > .container");
 	const modalBackdrop = document.getElementById("bot-detail-modal");
 	const modalTitle = document.getElementById("bot-modal-title");
 	const modalBody = document.getElementById("bot-modal-body");
 	const modalCloseBtn = document.getElementById("bot-modal-close");
 
+	const HEALTH_INTERVAL_MS = 30000;
+	const BARS_INTERVAL_MS = 1000;
+	const HEALTH_TIMEOUT_MS = 15000;
+	const FALLBACK_AVATAR = "/android-chrome-192x192.png";
+	const MODAL_FOCUSABLE =
+		'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 	let healthData = null;
 	const botMessageTimestamps = {};
 	let activeModalBotId = null;
+
+	// Diferença (ms) entre o relógio do servidor (data.timestamp do /health) e o do navegador.
+	// Evita que um relógio local adiantado/atrasado marque bots ativos como "Alerta"/"Inativa".
+	let clockSkew = 0;
+	// Horário (do servidor) dos dados exibidos, usado no "Atualizado às" e no aviso de falha.
+	let lastUpdatedAt = null;
+	// Assinatura da estrutura da grade no último render completo (bots, categorias e estado
+	// online/offline). Se não mudar, os cards existentes são atualizados no lugar.
+	let gridSignature = null;
+	// Avatares que já falharam (404): usa o fallback direto, sem requisitar de novo a cada render.
+	const failedAvatars = new Set();
+	// Garante que apenas a resposta do /health mais recente seja aplicada.
+	let fetchSeq = 0;
+
+	let healthTimer = null;
+	let barsTimer = null;
+	let eventSource = null;
 
 	function escapeHtml(value) {
 		return String(value ?? "").replace(
@@ -23,9 +51,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		);
 	}
 
+	/** Horário atual estimado no relógio do servidor. */
+	function serverNow() {
+		return Date.now() + clockSkew;
+	}
+
 	function getTimeSinceLastMessage(timestamp) {
 		if (!timestamp) return Infinity;
-		return Math.floor((Date.now() - timestamp) / 1000 / 60);
+		return Math.floor((serverNow() - timestamp) / 1000 / 60);
 	}
 
 	function formatTimeSince(minutes) {
@@ -48,6 +81,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		return minutes < 15 ? `Ativa há ${timeText}` : `Sem atividade há ${timeText}`;
 	}
 
+	function formatClock(timestamp) {
+		return new Date(timestamp).toLocaleTimeString("pt-BR", {
+			hour: "2-digit",
+			minute: "2-digit"
+		});
+	}
+
 	function formatPhoneNumber(number) {
 		if (!number || typeof number !== "string") return "";
 		const clean = number.replace(/\D/g, "");
@@ -59,6 +99,19 @@ document.addEventListener("DOMContentLoaded", () => {
 			return `+${country} (${ddd}) ${part1}-${part2}`;
 		}
 		return number;
+	}
+
+	function avatarSrc(botId) {
+		return failedAvatars.has(String(botId))
+			? FALLBACK_AVATAR
+			: `/os/img/profiles/${encodeURIComponent(botId)}.jpg`;
+	}
+
+	function findDriveItems(botId) {
+		if (!botsContainer) return [];
+		return Array.from(
+			botsContainer.querySelectorAll(`.drive-item[data-bot-id="${CSS.escape(String(botId))}"]`)
+		);
 	}
 
 	function getBotMsgsHr(bot) {
@@ -73,18 +126,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		return msgsHr;
 	}
 
-	function renderDriveItem(bot) {
-		const isOffline = !bot.connected || bot.banido;
+	/** Calcula tudo o que é exibido em um card, para o render completo e a atualização no lugar. */
+	function computeBotView(bot) {
 		const isBanned = !!bot.banido;
+		const isOffline = !bot.connected || isBanned;
 
 		const msgsHr = getBotMsgsHr(bot);
 		const msgsPercent = Math.min(75, (msgsHr / 5000) * 75);
 		const avgDelay = bot.responseTime ? bot.responseTime.avg || 0 : 0;
 		const delayPercent = Math.min(25, ((avgDelay * 1000) / 30000) * 25);
 		const totalPercent = Math.min(100, Math.max(5, msgsPercent + delayPercent));
-
 		const hue = Math.max(0, 120 - totalPercent * 1.2);
-		const barColor = `hsl(${hue}, 85%, 45%)`;
 
 		const minutesSince = getTimeSinceLastMessage(bot.lastMessageReceived);
 		let statusDotClass = "status-green";
@@ -104,38 +156,50 @@ document.addEventListener("DOMContentLoaded", () => {
 				? "DESCONECTADO"
 				: `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
 
+		return {
+			isBanned,
+			isOffline,
+			statusDotClass,
+			barText,
+			barWidth: isOffline ? 100 : totalPercent,
+			barColor: isOffline ? "#2a2a38" : `hsl(${hue}, 85%, 45%)`,
+			cleanPhone: bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : ""
+		};
+	}
+
+	function renderDriveItem(bot) {
+		const view = computeBotView(bot);
 		const phone = bot.phoneNumber || "";
-		const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
 		const safeId = escapeHtml(bot.id);
 
 		return `
-            <div class="drive-item ${isOffline ? "drive-offline" : ""}"
+            <div class="drive-item ${view.isOffline ? "drive-offline" : ""}"
                  data-bot-id="${safeId}"
                  data-phone="${escapeHtml(phone)}"
                  role="button"
                  tabindex="0"
                  title="Clique para mais informações">
-                <img src="/os/img/profiles/${encodeURIComponent(bot.id)}.jpg"
+                <img src="${escapeHtml(avatarSrc(bot.id))}"
                      class="drive-icon"
-                     onerror="this.onerror=null;this.src='/android-chrome-192x192.png';"
+                     data-avatar-bot-id="${safeId}"
                      alt=""
                      width="44" height="44"
                      loading="lazy" decoding="async">
                 <div class="drive-info">
                     <div class="drive-name">
-                        <span class="status-dot ${statusDotClass}"></span>
+                        <span class="status-dot ${view.statusDotClass}"></span>
                         <span>${safeId}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ""}
                     </div>
                     <div class="drive-bar">
-                        <div class="drive-bar-fill" style="width: ${isOffline ? 100 : totalPercent}%; background: ${isOffline ? "#2a2a38" : barColor};"></div>
-                        <span class="drive-bar-text ${isOffline ? "bar-text-offline" : ""}">${barText}</span>
+                        <div class="drive-bar-fill" style="width: ${view.barWidth}%; background: ${view.barColor};"></div>
+                        <span class="drive-bar-text ${view.isOffline ? "bar-text-offline" : ""}">${escapeHtml(view.barText)}</span>
                     </div>
                 </div>
                 ${
-									cleanPhone
+									view.cleanPhone
 										? `
-                    <a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" aria-label="Chamar ${safeId} no WhatsApp">
+                    <a href="https://wa.me/${view.cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" aria-label="Chamar ${safeId} no WhatsApp">
                         <i class="fab fa-whatsapp"></i>
                     </a>
                 `
@@ -145,10 +209,59 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 	}
 
+	/** Atualiza no lugar os cards de um bot (bolinha de status e barra), sem recriar o DOM. */
+	function updateBotNodes(bot) {
+		const items = findDriveItems(bot.id);
+		if (items.length === 0) return;
+
+		const view = computeBotView(bot);
+		items.forEach((el) => {
+			const dotEl = el.querySelector(".status-dot");
+			const fillEl = el.querySelector(".drive-bar-fill");
+			const textEl = el.querySelector(".drive-bar-text");
+
+			if (dotEl) dotEl.className = `status-dot ${view.statusDotClass}`;
+			if (fillEl) {
+				fillEl.style.width = `${view.barWidth}%`;
+				fillEl.style.background = view.barColor;
+			}
+			if (textEl && textEl.textContent !== view.barText) {
+				textEl.textContent = view.barText;
+			}
+		});
+	}
+
+	/** Partes do bot que exigem recriar a grade (seções, cards, links); o resto muda no lugar. */
+	function computeGridSignature(bots) {
+		return JSON.stringify(
+			bots.map((bot) => {
+				const view = computeBotView(bot);
+				return [
+					String(bot.id),
+					!!bot.privado,
+					!!bot.vip,
+					!!bot.comunitario,
+					view.cleanPhone,
+					view.isOffline,
+					view.isBanned
+				];
+			})
+		);
+	}
+
 	function renderBots() {
 		if (!botsContainer) return;
 
-		if (!healthData || !Array.isArray(healthData.bots) || healthData.bots.length === 0) {
+		const bots = healthData && Array.isArray(healthData.bots) ? healthData.bots : [];
+		const signature = computeGridSignature(bots);
+
+		if (signature === gridSignature) {
+			bots.forEach(updateBotNodes);
+			return;
+		}
+		gridSignature = signature;
+
+		if (bots.length === 0) {
 			botsContainer.innerHTML = `
                 <div class="status-loading">
                     <i class="fas fa-robot" style="color: #888;"></i>
@@ -158,10 +271,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			return;
 		}
 
-		const botsPrivados = healthData.bots.filter((b) => b.privado);
-		const botsNormais = healthData.bots.filter((b) => !b.comunitario && !b.vip && !b.privado);
-		const botsComunitarios = healthData.bots.filter((b) => b.comunitario && !b.privado);
-		const botsVips = healthData.bots.filter((b) => b.vip && !b.privado);
+		const botsPrivados = bots.filter((b) => b.privado);
+		const botsNormais = bots.filter((b) => !b.comunitario && !b.vip && !b.privado);
+		const botsComunitarios = bots.filter((b) => b.comunitario && !b.privado);
+		const botsVips = bots.filter((b) => b.vip && !b.privado);
 
 		const sections = [];
 
@@ -209,28 +322,25 @@ document.addEventListener("DOMContentLoaded", () => {
             `);
 		}
 
+		// Preserva o foco do teclado/leitor de tela através do re-render (card ou link do WhatsApp)
+		let focusBotId = null;
+		let focusWaBtn = false;
+		const active = document.activeElement;
+		if (active && botsContainer.contains(active)) {
+			const item = active.closest(".drive-item");
+			if (item) {
+				focusBotId = item.dataset.botId;
+				focusWaBtn = active.classList.contains("drive-wa-btn");
+			}
+		}
+
 		botsContainer.innerHTML = `<div class="meu-computador">${sections.join('<hr class="win-xp-separator">')}</div>`;
 
-		botsContainer.querySelectorAll(".drive-item").forEach((el) => {
-			const open = (e) => {
-				if (e.target.closest(".drive-wa-btn")) return;
-				const botId = el.dataset.botId;
-				const bot = healthData.bots.find((b) => b.id === botId);
-				if (bot) openBotModal(bot);
-			};
-
-			el.addEventListener("click", open);
-			el.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					open(e);
-				}
-			});
-		});
-
-		botsContainer.querySelectorAll(".drive-wa-btn").forEach((a) => {
-			a.addEventListener("click", (e) => e.stopPropagation());
-		});
+		if (focusBotId !== null) {
+			const item = findDriveItems(focusBotId)[0];
+			const target = item && focusWaBtn ? item.querySelector(".drive-wa-btn") || item : item;
+			if (target) target.focus({ preventScroll: true });
+		}
 	}
 
 	function updateLiveBars() {
@@ -241,36 +351,56 @@ document.addEventListener("DOMContentLoaded", () => {
 			botMessageTimestamps[botId] = botMessageTimestamps[botId].filter((t) => now - t <= 60000);
 		}
 
-		healthData.bots.forEach((bot) => {
-			const el = botsContainer.querySelector(`.drive-item[data-bot-id="${CSS.escape(bot.id)}"]`);
-			if (!el || !bot.connected || bot.banido) return;
+		healthData.bots.forEach(updateBotNodes);
+	}
 
-			const msgsHr = getBotMsgsHr(bot);
-			const msgsPercent = Math.min(75, (msgsHr / 5000) * 75);
-			const avgDelay = bot.responseTime ? bot.responseTime.avg || 0 : 0;
-			const delayPercent = Math.min(25, ((avgDelay * 1000) / 30000) * 25);
-			const totalPercent = Math.min(100, Math.max(5, msgsPercent + delayPercent));
+	function findBot(botId) {
+		if (!healthData || !Array.isArray(healthData.bots)) return null;
+		return healthData.bots.find((b) => String(b.id) === String(botId)) || null;
+	}
 
-			const hue = Math.max(0, 120 - totalPercent * 1.2);
-			const barColor = `hsl(${hue}, 85%, 45%)`;
+	function handleAvatarError(e) {
+		const img = e.target;
+		if (!(img instanceof HTMLImageElement) || img.dataset.avatarBotId === undefined) return;
+		failedAvatars.add(img.dataset.avatarBotId);
+		if (!img.src.endsWith(FALLBACK_AVATAR)) {
+			img.src = FALLBACK_AVATAR;
+		}
+	}
 
-			const fillEl = el.querySelector(".drive-bar-fill");
-			const textEl = el.querySelector(".drive-bar-text");
+	if (botsContainer) {
+		// Delegação: os listeners sobrevivem aos re-renders da grade
+		botsContainer.addEventListener("click", (e) => {
+			if (e.target.closest(".drive-wa-btn")) return;
+			const item = e.target.closest(".drive-item");
+			if (!item) return;
+			const bot = findBot(item.dataset.botId);
+			if (bot) openBotModal(bot);
+		});
 
-			if (fillEl) {
-				fillEl.style.width = `${totalPercent}%`;
-				fillEl.style.background = barColor;
-			}
-			if (textEl) {
-				textEl.textContent = `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+		botsContainer.addEventListener("keydown", (e) => {
+			const item = e.target.closest(".drive-item");
+			// Só o próprio card trata Enter/Espaço: no link do WhatsApp aninhado, o Enter
+			// precisa seguir o comportamento nativo e abrir o link.
+			if (!item || e.target !== item) return;
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				const bot = findBot(item.dataset.botId);
+				if (bot) openBotModal(bot);
 			}
 		});
+
+		// Eventos "error" não borbulham: captura para cachear avatares inexistentes
+		botsContainer.addEventListener("error", handleAvatarError, true);
+	}
+	if (modalBody) {
+		modalBody.addEventListener("error", handleAvatarError, true);
 	}
 
 	function openBotModal(bot) {
 		if (!modalBackdrop || !modalBody || !modalTitle) return;
 
-		activeModalBotId = bot.id;
+		activeModalBotId = String(bot.id);
 		const safeId = escapeHtml(bot.id);
 		modalTitle.innerHTML = `<i class="fas fa-info-circle"></i> Detalhes: ${safeId}`;
 
@@ -324,9 +454,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		modalBody.innerHTML = `
             <div class="bot-detail-view">
                 <div class="bot-detail-header">
-                    <img src="/os/img/profiles/${encodeURIComponent(bot.id)}.jpg"
+                    <img src="${escapeHtml(avatarSrc(bot.id))}"
                          class="bot-detail-avatar"
-                         onerror="this.onerror=null;this.src='/android-chrome-192x192.png';"
+                         data-avatar-bot-id="${safeId}"
                          alt="${safeId}">
                     <div class="bot-detail-title">
                         <h2>${safeId}</h2>
@@ -378,12 +508,50 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
 		modalBackdrop.hidden = false;
+		// O restante da página fica inerte enquanto o diálogo (aria-modal) está aberto
+		if (pageContainer) pageContainer.inert = true;
+		modalBody.scrollTop = 0;
+		if (modalCloseBtn) modalCloseBtn.focus();
 	}
 
 	function closeBotModal() {
-		if (!modalBackdrop) return;
+		if (!modalBackdrop || modalBackdrop.hidden) return;
 		modalBackdrop.hidden = true;
+		if (pageContainer) pageContainer.inert = false;
+
+		const returnBotId = activeModalBotId;
 		activeModalBotId = null;
+
+		// Devolve o foco ao card de origem (buscado de novo: a grade pode ter sido recriada)
+		if (returnBotId !== null) {
+			const item = findDriveItems(returnBotId)[0];
+			if (item) item.focus();
+		}
+	}
+
+	/** Mantém o Tab/Shift+Tab circulando dentro do diálogo aberto. */
+	function trapModalFocus(e) {
+		const modal = modalBackdrop.querySelector(".status-modal") || modalBackdrop;
+		const focusable = Array.from(modal.querySelectorAll(MODAL_FOCUSABLE)).filter(
+			(el) => el.getClientRects().length > 0
+		);
+		if (focusable.length === 0) {
+			e.preventDefault();
+			return;
+		}
+
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement;
+		const outside = !modal.contains(active);
+
+		if (e.shiftKey && (active === first || outside)) {
+			e.preventDefault();
+			last.focus();
+		} else if (!e.shiftKey && (active === last || outside)) {
+			e.preventDefault();
+			first.focus();
+		}
 	}
 
 	if (modalCloseBtn) {
@@ -395,17 +563,72 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	}
 	document.addEventListener("keydown", (e) => {
-		if (e.key === "Escape" && modalBackdrop && !modalBackdrop.hidden) {
+		if (!modalBackdrop || modalBackdrop.hidden) return;
+		if (e.key === "Escape") {
+			e.preventDefault();
 			closeBotModal();
+		} else if (e.key === "Tab") {
+			trapModalFocus(e);
 		}
 	});
 
+	/** Dados recebidos com sucesso: mostra o horário e remove o aviso de falha. */
+	function markFresh(timestamp) {
+		lastUpdatedAt = Number.isFinite(timestamp) ? timestamp : serverNow();
+		if (botsSection) botsSection.classList.remove("is-stale");
+		if (updatedEl) updatedEl.textContent = `Atualizado às ${formatClock(lastUpdatedAt)}`;
+		clearStaleBanner();
+	}
+
+	/** Falha após já haver dados na tela: sinaliza que o que está exibido está desatualizado. */
+	function markStale(err) {
+		if (botsSection) botsSection.classList.add("is-stale");
+
+		const since = lastUpdatedAt ? formatClock(lastUpdatedAt) : null;
+		if (updatedEl && since) updatedEl.textContent = `Dados de ${since} (desatualizados)`;
+		if (!alertEl) return;
+
+		const reason = err && err.message ? err.message : "erro desconhecido";
+		const text = `Falha ao atualizar o status (${reason}).${since ? ` Exibindo dados de ${since};` : ""} nova tentativa em instantes.`;
+		// Só reescreve se mudou, para o leitor de tela não repetir o aviso a cada tentativa
+		if (alertEl.dataset.message === text) return;
+		alertEl.dataset.message = text;
+		alertEl.innerHTML = `
+            <div class="status-stale-banner">
+                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                <span>${escapeHtml(text)}</span>
+            </div>
+        `;
+	}
+
+	function clearStaleBanner() {
+		if (alertEl && alertEl.dataset.message !== undefined) {
+			delete alertEl.dataset.message;
+			alertEl.innerHTML = "";
+		}
+	}
+
 	async function fetchHealth() {
+		const seq = ++fetchSeq;
+		const controller = typeof AbortController === "function" ? new AbortController() : null;
+		const timeout = controller ? setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS) : null;
+
 		try {
-			const res = await fetch("/health", { credentials: "same-origin" });
+			const res = await fetch("/health", {
+				credentials: "same-origin",
+				signal: controller ? controller.signal : undefined
+			});
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
+			if (!data || data.status === "error") {
+				throw new Error((data && data.message) || "resposta inválida");
+			}
+			if (seq !== fetchSeq) return;
+
 			healthData = data;
+			if (Number.isFinite(data.timestamp)) {
+				clockSkew = data.timestamp - Date.now();
+			}
 
 			const now = Date.now();
 			if (Array.isArray(data.bots)) {
@@ -420,57 +643,107 @@ document.addEventListener("DOMContentLoaded", () => {
 				});
 			}
 
+			markFresh(data.timestamp);
 			renderBots();
 		} catch (err) {
-			if (!healthData && botsContainer) {
-				botsContainer.innerHTML = `
+			if (seq !== fetchSeq) return;
+			const error =
+				err && err.name === "AbortError" ? new Error("tempo de resposta esgotado") : err;
+
+			if (!healthData) {
+				if (botsContainer) {
+					gridSignature = null;
+					botsContainer.innerHTML = `
                     <div class="status-loading">
                         <i class="fas fa-exclamation-triangle" style="color: #f6ad55;"></i>
-                        <p>Erro ao carregar status: ${escapeHtml(err.message)}</p>
+                        <p>Erro ao carregar status: ${escapeHtml(error && error.message)}</p>
                     </div>
                 `;
+				}
+			} else {
+				markStale(error);
 			}
+		} finally {
+			if (timeout) clearTimeout(timeout);
 		}
 	}
 
-	function connectSSE() {
-		if (typeof EventSource === "undefined") return;
+	function onActivity(e) {
 		try {
-			const source = new EventSource("/api/stream");
-			source.addEventListener("activity", (e) => {
-				try {
-					const data = JSON.parse(e.data);
-					if (!data || !data.botId) return;
+			const data = JSON.parse(e.data);
+			if (!data || !data.botId) return;
 
-					if (!botMessageTimestamps[data.botId]) {
-						botMessageTimestamps[data.botId] = [];
-					}
-					botMessageTimestamps[data.botId].push(Date.now());
+			if (!botMessageTimestamps[data.botId]) {
+				botMessageTimestamps[data.botId] = [];
+			}
+			botMessageTimestamps[data.botId].push(Date.now());
 
-					const iconEl = botsContainer?.querySelector(
-						`.drive-item[data-bot-id="${CSS.escape(data.botId)}"] .drive-icon`
-					);
-					if (iconEl) {
-						iconEl.classList.remove("avatar-flash");
-						void iconEl.offsetWidth;
-						iconEl.classList.add("avatar-flash");
-					}
+			const iconEl = botsContainer?.querySelector(
+				`.drive-item[data-bot-id="${CSS.escape(String(data.botId))}"] .drive-icon`
+			);
+			if (iconEl) {
+				iconEl.classList.remove("avatar-flash");
+				void iconEl.offsetWidth;
+				iconEl.classList.add("avatar-flash");
+			}
 
-					if (activeModalBotId === data.botId && modalBackdrop && !modalBackdrop.hidden) {
-						const avatar = modalBody?.querySelector(".bot-detail-avatar");
-						if (avatar) {
-							avatar.classList.remove("avatar-flash");
-							void avatar.offsetWidth;
-							avatar.classList.add("avatar-flash");
-						}
-					}
-				} catch (_) {}
-			});
+			if (activeModalBotId === String(data.botId) && modalBackdrop && !modalBackdrop.hidden) {
+				const avatar = modalBody?.querySelector(".bot-detail-avatar");
+				if (avatar) {
+					avatar.classList.remove("avatar-flash");
+					void avatar.offsetWidth;
+					avatar.classList.add("avatar-flash");
+				}
+			}
 		} catch (_) {}
 	}
 
+	function connectSSE() {
+		if (eventSource || typeof EventSource === "undefined") return;
+		try {
+			eventSource = new EventSource("/api/stream");
+			eventSource.addEventListener("activity", onActivity);
+		} catch (_) {
+			eventSource = null;
+		}
+	}
+
+	function disconnectSSE() {
+		if (eventSource) {
+			eventSource.close();
+			eventSource = null;
+		}
+	}
+
+	/** Liga SSE e timers (somente com a aba visível). */
+	function startLiveUpdates() {
+		connectSSE();
+		if (!healthTimer) healthTimer = setInterval(fetchHealth, HEALTH_INTERVAL_MS);
+		if (!barsTimer) barsTimer = setInterval(updateLiveBars, BARS_INTERVAL_MS);
+	}
+
+	/** Pausa SSE e timers enquanto a aba está oculta. */
+	function stopLiveUpdates() {
+		disconnectSSE();
+		if (healthTimer) {
+			clearInterval(healthTimer);
+			healthTimer = null;
+		}
+		if (barsTimer) {
+			clearInterval(barsTimer);
+			barsTimer = null;
+		}
+	}
+
+	document.addEventListener("visibilitychange", () => {
+		if (document.hidden) {
+			stopLiveUpdates();
+		} else {
+			fetchHealth();
+			startLiveUpdates();
+		}
+	});
+
 	fetchHealth();
-	connectSSE();
-	setInterval(fetchHealth, 30000);
-	setInterval(updateLiveBars, 1000);
+	if (!document.hidden) startLiveUpdates();
 });

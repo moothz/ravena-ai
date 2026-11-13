@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
     <link rel="stylesheet" href="/cmd.css?v=20261112-cmd">
-    <link rel="stylesheet" href="/status.css?v=20261112-status">
+    <link rel="stylesheet" href="/status.css?v=20261113-status-a11y">
     <link rel="stylesheet" href="/brand-icons.css?v=20261111-perf">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -66,10 +66,15 @@
                 </aside>
 
                 <!-- 2ª Parte (75%): Cards das instâncias -->
-                <section class="status-bots-section" id="status-bots-container" aria-label="Instâncias da Ravena">
-                    <div class="status-loading">
-                        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-                        <p>Carregando status das ravenas...</p>
+                <section class="status-bots-section" aria-label="Instâncias da Ravena">
+                    <!-- Aviso de falha ao atualizar (região viva: fica sempre no DOM, só o conteúdo muda) -->
+                    <div id="status-alert" class="status-alert" role="status" aria-live="polite"></div>
+                    <p id="status-updated" class="status-updated"></p>
+                    <div id="status-bots-container">
+                        <div class="status-loading">
+                            <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+                            <p>Carregando status das ravenas...</p>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -93,6 +98,6 @@
         </div>
     </div>
 
-    <script src="/status.js?v=20261112-status" defer></script>
+    <script src="/status.js?v=20261113-status-a11y" defer></script>
 </body>
 </html>
