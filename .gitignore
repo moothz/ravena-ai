@@ -221,3 +221,6 @@ data/zero_waifus_zinthos.json
 # Binário do yt-dlp (nightly) persistido no host e montado no container
 data/ytdlp/
 .ai-memory.toml
+
+# IDE
+.idea/
