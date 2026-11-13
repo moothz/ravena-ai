@@ -1893,6 +1893,35 @@ function buildStepRollBonuses(donorBonuses, farmBonus, eventRarosMult = 1.0, eve
 }
 
 /**
+ * Converte uma reserva de bônus da fazenda no formato esperado por buildStepRollBonuses
+ * @param {{ reserved: boolean, type?: 'ticket' | 'roll' }} reservation
+ * @returns {{ rolls: number, tickets: number } | null}
+ */
+function farmBonusFromReservation(reservation) {
+	if (!reservation?.reserved) return null;
+	return reservation.type === "ticket" ? { rolls: 0, tickets: 1 } : { rolls: 1, tickets: 0 };
+}
+
+/**
+ * Devolve (uma única vez) um bônus da fazenda reservado que não deve ser consumido:
+ * /roll falhou, não retornou personagem ou o resultado foi mítico.
+ * @param {string} userId
+ * @param {{ reserved: boolean, type?: 'ticket' | 'roll' }} reservation
+ */
+async function releaseFarmReservation(userId, reservation) {
+	if (!reservation?.reserved) return;
+	reservation.reserved = false;
+	try {
+		const refunded = await ShadowGardenBonusService.refundWaifuBonus(userId, reservation.type);
+		if (!refunded) {
+			logger.warn(`[rollWaifu] Falha ao devolver ${reservation.type} da fazenda para ${userId}`);
+		}
+	} catch (err) {
+		logger.error(`[rollWaifu] Erro ao devolver bônus da fazenda de ${userId}: ${err.message}`);
+	}
+}
+
+/**
  * Cria função de roll com ou sem filtro de gênero
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
@@ -1940,13 +1969,17 @@ function makeRollHandler(genderFilter) {
 				return null;
 			})();
 
-			const [rollBonusesRaw, farmBonus, dailyClaimResult] = await Promise.all([
+			// getWaifuBonus aqui só sincroniza colheitas pendentes; o uso do bônus é por reserva atômica
+			const [rollBonusesRaw, , dailyClaimResult] = await Promise.all([
 				DonorBonusService.getWaifuRollBonuses(userId),
 				ShadowGardenBonusService.getWaifuBonus(userId),
 				claimDailyPromise
 			]);
 
-			const hasFarmBonus = (farmBonus.rolls || 0) > 0 || (farmBonus.tickets || 0) > 0;
+			// Reserva o bônus da fazenda ANTES do /roll (UPDATE condicional): dois !mu-r
+			// simultâneos do mesmo usuário (ex: em chats diferentes) não usam o mesmo bônus.
+			const firstReservation = await ShadowGardenBonusService.reserveWaifuBonus(userId);
+			const hasFarmBonus = firstReservation.reserved;
 			let consumedFarmBonus = null;
 
 			const wrapReturn = (mainReturn) => {
@@ -1969,7 +2002,7 @@ function makeRollHandler(genderFilter) {
 
 			const finalBonuses = buildStepRollBonuses(
 				rollBonusesRaw,
-				hasFarmBonus ? farmBonus : null,
+				farmBonusFromReservation(firstReservation),
 				eventRarosMult,
 				eventWishMult
 			);
@@ -1978,17 +2011,26 @@ function makeRollHandler(genderFilter) {
 				...(finalBonuses && Object.keys(finalBonuses).length > 0 ? { bonuses: finalBonuses } : {})
 			};
 
-			const { data } = await api.post("/roll", payload);
+			let data;
+			try {
+				({ data } = await api.post("/roll", payload));
+			} catch (rollErr) {
+				await releaseFarmReservation(userId, firstReservation);
+				throw rollErr;
+			}
 
-			const firstRollData = data.data;
+			const firstRollData = data?.data;
 			const firstIsMythic = Boolean(
 				firstRollData?.character?.isMythic ||
 				firstRollData?.isMythic ||
 				String(firstRollData?.character?.rarity || "").toUpperCase() === "MYTHIC"
 			);
 
-			if (hasFarmBonus && !firstIsMythic) {
-				consumedFarmBonus = await ShadowGardenBonusService.consumeWaifuBonus(userId);
+			// Roll sem resultado ou mítico (míticos não consomem o bônus da fazenda): devolve a reserva
+			if (!firstRollData || firstIsMythic) {
+				await releaseFarmReservation(userId, firstReservation);
+			} else if (firstReservation.reserved) {
+				consumedFarmBonus = { consumed: true, type: firstReservation.type };
 			}
 
 			const initialRollsRemaining = firstRollData.rollsRemaining;
@@ -1996,6 +2038,10 @@ function makeRollHandler(genderFilter) {
 
 			// Define a quantidade real de rolls a executar: 1 (já executado) + rolls normais restantes + bônus da fazenda restantes
 			const farmBonusRemainingAfterFirst = await ShadowGardenBonusService.getWaifuBonus(userId);
+			if (consumedFarmBonus) {
+				consumedFarmBonus.remainingRolls = farmBonusRemainingAfterFirst.rolls || 0;
+				consumedFarmBonus.remainingTickets = farmBonusRemainingAfterFirst.tickets || 0;
+			}
 			const farmRemainingCount =
 				(farmBonusRemainingAfterFirst.rolls || 0) + (farmBonusRemainingAfterFirst.tickets || 0);
 			const standardRollsRemaining =
@@ -2286,13 +2332,12 @@ function makeRollHandler(genderFilter) {
 			let totalFarmConsumedInBatch = consumedFarmBonus?.consumed ? 1 : 0;
 
 			for (let i = 2; i <= rollsToExecute; i++) {
+				// Cada roll reserva o próprio bônus da fazenda (se ainda houver) antes do /roll
+				const stepReservation = await ShadowGardenBonusService.reserveWaifuBonus(userId);
 				try {
-					const curFarm = await ShadowGardenBonusService.getWaifuBonus(userId);
-					const stillHasFarm = (curFarm.rolls || 0) > 0 || (curFarm.tickets || 0) > 0;
-
 					const finalStepBonuses = buildStepRollBonuses(
 						rollBonusesRaw,
-						stillHasFarm ? curFarm : null,
+						farmBonusFromReservation(stepReservation),
 						eventRarosMult,
 						eventWishMult
 					);
@@ -2312,17 +2357,20 @@ function makeRollHandler(genderFilter) {
 							String(stepData.character?.rarity || "").toUpperCase() === "MYTHIC"
 						);
 						allRollResults.push(stepData);
-						if (stillHasFarm && !stepIsMythic) {
-							const cRes = await ShadowGardenBonusService.consumeWaifuBonus(userId);
-							if (cRes?.consumed) totalFarmConsumedInBatch++;
+						if (stepIsMythic) {
+							await releaseFarmReservation(userId, stepReservation);
+						} else if (stepReservation.reserved) {
+							totalFarmConsumedInBatch++;
 						}
 						if (stepIsMythic && rollsToExecute < requestedRolls) {
 							rollsToExecute++;
 						}
 					} else {
+						await releaseFarmReservation(userId, stepReservation);
 						break;
 					}
 				} catch (subErr) {
+					await releaseFarmReservation(userId, stepReservation);
 					logger.warn(`Erro no roll múltiplo #${i}: ${subErr.message}`);
 					break;
 				}

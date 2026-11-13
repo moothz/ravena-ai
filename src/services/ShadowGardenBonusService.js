@@ -191,9 +191,75 @@ async function getWaifuBonus(userId, autoSync = true) {
 	}
 }
 
+const WAIFU_BONUS_COLUMNS = { ticket: "tickets", roll: "rolls" };
+
+/**
+ * Reserva atomicamente 1 bônus de Waifu da fazenda ANTES do roll.
+ * Prioridade: ticket (Rosa de Sangue) primeiro, depois roll comum (Coração Púrpuro).
+ *
+ * Cada tentativa é um único `UPDATE ... WHERE <coluna> > 0` conferindo `changes === 1`,
+ * então chamadas concorrentes (ex: !mu-r em dois chats ao mesmo tempo) nunca usam o
+ * mesmo bônus duas vezes. Se o roll falhar ou não dever consumir o bônus (míticos),
+ * devolva com refundWaifuBonus().
+ *
+ * @param {string} userId
+ * @returns {Promise<{ reserved: boolean, type?: 'ticket' | 'roll' }>}
+ */
+async function reserveWaifuBonus(userId) {
+	const cId = cleanUserId(userId);
+	if (!cId) return { reserved: false };
+
+	for (const [type, column] of Object.entries(WAIFU_BONUS_COLUMNS)) {
+		try {
+			const res = database.mappers.run(
+				dbName,
+				`UPDATE farm_bonus_inventory SET ${column} = ${column} - 1, updated_at = ? WHERE user_id = ? AND ${column} > 0`,
+				[Date.now(), cId]
+			);
+			if (res && res.changes === 1) {
+				return { reserved: true, type };
+			}
+		} catch (err) {
+			logger.error(`[reserveWaifuBonus] Erro ao reservar ${type} de ${cId}: ${err.message}`);
+			return { reserved: false };
+		}
+	}
+
+	return { reserved: false };
+}
+
+/**
+ * Devolve 1 bônus de Waifu reservado por reserveWaifuBonus() (roll falhou ou foi mítico)
+ * @param {string} userId
+ * @param {'ticket' | 'roll'} type
+ * @returns {Promise<boolean>} true se devolvido
+ */
+async function refundWaifuBonus(userId, type) {
+	const cId = cleanUserId(userId);
+	const column = WAIFU_BONUS_COLUMNS[type];
+	if (!cId || !column) return false;
+
+	try {
+		const res = database.mappers.run(
+			dbName,
+			`INSERT INTO farm_bonus_inventory (user_id, rolls, tickets, updated_at)
+			 VALUES (?, ?, ?, ?)
+			 ON CONFLICT(user_id) DO UPDATE SET
+			   ${column} = COALESCE(${column}, 0) + 1,
+			   updated_at = excluded.updated_at`,
+			[cId, type === "roll" ? 1 : 0, type === "ticket" ? 1 : 0, Date.now()]
+		);
+		return Boolean(res && res.changes === 1);
+	} catch (err) {
+		logger.error(`[refundWaifuBonus] Erro ao devolver ${type} para ${cId}: ${err.message}`);
+		return false;
+	}
+}
+
 /**
  * Consome 1 roll ou ticket de Waifu da fazenda
  * Prioridade: Consome ticket primeiro (maior raridade), depois roll comum.
+ * Atômico (mesma reserva condicional do reserveWaifuBonus): nunca deixa saldo negativo.
  * @param {string} userId
  * @returns {Promise<{ consumed: boolean, type?: 'ticket' | 'roll', remainingRolls: number, remainingTickets: number }>}
  */
@@ -201,42 +267,25 @@ async function consumeWaifuBonus(userId) {
 	const cId = cleanUserId(userId);
 	if (!cId) return { consumed: false, remainingRolls: 0, remainingTickets: 0 };
 
-	const current = await getWaifuBonus(cId);
-	if (current.tickets > 0) {
-		try {
-			database.mappers.run(
-				dbName,
-				"UPDATE farm_bonus_inventory SET tickets = tickets - 1, updated_at = ? WHERE user_id = ?",
-				[Date.now(), cId]
-			);
-			return {
-				consumed: true,
-				type: "ticket",
-				remainingRolls: current.rolls,
-				remainingTickets: current.tickets - 1
-			};
-		} catch (err) {
-			logger.error(`[consumeWaifuBonus] Erro ao consumir ticket de ${cId}: ${err.message}`);
-		}
-	} else if (current.rolls > 0) {
-		try {
-			database.mappers.run(
-				dbName,
-				"UPDATE farm_bonus_inventory SET rolls = rolls - 1, updated_at = ? WHERE user_id = ?",
-				[Date.now(), cId]
-			);
-			return {
-				consumed: true,
-				type: "roll",
-				remainingRolls: current.rolls - 1,
-				remainingTickets: 0
-			};
-		} catch (err) {
-			logger.error(`[consumeWaifuBonus] Erro ao consumir roll de ${cId}: ${err.message}`);
-		}
+	// Sincroniza colheitas pendentes antes de consumir
+	await getWaifuBonus(cId);
+
+	const reservation = await reserveWaifuBonus(cId);
+	const remaining = await getWaifuBonus(cId, false);
+	if (!reservation.reserved) {
+		return {
+			consumed: false,
+			remainingRolls: remaining.rolls,
+			remainingTickets: remaining.tickets
+		};
 	}
 
-	return { consumed: false, remainingRolls: 0, remainingTickets: 0 };
+	return {
+		consumed: true,
+		type: reservation.type,
+		remainingRolls: remaining.rolls,
+		remainingTickets: remaining.tickets
+	};
 }
 
 /**
@@ -894,6 +943,8 @@ module.exports = {
 	addWaifuBonus,
 	getWaifuBonus,
 	consumeWaifuBonus,
+	reserveWaifuBonus,
+	refundWaifuBonus,
 	dispatchHarvestDrops,
 	reconcileHarvestBonus,
 	syncInventoryCrops,
