@@ -40,6 +40,7 @@ async function runTests() {
 		grupoLogs: "120363041254059254@g.us"
 	});
 	botA.notInWhitelist = () => true;
+	botA.ignorePV = true; // FakeBot ignora a opção ignorePV do construtor
 
 	const botB = new FakeBot({
 		id: "ravena2",
@@ -497,6 +498,39 @@ async function runTests() {
 		await pvSafety.hasPvInteraction(botA, casualPvUser),
 		true,
 		"Qualquer mensagem comum no PV deve ser gravada antes do filtro ignorePV"
+	);
+
+	// CMD_WHITELIST soma aos padrões e compara só o nome do comando (nunca os argumentos)
+	const mergedWhitelist = EventHandler.buildCommandWhitelist(" meucmd , SA-");
+	assert.ok(mergedWhitelist.includes("meucmd"), "Item da env entra na whitelist");
+	assert.ok(mergedWhitelist.includes("vincular"), "Padrões continuam valendo com a env definida");
+	assert.strictEqual(mergedWhitelist.filter((c) => c === "sa-").length, 1, "Sem duplicatas");
+	assert.strictEqual(eventHandler.isWhitelistedPvCommand("VINCULAR"), true);
+	assert.strictEqual(eventHandler.isWhitelistedPvCommand("sa-block 5511999999999"), true);
+	assert.strictEqual(eventHandler.isWhitelistedPvCommand("anonimo grupo oi"), true);
+	assert.strictEqual(eventHandler.isWhitelistedPvCommand("tts vou vincular minha conta"), false);
+	assert.strictEqual(eventHandler.isWhitelistedPvCommand("ping"), false);
+	const argsOnlyUser = "5531999994444@s.whatsapp.net";
+	resetHandlerStep(botA);
+	await eventHandler.processMessage(
+		botA,
+		createMessage({ content: "!ping vincular", group: null, author: argsOnlyUser })
+	);
+	await new Promise((r) => setTimeout(r, 400));
+	assert.strictEqual(
+		botA.capturedMessages.filter((m) => m.chatId === argsOnlyUser).length,
+		0,
+		`Com ignorePV, palavra da whitelist só nos argumentos não libera o comando: ${JSON.stringify(botA.capturedMessages.map((m) => [m.chatId, String(m.content).slice(0, 60)]))}`
+	);
+	resetHandlerStep(botB);
+	await eventHandler.processMessage(
+		botB,
+		createMessage({ content: "!ping vincular", group: null, author: argsOnlyUser })
+	);
+	assert.strictEqual(
+		await waitUntil(() => botB.capturedMessages.length > 0),
+		true,
+		"Sem ignorePV o mesmo comando responde (controle do teste)"
 	);
 
 	// Falha ao gravar em pv_users (SQLite) não pode derrubar o processamento da mensagem no PV
