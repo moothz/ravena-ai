@@ -69,7 +69,7 @@ WindowManager.register('imagine', {
                     previewBox.innerHTML = `<span style="color: #ff5555; font-size: 11px;">Resposta inesperada do servidor</span>`;
                 }
             } catch (err) {
-                previewBox.innerHTML = `<span style="color: #ff5555; font-size: 11px; padding: 15px; text-align: center;">Erro: ${err.message}</span>`;
+                previewBox.innerHTML = `<span style="color: #ff5555; font-size: 11px; padding: 15px; text-align: center;">Erro: ${Formatters.escapeHtml(err && err.message)}</span>`;
             } finally {
                 generateBtn.disabled = false;
                 generateBtn.innerHTML = '<i class="fas fa-magic"></i> Gerar Imagem';

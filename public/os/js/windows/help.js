@@ -59,7 +59,7 @@ WindowManager.register('help', {
                 const res = await Api.post('/api/ajuda/chat', { message: text, sessionId });
                 loadingMsg.innerHTML = (res.answer || 'Sem resposta').replace(/\n/g, '<br>');
             } catch (err) {
-                loadingMsg.innerHTML = `<span style="color: #ff5555;">Erro: ${err.message}</span>`;
+                loadingMsg.innerHTML = `<span style="color: #ff5555;">Erro: ${Formatters.escapeHtml(err && err.message)}</span>`;
             }
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         };

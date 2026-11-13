@@ -232,7 +232,7 @@ WindowManager.register('nudenet', {
                             </span>
                         </div>
                         <p style="font-size: 11px; color: #ff88a0; margin-top: 4px;">
-                            ${err.message || 'Falha ao processar a imagem no servidor NudeNet.'}
+                            ${Formatters.escapeHtml((err && err.message) || 'Falha ao processar a imagem no servidor NudeNet.')}
                         </p>
                     </div>
                 `;
