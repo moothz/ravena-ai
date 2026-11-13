@@ -1063,7 +1063,9 @@ class LLMService {
 			}
 
 			if (normalizedName === "get_group_ranking_stats") {
-				const chatId = args.chatId || options.chatId || options.groupId || options.group?.id;
+				// O chat vem SEMPRE do contexto da requisição, nunca dos argumentos do modelo
+				// (args.chatId permitiria consultar o ranking de qualquer outro grupo)
+				const chatId = options.chatId || options.groupId || options.group?.id;
 				this.logger.info(
 					`[LLMService] Executando get_group_ranking_stats para chatId: "${chatId}"`
 				);
