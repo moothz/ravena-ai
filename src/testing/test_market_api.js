@@ -41,7 +41,11 @@ async function startServer() {
 		database: {
 			databasePath: "/nonexistent",
 			dbAll: async () => [],
-			dbGet: async () => null
+			// Simula que o ofertante possui qualquer buff consultado
+			dbGet: async (dbName, sql, params = []) =>
+				dbName === "fishing" && /FROM fishing_buffs/.test(sql)
+					? { id: params[0], effect_type: "inventory_slot" }
+					: null
 		}
 	};
 	registerFeaturesRoutes(api);
@@ -207,6 +211,130 @@ async function testAuth(baseUrl, warnings, mocks) {
 	console.log("✓ 200 com X-Market-Secret correto.");
 }
 
+async function testInventoryListing(baseUrl) {
+	console.log("\n[5] Inventário lista sementes por type/category e ignora quantidade 0...");
+	const r = await request(baseUrl, "GET", "/api/market/user-inventory/5511900000001", {
+		secret: VALID_SECRET
+	});
+	assert.strictEqual(r.status, 200);
+	const items = r.data?.farm?.items || [];
+	const byId = Object.fromEntries(items.map((it) => [it.itemId, it]));
+	assert.ok(byId.seed_ok, "Semente com category 'seed' deve aparecer");
+	assert.strictEqual(byId.seed_ok.type, "seed");
+	assert.strictEqual(byId.seed_ok.quantity, 2);
+	assert.ok(!byId.seed_zero, "Item com quantidade 0 não pode virar 1 nem aparecer");
+	assert.ok(!byId.crop_x, "Colheitas não entram no inventário do mercado");
+	assert.strictEqual(byId.elixir_a?.quantity, 3);
+	assert.strictEqual(byId.decor_x?.quantity, 1);
+	console.log("✓ Sementes (category) listadas e itens zerados ignorados.");
+}
+
+async function testTransferValidation(baseUrl, mocks) {
+	const base = { fromUserId: "5511900000001", toUserId: "5511900000002" };
+	const post = (body) =>
+		request(baseUrl, "POST", "/api/market/transfer", { secret: VALID_SECRET, body });
+
+	console.log("\n[6] Quantidades inválidas são rejeitadas com 400 sem nenhuma transferência...");
+	const invalidBodies = [
+		{ ...base, runas: -50 },
+		{ ...base, runas: 1.5 },
+		{ ...base, runas: "abc" },
+		{ ...base, runas: true },
+		{ ...base, petalitas: -10 },
+		{ ...base, petalitas: 2.25 },
+		{ ...base, farmItems: [{ itemId: "elixir_a", amount: -1 }] },
+		{ ...base, farmItems: [{ itemId: "elixir_a", amount: 0 }] },
+		{ ...base, farmItems: [{ itemId: "elixir_a", amount: 1.5 }] },
+		{ ...base, farmItems: [{ itemId: "", amount: 1 }] },
+		{ ...base, farmItems: "elixir_a" },
+		{ ...base, fishingBuffIds: [-3] },
+		{ ...base, fishingBuffIds: [1.5] },
+		{ ...base, fishingBuffIds: ["abc"] },
+		{ ...base, buffs: [{ id: 0 }] },
+		{ ...base, fishingBuffIds: "7" },
+		{ ...base, toUserId: base.fromUserId, runas: 10 },
+		{ ...base, fromUserId: { $ne: null }, runas: 10 }
+	];
+	for (const body of invalidBodies) {
+		const r = await post(body);
+		assert.strictEqual(r.status, 400, `Deveria rejeitar com 400: ${JSON.stringify(body)}`);
+		assert.strictEqual(r.data?.success, false);
+	}
+	assert.strictEqual(mocks.calls.transferRunas.length, 0, "Nenhuma Runa pode ser movida");
+	assert.strictEqual(mocks.calls.transferBuff.length, 0, "Nenhum buff pode ser movido");
+	assert.strictEqual(mocks.calls.transferItems.length, 0, "Nada da fazenda pode ser movido");
+	console.log(`✓ ${invalidBodies.length} payloads inválidos rejeitados com 400.`);
+
+	console.log("\n[7] Itens repetidos da fazenda são agregados antes de validar estoque...");
+	// elixir_a tem 3 unidades: 2 + 2 = 4 deve falhar mesmo que cada entrada isolada caiba
+	let r = await post({
+		...base,
+		farmItems: [
+			{ itemId: "elixir_a", name: "Elixir A", amount: 2 },
+			{ itemId: "elixir_a", name: "Elixir A", amount: 2 }
+		]
+	});
+	assert.strictEqual(r.status, 400, "Soma 4 > estoque 3 deve falhar");
+	assert.ok(r.data?.reason?.includes("requer 4"), `Motivo deve citar o total: ${r.data?.reason}`);
+	assert.strictEqual(mocks.calls.transferItems.length, 0);
+
+	r = await post({
+		...base,
+		farmItems: [
+			{ itemId: "elixir_a", amount: 1 },
+			{ itemId: "elixir_a", quantity: "2" },
+			{ itemId: "seed_ok" }
+		]
+	});
+	assert.strictEqual(r.status, 200, `Soma 3 <= estoque 3 deve passar (${JSON.stringify(r.data)})`);
+	assert.strictEqual(mocks.calls.transferItems.length, 1);
+	const [, , sentItems, sentCoins] = mocks.calls.transferItems[0];
+	assert.deepStrictEqual(
+		sentItems,
+		[
+			{ itemId: "elixir_a", amount: 3 },
+			{ itemId: "seed_ok", amount: 1 }
+		],
+		"Itens enviados ao Jardim devem estar agregados por itemId"
+	);
+	assert.strictEqual(sentCoins, 0, "Sem petalitas, coins = 0");
+	console.log("✓ farmItems agregados por itemId (validação e envio).");
+
+	console.log("\n[8] IDs de buff duplicados são deduplicados e strings numéricas aceitas...");
+	mocks.reset();
+	r = await post({ ...base, runas: "0", petalitas: 0, fishingBuffIds: [7, "7", { id: 8 }, 8] });
+	assert.strictEqual(r.status, 200, `Buffs válidos devem passar (${JSON.stringify(r.data)})`);
+	assert.strictEqual(r.data?.buffsCount, 2, "Buffs repetidos devem ser contados uma vez");
+	assert.deepStrictEqual(
+		mocks.calls.transferBuff.map((c) => c[2]),
+		[7, 8],
+		"Cada buff deve ser transferido uma única vez"
+	);
+	assert.strictEqual(mocks.calls.transferRunas.length, 0, "runas: '0' não transfere Runas");
+	console.log("✓ fishingBuffIds deduplicados.");
+
+	console.log("\n[9] Payload legítimo do Waifuletes continua funcionando...");
+	mocks.reset();
+	r = await post({
+		...base,
+		runas: 25,
+		petalitas: 100,
+		fishes: [],
+		buffs: [{ id: 11, type: "inventory_slot" }],
+		fishingBuffIds: [11],
+		farmItems: [{ itemId: "decor_x", name: "Decoração X", type: "decoration", quantity: 1 }]
+	});
+	assert.strictEqual(
+		r.status,
+		200,
+		`Transferência completa deve passar (${JSON.stringify(r.data)})`
+	);
+	assert.strictEqual(mocks.calls.transferRunas[0][2], 25);
+	assert.deepStrictEqual(mocks.calls.transferItems[0][2], [{ itemId: "decor_x", amount: 1 }]);
+	assert.strictEqual(mocks.calls.transferItems[0][3], 100);
+	console.log("✓ Runas, buffs, itens e petalitas transferidos.");
+}
+
 async function testAuthFailureRateLimit(baseUrl) {
 	console.log("\n[R] Rate limit de falhas de autenticação...");
 	let limited = false;
@@ -233,6 +361,9 @@ async function runTests() {
 	const server = await startServer();
 	try {
 		await testAuth(server.baseUrl, server.warnings, mocks);
+		mocks.reset();
+		await testInventoryListing(server.baseUrl);
+		await testTransferValidation(server.baseUrl, mocks);
 		// Deve ser o último: consome a cota de falhas do IP local
 		await testAuthFailureRateLimit(server.baseUrl);
 	} finally {

@@ -15,6 +15,95 @@ const WAIFU_DETAILS_CACHE_TTL = 5 * 60 * 1000;
 const waifuGroupCache = new Map();
 
 /**
+ * Converte uma quantidade do mercado em inteiro seguro e não-negativo.
+ * Ausente/vazio vale `defaultValue`; negativos, frações, NaN e tipos estranhos retornam null.
+ * @param {*} value
+ * @param {Object} [options]
+ * @param {number} [options.defaultValue=0] - Valor quando o campo não foi enviado
+ * @param {boolean} [options.allowZero=true] - Se 0 é aceito (ex: runas: 0 = "não oferece runas")
+ * @returns {number|null}
+ */
+function parseMarketQuantity(value, { defaultValue = 0, allowZero = true } = {}) {
+	if (value === undefined || value === null || value === "") return defaultValue;
+	if (typeof value !== "number" && typeof value !== "string") return null;
+	const num = typeof value === "number" ? value : Number(value.trim());
+	if (!Number.isSafeInteger(num) || num < 0) return null;
+	if (num === 0 && !allowZero) return null;
+	return num;
+}
+
+/**
+ * Normaliza a lista de IDs de buffs de pesca (aceita números, strings numéricas ou objetos { id }).
+ * @param {*} list
+ * @returns {{ ids: number[] } | { error: string }}
+ */
+function parseMarketBuffIds(list) {
+	if (list === undefined || list === null) return { ids: [] };
+	if (!Array.isArray(list)) return { error: "Lista de buffs de pesca inválida." };
+	const ids = new Set();
+	for (const entry of list) {
+		const raw = entry && typeof entry === "object" ? entry.id : entry;
+		const id = parseMarketQuantity(raw, { defaultValue: null, allowZero: false });
+		if (id === null) {
+			return { error: `ID de buff de pesca inválido: ${JSON.stringify(raw ?? null)}.` };
+		}
+		ids.add(id);
+	}
+	return { ids: [...ids] };
+}
+
+/**
+ * Valida e agrega os itens da fazenda por itemId (somando quantidades repetidas),
+ * para que a checagem de estoque considere o total pedido de cada item.
+ * @param {*} list
+ * @returns {{ items: Array<{ itemId: string, amount: number, name: string }> } | { error: string }}
+ */
+function parseMarketFarmItems(list) {
+	if (list === undefined || list === null) return { items: [] };
+	if (!Array.isArray(list)) return { error: "Lista de itens da fazenda inválida." };
+	const byId = new Map();
+	for (const entry of list) {
+		const itemId = entry && typeof entry === "object" ? entry.itemId : null;
+		if (typeof itemId !== "string" || !itemId.trim() || itemId.length > 128) {
+			return { error: "Item da fazenda sem itemId válido." };
+		}
+		const amount = parseMarketQuantity(entry.amount ?? entry.quantity, {
+			defaultValue: 1,
+			allowZero: false
+		});
+		if (amount === null) {
+			return {
+				error: `Quantidade inválida para o item da fazenda ${entry.name || itemId} (use um inteiro positivo).`
+			};
+		}
+		const cur = byId.get(itemId);
+		if (cur) {
+			cur.amount += amount;
+			if (!Number.isSafeInteger(cur.amount)) {
+				return { error: `Quantidade inválida para o item da fazenda ${cur.name}.` };
+			}
+		} else {
+			byId.set(itemId, {
+				itemId,
+				amount,
+				name: typeof entry.name === "string" && entry.name ? entry.name : itemId
+			});
+		}
+	}
+	return { items: [...byId.values()] };
+}
+
+/**
+ * Valida um identificador de usuário recebido no corpo da transferência
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isValidMarketUserId(value) {
+	if (typeof value === "number") return Number.isSafeInteger(value) && value > 0;
+	return typeof value === "string" && value.trim().length > 0 && value.length <= 64;
+}
+
+/**
  * Registra rotas de recursos, jogos e coleções: Waifuletes, Pesca e Analytics
  * Arquivo: src/BotAPI/routes/featuresRoutes.js
  *
@@ -497,16 +586,20 @@ function registerFeaturesRoutes(api) {
 				const coins = Number(statusRes?.coins || 0);
 				const rawItems = Array.isArray(invRes?.items) ? invRes.items : [];
 
-				// Inclui consumíveis (elixires), sementes e decorações
+				// Inclui consumíveis (elixires), sementes e decorações com quantidade > 0.
+				// Sementes podem vir com `category: "seed"` em vez de `type` (mesma regra do FazendaCommands).
 				const filteredItems = rawItems
+					.map((it) => ({ it, type: it.type || it.category }))
 					.filter(
-						(it) => it.type === "consumable" || it.type === "seed" || it.type === "decoration"
+						({ it, type }) =>
+							(type === "consumable" || type === "seed" || type === "decoration") &&
+							(Number(it.quantity) || 0) > 0
 					)
-					.map((it) => ({
+					.map(({ it, type }) => ({
 						itemId: it.itemId,
 						name: it.name || it.itemId,
-						type: it.type,
-						quantity: Number(it.quantity) || 1
+						type,
+						quantity: Number(it.quantity) || 0
 					}));
 
 				farm = {
@@ -545,27 +638,62 @@ function registerFeaturesRoutes(api) {
 				buffs = [],
 				farmItems = [],
 				petalitas = 0
-			} = req.body;
+			} = req.body && typeof req.body === "object" ? req.body : {};
 
 			if (!fromUserId || !toUserId) {
 				return res
 					.status(400)
 					.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
 			}
+			if (!isValidMarketUserId(fromUserId) || !isValidMarketUserId(toUserId)) {
+				return res
+					.status(400)
+					.json({ success: false, reason: "fromUserId/toUserId em formato inválido" });
+			}
 
 			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
 			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+			if (cleanFrom === cleanTo) {
+				return res.status(400).json({
+					success: false,
+					reason: "Origem e destino da transferência não podem ser o mesmo usuário."
+				});
+			}
 
-			const runasAmount = Number(runas) || 0;
-			const petalitasAmount = Number(petalitas) || 0;
+			// Quantidades: inteiros positivos (0/ausente = não transfere). Nunca repassa negativos.
+			const runasAmount = parseMarketQuantity(runas);
+			if (runasAmount === null) {
+				return res.status(400).json({
+					success: false,
+					reason: "Quantidade de Runas inválida (use um inteiro positivo)."
+				});
+			}
+			const petalitasAmount = parseMarketQuantity(petalitas);
+			if (petalitasAmount === null) {
+				return res.status(400).json({
+					success: false,
+					reason: "Quantidade de Petalitas inválida (use um inteiro positivo)."
+				});
+			}
 
-			// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}])
-			const targetBuffIds =
-				Array.isArray(fishingBuffIds) && fishingBuffIds.length > 0
-					? fishingBuffIds.map((b) => (typeof b === "object" ? b.id : Number(b))).filter(Boolean)
-					: Array.isArray(buffs) && buffs.length > 0
-						? buffs.map((b) => (typeof b === "object" ? b.id : Number(b))).filter(Boolean)
-						: [];
+			// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}]),
+			// exigindo inteiros positivos e removendo duplicatas
+			const useFishingBuffIds =
+				fishingBuffIds !== null &&
+				fishingBuffIds !== undefined &&
+				!(Array.isArray(fishingBuffIds) && fishingBuffIds.length === 0);
+			const buffParse = parseMarketBuffIds(useFishingBuffIds ? fishingBuffIds : buffs);
+			if (buffParse.error) {
+				return res.status(400).json({ success: false, reason: buffParse.error });
+			}
+			const targetBuffIds = buffParse.ids;
+
+			// Itens da fazenda agregados por itemId (checagem de estoque usa o total pedido)
+			const farmParse = parseMarketFarmItems(farmItems);
+			if (farmParse.error) {
+				return res.status(400).json({ success: false, reason: farmParse.error });
+			}
+			const farmItemsToTransfer = farmParse.items;
 
 			// JIDs normalizados para checagem de pesca
 			const fromUserIds =
@@ -615,7 +743,7 @@ function registerFeaturesRoutes(api) {
 			}
 
 			// 1.3. Valida Farm (Petalitas e Itens) no Jardim
-			if (petalitasAmount > 0 || (Array.isArray(farmItems) && farmItems.length > 0)) {
+			if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
 				try {
 					if (petalitasAmount > 0) {
 						const status = await jardimClient.getStatus(cleanFrom);
@@ -627,18 +755,19 @@ function registerFeaturesRoutes(api) {
 						}
 					}
 
-					if (Array.isArray(farmItems) && farmItems.length > 0) {
+					if (farmItemsToTransfer.length > 0) {
 						const inv = await jardimClient.getInventory(cleanFrom);
-						const itemsMap = new Map(
-							(inv?.items || []).map((it) => [it.itemId, Number(it.quantity) || 0])
-						);
-						for (const reqItem of farmItems) {
+						const itemsMap = new Map();
+						for (const it of inv?.items || []) {
+							itemsMap.set(it.itemId, (itemsMap.get(it.itemId) || 0) + (Number(it.quantity) || 0));
+						}
+						for (const reqItem of farmItemsToTransfer) {
 							const currentQty = itemsMap.get(reqItem.itemId) || 0;
-							const needQty = Number(reqItem.amount || reqItem.quantity) || 1;
+							const needQty = reqItem.amount;
 							if (currentQty < needQty) {
 								return res.status(400).json({
 									success: false,
-									reason: `Item da fazenda insuficiente (${reqItem.name || reqItem.itemId}: possui ${currentQty}, requer ${needQty}).`
+									reason: `Item da fazenda insuficiente (${reqItem.name}: possui ${currentQty}, requer ${needQty}).`
 								});
 							}
 						}
@@ -678,10 +807,10 @@ function registerFeaturesRoutes(api) {
 				}
 
 				// 2.3. Transfere Fazenda (Petalitas + Itens)
-				if (petalitasAmount > 0 || (Array.isArray(farmItems) && farmItems.length > 0)) {
-					const itemsToTransfer = (farmItems || []).map((it) => ({
+				if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
+					const itemsToTransfer = farmItemsToTransfer.map((it) => ({
 						itemId: it.itemId,
-						amount: Number(it.amount || it.quantity) || 1
+						amount: it.amount
 					}));
 					await jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount);
 					farmTransferred = true;
