@@ -4,6 +4,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const AdminUtils = require("../utils/AdminUtils");
 const PhoneUtils = require("../utils/PhoneUtils");
+const PvSafetyService = require("../services/PvSafetyService");
 
 const logger = new Logger("view-once-commands");
 let sharedAdminUtils = null;
@@ -217,6 +218,21 @@ async function forwardViewOnceToPv(bot, message, group, { silentAdmin = false } 
 		});
 	}
 
+	// Envio no PV de quem pediu só com interação prévia no privado (evita ban por envio frio).
+	// Em reações, a identidade é a de quem reagiu (originReaction).
+	if (message.group) {
+		const pvCheck = await PvSafetyService.getInstance().ensureGroupPvAllowed(bot, message);
+		if (!pvCheck.allowed) {
+			if (silentAdmin) {
+				logger.info(
+					`[forwardViewOnceToPv] Admin sem interação prévia no PV; encaminhamento silencioso ignorado.`
+				);
+				return false;
+			}
+			return pvCheck.returnMessage;
+		}
+	}
+
 	const pvJid = await resolveRequesterPvJid(bot, message);
 	if (!pvJid) {
 		if (silentAdmin) return false;
@@ -355,6 +371,13 @@ async function handleAdminRoubarCommand(bot, message, args, group) {
 
 // Comandos desativados temporariamente: o WhatsApp entrega view-once apenas como <unavailable type="view_once"/> para dispositivos Web.
 // Os métodos e declarações permanecem preservados para reativação futura caso o protocolo mude.
+//
+// ATENÇÃO ao reativar:
+// - forwardViewOnceToPv já passa por PvSafetyService.ensureGroupPvAllowed (sem PV prévio com o bot,
+//   responde no grupo pedindo para chamar no privado; o modo silencioso de admin apenas ignora);
+// - exige VIEW_ONCE_CAPTURE_ENABLED=true: com a captura desligada (padrão) o WhatsAppBotGo recusa
+//   baixar mídia de visualização única pedida por quem não é o autor, e o comando só responderia
+//   "não foi possível baixar".
 const commands = [
 	/*
 	new Command({

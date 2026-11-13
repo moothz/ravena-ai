@@ -823,6 +823,12 @@ async function processAutoSTT(bot, message, group, opts = {}) {
 			return false;
 		}
 
+		// Áudio de visualização única não é transcrito automaticamente: a transcrição viraria
+		// conteúdo permanente no chat sem o autor pedir
+		if (message.isViewOnce || message.origin?.isViewOnce) {
+			return false;
+		}
+
 		// Verifica se o auto-STT está habilitado para este grupo
 		if (group && !group.autoStt) {
 			return false;
