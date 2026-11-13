@@ -1989,7 +1989,14 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						.catch(() => "Leitura não é o seu forte, né? _Convite ignorado._");
 					await this.bot.sendMessage(authorId, ignoredText);
 				} catch (err) {
-					this.bot.sendMessage(authorId, "Leitura não é o seu forte, né? _Convite ignorado._");
+					this.bot
+						.sendMessage(authorId, "Leitura não é o seu forte, né? _Convite ignorado._")
+						.catch((sendErr) =>
+							this.logger.warn(
+								`Falha ao avisar ${authorId} sobre convite ignorado:`,
+								sendErr?.message || sendErr
+							)
+						);
 				}
 
 				const punishDuration = 10 * this.inviteCooldown * 60 * 1000;
@@ -2024,7 +2031,14 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						.catch(() => "Leitura não é o seu forte, né? _Convite ignorado._");
 					await this.bot.sendMessage(authorId, ignoredText);
 				} catch (err) {
-					this.bot.sendMessage(authorId, "Leitura não é o seu forte, né? _Convite ignorado._");
+					this.bot
+						.sendMessage(authorId, "Leitura não é o seu forte, né? _Convite ignorado._")
+						.catch((sendErr) =>
+							this.logger.warn(
+								`Falha ao avisar ${authorId} sobre convite ignorado:`,
+								sendErr?.message || sendErr
+							)
+						);
 				}
 
 				const punishDuration = 10 * this.inviteCooldown * 60 * 1000;

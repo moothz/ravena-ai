@@ -1793,6 +1793,18 @@ class WhatsAppBotGo {
 					}
 				}
 			} catch (sendError) {
+				if (PvSafetyService.isColdBlockedError(sendError)) {
+					// Envio frio no PV bloqueado: registra como não entregue sem tratar como falha do bot
+					results.push({
+						error: sendError,
+						blockedByPvSafety: true,
+						skipped: true,
+						messageContent: message.content,
+						getInfo: () => ({ delivery: [], played: [], read: [] })
+					});
+					continue;
+				}
+
 				const isNotInGroup = sendError?.notInGroup || isNotInGroupError(sendError);
 				if (isNotInGroup && message.chatId && message.chatId.includes("@g.us")) {
 					this.logger.warn(
@@ -2340,6 +2352,8 @@ class WhatsAppBotGo {
 								const reactionPayload = {
 									reaction: reactionData.text,
 									senderId: info.Sender ?? info.SenderAlt,
+									// Forma alternativa (PN/LID) de quem reagiu, usada para resolver identidade
+									senderIdAlt: info.Sender ? (info.SenderAlt ?? null) : null,
 									userName: info.PushName,
 									msgId: { _serialized: reactionData.key.ID },
 									chatId: targetChat,
@@ -3451,20 +3465,24 @@ class WhatsAppBotGo {
 				!options._isVcardFlow &&
 				!this.pvSafetyService.isOwnBotNumber(this, chatId)
 			) {
-				const pvAllowed = await this.pvSafetyService.hasPvInteraction(this, chatId);
+				let pvAllowed = true;
+				try {
+					pvAllowed = await this.pvSafetyService.hasPvInteraction(this, chatId);
+				} catch (pvErr) {
+					// Fail-open: erro de consulta não pode silenciar respostas legítimas
+					this.logger.warn(
+						`[${this.id}] [PV-SAFETY] Falha ao verificar interação em PV para ${chatId} (liberando envio):`,
+						pvErr?.message || pvErr
+					);
+					pvAllowed = true;
+				}
 				if (!pvAllowed) {
 					this.logger.warn(
 						`[${this.id}] [PV-SAFETY] Bloqueando envio frio em PV para ${chatId}: sem interação prévia em PV com este bot.`
 					);
-					return {
-						id: { _serialized: `blocked_pv_${Date.now()}` },
-						ack: 0,
-						blockedByPvSafety: true,
-						timestamp: Math.floor(Date.now() / 1000),
-						_data: null,
-						getInfo: () => ({ delivery: [], played: [], read: [] }),
-						pin: () => false
-					};
+					// Erro tipado (code=PV_COLD_BLOCKED): loops de fallback tentam o próximo bot e
+					// ninguém registra um id de mensagem que nunca foi entregue.
+					throw this.pvSafetyService.createColdBlockedError(chatId, this);
 				}
 			}
 
@@ -3895,6 +3913,11 @@ class WhatsAppBotGo {
 
 			return returnObj;
 		} catch (error) {
+			// Bloqueio de PV já foi logado como warn; não é falha de envio
+			if (PvSafetyService.isColdBlockedError(error)) {
+				throw error;
+			}
+
 			if (outboundChecksum) {
 				const isTimeoutError =
 					error?.code === "ECONNABORTED" ||
@@ -4165,7 +4188,12 @@ class WhatsAppBotGo {
 	logMsgToGrupo(msg, extra = false) {
 		if (this.grupoLogs && msg) {
 			this.logger.info(`[logMsgToGrupo] ${msg}`, extra);
-			this.sendMessage(this.grupoLogs, msg);
+			this.sendMessage(this.grupoLogs, msg).catch((err) => {
+				this.logger.warn(
+					`[logMsgToGrupo] Falha ao enviar log para ${this.grupoLogs}:`,
+					err?.message || err
+				);
+			});
 		}
 	}
 

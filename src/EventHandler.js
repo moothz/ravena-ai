@@ -443,9 +443,23 @@ class EventHandler extends EventEmitter {
 				return;
 			}
 
-			// Registra qualquer mensagem recebida no PV antes de aplicar ignorePV
+			// Registra qualquer mensagem recebida no PV antes de aplicar ignorePV.
+			// Fire-and-forget: a liberação em memória é síncrona e falhas no SQLite não podem
+			// derrubar o processamento da mensagem.
 			if (!message.group && !message.isNewsletter && !message.fromMe) {
-				await this.pvSafetyService.recordPvInteraction(bot, message);
+				try {
+					this.pvSafetyService.recordPvInteraction(bot, message).catch((err) => {
+						this.logger.warn(
+							`[PV-SAFETY] Falha ao registrar interação em PV de ${message.author}:`,
+							err?.message || err
+						);
+					});
+				} catch (err) {
+					this.logger.warn(
+						`[PV-SAFETY] Falha ao registrar interação em PV de ${message.author}:`,
+						err?.message || err
+					);
+				}
 			}
 
 			const ignorePV = bot.ignorePV && bot.notInWhitelist(message.author) && message.group === null;

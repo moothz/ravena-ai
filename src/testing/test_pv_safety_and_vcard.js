@@ -160,6 +160,139 @@ async function runTests() {
 		"PN mapeado pelo lidToPnCache deve herdar liberação registrada via @lid"
 	);
 
+	// Grupos antigos sem sufixo no formato <criador>-<timestamp> não são PV
+	assert.strictEqual(pvSafety.isPvTarget("5511999999999-1580000000"), false);
+	assert.strictEqual(pvSafety.isPvTarget("5511999999999-1580000000@g.us"), false);
+
+	// Formato de produção: message.author chega como dígitos soltos (LID ainda sem mapeamento PN)
+	const prodLid = "123450000099999";
+	const prodPn = "5521977776666";
+	const buildProdPvMessage = (withPn = false) => {
+		const msg = createMessage({ author: prodLid, group: null, content: "oi" });
+		msg.from = `${prodLid}@lid`;
+		msg.authorAlt = withPn ? `${prodPn}@s.whatsapp.net` : undefined;
+		msg.goMessageData = {
+			Info: {
+				Sender: `${prodLid}@lid`,
+				SenderAlt: withPn ? `${prodPn}@s.whatsapp.net` : undefined,
+				Chat: `${prodLid}@lid`
+			}
+		};
+		return msg;
+	};
+	await pvSafety.recordPvInteraction(botA, buildProdPvMessage(false));
+	pvSafety.clearInboundAllowance(); // força o caminho do "banco" (sem a liberação em memória)
+	const botAKey = pvSafety.getBotKey(botA);
+	const prodRows = Array.from(pvSafety._testRecords.get(botAKey).values()).filter(
+		(r) => r.user_lid === `${prodLid}@lid`
+	);
+	assert.strictEqual(prodRows.length, 1);
+	assert.strictEqual(
+		prodRows[0].user_key,
+		`${prodLid}@lid`,
+		"Dígitos soltos iguais ao Info.Sender @lid devem ser gravados como LID (não como telefone)"
+	);
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, prodLid),
+		true,
+		"Resposta para o author (dígitos soltos) deve casar com o registro @lid"
+	);
+	assert.strictEqual(await pvSafety.hasPvInteraction(botA, `${prodLid}@lid`), true);
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, `${prodPn}@s.whatsapp.net`),
+		false,
+		"Sem mapeamento LID->PN ainda não há como saber que o PN é a mesma pessoa"
+	);
+	// Mapeamento aprendido depois (ex.: mensagem em grupo com SenderAlt): consulta pelo PN encontra o LID
+	botA.lidToPnCache.set(prodLid, prodPn);
+	botA.lidToPnCache.set(`${prodLid}@lid`, prodPn);
+	botA.getLidFromPn = WhatsAppBotGo.prototype.getLidFromPn;
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, `${prodPn}@s.whatsapp.net`),
+		true,
+		"PN aprendido depois deve achar o registro gravado só com o LID"
+	);
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, "552177776666"),
+		true,
+		"Variante de 12 dígitos (dígitos soltos) do PN também deve casar"
+	);
+	// Nova mensagem no PV já com o PN: promove a chave para o telefone e grava user_pn
+	await pvSafety.recordPvInteraction(botA, buildProdPvMessage(true));
+	const promoted = Array.from(pvSafety._testRecords.get(botAKey).values()).filter(
+		(r) => r.user_lid === `${prodLid}@lid`
+	);
+	assert.strictEqual(promoted.length, 1, "Promoção LID -> PN não deve duplicar registros");
+	assert.strictEqual(promoted[0].user_key, prodPn);
+	assert.strictEqual(promoted[0].user_pn, prodPn);
+	delete botA.getLidFromPn;
+
+	// Reação: só quem reagiu conta (não o autor da mensagem reagida)
+	const reactionMsg = createMessage({
+		author: "5531988887777@s.whatsapp.net",
+		group: groupId,
+		content: "x"
+	});
+	reactionMsg.goMessageData = { Info: { Sender: "5599911112222@s.whatsapp.net" } };
+	reactionMsg.authorAlt = "5531988887777@s.whatsapp.net";
+	reactionMsg.originReaction = { senderId: "5531988887777@s.whatsapp.net", reaction: "👍" };
+	const reactionIdentity = await pvSafety.resolveIdentity(botA, reactionMsg);
+	assert.ok(reactionIdentity.pnKeys.includes("5531988887777"));
+	assert.ok(
+		!reactionIdentity.pnKeys.includes("5599911112222"),
+		"Autor da mensagem reagida não pode entrar na identidade de quem reagiu"
+	);
+
+	// Throttle: com has_pv=1 e nada novo, no máximo 1 gravação por hora por usuário
+	const originalUpsert = pvSafety._upsertRecord.bind(pvSafety);
+	let upsertCalls = 0;
+	pvSafety._upsertRecord = async (...args) => {
+		upsertCalls++;
+		return originalUpsert(...args);
+	};
+	const throttleMsg = () =>
+		createMessage({ author: "5541977771234@s.whatsapp.net", group: null, content: "oi" });
+	await pvSafety.recordPvInteraction(botA, throttleMsg());
+	await pvSafety.recordPvInteraction(botA, throttleMsg());
+	await pvSafety.recordPvInteraction(botA, throttleMsg());
+	assert.strictEqual(upsertCalls, 1, "Mensagens repetidas no PV não devem regravar pv_users");
+	const throttleWithLid = throttleMsg();
+	throttleWithLid.authorAlt = "998800001111@lid";
+	await pvSafety.recordPvInteraction(botA, throttleWithLid);
+	assert.strictEqual(upsertCalls, 2, "Informação nova (LID) deve ser gravada mesmo dentro de 1h");
+	pvSafety._upsertRecord = originalUpsert;
+
+	// Fail-open: erro no SQLite libera o envio (e é logado) em vez de bloquear respostas
+	const originalFind = pvSafety._findRecords;
+	pvSafety._findRecords = async () => {
+		throw new Error("SQLITE_BUSY: database is locked");
+	};
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, "5561911112222@s.whatsapp.net"),
+		true,
+		"Erro de consulta em pv_users deve liberar (fail-open)"
+	);
+	await assert.rejects(
+		() =>
+			pvSafety.recordPvInteraction(
+				botA,
+				createMessage({ author: "5561911113333@s.whatsapp.net", group: null })
+			),
+		/SQLITE_BUSY/
+	);
+	pvSafety._findRecords = originalFind;
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, "5561911113333@s.whatsapp.net"),
+		true,
+		"Mesmo com falha na gravação, a liberação em memória (24h) cobre a resposta direta"
+	);
+	pvSafety.clearInboundAllowance();
+	assert.strictEqual(
+		await pvSafety.hasPvInteraction(botA, "5561911113333@s.whatsapp.net"),
+		false,
+		"Sem a liberação em memória e sem registro gravado, continua bloqueado"
+	);
+
 	// Telegram/Discord nunca bloqueiam e nunca enviam vCard
 	assert.strictEqual(pvSafety.isWhatsAppBot(tgBot), false);
 	assert.strictEqual(pvSafety.shouldSendVcard(tgBot), false);
@@ -366,6 +499,23 @@ async function runTests() {
 		"Qualquer mensagem comum no PV deve ser gravada antes do filtro ignorePV"
 	);
 
+	// Falha ao gravar em pv_users (SQLite) não pode derrubar o processamento da mensagem no PV
+	const originalRecordPv = pvSafety.recordPvInteraction;
+	pvSafety.recordPvInteraction = async () => {
+		throw new Error("SQLITE_IOERR: disk I/O error");
+	};
+	resetHandlerStep(botA);
+	await eventHandler.processMessage(
+		botA,
+		createMessage({ content: "!mu-adm", group: null, author: "5531999993333@s.whatsapp.net" })
+	);
+	assert.strictEqual(
+		await waitUntil(() => botA.capturedMessages.length > 0),
+		true,
+		"Comando no PV deve responder mesmo com falha ao gravar pv_users"
+	);
+	pvSafety.recordPvInteraction = originalRecordPv;
+
 	// Agora coldUser executa no grupo via botA -> PERMITIDO!
 	for (const cmd of ["!g-painel", "!g-manage", "!mu-adm", "!waifinder", "!faz-adm", "!banco-adm"]) {
 		resetHandlerStep(botA);
@@ -449,9 +599,58 @@ async function runTests() {
 	});
 
 	const coldTarget = "5561999990000@s.whatsapp.net";
-	const coldRes = await publicGo.inst.sendMessage(coldTarget, "Mensagem fria não solicitada");
-	assert.strictEqual(coldRes.blockedByPvSafety, true, "sendMessage deve bloquear envio frio em PV");
+	await assert.rejects(
+		() => publicGo.inst.sendMessage(coldTarget, "Mensagem fria não solicitada"),
+		(err) => {
+			assert.strictEqual(err.code, "PV_COLD_BLOCKED");
+			assert.strictEqual(err.blockedByPvSafety, true);
+			assert.strictEqual(PvSafetyService.isColdBlockedError(err), true);
+			return true;
+		},
+		"sendMessage deve lançar erro tipado ao bloquear envio frio em PV"
+	);
 	assert.strictEqual(publicGo.calls.length, 0, "Nenhuma chamada HTTP deve ocorrer no bloqueio");
+
+	// Caminho genérico (sendReturnMessages) não lança: devolve o resultado marcado como bloqueado
+	const ReturnMessage = require("../models/ReturnMessage");
+	const coldResults = await publicGo.inst.sendReturnMessages(
+		new ReturnMessage({ chatId: coldTarget, content: "Aviso automático" })
+	);
+	assert.strictEqual(coldResults.length, 1);
+	assert.strictEqual(coldResults[0].blockedByPvSafety, true);
+	assert.strictEqual(coldResults[0].error?.code, "PV_COLD_BLOCKED");
+	assert.ok(!coldResults[0].id, "Bloqueio não pode devolver id de mensagem falso");
+	assert.strictEqual(publicGo.calls.length, 0);
+
+	// Loop de fallback entre bots (ex.: gamesRoutes.sendGameNotice) deve pular o bot bloqueado
+	const { sendGameNotice } = require("../BotAPI/routes/gamesRoutes");
+	const fallbackCold = createSpyBot({
+		id: "fallback-cold",
+		nomeExibir: "Fria",
+		phoneNumber: "5511900002222",
+		privado: true
+	});
+	const fallbackWarm = createSpyBot({
+		id: "fallback-warm",
+		nomeExibir: "Quente",
+		phoneNumber: "5511900003333",
+		privado: true
+	});
+	const fallbackTarget = "5561988887777@s.whatsapp.net";
+	await pvSafety.recordPvInteraction(fallbackWarm.inst, fallbackTarget);
+	const noticeLogs = [];
+	const delivered = await sendGameNotice(
+		{
+			bots: [fallbackCold.inst, fallbackWarm.inst],
+			logger: { info: (m) => noticeLogs.push(m), warn: (m) => noticeLogs.push(m) }
+		},
+		fallbackTarget,
+		"Bônus creditado!"
+	);
+	assert.strictEqual(delivered, true, "Algum bot com PV prévio deve entregar o aviso");
+	assert.strictEqual(fallbackCold.calls.length, 0, "Bot sem PV prévio não pode enviar");
+	assert.strictEqual(fallbackWarm.calls.length, 1, "Fallback deve seguir para o próximo bot");
+	assert.strictEqual(fallbackWarm.calls[0].payload.text, "Bônus creditado!");
 
 	// Grupos (@g.us e legado 120363...) e o próprio número não são bloqueados
 	await publicGo.inst.sendMessage("120363041254059254@g.us", "log normal");
@@ -493,47 +692,148 @@ async function runTests() {
 		"✓ WhatsAppBotGo.sendMessage (bloqueio frio, vCard 45 dias e bots privados) validado!"
 	);
 
-	// 6. Persistência real em SQLite (pv_users.db) e promoção @lid -> PN
+	// 6. Persistência real em SQLite (pv_users.db), formato de produção (dígitos soltos) e promoção @lid -> PN
 	console.log("\n[6] Validando persistência SQLite em pv_users.db...");
-	const sqlBotId = "__test_sqlite_bot__";
-	const sqlBot = new FakeBot({ id: sqlBotId, phoneNumber: "555591535538", privado: false });
+	pvSafety.resetTestState();
+	// Número fictício exclusivo deste teste: a chave do bot no banco é o número (não o id)
+	const sqlBot = new FakeBot({
+		id: "__test_sqlite_bot__",
+		phoneNumber: "999000111222",
+		privado: false
+	});
 	sqlBot.lidToPnCache = new Map();
-	database.testMode = false;
-
-	await database.dbRun("pv_users", "DELETE FROM pv_users WHERE bot_id = ?", [sqlBotId]);
-	await pvSafety.recordPvInteraction(
-		sqlBot,
-		createMessage({ author: "777888999000@lid", group: null }),
-		t0
-	);
-	assert.strictEqual(await pvSafety.hasPvInteraction(sqlBot, "777888999000@lid"), true);
-
-	await pvSafety.markVcardSent(sqlBot, "777888999000@lid", t0);
-	sqlBot.lidToPnCache.set("777888999000@lid", "5548999998888@s.whatsapp.net");
-	await pvSafety.recordPvInteraction(
-		sqlBot,
-		createMessage({
-			author: "5548999998888@s.whatsapp.net",
-			authorAlt: "777888999000@lid",
-			group: null
-		}),
-		t0 + 5000
-	);
-	const promotedRows = await database.dbAll("pv_users", "SELECT * FROM pv_users WHERE bot_id = ?", [
-		sqlBotId
-	]);
+	sqlBot.getLidFromPn = WhatsAppBotGo.prototype.getLidFromPn;
+	const sqlBotKey = pvSafety.getBotKey(sqlBot);
 	assert.strictEqual(
-		promotedRows.length,
-		1,
-		"Promoção LID->PN não deve duplicar linhas em pv_users"
+		sqlBotKey,
+		"999000111222",
+		"Registro de PV deve ser chaveado pelo número do bot"
 	);
-	assert.strictEqual(promotedRows[0].user_key, "5548999998888");
-	assert.strictEqual(promotedRows[0].user_lid, "777888999000@lid");
-	assert.strictEqual(promotedRows[0].has_pv, 1);
-	assert.strictEqual(promotedRows[0].last_vcard_sent_at, t0);
-	await database.dbRun("pv_users", "DELETE FROM pv_users WHERE bot_id = ?", [sqlBotId]);
-	database.testMode = true;
-	console.log("✓ Persistência SQLite e promoção LID -> PN em pv_users.db validada!");
+	const legacyBotId = "__test_sqlite_legacy_bot__";
+	const legacyBot = { id: legacyBotId, phoneNumber: "999000111223" };
+	const legacyBotKey = pvSafety.getBotKey(legacyBot);
+	const cleanupSql = async () => {
+		for (const key of [sqlBotKey, legacyBotId, legacyBotKey]) {
+			await database.dbRun("pv_users", "DELETE FROM pv_users WHERE bot_id = ?", [key]);
+		}
+	};
+	database.testMode = false;
+	try {
+		await cleanupSql();
+		const sqlLid = "777888999000";
+		const sqlPn = "5548999998888";
+		const prodSqlMsg = createMessage({ author: sqlLid, group: null });
+		prodSqlMsg.from = `${sqlLid}@lid`;
+		prodSqlMsg.goMessageData = { Info: { Sender: `${sqlLid}@lid`, Chat: `${sqlLid}@lid` } };
+		await pvSafety.recordPvInteraction(sqlBot, prodSqlMsg, t0);
+		pvSafety.clearInboundAllowance();
+		const lidRows = await database.dbAll("pv_users", "SELECT * FROM pv_users WHERE bot_id = ?", [
+			sqlBotKey
+		]);
+		assert.strictEqual(lidRows.length, 1);
+		assert.strictEqual(lidRows[0].user_key, `${sqlLid}@lid`);
+		assert.strictEqual(await pvSafety.hasPvInteraction(sqlBot, `${sqlLid}@lid`), true);
+		assert.strictEqual(
+			await pvSafety.hasPvInteraction(sqlBot, sqlLid),
+			true,
+			"Consulta por dígitos soltos deve achar o registro @lid no SQLite"
+		);
+
+		// Linha antiga (antes da correção) gravada com o LID como se fosse telefone: user_key="<lid>"
+		await database.dbRun(
+			"pv_users",
+			"INSERT INTO pv_users (bot_id, user_key, user_lid, has_pv, first_pv_at, last_pv_at, last_vcard_sent_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, 0, ?)",
+			[sqlBotKey, "666555444333", "666555444333@lid", t0, t0, t0]
+		);
+		assert.strictEqual(
+			await pvSafety.hasPvInteraction(sqlBot, "666555444333@lid"),
+			true,
+			"Linha antiga com user_key = dígitos do LID deve casar com a consulta por @lid"
+		);
+
+		await pvSafety.markVcardSent(sqlBot, `${sqlLid}@lid`, t0);
+		sqlBot.lidToPnCache.set(sqlLid, sqlPn);
+		sqlBot.lidToPnCache.set(`${sqlLid}@lid`, sqlPn);
+		assert.strictEqual(
+			await pvSafety.hasPvInteraction(sqlBot, `${sqlPn}@s.whatsapp.net`),
+			true,
+			"Após aprender o PN, consulta pelo telefone deve achar a linha gravada só com LID"
+		);
+
+		await pvSafety.recordPvInteraction(
+			sqlBot,
+			createMessage({
+				author: `${sqlPn}@s.whatsapp.net`,
+				authorAlt: `${sqlLid}@lid`,
+				group: null
+			}),
+			t0 + 5000
+		);
+		const promotedRows = await database.dbAll(
+			"pv_users",
+			"SELECT * FROM pv_users WHERE bot_id = ? AND (user_lid = ? OR user_key = ?)",
+			[sqlBotKey, `${sqlLid}@lid`, sqlPn]
+		);
+		assert.strictEqual(
+			promotedRows.length,
+			1,
+			"Promoção LID->PN não deve duplicar linhas em pv_users"
+		);
+		assert.strictEqual(promotedRows[0].user_key, sqlPn);
+		assert.strictEqual(promotedRows[0].user_pn, sqlPn);
+		assert.strictEqual(promotedRows[0].user_lid, `${sqlLid}@lid`);
+		assert.strictEqual(promotedRows[0].has_pv, 1);
+		assert.strictEqual(promotedRows[0].last_vcard_sent_at, t0);
+
+		// Fail-open: erro real de SQL na consulta libera o envio
+		const originalDbAll = database.dbAll;
+		database.dbAll = async () => {
+			throw new Error("SQLITE_CORRUPT: database disk image is malformed");
+		};
+		pvSafety.clearInboundAllowance();
+		try {
+			assert.strictEqual(
+				await pvSafety.hasPvInteraction(sqlBot, "5548911110000@s.whatsapp.net"),
+				true,
+				"Falha do SQLite deve liberar o envio (fail-open)"
+			);
+		} finally {
+			database.dbAll = originalDbAll;
+		}
+
+		// Migração de linhas antigas chaveadas pelo id do bot para o número
+		await database.dbRun(
+			"pv_users",
+			"INSERT INTO pv_users (bot_id, user_key, has_pv, first_pv_at, last_pv_at, last_vcard_sent_at, updated_at) VALUES (?, ?, 1, ?, ?, ?, ?)",
+			[legacyBotId, "5548933334444", t0, t0, t0, t0]
+		);
+		const migration = await pvSafety.migrateLegacyBotKeys([legacyBot], {
+			force: true,
+			writeMarker: false
+		});
+		assert.strictEqual(migration.migratedRows, 1);
+		const legacyLeft = await database.dbAll("pv_users", "SELECT * FROM pv_users WHERE bot_id = ?", [
+			legacyBotId
+		]);
+		assert.strictEqual(legacyLeft.length, 0, "Linhas com o id antigo devem ser migradas");
+		assert.strictEqual(
+			await pvSafety.hasPvInteraction(legacyBot, "5548933334444@s.whatsapp.net"),
+			true,
+			"Após migrar, o bot (pelo número) mantém o histórico de PV"
+		);
+		assert.strictEqual(
+			await pvSafety.hasPvInteraction(
+				{ id: legacyBotId, phoneNumber: "999000111224" },
+				"5548933334444@s.whatsapp.net"
+			),
+			false,
+			"Mesmo id re-pareado com outro número não herda o histórico de PV"
+		);
+	} finally {
+		await cleanupSql();
+		database.testMode = true;
+	}
+	console.log("✓ Persistência SQLite, dígitos soltos, fail-open e chave por número validados!");
 
 	console.log("\n=== TODOS OS TESTES DE PV SAFETY & VCARD PASSARAM COM SUCESSO! ===");
 	process.exit(0);
