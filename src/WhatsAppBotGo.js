@@ -3595,6 +3595,7 @@ class WhatsAppBotGo {
 	_queuePvVcardReminder(chatId, options = {}) {
 		if (!this.pvSafetyService?.isPvTarget(chatId)) return;
 		if (!this.pvSafetyService.shouldSendVcard(this)) return;
+		if (!this._pvVcardTimers) this._pvVcardTimers = new Map();
 		const queueKey = PhoneUtils.cleanPhone(chatId) || String(chatId);
 		const pending = this._pvVcardTimers.get(queueKey);
 		if (pending) clearTimeout(pending);
@@ -3611,7 +3612,7 @@ class WhatsAppBotGo {
 					err?.message || err
 				);
 			});
-		}, this.pvVcardDebounceMs);
+		}, this.pvVcardDebounceMs ?? 2000);
 		if (typeof timer.unref === "function") timer.unref();
 		this._pvVcardTimers.set(queueKey, timer);
 	}

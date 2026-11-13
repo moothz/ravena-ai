@@ -1401,19 +1401,15 @@ class PvSafetyService {
 
 		const mappers = this.database.mappers;
 		const upsertSql = `INSERT INTO pv_users (${INSERT_COLUMNS}) VALUES (?, ?, ?, ?, 1, ?, ?, 0, ?) ${UPSERT_MERGE_SQL}`;
-		let inserted = 0;
-		let updated = 0;
 		const records = Array.from(entries.values());
+		const countRows = () =>
+			Number(mappers.get(DB_NAME, "SELECT COUNT(*) AS total FROM pv_users")?.total || 0);
+		const rowsBefore = countRows();
 		const batchSize = 2000;
 		for (let i = 0; i < records.length; i += batchSize) {
 			const batch = records.slice(i, i + batchSize);
 			mappers.transaction(DB_NAME, () => {
 				for (const rec of batch) {
-					const existed = mappers.get(
-						DB_NAME,
-						"SELECT has_pv FROM pv_users WHERE bot_id = ? AND user_key = ?",
-						[rec.bot_id, rec.user_key]
-					);
 					mappers.run(DB_NAME, upsertSql, [
 						rec.bot_id,
 						rec.user_key,
@@ -1423,11 +1419,11 @@ class PvSafetyService {
 						rec.last_pv_at,
 						now
 					]);
-					if (existed) updated++;
-					else inserted++;
 				}
 			});
 		}
+		const inserted = Math.max(0, countRows() - rowsBefore);
+		const updated = records.length - inserted;
 
 		const summary = {
 			at: now,

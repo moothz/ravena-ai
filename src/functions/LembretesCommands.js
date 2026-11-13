@@ -681,11 +681,22 @@ async function adiarLembreteBloqueadoNoPv(bot, lembrete, tentativasAnteriores = 
 	}
 
 	const novaData = Date.now() + LEMBRETE_PV_RETRY_MS;
-	await database.dbRun(
-		dbName,
-		`UPDATE lembretes SET ativo = 1, data = ?, pv_block_retries = ? WHERE id = ?`,
-		[novaData, tentativa, lembrete.id]
-	);
+	try {
+		await database.dbRun(
+			dbName,
+			`UPDATE lembretes SET ativo = 1, data = ?, pv_block_retries = ? WHERE id = ?`,
+			[novaData, tentativa, lembrete.id]
+		);
+	} catch (updateError) {
+		// Banco sem a coluna pv_block_retries: ao menos não perde o lembrete
+		logger.warn(
+			`Falha ao registrar tentativa do lembrete ${lembrete.id}, reativando sem contador: ${updateError.message}`
+		);
+		await database.dbRun(dbName, `UPDATE lembretes SET ativo = 1, data = ? WHERE id = ?`, [
+			novaData,
+			lembrete.id
+		]);
+	}
 	logger.warn(
 		`Lembrete ${lembrete.id} bloqueado no PV (${lembrete.chatId}): mantido ativo, nova tentativa ${tentativa}/${LEMBRETE_PV_MAX_RETRIES} em ${formatarTempoRestante(LEMBRETE_PV_RETRY_MS)}.`
 	);
