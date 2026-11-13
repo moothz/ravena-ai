@@ -131,6 +131,16 @@ function registerIndexRoutes(api) {
 
 	app.get(["/", "/os", "/os/", "/index.html", "/os/index.html"], handleIndex);
 
+	// Serve página de Status das Ravenas. Registrada ANTES do express.static para que o
+	// alias /status.html também passe por aqui (renovação da sessão de admin e no-cache).
+	app.get(["/status", "/status.html"], (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+		}
+		res.setHeader("Cache-Control", "no-cache");
+		res.sendFile(path.join(__dirname, "../../../public/status.html"));
+	});
+
 	// Entrega da interface Desktop OS como homepage principal (/)
 	app.use(express.static(path.join(PUBLIC_DIR, "os"), STATIC_OPTIONS));
 
@@ -294,15 +304,6 @@ function registerIndexRoutes(api) {
 	};
 	app.get("/pesca", servePesca);
 	app.get("/fishing", servePesca);
-
-	// Serve página de Status das Ravenas
-	app.get(["/status", "/status.html"], (req, res) => {
-		if (api.isAdmin(req)) {
-			api.setAdminSessionCookie(res);
-		}
-		res.setHeader("Cache-Control", "no-cache");
-		res.sendFile(path.join(__dirname, "../../../public/status.html"));
-	});
 
 	// Atalho para o aplicativo Waifuletes na OS
 	app.get(["/waifuletes", "/waifus"], (req, res) => {
