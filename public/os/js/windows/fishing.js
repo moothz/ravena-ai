@@ -146,7 +146,7 @@ WindowManager.register('fishing', {
             });
 
         } catch (err) {
-            container.innerHTML = `<div style="text-align: center; color: #ff5555; padding: 20px;">Erro ao carregar pesca: ${err.message}</div>`;
+            container.innerHTML = `<div style="text-align: center; color: #ff5555; padding: 20px;">Erro ao carregar pesca: ${Formatters.escapeHtml(err && err.message)}</div>`;
         }
     },
 

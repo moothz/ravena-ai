@@ -523,22 +523,23 @@ const Taskbar = {
 
             const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, '') : '';
             const statusDot = !bot.connected ? 'dot-down' : (bot.banido ? 'dot-down' : 'dot-up');
+            const safeId = Formatters.escapeHtml(bot.id);
 
             html += `
                 <div class="submenu-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                         <span style="display: flex; align-items: center; gap: 4px; font-weight: 600;">
                             <span class="service-status-dot ${statusDot}"></span>
-                            ${icon} ${bot.id}
+                            ${icon} ${safeId}
                         </span>
                     </div>
                     <div style="display: flex; gap: 6px; margin-left: 14px; margin-top: 2px;">
                         ${cleanPhone ? `
-                            <a href="https://wa.me/${cleanPhone}" target="_blank" class="os-btn" style="font-size: 9px; padding: 2px 6px; background: #25d366; border-color: #25d366;">
+                            <a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="os-btn" style="font-size: 9px; padding: 2px 6px; background: #25d366; border-color: #25d366;">
                                 <i class="fab fa-whatsapp"></i> Chamar
                             </a>
                         ` : ''}
-                        <button class="os-btn btn-sm-bot-status" data-bot-id="${bot.id}" style="font-size: 9px; padding: 2px 6px;">
+                        <button class="os-btn btn-sm-bot-status" data-bot-id="${safeId}" style="font-size: 9px; padding: 2px 6px;">
                             <i class="fas fa-info-circle"></i> Status
                         </button>
                     </div>

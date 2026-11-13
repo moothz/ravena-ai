@@ -288,8 +288,8 @@ const MobileApp = {
             console.error(`Error rendering mobile app ${appId}:`, err);
             bodyEl.innerHTML = `
                 <div style="padding: 20px; color: #ff5555; text-align: center;">
-                    <p>❌ Erro ao renderizar ${title}</p>
-                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${err.message}</p>
+                    <p>❌ Erro ao renderizar ${Formatters.escapeHtml(title)}</p>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${Formatters.escapeHtml(err && err.message)}</p>
                 </div>
             `;
         }

@@ -204,7 +204,7 @@ const WindowManager = {
             wb.body.innerHTML = `
                 <div style="padding: 20px; color: #ff5555; text-align: center;">
                     <p>❌ Erro ao renderizar janela</p>
-                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${err.message}</p>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 8px;">${Formatters.escapeHtml(err && err.message)}</p>
                 </div>
             `;
         }
