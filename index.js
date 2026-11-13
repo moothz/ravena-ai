@@ -92,6 +92,23 @@ async function main() {
 
 		// Carrega whitelist (Doadores + SuperAdmins)
 		const database = Database.getInstance({ disableBackup: disableActivity });
+
+		// Registro de PV (pv_users): migra chaves antigas (id -> número do bot) e faz o backfill
+		// a partir de dados que provam conversa prévia no PV. Roda uma única vez (marcadores em
+		// pv_meta) e ANTES de criar os bots, para nenhum envio legítimo ser bloqueado no deploy.
+		try {
+			const PvSafetyService = require("./src/services/PvSafetyService");
+			await PvSafetyService.getInstance().runStartupMaintenance(
+				rBots.map((rBot) => ({
+					id: rBot.nome,
+					phoneNumber: rBot.numero,
+					useTelegram: rBot.useTelegram,
+					useDiscord: rBot.useDiscord
+				}))
+			);
+		} catch (pvErr) {
+			logger.error("[PV-SAFETY] Falha na manutenção inicial de pv_users:", pvErr);
+		}
 		const donations = await database.getDonations();
 		const superAdmins = (process.env.SUPER_ADMINS || "")
 			.split(",")

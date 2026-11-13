@@ -34,13 +34,23 @@ database.getSQLiteDb(
       media_path TEXT,
       media_type TEXT,
       media_caption TEXT,
-      bot_id TEXT
+      bot_id TEXT,
+      pv_block_retries INTEGER DEFAULT 0
     );
 `
 );
 
 // Garantir coluna bot_id em bancos de dados já existentes
 database.dbRun(dbName, "ALTER TABLE lembretes ADD COLUMN bot_id TEXT;").catch(() => {});
+// Tentativas de reenvio de lembretes bloqueados pelo PvSafety (envio frio no PV)
+database
+	.dbRun(dbName, "ALTER TABLE lembretes ADD COLUMN pv_block_retries INTEGER DEFAULT 0;")
+	.catch(() => {});
+
+// Lembrete no PV bloqueado por falta de interação prévia: fica ativo e é reenviado de hora em hora
+// (ex.: assim que o usuário voltar a falar com o bot no PV) por até 3 dias.
+const LEMBRETE_PV_RETRY_MS = 60 * 60 * 1000;
+const LEMBRETE_PV_MAX_RETRIES = 72;
 
 // Diretório para armazenar mídias dos lembretes
 const LEMBRETES_MEDIA_DIR = path.join(database.databasePath, "lembretes-media");
@@ -641,6 +651,66 @@ async function verificarLembrete(bot, lembreteId) {
 }
 
 /**
+ * Indica se o envio foi bloqueado pelo PvSafety (sem interação prévia no PV).
+ * @param {Array|Object} results - Retorno de bot.sendReturnMessages
+ * @returns {boolean}
+ */
+function foiBloqueadoNoPv(results) {
+	const list = Array.isArray(results) ? results : [results];
+	return list.some(
+		(r) => r && (r.blockedByPvSafety === true || r.error?.code === "PV_COLD_BLOCKED")
+	);
+}
+
+/**
+ * Reativa um lembrete cujo envio foi bloqueado no PV e agenda nova tentativa.
+ * Mantém a mídia salva; após LEMBRETE_PV_MAX_RETRIES tentativas desiste e limpa a mídia.
+ * @param {WhatsAppBot} bot - Instância do bot
+ * @param {Object} lembrete - Lembrete (formato dbToLembrete)
+ * @param {number} tentativasAnteriores - Valor atual de pv_block_retries
+ * @returns {Promise<boolean>} true se reagendou
+ */
+async function adiarLembreteBloqueadoNoPv(bot, lembrete, tentativasAnteriores = 0) {
+	const tentativa = Number(tentativasAnteriores || 0) + 1;
+	if (tentativa > LEMBRETE_PV_MAX_RETRIES) {
+		logger.warn(
+			`Lembrete ${lembrete.id} continua bloqueado no PV (${lembrete.chatId}) após ${LEMBRETE_PV_MAX_RETRIES} tentativas. Desistindo.`
+		);
+		await limparMidiaLembrete(lembrete);
+		return false;
+	}
+
+	const novaData = Date.now() + LEMBRETE_PV_RETRY_MS;
+	await database.dbRun(
+		dbName,
+		`UPDATE lembretes SET ativo = 1, data = ?, pv_block_retries = ? WHERE id = ?`,
+		[novaData, tentativa, lembrete.id]
+	);
+	logger.warn(
+		`Lembrete ${lembrete.id} bloqueado no PV (${lembrete.chatId}): mantido ativo, nova tentativa ${tentativa}/${LEMBRETE_PV_MAX_RETRIES} em ${formatarTempoRestante(LEMBRETE_PV_RETRY_MS)}.`
+	);
+	iniciarTemporizador(bot, { ...lembrete, data: novaData, ativo: true });
+	return true;
+}
+
+/**
+ * Remove a mídia de um lembrete do S3 e do disco local.
+ * @param {Object} lembrete
+ */
+async function limparMidiaLembrete(lembrete) {
+	if (!lembrete?.mediaPath) return;
+	try {
+		await storageService.delete(lembrete.mediaPath, { category: "lembretes" }).catch(() => {});
+		const localPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
+		if (await fs.stat(localPath).catch(() => null)) {
+			await fs.unlink(localPath).catch(() => {});
+		}
+	} catch (unlinkError) {
+		logger.error("Erro ao excluir mídia do lembrete após envio:", unlinkError);
+	}
+}
+
+/**
  * Dispara um lembrete
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {string} lembreteId - ID do lembrete
@@ -726,20 +796,15 @@ async function dispararLembrete(bot, lembreteId) {
 					}
 				});
 
-				await bot.sendReturnMessages(returnMessage, group);
+				const mediaResults = await bot.sendReturnMessages(returnMessage, group);
+				if (foiBloqueadoNoPv(mediaResults)) {
+					// Não perde o lembrete nem a mídia: reativa e tenta de novo depois
+					await adiarLembreteBloqueadoNoPv(bot, lembrete, row.pv_block_retries);
+					return;
+				}
 
 				// Limpeza pós-envio no S3 e disco
-				try {
-					await storageService
-						.delete(lembrete.mediaPath, { category: "lembretes" })
-						.catch(() => {});
-					const localPath = path.join(LEMBRETES_MEDIA_DIR, lembrete.mediaPath);
-					if (await fs.stat(localPath).catch(() => null)) {
-						await fs.unlink(localPath).catch(() => {});
-					}
-				} catch (unlinkError) {
-					logger.error("Erro ao excluir mídia do lembrete após envio:", unlinkError);
-				}
+				await limparMidiaLembrete(lembrete);
 			} catch (mediaError) {
 				logger.error("Erro ao enviar mídia do lembrete:", mediaError);
 				returnMessage = new ReturnMessage({
@@ -748,7 +813,11 @@ async function dispararLembrete(bot, lembreteId) {
 					options: { mentions }
 				});
 
-				await bot.sendReturnMessages(returnMessage, group);
+				const fallbackResults = await bot.sendReturnMessages(returnMessage, group);
+				if (foiBloqueadoNoPv(fallbackResults)) {
+					await adiarLembreteBloqueadoNoPv(bot, lembrete, row.pv_block_retries);
+					return;
+				}
 			}
 		} else {
 			returnMessage = new ReturnMessage({
@@ -757,7 +826,11 @@ async function dispararLembrete(bot, lembreteId) {
 				options: { mentions }
 			});
 
-			await bot.sendReturnMessages(returnMessage, group);
+			const textResults = await bot.sendReturnMessages(returnMessage, group);
+			if (foiBloqueadoNoPv(textResults)) {
+				await adiarLembreteBloqueadoNoPv(bot, lembrete, row.pv_block_retries);
+				return;
+			}
 		}
 
 		logger.info(`Lembrete ${lembreteId} disparado com sucesso pelo bot ${botId}`);
@@ -836,6 +909,7 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
+	dispararLembrete,
 	inicializarLembretes: async (bot) => {
 		try {
 			await garantirDiretorios();

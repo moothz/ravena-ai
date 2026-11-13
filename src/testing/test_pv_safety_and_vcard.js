@@ -835,6 +835,338 @@ async function runTests() {
 	}
 	console.log("✓ Persistência SQLite, dígitos soltos, fail-open e chave por número validados!");
 
+	// 7. Backfill de pv_users a partir de dados existentes + lembretes/correios bloqueados no PV
+	console.log("\n[7] Validando backfill de pv_users e reenvio de lembretes/correios bloqueados...");
+	pvSafety.resetTestState();
+	const os = require("os");
+	const fs = require("fs");
+	const path = require("path");
+	const BetterSQLite = require("better-sqlite3");
+	const tmpSqlites = fs.mkdtempSync(path.join(os.tmpdir(), "pv-backfill-"));
+	const createSourceDb = (file, ddl, rows) => {
+		const conn = new BetterSQLite(path.join(tmpSqlites, file));
+		conn.exec(ddl);
+		for (const [sql, params] of rows) conn.prepare(sql).run(...params);
+		conn.close();
+	};
+	const bfNow = Date.now();
+	createSourceDb(
+		"lembretes.db",
+		"CREATE TABLE lembretes (id TEXT PRIMARY KEY, chat_id TEXT, user_id TEXT, data INTEGER, mensagem TEXT, criado_em INTEGER, ativo INTEGER, bot_id TEXT)",
+		[
+			[
+				"INSERT INTO lembretes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				["l1", "5511911110001@s.whatsapp.net", "5511911110001", bfNow, "a", bfNow, 0, "bf-bot-a"]
+			],
+			[
+				"INSERT INTO lembretes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				["l2", "120363000000000001@g.us", "5511911110010", bfNow, "b", bfNow, 1, "bf-bot-a"]
+			],
+			[
+				"INSERT INTO lembretes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				["l3", "888777666555444@lid", "888777666555444", bfNow, "c", bfNow, 1, null]
+			],
+			[
+				"INSERT INTO lembretes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				[
+					"l4",
+					"5511911110009@s.whatsapp.net",
+					"5511911110009",
+					bfNow,
+					"d",
+					bfNow,
+					1,
+					"bot-removido"
+				]
+			]
+		]
+	);
+	createSourceDb(
+		"greeted_users.db",
+		"CREATE TABLE greeted_users (user_id TEXT, bot_id TEXT, timestamp INTEGER, PRIMARY KEY (user_id, bot_id))",
+		[["INSERT INTO greeted_users VALUES (?, ?, ?)", ["5511911110002", "bf-bot-b", bfNow]]]
+	);
+	createSourceDb(
+		"correios.db",
+		"CREATE TABLE tracks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, chat_id TEXT, code TEXT, description TEXT, last_event_text TEXT, last_event_date TEXT, last_check INTEGER)",
+		[
+			[
+				"INSERT INTO tracks (chat_id, code, last_check) VALUES (?, ?, ?)",
+				["5511911110003", "A1", bfNow]
+			],
+			[
+				"INSERT INTO tracks (chat_id, code, last_check) VALUES (?, ?, ?)",
+				["120363000000000002@g.us", "A2", bfNow]
+			],
+			// ID de Telegram (sem plataforma na tabela): não pode virar telefone
+			[
+				"INSERT INTO tracks (chat_id, code, last_check) VALUES (?, ?, ?)",
+				["1198765432", "A3", bfNow]
+			]
+		]
+	);
+	createSourceDb(
+		"copa_seguir.db",
+		"CREATE TABLE copa_seguindo (chat_id TEXT, team_id TEXT, team_name_en TEXT, team_name_pt TEXT, fifa_code TEXT, created_at INTEGER, PRIMARY KEY (chat_id, team_id))",
+		[
+			[
+				"INSERT INTO copa_seguindo VALUES (?, ?, ?, ?, ?, ?)",
+				["5511911110004@s.whatsapp.net", "BRA", "Brazil", "Brasil", "BRA", bfNow]
+			],
+			[
+				"INSERT INTO copa_seguindo VALUES (?, ?, ?, ?, ?, ?)",
+				["551191111000", "ARG", "Argentina", "Argentina", "ARG", bfNow]
+			]
+		]
+	);
+	createSourceDb(
+		"linked_accounts.db",
+		"CREATE TABLE linked_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, platform TEXT, platform_id TEXT, whatsapp_id TEXT, created_at INTEGER, updated_at INTEGER); CREATE TABLE link_codes (code TEXT PRIMARY KEY, whatsapp_id TEXT, created_at INTEGER, expires_at INTEGER)",
+		[
+			[
+				"INSERT INTO linked_accounts (platform, platform_id, whatsapp_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+				["telegram", "123", "5511911110005", bfNow, bfNow]
+			],
+			["INSERT INTO link_codes VALUES (?, ?, ?, ?)", ["CODE1", "5511911110006", bfNow, bfNow]]
+		]
+	);
+	createSourceDb(
+		"core.db",
+		"CREATE TABLE invite_history (id INTEGER PRIMARY KEY AUTOINCREMENT, invite_code TEXT, group_jid TEXT, author_id TEXT, author_name TEXT, timestamp INTEGER, reason TEXT, json_data TEXT)",
+		[
+			[
+				"INSERT INTO invite_history (invite_code, author_id, timestamp) VALUES (?, ?, ?)",
+				["INV1", "5511911110007@c.us", bfNow]
+			]
+		]
+	);
+
+	const bfBotA = { id: "bf-bot-a", phoneNumber: "999000222001" };
+	const bfBotB = { id: "bf-bot-b", phoneNumber: "999000222002" };
+	const bfBots = [bfBotA, bfBotB, { id: "bf-tg", useTelegram: true }];
+	const bfMarker = `test_backfill_marker_${Date.now()}`;
+	const bfKeys = [pvSafety.getBotKey(bfBotA), pvSafety.getBotKey(bfBotB)];
+	const countBfRows = async () =>
+		(
+			await database.dbGet(
+				"pv_users",
+				`SELECT COUNT(*) AS c FROM pv_users WHERE bot_id IN (?, ?)`,
+				bfKeys
+			)
+		).c;
+	const cleanupBackfill = async () => {
+		for (const key of bfKeys) {
+			await database.dbRun("pv_users", "DELETE FROM pv_users WHERE bot_id = ?", [key]);
+		}
+		await database.dbRun("pv_users", "DELETE FROM pv_meta WHERE key = ?", [bfMarker]);
+	};
+
+	database.testMode = false;
+	try {
+		await cleanupBackfill();
+		const bfResult = await pvSafety.backfillFromExistingData(bfBots, {
+			sqlitesDir: tmpSqlites,
+			markerKey: bfMarker
+		});
+		assert.strictEqual(bfResult.bots, 2, "Apenas bots de WhatsApp entram no backfill");
+		assert.strictEqual(bfResult.sources.lembretes.users, 2);
+		assert.strictEqual(bfResult.sources.greeted_users.users, 1);
+		assert.strictEqual(bfResult.sources.correios.users, 1, "Grupo e ID de Telegram são ignorados");
+		assert.strictEqual(bfResult.sources.copa_seguir.users, 1, "copa_seguir exige JID com sufixo");
+		assert.strictEqual(bfResult.sources.linked_accounts.users, 2);
+		assert.strictEqual(bfResult.sources.invite_history.users, 1);
+		pvSafety.clearInboundAllowance();
+
+		const has = (bot, target) => pvSafety.hasPvInteraction(bot, target);
+		// lembrete com bot_id => só aquele bot
+		assert.strictEqual(await has(bfBotA, "5511911110001@s.whatsapp.net"), true);
+		assert.strictEqual(await has(bfBotB, "5511911110001@s.whatsapp.net"), false);
+		assert.strictEqual(await has(bfBotA, "551111110001"), true, "Variante de 12 dígitos casa");
+		// lembrete sem bot_id => todos os bots de WhatsApp
+		assert.strictEqual(await has(bfBotA, "888777666555444@lid"), true);
+		assert.strictEqual(await has(bfBotB, "888777666555444"), true);
+		// greeted_users com bot_id
+		assert.strictEqual(await has(bfBotB, "5511911110002@s.whatsapp.net"), true);
+		assert.strictEqual(await has(bfBotA, "5511911110002@s.whatsapp.net"), false);
+		// fontes sem bot_id => todos os bots
+		for (const target of [
+			"5511911110003@s.whatsapp.net",
+			"5511911110004@s.whatsapp.net",
+			"5511911110005@s.whatsapp.net",
+			"5511911110006@s.whatsapp.net",
+			"5511911110007@s.whatsapp.net"
+		]) {
+			assert.strictEqual(await has(bfBotA, target), true, `${target} deveria ser liberado (A)`);
+			assert.strictEqual(await has(bfBotB, target), true, `${target} deveria ser liberado (B)`);
+		}
+		// Linhas que não provam PV
+		assert.strictEqual(await has(bfBotA, "5511911110009@s.whatsapp.net"), false, "Bot removido");
+		assert.strictEqual(await has(bfBotA, "551198765432@s.whatsapp.net"), false, "ID de Telegram");
+		assert.strictEqual(
+			await has(bfBotA, "5511911110010@s.whatsapp.net"),
+			false,
+			"Lembrete de grupo"
+		);
+
+		// Idempotência: rodar de novo não duplica nada
+		const rowsAfterFirst = await countBfRows();
+		const bfAgain = await pvSafety.backfillFromExistingData(bfBots, {
+			sqlitesDir: tmpSqlites,
+			markerKey: bfMarker,
+			force: true
+		});
+		assert.strictEqual(bfAgain.inserted, 0, "Segunda execução não insere linhas novas");
+		assert.strictEqual(await countBfRows(), rowsAfterFirst);
+		// Marcador: sem force, não roda de novo
+		const bfSkipped = await pvSafety.backfillFromExistingData(bfBots, {
+			sqlitesDir: tmpSqlites,
+			markerKey: bfMarker
+		});
+		assert.strictEqual(bfSkipped.skipped, "done");
+		const markerRow = await database.dbGet("pv_users", "SELECT value FROM pv_meta WHERE key = ?", [
+			bfMarker
+		]);
+		assert.ok(JSON.parse(markerRow.value).sources.lembretes, "Marcador guarda as contagens");
+
+		// Backfill não pode rebaixar quem já tem vCard registrado
+		await pvSafety.markVcardSent(bfBotA, "5511911110001@s.whatsapp.net", t0);
+		await pvSafety.backfillFromExistingData(bfBots, {
+			sqlitesDir: tmpSqlites,
+			markerKey: bfMarker,
+			force: true
+		});
+		const vcardRow = await database.dbGet(
+			"pv_users",
+			"SELECT * FROM pv_users WHERE bot_id = ? AND user_key = ?",
+			[bfKeys[0], "5511911110001"]
+		);
+		assert.strictEqual(vcardRow.last_vcard_sent_at, t0);
+		assert.strictEqual(vcardRow.has_pv, 1);
+	} finally {
+		await cleanupBackfill();
+		fs.rmSync(tmpSqlites, { recursive: true, force: true });
+		database.testMode = true;
+	}
+
+	// Lembrete no PV bloqueado: continua ativo (com a mídia) e é reagendado
+	const LembretesCommands = require("../functions/LembretesCommands");
+	const lembBot = createSpyBot({
+		id: "lemb-pv-bot",
+		nomeExibir: "Lemb",
+		phoneNumber: "999000333001",
+		privado: true
+	});
+	const lembTarget = "5511911119999@s.whatsapp.net";
+	const lembId = `test-pv-block-${Date.now()}`;
+	database.testMode = false;
+	try {
+		await database
+			.dbRun("lembretes", "ALTER TABLE lembretes ADD COLUMN pv_block_retries INTEGER DEFAULT 0")
+			.catch(() => {});
+		await database.dbRun(
+			"lembretes",
+			"INSERT INTO lembretes (id, chat_id, user_id, data, mensagem, criado_em, ativo, has_media, bot_id) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)",
+			[
+				lembId,
+				lembTarget,
+				lembTarget,
+				Date.now() - 1000,
+				"pagar a conta",
+				Date.now(),
+				"lemb-pv-bot"
+			]
+		);
+		const beforeFire = Date.now();
+		await LembretesCommands.dispararLembrete(lembBot.inst, lembId);
+		let lembRow = await database.dbGet("lembretes", "SELECT * FROM lembretes WHERE id = ?", [
+			lembId
+		]);
+		assert.strictEqual(lembBot.calls.length, 0, "Envio frio não pode chegar na API");
+		assert.strictEqual(lembRow.ativo, 1, "Lembrete bloqueado no PV deve continuar ativo");
+		assert.strictEqual(lembRow.pv_block_retries, 1);
+		assert.ok(lembRow.data > beforeFire, "Lembrete bloqueado deve ser reagendado");
+
+		// Usuário fala com o bot no PV: a próxima tentativa entrega e desativa o lembrete
+		await pvSafety.recordPvInteraction(lembBot.inst, lembTarget);
+		await LembretesCommands.dispararLembrete(lembBot.inst, lembId);
+		lembRow = await database.dbGet("lembretes", "SELECT * FROM lembretes WHERE id = ?", [lembId]);
+		assert.strictEqual(lembRow.ativo, 0, "Lembrete entregue deve ser desativado");
+		assert.strictEqual(lembBot.calls.length, 1);
+		assert.ok(lembBot.calls[0].payload.text.includes("pagar a conta"));
+	} finally {
+		await database.dbRun("lembretes", "DELETE FROM lembretes WHERE id = ?", [lembId]);
+		database.testMode = true;
+	}
+
+	// Correios: last_event_text só avança depois que a notificação foi aceita
+	const axios = require("axios");
+	const originalAxiosGet = axios.get;
+	const originalCorreiosApi = process.env.CORREIOS_API;
+	const correiosPath = require.resolve("../functions/CorreiosCommands");
+	const cachedCorreios = require.cache[correiosPath];
+	delete require.cache[correiosPath];
+	process.env.CORREIOS_API = "http://correios.invalid";
+	const CorreiosCommands = require("../functions/CorreiosCommands");
+	const corBot = createSpyBot({
+		id: "correios-pv-bot",
+		nomeExibir: "Cor",
+		phoneNumber: "999000333002",
+		privado: true
+	});
+	const corTarget = "5511911118888@s.whatsapp.net";
+	const corCode = `QA${Date.now()}BR`;
+	axios.get = async () => ({
+		data: {
+			events: [
+				{
+					descricao: "Objeto entregue ao destinatário",
+					dtHrCriado: { date: "2026-11-12 10:00:00" },
+					unidade: { tipo: "Agência", endereco: { cidade: "Porto Alegre", uf: "RS" } }
+				}
+			]
+		}
+	});
+	database.testMode = false;
+	try {
+		database.getSQLiteDb(
+			"correios",
+			`CREATE TABLE IF NOT EXISTS tracks (
+				id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, chat_id TEXT, code TEXT, description TEXT,
+				last_event_text TEXT, last_event_date TEXT, last_check INTEGER, UNIQUE(chat_id, code)
+			);`,
+			true
+		);
+		await database.dbRun("correios", "DELETE FROM tracks WHERE code LIKE 'QA%BR'");
+		await database.dbRun(
+			"correios",
+			"INSERT INTO tracks (user_id, chat_id, code, description, last_event_text, last_event_date, last_check) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			[corTarget, corTarget, corCode, "Pacote teste", "Objeto postado", "2026-11-10 09:00:00", 0]
+		);
+		await CorreiosCommands.checkAllPackages(corBot.inst);
+		let track = await database.dbGet("correios", "SELECT * FROM tracks WHERE code = ?", [corCode]);
+		assert.strictEqual(corBot.calls.length, 0);
+		assert.strictEqual(
+			track.last_event_text,
+			"Objeto postado",
+			"Notificação bloqueada no PV não pode avançar o último evento"
+		);
+		assert.ok(track.last_check > 0, "last_check deve ser atualizado mesmo bloqueado");
+
+		await pvSafety.recordPvInteraction(corBot.inst, corTarget);
+		await CorreiosCommands.checkAllPackages(corBot.inst);
+		track = await database.dbGet("correios", "SELECT * FROM tracks WHERE code = ?", [corCode]);
+		assert.strictEqual(corBot.calls.length, 1, "Com PV prévio a notificação é enviada");
+		assert.strictEqual(track.last_event_text, "Objeto entregue ao destinatário");
+	} finally {
+		await database.dbRun("correios", "DELETE FROM tracks WHERE code = ?", [corCode]);
+		database.testMode = true;
+		axios.get = originalAxiosGet;
+		if (originalCorreiosApi === undefined) delete process.env.CORREIOS_API;
+		else process.env.CORREIOS_API = originalCorreiosApi;
+		if (cachedCorreios) require.cache[correiosPath] = cachedCorreios;
+	}
+	console.log("✓ Backfill idempotente, lembretes e correios bloqueados no PV validados!");
+
 	console.log("\n=== TODOS OS TESTES DE PV SAFETY & VCARD PASSARAM COM SUCESSO! ===");
 	process.exit(0);
 }
