@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const Logger = require("./Logger");
+const { getPublicBotContacts, getSupportContact } = require("./RavenaContacts");
 
 let CATEGORY_EMOJIS = {};
 try {
@@ -563,6 +564,10 @@ class CommandsHelper {
 	 */
 	getBaseHelpContext() {
 		const commandsIndex = this.getCommandsIndex();
+		const support = getSupportContact();
+		const activeBotsLines = getPublicBotContacts()
+			.map((b) => `  - ${b.id}: ${b.display} (${b.link})`)
+			.join("\n");
 
 		return `# Ravena - Informações Base
 
@@ -571,14 +576,12 @@ O objetivo é auxiliar grupos, comunidades e streamers com recursos de mídia (f
 
 ---
 ## 📞 Contatos e Suporte Oficial
-- **WhatsApp de Suporte Oficial (moothz)**: (55) 99642-4307 (https://wa.me/555596424307)
+- **WhatsApp de Suporte Oficial (moothz)**: ${support.display} (${support.link})
   - _Incentive os usuários a chamarem no suporte oficial para relatar bugs, dúvidas técnicas ou sugestões._
 - **Comunidade Oficial da Ravena**: https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz
 - **Site Oficial**: https://ravena.moothz.com
 - **Números Ativos (PV cria figurinhas automáticas e aceita convites)**:
-  - ravena2: +55 (98) 98771-5450 (https://wa.me/559887715450)
-  - ravena5: +55 (55) 99153-7296 (https://wa.me/555591537296)
-  - ravena10: +55 (55) 98102-4412 (https://wa.me/555581024412)
+${activeBotsLines}
 
 ---
 ## ⚙️ Arquitetura, Estabilidade e Dúvidas Frequentes

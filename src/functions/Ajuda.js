@@ -5,6 +5,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const LLMService = require("../services/LLMService");
 const CommandsHelper = require("../utils/CommandsHelper");
+const { getPublicBotContacts, getSupportContact } = require("../utils/RavenaContacts");
 
 const logger = new Logger("ajuda-commands");
 const llmService = LLMService.getInstance();
@@ -114,10 +115,15 @@ async function askHelp(question, sessionId = null, apiUser = null) {
 		? `\n\n---\n## HISTÓRICO DA CONVERSA NESTA SESSÃO (Mantenha coerência e continuidade com o diálogo anterior):\n${history}\n---`
 		: "";
 
+	const support = getSupportContact();
+	const activeBotLinks = getPublicBotContacts()
+		.map((b) => b.link)
+		.join(", ");
+
 	const forbiddenPhoneSuffix = getForbiddenPhoneSuffix();
 	const privacyInstruction = forbiddenPhoneSuffix
-		? `8. ((REGRA ESTRITA DE PRIVACIDADE)): O número de suporte público oficial é (55) 99642-4307. Qualquer número pessoal terminado em ${forbiddenPhoneSuffix} ou de super administradores é estritamente confidencial e JAMAIS deve ser enviado, confirmado ou mencionado sob nenhuma circunstância.`
-		: `8. ((REGRA ESTRITA DE PRIVACIDADE)): O número de suporte público oficial é (55) 99642-4307. Qualquer número pessoal privado do criador ou de super administradores é estritamente confidencial e JAMAIS deve ser enviado, confirmado ou mencionado sob nenhuma circunstância.`;
+		? `8. ((REGRA ESTRITA DE PRIVACIDADE)): O número de suporte público oficial é ${support.display}. Qualquer número pessoal terminado em ${forbiddenPhoneSuffix} ou de super administradores é estritamente confidencial e JAMAIS deve ser enviado, confirmado ou mencionado sob nenhuma circunstância.`
+		: `8. ((REGRA ESTRITA DE PRIVACIDADE)): O número de suporte público oficial é ${support.display}. Qualquer número pessoal privado do criador ou de super administradores é estritamente confidencial e JAMAIS deve ser enviado, confirmado ou mencionado sob nenhuma circunstância.`;
 
 	const communityHelpInstruction = process.env.LINK_COMUNIDADE
 		? ` e também a participar da Comunidade Oficial da Ravena: ${process.env.LINK_COMUNIDADE}.`
@@ -132,8 +138,8 @@ async function askHelp(question, sessionId = null, apiUser = null) {
 3. Você tem o índice completo de comandos por categoria acima. Quando o usuário perguntar sobre o funcionamento, regras, opções ou sintaxe de um comando específico, use a ferramenta 'get_command_info' (ou 'commands_helper') com o nome do comando para obter a documentação detalhada, sintaxe exata e exemplos práticos antes de formular a resposta.
 4. Ao sugerir criação de comandos personalizados com !g-addCmd, sempre sugira o uso de variáveis dinâmicas (ex: {pessoa}, {tituloGrupo}, {membroRandom}, etc.).
 5. Se for uma dúvida de gerenciamento de grupo, lembre que comandos iniciados em !g- são apenas para administradores e mencione o painel web (!g-painel).
-6. Se o usuário estiver no chat web perguntando sobre números de WhatsApp, como usar no WhatsApp ou como fazer figurinhas, forneça os números/links ativos das Ravenas (ex: https://wa.me/559887715450, https://wa.me/555591537296, https://wa.me/555581024412) e informe que no privado (PV) basta enviar a foto ou vídeo para criar figurinhas.
-7. Em caso de dúvidas, problemas técnicos, bugs, instabilidades ou sugestões, incentive o usuário a entrar em contato com o suporte do criador no WhatsApp: (55) 99642-4307 (https://wa.me/555596424307)${communityHelpInstruction}
+6. Se o usuário estiver no chat web perguntando sobre números de WhatsApp, como usar no WhatsApp ou como fazer figurinhas, forneça os números/links ativos das Ravenas (${activeBotLinks}) e informe que no privado (PV) basta enviar a foto ou vídeo para criar figurinhas.
+7. Em caso de dúvidas, problemas técnicos, bugs, instabilidades ou sugestões, incentive o usuário a entrar em contato com o suporte do criador no WhatsApp: ${support.display} (${support.link})${communityHelpInstruction}
 ${privacyInstruction}
 9. Se perguntado sobre estabilidade, quedas, delays ou múltiplos bots:
    - Esclareça que todos os bots rodam no mesmo servidor, mesmo local e compartilham o mesmo banco de dados SQLite.

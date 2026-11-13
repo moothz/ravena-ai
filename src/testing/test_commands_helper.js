@@ -2,6 +2,7 @@
 // Catálogo dinâmico de comandos da IA de ajuda (CommandsHelper):
 // - get_command_info / commands_helper não podem devolver o comando errado por casamento de tags
 // - comandos restritos (!sa-, !admin-, hidden) nunca entram no catálogo
+// - números públicos da Ravena derivados das instâncias de bot (RavenaContacts)
 
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
@@ -11,6 +12,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const CommandsHelper = require("../utils/CommandsHelper");
+const RavenaContacts = require("../utils/RavenaContacts");
+const Database = require("../utils/Database");
 
 const DETAILS_HEADER = "🤖 **Comando:**";
 
@@ -163,6 +166,56 @@ module.exports = { helper };
 	console.log("✓ Restritos filtrados no loadHelpers, no contexto base e no get_command_info.");
 }
 
+function testPublicBotContacts() {
+	console.log("\n[4] Números públicos derivados das instâncias de bot...");
+	const instances = [
+		{ id: "rv-publica", phoneNumber: "5511987654321" },
+		{ id: "rv-8digitos", phoneNumber: "555591537296@s.whatsapp.net" },
+		{ id: "rv-privada", phoneNumber: "5511900000001", privado: true },
+		{ id: "rv-banida", phoneNumber: "5511900000002", banido: true },
+		{ id: "rv-vip", phoneNumber: "5511900000003", vip: true },
+		{ id: "rv-comunitaria", phoneNumber: "5511900000004", comunitario: true },
+		{ id: "rv-sem-convite", phoneNumber: "5511900000005", ignoreInvites: true },
+		{ id: "rv-sem-pv", phoneNumber: "5511900000006", ignorePV: true },
+		{ id: "rv-telegram", phoneNumber: "5511900000007", useTelegram: true },
+		{ id: "rv-discord", useDiscord: true },
+		{ id: "rv-duplicada", phoneNumber: "5511987654321" }
+	];
+	const contacts = RavenaContacts.getPublicBotContacts(instances);
+	assert.deepStrictEqual(
+		contacts.map((c) => c.id),
+		["rv-publica", "rv-8digitos"],
+		"Somente bots públicos (sem privado/banido/vip/comunitário/ignore*) e sem duplicatas"
+	);
+	assert.strictEqual(contacts[0].display, "+55 (11) 98765-4321");
+	assert.strictEqual(contacts[0].link, "https://wa.me/5511987654321");
+	assert.strictEqual(contacts[1].display, "+55 (55) 99153-7296", "Nono dígito só na exibição");
+	assert.strictEqual(contacts[1].link, "https://wa.me/555591537296");
+
+	const fallback = RavenaContacts.getPublicBotContacts([{ id: "x", privado: true }]);
+	assert.deepStrictEqual(
+		fallback.map((c) => c.phone),
+		RavenaContacts.FALLBACK_PUBLIC_BOTS.map((b) => b.phone),
+		"Sem bots públicos carregados usa a lista central de fallback"
+	);
+	assert.strictEqual(RavenaContacts.getSupportContact().display, "(55) 99642-4307");
+
+	// O contexto da IA usa as instâncias registradas no Database
+	const db = Database.getInstance();
+	const fakeBot = { id: "rv-contexto", phoneNumber: "5521912345678" };
+	db.botInstances.push(fakeBot);
+	try {
+		const ctx = CommandsHelper.getInstance().getBaseHelpContext();
+		assert.ok(
+			ctx.includes("rv-contexto: +55 (21) 91234-5678 (https://wa.me/5521912345678)"),
+			"Contexto base deve listar bots públicos registrados"
+		);
+	} finally {
+		db.botInstances.splice(db.botInstances.indexOf(fakeBot), 1);
+	}
+	console.log("✓ Contatos derivados, filtrados e formatados; fallback centralizado.");
+}
+
 async function runTests() {
 	console.log("=== Testes do CommandsHelper (catálogo da IA de ajuda) ===");
 	const helper = CommandsHelper.getInstance();
@@ -171,6 +224,7 @@ async function runTests() {
 	await testTagQueriesDoNotReturnWrongCommand(helper);
 	await testExactLookupsStillWork(helper);
 	testRestrictedCommandsAreFiltered();
+	testPublicBotContacts();
 
 	console.log("\n=== Todos os testes do CommandsHelper passaram! ===");
 }
