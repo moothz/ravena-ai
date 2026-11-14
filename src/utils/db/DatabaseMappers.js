@@ -402,7 +402,10 @@ class DatabaseMappers {
 		return m ? m[1].toUpperCase() : "QUERY";
 	};
 	const tableOf = (sql) => {
-		const m = /\b(?:FROM|INTO|UPDATE|TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?)\s+["`\[]?([A-Za-z_][\w]*)/i.exec(sql || "");
+		const m =
+			/\b(?:FROM|INTO|UPDATE|TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?)\s+["`[]?([A-Za-z_][\w]*)/i.exec(
+				sql || ""
+			);
 		return m ? m[1].slice(0, 48) : undefined;
 	};
 	for (const method of ["run", "get", "all", "exec"]) {
@@ -422,13 +425,15 @@ class DatabaseMappers {
 				const active = telemetry.activeSpan();
 				if (active && active.isRecording() && active.attributes) {
 					active.setAttributes({
-						"ravena.sqlite.total_ms": Math.round(((active.attributes["ravena.sqlite.total_ms"] || 0) + ms) * 100) / 100,
+						"ravena.sqlite.total_ms":
+							Math.round(((active.attributes["ravena.sqlite.total_ms"] || 0) + ms) * 100) / 100,
 						"ravena.sqlite.calls": (active.attributes["ravena.sqlite.calls"] || 0) + 1
 					});
 				}
 				// Sem span pai (boot, migrações) não cria raiz solta; "duplicate column"/"already exists"
 				// das migrações idempotentes não é erro de verdade.
-				const expectedError = error && /duplicate column|already exists/i.test(String(error.message));
+				const expectedError =
+					error && /duplicate column|already exists/i.test(String(error.message));
 				if (active && (ms >= SLOW_MS || (error && !expectedError))) {
 					const op = opOf(sql);
 					const table = tableOf(sql);

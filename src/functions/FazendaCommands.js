@@ -728,7 +728,13 @@ async function handleFazenda(bot, message, _args, group) {
 		if (imageBuffer) {
 			const finalBuffer = await telemetry.withSpan(
 				"image optimize",
-				{ attributes: { "ravena.image.kind": "farm", "ravena.image.hq": Boolean(wantsHq), "ravena.image.input_bytes": imageBuffer?.length } },
+				{
+					attributes: {
+						"ravena.image.kind": "farm",
+						"ravena.image.hq": Boolean(wantsHq),
+						"ravena.image.input_bytes": imageBuffer?.length
+					}
+				},
 				() => optimizeFarmImage(imageBuffer, wantsHq)
 			);
 			returns.push(

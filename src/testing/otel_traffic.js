@@ -68,7 +68,11 @@ async function main() {
 		if (r === 0) {
 			for (const content of AI_COMMANDS) {
 				eventHandler.commandHandler.userDebounceMap?.clear();
-				const msg = createMessage({ content, author: "5511900000010@s.whatsapp.net", group: "120363000000999@g.us" });
+				const msg = createMessage({
+					content,
+					author: "5511900000010@s.whatsapp.net",
+					group: "120363000000999@g.us"
+				});
 				msg.platform = "telegram";
 				msg.timestamp = Math.round(Date.now() / 1000);
 				eventHandler.onMessage(bot, msg);
@@ -77,8 +81,14 @@ async function main() {
 		}
 		// Um caso de debounce de propósito (dois comandos colados do mesmo usuário)
 		const spam = "5511900000099@s.whatsapp.net";
-		eventHandler.onMessage(bot, createMessage({ content: "!ping", author: spam, group: "120363000000999@g.us" }));
-		eventHandler.onMessage(bot, createMessage({ content: "!ping", author: spam, group: "120363000000999@g.us" }));
+		eventHandler.onMessage(
+			bot,
+			createMessage({ content: "!ping", author: spam, group: "120363000000999@g.us" })
+		);
+		eventHandler.onMessage(
+			bot,
+			createMessage({ content: "!ping", author: spam, group: "120363000000999@g.us" })
+		);
 		await sleep(1500);
 		console.log(`[otel_traffic] rodada ${r + 1}/${rounds} concluída`);
 	}

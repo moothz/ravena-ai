@@ -507,403 +507,441 @@ function registerFeaturesRoutes(api) {
 	];
 
 	// Endpoint de Inventário ao Vivo para o Mercado de Classificados
-	app.get("/api/market/user-inventory/:userId", telemetry.outcomeMiddleware, ...marketGuards, async (req, res) => {
-		try {
-			const { userId } = req.params;
-			telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
-			if (!userId) {
-				return res.status(400).json({ success: false, error: "userId obrigatório" });
-			}
-
-			const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
-
-			// 1. Runas e Cotações do Banco
-			let runas = 0;
-			let rates = { runasPerZinthos: 0.2857, runasPerJardimCoin: 0.125 };
+	app.get(
+		"/api/market/user-inventory/:userId",
+		telemetry.outcomeMiddleware,
+		...marketGuards,
+		async (req, res) => {
 			try {
-				const account = await bankService.getAccount(cleanUser);
-				runas = account?.runas || 0;
-				const bankRates = await bankService.getRates();
-				if (bankRates) {
-					rates = {
-						runasPerZinthos: bankRates.runasPerZinthos,
-						runasPerJardimCoin: bankRates.runasPerJardimCoin
-					};
+				const { userId } = req.params;
+				telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
+				if (!userId) {
+					return res.status(400).json({ success: false, error: "userId obrigatório" });
 				}
-			} catch (bankErr) {
-				api.logger.warn(`Erro ao carregar saldo de Runas/taxas para ${userId}: ${bankErr.message}`);
-			}
 
-			// 2. Buffs de Pesca Permanentes (com normalização de JID)
-			let fishingBuffs = [];
-			try {
-				const userIds =
-					typeof FishingGame.getAllFishingUserIds === "function"
-						? FishingGame.getAllFishingUserIds(userId)
-						: [userId, cleanUser, `${cleanUser}@c.us`, `${cleanUser}:54@c.us`];
-				const placeholders = userIds.map(() => "?").join(",");
+				const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
 
-				const rows = await api.database.dbAll(
-					"fishing",
-					`SELECT id, effect_type as type, original_name as originalName, remaining_uses as remainingUses, value 
+				// 1. Runas e Cotações do Banco
+				let runas = 0;
+				let rates = { runasPerZinthos: 0.2857, runasPerJardimCoin: 0.125 };
+				try {
+					const account = await bankService.getAccount(cleanUser);
+					runas = account?.runas || 0;
+					const bankRates = await bankService.getRates();
+					if (bankRates) {
+						rates = {
+							runasPerZinthos: bankRates.runasPerZinthos,
+							runasPerJardimCoin: bankRates.runasPerJardimCoin
+						};
+					}
+				} catch (bankErr) {
+					api.logger.warn(
+						`Erro ao carregar saldo de Runas/taxas para ${userId}: ${bankErr.message}`
+					);
+				}
+
+				// 2. Buffs de Pesca Permanentes (com normalização de JID)
+				let fishingBuffs = [];
+				try {
+					const userIds =
+						typeof FishingGame.getAllFishingUserIds === "function"
+							? FishingGame.getAllFishingUserIds(userId)
+							: [userId, cleanUser, `${cleanUser}@c.us`, `${cleanUser}:54@c.us`];
+					const placeholders = userIds.map(() => "?").join(",");
+
+					const rows = await api.database.dbAll(
+						"fishing",
+						`SELECT id, effect_type as type, original_name as originalName, remaining_uses as remainingUses, value 
 					 FROM fishing_buffs 
 					 WHERE user_id IN (${placeholders}) 
 					   AND is_debuff = 0 
 					   AND effect_type IN ('inventory_slot', 'max_baits')
 					 ORDER BY id ASC`,
-					userIds
-				);
-
-				fishingBuffs = (rows || []).map((r) => {
-					let desc = "";
-					if (r.type === "inventory_slot") {
-						desc = `Aumenta capacidade permanente da mochila (+${r.value || 1} inv)`;
-					} else if (r.type === "max_baits") {
-						desc = `Aumenta limite permanente de iscas (+${r.value || 1} iscas)`;
-					}
-					return {
-						id: r.id,
-						type: r.type,
-						originalName:
-							r.originalName ||
-							(r.type === "inventory_slot" ? "Slot de Inventário" : "Iscas Extras"),
-						remainingUses: r.remainingUses,
-						value: r.value,
-						description: desc
-					};
-				});
-			} catch (fishErr) {
-				api.logger.warn(`Erro ao buscar buffs de pesca para ${userId}: ${fishErr.message}`);
-			}
-
-			// 3. Fazenda (Jardim das Sombras) - Moeda (Petalitas) + Consumíveis / Decorações
-			let farm = null;
-			let farmUnavailable = false;
-			try {
-				const [statusRes, invRes] = await Promise.all([
-					jardimClient.getStatus(cleanUser),
-					jardimClient.getInventory(cleanUser)
-				]);
-
-				const coins = Number(statusRes?.coins || 0);
-				const rawItems = Array.isArray(invRes?.items) ? invRes.items : [];
-
-				// Inclui consumíveis (elixires), sementes e decorações com quantidade > 0.
-				// Sementes podem vir com `category: "seed"` em vez de `type` (mesma regra do FazendaCommands).
-				const filteredItems = rawItems
-					.map((it) => ({ it, type: it.type || it.category }))
-					.filter(
-						({ it, type }) =>
-							(type === "consumable" || type === "seed" || type === "decoration") &&
-							(Number(it.quantity) || 0) > 0
-					)
-					.map(({ it, type }) => ({
-						itemId: it.itemId,
-						name: it.name || it.itemId,
-						type,
-						quantity: Number(it.quantity) || 0
-					}));
-
-				farm = {
-					coins,
-					items: filteredItems
-				};
-			} catch (farmErr) {
-				api.logger.warn(
-					`Jardim indisponível para consulta de inventário de ${userId}: ${farmErr.message}`
-				);
-				farmUnavailable = true;
-			}
-
-			return res.json({
-				success: true,
-				runas,
-				rates,
-				fishingBuffs,
-				farm,
-				farmUnavailable
-			});
-		} catch (error) {
-			api.logger.error("Erro geral no endpoint /api/market/user-inventory/:userId:", error);
-			return res.status(500).json({ success: false, error: "Erro interno ao buscar inventário" });
-		}
-	});
-
-	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
-	app.post("/api/market/transfer", telemetry.outcomeMiddleware, ...marketGuards, async (req, res) => {
-		try {
-			const {
-				fromUserId,
-				toUserId,
-				runas = 0,
-				fishingBuffIds = [],
-				buffs = [],
-				farmItems = [],
-				petalitas = 0
-			} = req.body && typeof req.body === "object" ? req.body : {};
-
-			if (!fromUserId || !toUserId) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "missing_user" });
-				return res
-					.status(400)
-					.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
-			}
-			if (!isValidMarketUserId(fromUserId) || !isValidMarketUserId(toUserId)) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
-				return res
-					.status(400)
-					.json({ success: false, reason: "fromUserId/toUserId em formato inválido" });
-			}
-
-			telemetry.setAttrs({
-				"ravena.from_user.id": telemetry.userIdAttr(fromUserId),
-				"ravena.to_user.id": telemetry.userIdAttr(toUserId),
-				"ravena.user.id": telemetry.userIdAttr(fromUserId)
-			});
-			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
-			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
-			if (cleanFrom === cleanTo) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "same_user" });
-				return res.status(400).json({
-					success: false,
-					reason: "Origem e destino da transferência não podem ser o mesmo usuário."
-				});
-			}
-
-			// Quantidades: inteiros positivos (0/ausente = não transfere). Nunca repassa negativos.
-			const runasAmount = parseMarketQuantity(runas);
-			if (runasAmount === null) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_runas" });
-				return res.status(400).json({
-					success: false,
-					reason: "Quantidade de Runas inválida (use um inteiro positivo)."
-				});
-			}
-			const petalitasAmount = parseMarketQuantity(petalitas);
-			if (petalitasAmount === null) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_petalitas" });
-				return res.status(400).json({
-					success: false,
-					reason: "Quantidade de Petalitas inválida (use um inteiro positivo)."
-				});
-			}
-
-			// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}]),
-			// exigindo inteiros positivos e removendo duplicatas
-			const useFishingBuffIds =
-				fishingBuffIds !== null &&
-				fishingBuffIds !== undefined &&
-				!(Array.isArray(fishingBuffIds) && fishingBuffIds.length === 0);
-			const buffParse = parseMarketBuffIds(useFishingBuffIds ? fishingBuffIds : buffs);
-			if (buffParse.error) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_buffs" });
-				return res.status(400).json({ success: false, reason: buffParse.error });
-			}
-			const targetBuffIds = buffParse.ids;
-
-			// Itens da fazenda agregados por itemId (checagem de estoque usa o total pedido)
-			const farmParse = parseMarketFarmItems(farmItems);
-			if (farmParse.error) {
-				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_farm_items" });
-				return res.status(400).json({ success: false, reason: farmParse.error });
-			}
-			const farmItemsToTransfer = farmParse.items;
-
-			// JIDs normalizados para checagem de pesca
-			const fromUserIds =
-				typeof FishingGame.getAllFishingUserIds === "function"
-					? FishingGame.getAllFishingUserIds(fromUserId)
-					: [fromUserId, cleanFrom, `${cleanFrom}@c.us`, `${cleanFrom}:54@c.us`];
-
-			// ==========================================
-			// 1. PRÉ-VALIDAÇÃO ESTREITA (NENHUM WRITE ANTES)
-			// ==========================================
-
-			// 1.1. Valida Runas
-			if (runasAmount > 0) {
-				const fromAccount = await bankService.getAccount(cleanFrom);
-				if (!fromAccount || fromAccount.runas < runasAmount) {
-					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_runas" });
-					return res.status(400).json({
-						success: false,
-						reason: `Saldo insuficiente de Runas do ofertante (${fromAccount?.runas || 0} / ${runasAmount} ᚱ).`
-					});
-				}
-			}
-
-			// 1.2. Valida Buffs no SQLite
-			if (targetBuffIds.length > 0) {
-				const placeholders = fromUserIds.map(() => "?").join(",");
-				for (const buffId of targetBuffIds) {
-					const row = await api.database.dbGet(
-						"fishing",
-						`SELECT id, effect_type FROM fishing_buffs WHERE id = ? AND user_id IN (${placeholders})`,
-						[buffId, ...fromUserIds]
+						userIds
 					);
-					if (!row) {
-						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "buff_not_owned" });
-						return res.status(400).json({
-							success: false,
-							reason: `Buff de pesca (ID: ${buffId}) não encontrado no inventário do ofertante.`
-						});
-					}
+
+					fishingBuffs = (rows || []).map((r) => {
+						let desc = "";
+						if (r.type === "inventory_slot") {
+							desc = `Aumenta capacidade permanente da mochila (+${r.value || 1} inv)`;
+						} else if (r.type === "max_baits") {
+							desc = `Aumenta limite permanente de iscas (+${r.value || 1} iscas)`;
+						}
+						return {
+							id: r.id,
+							type: r.type,
+							originalName:
+								r.originalName ||
+								(r.type === "inventory_slot" ? "Slot de Inventário" : "Iscas Extras"),
+							remainingUses: r.remainingUses,
+							value: r.value,
+							description: desc
+						};
+					});
+				} catch (fishErr) {
+					api.logger.warn(`Erro ao buscar buffs de pesca para ${userId}: ${fishErr.message}`);
 				}
 
-				// Tetos de inventário (500) e iscas (300) do destinatário
-				if (typeof FishingGame.checkBuffTransferCapacity === "function") {
-					const capCheck = await FishingGame.checkBuffTransferCapacity(toUserId, targetBuffIds);
-					if (!capCheck.ok) {
-						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "buff_cap" });
-						return res.status(400).json({ success: false, reason: capCheck.reason });
-					}
-				}
-			}
-
-			// 1.3. Valida Farm (Petalitas e Itens) no Jardim
-			if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
+				// 3. Fazenda (Jardim das Sombras) - Moeda (Petalitas) + Consumíveis / Decorações
+				let farm = null;
+				let farmUnavailable = false;
 				try {
-					if (petalitasAmount > 0) {
-						const status = await jardimClient.getStatus(cleanFrom);
-						if (!status || Number(status.coins || 0) < petalitasAmount) {
-							telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_petalitas" });
-							return res.status(400).json({
-								success: false,
-								reason: `Saldo insuficiente de Petalitas do ofertante (${status?.coins || 0} / ${petalitasAmount}).`
-							});
-						}
-					}
+					const [statusRes, invRes] = await Promise.all([
+						jardimClient.getStatus(cleanUser),
+						jardimClient.getInventory(cleanUser)
+					]);
 
-					if (farmItemsToTransfer.length > 0) {
-						const inv = await jardimClient.getInventory(cleanFrom);
-						const itemsMap = new Map();
-						for (const it of inv?.items || []) {
-							itemsMap.set(it.itemId, (itemsMap.get(it.itemId) || 0) + (Number(it.quantity) || 0));
-						}
-						for (const reqItem of farmItemsToTransfer) {
-							const currentQty = itemsMap.get(reqItem.itemId) || 0;
-							const needQty = reqItem.amount;
-							if (currentQty < needQty) {
-								telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_farm_item" });
-								return res.status(400).json({
-									success: false,
-									reason: `Item da fazenda insuficiente (${reqItem.name}: possui ${currentQty}, requer ${needQty}).`
-								});
-							}
-						}
-					}
-				} catch (farmValErr) {
-					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "farm_validation_failed" });
-					return res.status(400).json({
-						success: false,
-						reason: `Falha ao validar inventário do Jardim das Sombras: ${farmValErr.message}`
-					});
-				}
-			}
+					const coins = Number(statusRes?.coins || 0);
+					const rawItems = Array.isArray(invRes?.items) ? invRes.items : [];
 
-			// ==========================================
-			// 2. EXECUÇÃO COM SUPORTE A COMPENSAÇÃO/ROLLBACK
-			// ==========================================
+					// Inclui consumíveis (elixires), sementes e decorações com quantidade > 0.
+					// Sementes podem vir com `category: "seed"` em vez de `type` (mesma regra do FazendaCommands).
+					const filteredItems = rawItems
+						.map((it) => ({ it, type: it.type || it.category }))
+						.filter(
+							({ it, type }) =>
+								(type === "consumable" || type === "seed" || type === "decoration") &&
+								(Number(it.quantity) || 0) > 0
+						)
+						.map(({ it, type }) => ({
+							itemId: it.itemId,
+							name: it.name || it.itemId,
+							type,
+							quantity: Number(it.quantity) || 0
+						}));
 
-			let runasTransferred = false;
-			const buffsTransferred = [];
-			let farmTransferred = false;
-
-			// Atributos de negócio no span HTTP desta rota (no-op se OTel desligado). Só contagens.
-			telemetry.setAttrs({
-				"ravena.market.has_runas": runasAmount > 0,
-				"ravena.market.buffs_count": targetBuffIds.length,
-				"ravena.market.farm_items_count": farmItemsToTransfer.length,
-				"ravena.market.has_petalitas": petalitasAmount > 0
-			});
-
-			try {
-				// 2.1. Transfere Runas
-				if (runasAmount > 0) {
-					await telemetry.withSpan("market transfer.runas", () =>
-						bankService.transferRunas(cleanFrom, cleanTo, runasAmount, "MARKET_OFFER_ACCEPTED")
+					farm = {
+						coins,
+						items: filteredItems
+					};
+				} catch (farmErr) {
+					api.logger.warn(
+						`Jardim indisponível para consulta de inventário de ${userId}: ${farmErr.message}`
 					);
-					runasTransferred = true;
-				}
-
-				// 2.2. Transfere Buffs
-				if (targetBuffIds.length > 0) {
-					for (const buffId of targetBuffIds) {
-						const transferRes = await FishingGame.transferBuff(fromUserId, toUserId, buffId);
-						if (transferRes && transferRes.success === false) {
-							throw new Error(transferRes.reason || `Falha ao transferir buff ${buffId}`);
-						}
-						buffsTransferred.push(buffId);
-					}
-				}
-
-				// 2.3. Transfere Fazenda (Petalitas + Itens)
-				if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
-					const itemsToTransfer = farmItemsToTransfer.map((it) => ({
-						itemId: it.itemId,
-						amount: it.amount
-					}));
-					await telemetry.withSpan("market transfer.farm", () =>
-						jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount)
-					);
-					farmTransferred = true;
+					farmUnavailable = true;
 				}
 
 				return res.json({
 					success: true,
-					runas: runasAmount,
-					buffsCount: targetBuffIds.length,
-					farmTransferred
+					runas,
+					rates,
+					fishingBuffs,
+					farm,
+					farmUnavailable
 				});
-			} catch (execErr) {
-				api.logger.error(
-					"Erro durante execução da transferência de mercado, iniciando reversão:",
-					execErr
-				);
-				telemetry.recordError(telemetry.activeSpan(), execErr, "market_transfer_failed");
-				telemetry.addEvent("market.compensation.started", {
-					"ravena.market.revert_runas": runasTransferred,
-					"ravena.market.revert_buffs": buffsTransferred.length
-				});
-				telemetry.setAttrs({ "ravena.market.compensated": true, "app.outcome": "error" });
+			} catch (error) {
+				api.logger.error("Erro geral no endpoint /api/market/user-inventory/:userId:", error);
+				return res.status(500).json({ success: false, error: "Erro interno ao buscar inventário" });
+			}
+		}
+	);
 
-				// REVERSÃO CASO ALGUM PASSO POSTERIOR TENHA FALHADO
-				if (buffsTransferred.length > 0) {
-					for (const buffId of buffsTransferred) {
-						try {
-							await FishingGame.transferBuff(toUserId, fromUserId, buffId, { skipCapCheck: true });
-						} catch (revBuffErr) {
-							api.logger.error(`Falha crítica ao reverter buff ${buffId}: ${revBuffErr.message}`);
+	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
+	app.post(
+		"/api/market/transfer",
+		telemetry.outcomeMiddleware,
+		...marketGuards,
+		async (req, res) => {
+			try {
+				const {
+					fromUserId,
+					toUserId,
+					runas = 0,
+					fishingBuffIds = [],
+					buffs = [],
+					farmItems = [],
+					petalitas = 0
+				} = req.body && typeof req.body === "object" ? req.body : {};
+
+				if (!fromUserId || !toUserId) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "missing_user" });
+					return res
+						.status(400)
+						.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
+				}
+				if (!isValidMarketUserId(fromUserId) || !isValidMarketUserId(toUserId)) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
+					return res
+						.status(400)
+						.json({ success: false, reason: "fromUserId/toUserId em formato inválido" });
+				}
+
+				telemetry.setAttrs({
+					"ravena.from_user.id": telemetry.userIdAttr(fromUserId),
+					"ravena.to_user.id": telemetry.userIdAttr(toUserId),
+					"ravena.user.id": telemetry.userIdAttr(fromUserId)
+				});
+				const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
+				const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
+				if (cleanFrom === cleanTo) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "same_user" });
+					return res.status(400).json({
+						success: false,
+						reason: "Origem e destino da transferência não podem ser o mesmo usuário."
+					});
+				}
+
+				// Quantidades: inteiros positivos (0/ausente = não transfere). Nunca repassa negativos.
+				const runasAmount = parseMarketQuantity(runas);
+				if (runasAmount === null) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_runas" });
+					return res.status(400).json({
+						success: false,
+						reason: "Quantidade de Runas inválida (use um inteiro positivo)."
+					});
+				}
+				const petalitasAmount = parseMarketQuantity(petalitas);
+				if (petalitasAmount === null) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "invalid_petalitas"
+					});
+					return res.status(400).json({
+						success: false,
+						reason: "Quantidade de Petalitas inválida (use um inteiro positivo)."
+					});
+				}
+
+				// Coleta lista de IDs de buffs (compatível com fishingBuffIds e buffs [{id}]),
+				// exigindo inteiros positivos e removendo duplicatas
+				const useFishingBuffIds =
+					fishingBuffIds !== null &&
+					fishingBuffIds !== undefined &&
+					!(Array.isArray(fishingBuffIds) && fishingBuffIds.length === 0);
+				const buffParse = parseMarketBuffIds(useFishingBuffIds ? fishingBuffIds : buffs);
+				if (buffParse.error) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_buffs" });
+					return res.status(400).json({ success: false, reason: buffParse.error });
+				}
+				const targetBuffIds = buffParse.ids;
+
+				// Itens da fazenda agregados por itemId (checagem de estoque usa o total pedido)
+				const farmParse = parseMarketFarmItems(farmItems);
+				if (farmParse.error) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "invalid_farm_items"
+					});
+					return res.status(400).json({ success: false, reason: farmParse.error });
+				}
+				const farmItemsToTransfer = farmParse.items;
+
+				// JIDs normalizados para checagem de pesca
+				const fromUserIds =
+					typeof FishingGame.getAllFishingUserIds === "function"
+						? FishingGame.getAllFishingUserIds(fromUserId)
+						: [fromUserId, cleanFrom, `${cleanFrom}@c.us`, `${cleanFrom}:54@c.us`];
+
+				// ==========================================
+				// 1. PRÉ-VALIDAÇÃO ESTREITA (NENHUM WRITE ANTES)
+				// ==========================================
+
+				// 1.1. Valida Runas
+				if (runasAmount > 0) {
+					const fromAccount = await bankService.getAccount(cleanFrom);
+					if (!fromAccount || fromAccount.runas < runasAmount) {
+						telemetry.setAttrs({
+							"app.outcome": "rejected",
+							"app.reject.reason": "insufficient_runas"
+						});
+						return res.status(400).json({
+							success: false,
+							reason: `Saldo insuficiente de Runas do ofertante (${fromAccount?.runas || 0} / ${runasAmount} ᚱ).`
+						});
+					}
+				}
+
+				// 1.2. Valida Buffs no SQLite
+				if (targetBuffIds.length > 0) {
+					const placeholders = fromUserIds.map(() => "?").join(",");
+					for (const buffId of targetBuffIds) {
+						const row = await api.database.dbGet(
+							"fishing",
+							`SELECT id, effect_type FROM fishing_buffs WHERE id = ? AND user_id IN (${placeholders})`,
+							[buffId, ...fromUserIds]
+						);
+						if (!row) {
+							telemetry.setAttrs({
+								"app.outcome": "rejected",
+								"app.reject.reason": "buff_not_owned"
+							});
+							return res.status(400).json({
+								success: false,
+								reason: `Buff de pesca (ID: ${buffId}) não encontrado no inventário do ofertante.`
+							});
+						}
+					}
+
+					// Tetos de inventário (500) e iscas (300) do destinatário
+					if (typeof FishingGame.checkBuffTransferCapacity === "function") {
+						const capCheck = await FishingGame.checkBuffTransferCapacity(toUserId, targetBuffIds);
+						if (!capCheck.ok) {
+							telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "buff_cap" });
+							return res.status(400).json({ success: false, reason: capCheck.reason });
 						}
 					}
 				}
 
-				if (runasTransferred) {
+				// 1.3. Valida Farm (Petalitas e Itens) no Jardim
+				if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
 					try {
-						await bankService.transferRunas(
-							cleanTo,
-							cleanFrom,
-							runasAmount,
-							"MARKET_TRANSFER_ROLLBACK"
-						);
-					} catch (revRunasErr) {
-						api.logger.error(
-							`Falha crítica ao reverter Runas (${runasAmount}): ${revRunasErr.message}`
-						);
+						if (petalitasAmount > 0) {
+							const status = await jardimClient.getStatus(cleanFrom);
+							if (!status || Number(status.coins || 0) < petalitasAmount) {
+								telemetry.setAttrs({
+									"app.outcome": "rejected",
+									"app.reject.reason": "insufficient_petalitas"
+								});
+								return res.status(400).json({
+									success: false,
+									reason: `Saldo insuficiente de Petalitas do ofertante (${status?.coins || 0} / ${petalitasAmount}).`
+								});
+							}
+						}
+
+						if (farmItemsToTransfer.length > 0) {
+							const inv = await jardimClient.getInventory(cleanFrom);
+							const itemsMap = new Map();
+							for (const it of inv?.items || []) {
+								itemsMap.set(
+									it.itemId,
+									(itemsMap.get(it.itemId) || 0) + (Number(it.quantity) || 0)
+								);
+							}
+							for (const reqItem of farmItemsToTransfer) {
+								const currentQty = itemsMap.get(reqItem.itemId) || 0;
+								const needQty = reqItem.amount;
+								if (currentQty < needQty) {
+									telemetry.setAttrs({
+										"app.outcome": "rejected",
+										"app.reject.reason": "insufficient_farm_item"
+									});
+									return res.status(400).json({
+										success: false,
+										reason: `Item da fazenda insuficiente (${reqItem.name}: possui ${currentQty}, requer ${needQty}).`
+									});
+								}
+							}
+						}
+					} catch (farmValErr) {
+						telemetry.setAttrs({
+							"app.outcome": "rejected",
+							"app.reject.reason": "farm_validation_failed"
+						});
+						return res.status(400).json({
+							success: false,
+							reason: `Falha ao validar inventário do Jardim das Sombras: ${farmValErr.message}`
+						});
 					}
 				}
 
-				return res.status(500).json({
-					success: false,
-					reason: `Erro na transferência de itens externos: ${execErr.message}. Alterações prévias foram revertidas.`
+				// ==========================================
+				// 2. EXECUÇÃO COM SUPORTE A COMPENSAÇÃO/ROLLBACK
+				// ==========================================
+
+				let runasTransferred = false;
+				const buffsTransferred = [];
+				let farmTransferred = false;
+
+				// Atributos de negócio no span HTTP desta rota (no-op se OTel desligado). Só contagens.
+				telemetry.setAttrs({
+					"ravena.market.has_runas": runasAmount > 0,
+					"ravena.market.buffs_count": targetBuffIds.length,
+					"ravena.market.farm_items_count": farmItemsToTransfer.length,
+					"ravena.market.has_petalitas": petalitasAmount > 0
 				});
+
+				try {
+					// 2.1. Transfere Runas
+					if (runasAmount > 0) {
+						await telemetry.withSpan("market transfer.runas", () =>
+							bankService.transferRunas(cleanFrom, cleanTo, runasAmount, "MARKET_OFFER_ACCEPTED")
+						);
+						runasTransferred = true;
+					}
+
+					// 2.2. Transfere Buffs
+					if (targetBuffIds.length > 0) {
+						for (const buffId of targetBuffIds) {
+							const transferRes = await FishingGame.transferBuff(fromUserId, toUserId, buffId);
+							if (transferRes && transferRes.success === false) {
+								throw new Error(transferRes.reason || `Falha ao transferir buff ${buffId}`);
+							}
+							buffsTransferred.push(buffId);
+						}
+					}
+
+					// 2.3. Transfere Fazenda (Petalitas + Itens)
+					if (petalitasAmount > 0 || farmItemsToTransfer.length > 0) {
+						const itemsToTransfer = farmItemsToTransfer.map((it) => ({
+							itemId: it.itemId,
+							amount: it.amount
+						}));
+						await telemetry.withSpan("market transfer.farm", () =>
+							jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount)
+						);
+						farmTransferred = true;
+					}
+
+					return res.json({
+						success: true,
+						runas: runasAmount,
+						buffsCount: targetBuffIds.length,
+						farmTransferred
+					});
+				} catch (execErr) {
+					api.logger.error(
+						"Erro durante execução da transferência de mercado, iniciando reversão:",
+						execErr
+					);
+					telemetry.recordError(telemetry.activeSpan(), execErr, "market_transfer_failed");
+					telemetry.addEvent("market.compensation.started", {
+						"ravena.market.revert_runas": runasTransferred,
+						"ravena.market.revert_buffs": buffsTransferred.length
+					});
+					telemetry.setAttrs({ "ravena.market.compensated": true, "app.outcome": "error" });
+
+					// REVERSÃO CASO ALGUM PASSO POSTERIOR TENHA FALHADO
+					if (buffsTransferred.length > 0) {
+						for (const buffId of buffsTransferred) {
+							try {
+								await FishingGame.transferBuff(toUserId, fromUserId, buffId, {
+									skipCapCheck: true
+								});
+							} catch (revBuffErr) {
+								api.logger.error(`Falha crítica ao reverter buff ${buffId}: ${revBuffErr.message}`);
+							}
+						}
+					}
+
+					if (runasTransferred) {
+						try {
+							await bankService.transferRunas(
+								cleanTo,
+								cleanFrom,
+								runasAmount,
+								"MARKET_TRANSFER_ROLLBACK"
+							);
+						} catch (revRunasErr) {
+							api.logger.error(
+								`Falha crítica ao reverter Runas (${runasAmount}): ${revRunasErr.message}`
+							);
+						}
+					}
+
+					return res.status(500).json({
+						success: false,
+						reason: `Erro na transferência de itens externos: ${execErr.message}. Alterações prévias foram revertidas.`
+					});
+				}
+			} catch (error) {
+				api.logger.error("Erro geral na rota /api/market/transfer:", error);
+				return res
+					.status(500)
+					.json({ success: false, reason: error.message || "Erro interno de transferência" });
 			}
-		} catch (error) {
-			api.logger.error("Erro geral na rota /api/market/transfer:", error);
-			return res
-				.status(500)
-				.json({ success: false, reason: error.message || "Erro interno de transferência" });
 		}
-	});
+	);
 }
 
 module.exports = { registerFeaturesRoutes };

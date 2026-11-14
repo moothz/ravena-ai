@@ -55,7 +55,11 @@ function withSpan(name, opts, fn) {
 		fn = opts;
 		opts = {};
 	}
-	const spanOpts = { kind: opts.kind ?? SpanKind.INTERNAL, attributes: cleanAttrs(opts.attributes), links: opts.links };
+	const spanOpts = {
+		kind: opts.kind ?? SpanKind.INTERNAL,
+		attributes: cleanAttrs(opts.attributes),
+		links: opts.links
+	};
 	const parentCtx = opts.root ? ROOT_CONTEXT : context.active();
 	return tracer.startActiveSpan(name, spanOpts, parentCtx, (span) => {
 		let result;
@@ -88,7 +92,11 @@ function withSpan(name, opts, fn) {
 function startSpan(name, opts = {}, parentCtx) {
 	return tracer.startSpan(
 		name,
-		{ kind: opts.kind ?? SpanKind.INTERNAL, attributes: cleanAttrs(opts.attributes), startTime: opts.startTime },
+		{
+			kind: opts.kind ?? SpanKind.INTERNAL,
+			attributes: cleanAttrs(opts.attributes),
+			startTime: opts.startTime
+		},
 		parentCtx || context.active()
 	);
 }
@@ -151,7 +159,8 @@ function markOutcomeOnFinish(res) {
 		if (hasOutcome(span)) return;
 		const code = res.statusCode;
 		if (code >= 500) span.setAttribute("app.outcome", "error");
-		else if (code >= 400) span.setAttributes({ "app.outcome": "rejected", "app.reject.reason": `http_${code}` });
+		else if (code >= 400)
+			span.setAttributes({ "app.outcome": "rejected", "app.reject.reason": `http_${code}` });
 		else span.setAttribute("app.outcome", "ok");
 	});
 }
@@ -183,7 +192,8 @@ for (const [envName, def] of [
 
 function partnerOf(host) {
 	if (!host) return null;
-	if (partnerHosts.has(host)) return host.endsWith(":3040") || /jardim/i.test(host) ? "jardim" : "waifuletes";
+	if (partnerHosts.has(host))
+		return host.endsWith(":3040") || /jardim/i.test(host) ? "jardim" : "waifuletes";
 	return null;
 }
 
@@ -208,11 +218,16 @@ function noteDownstream(commandSpan, host, statusCode, method, path) {
 	if (mutating) {
 		commandSpan.setAttributes({
 			"ravena.downstream.last_action_status": code,
-			"ravena.downstream.last_action": `${String(method).toUpperCase()} ${path || ""}`.trim().slice(0, 80)
+			"ravena.downstream.last_action": `${String(method).toUpperCase()} ${path || ""}`
+				.trim()
+				.slice(0, 80)
 		});
 	}
 	if (code >= 400 || code === 0) {
-		commandSpan.setAttribute("ravena.downstream.failures", (attrs["ravena.downstream.failures"] || 0) + 1);
+		commandSpan.setAttribute(
+			"ravena.downstream.failures",
+			(attrs["ravena.downstream.failures"] || 0) + 1
+		);
 	}
 }
 
@@ -222,7 +237,10 @@ function finalizeCommandOutcome(span) {
 	const a = span.attributes || {};
 	const last = a["ravena.downstream.last_action_status"] ?? a["ravena.downstream.last_status"];
 	if (last === 0 || last >= 500) {
-		span.setAttributes({ "app.outcome": "error", "app.reject.reason": `downstream_${last || "network"}` });
+		span.setAttributes({
+			"app.outcome": "error",
+			"app.reject.reason": `downstream_${last || "network"}`
+		});
 	} else if (last >= 400) {
 		span.setAttributes({ "app.outcome": "rejected", "app.reject.reason": `downstream_${last}` });
 	} else {

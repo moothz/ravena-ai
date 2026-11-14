@@ -3663,7 +3663,9 @@ class LLMService {
 					queue.add = (task, opts) => {
 						const enqueuedAt = Date.now();
 						const bound = telemetry.context.bind(telemetry.context.active(), async (...a) => {
-							telemetry.addEvent("llm.dequeued", { "ravena.llm.queue_wait_ms": Date.now() - enqueuedAt });
+							telemetry.addEvent("llm.dequeued", {
+								"ravena.llm.queue_wait_ms": Date.now() - enqueuedAt
+							});
 							telemetry.setAttrs({ "ravena.llm.queue_wait_ms": Date.now() - enqueuedAt });
 							return task(...a);
 						});
@@ -3676,7 +3678,11 @@ class LLMService {
 		);
 	};
 
-	const PROVIDER_KIND = { openaiCompletion: "openai", openrouterCompletion: "openrouter", ollamaCompletion: "ollama" };
+	const PROVIDER_KIND = {
+		openaiCompletion: "openai",
+		openrouterCompletion: "openrouter",
+		ollamaCompletion: "ollama"
+	};
 	for (const [method, kind] of Object.entries(PROVIDER_KIND)) {
 		const orig = proto[method];
 		if (typeof orig !== "function") continue;
@@ -3702,15 +3708,22 @@ class LLMService {
 	const origTrack = proto._trackUsage;
 	proto._trackUsage = function (provider, response, model, options, isSuccess = true) {
 		const span = telemetry.activeSpan();
-		if (telemetry.isEnabled() && span && span.isRecording() && span.attributes?.["gen_ai.operation.name"]) {
+		if (
+			telemetry.isEnabled() &&
+			span &&
+			span.isRecording() &&
+			span.attributes?.["gen_ai.operation.name"]
+		) {
 			try {
 				const u = response?.usage || {};
 				const inTok = u.prompt_tokens ?? response?.prompt_eval_count ?? 0;
 				const outTok = u.completion_tokens ?? response?.eval_count ?? 0;
 				const prev = span.attributes;
 				span.setAttributes({
-					"gen_ai.usage.input_tokens": (prev["gen_ai.usage.input_tokens"] || 0) + (Number(inTok) || 0),
-					"gen_ai.usage.output_tokens": (prev["gen_ai.usage.output_tokens"] || 0) + (Number(outTok) || 0),
+					"gen_ai.usage.input_tokens":
+						(prev["gen_ai.usage.input_tokens"] || 0) + (Number(inTok) || 0),
+					"gen_ai.usage.output_tokens":
+						(prev["gen_ai.usage.output_tokens"] || 0) + (Number(outTok) || 0),
 					"ravena.llm.rounds": (prev["ravena.llm.rounds"] || 0) + 1
 				});
 				if (response?.model) span.setAttribute("gen_ai.response.model", String(response.model));

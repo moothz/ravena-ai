@@ -10,7 +10,8 @@
  */
 "use strict";
 
-const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+const endpoint =
+	process.env.OTEL_EXPORTER_OTLP_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
 const disabled = String(process.env.OTEL_SDK_DISABLED || "").toLowerCase() === "true";
 
 if (endpoint && !disabled) {
@@ -23,24 +24,35 @@ if (endpoint && !disabled) {
 
 function compactDiagLogger(base) {
 	const last = new Map();
-	const wrap = (level) => (msg, ...args) => {
-		let text = String(msg ?? "");
-		if (text.startsWith("{")) {
-			try {
-				const parsed = JSON.parse(text);
-				text = parsed.message || parsed.code || text;
-			} catch {}
-		}
-		const first = String(text).split("\n")[0].slice(0, 200);
-		const detail = args.map((a) => (a && a.message ? a.message : typeof a === "string" ? a : "")).find(Boolean) || "";
-		const line = `[otel] ${first}${detail ? ` — ${String(detail).split("\n")[0].slice(0, 200)}` : ""}`;
-		const now = Date.now();
-		if (now - (last.get(line) || 0) < 60000) return;
-		last.set(line, now);
-		if (last.size > 200) last.clear();
-		base[level](line);
+	const wrap =
+		(level) =>
+		(msg, ...args) => {
+			let text = String(msg ?? "");
+			if (text.startsWith("{")) {
+				try {
+					const parsed = JSON.parse(text);
+					text = parsed.message || parsed.code || text;
+				} catch {}
+			}
+			const first = String(text).split("\n")[0].slice(0, 200);
+			const detail =
+				args
+					.map((a) => (a && a.message ? a.message : typeof a === "string" ? a : ""))
+					.find(Boolean) || "";
+			const line = `[otel] ${first}${detail ? ` — ${String(detail).split("\n")[0].slice(0, 200)}` : ""}`;
+			const now = Date.now();
+			if (now - (last.get(line) || 0) < 60000) return;
+			last.set(line, now);
+			if (last.size > 200) last.clear();
+			base[level](line);
+		};
+	return {
+		error: wrap("error"),
+		warn: wrap("warn"),
+		info: wrap("info"),
+		debug: wrap("debug"),
+		verbose: wrap("verbose")
 	};
-	return { error: wrap("error"), warn: wrap("warn"), info: wrap("info"), debug: wrap("debug"), verbose: wrap("verbose") };
 }
 
 function start() {
@@ -59,7 +71,10 @@ function start() {
 
 	// Erros de export (collector fora do ar) nunca derrubam o processo. O logger de diagnóstico
 	// imprime só a 1ª linha (sem stack) e no máximo 1 vez por minuto por mensagem.
-	diag.setLogger(compactDiagLogger(new DiagConsoleLogger()), DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR);
+	diag.setLogger(
+		compactDiagLogger(new DiagConsoleLogger()),
+		DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR
+	);
 
 	let version = "unknown";
 	try {
@@ -70,7 +85,8 @@ function start() {
 		"service.name": process.env.OTEL_SERVICE_NAME || "ravena-ai",
 		"service.namespace": "ravena",
 		"service.version": version,
-		"deployment.environment.name": process.env.OTEL_DEPLOYMENT_ENVIRONMENT || process.env.NODE_ENV || "production"
+		"deployment.environment.name":
+			process.env.OTEL_DEPLOYMENT_ENVIRONMENT || process.env.NODE_ENV || "production"
 	});
 
 	// Remove query string (pode ter key=/token=) e o token de bot do Telegram (/bot<token>/metodo).
@@ -124,7 +140,8 @@ function start() {
 				// Chamadas de saída sem span pai (health checks periódicos, timers) não viram traces soltos.
 				requireParentforOutgoingSpans: true,
 				ignoreIncomingRequestHook: (req) => IGNORED_INCOMING.some((re) => re.test(req.url || "")),
-				ignoreOutgoingRequestHook: (opts) => IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
+				ignoreOutgoingRequestHook: (opts) =>
+					IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
 				// URL de saída sem query string e sem token de bot do Telegram (o collector repete a máscara).
 				requestHook: (span, req) => {
 					if (typeof req.getHeader !== "function") {
@@ -134,7 +151,14 @@ function start() {
 							span.setAttribute("http.target", sanitizePath(req.url));
 							// query de entrada: só os nomes dos parâmetros (valores podem ter texto livre/IDs)
 							const q = req.url.split("?")[1];
-							if (q) span.setAttribute("url.query", q.split("&").map((kv) => `${kv.split("=")[0].slice(0, 40)}=REDACTED`).join("&"));
+							if (q)
+								span.setAttribute(
+									"url.query",
+									q
+										.split("&")
+										.map((kv) => `${kv.split("=")[0].slice(0, 40)}=REDACTED`)
+										.join("&")
+								);
 						}
 						return;
 					}
@@ -146,10 +170,14 @@ function start() {
 				},
 				responseHook: (span, res) => {
 					// resposta de cliente (IncomingMessage com statusCode e sem método)
-					if (res && typeof res.statusCode === "number" && !res.method) noteResponse(span, res.statusCode);
+					if (res && typeof res.statusCode === "number" && !res.method)
+						noteResponse(span, res.statusCode);
 				},
 				// Não grava headers.
-				headersToSpanAttributes: { client: { requestHeaders: [], responseHeaders: [] }, server: { requestHeaders: [], responseHeaders: [] } }
+				headersToSpanAttributes: {
+					client: { requestHeaders: [], responseHeaders: [] },
+					server: { requestHeaders: [], responseHeaders: [] }
+				}
 			}),
 			new UndiciInstrumentation({
 				requireParentforSpans: true,
@@ -174,7 +202,10 @@ function start() {
 
 	// O construtor do NodeSDK troca o logger de diagnóstico quando OTEL_LOG_LEVEL está definido;
 	// reaplica o logger compacto (sem stack, com limite de frequência).
-	diag.setLogger(compactDiagLogger(new DiagConsoleLogger()), DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR);
+	diag.setLogger(
+		compactDiagLogger(new DiagConsoleLogger()),
+		DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR
+	);
 	sdk.start();
 	globalThis.__RAVENA_OTEL_ENABLED = true;
 
@@ -183,5 +214,7 @@ function start() {
 	globalThis.__RAVENA_OTEL_SHUTDOWN = () =>
 		Promise.race([sdk.shutdown().catch(() => {}), new Promise((r) => setTimeout(r, 3000).unref())]);
 
-	console.log(`[otel] telemetria ligada → ${endpoint} (service.name=${process.env.OTEL_SERVICE_NAME || "ravena-ai"})`);
+	console.log(
+		`[otel] telemetria ligada → ${endpoint} (service.name=${process.env.OTEL_SERVICE_NAME || "ravena-ai"})`
+	);
 }

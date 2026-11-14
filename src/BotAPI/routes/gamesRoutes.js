@@ -127,7 +127,10 @@ function registerGamesRoutes(api) {
 			const credited = await telemetry.withSpan("fazenda harvest.reconcile", () =>
 				ShadowGardenBonusService.reconcileHarvestBonus(userId)
 			);
-			telemetry.setAttrs({ "ravena.fazenda.credited_count": credited.length, "ravena.fazenda.harvested_types": harvested.length });
+			telemetry.setAttrs({
+				"ravena.fazenda.credited_count": credited.length,
+				"ravena.fazenda.harvested_types": harvested.length
+			});
 
 			if (credited.length > 0) {
 				const delivered = await sendGameNotice(

@@ -1384,7 +1384,16 @@ class CommandHandler {
 	 * Executa um comando fixo dentro de um span de negócio (no-op se o OpenTelemetry estiver
 	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
 	 */
-	executeFixedCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
+	executeFixedCommand(
+		bot,
+		message,
+		command,
+		args,
+		group,
+		silent = false,
+		silentReaction = false,
+		isAuto = false
+	) {
 		return telemetry.withCommandSpan(
 			`command ${command?.name ?? "unknown"}`,
 			{
@@ -1397,7 +1406,16 @@ class CommandHandler {
 				}
 			},
 			(span) =>
-				this._executeFixedCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto)
+				this._executeFixedCommandImpl(
+					bot,
+					message,
+					command,
+					args,
+					group,
+					silent,
+					silentReaction,
+					isAuto
+				)
 		);
 	}
 
@@ -1782,7 +1800,16 @@ class CommandHandler {
 	 * Executa um comando personalizado (nome livre, definido pelo grupo → span fixo "command custom") dentro de um span de negócio (no-op se o OpenTelemetry estiver
 	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
 	 */
-	executeCustomCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
+	executeCustomCommand(
+		bot,
+		message,
+		command,
+		args,
+		group,
+		silent = false,
+		silentReaction = false,
+		isAuto = false
+	) {
 		return telemetry.withCommandSpan(
 			"command custom",
 			{
@@ -1795,7 +1822,16 @@ class CommandHandler {
 				}
 			},
 			(span) =>
-				this._executeCustomCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto)
+				this._executeCustomCommandImpl(
+					bot,
+					message,
+					command,
+					args,
+					group,
+					silent,
+					silentReaction,
+					isAuto
+				)
 		);
 	}
 
