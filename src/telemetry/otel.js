@@ -99,7 +99,7 @@ function start() {
 			}),
 			new ExpressInstrumentation({ ignoreLayersType: ["middleware", "request_handler"] }),
 			new IORedisInstrumentation({ requireParentSpan: true }),
-			new RuntimeNodeInstrumentation({ monitoringPrecision: 5000 })
+			new RuntimeNodeInstrumentation()
 		]
 	});
 
