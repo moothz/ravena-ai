@@ -3165,10 +3165,10 @@ Break down the cost by category and provide a total estimated cost.`;
 			const state = args[2].toLowerCase();
 
 			// Verifica se a plataforma é válida
-			if (!["twitch", "kick", "youtube"].includes(platform)) {
+			if (!["twitch", "kick", "youtube", "tiktok"].includes(platform)) {
 				return new ReturnMessage({
 					chatId,
-					content: `Plataforma inválida: ${platform}. Use 'twitch', 'kick' ou 'youtube'.`
+					content: `Plataforma inválida: ${platform}. Use 'twitch', 'kick', 'youtube' ou 'tiktok'.`
 				});
 			}
 
@@ -3219,6 +3219,10 @@ Break down the cost by category and provide a total estimated cost.`;
 				eventData.title = `Não acredite nos seus olhos! ${channelName} ao vivo agora!`;
 				eventData.url = `https://youtube.com/watch?v=simulado${Math.floor(Math.random() * 10000)}`;
 				eventData.videoId = args[3] ?? `simulado${Math.floor(Math.random() * 10000)}`;
+			} else if (platform === "tiktok") {
+				eventData.title = `${channelName} ao vivo no TikTok (simulação)!`;
+				eventData.url = `https://www.tiktok.com/@${channelName}/live`;
+				eventData.roomId = `simulado${Math.floor(Math.random() * 10000)}`;
 			}
 
 			// Adicionar thumbnail simulada
@@ -6270,6 +6274,14 @@ Retorne no formato JSON rigoroso:
 		statusText += `\n🔴 *YouTube (RSS XML):*\n`;
 		statusText += `• Canais monitorados: *${m.youtube.channelCount}*\n`;
 		statusText += `• Intervalo de busca: *${m.youtube.intervalSec}s*\n`;
+
+		if (m.tiktok) {
+			statusText += `\n🎵 *TikTok (scraping):*\n`;
+			statusText += `• Canais monitorados: *${m.tiktok.channelCount}*\n`;
+			statusText += `• Intervalo de busca (lives): *${m.tiktok.intervalSec}s*\n`;
+			statusText += `• Checagem de vídeos: a cada *${Math.round(m.tiktok.videoCheckIntervalSec / 60)}min* por perfil\n`;
+			statusText += `• Chave Euler (fallback): ${m.tiktok.hasSignApiKey ? "✅" : "❌"}\n`;
+		}
 
 		statusText += `\n⚙️ *Monitoramento Global:* ${m.isMonitoring ? "🟢 Rodando" : "🟡 Pausado"}`;
 

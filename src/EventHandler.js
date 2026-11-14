@@ -2514,17 +2514,20 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							bot?.id || null
 						);
 
-						// Limpeza das configurações de monitoramento de streams do grupo (Twitch, Kick, YouTube)
+						// Limpeza das configurações de monitoramento de streams do grupo (Twitch, Kick, YouTube, TikTok)
 						let streamsRemovedText = "";
 						const oldTwitch = Array.isArray(group.twitch) ? [...group.twitch] : [];
 						const oldKick = Array.isArray(group.kick) ? [...group.kick] : [];
 						const oldYoutube = Array.isArray(group.youtube) ? [...group.youtube] : [];
-						const totalStreams = oldTwitch.length + oldKick.length + oldYoutube.length;
+						const oldTiktok = Array.isArray(group.tiktok) ? [...group.tiktok] : [];
+						const totalStreams =
+							oldTwitch.length + oldKick.length + oldYoutube.length + oldTiktok.length;
 
 						if (totalStreams > 0) {
 							group.twitch = [];
 							group.kick = [];
 							group.youtube = [];
+							group.tiktok = [];
 
 							const parts = [];
 							if (oldTwitch.length > 0) {
@@ -2538,6 +2541,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							if (oldYoutube.length > 0) {
 								parts.push(
 									`${oldYoutube.length} YouTube (${oldYoutube.map((c) => c.channel).join(", ")})`
+								);
+							}
+							if (oldTiktok.length > 0) {
+								parts.push(
+									`${oldTiktok.length} TikTok (${oldTiktok.map((c) => c.channel).join(", ")})`
 								);
 							}
 							streamsRemovedText = `\n📺 *Streams Removidas (${totalStreams}):* ${parts.join(" | ")}`;
@@ -2598,6 +2606,22 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 											streamMonitor.unsubscribe(chName, "youtube");
 											this.logger.debug(
 												`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
+											);
+										}
+									}
+
+									for (const ch of oldTiktok) {
+										const chName = ch.channel;
+										const stillUsed = allGroups.some(
+											(g) =>
+												g.id !== groupId &&
+												Array.isArray(g.tiktok) &&
+												g.tiktok.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+										);
+										if (!stillUsed) {
+											streamMonitor.unsubscribe(chName, "tiktok");
+											this.logger.debug(
+												`[processGroupLeave] Desinscrito perfil TikTok sem grupos restantes: ${chName}`
 											);
 										}
 									}

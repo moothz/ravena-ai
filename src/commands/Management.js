@@ -15,6 +15,15 @@ const GroupMonitoringService = require("../services/GroupMonitoringService");
 const PvSafetyService = require("../services/PvSafetyService");
 const storageService = require("../services/StorageService");
 
+// Plataformas com vídeos gravados além de lives (aceitam o modo "video" em !g-<plataforma>-midia)
+const VIDEO_PLATFORMS = new Set(["youtube", "tiktok"]);
+const STREAM_PLATFORM_LABELS = {
+	twitch: "Twitch",
+	kick: "Kick",
+	youtube: "YouTube",
+	tiktok: "TikTok"
+};
+
 class Management {
 	constructor() {
 		this.logger = new Logger("management");
@@ -488,6 +497,51 @@ class Management {
 				method: "setYoutubeForwardChannel",
 				description:
 					"Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp"
+			},
+			"tiktok-canal": {
+				method: "toggleTiktokChannel",
+				description: "Adiciona/remove perfil do TikTok para monitoramento de lives e vídeos"
+			},
+			"tiktok-mudarTitulo": {
+				method: "toggleTiktokTitleChange",
+				description: "Ativa/desativa mudança de título do grupo para lives do TikTok"
+			},
+			"tiktok-mudarFoto": {
+				method: "toggleTiktokPhotoChange",
+				description: "Ativa/desativa mudança de foto do grupo para lives do TikTok"
+			},
+			"tiktok-titulo": {
+				method: "setTiktokTitle",
+				description: "Define título do grupo para lives de perfil do TikTok"
+			},
+			"tiktok-fotoGrupo": {
+				method: "setTiktokGroupPhoto",
+				description: "Define foto do grupo para lives de perfil do TikTok"
+			},
+			"tiktok-midia": {
+				method: "setTiktokMedia",
+				description: "Define mídia para notificação de vídeo novo ou live do TikTok"
+			},
+			"tiktok-midia-del": {
+				method: "deleteTiktokMedia",
+				description: "Remove mídia específica da notificação de perfil do TikTok"
+			},
+			"tiktok-usarIA": {
+				method: "toggleTiktokAI",
+				description: "Ativa/desativa uso de IA para gerar mensagens de notificação"
+			},
+			"tiktok-usarThumbnail": {
+				method: "toggleTiktokThumbnail",
+				description: "Ativa/desativa o envio da capa da live/vídeo junto com o texto"
+			},
+			"tiktok-marcar": {
+				method: "toggleTiktokMentions",
+				description: "Ativa/desativa menção a todos os membros nas notificações do TikTok"
+			},
+			"tiktok-encaminharCanal": {
+				method: "setTiktokForwardChannel",
+				description:
+					"Ativa/desativa encaminhamento de notificações do TikTok para canal do WhatsApp"
 			},
 			variaveis: {
 				method: "listVariables",
@@ -2099,6 +2153,7 @@ class Management {
 			const twitchChannels = Array.isArray(group.twitch) ? group.twitch : [];
 			const kickChannels = Array.isArray(group.kick) ? group.kick : [];
 			const youtubeChannels = Array.isArray(group.youtube) ? group.youtube : [];
+			const tiktokChannels = Array.isArray(group.tiktok) ? group.tiktok : [];
 
 			// Função auxiliar para formatar as configurações de mídia
 			const formatMediaConfig = (config) => {
@@ -2374,12 +2429,46 @@ class Management {
 				}
 			}
 
+			// TikTok
+			if (tiktokChannels.length > 0) {
+				infoMessage += `*TikTok (${tiktokChannels.length}):*\n`;
+
+				for (const channel of tiktokChannels) {
+					infoMessage += `- *${channel.channel}*:\n`;
+
+					if (channel.pausedUntil && new Date(channel.pausedUntil) > new Date()) {
+						infoMessage += `  • Status: ⏸️ *PAUSADO* (até ${new Date(channel.pausedUntil).toLocaleString("pt-BR")})\n`;
+					}
+
+					infoMessage += `  • Notificar vídeos: ${channel.notifyVideos !== false ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Notificar lives: ${channel.notifyLives !== false ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Mídias Vídeo Novo: ${formatMediaConfig(channel.videoConfig)}\n`;
+					infoMessage += `  • Mídias Online: ${formatMediaConfig(channel.onConfig)}\n`;
+					infoMessage += `  • Mídias Offline: ${formatMediaConfig(channel.offConfig)}\n`;
+					infoMessage += `  • Mudar título do grupo: ${channel.changeTitleOnEvent ? "Sim" : "Não"}\n`;
+
+					if (channel.changeTitleOnEvent) {
+						if (channel.onlineTitle) {
+							infoMessage += `  • Título Online: "${channel.onlineTitle}"\n`;
+						}
+						if (channel.offlineTitle) {
+							infoMessage += `  • Título Offline: "${channel.offlineTitle}"\n`;
+						}
+					}
+
+					infoMessage += `  • Usar IA: ${channel.useAI ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Mudar foto do grupo: ${channel.changePhotoOnEvent ? "Sim" : "Não"}\n`;
+					infoMessage += "\n";
+				}
+			}
+
 			if (
 				twitchChannels.length === 0 &&
 				kickChannels.length === 0 &&
-				youtubeChannels.length === 0
+				youtubeChannels.length === 0 &&
+				tiktokChannels.length === 0
 			) {
-				infoMessage += `Nenhum canal configurado. Use !g-twitch-canal, !g-kick-canal ou !g-youtube-canal para adicionar.\n\n`;
+				infoMessage += `Nenhum canal configurado. Use !g-twitch-canal, !g-kick-canal, !g-youtube-canal ou !g-tiktok-canal para adicionar.\n\n`;
 			}
 
 			// Adiciona informação sobre comandos personalizados
@@ -4017,6 +4106,14 @@ class Management {
 			} else {
 				defaultText = `⚫ A live de *{canal}* no YouTube foi finalizada.`;
 			}
+		} else if (platform === "tiktok") {
+			if (eventType === "video") {
+				defaultText = `*⚠️ Vídeo novo no TikTok! ⚠️*\n\n*{author}:* {title}\n{link}`;
+			} else if (eventType === "on") {
+				defaultText = `🔴 *{canal}* está AO VIVO no TikTok!\n\n*{titulo}*\nVenha assistir: {link}`;
+			} else {
+				defaultText = `⚫ A live de *{canal}* no TikTok foi finalizada.`;
+			}
 		}
 
 		return {
@@ -5214,6 +5311,333 @@ class Management {
 	}
 
 	/**
+	 * Processes a string to extract and sanitize a TikTok username.
+	 * Accepts "usuario", "@usuario" or profile/live URLs (tiktok.com/@usuario/live).
+	 * @param {string} inputString - The raw input string
+	 * @returns {string} The sanitized TikTok username, or an empty string if input is invalid.
+	 */
+	sanitizeTiktokChannelName(inputString) {
+		if (typeof inputString !== "string") {
+			return "";
+		}
+
+		const withoutUrl = inputString
+			.trim()
+			.replace(/^((https?:\/\/)?(www\.|m\.)?tiktok\.com\/)?@?/i, "")
+			.split(/[/?#]/)[0];
+
+		return withoutUrl.toLowerCase().replace(/[^a-z0-9_.]/g, "");
+	}
+
+	/**
+	 * Toggles monitoring of a TikTok profile (lives and new videos)
+	 * @param {WhatsAppBot} bot - The bot instance
+	 * @param {Object} message - The message object
+	 * @param {Array} args - Command arguments
+	 * @param {Object} group - The group object
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async toggleTiktokChannel(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"Por favor, forneça o usuário do TikTok. Exemplo: !g-tiktok-canal usuario (ou o link do perfil)"
+			});
+		}
+
+		const channelName = this.sanitizeTiktokChannelName(args[0]);
+
+		if (!channelName) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "Usuário inválido para o TikTok. Por favor, forneça um usuário válido."
+			});
+		}
+
+		const channels = this.getChannelConfig(group, "tiktok");
+		const existingChannel = this.findChannelConfig(group, "tiktok", channelName);
+
+		if (existingChannel) {
+			group.tiktok = channels.filter((c) => c.channel.toLowerCase() !== channelName.toLowerCase());
+
+			await this.database.saveGroup(group);
+
+			if (bot.streamMonitor) {
+				bot.streamMonitor.unsubscribe(channelName, "tiktok");
+			}
+
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Perfil do TikTok removido: ${channelName}`
+			});
+		}
+
+		if (bot.streamMonitor) {
+			const channelExists = await bot.streamMonitor.tiktokChannelExists(channelName);
+			if (!channelExists) {
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `❌ Erro: O perfil "${channelName}" não existe no TikTok. Verifique se o usuário ou link está correto.`
+				});
+			}
+		}
+
+		const newChannel = {
+			channel: channelName,
+			notifyVideos: true,
+			notifyLives: true,
+			videoConfig: this.createDefaultNotificationConfig("tiktok", channelName, "video"),
+			onConfig: this.createDefaultNotificationConfig("tiktok", channelName, "on"),
+			offConfig: {
+				media: []
+			},
+			changeTitleOnEvent: true,
+			useAI: false,
+			useThumbnail: true,
+			mentionAllMembers: false
+		};
+
+		channels.push(newChannel);
+		await this.database.saveGroup(group);
+
+		await this._refreshStreamBots(group);
+
+		if (!bot.streamMonitor) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					`Perfil do TikTok adicionado: ${channelName}\n\n` +
+					`⚠️ Aviso: O monitoramento de canais não está inicializado no bot. Entre em contato com o administrador.`
+			});
+		}
+
+		bot.streamMonitor.subscribe(channelName, "tiktok");
+
+		if (bot.grupoLogs) {
+			bot.sendMessage(
+				bot.grupoLogs,
+				`Novo perfil do tiktok adicionado em '${group.name ?? "grupo"}' (${group.id}):\n- tiktok.com/@${channelName}`
+			);
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content:
+				`Perfil do TikTok adicionado: ${channelName}\n\n` +
+				`Configurações padrão definidas para Vídeos Novos e Lives. Use !g-tiktok-midia [video|on|off] ${channelName} para personalizar.`
+		});
+	}
+
+	/**
+	 * Resolve o canal informado (ou único configurado) para comandos de toggle de stream.
+	 * @returns {Promise<Object|ReturnMessage>} channelConfig ou mensagem de erro
+	 * @private
+	 */
+	async _resolveStreamChannelConfig(bot, message, args, group, platform) {
+		const channelName = await this.validateChannelName(bot, message, args, group, platform);
+		if (channelName instanceof ReturnMessage) {
+			return channelName;
+		}
+
+		const channelConfig = this.findChannelConfig(group, platform, channelName);
+		if (!channelConfig) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Canal do ${STREAM_PLATFORM_LABELS[platform] ?? platform} não configurado: ${channelName}. Use !g-${platform}-canal ${channelName} para configurar.`
+			});
+		}
+		return channelConfig;
+	}
+
+	/**
+	 * Ativa/desativa a alteração de título do grupo em eventos de live
+	 * @param {string} platform - Plataforma (twitch, kick, youtube, tiktok)
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async toggleStreamTitleChange(bot, message, args, group, platform) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const channelConfig = await this._resolveStreamChannelConfig(
+			bot,
+			message,
+			args,
+			group,
+			platform
+		);
+		if (channelConfig instanceof ReturnMessage) {
+			return channelConfig;
+		}
+
+		if (!channelConfig.changeTitleOnEvent && !(await this.isBotAdmin(bot, group))) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ O bot não é administrador do grupo. Para alterar o título do grupo, o bot precisa ser um administrador. " +
+					"Por favor, adicione o bot como administrador e tente novamente."
+			});
+		}
+
+		channelConfig.changeTitleOnEvent = !channelConfig.changeTitleOnEvent;
+		await this.database.saveGroup(group);
+
+		const channelName = channelConfig.channel;
+		const status = channelConfig.changeTitleOnEvent ? "ativada" : "desativada";
+
+		if (!channelConfig.changeTitleOnEvent) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Alteração de título para eventos do canal ${channelName} ${status}.`
+			});
+		}
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content:
+				`Alteração de título para eventos do canal ${channelName} ${status}.\n\n` +
+				`Você pode definir títulos personalizados com:\n` +
+				`!g-${platform}-titulo on ${channelName} [título]\n` +
+				`!g-${platform}-titulo off ${channelName} [título]`
+		});
+	}
+
+	/**
+	 * Ativa/desativa mensagens geradas por IA nas notificações
+	 * @param {string} platform - Plataforma (twitch, kick, youtube, tiktok)
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async toggleStreamAI(bot, message, args, group, platform) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const channelConfig = await this._resolveStreamChannelConfig(
+			bot,
+			message,
+			args,
+			group,
+			platform
+		);
+		if (channelConfig instanceof ReturnMessage) {
+			return channelConfig;
+		}
+
+		channelConfig.useAI = !channelConfig.useAI;
+		await this.database.saveGroup(group);
+
+		const status = channelConfig.useAI ? "ativadas" : "desativadas";
+		const eventsDesc = VIDEO_PLATFORMS.has(platform)
+			? "quando o canal ficar online ou postar vídeo novo"
+			: "quando o canal ficar online";
+
+		return new ReturnMessage({
+			chatId: group.id,
+			content: channelConfig.useAI
+				? `Mensagens geradas por IA para eventos do canal ${channelConfig.channel} ${status}.\n\n` +
+					`O bot usará IA para gerar mensagens personalizadas ${eventsDesc}.`
+				: `Mensagens geradas por IA para eventos do canal ${channelConfig.channel} ${status}.`
+		});
+	}
+
+	/**
+	 * Ativa/desativa o envio da thumbnail/capa junto ao texto da notificação
+	 * @param {string} platform - Plataforma (twitch, kick, youtube, tiktok)
+	 * @returns {Promise<ReturnMessage>} Mensagem de retorno
+	 */
+	async toggleStreamThumbnail(bot, message, args, group, platform) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const channelConfig = await this._resolveStreamChannelConfig(
+			bot,
+			message,
+			args,
+			group,
+			platform
+		);
+		if (channelConfig instanceof ReturnMessage) {
+			return channelConfig;
+		}
+
+		channelConfig.useThumbnail = !channelConfig.useThumbnail;
+		await this.database.saveGroup(group);
+
+		const status = channelConfig.useThumbnail ? "irá enviar" : "não irá enviar";
+		return new ReturnMessage({
+			chatId: group.id,
+			content: `O bot agora ${status} junto a thumbnail da stream/vídeo do canal ${channelConfig.channel}.`
+		});
+	}
+
+	async toggleTiktokTitleChange(bot, message, args, group) {
+		return this.toggleStreamTitleChange(bot, message, args, group, "tiktok");
+	}
+
+	async toggleTiktokAI(bot, message, args, group) {
+		return this.toggleStreamAI(bot, message, args, group, "tiktok");
+	}
+
+	async toggleTiktokThumbnail(bot, message, args, group) {
+		return this.toggleStreamThumbnail(bot, message, args, group, "tiktok");
+	}
+
+	async setTiktokMedia(bot, message, args, group) {
+		return this.setStreamMedia(bot, message, args, group, "tiktok");
+	}
+
+	async deleteTiktokMedia(bot, message, args, group) {
+		return this.deleteStreamMedia(bot, message, args, group, "tiktok");
+	}
+
+	async setTiktokTitle(bot, message, args, group) {
+		return this.setStreamTitle(bot, message, args, group, "tiktok");
+	}
+
+	async setTiktokGroupPhoto(bot, message, args, group) {
+		return this.setStreamGroupPhoto(bot, message, args, group, "tiktok");
+	}
+
+	async toggleTiktokPhotoChange(bot, message, args, group) {
+		return this.toggleStreamPhotoChange(bot, message, args, group, "tiktok");
+	}
+
+	async toggleTiktokMentions(bot, message, args, group) {
+		return this.toggleStreamMentions(bot, message, args, group, "tiktok");
+	}
+
+	async setTiktokForwardChannel(bot, message, args, group) {
+		return this.setStreamForwardChannel(bot, message, args, group, "tiktok");
+	}
+
+	// !g-youtube-mudarTitulo e !g-youtube-usarIA estavam mapeados sem método implementado
+	async toggleYoutubeTitleChange(bot, message, args, group) {
+		return this.toggleStreamTitleChange(bot, message, args, group, "youtube");
+	}
+
+	async toggleYoutubeAI(bot, message, args, group) {
+		return this.toggleStreamAI(bot, message, args, group, "youtube");
+	}
+
+	/**
 	 * Sets a nickname for a user in a group
 	 * @param {WhatsAppBot} bot - Bot instance
 	 * @param {Object} message - Message data
@@ -6205,14 +6629,14 @@ class Management {
 			} else if (modeArg === "off" || modeArg === "offline") {
 				mode = "off";
 				args = args.slice(1);
-			} else if (platform === "youtube" && (modeArg === "video" || modeArg === "videos")) {
+			} else if (VIDEO_PLATFORMS.has(platform) && (modeArg === "video" || modeArg === "videos")) {
 				mode = "video";
 				args = args.slice(1);
 			}
 		}
 
 		if (!mode) {
-			mode = platform === "youtube" ? "video" : "on";
+			mode = VIDEO_PLATFORMS.has(platform) ? "video" : "on";
 		}
 
 		// Validate and get channel name
@@ -6423,7 +6847,7 @@ class Management {
 
 		// Verifica se todos os argumentos necessários foram fornecidos
 		if (args.length < 2) {
-			const modesAllowed = platform === "youtube" ? "[video/on/off]" : "[on/off]";
+			const modesAllowed = VIDEO_PLATFORMS.has(platform) ? "[video/on/off]" : "[on/off]";
 			return new ReturnMessage({
 				chatId: group.id,
 				content: `Argumentos insuficientes. Uso: !g-${platform}-midia-del ${modesAllowed} [tipo] <canal>\n\nOnde:\n- ${modesAllowed}: Especifica o tipo de notificação\n- [tipo]: Tipo de mídia (text, image, audio, video, sticker)`
@@ -6432,11 +6856,11 @@ class Management {
 
 		// Determina o modo
 		const mode = args[0].toLowerCase();
-		if (platform === "youtube") {
+		if (VIDEO_PLATFORMS.has(platform)) {
 			if (!["video", "on", "off"].includes(mode)) {
 				return new ReturnMessage({
 					chatId: group.id,
-					content: `Modo inválido: ${mode}. Para YouTube, use "video", "on" ou "off".`
+					content: `Modo inválido: ${mode}. Para ${platform === "tiktok" ? "TikTok" : "YouTube"}, use "video", "on" ou "off".`
 				});
 			}
 		} else {
@@ -10351,6 +10775,71 @@ const helper = {
 			cmd: "!g-youtube-encaminharCanal",
 			desc: "Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp seguido",
 			usage: ["!g-youtube-encaminharCanal <canalStream> <nomeCanalSeguido>"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-canal",
+			desc: "Adiciona/remove perfil do TikTok para monitoramento de lives e vídeos",
+			usage: ["!g-tiktok-canal <usuario>"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-mudarTitulo",
+			desc: "Ativa/desativa mudança de título do grupo para lives do TikTok",
+			usage: ["!g-tiktok-mudarTitulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-titulo",
+			desc: "Define título do grupo para lives de perfil do TikTok",
+			usage: ["!g-tiktok-titulo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-fotoGrupo",
+			desc: "Define foto do grupo para lives de perfil do TikTok",
+			usage: ["!g-tiktok-fotoGrupo"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-midia",
+			desc: "Define mídia para notificações de vídeos novos ou lives do TikTok",
+			usage: [
+				"!g-tiktok-midia [video|on|off] <usuario>",
+				"!g-tiktok-midia <usuario> (padrão: vídeos novos)",
+				"!g-tiktok-midia on <usuario> (lives online)",
+				"!g-tiktok-midia off <usuario> (lives offline)"
+			],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-midia-del",
+			desc: "Remove mídia específica de vídeo ou live do TikTok",
+			usage: ["!g-tiktok-midia-del [video|on|off] <tipo> <usuario>"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-usarIA",
+			desc: "Ativa/desativa uso de IA para gerar mensagens de notificação",
+			usage: ["!g-tiktok-usarIA"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-usarThumbnail",
+			desc: "Ativa/desativa o envio da capa da live/vídeo junto com o texto",
+			usage: ["!g-tiktok-usarThumbnail"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-marcar",
+			desc: "Ativa/desativa menção a todos os membros nas notificações do TikTok",
+			usage: ["!g-tiktok-marcar"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-encaminharCanal",
+			desc: "Ativa/desativa encaminhamento de notificações do TikTok para canal do WhatsApp seguido",
+			usage: ["!g-tiktok-encaminharCanal <usuario> <nomeCanalSeguido>"],
 			category: "streams"
 		},
 		{

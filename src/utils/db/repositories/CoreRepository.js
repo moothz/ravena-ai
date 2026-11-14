@@ -60,6 +60,7 @@ class CoreRepository {
 				twitch TEXT,
 				kick TEXT,
 				youtube TEXT,
+				tiktok TEXT,
 				bot_not_in_group TEXT,
 				webhooks TEXT,
 				greetings TEXT,
@@ -416,14 +417,14 @@ class CoreRepository {
 				`INSERT INTO groups (
           id, name, titulo, descricao, regras, added_by, removed_by, prefix,
           custom_ignores_prefix, invite_code, paused, additional_admins,
-          filters, twitch, kick, youtube, bot_not_in_group, webhooks,
+          filters, twitch, kick, youtube, tiktok, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
           ignored_numbers, ignored_users, muted_commands, muted_categories,
           nicks, warnings, custom_ai_prompt, dinamic_personality, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, members, admins, created_at, updated_at, json_data
         ) VALUES (
           @id, @name, @titulo, @descricao, @regras, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
-          @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
+          @filters, @twitch, @kick, @youtube, @tiktok, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
           @ignored_numbers, @ignored_users, @muted_commands, @muted_categories,
           @nicks, @warnings, @custom_ai_prompt, @dinamic_personality, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @members, @admins, @created_at, @updated_at, @json_data
@@ -444,6 +445,7 @@ class CoreRepository {
           twitch                = excluded.twitch,
           kick                  = excluded.kick,
           youtube               = excluded.youtube,
+          tiktok                = excluded.tiktok,
           bot_not_in_group      = excluded.bot_not_in_group,
           webhooks              = excluded.webhooks,
           greetings             = excluded.greetings,

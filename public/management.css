@@ -1368,6 +1368,7 @@ textarea.form-control {
 .text-twitch { color: #9146ff; }
 .text-kick { color: #53fc18; }
 .text-youtube { color: #ff0000; }
+.text-tiktok { color: #ff0050; }
 .text-warning { color: var(--warning-color); }
 .text-success { color: var(--success-color); }
 

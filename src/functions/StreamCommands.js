@@ -34,14 +34,16 @@ async function listMonitoredChannels(bot, message, args, group) {
 		const twitchChannels = Array.isArray(targetGroup.twitch) ? targetGroup.twitch : [];
 		const kickChannels = Array.isArray(targetGroup.kick) ? targetGroup.kick : [];
 		const youtubeChannels = Array.isArray(targetGroup.youtube) ? targetGroup.youtube : [];
+		const tiktokChannels = Array.isArray(targetGroup.tiktok) ? targetGroup.tiktok : [];
 
-		const totalChannels = twitchChannels.length + kickChannels.length + youtubeChannels.length;
+		const totalChannels =
+			twitchChannels.length + kickChannels.length + youtubeChannels.length + tiktokChannels.length;
 
 		if (totalChannels === 0) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Nenhum canal configurado para monitoramento neste grupo.\n\nUse os comandos:\n!g-twitch-canal\n!g-kick-canal\n!g-youtube-canal"
+					"Nenhum canal configurado para monitoramento neste grupo.\n\nUse os comandos:\n!g-twitch-canal\n!g-kick-canal\n!g-youtube-canal\n!g-tiktok-canal"
 			});
 		}
 
@@ -87,6 +89,22 @@ async function listMonitoredChannels(bot, message, args, group) {
 
 				response += `• ${channel.channel}\n`;
 				response += `  - Notificação de vídeo: ${channel.onConfig?.media?.length || 0} item(s)\n`;
+				response += `  - Alterar título: ${titleChange}\n`;
+				response += `  - Usar IA: ${useAI}\n\n`;
+			}
+		}
+
+		// Lista perfis TikTok
+		if (tiktokChannels.length > 0) {
+			response += `*TikTok:*\n`;
+			for (const channel of tiktokChannels) {
+				const titleChange = channel.changeTitleOnEvent ? "✅" : "❌";
+				const useAI = channel.useAI ? "✅" : "❌";
+
+				response += `• ${channel.channel}\n`;
+				response += `  - Notificação de vídeo: ${channel.videoConfig?.media?.length || 0} item(s)\n`;
+				response += `  - Notificação online: ${channel.onConfig?.media?.length || 0} item(s)\n`;
+				response += `  - Notificação offline: ${channel.offConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Alterar título: ${titleChange}\n`;
 				response += `  - Usar IA: ${useAI}\n\n`;
 			}
@@ -169,8 +187,12 @@ async function showStreamStatus(bot, message, args, group) {
 		const youtubeChannels = Array.isArray(targetGroup.youtube)
 			? targetGroup.youtube.map((c) => c.channel.toLowerCase())
 			: [];
+		const tiktokChannels = Array.isArray(targetGroup.tiktok)
+			? targetGroup.tiktok.map((c) => c.channel.toLowerCase())
+			: [];
 
-		const totalChannels = twitchChannels.length + kickChannels.length + youtubeChannels.length;
+		const totalChannels =
+			twitchChannels.length + kickChannels.length + youtubeChannels.length + tiktokChannels.length;
 
 		if (totalChannels === 0) {
 			return new ReturnMessage({
@@ -243,6 +265,29 @@ async function showStreamStatus(bot, message, args, group) {
 					} else {
 						response += `• ${channelName}: ❓ *Status desconhecido*\n\n`;
 					}
+				} else {
+					response += `• ${channelName}: ❓ *Status desconhecido*\n\n`;
+				}
+			}
+		}
+
+		// Status perfis TikTok
+		if (tiktokChannels.length > 0) {
+			response += `*TikTok:*\n`;
+			for (const channelName of tiktokChannels) {
+				const status = streamStatus[`tiktok:${channelName}`];
+
+				if (status?.isLive) {
+					response += `• ${channelName}: 🟢 *LIVE*\n`;
+					response += `  - Título: ${status.title || "N/A"}\n`;
+					response += `  - Viewers: ${status.viewerCount ?? "N/A"}\n`;
+					response += `  - Link: https://www.tiktok.com/@${channelName}/live\n\n`;
+				} else if (status?.lastChecked) {
+					response += `• ${channelName}: 🔴 *OFFLINE*\n`;
+					if (status.lastVideo) {
+						response += `  - Último vídeo: ${status.lastVideo.url || "N/A"}\n`;
+					}
+					response += "\n";
 				} else {
 					response += `• ${channelName}: ❓ *Status desconhecido*\n\n`;
 				}

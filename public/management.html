@@ -787,6 +787,64 @@
                     </div>
                 </div>
 
+                <!-- Accordion: Perfis TikTok (Vídeos) -->
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <h3><i class="fab fa-tiktok text-tiktok"></i> TikTok (Vídeos)</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fab fa-tiktok"></i>
+                            <div>Notifica vídeos novos publicados nos perfis do TikTok monitorados.</div>
+                        </div>
+                        <div class="commands-toolbar">
+                            <button type="button" class="btn btn-success btn-add-stream" data-platform="tiktok_video"><i class="fas fa-plus"></i> Adicionar Perfil (Vídeos)</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="tiktok_video-table">
+                                <thead>
+                                    <tr>
+                                        <th>Usuário</th>
+                                        <th style="width: 110px;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <div id="no-tiktok_video-msg" class="text-center p-3 text-muted hidden">Nenhum perfil configurado para vídeos.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accordion: Perfis TikTok (Lives) -->
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <h3><i class="fas fa-broadcast-tower text-tiktok"></i> TikTok (Lives)</h3>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="section-notice mb-3">
+                            <i class="fas fa-broadcast-tower"></i>
+                            <div>Monitora perfis do TikTok e envia notificação no grupo assim que entrarem ao vivo, com suporte a mensagens Online/Offline e mudança de título.</div>
+                        </div>
+                        <div class="commands-toolbar">
+                            <button type="button" class="btn btn-success btn-add-stream" data-platform="tiktok_live"><i class="fas fa-plus"></i> Adicionar Perfil (Lives)</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="tiktok_live-table">
+                                <thead>
+                                    <tr>
+                                        <th>Usuário</th>
+                                        <th style="width: 110px;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <div id="no-tiktok_live-msg" class="text-center p-3 text-muted hidden">Nenhum perfil configurado para lives.</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Accordion: Configuração Jogos -->
                 <div class="accordion-item">
                     <div class="accordion-header">
