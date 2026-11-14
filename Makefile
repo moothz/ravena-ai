@@ -91,7 +91,7 @@ up: ## Inicia todos os serviços em modo background
 	docker compose up -d
 
 up-build: ## Constrói as imagens e inicia todos os serviços
-	@mkdir -p data && echo "Construindo imagens e iniciando os serviços..." > data/status_motivo.txt
+	@mkdir -p data && echo "Recompilando o código e iniciando os serviços..." > data/status_motivo.txt
 	docker compose up -d --build
 
 down: ## Para todos os serviços
@@ -103,11 +103,11 @@ restart: ## Reinicia todos os serviços
 	docker compose restart
 
 restart-bot: ## Reinicia apenas o bot ravena-ai
-	@mkdir -p data && echo "Reiniciando o contêiner do bot..." > data/status_motivo.txt
+	@mkdir -p data && echo "Reiniciando o bot..." > data/status_motivo.txt
 	docker compose restart ravena-ai
 
 up-bot: ## Atualiza código (build incremental), sincroniza .env e recria apenas o bot ravena-ai
-	@mkdir -p data && echo "Atualizando código, .env e recriando container do bot..." > data/status_motivo.txt
+	@mkdir -p data && echo "Atualização no código fonte! Recompilando e reiniciando..." > data/status_motivo.txt
 	docker compose up -d --build --no-deps ravena-ai
 
 restart-api: ## Reinicia apenas o whatsgoapi
@@ -141,7 +141,7 @@ ravena-ai: ## Faz build e recarrega o código do bot ravena-ai
 	docker compose up -d ravena-ai
 
 build: ## Constrói todas as imagens Docker
-	@mkdir -p data && echo "Reconstruindo imagens Docker..." > data/status_motivo.txt
+	@mkdir -p data && echo "Recompilando o código e reiniciando..." > data/status_motivo.txt
 	docker compose build
 
 pull: ## Baixa as imagens base mais recentes
