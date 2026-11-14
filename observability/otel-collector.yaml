@@ -1,0 +1,142 @@
+# OpenTelemetry Collector (contrib) — porta de entrada única da telemetria do ecossistema.
+# Serviços (ravena-ai, waifuletes, jardim-das-sombras) exportam OTLP para cá;
+# daqui os traces vão para o Jaeger e as métricas (RED derivadas de spans + métricas do SDK)
+# ficam expostas para o Prometheus em :8889.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Protege o homelab: se a fila crescer, o collector recusa dados (os SDKs descartam) em vez de estourar RAM.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+  # Rede de segurança de privacidade (a política principal é aplicada nos SDKs; ver OBSERVABILITY.md).
+  # Remove atributos que nunca deveriam chegar e mascara números longos (telefones / IDs de usuário)
+  # que escapem em URLs, rotas ou mensagens de exceção.
+  attributes/pii:
+    actions:
+      - { key: http.request.header.authorization, action: delete }
+      - { key: http.request.header.x-api-key, action: delete }
+      - { key: http.request.header.x-market-secret, action: delete }
+      - { key: enduser.id, action: delete }
+      - { key: user.id, action: delete }
+      - { key: user.name, action: delete }
+      - { key: user.phone, action: delete }
+      - { key: db.query.parameters, action: delete }
+  transform/pii:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          # token de bot do Telegram em qualquer lugar (ex.: rota do webhook /webhook/telegram/<token>)
+          - replace_pattern(name, "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["http.route"], "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["url.path"], "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["url.full"], "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["http.target"], "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["url.full"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["url.path"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["url.query"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["http.target"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["http.url"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["url.full"], "(?i)(key|token|secret|apikey|api_key|auth|password|senha)=[^&]+", "$$1=***")
+          - replace_pattern(attributes["url.query"], "(?i)(key|token|secret|apikey|api_key|auth|password|senha)=[^&]+", "$$1=***")
+          - replace_pattern(attributes["http.url"], "(?i)(key|token|secret|apikey|api_key|auth|password|senha)=[^&]+", "$$1=***")
+          # token de bot do Telegram vai no path: https://api.telegram.org/bot<token>/metodo
+          - replace_pattern(attributes["url.full"], "/bot[^/]+", "/bot***")
+          - replace_pattern(attributes["url.path"], "/bot[^/]+", "/bot***")
+          - replace_pattern(attributes["http.url"], "/bot[^/]+", "/bot***")
+          - replace_pattern(attributes["http.target"], "/bot[^/]+", "/bot***")
+          # comandos Redis/SQL nunca levam argumentos (chaves contêm token de sessão / IDs)
+          - set(attributes["db.query.text"], Split(attributes["db.query.text"], " ")[0]) where attributes["db.system.name"] == "redis" or attributes["db.system"] == "redis"
+          - set(attributes["db.statement"], Split(attributes["db.statement"], " ")[0]) where attributes["db.system"] == "redis"
+          - replace_pattern(name, "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["http.route"], "[0-9]{6,}", "{n}")
+      - context: spanevent
+        statements:
+          - replace_pattern(attributes["exception.message"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["exception.stacktrace"], "[0-9]{6,}", "{n}")
+    metric_statements:
+      - context: datapoint
+        statements:
+          - replace_pattern(attributes["http.route"], "[0-9]{6,}:[A-Za-z0-9_-]{20,}", "***")
+          - replace_pattern(attributes["http.route"], "[0-9]{6,}", "{n}")
+          - replace_pattern(attributes["url.path"], "[0-9]{6,}", "{n}")
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "[0-9]{8,}", "{n}")
+
+  batch:
+    send_batch_size: 1024
+    timeout: 2s
+
+connectors:
+  # Métricas RED (Rate, Errors, Duration) derivadas dos spans — alimentam a aba "Monitor" do Jaeger
+  # e os painéis do Grafana. Dimensões extras são poucas e de baixa cardinalidade.
+  span_metrics:
+    histogram:
+      explicit:
+        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
+    dimensions:
+      - name: http.request.method
+      - name: http.response.status_code
+      - name: http.route
+      - name: app.command.category
+      - name: app.outcome
+      - name: gen_ai.request.model
+    exclude_dimensions: []
+    aggregation_cardinality_limit: 5000
+    aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+    metrics_flush_interval: 15s
+    metrics_expiration: 1h
+
+exporters:
+  otlp_grpc/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+    sending_queue:
+      queue_size: 2000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 60s
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: false
+    enable_open_metrics: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/pii, transform/pii, batch]
+      exporters: [otlp_grpc/jaeger, span_metrics]
+    metrics:
+      receivers: [otlp, span_metrics]
+      processors: [memory_limiter, transform/pii, batch]
+      exporters: [prometheus]
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: basic
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888

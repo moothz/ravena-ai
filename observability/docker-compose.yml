@@ -1,0 +1,117 @@
+# Stack de observabilidade do ecossistema Ravena (ravena-ai + waifuletes + jardim-das-sombras).
+# Subir:   docker compose -f observability/docker-compose.yml up -d
+# UIs:     Jaeger http://localhost:16686  |  Grafana http://localhost:3001  |  Prometheus http://localhost:9091
+# Os serviços exportam para http://host.docker.internal:4318 (OTLP/HTTP) — ver OBSERVABILITY.md.
+name: ravena-observability
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    container_name: obs-otel-collector
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # OTLP/HTTP (só a 4318; os serviços exportam http/protobuf). Os containers dos outros composes
+      # chegam aqui por host.docker.internal (host-gateway). Em Linux nativo recomenda-se
+      # OTEL_BIND_ADDR=172.17.0.1 (gateway da bridge docker0): alcançável pelos containers e
+      # invisível na LAN. O padrão 0.0.0.0 funciona em qualquer host, mas portas publicadas pelo
+      # Docker ignoram o ufw — nunca exponha 4318 à internet. Sem healthcheck: a imagem é distroless.
+      - "${OTEL_BIND_ADDR:-0.0.0.0}:4318:4318"
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    container_name: obs-jaeger
+    restart: unless-stopped
+    logging: *default-logging
+    user: "0"   # o volume nomeado nasce com dono root; o Badger precisa escrever nele
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    environment:
+      JAEGER_RETENTION: ${JAEGER_RETENTION:-168h}
+    volumes:
+      - ./jaeger.yaml:/etc/jaeger/config.yaml:ro
+      - jaeger-badger:/badger
+    ports:
+      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:16686:16686"
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    container_name: obs-prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:${PROMETHEUS_PORT:-9091}:9090"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    container_name: obs-grafana
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_DEFAULT_THEME: dark
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ravena-red.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:3001:3000"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 384M }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  jaeger-badger:
+  prometheus-data:
+  grafana-data:
