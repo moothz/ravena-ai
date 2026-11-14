@@ -3892,6 +3892,12 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 			usedPhotoIndex = 1;
 		}
 	}
+	telemetry.setAttrs({
+		"ravena.waifu.photo.requested": requestedPhotoIndex ?? undefined,
+		"ravena.waifu.photo.used": usedPhotoIndex ?? undefined,
+		"ravena.waifu.photo.total": totalPhotos,
+		"ravena.waifu.photo.fallback": Boolean(photoWarning)
+	});
 
 	// 4. Se solicitou explicitamente nova foto com 'nova' ou especificando ID de foto
 	if (forceNew) {
