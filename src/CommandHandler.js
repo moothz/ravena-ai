@@ -793,9 +793,12 @@ class CommandHandler {
 			}
 
 			// Processa comando normalmente
-			this.processCommand(bot, message, command, args, group).catch((error) => {
-				this.logger.error("Erro em processCommand:", error.message ?? "xxx");
-			});
+			telemetry.addPending(
+				message,
+				this.processCommand(bot, message, command, args, group).catch((error) => {
+					this.logger.error("Erro em processCommand:", error.message ?? "xxx");
+				})
+			);
 
 			// Nota: Não esperamos processCommand para evitar bloquear a thread de eventos
 		} catch (error) {
@@ -1153,6 +1156,7 @@ class CommandHandler {
 		}
 
 		// Nenhum comando encontrado
+		telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "unknown_command" });
 		// Se o grupo não tem prefixo (vazio), qualquer conversa normal chegaria aqui, então não polui o debug
 		const hasPrefix = group ? group.prefix && group.prefix !== "" : true;
 		if (hasPrefix) {

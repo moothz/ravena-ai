@@ -362,9 +362,13 @@ class EventHandler extends EventEmitter {
 		// Span raiz de negócio (no-op se o OpenTelemetry estiver desligado). Comandos disparados
 		// a partir daqui viram spans filhos. Nada de PII: chat/usuário só como hash.
 		telemetry
-			.withSpan("chat.message process", { kind: telemetry.SpanKind.CONSUMER, attributes: messageSpanAttributes(bot, message) }, () =>
-				this.processMessage(bot, message)
-			)
+			.withSpan("chat.message process", { kind: telemetry.SpanKind.CONSUMER, attributes: messageSpanAttributes(bot, message) }, async () => {
+				// Comandos/respostas disparados sem await registram sua promise aqui, para o span da
+				// mensagem cobrir o processamento inteiro (só com OTel ligado; teto de 120 s).
+				if (telemetry.isEnabled()) telemetry.trackPending(message);
+				await this.processMessage(bot, message);
+				await telemetry.awaitPending(message, 120000);
+			})
 			.catch((error) => {
 				this.logger.error("Erro em processMessage:", error);
 			});
@@ -858,9 +862,12 @@ class EventHandler extends EventEmitter {
 			} else {
 				// Processa mensagem não-comando
 				// Aqui também vai cair quando o grupo tiver a opção customIgnoresPrefix, que os comandos personalizados não precisam de prefixo
-				this.processNonCommandMessage(bot, message, group, textContent).catch((error) => {
-					this.logger.error("Erro em processNonCommandMessage:", error);
-				});
+				telemetry.addPending(
+					message,
+					this.processNonCommandMessage(bot, message, group, textContent).catch((error) => {
+						this.logger.error("Erro em processNonCommandMessage:", error);
+					})
+				);
 			}
 		} catch (error) {
 			this.logger.error("Erro ao processar mensagem:", error);

@@ -116,6 +116,32 @@ function hasOutcome(span) {
 	return Boolean(span && span.attributes && span.attributes["app.outcome"] !== undefined);
 }
 
+// Promises disparadas sem await durante o processamento de uma mensagem (só com OTel ligado).
+// Guardadas num Symbol para não aparecerem em JSON/logs do objeto da mensagem.
+const PENDING = Symbol("otelPending");
+function trackPending(message) {
+	if (message && typeof message === "object") message[PENDING] = [];
+}
+function addPending(message, promise) {
+	const list = message && message[PENDING];
+	if (Array.isArray(list) && promise && typeof promise.then === "function") list.push(promise);
+	return promise;
+}
+async function awaitPending(message, capMs = 120000) {
+	const list = message && message[PENDING];
+	if (!Array.isArray(list) || list.length === 0) return;
+	let timer;
+	await Promise.race([
+		Promise.allSettled(list),
+		new Promise((r) => {
+			timer = setTimeout(r, capMs);
+			timer.unref?.();
+		})
+	]);
+	clearTimeout(timer);
+	delete message[PENDING];
+}
+
 /** IDs de correlação para logs ("" se não houver span ativo). */
 function logIds() {
 	const s = trace.getActiveSpan();
@@ -142,5 +168,8 @@ module.exports = {
 	addEvent,
 	recordError,
 	hasOutcome,
+	trackPending,
+	addPending,
+	awaitPending,
 	logIds
 };
