@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs/promises");
 const Database = require("./utils/Database");
+const telemetry = require("./telemetry");
 const Logger = require("./utils/Logger");
 const FixedCommands = require("./commands/FixedCommands");
 const Management = require("./commands/Management");
@@ -643,6 +644,7 @@ class CommandHandler {
 						this.spamLogger.warn(
 							`[SpamPrevention] Usuário ${userId} tentou executar '${commandText.trim()}' mas está banido por spam até ${new Date(record.bannedUntil).toISOString()}`
 						);
+						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "spam_ban" });
 						return null;
 					}
 
@@ -689,6 +691,7 @@ class CommandHandler {
 								);
 							});
 						}
+						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "debounce" });
 						return null; // Interrompe a execução
 					}
 
@@ -1373,7 +1376,30 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo (se em grupo)
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeFixedCommand(
+	/**
+	 * Executa um comando fixo dentro de um span de negócio (no-op se o OpenTelemetry estiver
+	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
+	 */
+	executeFixedCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
+		return telemetry.withSpan(
+			`command ${command?.name ?? "unknown"}`,
+			{
+				attributes: {
+					"app.command.name": command?.name,
+					"app.command.category": command?.category || "none",
+					"app.command.type": isAuto ? "auto" : "fixed",
+					"ravena.bot.platform": message?.platform || "whatsapp"
+				}
+			},
+			(span) =>
+				this._executeFixedCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto).then((result) => {
+					if (!telemetry.hasOutcome(span)) telemetry.setAttrs({ "app.outcome": "ok" }, span);
+					return result;
+				})
+		);
+	}
+
+	async _executeFixedCommandImpl(
 		bot,
 		message,
 		command,
@@ -1396,9 +1422,11 @@ class CommandHandler {
 				this.logger.debug(
 					`Ignorando comando '${command.name}' da categoria silenciada '${command.category}'`
 				);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "muted" });
 				return null;
 			}
 			if (muteReason === "command") {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "muted" });
 				this.logger.debug(`Ignorando comando '${command.name}' pois está silenciado no grupo.`);
 				// Em reação, não reage na mensagem de outra pessoa: apenas ignora em silêncio
 				if (!silent && !silentReaction && !message.originReaction) message.origin.react("⛔️");
@@ -1512,6 +1540,7 @@ class CommandHandler {
 			// Verifica horários permitidos
 			if (!this.checkAllowedTimes(command)) {
 				this.logger.debug(`Comando ${command.name} não está disponível neste horário/dia`);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "time_window" });
 
 				// Reage com emoji de relógio
 				if (!silent && !silentReaction) {
@@ -1541,6 +1570,7 @@ class CommandHandler {
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(`Comando ${command.name} em cooldown por mais ${cooldownInfo.timeLeft}s`);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "cooldown" });
 				if (!silent) await this.handleCooldownMessage(bot, message, command, groupId, cooldownInfo);
 				return null;
 			}
@@ -1552,7 +1582,10 @@ class CommandHandler {
 				silent,
 				silentReaction
 			});
-			if (commandLimit.blocked) return null;
+			if (commandLimit.blocked) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "rate_limit" });
+				return null;
+			}
 
 			// Reage com emoji "antes" (específico do comando ou padrão)
 			if (!silent && !silentReaction && command.reactions?.before) {
@@ -1568,7 +1601,9 @@ class CommandHandler {
 				this.updateCooldown(command, groupId, bot.id);
 				this.recordCommandLimitUsage(commandLimit, message);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
+				telemetry.addEvent("command.checks_passed");
 				let result = await command.method(bot, message, args, group);
+				telemetry.addEvent("command.method_done");
 
 				// Log usage
 				this.cmdUsage.logCommand({
@@ -1658,6 +1693,8 @@ class CommandHandler {
 			}
 		} catch (error) {
 			this.logger.error(`Erro ao executar comando fixo ${command.name}:`, error.message ?? "xxx");
+			telemetry.recordError(telemetry.activeSpan(), error);
+			telemetry.setAttrs({ "app.outcome": "error" });
 
 			const chatId = message.group ?? message.author;
 			const errorEmoji = command.reactions?.error ?? this.defaultReactions.error;
@@ -1739,7 +1776,30 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo
 	 * @param {boolean} silent - Se true, não envia mensagens nem reage
 	 */
-	async executeCustomCommand(
+	/**
+	 * Executa um comando personalizado (nome livre, definido pelo grupo → span fixo "command custom") dentro de um span de negócio (no-op se o OpenTelemetry estiver
+	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
+	 */
+	executeCustomCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
+		return telemetry.withSpan(
+			"command custom",
+			{
+				attributes: {
+					"app.command.name": "custom",
+					"app.command.category": "custom",
+					"app.command.type": isAuto ? "auto" : "custom",
+					"ravena.bot.platform": message?.platform || "whatsapp"
+				}
+			},
+			(span) =>
+				this._executeCustomCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto).then((result) => {
+					if (!telemetry.hasOutcome(span)) telemetry.setAttrs({ "app.outcome": "ok" }, span);
+					return result;
+				})
+		);
+	}
+
+	async _executeCustomCommandImpl(
 		bot,
 		message,
 		command,
@@ -1817,6 +1877,7 @@ class CommandHandler {
 				this.logger.debug(
 					`Comando ${command.startsWith} em cooldown por mais ${cooldownInfo.timeLeft}s`
 				);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "cooldown" });
 				if (!silent)
 					await this.handleCooldownMessage(
 						bot,
@@ -1835,7 +1896,10 @@ class CommandHandler {
 				silent,
 				silentReaction
 			});
-			if (commandLimit.blocked) return null;
+			if (commandLimit.blocked) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "rate_limit" });
+				return null;
+			}
 
 			// Reage com emoji antes (do comando ou padrão)
 			if (!silent && !silentReaction && command.reactions?.before) {
@@ -1981,6 +2045,8 @@ class CommandHandler {
 				`Erro ao executar comando personalizado ${command.startsWith}:`,
 				error.message ?? "xxx"
 			);
+			telemetry.recordError(telemetry.activeSpan(), error);
+			telemetry.setAttrs({ "app.outcome": "error" });
 
 			const errorEmoji = command.reactions?.error ?? "❌";
 			const returnMessage = new ReturnMessage({

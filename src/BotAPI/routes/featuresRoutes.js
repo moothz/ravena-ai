@@ -1,4 +1,5 @@
 const path = require("path");
+const telemetry = require("../../telemetry");
 const fs = require("fs").promises;
 const axios = require("axios");
 const FishingGame = require("../../functions/FishingGame");
@@ -788,10 +789,20 @@ function registerFeaturesRoutes(api) {
 			const buffsTransferred = [];
 			let farmTransferred = false;
 
+			// Atributos de negócio no span HTTP desta rota (no-op se OTel desligado). Só contagens.
+			telemetry.setAttrs({
+				"ravena.market.has_runas": runasAmount > 0,
+				"ravena.market.buffs_count": targetBuffIds.length,
+				"ravena.market.farm_items_count": farmItemsToTransfer.length,
+				"ravena.market.has_petalitas": petalitasAmount > 0
+			});
+
 			try {
 				// 2.1. Transfere Runas
 				if (runasAmount > 0) {
-					await bankService.transferRunas(cleanFrom, cleanTo, runasAmount, "MARKET_OFFER_ACCEPTED");
+					await telemetry.withSpan("market transfer.runas", () =>
+						bankService.transferRunas(cleanFrom, cleanTo, runasAmount, "MARKET_OFFER_ACCEPTED")
+					);
 					runasTransferred = true;
 				}
 
@@ -812,7 +823,9 @@ function registerFeaturesRoutes(api) {
 						itemId: it.itemId,
 						amount: it.amount
 					}));
-					await jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount);
+					await telemetry.withSpan("market transfer.farm", () =>
+						jardimClient.transferItems(cleanFrom, cleanTo, itemsToTransfer, petalitasAmount)
+					);
 					farmTransferred = true;
 				}
 
@@ -827,6 +840,12 @@ function registerFeaturesRoutes(api) {
 					"Erro durante execução da transferência de mercado, iniciando reversão:",
 					execErr
 				);
+				telemetry.recordError(telemetry.activeSpan(), execErr, "market_transfer_failed");
+				telemetry.addEvent("market.compensation.started", {
+					"ravena.market.revert_runas": runasTransferred,
+					"ravena.market.revert_buffs": buffsTransferred.length
+				});
+				telemetry.setAttrs({ "ravena.market.compensated": true, "app.outcome": "error" });
 
 				// REVERSÃO CASO ALGUM PASSO POSTERIOR TENHA FALHADO
 				if (buffsTransferred.length > 0) {

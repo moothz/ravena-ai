@@ -1,4 +1,26 @@
 const CommandHandler = require("./CommandHandler");
+const telemetry = require("./telemetry");
+
+/** Atributos do span de mensagem recebida — baixa cardinalidade, sem PII (IDs só em hash). */
+function messageSpanAttributes(bot, message) {
+	if (!telemetry.isEnabled()) return undefined;
+	const platform = message?.platform || "whatsapp";
+	const ts = Number(message?.timestamp);
+	const lagMs = Number.isFinite(ts) && ts > 1e9 ? Date.now() - (ts < 1e12 ? ts * 1000 : ts) : undefined;
+	return {
+		"messaging.system": platform,
+		"messaging.operation.type": "process",
+		"messaging.operation.name": "process",
+		"ravena.bot.platform": platform,
+		"ravena.bot.id": bot?.id,
+		"ravena.chat.type": message?.group ? "group" : "private",
+		"ravena.message.type": message?.type,
+		"ravena.message.has_media": Boolean(message?.hasMedia),
+		"ravena.message.lag_ms": lagMs !== undefined && lagMs >= 0 && lagMs < 864e5 ? lagMs : undefined,
+		"ravena.chat.id_hash": telemetry.hashId(message?.group || message?.from),
+		"ravena.user.id_hash": telemetry.hashId(message?.author || message?.authorAlt)
+	};
+}
 const Database = require("./utils/Database");
 const Group = require("./models/Group");
 const Logger = require("./utils/Logger");
@@ -336,10 +358,16 @@ class EventHandler extends EventEmitter {
 	 */
 	onMessage(bot, message) {
 		this.emit("activity", { type: "message", botId: bot.id });
-		// Processa mensagem sem aguardar para evitar bloquear a thread de eventos
-		this.processMessage(bot, message).catch((error) => {
-			this.logger.error("Erro em processMessage:", error);
-		});
+		// Processa mensagem sem aguardar para evitar bloquear a thread de eventos.
+		// Span raiz de negócio (no-op se o OpenTelemetry estiver desligado). Comandos disparados
+		// a partir daqui viram spans filhos. Nada de PII: chat/usuário só como hash.
+		telemetry
+			.withSpan("chat.message process", { kind: telemetry.SpanKind.CONSUMER, attributes: messageSpanAttributes(bot, message) }, () =>
+				this.processMessage(bot, message)
+			)
+			.catch((error) => {
+				this.logger.error("Erro em processMessage:", error);
+			});
 	}
 
 	/**
@@ -394,6 +422,7 @@ class EventHandler extends EventEmitter {
 
 			// --- Prevenção de Spam Ativo ---
 			if (await this.checkSpammerMessage(bot, message)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "spam" });
 				return;
 			}
 			// -------------------------------
@@ -419,6 +448,7 @@ class EventHandler extends EventEmitter {
 
 			if (isLocalBlocked) {
 				// this.logger.debug(`[EventHandler] Ignorando mensagem de usuário bloqueado: ${message.author} (${message.authorAlt})`);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "blocked_user" });
 				return;
 			}
 			// --------------------------------
@@ -811,7 +841,7 @@ class EventHandler extends EventEmitter {
 					this.logger.debug(`Comando de gerenciamento detectado: ${commandText}`);
 
 					// Processa comando sem aguardar para evitar bloqueio
-					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
+					await this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
 						this.logger.error("Erro em handleCommand:", error);
 					});
 
@@ -820,7 +850,8 @@ class EventHandler extends EventEmitter {
 
 				// Processa comando normal
 				if (!ignorePV || message.group || this.isWhitelistedPvCommand(commandText)) {
-					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
+					telemetry.setAttrs({ "ravena.message.is_command": true });
+					await this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
 						this.logger.error("Erro em handleCommand:", error);
 					});
 				}

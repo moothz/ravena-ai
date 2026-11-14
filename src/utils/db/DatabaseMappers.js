@@ -388,4 +388,63 @@ class DatabaseMappers {
 	}
 }
 
+// ─────────────────────────────────────────────────────────────
+// OpenTelemetry (no-op se desligado). better-sqlite3 é síncrono e não tem instrumentação oficial:
+//  - toda chamada soma tempo/contagem no span ativo (ravena.sqlite.total_ms / ravena.sqlite.calls);
+//  - só as chamadas lentas (≥ OTEL_SQLITE_SLOW_MS, padrão 20 ms) viram span próprio
+//    "sqlite {operação} {tabela}" — sem SQL nem parâmetros.
+// ─────────────────────────────────────────────────────────────
+{
+	const telemetry = require("../../telemetry");
+	const SLOW_MS = Number(process.env.OTEL_SQLITE_SLOW_MS || 20);
+	const opOf = (sql) => {
+		const m = /^\s*(\w+)/.exec(sql || "");
+		return m ? m[1].toUpperCase() : "QUERY";
+	};
+	const tableOf = (sql) => {
+		const m = /\b(?:FROM|INTO|UPDATE|TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?)\s+["`\[]?([A-Za-z_][\w]*)/i.exec(sql || "");
+		return m ? m[1].slice(0, 48) : undefined;
+	};
+	for (const method of ["run", "get", "all", "exec"]) {
+		const orig = DatabaseMappers.prototype[method];
+		DatabaseMappers.prototype[method] = function (name, sql, ...rest) {
+			if (!telemetry.isEnabled()) return orig.call(this, name, sql, ...rest);
+			const t0 = Date.now();
+			const h0 = process.hrtime.bigint();
+			let error;
+			try {
+				return orig.call(this, name, sql, ...rest);
+			} catch (e) {
+				error = e;
+				throw e;
+			} finally {
+				const ms = Number(process.hrtime.bigint() - h0) / 1e6;
+				const active = telemetry.activeSpan();
+				if (active && active.isRecording() && active.attributes) {
+					active.setAttributes({
+						"ravena.sqlite.total_ms": Math.round(((active.attributes["ravena.sqlite.total_ms"] || 0) + ms) * 100) / 100,
+						"ravena.sqlite.calls": (active.attributes["ravena.sqlite.calls"] || 0) + 1
+					});
+				}
+				if (ms >= SLOW_MS || error) {
+					const op = opOf(sql);
+					const table = tableOf(sql);
+					const span = telemetry.startSpan(table ? `sqlite ${op} ${table}` : `sqlite ${op}`, {
+						kind: telemetry.SpanKind.CLIENT,
+						startTime: t0,
+						attributes: {
+							"db.system.name": "sqlite",
+							"db.operation.name": op,
+							"db.collection.name": table,
+							"db.namespace": /^[A-Za-z_]{1,40}$/.test(String(name || "")) ? String(name) : "other"
+						}
+					});
+					if (error) telemetry.recordError(span, error);
+					span.end(t0 + ms);
+				}
+			}
+		};
+	}
+}
+
 module.exports = DatabaseMappers;
