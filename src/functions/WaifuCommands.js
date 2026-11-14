@@ -115,6 +115,22 @@ const pendingClaims = new Map();
 // Map<string, { characterId: string, groupId: string, rollerUserId?: string, rollerUserName?: string, exclusiveUntil?: number, expiresAt: number }>
 const activeClaimsByCharGroup = new Map();
 
+// Agendamento automático de casamento quando bloqueado por exclusividade ou cooldown dentro da janela de 300s
+// Map<`${groupId}:${characterId}:${userId}`, { timer: NodeJS.Timeout, executeAt: number, characterName: string }>
+const scheduledMarryTimers = new Map();
+
+function isCharacterAlreadyClaimedInGroup(groupId, characterId) {
+	if (!groupId || !characterId) return false;
+	const active = activeClaimsByCharGroup.get(`${groupId}:${characterId}`);
+	if (active && active.claimed) return true;
+	const multiRolls = recentMultiRollsByGroup.get(groupId) || [];
+	for (const r of multiRolls) {
+		const s = (r.slots || []).find((x) => x.characterId === characterId);
+		if (s && s.claimed) return true;
+	}
+	return false;
+}
+
 // Histórico dos multi-rolls ainda dentro da janela de claim, por grupo (mais recente no fim).
 // Permite casar por número (!mu-c N) com slots de rolagens anteriores, e não só a última.
 // Map<groupId, Array<{ isMultiRoll: true, slots: Array<object>, rollerUserId, rollerUserName, expiresAt }>>
@@ -1130,13 +1146,18 @@ function formatDateTimeBR(date, options = {}) {
 }
 
 /**
- * Monta o link público da página do personagem no portal web do Waifuletes
- * @param {string} characterId
+ * Monta o link público da página do personagem no portal web do Waifuletes usando o alias curto /c/
+ * @param {string|object} characterIdOrChar
  * @returns {string|null} URL completa ou null se WAIFULETES_WEB_URL não estiver configurada
  */
-function getCharacterWebUrl(characterId) {
-	if (!WAIFULETES_WEB_URL || !characterId) return null;
-	return `${WAIFULETES_WEB_URL}/character/${encodeURIComponent(String(characterId).trim())}`;
+function getCharacterWebUrl(characterIdOrChar) {
+	if (!WAIFULETES_WEB_URL || !characterIdOrChar) return null;
+	const shortId =
+		typeof characterIdOrChar === "object"
+			? characterIdOrChar.numericId || characterIdOrChar.id || characterIdOrChar.characterId
+			: characterIdOrChar;
+	if (!shortId) return null;
+	return `${WAIFULETES_WEB_URL}/c/${encodeURIComponent(String(shortId).trim())}`;
 }
 
 /**
@@ -2212,7 +2233,7 @@ function makeRollHandler(genderFilter) {
 					}
 				}
 
-				const singleRollWebUrl = getCharacterWebUrl(character.id);
+				const singleRollWebUrl = getCharacterWebUrl(character.numericId || character.id);
 				if (singleRollWebUrl) {
 					text += `\n🔗 ${singleRollWebUrl}`;
 				}
@@ -2420,6 +2441,7 @@ function makeRollHandler(genderFilter) {
 				return {
 					slot,
 					characterId: char.id,
+					numericId: char.numericId || null,
 					characterName: char.name,
 					series: char.series,
 					rarity,
@@ -2588,7 +2610,7 @@ function makeRollHandler(genderFilter) {
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
 					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
 					text += `> !mu-casar ${s.characterId}\n`;
-					const wishSlotWebUrl = getCharacterWebUrl(s.characterId);
+					const wishSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (wishSlotWebUrl) {
 						text += `> ${wishSlotWebUrl}\n`;
 					}
@@ -2609,7 +2631,7 @@ function makeRollHandler(genderFilter) {
 					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
 					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
 					text += `> !mu-casar ${s.characterId}\n`;
-					const singleSlotWebUrl = getCharacterWebUrl(s.characterId);
+					const singleSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (singleSlotWebUrl) {
 						text += `> ${singleSlotWebUrl}\n`;
 					}
@@ -2850,6 +2872,140 @@ async function buildMarriageReturnMessage(
 /**
  * Reivindica casamento com personagem sorteado
  */
+/**
+ * Executa a chamada à API de casamento e constrói a mensagem de retorno para o chat
+ */
+async function executeMarriageCall(bot, message, userId, groupId, characterId, name, matchedRoll) {
+	const { data } = await api.post("/marry", {
+		userId,
+		groupId,
+		characterId,
+		name,
+		platform: "WHATSAPP"
+	});
+
+	if (matchedRoll?.isMultiRoll || pendingClaims.get(groupId)?.isMultiRoll) {
+		const pending = pendingClaims.get(groupId);
+		if (pending?.slots) {
+			const s = pending.slots.find((x) => x.characterId === characterId);
+			if (s) s.claimed = true;
+			const allFreeClaimed = pending.slots.filter((x) => x.available).every((x) => x.claimed);
+			if (allFreeClaimed) {
+				pendingClaims.delete(groupId);
+			}
+		}
+	} else {
+		const pending = pendingClaims.get(groupId);
+		if (pending && (!pending.characterId || pending.characterId === characterId)) {
+			pendingClaims.delete(groupId);
+		}
+	}
+	activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
+	const { character, keys, isSoulmate, kakeraBalance } = data.data;
+	markMultiRollCharacterClaimed(groupId, characterId);
+	if (character?.id && character.id !== characterId) {
+		markMultiRollCharacterClaimed(groupId, character.id);
+		activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
+	}
+
+	// Cancela timers pendentes de casamento agendado para este mesmo personagem no grupo
+	for (const [key, item] of scheduledMarryTimers.entries()) {
+		if (
+			key.startsWith(`${groupId}:${characterId}:`) ||
+			(character?.id && key.startsWith(`${groupId}:${character.id}:`))
+		) {
+			clearTimeout(item.timer);
+			scheduledMarryTimers.delete(key);
+		}
+	}
+
+	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+	let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
+	text += `🔑 Chaves: *${keys}/10*\n`;
+	text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
+	if (isSoulmate) {
+		text += `\n💖 *${character.name} é sua Soulmate definitiva!*`;
+	}
+
+	return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
+		quotedMessageId: message.origin?.id?._serialized,
+		goReply: message.origin,
+		mentions: [toJid(userId)]
+	});
+}
+
+/**
+ * Agenda um timer para casar automaticamente quando a exclusividade ou cooldown expirar
+ */
+function scheduleMarriageTimer({
+	bot,
+	message,
+	userId,
+	groupId,
+	characterId,
+	name,
+	matchedRoll,
+	waitMs,
+	reasonText
+}) {
+	const timerKey = `${groupId}:${characterId}:${userId}`;
+	if (scheduledMarryTimers.has(timerKey)) {
+		const existing = scheduledMarryTimers.get(timerKey);
+		const leftSec = Math.max(1, Math.ceil((existing.executeAt - Date.now()) / 1000));
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: `⏱️ *Você já possui um casamento agendado para este personagem!*\nTentaremos casar automaticamente em *${leftSec}s*.`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+
+	const executeAt = Date.now() + waitMs;
+	const charName = matchedRoll?.characterName || matchedRoll?.name || characterId;
+	const waitSec = Math.ceil(waitMs / 1000);
+
+	const timer = setTimeout(async () => {
+		scheduledMarryTimers.delete(timerKey);
+
+		// Se o personagem já foi casado por outro jogador durante a espera
+		if (matchedRoll?.claimed || isCharacterAlreadyClaimedInGroup(groupId, characterId)) {
+			return;
+		}
+
+		try {
+			const marriageResult = await executeMarriageCall(
+				bot,
+				message,
+				userId,
+				groupId,
+				characterId,
+				name,
+				matchedRoll
+			);
+			if (marriageResult && bot && typeof bot.sendReturnMessages === "function") {
+				await bot.sendReturnMessages(marriageResult);
+			}
+		} catch (timerErr) {
+			logger.warn(
+				`[ScheduledMarry] Casamento agendado não pôde ser completado para ${userId} (${characterId}): ${timerErr?.message}`
+			);
+		}
+	}, waitMs);
+
+	scheduledMarryTimers.set(timerKey, { timer, executeAt, characterName: charName });
+
+	return new ReturnMessage({
+		chatId: message.group ?? message.author,
+		content: `⏱️ *Casamento agendado!* ${reasonText}\nCasaremos automaticamente com *${charName}* em *${waitSec}s* se ninguém casar antes! 💍`,
+		options: {
+			quotedMessageId: message.origin?.id?._serialized,
+			goReply: message.origin
+		}
+	});
+}
+
 async function casarWaifu(bot, message, args) {
 	const chatId = message.group ?? message.author;
 	const groupId = getGroupId(message);
@@ -3208,6 +3364,31 @@ async function casarWaifu(bot, message, args) {
 		matchedRoll.rollerUserId &&
 		normalizeUserId(matchedRoll.rollerUserId) !== userId
 	) {
+		const remainingExclusiveMs = matchedRoll.exclusiveUntil - Date.now() + 500;
+		const charExpiresAt = matchedRoll.expiresAt || Date.now() + 300000;
+		const charTimeLeftMs = charExpiresAt - Date.now();
+
+		// Se a exclusividade cabe dentro da janela de casamento restante (300s), agenda timer automático
+		if (remainingExclusiveMs < charTimeLeftMs) {
+			const remainingSecs = Math.ceil(remainingExclusiveMs / 1000);
+			const rollerDisplayName = await resolveDisplayName(
+				message,
+				matchedRoll.rollerUserId,
+				matchedRoll.rollerUserName
+			);
+			return scheduleMarriageTimer({
+				bot,
+				message,
+				userId,
+				groupId,
+				characterId,
+				name,
+				matchedRoll,
+				waitMs: remainingExclusiveMs,
+				reasonText: `A exclusividade de *${rollerDisplayName}* expira em *${remainingSecs}s*.`
+			});
+		}
+
 		const remainingSecs = Math.max(1, Math.ceil((matchedRoll.exclusiveUntil - Date.now()) / 1000));
 		const rollerDisplayName = await resolveDisplayName(
 			message,
@@ -3239,52 +3420,39 @@ async function casarWaifu(bot, message, args) {
 	}
 
 	try {
-		const { data } = await api.post("/marry", {
-			userId,
-			groupId,
-			characterId,
-			name,
-			platform: "WHATSAPP"
-		});
-
-		if (matchedRoll?.isMultiRoll || pendingClaims.get(groupId)?.isMultiRoll) {
-			const pending = pendingClaims.get(groupId);
-			if (pending?.slots) {
-				const s = pending.slots.find((x) => x.characterId === characterId);
-				if (s) s.claimed = true;
-				const allFreeClaimed = pending.slots.filter((x) => x.available).every((x) => x.claimed);
-				if (allFreeClaimed) {
-					pendingClaims.delete(groupId);
-				}
-			}
-		} else {
-			const pending = pendingClaims.get(groupId);
-			if (pending && (!pending.characterId || pending.characterId === characterId)) {
-				pendingClaims.delete(groupId);
-			}
-		}
-		activeClaimsByCharGroup.delete(`${groupId}:${characterId}`);
-		const { character, keys, isSoulmate, kakeraBalance } = data.data;
-		markMultiRollCharacterClaimed(groupId, characterId);
-		if (character?.id && character.id !== characterId) {
-			markMultiRollCharacterClaimed(groupId, character.id);
-			activeClaimsByCharGroup.delete(`${groupId}:${character.id}`);
-		}
-
-		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
-		text += `🔑 Chaves: *${keys}/10*\n`;
-		text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
-		if (isSoulmate) {
-			text += `\n💖 *${character.name} é sua Soulmate definitiva!*`;
-		}
-
-		return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
-			quotedMessageId: message.origin?.id?._serialized,
-			goReply: message.origin,
-			mentions: [toJid(userId)]
-		});
+		return await executeMarriageCall(bot, message, userId, groupId, characterId, name, matchedRoll);
 	} catch (err) {
+		const resData = err.response?.data;
+		const apiErr =
+			typeof resData?.error === "object" && resData?.error !== null ? resData.error : null;
+
+		// Se negado por Cooldown de casamento e o tempo restante couber dentro da janela de 300s, agenda timer automático
+		if (
+			apiErr?.code === "CLAIM_COOLDOWN_ACTIVE" &&
+			typeof apiErr.remainingSeconds === "number" &&
+			apiErr.remainingSeconds > 0
+		) {
+			const waitMs = apiErr.remainingSeconds * 1000 + 500;
+			const charExpiresAt = matchedRoll?.expiresAt || Date.now() + 300000;
+			const charTimeLeftMs = charExpiresAt - Date.now();
+
+			if (waitMs < charTimeLeftMs) {
+				const normRarity = apiErr.rarity ? String(apiErr.rarity).toUpperCase() : "";
+				const label = RARITY_LABEL[normRarity] || apiErr.rarity;
+				return scheduleMarriageTimer({
+					bot,
+					message,
+					userId,
+					groupId,
+					characterId,
+					name,
+					matchedRoll,
+					waitMs,
+					reasonText: `Seu cooldown para casar com *${label}* encerra em *${apiErr.remainingSeconds}s*.`
+				});
+			}
+		}
+
 		return handleApiError(err, chatId, "Erro ao realizar casamento.", {
 			quotedMessageId: message.origin?.id?._serialized,
 			goReply: message.origin
@@ -3500,7 +3668,10 @@ async function divorciarWaifu(bot, message, args) {
 			dailyDivorceCount,
 			refundRate,
 			refundRatePercent,
-			nextTierRefundRate
+			nextTierRefundRate,
+			rankMultiplier,
+			rarityPosition,
+			rarityTotal
 		} = data.data;
 
 		await removeMarriagePhoto(character.id || characterId).catch(() => {});
@@ -3513,10 +3684,13 @@ async function divorciarWaifu(bot, message, args) {
 			: `💔 *Divórcio concluído!*\nVocê se separou de *${character.name}*.\n\n`;
 
 		text += `💰 *Rendimento do Divórcio:* *+${Number(refundedKakera).toLocaleString("pt-BR")} Zinthos*`;
+		if (typeof rankMultiplier === "number" && rankMultiplier > 1) {
+			text += ` _(🏆 Bônus de Rank ${rankMultiplier}x — #${rarityPosition || 1} de ${(rarityTotal || 1).toLocaleString("pt-BR")} ${rarityLabel})_`;
+		}
 		if (typeof refundRate === "number" && refundRate < 1) {
-			text += ` _(${refundRatePercent || `${Math.round(refundRate * 100)}%`} de reembolso — ${dailyDivorceCount}º divórcio ${rarityLabel} hoje)_\n`;
+			text += `\n_(${refundRatePercent || `${Math.round(refundRate * 100)}%`} de reembolso — ${dailyDivorceCount}º divórcio ${rarityLabel} hoje)_\n`;
 		} else if (dailyDivorceCount === 1) {
-			text += ` _(100% integral — 1º divórcio ${rarityLabel} hoje)_\n`;
+			text += `\n_(100% integral — 1º divórcio ${rarityLabel} hoje)_\n`;
 		} else {
 			text += `\n`;
 		}
@@ -7847,8 +8021,11 @@ async function listarOfertasRecebidasCmd(bot, message) {
 					);
 					parts.push(`${totalFarmQty} item(ns) de fazenda`);
 				}
-				if (offered.zinthos && Number(offered.zinthos) > 0)
-					parts.push(`🪙 ${Number(offered.zinthos).toLocaleString("pt-BR")} Zinthos`);
+				if (offered.zinthos && Number(offered.zinthos) > 0) {
+					const gross = Number(offered.zinthos);
+					const net = Math.floor(gross * 0.95);
+					parts.push(`🪙 ${net.toLocaleString("pt-BR")} Zinthos a receber (taxa 5% descontada)`);
+				}
 				itemsDesc = parts.join(", ") || "Nenhum item";
 			}
 
