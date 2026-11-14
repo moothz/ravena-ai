@@ -166,8 +166,9 @@ document.addEventListener('DOMContentLoaded', () => {
         memberModal: document.getElementById('member-modal'),
         webhookModal: document.getElementById('webhook-modal'),
         scheduleModal: document.getElementById('schedule-modal'),
+        commandLimitModal: document.getElementById('command-limit-modal'),
         
-        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal, .close-saida-modal'),
+        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal, .close-saida-modal, .close-command-limit-modal'),
         closeUploadBtns: document.querySelectorAll('.close-upload'),
 
         // Schedules
@@ -423,6 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderCommandsTable();
             renderWarnings();
             renderWebhooks();
+            renderCommandLimits();
             await loadSchedules();
             setupDirtyTracking();
 
@@ -502,6 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ignoredNumbers: 'Números Ignorados',
             mutedCategories: 'Categorias Silenciadas',
             mutedCommands: 'Comandos Silenciados',
+            commandLimits: 'Frequência de Comandos',
             additionalAdmins: 'Admins Adicionais',
             autoStt: 'Transcrever Áudios',
             notificaGrupoFechado: 'Notificar Grupo Fechado',
@@ -3104,6 +3107,130 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // --- Frequência de Comandos (limites por intervalo) ---
+
+    const COMMAND_LIMIT_DEFAULT_HOURS = 24;
+    const COMMAND_LIMIT_MAX_HOURS = 720;
+    const COMMAND_LIMIT_MAX_USES = 1000;
+    const COMMAND_LIMIT_MAX_RULES = 50;
+
+    function normalizeLimitCommandName(name) {
+        return String(name || '').trim().toLowerCase().replace(/^!+/, '');
+    }
+
+    function describeCommandLimitScope(scope) {
+        return scope === 'user' ? 'Por pessoa' : 'Global';
+    }
+
+    function updateCommandLimitScopeHint() {
+        const perUser = document.getElementById('new-command-limit-per-user').checked;
+        document.getElementById('command-limit-scope-hint').textContent = perUser
+            ? 'Por pessoa: cada membro pode usar o comando até o limite dentro do intervalo.'
+            : 'Global: o limite é compartilhado por todos os membros do grupo.';
+    }
+
+    function openCommandLimitModal(index = null) {
+        const limit = index !== null ? (groupData.commandLimits || [])[index] : null;
+        document.getElementById('command-limit-modal-title').textContent = limit ? 'Editar Frequência' : 'Nova Frequência';
+        document.getElementById('command-limit-edit-index').value = index !== null ? String(index) : '';
+        document.getElementById('new-command-limit-command').value = limit?.command || '';
+        document.getElementById('new-command-limit-uses').value = limit?.maxUses ?? '';
+        document.getElementById('new-command-limit-hours').value = limit?.hours ?? COMMAND_LIMIT_DEFAULT_HOURS;
+        document.getElementById('new-command-limit-per-user').checked = limit?.scope === 'user';
+        document.getElementById('new-command-limit-ignore-admins').checked = limit?.ignoreAdmins === true;
+        updateCommandLimitScopeHint();
+        els.commandLimitModal.classList.remove('hidden');
+    }
+
+    function renderCommandLimits() {
+        const tbody = document.getElementById('command-limits-table-body');
+        const emptyMsg = document.getElementById('no-command-limits-msg');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const limits = groupData.commandLimits || [];
+        emptyMsg.classList.toggle('hidden', limits.length > 0);
+
+        limits.forEach((limit, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${escapeHtml(limit.command)}</strong></td>
+                <td>${limit.maxUses}x a cada ${limit.hours}h</td>
+                <td>${describeCommandLimitScope(limit.scope)}</td>
+                <td>${limit.ignoreAdmins ? 'Fora do limite' : 'Limitados'}</td>
+                <td>
+                    <button type="button" class="btn btn-xs btn-outline btn-edit-command-limit" title="Editar"><i class="fas fa-pen"></i></button>
+                    <button type="button" class="btn btn-xs btn-danger btn-del-command-limit" title="Remover"><i class="fas fa-trash"></i></button>
+                </td>
+            `;
+
+            tr.querySelector('.btn-edit-command-limit').onclick = () => openCommandLimitModal(index);
+            tr.querySelector('.btn-del-command-limit').onclick = async () => {
+                if (await showCustomConfirm(`Remover o limite do comando "${escapeHtml(limit.command)}"?`)) {
+                    groupData.commandLimits.splice(index, 1);
+                    setDirty(true);
+                    renderCommandLimits();
+                }
+            };
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    const btnAddCommandLimit = document.getElementById('btn-add-command-limit');
+    if (btnAddCommandLimit) {
+        btnAddCommandLimit.onclick = () => openCommandLimitModal();
+    }
+
+    const commandLimitPerUserToggle = document.getElementById('new-command-limit-per-user');
+    if (commandLimitPerUserToggle) {
+        commandLimitPerUserToggle.addEventListener('change', updateCommandLimitScopeHint);
+    }
+
+    const btnSaveCommandLimit = document.getElementById('btn-save-command-limit-confirm');
+    if (btnSaveCommandLimit) {
+        btnSaveCommandLimit.onclick = async () => {
+            const editIndexValue = document.getElementById('command-limit-edit-index').value;
+            const editIndex = editIndexValue === '' ? null : Number(editIndexValue);
+            const command = normalizeLimitCommandName(document.getElementById('new-command-limit-command').value);
+            const maxUses = Number(document.getElementById('new-command-limit-uses').value);
+            const hoursValue = document.getElementById('new-command-limit-hours').value;
+            const hours = hoursValue === '' ? COMMAND_LIMIT_DEFAULT_HOURS : Number(hoursValue);
+            const scope = document.getElementById('new-command-limit-per-user').checked ? 'user' : 'global';
+            const ignoreAdmins = document.getElementById('new-command-limit-ignore-admins').checked;
+
+            if (!command || /\s/.test(command)) {
+                return await showCustomAlert('Informe o nome do comando, sem espaços.');
+            }
+            if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > COMMAND_LIMIT_MAX_USES) {
+                return await showCustomAlert(`O limite de vezes deve ser um número inteiro entre 1 e ${COMMAND_LIMIT_MAX_USES}.`);
+            }
+            if (!Number.isInteger(hours) || hours < 1 || hours > COMMAND_LIMIT_MAX_HOURS) {
+                return await showCustomAlert(`O intervalo deve ser um número inteiro de horas entre 1 e ${COMMAND_LIMIT_MAX_HOURS}.`);
+            }
+
+            if (!groupData.commandLimits) groupData.commandLimits = [];
+            const duplicateIndex = groupData.commandLimits.findIndex(l => l.command === command);
+            if (duplicateIndex !== -1 && duplicateIndex !== editIndex) {
+                return await showCustomAlert(`O comando "${escapeHtml(command)}" já tem um limite. Edite o existente.`);
+            }
+            if (editIndex === null && groupData.commandLimits.length >= COMMAND_LIMIT_MAX_RULES) {
+                return await showCustomAlert(`Limite máximo de ${COMMAND_LIMIT_MAX_RULES} comandos com frequência atingido.`);
+            }
+
+            const limitData = { command, maxUses, hours, scope, ignoreAdmins };
+            if (editIndex !== null) {
+                groupData.commandLimits[editIndex] = limitData;
+            } else {
+                groupData.commandLimits.push(limitData);
+            }
+
+            setDirty(true);
+            renderCommandLimits();
+            els.commandLimitModal.classList.add('hidden');
+        };
+    }
+
     // --- Group Schedules (Abrir/Fechar) ---
 
     const DIAS_SEMANA_NOMES = [
@@ -3435,6 +3562,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     populateFields();
                     renderWarnings();
                     renderWebhooks();
+                    renderCommandLimits();
                     setDirty(true);
 
                     await showCustomAlert('Configurações importadas com sucesso! Clique em "Salvar Tudo" para consolidar as alterações.', 'Importação Concluída');
@@ -3523,6 +3651,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 els.memberModal.classList.add('hidden');
                 els.webhookModal.classList.add('hidden');
                 els.scheduleModal.classList.add('hidden');
+                els.commandLimitModal.classList.add('hidden');
             };
         });
         els.closeUploadBtns.forEach(b => b.onclick = () => els.uploadModal.classList.add('hidden'));

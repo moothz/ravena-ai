@@ -79,6 +79,7 @@ const GroupMapper = {
 			ignoredUsers: parse(row.ignored_users, []),
 			mutedCommands: parse(row.muted_commands, []),
 			mutedCategories: parse(row.muted_categories, []),
+			commandLimits: parse(row.command_limits, []),
 			nicks: parse(row.nicks, []),
 			warnings: parse(row.warnings, []),
 			customAIPrompt: (() => {
@@ -161,6 +162,7 @@ const GroupMapper = {
 			ignored_users: s(obj.ignoredUsers),
 			muted_commands: s(obj.mutedCommands),
 			muted_categories: s(obj.mutedCategories),
+			command_limits: s(obj.commandLimits || []),
 			nicks: s(obj.nicks),
 			warnings: s(obj.warnings),
 			custom_ai_prompt: (() => {

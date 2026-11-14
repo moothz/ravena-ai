@@ -77,6 +77,8 @@ class Group {
 		this.ignoredUsers = data.ignoredUsers ?? [];
 		this.mutedCommands = data.mutedCommands ?? [];
 		this.mutedCategories = data.mutedCategories ?? [];
+		// Limites de frequência: [{ command, maxUses, hours, scope: "global" | "user" }]
+		this.commandLimits = Array.isArray(data.commandLimits) ? data.commandLimits : [];
 		this.nicks = data.nicks ?? [];
 		this.warnings = data.warnings ?? [];
 		this.customAIPrompt = data.customAIPrompt ?? [];
@@ -128,6 +130,7 @@ class Group {
 			mutedCommands: this.mutedCommands,
 			// FIX: Adicionado mutedCategories que estava faltando
 			mutedCategories: this.mutedCategories,
+			commandLimits: this.commandLimits,
 			nicks: this.nicks,
 			warnings: this.warnings,
 			customAIPrompt: this.customAIPrompt,
@@ -217,6 +220,7 @@ class Group {
 		if (data.ignoredUsers) this.ignoredUsers = data.ignoredUsers;
 		if (data.mutedCommands) this.mutedCommands = data.mutedCommands;
 		if (data.mutedCategories) this.mutedCategories = data.mutedCategories; // Added support for updating mutedCategories
+		if (Array.isArray(data.commandLimits)) this.commandLimits = data.commandLimits;
 		if (data.nicks) this.nicks = data.nicks;
 		if (data.warnings) this.warnings = data.warnings;
 		if (data.customAIPrompt) this.customAIPrompt = data.customAIPrompt;

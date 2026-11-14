@@ -407,6 +407,32 @@
                             <div id="muted-commands-list" class="tags-container"></div>
                         </div>
 
+                        <hr>
+
+                        <!-- Frequência de Comandos -->
+                        <div class="list-manager-section">
+                            <label id="lbl-command-limits">Frequência de Comandos</label>
+                            <div class="field-hint">Limita quantas vezes um comando pode ser usado em um intervalo de tempo, no grupo todo ou por pessoa.</div>
+                            <div class="commands-toolbar mt-1">
+                                <button type="button" id="btn-add-command-limit" class="btn btn-secondary"><i class="fas fa-gauge-high"></i> Editar frequência</button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table" id="command-limits-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Comando</th>
+                                            <th>Limite</th>
+                                            <th>Tipo</th>
+                                            <th>Admins</th>
+                                            <th style="width: 90px;">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="command-limits-table-body"></tbody>
+                                </table>
+                                <div id="no-command-limits-msg" class="text-center p-3 text-muted hidden">Nenhum limite de frequência configurado.</div>
+                            </div>
+                        </div>
+
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary btn-save-section" data-section="commands">
                                 <i class="fas fa-save"></i> Salvar Comandos
@@ -1384,6 +1410,60 @@
         </div>
     </div>
 
+    <!-- Command Limit Modal (Editar frequência) -->
+    <div id="command-limit-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="command-limit-modal-title">Editar Frequência</h2>
+                <span class="close-command-limit-modal cursor-pointer">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="command-limit-edit-index" value="">
+                <div class="form-group">
+                    <label for="new-command-limit-command">Comando</label>
+                    <input type="text" id="new-command-limit-command" class="form-control" placeholder="ex: roleta">
+                    <div class="field-hint">Nome do comando sem o prefixo. Vale para comandos fixos e personalizados.</div>
+                </div>
+                <div class="two-cols-row">
+                    <div class="form-group">
+                        <label for="new-command-limit-uses">Limite de vezes</label>
+                        <input type="number" id="new-command-limit-uses" class="form-control" min="1" max="1000" step="1" placeholder="ex: 10">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-command-limit-hours">Intervalo de tempo (horas)</label>
+                        <input type="number" id="new-command-limit-hours" class="form-control" min="1" max="720" step="1" value="24">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Tipo de limite</label>
+                    <div class="checkbox-group toggle-row-compact" style="justify-content: flex-start; gap: 12px;">
+                        <span class="toggle-label">Global</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="new-command-limit-per-user">
+                            <span class="slider-round"></span>
+                        </label>
+                        <span class="toggle-label">Por pessoa</span>
+                    </div>
+                    <div class="field-hint" id="command-limit-scope-hint">Global: o limite é compartilhado por todos os membros do grupo.</div>
+                </div>
+                <div class="form-group">
+                    <div class="checkbox-group toggle-row-compact">
+                        <span class="toggle-label">Admins ficam de fora do limite</span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="new-command-limit-ignore-admins">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="field-hint">Ligado: admins usam o comando sem limite e seus usos não contam.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-command-limit-modal">Cancelar</button>
+                <button type="button" id="btn-save-command-limit-confirm" class="btn btn-primary">Salvar Limite</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Schedule Modal (Abrir/Fechar) -->
     <div id="schedule-modal" class="modal hidden">
         <div class="modal-content">
@@ -1583,6 +1663,6 @@
         </div>
     </div>
 
-    <script src="/management.js?v=30"></script>
+    <script src="/management.js?v=31"></script>
 </body>
 </html>

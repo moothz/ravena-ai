@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const { upload } = require("../middleware/upload");
 const GrupoAgendamentos = require("../../commands/modules/GrupoAgendamentos");
 const { validateRegexFilter } = require("../../utils/RegexFilterValidator");
+const { validateCommandLimits } = require("../../utils/CommandLimits");
 const {
 	parseServerAddress,
 	formatServerAddress
@@ -588,6 +589,14 @@ function registerManagementRoutes(api) {
 						});
 					}
 				}
+			}
+
+			if (changes.commandLimits !== undefined) {
+				const validation = validateCommandLimits(changes.commandLimits);
+				if (!validation.valid) {
+					return res.status(400).json({ success: false, message: validation.error });
+				}
+				changes.commandLimits = validation.limits;
 			}
 
 			if (changes.roleta !== undefined && changes.roleta !== null) {
