@@ -61,6 +61,8 @@ processors:
           # comandos Redis/SQL nunca levam argumentos (chaves contêm token de sessão / IDs)
           - set(attributes["db.query.text"], Split(attributes["db.query.text"], " ")[0]) where attributes["db.system.name"] == "redis" or attributes["db.system"] == "redis"
           - set(attributes["db.statement"], Split(attributes["db.statement"], " ")[0]) where attributes["db.system"] == "redis"
+          - replace_pattern(attributes["url.full"], "[^/]*(@|%40)(c\\.us|g\\.us|lid|s\\.whatsapp\\.net)", "{id}")
+          - replace_pattern(attributes["url.path"], "[^/]*(@|%40)(c\\.us|g\\.us|lid|s\\.whatsapp\\.net)", "{id}")
           - replace_pattern(name, "[0-9]{6,}", "{n}")
           - replace_pattern(attributes["http.route"], "[0-9]{6,}", "{n}")
       - context: spanevent

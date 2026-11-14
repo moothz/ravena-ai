@@ -71,7 +71,8 @@ function start() {
 		String(p || "")
 			.split("?")[0]
 			.replace(/\/bot[^/]+/, "/bot***")
-			.replace(/[0-9]{6,}/g, "{n}");
+			.replace(/[0-9]{6,}/g, "{n}")
+			.replace(/[^/]*(@|%40)(c\.us|g\.us|lid|s\.whatsapp\.net)/gi, "{id}");
 
 	// Ruído que não ajuda a achar gargalo: health checks, long-poll do Telegram, polling de status.
 	const IGNORED_INCOMING = [/^\/health/, /^\/favicon/, /^\/public\//, /^\/static\//];
@@ -99,7 +100,15 @@ function start() {
 				ignoreOutgoingRequestHook: (opts) => IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
 				// URL de saída sem query string e sem token de bot do Telegram (o collector repete a máscara).
 				requestHook: (span, req) => {
-					if (typeof req.getHeader !== "function" || typeof req.path !== "string") return; // só ClientRequest
+					if (typeof req.getHeader !== "function") {
+						// IncomingMessage (servidor): caminho sem query e com IDs longos mascarados
+						if (typeof req.url === "string") {
+							span.setAttribute("url.path", sanitizePath(req.url));
+							span.setAttribute("http.target", sanitizePath(req.url));
+						}
+						return;
+					}
+					if (typeof req.path !== "string") return;
 					const host = req.getHeader("host") || req.host || "";
 					const path = sanitizePath(req.path);
 					span.setAttribute("url.full", `${req.protocol || "http:"}//${host}${path}`);
