@@ -86,10 +86,10 @@ function start() {
 	const pendingCalls = new WeakMap();
 	let telemetryHelpers = null;
 	const helpers = () => (telemetryHelpers ||= require("./index"));
-	const rememberCommand = (span, host) => {
+	const rememberCommand = (span, host, method, path) => {
 		try {
 			const cmd = helpers().currentCommandSpan();
-			if (cmd) pendingCalls.set(span, { cmd, host });
+			if (cmd) pendingCalls.set(span, { cmd, host, method, path: sanitizePath(path) });
 		} catch {}
 	};
 	const noteResponse = (span, status) => {
@@ -97,7 +97,7 @@ function start() {
 		if (!entry) return;
 		pendingCalls.delete(span);
 		try {
-			helpers().noteDownstream(entry.cmd, entry.host, status);
+			helpers().noteDownstream(entry.cmd, entry.host, status, entry.method, entry.path);
 		} catch {}
 	};
 
@@ -142,7 +142,7 @@ function start() {
 					const host = req.getHeader("host") || req.host || "";
 					const path = sanitizePath(req.path);
 					span.setAttribute("url.full", `${req.protocol || "http:"}//${host}${path}`);
-					rememberCommand(span, host);
+					rememberCommand(span, host, req.method, req.path);
 				},
 				responseHook: (span, res) => {
 					// resposta de cliente (IncomingMessage com statusCode e sem método)
@@ -156,7 +156,7 @@ function start() {
 				ignoreRequestHook: (req) => IGNORED_OUTGOING.some((re) => re.test(req.path || "")),
 				requestHook: (span, req) => {
 					try {
-						rememberCommand(span, new URL(req.origin).host);
+						rememberCommand(span, new URL(req.origin).host, req.method, req.path);
 					} catch {}
 				},
 				responseHook: (span, { response }) => noteResponse(span, response?.statusCode),

@@ -114,6 +114,7 @@ function registerGamesRoutes(api) {
 
 		try {
 			const userId = String(req.body?.userId || "").replace(/\D/g, "");
+			telemetry.setAttrs({ "ravena.user.id_hash": telemetry.hashUserId(userId) });
 			if (!userId) {
 				return res.status(422).json({ ok: false, error: "userId é obrigatório." });
 			}

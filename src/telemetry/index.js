@@ -167,8 +167,11 @@ function outcomeMiddleware(req, res, next) {
 // ── Resultado do comando a partir das chamadas aos microsserviços (waifuletes / Jardim) ─────────
 // O span "command <nome>" fica guardado no contexto; os hooks de HTTP (otel.js) anotam o status
 // de cada resposta dos parceiros. Ao fim do comando, se ninguém definiu app.outcome, vale a
-// ÚLTIMA resposta de parceiro: 5xx/erro de rede → error; 4xx → rejected (downstream_<status>).
-// (Pré-checagens 4xx que o comando trata e seguem adiante não contam: só a última chamada.)
+// última resposta de OPERAÇÃO MUTÁVEL (POST/PUT/PATCH/DELETE) de parceiro — ou a última
+// resposta qualquer, se o comando só leu: 5xx/erro de rede → error; 4xx → rejected
+// (downstream_<status>). Assim uma pré-checagem 4xx seguida de uma ação 2xx (ex.: kakera/daily
+// antes do roll) não marca o comando, e uma ação 4xx seguida de leituras 2xx (ex.: colheita
+// recusada e depois harvest-totals) marca.
 const COMMAND_SPAN_KEY = api.createContextKey("ravena.command.span");
 const partnerHosts = new Set();
 for (const [envName, def] of [
@@ -193,16 +196,23 @@ function currentCommandSpan() {
 }
 
 /** Registra no span do comando o status de uma resposta de microsserviço parceiro. */
-function noteDownstream(commandSpan, host, statusCode) {
+function noteDownstream(commandSpan, host, statusCode, method, path) {
 	const partner = partnerOf(host);
 	if (!partner || !commandSpan || !commandSpan.isRecording()) return;
 	const code = Number(statusCode) || 0;
 	const attrs = commandSpan.attributes || {};
+	const mutating = /^(POST|PUT|PATCH|DELETE)$/i.test(String(method || ""));
 	commandSpan.setAttributes({
 		"ravena.downstream.calls": (attrs["ravena.downstream.calls"] || 0) + 1,
 		"ravena.downstream.last_status": code,
 		"ravena.downstream.last_service": partner
 	});
+	if (mutating) {
+		commandSpan.setAttributes({
+			"ravena.downstream.last_action_status": code,
+			"ravena.downstream.last_action": `${String(method).toUpperCase()} ${path || ""}`.trim().slice(0, 80)
+		});
+	}
 	if (code >= 400 || code === 0) {
 		commandSpan.setAttribute("ravena.downstream.failures", (attrs["ravena.downstream.failures"] || 0) + 1);
 	}
@@ -211,7 +221,8 @@ function noteDownstream(commandSpan, host, statusCode) {
 /** Resultado final do comando quando o código não definiu um. */
 function finalizeCommandOutcome(span) {
 	if (!span || !span.isRecording() || hasOutcome(span)) return;
-	const last = span.attributes?.["ravena.downstream.last_status"];
+	const a = span.attributes || {};
+	const last = a["ravena.downstream.last_action_status"] ?? a["ravena.downstream.last_status"];
 	if (last === 0 || last >= 500) {
 		span.setAttributes({ "app.outcome": "error", "app.reject.reason": `downstream_${last || "network"}` });
 	} else if (last >= 400) {
