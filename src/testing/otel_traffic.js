@@ -6,7 +6,11 @@
  * (EventHandler.onMessage → CommandHandler → serviços → waifuletes / Jardim das Sombras / LLM).
  *
  * Uso (dentro do container, com OTEL_EXPORTER_OTLP_ENDPOINT definido no .env):
- *   docker compose exec ravena-ai node --require ./src/telemetry/otel.js src/testing/otel_traffic.js [rodadas] [--sem-llm]
+ *   docker compose exec ravena-ai node --require ./src/telemetry/otel.js src/testing/otel_traffic.js [rodadas] [--com-ia]
+ *
+ * Por padrão NÃO dispara nada que chame serviços de IA/geração de imagem (LLM, bonsai): !ai e
+ * !mu-casar (que gera a foto do casal) só entram com --com-ia, e nesse caso uma única vez por
+ * execução (são serviços remotos de terceiros; não use para volume).
  *
  * As respostas ficam só na memória do FakeBot (nada é enviado a terceiros). Os comandos de jogo
  * alteram os bancos LOCAIS do waifuletes/Jardim para os usuários falsos 55119000000xx.
@@ -20,13 +24,12 @@ const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
 
 const rounds = Number(process.argv[2] || 1);
-const withLLM = !process.argv.includes("--sem-llm");
+const withAI = process.argv.includes("--com-ia");
 
 const COMMANDS = [
 	"!ping",
 	"!mu-roll",
 	"!mu-roll",
-	"!mu-casar",
 	"!mu-daily",
 	"!fazenda",
 	"!faz-loja",
@@ -37,7 +40,8 @@ const COMMANDS = [
 	"!banco-extrato",
 	"!comando-que-nao-existe"
 ];
-if (withLLM) COMMANDS.push("!ai responda apenas com a palavra ok");
+// Comandos que chamam IA remota: no máximo uma vez por execução, e só com --com-ia
+const AI_COMMANDS = withAI ? ["!mu-casar", "!ai responda apenas com a palavra ok"] : [];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,7 +62,17 @@ async function main() {
 				msg.platform = "telegram";
 				msg.timestamp = Math.round(Date.now() / 1000);
 				eventHandler.onMessage(bot, msg);
-				await sleep(content.startsWith("!ai") ? 8000 : 1500);
+				await sleep(1500);
+			}
+		}
+		if (r === 0) {
+			for (const content of AI_COMMANDS) {
+				eventHandler.commandHandler.userDebounceMap?.clear();
+				const msg = createMessage({ content, author: "5511900000010@s.whatsapp.net", group: "120363000000999@g.us" });
+				msg.platform = "telegram";
+				msg.timestamp = Math.round(Date.now() / 1000);
+				eventHandler.onMessage(bot, msg);
+				await sleep(10000);
 			}
 		}
 		// Um caso de debounce de propósito (dois comandos colados do mesmo usuário)

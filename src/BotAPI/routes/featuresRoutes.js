@@ -630,6 +630,7 @@ function registerFeaturesRoutes(api) {
 
 	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
 	app.post("/api/market/transfer", ...marketGuards, async (req, res) => {
+		telemetry.markOutcomeOnFinish(res);
 		try {
 			const {
 				fromUserId,

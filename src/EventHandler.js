@@ -18,7 +18,7 @@ function messageSpanAttributes(bot, message) {
 		"ravena.message.has_media": Boolean(message?.hasMedia),
 		"ravena.message.lag_ms": lagMs !== undefined && lagMs >= 0 && lagMs < 864e5 ? lagMs : undefined,
 		"ravena.chat.id_hash": telemetry.hashId(message?.group || message?.from),
-		"ravena.user.id_hash": telemetry.hashId(message?.author || message?.authorAlt)
+		"ravena.user.id_hash": telemetry.hashUserId(message?.author || message?.authorAlt)
 	};
 }
 const Database = require("./utils/Database");

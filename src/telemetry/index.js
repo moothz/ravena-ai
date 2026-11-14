@@ -142,6 +142,29 @@ async function awaitPending(message, capMs = 120000) {
 	delete message[PENDING];
 }
 
+/**
+ * Para rotas Express: ao terminar a resposta, grava app.outcome no span ativo da requisição
+ * (4xx = rejected com o status como motivo; 5xx = error), se ninguém tiver gravado antes.
+ */
+function markOutcomeOnFinish(res) {
+	const span = trace.getActiveSpan();
+	if (!span || !span.isRecording() || !res || typeof res.once !== "function") return;
+	res.once("finish", () => {
+		if (hasOutcome(span)) return;
+		const code = res.statusCode;
+		if (code >= 500) span.setAttribute("app.outcome", "error");
+		else if (code >= 400) span.setAttributes({ "app.outcome": "rejected", "app.reject.reason": `http_${code}` });
+		else span.setAttribute("app.outcome", "ok");
+	});
+}
+
+/** Pseudônimo de usuário com a mesma normalização que a ravena usa ao chamar waifuletes/Jardim. */
+function hashUserId(id) {
+	if (id === undefined || id === null || id === "") return undefined;
+	const norm = String(id).split("@")[0].split(":")[0];
+	return hashId(norm || id);
+}
+
 /** IDs de correlação para logs ("" se não houver span ativo). */
 function logIds() {
 	const s = trace.getActiveSpan();
@@ -168,6 +191,8 @@ module.exports = {
 	addEvent,
 	recordError,
 	hasOutcome,
+	markOutcomeOnFinish,
+	hashUserId,
 	trackPending,
 	addPending,
 	awaitPending,

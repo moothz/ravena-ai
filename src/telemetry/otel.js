@@ -21,6 +21,21 @@ if (endpoint && !disabled) {
 	}
 }
 
+function compactDiagLogger(base) {
+	const last = new Map();
+	const wrap = (level) => (msg, ...args) => {
+		const first = String(msg ?? "").split("\n")[0].slice(0, 200);
+		const detail = args.map((a) => (a && a.message ? a.message : typeof a === "string" ? a : "")).find(Boolean) || "";
+		const line = `[otel] ${first}${detail ? ` — ${String(detail).split("\n")[0].slice(0, 200)}` : ""}`;
+		const now = Date.now();
+		if (now - (last.get(line) || 0) < 60000) return;
+		last.set(line, now);
+		if (last.size > 200) last.clear();
+		base[level](line);
+	};
+	return { error: wrap("error"), warn: wrap("warn"), info: wrap("info"), debug: wrap("debug"), verbose: wrap("verbose") };
+}
+
 function start() {
 	const { NodeSDK } = require("@opentelemetry/sdk-node");
 	const { diag, DiagConsoleLogger, DiagLogLevel } = require("@opentelemetry/api");
@@ -35,8 +50,9 @@ function start() {
 	const { IORedisInstrumentation } = require("@opentelemetry/instrumentation-ioredis");
 	const { RuntimeNodeInstrumentation } = require("@opentelemetry/instrumentation-runtime-node");
 
-	// Erros de export (collector fora do ar) só aparecem como aviso, nunca derrubam o processo.
-	diag.setLogger(new DiagConsoleLogger(), DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR);
+	// Erros de export (collector fora do ar) nunca derrubam o processo. O logger de diagnóstico
+	// imprime só a 1ª linha (sem stack) e no máximo 1 vez por minuto por mensagem.
+	diag.setLogger(compactDiagLogger(new DiagConsoleLogger()), DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR);
 
 	let version = "unknown";
 	try {
@@ -77,6 +93,8 @@ function start() {
 		}),
 		instrumentations: [
 			new HttpInstrumentation({
+				// Chamadas de saída sem span pai (health checks periódicos, timers) não viram traces soltos.
+				requireParentforOutgoingSpans: true,
 				ignoreIncomingRequestHook: (req) => IGNORED_INCOMING.some((re) => re.test(req.url || "")),
 				ignoreOutgoingRequestHook: (opts) => IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
 				// URL de saída sem query string e sem token de bot do Telegram (o collector repete a máscara).
@@ -90,6 +108,7 @@ function start() {
 				headersToSpanAttributes: { client: { requestHeaders: [], responseHeaders: [] }, server: { requestHeaders: [], responseHeaders: [] } }
 			}),
 			new UndiciInstrumentation({
+				requireParentforSpans: true,
 				ignoreRequestHook: (req) => IGNORED_OUTGOING.some((re) => re.test(req.path || "")),
 				startSpanHook: (req) => ({
 					"url.full": `${req.origin}${sanitizePath(req.path)}`,
