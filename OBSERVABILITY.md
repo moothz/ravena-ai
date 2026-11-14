@@ -89,13 +89,22 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 | Span | Kind | Atributos principais |
 |---|---|---|
 | `chat.message process` | CONSUMER (raiz por mensagem) | `messaging.system` (telegram/whatsapp/discord), `ravena.chat.type`, `ravena.message.type`, `ravena.message.lag_ms` (atraso entre o envio e o processamento), `ravena.chat.id_hash`, `ravena.user.id_hash`, `app.outcome`/`app.reject.reason` (spam, blocked_user, debounce, spam_ban) |
-| `command <nome>` / `command custom` | INTERNAL | `app.command.name`, `app.command.category`, `app.command.type` (fixed/custom/auto), `app.outcome` (ok/rejected/error), `app.reject.reason` (cooldown, rate_limit, muted, time_window), eventos `command.checks_passed` e `command.method_done` |
+| `command <nome>` / `command custom` | INTERNAL | `app.command.name`, `app.command.category`, `app.command.type` (fixed/custom/auto), `app.outcome` (ok/rejected/error), `app.reject.reason` (cooldown, rate_limit, muted, time_window, `downstream_<status>`), `ravena.downstream.*` (chamadas, falhas, último status/serviço), eventos `command.checks_passed` e `command.method_done` |
 | `llm.request` | INTERNAL | fila: `ravena.llm.queue_wait_ms`, `ravena.llm.priority`, `ravena.llm.tool_calling`, `ravena.llm.has_image` |
 | `chat <modelo>` | CLIENT (GenAI semconv) | `gen_ai.operation.name=chat`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`/`output_tokens` (somados entre rodadas de tool), `ravena.llm.rounds`, `ravena.llm.provider` |
 | `execute_tool <ferramenta>` | INTERNAL | `gen_ai.tool.name` |
 | `sqlite <OP> <tabela>` | CLIENT, só se ≥ `OTEL_SQLITE_SLOW_MS` | `db.system.name=sqlite`, `db.operation.name`, `db.collection.name`. Todo span também acumula `ravena.sqlite.total_ms` e `ravena.sqlite.calls` (o better-sqlite3 é síncrono e bloqueia o event loop) |
 | `market transfer.runas` / `market transfer.farm` | INTERNAL | dentro de `POST /api/market/transfer` (chamado pelo waifuletes). Contagens (`ravena.market.*`), evento `market.compensation.started`, `ravena.market.compensated` |
 | `fazenda harvest.reconcile` | INTERNAL | dentro de `POST /api/games/fazenda/harvest` (chamado pelo Jardim). `ravena.fazenda.credited_count` |
+
+**Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a **última** resposta de parceiro:
+- 4xx → `rejected` + `downstream_<status>`;
+- 5xx → `error`;
+- 2xx → `ok`.
+
+Pré-checagens 4xx que o comando trata e seguem adiante, como `kakera/daily` antes do roll, não contam.
+
+`/api/market/transfer` grava motivos específicos: `insufficient_runas`, `insufficient_petalitas`, `insufficient_farm_item`, `same_user`, `invalid_*`, `buff_*`, `farm_validation_failed`. As duas rotas do mercado também gravam o resultado dos 401/429 dos guards.
 
 `app.outcome` e `app.reject.reason` são comuns aos 3 serviços e viram dimensões das métricas RED. Rejeição de negócio esperada (cooldown, saldo, limite) **não** é erro: o span fica sem status ERROR e recebe `app.outcome=rejected`. Exceções inesperadas recebem status ERROR, `error.type` e o evento `exception`.
 
@@ -116,6 +125,28 @@ Regras que valem para os spans:
   - mascara tokens do Telegram, `key=`/`token=`/`auth=` e argumentos de comandos Redis;
   - apaga headers de auth e `user.*`/`enduser.id`.
 - **Baggage não é usado**, porque ele se propaga para todos os serviços downstream.
+
+### Identificar um usuário a partir de um trace (operador autorizado)
+
+Os spans só têm pseudônimos. Para saber **quem** está por trás de um `*.id_hash` (ex.: investigar uma reclamação, um abuso ou um erro de um jogador), quem tem acesso à máquina do bot e ao `OTEL_ID_SALT` recomputa o HMAC localmente:
+
+```bash
+# hash → ID (+ nome/apelido conhecido). Procura nos SQLite da ravena e, via docker exec,
+# nos usuários/grupos do waifuletes e nos jogadores do Jardim. Só leitura.
+python3 observability/tools/quem-e.py 3fa9c1d2e4b5a6f7
+
+# ID → hashes + links prontos do Jaeger filtrando pela tag em cada serviço (caminho inverso)
+python3 observability/tools/quem-e.py --id 5511999990000@c.us
+python3 observability/tools/quem-e.py --id 120363000000000@g.us --grupo
+```
+
+- **Salt:** vem de `OTEL_ID_SALT` (env) ou do `.env` da ravena (`--env` para outro arquivo). Ele **nunca** é impresso. Sem o salt não há como reverter, e é isso que protege os traces.
+- **Mesma entrada de HMAC nos 3 serviços:**
+  - usuário: ID sem sufixo (cortado no primeiro `@` e no primeiro `:`, então `5511…@c.us`, `5511…:3@s.whatsapp.net` e `5511…` dão o mesmo hash) → `ravena.user.id_hash`, `waifu.user.id_hash`, `jds.user.id_hash`;
+  - grupo/chat: ID completo → `ravena.chat.id_hash`, `waifu.group.id_hash`.
+- **Busca pelo usuário em todos os serviços:** no Jaeger, *Tags* `ravena.user.id_hash=<hash>` (ou `waifu.`/`jds.`, mesmo valor).
+- **Dado pessoal:** o resultado (ID, nome) é dado pessoal. Use só para a investigação e não cole em issue, chat ou log público.
+- **Sem dependências:** Python 3 padrão. Rode na raiz do repo ravena-ai.
 
 **Logs:** o `Logger` acrescenta `[trace_id=… span_id=…]` quando há span ativo. Os logs continuam só no `docker logs` e em `logs/`; não são exportados (os logs atuais têm IDs crus e não devem sair da máquina).
 
@@ -169,4 +200,5 @@ Amostra **100%** (`parentbased_always_on`), porque o volume do homelab é baixo 
 - **WhatsApp (whatsgoapi, Go):** não instrumentado. O trace de WA começa no webhook HTTP da ravena. Para continuar o trace a partir do Go: `otelhttp.NewHandler` no servidor e `otelhttp.NewTransport` no cliente que chama o webhook, com `req.WithContext(ctx)` (pacote `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp`).
 - **Fire-and-forget:** com a telemetria ligada, `chat.message process` espera os comandos e respostas disparados sem `await` antes de terminar (teto de 120 s), então a duração do span da mensagem é o fim a fim. Trabalho agendado depois disso (`setTimeout`, crons) não entra no trace.
 - **Sem cobertura:** `impit` (cliente HTTP em Rust), WebSocket do ComfyUI e processos filhos (ffmpeg, yt-dlp) não geram spans automáticos.
+- **Serviços de teste no Jaeger:** `smoke` e `waifuletes-otel-teste` aparecem na lista até expirarem (TTL de 7 dias). O Badger não apaga por serviço; a única alternativa seria zerar o volume `jaeger-badger`, perdendo todos os traces. O Jaeger não rastreia mais as próprias consultas (`enable_tracing: false`).
 - **Grafana sem traces:** o datasource Jaeger do Grafana não funciona com o Jaeger 2.23 (API de busca legada removida). Os traces ficam na UI do Jaeger, e o dashboard tem link para ela.
