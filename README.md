@@ -12,7 +12,7 @@ A **RavenaBot** foi desenvolvida para potencializar a dinâmica de grupos e cana
 - **Automação e Moderação:** Boas-vindas, despedidas, filtros de palavras, links e quarentena de conteúdo NSFW.
 - **Mídia e Criação:** Geração de stickers estáticos e animados, conversão de formatos (áudio/vídeo/GIF) e download de plataformas (YouTube, TikTok, Instagram).
 - **Gamificação e Coleção:** Sistema de harém/gacha (*Waifuletes*), pescaria de peixes lendários, cassino (slots/roleta) e jogos de palavras (anagrama/stop).
-- **Streaming:** Notificações automáticas em tempo real de lives da Twitch, Kick e YouTube.
+- **Streaming:** Notificações automáticas em tempo real de lives da Twitch, Kick, YouTube e TikTok (além de vídeos novos no YouTube e TikTok).
 - **Inteligência Artificial:** Resumo de mensagens, transcrição de voz (Whisper/F5-TTS), OCR e respostas inteligentes via LLMs (Gemini, Claude, GPT, Ollama).
 
 ### 🌐 Use a Ravena agora!

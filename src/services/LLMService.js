@@ -282,14 +282,14 @@ class LLMService {
 				function: {
 					name: "check_live_streams",
 					description:
-						"Verifica o status em tempo real das transmissões e canais de streamers monitorados pelo bot (Twitch, Kick e YouTube), exibindo quem está ao vivo, jogo, título e espectadores.",
+						"Verifica o status em tempo real das transmissões e canais de streamers monitorados pelo bot (Twitch, Kick, YouTube e TikTok), exibindo quem está ao vivo, jogo, título e espectadores.",
 					parameters: {
 						type: "object",
 						properties: {
 							platform: {
 								type: "string",
 								description:
-									"Plataforma opcional para filtrar: 'twitch', 'kick', 'youtube' ou 'all' (padrão: 'all')"
+									"Plataforma opcional para filtrar: 'twitch', 'kick', 'youtube', 'tiktok' ou 'all' (padrão: 'all')"
 							}
 						},
 						required: []

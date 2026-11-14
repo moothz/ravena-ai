@@ -172,7 +172,5 @@ Todas as conexões passam por `DatabaseMappers._applyPragmas()`: `journal_mode=W
 Para voltar ao modo antigo use `SQLITE_JOURNAL_MODE=DELETE` (aplica `synchronous=FULL`).
 Os prepared statements são reutilizados por conexão (cache de até 500 SQLs distintos).
 
-Para resetar o banco remoto após migrações de schema:
-```bash
-node src/utils/db/migrations/reset_remote_backup.js
-```
+Colunas novas no SQLite são adicionadas automaticamente no MySQL remoto a cada sync (`DatabaseBackup.ensureRemoteColumns`),
+então migrações que só adicionam colunas não exigem ação manual no remoto.

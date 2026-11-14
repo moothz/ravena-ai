@@ -41,6 +41,7 @@ class Group {
 		this.twitch = data.twitch ?? [];
 		this.kick = data.kick ?? [];
 		this.youtube = data.youtube ?? [];
+		this.tiktok = data.tiktok ?? [];
 		this.botNotInGroup = data.botNotInGroup ?? [];
 		this.webhooks = data.webhooks ?? [];
 
@@ -117,6 +118,7 @@ class Group {
 			twitch: this.twitch,
 			kick: this.kick,
 			youtube: this.youtube,
+			tiktok: this.tiktok,
 			botNotInGroup: this.botNotInGroup,
 			webhooks: this.webhooks,
 			minecraftServer: this.minecraftServer,
@@ -182,6 +184,7 @@ class Group {
 		if (data.twitch) this.twitch = data.twitch;
 		if (data.kick) this.kick = data.kick;
 		if (data.youtube) this.youtube = data.youtube;
+		if (data.tiktok) this.tiktok = data.tiktok;
 
 		// Not in group
 		if (data.botNotInGroup) this.botNotInGroup = data.botNotInGroup;

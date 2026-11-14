@@ -10,6 +10,16 @@ const Database = require("./utils/Database");
 const AdminUtils = require("./utils/AdminUtils");
 const storageService = require("./services/StorageService");
 
+const PLATFORM_LABELS = {
+	twitch: "Twitch",
+	kick: "Kick",
+	youtube: "YouTube",
+	tiktok: "TikTok"
+};
+
+// Plataformas com vídeos gravados além de lives (canal tem notifyVideos/notifyLives e videoConfig)
+const VIDEO_PLATFORMS = new Set(["youtube", "tiktok"]);
+
 /**
  * Sistema para gerenciamento de monitoramento de streams (Singleton)
  */
@@ -171,12 +181,7 @@ class StreamSystem {
 				if (data.groupId) {
 					const bot = await this.findBotForGroup(data.groupId);
 					if (bot) {
-						const platformName =
-							data.platform === "youtube"
-								? "YouTube"
-								: data.platform === "twitch"
-									? "Twitch"
-									: "Kick";
+						const platformName = PLATFORM_LABELS[data.platform] ?? data.platform;
 
 						// Monta o link público do canal
 						let channelLink = "";
@@ -186,6 +191,8 @@ class StreamSystem {
 							channelLink = `https://kick.com/${data.channelName}`;
 						} else if (data.platform === "youtube") {
 							channelLink = `https://www.youtube.com/@${data.channelName}`;
+						} else if (data.platform === "tiktok") {
+							channelLink = `https://www.tiktok.com/@${data.channelName}`;
 						}
 
 						// Personaliza a mensagem com base no status detectado
@@ -300,7 +307,8 @@ class StreamSystem {
 			const subscribedChannels = {
 				twitch: [],
 				kick: [],
-				youtube: []
+				youtube: [],
+				tiktok: []
 			};
 
 			const now = new Date();
@@ -308,7 +316,7 @@ class StreamSystem {
 			// Processa cada grupo
 			for (const group of groups) {
 				let groupModified = false;
-				const platforms = ["twitch", "kick", "youtube"];
+				const platforms = ["twitch", "kick", "youtube", "tiktok"];
 
 				for (const platform of platforms) {
 					if (group[platform] && Array.isArray(group[platform])) {
@@ -355,7 +363,7 @@ class StreamSystem {
 									}
 								}
 							} else {
-								// Kick e YouTube
+								// Kick, YouTube e TikTok
 								if (!subscribedChannels[platform].includes(channelConfig.channel)) {
 									this.streamMonitor.subscribe(channelConfig.channel, platform);
 									subscribedChannels[platform].push(channelConfig.channel);
@@ -378,7 +386,7 @@ class StreamSystem {
 			}
 
 			this.logger.info(
-				`Carregados para monitoramento: ${subscribedChannels.twitch.length} canais Twitch, ${subscribedChannels.kick.length} canais Kick e ${subscribedChannels.youtube.length} canais YouTube`
+				`Carregados para monitoramento: ${subscribedChannels.twitch.length} canais Twitch, ${subscribedChannels.kick.length} canais Kick, ${subscribedChannels.youtube.length} canais YouTube e ${subscribedChannels.tiktok.length} canais TikTok`
 			);
 		} catch (error) {
 			this.logger.error("Erro ao carregar canais para monitorar:", error);
@@ -402,8 +410,8 @@ class StreamSystem {
 
 				if (!channelConfig) continue;
 
-				// Para YouTube, verifica se lives estão ativadas para este canal
-				if (data.platform === "youtube" && channelConfig.notifyLives === false) continue;
+				// Para plataformas com vídeos (YouTube/TikTok), verifica se lives estão ativadas para este canal
+				if (VIDEO_PLATFORMS.has(data.platform) && channelConfig.notifyLives === false) continue;
 
 				await this.processStreamEvent(groupData, channelConfig, data, "online");
 			}
@@ -429,8 +437,8 @@ class StreamSystem {
 
 				if (!channelConfig) continue;
 
-				// Para YouTube, verifica se lives estão ativadas para este canal
-				if (data.platform === "youtube" && channelConfig.notifyLives === false) continue;
+				// Para plataformas com vídeos (YouTube/TikTok), verifica se lives estão ativadas para este canal
+				if (VIDEO_PLATFORMS.has(data.platform) && channelConfig.notifyLives === false) continue;
 
 				await this.processStreamEvent(groupData, channelConfig, data, "offline");
 			}
@@ -448,9 +456,10 @@ class StreamSystem {
 			const groups = await this.database.getGroups();
 
 			for (const groupData of groups) {
-				if (!groupData.youtube) continue;
+				const platformChannels = groupData[data.platform ?? "youtube"];
+				if (!Array.isArray(platformChannels)) continue;
 
-				const channelConfig = groupData.youtube.find(
+				const channelConfig = platformChannels.find(
 					(c) => c.channel.toLowerCase() === data.channelName.toLowerCase()
 				);
 
@@ -1250,6 +1259,12 @@ class StreamSystem {
 				prompt = `O canal ${eventData.channelName} ficou online e está jogando ${eventData.game ?? "um jogo"} com o título "${eventData.title ?? ""}". Gere uma mensagem animada para convidar a galera do grupo a participar da stream. Você deve incluir o link da stream: ${streamLink}${customPersonalidade}`;
 			} else if (eventData.platform === "youtube") {
 				prompt = `O canal ${eventData.channelName} lançou vídeo novo: "${eventData.title ?? ""}". Gere convite animado. Você deve incluir o link do canal: https://youtube.com/${eventData.channelName}${customPersonalidade}`;
+			} else if (eventData.platform === "tiktok") {
+				const isVideo = Boolean(eventData.videoId);
+				const tiktokLink = eventData.url ?? `https://www.tiktok.com/@${eventData.channelName}`;
+				prompt = isVideo
+					? `O perfil ${eventData.channelName} postou vídeo novo no TikTok: "${eventData.title ?? ""}". Gere convite animado para a galera do grupo assistir. Você deve incluir o link do vídeo: ${tiktokLink}${customPersonalidade}`
+					: `O perfil ${eventData.channelName} entrou ao vivo no TikTok com o título "${eventData.title ?? ""}". Gere uma mensagem animada para convidar a galera do grupo a participar da live. Você deve incluir o link da live: ${tiktokLink}${customPersonalidade}`;
 			}
 
 			const aiResponse = await this.llmService.getCompletion({ prompt, priority: 3 });

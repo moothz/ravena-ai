@@ -6,6 +6,20 @@ const Database = require("../utils/Database");
 const Logger = require("../utils/Logger");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// TikTok: status 4 = sala encerrada (mesma regra usada pelo tiktok-live-connector)
+const TIKTOK_ROOM_STATUS_ENDED = 4;
+// Respostas do perfil web para usuário inexistente/banido
+const TIKTOK_USER_NOT_FOUND_CODES = [10202, 10221, 10223];
+// Polls consecutivos com "user_not_found" antes de pausar o canal (~2h no intervalo padrão)
+const TIKTOK_NOT_FOUND_LIMIT = 60;
+// Erro da API do TikTok para usuário inexistente (statusCode 19881007)
+const TIKTOK_API_USER_NOT_FOUND = /user_not_found|19881007/i;
+// Quantos itens do perfil olhar para achar o vídeo mais novo (cobre vídeos fixados)
+const TIKTOK_VIDEO_SCAN_LIMIT = 6;
+// Só notifica vídeos publicados nas últimas 24h (mesma regra do YouTube)
+const TIKTOK_RECENT_VIDEO_MS = 24 * 60 * 60 * 1000;
+const TIKTOK_YTDLP_TIMEOUT_MS = 60000;
+
 // Retry helper with exponential backoff for network errors
 async function retryWithBackoff(fn, maxAttempts = 3, baseDelay = 2000) {
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -89,12 +103,14 @@ class StreamMonitor extends EventEmitter {
 		this.pollingTimers = {
 			twitch: null,
 			kick: null,
-			youtube: null
+			youtube: null,
+			tiktok: null
 		};
 		this.customPollingIntervals = {
 			twitch: null,
 			kick: null,
-			youtube: null
+			youtube: null,
+			tiktok: null
 		};
 
 		this.youtubeNotFounds = {};
@@ -107,6 +123,14 @@ class StreamMonitor extends EventEmitter {
 		};
 		this.twitchNotFounds = {};
 		this.kickNotFounds = {};
+		this.tiktokNotFounds = {};
+		// Chave opcional do Euler Stream (sign server usado pelo tiktok-live-connector como último fallback)
+		this.tiktokSignApiKey = process.env.TIKTOK_SIGN_API_KEY || null;
+		this.tiktokVideoCheckIntervalMs =
+			(parseInt(process.env.TIKTOK_VIDEO_CHECK_MINUTES, 10) || 15) * 60 * 1000;
+		this.tiktokLastVideoCheck = {};
+		this.tiktokConnections = new Map();
+		this._tiktokLibPromise = null;
 		this.twitchRateLimitedUntil = null;
 		this.kickRateLimitedUntil = null;
 		this.twitchRateLimit = {
@@ -123,7 +147,8 @@ class StreamMonitor extends EventEmitter {
 		this.isPolling = {
 			twitch: false,
 			kick: false,
-			youtube: false
+			youtube: false,
+			tiktok: false
 		};
 
 		this.logger = new Logger("stream-monitor");
@@ -585,6 +610,8 @@ class StreamMonitor extends EventEmitter {
 		if (eventName === "streamOnline") {
 			if (data.platform === "youtube" && data.videoId) {
 				notificationKey = `online:${data.platform}:${data.channelName.toLowerCase()}:${data.videoId}`;
+			} else if (data.platform === "tiktok" && data.roomId) {
+				notificationKey = `online:${data.platform}:${data.channelName.toLowerCase()}:${data.roomId}`;
 			} else {
 				const startedAt = data.startedAt || (status && status.startedAt);
 				if (startedAt) {
@@ -829,10 +856,31 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
+	 * Intervalo para TikTok (scraping da página /live, sem API oficial).
+	 * Conservador para não ser bloqueado pelo TikTok; vídeos novos são checados em cadência própria.
+	 * @returns {{ intervalMs: number, reason: string }}
+	 */
+	calculateOptimalTiktokInterval(channelCount = null) {
+		const count =
+			channelCount ?? this.channels.filter((c) => c.source.toLowerCase() === "tiktok").length;
+		let optimalSec = 120;
+		if (count > 60) {
+			optimalSec = 300;
+		} else if (count > 20) {
+			optimalSec = 180;
+		}
+		const videoMin = Math.round(this.tiktokVideoCheckIntervalMs / 60000);
+		return {
+			intervalMs: optimalSec * 1000,
+			reason: `TikTok: ${count} canais -> ${optimalSec}s por busca de live (vídeos a cada ${videoMin}min)`
+		};
+	}
+
+	/**
 	 * Agenda o próximo ciclo de polling para uma plataforma específica
 	 * usando agendamento recursivo (evita sobreposição de ciclos e adapta intervalos em tempo real).
 	 * @private
-	 * @param {string} platform - "twitch" | "kick" | "youtube"
+	 * @param {string} platform - "twitch" | "kick" | "youtube" | "tiktok"
 	 * @param {number} [delayMs=0] - Tempo de espera em ms antes de executar
 	 */
 	_schedulePlatformLoop(platform, delayMs = 0) {
@@ -885,6 +933,10 @@ class StreamMonitor extends EventEmitter {
 					await this._pollYoutubeChannels();
 					const calc = this.calculateOptimalYoutubeInterval();
 					nextDelayMs = this.customPollingIntervals?.youtube || calc.intervalMs;
+				} else if (platform === "tiktok") {
+					await this._pollTiktokChannels();
+					const calc = this.calculateOptimalTiktokInterval();
+					nextDelayMs = this.customPollingIntervals?.tiktok || calc.intervalMs;
 				}
 			} catch (err) {
 				this.logger.error(`[schedulePlatformLoop] Erro no ciclo de polling de ${platform}:`, err);
@@ -923,16 +975,19 @@ class StreamMonitor extends EventEmitter {
 		const twitchCalc = this.calculateOptimalTwitchInterval();
 		const kickCalc = this.calculateOptimalKickInterval();
 		const ytCalc = this.calculateOptimalYoutubeInterval();
+		const tiktokCalc = this.calculateOptimalTiktokInterval();
 
 		this.logger.info(`[startMonitoring] Intervalos calculados para polling de streams:`);
 		this.logger.info(`  • ${twitchCalc.reason}`);
 		this.logger.info(`  • ${kickCalc.reason}`);
 		this.logger.info(`  • ${ytCalc.reason}`);
+		this.logger.info(`  • ${tiktokCalc.reason}`);
 
 		// Inicia loops auto-agendados com escalonamento inicial para evitar picos
 		this._schedulePlatformLoop("twitch", 0);
 		this._schedulePlatformLoop("kick", 1500);
 		this._schedulePlatformLoop("youtube", 4000);
+		this._schedulePlatformLoop("tiktok", 6000);
 
 		this.logger.info("Monitoramento de streams iniciado (loops auto-agendados otimizados)");
 	}
@@ -960,7 +1015,7 @@ class StreamMonitor extends EventEmitter {
 	/**
 	 * Set the polling interval for platforms manually
 	 * @param {number} interval - Polling interval in milliseconds
-	 * @param {string|null} [platform=null] - "twitch" | "kick" | "youtube" | null
+	 * @param {string|null} [platform=null] - "twitch" | "kick" | "youtube" | "tiktok" | null
 	 */
 	setPollingInterval(interval, platform = null) {
 		if (platform && this.customPollingIntervals[platform] !== undefined) {
@@ -969,6 +1024,7 @@ class StreamMonitor extends EventEmitter {
 			this.customPollingIntervals.twitch = interval;
 			this.customPollingIntervals.kick = interval;
 			this.customPollingIntervals.youtube = interval;
+			this.customPollingIntervals.tiktok = interval;
 		}
 		this.pollingInterval = interval;
 		// Reinicia os loops para aplicar o novo intervalo
@@ -976,6 +1032,7 @@ class StreamMonitor extends EventEmitter {
 			this._schedulePlatformLoop("twitch", 0);
 			this._schedulePlatformLoop("kick", 1000);
 			this._schedulePlatformLoop("youtube", 2000);
+			this._schedulePlatformLoop("tiktok", 3000);
 		}
 	}
 
@@ -986,12 +1043,14 @@ class StreamMonitor extends EventEmitter {
 		this.customPollingIntervals = {
 			twitch: null,
 			kick: null,
-			youtube: null
+			youtube: null,
+			tiktok: null
 		};
 		if (this.isMonitoring) {
 			this._schedulePlatformLoop("twitch", 0);
 			this._schedulePlatformLoop("kick", 1000);
 			this._schedulePlatformLoop("youtube", 2000);
+			this._schedulePlatformLoop("tiktok", 3000);
 		}
 	}
 
@@ -1002,10 +1061,12 @@ class StreamMonitor extends EventEmitter {
 		const twitchChannels = this.channels.filter((c) => c.source.toLowerCase() === "twitch");
 		const kickChannels = this.channels.filter((c) => c.source.toLowerCase() === "kick");
 		const ytChannels = this.channels.filter((c) => c.source.toLowerCase() === "youtube");
+		const tiktokChannels = this.channels.filter((c) => c.source.toLowerCase() === "tiktok");
 
 		const twitchCalc = this.calculateOptimalTwitchInterval(twitchChannels.length);
 		const kickCalc = this.calculateOptimalKickInterval(kickChannels.length);
 		const ytCalc = this.calculateOptimalYoutubeInterval(ytChannels.length);
+		const tiktokCalc = this.calculateOptimalTiktokInterval(tiktokChannels.length);
 
 		return {
 			isMonitoring: this.isMonitoring,
@@ -1043,6 +1104,14 @@ class StreamMonitor extends EventEmitter {
 				intervalSec: Math.round((this.customPollingIntervals?.youtube || ytCalc.intervalMs) / 1000),
 				mode: this.youtubeApiKey ? "official_api" : "autonomous",
 				hasApiKey: Boolean(this.youtubeApiKey)
+			},
+			tiktok: {
+				channelCount: tiktokChannels.length,
+				intervalSec: Math.round(
+					(this.customPollingIntervals?.tiktok || tiktokCalc.intervalMs) / 1000
+				),
+				videoCheckIntervalSec: Math.round(this.tiktokVideoCheckIntervalMs / 1000),
+				hasSignApiKey: Boolean(this.tiktokSignApiKey)
 			}
 		};
 	}
@@ -1050,12 +1119,14 @@ class StreamMonitor extends EventEmitter {
 	/**
 	 * Subscribe to a channel
 	 * @param {string} channelName - The name of the channel
-	 * @param {string} source - The source platform (twitch, kick, youtube)
+	 * @param {string} source - The source platform (twitch, kick, youtube, tiktok)
 	 * @returns {boolean} - Success status
 	 */
 	subscribe(channelName, source) {
-		if (!["twitch", "kick", "youtube"].includes(source.toLowerCase())) {
-			this.logger.error(`Invalid source: ${source}. Must be 'twitch', 'kick', or 'youtube'`);
+		if (!["twitch", "kick", "youtube", "tiktok"].includes(source.toLowerCase())) {
+			this.logger.error(
+				`Invalid source: ${source}. Must be 'twitch', 'kick', 'youtube', or 'tiktok'`
+			);
 			return false;
 		}
 
@@ -1123,6 +1194,10 @@ class StreamMonitor extends EventEmitter {
 		}
 		if (this.lastPersistedStatuses && this.lastPersistedStatuses[channelKey]) {
 			delete this.lastPersistedStatuses[channelKey];
+		}
+		if (normalizedSource === "tiktok") {
+			delete this.tiktokLastVideoCheck[channelKey];
+			this.tiktokConnections.delete(this.sanitizePlatformChannelName(channelName, "tiktok"));
 		}
 
 		// Remove from DB
@@ -2540,6 +2615,367 @@ class StreamMonitor extends EventEmitter {
 	}
 
 	/**
+	 * Carrega o tiktok-live-connector sob demanda (o pacote é ESM-only e o projeto é CommonJS).
+	 * @private
+	 */
+	_getTiktokLib() {
+		if (!this._tiktokLibPromise) {
+			this._tiktokLibPromise = import("tiktok-live-connector").catch((error) => {
+				this._tiktokLibPromise = null;
+				throw error;
+			});
+		}
+		return this._tiktokLibPromise;
+	}
+
+	/**
+	 * Reaproveita uma TikTokLiveConnection por usuário (mantém cookies/presets entre polls).
+	 * Nenhum WebSocket é aberto: só os clientes HTTP da lib são usados.
+	 * @private
+	 */
+	async _getTiktokConnection(username) {
+		const cached = this.tiktokConnections.get(username);
+		if (cached) return cached;
+
+		const { TikTokLiveConnection } = await this._getTiktokLib();
+		const connection = new TikTokLiveConnection(username, {
+			signApiKey: this.tiktokSignApiKey || undefined,
+			fetchRoomInfoOnConnect: false
+		});
+		this.tiktokConnections.set(username, connection);
+		return connection;
+	}
+
+	/**
+	 * Converte o objeto liveRoomUserInfo do TikTok ({ user, liveRoom }) no formato do monitor.
+	 * @returns {Object|null} null quando o objeto não traz status da sala
+	 * @private
+	 */
+	_parseTiktokRoomInfo(roomInfo, username) {
+		const liveRoom = roomInfo?.liveRoom;
+		if (!liveRoom || liveRoom.status === undefined || liveRoom.status === null) return null;
+
+		if (liveRoom.status === TIKTOK_ROOM_STATUS_ENDED) {
+			return { isLive: false };
+		}
+
+		const startTime = Number(liveRoom.startTime);
+		const roomId = liveRoom.roomId ?? roomInfo.user?.roomId;
+		return {
+			isLive: true,
+			roomId: roomId ? String(roomId) : null,
+			title: liveRoom.title || `Live de ${username}`,
+			thumbnail: liveRoom.coverUrl || roomInfo.user?.avatarLarger || null,
+			viewerCount: liveRoom.liveRoomStats?.userCount ?? null,
+			startedAt: startTime > 0 ? new Date(startTime * 1000).toISOString() : null,
+			url: `https://www.tiktok.com/@${username}/live`
+		};
+	}
+
+	/**
+	 * Checa se um usuário do TikTok está ao vivo.
+	 * 1. Scraping da página /live (SIGI_STATE): traz título, capa, viewers e roomId.
+	 * 2. Fallback no composite da lib (HTML -> API -> Euler) para o status, e API para metadados.
+	 * @param {string} username - Usuário sanitizado (sem @)
+	 * @returns {Promise<{isLive: boolean, roomId?: string|null, title?: string, thumbnail?: string|null, viewerCount?: number|null, startedAt?: string|null, url?: string}>}
+	 * @private
+	 */
+	async _checkTiktokLiveStatus(username) {
+		const lib = await this._getTiktokLib();
+		const connection = await this._getTiktokConnection(username);
+		const routeArgs = { webClient: connection.webClient, uniqueId: connection.uniqueId };
+
+		try {
+			const htmlInfo = await lib.fetchRoomInfoFromHtmlRoute(routeArgs);
+			const parsed = this._parseTiktokRoomInfo(htmlInfo, username);
+			if (parsed) return parsed;
+		} catch (error) {
+			this.logger.debug(`[_checkTiktokLiveStatus] HTML falhou para ${username}: ${error.message}`);
+		}
+
+		const isLive = await connection.fetchIsLive();
+		if (!isLive) return { isLive: false };
+
+		try {
+			const apiInfo = await lib.fetchRoomInfoFromApiLiveRoute(routeArgs);
+			const parsed = this._parseTiktokRoomInfo(apiInfo?.data, username);
+			if (parsed?.isLive) return parsed;
+		} catch (error) {
+			this.logger.debug(
+				`[_checkTiktokLiveStatus] Metadados via API falharam para ${username}: ${error.message}`
+			);
+		}
+
+		return {
+			isLive: true,
+			roomId: null,
+			title: `Live de ${username}`,
+			thumbnail: null,
+			viewerCount: null,
+			startedAt: null,
+			url: `https://www.tiktok.com/@${username}/live`
+		};
+	}
+
+	/**
+	 * Erro definitivo de "usuário não existe" vindo da API do TikTok (direto ou dentro do composite).
+	 * @private
+	 */
+	_isTiktokUserNotFoundError(error) {
+		const nested = Array.isArray(error?.config?.requestErrs) ? error.config.requestErrs : [];
+		return [error, ...nested].some(
+			(err) => typeof err?.message === "string" && TIKTOK_API_USER_NOT_FOUND.test(err.message)
+		);
+	}
+
+	/**
+	 * Busca o vídeo mais recente do perfil via yt-dlp (o tiktok-live-connector só cobre lives).
+	 * IDs de vídeo do TikTok carregam o timestamp de criação nos 32 bits mais altos, o que permite
+	 * achar o mais novo mesmo com vídeos fixados no topo do perfil.
+	 * @param {string} username - Usuário sanitizado (sem @)
+	 * @returns {Promise<{id: string, url: string, publishedAt: string}|null>}
+	 * @private
+	 */
+	async _checkTiktokLatestVideo(username) {
+		const youtubedl = require("youtube-dl-exec");
+		const profile = await youtubedl(
+			`https://www.tiktok.com/@${username}`,
+			{
+				dumpSingleJson: true,
+				flatPlaylist: true,
+				playlistEnd: TIKTOK_VIDEO_SCAN_LIMIT,
+				noWarnings: true
+			},
+			{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
+		);
+
+		const ids = (profile?.entries || [])
+			.map((entry) => String(entry?.id ?? ""))
+			.filter((id) => /^\d{15,25}$/.test(id));
+		if (ids.length === 0) return null;
+
+		const newestId = ids.reduce((max, id) => (BigInt(id) > BigInt(max) ? id : max));
+		const createdAtSec = Number(BigInt(newestId) >> 32n);
+
+		return {
+			id: newestId,
+			url: `https://www.tiktok.com/@${username}/video/${newestId}`,
+			publishedAt: new Date(createdAtSec * 1000).toISOString()
+		};
+	}
+
+	/**
+	 * Completa título/thumbnail de um vídeo específico. Falhas não bloqueiam a notificação.
+	 * @private
+	 */
+	async _fetchTiktokVideoDetails(video, username) {
+		try {
+			const youtubedl = require("youtube-dl-exec");
+			const info = await youtubedl(
+				video.url,
+				{ dumpSingleJson: true, skipDownload: true, noWarnings: true },
+				{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
+			);
+			return {
+				...video,
+				title: info?.title || info?.description || "Novo vídeo",
+				thumbnail: info?.thumbnail || null
+			};
+		} catch (error) {
+			this.logger.debug(
+				`[_fetchTiktokVideoDetails] Sem detalhes para ${username}/${video.id}: ${error.message}`
+			);
+			return { ...video, title: "Novo vídeo", thumbnail: null };
+		}
+	}
+
+	/**
+	 * Atualiza o status de live de um canal do TikTok e emite streamOnline/streamOffline.
+	 * Erros transitórios não alteram o estado (evita offline falso quando o TikTok bloqueia).
+	 * @returns {Promise<boolean>} false se o canal foi pausado
+	 * @private
+	 */
+	async _updateTiktokLiveStatus(channel, username, status) {
+		try {
+			const live = await this._checkTiktokLiveStatus(username);
+			this.tiktokNotFounds[channel.name] = 0;
+
+			const wasLive = Boolean(status.isLive);
+			status.lastChecked = new Date().toISOString();
+
+			if (live.isLive) {
+				status.isLive = true;
+				status.title = live.title;
+				status.thumbnail = live.thumbnail;
+				status.viewerCount = live.viewerCount;
+				// Live nova sem horário (fallback sem metadados) não pode herdar o startedAt da live anterior,
+				// senão a chave de dedupe do notifiedCache repete e a notificação é suprimida
+				status.startedAt =
+					live.startedAt || (wasLive ? status.startedAt : null) || new Date().toISOString();
+				status.currentRoomId = live.roomId;
+
+				if (!wasLive) {
+					await this._emitIfSafe("streamOnline", {
+						platform: "tiktok",
+						channelName: channel.name,
+						title: live.title,
+						thumbnail: live.thumbnail,
+						url: live.url,
+						roomId: live.roomId,
+						viewerCount: live.viewerCount,
+						startedAt: live.startedAt
+					});
+				}
+			} else {
+				status.isLive = false;
+				status.currentRoomId = null;
+				status.startedAt = null;
+
+				if (wasLive) {
+					await this._emitIfSafe("streamOffline", {
+						platform: "tiktok",
+						channelName: channel.name
+					});
+				}
+			}
+			return true;
+		} catch (error) {
+			if (this._isTiktokUserNotFoundError(error)) {
+				this.tiktokNotFounds[channel.name] = (this.tiktokNotFounds[channel.name] || 0) + 1;
+				if (this.tiktokNotFounds[channel.name] > TIKTOK_NOT_FOUND_LIMIT) {
+					await this.pauseChannel(channel.name, "tiktok");
+					return false;
+				}
+			} else {
+				this.logger.debug(`Erro temporário ao monitorar TikTok ${channel.name}: ${error.message}`);
+			}
+			return true;
+		}
+	}
+
+	/**
+	 * Checa vídeo novo (cadência própria, mais lenta que a de lives) e emite newVideo.
+	 * Mesmas regras do YouTube: só notifica vídeos das últimas 24h.
+	 * @private
+	 */
+	async _updateTiktokLatestVideo(channel, username, status, channelKey) {
+		// Primeira checagem de cada perfil é espalhada dentro do intervalo, para os yt-dlp
+		// (até 2 execuções por perfil) não caírem todos no mesmo ciclo e atrasarem as lives
+		if (this.tiktokLastVideoCheck[channelKey] === undefined) {
+			this.tiktokLastVideoCheck[channelKey] =
+				Date.now() - Math.floor(Math.random() * this.tiktokVideoCheckIntervalMs);
+		}
+		const lastCheck = this.tiktokLastVideoCheck[channelKey];
+		if (Date.now() - lastCheck < this.tiktokVideoCheckIntervalMs) return;
+		this.tiktokLastVideoCheck[channelKey] = Date.now();
+
+		try {
+			const latest = await this._checkTiktokLatestVideo(username);
+			if (!latest || latest.id === (status.lastVideo?.id ?? "")) return;
+
+			const published = new Date(latest.publishedAt);
+			const isRecent =
+				!isNaN(published.getTime()) && published.getTime() >= Date.now() - TIKTOK_RECENT_VIDEO_MS;
+
+			let videoData = latest;
+			if (isRecent) {
+				videoData = await this._fetchTiktokVideoDetails(latest, username);
+				await this._emitIfSafe("newVideo", {
+					platform: "tiktok",
+					channelName: channel.name,
+					title: videoData.title,
+					thumbnail: videoData.thumbnail,
+					url: videoData.url,
+					videoId: videoData.id,
+					publishedAt: videoData.publishedAt
+				});
+			}
+
+			status.lastVideo = videoData;
+		} catch (error) {
+			this.logger.debug(
+				`[_updateTiktokLatestVideo] Erro buscando vídeos de ${channel.name}: ${error.message}`
+			);
+		}
+	}
+
+	async _pollTiktokChannels() {
+		const tiktokChannels = this.channels.filter((c) => c.source.toLowerCase() === "tiktok");
+		if (tiktokChannels.length === 0) return;
+
+		// Lotes pequenos e espaçados: tudo é scraping e o TikTok bloqueia rajadas
+		const BATCH_SIZE = 3;
+		for (let i = 0; i < tiktokChannels.length; i += BATCH_SIZE) {
+			const batch = tiktokChannels.slice(i, i + BATCH_SIZE);
+
+			await Promise.allSettled(
+				batch.map(async (channel) => {
+					const username = this.sanitizePlatformChannelName(channel.name, "tiktok");
+					if (!username) return;
+
+					const channelKey = `tiktok:${channel.name.toLowerCase()}`;
+					if (!this.streamStatuses[channelKey]) {
+						this.streamStatuses[channelKey] = {
+							isLive: false,
+							lastVideo: null,
+							lastChecked: null,
+							platform: "tiktok",
+							channelName: channel.name,
+							currentRoomId: null
+						};
+					}
+					const status = this.streamStatuses[channelKey];
+
+					const stillMonitored = await this._updateTiktokLiveStatus(channel, username, status);
+					if (!stillMonitored) return;
+
+					await this._updateTiktokLatestVideo(channel, username, status, channelKey);
+					await this._updateStatusInDB(channelKey, status);
+				})
+			);
+
+			if (i + BATCH_SIZE < tiktokChannels.length) {
+				await sleep(1500);
+			}
+		}
+	}
+
+	/**
+	 * Verifica se um usuário do TikTok existe consultando a página pública do perfil.
+	 * Só retorna false com resposta definitiva de "usuário não existe"; bloqueios/captcha contam como existente.
+	 * @param {string} channelName - Usuário ou URL do perfil
+	 * @returns {Promise<boolean>}
+	 */
+	async tiktokChannelExists(channelName) {
+		const username = this.sanitizePlatformChannelName(channelName, "tiktok");
+		if (!username) return false;
+
+		try {
+			const response = await axios.get(`https://www.tiktok.com/@${username}`, {
+				headers: this.youtubeHeaders,
+				timeout: 10000,
+				validateStatus: () => true
+			});
+			if (response.status === 404) return false;
+
+			const html = typeof response.data === "string" ? response.data : "";
+			const match = html.match(
+				/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">(.*?)<\/script>/s
+			);
+			if (!match) return true;
+
+			const data = JSON.parse(match[1]);
+			const statusCode = data?.__DEFAULT_SCOPE__?.["webapp.user-detail"]?.statusCode;
+			return !TIKTOK_USER_NOT_FOUND_CODES.includes(statusCode);
+		} catch (error) {
+			this.logger.debug(
+				`[tiktokChannelExists] Não foi possível checar ${username}: ${error.message}`
+			);
+			return true;
+		}
+	}
+
+	/**
 	 * Busca o status de streams no Twitch sem necessidade de monitoramento prévio
 	 * @param {string|Array<string>} channels - Nome do canal ou array de nomes
 	 * @returns {Promise<Object|Array<Object>>} - Status da stream ou array de status
@@ -2965,6 +3401,12 @@ class StreamMonitor extends EventEmitter {
 				urlPattern: /^(https?:\/\/)?(www.)?(youtube.com\/(c\/|user\/|@|channel\/)?|youtu.be\/)/i,
 				// YouTube handles allow hyphens (-) and dots (.)
 				illegalChars: /[^a-z0-9_\-.]/g
+			},
+			tiktok: {
+				// Removes tiktok.com/@ (desktop e mobile) ou só o @ inicial
+				urlPattern: /^((https?:\/\/)?(www\.|m\.)?tiktok\.com\/)?@?/i,
+				// Usernames do TikTok: letras, números, _ e .
+				illegalChars: /[^a-z0-9_.]/g
 			}
 		};
 
@@ -2973,6 +3415,11 @@ class StreamMonitor extends EventEmitter {
 
 		// 1. Remove the URL domain/protocol
 		let cleaned = inputString.replace(rules.urlPattern, "").trim();
+
+		// TikTok: descarta sufixos como /live, /video/123 e query strings do link colado
+		if (platform.toLowerCase() === "tiktok") {
+			cleaned = cleaned.split(/[/?#]/)[0];
+		}
 
 		// Se for um Channel ID do YouTube (UC + 22 chars), preserva o case exato (Base64URL é case-sensitive)
 		const isYoutubeChannelId =
@@ -3077,8 +3524,7 @@ class StreamMonitor extends EventEmitter {
 
 			// Reseta o contador local de erros
 			const p = platform.toLowerCase();
-			const notFoundKey =
-				p === "youtube" ? "youtubeNotFounds" : p === "twitch" ? "twitchNotFounds" : "kickNotFounds";
+			const notFoundKey = `${p}NotFounds`;
 			if (this[notFoundKey]) {
 				this[notFoundKey][channelName] = 0;
 			}
@@ -3141,7 +3587,7 @@ class StreamMonitor extends EventEmitter {
 
 			for (const group of groups) {
 				let groupModified = false;
-				const platforms = ["youtube", "twitch", "kick"];
+				const platforms = ["youtube", "twitch", "kick", "tiktok"];
 
 				for (const platform of platforms) {
 					if (group[platform] && Array.isArray(group[platform])) {

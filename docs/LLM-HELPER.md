@@ -13,7 +13,7 @@ O objetivo principal é auxiliar streamers, gerenciar comunidades e aumentar a i
 - **IA**: Processamento de mensagens com LLMs, geração de imagens, tradução e transcrição de áudio.
 - **Jogos**: Pescaria (!pesca), Roleta Russa (!roleta), Slots (!slots), Anagrama, Tarot e mais.
 - **Utilidades**: Clima, Notícias, Horóscopo, Pesquisas Google/Wikipedia.
-- **Streaming**: Notificações de lives (Twitch, Kick, YouTube).
+- **Streaming**: Notificações de lives (Twitch, Kick, YouTube, TikTok) e de vídeos novos (YouTube, TikTok).
 - **Gerenciamento**: Painel Web (!g-painel), filtros de links/NSFW, mensagens de boas-vindas.
 
 ### Adicionar ravena em um grupo
@@ -2432,6 +2432,96 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 **Categoria:** streams
 
 **Exemplo de uso:** `!g-youtube-encaminharCanal <canalStream> <nomeCanalSeguido>`
+
+---
+
+#### `!g-tiktok-canal`
+**Descrição:** Adiciona/remove perfil do TikTok para monitoramento de lives e vídeos novos (aceita usuário, @usuario ou link do perfil)
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-canal usuario`
+
+---
+
+#### `!g-tiktok-mudarTitulo`
+**Descrição:** Ativa/desativa mudança de título do grupo para lives do TikTok
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-mudarTitulo`
+
+---
+
+#### `!g-tiktok-titulo`
+**Descrição:** Define título do grupo para lives de perfil do TikTok
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-titulo on usuario Título`
+
+---
+
+#### `!g-tiktok-fotoGrupo`
+**Descrição:** Define foto do grupo para lives de perfil do TikTok
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-fotoGrupo`
+
+---
+
+#### `!g-tiktok-midia`
+**Descrição:** Define mídia para notificações de vídeos novos (video) ou lives (on/off) do TikTok. Sem modo, usa vídeos novos
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-midia [video|on|off] <usuario>`
+
+---
+
+#### `!g-tiktok-midia-del`
+**Descrição:** Remove mídia específica de vídeo ou live do TikTok
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-midia-del [video|on|off] <tipo> <usuario>`
+
+---
+
+#### `!g-tiktok-usarIA`
+**Descrição:** Ativa/desativa uso de IA para gerar mensagens de notificação
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-usarIA`
+
+---
+
+#### `!g-tiktok-usarThumbnail`
+**Descrição:** Ativa/desativa o envio da capa da live/vídeo junto com o texto
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-usarThumbnail`
+
+---
+
+#### `!g-tiktok-marcar`
+**Descrição:** Ativa/desativa menção a todos os membros nas notificações do TikTok
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-marcar`
+
+---
+
+#### `!g-tiktok-encaminharCanal`
+**Descrição:** Ativa/desativa encaminhamento de notificações do TikTok para canal do WhatsApp seguido
+
+**Categoria:** streams
+
+**Exemplo de uso:** `!g-tiktok-encaminharCanal <usuario> <nomeCanalSeguido>`
 
 ---
 

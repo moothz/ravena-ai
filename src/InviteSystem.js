@@ -728,7 +728,8 @@ class InviteSystem {
 			const hasTwitch = Array.isArray(group.twitch) && group.twitch.length > 0;
 			const hasKick = Array.isArray(group.kick) && group.kick.length > 0;
 			const hasYoutube = Array.isArray(group.youtube) && group.youtube.length > 0;
-			return hasTwitch || hasKick || hasYoutube;
+			const hasTiktok = Array.isArray(group.tiktok) && group.tiktok.length > 0;
+			return hasTwitch || hasKick || hasYoutube || hasTiktok;
 		} catch (err) {
 			this.logger.error(`Erro ao checar canais de stream do grupo ${groupJid}:`, err);
 			return false;

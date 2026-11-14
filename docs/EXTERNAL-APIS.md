@@ -53,6 +53,7 @@ Configurados na chave `"llm"` do `service-providers.json`.
 | :--- | :--- | :--- | :--- |
 | **Twitch API** | `TWITCH_CLIENT_ID`<br>`TWITCH_CLIENT_SECRET` | Notificações em tempo real quando canais monitorados entram ao vivo. | [`src/services/StreamMonitor.js`](../src/services/StreamMonitor.js) |
 | **Kick API** | `KICK_CLIENT_ID`<br>`KICK_CLIENT_SECRET` | Monitoramento e alertas de transmissões ao vivo na plataforma Kick. | [`src/services/StreamMonitor.js`](../src/services/StreamMonitor.js) |
+| **TikTok** (sem chave obrigatória) | `TIKTOK_SIGN_API_KEY` *(opcional)*<br>`TIKTOK_VIDEO_CHECK_MINUTES` *(opcional, padrão 15)* | Lives via [`tiktok-live-connector`](https://github.com/zerodytrash/TikTok-Live-Connector) (scraping da página `/live`, com fallback na API do TikTok e no sign server Euler Stream) e vídeos novos via `yt-dlp`. | [`src/services/StreamMonitor.js`](../src/services/StreamMonitor.js) |
 | **OpenWeather** | `OPENWEATHER_API_KEY` | Previsão climática, sensação térmica e condições do tempo via `!tempo`. | [`src/functions/GeneralCommands.js`](../src/functions/GeneralCommands.js) |
 | **DeepL** | `DEEPL_API_KEY` | Tradução neural precisa de textos e mensagens citadas via `!traduzir`. | [`src/functions/GeneralCommands.js`](../src/functions/GeneralCommands.js) |
 | **Giphy** | `GIPHY_API_KEY` | Pesquisa e envio de animações GIF em resposta a comandos. | [`src/functions/MediaCommands.js`](../src/functions/MediaCommands.js) |

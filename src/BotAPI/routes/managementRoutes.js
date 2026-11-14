@@ -79,7 +79,7 @@ function registerManagementRoutes(api) {
 				await scanMediaObj(groupData.greetings);
 				await scanMediaObj(groupData.farewells);
 
-				["twitch", "kick", "youtube"].forEach((platform) => {
+				["twitch", "kick", "youtube", "tiktok"].forEach((platform) => {
 					if (groupData[platform]) {
 						groupData[platform].forEach((stream) => {
 							if (stream.videoConfig?.media) {
@@ -146,6 +146,7 @@ function registerManagementRoutes(api) {
 				totalStreams += (g.twitch || []).length;
 				totalStreams += (g.kick || []).length;
 				totalStreams += (g.youtube || []).length;
+				totalStreams += (g.tiktok || []).length;
 
 				if (totalStreams > MAX_STREAMS) {
 					throw new Error(`Limite de streams excedido (${MAX_STREAMS}).`);
