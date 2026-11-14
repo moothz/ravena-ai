@@ -126,6 +126,7 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 | `sqlite <OP> <tabela>` | CLIENT, só se ≥ `OTEL_SQLITE_SLOW_MS` | `db.system.name=sqlite`, `db.operation.name`, `db.collection.name`. Todo span também acumula `ravena.sqlite.total_ms` e `ravena.sqlite.calls` (o better-sqlite3 é síncrono e bloqueia o event loop) |
 | `market transfer.runas` / `market transfer.farm` | INTERNAL | dentro de `POST /api/market/transfer` (chamado pelo waifuletes). Contagens (`ravena.market.*`), evento `market.compensation.started`, `ravena.market.compensated` |
 | `fazenda harvest.reconcile` | INTERNAL | dentro de `POST /api/games/fazenda/harvest` (chamado pelo Jardim). `ravena.fazenda.credited_count` |
+| `waifu marry.scheduled` | INTERNAL (raiz) | casamento agendado do `!mu-casar` quando o timer dispara: trace próprio com link para o comando que agendou. `ravena.marry.wait_ms`, `app.outcome` (inclui `already_claimed` e a resposta do waifuletes) |
 
 **Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a última resposta de parceiro a uma **operação mutável** (POST/PUT/PATCH/DELETE). Se o comando só fez leituras, vale a última resposta:
 - 4xx → `rejected` + `downstream_<status>`;
@@ -232,7 +233,7 @@ Amostra **100%** (`parentbased_always_on`), porque o volume do homelab é baixo 
 ## 7. Limitações conhecidas
 
 - **WhatsApp (whatsgoapi, Go):** não instrumentado. O trace de WA começa no webhook HTTP da ravena. Para continuar o trace a partir do Go: `otelhttp.NewHandler` no servidor e `otelhttp.NewTransport` no cliente que chama o webhook, com `req.WithContext(ctx)` (pacote `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp`).
-- **Fire-and-forget:** com a telemetria ligada, `chat.message process` espera os comandos e respostas disparados sem `await` antes de terminar (teto de 120 s), então a duração do span da mensagem é o fim a fim. Trabalho agendado depois disso (`setTimeout`, crons) não entra no trace.
+- **Fire-and-forget:** com a telemetria ligada, `chat.message process` espera os comandos e respostas disparados sem `await` antes de terminar (teto de 120 s), então a duração do span da mensagem é o fim a fim. Trabalho agendado depois disso (`setTimeout`, crons) não entra no trace; a exceção é o casamento agendado, que abre o próprio trace (`waifu marry.scheduled`).
 - **Sem cobertura:** `impit` (cliente HTTP em Rust), WebSocket do ComfyUI e processos filhos (ffmpeg, yt-dlp) não geram spans automáticos.
 - **Jaeger:** não rastreia as próprias consultas (`enable_tracing: false`). O Badger não apaga por serviço; um serviço de teste some só quando o TTL expira.
 - **Grafana sem traces:** o datasource Jaeger do Grafana não funciona com o Jaeger 2.23 (API de busca legada removida). Os traces ficam na UI do Jaeger, e o dashboard tem link para ela.
