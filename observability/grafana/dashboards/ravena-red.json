@@ -7,7 +7,7 @@
  ],
  "timezone": "browser",
  "schemaVersion": 39,
- "version": 1,
+ "version": 2,
  "refresh": "30s",
  "time": {
   "from": "now-3h",
@@ -250,7 +250,7 @@
   {
    "id": 7,
    "type": "table",
-   "title": "Top rotas por tempo total consumido (ms/s)",
+   "title": "Top rotas por tempo total consumido (ms de CPU/espera por s)",
    "description": "Onde o tempo vai: taxa × latência. Use o intervalo do dashboard.",
    "datasource": {
     "type": "prometheus",
@@ -269,19 +269,62 @@
       "uid": "prometheus"
      },
      "expr": "topk(15, sum by (service_name, span_name) (rate(traces_span_metrics_duration_milliseconds_sum{service_name=~\"$service\",span_kind=\"SPAN_KIND_SERVER\"}[$__range])))",
-     "legendFormat": "{{service_name}} {{span_name}}",
-     "refId": "A"
+     "legendFormat": "__auto",
+     "refId": "A",
+     "instant": true,
+     "range": false,
+     "format": "table"
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "ms"
+     "unit": "suffix:ms/s",
+     "decimals": 3
     },
     "overrides": []
    },
    "options": {
-    "showHeader": true
-   }
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "Tempo consumido",
+      "desc": true
+     }
+    ]
+   },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "Time": 0,
+       "service_name": 1,
+       "span_name": 2
+      },
+      "renameByName": {
+       "service_name": "Serviço",
+       "span_name": "Operação",
+       "Value": "Tempo consumido"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Tempo consumido",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ]
   },
   {
    "id": 8,
@@ -404,19 +447,60 @@
       "uid": "prometheus"
      },
      "expr": "topk(15, histogram_quantile(0.95, sum by (le, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_name=~\"command .*\"}[$__range]))))",
-     "legendFormat": "{{span_name}}",
-     "refId": "A"
+     "legendFormat": "__auto",
+     "refId": "A",
+     "instant": true,
+     "range": false,
+     "format": "table"
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "ms"
+     "unit": "ms",
+     "decimals": 0
     },
     "overrides": []
    },
    "options": {
-    "showHeader": true
-   }
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "p95",
+      "desc": true
+     }
+    ]
+   },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "Time": 0,
+       "span_name": 1
+      },
+      "renameByName": {
+       "span_name": "Operação",
+       "Value": "p95"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "p95",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ]
   },
   {
    "id": 12,
@@ -576,7 +660,7 @@
   {
    "id": 17,
    "type": "timeseries",
-   "title": "Jardim: p95 do render de canvas",
+   "title": "Jardim: p95 do render de canvas (render, draw, encode)",
    "description": "",
    "datasource": {
     "type": "prometheus",
@@ -594,7 +678,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "histogram_quantile(0.95, sum by (le, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=\"jardim-das-sombras\",span_name=~\".*render.*\"}[$__rate_interval])))",
+     "expr": "histogram_quantile(0.95, sum by (le, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=\"jardim-das-sombras\",span_name=~\"farm render|canvas draw|canvas encode\"}[$__rate_interval])))",
      "legendFormat": "{{span_name}}",
      "refId": "A"
     }
@@ -898,8 +982,8 @@
   },
   {
    "id": 25,
-   "type": "timeseries",
-   "title": "Top operações rejeitadas (intervalo)",
+   "type": "table",
+   "title": "Top operações rejeitadas (no intervalo)",
    "description": "",
    "datasource": {
     "type": "prometheus",
@@ -918,26 +1002,62 @@
       "uid": "prometheus"
      },
      "expr": "topk(10, sum by (service_name, span_name) (increase(traces_span_metrics_calls_total{service_name=~\"$service\",app_outcome=\"rejected\"}[$__range])))",
-     "legendFormat": "{{service_name}} {{span_name}}",
-     "refId": "A"
+     "legendFormat": "__auto",
+     "refId": "A",
+     "instant": true,
+     "range": false,
+     "format": "table"
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "short"
+     "unit": "short",
+     "decimals": 0
     },
     "overrides": []
    },
    "options": {
-    "legend": {
-     "displayMode": "table",
-     "placement": "right",
-     "calcs": [
-      "mean",
-      "max"
-     ]
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "Rejeições",
+      "desc": true
+     }
+    ]
+   },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "Time": 0,
+       "service_name": 1,
+       "span_name": 2
+      },
+      "renameByName": {
+       "service_name": "Serviço",
+       "span_name": "Operação",
+       "Value": "Rejeições"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Rejeições",
+        "desc": true
+       }
+      ]
+     }
     }
-   }
+   ]
   }
  ]
 }
