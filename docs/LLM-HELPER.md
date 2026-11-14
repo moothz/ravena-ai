@@ -130,6 +130,7 @@ Você deve atuar como uma assistente proativa e inteligente. Siga estas regras:
 - **Painel Web**: Sempre sugira o `!g-painel` para configurações complexas, é mais fácil que comandos de chat.
 - **Prefixo**: Grupos podem ter prefixos personalizados (`!g-setPrefixo`).
 - **Mute**: Se um comando estiver incomodando, use `!g-mute [comando]`.
+- **Frequência de comandos**: Para limitar quantas vezes um comando pode ser usado (ex.: `roleta` 10 vezes a cada 24h), use `!g-painel` > Comandos > *Editar frequência*. O limite pode ser global (grupo todo) ou por pessoa, pode deixar os admins de fora e vale para comandos fixos e personalizados. Quando o limite é atingido, a Ravena reage com 🚫 e informa quando o comando volta a ficar disponível.
 
 ---
 

@@ -13,6 +13,12 @@ const CmdUsage = require("./utils/CmdUsage");
 const ProfilePictureHelper = require("./utils/ProfilePictureHelper");
 const PhoneUtils = require("./utils/PhoneUtils");
 const storageService = require("./services/StorageService");
+const {
+	CommandLimitTracker,
+	COMMAND_LIMIT_SCOPES,
+	findCommandLimit,
+	describeCommandLimit
+} = require("./utils/CommandLimits");
 
 class CommandHandler {
 	constructor() {
@@ -24,6 +30,7 @@ class CommandHandler {
 		this.variableProcessor = new CustomVariableProcessor();
 		this.adminUtils = AdminUtils.getInstance();
 		this.cmdUsage = CmdUsage.getInstance();
+		this.commandLimitTracker = CommandLimitTracker.getInstance();
 		this.customCommands = {}; // Agrupados por groupId
 		this.cooldownCache = new Map(); // "botId_groupId|comando" -> timestamp do ultimo uso
 		this.privateManagement = {}; // Para gerenciar grupos a partir de chats privados
@@ -296,6 +303,77 @@ class CommandHandler {
 			}
 		} catch (error) {
 			this.logger.error("Erro ao enviar mensagem de cooldown:", error.message ?? "xxx");
+		}
+	}
+
+	/**
+	 * Verifica o limite de frequência configurado no grupo (!g-painel > Comandos > Editar frequência)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Mensagem original
+	 * @param {string} commandName - Nome do comando fixo ou gatilho do personalizado
+	 * @param {Group} group - O objeto do grupo
+	 * @param {boolean} silent - Se true, não envia mensagens nem reage
+	 * @returns {Promise<{ limit: Object|null, blocked: boolean }>}
+	 */
+	async checkCommandLimit(bot, message, commandName, group, silent = false) {
+		if (!message.group || !group) return { limit: null, blocked: false };
+
+		const limit = findCommandLimit(group, commandName);
+		if (!limit) return { limit: null, blocked: false };
+
+		// Admins fora do limite: não bloqueia nem conta o uso
+		if (limit.ignoreAdmins) {
+			const chat = await message.origin.getChat().catch(() => null);
+			const isUserAdmin = await this.adminUtils.isAdmin(message.author, group, chat, bot);
+			if (isUserAdmin) return { limit: null, blocked: false };
+		}
+
+		const usage = await this.commandLimitTracker.check(limit, message.group, message.author);
+		if (usage.blocked) {
+			this.logger.debug(
+				`Comando ${commandName} atingiu o limite (${describeCommandLimit(limit)}) em ${message.group}`
+			);
+			if (!silent) await this.handleCommandLimitMessage(bot, message, limit, usage, group);
+		}
+		return { limit, blocked: usage.blocked };
+	}
+
+	/**
+	 * Registra o uso de um comando com limite de frequência
+	 * @param {Object|null} limit - Regra retornada por checkCommandLimit
+	 * @param {Object} message - Mensagem original
+	 */
+	recordCommandLimitUsage(limit, message) {
+		if (!limit) return;
+		this.commandLimitTracker.record(limit, message.group, message.author);
+	}
+
+	/**
+	 * Avisa que o limite de frequência foi atingido (no máximo uma mensagem a cada 30s)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Mensagem original
+	 * @param {Object} limit - Regra de limite
+	 * @param {Object} usage - Resultado da verificação ({ retryInSeconds })
+	 * @param {Group} group - O objeto do grupo
+	 */
+	async handleCommandLimitMessage(bot, message, limit, usage, group) {
+		try {
+			await message.origin.react("🚫");
+
+			const isPerUser = limit.scope === COMMAND_LIMIT_SCOPES.USER;
+			const limitMsgKey = `limit:${message.group}:${limit.command}:${isPerUser ? message.author : "*"}`;
+			const now = Date.now();
+			if (now - (this.cooldownMessages[limitMsgKey] ?? 0) <= 30000) return;
+
+			const retryIn = this.formatCooldownTime(usage.retryInSeconds);
+			const content = isPerUser
+				? `Você atingiu o limite do comando '${limit.command}' (${describeCommandLimit(limit)}). Tente novamente em ${retryIn}.`
+				: `O comando '${limit.command}' atingiu o limite do grupo (${describeCommandLimit(limit)}). Tente novamente em ${retryIn}.`;
+
+			await bot.sendReturnMessages(new ReturnMessage({ chatId: message.group, content }), group);
+			this.cooldownMessages[limitMsgKey] = now;
+		} catch (error) {
+			this.logger.error("Erro ao enviar mensagem de limite de comando:", error.message ?? "xxx");
 		}
 	}
 
@@ -1437,6 +1515,10 @@ class CommandHandler {
 				return null;
 			}
 
+			// Verifica limite de frequência do grupo
+			const commandLimit = await this.checkCommandLimit(bot, message, command.name, group, silent);
+			if (commandLimit.blocked) return null;
+
 			// Reage com emoji "antes" (específico do comando ou padrão)
 			if (!silent && !silentReaction && command.reactions?.before) {
 				try {
@@ -1449,6 +1531,7 @@ class CommandHandler {
 			// Executa método do comando
 			if (typeof command.method === "function") {
 				this.updateCooldown(command, groupId, bot.id);
+				this.recordCommandLimitUsage(commandLimit.limit, message);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
 				let result = await command.method(bot, message, args, group);
 
@@ -1711,6 +1794,16 @@ class CommandHandler {
 				return null;
 			}
 
+			// Verifica limite de frequência do grupo
+			const commandLimit = await this.checkCommandLimit(
+				bot,
+				message,
+				command.startsWith,
+				group,
+				silent
+			);
+			if (commandLimit.blocked) return null;
+
 			// Reage com emoji antes (do comando ou padrão)
 			if (!silent && !silentReaction && command.reactions?.before) {
 				try {
@@ -1750,6 +1843,7 @@ class CommandHandler {
 			}
 
 			this.updateCooldown(command.startsWith, message.group, bot.id);
+			this.recordCommandLimitUsage(commandLimit.limit, message);
 
 			let finalResult = null;
 

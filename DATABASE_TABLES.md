@@ -101,6 +101,7 @@ Configuração completa de cada grupo onde o bot está presente.
 | `warnings` | TEXT (JSON) | Advertências de membros |
 | `custom_ai_prompt` | TEXT (JSON) | Personalidade da IA para o grupo |
 | `muted_commands` | TEXT (JSON) | Comandos silenciados |
+| `command_limits` | TEXT (JSON) | Limites de frequência `[{command, maxUses, hours, scope: "global"\|"user", ignoreAdmins}]` (!g-painel > Comandos > Editar frequência) |
 | `webhooks` | TEXT (JSON) | Webhooks configurados |
 | `twitch` / `youtube` / `kick` | TEXT (JSON) | Canais monitorados |
 | `bot_not_in_group` | TEXT (JSON) | Lista de bot_ids que não participam deste grupo |
@@ -486,6 +487,7 @@ Interações cômicas automáticas do bot.
 | `video_cache.db` | `cached_videos` | Cache de downloads de vídeo |
 | `cmd_usage.db` | `cmd_usage_log` | Log de uso de comandos (analytics) |
 | `cooldowns.db` | `cooldowns` | Rate limiting de comandos por usuário/grupo |
+| `command_limits.db` | `command_limit_usage` | Usos de comandos com limite de frequência (janela deslizante; registros fora da janela são apagados a cada uso) |
 | `copa_seguir.db` | `copa_seguindo` | Chats que seguem times da Copa 2026 para notificações em tempo real |
 | `llm_stats.db` | `usage_stats` | Tokens consumidos por modelo de IA (com identificador de `api_user`) |
 | `media_stats.db` | `comfy_stats`, `speech_transcription_stats`, `speech_generation_stats` | Uso de geração de imagem, transcrição e síntese de voz (com `api_user`) |

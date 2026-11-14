@@ -71,6 +71,7 @@ class CoreRepository {
 				ignored_users TEXT,
 				muted_commands TEXT,
 				muted_categories TEXT,
+				command_limits TEXT,
 				nicks TEXT,
 				warnings TEXT,
 				custom_ai_prompt TEXT,
@@ -418,14 +419,14 @@ class CoreRepository {
           custom_ignores_prefix, invite_code, paused, additional_admins,
           filters, twitch, kick, youtube, bot_not_in_group, webhooks,
           greetings, farewells, interact, auto_translate_to, auto_stt,
-          ignored_numbers, ignored_users, muted_commands, muted_categories,
+          ignored_numbers, ignored_users, muted_commands, muted_categories, command_limits,
           nicks, warnings, custom_ai_prompt, dinamic_personality, notifica_grupo_fechado, notifica_grupo_aberto, banir_spammers, spammer_whitelist, banned_users, minecraft_server, members, admins, created_at, updated_at, json_data
         ) VALUES (
           @id, @name, @titulo, @descricao, @regras, @added_by, @removed_by, @prefix,
           @custom_ignores_prefix, @invite_code, @paused, @additional_admins,
           @filters, @twitch, @kick, @youtube, @bot_not_in_group, @webhooks,
           @greetings, @farewells, @interact, @auto_translate_to, @auto_stt,
-          @ignored_numbers, @ignored_users, @muted_commands, @muted_categories,
+          @ignored_numbers, @ignored_users, @muted_commands, @muted_categories, @command_limits,
           @nicks, @warnings, @custom_ai_prompt, @dinamic_personality, @notifica_grupo_fechado, @notifica_grupo_aberto, @banir_spammers, @spammer_whitelist, @banned_users, @minecraft_server, @members, @admins, @created_at, @updated_at, @json_data
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -455,6 +456,7 @@ class CoreRepository {
           ignored_users         = excluded.ignored_users,
           muted_commands        = excluded.muted_commands,
           muted_categories      = excluded.muted_categories,
+          command_limits        = excluded.command_limits,
           nicks                 = excluded.nicks,
           warnings              = excluded.warnings,
           custom_ai_prompt      = excluded.custom_ai_prompt,
