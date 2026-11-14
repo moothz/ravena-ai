@@ -60,4 +60,5 @@ RUN mkdir -p /app/data /app/public /app/downloads
 
 EXPOSE 5000
 
-CMD ["node", "--dns-result-order=ipv4first", "index.js"]
+# --require do bootstrap OpenTelemetry: no-op se OTEL_EXPORTER_OTLP_ENDPOINT não estiver definido (ver OBSERVABILITY.md)
+CMD ["node", "--dns-result-order=ipv4first", "--require", "./src/telemetry/otel.js", "index.js"]
