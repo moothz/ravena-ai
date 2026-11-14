@@ -31,6 +31,10 @@ Recursos e retenção (variáveis no shell ou num `.env` dentro de `observabilit
 
 Limites de memória: collector 512 MB, Jaeger 1 GB, Prometheus 512 MB, Grafana 384 MB. Em uso real a stack fica bem abaixo disso. Os dados ficam nos volumes `jaeger-badger`, `prometheus-data` e `grafana-data`.
 
+**Disco:** o Badger não tem teto de tamanho, só TTL. No teste local com tráfego sintético intenso (~75 mil spans em 45 min) ocupou cerca de 60 MB. Com o volume real do bot, 7 dias devem ficar na casa de centenas de MB. Se apertar, reduza `JAEGER_RETENTION` (ex.: `72h`). Ver o uso: `docker system df -v | grep jaeger-badger`.
+
+**Healthchecks:** Jaeger, Prometheus e Grafana têm healthcheck. O collector usa imagem distroless (sem shell); a saúde dele aparece no painel "Saúde do pipeline" do dashboard (spans aceitos/recusados).
+
 Para mudar um arquivo de config, recrie o container: `docker compose -f observability/docker-compose.yml up -d --force-recreate <serviço>`. No Docker Desktop, o bind de arquivo único não vê edições feitas com `sed -i`.
 
 ### Rede
@@ -75,7 +79,10 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 - ioredis.
 - Runtime Node: event loop, GC, heap.
 
-**Ruído descartado:** `/health`, estáticos e o long-poll `getUpdates` do Telegram.
+**Ruído descartado:**
+- `/health`, estáticos e o long-poll `getUpdates` do Telegram;
+- chamadas HTTP de saída **sem span pai**, como os health-checks periódicos dos serviços de IA e da whatsgoapi (sem isso, viravam dezenas de traces soltos por minuto);
+- no collector, comandos Redis com menos de 1 ms (eram cerca de metade dos spans do waifuletes; os lentos continuam).
 
 **Spans de negócio** (nomes de baixa cardinalidade; IDs nunca no nome):
 
@@ -147,10 +154,10 @@ sum by (app_outcome) (rate(traces_span_metrics_calls_total{span_name=~"command .
 
 **Logs ↔ trace:** `docker logs ravena-ai 2>&1 | grep <trace_id>`.
 
-**Gerar tráfego de teste** (usuários e grupos falsos, nada é enviado a terceiros):
+**Gerar tráfego de teste** (usuários e grupos falsos, nada é enviado a terceiros). Por padrão não chama IA. `--com-ia` inclui uma única vez `!mu-casar` (foto do casal: bonsai + LLM) e `!ai`, que usam os serviços remotos de IA; não use isso para volume:
 
 ```bash
-docker compose exec ravena-ai node --require ./src/telemetry/otel.js src/testing/otel_traffic.js 2 --sem-llm
+docker compose exec ravena-ai node --require ./src/telemetry/otel.js src/testing/otel_traffic.js 2
 ```
 
 ## 6. Amostragem e volume

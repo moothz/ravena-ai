@@ -78,6 +78,14 @@ processors:
         statements:
           - replace_pattern(body, "[0-9]{8,}", "{n}")
 
+  # Comandos Redis triviais (< 1 ms) são ~metade dos spans do waifuletes e não ajudam a achar
+  # gargalo; os lentos continuam. São folhas, então o trace não quebra.
+  filter/fast-redis:
+    error_mode: ignore
+    traces:
+      span:
+        - (attributes["db.system.name"] == "redis" or attributes["db.system"] == "redis") and (end_time_unix_nano - start_time_unix_nano) < 1000000
+
   batch:
     send_batch_size: 1024
     timeout: 2s
@@ -88,7 +96,7 @@ connectors:
   span_metrics:
     histogram:
       explicit:
-        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
+        buckets: [1ms, 2.5ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
     dimensions:
       - name: http.request.method
       - name: http.response.status_code
@@ -123,7 +131,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, attributes/pii, transform/pii, batch]
+      processors: [memory_limiter, filter/fast-redis, attributes/pii, transform/pii, batch]
       exporters: [otlp_grpc/jaeger, span_metrics]
     metrics:
       receivers: [otlp, span_metrics]
