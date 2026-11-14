@@ -107,7 +107,7 @@ services:
       - "${OBS_UI_BIND_ADDR:-127.0.0.1}:3001:3000"
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 384M }
+        limits: { cpus: "0.5", memory: 512M }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s

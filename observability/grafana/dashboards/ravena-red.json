@@ -7,7 +7,7 @@
  ],
  "timezone": "browser",
  "schemaVersion": 39,
- "version": 3,
+ "version": 4,
  "refresh": "30s",
  "time": {
   "from": "now-3h",
@@ -48,6 +48,13 @@
    "targetBlank": true,
    "icon": "external link",
    "url": "http://localhost:16686/search?service=ravena-ai&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22ravena.chat.id_hash%22%3A%22${id_hash}%22%7D"
+  },
+  {
+   "title": "Traces do id_hash: waifuletes (group)",
+   "type": "link",
+   "targetBlank": true,
+   "icon": "external link",
+   "url": "http://localhost:16686/search?service=waifuletes&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22waifu.group.id_hash%22%3A%22${id_hash}%22%7D"
   }
  ],
  "templating": {

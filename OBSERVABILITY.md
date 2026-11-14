@@ -29,7 +29,7 @@ Recursos e retenção (variáveis no shell ou num `.env` dentro de `observabilit
 | `PROMETHEUS_PORT` | `9091` | Porta do Prometheus no host (a 9090 é usada pelo cobalt) |
 | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | `admin` / `admin` | Troque no homelab |
 
-Limites de memória: collector 512 MB, Jaeger 1 GB, Prometheus 512 MB, Grafana 384 MB. Em uso real a stack fica bem abaixo disso. Os dados ficam nos volumes `jaeger-badger`, `prometheus-data` e `grafana-data`.
+Limites de memória: collector 512 MB, Jaeger 1 GB, Prometheus 512 MB, Grafana 512 MB. Em uso real a stack fica bem abaixo disso. Os dados ficam nos volumes `jaeger-badger`, `prometheus-data` e `grafana-data`.
 
 **Disco:** o Badger não tem teto de tamanho, só TTL. No teste local com tráfego sintético intenso (~75 mil spans em 45 min) ocupou cerca de 60 MB. Com o volume real do bot, 7 dias devem ficar na casa de centenas de MB. Se apertar, reduza `JAEGER_RETENTION` (ex.: `72h`). Ver o uso: `docker system df -v | grep jaeger-badger`.
 
@@ -97,12 +97,12 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 | `market transfer.runas` / `market transfer.farm` | INTERNAL | dentro de `POST /api/market/transfer` (chamado pelo waifuletes). Contagens (`ravena.market.*`), evento `market.compensation.started`, `ravena.market.compensated` |
 | `fazenda harvest.reconcile` | INTERNAL | dentro de `POST /api/games/fazenda/harvest` (chamado pelo Jardim). `ravena.fazenda.credited_count` |
 
-**Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a **última** resposta de parceiro:
+**Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a última resposta de parceiro a uma **operação mutável** (POST/PUT/PATCH/DELETE). Se o comando só fez leituras, vale a última resposta:
 - 4xx → `rejected` + `downstream_<status>`;
-- 5xx → `error`;
+- 5xx ou erro de rede → `error`;
 - 2xx → `ok`.
 
-Pré-checagens 4xx que o comando trata e seguem adiante, como `kakera/daily` antes do roll, não contam.
+Assim, uma pré-checagem recusada seguida da ação OK não marca o comando (ex.: `kakera/daily` antes do roll). Já uma ação recusada seguida de leituras marca (ex.: colheita recusada e depois `harvest-totals`). Os atributos `ravena.downstream.last_action`, `last_action_status`, `failures` e `calls` mostram o detalhe.
 
 `/api/market/transfer` grava motivos específicos: `insufficient_runas`, `insufficient_petalitas`, `insufficient_farm_item`, `same_user`, `invalid_*`, `buff_*`, `farm_validation_failed`. As duas rotas do mercado também gravam o resultado dos 401/429 dos guards.
 
@@ -144,7 +144,13 @@ python3 observability/tools/quem-e.py --id 120363000000000@g.us --grupo
 - **Mesma entrada de HMAC nos 3 serviços:**
   - usuário: ID sem sufixo (cortado no primeiro `@` e no primeiro `:`, então `5511…@c.us`, `5511…:3@s.whatsapp.net` e `5511…` dão o mesmo hash) → `ravena.user.id_hash`, `waifu.user.id_hash`, `jds.user.id_hash`;
   - grupo/chat: ID completo → `ravena.chat.id_hash`, `waifu.group.id_hash`.
-- **Busca pelo usuário em todos os serviços:** no Jaeger, *Tags* `ravena.user.id_hash=<hash>` (ou `waifu.`/`jds.`, mesmo valor).
+- **Busca pelo usuário em todos os serviços:** no Jaeger, *Tags* `ravena.user.id_hash=<hash>` (ou `waifu.`/`jds.`, mesmo valor). Também existem `ravena.from_user`/`to_user` e `jds.from_user`/`to_user` (transferências), `waifu.buyer`/`seller` (mercado) e, para grupos, `ravena.chat.id_hash`/`waifu.group.id_hash`. O `--id` imprime um link para cada uma.
+- **Onde o hash aparece:**
+  - na ravena, no span `chat.message process` de cada mensagem e no span SERVER de toda rota da BotAPI com `:userId`/`:groupId`, além de `/api/market/transfer` e do webhook de colheita;
+  - no waifuletes e no Jardim, no SERVER de toda rota com usuário e nos spans de negócio.
+- **No Grafana:** o dashboard tem a variável **`id_hash`** (caixa de texto no topo). Cole o hash e use os links "Traces do id_hash: …" no canto superior direito. Eles abrem o Jaeger já filtrado, no intervalo de tempo do dashboard.
+- **Quem só conversou com o bot:** a ferramenta busca em todos os SQLite, mas IDs que nunca foram gravados não aparecem. Nesse caso, passe uma lista de suspeitos com `--candidatos arquivo.txt` (ou `-` para stdin).
+- **Traces antigos:** os de antes de 14/11/2026 podem ter o hash calculado sobre o ID com sufixo. O `--id` mostra esse valor também.
 - **Dado pessoal:** o resultado (ID, nome) é dado pessoal. Use só para a investigação e não cole em issue, chat ou log público.
 - **Sem dependências:** Python 3 padrão. Rode na raiz do repo ravena-ai.
 

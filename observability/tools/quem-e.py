@@ -38,8 +38,19 @@ ID_RE = re.compile(r"^-?\d{5,}(:\d+)?(@(c\.us|g\.us|lid|s\.whatsapp\.net|broadca
 NAME_COLS = re.compile(r"(^|_)(name|nome|nick|nickname|apelido|pushname|titulo|author_name|player_name|group_name)$", re.I)
 JAEGER = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
-USER_TAGS = [("ravena-ai", "ravena.user.id_hash"), ("waifuletes", "waifu.user.id_hash"), ("jardim-das-sombras", "jds.user.id_hash")]
+USER_TAGS = [
+    ("ravena-ai", "ravena.user.id_hash"),
+    ("ravena-ai", "ravena.from_user.id_hash"),  # /api/market/transfer: quem paga
+    ("ravena-ai", "ravena.to_user.id_hash"),    # /api/market/transfer: quem recebe
+    ("waifuletes", "waifu.user.id_hash"),
+    ("waifuletes", "waifu.buyer.id_hash"),      # mercado: comprador
+    ("waifuletes", "waifu.seller.id_hash"),     # mercado: vendedor
+    ("jardim-das-sombras", "jds.user.id_hash"),
+    ("jardim-das-sombras", "jds.from_user.id_hash"),
+    ("jardim-das-sombras", "jds.to_user.id_hash"),
+]
 GROUP_TAGS = [("ravena-ai", "ravena.chat.id_hash"), ("waifuletes", "waifu.group.id_hash")]
+GROUPISH = re.compile(r"group|grupo|chat|canal", re.I)
 
 
 def load_salt(env_file):
@@ -137,7 +148,7 @@ def service_candidates():
 
 
 # ── modos ─────────────────────────────────────────────────────────────────────────────────────
-def find_hash(salt, target, use_docker, data_dir):
+def find_hash(salt, target, use_docker, data_dir, extra=()):
     target = target.lower().strip()
     if not re.fullmatch(r"[0-9a-f]{16}", target):
         sys.exit("hash inválido: esperado 16 caracteres hexadecimais (ex.: valor de ravena.user.id_hash)")
@@ -145,6 +156,8 @@ def find_hash(salt, target, use_docker, data_dir):
     if use_docker:
         for k, v in service_candidates().items():
             cands.setdefault(k, []).extend(v)
+    for raw in extra:
+        cands.setdefault(raw, []).append(("--candidatos", None))
     hits = {}
     for raw, origins in cands.items():
         norm = normalize_user(raw)
@@ -157,10 +170,18 @@ def find_hash(salt, target, use_docker, data_dir):
         print("Se você suspeita de um ID específico, teste com:  quem-e.py --id <ID>")
         return 1
     for (kind, form), origins in hits.items():
-        nomes = sorted({n for _, n in origins if n})
+        # nome de grupo (tabelas/colunas de grupo/chat) não é apelido de usuário, e vice-versa
+        if kind == "usuário":
+            nomes = sorted({n for o, n in origins if n and not GROUPISH.search(o)})
+            grupos = sorted({n for o, n in origins if n and GROUPISH.search(o)})
+        else:
+            nomes = sorted({n for o, n in origins if n and GROUPISH.search(o)}) or sorted({n for _, n in origins if n})
+            grupos = []
         print(f"{target}  →  {kind}: {form}")
         if nomes:
             print(f"  nome(s) conhecido(s): {', '.join(nomes[:5])}")
+        if grupos:
+            print(f"  aparece em grupo(s)/chat(s) com nome: {', '.join(grupos[:3])}")
         print(f"  encontrado em: {', '.join(sorted({o for o, _ in origins})[:6])}")
     return 0
 
@@ -173,10 +194,12 @@ def show_id(salt, raw, force_group):
     if not is_group:
         print(f"usuário {normalize_user(raw)}  →  id_hash {uh}")
         for svc, tag in USER_TAGS:
-            print(f"  {svc:<20} {jaeger_link(svc, tag, uh)}")
+            print(f"  {svc:<20} {tag:<26} {jaeger_link(svc, tag, uh)}")
+        if gh != uh:
+            print(f"  (traces antigos, de antes da unificação do hash de usuário em 14/11/2026, podem ter usado {gh})")
     print(f"{'grupo/chat' if is_group else 'como chat (PV)'} {raw}  →  id_hash {gh}")
     for svc, tag in GROUP_TAGS:
-        print(f"  {svc:<20} {jaeger_link(svc, tag, gh)}")
+        print(f"  {svc:<20} {tag:<26} {jaeger_link(svc, tag, gh)}")
     return 0
 
 
@@ -188,6 +211,7 @@ def main():
     ap.add_argument("--env", default=os.path.join(REPO, ".env"), help="arquivo .env com OTEL_ID_SALT (padrão: .env da ravena)")
     ap.add_argument("--dados", default=os.path.join(REPO, "data", "sqlites"), help="pasta dos SQLite da ravena")
     ap.add_argument("--sem-docker", action="store_true", help="não consulta waifuletes/Jardim via docker exec")
+    ap.add_argument("--candidatos", help="arquivo com IDs extras a testar, um por linha (ex.: exportados de outra base); '-' = stdin")
     a = ap.parse_args()
     if not a.hash and not a.id:
         ap.print_help()
@@ -195,7 +219,11 @@ def main():
     salt = load_salt(a.env)
     if a.id:
         return show_id(salt, a.id, a.grupo)
-    return find_hash(salt, a.hash, not a.sem_docker, a.dados)
+    extra = []
+    if a.candidatos:
+        fh = sys.stdin if a.candidatos == "-" else open(a.candidatos, encoding="utf-8", errors="ignore")
+        extra = [line.strip() for line in fh if line.strip()]
+    return find_hash(salt, a.hash, not a.sem_docker, a.dados, extra)
 
 
 if __name__ == "__main__":
