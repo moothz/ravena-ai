@@ -716,7 +716,10 @@ class BotAPI {
 			const avisosChat = bot.grupoAvisos || process.env.GRUPO_AVISOS;
 			const interacaoChat = bot.grupoInteracao || process.env.GRUPO_INTERACAO;
 
-			if (logsChat) {
+			const isNewsletter = (chatId) =>
+				!chatId || String(chatId).endsWith("@newsletter") || String(chatId).includes("newsletter");
+
+			if (logsChat && !isNewsletter(logsChat)) {
 				try {
 					await bot.sendMessage(logsChat, donationMsg, { marcarTodos: true });
 				} catch (error) {
@@ -727,7 +730,7 @@ class BotAPI {
 				}
 			}
 
-			if (anunciosChat && !ignorar) {
+			if (anunciosChat && !ignorar && !isNewsletter(anunciosChat)) {
 				try {
 					await bot.sendMessage(anunciosChat, donationMsg, { marcarTodos: true });
 				} catch (e) {
@@ -737,24 +740,17 @@ class BotAPI {
 				}
 			}
 
-			if (avisosChat && !ignorar) {
+			// Canais de newsletter (@newsletter) não recebem notificações de donate
+			if (avisosChat && !ignorar && !isNewsletter(avisosChat)) {
 				try {
-					const isNewsletter =
-						String(avisosChat).endsWith("@newsletter") || String(avisosChat).includes("newsletter");
-					const sentMsg = await bot.sendMessage(
-						avisosChat,
-						donationMsg,
-						isNewsletter ? {} : { marcarTodos: true }
-					);
+					const sentMsg = await bot.sendMessage(avisosChat, donationMsg, { marcarTodos: true });
 
-					if (!isNewsletter) {
-						try {
-							if (sentMsg && sentMsg.pin) {
-								await sentMsg.pin(pinDuration);
-							}
-						} catch (pinError) {
-							this.logger.error("Erro ao fixar mensagem no grupoAvisos:", pinError);
+					try {
+						if (sentMsg && sentMsg.pin) {
+							await sentMsg.pin(pinDuration);
 						}
+					} catch (pinError) {
+						this.logger.error("Erro ao fixar mensagem no grupoAvisos:", pinError);
 					}
 				} catch (error) {
 					this.logger.error(

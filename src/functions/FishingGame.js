@@ -3290,7 +3290,30 @@ async function fishingDataCommand(bot, message, args, group) {
 			const nextRegen = getNextBaitRegenTime(userData);
 			const nextMin = Math.ceil(nextRegen.secondsUntilNextBait / 60);
 			const allMin = Math.ceil(nextRegen.secondsUntilAllBaits / 60);
-			msg += `> Próxima em ${nextMin} min, todas em ${allMin} min\n`;
+
+			const allHours = Math.floor(allMin / 60);
+			const remMin = allMin % 60;
+			let allTimeStr = "";
+			if (allHours > 0 && remMin > 0) {
+				allTimeStr = `${allHours} ${allHours === 1 ? "hora" : "horas"} e ${remMin} ${remMin === 1 ? "minuto" : "minutos"}`;
+			} else if (allHours > 0) {
+				allTimeStr = `${allHours} ${allHours === 1 ? "hora" : "horas"}`;
+			} else {
+				allTimeStr = `${remMin} ${remMin === 1 ? "minuto" : "minutos"}`;
+			}
+
+			const targetDateStr = new Intl.DateTimeFormat("pt-BR", {
+				timeZone: "America/Sao_Paulo",
+				day: "2-digit",
+				month: "2-digit",
+				hour: "2-digit",
+				minute: "2-digit",
+				hour12: false
+			})
+				.format(nextRegen.allBaitsTime)
+				.replace(",", "");
+
+			msg += `> Próxima em ${nextMin} min, todas em ${allTimeStr} (${targetDateStr})\n`;
 		}
 		msg += `🎒 *Inventário:* ${fishes.length}/${maxInventory}\n`;
 		msg += `🎣 *Arremessos:* ${userData.totalBaitsUsed ?? 0}\n`;

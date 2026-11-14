@@ -325,26 +325,18 @@ async function runTests() {
 		"Não deve incluir aviso no grupo de avisos para doador com número salvo"
 	);
 
-	// Doador enviando para canal de avisos @newsletter (obrigatório)
+	// Canal de avisos @newsletter NÃO deve receber notificação de doação
 	dummyBot.grupoAvisos = "120363425083483471@newsletter";
 	dummyBot.sent = [];
-	let lastOptions = null;
 	const originalSendMessage = dummyBot.sendMessage;
 	dummyBot.sendMessage = async (target, msg, opts) => {
 		dummyBot.sent.push({ target, msg, opts });
-		lastOptions = opts;
 		return { pin: async () => {} };
 	};
 	await dummyApi.notifyGroupsAboutDonation("DoadorNewsletter", 100, "Vida longa!", 100);
 	assert.ok(
-		dummyBot.sent.some((s) => s.target === "120363425083483471@newsletter"),
-		"Doação DEVE obrigatoriamente ser notificada no canal de avisos newsletter"
-	);
-	const newsletterSent = dummyBot.sent.find((s) => s.target === "120363425083483471@newsletter");
-	assert.deepStrictEqual(
-		newsletterSent.opts,
-		{},
-		"No canal newsletter não deve tentar marcarTodos"
+		!dummyBot.sent.some((s) => s.target === "120363425083483471@newsletter"),
+		"Doação NÃO DEVE ser notificada no canal de avisos newsletter"
 	);
 	dummyBot.sendMessage = originalSendMessage;
 	dummyBot.grupoAvisos = "avisos@g.us";

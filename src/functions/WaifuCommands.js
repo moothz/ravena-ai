@@ -3755,44 +3755,92 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"🔍 Informe o nome ou ID do personagem para consultar a foto de casamento.\nExemplo: `!mu-foto Frieren` ou `!mu-foto nova Frieren`"
+				"🔍 Informe o nome ou ID do personagem para consultar a foto de casamento.\nExemplo: `!mu-foto Frieren`, `!mu-foto nova Frieren 2` ou `!mu-foto Frieren 2`"
 		});
 	}
 
-	const query = rawArgs.join(" ").trim();
-	let char = null;
+	// Identifica se um índice de foto foi especificado
+	let requestedPhotoIndex = null;
 
-	// 1. Tenta buscar direto por ID/slug exato se não contiver espaços
-	if (!/\s/.test(query)) {
-		try {
-			const { data } = await api.get(`/characters/${encodeURIComponent(query)}`);
-			if (data?.data) {
-				char = data.data;
-			}
-		} catch (idErr) {
-			if (idErr.response?.status !== 404) {
-				logger.debug(`[consultarOuGerarFotoCasamento] Falha na consulta por ID: ${idErr.message}`);
-			}
+	// 1. Prefixo explícito (#N, foto:N ou 'foto N')
+	for (let i = 0; i < rawArgs.length; i++) {
+		const m = rawArgs[i].match(/^(?:#|foto:?)(\d+)$/i);
+		if (m) {
+			requestedPhotoIndex = parseInt(m[1], 10);
+			rawArgs.splice(i, 1);
+			break;
+		}
+		if (/^foto$/i.test(rawArgs[i]) && i + 1 < rawArgs.length && /^\d+$/.test(rawArgs[i + 1])) {
+			requestedPhotoIndex = parseInt(rawArgs[i + 1], 10);
+			rawArgs.splice(i, 2);
+			break;
 		}
 	}
 
-	// 2. Se não encontrou por ID exato, busca ampla no catálogo
-	if (!char) {
+	// 2. Argumento numérico posicional no início ou no fim (ex: '2 Frieren' ou 'Frieren 2')
+	let candidateQuery = rawArgs.join(" ").trim();
+	let candidatePhotoIndex = null;
+
+	if (requestedPhotoIndex === null && rawArgs.length >= 2) {
+		if (/^\d+$/.test(rawArgs[0])) {
+			candidatePhotoIndex = parseInt(rawArgs[0], 10);
+			candidateQuery = rawArgs.slice(1).join(" ").trim();
+		} else if (/^\d+$/.test(rawArgs[rawArgs.length - 1])) {
+			candidatePhotoIndex = parseInt(rawArgs[rawArgs.length - 1], 10);
+			candidateQuery = rawArgs.slice(0, -1).join(" ").trim();
+		}
+	}
+
+	let query = rawArgs.join(" ").trim();
+	let char = null;
+
+	async function fetchChar(q) {
+		if (!q) return null;
+		if (!/\s/.test(q)) {
+			try {
+				const { data } = await api.get(`/characters/${encodeURIComponent(q)}`);
+				if (data?.data) return data.data;
+			} catch (_) {}
+		}
 		try {
 			const { data } = await api.get("/characters", {
-				params: { search: query, limit: 6 }
+				params: { search: q, limit: 6 }
 			});
 			const results = data.data?.data || [];
 			if (results.length > 0) {
-				const normQ = query.toLowerCase();
+				const normQ = q.toLowerCase();
 				const exactId = results.find((c) => c.id?.toLowerCase() === normQ);
 				const exactName = results.find((c) => c.name?.toLowerCase() === normQ);
 				const startsName = results.find((c) => c.name?.toLowerCase().startsWith(normQ));
-				char = exactId || exactName || startsName || results[0];
+				return exactId || exactName || startsName || results[0];
 			}
-		} catch (searchErr) {
-			logger.error(`[consultarOuGerarFotoCasamento] Erro na busca ampla: ${searchErr.message}`);
+		} catch (_) {}
+		return null;
+	}
+
+	if (candidatePhotoIndex !== null && candidateQuery) {
+		// Se o termo completo bate exato com o nome ou ID (ex: "Android 18"), prioriza o nome completo
+		const fullMatch = await fetchChar(query);
+		const normFull = query.toLowerCase();
+		if (
+			fullMatch &&
+			(fullMatch.name?.toLowerCase() === normFull || fullMatch.id?.toLowerCase() === normFull)
+		) {
+			char = fullMatch;
+			requestedPhotoIndex = null;
+		} else {
+			const candMatch = await fetchChar(candidateQuery);
+			if (candMatch) {
+				char = candMatch;
+				requestedPhotoIndex = candidatePhotoIndex;
+				query = candidateQuery;
+			} else if (fullMatch) {
+				char = fullMatch;
+				requestedPhotoIndex = null;
+			}
 		}
+	} else {
+		char = await fetchChar(query);
 	}
 
 	if (!char) {
@@ -3815,7 +3863,37 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 	const ownerDisplayName = char.owner.name || (await resolveDisplayName(message, ownerId, null));
 	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 
-	// 4. Se solicitou explicitamente nova foto com 'nova'
+	// Se especificou foto por ID, força a geração/atualização da foto base
+	if (requestedPhotoIndex !== null) {
+		forceNew = true;
+	}
+
+	// Resolução da foto especificada ou padrão
+	const availablePhotos =
+		Array.isArray(char.imageUrls) && char.imageUrls.length > 0
+			? char.imageUrls
+			: char.imageUrl
+				? [char.imageUrl]
+				: [];
+	const totalPhotos = availablePhotos.length;
+
+	let targetPhotoUrl = char.imageUrl || (availablePhotos[0] ?? null);
+	let photoWarning = null;
+	let usedPhotoIndex = null;
+
+	if (requestedPhotoIndex !== null) {
+		if (requestedPhotoIndex >= 1 && requestedPhotoIndex <= totalPhotos) {
+			targetPhotoUrl = availablePhotos[requestedPhotoIndex - 1];
+			usedPhotoIndex = requestedPhotoIndex;
+		} else {
+			// ID inválido: usa default e avisa a quantidade disponível (incremental 1, 2, 3, ...)
+			photoWarning = `Foto #${requestedPhotoIndex} inválida! *${char.name}* possui ${totalPhotos} foto(s) disponível(is) (1 a ${totalPhotos}). Usando a foto padrão.`;
+			targetPhotoUrl = char.imageUrl || (availablePhotos[0] ?? null);
+			usedPhotoIndex = 1;
+		}
+	}
+
+	// 4. Se solicitou explicitamente nova foto com 'nova' ou especificando ID de foto
 	if (forceNew) {
 		if (!isOwner) {
 			return new ReturnMessage({
@@ -3829,11 +3907,23 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		}
 
 		message.origin?.react?.(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
-		const photoResult = await generateAndSaveMarriageImage(bot, message, char, userId, name);
+		const photoResult = await generateAndSaveMarriageImage(
+			bot,
+			message,
+			char,
+			userId,
+			name,
+			targetPhotoUrl
+		);
 
 		if (photoResult && photoResult.success && photoResult.media) {
 			let caption = `💍 *Nova Foto de Casamento!* 📸\n`;
 			caption += `👰 Casal: ${userMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+			if (photoWarning) {
+				caption += `⚠️ _${photoWarning}_\n`;
+			} else if (usedPhotoIndex && totalPhotos > 1) {
+				caption += `🖼️ _Gerada com base na foto *#${usedPhotoIndex}* do catálogo!_\n`;
+			}
 			caption += `✨ A nova foto oficial foi gerada e atualizada no álbum!`;
 
 			return new ReturnMessage({
@@ -3885,6 +3975,9 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 			caption += `👰 Casal: ${coupleLabel} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
 			if (isOwner) {
 				caption += `💡 _Envie \`!mu-foto nova ${char.id}\` para gerar uma nova foto e substituir a atual._`;
+				if (totalPhotos > 1) {
+					caption += `\n🖼️ _Este personagem possui ${totalPhotos} fotos. Use \`!mu-foto nova ${char.id} <1-${totalPhotos}>\` para gerar com outra foto base._`;
+				}
 			}
 
 			return new ReturnMessage({
@@ -3914,11 +4007,23 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 
 	// O cônjuge chamou !mu-foto e o casamento não tinha foto salva: gera na hora!
 	message.origin?.react?.(process.env.LOADING_EMOJI ?? "⌛️").catch(() => {});
-	const photoResult = await generateAndSaveMarriageImage(bot, message, char, userId, name);
+	const photoResult = await generateAndSaveMarriageImage(
+		bot,
+		message,
+		char,
+		userId,
+		name,
+		targetPhotoUrl
+	);
 
 	if (photoResult && photoResult.success && photoResult.media) {
 		let caption = `💍 *Foto de Casamento Registrada!* 📸\n`;
 		caption += `👰 Casal: ${userMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+		if (photoWarning) {
+			caption += `⚠️ _${photoWarning}_\n`;
+		} else if (usedPhotoIndex && totalPhotos > 1) {
+			caption += `🖼️ _Gerada com base na foto *#${usedPhotoIndex}* do catálogo!_\n`;
+		}
 		caption += `✨ A foto de casamento foi gerada com sucesso e arquivada no álbum!`;
 
 		return new ReturnMessage({
@@ -7480,7 +7585,7 @@ async function ajudaWaifus(bot, message) {
 
 	text += `💍 *Casamento e Harém:*\n`;
 	text += `• \`!mu-casar\` (aliases: \`!mu-c\`, \`!mu-claim\`, \`!mu-marry\`) — Casa com o personagem rolado nos últimos 300s.\n`;
-	text += `• \`!mu-foto [nova] <nome>\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal.\n`;
+	text += `• \`!mu-foto [nova] <nome> [idFoto]\` (aliases: \`!mu-photo\`, \`!mu-fotocasal\`) — Consulta ou gera a foto oficial de casamento do casal (permite escolher a foto base).\n`;
 	text += `• \`!mu-divorciar <id>\` (aliases: \`!mu-div\`, \`!mu-d\`) — Divorcia um personagem e resgata Zinthos (com soft limite diário por raridade; 4 cotas para Soulmates).\n`;
 	text += `• \`!mu-harem [@usuário | página]\` (alias: \`!mu-h\`) — Lista todas as waifus/husbandos que você ou outro usuário possui.\n`;
 	text += `• \`!mu-harem-nome <nome>\` (aliases: \`!mu-hnome\`, \`!mu-nomeharem\`) — Define um nome personalizado para o seu harém (até 20 caracteres).\n`;
@@ -10023,8 +10128,8 @@ const helper = {
 		},
 		{
 			cmd: "!mu-foto",
-			desc: "Exibe a foto oficial de casamento do casal ou gera uma nova com 'nova'",
-			usage: ["!mu-foto Rem", "!mu-foto nova Rem", "!mu-foto rem-re-zero"],
+			desc: "Exibe a foto oficial de casamento do casal ou gera uma nova com 'nova' (suporta id da foto base)",
+			usage: ["!mu-foto Rem", "!mu-foto nova Rem", "!mu-foto Rem 2", "!mu-foto nova Rem 2"],
 			category: "mudae"
 		},
 		{
