@@ -131,14 +131,16 @@ async function downloadCharacterImageBuffer(imageUrl) {
  * Solicita à IA uma descrição detalhada da personagem casada.
  * Se der erro ou falhar, retorna o buffer original para fallback.
  * @param {Object} character
+ * @param {string|null} [targetPhotoUrl=null] - URL opcional de foto específica do personagem
  * @returns {Promise<{ success: boolean, description?: string, originalBase64?: string, fallback: "text"|"original_image" }>}
  */
-async function describeCharacter(character) {
-	if (!character || !character.imageUrl) {
+async function describeCharacter(character, targetPhotoUrl = null) {
+	const imageUrl = targetPhotoUrl || character?.imageUrl;
+	if (!imageUrl) {
 		return { success: false, fallback: "text" };
 	}
 
-	const imageBuffer = await module.exports.downloadCharacterImageBuffer(character.imageUrl);
+	const imageBuffer = await module.exports.downloadCharacterImageBuffer(imageUrl);
 	if (!imageBuffer) {
 		return { success: false, fallback: "text" };
 	}
@@ -343,12 +345,20 @@ async function compositeMarriageBorder(imageBuffer) {
  * @param {Object} character
  * @param {string} userId
  * @param {string} userName
+ * @param {string|null} [targetPhotoUrl=null]
  * @returns {Promise<{ success: boolean, media?: Object, fallback?: "text"|"original_image", originalBase64?: string, photoPath?: string }>}
  */
-async function generateAndSaveMarriageImage(bot, message, character, userId, userName) {
+async function generateAndSaveMarriageImage(
+	bot,
+	message,
+	character,
+	userId,
+	userName,
+	targetPhotoUrl = null
+) {
 	try {
-		// 1. Obter descrição da personagem pela LLM
-		const charDescResult = await module.exports.describeCharacter(character);
+		// 1. Obter descrição da personagem pela LLM (usa foto selecionada ou default)
+		const charDescResult = await module.exports.describeCharacter(character, targetPhotoUrl);
 		if (!charDescResult.success) {
 			return {
 				success: false,
