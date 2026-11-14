@@ -24,7 +24,14 @@ if (endpoint && !disabled) {
 function compactDiagLogger(base) {
 	const last = new Map();
 	const wrap = (level) => (msg, ...args) => {
-		const first = String(msg ?? "").split("\n")[0].slice(0, 200);
+		let text = String(msg ?? "");
+		if (text.startsWith("{")) {
+			try {
+				const parsed = JSON.parse(text);
+				text = parsed.message || parsed.code || text;
+			} catch {}
+		}
+		const first = String(text).split("\n")[0].slice(0, 200);
 		const detail = args.map((a) => (a && a.message ? a.message : typeof a === "string" ? a : "")).find(Boolean) || "";
 		const line = `[otel] ${first}${detail ? ` — ${String(detail).split("\n")[0].slice(0, 200)}` : ""}`;
 		const now = Date.now();
@@ -105,6 +112,9 @@ function start() {
 						if (typeof req.url === "string") {
 							span.setAttribute("url.path", sanitizePath(req.url));
 							span.setAttribute("http.target", sanitizePath(req.url));
+							// query de entrada: só os nomes dos parâmetros (valores podem ter texto livre/IDs)
+							const q = req.url.split("?")[1];
+							if (q) span.setAttribute("url.query", q.split("&").map((kv) => `${kv.split("=")[0].slice(0, 40)}=REDACTED`).join("&"));
 						}
 						return;
 					}
@@ -131,6 +141,9 @@ function start() {
 		]
 	});
 
+	// O construtor do NodeSDK troca o logger de diagnóstico quando OTEL_LOG_LEVEL está definido;
+	// reaplica o logger compacto (sem stack, com limite de frequência).
+	diag.setLogger(compactDiagLogger(new DiagConsoleLogger()), DiagLogLevel[(process.env.OTEL_LOG_LEVEL || "error").toUpperCase()] ?? DiagLogLevel.ERROR);
 	sdk.start();
 	globalThis.__RAVENA_OTEL_ENABLED = true;
 
