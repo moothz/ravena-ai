@@ -161,6 +161,19 @@ async function testLivePolling(monitor) {
 		monitor._checkTiktokLiveStatus = async () => ({ isLive: false });
 		await monitor._pollTiktokChannels();
 		assert.strictEqual(count(events, "streamOffline"), 1, "offline 1x");
+
+		// Nova live sem metadados (fallback): não pode reaproveitar o startedAt da anterior e ser suprimida
+		monitor._checkTiktokLiveStatus = async () => ({
+			isLive: true,
+			roomId: null,
+			title: `Live de ${channel}`,
+			thumbnail: null,
+			viewerCount: null,
+			startedAt: null,
+			url: `https://www.tiktok.com/@${channel}/live`
+		});
+		await monitor._pollTiktokChannels();
+		assert.strictEqual(count(events, "streamOnline"), 2, "segunda live notifica");
 	} finally {
 		monitor._checkTiktokLiveStatus = originalCheck;
 		monitor._checkTiktokLatestVideo = originalVideo;
@@ -197,6 +210,9 @@ async function testVideoPolling(monitor) {
 	};
 
 	try {
+		// Primeira checagem é escalonada aleatoriamente; força acontecer neste ciclo
+		monitor.tiktokLastVideoCheck[channelKey] = 0;
+
 		// Vídeo antigo (> 24h): só vira baseline, sem notificação
 		monitor._checkTiktokLatestVideo = async () => oldVideo;
 		await monitor._pollTiktokChannels();

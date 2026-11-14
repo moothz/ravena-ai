@@ -5628,7 +5628,6 @@ class Management {
 		return this.setStreamForwardChannel(bot, message, args, group, "tiktok");
 	}
 
-	// !g-youtube-mudarTitulo e !g-youtube-usarIA estavam mapeados sem método implementado
 	async toggleYoutubeTitleChange(bot, message, args, group) {
 		return this.toggleStreamTitleChange(bot, message, args, group, "youtube");
 	}
@@ -6860,7 +6859,7 @@ class Management {
 			if (!["video", "on", "off"].includes(mode)) {
 				return new ReturnMessage({
 					chatId: group.id,
-					content: `Modo inválido: ${mode}. Para ${platform === "tiktok" ? "TikTok" : "YouTube"}, use "video", "on" ou "off".`
+					content: `Modo inválido: ${mode}. Para ${STREAM_PLATFORM_LABELS[platform]}, use "video", "on" ou "off".`
 				});
 			}
 		} else {

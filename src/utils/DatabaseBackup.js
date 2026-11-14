@@ -506,8 +506,9 @@ class DatabaseBackup {
 
 	async syncTable(sqliteDb, tableName, pks, remoteConn) {
 		try {
-			const createSql = await this.getRemoteCreateStatement(sqliteDb, tableName, pks);
-			await remoteConn.execute(createSql);
+			const columns = this.getRemoteColumnDefinitions(sqliteDb, tableName, pks);
+			await remoteConn.execute(this.buildRemoteCreateStatement(tableName, columns, pks));
+			await this.ensureRemoteColumns(remoteConn, tableName, columns);
 
 			const rows = this.queryAll(sqliteDb, `SELECT * FROM ${tableName}`);
 
@@ -532,10 +533,14 @@ class DatabaseBackup {
 		}
 	}
 
-	async getRemoteCreateStatement(sqliteDb, tableName, pks) {
+	/**
+	 * Mapeia as colunas de uma tabela SQLite para tipos MySQL.
+	 * @returns {Array<{name: string, type: string}>}
+	 */
+	getRemoteColumnDefinitions(sqliteDb, tableName, pks) {
 		const info = this.queryAll(sqliteDb, `PRAGMA table_info(${tableName})`);
 
-		const columns = info.map((col) => {
+		return info.map((col) => {
 			let type = "TEXT";
 			if (col.type.includes("INT")) type = "BIGINT";
 			if (col.type.includes("REAL") || col.type.includes("DOUBLE")) type = "DOUBLE";
@@ -552,10 +557,31 @@ class DatabaseBackup {
 				}
 			}
 
-			return `\`${col.name}\` ${type}`;
+			return { name: col.name, type };
 		});
+	}
 
-		return `CREATE TABLE IF NOT EXISTS \`${tableName}\` (${columns.join(", ")}, PRIMARY KEY (${pks.map((pk) => `\`${pk}\``).join(", ")})) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
+	buildRemoteCreateStatement(tableName, columns, pks) {
+		const columnsSql = columns.map((col) => `\`${col.name}\` ${col.type}`).join(", ");
+		return `CREATE TABLE IF NOT EXISTS \`${tableName}\` (${columnsSql}, PRIMARY KEY (${pks.map((pk) => `\`${pk}\``).join(", ")})) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
+	}
+
+	/**
+	 * O CREATE TABLE IF NOT EXISTS não altera tabelas já existentes no remoto: colunas novas
+	 * do SQLite (migradas pelo _ensureTableSchema) precisam ser adicionadas aqui, senão o upsert
+	 * falha com "Unknown column" e a tabela inteira deixa de ser sincronizada.
+	 */
+	async ensureRemoteColumns(remoteConn, tableName, columns) {
+		const [remoteColumns] = await remoteConn.query(`SHOW COLUMNS FROM \`${tableName}\``);
+		const existing = new Set(remoteColumns.map((col) => col.Field));
+		const missing = columns.filter((col) => !existing.has(col.name));
+
+		for (const col of missing) {
+			this.logger.info(`Table ${tableName}: adicionando coluna remota ${col.name} (${col.type})`);
+			await remoteConn.execute(
+				`ALTER TABLE \`${tableName}\` ADD COLUMN \`${col.name}\` ${col.type}`
+			);
+		}
 	}
 
 	async upsertToRemote(remoteConn, tableName, rows, pks) {

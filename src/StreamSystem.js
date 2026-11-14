@@ -181,7 +181,7 @@ class StreamSystem {
 				if (data.groupId) {
 					const bot = await this.findBotForGroup(data.groupId);
 					if (bot) {
-						const platformName = PLATFORM_LABELS[data.platform] ?? "Kick";
+						const platformName = PLATFORM_LABELS[data.platform] ?? data.platform;
 
 						// Monta o link público do canal
 						let channelLink = "";

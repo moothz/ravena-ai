@@ -392,6 +392,15 @@ async function listOnlineStreamers(bot, message, args, group) {
 			response += "\n";
 		}
 
+		// Adiciona perfis do TikTok em live
+		if (streamsByPlatform.tiktok && streamsByPlatform.tiktok.length > 0) {
+			response += `🎵 *TikTok*:\n`;
+			for (const stream of streamsByPlatform.tiktok) {
+				response += `   - *${stream.channelName}*: ${stream.title} _(${stream.viewerCount} viewers)_\n`;
+			}
+			response += "\n";
+		}
+
 		return new ReturnMessage({
 			chatId,
 			content: response
@@ -1057,6 +1066,8 @@ async function getMonitoredStreamsSummary(filterPlatform = "all") {
 					linkUrl = `https://kick.com/${stream.name}`;
 				} else if (pLower === "youtube") {
 					linkUrl = stream.lastVideoUrl || `https://youtube.com/@${stream.name}`;
+				} else if (pLower === "tiktok") {
+					linkUrl = `https://www.tiktok.com/@${stream.name}/live`;
 				}
 
 				resultado += `  - **[${stream.platform}] ${stream.name}**: ${stream.title}\n`;

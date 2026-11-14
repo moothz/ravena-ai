@@ -12,8 +12,13 @@ const TIKTOK_ROOM_STATUS_ENDED = 4;
 const TIKTOK_USER_NOT_FOUND_CODES = [10202, 10221, 10223];
 // Polls consecutivos com "user_not_found" antes de pausar o canal (~2h no intervalo padrão)
 const TIKTOK_NOT_FOUND_LIMIT = 60;
+// Erro da API do TikTok para usuário inexistente (statusCode 19881007)
+const TIKTOK_API_USER_NOT_FOUND = /user_not_found|19881007/i;
 // Quantos itens do perfil olhar para achar o vídeo mais novo (cobre vídeos fixados)
 const TIKTOK_VIDEO_SCAN_LIMIT = 6;
+// Só notifica vídeos publicados nas últimas 24h (mesma regra do YouTube)
+const TIKTOK_RECENT_VIDEO_MS = 24 * 60 * 60 * 1000;
+const TIKTOK_YTDLP_TIMEOUT_MS = 60000;
 
 // Retry helper with exponential backoff for network errors
 async function retryWithBackoff(fn, maxAttempts = 3, baseDelay = 2000) {
@@ -2719,7 +2724,7 @@ class StreamMonitor extends EventEmitter {
 	_isTiktokUserNotFoundError(error) {
 		const nested = Array.isArray(error?.config?.requestErrs) ? error.config.requestErrs : [];
 		return [error, ...nested].some(
-			(err) => typeof err?.message === "string" && /user_not_found|19881007/i.test(err.message)
+			(err) => typeof err?.message === "string" && TIKTOK_API_USER_NOT_FOUND.test(err.message)
 		);
 	}
 
@@ -2741,7 +2746,7 @@ class StreamMonitor extends EventEmitter {
 				playlistEnd: TIKTOK_VIDEO_SCAN_LIMIT,
 				noWarnings: true
 			},
-			{ timeout: 60000 }
+			{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
 		);
 
 		const ids = (profile?.entries || [])
@@ -2769,7 +2774,7 @@ class StreamMonitor extends EventEmitter {
 			const info = await youtubedl(
 				video.url,
 				{ dumpSingleJson: true, skipDownload: true, noWarnings: true },
-				{ timeout: 60000 }
+				{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
 			);
 			return {
 				...video,
@@ -2803,7 +2808,10 @@ class StreamMonitor extends EventEmitter {
 				status.title = live.title;
 				status.thumbnail = live.thumbnail;
 				status.viewerCount = live.viewerCount;
-				status.startedAt = live.startedAt || status.startedAt || new Date().toISOString();
+				// Live nova sem horário (fallback sem metadados) não pode herdar o startedAt da live anterior,
+				// senão a chave de dedupe do notifiedCache repete e a notificação é suprimida
+				status.startedAt =
+					live.startedAt || (wasLive ? status.startedAt : null) || new Date().toISOString();
 				status.currentRoomId = live.roomId;
 
 				if (!wasLive) {
@@ -2821,6 +2829,7 @@ class StreamMonitor extends EventEmitter {
 			} else {
 				status.isLive = false;
 				status.currentRoomId = null;
+				status.startedAt = null;
 
 				if (wasLive) {
 					await this._emitIfSafe("streamOffline", {
@@ -2850,7 +2859,13 @@ class StreamMonitor extends EventEmitter {
 	 * @private
 	 */
 	async _updateTiktokLatestVideo(channel, username, status, channelKey) {
-		const lastCheck = this.tiktokLastVideoCheck[channelKey] || 0;
+		// Primeira checagem de cada perfil é espalhada dentro do intervalo, para os yt-dlp
+		// (até 2 execuções por perfil) não caírem todos no mesmo ciclo e atrasarem as lives
+		if (this.tiktokLastVideoCheck[channelKey] === undefined) {
+			this.tiktokLastVideoCheck[channelKey] =
+				Date.now() - Math.floor(Math.random() * this.tiktokVideoCheckIntervalMs);
+		}
+		const lastCheck = this.tiktokLastVideoCheck[channelKey];
 		if (Date.now() - lastCheck < this.tiktokVideoCheckIntervalMs) return;
 		this.tiktokLastVideoCheck[channelKey] = Date.now();
 
@@ -2860,7 +2875,7 @@ class StreamMonitor extends EventEmitter {
 
 			const published = new Date(latest.publishedAt);
 			const isRecent =
-				!isNaN(published.getTime()) && published.getTime() >= Date.now() - 24 * 60 * 60 * 1000;
+				!isNaN(published.getTime()) && published.getTime() >= Date.now() - TIKTOK_RECENT_VIDEO_MS;
 
 			let videoData = latest;
 			if (isRecent) {
