@@ -162,6 +162,9 @@ def find_hash(salt, target, use_docker, data_dir, extra=()):
     for raw, origins in cands.items():
         norm = normalize_user(raw)
         forms = [("usuário", norm)] if norm == raw else [("usuário", norm), ("grupo/chat", raw)]
+        # hash legado (traces de antes da unificação): ID com sufixo do WhatsApp
+        if norm.lstrip("-").isdigit():
+            forms += [("usuário (hash legado ou chat PV)", norm + suf) for suf in ("@c.us", "@s.whatsapp.net", "@lid") if norm + suf != raw]
         for kind, form in forms:
             if hmac16(salt, form) == target:
                 hits.setdefault((kind, form), []).extend(origins)
