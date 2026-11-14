@@ -42,8 +42,10 @@ services:
     command: ["--config", "/etc/jaeger/config.yaml"]
     environment:
       JAEGER_RETENTION: ${JAEGER_RETENTION:-168h}
+      OTEL_TRACES_EXPORTER: none   # não auto-rastrear a UI/consultas do próprio Jaeger (ruído)
     volumes:
       - ./jaeger.yaml:/etc/jaeger/config.yaml:ro
+      - ./jaeger-ui.json:/etc/jaeger/jaeger-ui.json:ro
       - jaeger-badger:/badger
     ports:
       - "${OBS_UI_BIND_ADDR:-127.0.0.1}:16686:16686"

@@ -19,6 +19,8 @@ extensions:
     http:
       endpoint: 0.0.0.0:13133
   jaeger_query:
+    ui:
+      config_file: /etc/jaeger/jaeger-ui.json
     storage:
       traces: badger_store
       metrics: prom_store
