@@ -73,6 +73,19 @@ Este projeto é executado inteiramente dentro de containers Docker. O container 
   npm run lint:fix
   ```
 
+## Telemetria OpenTelemetry (OBRIGATÓRIO em todo PR)
+Todo comando, rota, serviço ou fluxo novo (ou alterado) deve sair instrumentado. Referência completa: `OBSERVABILITY.md`. Helpers em `src/telemetry/index.js` (no-op com a telemetria desligada, então não precisa de `if`).
+- **Comandos:** o `CommandHandler` já cria o span `command <nome>`. Acrescente os atributos de negócio relevantes com `telemetry.setAttrs({ "ravena.<domínio>.<campo>": valor })` e, quando o comando recusar algo esperado (saldo, cooldown, limite), marque `app.outcome: "rejected"` e `app.reject.reason: "<motivo_curto>"`. Recusa de negócio **não** é erro.
+- **Etapas que podem ser lentas** (imagem, LLM, chamada externa, laço pesado, SQLite grande): envolva em `telemetry.withSpan("<área> <etapa>", { attributes }, () => ...)`.
+- **Trabalho fora da mensagem** (`setTimeout`, cron, fila, retry agendado, webhook recebido): abra um trace próprio com `telemetry.withSpan`/`telemetry.withCommandSpan(nome, { root: true, links: [{ context: spanOrigem.spanContext() }] }, fn)`. HTTP de saída sem span pai é descartado, então sem isso a chamada some.
+- **Rotas da BotAPI:** o Express já gera o span SERVER; `:userId`/`:groupId` já viram atributo. Para outros campos de usuário no corpo, use `telemetry.userIdAttr()`.
+- **IDs:** usuário só via `telemetry.userIdAttr(id)` em `*.user.id`; grupo/chat via `telemetry.chatIdAttr(id)` em `*.chat.id`. **Nunca** no nome do span.
+- **Nunca** em span, atributo ou evento: nome/apelido, texto de mensagem, argumentos de comando, prompt/resposta de LLM, tokens, chaves, headers de auth.
+- **Nome de span:** baixa cardinalidade (`<área> <operação>`, ex.: `fazenda harvest.reconcile`), sem IDs nem valores, porque vira dimensão de métrica.
+- **Erro inesperado:** `telemetry.recordError(span, err)` (marca ERROR e grava a exceção).
+- **Documentação:** acrescente o span novo na tabela "Spans de negócio" do `OBSERVABILITY.md`.
+- **Validar:** com `OTEL_EXPORTER_OTLP_ENDPOINT` ligado localmente, gere tráfego (`src/testing/otel_traffic.js` ou FakeBot) e confira o span no Jaeger (`http://localhost:16686`).
+
 ## Harness de Testes e Mocks (`src/testing/`)
 O projeto conta com uma infraestrutura própria para testes em `src/testing/`, permitindo testar comandos e regras do `EventHandler` sem abrir conexões reais de rede:
 
