@@ -222,11 +222,6 @@ class CommandLimitTracker {
 
 module.exports = {
 	COMMAND_LIMIT_SCOPES,
-	DEFAULT_LIMIT_HOURS,
-	MAX_LIMIT_HOURS,
-	MAX_LIMIT_USES,
-	MAX_LIMIT_RULES,
-	normalizeCommandName,
 	validateCommandLimits,
 	findCommandLimit,
 	evaluateUsage,

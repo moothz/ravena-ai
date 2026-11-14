@@ -2,6 +2,8 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
+const axios = require("axios");
+const express = require("express");
 const FakeBot = require("./FakeBot");
 const { createMessage } = require("./FakeMessage");
 
@@ -12,6 +14,7 @@ const CommandHandler = require("../CommandHandler");
 const ReturnMessage = require("../models/ReturnMessage");
 const Group = require("../models/Group");
 const GroupMapper = require("../utils/db/mappers/GroupMapper");
+const { registerManagementRoutes } = require("../BotAPI/routes/managementRoutes");
 const {
 	validateCommandLimits,
 	findCommandLimit,
@@ -213,12 +216,146 @@ async function testCommandHandlerEnforcement() {
 	}
 }
 
+function limitedGroup(scope, maxUses = 1) {
+	return { id: GROUP_ID, commandLimits: [{ command: "roleta", maxUses, hours: 24, scope }] };
+}
+
+/** Mensagem de grupo que registra as reações feitas pelo bot */
+function trackedMessage(author, reactions) {
+	const message = createMessage({ content: "!roleta", group: GROUP_ID, author });
+	message.origin.react = async (emoji) => reactions.push(emoji);
+	return message;
+}
+
+async function testNoticesAndIdentity() {
+	const handler = new CommandHandler();
+	const command = {
+		name: "roleta",
+		method: async (_bot, message) => new ReturnMessage({ chatId: message.group, content: "bang" })
+	};
+	const limitNotices = () =>
+		bot.capturedMessages.filter((m) => String(m.content).includes("limite do comando")).length;
+	const reactions = [];
+	const run = (message, group) => handler.executeFixedCommand(bot, message, command, [], group);
+
+	// Aviso limitado a um a cada 30s; a reação 🚫 acontece sempre
+	handler.commandLimitTracker = createMemoryTracker();
+	bot.resetCapture();
+	const group = limitedGroup("user");
+	await run(trackedMessage(ALICE, reactions), group);
+	await run(trackedMessage(ALICE, reactions), group);
+	await run(trackedMessage(ALICE, reactions), group);
+	assert.strictEqual(limitNotices(), 1);
+	assert.strictEqual(reactions.filter((emoji) => emoji === "🚫").length, 2);
+	console.log("OK: aviso de limite não se repete dentro de 30s");
+
+	// Comando via reação: não reage nem avisa na mensagem de outra pessoa
+	bot.resetCapture();
+	reactions.length = 0;
+	const reactionMessage = trackedMessage(ALICE, reactions);
+	reactionMessage.originReaction = { senderId: ALICE, reaction: "🎲" };
+	handler.cooldownMessages = {};
+	assert.strictEqual(await run(reactionMessage, group), null);
+	assert.strictEqual(reactions.length, 0);
+	assert.strictEqual(limitNotices(), 0);
+	console.log("OK: limite atingido via reação fica em silêncio");
+
+	// LID e PN da mesma pessoa contam no mesmo limite
+	const LID = "123456789012345@lid";
+	bot.lidToPnMap = new Map([[LID, "5511999999999"]]);
+	try {
+		handler.commandLimitTracker = createMemoryTracker();
+		await run(trackedMessage(ALICE, reactions), group);
+		assert.strictEqual(await run(trackedMessage(LID, reactions), group), null);
+		assert.deepStrictEqual(
+			handler.commandLimitTracker.usages.map((usage) => usage.userId),
+			["5511999999999"]
+		);
+		console.log("OK: LID resolvido para PN conta no mesmo limite por pessoa");
+	} finally {
+		delete bot.lidToPnMap;
+	}
+}
+
+async function testCustomCommandLimit() {
+	const handler = new CommandHandler();
+	handler.commandLimitTracker = createMemoryTracker();
+	const group = { ...limitedGroup("global"), prefix: "!", name: "teste" };
+	const customCommand = { startsWith: "roleta", responses: ["bang"], active: true };
+	const run = () =>
+		handler.executeCustomCommand(
+			bot,
+			createMessage({ content: "!roleta", group: GROUP_ID, author: ALICE }),
+			customCommand,
+			[],
+			group
+		);
+
+	bot.resetCapture();
+	await run();
+	assert.strictEqual(await run(), null);
+	assert.strictEqual(handler.commandLimitTracker.usages.length, 1);
+	assert.ok(bot.capturedMessages.some((m) => String(m.content).includes("limite do grupo")));
+	console.log("OK: comando personalizado respeita o limite");
+}
+
+async function testUpdateGroupRoute() {
+	const saved = [];
+	const app = express();
+	app.use(express.json());
+	registerManagementRoutes({
+		app,
+		bots: [],
+		authenticateBasic: (req, res, next) => next(),
+		strictLimiter: (req, res, next) => next(),
+		generalLimiter: (req, res, next) => next(),
+		logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+		database: {
+			getGroup: async (id) => ({ id }),
+			saveGroup: async (group) => saved.push(group)
+		},
+		readWebManagementToken: async () => ({
+			groupId: GROUP_ID,
+			expiresAt: new Date(Date.now() + HOUR_MS).toISOString()
+		})
+	});
+	const server = app.listen(0);
+	const url = `http://127.0.0.1:${server.address().port}/api/update-group`;
+	const post = (commandLimits) =>
+		axios.post(
+			url,
+			{ token: "t", groupId: GROUP_ID, changes: { commandLimits } },
+			{ validateStatus: () => true }
+		);
+
+	try {
+		const ok = await post([
+			{ command: "!Roleta", maxUses: "10", scope: "user", ignoreAdmins: true }
+		]);
+		assert.strictEqual(ok.status, 200);
+		assert.deepStrictEqual(saved[0].commandLimits, [
+			{ command: "roleta", maxUses: 10, hours: 24, scope: "user", ignoreAdmins: true }
+		]);
+
+		const invalid = await post([{ command: "roleta", maxUses: 0 }]);
+		assert.strictEqual(invalid.status, 400);
+		assert.match(invalid.data.message, /entre 1 e 1000/);
+		assert.strictEqual(saved.length, 1);
+		console.log("OK: /api/update-group normaliza e rejeita limites inválidos");
+	} finally {
+		server.close();
+	}
+}
+
 async function main() {
 	testValidateCommandLimits();
 	testFindAndDescribe();
 	testEvaluateUsage();
 	testGroupPersistence();
 	await testCommandHandlerEnforcement();
+	await testNoticesAndIdentity();
+	await testCustomCommandLimit();
+	await testUpdateGroupRoute();
 	console.log("\nTodos os testes de limite de frequência passaram.");
 }
 
