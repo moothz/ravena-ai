@@ -81,6 +81,26 @@ function start() {
 			.replace(/[0-9]{6,}/g, "{n}")
 			.replace(/[^/]*(@|%40)(c\.us|g\.us|lid|s\.whatsapp\.net)/gi, "{id}");
 
+	// Liga cada span de cliente HTTP ao span "command <nome>" ativo, para o resultado do comando
+	// refletir a resposta do waifuletes/Jardim (ver telemetry/index.js → noteDownstream).
+	const pendingCalls = new WeakMap();
+	let telemetryHelpers = null;
+	const helpers = () => (telemetryHelpers ||= require("./index"));
+	const rememberCommand = (span, host) => {
+		try {
+			const cmd = helpers().currentCommandSpan();
+			if (cmd) pendingCalls.set(span, { cmd, host });
+		} catch {}
+	};
+	const noteResponse = (span, status) => {
+		const entry = pendingCalls.get(span);
+		if (!entry) return;
+		pendingCalls.delete(span);
+		try {
+			helpers().noteDownstream(entry.cmd, entry.host, status);
+		} catch {}
+	};
+
 	// Ruído que não ajuda a achar gargalo: health checks, long-poll do Telegram, polling de status.
 	const IGNORED_INCOMING = [/^\/health/, /^\/favicon/, /^\/public\//, /^\/static\//];
 	const IGNORED_OUTGOING = [/\/getUpdates/, /\/v1\/(traces|metrics|logs)$/];
@@ -122,6 +142,11 @@ function start() {
 					const host = req.getHeader("host") || req.host || "";
 					const path = sanitizePath(req.path);
 					span.setAttribute("url.full", `${req.protocol || "http:"}//${host}${path}`);
+					rememberCommand(span, host);
+				},
+				responseHook: (span, res) => {
+					// resposta de cliente (IncomingMessage com statusCode e sem método)
+					if (res && typeof res.statusCode === "number" && !res.method) noteResponse(span, res.statusCode);
 				},
 				// Não grava headers.
 				headersToSpanAttributes: { client: { requestHeaders: [], responseHeaders: [] }, server: { requestHeaders: [], responseHeaders: [] } }
@@ -129,6 +154,12 @@ function start() {
 			new UndiciInstrumentation({
 				requireParentforSpans: true,
 				ignoreRequestHook: (req) => IGNORED_OUTGOING.some((re) => re.test(req.path || "")),
+				requestHook: (span, req) => {
+					try {
+						rememberCommand(span, new URL(req.origin).host);
+					} catch {}
+				},
+				responseHook: (span, { response }) => noteResponse(span, response?.statusCode),
 				startSpanHook: (req) => ({
 					"url.full": `${req.origin}${sanitizePath(req.path)}`,
 					"url.path": sanitizePath(req.path),

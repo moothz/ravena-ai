@@ -1385,7 +1385,7 @@ class CommandHandler {
 	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
 	 */
 	executeFixedCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
-		return telemetry.withSpan(
+		return telemetry.withCommandSpan(
 			`command ${command?.name ?? "unknown"}`,
 			{
 				attributes: {
@@ -1396,10 +1396,7 @@ class CommandHandler {
 				}
 			},
 			(span) =>
-				this._executeFixedCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto).then((result) => {
-					if (!telemetry.hasOutcome(span)) telemetry.setAttrs({ "app.outcome": "ok" }, span);
-					return result;
-				})
+				this._executeFixedCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto)
 		);
 	}
 
@@ -1785,7 +1782,7 @@ class CommandHandler {
 	 * desligado). O nome do span é de baixa cardinalidade; args/texto nunca entram.
 	 */
 	executeCustomCommand(bot, message, command, args, group, silent = false, silentReaction = false, isAuto = false) {
-		return telemetry.withSpan(
+		return telemetry.withCommandSpan(
 			"command custom",
 			{
 				attributes: {
@@ -1796,10 +1793,7 @@ class CommandHandler {
 				}
 			},
 			(span) =>
-				this._executeCustomCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto).then((result) => {
-					if (!telemetry.hasOutcome(span)) telemetry.setAttrs({ "app.outcome": "ok" }, span);
-					return result;
-				})
+				this._executeCustomCommandImpl(bot, message, command, args, group, silent, silentReaction, isAuto)
 		);
 	}
 

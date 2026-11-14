@@ -158,6 +158,81 @@ function markOutcomeOnFinish(res) {
 	});
 }
 
+/** Middleware Express: registra app.outcome ao fim da resposta (inclusive 401/429 dos guards). */
+function outcomeMiddleware(req, res, next) {
+	markOutcomeOnFinish(res);
+	next();
+}
+
+// ── Resultado do comando a partir das chamadas aos microsserviços (waifuletes / Jardim) ─────────
+// O span "command <nome>" fica guardado no contexto; os hooks de HTTP (otel.js) anotam o status
+// de cada resposta dos parceiros. Ao fim do comando, se ninguém definiu app.outcome, vale a
+// ÚLTIMA resposta de parceiro: 5xx/erro de rede → error; 4xx → rejected (downstream_<status>).
+// (Pré-checagens 4xx que o comando trata e seguem adiante não contam: só a última chamada.)
+const COMMAND_SPAN_KEY = api.createContextKey("ravena.command.span");
+const partnerHosts = new Set();
+for (const [envName, def] of [
+	["WAIFULETES_API_URL", "http://host.docker.internal:3030"],
+	["JARDIM_API_URL", "http://host.docker.internal:3040"]
+]) {
+	try {
+		partnerHosts.add(new URL(process.env[envName] || def).host);
+	} catch {}
+}
+
+function partnerOf(host) {
+	if (!host) return null;
+	if (partnerHosts.has(host)) return host.endsWith(":3040") || /jardim/i.test(host) ? "jardim" : "waifuletes";
+	return null;
+}
+
+/** Usado pelos hooks de HTTP: devolve o span do comando ativo (ou null). */
+function currentCommandSpan() {
+	const s = context.active().getValue(COMMAND_SPAN_KEY);
+	return s && s.isRecording && s.isRecording() ? s : null;
+}
+
+/** Registra no span do comando o status de uma resposta de microsserviço parceiro. */
+function noteDownstream(commandSpan, host, statusCode) {
+	const partner = partnerOf(host);
+	if (!partner || !commandSpan || !commandSpan.isRecording()) return;
+	const code = Number(statusCode) || 0;
+	const attrs = commandSpan.attributes || {};
+	commandSpan.setAttributes({
+		"ravena.downstream.calls": (attrs["ravena.downstream.calls"] || 0) + 1,
+		"ravena.downstream.last_status": code,
+		"ravena.downstream.last_service": partner
+	});
+	if (code >= 400 || code === 0) {
+		commandSpan.setAttribute("ravena.downstream.failures", (attrs["ravena.downstream.failures"] || 0) + 1);
+	}
+}
+
+/** Resultado final do comando quando o código não definiu um. */
+function finalizeCommandOutcome(span) {
+	if (!span || !span.isRecording() || hasOutcome(span)) return;
+	const last = span.attributes?.["ravena.downstream.last_status"];
+	if (last === 0 || last >= 500) {
+		span.setAttributes({ "app.outcome": "error", "app.reject.reason": `downstream_${last || "network"}` });
+	} else if (last >= 400) {
+		span.setAttributes({ "app.outcome": "rejected", "app.reject.reason": `downstream_${last}` });
+	} else {
+		span.setAttribute("app.outcome", "ok");
+	}
+}
+
+/** Como withSpan, mas marca o span como "comando" no contexto (para os hooks de HTTP). */
+function withCommandSpan(name, opts, fn) {
+	return withSpan(name, opts, (span) =>
+		context.with(context.active().setValue(COMMAND_SPAN_KEY, span), () =>
+			Promise.resolve(fn(span)).then((result) => {
+				finalizeCommandOutcome(span);
+				return result;
+			})
+		)
+	);
+}
+
 /** Pseudônimo de usuário com a mesma normalização que a ravena usa ao chamar waifuletes/Jardim. */
 function hashUserId(id) {
 	if (id === undefined || id === null || id === "") return undefined;
@@ -192,6 +267,10 @@ module.exports = {
 	recordError,
 	hasOutcome,
 	markOutcomeOnFinish,
+	withCommandSpan,
+	currentCommandSpan,
+	noteDownstream,
+	outcomeMiddleware,
 	hashUserId,
 	trackPending,
 	addPending,

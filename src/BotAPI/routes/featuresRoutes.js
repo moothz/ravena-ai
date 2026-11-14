@@ -507,7 +507,7 @@ function registerFeaturesRoutes(api) {
 	];
 
 	// Endpoint de Inventário ao Vivo para o Mercado de Classificados
-	app.get("/api/market/user-inventory/:userId", ...marketGuards, async (req, res) => {
+	app.get("/api/market/user-inventory/:userId", telemetry.outcomeMiddleware, ...marketGuards, async (req, res) => {
 		try {
 			const { userId } = req.params;
 			if (!userId) {
@@ -629,8 +629,7 @@ function registerFeaturesRoutes(api) {
 	});
 
 	// Transferência de Itens do Mercado (Runas, Buffs & Fazenda com Rollback Atômico)
-	app.post("/api/market/transfer", ...marketGuards, async (req, res) => {
-		telemetry.markOutcomeOnFinish(res);
+	app.post("/api/market/transfer", telemetry.outcomeMiddleware, ...marketGuards, async (req, res) => {
 		try {
 			const {
 				fromUserId,
@@ -643,11 +642,13 @@ function registerFeaturesRoutes(api) {
 			} = req.body && typeof req.body === "object" ? req.body : {};
 
 			if (!fromUserId || !toUserId) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "missing_user" });
 				return res
 					.status(400)
 					.json({ success: false, reason: "fromUserId e toUserId são obrigatórios" });
 			}
 			if (!isValidMarketUserId(fromUserId) || !isValidMarketUserId(toUserId)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
 				return res
 					.status(400)
 					.json({ success: false, reason: "fromUserId/toUserId em formato inválido" });
@@ -656,6 +657,7 @@ function registerFeaturesRoutes(api) {
 			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
 			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
 			if (cleanFrom === cleanTo) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "same_user" });
 				return res.status(400).json({
 					success: false,
 					reason: "Origem e destino da transferência não podem ser o mesmo usuário."
@@ -665,6 +667,7 @@ function registerFeaturesRoutes(api) {
 			// Quantidades: inteiros positivos (0/ausente = não transfere). Nunca repassa negativos.
 			const runasAmount = parseMarketQuantity(runas);
 			if (runasAmount === null) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_runas" });
 				return res.status(400).json({
 					success: false,
 					reason: "Quantidade de Runas inválida (use um inteiro positivo)."
@@ -672,6 +675,7 @@ function registerFeaturesRoutes(api) {
 			}
 			const petalitasAmount = parseMarketQuantity(petalitas);
 			if (petalitasAmount === null) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_petalitas" });
 				return res.status(400).json({
 					success: false,
 					reason: "Quantidade de Petalitas inválida (use um inteiro positivo)."
@@ -686,6 +690,7 @@ function registerFeaturesRoutes(api) {
 				!(Array.isArray(fishingBuffIds) && fishingBuffIds.length === 0);
 			const buffParse = parseMarketBuffIds(useFishingBuffIds ? fishingBuffIds : buffs);
 			if (buffParse.error) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_buffs" });
 				return res.status(400).json({ success: false, reason: buffParse.error });
 			}
 			const targetBuffIds = buffParse.ids;
@@ -693,6 +698,7 @@ function registerFeaturesRoutes(api) {
 			// Itens da fazenda agregados por itemId (checagem de estoque usa o total pedido)
 			const farmParse = parseMarketFarmItems(farmItems);
 			if (farmParse.error) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_farm_items" });
 				return res.status(400).json({ success: false, reason: farmParse.error });
 			}
 			const farmItemsToTransfer = farmParse.items;
@@ -711,6 +717,7 @@ function registerFeaturesRoutes(api) {
 			if (runasAmount > 0) {
 				const fromAccount = await bankService.getAccount(cleanFrom);
 				if (!fromAccount || fromAccount.runas < runasAmount) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_runas" });
 					return res.status(400).json({
 						success: false,
 						reason: `Saldo insuficiente de Runas do ofertante (${fromAccount?.runas || 0} / ${runasAmount} ᚱ).`
@@ -728,6 +735,7 @@ function registerFeaturesRoutes(api) {
 						[buffId, ...fromUserIds]
 					);
 					if (!row) {
+						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "buff_not_owned" });
 						return res.status(400).json({
 							success: false,
 							reason: `Buff de pesca (ID: ${buffId}) não encontrado no inventário do ofertante.`
@@ -739,6 +747,7 @@ function registerFeaturesRoutes(api) {
 				if (typeof FishingGame.checkBuffTransferCapacity === "function") {
 					const capCheck = await FishingGame.checkBuffTransferCapacity(toUserId, targetBuffIds);
 					if (!capCheck.ok) {
+						telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "buff_cap" });
 						return res.status(400).json({ success: false, reason: capCheck.reason });
 					}
 				}
@@ -750,6 +759,7 @@ function registerFeaturesRoutes(api) {
 					if (petalitasAmount > 0) {
 						const status = await jardimClient.getStatus(cleanFrom);
 						if (!status || Number(status.coins || 0) < petalitasAmount) {
+							telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_petalitas" });
 							return res.status(400).json({
 								success: false,
 								reason: `Saldo insuficiente de Petalitas do ofertante (${status?.coins || 0} / ${petalitasAmount}).`
@@ -767,6 +777,7 @@ function registerFeaturesRoutes(api) {
 							const currentQty = itemsMap.get(reqItem.itemId) || 0;
 							const needQty = reqItem.amount;
 							if (currentQty < needQty) {
+								telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "insufficient_farm_item" });
 								return res.status(400).json({
 									success: false,
 									reason: `Item da fazenda insuficiente (${reqItem.name}: possui ${currentQty}, requer ${needQty}).`
@@ -775,6 +786,7 @@ function registerFeaturesRoutes(api) {
 						}
 					}
 				} catch (farmValErr) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "farm_validation_failed" });
 					return res.status(400).json({
 						success: false,
 						reason: `Falha ao validar inventário do Jardim das Sombras: ${farmValErr.message}`
