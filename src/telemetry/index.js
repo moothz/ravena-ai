@@ -2,30 +2,28 @@
  * Helpers de tracing de negócio da ravena-ai.
  *
  * Usa só @opentelemetry/api: quando a telemetria está desligada, tudo aqui vira no-op barato
- * (tracer no-op, hashId devolve undefined sem calcular HMAC).
+ * (tracer no-op, userIdAttr/chatIdAttr devolvem undefined).
  *
- * Política de privacidade (ver OBSERVABILITY.md): NUNCA passar para atributos/eventos telefone,
- * ID cru de usuário/grupo/chat, nome, texto de mensagem, args de comando, prompt/resposta de LLM
- * ou segredos. IDs só via hashId().
+ * Política de privacidade (ver OBSERVABILITY.md): usuário e chat entram como ID (telefone/ID da
+ * plataforma) SÓ via userIdAttr()/chatIdAttr(), nos atributos *.user.id / *.chat.id. NUNCA passar
+ * nome, texto de mensagem, args de comando, prompt/resposta de LLM ou segredos. Por isso a stack
+ * de observabilidade não pode ficar exposta fora do host (ver OBSERVABILITY.md, "Segurança").
  */
 "use strict";
 
-const crypto = require("crypto");
 const api = require("@opentelemetry/api");
 
 const { trace, context, SpanStatusCode, SpanKind, ROOT_CONTEXT } = api;
 const tracer = trace.getTracer("ravena-ai");
 
-const ID_SALT = process.env.OTEL_ID_SALT || crypto.randomBytes(32).toString("hex");
-
 function isEnabled() {
 	return globalThis.__RAVENA_OTEL_ENABLED === true;
 }
 
-/** Pseudônimo estável (HMAC-SHA256 truncado) para IDs de usuário/grupo. undefined se desligado. */
-function hashId(id) {
+/** ID de grupo/chat como está (ex.: 1203…@g.us). undefined se desligado ou vazio. */
+function chatIdAttr(id) {
 	if (!isEnabled() || id === undefined || id === null || id === "") return undefined;
-	return crypto.createHmac("sha256", ID_SALT).update(String(id)).digest("hex").slice(0, 16);
+	return String(id);
 }
 
 function cleanAttrs(attrs) {
@@ -244,11 +242,15 @@ function withCommandSpan(name, opts, fn) {
 	);
 }
 
-/** Pseudônimo de usuário com a mesma normalização que a ravena usa ao chamar waifuletes/Jardim. */
-function hashUserId(id) {
-	if (id === undefined || id === null || id === "") return undefined;
+/**
+ * ID de usuário sem sufixo (telefone no WhatsApp, ID numérico no Telegram/Discord), com a mesma
+ * normalização que a ravena usa ao chamar waifuletes/Jardim: corta no primeiro "@" e no primeiro
+ * ":" (5511…@c.us, 5511…:3@s.whatsapp.net e 5511… viram 5511…). undefined se desligado ou vazio.
+ */
+function userIdAttr(id) {
+	if (!isEnabled() || id === undefined || id === null || id === "") return undefined;
 	const norm = String(id).split("@")[0].split(":")[0];
-	return hashId(norm || id);
+	return norm || String(id);
 }
 
 /** IDs de correlação para logs ("" se não houver span ativo). */
@@ -269,7 +271,7 @@ module.exports = {
 	trace,
 	ROOT_CONTEXT,
 	isEnabled,
-	hashId,
+	chatIdAttr,
 	withSpan,
 	startSpan,
 	activeSpan,
@@ -282,7 +284,7 @@ module.exports = {
 	currentCommandSpan,
 	noteDownstream,
 	outcomeMiddleware,
-	hashUserId,
+	userIdAttr,
 	trackPending,
 	addPending,
 	awaitPending,

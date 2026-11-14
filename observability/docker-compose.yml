@@ -2,6 +2,11 @@
 # Subir:   docker compose -f observability/docker-compose.yml up -d
 # UIs:     Jaeger http://localhost:16686  |  Grafana http://localhost:3001  |  Prometheus http://localhost:9091
 # Os serviços exportam para http://host.docker.internal:4318 (OTLP/HTTP) — ver OBSERVABILITY.md.
+#
+# SEGURANÇA: os traces guardam telefone/ID de usuário e ID de grupo. Nada aqui pode ser alcançável
+# de fora do host. As UIs ficam em 127.0.0.1 (acesso remoto só por túnel SSH); o Jaeger não tem
+# login. Portas publicadas pelo Docker ignoram ufw/iptables do host, então não troque os binds por
+# 0.0.0.0. Defina GRAFANA_ADMIN_PASSWORD em observability/.env antes de subir.
 name: ravena-observability
 
 x-logging: &default-logging
@@ -20,12 +25,14 @@ services:
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      # OTLP/HTTP (só a 4318; os serviços exportam http/protobuf). Os containers dos outros composes
-      # chegam aqui por host.docker.internal (host-gateway). Em Linux nativo recomenda-se
-      # OTEL_BIND_ADDR=172.17.0.1 (gateway da bridge docker0): alcançável pelos containers e
-      # invisível na LAN. O padrão 0.0.0.0 funciona em qualquer host, mas portas publicadas pelo
-      # Docker ignoram o ufw — nunca exponha 4318 à internet. Sem healthcheck: a imagem é distroless.
-      - "${OTEL_BIND_ADDR:-0.0.0.0}:4318:4318"
+      # OTLP/HTTP (só a 4318; os serviços exportam http/protobuf, sem autenticação). Os containers
+      # dos outros composes chegam aqui por host.docker.internal (host-gateway).
+      # - Linux nativo (servidor): OTEL_BIND_ADDR=172.17.0.1 (gateway da bridge docker0), alcançável
+      #   pelos containers e invisível na LAN/internet. Com 127.0.0.1 os containers não alcançam.
+      # - Docker Desktop (Windows/macOS/WSL): o padrão 127.0.0.1 funciona.
+      # Nunca use 0.0.0.0: qualquer um na rede poderia injetar ou inundar traces.
+      # Sem healthcheck: a imagem é distroless.
+      - "${OTEL_BIND_ADDR:-127.0.0.1}:4318:4318"
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 512M }
@@ -47,7 +54,7 @@ services:
       - ./jaeger-ui.json:/etc/jaeger/jaeger-ui.json:ro
       - jaeger-badger:/badger
     ports:
-      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:16686:16686"
+      - "127.0.0.1:16686:16686"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:13133/status"]
       interval: 30s
@@ -75,7 +82,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:${PROMETHEUS_PORT:-9091}:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9091}:9090"
     deploy:
       resources:
         limits: { cpus: "0.5", memory: 512M }
@@ -91,10 +98,11 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Sem acesso anônimo e sem senha padrão: o compose não sobe sem GRAFANA_ADMIN_PASSWORD.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD em observability/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
       GF_USERS_DEFAULT_THEME: dark
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
@@ -104,7 +112,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "${OBS_UI_BIND_ADDR:-127.0.0.1}:3001:3000"
+      - "127.0.0.1:3001:3000"
     deploy:
       resources:
         limits: { cpus: "0.5", memory: 512M }

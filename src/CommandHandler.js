@@ -1393,7 +1393,7 @@ class CommandHandler {
 					"app.command.category": command?.category || "none",
 					"app.command.type": isAuto ? "auto" : "fixed",
 					"ravena.bot.platform": message?.platform || "whatsapp",
-					"ravena.user.id_hash": telemetry.hashUserId(message?.author || message?.authorAlt)
+					"ravena.user.id": telemetry.userIdAttr(message?.author || message?.authorAlt)
 				}
 			},
 			(span) =>
@@ -1791,7 +1791,7 @@ class CommandHandler {
 					"app.command.category": "custom",
 					"app.command.type": isAuto ? "auto" : "custom",
 					"ravena.bot.platform": message?.platform || "whatsapp",
-					"ravena.user.id_hash": telemetry.hashUserId(message?.author || message?.authorAlt)
+					"ravena.user.id": telemetry.userIdAttr(message?.author || message?.authorAlt)
 				}
 			},
 			(span) =>

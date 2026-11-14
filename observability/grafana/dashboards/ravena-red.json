@@ -22,39 +22,39 @@
    "icon": "external link"
   },
   {
-   "title": "Traces do id_hash: ravena-ai (user)",
+   "title": "Traces do ID: ravena-ai (user)",
    "type": "link",
    "targetBlank": true,
    "icon": "external link",
-   "url": "http://localhost:16686/search?service=ravena-ai&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22ravena.user.id_hash%22%3A%22${id_hash}%22%7D"
+   "url": "http://localhost:16686/search?service=ravena-ai&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22ravena.user.id%22%3A%22${id:percentencode}%22%7D"
   },
   {
-   "title": "Traces do id_hash: waifuletes (user)",
+   "title": "Traces do ID: waifuletes (user)",
    "type": "link",
    "targetBlank": true,
    "icon": "external link",
-   "url": "http://localhost:16686/search?service=waifuletes&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22waifu.user.id_hash%22%3A%22${id_hash}%22%7D"
+   "url": "http://localhost:16686/search?service=waifuletes&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22waifu.user.id%22%3A%22${id:percentencode}%22%7D"
   },
   {
-   "title": "Traces do id_hash: jardim-das-sombras (user)",
+   "title": "Traces do ID: jardim-das-sombras (user)",
    "type": "link",
    "targetBlank": true,
    "icon": "external link",
-   "url": "http://localhost:16686/search?service=jardim-das-sombras&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22jds.user.id_hash%22%3A%22${id_hash}%22%7D"
+   "url": "http://localhost:16686/search?service=jardim-das-sombras&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22jds.user.id%22%3A%22${id:percentencode}%22%7D"
   },
   {
-   "title": "Traces do id_hash: ravena-ai (chat)",
+   "title": "Traces do ID: ravena-ai (chat)",
    "type": "link",
    "targetBlank": true,
    "icon": "external link",
-   "url": "http://localhost:16686/search?service=ravena-ai&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22ravena.chat.id_hash%22%3A%22${id_hash}%22%7D"
+   "url": "http://localhost:16686/search?service=ravena-ai&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22ravena.chat.id%22%3A%22${id:percentencode}%22%7D"
   },
   {
-   "title": "Traces do id_hash: waifuletes (group)",
+   "title": "Traces do ID: waifuletes (group)",
    "type": "link",
    "targetBlank": true,
    "icon": "external link",
-   "url": "http://localhost:16686/search?service=waifuletes&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22waifu.group.id_hash%22%3A%22${id_hash}%22%7D"
+   "url": "http://localhost:16686/search?service=waifuletes&start=${__from}000&end=${__to}000&lookback=custom&limit=50&tags=%7B%22waifu.group.id%22%3A%22${id:percentencode}%22%7D"
   }
  ],
  "templating": {
@@ -82,15 +82,15 @@
     "refresh": 2
    },
    {
-    "name": "id_hash",
-    "label": "id_hash (usuário/grupo)",
+    "name": "id",
+    "label": "ID (telefone/usuário ou grupo)",
     "type": "textbox",
     "query": "",
     "current": {
      "text": "",
      "value": ""
     },
-    "description": "Cole um *.id_hash para abrir os traces dele no Jaeger (link no topo). Para descobrir quem é: observability/tools/quem-e.py"
+    "description": "Usuário: telefone ou ID sem sufixo (ex.: 5511999999999). Grupo: ID completo (ex.: 1203…@g.us). Abre os traces no Jaeger pelos links do topo."
    }
   ]
  },

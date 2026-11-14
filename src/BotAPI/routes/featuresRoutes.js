@@ -510,7 +510,7 @@ function registerFeaturesRoutes(api) {
 	app.get("/api/market/user-inventory/:userId", telemetry.outcomeMiddleware, ...marketGuards, async (req, res) => {
 		try {
 			const { userId } = req.params;
-			telemetry.setAttrs({ "ravena.user.id_hash": telemetry.hashUserId(userId) });
+			telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
 			if (!userId) {
 				return res.status(400).json({ success: false, error: "userId obrigatório" });
 			}
@@ -656,9 +656,9 @@ function registerFeaturesRoutes(api) {
 			}
 
 			telemetry.setAttrs({
-				"ravena.from_user.id_hash": telemetry.hashUserId(fromUserId),
-				"ravena.to_user.id_hash": telemetry.hashUserId(toUserId),
-				"ravena.user.id_hash": telemetry.hashUserId(fromUserId)
+				"ravena.from_user.id": telemetry.userIdAttr(fromUserId),
+				"ravena.to_user.id": telemetry.userIdAttr(toUserId),
+				"ravena.user.id": telemetry.userIdAttr(fromUserId)
 			});
 			const cleanFrom = String(fromUserId).replace(/\D/g, "") || String(fromUserId);
 			const cleanTo = String(toUserId).replace(/\D/g, "") || String(toUserId);
