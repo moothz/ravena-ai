@@ -391,8 +391,8 @@ class DatabaseMappers {
 // ─────────────────────────────────────────────────────────────
 // OpenTelemetry (no-op se desligado). better-sqlite3 é síncrono e não tem instrumentação oficial:
 //  - toda chamada soma tempo/contagem no span ativo (ravena.sqlite.total_ms / ravena.sqlite.calls);
-//  - só as chamadas lentas (≥ OTEL_SQLITE_SLOW_MS, padrão 20 ms) viram span próprio
-//    "sqlite {operação} {tabela}" — sem SQL nem parâmetros.
+//  - só as chamadas lentas (≥ OTEL_SQLITE_SLOW_MS, padrão 20 ms) ou com erro, e dentro de um
+//    span pai, viram span próprio "sqlite {operação} {tabela}" — sem SQL nem parâmetros.
 // ─────────────────────────────────────────────────────────────
 {
 	const telemetry = require("../../telemetry");
@@ -426,7 +426,10 @@ class DatabaseMappers {
 						"ravena.sqlite.calls": (active.attributes["ravena.sqlite.calls"] || 0) + 1
 					});
 				}
-				if (ms >= SLOW_MS || error) {
+				// Sem span pai (boot, migrações) não cria raiz solta; "duplicate column"/"already exists"
+				// das migrações idempotentes não é erro de verdade.
+				const expectedError = error && /duplicate column|already exists/i.test(String(error.message));
+				if (active && (ms >= SLOW_MS || (error && !expectedError))) {
 					const op = opOf(sql);
 					const table = tableOf(sql);
 					const span = telemetry.startSpan(table ? `sqlite ${op} ${table}` : `sqlite ${op}`, {
@@ -439,7 +442,7 @@ class DatabaseMappers {
 							"db.namespace": /^[A-Za-z_]{1,40}$/.test(String(name || "")) ? String(name) : "other"
 						}
 					});
-					if (error) telemetry.recordError(span, error);
+					if (error && !expectedError) telemetry.recordError(span, error);
 					span.end(t0 + ms);
 				}
 			}
