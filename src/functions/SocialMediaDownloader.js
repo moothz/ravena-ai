@@ -667,7 +667,10 @@ async function executeYoutubeDownload(
 				} catch (sendError) {
 					logger.error("Erro ao enviar áudio do YouTube:", sendError);
 					await bot.sendReturnMessages(
-						new ReturnMessage({ chatId, content: "Erro ao enviar áudio." }),
+						new ReturnMessage({
+							chatId,
+							content: "❌ Não consegui enviar o áudio. Tenta de novo em instantes!"
+						}),
 						group
 					);
 				}
@@ -687,7 +690,7 @@ async function executeYoutubeDownload(
 					await bot.sendReturnMessages(
 						new ReturnMessage({
 							chatId,
-							content: `❌ Erro ao baixar vídeo do YouTube: ${error.message}`
+							content: `❌ Não consegui baixar esse vídeo do YouTube: ${error.message}`
 						}),
 						group
 					);
@@ -727,7 +730,7 @@ async function executeYoutubeDownload(
 						caption += `\n📥 *Vídeo em alta qualidade:* ${s3Url}`;
 					}
 					if (isTooLargeForWaVideo) {
-						caption += `\n\n📂 Enviado como arquivo devido ao limite de tamanho para vídeos no WhatsApp`;
+						caption += `\n\n📂 Enviado como documento por causa do tamanho limite do WhatsApp`;
 					}
 					caption += `\n\n> *Dica:* Se quiser apenas o áudio, responda este vídeo com \`${bot.prefix}extractaudio\``;
 
@@ -770,7 +773,7 @@ async function executeYoutubeDownload(
 
 					const errorMsg = linkFallback
 						? `⚠️ O vídeo excedeu o limite do WhatsApp!\n\n> 📥 *Baixe diretamente aqui (válido por 6h):*\n${linkFallback}`
-						: "Erro ao enviar vídeo.";
+						: "❌ Não consegui enviar o vídeo. Tenta de novo em instantes!";
 
 					await bot.sendReturnMessages(new ReturnMessage({ chatId, content: errorMsg }), group);
 				}
@@ -971,7 +974,7 @@ async function downloadHandler(bot, message, args, group) {
 				if (videos.length === 0) {
 					return new ReturnMessage({
 						chatId,
-						content: `❌ Nenhum vídeo encontrado para "_${query}_" no YouTube.`
+						content: `❌ Não achei nenhum vídeo pra "_${query}_" no YouTube.`
 					});
 				}
 
@@ -1040,7 +1043,7 @@ async function downloadHandler(bot, message, args, group) {
 				logger.error(`Erro na busca do YouTube: ${searchError.message}`);
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao buscar por "_${query}_" no YouTube: ${searchError.message}`
+					content: `❌ Deu ruim ao buscar por "_${query}_" no YouTube: ${searchError.message}`
 				});
 			}
 		}
@@ -1050,7 +1053,7 @@ async function downloadHandler(bot, message, args, group) {
 	if (!url) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Por favor, forneça uma URL válida ou um termo de busca.\nExemplo: \`${bot.prefix}${commandName} https://...\` ou \`${bot.prefix}${commandName} nome da música\``
+			content: `❌ Manda uma URL válida ou o que você quer buscar.\nExemplo: \`${bot.prefix}${commandName} https://...\` ou \`${bot.prefix}${commandName} nome da música\``
 		});
 	}
 
@@ -1211,7 +1214,7 @@ async function downloadHandler(bot, message, args, group) {
 		await bot.sendReturnMessages(
 			new ReturnMessage({
 				chatId,
-				content: `❌ *Erro ao processar download após várias tentativas:*\n${error.message}`
+				content: `❌ *Não consegui baixar a mídia depois de algumas tentativas:*\n${error.message}`
 			}),
 			group
 		);

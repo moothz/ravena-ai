@@ -57,7 +57,7 @@ async function enviarGif(bot, message, args, group) {
 			if (!response.data || !response.data.data || response.data.data.length === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: "❌ Não foi possível encontrar GIFs populares. Tente novamente mais tarde.",
+					content: "❌ Não achei nenhum GIF em alta no momento. Tenta de novo mais tarde!",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -88,7 +88,7 @@ async function enviarGif(bot, message, args, group) {
 			if (!response.data || !response.data.data || response.data.data.length === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Nenhum GIF encontrado para "${searchTerm}". Tente outra busca.`,
+					content: `❌ Não achei nenhum GIF pra "${searchTerm}". Tenta outro termo!`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -222,15 +222,15 @@ async function enviarGif(bot, message, args, group) {
 		logger.error("Erro ao buscar/enviar GIF:", error);
 
 		const chatId = message.group ?? message.author;
-		let errorMessage = "Erro ao buscar GIF. Por favor, tente novamente.";
+		let errorMessage = "Deu ruim ao buscar o GIF. Tenta de novo em instantes!";
 
 		if (error.response) {
 			// Erro da API
 			if (error.response.status === 403) {
-				errorMessage = "Chave de API do Giphy inválida. Verifique sua configuração.";
+				errorMessage = "Chave da API do Giphy inválida nas configurações do bot.";
 			} else if (error.response.status === 429) {
 				errorMessage =
-					"Limite de requisições da API do Giphy excedido. Tente novamente mais tarde.";
+					"Muitas buscas no Giphy ao mesmo tempo! Espera um pouquinho e tenta de novo.";
 			}
 		}
 

@@ -302,13 +302,13 @@ async function handleJpeg(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+						"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 				});
 			}
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
+					"Manda uma imagem, responde a uma foto ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 			});
 		}
 
@@ -359,7 +359,7 @@ async function handleJpeg(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente."
+			content: "❌ Deu ruim ao processar a imagem. Confere se o arquivo é válido e tenta de novo!"
 		});
 	}
 }
@@ -391,13 +391,13 @@ async function handleRemoveBg(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+						"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 				});
 			}
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
+					"Manda uma imagem, responde a uma foto ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 			});
 		}
 
@@ -457,7 +457,7 @@ async function handleRemoveBg(bot, message, args, group) {
 		const content =
 			error.isRembgUserError || error.message?.startsWith("Problema removendo fundo da imagem:")
 				? error.message
-				: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente.";
+				: "❌ Deu ruim ao processar a imagem. Confere se o arquivo é válido e tenta de novo!";
 
 		return new ReturnMessage({
 			chatId,
@@ -497,13 +497,13 @@ async function handleDistort(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+						"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 				});
 			}
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
+					"Manda uma imagem, responde a uma foto ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 			});
 		}
 
@@ -558,7 +558,7 @@ async function handleDistort(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente."
+			content: "❌ Deu ruim ao processar a imagem. Confere se o arquivo é válido e tenta de novo!"
 		});
 	}
 }
@@ -588,13 +588,13 @@ async function handleStickerBg(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+						"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 				});
 			}
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
+					"Manda uma imagem, responde a uma foto ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 			});
 		}
 
@@ -668,7 +668,7 @@ async function handleStickerBg(bot, message, args, group) {
 		const content =
 			error.isRembgUserError || error.message?.startsWith("Problema removendo fundo da imagem:")
 				? error.message
-				: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente.";
+				: "❌ Deu ruim ao processar a imagem. Confere se o arquivo é válido e tenta de novo!";
 
 		return new ReturnMessage({
 			chatId,
@@ -703,13 +703,13 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+						"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 				});
 			}
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma imagem, responda a uma imagem ou mencione alguém com @ para usar sua foto de perfil."
+					"Manda uma imagem, responde a uma foto ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 			});
 		}
 
@@ -764,7 +764,7 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar imagem. Certifique-se de que a imagem é válida e tente novamente."
+			content: "❌ Deu ruim ao processar a imagem. Confere se o arquivo é válido e tenta de novo!"
 		});
 	}
 }

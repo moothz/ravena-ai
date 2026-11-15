@@ -23,7 +23,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 	if (!query) {
 		return new ReturnMessage({
 			chatId,
-			content: "Você precisa me dizer o que buscar! Use: `!sc <nome da música)>`",
+			content: "Diz aí o que você quer buscar no SoundCloud! Ex: `!sc <nome da música>`",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -49,7 +49,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 		if (!searchResults || searchResults.collection.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `Não encontrei nenhum resultado para "${searchQuery}" no SoundCloud.`,
+				content: `Não achei nenhuma faixa pra "${searchQuery}" no SoundCloud.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -71,7 +71,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 		if (!downloadResult || !downloadResult.lastDownloadLocation) {
 			return new ReturnMessage({
 				chatId,
-				content: "Desculpe, não consegui baixar o áudio.",
+				content: "❌ Não consegui baixar esse áudio do SoundCloud agora.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -115,9 +115,7 @@ async function soundCloudSearchAndDownload(bot, message, args, group) {
 		return [detalhesMsg, audioMsg];
 	} catch (error) {
 		console.error("[soundCloudSearchAndDownload] Error:", error);
-		return new ReturnMessage(
-			"Ocorreu um erro ao buscar no SoundCloud. Tente novamente mais tarde."
-		);
+		return new ReturnMessage("❌ Deu ruim ao buscar no SoundCloud. Tenta de novo mais tarde!");
 	}
 }
 

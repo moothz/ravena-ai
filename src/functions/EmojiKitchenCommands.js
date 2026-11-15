@@ -145,8 +145,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 		if (!emojis) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça dois emojis para criar um sticker combinado. Exemplo: !emojik 🥹 😗"
+				content: "Manda dois emojis pra misturar em figurinha! Exemplo: *!emojik 🥹 😗*"
 			});
 		}
 
@@ -226,7 +225,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId,
-				content: `Não foi possível criar o sticker para ${emojis[0]}+${emojis[1]}. Esta combinação pode não estar disponível.`
+				content: `Não consegui misturar ${emojis[0]}+${emojis[1]}. Essa combinação pode não existir ainda no Emoji Kitchen!`
 			});
 		}
 	} catch (error) {
@@ -234,7 +233,7 @@ async function emojiKitchenCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Ocorreu um erro ao processar o comando. Por favor, tente novamente."
+			content: "❌ Deu ruim ao misturar os emojis. Tenta de novo em instantes!"
 		});
 	}
 }

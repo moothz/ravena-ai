@@ -189,7 +189,8 @@ async function audioCommand(bot, message, args, group) {
 		if (!args || args.length < 1) {
 			return new ReturnMessage({
 				chatId,
-				content: "🔇 Digite o nome do áudio para buscar no site MyInstants\n!audio nome do áudio",
+				content:
+					"🔇 Fala o nome do áudio que você quer buscar no MyInstants!\nExemplo: *!audio nome do áudio*",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -206,7 +207,8 @@ async function audioCommand(bot, message, args, group) {
 		if (!query) {
 			return new ReturnMessage({
 				chatId,
-				content: "🔇 Digite o nome do áudio para buscar no site MyInstants\n!audio nome do áudio",
+				content:
+					"🔇 Fala o nome do áudio que você quer buscar no MyInstants!\nExemplo: *!audio nome do áudio*",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -219,7 +221,7 @@ async function audioCommand(bot, message, args, group) {
 		if (!resultados.length) {
 			return new ReturnMessage({
 				chatId,
-				content: `🔇 Nenhum áudio encontrado para "${query}".`,
+				content: `🔇 Não achei nenhum áudio pra "${query}" no MyInstants.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -231,7 +233,7 @@ async function audioCommand(bot, message, args, group) {
 			const preview = resultados.map((r, i) => `- ${i + 1}. ${r.title}`).join("\n");
 			return new ReturnMessage({
 				chatId,
-				content: `🔊 Resultados para "${query}":\n${preview}\n\nUse: !audio ${query} número_do_áudio para enviar o áudio desejado.\n\nExemplo: !audio ${query} 1`,
+				content: `🔊 *Resultados pra "${query}":*\n${preview}\n\nPra tocar, manda: *!audio ${query} [número]*\nExemplo: *!audio ${query} 1*`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -245,7 +247,7 @@ async function audioCommand(bot, message, args, group) {
 		if (!resultado) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Número inválido, para '${query}' digite um número entre 1 e ${resultados.length}.\n!audio ${query} n`,
+				content: `❌ Número fora da lista! Pra '${query}', escolhe entre 1 e ${resultados.length}.\nEx: *!audio ${query} 1*`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -261,7 +263,7 @@ async function audioCommand(bot, message, args, group) {
 			logger.error(`Erro ao baixar áudio "${resultado.title}":`, downErr.message || downErr);
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível baixar o áudio "${resultado.title}". Tente escolher outro número.`,
+				content: `❌ Não consegui baixar o áudio "${resultado.title}". Tenta escolher outro número da lista!`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -291,7 +293,7 @@ async function audioCommand(bot, message, args, group) {
 		logger.error("Erro ao executar comando audio:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao buscar o áudio. Por favor, tente novamente mais tarde."
+			content: "❌ Deu ruim ao buscar o áudio. Tenta de novo em instantes!"
 		});
 	}
 }

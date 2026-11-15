@@ -318,7 +318,7 @@ async function textToSpeech(bot, message, args, group, char = null) {
 		if (text.length < 1) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça texto para converter em voz.",
+				content: "Manda o texto que você quer que eu fale em voz! 🗣️",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -446,7 +446,7 @@ async function textToSpeech(bot, message, args, group, char = null) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao gerar voz. Por favor, tente novamente.",
+			content: "❌ Deu ruim ao gerar o áudio de voz. Tenta de novo em instantes!",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -590,7 +590,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar o áudio da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
+						"⚠️ Não consegui baixar o áudio da mensagem marcada. O arquivo pode ter expirado ou falhado no download.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -599,7 +599,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça um áudio ou mensagem de voz.",
+				content: "Manda ou marca um áudio ou mensagem de voz pra transcrever! 🎙️",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -611,7 +611,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 		if (!isTranscribableMedia(media, sourceType)) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça um áudio ou mensagem de voz.",
+				content: "Manda ou marca um áudio ou mensagem de voz pra transcrever! 🎙️",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -630,7 +630,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 			if (stat.size > MAX_STT_MEDIA_BYTES) {
 				return new ReturnMessage({
 					chatId,
-					content: `⚠️ Mídia muito grande (${(stat.size / 1024 / 1024).toFixed(1)} MB) para transcrever. Máximo de ${Math.floor(MAX_STT_MEDIA_BYTES / 1024 / 1024)} MB.`,
+					content: `⚠️ Esse áudio é pesado demais (${(stat.size / 1024 / 1024).toFixed(1)} MB) pra transcrever! O limite é ${Math.floor(MAX_STT_MEDIA_BYTES / 1024 / 1024)} MB.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -713,7 +713,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 		if (!transcribedText || transcribedText.startsWith("Erro")) {
 			if (transcribedText !== "Erro no servidor de transcrição") {
 				transcribedText =
-					"Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+					"Não consegui entender esse áudio. O som pode estar muito baixo ou com ruído demais.";
 			}
 
 			const errorMessage = new ReturnMessage({
@@ -776,7 +776,7 @@ async function speechToText(bot, message, args, group, optimizeWithLLM = true) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao transcrever áudio. Por favor, tente novamente."
+			content: "❌ Deu ruim na transcrição do áudio. Tenta de novo em instantes!"
 		});
 	} finally {
 		// Clean up temporary files in finally block to ensure they are always removed
@@ -976,7 +976,7 @@ async function processAutoSTT(bot, message, group, opts = {}) {
 					(errorText.startsWith("Erro") && errorText !== "Erro no servidor de transcrição")
 				) {
 					errorText =
-						"Não foi possível transcrever o áudio. O áudio pode estar muito baixo ou pouco claro.";
+						"Não consegui entender esse áudio. O som pode estar muito baixo ou com ruído demais.";
 				}
 				const errorMessage = new ReturnMessage({
 					chatId,

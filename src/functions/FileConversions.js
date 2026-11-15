@@ -147,14 +147,14 @@ async function handleGetAudio(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Para extrair áudio de um vídeo/voz você precisa responder à uma mensagem que possua esta mídia (ou colocar na legenda)."
+					"Responde a um vídeo ou mensagem de voz (ou manda na legenda) pra extrair o áudio em MP3! 🎵"
 			});
 		}
 		if (status === "download_failed") {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
+					"❌ Não consegui baixar essa mídia (pode ter expirado ou ser visualização única protegida)."
 			});
 		}
 
@@ -165,7 +165,7 @@ async function handleGetAudio(bot, message, args, group) {
 		if (!supportedTypes.includes(mediaType)) {
 			return new ReturnMessage({
 				chatId,
-				content: `*Erro extraindo áudio*: Tipo de mídia não suportado: ${mediaType}. Use em áudio, voz ou vídeo.`
+				content: `❌ Esse tipo de arquivo não é suportado (${mediaType}). Usa o comando em áudio, voz ou vídeo!`
 			});
 		}
 
@@ -191,7 +191,7 @@ async function handleGetAudio(bot, message, args, group) {
 		logger.error("Erro ao processar comando getaudio:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar áudio."
+			content: "❌ Deu ruim ao converter o áudio. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -213,14 +213,14 @@ async function handleGetVoice(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Para extrair áudio de um vídeo/voz você precisa responder à uma mensagem que possua esta mídia (ou colocar na legenda)."
+					"Responde a um vídeo ou áudio (ou manda na legenda) pra converter em mensagem de voz! 🎙️"
 			});
 		}
 		if (status === "download_failed") {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
+					"❌ Não consegui baixar essa mídia (pode ter expirado ou ser visualização única protegida)."
 			});
 		}
 
@@ -231,7 +231,7 @@ async function handleGetVoice(bot, message, args, group) {
 		if (!supportedTypes.includes(mediaType)) {
 			return new ReturnMessage({
 				chatId,
-				content: `*Erro extraindo voz*: Tipo de mídia não suportado: ${mediaType}. Use em áudio, voz ou vídeo.`
+				content: `❌ Esse tipo de arquivo não é suportado (${mediaType}). Usa o comando em áudio, voz ou vídeo!`
 			});
 		}
 
@@ -257,7 +257,7 @@ async function handleGetVoice(bot, message, args, group) {
 		logger.error("Erro ao processar comando getvoice:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao processar áudio."
+			content: "❌ Deu ruim ao gerar a mensagem de voz. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -279,7 +279,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, especifique o nível de volume (0-1000). Exemplo: !volume 200"
+				content: "Manda o nível de volume que você quer (0 a 1000). Exemplo: *!volume 200*"
 			});
 		}
 
@@ -289,7 +289,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		if (isNaN(volumeLevel) || volumeLevel < 0 || volumeLevel > 1000) {
 			return new ReturnMessage({
 				chatId,
-				content: "Nível de volume inválido. Use um valor entre 0 e 1000."
+				content: "Nível de volume inválido! Escolhe um valor entre 0 e 1000."
 			});
 		}
 
@@ -297,14 +297,14 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		if (status === "no_media") {
 			return new ReturnMessage({
 				chatId,
-				content: "A mensagem citada não contém mídia (você também pode enviar na legenda)."
+				content: "A mensagem marcada não tem áudio nem vídeo (ou manda na legenda da mídia)."
 			});
 		}
 		if (status === "download_failed") {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Não foi possível baixar a mídia (ela pode ter expirado ou ser de visualização única protegida)."
+					"❌ Não consegui baixar essa mídia (pode ter expirado ou ser visualização única protegida)."
 			});
 		}
 
@@ -315,7 +315,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		if (!supportedTypes.includes(mediaType)) {
 			return new ReturnMessage({
 				chatId,
-				content: `Tipo de mídia não suportado: ${mediaType}. Use em áudio, voz ou vídeo.`
+				content: `❌ Esse tipo de arquivo não é suportado (${mediaType}). Usa o comando em áudio, voz ou vídeo!`
 			});
 		}
 
@@ -368,7 +368,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 		logger.error("Erro ao processar comando volume:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao ajustar volume."
+			content: "❌ Deu ruim ao ajustar o volume. Tenta de novo em instantes!"
 		});
 	}
 }

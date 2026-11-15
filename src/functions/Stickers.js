@@ -588,13 +588,13 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 					return new ReturnMessage({
 						chatId,
 						content:
-							"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou."
+							"⚠️ Não consegui baixar a mídia marcada. O arquivo pode ter expirado ou saído do cache."
 					});
 				}
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Envie uma imagem/vídeo com a legenda do comando, responda a uma mídia ou mencione alguém com @ para usar sua foto de perfil."
+						"Manda uma imagem ou vídeo na legenda do comando, responde a uma mídia ou marca alguém com @ pra usar a foto de perfil! 🖼️"
 				});
 			}
 
@@ -609,7 +609,8 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 					await message.origin.react("❌");
 					return new ReturnMessage({
 						chatId,
-						content: "❌ Não foi possível baixar o sticker citado (mídia indisponível ou expirada)."
+						content:
+							"❌ Não consegui baixar a figurinha marcada (a mídia expirou ou ficou indisponível)."
 					});
 				}
 
@@ -716,7 +717,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 					return new ReturnMessage({
 						chatId,
 						content:
-							"❌ Não foi possível baixar a mídia citada (ela pode ter expirado ou ser de visualização única protegida)."
+							"❌ Não consegui baixar essa mídia (pode ter expirado ou ser visualização única protegida)."
 					});
 				}
 				mediaBuffer = media;
@@ -727,7 +728,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Este tipo de mídia não pode ser convertido em sticker. Apenas imagens, vídeos e stickers são suportados (você também pode mencionar alguém com @ para usar sua foto de perfil)."
+						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos e figurinhas (ou marca alguém com @ pra usar a foto de perfil)."
 				});
 			}
 		}
@@ -815,7 +816,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 
 		return new ReturnMessage({
 			chatId,
-			content: `Erro ao criar sticker quadrado (${cropType}). Por favor, tente novamente com uma imagem ou vídeo válido.`
+			content: `❌ Deu ruim ao criar a figurinha (${cropType}). Tenta mandar outra imagem ou vídeo!`
 		});
 	}
 }

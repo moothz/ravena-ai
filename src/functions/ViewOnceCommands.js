@@ -209,8 +209,8 @@ async function forwardViewOnceToPv(bot, message, group, { silentAdmin = false } 
 		return new ReturnMessage({
 			chatId: fallbackChatId,
 			content: !targetMsg
-				? "Responda a uma mídia de visualização única com !roubar ou reaja com 👀 para recebê-la no privado."
-				: "A mensagem informada não é uma mídia de visualização única.",
+				? "Responde a uma mídia de visualização única com *!roubar* ou reage com 👀 pra receber ela no privado."
+				: "A mensagem marcada não é uma mídia de visualização única.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -239,7 +239,7 @@ async function forwardViewOnceToPv(bot, message, group, { silentAdmin = false } 
 		if (isReaction) await message.origin?.react?.("❌")?.catch(() => {});
 		return new ReturnMessage({
 			chatId: fallbackChatId,
-			content: "❌ Não foi possível identificar seu número privado para enviar a mídia.",
+			content: "❌ Não consegui achar seu número no privado pra entregar a mídia.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -248,7 +248,7 @@ async function forwardViewOnceToPv(bot, message, group, { silentAdmin = false } 
 	}
 
 	const unavailableText =
-		"🔒 Não foi possível baixar esta mídia de visualização única — o WhatsApp não entregou as chaves/dados da mídia para o dispositivo conectado.";
+		"🔒 Não consegui baixar essa mídia de visualização única — o WhatsApp não liberou os dados pro bot conectado.";
 
 	if (isUnavailable || !targetMsg.hasMedia) {
 		if (!silentAdmin) {

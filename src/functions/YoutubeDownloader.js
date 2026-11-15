@@ -287,7 +287,7 @@ async function processYoutubeReaction(bot, message, emoji) {
 
 				const errorMsgContent = s3Url
 					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe em alta qualidade aqui (válido por 6h):*\n${s3Url}`
-					: "Erro ao enviar vídeo.";
+					: "❌ Não consegui enviar o vídeo. Tenta de novo em instantes!";
 
 				const errorMsg = new ReturnMessage({
 					chatId,
@@ -519,7 +519,7 @@ async function ytCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Por favor, forneça um link do YouTube ou termo de busca. Exemplo: !yt https://youtu.be/dQw4w9WgXcQ ou !yt despacito",
+				"Manda um link do YouTube ou o que você quer buscar. Exemplo: *!yt https://youtu.be/...* ou *!yt despacito* 🎥",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -535,7 +535,7 @@ async function ytCommand(bot, message, args, group) {
 		if (!videoId) {
 			return new ReturnMessage({
 				chatId,
-				content: "Ops! 😅 Só é possível baixar vídeos do YouTube com este comando. 🎥",
+				content: "Ops! 😅 Esse comando só baixa vídeos do YouTube. 🎥",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -565,7 +565,7 @@ async function ytCommand(bot, message, args, group) {
 		if (!videoId) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Nenhum vídeo encontrado para: "${input}"`,
+				content: `❌ Não achei nenhum vídeo pra: "${input}"`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -585,7 +585,7 @@ async function ytCommand(bot, message, args, group) {
 
 				const errorMsg = new ReturnMessage({
 					chatId,
-					content: `Erro ao baixar vídeo: ${error.message}`,
+					content: `❌ Não consegui baixar o vídeo: ${error.message}`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -662,7 +662,7 @@ async function ytCommand(bot, message, args, group) {
 
 				const errorMsgContent = s3Url
 					? `⚠️ O vídeo excedeu o limite do WhatsApp para envio direto!\n\n> 📥 *Baixe em alta qualidade aqui (válido por 6h):*\n${s3Url}`
-					: "Erro ao enviar vídeo.";
+					: "❌ Não consegui enviar o vídeo. Tenta de novo em instantes!";
 
 				const errorMsg = new ReturnMessage({
 					chatId,
@@ -740,7 +740,7 @@ async function srCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Por favor, forneça um link do YouTube ou termo de busca. Exemplo: !sr https://youtu.be/dQw4w9WgXcQ ou !sr despacito",
+				"Manda um link do YouTube ou o nome da música pra buscar. Exemplo: *!sr https://youtu.be/...* ou *!sr despacito* 🎵",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -756,7 +756,7 @@ async function srCommand(bot, message, args, group) {
 		if (!videoId) {
 			return new ReturnMessage({
 				chatId,
-				content: "Ops! 😅 Só é possível baixar músicas do YouTube com este comando. 🎵",
+				content: "Ops! 😅 Esse comando só baixa áudio de vídeos do YouTube. 🎵",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -786,7 +786,7 @@ async function srCommand(bot, message, args, group) {
 		if (!videoId) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Nenhum vídeo encontrado para: "${input}"`,
+				content: `❌ Não achei nada no YouTube pra: "${input}"`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -806,7 +806,7 @@ async function srCommand(bot, message, args, group) {
 
 				const errorMsg = new ReturnMessage({
 					chatId,
-					content: `Erro ao baixar áudio: ${error.message}`,
+					content: `❌ Não consegui baixar o áudio: ${error.message}`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -841,7 +841,7 @@ async function srCommand(bot, message, args, group) {
 
 				const errorMsg = new ReturnMessage({
 					chatId,
-					content: "Erro ao enviar áudio."
+					content: "❌ Não consegui enviar o áudio. Tenta de novo em instantes!"
 				});
 
 				await bot.sendReturnMessages(errorMsg, group);
@@ -865,8 +865,7 @@ async function lyricsCommand(bot, message, args, group) {
 	if (args.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"Por favor, forneça o nome de uma música para buscar a letra.\nExemplo: `!letra Fear of the Dark`",
+			content: "Manda o nome da música pra buscar a letra.\nExemplo: `!letra Fear of the Dark` 🎶",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -889,7 +888,7 @@ async function lyricsCommand(bot, message, args, group) {
 	if (!lyricsData) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Não foi possível encontrar a letra para "${query}".`,
+			content: `❌ Não achei a letra dessa música: "${query}".`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -912,7 +911,7 @@ async function downloadsDisabledCommand(bot, message, args, group) {
 	return new ReturnMessage({
 		chatId,
 		content:
-			"⚠️ *Downloads temporariamente desabilitados!* ⚠️\n\nEsta funcionalidade está em manutenção e voltará em breve. Agradecemos a compreensão! ✨"
+			"⚠️ *Downloads temporariamente pausados!* ⚠️\n\nEssa função tá em manutenção rápida e volta já, já! ✨"
 	});
 }
 

@@ -1731,20 +1731,19 @@ async function stickerScraperCommand(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId,
-				content: `⚠️ Não foi possível encontrar figurinhas para as tags: *${requestedTags.join(", ")}*.${topTagsStr}`
+				content: `⚠️ Não achei nenhuma figurinha pras tags: *${requestedTags.join(", ")}*.${topTagsStr}`
 			});
 		}
 
 		return new ReturnMessage({
 			chatId,
-			content:
-				"Não foi possível encontrar figurinhas disponíveis no momento. Por favor, tente novamente em instantes."
+			content: "Não encontrei figurinhas disponíveis agora. Tenta de novo em instantes!"
 		});
 	} catch (error) {
 		logger.error(`Erro ao processar comando sticker-scraper: ${error.message}`, error);
 		return new ReturnMessage({
 			chatId,
-			content: "Ocorreu um erro ao buscar a figurinha. Por favor, tente novamente mais tarde."
+			content: "❌ Deu ruim ao buscar a figurinha. Tenta de novo mais tarde!"
 		});
 	}
 }
@@ -2121,7 +2120,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		returnMessages.push(
 			new ReturnMessage({
 				chatId,
-				content: "🔞 Figurinha reportada ao admin com sucesso. Obrigado pela colaboração!",
+				content: "🔞 Valeu pelo toque! A figurinha foi enviada pra moderação analisar.",
 				options: {
 					stickerReportId: stickerId || null
 				}
@@ -2133,7 +2132,7 @@ async function figaDenunciarCommand(bot, message, args, group) {
 		logger.error(`Erro ao processar comando figa-denunciar: ${error.message}`, error);
 		return new ReturnMessage({
 			chatId,
-			content: "Ocorreu um erro ao registrar a denúncia. Por favor, tente novamente mais tarde."
+			content: "❌ Deu ruim ao registrar a denúncia. Tenta de novo mais tarde!"
 		});
 	}
 }
