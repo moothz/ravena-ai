@@ -14,7 +14,7 @@ Moedas e recursos dos minigames sao centralizados em Runas (ᚱ), custodiadas na
 | :--- | :--- | :--- | :--- | :--- |
 | Pesca (`!pescar`) | Arremesso de isca | Cooldown: 5s;<br>Regen: 1 isca / 1h (teto base: 5 iscas; cap absoluto: 300) | 24 iscas naturais/dia (compra no banco permite ate +200 iscas/dia) | 84% peixe (~37,8 kg medios), 15% lixo, 4% Carteira Furada (+50 a 500 ᚱ), 4% Fichas (+1 a 5 moedas) |
 | Slots (`!slots`) | Giro da alavanca | Cooldown: 5s;<br>Regen: 1 moeda / 2 min (teto base: 5 moedas; cap absoluto: 1.000) | 720 moedas naturais/dia (compra no banco permite ate +300 moedas/dia) | 1% Vitoria Total (fator diamante 1,4x), 27% Vitoria Parcial (7,5% cashback), 72% Derrota |
-| Jardim (`!faz-plantar`) | Cultivo (9 canteiros) | 15m a 12h por planta;<br>Sacola do Coveiro diaria (reset 03:00 BRT) | Limite da loja: 10 sementes comuns/dia; 3 raras/epicas/dia | Sacola: ~3.000 Ptl + 3 sementes; Lucro agricola: +19.000 Ptl/dia + 16 Waifu Tickets/dia |
+| Jardim (`!faz-plantar`) | Cultivo (9 canteiros) | 15m a 12h por planta;<br>Sacola do Coveiro diaria (reset 03:00 BRT) | Limite da loja: 10 sementes comuns/dia; 3 raras/epicas/dia | Sacola: ~3.000 a 5.000 Ptl + sementes; Rendimento real auditado: ~74.900 Ptl/dia a 100% de aproveitamento + 16 Waifu Tickets/dia |
 | Waifuletes (`!roll`) | Gacha de personagens | Cooldown roll: 1 roll / 5 min (base: 9); Cooldown claim por raridade (30m a 2h) | 288 rolls base/dia; Casamento: 25 Comuns, 20 Incomuns, 15 Raras, 10 Epicas | Daily: ~675 Z; Cristais nos rolls: ~12,5 Z/roll; Divorcio: 1o 100%, 2o 80% do valor ajustado por rank |
 | RavenaBank (`!banco`) | Cambio e Liquidacao | Sem cooldown | Cota Venda: 300.000 ᚱ/dia;<br>Cota Compra Zinthos: 525.000 Z/dia;<br>Cota Compra Petalitas: 307.500 Ptl/dia | Spread progressivo: $0,03 + 0,07 \times (\text{Uso}/\text{Cota})^{1,5}$ (~3% a 5,5% medios). Cotacao atual: 1 ᚱ = 5,886 Zinthos (0,1699 ᚱ/Z); 1 kg peixe = 1,2562 ᚱ; 1 Ptl = 0,1235 ᚱ |
 
@@ -42,13 +42,12 @@ Moedas e recursos dos minigames sao centralizados em Runas (ᚱ), custodiadas na
   * Rendimento por arremesso: 58,48 Runas (equivalente a 65,71 ᚱ por isca liquida gasta).
 
 ### Jardim das Sombras (`FazendaCommands.js`)
-* Plantas de Waifus (producao de rolls):
-  * 10x Coracao Purpuro (3h): custo 300 Ptl, colheita 350 Ptl + 1 Waifu Ticket. Saldo: +500 Ptl e +10 Waifu Tickets/dia.
-  * 3x Rosa de Sangue (12h): custo 1.200 Ptl, colheita 1.500 Ptl + 2 Waifu Tickets. Saldo: +900 Ptl e +6 Waifu Tickets/dia.
-* Plantas de economia pura:
-  * 3x Lotus Negra (+9.000 Ptl) + 10x Cogumelo Tumular (+4.000 Ptl) + 10x Lirio Cadaver (+6.000 Ptl). Saldo: +19.000 Ptl/dia.
-* Sacola do Coveiro: +3.000 Ptl/dia.
-* Total agricola base: +23.400 Petalitas/dia e 16 Waifu Tickets/dia.
+* Producao real auditada (74.900 Ptl/dia a 100% de aproveitamento):
+  * Lucro liquido do catalogo lucrativo da loja: ~49.400 Ptl/dia (considerando double-dipping de coinReward e sellPrice).
+  * Sacola do Coveiro diaria + sementes gratuitas: ~5.300 Ptl/dia.
+  * Sacolas do Coveiro obtidas via Slots (~7,6 sacolas/dia = ~23 sementes comuns + bonus colhidas): ~11.500 Ptl/dia.
+  * Petalitas diretas ganhas no Slots: ~8.700 Ptl/dia.
+  * Waifu Tickets gerados por colheitas (Coracao Purpuro e Rosa de Sangue): 16 tickets/dia.
 
 ### Waifuletes (`RollService.ts` e `DivorceService.ts`)
 * Rolls diarios: 288 base + 16 (Jardim) + 12,1 (Slots a 100%) = 316,1 rolls/dia.
@@ -62,78 +61,94 @@ Moedas e recursos dos minigames sao centralizados em Runas (ᚱ), custodiadas na
 
 ---
 
-## 3. Cenarios de Operacao Diaria
+## 3. Auditoria do Desvio de Petalitas (Real vs Calibragem Teorica)
 
-1. **Cenario A: Sinergia Total (Foco em Zinthos)**
+No documento de calibragem original do banco ([RAVENABANK.md](file:///home/moothz/ravena-ai/docs/RAVENABANK.md#L18-L26)), 1 dia de dedicacao media foi calibrado para gerar 8.000 Petalitas. Nos snapshots reais de producao dos jogadores (`fazenda_player_snapshots` em `data/sqlites/fazenda.db`), os jogadores mais ativos acumulam entre 400.000 e 633.000 Petalitas semanais (57.000 a 90.000 Petalitas/dia), confirmando relatos da comunidade de ganhos superiores a 50.000 Ptl/dia.
+
+Causas tecnicas identificadas no codigo:
+
+1. **Recompensa Dupla (Double Dipping):** Em `FarmService.ts`, o metodo `harvest()` credita `coinReward` imediatamente na carteira e adiciona o item `crop_<planta>` ao inventario, permitindo vende-lo em seguida por `sellPrice`.
+2. **Multiplicador de Moedas em Cascata:** O parametro `effectiveCoinMultiplier` (ate 2.0x por buffs e doacoes) incide tanto sobre o `coinReward` na colheita quanto sobre o `sellPrice` na venda. Uma Lotus Negra com 2.0x rende 8.000 Ptl na venda, gerando 21.000 Ptl de lucro liquido em 3 sementes.
+3. **Margens de Cultivos Curtos:** O Cogumelo Tumular custa 200 Ptl e vende por 600 Ptl (200% de lucro liquido) com tempo de crescimento de apenas 20 minutos (ou 5 minutos com buffs de velocidade).
+4. **Sementes Gratuitas via Slots:** A integracao com `SlotsGame.js` injeta sacolas e dezenas de sementes sem custo de loja aos jogadores frequentes.
+5. **Limites da Loja por Especie:** O limite diario da loja e individual por planta (10 unidades por especie), permitindo comprar 86 sementes lucrativas por dia.
+
+*Nota para rebalanceamento futuro:* Para reancorar a producao na faixa de 15.000 a 25.000 Ptl/dia sem afetar a diversao, os pontos de ajuste recomendados sao a eliminacao do `coinReward` em plantas que ja concedem itens utilitarios (deixando apenas o `sellPrice`), reducao das margens do Cogumelo Tumular e Lirio Cadaver, e adocao de cota global de sementes por dia (25 a 30 sementes no total).
+
+---
+
+## 4. Cenarios de Operacao Diaria
+
+1. **Cenario A: Sinergia Total (Foco em Zinthos com pesca intensiva)**
    * Todas as 245 iscas obtidas no Slots sao usadas na pesca junto com as 24 iscas naturais (~302 arremessos).
    * Vende todos os peixes comuns e 75% das Petalitas geradas para o RavenaBank (retendo 25% para reinvestir em sementes).
    * Converte 100% das Runas obtidas em Zinthos via `!banco-comprar zinthos`.
 2. **Cenario B: Padrao (Foco em Zinthos com rotina moderada)**
-   * Faz a pescaria natural (24 iscas), roda os slots regenerados, colhe o jardim e vende peixes e 75% das petalitas. As iscas recebidas no slots ficam guardadas.
+   * Faz a pescaria natural (24 iscas), roda os slots regenerados, colhe o jardim e vende peixes e 75% das petalitas geradas. As iscas recebidas no slots ficam estocadas.
    * Converte 100% das Runas obtidas em Zinthos.
 3. **Cenario C: Acumulo de Runas (Sem conversao para Zinthos)**
    * As Runas permanecem na conta bancaria para compras de consumiveis e valorizacao cambial. O jogador mantem apenas o Zinthos nativo gerado no Waifuletes e acumula o saldo de Petalitas.
 
 ---
 
-## 4. Medias Diarias por Nivel de Aproveitamento
+## 5. Medias Diarias por Nivel de Aproveitamento
 
 | Metrica Diaria | 100% de Aproveitamento | 80% de Aproveitamento | 60% de Aproveitamento | 50% de Aproveitamento |
 | :--- | :--- | :--- | :--- | :--- |
 | Moedas de Slots/dia | 720 moedas (1.000 giros) | 576 moedas (800 giros) | 432 moedas (600 giros) | 360 moedas (500 giros) |
 | Rolls Totais no Waifuletes | 316,1 rolls/dia | 252,9 rolls/dia | 189,7 rolls/dia | 158,0 rolls/dia |
-| Petalitas Totais Geradas | 32.121 Ptl/dia | 25.697 Ptl/dia | 19.273 Ptl/dia | 16.060 Ptl/dia |
-| Runas Geradas: Cenario B (Padrao) | 17.632 ᚱ/dia | 14.106 ᚱ/dia | 10.579 ᚱ/dia | 8.816 ᚱ/dia |
-| Runas Geradas: Cenario A (Sinergia Total) | 33.226 ᚱ/dia | 26.581 ᚱ/dia | 19.936 ᚱ/dia | 16.613 ᚱ/dia |
+| Petalitas Totais Geradas | 74.900 Ptl/dia | 59.920 Ptl/dia | 44.940 Ptl/dia | 37.450 Ptl/dia |
+| Runas Geradas: Cenario B (Padrao) | 21.436 ᚱ/dia | 17.149 ᚱ/dia | 12.862 ᚱ/dia | 10.718 ᚱ/dia |
+| Runas Geradas: Cenario A (Sinergia Total) | 37.030 ᚱ/dia | 29.624 ᚱ/dia | 22.218 ᚱ/dia | 18.515 ᚱ/dia |
 | Zinthos Nativo (Sem banco) | 6.821 Z/dia | 5.457 Z/dia | 4.093 Z/dia | 3.411 Z/dia |
-| Zinthos Total: Cenario B (Padrao) | 105.930 Z/dia | 84.744 Z/dia | 63.558 Z/dia | 52.965 Z/dia |
-| Zinthos Total: Cenario A (Sinergia) | 192.607 Z/dia | 154.086 Z/dia | 115.564 Z/dia | 96.304 Z/dia |
+| Zinthos Total: Cenario B (Padrao) | 127.312 Z/dia | 101.849 Z/dia | 76.387 Z/dia | 63.656 Z/dia |
+| Zinthos Total: Cenario A (Sinergia) | 213.877 Z/dia | 171.101 Z/dia | 128.326 Z/dia | 106.938 Z/dia |
 
-Na cotacao base teorica (0,2857 ᚱ/Z), o Zinthos total seria de ~65.000 Z/dia no Cenario B e ~118.000 Z/dia no Cenario A. Na cotacao real indexada ao M2 do banco (0,1699 ᚱ/Z), o rendimento atinge os valores da tabela sem ultrapassar o limite diario de 525.000 Z/dia.
+Na cotacao real indexada ao M2 do banco (0,1699 ᚱ/Z), a conversao das Runas geradas permite atingir os valores da tabela sem ultrapassar o teto diario de compra do banco (525.000 Z/dia).
 
 ---
 
-## 5. Projecao Temporal Escalada (1, 7, 15, 30 e 60 dias)
+## 6. Projecao Temporal Escalada (1, 7, 15, 30 e 60 dias)
 
 ### 100% de Aproveitamento (Sem perda de cooldowns)
 | Periodo | Zinthos (Padrao) | Zinthos (Sinergia Total) | Runas Geradas (Padrao) | Runas Geradas (Sinergia) | Petalitas Geradas |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 dia | 105.930 Z | 192.607 Z | 17.632 ᚱ | 33.226 ᚱ | 32.121 Ptl |
-| 7 dias | 741.510 Z | 1.348.250 Z | 123.424 ᚱ | 232.584 ᚱ | 224.847 Ptl |
-| 15 dias | 1.588.949 Z | 2.889.107 Z | 264.480 ᚱ | 498.395 ᚱ | 481.814 Ptl |
-| 30 dias | 3.177.898 Z | 5.778.214 Z | 528.961 ᚱ | 996.791 ᚱ | 963.628 Ptl |
-| 60 dias | 6.355.796 Z | 11.556.428 Z | 1.057.921 ᚱ | 1.993.581 ᚱ | 1.927.256 Ptl |
+| 1 dia | 127.312 Z | 213.877 Z | 21.436 ᚱ | 37.030 ᚱ | 74.900 Ptl |
+| 7 dias | 891.181 Z | 1.497.138 Z | 150.052 ᚱ | 259.212 ᚱ | 524.300 Ptl |
+| 15 dias | 1.909.673 Z | 3.208.152 Z | 321.539 ᚱ | 555.454 ᚱ | 1.123.500 Ptl |
+| 30 dias | 3.819.347 Z | 6.416.304 Z | 643.078 ᚱ | 1.110.908 ᚱ | 2.247.000 Ptl |
+| 60 dias | 7.638.694 Z | 12.832.609 Z | 1.286.156 ᚱ | 2.221.816 ᚱ | 4.494.000 Ptl |
 
 ### 80% de Aproveitamento (Pausa noturna de 6 a 8 horas)
 | Periodo | Zinthos (Padrao) | Zinthos (Sinergia Total) | Runas Geradas (Padrao) | Runas Geradas (Sinergia) | Petalitas Geradas |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 dia | 84.744 Z | 154.086 Z | 14.106 ᚱ | 26.581 ᚱ | 25.697 Ptl |
-| 7 dias | 593.208 Z | 1.078.600 Z | 98.739 ᚱ | 186.068 ᚱ | 179.877 Ptl |
-| 15 dias | 1.271.159 Z | 2.311.286 Z | 211.584 ᚱ | 398.716 ᚱ | 385.451 Ptl |
-| 30 dias | 2.542.319 Z | 4.622.571 Z | 423.168 ᚱ | 797.432 ᚱ | 770.902 Ptl |
-| 60 dias | 5.084.637 Z | 9.245.142 Z | 846.337 ᚱ | 1.594.865 ᚱ | 1.541.805 Ptl |
+| 1 dia | 101.849 Z | 171.101 Z | 17.149 ᚱ | 29.624 ᚱ | 59.920 Ptl |
+| 7 dias | 712.945 Z | 1.197.710 Z | 120.041 ᚱ | 207.369 ᚱ | 419.440 Ptl |
+| 15 dias | 1.527.739 Z | 2.566.522 Z | 257.231 ᚱ | 444.363 ᚱ | 898.800 Ptl |
+| 30 dias | 3.055.478 Z | 5.133.044 Z | 514.462 ᚱ | 888.726 ᚱ | 1.797.600 Ptl |
+| 60 dias | 6.110.955 Z | 10.266.087 Z | 1.028.925 ᚱ | 1.777.453 ᚱ | 3.595.200 Ptl |
 
 ### 60% de Aproveitamento (Uso regular em blocos ao longo do dia)
 | Periodo | Zinthos (Padrao) | Zinthos (Sinergia Total) | Runas Geradas (Padrao) | Runas Geradas (Sinergia) | Petalitas Geradas |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 dia | 63.558 Z | 115.564 Z | 10.579 ᚱ | 19.936 ᚱ | 19.273 Ptl |
-| 7 dias | 444.906 Z | 808.950 Z | 74.054 ᚱ | 139.551 ᚱ | 134.908 Ptl |
-| 15 dias | 953.369 Z | 1.733.464 Z | 158.688 ᚱ | 299.037 ᚱ | 289.088 Ptl |
-| 30 dias | 1.906.739 Z | 3.466.928 Z | 317.376 ᚱ | 598.074 ᚱ | 578.177 Ptl |
-| 60 dias | 3.813.478 Z | 6.933.857 Z | 634.753 ᚱ | 1.196.149 ᚱ | 1.156.354 Ptl |
+| 1 dia | 76.387 Z | 128.326 Z | 12.862 ᚱ | 22.218 ᚱ | 44.940 Ptl |
+| 7 dias | 534.709 Z | 898.283 Z | 90.031 ᚱ | 155.527 ᚱ | 314.580 Ptl |
+| 15 dias | 1.145.804 Z | 1.924.891 Z | 192.923 ᚱ | 333.272 ᚱ | 674.100 Ptl |
+| 30 dias | 2.291.608 Z | 3.849.783 Z | 385.847 ᚱ | 666.545 ᚱ | 1.348.200 Ptl |
+| 60 dias | 4.583.216 Z | 7.699.565 Z | 771.694 ᚱ | 1.333.090 ᚱ | 2.696.400 Ptl |
 
 ### 50% de Aproveitamento (Uso casual de 2 a 3 sessoes diarias)
 | Periodo | Zinthos (Padrao) | Zinthos (Sinergia Total) | Runas Geradas (Padrao) | Runas Geradas (Sinergia) | Petalitas Geradas |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 dia | 52.965 Z | 96.304 Z | 8.816 ᚱ | 16.613 ᚱ | 16.060 Ptl |
-| 7 dias | 370.755 Z | 674.125 Z | 61.712 ᚱ | 116.292 ᚱ | 112.423 Ptl |
-| 15 dias | 794.475 Z | 1.444.553 Z | 132.240 ᚱ | 249.198 ᚱ | 240.907 Ptl |
-| 30 dias | 1.588.949 Z | 2.889.107 Z | 264.480 ᚱ | 498.395 ᚱ | 481.814 Ptl |
-| 60 dias | 3.177.898 Z | 5.778.214 Z | 528.961 ᚱ | 996.791 ᚱ | 963.628 Ptl |
+| 1 dia | 63.656 Z | 106.938 Z | 10.718 ᚱ | 18.515 ᚱ | 37.450 Ptl |
+| 7 dias | 445.590 Z | 748.569 Z | 75.026 ᚱ | 129.606 ᚱ | 262.150 Ptl |
+| 15 dias | 954.837 Z | 1.604.076 Z | 160.769 ᚱ | 277.727 ᚱ | 561.750 Ptl |
+| 30 dias | 1.909.673 Z | 3.208.152 Z | 321.539 ᚱ | 555.454 ᚱ | 1.123.500 Ptl |
+| 60 dias | 3.819.347 Z | 6.416.304 Z | 643.078 ᚱ | 1.110.908 ᚱ | 2.247.000 Ptl |
 
 ---
 
-## 6. Comandos Gerais dos Jogos
+## 7. Comandos Gerais dos Jogos
 
 ### RavenaBank (Cambio e Financas)
 * `!banco` (ou `!saldo-banco`): Exibe saldo de Runas, patrimonio e cotas diarias consumidas e restantes.
@@ -181,7 +196,7 @@ Na cotacao base teorica (0,2857 ᚱ/Z), o Zinthos total seria de ~65.000 Z/dia n
 
 ---
 
-## 7. Script de Simulacao
+## 8. Script de Simulacao
 
 Para recalcular as estimativas com as cotacoes do dia salvas no banco de dados `data/sqlites/bank.db`:
 
@@ -190,6 +205,6 @@ python3 scripts/economy_simulation.py
 ```
 
 Arquivo de script:
-* [economy_simulation.py](scripts/economy_simulation.py)
+* [economy_simulation.py](file:///home/moothz/ravena-ai/scripts/economy_simulation.py)
 
 O script le a tabela `bank_daily_rates`, extrai a cotacao registrada no reset das 04:00 BRT e recalcula as projecoes.

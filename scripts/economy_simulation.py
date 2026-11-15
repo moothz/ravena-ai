@@ -18,12 +18,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 BANK_DB_PATH = os.path.join(REPO_ROOT, "data", "sqlites", "bank.db")
 
-# Taxas base padrão
+# Taxas base padrao
 BASE_RUNAS_PER_KG_FISH = 1.2500
 BASE_RUNAS_PER_ZINTHOS = 1000 / 3500  # ~0.2857
 BASE_RUNAS_PER_JARDIM = 0.1250
 
-# Tenta carregar taxas dinâmicas reais do banco SQLite mais recente
+# Taxas ativas (tenta carregar do SQLite mais recente)
 curr_rates = {
     "runas_per_kg_fish": BASE_RUNAS_PER_KG_FISH,
     "runas_per_zinthos": 0.1699,
@@ -51,17 +51,16 @@ if os.path.exists(BANK_DB_PATH):
             curr_rates["quota_compra_zinthos"] = float(row[4])
             curr_rates["quota_compra_jardim"] = float(row[5])
         conn.close()
-    except Exception as e:
+    except Exception:
         pass
 
-# Constantes de Jogos
-# Pesca
+# Constantes da Pesca (FishingGame)
 NET_BAIT_PER_THROW = 0.89
-FISH_KG_PER_THROW = 0.84 * 45.0  # 37.8 kg
+FISH_KG_PER_THROW = 0.84 * 45.0  # 37.8 kg retidos
 RUNAS_CARTEIRA_PER_THROW = 0.04 * 275.0  # 11.0 Runas
 SLOTS_COINS_PER_THROW = 0.04 * 3.0  # 0.12 moedas
 
-# Slots
+# Constantes do Caca-Coisas (SlotsGame)
 WIN_MULT = 1.4
 P_WIN = 0.01
 P_PARTIAL = 0.27
@@ -92,11 +91,17 @@ ev_coin_ptl = spins_per_regen_coin * spin_ptl
 ev_coin_baits = spins_per_regen_coin * spin_baits
 ev_coin_tickets = spins_per_regen_coin * spin_tickets
 
-# Fazenda
-FARM_BASE_PTL = 23400.0
+# Constantes do Jardim das Sombras (Fazenda)
+# Producao real auditada:
+# Lucro liquido das colheitas da loja (10 plantas lucrativas com double-dipping coinReward + sellPrice): ~49.400 Ptl
+# Sacola do Coveiro diaria + sementes gratuitas colhidas: ~5.300 Ptl
+# Sacolas do Coveiro obtidas nos Slots (~7.6 sacolas/dia): ~11.500 Ptl
+# Petalitas diretas ganhas no Slots: ~8.700 Ptl
+# Total liquido medio: ~74.900 Ptl/dia a 100% de aproveitamento (corroborado pelos snapshots reais de 57k-90k Ptl/dia).
+FARM_BASE_PTL = 74900.0
 FARM_WAIFU_TICKETS = 16.0
 
-# Waifuletes
+# Constantes do Waifuletes
 DAILY_KAKERA = 675.0
 KAKERA_PER_ROLL = 0.25 * 50.0  # 12.5 Zinthos / roll
 DAILY_DIVORCE_ZINTHOS = 2195.0
@@ -106,15 +111,14 @@ def run_simulation():
     days_list = [1, 7, 15, 30, 60]
 
     print("================================================================================")
-    print(" 🏛️ SIMULAÇÃO ECONÔMICA: RAVENA-AI, WAIFULETES & JARDIM DAS SOMBRAS")
-    print(f" Cotação Ativa: {curr_rates['date']} | 1 kg Peixe = {curr_rates['runas_per_kg_fish']:.4f} ᚱ | 1 Z = {curr_rates['runas_per_zinthos']:.4f} ᚱ | 1 Ptl = {curr_rates['runas_per_jardim']:.4f} ᚱ")
+    print(" SIMULACAO ECONOMICA: RAVENA-AI, WAIFULETES & JARDIM DAS SOMBRAS")
+    print(f" Cotacao Ativa: {curr_rates['date']} | 1 kg Peixe = {curr_rates['runas_per_kg_fish']:.4f} R | 1 Z = {curr_rates['runas_per_zinthos']:.4f} R | 1 Ptl = {curr_rates['runas_per_jardim']:.4f} R")
     print("================================================================================\n")
 
     for eff in efficiencies:
         eff_pct = int(eff * 100)
         slots_coins = 720.0 * eff
         slots_runas = slots_coins * ev_coin_runas
-        slots_ptl = slots_coins * ev_coin_ptl
         slots_baits = slots_coins * ev_coin_baits
         slots_tickets = slots_coins * ev_coin_tickets
 
@@ -131,7 +135,7 @@ def run_simulation():
         extra_carteira_runas = extra_throws * RUNAS_CARTEIRA_PER_THROW
         extra_pesca_runas = extra_fish_runas + extra_carteira_runas
 
-        farm_ptl = (FARM_BASE_PTL * eff) + slots_ptl
+        farm_ptl = FARM_BASE_PTL * eff
         farm_tickets = FARM_WAIFU_TICKETS * eff
         ptl_sold = farm_ptl * 0.75
         ptl_sold_runas = ptl_sold * curr_rates["runas_per_jardim"] * 0.96
@@ -150,11 +154,11 @@ def run_simulation():
         total_zinthos_c2 = native_zinthos + zinthos_bought_c2
 
         print(f"### Aproveitamento: {eff_pct}%")
-        print(f"• Rolls/dia: {total_rolls:.1f} | Zinthos Nativo/dia: {native_zinthos:,.0f} Z | Petalitas/dia: {farm_ptl:,.0f} Ptl")
-        print(f"• Runas Geradas/dia: {runas_cenario_1:,.0f} ᚱ (Padrão) | {runas_cenario_2:,.0f} ᚱ (Sinergia Total)")
-        print(f"• Zinthos Total/dia: {total_zinthos_c1:,.0f} Z (Padrão) | {total_zinthos_c2:,.0f} Z (Sinergia Total)\n")
+        print(f"  Rolls/dia: {total_rolls:.1f} | Zinthos Nativo/dia: {native_zinthos:,.0f} Z | Petalitas/dia: {farm_ptl:,.0f} Ptl")
+        print(f"  Runas Geradas/dia: {runas_cenario_1:,.0f} R (Padrao) | {runas_cenario_2:,.0f} R (Sinergia Total)")
+        print(f"  Zinthos Total/dia: {total_zinthos_c1:,.0f} Z (Padrao) | {total_zinthos_c2:,.0f} Z (Sinergia Total)\n")
 
-        print("| Período | Zinthos (Padrão) | Zinthos (Sinergia) | Runas (Padrão) | Runas (Sinergia) | Petalitas Geradas |")
+        print("| Periodo | Zinthos (Padrao) | Zinthos (Sinergia) | Runas (Padrao) | Runas (Sinergia) | Petalitas Geradas |")
         print("| :--- | :--- | :--- | :--- | :--- | :--- |")
         for days in days_list:
             print(f"| **{days} dia(s)** | **{total_zinthos_c1*days:,.0f} Z** | **{total_zinthos_c2*days:,.0f} Z** | {runas_cenario_1*days:,.0f} ᚱ | {runas_cenario_2*days:,.0f} ᚱ | {farm_ptl*days:,.0f} Ptl |")
