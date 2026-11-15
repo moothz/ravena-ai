@@ -53,7 +53,7 @@ database.getSQLiteDb(
 );
 
 const MAX_COINS = 5;
-const MAX_STORED_COINS = 1000;
+const MAX_STORED_COINS = 100000;
 const COIN_REGEN_TIME = 2 * 60; // 2 minutes in seconds
 const SLOT_EMOJIS = ["🍎", "🍋", "🍒", "🍇", "🍉", "🍓", "🍑", "🍍", "🥭", "💎"];
 
@@ -1220,5 +1220,6 @@ module.exports = {
 	addCoins,
 	getUserCoins,
 	getWeeklySlotsStats,
-	openSacolasDoCoveiro
+	openSacolasDoCoveiro,
+	MAX_STORED_COINS
 };
