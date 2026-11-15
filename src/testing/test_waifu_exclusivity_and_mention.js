@@ -293,7 +293,8 @@ async function runTests() {
 
 		const rollResult = await WaifuCommands.rollAny(bot, rollMsg);
 		assert.ok(rollResult, "rollAny deve retornar ReturnMessage");
-		const rollText = rollResult.content?.caption || rollResult.content;
+		const rollText =
+			rollResult.options?.caption || rollResult.content?.caption || rollResult.content;
 		assert.ok(
 			rollText.includes("60s de exclusividade para casar"),
 			`Legenda do roll deve mencionar 60s de exclusividade. Texto: ${rollText}`

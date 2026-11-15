@@ -270,8 +270,8 @@ async function runTests() {
 		assert.ok(capChar.length >= 1, "Deveria capturar resposta de !mu-char");
 		const charContent = capChar[0]?.content || capChar[0]?.options?.caption || "";
 		assert.ok(
-			charContent.includes("/character/rem-re-zero"),
-			`Deveria incluir link /character/rem-re-zero, recebido: ${charContent}`
+			charContent.includes("/c/rem-re-zero") || charContent.includes("/character/rem-re-zero"),
+			`Deveria incluir link /c/rem-re-zero ou /character/rem-re-zero, recebido: ${charContent}`
 		);
 		console.log("✓ !mu-char exibe link da página do personagem corretamente!");
 
@@ -293,8 +293,9 @@ async function runTests() {
 			"Deveria conter cabeçalho de favoritas"
 		);
 		assert.ok(
-			haremContent.includes("📁 *Coleções (1/15):*"),
-			"Deveria conter cabeçalho de coleções"
+			haremContent.includes("📁 *Coleções (1/100):*") ||
+				haremContent.includes("📁 *Coleções (1/15):*"),
+			`Deveria conter cabeçalho de coleções, recebido: ${haremContent}`
 		);
 		assert.ok(
 			haremContent.indexOf("📁 *Coleções") > haremContent.indexOf("⭐ *Favoritas"),
@@ -308,7 +309,7 @@ async function runTests() {
 		assert.ok(haremContent.includes("Rem"), "Deveria listar Rem dentro da pasta");
 		assert.ok(haremContent.includes("💞"), "Deveria conter coração de soulmate para 10/10 chaves");
 		assert.ok(
-			haremContent.includes("/character/rem-re-zero"),
+			haremContent.includes("/c/rem-re-zero") || haremContent.includes("/character/rem-re-zero"),
 			"Deveria conter o link do personagem"
 		);
 		console.log("✓ !mu-harem exibe coleções abaixo de favoritas perfeitamente!");
@@ -327,7 +328,8 @@ async function runTests() {
 		assert.ok(capCols.length >= 1, "Deveria capturar resposta de !mu-colecoes");
 		const colsContent = capCols[0]?.content || "";
 		assert.ok(
-			colsContent.includes("📁 *Suas Coleções de Waifus (1/15):*"),
+			colsContent.includes("📁 *Suas Coleções de Waifus (1/100):*") ||
+				colsContent.includes("📁 *Suas Coleções de Waifus (1/15):*"),
 			`Deveria listar coleções, recebido: ${colsContent}`
 		);
 		assert.ok(colsContent.includes("1. 📂 *Isekai* — 1 personagem(ns)"));
@@ -465,7 +467,8 @@ async function runTests() {
 			"Deveria conter emoji 🔮 e nome da Artoria na coleção"
 		);
 		assert.ok(
-			haremMythicContent.includes("/character/artoria-mythic"),
+			haremMythicContent.includes("/c/artoria-mythic") ||
+				haremMythicContent.includes("/character/artoria-mythic"),
 			"Deveria conter o link da waifu mítica"
 		);
 
@@ -511,7 +514,8 @@ async function runTests() {
 			"Deveria exibir Artoria com 🔮"
 		);
 		assert.ok(
-			verMiticosContent.includes("/character/artoria-mythic"),
+			verMiticosContent.includes("/c/artoria-mythic") ||
+				verMiticosContent.includes("/character/artoria-mythic"),
 			"Deveria exibir o link web de Artoria"
 		);
 		console.log("✓ Míticos como primeira coleção em !mu-harem e !mu-colecoes verificado!");

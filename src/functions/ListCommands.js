@@ -699,7 +699,7 @@ async function showLists(bot, message, args, group) {
 		logger.error("Error showing lists:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao mostrar listas. Por favor, tente novamente."
+			content: "❌ Não consegui carregar as listas agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -747,7 +747,7 @@ async function showSingleList(bot, message, args, group) {
 			if (!args || args.length === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: "Por favor, informe o nome da lista. Exemplo: !lista compras"
+					content: "Me passa o nome da lista pra ver. Exemplo: `!lista compras`"
 				});
 			}
 			return new ReturnMessage({
@@ -772,7 +772,7 @@ async function showSingleList(bot, message, args, group) {
 		logger.error("Error showing single list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao exibir a lista. Por favor, tente novamente."
+			content: "❌ Não consegui exibir a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -848,7 +848,7 @@ async function exportList(bot, message, args, group) {
 			if (!args || args.length === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: "Por favor, informe o nome da lista. Exemplo: !lix compras"
+					content: "Me passa o nome da lista pra exportar. Exemplo: `!lix compras`"
 				});
 			}
 			return new ReturnMessage({
@@ -890,7 +890,7 @@ async function exportList(bot, message, args, group) {
 		logger.error("Error exporting list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao exportar a lista. Por favor, tente novamente."
+			content: "❌ Não consegui exportar a lista agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -915,7 +915,7 @@ async function createItemList(bot, message, args, group) {
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, informe o nome da lista. Exemplo: !lci compras Mercado da Semana"
+				content: "Me passa o nome da lista pra criar. Exemplo: `!lci compras Mercado da Semana`"
 			});
 		}
 
@@ -964,7 +964,7 @@ async function createItemList(bot, message, args, group) {
 		logger.error("Error creating item list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao criar lista de itens. Por favor, tente novamente."
+			content: "❌ Não consegui criar a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -1094,7 +1094,7 @@ async function addItemsToList(bot, message, args, group) {
 				}
 				return new ReturnMessage({
 					chatId,
-					content: `Por favor, indique o nome da lista. Exemplo:\n\`!add compras Arroz\nFeijão\nMacarrão\`\n\nListas disponíveis: ${groupItemLists.map((l) => l.name).join(", ")}`
+					content: `Me diz em qual lista você quer adicionar. Exemplo:\n\`!add compras Arroz\nFeijão\nMacarrão\`\n\nListas disponíveis: ${groupItemLists.map((l) => l.name).join(", ")}`
 				});
 			}
 
@@ -1177,7 +1177,7 @@ async function addItemsToList(bot, message, args, group) {
 		logger.error("Error adding items to list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao adicionar itens à lista. Por favor, tente novamente."
+			content: "❌ Não consegui adicionar os itens agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -1237,7 +1237,7 @@ async function toggleCheckItem(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, indique a lista e o número do item. Exemplo: `!check compras 1` ou responda à lista com `!check 1`."
+					"Indica a lista e o número do item. Exemplo: `!check compras 1` ou responde à lista com `!check 1`."
 			});
 		}
 
@@ -1289,7 +1289,7 @@ async function toggleCheckItem(bot, message, args, group) {
 		logger.error("Error toggling check item:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao marcar item da lista. Por favor, tente novamente."
+			content: "❌ Não consegui marcar o item agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -1345,7 +1345,7 @@ async function uncheckItem(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, indique a lista e o nome do item concluído. Exemplo: `!uncheck compras café` ou responda à lista com `!uncheck café`."
+					"Indica a lista e o nome do item concluído. Exemplo: `!uncheck compras café` ou responde à lista com `!uncheck café`."
 			});
 		}
 
@@ -1397,7 +1397,7 @@ async function uncheckItem(bot, message, args, group) {
 		logger.error("Error unchecking item:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao desmarcar item da lista. Por favor, tente novamente."
+			content: "❌ Não consegui desmarcar o item agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -1453,7 +1453,7 @@ async function removeItemFromList(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, indique a lista e o número do item a remover. Exemplo: `!rem compras 1` ou responda à lista com `!rem 1`."
+					"Indica a lista e o número do item pra remover. Exemplo: `!rem compras 1` ou responde à lista com `!rem 1`."
 			});
 		}
 
@@ -1498,7 +1498,7 @@ async function removeItemFromList(bot, message, args, group) {
 		logger.error("Error removing item from list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao remover item da lista. Por favor, tente novamente."
+			content: "❌ Não consegui remover o item agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -1547,7 +1547,7 @@ async function clearList(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, indique qual lista deseja limpar. Exemplo: `!limpar compras` ou responda à mensagem da lista."
+					"Me diz qual lista você quer limpar. Exemplo: `!limpar compras` ou responde à mensagem da lista."
 			});
 		}
 
@@ -1585,7 +1585,7 @@ async function clearList(bot, message, args, group) {
 		logger.error("Error clearing list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao limpar lista. Por favor, tente novamente."
+			content: "❌ Não consegui limpar a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -1660,7 +1660,7 @@ async function setListPermission(bot, message, args, group) {
 		logger.error("Error setting list permission:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao alterar permissão da lista. Por favor, tente novamente."
+			content: "❌ Não consegui alterar a permissão da lista agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -1685,7 +1685,7 @@ async function createList(bot, message, args, group) {
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça pelo menos um nome de lista. Exemplo: !lc lista1 lista2"
+				content: "Passa pelo menos um nome de lista. Exemplo: `!lc lista1 lista2`"
 			});
 		}
 
@@ -1748,7 +1748,7 @@ async function createList(bot, message, args, group) {
 		logger.error("Error creating list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao criar lista. Por favor, tente novamente."
+			content: "❌ Não consegui criar a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -1771,8 +1771,7 @@ async function createListWithTitle(bot, message, args, group) {
 		if (args.length < 2) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça o nome da lista e o título. Exemplo: !lct lista1 Título da Lista"
+				content: "Passa o nome da lista e o título. Exemplo: `!lct lista1 Título da Lista`"
 			});
 		}
 
@@ -1811,7 +1810,7 @@ async function createListWithTitle(bot, message, args, group) {
 		logger.error("Error creating list with title:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao criar lista. Por favor, tente novamente."
+			content: "❌ Não consegui criar a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -1834,8 +1833,7 @@ async function deleteList(bot, message, args, group) {
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça pelo menos um nome de lista para excluir. Exemplo: !ld lista1 lista2"
+				content: "Passa pelo menos um nome de lista pra apagar. Exemplo: `!ld lista1 lista2`"
 			});
 		}
 
@@ -1906,7 +1904,7 @@ async function deleteList(bot, message, args, group) {
 		logger.error("Error deleting list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao excluir lista. Por favor, tente novamente."
+			content: "❌ Não consegui apagar a lista agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -1929,7 +1927,7 @@ async function joinList(bot, message, args, group) {
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça o nome da lista para entrar. Exemplo: !le lista1"
+				content: "Passa o nome da lista pra entrar. Exemplo: `!le lista1`"
 			});
 		}
 
@@ -2009,7 +2007,7 @@ async function joinList(bot, message, args, group) {
 		logger.error("Error joining list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao entrar na lista. Por favor, tente novamente."
+			content: "❌ Não consegui te colocar na lista agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -2032,8 +2030,7 @@ async function leaveList(bot, message, args, group) {
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça o nome de pelo menos uma lista para sair. Exemplo: !ls lista1 lista2"
+				content: "Passa o nome de pelo menos uma lista pra sair. Exemplo: `!ls lista1 lista2`"
 			});
 		}
 
@@ -2108,7 +2105,7 @@ async function leaveList(bot, message, args, group) {
 		logger.error("Error leaving list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao sair da lista. Por favor, tente novamente."
+			content: "❌ Não consegui te tirar da lista agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -2131,7 +2128,7 @@ async function setListTitle(bot, message, args, group) {
 		if (args.length < 2) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça o nome da lista e o título. Exemplo: !lt lista1 Novo Título"
+				content: "Passa o nome da lista e o novo título. Exemplo: `!lt lista1 Novo Título`"
 			});
 		}
 
@@ -2172,7 +2169,7 @@ async function setListTitle(bot, message, args, group) {
 		logger.error("Error setting list title:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao definir título da lista. Por favor, tente novamente."
+			content: "❌ Não consegui atualizar o título da lista agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -2204,7 +2201,7 @@ async function removeFromList(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça o nome da lista e o identificador do participante. Exemplo: !lr lista1 5521987654321"
+					"Passa o nome da lista e o número do participante. Exemplo: `!lr lista1 5521987654321`"
 			});
 		}
 
@@ -2265,7 +2262,7 @@ async function removeFromList(bot, message, args, group) {
 		logger.error("Error removing user from list:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao remover usuário da lista. Por favor, tente novamente."
+			content: "❌ Não consegui remover o participante da lista agora. Tenta de novo em instantes!"
 		});
 	}
 }

@@ -2950,15 +2950,27 @@ function scheduleMarriageTimer({
 	reasonText
 }) {
 	const timerKey = `${groupId}:${characterId}:${userId}`;
+	const mentions = matchedRoll?.rollerUserId ? [toJid(matchedRoll.rollerUserId)] : undefined;
+	const rollerMention = matchedRoll?.rollerUserId
+		? matchedRoll.rollerUserId.includes("@")
+			? `@${matchedRoll.rollerUserId.split("@")[0]}`
+			: `@${matchedRoll.rollerUserId}`
+		: "";
+
 	if (scheduledMarryTimers.has(timerKey)) {
 		const existing = scheduledMarryTimers.get(timerKey);
 		const leftSec = Math.max(1, Math.ceil((existing.executeAt - Date.now()) / 1000));
+		const isExclusive = matchedRoll?.exclusiveUntil && Date.now() < matchedRoll.exclusiveUntil;
+		const exclText = isExclusive
+			? ` (🔒 *Personagem exclusivo${rollerMention ? ` de ${rollerMention}` : ""}!*)`
+			: "";
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: `⏱️ *Você já possui um casamento agendado para este personagem!*\nTentaremos casar automaticamente em *${leftSec}s*.`,
+			content: `⏱️ *Você já possui um casamento agendado para este personagem!*${exclText}\nTentaremos casar automaticamente em *${leftSec}s*.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
-				goReply: message.origin
+				goReply: message.origin,
+				mentions
 			}
 		});
 	}
@@ -3029,7 +3041,8 @@ function scheduleMarriageTimer({
 		content: `⏱️ *Casamento agendado!* ${reasonText}\nCasaremos automaticamente com *${charName}* em *${waitSec}s* se ninguém casar antes! 💍`,
 		options: {
 			quotedMessageId: message.origin?.id?._serialized,
-			goReply: message.origin
+			goReply: message.origin,
+			mentions
 		}
 	});
 }
@@ -3399,11 +3412,18 @@ async function casarWaifu(bot, message, args) {
 		// Se a exclusividade cabe dentro da janela de casamento restante (300s), agenda timer automático
 		if (remainingExclusiveMs < charTimeLeftMs) {
 			const remainingSecs = Math.ceil(remainingExclusiveMs / 1000);
+			const rollerMention = matchedRoll.rollerUserId.includes("@")
+				? `@${matchedRoll.rollerUserId.split("@")[0]}`
+				: `@${matchedRoll.rollerUserId}`;
 			const rollerDisplayName = await resolveDisplayName(
 				message,
 				matchedRoll.rollerUserId,
 				matchedRoll.rollerUserName
 			);
+			const displayInfo =
+				rollerDisplayName && !rollerDisplayName.includes("@")
+					? `${rollerMention} (${rollerDisplayName})`
+					: rollerMention;
 			return scheduleMarriageTimer({
 				bot,
 				message,
@@ -3413,7 +3433,7 @@ async function casarWaifu(bot, message, args) {
 				name,
 				matchedRoll,
 				waitMs: remainingExclusiveMs,
-				reasonText: `A exclusividade de *${rollerDisplayName}* expira em *${remainingSecs}s*.`
+				reasonText: `🔒 *Personagem exclusivo!* A exclusividade de ${displayInfo} expira em *${remainingSecs}s*.`
 			});
 		}
 
@@ -3946,8 +3966,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 
 		return new ReturnMessage({
 			chatId,
-			content:
-				"❌ Não foi possível gerar a nova foto de casamento no momento. Tente novamente mais tarde.",
+			content: "❌ Não deu pra gerar a nova foto de casamento agora. Tenta de novo daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -4030,7 +4049,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		} else if (usedPhotoIndex && totalPhotos > 1) {
 			caption += `🖼️ _Gerada com base na foto *#${usedPhotoIndex}* do catálogo!_\n`;
 		}
-		caption += `✨ A foto de casamento foi gerada com sucesso e arquivada no álbum!`;
+		caption += `✨ A foto de casamento foi gerada e já tá guardada no álbum!`;
 
 		return new ReturnMessage({
 			chatId,
@@ -4046,8 +4065,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 
 	return new ReturnMessage({
 		chatId,
-		content:
-			"❌ Não foi possível gerar a foto do casamento no momento. Tente novamente mais tarde.",
+		content: "❌ Não deu pra gerar a foto do casamento agora. Tenta de novo daqui a pouco.",
 		options: {
 			quotedMessageId: message.origin?.id?._serialized,
 			goReply: message.origin
@@ -4679,8 +4697,7 @@ async function gerenciarFotoHarem(bot, message, args) {
 		} else if (photoPayload === "marriage") {
 			replyMsg = `💒 A foto oficial de casamento de *${char.name}* foi fixada no card do harém!`;
 		} else {
-			replyMsg =
-				resultMessage || `📌 Foto fixa definida com sucesso para *${char.name}* no seu harém!`;
+			replyMsg = resultMessage || `📌 Foto fixa definida para *${char.name}* no seu harém!`;
 		}
 
 		return new ReturnMessage({ chatId, content: replyMsg });
@@ -6673,7 +6690,7 @@ async function denunciarWaifu(bot, message, args, group) {
 	if (!character) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Não foi possível encontrar o personagem "${candidateIdOrQuery}" no catálogo Waifuletes.`
+			content: `❌ Não achei o personagem "${candidateIdOrQuery}" no catálogo do Waifuletes.`
 		});
 	}
 
@@ -7059,7 +7076,7 @@ async function toggleRollMarcar(bot, message, args, group) {
 	if (!groupObj) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Não foi possível carregar as configurações deste grupo.",
+			content: "❌ Não consegui carregar as configurações deste grupo agora.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -7820,7 +7837,7 @@ async function painelWebAdmin(bot, message) {
 		return handleApiError(
 			err,
 			chatId,
-			"❌ Não foi possível gerar o link do painel pessoal no momento. Tente novamente mais tarde."
+			"❌ Não deu pra gerar o link do painel pessoal agora. Tenta de novo daqui a pouco."
 		);
 	}
 }
@@ -7897,7 +7914,7 @@ async function waifinderWeb(bot, message) {
 		return handleApiError(
 			err,
 			chatId,
-			"❌ Não foi possível gerar o link do Waifinder no momento. Tente novamente mais tarde."
+			"❌ Não deu pra gerar o link do Waifinder agora. Tenta de novo daqui a pouco."
 		);
 	}
 }
@@ -8017,7 +8034,7 @@ async function compartilharHarem(bot, message) {
 		return handleApiError(
 			err,
 			chatId,
-			"❌ Não foi possível obter o link do seu harém público no momento."
+			"❌ Não consegui gerar o link do seu harém público agora. Tenta de novo daqui a pouco."
 		);
 	}
 }
@@ -8214,12 +8231,12 @@ async function aceitarOfertaCmd(bot, message, args) {
 		if (data.success) {
 			return new ReturnMessage({
 				chatId,
-				content: `🎉 *Oferta Aceita com Sucesso!*\n\n${data.message || "Os personagens e itens foram trocados e transferidos."}`
+				content: `🎉 *Oferta Aceita!*\n\n${data.message || "Os personagens e itens foram trocados e transferidos."}`
 			});
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `⚠️ ${data.reason || "Não foi possível aceitar a oferta."}`
+				content: `⚠️ ${data.reason || "Não deu pra aceitar a oferta."}`
 			});
 		}
 	} catch (err) {
@@ -8302,7 +8319,7 @@ async function cobicarWaifuCmd(bot, message, args) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Não foi possível registrar seu interesse."
+			content: "❌ Não deu pra registrar seu interesse agora."
 		});
 	} catch (err) {
 		const errData = err?.response?.data?.error;

@@ -760,7 +760,11 @@ async function handleFazenda(bot, message, _args, group) {
 		return returns;
 	} catch (err) {
 		logger.error(`[handleFazenda] Erro ao carregar fazenda: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao acessar o Jardim: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui abrir seu Jardim agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -808,7 +812,7 @@ async function handleFazAdm(bot, message) {
 		logger.error(`[handleFazAdm] Erro ao gerar admin url: ${err.message}`);
 		return replyReturnMessage(
 			getChatId(message),
-			`❌ Não foi possível gerar seu link de acesso: ${err.message}`,
+			`❌ Não consegui gerar seu link de acesso agora: ${err.message}`,
 			message
 		);
 	}
@@ -1073,7 +1077,7 @@ async function handleFazColher(bot, message, _args, group) {
 					chatId,
 					`🌾 *SINCRONIZAÇÃO DO JARDIM DAS SOMBRAS* 🌾\n\n` +
 						`🎁 *BÔNUS ESPECIAIS RESGATADOS DAS SUAS COLHEITAS:*\n${syncMsgs.join("\n")}\n\n` +
-						`💡 _Não havia novas plantas prontas no terreno, mas seus bônus de colheitas anteriores foram computados com sucesso!_`,
+						`💡 _Não tinha planta nova pronta no terreno, mas seus bônus de colheitas anteriores foram computados certinho!_`,
 					message
 				);
 			}
@@ -1082,7 +1086,7 @@ async function handleFazColher(bot, message, _args, group) {
 		}
 
 		logger.error(`[handleFazColher] Erro na colheita: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha na colheita: ${err.message}`, message);
+		return replyReturnMessage(chatId, `❌ Deu ruim na colheita: ${err.message}`, message);
 	}
 }
 
@@ -1285,7 +1289,7 @@ async function handleFazPlantar(bot, message, _args, group) {
 		return replyReturnMessage(chatId, text, message, { farmData: { userId } });
 	} catch (err) {
 		logger.error(`[handleFazPlantar] Erro ao plantar: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao plantar: ${err.message}`, message);
+		return replyReturnMessage(chatId, `❌ Deu ruim no plantio: ${err.message}`, message);
 	}
 }
 
@@ -1383,7 +1387,11 @@ async function handleFazLoja(bot, message) {
 		return replyReturnMessage(chatId, text, message, extraOpts);
 	} catch (err) {
 		logger.error(`[handleFazLoja] Erro ao carregar loja: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao carregar loja: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui abrir a loja agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -1464,7 +1472,7 @@ async function handleFazComprar(bot, message) {
 		return returns;
 	} catch (err) {
 		logger.error(`[handleFazComprar] Erro ao comprar: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha na compra: ${err.message}`, message);
+		return replyReturnMessage(chatId, `❌ Deu ruim na compra: ${err.message}`, message);
 	}
 }
 
@@ -1949,7 +1957,7 @@ async function buildCartView(userId, useTelegram = false) {
 		cartLines.forEach((l) => {
 			text += `• *${formatCartItemLabel(l)}* — x${l.quantity}\n`;
 		});
-		text += `\n⚠️ _Não foi possível consultar a loja agora para checar estoque e preços._\n`;
+		text += `\n⚠️ _Não consegui consultar a loja agora para checar estoque e preços._\n`;
 	} else {
 		plan = planCartPurchase(cartLines, shop, coins);
 		const catalog = flattenShopCatalog(shop);
@@ -2097,7 +2105,11 @@ async function handleCartAdd(bot, message, tokens) {
 		shop = await jardimClient.getShop(userId);
 	} catch (err) {
 		logger.error(`[handleCartAdd] Erro ao carregar loja: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao consultar a loja: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui consultar a loja agora: ${err.message}`,
+			message
+		);
 	}
 
 	const meta = findShopCatalogItem(shop, itemQuery);
@@ -2149,7 +2161,11 @@ async function handleCartAdd(bot, message, tokens) {
 		});
 	} catch (err) {
 		logger.error(`[handleCartAdd] Erro ao salvar carrinho: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao salvar o carrinho: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui salvar no carrinho agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -2218,7 +2234,11 @@ async function handleCartRemove(bot, message, tokens) {
 		});
 	} catch (err) {
 		logger.error(`[handleCartRemove] Erro ao remover do carrinho: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao atualizar o carrinho: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui atualizar o carrinho agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -2338,7 +2358,11 @@ async function handleCartPurchase(bot, message) {
 		});
 	} catch (err) {
 		logger.error(`[handleCartPurchase] Erro ao comprar carrinho: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao comprar o carrinho: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Deu ruim ao finalizar o carrinho: ${err.message}`,
+			message
+		);
 	} finally {
 		cartPurchasesInFlight.delete(userId);
 	}
@@ -2374,7 +2398,11 @@ async function handleFazCarrinho(bot, message) {
 				return replyReturnMessage(chatId, text, message);
 			} catch (err) {
 				logger.error(`[handleFazCarrinho] Erro ao limpar carrinho: ${err.message}`);
-				return replyReturnMessage(chatId, `❌ Falha ao limpar o carrinho: ${err.message}`, message);
+				return replyReturnMessage(
+					chatId,
+					`❌ Não consegui limpar o carrinho agora: ${err.message}`,
+					message
+				);
 			}
 		case "ver":
 			try {
@@ -2629,7 +2657,11 @@ async function handleFazInventario(bot, message) {
 		return replyReturnMessage(chatId, text, message, extraOpts);
 	} catch (err) {
 		logger.error(`[handleFazInventario] Erro ao carregar inventário: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao buscar inventário: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui abrir seu celeiro/mochila agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -2657,7 +2689,7 @@ async function handleFazUsar(bot, message) {
 		refreshTelegramInventoryMessage(bot, chatId, userId).catch(() => {});
 
 		let text = `🧪 *ELIXIR UTILIZADO!* 🧪\n\n`;
-		text += `• Efeito: *${useRes.message || useRes.effect || "Elixir ativado com sucesso!"}*\n`;
+		text += `• Efeito: *${useRes.message || useRes.effect || "Elixir ativado!"}*\n`;
 		if (useRes.remainingQuantity !== undefined) {
 			text += `• Quantidade Restante: *${useRes.remainingQuantity}x*`;
 		}
@@ -2665,7 +2697,7 @@ async function handleFazUsar(bot, message) {
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazUsar] Erro ao usar elixir: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao usar item: ${err.message}`, message);
+		return replyReturnMessage(chatId, `❌ Deu ruim ao usar o item: ${err.message}`, message);
 	}
 }
 
@@ -2745,7 +2777,7 @@ async function handleFazVender(bot, message) {
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazVender] Erro ao vender colheitas: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha na venda: ${err.message}`, message);
+		return replyReturnMessage(chatId, `❌ Deu ruim na venda: ${err.message}`, message);
 	}
 }
 
@@ -2812,7 +2844,11 @@ async function handleFazDecorar(bot, message) {
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazDecorar] Erro ao posicionar enfeite: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao posicionar enfeite: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui posicionar o enfeite agora: ${err.message}`,
+			message
+		);
 	}
 }
 
@@ -3072,7 +3108,11 @@ async function handleFazRanking(bot, message, args = [], group = null) {
 		return replyReturnMessage(chatId, text, message);
 	} catch (err) {
 		logger.error(`[handleFazRanking] Erro ao buscar rankings: ${err.message}`);
-		return replyReturnMessage(chatId, `❌ Falha ao carregar ranking: ${err.message}`, message);
+		return replyReturnMessage(
+			chatId,
+			`❌ Não consegui carregar o ranking agora: ${err.message}`,
+			message
+		);
 	}
 }
 
