@@ -118,6 +118,62 @@ class MemoryService {
 		this.database
 			.dbRun(DB_NAME, "ALTER TABLE memory_group_profiles ADD COLUMN topic_breakdown TEXT")
 			.catch(() => {});
+		this.database
+			.dbRun(DB_NAME, "ALTER TABLE memory_identities ADD COLUMN facts_count INTEGER DEFAULT 0")
+			.catch(() => {});
+		this.database
+			.dbRun(DB_NAME, "ALTER TABLE memory_identities ADD COLUMN last_fact_at INTEGER DEFAULT 0")
+			.catch(() => {});
+		this.database
+			.dbRun(
+				DB_NAME,
+				"CREATE INDEX IF NOT EXISTS idx_mem_ident_facts ON memory_identities(facts_count DESC, last_fact_at DESC)"
+			)
+			.catch(() => {});
+	}
+
+	/**
+	 * Sanitiza a categoria para garantir valores canônicos e limpos
+	 * @param {string} cat
+	 * @returns {string}
+	 */
+	sanitizeCategory(cat) {
+		if (!cat || typeof cat !== "string") return "general";
+		const valid = ["hobby", "work", "preference", "personality", "general"];
+		const clean = cat
+			.toLowerCase()
+			.split(/[|,;/\s]/)[0]
+			.trim();
+		return valid.includes(clean) ? clean : "general";
+	}
+
+	/**
+	 * Sanitiza e valida o texto de um fato para evitar vazamento de prompt,
+	 * raciocínio da IA, metadados ou caracteres quebrados
+	 * @param {string} text
+	 * @returns {string|null}
+	 */
+	sanitizeFactText(text) {
+		if (!text || typeof text !== "string") return null;
+		let clean = text.trim();
+
+		// Rejeita meta-talk, auto-correções do LLM ou lixo estrutural
+		if (
+			/correção:|saída solicitada|instruções de estrutura|análise corrigida|conforme instruções|\$\s*\\bf|\\rightarrow|\[ID:\s*|\[general\]|note:\s*correcting|\.\.\.etc\.\.\.|categoryt:/i.test(
+				clean
+			)
+		) {
+			return null;
+		}
+
+		// Remove aspas soltas, marcadores, bullets ou caracteres estranhos nas pontas
+		clean = clean.replace(/^[··"'\s\-*•[\]${}]+|[··"'\s\-*•[\]${}]+$/g, "").trim();
+
+		// Descarta se for muito curto, muito longo ou texto vago
+		if (clean.length < 5 || clean.length > 300) return null;
+		if (/^(nenhuma informação|nada relevante|não há dados)/i.test(clean)) return null;
+
+		return clean;
 	}
 
 	/**
@@ -650,9 +706,10 @@ class MemoryService {
        "user_id": "wa_5511999999999",
        "author_name": "Nome",
        "facts": ["Gosta de pescar", "Trabalha com TI", "Torce pro Palmeiras"],
-       "category": "hobby|work|preference|personality"
+       "category": "hobby"
      }
    ]
+   IMPORTANTE: Em 'category', use exatamente uma destas palavras: "hobby", "work", "preference", "personality" ou "general".
    IMPORTANTE: Em 'user_id', use exatamente o ID informado entre colchetes [ID: ...] da mensagem de quem falou.
 
 Conversa:
@@ -709,7 +766,10 @@ ${textToAnalyze}`;
 										user_id: { type: "string" },
 										author_name: { type: "string" },
 										facts: { type: "array", items: { type: "string" } },
-										category: { type: "string" }
+										category: {
+											type: "string",
+											enum: ["hobby", "work", "preference", "personality", "general"]
+										}
 									},
 									required: ["user_id", "facts"]
 								}
@@ -947,14 +1007,16 @@ ${textToAnalyze}`;
 						continue;
 					}
 
-					for (const factText of uFact.facts) {
-						if (!factText || typeof factText !== "string" || factText.trim().length < 5) {
+					for (const rawFact of uFact.facts) {
+						const factText = this.sanitizeFactText(rawFact);
+						if (!factText) {
 							continue;
 						}
+						const category = this.sanitizeCategory(uFact.category);
 						await this.addOrUpdateUserFact(
 							canonicalId,
-							factText.trim(),
-							uFact.category || "general",
+							factText,
+							category,
 							isPv ? "pv" : "group",
 							targetId
 						);
@@ -1038,6 +1100,13 @@ ${textToAnalyze}`;
 					"UPDATE memory_user_facts SET last_confirmed_at = ?, confidence = MIN(1.0, confidence + 0.1) WHERE id = ?",
 					[now, matchedId]
 				);
+				await this.database
+					.dbRun(
+						DB_NAME,
+						"UPDATE memory_identities SET last_fact_at = ? WHERE canonical_user_id = ?",
+						[now, canonicalUserId]
+					)
+					.catch(() => {});
 			} else {
 				// Insere novo fato com vetor BLOB
 				const blob = newVec ? this.embeddingService.vectorToBuffer(newVec) : null;
@@ -1047,6 +1116,13 @@ ${textToAnalyze}`;
 					 VALUES (?, ?, ?, 1.0, ?, ?, ?, ?, ?)`,
 					[canonicalUserId, factText, category, blob, sourceType, sourceId, now, now]
 				);
+				await this.database
+					.dbRun(
+						DB_NAME,
+						"UPDATE memory_identities SET facts_count = facts_count + 1, last_fact_at = ? WHERE canonical_user_id = ?",
+						[now, canonicalUserId]
+					)
+					.catch(() => {});
 			}
 		} catch (err) {
 			this.logger.error(`Erro ao adicionar fato para ${canonicalUserId}:`, err);
@@ -1316,7 +1392,7 @@ ${textToAnalyze}`;
 				try {
 					fishingData = await this.database.dbGet(
 						"fishing",
-						"SELECT level, total_fishes_caught, rare_fishes_caught, legendary_fishes_caught, equipped_rod, xp FROM fishing_users WHERE user_id = ?",
+						"SELECT total_catches, total_weight, inventory_weight, biggest_fish_json FROM fishing_users WHERE user_id = ?",
 						[userPhone]
 					);
 				} catch (e) {}
@@ -1534,12 +1610,12 @@ ${textToAnalyze}`;
 				try {
 					const fishing = await this.database.dbGet(
 						"fishing",
-						"SELECT level, legendary_fishes_caught FROM fishing_users WHERE user_id = ?",
+						"SELECT total_catches, total_weight FROM fishing_users WHERE user_id = ?",
 						[userPhone]
 					);
-					if (fishing && fishing.level > 1) {
+					if (fishing && fishing.total_catches > 0) {
 						gameDetails.push(
-							`Pesca: Nível ${fishing.level} (Lendários fisgados: ${fishing.legendary_fishes_caught || 0})`
+							`Pesca: ${fishing.total_catches} peixes fisgados (${(fishing.total_weight || 0).toFixed(1)}kg total)`
 						);
 					}
 				} catch (e) {}
@@ -1635,22 +1711,20 @@ ${textToAnalyze}`;
 	async searchUsers(query = "", limit = 30, offset = 0) {
 		try {
 			let sql = `
-				SELECT mi.canonical_user_id, mi.display_name, mi.platform_id, mi.platform, mi.id_type,
-				       COUNT(DISTINCT muf.id) as facts_count,
-				       MAX(muf.last_confirmed_at) as last_seen
-				FROM memory_identities mi
-				LEFT JOIN memory_user_facts muf ON mi.canonical_user_id = muf.canonical_user_id
+				SELECT canonical_user_id, display_name, platform_id, platform, id_type,
+				       facts_count, last_fact_at as last_seen
+				FROM memory_identities
 			`;
 			const params = [];
 
 			if (query && query.trim().length > 0) {
 				const clean = query.trim();
 				const cleanNum = this.cleanPhone(clean);
-				sql += ` WHERE mi.display_name LIKE ? OR mi.platform_id LIKE ? OR mi.canonical_user_id LIKE ?`;
+				sql += ` WHERE display_name LIKE ? OR platform_id LIKE ? OR canonical_user_id LIKE ?`;
 				params.push(`%${clean}%`, `%${cleanNum || clean}%`, `%${clean}%`);
 			}
 
-			sql += ` GROUP BY mi.canonical_user_id ORDER BY facts_count DESC, last_seen DESC LIMIT ? OFFSET ?`;
+			sql += ` ORDER BY facts_count DESC, last_fact_at DESC LIMIT ? OFFSET ?`;
 			params.push(limit, offset);
 
 			return await this.database.dbAll(DB_NAME, sql, params);

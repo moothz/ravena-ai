@@ -142,11 +142,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			const g = d.games || {};
 			let gamesHtml = '<div class="stats-grid">';
 			if (g.fishing) {
+				const peixes = g.fishing.total_catches || 0;
+				const peso = (g.fishing.total_weight || 0).toFixed(1);
 				gamesHtml += `
 					<div class="stat-item">
 						<div class="stat-label">🎣 Pesca Ravena</div>
-						<div class="stat-val">Nível ${g.fishing.level} (${g.fishing.total_fishes_caught || 0} peixes)</div>
-						<div style="font-size:0.8em; color:#aaa;">Vara: ${g.fishing.equipped_rod || "Básica"}</div>
+						<div class="stat-val">${peixes} peixes (${peso} kg)</div>
+						<div style="font-size:0.8em; color:#aaa;">Peso acumulado</div>
 					</div>`;
 			}
 			if (g.slots) {
