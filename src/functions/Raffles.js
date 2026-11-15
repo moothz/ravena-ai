@@ -744,7 +744,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: responseChatId,
 			content:
-				"⚠️ *Atenção:* Use o comando informando o link da rifa que deseja seguir. Exemplo: `!raffle-seguir https://www.narigapremios.com/campanha/fiat-palio-71054`",
+				"⚠️ Manda o comando junto com o link da rifa que você quer acompanhar. Exemplo: `!raffle-seguir https://www.narigapremios.com/campanha/fiat-palio-71054`",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -762,7 +762,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 	} catch (e) {
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `🎁 *Ação: _link inválido_*\n\nO link informado não é uma URL válida: ${args[0]}`,
+			content: `🎁 *Ação: _link inválido_*\n\nEsse link parece incorreto: ${args[0]}`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -780,7 +780,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 		if (!data) {
 			return new ReturnMessage({
 				chatId: responseChatId,
-				content: `🎁 *Ação: _não encontrada_*\n\nNão consegui obter os dados da rifa no link ${link}. Verifique se a URL está correta.`,
+				content: `🎁 *Ação: _não encontrada_*\n\nNão consegui ler as informações dessa rifa no link ${link}. Confere se a URL tá certa!`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -795,7 +795,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 		if (alreadyFollows) {
 			return new ReturnMessage({
 				chatId: responseChatId,
-				content: `⚠️ O grupo *${targetGroup.name}* já está seguindo esta rifa!\n\nUse \`!raffle ${link}\` para consultar as informações em tempo real.`,
+				content: `⚠️ O grupo *${targetGroup.name}* já tá acompanhando essa rifa!\n\nUsa \`!raffle ${link}\` pra ver o status atualizado.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -813,7 +813,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 		await raffleMonitor.followRaffle(link, targetGroup.id, message.author, bot.id, currentPercent);
 
 		const roundedPercent = Math.round(currentPercent);
-		let responseText = `✅ *Rifa adicionada ao monitoramento com sucesso!*\n\n`;
+		let responseText = `✅ *Rifa adicionada ao monitoramento!*\n\n`;
 		if (isPrivate) {
 			responseText += `👥 *Grupo vinculado:* ${targetGroup.name}\n\n`;
 		}
@@ -841,7 +841,7 @@ async function raffleSeguirCommand(bot, message, args, group) {
 		logger.error("Erro ao registrar seguidor de rifa:", error);
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `❌ Ocorreu um erro ao tentar seguir a rifa: ${error.message ?? error}`,
+			content: `❌ Deu ruim ao tentar acompanhar a rifa: ${error.message ?? error}`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -864,7 +864,7 @@ async function rafflePararCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: responseChatId,
 			content:
-				"⚠️ *Atenção:* Use o comando informando o link da rifa que deseja parar de seguir. Exemplo: `!raffle-parar https://www.narigapremios.com/campanha/fiat-palio-71054`",
+				"⚠️ Informa o link da rifa que você quer parar de acompanhar. Exemplo: `!raffle-parar https://www.narigapremios.com/campanha/fiat-palio-71054`",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -883,7 +883,7 @@ async function rafflePararCommand(bot, message, args, group) {
 	if (removed) {
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `🛑 O grupo *${targetGroup.name}* parou de seguir a rifa:\n${link}\n\nVocê não receberá mais notificações para esta rifa.`,
+			content: `🛑 O grupo *${targetGroup.name}* parou de acompanhar a rifa:\n${link}\n\nAs notificações foram desligadas.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -892,7 +892,7 @@ async function rafflePararCommand(bot, message, args, group) {
 	} else {
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `⚠️ O grupo *${targetGroup.name}* não estava seguindo esta rifa.`,
+			content: `⚠️ O grupo *${targetGroup.name}* nem tava acompanhando essa rifa.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -921,7 +921,7 @@ async function raffleListarCommand(bot, message, args, group) {
 	if (!list || list.length === 0) {
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `📋 O grupo *${targetGroup.name}* não está seguindo nenhuma rifa no momento.\n\nUse \`!raffle-seguir <link>\` para começar a acompanhar uma rifa.`,
+			content: `📋 O grupo *${targetGroup.name}* não tá acompanhando nenhuma rifa agora.\n\nManda \`!raffle-seguir <link>\` pra começar o monitoramento.`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

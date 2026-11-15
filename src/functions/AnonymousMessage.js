@@ -98,7 +98,7 @@ async function anonymousMessage(bot, message, args, group) {
 			const groupIdentifier = group?.id ?? message.group;
 			return new ReturnMessage({
 				chatId: message.group,
-				content: `O comando deve ser usado no meu privado!\n\nPara enviar uma mensagem anônima para este grupo, me chame no privado usando:\n*!anonimo ${groupIdentifier} sua mensagem*\n\nExemplo:\n*!anonimo ${groupIdentifier} Olá, esta é uma mensagem anônima!*`,
+				content: `🤫 Mensagem anônima só pelo meu privado!\n\nMe chama no PV e manda:\n*!anonimo ${groupIdentifier} sua mensagem*\n\nExemplo:\n*!anonimo ${groupIdentifier} Fala galera, tudo certo?*`,
 				options: message.origin?.id?._serialized
 					? {
 							quotedMessageId: message.origin.id._serialized,
@@ -122,7 +122,7 @@ async function anonymousMessage(bot, message, args, group) {
 		if (args.length < 2) {
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `⚠️ Formato incorreto. Use: !anonimo ${group?.name ?? "nomegrupo"} mensagem\n\nExemplo: !anonimo ${group?.name ?? "nomegrupo"} Olá, esta é uma mensagem anônima!\n\nO 'nomegrupo' é o que aparece na segunda linha do comando *!cmd*, se não souber, envie !cmd dentro do grupo. O administrador pode trocar este nome usando o comando !g-setNome novonome.`
+				content: `⚠️ Como usar: !anonimo ${group?.name ?? "nomegrupo"} sua mensagem\n\nExemplo: !anonimo ${group?.name ?? "nomegrupo"} Fala galera, tudo certo?\n\nO 'nomegrupo' é o que aparece na segunda linha do comando *!cmd*. Se não souber, digita !cmd lá no grupo. O admin pode trocar esse nome com !g-setNome novonome.`
 			});
 		}
 
@@ -134,7 +134,7 @@ async function anonymousMessage(bot, message, args, group) {
 		if (cooldownCheck.onCooldown) {
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `⌛️ Você precisa esperar ${cooldownCheck.timeLeft} hora(s) para enviar outra mensagem anônima.`
+				content: `⌛️ Calma aí! Espera mais ${cooldownCheck.timeLeft}h pra mandar outra mensagem anônima.`
 			});
 		}
 
@@ -152,7 +152,7 @@ async function anonymousMessage(bot, message, args, group) {
 		if (anonymousText.length < 5) {
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: "⚠️ A mensagem é muito curta. Por favor, escreva algo mais substancial."
+				content: "⚠️ Mensagem muito curtinha! Escreve pelo menos umas palavrinhas a mais."
 			});
 		}
 
@@ -169,7 +169,7 @@ async function anonymousMessage(bot, message, args, group) {
 		if (!targetGroup) {
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `❌ Grupo "${targetGroupName}" não encontrado. Verifique o nome e tente novamente.`
+				content: `❌ Não achei o grupo "${targetGroupName}". Confere se digitou o nome certinho.`
 			});
 		}
 
@@ -178,7 +178,7 @@ async function anonymousMessage(bot, message, args, group) {
 			if (targetGroup.mutedCategories.includes("jogos")) {
 				return new ReturnMessage({
 					chatId: senderIds[0],
-					content: `❌ A categoria de jogos (que inclui mensagens anônimas) está desativada no grupo "${targetGroup.name}".`
+					content: `❌ As mensagens anônimas estão desativadas no grupo "${targetGroup.name}".`
 				});
 			}
 		}
@@ -187,7 +187,7 @@ async function anonymousMessage(bot, message, args, group) {
 			if (targetGroup.mutedCommands.includes("anonimo")) {
 				return new ReturnMessage({
 					chatId: senderIds[0],
-					content: `❌ O comando de mensagens anônimas está desativado no grupo "${targetGroup.name}".`
+					content: `❌ O envio anônimo tá desativado no grupo "${targetGroup.name}".`
 				});
 			}
 		}
@@ -207,14 +207,14 @@ async function anonymousMessage(bot, message, args, group) {
 			if (!isUserInGroup) {
 				return new ReturnMessage({
 					chatId: senderIds[0],
-					content: `❌ Você não é membro do grupo "${targetGroup.name}". Apenas membros podem enviar mensagens anônimas para este grupo.`
+					content: `❌ Você não tá no grupo "${targetGroup.name}"! Só membros de lá podem mandar mensagem anônima.`
 				});
 			}
 		} catch (error) {
 			logger.error("Erro ao verificar grupo ou participantes:", error);
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `❌ Não foi possível acessar o grupo. O bot pode não estar mais nele ou o grupo foi excluído.`
+				content: `❌ Não consegui acessar o grupo. A Ravena pode ter saído ou o grupo não existe mais.`
 			});
 		}
 
@@ -282,14 +282,14 @@ async function anonymousMessage(bot, message, args, group) {
 			// Confirma o envio para o remetente
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `✅ Sua mensagem anônima foi enviada com sucesso para o grupo "${targetGroup.name}".\n\nVocê poderá enviar outra mensagem anônima em ${COOLDOWN_HOURS} horas.`
+				content: `✅ Sua mensagem anônima foi enviada para o grupo "${targetGroup.name}".\n\nVocê pode mandar outra daqui a ${COOLDOWN_HOURS} horas.`
 			});
 		} catch (error) {
 			logger.error("Erro ao enviar mensagem anônima:", error);
 
 			return new ReturnMessage({
 				chatId: senderIds[0],
-				content: `❌ Erro ao enviar mensagem anônima: ${error.message}`
+				content: `❌ Não consegui entregar a mensagem anônima: ${error.message}`
 			});
 		}
 	} catch (error) {
@@ -297,7 +297,7 @@ async function anonymousMessage(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.author,
-			content: "❌ Ocorreu um erro ao processar sua solicitação. Por favor, tente novamente."
+			content: "❌ Deu ruim ao processar o envio anônimo. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -329,7 +329,7 @@ async function adminAnonMessages(bot, message, args) {
 		if (!isAdmin) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: `⛔ Apenas administradores podem usar este comando.`
+				content: `⛔ Só administradores do bot podem usar esse comando.`
 			});
 		}
 
@@ -340,7 +340,7 @@ async function adminAnonMessages(bot, message, args) {
 			if (anonMessages.length === 0) {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: `📝 Não há mensagens anônimas registradas.`
+					content: `📝 Nenhuma mensagem anônima registrada por enquanto.`
 				});
 			}
 
@@ -364,7 +364,7 @@ ${lastMessages}`
 
 			return new ReturnMessage({
 				chatId: message.author,
-				content: `🧹 Todas as mensagens anônimas foram removidas.`
+				content: `🧹 Todas as mensagens anônimas foram apagadas com sucesso.`
 			});
 		} else if (args[0] === "find" && args.length > 1) {
 			// Busca mensagens por ID do usuário
@@ -379,7 +379,7 @@ ${lastMessages}`
 			if (userMessages.length === 0) {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: `🔍 Nenhuma mensagem encontrada para o usuário ${userId}.`
+					content: `🔍 Nenhuma mensagem encontrada pro usuário ${userId}.`
 				});
 			}
 
@@ -416,7 +416,7 @@ ${formattedMessages}`
 
 		return new ReturnMessage({
 			chatId: message.author,
-			content: "❌ Ocorreu um erro ao processar sua solicitação."
+			content: "❌ Deu ruim ao processar sua solicitação no painel anônimo."
 		});
 	}
 }

@@ -100,7 +100,7 @@ async function handleSorteio(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -174,7 +174,7 @@ async function handleSorteio(bot, message, args, group) {
 		logger.error("Erro no comando !sorteio:", error);
 		return new ReturnMessage({
 			chatId: message.group || message.author,
-			content: "Ocorreu um erro ao processar o sorteio."
+			content: "❌ Deu ruim ao processar o sorteio. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -192,7 +192,7 @@ async function handleSorteioEntrar(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -206,7 +206,7 @@ async function handleSorteioEntrar(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId: message.group,
 				content:
-					"Não há nenhum sorteio ativo neste grupo no momento. Crie um com *!sorteio [nome]*."
+					"❌ Não tem nenhum sorteio rolando por aqui agora. Pra começar um, manda *!sorteio [nome]*."
 			});
 		}
 
@@ -223,7 +223,7 @@ async function handleSorteioEntrar(bot, message, args, group) {
 		if (participant) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: `${userName}, você já está participando do sorteio "${raffle.title}"!`
+				content: `${userName}, você já tá dentro do sorteio "${raffle.title}"!`
 			});
 		}
 
@@ -241,7 +241,7 @@ async function handleSorteioEntrar(bot, message, args, group) {
 		logger.error("Erro no comando !sorteio-entrar:", error);
 		return new ReturnMessage({
 			chatId: message.group,
-			content: "Erro ao tentar entrar no sorteio."
+			content: "❌ Não consegui te inscrever no sorteio agora. Tenta de novo!"
 		});
 	}
 }
@@ -259,7 +259,7 @@ async function handleSorteioSair(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -272,7 +272,7 @@ async function handleSorteioSair(bot, message, args, group) {
 		if (!raffle) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "Não há nenhum sorteio ativo neste grupo no momento."
+				content: "❌ Não tem nenhum sorteio rolando por aqui agora."
 			});
 		}
 
@@ -289,7 +289,7 @@ async function handleSorteioSair(bot, message, args, group) {
 		if (!participant) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: `${userName}, você não está participando do sorteio "${raffle.title}".`
+				content: `${userName}, você nem tá participando do sorteio "${raffle.title}".`
 			});
 		}
 
@@ -307,7 +307,7 @@ async function handleSorteioSair(bot, message, args, group) {
 		logger.error("Erro no comando !sorteio-sair:", error);
 		return new ReturnMessage({
 			chatId: message.group,
-			content: "Erro ao tentar sair do sorteio."
+			content: "❌ Não consegui te tirar do sorteio agora. Tenta de novo!"
 		});
 	}
 }
@@ -325,7 +325,7 @@ async function handleSortear(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -378,7 +378,7 @@ async function handleSortear(bot, message, args, group) {
 			if (participants.length === 0) {
 				return new ReturnMessage({
 					chatId: message.group,
-					content: `⚠️ Não há nenhum participante no sorteio "${raffle.title}". Ninguém pôde ser sorteado.`
+					content: `⚠️ Não tem ninguém participando do sorteio "${raffle.title}" ainda! Impossível sortear.`
 				});
 			}
 
@@ -443,7 +443,7 @@ async function handleSortear(bot, message, args, group) {
 			if (!chat || !chat.isGroup) {
 				return new ReturnMessage({
 					chatId: message.group,
-					content: "Erro ao acessar os membros do grupo."
+					content: "❌ Não consegui listar os membros do grupo pra sortear."
 				});
 			}
 
@@ -465,7 +465,7 @@ async function handleSortear(bot, message, args, group) {
 			if (participants.length === 0) {
 				return new ReturnMessage({
 					chatId: message.group,
-					content: "Nenhum membro elegível encontrado no grupo para realizar o sorteio."
+					content: "❌ Não achei nenhum membro elegível no grupo pra sortear agora."
 				});
 			}
 
@@ -522,7 +522,7 @@ async function handleSortear(bot, message, args, group) {
 		logger.error("Erro no comando !sortear:", error);
 		return new ReturnMessage({
 			chatId: message.group,
-			content: "Erro ao realizar o sorteio."
+			content: "❌ Deu ruim na hora de realizar o sorteio. Tenta de novo!"
 		});
 	}
 }
@@ -540,7 +540,7 @@ async function handleSorteioLimpar(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -554,7 +554,7 @@ async function handleSorteioLimpar(bot, message, args, group) {
 		if (!activeRaffles || activeRaffles.length === 0) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "Não há nenhum sorteio ativo neste grupo no momento."
+				content: "❌ Não tem nenhum sorteio rolando por aqui agora."
 			});
 		}
 
@@ -596,7 +596,7 @@ async function handleSorteioLimpar(bot, message, args, group) {
 		if (groupParticipants.length === 0) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "Erro ao acessar os membros do grupo para verificar os participantes."
+				content: "❌ Não consegui acessar a lista de membros pra conferir quem ainda tá no grupo."
 			});
 		}
 
@@ -696,7 +696,7 @@ async function handleSorteioLimpar(bot, message, args, group) {
 		logger.error("Erro no comando !sorteio-limpar:", error);
 		return new ReturnMessage({
 			chatId: message.group,
-			content: "Erro ao tentar limpar participantes inativos do sorteio."
+			content: "❌ Deu ruim ao tentar limpar quem já saiu do grupo."
 		});
 	}
 }
@@ -714,7 +714,7 @@ async function handleSorteios(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este comando só pode ser usado em grupos."
+				content: "❌ Esse comando só funciona dentro de grupos!"
 			});
 		}
 
@@ -727,7 +727,7 @@ async function handleSorteios(bot, message, args, group) {
 		if (!raffles || raffles.length === 0) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "Nenhum sorteio anterior registrado neste grupo."
+				content: "📝 Nenhum sorteio registrado no histórico deste grupo ainda."
 			});
 		}
 
@@ -760,7 +760,7 @@ async function handleSorteios(bot, message, args, group) {
 		logger.error("Erro no comando !sorteios:", error);
 		return new ReturnMessage({
 			chatId: message.group,
-			content: "Erro ao obter o histórico de sorteios."
+			content: "❌ Não consegui puxar o histórico de sorteios agora."
 		});
 	}
 }

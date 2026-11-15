@@ -251,7 +251,7 @@ async function criarEnquete(bot, message, args, group) {
 	if (lines.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "Por favor, informe a pergunta e as opções da enquete em linhas separadas."
+			content: "📊 Manda a pergunta e as opções da enquete em linhas separadas!"
 		});
 	}
 
@@ -276,7 +276,7 @@ async function criarEnquete(bot, message, args, group) {
 	if (!rawQuestion) {
 		return new ReturnMessage({
 			chatId,
-			content: "Por favor, informe a pergunta da enquete na primeira linha."
+			content: "📊 Coloca a pergunta da enquete na primeira linha!"
 		});
 	}
 
@@ -284,7 +284,7 @@ async function criarEnquete(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"⚠️ A enquete precisa de no mínimo 2 opções de resposta.\nExemplo:\n!enquete Pergunta?\nOpção 1\nOpção 2",
+				"⚠️ A enquete precisa de pelo menos 2 opções de resposta!\n\nExemplo:\n!enquete Qual o melhor jogo?\nOpção 1\nOpção 2",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -295,7 +295,7 @@ async function criarEnquete(bot, message, args, group) {
 	if (rawOptions.length > 12) {
 		return new ReturnMessage({
 			chatId,
-			content: "⚠️ O WhatsApp permite no máximo 12 opções por enquete.",
+			content: "⚠️ O limite do WhatsApp é de até 12 opções por enquete!",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -329,8 +329,7 @@ async function criarEnquete(bot, message, args, group) {
 	if (processedOptions.length < 2) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"⚠️ A enquete precisa de pelo menos 2 opções de resposta válidas após o processamento.",
+			content: "⚠️ Ficaram menos de 2 opções válidas pra enquete!",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

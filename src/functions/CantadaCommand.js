@@ -29,7 +29,7 @@ async function cantadaCommand(bot, message, args, group) {
 			logger.warn("Nenhuma frase encontrada em 'cantadas-ruins'");
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Nenhuma cantada disponível no momento.",
+				content: "❌ O repertório de cantadas tá vazio por enquanto!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -59,7 +59,7 @@ async function cantadaCommand(bot, message, args, group) {
 		logger.error("Erro ao gerar cantada:", err);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Algo deu errado ao tentar a cantada. Tente novamente mais tarde.",
+			content: "❌ A cantada falhou miseravelmente! Tenta de novo daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

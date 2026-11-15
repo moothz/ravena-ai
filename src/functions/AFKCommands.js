@@ -290,7 +290,7 @@ const commands = [
 			if (!group && !message.group) {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: "❌ Este comando só pode ser utilizado em grupos!"
+					content: "❌ O comando de AFK só funciona em grupos!"
 				});
 			}
 
@@ -306,7 +306,7 @@ const commands = [
 			if (reason) {
 				response += `\n💬 *Motivo:* ${reason}`;
 			}
-			response += `\n\n_Qualquer mensagem enviada por você no grupo removerá o AFK (🏁)._`;
+			response += `\n\n_Assim que você mandar qualquer mensagem no grupo, seu AFK é removido (🏁)._`;
 
 			return new ReturnMessage({
 				chatId: groupId,
@@ -325,7 +325,7 @@ const commands = [
 			if (!group && !message.group) {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: "❌ Este comando só pode ser utilizado em grupos!"
+					content: "❌ O comando de AFK só funciona em grupos!"
 				});
 			}
 
@@ -335,7 +335,7 @@ const commands = [
 			if (activeSessions.length === 0) {
 				return new ReturnMessage({
 					chatId: groupId,
-					content: "✅ Nenhum membro está AFK neste grupo no momento!"
+					content: "✅ Todo mundo ativo por aqui! Nenhum membro está AFK agora."
 				});
 			}
 

@@ -99,7 +99,7 @@ async function namorarCommand(bot, message, args, group) {
 	if (mentions.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Você precisa mencionar alguém para pedir em namoro! Ex: *!namorar @pessoa* 😉",
+			content: "❌ Marca quem você quer pedir em namoro! Ex: *!namorar @pessoa* 😉",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -212,7 +212,7 @@ async function namorarCommand(bot, message, args, group) {
 	if (existingProposal) {
 		return new ReturnMessage({
 			chatId,
-			content: `⌛ Você já pediu ${getMentionStr(targetJid)} em namoro! Aguarde a resposta dele(a). 😉`,
+			content: `⌛ Você já mandou um pedido de namoro pro ${getMentionStr(targetJid)}! Aguarda a resposta dele(a). 😉`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin,
@@ -266,7 +266,7 @@ async function casarCommand(bot, message, args, group) {
 	if (mentions.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Você precisa mencionar alguém para pedir em casamento! Ex: *!casar @pessoa* 😉",
+			content: "❌ Marca quem você quer pedir em casamento! Ex: *!casar @pessoa* 😉",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -403,7 +403,7 @@ async function casarCommand(bot, message, args, group) {
 	if (existingProposal) {
 		return new ReturnMessage({
 			chatId,
-			content: `⌛ Você já pediu ${getMentionStr(targetJid)} em casamento! Aguarde a resposta dele(a). 💍`,
+			content: `⌛ Você já pediu ${getMentionStr(targetJid)} em casamento! Segura a ansiedade e aguarda a resposta. 💍`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin,
@@ -659,8 +659,7 @@ async function recusarCommand(bot, message, args, group) {
 	if (mentions.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content:
-				"❌ Você precisa mencionar quem pediu você em namoro/casamento/separação para recusar! Ex: *!recusar @pessoa* 🧐",
+			content: "❌ Marca quem te fez a proposta pra você recusar! Ex: *!recusar @pessoa* 🧐",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -686,7 +685,7 @@ async function recusarCommand(bot, message, args, group) {
 	if (!pending) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Não há nenhum pedido pendente de ${getMentionStr(targetJid)} para você! 🧐`,
+			content: `❌ Não tem nenhum pedido pendente de ${getMentionStr(targetJid)} pra você! 🧐`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin,
@@ -1058,7 +1057,7 @@ async function relacionamentoCommand(bot, message, args, group) {
 	if (!rels || rels.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: `💔 ${getMentionStr(authorJid)}, você não tem nenhum relacionamento registrado neste grupo! Que tal tentar *!namorar* alguém? 😉`,
+			content: `💔 ${getMentionStr(authorJid)}, você não tem nenhum relacionamento registrado por aqui ainda! Que tal mandar um *!namorar @alguém*? 😉`,
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin,
@@ -1161,7 +1160,7 @@ async function relacionamentosCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"💔 Nenhum relacionamento foi registrado neste grupo ainda! Sejam os pioneiros pedindo alguém em namoro! 😉",
+				"💔 Nenhum relacionamento registrado por aqui ainda! Quem vai ter coragem de ser o primeiro casal? Manda um *!namorar @alguém*! 😉",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

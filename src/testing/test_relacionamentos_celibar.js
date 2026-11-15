@@ -12,10 +12,11 @@ async function runTests() {
 		"--- Iniciando testes de !relacionamento, !separar (por número/id/telefone) e !celibar ---"
 	);
 
-	const bot = new FakeBot({ id: "teste-bot", grupoLogs: "123@g.us" });
+	const bot = new FakeBot({ id: "teste-bot", grupoLogs: "123@g.us", testMode: false });
 	const eventHandler = new EventHandler();
 	await eventHandler.commandHandler.loadAllCommands();
 	const database = Database.getInstance();
+	database.testMode = false;
 
 	const testGroup = "120363888888888888@g.us";
 	const userAJid = "5511999990001@s.whatsapp.net";
