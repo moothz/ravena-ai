@@ -46,10 +46,10 @@ async function runTests() {
 	console.log("3. Moedas após Ficha de Cassino (+5):", userAfterFicha.coins);
 	assert.strictEqual(userAfterFicha.coins, 14, "Moedas devem ser 14 após Ficha de Cassino");
 
-	// 4. Testa limite alto de acúmulo (MAX_STORED_COINS = 100000)
-	user = await SlotsGame.addCoins(testUserId, 200000);
-	console.log("4. Moedas após tentar adicionar 200000:", user.coins);
-	assert.strictEqual(user.coins, 100000, "Moedas devem ser limitadas a 100000");
+	// 4. Testa limite alto de acúmulo (MAX_STORED_COINS = 3000)
+	user = await SlotsGame.addCoins(testUserId, 5000);
+	console.log("4. Moedas após tentar adicionar 5000:", user.coins);
+	assert.strictEqual(user.coins, 3000, "Moedas devem ser limitadas a 3000");
 
 	// 5. Limpeza do usuário de teste
 	await db.dbRun("slots", "DELETE FROM slots_users WHERE user_id = ?", [testUserId]);
