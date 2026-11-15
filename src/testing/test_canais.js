@@ -181,7 +181,7 @@ async function runTests() {
 	// 5. Testes da regra de agrupamento em buildGroupedReturnMessages
 	// -------------------------------------------------------------
 	console.log("\n[5] Testando buildGroupedReturnMessages...");
-	const fakeBot = new FakeBot();
+	const fakeBot = new FakeBot({ testMode: false });
 
 	// Caso A: 0 postagens
 	const msgs0 = await buildGroupedReturnMessages(

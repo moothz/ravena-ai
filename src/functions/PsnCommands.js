@@ -64,7 +64,7 @@ function lookupErrorMessage(error, platform) {
 		return "❌ A autenticação PSN precisa ser renovada pelo administrador.";
 	if (status === 429 || ["STEAM_RATE_LIMIT", "PSN_RATE_LIMIT", "LOOKUP_BUSY"].includes(code))
 		return "⏳ Há muitas consultas em andamento. Tente novamente em alguns minutos.";
-	return `❌ Não foi possível consultar a ${platform} agora. Tente novamente mais tarde.`;
+	return `❌ Não consegui consultar a ${platform} agora. Tenta de novo daqui a pouco.`;
 }
 
 function safeName(value) {

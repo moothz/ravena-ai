@@ -557,7 +557,7 @@ async function apelidoCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao definir apelido. Por favor, tente novamente."
+			content: "❌ Deu erro ao definir o apelido. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -697,7 +697,7 @@ async function statusCommand(bot, message, args, group) {
 		logger.error("Erro ao buscar status dos bots:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao buscar o status das Ravenas. Tente novamente mais tarde."
+			content: "❌ Não consegui buscar o status das Ravenas agora. Tenta de novo daqui a pouco."
 		});
 	}
 }

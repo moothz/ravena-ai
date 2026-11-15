@@ -346,7 +346,7 @@ ${cachedRollingSummary}`
 			}
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "Falha ao gerar resumo. Por favor, tente novamente."
+				content: "❌ Não consegui gerar o resumo agora. Tenta de novo daqui a pouco."
 			});
 		}
 
@@ -411,7 +411,7 @@ ${cleanSummary}`
 		logger.error("Erro ao resumir conversa:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao gerar resumo. Por favor, tente novamente."
+			content: "❌ Não consegui gerar o resumo agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -532,7 +532,7 @@ ${historyFormatted}`;
 			if (retornarErro) {
 				return new ReturnMessage({
 					chatId: message.group,
-					content: "Falha ao gerar mensagem. Por favor, tente novamente."
+					content: "❌ Não consegui gerar uma mensagem agora. Tenta de novo daqui a pouco."
 				});
 			} else {
 				return [];
@@ -564,7 +564,7 @@ ${historyFormatted}`;
 		if (retornarErro) {
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
-				content: "Erro ao gerar mensagem. Por favor, tente novamente."
+				content: "❌ Deu erro ao gerar a mensagem. Tenta de novo daqui a pouco."
 			});
 		} else {
 			return [];

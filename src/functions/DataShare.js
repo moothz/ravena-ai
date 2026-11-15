@@ -180,7 +180,7 @@ async function shareVariable(bot, message, args, group) {
 				logger.error(`Error reading or parsing ${filePath}:`, error);
 				return new ReturnMessage({
 					chatId,
-					content: "Ocorreu um erro ao ler o arquivo de dados. O arquivo pode estar corrompido.",
+					content: "❌ Deu ruim ao ler o arquivo de dados. Ele pode estar corrompido.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -215,7 +215,7 @@ async function shareVariable(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Ocorreu um erro inesperado ao compartilhar estes dados.",
+			content: "❌ Deu um erro inesperado ao compartilhar esses dados.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

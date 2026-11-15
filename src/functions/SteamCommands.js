@@ -79,7 +79,7 @@ function lookupErrorMessage(error, platform) {
 		return "❌ A autenticação PSN precisa ser renovada pelo administrador.";
 	if (status === 429 || ["STEAM_RATE_LIMIT", "PSN_RATE_LIMIT", "LOOKUP_BUSY"].includes(code))
 		return "⏳ Há muitas consultas em andamento. Tente novamente em alguns minutos.";
-	return `❌ Não foi possível consultar a ${platform} agora. Tente novamente mais tarde.`;
+	return `❌ Não consegui consultar a ${platform} agora. Tenta de novo daqui a pouco.`;
 }
 
 function safeName(value) {
@@ -208,7 +208,7 @@ const helper = {
  */
 async function fetchSteamGameInfo(query) {
 	if (!query || typeof query !== "string" || query.trim().length === 0) {
-		return "Por favor, informe o nome do jogo para pesquisar na Steam.";
+		return "Manda o nome do jogo pra pesquisar na Steam!";
 	}
 
 	const termo = query.trim();
@@ -220,7 +220,7 @@ async function fetchSteamGameInfo(query) {
 		const items = searchRes.data?.items;
 
 		if (!items || items.length === 0) {
-			return `Não foi possível encontrar o jogo "${termo}" na Steam.`;
+			return `Não achei o jogo "${termo}" na Steam.`;
 		}
 
 		const bestItem = items[0];
@@ -266,7 +266,7 @@ async function fetchSteamGameInfo(query) {
 		return resultado.trim();
 	} catch (err) {
 		logger.error(`Erro ao consultar jogo na Steam para ${query}:`, err.message);
-		return `Erro ao consultar a Steam para "${query}": ${err.message}`;
+		return `Não consegui consultar a Steam para "${query}": ${err.message}`;
 	}
 }
 

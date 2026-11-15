@@ -22,7 +22,7 @@ async function wildRiftBuildCommand(bot, message, args, group) {
 			logger.info("Nenhum campeão informado");
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Por favor, informe o nome do campeão.\n\n*Exemplo:* !wr-build aatrox",
+				content: "❌ Manda o nome do campeão!\n\n*Exemplo:* !wr-build aatrox",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin

@@ -647,7 +647,7 @@ async function aiCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça uma pergunta ou uma imagem com uma pergunta. Exemplo: !ai Qual é a capital da França?",
+					"Manda uma pergunta ou uma imagem com pergunta! Exemplo: !ai Qual é a capital da França?",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -738,7 +738,7 @@ async function aiCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
+				"⚠️ Não consegui recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -1002,7 +1002,7 @@ async function handleMediaRequest(
 			logger.error("[aiCommand] Error processing video:", videoError);
 			return new ReturnMessage({
 				chatId,
-				content: `Ocorreu um erro ao processar o vídeo: ${videoError.message}`,
+				content: `Não consegui processar esse vídeo: ${videoError.message}`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}

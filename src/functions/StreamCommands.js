@@ -119,7 +119,7 @@ async function listMonitoredChannels(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao listar canais monitorados. Por favor, tente novamente."
+			content: "❌ Não consegui listar os canais monitorados agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -138,14 +138,13 @@ function avisoStreamSystem(bot, chatId) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"O sistema de monitoramento de streams não está inicializado.\nO bot irá tentar reinicializar o sistema, tente novamente em breve."
+				"O monitoramento de streams ainda tá iniciando.\nTô subindo o serviço agora, tenta de novo em instantes!"
 		});
 	} catch (e) {
 		logger.error("[avisoStreamSystem] Erro tentando inicializar sistema de streams", e);
 		return new ReturnMessage({
 			chatId,
-			content:
-				"O sistema de monitoramento de streams não está inicializado e não foi possível reinicializar o sistema."
+			content: "O monitoramento de streams tá indisponível no momento."
 		});
 	}
 }
@@ -303,7 +302,7 @@ async function showStreamStatus(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao mostrar status dos streams. Por favor, tente novamente."
+			content: "❌ Não consegui ver o status das lives agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -410,7 +409,7 @@ async function listOnlineStreamers(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao listar streamers online. Por favor, tente novamente."
+			content: "❌ Não consegui listar os streamers online agora. Tenta de novo daqui a pouco."
 		});
 	}
 }

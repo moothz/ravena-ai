@@ -26,7 +26,7 @@ async function qrCommand(bot, message, args, group) {
 	if (!text || text.trim().length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Por favor, forneça o texto para o QR Code ou responda a uma mensagem.",
+			content: "❌ Manda o texto pro QR Code ou responde a uma mensagem com o texto!",
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -56,7 +56,7 @@ async function qrCommand(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Error generating QR Code:", error);
-		return "❌ Erro ao gerar QR Code.";
+		return "❌ Não consegui gerar o QR Code agora. Tenta de novo daqui a pouco.";
 	}
 }
 
@@ -118,7 +118,7 @@ async function qrWifiCommand(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Error generating WiFi QR Code:", error);
-		return "❌ Erro ao gerar QR Code de WiFi.";
+		return "❌ Não consegui gerar o QR Code de WiFi agora. Tenta de novo daqui a pouco.";
 	}
 }
 
@@ -457,7 +457,7 @@ async function qrPixCommand(bot, message, args, group) {
 		});
 	} catch (error) {
 		logger.error("Error generating PIX QR Code:", error);
-		return "❌ Erro ao gerar PIX. Verifique se a chave é válida.";
+		return "❌ Não consegui gerar o QR Code do PIX. Dá uma conferida se a chave tá certa.";
 	}
 }
 

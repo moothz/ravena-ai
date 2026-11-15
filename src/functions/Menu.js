@@ -483,7 +483,7 @@ async function showCommandsByCategory(bot, message, args, group, explicitCategor
 		logger.error("Erro ao enviar lista de comandos por categoria:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao recuperar lista de comandos por categoria. Por favor, tente novamente."
+			content: "❌ Não consegui carregar essa categoria agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -933,7 +933,7 @@ async function sendCommandList(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao recuperar lista de comandos. Por favor, tente novamente."
+			content: "❌ Não consegui carregar a lista de comandos agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -1023,7 +1023,8 @@ async function sendManagementCommandList(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao recuperar lista de comandos de gerenciamento. Por favor, tente novamente."
+			content:
+				"❌ Não consegui carregar os comandos de gerenciamento agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -1199,7 +1200,8 @@ async function sendGroupCommandList(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao recuperar lista de comandos personalizados. Por favor, tente novamente."
+			content:
+				"❌ Não consegui carregar os comandos personalizados agora. Tenta de novo daqui a pouco."
 		});
 	}
 }

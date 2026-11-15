@@ -231,7 +231,7 @@ ${privacyInstruction}
 		) {
 			// Fallback local direto se a IA não responder
 			const localSearch = commandsHelper.search(question);
-			const fallbackMsg = `Não foi possível consultar a IA no momento, mas encontrei os seguintes comandos relacionados:\n\n${localSearch}`;
+			const fallbackMsg = `Não consegui consultar a IA agora, mas achei esses comandos relacionados:\n\n${localSearch}`;
 			logger.warn(
 				`[Ajuda] Resposta fallback local gerada em ${elapsedMs}ms (Session: ${sessionId || "direct"}): "${fallbackMsg.replace(/\r?\n/g, " ").substring(0, 300)}"`
 			);

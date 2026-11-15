@@ -24,7 +24,7 @@ async function buscarAnime(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça o nome de um anime para buscar. Exemplo: !anime Naruto",
+				content: "Manda o nome de um anime pra buscar! Exemplo: !anime Naruto",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -45,7 +45,7 @@ async function buscarAnime(bot, message, args, group) {
 		if (!data || !data.title) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível encontrar informações sobre "${nome}". Verifique se o nome está correto.`,
+				content: `❌ Não achei informações sobre "${nome}". Dá uma conferida no nome e tenta de novo.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -129,12 +129,13 @@ async function buscarAnime(bot, message, args, group) {
 		logger.error("Erro ao buscar anime:", error);
 
 		const chatId = message.group ?? message.author;
-		let errorMessage = "Erro ao buscar informações do anime. Por favor, tente novamente.";
+		let errorMessage =
+			"Não consegui buscar informações do anime agora. Tenta de novo daqui a pouco.";
 
 		if (error.message.includes("Invalid")) {
-			errorMessage = `Não foi possível encontrar esse anime. Verifique se o nome está correto.`;
+			errorMessage = `Não achei esse anime. Dá uma conferida no nome e tenta de novo.`;
 		} else if (error.message.includes("timeout")) {
-			errorMessage = `Tempo esgotado ao buscar informações. A API pode estar indisponível.`;
+			errorMessage = `Tempo esgotado ao buscar informações. O MyAnimeList pode estar fora do ar.`;
 		}
 
 		return new ReturnMessage({
@@ -187,7 +188,7 @@ const helper = {
  */
 async function fetchAnimeInfo(query) {
 	if (!query || typeof query !== "string" || query.trim().length === 0) {
-		return "Por favor, informe o nome do anime a pesquisar.";
+		return "Manda o nome do anime pra pesquisar.";
 	}
 
 	const nome = query.trim();
@@ -195,7 +196,7 @@ async function fetchAnimeInfo(query) {
 	try {
 		const data = await malScraper.getInfoFromName(nome);
 		if (!data || !data.title) {
-			return `Não foi possível encontrar informações sobre o anime "${nome}" no MyAnimeList.`;
+			return `Não achei informações sobre o anime "${nome}" no MyAnimeList.`;
 		}
 
 		let resultado = `🗾 **${data.title}** (${data.japaneseTitle || "N/A"})\n`;

@@ -230,8 +230,7 @@ async function criarLembrete(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça uma data/hora para o lembrete. Exemplo: !lembrar amanhã às 10:00"
+				content: "Manda quando você quer ser lembrado! Exemplo: *!lembrar amanhã às 10:00*"
 			});
 		}
 
@@ -269,7 +268,7 @@ async function criarLembrete(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						'Não foi possível interpretar a data/hora. Use formatos como "em 10 minutos", "amanhã às 10:00" ou "17/04/2025 07:30".'
+						'Não consegui entender a data/hora. Tenta algo como "em 10 minutos", "amanhã às 10:00" ou "17/04/2026 07:30".'
 				});
 			}
 		}
@@ -396,7 +395,7 @@ async function criarLembrete(bot, message, args, group) {
 		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao criar lembrete. Por favor, tente novamente."
+			content: "❌ Deu erro ao criar o lembrete. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -483,7 +482,7 @@ async function listarLembretes(bot, message, args, group) {
 		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao listar lembretes. Por favor, tente novamente."
+			content: "❌ Não consegui listar seus lembretes agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -504,8 +503,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça o ID do lembrete a ser cancelado. Use !lembretes para ver os IDs."
+				content: "Manda o ID do lembrete que quer cancelar! Usa `!lembretes` pra ver os IDs."
 			});
 		}
 
@@ -515,7 +513,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		if (!row) {
 			return new ReturnMessage({
 				chatId,
-				content: `Lembrete com ID ${lembreteId} não encontrado.`
+				content: `❌ Não achei nenhum lembrete com o ID ${lembreteId}.`
 			});
 		}
 
@@ -524,7 +522,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		if (lembrete.userId !== userId && (!message.group || lembrete.chatId !== chatId)) {
 			return new ReturnMessage({
 				chatId,
-				content: "Você não tem permissão para cancelar este lembrete."
+				content: "Você só pode cancelar seus próprios lembretes!"
 			});
 		}
 
@@ -548,7 +546,7 @@ async function cancelarLembrete(bot, message, args, group) {
 		const chatId = message.group || (group && group.id) || message.from;
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao cancelar lembrete. Por favor, tente novamente."
+			content: "❌ Deu erro ao cancelar o lembrete. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -820,7 +818,7 @@ async function dispararLembrete(bot, lembreteId) {
 				logger.error("Erro ao enviar mídia do lembrete:", mediaError);
 				returnMessage = new ReturnMessage({
 					chatId: lembrete.chatId,
-					content: `${textoLembrete}\n\n_(Não foi possível enviar a mídia)_`,
+					content: `${textoLembrete}\n\n_(Não consegui enviar a mídia deste lembrete)_`,
 					options: { mentions }
 				});
 

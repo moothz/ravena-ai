@@ -133,7 +133,7 @@ async function mentionAllMembers(bot, message, args, group) {
 		logger.error("Erro ao mencionar membros do grupo:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao mencionar membros do grupo. Por favor, tente novamente."
+			content: "❌ Não consegui marcar os membros do grupo agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -303,7 +303,7 @@ async function toggleIgnore(bot, message, args, group) {
 		logger.error("Erro ao alternar status de ignorar:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao atualizar seu status de ignorar. Por favor, tente novamente."
+			content: "❌ Deu erro ao atualizar seu status de ignorar. Tenta de novo daqui a pouco."
 		});
 	}
 }

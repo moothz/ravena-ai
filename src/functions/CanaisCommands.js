@@ -1116,7 +1116,7 @@ async function seguirCommand(bot, message, args, group) {
 		logger.error("Erro ao resolver link do canal:", e);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao consultar o canal no WhatsApp: ${e.message || "Link inválido ou canal não encontrado."}`
+			content: `❌ Não consegui consultar o canal no WhatsApp: ${e.message || "Link inválido ou canal não encontrado."}`
 		});
 	}
 
@@ -1124,7 +1124,7 @@ async function seguirCommand(bot, message, args, group) {
 	if (!canalJid) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Não foi possível obter o ID do canal a partir do link informado."
+			content: "❌ Não consegui achar o ID do canal pelo link informado."
 		});
 	}
 
@@ -1259,7 +1259,7 @@ Ao convidar o bot para ser administrador do canal, ele tentará aceitar o convit
 		logger.warn(`[Canais] Erro ao carregar grupo para dica de stream:`, err);
 	}
 
-	const responseText = `✅ Canal *${nomeOficial}* cadastrado com sucesso para o grupo *${targetGroup.name || targetGroup.id}*!
+	const responseText = `✅ Canal *${nomeOficial}* cadastrado pro grupo *${targetGroup.name || targetGroup.id}*!
 🏷️ Apelido no grupo: *${apelidoFinal}*
 📥 Baixando até ${BACKFILL_COUNT} mensagens recentes em segundo plano...
 
@@ -1729,7 +1729,7 @@ async function midiasCommand(bot, message, args, group) {
 
 	return new ReturnMessage({
 		chatId,
-		content: `✅ Tipos de mídia para *${matchedCanal.apelido}* atualizados com sucesso no grupo *${targetGroup.name || targetGroup.id}*!\n📌 Mídias ativas: *${parsed.types.join(", ")}*`
+		content: `✅ Tipos de mídia pra *${matchedCanal.apelido}* atualizados no grupo *${targetGroup.name || targetGroup.id}*!\n📌 Mídias ativas: *${parsed.types.join(", ")}*`
 	});
 }
 
@@ -1879,7 +1879,7 @@ async function aceitarInviteCommand(bot, message, args) {
 	if (!canalJid) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ *Canal não encontrado!* Não foi possível identificar o JID do canal a partir de "${linkOrJid}".`,
+			content: `❌ *Canal não encontrado!* Não consegui identificar o ID do canal a partir de "${linkOrJid}".`,
 			options: { quoted: message.origin }
 		});
 	}
@@ -1888,7 +1888,7 @@ async function aceitarInviteCommand(bot, message, args) {
 		await bot.acceptNewsletterAdminInvite(canalJid);
 		return new ReturnMessage({
 			chatId,
-			content: `✅ *Convite de Admin Aceito com Sucesso!*\n\nO bot agora aceitou o convite de administrador para o canal (\`${canalJid}\`).`,
+			content: `✅ *Convite de Admin Aceito!*\n\nAgora sou administradora do canal (\`${canalJid}\`).`,
 			options: { quoted: message.origin }
 		});
 	} catch (error) {
@@ -1896,7 +1896,7 @@ async function aceitarInviteCommand(bot, message, args) {
 		const errMsg = error.message || error.data?.message || "Erro desconhecido ao aceitar convite.";
 		return new ReturnMessage({
 			chatId,
-			content: `❌ *Falha ao aceitar convite:* ${errMsg}\n\nVerifique se o convite para ser admin do canal ainda está ativo e se o bot é seguidor do canal.`,
+			content: `❌ *Não deu pra aceitar o convite:* ${errMsg}\n\nDá uma olhada se o convite pra admin ainda tá ativo e se já sigo o canal.`,
 			options: { quoted: message.origin }
 		});
 	}

@@ -130,7 +130,7 @@ async function showDonationGoal(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao recuperar informações de meta de doação. Por favor, tente novamente."
+			content: "❌ Não consegui buscar a meta de doações agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -266,7 +266,7 @@ async function showTopDonors(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao recuperar informações de doadores. Por favor, tente novamente."
+			content: "❌ Não consegui buscar a lista de doadores agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -414,7 +414,8 @@ async function showDonationPerks(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao consultar vantagens de doação. Por favor, tente novamente."
+			content:
+				"❌ Não consegui consultar as vantagens de doação agora. Tenta de novo daqui a pouco."
 		});
 	}
 }

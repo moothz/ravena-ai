@@ -39,7 +39,7 @@ async function searchAircraftRAB(bot, message, args, group) {
 		if (!cleanArgs) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça a matrícula da aeronave. Exemplo: !rab PT-XYZ",
+				content: "Informe a matrícula ou prefixo da aeronave! Exemplo: !rab PT-XYZ",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -153,7 +153,7 @@ async function searchAircraftRAB(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Erro ao consultar o Registro Aeronáutico Brasileiro. Por favor, tente novamente mais tarde.",
+				"❌ Não consegui consultar o Registro Aeronáutico Brasileiro agora. Tenta de novo daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -179,7 +179,7 @@ async function searchWeb(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma consulta de busca. Exemplo: !buscar tutorial javascript",
+				content: "Manda o que você quer pesquisar! Exemplo: *!buscar tutorial javascript*",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -210,7 +210,7 @@ async function searchWeb(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao realizar busca na web. Por favor, tente novamente.",
+			content: "❌ Deu erro ao fazer a busca na web. Tenta de novo daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -235,7 +235,7 @@ async function searchImages(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma consulta de busca. Exemplo: !buscar-img gatos fofos",
+				content: "Manda o que você quer buscar em imagens! Exemplo: *!buscar-img gatos fofos*",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -350,7 +350,7 @@ async function searchImages(bot, message, args, group) {
 				logger.warn(`Nenhuma imagem processada com sucesso para "${query}"`);
 				return new ReturnMessage({
 					chatId,
-					content: `Erro ao processar imagens para "${query}". Tente novamente mais tarde.`,
+					content: `❌ Não consegui processar as imagens para "${query}". Tenta de novo daqui a pouco.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -370,7 +370,7 @@ async function searchImages(bot, message, args, group) {
 			if (isRateLimitError) {
 				return new ReturnMessage({
 					chatId,
-					content: `Limite de requisições de API excedido. Por favor, tente novamente mais tarde ou configure uma chave de API válida no arquivo .env (UNSPLASH_API_KEY=sua_chave_aqui).`,
+					content: `Limite de requisições excedido. Tenta de novo daqui a pouco.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -431,7 +431,7 @@ async function searchImages(bot, message, args, group) {
 			} else {
 				return new ReturnMessage({
 					chatId,
-					content: `Erro ao buscar imagens para "${query}". Tente novamente mais tarde.`,
+					content: `❌ Não consegui buscar imagens para "${query}". Tenta de novo daqui a pouco.`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -445,7 +445,7 @@ async function searchImages(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "Erro ao realizar busca de imagens. Por favor, tente novamente.",
+			content: "❌ Deu erro ao buscar imagens. Tenta de novo daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

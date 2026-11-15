@@ -31,7 +31,7 @@ async function vincularCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId: message.group,
 				content:
-					"⚠️ *Atenção:* Por motivos de segurança, o comando `!vincular` só pode ser usado no **chat privado (PV)** com a Ravena.\n\nPor favor, me chame no privado para obter o seu código de vinculação!"
+					"⚠️ *Atenção:* Por segurança, o comando `!vincular` só funciona no **chat privado (PV)** com a Ravena.\n\nMe chama no privado pra pegar seu código de vinculação!"
 			});
 		}
 
@@ -60,7 +60,7 @@ async function vincularCommand(bot, message, args, group) {
 			logger.error("Erro ao gerar código de vinculação no WhatsApp:", error);
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "❌ Ocorreu um erro ao gerar seu código de vinculação. Tente novamente mais tarde."
+				content: "❌ Deu ruim ao gerar seu código de vinculação. Tenta de novo daqui a pouco."
 			});
 		}
 	}
@@ -141,13 +141,13 @@ async function vincularCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `✅ *Conta vinculada com sucesso!*\n\nSua conta do **${platformName}** foi vinculada ao WhatsApp (*${result.whatsappId}*).\n\nA partir de agora, seus jogos, moedas, inventário e bônus de doador são unificados e sincronizados automaticamente! 🎉`
+			content: `✅ *Conta vinculada!*\n\nSua conta do **${platformName}** foi vinculada ao WhatsApp (*${result.whatsappId}*).\n\nA partir de agora, seus jogos, moedas, inventário e bônus de doador tão sincronizados automaticamente! 🎉`
 		});
 	} catch (error) {
 		logger.error("Erro ao vincular conta no Telegram/Discord:", error);
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: "❌ Ocorreu um erro ao processar a vinculação. Tente novamente."
+			content: "❌ Deu erro ao processar a vinculação. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -169,7 +169,7 @@ async function desvincularCommand(bot, message, args, group) {
 		if (message.group) {
 			return new ReturnMessage({
 				chatId: message.group,
-				content: "⚠️ Por segurança, execute o comando `!desvincular` no chat privado com a Ravena."
+				content: "⚠️ Por segurança, manda o comando `!desvincular` direto no privado com a Ravena."
 			});
 		}
 
@@ -180,8 +180,7 @@ async function desvincularCommand(bot, message, args, group) {
 		if (!links.telegram && !links.discord) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content:
-					"ℹ️ Você não possui nenhuma conta de Telegram ou Discord vinculada ao seu WhatsApp."
+				content: "ℹ️ Você não tem nenhuma conta de Telegram ou Discord vinculada ao seu WhatsApp."
 			});
 		}
 
@@ -189,14 +188,14 @@ async function desvincularCommand(bot, message, args, group) {
 			if (!links[platformArg]) {
 				return new ReturnMessage({
 					chatId: message.author,
-					content: `ℹ️ Você não possui nenhuma conta do **${platformArg.toUpperCase()}** vinculada ao seu WhatsApp.`
+					content: `ℹ️ Você não tem nenhuma conta do **${platformArg.toUpperCase()}** vinculada ao seu WhatsApp.`
 				});
 			}
 
 			await accountLinkService.unlinkWhatsApp(whatsappId, platformArg);
 			return new ReturnMessage({
 				chatId: message.author,
-				content: `✅ Conta do **${platformArg.toUpperCase()}** desvinculada do seu WhatsApp com sucesso.`
+				content: `✅ Conta do **${platformArg.toUpperCase()}** desvinculada do seu WhatsApp!`
 			});
 		}
 
@@ -204,7 +203,7 @@ async function desvincularCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId: message.author,
 			content:
-				"✅ Todas as contas externas (Telegram e Discord) foram desvinculadas do seu WhatsApp com sucesso."
+				"✅ Todas as contas externas (Telegram e Discord) foram desvinculadas do seu WhatsApp!"
 		});
 	}
 
@@ -217,14 +216,14 @@ async function desvincularCommand(bot, message, args, group) {
 	if (!linkedWa) {
 		return new ReturnMessage({
 			chatId: responseChatId,
-			content: `ℹ️ Sua conta do **${platformName}** não está vinculada a nenhuma conta de WhatsApp.`
+			content: `ℹ️ Sua conta do **${platformName}** não tá vinculada a nenhuma conta de WhatsApp.`
 		});
 	}
 
 	await accountLinkService.unlink(platformCode, platformAuthorId);
 	return new ReturnMessage({
 		chatId: responseChatId,
-		content: `✅ Sua conta do **${platformName}** foi desvinculada do WhatsApp (*${linkedWa}*) com sucesso.`
+		content: `✅ Sua conta do **${platformName}** foi desvinculada do WhatsApp (*${linkedWa}*)!`
 	});
 }
 

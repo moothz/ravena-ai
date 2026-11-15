@@ -14,8 +14,8 @@ async function eventosCommand(bot, message) {
 			chatId,
 			content:
 				"🎉 *EVENTOS ESPECIAIS NA RAVENA* 🎉\n\n" +
-				"No momento não há nenhum evento temporário ativo.\n" +
-				"Fique atento aos avisos do grupo para os próximos eventos com bônus de Pesca, Waifus e Slots!"
+				"No momento não tem nenhum evento temporário rolando.\n" +
+				"Fica de olho nos avisos do grupo pros próximos eventos com bônus de Pesca, Waifus e Slots!"
 		});
 	}
 

@@ -333,7 +333,7 @@ async function listFiles(bot, message, args, group) {
 		logger.error("Erro ao listar arquivos:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao listar arquivos. Por favor, tente novamente."
+			content: "❌ Não consegui listar os arquivos agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -347,7 +347,8 @@ async function downloadFile(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça o caminho do arquivo ou pasta a ser baixado."
+				content:
+					"Manda o caminho do arquivo ou pasta que quer baixar! Ex: !f-baixar fotos/imagem.png"
 			});
 		}
 
@@ -441,7 +442,7 @@ async function downloadFile(bot, message, args, group) {
 				logger.error(`Erro ao enviar: ${filePath}`, e);
 				return new ReturnMessage({
 					chatId,
-					content: `⚠️ Erro ao enviar arquivo: ${filePath}`
+					content: `⚠️ Não deu pra enviar o arquivo: ${filePath}`
 				});
 			}
 		}
@@ -451,7 +452,7 @@ async function downloadFile(bot, message, args, group) {
 		logger.error("Erro ao baixar arquivo/pasta:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao baixar arquivo/pasta. Por favor, tente novamente."
+			content: "❌ Não consegui baixar o arquivo ou pasta agora. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -463,7 +464,7 @@ async function createFolder(bot, message, args, group) {
 	try {
 		const chatId = message.group ?? message.author;
 		if (args.length === 0)
-			return new ReturnMessage({ chatId, content: "Por favor, forneça o nome da pasta." });
+			return new ReturnMessage({ chatId, content: "Manda o nome da pasta que quer criar!" });
 
 		const folderPath = normalizePath(args.join(" "));
 		if (!isValidPath(folderPath))
@@ -510,7 +511,7 @@ async function createFolder(bot, message, args, group) {
 		logger.error("Erro ao criar pasta:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao criar pasta."
+			content: "❌ Deu erro ao criar a pasta. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -530,14 +531,14 @@ async function uploadFile(bot, message, args, group) {
 		if (!quotedMsg || !quotedMsg.hasMedia)
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Por favor, mencione uma mensagem com arquivo."
+				content: "❌ Responde a uma mensagem que tenha arquivo!"
 			});
 
 		const media = await quotedMsg.downloadMedia();
 		if (!media || !media.data)
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Não foi possível baixar o arquivo."
+				content: "❌ Não consegui baixar o arquivo da mensagem."
 			});
 
 		const fileBuffer = Buffer.from(media.data, "base64");
@@ -629,7 +630,7 @@ async function uploadFile(bot, message, args, group) {
 		logger.error("Erro ao enviar arquivo:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao enviar arquivo."
+			content: "❌ Deu erro ao enviar o arquivo. Tenta de novo daqui a pouco."
 		});
 	}
 }
@@ -640,7 +641,11 @@ async function uploadFile(bot, message, args, group) {
 async function deleteFile(bot, message, args, group) {
 	try {
 		const chatId = message.group ?? message.author;
-		if (args.length === 0) return new ReturnMessage({ chatId, content: "Forneça o caminho." });
+		if (args.length === 0)
+			return new ReturnMessage({
+				chatId,
+				content: "Manda o caminho do arquivo ou pasta que quer apagar!"
+			});
 
 		const filePath = normalizePath(args.join(" "));
 		const fileInfo = await getFile(chatId, filePath);
@@ -685,7 +690,7 @@ async function deleteFile(bot, message, args, group) {
 		logger.error("Erro ao excluir:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao excluir."
+			content: "❌ Deu erro ao apagar. Tenta de novo daqui a pouco."
 		});
 	}
 }
