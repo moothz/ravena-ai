@@ -80,7 +80,7 @@ async function buscarPlaca(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma placa para consultar. Exemplo: !placa ABC1234"
+				content: "Me manda uma placa pra consultar. Exemplo: `!placa ABC1234`"
 			});
 		}
 
@@ -93,7 +93,7 @@ async function buscarPlaca(bot, message, args, group) {
 		if (!valid) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Placa inválida: "${placaInput}". Formato correto: ABC1234 ou ABC1D23`
+				content: `❌ Placa inválida: "${placaInput}". O formato deve ser ABC1234 ou ABC1D23.`
 			});
 		}
 
@@ -130,7 +130,7 @@ async function buscarPlaca(bot, message, args, group) {
 		if (!resultado || !resultado.msg) {
 			retorno = new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível consultar a placa "${placa}". Tente novamente mais tarde.`,
+				content: `❌ Não consegui puxar os dados da placa "${placa}" agora. Tenta de novo daqui a pouco.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -173,7 +173,7 @@ async function buscarPlaca(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao consultar placa. Tente novamente mais tarde.",
+			content: "❌ Deu ruim ao consultar a placa. Tenta de novo em instantes!",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -689,7 +689,7 @@ async function consultarSiPt(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça uma placa para consultar. Exemplo: !sipt ABC1234"
+				content: "Me manda uma placa pra consultar no SiPt. Exemplo: `!sipt ABC1234`"
 			});
 		}
 
@@ -702,7 +702,7 @@ async function consultarSiPt(bot, message, args, group) {
 		if (!valid) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Placa inválida: "${placaInput}". Formato correto: ABC1234 ou ABC1D23`
+				content: `❌ Placa inválida: "${placaInput}". O formato deve ser ABC1234 ou ABC1D23.`
 			});
 		}
 
@@ -714,7 +714,7 @@ async function consultarSiPt(bot, message, args, group) {
 		if (!resultados || resultados.length === 0 || !resultados[0].msg) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível consultar a placa "${placa}" no SiPt. Tente novamente mais tarde.`,
+				content: `❌ Não consegui consultar a placa "${placa}" no SiPt agora. Tenta de novo em instantes!`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -738,7 +738,7 @@ async function consultarSiPt(bot, message, args, group) {
 		const chatId = message.group ?? message.author;
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao consultar placa no SiPt. Tente novamente mais tarde.",
+			content: "❌ Deu ruim ao consultar no SiPt. Tenta de novo daqui a pouco!",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

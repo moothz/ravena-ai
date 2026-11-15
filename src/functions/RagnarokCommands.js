@@ -53,7 +53,7 @@ async function ragnarokInfoCommand(bot, message, args, group) {
 		logger.warn("Erro ao ler ragnarok.txt:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `Erro buscando as infos do Ragnavena!`
+			content: "❌ Deu ruim ao buscar as informações do Ragnavena!"
 		});
 	}
 }
@@ -179,7 +179,7 @@ async function ragnarokResetCommand(bot, message, args, group) {
 				await connection.end();
 				return new ReturnMessage({
 					chatId,
-					content: "Conta não encontrada. Use !ragnarok primeiro."
+					content: "❌ Conta não encontrada. Usa `!ragnavena` primeiro pra criar a sua!"
 				});
 			}
 
@@ -189,7 +189,10 @@ async function ragnarokResetCommand(bot, message, args, group) {
 	} catch (e) {
 		await connection.end();
 		logger.error("Reset failed: " + e.message);
-		return new ReturnMessage({ chatId, content: "Erro ao processar reset." });
+		return new ReturnMessage({
+			chatId,
+			content: "❌ Deu ruim ao resetar a conta. Tenta de novo daqui a pouco!"
+		});
 	}
 }
 

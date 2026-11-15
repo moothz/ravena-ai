@@ -178,7 +178,7 @@ async function vooCommand(bot, message, args) {
 		logger.error("Erro ao executar comando voo:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao consultar o voo. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar o voo agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -218,7 +218,7 @@ async function voosCommand(bot, message, args) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Aeroporto ou cidade não encontrada para *"${query}"*.\n\nTente usar a sigla IATA (ex: \`CWB\`, \`GRU\`, \`GIG\`, \`BSB\`, \`SDU\`) ou o nome da cidade.`,
+				content: `❌ Não encontrei aeroporto nem cidade para *"${query}"*.\n\nTenta usar a sigla IATA (tipo \`CWB\`, \`GRU\`, \`GIG\`, \`BSB\`, \`SDU\`) ou o nome da cidade.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -337,8 +337,7 @@ async function voosCommand(bot, message, args) {
 		logger.error("Erro ao executar comando voos:", error);
 		return new ReturnMessage({
 			chatId,
-			content:
-				"❌ Ocorreu um erro ao consultar o painel de voos. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar o painel de voos agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }
@@ -369,7 +368,7 @@ async function prefixoCommand(bot, message, args) {
 		if (!rab) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Matrícula *"${prefixo}"* não encontrada no Registro Aeronáutico Brasileiro (RAB) da ANAC.`,
+				content: `❌ Matrícula *"${prefixo}"* não encontrada no RAB da ANAC.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -454,8 +453,7 @@ async function prefixoCommand(bot, message, args) {
 		logger.error("Erro ao executar comando prefixo/rab:", error);
 		return new ReturnMessage({
 			chatId,
-			content:
-				"❌ Ocorreu um erro ao consultar o RAB da ANAC. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar o RAB da ANAC agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -474,7 +472,7 @@ async function radarCommand(bot, message, args) {
 		if (!radar || !radar.airport) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Aeroporto ou cidade não encontrada para *"${query}"*. Exemplo: \`!radar SBGR\` ou \`!radar Curitiba\``,
+				content: `❌ Não encontrei aeroporto nem cidade para *"${query}"*. Exemplo: \`!radar SBGR\` ou \`!radar Curitiba\``,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -520,8 +518,7 @@ async function radarCommand(bot, message, args) {
 		logger.error("Erro ao executar comando radar:", error);
 		return new ReturnMessage({
 			chatId,
-			content:
-				"❌ Ocorreu um erro ao consultar o radar aéreo. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar o radar aéreo agora. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -552,7 +549,7 @@ async function aeroportoCommand(bot, message, args) {
 		if (!data || !data.airport) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Aeroporto não encontrado para *"${query}"*.`,
+				content: `❌ Aeroporto *"${query}"* não encontrado.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -601,7 +598,7 @@ async function aeroportoCommand(bot, message, args) {
 		logger.error("Erro ao executar comando aeroporto:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao consultar o aeroporto. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar os dados do aeroporto agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }

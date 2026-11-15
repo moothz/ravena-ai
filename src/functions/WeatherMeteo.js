@@ -311,7 +311,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"❌ Por favor, digite uma cidade ou responda a uma localização.\nEx: `!clima Curitba, PR`",
+						"❌ Digita uma cidade ou responde a uma localização no mapa.\nExemplo: `!clima Curitiba, PR` ☀️",
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
@@ -344,7 +344,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 		logger.error("Erro no comando clima:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Não foi possível obter o clima: ${error.message}`,
+			content: `❌ Não consegui puxar o clima: ${error.message}`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}

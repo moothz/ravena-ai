@@ -39,8 +39,7 @@ async function buscarImdb(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content:
-					"Por favor, forneça o nome de um filme ou série para buscar. Exemplo: !imdb Inception",
+				content: "Me passa o nome de um filme ou série pra buscar. Exemplo: `!imdb Inception`",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -69,7 +68,7 @@ async function buscarImdb(bot, message, args, group) {
 		) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível encontrar "${nome}". Verifique se o nome está correto.`,
+				content: `❌ Não encontrei nada sobre "${nome}". Confere se o nome tá certinho!`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -95,7 +94,7 @@ async function buscarImdb(bot, message, args, group) {
 		if (detailResponse.data.Response === "False") {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Erro ao buscar detalhes para "${nome}".`,
+				content: `❌ Não consegui carregar os detalhes de "${nome}".`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -226,7 +225,7 @@ async function buscarImdb(bot, message, args, group) {
 		logger.error("Erro ao buscar IMDB:", error);
 
 		const chatId = message.group ?? message.author;
-		let errorMessage = "Erro ao buscar informações do IMDB. Por favor, tente novamente.";
+		let errorMessage = "Não consegui consultar o IMDb agora. Tenta de novo daqui a pouco!";
 
 		if (error.response) {
 			// Erros relacionados à API
@@ -237,7 +236,7 @@ async function buscarImdb(bot, message, args, group) {
 			} else if (status === 404) {
 				errorMessage = "Filme ou série não encontrado.";
 			} else if (status === 429) {
-				errorMessage = "Limite de requisições excedido. Tente novamente mais tarde.";
+				errorMessage = "Limite de consultas ao IMDb atingido. Tenta de novo mais tarde!";
 			}
 		}
 
@@ -284,7 +283,7 @@ const helper = {
  */
 async function fetchImdbInfo(query) {
 	if (!query || typeof query !== "string" || query.trim().length === 0) {
-		return "Por favor, especifique o nome de um filme ou série para buscar no IMDb.";
+		return "Me passa o nome de um filme ou série pra buscar no IMDb.";
 	}
 
 	if (!OMDB_API_KEY) {
@@ -309,7 +308,7 @@ async function fetchImdbInfo(query) {
 			!searchResponse.data.Search ||
 			searchResponse.data.Search.length === 0
 		) {
-			return `Não foi possível encontrar nenhum título para "${nome}" no IMDb.`;
+			return `Não encontrei nenhum título para "${nome}" no IMDb.`;
 		}
 
 		const imdbId = searchResponse.data.Search[0].imdbID;

@@ -63,10 +63,10 @@ function handleRiotError(error, gameName, tagLine) {
 			return "A chave de API da Riot Games (RIOT_GAMES) configurada está inválida ou expirou.";
 		}
 		if (status === 404) {
-			return `Não foi possível encontrar o jogador "${gameName}#${tagLine}". Verifique se o nome e a tag estão corretos.`;
+			return `Não encontrei o jogador "${gameName}#${tagLine}". Confere se o nome e a tag estão certos!`;
 		}
 		if (status === 429) {
-			return "O limite de requisições da API da Riot Games foi excedido. Tente novamente mais tarde.";
+			return "Limite de consultas da API da Riot atingido. Tenta de novo daqui a pouco!";
 		}
 		return `Erro na API da Riot Games (Status: ${status}).`;
 	}
@@ -507,7 +507,7 @@ async function handleLolCommand(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça um nome de invocador. Exemplo: !lol Faker#ABC"
+				content: "Me passa o nome do invocador com a tag. Exemplo: `!lol Faker#ABC`"
 			});
 		}
 
@@ -516,7 +516,7 @@ async function handleLolCommand(bot, message, args, group) {
 		if (!summonerName.includes("#")) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Informe o nome do invocador seguido da tag, exemplo: !lol Faker#ABC`
+				content: "❌ Falta a tag do invocador! Exemplo: `!lol Faker#ABC`"
 			});
 		}
 
@@ -598,7 +598,7 @@ async function getValorantRank(gameName, tagLine, server) {
 		return `🔫 *Valorant - ${gameName}#${tagLine}*\n\n🏆 ${text}`;
 	} catch (e) {
 		logger.error(`Rengar API falhou para ${gameName}#${tagLine}:`, e.message);
-		throw new Error("Não foi possível obter os dados do jogador de Valorant nas APIs disponíveis.");
+		throw new Error("Não consegui puxar os dados do jogador de Valorant agora.");
 	}
 }
 
@@ -618,7 +618,7 @@ async function handleValorantCommand(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça um Riot ID com tagline (ex: !valorant NomeJogador#ABC ou !valorant NomeJogador#ABC-BR)"
+					"Me passa o Riot ID com a tag. Exemplo: `!valorant NomeJogador#ABC` ou `!valorant NomeJogador#ABC-BR`"
 			});
 		}
 
@@ -628,7 +628,7 @@ async function handleValorantCommand(bot, message, args, group) {
 		if (!tagLine) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça um Riot ID completo com tagline (ex: NomeJogador#ABC)"
+				content: "Falta a tag do Riot ID! Exemplo: `NomeJogador#ABC`"
 			});
 		}
 

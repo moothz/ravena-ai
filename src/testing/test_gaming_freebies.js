@@ -20,7 +20,8 @@ const {
 	checkAndNotifyFreeGames
 } = require("../functions/GamingFreebies");
 
-const database = Database.getInstance({ testMode: true });
+const database = Database.getInstance({ testMode: false });
+database.testMode = false;
 const DB_NAME = "gaming_freebies";
 
 async function runTests() {
@@ -118,7 +119,7 @@ async function runTests() {
 	// 3. Mock e Execução de !0800 / !jogos-free
 	// -------------------------------------------------------------
 	console.log("\n[3] Testando execução do comando !0800...");
-	const bot = new FakeBot({ id: "bot-test", isConnected: true });
+	const bot = new FakeBot({ id: "bot-test", isConnected: true, testMode: false });
 	const testGroup = {
 		id: "120363000000000000@g.us",
 		name: "Grupo Gamer Teste",

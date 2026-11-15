@@ -31,14 +31,13 @@ async function ocrCommand(bot, message, args, group) {
 				return new ReturnMessage({
 					chatId,
 					content:
-						"⚠️ Não foi possível recuperar a mídia da mensagem marcada. Ela pode ter saído do cache ou o download falhou.",
+						"⚠️ Não consegui baixar a imagem da mensagem citada. Ela pode ter expirado ou saído do cache.",
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
 			return new ReturnMessage({
 				chatId,
-				content:
-					"❌ Por favor, envie uma imagem com o comando ou responda a uma imagem usando !ocr.",
+				content: "❌ Manda uma imagem com o comando ou responde a uma foto com `!ocr`.",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -80,7 +79,7 @@ async function ocrCommand(bot, message, args, group) {
 		if (!response || response.trim().length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "⚠️ Não consegui extrair nenhum texto desta imagem.",
+				content: "⚠️ Não achei nenhum texto legível nessa imagem.",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -97,7 +96,7 @@ async function ocrCommand(bot, message, args, group) {
 		logger.error("[ocrCommand] Error in OCR processing:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao processar o OCR. Tente novamente mais tarde.",
+			content: "❌ Deu ruim ao processar o OCR. Tenta de novo daqui a pouco!",
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}

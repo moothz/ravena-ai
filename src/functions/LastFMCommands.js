@@ -178,7 +178,7 @@ async function processLastFM(usuario) {
 			// Alguma requisição falhou
 			return new ReturnMessage({
 				chatId: null, // Será definido pelo CommandHandler
-				content: `*lastm.fm*: Ocorreu um erro buscando os dados do perfil '${usuario}'. Verifique o nome e tente novamente.`,
+				content: `❌ *Last.fm:* Não consegui encontrar o perfil '${usuario}'. Confere o nome de usuário e tenta de novo!`,
 				reactions: {
 					after: "❌"
 				},
@@ -192,7 +192,7 @@ async function processLastFM(usuario) {
 
 		return new ReturnMessage({
 			chatId: null, // Será definido pelo CommandHandler
-			content: `*lastm.fm*: Ocorreu um erro inesperado ao buscar os dados do perfil '${usuario}'.`,
+			content: `❌ *Last.fm:* Deu ruim ao buscar os dados de '${usuario}'. Tenta de novo em instantes!`,
 			reactions: {
 				after: "❌"
 			},
@@ -219,7 +219,7 @@ async function lastfmCommand(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Por favor, forneça um nome de usuário do Last.fm. Exemplo: `!lastfm username`",
+				content: "❌ Me passa o usuário do Last.fm. Exemplo: `!lastfm username`",
 				reactions: {
 					after: "❓"
 				}
@@ -250,7 +250,7 @@ async function lastfmCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao executar o comando. Por favor, tente novamente mais tarde.",
+			content: "❌ Não consegui consultar o Last.fm agora. Tenta de novo daqui a pouco!",
 			reactions: {
 				after: "❌"
 			}

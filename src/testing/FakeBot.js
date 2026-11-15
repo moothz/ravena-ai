@@ -93,8 +93,11 @@ class FakeBot {
 		// DB compartilhado com o sistema real (leitura), testMode bloqueia escritas
 		this.database = Database.getInstance({
 			disableBackup: true,
-			testMode: true
+			testMode: options.testMode ?? true
 		});
+		if (options.testMode !== undefined) {
+			this.database.testMode = options.testMode;
+		}
 		this.database.registerBotInstance(this);
 
 		// Sistema de invite desabilitado

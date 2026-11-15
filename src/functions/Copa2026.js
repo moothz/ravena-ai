@@ -701,7 +701,7 @@ async function copaTimes(bot, message, args, group) {
 		logger.error("Erro em copaTimes:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar times: ${error.message}`,
+			content: `❌ Não consegui buscar a lista de times agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -715,7 +715,7 @@ async function copaTime(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Use: `!copa-time <nome>`\nEx: `!copa-time brasil`, `!copa-time argentina`, `!copa-time franca`",
+					"❌ Me passa o nome da seleção! Exemplo: `!copa-time brasil` ou `!copa-time argentina`",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -734,8 +734,8 @@ async function copaTime(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					`❌ Time "${rawInput}" não encontrado.\n\n` +
-					`💡 Tente com o nome em português ou inglês. Times disponíveis:\n${known}`,
+					`❌ Seleção "${rawInput}" não encontrada.\n\n` +
+					`Tenta usar o nome em português ou inglês. Times disponíveis:\n${known}`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -756,7 +756,7 @@ async function copaTime(bot, message, args, group) {
 		logger.error("Erro em copaTime:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar time: ${error.message}`,
+			content: `❌ Não consegui buscar as informações da seleção agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -794,7 +794,7 @@ async function copaGrupos(bot, message, args, group) {
 		logger.error("Erro em copaGrupos:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar grupos: ${error.message}`,
+			content: `❌ Não consegui puxar a tabela dos grupos agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -807,7 +807,7 @@ async function copaGrupo(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Use: `!copa-grupo <letra>`\nEx: `!copa-grupo C`",
+				content: "❌ Me passa a letra do grupo! Exemplo: `!copa-grupo C`",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -822,7 +822,7 @@ async function copaGrupo(bot, message, args, group) {
 		if (!groupData) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Grupo "${letter}" não encontrado. Use A-L.`,
+				content: `❌ Grupo "${letter}" não encontrado. Escolha entre A e L!`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -874,7 +874,7 @@ async function copaGrupo(bot, message, args, group) {
 		logger.error("Erro em copaGrupo:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar grupo: ${error.message}`,
+			content: `❌ Não consegui puxar as informações do grupo agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -899,7 +899,7 @@ async function copaJogos(bot, message, args, group) {
 			if (groupGames.length === 0) {
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Grupo "${filterGroup}" não encontrado. Use A-L.`,
+					content: `❌ Grupo "${filterGroup}" não encontrado. Escolha entre A e L!`,
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
@@ -938,7 +938,7 @@ async function copaJogos(bot, message, args, group) {
 		if (upcoming.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "⚽ Nenhum jogo futuro encontrado. A Copa pode ter encerrado!",
+				content: "⚽ Nenhum jogo futuro na tabela. A Copa pode já ter terminado!",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -993,7 +993,7 @@ async function copaJogos(bot, message, args, group) {
 		logger.error("Erro em copaJogos:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar jogos: ${error.message}`,
+			content: `❌ Não consegui carregar os jogos agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -1006,7 +1006,7 @@ async function copaJogo(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Use: `!copa-jogo <id>`\nEx: `!copa-jogo 1`",
+				content: "❌ Me passa o ID da partida! Exemplo: `!copa-jogo 1`",
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -1074,7 +1074,7 @@ async function copaJogo(bot, message, args, group) {
 		logger.error("Erro em copaJogo:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar jogo: ${error.message}`,
+			content: `❌ Não consegui carregar os detalhes do jogo agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -1115,7 +1115,7 @@ async function copaEstadios(bot, message, args, group) {
 		logger.error("Erro em copaEstadios:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao buscar estádios: ${error.message}`,
+			content: `❌ Não consegui buscar a lista de estádios agora. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}
@@ -1150,8 +1150,7 @@ async function copaSeguir(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"❌ Use: `!copa-seguir <nome>`\n" +
-					"Ex: `!copa-seguir brasil`, `!copa-seguir argentina`" +
+					"❌ Me passa o nome da seleção pra seguir ou deixar de seguir! Exemplo: `!copa-seguir brasil`" +
 					followedListStr +
 					`\n\n> ${chatId}`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
@@ -1171,8 +1170,8 @@ async function copaSeguir(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					`❌ Time "${rawInput}" não encontrado.\n\n` +
-					`💡 Tente com o nome em português ou inglês. Ex: brasil, argentina, franca.`,
+					`❌ Seleção "${rawInput}" não encontrada.\n\n` +
+					`Tenta usar o nome em português ou inglês (ex: brasil, argentina, franca).`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -1216,7 +1215,7 @@ async function copaSeguir(bot, message, args, group) {
 		logger.error("Erro em copaSeguir:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao processar comando: ${error.message}`,
+			content: `❌ Deu ruim ao atualizar as notificações. (${error.message})`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}

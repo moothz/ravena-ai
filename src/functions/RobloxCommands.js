@@ -98,7 +98,7 @@ async function getRobloxPlayerData(username) {
 
 		const searchData = userSearchResponse.data?.data;
 		if (!searchData || searchData.length === 0) {
-			throw new Error(`Usuário "${username}" não encontrado no Roblox.`);
+			throw new Error(`Jogador "${username}" não encontrado no Roblox.`);
 		}
 
 		const user = searchData[0];
@@ -225,9 +225,10 @@ async function getRobloxPlayerData(username) {
 		// Tratamento de erros amigáveis de rede/timeout
 		let friendlyMessage = apiError.message;
 		if (apiError.message.includes("EPIPE") || apiError.message.includes("ECONNRESET")) {
-			friendlyMessage = "Conexão instável com a Roblox. Tente novamente em breve.";
+			friendlyMessage = "Conexão instável com o Roblox. Tenta de novo daqui a pouco!";
 		} else if (apiError.message.includes("timeout")) {
-			friendlyMessage = "Servidor Roblox demorou muito para responder (Tempo limite excedido).";
+			friendlyMessage =
+				"Os servidores do Roblox demoraram pra responder. Tenta de novo em instantes!";
 		}
 		throw new Error(friendlyMessage);
 	}
@@ -248,7 +249,7 @@ async function handleRobloxCommand(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça o nome de usuário do Roblox. Exemplo: !roblox builderman"
+				content: "Me passa o nick do Roblox. Exemplo: `!roblox builderman`"
 			});
 		}
 

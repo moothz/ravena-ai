@@ -160,7 +160,7 @@ async function horoscopoCommand(bot, message, args, group) {
 		if (!parsedDate || parsedDate.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Data não reconhecida. Tente usar formatos como "hoje", "ontem", "31/10/2025".`,
+				content: `❌ Não entendi essa data! Tenta usar termos como "hoje", "ontem" ou no formato "DD/MM/AAAA".`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -186,7 +186,7 @@ async function horoscopoCommand(bot, message, args, group) {
 		if (rows.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `😴 Nenhum horóscopo encontrado para ${formattedDate}.`,
+				content: `😴 Não achei previsões do horóscopo pra ${formattedDate}.`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -203,7 +203,7 @@ async function horoscopoCommand(bot, message, args, group) {
 				const signoInfo = signos[signoAlvo];
 				responseText += `${signoInfo.emoji} *${signoInfo.nome}:* ${texto}`;
 			} else {
-				responseText += `Não encontrei o horóscopo para *${signoQuery}* nesta data. Mostrando todos os disponíveis:\n\n`;
+				responseText += `Não achei previsão específica pra *${signoQuery}* nessa data. Segue o horóscopo dos outros signos:\n\n`;
 				showAll = true;
 			}
 		} else {
@@ -223,7 +223,7 @@ async function horoscopoCommand(bot, message, args, group) {
 			if (!foundAny) {
 				return new ReturnMessage({
 					chatId,
-					content: `😴 Nenhum horóscopo encontrado para ${formattedDate}.`,
+					content: `😴 Não achei previsões do horóscopo pra ${formattedDate}.`,
 					options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 				});
 			}
@@ -238,7 +238,7 @@ async function horoscopoCommand(bot, message, args, group) {
 		logger.error("Erro ao executar comando horoscopo:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao buscar o horóscopo.",
+			content: "❌ Deu ruim ao buscar o horóscopo. Tenta de novo em instantes!",
 			reaction: "❌"
 		});
 	}

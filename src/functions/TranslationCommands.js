@@ -555,9 +555,9 @@ async function handleTranslation(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça o idioma de destino e o texto a ser traduzido.\n" +
-					"Exemplo: !traduzir pt en Olá, mundo!\n" +
-					"Ou responda a uma mensagem com: !traduzir pt en",
+					"Passa o idioma de origem, o de destino e o texto pra traduzir.\n" +
+					"Exemplo: `!traduzir pt en Olá, mundo!`\n" +
+					"Ou responde a uma mensagem com: `!traduzir pt en`",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -576,8 +576,8 @@ async function handleTranslation(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					`Idioma de origem não reconhecido: "${args[0]}".\n` +
-					"Exemplo de idiomas suportados: en (inglês), es (espanhol), fr (francês), etc.",
+					`Não reconheci o idioma de origem "${args[0]}".\n` +
+					"Exemplos válidos: `pt`, `en`, `es`, `fr`, etc.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -589,8 +589,8 @@ async function handleTranslation(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					`Idioma desejado não reconhecido: "${args[1]}".\n` +
-					"Exemplo de idiomas suportados: en (inglês), es (espanhol), fr (francês), etc.",
+					`Não reconheci o idioma de destino "${args[1]}".\n` +
+					"Exemplos válidos: `pt`, `en`, `es`, `fr`, etc.",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -607,7 +607,7 @@ async function handleTranslation(bot, message, args, group) {
 				if (!quotedMsg) {
 					return new ReturnMessage({
 						chatId,
-						content: "Por favor, responda a uma mensagem ou forneça um texto para traduzir.",
+						content: "Responde a uma mensagem ou digita o texto que você quer traduzir!",
 						options: {
 							quotedMessageId: message.origin.id._serialized,
 							goReply: message.origin
@@ -620,7 +620,7 @@ async function handleTranslation(bot, message, args, group) {
 				logger.error("Erro ao obter mensagem citada:", error);
 				return new ReturnMessage({
 					chatId,
-					content: "Erro ao obter a mensagem citada. Por favor, tente novamente.",
+					content: "Não consegui ler a mensagem citada. Tenta de novo!",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -635,7 +635,7 @@ async function handleTranslation(bot, message, args, group) {
 		if (!textToTranslate || textToTranslate.trim() === "") {
 			return new ReturnMessage({
 				chatId,
-				content: "Texto vazio. Por favor, forneça um texto para traduzir.",
+				content: "Texto vazio. Manda o que você quer traduzir!",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -663,7 +663,7 @@ async function handleTranslation(bot, message, args, group) {
 		logger.error("Erro no comando de tradução:", error);
 		return new ReturnMessage({
 			chatId,
-			content: `Erro ao traduzir o texto. Por favor, tente novamente.\n${error.message}`
+			content: `❌ Não consegui traduzir o texto agora. Tenta de novo daqui a pouco!\n${error.message}`
 		});
 	}
 }

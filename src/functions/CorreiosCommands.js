@@ -240,7 +240,7 @@ async function correiosCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"📦 *Rastreio de Objetos (Correios)*\n\nUso: !correios [CÓDIGO] [DESCRIÇÃO]\nExemplo: !correios NA123456789BR Monitor Novo\n\nComandos extras:\n!correios-lista\n!correios-del [CÓDIGO]",
+				"📦 *Rastreio de Objetos (Correios)*\n\nUso: *!correios [CÓDIGO] [DESCRIÇÃO]*\nExemplo: *!correios NA123456789BR Monitor Novo*\n\nComandos extras:\n!correios-lista\n!correios-del [CÓDIGO]",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -251,7 +251,7 @@ async function correiosCommand(bot, message, args, group) {
 	if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(code)) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Formato de código inválido. Use o padrão (ex: AA123456789BR).",
+			content: "❌ Formato de código inválido! O padrão dos Correios é tipo *AA123456789BR*.",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -298,7 +298,7 @@ async function correiosCommand(bot, message, args, group) {
 					content:
 						`📋 *Pacote:* ${existing.description}\n` +
 						`🔢 *Código:* \`${existing.code}\`\n\n` +
-						`⚠️ Ainda não há dados de rastreamento para este objeto.`,
+						`⚠️ Ainda não constam dados de rastreamento pra esse pacote nos Correios.`,
 					options: { quotedMessageId: message.origin.id._serialized }
 				});
 			}
@@ -353,7 +353,7 @@ async function correiosCommand(bot, message, args, group) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				`✅ *Rastreio Adicionado com Sucesso!*\n\n` +
+				`✅ *Rastreio Cadastrado!*\n\n` +
 				`📋 *Pacote:* ${description}\n` +
 				`🔢 *Código:* \`${code}\`\n\n` +
 				`${statusEmoji} *Status Atual:* ${lastText}\n` +
@@ -366,7 +366,7 @@ async function correiosCommand(bot, message, args, group) {
 		logger.error("Error in correiosCommand:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao adicionar rastreio.",
+			content: "❌ Deu ruim ao cadastrar o rastreio. Tenta de novo!",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -386,7 +386,7 @@ async function correiosListaCommand(bot, message, args, group) {
 		if (tracks.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "📭 Nenhum pacote sendo rastreado neste chat.",
+				content: "📭 Nenhum pacote sendo rastreado por aqui no momento.",
 				options: { quotedMessageId: message.origin.id._serialized }
 			});
 		}
@@ -456,7 +456,7 @@ async function correiosListaCommand(bot, message, args, group) {
 		logger.error("Error in correiosListaCommand:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao listar pacotes.",
+			content: "❌ Deu ruim ao listar os pacotes rastreados.",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -471,7 +471,8 @@ async function correiosDelCommand(bot, message, args, group) {
 	if (args.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Informe o código que deseja remover. Ex: !correios-del NA123456789BR",
+			content:
+				"❌ Manda o código que você quer parar de rastrear. Ex: *!correios-del NA123456789BR*",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -498,13 +499,13 @@ async function correiosDelCommand(bot, message, args, group) {
 			}
 			return new ReturnMessage({
 				chatId,
-				content: `✅ Rastreio do código \`${code}\` removido com sucesso.`,
+				content: `✅ Rastreio do pacote \`${code}\` foi removido!`,
 				options: { quotedMessageId: message.origin.id._serialized }
 			});
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `⚠️ Código \`${code}\` não encontrado no rastreio deste chat.`,
+				content: `⚠️ O código \`${code}\` não tá na lista de rastreios daqui.`,
 				options: { quotedMessageId: message.origin.id._serialized }
 			});
 		}
@@ -512,7 +513,7 @@ async function correiosDelCommand(bot, message, args, group) {
 		logger.error("Error in correiosDelCommand:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao remover rastreio.",
+			content: "❌ Deu ruim ao remover o rastreio. Tenta de novo!",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}

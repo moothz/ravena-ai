@@ -39,7 +39,7 @@ async function metarCommand(bot, message, args, group) {
 		if (!args.length) {
 			return new ReturnMessage({
 				chatId,
-				content: "🛄 Informe o código ICAO do aeroporto. Exemplo: !metar SBGR",
+				content: "🛄 Me passa o código ICAO do aeroporto. Exemplo: `!metar SBGR`",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -53,7 +53,7 @@ async function metarCommand(bot, message, args, group) {
 		if (!metar || metar.toLowerCase().includes("no data found")) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível encontrar o METAR para "${icao}".`,
+				content: `❌ Não achei nenhum boletim METAR para "${icao}".`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -73,7 +73,7 @@ async function metarCommand(bot, message, args, group) {
 		logger.error("Erro ao executar comando metar:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao buscar o METAR. Por favor, tente novamente mais tarde."
+			content: "❌ Não consegui consultar o METAR agora. Tenta de novo daqui a pouco!"
 		});
 	}
 }

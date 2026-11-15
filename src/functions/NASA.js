@@ -173,7 +173,7 @@ async function apodCommand(bot, message, args, group) {
 		});
 	} catch (error) {
 		logAxiosError("Erro no comando APOD", error);
-		let errorMsg = "❌ Não foi possível buscar o APOD. Verifique a data e tente novamente.";
+		let errorMsg = "❌ Não consegui buscar a foto da NASA (APOD). Confere a data e tenta de novo!";
 		if (error.response && error.response.data && error.response.data.msg) {
 			errorMsg = `❌ Erro da NASA: ${error.response.data.msg}`;
 		}
@@ -207,7 +207,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 		if (!data || data.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Nenhuma imagem EPIC encontrada para esta data.`,
+				content: `❌ Nenhuma foto EPIC da Terra encontrada pra essa data.`,
 				options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 			});
 		}
@@ -256,7 +256,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 		logAxiosError(`Erro no comando EPIC (${variant})`, error);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Não foi possível buscar a imagem EPIC. Tente novamente.`,
+			content: `❌ Não consegui carregar a imagem EPIC agora. Tenta de novo em instantes!`,
 			options: { quotedMessageId: message.origin.id._serialized, goReply: message.origin }
 		});
 	}

@@ -308,7 +308,7 @@ async function gamingFreebiesCommand(bot, message, args, group) {
 		logger.error("Erro ao buscar giveaways:", error);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao buscar brindes de jogos. Tente novamente mais tarde.",
+			content: "❌ Não consegui buscar os brindes de jogos agora. Tenta de novo daqui a pouco!",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

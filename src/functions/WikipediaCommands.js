@@ -28,7 +28,7 @@ async function buscarWikipedia(bot, message, args, group) {
 		if (args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "Por favor, forneça um termo para buscar na Wikipedia. Exemplo: !wiki Brasil"
+				content: "Me passa o termo que você quer pesquisar na Wikipedia. Exemplo: `!wiki Brasil`"
 			});
 		}
 
@@ -63,7 +63,7 @@ async function buscarWikipedia(bot, message, args, group) {
 		) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Não foi possível encontrar informações sobre "${termo}" na Wikipedia.`
+				content: `❌ Não achei nada sobre "${termo}" na Wikipedia.`
 			});
 		}
 
@@ -79,7 +79,7 @@ async function buscarWikipedia(bot, message, args, group) {
 			if (!data || !data.title) {
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao buscar informações detalhadas sobre "${termo}".`
+					content: `❌ Não consegui puxar os detalhes sobre "${termo}".`
 				});
 			}
 
@@ -160,12 +160,12 @@ async function buscarWikipedia(bot, message, args, group) {
 			if (summaryError.response && summaryError.response.status === 404) {
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Não foi possível encontrar uma página completa sobre "${termo}" na Wikipedia.`
+					content: `❌ Não encontrei uma página completa sobre "${termo}" na Wikipedia.`
 				});
 			} else {
 				return new ReturnMessage({
 					chatId,
-					content: `❌ Erro ao buscar informações detalhadas sobre "${termo}". Tente novamente mais tarde.`
+					content: `❌ Não consegui puxar as informações sobre "${termo}" agora. Tenta de novo em instantes!`
 				});
 			}
 		}
@@ -173,16 +173,17 @@ async function buscarWikipedia(bot, message, args, group) {
 		logger.error("Erro geral ao buscar Wikipedia:", error);
 
 		const chatId = message.group ?? message.author;
-		let errorMessage = "Erro ao buscar informações da Wikipedia. Por favor, tente novamente.";
+		let errorMessage = "Não consegui consultar a Wikipedia agora. Tenta de novo daqui a pouco!";
 
 		if (error.response) {
 			// Trata códigos de erro específicos
 			const status = error.response.status;
 
 			if (status === 404) {
-				errorMessage = `Não foi possível encontrar informações sobre "${args.join(" ")}" na Wikipedia.`;
+				errorMessage = `Não achei informações sobre "${args.join(" ")}" na Wikipedia.`;
 			} else if (status === 429) {
-				errorMessage = "Muitas solicitações à Wikipedia. Por favor, tente novamente mais tarde.";
+				errorMessage =
+					"Muitas consultas à Wikipedia seguidas. Dá uma segurada e tenta de novo daqui a pouco!";
 			}
 		}
 
@@ -229,7 +230,7 @@ const helper = {
  */
 async function fetchWikiSummary(query) {
 	if (!query || typeof query !== "string" || query.trim().length === 0) {
-		return "Por favor, especifique um termo para buscar na Wikipedia.";
+		return "Me passa um termo pra pesquisar na Wikipedia.";
 	}
 
 	const termo = query.trim();

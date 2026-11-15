@@ -238,7 +238,7 @@ async function newsCommand(bot, message, args, group) {
 							const stringDatasDisponiveis = await getStringMunewsDisponiveis();
 							return new ReturnMessage({
 								chatId,
-								content: `❌ Formato de data não reconhecido. Tente usar formatos como "hoje", "ontem", "segunda-feira passada", "19/04/2025" ou "YYYY-MM-DD".\n\n${stringDatasDisponiveis}`,
+								content: `❌ Não entendi esse formato de data. Tenta usar coisas como "hoje", "ontem", "segunda-feira passada", "19/04/2025" ou "YYYY-MM-DD".\n\n${stringDatasDisponiveis}`,
 								options: {
 									quotedMessageId: message.origin.id._serialized,
 									goReply: message.origin
@@ -272,7 +272,7 @@ async function newsCommand(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId,
-				content: `ℹ️ *MuNews não encontrada para ${formattedDate}*\n\nAs MuNews geralmente chegam entre 06:00 e 7:30 da manhã. Tente novamente mais tarde ou verifique a data informada.\n\n${stringDatasDisponiveis}`,
+				content: `ℹ️ *MuNews não encontrada para ${formattedDate}*\n\nAs edições costumam sair entre 06:00 e 07:30 da manhã. Dá uma conferida na data ou tenta de novo mais tarde!\n\n${stringDatasDisponiveis}`,
 				reaction: "😴",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
@@ -285,7 +285,7 @@ async function newsCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Ocorreu um erro ao buscar as MuNews. Por favor, tente novamente mais tarde.",
+			content: "❌ Não consegui buscar a MuNews agora. Tenta de novo em instantes!",
 			reaction: "❌"
 		});
 	}
