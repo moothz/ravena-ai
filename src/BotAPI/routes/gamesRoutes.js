@@ -19,6 +19,7 @@
  * @param {Object} api - Instância da BotAPI
  */
 
+const telemetry = require("../../telemetry");
 const ShadowGardenBonusService = require("../../services/ShadowGardenBonusService");
 const FishingGame = require("../../functions/FishingGame");
 const bankService = require("../../services/BankService");
@@ -113,6 +114,7 @@ function registerGamesRoutes(api) {
 
 		try {
 			const userId = String(req.body?.userId || "").replace(/\D/g, "");
+			telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
 			if (!userId) {
 				return res.status(422).json({ ok: false, error: "userId é obrigatório." });
 			}
@@ -122,7 +124,13 @@ function registerGamesRoutes(api) {
 				`[gamesRoutes] Colheita do Jardim para ${userId} (${harvested.length} tipo(s) de planta). Reconciliando bônus.`
 			);
 
-			const credited = await ShadowGardenBonusService.reconcileHarvestBonus(userId);
+			const credited = await telemetry.withSpan("fazenda harvest.reconcile", () =>
+				ShadowGardenBonusService.reconcileHarvestBonus(userId)
+			);
+			telemetry.setAttrs({
+				"ravena.fazenda.credited_count": credited.length,
+				"ravena.fazenda.harvested_types": harvested.length
+			});
 
 			if (credited.length > 0) {
 				const delivered = await sendGameNotice(

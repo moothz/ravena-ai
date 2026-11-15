@@ -1,0 +1,56 @@
+# Jaeger v2 — armazenamento (Badger em disco, retenção configurável) + UI.
+# Recebe traces só do otel-collector (rede interna). A aba "Monitor" (SPM) lê as métricas RED do Prometheus.
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    resource:
+      service.name: jaeger
+    logs:
+      level: warn
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+  jaeger_query:
+    enable_tracing: false   # não rastrear as próprias consultas da UI/API (apareciam como serviço "jaeger")
+    ui:
+      config_file: /etc/jaeger/jaeger-ui.json
+    storage:
+      traces: badger_store
+      metrics: prom_store
+  jaeger_storage:
+    backends:
+      badger_store:
+        badger:
+          directories:
+            keys: /badger/keys
+            values: /badger/values
+          ephemeral: false
+          ttl:
+            spans: ${env:JAEGER_RETENTION:-168h}
+    metric_backends:
+      prom_store:
+        prometheus:
+          endpoint: http://prometheus:9090
+          normalize_calls: true
+          normalize_duration: true
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: badger_store

@@ -1,0 +1,11 @@
+apiVersion: 1
+# Só Prometheus: o Jaeger 2.23 removeu a API HTTP interna /api/services e /api/traces (busca),
+# que o datasource Jaeger do Grafana usa. Os traces são vistos na UI do Jaeger (http://localhost:16686);
+# os painéis do Grafana têm links para lá.
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true

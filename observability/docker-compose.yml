@@ -1,0 +1,131 @@
+# Stack de observabilidade do ecossistema Ravena (ravena-ai + waifuletes + jardim-das-sombras).
+# Subir:   docker compose -f observability/docker-compose.yml up -d
+# UIs:     Jaeger http://localhost:16686  |  Grafana http://localhost:3001  |  Prometheus http://localhost:9091
+# Os serviços exportam para http://host.docker.internal:4318 (OTLP/HTTP) — ver OBSERVABILITY.md.
+#
+# SEGURANÇA: os traces guardam telefone/ID de usuário e ID de grupo. Nada aqui pode ser alcançável
+# de fora do host. As UIs ficam em 127.0.0.1 (acesso remoto só por túnel SSH); o Jaeger não tem
+# login. Portas publicadas pelo Docker ignoram ufw/iptables do host, então não troque os binds por
+# 0.0.0.0. Defina GRAFANA_ADMIN_PASSWORD em observability/.env antes de subir.
+name: ravena-observability
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    container_name: obs-otel-collector
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # OTLP/HTTP (só a 4318; os serviços exportam http/protobuf, sem autenticação). Os containers
+      # dos outros composes chegam aqui por host.docker.internal (host-gateway).
+      # - Linux nativo (servidor): OTEL_BIND_ADDR=172.17.0.1 (gateway da bridge docker0), alcançável
+      #   pelos containers e invisível na LAN/internet. Com 127.0.0.1 os containers não alcançam.
+      # - Docker Desktop (Windows/macOS/WSL): o padrão 127.0.0.1 funciona.
+      # Nunca use 0.0.0.0: qualquer um na rede poderia injetar ou inundar traces.
+      # Sem healthcheck: a imagem é distroless.
+      - "${OTEL_BIND_ADDR:-127.0.0.1}:4318:4318"
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    container_name: obs-jaeger
+    restart: unless-stopped
+    logging: *default-logging
+    user: "0"   # o volume nomeado nasce com dono root; o Badger precisa escrever nele
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    environment:
+      JAEGER_RETENTION: ${JAEGER_RETENTION:-168h}
+    volumes:
+      - ./jaeger.yaml:/etc/jaeger/config.yaml:ro
+      - ./jaeger-ui.json:/etc/jaeger/jaeger-ui.json:ro
+      - jaeger-badger:/badger
+    ports:
+      - "127.0.0.1:16686:16686"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:13133/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    container_name: obs-prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9091}:9090"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    container_name: obs-grafana
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Sem acesso anônimo e sem senha padrão: o compose não sobe sem GRAFANA_ADMIN_PASSWORD.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD em observability/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_THEME: dark
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ravena-red.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  jaeger-badger:
+  prometheus-data:
+  grafana-data:

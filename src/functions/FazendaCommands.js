@@ -6,6 +6,7 @@
  */
 
 const sharp = require("sharp");
+const telemetry = require("../telemetry");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Logger = require("../utils/Logger");
@@ -725,7 +726,17 @@ async function handleFazenda(bot, message, _args, group) {
 
 		// Envia a imagem com a legenda principal se tiver, ou apenas texto se falhou a imagem
 		if (imageBuffer) {
-			const finalBuffer = await optimizeFarmImage(imageBuffer, wantsHq);
+			const finalBuffer = await telemetry.withSpan(
+				"image optimize",
+				{
+					attributes: {
+						"ravena.image.kind": "farm",
+						"ravena.image.hq": Boolean(wantsHq),
+						"ravena.image.input_bytes": imageBuffer?.length
+					}
+				},
+				() => optimizeFarmImage(imageBuffer, wantsHq)
+			);
 			returns.push(
 				replyReturnMessage(
 					chatId,

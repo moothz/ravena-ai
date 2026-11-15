@@ -3630,4 +3630,123 @@ class LLMService {
 	}
 }
 
+// ─────────────────────────────────────────────────────────────
+// OpenTelemetry (no-op se desligado). Envolve os métodos sem mexer no corpo da classe:
+//  - getCompletion → span "llm.request" (fila, tentativas); a tarefa enfileirada mantém o contexto
+//  - *Completion   → span GenAI CLIENT "chat {modelo}" (provider, modelo, tokens, rodadas de tool)
+//  - executeToolCall → span "execute_tool {ferramenta}"
+// Prompt, mensagens e respostas NUNCA entram em atributos (conteúdo GenAI é opt-in e fica desligado).
+// ─────────────────────────────────────────────────────────────
+{
+	const telemetry = require("../telemetry");
+	const proto = LLMService.prototype;
+
+	const origGetCompletion = proto.getCompletion;
+	proto.getCompletion = function (options = {}) {
+		if (!telemetry.isEnabled()) return origGetCompletion.call(this, options);
+		return telemetry.withSpan(
+			"llm.request",
+			{
+				attributes: {
+					"ravena.llm.priority": options.priority ?? 0,
+					"ravena.llm.queued": !(options.bypassQueue || options.isSubRequest),
+					"ravena.llm.provider_pinned": options.provider || undefined,
+					"ravena.llm.has_image": Boolean(options.image || options.images?.length),
+					"ravena.llm.tool_calling": options.toolCalling === true
+				}
+			},
+			() => {
+				// A fila executa a tarefa no contexto de quem a drenou; amarra o contexto deste pedido.
+				if (this.queue && !this.queue.__otelPatched) {
+					const queue = this.queue;
+					const origAdd = queue.add.bind(queue);
+					queue.add = (task, opts) => {
+						const enqueuedAt = Date.now();
+						const bound = telemetry.context.bind(telemetry.context.active(), async (...a) => {
+							telemetry.addEvent("llm.dequeued", {
+								"ravena.llm.queue_wait_ms": Date.now() - enqueuedAt
+							});
+							telemetry.setAttrs({ "ravena.llm.queue_wait_ms": Date.now() - enqueuedAt });
+							return task(...a);
+						});
+						return origAdd(bound, opts);
+					};
+					queue.__otelPatched = true;
+				}
+				return origGetCompletion.call(this, options);
+			}
+		);
+	};
+
+	const PROVIDER_KIND = {
+		openaiCompletion: "openai",
+		openrouterCompletion: "openrouter",
+		ollamaCompletion: "ollama"
+	};
+	for (const [method, kind] of Object.entries(PROVIDER_KIND)) {
+		const orig = proto[method];
+		if (typeof orig !== "function") continue;
+		proto[method] = function (options = {}) {
+			if (!telemetry.isEnabled()) return orig.call(this, options);
+			const model = options.model || "unknown";
+			return telemetry.withSpan(
+				`chat ${model}`,
+				{
+					kind: telemetry.SpanKind.CLIENT,
+					attributes: {
+						"gen_ai.operation.name": "chat",
+						"gen_ai.provider.name": kind,
+						"gen_ai.request.model": model,
+						"ravena.llm.provider": options.providerName || kind
+					}
+				},
+				() => orig.call(this, options)
+			);
+		};
+	}
+
+	const origTrack = proto._trackUsage;
+	proto._trackUsage = function (provider, response, model, options, isSuccess = true) {
+		const span = telemetry.activeSpan();
+		if (
+			telemetry.isEnabled() &&
+			span &&
+			span.isRecording() &&
+			span.attributes?.["gen_ai.operation.name"]
+		) {
+			try {
+				const u = response?.usage || {};
+				const inTok = u.prompt_tokens ?? response?.prompt_eval_count ?? 0;
+				const outTok = u.completion_tokens ?? response?.eval_count ?? 0;
+				const prev = span.attributes;
+				span.setAttributes({
+					"gen_ai.usage.input_tokens":
+						(prev["gen_ai.usage.input_tokens"] || 0) + (Number(inTok) || 0),
+					"gen_ai.usage.output_tokens":
+						(prev["gen_ai.usage.output_tokens"] || 0) + (Number(outTok) || 0),
+					"ravena.llm.rounds": (prev["ravena.llm.rounds"] || 0) + 1
+				});
+				if (response?.model) span.setAttribute("gen_ai.response.model", String(response.model));
+				if (model && model !== prev["gen_ai.request.model"]) {
+					span.setAttribute("gen_ai.request.model", String(model));
+					span.updateName(`chat ${model}`);
+				}
+				if (!isSuccess) span.setAttribute("app.outcome", "error");
+			} catch {}
+		}
+		return origTrack.call(this, provider, response, model, options, isSuccess);
+	};
+
+	const origTool = proto.executeToolCall;
+	proto.executeToolCall = function (fnName, args = {}, options = {}) {
+		if (!telemetry.isEnabled()) return origTool.call(this, fnName, args, options);
+		const name = String(fnName || "unknown").slice(0, 64);
+		return telemetry.withSpan(
+			`execute_tool ${name}`,
+			{ attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name } },
+			() => origTool.call(this, fnName, args, options)
+		);
+	};
+}
+
 module.exports = LLMService;

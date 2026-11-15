@@ -1,4 +1,31 @@
 const CommandHandler = require("./CommandHandler");
+const telemetry = require("./telemetry");
+
+/** Atributos do span de mensagem recebida — sem texto/nome; usuário e chat só como ID. */
+function messageSpanAttributes(bot, message) {
+	if (!telemetry.isEnabled()) return undefined;
+	const platform = message?.platform || "whatsapp";
+	const ts = Number(message?.timestamp);
+	const lagMs =
+		Number.isFinite(ts) && ts > 1e9 ? Date.now() - (ts < 1e12 ? ts * 1000 : ts) : undefined;
+	const userId = telemetry.userIdAttr(message?.author || message?.authorAlt);
+	const altId = telemetry.userIdAttr(message?.authorAlt);
+	return {
+		"messaging.system": platform,
+		"messaging.operation.type": "process",
+		"messaging.operation.name": "process",
+		"ravena.bot.platform": platform,
+		"ravena.bot.id": bot?.id,
+		"ravena.chat.type": message?.group ? "group" : "private",
+		"ravena.message.type": message?.type,
+		"ravena.message.has_media": Boolean(message?.hasMedia),
+		"ravena.message.lag_ms": lagMs !== undefined && lagMs >= 0 && lagMs < 864e5 ? lagMs : undefined,
+		"ravena.chat.id": telemetry.chatIdAttr(message?.group || message?.from),
+		"ravena.user.id": userId,
+		// LID (ou telefone) alternativo quando a plataforma manda os dois: liga as duas identidades
+		"ravena.user.alt_id": altId && altId !== userId ? altId : undefined
+	};
+}
 const Database = require("./utils/Database");
 const Group = require("./models/Group");
 const Logger = require("./utils/Logger");
@@ -336,10 +363,24 @@ class EventHandler extends EventEmitter {
 	 */
 	onMessage(bot, message) {
 		this.emit("activity", { type: "message", botId: bot.id });
-		// Processa mensagem sem aguardar para evitar bloquear a thread de eventos
-		this.processMessage(bot, message).catch((error) => {
-			this.logger.error("Erro em processMessage:", error);
-		});
+		// Processa mensagem sem aguardar para evitar bloquear a thread de eventos.
+		// Span raiz de negócio (no-op se o OpenTelemetry estiver desligado). Comandos disparados
+		// a partir daqui viram spans filhos. Sem texto nem nome: chat/usuário só como ID.
+		telemetry
+			.withSpan(
+				"chat.message process",
+				{ kind: telemetry.SpanKind.CONSUMER, attributes: messageSpanAttributes(bot, message) },
+				async () => {
+					// Comandos/respostas disparados sem await registram sua promise aqui, para o span da
+					// mensagem cobrir o processamento inteiro (só com OTel ligado; teto de 120 s).
+					if (telemetry.isEnabled()) telemetry.trackPending(message);
+					await this.processMessage(bot, message);
+					await telemetry.awaitPending(message, 120000);
+				}
+			)
+			.catch((error) => {
+				this.logger.error("Erro em processMessage:", error);
+			});
 	}
 
 	/**
@@ -394,6 +435,7 @@ class EventHandler extends EventEmitter {
 
 			// --- Prevenção de Spam Ativo ---
 			if (await this.checkSpammerMessage(bot, message)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "spam" });
 				return;
 			}
 			// -------------------------------
@@ -419,6 +461,7 @@ class EventHandler extends EventEmitter {
 
 			if (isLocalBlocked) {
 				// this.logger.debug(`[EventHandler] Ignorando mensagem de usuário bloqueado: ${message.author} (${message.authorAlt})`);
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "blocked_user" });
 				return;
 			}
 			// --------------------------------
@@ -811,25 +854,33 @@ class EventHandler extends EventEmitter {
 					this.logger.debug(`Comando de gerenciamento detectado: ${commandText}`);
 
 					// Processa comando sem aguardar para evitar bloqueio
-					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
-						this.logger.error("Erro em handleCommand:", error);
-					});
+					await this.commandHandler
+						.handleCommand(bot, message, commandText, group)
+						.catch((error) => {
+							this.logger.error("Erro em handleCommand:", error);
+						});
 
 					return; // Evita processamento adicional
 				}
 
 				// Processa comando normal
 				if (!ignorePV || message.group || this.isWhitelistedPvCommand(commandText)) {
-					this.commandHandler.handleCommand(bot, message, commandText, group).catch((error) => {
-						this.logger.error("Erro em handleCommand:", error);
-					});
+					telemetry.setAttrs({ "ravena.message.is_command": true });
+					await this.commandHandler
+						.handleCommand(bot, message, commandText, group)
+						.catch((error) => {
+							this.logger.error("Erro em handleCommand:", error);
+						});
 				}
 			} else {
 				// Processa mensagem não-comando
 				// Aqui também vai cair quando o grupo tiver a opção customIgnoresPrefix, que os comandos personalizados não precisam de prefixo
-				this.processNonCommandMessage(bot, message, group, textContent).catch((error) => {
-					this.logger.error("Erro em processNonCommandMessage:", error);
-				});
+				telemetry.addPending(
+					message,
+					this.processNonCommandMessage(bot, message, group, textContent).catch((error) => {
+						this.logger.error("Erro em processNonCommandMessage:", error);
+					})
+				);
 			}
 		} catch (error) {
 			this.logger.error("Erro ao processar mensagem:", error);

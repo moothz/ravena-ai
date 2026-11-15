@@ -326,6 +326,18 @@ class BotAPI {
 	 *    - GET  /api/games/fazenda/bonus/:userId   -> Bônus acumulados do jogador (rolls, tickets, iscas)
 	 */
 	setupRoutes() {
+		// OpenTelemetry: toda rota com :userId / :groupId grava o ID no span da requisição
+		// (no-op com a telemetria desligada)
+		const telemetry = require("./telemetry");
+		this.app.param("userId", (req, res, next, value) => {
+			telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(value) });
+			next();
+		});
+		this.app.param("groupId", (req, res, next, value) => {
+			telemetry.setAttrs({ "ravena.chat.id": telemetry.chatIdAttr(value) });
+			next();
+		});
+
 		registerIndexRoutes(this);
 		registerInstancesRoutes(this);
 		registerManagementRoutes(this);

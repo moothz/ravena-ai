@@ -450,6 +450,9 @@ async function main() {
 			logger.error("Erro ao fechar conexões de bancos de dados:", e);
 		}
 
+		// Esvazia a fila de telemetria (no-op se o OpenTelemetry estiver desligado; teto de 3 s)
+		if (globalThis.__RAVENA_OTEL_SHUTDOWN) await globalThis.__RAVENA_OTEL_SHUTDOWN();
+
 		logger.info("Encerramento limpo concluído. Encerrando processo.");
 		process.exit(0);
 	};

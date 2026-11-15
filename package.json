@@ -4,7 +4,7 @@
   "description": "Bot de zapzap!",
   "main": "index.js",
   "scripts": {
-    "start": "node --dns-result-order=ipv4first index.js",
+    "start": "node --dns-result-order=ipv4first --require ./src/telemetry/otel.js index.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
@@ -12,6 +12,13 @@
     "@aws-sdk/client-s3": "^3.1156.0",
     "@aws-sdk/lib-storage": "^3.1156.0",
     "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "@opentelemetry/api": "~1.9.0",
+    "@opentelemetry/instrumentation-express": "^0.71.1",
+    "@opentelemetry/instrumentation-http": "^0.223.2",
+    "@opentelemetry/instrumentation-ioredis": "^0.71.0",
+    "@opentelemetry/instrumentation-runtime-node": "^0.36.1",
+    "@opentelemetry/instrumentation-undici": "^0.33.0",
+    "@opentelemetry/sdk-node": "^0.223.2",
     "axios": "^1.19.0",
     "better-sqlite3": "^12.9.0",
     "canvas": "^3.2.3",

@@ -2,6 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const util = require("util");
 
+let _telemetry = null;
+function telemetryLogIds() {
+	try {
+		if (!_telemetry) _telemetry = require("../telemetry");
+		return _telemetry.logIds();
+	} catch {
+		return null;
+	}
+}
+
 const LOG_DIR = path.join(__dirname, "../../logs");
 const FLUSH_INTERVAL_MS = 250;
 const MAX_BUFFER_BYTES = 256 * 1024;
@@ -107,6 +117,12 @@ class Logger {
 	log(level, message, data = null) {
 		const timestamp = new Date().toISOString();
 		let logMessage = `[${timestamp}] [${level.toUpperCase()}] [${this.name}] ${message}`;
+
+		// Correlação log ↔ trace (só quando o OpenTelemetry está ligado e há span ativo)
+		if (globalThis.__RAVENA_OTEL_ENABLED) {
+			const ids = telemetryLogIds();
+			if (ids) logMessage += ` [trace_id=${ids.traceId} span_id=${ids.spanId}]`;
+		}
 
 		// Adiciona dados se fornecidos
 		if (data) {

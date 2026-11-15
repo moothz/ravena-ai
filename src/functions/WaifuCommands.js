@@ -2,6 +2,7 @@ const axios = require("axios");
 const fs = require("fs").promises;
 const sharp = require("sharp");
 const Logger = require("../utils/Logger");
+const telemetry = require("../telemetry");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const Database = require("../utils/Database");
@@ -2966,32 +2967,59 @@ function scheduleMarriageTimer({
 	const charName = matchedRoll?.characterName || matchedRoll?.name || characterId;
 	const waitSec = Math.ceil(waitMs / 1000);
 
-	const timer = setTimeout(async () => {
-		scheduledMarryTimers.delete(timerKey);
+	// OpenTelemetry: o disparo do timer vira um trace próprio (o comando que agendou já terminou),
+	// ligado por link ao span do comando original. No-op com a telemetria desligada.
+	const originSpanContext = telemetry.isEnabled()
+		? telemetry.activeSpan()?.spanContext()
+		: undefined;
+	const timer = setTimeout(() => {
+		telemetry
+			.withCommandSpan(
+				"waifu marry.scheduled",
+				{
+					root: true,
+					links: originSpanContext ? [{ context: originSpanContext }] : undefined,
+					attributes: {
+						"app.command.category": "waifu",
+						"ravena.user.id": telemetry.userIdAttr(userId),
+						"ravena.chat.id": telemetry.chatIdAttr(groupId),
+						"ravena.marry.wait_ms": waitMs
+					}
+				},
+				async (span) => {
+					scheduledMarryTimers.delete(timerKey);
 
-		// Se o personagem já foi casado por outro jogador durante a espera
-		if (matchedRoll?.claimed || isCharacterAlreadyClaimedInGroup(groupId, characterId)) {
-			return;
-		}
+					// Se o personagem já foi casado por outro jogador durante a espera
+					if (matchedRoll?.claimed || isCharacterAlreadyClaimedInGroup(groupId, characterId)) {
+						telemetry.setAttrs(
+							{ "app.outcome": "rejected", "app.reject.reason": "already_claimed" },
+							span
+						);
+						return;
+					}
 
-		try {
-			const marriageResult = await executeMarriageCall(
-				bot,
-				message,
-				userId,
-				groupId,
-				characterId,
-				name,
-				matchedRoll
-			);
-			if (marriageResult && bot && typeof bot.sendReturnMessages === "function") {
-				await bot.sendReturnMessages(marriageResult);
-			}
-		} catch (timerErr) {
-			logger.warn(
-				`[ScheduledMarry] Casamento agendado não pôde ser completado para ${userId} (${characterId}): ${timerErr?.message}`
-			);
-		}
+					try {
+						const marriageResult = await executeMarriageCall(
+							bot,
+							message,
+							userId,
+							groupId,
+							characterId,
+							name,
+							matchedRoll
+						);
+						if (marriageResult && bot && typeof bot.sendReturnMessages === "function") {
+							await bot.sendReturnMessages(marriageResult);
+						}
+					} catch (timerErr) {
+						telemetry.recordError(span, timerErr);
+						logger.warn(
+							`[ScheduledMarry] Casamento agendado não pôde ser completado para ${userId} (${characterId}): ${timerErr?.message}`
+						);
+					}
+				}
+			)
+			.catch(() => {});
 	}, waitMs);
 
 	scheduledMarryTimers.set(timerKey, { timer, executeAt, characterName: charName });
@@ -3864,6 +3892,12 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 			usedPhotoIndex = 1;
 		}
 	}
+	telemetry.setAttrs({
+		"ravena.waifu.photo.requested": requestedPhotoIndex ?? undefined,
+		"ravena.waifu.photo.used": usedPhotoIndex ?? undefined,
+		"ravena.waifu.photo.total": totalPhotos,
+		"ravena.waifu.photo.fallback": Boolean(photoWarning)
+	});
 
 	// 4. Se solicitou explicitamente nova foto com 'nova' ou especificando ID de foto
 	if (forceNew) {
