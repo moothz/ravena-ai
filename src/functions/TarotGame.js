@@ -344,7 +344,7 @@ Responda em PORTUGUÊS BRASIL.`;
 		drawn.forEach((c) => {
 			response += `• *${c.name}*: ${c.meaning}\n`;
 		});
-		response += `\n⚠️ _Sua leitura não pôde ser analisada profundamente agora. Por esse motivo, você poderá tentar novamente quando desejar sem aguardar os 7 dias!_`;
+		response += `\n⚠️ _As brumas cobriram a visão da cartomante por um instante. Sua tentativa não foi gasta, pode tirar as cartas de novo quando quiser!_`;
 	}
 
 	return new ReturnMessage({

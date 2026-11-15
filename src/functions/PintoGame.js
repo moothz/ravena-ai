@@ -345,7 +345,7 @@ async function pintoCommand(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "Este jogo só pode ser jogado em grupos.",
+				content: "🍆 Esse jogo só rola em grupos!",
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -365,7 +365,7 @@ async function pintoCommand(bot, message, args, group) {
 		if (cooldownStatus.inCooldown) {
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `⌛️ ${userName}, você já realizou sua avaliação recentemente.\n\nPróxima avaliação disponível em ${cooldownStatus.daysUntil} dia(s), dia ${formatDate(cooldownStatus.nextAvailable)}.`,
+				content: `⌛️ Calma, ${userName}! Você já fez sua medição recentemente.\n\nPróxima avaliação liberada em ${cooldownStatus.daysUntil} dia(s), no dia ${formatDate(cooldownStatus.nextAvailable)}.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -459,7 +459,7 @@ async function pintoCommand(bot, message, args, group) {
 			`• *Curvatura:* ${curvatureText}\n` +
 			`• *Score:* _${score} pontos_${donorBonusText}\n\n` +
 			`${comment}\n\n` +
-			`> Você pode voltar daqui a ${COOLDOWN_DAYS} dias para refazermos sua avaliação.`;
+			`> Volta daqui a ${COOLDOWN_DAYS} dias pra medir de novo!`;
 
 		const mentionsList = targetJid ? [targetJid] : [];
 
@@ -477,7 +477,7 @@ async function pintoCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "❌ Erro ao processar o comando. Por favor, tente novamente.",
+			content: "❌ Deu ruim na medição. Tenta de novo em instantes!",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
@@ -523,7 +523,7 @@ async function pintoRankingCommand(bot, message, args, group) {
 		if (topPlayers.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: `🏆 Ainda não há dados para o ranking no grupo ${targetGroup.name || targetGroup.id}. Use !pinto para participar!`
+				content: `🏆 Ninguém colocou o tamanho na mesa no grupo *${targetGroup.name || targetGroup.id}* ainda. Manda um \`!pinto\` pra estrear!`
 			});
 		}
 
@@ -577,7 +577,7 @@ async function pintoRankingCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "❌ Erro ao mostrar ranking. Por favor, tente novamente."
+			content: "❌ Falha ao carregar o ranking. Tenta de novo mais tarde!"
 		});
 	}
 }
@@ -619,7 +619,7 @@ async function pintoResetCommand(bot, message, args, group) {
 			return [
 				new ReturnMessage({
 					chatId,
-					content: `⚠️ Não há dados do jogo para o grupo ${targetGroup.name || targetGroup.id}.`,
+					content: `⚠️ Sem histórico de medições pro grupo *${targetGroup.name || targetGroup.id}*.`,
 					options: {
 						quotedMessageId: message.origin?.id?._serialized,
 						goReply: message.origin
@@ -648,7 +648,7 @@ async function pintoResetCommand(bot, message, args, group) {
 			rankingMessage,
 			new ReturnMessage({
 				chatId,
-				content: `🔄 *Dados do Jogo Pinto Resetados*\n\nForam removidos dados de ${numJogadores} jogadores do grupo ${targetGroup.name || targetGroup.id}.\n\nO ranking acima mostra como estava antes do reset.`,
+				content: `🔄 *Ranking do Tamanho Zerado*\n\nHistórico removido para ${numJogadores} jogador(es) do grupo *${targetGroup.name || targetGroup.id}*.\n\nO ranking acima registra a foto final antes do reset.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -661,7 +661,7 @@ async function pintoResetCommand(bot, message, args, group) {
 		return [
 			new ReturnMessage({
 				chatId: message.group ?? message.author,
-				content: "Erro ao resetar dados do jogo. Por favor, tente novamente."
+				content: "❌ Falha ao resetar o ranking. Tenta de novo!"
 			})
 		];
 	}

@@ -564,7 +564,7 @@ async function slotsCommand(bot, message, args, group) {
 		if (isNaN(parsed) || parsed <= 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Quantidade inválida de rodadas. Informe um número entre 1 e 30.",
+				content: "❌ Quantidade inválida! Escolhe de 1 a 30 giros.",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -956,7 +956,7 @@ async function slotsPrizesCommand(bot, message, args, group) {
 	if (!prizes || prizes.length === 0) {
 		return new ReturnMessage({
 			chatId,
-			content: "🎰 Você ainda não ganhou nenhum prêmio no caça-coisas. Tente a sorte com !slots!"
+			content: "🎰 Nenhum prêmio registrado no seu baú ainda. Tenta a sorte no `!slots`!"
 		});
 	}
 
@@ -1011,7 +1011,7 @@ async function slotsRankingCommand(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "🎰 O ranking do Caça-coisas só pode ser visualizado em grupos."
+				content: "🎰 O ranking do Caça-coisas só pode ser visto em grupos."
 			});
 		}
 
@@ -1042,7 +1042,8 @@ async function slotsRankingCommand(bot, message, args, group) {
 		if (winnersRanking.length === 0 && losersRanking.length === 0) {
 			return new ReturnMessage({
 				chatId: groupId,
-				content: "🎰 Ainda não há dados para o ranking neste grupo. Use *!slots* para participar!"
+				content:
+					"🎰 Ninguém girou o caça-coisas neste grupo ainda. Usa *!slots* pra estrear o placar!"
 			});
 		}
 
@@ -1074,7 +1075,7 @@ async function slotsRankingCommand(bot, message, args, group) {
 		logger.error("Erro ao mostrar ranking do slots:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "❌ Erro ao buscar ranking do Caça-coisas."
+			content: "❌ Falha ao carregar o ranking do Caça-coisas. Tenta de novo em instantes!"
 		});
 	}
 }

@@ -198,7 +198,7 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		return new ReturnMessage({
 			chatId,
 			content:
-				"Por favor, forneça um prompt para gerar a imagem. Exemplo: !imagine um gato usando chapéu de cowboy"
+				"🎨 Descreve a imagem que você quer criar! Exemplo: `!imagine um gato usando chapéu de cowboy`"
 		});
 	}
 
@@ -445,15 +445,14 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 					new ReturnMessage({
 						chatId,
 						content:
-							"🔞 A imagem gerada pode conter conteúdo potencialmente inadequado e este grupo está filtrando conteúdo NSFW, por isso o resultado não foi enviado."
+							"🔞 A imagem gerada contém conteúdo adulto/sensível (NSFW). Como o filtro do grupo tá ativado, a imagem foi barrada."
 					})
 				);
 			} else {
 				returnMessages.push(
 					new ReturnMessage({
 						chatId,
-						content:
-							"🔞 A imagem gerada pode conter conteúdo potencialmente inadequado, abra com cautela."
+						content: "🔞 A imagem pode ter conteúdo sensível (NSFW). Cuidado ao abrir!"
 					})
 				);
 
@@ -485,12 +484,12 @@ async function generateImage(bot, message, args, group, skipNotify = true, optio
 		logger.error("Erro ao gerar imagem:", error);
 		trackBonsaiStats("error", 1, "bonsai-ternary", false);
 
-		let errorMessage = "Erro ao gerar imagem.";
+		let errorMessage = "❌ Deu ruim ao gerar a imagem.";
 		if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
 			errorMessage =
-				"Não foi possível conectar ao servidor Bonsai. Verifique se ele está rodando e acessível.";
+				"❌ Não consegui me conectar ao servidor de imagens no momento. Tenta de novo mais tarde!";
 		} else {
-			errorMessage = `Erro: ${error.message}`;
+			errorMessage = `❌ Falha na geração: ${error.message}`;
 		}
 
 		return new ReturnMessage({

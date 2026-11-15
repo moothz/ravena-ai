@@ -173,7 +173,7 @@ async function startStopGame(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `🛑 Já existe um jogo de Stop/Adedonha em andamento! Me encaminhe as respostas no pv.\n\n- 🕐 Tempo restante: ${minutes}m ${seconds}s.`
+				content: `🛑 Já tem uma rodada de Stop rolando! Manda as respostas no meu privado.\n\n• 🕐 Tempo restante: ${minutes}m ${seconds}s.`
 			});
 		}
 
@@ -228,7 +228,7 @@ async function startStopGame(bot, message, args, group) {
 
 		let startMessage = `🛑 *STOP!* ✋ - Letra: *${selectedLetter}* - _Inicializando..._\n\nVocês tem ${minutes}m${seconds > 0 ? ` ${seconds}s` : ""} para responder! 🕐\n`;
 		startMessage += `Todas as respostas devem começar com a letra *${selectedLetter}*.\n`;
-		startMessage += `Copie a mensagem a seguir, preencha as respostas e envie no meu pv!`;
+		startMessage += `Copia o modelo abaixo, preenche e manda no meu PV!`;
 
 		const messages = [];
 		messages.push(
@@ -277,7 +277,7 @@ async function startStopGame(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "❌ Erro ao iniciar o jogo de Stop/Adedonha. Por favor, tente novamente."
+			content: "❌ Deu ruim ao abrir a rodada de Stop. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -311,7 +311,7 @@ function processStopGameResponse(bot, message) {
 		if (!activeGames[groupId]) {
 			return new ReturnMessage({
 				chatId: userId,
-				content: `🫸 Não há um jogo ativo neste grupo`
+				content: `🫸 Nenhuma rodada ativa nesse grupo no momento.`
 			});
 		}
 
@@ -319,7 +319,7 @@ function processStopGameResponse(bot, message) {
 		if (Date.now() > activeGames[groupId].endTime) {
 			return new ReturnMessage({
 				chatId: userId,
-				content: `🫸 O último jogo neste grupo já expirou!`
+				content: `🫸 Tempo esgotado! Essa rodada já encerrou.`
 			});
 		}
 
@@ -368,7 +368,7 @@ function processStopGameResponse(bot, message) {
 		message.origin.react(emoji);
 		return new ReturnMessage({
 			chatId: userId,
-			content: `${emoji} Recebi suas respostas!\n- 🕐 Tempo restante: ${minutes}m ${seconds}s`
+			content: `${emoji} Respostas anotadas!\n• 🕐 Tempo restante: ${minutes}m ${seconds}s`
 		});
 	} catch (error) {
 		logger.warn("Erro ao processar resposta do jogo Stop/Adedonha:", error);

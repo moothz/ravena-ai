@@ -451,7 +451,7 @@ async function startGameCommand(bot, message, args, group) {
 	if (!groupId) {
 		return new ReturnMessage({
 			chatId: message.author,
-			content: "O jogo de anagrama só pode ser jogado em grupos."
+			content: "🧩 O jogo de anagrama só rola em grupos!"
 		});
 	}
 	if (activeGames[groupId]) {
@@ -484,7 +484,7 @@ async function guessCommand(bot, message, args, group) {
 	if (!guess) {
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "Você precisa fornecer um palpite. Ex: `!ana palavra`",
+			content: "🧩 Faltou o palpite! Manda junto com o comando: `!ana palavra`",
 			options: { quotedMessageId: message.origin.id._serialized }
 		});
 	}
@@ -562,20 +562,27 @@ async function guessCommand(bot, message, args, group) {
 async function hintCommand(bot, message) {
 	const groupId = message.group;
 	const game = activeGames[groupId];
-	if (!game) return new ReturnMessage({ chatId: groupId, content: "Não há um jogo em andamento." });
+	if (!game)
+		return new ReturnMessage({
+			chatId: groupId,
+			content: "🧩 Nenhuma partida de anagrama rolando agora."
+		});
 
 	// Usa o limite dinâmico calculado no início da rodada
 	if (game.hintsUsed >= game.maxHints)
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "> As dicas para esta partida já acabaram!"
+			content: "> Esgotou as dicas dessa rodada!"
 		});
 
 	const unrevealedIndices = game.revealedLetters
 		.map((revealed, i) => (revealed ? null : i))
 		.filter((i) => i !== null);
 	if (unrevealedIndices.length <= 2)
-		return new ReturnMessage({ chatId: groupId, content: "> A palavra já está muito revelada!" });
+		return new ReturnMessage({
+			chatId: groupId,
+			content: "> Quase tudo revelado, agora é na raça!"
+		});
 
 	const randomIndex = unrevealedIndices[Math.floor(Math.random() * unrevealedIndices.length)];
 	game.revealedLetters[randomIndex] = true;
@@ -620,13 +627,13 @@ async function skipCommand(bot, message, args, group) {
 	if (!game)
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "> Não há um jogo em andamento para pular."
+			content: "> Não tem partida rolando pra pular!"
 		});
 	if (game.roundEnded) return null;
 	if (game.skipsUsed >= SKIPS_PER_ROUND)
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "> Os pulos para esta rodada já acabaram!"
+			content: "> Os pulos dessa rodada acabaram!"
 		});
 
 	game.roundEnded = true;
@@ -655,7 +662,7 @@ async function rankingCommand(bot, message) {
 	if (!groupId)
 		return new ReturnMessage({
 			chatId: message.author,
-			content: "> O ranking só pode ser visto em grupos."
+			content: "> O ranking só rola em grupos."
 		});
 
 	try {
@@ -677,7 +684,7 @@ async function rankingCommand(bot, message) {
 			return new ReturnMessage({
 				chatId: groupId,
 				content:
-					"🏆 Ainda não há dados de Anagrama para este grupo. Comece a jogar com `!anagrama`!"
+					"🏆 Ninguém jogou anagrama por aqui ainda. Manda `!anagrama` pra abrir a temporada!"
 			});
 		}
 
@@ -698,7 +705,10 @@ async function rankingCommand(bot, message) {
 		return new ReturnMessage({ chatId: groupId, content: rankingMessage });
 	} catch (error) {
 		logger.error("Erro no comando ranking:", error);
-		return new ReturnMessage({ chatId: groupId, content: "❌ Erro ao buscar ranking." });
+		return new ReturnMessage({
+			chatId: groupId,
+			content: "❌ Falha ao carregar o ranking. Tenta de novo em instantes!"
+		});
 	}
 }
 
@@ -707,13 +717,13 @@ async function resetCommand(bot, message, args, group) {
 	if (!groupId)
 		return new ReturnMessage({
 			chatId: message.author,
-			content: "Este comando só funciona em grupos."
+			content: "❌ Esse comando só funciona em grupos."
 		});
 	const isAdmin = await bot.adminUtils.isAdmin(message.author, group, null, bot);
 	if (!isAdmin)
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "❌ Apenas administradores podem resetar os dados."
+			content: "❌ Só admins do grupo podem zerar os dados!"
 		});
 
 	if (activeGames[groupId]) {
@@ -727,11 +737,15 @@ async function resetCommand(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId: groupId,
-			content: "✅ O ranking e recorde do Anagrama para este grupo foram resetados!"
+			content:
+				"🔄 *Anagrama Zerado!*\n\nO ranking e o recorde do grupo foram resetados com sucesso."
 		});
 	} catch (error) {
 		logger.error("Erro ao resetar dados:", error);
-		return new ReturnMessage({ chatId: groupId, content: "❌ Erro ao resetar dados do grupo." });
+		return new ReturnMessage({
+			chatId: groupId,
+			content: "❌ Falha ao zerar os dados do anagrama."
+		});
 	}
 }
 

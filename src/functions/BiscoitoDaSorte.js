@@ -29,7 +29,7 @@ async function biscoitoCommand(bot, message, args, group) {
 			logger.warn("Nenhuma frase encontrada em 'biscoito-frases'");
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Nenhuma frase de biscoito da sorte disponível no momento.",
+				content: "❌ O pote de biscoitos da sorte tá vazio por enquanto!",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -59,7 +59,7 @@ async function biscoitoCommand(bot, message, args, group) {
 		logger.error("Erro ao gerar frase do biscoito:", err);
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Algo deu errado ao abrir o biscoito da sorte. Tente novamente mais tarde.",
+			content: "❌ O biscoito quebrou no caminho! Tenta abrir outro daqui a pouco.",
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin

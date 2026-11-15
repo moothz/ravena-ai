@@ -118,7 +118,7 @@ async function handleBanco(bot, message) {
 		logger.error(`[handleBanco] Erro: ${err.message}`);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao consultar conta bancária: ${err.message}`
+			content: `❌ Não consegui abrir sua conta no banco: ${err.message}`
 		});
 	}
 }
@@ -144,7 +144,7 @@ async function handleBancoAdm(bot, message) {
 		const content =
 			`🔐 *ACESSO PESSOAL AO RAVENABANK WEB* 🔐\n\n` +
 			`Acesse sua conta bancária e faça trocas direto pelo navegador:\n${webUrl}\n\n` +
-			`⚠️ _Este link é pessoal e exclusivo. Cada acesso ou troca pelo navegador renova sua sessão automaticamente por mais 3 dias!_`;
+			`⚠️ _Esse link é pessoal e intransferível. Cada acesso ou troca pelo navegador renova sua sessão automaticamente por mais 3 dias!_`;
 
 		if (inPrivate) {
 			return new ReturnMessage({
@@ -178,7 +178,7 @@ async function handleBancoAdm(bot, message) {
 		logger.error(`[handleBancoAdm] Erro: ${err.message}`);
 		return new ReturnMessage({
 			chatId: getChatId(message),
-			content: `❌ Não foi possível gerar seu link de acesso: ${err.message}`
+			content: `❌ Deu ruim ao gerar seu link de acesso: ${err.message}`
 		});
 	}
 }
@@ -234,7 +234,7 @@ async function handleEconomia(bot, message) {
 		logger.error(`[handleEconomia] Erro: ${err.message}`);
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao consultar economia: ${err.message}`
+			content: `❌ Não consegui carregar o painel da economia: ${err.message}`
 		});
 	}
 }
@@ -250,9 +250,9 @@ async function handleDepositar(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				`❌ *Uso incorreto!*\n\n` +
+				`❌ *Como usar a venda no banco:*\n\n` +
 				`Exemplos:\n` +
-				`• \`!banco-vender peixe 300\` (vende peixes até 300kg arredondando para baixo)\n` +
+				`• \`!banco-vender peixe 300\` (vende peixes até 300kg, arredondando pra baixo)\n` +
 				`• \`!banco-vender peixe tudo\` (vende todos os peixes comuns do inventário)\n` +
 				`• \`!banco-vender zinthos 1500\`\n` +
 				`• \`!banco-vender jardim 5000\``
@@ -323,13 +323,13 @@ async function handleDepositar(bot, message, args) {
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Jogo desconhecido: "${game}". Escolha entre: \`peixe\`, \`zinthos\` ou \`jardim\`.`
+				content: `❌ Jogo não reconhecido: "${game}". Escolhe entre: \`peixe\`, \`zinthos\` ou \`jardim\`.`
 			});
 		}
 	} catch (err) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Falha na operação: ${err.message}`
+			content: `❌ A operação falhou: ${err.message}`
 		});
 	}
 }
@@ -345,15 +345,15 @@ async function handleSacar(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				`❌ *Uso incorreto!*\n\n` +
+				`❌ *Como usar a compra no banco:*\n\n` +
 				`Exemplos de Câmbio de Moedas:\n` +
-				`• \`!banco-comprar zinthos 100\` (gasta 100 Runas e recebe Zinthos)\n` +
-				`• \`!banco-comprar jardim 250\` (gasta 250 Runas e recebe Petalitas)\n\n` +
+				`• \`!banco-comprar zinthos 100\` (troca 100 Runas por Zinthos)\n` +
+				`• \`!banco-comprar jardim 250\` (troca 250 Runas por Petalitas)\n\n` +
 				`🛍️ *Loja RavenaBank (Consumíveis de Jogos):*\n` +
-				`• \`!banco-comprar moeda 5\` (gasta 55 ᚱ cada moeda do Slots, máx 300/dia)\n` +
-				`• \`!banco-comprar isca 3\` (gasta 45 ᚱ cada isca de Pesca, máx 200/dia)\n` +
-				`• \`!banco-loja\` (exibe o catálogo completo da loja)\n\n` +
-				`⚠️ _Nota: Não é possível comprar peixes com Runas._`
+				`• \`!banco-comprar moeda 5\` (gasta 55 ᚱ por moeda do Slots, máx 300/dia)\n` +
+				`• \`!banco-comprar isca 3\` (gasta 45 ᚱ por isca de Pesca, máx 200/dia)\n` +
+				`• \`!banco-loja\` (vê o catálogo completo da loja)\n\n` +
+				`⚠️ _Aviso: Não dá pra comprar peixes com Runas._`
 		});
 	}
 
@@ -388,13 +388,13 @@ async function handleSacar(bot, message, args) {
 		) {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Informe a quantidade que deseja comprar. Exemplo: \`!banco-comprar ${game} 5\``
+				content: `❌ Quantas unidades você quer comprar? Exemplo: \`!banco-comprar ${game} 5\``
 			});
 		}
 		return new ReturnMessage({
 			chatId,
 			content:
-				`❌ *Uso incorreto!*\n\n` +
+				`❌ *Faltou a quantidade!*\n\n` +
 				`Exemplos:\n` +
 				`• \`!banco-comprar zinthos 100\`\n` +
 				`• \`!banco-comprar jardim 250\`\n` +
@@ -411,7 +411,7 @@ async function handleSacar(bot, message, args) {
 				chatId,
 				content:
 					`❌ *Operação não permitida!*\n` +
-					`Não é possível comprar peixes usando Runas. Peixes só podem ser vendidos para o banco.`
+					`Não é possível comprar peixes com Runas. Peixe só pode ser pescado ou vendido pro banco.`
 			});
 		} else if (
 			game === "moeda" ||
@@ -465,7 +465,7 @@ async function handleSacar(bot, message, args) {
 		} else {
 			return new ReturnMessage({
 				chatId,
-				content: `❌ Destino de compra inválido: "${game}". Escolha entre: \`zinthos\`, \`jardim\`, \`moeda\` ou \`isca\`. Veja \`!banco-loja\` para mais detalhes.`
+				content: `❌ Item ou moeda inválida: "${game}". Escolhe entre: \`zinthos\`, \`jardim\`, \`moeda\` ou \`isca\`. Veja o \`!banco-loja\` pra conferir.`
 			});
 		}
 	} catch (err) {
@@ -567,7 +567,7 @@ async function handleLoja(bot, message) {
 	} catch (err) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Falha ao abrir a loja: ${err.message}`
+			content: `❌ Deu ruim ao abrir a loja: ${err.message}`
 		});
 	}
 }
@@ -590,7 +590,7 @@ async function handleExtrato(bot, message) {
 		text += `💠 *Saldo Atual:* \`${formatPtBr(snapshot.currentRunas, 2, 2)} ᚱ\`\n\n`;
 
 		if (!txs || txs.length === 0) {
-			text += `_Você ainda não realizou movimentações no RavenaBank hoje._`;
+			text += `_Você ainda não fez nenhuma movimentação no RavenaBank hoje._`;
 			return new ReturnMessage({
 				chatId,
 				content: text,
@@ -634,7 +634,7 @@ async function handleExtrato(bot, message) {
 	} catch (err) {
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Erro ao consultar extrato: ${err.message}`
+			content: `❌ Não consegui puxar seu extrato: ${err.message}`
 		});
 	}
 }

@@ -250,7 +250,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "A roleta russa só pode ser jogada em grupos."
+				content: "🔫 A roleta russa só pode ser jogada em grupos!"
 			});
 		}
 
@@ -285,7 +285,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `💀 ${userName} já está morto na roleta russa. Ressuscita em ${minutes}m${seconds}s.`,
+				content: `💀 ${userName} tá no além! Ressuscita em ${minutes}m${seconds}s.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -297,7 +297,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 		if (groupData.last_player_id === userId) {
 			return new ReturnMessage({
 				chatId: groupId,
-				content: `🔄 ${userName}, espere outra pessoa jogar antes de tentar novamente.`,
+				content: `🔄 Calma, ${userName}! Passa a arma pra outro jogar antes da sua vez.`,
 				options: {
 					quotedMessageId: message.origin.id._serialized,
 					goReply: message.origin
@@ -394,9 +394,9 @@ async function jogarRoletaRussa(bot, message, args, group) {
 			let info;
 			if (newRecord) {
 				// More descriptive record message
-				info = `Morreu em ${triesBeforeDeath}, um novo record! Seu máximo antes disso era ${oldMax}.\nNeste grupo, você já morreu ${deaths} vezes.`;
+				info = `Caiu na tentativa ${triesBeforeDeath}, novo recorde! Seu melhor antes era ${oldMax}.\nNeste grupo, já são ${deaths} mortes na sua conta.`;
 			} else {
-				info = `Morreu em ${triesBeforeDeath}.\nNeste grupo, você já morreu ${deaths} vezes.`;
+				info = `Caiu na tentativa ${triesBeforeDeath}.\nNeste grupo, já são ${deaths} mortes na sua conta.`;
 			}
 
 			try {
@@ -452,7 +452,7 @@ async function jogarRoletaRussa(bot, message, args, group) {
 		logger.error("Erro ao jogar roleta russa:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao jogar roleta russa. Por favor, tente novamente."
+			content: "❌ Deu ruim ao puxar o gatilho. Tenta de novo em instantes!"
 		});
 	}
 }
@@ -465,7 +465,7 @@ async function mostrarRanking(bot, message, args, group) {
 		if (!message.group) {
 			return new ReturnMessage({
 				chatId: message.author,
-				content: "O ranking da roleta russa só pode ser visualizado em grupos."
+				content: "🏆 O ranking da roleta russa só pode ser visto em grupos."
 			});
 		}
 
@@ -501,7 +501,7 @@ async function mostrarRanking(bot, message, args, group) {
 		if (rankingSorte.length === 0 && rankingMortes.length === 0) {
 			return new ReturnMessage({
 				chatId: groupId,
-				content: "🏆 Ainda não há jogadores na roleta russa deste grupo."
+				content: "🏆 Ninguém puxou o gatilho na roleta russa deste grupo ainda."
 			});
 		}
 
@@ -516,7 +516,7 @@ async function mostrarRanking(bot, message, args, group) {
 				mensagem += `\t${emoji} ${index + 1}°: ${jogador.luck}${jogandoAtualmente} - ${jogador.user_name || "Desconhecido"}\n`;
 			});
 		} else {
-			mensagem += "\tAinda não há jogadores neste ranking\n";
+			mensagem += "\tNenhum sobrevivente registrado ainda\n";
 		}
 
 		mensagem += "\n🪦 *Número de Mortes*\n";
@@ -526,7 +526,7 @@ async function mostrarRanking(bot, message, args, group) {
 				mensagem += `\t${emoji} ${index + 1}°: ${jogador.deaths} - ${jogador.user_name || "Desconhecido"}\n`;
 			});
 		} else {
-			mensagem += "\tAinda não há jogadores neste ranking\n";
+			mensagem += "\tNenhuma morte registrada ainda\n";
 		}
 
 		return new ReturnMessage({
@@ -537,7 +537,7 @@ async function mostrarRanking(bot, message, args, group) {
 		logger.error("Erro ao mostrar ranking:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao mostrar ranking da roleta russa. Por favor, tente novamente."
+			content: "❌ Falha ao carregar o ranking da roleta. Tenta de novo mais tarde!"
 		});
 	}
 }
@@ -570,7 +570,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 			return [
 				new ReturnMessage({
 					chatId,
-					content: `⚠️ Não há dados da roleta russa para o grupo ${targetGroup.name || targetGroup.id}.`,
+					content: `⚠️ Sem histórico da roleta russa pro grupo *${targetGroup.name || targetGroup.id}*.`,
 					options: {
 						quotedMessageId: message.origin?.id?._serialized,
 						goReply: message.origin
@@ -605,7 +605,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 			rankingMessage,
 			new ReturnMessage({
 				chatId,
-				content: `🔄 *Dados da Roleta Russa Resetados*\n\nForam removidos dados de ${numJogadores} jogadores do grupo ${targetGroup.name || targetGroup.id}.\n\nO ranking acima mostra como estava antes do reset.`,
+				content: `🔄 *Roleta Russa Resetada*\n\nHistórico zerado para ${numJogadores} jogador(es) do grupo *${targetGroup.name || targetGroup.id}*.\n\nO ranking acima registra a foto final antes do reset.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -617,7 +617,7 @@ async function resetarRoletaRussa(bot, message, args, group) {
 		return [
 			new ReturnMessage({
 				chatId: message.group ?? message.author,
-				content: "Erro ao resetar dados da roleta russa. Por favor, tente novamente."
+				content: "❌ Falha ao resetar a roleta russa. Tenta de novo!"
 			})
 		];
 	}
@@ -643,7 +643,7 @@ async function definirTempoRoleta(bot, message, args, group) {
 			return new ReturnMessage({
 				chatId,
 				content:
-					"Por favor, forneça um tempo em segundos (mínimo 10, máximo 259200, 72 horas). Exemplo: !roleta-tempo 300"
+					"⏱️ Informa o tempo em segundos (de 10s a 259200s / 72h). Exemplo: `!roleta-tempo 300`"
 			});
 		}
 
@@ -675,13 +675,13 @@ async function definirTempoRoleta(bot, message, args, group) {
 
 		return new ReturnMessage({
 			chatId,
-			content: `🕐 Tempo de "morte" na roleta russa do grupo *${targetGroup.name || targetGroup.id}* definido para ${tempoFormatado}.`
+			content: `🕐 Tempo de silêncio na roleta russa do grupo *${targetGroup.name || targetGroup.id}* ajustado para ${tempoFormatado}.`
 		});
 	} catch (error) {
 		logger.error("Erro ao definir tempo de roleta:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao definir tempo da roleta russa. Por favor, tente novamente."
+			content: "❌ Não deu pra alterar o tempo da roleta. Tenta de novo!"
 		});
 	}
 }
@@ -721,7 +721,7 @@ async function alternarSilenciamentoRoleta(bot, message, args, group) {
 					: false;
 			if (!botIsAdmin) {
 				content +=
-					" ⚠️ O bot não é administrador do grupo e não poderá apagar as mensagens dos jogadores mortos.";
+					" ⚠️ Como a Ravena não é admin do grupo, ela não vai conseguir apagar as mensagens de quem morrer.";
 			}
 		}
 
@@ -730,7 +730,7 @@ async function alternarSilenciamentoRoleta(bot, message, args, group) {
 		logger.error("Erro ao alternar silenciamento da roleta:", error);
 		return new ReturnMessage({
 			chatId: message.group ?? message.author,
-			content: "Erro ao alterar o silenciamento da roleta russa. Por favor, tente novamente."
+			content: "❌ Falha ao mudar o silenciamento da roleta. Tenta de novo!"
 		});
 	}
 }

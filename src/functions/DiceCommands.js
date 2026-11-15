@@ -69,7 +69,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 			if (!match) {
 				return new ReturnMessage({
 					chatId,
-					content: "Formato inválido. Use algo como: d20, 2d6, d8+3, 3d10-2",
+					content: "🎲 Não entendi a rolagem! Tenta algo como: `d20`, `2d6`, `d8+3` ou `3d10-2`.",
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -96,7 +96,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 			returnMessages.push(
 				new ReturnMessage({
 					chatId,
-					content: `⚠️ Número máximo de dados é ${MAX_DICE}.`,
+					content: `⚠️ O limite por rolagem é de ${MAX_DICE} dados!`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -110,7 +110,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 			returnMessages.push(
 				new ReturnMessage({
 					chatId,
-					content: `⚠️ Número máximo de faces é ${MAX_SIDES}.`,
+					content: `⚠️ O limite máximo é de ${MAX_SIDES} faces por dado!`,
 					options: {
 						quotedMessageId: message.origin.id._serialized,
 						goReply: message.origin
@@ -222,7 +222,7 @@ async function rollDice(bot, message, args, group, defaultSides = null) {
 		const chatId = message.group ?? message.author;
 		return new ReturnMessage({
 			chatId,
-			content: "❌ Erro ao rolar dados. Por favor, tente novamente.",
+			content: "❌ O dado caiu da mesa! Tenta rolar de novo em instantes.",
 			options: {
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin

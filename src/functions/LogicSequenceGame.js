@@ -412,7 +412,7 @@ async function startLogicGame(bot, message, args, group) {
 		if (activeGames[chatId]) {
 			return new ReturnMessage({
 				chatId,
-				content: `⚠️ Já existe um jogo de sequência ativo!\nResponda com *!seq <resposta>*`
+				content: `⚠️ Já tem um desafio de lógica rolando!\nResponde aí com *!seq <resposta>*`
 			});
 		}
 
@@ -450,7 +450,7 @@ async function startLogicGame(bot, message, args, group) {
 		logger.error("Error starting logic game", error);
 		return new ReturnMessage({
 			chatId: message.group || message.author,
-			content: "❌ Erro ao iniciar o jogo."
+			content: "❌ Deu ruim ao iniciar o desafio. Tenta de novo!"
 		});
 	}
 }
@@ -465,14 +465,14 @@ async function handleGuess(bot, message, args, group) {
 		if (!activeGames[chatId]) {
 			return new ReturnMessage({
 				chatId,
-				content: "⚠️ Nenhum jogo ativo no momento. Use *!sequencia* para iniciar."
+				content: "⚠️ Nenhum desafio de lógica ativo agora. Manda *!sequencia* pra começar!"
 			});
 		}
 
 		if (!args || args.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "⚠️ Você precisa enviar uma resposta! Ex: *!seq 42*"
+				content: "⚠️ Faltou mandar o seu palpite! Ex: *!seq 42*"
 			});
 		}
 
@@ -602,7 +602,8 @@ async function showRanking(bot, message, args, group) {
 		if (!rows || rows.length === 0) {
 			return new ReturnMessage({
 				chatId,
-				content: "📉 Ainda não há ranking para este grupo. Jogue com *!sequencia*!"
+				content:
+					"📉 Ninguém pontuou no desafio de lógica por aqui ainda. Manda *!sequencia* pra estrear!"
 			});
 		}
 
@@ -620,7 +621,7 @@ async function showRanking(bot, message, args, group) {
 		logger.error("Error showing ranking", error);
 		return new ReturnMessage({
 			chatId: message.group || message.author,
-			content: "❌ Erro ao buscar ranking."
+			content: "❌ Falha ao carregar o ranking de lógica. Tenta de novo mais tarde!"
 		});
 	}
 }
