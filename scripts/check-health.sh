@@ -35,6 +35,8 @@ CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-60}"
 MAX_RETRIES=3
 WHATSGO_FAIL_COUNT=0
 RAVENA_FAIL_COUNT=0
+RAVENA_INACTIVE_RESTARTS=0
+RAVENA_ALERT_SENT=0
 
 # RAM Alert state tracking
 LAST_RAM_WARN_TIME=0
@@ -93,6 +95,7 @@ restart_container() {
     echo "[health-check] Restarting container: ${container} (Reason: ${reason})"
     if [ -d "/data" ] && [ -n "${reason}" ]; then
         echo "${reason}" > /data/status_motivo.txt
+        chmod 666 /data/status_motivo.txt 2>/dev/null || true
     fi
     docker restart "${container}"
 }
@@ -102,6 +105,7 @@ restart_stack() {
     echo "[health-check] Restarting full ravena-ai stack (Reason: ${reason})"
     if [ -d "/data" ] && [ -n "${reason}" ]; then
         echo "${reason}" > /data/status_motivo.txt
+        chmod 666 /data/status_motivo.txt 2>/dev/null || true
     fi
 
     # Discover compose project name or fallback to ravena-ai
@@ -395,15 +399,15 @@ _(Os containers continuam funcionando normalmente)_"
             CURRENT_HOUR=$(echo $CURRENT_HOUR | sed 's/^0//')
             [ -z "$CURRENT_HOUR" ] || [ "$CURRENT_HOUR" = " " ] && CURRENT_HOUR=0
             
-            if [ "$CURRENT_HOUR" -ge 1 ] && [ "$CURRENT_HOUR" -lt 7 ]; then
+            if [ "$CURRENT_HOUR" -ge 0 ] && [ "$CURRENT_HOUR" -lt 7 ]; then
                 LIMIT_MIN=90
                 MAX_INACTIVE=4
             elif [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_HOUR" -lt 8 ]; then
                 LIMIT_MIN=45
                 MAX_INACTIVE=3
             else
-                LIMIT_MIN=10
-                MAX_INACTIVE=1
+                LIMIT_MIN=15
+                MAX_INACTIVE=2
             fi
 
             LIMIT_MS=$((LIMIT_MIN * 60 * 1000))
@@ -420,18 +424,41 @@ _(Os containers continuam funcionando normalmente)_"
                 echo "[health-check] ravena-ai unhealthy (${RAVENA_FAIL_COUNT}/${MAX_RETRIES}): ${INACTIVE_COUNT} bots inactive for >${LIMIT_MIN}min."
                 
                 if [ "$RAVENA_FAIL_COUNT" -ge "$MAX_RETRIES" ]; then
-                    echo "[health-check] ravena-ai UNHEALTHY. Restarting..."
+                    RAVENA_INACTIVE_RESTARTS=$((RAVENA_INACTIVE_RESTARTS + 1))
+                    RAVENA_ALERT_SENT=1
 
-                    MSG="🚨 <b>SERVICE UNHEALTHY: ${RAVENA_CONTAINER}</b>%0A<i>${INACTIVE_COUNT} bots inactive for > ${LIMIT_MIN} mins.</i>%0A<i>Initiating Docker restart...</i>"
-                    MSG="${MSG}$(get_ravena_logs)"
+                    if [ "$RAVENA_INACTIVE_RESTARTS" -ge 2 ]; then
+                        echo "[health-check] ravena-ai UNHEALTHY persistente (${RAVENA_INACTIVE_RESTARTS}a tentativa). Reiniciando whatsgoapi e ravena-ai..."
 
-                    send_telegram "$MSG"
-                    restart_container "${RAVENA_CONTAINER}" "O bot foi reiniciado automaticamente pelo monitor de saúde devido à inatividade prolongada dos bots."
+                        MSG="🚨 <b>SERVICE UNHEALTHY (PERSISTENTE): ${RAVENA_CONTAINER} & ${WHATSGOAPI_CONTAINER}</b>%0A<i>${INACTIVE_COUNT} bots inativos por > ${LIMIT_MIN} mins mesmo após reinício prévio da Ravena.</i>%0A<i>Reiniciando whatsgoapi e ravena-ai para reestabelecer conexões do WhatsApp...</i>"
+                        MSG="${MSG}$(get_ravena_logs)"
+
+                        send_telegram "$MSG"
+                        restart_container "${WHATSGOAPI_CONTAINER}" "O serviço whatsgoapi foi reiniciado automaticamente devido à inatividade persistente dos bots."
+                        sleep 10
+                        restart_container "${RAVENA_CONTAINER}" "O bot ravena-ai foi reiniciado automaticamente após o whatsgoapi por inatividade persistente."
+                        RAVENA_INACTIVE_RESTARTS=0
+                    else
+                        echo "[health-check] ravena-ai UNHEALTHY. Restarting ${RAVENA_CONTAINER}..."
+
+                        MSG="🚨 <b>SERVICE UNHEALTHY: ${RAVENA_CONTAINER}</b>%0A<i>${INACTIVE_COUNT} bots inativos por > ${LIMIT_MIN} mins.</i>%0A<i>Iniciando reinício automático do container...</i>"
+                        MSG="${MSG}$(get_ravena_logs)"
+
+                        send_telegram "$MSG"
+                        restart_container "${RAVENA_CONTAINER}" "O bot foi reiniciado automaticamente pelo monitor de saúde devido à inatividade prolongada dos bots."
+                    fi
+
                     RAVENA_FAIL_COUNT=0
                     sleep 30
                 fi
             else
+                if [ "$RAVENA_ALERT_SENT" -eq 1 ]; then
+                    echo "[health-check] ravena-ai normalizado. Enviando confirmação de recuperação..."
+                    send_telegram "✅ <b>SERVICE RECOVERED: ${RAVENA_CONTAINER}</b>%0A<i>Os bots voltaram a responder normalmente (bots inativos: ${INACTIVE_COUNT}).</i>"
+                    RAVENA_ALERT_SENT=0
+                fi
                 RAVENA_FAIL_COUNT=0
+                RAVENA_INACTIVE_RESTARTS=0
                 echo "[health-check] OK (whatsgoapi: ${HTTP_STATUS}, inactive bots: ${INACTIVE_COUNT})"
             fi
         else
@@ -440,6 +467,7 @@ _(Os containers continuam funcionando normalmente)_"
 
             if [ "$RAVENA_FAIL_COUNT" -ge "$MAX_RETRIES" ]; then
                 echo "[health-check] ravena-ai DOWN. Restarting..."
+                RAVENA_ALERT_SENT=1
 
                 MSG="🚨 <b>SERVICE DOWN: ${RAVENA_CONTAINER}</b>%0A<i>Health check failed to get data from ${RAVENA_URL}.</i>%0A<i>Initiating Docker restart...</i>"
                 MSG="${MSG}$(get_ravena_logs)"

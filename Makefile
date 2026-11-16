@@ -87,27 +87,27 @@ generate-secrets: ## Gera o .env a partir do .env.example com segredos e inputs 
 ##@ Docker
 
 up: ## Inicia todos os serviços em modo background
-	@mkdir -p data && echo "Iniciando todos os serviços..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Iniciando todos os serviços..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose up -d
 
 up-build: ## Constrói as imagens e inicia todos os serviços
-	@mkdir -p data && echo "Recompilando o código e iniciando os serviços..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Recompilando o código e iniciando os serviços..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose up -d --build
 
 down: ## Para todos os serviços
-	@mkdir -p data && echo "Serviços desligados pelo administrador." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Serviços desligados pelo administrador." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose down
 
 restart: ## Reinicia todos os serviços
-	@mkdir -p data && echo "Reiniciando todos os serviços..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Reiniciando todos os serviços..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose restart
 
 restart-bot: ## Reinicia apenas o bot ravena-ai
-	@mkdir -p data && echo "Reiniciando o bot..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Reiniciando o bot..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose restart ravena-ai
 
 up-bot: ## Atualiza código (build incremental), sincroniza .env e recria apenas o bot ravena-ai
-	@mkdir -p data && echo "Atualização no código fonte! Recompilando e reiniciando..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Atualização no código fonte! Recompilando e reiniciando..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose up -d --build --no-deps ravena-ai
 
 restart-api: ## Reinicia apenas o whatsgoapi
@@ -136,12 +136,12 @@ skip-check: ## Alterna (liga/desliga) a pausa da verificação de saúde do heal
 
 
 ravena-ai: ## Faz build e recarrega o código do bot ravena-ai
-	@mkdir -p data && echo "Atualizando código e reiniciando o bot..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Atualizando código e reiniciando o bot..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose build ravena-ai
 	docker compose up -d ravena-ai
 
 build: ## Constrói todas as imagens Docker
-	@mkdir -p data && echo "Recompilando o código e reiniciando..." > data/status_motivo.txt
+	@mkdir -p data && rm -f data/status_motivo.txt && echo "Recompilando o código e reiniciando..." > data/status_motivo.txt && chmod 666 data/status_motivo.txt 2>/dev/null || true
 	docker compose build
 
 pull: ## Baixa as imagens base mais recentes
