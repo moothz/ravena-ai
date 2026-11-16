@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
 	const botsContainer = document.getElementById("status-bots-container");
+	const announcementsContainer = document.getElementById("status-announcements-container");
 	const botsSection = botsContainer ? botsContainer.closest(".status-bots-section") : null;
 	const updatedEl = document.getElementById("status-updated");
 	const alertEl = document.getElementById("status-alert");
@@ -54,6 +55,121 @@ document.addEventListener("DOMContentLoaded", () => {
 	/** Horário atual estimado no relógio do servidor. */
 	function serverNow() {
 		return Date.now() + clockSkew;
+	}
+
+	function formatWhatsAppMarkup(text) {
+		if (!text || typeof text !== "string") return "";
+
+		let escaped = escapeHtml(text);
+
+		// Blocos de código multilinhas (```codigo```)
+		const codeBlocks = [];
+		escaped = escaped.replace(/```([\s\S]*?)```/g, (match, code) => {
+			const id = codeBlocks.length;
+			codeBlocks.push(`<pre><code>${code}</code></pre>`);
+			return `\x00CODEBLOCK_${id}\x00`;
+		});
+
+		// Código inline (`codigo`)
+		const inlineCodes = [];
+		escaped = escaped.replace(/`([^`\n]+?)`/g, (match, code) => {
+			const id = inlineCodes.length;
+			inlineCodes.push(`<code>${code}</code>`);
+			return `\x00INLINECODE_${id}\x00`;
+		});
+
+		// Citações / Quotes (> texto)
+		const lines = escaped.split("\n");
+		const processedLines = [];
+		let quoteBuffer = [];
+
+		const flushQuotes = () => {
+			if (quoteBuffer.length > 0) {
+				processedLines.push(`<blockquote>${quoteBuffer.join("<br>")}</blockquote>`);
+				quoteBuffer = [];
+			}
+		};
+
+		for (const line of lines) {
+			const match = line.match(/^(&gt;|>)\s?(.*)$/);
+			if (match) {
+				quoteBuffer.push(match[2]);
+			} else {
+				flushQuotes();
+				processedLines.push(line);
+			}
+		}
+		flushQuotes();
+		escaped = processedLines.join("\n");
+
+		// Negrito (*texto*)
+		escaped = escaped.replace(/(^|[\s>(~_])\*([^*\n]+?)\*(?=[^\w*]|$)/g, (m, p, inner) => {
+			if (/^\s*$/.test(inner)) return m;
+			return `${p}<strong>${inner}</strong>`;
+		});
+
+		// Itálico (_texto_)
+		escaped = escaped.replace(/(^|[\s>(~*])_([^_\n]+?)_(?=[^\w_]|$)/g, (m, p, inner) => {
+			if (/^\s*$/.test(inner)) return m;
+			return `${p}<em>${inner}</em>`;
+		});
+
+		// Tachado (~texto~)
+		escaped = escaped.replace(/(^|[\s>(_*])~([^~\n]+?)~(?=[^\w~]|$)/g, (m, p, inner) => {
+			if (/^\s*$/.test(inner)) return m;
+			return `${p}<del>${inner}</del>`;
+		});
+
+		// URLs clicáveis
+		escaped = escaped.replace(
+			/(https?:\/\/[^\s<]+)/gi,
+			'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+		);
+
+		// Restaura blocos de código
+		escaped = escaped.replace(/\x00CODEBLOCK_(\d+)\x00/g, (m, id) => codeBlocks[Number(id)] || "");
+		escaped = escaped.replace(
+			/\x00INLINECODE_(\d+)\x00/g,
+			(m, id) => inlineCodes[Number(id)] || ""
+		);
+
+		// Quebras de linha (\n -> <br>)
+		escaped = escaped.replace(/\n/g, "<br>");
+
+		return escaped;
+	}
+
+	function renderAnnouncements(announcements) {
+		if (!announcementsContainer) return;
+
+		const active = Array.isArray(announcements)
+			? announcements.filter((a) => a && Number(a.expires_at) > serverNow())
+			: [];
+
+		if (active.length === 0) {
+			announcementsContainer.style.display = "none";
+			announcementsContainer.innerHTML = "";
+			return;
+		}
+
+		announcementsContainer.innerHTML = active
+			.map(
+				(item) => `
+				<article class="status-announcement-card" data-id="${escapeHtml(item.id)}">
+					<div class="status-announcement-header">
+						<span class="status-announcement-title">
+							<i class="fas fa-bullhorn" aria-hidden="true"></i> Aviso
+						</span>
+					</div>
+					<div class="status-announcement-content">
+						${formatWhatsAppMarkup(item.message)}
+					</div>
+				</article>
+			`
+			)
+			.join("");
+
+		announcementsContainer.style.display = "flex";
 	}
 
 	function getTimeSinceLastMessage(timestamp) {
@@ -644,6 +760,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 
 			markFresh(data.timestamp);
+			if (data.announcements !== undefined) {
+				renderAnnouncements(data.announcements);
+			}
 			renderBots();
 		} catch (err) {
 			if (seq !== fetchSeq) return;
@@ -703,6 +822,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		try {
 			eventSource = new EventSource("/api/stream");
 			eventSource.addEventListener("activity", onActivity);
+			eventSource.addEventListener("status-announcements", (e) => {
+				try {
+					const announcements = JSON.parse(e.data);
+					renderAnnouncements(announcements);
+				} catch (_) {}
+			});
 		} catch (_) {
 			eventSource = null;
 		}

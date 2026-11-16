@@ -771,6 +771,26 @@ class Database {
 		return this.coreRepo.claimScheduledEventStart(id, startedAt);
 	}
 
+	// --- Status Announcements ---
+
+	async createStatusAnnouncement(data) {
+		this.triggerBackupStart();
+		return this.coreRepo.createStatusAnnouncement(data);
+	}
+	async getStatusAnnouncementById(id) {
+		return this.coreRepo.getStatusAnnouncementById(id);
+	}
+	async getActiveStatusAnnouncements(now = Date.now()) {
+		return this.coreRepo.getActiveStatusAnnouncements(now);
+	}
+	async getAllStatusAnnouncements(limit = 50) {
+		return this.coreRepo.getAllStatusAnnouncements(limit);
+	}
+	async deleteStatusAnnouncement(id) {
+		this.triggerBackupStart();
+		return this.coreRepo.deleteStatusAnnouncement(id);
+	}
+
 	// --- Pending Joins ---
 
 	async getPendingJoins() {

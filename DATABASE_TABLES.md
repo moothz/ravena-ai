@@ -16,6 +16,7 @@ graph TD
         soft_blocks["soft_blocks\nBloqueios suaves"]
         blocked_invites["blocked_invites\nInvites banidos"]
         global_nicks["global_nicks\nApelidos globais de usuários"]
+        status_announcements["status_announcements\nAvisos públicos de status"]
     end
 
     subgraph CMDS ["💬 Comandos (custom_commands.db)"]
@@ -192,6 +193,17 @@ Histórico de estadias (períodos em que o bot entrou e saiu) de grupos.
 | `join_responsible` | TEXT | Dados em JSON de quem adicionou o bot (nulo se desconhecido) |
 | `leave_responsible` | TEXT | Dados em JSON de quem removeu o bot (nulo se ativo/desconhecido) |
 | `json_data` | TEXT | Objeto JSON completo do período |
+
+### `status_announcements`
+Avisos e comunicados de status exibidos no topo do endpoint `/status` e no comando `!status`.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Auto-incremento |
+| `message` | TEXT | Texto do aviso (suporta formatação WhatsApp: *negrito*, _itálico_, ~tachado~, emojis, quebras) |
+| `created_at` | INTEGER | Timestamp da criação (ms) |
+| `expires_at` | INTEGER | Timestamp da expiração (ms) |
+| `created_by` | TEXT | Identificador do criador ('admin') |
 
 ---
 

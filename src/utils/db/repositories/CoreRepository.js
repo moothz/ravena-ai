@@ -225,6 +225,20 @@ class CoreRepository {
 			this.DB,
 			"CREATE INDEX IF NOT EXISTS idx_scheduled_events_times ON scheduled_events(start_time, end_time)"
 		);
+		this.mappers.exec(
+			this.DB,
+			`CREATE TABLE IF NOT EXISTS status_announcements (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				message TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL,
+				created_by TEXT DEFAULT 'admin'
+			)`
+		);
+		this.mappers.exec(
+			this.DB,
+			"CREATE INDEX IF NOT EXISTS idx_status_announcements_expires ON status_announcements(expires_at)"
+		);
 		this._migrateLegacyGlobalNicks();
 		this._loadGlobalIgnoredCache();
 
@@ -2075,6 +2089,80 @@ class CoreRepository {
 			return Boolean(res && res.changes === 1);
 		} catch (error) {
 			this.logger.error("Error claiming scheduled event start:", error);
+			return false;
+		}
+	}
+
+	// --- Status Announcements ---
+
+	async createStatusAnnouncement(data) {
+		try {
+			const now = Date.now();
+			const message = String(data.message || "").trim();
+			const expiresAt = Number(data.expiresAt || data.expires_at);
+			const createdBy = String(data.createdBy || data.created_by || "admin");
+
+			const res = this.mappers.run(
+				this.DB,
+				`INSERT INTO status_announcements (message, created_at, expires_at, created_by)
+				 VALUES (?, ?, ?, ?)`,
+				[message, now, expiresAt, createdBy]
+			);
+			return this.getStatusAnnouncementById(res.lastInsertRowid);
+		} catch (error) {
+			this.logger.error("Error creating status announcement:", error);
+			throw error;
+		}
+	}
+
+	async getStatusAnnouncementById(id) {
+		try {
+			const row = this.mappers.get(this.DB, "SELECT * FROM status_announcements WHERE id = ?", [
+				Number(id)
+			]);
+			return row || null;
+		} catch (error) {
+			this.logger.error("Error getting status announcement by id:", error);
+			return null;
+		}
+	}
+
+	async getActiveStatusAnnouncements(now = Date.now()) {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM status_announcements WHERE expires_at > ? ORDER BY created_at DESC",
+				[now]
+			);
+			return rows || [];
+		} catch (error) {
+			this.logger.error("Error getting active status announcements:", error);
+			return [];
+		}
+	}
+
+	async getAllStatusAnnouncements(limit = 50) {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM status_announcements ORDER BY created_at DESC LIMIT ?",
+				[Number(limit)]
+			);
+			return rows || [];
+		} catch (error) {
+			this.logger.error("Error getting all status announcements:", error);
+			return [];
+		}
+	}
+
+	async deleteStatusAnnouncement(id) {
+		try {
+			const res = this.mappers.run(this.DB, "DELETE FROM status_announcements WHERE id = ?", [
+				Number(id)
+			]);
+			return Boolean(res && res.changes > 0);
+		} catch (error) {
+			this.logger.error("Error deleting status announcement:", error);
 			return false;
 		}
 	}

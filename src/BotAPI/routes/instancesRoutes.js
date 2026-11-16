@@ -30,7 +30,7 @@ function registerInstancesRoutes(api) {
 	const app = api.app;
 
 	// Endpoint SSE para streaming de eventos gerais e status de serviços
-	app.get("/api/stream", (req, res) => {
+	app.get("/api/stream", async (req, res) => {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Cache-Control", "no-cache");
 		res.setHeader("Connection", "keep-alive");
@@ -40,6 +40,16 @@ function registerInstancesRoutes(api) {
 			res.write(`event: service-status\n`);
 			res.write(`data: ${JSON.stringify(api.lastServicesStatus)}\n\n`);
 		}
+
+		try {
+			if (api.database?.getActiveStatusAnnouncements) {
+				const activeAnnouncements = await api.database.getActiveStatusAnnouncements();
+				if (activeAnnouncements && activeAnnouncements.length > 0) {
+					res.write(`event: status-announcements\n`);
+					res.write(`data: ${JSON.stringify(activeAnnouncements)}\n\n`);
+				}
+			}
+		} catch (_) {}
 
 		api.sseClients.push(res);
 
@@ -1039,6 +1049,125 @@ function registerInstancesRoutes(api) {
 			logStream.kill();
 		});
 	});
+
+	/* ========================================================================== */
+	/* AVISOS DE STATUS (/status E !status)                                       */
+	/* ========================================================================== */
+
+	// Lista avisos de status ativos (ou todos se all=true e autenticado)
+	app.get("/api/status-announcements", async (req, res) => {
+		try {
+			const isAdmin = api.isAdmin(req);
+			const all = req.query.all === "true" && isAdmin;
+			const announcements =
+				all && api.database?.getAllStatusAnnouncements
+					? await api.database.getAllStatusAnnouncements()
+					: api.database?.getActiveStatusAnnouncements
+						? await api.database.getActiveStatusAnnouncements()
+						: [];
+
+			res.json({
+				status: "ok",
+				announcements
+			});
+		} catch (error) {
+			api.logger.error("Erro ao listar avisos de status:", error);
+			res.status(500).json({ status: "error", message: "Erro ao buscar avisos de status." });
+		}
+	});
+
+	// Publica um novo aviso de status (requer autenticação básica)
+	app.post(
+		"/api/status-announcements",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { message, expiresAt } = req.body || {};
+
+				if (!message || typeof message !== "string" || !message.trim()) {
+					return res.status(400).json({
+						status: "error",
+						message: "A mensagem do aviso é obrigatória e não pode ser vazia."
+					});
+				}
+
+				const expiresTimestamp =
+					typeof expiresAt === "number" ? expiresAt : new Date(expiresAt).getTime();
+
+				if (!Number.isFinite(expiresTimestamp) || expiresTimestamp <= Date.now()) {
+					return res.status(400).json({
+						status: "error",
+						message: "A data de expiração deve ser válida e posterior ao momento atual."
+					});
+				}
+
+				const announcement = await api.database.createStatusAnnouncement({
+					message: message.trim(),
+					expiresAt: expiresTimestamp,
+					createdBy: req.user?.username || "admin"
+				});
+
+				// Transmite lista atualizada para clientes SSE conectados
+				try {
+					if (api.database?.getActiveStatusAnnouncements) {
+						const active = await api.database.getActiveStatusAnnouncements();
+						api.broadcastSSE("status-announcements", active);
+					}
+				} catch (sseErr) {
+					api.logger.warn("Erro ao emitir SSE de avisos de status:", sseErr);
+				}
+
+				res.status(201).json({
+					status: "ok",
+					message: "Aviso de status publicado com sucesso.",
+					announcement
+				});
+			} catch (error) {
+				api.logger.error("Erro ao criar aviso de status:", error);
+				res.status(500).json({ status: "error", message: "Falha ao publicar aviso de status." });
+			}
+		}
+	);
+
+	// Remove um aviso de status por ID (requer autenticação básica)
+	app.delete(
+		"/api/status-announcements/:id",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { id } = req.params;
+				const deleted = await api.database.deleteStatusAnnouncement(id);
+
+				if (!deleted) {
+					return res.status(404).json({
+						status: "error",
+						message: "Aviso de status não encontrado."
+					});
+				}
+
+				// Transmite lista atualizada para clientes SSE conectados
+				try {
+					if (api.database?.getActiveStatusAnnouncements) {
+						const active = await api.database.getActiveStatusAnnouncements();
+						api.broadcastSSE("status-announcements", active);
+					}
+				} catch (sseErr) {
+					api.logger.warn("Erro ao emitir SSE de avisos de status pós-delete:", sseErr);
+				}
+
+				res.json({
+					status: "ok",
+					message: "Aviso de status removido com sucesso.",
+					id: Number(id)
+				});
+			} catch (error) {
+				api.logger.error("Erro ao remover aviso de status:", error);
+				res.status(500).json({ status: "error", message: "Falha ao remover aviso de status." });
+			}
+		}
+	);
 }
 
 module.exports = { registerInstancesRoutes };

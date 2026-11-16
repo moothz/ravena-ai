@@ -151,14 +151,23 @@ function registerIndexRoutes(api) {
 	app.use(express.static(PUBLIC_DIR, STATIC_OPTIONS));
 
 	// Endpoint de verificação de saúde (100% em memória, ultra-rápido)
-	app.get("/health", (req, res) => {
+	app.get("/health", async (req, res) => {
 		try {
 			const isAdmin = api.isAdmin(req);
+			let announcements = [];
+			try {
+				if (api.database?.getActiveStatusAnnouncements) {
+					announcements = await api.database.getActiveStatusAnnouncements();
+				}
+			} catch (annErr) {
+				api.logger.warn("Erro ao buscar avisos de status no /health:", annErr);
+			}
 
 			res.json({
 				status: "ok",
 				timestamp: Date.now(),
 				isAdmin,
+				announcements,
 				bots: api.bots
 					.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
 					.map((bot) => {

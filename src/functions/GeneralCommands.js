@@ -8,6 +8,7 @@ const MemoryCache = require("../utils/MemoryCache");
 const LLMService = require("../services/LLMService");
 const fs = require("fs").promises;
 const axios = require("axios");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("general-commands");
 
@@ -658,11 +659,30 @@ async function statusCommand(bot, message, args, group) {
 
 		const response = await axios.get(url);
 
+		// Busca avisos de status ativos para exibir no header logo abaixo
+		let announcementsBlock = "";
+		try {
+			if (database && typeof database.getActiveStatusAnnouncements === "function") {
+				const activeAnnouncements = await database.getActiveStatusAnnouncements();
+				if (Array.isArray(activeAnnouncements) && activeAnnouncements.length > 0) {
+					telemetry.setAttrs({ "ravena.status.announcements_count": activeAnnouncements.length });
+					announcementsBlock =
+						activeAnnouncements
+							.map((a) => {
+								const text = (a.message || "").trim();
+								return `📢 ${text}`;
+							})
+							.join("\n\n") + "\n\n";
+				}
+			}
+		} catch (annError) {
+			logger.warn(`[statusCommand] Erro ao buscar avisos de status: ${annError.message}`);
+		}
+
 		// Link completo (com https://) para o Discord/Telegram também transformarem em link
 		const siteUrl = (process.env.BOT_DOMAIN || "https://ravena.moothz.com").replace(/\/+$/, "");
 		let statusMessage =
-			`🕸 *Status das Ravenas* 🔄\n> ${siteUrl}/status\n> https://ravena.moothz.com\n\n` +
-			servicesHeader;
+			`🕸 *Status das Ravenas* 🔄\n> ${siteUrl}/status\n\n` + announcementsBlock + servicesHeader;
 
 		const botsNormais = response.data.bots.filter((b) => !b.comunitario && !b.vip);
 		const botsComunitarios = response.data.bots.filter((b) => b.comunitario);

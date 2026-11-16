@@ -548,6 +548,143 @@
     filter: brightness(1.1);
 }
 
+/* ==========================================================================
+   Avisos e Comunicados Importantes (/status)
+   ========================================================================== */
+.status-announcements-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 22px;
+    width: 100%;
+}
+
+.status-announcement-card {
+    position: relative;
+    background: linear-gradient(135deg, rgba(246, 173, 85, 0.12) 0%, rgba(221, 107, 32, 0.08) 100%), #120b29;
+    border: 1px solid rgba(246, 173, 85, 0.45);
+    border-left: 4px solid #f6ad55;
+    border-radius: 8px;
+    padding: 14px 18px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(246, 173, 85, 0.15);
+    backdrop-filter: blur(8px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status-announcement-card:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(246, 173, 85, 0.25);
+}
+
+.status-announcement-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(246, 173, 85, 0.25);
+    flex-wrap: wrap;
+}
+
+.status-announcement-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #f6ad55;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-family: var(--status-font-mono);
+}
+
+.status-announcement-title i {
+    font-size: 14px;
+    color: #f6ad55;
+}
+
+.status-announcement-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #e2e8f0;
+    font-family: var(--status-font-mono);
+    background: rgba(0, 0, 0, 0.45);
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.status-announcement-badge i {
+    color: #f6ad55;
+}
+
+.status-announcement-content {
+    font-size: 14px;
+    line-height: 1.65;
+    color: #edf2f7;
+    word-break: break-word;
+}
+
+.status-announcement-content strong,
+.status-announcement-content b {
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.status-announcement-content em,
+.status-announcement-content i {
+    font-style: italic;
+    color: #e2e8f0;
+}
+
+.status-announcement-content del,
+.status-announcement-content s {
+    text-decoration: line-through;
+    color: #a0aec0;
+}
+
+.status-announcement-content code {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--status-font-mono);
+    font-size: 13px;
+    color: #feb2b2;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-announcement-content pre {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-family: var(--status-font-mono);
+    font-size: 13px;
+    overflow-x: auto;
+    margin: 8px 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.status-announcement-content blockquote {
+    border-left: 3px solid #f6ad55;
+    margin: 8px 0;
+    padding: 6px 14px;
+    color: #cbd5e0;
+    background: rgba(246, 173, 85, 0.08);
+    border-radius: 0 6px 6px 0;
+}
+
+.status-announcement-content a {
+    color: #63b3ed;
+    text-decoration: underline;
+    transition: color 0.2s;
+}
+
+.status-announcement-content a:hover {
+    color: #90cdf4;
+}
+
 @media (max-width: 860px) {
     .status-layout {
         grid-template-columns: 1fr;

@@ -13,7 +13,7 @@
     <meta property="og:description" content="Central de gerenciamento de instâncias e bots da Ravena.">
     <meta property="og:image" content="/android-chrome-512x512.png">
     
-    <link rel="stylesheet" href="/instances.css?v=2">
+    <link rel="stylesheet" href="/instances.css?v=20261115-status-announcements">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -31,6 +31,9 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <button id="btn-publish-status" class="btn btn-warning" title="Publicar aviso no status" onclick="window.openPublishStatusModal &amp;&amp; window.openPublishStatusModal()">
+                        <i class="fas fa-bullhorn"></i> <span>Publicar Status</span>
+                    </button>
                     <button id="btn-new-instance" class="btn btn-primary" title="Adicionar nova configuração de instância">
                         <i class="fas fa-plus"></i> <span>Nova Instância</span>
                     </button>
@@ -147,6 +150,109 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/instances.js?v=2"></script>
+    <!-- Modal de Publicar Status -->
+    <div id="publish-status-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2 id="publish-modal-title"><i class="fas fa-bullhorn" style="color:var(--warning-color);margin-right:8px;"></i> Publicar Aviso de Status</h2>
+                <button type="button" class="close-modal" id="btn-close-publish-modal" aria-label="Fechar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Seção do Formulário -->
+                <div class="form-section" style="margin-top: 0;">
+                    <div class="form-section-title">
+                        <i class="fas fa-edit"></i> Novo Aviso
+                    </div>
+
+                    <!-- Barra de Ferramentas de Formatação WhatsApp -->
+                    <div class="markup-toolbar" aria-label="Formatação WhatsApp">
+                        <span class="markup-toolbar-label">Formatar:</span>
+                        <div class="markup-btn-group">
+                            <button type="button" class="markup-btn" data-tag="bold" title="Negrito (*texto*)"><b>*B*</b></button>
+                            <button type="button" class="markup-btn" data-tag="italic" title="Itálico (_texto_)"><i>_I_</i></button>
+                            <button type="button" class="markup-btn" data-tag="strike" title="Tachado (~texto~)"><s>~S~</s></button>
+                            <button type="button" class="markup-btn" data-tag="mono" title="Monospace (```texto```)"><code>`C`</code></button>
+                            <button type="button" class="markup-btn" data-tag="quote" title="Citação (&gt; texto)"><i class="fas fa-quote-left"></i></button>
+                        </div>
+
+                        <span class="markup-toolbar-label" style="margin-left: 8px;">Emojis:</span>
+                        <div class="emoji-quick-pills">
+                            <button type="button" class="emoji-pill" data-emoji="📢">📢</button>
+                            <button type="button" class="emoji-pill" data-emoji="⚠️">⚠️</button>
+                            <button type="button" class="emoji-pill" data-emoji="🚀">🚀</button>
+                            <button type="button" class="emoji-pill" data-emoji="🔧">🔧</button>
+                            <button type="button" class="emoji-pill" data-emoji="ℹ️">ℹ️</button>
+                            <button type="button" class="emoji-pill" data-emoji="🕒">🕒</button>
+                            <button type="button" class="emoji-pill" data-emoji="🛑">🛑</button>
+                            <button type="button" class="emoji-pill" data-emoji="✨">✨</button>
+                            <button type="button" class="emoji-pill" data-emoji="🚨">🚨</button>
+                            <button type="button" class="emoji-pill" data-emoji="🔄">🔄</button>
+                        </div>
+                    </div>
+
+                    <!-- Textarea da Mensagem -->
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label for="announcement-message">
+                            <i class="fas fa-comment-alt"></i> Texto do Aviso (WhatsApp Markup, quebras de linha e emojis suportados)
+                        </label>
+                        <textarea id="announcement-message" class="form-control" rows="4" placeholder="Ex: *Manutenção Programada*: O bot ficará instável das 14h às 16h para melhorias no servidor. _Agradecemos a paciência!_"></textarea>
+                        <div class="field-hint">Use *negrito*, _itálico_, ~tachado~, `código` ou &gt; citação. Pressione Enter para quebrar linhas.</div>
+                    </div>
+
+                    <!-- Prévia em Tempo Real -->
+                    <div class="preview-box-container">
+                        <div class="preview-box-label"><i class="fas fa-eye"></i> Prévia do Aviso no Status:</div>
+                        <div id="announcement-live-preview" class="announcement-live-preview">
+                            <span class="preview-placeholder">A prévia da formatação aparecerá aqui conforme você digita...</span>
+                        </div>
+                    </div>
+
+                    <!-- Data e Hora de Expiração -->
+                    <div class="form-group" style="margin-top: 14px;">
+                        <label for="announcement-expires-at">
+                            <i class="fas fa-calendar-alt"></i> Data e Hora de Expiração
+                        </label>
+                        <div class="expiry-input-row">
+                            <input type="datetime-local" id="announcement-expires-at" class="form-control" required>
+                            <div class="expiry-presets">
+                                <button type="button" class="expiry-preset-btn" data-hours="1">+1 hora</button>
+                                <button type="button" class="expiry-preset-btn" data-hours="6">+6 horas</button>
+                                <button type="button" class="expiry-preset-btn" data-hours="12">+12 horas</button>
+                                <button type="button" class="expiry-preset-btn" data-hours="24">+1 dia</button>
+                                <button type="button" class="expiry-preset-btn" data-hours="72">+3 dias</button>
+                                <button type="button" class="expiry-preset-btn" data-hours="168">+1 semana</button>
+                            </div>
+                        </div>
+                        <div class="field-hint">O aviso expira automaticamente e para de ser exibido após essa data/hora no /status e no comando !status.</div>
+                    </div>
+
+                    <!-- Botão de Publicação -->
+                    <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" id="btn-submit-announcement" class="btn btn-warning">
+                            <i class="fas fa-paper-plane"></i> <span>Publicar Aviso</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Seção de Avisos Ativos Publicados -->
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-list-ul"></i> Avisos Ativos Publicados
+                        <span id="active-announcements-count" class="badge-count">0</span>
+                    </div>
+                    <div id="active-announcements-list" class="active-announcements-list">
+                        <div class="loading-state-small">
+                            <i class="fas fa-spinner fa-spin"></i> Carregando avisos ativos...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-footer-close-publish-modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/instances.js?v=20261115-status-announcements"></script>
 </body>
 </html>
