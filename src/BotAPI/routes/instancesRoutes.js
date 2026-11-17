@@ -1130,6 +1130,75 @@ function registerInstancesRoutes(api) {
 		}
 	);
 
+	// Atualiza um aviso de status existente por ID (requer autenticação básica)
+	app.put(
+		"/api/status-announcements/:id",
+		api.authenticateBasic,
+		api.strictLimiter,
+		async (req, res) => {
+			try {
+				const { id } = req.params;
+				const { message, expiresAt } = req.body || {};
+
+				if (!message || typeof message !== "string" || !message.trim()) {
+					return res.status(400).json({
+						status: "error",
+						message: "A mensagem do aviso é obrigatória e não pode ser vazia."
+					});
+				}
+
+				const expiresTimestamp =
+					typeof expiresAt === "number" ? expiresAt : new Date(expiresAt).getTime();
+
+				if (!Number.isFinite(expiresTimestamp) || expiresTimestamp <= Date.now()) {
+					return res.status(400).json({
+						status: "error",
+						message: "A data de expiração deve ser válida e posterior ao momento atual."
+					});
+				}
+
+				if (!api.database?.updateStatusAnnouncement) {
+					return res.status(500).json({
+						status: "error",
+						message: "Método de atualização de aviso não disponível no banco de dados."
+					});
+				}
+
+				const updated = await api.database.updateStatusAnnouncement(id, {
+					message: message.trim(),
+					expiresAt: expiresTimestamp,
+					updatedBy: req.user?.username || "admin"
+				});
+
+				if (!updated) {
+					return res.status(404).json({
+						status: "error",
+						message: "Aviso de status não encontrado."
+					});
+				}
+
+				// Transmite lista atualizada para clientes SSE conectados
+				try {
+					if (api.database?.getActiveStatusAnnouncements) {
+						const active = await api.database.getActiveStatusAnnouncements();
+						api.broadcastSSE("status-announcements", active);
+					}
+				} catch (sseErr) {
+					api.logger.warn("Erro ao emitir SSE de avisos de status pós-update:", sseErr);
+				}
+
+				res.json({
+					status: "ok",
+					message: "Aviso de status atualizado com sucesso.",
+					announcement: updated
+				});
+			} catch (error) {
+				api.logger.error("Erro ao atualizar aviso de status:", error);
+				res.status(500).json({ status: "error", message: "Falha ao atualizar aviso de status." });
+			}
+		}
+	);
+
 	// Remove um aviso de status por ID (requer autenticação básica)
 	app.delete(
 		"/api/status-announcements/:id",

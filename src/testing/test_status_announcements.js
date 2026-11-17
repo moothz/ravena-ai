@@ -65,7 +65,22 @@ async function runTests() {
 			!activeIds.includes(expiredAnnouncement.id),
 			"Aviso expirado NÃO deve estar na lista de ativos"
 		);
-		console.log("✓ Operações de banco e filtro de expiração validados com sucesso.");
+
+		// Testa atualização de aviso via database
+		const updatedDb = await database.updateStatusAnnouncement(announcement1.id, {
+			message: "*Manutenção Atualizada*: Término previsto para as 17h.",
+			expiresAt: now + 5000 * 1000
+		});
+		assert.ok(updatedDb, "updateStatusAnnouncement deve retornar o registro atualizado");
+		assert.strictEqual(updatedDb.message, "*Manutenção Atualizada*: Término previsto para as 17h.");
+		assert.strictEqual(updatedDb.expires_at, now + 5000 * 1000);
+		// Restaura para os testes seguintes
+		await database.updateStatusAnnouncement(announcement1.id, {
+			message: "*Manutenção Programada*: O bot ficará instável das 14h às 16h.",
+			expiresAt: now + 3600 * 1000
+		});
+
+		console.log("✓ Operações de banco, atualização e filtro de expiração validados com sucesso.");
 
 		// 2. Testando exibição no comando !status
 		console.log("2. Testando exibição no comando !status...");
@@ -177,6 +192,31 @@ async function runTests() {
 		// Confirma que emitiu evento SSE
 		const sseEvent = sseMessages.find((m) => m.event === "status-announcements");
 		assert.ok(sseEvent, "Deve ter transmitido evento SSE 'status-announcements'");
+
+		// PUT /api/status-announcements/:id atualizando com sucesso
+		const putRes = await fetch(`${baseUrl}/api/status-announcements/${apiCreatedId}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				message: "*Aviso Editado via API*",
+				expiresAt: Date.now() + 172800 * 1000
+			})
+		});
+		assert.strictEqual(putRes.status, 200, "Atualização válida deve retornar 200");
+		const putJson = await putRes.json();
+		assert.strictEqual(putJson.status, "ok");
+		assert.strictEqual(putJson.announcement.message, "*Aviso Editado via API*");
+
+		// PUT /api/status-announcements/:id com ID inexistente retorna 404
+		const notFoundPut = await fetch(`${baseUrl}/api/status-announcements/99999999`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				message: "Não existe",
+				expiresAt: Date.now() + 60000
+			})
+		});
+		assert.strictEqual(notFoundPut.status, 404, "ID inexistente deve retornar 404");
 
 		// DELETE /api/status-announcements/:id
 		const delRes = await fetch(`${baseUrl}/api/status-announcements/${apiCreatedId}`, {

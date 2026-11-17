@@ -2155,6 +2155,35 @@ class CoreRepository {
 		}
 	}
 
+	async updateStatusAnnouncement(id, data) {
+		try {
+			const existing = await this.getStatusAnnouncementById(id);
+			if (!existing) return null;
+
+			const message = data.message !== undefined ? String(data.message).trim() : existing.message;
+			const expiresAt =
+				data.expiresAt !== undefined || data.expires_at !== undefined
+					? Number(data.expiresAt ?? data.expires_at)
+					: existing.expires_at;
+			const updatedBy = String(
+				data.updatedBy || data.updated_by || data.createdBy || existing.created_by
+			);
+
+			this.mappers.run(
+				this.DB,
+				`UPDATE status_announcements 
+				 SET message = ?, expires_at = ?, created_by = ?
+				 WHERE id = ?`,
+				[message, expiresAt, updatedBy, Number(id)]
+			);
+
+			return this.getStatusAnnouncementById(id);
+		} catch (error) {
+			this.logger.error("Error updating status announcement:", error);
+			throw error;
+		}
+	}
+
 	async deleteStatusAnnouncement(id) {
 		try {
 			const res = this.mappers.run(this.DB, "DELETE FROM status_announcements WHERE id = ?", [

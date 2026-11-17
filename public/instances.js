@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnRefresh = document.getElementById("btn-refresh");
 	const refreshIcon = document.getElementById("refresh-icon");
 	const btnSaveAll = document.getElementById("btn-save-all");
+	const unsavedIndicator = document.getElementById("unsaved-indicator");
 	const btnNewInstance = document.getElementById("btn-new-instance");
 	const btnRetry = document.getElementById("btn-retry");
 
@@ -39,6 +40,44 @@ document.addEventListener("DOMContentLoaded", () => {
 	let currentSearch = "";
 	const openBotIds = new Set(); // Preserva quais sanfonas estão abertas
 	let isSaving = false;
+	let hasUnsavedChanges = false;
+
+	// Gestão de estado de edição para evitar perdas acidentais em auto-refreshes
+	function markDirty() {
+		if (!hasUnsavedChanges) {
+			hasUnsavedChanges = true;
+			if (unsavedIndicator) unsavedIndicator.classList.remove("hidden");
+			if (btnSaveAll) {
+				btnSaveAll.title = "Existem alterações pendentes! Clique para salvar tudo.";
+			}
+		}
+	}
+
+	function markClean() {
+		hasUnsavedChanges = false;
+		if (unsavedIndicator) unsavedIndicator.classList.add("hidden");
+		if (btnSaveAll) {
+			btnSaveAll.title = "Salvar todas as alterações em tempo real";
+		}
+	}
+
+	function isUserEditing() {
+		if (hasUnsavedChanges) return true;
+		const pubModal = document.getElementById("publish-status-modal");
+		if (pubModal && !pubModal.classList.contains("hidden")) return true;
+		const active = document.activeElement;
+		if (
+			active &&
+			(active.tagName === "INPUT" ||
+				active.tagName === "TEXTAREA" ||
+				active.tagName === "SELECT" ||
+				active.isContentEditable)
+		) {
+			return true;
+		}
+		if (Array.isArray(allBots) && allBots.some((b) => b.isNew)) return true;
+		return false;
+	}
 
 	// Toast Notification
 	function showToast(message, type = "info", duration = 4000) {
@@ -100,8 +139,82 @@ document.addEventListener("DOMContentLoaded", () => {
 		return `${days}d atrás`;
 	}
 
+	// Atualização em tempo real suave apenas dos cabeçalhos e status das instâncias (sem recriar formulários nem inputs)
+	function updateBotRuntimeInPlace(freshBots) {
+		if (!instancesContainer) return;
+		freshBots.forEach((bot) => {
+			const card = instancesContainer.querySelector(
+				`.bot-accordion[data-bot-name="${bot.nome}"]`
+			);
+			if (!card) return;
+
+			const isEnabled = bot.enabled !== false;
+			const isOnline = Boolean(bot.connected && !bot.banido && isEnabled);
+			const isBanned = Boolean(bot.banido);
+			const platform = bot.useTelegram ? "Telegram" : bot.useDiscord ? "Discord" : "WhatsApp";
+
+			card.classList.remove(
+				"status-online",
+				"status-offline",
+				"status-disabled",
+				"status-banned"
+			);
+			let statusClass = "status-offline";
+			let statusBadge =
+				'<span class="badge badge-offline"><i class="fas fa-times-circle"></i> Offline</span>';
+
+			if (!isEnabled) {
+				statusClass = "status-disabled";
+				statusBadge =
+					'<span class="badge badge-disabled"><i class="fas fa-power-off"></i> Desativada</span>';
+			} else if (isBanned) {
+				statusClass = "status-banned";
+				statusBadge = '<span class="badge badge-banned"><i class="fas fa-ban"></i> Banida</span>';
+			} else if (isOnline) {
+				statusClass = "status-online";
+				statusBadge =
+					'<span class="badge badge-online"><i class="fas fa-check-circle"></i> Online</span>';
+			}
+			card.classList.add(statusClass);
+
+			const platformIcon =
+				platform === "Telegram"
+					? '<i class="fab fa-telegram" style="color:#2AABEE;"></i>'
+					: platform === "Discord"
+						? '<i class="fab fa-discord" style="color:#5865F2;"></i>'
+						: '<i class="fab fa-whatsapp" style="color:#25D366;"></i>';
+
+			const msgsHr = Math.round(bot.msgsHr || 0);
+			const groupsCount = bot.groupsCount || 0;
+			const avgDelay = bot.responseTime ? bot.responseTime.avg || 0 : 0;
+
+			const headerMain = card.querySelector(".bot-header-main");
+			if (headerMain) {
+				headerMain.innerHTML = `
+					<span class="bot-title">
+						${platformIcon}
+						<span>${escapeHtml(bot.nomeExibir || bot.nome)}</span>
+						${bot.nomeExibir && bot.nomeExibir !== bot.nome ? `<small style="font-size:0.75rem; color:var(--text-muted);">(${escapeHtml(bot.nome)})</small>` : ""}
+					</span>
+					${statusBadge}
+					${bot.privado ? '<span class="badge badge-private"><i class="fas fa-lock"></i> Privada</span>' : ""}
+					${bot.vip ? '<span class="badge badge-vip"><i class="fas fa-gem"></i> VIP</span>' : ""}
+					${bot.comunitario ? '<span class="badge badge-community"><i class="fas fa-hands-helping"></i> Comunitária</span>' : ""}
+					<span class="badge badge-platform">${platform}</span>
+					<span class="badge badge-stat" title="Mensagens por hora"><i class="fas fa-envelope"></i> ${msgsHr} msgs/h</span>
+					<span class="badge badge-stat" title="Grupos conectados"><i class="fas fa-users"></i> ${groupsCount} grupos</span>
+					${avgDelay > 0 ? `<span class="badge badge-stat" title="Delay médio de resposta">⚡ ${avgDelay.toFixed(1)}s</span>` : ""}
+				`;
+			}
+		});
+	}
+
 	// Carregamento dos dados dos bots
 	async function fetchBots(isBackground = false) {
+		if (isBackground && isUserEditing()) {
+			return;
+		}
+
 		if (!isBackground) {
 			loadingBox.style.display = "block";
 			errorBox.style.display = "none";
@@ -121,9 +234,18 @@ document.addEventListener("DOMContentLoaded", () => {
 				throw new Error("Formato inválido retornado pela API.");
 			}
 
+			const sameBots =
+				allBots.length === data.length &&
+				allBots.every((b, i) => b.nome === data[i].nome);
+
 			allBots = data;
 			updateSummaryCounters();
-			renderBotAccordions();
+
+			if (isBackground && sameBots && instancesContainer && instancesContainer.children.length > 0) {
+				updateBotRuntimeInPlace(data);
+			} else {
+				renderBotAccordions();
+			}
 
 			loadingBox.style.display = "none";
 		} catch (err) {
@@ -687,6 +809,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				}
 				bot.extras[cleanCat] = {};
 				renderExtrasBuilder(extrasContainer, bot.extras);
+				markDirty();
 				showToast(`Categoria '${cleanCat}' adicionada aos extras!`, "info");
 			});
 		}
@@ -813,6 +936,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				}
 				extrasObj[catKey][cleanKey] = "";
 				renderExtrasBuilder(container, extrasObj);
+				markDirty();
 			});
 
 			// Botão Remover Categoria
@@ -825,6 +949,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					return;
 				delete extrasObj[catKey];
 				renderExtrasBuilder(container, extrasObj);
+				markDirty();
 			});
 
 			container.appendChild(catCard);
@@ -890,6 +1015,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			if (newType === "number") currentVal = Number(currentVal) || 0;
 			else if (newType === "boolean") currentVal = currentVal === "true";
 			renderValInput(newType, currentVal);
+			markDirty();
 		});
 
 		// Excluir Propriedade
@@ -898,6 +1024,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			e.stopPropagation();
 			delete extrasObj[catKey][propKey];
 			row.remove();
+			markDirty();
 		});
 
 		return row;
@@ -1045,6 +1172,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				: "Todas as instâncias foram salvas e sincronizadas em tempo real!";
 
 			showToast(targetMsg, "success");
+			markClean();
 			await fetchBots(true);
 		} catch (err) {
 			console.error("Falha ao salvar:", err);
@@ -1089,6 +1217,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		openBotIds.add(newBot.nome);
 		updateSummaryCounters();
 		renderBotAccordions();
+		markDirty();
 
 		// Rola até a nova sanfona
 		const firstCard = instancesContainer.querySelector(".bot-accordion");
@@ -1152,8 +1281,33 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	// Atualizar manual
-	btnRefresh.addEventListener("click", () => fetchBots(false));
+	btnRefresh.addEventListener("click", () => {
+		if (hasUnsavedChanges) {
+			if (
+				!confirm(
+					"Você possui alterações não salvas que serão perdidas ao atualizar. Deseja continuar?"
+				)
+			) {
+				return;
+			}
+			markClean();
+		}
+		fetchBots(false);
+	});
 	btnRetry.addEventListener("click", () => fetchBots(false));
+
+	// Registra observadores de alterações para rastrear edições não salvas
+	if (instancesContainer) {
+		instancesContainer.addEventListener("input", markDirty);
+		instancesContainer.addEventListener("change", markDirty);
+	}
+
+	window.addEventListener("beforeunload", (e) => {
+		if (hasUnsavedChanges) {
+			e.preventDefault();
+			e.returnValue = "";
+		}
+	});
 
 	/* ==========================================================================
        MODAL DE PUBLICAÇÃO DE STATUS (/instances)
@@ -1168,6 +1322,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnSubmitAnnouncement = document.getElementById("btn-submit-announcement");
 	const activeAnnouncementsList = document.getElementById("active-announcements-list");
 	const activeAnnouncementsCount = document.getElementById("active-announcements-count");
+	const formAnnouncementTitle = document.getElementById("form-announcement-title");
+	const editingAnnouncementBanner = document.getElementById("editing-announcement-banner");
+	const editingAnnouncementIdLabel = document.getElementById("editing-announcement-id-label");
+	const btnCancelAnnouncementEditTop = document.getElementById("btn-cancel-announcement-edit-top");
+	const btnCancelAnnouncementEdit = document.getElementById("btn-cancel-announcement-edit");
+
+	let editingAnnouncementId = null;
 
 	function escapeHtml(text) {
 		return String(text ?? "").replace(
@@ -1267,17 +1428,109 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	}
 
-	function setExpiryHours(hours) {
-		if (!announcementExpiresAt) return;
-		const targetDate = new Date(Date.now() + hours * 3600 * 1000);
-		// Formato compatível com input datetime-local no fuso local: YYYY-MM-DDTHH:mm
+	function formatTimestampForInput(timestamp) {
+		const targetDate = new Date(Number(timestamp));
 		const pad = (n) => String(n).padStart(2, "0");
 		const year = targetDate.getFullYear();
 		const month = pad(targetDate.getMonth() + 1);
 		const day = pad(targetDate.getDate());
 		const hour = pad(targetDate.getHours());
 		const minute = pad(targetDate.getMinutes());
-		announcementExpiresAt.value = `${year}-${month}-${day}T${hour}:${minute}`;
+		return `${year}-${month}-${day}T${hour}:${minute}`;
+	}
+
+	function setExpiryHours(hours) {
+		if (!announcementExpiresAt) return;
+		announcementExpiresAt.value = formatTimestampForInput(Date.now() + hours * 3600 * 1000);
+	}
+
+	function startEditingAnnouncement(item) {
+		if (!item || !announcementMessage || !announcementExpiresAt) return;
+		editingAnnouncementId = item.id;
+
+		if (editingAnnouncementBanner) {
+			editingAnnouncementBanner.classList.remove("hidden");
+		}
+		if (editingAnnouncementIdLabel) {
+			editingAnnouncementIdLabel.textContent = `#${item.id}`;
+		}
+		if (formAnnouncementTitle) {
+			formAnnouncementTitle.innerHTML = `<i class="fas fa-edit"></i> Editando Aviso #${item.id}`;
+		}
+		if (btnCancelAnnouncementEdit) {
+			btnCancelAnnouncementEdit.classList.remove("hidden");
+		}
+		if (btnSubmitAnnouncement) {
+			btnSubmitAnnouncement.classList.remove("btn-warning");
+			btnSubmitAnnouncement.classList.add("btn-success");
+			btnSubmitAnnouncement.innerHTML =
+				'<i class="fas fa-save"></i> <span>Salvar Alterações</span>';
+		}
+
+		announcementMessage.value = item.message || "";
+		const expMs = Number(item.expires_at);
+		if (expMs <= Date.now() + 600000) {
+			setExpiryHours(24);
+		} else {
+			announcementExpiresAt.value = formatTimestampForInput(expMs);
+		}
+		updateLivePreview();
+
+		const modalBody = publishModal ? publishModal.querySelector(".modal-body") : null;
+		if (modalBody) {
+			modalBody.scrollTo({ top: 0, behavior: "smooth" });
+		}
+		announcementMessage.focus();
+		showToast(
+			`Aviso #${item.id} carregado para edição. Altere o que precisar e salve!`,
+			"info",
+			3500
+		);
+	}
+
+	function cancelEditingAnnouncement() {
+		editingAnnouncementId = null;
+
+		if (editingAnnouncementBanner) {
+			editingAnnouncementBanner.classList.add("hidden");
+		}
+		if (formAnnouncementTitle) {
+			formAnnouncementTitle.innerHTML = '<i class="fas fa-edit"></i> Novo Aviso';
+		}
+		if (btnCancelAnnouncementEdit) {
+			btnCancelAnnouncementEdit.classList.add("hidden");
+		}
+		if (btnSubmitAnnouncement) {
+			btnSubmitAnnouncement.classList.remove("btn-success");
+			btnSubmitAnnouncement.classList.add("btn-warning");
+			btnSubmitAnnouncement.innerHTML =
+				'<i class="fas fa-paper-plane"></i> <span>Publicar Aviso</span>';
+		}
+
+		if (announcementMessage) {
+			announcementMessage.value = "";
+		}
+		setExpiryHours(24);
+		updateLivePreview();
+	}
+
+	function reuseAnnouncement(item) {
+		if (!item || !announcementMessage) return;
+		cancelEditingAnnouncement();
+		announcementMessage.value = item.message || "";
+		setExpiryHours(24);
+		updateLivePreview();
+
+		const modalBody = publishModal ? publishModal.querySelector(".modal-body") : null;
+		if (modalBody) {
+			modalBody.scrollTo({ top: 0, behavior: "smooth" });
+		}
+		announcementMessage.focus();
+		showToast(
+			"Dados do aviso copiados para o formulário. Ajuste o que precisar e publique!",
+			"info",
+			4000
+		);
 	}
 
 	function insertAtCursor(before, after = "") {
@@ -1328,19 +1581,29 @@ document.addEventListener("DOMContentLoaded", () => {
 						minute: "2-digit"
 					});
 					const isExpired = Date.now() > Number(item.expires_at);
+					const isBeingEdited = editingAnnouncementId === item.id;
 
 					return `
-                    <div class="active-announcement-card" data-id="${item.id}">
+                    <div class="active-announcement-card" data-id="${item.id}" style="${isBeingEdited ? "border-left: 3px solid var(--success-light); background: rgba(56, 161, 105, 0.12);" : ""}">
                         <div class="active-announcement-header">
                             <div class="active-announcement-meta">
                                 <span class="active-announcement-badge">
                                     <i class="far fa-clock"></i> ${isExpired ? "Expirado" : "Expira em"}: ${formattedExpiry}
                                 </span>
                                 <span>Criado em: ${new Date(item.created_at).toLocaleDateString("pt-BR")}</span>
+                                ${isBeingEdited ? '<span class="badge badge-online" style="font-size:0.7rem; padding: 2px 6px;"><i class="fas fa-pencil-alt"></i> Em edição</span>' : ""}
                             </div>
-                            <button type="button" class="btn btn-danger-outline btn-sm btn-delete-announcement" data-id="${item.id}" title="Excluir este aviso imediatamente">
-                                <i class="fas fa-trash"></i> <span>Remover</span>
-                            </button>
+                            <div class="active-announcement-actions">
+                                <button type="button" class="btn btn-warning-outline btn-sm btn-edit-announcement" data-id="${item.id}" title="Editar este aviso">
+                                    <i class="fas fa-edit"></i> <span>Editar</span>
+                                </button>
+                                <button type="button" class="btn btn-secondary-outline btn-sm btn-reuse-announcement" data-id="${item.id}" title="Preencher formulário para criar um novo aviso baseado neste">
+                                    <i class="fas fa-clone"></i> <span>Reutilizar</span>
+                                </button>
+                                <button type="button" class="btn btn-danger-outline btn-sm btn-delete-announcement" data-id="${item.id}" title="Excluir este aviso imediatamente">
+                                    <i class="fas fa-trash"></i> <span>Remover</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="active-announcement-content">
                             ${formatWhatsAppMarkup(item.message)}
@@ -1350,17 +1613,64 @@ document.addEventListener("DOMContentLoaded", () => {
 				})
 				.join("");
 
-			// Adiciona handlers de deleção
+			// Handlers de edição
+			activeAnnouncementsList.querySelectorAll(".btn-edit-announcement").forEach((btn) => {
+				btn.addEventListener("click", (e) => {
+					const id = Number(e.currentTarget.dataset.id);
+					const targetItem = list.find((a) => a.id === id);
+					if (targetItem) {
+						startEditingAnnouncement(targetItem);
+						loadActiveAnnouncements();
+					}
+				});
+			});
+
+			// Handlers de reutilização
+			activeAnnouncementsList.querySelectorAll(".btn-reuse-announcement").forEach((btn) => {
+				btn.addEventListener("click", (e) => {
+					const id = Number(e.currentTarget.dataset.id);
+					const targetItem = list.find((a) => a.id === id);
+					if (targetItem) {
+						reuseAnnouncement(targetItem);
+					}
+				});
+			});
+
+			// Handlers de deleção
 			activeAnnouncementsList.querySelectorAll(".btn-delete-announcement").forEach((btn) => {
 				btn.addEventListener("click", async (e) => {
-					const id = e.currentTarget.dataset.id;
+					const id = Number(e.currentTarget.dataset.id);
+					const targetItem = list.find((a) => a.id === id);
 					if (!confirm("Deseja realmente remover este aviso de status?")) return;
 					btn.disabled = true;
 					btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 					try {
 						const delResp = await fetch(`/api/status-announcements/${id}`, { method: "DELETE" });
 						if (!delResp.ok) throw new Error(`HTTP ${delResp.status}`);
-						showToast("Aviso de status removido com sucesso!", "success");
+
+						// Se estava editando esse aviso, cancela a edição
+						if (editingAnnouncementId === id) {
+							cancelEditingAnnouncement();
+						}
+
+						// Preenche o formulário com os dados excluídos para facilitar recadastro se o formulário estiver vazio
+						if (
+							targetItem &&
+							announcementMessage &&
+							(!announcementMessage.value.trim() || editingAnnouncementId === id)
+						) {
+							announcementMessage.value = targetItem.message;
+							setExpiryHours(24);
+							updateLivePreview();
+							showToast(
+								"Aviso removido. Os campos foram preenchidos para recadastro/edição se desejar.",
+								"info",
+								5000
+							);
+						} else {
+							showToast("Aviso de status removido com sucesso!", "success");
+						}
+
 						await loadActiveAnnouncements();
 					} catch (delErr) {
 						showToast(`Erro ao remover aviso: ${delErr.message}`, "error");
@@ -1375,11 +1685,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function openPublishModal() {
-		console.log("[instances] openPublishModal disparado");
-		if (!publishModal) {
-			console.error("[instances] publishModal não encontrado no DOM!");
-			return;
-		}
+		if (!publishModal) return;
 		publishModal.classList.remove("hidden");
 		if (announcementExpiresAt && !announcementExpiresAt.value) {
 			setExpiryHours(24); // Padrão: 24 horas
@@ -1391,6 +1697,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	function closePublishModal() {
 		if (!publishModal) return;
 		publishModal.classList.add("hidden");
+		if (editingAnnouncementId) {
+			cancelEditingAnnouncement();
+		}
 	}
 
 	window.openPublishStatusModal = openPublishModal;
@@ -1408,6 +1717,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	if (btnFooterClosePublishModal) {
 		btnFooterClosePublishModal.addEventListener("click", closePublishModal);
+	}
+
+	if (btnCancelAnnouncementEditTop) {
+		btnCancelAnnouncementEditTop.addEventListener("click", cancelEditingAnnouncement);
+	}
+
+	if (btnCancelAnnouncementEdit) {
+		btnCancelAnnouncementEdit.addEventListener("click", cancelEditingAnnouncement);
 	}
 
 	if (publishModal) {
@@ -1460,7 +1777,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		btnSubmitAnnouncement.addEventListener("click", async () => {
 			const message = announcementMessage ? announcementMessage.value.trim() : "";
 			if (!message) {
-				showToast("Por favor, digite o texto do aviso antes de publicar.", "error");
+				showToast("Por favor, digite o texto do aviso antes de salvar.", "error");
 				if (announcementMessage) announcementMessage.focus();
 				return;
 			}
@@ -1479,13 +1796,20 @@ document.addEventListener("DOMContentLoaded", () => {
 				return;
 			}
 
+			const isEditing = Boolean(editingAnnouncementId);
 			btnSubmitAnnouncement.disabled = true;
-			btnSubmitAnnouncement.innerHTML =
-				'<i class="fas fa-spinner fa-spin"></i> <span>Publicando...</span>';
+			btnSubmitAnnouncement.innerHTML = isEditing
+				? '<i class="fas fa-spinner fa-spin"></i> <span>Salvando...</span>'
+				: '<i class="fas fa-spinner fa-spin"></i> <span>Publicando...</span>';
 
 			try {
-				const resp = await fetch("/api/status-announcements", {
-					method: "POST",
+				const url = isEditing
+					? `/api/status-announcements/${editingAnnouncementId}`
+					: "/api/status-announcements";
+				const method = isEditing ? "PUT" : "POST";
+
+				const resp = await fetch(url, {
+					method,
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						message,
@@ -1498,19 +1822,26 @@ document.addEventListener("DOMContentLoaded", () => {
 					throw new Error(resJson.message || `Erro HTTP ${resp.status}`);
 				}
 
-				showToast("Aviso de status publicado com sucesso!", "success");
-				if (announcementMessage) {
-					announcementMessage.value = "";
-					updateLivePreview();
-				}
-				setExpiryHours(24);
+				showToast(
+					isEditing
+						? "Aviso de status atualizado com sucesso!"
+						: "Aviso de status publicado com sucesso!",
+					"success"
+				);
+
+				cancelEditingAnnouncement();
 				await loadActiveAnnouncements();
 			} catch (err) {
-				showToast(`Falha ao publicar aviso: ${err.message}`, "error");
+				showToast(`Falha ao salvar aviso: ${err.message}`, "error");
 			} finally {
 				btnSubmitAnnouncement.disabled = false;
-				btnSubmitAnnouncement.innerHTML =
-					'<i class="fas fa-paper-plane"></i> <span>Publicar Aviso</span>';
+				if (editingAnnouncementId) {
+					btnSubmitAnnouncement.innerHTML =
+						'<i class="fas fa-save"></i> <span>Salvar Alterações</span>';
+				} else {
+					btnSubmitAnnouncement.innerHTML =
+						'<i class="fas fa-paper-plane"></i> <span>Publicar Aviso</span>';
+				}
 			}
 		});
 	}
@@ -1518,9 +1849,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Carregamento inicial
 	fetchBots(false);
 
-	// Auto-refresh suave a cada 30 segundos em segundo plano (mantém sanfonas abertas)
+	// Auto-refresh suave a cada 30 segundos em segundo plano (mantém sanfonas abertas e respeita edição)
 	setInterval(() => {
-		if (!isSaving) {
+		if (!isSaving && !isUserEditing()) {
 			fetchBots(true);
 		}
 	}, 30000);

@@ -38,7 +38,7 @@
                         <i class="fas fa-plus"></i> <span>Nova Instância</span>
                     </button>
                     <button id="btn-save-all" class="btn btn-success" title="Salvar todas as alterações em tempo real">
-                        <i class="fas fa-save"></i> <span>Salvar Tudo</span>
+                        <i class="fas fa-save"></i> <span>Salvar Tudo</span><span id="unsaved-indicator" class="unsaved-badge hidden" title="Você tem alterações não salvas"></span>
                     </button>
                     <button id="btn-refresh" class="btn btn-secondary" title="Recarregar status">
                         <i class="fas fa-sync-alt" id="refresh-icon"></i> <span>Atualizar</span>
@@ -160,7 +160,16 @@
             <div class="modal-body">
                 <!-- Seção do Formulário -->
                 <div class="form-section" style="margin-top: 0;">
-                    <div class="form-section-title">
+                    <div id="editing-announcement-banner" class="editing-announcement-banner hidden">
+                        <div class="editing-banner-content">
+                            <i class="fas fa-pencil-alt"></i>
+                            <span>Editando aviso <strong id="editing-announcement-id-label">#0</strong> &mdash; altere o texto ou prazo e salve</span>
+                        </div>
+                        <button type="button" id="btn-cancel-announcement-edit-top" class="btn btn-secondary btn-sm" title="Cancelar edição">
+                            <i class="fas fa-times"></i> Cancelar
+                        </button>
+                    </div>
+                    <div class="form-section-title" id="form-announcement-title">
                         <i class="fas fa-edit"></i> Novo Aviso
                     </div>
 
@@ -228,6 +237,9 @@
 
                     <!-- Botão de Publicação -->
                     <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" id="btn-cancel-announcement-edit" class="btn btn-secondary hidden">
+                            <i class="fas fa-times"></i> <span>Cancelar Edição</span>
+                        </button>
                         <button type="button" id="btn-submit-announcement" class="btn btn-warning">
                             <i class="fas fa-paper-plane"></i> <span>Publicar Aviso</span>
                         </button>

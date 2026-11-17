@@ -786,6 +786,10 @@ class Database {
 	async getAllStatusAnnouncements(limit = 50) {
 		return this.coreRepo.getAllStatusAnnouncements(limit);
 	}
+	async updateStatusAnnouncement(id, data) {
+		this.triggerBackupStart();
+		return this.coreRepo.updateStatusAnnouncement(id, data);
+	}
 	async deleteStatusAnnouncement(id) {
 		this.triggerBackupStart();
 		return this.coreRepo.deleteStatusAnnouncement(id);
