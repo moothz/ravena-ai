@@ -62,6 +62,86 @@ function resolvePath(p, fallback) {
 	return path.isAbsolute(v) ? v : path.join(ROOT, v);
 }
 
+const OUR_TABLES = new Set([
+	"flows_hourly",
+	"balances",
+	"received_by_quintile",
+	"load_runs",
+	"annotations",
+	"ledger_status"
+]);
+
+/** Caminho real (resolve links simbólicos do trecho que já existe). */
+function realish(p) {
+	const abs = path.resolve(p);
+	let head = abs;
+	const tail = [];
+	while (!fs.existsSync(head) && path.dirname(head) !== head) {
+		tail.unshift(path.basename(head));
+		head = path.dirname(head);
+	}
+	try {
+		return path.join(fs.realpathSync(head), ...tail);
+	} catch (_) {
+		return abs;
+	}
+}
+
+function isInside(child, parent) {
+	const rel = path.relative(parent, child);
+	return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/** Tabelas de um SQLite existente que não são do painel (lido só-leitura). */
+function foreignTables(file) {
+	if (!fs.existsSync(file)) return [];
+	if (!fs.statSync(file).isFile()) return ["(não é arquivo)"];
+	let db;
+	try {
+		db = new BetterSQLite(file, { readonly: true, fileMustExist: true });
+		return db
+			.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+			.all()
+			.map((r) => r.name)
+			.filter((n) => !OUR_TABLES.has(n));
+	} catch (_) {
+		return ["(não é SQLite)"];
+	} finally {
+		if (db) db.close();
+	}
+}
+
+/**
+ * Garante que a carga nunca escreve fora dos próprios arquivos: recusa banco de trabalho ou diretório
+ * publicado dentro de data/sqlites (bancos do bot, inclusive o bank.db), apontando para o bank.db, ou
+ * por cima de um SQLite que tenha qualquer tabela que não seja do painel.
+ */
+function assertSafePaths(dbPath, publishDir) {
+	const sqlites = realish(path.join(ROOT, "data/sqlites"));
+	const bank = realish(resolvePath(process.env.ECONOMY_ANALYTICS_BANK_DB, "data/sqlites/bank.db"));
+	const work = realish(dbPath);
+	const pubDir = realish(publishDir);
+	const pubFile = path.join(pubDir, PUBLISHED_NAME);
+	for (const [name, p] of [
+		["ECONOMY_ANALYTICS_DB", work],
+		["ECONOMY_ANALYTICS_PUBLISH_DIR", pubDir]
+	]) {
+		if (isInside(p, sqlites)) throw new Error(`${name} não pode ficar em data/sqlites (${p})`);
+	}
+	if (work === bank || pubFile === bank) throw new Error("a carga não pode escrever no bank.db");
+	if (path.dirname(work) === pubDir) {
+		throw new Error("ECONOMY_ANALYTICS_DB não pode ficar no diretório publicado");
+	}
+	for (const f of [work, pubFile]) {
+		const foreign = foreignTables(f);
+		if (foreign.length) {
+			throw new Error(
+				`recusado: ${f} já existe e não é do painel (tabelas: ${foreign.join(", ")})`
+			);
+		}
+	}
+}
+
 function toIntOrNull(v) {
 	if (v === null || v === undefined) return null;
 	const n = Number(v);
@@ -79,9 +159,7 @@ class EconomyAnalyticsStore {
 			publishDir || process.env.ECONOMY_ANALYTICS_PUBLISH_DIR,
 			DEFAULT_PUBLISH_DIR
 		);
-		if (path.resolve(path.dirname(this.dbPath)) === path.resolve(this.publishDir)) {
-			throw new Error("ECONOMY_ANALYTICS_DB não pode ficar no diretório publicado");
-		}
+		assertSafePaths(this.dbPath, this.publishDir);
 		fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
 		this.db = new BetterSQLite(this.dbPath);
 		this.db.pragma("journal_mode = WAL");
@@ -232,14 +310,51 @@ class EconomyAnalyticsStore {
 	}
 
 	/**
+	 * Trava de publicação entre processos (a carga no bot e o scripts/economy-annotate.js): arquivo
+	 * criado com O_EXCL ao lado do banco de trabalho. Trava com mais de staleMs é de processo morto e
+	 * é removida. Espera no máximo waitMs (síncrono; a publicação inteira já é síncrona).
+	 */
+	_acquirePublishLock(waitMs, staleMs) {
+		const lock = `${this.dbPath}.publish.lock`;
+		const start = Date.now();
+		const sleeper = new Int32Array(new SharedArrayBuffer(4));
+		for (;;) {
+			try {
+				const fd = fs.openSync(lock, "wx");
+				fs.writeSync(fd, String(process.pid));
+				fs.closeSync(fd);
+				return () => fs.rmSync(lock, { force: true });
+			} catch (err) {
+				if (err.code !== "EEXIST") throw err;
+			}
+			let age = 0;
+			try {
+				age = Date.now() - fs.statSync(lock).mtimeMs;
+			} catch (_) {
+				continue; // sumiu entre o open e o stat
+			}
+			if (age > staleMs) {
+				fs.rmSync(lock, { force: true });
+				continue;
+			}
+			if (Date.now() - start >= waitMs) {
+				throw new Error("outra publicação em andamento (trava ocupada)");
+			}
+			Atomics.wait(sleeper, 0, 0, 100);
+		}
+	}
+
+	/**
 	 * Publica um retrato consistente: VACUUM INTO num temporário no mesmo diretório (mesmo sistema de
 	 * arquivos) e rename atômico por cima do anterior. Quem já está lendo continua no arquivo antigo.
+	 * Serializado entre processos pela trava acima.
 	 */
-	publish() {
+	publish({ waitMs = 5000, staleMs = 120000 } = {}) {
 		fs.mkdirSync(this.publishDir, { recursive: true });
+		const release = this._acquirePublishLock(waitMs, staleMs);
 		const tmp = path.join(this.publishDir, `.${PUBLISHED_NAME}.tmp-${process.pid}`);
-		fs.rmSync(tmp, { force: true });
 		try {
+			fs.rmSync(tmp, { force: true });
 			this.db.prepare("VACUUM INTO ?").run(tmp);
 			const snap = new BetterSQLite(tmp);
 			try {
@@ -248,12 +363,21 @@ class EconomyAnalyticsStore {
 				snap.close();
 			}
 			fs.chmodSync(tmp, 0o644); // o Grafana roda como outro usuário (uid 472)
+			// nunca sobrescreve um arquivo que não seja um retrato do painel
+			const foreign = foreignTables(this.publishedPath);
+			if (foreign.length) throw new Error(`recusado: ${this.publishedPath} não é do painel`);
 			fs.renameSync(tmp, this.publishedPath);
 		} catch (err) {
 			fs.rmSync(tmp, { force: true });
 			throw err;
+		} finally {
+			release();
 		}
 		return this.publishedPath;
+	}
+
+	listAnnotations() {
+		return this.db.prepare("SELECT ts, currency, label FROM annotations ORDER BY ts").all();
 	}
 
 	close() {
@@ -268,5 +392,6 @@ module.exports = {
 	DEFAULT_DB_PATH,
 	DEFAULT_PUBLISH_DIR,
 	SCHEMA,
-	resolvePath
+	resolvePath,
+	assertSafePaths
 };

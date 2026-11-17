@@ -168,7 +168,14 @@ const TX_SQL = `SELECT user_id, type, game, runas_amount, details_json, timestam
 	WHERE id >= ? AND timestamp >= ? AND timestamp < ?
 	  AND (status IS NULL OR status IN ('COMPLETED', 'UNDONE'))`;
 
-/** Menor id que pode ter timestamp >= ts (busca binária em O(log n) leituras pelo rowid). */
+/** Linhas logo abaixo do id achado que são conferidas contra relógio que voltou para trás. */
+const ID_GUARD_ROWS = 5000;
+
+/**
+ * Menor id que pode ter timestamp >= ts (busca binária em O(log n) leituras pelo rowid).
+ * Proteção: se alguma das ID_GUARD_ROWS linhas logo abaixo do resultado tem timestamp >= ts - folga
+ * (relógio do servidor voltou, timestamps fora de ordem), desiste da busca e lê desde o id 0.
+ */
 function firstIdFrom(query, ts) {
 	const r = query("SELECT MIN(id) AS lo, MAX(id) AS hi FROM bank_transactions", [])[0];
 	if (!r || r.lo === null || r.lo === undefined) return 0;
@@ -185,6 +192,11 @@ function firstIdFrom(query, ts) {
 		else if (Number(row.timestamp) < target) lo = row.id + 1;
 		else hi = mid;
 	}
+	const guard = query(
+		"SELECT MAX(timestamp) AS t FROM bank_transactions WHERE id >= ? AND id < ?",
+		[lo - ID_GUARD_ROWS, lo]
+	)[0];
+	if (guard && guard.t !== null && Number(guard.t) >= target) return 0;
 	return lo;
 }
 

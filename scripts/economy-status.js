@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Estado da carga do painel da economia (sem sqlite3 no host/imagem):
+ * Estado da carga do painel da economia (sem sqlite3 no host/imagem). Rode da raiz do projeto (/app no
+ * contêiner): lê o .env e resolve os caminhos padrão a partir dela.
  *   docker exec ravena-ai node scripts/economy-status.js
  * Mostra, por fonte, até quando os dados estão carregados, a última tentativa e o último erro, e se o
  * retrato publicado para o Grafana existe. Não mostra dado de jogador (não há nenhum no banco).

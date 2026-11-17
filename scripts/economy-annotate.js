@@ -1,37 +1,62 @@
 #!/usr/bin/env node
 /**
- * Registra uma anotação no painel da economia (mudança de regra, correção de extrato) e republica
- * o retrato lido pelo Grafana. Sem sqlite3 no host/imagem, rode dentro do contêiner:
- *   docker exec ravena-ai node scripts/economy-annotate.js "Taxa de hospedagem reajustada" zinthos
- *   docker exec ravena-ai node scripts/economy-annotate.js "Correção do extrato" todas 2026-11-20T15:00:00-03:00
- * Moeda: zinthos | petalitas | runas | todas (padrão). Data: ISO 8601 (padrão: agora).
+ * Anotações do painel da economia (mudança de regra, correção de extrato). Rode da raiz do projeto
+ * (/app no contêiner): o script lê o .env e resolve os caminhos padrão a partir dela.
+ *   docker exec ravena-ai node scripts/economy-annotate.js "Taxa de hospedagem reajustada" zinthos 2026-11-20T15:00:00-03:00
+ *   docker exec ravena-ai node scripts/economy-annotate.js --export > anotacoes.json
+ *   docker exec -i ravena-ai node scripts/economy-annotate.js --import < anotacoes.json
+ * Moeda: zinthos | petalitas | runas | todas (padrão). Data: ISO 8601 (padrão: agora). A anotação só
+ * aparece no gráfico quando a data cai no intervalo mostrado.
+ * Depois de gravar, republica o retrato do Grafana (se a carga estiver publicando, aparece na próxima).
  */
 "use strict";
 
 require("dotenv").config({ quiet: true });
+const fs = require("fs");
 const { EconomyAnalyticsStore } = require("../src/services/EconomyAnalyticsStore");
 
-const [label, moedaArg = "todas", when] = process.argv.slice(2);
 const MOEDAS = ["zinthos", "petalitas", "runas", "todas"];
-if (!label || !MOEDAS.includes(moedaArg)) {
-	console.error(
-		'Uso: node scripts/economy-annotate.js "<texto>" [zinthos|petalitas|runas|todas] [data ISO]'
-	);
+const args = process.argv.slice(2);
+
+function fail(msg) {
+	console.error(msg);
 	process.exit(1);
 }
-const ts = when ? Date.parse(when) : Date.now();
-if (!Number.isFinite(ts)) {
-	console.error(`Data inválida: ${when}`);
-	process.exit(1);
+
+function publish(store) {
+	try {
+		return `publicada em ${store.publish()}`;
+	} catch (err) {
+		return `gravada; aparece no Grafana na próxima carga (${err.message})`;
+	}
 }
 
 const store = new EconomyAnalyticsStore();
 try {
-	store.addAnnotation(ts, moedaArg === "todas" ? null : moedaArg, label);
-	const published = store.publish();
-	console.log(
-		`Anotação gravada em ${new Date(ts).toISOString()} (${moedaArg}) e publicada em ${published}.`
-	);
+	if (args[0] === "--export") {
+		process.stdout.write(`${JSON.stringify(store.listAnnotations(), null, 1)}\n`);
+	} else if (args[0] === "--import") {
+		const list = JSON.parse(fs.readFileSync(0, "utf8"));
+		if (!Array.isArray(list)) fail("Esperava uma lista JSON (saída do --export).");
+		for (const a of list) {
+			if (!Number.isFinite(Number(a.ts)) || !a.label)
+				fail(`Anotação inválida: ${JSON.stringify(a)}`);
+			store.addAnnotation(Number(a.ts), a.currency || null, String(a.label));
+		}
+		console.log(`${list.length} anotações importadas; ${publish(store)}.`);
+	} else {
+		const [label, moeda = "todas", when] = args;
+		if (!label || !MOEDAS.includes(moeda)) {
+			fail(
+				'Uso: node scripts/economy-annotate.js "<texto>" [zinthos|petalitas|runas|todas] [data ISO]\n' +
+					"     node scripts/economy-annotate.js --export | --import (stdin)"
+			);
+		}
+		const ts = when ? Date.parse(when) : Date.now();
+		if (!Number.isFinite(ts)) fail(`Data inválida: ${when}`);
+		store.addAnnotation(ts, moeda === "todas" ? null : moeda, label);
+		console.log(`Anotação em ${new Date(ts).toISOString()} (${moeda}) ${publish(store)}.`);
+	}
 } finally {
 	store.close();
 }

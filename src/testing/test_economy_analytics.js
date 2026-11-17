@@ -423,6 +423,28 @@ async function main() {
 		assert.match(plan, /INTEGER PRIMARY KEY|rowid/i, plan);
 	});
 
+	await test("busca por id: relógio que voltou para trás cai para leitura desde o id 0", () => {
+		const db = makeBankDb(path.join(tmpRoot, "bank-clock.db"));
+		for (let i = 0; i < 10; i++) tx(db, "a", "DEPOSIT", "pesca", 1, DAY0 - 10 * D + i * H);
+		// relógio adiantado gravou uma linha "no futuro" (id 11), depois voltou: a busca binária passa
+		// por cima dela e acharia só o fim da tabela
+		tx(db, "a", "DEPOSIT", "pesca", 7, DAY0 + 2 * H);
+		for (let i = 0; i < 90; i++) tx(db, "a", "DEPOSIT", "pesca", 1, DAY0 - 5 * D + i * H);
+		const qq = (sql, p = []) => db.prepare(sql).all(...p);
+		assert.strictEqual(
+			R.firstIdFrom(qq, DAY0),
+			0,
+			"linha fora de ordem abaixo do resultado: lê desde 0"
+		);
+		const flows = R.runasFlows(qq, DAY0, DAY0 + D);
+		assert.strictEqual(
+			flows.reduce((s, f) => s + f.amountIn, 0),
+			7,
+			"a linha fora de ordem não se perde"
+		);
+		db.close();
+	});
+
 	await test("retratos de Runas: total com negativos, reconstrução na hora cheia, dias com cobertura", () => {
 		const now = DAY0 + 5 * H + 5 * 60 * 1000;
 		const s = R.buildRunasSummary(bankQuery, DAY0, DAY0 + D, now);
@@ -684,20 +706,185 @@ async function main() {
 			assert.strictEqual(state.calls.find((c) => c.svc === "waifuletes").from, DAY0 + 7 * H);
 		});
 
-		await test("stop() espera a rodada em andamento antes de fechar o banco", async () => {
+		await test("Zinthos com totalAtWindowEnd: retrato alinhado em `to`; sem ele, no instante da resposta", async () => {
 			clock += H;
-			state.delay = 150;
+			const to = R.hourStart(clock);
+			state.override.waifuletes = (b) => ({ balances: { ...b.balances, totalAtWindowEnd: 98765 } });
+			await svc.runOnce();
+			state.override.waifuletes = null;
+			const row = readAll(
+				dbPath,
+				"SELECT ts, total, p50 FROM balances WHERE currency='zinthos' ORDER BY ts DESC LIMIT 1"
+			)[0];
+			assert.deepStrictEqual(row, { ts: to, total: 98765, p50: 1200 }); // faixas/percentis do retrato ao vivo
+			const pet = readAll(
+				dbPath,
+				"SELECT ts FROM balances WHERE currency='petalitas' ORDER BY ts DESC LIMIT 1"
+			)[0];
+			assert.strictEqual(pet.ts, clock); // Jardim sem totalAtWindowEnd: generatedAt
+		});
+
+		await test("stop(): aborta HTTP em curso, para entre pedaços e nunca espera mais que o limite", async () => {
+			// 1) Chamada lenta é abortada: stop volta rápido e fecha o banco
+			clock += H;
+			state.delay = 5000;
 			const running = svc.runOnce();
-			await new Promise((r) => setTimeout(r, 20));
-			await svc.stop();
+			await new Promise((r) => setTimeout(r, 50));
+			let t0 = Date.now();
+			assert.strictEqual(await svc.stop(), true);
+			assert.ok(Date.now() - t0 < 1000, `stop demorou ${Date.now() - t0} ms`);
 			const res = await running;
-			assert.strictEqual(res.zinthos.ok, true, JSON.stringify(res.zinthos));
+			assert.strictEqual(res.zinthos.ok, false);
+			assert.strictEqual(res.stopped, true);
 			assert.strictEqual(svc.store, null);
+			assert.deepStrictEqual(await svc.runOnce(), { stopped: true }); // parado não roda mais
 			state.delay = 0;
-			svc = mkService(); // reabre o mesmo banco: continua de onde parou
+			// 2) Fonte que ignora o abort: stop desiste depois de stopWaitMs e não fecha o banco sob ela
+			const stuck = mkService();
+			stuck.stopWaitMs = 200;
+			stuck.sources[0].fetch = () => new Promise(() => {});
+			stuck.runOnce();
+			await new Promise((r) => setTimeout(r, 30));
+			t0 = Date.now();
+			assert.strictEqual(await stuck.stop(), false);
+			assert.ok(Date.now() - t0 < 600, `stop demorou ${Date.now() - t0} ms`);
+			assert.ok(stuck.store, "banco continua aberto (o processo vai sair)");
+			stuck.store.close();
+			// Reabre o mesmo banco: a próxima rodada continua de onde parou
+			svc = mkService();
 			state.calls.length = 0;
 			const r = await svc.runOnce();
-			assert.strictEqual(r.zinthos.skipped, true);
+			assert.strictEqual(r.zinthos.ok, true);
+			assert.strictEqual(
+				state.calls.find((c) => c.svc === "waifuletes").from,
+				R.hourStart(clock) - H
+			);
+		});
+
+		await test("publicação serializada por trava (O_EXCL), trava velha é removida", () => {
+			const lock = `${dbPath}.publish.lock`;
+			fs.writeFileSync(lock, "999999");
+			assert.throws(() => svc.store.publish({ waitMs: 200 }), /trava ocupada/);
+			const old = (Date.now() - 10 * 60 * 1000) / 1000;
+			fs.utimesSync(lock, old, old);
+			svc.store.publish({ waitMs: 200 });
+			assert.ok(!fs.existsSync(lock), "trava liberada depois de publicar");
+			assert.deepStrictEqual(fs.readdirSync(publishDir), ["analytics.db"]);
+		});
+
+		await test("scripts economy-annotate (gravar, exportar, importar) e economy-status", () => {
+			const { spawnSync } = require("child_process");
+			const env = {
+				...process.env,
+				ECONOMY_ANALYTICS_DB: dbPath,
+				ECONOMY_ANALYTICS_PUBLISH_DIR: publishDir
+			};
+			const run = (args, input) =>
+				spawnSync(
+					process.execPath,
+					[path.join(__dirname, "../../scripts", ...args.slice(0, 1)), ...args.slice(1)],
+					{
+						env,
+						input,
+						encoding: "utf8"
+					}
+				);
+			let r = run(["economy-annotate.js", "Regra nova", "zinthos", "2026-11-09T12:00:00Z"]);
+			assert.strictEqual(r.status, 0, r.stderr);
+			assert.match(r.stdout, /publicada/);
+			const pub = readAll(pubFile, "SELECT ts, currency, label FROM annotations");
+			assert.deepStrictEqual(pub, [
+				{ ts: Date.parse("2026-11-09T12:00:00Z"), currency: "zinthos", label: "Regra nova" }
+			]);
+			r = run(["economy-annotate.js", "--export"]);
+			const exported = JSON.parse(r.stdout);
+			assert.strictEqual(exported.length, 1);
+			assert.strictEqual(run(["economy-annotate.js", "x", "ouro"]).status, 1);
+			// Recomeçar do zero e importar de volta
+			const env2 = {
+				...env,
+				ECONOMY_ANALYTICS_DB: path.join(tmpRoot, "zero", "a.db"),
+				ECONOMY_ANALYTICS_PUBLISH_DIR: path.join(tmpRoot, "zero-pub")
+			};
+			r = spawnSync(
+				process.execPath,
+				[path.join(__dirname, "../../scripts/economy-annotate.js"), "--import"],
+				{
+					env: env2,
+					input: JSON.stringify(exported),
+					encoding: "utf8"
+				}
+			);
+			assert.strictEqual(r.status, 0, r.stderr);
+			assert.strictEqual(
+				readAll(
+					path.join(tmpRoot, "zero-pub", "analytics.db"),
+					"SELECT COUNT(*) n FROM annotations"
+				)[0].n,
+				1
+			);
+			r = run(["economy-status.js"]);
+			assert.strictEqual(r.status, 0, r.stderr);
+			assert.match(r.stdout, /zinthos\s+\d{4}-/);
+			assert.match(r.stdout, /retrato do Grafana: .*atualizado/);
+		});
+
+		await test("guarda de caminhos: nunca escreve em data/sqlites, no bank.db ou em SQLite alheio", () => {
+			const { EconomyAnalyticsStore } = require("../services/EconomyAnalyticsStore");
+			const crypto = require("crypto");
+			const sha = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+			const repoSqlites = path.join(__dirname, "../../data/sqlites");
+			const inSqlites = path.join(repoSqlites, "economia-guard-test.db");
+			assert.throws(
+				() => new EconomyAnalyticsStore(inSqlites, path.join(tmpRoot, "g1")),
+				/data\/sqlites/
+			);
+			assert.throws(
+				() => new EconomyAnalyticsStore(path.join(tmpRoot, "g2", "a.db"), repoSqlites),
+				/data\/sqlites/
+			);
+			assert.ok(!fs.existsSync(inSqlites), "nada criado em data/sqlites");
+			// bank.db de verdade (configurado) e qualquer SQLite com tabelas que não são do painel
+			const bankFile = path.join(tmpRoot, "bank.db");
+			const before = sha(bankFile);
+			const prev = process.env.ECONOMY_ANALYTICS_BANK_DB;
+			process.env.ECONOMY_ANALYTICS_BANK_DB = bankFile;
+			try {
+				assert.throws(
+					() => new EconomyAnalyticsStore(bankFile, path.join(tmpRoot, "g3")),
+					/bank\.db/
+				);
+			} finally {
+				if (prev === undefined) delete process.env.ECONOMY_ANALYTICS_BANK_DB;
+				else process.env.ECONOMY_ANALYTICS_BANK_DB = prev;
+			}
+			assert.throws(
+				() => new EconomyAnalyticsStore(bankFile, path.join(tmpRoot, "g4")),
+				/não é do painel/
+			);
+			// diretório publicado com um analytics.db alheio
+			const alien = path.join(tmpRoot, "alien");
+			fs.mkdirSync(alien, { recursive: true });
+			fs.copyFileSync(bankFile, path.join(alien, "analytics.db"));
+			assert.throws(
+				() => new EconomyAnalyticsStore(path.join(tmpRoot, "g5", "a.db"), alien),
+				/não é do painel/
+			);
+			assert.strictEqual(sha(bankFile), before, "bank.db intacto");
+			assert.strictEqual(sha(path.join(alien, "analytics.db")), before, "arquivo alheio intacto");
+			// o script de anotação herda a guarda
+			const { spawnSync } = require("child_process");
+			const r = spawnSync(
+				process.execPath,
+				[path.join(__dirname, "../../scripts/economy-annotate.js"), "x"],
+				{
+					env: { ...process.env, ECONOMY_ANALYTICS_DB: inSqlites },
+					encoding: "utf8"
+				}
+			);
+			assert.notStrictEqual(r.status, 0);
+			assert.match(r.stderr, /data\/sqlites/);
+			assert.ok(!fs.existsSync(inSqlites));
 		});
 
 		await test("moeda sem origem: Δ total − Σ fluxos; non_monetary fora; dia sem retrato não some", () => {

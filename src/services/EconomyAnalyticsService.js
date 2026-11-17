@@ -38,13 +38,17 @@ const SCHEMA_VERSION = 1;
 const RECEIVED_WINDOW_MS = 7 * DAY_MS;
 const CHUNK_MS = 30 * DAY_MS;
 const DEFAULT_BACKFILL_START = "2025-01-01";
+// Encerramento do bot: no máximo isso esperando a rodada em andamento (o index.js força saída em 25 s)
+const STOP_WAIT_MS = 3000;
 
 /** GET da rota de resumo de um serviço. Erros não carregam corpo de resposta (evita vazar dados). */
-async function fetchSummary(baseUrl, headers, from, to, timeoutMs, received = false) {
+async function fetchSummary(baseUrl, headers, from, to, timeoutMs, received = false, abort = null) {
 	const url =
 		`${String(baseUrl).replace(/\/+$/, "")}/internal/economy/summary?from=${from}&to=${to}` +
 		(received ? "&received=1" : "");
-	const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+	const timeout = AbortSignal.timeout(timeoutMs);
+	const signal = abort ? AbortSignal.any([timeout, abort]) : timeout;
+	const res = await fetch(url, { headers, signal });
 	if (!res.ok) {
 		const err = new Error(`HTTP ${res.status} em /internal/economy/summary`);
 		err.status = res.status;
@@ -126,6 +130,9 @@ class EconomyAnalyticsService {
 		this.store = null;
 		this.task = null;
 		this._running = null;
+		this._stopping = false;
+		this._abort = null;
+		this.stopWaitMs = opts.stopWaitMs ?? STOP_WAIT_MS;
 	}
 
 	static getInstance() {
@@ -151,7 +158,8 @@ class EconomyAnalyticsService {
 						from,
 						to,
 						this.timeoutMs,
-						opts.received
+						opts.received,
+						this._abort && this._abort.signal
 					)
 			},
 			{
@@ -164,7 +172,8 @@ class EconomyAnalyticsService {
 						from,
 						to,
 						this.timeoutMs,
-						opts.received
+						opts.received,
+						this._abort && this._abort.signal
 					)
 			},
 			{
@@ -211,30 +220,51 @@ class EconomyAnalyticsService {
 		);
 	}
 
-	/** Para o agendamento, espera a rodada em andamento terminar e só então fecha o banco. */
+	/**
+	 * Para o agendamento e a rodada em andamento: marca parada (checada entre fontes e pedaços), aborta
+	 * as chamadas HTTP em curso e espera no máximo stopWaitMs. Só fecha o banco se a rodada terminou;
+	 * se não terminou a tempo, deixa como está (o processo vai sair) para não fechar o banco sob ela.
+	 */
 	async stop() {
 		if (this.task) {
 			this.task.stop();
 			this.task = null;
 		}
+		this._stopping = true;
+		if (this._abort) this._abort.abort(new Error("encerrando"));
+		let finished = true;
 		if (this._running) {
-			try {
-				await this._running;
-			} catch (_) {}
+			let timer;
+			const timeout = new Promise((resolve) => {
+				timer = setTimeout(() => resolve("timeout"), this.stopWaitMs);
+			});
+			const r = await Promise.race([
+				this._running.then(
+					() => "ok",
+					() => "ok"
+				),
+				timeout
+			]);
+			clearTimeout(timer);
+			finished = r === "ok";
 		}
-		if (this.store) {
+		if (finished && this.store) {
 			this.store.close();
 			this.store = null;
 		}
+		return finished;
 	}
 
 	/** Uma carga completa (todas as fontes). Chamadas concorrentes esperam a que está rodando. */
 	runOnce() {
 		if (this._running) return this._running;
+		if (this._stopping) return Promise.resolve({ stopped: true });
+		this._abort = new AbortController();
 		this._running = telemetry
 			.withSpan("economy.analytics.run", { root: true }, () => this._run())
 			.finally(() => {
 				this._running = null;
+				this._abort = null;
 			});
 		return this._running;
 	}
@@ -244,11 +274,14 @@ class EconomyAnalyticsService {
 		const runTs = this.now();
 		const results = {};
 		for (const source of this.sources) {
+			if (this._stopping) return { ...results, stopped: true };
 			results[source.name] = await this._loadSource(store, source, runTs);
 		}
 		for (const source of this.sources) {
+			if (this._stopping) return { ...results, stopped: true };
 			results[`${source.name}.received`] = await this._loadReceived(store, source, runTs);
 		}
+		if (this._stopping) return { ...results, stopped: true };
 		try {
 			store.publish();
 		} catch (err) {
@@ -265,6 +298,7 @@ class EconomyAnalyticsService {
 		if (from >= hourNow) return { ok: true, skipped: true, from, to: hourNow };
 		const out = { ok: true, from, to: hourNow, rows: 0, chunks: 0 };
 		while (from < hourNow) {
+			if (this._stopping) return { ...out, stopped: true };
 			const to =
 				from < this.backfillStart
 					? Math.min(this.backfillStart, hourNow)
@@ -300,11 +334,16 @@ class EconomyAnalyticsService {
 					const available = !!(summary.ledger && summary.ledger.available);
 					let rows = store.writeFlows(source.currency, from, to, flows);
 					if (live) {
-						// O retrato dos serviços é do instante da resposta: só vale para a janela atual
+						// O retrato dos serviços é do instante da resposta: só vale para a janela atual.
+						// Com balances.totalAtWindowEnd (waifuletes: total menos o extrato com createdAt >= to)
+						// o retrato vai para `to`, alinhado ao corte dos fluxos como nas Runas; faixas,
+						// percentis e concentração continuam do retrato ao vivo. Sem ele (Jardim), generatedAt.
+						const atEnd = summary.balances.totalAtWindowEnd;
+						const aligned = atEnd !== null && atEnd !== undefined && Number.isFinite(Number(atEnd));
 						rows += store.writeBalance(
 							source.currency,
-							Number(summary.generatedAt),
-							summary.balances
+							aligned ? to : Number(summary.generatedAt),
+							aligned ? { ...summary.balances, total: Number(atEnd) } : summary.balances
 						);
 					}
 					if (source.local) {
