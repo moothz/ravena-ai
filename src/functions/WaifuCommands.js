@@ -10354,6 +10354,7 @@ const helper = {
  * @param {string} [customDateStr]
  * @param {string} [customChatId]
  * @param {Object} [customMedia] - Foto gerada do casamento (se disponível)
+ * @param {string} [acquisitionType=null] - Tipo de aquisição (ex: "cotas")
  * @returns {Promise<boolean>}
  */
 async function notifySpecialMarriage(
@@ -10362,7 +10363,8 @@ async function notifySpecialMarriage(
 	userName,
 	customDateStr = null,
 	customChatId = null,
-	customMedia = null
+	customMedia = null,
+	acquisitionType = null
 ) {
 	try {
 		if (!character) return false;
@@ -10426,17 +10428,32 @@ async function notifySpecialMarriage(
 		let caption = "";
 		caption += `👑 ✨ 👑 *CASAMENTO LENDÁRIO EXTRAORDINÁRIO!* 👑 ✨ 👑\n\n`;
 		caption += `💍 ══════════════════════════ 💍\n`;
-		caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
+		if (acquisitionType === "cotas") {
+			caption += `   📈 *CONQUISTA VIA MERCADO DE INVESTIMENTOS!* 💖\n`;
+		} else {
+			caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
+		}
 		caption += `💍 ══════════════════════════ 💍\n\n`;
-		caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
+		if (acquisitionType === "cotas") {
+			caption += `Após garantir todas as 4 cotas no mercado de ações, o jogador *${userName}* selou seu matrimônio com a suprema lenda:\n\n`;
+		} else {
+			caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
+		}
 		caption += `⭐ 🌟 *${character.name}* 🌟 ⭐\n`;
 		caption += `👑 *Raridade:* LENDÁRIO ✨\n`;
 		if (character.series) {
 			caption += `📺 *Universo:* ${character.series}\n`;
 		}
-		caption += `📅 *Data da Cerimônia:* ${dateStr}\n\n`;
-		caption += `✨ ══════════════════════════ ✨\n`;
-		caption += `🎉 *Que este casal lendário reine supremo com felicidades infinitas, companheirismo inabalável e vitórias épicas por toda a eternidade!* 🥂🍾✨`;
+		caption += `📅 *Data da Cerimônia:* ${dateStr}\n`;
+		if (acquisitionType === "cotas") {
+			caption += `💼 *Aquisição:* 100% das cotas completadas\n`;
+		}
+		caption += `\n✨ ══════════════════════════ ✨\n`;
+		if (acquisitionType === "cotas") {
+			caption += `🎉 *Investimento certeiro e matrimônio de respeito! Que esse casal lendário aproveite cada momento!* 🥂🍾✨`;
+		} else {
+			caption += `🎉 *Que este casal lendário reine supremo com felicidades infinitas, companheirismo inabalável e vitórias épicas por toda a eternidade!* 🥂🍾✨`;
+		}
 
 		// 1. Prioridade: foto gerada do casamento (passada diretamente ou buscada no disco/SQLite)
 		let imageBase64 = null;

@@ -5,6 +5,7 @@ const axios = require("axios");
 const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
 const bankService = require("../../services/BankService");
+const WaifuCommands = require("../../functions/WaifuCommands");
 const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
 const { createAuthenticateMarket } = require("../middleware/auth");
 const { createMarketRateLimiters } = require("../middleware/rateLimiters");
@@ -939,6 +940,47 @@ function registerFeaturesRoutes(api) {
 				return res
 					.status(500)
 					.json({ success: false, reason: error.message || "Erro interno de transferência" });
+			}
+		}
+	);
+
+	// Notificação de Casamento Lendário Adquirido por Cotas
+	app.post(
+		"/api/market/notify-legendary-marriage",
+		telemetry.outcomeMiddleware,
+		...marketGuards,
+		async (req, res) => {
+			try {
+				const { character, userName, acquisitionType = "cotas" } = req.body || {};
+				if (!character || !character.name) {
+					return res.status(400).json({ success: false, error: "Dados do personagem obrigatórios" });
+				}
+
+				telemetry.setAttrs({
+					"waifu.character.id": character.id || "unknown",
+					"waifu.acquisition_type": acquisitionType
+				});
+
+				const targetBot =
+					api.bots?.find((b) => b.isConnected && !b.useTelegram && !b.useDiscord) ||
+					api.bots?.find((b) => b.isConnected) ||
+					api.bots?.[0] ||
+					null;
+
+				const sent = await WaifuCommands.notifySpecialMarriage(
+					targetBot,
+					character,
+					userName || "Investidor Anônimo",
+					null,
+					null,
+					null,
+					acquisitionType
+				);
+
+				return res.json({ success: true, notified: sent });
+			} catch (err) {
+				api.logger.error("Erro ao processar notificação de casamento por cotas:", err);
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
 			}
 		}
 	);
