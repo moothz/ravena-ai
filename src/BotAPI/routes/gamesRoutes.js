@@ -222,7 +222,7 @@ function registerGamesRoutes(api) {
 			try {
 				const fishRow = await database.dbGet(
 					"fishing",
-					"SELECT COUNT(*) as c, SUM(weight) as w FROM fishing_inventory WHERE user_id = ? AND (is_rare = 0 OR is_rare IS NULL)",
+					"SELECT COUNT(*) as c, SUM(weight) as w FROM fishing_inventory WHERE user_id = ? AND (is_rare = 0 OR is_rare IS NULL) AND (is_locked = 0 OR is_locked IS NULL)",
 					[userId]
 				);
 				fishWeight = fishRow?.w || 0;

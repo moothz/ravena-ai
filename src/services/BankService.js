@@ -787,10 +787,10 @@ class BankService {
 		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
 		const quota = await this.getDailyQuota(cleanUser);
 
-		// 1. Busca peixes comuns do usuário
+		// 1. Busca peixes comuns do usuário (desconsiderando peixes bloqueados contra venda)
 		const allFishes = await database.dbAll(
 			"fishing",
-			"SELECT id, name, weight, is_rare, emoji FROM fishing_inventory WHERE (user_id = ? OR user_id = ?) AND (is_rare = 0 OR is_rare IS NULL) ORDER BY weight DESC",
+			"SELECT id, name, weight, is_rare, emoji FROM fishing_inventory WHERE (user_id = ? OR user_id = ?) AND (is_rare = 0 OR is_rare IS NULL) AND (is_locked = 0 OR is_locked IS NULL) ORDER BY weight DESC",
 			[userId, cleanUser]
 		);
 

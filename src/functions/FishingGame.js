@@ -110,6 +110,26 @@ database.getSQLiteDb(
 		// Ignore if column already exists
 	}
 	try {
+		// Migration: Add is_locked to fishing_inventory
+		await database.dbRun(dbName, "ALTER TABLE fishing_inventory ADD COLUMN is_locked INTEGER DEFAULT 0");
+	} catch (e) {
+		// Ignore if column already exists
+	}
+	try {
+		await database.dbRun(
+			dbName,
+			`CREATE TABLE IF NOT EXISTS fishing_locked_rules (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id TEXT,
+				fish_name TEXT,
+				weight REAL,
+				created_at INTEGER
+			)`
+		);
+	} catch (e) {
+		// Ignore
+	}
+	try {
 		const fontsDir = path.join(database.databasePath, "fonts");
 		await fs.mkdir(fontsDir, { recursive: true });
 	} catch (e) {
@@ -802,6 +822,7 @@ async function getUserData(userId) {
 			name: f.name,
 			weight: f.weight,
 			isRare: !!f.is_rare,
+			isLocked: !!f.is_locked,
 			emoji: f.emoji,
 			timestamp: f.timestamp,
 			dbId: f.id
@@ -1004,11 +1025,23 @@ async function updateBuffUses(buffId, remainingUses) {
 }
 
 async function addFishToInventory(userId, fish) {
+	let isLocked = 0;
+	try {
+		const matchingRule = await database.dbGet(
+			dbName,
+			`SELECT id FROM fishing_locked_rules 
+			 WHERE (user_id = ? OR user_id = ?) AND LOWER(fish_name) = LOWER(?) 
+			 AND (weight IS NULL OR ABS(weight - ?) < 0.05) LIMIT 1`,
+			[userId, String(userId).replace(/@.*$/, ""), fish.name, fish.weight]
+		);
+		if (matchingRule) isLocked = 1;
+	} catch (_) {}
+
 	const result = await database.dbRun(
 		dbName,
 		`INSERT INTO fishing_inventory 
-        (user_id, name, weight, is_rare, timestamp, emoji, data_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, name, weight, is_rare, timestamp, emoji, data_json, is_locked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
 			userId,
 			fish.name,
@@ -1016,7 +1049,8 @@ async function addFishToInventory(userId, fish) {
 			fish.isRare ? 1 : 0,
 			fish.timestamp,
 			fish.emoji,
-			JSON.stringify(fish)
+			JSON.stringify(fish),
+			isLocked
 		]
 	);
 	return result.lastID;
@@ -3388,7 +3422,8 @@ async function fishingDataCommand(bot, message, args, group) {
 			sortedFishes.forEach((fish, index) => {
 				totalWeight += fish.weight;
 				const rareMark = fish.isRare ? ` ${fish.emoji} RARO!` : "";
-				msg += `${index + 1}. ${fish.name}: ${fish.weight.toFixed(2)} kg${rareMark}\n`;
+				const lockMark = fish.isLocked ? " 🔒" : "";
+				msg += `${index + 1}. ${fish.name}: ${fish.weight.toFixed(2)} kg${rareMark}${lockMark}\n`;
 			});
 			msg += `\n⚖️ *Peso Total:* ${totalWeight.toFixed(2)} kg\n`;
 		}
@@ -3521,6 +3556,210 @@ async function getLegendaryMonthlyAvailability(date = new Date()) {
 		totalAvailableMonth += Math.max(0, limit - (monthlyMap.get(fish.name) || 0));
 	}
 	return { monthlyMap, totalAvailableMonth, totalMonthlyLimit };
+}
+
+/**
+ * Faz parse dos argumentos de bloqueio/desbloqueio de peixe: Nome_do_Peixe [peso opcional]
+ * Suporta formatos como "115,2", "120.3", "150kg", "180 kg".
+ */
+function parseFishLockArgs(argsText) {
+	if (!argsText || !argsText.trim()) return null;
+	const parts = argsText.trim().split(/\s+/);
+	if (parts.length === 0) return null;
+
+	let weight = null;
+	let nameParts = [...parts];
+
+	if (nameParts.length >= 2 && /^kg$/i.test(nameParts[nameParts.length - 1])) {
+		const potentialNum = nameParts[nameParts.length - 2].replace(",", ".");
+		const parsed = parseFloat(potentialNum);
+		if (!isNaN(parsed) && parsed > 0) {
+			weight = parsed;
+			nameParts.splice(nameParts.length - 2, 2);
+		}
+	} else if (nameParts.length >= 1) {
+		const last = nameParts[nameParts.length - 1];
+		const match = last.match(/^(\d+(?:[.,]\d+)?)(?:kg)?$/i);
+		if (match) {
+			const parsed = parseFloat(match[1].replace(",", "."));
+			if (!isNaN(parsed) && parsed > 0) {
+				weight = parsed;
+				nameParts.pop();
+			}
+		}
+	}
+
+	const fishName = nameParts.join(" ").trim();
+	if (!fishName) return null;
+
+	return { fishName, weight };
+}
+
+/**
+ * Bloqueia um peixe por nome (ou nome + peso) contra venda no banco e web
+ */
+async function lockFishCommand(bot, message, args, group) {
+	try {
+		const chatId = message.group ?? message.author;
+		const userId = message.author;
+		const cleanUser = String(userId).replace(/@.*$/, "");
+		const argsText = Array.isArray(args) ? args.join(" ") : String(args || "");
+
+		const parsed = parseFishLockArgs(argsText);
+		if (!parsed) {
+			return new ReturnMessage({
+				chatId,
+				content: "🔒 Uso: *!peixe-bloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-bloquear Salmão` (bloqueia todos com esse nome)\n• `!peixe-bloquear Tubarão 120.3` ou `!peixe-bloquear Atum 150kg`\n\nPeixes bloqueados não podem ser vendidos no `!banco-vender` nem pelo painel web.",
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const { fishName, weight } = parsed;
+
+		// 1. Atualiza peixes existentes no inventário
+		let updateRes;
+		if (weight !== null) {
+			updateRes = await database.dbRun(
+				dbName,
+				`UPDATE fishing_inventory SET is_locked = 1 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(name) = LOWER(?) 
+				 AND ABS(weight - ?) < 0.05`,
+				[userId, cleanUser, fishName, weight]
+			);
+		} else {
+			updateRes = await database.dbRun(
+				dbName,
+				`UPDATE fishing_inventory SET is_locked = 1 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(name) = LOWER(?)`,
+				[userId, cleanUser, fishName]
+			);
+		}
+
+		// 2. Insere regra persistente em fishing_locked_rules
+		await database.dbRun(
+			dbName,
+			`INSERT INTO fishing_locked_rules (user_id, fish_name, weight, created_at) VALUES (?, ?, ?, ?)`,
+			[userId, fishName.toLowerCase(), weight, Date.now()]
+		);
+
+		const count = updateRes?.changes ?? 0;
+		const weightStr = weight !== null ? ` com peso ~${weight} kg` : "";
+		const countStr = count > 0 ? `\n📦 *${count} peixe(s)* já no seu inventário foram marcados com 🔒.` : "";
+
+		return new ReturnMessage({
+			chatId,
+			content: `🔒 *Peixe Bloqueado com Sucesso!*\n\nPeixes do tipo *${fishName}*${weightStr} foram bloqueados contra venda.${countStr}\n\nPara desbloquear, envie:\n• \`!peixe-desbloquear ${fishName}${weight !== null ? " " + weight : ""}\``,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (error) {
+		logger.error("Erro lockFishCommand:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "❌ Erro ao bloquear peixe.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
+}
+
+/**
+ * Desbloqueia um peixe por nome (ou nome + peso) permitindo a venda
+ */
+async function unlockFishCommand(bot, message, args, group) {
+	try {
+		const chatId = message.group ?? message.author;
+		const userId = message.author;
+		const cleanUser = String(userId).replace(/@.*$/, "");
+		const argsText = Array.isArray(args) ? args.join(" ") : String(args || "");
+
+		const parsed = parseFishLockArgs(argsText);
+		if (!parsed) {
+			return new ReturnMessage({
+				chatId,
+				content: "🔓 Uso: *!peixe-desbloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-desbloquear Salmão`\n• `!peixe-desbloquear Tubarão 120.3`",
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const { fishName, weight } = parsed;
+
+		// 1. Remove peixes travados no inventário
+		let updateRes;
+		if (weight !== null) {
+			updateRes = await database.dbRun(
+				dbName,
+				`UPDATE fishing_inventory SET is_locked = 0 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(name) = LOWER(?) 
+				 AND ABS(weight - ?) < 0.05`,
+				[userId, cleanUser, fishName, weight]
+			);
+		} else {
+			updateRes = await database.dbRun(
+				dbName,
+				`UPDATE fishing_inventory SET is_locked = 0 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(name) = LOWER(?)`,
+				[userId, cleanUser, fishName]
+			);
+		}
+
+		// 2. Remove regra persistente
+		if (weight !== null) {
+			await database.dbRun(
+				dbName,
+				`DELETE FROM fishing_locked_rules 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(fish_name) = LOWER(?) 
+				 AND ABS(weight - ?) < 0.05`,
+				[userId, cleanUser, fishName, weight]
+			);
+		} else {
+			await database.dbRun(
+				dbName,
+				`DELETE FROM fishing_locked_rules 
+				 WHERE (user_id = ? OR user_id = ?) 
+				 AND LOWER(fish_name) = LOWER(?)`,
+				[userId, cleanUser, fishName]
+			);
+		}
+
+		const count = updateRes?.changes ?? 0;
+		const weightStr = weight !== null ? ` com peso ~${weight} kg` : "";
+		const countStr = count > 0 ? `\n📦 *${count} peixe(s)* no seu inventário foram liberados.` : "";
+
+		return new ReturnMessage({
+			chatId,
+			content: `🔓 *Peixe Desbloqueado com Sucesso!*\n\nPeixes do tipo *${fishName}*${weightStr} agora podem ser vendidos normalmente no banco e painel web.${countStr}`,
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	} catch (error) {
+		logger.error("Erro unlockFishCommand:", error);
+		return new ReturnMessage({
+			chatId: message.group ?? message.author,
+			content: "❌ Erro ao desbloquear peixe.",
+			options: {
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin
+			}
+		});
+	}
 }
 
 /**
@@ -4491,6 +4730,58 @@ const commands = [
 		cooldown: 5,
 		reactions: { after: "🌍", error: "❌" },
 		method: globalFactorsCommand
+	}),
+	new Command({
+		name: "peixe-bloquear",
+		description: "Bloqueia um peixe por nome (ou nome e peso) contra venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔒", error: "❌" },
+		method: lockFishCommand
+	}),
+	new Command({
+		name: "bloquear-peixe",
+		hidden: true,
+		description: "Bloqueia um peixe contra venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔒", error: "❌" },
+		method: lockFishCommand
+	}),
+	new Command({
+		name: "pesca-bloquear",
+		hidden: true,
+		description: "Bloqueia um peixe contra venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔒", error: "❌" },
+		method: lockFishCommand
+	}),
+	new Command({
+		name: "peixe-desbloquear",
+		description: "Desbloqueia um peixe por nome (ou nome e peso) permitindo a venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔓", error: "❌" },
+		method: unlockFishCommand
+	}),
+	new Command({
+		name: "desbloquear-peixe",
+		hidden: true,
+		description: "Desbloqueia um peixe permitindo a venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔓", error: "❌" },
+		method: unlockFishCommand
+	}),
+	new Command({
+		name: "pesca-desbloquear",
+		hidden: true,
+		description: "Desbloqueia um peixe permitindo a venda no banco",
+		category: "jogos",
+		cooldown: 2,
+		reactions: { after: "🔓", error: "❌" },
+		method: unlockFishCommand
 	})
 ];
 

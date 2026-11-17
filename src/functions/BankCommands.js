@@ -56,7 +56,7 @@ async function handleBanco(bot, message) {
 		try {
 			const fishRow = await database.dbGet(
 				"fishing",
-				"SELECT SUM(weight) as w FROM fishing_inventory WHERE (user_id = ? OR user_id = ?) AND (is_rare = 0 OR is_rare IS NULL)",
+				"SELECT SUM(weight) as w FROM fishing_inventory WHERE (user_id = ? OR user_id = ?) AND (is_rare = 0 OR is_rare IS NULL) AND (is_locked = 0 OR is_locked IS NULL)",
 				[message.author, userId]
 			);
 			fishWeight = fishRow?.w || 0;
