@@ -72,6 +72,39 @@ async function main() {
 	}
 	console.log("✓ Todos os rótulos explícitos foram corretamente classificados como NSFW.");
 
+	// 4. Testar disponibilidade e fallback para LLM quando NudeNet estiver desativado
+	const originalGetEnabled = nsfwPredict.getEnabledProviders;
+	nsfwPredict.getEnabledProviders = () => [];
+	assert.strictEqual(
+		nsfwPredict.isAvailable(),
+		true,
+		"isAvailable() deve ser true mesmo sem provedores NudeNet, usando LLM como fallback"
+	);
+
+	let llmCalled = false;
+	const originalLLM = nsfwPredict.detectNSFWWithLLM;
+	nsfwPredict.detectNSFWWithLLM = async () => {
+		llmCalled = true;
+		return { isNSFW: false, reason: "LLM test" };
+	};
+
+	delete process.env.DISABLE_ACTIVITY;
+	await nsfwPredict.detectNSFW("dummy", { groupName: "test" });
+	process.env.DISABLE_ACTIVITY = "true";
+
+	assert.strictEqual(
+		llmCalled,
+		true,
+		"detectNSFW deve chamar LLM diretamente quando NudeNet está desabilitado"
+	);
+	console.log(
+		"✓ Fallback automático para LLM funciona quando todos os provedores NudeNet estão desativados."
+	);
+
+	// Restaura mocks
+	nsfwPredict.getEnabledProviders = originalGetEnabled;
+	nsfwPredict.detectNSFWWithLLM = originalLLM;
+
 	console.log("\nTodos os testes de rótulos NudeNet passaram com sucesso!");
 }
 

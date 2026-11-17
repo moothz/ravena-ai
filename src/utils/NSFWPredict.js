@@ -120,13 +120,17 @@ class NSFWPredict {
 	}
 
 	/**
-	 * Verifica se há pelo menos um provedor NudeNet habilitado e disponível
+	 * Verifica se há pelo menos um provedor NudeNet ou LLM habilitado e disponível
 	 * @returns {boolean}
 	 */
 	isAvailable() {
 		const providers = this.getEnabledProviders();
-		if (providers.length === 0) return false;
-		return providers.some((p) => this.isProviderAvailable(p));
+		if (providers.length > 0 && providers.some((p) => this.isProviderAvailable(p))) {
+			return true;
+		}
+		// Se nenhum NudeNet estiver habilitado/disponível, o LLM serve como provedor principal
+		const llmProviders = this.serviceProviderService.getProviders("llm");
+		return Array.isArray(llmProviders) && llmProviders.some((p) => p.enabled);
 	}
 
 	/**
@@ -1026,12 +1030,16 @@ CRITICAL RULES:
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 		const shouldForceLLM = Boolean(
-			context.forceLLM || context.skipNudeNet || context.useLLM || context.provider === "llm"
+			process.env.NSFW_PROVIDER === "llm" ||
+			context.forceLLM ||
+			context.skipNudeNet ||
+			context.useLLM ||
+			context.provider === "llm"
 		);
 
 		if (shouldForceLLM) {
 			this.logger.info(
-				`${groupPrefix}Análise NSFW via LLM forçada por parâmetro de contexto.${userSuffix}`
+				`${groupPrefix}Análise NSFW via LLM forçada por parâmetro de contexto ou configuração.${userSuffix}`
 			);
 			return await this.detectNSFWWithLLM(imagesInput, context);
 		}
@@ -1061,11 +1069,17 @@ CRITICAL RULES:
 		}
 
 		if (!result) {
-			// Fallback para LLM se todos os provedores NudeNet falharem
+			// Fallback para LLM se todos os provedores NudeNet falharem ou se nenhum estiver habilitado
 			try {
-				this.logger.warn(
-					`${groupPrefix}Todos os provedores NudeNet falharam. Executando fallback via LLM...${userSuffix}`
-				);
+				if (availableProviders.length === 0) {
+					this.logger.info(
+						`${groupPrefix}Nenhum provedor NudeNet habilitado. Executando detecção via LLM...${userSuffix}`
+					);
+				} else {
+					this.logger.warn(
+						`${groupPrefix}Todos os provedores NudeNet falharam. Executando fallback via LLM...${userSuffix}`
+					);
+				}
 				return await this.detectNSFWWithLLM(imagesInput, context);
 			} catch (llmErr) {
 				return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
@@ -1138,12 +1152,16 @@ CRITICAL RULES:
 
 		const { groupPrefix, userSuffix } = this._formatLogContext(context);
 		const shouldForceLLM = Boolean(
-			context.forceLLM || context.skipNudeNet || context.useLLM || context.provider === "llm"
+			process.env.NSFW_PROVIDER === "llm" ||
+			context.forceLLM ||
+			context.skipNudeNet ||
+			context.useLLM ||
+			context.provider === "llm"
 		);
 
 		if (shouldForceLLM) {
 			this.logger.info(
-				`${groupPrefix}Análise NSFW de vídeo via LLM forçada por parâmetro de contexto.${userSuffix}`
+				`${groupPrefix}Análise NSFW de vídeo via LLM forçada por parâmetro de contexto ou configuração.${userSuffix}`
 			);
 			return await this.detectNSFWVideoWithLLM(videoPath, context);
 		}
@@ -1169,11 +1187,17 @@ CRITICAL RULES:
 			}
 		}
 
-		// Fallback para LLM se todos os provedores falharem
+		// Fallback para LLM se todos os provedores falharem ou se nenhum estiver habilitado
 		try {
-			this.logger.warn(
-				`${groupPrefix}Todos os provedores NudeNet falharam para vídeo. Executando fallback via LLM...${userSuffix}`
-			);
+			if (availableProviders.length === 0) {
+				this.logger.info(
+					`${groupPrefix}Nenhum provedor NudeNet habilitado para vídeo. Executando detecção via LLM...${userSuffix}`
+				);
+			} else {
+				this.logger.warn(
+					`${groupPrefix}Todos os provedores NudeNet falharam para vídeo. Executando fallback via LLM...${userSuffix}`
+				);
+			}
 			return await this.detectNSFWVideoWithLLM(videoPath, context);
 		} catch (llmErr) {
 			return { isNSFW: false, reason: "Todos os provedores NSFW falharam", skipped: true };
