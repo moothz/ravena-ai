@@ -1,0 +1,17 @@
+apiVersion: 1
+# Painel da economia (OBSERVABILITY.md): lê o analytics.db que a ravena-ai grava toda hora.
+# O arquivo é montado só-leitura no contêiner (ver ECONOMY_ANALYTICS_DB_HOST em observability/.env).
+# immutable=1: o contêiner não enxerga o -wal/-shm do arquivo montado; a carga termina cada rodada com
+# wal_checkpoint(TRUNCATE), então o arquivo principal já está completo quando o Grafana lê.
+# O Prometheus continua sendo a fonte padrão (datasources.yaml).
+datasources:
+  - name: Economia (SQLite)
+    uid: economia-sqlite
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: false
+    editable: false
+    jsonData:
+      path: /var/lib/economia/analytics.db
+      pathPrefix: "file:"
+      pathOptions: "?mode=ro&immutable=1"

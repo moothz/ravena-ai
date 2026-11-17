@@ -370,6 +370,11 @@ async function main() {
 			groupMediaRetentionService.start();
 		}
 
+		// Carga horária do painel da economia (analytics.db, minuto 5). Ver OBSERVABILITY.md
+		if (!disableActivity && process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
+			require("./src/services/EconomyAnalyticsService").getInstance().start();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,
@@ -417,6 +422,13 @@ async function main() {
 		try {
 			require("./src/services/ScheduledEventService").getInstance().stop();
 		} catch (_e) {}
+
+		// Para a carga do painel da economia
+		if (process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
+			try {
+				require("./src/services/EconomyAnalyticsService").getInstance().stop();
+			} catch (_e) {}
+		}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
 		if (telegramNotificationService) {
