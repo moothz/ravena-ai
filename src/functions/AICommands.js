@@ -1134,6 +1134,111 @@ async function getMediaFromMessage(message) {
 	return { media: null, hadQuoted, quotedHadMedia: null };
 }
 
+/**
+ * Comando !fatos: Exclusivo no PV.
+ * Compila fatos semânticos armazenados na memória sobre o usuário e gera uma síntese de perfil por IA.
+ */
+async function userFactsCommand(bot, message, args, group) {
+	try {
+		// Bloqueia em grupos: estritamente no PV
+		if (message.group) {
+			return new ReturnMessage({
+				chatId: message.group,
+				content:
+					"🔒 O comando *!fatos* contém suas informações pessoais de memória e só pode ser consultado no privado (PV)!\nEnvie *!fatos* no meu PV para ver.",
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const userId = message.author;
+		const userName =
+			message.name ?? message.pushName ?? message.pushname ?? message.authorName ?? "Você";
+
+		const MemoryService = require("../services/MemoryService");
+		const memoryService = MemoryService.getInstance();
+
+		const canonicalId = await memoryService.resolveCanonicalUserId(userId);
+		let facts = [];
+		if (canonicalId) {
+			facts = await database.dbAll(
+				"memory",
+				`SELECT fact_text, category, confidence, last_confirmed_at 
+				 FROM memory_user_facts 
+				 WHERE canonical_user_id = ? 
+				 ORDER BY last_confirmed_at DESC`,
+				[canonicalId]
+			);
+		}
+
+		if (!facts || facts.length === 0) {
+			return new ReturnMessage({
+				chatId: userId,
+				content: `🧠 *Memória IA: Seus Fatos*\n\nOlá, *${userName}*! Ainda não registrei fatos duráveis sobre você na minha memória.\nConforme você conversa nos grupos e interage com os jogos, vou aprendendo sobre suas preferências e gostos!`
+			});
+		}
+
+		const factsListText = facts.map((f, i) => `${i + 1}. ${f.fact_text}`).join("\n");
+		let summaryText = "";
+
+		try {
+			const prompt = `Abaixo estão fatos duráveis memorizados pela IA sobre o usuário ${userName}:\n${factsListText}\n\nEscreva um parágrafo curto (2 a 3 frases) traçando um perfil amigável, natural e objetivo da pessoa com base nesses fatos. Não use clichês de IA, não comece com 'Com certeza' ou 'Aqui está'. Seja direta.`;
+
+			const response = await llmService.getCompletion({
+				prompt,
+				systemContext:
+					"Você é a Ravena, uma IA inteligente, perspicaz e bem-humorada. Resuma os fatos em linguagem natural e fluida.",
+				temperature: 0.7,
+				priority: 4
+			});
+
+			if (typeof response === "string") {
+				summaryText = response.trim();
+			} else if (response?.content) {
+				summaryText = String(response.content).trim();
+			} else if (response?.text) {
+				summaryText = String(response.text).trim();
+			}
+		} catch (err) {
+			logger.warn(`[userFactsCommand] Falha ao gerar síntese via LLM: ${err.message}`);
+			summaryText = "Aqui está a compilação do que memorizei e observei sobre você até o momento:";
+		}
+
+		let msg = `🧠 ✨ *MEMÓRIA IA: SEUS FATOS* ✨ 🧠\n\n`;
+		if (summaryText) {
+			msg += `${summaryText.trim()}\n\n`;
+			msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+		}
+		msg += `📋 *Fatos Registrados (${facts.length}):*\n`;
+		facts.forEach((f, idx) => {
+			const cat = String(f.category || "").toLowerCase();
+			const emoji =
+				cat.includes("hobby") || cat.includes("lazer")
+					? "🎨"
+					: cat.includes("trabalho") || cat.includes("profissao") || cat.includes("work")
+						? "💼"
+						: cat.includes("pref") || cat.includes("gosto")
+							? "⭐"
+							: "📌";
+			msg += `${idx + 1}. ${emoji} ${f.fact_text}\n`;
+		});
+		msg += `\n_💡 Fatos aprendidos e atualizados continuamente através das suas interações nos grupos._`;
+
+		return new ReturnMessage({
+			chatId: userId,
+			content: msg
+		});
+	} catch (error) {
+		logger.error("Erro userFactsCommand:", error);
+		return new ReturnMessage({
+			chatId: message.author,
+			content: "❌ Ocorreu um erro ao consultar seus fatos de memória."
+		});
+	}
+}
+
 const commands = [
 	new Command({
 		name: "ai",
@@ -1188,6 +1293,18 @@ const commands = [
 		},
 		cooldown: 30,
 		method: aiCommand
+	}),
+	new Command({
+		name: "fatos",
+		description: "Exibe os fatos e resumo que a IA memorizou sobre você (apenas no PV)",
+		category: "ia",
+		reactions: {
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🧠",
+			error: "❌"
+		},
+		cooldown: 15,
+		method: userFactsCommand
 	})
 ];
 
@@ -1202,6 +1319,12 @@ const helper = {
 			cmd: "!ai",
 			desc: "Envia uma pergunta ou instrução para a IA responder ou interagir",
 			usage: ["!ai Quem foi Ada Lovelace?", "!ai Explique como funciona o motor a combustão"],
+			category: "ia"
+		},
+		{
+			cmd: "!fatos",
+			desc: "Exibe os fatos semânticos e síntese que a IA aprendeu sobre você (exclusivo no PV)",
+			usage: ["!fatos"],
 			category: "ia"
 		}
 	]
