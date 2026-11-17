@@ -107,13 +107,16 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ravena-red.json
-      # Painel da economia (OBSERVABILITY.md): plugin SQLite instalado na subida (versão fixa).
-      GF_PLUGINS_PREINSTALL_SYNC: frser-sqlite-datasource@4.0.6
+      # Painel da economia (OBSERVABILITY.md): plugin SQLite instalado em segundo plano na subida (versão
+      # fixa; fica no volume grafana-data). Não usar GF_PLUGINS_PREINSTALL_SYNC: no 13.2.6, se o download
+      # falhar (sem internet, grafana.com fora), o Grafana inteiro sai com erro na subida.
+      GF_PLUGINS_PREINSTALL: frser-sqlite-datasource@4.0.6
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-      # analytics.db gravado pela ravena-ai (ECONOMY_ANALYTICS_DB), só leitura. Padrão: o data/ deste repo.
-      - ${ECONOMY_ANALYTICS_DB_HOST:-../data/sqlites/analytics.db}:/var/lib/economia/analytics.db:ro
+      # Painel da economia: DIRETÓRIO onde a ravena-ai publica o analytics.db (ECONOMY_ANALYTICS_PUBLISH_DIR),
+      # só leitura. Se não existir, o Docker cria vazio (dono root) e a ravena (root no contêiner) escreve nele.
+      - ${ECONOMY_ANALYTICS_DIR_HOST:-../data/economia}:/var/lib/economia:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:3001:3000"

@@ -426,7 +426,8 @@ async function main() {
 		// Para a carga do painel da economia
 		if (process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
 			try {
-				require("./src/services/EconomyAnalyticsService").getInstance().stop();
+				// espera a rodada em andamento antes de fechar o banco do painel
+				await require("./src/services/EconomyAnalyticsService").getInstance().stop();
 			} catch (_e) {}
 		}
 

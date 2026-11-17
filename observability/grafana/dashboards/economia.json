@@ -209,7 +209,7 @@
    "id": 3,
    "type": "table",
    "title": "Moeda sem origem na semana",
-   "description": "Por moeda, nos 7 dias econômicos completos até o fim do intervalo: Δ massa − Σ(entradas − saídas) do extrato. Positivo = moeda que apareceu sem linha no extrato; negativo = sumiu sem linha. Moeda sem extrato (Jardim hoje) aparece como 'sem extrato'. Status: |%| < 0,5 ok, < 2 atenção, senão alerta. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
+   "description": "Por moeda, nos 7 dias econômicos completos até o fim do intervalo: Δ massa − Σ(entradas − saídas) do extrato. Positivo = moeda que apareceu sem linha no extrato; negativo = sumiu sem linha. Moeda sem extrato (Jardim hoje) aparece como 'sem extrato'. Status: |%| < 0,1 ok, < 0,5 atenção, senão agir. Dia sem retrato entra no intervalo do último dia com retrato. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
@@ -228,8 +228,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (\n  SELECT cur.currency,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT total FROM balances b WHERE b.currency = cur.currency AND b.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa\n  FROM cur\n)\nSELECT currency AS moeda,\n  CASE WHEN avail = 0 THEN NULL ELSE so7 END AS sem_origem_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * so7 / NULLIF(ABS(massa), 0), 2) END AS pct_da_massa,\n  CASE WHEN avail = 0 THEN 'sem extrato'\n       WHEN so7 IS NULL OR massa IS NULL THEN 'sem dados'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.5 THEN 'ok'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 2 THEN 'atenção'\n       ELSE 'alerta' END AS status\nFROM w",
-     "rawQueryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (\n  SELECT cur.currency,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT total FROM balances b WHERE b.currency = cur.currency AND b.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa\n  FROM cur\n)\nSELECT currency AS moeda,\n  CASE WHEN avail = 0 THEN NULL ELSE so7 END AS sem_origem_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * so7 / NULLIF(ABS(massa), 0), 2) END AS pct_da_massa,\n  CASE WHEN avail = 0 THEN 'sem extrato'\n       WHEN so7 IS NULL OR massa IS NULL THEN 'sem dados'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.5 THEN 'ok'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 2 THEN 'atenção'\n       ELSE 'alerta' END AS status\nFROM w",
+     "queryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (\n  SELECT cur.currency,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT total FROM balances b WHERE b.currency = cur.currency AND b.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa\n  FROM cur\n)\nSELECT currency AS moeda,\n  CASE WHEN avail = 0 THEN NULL ELSE so7 END AS sem_origem_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * so7 / NULLIF(ABS(massa), 0), 3) END AS pct_da_massa,\n  CASE WHEN avail = 0 THEN 'sem extrato'\n       WHEN so7 IS NULL OR massa IS NULL THEN 'sem dados'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.1 THEN 'ok'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.5 THEN 'atenção'\n       ELSE 'agir' END AS status\nFROM w",
+     "rawQueryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (\n  SELECT cur.currency,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT total FROM balances b WHERE b.currency = cur.currency AND b.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa\n  FROM cur\n)\nSELECT currency AS moeda,\n  CASE WHEN avail = 0 THEN NULL ELSE so7 END AS sem_origem_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * so7 / NULLIF(ABS(massa), 0), 3) END AS pct_da_massa,\n  CASE WHEN avail = 0 THEN 'sem extrato'\n       WHEN so7 IS NULL OR massa IS NULL THEN 'sem dados'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.1 THEN 'ok'\n       WHEN ABS(100.0 * so7 / NULLIF(ABS(massa), 0)) < 0.5 THEN 'atenção'\n       ELSE 'agir' END AS status\nFROM w",
      "timeColumns": []
     }
    ],
@@ -256,7 +256,7 @@
             "color": "yellow",
             "index": 1
            },
-           "alerta": {
+           "agir": {
             "color": "red",
             "index": 2
            },
@@ -301,7 +301,7 @@
    "id": 4,
    "type": "timeseries",
    "title": "Moeda sem origem por dia",
-   "description": "Por dia econômico (vira às 04:00 BRT): Δ total entre o primeiro retrato do dia e o do dia seguinte − Σ(entradas − saídas) das horas entre eles. Petalitas fica vazia enquanto o Jardim não tiver extrato. Um dia só aparece quando o dia seguinte já tem retrato.",
+   "description": "Por dia econômico (vira às 04:00 BRT): Δ total entre o primeiro retrato do dia e o do dia seguinte − Σ(entradas − saídas) das horas entre eles (linhas non_monetary fora). Dia sem retrato não some: o intervalo até o próximo retrato fica no último dia com retrato. Petalitas fica vazia enquanto o Jardim não tiver extrato. O dia mais recente só aparece quando o dia seguinte já tem retrato. Resíduo conhecido: o retrato do waifuletes/Jardim é do minuto 5 e o corte dos fluxos é na hora cheia (alguns minutos de fluxo trocam de dia; some na soma da semana).",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
@@ -320,8 +320,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT (d * 86400000 + 25200000) / 1000 AS time,\n  SUM(CASE WHEN currency = 'zinthos' THEN so END) AS zinthos,\n  SUM(CASE WHEN currency = 'petalitas' THEN so END) AS petalitas,\n  SUM(CASE WHEN currency = 'runas' THEN so END) AS runas\nFROM x\nWHERE d * 86400000 + 25200000 >= $__from AND d * 86400000 + 25200000 < $__to\nGROUP BY d ORDER BY d",
-     "rawQueryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT (d * 86400000 + 25200000) / 1000 AS time,\n  SUM(CASE WHEN currency = 'zinthos' THEN so END) AS zinthos,\n  SUM(CASE WHEN currency = 'petalitas' THEN so END) AS petalitas,\n  SUM(CASE WHEN currency = 'runas' THEN so END) AS runas\nFROM x\nWHERE d * 86400000 + 25200000 >= $__from AND d * 86400000 + 25200000 < $__to\nGROUP BY d ORDER BY d",
+     "queryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT (d * 86400000 + 25200000) / 1000 AS time,\n  SUM(CASE WHEN currency = 'zinthos' THEN so END) AS zinthos,\n  SUM(CASE WHEN currency = 'petalitas' THEN so END) AS petalitas,\n  SUM(CASE WHEN currency = 'runas' THEN so END) AS runas\nFROM x\nWHERE d * 86400000 + 25200000 >= $__from AND d * 86400000 + 25200000 < $__to\nGROUP BY d ORDER BY d",
+     "rawQueryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT (d * 86400000 + 25200000) / 1000 AS time,\n  SUM(CASE WHEN currency = 'zinthos' THEN so END) AS zinthos,\n  SUM(CASE WHEN currency = 'petalitas' THEN so END) AS petalitas,\n  SUM(CASE WHEN currency = 'runas' THEN so END) AS runas\nFROM x\nWHERE d * 86400000 + 25200000 >= $__from AND d * 86400000 + 25200000 < $__to\nGROUP BY d ORDER BY d",
      "timeColumns": [
       "time"
      ]
@@ -415,7 +415,7 @@
    "id": 6,
    "type": "table",
    "title": "As 3 moedas na semana",
-   "description": "Massa = último retrato até o fim do intervalo; crescimento = contra o retrato de 7 dias antes. Saída por 100 de entrada: quanto sai para cada 100 que entra (todas as linhas do extrato, inclusive transferências). Maior fonte = motivo com mais entradas. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
+   "description": "Massa = último retrato até o fim do intervalo; crescimento = contra o retrato de 7 dias antes (vazio na primeira semana de cargas). Criado/destruído = só motivos de criação e destruição (câmbio e transferências ficam no quadro de baixo). Destruído por 100 criado: abaixo de 50 a moeda acumula rápido. Maior fonte = motivo de criação com mais entradas. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
@@ -434,8 +434,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')),\nb AS (\n  SELECT cur.currency,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to - 604800000 ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS entradas,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS saidas,\n    (SELECT reason FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to\n       GROUP BY reason ORDER BY SUM(amount_in) DESC LIMIT 1) AS maior_fonte,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n)\nSELECT currency AS moeda, massa,\n  ROUND(100.0 * (massa - massa_antes) / NULLIF(ABS(massa_antes), 0), 2) AS crescimento_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE entradas END AS entradas_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE saidas END AS saidas_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * saidas / NULLIF(entradas, 0), 1) END AS saida_por_100_entrada,\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS maior_fonte\nFROM b",
-     "rawQueryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')),\nb AS (\n  SELECT cur.currency,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to - 604800000 ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS entradas,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS saidas,\n    (SELECT reason FROM flows_hourly f WHERE f.currency = cur.currency AND f.hour >= $__to - 604800000 AND f.hour < $__to\n       GROUP BY reason ORDER BY SUM(amount_in) DESC LIMIT 1) AS maior_fonte,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n)\nSELECT currency AS moeda, massa,\n  ROUND(100.0 * (massa - massa_antes) / NULLIF(ABS(massa_antes), 0), 2) AS crescimento_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE entradas END AS entradas_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE saidas END AS saidas_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * saidas / NULLIF(entradas, 0), 1) END AS saida_por_100_entrada,\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS maior_fonte\nFROM b",
+     "queryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')),\nb AS (\n  SELECT cur.currency,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to - 604800000 ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS destruido,\n    (SELECT reason FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n       GROUP BY reason ORDER BY SUM(amount_in) DESC LIMIT 1) AS maior_fonte,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n)\nSELECT currency AS moeda, massa,\n  ROUND(100.0 * (massa - massa_antes) / NULLIF(ABS(massa_antes), 0), 2) AS crescimento_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE criado END AS criado_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE destruido END AS destruido_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * destruido / NULLIF(criado, 0), 1) END AS destruido_por_100_criado,\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS maior_fonte\nFROM b",
+     "rawQueryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas')),\nb AS (\n  SELECT cur.currency,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to - 604800000 ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS destruido,\n    (SELECT reason FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n       GROUP BY reason ORDER BY SUM(amount_in) DESC LIMIT 1) AS maior_fonte,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n)\nSELECT currency AS moeda, massa,\n  ROUND(100.0 * (massa - massa_antes) / NULLIF(ABS(massa_antes), 0), 2) AS crescimento_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE criado END AS criado_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE destruido END AS destruido_7d,\n  CASE WHEN avail = 0 THEN NULL ELSE ROUND(100.0 * destruido / NULLIF(criado, 0), 1) END AS destruido_por_100_criado,\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS maior_fonte\nFROM b",
      "timeColumns": []
     }
    ],
@@ -479,7 +479,7 @@
      {
       "matcher": {
        "id": "byName",
-       "options": "saida_por_100_entrada"
+       "options": "destruido_por_100_criado"
       },
       "properties": [
        {
@@ -549,6 +549,42 @@
   },
   {
    "id": 7,
+   "type": "table",
+   "title": "Câmbio e transferências na semana",
+   "description": "Câmbio (RavenaBank) e transferências entre jogadores, fora do criado/destruído. Transferência líquida diferente de zero = taxa do mercado (ex.: 5% do MARKET_TRADE some). Linhas fora do dinheiro = motivos non_monetary (ex.: HOSTING_FEE_WAIFU, waifu confiscada para quitar taxa), que não mexem no saldo e ficam fora de todas as somas.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 24,
+    "h": 5
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas'))\nSELECT cur.currency AS moeda,\n  (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_entrou,\n  (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_saiu,\n  (SELECT SUM(amount_in - amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_liquido,\n  (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'transfer' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS transferido,\n  (SELECT SUM(amount_in - amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'transfer' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS transferencia_liquida,\n  (SELECT SUM(tx_count) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'non_monetary' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS linhas_fora_do_dinheiro\nFROM cur",
+     "rawQueryText": "WITH cur(currency) AS (VALUES ('zinthos'), ('petalitas'), ('runas'))\nSELECT cur.currency AS moeda,\n  (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_entrou,\n  (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_saiu,\n  (SELECT SUM(amount_in - amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('exchange_in', 'exchange_out') AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS cambio_liquido,\n  (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'transfer' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS transferido,\n  (SELECT SUM(amount_in - amount_out) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'transfer' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS transferencia_liquida,\n  (SELECT SUM(tx_count) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'non_monetary' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS linhas_fora_do_dinheiro\nFROM cur",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "—"
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "id": 8,
    "type": "stat",
    "title": "Crescimento da massa (7 dias) — ${moeda}",
    "description": "Variação da massa total em 7 dias. Verde < 5%, amarelo < 15%, vermelho acima. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
@@ -558,7 +594,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 20,
+    "y": 25,
     "w": 6,
     "h": 4
    },
@@ -615,17 +651,17 @@
    }
   },
   {
-   "id": 8,
+   "id": 9,
    "type": "stat",
-   "title": "Saída por 100 de entrada (7 dias) — ${moeda}",
-   "description": "Quanto sai para cada 100 que entra. Abaixo de 50 a moeda acumula rápido. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
+   "title": "Destruído por 100 criado (7 dias) — ${moeda}",
+   "description": "Quanto é destruído para cada 100 criados (só motivos de criação/destruição). Abaixo de 50 a moeda acumula rápido. Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
    },
    "gridPos": {
     "x": 6,
-    "y": 20,
+    "y": 25,
     "w": 6,
     "h": 4
    },
@@ -637,8 +673,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "SELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * SUM(amount_out) / NULLIF(SUM(amount_in), 0), 1) END AS saida_por_100\nFROM flows_hourly WHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to",
-     "rawQueryText": "SELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * SUM(amount_out) / NULLIF(SUM(amount_in), 0), 1) END AS saida_por_100\nFROM flows_hourly WHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to",
+     "queryText": "SELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * SUM(amount_out) / NULLIF(SUM(amount_in), 0), 1) END AS destruido_por_100\nFROM flows_hourly WHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__to - 604800000 AND hour < $__to",
+     "rawQueryText": "SELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * SUM(amount_out) / NULLIF(SUM(amount_in), 0), 1) END AS destruido_por_100\nFROM flows_hourly WHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__to - 604800000 AND hour < $__to",
      "timeColumns": []
     }
    ],
@@ -681,7 +717,7 @@
    }
   },
   {
-   "id": 9,
+   "id": 10,
    "type": "stat",
    "title": "Fatia dos 10% mais ricos — ${moeda}",
    "description": "Fração da massa nas 10% contas com mais saldo (entre quem tem saldo > 0). Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
@@ -691,7 +727,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 20,
+    "y": 25,
     "w": 6,
     "h": 4
    },
@@ -748,17 +784,17 @@
    }
   },
   {
-   "id": 10,
+   "id": 11,
    "type": "stat",
    "title": "Moeda sem origem (7 dias, % da massa) — ${moeda}",
-   "description": "Moeda sem linha no extrato na semana, em % da massa. 'sem extrato' = o serviço ainda não tem extrato (Jardim). Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
+   "description": "Moeda sem linha no extrato na semana, em % da massa. Verde < 0,1%, amarelo < 0,5%, vermelho (agir) acima, nos dois sentidos. 'sem extrato' = o serviço ainda não tem extrato (Jardim). Limiares de cor (verde/amarelo/vermelho) são PROVISÓRIOS, ponto de partida para calibrar.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
    },
    "gridPos": {
     "x": 18,
-    "y": 20,
+    "y": 25,
     "w": 6,
     "h": 4
    },
@@ -770,14 +806,15 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * (SELECT SUM(so) FROM x WHERE currency = '${moeda}'\n                        AND d * 86400000 + 25200000 >= $__to - 604800000 AND d * 86400000 + 25200000 < $__to)\n       / NULLIF(ABS((SELECT total FROM balances WHERE currency = '${moeda}' AND ts <= $__to ORDER BY ts DESC LIMIT 1)), 0), 2) END AS sem_origem",
-     "rawQueryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT a.currency, a.d, a.ts AS ta, b.ts AS tb, b.total - a.total AS dtotal, b.total AS total_fim\n  FROM op a JOIN op b ON b.currency = a.currency AND b.d = a.d + 1\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.total_fim,\n         dl.dtotal - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * (SELECT SUM(so) FROM x WHERE currency = '${moeda}'\n                        AND d * 86400000 + 25200000 >= $__to - 604800000 AND d * 86400000 + 25200000 < $__to)\n       / NULLIF(ABS((SELECT total FROM balances WHERE currency = '${moeda}' AND ts <= $__to ORDER BY ts DESC LIMIT 1)), 0), 2) END AS sem_origem",
+     "queryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * (SELECT SUM(so) FROM x WHERE currency = '${moeda}'\n                        AND d * 86400000 + 25200000 >= $__to - 604800000 AND d * 86400000 + 25200000 < $__to)\n       / NULLIF(ABS((SELECT total FROM balances WHERE currency = '${moeda}' AND ts <= $__to ORDER BY ts DESC LIMIT 1)), 0), 2) END AS sem_origem",
+     "rawQueryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n)\nSELECT CASE WHEN COALESCE((SELECT available FROM ledger_status WHERE currency = '${moeda}'), 1) = 0 THEN NULL\n  ELSE ROUND(100.0 * (SELECT SUM(so) FROM x WHERE currency = '${moeda}'\n                        AND d * 86400000 + 25200000 >= $__to - 604800000 AND d * 86400000 + 25200000 < $__to)\n       / NULLIF(ABS((SELECT total FROM balances WHERE currency = '${moeda}' AND ts <= $__to ORDER BY ts DESC LIMIT 1)), 0), 2) END AS sem_origem",
      "timeColumns": []
     }
    ],
    "fieldConfig": {
     "defaults": {
      "unit": "percent",
+     "decimals": 3,
      "thresholds": {
       "mode": "absolute",
       "steps": [
@@ -787,11 +824,11 @@
        },
        {
         "color": "yellow",
-        "value": 0.5
+        "value": 0.1
        },
        {
         "color": "red",
-        "value": 2
+        "value": 0.5
        }
       ]
      },
@@ -804,7 +841,7 @@
        "type": "range",
        "options": {
         "from": -1e+18,
-        "to": -2,
+        "to": -0.5,
         "result": {
          "color": "red",
          "index": 0
@@ -814,8 +851,8 @@
       {
        "type": "range",
        "options": {
-        "from": -2,
-        "to": -0.5,
+        "from": -0.5,
+        "to": -0.1,
         "result": {
          "color": "yellow",
          "index": 1
@@ -839,17 +876,17 @@
    }
   },
   {
-   "id": 11,
+   "id": 12,
    "type": "table",
    "title": "De onde vem e para onde vai (7 dias) — ${moeda}",
-   "description": "Fluxo por motivo do extrato na semana. Tipo vem do mapeamento versionado da ravena (EconomyAnalyticsMapping.js); 'unknown' = motivo sem mapeamento.",
+   "description": "Fluxo por motivo do extrato na semana. Tipo vem do mapeamento versionado da ravena (EconomyAnalyticsMapping.js); 'unknown' = motivo sem mapeamento. non_monetary (ex.: HOSTING_FEE_WAIFU) mostra só a contagem: não mexe no saldo e fica fora de todas as somas.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
    },
    "gridPos": {
     "x": 0,
-    "y": 24,
+    "y": 29,
     "w": 24,
     "h": 9
    },
@@ -861,8 +898,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "SELECT reason AS motivo, kind AS tipo,\n  SUM(amount_in) AS entradas, SUM(amount_out) AS saidas, SUM(amount_in - amount_out) AS liquido,\n  SUM(tx_count) AS transacoes, MAX(users) AS max_jogadores_hora\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to\nGROUP BY reason, kind\nORDER BY entradas + saidas DESC",
-     "rawQueryText": "SELECT reason AS motivo, kind AS tipo,\n  SUM(amount_in) AS entradas, SUM(amount_out) AS saidas, SUM(amount_in - amount_out) AS liquido,\n  SUM(tx_count) AS transacoes, MAX(users) AS max_jogadores_hora\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to\nGROUP BY reason, kind\nORDER BY entradas + saidas DESC",
+     "queryText": "SELECT reason AS motivo, kind AS tipo,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_in) END AS entradas,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_out) END AS saidas,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_in - amount_out) END AS liquido,\n  SUM(tx_count) AS transacoes, MAX(users) AS max_jogadores_hora\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to\nGROUP BY reason, kind\nORDER BY COALESCE(entradas, 0) + COALESCE(saidas, 0) DESC",
+     "rawQueryText": "SELECT reason AS motivo, kind AS tipo,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_in) END AS entradas,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_out) END AS saidas,\n  CASE WHEN kind = 'non_monetary' THEN NULL ELSE SUM(amount_in - amount_out) END AS liquido,\n  SUM(tx_count) AS transacoes, MAX(users) AS max_jogadores_hora\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__to - 604800000 AND hour < $__to\nGROUP BY reason, kind\nORDER BY COALESCE(entradas, 0) + COALESCE(saidas, 0) DESC",
      "timeColumns": []
     }
    ],
@@ -887,6 +924,11 @@
             "color": "red",
             "index": 0,
             "text": "unknown (sem mapeamento)"
+           },
+           "non_monetary": {
+            "color": "text",
+            "index": 1,
+            "text": "non_monetary (fora das somas)"
            }
           }
          }
@@ -942,20 +984,20 @@
    }
   },
   {
-   "id": 12,
+   "id": 13,
    "type": "row",
    "title": "Detalhe da moeda: ${moeda}",
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 33,
+    "y": 38,
     "w": 24,
     "h": 1
    },
    "panels": []
   },
   {
-   "id": 13,
+   "id": 14,
    "type": "timeseries",
    "title": "Massa total (12 semanas) — ${moeda}",
    "description": "Massa total da moeda nas últimas 12 semanas. Anotações = tabela annotations (mudanças de regra, correções de extrato).",
@@ -965,7 +1007,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 34,
+    "y": 39,
     "w": 24,
     "h": 8
    },
@@ -996,17 +1038,17 @@
    "timeFrom": "84d"
   },
   {
-   "id": 14,
+   "id": 15,
    "type": "timeseries",
-   "title": "Entradas e saídas por dia — ${moeda}",
-   "description": "Somas do extrato por dia econômico (04:00 BRT), no intervalo do painel.",
+   "title": "Criado e destruído por dia — ${moeda}",
+   "description": "Só motivos de criação e destruição, por dia econômico (04:00 BRT), no intervalo do painel.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
    },
    "gridPos": {
     "x": 0,
-    "y": 42,
+    "y": 47,
     "w": 12,
     "h": 8
    },
@@ -1018,8 +1060,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS entradas, SUM(amount_out) AS saidas, SUM(amount_in - amount_out) AS liquido\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
-     "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS entradas, SUM(amount_out) AS saidas, SUM(amount_in - amount_out) AS liquido\nFROM flows_hourly\nWHERE currency = '${moeda}' AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
+     "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS criado, SUM(amount_out) AS destruido, SUM(amount_in - amount_out) AS liquido\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
+     "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS criado, SUM(amount_out) AS destruido, SUM(amount_in - amount_out) AS liquido\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
      "timeColumns": [
       "time"
      ]
@@ -1037,9 +1079,9 @@
    "options": {}
   },
   {
-   "id": 15,
+   "id": 16,
    "type": "timeseries",
-   "title": "Entradas por tipo e dia — ${moeda}",
+   "title": "Movimento por tipo e dia — ${moeda}",
    "description": "Entradas de criação/câmbio/transferência e saídas de destruição/câmbio, por dia.",
    "datasource": {
     "type": "frser-sqlite-datasource",
@@ -1047,7 +1089,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 42,
+    "y": 47,
     "w": 12,
     "h": 8
    },
@@ -1073,7 +1115,7 @@
    "options": {}
   },
   {
-   "id": 16,
+   "id": 17,
    "type": "timeseries",
    "title": "Concentração: fatia dos 10% mais ricos — ${moeda}",
    "description": "",
@@ -1083,7 +1125,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 50,
+    "y": 55,
     "w": 12,
     "h": 7
    },
@@ -1114,7 +1156,7 @@
    "timeFrom": "84d"
   },
   {
-   "id": 17,
+   "id": 18,
    "type": "timeseries",
    "title": "Saldo típico: p50 e p90 — ${moeda}",
    "description": "Mediana (p50) e p90 do saldo entre quem tem saldo > 0.",
@@ -1124,7 +1166,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 50,
+    "y": 55,
     "w": 12,
     "h": 7
    },
@@ -1151,20 +1193,20 @@
    "timeFrom": "84d"
   },
   {
-   "id": 18,
+   "id": 19,
    "type": "row",
    "title": "Quem recebe: ${moeda}",
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 57,
+    "y": 62,
     "w": 24,
     "h": 1
    },
    "panels": []
   },
   {
-   "id": 19,
+   "id": 20,
    "type": "table",
    "title": "Quem recebe: entradas de criação nos últimos 7 dias, por faixa de saldo atual — ${moeda}",
    "description": "Contas com saldo > 0 divididas em 5 faixas pelo saldo atual; quanto cada faixa recebeu de motivos de criação nos 7 dias antes do último dia carregado. Faixas com menos de 10 contas vêm vazias (proteção de privacidade).",
@@ -1174,7 +1216,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 58,
+    "y": 63,
     "w": 12,
     "h": 7
    },
@@ -1228,7 +1270,7 @@
    "options": {}
   },
   {
-   "id": 20,
+   "id": 21,
    "type": "timeseries",
    "title": "Fatia recebida pela faixa de maior saldo (Q5) — ${moeda}",
    "description": "Quanto das entradas de criação (janela de 7 dias) foi para a faixa de maior (Q5) e de menor (Q1) saldo, dia a dia.",
@@ -1238,7 +1280,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 58,
+    "y": 63,
     "w": 12,
     "h": 7
    },
@@ -1269,7 +1311,7 @@
    "timeFrom": "84d"
   },
   {
-   "id": 21,
+   "id": 22,
    "type": "bargauge",
    "title": "Massa por faixa de saldo (retrato mais recente) — ${moeda}",
    "description": "Soma dos saldos em cada quinto (entre quem tem saldo > 0). Quinto com menos de 10 contas fica vazio.",
@@ -1279,7 +1321,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 65,
+    "y": 70,
     "w": 24,
     "h": 6
    },

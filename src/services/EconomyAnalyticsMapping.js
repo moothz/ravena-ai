@@ -10,6 +10,8 @@
  *   transfer      moeda passa de um jogador para outro (soma zero, salvo taxa)
  *   exchange_in   moeda entra vinda de outra moeda acompanhada (câmbio no RavenaBank)
  *   exchange_out  moeda sai para outra moeda acompanhada (câmbio no RavenaBank)
+ *   non_monetary  linha do extrato que NÃO mexe no saldo (fica fora de todas as somas de dinheiro do
+ *                 painel, inclusive da moeda sem origem). Extensão aos kinds do contrato.
  *   unknown       motivo sem mapeamento (aparece no painel para alguém mapear)
  *
  * Motivos "mistos" (ex.: ADMIN_GRANT, ADMIN_ADJUST) recebem o kind do sentido dominante; os valores
@@ -22,7 +24,18 @@
 
 const MAPPING_VERSION = 1;
 
-const KINDS = ["creation", "destruction", "transfer", "exchange_in", "exchange_out", "unknown"];
+const KINDS = [
+	"creation",
+	"destruction",
+	"transfer",
+	"exchange_in",
+	"exchange_out",
+	"non_monetary",
+	"unknown"
+];
+
+/** Kinds que não representam dinheiro movido: fora de entradas, saídas e moeda sem origem. */
+const NON_MONETARY_KINDS = ["non_monetary"];
 
 const MAPPING = {
 	// Zinthos: enum KakeraReason do waifuletes (api/prisma/schema.prisma). A rota do waifuletes separa
@@ -50,9 +63,9 @@ const MAPPING = {
 		MARKET_BUY: "destruction", // investimento no mercado (paga ao sistema)
 		MARKET_REFUND: "creation", // estorno de compra/investimento
 		HOSTING_FEE: "destruction",
-		// Linhas positivas que não batem com o saldo (contabilidade do lado da waifu). Nenhum kind do
-		// contrato descreve isso; fica unknown de propósito para aparecer no painel.
-		HOSTING_FEE_WAIFU: "unknown"
+		// Valor da waifu confiscada usado para quitar dívida de taxa: linha positiva que nunca entra no
+		// saldo (a sobra creditada de verdade não tem linha). Contado à parte, fora das somas.
+		HOSTING_FEE_WAIFU: "non_monetary"
 	},
 	// Petalitas: o Jardim ainda não tem extrato (ledger.available = false). Sem motivos mapeados.
 	petalitas: {},
@@ -93,4 +106,4 @@ function kindFor(currency, reason) {
 	return table[reason];
 }
 
-module.exports = { MAPPING_VERSION, MAPPING, KINDS, kindFor };
+module.exports = { MAPPING_VERSION, MAPPING, KINDS, NON_MONETARY_KINDS, kindFor };

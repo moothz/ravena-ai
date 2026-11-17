@@ -19,6 +19,7 @@ const http = require("http");
 const BetterSQLite = require("better-sqlite3");
 
 const { kindFor, MAPPING, KINDS } = require("../services/EconomyAnalyticsMapping");
+const { SCHEMA } = require("../services/EconomyAnalyticsStore");
 const R = require("../services/EconomyAnalyticsRunas");
 const EconomyAnalyticsService = require("../services/EconomyAnalyticsService");
 
@@ -79,34 +80,18 @@ function tx(db, user, type, game, runas, ts, extra = {}) {
 // ---------------------------------------------------------------------------
 function remoteSummary(currency, from, to, opts = {}) {
 	const flows = [];
-	if (opts.ledger !== false) {
-		const h = Math.max(R.hourStart(from), DAY0);
-		if (h < to) {
-			flows.push({
-				hour: h,
-				reason: "DAILY_REWARD",
-				amountIn: 1000,
-				amountOut: 0,
-				count: 10,
-				users: 8
-			});
-			flows.push({
-				hour: h,
-				reason: "HOSTING_FEE",
-				amountIn: 0,
-				amountOut: 300,
-				count: 3,
-				users: 3
-			});
-			flows.push({
-				hour: h,
-				reason: "NEW_REASON_X",
-				amountIn: 50,
-				amountOut: 0,
-				count: 1,
-				users: 1
-			});
-		}
+	const h = Math.max(R.hourStart(from), DAY0);
+	if (opts.ledger !== false && h < to) {
+		const f = (reason, amountIn, amountOut) => ({
+			hour: h,
+			reason,
+			amountIn,
+			amountOut,
+			count: 1,
+			users: 1
+		});
+		flows.push(f("DAILY_REWARD", 1000, 0), f("HOSTING_FEE", 0, 300), f("NEW_REASON_X", 50, 0));
+		flows.push(f("HOSTING_FEE_WAIFU", 7777, 0), f("MARKET_TRADE", 100, 105));
 	}
 	return {
 		currency,
@@ -123,18 +108,20 @@ function remoteSummary(currency, from, to, opts = {}) {
 			top10Share: 0.4,
 			quintiles: [1, 2, 3, 4, 5].map((q) => ({ q, n: 12, min: q, max: q * 10, sum: q * 1000 }))
 		},
+		// waifuletes: receivedByQuintile só com received=1 (opt-in)
 		receivedByQuintile:
-			to - from <= 8 * D
+			opts.received && to - from <= 8 * D
 				? [1, 2, 3, 4, 5].map((q) => ({ q, n: 12, receivedSum: q * 100, receivedMedian: q }))
 				: []
 	};
 }
 
 function startMockServer(state) {
-	const server = http.createServer((req, res) => {
+	const server = http.createServer(async (req, res) => {
 		const u = new URL(req.url, "http://x");
 		const from = Number(u.searchParams.get("from"));
 		const to = Number(u.searchParams.get("to"));
+		const received = u.searchParams.get("received") === "1";
 		const isWaifu = req.headers.authorization === "Bearer test-waifu-key";
 		const isJardim = req.headers["x-api-key"] === "test-jardim-key";
 		const svc = isWaifu ? "waifuletes" : isJardim ? "jardim" : null;
@@ -142,15 +129,21 @@ function startMockServer(state) {
 			res.writeHead(401).end("{}");
 			return;
 		}
-		state.calls.push({ svc, from, to });
-		if (state.fail[svc]) {
+		state.calls.push({ svc, from, to, received });
+		if (state.delay) await new Promise((r) => setTimeout(r, state.delay));
+		const fail = state.fail[svc];
+		if (fail === true || (typeof fail === "function" && fail(from, to))) {
 			res.writeHead(500, { "content-type": "application/json" }).end('{"error":"boom"}');
 			return;
 		}
 		const body =
 			svc === "waifuletes"
-				? remoteSummary("zinthos", from, to, { generatedAt: state.now() })
-				: remoteSummary("petalitas", from, to, { generatedAt: state.now(), ledger: false });
+				? remoteSummary("zinthos", from, to, { generatedAt: state.now(), received })
+				: remoteSummary("petalitas", from, to, {
+						generatedAt: state.now(),
+						ledger: false,
+						received
+					});
 		if (state.override[svc]) Object.assign(body, state.override[svc](body));
 		res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 	});
@@ -166,35 +159,39 @@ function readAll(file, sql, params = []) {
 	}
 }
 
-/** Lê a consulta de um painel do dashboard provisionado e troca as macros/variáveis do Grafana. */
+const DASHBOARD = path.join(__dirname, "../../observability/grafana/dashboards/economia.json");
+function dashboardPanels() {
+	const dash = JSON.parse(fs.readFileSync(DASHBOARD, "utf8"));
+	return dash.panels.flatMap((p) => (p.panels ? [p, ...p.panels] : [p]));
+}
+
+/** Consulta de um painel com a interpolação que o frontend faz ($__from/$__to em ms, ${moeda}). */
 function dashboardSql(title, { from, to, moeda = "zinthos" }) {
-	const dash = JSON.parse(
-		fs.readFileSync(
-			path.join(__dirname, "../../observability/grafana/dashboards/economia.json"),
-			"utf8"
-		)
-	);
-	const panels = dash.panels.flatMap((p) => (p.panels ? [p, ...p.panels] : [p]));
-	const panel = panels.find((p) => p.title === title);
+	const panel = dashboardPanels().find((p) => p.title === title);
 	assert.ok(panel, `painel "${title}" não encontrado`);
-	return (
-		panel.targets[0].queryText
-			// O frser recebe a consulta já interpolada pelo frontend ($__from/$__to em ms)
-			.replace(/\$__from\b/g, String(from))
-			.replace(/\$__to\b/g, String(to))
-			.replace(/\$\{moeda:sqlstring\}/g, `'${moeda}'`)
-			.replace(/\$\{moeda\}/g, moeda)
-	);
+	return panel.targets[0].queryText
+		.replace(/\$__from\b/g, String(from))
+		.replace(/\$__to\b/g, String(to))
+		.replace(/\$\{moeda:sqlstring\}/g, `'${moeda}'`)
+		.replace(/\$\{moeda\}/g, moeda);
+}
+
+function freshDb(name) {
+	const file = path.join(tmpRoot, name);
+	const db = new BetterSQLite(file);
+	db.exec(SCHEMA);
+	return { file, db };
 }
 
 async function main() {
 	console.log("=== Testes: painel da economia (EconomyAnalytics) ===");
 
 	// ----------------------------------------------------------------------- mapeamento
-	await test("mapeamento reason → kind (conhecido, desconhecido, moeda sem tabela)", () => {
+	await test("mapeamento reason → kind (conhecido, desconhecido, non_monetary, moeda sem tabela)", () => {
 		assert.strictEqual(kindFor("zinthos", "DAILY_REWARD"), "creation");
 		assert.strictEqual(kindFor("zinthos", "HOSTING_FEE"), "destruction");
 		assert.strictEqual(kindFor("zinthos", "MARKET_TRADE"), "transfer");
+		assert.strictEqual(kindFor("zinthos", "HOSTING_FEE_WAIFU"), "non_monetary");
 		assert.strictEqual(kindFor("runas", "DEPOSIT:waifu"), "exchange_in");
 		assert.strictEqual(kindFor("runas", "WITHDRAW:jardim"), "exchange_out");
 		assert.strictEqual(kindFor("runas", "STORE_BUY:slots"), "destruction");
@@ -203,7 +200,6 @@ async function main() {
 		assert.strictEqual(kindFor("zinthos", "toString"), "unknown"); // não herda do prototype
 		assert.strictEqual(kindFor("petalitas", "QUALQUER"), "unknown");
 		assert.strictEqual(kindFor("ouro", "DAILY_REWARD"), "unknown");
-		// Todos os motivos do enum KakeraReason estão mapeados
 		for (const r of [
 			"DAILY_REWARD",
 			"DIVORCE",
@@ -215,11 +211,11 @@ async function main() {
 			"MARKET_TRADE",
 			"MARKET_BUY",
 			"MARKET_REFUND",
-			"HOSTING_FEE"
+			"HOSTING_FEE",
+			"HOSTING_FEE_WAIFU"
 		]) {
 			assert.notStrictEqual(kindFor("zinthos", r), "unknown", r);
 		}
-		assert.strictEqual(kindFor("zinthos", "HOSTING_FEE_WAIFU"), "unknown"); // de propósito
 		assert.strictEqual(kindFor("zinthos", "ADMIN_GRANT:bank_withdraw_zinthos"), "exchange_in");
 		assert.strictEqual(kindFor("zinthos", "ADMIN_GRANT:bank_deposit_runas"), "exchange_out");
 		assert.strictEqual(
@@ -231,9 +227,8 @@ async function main() {
 		assert.strictEqual(kindFor("zinthos", "ADMIN_GRANT:other"), "creation");
 		assert.strictEqual(kindFor("zinthos", "ADMIN_GRANT:evento_natal"), "unknown"); // sufixo novo aparece
 		assert.strictEqual(kindFor("zinthos", "DAILY_REWARD:x"), "unknown");
-		for (const t of Object.values(MAPPING)) {
+		for (const t of Object.values(MAPPING))
 			for (const k of Object.values(t)) assert.ok(KINDS.includes(k));
-		}
 	});
 
 	await test("sentido de cada type de bank_transactions", () => {
@@ -283,7 +278,7 @@ async function main() {
 	});
 
 	// ----------------------------------------------------------------------- estatística
-	await test("quintos com n < 10 saem nulos; percentis e top10Share", () => {
+	await test("quintos com n < 10 saem nulos; percentis, top10Share; total inclui saldo negativo", () => {
 		const small = R.balanceStats([0, 0, ...Array.from({ length: 30 }, (_, i) => i + 1)]);
 		assert.strictEqual(small.accounts, 32);
 		assert.strictEqual(small.holders, 30);
@@ -299,7 +294,6 @@ async function main() {
 		assert.deepStrictEqual(big.quintiles[0], { q: 1, n: 12, min: 1, max: 12, sum: 78 });
 		assert.deepStrictEqual(big.quintiles[4], { q: 5, n: 12, min: 49, max: 60, sum: 654 });
 
-		// 49 holders → quintos de 9 e 10: só os de 10 aparecem
 		const mixed = R.balanceStats(Array.from({ length: 49 }, (_, i) => i + 1));
 		assert.deepStrictEqual(
 			mixed.quintiles.map((q) => q.n),
@@ -308,6 +302,13 @@ async function main() {
 		assert.strictEqual(mixed.quintiles[0].sum, null);
 		assert.notStrictEqual(mixed.quintiles[1].sum, null);
 
+		// Saldo negativo entra no total (como nos serviços), não na concentração
+		const neg = R.balanceStats([-50, 10, 30]);
+		assert.strictEqual(neg.total, -10);
+		assert.strictEqual(neg.holders, 2);
+		assert.strictEqual(neg.accounts, 3);
+		assert.strictEqual(neg.top10Share, 0.75);
+
 		const empty = R.balanceStats([]);
 		assert.strictEqual(empty.total, 0);
 		assert.strictEqual(empty.top10Share, null);
@@ -315,7 +316,7 @@ async function main() {
 
 	await test("receivedByQuintile: nulos em grupo pequeno, mediana inclui quem não recebeu", () => {
 		const bal = new Map(Array.from({ length: 50 }, (_, i) => [`u${i}`, i + 1]));
-		bal.set("zero", 0); // sem saldo: fora dos quintos
+		bal.set("zero", 0);
 		const got = new Map([
 			["u0", 100],
 			["u1", 50],
@@ -336,8 +337,9 @@ async function main() {
 	});
 
 	// ----------------------------------------------------------------------- Runas do bank.db
-	const bankFile = path.join(tmpRoot, "bank.db");
-	const bank = makeBankDb(bankFile);
+	const bank = makeBankDb(path.join(tmpRoot, "bank.db"));
+	// 200 transações antigas para a busca binária por id ter o que pular
+	for (let i = 0; i < 200; i++) tx(bank, "old", "DEPOSIT", "pesca", 1, DAY0 - 30 * D + i * H);
 	const t1 = DAY0 + 2 * H + 10 * 60 * 1000; // 09:10 UTC
 	const t2 = DAY0 + 3 * H + 1; // 10:00 UTC (+1 ms)
 	tx(bank, "u1", "DEPOSIT", "pesca", 100.4, t1);
@@ -351,26 +353,27 @@ async function main() {
 	tx(bank, "u1", "TRANSFER_IN", "market", 5, t2);
 	tx(bank, "u4", "DEPOSIT", "pesca", 999, t2, { status: "PENDING" }); // status desconhecido: fora
 	tx(bank, "u4", "MYSTERY", "x", 3, t2);
-	for (let i = 0; i < 60; i++) {
-		bank.prepare("INSERT INTO bank_accounts (user_id, runas) VALUES (?, ?)").run(`h${i}`, i + 1);
-	}
-	bank.prepare("INSERT INTO bank_accounts (user_id, runas) VALUES ('u1', 0.4)").run();
-	// Retratos diários (virada 04:00 BRT): dia 10 completo; NULL = conta criada no meio do dia
-	bank
-		.prepare(
-			"INSERT INTO bank_daily_quotas (user_id, date, initial_runas) VALUES ('a', '2026-11-10', 1000.4), ('b', '2026-11-10', 500), ('c', '2026-11-10', NULL)"
-		)
-		.run();
-	// Dia 09 só tem linhas NULL (antes da virada gravar initial_runas): ignorado
-	bank
-		.prepare(
-			"INSERT INTO bank_daily_quotas (user_id, date, initial_runas) VALUES ('a', '2026-11-09', NULL)"
-		)
-		.run();
+	const acc = bank.prepare(
+		"INSERT INTO bank_accounts (user_id, runas, created_at) VALUES (?, ?, ?)"
+	);
+	for (let i = 0; i < 60; i++) acc.run(`h${i}`, i + 1, null); // contas antigas (created_at nulo)
+	acc.run("u1", 0.4, DAY0 - D);
+	acc.run("neg", -100, DAY0 - D); // saldo negativo
+	acc.run("late", 7, DAY0 + H); // criada depois da virada do dia 10
+	const q = bank.prepare(
+		"INSERT INTO bank_daily_quotas (user_id, date, initial_runas) VALUES (?, ?, ?)"
+	);
+	// Dia 10: virada gravou initial_runas para as 62 contas que existiam; 'late' tem linha NULL
+	for (let i = 0; i < 60; i++) q.run(`h${i}`, "2026-11-10", i + 1);
+	q.run("u1", "2026-11-10", 0.4);
+	q.run("neg", "2026-11-10", -100);
+	q.run("late", "2026-11-10", null);
+	// Dia 09: só 3 linhas (antes da virada gravar todo mundo) → cobertura baixa, dia ignorado
+	for (const u of ["h0", "h1", "h2"]) q.run(u, "2026-11-09", 1000);
 	const bankQuery = (sql, params = []) => bank.prepare(sql).all(...params);
 
 	await test("agregação de Runas por hora e motivo (bank.db sintético)", () => {
-		const flows = R.runasFlows(bankQuery, 0, DAY0 + D);
+		const flows = R.runasFlows(bankQuery, DAY0, DAY0 + D);
 		const get = (hour, reason) => flows.find((f) => f.hour === hour && f.reason === reason);
 		const h1 = DAY0 + 2 * H;
 		const h2 = DAY0 + 3 * H;
@@ -395,100 +398,149 @@ async function main() {
 		assert.strictEqual(get(h2, "BONUS:slots_prize").amountIn, 40);
 		assert.strictEqual(get(h2, "MYSTERY:x").amountIn, 3);
 		assert.ok(!flows.some((f) => f.amountIn === 999), "status PENDING não entra");
-		// janela [from, to): to exclusivo
-		assert.strictEqual(R.runasFlows(bankQuery, h1, h2).length, 1);
-		// nenhum ID de usuário no resultado
+		assert.strictEqual(R.runasFlows(bankQuery, h1, h2).length, 1); // to exclusivo
 		assert.ok(!JSON.stringify(flows).includes("u1"));
+		// from=0 pega o histórico inteiro
+		assert.strictEqual(
+			R.runasFlows(bankQuery, 0, DAY0).reduce((s, f) => s + f.count, 0),
+			200
+		);
 	});
 
-	await test("resumo de Runas no formato do contrato + retratos diários", () => {
-		const s = R.buildRunasSummary(bankQuery, DAY0, DAY0 + D, DAY0 + D + 5);
+	await test("janela de transações sem varredura: busca binária no id + plano de consulta", () => {
+		const firstNew = bank
+			.prepare("SELECT MIN(id) id FROM bank_transactions WHERE timestamp >= ?")
+			.get(DAY0).id;
+		const lo = R.firstIdFrom(bankQuery, DAY0);
+		assert.ok(lo <= firstNew, "nunca pula transação da janela");
+		assert.ok(lo > 150, `deveria pular o histórico (id ${lo})`);
+		const plan = bankQuery(
+			`EXPLAIN QUERY PLAN SELECT * FROM bank_transactions WHERE id >= ? AND timestamp >= ? AND timestamp < ?`,
+			[lo, DAY0, DAY0 + D]
+		)
+			.map((r) => r.detail)
+			.join(" | ");
+		assert.match(plan, /INTEGER PRIMARY KEY|rowid/i, plan);
+	});
+
+	await test("retratos de Runas: total com negativos, reconstrução na hora cheia, dias com cobertura", () => {
+		const now = DAY0 + 5 * H + 5 * 60 * 1000;
+		const s = R.buildRunasSummary(bankQuery, DAY0, DAY0 + D, now);
 		assert.strictEqual(s.currency, "runas");
-		assert.strictEqual(s.balances.holders, 61);
-		assert.strictEqual(s.balances.accounts, 61);
-		assert.strictEqual(s.balances.total, Math.round(1830 + 0.4));
-		assert.strictEqual(s.receivedByQuintile.length, 5);
-		// creation na janela: DEPOSIT:pesca (u1 110.4, u2 50.4) e BONUS:slots_prize (u2 40); u2 não tem
-		// saldo (fora dos quintos), u1 tem 0.4 → quinto 1
-		assert.strictEqual(s.receivedByQuintile[0].receivedSum, 110);
-		assert.strictEqual(R.buildRunasSummary(bankQuery, 0, DAY0 + D).receivedByQuintile.length, 0);
+		assert.strictEqual(s.balances.accounts, 63);
+		assert.strictEqual(s.balances.holders, 62); // 60 h + u1 + late
+		assert.strictEqual(s.balances.total, Math.round(1830 + 0.4 - 100 + 7));
+		assert.strictEqual(s.receivedByQuintile.length, 0, "received só quando pedido");
+		// Reconstrução: saldos às 10:00 = atuais − extrato em [10:00, agora)
+		const at = R.balancesAt(bankQuery, DAY0 + 3 * H, now);
+		assert.strictEqual(Math.round(at.get("u1") * 10) / 10, 0.4 + 10.5 - 5);
+		assert.strictEqual(at.get("u3"), 200 + 30);
+		const live = R.buildRunasSummary(bankQuery, DAY0, DAY0 + 3 * H, now, {
+			balancesAt: DAY0 + 3 * H
+		});
+		assert.strictEqual(live.generatedAt, DAY0 + 3 * H);
+		const rec = R.buildRunasSummary(bankQuery, DAY0, DAY0 + D, now, { received: true });
+		assert.strictEqual(rec.receivedByQuintile.length, 5);
+		assert.strictEqual(rec.ledger.flows.length, 0);
+		// Retratos diários: só o dia 10 (o 09 tem 3/61 contas)
 		const snaps = R.dailySnapshots(bankQuery, 0, DAY0 + 2 * D);
-		assert.strictEqual(snaps.length, 1);
-		assert.strictEqual(snaps[0].ts, DAY0);
-		assert.strictEqual(snaps[0].balances.total, 1500);
-		assert.strictEqual(snaps[0].balances.accounts, 3);
-		assert.strictEqual(snaps[0].balances.holders, 2);
+		assert.deepStrictEqual(
+			snaps.map((x) => x.ts),
+			[DAY0]
+		);
+		assert.strictEqual(snaps[0].balances.total, Math.round(1830 + 0.4 - 100));
+		assert.strictEqual(snaps[0].balances.accounts, 62);
+		// Sem virada na janela: nem consulta
+		let calls = 0;
+		R.dailySnapshots((sql, p) => (calls++, bankQuery(sql, p)), DAY0 + H, DAY0 + 2 * H);
+		assert.strictEqual(calls, 0);
+		assert.deepStrictEqual(R.boundaryDates(DAY0 - 1, DAY0 + D + 1), {
+			first: "2026-11-10",
+			last: "2026-11-11"
+		});
 	});
 
 	// ----------------------------------------------------------------------- carga completa
 	let clock = DAY0 + 5 * H + 5 * 60 * 1000; // 12:05 UTC
-	const state = { calls: [], fail: {}, override: {}, now: () => clock };
+	const state = { calls: [], fail: {}, override: {}, now: () => clock, delay: 0 };
 	const server = await startMockServer(state);
 	const base = `http://127.0.0.1:${server.address().port}`;
-	const dbPath = path.join(tmpRoot, "analytics.db");
-	const svc = new EconomyAnalyticsService({
-		dbPath,
-		bankQuery,
-		now: () => clock,
-		waifuletesUrl: base,
-		waifuletesKey: "test-waifu-key",
-		jardimUrl: base,
-		jardimKey: "test-jardim-key",
-		sources: ["zinthos", "petalitas", "runas"]
-	});
+	const dbPath = path.join(tmpRoot, "carga", "analytics.db");
+	const publishDir = path.join(tmpRoot, "publicado"); // não existe ainda
+	const pubFile = path.join(publishDir, "analytics.db");
+	const BF = DAY0 - 70 * D; // fim do primeiro pedaço
+	const mkService = () =>
+		new EconomyAnalyticsService({
+			dbPath,
+			publishDir,
+			bankQuery,
+			now: () => clock,
+			backfillStart: BF,
+			waifuletesUrl: base,
+			waifuletesKey: "test-waifu-key",
+			jardimUrl: base,
+			jardimKey: "test-jardim-key",
+			sources: ["zinthos", "petalitas", "runas"]
+		});
+	let svc = mkService();
 
 	try {
-		await test("primeira carga: from=0 até o início da hora, WAL, fontes isoladas", async () => {
+		await test("primeira carga: from=0 em pedaços, fontes isoladas, retrato só na janela atual, publicação", async () => {
 			state.fail.jardim = true;
 			const r = await svc.runOnce();
 			const hourNow = DAY0 + 5 * H;
-			assert.deepStrictEqual(
-				state.calls.filter((c) => c.to === hourNow).map((c) => [c.svc, c.from]),
-				[
-					["waifuletes", 0],
-					["jardim", 0]
-				]
+			const w = state.calls
+				.filter((c) => c.svc === "waifuletes" && !c.received)
+				.map((c) => [c.from, c.to]);
+			assert.deepStrictEqual(w, [
+				[0, BF],
+				[BF, BF + 30 * D],
+				[BF + 30 * D, BF + 60 * D],
+				[BF + 60 * D, hourNow]
+			]);
+			assert.strictEqual(
+				state.calls.filter((c) => c.svc === "jardim").length,
+				1,
+				"Jardim para no 1º erro"
 			);
 			assert.strictEqual(r.zinthos.ok, true);
+			assert.strictEqual(r.zinthos.chunks, 4);
 			assert.strictEqual(r.runas.ok, true);
 			assert.strictEqual(r.petalitas.ok, false);
-			const runs = readAll(
-				dbPath,
-				"SELECT source, ok, window_from, window_to, error FROM load_runs ORDER BY source"
+			const pet = readAll(dbPath, "SELECT ok, error FROM load_runs WHERE source='petalitas'");
+			assert.deepStrictEqual(
+				pet.map((x) => x.ok),
+				[0]
 			);
-			const pet = runs.find((x) => x.source === "petalitas");
-			assert.strictEqual(pet.ok, 0);
-			assert.match(pet.error, /HTTP 500/);
-			assert.strictEqual(runs.find((x) => x.source === "zinthos").window_to, hourNow);
+			assert.match(pet[0].error, /HTTP 500/);
 			assert.strictEqual(readAll(dbPath, "PRAGMA journal_mode")[0].journal_mode, "wal");
-			// Fluxos de Runas e Zinthos gravados com kind
 			const z = readAll(
 				dbPath,
-				"SELECT reason, kind, amount_in, amount_out FROM flows_hourly WHERE currency='zinthos' ORDER BY reason"
+				"SELECT reason, kind FROM flows_hourly WHERE currency='zinthos' ORDER BY reason"
 			);
 			assert.deepStrictEqual(
 				z.map((x) => [x.reason, x.kind]),
 				[
 					["DAILY_REWARD", "creation"],
 					["HOSTING_FEE", "destruction"],
+					["HOSTING_FEE_WAIFU", "non_monetary"],
+					["MARKET_TRADE", "transfer"],
 					["NEW_REASON_X", "unknown"]
 				]
 			);
-			const rr = readAll(
-				dbPath,
-				"SELECT reason, kind FROM flows_hourly WHERE currency='runas' AND reason='MYSTERY:x'"
-			);
-			assert.strictEqual(rr[0].kind, "unknown");
-			// Retrato diário do bank_daily_quotas + retrato da carga
-			const rb = readAll(
-				dbPath,
-				"SELECT ts, total FROM balances WHERE currency='runas' ORDER BY ts"
-			);
+			// Retrato dos serviços só uma vez (janela que chega à hora atual), no instante da resposta
 			assert.deepStrictEqual(
-				rb.map((x) => x.ts),
-				[DAY0, clock]
+				readAll(dbPath, "SELECT ts FROM balances WHERE currency='zinthos'").map((x) => x.ts),
+				[clock]
 			);
-			// receivedByQuintile do dia: zinthos e runas sim, petalitas falhou
+			// Runas: retrato diário (07:00) + reconstruído exatamente na hora cheia
+			assert.deepStrictEqual(
+				readAll(dbPath, "SELECT ts FROM balances WHERE currency='runas' ORDER BY ts").map(
+					(x) => x.ts
+				),
+				[DAY0, hourNow]
+			);
+			// Quem recebe: zinthos (received=1) e runas; petalitas nunca carregou → nada
 			const rq = readAll(
 				dbPath,
 				"SELECT currency, COUNT(*) n FROM received_by_quintile GROUP BY currency ORDER BY currency"
@@ -500,44 +552,62 @@ async function main() {
 					["zinthos", 5]
 				]
 			);
-			const recvCall = state.calls.find((c) => c.svc === "waifuletes" && c.to === DAY0);
-			assert.ok(
-				recvCall && recvCall.from === DAY0 - 7 * D,
-				"pede os últimos 7 dias até o início do dia"
+			const recv = state.calls.filter((c) => c.received);
+			assert.deepStrictEqual(
+				recv.map((c) => [c.svc, c.from, c.to]),
+				[["waifuletes", DAY0 - 7 * D, DAY0]]
+			);
+			// Publicado: diretório criado, retrato consistente, sem WAL e sem temporário
+			assert.ok(fs.existsSync(pubFile));
+			assert.deepStrictEqual(fs.readdirSync(publishDir), ["analytics.db"]);
+			assert.strictEqual(readAll(pubFile, "PRAGMA journal_mode")[0].journal_mode, "delete");
+			assert.deepStrictEqual(
+				readAll(pubFile, "SELECT COUNT(*) n FROM load_runs"),
+				readAll(dbPath, "SELECT COUNT(*) n FROM load_runs")
 			);
 		});
 
-		await test("carga incremental: a próxima hora pede [último to, hora atual); falha refaz do zero", async () => {
+		await test("carga incremental; pedaço que falha não volta ao zero; sem extrato não pede received", async () => {
+			state.calls.length = 0;
+			state.fail.jardim = (from) => from === BF + 30 * D; // 3º pedaço falha
+			clock += H; // 13:05
+			const before = readAll(pubFile, "SELECT COUNT(*) n FROM load_runs")[0].n;
+			await svc.runOnce();
+			assert.ok(
+				readAll(pubFile, "SELECT COUNT(*) n FROM load_runs")[0].n > before,
+				"Grafana vê a nova rodada"
+			);
+			const hourNow = DAY0 + 6 * H;
+			assert.deepStrictEqual(
+				state.calls.filter((c) => c.svc === "waifuletes").map((c) => [c.from, c.to]),
+				[[DAY0 + 5 * H, hourNow]]
+			);
+			assert.deepStrictEqual(
+				state.calls.filter((c) => c.svc === "jardim").map((c) => c.from),
+				[0, BF, BF + 30 * D]
+			);
+			assert.ok(
+				!state.calls.some((c) => c.received),
+				"received uma vez por dia; Jardim sem extrato não é pedido"
+			);
+			const noLedger = readAll(
+				dbPath,
+				"SELECT ok, error FROM load_runs WHERE source='petalitas.received'"
+			);
+			assert.deepStrictEqual(noLedger, [{ ok: 1, error: "sem extrato" }]);
+			// Próxima hora: Jardim continua do pedaço que falhou
 			state.calls.length = 0;
 			state.fail.jardim = false;
-			clock += H; // 13:05
+			clock += H; // 14:05
 			await svc.runOnce();
-			const hourNow = DAY0 + 6 * H;
-			const main = state.calls.filter((c) => c.to === hourNow);
 			assert.deepStrictEqual(
-				main.map((c) => [c.svc, c.from]),
-				[
-					["waifuletes", DAY0 + 5 * H],
-					["jardim", 0]
-				]
+				state.calls.filter((c) => c.svc === "jardim").map((c) => c.from),
+				[BF + 30 * D, BF + 60 * D]
 			);
-			// receivedByQuintile só uma vez por dia: zinthos não pede de novo, petalitas pede
-			const recv = state.calls.filter((c) => c.to === DAY0);
-			assert.deepStrictEqual(
-				recv.map((c) => c.svc),
-				["jardim"]
+			assert.strictEqual(
+				readAll(dbPath, "SELECT COUNT(*) n FROM load_runs WHERE source='petalitas.received'")[0].n,
+				1
 			);
-			const ok = readAll(
-				dbPath,
-				"SELECT source, window_from, window_to FROM load_runs WHERE ok=1 AND window_to=? ORDER BY source",
-				[hourNow]
-			);
-			assert.deepStrictEqual(
-				ok.map((x) => x.source),
-				["petalitas", "runas", "zinthos"]
-			);
-			assert.strictEqual(ok.find((x) => x.source === "runas").window_from, DAY0 + 5 * H);
-			// Jardim sem extrato: ledger_status marca, painel mostra "sem extrato"
 			const ls = readAll(dbPath, "SELECT currency, available FROM ledger_status ORDER BY currency");
 			assert.deepStrictEqual(
 				ls.map((x) => [x.currency, x.available]),
@@ -564,35 +634,22 @@ async function main() {
 			const snapshot = () =>
 				readAll(dbPath, "SELECT * FROM flows_hourly ORDER BY hour, currency, reason");
 			const before = snapshot();
-			// Esquece as cargas da última hora e roda de novo a mesma janela
 			const db = new BetterSQLite(dbPath);
-			db.prepare("DELETE FROM load_runs WHERE window_to = ?").run(DAY0 + 6 * H);
+			db.prepare("DELETE FROM load_runs WHERE window_to = ?").run(DAY0 + 7 * H);
 			db.close();
 			await svc.runOnce();
 			assert.deepStrictEqual(snapshot(), before);
-			// writeFlows apaga motivo que sumiu da janela
-			svc.store.writeFlows("zinthos", DAY0, DAY0 + H, [
-				{
-					hour: DAY0,
-					reason: "DAILY_REWARD",
-					kind: "creation",
-					amountIn: 1,
-					amountOut: 0,
-					count: 1,
-					users: 1
-				}
-			]);
-			svc.store.writeFlows("zinthos", DAY0, DAY0 + H, [
-				{
-					hour: DAY0,
-					reason: "DIVORCE",
-					kind: "creation",
-					amountIn: 2,
-					amountOut: 0,
-					count: 1,
-					users: 1
-				}
-			]);
+			const flow = (reason) => ({
+				hour: DAY0,
+				reason,
+				kind: "creation",
+				amountIn: 1,
+				amountOut: 0,
+				count: 1,
+				users: 1
+			});
+			svc.store.writeFlows("zinthos", DAY0, DAY0 + H, [flow("DAILY_REWARD")]);
+			svc.store.writeFlows("zinthos", DAY0, DAY0 + H, [flow("DIVORCE")]);
 			const rows = readAll(
 				dbPath,
 				"SELECT reason FROM flows_hourly WHERE currency='zinthos' AND hour=?",
@@ -605,13 +662,13 @@ async function main() {
 		});
 
 		await test("resposta fora do contrato vira erro em load_runs (e não grava nada)", async () => {
-			clock += H; // 14:15
+			clock += H;
 			state.override.waifuletes = () => ({ schemaVersion: 2 });
 			const r = await svc.runOnce();
 			assert.strictEqual(r.zinthos.ok, false);
 			assert.match(r.zinthos.error, /schemaVersion/);
 			assert.strictEqual(r.runas.ok, true);
-			state.override.waifuletes = (b) => ({
+			state.override.waifuletes = () => ({
 				ledger: {
 					available: true,
 					flows: [{ hour: 0, reason: "DAILY_REWARD", amountIn: 1, amountOut: 0 }]
@@ -621,62 +678,145 @@ async function main() {
 			const r2 = await svc.runOnce();
 			assert.match(r2.zinthos.error, /fora da janela/);
 			state.override.waifuletes = null;
-			// a próxima carga boa cobre o buraco inteiro
 			state.calls.length = 0;
 			clock += H;
 			await svc.runOnce();
-			assert.strictEqual(state.calls[0].from, DAY0 + 6 * H);
+			assert.strictEqual(state.calls.find((c) => c.svc === "waifuletes").from, DAY0 + 7 * H);
 		});
 
-		await test("moeda sem origem (consulta do painel) = Δ total − Σ(entradas − saídas)", () => {
-			const db = new BetterSQLite(path.join(tmpRoot, "orphan.db"));
-			db.exec(require("../services/EconomyAnalyticsStore").SCHEMA);
+		await test("stop() espera a rodada em andamento antes de fechar o banco", async () => {
+			clock += H;
+			state.delay = 150;
+			const running = svc.runOnce();
+			await new Promise((r) => setTimeout(r, 20));
+			await svc.stop();
+			const res = await running;
+			assert.strictEqual(res.zinthos.ok, true, JSON.stringify(res.zinthos));
+			assert.strictEqual(svc.store, null);
+			state.delay = 0;
+			svc = mkService(); // reabre o mesmo banco: continua de onde parou
+			state.calls.length = 0;
+			const r = await svc.runOnce();
+			assert.strictEqual(r.zinthos.skipped, true);
+		});
+
+		await test("moeda sem origem: Δ total − Σ fluxos; non_monetary fora; dia sem retrato não some", () => {
+			const { file, db } = freshDb("orphan.db");
 			const ins = db.prepare("INSERT INTO balances (ts, currency, total) VALUES (?, ?, ?)");
-			const fl = db.prepare("INSERT INTO flows_hourly VALUES (?, ?, ?, 'creation', ?, ?, 1, 1)");
-			// Dia 0: abre 1000, fecha (abertura do dia 1) 1600; fluxos +700 −200 = +500 → 100 sem origem
+			const fl = db.prepare("INSERT INTO flows_hourly VALUES (?, ?, ?, ?, ?, ?, 1, 1)");
+			// Dia 0: abre 1000, abertura do dia 1 = 1600; fluxos +700 −200 = +500 → 100 sem origem
 			ins.run(DAY0 + 5 * 60 * 1000, "zinthos", 1000);
 			ins.run(DAY0 + 3 * H, "zinthos", 1200); // retrato no meio do dia: ignorado
 			ins.run(DAY0 + D + 5 * 60 * 1000, "zinthos", 1600);
-			fl.run(DAY0, "zinthos", "A", 700, 0);
-			fl.run(DAY0 + 23 * H, "zinthos", "B", 0, 200);
-			fl.run(DAY0 + D, "zinthos", "A", 999, 0); // dia seguinte: fora
+			fl.run(DAY0, "zinthos", "A", "creation", 700, 0);
+			fl.run(DAY0 + 23 * H, "zinthos", "B", "destruction", 0, 200);
+			fl.run(DAY0 + H, "zinthos", "HOSTING_FEE_WAIFU", "non_monetary", 5000, 0); // fora
 			// Dia 1: abre 1600, dia 2 abre 2499, fluxo +999 → −100 (sumiu sem linha no extrato)
-			ins.run(DAY0 + 2 * D + 5 * 60 * 1000, "zinthos", 1500 + 999);
+			fl.run(DAY0 + D, "zinthos", "A", "creation", 999, 0);
+			ins.run(DAY0 + 2 * D + 5 * 60 * 1000, "zinthos", 2499);
+			// Dia 3 sem retrato: dia 2 → dia 4 (2600) com +50 de fluxo → 51 no dia 2 (2 dias)
+			fl.run(DAY0 + 3 * D + 2 * H, "zinthos", "A", "creation", 50, 0);
+			ins.run(DAY0 + 4 * D + 5 * 60 * 1000, "zinthos", 2600);
 			// Runas no mesmo período, tudo explicado
 			ins.run(DAY0, "runas", 10);
 			ins.run(DAY0 + D, "runas", 15);
-			fl.run(DAY0 + H, "runas", "X", 5, 0);
+			fl.run(DAY0 + H, "runas", "X", "exchange_in", 5, 0);
 			db.close();
-			const sql = dashboardSql("Moeda sem origem por dia", { from: DAY0 - D, to: DAY0 + 3 * D });
-			const rows = readAll(path.join(tmpRoot, "orphan.db"), sql);
-			assert.strictEqual(rows.length, 2);
-			assert.strictEqual(rows[0].time, DAY0 / 1000); // frser lê colunas de tempo em segundos
-			assert.strictEqual(rows[0].zinthos, 100);
-			assert.strictEqual(rows[0].runas, 0);
-			assert.strictEqual(rows[0].petalitas, null);
-			assert.strictEqual(rows[1].time, (DAY0 + D) / 1000);
-			assert.strictEqual(rows[1].zinthos, -100);
+			const rows = readAll(
+				file,
+				dashboardSql("Moeda sem origem por dia", { from: DAY0 - D, to: DAY0 + 6 * D })
+			);
+			assert.deepStrictEqual(
+				rows.map((r) => [r.time, r.zinthos, r.runas, r.petalitas]),
+				[
+					[DAY0 / 1000, 100, 0, null], // frser lê colunas de tempo em segundos
+					[(DAY0 + D) / 1000, -100, null, null],
+					[(DAY0 + 2 * D) / 1000, 51, null, null]
+				]
+			);
+			const week = readAll(
+				file,
+				dashboardSql("Moeda sem origem na semana", { from: 0, to: DAY0 + 6 * D })
+			);
+			const zw = week.find((x) => x.moeda === "zinthos");
+			assert.strictEqual(zw.sem_origem_7d, 51);
+			assert.strictEqual(zw.status, "agir"); // 51/2600 = 1,96%
 		});
 
-		await test("todas as consultas do painel rodam no analytics.db da carga", () => {
-			const dash = JSON.parse(
-				fs.readFileSync(
-					path.join(__dirname, "../../observability/grafana/dashboards/economia.json"),
-					"utf8"
-				)
+		await test("criado/destruído só com creation/destruction; câmbio e transferência à parte", () => {
+			const { file, db } = freshDb("week.db");
+			const fl = db.prepare("INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, ?, ?, ?, ?, 1)");
+			const h = DAY0 + D;
+			fl.run(h, "DAILY_REWARD", "creation", 100, 0, 3);
+			fl.run(h, "ADMIN_GRANT", "creation", 20, 5, 2); // ajuste negativo conta como destruído
+			fl.run(h, "HOSTING_FEE", "destruction", 0, 30, 1);
+			fl.run(h, "MARKET_TRADE", "transfer", 50, 52, 2);
+			fl.run(h, "ADMIN_GRANT:bank_withdraw_zinthos", "exchange_in", 70, 0, 1);
+			fl.run(h, "ADMIN_GRANT:bank_deposit_runas", "exchange_out", 0, 40, 1);
+			fl.run(h, "HOSTING_FEE_WAIFU", "non_monetary", 99999, 0, 4);
+			db.prepare("INSERT INTO balances (ts, currency, total) VALUES (?, 'zinthos', 1000)").run(h);
+			db.close();
+			const to = DAY0 + 3 * D;
+			const t = readAll(file, dashboardSql("As 3 moedas na semana", { from: 0, to })).find(
+				(x) => x.moeda === "zinthos"
 			);
-			const panels = dash.panels.flatMap((p) => (p.panels ? [p, ...p.panels] : [p]));
-			let n = 0;
-			for (const p of panels) {
+			assert.strictEqual(t.criado_7d, 120);
+			assert.strictEqual(t.destruido_7d, 35);
+			assert.strictEqual(t.destruido_por_100_criado, 29.2);
+			assert.strictEqual(t.maior_fonte, "DAILY_REWARD");
+			const c = readAll(
+				file,
+				dashboardSql("Câmbio e transferências na semana", { from: 0, to })
+			).find((x) => x.moeda === "zinthos");
+			assert.deepStrictEqual(
+				[
+					c.cambio_entrou,
+					c.cambio_saiu,
+					c.cambio_liquido,
+					c.transferido,
+					c.transferencia_liquida,
+					c.linhas_fora_do_dinheiro
+				],
+				[70, 40, 30, 50, -2, 4]
+			);
+			const stat = readAll(
+				file,
+				dashboardSql("Destruído por 100 criado (7 dias) — ${moeda}", { from: 0, to })
+			);
+			assert.strictEqual(stat[0].destruido_por_100, 29.2);
+			const byReason = readAll(
+				file,
+				dashboardSql("De onde vem e para onde vai (7 dias) — ${moeda}", { from: 0, to })
+			);
+			const nm = byReason.find((x) => x.motivo === "HOSTING_FEE_WAIFU");
+			assert.strictEqual(nm.entradas, null);
+			assert.strictEqual(nm.transacoes, 4);
+			const daily = readAll(
+				file,
+				dashboardSql("Criado e destruído por dia — ${moeda}", { from: 0, to })
+			);
+			assert.deepStrictEqual([daily[0].criado, daily[0].destruido], [120, 35]);
+			// Nenhuma consulta do painel soma a linha non_monetary
+			for (const p of dashboardPanels()) {
 				if (!p.targets) continue;
-				const sql = dashboardSql(p.title, { from: DAY0 - 90 * D, to: clock });
-				readAll(dbPath, sql);
+				const rows = readAll(file, dashboardSql(p.title, { from: 0, to }));
+				assert.ok(!JSON.stringify(rows).includes("99999"), `${p.title} somou non_monetary`);
+			}
+		});
+
+		await test("todas as consultas do painel rodam no retrato publicado", () => {
+			let n = 0;
+			for (const p of dashboardPanels()) {
+				if (!p.targets) continue;
+				for (const moeda of ["zinthos", "petalitas", "runas"]) {
+					readAll(pubFile, dashboardSql(p.title, { from: DAY0 - 90 * D, to: clock, moeda }));
+				}
 				n++;
 			}
-			assert.ok(n >= 10, `esperava >= 10 painéis com consulta, achou ${n}`);
+			assert.ok(n >= 15, `esperava >= 15 painéis com consulta, achou ${n}`);
 		});
 	} finally {
-		svc.stop();
+		await svc.stop();
 		server.close();
 		bank.close();
 	}

@@ -1,8 +1,9 @@
 apiVersion: 1
-# Painel da economia (OBSERVABILITY.md): lê o analytics.db que a ravena-ai grava toda hora.
-# O arquivo é montado só-leitura no contêiner (ver ECONOMY_ANALYTICS_DB_HOST em observability/.env).
-# immutable=1: o contêiner não enxerga o -wal/-shm do arquivo montado; a carga termina cada rodada com
-# wal_checkpoint(TRUNCATE), então o arquivo principal já está completo quando o Grafana lê.
+# Painel da economia (OBSERVABILITY.md): lê o retrato do analytics.db que a ravena-ai publica toda hora
+# (VACUUM INTO + rename atômico) no diretório montado só-leitura em /var/lib/economia
+# (ECONOMY_ANALYTICS_DIR_HOST em observability/.env). Como o arquivo nunca é alterado no lugar, só
+# trocado inteiro, dá para abrir com immutable=1 (sem trava nem -wal/-shm num diretório só-leitura).
+# pathOptions vai SEM "?": o plugin já põe o "?" (com "?mode=ro" o mode=ro some em silêncio).
 # O Prometheus continua sendo a fonte padrão (datasources.yaml).
 datasources:
   - name: Economia (SQLite)
@@ -14,4 +15,4 @@ datasources:
     jsonData:
       path: /var/lib/economia/analytics.db
       pathPrefix: "file:"
-      pathOptions: "?mode=ro&immutable=1"
+      pathOptions: "mode=ro&immutable=1"

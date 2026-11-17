@@ -58,12 +58,15 @@ const round = (v) => (v === null || v === undefined ? null : Math.round(v));
 function balanceStats(values) {
 	const holders = values.filter((v) => v > 0).sort((a, b) => a - b);
 	const n = holders.length;
-	const total = holders.reduce((s, v) => s + v, 0);
+	// total = soma de TODAS as contas (saldo negativo incluso), como nos serviços; a concentração
+	// (top10Share, quintos, percentis) é só entre quem tem saldo > 0.
+	const total = values.reduce((s, v) => s + v, 0);
+	const holdersTotal = holders.reduce((s, v) => s + v, 0);
 	let top10Share = null;
-	if (n > 0 && total > 0) {
+	if (n > 0 && holdersTotal > 0) {
 		const k = Math.ceil(n * 0.1);
 		const top = holders.slice(n - k).reduce((s, v) => s + v, 0);
-		top10Share = Number((top / total).toFixed(4));
+		top10Share = Number((top / holdersTotal).toFixed(4));
 	}
 	const quintiles = quintileRanges(n).map(({ q, start, end }) => {
 		const slice = holders.slice(start, end);
@@ -156,18 +159,46 @@ function classifyRunasTx(row) {
 		: { reason, amountIn: 0, amountOut: abs };
 }
 
+// bank_transactions não tem índice em timestamp (e o bank.db não muda nesta fase). Para não varrer a
+// tabela toda a cada hora, acha por busca binária no id (AUTOINCREMENT, cresce com o tempo) o primeiro id
+// da janela, com 1 h de folga para inserções fora de ordem, e filtra por timestamp a partir dele.
+const ID_MARGIN_MS = HOUR_MS;
 const TX_SQL = `SELECT user_id, type, game, runas_amount, details_json, timestamp
 	FROM bank_transactions
-	WHERE timestamp >= ? AND timestamp < ?
+	WHERE id >= ? AND timestamp >= ? AND timestamp < ?
 	  AND (status IS NULL OR status IN ('COMPLETED', 'UNDONE'))`;
+
+/** Menor id que pode ter timestamp >= ts (busca binária em O(log n) leituras pelo rowid). */
+function firstIdFrom(query, ts) {
+	const r = query("SELECT MIN(id) AS lo, MAX(id) AS hi FROM bank_transactions", [])[0];
+	if (!r || r.lo === null || r.lo === undefined) return 0;
+	const target = ts - ID_MARGIN_MS;
+	let lo = r.lo;
+	let hi = r.hi + 1;
+	while (lo < hi) {
+		const mid = Math.floor((lo + hi) / 2);
+		const row = query(
+			"SELECT id, timestamp FROM bank_transactions WHERE id >= ? ORDER BY id LIMIT 1",
+			[mid]
+		)[0];
+		if (!row) hi = mid;
+		else if (Number(row.timestamp) < target) lo = row.id + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
+function txRows(query, from, to) {
+	return query(TX_SQL, [from > 0 ? firstIdFrom(query, from) : 0, from, to]);
+}
 
 /**
  * Fluxos por hora e motivo. Transações desfeitas (status UNDONE) contam no instante original (o
  * dinheiro se moveu) e o UNDO_TRADE correspondente conta como estorno no instante em que foi desfeita.
  */
-function runasFlows(query, from, to) {
+function runasFlows(query, from, to, rows = txRows(query, from, to)) {
 	const groups = new Map();
-	for (const row of query(TX_SQL, [from, to])) {
+	for (const row of rows) {
 		const { reason, amountIn, amountOut } = classifyRunasTx(row);
 		const hour = hourStart(Number(row.timestamp));
 		const key = `${hour}|${reason}`;
@@ -200,9 +231,25 @@ function currentBalances(query) {
 	return map;
 }
 
+/**
+ * Saldos no instante `at` (início de hora) a partir dos saldos atuais menos o extrato em [at, now).
+ * Assim o retrato fica alinhado ao corte dos fluxos (moeda sem origem sem resíduo de minutos).
+ * Só usar para `at` recente: crédito sem extrato depois de `at` entraria no retrato de `at`.
+ */
+function balancesAt(query, at, now) {
+	const map = currentBalances(query);
+	if (at >= now) return map;
+	for (const row of txRows(query, at, now + 1)) {
+		const { amountIn, amountOut } = classifyRunasTx(row);
+		const u = String(row.user_id);
+		map.set(u, (map.get(u) || 0) - amountIn + amountOut);
+	}
+	return map;
+}
+
 function receivedInWindow(query, from, to) {
 	const map = new Map();
-	for (const row of query(TX_SQL, [from, to])) {
+	for (const row of txRows(query, from, to)) {
 		const { reason, amountIn } = classifyRunasTx(row);
 		if (amountIn <= 0 || kindFor("runas", reason) !== "creation") continue;
 		const u = String(row.user_id);
@@ -211,46 +258,86 @@ function receivedInWindow(query, from, to) {
 	return map;
 }
 
+const DAILY_MIN_COVERAGE = 0.9;
+
 /**
- * Retratos diários de saldo a partir de bank_daily_quotas.initial_runas (gravado na virada das 04:00
- * BRT para todas as contas). Linha com initial_runas NULL = conta que não existia na virada (0).
- * Só devolve dias cujo início (07:00 UTC) cai em [from, to).
+ * Primeira e última data (YYYY-MM-DD) cujo início do dia econômico (07:00 UTC) cai em [from, to), ou
+ * null se não houver nenhuma.
+ */
+function boundaryDates(from, to) {
+	let first = economicDayStart(Math.max(from, 0));
+	if (first < from) first += DAY_MS;
+	const last = economicDayStart(to - 1);
+	if (first >= to || last < first) return null;
+	const fmt = (ts) => new Date(ts).toISOString().slice(0, 10);
+	return { first: fmt(first), last: fmt(last) };
+}
+
+/**
+ * Retratos diários de saldo a partir de bank_daily_quotas.initial_runas (a virada das 04:00 BRT grava
+ * initial_runas para todas as contas). Só para dias cujo início (07:00 UTC) cai em [from, to).
+ *
+ * Aceita a data só se as linhas com initial_runas cobrem >= 90% das contas que já existiam (created_at
+ * até a virada). Antes da virada gravar initial_runas só havia linha de quem usou cota: esses dias
+ * viram buraco no gráfico em vez de um total falso. Linha com initial_runas NULL = conta criada depois
+ * da virada; fica de fora.
+ *
+ * Resíduo conhecido: a virada grava initial_runas depois de calculateDailyRates (que chama o waifuletes),
+ * segundos a minutos depois das 04:00 BRT; o retrato leva o rótulo 07:00 UTC. Transações nesse intervalo
+ * aparecem na moeda sem origem desses dias. Só afeta o histórico: com a carga ligada, o retrato da hora
+ * cheia é reconstruído (balancesAt) e tem prioridade sobre o diário no mesmo instante.
+ *
+ * Sem virada na janela, não lê nada: na carga horária essa leitura (varredura, a PK começa por user_id)
+ * acontece uma vez por dia.
  * @returns {{ts:number, balances:object}[]}
  */
 function dailySnapshots(query, from, to) {
-	const rows = query(
-		`SELECT date, initial_runas FROM bank_daily_quotas
-		 WHERE date IN (SELECT date FROM bank_daily_quotas WHERE initial_runas IS NOT NULL GROUP BY date)`,
-		[]
-	);
+	const range = boundaryDates(from, to);
+	if (!range) return [];
 	const byDate = new Map();
-	for (const r of rows) {
-		const ts = Date.parse(`${r.date}T07:00:00.000Z`);
-		if (!Number.isFinite(ts) || ts < from || ts >= to) continue;
-		if (!byDate.has(ts)) byDate.set(ts, []);
-		byDate.get(ts).push(Number(r.initial_runas) || 0);
+	for (const r of query(
+		`SELECT date, initial_runas FROM bank_daily_quotas
+		 WHERE date >= ? AND date <= ? AND initial_runas IS NOT NULL`,
+		[range.first, range.last]
+	)) {
+		if (!byDate.has(r.date)) byDate.set(r.date, []);
+		byDate.get(r.date).push(Number(r.initial_runas) || 0);
 	}
-	return [...byDate.entries()]
-		.sort((a, b) => a[0] - b[0])
-		.map(([ts, values]) => ({ ts, balances: balanceStats(values) }));
+	if (byDate.size === 0) return [];
+	const created = query("SELECT created_at FROM bank_accounts", []).map((r) =>
+		r.created_at === null || r.created_at === undefined ? 0 : Number(r.created_at)
+	);
+	const out = [];
+	for (const [date, values] of [...byDate.entries()].sort()) {
+		const ts = Date.parse(`${date}T07:00:00.000Z`);
+		if (!Number.isFinite(ts)) continue;
+		const accounts = created.filter((c) => c <= ts).length;
+		if (values.length < DAILY_MIN_COVERAGE * accounts) continue;
+		out.push({ ts, balances: balanceStats(values) });
+	}
+	return out;
 }
 
 /**
  * Resumo no formato da rota dos serviços.
  * @param {(sql:string, params:any[]) => object[]} query leitura síncrona do bank.db
+ * @param {object} [opts]
+ * @param {boolean} [opts.received] calcula receivedByQuintile (janela <= 8 dias)
+ * @param {number|null} [opts.balancesAt] retrato reconstruído neste instante (padrão: agora)
  */
-function buildRunasSummary(query, from, to, now = Date.now()) {
-	const balanceByUser = currentBalances(query);
+function buildRunasSummary(query, from, to, now = Date.now(), opts = {}) {
+	const at = opts.balancesAt ?? null;
+	const balanceByUser = at === null ? currentBalances(query) : balancesAt(query, at, now);
 	const summary = {
 		currency: "runas",
 		schemaVersion: 1,
-		generatedAt: now,
+		generatedAt: at === null ? now : at,
 		window: { from, to },
-		ledger: { available: true, flows: runasFlows(query, from, to) },
+		ledger: { available: true, flows: opts.received ? [] : runasFlows(query, from, to) },
 		balances: balanceStats([...balanceByUser.values()]),
 		receivedByQuintile: []
 	};
-	if (to - from <= RECEIVED_MAX_WINDOW_MS) {
+	if (opts.received && to - from <= RECEIVED_MAX_WINDOW_MS) {
 		summary.receivedByQuintile = receivedByQuintile(
 			balanceByUser,
 			receivedInWindow(query, from, to)
@@ -272,6 +359,9 @@ module.exports = {
 	receivedByQuintile,
 	classifyRunasTx,
 	runasFlows,
+	firstIdFrom,
+	balancesAt,
+	boundaryDates,
 	dailySnapshots,
 	buildRunasSummary
 };
