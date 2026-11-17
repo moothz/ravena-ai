@@ -1685,7 +1685,59 @@ class CommandHandler {
 						});
 
 						// Envia as ReturnMessages
-						if (!silent) await bot.sendReturnMessages(result, group);
+						let sendFailed = false;
+						let sendError = null;
+						if (!silent && bot && typeof bot.sendReturnMessages === "function") {
+							try {
+								const sendResults = await bot.sendReturnMessages(result, group);
+								const resultsList = Array.isArray(sendResults) ? sendResults : [sendResults];
+								const failedItem = resultsList.find((r) => r && r.error);
+								if (failedItem) {
+									sendFailed = true;
+									sendError = failedItem.error;
+								}
+							} catch (sendErr) {
+								sendFailed = true;
+								sendError = sendErr;
+							}
+						}
+
+						// Detecta falha de envio de rolls de Waifu e executa estorno automático
+						if (sendFailed) {
+							const msgList = Array.isArray(result) ? result : [result];
+							const failedRollMsg = msgList.find(
+								(m) => m instanceof ReturnMessage && m.options?.waifuRollMeta
+							);
+							if (failedRollMsg && failedRollMsg.options?.waifuRollMeta) {
+								const meta = failedRollMsg.options.waifuRollMeta;
+								try {
+									const WaifuCommands = require("./functions/WaifuCommands");
+									if (typeof WaifuCommands.refundFailedRoll === "function") {
+										await WaifuCommands.refundFailedRoll(
+											meta,
+											sendError?.message || "media_send_failed"
+										);
+									}
+								} catch (refErr) {
+									this.logger.error("Erro ao chamar refundFailedRoll no CommandHandler:", refErr);
+								}
+
+								// Envia aviso humanizado no chat para tranquilizar o usuário
+								try {
+									const targetChat = failedRollMsg.chatId || message.group || message.author;
+									const count = meta.rollCount || 1;
+									const aviso =
+										count > 1
+											? `Tivemos uma falha ao enviar as imagens dos seus rolls no WhatsApp. Os ${count} rolls já foram devolvidos para a sua conta, pode tentar de novo!`
+											: `Tivemos uma falha ao enviar a imagem do seu roll no WhatsApp. O seu roll já foi devolvido para a sua conta, pode tentar de novo!`;
+									if (bot && typeof bot.sendMessage === "function" && targetChat) {
+										await bot.sendMessage(targetChat, aviso);
+									}
+								} catch (notifyErr) {
+									this.logger.warn("Erro ao enviar aviso de estorno de roll:", notifyErr.message);
+								}
+							}
+						}
 					}
 				}
 
@@ -1693,7 +1745,12 @@ class CommandHandler {
 
 				// Reage com emoji "depois" (específico do comando ou padrão)
 				if (!silent && !silentReaction && command.reactions?.after && result !== false) {
-					this.delayedReaction(message.origin, command.reactions.after, 1000);
+					if (sendFailed) {
+						const errorEmoji = command.reactions?.error ?? this.defaultReactions.error ?? "❌";
+						this.delayedReaction(message.origin, errorEmoji, 1000);
+					} else {
+						this.delayedReaction(message.origin, command.reactions.after, 1000);
+					}
 				}
 
 				return result;

@@ -1962,6 +1962,110 @@ async function releaseFarmReservation(userId, reservation) {
 }
 
 /**
+ * Estorna rolls e limpa reservas/claims quando o envio da mensagem de mídia falha.
+ * @param {Object} meta
+ * @param {string} meta.userId
+ * @param {number} meta.rollCount
+ * @param {Array<string>} [meta.farmBonusesConsumed]
+ * @param {Array<string>} [meta.characterIds]
+ * @param {string} [meta.groupId]
+ * @param {string} [reason="media_send_failed"]
+ * @returns {Promise<boolean>}
+ */
+async function refundFailedRoll(meta, reason = "media_send_failed") {
+	if (!meta || !meta.userId) return false;
+
+	const runRefund = async () => {
+		try {
+			// 1. Estorna rolls no Waifuletes
+			if (meta.rollCount > 0) {
+				try {
+					await api.post("/roll/refund", {
+						userId: meta.userId,
+						amount: meta.rollCount,
+						reason
+					});
+					logger.warn(
+						`[refundFailedRoll] ${meta.rollCount} roll(s) estornado(s) no Waifuletes para ${meta.userId}. Motivo: ${reason}`
+					);
+				} catch (apiErr) {
+					logger.error(
+						`[refundFailedRoll] Erro ao estornar rolls no Waifuletes para ${meta.userId}:`,
+						apiErr?.response?.data || apiErr.message
+					);
+				}
+			}
+
+			// 2. Devolve bônus da fazenda consumidos
+			if (Array.isArray(meta.farmBonusesConsumed) && meta.farmBonusesConsumed.length > 0) {
+				for (const bonusType of meta.farmBonusesConsumed) {
+					try {
+						await ShadowGardenBonusService.refundWaifuBonus(meta.userId, bonusType);
+						logger.warn(
+							`[refundFailedRoll] Bônus de fazenda (${bonusType}) devolvido para ${meta.userId}.`
+						);
+					} catch (farmErr) {
+						logger.error(
+							`[refundFailedRoll] Erro ao devolver bônus da fazenda para ${meta.userId}:`,
+							farmErr.message
+						);
+					}
+				}
+			}
+
+			// 3. Remove claims pendentes e ativos das waifus não entregues
+			if (meta.groupId) {
+				const curPending = pendingClaims.get(meta.groupId);
+				if (
+					curPending &&
+					(curPending.rollerUserId === meta.userId || curPending.userId === meta.userId)
+				) {
+					pendingClaims.delete(meta.groupId);
+				}
+				if (recentMultiRollsByGroup.has(meta.groupId)) {
+					const list = recentMultiRollsByGroup.get(meta.groupId);
+					if (Array.isArray(list)) {
+						const filtered = list.filter(
+							(r) =>
+								r.rollerUserId !== meta.userId ||
+								(r.slots && !r.slots.some((s) => meta.characterIds?.includes(s.characterId)))
+						);
+						recentMultiRollsByGroup.set(meta.groupId, filtered);
+					}
+				}
+			}
+
+			if (Array.isArray(meta.characterIds) && meta.groupId) {
+				for (const charId of meta.characterIds) {
+					activeClaimsByCharGroup.delete(`${meta.groupId}:${charId}`);
+				}
+			}
+
+			return true;
+		} catch (err) {
+			logger.error(`[refundFailedRoll] Erro geral ao processar estorno de rolls:`, err);
+			return false;
+		}
+	};
+
+	if (telemetry && typeof telemetry.withSpan === "function") {
+		return telemetry.withSpan(
+			"waifu.roll.refund",
+			{
+				attributes: {
+					"waifu.user.id": telemetry.userIdAttr ? telemetry.userIdAttr(meta.userId) : meta.userId,
+					"waifu.refund.rolls": meta.rollCount,
+					"waifu.refund.reason": reason
+				}
+			},
+			runRefund
+		);
+	}
+
+	return runRefund();
+}
+
+/**
  * Cria função de roll com ou sem filtro de gênero
  * @param {"MALE" | "FEMALE" | undefined} genderFilter
  */
@@ -2308,6 +2412,15 @@ function makeRollHandler(genderFilter) {
 					}
 				}
 
+				const singleRollMeta = {
+					userId,
+					rollCount: firstIsMythic ? 0 : 1,
+					farmBonusesConsumed:
+						consumedFarmBonus?.consumed && firstReservation?.type ? [firstReservation.type] : [],
+					characterIds: character?.id ? [character.id] : [],
+					groupId
+				};
+
 				if (imageBase64) {
 					return wrapReturn(
 						new ReturnMessage({
@@ -2320,6 +2433,8 @@ function makeRollHandler(genderFilter) {
 							},
 							options: {
 								caption: text,
+								isWaifuRoll: true,
+								waifuRollMeta: singleRollMeta,
 								waifuCharacterId: character.id,
 								waifuAvailable: Boolean(
 									available && !owner && !isOwner && !firstRollData?.instantMarriage
@@ -2346,6 +2461,8 @@ function makeRollHandler(genderFilter) {
 						chatId,
 						content: text,
 						options: {
+							isWaifuRoll: true,
+							waifuRollMeta: singleRollMeta,
 							waifuCharacterId: character.id,
 							waifuAvailable: Boolean(
 								available && !owner && !isOwner && !firstRollData?.instantMarriage
@@ -2370,6 +2487,10 @@ function makeRollHandler(genderFilter) {
 			// ─── ROLLS MÚLTIPLOS (2 a 9) ──────────────────────────────────────────
 			const allRollResults = [firstRollData];
 			let totalFarmConsumedInBatch = consumedFarmBonus?.consumed ? 1 : 0;
+			const farmBonusesConsumedList = [];
+			if (consumedFarmBonus?.consumed && firstReservation?.type) {
+				farmBonusesConsumedList.push(firstReservation.type);
+			}
 
 			for (let i = 2; i <= rollsToExecute; i++) {
 				// Cada roll reserva o próprio bônus da fazenda (se ainda houver) antes do /roll
@@ -2401,6 +2522,9 @@ function makeRollHandler(genderFilter) {
 							await releaseFarmReservation(userId, stepReservation);
 						} else if (stepReservation.reserved) {
 							totalFarmConsumedInBatch++;
+							if (stepReservation.type) {
+								farmBonusesConsumedList.push(stepReservation.type);
+							}
 						}
 						if (stepIsMythic && rollsToExecute < requestedRolls) {
 							rollsToExecute++;
@@ -2743,6 +2867,23 @@ function makeRollHandler(genderFilter) {
 				);
 			}
 
+			const nonMythicRolls = allRollResults.filter((r) => {
+				const isM = Boolean(
+					r?.character?.isMythic ||
+					r?.isMythic ||
+					String(r?.character?.rarity || "").toUpperCase() === "MYTHIC"
+				);
+				return !isM;
+			}).length;
+
+			const multiRollMeta = {
+				userId,
+				rollCount: nonMythicRolls,
+				farmBonusesConsumed: farmBonusesConsumedList,
+				characterIds: multiRollSlots.map((s) => s.characterId),
+				groupId
+			};
+
 			if (gridBase64) {
 				const curPending = pendingClaims.get(groupId);
 				if (curPending && curPending.isMultiRoll) {
@@ -2759,6 +2900,8 @@ function makeRollHandler(genderFilter) {
 						},
 						options: {
 							caption: text,
+							isWaifuRoll: true,
+							waifuRollMeta: multiRollMeta,
 							waifuRolls: multiRollSlots,
 							waifuGroupId: groupId,
 							waifuRollerUserId: userId,
@@ -2776,6 +2919,8 @@ function makeRollHandler(genderFilter) {
 					chatId,
 					content: text,
 					options: {
+						isWaifuRoll: true,
+						waifuRollMeta: multiRollMeta,
 						waifuRolls: multiRollSlots,
 						waifuGroupId: groupId,
 						waifuRollerUserId: userId,
@@ -10979,5 +11124,6 @@ module.exports = {
 	generateSingleRollPlaceholderBuffer,
 	infoCriacaoMitico,
 	handleWaifuMenuCallback,
-	buildStepRollBonuses
+	buildStepRollBonuses,
+	refundFailedRoll
 };
