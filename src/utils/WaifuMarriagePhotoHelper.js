@@ -445,6 +445,18 @@ async function generateAndSaveMarriageImage(
 		// 6. Salvar imagem no diretório permanente e S3
 		await ensureMarriagesDir();
 		const photoPath = path.join(getMarriagesDir(), `${character.id}.jpg`);
+		const prevPhotoPath = path.join(getMarriagesDir(), `${character.id}_prev.jpg`);
+
+		// Se já existir foto atual, salva backup para possibilitar reversão
+		if (fsSync.existsSync(photoPath)) {
+			try {
+				await fs.copyFile(photoPath, prevPhotoPath);
+				logger.info(`[generateAndSaveMarriageImage] Backup da foto anterior salvo em: ${prevPhotoPath}`);
+			} catch (backupErr) {
+				logger.warn(`Erro ao criar backup da foto anterior (${character.id}):`, backupErr.message);
+			}
+		}
+
 		await fs.writeFile(photoPath, framedBuffer);
 		logger.info(`[generateAndSaveMarriageImage] Foto de casamento salva em: ${photoPath}`);
 
@@ -567,6 +579,10 @@ async function removeMarriagePhoto(characterId) {
 			await fs.unlink(photoPath).catch(() => {});
 			logger.info(`Foto de casamento removida do disco: ${photoPath}`);
 		}
+		const prevPhotoPath = path.join(getMarriagesDir(), `${characterId}_prev.jpg`);
+		if (fsSync.existsSync(prevPhotoPath)) {
+			await fs.unlink(prevPhotoPath).catch(() => {});
+		}
 	} catch (e) {
 		logger.warn(`Erro ao excluir foto de casamento do disco (${characterId}):`, e.message);
 	}
@@ -577,6 +593,64 @@ async function removeMarriagePhoto(characterId) {
 		]);
 	} catch (dbErr) {
 		logger.warn(`Erro ao deletar registro de casamento no SQLite (${characterId}):`, dbErr.message);
+	}
+}
+
+/**
+ * Reverte a foto de casamento para a versão anterior ({character.id}_prev.jpg) se existir.
+ * @param {string} characterId
+ * @returns {Promise<{ success: boolean, message: string, photoPath?: string, buffer?: Buffer }>}
+ */
+async function revertMarriagePhoto(characterId) {
+	if (!characterId) {
+		return { success: false, message: "ID do personagem não informado." };
+	}
+
+	const marriagesDir = getMarriagesDir();
+	const currentPath = path.join(marriagesDir, `${characterId}.jpg`);
+	const prevPath = path.join(marriagesDir, `${characterId}_prev.jpg`);
+
+	if (!fsSync.existsSync(prevPath)) {
+		return {
+			success: false,
+			message: "Nenhuma foto de casamento anterior encontrada para reverter."
+		};
+	}
+
+	try {
+		const prevBuffer = await fs.readFile(prevPath);
+		// Restaura prev para current
+		await fs.writeFile(currentPath, prevBuffer);
+
+		// Upload no S3
+		await storageService
+			.upload(prevBuffer, `${characterId}.jpg`, {
+				category: "marriages",
+				mimetype: "image/jpeg"
+			})
+			.catch((err) => {
+				logger.warn(`Falha ao sincronizar reversão de foto no S3 (${characterId}):`, err.message);
+			});
+
+		// Atualiza timestamp no SQLite
+		await database.dbRun(
+			DB_NAME,
+			"UPDATE waifu_marriage_photos SET updated_at = ? WHERE character_id = ?",
+			[Date.now(), characterId]
+		);
+
+		return {
+			success: true,
+			photoPath: currentPath,
+			buffer: prevBuffer,
+			message: "Foto de casamento revertida com sucesso para a versão anterior!"
+		};
+	} catch (err) {
+		logger.error(`Erro ao reverter foto de casamento (${characterId}):`, err);
+		return {
+			success: false,
+			message: `Erro ao reverter foto: ${err.message}`
+		};
 	}
 }
 
@@ -591,5 +665,6 @@ module.exports = {
 	compositeMarriageBorder,
 	generateAndSaveMarriageImage,
 	getMarriagePhoto,
-	removeMarriagePhoto
+	removeMarriagePhoto,
+	revertMarriagePhoto
 };

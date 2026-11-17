@@ -14,7 +14,8 @@ const ShadowGardenClient = require("../services/ShadowGardenClient");
 const {
 	generateAndSaveMarriageImage,
 	getMarriagePhoto,
-	removeMarriagePhoto
+	removeMarriagePhoto,
+	revertMarriagePhoto
 } = require("../utils/WaifuMarriagePhotoHelper");
 const AdminUtils = require("../utils/AdminUtils");
 const PhoneUtils = require("../utils/PhoneUtils");
@@ -3766,8 +3767,12 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 
 	const rawArgs = [...(args || [])];
 	let forceNew = false;
+	let isRevert = false;
 	if (rawArgs.length > 0 && /^(nova|novo)$/i.test(rawArgs[0])) {
 		forceNew = true;
+		rawArgs.shift();
+	} else if (rawArgs.length > 0 && /^(reverter|revert|desfazer)$/i.test(rawArgs[0])) {
+		isRevert = true;
 		rawArgs.shift();
 	}
 
@@ -3775,7 +3780,7 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 		return new ReturnMessage({
 			chatId,
 			content:
-				"🔍 Informe o nome ou ID do personagem para consultar a foto de casamento.\nExemplo: `!mu-foto Frieren`, `!mu-foto nova Frieren 2` ou `!mu-foto Frieren 2`"
+				"🔍 Informe o nome ou ID do personagem para consultar a foto de casamento.\nExemplo: `!mu-foto Frieren`, `!mu-foto nova Frieren 2` ou `!mu-foto reverter Frieren`"
 		});
 	}
 
@@ -3883,6 +3888,59 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 	const ownerDisplayName = char.owner.name || (await resolveDisplayName(message, ownerId, null));
 	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
 
+	// Reversão de foto de casamento
+	if (isRevert) {
+		if (!isOwner) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Apenas o cônjuge (*${ownerDisplayName}*) pode reverter a foto de casamento com *${char.name}*!`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		const revertRes = await revertMarriagePhoto(char.id);
+		if (!revertRes.success) {
+			return new ReturnMessage({
+				chatId,
+				content: `❌ ${revertRes.message}`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		}
+
+		let media = null;
+		if (bot && typeof bot.createMedia === "function") {
+			media = await bot.createMedia(revertRes.photoPath, "image/jpeg").catch(() => null);
+		}
+		if (!media && revertRes.buffer) {
+			media = {
+				data: revertRes.buffer.toString("base64"),
+				mimetype: "image/jpeg",
+				isMessageMedia: true
+			};
+		}
+
+		let caption = `🔙 *Foto de Casamento Revertida!* 📸\n`;
+		caption += `👰 Casal: ${userMention} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
+		caption += `✨ A foto anterior foi restaurada com sucesso no álbum oficial!`;
+
+		return new ReturnMessage({
+			chatId,
+			content: media || revertRes.message,
+			options: {
+				caption: media ? caption : undefined,
+				quotedMessageId: message.origin?.id?._serialized,
+				goReply: message.origin,
+				mentions: [toJid(userId)]
+			}
+		});
+	}
+
 	// Se especificou foto por ID, força a geração/atualização da foto base
 	if (requestedPhotoIndex !== null) {
 		forceNew = true;
@@ -3950,7 +4008,8 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 			} else if (usedPhotoIndex && totalPhotos > 1) {
 				caption += `🖼️ _Gerada com base na foto *#${usedPhotoIndex}* do catálogo!_\n`;
 			}
-			caption += `✨ A nova foto oficial foi gerada e atualizada no álbum!`;
+			caption += `✨ A nova foto oficial foi gerada e atualizada no álbum!\n`;
+			caption += `🔙 _Não curtiu? Você pode voltar à foto antiga com \`!mu-foto reverter ${char.id}\`._`;
 
 			return new ReturnMessage({
 				chatId,
@@ -3999,7 +4058,8 @@ async function consultarOuGerarFotoCasamento(bot, message, args) {
 			let caption = `💍 *Álbum de Casamento* 📸\n`;
 			caption += `👰 Casal: ${coupleLabel} & *${char.name}*${char.series ? ` (${char.series})` : ""}\n`;
 			if (isOwner) {
-				caption += `💡 _Envie \`!mu-foto nova ${char.id}\` para gerar uma nova foto e substituir a atual._`;
+				caption += `💡 _Envie \`!mu-foto nova ${char.id}\` para gerar uma nova foto e substituir a atual._\n`;
+				caption += `🔙 _Para voltar à foto anterior, use \`!mu-foto reverter ${char.id}\`._`;
 				if (totalPhotos > 1) {
 					caption += `\n🖼️ _Este personagem possui ${totalPhotos} fotos. Use \`!mu-foto nova ${char.id} <1-${totalPhotos}>\` para gerar com outra foto base._`;
 				}
