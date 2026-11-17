@@ -19,149 +19,6 @@ function decodeHtmlEntities(text) {
 
 //logger.info('Módulo SearchCommands carregado');
 
-/**
- * Consulta informações de aeronaves no Registro Aeronáutico Brasileiro (RAB)
- * @param {WhatsAppBot} bot - Instância do bot
- * @param {Object} message - Dados da mensagem
- * @param {Array} args - Argumentos do comando
- * @param {Object} group - Dados do grupo
- * @returns {Promise<ReturnMessage>} - ReturnMessage com os resultados da consulta
- */
-async function searchAircraftRAB(bot, message, args, group) {
-	try {
-		const chatId = message.group ?? message.author;
-
-		const cleanArgs = args
-			.join("")
-			.toUpperCase()
-			.replace(/[^A-Z0-9-]/g, "");
-
-		if (!cleanArgs) {
-			return new ReturnMessage({
-				chatId,
-				content: "Informe a matrícula ou prefixo da aeronave! Exemplo: !rab PT-XYZ",
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		const marca = cleanArgs;
-		logger.info(`Consultando aeronave com matrícula: ${marca}`);
-
-		// URL da consulta RAB (ANAC migrou para aeronaves.anac.gov.br)
-		const currentUrl = `https://aeronaves.anac.gov.br/aeronaves/cons_rab_resposta.asp?textMarca=${encodeURIComponent(marca)}`;
-
-		// Realiza a requisição com timeout de 10 segundos
-		let response = await axios.get(currentUrl, {
-			responseType: "arraybuffer",
-			timeout: 10000,
-			headers: {
-				"User-Agent":
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-			}
-		});
-
-		// Decodifica a resposta usando ISO-8859-1 (padrão para sites brasileiros antigos)
-		const decoder = new TextDecoder("iso-8859-1");
-		let html = decoder.decode(response.data);
-
-		// Se houver meta refresh redirect, segue o redirecionamento
-		const refreshMatch = html.match(
-			/<meta[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*url=([^"']+)["']/i
-		);
-		if (refreshMatch && refreshMatch[1]) {
-			let redirectUrl = refreshMatch[1].trim();
-			if (!redirectUrl.startsWith("http")) {
-				redirectUrl = new URL(redirectUrl, currentUrl).href;
-			}
-			response = await axios.get(redirectUrl, {
-				responseType: "arraybuffer",
-				timeout: 10000,
-				headers: {
-					"User-Agent":
-						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-				}
-			});
-			html = decoder.decode(response.data);
-		}
-
-		// Carrega o HTML para parsing
-		const $ = cheerio.load(html);
-
-		// Verifica se a aeronave não foi encontrada via alerta do script da ANAC
-		if (html.toLowerCase().includes("encontrado")) {
-			logger.info(`Matrícula ${marca} não encontrada.`);
-			return new ReturnMessage({
-				chatId,
-				content: `🛄 Consulta RAB - Matrícula '${marca}' não encontrada!`,
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		// Encontra a tabela com os dados da aeronave
-		const table = $(".table.table-hover");
-		const rows = [];
-
-		table.find("tr").each((index, element) => {
-			const property = $(element).find("th:nth-child(1)").text().trim();
-			const value = $(element).find("td:nth-child(2)").text().trim().replace(/\s+/g, " ");
-
-			if (property && value) {
-				// Ignora avisos de campos descontinuados da ANAC
-				if (value.includes("descontinuado") || value.includes("ConsultaRAB NOVO")) {
-					return;
-				}
-				const cleanProperty = property.replace(/:$/, "").trim();
-				rows.push(`*${cleanProperty}*: ${value}`);
-			}
-		});
-
-		if (rows.length === 0) {
-			logger.info(`Matrícula ${marca} não retornou dados.`);
-			return new ReturnMessage({
-				chatId,
-				content: `🛄 Consulta RAB - Matrícula '${marca}' não encontrada!`,
-				options: {
-					quotedMessageId: message.origin.id._serialized,
-					goReply: message.origin
-				}
-			});
-		}
-
-		const retorno = `🛄 *Consulta RAB - Matrícula ${marca}*\n\n` + rows.join("\n");
-
-		logger.info(`Dados da aeronave ${marca} encontrados e processados.`);
-
-		// Retorna a mensagem com os dados da aeronave
-		return new ReturnMessage({
-			chatId,
-			content: retorno,
-			options: {
-				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
-			}
-		});
-	} catch (error) {
-		logger.error("Erro na consulta RAB:", error);
-		const chatId = message.group ?? message.author;
-
-		return new ReturnMessage({
-			chatId,
-			content:
-				"❌ Não consegui consultar o Registro Aeronáutico Brasileiro agora. Tenta de novo daqui a pouco.",
-			options: {
-				quotedMessageId: message.origin.id._serialized,
-				goReply: message.origin
-			}
-		});
-	}
-}
-
 const LLMService = require("../services/LLMService");
 
 /**
@@ -481,26 +338,16 @@ const commands = [
 		method: searchImages
 	}),
 
-	new Command({
-		name: "rab",
-		description: "Consultas ao Registro Aeronáutico Brasileiro",
-		category: "busca",
-		reactions: {
-			before: process.env.LOADING_EMOJI ?? "⌛️",
-			after: "🛄"
-		},
-		method: searchAircraftRAB
-	})
 ];
 
 // Registra os comandos sendo exportados
 //logger.debug(`Exportando ${commands.length} comandos:`, commands.map(cmd => cmd.name));
 
 const helper = {
-	about: "Mecanismo de busca na web, imagens e Registro Aeronáutico Brasileiro (RAB)",
+	about: "Mecanismo de busca na web e imagens",
 	implementation:
-		"Integra com engines de busca na web, DuckDuckGo/Google e banco de dados de aeronaves da ANAC",
-	tags: "busca,pesquisa,google,web,imagens,rab,aviao,aeronave",
+		"Integra com engines de busca na web (DuckDuckGo/Google)",
+	tags: "busca,pesquisa,google,web,imagens",
 	cmds: [
 		{
 			cmd: "!buscar",
@@ -513,12 +360,6 @@ const helper = {
 			desc: "Pesquisa e envia imagens encontradas na web",
 			usage: ["!buscar-img paisagem da serra", "!buscar-img wallpaper 4k"],
 			category: "busca"
-		},
-		{
-			cmd: "!rab",
-			desc: "Consulta dados de aeronaves pelo prefixo no Registro Aeronáutico Brasileiro da ANAC",
-			usage: ["!rab PT-ABC", "!rab PR-XYZ"],
-			category: "utilidades"
 		}
 	]
 };

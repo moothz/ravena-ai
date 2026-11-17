@@ -1,4 +1,5 @@
 const axios = require("axios");
+const cheerio = require("cheerio");
 const Logger = require("../utils/Logger");
 
 const logger = new Logger("flight-service");
@@ -665,30 +666,67 @@ class FlightService {
 
 		const [rabResult, liveFlight] = await Promise.allSettled([
 			(async () => {
-				const url = `https://aeronaves.anac.gov.br/aeronaves/cons_rab_resposta.asp?textMarca=${clean}`;
-				const res = await axios.get(url, {
-					headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RavenaBot" },
+				const currentUrl = `https://aeronaves.anac.gov.br/aeronaves/cons_rab_resposta.asp?textMarca=${clean}`;
+				let response = await axios.get(currentUrl, {
+					headers: {
+						"User-Agent":
+							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+					},
 					responseType: "arraybuffer",
-					timeout: 8000
+					timeout: 10000
 				});
-				const html = new TextDecoder("latin1").decode(res.data);
-				const data = {};
-				const regex = /<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/gi;
-				let match;
-				while ((match = regex.exec(html)) !== null) {
-					const key = match[1]
-						.replace(/<[^>]+>/g, "")
-						.replace(/[\r\n\t]+/g, " ")
-						.replace(/:/g, "")
-						.trim();
-					const val = match[2]
-						.replace(/<[^>]+>/g, "")
-						.replace(/[\r\n\t]+/g, " ")
-						.trim();
-					if (key && val) {
-						data[key] = val;
+
+				const decoder = new TextDecoder("iso-8859-1");
+				let html = decoder.decode(response.data);
+
+				// Se houver meta refresh redirect da ANAC, segue o redirecionamento
+				const refreshMatch = html.match(
+					/<meta[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*url=([^"']+)["']/i
+				);
+				if (refreshMatch && refreshMatch[1]) {
+					let redirectUrl = refreshMatch[1].trim();
+					if (!redirectUrl.startsWith("http")) {
+						redirectUrl = new URL(redirectUrl, currentUrl).href;
 					}
+					response = await axios.get(redirectUrl, {
+						headers: {
+							"User-Agent":
+								"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+						},
+						responseType: "arraybuffer",
+						timeout: 10000
+					});
+					html = decoder.decode(response.data);
 				}
+
+				if (
+					html.toLowerCase().includes("não encontrado") ||
+					html.toLowerCase().includes("nao encontrado")
+				) {
+					return {};
+				}
+
+				const $ = cheerio.load(html);
+				const data = {};
+
+				$(".table tr, tr").each((index, element) => {
+					const property = $(element).find("th:nth-child(1), th").first().text().trim();
+					const value = $(element)
+						.find("td:nth-child(2), td")
+						.first()
+						.text()
+						.trim()
+						.replace(/\s+/g, " ");
+
+					if (property && value) {
+						if (value.includes("descontinuado") || value.includes("ConsultaRAB NOVO")) {
+							return;
+						}
+						const cleanProperty = property.replace(/:$/, "").trim();
+						data[cleanProperty] = value;
+					}
+				});
+
 				return data;
 			})(),
 			FlightService.getFlightLive(clean)
