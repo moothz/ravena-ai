@@ -1641,6 +1641,7 @@ class CommandHandler {
 				//this.logger.debug(`Comando ${command.name} resposta do method: `, { ReMsg: (result instanceof ReturnMessage), result });
 
 				// Verifica se o resultado é um ReturnMessage ou array de ReturnMessages
+				let sendFailed = false;
 				if (result) {
 					if (typeof result === "string") {
 						result = new ReturnMessage({
@@ -1685,7 +1686,7 @@ class CommandHandler {
 						});
 
 						// Envia as ReturnMessages
-						let sendFailed = false;
+						sendFailed = false;
 						let sendError = null;
 						if (!silent && bot && typeof bot.sendReturnMessages === "function") {
 							try {

@@ -953,7 +953,9 @@ function registerFeaturesRoutes(api) {
 			try {
 				const { character, userName, acquisitionType = "cotas" } = req.body || {};
 				if (!character || !character.name) {
-					return res.status(400).json({ success: false, error: "Dados do personagem obrigatórios" });
+					return res
+						.status(400)
+						.json({ success: false, error: "Dados do personagem obrigatórios" });
 				}
 
 				telemetry.setAttrs({

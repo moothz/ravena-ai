@@ -336,8 +336,7 @@ const commands = [
 			after: "📷"
 		},
 		method: searchImages
-	}),
-
+	})
 ];
 
 // Registra os comandos sendo exportados
@@ -345,8 +344,7 @@ const commands = [
 
 const helper = {
 	about: "Mecanismo de busca na web e imagens",
-	implementation:
-		"Integra com engines de busca na web (DuckDuckGo/Google)",
+	implementation: "Integra com engines de busca na web (DuckDuckGo/Google)",
 	tags: "busca,pesquisa,google,web,imagens",
 	cmds: [
 		{

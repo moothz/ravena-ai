@@ -111,7 +111,10 @@ database.getSQLiteDb(
 	}
 	try {
 		// Migration: Add is_locked to fishing_inventory
-		await database.dbRun(dbName, "ALTER TABLE fishing_inventory ADD COLUMN is_locked INTEGER DEFAULT 0");
+		await database.dbRun(
+			dbName,
+			"ALTER TABLE fishing_inventory ADD COLUMN is_locked INTEGER DEFAULT 0"
+		);
 	} catch (e) {
 		// Ignore if column already exists
 	}
@@ -3568,7 +3571,7 @@ function parseFishLockArgs(argsText) {
 	if (parts.length === 0) return null;
 
 	let weight = null;
-	let nameParts = [...parts];
+	const nameParts = [...parts];
 
 	if (nameParts.length >= 2 && /^kg$/i.test(nameParts[nameParts.length - 1])) {
 		const potentialNum = nameParts[nameParts.length - 2].replace(",", ".");
@@ -3609,7 +3612,8 @@ async function lockFishCommand(bot, message, args, group) {
 		if (!parsed) {
 			return new ReturnMessage({
 				chatId,
-				content: "🔒 Uso: *!peixe-bloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-bloquear Salmão` (bloqueia todos com esse nome)\n• `!peixe-bloquear Tubarão 120.3` ou `!peixe-bloquear Atum 150kg`\n\nPeixes bloqueados não podem ser vendidos no `!banco-vender` nem pelo painel web.",
+				content:
+					"🔒 Uso: *!peixe-bloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-bloquear Salmão` (bloqueia todos com esse nome)\n• `!peixe-bloquear Tubarão 120.3` ou `!peixe-bloquear Atum 150kg`\n\nPeixes bloqueados não podem ser vendidos no `!banco-vender` nem pelo painel web.",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
@@ -3649,7 +3653,8 @@ async function lockFishCommand(bot, message, args, group) {
 
 		const count = updateRes?.changes ?? 0;
 		const weightStr = weight !== null ? ` com peso ~${weight} kg` : "";
-		const countStr = count > 0 ? `\n📦 *${count} peixe(s)* já no seu inventário foram marcados com 🔒.` : "";
+		const countStr =
+			count > 0 ? `\n📦 *${count} peixe(s)* já no seu inventário foram marcados com 🔒.` : "";
 
 		return new ReturnMessage({
 			chatId,
@@ -3686,7 +3691,8 @@ async function unlockFishCommand(bot, message, args, group) {
 		if (!parsed) {
 			return new ReturnMessage({
 				chatId,
-				content: "🔓 Uso: *!peixe-desbloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-desbloquear Salmão`\n• `!peixe-desbloquear Tubarão 120.3`",
+				content:
+					"🔓 Uso: *!peixe-desbloquear <Nome do Peixe> [peso opcional]*\n\nExemplos:\n• `!peixe-desbloquear Salmão`\n• `!peixe-desbloquear Tubarão 120.3`",
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin

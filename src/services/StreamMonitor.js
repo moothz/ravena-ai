@@ -2891,7 +2891,8 @@ class StreamMonitor extends EventEmitter {
 			// Ignora se o vídeo encontrado for na verdade a live atual em andamento
 			if (
 				status.isLive &&
-				(latest.id === String(status.currentRoomId || "") || (latest.url && latest.url.includes("/live")))
+				(latest.id === String(status.currentRoomId || "") ||
+					(latest.url && latest.url.includes("/live")))
 			) {
 				return;
 			}

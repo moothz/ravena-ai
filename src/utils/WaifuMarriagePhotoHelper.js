@@ -451,7 +451,9 @@ async function generateAndSaveMarriageImage(
 		if (fsSync.existsSync(photoPath)) {
 			try {
 				await fs.copyFile(photoPath, prevPhotoPath);
-				logger.info(`[generateAndSaveMarriageImage] Backup da foto anterior salvo em: ${prevPhotoPath}`);
+				logger.info(
+					`[generateAndSaveMarriageImage] Backup da foto anterior salvo em: ${prevPhotoPath}`
+				);
 			} catch (backupErr) {
 				logger.warn(`Erro ao criar backup da foto anterior (${character.id}):`, backupErr.message);
 			}
