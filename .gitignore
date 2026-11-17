@@ -148,6 +148,7 @@ nssm-service.bat
 !/scripts/test-providers.js
 !/scripts/check-health.sh
 !/scripts/economy_simulation.py
+!/scripts/distribute-retroactive-rolls.js
 data/textos/*.txt
 !data/textos/*.example.txt
 /src/scripts

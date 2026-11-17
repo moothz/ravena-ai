@@ -85,6 +85,7 @@ function calculateBonuses(totalAmount) {
 
 	const runas = Math.round(totalAmount * 50); // 50 Runas por R$ 1 doado (moeda global RavenaBank)
 	const mythicSlots = Math.floor(totalAmount / 50); // 1 Slot Mítico a cada R$ 50 doados
+	const bonusRolls = Math.floor(totalAmount / 10) * 75; // 75 rolls no Waifuletes a cada R$ 10 doados
 
 	// Pinto Game (+1% de tamanho por R$1)
 	const pintoBonusPercent = Math.round(totalAmount * 1);
@@ -115,10 +116,12 @@ function calculateBonuses(totalAmount) {
 			rarityMultipliers,
 			wishlistMultiplier,
 			extraMaxRolls: Math.floor(totalAmount / 10),
+			bonusRolls,
 			runas,
 			mythicSlots
 		},
 		mythicSlots,
+		bonusRolls,
 		pinto: {
 			bonusPercent: pintoBonusPercent,
 			multiplier: pintoMultiplier
@@ -160,6 +163,10 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		0,
 		(current.waifu.mythicSlots || 0) - (previous.waifu.mythicSlots || 0)
 	);
+	const deltaBonusRolls = Math.max(
+		0,
+		(current.waifu.bonusRolls || 0) - (previous.waifu.bonusRolls || 0)
+	);
 
 	const farmDelta = ShadowGardenBonusService.calculateFarmDonationBonuses(
 		totalAmount,
@@ -176,6 +183,7 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		deltaHighItems,
 		deltaFazenda: farmDelta,
 		deltaMythicSlots,
+		deltaBonusRolls,
 		current,
 		previous
 	};
@@ -236,6 +244,30 @@ async function creditMythicSlots(cleanNumber, amount, totalAmount, reason = "DON
 	if (!amount || amount <= 0 || !cleanNumber) return null;
 	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
 	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/mythic-slots`;
+	const headers = {
+		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
+		"Content-Type": "application/json"
+	};
+	const payload = {
+		amount,
+		reason,
+		donateValue: totalAmount
+	};
+	return await axios.post(url, payload, { headers, timeout: 10000 });
+}
+
+/**
+ * Credita rolls extras de sorteio para o usuário na API do Waifuletes
+ * @param {string} cleanNumber
+ * @param {number} amount
+ * @param {number} totalAmount
+ * @param {string} [reason="DONATE_R$10"]
+ * @returns {Promise<Object|null>}
+ */
+async function creditWaifuRolls(cleanNumber, amount, totalAmount, reason = "DONATE_R$10") {
+	if (!amount || amount <= 0 || !cleanNumber) return null;
+	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
+	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/rolls/add`;
 	const headers = {
 		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
 		"Content-Type": "application/json"
@@ -316,7 +348,12 @@ async function awardDonorBonuses(
 				? Number(donor.runasProcessedAmount) || 0
 				: donor.zinthosProcessedAmount !== undefined && donor.zinthosProcessedAmount !== null
 					? Number(donor.zinthosProcessedAmount) || 0
-					: 0;
+					: (previousAmount || 0);
+
+		const previousRollsAmount =
+			donor.rollsProcessedAmount !== undefined && donor.rollsProcessedAmount !== null
+				? Number(donor.rollsProcessedAmount) || 0
+				: (previousAmount || 0);
 
 		const delta = calculateIncrementalBonuses(totalAmount, previousAmount);
 		const deltaRunas = Math.max(
@@ -325,7 +362,18 @@ async function awardDonorBonuses(
 		);
 		delta.deltaRunas = deltaRunas;
 
-		if (delta.deltaAmount <= 0 && deltaRunas <= 0 && (delta.deltaMythicSlots || 0) <= 0) {
+		const deltaBonusRolls = Math.max(
+			0,
+			Math.floor(totalAmount / 10) * 75 - Math.floor(previousRollsAmount / 10) * 75
+		);
+		delta.deltaBonusRolls = deltaBonusRolls;
+
+		if (
+			delta.deltaAmount <= 0 &&
+			deltaRunas <= 0 &&
+			(delta.deltaMythicSlots || 0) <= 0 &&
+			deltaBonusRolls <= 0
+		) {
 			return {
 				success: true,
 				dryRun: !!options.dryRun,
@@ -417,7 +465,7 @@ async function awardDonorBonuses(
 						source: "donor_bonus",
 						details: { donorName: donor.nome, totalAmount }
 					});
-					await database.updateDonorZinthosProcessed(donor.nome, totalAmount);
+					await database.updateDonorRunasProcessed(donor.nome, totalAmount);
 				} catch (bErr) {
 					logger.warn(
 						`[DonorBonusService] Falha ao creditar Runas para ${cleanNumber}: ${bErr.message}`
@@ -436,6 +484,18 @@ async function awardDonorBonuses(
 				}
 			}
 
+			// 6.1. Concede Rolls no Waifuletes (75 rolls a cada R$ 10 doados)
+			if (deltaBonusRolls > 0) {
+				try {
+					await creditWaifuRolls(cleanNumber, deltaBonusRolls, totalAmount, "DONATE_R$10");
+					await database.updateDonorRollsProcessed(donor.nome, totalAmount);
+				} catch (rErr) {
+					logger.warn(
+						`[DonorBonusService] Falha ao creditar ${deltaBonusRolls} roll(s) para ${cleanNumber}: ${rErr.message}`
+					);
+				}
+			}
+
 			// 7. Atualiza o valor processado no banco de doações (pesca e slots)
 			if (delta.deltaAmount > 0) {
 				await database.updateDonorBonusProcessed(donor.nome, totalAmount);
@@ -444,6 +504,9 @@ async function awardDonorBonuses(
 			let logDetails = `+${delta.deltaBaits} iscas, +${delta.deltaCoins} moedas, +${deltaRunas} Runas, +${chosenItems.length} itens`;
 			if (delta.deltaMythicSlots > 0) {
 				logDetails += `, +${delta.deltaMythicSlots} slots míticos`;
+			}
+			if (deltaBonusRolls > 0) {
+				logDetails += `, +${deltaBonusRolls} rolls waifuletes`;
 			}
 			if (delta.deltaFazenda) {
 				const fLog = [];
@@ -496,7 +559,8 @@ function formatBonusMessage(bonusRes) {
 		!bonusRes.delta ||
 		(bonusRes.delta.deltaAmount <= 0 &&
 			(bonusRes.delta.deltaRunas || 0) <= 0 &&
-			(bonusRes.delta.deltaMythicSlots || 0) <= 0)
+			(bonusRes.delta.deltaMythicSlots || 0) <= 0 &&
+			(bonusRes.delta.deltaBonusRolls || 0) <= 0)
 	) {
 		return "";
 	}
@@ -512,6 +576,9 @@ function formatBonusMessage(bonusRes) {
 	}
 	if (delta.deltaRunas > 0) {
 		parts.push(`+${delta.deltaRunas.toLocaleString("pt-BR")} Runas (ᚱ)`);
+	}
+	if (delta.deltaBonusRolls > 0) {
+		parts.push(`+${delta.deltaBonusRolls} rolls no Waifuletes`);
 	}
 	const itemsCount = chosenItems?.length || 0;
 	if (itemsCount > 0) {
@@ -578,5 +645,6 @@ module.exports = {
 	getWaifuRollBonuses,
 	awardDonorBonuses,
 	creditMythicSlots,
+	creditWaifuRolls,
 	formatBonusMessage
 };

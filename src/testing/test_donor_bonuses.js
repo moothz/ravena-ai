@@ -183,6 +183,10 @@ async function runTests() {
 		contentNaoDoador.includes("cap em R$ 250 (20x)"),
 		"Deve informar o cap de wishlist em R$ 250 (20x)"
 	);
+	assert.ok(
+		contentNaoDoador.includes("+75 Rolls no Waifuletes"),
+		"Deve citar +75 Rolls no Waifuletes a cada R$ 10"
+	);
 	console.log("✓ !doar-vantagens para não-doador OK");
 
 	// Teste com doador conhecido (Agrius / 5511981010487)
@@ -222,6 +226,10 @@ async function runTests() {
 		contentDoador.includes("decorações VIP exclusivas") && contentDoador.includes("2"),
 		"Deve listar 2 decorações VIP para o doador"
 	);
+	assert.ok(
+		contentDoador.includes("rolls extras no Waifuletes entregues"),
+		"Deve listar rolls extras no Waifuletes entregues"
+	);
 	console.log("✓ !doar-vantagens para apoiador OK");
 
 	// 3.1 Teste do comando !mu-chances para apoiador com caps
@@ -256,6 +264,7 @@ async function runTests() {
 	assert.strictEqual(resDry.delta.deltaBaits, 160, "Deve calcular 160 iscas");
 	assert.strictEqual(resDry.delta.deltaCoins, 240, "Deve calcular 240 moedas");
 	assert.strictEqual(resDry.delta.deltaRunas, 4000, "Deve calcular 4000 Runas (80 * 50)");
+	assert.strictEqual(resDry.delta.deltaBonusRolls, 600, "Deve calcular 600 rolls no Waifuletes (8 * 75)");
 	assert.strictEqual(
 		resDry.chosenItems.length,
 		22,
@@ -265,6 +274,7 @@ async function runTests() {
 	assert(resDry.bonusMsg.includes("+160 iscas"), "Deve conter +160 iscas");
 	assert(resDry.bonusMsg.includes("+240 moedas"), "Deve conter +240 moedas");
 	assert(resDry.bonusMsg.includes("+4.000 Runas (ᚱ)"), "Deve conter +4.000 Runas (ᚱ)");
+	assert(resDry.bonusMsg.includes("+600 rolls no Waifuletes"), "Deve conter +600 rolls no Waifuletes");
 	assert(resDry.bonusMsg.includes("+22 itens de pesca"), "Deve conter +22 itens de pesca");
 	assert(resDry.bonusMsg.includes("Fazenda"), "Deve conter seção da Fazenda");
 	assert(resDry.bonusMsg.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
@@ -273,6 +283,24 @@ async function runTests() {
 	assert(resDry.bonusMsg.includes("decorações VIP"), "Deve conter decorações VIP");
 	console.log("   bonusMsg formatada:\n" + resDry.bonusMsg);
 	console.log("✓ awardDonorBonuses com dryRun e formatBonusMessage OK");
+
+	// 4.1 Teste incremental de Runas (prevenção do bug de cálculo pelo total)
+	console.log("\n--- 4.1 Testando concessão incremental de Runas (Bugfix) ---");
+	const fakeDonorWithHistory = {
+		nome: "DoadorAntigo",
+		numero: "5511988887777",
+		valor: 40,
+		bonusesProcessedAmount: 35,
+		runasProcessedAmount: 35,
+		zinthosProcessedAmount: 35,
+		rollsProcessedAmount: 35
+	};
+	const resIncremental = await DonorBonusService.awardDonorBonuses(fakeDonorWithHistory, 40, 35, {
+		dryRun: true
+	});
+	assert.strictEqual(resIncremental.delta.deltaRunas, 250, "Deve calcular 250 Runas para doação de R$5 (R$40 - R$35), NUNCA 2000 Runas");
+	assert.strictEqual(resIncremental.delta.deltaBonusRolls, 75, "R$35 -> R$40 cruza a marca de R$40 (4º múltiplo de 10), concedendo 75 rolls");
+	console.log("✓ Cálculo incremental de Runas (R$5 novo sobre R$35 = +250 Runas) OK");
 
 	// 5. Teste da mensagem de notificação de donate em grupos logs/avisos
 	console.log("\n--- 5. Testando notifyGroupsAboutDonation com e sem número vinculado ---");
@@ -381,9 +409,9 @@ async function runTests() {
 	);
 	assert.ok(
 		replyContent.includes(
-			"🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +2.500 Runas (ᚱ), +13 itens de pesca!"
+			"🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +2.500 Runas (ᚱ), +375 rolls no Waifuletes, +13 itens de pesca!"
 		),
-		"Deve conter bônus de pesca e runas"
+		"Deve conter bônus de pesca, runas e rolls waifuletes"
 	);
 	assert.ok(replyContent.includes("🦇 *Fazenda:*"), "Deve conter seção da Fazenda");
 	assert.ok(replyContent.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");

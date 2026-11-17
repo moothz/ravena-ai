@@ -306,6 +306,7 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
 
 		msg += `🌸 *Waifus (Mudae):*\n`;
+		msg += `• *+75 Rolls no Waifuletes* a cada R$ 10 doados _(rolls imediatos para rolar quando quiser!)_.\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
 		msg += `• *Bônus de Raridade:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1 doado.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
@@ -340,6 +341,7 @@ async function showDonationPerks(bot, message, args, group) {
 
 			msg += `⚡ *Bônus Concedidos:*\n`;
 			msg += `  • ᚱ *${(bonuses.bank?.runas || bonuses.runas || 0).toLocaleString("pt-BR")}* Runas creditadas na sua conta do RavenaBank (\`!banco\`).\n`;
+			msg += `  • 🎲 *${bonuses.waifu.bonusRolls || 0}* rolls extras no Waifuletes entregues (75 rolls a cada R$ 10 doados).\n`;
 			msg += `  • 🐛 *${bonuses.pesca.baits}* iscas de pesca entregues no seu balde.\n`;
 			msg += `  • 🪙 *${bonuses.slots.coins}* moedas entregues no seu cofrinho de slots.\n\n`;
 
