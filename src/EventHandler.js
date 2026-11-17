@@ -1065,6 +1065,10 @@ class EventHandler extends EventEmitter {
 				const lowerText = textContent.toLowerCase();
 				for (const word of filters.words) {
 					if (lowerText.includes(word.toLowerCase())) {
+						telemetry.setAttrs({
+							"app.outcome": "rejected",
+							"app.reject.reason": "filtered_words"
+						});
 						this.logger.info(
 							`Mensagem filtrada no grupo ${group.id} - contém palavra proibida: ${word}`
 						);
@@ -1091,6 +1095,10 @@ class EventHandler extends EventEmitter {
 				try {
 					const regex = buildRegex(pattern);
 					if (regex && regex.test(textContent)) {
+						telemetry.setAttrs({
+							"app.outcome": "rejected",
+							"app.reject.reason": "filtered_regex"
+						});
 						this.logger.info(
 							`Mensagem filtrada no grupo ${group.id} - corresponde ao regex proibido: ${pattern}`
 						);
@@ -1117,6 +1125,7 @@ class EventHandler extends EventEmitter {
 				const hasForbiddenLink = foundLinks.some((link) => !this.isLinkAllowed(link, allowedLinks));
 
 				if (hasForbiddenLink) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "filtered_links" });
 					this.logger.info(`Mensagem filtrada no grupo ${group.id} - contém link não permitido`);
 
 					// Deleta a mensagem se possível - não bloqueia
@@ -1160,6 +1169,7 @@ class EventHandler extends EventEmitter {
 			});
 
 			if (match) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "filtered_person" });
 				this.logger.info(
 					`Mensagem filtrada no grupo ${group.id} - de usuário banido: ${message.author}`
 				);
@@ -1195,6 +1205,7 @@ class EventHandler extends EventEmitter {
 
 			const isDetectAll = this.isNudenetDetectAll();
 			if (await this.checkNSFW(bot, message, group, isDetectAll)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "filtered_nsfw" });
 				return true;
 			}
 		}
@@ -1316,108 +1327,137 @@ class EventHandler extends EventEmitter {
 			return false;
 		}
 
-		try {
-			const tempDir = path.join(__dirname, "../temp");
-			try {
-				await fs.access(tempDir);
-			} catch (error) {
-				await fs.mkdir(tempDir, { recursive: true });
-			}
-
-			// Obtém dados da mídia (suporta tanto base64 quanto data)
-			let mediaData = message.content?.data || message.content?.base64;
-
-			// Se não tiver dados (comum em vídeos e mensagens WhatsGo), tenta baixar
-			if (!mediaData && typeof message.downloadMedia === "function") {
-				try {
-					const media = await message.downloadMedia();
-					mediaData = media?.data || media?.base64;
-				} catch (dlErr) {
-					this.logger.error("Erro ao baixar mídia para verificação NSFW:", dlErr);
+		return telemetry.withSpan(
+			"nsfw detect",
+			{
+				attributes: {
+					"ravena.chat.id": telemetry.chatIdAttr(group?.id || message.group),
+					"ravena.user.id": telemetry.userIdAttr(message.author),
+					"ravena.nsfw.media_type": message.type,
+					"ravena.nsfw.is_group_filter": isGroupFilter,
+					"ravena.nsfw.detect_all": Boolean(isDetectAll)
 				}
-			}
+			},
+			async (span) => {
+				try {
+					const tempDir = path.join(__dirname, "../temp");
+					try {
+						await fs.access(tempDir);
+					} catch (error) {
+						await fs.mkdir(tempDir, { recursive: true });
+					}
 
-			if (!mediaData) {
-				const groupTag = group?.name ? `[${group.name}] ` : "";
-				this.logger.warn(
-					`${groupTag}Não foi possível obter dados da mídia para verificação NSFW, ignorando.`
-				);
+					// Obtém dados da mídia (suporta tanto base64 quanto data)
+					let mediaData = message.content?.data || message.content?.base64;
+
+					// Se não tiver dados (comum em vídeos e mensagens WhatsGo), tenta baixar
+					if (!mediaData && typeof message.downloadMedia === "function") {
+						try {
+							const media = await message.downloadMedia();
+							mediaData = media?.data || media?.base64;
+						} catch (dlErr) {
+							this.logger.error("Erro ao baixar mídia para verificação NSFW:", dlErr);
+						}
+					}
+
+					if (!mediaData) {
+						const groupTag = group?.name ? `[${group.name}] ` : "";
+						this.logger.warn(
+							`${groupTag}Não foi possível obter dados da mídia para verificação NSFW, ignorando.`
+						);
+						span.setAttributes({
+							"ravena.nsfw.skipped": true,
+							"ravena.nsfw.skip_reason": "no_media_data"
+						});
+						return false;
+					}
+
+					// Stickers não devem ser marcados como detectAll
+					const isDetectAllForMedia = isDetectAll && !isSticker;
+					const isStickerCmd = this.isStickerMessage(message, group, bot);
+
+					const nsfwContext = {
+						groupName: group?.name || group?.id || (message.group ? message.group : "PV"),
+						groupTitle: group?.titulo || null,
+						bot,
+						botId: bot?.id || bot?.nome,
+						author: message.author || message.authorAlt || "desconhecido",
+						authorName:
+							message.name ||
+							message.pushName ||
+							message.authorName ||
+							message.author ||
+							"desconhecido",
+						threshold: group?.filters?.nsfwThreshold,
+						group,
+						detectAll: isDetectAllForMedia,
+						isDetectAll: isDetectAllForMedia,
+						isSticker: isSticker || isStickerCmd,
+						type: message.type
+					};
+
+					let result = { isNSFW: false, reason: "" };
+
+					if (isVideo || isGif) {
+						const isGifMime = isGif && message.content?.mimetype === "image/gif";
+						const fileExt = isGifMime ? "gif" : "mp4";
+						const tempFilePath = path.join(
+							tempDir,
+							`nsfw-check-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`
+						);
+
+						const mediaBuffer = Buffer.from(mediaData, "base64");
+						await fs.writeFile(tempFilePath, mediaBuffer);
+
+						try {
+							result = await this.nsfwPredict.detectNSFWVideo(tempFilePath, nsfwContext);
+						} finally {
+							fs.unlink(tempFilePath).catch((error) => {
+								this.logger.error(`Erro ao excluir arquivo temporário ${tempFilePath}:`, error);
+							});
+						}
+					} else {
+						// Imagem ou Sticker
+						result = await this.nsfwPredict.detectNSFW(mediaData, nsfwContext);
+					}
+
+					span.setAttributes({
+						"ravena.nsfw.is_nsfw": Boolean(result?.isNSFW),
+						"ravena.nsfw.reason": result?.reason ? String(result.reason).slice(0, 100) : undefined,
+						"ravena.nsfw.category": result?.category || undefined
+					});
+
+					if (result.isNSFW) {
+						if (isGroupFilter) {
+							span.setAttributes({
+								"app.outcome": "rejected",
+								"app.reject.reason": "filtered_nsfw"
+							});
+							this.logger.info(
+								`[${nsfwContext.groupName}] Mensagem NSFW filtrada - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
+							);
+
+							// Deleta a mensagem se o filtro do grupo estiver ativo
+							message.origin.delete(true).catch((error) => {
+								this.logger.error("Erro ao deletar mensagem NSFW:", error);
+							});
+
+							return true;
+						} else {
+							this.logger.info(
+								`[${nsfwContext.groupName}] Mensagem NSFW detectada (detectAll) - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
+							);
+							return false;
+						}
+					}
+				} catch (nsfwError) {
+					this.logger.error("Erro ao verificar conteúdo NSFW:", nsfwError);
+					telemetry.recordError(span, nsfwError);
+				}
+
 				return false;
 			}
-
-			// Stickers não devem ser marcados como detectAll
-			const isDetectAllForMedia = isDetectAll && !isSticker;
-			const isStickerCmd = this.isStickerMessage(message, group, bot);
-
-			const nsfwContext = {
-				groupName: group?.name || group?.id || (message.group ? message.group : "PV"),
-				groupTitle: group?.titulo || null,
-				bot,
-				botId: bot?.id || bot?.nome,
-				author: message.author || message.authorAlt || "desconhecido",
-				authorName:
-					message.name ||
-					message.pushName ||
-					message.authorName ||
-					message.author ||
-					"desconhecido",
-				threshold: group?.filters?.nsfwThreshold,
-				group,
-				detectAll: isDetectAllForMedia,
-				isDetectAll: isDetectAllForMedia,
-				isSticker: isSticker || isStickerCmd,
-				type: message.type
-			};
-
-			let result = { isNSFW: false, reason: "" };
-
-			if (isVideo || isGif) {
-				const isGifMime = isGif && message.content?.mimetype === "image/gif";
-				const fileExt = isGifMime ? "gif" : "mp4";
-				const tempFilePath = path.join(
-					tempDir,
-					`nsfw-check-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`
-				);
-
-				const mediaBuffer = Buffer.from(mediaData, "base64");
-				await fs.writeFile(tempFilePath, mediaBuffer);
-
-				try {
-					result = await this.nsfwPredict.detectNSFWVideo(tempFilePath, nsfwContext);
-				} finally {
-					fs.unlink(tempFilePath).catch((error) => {
-						this.logger.error(`Erro ao excluir arquivo temporário ${tempFilePath}:`, error);
-					});
-				}
-			} else {
-				// Imagem ou Sticker
-				result = await this.nsfwPredict.detectNSFW(mediaData, nsfwContext);
-			}
-
-			if (result.isNSFW) {
-				if (isGroupFilter) {
-					this.logger.info(
-						`[${nsfwContext.groupName}] Mensagem NSFW filtrada - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
-					);
-
-					// Deleta a mensagem se o filtro do grupo estiver ativo
-					message.origin.delete(true).catch((error) => {
-						this.logger.error("Erro ao deletar mensagem NSFW:", error);
-					});
-
-					return true;
-				} else {
-					this.logger.info(
-						`[${nsfwContext.groupName}] Mensagem NSFW detectada (detectAll) - motivo: ${result.reason} [enviado por ${nsfwContext.authorName}/${nsfwContext.author}]`
-					);
-					return false;
-				}
-			}
-		} catch (nsfwError) {
-			this.logger.error("Erro ao verificar conteúdo NSFW:", nsfwError);
-		}
-
-		return false;
+		);
 	}
 
 	/**

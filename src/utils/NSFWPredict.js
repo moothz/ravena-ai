@@ -385,6 +385,7 @@ class NSFWPredict {
 	 */
 	_isNsfwLabel(label) {
 		if (!label || typeof label !== "string") return false;
+		if (label.includes("COVERED")) return false;
 		const explicitLabels = [
 			"FEMALE_BREAST_EXPOSED",
 			"FEMALE_GENITALIA_EXPOSED",
@@ -395,11 +396,11 @@ class NSFWPredict {
 		if (explicitLabels.includes(label)) return true;
 		if (
 			label.includes("EXPOSED") &&
-			!["FEET_EXPOSED", "ARMPITS_EXPOSED", "BELLY_EXPOSED"].includes(label)
+			!["FEET_EXPOSED", "ARMPITS_EXPOSED", "BELLY_EXPOSED", "MALE_BREAST_EXPOSED"].includes(label)
 		) {
 			return true;
 		}
-		return label.includes("GENITALIA") || label.includes("ANUS");
+		return false;
 	}
 
 	/**
