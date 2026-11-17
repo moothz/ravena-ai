@@ -2749,12 +2749,20 @@ class StreamMonitor extends EventEmitter {
 			{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
 		);
 
-		const ids = (profile?.entries || [])
-			.map((entry) => String(entry?.id ?? ""))
-			.filter((id) => /^\d{15,25}$/.test(id));
-		if (ids.length === 0) return null;
+		const entries = (profile?.entries || []).filter((entry) => {
+			if (!entry) return false;
+			const id = String(entry?.id ?? "");
+			if (!/^\d{15,25}$/.test(id)) return false;
+			if (entry.live_status === "is_live" || entry.is_live === true) return false;
+			if (typeof entry.url === "string" && entry.url.includes("/live")) return false;
+			return true;
+		});
+		if (entries.length === 0) return null;
 
-		const newestId = ids.reduce((max, id) => (BigInt(id) > BigInt(max) ? id : max));
+		const newestEntry = entries.reduce((max, entry) =>
+			BigInt(entry.id) > BigInt(max.id) ? entry : max
+		);
+		const newestId = String(newestEntry.id);
 		const createdAtSec = Number(BigInt(newestId) >> 32n);
 
 		return {
@@ -2776,8 +2784,15 @@ class StreamMonitor extends EventEmitter {
 				{ dumpSingleJson: true, skipDownload: true, noWarnings: true },
 				{ timeout: TIKTOK_YTDLP_TIMEOUT_MS }
 			);
+
+			const isLive =
+				info?.live_status === "is_live" ||
+				info?.is_live === true ||
+				Boolean(info?.webpage_url && String(info.webpage_url).includes("/live"));
+
 			return {
 				...video,
+				isLive,
 				title: info?.title || info?.description || "Novo vídeo",
 				thumbnail: info?.thumbnail || null
 			};
@@ -2785,7 +2800,7 @@ class StreamMonitor extends EventEmitter {
 			this.logger.debug(
 				`[_fetchTiktokVideoDetails] Sem detalhes para ${username}/${video.id}: ${error.message}`
 			);
-			return { ...video, title: "Novo vídeo", thumbnail: null };
+			return { ...video, isLive: false, title: "Novo vídeo", thumbnail: null };
 		}
 	}
 
@@ -2873,6 +2888,14 @@ class StreamMonitor extends EventEmitter {
 			const latest = await this._checkTiktokLatestVideo(username);
 			if (!latest || latest.id === (status.lastVideo?.id ?? "")) return;
 
+			// Ignora se o vídeo encontrado for na verdade a live atual em andamento
+			if (
+				status.isLive &&
+				(latest.id === String(status.currentRoomId || "") || (latest.url && latest.url.includes("/live")))
+			) {
+				return;
+			}
+
 			const published = new Date(latest.publishedAt);
 			const isRecent =
 				!isNaN(published.getTime()) && published.getTime() >= Date.now() - TIKTOK_RECENT_VIDEO_MS;
@@ -2880,6 +2903,10 @@ class StreamMonitor extends EventEmitter {
 			let videoData = latest;
 			if (isRecent) {
 				videoData = await this._fetchTiktokVideoDetails(latest, username);
+				if (videoData.isLive) {
+					return;
+				}
+
 				await this._emitIfSafe("newVideo", {
 					platform: "tiktok",
 					channelName: channel.name,
