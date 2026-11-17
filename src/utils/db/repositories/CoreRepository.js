@@ -811,6 +811,7 @@ class CoreRepository {
 			}
 			const donor = DonationMapper.fromRow(row);
 			donor.zinthosProcessedAmount = amount;
+			donor.runasProcessedAmount = amount;
 			const r = DonationMapper.toRow(donor);
 			this.mappers.run(
 				this.DB,
@@ -820,6 +821,36 @@ class CoreRepository {
 			return true;
 		} catch (error) {
 			this.logger.error("Error updating donor zinthos processed:", error);
+			return false;
+		}
+	}
+
+	async updateDonorRunasProcessed(name, amount) {
+		return this.updateDonorZinthosProcessed(name, amount);
+	}
+
+	async updateDonorRollsProcessed(name, amount) {
+		try {
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+				[name]
+			);
+			if (!row) {
+				this.logger.warn(`Donor "${name}" not found to update rolls processed`);
+				return false;
+			}
+			const donor = DonationMapper.fromRow(row);
+			donor.rollsProcessedAmount = amount;
+			const r = DonationMapper.toRow(donor);
+			this.mappers.run(
+				this.DB,
+				"INSERT OR REPLACE INTO donations (name, valor, numero, timestamp, historico, json_data) VALUES (@name, @valor, @numero, @timestamp, @historico, @json_data)",
+				{ ...r, json_data: JSON.stringify(donor) }
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error updating donor rolls processed:", error);
 			return false;
 		}
 	}

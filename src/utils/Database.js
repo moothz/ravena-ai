@@ -695,6 +695,22 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.updateDonorZinthosProcessed(name, amount);
 	}
+	async updateDonorRunasProcessed(name, amount) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonorRunasProcessed() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonorRunasProcessed(name, amount);
+	}
+	async updateDonorRollsProcessed(name, amount) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonorRollsProcessed() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonorRollsProcessed(name, amount);
+	}
 	async updateDonationAmount(name, amount) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] updateDonationAmount() bloqueado");

@@ -27,13 +27,21 @@ const DonationMapper = {
 			}
 		}
 
+		const bonusesProcessed = extra.bonusesProcessedAmount ?? 0;
+		const runasProcessed = extra.runasProcessedAmount ?? extra.zinthosProcessedAmount ?? 0;
+		const rollsProcessed = extra.rollsProcessedAmount ?? 0;
+
 		return {
+			...extra,
 			nome: row.name,
 			valor: row.valor ?? 0,
 			numero: row.numero ?? undefined,
 			timestamp: row.timestamp ?? null,
 			historico,
-			bonusesProcessedAmount: extra.bonusesProcessedAmount ?? 0
+			bonusesProcessedAmount: bonusesProcessed,
+			runasProcessedAmount: runasProcessed,
+			zinthosProcessedAmount: runasProcessed,
+			rollsProcessedAmount: rollsProcessed
 		};
 	},
 
