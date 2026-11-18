@@ -981,6 +981,8 @@ async function main() {
 				fl.run(DAY0 + d * D + H, "zinthos", "DAILY_REWARD", "creation", delta, 0);
 			}
 			fl.run(DAY0 + 2 * D, "zinthos", "HOSTING_FEE_WAIFU", "non_monetary", 999999, 0);
+			// Motivo sem mapear (atenção, mesmo nível do crescimento): "Por quê" lista os dois
+			fl.run(DAY0 + 4 * D, "zinthos", "NOVO_Z", "unknown", 0, 0); // sem valor: não mexe na moeda sem origem
 			// Runas: estável (0%), mas 6 de 100 criados sem origem → agir pelo % do criado
 			for (let d = 0; d <= 8; d++) bal.run(DAY0 + d * D, "runas", 50000 + (d >= 5 ? 6 : 0));
 			fl.run(DAY0 + 3 * D, "runas", "DEPOSIT:pesca", "creation", 100, 0);
@@ -1004,14 +1006,14 @@ async function main() {
 				["Zinthos", "Petalitas", "Runas"]
 			);
 			assert.strictEqual(by.Zinthos["Situação"], "atenção");
-			assert.strictEqual(by.Zinthos["Por quê"], "crescimento");
+			assert.strictEqual(by.Zinthos["Por quê"], "crescimento + motivo sem mapear");
 			assert.strictEqual(by.Zinthos["Crescimento (%)"], 1.99);
 			assert.strictEqual(by.Zinthos["Dobra em (semanas)"], 35.1);
 			assert.strictEqual(by.Zinthos["Sem origem (% do criado)"], 0);
 			assert.strictEqual(by.Zinthos["Sem origem"], "0.00% do criado");
 			assert.strictEqual(by.Zinthos["Maior fonte"], "Recompensa diária");
 			assert.strictEqual(by.Runas["Situação"], "agir");
-			assert.strictEqual(by.Runas["Por quê"], "sem origem");
+			assert.strictEqual(by.Runas["Por quê"], "sem origem"); // crescimento ok não entra
 			assert.strictEqual(by.Runas["Sem origem (% do criado)"], 6);
 			assert.strictEqual(by.Runas["Sem origem (% da massa)"], 0.012);
 			assert.strictEqual(by.Runas["Sem origem"], "6.00% do criado"); // o critério pior (% do criado)
@@ -1035,7 +1037,7 @@ async function main() {
 				path.join(tmpRoot, "veredito2.db"),
 				dashboardSql("Confiança: de quando são os dados (agora)", { from: 0, to })
 			);
-			assert.strictEqual(conf.find((x) => x.Fonte === "Zinthos")["Motivos sem mapear (7 dias)"], 1);
+			assert.strictEqual(conf.find((x) => x.Fonte === "Zinthos")["Motivos sem mapear (7 dias)"], 2); // NOVO_Z e NOVO
 			assert.strictEqual(conf.find((x) => x.Fonte === "Runas")["Motivos sem mapear (7 dias)"], 0);
 		});
 
