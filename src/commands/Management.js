@@ -14,6 +14,7 @@ const { validateRegexFilter } = require("../utils/RegexFilterValidator");
 const GroupMonitoringService = require("../services/GroupMonitoringService");
 const PvSafetyService = require("../services/PvSafetyService");
 const storageService = require("../services/StorageService");
+const telemetry = require("../telemetry");
 
 // Plataformas com vídeos gravados além de lives (aceitam o modo "video" em !g-<plataforma>-midia)
 const VIDEO_PLATFORMS = new Set(["youtube", "tiktok"]);
@@ -409,6 +410,10 @@ class Management {
 				description:
 					"Ativa/desativa encaminhamento de notificações da Twitch para canal do WhatsApp"
 			},
+			"twitch-fecharGrupo": {
+				method: "toggleTwitchCloseGroup",
+				description: "Fecha o grupo durante lives da Twitch [tempo opcional] [canal opcional]"
+			},
 			"kick-canal": {
 				method: "toggleKickChannel",
 				description: "Adiciona/remove canal do Kick para monitoramento"
@@ -452,6 +457,10 @@ class Management {
 			"kick-encaminharCanal": {
 				method: "setKickForwardChannel",
 				description: "Ativa/desativa encaminhamento de notificações do Kick para canal do WhatsApp"
+			},
+			"kick-fecharGrupo": {
+				method: "toggleKickCloseGroup",
+				description: "Fecha o grupo durante lives do Kick [tempo opcional] [canal opcional]"
 			},
 			"youtube-canal": {
 				method: "toggleYoutubeChannel",
@@ -498,6 +507,14 @@ class Management {
 				description:
 					"Ativa/desativa encaminhamento de notificações do YouTube para canal do WhatsApp"
 			},
+			"youtube-fecharGrupo": {
+				method: "toggleYoutubeCloseGroup",
+				description: "Fecha o grupo durante lives do YouTube [tempo opcional] [canal opcional]"
+			},
+			"yt-fecharGrupo": {
+				method: "toggleYoutubeCloseGroup",
+				description: "Alias de youtube-fecharGrupo"
+			},
 			"tiktok-canal": {
 				method: "toggleTiktokChannel",
 				description: "Adiciona/remove perfil do TikTok para monitoramento de lives e vídeos"
@@ -542,6 +559,10 @@ class Management {
 				method: "setTiktokForwardChannel",
 				description:
 					"Ativa/desativa encaminhamento de notificações do TikTok para canal do WhatsApp"
+			},
+			"tiktok-fecharGrupo": {
+				method: "toggleTiktokCloseGroup",
+				description: "Fecha o grupo durante lives do TikTok [tempo opcional] [canal opcional]"
 			},
 			variaveis: {
 				method: "listVariables",
@@ -2334,6 +2355,8 @@ class Management {
 						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
+					infoMessage += `  • Fechar grupo na live: ${channel.closeGroupOnLive ? (channel.closeGroupDuration ? `Sim (${channel.closeGroupDuration}m)` : "Sim") : "Não"}\n`;
+
 					infoMessage += "\n";
 				}
 			}
@@ -2383,6 +2406,8 @@ class Management {
 						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
+					infoMessage += `  • Fechar grupo na live: ${channel.closeGroupOnLive ? (channel.closeGroupDuration ? `Sim (${channel.closeGroupDuration}m)` : "Sim") : "Não"}\n`;
+
 					infoMessage += "\n";
 				}
 			}
@@ -2425,6 +2450,8 @@ class Management {
 						infoMessage += `  • Foto de grupo Offline: Restaurar foto anterior\n`;
 					}
 
+					infoMessage += `  • Fechar grupo na live: ${channel.closeGroupOnLive ? (channel.closeGroupDuration ? `Sim (${channel.closeGroupDuration}m)` : "Sim") : "Não"}\n`;
+
 					infoMessage += "\n";
 				}
 			}
@@ -2458,6 +2485,7 @@ class Management {
 
 					infoMessage += `  • Usar IA: ${channel.useAI ? "Sim" : "Não"}\n`;
 					infoMessage += `  • Mudar foto do grupo: ${channel.changePhotoOnEvent ? "Sim" : "Não"}\n`;
+					infoMessage += `  • Fechar grupo na live: ${channel.closeGroupOnLive ? (channel.closeGroupDuration ? `Sim (${channel.closeGroupDuration}m)` : "Sim") : "Não"}\n`;
 					infoMessage += "\n";
 				}
 			}
@@ -4271,7 +4299,9 @@ class Management {
 						changeTitleOnEvent: true,
 						useThumbnail: true,
 						useAI: false,
-						mentionAllMembers: false
+						mentionAllMembers: false,
+						closeGroupOnLive: false,
+						closeGroupDuration: null
 					};
 
 					channels.push(newChannel);
@@ -4843,7 +4873,9 @@ class Management {
 				},
 				changeTitleOnEvent: true,
 				useAI: false,
-				mentionAllMembers: false
+				mentionAllMembers: false,
+				closeGroupOnLive: false,
+				closeGroupDuration: null
 			};
 
 			channels.push(newChannel);
@@ -5273,7 +5305,9 @@ class Management {
 				changeTitleOnEvent: true,
 				useAI: false,
 				useThumbnail: true,
-				mentionAllMembers: false
+				mentionAllMembers: false,
+				closeGroupOnLive: false,
+				closeGroupDuration: null
 			};
 
 			channels.push(newChannel);
@@ -5402,7 +5436,9 @@ class Management {
 			changeTitleOnEvent: true,
 			useAI: false,
 			useThumbnail: true,
-			mentionAllMembers: false
+			mentionAllMembers: false,
+			closeGroupOnLive: false,
+			closeGroupDuration: null
 		};
 
 		channels.push(newChannel);
@@ -8495,6 +8531,165 @@ class Management {
 		return this.toggleStreamMentions(bot, message, args, group, "youtube");
 	}
 
+	async toggleTwitchCloseGroup(bot, message, args, group) {
+		return this.toggleStreamCloseGroup(bot, message, args, group, "twitch");
+	}
+
+	async toggleKickCloseGroup(bot, message, args, group) {
+		return this.toggleStreamCloseGroup(bot, message, args, group, "kick");
+	}
+
+	async toggleYoutubeCloseGroup(bot, message, args, group) {
+		return this.toggleStreamCloseGroup(bot, message, args, group, "youtube");
+	}
+
+	async toggleTiktokCloseGroup(bot, message, args, group) {
+		return this.toggleStreamCloseGroup(bot, message, args, group, "tiktok");
+	}
+
+	/**
+	 * Ativa/desativa ou define tempo para fechar grupo em lives
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @param {Object} group
+	 * @param {string} platform
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async toggleStreamCloseGroup(bot, message, args, group, platform) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		const isAdmin = await this.isBotAdmin(bot, group);
+		if (!isAdmin) {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "bot_not_admin"
+			});
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					"⚠️ O bot não é administrador do grupo. Para fechar/abrir o grupo automaticamente durante transmissões, o bot precisa ser um administrador. " +
+					"Por favor, adicione o bot como administrador e tente novamente."
+			});
+		}
+
+		const channels = this.getChannelConfig(group, platform);
+		if (!channels || channels.length === 0) {
+			const platName = STREAM_PLATFORM_LABELS[platform] ?? platform;
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "channel_not_found"
+			});
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Nenhum canal de ${platName} configurado neste grupo. Use !g-${platform === "youtube" ? "youtube" : platform}-canal <nomeCanal> para adicionar.`
+			});
+		}
+
+		let parsedDuration = undefined;
+		let explicitDisable = false;
+		let channelArg = null;
+
+		const disableKeywords = ["off", "desativar", "desligar", "false", "nao", "não"];
+
+		for (const arg of args) {
+			const argLower = arg.toLowerCase().trim();
+			if (/^\d+$/.test(argLower)) {
+				const val = parseInt(argLower, 10);
+				if (val === 0) {
+					explicitDisable = true;
+				} else {
+					parsedDuration = val;
+				}
+			} else if (disableKeywords.includes(argLower)) {
+				explicitDisable = true;
+			} else if (!channelArg) {
+				channelArg = argLower;
+			}
+		}
+
+		let targetChannel = null;
+		if (channelArg) {
+			targetChannel = channels.find(
+				(c) => c.channel && c.channel.toLowerCase() === channelArg.toLowerCase()
+			);
+			if (!targetChannel) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "channel_not_found"
+				});
+				return new ReturnMessage({
+					chatId: group.id,
+					content: `Canal não encontrado na lista de ${STREAM_PLATFORM_LABELS[platform] ?? platform}: "${channelArg}". Canais configurados: ${channels.map((c) => c.channel).join(", ")}`
+				});
+			}
+		} else {
+			if (channels.length === 1) {
+				targetChannel = channels[0];
+			} else {
+				const channelsList = channels.map((c) => c.channel).join(", ");
+				const cmdPrefix = platform === "youtube" ? "youtube" : platform;
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "channel_not_specified"
+				});
+				return new ReturnMessage({
+					chatId: group.id,
+					content:
+						`Múltiplos canais de ${STREAM_PLATFORM_LABELS[platform] ?? platform} configurados. Especifique o canal:\n` +
+						`• \`!g-${cmdPrefix}-fecharGrupo [tempo] <canal>\`\n\n` +
+						`Canais configurados: ${channelsList}`
+				});
+			}
+		}
+
+		// Aplica a alteração
+		if (explicitDisable) {
+			targetChannel.closeGroupOnLive = false;
+			targetChannel.closeGroupDuration = null;
+		} else if (parsedDuration !== undefined) {
+			targetChannel.closeGroupOnLive = true;
+			targetChannel.closeGroupDuration = parsedDuration;
+		} else {
+			// Sem tempo e sem disable explícito: alterna estado
+			targetChannel.closeGroupOnLive = !targetChannel.closeGroupOnLive;
+			if (!targetChannel.closeGroupOnLive) {
+				targetChannel.closeGroupDuration = null;
+			}
+		}
+
+		await this.database.saveGroup(group);
+
+		telemetry.setAttrs({
+			"ravena.stream.platform": platform,
+			"ravena.stream.close_group": Boolean(targetChannel.closeGroupOnLive),
+			"ravena.stream.close_duration": targetChannel.closeGroupDuration ?? 0
+		});
+
+		const platName = STREAM_PLATFORM_LABELS[platform] ?? platform;
+		if (targetChannel.closeGroupOnLive) {
+			const tempoMsg = targetChannel.closeGroupDuration
+				? `por *${targetChannel.closeGroupDuration} minutos* (reabrindo em seguida)`
+				: `enquanto a live estiver *ao vivo* (reabrindo ao encerrar)`;
+			return new ReturnMessage({
+				chatId: group.id,
+				content:
+					`🔒 *Fechamento automático de grupo ativado!*\n\n` +
+					`Quando o canal *${targetChannel.channel}* (${platName}) entrar ao vivo, o grupo será fechado ${tempoMsg}.`
+			});
+		} else {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `🔓 *Fechamento automático de grupo desativado* para transmissões de *${targetChannel.channel}* (${platName}).`
+			});
+		}
+	}
+
 	async setStreamForwardChannel(bot, message, args, group, platform) {
 		const groupId = group.id;
 
@@ -10652,6 +10847,17 @@ const helper = {
 			category: "streams"
 		},
 		{
+			cmd: "!g-twitch-fecharGrupo",
+			desc: "Fecha o grupo durante lives da Twitch [tempo opcional] [canal opcional]",
+			usage: [
+				"!g-twitch-fecharGrupo",
+				"!g-twitch-fecharGrupo 30",
+				"!g-twitch-fecharGrupo <canal>",
+				"!g-twitch-fecharGrupo 30 <canal>"
+			],
+			category: "streams"
+		},
+		{
 			cmd: "!g-kick-canal",
 			desc: "Adiciona/remove canal do Kick para monitoramento",
 			usage: ["!g-kick-canal"],
@@ -10709,6 +10915,17 @@ const helper = {
 			cmd: "!g-kick-encaminharCanal",
 			desc: "Ativa/desativa encaminhamento de notificações do Kick para canal do WhatsApp seguido",
 			usage: ["!g-kick-encaminharCanal <canalStream> <nomeCanalSeguido>"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-kick-fecharGrupo",
+			desc: "Fecha o grupo durante lives do Kick [tempo opcional] [canal opcional]",
+			usage: [
+				"!g-kick-fecharGrupo",
+				"!g-kick-fecharGrupo 30",
+				"!g-kick-fecharGrupo <canal>",
+				"!g-kick-fecharGrupo 30 <canal>"
+			],
 			category: "streams"
 		},
 		{
@@ -10777,6 +10994,18 @@ const helper = {
 			category: "streams"
 		},
 		{
+			cmd: "!g-youtube-fecharGrupo",
+			desc: "Fecha o grupo durante lives do YouTube [tempo opcional] [canal opcional]",
+			usage: [
+				"!g-youtube-fecharGrupo",
+				"!g-youtube-fecharGrupo 30",
+				"!g-youtube-fecharGrupo <canal>",
+				"!g-youtube-fecharGrupo 30 <canal>",
+				"!g-yt-fecharGrupo"
+			],
+			category: "streams"
+		},
+		{
 			cmd: "!g-tiktok-canal",
 			desc: "Adiciona/remove perfil do TikTok para monitoramento de lives e vídeos",
 			usage: ["!g-tiktok-canal <usuario>"],
@@ -10839,6 +11068,17 @@ const helper = {
 			cmd: "!g-tiktok-encaminharCanal",
 			desc: "Ativa/desativa encaminhamento de notificações do TikTok para canal do WhatsApp seguido",
 			usage: ["!g-tiktok-encaminharCanal <usuario> <nomeCanalSeguido>"],
+			category: "streams"
+		},
+		{
+			cmd: "!g-tiktok-fecharGrupo",
+			desc: "Fecha o grupo durante lives do TikTok [tempo opcional] [canal opcional]",
+			usage: [
+				"!g-tiktok-fecharGrupo",
+				"!g-tiktok-fecharGrupo 30",
+				"!g-tiktok-fecharGrupo <usuario>",
+				"!g-tiktok-fecharGrupo 30 <usuario>"
+			],
 			category: "streams"
 		},
 		{

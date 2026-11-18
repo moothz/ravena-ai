@@ -56,11 +56,17 @@ async function listMonitoredChannels(bot, message, args, group) {
 			for (const channel of twitchChannels) {
 				const titleChange = channel.changeTitleOnEvent ? "✅" : "❌";
 				const useAI = channel.useAI ? "✅" : "❌";
+				const closeGroup = channel.closeGroupOnLive
+					? channel.closeGroupDuration
+						? `✅ (${channel.closeGroupDuration}m)`
+						: "✅"
+					: "❌";
 
 				response += `• ${channel.channel}\n`;
 				response += `  - Notificação online: ${channel.onConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Notificação offline: ${channel.offConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Alterar título: ${titleChange}\n`;
+				response += `  - Fechar grupo na live: ${closeGroup}\n`;
 				response += `  - Usar IA: ${useAI}\n\n`;
 			}
 		}
@@ -71,11 +77,17 @@ async function listMonitoredChannels(bot, message, args, group) {
 			for (const channel of kickChannels) {
 				const titleChange = channel.changeTitleOnEvent ? "✅" : "❌";
 				const useAI = channel.useAI ? "✅" : "❌";
+				const closeGroup = channel.closeGroupOnLive
+					? channel.closeGroupDuration
+						? `✅ (${channel.closeGroupDuration}m)`
+						: "✅"
+					: "❌";
 
 				response += `• ${channel.channel}\n`;
 				response += `  - Notificação online: ${channel.onConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Notificação offline: ${channel.offConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Alterar título: ${titleChange}\n`;
+				response += `  - Fechar grupo na live: ${closeGroup}\n`;
 				response += `  - Usar IA: ${useAI}\n\n`;
 			}
 		}
@@ -86,10 +98,16 @@ async function listMonitoredChannels(bot, message, args, group) {
 			for (const channel of youtubeChannels) {
 				const titleChange = channel.changeTitleOnEvent ? "✅" : "❌";
 				const useAI = channel.useAI ? "✅" : "❌";
+				const closeGroup = channel.closeGroupOnLive
+					? channel.closeGroupDuration
+						? `✅ (${channel.closeGroupDuration}m)`
+						: "✅"
+					: "❌";
 
 				response += `• ${channel.channel}\n`;
 				response += `  - Notificação de vídeo: ${channel.onConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Alterar título: ${titleChange}\n`;
+				response += `  - Fechar grupo na live: ${closeGroup}\n`;
 				response += `  - Usar IA: ${useAI}\n\n`;
 			}
 		}
@@ -100,12 +118,18 @@ async function listMonitoredChannels(bot, message, args, group) {
 			for (const channel of tiktokChannels) {
 				const titleChange = channel.changeTitleOnEvent ? "✅" : "❌";
 				const useAI = channel.useAI ? "✅" : "❌";
+				const closeGroup = channel.closeGroupOnLive
+					? channel.closeGroupDuration
+						? `✅ (${channel.closeGroupDuration}m)`
+						: "✅"
+					: "❌";
 
 				response += `• ${channel.channel}\n`;
 				response += `  - Notificação de vídeo: ${channel.videoConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Notificação online: ${channel.onConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Notificação offline: ${channel.offConfig?.media?.length || 0} item(s)\n`;
 				response += `  - Alterar título: ${titleChange}\n`;
+				response += `  - Fechar grupo na live: ${closeGroup}\n`;
 				response += `  - Usar IA: ${useAI}\n\n`;
 			}
 		}

@@ -244,6 +244,9 @@ document.addEventListener('DOMContentLoaded', () => {
         streamMention: document.getElementById('stream-mention'),
         streamChangeTitle: document.getElementById('stream-change-title'),
         streamChangePhoto: document.getElementById('stream-change-photo'),
+        streamCloseGroup: document.getElementById('stream-close-group'),
+        streamCloseGroupDuration: document.getElementById('stream-close-group-duration'),
+        streamCloseGroupDurationBox: document.getElementById('stream-close-group-duration-box'),
         streamAI: document.getElementById('stream-ai'),
         streamUseThumbnail: document.getElementById('stream-use-thumbnail'),
         streamTitlesGroup: document.getElementById('stream-titles-group'),
@@ -1765,6 +1768,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>
                         <strong>${stream.channel}</strong>
                         ${stream.useThumbnail ? ' <span class="badge-soon" style="color: #25d366; border-color: rgba(37,211,102,0.4); background: rgba(37,211,102,0.1);">Thumb</span>' : ''}
+                        ${!isVideoKind && stream.closeGroupOnLive ? ` <span class="badge-soon" style="color: #f39c12; border-color: rgba(243,156,18,0.4); background: rgba(243,156,18,0.1);" title="Fecha o grupo durante lives"><i class="fas fa-lock"></i> Fechar Grupo${stream.closeGroupDuration ? ` (${stream.closeGroupDuration}m)` : ''}</span>` : ''}
                     </td>
                     <td>
                         <button class="btn btn-xs btn-primary btn-edit-stream" data-platform="${platform}" data-index="${index}"><i class="fas fa-edit"></i> Editar</button>
@@ -1808,6 +1812,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const offAcc = document.getElementById('stream-off-accordion');
         const offDiv = document.getElementById('stream-off-divider');
         const titleRow = document.getElementById('stream-change-title-row');
+        const closeGroupRow = document.getElementById('stream-close-group-row');
 
         if (isVideoKind) {
             const videoIcon = storeKey === 'tiktok' ? 'fab fa-tiktok text-tiktok' : 'fab fa-youtube text-danger';
@@ -1816,12 +1821,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (offAcc) offAcc.classList.add('hidden');
             if (offDiv) offDiv.classList.add('hidden');
             if (titleRow) titleRow.classList.add('hidden');
+            if (closeGroupRow) closeGroupRow.classList.add('hidden');
+            if (els.streamCloseGroupDurationBox) els.streamCloseGroupDurationBox.classList.add('hidden');
         } else {
             if (simLabel) simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação da Live';
             if (onTitle) onTitle.innerHTML = '<i class="fas fa-satellite-dish text-success"></i> <h4>Mídia & Mensagem quando Online</h4>';
             if (offAcc) offAcc.classList.remove('hidden');
             if (offDiv) offDiv.classList.remove('hidden');
             if (titleRow) titleRow.classList.remove('hidden');
+            if (closeGroupRow) closeGroupRow.classList.remove('hidden');
         }
 
         if (isEdit) {
@@ -1834,6 +1842,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 changeTitleOnEvent: isLiveKind || platform === 'twitch' || platform === 'kick',
                 onlineTitle: '',
                 offlineTitle: '',
+                closeGroupOnLive: false,
+                closeGroupDuration: null,
                 useThumbnail: true,
                 useAI: false,
                 notifyVideos: true,
@@ -1865,6 +1875,12 @@ document.addEventListener('DOMContentLoaded', () => {
         els.streamTitleOff.value = d.offlineTitle || '';
         
         toggleStreamTitles(!isVideoKind && d.changeTitleOnEvent);
+
+        if (els.streamCloseGroup) els.streamCloseGroup.checked = !!d.closeGroupOnLive;
+        if (els.streamCloseGroupDuration) els.streamCloseGroupDuration.value = d.closeGroupDuration || '';
+        if (els.streamCloseGroupDurationBox) {
+            els.streamCloseGroupDurationBox.classList.toggle('hidden', !(!isVideoKind && d.closeGroupOnLive));
+        }
 
         if (isVideoKind) {
             renderStreamMediaList('stream-on-media-list', d.videoConfig?.media || []);
@@ -1909,6 +1925,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(els.streamChangeTitle) {
         els.streamChangeTitle.addEventListener('change', (e) => toggleStreamTitles(e.target.checked));
+    }
+
+    if(els.streamCloseGroup) {
+        els.streamCloseGroup.addEventListener('change', (e) => {
+            if (els.streamCloseGroupDurationBox) {
+                els.streamCloseGroupDurationBox.classList.toggle('hidden', !e.target.checked);
+            }
+        });
     }
 
     if(els.streamUseThumbnail) {
@@ -2138,6 +2162,9 @@ document.addEventListener('DOMContentLoaded', () => {
             d.changePhotoOnEvent = els.streamChangePhoto ? els.streamChangePhoto.checked : false;
             d.onlineTitle = els.streamTitleOn.value;
             d.offlineTitle = els.streamTitleOff.value;
+            d.closeGroupOnLive = els.streamCloseGroup ? els.streamCloseGroup.checked : false;
+            const dur = els.streamCloseGroupDuration ? parseInt(els.streamCloseGroupDuration.value, 10) : null;
+            d.closeGroupDuration = (d.closeGroupOnLive && !isNaN(dur) && dur > 0) ? dur : null;
         }
 
         if (isVideoKind) {
@@ -2166,6 +2193,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         existing.offConfig = d.offConfig;
                         existing.changeTitleOnEvent = d.changeTitleOnEvent;
                         existing.changePhotoOnEvent = d.changePhotoOnEvent;
+                        existing.closeGroupOnLive = d.closeGroupOnLive;
+                        existing.closeGroupDuration = d.closeGroupDuration;
                         existing.onlineTitle = d.onlineTitle;
                         existing.offlineTitle = d.offlineTitle;
                     }

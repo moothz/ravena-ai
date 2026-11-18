@@ -49,6 +49,7 @@ class StreamSystem {
 		this.dataPath = this.database.databasePath;
 		this.mediaPath = path.join(this.dataPath, "media");
 		this.cachedGroupPhotos = new Map();
+		this.closeGroupTimers = new Map();
 		this.adminUtils = AdminUtils.getInstance();
 		this.initialized = false;
 		this.initializing = false;
@@ -517,11 +518,12 @@ class StreamSystem {
 			const hasMentions =
 				channelConfig.mentionAllMembers && (eventType === "online" || eventType === "video");
 			const hasAI = channelConfig.useAI && (eventType === "online" || eventType === "video");
+			const hasCloseGroup = eventType !== "video" && channelConfig.closeGroupOnLive === true;
 
 			// Log detalhado para diagnosticar eventos que não geram notificações
-			if (!hasMedia && !hasTitleChange && !hasPhotoChange && !hasAI) {
+			if (!hasMedia && !hasTitleChange && !hasPhotoChange && !hasAI && !hasCloseGroup) {
 				this.logger.warn(
-					`[processStreamEvent] Sem mídia, title change, photo change, nem IA configurada para ${group.name}/${eventData.channelName} (${eventType}) — evento ignorado`
+					`[processStreamEvent] Sem mídia, title change, photo change, IA nem fecharGrupo configurado para ${group.name}/${eventData.channelName} (${eventType}) — evento ignorado`
 				);
 				return;
 			}
@@ -687,8 +689,12 @@ class StreamSystem {
 						break; // Sai do loop de bots
 					} else {
 						// Nenhuma mensagem gerada.
-						// Se era pra mudar o título e conseguimos (ou não era pra mudar), consideramos sucesso.
-						if (!channelConfig.changeTitleOnEvent || titleChanged) {
+						// Se era pra mudar o título ou fechar grupo e conseguimos (ou não era pra mudar), consideramos sucesso.
+						if (
+							!channelConfig.changeTitleOnEvent ||
+							titleChanged ||
+							channelConfig.closeGroupOnLive
+						) {
 							sentSuccess = true;
 							break;
 						}
@@ -758,6 +764,20 @@ class StreamSystem {
 					} catch (e) {
 						// Ignora e tenta o próximo bot
 					}
+				}
+			}
+
+			// Processa fechamento / reabertura do grupo para transmissões ao vivo
+			if (eventType !== "video" && channelConfig.closeGroupOnLive) {
+				if (eventType === "online") {
+					await this.closeGroupForStream(
+						group.id,
+						eventData.platform,
+						eventData.channelName,
+						channelConfig.closeGroupDuration
+					);
+				} else if (eventType === "offline") {
+					await this.openGroupForStream(group.id, eventData.platform, eventData.channelName);
 				}
 			}
 
@@ -1144,6 +1164,151 @@ class StreamSystem {
 			this.logger.error(`Erro ao alterar foto do grupo ${chat.id?._serialized || chat.id}:`, e);
 			return false;
 		}
+	}
+
+	/**
+	 * Verifica se algum outro canal no grupo está ao vivo e com a opção de fechar grupo ativada
+	 * @param {string} groupId
+	 * @param {string} currentPlatform
+	 * @param {string} currentChannelName
+	 * @returns {Promise<boolean>}
+	 */
+	async isAnyOtherStreamLiveWithCloseGroup(groupId, currentPlatform, currentChannelName) {
+		try {
+			const group = await this.database.getGroup(groupId);
+			if (!group) return false;
+			const platforms = ["twitch", "kick", "youtube", "tiktok"];
+			const statuses = this.streamMonitor ? this.streamMonitor.getStreamStatus() : {};
+
+			for (const plat of platforms) {
+				const channels = group[plat];
+				if (!Array.isArray(channels)) continue;
+				for (const ch of channels) {
+					if (
+						plat === currentPlatform &&
+						ch.channel.toLowerCase() === currentChannelName.toLowerCase()
+					) {
+						continue;
+					}
+					if (ch.closeGroupOnLive) {
+						const statusKey = `${plat.toLowerCase()}:${ch.channel.toLowerCase()}`;
+						if (statuses[statusKey]?.isLive) {
+							return true;
+						}
+					}
+				}
+			}
+		} catch (e) {
+			this.logger.error(
+				`[isAnyOtherStreamLiveWithCloseGroup] Erro ao verificar outros canais ao vivo para ${groupId}:`,
+				e
+			);
+		}
+		return false;
+	}
+
+	/**
+	 * Altera configuração do grupo para apenas admins enviarem mensagens (fechar/abrir)
+	 * @param {string} groupId
+	 * @param {boolean} setAdminsOnly
+	 * @returns {Promise<boolean>}
+	 */
+	async setGroupMessagesAdminsOnly(groupId, setAdminsOnly) {
+		const bots = await this.findBotsForGroup(groupId);
+		for (const bot of bots) {
+			try {
+				if (!bot.client) continue;
+				const chat = await bot.client.getChatById(groupId);
+				if (!chat || chat.notInGroup) continue;
+				if (typeof chat.setMessagesAdminsOnly === "function") {
+					await chat.setMessagesAdminsOnly(setAdminsOnly);
+					this.logger.info(
+						`[setGroupMessagesAdminsOnly] Grupo ${groupId} ${setAdminsOnly ? "fechado" : "aberto"} com sucesso via bot ${bot.id}`
+					);
+					return true;
+				}
+			} catch (err) {
+				this.logger.error(
+					`[setGroupMessagesAdminsOnly] Erro ao ${setAdminsOnly ? "fechar" : "abrir"} grupo ${groupId} via bot ${bot.id}:`,
+					err?.message || err
+				);
+			}
+		}
+		this.logger.warn(
+			`[setGroupMessagesAdminsOnly] Nenhum bot conseguiu ${setAdminsOnly ? "fechar" : "abrir"} o grupo ${groupId}`
+		);
+		return false;
+	}
+
+	/**
+	 * Fecha o grupo para o evento de stream online e agenda reabertura se houver duração configurada
+	 * @param {string} groupId
+	 * @param {string} platform
+	 * @param {string} channelName
+	 * @param {number|null} [durationMinutes=null]
+	 */
+	async closeGroupForStream(groupId, platform, channelName, durationMinutes = null) {
+		const key = `${groupId}:${platform}:${channelName.toLowerCase()}`;
+		if (this.closeGroupTimers.has(key)) {
+			clearTimeout(this.closeGroupTimers.get(key));
+			this.closeGroupTimers.delete(key);
+		}
+
+		await this.setGroupMessagesAdminsOnly(groupId, true);
+
+		const dur = parseInt(durationMinutes, 10);
+		if (!isNaN(dur) && dur > 0) {
+			const ms = dur * 60 * 1000;
+			this.logger.info(
+				`[closeGroupForStream] Agendando reabertura do grupo ${groupId} após ${dur} minutos (canal ${platform}/${channelName})`
+			);
+			const timer = setTimeout(async () => {
+				this.closeGroupTimers.delete(key);
+				this.logger.info(
+					`[closeGroupForStream] Timer de ${dur}m expirou para ${platform}/${channelName}. Verificando se pode reabrir grupo ${groupId}...`
+				);
+				const otherLive = await this.isAnyOtherStreamLiveWithCloseGroup(
+					groupId,
+					platform,
+					channelName
+				);
+				if (!otherLive) {
+					await this.setGroupMessagesAdminsOnly(groupId, false);
+				} else {
+					this.logger.info(
+						`[closeGroupForStream] Outra stream ainda ao vivo com fecharGrupo no grupo ${groupId}. Grupo permanece fechado.`
+					);
+				}
+			}, ms);
+			if (typeof timer.unref === "function") {
+				timer.unref();
+			}
+			this.closeGroupTimers.set(key, timer);
+		}
+	}
+
+	/**
+	 * Reabre o grupo para o evento de stream offline se não houver outra stream fechando o grupo
+	 * @param {string} groupId
+	 * @param {string} platform
+	 * @param {string} channelName
+	 */
+	async openGroupForStream(groupId, platform, channelName) {
+		const key = `${groupId}:${platform}:${channelName.toLowerCase()}`;
+		if (this.closeGroupTimers.has(key)) {
+			clearTimeout(this.closeGroupTimers.get(key));
+			this.closeGroupTimers.delete(key);
+		}
+
+		const otherLive = await this.isAnyOtherStreamLiveWithCloseGroup(groupId, platform, channelName);
+		if (otherLive) {
+			this.logger.info(
+				`[openGroupForStream] Outra stream com fecharGrupo continua ao vivo no grupo ${groupId}. Grupo não será reaberto agora.`
+			);
+			return;
+		}
+
+		await this.setGroupMessagesAdminsOnly(groupId, false);
 	}
 
 	/**

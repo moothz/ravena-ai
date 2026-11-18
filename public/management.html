@@ -1355,6 +1355,26 @@
                     </label>
                 </div>
 
+                <!-- Fechar Grupo em Lives -->
+                <div class="form-group toggle-row-compact" id="stream-close-group-row">
+                    <div>
+                        <span class="toggle-label" id="lbl-stream-close-group">Fechar Grupo durante a Live</span>
+                        <div class="field-hint">Fecha o grupo (apenas admins enviam mensagens) ao iniciar a live e reabre ao encerrar (ou pelo tempo configurado).</div>
+                    </div>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="stream-close-group">
+                        <span class="slider-round"></span>
+                    </label>
+                </div>
+
+                <div id="stream-close-group-duration-box" class="hidden title-custom-box p-3 mb-3">
+                    <div class="form-group">
+                        <label id="lbl-stream-close-group-duration">Tempo Fechado em Minutos (Opcional)</label>
+                        <input type="number" id="stream-close-group-duration" class="form-control" min="1" max="1440" placeholder="Ex: 60 (deixe vazio para manter fechado até o fim da live)">
+                        <div class="field-hint">Se preenchido, o grupo reabre após estes minutos mesmo se a live continuar online. Vazio = reabre apenas ao encerrar.</div>
+                    </div>
+                </div>
+
                 <!-- Simulador de Notificação WhatsApp da Stream -->
                 <div class="wa-simulator-wrapper mb-3">
                     <div class="wa-sim-title" id="wa-sim-title-label"><i class="fab fa-whatsapp"></i> Prévia da Notificação da Live</div>
