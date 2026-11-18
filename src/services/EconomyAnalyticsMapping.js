@@ -17,8 +17,9 @@
  * Motivos "mistos" (ex.: ADMIN_GRANT, ADMIN_ADJUST) recebem o kind do sentido dominante; os valores
  * de saída continuam em amount_out, então entradas e saídas totais do painel não dependem do kind.
  *
- * Ao mudar um kind, suba MAPPING_VERSION e registre em `annotations` (o histórico já gravado em
- * flows_hourly guarda o kind da época da carga).
+ * Ao mudar um kind, suba MAPPING_VERSION: na subida seguinte a carga regrava o kind de todo o
+ * flows_hourly com o mapeamento atual (tabela meta do analytics.db). Todo motivo mapeado precisa de um
+ * nome legível em LABELS (vira a tabela reason_labels, usada pelo painel).
  */
 "use strict";
 
@@ -95,6 +96,67 @@ const MAPPING = {
 	}
 };
 
+/** Nome legível de cada motivo mapeado (painel). Motivo sem nome aparece cru. */
+const LABELS = {
+	zinthos: {
+		DAILY_REWARD: "Recompensa diária",
+		DIVORCE: "Divórcio (venda de personagem)",
+		ROLL_CRYSTAL: "Cristal de roll",
+		EVENT_REWARD: "Prêmio de evento",
+		WISHLIST_BONUS: "Bônus da lista de desejos",
+		SOULMATE_BONUS: "Bônus de alma gêmea",
+		ADMIN_GRANT: "Concessão de admin",
+		"ADMIN_GRANT:other": "Concessão de admin (outros)",
+		"ADMIN_GRANT:donor_bonus": "Bônus de doador",
+		"ADMIN_GRANT:slots_prize": "Prêmio dos slots",
+		"ADMIN_GRANT:admin_panel_edit": "Ajuste no painel admin",
+		"ADMIN_GRANT:bank_withdraw_zinthos": "Câmbio: compra com Runas",
+		"ADMIN_GRANT:bank_deposit_runas": "Câmbio: venda por Runas",
+		"ADMIN_GRANT:bank_deposit_rollback_error": "Câmbio: estorno de venda com erro",
+		"ADMIN_GRANT:bank_undo_deposit_zinthos": "Câmbio: venda desfeita",
+		"ADMIN_GRANT:bank_undo_withdraw_zinthos": "Câmbio: compra desfeita",
+		MARKET_TRADE: "Mercado: negociação entre jogadores",
+		MARKET_BUY: "Mercado: investimento",
+		MARKET_REFUND: "Mercado: estorno",
+		HOSTING_FEE: "Taxa de hospedagem",
+		HOSTING_FEE_WAIFU: "Taxa de hospedagem: waifu confiscada"
+	},
+	petalitas: {},
+	runas: {
+		"DEPOSIT:pesca": "Venda de peixe",
+		"DEPOSIT:waifu": "Câmbio: venda de Zinthos",
+		"DEPOSIT:jardim": "Câmbio: venda de Petalitas",
+		"WITHDRAW:waifu": "Câmbio: compra de Zinthos",
+		"WITHDRAW:jardim": "Câmbio: compra de Petalitas",
+		"STORE_BUY:slots": "Loja: moedas dos slots",
+		"STORE_BUY:fishing": "Loja: iscas",
+		"BONUS:donor_bonus": "Bônus de doador",
+		"BONUS:slots_prize": "Prêmio dos slots",
+		"BONUS:bonus": "Bônus",
+		"ADMIN_ADJUST:admin": "Ajuste de admin",
+		"TRANSFER_IN:market": "Mercado: recebido de jogador",
+		"TRANSFER_OUT:market": "Mercado: pago a jogador",
+		"UNDO_DEPOSIT:pesca": "Venda de peixe desfeita",
+		"UNDO_DEPOSIT:waifu": "Câmbio desfeito: venda de Zinthos",
+		"UNDO_DEPOSIT:jardim": "Câmbio desfeito: venda de Petalitas",
+		"UNDO_WITHDRAW:waifu": "Câmbio desfeito: compra de Zinthos",
+		"UNDO_WITHDRAW:jardim": "Câmbio desfeito: compra de Petalitas",
+		"UNDO_STORE_BUY:slots": "Loja desfeita: moedas dos slots",
+		"UNDO_STORE_BUY:fishing": "Loja desfeita: iscas"
+	}
+};
+
+/** Linhas da tabela reason_labels: todo motivo mapeado, com nome e tipo. */
+function reasonLabelRows() {
+	const rows = [];
+	for (const [currency, table] of Object.entries(MAPPING)) {
+		for (const [reason, kind] of Object.entries(table)) {
+			rows.push({ currency, reason, kind, label: (LABELS[currency] || {})[reason] || reason });
+		}
+	}
+	return rows;
+}
+
 /**
  * @param {string} currency zinthos | petalitas | runas
  * @param {string} reason motivo cru
@@ -106,4 +168,12 @@ function kindFor(currency, reason) {
 	return table[reason];
 }
 
-module.exports = { MAPPING_VERSION, MAPPING, KINDS, NON_MONETARY_KINDS, kindFor };
+module.exports = {
+	MAPPING_VERSION,
+	MAPPING,
+	LABELS,
+	KINDS,
+	NON_MONETARY_KINDS,
+	kindFor,
+	reasonLabelRows
+};

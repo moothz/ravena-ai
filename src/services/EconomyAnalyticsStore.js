@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS annotations (
 CREATE TABLE IF NOT EXISTS ledger_status (
   currency TEXT PRIMARY KEY, available INTEGER NOT NULL, ts INTEGER NOT NULL
 );
+-- Versão do mapeamento motivo → tipo com que flows_hourly.kind foi gravado
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- Nome legível e tipo de cada motivo mapeado (EconomyAnalyticsMapping.LABELS), regravada na subida
+CREATE TABLE IF NOT EXISTS reason_labels (
+  currency TEXT NOT NULL, reason TEXT NOT NULL, label TEXT NOT NULL, kind TEXT NOT NULL,
+  PRIMARY KEY (currency, reason)
+);
 CREATE INDEX IF NOT EXISTS idx_flows_currency_hour ON flows_hourly(currency, hour);
 CREATE INDEX IF NOT EXISTS idx_balances_currency_ts ON balances(currency, ts);
 CREATE INDEX IF NOT EXISTS idx_load_runs_source ON load_runs(source, ok, window_to);
@@ -68,7 +75,9 @@ const OUR_TABLES = new Set([
 	"received_by_quintile",
 	"load_runs",
 	"annotations",
-	"ledger_status"
+	"ledger_status",
+	"meta",
+	"reason_labels"
 ]);
 
 /** Caminho real (resolve links simbólicos do trecho que já existe). */
@@ -278,6 +287,41 @@ class EconomyAnalyticsStore {
 		});
 		tx();
 		return rows.length;
+	}
+
+	/**
+	 * Alinha o banco ao mapeamento atual: regrava reason_labels e, se a versão do mapeamento mudou desde
+	 * a última vez, regrava o kind de todo o flows_hourly (só este banco; nenhum dado de jogo).
+	 * @returns {{remapped:number, previous:string|null}}
+	 */
+	syncMapping(version, kindFor, labelRows) {
+		let remapped = 0;
+		let previous = null;
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM reason_labels").run();
+			const ins = this.db.prepare(
+				"INSERT INTO reason_labels (currency, reason, label, kind) VALUES (?, ?, ?, ?)"
+			);
+			for (const r of labelRows) ins.run(r.currency, r.reason, r.label, r.kind);
+			const row = this.db.prepare("SELECT value FROM meta WHERE key = 'mapping_version'").get();
+			previous = row ? row.value : null;
+			if (previous !== String(version)) {
+				const upd = this.db.prepare(
+					"UPDATE flows_hourly SET kind = ? WHERE currency = ? AND reason = ? AND kind <> ?"
+				);
+				for (const { currency, reason } of this.db
+					.prepare("SELECT DISTINCT currency, reason FROM flows_hourly")
+					.all()) {
+					const k = kindFor(currency, reason);
+					remapped += upd.run(k, currency, reason, k).changes;
+				}
+				this.db
+					.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('mapping_version', ?)")
+					.run(String(version));
+			}
+		});
+		tx();
+		return { remapped, previous };
 	}
 
 	setLedgerStatus(currency, available, ts) {

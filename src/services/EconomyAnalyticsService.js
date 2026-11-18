@@ -23,7 +23,7 @@ const BetterSQLite = require("better-sqlite3");
 const Logger = require("../utils/Logger");
 const telemetry = require("../telemetry");
 const { EconomyAnalyticsStore, resolvePath } = require("./EconomyAnalyticsStore");
-const { kindFor, MAPPING_VERSION } = require("./EconomyAnalyticsMapping");
+const { kindFor, MAPPING_VERSION, reasonLabelRows } = require("./EconomyAnalyticsMapping");
 const {
 	HOUR_MS,
 	DAY_MS,
@@ -37,15 +37,22 @@ const logger = new Logger("economy-analytics");
 const SCHEMA_VERSION = 1;
 const RECEIVED_WINDOW_MS = 7 * DAY_MS;
 const CHUNK_MS = 30 * DAY_MS;
+const RELOAD_MAX_MS = 90 * DAY_MS;
 const DEFAULT_BACKFILL_START = "2025-01-01";
 // Encerramento do bot: no máximo isso esperando a rodada em andamento (o index.js força saída em 25 s)
 const STOP_WAIT_MS = 3000;
 
-/** GET da rota de resumo de um serviço. Erros não carregam corpo de resposta (evita vazar dados). */
-async function fetchSummary(baseUrl, headers, from, to, timeoutMs, received = false, abort = null) {
+/**
+ * GET da rota de resumo de um serviço. Erros não carregam corpo de resposta (evita vazar dados).
+ * opts.received pede receivedByQuintile (received=1); opts.balances=false pula o cálculo de saldos no
+ * serviço (balances=0, resposta com balances: null), usado nos pedaços históricos e na recarga.
+ */
+async function fetchSummary(baseUrl, headers, from, to, timeoutMs, opts = {}) {
+	const { received = false, balances = true, abort = null } = opts;
 	const url =
 		`${String(baseUrl).replace(/\/+$/, "")}/internal/economy/summary?from=${from}&to=${to}` +
-		(received ? "&received=1" : "");
+		(received ? "&received=1" : "") +
+		(balances ? "" : "&balances=0");
 	const timeout = AbortSignal.timeout(timeoutMs);
 	const signal = abort ? AbortSignal.any([timeout, abort]) : timeout;
 	const res = await fetch(url, { headers, signal });
@@ -58,14 +65,14 @@ async function fetchSummary(baseUrl, headers, from, to, timeoutMs, received = fa
 }
 
 /** Confere a resposta contra o contrato antes de gravar qualquer coisa. */
-function validateSummary(s, currency, from, to) {
+function validateSummary(s, currency, from, to, { balances = true } = {}) {
 	if (!s || typeof s !== "object") throw new Error("resposta vazia");
 	if (s.currency !== currency) throw new Error(`moeda inesperada: ${s.currency}`);
 	if (s.schemaVersion !== SCHEMA_VERSION) {
 		throw new Error(`schemaVersion ${s.schemaVersion} não suportada (esperada ${SCHEMA_VERSION})`);
 	}
 	if (!Number.isFinite(Number(s.generatedAt))) throw new Error("generatedAt ausente");
-	if (!s.balances || !Number.isFinite(Number(s.balances.total))) {
+	if (balances && (!s.balances || !Number.isFinite(Number(s.balances.total)))) {
 		throw new Error("balances ausente");
 	}
 	const flows =
@@ -158,13 +165,14 @@ class EconomyAnalyticsService {
 						from,
 						to,
 						this.timeoutMs,
-						opts.received,
-						this._abort && this._abort.signal
+						{ ...opts, abort: this._abort && this._abort.signal }
 					)
 			},
 			{
 				name: "petalitas",
 				currency: "petalitas",
+				// Sem extrato: uma chamada só, para o retrato atual (nada a fatiar)
+				noChunk: true,
 				fetch: (from, to, opts = {}) =>
 					fetchSummary(
 						this.jardim.url,
@@ -172,8 +180,7 @@ class EconomyAnalyticsService {
 						from,
 						to,
 						this.timeoutMs,
-						opts.received,
-						this._abort && this._abort.signal
+						{ ...opts, abort: this._abort && this._abort.signal }
 					)
 			},
 			{
@@ -185,7 +192,8 @@ class EconomyAnalyticsService {
 					this._withBank((q) =>
 						buildRunasSummary(q, from, to, this.now(), {
 							received: opts.received,
-							balancesAt: opts.live ? to : null
+							balancesAt: opts.live ? to : null,
+							noBalances: opts.balances === false
 						})
 					)
 			}
@@ -205,7 +213,16 @@ class EconomyAnalyticsService {
 	}
 
 	_getStore() {
-		if (!this.store) this.store = new EconomyAnalyticsStore(this.dbPath, this.publishDir);
+		if (!this.store) {
+			const store = new EconomyAnalyticsStore(this.dbPath, this.publishDir);
+			const { remapped, previous } = store.syncMapping(MAPPING_VERSION, kindFor, reasonLabelRows());
+			if (remapped || (previous !== null && previous !== String(MAPPING_VERSION))) {
+				logger.info(
+					`[economy] Mapeamento v${previous} → v${MAPPING_VERSION}: ${remapped} linhas de fluxo com tipo regravado.`
+				);
+			}
+			this.store = store;
+		}
 		return this.store;
 	}
 
@@ -299,10 +316,10 @@ class EconomyAnalyticsService {
 		const out = { ok: true, from, to: hourNow, rows: 0, chunks: 0 };
 		while (from < hourNow) {
 			if (this._stopping) return { ...out, stopped: true };
-			const to =
-				from < this.backfillStart
-					? Math.min(this.backfillStart, hourNow)
-					: Math.min(from + CHUNK_MS, hourNow);
+			let to;
+			if (source.noChunk) to = hourNow;
+			else if (from < this.backfillStart) to = Math.min(this.backfillStart, hourNow);
+			else to = Math.min(from + CHUNK_MS, hourNow);
 			const r = await this._loadWindow(store, source, from, to, runTs + out.chunks, to === hourNow);
 			out.chunks++;
 			if (!r.ok) return { ...out, ok: false, error: r.error, to };
@@ -325,8 +342,11 @@ class EconomyAnalyticsService {
 			},
 			async (span) => {
 				try {
-					const summary = await source.fetch(from, to, { live });
-					const flows = validateSummary(summary, source.currency, from, to).map((f) => ({
+					// Pedaço histórico: sem saldos (balances=0); o retrato só vale para a janela atual
+					const summary = await source.fetch(from, to, { live, balances: live });
+					const flows = validateSummary(summary, source.currency, from, to, {
+						balances: live
+					}).map((f) => ({
 						...f,
 						hour: Number(f.hour),
 						kind: kindFor(source.currency, String(f.reason))
@@ -377,6 +397,68 @@ class EconomyAnalyticsService {
 				}
 			}
 		);
+	}
+
+	/**
+	 * Recarga de uma janela de fluxos (scripts/economy-reload.js): pede de novo os fluxos ao serviço
+	 * (balances=0) ou ao bank.db e regrava só flows_hourly daquela janela, de forma idempotente.
+	 * NUNCA mexe em balances, exceto com runasBalances (só Runas): preenche os retratos diários da janela
+	 * que faltam, a partir do bank.db (só leitura), sem sobrescrever os que existem.
+	 * A janela precisa estar inteira dentro do que já foi carregado e ter no máximo 90 dias.
+	 */
+	async reloadFlows(currency, from, to, { runasBalances = false } = {}) {
+		const source = this.sources.find((s) => s.currency === currency);
+		if (!source) throw new Error(`moeda desconhecida ou desligada: ${currency}`);
+		if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
+			throw new Error("janela inválida: início precisa ser antes do fim");
+		}
+		if (from % HOUR_MS !== 0 || to % HOUR_MS !== 0) {
+			throw new Error("janela inválida: início e fim precisam cair em hora cheia");
+		}
+		if (to - from > RELOAD_MAX_MS) throw new Error("janela inválida: no máximo 90 dias");
+		if (runasBalances && currency !== "runas") {
+			throw new Error("--saldos-runas só vale para Runas");
+		}
+		const store = this._getStore();
+		const last = store.getLastSuccessfulTo(source.name);
+		if (last === null || to > last) {
+			throw new Error("janela inválida: termina depois da última carga bem-sucedida desta moeda");
+		}
+		if (store.getLedgerAvailable(currency) === false) {
+			throw new Error(`${currency} não tem extrato: nada a recarregar`);
+		}
+		const runTs = this.now();
+		const name = `${source.name}.reload`;
+		try {
+			const summary = await source.fetch(from, to, { balances: false });
+			const flows = validateSummary(summary, currency, from, to, { balances: false }).map((f) => ({
+				...f,
+				hour: Number(f.hour),
+				kind: kindFor(currency, String(f.reason))
+			}));
+			let rows = store.writeFlows(currency, from, to, flows);
+			let snapshots = 0;
+			if (runasBalances) {
+				for (const snap of this._withBank((q) => dailySnapshots(q, from, to))) {
+					snapshots += store.writeBalance(currency, snap.ts, snap.balances, true);
+				}
+				rows += snapshots;
+			}
+			store.recordRun({ ts: runTs, source: name, ok: true, from, to, rows });
+			store.publish();
+			return { ok: true, flows: flows.length, snapshots };
+		} catch (err) {
+			store.recordRun({
+				ts: runTs,
+				source: name,
+				ok: false,
+				from,
+				to,
+				rows: 0,
+				error: err.message
+			});
+			throw err;
+		}
 	}
 
 	/**

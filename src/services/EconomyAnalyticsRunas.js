@@ -336,17 +336,24 @@ function dailySnapshots(query, from, to) {
  * @param {object} [opts]
  * @param {boolean} [opts.received] calcula receivedByQuintile (janela <= 8 dias)
  * @param {number|null} [opts.balancesAt] retrato reconstruído neste instante (padrão: agora)
+ * @param {boolean} [opts.noBalances] devolve balances: null (como balances=0 nos serviços)
  */
 function buildRunasSummary(query, from, to, now = Date.now(), opts = {}) {
 	const at = opts.balancesAt ?? null;
-	const balanceByUser = at === null ? currentBalances(query) : balancesAt(query, at, now);
+	// noBalances (pedaço histórico / recarga): nem lê bank_accounts
+	const skip = opts.noBalances && !opts.received;
+	const balanceByUser = skip
+		? null
+		: at === null
+			? currentBalances(query)
+			: balancesAt(query, at, now);
 	const summary = {
 		currency: "runas",
 		schemaVersion: 1,
 		generatedAt: at === null ? now : at,
 		window: { from, to },
 		ledger: { available: true, flows: opts.received ? [] : runasFlows(query, from, to) },
-		balances: balanceStats([...balanceByUser.values()]),
+		balances: skip ? null : balanceStats([...balanceByUser.values()]),
 		receivedByQuintile: []
 	};
 	if (opts.received && to - from <= RECEIVED_MAX_WINDOW_MS) {

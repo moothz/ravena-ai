@@ -151,6 +151,7 @@ nssm-service.bat
 !/scripts/distribute-retroactive-rolls.js
 !/scripts/economy-annotate.js
 !/scripts/economy-status.js
+!/scripts/economy-reload.js
 data/textos/*.txt
 !data/textos/*.example.txt
 /src/scripts
