@@ -989,6 +989,14 @@ async function main() {
 			db.prepare("INSERT INTO ledger_status VALUES ('petalitas', 0, 0)").run();
 			for (let d = 0; d <= 8; d++) bal.run(DAY0 + d * D, "petalitas", 7000);
 			db.close();
+			// Variante: Zinthos só com 3 dias de retrato (sem base de 7 a 9 dias) e um motivo sem mapear
+			fs.copyFileSync(file, path.join(tmpRoot, "veredito2.db"));
+			const db2 = new BetterSQLite(path.join(tmpRoot, "veredito2.db"));
+			db2.prepare("DELETE FROM balances WHERE currency = 'zinthos' AND ts < ?").run(DAY0 + 5 * D);
+			db2
+				.prepare("INSERT INTO flows_hourly VALUES (?, 'zinthos', 'NOVO', 'unknown', 3, 0, 1, 1)")
+				.run(DAY0 + 6 * D);
+			db2.close();
 			const v = readAll(file, dashboardSql("Veredito por moeda (últimos 7 dias)", { from: 0, to }));
 			const by = Object.fromEntries(v.map((x) => [x.Moeda, x]));
 			assert.deepStrictEqual(
@@ -996,17 +1004,60 @@ async function main() {
 				["Zinthos", "Petalitas", "Runas"]
 			);
 			assert.strictEqual(by.Zinthos["Situação"], "atenção");
-			assert.strictEqual(by.Zinthos["Crescimento na semana (%)"], 1.99);
+			assert.strictEqual(by.Zinthos["Por quê"], "crescimento");
+			assert.strictEqual(by.Zinthos["Crescimento (%)"], 1.99);
 			assert.strictEqual(by.Zinthos["Dobra em (semanas)"], 35.1);
 			assert.strictEqual(by.Zinthos["Sem origem (% do criado)"], 0);
+			assert.strictEqual(by.Zinthos["Sem origem"], "0.00% do criado");
 			assert.strictEqual(by.Zinthos["Maior fonte"], "Recompensa diária");
 			assert.strictEqual(by.Runas["Situação"], "agir");
+			assert.strictEqual(by.Runas["Por quê"], "sem origem");
 			assert.strictEqual(by.Runas["Sem origem (% do criado)"], 6);
+			assert.strictEqual(by.Runas["Sem origem (% da massa)"], 0.012);
+			assert.strictEqual(by.Runas["Sem origem"], "6.00% do criado"); // o critério pior (% do criado)
 			assert.strictEqual(by.Runas["Dobra em (semanas)"], 5776.6);
 			assert.strictEqual(by.Runas["Maior fonte"], "Venda de peixe");
 			assert.strictEqual(by.Petalitas["Situação"], "ok · sem extrato");
 			assert.strictEqual(by.Petalitas["Sem origem (% do criado)"], null);
 			assert.strictEqual(by.Petalitas["Dados até"], (DAY0 + 8 * D) / 1000);
+			assert.strictEqual(by.Petalitas["Por quê"], "—");
+			// Sem retrato de 7 a 9 dias atrás: crescimento "sem dados", sem "dobra em"; motivo sem mapear → atenção
+			const v2 = readAll(
+				path.join(tmpRoot, "veredito2.db"),
+				dashboardSql("Veredito por moeda (últimos 7 dias)", { from: 0, to })
+			);
+			const z2 = v2.find((x) => x.Moeda === "Zinthos");
+			assert.strictEqual(z2["Crescimento (%)"], null);
+			assert.strictEqual(z2["Dobra em (semanas)"], null);
+			assert.strictEqual(z2["Situação"], "atenção");
+			assert.strictEqual(z2["Por quê"], "motivo sem mapear");
+			const conf = readAll(
+				path.join(tmpRoot, "veredito2.db"),
+				dashboardSql("Confiança: de quando são os dados (agora)", { from: 0, to })
+			);
+			assert.strictEqual(conf.find((x) => x.Fonte === "Zinthos")["Motivos sem mapear (7 dias)"], 1);
+			assert.strictEqual(conf.find((x) => x.Fonte === "Runas")["Motivos sem mapear (7 dias)"], 0);
+		});
+
+		await test("de onde vem e para onde vai: top 8 por |líquido| + Outros, sem mapear sempre aparece", () => {
+			const { file, db } = freshDb("topn.db");
+			const fl = db.prepare("INSERT INTO flows_hourly VALUES (?, 'runas', ?, ?, ?, ?, 1, 1)");
+			for (let i = 1; i <= 12; i++) fl.run(DAY0 + i * H, `R${i}`, "creation", i * 100, 0);
+			fl.run(DAY0, "MISTERIO", "unknown", 1, 0); // o menor de todos, mas sem mapear
+			db.close();
+			const rows = readAll(
+				file,
+				dashboardSql("De onde vem e para onde vai — ${moeda} (últimos 7 dias)", {
+					from: 0,
+					to: DAY0 + D,
+					moeda: "runas"
+				})
+			);
+			assert.deepStrictEqual(
+				rows.map((r) => r.Motivo),
+				["R12", "R11", "R10", "R9", "R8", "R7", "R6", "R5", "MISTERIO", "Outros (4 motivos)"]
+			);
+			assert.strictEqual(rows[9]["Líquido"], 100 + 200 + 300 + 400);
 		});
 
 		await test("totais: criado/destruído só com creation/destruction; câmbio e transferência à parte; nomes legíveis", () => {
@@ -1114,6 +1165,18 @@ async function main() {
 							"so_massa",
 							"so_criado",
 							"lv_g",
+							"lv_sm",
+							"lv_sc",
+							"lv_u",
+							"lv",
+							"unk",
+							"motivo",
+							"ent",
+							"sai",
+							"liq",
+							"tx",
+							"pos",
+							"grp",
 							"lv_so",
 							"d",
 							"rn",
@@ -1139,7 +1202,7 @@ async function main() {
 			}
 		});
 
-		await test("mapeamento: todo motivo mapeado tem nome; troca de versão regrava o tipo na subida", () => {
+		await test("mapeamento: todo motivo mapeado tem nome; a subida regrava o tipo mesmo sem subir a versão", () => {
 			for (const [cur, table] of Object.entries(MAPPING)) {
 				for (const reason of Object.keys(table))
 					assert.ok(LABELS[cur][reason], `${cur}/${reason} sem nome legível`);
@@ -1169,18 +1232,35 @@ async function main() {
 				String(MAPPING_VERSION)
 			);
 			assert.strictEqual(s2.store.db.prepare("SELECT COUNT(*) n FROM balances").get().n, balBefore);
-			// Mesma versão: não mexe de novo
-			s2.store.db
-				.prepare("UPDATE flows_hourly SET kind = 'transfer' WHERE reason = 'DAILY_REWARD'")
-				.run();
+			// Mudança no mapeamento SEM subir a versão também vale na próxima subida
 			s2.store.close();
 			s2.store = null;
-			const s3 = new EconomyAnalyticsService({ dbPath: wdb, publishDir: pdir, sources: [] });
-			assert.strictEqual(
-				s3._getStore().db.prepare("SELECT kind FROM flows_hourly WHERE reason='DAILY_REWARD'").get()
-					.kind,
-				"transfer"
-			);
+			const before = MAPPING.zinthos.DAILY_REWARD;
+			MAPPING.zinthos.MOTIVO_FUTURO = "destruction";
+			MAPPING.zinthos.DAILY_REWARD = "transfer";
+			let s3;
+			try {
+				s3 = new EconomyAnalyticsService({ dbPath: wdb, publishDir: pdir, sources: [] });
+				const k3 = s3
+					._getStore()
+					.db.prepare("SELECT reason, kind FROM flows_hourly ORDER BY reason")
+					.all();
+				assert.deepStrictEqual(k3, [
+					{ reason: "DAILY_REWARD", kind: "transfer" },
+					{ reason: "MOTIVO_FUTURO", kind: "destruction" }
+				]);
+				assert.strictEqual(
+					s3.store.db
+						.prepare(
+							"SELECT kind FROM reason_labels WHERE currency='zinthos' AND reason='DAILY_REWARD'"
+						)
+						.get().kind,
+					"transfer"
+				);
+			} finally {
+				MAPPING.zinthos.DAILY_REWARD = before;
+				delete MAPPING.zinthos.MOTIVO_FUTURO;
+			}
 			s3.store.close();
 		});
 

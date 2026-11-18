@@ -17,9 +17,9 @@
  * Motivos "mistos" (ex.: ADMIN_GRANT, ADMIN_ADJUST) recebem o kind do sentido dominante; os valores
  * de saída continuam em amount_out, então entradas e saídas totais do painel não dependem do kind.
  *
- * Ao mudar um kind, suba MAPPING_VERSION: na subida seguinte a carga regrava o kind de todo o
- * flows_hourly com o mapeamento atual (tabela meta do analytics.db). Todo motivo mapeado precisa de um
- * nome legível em LABELS (vira a tabela reason_labels, usada pelo painel).
+ * A cada subida a carga regrava o kind de toda linha do flows_hourly que difere deste mapeamento (não
+ * precisa subir MAPPING_VERSION para valer; suba para registrar a mudança). Todo motivo mapeado precisa
+ * de um nome legível em LABELS (vira a tabela reason_labels, usada pelo painel).
  */
 "use strict";
 

@@ -290,8 +290,10 @@ class EconomyAnalyticsStore {
 	}
 
 	/**
-	 * Alinha o banco ao mapeamento atual: regrava reason_labels e, se a versão do mapeamento mudou desde
-	 * a última vez, regrava o kind de todo o flows_hourly (só este banco; nenhum dado de jogo).
+	 * Alinha o banco ao mapeamento atual, a cada subida: regrava reason_labels e o kind de toda linha de
+	 * flows_hourly cujo tipo difere do mapeamento atual (só este banco; nenhum dado de jogo). Não depende
+	 * de alguém subir MAPPING_VERSION: qualquer mudança no mapeamento é aplicada ao histórico inteiro.
+	 * meta.mapping_version fica só como registro.
 	 * @returns {{remapped:number, previous:string|null}}
 	 */
 	syncMapping(version, kindFor, labelRows) {
@@ -305,20 +307,18 @@ class EconomyAnalyticsStore {
 			for (const r of labelRows) ins.run(r.currency, r.reason, r.label, r.kind);
 			const row = this.db.prepare("SELECT value FROM meta WHERE key = 'mapping_version'").get();
 			previous = row ? row.value : null;
-			if (previous !== String(version)) {
-				const upd = this.db.prepare(
-					"UPDATE flows_hourly SET kind = ? WHERE currency = ? AND reason = ? AND kind <> ?"
-				);
-				for (const { currency, reason } of this.db
-					.prepare("SELECT DISTINCT currency, reason FROM flows_hourly")
-					.all()) {
-					const k = kindFor(currency, reason);
-					remapped += upd.run(k, currency, reason, k).changes;
-				}
-				this.db
-					.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('mapping_version', ?)")
-					.run(String(version));
+			const upd = this.db.prepare(
+				"UPDATE flows_hourly SET kind = ? WHERE currency = ? AND reason = ? AND kind <> ?"
+			);
+			for (const { currency, reason } of this.db
+				.prepare("SELECT DISTINCT currency, reason FROM flows_hourly")
+				.all()) {
+				const k = kindFor(currency, reason);
+				remapped += upd.run(k, currency, reason, k).changes;
 			}
+			this.db
+				.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('mapping_version', ?)")
+				.run(String(version));
 		});
 		tx();
 		return { remapped, previous };

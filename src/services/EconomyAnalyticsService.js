@@ -216,9 +216,9 @@ class EconomyAnalyticsService {
 		if (!this.store) {
 			const store = new EconomyAnalyticsStore(this.dbPath, this.publishDir);
 			const { remapped, previous } = store.syncMapping(MAPPING_VERSION, kindFor, reasonLabelRows());
-			if (remapped || (previous !== null && previous !== String(MAPPING_VERSION))) {
+			if (remapped) {
 				logger.info(
-					`[economy] Mapeamento v${previous} → v${MAPPING_VERSION}: ${remapped} linhas de fluxo com tipo regravado.`
+					`[economy] Mapeamento (v${previous ?? "-"} → v${MAPPING_VERSION}): ${remapped} linhas de fluxo com tipo regravado.`
 				);
 			}
 			this.store = store;
