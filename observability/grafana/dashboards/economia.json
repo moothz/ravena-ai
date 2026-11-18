@@ -1147,7 +1147,7 @@
      "id": 10,
      "type": "table",
      "title": "Quem recebe — ${moeda} (últimos 7 dias, por faixa de saldo atual)",
-     "description": "Contas com saldo > 0 em 5 faixas pelo saldo atual; quanto cada faixa recebeu de motivos de criação nos 7 dias antes do último dia carregado. Faixa com menos de 10 contas fica vazia (privacidade). Petalitas: sem extrato.",
+     "description": "Contas com saldo > 0 em 5 faixas pelo saldo atual; quanto cada faixa recebeu de motivos de criação nos 7 dias antes do último dia carregado. Petalitas: sem extrato.",
      "datasource": {
       "type": "frser-sqlite-datasource",
       "uid": "economia-sqlite"
@@ -1292,7 +1292,7 @@
      "id": 12,
      "type": "bargauge",
      "title": "Massa por faixa de saldo — ${moeda} (retrato mais recente)",
-     "description": "Soma dos saldos em cada quinto (entre quem tem saldo > 0). Quinto com menos de 10 contas fica vazio.",
+     "description": "Soma dos saldos em cada quinto (entre quem tem saldo > 0). Com menos de 5 contas com saldo, algum quinto fica vazio.",
      "datasource": {
       "type": "frser-sqlite-datasource",
       "uid": "economia-sqlite"

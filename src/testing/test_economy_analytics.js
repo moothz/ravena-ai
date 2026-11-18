@@ -287,14 +287,15 @@ async function main() {
 	});
 
 	// ----------------------------------------------------------------------- estatística
-	await test("quintos com n < 10 saem nulos; percentis, top10Share; total inclui saldo negativo", () => {
+	await test("quintos sempre preenchidos (faixa pequena inclusive); percentis, top10Share; total inclui saldo negativo", () => {
 		const small = R.balanceStats([0, 0, ...Array.from({ length: 30 }, (_, i) => i + 1)]);
 		assert.strictEqual(small.accounts, 32);
 		assert.strictEqual(small.holders, 30);
 		assert.strictEqual(small.total, 465);
 		assert.ok(
-			small.quintiles.every((q) => q.n === 6 && q.min === null && q.max === null && q.sum === null)
+			small.quintiles.every((q) => q.n === 6 && q.min !== null && q.max !== null && q.sum !== null)
 		);
+		assert.deepStrictEqual(small.quintiles[0], { q: 1, n: 6, min: 1, max: 6, sum: 21 });
 		assert.strictEqual(small.p50, 15);
 		assert.strictEqual(small.p90, 27);
 		assert.strictEqual(small.top10Share, Number(((28 + 29 + 30) / 465).toFixed(4)));
@@ -308,8 +309,10 @@ async function main() {
 			mixed.quintiles.map((q) => q.n),
 			[9, 10, 10, 10, 10]
 		);
-		assert.strictEqual(mixed.quintiles[0].sum, null);
+		assert.strictEqual(mixed.quintiles[0].sum, 45);
 		assert.notStrictEqual(mixed.quintiles[1].sum, null);
+		// Quinto vazio (menos de 5 contas com saldo) continua nulo
+		assert.strictEqual(R.balanceStats([7]).quintiles[0].sum, null);
 
 		// Saldo negativo entra no total (como nos serviços), não na concentração
 		const neg = R.balanceStats([-50, 10, 30]);
@@ -323,7 +326,7 @@ async function main() {
 		assert.strictEqual(empty.top10Share, null);
 	});
 
-	await test("receivedByQuintile: nulos em grupo pequeno, mediana inclui quem não recebeu", () => {
+	await test("receivedByQuintile: preenchido em grupo pequeno, mediana inclui quem não recebeu", () => {
 		const bal = new Map(Array.from({ length: 50 }, (_, i) => [`u${i}`, i + 1]));
 		bal.set("zero", 0);
 		const got = new Map([
@@ -342,7 +345,13 @@ async function main() {
 			]),
 			new Map([["a", 5]])
 		);
-		assert.ok(few.every((q) => q.receivedSum === null && q.receivedMedian === null));
+		// 2 contas: quintos 1, 2 e 4 vazios (nulos); os com conta vêm preenchidos
+		assert.deepStrictEqual(
+			few.map((q) => q.n),
+			[0, 0, 1, 0, 1]
+		);
+		assert.deepStrictEqual(few[2], { q: 3, n: 1, receivedSum: 5, receivedMedian: 5 });
+		assert.strictEqual(few[0].receivedSum, null);
 	});
 
 	// ----------------------------------------------------------------------- Runas do bank.db

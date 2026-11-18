@@ -2,8 +2,8 @@
  * EconomyAnalyticsRunas.js
  *
  * Resumo da economia de Runas a partir do bank.db local (só leitura), no mesmo formato da rota
- * `GET /internal/economy/summary` dos serviços (contrato do painel, seção 1). Os IDs de usuário só
- * existem em memória durante o cálculo; nada por jogador é devolvido.
+ * `GET /internal/economy/summary` dos serviços (contrato do painel, seção 1), e o detalhe por jogador
+ * no formato de `GET /internal/economy/players` (página Jogadores).
  *
  * Também traz as funções de estatística (quintos, percentis) usadas no cálculo.
  */
@@ -15,7 +15,6 @@ const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 // O dia econômico vira às 04:00 BRT = 07:00 UTC (BankService.getTodayDateString)
 const DAY_OFFSET_MS = 7 * HOUR_MS;
-const MIN_GROUP = 10; // quintos com n < 10 saem nulos
 const RECEIVED_MAX_WINDOW_MS = 8 * DAY_MS;
 
 /** Início (epoch ms) do dia econômico que contém `ts`. */
@@ -71,7 +70,7 @@ function balanceStats(values) {
 	const quintiles = quintileRanges(n).map(({ q, start, end }) => {
 		const slice = holders.slice(start, end);
 		const size = slice.length;
-		if (size < MIN_GROUP) return { q, n: size, min: null, max: null, sum: null };
+		if (size === 0) return { q, n: 0, min: null, max: null, sum: null };
 		return {
 			q,
 			n: size,
@@ -101,7 +100,7 @@ function receivedByQuintile(balanceByUser, receivedByUser) {
 	return quintileRanges(holders.length).map(({ q, start, end }) => {
 		const slice = holders.slice(start, end);
 		const size = slice.length;
-		if (size < MIN_GROUP) return { q, n: size, receivedSum: null, receivedMedian: null };
+		if (size === 0) return { q, n: 0, receivedSum: null, receivedMedian: null };
 		const got = slice.map(([u]) => receivedByUser.get(u) || 0).sort((a, b) => a - b);
 		return {
 			q,
@@ -369,7 +368,6 @@ module.exports = {
 	HOUR_MS,
 	DAY_MS,
 	DAY_OFFSET_MS,
-	MIN_GROUP,
 	economicDayStart,
 	hourStart,
 	percentile,
