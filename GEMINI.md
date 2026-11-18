@@ -73,6 +73,11 @@ Este projeto é executado inteiramente dentro de containers Docker. O container 
   npm run lint:fix
   ```
 
+## Privacidade e Proteção de Dados de Usuários em Commits (OBRIGATÓRIO)
+- **NUNCA** inclua números de telefone reais de usuários, JIDs reais (`@s.whatsapp.net`, `@c.us`), nomes de usuários ou dados pessoais em arquivos versionados no git (testes, documentações, logs, fixtures, mocks ou código).
+- **SEMPRE** utilize dados sintéticos e fictícios para testes e exemplos (ex.: `5511999990001`, `5511999991111@s.whatsapp.net`, `logs@g.us`, `120363000000000099@g.us`).
+- **Verificação obrigatória pré-commit:** Antes de qualquer commit, analise o `git diff` e garanta que nenhum identificador real de usuário ou grupo privado real seja exposto.
+
 ## Telemetria OpenTelemetry (OBRIGATÓRIO em todo PR)
 Todo comando, rota, serviço ou fluxo novo (ou alterado) deve sair instrumentado. Referência completa: `OBSERVABILITY.md`. Helpers em `src/telemetry/index.js` (no-op com a telemetria desligada, então não precisa de `if`).
 - **Comandos:** o `CommandHandler` já cria o span `command <nome>`. Acrescente os atributos de negócio relevantes com `telemetry.setAttrs({ "ravena.<domínio>.<campo>": valor })` e, quando o comando recusar algo esperado (saldo, cooldown, limite), marque `app.outcome: "rejected"` e `app.reject.reason: "<motivo_curto>"`. Recusa de negócio **não** é erro.

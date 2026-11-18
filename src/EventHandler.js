@@ -134,6 +134,7 @@ class EventHandler extends EventEmitter {
 		this.pvDebounce = {};
 		this.activeSpammers = new Set();
 		this.spammerPhoneMap = new Map();
+		this.knownSpammers = new Set();
 		this.spammerActiveWindowUntil = 0;
 		this.sentStickersByOriginalMsg = new Map();
 		this.recentSpammerLeaveNotices = new Map();
@@ -141,6 +142,7 @@ class EventHandler extends EventEmitter {
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
+		this.loadKnownSpammers();
 	}
 
 	/**
@@ -2770,10 +2772,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 
 						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
-						// Aplica-se apenas às ravenas normais (para comunitárias, gera mensagem subsequente de sugestão com comandos)
+						// Aplica-se a bots normais e comunitários (apenas VIP e privado são isentos)
 						let blockLogsText = "";
-						let msgSubsequentCommands = "";
-						const isNormalBot = !bot.vip && !bot.comunitario && !bot.privado;
+						const msgSubsequentCommands = "";
+						const shouldPunishRemoval = !bot.vip && !bot.privado;
 
 						const currentPeriod =
 							periods && periods.length > 0 ? periods[periods.length - 1] : null;
@@ -2796,8 +2798,31 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						const removerId = data.responsavel?.id || null;
 						const cleanRemoverPhone = removerId ? removerId.replace(/\D/g, "").split("@")[0] : null;
 						const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
-						const isRemovedBySelf =
-							cleanRemoverPhone && botCleanPhone && cleanRemoverPhone === botCleanPhone;
+						const botNumbers = [
+							botCleanPhone,
+							bot.id ? String(bot.id).replace(/\D/g, "") : null,
+							bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : null,
+							bot.myLid ? String(bot.myLid).replace(/\D/g, "") : null
+						].filter(Boolean);
+
+						const isRemovedBySelf = Boolean(
+							cleanRemoverPhone &&
+							(botNumbers.includes(cleanRemoverPhone) ||
+								(botCleanPhone && cleanRemoverPhone === botCleanPhone))
+						);
+
+						const cleanRespPhone = bot.numeroResponsavel
+							? String(bot.numeroResponsavel).replace(/\D/g, "").split("@")[0]
+							: null;
+						const isRemovedByAdminComunitaria = Boolean(
+							bot.comunitario &&
+							cleanRespPhone &&
+							cleanRemoverPhone &&
+							(cleanRemoverPhone === cleanRespPhone ||
+								cleanRemoverPhone.endsWith(cleanRespPhone) ||
+								cleanRespPhone.endsWith(cleanRemoverPhone))
+						);
+
 						const isRemoverSuperAdmin = removerId ? this.adminUtils.isSuperAdmin(removerId) : false;
 						const isAmigavel = !!(group.removidoAmigavel || group.saidaAmigavel);
 
@@ -2807,6 +2832,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							isLessThan7Days &&
 							cleanRemoverPhone &&
 							!isRemovedBySelf &&
+							!isRemovedByAdminComunitaria &&
 							!isRemoverSuperAdmin &&
 							!isAmigavel
 						) {
@@ -2845,24 +2871,18 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 							});
 						};
 
-						const botNumbers = [
-							botCleanPhone,
-							bot.id ? String(bot.id).replace(/\D/g, "") : null,
-							bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : null,
-							bot.myLid ? String(bot.myLid).replace(/\D/g, "") : null
-						].filter(Boolean);
-
 						if (
-							isNormalBot &&
+							shouldPunishRemoval &&
 							isLessThan7Days &&
 							cleanRemoverPhone &&
 							!isRemovedBySelf &&
+							!isRemovedByAdminComunitaria &&
 							!isRemoverSuperAdmin &&
 							!isRemoverDonator &&
 							!isAmigavel
 						) {
 							this.logger.info(
-								`[processGroupLeave] Bot normal '${bot.id}' removido em <7d (${durationMs}ms, <24h: ${isLessThan24Hours}) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+								`[processGroupLeave] Bot '${bot.id}' (comunitário: ${Boolean(bot.comunitario)}) removido em <7d (${durationMs}ms, <24h: ${isLessThan24Hours}) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
 							);
 
 							// 1. Busca código de convite e autor do convite
@@ -3008,100 +3028,6 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								if (blockLogParts.length > 0) {
 									blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
 								}
-							}
-						} else if (
-							bot.comunitario &&
-							isLessThan7Days &&
-							cleanRemoverPhone &&
-							!isRemovedBySelf &&
-							!isRemoverSuperAdmin &&
-							!isRemoverDonator &&
-							!isAmigavel
-						) {
-							// Para ravenas comunitárias, não bloqueia automaticamente, mas monta os comandos
-							// para que o admin possa encaminhar diretamente para o bot
-							let inviteCode = group.inviteCode || null;
-							let inviterId = group.addedBy || null;
-
-							try {
-								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
-								if (inviteHistory && inviteHistory.length > 0) {
-									const latestInvite = inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
-									if (latestInvite) {
-										if (!inviteCode && latestInvite.invite_code) {
-											inviteCode = latestInvite.invite_code;
-										}
-										if (!inviterId && latestInvite.author_id) {
-											inviterId = latestInvite.author_id;
-										}
-									}
-								}
-							} catch (invErr) {
-								this.logger.error(
-									"Erro ao buscar histórico de convites para comandos de saída comunitária:",
-									invErr
-								);
-							}
-
-							const cleanInviterPhone = inviterId
-								? inviterId.replace(/\D/g, "").split("@")[0]
-								: null;
-
-							const targetNumbersSet = new Set();
-							if (cleanRemoverPhone) targetNumbersSet.add(cleanRemoverPhone);
-							if (cleanInviterPhone) targetNumbersSet.add(cleanInviterPhone);
-
-							if (isLessThan24Hours) {
-								let adminEntries = [];
-								if (Array.isArray(group.admins)) {
-									adminEntries = group.admins;
-								} else if (typeof group.admins === "string") {
-									try {
-										adminEntries = JSON.parse(group.admins);
-									} catch (e) {
-										adminEntries = [];
-									}
-								}
-
-								for (const adminEntry of adminEntries) {
-									if (!adminEntry) continue;
-									const adminClean = String(adminEntry).replace(/\D/g, "").split("@")[0];
-									if (adminClean && adminClean.length >= 8) {
-										targetNumbersSet.add(adminClean);
-									}
-								}
-							}
-
-							const targetNumbers = Array.from(targetNumbersSet).filter(
-								(num) =>
-									num &&
-									!botNumbers.includes(num) &&
-									!this.adminUtils.isSuperAdmin(num) &&
-									!isDonorNumber(num)
-							);
-
-							const commands = [];
-							if (targetNumbers.length === 1) {
-								commands.push(`!sa-block ${targetNumbers[0]}`);
-							} else if (targetNumbers.length > 1) {
-								commands.push(`!sa-blockList ${targetNumbers.join(", ")}`);
-							}
-
-							if (cleanRemoverPhone) {
-								if ((!cleanInviterPhone || cleanInviterPhone === cleanRemoverPhone) && inviteCode) {
-									commands.push(`!sa-blockInvites ${cleanRemoverPhone} ${inviteCode}`);
-								} else {
-									commands.push(`!sa-blockInvites ${cleanRemoverPhone}`);
-								}
-							}
-							if (cleanInviterPhone && cleanInviterPhone !== cleanRemoverPhone) {
-								commands.push(
-									`!sa-blockInvites ${cleanInviterPhone}${inviteCode ? ` ${inviteCode}` : ""}`.trim()
-								);
-							}
-
-							if (commands.length > 0) {
-								msgSubsequentCommands = commands.join("\n");
 							}
 						}
 
@@ -4101,6 +4027,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		}
 
 		const userId = typeof user === "string" ? user : user?.id?._serialized || user?.id || "";
+		if (this.isKnownSpammer(cleanPhone) || this.isKnownSpammer(userId)) {
+			return "Known_Spammer";
+		}
+
 		if (
 			(userId && this.activeSpammers.has(userId)) ||
 			(cleanPhone && this.activeSpammers.has(cleanPhone))
@@ -4156,6 +4086,59 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		const clean = str.split("@")[0].replace(/\D/g, "");
 		if (!clean) return false;
 		return clean.startsWith("63") || clean.startsWith("62") || clean.startsWith("380");
+	}
+
+	/**
+	 * Verifica se o telefone ou JID/LID está cadastrado na lista persistente de known spammers
+	 * @param {string} phoneOrId
+	 * @returns {boolean}
+	 */
+	isKnownSpammer(phoneOrId) {
+		if (!phoneOrId || !this.knownSpammers) return false;
+		const str = String(phoneOrId).trim();
+		const pure = str.split("@")[0].replace(/\D/g, "");
+		if (pure && this.knownSpammers.has(pure)) return true;
+		if (this.knownSpammers.has(str)) return true;
+		return false;
+	}
+
+	/**
+	 * Carrega a lista persistente de known spammers do banco de dados
+	 */
+	async loadKnownSpammers() {
+		try {
+			if (!this.database || typeof this.database.getKnownSpammers !== "function") return;
+			const list = await this.database.getKnownSpammers();
+			if (Array.isArray(list)) {
+				this.knownSpammers = new Set(list.map((r) => r.number));
+				this.logger.info(
+					`[EventHandler] ${this.knownSpammers.size} known spammers carregados do banco.`
+				);
+			}
+		} catch (err) {
+			this.logger.error("Erro ao carregar known spammers:", err);
+		}
+	}
+
+	/**
+	 * Adiciona um número aos known spammers em memória e banco de dados
+	 */
+	async addKnownSpammer(phoneNumber, reason = "Manual", addedBy = null) {
+		const clean = String(phoneNumber).replace(/\D/g, "");
+		if (!clean) return false;
+		if (!this.knownSpammers) this.knownSpammers = new Set();
+		this.knownSpammers.add(clean);
+		return this.database.addKnownSpammer(clean, reason, addedBy);
+	}
+
+	/**
+	 * Remove um número dos known spammers em memória e banco de dados
+	 */
+	async removeKnownSpammer(phoneNumber) {
+		const clean = String(phoneNumber).replace(/\D/g, "");
+		if (!clean) return false;
+		if (this.knownSpammers) this.knownSpammers.delete(clean);
+		return this.database.removeKnownSpammer(clean);
 	}
 
 	/**
@@ -4373,6 +4356,14 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				return true;
 			}
 
+			// 1.5. Está no banco de spammers conhecidos (known_spammers)?
+			if (
+				(cleanPhone && this.isKnownSpammer(cleanPhone)) ||
+				(userId && this.isKnownSpammer(userId))
+			) {
+				return true;
+			}
+
 			// 2. Checa se o nome do usuário segue o padrão MI### (3 a 8 números)
 			if (this.isSpammerName(userName)) {
 				return true;
@@ -4415,7 +4406,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 					if (this.isSpammerWhitelisted(grp, userId, participantPhone)) {
 						continue;
 					}
-					if (this.isSpammerPrefix(participantPhone)) {
+					if (this.isSpammerPrefix(participantPhone) || this.isKnownSpammer(participantPhone)) {
 						this.registerSpammer(userId, participantPhone, isLid ? userId : null);
 						return true;
 					}
@@ -4442,7 +4433,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 								if (this.isSpammerWhitelisted(grp, userId, cPhone)) {
 									continue;
 								}
-								if (this.isSpammerPrefix(cPhone)) {
+								if (this.isSpammerPrefix(cPhone) || this.isKnownSpammer(cPhone)) {
 									this.registerSpammer(userId, cPhone, isLid ? userId : null);
 									return true;
 								}
@@ -4479,6 +4470,11 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 
 			// 1. Está no Set de spammers ativos?
 			if ((pId && this.activeSpammers.has(pId)) || (phone && this.activeSpammers.has(phone))) {
+				return true;
+			}
+
+			// 1.5. Está no banco de spammers conhecidos (known_spammers)?
+			if ((phone && this.isKnownSpammer(phone)) || (pId && this.isKnownSpammer(pId))) {
 				return true;
 			}
 

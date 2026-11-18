@@ -120,6 +120,12 @@ class CoreRepository {
 				number TEXT PRIMARY KEY,
 				timestamp INTEGER
 			)`,
+			known_spammers: `CREATE TABLE IF NOT EXISTS known_spammers (
+				number TEXT PRIMARY KEY,
+				reason TEXT,
+				added_by TEXT,
+				timestamp INTEGER
+			)`,
 			global_ignored_users: `CREATE TABLE IF NOT EXISTS global_ignored_users (
 				identifier TEXT PRIMARY KEY,
 				user_id TEXT,
@@ -1427,6 +1433,63 @@ class CoreRepository {
 			return rows;
 		} catch (error) {
 			this.logger.error("Error getting local blocks:", error);
+			return [];
+		}
+	}
+
+	// --- Known Spammers ---
+
+	async addKnownSpammer(phoneNumber, reason = "Manual", addedBy = null) {
+		try {
+			const clean = String(phoneNumber).replace(/\D/g, "");
+			if (!clean) return false;
+			this.mappers.run(
+				this.DB,
+				"INSERT OR REPLACE INTO known_spammers (number, reason, added_by, timestamp) VALUES (?, ?, ?, ?)",
+				[clean, reason, addedBy, Date.now()]
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error adding known spammer:", error);
+			return false;
+		}
+	}
+
+	async removeKnownSpammer(phoneNumber) {
+		try {
+			const clean = String(phoneNumber).replace(/\D/g, "");
+			if (!clean) return false;
+			this.mappers.run(this.DB, "DELETE FROM known_spammers WHERE number = ?", [clean]);
+			return true;
+		} catch (error) {
+			this.logger.error("Error removing known spammer:", error);
+			return false;
+		}
+	}
+
+	async isKnownSpammer(phoneNumber) {
+		try {
+			const clean = String(phoneNumber).replace(/\D/g, "");
+			if (!clean) return false;
+			const row = this.mappers.get(this.DB, "SELECT number FROM known_spammers WHERE number = ?", [
+				clean
+			]);
+			return !!row;
+		} catch (error) {
+			this.logger.error("Error checking known spammer:", error);
+			return false;
+		}
+	}
+
+	async getKnownSpammers() {
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				"SELECT * FROM known_spammers ORDER BY timestamp DESC"
+			);
+			return rows;
+		} catch (error) {
+			this.logger.error("Error getting known spammers:", error);
 			return [];
 		}
 	}

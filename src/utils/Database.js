@@ -908,6 +908,31 @@ class Database {
 		return this.coreRepo.getLocalBlocks();
 	}
 
+	// --- Known Spammers ---
+
+	async addKnownSpammer(phoneNumber, reason = "Manual", addedBy = null) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] addKnownSpammer() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.addKnownSpammer(phoneNumber, reason, addedBy);
+	}
+	async removeKnownSpammer(phoneNumber) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] removeKnownSpammer() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.removeKnownSpammer(phoneNumber);
+	}
+	async isKnownSpammer(phoneNumber) {
+		return this.coreRepo.isKnownSpammer(phoneNumber);
+	}
+	async getKnownSpammers() {
+		return this.coreRepo.getKnownSpammers();
+	}
+
 	// --- Global Ignored Users ---
 
 	async addGlobalIgnored(identifiers, meta = {}) {

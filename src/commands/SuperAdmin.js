@@ -118,6 +118,30 @@ class SuperAdmin {
 			},
 			blockInvites: { method: "blockInvites", description: "Bloqueia os invites dessa pessoa" },
 			unblockInvites: { method: "unblockInvites", description: "Bloqueia os invites dessa pessoa" },
+			addSpammer: {
+				method: "addSpammer",
+				description: "Adiciona um ou mais números à lista de spammers conhecidos"
+			},
+			addKnownSpammer: {
+				method: "addSpammer",
+				description: "Alias para addSpammer"
+			},
+			delSpammer: {
+				method: "delSpammer",
+				description: "Remove um ou mais números da lista de spammers conhecidos"
+			},
+			removeSpammer: {
+				method: "delSpammer",
+				description: "Alias para delSpammer"
+			},
+			listSpammers: {
+				method: "listSpammers",
+				description: "Lista todos os spammers conhecidos registrados"
+			},
+			listKnownSpammers: {
+				method: "listSpammers",
+				description: "Alias para listSpammers"
+			},
 			blockList: {
 				method: "blockList",
 				description: "Bloqueia todos os contatos recebidos separados por vírgula"
@@ -2508,6 +2532,182 @@ Break down the cost by category and provide a total estimated cost.`;
 		return new ReturnMessage({
 			chatId,
 			content: `✅ Convites do número ${phoneNumber} desbloqueados com sucesso.`
+		});
+	}
+
+	/**
+	 * Adiciona um ou mais números à lista de spammers conhecidos
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async addSpammer(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"ℹ️ Uso: !sa-addSpammer <numero, numero2...> [motivo]\nExemplo: !sa-addSpammer 5511999999999, 5511888888888 Ataque de Report"
+			});
+		}
+
+		const fullText = args.join(" ");
+		let rawItems = [];
+		let reason = "Manual";
+
+		if (fullText.includes(",")) {
+			rawItems = fullText
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+			const lastItem = rawItems[rawItems.length - 1];
+			const lastParts = lastItem.split(/\s+/);
+			if (lastParts.length > 1 && !lastParts[1].match(/^\d+$/)) {
+				rawItems[rawItems.length - 1] = lastParts[0];
+				reason = lastParts.slice(1).join(" ");
+			}
+		} else {
+			const parts = fullText.split(/\s+/);
+			rawItems = [parts[0]];
+			if (parts.length > 1) {
+				reason = parts.slice(1).join(" ");
+			}
+		}
+
+		const added = [];
+		const skipped = [];
+
+		for (const item of rawItems) {
+			const clean = item.replace(/\D/g, "");
+			if (!clean || clean.length < 8) {
+				skipped.push(`${item} (número inválido)`);
+				continue;
+			}
+
+			if (this.isSuperAdmin(clean)) {
+				skipped.push(`${clean} (SuperAdmin protegido)`);
+				continue;
+			}
+
+			if (bot.eventHandler && typeof bot.eventHandler.addKnownSpammer === "function") {
+				await bot.eventHandler.addKnownSpammer(clean, reason, message.author);
+			} else {
+				await this.database.addKnownSpammer(clean, reason, message.author);
+			}
+			added.push(clean);
+		}
+
+		let msg = `🛡️ *Known Spammers Atualizados*\n\n`;
+		if (added.length > 0) {
+			msg += `✅ *Adicionados (${added.length}):*\n${added.map((n) => `• ${n}`).join("\n")}\nMotivo: _${reason}_\n\n`;
+		}
+		if (skipped.length > 0) {
+			msg += `⚠️ *Ignorados (${skipped.length}):*\n${skipped.map((s) => `• ${s}`).join("\n")}\n\n`;
+		}
+		msg += `> Esses números serão tratados como spammers pelo EventHandler e auto-banidos de grupos monitorados.`;
+
+		return new ReturnMessage({
+			chatId,
+			content: msg.trim()
+		});
+	}
+
+	/**
+	 * Remove um ou mais números da lista de spammers conhecidos
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async delSpammer(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content:
+					"ℹ️ Uso: !sa-delSpammer <numero, numero2...>\nExemplo: !sa-delSpammer 5511999999999, 5511888888888"
+			});
+		}
+
+		const fullText = args.join(" ");
+		const rawItems = fullText
+			.split(/[\s,]+/)
+			.map((s) => s.trim())
+			.filter(Boolean);
+
+		const removed = [];
+		for (const item of rawItems) {
+			const clean = item.replace(/\D/g, "");
+			if (!clean) continue;
+
+			if (bot.eventHandler && typeof bot.eventHandler.removeKnownSpammer === "function") {
+				await bot.eventHandler.removeKnownSpammer(clean);
+			} else {
+				await this.database.removeKnownSpammer(clean);
+			}
+			removed.push(clean);
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: `✅ *Known Spammers:* ${removed.length} número(s) removido(s) da lista.`
+		});
+	}
+
+	/**
+	 * Lista todos os spammers conhecidos registrados
+	 * @param {WhatsAppBot} bot
+	 * @param {Object} message
+	 * @param {Array} args
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async listSpammers(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+			return new ReturnMessage({
+				chatId,
+				content: "⛔ Apenas super administradores podem usar este comando."
+			});
+		}
+
+		const list = await this.database.getKnownSpammers();
+		if (!list || list.length === 0) {
+			return new ReturnMessage({
+				chatId,
+				content: "ℹ️ Nenhum spammer conhecido registrado no momento."
+			});
+		}
+
+		let msg = `🛡️ *Lista de Spammers Conhecidos (${list.length})*\n\n`;
+		const display = list.slice(0, 50);
+		for (const item of display) {
+			const dt = item.timestamp ? new Date(item.timestamp).toLocaleDateString("pt-BR") : "-";
+			const reason = item.reason ? ` - _${item.reason}_` : "";
+			msg += `• *${item.number}* (${dt})${reason}\n`;
+		}
+
+		if (list.length > 50) {
+			msg += `\n_...e mais ${list.length - 50} spammers cadastrados._`;
+		}
+
+		return new ReturnMessage({
+			chatId,
+			content: msg.trim()
 		});
 	}
 

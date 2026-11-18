@@ -15,6 +15,8 @@ graph TD
         pending_joins["pending_joins\nConvites pendentes"]
         soft_blocks["soft_blocks\nBloqueios suaves"]
         blocked_invites["blocked_invites\nInvites banidos"]
+        local_blocks["local_blocks\nBloqueios locais"]
+        known_spammers["known_spammers\nSpammers conhecidos"]
         global_nicks["global_nicks\nApelidos globais de usuários"]
         status_announcements["status_announcements\nAvisos públicos de status"]
     end
@@ -155,6 +157,16 @@ Números ou LIDs bloqueados localmente que o bot ignora completamente.
 |---|---|---|
 | `number` | TEXT PK | Número de telefone ou LID (sem @c.us/@s.w.net) |
 | `timestamp` | INTEGER | Data do bloqueio (ms) |
+
+### `known_spammers`
+Lista persistente de spammers conhecidos gerenciada por SuperAdmin e monitorada pelo `EventHandler`.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `number` | TEXT PK | Número de telefone limpo (apenas dígitos) |
+| `reason` | TEXT | Motivo do cadastro como spammer |
+| `added_by` | TEXT | Identificador do SuperAdmin que adicionou |
+| `timestamp` | INTEGER | Data do cadastro (ms) |
 
 ### `global_nicks`
 Apelidos globais de usuários definidos via PV, utilizados como fallback em qualquer grupo.
