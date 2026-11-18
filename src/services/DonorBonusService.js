@@ -50,6 +50,17 @@ function pickRandom(arr) {
 }
 
 /**
+ * Retorna a quantidade de rolls concedidos por cada bloco de R$ 10 doados.
+ * Regra: 50% dos rolls máximos do usuário (arredondado para cima), com mínimo garantido de 15 rolls.
+ * @param {number} maxRolls - Teto máximo de rolls do usuário (base 9 + bônus de doação)
+ * @returns {number}
+ */
+function getRollsPer10Block(maxRolls = 9) {
+	const half = Math.ceil((Number(maxRolls) || 9) * 0.5);
+	return Math.max(15, half);
+}
+
+/**
  * Calcula todos os bônus com base no valor acumulado de doações
  * @param {number} totalAmount - Valor total doado em R$
  * @returns {Object}
@@ -85,7 +96,10 @@ function calculateBonuses(totalAmount) {
 
 	const runas = Math.round(totalAmount * 50); // 50 Runas por R$ 1 doado (moeda global RavenaBank)
 	const mythicSlots = Math.floor(totalAmount / 50); // 1 Slot Mítico a cada R$ 50 doados
-	const bonusRolls = Math.floor(totalAmount / 10) * 75; // 75 rolls no Waifuletes a cada R$ 10 doados
+	const extraMaxRolls = Math.floor(totalAmount / 10);
+	const currentMaxRolls = 9 + extraMaxRolls;
+	const rollsPer10 = getRollsPer10Block(currentMaxRolls);
+	const bonusRolls = extraMaxRolls * rollsPer10;
 
 	// Pinto Game (+1% de tamanho por R$1)
 	const pintoBonusPercent = Math.round(totalAmount * 1);
@@ -163,10 +177,12 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		0,
 		(current.waifu.mythicSlots || 0) - (previous.waifu.mythicSlots || 0)
 	);
-	const deltaBonusRolls = Math.max(
+	const deltaRollsBlocks = Math.max(
 		0,
-		(current.waifu.bonusRolls || 0) - (previous.waifu.bonusRolls || 0)
+		Math.floor(totalAmount / 10) - Math.floor(previousAmount / 10)
 	);
+	const donorMaxRolls = 9 + Math.floor(previousAmount / 10);
+	const deltaBonusRolls = deltaRollsBlocks * getRollsPer10Block(donorMaxRolls);
 
 	const farmDelta = ShadowGardenBonusService.calculateFarmDonationBonuses(
 		totalAmount,
@@ -362,10 +378,12 @@ async function awardDonorBonuses(
 		);
 		delta.deltaRunas = deltaRunas;
 
-		const deltaBonusRolls = Math.max(
+		const deltaRollsBlocks = Math.max(
 			0,
-			Math.floor(totalAmount / 10) * 75 - Math.floor(previousRollsAmount / 10) * 75
+			Math.floor(totalAmount / 10) - Math.floor(previousRollsAmount / 10)
 		);
+		const baseMaxRolls = 9 + Math.floor(previousRollsAmount / 10);
+		const deltaBonusRolls = deltaRollsBlocks * getRollsPer10Block(baseMaxRolls);
 		delta.deltaBonusRolls = deltaBonusRolls;
 
 		if (
@@ -637,6 +655,7 @@ module.exports = {
 	SIMPLE_ITEMS,
 	MEDIUM_ITEMS,
 	HIGH_ITEMS,
+	getRollsPer10Block,
 	calculateBonuses,
 	calculateIncrementalBonuses,
 	getDonorByNumber,

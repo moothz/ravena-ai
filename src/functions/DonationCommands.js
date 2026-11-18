@@ -306,7 +306,7 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `• *3 Moedas* a cada R$ 1 doado _(sem limite de teto nos bônus!)_.\n\n`;
 
 		msg += `🌸 *Waifus (Mudae):*\n`;
-		msg += `• *+75 Rolls no Waifuletes* a cada R$ 10 doados _(rolls imediatos para rolar quando quiser!)_.\n`;
+		msg += `• *Rolls no Waifuletes:* A cada R$ 10 doados, ganhe 50% do seu teto máximo de rolls arredondado para cima (mínimo garantido de 15 rolls na hora)!\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
 		msg += `• *Bônus de Raridade:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1 doado.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
@@ -334,14 +334,14 @@ async function showDonationPerks(bot, message, args, group) {
 			const totalAmount = Number(donor.valor) || 0;
 			const bonuses = DonorBonusService.calculateBonuses(totalAmount);
 			const extraRolls = bonuses.waifu.extraMaxRolls || 0;
-			const totalMaxRolls = 10 + extraRolls;
+			const totalMaxRolls = 9 + extraRolls;
 
 			msg += `💖 *Você é um apoiador! Agradeço de coração sua ajuda e por acreditar no projeto.*\n\n`;
 			msg += `📊 *Seus Benefícios Acumulados (Total doado: R$ ${totalAmount.toFixed(2)}):*\n\n`;
 
 			msg += `⚡ *Bônus Concedidos:*\n`;
 			msg += `  • ᚱ *${(bonuses.bank?.runas || bonuses.runas || 0).toLocaleString("pt-BR")}* Runas creditadas na sua conta do RavenaBank (\`!banco\`).\n`;
-			msg += `  • 🎲 *${bonuses.waifu.bonusRolls || 0}* rolls extras no Waifuletes entregues (75 rolls a cada R$ 10 doados).\n`;
+			msg += `  • 🎲 *${bonuses.waifu.bonusRolls || 0}* rolls extras no Waifuletes entregues (50% do teto máx por R$ 10, mín. 15).\n`;
 			msg += `  • 🐛 *${bonuses.pesca.baits}* iscas de pesca entregues no seu balde.\n`;
 			msg += `  • 🪙 *${bonuses.slots.coins}* moedas entregues no seu cofrinho de slots.\n\n`;
 
@@ -365,7 +365,7 @@ async function showDonationPerks(bot, message, args, group) {
 				totalAmount >= 450 ? " _(Cap 10x em R$ 450 atingido!)_" : " _(Cap 10x em R$ 450)_";
 
 			msg += `💎 *Bônus Ativos nos Sorteios de Waifus:*\n`;
-			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (10 base + ${extraRolls} extras por doação)\n`;
+			msg += `  • 🎟️ Teto de Rolls: *${totalMaxRolls} rolls máximos* (9 base + ${extraRolls} extras por doação)\n`;
 			msg += `  • 🔵 Raros: *+${rarePct}%* | 🟣 Épicos: *+${epicPct}%* | ⭐ Lendários: *+${legPct}%* (${legMult.toFixed(1)}x)${legCapTag}\n`;
 			if (bonuses.waifu.wishlistMultiplier) {
 				const wishPct = Math.round((bonuses.waifu.wishlistMultiplier - 1) * 100);

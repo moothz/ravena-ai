@@ -22,12 +22,21 @@ async function runTests() {
 	assert.strictEqual(b10.pesca.totalHighItems, 0, "R$10 não atinge faixa alta");
 	assert.strictEqual(b10.runas, 500, "R$10 deve conceder 500 Runas");
 	assert.strictEqual(b10.mythicSlots, 0, "R$10: 0 slots míticos");
+	assert.strictEqual(b10.waifu.bonusRolls, 15, "R$10: 1 bloco * 15 rolls (mínimo de 15)");
 	assert.strictEqual(b10.waifu.rarityMultipliers.RARE, 1.2, "R$10: RARE 1.20x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.EPIC, 1.35, "R$10: EPIC 1.35x");
 	assert.strictEqual(b10.waifu.rarityMultipliers.LEGENDARY, 1.2, "R$10: LEGENDARY 1.20x");
 	assert.strictEqual(b10.waifu.wishlistMultiplier, null, "R$10: wishlist não ativada");
 	assert.strictEqual(b10.pinto.bonusPercent, 10, "R$10: pinto +10%");
 	console.log("✓ R$ 10 cálculos OK");
+
+	// Validação direta do helper getRollsPer10Block
+	assert.strictEqual(DonorBonusService.getRollsPer10Block(9), 15, "9 rolls: ceil(4.5)=5 -> min 15");
+	assert.strictEqual(DonorBonusService.getRollsPer10Block(10), 15, "10 rolls: ceil(5)=5 -> min 15");
+	assert.strictEqual(DonorBonusService.getRollsPer10Block(30), 15, "30 rolls: ceil(15)=15 -> min 15");
+	assert.strictEqual(DonorBonusService.getRollsPer10Block(31), 16, "31 rolls: ceil(15.5)=16");
+	assert.strictEqual(DonorBonusService.getRollsPer10Block(120), 60, "120 rolls: ceil(60)=60");
+	console.log("✓ getRollsPer10Block helper OK");
 
 	// R$ 20
 	const b20 = DonorBonusService.calculateBonuses(20);
@@ -128,11 +137,22 @@ async function runTests() {
 	assert.strictEqual(inc.deltaMediumItems, 0, "Delta medium items deve ser 0 (já recebeu)");
 	assert.strictEqual(inc.deltaHighItems, 3, "Delta high items deve ser 3 (5 - 2)");
 	assert.strictEqual(inc.deltaMythicSlots, 0, "Delta mythic slots deve ser 0 (80 e 50 têm 1)");
+	assert.strictEqual(inc.deltaBonusRolls, 45, "Delta rolls: 3 blocos de R$10 com teto base 14 (ceil(7)=7 -> min 15) = 45 rolls");
 	assert.strictEqual(
 		DonorBonusService.calculateIncrementalBonuses(100, 50).deltaMythicSlots,
 		1,
 		"Delta de 50 para 100 deve conceder 1 slot mítico"
 	);
+
+	// Cenário A do usuário: Doador antigo com 120 rolls de teto total (R$1110 -> 9 + 111 = 120 max rolls) doa R$30
+	// Esperado: 3 blocos de R$10 * ceil(120 * 0.5) = 3 * 60 = 180 rolls
+	const incAntigo = DonorBonusService.calculateIncrementalBonuses(1140, 1110);
+	assert.strictEqual(incAntigo.deltaBonusRolls, 180, "Doador com 120 rolls doando R$30 deve ganhar 60 * 3 = 180 rolls");
+
+	// Cenário B do usuário: Novo doador com 9 rolls de teto total doa R$10
+	// Esperado: 1 bloco de R$10 * max(15, ceil(9 * 0.5)) = 1 * 15 = 15 rolls
+	const incNovo = DonorBonusService.calculateIncrementalBonuses(10, 0);
+	assert.strictEqual(incNovo.deltaBonusRolls, 15, "Novo doador com 9 rolls doando R$10 deve ganhar 15 rolls");
 	console.log("✓ Cálculo incremental OK");
 
 	// 3. Teste do comando !doar-vantagens via EventHandler e FakeBot
@@ -184,8 +204,12 @@ async function runTests() {
 		"Deve informar o cap de wishlist em R$ 250 (20x)"
 	);
 	assert.ok(
-		contentNaoDoador.includes("+75 Rolls no Waifuletes"),
-		"Deve citar +75 Rolls no Waifuletes a cada R$ 10"
+		contentNaoDoador.includes("Rolls no Waifuletes:"),
+		"Deve citar bônus de Rolls no Waifuletes a cada R$ 10"
+	);
+	assert.ok(
+		contentNaoDoador.includes("mínimo garantido de 15 rolls"),
+		"Deve citar mínimo garantido de 15 rolls"
 	);
 	console.log("✓ !doar-vantagens para não-doador OK");
 
@@ -256,7 +280,15 @@ async function runTests() {
 
 	// 4. Teste de concessão simulada (dry-run)
 	console.log("\n--- 4. Testando concessão simulada (awardDonorBonuses dryRun) ---");
-	const resDry = await DonorBonusService.awardDonorBonuses("Agrius Metamorphosis", 80, 0, {
+	const fakeAgrius = {
+		nome: "Agrius Metamorphosis",
+		numero: "5511981010487",
+		valor: 80,
+		bonusesProcessedAmount: 0,
+		runasProcessedAmount: 0,
+		rollsProcessedAmount: 0
+	};
+	const resDry = await DonorBonusService.awardDonorBonuses(fakeAgrius, 80, 0, {
 		dryRun: true
 	});
 	assert.strictEqual(resDry.success, true, "Concessão simulada deve ter sucesso");
@@ -264,7 +296,7 @@ async function runTests() {
 	assert.strictEqual(resDry.delta.deltaBaits, 160, "Deve calcular 160 iscas");
 	assert.strictEqual(resDry.delta.deltaCoins, 240, "Deve calcular 240 moedas");
 	assert.strictEqual(resDry.delta.deltaRunas, 4000, "Deve calcular 4000 Runas (80 * 50)");
-	assert.strictEqual(resDry.delta.deltaBonusRolls, 600, "Deve calcular 600 rolls no Waifuletes (8 * 75)");
+	assert.strictEqual(resDry.delta.deltaBonusRolls, 120, "Deve calcular 120 rolls no Waifuletes (8 * 15)");
 	assert.strictEqual(
 		resDry.chosenItems.length,
 		22,
@@ -274,7 +306,7 @@ async function runTests() {
 	assert(resDry.bonusMsg.includes("+160 iscas"), "Deve conter +160 iscas");
 	assert(resDry.bonusMsg.includes("+240 moedas"), "Deve conter +240 moedas");
 	assert(resDry.bonusMsg.includes("+4.000 Runas (ᚱ)"), "Deve conter +4.000 Runas (ᚱ)");
-	assert(resDry.bonusMsg.includes("+600 rolls no Waifuletes"), "Deve conter +600 rolls no Waifuletes");
+	assert(resDry.bonusMsg.includes("+120 rolls no Waifuletes"), "Deve conter +120 rolls no Waifuletes");
 	assert(resDry.bonusMsg.includes("+22 itens de pesca"), "Deve conter +22 itens de pesca");
 	assert(resDry.bonusMsg.includes("Fazenda"), "Deve conter seção da Fazenda");
 	assert(resDry.bonusMsg.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
@@ -299,8 +331,55 @@ async function runTests() {
 		dryRun: true
 	});
 	assert.strictEqual(resIncremental.delta.deltaRunas, 250, "Deve calcular 250 Runas para doação de R$5 (R$40 - R$35), NUNCA 2000 Runas");
-	assert.strictEqual(resIncremental.delta.deltaBonusRolls, 75, "R$35 -> R$40 cruza a marca de R$40 (4º múltiplo de 10), concedendo 75 rolls");
+	assert.strictEqual(resIncremental.delta.deltaBonusRolls, 15, "R$35 -> R$40 cruza a marca de R$40 (4º múltiplo de 10), concedendo 15 rolls");
 	console.log("✓ Cálculo incremental de Runas (R$5 novo sobre R$35 = +250 Runas) OK");
+
+	// 4.2 Teste de awardDonorBonuses com bônus dinâmico de rolls
+	console.log("\n--- 4.2 Testando concessão dinâmica de rolls (awardDonorBonuses) ---");
+	// Cenário A: Usuário antigo com 120 rolls (R$1110 -> 9 + 111 = 120) doando R$30 (agora R$1140)
+	const donorAntigo = {
+		nome: "DoadorAntigo120",
+		numero: "5511987654321",
+		valor: 1140,
+		bonusesProcessedAmount: 1110,
+		runasProcessedAmount: 1110,
+		rollsProcessedAmount: 1110
+	};
+	const resAntigo = await DonorBonusService.awardDonorBonuses(donorAntigo, 1140, 1110, {
+		dryRun: true
+	});
+	assert.strictEqual(
+		resAntigo.delta.deltaBonusRolls,
+		180,
+		"Doador com 120 rolls doando R$30 deve receber 60 * 3 = 180 rolls"
+	);
+	assert.ok(
+		resAntigo.bonusMsg.includes("+180 rolls no Waifuletes"),
+		"bonusMsg deve conter +180 rolls"
+	);
+
+	// Cenário B: Novo doador com 9 rolls de teto total doando R$10
+	const donorNovo = {
+		nome: "DoadorNovo9",
+		numero: "5511912345678",
+		valor: 10,
+		bonusesProcessedAmount: 0,
+		runasProcessedAmount: 0,
+		rollsProcessedAmount: 0
+	};
+	const resNovo = await DonorBonusService.awardDonorBonuses(donorNovo, 10, 0, {
+		dryRun: true
+	});
+	assert.strictEqual(
+		resNovo.delta.deltaBonusRolls,
+		15,
+		"Novo doador com 9 rolls doando R$10 deve receber 15 rolls (mínimo)"
+	);
+	assert.ok(
+		resNovo.bonusMsg.includes("+15 rolls no Waifuletes"),
+		"bonusMsg deve conter +15 rolls"
+	);
+	console.log("✓ Concessão dinâmica de rolls (Cenários 120 rolls e 9 rolls) OK");
 
 	// 5. Teste da mensagem de notificação de donate em grupos logs/avisos
 	console.log("\n--- 5. Testando notifyGroupsAboutDonation com e sem número vinculado ---");
@@ -409,7 +488,7 @@ async function runTests() {
 	);
 	assert.ok(
 		replyContent.includes(
-			"🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +2.500 Runas (ᚱ), +375 rolls no Waifuletes, +13 itens de pesca!"
+			"🎁 *Bônus concedidos:* +100 iscas, +150 moedas, +2.500 Runas (ᚱ), +75 rolls no Waifuletes, +13 itens de pesca!"
 		),
 		"Deve conter bônus de pesca, runas e rolls waifuletes"
 	);
