@@ -52,11 +52,29 @@ async function main() {
 		return clean === superAdminPhone;
 	};
 
+	// Mock dos métodos correspondentes no superAdmin para registrar execuções
+	const executedBlocks = [];
+	eventHandler.commandHandler.superAdmin.blockList = async (bot, msg, args) => {
+		executedBlocks.push({ cmd: "blockList", args });
+		return new ReturnMessage({
+			chatId: msg.group ?? msg.author,
+			content: `BlockList executado: ${args.join(" ")}`
+		});
+	};
+	eventHandler.commandHandler.superAdmin.blockInvites = async (bot, msg, args) => {
+		executedBlocks.push({ cmd: "blockInvites", args });
+		return new ReturnMessage({
+			chatId: msg.group ?? msg.author,
+			content: `BlockInvites executado: ${args.join(" ")}`
+		});
+	};
+
 	// -------------------------------------------------------------------------
-	// Caso 1: Bot comunitário removido em < 7 dias - apenas 1 número alvo (quem removeu é o autor do convite)
+	// Caso 1: Bot comunitário removido entre 24h e 7 dias (gera punição de convites automaticamente)
 	// -------------------------------------------------------------------------
-	console.log("\n[1] Bot comunitário removido em < 7 dias (mesmo removedor e inviter)...");
+	console.log("\n[1] Bot comunitário removido entre 24h e 7 dias (auto-block de convites)...");
 	fakeBot.capturedMessages = [];
+	executedBlocks.length = 0;
 
 	const remover1 = "5511999999999";
 	mockInviteHistory = [{ invite_code: "INVITE123", author_id: `${remover1}@c.us` }];
@@ -90,50 +108,49 @@ async function main() {
 
 	assert.strictEqual(
 		fakeBot.capturedMessages.length,
-		2,
-		"Deveria ter enviado 2 mensagens para o grupo de logs"
+		1,
+		"Deveria ter enviado 1 mensagem para o grupo de logs com o relatório da saída"
 	);
 	assert.strictEqual(fakeBot.capturedMessages[0].chatId, "logs@g.us");
 	assert.ok(
 		fakeBot.capturedMessages[0].content.includes("saiu do grupo"),
 		"1ª mensagem deve ser a notificação de saída"
 	);
-
-	const cmds1 = fakeBot.capturedMessages[1].content;
-	console.log("Comandos gerados (Caso 1):\n" + cmds1);
 	assert.ok(
-		cmds1.includes("!sa-block 5511999999999"),
-		"Deve sugerir !sa-block com o número do removedor"
+		fakeBot.capturedMessages[0].content.includes("Bloqueio de convites"),
+		"Deve conter seção de bloqueio de convites executado"
 	);
 	assert.ok(
-		cmds1.includes("!sa-blockInvites 5511999999999 INVITE123"),
-		"Deve sugerir !sa-blockInvites com o número e o código de convite"
+		executedBlocks.some((b) => b.cmd === "blockInvites" && b.args.includes(remover1)),
+		"Deve ter executado blockInvites no removedor"
 	);
 	console.log("✅ Caso 1 passou com sucesso!");
 
 	// -------------------------------------------------------------------------
-	// Caso 2: Bot comunitário removido em < 7 dias - 2 números alvos diferentes
+	// Caso 2: Bot comunitário removido em < 24 horas (gera punição geral automática)
 	// -------------------------------------------------------------------------
-	console.log("\n[2] Bot comunitário removido em < 7 dias (remover e inviter diferentes)...");
+	console.log("\n[2] Bot comunitário removido em < 24 horas (auto-block geral com admins)...");
 	fakeBot.capturedMessages = [];
+	executedBlocks.length = 0;
 
 	const remover2 = "5511777777777";
 	const inviter2 = "5511888888888";
 	mockInviteHistory = [{ invite_code: "CODE456", author_id: `${inviter2}@c.us` }];
 	mockMembershipPeriods = [
 		{
-			join_timestamp: Date.now() - 1 * 24 * 60 * 60 * 1000,
+			join_timestamp: Date.now() - 3 * 60 * 60 * 1000,
 			leave_timestamp: Date.now(),
-			duration: 1 * 24 * 60 * 60 * 1000
+			duration: 3 * 60 * 60 * 1000
 		}
 	];
 
 	const group2 = {
 		id: "group2@g.us",
 		name: "Grupo Teste 2",
-		date: Date.now() - 1 * 24 * 60 * 60 * 1000,
+		date: Date.now() - 3 * 60 * 60 * 1000,
 		inviteCode: "CODE456",
-		addedBy: `${inviter2}@c.us`
+		addedBy: `${inviter2}@c.us`,
+		admins: ["5511666666666@c.us"]
 	};
 	groupsMap[group2.id] = group2;
 	eventHandler.groups[group2.id] = group2;
@@ -148,22 +165,105 @@ async function main() {
 	await eventHandler.processGroupLeave(fakeBot, leaveData2);
 	await new Promise((r) => setTimeout(r, 100));
 
-	assert.strictEqual(fakeBot.capturedMessages.length, 2, "Deveria ter enviado 2 mensagens");
-	const cmds2 = fakeBot.capturedMessages[1].content;
-	console.log("Comandos gerados (Caso 2):\n" + cmds2);
+	assert.strictEqual(fakeBot.capturedMessages.length, 1, "Deveria ter enviado 1 mensagem de log");
 	assert.ok(
-		cmds2.includes("!sa-blockList 5511777777777, 5511888888888"),
-		"Deve sugerir !sa-blockList com ambos os números"
+		fakeBot.capturedMessages[0].content.includes("Bloqueio GERAL"),
+		"Deve conter seção de bloqueio geral"
 	);
 	assert.ok(
-		cmds2.includes("!sa-blockInvites 5511777777777"),
-		"Deve sugerir !sa-blockInvites para quem removeu"
-	);
-	assert.ok(
-		cmds2.includes("!sa-blockInvites 5511888888888 CODE456"),
-		"Deve sugerir !sa-blockInvites para o autor do convite com o código"
+		executedBlocks.some((b) => b.cmd === "blockList"),
+		"Deve ter executado blockList nos admins, removedor e inviter"
 	);
 	console.log("✅ Caso 2 passou com sucesso!");
+
+	// -------------------------------------------------------------------------
+	// Caso 3: Saída amigável (!g-sair) - NÃO deve gerar punição
+	// -------------------------------------------------------------------------
+	console.log("\n[3] Bot comunitário com saída amigável (!g-sair - sem punição)...");
+	fakeBot.capturedMessages = [];
+	executedBlocks.length = 0;
+
+	const groupAmigavel = {
+		id: "group-amigavel@g.us",
+		name: "Grupo Amigável",
+		date: Date.now() - 1 * 60 * 60 * 1000,
+		removidoAmigavel: true,
+		saidaAmigavel: { author: "5511999999999@c.us" }
+	};
+	groupsMap[groupAmigavel.id] = groupAmigavel;
+	eventHandler.groups[groupAmigavel.id] = groupAmigavel;
+
+	await eventHandler.processGroupLeave(fakeBot, {
+		isBotLeaving: true,
+		user: { id: "5511988887777@c.us", name: "Ravena" },
+		group: { id: groupAmigavel.id, name: groupAmigavel.name },
+		responsavel: { id: "5511999999999@c.us", name: "User" }
+	});
+	await new Promise((r) => setTimeout(r, 100));
+
+	assert.strictEqual(executedBlocks.length, 0, "Saída amigável NÃO deve executar nenhum block");
+	assert.ok(
+		fakeBot.capturedMessages[0].content.includes("Saída amigável"),
+		"Log deve registrar saída amigável"
+	);
+	console.log("✅ Caso 3 passou com sucesso!");
+
+	// -------------------------------------------------------------------------
+	// Caso 4: Saída manual pelo próprio celular da comunitária (sem punição)
+	// -------------------------------------------------------------------------
+	console.log("\n[4] Bot comunitário saindo manualmente pelo celular do bot (sem punição)...");
+	fakeBot.capturedMessages = [];
+	executedBlocks.length = 0;
+
+	const groupSelf = {
+		id: "group-self@g.us",
+		name: "Grupo Self Leave",
+		date: Date.now() - 1 * 60 * 60 * 1000
+	};
+	groupsMap[groupSelf.id] = groupSelf;
+	eventHandler.groups[groupSelf.id] = groupSelf;
+
+	await eventHandler.processGroupLeave(fakeBot, {
+		isBotLeaving: true,
+		user: { id: "5511988887777@c.us", name: "Ravena" },
+		group: { id: groupSelf.id, name: groupSelf.name },
+		responsavel: { id: "5511988887777@c.us", name: "Ravena Celular" }
+	});
+	await new Promise((r) => setTimeout(r, 100));
+
+	assert.strictEqual(executedBlocks.length, 0, "Remoção pelo próprio número do bot NÃO deve punir");
+	console.log("✅ Caso 4 passou com sucesso!");
+
+	// -------------------------------------------------------------------------
+	// Caso 5: Admin da comunitária (numeroResponsavel) remove o bot (sem punição)
+	// -------------------------------------------------------------------------
+	console.log("\n[5] Admin da comunitária (numeroResponsavel) remove o bot (sem punição)...");
+	fakeBot.capturedMessages = [];
+	executedBlocks.length = 0;
+	fakeBot.numeroResponsavel = "5511955554444";
+
+	const groupResp = {
+		id: "group-resp@g.us",
+		name: "Grupo Admin Resp",
+		date: Date.now() - 1 * 60 * 60 * 1000
+	};
+	groupsMap[groupResp.id] = groupResp;
+	eventHandler.groups[groupResp.id] = groupResp;
+
+	await eventHandler.processGroupLeave(fakeBot, {
+		isBotLeaving: true,
+		user: { id: "5511988887777@c.us", name: "Ravena" },
+		group: { id: groupResp.id, name: groupResp.name },
+		responsavel: { id: "5511955554444@c.us", name: "Dono da Comunitária" }
+	});
+	await new Promise((r) => setTimeout(r, 100));
+
+	assert.strictEqual(
+		executedBlocks.length,
+		0,
+		"Remoção pelo responsável da comunitária NÃO deve punir"
+	);
+	console.log("✅ Caso 5 passou com sucesso!");
 
 	// -------------------------------------------------------------------------
 	// Caso 3: Não deve enviar comandos se a estadia for > 7 dias

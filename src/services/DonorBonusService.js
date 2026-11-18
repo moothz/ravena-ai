@@ -340,7 +340,12 @@ async function resetWaifuClaimCooldowns(cleanNumber, totalAmount, reason = "DONA
  * @param {string} [reason="DONATE_R$30"]
  * @returns {Promise<Object|null>}
  */
-async function reduceWaifuDailyMarryLimits(cleanNumber, blocks, totalAmount, reason = "DONATE_R$30") {
+async function reduceWaifuDailyMarryLimits(
+	cleanNumber,
+	blocks,
+	totalAmount,
+	reason = "DONATE_R$30"
+) {
 	if (!blocks || blocks <= 0 || !cleanNumber) return null;
 	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
 	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/daily-marry/reduce`;
@@ -424,17 +429,17 @@ async function awardDonorBonuses(
 				? Number(donor.runasProcessedAmount) || 0
 				: donor.zinthosProcessedAmount !== undefined && donor.zinthosProcessedAmount !== null
 					? Number(donor.zinthosProcessedAmount) || 0
-					: (previousAmount || 0);
+					: previousAmount || 0;
 
 		const previousRollsAmount =
 			donor.rollsProcessedAmount !== undefined && donor.rollsProcessedAmount !== null
 				? Number(donor.rollsProcessedAmount) || 0
-				: (previousAmount || 0);
+				: previousAmount || 0;
 
 		const previousDailyMarryAmount =
 			donor.dailyMarryProcessedAmount !== undefined && donor.dailyMarryProcessedAmount !== null
 				? Number(donor.dailyMarryProcessedAmount) || 0
-				: (previousAmount || 0);
+				: previousAmount || 0;
 
 		const delta = calculateIncrementalBonuses(totalAmount, previousAmount);
 		const deltaRunas = Math.max(

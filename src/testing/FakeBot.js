@@ -110,6 +110,7 @@ class FakeBot {
 
 		// Mensagens capturadas durante o teste
 		this.capturedMessages = [];
+		this.capturedMessagesAdminsOnly = [];
 		this.skipGroupInfo = options.skipGroupInfo ?? [];
 
 		this.isConnected = options.isConnected ?? true;
@@ -711,6 +712,11 @@ class FakeBot {
 				this.capturedSubjects = this.capturedSubjects || [];
 				this.capturedSubjects.push({ chatId, title });
 				return true;
+			},
+			setMessagesAdminsOnly: async (adminOnly) => {
+				this.capturedMessagesAdminsOnly = this.capturedMessagesAdminsOnly || [];
+				this.capturedMessagesAdminsOnly.push({ chatId, adminOnly });
+				return true;
 			}
 		};
 	}
@@ -854,6 +860,7 @@ class FakeBot {
 	 */
 	resetCapture() {
 		this.capturedMessages = [];
+		this.capturedMessagesAdminsOnly = [];
 		this.editedMessages = [];
 		this.removedParticipants = [];
 		this.removedCommunityParticipants = [];

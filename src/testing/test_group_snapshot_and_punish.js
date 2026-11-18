@@ -270,9 +270,9 @@ async function main() {
 	console.log("✅ Teste 5 passou com sucesso!");
 
 	// -------------------------------------------------------------------------
-	// TESTE 6: Bot Comunitário gerando comandos sugeridos com Admins em < 24h
+	// TESTE 6: Bot Comunitário gerando punição direta (< 24h)
 	// -------------------------------------------------------------------------
-	console.log("\n[TESTE 6] Bot Comunitário gerando comandos com Admins para < 24h...");
+	console.log("\n[TESTE 6] Bot Comunitário gerando punição automática com Admins para < 24h...");
 	const comuBot = new FakeBot({
 		id: "ravena-comu",
 		comunitario: true,
@@ -291,12 +291,16 @@ async function main() {
 	});
 	await new Promise((r) => setTimeout(r, 50));
 
-	assert.strictEqual(comuBot.capturedMessages.length, 2, "Comunitário deve enviar 2 mensagens");
-	const sugestao = comuBot.capturedMessages[1].content;
-	console.log("Sugestão Comunitário:\n" + sugestao);
-	assert.ok(sugestao.includes("!sa-blockList"), "Deve conter !sa-blockList");
-	assert.ok(sugestao.includes("5511999991111"), "Deve listar admin 1 na sugestão");
-	assert.ok(sugestao.includes("5511999992222"), "Deve listar admin 2 na sugestão");
+	assert.strictEqual(
+		comuBot.capturedMessages.length,
+		1,
+		"Comunitário deve enviar 1 mensagem de log contendo os bloqueios executados"
+	);
+	const logContent = comuBot.capturedMessages[0].content;
+	console.log("Log Comunitário:\n" + logContent);
+	assert.ok(logContent.includes("!sa-blockList"), "Deve conter !sa-blockList executado");
+	assert.ok(logContent.includes("5511999991111"), "Deve listar admin 1 nos bloqueios");
+	assert.ok(logContent.includes("5511999992222"), "Deve listar admin 2 nos bloqueios");
 	console.log("✅ Teste 6 passou com sucesso!");
 
 	console.log("\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO!");
