@@ -711,6 +711,14 @@ class Database {
 		this.triggerBackupStart();
 		return this.coreRepo.updateDonorRollsProcessed(name, amount);
 	}
+	async updateDonorDailyMarryProcessed(name, amount) {
+		if (this.testMode) {
+			this.logger.debug("[TestMode] updateDonorDailyMarryProcessed() bloqueado");
+			return true;
+		}
+		this.triggerBackupStart();
+		return this.coreRepo.updateDonorDailyMarryProcessed(name, amount);
+	}
 	async updateDonationAmount(name, amount) {
 		if (this.testMode) {
 			this.logger.debug("[TestMode] updateDonationAmount() bloqueado");

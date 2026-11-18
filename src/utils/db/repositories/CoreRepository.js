@@ -855,6 +855,32 @@ class CoreRepository {
 		}
 	}
 
+	async updateDonorDailyMarryProcessed(name, amount) {
+		try {
+			const row = this.mappers.get(
+				this.DB,
+				"SELECT * FROM donations WHERE name = ? COLLATE NOCASE",
+				[name]
+			);
+			if (!row) {
+				this.logger.warn(`Donor "${name}" not found to update daily marry processed`);
+				return false;
+			}
+			const donor = DonationMapper.fromRow(row);
+			donor.dailyMarryProcessedAmount = amount;
+			const r = DonationMapper.toRow(donor);
+			this.mappers.run(
+				this.DB,
+				"INSERT OR REPLACE INTO donations (name, valor, numero, timestamp, historico, json_data) VALUES (@name, @valor, @numero, @timestamp, @historico, @json_data)",
+				{ ...r, json_data: JSON.stringify(donor) }
+			);
+			return true;
+		} catch (error) {
+			this.logger.error("Error updating donor daily marry processed:", error);
+			return false;
+		}
+	}
+
 	async updateDonationAmount(name, amount) {
 		try {
 			const row = this.mappers.get(

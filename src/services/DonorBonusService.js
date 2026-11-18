@@ -100,6 +100,8 @@ function calculateBonuses(totalAmount) {
 	const currentMaxRolls = 9 + extraMaxRolls;
 	const rollsPer10 = getRollsPer10Block(currentMaxRolls);
 	const bonusRolls = extraMaxRolls * rollsPer10;
+	const renewClaimCooldowns = totalAmount >= 20;
+	const dailyMarryBlocks = Math.floor(totalAmount / 30);
 
 	// Pinto Game (+1% de tamanho por R$1)
 	const pintoBonusPercent = Math.round(totalAmount * 1);
@@ -132,10 +134,14 @@ function calculateBonuses(totalAmount) {
 			extraMaxRolls: Math.floor(totalAmount / 10),
 			bonusRolls,
 			runas,
-			mythicSlots
+			mythicSlots,
+			renewClaimCooldowns,
+			dailyMarryBlocks
 		},
 		mythicSlots,
 		bonusRolls,
+		renewClaimCooldowns,
+		dailyMarryBlocks,
 		pinto: {
 			bonusPercent: pintoBonusPercent,
 			multiplier: pintoMultiplier
@@ -184,6 +190,12 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 	const donorMaxRolls = 9 + Math.floor(previousAmount / 10);
 	const deltaBonusRolls = deltaRollsBlocks * getRollsPer10Block(donorMaxRolls);
 
+	const renewClaimCooldowns = deltaAmount >= 20;
+	const deltaDailyMarryBlocks = Math.max(
+		0,
+		Math.floor(totalAmount / 30) - Math.floor(previousAmount / 30)
+	);
+
 	const farmDelta = ShadowGardenBonusService.calculateFarmDonationBonuses(
 		totalAmount,
 		previousAmount
@@ -200,6 +212,8 @@ function calculateIncrementalBonuses(totalAmount, previousAmount = 0) {
 		deltaFazenda: farmDelta,
 		deltaMythicSlots,
 		deltaBonusRolls,
+		renewClaimCooldowns,
+		deltaDailyMarryBlocks,
 		current,
 		previous
 	};
@@ -297,6 +311,52 @@ async function creditWaifuRolls(cleanNumber, amount, totalAmount, reason = "DONA
 }
 
 /**
+ * Renova todos os cooldowns de casamento do usuário na API do Waifuletes (para doações >= R$ 20)
+ * @param {string} cleanNumber
+ * @param {number} totalAmount
+ * @param {string} [reason="DONATE_R$20"]
+ * @returns {Promise<Object|null>}
+ */
+async function resetWaifuClaimCooldowns(cleanNumber, totalAmount, reason = "DONATE_R$20") {
+	if (!cleanNumber) return null;
+	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
+	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/reset-claim-cooldowns`;
+	const headers = {
+		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
+		"Content-Type": "application/json"
+	};
+	const payload = {
+		reason,
+		donateValue: totalAmount
+	};
+	return await axios.post(url, payload, { headers, timeout: 10000 });
+}
+
+/**
+ * Remove do consumo do limite diário de casamento no Waifuletes (a cada R$ 30 doados: -1 lendário, -1 épico, -5 raros, -10 incomuns, -15 comuns)
+ * @param {string} cleanNumber
+ * @param {number} blocks
+ * @param {number} totalAmount
+ * @param {string} [reason="DONATE_R$30"]
+ * @returns {Promise<Object|null>}
+ */
+async function reduceWaifuDailyMarryLimits(cleanNumber, blocks, totalAmount, reason = "DONATE_R$30") {
+	if (!blocks || blocks <= 0 || !cleanNumber) return null;
+	const userId = cleanNumber.includes("@") ? cleanNumber.split("@")[0].split(":")[0] : cleanNumber;
+	const url = `${WAIFULETES_URL}/user/${encodeURIComponent(userId)}/daily-marry/reduce`;
+	const headers = {
+		Authorization: `Bearer ${WAIFULETES_KEY || ""}`,
+		"Content-Type": "application/json"
+	};
+	const payload = {
+		blocks,
+		reason,
+		donateValue: totalAmount
+	};
+	return await axios.post(url, payload, { headers, timeout: 10000 });
+}
+
+/**
  * Retorna os bônus para a API de Waifus (POST /roll)
  * @param {string} userId
  * @returns {Promise<Object|null>}
@@ -371,6 +431,11 @@ async function awardDonorBonuses(
 				? Number(donor.rollsProcessedAmount) || 0
 				: (previousAmount || 0);
 
+		const previousDailyMarryAmount =
+			donor.dailyMarryProcessedAmount !== undefined && donor.dailyMarryProcessedAmount !== null
+				? Number(donor.dailyMarryProcessedAmount) || 0
+				: (previousAmount || 0);
+
 		const delta = calculateIncrementalBonuses(totalAmount, previousAmount);
 		const deltaRunas = Math.max(
 			0,
@@ -386,11 +451,20 @@ async function awardDonorBonuses(
 		const deltaBonusRolls = deltaRollsBlocks * getRollsPer10Block(baseMaxRolls);
 		delta.deltaBonusRolls = deltaBonusRolls;
 
+		const deltaDailyMarryBlocks = Math.max(
+			0,
+			Math.floor(totalAmount / 30) - Math.floor(previousDailyMarryAmount / 30)
+		);
+		delta.deltaDailyMarryBlocks = deltaDailyMarryBlocks;
+		delta.renewClaimCooldowns = delta.deltaAmount >= 20;
+
 		if (
 			delta.deltaAmount <= 0 &&
 			deltaRunas <= 0 &&
 			(delta.deltaMythicSlots || 0) <= 0 &&
-			deltaBonusRolls <= 0
+			deltaBonusRolls <= 0 &&
+			!delta.renewClaimCooldowns &&
+			deltaDailyMarryBlocks <= 0
 		) {
 			return {
 				success: true,
@@ -502,7 +576,7 @@ async function awardDonorBonuses(
 				}
 			}
 
-			// 6.1. Concede Rolls no Waifuletes (75 rolls a cada R$ 10 doados)
+			// 6.1. Concede Rolls no Waifuletes (a cada R$ 10 doados)
 			if (deltaBonusRolls > 0) {
 				try {
 					await creditWaifuRolls(cleanNumber, deltaBonusRolls, totalAmount, "DONATE_R$10");
@@ -510,6 +584,34 @@ async function awardDonorBonuses(
 				} catch (rErr) {
 					logger.warn(
 						`[DonorBonusService] Falha ao creditar ${deltaBonusRolls} roll(s) para ${cleanNumber}: ${rErr.message}`
+					);
+				}
+			}
+
+			// 6.2. Renova cooldowns de casamento no Waifuletes (para doações >= R$ 20)
+			if (delta.renewClaimCooldowns) {
+				try {
+					await resetWaifuClaimCooldowns(cleanNumber, totalAmount, "DONATE_R$20");
+				} catch (cdErr) {
+					logger.warn(
+						`[DonorBonusService] Falha ao renovar cooldowns de casamento para ${cleanNumber}: ${cdErr.message}`
+					);
+				}
+			}
+
+			// 6.3. Reduz limites diários de casamento no Waifuletes (a cada R$ 30 doados)
+			if (deltaDailyMarryBlocks > 0) {
+				try {
+					await reduceWaifuDailyMarryLimits(
+						cleanNumber,
+						deltaDailyMarryBlocks,
+						totalAmount,
+						"DONATE_R$30"
+					);
+					await database.updateDonorDailyMarryProcessed(donor.nome, totalAmount);
+				} catch (dmErr) {
+					logger.warn(
+						`[DonorBonusService] Falha ao reduzir limites diários de casamento para ${cleanNumber}: ${dmErr.message}`
 					);
 				}
 			}
@@ -525,6 +627,12 @@ async function awardDonorBonuses(
 			}
 			if (deltaBonusRolls > 0) {
 				logDetails += `, +${deltaBonusRolls} rolls waifuletes`;
+			}
+			if (delta.renewClaimCooldowns) {
+				logDetails += `, cooldowns casamento renovados`;
+			}
+			if (deltaDailyMarryBlocks > 0) {
+				logDetails += `, +${deltaDailyMarryBlocks} blocos limite casamento diário`;
 			}
 			if (delta.deltaFazenda) {
 				const fLog = [];
@@ -578,7 +686,9 @@ function formatBonusMessage(bonusRes) {
 		(bonusRes.delta.deltaAmount <= 0 &&
 			(bonusRes.delta.deltaRunas || 0) <= 0 &&
 			(bonusRes.delta.deltaMythicSlots || 0) <= 0 &&
-			(bonusRes.delta.deltaBonusRolls || 0) <= 0)
+			(bonusRes.delta.deltaBonusRolls || 0) <= 0 &&
+			!bonusRes.delta.renewClaimCooldowns &&
+			(bonusRes.delta.deltaDailyMarryBlocks || 0) <= 0)
 	) {
 		return "";
 	}
@@ -648,6 +758,17 @@ function formatBonusMessage(bonusRes) {
 		msg += `\n🔮 *Personagens Míticos:* +${count} ${count === 1 ? "slot liberado" : "slots liberados"} para forjar no painel web!`;
 	}
 
+	// Renovação de Cooldowns de Casamento (Waifuletes)
+	if (delta.renewClaimCooldowns) {
+		msg += `\n💍 *Casamentos:* Cooldowns de casamento renovados (todos disponíveis)!`;
+	}
+
+	// Redução do Limite Diário de Casamento (Waifuletes)
+	if (delta.deltaDailyMarryBlocks > 0) {
+		const b = delta.deltaDailyMarryBlocks;
+		msg += `\n💍 *Limite Diário de Casamento:* -${b} lendário, -${b} épico, -${b * 5} raros, -${b * 10} incomuns, -${b * 15} comuns liberados no seu limite diário!`;
+	}
+
 	return msg;
 }
 
@@ -665,5 +786,7 @@ module.exports = {
 	awardDonorBonuses,
 	creditMythicSlots,
 	creditWaifuRolls,
+	resetWaifuClaimCooldowns,
+	reduceWaifuDailyMarryLimits,
 	formatBonusMessage
 };

@@ -45,6 +45,8 @@ async function runTests() {
 	assert.strictEqual(b20.pesca.simpleItemsCount, 4, "R$20 deve conceder 4 itens simples");
 	assert.strictEqual(b20.pesca.mediumItemsCount, 1, "R$20 deve conceder 1 item médio");
 	assert.strictEqual(b20.pesca.totalHighItems, 0, "R$20 não atinge faixa alta");
+	assert.strictEqual(b20.waifu.renewClaimCooldowns, true, "R$20 deve ativar renovação de cooldowns");
+	assert.strictEqual(b20.waifu.dailyMarryBlocks, 0, "R$20: 0 blocos de limite diário (precisa de R$30)");
 	console.log("✓ R$ 20 cálculos OK");
 
 	// R$ 35
@@ -59,6 +61,8 @@ async function runTests() {
 		"R$35 deve conceder 1 item alto da faixa 30-50"
 	);
 	assert.strictEqual(b35.pesca.totalHighItems, 1, "R$35 total itens altos = 1");
+	assert.strictEqual(b35.waifu.renewClaimCooldowns, true, "R$35 deve ativar renovação de cooldowns");
+	assert.strictEqual(b35.waifu.dailyMarryBlocks, 1, "R$35 deve conceder 1 bloco de redução diária");
 	console.log("✓ R$ 35 cálculos OK");
 
 	// R$ 50
@@ -211,6 +215,14 @@ async function runTests() {
 		contentNaoDoador.includes("mínimo garantido de 15 rolls"),
 		"Deve citar mínimo garantido de 15 rolls"
 	);
+	assert.ok(
+		contentNaoDoador.includes("Renovação de Cooldowns de Casamento:"),
+		"Deve citar renovação de cooldowns a cada R$20"
+	);
+	assert.ok(
+		contentNaoDoador.includes("Redução do Limite Diário de Casamento:"),
+		"Deve citar redução do limite diário a cada R$30"
+	);
 	console.log("✓ !doar-vantagens para não-doador OK");
 
 	// Teste com doador conhecido (Agrius / 5511981010487)
@@ -297,6 +309,8 @@ async function runTests() {
 	assert.strictEqual(resDry.delta.deltaCoins, 240, "Deve calcular 240 moedas");
 	assert.strictEqual(resDry.delta.deltaRunas, 4000, "Deve calcular 4000 Runas (80 * 50)");
 	assert.strictEqual(resDry.delta.deltaBonusRolls, 120, "Deve calcular 120 rolls no Waifuletes (8 * 15)");
+	assert.strictEqual(resDry.delta.renewClaimCooldowns, true, "R$80 >= 20 deve renovar cooldowns de casamento");
+	assert.strictEqual(resDry.delta.deltaDailyMarryBlocks, 2, "R$80 deve conceder 2 blocos de redução diária (80 / 30 = 2)");
 	assert.strictEqual(
 		resDry.chosenItems.length,
 		22,
@@ -307,6 +321,8 @@ async function runTests() {
 	assert(resDry.bonusMsg.includes("+240 moedas"), "Deve conter +240 moedas");
 	assert(resDry.bonusMsg.includes("+4.000 Runas (ᚱ)"), "Deve conter +4.000 Runas (ᚱ)");
 	assert(resDry.bonusMsg.includes("+120 rolls no Waifuletes"), "Deve conter +120 rolls no Waifuletes");
+	assert(resDry.bonusMsg.includes("Cooldowns de casamento renovados"), "Deve conter renovação de cooldowns");
+	assert(resDry.bonusMsg.includes("-2 lendário, -2 épico, -10 raros, -20 incomuns, -30 comuns"), "Deve conter expansão do limite diário");
 	assert(resDry.bonusMsg.includes("+22 itens de pesca"), "Deve conter +22 itens de pesca");
 	assert(resDry.bonusMsg.includes("Fazenda"), "Deve conter seção da Fazenda");
 	assert(resDry.bonusMsg.includes("Cinzas Líquidas"), "Deve conter Cinzas Líquidas");
@@ -497,6 +513,8 @@ async function runTests() {
 	assert.ok(replyContent.includes("Lágrimas de Midas"), "Deve conter Lágrimas de Midas");
 	assert.ok(replyContent.includes("Suspiro Espectral"), "Deve conter Suspiro Espectral");
 	assert.ok(replyContent.includes("decoração VIP"), "Deve conter decoração VIP");
+	assert.ok(replyContent.includes("Cooldowns de casamento renovados"), "Deve conter renovação de cooldowns no SuperAdmin");
+	assert.ok(replyContent.includes("-1 lendário, -1 épico, -5 raros, -10 incomuns, -15 comuns"), "Deve conter redução diária de casamento no SuperAdmin");
 	console.log("✓ SuperAdmin addDonorNumber exibindo bônus da fazenda OK");
 
 	sa.database.updateDonorNumber = originalUpdateDonorNumber;

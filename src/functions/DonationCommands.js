@@ -308,6 +308,8 @@ async function showDonationPerks(bot, message, args, group) {
 		msg += `🌸 *Waifus (Mudae):*\n`;
 		msg += `• *Rolls no Waifuletes:* A cada R$ 10 doados, ganhe 50% do seu teto máximo de rolls arredondado para cima (mínimo garantido de 15 rolls na hora)!\n`;
 		msg += `• *+1 Roll Máximo Extra* a cada R$ 10 doados _(regenera 1 roll a cada 5 min até o seu teto!)_.\n`;
+		msg += `• *Renovação de Cooldowns de Casamento:* Doações de no mínimo R$ 20 renovam imediatamente todos os seus cooldowns de casamento (deixando todos disponíveis para casar na hora)!\n`;
+		msg += `• *Redução do Limite Diário de Casamento:* A cada R$ 30 doados, remove do seu limite diário: 1 Lendário, 1 Épico, 5 Raros, 10 Incomuns e 15 Comuns (nunca fica abaixo de 0)!\n`;
 		msg += `• *Bônus de Raridade:* +2% de chance em Raros e Lendários, +3.5% em Épicos por R$ 1 doado.\n`;
 		msg += `• *A partir de R$ 50:* Desbloqueia *Super Wishlist* (+300% base + 8% por R$ 1 acima de 50)!\n`;
 		msg += `• *Aos R$ 100:* Multiplicador de Lendários atinge 3x (+200%) e Wishlist chega a 8x (+700%)!\n`;
@@ -342,6 +344,10 @@ async function showDonationPerks(bot, message, args, group) {
 			msg += `⚡ *Bônus Concedidos:*\n`;
 			msg += `  • ᚱ *${(bonuses.bank?.runas || bonuses.runas || 0).toLocaleString("pt-BR")}* Runas creditadas na sua conta do RavenaBank (\`!banco\`).\n`;
 			msg += `  • 🎲 *${bonuses.waifu.bonusRolls || 0}* rolls extras no Waifuletes entregues (50% do teto máx por R$ 10, mín. 15).\n`;
+			if (bonuses.waifu.dailyMarryBlocks > 0) {
+				const b = bonuses.waifu.dailyMarryBlocks;
+				msg += `  • 💍 *Limite Diário de Casamento:* -${b} lendário, -${b} épico, -${b * 5} raros, -${b * 10} incomuns, -${b * 15} comuns liberados por doação!\n`;
+			}
 			msg += `  • 🐛 *${bonuses.pesca.baits}* iscas de pesca entregues no seu balde.\n`;
 			msg += `  • 🪙 *${bonuses.slots.coins}* moedas entregues no seu cofrinho de slots.\n\n`;
 

@@ -30,6 +30,7 @@ const DonationMapper = {
 		const bonusesProcessed = extra.bonusesProcessedAmount ?? 0;
 		const runasProcessed = extra.runasProcessedAmount ?? extra.zinthosProcessedAmount ?? 0;
 		const rollsProcessed = extra.rollsProcessedAmount ?? 0;
+		const dailyMarryProcessed = extra.dailyMarryProcessedAmount ?? 0;
 
 		return {
 			...extra,
@@ -41,7 +42,8 @@ const DonationMapper = {
 			bonusesProcessedAmount: bonusesProcessed,
 			runasProcessedAmount: runasProcessed,
 			zinthosProcessedAmount: runasProcessed,
-			rollsProcessedAmount: rollsProcessed
+			rollsProcessedAmount: rollsProcessed,
+			dailyMarryProcessedAmount: dailyMarryProcessed
 		};
 	},
 
