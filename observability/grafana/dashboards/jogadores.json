@@ -1,0 +1,1439 @@
+{
+ "uid": "ravena-jogadores",
+ "title": "Ravena — Jogadores",
+ "tags": [
+  "ravena",
+  "economia"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "",
+ "time": {
+  "from": "now-7d",
+  "to": "now"
+ },
+ "description": "Detalhe por jogador da economia: ranking, anomalias e ficha. Mesma fonte do painel da economia (analytics.db). Mostra nome e telefone (decisão de produto: moeda de jogo; Grafana só por túnel ou com senha). O analytics.db guarda epoch em ms; o frser-sqlite-datasource lê colunas de tempo em segundos, por isso o / 1000 nos SELECT.",
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "moeda",
+    "label": "Moeda",
+    "type": "custom",
+    "query": "zinthos,petalitas,runas",
+    "current": {
+     "selected": true,
+     "text": "zinthos",
+     "value": "zinthos"
+    },
+    "options": [
+     {
+      "selected": true,
+      "text": "zinthos",
+      "value": "zinthos"
+     },
+     {
+      "selected": false,
+      "text": "petalitas",
+      "value": "petalitas"
+     },
+     {
+      "selected": false,
+      "text": "runas",
+      "value": "runas"
+     }
+    ],
+    "multi": false,
+    "includeAll": false
+   },
+   {
+    "name": "busca",
+    "label": "Buscar",
+    "type": "textbox",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    }
+   },
+   {
+    "name": "jogador",
+    "label": "Jogador",
+    "type": "textbox",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    }
+   }
+  ]
+ },
+ "links": [
+  {
+   "title": "Economia",
+   "type": "link",
+   "url": "/d/ravena-economia/ravena-economia",
+   "icon": "dashboard",
+   "keepTime": true,
+   "includeVars": false,
+   "tooltip": "Painel da economia"
+  }
+ ],
+ "panels": [
+  {
+   "id": 11,
+   "type": "row",
+   "title": "Ranking e anomalias",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "id": 1,
+   "type": "table",
+   "title": "Quem mais ganhou — ${moeda} (período selecionado)",
+   "description": "Os 25 que mais receberam de motivos de criação no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir o jogador. Petalitas: só saldo (Jardim sem extrato).",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 24,
+    "h": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transferências (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transferências (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "sem dados no período"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Pessoa"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Nome"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Abrir jogador",
+          "url": "/d/ravena-jogadores/ravena-jogadores?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 180
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Telefone / ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo de ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Criado"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Destruído"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Câmbio (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Transferências (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Líquido"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Saldo atual"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Líquido"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "green",
+           "value": 0
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% da massa"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 2,
+   "type": "table",
+   "title": "Quem mais perdeu — ${moeda} (período selecionado)",
+   "description": "Os 25 com o pior saldo líquido (entrou − saiu, sem as linhas fora do dinheiro) no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir o jogador. Petalitas: só saldo (Jardim sem extrato).",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 24,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transferências (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transferências (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "ninguém perdeu no período"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Pessoa"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Nome"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Abrir jogador",
+          "url": "/d/ravena-jogadores/ravena-jogadores?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 180
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Telefone / ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo de ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Criado"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Destruído"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Câmbio (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Transferências (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Líquido"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Saldo atual"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Líquido"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "green",
+           "value": 0
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% da massa"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 3,
+   "type": "table",
+   "title": "Anomalias: dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
+   "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 19,
+    "w": 24,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
+     "timeColumns": [
+      "Dia"
+     ]
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "nenhum dia fora da curva"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "time:DD/MM"
+       },
+       {
+        "id": "custom.width",
+        "value": 70
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% do dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Pessoa"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Nome"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Abrir jogador",
+          "url": "/d/ravena-jogadores/ravena-jogadores?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 180
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Telefone / ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo de ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Criado no dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Mediana do dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Jogadores no dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Vezes a mediana"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "yellow",
+           "value": null
+          },
+          {
+           "color": "red",
+           "value": 50
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 4,
+   "type": "table",
+   "title": "Maiores saldos — ${moeda} (agora)",
+   "description": "Saldo atual por pessoa (somando os IDs dela), fatia da massa e variação desde o saldo de 7 dias atrás (fim do dia econômico).",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 28,
+    "w": 24,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "sem dados"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Pessoa"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Nome"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Abrir jogador",
+          "url": "/d/ravena-jogadores/ravena-jogadores?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 180
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Telefone / ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo de ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Saldo"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Variação em 7 dias"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% da massa"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Variação em 7 dias"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "green",
+           "value": 0
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 5,
+   "type": "table",
+   "title": "Encontrar jogador (busca por nome, telefone ou ID)",
+   "description": "Digite parte do nome, do telefone ou do ID no campo 'Buscar' no topo. Clique no nome para abrir o jogador.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 37,
+    "w": 24,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person,\n    SUM(CASE WHEN p.currency = 'zinthos' THEN p.balance END) AS z, SUM(CASE WHEN p.currency = 'runas' THEN p.balance END) AS r,\n    SUM(CASE WHEN p.currency = 'petalitas' THEN p.balance END) AS pt\n  FROM players p JOIN identities i ON i.player_id = p.player_id GROUP BY i.person\n),\ncmds AS (\n  SELECT i.person, SUM(a.uses) AS u FROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\n  WHERE a.day >= $__to - 604800000 AND a.day < $__to GROUP BY i.person\n)\nSELECT pp.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.z AS \"Zinthos\", bal.r AS \"Runas\", bal.pt AS \"Petalitas\", cmds.u AS \"Comandos (7 dias)\"\nFROM pp LEFT JOIN bal ON bal.person = pp.person LEFT JOIN cmds ON cmds.person = pp.person\nWHERE ${busca:sqlstring} = '' OR pp.nome LIKE '%' || ${busca:sqlstring} || '%' OR pp.person LIKE '%' || ${busca:sqlstring} || '%'\n  OR EXISTS (SELECT 1 FROM identities j WHERE j.person = pp.person AND j.player_id LIKE '%' || ${busca:sqlstring} || '%')\nORDER BY COALESCE(bal.z, 0) + COALESCE(bal.r, 0) DESC LIMIT 50",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person,\n    SUM(CASE WHEN p.currency = 'zinthos' THEN p.balance END) AS z, SUM(CASE WHEN p.currency = 'runas' THEN p.balance END) AS r,\n    SUM(CASE WHEN p.currency = 'petalitas' THEN p.balance END) AS pt\n  FROM players p JOIN identities i ON i.player_id = p.player_id GROUP BY i.person\n),\ncmds AS (\n  SELECT i.person, SUM(a.uses) AS u FROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\n  WHERE a.day >= $__to - 604800000 AND a.day < $__to GROUP BY i.person\n)\nSELECT pp.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.z AS \"Zinthos\", bal.r AS \"Runas\", bal.pt AS \"Petalitas\", cmds.u AS \"Comandos (7 dias)\"\nFROM pp LEFT JOIN bal ON bal.person = pp.person LEFT JOIN cmds ON cmds.person = pp.person\nWHERE ${busca:sqlstring} = '' OR pp.nome LIKE '%' || ${busca:sqlstring} || '%' OR pp.person LIKE '%' || ${busca:sqlstring} || '%'\n  OR EXISTS (SELECT 1 FROM identities j WHERE j.person = pp.person AND j.player_id LIKE '%' || ${busca:sqlstring} || '%')\nORDER BY COALESCE(bal.z, 0) + COALESCE(bal.r, 0) DESC LIMIT 50",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "ninguém encontrado"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Pessoa"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Nome"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Abrir jogador",
+          "url": "/d/ravena-jogadores/ravena-jogadores?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+         }
+        ]
+       },
+       {
+        "id": "custom.width",
+        "value": 180
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Telefone / ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo de ID"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Zinthos"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Runas"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Petalitas"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Comandos (7 dias)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 12,
+   "type": "row",
+   "title": "Jogador escolhido: ${jogador}",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 46,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "id": 6,
+   "type": "table",
+   "title": "Ficha do jogador",
+   "description": "Escolha o jogador clicando num nome das tabelas acima (ou digitando a pessoa no campo 'Jogador': telefone com 13 dígitos, tg:<id> ou lid:<id>). Período = seletor de tempo.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 48,
+    "w": 24,
+    "h": 5
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n), cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Moeda\",\n  (SELECT SUM(p.balance) FROM players p JOIN identities i ON i.player_id = p.player_id WHERE i.person = ${jogador:sqlstring} AND p.currency = cur.currency) AS \"Saldo atual\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Criado no período\",\n  (SELECT SUM(d.amount_out - d.amount_in) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'destruction' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Destruído no período\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind IN ('exchange_in', 'exchange_out') AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Câmbio (líquido)\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'transfer' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Transferências (líquido)\",\n  (SELECT GROUP_CONCAT(i.player_id || ' (' || i.id_kind || ')', ', ') FROM identities i\n     WHERE i.person = ${jogador:sqlstring} AND i.player_id IN (SELECT player_id FROM players p WHERE p.currency = cur.currency\n                                    UNION SELECT player_id FROM player_daily d WHERE d.currency = cur.currency)) AS \"IDs nesta fonte\",\n  (SELECT COALESCE(pp.nome, '—') || ' · ' || CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone ELSE pp.person END FROM pp WHERE pp.person = ${jogador:sqlstring}) AS \"Quem\"\nFROM cur ORDER BY cur.ordem",
+     "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n), cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Moeda\",\n  (SELECT SUM(p.balance) FROM players p JOIN identities i ON i.player_id = p.player_id WHERE i.person = ${jogador:sqlstring} AND p.currency = cur.currency) AS \"Saldo atual\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Criado no período\",\n  (SELECT SUM(d.amount_out - d.amount_in) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'destruction' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Destruído no período\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind IN ('exchange_in', 'exchange_out') AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Câmbio (líquido)\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'transfer' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Transferências (líquido)\",\n  (SELECT GROUP_CONCAT(i.player_id || ' (' || i.id_kind || ')', ', ') FROM identities i\n     WHERE i.person = ${jogador:sqlstring} AND i.player_id IN (SELECT player_id FROM players p WHERE p.currency = cur.currency\n                                    UNION SELECT player_id FROM player_daily d WHERE d.currency = cur.currency)) AS \"IDs nesta fonte\",\n  (SELECT COALESCE(pp.nome, '—') || ' · ' || CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone ELSE pp.person END FROM pp WHERE pp.person = ${jogador:sqlstring}) AS \"Quem\"\nFROM cur ORDER BY cur.ordem",
+     "timeColumns": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "—",
+     "custom": {
+      "wrapText": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Saldo atual"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Criado no período"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Destruído no período"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Câmbio (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Transferências (líquido)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Moeda"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 90
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "IDs nesta fonte"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 260
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Saldo por dia — ${moeda} — jogador escolhido",
+   "description": "Saldo no fim de cada dia econômico (o dia corrente = agora). Petalitas: só desde a primeira carga.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 53,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "SELECT b.day / 1000 AS time, SUM(b.balance) AS \"Saldo no fim do dia\"\nFROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\nWHERE i.person = ${jogador:sqlstring} AND b.currency = '${moeda}' AND b.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND b.day < $__to\nGROUP BY b.day ORDER BY b.day",
+     "rawQueryText": "SELECT b.day / 1000 AS time, SUM(b.balance) AS \"Saldo no fim do dia\"\nFROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\nWHERE i.person = ${jogador:sqlstring} AND b.currency = '${moeda}' AND b.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND b.day < $__to\nGROUP BY b.day ORDER BY b.day",
+     "timeColumns": [
+      "time"
+     ]
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "noValue": "escolha um jogador"
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Fluxo por motivo e dia — ${moeda} — jogador escolhido",
+   "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 53,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "time series",
+     "queryText": "SELECT d.day / 1000 AS time, COALESCE(l.label, d.reason) AS \"Motivo\", SUM(d.amount_in - d.amount_out) AS \"Líquido\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.kind <> 'non_monetary' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day",
+     "rawQueryText": "SELECT d.day / 1000 AS time, COALESCE(l.label, d.reason) AS \"Motivo\", SUM(d.amount_in - d.amount_out) AS \"Líquido\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.kind <> 'non_monetary' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day",
+     "timeColumns": [
+      "time"
+     ]
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "displayName": "${__field.labels.Motivo}",
+     "noValue": "escolha um jogador",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 60,
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "sum"
+     ]
+    }
+   }
+  },
+  {
+   "id": 9,
+   "type": "table",
+   "title": "Extrato diário — ${moeda} — jogador escolhido",
+   "description": "",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 61,
+    "w": 16,
+    "h": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "SELECT d.day / 1000 AS \"Dia\", COALESCE(l.label, d.reason) AS \"Motivo\", CASE d.kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n  SUM(d.amount_in) AS \"Entrou\", SUM(d.amount_out) AS \"Saiu\", SUM(d.tx_count) AS \"Transações\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day DESC, SUM(d.amount_in) + SUM(d.amount_out) DESC",
+     "rawQueryText": "SELECT d.day / 1000 AS \"Dia\", COALESCE(l.label, d.reason) AS \"Motivo\", CASE d.kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n  SUM(d.amount_in) AS \"Entrou\", SUM(d.amount_out) AS \"Saiu\", SUM(d.tx_count) AS \"Transações\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day DESC, SUM(d.amount_in) + SUM(d.amount_out) DESC",
+     "timeColumns": [
+      "Dia"
+     ]
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "escolha um jogador"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Dia"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "time:DD/MM"
+       },
+       {
+        "id": "custom.width",
+        "value": 70
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tipo"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "Sem mapeamento": {
+            "color": "red",
+            "index": 0
+           },
+           "Fora do dinheiro": {
+            "color": "text",
+            "index": 1
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Entrou"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Saiu"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Transações"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   }
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Comandos por dia — jogador escolhido",
+   "description": "",
+   "datasource": {
+    "type": "frser-sqlite-datasource",
+    "uid": "economia-sqlite"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 61,
+    "w": 8,
+    "h": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "queryType": "table",
+     "queryText": "SELECT a.day / 1000 AS time, SUM(a.uses) AS \"Comandos\"\nFROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\nWHERE i.person = ${jogador:sqlstring} AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+     "rawQueryText": "SELECT a.day / 1000 AS time, SUM(a.uses) AS \"Comandos\"\nFROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\nWHERE i.person = ${jogador:sqlstring} AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+     "timeColumns": [
+      "time"
+     ]
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "noValue": "escolha um jogador",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 60
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  }
+ ]
+}

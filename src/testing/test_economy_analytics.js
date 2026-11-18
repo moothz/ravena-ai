@@ -169,20 +169,27 @@ function readAll(file, sql, params = []) {
 }
 
 const DASHBOARD = path.join(__dirname, "../../observability/grafana/dashboards/economia.json");
-function dashboardPanels() {
-	const dash = JSON.parse(fs.readFileSync(DASHBOARD, "utf8"));
+const DASHBOARD_JOGADORES = path.join(
+	__dirname,
+	"../../observability/grafana/dashboards/jogadores.json"
+);
+function dashboardPanels(file = DASHBOARD) {
+	const dash = JSON.parse(fs.readFileSync(file, "utf8"));
 	return dash.panels.flatMap((p) => (p.panels ? [p, ...p.panels] : [p]));
 }
 
 /** Consulta de um painel com a interpolação que o frontend faz ($__from/$__to em ms, ${moeda}). */
-function dashboardSql(title, { from, to, moeda = "zinthos" }) {
-	const panel = dashboardPanels().find((p) => p.title === title);
+function dashboardSql(title, { from, to, moeda = "zinthos", jogador = "", file = DASHBOARD }) {
+	const panel = dashboardPanels(file).find((p) => p.title === title);
 	assert.ok(panel, `painel "${title}" não encontrado`);
 	return panel.targets[0].queryText
 		.replace(/\$__from\b/g, String(from))
 		.replace(/\$__to\b/g, String(to))
 		.replace(/\$\{moeda:sqlstring\}/g, `'${moeda}'`)
-		.replace(/\$\{moeda\}/g, moeda);
+		.replace(/\$\{moeda\}/g, moeda)
+		.replace(/\$\{jogador:sqlstring\}/g, `'${jogador.replace(/'/g, "''")}'`)
+		.replace(/\$\{jogador\}/g, jogador)
+		.replace(/\$\{busca:sqlstring\}/g, `'${jogador.replace(/'/g, "''")}'`);
 }
 
 function freshDb(name) {
@@ -500,6 +507,404 @@ async function main() {
 		});
 	});
 
+	// ----------------------------------------------------------------------- jogadores
+	await test("identidade: LID → telefone, celular BR de 12 dígitos vira 13, Telegram, LID sem telefone", () => {
+		const P = require("../services/EconomyAnalyticsPlayers");
+		const r = new P.IdentityResolver([
+			{
+				canonical_user_id: "wa_5511987654321",
+				platform: "whatsapp",
+				platform_id: "123456789012345@lid",
+				id_type: "lid",
+				display_name: "Ana"
+			},
+			{
+				canonical_user_id: "wa_5511987654321",
+				platform: "whatsapp",
+				platform_id: "5511987654321@s.whatsapp.net",
+				id_type: "jid",
+				display_name: "Ana"
+			},
+			{
+				canonical_user_id: "tg_777",
+				platform: "telegram",
+				platform_id: "777",
+				id_type: "tg_id",
+				display_name: "Bia"
+			}
+		]);
+		assert.deepStrictEqual(r.resolve("123456789012345@lid"), {
+			person: "5511987654321",
+			phone: "5511987654321",
+			idKind: "lid",
+			name: "Ana"
+		});
+		assert.deepStrictEqual(r.resolve("551187654321:12@s.whatsapp.net"), {
+			person: "5511987654321",
+			phone: "5511987654321",
+			idKind: "telefone",
+			name: "Ana"
+		});
+		assert.deepStrictEqual(r.resolve("777"), {
+			person: "tg:777",
+			phone: null,
+			idKind: "telegram",
+			name: "Bia"
+		});
+		assert.deepStrictEqual(r.resolve("999999999999999"), {
+			person: "lid:999999999999999",
+			phone: null,
+			idKind: "lid sem telefone",
+			name: null
+		});
+		r.addTelegram(["4242@x"]);
+		assert.strictEqual(r.resolve("4242").idKind, "telegram");
+		assert.strictEqual(P.canonicalPhone("554788130617"), "5547988130617");
+		assert.strictEqual(P.canonicalPhone("12025550123"), "12025550123");
+	});
+
+	await test("Runas por jogador e dia: soma bate com os fluxos da moeda e saldo no fim de cada dia", () => {
+		const P = require("../services/EconomyAnalyticsPlayers");
+		const pb = makeBankDb(path.join(tmpRoot, "bank-players.db"));
+		pb.prepare("INSERT INTO bank_accounts (user_id, runas, created_at) VALUES (?, ?, ?)").run(
+			"5511987654321",
+			500,
+			0
+		);
+		pb.prepare("INSERT INTO bank_accounts (user_id, runas, created_at) VALUES (?, ?, ?)").run(
+			"u2",
+			0,
+			0
+		);
+		tx(pb, "5511987654321", "DEPOSIT", "pesca", 100, DAY0 + H);
+		tx(pb, "5511987654321", "STORE_BUY", "slots", 30, DAY0 + 2 * H);
+		tx(pb, "u2", "BONUS", "slots_prize", 40, DAY0 + D + H);
+		tx(pb, "u2", "WITHDRAW", "waifu", 40, DAY0 + D + 2 * H);
+		tx(pb, "5511987654321", "DEPOSIT", "pesca", 50, DAY0 + 2 * D + H);
+		const q = (sql, params = []) => pb.prepare(sql).all(...params);
+		const now = DAY0 + 2 * D + 3 * H;
+		const wins = P.dayWindows(DAY0, now);
+		assert.deepStrictEqual(
+			wins.map((w) => [w.from, w.to, w.complete]),
+			[
+				[DAY0, DAY0 + D, true],
+				[DAY0 + D, DAY0 + 2 * D, true],
+				[DAY0 + 2 * D, now, false]
+			]
+		);
+		const out = P.runasPlayerDays(q, wins, now);
+		for (let i = 0; i < wins.length; i++) {
+			const flows = R.runasFlows(q, wins[i].from, wins[i].to);
+			const sum = (arr, k) => arr.reduce((a, f) => a + f[k], 0);
+			assert.strictEqual(sum(out[i].flows, "amountIn"), sum(flows, "amountIn"));
+			assert.strictEqual(sum(out[i].flows, "amountOut"), sum(flows, "amountOut"));
+			const at = R.balancesAt(q, wins[i].to, now);
+			for (const p of out[i].players)
+				assert.strictEqual(p.balanceAtWindowEnd, Math.round(at.get(p.id) || 0));
+		}
+		const d0 = out[0].players.find((p) => p.id === "5511987654321");
+		assert.deepStrictEqual([d0.balance, d0.balanceAtWindowEnd], [500, 450]);
+		// u2: saldo 0 hoje, mas teve movimento no dia 1 → aparece no dia 1, não no dia 2
+		assert.ok(out[1].players.some((p) => p.id === "u2"));
+		assert.ok(!out[2].players.some((p) => p.id === "u2"));
+		pb.close();
+	});
+
+	await test("carga por jogador: dias, saldo, identidade unida entre moedas, atividade, ciclo da alma gêmea e disponibilidade", async () => {
+		let pclock = DAY0 + 2 * D + 3 * H + 5 * 60 * 1000;
+		const pcalls = [];
+		const LID = "123456789012345";
+		const PHONE = "5511987654321";
+		const pserver = http.createServer((req, res) => {
+			const u = new URL(req.url, "http://x");
+			const from = Number(u.searchParams.get("from"));
+			const to = Number(u.searchParams.get("to"));
+			const isWaifu = req.headers.authorization === "Bearer test-waifu-key";
+			const isJardim = req.headers["x-api-key"] === "test-jardim-key";
+			const currency = isWaifu ? "zinthos" : isJardim ? "petalitas" : null;
+			if (!currency) return res.writeHead(401).end("{}");
+			pcalls.push([currency, u.pathname, from, to]);
+			let body;
+			if (u.pathname === "/internal/economy/summary") {
+				body = remoteSummary(currency, from, to, { generatedAt: pclock, ledger: isWaifu });
+				if (u.searchParams.get("balances") === "0") body.balances = null;
+				if (isWaifu) {
+					const h = R.hourStart(Math.max(from, DAY0 + D));
+					body.soulmateCycle =
+						h < to
+							? [{ hour: h, divorces: 2, paid: 900, quotaCost: 1000, aboveCost: 1, maxReturn: 1.5 }]
+							: [];
+				}
+			} else if (u.pathname === "/internal/economy/players") {
+				body = isWaifu
+					? {
+							currency,
+							schemaVersion: 1,
+							generatedAt: pclock,
+							window: { from, to },
+							ledger: { available: true },
+							players: [
+								{
+									id: `${LID}@lid`,
+									name: "Ana W",
+									platform: "WHATSAPP",
+									balance: 900,
+									balanceAtWindowEnd: 800 + (from - DAY0) / D,
+									lastActiveAt: from
+								}
+							],
+							flows: [
+								{ id: `${LID}@lid`, reason: "DAILY_REWARD", amountIn: 100, amountOut: 0, count: 1 },
+								{ id: `${LID}:3@lid`, reason: "DAILY_REWARD", amountIn: 5, amountOut: 0, count: 1 }
+							]
+						}
+					: {
+							currency,
+							schemaVersion: 1,
+							generatedAt: pclock,
+							window: { from, to },
+							ledger: { available: false },
+							players: [
+								{
+									id: PHONE,
+									name: "Ana J",
+									platform: null,
+									balance: 70,
+									balanceAtWindowEnd: null,
+									lastActiveAt: null
+								}
+							],
+							flows: []
+						};
+			} else return res.writeHead(404).end("{}");
+			res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+		});
+		await new Promise((r) => pserver.listen(0, "127.0.0.1", r));
+		const pbase = `http://127.0.0.1:${pserver.address().port}`;
+		const pbank = makeBankDb(path.join(tmpRoot, "bank-p2.db"));
+		pbank
+			.prepare("INSERT INTO bank_accounts (user_id, runas, created_at) VALUES (?, ?, ?)")
+			.run("551187654321", 300, 0);
+		tx(pbank, "551187654321", "DEPOSIT", "pesca", 100, DAY0 + D + H);
+		const cmd = new BetterSQLite(path.join(tmpRoot, "cmd_usage.db"));
+		cmd.exec(`CREATE TABLE cmd_usage_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, type TEXT NOT NULL,
+			command TEXT NOT NULL, user TEXT NOT NULL, group_id TEXT, args TEXT, return_data TEXT)`);
+		const cmdIns = cmd.prepare(
+			"INSERT INTO cmd_usage_log (timestamp, type, command, user, args) VALUES (?, ?, ?, ?, ?)"
+		);
+		cmdIns.run(DAY0 + D + H, "fixed", "mu", `${LID}@lid`, "");
+		cmdIns.run(DAY0 + D + H + 1, "fixed", "mu", `${LID}@lid`, "");
+		cmdIns.run(DAY0 + D + H + 2, "fixed", "pescar", "5521911112222", "");
+		cmdIns.run(DAY0 + D + H + 3, "auto", "mu", "5521911112222", ""); // automático: fora
+		cmdIns.run(DAY0 + D + H + 4, "fixed", "interagir", "5521911112222", "false"); // passivo: fora
+		const mem = [
+			{
+				canonical_user_id: `wa_${PHONE}`,
+				platform: "whatsapp",
+				platform_id: `${LID}@lid`,
+				id_type: "lid",
+				display_name: "Ana"
+			}
+		];
+		const pdb = path.join(tmpRoot, "players", "analytics.db");
+		const ppub = path.join(tmpRoot, "players-pub");
+		const mk = () =>
+			new EconomyAnalyticsService({
+				dbPath: pdb,
+				publishDir: ppub,
+				bankQuery: (sql, params = []) => pbank.prepare(sql).all(...params),
+				cmdUsageQuery: (sql, params = []) => cmd.prepare(sql).all(...params),
+				memoryQuery: () => mem,
+				now: () => pclock,
+				backfillStart: DAY0 - 10 * D,
+				waifuletesUrl: pbase,
+				waifuletesKey: "test-waifu-key",
+				jardimUrl: pbase,
+				jardimKey: "test-jardim-key",
+				playerDays: 3
+			});
+		const ps = mk();
+		try {
+			const r = await ps.runOnce();
+			const hourNow = DAY0 + 2 * D + 3 * H;
+			assert.ok(
+				r["zinthos.players"].ok &&
+					r["runas.players"].ok &&
+					r["petalitas.players"].ok &&
+					r.atividade.ok
+			);
+			// 3 dias de retenção: DAY0, DAY0+D e o dia corrente até a hora cheia
+			assert.deepStrictEqual(
+				pcalls
+					.filter((c) => c[0] === "zinthos" && c[1].endsWith("/players"))
+					.map((c) => [c[2], c[3]]),
+				[
+					[DAY0, DAY0 + D],
+					[DAY0 + D, DAY0 + 2 * D],
+					[DAY0 + 2 * D, hourNow]
+				]
+			);
+			// Jardim sem extrato: só o dia corrente
+			assert.deepStrictEqual(
+				pcalls
+					.filter((c) => c[0] === "petalitas" && c[1].endsWith("/players"))
+					.map((c) => [c[2], c[3]]),
+				[[DAY0 + 2 * D, hourNow]]
+			);
+			// LID com e sem dispositivo somam no mesmo ID cru
+			assert.deepStrictEqual(
+				readAll(
+					pdb,
+					"SELECT day, player_id, amount_in, tx_count FROM player_daily WHERE currency='zinthos' ORDER BY day"
+				).map((x) => [x.day, x.player_id, x.amount_in, x.tx_count]),
+				[
+					[DAY0, LID, 105, 2],
+					[DAY0 + D, LID, 105, 2],
+					[DAY0 + 2 * D, LID, 105, 2]
+				]
+			);
+			assert.deepStrictEqual(
+				readAll(
+					pdb,
+					"SELECT day, balance FROM player_balance_daily WHERE currency='zinthos' ORDER BY day"
+				).map((x) => [x.day, x.balance]),
+				[
+					[DAY0, 800],
+					[DAY0 + D, 801],
+					[DAY0 + 2 * D, 802]
+				]
+			);
+			assert.strictEqual(
+				readAll(pdb, "SELECT COUNT(*) n FROM player_balance_daily WHERE currency='petalitas'")[0].n,
+				1
+			);
+			// Runas por jogador: dia DAY0+D
+			assert.deepStrictEqual(
+				readAll(
+					pdb,
+					"SELECT day, reason, kind, amount_in FROM player_daily WHERE currency='runas'"
+				).map((x) => [x.day, x.reason, x.kind, x.amount_in]),
+				[[DAY0 + D, "DEPOSIT:pesca", "creation", 100]]
+			);
+			// Uma pessoa só: LID do waifuletes, telefone de 13 dígitos no Jardim e de 12 no bank.db
+			const ids = readAll(
+				pdb,
+				"SELECT player_id, person, phone, id_kind, name FROM identities ORDER BY player_id"
+			);
+			assert.deepStrictEqual(
+				ids.filter((x) => x.person === PHONE).map((x) => [x.player_id, x.id_kind]),
+				[
+					[LID, "lid"],
+					["551187654321", "telefone"],
+					[PHONE, "telefone"]
+				]
+			);
+			assert.ok(ids.filter((x) => x.person === PHONE).every((x) => x.name === "Ana"));
+			// Atividade: sem automáticos nem interação passiva
+			assert.deepStrictEqual(
+				readAll(pdb, "SELECT hour, uses, users FROM activity_hourly").map((x) => [
+					x.hour,
+					x.uses,
+					x.users
+				]),
+				[[DAY0 + D + H, 3, 2]]
+			);
+			assert.deepStrictEqual(
+				readAll(pdb, "SELECT player_id, uses FROM player_activity_daily ORDER BY player_id").map(
+					(x) => [x.player_id, x.uses]
+				),
+				[
+					[LID, 2],
+					["5521911112222", 1]
+				]
+			);
+			// Ciclo da alma gêmea gravado e marcado como disponível
+			assert.strictEqual(
+				readAll(pdb, "SELECT SUM(above_cost) n FROM soulmate_cycle_hourly")[0].n,
+				1
+			);
+			const feats = Object.fromEntries(
+				readAll(pdb, "SELECT key, available FROM features").map((x) => [x.key, x.available])
+			);
+			assert.deepStrictEqual(feats, {
+				jogadores: 1,
+				ciclo_alma_gemea: 1,
+				atividade: 1,
+				fluxos_petalitas: 0,
+				causa_sem_origem: 0
+			});
+
+			// Próxima hora: só o dia corrente é refeito, sem duplicar
+			pcalls.length = 0;
+			pclock += H;
+			cmdIns.run(DAY0 + 2 * D + 3 * H + 10, "fixed", "mu", `${LID}@lid`, "");
+			await ps.runOnce();
+			assert.deepStrictEqual(
+				pcalls
+					.filter((c) => c[0] === "zinthos" && c[1].endsWith("/players"))
+					.map((c) => [c[2], c[3]]),
+				[[DAY0 + 2 * D, hourNow + H]]
+			);
+			assert.strictEqual(
+				readAll(pdb, "SELECT COUNT(*) n FROM player_daily WHERE currency='zinthos'")[0].n,
+				3
+			);
+			assert.deepStrictEqual(
+				readAll(
+					pdb,
+					"SELECT day, uses FROM player_activity_daily WHERE player_id = ? ORDER BY day",
+					[LID]
+				).map((x) => [x.day, x.uses]),
+				[
+					[DAY0 + D, 2],
+					[DAY0 + 2 * D, 1]
+				]
+			);
+
+			// Virada de dois dias: retenção de 3 dias apaga o mais antigo
+			pclock += 2 * D;
+			await ps.runOnce();
+			assert.strictEqual(readAll(pdb, "SELECT MIN(day) d FROM player_daily")[0].d, DAY0 + 2 * D);
+			assert.strictEqual(
+				readAll(pdb, "SELECT MIN(day) d FROM player_activity_daily")[0].d,
+				DAY0 + 2 * D
+			);
+
+			// Painéis da página Jogadores rodam no retrato publicado, com e sem jogador escolhido
+			const pubP = path.join(ppub, "analytics.db");
+			let n = 0;
+			for (const p of dashboardPanels(DASHBOARD_JOGADORES)) {
+				if (!p.targets) continue;
+				for (const moeda of ["zinthos", "petalitas", "runas"]) {
+					for (const jogador of ["", PHONE, "x'; DROP TABLE players; --"]) {
+						readAll(
+							pubP,
+							dashboardSql(p.title, {
+								from: DAY0 - D,
+								to: pclock,
+								moeda,
+								jogador,
+								file: DASHBOARD_JOGADORES
+							})
+						);
+					}
+				}
+				n++;
+			}
+			assert.ok(n >= 6, `esperava >= 6 painéis na página Jogadores, achou ${n}`);
+			// Painéis da economia continuam rodando com as tabelas novas (ciclo, ficha, atividade, em preparação)
+			for (const p of dashboardPanels()) {
+				if (!p.targets) continue;
+				readAll(pubP, dashboardSql(p.title, { from: DAY0 - D, to: pclock, moeda: "zinthos" }));
+			}
+		} finally {
+			await ps.stop();
+			pserver.close();
+			pbank.close();
+			cmd.close();
+		}
+	});
+
 	// ----------------------------------------------------------------------- carga completa
 	let clock = DAY0 + 5 * H + 5 * 60 * 1000; // 12:05 UTC
 	const state = { calls: [], fail: {}, override: {}, now: () => clock, delay: 0 };
@@ -520,7 +925,8 @@ async function main() {
 			waifuletesKey: "test-waifu-key",
 			jardimUrl: base,
 			jardimKey: "test-jardim-key",
-			sources: ["zinthos", "petalitas", "runas"]
+			sources: ["zinthos", "petalitas", "runas"],
+			playerDays: 0 // detalhe por jogador tem testes próprios abaixo
 		});
 	let svc = mkService();
 
@@ -1198,12 +1604,24 @@ async function main() {
 							"t1",
 							"dias",
 							"total_fim",
-							"so"
+							"so",
+							// ficha de antes e depois (CTE interna; as colunas exibidas têm nome legível)
+							"c",
+							"cri_a",
+							"cri_d",
+							"cri_d_tot",
+							"des_a",
+							"des_d",
+							"des_d_tot",
+							"jog_a",
+							"jog_d_tot",
+							"massa_na",
+							"massa_dep"
 						].includes(m[1]),
 						`${p.title}: coluna em snake_case ${m[1]}`
 					);
 				}
-				if (!/Últimas mudanças|Confiança/.test(p.title)) {
+				if (!/Últimas mudanças|Confiança|Disponibilidade|Mudanças: ficha/.test(p.title)) {
 					assert.match(
 						p.title,
 						/últimos 7 dias|12 semanas|período selecionado|retrato mais recente|últimas 50|agora/,

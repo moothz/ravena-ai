@@ -7,7 +7,7 @@
  ],
  "timezone": "browser",
  "schemaVersion": 39,
- "version": 2,
+ "version": 3,
  "refresh": "",
  "time": {
   "from": "now-7d",
@@ -86,10 +86,20 @@
    }
   ]
  },
- "links": [],
+ "links": [
+  {
+   "title": "Jogadores",
+   "type": "link",
+   "url": "/d/ravena-jogadores/ravena-jogadores",
+   "icon": "dashboard",
+   "keepTime": true,
+   "includeVars": false,
+   "tooltip": "Detalhe por jogador"
+  }
+ ],
  "panels": [
   {
-   "id": 19,
+   "id": 32,
    "type": "row",
    "title": "Estado",
    "collapsed": false,
@@ -769,8 +779,8 @@
   {
    "id": 4,
    "type": "table",
-   "title": "Últimas mudanças registradas",
-   "description": "Anotações (mudança de regra, correção de extrato), registradas com scripts/economy-annotate.js. Aparecem também no gráfico de massa.",
+   "title": "Últimas mudanças: antes e depois",
+   "description": "Ficha de cada mudança registrada (scripts/economy-annotate.js): criado por dia nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias; vazio antes de 1 dia). Mudança sem moeda usa a moeda do seletor. A ficha completa (destruído, massa, jogadores) fica na seção 'Mudanças: ficha de antes e depois'.",
    "datasource": {
     "type": "frser-sqlite-datasource",
     "uid": "economia-sqlite"
@@ -789,8 +799,8 @@
       "uid": "economia-sqlite"
      },
      "queryType": "table",
-     "queryText": "SELECT ts / 1000 AS \"Quando\", COALESCE(currency, 'todas') AS \"Moeda\", label AS \"O que mudou\"\nFROM annotations ORDER BY ts DESC LIMIT 6",
-     "rawQueryText": "SELECT ts / 1000 AS \"Quando\", COALESCE(currency, 'todas') AS \"Moeda\", label AS \"O que mudou\"\nFROM annotations ORDER BY ts DESC LIMIT 6",
+     "queryText": "WITH a AS (SELECT ts, currency, label, COALESCE(currency, '${moeda}') AS c FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 6),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE((SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts) / 7.0 AS jog_a,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000) AS jog_d_tot\n  FROM a\n),\nr AS (\n  SELECT m.*, CASE WHEN dias >= 1 THEN cri_d_tot / dias END AS cri_d, CASE WHEN dias >= 1 THEN des_d_tot / dias END AS des_d\n  FROM m\n)\nSELECT ts / 1000 AS \"Quando\", CASE r.c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", label AS \"O que mudou\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0), 1) AS \"Δ criado (%)\", ROUND(dias, 1) AS \"Dias depois\"\nFROM r ORDER BY ts DESC",
+     "rawQueryText": "WITH a AS (SELECT ts, currency, label, COALESCE(currency, '${moeda}') AS c FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 6),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE((SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts) / 7.0 AS jog_a,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000) AS jog_d_tot\n  FROM a\n),\nr AS (\n  SELECT m.*, CASE WHEN dias >= 1 THEN cri_d_tot / dias END AS cri_d, CASE WHEN dias >= 1 THEN des_d_tot / dias END AS des_d\n  FROM m\n)\nSELECT ts / 1000 AS \"Quando\", CASE r.c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", label AS \"O que mudou\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0), 1) AS \"Δ criado (%)\", ROUND(dias, 1) AS \"Dias depois\"\nFROM r ORDER BY ts DESC",
      "timeColumns": [
       "Quando"
      ]
@@ -819,6 +829,30 @@
      {
       "matcher": {
        "id": "byName",
+       "options": "Criado/dia antes"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Criado/dia depois"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
        "options": "Quando"
       },
       "properties": [
@@ -839,6 +873,52 @@
         "value": 80
        }
       ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Dias depois"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Δ criado (%)"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "yellow",
+           "value": 10
+          },
+          {
+           "color": "red",
+           "value": 30
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
      }
     ]
    },
@@ -848,7 +928,7 @@
    }
   },
   {
-   "id": 20,
+   "id": 33,
    "type": "row",
    "title": "Moeda: ${moeda} — massa, fluxos e concentração",
    "collapsed": true,
@@ -1132,7 +1212,7 @@
    ]
   },
   {
-   "id": 21,
+   "id": 34,
    "type": "row",
    "title": "Quem recebe: ${moeda}",
    "collapsed": true,
@@ -1342,7 +1422,7 @@
    ]
   },
   {
-   "id": 22,
+   "id": 35,
    "type": "row",
    "title": "Câmbio e transferências",
    "collapsed": true,
@@ -1396,9 +1476,9 @@
    ]
   },
   {
-   "id": 23,
+   "id": 36,
    "type": "row",
-   "title": "Diagnóstico: moeda sem origem, mapeamento e cargas",
+   "title": "Mudanças: ficha de antes e depois",
    "collapsed": true,
    "gridPos": {
     "x": 0,
@@ -1407,6 +1487,837 @@
     "h": 1
    },
    "panels": [
+    {
+     "id": 19,
+     "type": "table",
+     "title": "Mudanças: ficha de antes e depois (últimas 20)",
+     "description": "Para cada mudança registrada: médias diárias de criado e destruído (só motivos de criação/destruição), massa no instante e 7 dias depois (ou o último retrato), e jogadores com movimento por dia (página Jogadores). 'Depois' usa os dias já carregados (até 7). Antes de completar 7 dias, os números de 'depois' ainda vão mudar.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 30,
+      "w": 24,
+      "h": 9
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "WITH a AS (SELECT ts, currency, label, COALESCE(currency, '${moeda}') AS c FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE((SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts) / 7.0 AS jog_a,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000) AS jog_d_tot\n  FROM a\n),\nr AS (\n  SELECT m.*, CASE WHEN dias >= 1 THEN cri_d_tot / dias END AS cri_d, CASE WHEN dias >= 1 THEN des_d_tot / dias END AS des_d\n  FROM m\n)\nSELECT ts / 1000 AS \"Quando\", CASE r.c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", label AS \"O que mudou\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  massa_na AS \"Massa na mudança\", massa_dep AS \"Massa 7 dias depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Δ massa (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", CASE WHEN dias >= 1 THEN ROUND(jog_d_tot / dias, 1) END AS \"Jogadores/dia depois\",\n  ROUND(dias, 1) AS \"Dias depois\"\nFROM r ORDER BY ts DESC",
+       "rawQueryText": "WITH a AS (SELECT ts, currency, label, COALESCE(currency, '${moeda}') AS c FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE((SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts) / 7.0 AS jog_a,\n    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000) AS jog_d_tot\n  FROM a\n),\nr AS (\n  SELECT m.*, CASE WHEN dias >= 1 THEN cri_d_tot / dias END AS cri_d, CASE WHEN dias >= 1 THEN des_d_tot / dias END AS des_d\n  FROM m\n)\nSELECT ts / 1000 AS \"Quando\", CASE r.c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", label AS \"O que mudou\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  massa_na AS \"Massa na mudança\", massa_dep AS \"Massa 7 dias depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Δ massa (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", CASE WHEN dias >= 1 THEN ROUND(jog_d_tot / dias, 1) END AS \"Jogadores/dia depois\",\n  ROUND(dias, 1) AS \"Dias depois\"\nFROM r ORDER BY ts DESC",
+       "timeColumns": [
+        "Quando"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "—",
+       "custom": {
+        "wrapText": true
+       }
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Quando"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "time:DD/MM HH:mm"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Criado/dia antes"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Criado/dia depois"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Destruído/dia antes"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Destruído/dia depois"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Massa na mudança"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Massa 7 dias depois"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Quando"
+        },
+        "properties": [
+         {
+          "id": "custom.width",
+          "value": 95
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Moeda"
+        },
+        "properties": [
+         {
+          "id": "custom.width",
+          "value": 90
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "O que mudou"
+        },
+        "properties": [
+         {
+          "id": "custom.width",
+          "value": 260
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Δ massa (%)"
+        },
+        "properties": [
+         {
+          "id": "thresholds",
+          "value": {
+           "mode": "absolute",
+           "steps": [
+            {
+             "color": "red",
+             "value": null
+            },
+            {
+             "color": "yellow",
+             "value": -3
+            },
+            {
+             "color": "green",
+             "value": -1
+            },
+            {
+             "color": "yellow",
+             "value": 1
+            },
+            {
+             "color": "red",
+             "value": 3
+            }
+           ]
+          }
+         },
+         {
+          "id": "custom.cellOptions",
+          "value": {
+           "type": "color-text"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    }
+   ]
+  },
+  {
+   "id": 37,
+   "type": "row",
+   "title": "Ciclo da alma gêmea",
+   "collapsed": true,
+   "gridPos": {
+    "x": 0,
+    "y": 30,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [
+    {
+     "id": 20,
+     "type": "stat",
+     "title": "Divórcios de alma gêmea que pagaram mais que as cotas (últimos 7 dias)",
+     "description": "Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea cujo pagamento foi maior ou igual ao que o jogador gastou em cotas daquele personagem desde o divórcio anterior. Deve ficar em 0; qualquer valor acima é o ciclo voltando a imprimir moeda (também vira alerta).",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 31,
+      "w": 8,
+      "h": 6
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT COALESCE(SUM(above_cost), 0) AS \"Acima do custo\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "rawQueryText": "SELECT COALESCE(SUM(above_cost), 0) AS \"Acima do custo\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia",
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "green",
+          "value": null
+         },
+         {
+          "color": "red",
+          "value": 1
+         }
+        ]
+       },
+       "color": {
+        "mode": "thresholds"
+       },
+       "unit": "none"
+      },
+      "overrides": []
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "none",
+      "textMode": "value",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      }
+     }
+    },
+    {
+     "id": 21,
+     "type": "stat",
+     "title": "Maior retorno de um divórcio de alma gêmea (últimos 7 dias)",
+     "description": "Pagamento do divórcio ÷ custo das cotas, o maior da semana. Abaixo de 1 = o ciclo dá prejuízo (fechado). Vazio = nenhum divórcio de alma gêmea com custo de cotas na semana.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 8,
+      "y": 31,
+      "w": 8,
+      "h": 6
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT MAX(max_return) AS \"Maior retorno\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "rawQueryText": "SELECT MAX(max_return) AS \"Maior retorno\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "nenhum divórcio de alma gêmea",
+       "decimals": 2,
+       "unit": "none",
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "green",
+          "value": null
+         },
+         {
+          "color": "yellow",
+          "value": 0.5
+         },
+         {
+          "color": "red",
+          "value": 1
+         }
+        ]
+       },
+       "color": {
+        "mode": "thresholds"
+       }
+      },
+      "overrides": []
+     },
+     "options": {
+      "colorMode": "value",
+      "graphMode": "none",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      }
+     }
+    },
+    {
+     "id": 22,
+     "type": "stat",
+     "title": "Divórcios de alma gêmea (últimos 7 dias)",
+     "description": "",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 16,
+      "y": 31,
+      "w": 8,
+      "h": 6
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT COALESCE(SUM(divorces), 0) AS \"Divórcios\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "rawQueryText": "SELECT COALESCE(SUM(divorces), 0) AS \"Divórcios\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia",
+       "unit": "locale"
+      },
+      "overrides": []
+     },
+     "options": {
+      "colorMode": "none",
+      "graphMode": "none",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      }
+     }
+    },
+    {
+     "id": 23,
+     "type": "table",
+     "title": "Ciclo da alma gêmea por dia (período selecionado)",
+     "description": "Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 37,
+      "w": 24,
+      "h": 7
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Acima do custo\", ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
+       "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Acima do custo\", ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
+       "timeColumns": [
+        "Dia"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia (ou nenhum divórcio de alma gêmea no período)"
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Dia"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "time:DD/MM"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Divórcios"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Pago nos divórcios"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Custo das cotas"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Retorno (pago ÷ custo)"
+        },
+        "properties": [
+         {
+          "id": "thresholds",
+          "value": {
+           "mode": "absolute",
+           "steps": [
+            {
+             "color": "green",
+             "value": null
+            },
+            {
+             "color": "yellow",
+             "value": 0.5
+            },
+            {
+             "color": "red",
+             "value": 1
+            }
+           ]
+          }
+         },
+         {
+          "id": "custom.cellOptions",
+          "value": {
+           "type": "color-text"
+          }
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Acima do custo"
+        },
+        "properties": [
+         {
+          "id": "thresholds",
+          "value": {
+           "mode": "absolute",
+           "steps": [
+            {
+             "color": "green",
+             "value": null
+            },
+            {
+             "color": "red",
+             "value": 1
+            }
+           ]
+          }
+         },
+         {
+          "id": "custom.cellOptions",
+          "value": {
+           "type": "color-text"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    }
+   ]
+  },
+  {
+   "id": 38,
+   "type": "row",
+   "title": "Atividade",
+   "collapsed": true,
+   "gridPos": {
+    "x": 0,
+    "y": 31,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [
+    {
+     "id": 24,
+     "type": "timeseries",
+     "title": "Pessoas ativas por dia (período selecionado)",
+     "description": "Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90).",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 32,
+      "w": 12,
+      "h": 8
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+       "rawQueryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+       "timeColumns": [
+        "time"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: cmd_usage.db legível pela ravena",
+       "unit": "locale",
+       "custom": {
+        "drawStyle": "bars",
+        "fillOpacity": 60
+       }
+      },
+      "overrides": []
+     },
+     "options": {}
+    },
+    {
+     "id": 25,
+     "type": "timeseries",
+     "title": "Jogadores com movimento por dia, por moeda (período selecionado)",
+     "description": "Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 12,
+      "y": 32,
+      "w": 12,
+      "h": 8
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "time series",
+       "queryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.currency ORDER BY d.day",
+       "rawQueryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.currency ORDER BY d.day",
+       "timeColumns": [
+        "time"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "sem dados",
+       "unit": "locale",
+       "displayName": "${__field.labels.Moeda}"
+      },
+      "overrides": []
+     },
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom"
+      }
+     }
+    },
+    {
+     "id": 26,
+     "type": "timeseries",
+     "title": "Comandos por hora (período selecionado)",
+     "description": "",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 40,
+      "w": 12,
+      "h": 7
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT hour / 1000 AS time, uses AS \"Comandos\" FROM activity_hourly\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND hour >= $__from AND hour < $__to ORDER BY hour",
+       "rawQueryText": "SELECT hour / 1000 AS time, uses AS \"Comandos\" FROM activity_hourly\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND hour >= $__from AND hour < $__to ORDER BY hour",
+       "timeColumns": [
+        "time"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: cmd_usage.db legível pela ravena",
+       "unit": "locale"
+      },
+      "overrides": []
+     },
+     "options": {}
+    },
+    {
+     "id": 27,
+     "type": "table",
+     "title": "Comandos mais usados (últimos 7 dias)",
+     "description": "Top 25 comandos nos 7 dias, com o maior número de pessoas distintas num dia.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 12,
+      "y": 40,
+      "w": 12,
+      "h": 7
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT command AS \"Comando\", SUM(uses) AS \"Usos\", MAX(users) AS \"Pessoas (maior dia)\",\n  ROUND(100.0 * SUM(uses) / NULLIF((SELECT SUM(uses) FROM activity_daily_command WHERE day >= $__to - 604800000 AND day < $__to), 0), 1) AS \"% dos usos\"\nFROM activity_daily_command\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND day >= $__to - 604800000 AND day < $__to\nGROUP BY command ORDER BY \"Usos\" DESC LIMIT 25",
+       "rawQueryText": "SELECT command AS \"Comando\", SUM(uses) AS \"Usos\", MAX(users) AS \"Pessoas (maior dia)\",\n  ROUND(100.0 * SUM(uses) / NULLIF((SELECT SUM(uses) FROM activity_daily_command WHERE day >= $__to - 604800000 AND day < $__to), 0), 1) AS \"% dos usos\"\nFROM activity_daily_command\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND day >= $__to - 604800000 AND day < $__to\nGROUP BY command ORDER BY \"Usos\" DESC LIMIT 25",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: cmd_usage.db legível pela ravena"
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Usos"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Pessoas (maior dia)"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "% dos usos"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "percent"
+         },
+         {
+          "id": "custom.cellOptions",
+          "value": {
+           "type": "gauge",
+           "mode": "basic"
+          }
+         },
+         {
+          "id": "max",
+          "value": 100
+         },
+         {
+          "id": "min",
+          "value": 0
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    }
+   ]
+  },
+  {
+   "id": 39,
+   "type": "row",
+   "title": "Diagnóstico: alertas, moeda sem origem, mapeamento e cargas",
+   "collapsed": true,
+   "gridPos": {
+    "x": 0,
+    "y": 32,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [
+    {
+     "id": 31,
+     "type": "alertlist",
+     "title": "Alertas da economia",
+     "datasource": null,
+     "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada, motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
+     "gridPos": {
+      "x": 0,
+      "y": 33,
+      "w": 24,
+      "h": 5
+     },
+     "options": {
+      "viewMode": "list",
+      "groupMode": "default",
+      "groupBy": [],
+      "maxItems": 20,
+      "sortOrder": 1,
+      "dashboardAlerts": false,
+      "alertName": "",
+      "alertInstanceLabelFilter": "{area=\"economia\"}",
+      "folder": null,
+      "stateFilter": {
+       "firing": true,
+       "pending": true,
+       "noData": true,
+       "normal": true,
+       "error": true
+      }
+     }
+    },
     {
      "id": 14,
      "type": "timeseries",
@@ -1418,7 +2329,7 @@
      },
      "gridPos": {
       "x": 0,
-      "y": 30,
+      "y": 40,
       "w": 8,
       "h": 7
      },
@@ -1536,7 +2447,7 @@
      },
      "gridPos": {
       "x": 8,
-      "y": 30,
+      "y": 40,
       "w": 8,
       "h": 7
      },
@@ -1643,7 +2554,7 @@
      },
      "gridPos": {
       "x": 16,
-      "y": 30,
+      "y": 40,
       "w": 8,
       "h": 7
      },
@@ -1761,7 +2672,7 @@
      },
      "gridPos": {
       "x": 0,
-      "y": 37,
+      "y": 47,
       "w": 10,
       "h": 7
      },
@@ -1861,7 +2772,7 @@
      },
      "gridPos": {
       "x": 10,
-      "y": 37,
+      "y": 47,
       "w": 14,
       "h": 7
      },
@@ -2020,6 +2931,265 @@
           "value": {
            "type": "color-text"
           }
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    }
+   ]
+  },
+  {
+   "id": 40,
+   "type": "row",
+   "title": "Em preparação: painéis que dependem da fase 2",
+   "collapsed": true,
+   "gridPos": {
+    "x": 0,
+    "y": 33,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [
+    {
+     "id": 28,
+     "type": "table",
+     "title": "Disponibilidade dos painéis",
+     "description": "Painéis que dependem de dado que pode não existir ainda. Indisponível = o painel aparece com o selo 'Indisponível — depende de: …' em vez de números. A carga regrava esta tabela a cada hora.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 34,
+      "w": 24,
+      "h": 6
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT title AS \"Painel\", CASE available WHEN 1 THEN 'ativo' ELSE 'indisponível' END AS \"Situação\",\n  COALESCE(depends_on, '') AS \"Depende de\", COALESCE(detail, '') AS \"Detalhe\", ts / 1000 AS \"Conferido em\"\nFROM features ORDER BY available, title",
+       "rawQueryText": "SELECT title AS \"Painel\", CASE available WHEN 1 THEN 'ativo' ELSE 'indisponível' END AS \"Situação\",\n  COALESCE(depends_on, '') AS \"Depende de\", COALESCE(detail, '') AS \"Detalhe\", ts / 1000 AS \"Conferido em\"\nFROM features ORDER BY available, title",
+       "timeColumns": [
+        "Conferido em"
+       ]
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "carga ainda não rodou",
+       "custom": {
+        "wrapText": true
+       }
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Conferido em"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "time:DD/MM HH:mm"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Situação"
+        },
+        "properties": [
+         {
+          "id": "mappings",
+          "value": [
+           {
+            "type": "value",
+            "options": {
+             "ativo": {
+              "color": "green",
+              "index": 0
+             },
+             "indisponível": {
+              "color": "text",
+              "index": 1
+             }
+            }
+           }
+          ]
+         },
+         {
+          "id": "custom.cellOptions",
+          "value": {
+           "type": "color-background"
+          }
+         },
+         {
+          "id": "custom.width",
+          "value": 120
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Painel"
+        },
+        "properties": [
+         {
+          "id": "custom.width",
+          "value": 230
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Conferido em"
+        },
+        "properties": [
+         {
+          "id": "custom.width",
+          "value": 110
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    },
+    {
+     "id": 29,
+     "type": "table",
+     "title": "Causa da moeda sem origem (últimos 7 dias)",
+     "description": "Quanto de cada causa conhecida explica a moeda sem origem. Hoje ela aparece como um número só (Diagnóstico). Na fase 2, cada caminho sem extrato passa a gravar uma linha própria e este painel se liga sozinho.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 40,
+      "w": 12,
+      "h": 7
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT f.currency AS \"Moeda\", COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Causa\", SUM(f.amount_in - f.amount_out) AS \"Valor\"\nFROM flows_hourly f\nWHERE (SELECT available FROM features WHERE key = 'causa_sem_origem') = 1\n  AND f.reason LIKE 'UNLEDGERED:%' AND f.hour >= $__to - 604800000 AND f.hour < $__to\nGROUP BY f.currency, f.reason ORDER BY ABS(SUM(f.amount_in - f.amount_out)) DESC",
+       "rawQueryText": "SELECT f.currency AS \"Moeda\", COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Causa\", SUM(f.amount_in - f.amount_out) AS \"Valor\"\nFROM flows_hourly f\nWHERE (SELECT available FROM features WHERE key = 'causa_sem_origem') = 1\n  AND f.reason LIKE 'UNLEDGERED:%' AND f.hour >= $__to - 604800000 AND f.hour < $__to\nGROUP BY f.currency, f.reason ORDER BY ABS(SUM(f.amount_in - f.amount_out)) DESC",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: fase 2, extrato completo (give-all, sobra do confisco e exclusão de usuário nos Zinthos; transbordo e Carteira Furada nas Runas)"
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Valor"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       }
+      ]
+     },
+     "options": {
+      "cellHeight": "sm",
+      "showHeader": true
+     }
+    },
+    {
+     "id": 30,
+     "type": "table",
+     "title": "Fluxos de Petalitas por motivo (últimos 7 dias)",
+     "description": "De onde vêm e para onde vão as Petalitas. Liga sozinho quando o Jardim passar a ter extrato.",
+     "datasource": {
+      "type": "frser-sqlite-datasource",
+      "uid": "economia-sqlite"
+     },
+     "gridPos": {
+      "x": 12,
+      "y": 40,
+      "w": 12,
+      "h": 7
+     },
+     "targets": [
+      {
+       "refId": "A",
+       "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "economia-sqlite"
+       },
+       "queryType": "table",
+       "queryText": "SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(f.amount_in) AS \"Entrou\", SUM(f.amount_out) AS \"Saiu\", SUM(f.amount_in - f.amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE (SELECT available FROM features WHERE key = 'fluxos_petalitas') = 1 AND f.currency = 'petalitas' AND f.hour >= $__to - 604800000 AND f.hour < $__to\nGROUP BY f.reason ORDER BY ABS(SUM(f.amount_in - f.amount_out)) DESC",
+       "rawQueryText": "SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(f.amount_in) AS \"Entrou\", SUM(f.amount_out) AS \"Saiu\", SUM(f.amount_in - f.amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE (SELECT available FROM features WHERE key = 'fluxos_petalitas') = 1 AND f.currency = 'petalitas' AND f.hour >= $__to - 604800000 AND f.hour < $__to\nGROUP BY f.reason ORDER BY ABS(SUM(f.amount_in - f.amount_out)) DESC",
+       "timeColumns": []
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "Indisponível — depende de: extrato do Jardim (fase 2)"
+      },
+      "overrides": [
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Entrou"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Saiu"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
+         }
+        ]
+       },
+       {
+        "matcher": {
+         "id": "byName",
+         "options": "Líquido"
+        },
+        "properties": [
+         {
+          "id": "unit",
+          "value": "locale"
          }
         ]
        }

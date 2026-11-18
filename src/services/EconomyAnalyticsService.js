@@ -14,7 +14,14 @@
  * janelas de 30 dias, cada uma registrada como carga ok (um timeout não faz voltar ao zero).
  * O retrato de saldos só é gravado na janela que chega à hora atual. Falha de uma fonte não para as
  * outras. Uma vez por dia econômico (04:00 BRT) grava quem recebe (últimos 7 dias, por quinto), só
- * para moeda com extrato. Ao fim de cada rodada publica um retrato do banco para o Grafana.
+ * para moeda com extrato.
+ *
+ * Por jogador (página Jogadores, ECONOMY_ANALYTICS_PLAYER_DAYS dias, padrão 90; 0 desliga): a cada
+ * rodada pede GET /internal/economy/players por dia econômico, do dia da última carga até a hora atual
+ * (o dia corrente é refeito a cada hora), e lê as Runas do bank.db. Atividade: comandos do cmd_usage.db
+ * (só leitura). Identidade: LID → telefone pela memory_identities do memory.db (só leitura).
+ * Ao fim de cada rodada grava a disponibilidade dos painéis (features) e publica um retrato do banco
+ * para o Grafana.
  */
 "use strict";
 
@@ -32,6 +39,14 @@ const {
 	buildRunasSummary,
 	dailySnapshots
 } = require("./EconomyAnalyticsRunas");
+const {
+	rawId,
+	IdentityResolver,
+	readIdentities,
+	dayWindows,
+	runasPlayerDays,
+	readActivity
+} = require("./EconomyAnalyticsPlayers");
 
 const logger = new Logger("economy-analytics");
 const SCHEMA_VERSION = 1;
@@ -39,6 +54,9 @@ const RECEIVED_WINDOW_MS = 7 * DAY_MS;
 const CHUNK_MS = 30 * DAY_MS;
 const RELOAD_MAX_MS = 90 * DAY_MS;
 const DEFAULT_BACKFILL_START = "2025-01-01";
+const DEFAULT_PLAYER_DAYS = 90;
+/** Janela máxima aceita pelas rotas /internal/economy/players. */
+const PLAYERS_MAX_WINDOW_MS = 8 * DAY_MS;
 // Encerramento do bot: no máximo isso esperando a rodada em andamento (o index.js força saída em 25 s)
 const STOP_WAIT_MS = 3000;
 
@@ -62,6 +80,53 @@ async function fetchSummary(baseUrl, headers, from, to, timeoutMs, opts = {}) {
 		throw err;
 	}
 	return res.json();
+}
+
+/** GET da rota por jogador de um serviço (mesmas regras de erro do resumo). */
+async function fetchPlayers(baseUrl, headers, from, to, timeoutMs, abort = null) {
+	const url = `${String(baseUrl).replace(/\/+$/, "")}/internal/economy/players?from=${from}&to=${to}`;
+	const timeout = AbortSignal.timeout(timeoutMs);
+	const signal = abort ? AbortSignal.any([timeout, abort]) : timeout;
+	const res = await fetch(url, { headers, signal });
+	if (!res.ok) {
+		const err = new Error(`HTTP ${res.status} em /internal/economy/players`);
+		err.status = res.status;
+		throw err;
+	}
+	return res.json();
+}
+
+/** Confere a resposta por jogador contra o contrato. */
+function validatePlayers(p, currency, from, to) {
+	if (!p || typeof p !== "object") throw new Error("resposta vazia");
+	if (p.currency !== currency) throw new Error(`moeda inesperada: ${p.currency}`);
+	if (p.schemaVersion !== SCHEMA_VERSION) {
+		throw new Error(`schemaVersion ${p.schemaVersion} não suportada (esperada ${SCHEMA_VERSION})`);
+	}
+	if (!p.window || Number(p.window.from) !== from || Number(p.window.to) !== to) {
+		throw new Error("janela da resposta não confere");
+	}
+	if (!Array.isArray(p.players) || !Array.isArray(p.flows))
+		throw new Error("players/flows ausentes");
+	for (const x of p.players) if (!x || !x.id) throw new Error("jogador sem id");
+	for (const f of p.flows) {
+		if (!f || !f.id || !f.reason) throw new Error("fluxo por jogador sem id ou reason");
+		if (Number(f.amountIn) < 0 || Number(f.amountOut) < 0)
+			throw new Error("valor negativo no fluxo");
+	}
+	return p;
+}
+
+/** soulmateCycle do resumo do waifuletes (null se o serviço ainda não manda). */
+function validateSoulmate(s, from, to) {
+	if (!Array.isArray(s.soulmateCycle)) return null;
+	for (const r of s.soulmateCycle) {
+		const h = Number(r.hour);
+		if (!Number.isFinite(h) || h % HOUR_MS !== 0 || h < hourStart(from) || h >= to) {
+			throw new Error(`soulmateCycle com hora fora da janela: ${r.hour}`);
+		}
+	}
+	return s.soulmateCycle;
 }
 
 /** Confere a resposta contra o contrato antes de gravar qualquer coisa. */
@@ -111,6 +176,20 @@ class EconomyAnalyticsService {
 			"data/sqlites/bank.db"
 		);
 		this.bankQuery = opts.bankQuery || null;
+		this.memoryDbPath = resolvePath(
+			opts.memoryDbPath || env.ECONOMY_ANALYTICS_MEMORY_DB,
+			"data/sqlites/memory.db"
+		);
+		this.memoryQuery = opts.memoryQuery || null;
+		this.cmdUsageDbPath = resolvePath(
+			opts.cmdUsageDbPath || env.ECONOMY_ANALYTICS_CMD_USAGE_DB,
+			"data/sqlites/cmd_usage.db"
+		);
+		this.cmdUsageQuery = opts.cmdUsageQuery || null;
+		const days = Number(
+			opts.playerDays ?? env.ECONOMY_ANALYTICS_PLAYER_DAYS ?? DEFAULT_PLAYER_DAYS
+		);
+		this.playerDays = Number.isFinite(days) && days >= 0 ? Math.floor(days) : DEFAULT_PLAYER_DAYS;
 		this.timeoutMs = Number(opts.timeoutMs || env.ECONOMY_ANALYTICS_TIMEOUT_MS) || 60000;
 		const start =
 			opts.backfillStart ??
@@ -166,6 +245,15 @@ class EconomyAnalyticsService {
 						to,
 						this.timeoutMs,
 						{ ...opts, abort: this._abort && this._abort.signal }
+					),
+				fetchPlayers: (from, to) =>
+					fetchPlayers(
+						this.waifuletes.url,
+						{ Authorization: `Bearer ${this.waifuletes.key}` },
+						from,
+						to,
+						this.timeoutMs,
+						this._abort && this._abort.signal
 					)
 			},
 			{
@@ -181,6 +269,15 @@ class EconomyAnalyticsService {
 						to,
 						this.timeoutMs,
 						{ ...opts, abort: this._abort && this._abort.signal }
+					),
+				fetchPlayers: (from, to) =>
+					fetchPlayers(
+						this.jardim.url,
+						{ "x-api-key": this.jardim.key },
+						from,
+						to,
+						this.timeoutMs,
+						this._abort && this._abort.signal
 					)
 			},
 			{
@@ -202,8 +299,13 @@ class EconomyAnalyticsService {
 
 	/** Executa fn com uma função de leitura do bank.db aberto só-leitura (fechado ao final). */
 	_withBank(fn) {
-		if (this.bankQuery) return fn(this.bankQuery);
-		const db = new BetterSQLite(this.bankDbPath, { readonly: true, fileMustExist: true });
+		return this._withDb(this.bankDbPath, this.bankQuery, fn);
+	}
+
+	/** Executa fn com leitura síncrona de um SQLite do bot aberto só-leitura (ou a injetada nos testes). */
+	_withDb(file, injected, fn) {
+		if (injected) return fn(injected);
+		const db = new BetterSQLite(file, { readonly: true, fileMustExist: true });
 		try {
 			db.pragma("busy_timeout = 5000");
 			return fn((sql, params = []) => db.prepare(sql).all(...params));
@@ -298,6 +400,25 @@ class EconomyAnalyticsService {
 			if (this._stopping) return { ...results, stopped: true };
 			results[`${source.name}.received`] = await this._loadReceived(store, source, runTs);
 		}
+		if (this.playerDays > 0) {
+			for (const source of this.sources) {
+				if (this._stopping) return { ...results, stopped: true };
+				results[`${source.name}.players`] = await this._loadPlayers(store, source, runTs);
+			}
+			if (this._stopping) return { ...results, stopped: true };
+			results.atividade = this._loadActivity(store, runTs);
+			try {
+				results.identities = this._refreshIdentities(store);
+				store.pruneBefore(this._minPlayerDay(runTs));
+			} catch (err) {
+				logger.warn(`[economy] Falha ao regravar identidades: ${err.message}`);
+			}
+		}
+		try {
+			this._writeFeatures(store, runTs);
+		} catch (err) {
+			logger.warn(`[economy] Falha ao gravar a disponibilidade dos painéis: ${err.message}`);
+		}
 		if (this._stopping) return { ...results, stopped: true };
 		try {
 			store.publish();
@@ -353,6 +474,11 @@ class EconomyAnalyticsService {
 					}));
 					const available = !!(summary.ledger && summary.ledger.available);
 					let rows = store.writeFlows(source.currency, from, to, flows);
+					const soulmate = validateSoulmate(summary, from, to);
+					if (soulmate) {
+						rows += store.writeSoulmate(from, to, soulmate);
+						store.setMeta("soulmate_cycle", "1");
+					}
 					if (live) {
 						// O retrato dos serviços é do instante da resposta: só vale para a janela atual.
 						// Com balances.totalAtWindowEnd (waifuletes: total menos o extrato com createdAt >= to)
@@ -396,6 +522,173 @@ class EconomyAnalyticsService {
 					return { ok: false, error: err.message };
 				}
 			}
+		);
+	}
+
+	/** Primeiro dia econômico guardado no detalhe por jogador. */
+	_minPlayerDay(runTs) {
+		return economicDayStart(hourStart(runTs)) - (this.playerDays - 1) * DAY_MS;
+	}
+
+	/**
+	 * Início da próxima carga diária (por jogador ou atividade): o dia da última carga (o dia corrente é
+	 * refeito a cada hora), nunca antes da retenção. null = nada a fazer.
+	 */
+	_dailyFrom(store, name, runTs, onlyToday = false) {
+		const hourNow = hourStart(runTs);
+		const minDay = this._minPlayerDay(runTs);
+		const last = store.getLastSuccessfulTo(name);
+		let from;
+		if (onlyToday) from = economicDayStart(hourNow);
+		else if (last === null) from = minDay;
+		else if (last >= hourNow) return null;
+		else from = Math.max(minDay, economicDayStart(last));
+		return from < hourNow ? from : null;
+	}
+
+	/**
+	 * Detalhe por jogador de uma moeda, um dia econômico por chamada. Moeda sem extrato (Jardim): só o
+	 * dia corrente, para o saldo atual (não há histórico a pedir).
+	 */
+	async _loadPlayers(store, source, runTs) {
+		const name = `${source.name}.players`;
+		const ledger = store.getLedgerAvailable(source.currency);
+		if (ledger === null) return { ok: false, skipped: true, error: "fonte nunca carregada" };
+		if (!source.local && !source.fetchPlayers) return { ok: true, skipped: true };
+		const hourNow = hourStart(runTs);
+		const from = this._dailyFrom(store, name, runTs, ledger === false);
+		if (from === null) return { ok: true, skipped: true };
+		const windows = dayWindows(from, hourNow);
+		const out = { ok: true, days: 0, rows: 0 };
+		let localPayloads = null;
+		const idOf = (id) => rawId(id) || null;
+		for (let i = 0; i < windows.length; i++) {
+			if (this._stopping) return { ...out, stopped: true };
+			const w = windows[i];
+			try {
+				if (w.to - w.from > PLAYERS_MAX_WINDOW_MS) throw new Error("janela maior que 8 dias");
+				let payload;
+				if (source.local) {
+					if (!localPayloads) {
+						localPayloads = this._withBank((q) => runasPlayerDays(q, windows, this.now()));
+					}
+					payload = localPayloads[i];
+				} else {
+					payload = await source.fetchPlayers(w.from, w.to);
+				}
+				validatePlayers(payload, source.currency, w.from, w.to);
+				const rows = store.writePlayerDay(source.currency, w.day, payload, {
+					live: w.to === hourNow,
+					kindFor,
+					idOf,
+					ts: runTs
+				});
+				store.recordRun({ ts: runTs + i, source: name, ok: true, from: w.from, to: w.to, rows });
+				out.days++;
+				out.rows += rows;
+			} catch (err) {
+				store.recordRun({
+					ts: runTs + i,
+					source: name,
+					ok: false,
+					from: w.from,
+					to: w.to,
+					rows: 0,
+					error: err.message
+				});
+				logger.warn(`[economy] ${name}: carga falhou (${err.message}).`);
+				return { ...out, ok: false, error: err.message };
+			}
+		}
+		if (out.days) logger.info(`[economy] ${name}: ${out.days} dia(s), ${out.rows} linhas.`);
+		return out;
+	}
+
+	/** Atividade (cmd_usage.db, só leitura) do dia da última carga até a hora atual. */
+	_loadActivity(store, runTs) {
+		const name = "atividade";
+		const hourNow = hourStart(runTs);
+		const from = this._dailyFrom(store, name, runTs);
+		if (from === null) return { ok: true, skipped: true };
+		try {
+			const data = this._withDb(this.cmdUsageDbPath, this.cmdUsageQuery, (q) =>
+				readActivity(q, from, hourNow)
+			);
+			const rows = store.writeActivity(from, hourNow, data, (u) => rawId(u) || null);
+			store.recordRun({ ts: runTs, source: name, ok: true, from, to: hourNow, rows });
+			return { ok: true, rows };
+		} catch (err) {
+			store.recordRun({
+				ts: runTs,
+				source: name,
+				ok: false,
+				from,
+				to: hourNow,
+				rows: 0,
+				error: err.message
+			});
+			logger.warn(`[economy] ${name}: carga falhou (${err.message}).`);
+			return { ok: false, error: err.message };
+		}
+	}
+
+	/** Regrava identities: ID cru → pessoa (telefone, LID resolvido, Telegram) e nome. */
+	_refreshIdentities(store) {
+		let rows = [];
+		try {
+			rows = this._withDb(this.memoryDbPath, this.memoryQuery, readIdentities);
+		} catch (err) {
+			// memory.db ausente: segue sem LID → telefone (o painel mostra "lid sem telefone")
+			logger.debug?.(`[economy] memory.db indisponível: ${err.message}`);
+		}
+		const resolver = new IdentityResolver(rows);
+		resolver.addTelegram(store.listTelegramIds());
+		const out = store
+			.listPlayerIds()
+			.map((playerId) => ({ playerId, ...resolver.resolve(playerId) }));
+		return store.writeIdentities(out);
+	}
+
+	/** Disponibilidade dos painéis que dependem de dado que pode não existir ainda. */
+	_writeFeatures(store, runTs) {
+		const ok = (name) => store.getLastSuccessfulTo(name) !== null;
+		const players = this.playerDays > 0;
+		store.writeFeatures(
+			[
+				{
+					key: "jogadores",
+					title: "Página Jogadores",
+					available: players && this.sources.some((s) => ok(`${s.name}.players`)),
+					dependsOn: "rota /internal/economy/players no waifuletes e no Jardim, bank.db",
+					detail: players ? null : "desligada (ECONOMY_ANALYTICS_PLAYER_DAYS=0)"
+				},
+				{
+					key: "ciclo_alma_gemea",
+					title: "Ciclo da alma gêmea",
+					available: store.getMeta("soulmate_cycle") === "1",
+					dependsOn: "waifuletes com soulmateCycle no resumo da economia"
+				},
+				{
+					key: "atividade",
+					title: "Atividade (comandos usados)",
+					available: players && ok("atividade"),
+					dependsOn: "cmd_usage.db legível pela ravena"
+				},
+				{
+					key: "fluxos_petalitas",
+					title: "Fluxos de Petalitas",
+					available: store.getLedgerAvailable("petalitas") === true,
+					dependsOn: "extrato do Jardim (fase 2)"
+				},
+				{
+					key: "causa_sem_origem",
+					title: "Causa da moeda sem origem",
+					available: false,
+					dependsOn:
+						"fase 2: extrato completo (give-all, sobra do confisco e exclusão de usuário nos Zinthos; transbordo e Carteira Furada nas Runas)"
+				}
+			],
+			runTs
 		);
 	}
 
@@ -510,3 +803,4 @@ class EconomyAnalyticsService {
 module.exports = EconomyAnalyticsService;
 module.exports.fetchSummary = fetchSummary;
 module.exports.validateSummary = validateSummary;
+module.exports.validatePlayers = validatePlayers;

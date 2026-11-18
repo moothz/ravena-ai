@@ -1,0 +1,271 @@
+# Gerado junto com os dashboards da economia. Regras do painel da economia (pasta Economia), sem ponto de contato:
+# aparecem em Alerting e no painel 'Alertas da economia'. Para receber aviso, configurar um contact point no Grafana.
+{
+ "apiVersion": 1,
+ "groups": [
+  {
+   "orgId": 1,
+   "name": "economia",
+   "folder": "Economia",
+   "interval": "10m",
+   "rules": [
+    {
+     "uid": "economia-carga-atrasada",
+     "title": "Economia: carga atrasada",
+     "condition": "C",
+     "for": "0m",
+     "noDataState": "Alerting",
+     "execErrState": "Error",
+     "labels": {
+      "area": "economia"
+     },
+     "annotations": {
+      "summary": "Alguma fonte do painel da economia não carrega há mais de 3 h (ver Confiança / Histórico de cargas).",
+      "__dashboardUid__": "ravena-economia"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "economia-sqlite",
+       "model": {
+        "refId": "A",
+        "queryType": "table",
+        "queryText": "SELECT ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(t)) / 3600000.0, 2) AS atraso_h\nFROM (SELECT source, MAX(window_to) AS t FROM load_runs WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source)",
+        "rawQueryText": "SELECT ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(t)) / 3600000.0, 2) AS atraso_h\nFROM (SELECT source, MAX(window_to) AS t FROM load_runs WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source)",
+        "timeColumns": []
+       }
+      },
+      {
+       "refId": "B",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "B",
+        "type": "reduce",
+        "expression": "A",
+        "reducer": "last",
+        "settings": {
+         "mode": "dropNN"
+        }
+       }
+      },
+      {
+       "refId": "C",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "C",
+        "type": "threshold",
+        "expression": "B",
+        "conditions": [
+         {
+          "evaluator": {
+           "type": "gt",
+           "params": [
+            3
+           ]
+          }
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "uid": "economia-motivo-sem-mapear",
+     "title": "Economia: motivo sem mapear",
+     "condition": "C",
+     "for": "0m",
+     "noDataState": "NoData",
+     "execErrState": "Error",
+     "labels": {
+      "area": "economia"
+     },
+     "annotations": {
+      "summary": "Motivo novo no extrato sem mapeamento (Diagnóstico → Motivos sem mapeamento). Mapear em EconomyAnalyticsMapping.js.",
+      "__dashboardUid__": "ravena-economia"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "economia-sqlite",
+       "model": {
+        "refId": "A",
+        "queryType": "table",
+        "queryText": "SELECT COUNT(DISTINCT currency || ':' || reason) AS motivos FROM flows_hourly\nWHERE kind = 'unknown' AND hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000",
+        "rawQueryText": "SELECT COUNT(DISTINCT currency || ':' || reason) AS motivos FROM flows_hourly\nWHERE kind = 'unknown' AND hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000",
+        "timeColumns": []
+       }
+      },
+      {
+       "refId": "B",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "B",
+        "type": "reduce",
+        "expression": "A",
+        "reducer": "last",
+        "settings": {
+         "mode": "dropNN"
+        }
+       }
+      },
+      {
+       "refId": "C",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "C",
+        "type": "threshold",
+        "expression": "B",
+        "conditions": [
+         {
+          "evaluator": {
+           "type": "gt",
+           "params": [
+            0
+           ]
+          }
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "uid": "economia-sem-origem",
+     "title": "Economia: moeda sem origem acima de 5% do criado",
+     "condition": "C",
+     "for": "0m",
+     "noDataState": "NoData",
+     "execErrState": "Error",
+     "labels": {
+      "area": "economia"
+     },
+     "annotations": {
+      "summary": "Moeda sem origem (sem linha no extrato) passou de 5% do criado na semana. Zinthos e Runas começam acima disso por buracos conhecidos (fase 2).",
+      "__dashboardUid__": "ravena-economia"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "economia-sqlite",
+       "model": {
+        "refId": "A",
+        "queryType": "table",
+        "queryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (SELECT currency, SUM(so) AS so7 FROM x WHERE x.d * 86400000 + 25200000 >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000 GROUP BY currency),\nc AS (SELECT currency, SUM(amount_in) AS criado FROM flows_hourly WHERE kind = 'creation' AND hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000 GROUP BY currency)\nSELECT w.currency AS moeda, ROUND(ABS(100.0 * w.so7 / c.criado), 2) AS pct FROM w JOIN c ON c.currency = w.currency WHERE c.criado > 0",
+        "rawQueryText": "WITH snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nw AS (SELECT currency, SUM(so) AS so7 FROM x WHERE x.d * 86400000 + 25200000 >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000 GROUP BY currency),\nc AS (SELECT currency, SUM(amount_in) AS criado FROM flows_hourly WHERE kind = 'creation' AND hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000 GROUP BY currency)\nSELECT w.currency AS moeda, ROUND(ABS(100.0 * w.so7 / c.criado), 2) AS pct FROM w JOIN c ON c.currency = w.currency WHERE c.criado > 0",
+        "timeColumns": []
+       }
+      },
+      {
+       "refId": "B",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "B",
+        "type": "reduce",
+        "expression": "A",
+        "reducer": "last",
+        "settings": {
+         "mode": "dropNN"
+        }
+       }
+      },
+      {
+       "refId": "C",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "C",
+        "type": "threshold",
+        "expression": "B",
+        "conditions": [
+         {
+          "evaluator": {
+           "type": "gt",
+           "params": [
+            5
+           ]
+          }
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "uid": "economia-ciclo-alma-gemea",
+     "title": "Economia: divórcio de alma gêmea pagou mais que as cotas",
+     "condition": "C",
+     "for": "0m",
+     "noDataState": "NoData",
+     "execErrState": "Error",
+     "labels": {
+      "area": "economia"
+     },
+     "annotations": {
+      "summary": "O ciclo cotas → alma gêmea → divórcio voltou a dar lucro (seção Ciclo da alma gêmea).",
+      "__dashboardUid__": "ravena-economia"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "economia-sqlite",
+       "model": {
+        "refId": "A",
+        "queryType": "table",
+        "queryText": "SELECT COALESCE(SUM(above_cost), 0) AS acima FROM soulmate_cycle_hourly WHERE hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000",
+        "rawQueryText": "SELECT COALESCE(SUM(above_cost), 0) AS acima FROM soulmate_cycle_hourly WHERE hour >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000",
+        "timeColumns": []
+       }
+      },
+      {
+       "refId": "B",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "B",
+        "type": "reduce",
+        "expression": "A",
+        "reducer": "last",
+        "settings": {
+         "mode": "dropNN"
+        }
+       }
+      },
+      {
+       "refId": "C",
+       "datasourceUid": "__expr__",
+       "model": {
+        "refId": "C",
+        "type": "threshold",
+        "expression": "B",
+        "conditions": [
+         {
+          "evaluator": {
+           "type": "gt",
+           "params": [
+            0
+           ]
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

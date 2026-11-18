@@ -169,32 +169,35 @@ const TX_SQL = `SELECT user_id, type, game, runas_amount, details_json, timestam
 
 /** Linhas logo abaixo do id achado que são conferidas contra relógio que voltou para trás. */
 const ID_GUARD_ROWS = 5000;
+/** Tabelas aceitas por firstIdFrom (o nome entra no SQL). */
+const ID_TABLES = new Set(["bank_transactions", "cmd_usage_log"]);
 
 /**
- * Menor id que pode ter timestamp >= ts (busca binária em O(log n) leituras pelo rowid).
+ * Menor id que pode ter timestamp >= ts (busca binária em O(log n) leituras pelo rowid). Vale para
+ * qualquer tabela com id AUTOINCREMENT e coluna timestamp sem índice (bank_transactions, cmd_usage_log).
  * Proteção: se alguma das ID_GUARD_ROWS linhas logo abaixo do resultado tem timestamp >= ts - folga
  * (relógio do servidor voltou, timestamps fora de ordem), desiste da busca e lê desde o id 0.
  */
-function firstIdFrom(query, ts) {
-	const r = query("SELECT MIN(id) AS lo, MAX(id) AS hi FROM bank_transactions", [])[0];
+function firstIdFrom(query, ts, table = "bank_transactions") {
+	if (!ID_TABLES.has(table)) throw new Error(`tabela não suportada: ${table}`);
+	const r = query(`SELECT MIN(id) AS lo, MAX(id) AS hi FROM ${table}`, [])[0];
 	if (!r || r.lo === null || r.lo === undefined) return 0;
 	const target = ts - ID_MARGIN_MS;
 	let lo = r.lo;
 	let hi = r.hi + 1;
 	while (lo < hi) {
 		const mid = Math.floor((lo + hi) / 2);
-		const row = query(
-			"SELECT id, timestamp FROM bank_transactions WHERE id >= ? ORDER BY id LIMIT 1",
-			[mid]
-		)[0];
+		const row = query(`SELECT id, timestamp FROM ${table} WHERE id >= ? ORDER BY id LIMIT 1`, [
+			mid
+		])[0];
 		if (!row) hi = mid;
 		else if (Number(row.timestamp) < target) lo = row.id + 1;
 		else hi = mid;
 	}
-	const guard = query(
-		"SELECT MAX(timestamp) AS t FROM bank_transactions WHERE id >= ? AND id < ?",
-		[lo - ID_GUARD_ROWS, lo]
-	)[0];
+	const guard = query(`SELECT MAX(timestamp) AS t FROM ${table} WHERE id >= ? AND id < ?`, [
+		lo - ID_GUARD_ROWS,
+		lo
+	])[0];
 	if (guard && guard.t !== null && Number(guard.t) >= target) return 0;
 	return lo;
 }
@@ -377,6 +380,7 @@ module.exports = {
 	classifyRunasTx,
 	runasFlows,
 	firstIdFrom,
+	txRows,
 	balancesAt,
 	boundaryDates,
 	dailySnapshots,

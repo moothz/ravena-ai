@@ -9,7 +9,10 @@
  *     gerado ao fim de cada rodada com VACUUM INTO num temporário + rename atômico. O Grafana monta só
  *     esse diretório, só-leitura, e abre com immutable=1 (nunca vê arquivo pela metade nem -wal).
  *
- * Não usa a classe Database (caminho fixo em data/sqlites e backup). Nada aqui é dado por jogador.
+ * Não usa a classe Database (caminho fixo em data/sqlites e backup). Guarda também o detalhe por
+ * jogador (página Jogadores): saldo, fluxo por motivo e comandos por dia, com nome e telefone, por
+ * ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90). Decisão de produto: moeda de jogo, sem valor
+ * financeiro; o Grafana só é acessado por túnel ou com senha.
  */
 "use strict";
 
@@ -59,6 +62,50 @@ CREATE TABLE IF NOT EXISTS reason_labels (
   currency TEXT NOT NULL, reason TEXT NOT NULL, label TEXT NOT NULL, kind TEXT NOT NULL,
   PRIMARY KEY (currency, reason)
 );
+-- Ciclo cotas → alma gêmea → divórcio (waifuletes: soulmateCycle do resumo), por hora
+CREATE TABLE IF NOT EXISTS soulmate_cycle_hourly (
+  hour INTEGER PRIMARY KEY, divorces INTEGER NOT NULL, paid INTEGER NOT NULL, quota_cost INTEGER NOT NULL,
+  above_cost INTEGER NOT NULL, max_return REAL
+);
+-- Atividade (cmd_usage.db): comandos e pessoas distintas por hora; por dia e comando
+CREATE TABLE IF NOT EXISTS activity_hourly (
+  hour INTEGER PRIMARY KEY, uses INTEGER NOT NULL, users INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity_daily_command (
+  day INTEGER NOT NULL, command TEXT NOT NULL, uses INTEGER NOT NULL, users INTEGER NOT NULL,
+  PRIMARY KEY (day, command)
+);
+-- Por jogador (ID cru de cada fonte; identities une as fontes numa pessoa)
+CREATE TABLE IF NOT EXISTS players (
+  currency TEXT NOT NULL, player_id TEXT NOT NULL, name TEXT, platform TEXT,
+  balance INTEGER, last_active INTEGER, updated_ts INTEGER NOT NULL,
+  PRIMARY KEY (currency, player_id)
+);
+CREATE TABLE IF NOT EXISTS player_daily (
+  day INTEGER NOT NULL, currency TEXT NOT NULL, player_id TEXT NOT NULL, reason TEXT NOT NULL,
+  kind TEXT NOT NULL, amount_in INTEGER NOT NULL, amount_out INTEGER NOT NULL, tx_count INTEGER NOT NULL,
+  PRIMARY KEY (day, currency, player_id, reason)
+);
+CREATE TABLE IF NOT EXISTS player_balance_daily (
+  day INTEGER NOT NULL, currency TEXT NOT NULL, player_id TEXT NOT NULL, balance INTEGER NOT NULL,
+  PRIMARY KEY (day, currency, player_id)
+);
+CREATE TABLE IF NOT EXISTS player_activity_daily (
+  day INTEGER NOT NULL, player_id TEXT NOT NULL, uses INTEGER NOT NULL,
+  PRIMARY KEY (day, player_id)
+);
+-- ID cru → pessoa (telefone com 13 dígitos, tg:<id> ou lid:<id>), regravada a cada rodada
+CREATE TABLE IF NOT EXISTS identities (
+  player_id TEXT PRIMARY KEY, person TEXT NOT NULL, phone TEXT, id_kind TEXT NOT NULL, name TEXT
+);
+-- Painéis que dependem de dado que pode não existir ainda (selo "Indisponível" no painel)
+CREATE TABLE IF NOT EXISTS features (
+  key TEXT PRIMARY KEY, title TEXT NOT NULL, available INTEGER NOT NULL, depends_on TEXT, detail TEXT,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_player_daily_cur_day ON player_daily(currency, day);
+CREATE INDEX IF NOT EXISTS idx_player_daily_player ON player_daily(player_id, day);
+CREATE INDEX IF NOT EXISTS idx_identities_person ON identities(person);
 CREATE INDEX IF NOT EXISTS idx_flows_currency_hour ON flows_hourly(currency, hour);
 CREATE INDEX IF NOT EXISTS idx_balances_currency_ts ON balances(currency, ts);
 CREATE INDEX IF NOT EXISTS idx_load_runs_source ON load_runs(source, ok, window_to);
@@ -77,7 +124,16 @@ const OUR_TABLES = new Set([
 	"annotations",
 	"ledger_status",
 	"meta",
-	"reason_labels"
+	"reason_labels",
+	"soulmate_cycle_hourly",
+	"activity_hourly",
+	"activity_daily_command",
+	"players",
+	"player_daily",
+	"player_balance_daily",
+	"player_activity_daily",
+	"identities",
+	"features"
 ]);
 
 /** Caminho real (resolve links simbólicos do trecho que já existe). */
@@ -322,6 +378,213 @@ class EconomyAnalyticsStore {
 		});
 		tx();
 		return { remapped, previous };
+	}
+
+	/** Ciclo da alma gêmea: regrava as horas da janela. */
+	writeSoulmate(from, to, rows) {
+		const tx = this.db.transaction(() => {
+			this.db
+				.prepare("DELETE FROM soulmate_cycle_hourly WHERE hour >= ? AND hour < ?")
+				.run(from, to);
+			const ins = this.db.prepare(
+				`INSERT OR REPLACE INTO soulmate_cycle_hourly (hour, divorces, paid, quota_cost, above_cost, max_return)
+				 VALUES (?, ?, ?, ?, ?, ?)`
+			);
+			for (const r of rows) {
+				ins.run(
+					Number(r.hour),
+					toIntOrNull(r.divorces) || 0,
+					toIntOrNull(r.paid) || 0,
+					toIntOrNull(r.quotaCost) || 0,
+					toIntOrNull(r.aboveCost) || 0,
+					r.maxReturn === null || r.maxReturn === undefined ? null : Number(r.maxReturn)
+				);
+			}
+		});
+		tx();
+		return rows.length;
+	}
+
+	/**
+	 * Atividade de [from, to): regrava horas da janela e os dias inteiros que ela toca (from é sempre
+	 * início de dia econômico na carga).
+	 * @param {Function} idOf ID cru do usuário (rawId)
+	 */
+	writeActivity(from, to, { hourly, byCommand, byUser }, idOf) {
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM activity_hourly WHERE hour >= ? AND hour < ?").run(from, to);
+			this.db
+				.prepare("DELETE FROM activity_daily_command WHERE day >= ? AND day < ?")
+				.run(from, to);
+			this.db.prepare("DELETE FROM player_activity_daily WHERE day >= ? AND day < ?").run(from, to);
+			const h = this.db.prepare(
+				"INSERT OR REPLACE INTO activity_hourly (hour, uses, users) VALUES (?, ?, ?)"
+			);
+			for (const r of hourly) h.run(Number(r.hour), Number(r.uses), Number(r.users));
+			const c = this.db.prepare(
+				"INSERT OR REPLACE INTO activity_daily_command (day, command, uses, users) VALUES (?, ?, ?, ?)"
+			);
+			for (const r of byCommand)
+				c.run(Number(r.day), String(r.command), Number(r.uses), Number(r.users));
+			const u = this.db.prepare(
+				`INSERT INTO player_activity_daily (day, player_id, uses) VALUES (?, ?, ?)
+				 ON CONFLICT(day, player_id) DO UPDATE SET uses = uses + excluded.uses`
+			);
+			for (const r of byUser) {
+				const id = idOf(r.user);
+				if (id) u.run(Number(r.day), id, Number(r.uses));
+			}
+		});
+		tx();
+		return hourly.length + byCommand.length + byUser.length;
+	}
+
+	/**
+	 * Um dia de uma moeda por jogador (resposta de /internal/economy/players): regrava fluxos e saldo do
+	 * dia; com `live`, atualiza também o saldo atual em players.
+	 * @param {Function} kindFor (currency, reason) => kind
+	 * @param {Function} idOf ID cru (rawId)
+	 */
+	writePlayerDay(currency, day, payload, { live, kindFor, idOf, ts }) {
+		const flows = Array.isArray(payload.flows) ? payload.flows : [];
+		const players = Array.isArray(payload.players) ? payload.players : [];
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM player_daily WHERE currency = ? AND day = ?").run(currency, day);
+			const ins = this.db.prepare(
+				`INSERT INTO player_daily (day, currency, player_id, reason, kind, amount_in, amount_out, tx_count)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(day, currency, player_id, reason) DO UPDATE SET
+				   amount_in = amount_in + excluded.amount_in, amount_out = amount_out + excluded.amount_out,
+				   tx_count = tx_count + excluded.tx_count`
+			);
+			for (const f of flows) {
+				const id = idOf(f.id);
+				if (!id) continue;
+				ins.run(
+					day,
+					currency,
+					id,
+					String(f.reason),
+					kindFor(currency, String(f.reason)),
+					Math.max(0, toIntOrNull(f.amountIn) || 0),
+					Math.max(0, toIntOrNull(f.amountOut) || 0),
+					toIntOrNull(f.count) || 0
+				);
+			}
+			const bal = this.db.prepare(
+				`INSERT INTO player_balance_daily (day, currency, player_id, balance) VALUES (?, ?, ?, ?)
+				 ON CONFLICT(day, currency, player_id) DO UPDATE SET balance = balance + excluded.balance`
+			);
+			const hasEnd = players.some(
+				(p) => p.balanceAtWindowEnd !== null && p.balanceAtWindowEnd !== undefined
+			);
+			if (hasEnd || live) {
+				this.db
+					.prepare("DELETE FROM player_balance_daily WHERE currency = ? AND day = ?")
+					.run(currency, day);
+				for (const p of players) {
+					const id = idOf(p.id);
+					const v = hasEnd ? p.balanceAtWindowEnd : p.balance;
+					if (id && v !== null && v !== undefined) bal.run(day, currency, id, toIntOrNull(v) || 0);
+				}
+			}
+			if (live) {
+				this.db.prepare("DELETE FROM players WHERE currency = ?").run(currency);
+				const up = this.db.prepare(
+					`INSERT INTO players (currency, player_id, name, platform, balance, last_active, updated_ts)
+					 VALUES (?, ?, ?, ?, ?, ?, ?)
+					 ON CONFLICT(currency, player_id) DO UPDATE SET balance = balance + excluded.balance,
+					   name = COALESCE(players.name, excluded.name), platform = COALESCE(players.platform, excluded.platform),
+					   last_active = MAX(COALESCE(players.last_active, 0), COALESCE(excluded.last_active, 0))`
+				);
+				for (const p of players) {
+					const id = idOf(p.id);
+					if (!id) continue;
+					up.run(
+						currency,
+						id,
+						p.name ? String(p.name).slice(0, 120) : null,
+						p.platform ? String(p.platform) : null,
+						toIntOrNull(p.balance) || 0,
+						toIntOrNull(p.lastActiveAt),
+						ts
+					);
+				}
+			}
+		});
+		tx();
+		return flows.length + players.length;
+	}
+
+	/** Todos os IDs crus por jogador vistos (para regravar identities). */
+	listPlayerIds() {
+		return this.db
+			.prepare(
+				`SELECT player_id FROM players UNION SELECT player_id FROM player_daily
+				 UNION SELECT player_id FROM player_activity_daily`
+			)
+			.all()
+			.map((r) => r.player_id);
+	}
+
+	/** IDs que um serviço marcou como Telegram. */
+	listTelegramIds() {
+		return this.db
+			.prepare("SELECT player_id FROM players WHERE upper(platform) = 'TELEGRAM'")
+			.all()
+			.map((r) => r.player_id);
+	}
+
+	/** Regrava identities inteira. rows: {playerId, person, phone, idKind, name} */
+	writeIdentities(rows) {
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM identities").run();
+			const ins = this.db.prepare(
+				"INSERT OR REPLACE INTO identities (player_id, person, phone, id_kind, name) VALUES (?, ?, ?, ?, ?)"
+			);
+			for (const r of rows) ins.run(r.playerId, r.person, r.phone, r.idKind, r.name);
+		});
+		tx();
+		return rows.length;
+	}
+
+	/** Apaga o detalhe por jogador e a atividade com dia anterior a `minDay`. */
+	pruneBefore(minDay) {
+		let n = 0;
+		for (const [table, col] of [
+			["player_daily", "day"],
+			["player_balance_daily", "day"],
+			["player_activity_daily", "day"],
+			["activity_daily_command", "day"],
+			["activity_hourly", "hour"]
+		]) {
+			n += this.db.prepare(`DELETE FROM ${table} WHERE ${col} < ?`).run(minDay).changes;
+		}
+		return n;
+	}
+
+	/** Regrava a tabela de disponibilidade dos painéis. rows: {key, title, available, dependsOn, detail} */
+	writeFeatures(rows, ts) {
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM features").run();
+			const ins = this.db.prepare(
+				"INSERT INTO features (key, title, available, depends_on, detail, ts) VALUES (?, ?, ?, ?, ?, ?)"
+			);
+			for (const r of rows)
+				ins.run(r.key, r.title, r.available ? 1 : 0, r.dependsOn || null, r.detail || null, ts);
+		});
+		tx();
+	}
+
+	getMeta(key) {
+		const row = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(key);
+		return row ? row.value : null;
+	}
+
+	setMeta(key, value) {
+		this.db
+			.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)")
+			.run(key, String(value));
 	}
 
 	setLedgerStatus(currency, available, ts) {
