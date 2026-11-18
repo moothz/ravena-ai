@@ -20,8 +20,7 @@
       "area": "economia"
      },
      "annotations": {
-      "summary": "Alguma fonte do painel da economia não carrega há mais de 3 h (ver Confiança / Histórico de cargas).",
-      "__dashboardUid__": "ravena-economia"
+      "summary": "Alguma fonte do painel da economia não carrega há mais de 3 h (ver Confiança / Histórico de cargas)."
      },
      "data": [
       {
@@ -84,8 +83,7 @@
       "area": "economia"
      },
      "annotations": {
-      "summary": "Motivo novo no extrato sem mapeamento (Diagnóstico → Motivos sem mapeamento). Mapear em EconomyAnalyticsMapping.js.",
-      "__dashboardUid__": "ravena-economia"
+      "summary": "Motivo novo no extrato sem mapeamento (Diagnóstico → Motivos sem mapeamento). Mapear em EconomyAnalyticsMapping.js."
      },
      "data": [
       {
@@ -148,8 +146,7 @@
       "area": "economia"
      },
      "annotations": {
-      "summary": "Moeda sem origem (sem linha no extrato) passou de 5% do criado na semana. Zinthos e Runas começam acima disso por buracos conhecidos (fase 2).",
-      "__dashboardUid__": "ravena-economia"
+      "summary": "Moeda sem origem (sem linha no extrato) passou de 5% do criado na semana. Zinthos e Runas começam acima disso por buracos conhecidos (fase 2)."
      },
      "data": [
       {
@@ -212,8 +209,7 @@
       "area": "economia"
      },
      "annotations": {
-      "summary": "O ciclo cotas → alma gêmea → divórcio voltou a dar lucro (seção Ciclo da alma gêmea).",
-      "__dashboardUid__": "ravena-economia"
+      "summary": "O ciclo cotas → alma gêmea → divórcio voltou a dar lucro (seção Ciclo da alma gêmea)."
      },
      "data": [
       {
