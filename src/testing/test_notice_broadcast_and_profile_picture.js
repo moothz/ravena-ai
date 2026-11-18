@@ -32,14 +32,13 @@ async function runTests() {
 
 		const botWaDonate = new FakeBot({ id: "ravenavip" });
 		botWaDonate.isConnected = true;
-		botWaDonate.notificarDonate = true;
 
-		// Deve escolher botWaDonate (notificarDonate / ravenavip)
+		// Deve escolher botWaDonate (ravenavip)
 		const chosen = getWhatsAppBroadcastBot([botTg, botDc, botWaNormal, botWaDonate]);
 		assert.strictEqual(
 			chosen.id,
 			"ravenavip",
-			"Deve selecionar o bot WhatsApp prioritário para avisos (notificarDonate / ravenavip)"
+			"Deve selecionar o bot WhatsApp prioritário para avisos (ravenavip)"
 		);
 
 		// NUNCA deve escolher Telegram ou Discord
@@ -57,7 +56,6 @@ async function runTests() {
 			grupoAnuncios: "anuncios@g.us"
 		});
 		waBot.isConnected = true;
-		waBot.notificarDonate = true;
 
 		let pinnedDuration = null;
 		waBot.sendReturnMessages = async (retMsg) => {
@@ -129,7 +127,6 @@ async function runTests() {
 			grupoAvisos: "wa_avisos@g.us"
 		});
 		waBot.isConnected = true;
-		waBot.notificarDonate = true;
 
 		// Injeta no Database global para testes
 		const Database = require("../utils/Database");

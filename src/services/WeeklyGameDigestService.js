@@ -322,22 +322,18 @@ class WeeklyGameDigestService {
 				return false;
 			}
 
-			// Localiza estritamente o bot principal do WhatsApp (notificarDonate: true, ex: ravenavip)
+			// Localiza estritamente o bot principal do WhatsApp (ravenavip ou vip)
 			// NUNCA seleciona bots do Telegram ou Discord
 			const targetBot =
 				bots.find(
 					(b) =>
-						!b.useTelegram && !b.useDiscord && b.notificarDonate && (b.isConnected || b.testMode)
-				) ||
-				bots.find(
-					(b) =>
-						!b.useTelegram && !b.useDiscord && b.id === "ravenavip" && (b.isConnected || b.testMode)
+						!b.useTelegram && !b.useDiscord && (b.id === "ravenavip" || b.vip) && (b.isConnected || b.testMode)
 				) ||
 				bots.find((b) => !b.useTelegram && !b.useDiscord && (b.isConnected || b.testMode));
 
 			if (!targetBot) {
 				this.logger.warn(
-					"[sendDigest] Nenhum bot WhatsApp habilitado (ravenavip / notificarDonate) conectado para envio."
+					"[sendDigest] Nenhum bot WhatsApp habilitado (ravenavip / vip) conectado para envio."
 				);
 				return false;
 			}

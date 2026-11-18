@@ -45,7 +45,6 @@ class FakeBot {
 		this.grupoLogs = options.grupoLogs ?? null;
 		this.dossieGroups = options.dossieGroups ?? options.grupoLogs ?? null;
 		this.grupoAvisos = options.grupoAvisos ?? options.grupoLogs ?? null;
-		this.grupoEstabilidade = options.grupoEstabilidade ?? null;
 		this.grupoInvites = options.grupoInvites ?? null;
 		this.grupoAnuncios = options.grupoAnuncios ?? null;
 		this.grupoInteracao = options.grupoInteracao ?? null;
@@ -831,7 +830,6 @@ class FakeBot {
 			matches(this.grupoLogs) ||
 			matches(this.grupoInvites) ||
 			matches(this.grupoAvisos) ||
-			matches(this.grupoEstabilidade) ||
 			this.isDossieGroup(groupId)
 		);
 	}

@@ -56,7 +56,6 @@ class WhatsAppBotTelegram {
 			this.grupoLogs ??
 			(process.env.TELEGRAM_GRUPO_DOSSIES ? parseInt(process.env.TELEGRAM_GRUPO_DOSSIES) : null);
 		this.grupoAvisos = parseInt(options.grupoAvisos || process.env.TELEGRAM_GRUPO_AVISOS);
-		this.notificarDonate = options.notificarDonate;
 		this.webhookHost = options.webhookHost; // ex: ravena.moothz.com
 		this.webhookPort = options.webhookPort || 9001;
 		this.pollingInterval = null; // Para armazenar o ID do intervalo de polling
@@ -1870,7 +1869,6 @@ class WhatsAppBotTelegram {
 			matches(this.grupoLogs) ||
 			matches(this.grupoInvites) ||
 			matches(this.grupoAvisos) ||
-			matches(this.grupoEstabilidade) ||
 			this.isDossieGroup(groupId)
 		);
 	}

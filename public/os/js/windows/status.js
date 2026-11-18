@@ -159,14 +159,22 @@ WindowManager.register('status', {
             }
         }
 
-        const msgsPercent = Math.min(75, (msgsHr / 5000) * 75);
+        // Fator 1: Throttle de carga (% do ratelimit) → peso de até 50% da barra
+        const throttleLoad = (bot.throttle && bot.throttle.rateLimit > 0)
+            ? (bot.throttle.loadPercent || 0)
+            : 0;
+        const throttlePercent = Math.min(50, (throttleLoad / 100) * 50);
 
-        // Delay (0s to 30s -> 0-25%)
+        // Fator 2: Volume msgs/hora (tráfego geral) → peso de até 30% da barra
+        // Normalizado para 3000 msgs/hr = 30% da barra
+        const msgsPercent = Math.min(30, (msgsHr / 3000) * 30);
+
+        // Fator 3: Delay médio de resposta → peso de até 20% da barra
+        // Normalizado para 30s delay = 20% da barra
         const avgDelay = bot.responseTime ? (bot.responseTime.avg || 0) : 0;
-        const delayMs = avgDelay * 1000;
-        const delayPercent = Math.min(25, (delayMs / 30000) * 25);
+        const delayPercent = Math.min(20, ((avgDelay * 1000) / 30000) * 20);
 
-        const totalPercent = Math.min(100, Math.max(5, msgsPercent + delayPercent));
+        const totalPercent = Math.min(100, Math.max(5, throttlePercent + msgsPercent + delayPercent));
 
         // Color calculation (0% green -> 50% yellow -> 100% red)
         const hue = Math.max(0, 120 - (totalPercent * 1.2));
@@ -187,11 +195,17 @@ WindowManager.register('status', {
             statusDotClass = 'status-yellow';
         }
 
-        const barText = isBanned
-            ? 'BANIDA'
-            : !bot.connected
-            ? 'DESCONECTADO'
-            : `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+        let barText;
+        if (isBanned) {
+            barText = 'BANIDA';
+        } else if (!bot.connected) {
+            barText = 'DESCONECTADO';
+        } else if (bot.throttle && bot.throttle.rateLimit > 0) {
+            const queueSize = bot.throttle.queueSize || 0;
+            barText = `${msgsHr} msgs/hr · ${throttleLoad}% carga${queueSize > 0 ? ` · fila: ${queueSize}` : ''}`;
+        } else {
+            barText = `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+        }
 
         const phone = bot.phoneNumber || '';
         const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
@@ -199,7 +213,7 @@ WindowManager.register('status', {
         const safeId = esc(bot.id);
 
         return `
-            <div class="drive-item ${isOffline ? 'drive-offline' : ''}" 
+            <div class="drive-item ${isOffline ? 'drive-offline' : ''} ${isBanned ? 'drive-banned' : ''}" 
                  data-bot-id="${safeId}" 
                  data-phone="${esc(phone)}"
                  title="Clique para mais informações">
@@ -220,7 +234,7 @@ WindowManager.register('status', {
                         <span class="drive-bar-text ${isOffline ? 'bar-text-offline' : ''}">${barText}</span>
                     </div>
                 </div>
-                ${cleanPhone ? `
+                ${cleanPhone && !isBanned ? `
                     <a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" onclick="event.stopPropagation();">
                         <i class="fab fa-whatsapp"></i>
                     </a>
@@ -244,10 +258,20 @@ WindowManager.register('status', {
                 if (recent.length > 0) msgsHr = recent.length * 60;
             }
 
-            const msgsPercent = Math.min(75, (msgsHr / 5000) * 75);
+            // Fator 1: Throttle de carga (% do ratelimit) → peso de até 50%
+            const throttleLoad = (bot.throttle && bot.throttle.rateLimit > 0)
+                ? (bot.throttle.loadPercent || 0)
+                : 0;
+            const throttlePercent = Math.min(50, (throttleLoad / 100) * 50);
+
+            // Fator 2: Volume msgs/hora (tráfego geral) → peso de até 30%
+            const msgsPercent = Math.min(30, (msgsHr / 3000) * 30);
+
+            // Fator 3: Delay médio de resposta → peso de até 20%
             const avgDelay = bot.responseTime ? (bot.responseTime.avg || 0) : 0;
-            const delayPercent = Math.min(25, ((avgDelay * 1000) / 30000) * 25);
-            const totalPercent = Math.min(100, Math.max(5, msgsPercent + delayPercent));
+            const delayPercent = Math.min(20, ((avgDelay * 1000) / 30000) * 20);
+
+            const totalPercent = Math.min(100, Math.max(5, throttlePercent + msgsPercent + delayPercent));
 
             const hue = Math.max(0, 120 - (totalPercent * 1.2));
             const barColor = `hsl(${hue}, 85%, 45%)`;
@@ -260,7 +284,12 @@ WindowManager.register('status', {
                 fillEl.style.background = barColor;
             }
             if (textEl) {
-                textEl.textContent = `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+                if (bot.throttle && bot.throttle.rateLimit > 0) {
+                    const queueSize = bot.throttle.queueSize || 0;
+                    textEl.textContent = `${msgsHr} msgs/hr · ${throttleLoad}% carga${queueSize > 0 ? ` · fila: ${queueSize}` : ""}`;
+                } else {
+                    textEl.textContent = `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+                }
             }
         });
     },

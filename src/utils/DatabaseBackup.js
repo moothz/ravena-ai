@@ -785,7 +785,7 @@ ${err.message}`);
 	async reportToTelegram(message) {
 		for (const bot of this.db.botInstances) {
 			try {
-				if (bot.notificarDonate) {
+				if (!bot.useTelegram && !bot.useDiscord && (bot.id === "ravenavip" || bot.vip)) {
 					await bot.sendMessage(bot.grupoLogs || process.env.GRUPO_LOGS, message);
 				}
 			} catch (e) {

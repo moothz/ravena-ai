@@ -559,6 +559,9 @@ function renderBotCard(botContainer, data, bot){
     if (bot.comunitario) {
         botCard.classList.add('comunitario');
     }
+    if (bot.banido) {
+        botCard.classList.add('banned');
+    }
     
     let buttonsHtml = '';
     if (isAdminMode) {
@@ -638,9 +641,10 @@ function renderBotCard(botContainer, data, bot){
         <div class="bot-card-content">
             <div class="bot-header">
                 <div class="bot-title">
+                    ${!bot.banido ? `
                     <a href="${whatsappUrl}" target="_blank" title="Abrir chat no WhatsApp">
                         <img src="whatsapp.png" alt="WhatsApp" class="whatsapp-icon">
-                    </a>
+                    </a>` : ''}
                     <div class="bot-name">${bot.id}</div>
                 </div>
                 <div class="status-dot ${statusClass}" id="status-${bot.id}" title="${statusDesc}"></div>
@@ -649,7 +653,7 @@ function renderBotCard(botContainer, data, bot){
                 <div class="detail-item">
                     <span class="detail-label">Num.:</span>
                     <span class="detail-value">
-                        <a href="${whatsappUrl}" target="_blank" class="phone-link">${phoneNumber || 'Não disponível'}</a>
+                        ${bot.banido ? (phoneNumber || 'Não disponível') : `<a href="${whatsappUrl}" target="_blank" class="phone-link">${phoneNumber || 'Não disponível'}</a>`}
                     </span>
                 </div>
                 ${divResponsavel}

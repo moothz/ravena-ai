@@ -32,6 +32,7 @@ const MemoryCache = require("./utils/MemoryCache");
 const storageService = require("./services/StorageService");
 const SenderDropMonitor = require("./services/SenderDropMonitor");
 const PvSafetyService = require("./services/PvSafetyService");
+const MessageThrottler = require("./services/MessageThrottler");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -110,7 +111,6 @@ class WhatsAppBotGo {
 		}
 		this.webhookHost = wh;
 		this.webhookPort = options.webhookPort ?? process.env.WEBHOOK_PORT_WHATSGO ?? 3000;
-		this.notificarDonate = options.notificarDonate;
 		this.pvAI = options.pvAI;
 		this.version = "WhatsgoGO";
 		this.wwebversion = "0";
@@ -194,6 +194,9 @@ class WhatsAppBotGo {
 		this.autoDownloadPV = options.autoDownloadPV ?? false;
 		this.whitelist = options.whitelistPV ?? [];
 		this.ignoreInvites = options.ignoreInvites ?? false;
+		// Rate limiting / throttling de saída
+		this.rateLimit = options.rateLimit ?? 0; // 0 = desabilitado
+		this.throttler = new MessageThrottler(this.id, this.rateLimit);
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
 		this.dossieGroups =
 			options.dossieGroups ??
@@ -4103,17 +4106,30 @@ class WhatsAppBotGo {
 
 			let response;
 			try {
-				response = await this.apiClient.post(endpoint, payload);
-			} catch (postErr) {
-				if (endpoint === "/send/link") {
+				// Throttling progressivo de saída (peso 1.0 = mensagem normal)
+				response = await this.throttler.enqueue(async () => {
+					try {
+						return await this.apiClient.post(endpoint, payload);
+					} catch (postErr) {
+						if (endpoint === "/send/link") {
+							this.logger.warn(
+								`[${this.id}] Falha ao enviar com link preview (/send/link), enviando via /send/text:`,
+								postErr.message || postErr
+							);
+							return await this.apiClient.post("/send/text", payload);
+						} else {
+							throw postErr;
+						}
+					}
+				}, 1.0);
+			} catch (throttleErr) {
+				if (throttleErr.message && throttleErr.message.startsWith("THROTTLE_TIMEOUT")) {
 					this.logger.warn(
-						`[${this.id}] Falha ao enviar com link preview (/send/link), enviando via /send/text:`,
-						postErr.message || postErr
+						`[${this.id}] [THROTTLE] Mensagem descartada por timeout na fila para ${chatId}`
 					);
-					response = await this.apiClient.post("/send/text", payload);
-				} else {
-					throw postErr;
+					throw throttleErr;
 				}
+				throw throttleErr;
 			}
 			this.loadReport.trackSentMessage(isGroup);
 
@@ -4952,14 +4968,23 @@ class WhatsAppBotGo {
 		}
 
 		try {
-			await this.apiClient.post("/message/react", {
-				number: chatId,
-				reaction,
-				id: messageId,
-				fromMe: false // Assuming we are reacting to others
-			});
+			// Throttling progressivo de saída (peso 1/3 = reação)
+			await this.throttler.enqueue(async () => {
+				return await this.apiClient.post("/message/react", {
+					number: chatId,
+					reaction,
+					id: messageId,
+					fromMe: false,
+				});
+			}, 1 / 3);
 			return true;
 		} catch (e) {
+			if (e.message && e.message.startsWith("THROTTLE_TIMEOUT")) {
+				this.logger.warn(
+					`[${this.id}] [THROTTLE] Reação descartada por timeout na fila para ${chatId}`
+				);
+				return false; // Reação descartada silenciosamente
+			}
 			if (chatId && chatId.includes("@g.us") && isNotInGroupError(e)) {
 				await this.markNotInGroup(chatId);
 			}
@@ -5071,7 +5096,6 @@ class WhatsAppBotGo {
 			matches(this.grupoInvites) ||
 			matches(this.grupoAvisos) ||
 			matches(this.grupoAnuncios) ||
-			matches(this.grupoEstabilidade) ||
 			this.isDossieGroup(groupId)
 		);
 	}

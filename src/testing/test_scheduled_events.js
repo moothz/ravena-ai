@@ -362,7 +362,7 @@ async function runTests() {
 		id: "mock-wa-bot",
 		useTelegram: false,
 		isConnected: true,
-		notificarDonate: true,
+		vip: true,
 		async sendReturnMessages(msgs) {
 			for (const m of msgs) sentCalls.push(m);
 		}

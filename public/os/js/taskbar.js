@@ -534,7 +534,7 @@ const Taskbar = {
                         </span>
                     </div>
                     <div style="display: flex; gap: 6px; margin-left: 14px; margin-top: 2px;">
-                        ${cleanPhone ? `
+                        ${cleanPhone && !bot.banido ? `
                             <a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="os-btn" style="font-size: 9px; padding: 2px 6px; background: #25d366; border-color: #25d366;">
                                 <i class="fab fa-whatsapp"></i> Chamar
                             </a>

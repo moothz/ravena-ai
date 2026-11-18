@@ -411,6 +411,22 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
 
             <div class="bot-accordion-body">
+                <!-- Seção 0: Tipo de Plataforma -->
+                <div class="form-section">
+                    <div class="form-section-title"><i class="fas fa-robot"></i> Tipo de Bot</div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label>Plataforma</label>
+                            <select class="form-control field-platform-type">
+                                <option value="whatsapp" ${!bot.useTelegram && !bot.useDiscord ? "selected" : ""}>WhatsApp</option>
+                                <option value="telegram" ${bot.useTelegram ? "selected" : ""}>Telegram</option>
+                                <option value="discord" ${bot.useDiscord ? "selected" : ""}>Discord</option>
+                            </select>
+                            <div class="field-hint">Define a plataforma desta instância. Exibe apenas os campos relevantes abaixo.</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Seção 1: Identificação & Acesso -->
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-id-card"></i> Identificação & Acesso ao Painel</div>
@@ -546,17 +562,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                         <div class="toggle-card">
                             <div class="toggle-info">
-                                <span class="toggle-title">Notificar Doação</span>
-                                <span class="toggle-desc">Envia avisos de doações recebidas</span>
-                            </div>
-                            <label class="switch-toggle">
-                                <input type="checkbox" class="field-notificar-donate" ${bot.notificarDonate ? "checked" : ""}>
-                                <span class="slider-round"></span>
-                            </label>
-                        </div>
-
-                        <div class="toggle-card">
-                            <div class="toggle-info">
                                 <span class="toggle-title">Atualizar Status</span>
                                 <span class="toggle-desc">Atualiza recado do perfil no scheduler</span>
                             </div>
@@ -637,11 +642,6 @@ document.addEventListener("DOMContentLoaded", () => {
                             <div class="field-hint">JID para envio de dossiês automáticos.</div>
                         </div>
                         <div class="form-group">
-                            <label>Grupo Estabilidade (grupoEstabilidade)</label>
-                            <input type="text" class="form-control field-grupo-estabilidade" value="${bot.grupoEstabilidade || ""}" placeholder="ex: 1203634...@g.us">
-                            <div class="field-hint">JID para monitoramento de estabilidade.</div>
-                        </div>
-                        <div class="form-group">
                             <label>Porta Webhook (webhookPort)</label>
                             <input type="number" class="form-control field-webhook-port" value="${bot.webhookPort || ""}" placeholder="ex: 6200">
                             <div class="field-hint">Porta HTTP para eventos do Whatsmeow Go.</div>
@@ -653,7 +653,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-broom"></i> Manutenção & Limpeza de Mensagens</div>
                     <div class="form-grid">
-                        <div class="form-group" style="grid-column: 1 / -1;">
+                        <div class="form-group">
+                            <label>Rate Limit de Envio (ratelimit)</label>
+                            <input type="number"
+                                   class="form-control field-ratelimit"
+                                   value="${bot.ratelimit !== undefined && bot.ratelimit !== null ? bot.ratelimit : 0}"
+                                   min="0" max="600" step="1"
+                                   placeholder="0 = desabilitado">
+                            <div class="field-hint">
+                                Máximo de mensagens por minuto que este bot pode enviar. 0 = sem limite.
+                                Sugerido: 15 para bots públicos. Reações valem 1/3 de mensagem.
+                                Acima de 50% da cota o sistema começa a atrasar envios progressivamente.
+                                ${bot.privado ? '<br><span style="color: var(--status-green);">✓ Bot privado — rate limit não aplicado por padrão.</span>' : ""}
+                            </div>
+                        </div>
+                        <div class="form-group">
                             <label>Intervalo de Limpeza de Mensagens (deleteMessagesInterval)</label>
                             <input type="text" class="form-control field-delete-messages-interval" value="${bot.deleteMessagesInterval !== undefined ? bot.deleteMessagesInterval : "false"}" placeholder="false ou número de dias (ex: 3 ou 7)">
                             <div class="field-hint">false = nunca apaga; 3 = apaga a cada 3 dias; 7 = semanalmente às 03:30 AM via ClearChat.</div>
@@ -661,34 +675,35 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
 
-                <!-- Seção 6: Integração Externa (Telegram / Discord) -->
-                <div class="form-section">
-                    <div class="form-section-title"><i class="fas fa-network-wired"></i> Conexão Multiplataforma (Telegram / Discord)</div>
+                <!-- Seção Telegram -->
+                <div class="form-section platform-section" data-platform="telegram">
+                    <div class="form-section-title"><i class="fab fa-telegram"></i> Configuração do Telegram</div>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Usar Telegram (useTelegram)</label>
-                            <label class="switch-toggle">
-                                <input type="checkbox" class="field-use-telegram" ${bot.useTelegram ? "checked" : ""}>
-                                <span class="slider-round"></span>
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>Telegram Bot Token</label>
+                            <label>Token do Bot (telegramBotToken)</label>
                             <input type="password" class="form-control field-telegram-token" value="${bot.telegramBotToken || ""}" placeholder="Token do BotFather">
                         </div>
                         <div class="form-group">
-                            <label>Telegram Bot Name</label>
+                            <label>Nome do Bot (telegramBotName)</label>
                             <input type="text" class="form-control field-telegram-name" value="${bot.telegramBotName || ""}" placeholder="ex: ravenosabot">
                         </div>
                         <div class="form-group">
-                            <label>Usar Discord (useDiscord)</label>
-                            <label class="switch-toggle">
-                                <input type="checkbox" class="field-use-discord" ${bot.useDiscord ? "checked" : ""}>
-                                <span class="slider-round"></span>
-                            </label>
+                            <label>ID do Bot Telegram (telegramBotId)</label>
+                            <input type="text" class="form-control field-telegram-bot-id" value="${bot.telegramBotId || ""}" placeholder="ex: 8402791288">
                         </div>
+                        <div class="form-group">
+                            <label>Webhook Host (webhookHost)</label>
+                            <input type="text" class="form-control field-webhook-host" value="${bot.webhookHost || ""}" placeholder="ex: rav-telegram.moothz.com">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção Discord -->
+                <div class="form-section platform-section" data-platform="discord">
+                    <div class="form-section-title"><i class="fab fa-discord"></i> Configuração do Discord</div>
+                    <div class="form-grid">
                         <div class="form-group" style="grid-column: 1 / -1;">
-                            <label>Discord Bot Token</label>
+                            <label>Token do Bot Discord (discordToken)</label>
                             <input type="password" class="form-control field-discord-token" value="${bot.discordToken || ""}" placeholder="Token da aplicação no Discord Developer Portal">
                         </div>
                     </div>
@@ -757,6 +772,21 @@ document.addEventListener("DOMContentLoaded", () => {
 				openBotIds.delete(bot.nome);
 			}
 		});
+
+		// Visibilidade condicional por plataforma
+		function applyPlatformVisibility(platform) {
+			card.querySelectorAll(".platform-section").forEach((sec) => {
+				sec.style.display = sec.dataset.platform === platform ? "" : "none";
+			});
+		}
+		const platformSelect = card.querySelector(".field-platform-type");
+		if (platformSelect) {
+			applyPlatformVisibility(platformSelect.value);
+			platformSelect.addEventListener("change", () => {
+				applyPlatformVisibility(platformSelect.value);
+				markDirty();
+			});
+		}
 
 		// Toggle Mostrar/Ocultar Senha
 		const togglePwBtn = card.querySelector(".btn-toggle-pw");
@@ -1057,7 +1087,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		bot.autoDownloadPV = getBool(".field-auto-download-pv");
 		bot.ignoreInvites = getBool(".field-ignore-invites");
 		bot.pvAI = getBool(".field-pv-ai");
-		bot.notificarDonate = getBool(".field-notificar-donate");
 		bot.updateStatus = getBool(".field-update-status");
 		bot.sendJoinInfo = getBool(".field-send-join-info");
 
@@ -1069,7 +1098,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		bot.grupoAvisos = getVal(".field-grupo-avisos") || null;
 		bot.grupoInvites = getVal(".field-grupo-invites") || null;
 		bot.dossieGroups = getVal(".field-dossie-groups") || null;
-		bot.grupoEstabilidade = getVal(".field-grupo-estabilidade") || null;
 
 		const whPortVal = getVal(".field-webhook-port");
 		bot.webhookPort = whPortVal ? parseInt(whPortVal, 10) : null;
@@ -1086,12 +1114,47 @@ document.addEventListener("DOMContentLoaded", () => {
 			bot.deleteMessagesInterval = isNaN(parsedDays) || parsedDays <= 0 ? false : parsedDays;
 		}
 
-		bot.useTelegram = getBool(".field-use-telegram");
-		bot.telegramBotToken = getVal(".field-telegram-token");
-		bot.telegramBotName = getVal(".field-telegram-name");
+		// Plataforma
+		const platformVal = getVal(".field-platform-type");
+		if (platformVal === "telegram") {
+			bot.useTelegram = true;
+			bot.useDiscord = false;
+		} else if (platformVal === "discord") {
+			bot.useDiscord = true;
+			bot.useTelegram = false;
+		} else {
+			bot.useTelegram = false;
+			bot.useDiscord = false;
+		}
 
-		bot.useDiscord = getBool(".field-use-discord");
-		bot.discordToken = getVal(".field-discord-token");
+		// Campos de Telegram (só lê se for Telegram)
+		if (bot.useTelegram) {
+			bot.telegramBotToken = getVal(".field-telegram-token");
+			bot.telegramBotName = getVal(".field-telegram-name");
+			bot.telegramBotId = getVal(".field-telegram-bot-id");
+			bot.webhookHost = getVal(".field-webhook-host") || null;
+		} else {
+			delete bot.telegramBotToken;
+			delete bot.telegramBotName;
+			delete bot.telegramBotId;
+			delete bot.webhookHost;
+		}
+
+		// Campos de Discord (só lê se for Discord)
+		if (bot.useDiscord) {
+			bot.discordToken = getVal(".field-discord-token");
+		} else {
+			delete bot.discordToken;
+		}
+
+		// Rate Limit
+		const rateLimitEl = card.querySelector(".field-ratelimit");
+		if (rateLimitEl) {
+			const rl = parseInt(rateLimitEl.value, 10);
+			bot.ratelimit = !isNaN(rl) && rl > 0 ? Math.min(600, rl) : 0;
+		} else {
+			bot.ratelimit = 0;
+		}
 
 		// Extrai o objeto extras reconstruído a partir do DOM
 		const extrasContainer = card.querySelector(`#extras-container-${bot.nome}`);
@@ -1203,7 +1266,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			autoDownloadPV: false,
 			ignoreInvites: false,
 			pvAI: true,
-			notificarDonate: false,
 			updateStatus: true,
 			sendJoinInfo: true,
 			aiPersonality: "",

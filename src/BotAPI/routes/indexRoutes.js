@@ -190,7 +190,10 @@ function registerIndexRoutes(api) {
 							numeroResponsavel: bot.numeroResponsavel ?? false,
 							supportMsg: bot.supportMsg ?? false,
 							vip: bot.vip ?? false,
-							privado: bot.privado ?? false
+							privado: bot.privado ?? false,
+							throttle: bot.throttler
+								? bot.throttler.getMetrics()
+								: { loadPercent: 0, delayMs: 0, queueSize: 0, rateLimit: 0, windowCost: 0 }
 						};
 					})
 			});

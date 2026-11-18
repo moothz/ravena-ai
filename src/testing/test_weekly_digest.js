@@ -209,13 +209,11 @@ async function runTests() {
 		const discordBot = new FakeBot({ id: "ravena-discord", grupoLogs: "discord_logs" });
 		discordBot.useDiscord = true;
 		const yukiBot = new FakeBot({ id: "yuki", grupoLogs: "yuki_logs@g.us" });
-		yukiBot.notificarDonate = false;
 		const ravenaVipBot = new FakeBot({
 			id: "ravenavip",
 			grupoAnuncios: "target_anuncios@g.us",
 			grupoAvisos: "target_avisos@g.us"
 		});
-		ravenaVipBot.notificarDonate = true;
 
 		digestService.registeredBots.clear();
 		digestService.registerBot(telegramBot);

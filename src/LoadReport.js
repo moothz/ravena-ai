@@ -126,20 +126,6 @@ class LoadReport {
 			// A atualização de status do perfil agora é gerenciada pelo ProfileStatusScheduler
 			// de forma escalonada (staggered a cada 5 minutos) para evitar requisições simultâneas.
 
-			// Envia relatório para o grupo de logs se configurado
-			if (this.bot.grupoEstabilidade) {
-				try {
-					const reportMessage = this.formatReportMessage(report);
-					this.logger.info(reportMessage);
-					await this.bot.sendMessage(this.bot.grupoEstabilidade, reportMessage);
-				} catch (error) {
-					this.logger.error(
-						"Erro ao enviar relatório de carga para o grupo de estabilidade:",
-						error
-					);
-				}
-			}
-
 			// Reseta estatísticas para o próximo período
 			this.stats = {
 				receivedPrivate: 0,

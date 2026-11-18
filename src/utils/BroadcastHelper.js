@@ -6,7 +6,7 @@ const logger = new Logger("broadcast-helper");
 
 /**
  * Obtém a instância prioritária de bot do WhatsApp para broadcasts nos grupos de avisos/anúncios.
- * Segue a regra do ravenavip / notificarDonate (igual ao sistema de donates e weekly digest).
+ * Segue a regra do ravenavip / vip (igual ao sistema de donates e weekly digest).
  *
  * @param {Array<Object>} [botList=null] - Lista opcional de bots para injeção/testes
  * @returns {Object|null}
@@ -19,11 +19,9 @@ function getWhatsAppBroadcastBot(botList = null) {
 	const isOnline = (b) => Boolean(b && (b.isConnected || b.testMode));
 
 	return (
-		allBots.find((b) => isWhatsApp(b) && b.notificarDonate && isOnline(b)) ||
 		allBots.find((b) => isWhatsApp(b) && b.id === "ravenavip" && isOnline(b)) ||
 		allBots.find((b) => isWhatsApp(b) && b.vip && isOnline(b)) ||
 		allBots.find((b) => isWhatsApp(b) && isOnline(b)) ||
-		allBots.find((b) => isWhatsApp(b) && b.notificarDonate) ||
 		allBots.find((b) => isWhatsApp(b) && b.id === "ravenavip") ||
 		allBots.find((b) => isWhatsApp(b)) ||
 		null

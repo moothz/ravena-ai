@@ -454,9 +454,10 @@ async function runTests() {
 	// 5. Teste da mensagem de notificação de donate em grupos logs/avisos
 	console.log("\n--- 5. Testando notifyGroupsAboutDonation com e sem número vinculado ---");
 	const dummyBot = {
+		id: "ravenavip",
+		isConnected: true,
 		grupoLogs: "logs@g.us",
 		grupoAvisos: "avisos@g.us",
-		notificarDonate: true,
 		sent: [],
 		async sendMessage(target, msg) {
 			this.sent.push({ target, msg });

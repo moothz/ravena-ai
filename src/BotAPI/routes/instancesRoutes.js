@@ -983,7 +983,12 @@ function registerInstancesRoutes(api) {
 					liveBot.autoDownloadPV = Boolean(botConfig.autoDownloadPV);
 					liveBot.ignoreInvites = Boolean(botConfig.ignoreInvites);
 					liveBot.pvAI = Boolean(botConfig.pvAI);
-					liveBot.notificarDonate = Boolean(botConfig.notificarDonate);
+					// Sincronizar rateLimit em tempo real sem reiniciar o bot
+					const newRateLimit = typeof botConfig.ratelimit === "number" ? botConfig.ratelimit : 0;
+					if (liveBot.throttler) {
+						liveBot.throttler.rateLimit = newRateLimit;
+					}
+					liveBot.rateLimit = newRateLimit;
 					liveBot.updateStatus =
 						botConfig.updateStatus !== undefined ? Boolean(botConfig.updateStatus) : true;
 					liveBot.sendJoinInfo =
@@ -997,8 +1002,6 @@ function registerInstancesRoutes(api) {
 					if (botConfig.grupoAvisos !== undefined) liveBot.grupoAvisos = botConfig.grupoAvisos;
 					if (botConfig.grupoInvites !== undefined) liveBot.grupoInvites = botConfig.grupoInvites;
 					if (botConfig.dossieGroups !== undefined) liveBot.dossieGroups = botConfig.dossieGroups;
-					if (botConfig.grupoEstabilidade !== undefined)
-						liveBot.grupoEstabilidade = botConfig.grupoEstabilidade;
 					if (botConfig.linkGrupao !== undefined) liveBot.linkGrupao = botConfig.linkGrupao;
 					if (botConfig.linkAvisos !== undefined) liveBot.linkAvisos = botConfig.linkAvisos;
 					if (botConfig.linkComunidade !== undefined)

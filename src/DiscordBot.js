@@ -91,7 +91,6 @@ class DiscordBot {
 			process.env.GRUPO_DOSSIES_DISCORD ??
 			process.env.GRUPO_LOGS_DISCORD;
 		this.grupoAvisos = options.grupoAvisos; // Espera-se um Channel ID
-		this.notificarDonate = options.notificarDonate;
 		this.linkAvisos = options.linkAvisos ?? process.env.LINK_GRUPO_AVISOS;
 		this.linkGrupao = options.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO;
 		this.linkComunidade = options.linkComunidade ?? process.env.LINK_COMUNIDADE;
@@ -1996,7 +1995,6 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 			matches(this.grupoLogs) ||
 			matches(this.grupoInvites) ||
 			matches(this.grupoAvisos) ||
-			matches(this.grupoEstabilidade) ||
 			this.isDossieGroup(groupId)
 		);
 	}

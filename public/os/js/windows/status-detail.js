@@ -36,6 +36,13 @@ WindowManager.register('status-detail', {
         const maxDelay = bot.responseTime ? (bot.responseTime.max || 0) : 0;
         const msgsHr = Math.round(bot.msgsHr || 0);
 
+        const throttle = bot.throttle || {};
+        const throttleRateLimit = throttle.rateLimit || 0;
+        const throttleLoad = throttle.loadPercent || 0;
+        const throttleQueue = throttle.queueSize || 0;
+        const throttleDelayMs = throttle.delayMs || 0;
+        const throttleWindowCost = throttle.windowCost || 0;
+
         let typeBadge = '<span style="color: var(--bright-blue);">🐦‍⬛ Oficial</span>';
         if (bot.privado) typeBadge = '<span style="color: #ff9800;">🔒 Privada</span>';
         else if (bot.vip) typeBadge = '<span style="color: var(--gold-color);">💎 VIP</span>';
@@ -64,7 +71,7 @@ WindowManager.register('status-detail', {
             <div class="bot-detail-view">
                 <div class="bot-detail-header">
                     <img src="img/profiles/${encodeURIComponent(bot.id)}.jpg" 
-                         class="bot-detail-avatar" 
+                         class="bot-detail-avatar ${bot.banido ? 'avatar-banned' : ''}" 
                          onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
                          alt="${safeId}">
                     <div class="bot-detail-title">
@@ -90,6 +97,15 @@ WindowManager.register('status-detail', {
                         <div class="detail-card-label">Última Atividade</div>
                         <div class="detail-card-value" style="font-size: 11px;">${esc(lastSeenText)}</div>
                     </div>
+                    <div class="detail-card" style="grid-column: span 2;">
+                        <div class="detail-card-label">Rate Limit & Throttling</div>
+                        <div class="detail-card-value" style="font-size: 11px;">
+                            ${throttleRateLimit > 0
+                                ? `${throttleRateLimit} msgs/min &nbsp;·&nbsp; <b>${throttleLoad}%</b> carga &nbsp;(${throttleWindowCost.toFixed(1)} msgs/min usadas)${throttleQueue > 0 ? ` &nbsp;·&nbsp; fila: <b style="color: #ecc94b;">${throttleQueue}</b>` : ''}${throttleDelayMs > 0 ? ` &nbsp;·&nbsp; delay: ${throttleDelayMs}ms` : ''}`
+                                : '<span style="color: var(--text-muted, #888);">Desabilitado</span>'
+                            }
+                        </div>
+                    </div>
                     ${comunitContent}
                 </div>
 
@@ -99,7 +115,7 @@ WindowManager.register('status-detail', {
                             <i class="fab fa-whatsapp"></i> Chamar Responsável
                         </a>
                     ` : ''}
-                    ${cleanPhone ? `
+                    ${cleanPhone && !bot.banido ? `
                         <a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="os-btn" style="background: linear-gradient(180deg, #25d366 0%, #128c7e 100%); border-color: #25d366;">
                             <i class="fab fa-whatsapp"></i> Chamar no Whats
                         </a>

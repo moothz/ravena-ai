@@ -173,7 +173,6 @@ async function main() {
 						process.env.TELEGRAM_GRUPO_DOSSIES ??
 						process.env.TELEGRAM_GRUPO_LOGS,
 					grupoAvisos: process.env.TELEGRAM_GRUPO_AVISOS,
-					notificarDonate: rBot.notificarDonate ?? false,
 
 					// Configs de cache
 					redisURL: process.env.CACHE_REDIS_URI,
@@ -212,7 +211,6 @@ async function main() {
 						process.env.GRUPO_DOSSIES_DISCORD ??
 						process.env.GRUPO_LOGS_DISCORD,
 					grupoAvisos: process.env.GRUPO_AVISOS_DISCORD,
-					notificarDonate: rBot.notificarDonate ?? false,
 
 					// Configs de cache
 					redisURL: process.env.CACHE_REDIS_URI,
@@ -256,11 +254,11 @@ async function main() {
 					whitelistPV: whitelistArray,
 					pvAI: rBot.pvAI ?? false,
 					ignoreInvites: rBot.ignoreInvites ?? false,
+					rateLimit: rBot.ratelimit ?? 0,
 					managementUser: rBot.managementUser ?? process.env.BOTAPI_USER,
 					managementPW: rBot.managementPW ?? process.env.BOTAPI_PASSWORD,
 
 					// IDs dos grupos para notificações da comunidade
-					grupoEstabilidade: rBot.grupoEstabilidade ?? process.env.GRUPO_ESTABILIDADE,
 					grupoLogs: rBot.grupoLogs ?? process.env.GRUPO_LOGS,
 					dossieGroups:
 						rBot.dossieGroups ??
@@ -273,7 +271,6 @@ async function main() {
 					grupoInteracao: rBot.grupoInteracao ?? process.env.GRUPO_INTERACAO,
 					linkGrupao: rBot.linkGrupao ?? process.env.LINK_GRUPO_INTERACAO,
 					linkAvisos: rBot.linkAvisos ?? process.env.LINK_GRUPO_AVISOS,
-					notificarDonate: rBot.notificarDonate ?? false, // Apenas um dos bots deve notificar donate
 
 					// WhatsgoAPI
 					goInstanceName: rBot.goID ?? rBot.nome,

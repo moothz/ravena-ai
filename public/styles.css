@@ -630,6 +630,11 @@ h1 {
   transform: translateY(-5px);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
  }
+
+.bot-card.banned .bot-card-bg {
+  filter: grayscale(0.5) sepia(1) hue-rotate(310deg) saturate(2.5) opacity(0.75);
+  border-bottom-color: #ff4d4d;
+}
 /* Updated VIP class with the animation */
  .bot-card.vip .bot-card-bg {
   background-color: #06256d;
