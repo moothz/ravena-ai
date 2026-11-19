@@ -19,7 +19,8 @@ WindowManager.register('status-detail', {
         const body = wb.body;
         const esc = Formatters.escapeHtml;
         const safeId = esc(bot.id);
-        wb.setTitle(`Detalhes: ${bot.id}`);
+        const displayName = esc(bot.nomeExibir || bot.id);
+        wb.setTitle(`Detalhes: ${bot.nomeExibir || bot.id}`);
 
         const phoneNumber = bot.phoneNumber ? Formatters.formatPhoneNumber(bot.phoneNumber) : 'Não informado';
         const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, '') : '';
@@ -75,7 +76,7 @@ WindowManager.register('status-detail', {
                          onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
                          alt="${safeId}">
                     <div class="bot-detail-title">
-                        <h2>${safeId}</h2>
+                        <h2>${displayName}</h2>
                         <p>${typeBadge} &nbsp;|&nbsp; ${statusText}</p>
                     </div>
                 </div>

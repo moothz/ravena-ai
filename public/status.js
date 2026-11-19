@@ -248,10 +248,16 @@ document.addEventListener("DOMContentLoaded", () => {
 		const isOffline = !bot.connected || isBanned;
 
 		const msgsHr = getBotMsgsHr(bot);
-		const msgsPercent = Math.min(75, (msgsHr / 5000) * 75);
+		const throttleLoad = bot.throttle
+			? bot.throttle.loadPercent !== undefined
+				? bot.throttle.loadPercent
+				: 0
+			: 0;
+		const throttlePercent = Math.min(50, (throttleLoad / 100) * 50);
+		const msgsPercent = Math.min(30, (msgsHr / 3000) * 30);
 		const avgDelay = bot.responseTime ? bot.responseTime.avg || 0 : 0;
-		const delayPercent = Math.min(25, ((avgDelay * 1000) / 30000) * 25);
-		const totalPercent = Math.min(100, Math.max(5, msgsPercent + delayPercent));
+		const delayPercent = Math.min(20, ((avgDelay * 1000) / 30000) * 20);
+		const totalPercent = Math.min(100, Math.max(5, throttlePercent + msgsPercent + delayPercent));
 		const hue = Math.max(0, 120 - totalPercent * 1.2);
 
 		const minutesSince = getTimeSinceLastMessage(bot.lastMessageReceived);
@@ -266,11 +272,17 @@ document.addEventListener("DOMContentLoaded", () => {
 			statusDotClass = "status-yellow";
 		}
 
-		const barText = isBanned
-			? "BANIDA"
-			: !bot.connected
-				? "DESCONECTADO"
-				: `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+		let barText;
+		if (isBanned) {
+			barText = "BANIDA";
+		} else if (!bot.connected) {
+			barText = "DESCONECTADO";
+		} else if (bot.throttle && (bot.throttle.rateLimit > 0 || bot.throttle.loadPercent > 0)) {
+			const queueSize = bot.throttle.queueSize || 0;
+			barText = `${msgsHr} msgs/hr · ${throttleLoad}% carga${queueSize > 0 ? ` · fila: ${queueSize}` : ""}`;
+		} else {
+			barText = `${msgsHr} msgs/hr, ${avgDelay.toFixed(1)}s delay`;
+		}
 
 		return {
 			isBanned,
@@ -287,6 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const view = computeBotView(bot);
 		const phone = bot.phoneNumber || "";
 		const safeId = escapeHtml(bot.id);
+		const displayName = escapeHtml(bot.nomeExibir || bot.id);
 
 		return `
             <div class="drive-item ${view.isOffline ? "drive-offline" : ""}"
@@ -304,7 +317,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${view.statusDotClass}"></span>
-                        <span>${safeId}</span>
+                        <span>${displayName}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ""}
                     </div>
                     <div class="drive-bar">
@@ -315,7 +328,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${
 									view.cleanPhone
 										? `
-                    <a href="https://wa.me/${view.cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" aria-label="Chamar ${safeId} no WhatsApp">
+                    <a href="https://wa.me/${view.cleanPhone}" target="_blank" rel="noopener noreferrer" class="drive-wa-btn" title="Chamar no WhatsApp" aria-label="Chamar ${displayName} no WhatsApp">
                         <i class="fab fa-whatsapp"></i>
                     </a>
                 `
@@ -335,6 +348,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			const dotEl = el.querySelector(".status-dot");
 			const fillEl = el.querySelector(".drive-bar-fill");
 			const textEl = el.querySelector(".drive-bar-text");
+			const nameEl = el.querySelector(".drive-name span:not(.status-dot)");
+
+			if (nameEl) {
+				const displayName = bot.nomeExibir || bot.id;
+				if (nameEl.textContent !== displayName) {
+					nameEl.textContent = displayName;
+				}
+			}
 
 			if (dotEl) dotEl.className = `status-dot ${view.statusDotClass}`;
 			if (fillEl) {
@@ -354,6 +375,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				const view = computeBotView(bot);
 				return [
 					String(bot.id),
+					String(bot.nomeExibir || bot.id),
 					!!bot.privado,
 					!!bot.vip,
 					!!bot.comunitario,
@@ -518,7 +540,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		activeModalBotId = String(bot.id);
 		const safeId = escapeHtml(bot.id);
-		modalTitle.innerHTML = `<i class="fas fa-info-circle"></i> Detalhes: ${safeId}`;
+		const displayName = escapeHtml(bot.nomeExibir || bot.id);
+		modalTitle.innerHTML = `<i class="fas fa-info-circle"></i> Detalhes: ${displayName}`;
 
 		const phoneNumber = bot.phoneNumber ? formatPhoneNumber(bot.phoneNumber) : "Não informado";
 		const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : "";
@@ -534,6 +557,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		const avgDelay = bot.responseTime ? bot.responseTime.avg || 0 : 0;
 		const maxDelay = bot.responseTime ? bot.responseTime.max || 0 : 0;
 		const msgsHr = getBotMsgsHr(bot);
+
+		const throttle = bot.throttle || {};
+		const throttleRateLimit = throttle.rateLimit || 0;
+		const throttleLoad = throttle.loadPercent !== undefined ? throttle.loadPercent : 0;
+		const throttleWindowCost = throttle.windowCost !== undefined ? throttle.windowCost : 0;
+		const throttleQueue = throttle.queueSize || 0;
+		const throttleDelayMs = throttle.delayMs || 0;
 
 		let typeBadge = '<span style="color: var(--status-bright-blue);">🐦‍⬛ Oficial</span>';
 		if (bot.privado) typeBadge = '<span style="color: #ff9800;">🔒 Privada</span>';
@@ -573,9 +603,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <img src="${escapeHtml(avatarSrc(bot.id))}"
                          class="bot-detail-avatar"
                          data-avatar-bot-id="${safeId}"
-                         alt="${safeId}">
+                         alt="${displayName}">
                     <div class="bot-detail-title">
-                        <h2>${safeId}</h2>
+                        <h2>${displayName}</h2>
                         <p>${typeBadge} &nbsp;|&nbsp; ${statusText}</p>
                     </div>
                 </div>
@@ -596,6 +626,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-card">
                         <div class="detail-card-label">Última Atividade</div>
                         <div class="detail-card-value" style="font-size: 11px;">${escapeHtml(lastSeenText)}</div>
+                    </div>
+                    <div class="detail-card" style="grid-column: span 2;">
+                        <div class="detail-card-label">Rate Limit & Throttling</div>
+                        <div class="detail-card-value" style="font-size: 11px;">
+                            ${
+															throttleRateLimit > 0 || throttleLoad > 0
+																? `${throttleRateLimit > 0 ? `${throttleRateLimit} msgs/min &nbsp;·&nbsp; ` : ""}<b>${throttleLoad}%</b> carga &nbsp;(${throttleWindowCost.toFixed(1)} msgs/min usadas)${throttleQueue > 0 ? ` &nbsp;·&nbsp; fila: <b style="color: #ecc94b;">${throttleQueue}</b>` : ""}${throttleDelayMs > 0 ? ` &nbsp;·&nbsp; delay: ${throttleDelayMs}ms` : ""}`
+																: '<span style="color: #888;">Desabilitado</span>'
+														}
+                        </div>
                     </div>
                     ${comunitContent}
                 </div>

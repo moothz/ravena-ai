@@ -2204,8 +2204,13 @@ class EventHandler extends EventEmitter {
 								const fileContent = await fs.readFile(groupJoinPath, "utf8");
 								if (fileContent && fileContent.trim() !== "") {
 									botInfoMessage = fileContent.trim();
-									// Substitui variável {prefix} se presente
-									botInfoMessage = botInfoMessage.replace(/{prefix}/g, group.prefix ?? "!");
+									const botDisplayName = bot.nomeExibir || bot.id || "ravenabot";
+									// Substitui variáveis {prefix}, {botName}, {nomeExibir} e fallback *ravenabot*
+									botInfoMessage = botInfoMessage
+										.replace(/{prefix}/g, group.prefix ?? "!")
+										.replace(/{botName}/gi, botDisplayName)
+										.replace(/{nomeExibir}/gi, botDisplayName)
+										.replace(/\*ravenabot\*/gi, `*${botDisplayName}*`);
 								}
 							}
 						} catch (readError) {
@@ -2410,8 +2415,13 @@ Retorne um JSON com dois campos:
 								const fileContent = await fs.readFile(groupJoinExistentePath, "utf8");
 								if (fileContent && fileContent.trim() !== "") {
 									botInfoMessage = fileContent.trim();
-									// Substitui variável {prefix} se presente
-									botInfoMessage = botInfoMessage.replace(/{prefix}/g, group.prefix ?? "!");
+									const botDisplayName = bot.nomeExibir || bot.id || "ravenabot";
+									// Substitui variáveis {prefix}, {botName}, {nomeExibir} e fallback *ravenabot*
+									botInfoMessage = botInfoMessage
+										.replace(/{prefix}/g, group.prefix ?? "!")
+										.replace(/{botName}/gi, botDisplayName)
+										.replace(/{nomeExibir}/gi, botDisplayName)
+										.replace(/\*ravenabot\*/gi, `*${botDisplayName}*`);
 								}
 
 								botInfoMessage += `\n\nO nome do seu grupo está definido como *${group.name}*.

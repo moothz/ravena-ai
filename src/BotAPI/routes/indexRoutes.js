@@ -177,6 +177,7 @@ function registerIndexRoutes(api) {
 
 						return {
 							id: bot.id,
+							nomeExibir: bot.nomeExibir || bot.id,
 							phoneNumber: bot.phoneNumber,
 							supportNumber: bot.supportNumber,
 							connected: bot.isConnected,

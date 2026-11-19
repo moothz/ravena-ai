@@ -1285,11 +1285,18 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Adicionar Nova Instância
 	btnNewInstance.addEventListener("click", () => {
 		const randId = "rav-" + Math.floor(1000 + Math.random() * 9000);
+		const maxWebhookPort = allBots.reduce((max, b) => {
+			const port = parseInt(b.webhookPort, 10);
+			return !isNaN(port) && port > max ? port : max;
+		}, 0);
+		const nextWebhookPort = maxWebhookPort > 0 ? maxWebhookPort + 1 : 14000;
+
 		const newBot = {
 			enabled: false,
 			nome: randId,
 			nomeExibir: "Nova Ravena",
 			numero: "",
+			webhookPort: nextWebhookPort,
 			customPrefix: "!",
 			managementUser: "admin",
 			managementPW: generateSecurePassword(16),

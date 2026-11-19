@@ -226,7 +226,7 @@ WindowManager.register('status', {
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${statusDotClass}"></span>
-                        <span>${safeId}</span>
+                        <span>${esc(bot.nomeExibir || bot.id)}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ''}
                     </div>
                     <div class="drive-bar">
@@ -278,6 +278,14 @@ WindowManager.register('status', {
 
             const fillEl = el.querySelector('.drive-bar-fill');
             const textEl = el.querySelector('.drive-bar-text');
+            const nameEl = el.querySelector('.drive-name span:not(.status-dot)');
+
+            if (nameEl) {
+                const displayName = bot.nomeExibir || bot.id;
+                if (nameEl.textContent !== displayName) {
+                    nameEl.textContent = displayName;
+                }
+            }
 
             if (fillEl) {
                 fillEl.style.width = `${totalPercent}%`;
