@@ -93,6 +93,18 @@ class BankService {
 		this._setupCron();
 	}
 
+	/**
+	 * Parâmetros de balanceamento das Runas, só leitura, para o registro automático de mudanças do painel
+	 * da economia (EconomyAnalyticsChanges). Não muda nada.
+	 */
+	getEconomyParams() {
+		return {
+			cambio: { BASE_RUNAS_PER_KG_FISH, BASE_RUNAS_PER_ZINTHOS, BASE_RUNAS_PER_JARDIM },
+			cotas: { DAILY_LIMITS },
+			loja: { STORE_PRICES, STORE_LIMITS }
+		};
+	}
+
 	_initDatabase() {
 		try {
 			database.getSQLiteDb(

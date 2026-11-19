@@ -24,7 +24,7 @@
 const fs = require("fs");
 const path = require("path");
 const BetterSQLite = require("better-sqlite3");
-const { DAY_MS, economicDayStart } = require("./EconomyAnalyticsRunas");
+const { DAY_MS, DAY_OFFSET_MS, economicDayStart } = require("./EconomyAnalyticsRunas");
 
 const ROOT = path.join(__dirname, "../..");
 const DEFAULT_DB_PATH = "data/economia-carga/analytics.db";
@@ -105,6 +105,10 @@ CREATE TABLE IF NOT EXISTS player_activity_daily (
 -- ID cru → pessoa (telefone com 13 dígitos, tg:<id> ou lid:<id>), regravada a cada rodada
 CREATE TABLE IF NOT EXISTS identities (
   player_id TEXT PRIMARY KEY, person TEXT NOT NULL, phone TEXT, id_kind TEXT NOT NULL, name TEXT
+);
+-- Última leitura dos parâmetros de balanceamento de cada serviço (registro automático de mudanças)
+CREATE TABLE IF NOT EXISTS params_current (
+  source TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (source, key)
 );
 -- Painéis que dependem de dado que pode não existir ainda (selo "Indisponível" no painel)
 CREATE TABLE IF NOT EXISTS features (
@@ -358,7 +362,7 @@ class EconomyAnalyticsStore {
 	/**
 	 * Colunas novas em bancos criados por versões anteriores (só ADD COLUMN; nada é apagado).
 	 * annotations.origin: NULL ou 'manual' (economy-annotate), 'auto' (parâmetro de balanceamento mudou),
-	 * 'possivel' (detectada nos dados, a confirmar), 'descartada'; annotations.detail: JSON opcional.
+	 * 'confirmada', 'possivel' (detectada nos dados, a confirmar), 'descartada'; annotations.detail: JSON opcional.
 	 * soulmate_cycle_hourly.without_quota: NULL nas horas de um waifuletes anterior ao campo.
 	 */
 	_migrate() {
@@ -769,6 +773,56 @@ class EconomyAnalyticsStore {
 		});
 		tx();
 		return { written, days, from: first };
+	}
+
+	/** Última leitura dos parâmetros de um serviço ({chave: valor}), ou null se nunca leu. */
+	getParams(source) {
+		const rows = this.db
+			.prepare("SELECT key, value FROM params_current WHERE source = ?")
+			.all(source);
+		if (!rows.length) return null;
+		return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]));
+	}
+
+	replaceParams(source, params, ts) {
+		const tx = this.db.transaction(() => {
+			this.db.prepare("DELETE FROM params_current WHERE source = ?").run(source);
+			const ins = this.db.prepare(
+				"INSERT INTO params_current (source, key, value, ts) VALUES (?, ?, ?, ?)"
+			);
+			for (const [k, v] of Object.entries(params)) ins.run(source, k, JSON.stringify(v), ts);
+		});
+		tx();
+	}
+
+	/** Linhas por dia econômico e motivo de uma moeda (detecção de possíveis mudanças). */
+	dailyReasonStats(currency, from, to) {
+		return this.db
+			.prepare(
+				`SELECT ((hour - ${DAY_OFFSET_MS}) / ${DAY_MS}) * ${DAY_MS} + ${DAY_OFFSET_MS} AS day, reason,
+				   SUM(tx_count) AS n, SUM(amount_in + amount_out) AS vol
+				 FROM flows_hourly WHERE currency = ? AND hour >= ? AND hour < ? AND kind <> 'non_monetary'
+				 GROUP BY 1, 2`
+			)
+			.all(currency, from, to);
+	}
+
+	reasonLabel(currency, reason) {
+		const r = this.db
+			.prepare("SELECT label FROM reason_labels WHERE currency = ? AND reason = ?")
+			.get(currency, reason);
+		return r ? r.label : reason;
+	}
+
+	hasAnnotation(ts, label) {
+		return !!this.db.prepare("SELECT 1 FROM annotations WHERE ts = ? AND label = ?").get(ts, label);
+	}
+
+	/** Muda a origem de uma anotação (confirmar ou descartar uma possível mudança). */
+	setAnnotationOrigin(ts, label, origin) {
+		return this.db
+			.prepare("UPDATE annotations SET origin = ? WHERE ts = ? AND label = ?")
+			.run(origin, ts, label).changes;
 	}
 
 	getMeta(key) {

@@ -29,6 +29,7 @@ const {
 const { SCHEMA } = require("../services/EconomyAnalyticsStore");
 const R = require("../services/EconomyAnalyticsRunas");
 const EconomyAnalyticsService = require("../services/EconomyAnalyticsService");
+const Changes = require("../services/EconomyAnalyticsChanges");
 
 const H = R.HOUR_MS;
 const D = R.DAY_MS;
@@ -133,6 +134,12 @@ function startMockServer(state) {
 		const isWaifu = req.headers.authorization === "Bearer test-waifu-key";
 		const isJardim = req.headers["x-api-key"] === "test-jardim-key";
 		const svc = isWaifu ? "waifuletes" : isJardim ? "jardim" : null;
+		if (svc && u.pathname === "/internal/economy/params") {
+			const p = state.params && state.params[svc];
+			if (!p) res.writeHead(404).end("{}");
+			else res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(p));
+			return;
+		}
 		if (!svc || u.pathname !== "/internal/economy/summary") {
 			res.writeHead(401).end("{}");
 			return;
@@ -893,7 +900,8 @@ async function main() {
 				ciclo_alma_gemea: 1,
 				atividade: 1,
 				fluxos_petalitas: 0,
-				causa_sem_origem: 0
+				causa_sem_origem: 0,
+				mudancas_automaticas: 0 // serviços de mentira sem a rota de parâmetros; BankService fora do bot
 			});
 
 			// Próxima hora: só o dia corrente é refeito, sem duplicar
@@ -1467,6 +1475,23 @@ async function main() {
 			const exported = JSON.parse(r.stdout);
 			assert.strictEqual(exported.length, 1);
 			assert.strictEqual(run(["economy-annotate.js", "x", "ouro"]).status, 1);
+			// --listar, --confirmar e --descartar (ts em ms ou ISO)
+			r = run(["economy-annotate.js", "--listar"]);
+			assert.match(r.stdout, /manual\s+zinthos\s+Regra nova/);
+			r = run(["economy-annotate.js", "--descartar", "2026-11-09T12:00:00Z", "Regra nova"]);
+			assert.strictEqual(r.status, 0, r.stderr);
+			assert.strictEqual(
+				readAll(pubFile, "SELECT origin FROM annotations")[0].origin,
+				"descartada"
+			);
+			r = run([
+				"economy-annotate.js",
+				"--confirmar",
+				String(Date.parse("2026-11-09T12:00:00Z")),
+				"Regra nova"
+			]);
+			assert.strictEqual(r.status, 0, r.stderr);
+			assert.strictEqual(run(["economy-annotate.js", "--confirmar", "1", "não existe"]).status, 1);
 			// Recomeçar do zero e importar de volta
 			const env2 = {
 				...env,
@@ -1619,6 +1644,160 @@ async function main() {
 				"Zinthos"
 			]);
 			assert.deepStrictEqual([...new Set(multi(["runas"]).map((x) => x.Moeda))], ["Runas"]);
+		});
+
+		await test("parâmetros: achata, compara, rótulo curto; Runas só com o BankService já carregado", () => {
+			assert.deepStrictEqual(Changes.flattenParams({ a: { B: 1, C: [2, 3] }, d: null, e: "x" }), {
+				"a.B": 1,
+				"a.C.0": 2,
+				"a.C.1": 3,
+				d: "none",
+				e: "x"
+			});
+			assert.deepStrictEqual(Changes.diffParams(null, { a: 1 }), []); // primeira leitura só guarda
+			const ch = Changes.diffParams({ a: 1, b: 2, gone: 5 }, { a: 1, b: 3, novo: 7 });
+			assert.deepStrictEqual(ch, [
+				{ key: "b", from: 2, to: 3 },
+				{ key: "gone", from: 5, to: null },
+				{ key: "novo", from: null, to: 7 }
+			]);
+			assert.strictEqual(
+				Changes.changeLabel("waifuletes", [{ key: "divorce.RATE", from: 0.05, to: 0.08 }]),
+				"waifuletes: divorce.RATE 0.05 → 0.08"
+			);
+			assert.match(
+				Changes.changeLabel("jardim", ch),
+				/^jardim: 3 parâmetros \(b 2 → 3; gone removido \(era 5\); novo novo \(7\)\)$/
+			);
+			const many = Array.from({ length: 40 }, (_, i) => ({
+				key: `chave.longa.${i}`,
+				from: i,
+				to: i + 1
+			}));
+			const lbl = Changes.changeLabel("waifuletes", many);
+			assert.ok(lbl.length <= 230 && /; \+\d+\)$/.test(lbl), lbl);
+			// Fora do bot o BankService não está carregado: nada de abrir bank.db ou agendar cron
+			assert.strictEqual(Changes.runasParamsFromBot(), null);
+		});
+
+		await test("mudanças automáticas: 1ª leitura guarda, mudança vira anotação na subida do serviço, 404 fica de fora", async () => {
+			let pclock = DAY0 + 5 * D + 2 * H;
+			const st8 = { calls: [], fail: {}, override: {}, now: () => pclock, delay: 0, params: {} };
+			const srv = await startMockServer(st8);
+			const url = `http://127.0.0.1:${srv.address().port}`;
+			let runas = { params: { "loja.STORE_PRICES.isca": 45 }, startedAt: 1, version: null };
+			const s = new EconomyAnalyticsService({
+				dbPath: path.join(tmpRoot, "auto", "a.db"),
+				publishDir: path.join(tmpRoot, "auto-pub"),
+				sources: ["zinthos", "petalitas", "runas"],
+				waifuletesUrl: url,
+				waifuletesKey: "test-waifu-key",
+				jardimUrl: url,
+				jardimKey: "test-jardim-key",
+				now: () => pclock,
+				runasParams: () => runas
+			});
+			try {
+				const st = s._getStore();
+				st8.params.waifuletes = {
+					currency: "zinthos",
+					schemaVersion: 1,
+					generatedAt: pclock,
+					startedAt: DAY0,
+					version: "abc",
+					params: { divorce: { DIVORCE_PENALTY_RATE: 0.05 }, daily: { DAILY_KAKERA_AMOUNT: 100 } }
+				};
+				let r = await s._loadParams(st, pclock);
+				assert.deepStrictEqual(r.jardim, { ok: true, available: false }); // sem a rota
+				assert.strictEqual(r.waifuletes.changes, 0);
+				assert.strictEqual(st.listAnnotations().length, 0);
+				// waifuletes subiu de novo com a taxa nova; a anotação vai para a hora da subida
+				pclock += 3 * H;
+				const up = pclock - 90 * 60 * 1000;
+				st8.params.waifuletes = {
+					...st8.params.waifuletes,
+					startedAt: up,
+					params: { divorce: { DIVORCE_PENALTY_RATE: 0.08 }, daily: { DAILY_KAKERA_AMOUNT: 100 } }
+				};
+				runas = { ...runas, params: { "loja.STORE_PRICES.isca": 50 }, startedAt: 1 };
+				r = await s._loadParams(st, pclock);
+				const anns = st.listAnnotations();
+				assert.deepStrictEqual(
+					anns.map((a) => [a.ts, a.currency, a.origin, a.label]),
+					[
+						[R.hourStart(pclock), "runas", "auto", "ravena: loja.STORE_PRICES.isca 45 → 50"],
+						[up, "zinthos", "auto", "waifuletes: divorce.DIVORCE_PENALTY_RATE 0.05 → 0.08"]
+					].sort((a, b) => a[0] - b[0])
+				);
+				const w = anns.find((a) => a.currency === "zinthos");
+				assert.deepStrictEqual(w.detail.changes, [
+					{ key: "divorce.DIVORCE_PENALTY_RATE", from: 0.05, to: 0.08 }
+				]);
+				assert.strictEqual(w.detail.version, "abc");
+				// Sem mudança: nada novo
+				pclock += H;
+				await s._loadParams(st, pclock);
+				assert.strictEqual(st.listAnnotations().length, 2);
+				// Falha de um serviço não para os outros
+				st8.params.waifuletes = { nope: true };
+				r = await s._loadParams(st, pclock);
+				assert.strictEqual(r.waifuletes.ok, false);
+				assert.strictEqual(r.ravena.ok, true);
+			} finally {
+				await s.stop();
+				srv.close();
+			}
+		});
+
+		await test("possíveis mudanças: motivo novo, motivo que sumiu e valor por transação; uma vez por dia", () => {
+			const D0 = DAY0 + 40 * D;
+			const rows = [];
+			for (let i = 1; i <= 10; i++) {
+				const d = D0 - i * D;
+				rows.push({ day: d, reason: "DAILY", n: 30, vol: 30 * (100 + (i % 2)) });
+				rows.push({ day: d, reason: "OLD", n: 5, vol: 50 });
+				rows.push({ day: d, reason: "ROLL", n: 30, vol: 30 * (i % 2 ? 50 : 150) }); // instável: não conta
+			}
+			rows.push({ day: D0, reason: "DAILY", n: 40, vol: 40 * 300 });
+			rows.push({ day: D0, reason: "ROLL", n: 30, vol: 30 * 400 });
+			rows.push({ day: D0, reason: "NEW", n: 2, vol: 999 });
+			const found = Changes.detectPossible(rows, D0, (r) => `L_${r}`);
+			assert.deepStrictEqual(
+				found.map((f) => f.label),
+				[
+					"valor por transação de L_DAILY: 101 → 300 (+198%)",
+					"motivo novo: L_NEW",
+					"motivo sumiu: L_OLD"
+				]
+			);
+			// No serviço: só com extrato, só com o dia carregado, uma vez por dia, sem regravar decisão
+			const s = new EconomyAnalyticsService({
+				dbPath: path.join(tmpRoot, "poss", "a.db"),
+				publishDir: path.join(tmpRoot, "poss-pub"),
+				sources: ["zinthos", "petalitas"]
+			});
+			const st = s._getStore();
+			const fl = st.db.prepare(
+				"INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, 'creation', ?, 0, ?, 1)"
+			);
+			for (const r of rows) fl.run(r.day + H, r.reason, r.vol, r.n);
+			st.setLedgerStatus("zinthos", true, 0);
+			st.setLedgerStatus("petalitas", false, 0);
+			const runTs = D0 + D + 2 * H;
+			assert.deepStrictEqual(s._detectChanges(st, runTs), {}); // dia ainda não carregado
+			st.recordRun({ ts: 1, source: "zinthos", ok: true, from: 0, to: D0 + D + H, rows: 1 });
+			assert.deepStrictEqual(s._detectChanges(st, runTs), { zinthos: 3 });
+			assert.ok(st.listAnnotations().every((a) => a.origin === "possivel" && a.ts === D0));
+			st.setAnnotationOrigin(D0, "motivo novo: NEW", "descartada");
+			st.db.prepare("DELETE FROM meta WHERE key = 'detect_day:zinthos'").run();
+			s._detectChanges(st, runTs); // rodar de novo não desfaz o descarte
+			assert.strictEqual(
+				st.listAnnotations().find((a) => a.label === "motivo novo: NEW").origin,
+				"descartada"
+			);
+			assert.deepStrictEqual(s._detectChanges(st, runTs + H), {}); // já olhou esse dia
+			st.close();
+			s.store = null;
 		});
 
 		await test("banco antigo: annotations ganha origin e detail sem perder linhas", () => {

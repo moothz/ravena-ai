@@ -156,8 +156,8 @@
       },
       "spec": {
        "queryType": "table",
-       "queryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE ts >= $__from - 12 * 604800000 AND ts < $__to",
-       "rawQueryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE ts >= $__from - 12 * 604800000 AND ts < $__to",
+       "queryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') AND ts >= $__from - 12 * 604800000 AND ts < $__to",
+       "rawQueryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') AND ts >= $__from - 12 * 604800000 AND ts < $__to",
        "timeColumns": [
         "time"
        ]

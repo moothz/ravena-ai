@@ -59,6 +59,7 @@ const {
 	runasPlayerDay,
 	readActivity
 } = require("./EconomyAnalyticsPlayers");
+const Changes = require("./EconomyAnalyticsChanges");
 
 const logger = new Logger("economy-analytics");
 const SCHEMA_VERSION = 1;
@@ -245,6 +246,8 @@ class EconomyAnalyticsService {
 					? delay
 					: DEFAULT_START_DELAY_MS;
 		this._startTimer = null;
+		// Parâmetros das Runas (testes injetam; no bot, as constantes do BankService já carregado)
+		this.runasParams = opts.runasParams || Changes.runasParamsFromBot;
 	}
 
 	static isEnabled() {
@@ -520,6 +523,17 @@ class EconomyAnalyticsService {
 				logger.warn(`[economy] Falha ao regravar identidades: ${err.message}`);
 			}
 		}
+		if (this._stopping) return { ...results, stopped: true };
+		try {
+			results.params = await this._loadParams(store, runTs);
+		} catch (err) {
+			logger.warn(`[economy] Falha ao ler parâmetros de balanceamento: ${err.message}`);
+		}
+		try {
+			results.possiveis = this._detectChanges(store, runTs);
+		} catch (err) {
+			logger.warn(`[economy] Falha ao procurar possíveis mudanças: ${err.message}`);
+		}
 		try {
 			this._writeFeatures(store, runTs);
 		} catch (err) {
@@ -656,6 +670,126 @@ class EconomyAnalyticsService {
 			);
 		}
 		return r.written;
+	}
+
+	/**
+	 * Parâmetros de balanceamento: compara com a leitura anterior de cada serviço e registra o que mudou
+	 * como anotação automática (origin 'auto'). A primeira leitura só guarda. A hora da mudança é a
+	 * subida do serviço (startedAt) quando ela cai depois da leitura anterior; senão, a hora atual.
+	 * Serviço sem a rota (404) fica de fora sem erro.
+	 */
+	async _loadParams(store, runTs) {
+		const hourNow = hourStart(runTs);
+		const readers = [];
+		for (const src of this.sources) {
+			if (src.name === "zinthos") {
+				readers.push({
+					service: "waifuletes",
+					currency: "zinthos",
+					read: () =>
+						Changes.fetchParams(
+							this.waifuletes.url,
+							{ Authorization: `Bearer ${this.waifuletes.key}` },
+							this.timeoutMs,
+							this._abort && this._abort.signal
+						)
+				});
+			} else if (src.name === "petalitas") {
+				readers.push({
+					service: "jardim",
+					currency: "petalitas",
+					read: () =>
+						Changes.fetchParams(
+							this.jardim.url,
+							{ "x-api-key": this.jardim.key },
+							this.timeoutMs,
+							this._abort && this._abort.signal
+						)
+				});
+			} else if (src.name === "runas") {
+				readers.push({
+					service: "ravena",
+					currency: "runas",
+					read: async () => this.runasParams()
+				});
+			}
+		}
+		const out = {};
+		for (const r of readers) {
+			if (this._stopping) break;
+			try {
+				const got = await r.read();
+				if (!got || got.missing) {
+					store.setMeta(`params_available:${r.service}`, 0);
+					out[r.service] = { ok: true, available: false };
+					continue;
+				}
+				const prev = store.getParams(r.service);
+				const changes = Changes.diffParams(prev, got.params);
+				const prevTs = Number(store.getMeta(`params_ts:${r.service}`)) || 0;
+				if (changes.length) {
+					const ts =
+						got.startedAt && got.startedAt > prevTs && got.startedAt <= runTs
+							? got.startedAt
+							: hourNow;
+					store.addAnnotation(ts, r.currency, Changes.changeLabel(r.service, changes), "auto", {
+						service: r.service,
+						version: got.version,
+						changes
+					});
+					logger.info(
+						`[economy] ${r.service}: ${changes.length} parâmetro(s) de balanceamento mudaram; anotação registrada.`
+					);
+				}
+				if (!prev || changes.length) store.replaceParams(r.service, got.params, runTs);
+				store.setMeta(`params_ts:${r.service}`, runTs);
+				store.setMeta(`params_available:${r.service}`, 1);
+				out[r.service] = { ok: true, available: true, changes: changes.length };
+			} catch (err) {
+				out[r.service] = { ok: false, error: err.message };
+				logger.warn(`[economy] ${r.service}: leitura de parâmetros falhou (${err.message}).`);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Possíveis mudanças, uma vez por dia econômico e moeda com extrato: olha o último dia completo já
+	 * carregado (motivo novo, motivo que sumiu, valor por transação fora do normal) e registra cada achado
+	 * como anotação 'possivel' no início do dia. Nunca reescreve uma anotação que já existe (confirmada
+	 * ou descartada continua como está).
+	 */
+	_detectChanges(store, runTs) {
+		const day = economicDayStart(hourStart(runTs)) - DAY_MS;
+		const out = {};
+		for (const src of this.sources) {
+			if (!store.getLedgerAvailable(src.currency)) continue;
+			const key = `detect_day:${src.currency}`;
+			if (Number(store.getMeta(key)) >= day) continue;
+			const loaded = store.getLastSuccessfulTo(src.name);
+			if (loaded === null || loaded < day + DAY_MS) continue;
+			const rows = store.dailyReasonStats(
+				src.currency,
+				day - Changes.DETECT.lookbackDays * DAY_MS,
+				day + DAY_MS
+			);
+			// Sem histórico suficiente (carga recente) não dá para dizer o que é "novo"
+			const first = rows.reduce((m, r) => Math.min(m, Number(r.day)), Infinity);
+			let found = [];
+			if (first <= day - Changes.DETECT.steadyDays * DAY_MS) {
+				found = Changes.detectPossible(rows, day, (reason) =>
+					store.reasonLabel(src.currency, reason)
+				);
+			}
+			for (const f of found) {
+				if (!store.hasAnnotation(day, f.label)) {
+					store.addAnnotation(day, src.currency, f.label, "possivel", f.detail);
+				}
+			}
+			store.setMeta(key, day);
+			out[src.currency] = found.length;
+		}
+		return out;
 	}
 
 	/** Primeiro dia econômico guardado no detalhe por jogador. */
@@ -824,6 +958,21 @@ class EconomyAnalyticsService {
 					title: "Fluxos de Petalitas",
 					available: store.getLedgerAvailable("petalitas") === true,
 					dependsOn: "extrato do Jardim (fase 2)"
+				},
+				{
+					key: "mudancas_automaticas",
+					title: "Mudanças automáticas (parâmetros de balanceamento)",
+					available: ["waifuletes", "jardim", "ravena"].some(
+						(n) => store.getMeta(`params_available:${n}`) === "1"
+					),
+					dependsOn:
+						"rota /internal/economy/params no waifuletes e no Jardim; BankService carregado no bot (Runas)",
+					detail: ["waifuletes", "jardim", "ravena"]
+						.map(
+							(n) =>
+								`${n}: ${store.getMeta(`params_available:${n}`) === "1" ? "lendo" : "sem leitura"}`
+						)
+						.join(", ")
 				},
 				{
 					key: "causa_sem_origem",
