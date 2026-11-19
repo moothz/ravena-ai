@@ -8,6 +8,8 @@ const AdminUtils = require("../utils/AdminUtils");
 const LLMService = require("../services/LLMService");
 const DonorBonusService = require("../services/DonorBonusService");
 const GameEventService = require("../services/GameEventService");
+const CacheManager = require("../services/CacheManager");
+const telemetry = require("../telemetry");
 const { execFile } = require("child_process");
 const PhoneUtils = require("../utils/PhoneUtils");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -96,6 +98,11 @@ class SuperAdmin {
 			leaveGrupo: {
 				method: "leaveGroup",
 				description: "Sai de um grupo com opção de bloquear membros"
+			},
+			nuke: {
+				method: "nukeGroupMessages",
+				description:
+					"Apaga as últimas N mensagens enviadas no grupo, ou o máximo que tiver acesso (cache)"
 			},
 			privacidade: {
 				method: "setDefaultPrivacySettings",
@@ -3094,6 +3101,105 @@ Break down the cost by category and provide a total estimated cost.`;
 			return new ReturnMessage({
 				chatId: message.group ?? message.author,
 				content: "❌ Erro ao processar comando."
+			});
+		}
+	}
+
+	/**
+	 * Apaga as últimas N mensagens enviadas no grupo, ou o máximo que tiver acesso (cache).
+	 * Uso: !sa-nuke [N] (em grupo) ou !sa-nuke <groupId@g.us> [N] (no PV)
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Dados da mensagem
+	 * @param {Array} args - Argumentos do comando
+	 * @param {Group} group - Grupo do WhatsApp
+	 * @returns {Promise<ReturnMessage>}
+	 */
+	async nukeGroupMessages(bot, message, args, group) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!this.isSuperAdmin(message.author)) {
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			let targetGroup = message.group;
+			let countParam = null;
+
+			if (args && args.length > 0) {
+				if (args[0].includes("@g.us")) {
+					targetGroup = args[0].trim();
+					if (args[1]) countParam = parseInt(args[1], 10);
+				} else {
+					countParam = parseInt(args[0], 10);
+				}
+			}
+
+			if (!targetGroup) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"❌ Uso: `!sa-nuke [N]` dentro de um grupo, ou `!sa-nuke <groupId@g.us> [N]` no PV."
+				});
+			}
+
+			const cacheManager = CacheManager.getInstance();
+			const limit = countParam && !isNaN(countParam) && countParam > 0 ? countParam : 100;
+
+			const messages = await cacheManager.getRecentMessagesForChat(targetGroup, limit);
+
+			if (!messages || messages.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: `⚠️ Nenhuma mensagem encontrada no cache recente para o grupo \`${targetGroup}\`.`
+				});
+			}
+
+			let deletedCount = 0;
+			let failedCount = 0;
+
+			for (const msg of messages) {
+				try {
+					if (typeof bot.deleteMessageByKey === "function") {
+						await bot.deleteMessageByKey({
+							remoteJid: targetGroup,
+							id: msg.id,
+							fromMe: msg.fromMe,
+							participant: msg.participant
+						});
+						cacheManager.removeMessageFromCache(msg.id);
+						deletedCount++;
+						await sleep(60);
+					}
+				} catch (delErr) {
+					failedCount++;
+					this.logger.debug(`[nuke] Falha ao apagar mensagem ${msg.id}: ${delErr.message}`);
+				}
+			}
+
+			telemetry.setAttrs({
+				"ravena.superadmin.nuke.deleted": deletedCount,
+				"ravena.superadmin.nuke.failed": failedCount,
+				"ravena.superadmin.nuke.target": targetGroup
+			});
+
+			let resultText = `💥 *Nuke concluído!* 💥\n\n`;
+			resultText += `🗑️ *${deletedCount}* mensagens apagadas com sucesso.\n`;
+			if (failedCount > 0) {
+				resultText += `⚠️ *${failedCount}* mensagens não puderam ser apagadas (já excluídas ou sem permissão).\n`;
+			}
+			resultText += `📊 Total de mensagens no cache do grupo: ${messages.length}.`;
+
+			return new ReturnMessage({
+				chatId,
+				content: resultText
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando nukeGroupMessages:", error);
+			return new ReturnMessage({
+				chatId,
+				content: `❌ Erro ao executar nuke: ${error.message}`
 			});
 		}
 	}

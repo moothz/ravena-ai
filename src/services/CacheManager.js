@@ -619,6 +619,127 @@ class CacheManager {
 		return null;
 	}
 
+	/**
+	 * Retorna as últimas mensagens em cache de um determinado chat/grupo
+	 * @param {string} chatId - ID do chat/grupo (ex: 123@g.us)
+	 * @param {number} [limit=100] - Quantidade máxima de mensagens
+	 * @returns {Promise<Array<{ id: string, remoteJid: string, fromMe: boolean, participant: string|null, timestamp: number }>>}
+	 */
+	async getRecentMessagesForChat(chatId, limit = 100) {
+		if (!chatId) return [];
+		const foundMap = new Map();
+
+		// 1. Busca na memória (MemoryCache)
+		if (this.messageCache && this.messageCache.cache) {
+			const now = Date.now();
+			for (const [key, entry] of this.messageCache.cache.entries()) {
+				if (!entry || entry.expiresAt <= now) continue;
+				const msg = entry.value;
+				if (!msg) continue;
+
+				const targetChat =
+					msg.key?.remoteJid ||
+					msg.chatId ||
+					msg.group ||
+					msg.from ||
+					msg.origin?.chatId ||
+					msg.origin?.group ||
+					msg.origin?.key?.remoteJid;
+
+				if (targetChat === chatId) {
+					const msgId = String(msg.id || msg.key?.id || key);
+					const fromMe = Boolean(msg.key?.fromMe ?? msg.fromMe);
+					const participant =
+						msg.key?.participant || msg.authorAlt || msg.author || msg.sender || msg.from || null;
+					const timestamp = msg.timestamp || msg.origin?.timestamp || 0;
+
+					foundMap.set(msgId, {
+						id: msgId,
+						remoteJid: chatId,
+						fromMe,
+						participant,
+						timestamp
+					});
+				}
+			}
+		}
+
+		// 2. Busca no SQLite se necessário
+		try {
+			const rows = await this.database.dbAll(
+				this.DB_NAME,
+				`SELECT key, json_data, expires_at FROM messages 
+				 WHERE expires_at > ? AND (
+					json_data LIKE '%"remoteJid":"' || ? || '"%' OR 
+					json_data LIKE '%"chatId":"' || ? || '"%' OR 
+					json_data LIKE '%"group":"' || ? || '"%'
+				 ) 
+				 ORDER BY expires_at DESC LIMIT ?`,
+				[Date.now(), chatId, chatId, chatId, limit * 2]
+			);
+
+			if (rows && rows.length > 0) {
+				for (const row of rows) {
+					const parsed = safeJsonParse(row.json_data);
+					if (!parsed) continue;
+
+					const targetChat =
+						parsed.key?.remoteJid ||
+						parsed.chatId ||
+						parsed.group ||
+						parsed.from ||
+						parsed.origin?.chatId ||
+						parsed.origin?.group ||
+						parsed.origin?.key?.remoteJid;
+
+					if (targetChat === chatId) {
+						const rawId = String(parsed.id || parsed.key?.id || row.key.replace(/^message:/, ""));
+						if (!foundMap.has(rawId)) {
+							const fromMe = Boolean(parsed.key?.fromMe ?? parsed.fromMe);
+							const participant =
+								parsed.key?.participant ||
+								parsed.authorAlt ||
+								parsed.author ||
+								parsed.sender ||
+								parsed.from ||
+								null;
+							const timestamp = parsed.timestamp || parsed.origin?.timestamp || 0;
+
+							foundMap.set(rawId, {
+								id: rawId,
+								remoteJid: chatId,
+								fromMe,
+								participant,
+								timestamp
+							});
+						}
+					}
+				}
+			}
+		} catch (e) {
+			this.logger.error("Erro ao buscar mensagens do chat no SQLite:", e);
+		}
+
+		// Ordena decrescente por timestamp (mais recentes primeiro)
+		const list = Array.from(foundMap.values()).sort(
+			(a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+		);
+		return list.slice(0, limit);
+	}
+
+	/**
+	 * Remove uma mensagem do cache de memória e SQLite
+	 * @param {string} id - ID da mensagem
+	 */
+	removeMessageFromCache(id) {
+		if (!id) return;
+		const strId = String(id);
+		this.messageCache.delete(strId);
+		this.database
+			.dbRun(this.DB_NAME, "DELETE FROM messages WHERE key = ?", [`message:${strId}`])
+			.catch(() => {});
+	}
+
 	async putContactInCache(data) {
 		if (!data || typeof data.number === "undefined") return;
 		const contactNumber = String(data.number);
