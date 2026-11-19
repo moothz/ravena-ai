@@ -636,7 +636,9 @@ class BotAPI {
 	 */
 	async notifyPowerStatus(message) {
 		const bot =
-			this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.id === "ravenavip" && b.isConnected) ??
+			this.bots.find(
+				(b) => !b.useTelegram && !b.useDiscord && b.id === "ravenavip" && b.isConnected
+			) ??
 			this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.vip && b.isConnected) ??
 			this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.isConnected && !b.privado) ??
 			this.bots[0];
@@ -704,7 +706,9 @@ class BotAPI {
 			const pinDuration = 600 + extraPinTime;
 
 			const bot =
-				this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.id === "ravenavip" && b.isConnected) ??
+				this.bots.find(
+					(b) => !b.useTelegram && !b.useDiscord && b.id === "ravenavip" && b.isConnected
+				) ??
 				this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.vip && b.isConnected) ??
 				this.bots.find((b) => !b.useTelegram && !b.useDiscord && b.isConnected) ??
 				this.bots[Math.floor(Math.random() * this.bots.length)];

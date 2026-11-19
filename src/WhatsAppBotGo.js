@@ -198,12 +198,7 @@ class WhatsAppBotGo {
 		this.rateLimit = options.rateLimit ?? 0; // 0 = desabilitado
 		this.delayMin = options.delayMin ?? 0;
 		this.delayMax = options.delayMax ?? (this.privado ? 0 : 2);
-		this.throttler = new MessageThrottler(
-			this.id,
-			this.rateLimit,
-			this.delayMin,
-			this.delayMax
-		);
+		this.throttler = new MessageThrottler(this.id, this.rateLimit, this.delayMin, this.delayMax);
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
 		this.dossieGroups =
 			options.dossieGroups ??
@@ -4981,14 +4976,16 @@ class WhatsAppBotGo {
 
 		try {
 			// Throttling progressivo de saída (peso 1/3 = reação)
-			await this.throttler.enqueue(async () => {
-				return await this.apiClient.post("/message/react", {
-					number: chatId,
-					reaction,
-					id: messageId,
-					fromMe: false,
-				});
-			}, 1 / 3);
+			await this.throttler.enqueue(
+				async () =>
+					await this.apiClient.post("/message/react", {
+						number: chatId,
+						reaction,
+						id: messageId,
+						fromMe: false
+					}),
+				1 / 3
+			);
 			return true;
 		} catch (e) {
 			if (e.message && e.message.startsWith("THROTTLE_TIMEOUT")) {

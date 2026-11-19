@@ -327,9 +327,11 @@ class WeeklyGameDigestService {
 			const targetBot =
 				bots.find(
 					(b) =>
-						!b.useTelegram && !b.useDiscord && (b.id === "ravenavip" || b.vip) && (b.isConnected || b.testMode)
-				) ||
-				bots.find((b) => !b.useTelegram && !b.useDiscord && (b.isConnected || b.testMode));
+						!b.useTelegram &&
+						!b.useDiscord &&
+						(b.id === "ravenavip" || b.vip) &&
+						(b.isConnected || b.testMode)
+				) || bots.find((b) => !b.useTelegram && !b.useDiscord && (b.isConnected || b.testMode));
 
 			if (!targetBot) {
 				this.logger.warn(

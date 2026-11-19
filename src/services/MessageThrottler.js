@@ -83,25 +83,26 @@ class MessageThrottler {
 	}
 
 	/**
-	 * Calcula o delay de throttling em ms baseado na carga atual (0–100%).
-	 * @param {number} loadPercent - Carga atual em % (0 a 100)
+	 * Calcula o delay de throttling em ms baseado na carga atual (0–100%+).
+	 * Freio progressivo suave: não segura a fila desnecessariamente enquanto houver cota.
+	 * @param {number} loadPercent - Carga atual em % (0 a 100+)
 	 * @returns {number} - Delay em ms
 	 */
 	_computeDelay(loadPercent) {
-		if (loadPercent <= 20) return 0;
-		if (loadPercent <= 50) {
-			// 100ms a 300ms linear entre 20% e 50%
-			return Math.round(100 + ((loadPercent - 20) / 30) * 200);
+		if (loadPercent <= 40) return 0;
+		if (loadPercent <= 70) {
+			// 100ms a 300ms linear entre 40% e 70%
+			return Math.round(100 + ((loadPercent - 40) / 30) * 200);
 		}
-		if (loadPercent <= 75) {
-			// 400ms a 1200ms linear entre 50% e 75%
-			return Math.round(400 + ((loadPercent - 50) / 25) * 800);
+		if (loadPercent <= 90) {
+			// 300ms a 800ms linear entre 70% e 90%
+			return Math.round(300 + ((loadPercent - 70) / 20) * 500);
 		}
-		if (loadPercent <= 95) {
-			// 1500ms a 2500ms linear entre 75% e 95%
-			return Math.round(1500 + ((loadPercent - 75) / 20) * 1000);
+		if (loadPercent < 100) {
+			// 800ms a 1500ms linear entre 90% e 100%
+			return Math.round(800 + ((loadPercent - 90) / 10) * 700);
 		}
-		// >= 95%: intervalo mínimo para honrar o limite
+		// >= 100%: intervalo mínimo para honrar o limite (espaçamento estrito)
 		return Math.round(60000 / this.rateLimit);
 	}
 
@@ -175,9 +176,8 @@ class MessageThrottler {
 		if (endpoint === "/send/media" && (!payload.caption || !payload.caption.trim())) {
 			const type = payload.type || "";
 			if (type === "image" || type === "video" || type === "gif") {
-				const mediaKey = typeof payload.data === "string"
-					? payload.data.slice(0, 512)
-					: (payload.url || "");
+				const mediaKey =
+					typeof payload.data === "string" ? payload.data.slice(0, 512) : payload.url || "";
 				if (mediaKey) {
 					const hash = crypto.createHash("sha256").update(`media:${mediaKey}`).digest("hex");
 					if (this._sentHashes.has(hash)) {
@@ -203,7 +203,10 @@ class MessageThrottler {
 					// Padding seguro de 1 byte aleatório no final
 					const padded = Buffer.concat([buf, crypto.randomBytes(1)]);
 					payload.data = padded.toString("base64");
-					const newHash = crypto.createHash("sha256").update(payload.data.slice(0, 1024)).digest("hex");
+					const newHash = crypto
+						.createHash("sha256")
+						.update(payload.data.slice(0, 1024))
+						.digest("hex");
 					this._sentHashes.set(newHash, Date.now());
 				} catch (err) {
 					// Fallback silencioso se houver falha de base64
@@ -252,53 +255,41 @@ class MessageThrottler {
 
 		while (this._queue.length > 0) {
 			const item = this._queue[0];
-
-			// Verificar descarte por timeout (60 segundos na fila)
+			const cost = this._getWindowCost();
+			const loadPercent = this.rateLimit > 0 ? (cost / this.rateLimit) * 100 : 0;
+			const isOverLimit = this.rateLimit > 0 && cost >= this.rateLimit;
 			const ageMs = Date.now() - item.enqueuedAt;
-			if (ageMs > 60000) {
+
+			// Regra de descarte inteligente:
+			// NUNCA descarta se a carga estiver abaixo de 100% da cota.
+			// Só descarta se a cota estiver totalmente saturada (>= 100%) E a mensagem aguardar há mais de 90s.
+			if (isOverLimit && ageMs > 90000) {
 				this._queue.shift();
 				this.queueSize = this._queue.length;
 				this.logger.warn(
-					`[throttler] Descartando mensagem (${ageMs.toFixed(0)}ms na fila, peso=${item.weight})`
+					`[throttler] Descartando mensagem por sobrecarga (${ageMs.toFixed(0)}ms na fila, cota=${cost.toFixed(1)}/${this.rateLimit}, peso=${item.weight})`
 				);
 				item.reject(
-					new Error(`THROTTLE_TIMEOUT: mensagem descartada após ${ageMs.toFixed(0)}ms na fila`)
+					new Error(
+						`THROTTLE_TIMEOUT: mensagem descartada por sobrecarga após ${ageMs.toFixed(0)}ms na fila`
+					)
 				);
-				await this._sendDiscardAlert(ageMs);
+				await this._sendDiscardAlert(ageMs, cost);
 				continue;
 			}
 
-			// Calcular carga e delay de throttling
-			const cost = this._getWindowCost();
-			const loadPercent = this.rateLimit > 0 ? Math.min(100, (cost / this.rateLimit) * 100) : 0;
+			// Calcular delay de throttling baseado na carga atual
 			const throttleDelayMs = this._computeDelay(loadPercent);
 
 			// Calcular delay orgânico (aplicado apenas a mensagens com peso >= 1.0)
 			const organicDelayMs = item.weight >= 1.0 ? this._computeOrganicDelay() : 0;
 			const totalDelayMs = throttleDelayMs + organicDelayMs;
 
-			this.currentLoadPercent = Math.round(loadPercent);
+			this.currentLoadPercent = Math.min(100, Math.round(loadPercent));
 			this.currentDelayMs = totalDelayMs;
 
 			if (totalDelayMs > 0) {
 				await new Promise((r) => setTimeout(r, totalDelayMs));
-			}
-
-			// Verificar novamente após o delay
-			const ageAfterDelay = Date.now() - item.enqueuedAt;
-			if (ageAfterDelay > 60000) {
-				this._queue.shift();
-				this.queueSize = this._queue.length;
-				this.logger.warn(
-					`[throttler] Descartando mensagem após delay (${ageAfterDelay.toFixed(0)}ms na fila)`
-				);
-				item.reject(
-					new Error(
-						`THROTTLE_TIMEOUT: descartada após delay, ${ageAfterDelay.toFixed(0)}ms na fila`
-					)
-				);
-				await this._sendDiscardAlert(ageAfterDelay);
-				continue;
 			}
 
 			// Executar
@@ -317,18 +308,20 @@ class MessageThrottler {
 
 		this._processing = false;
 		this.queueSize = 0;
-		this.currentLoadPercent = this.rateLimit > 0
-			? Math.round((this._getWindowCost() / this.rateLimit) * 100)
-			: 0;
+		this.currentLoadPercent =
+			this.rateLimit > 0
+				? Math.min(100, Math.round((this._getWindowCost() / this.rateLimit) * 100))
+				: 0;
 		this.currentDelayMs = 0;
 	}
 
 	/**
-	 * Envia alerta via Telegram ao dono quando mensagens são descartadas.
+	 * Envia alerta via Telegram ao dono quando mensagens são descartadas por sobrecarga.
 	 * Rate-limited: no máximo 1 alerta a cada 5 minutos por instância.
 	 * @param {number} ageMs - Idade em ms da mensagem descartada
+	 * @param {number} [currentCost=null] - Custo atual da janela de 60s
 	 */
-	async _sendDiscardAlert(ageMs) {
+	async _sendDiscardAlert(ageMs, currentCost = null) {
 		const now = Date.now();
 		if (now - this._lastDiscardAlertAt < this._discardAlertCooldownMs) {
 			return;
@@ -346,9 +339,8 @@ class MessageThrottler {
 		}
 
 		const queueLen = this._queue.length;
-		const cost = this._getWindowCost();
-		const loadPercent =
-			this.rateLimit > 0 ? Math.round((cost / this.rateLimit) * 100) : 0;
+		const cost = typeof currentCost === "number" ? currentCost : this._getWindowCost();
+		const loadPercent = this.rateLimit > 0 ? Math.round((cost / this.rateLimit) * 100) : 0;
 
 		const message =
 			`⚠️ <b>[THROTTLE] Bot ${this.botId}</b> descartou mensagem!\n\n` +
@@ -385,9 +377,7 @@ class MessageThrottler {
 	getMetrics() {
 		const cost = this._getWindowCost();
 		const loadPercent =
-			this.rateLimit > 0
-				? Math.min(100, Math.round((cost / this.rateLimit) * 100))
-				: 0;
+			this.rateLimit > 0 ? Math.min(100, Math.round((cost / this.rateLimit) * 100)) : 0;
 		return {
 			loadPercent,
 			delayMs: this.currentDelayMs,
