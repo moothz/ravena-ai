@@ -3,7 +3,7 @@
  *
  * Resumo da economia de Runas a partir do bank.db local (só leitura), no mesmo formato da rota
  * `GET /internal/economy/summary` dos serviços (contrato do painel, seção 1), e o detalhe por jogador
- * no formato de `GET /internal/economy/players` (página Jogadores).
+ * no formato de `GET /internal/economy/players` (aba Jogadores).
  *
  * Também traz as funções de estatística (quintos, percentis) usadas no cálculo.
  */

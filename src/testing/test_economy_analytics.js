@@ -171,15 +171,57 @@ function readAll(file, sql, params = []) {
 const DASHBOARD = path.join(__dirname, "../../observability/grafana/dashboards/economia.json");
 const DASHBOARD_JOGADORES = path.join(
 	__dirname,
-	"../../observability/grafana/dashboards/jogadores.json"
+	"../../observability/grafana/dashboards/jogador.json"
 );
+
+/** Painéis do dashboard (formato v2 do Grafana: spec.elements), num formato plano para os testes. */
 function dashboardPanels(file = DASHBOARD) {
 	const dash = JSON.parse(fs.readFileSync(file, "utf8"));
-	return dash.panels.flatMap((p) => (p.panels ? [p, ...p.panels] : [p]));
+	return Object.entries(dash.spec.elements).map(([name, el]) => ({
+		name,
+		id: el.spec.id,
+		title: el.spec.title,
+		type: el.spec.vizConfig.group,
+		description: el.spec.description,
+		fieldConfig: el.spec.vizConfig.spec.fieldConfig,
+		options: el.spec.vizConfig.spec.options,
+		timeFrom: el.spec.data.spec.queryOptions.timeFrom,
+		targets: el.spec.data.spec.queries.map((q) => ({ refId: q.spec.refId, ...q.spec.query.spec }))
+	}));
+}
+
+/** Abas → seções → nomes dos elementos, na ordem do layout. */
+function dashboardLayout(file = DASHBOARD) {
+	const dash = JSON.parse(fs.readFileSync(file, "utf8"));
+	const grid = (l) => l.spec.items.map((i) => i.spec.element.name);
+	const sections = (l) =>
+		l.kind === "RowsLayout"
+			? l.spec.rows.map((r) => ({
+					title: r.spec.title,
+					collapse: r.spec.collapse,
+					conditional: r.spec.conditionalRendering || null,
+					elements: grid(r.spec.layout)
+				}))
+			: [{ title: null, collapse: false, conditional: null, elements: grid(l) }];
+	const root = dash.spec.layout;
+	const tabs =
+		root.kind === "TabsLayout" ? root.spec.tabs : [{ spec: { title: null, layout: root } }];
+	return tabs.map((t) => ({ title: t.spec.title, sections: sections(t.spec.layout) }));
 }
 
 /** Consulta de um painel com a interpolação que o frontend faz ($__from/$__to em ms, ${moeda}). */
-function dashboardSql(title, { from, to, moeda = "zinthos", jogador = "", file = DASHBOARD }) {
+function dashboardSql(
+	title,
+	{
+		from,
+		to,
+		moeda = "zinthos",
+		moedas = ["zinthos", "petalitas", "runas"],
+		escala = "indice",
+		jogador = "",
+		file = DASHBOARD
+	}
+) {
 	const panel = dashboardPanels(file).find((p) => p.title === title);
 	assert.ok(panel, `painel "${title}" não encontrado`);
 	return panel.targets[0].queryText
@@ -187,6 +229,8 @@ function dashboardSql(title, { from, to, moeda = "zinthos", jogador = "", file =
 		.replace(/\$__to\b/g, String(to))
 		.replace(/\$\{moeda:sqlstring\}/g, `'${moeda}'`)
 		.replace(/\$\{moeda\}/g, moeda)
+		.replace(/\$\{moedas:sqlstring\}/g, moedas.map((m) => `'${m}'`).join(","))
+		.replace(/\$\{escala\}/g, escala)
 		.replace(/\$\{jogador:sqlstring\}/g, `'${jogador.replace(/'/g, "''")}'`)
 		.replace(/\$\{jogador\}/g, jogador)
 		.replace(/\$\{busca:sqlstring\}/g, `'${jogador.replace(/'/g, "''")}'`);
@@ -883,11 +927,11 @@ async function main() {
 				DAY0 + 2 * D
 			);
 
-			// Painéis da página Jogadores rodam no retrato publicado, com e sem jogador escolhido
+			// Painéis da ficha do jogador rodam no retrato publicado, com e sem jogador escolhido
 			const pubP = path.join(ppub, "analytics.db");
 			let n = 0;
 			for (const p of dashboardPanels(DASHBOARD_JOGADORES)) {
-				if (!p.targets) continue;
+				if (!p.targets.length) continue;
 				for (const moeda of ["zinthos", "petalitas", "runas"]) {
 					for (const jogador of ["", PHONE, "x'; DROP TABLE players; --"]) {
 						readAll(
@@ -904,10 +948,10 @@ async function main() {
 				}
 				n++;
 			}
-			assert.ok(n >= 6, `esperava >= 6 painéis na página Jogadores, achou ${n}`);
+			assert.ok(n >= 6, `esperava >= 6 painéis na ficha do jogador, achou ${n}`);
 			// Painéis da economia continuam rodando com as tabelas novas (ciclo, ficha, atividade, em preparação)
 			for (const p of dashboardPanels()) {
-				if (!p.targets) continue;
+				if (!p.targets.length) continue;
 				readAll(pubP, dashboardSql(p.title, { from: DAY0 - D, to: pclock, moeda: "zinthos" }));
 			}
 		} finally {
@@ -1218,7 +1262,7 @@ async function main() {
 			st.writeBalance("zinthos", anchor, { total: 1000, holders: 3 });
 			const so = st.db
 				.prepare(
-					dashboardSql("Sem origem por dia — Zinthos (período selecionado)", {
+					dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
 						from: DAY0 - D,
 						to: anchor + D
 					})
@@ -1530,7 +1574,7 @@ async function main() {
 			const range = { from: DAY0 - D, to: DAY0 + 6 * D };
 			const z = readAll(
 				file,
-				dashboardSql("Sem origem por dia — Zinthos (período selecionado)", range)
+				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", range)
 			);
 			assert.deepStrictEqual(
 				z.map((r) => [r.time, r["Sem origem"], r["% da massa"], r["Dias no intervalo"]]),
@@ -1542,7 +1586,10 @@ async function main() {
 			);
 			const r = readAll(
 				file,
-				dashboardSql("Sem origem por dia — Runas (período selecionado)", range)
+				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
+					...range,
+					moeda: "runas"
+				})
 			);
 			assert.deepStrictEqual(
 				r.map((x) => x["Sem origem"]),
@@ -1550,9 +1597,113 @@ async function main() {
 			);
 			const p = readAll(
 				file,
-				dashboardSql("Sem origem por dia — Petalitas (período selecionado)", range)
+				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
+					...range,
+					moeda: "petalitas"
+				})
 			);
 			assert.strictEqual(p.length, 0);
+			// Gráfico com várias moedas: o filtro Moedas põe e tira séries
+			const multi = (moedas) =>
+				readAll(
+					file,
+					dashboardSql("Sem origem por dia, por moeda (período selecionado)", { ...range, moedas })
+				);
+			assert.deepStrictEqual([...new Set(multi(["zinthos", "runas"]).map((x) => x.Moeda))].sort(), [
+				"Runas",
+				"Zinthos"
+			]);
+			assert.deepStrictEqual([...new Set(multi(["runas"]).map((x) => x.Moeda))], ["Runas"]);
+		});
+
+		await test("banco antigo: annotations ganha origin e detail sem perder linhas", () => {
+			const wdb = path.join(tmpRoot, "antigo", "a.db");
+			fs.mkdirSync(path.dirname(wdb), { recursive: true });
+			const old = new BetterSQLite(wdb);
+			old.exec(
+				"CREATE TABLE annotations (ts INTEGER NOT NULL, currency TEXT, label TEXT NOT NULL, PRIMARY KEY (ts, label))"
+			);
+			old.prepare("INSERT INTO annotations VALUES (1, 'zinthos', 'antiga')").run();
+			old.close();
+			const s = new EconomyAnalyticsService({
+				dbPath: wdb,
+				publishDir: path.join(tmpRoot, "antigo-pub"),
+				sources: []
+			});
+			const st = s._getStore();
+			st.addAnnotation(2, null, "nova", "auto", { de: 1, para: 2 });
+			assert.deepStrictEqual(st.listAnnotations(), [
+				{ ts: 1, currency: "zinthos", label: "antiga", origin: null, detail: null },
+				{ ts: 2, currency: null, label: "nova", origin: "auto", detail: { de: 1, para: 2 } }
+			]);
+			st.close();
+			s.store = null;
+		});
+
+		await test("ficha de mudanças: faixa do normal, situação, motivos que mais mudaram e origem", () => {
+			const { file, db } = freshDb("mudancas.db");
+			const fl = db.prepare("INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, ?, ?, ?, 1, 1)");
+			const T = DAY0 + 70 * D;
+			// 9 semanas antes: 700 por semana com ±10% alternado; depois: 3 dias com 300/dia e um motivo novo
+			for (let w = 1; w <= 9; w++) {
+				fl.run(T - w * 7 * D + H, "DAILY_REWARD", "creation", w % 2 ? 770 : 630, 0);
+			}
+			for (let d = 0; d < 3; d++) {
+				fl.run(T + d * D + H, "DAILY_REWARD", "creation", 300, 0);
+				fl.run(T + d * D + 2 * H, "DIVORCE", "creation", 50, 0);
+			}
+			db.prepare(
+				"INSERT INTO reason_labels VALUES ('zinthos', 'DIVORCE', 'Divórcio', 'creation')"
+			).run();
+			db.prepare(
+				"INSERT INTO annotations (ts, currency, label, origin) VALUES (?, 'zinthos', 'DAILY 100 → 300', 'auto')"
+			).run(T);
+			db.prepare(
+				"INSERT INTO annotations (ts, currency, label, origin) VALUES (?, 'zinthos', 'motivo novo', 'possivel')"
+			).run(T + 2 * D + 3 * H);
+			db.close();
+			const rows = readAll(
+				file,
+				dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
+			);
+			assert.strictEqual(rows.length, 2);
+			const [poss, auto] = rows;
+			assert.strictEqual(auto.Origem, "automática");
+			assert.strictEqual(auto["Situação"], "acompanhando (2 de 7 dias)");
+			assert.strictEqual(auto["Criado/dia antes"], 110); // 770 / 7
+			// depois: 1050 em 2,04 dias (última hora carregada = T + 2 d + 2 h + 1 h)
+			// normal = média de |Δ%| entre semanas seguidas (770/630 alternados ≈ 20%)
+			assert.match(auto["Criado/dia: Δ"], /^▲ \+\d+\.\d% \(normal ±20%\)$/);
+			assert.match(auto["Motivos que mais mudaram"], /Divórcio \+\d+\/dia/);
+			assert.ok(auto["Semanas no normal"] >= 7);
+			assert.strictEqual(poss.Origem, "possível");
+			assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia) · confirmar?");
+			// Moeda sem extrato (Petalitas): o "depois" avança pela carga registrada, não fica "cedo demais"
+			const { file: f3, db: db3 } = freshDb("mudancas-pet.db");
+			db3
+				.prepare(
+					"INSERT INTO annotations (ts, currency, label, origin) VALUES (?, 'petalitas', 'jardim: x 1 → 2', 'auto')"
+				)
+				.run(T);
+			db3
+				.prepare(
+					"INSERT INTO load_runs (ts, source, ok, window_from, window_to, rows) VALUES (1, 'petalitas', 1, 0, ?, 1)"
+				)
+				.run(T + 3 * D);
+			db3.close();
+			const pet = readAll(
+				f3,
+				dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
+			);
+			assert.strictEqual(pet[0]["Situação"], "acompanhando (3 de 7 dias)");
+			// Sem nenhuma mudança: a consulta volta vazia e o painel mostra o texto de estado vazio
+			const { file: f2 } = freshDb("mudancas-vazio.db");
+			assert.deepStrictEqual(
+				readAll(f2, dashboardSql("Últimas mudanças (3)", { from: 0, to: T })),
+				[]
+			);
+			const resumo = dashboardPanels().find((p) => p.title === "Últimas mudanças (3)");
+			assert.match(resumo.fieldConfig.defaults.noValue, /Nenhuma mudança registrada ainda/);
 		});
 
 		await test("veredito por moeda: situação pelo pior critério, dobra em N semanas, % do criado", () => {
@@ -1712,9 +1863,16 @@ async function main() {
 			assert.strictEqual(get("NOVO_MOTIVO").Tipo, "Sem mapeamento"); // sem nome: aparece cru
 			const daily = readAll(
 				file,
-				dashboardSql("Criado e destruído por dia — ${moeda} (período selecionado)", { from: 0, to })
+				dashboardSql("Criado, destruído e líquido por dia — ${moeda} (período selecionado)", {
+					from: 0,
+					to
+				})
 			);
-			assert.deepStrictEqual([daily[0]["Criado"], daily[0]["Destruído"]], [120, 35]);
+			// destruído abaixo de zero, líquido em linha
+			assert.deepStrictEqual(
+				[daily[0]["Criado"], daily[0]["Destruído"], daily[0]["Líquido"]],
+				[120, -35, 85]
+			);
 			const unk = readAll(
 				file,
 				dashboardSql("Motivos sem mapeamento (últimos 7 dias)", { from: 0, to })
@@ -1725,23 +1883,59 @@ async function main() {
 			);
 			// Nenhuma consulta do painel soma a linha non_monetary
 			for (const p of dashboardPanels()) {
-				if (!p.targets) continue;
+				if (!p.targets.length) continue;
 				const rows = readAll(file, dashboardSql(p.title, { from: 0, to }));
 				assert.ok(!JSON.stringify(rows).includes("99999"), `${p.title} somou non_monetary`);
 			}
 		});
 
-		await test("painel: estado com 4 painéis, seções recolhidas, colunas legíveis, período no título, padrão 7 dias", () => {
+		await test("painel: seis abas, Resumo numa tela, alma gêmea só com Zinthos, colunas legíveis, período no título, padrão 7 dias", () => {
 			const dash = JSON.parse(fs.readFileSync(DASHBOARD, "utf8"));
-			assert.deepStrictEqual(dash.time, { from: "now-7d", to: "now" });
-			const top = dash.panels.filter((p) => p.type !== "row");
-			assert.strictEqual(top.length, 4, "tela de estado com 4 painéis");
-			const rows = dash.panels.filter((p) => p.type === "row");
-			assert.ok(
-				rows.slice(1).every((r) => r.collapsed && r.panels.length > 0),
-				"detalhes recolhidos"
+			assert.strictEqual(dash.apiVersion, "dashboard.grafana.app/v2");
+			assert.strictEqual(dash.metadata.name, "ravena-economia");
+			assert.deepStrictEqual(
+				[dash.spec.timeSettings.from, dash.spec.timeSettings.to],
+				["now-7d", "now"]
 			);
-			for (const p of dashboardPanels().filter((x) => x.targets)) {
+			const layout = dashboardLayout();
+			assert.deepStrictEqual(
+				layout.map((t) => t.title),
+				["Resumo", "Moeda", "Jogadores", "Atividade", "Mudanças", "Diagnóstico"]
+			);
+			const byName = new Map(dashboardPanels().map((p) => [p.name, p]));
+			const resumo = layout[0].sections[0].elements.map((n) => byName.get(n));
+			assert.deepStrictEqual(
+				resumo.filter((p) => p.type !== "text").map((p) => p.type),
+				["table", "table", "timeseries", "alertlist", "table"],
+				"Resumo: confiança, veredito, massa, alertas, mudanças"
+			);
+			// Resumo cabe numa tela (~1080 px; linha do grid = 30 px)
+			const resumoH = JSON.parse(
+				fs.readFileSync(DASHBOARD, "utf8")
+			).spec.layout.spec.tabs[0].spec.layout.spec.items.reduce(
+				(m, i) => Math.max(m, i.spec.y + i.spec.height),
+				0
+			);
+			assert.ok(resumoH <= 32, `Resumo com ${resumoH} linhas de grade`);
+			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea");
+			assert.deepStrictEqual(alma.conditional.spec.items[0].spec, {
+				variable: "moeda",
+				operator: "equals",
+				value: "zinthos"
+			});
+			// Todo elemento do layout existe e todo elemento está no layout (uma vez)
+			const used = layout.flatMap((t) => t.sections.flatMap((s) => s.elements));
+			assert.deepStrictEqual([...used].sort(), [...byName.keys()].sort());
+			// Variáveis: moeda (uma), moedas (várias, todas marcadas) e escala
+			const vars = Object.fromEntries(dash.spec.variables.map((v) => [v.spec.name, v.spec]));
+			assert.strictEqual(vars.moeda.multi, false);
+			assert.strictEqual(vars.moedas.multi, true);
+			assert.deepStrictEqual(vars.moedas.current.value, ["zinthos", "petalitas", "runas"]);
+			assert.deepStrictEqual(
+				vars.escala.options.map((o) => o.value),
+				["indice", "valor"]
+			);
+			for (const p of dashboardPanels().filter((x) => x.targets.length)) {
 				const sql = p.targets[0].queryText;
 				for (const m of sql.matchAll(/ AS ([a-z_]+)\b/g)) {
 					assert.ok(
@@ -1794,12 +1988,35 @@ async function main() {
 							"jog_a",
 							"jog_d_tot",
 							"massa_na",
-							"massa_dep"
+							"massa_dep",
+							"id",
+							"origin",
+							"v",
+							"ruido",
+							"semanas",
+							"dcri",
+							"situacao",
+							"motivos",
+							"t0",
+							"n",
+							// ranking da aba Jogadores (CTE internas)
+							...[
+								"cambio",
+								"destruido",
+								"liquido",
+								"m",
+								"mediana",
+								"nome",
+								"phone",
+								"saldo",
+								"tipos",
+								"transf"
+							]
 						].includes(m[1]),
 						`${p.title}: coluna em snake_case ${m[1]}`
 					);
 				}
-				if (!/Últimas mudanças|Confiança|Disponibilidade|Mudanças: ficha/.test(p.title)) {
+				if (!/Últimas mudanças|Confiança|Disponibilidade|Ficha de antes e depois/.test(p.title)) {
 					assert.match(
 						p.title,
 						/últimos 7 dias|12 semanas|período selecionado|retrato mais recente|últimas 50|agora/,
@@ -2145,7 +2362,7 @@ async function main() {
 		await test("todas as consultas do painel rodam no retrato publicado", () => {
 			let n = 0;
 			for (const p of dashboardPanels()) {
-				if (!p.targets) continue;
+				if (!p.targets.length) continue;
 				for (const moeda of ["zinthos", "petalitas", "runas"]) {
 					readAll(pubFile, dashboardSql(p.title, { from: DAY0 - 90 * D, to: clock, moeda }));
 				}

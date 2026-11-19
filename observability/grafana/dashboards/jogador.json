@@ -1,0 +1,1035 @@
+{
+ "apiVersion": "dashboard.grafana.app/v2",
+ "kind": "Dashboard",
+ "metadata": {
+  "name": "ravena-jogador"
+ },
+ "spec": {
+  "title": "Ravena — Jogador",
+  "description": "Ficha de um jogador da economia: saldo, extrato diário e comandos. Mesma fonte do painel da economia (analytics.db). Mostra nome e telefone (decisão de produto: moeda de jogo; Grafana só por túnel ou com senha). O analytics.db guarda epoch em ms; o frser-sqlite-datasource lê colunas de tempo em segundos, por isso o / 1000 nos SELECT.",
+  "tags": [
+   "ravena",
+   "economia"
+  ],
+  "editable": true,
+  "cursorSync": "Crosshair",
+  "liveNow": false,
+  "preload": false,
+  "links": [
+   {
+    "title": "Economia",
+    "type": "link",
+    "icon": "dashboard",
+    "tooltip": "Painel da economia",
+    "url": "/d/ravena-economia/ravena-economia",
+    "tags": [],
+    "asDropdown": false,
+    "targetBlank": false,
+    "includeVars": false,
+    "keepTime": true
+   }
+  ],
+  "timeSettings": {
+   "timezone": "browser",
+   "from": "now-7d",
+   "to": "now",
+   "autoRefresh": "",
+   "autoRefreshIntervals": [
+    "5m",
+    "15m",
+    "1h"
+   ],
+   "hideTimepicker": false,
+   "fiscalYearStartMonth": 0,
+   "weekStart": "monday"
+  },
+  "variables": [
+   {
+    "kind": "CustomVariable",
+    "spec": {
+     "name": "moeda",
+     "label": "Moeda",
+     "query": "Zinthos : zinthos,Petalitas : petalitas,Runas : runas",
+     "current": {
+      "text": "Zinthos",
+      "value": "zinthos"
+     },
+     "options": [
+      {
+       "selected": true,
+       "text": "Zinthos",
+       "value": "zinthos"
+      },
+      {
+       "selected": false,
+       "text": "Petalitas",
+       "value": "petalitas"
+      },
+      {
+       "selected": false,
+       "text": "Runas",
+       "value": "runas"
+      }
+     ],
+     "multi": false,
+     "includeAll": false,
+     "hide": "dontHide",
+     "skipUrlSync": false,
+     "allowCustomValue": false
+    }
+   },
+   {
+    "kind": "TextVariable",
+    "spec": {
+     "name": "busca",
+     "label": "Buscar",
+     "query": "",
+     "current": {
+      "text": "",
+      "value": ""
+     },
+     "hide": "dontHide",
+     "skipUrlSync": false
+    }
+   },
+   {
+    "kind": "TextVariable",
+    "spec": {
+     "name": "jogador",
+     "label": "Jogador",
+     "query": "",
+     "current": {
+      "text": "",
+      "value": ""
+     },
+     "hide": "dontHide",
+     "skipUrlSync": false
+    }
+   }
+  ],
+  "annotations": [
+   {
+    "kind": "AnnotationQuery",
+    "spec": {
+     "query": {
+      "kind": "DataQuery",
+      "group": "grafana",
+      "version": "v0",
+      "datasource": {
+       "name": "-- Grafana --"
+      },
+      "spec": {}
+     },
+     "enable": true,
+     "hide": true,
+     "iconColor": "rgba(0, 211, 255, 1)",
+     "name": "Annotations & Alerts",
+     "builtIn": true,
+     "legacyOptions": {
+      "type": "dashboard"
+     }
+    }
+   },
+   {
+    "kind": "AnnotationQuery",
+    "spec": {
+     "query": {
+      "kind": "DataQuery",
+      "group": "frser-sqlite-datasource",
+      "version": "v0",
+      "datasource": {
+       "name": "economia-sqlite"
+      },
+      "spec": {
+       "queryType": "table",
+       "queryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE COALESCE(origin, 'manual') <> 'possivel' AND ts >= $__from - 12 * 604800000 AND ts < $__to",
+       "rawQueryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END || ': ' || label AS text, COALESCE(currency, 'todas') AS tags FROM annotations WHERE COALESCE(origin, 'manual') <> 'possivel' AND ts >= $__from - 12 * 604800000 AND ts < $__to",
+       "timeColumns": [
+        "time"
+       ]
+      }
+     },
+     "enable": true,
+     "hide": false,
+     "iconColor": "orange",
+     "name": "Mudanças registradas"
+    }
+   }
+  ],
+  "elements": {
+   "panel-43": {
+    "kind": "Panel",
+    "spec": {
+     "id": 43,
+     "title": "Encontrar jogador (busca por nome, telefone ou ID)",
+     "description": "Digite parte do nome, do telefone ou do ID no campo 'Buscar' no topo e clique no nome para abrir a ficha.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person,\n    SUM(CASE WHEN p.currency = 'zinthos' THEN p.balance END) AS z, SUM(CASE WHEN p.currency = 'runas' THEN p.balance END) AS r,\n    SUM(CASE WHEN p.currency = 'petalitas' THEN p.balance END) AS pt\n  FROM players p JOIN identities i ON i.player_id = p.player_id GROUP BY i.person\n),\ncmds AS (\n  SELECT i.person, SUM(a.uses) AS u FROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\n  WHERE a.day >= $__to - 604800000 AND a.day < $__to GROUP BY i.person\n)\nSELECT pp.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.z AS \"Zinthos\", bal.r AS \"Runas\", bal.pt AS \"Petalitas\", cmds.u AS \"Comandos (7 dias)\"\nFROM pp LEFT JOIN bal ON bal.person = pp.person LEFT JOIN cmds ON cmds.person = pp.person\nWHERE ${busca:sqlstring} = '' OR pp.nome LIKE '%' || ${busca:sqlstring} || '%' OR pp.person LIKE '%' || ${busca:sqlstring} || '%'\n  OR EXISTS (SELECT 1 FROM identities j WHERE j.person = pp.person AND j.player_id LIKE '%' || ${busca:sqlstring} || '%')\nORDER BY COALESCE(bal.z, 0) + COALESCE(bal.r, 0) DESC LIMIT 50",
+            "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n),\nbal AS (\n  SELECT i.person,\n    SUM(CASE WHEN p.currency = 'zinthos' THEN p.balance END) AS z, SUM(CASE WHEN p.currency = 'runas' THEN p.balance END) AS r,\n    SUM(CASE WHEN p.currency = 'petalitas' THEN p.balance END) AS pt\n  FROM players p JOIN identities i ON i.player_id = p.player_id GROUP BY i.person\n),\ncmds AS (\n  SELECT i.person, SUM(a.uses) AS u FROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\n  WHERE a.day >= $__to - 604800000 AND a.day < $__to GROUP BY i.person\n)\nSELECT pp.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.z AS \"Zinthos\", bal.r AS \"Runas\", bal.pt AS \"Petalitas\", cmds.u AS \"Comandos (7 dias)\"\nFROM pp LEFT JOIN bal ON bal.person = pp.person LEFT JOIN cmds ON cmds.person = pp.person\nWHERE ${busca:sqlstring} = '' OR pp.nome LIKE '%' || ${busca:sqlstring} || '%' OR pp.person LIKE '%' || ${busca:sqlstring} || '%'\n  OR EXISTS (SELECT 1 FROM identities j WHERE j.person = pp.person AND j.player_id LIKE '%' || ${busca:sqlstring} || '%')\nORDER BY COALESCE(bal.z, 0) + COALESCE(bal.r, 0) DESC LIMIT 50",
+            "timeColumns": []
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "ninguém encontrado"
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Zinthos"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Runas"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Petalitas"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Comandos (7 dias)"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Saldo atual"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Maior fonte"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Variação em 7 dias"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% da massa"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Motivo dominante"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% do dia"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Pessoa"
+          },
+          "properties": [
+           {
+            "id": "custom.hidden",
+            "value": true
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Nome"
+          },
+          "properties": [
+           {
+            "id": "links",
+            "value": [
+             {
+              "title": "Abrir ficha do jogador",
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+             }
+            ]
+           },
+           {
+            "id": "custom.width",
+            "value": 180
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Telefone / ID"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 160
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Tipo de ID"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 110
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Zinthos"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Runas"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Petalitas"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Comandos (7 dias)"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-44": {
+    "kind": "Panel",
+    "spec": {
+     "id": 44,
+     "title": "Ficha do jogador",
+     "description": "Escolha o jogador clicando num nome (aqui ou nas tabelas da aba Jogadores) ou digitando a pessoa no campo 'Jogador': telefone com 13 dígitos, tg:<id> ou lid:<id>. Período = seletor de tempo.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n), cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Moeda\",\n  (SELECT SUM(p.balance) FROM players p JOIN identities i ON i.player_id = p.player_id WHERE i.person = ${jogador:sqlstring} AND p.currency = cur.currency) AS \"Saldo atual\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Criado no período\",\n  (SELECT SUM(d.amount_out - d.amount_in) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'destruction' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Destruído no período\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind IN ('exchange_in', 'exchange_out') AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Câmbio (líquido)\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'transfer' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Transf. (líquido)\",\n  (SELECT GROUP_CONCAT(i.player_id || ' (' || i.id_kind || ')', ', ') FROM identities i\n     WHERE i.person = ${jogador:sqlstring} AND i.player_id IN (SELECT player_id FROM players p WHERE p.currency = cur.currency\n                                    UNION SELECT player_id FROM player_daily d WHERE d.currency = cur.currency)) AS \"IDs nesta fonte\"\nFROM cur ORDER BY cur.ordem",
+            "rawQueryText": "WITH pp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,\n    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome\n  FROM identities i GROUP BY i.person\n), cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Moeda\",\n  (SELECT SUM(p.balance) FROM players p JOIN identities i ON i.player_id = p.player_id WHERE i.person = ${jogador:sqlstring} AND p.currency = cur.currency) AS \"Saldo atual\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Criado no período\",\n  (SELECT SUM(d.amount_out - d.amount_in) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'destruction' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Destruído no período\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind IN ('exchange_in', 'exchange_out') AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Câmbio (líquido)\",\n  (SELECT SUM(d.amount_in - d.amount_out) FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n     WHERE i.person = ${jogador:sqlstring} AND d.currency = cur.currency AND d.kind = 'transfer' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to) AS \"Transf. (líquido)\",\n  (SELECT GROUP_CONCAT(i.player_id || ' (' || i.id_kind || ')', ', ') FROM identities i\n     WHERE i.person = ${jogador:sqlstring} AND i.player_id IN (SELECT player_id FROM players p WHERE p.currency = cur.currency\n                                    UNION SELECT player_id FROM player_daily d WHERE d.currency = cur.currency)) AS \"IDs nesta fonte\"\nFROM cur ORDER BY cur.ordem",
+            "timeColumns": []
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "—",
+         "custom": {
+          "wrapText": true
+         }
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Saldo atual"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Criado no período"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Destruído no período"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Câmbio (líquido)"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Transf. (líquido)"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Moeda"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 90
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "IDs nesta fonte"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 260
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-45": {
+    "kind": "Panel",
+    "spec": {
+     "id": 45,
+     "title": "Saldo por dia — ${moeda} — jogador escolhido",
+     "description": "Saldo no fim de cada dia econômico (o dia corrente = agora). Petalitas: só desde a primeira carga.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "SELECT b.day / 1000 AS time, SUM(b.balance) AS \"Saldo no fim do dia\"\nFROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\nWHERE i.person = ${jogador:sqlstring} AND b.currency = '${moeda}' AND b.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND b.day < $__to\nGROUP BY b.day ORDER BY b.day",
+            "rawQueryText": "SELECT b.day / 1000 AS time, SUM(b.balance) AS \"Saldo no fim do dia\"\nFROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\nWHERE i.person = ${jogador:sqlstring} AND b.currency = '${moeda}' AND b.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND b.day < $__to\nGROUP BY b.day ORDER BY b.day",
+            "timeColumns": [
+             "time"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "timeseries",
+      "version": "",
+      "spec": {
+       "options": {},
+       "fieldConfig": {
+        "defaults": {
+         "unit": "locale",
+         "noValue": "escolha um jogador",
+         "custom": {
+          "lineInterpolation": "stepAfter"
+         }
+        },
+        "overrides": []
+       }
+      }
+     }
+    }
+   },
+   "panel-46": {
+    "kind": "Panel",
+    "spec": {
+     "id": 46,
+     "title": "Fluxo por motivo e dia — ${moeda} — jogador escolhido",
+     "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "time series",
+            "queryText": "SELECT d.day / 1000 AS time, COALESCE(l.label, d.reason) AS \"Motivo\", SUM(d.amount_in - d.amount_out) AS \"Líquido\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.kind <> 'non_monetary' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day",
+            "rawQueryText": "SELECT d.day / 1000 AS time, COALESCE(l.label, d.reason) AS \"Motivo\", SUM(d.amount_in - d.amount_out) AS \"Líquido\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.kind <> 'non_monetary' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day",
+            "timeColumns": [
+             "time"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "timeseries",
+      "version": "",
+      "spec": {
+       "options": {
+        "legend": {
+         "displayMode": "table",
+         "placement": "right",
+         "calcs": [
+          "sum"
+         ]
+        }
+       },
+       "fieldConfig": {
+        "defaults": {
+         "unit": "locale",
+         "displayName": "${__field.labels.Motivo}",
+         "noValue": "escolha um jogador",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 60,
+          "stacking": {
+           "mode": "normal"
+          }
+         }
+        },
+        "overrides": []
+       }
+      }
+     }
+    }
+   },
+   "panel-47": {
+    "kind": "Panel",
+    "spec": {
+     "id": 47,
+     "title": "Extrato diário — ${moeda} — jogador escolhido",
+     "description": "",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "SELECT d.day / 1000 AS \"Dia\", COALESCE(l.label, d.reason) AS \"Motivo\", CASE d.kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n  SUM(d.amount_in) AS \"Entrou\", SUM(d.amount_out) AS \"Saiu\", SUM(d.tx_count) AS \"Transações\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day DESC, SUM(d.amount_in) + SUM(d.amount_out) DESC",
+            "rawQueryText": "SELECT d.day / 1000 AS \"Dia\", COALESCE(l.label, d.reason) AS \"Motivo\", CASE d.kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n  SUM(d.amount_in) AS \"Entrou\", SUM(d.amount_out) AS \"Saiu\", SUM(d.tx_count) AS \"Transações\"\nFROM player_daily d JOIN identities i ON i.player_id = d.player_id\nLEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\nWHERE i.person = ${jogador:sqlstring} AND d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.reason ORDER BY d.day DESC, SUM(d.amount_in) + SUM(d.amount_out) DESC",
+            "timeColumns": [
+             "Dia"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "escolha um jogador"
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "time:DD/MM"
+           },
+           {
+            "id": "custom.width",
+            "value": 70
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Tipo"
+          },
+          "properties": [
+           {
+            "id": "mappings",
+            "value": [
+             {
+              "type": "value",
+              "options": {
+               "Sem mapeamento": {
+                "color": "red",
+                "index": 0
+               },
+               "Fora do dinheiro": {
+                "color": "text",
+                "index": 1
+               }
+              }
+             }
+            ]
+           },
+           {
+            "id": "custom.cellOptions",
+            "value": {
+             "type": "color-text"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Entrou"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Saiu"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Transações"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-48": {
+    "kind": "Panel",
+    "spec": {
+     "id": 48,
+     "title": "Comandos por dia — jogador escolhido",
+     "description": "",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "SELECT a.day / 1000 AS time, SUM(a.uses) AS \"Comandos\"\nFROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\nWHERE i.person = ${jogador:sqlstring} AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+            "rawQueryText": "SELECT a.day / 1000 AS time, SUM(a.uses) AS \"Comandos\"\nFROM player_activity_daily a JOIN identities i ON i.player_id = a.player_id\nWHERE i.person = ${jogador:sqlstring} AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+            "timeColumns": [
+             "time"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "timeseries",
+      "version": "",
+      "spec": {
+       "options": {},
+       "fieldConfig": {
+        "defaults": {
+         "unit": "locale",
+         "noValue": "escolha um jogador",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 60
+         }
+        },
+        "overrides": []
+       }
+      }
+     }
+    }
+   }
+  },
+  "layout": {
+   "kind": "RowsLayout",
+   "spec": {
+    "rows": [
+     {
+      "kind": "RowsLayoutRow",
+      "spec": {
+       "title": "Encontrar jogador",
+       "collapse": false,
+       "layout": {
+        "kind": "GridLayout",
+        "spec": {
+         "items": [
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-43"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "kind": "RowsLayoutRow",
+      "spec": {
+       "title": "Jogador escolhido: ${jogador}",
+       "collapse": false,
+       "layout": {
+        "kind": "GridLayout",
+        "spec": {
+         "items": [
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 6,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-44"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-45"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 12,
+            "y": 6,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-46"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 14,
+            "width": 16,
+            "height": 10,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-47"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 16,
+            "y": 14,
+            "width": 8,
+            "height": 10,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-48"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

@@ -15,7 +15,7 @@
  * marca só é aceito se todas as tabelas forem do painel (criado por versão anterior à marca); aí é marcado.
  *
  * Não usa a classe Database (caminho fixo em data/sqlites e backup). Guarda também o detalhe por
- * jogador (página Jogadores): saldo, fluxo por motivo e comandos por dia, com nome e telefone, por
+ * jogador (aba Jogadores e ficha): saldo, fluxo por motivo e comandos por dia, com nome e telefone, por
  * ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90). Decisão de produto: moeda de jogo, sem valor
  * financeiro; o Grafana só é acessado por túnel ou com senha.
  */
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS load_runs (
   rows INTEGER, error TEXT, PRIMARY KEY (ts, source)
 );
 CREATE TABLE IF NOT EXISTS annotations (
-  ts INTEGER NOT NULL, currency TEXT, label TEXT NOT NULL, PRIMARY KEY (ts, label)
+  ts INTEGER NOT NULL, currency TEXT, label TEXT NOT NULL, origin TEXT, detail TEXT, PRIMARY KEY (ts, label)
 );
 -- Fora do contrato (aditiva): se a moeda tem extrato. Sem extrato o painel mostra "sem extrato" em vez
 -- de calcular moeda sem origem (seria o Δ total inteiro).
@@ -355,7 +355,12 @@ class EconomyAnalyticsStore {
 		);
 	}
 
-	/** Colunas novas em bancos criados por versões anteriores (só ADD COLUMN; nada é apagado). */
+	/**
+	 * Colunas novas em bancos criados por versões anteriores (só ADD COLUMN; nada é apagado).
+	 * annotations.origin: NULL ou 'manual' (economy-annotate), 'auto' (parâmetro de balanceamento mudou),
+	 * 'possivel' (detectada nos dados, a confirmar), 'descartada'; annotations.detail: JSON opcional.
+	 * soulmate_cycle_hourly.without_quota: NULL nas horas de um waifuletes anterior ao campo.
+	 */
 	_migrate() {
 		const cols = (t) =>
 			new Set(
@@ -367,6 +372,9 @@ class EconomyAnalyticsStore {
 		if (!cols("soulmate_cycle_hourly").has("without_quota")) {
 			this.db.exec("ALTER TABLE soulmate_cycle_hourly ADD COLUMN without_quota INTEGER");
 		}
+		const ann = cols("annotations");
+		if (!ann.has("origin")) this.db.exec("ALTER TABLE annotations ADD COLUMN origin TEXT");
+		if (!ann.has("detail")) this.db.exec("ALTER TABLE annotations ADD COLUMN detail TEXT");
 	}
 
 	/** `to` da última carga bem-sucedida da fonte, ou null se nunca houve. */
@@ -792,10 +800,18 @@ class EconomyAnalyticsStore {
 		);
 	}
 
-	addAnnotation(ts, currency, label) {
+	addAnnotation(ts, currency, label, origin = null, detail = null) {
 		this.db
-			.prepare("INSERT OR REPLACE INTO annotations (ts, currency, label) VALUES (?, ?, ?)")
-			.run(ts, currency || null, label);
+			.prepare(
+				"INSERT OR REPLACE INTO annotations (ts, currency, label, origin, detail) VALUES (?, ?, ?, ?, ?)"
+			)
+			.run(
+				ts,
+				currency || null,
+				label,
+				origin || null,
+				detail === null || detail === undefined ? null : JSON.stringify(detail)
+			);
 	}
 
 	/** Caminho do retrato publicado (o que o Grafana lê). */
@@ -880,7 +896,10 @@ class EconomyAnalyticsStore {
 	}
 
 	listAnnotations() {
-		return this.db.prepare("SELECT ts, currency, label FROM annotations ORDER BY ts").all();
+		return this.db
+			.prepare("SELECT ts, currency, label, origin, detail FROM annotations ORDER BY ts")
+			.all()
+			.map((a) => ({ ...a, detail: a.detail ? JSON.parse(a.detail) : null }));
 	}
 
 	/** Libera a trava de publicação se ela estiver com este store (encerramento no meio da publicação). */

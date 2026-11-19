@@ -20,7 +20,7 @@
  * outras. Uma vez por dia econômico (04:00 BRT) grava quem recebe (últimos 7 dias, por quinto), só
  * para moeda com extrato.
  *
- * Por jogador (página Jogadores, ECONOMY_ANALYTICS_PLAYER_DAYS dias, padrão 90; 0 desliga): a cada
+ * Por jogador (aba Jogadores e ficha do jogador, ECONOMY_ANALYTICS_PLAYER_DAYS dias, padrão 90; 0 desliga): a cada
  * rodada pede GET /internal/economy/players por dia econômico, do dia da última carga até a hora atual
  * (o dia corrente é refeito a cada hora), e lê as Runas do bank.db, um dia por vez, cedendo o laço de
  * eventos entre os dias. Aumentar PLAYER_DAYS não busca os dias antigos que faltam: a carga continua do

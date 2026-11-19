@@ -40,7 +40,13 @@ async function main(store) {
 		for (const a of list) {
 			if (!Number.isFinite(Number(a.ts)) || !a.label)
 				fail(`Anotação inválida: ${JSON.stringify(a)}`);
-			store.addAnnotation(Number(a.ts), a.currency || null, String(a.label));
+			store.addAnnotation(
+				Number(a.ts),
+				a.currency || null,
+				String(a.label),
+				a.origin || null,
+				a.detail ?? null
+			);
 		}
 		console.log(`${list.length} anotações importadas; ${await publish(store)}.`);
 	} else {

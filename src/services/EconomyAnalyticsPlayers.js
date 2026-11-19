@@ -1,7 +1,7 @@
 /**
  * EconomyAnalyticsPlayers.js
  *
- * Detalhe por jogador do painel da economia (dashboard "Ravena — Jogadores"):
+ * Detalhe por jogador do painel da economia (aba Jogadores e dashboard "Ravena — Jogador"):
  *   - identidade: une o mesmo jogador entre moedas (waifuletes, Jardim e bank.db usam o número antes do
  *     @ ou do :), resolve LID do WhatsApp para telefone pela tabela memory_identities (memory.db, só
  *     leitura) e junta as variantes de 12 e 13 dígitos dos celulares do Brasil (como o PhoneUtils);
