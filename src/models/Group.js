@@ -51,6 +51,10 @@ class Group {
 		// Mensagens de boas-vindas e despedida
 		this.greetings = data.greetings ?? {};
 		this.farewells = data.farewells ?? {};
+		this.greetingAccumulation = data.greetingAccumulation ?? {
+			enabled: false,
+			intervalMinutes: 30
+		};
 
 		// Interacoes Auto
 		this.interact = data.interact ?? {
@@ -124,6 +128,7 @@ class Group {
 			minecraftServer: this.minecraftServer,
 			greetings: this.greetings,
 			farewells: this.farewells,
+			greetingAccumulation: this.greetingAccumulation,
 			interact: this.interact,
 			autoTranslateTo: this.autoTranslateTo,
 			autoStt: this.autoStt,
@@ -205,6 +210,13 @@ class Group {
 			this.farewells = {
 				...this.farewells,
 				...data.farewells
+			};
+		}
+
+		if (data.greetingAccumulation) {
+			this.greetingAccumulation = {
+				...this.greetingAccumulation,
+				...data.greetingAccumulation
 			};
 		}
 

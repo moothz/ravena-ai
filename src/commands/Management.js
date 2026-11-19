@@ -2195,10 +2195,21 @@ class Management {
 			// Constrói mensagem informativa
 			let infoMessage = `*📊 Informações do Grupo*\n\n`;
 			infoMessage += `*Nome:* ${group.name}\n`;
+			if (group.titulo) {
+				infoMessage += `*Título:* ${group.titulo}\n`;
+			}
 			infoMessage += `*ID:* ${group.id}\n`;
 			infoMessage += `*Prefixo:* "${group.prefix}"\n`;
+			infoMessage += `*Comandos Sem Prefixo:* ${group.customIgnoresPrefix ? "Sim" : "Não"}\n`;
 			infoMessage += `*Data de Criação:* ${creationDate}\n`;
-			infoMessage += `*Pausado:* ${group.paused ? "Sim" : "Não"}\n\n`;
+			infoMessage += `*Pausado:* ${group.paused ? "Sim" : "Não"}\n`;
+			if (group.inviteCode) {
+				infoMessage += `*Link do Grupo:* https://chat.whatsapp.com/${group.inviteCode}\n`;
+			}
+			if (group.minecraftServer && group.minecraftServer.host) {
+				infoMessage += `*Servidor Minecraft:* ${group.minecraftServer.host}${group.minecraftServer.port ? `:${group.minecraftServer.port}` : ""}\n`;
+			}
+			infoMessage += "\n";
 
 			// Adiciona informações de admins adicionais
 			const admins = group.additionalAdmins ?? [];
@@ -2207,22 +2218,33 @@ class Management {
 				for (let i = 0; i < Math.min(3, admins.length); i++) {
 					infoMessage += `- ${this.formatPhoneNumber(admins[i])}\n`;
 				}
-				if (admins.length > 300) {
-					infoMessage += `... e mais ${admins.length - 300} administradores\n`;
+				if (admins.length > 3) {
+					infoMessage += `... e mais ${admins.length - 3} administradores\n`;
 				}
 				infoMessage += "\n";
 			}
 
-			// Adiciona informações de armazenamento
-			if (group.customAIPrompt && group.customAIPrompt.length > 1) {
-				infoMessage += `*Personalidade IA*:\n`;
-				infoMessage += `- \`${group.customAIPrompt}\`\n\n`;
+			// Regras do grupo
+			if (group.regras && group.regras.trim()) {
+				infoMessage += `*Regras do Grupo:*\n`;
+				infoMessage += `> ${group.regras.replace(/\n/g, "\n> ")}\n\n`;
 			}
 
-			infoMessage += `*Respostas Automáticas:*\n`;
-			infoMessage += `- *Boas-vindas:* \`\`\`${welcomeMessage}\`\`\`\n`;
-			infoMessage += `- *Despedidas:* \`\`\`${farewellMessage}\`\`\`\n`;
+			// Inteligência Artificial
+			infoMessage += `*Inteligência Artificial:*\n`;
+			if (group.customAIPrompt && group.customAIPrompt.length > 0) {
+				infoMessage += `- *Personalidade:* \`${group.customAIPrompt}\`\n`;
+			}
+			infoMessage += `- *Personalidade Dinâmica:* ${group.dinamicPersonality ? "Sim" : "Não"}\n`;
 			infoMessage += `- *Auto-STT:* ${group.autoStt ? "Sim" : "Não"}\n`;
+			infoMessage += `- *Auto-Tradução:* ${group.autoTranslateTo || "Desativada"}\n\n`;
+
+			infoMessage += `*Respostas Automáticas:*\n`;
+			const welcomeMedia = formatMediaConfig(group.greetings);
+			const farewellMedia = formatMediaConfig(group.farewells);
+			infoMessage += `- *Boas-vindas:* \`\`\`${welcomeMessage}\`\`\`${welcomeMedia !== "Nenhuma mídia configurada" ? ` _(Mídias: ${welcomeMedia})_` : ""}\n`;
+			infoMessage += `- *Despedidas:* \`\`\`${farewellMessage}\`\`\`${farewellMedia !== "Nenhuma mídia configurada" ? ` _(Mídias: ${farewellMedia})_` : ""}\n`;
+			infoMessage += `- *Acumular Saudações:* ${group.greetingAccumulation?.enabled ? `Sim (${group.greetingAccumulation.intervalMinutes || 30} min)` : "Não"}\n`;
 			infoMessage += `- *Notificar Fechado:* ${group.notificaGrupoFechado ? "Sim" : "Não"}\n`;
 			infoMessage += `- *Notificar Aberto:* ${group.notificaGrupoAberto ? "Sim" : "Não"}\n\n`;
 
@@ -2232,7 +2254,9 @@ class Management {
 				infoMessage += `- *Chance:* ${group.interact.chance / 100}% (${group.interact.chance}/10000)\n`;
 				infoMessage += `- *Cooldown:* ${group.interact.cooldown} minutos\n`;
 				const proporcao = group.interact.proporcao !== undefined ? group.interact.proporcao : 50;
-				infoMessage += `- *Proporção:* ${proporcao}% IA, ${100 - proporcao}% comandos\n\n`;
+				infoMessage += `- *Proporção:* ${proporcao}% IA, ${100 - proporcao}% comandos\n`;
+				infoMessage += `- *Usar Comandos:* ${group.interact.useCmds !== false ? "Sim" : "Não"}\n`;
+				infoMessage += `- *Votar em Enquetes:* ${group.interact.voteInPolls !== false ? "Sim" : "Não"}\n\n`;
 			}
 
 			infoMessage += `*Filtros:*\n`;
@@ -2282,13 +2306,9 @@ class Management {
 				this.logger.error("Erro ao buscar dossiês para info:", e);
 			}
 
-			if (group.ignoredNumbers && group.ignoredNumbers.length > 0) {
-				infoMessage += `\n*Números Ignorados:* ${group.ignoredNumbers.join(", ")}\n`;
-			}
-
 			infoMessage += dossierInfo;
 
-			// Apelidos configurados
+			// Silenciamentos e Restrições
 			if (group.mutedCategories && group.mutedCategories.length > 0) {
 				infoMessage += `\n*Categorias Silenciadas:* ${group.mutedCategories.join(", ")}\n`;
 			}
@@ -2297,14 +2317,35 @@ class Management {
 				infoMessage += `*Comandos Silenciados:* ${group.mutedCommands.join(", ")}\n`;
 			}
 
+			if (group.commandLimits && group.commandLimits.length > 0) {
+				infoMessage += `*Limites de Comandos:*\n`;
+				for (const cl of group.commandLimits) {
+					infoMessage += `- *${cl.command}:* máx ${cl.maxUses}x a cada ${cl.hours}h (${cl.scope || "global"})\n`;
+				}
+			}
+
 			if (group.ignoredNumbers && group.ignoredNumbers.length > 0) {
-				infoMessage += `\n*Números Ignorados:* ${group.ignoredNumbers.join(", ")}\n`;
+				infoMessage += `*Números Ignorados:* ${group.ignoredNumbers.join(", ")}\n`;
+			}
+
+			if (group.ignoredUsers && group.ignoredUsers.length > 0) {
+				infoMessage += `*Usuários Ignorados:* ${group.ignoredUsers.join(", ")}\n`;
+			}
+
+			if (group.warnings && group.warnings.length > 0) {
+				infoMessage += `*Membros com Advertências:* ${group.warnings.length}\n`;
+			}
+
+			if (group.webhooks && group.webhooks.length > 0) {
+				infoMessage += `*Webhooks Ativos:* ${group.webhooks.length}\n`;
 			}
 
 			// Apelidos configurados
 			if (group.nicks && group.nicks.length > 0) {
 				infoMessage += `\n*Apelidos Configurados:* ${group.nicks.map((n) => `${n.apelido} (${n.numero})`).join(", ")}\n`;
 			}
+
+			infoMessage += "\n";
 
 			infoMessage += `*Canais Monitorados:*\n`;
 
@@ -2502,39 +2543,48 @@ class Management {
 			// Adiciona informação sobre comandos personalizados
 			infoMessage += `*Comandos Personalizados (${activeCommands.length}):*\n`;
 
-			// Lista comandos personalizados com suas informações detalhadas
+			// Lista comandos personalizados com suas informações detalhadas e código das respostas
 			const maxCommands = Math.min(1000, activeCommands.length);
 			for (let i = 0; i < maxCommands; i++) {
-				const cmd = activeCommands[i];
-				infoMessage += `- *${group.prefix}${cmd.startsWith}*: `;
-
-				// Mostra contagem de respostas
-				if (cmd.responses && cmd.responses.length > 0) {
-					infoMessage += `${cmd.responses.length} respostas`;
-					// Mostra contador de uso
-					if (cmd.count) {
-						infoMessage += `, usado ${cmd.count} vezes\n`;
-					}
-
-					for (const resp of cmd.responses) {
-						infoMessage += `> ${resp}\n`;
-					}
-
-					// Mostra se tem restrições de horário/dias
-					if (cmd.allowedTimes) {
-						infoMessage += `, `;
-						if (cmd.allowedTimes.start && cmd.allowedTimes.end) {
-							infoMessage += `${cmd.allowedTimes.start}-${cmd.allowedTimes.end}`;
-						}
-						if (cmd.allowedTimes.daysOfWeek && cmd.allowedTimes.daysOfWeek.length > 0) {
-							infoMessage += ` [${cmd.allowedTimes.daysOfWeek.join(", ")}]`;
-						}
-					}
-				} else {
-					infoMessage += "Sem respostas";
+				if (infoMessage.length > 25000) {
+					infoMessage += `\n_... e mais ${activeCommands.length - i} comandos (omitidos por limite de tamanho)_\n`;
+					break;
 				}
 
-				infoMessage += "\n";
+				const cmd = activeCommands[i];
+				const trigger = `${group.prefix}${cmd.startsWith}`;
+
+				// Monta flags do comando
+				const flags = [];
+				if (cmd.count) flags.push(`usado ${cmd.count}x`);
+				if (cmd.adminOnly) flags.push("admin");
+				if (cmd.replyInPvivate || cmd.replyInPrivate) flags.push("PV");
+				if (cmd.sendAll) flags.push("envia todas");
+				if (cmd.reply === false) flags.push("sem citação");
+				if (cmd.cooldown) flags.push(`cd: ${cmd.cooldown}s`);
+				if (cmd.reactions?.before || cmd.reactions?.after) {
+					flags.push(`reações: ${cmd.reactions.before || "-"}/${cmd.reactions.after || "-"}`);
+				}
+				if (cmd.allowedTimes?.start && cmd.allowedTimes?.end) {
+					flags.push(`horário: ${cmd.allowedTimes.start}-${cmd.allowedTimes.end}`);
+				}
+				if (cmd.allowedTimes?.daysOfWeek && cmd.allowedTimes.daysOfWeek.length > 0) {
+					flags.push(`dias: [${cmd.allowedTimes.daysOfWeek.join(", ")}]`);
+				}
+
+				const flagsStr = flags.length > 0 ? ` _(${flags.join(", ")})_` : "";
+				infoMessage += `- *${trigger}*${flagsStr}:\n`;
+
+				if (cmd.responses && cmd.responses.length > 0) {
+					for (let rIdx = 0; rIdx < cmd.responses.length; rIdx++) {
+						const resp = cmd.responses[rIdx];
+						const respLabel = cmd.responses.length > 1 ? `  _Resposta ${rIdx + 1}:_\n` : "";
+						// Envolve em bloco de código para exibir exatamente o código/variáveis do comando
+						infoMessage += `${respLabel}\`\`\`\n${resp}\n\`\`\`\n`;
+					}
+				} else {
+					infoMessage += `  _Sem respostas configuradas_\n`;
+				}
 			}
 
 			// Indica se existem mais comandos
