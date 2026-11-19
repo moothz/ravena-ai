@@ -8,7 +8,8 @@
  *   - petalitas: GET {JARDIM_API_URL}/internal/economy/summary       (x-api-key: JARDIM_API_KEY)
  *   - runas:     bank.db local, aberto só-leitura
  *
- * Toda hora no minuto 5 (só com ECONOMY_ANALYTICS_ENABLED=true): para cada fonte pede
+ * Uma rodada cerca de 1 minuto depois da subida e depois toda hora no minuto 5 (só com
+ * ECONOMY_ANALYTICS_ENABLED=true): para cada fonte pede
  * [to da última carga ok, início da hora atual) e grava fluxos por hora e motivo e o resultado em
  * load_runs. A primeira carga pede from=0, em pedaços: [0, ECONOMY_ANALYTICS_BACKFILL_START) e depois
  * janelas de 30 dias, cada uma registrada como carga ok (um timeout não faz voltar ao zero).
@@ -57,6 +58,10 @@ const DEFAULT_BACKFILL_START = "2025-01-01";
 const DEFAULT_PLAYER_DAYS = 90;
 /** Janela máxima aceita pelas rotas /internal/economy/players. */
 const PLAYERS_MAX_WINDOW_MS = 8 * DAY_MS;
+// Primeira rodada depois da subida (dá tempo do bot assentar); 0 ou ECONOMY_ANALYTICS_RUN_ON_START=false desliga
+const DEFAULT_START_DELAY_MS = 60000;
+// Mesma regra de balances.totalAtWindowEnd no waifuletes: a waifu confiscada nunca creditou o saldo
+const MASS_EXCLUDED_REASONS = { zinthos: ["HOSTING_FEE_WAIFU"] };
 // Encerramento do bot: no máximo isso esperando a rodada em andamento (o index.js força saída em 25 s)
 const STOP_WAIT_MS = 3000;
 
@@ -219,6 +224,15 @@ class EconomyAnalyticsService {
 		this._stopping = false;
 		this._abort = null;
 		this.stopWaitMs = opts.stopWaitMs ?? STOP_WAIT_MS;
+		const delay = Number(opts.startDelayMs ?? env.ECONOMY_ANALYTICS_START_DELAY_MS);
+		this.startDelayMs =
+			(opts.runOnStart ?? env.ECONOMY_ANALYTICS_RUN_ON_START) === false ||
+			String(env.ECONOMY_ANALYTICS_RUN_ON_START).toLowerCase() === "false"
+				? 0
+				: Number.isFinite(delay) && delay >= 0
+					? delay
+					: DEFAULT_START_DELAY_MS;
+		this._startTimer = null;
 	}
 
 	static getInstance() {
@@ -334,6 +348,17 @@ class EconomyAnalyticsService {
 		this.task = cron.schedule("5 * * * *", () => {
 			this.runOnce().catch((err) => logger.error(`[economy] Falha na carga: ${err.message}`));
 		});
+		// Uma rodada logo depois da subida: sem ela, a primeira carga (e o retrato que o Grafana lê) só sai
+		// no minuto 5 da hora seguinte. A carga é incremental, então reiniciar o bot não recarrega nada.
+		if (this.startDelayMs > 0) {
+			this._startTimer = setTimeout(() => {
+				this._startTimer = null;
+				this.runOnce().catch((err) =>
+					logger.error(`[economy] Falha na carga da subida: ${err.message}`)
+				);
+			}, this.startDelayMs);
+			if (this._startTimer.unref) this._startTimer.unref();
+		}
 		logger.info(
 			`[economy] Carga horária do painel ligada (fontes: ${this.sources.map((s) => s.name).join(", ")}; mapeamento v${MAPPING_VERSION}).`
 		);
@@ -348,6 +373,10 @@ class EconomyAnalyticsService {
 		if (this.task) {
 			this.task.stop();
 			this.task = null;
+		}
+		if (this._startTimer) {
+			clearTimeout(this._startTimer);
+			this._startTimer = null;
 		}
 		this._stopping = true;
 		if (this._abort) this._abort.abort(new Error("encerrando"));
@@ -491,6 +520,9 @@ class EconomyAnalyticsService {
 							aligned ? to : Number(summary.generatedAt),
 							aligned ? { ...summary.balances, total: Number(atEnd) } : summary.balances
 						);
+						if (aligned && !source.local) {
+							rows += this._reconstructMass(store, source.currency, to, Number(atEnd));
+						}
 					}
 					if (source.local) {
 						// Runas: retratos diários (virada das 04:00 BRT) da janela, sem sobrescrever o horário
@@ -523,6 +555,35 @@ class EconomyAnalyticsService {
 				}
 			}
 		);
+	}
+
+	/**
+	 * Massa histórica (só o total) de uma moeda com extrato, uma vez: anda para trás a partir do primeiro
+	 * retrato alinhado (`anchorTs`, `anchorTotal`) descontando o líquido dos fluxos já carregados, e grava um
+	 * retrato por virada de dia econômico (04:00 BRT) que ainda não exista. Não sobrescreve retrato real.
+	 * Faixas, percentis e concentração do passado ficam vazios (o extrato não dá o saldo de cada um sem
+	 * reconstruir jogador a jogador). Mesma ressalva de totalAtWindowEnd: mudança de saldo sem linha no
+	 * extrato cai no período anterior a ela.
+	 * @returns {number} retratos gravados
+	 */
+	_reconstructMass(store, currency, anchorTs, anchorTotal) {
+		const key = `mass_reconstructed:${currency}`;
+		if (store.getMeta(key)) return 0;
+		const r = store.reconstructMass(
+			currency,
+			anchorTs,
+			anchorTotal,
+			MASS_EXCLUDED_REASONS[currency] || []
+		);
+		store.setMeta(key, JSON.stringify({ anchorTs, ...r }));
+		// Lido pelo painel: a conferência de moeda sem origem ignora os retratos reconstruídos (antes disto)
+		store.setMeta(`mass_reconstructed_before:${currency}`, anchorTs);
+		if (r.written) {
+			logger.info(
+				`[economy] ${currency}: massa histórica reconstruída pelo extrato (${r.written} dias desde ${new Date(r.from).toISOString().slice(0, 10)}).`
+			);
+		}
+		return r.written;
 	}
 
 	/** Primeiro dia econômico guardado no detalhe por jogador. */

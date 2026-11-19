@@ -1164,6 +1164,92 @@ async function main() {
 			assert.strictEqual(pet.ts, clock); // Jardim sem totalAtWindowEnd: generatedAt
 		});
 
+		await test("Massa histórica de Zinthos: anda para trás pelos fluxos, sem a waifu confiscada, sem sobrescrever retrato real, uma vez só", async () => {
+			const wdb = path.join(tmpRoot, "massa", "a.db");
+			const s = new EconomyAnalyticsService({
+				dbPath: wdb,
+				publishDir: path.join(tmpRoot, "massa-pub"),
+				sources: []
+			});
+			const st = s._getStore();
+			const fl = st.db.prepare(
+				"INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, 'creation', ?, ?, 1, 1)"
+			);
+			fl.run(DAY0 + 2 * H, "DAILY_REWARD", 100, 0); // dia 0
+			fl.run(DAY0 + D + 5 * H, "DAILY_REWARD", 50, 10); // dia 1
+			fl.run(DAY0 + D + 6 * H, "HOSTING_FEE_WAIFU", 999, 0); // nunca creditou o saldo: fora
+			fl.run(DAY0 + 2 * D + 1 * H, "MARKET_TRADE", 0, 30); // dia 2
+			st.db
+				.prepare("INSERT INTO flows_hourly VALUES (?, 'runas', 'X', 'creation', 5000, 0, 1, 1)")
+				.run(DAY0 + D);
+			st.writeBalance("zinthos", DAY0 + D, { total: 1, p50: 7, holders: 5 }); // retrato real: fica
+			const anchor = DAY0 + 2 * D + 3 * H;
+			const n = s._reconstructMass(st, "zinthos", anchor, 1000);
+			const rows = st.db
+				.prepare(
+					"SELECT ts, total, p50, holders FROM balances WHERE currency='zinthos' ORDER BY ts"
+				)
+				.all();
+			// dia 2: 1000 − (−30) = 1030; dia 1: real; dia 0: 1030 − 40 − 100 = 890
+			assert.deepStrictEqual(rows, [
+				{ ts: DAY0, total: 890, p50: null, holders: null },
+				{ ts: DAY0 + D, total: 1, p50: 7, holders: 5 },
+				{ ts: DAY0 + 2 * D, total: 1030, p50: null, holders: null }
+			]);
+			assert.strictEqual(n, 2);
+			assert.strictEqual(s._reconstructMass(st, "zinthos", anchor + D, 5), 0); // só a primeira vez
+			assert.strictEqual(JSON.parse(st.getMeta("mass_reconstructed:zinthos")).written, 2);
+			assert.strictEqual(st.getMeta("mass_reconstructed_before:zinthos"), String(anchor));
+			// Conferência de moeda sem origem: retrato reconstruído fica fora (daria zero por construção);
+			// sobra só o intervalo que começa no retrato real do dia 1
+			st.writeBalance("zinthos", anchor, { total: 1000, holders: 3 });
+			const so = st.db
+				.prepare(
+					dashboardSql("Sem origem por dia — Zinthos (período selecionado)", {
+						from: DAY0 - D,
+						to: anchor + D
+					})
+				)
+				.all();
+			assert.strictEqual(so.length, 1, JSON.stringify(so));
+			// Âncora exatamente na virada: não regrava o próprio dia
+			const t = st.reconstructMass("zinthos", DAY0 + 2 * D, 1000);
+			assert.strictEqual(t.days, 2);
+			st.close();
+			s.store = null;
+		});
+
+		await test("Carga na subida: roda uma vez depois do atraso, desliga com 0 e stop() cancela", async () => {
+			const mk = (opts) =>
+				new EconomyAnalyticsService({
+					dbPath: path.join(tmpRoot, "subida", "a.db"),
+					publishDir: path.join(tmpRoot, "subida-pub"),
+					sources: [],
+					...opts
+				});
+			const a = mk({ startDelayMs: 20 });
+			let runs = 0;
+			a.runOnce = () => (runs++, Promise.resolve({}));
+			a.start();
+			await new Promise((r) => setTimeout(r, 80));
+			assert.strictEqual(runs, 1);
+			await a.stop();
+			const b = mk({ startDelayMs: 0 });
+			b.runOnce = () => (runs++, Promise.resolve({}));
+			b.start();
+			await new Promise((r) => setTimeout(r, 40));
+			assert.strictEqual(runs, 1);
+			await b.stop();
+			const c = mk({ startDelayMs: 30 });
+			c.runOnce = () => (runs++, Promise.resolve({}));
+			c.start();
+			await c.stop();
+			await new Promise((r) => setTimeout(r, 60));
+			assert.strictEqual(runs, 1);
+			assert.strictEqual(mk({ runOnStart: false }).startDelayMs, 0);
+			assert.strictEqual(mk({}).startDelayMs, 60000);
+		});
+
 		await test("stop(): aborta HTTP em curso, para entre pedaços e nunca espera mais que o limite", async () => {
 			// 1) Chamada lenta é abortada: stop volta rápido e fecha o banco
 			clock += H;

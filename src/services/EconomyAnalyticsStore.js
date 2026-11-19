@@ -19,6 +19,7 @@
 const fs = require("fs");
 const path = require("path");
 const BetterSQLite = require("better-sqlite3");
+const { DAY_MS, economicDayStart } = require("./EconomyAnalyticsRunas");
 
 const ROOT = path.join(__dirname, "../..");
 const DEFAULT_DB_PATH = "data/economia-carga/analytics.db";
@@ -574,6 +575,43 @@ class EconomyAnalyticsStore {
 				ins.run(r.key, r.title, r.available ? 1 : 0, r.dependsOn || null, r.detail || null, ts);
 		});
 		tx();
+	}
+
+	/**
+	 * Massa total por virada de dia econômico antes de `anchorTs`: anchorTotal − Σ(entra − sai) dos fluxos
+	 * com hora em [dia, anchorTs), sem os motivos de `excludeReasons`. Grava só onde não há retrato
+	 * (INSERT OR IGNORE). Ver EconomyAnalyticsService._reconstructMass.
+	 * @returns {{written:number, days:number, from:number|null}}
+	 */
+	reconstructMass(currency, anchorTs, anchorTotal, excludeReasons = []) {
+		const ph = excludeReasons.map(() => "?").join(", ");
+		const net = this.db
+			.prepare(
+				`SELECT hour, SUM(amount_in - amount_out) AS net FROM flows_hourly
+				 WHERE currency = ? AND hour < ?${ph ? ` AND reason NOT IN (${ph})` : ""}
+				 GROUP BY hour ORDER BY hour DESC`
+			)
+			.all(currency, anchorTs, ...excludeReasons);
+		if (!net.length) return { written: 0, days: 0, from: null };
+		const first = economicDayStart(Number(net[net.length - 1].hour));
+		let day = economicDayStart(anchorTs);
+		if (day === anchorTs) day -= DAY_MS; // o retrato da âncora já existe
+		let total = Number(anchorTotal);
+		let i = 0;
+		let written = 0;
+		let days = 0;
+		const tx = this.db.transaction(() => {
+			for (; day >= first; day -= DAY_MS) {
+				while (i < net.length && Number(net[i].hour) >= day) {
+					total -= Number(net[i].net) || 0;
+					i++;
+				}
+				days++;
+				written += this.writeBalance(currency, day, { total }, true);
+			}
+		});
+		tx();
+		return { written, days, from: first };
 	}
 
 	getMeta(key) {
