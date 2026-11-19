@@ -21,15 +21,32 @@ async function pingCommand(bot, message, args, group) {
 	const delayMsg =
 		message.responseTime ??
 		bot.getCurrentTimestamp() -
-			(message.origin.timestamp ?? message.origin.messageTimestamp ?? bot.getCurrentTimestamp());
+			(message.origin?.timestamp ?? message.origin?.messageTimestamp ?? bot.getCurrentTimestamp());
 	logger.debug("Message origin:", message.origin);
 	logger.debug(`Executando comando ping para ${chatId}`);
 
+	const liveMetrics =
+		typeof bot.loadReport?.getLiveMetrics === "function"
+			? bot.loadReport.getLiveMetrics()
+			: { msgsHr: 0, responseTime: { avg: 0 } };
+	const msgsHr = Math.round(liveMetrics.msgsHr || 0);
+	const avgDelay = Number(liveMetrics.responseTime?.avg || 0).toFixed(2);
+
+	const throttle =
+		typeof bot.throttler?.getMetrics === "function"
+			? bot.throttler.getMetrics()
+			: { loadPercent: 0, queueSize: 0 };
+	const carga = Math.round(throttle.loadPercent || 0);
+	const fila = throttle.queueSize || 0;
+	const filaText = fila === 1 ? "1 msg na fila" : `${fila} msgs na fila`;
+
+	const content = `Pong! 🏓 _(${delayMsg}s)_\n${msgsHr} msg/h | ${carga}% carga | ${filaText} | ${avgDelay}s delay médio`;
+
 	return new ReturnMessage({
 		chatId,
-		content: `Pong! 🏓 _(${delayMsg}s)_`,
+		content,
 		options: {
-			quotedMessageId: message.origin.id._serialized,
+			quotedMessageId: message.origin?.id?._serialized,
 			goReply: message.origin
 		}
 	});
