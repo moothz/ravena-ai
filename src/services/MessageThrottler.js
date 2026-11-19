@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("crypto");
 const axios = require("axios");
 const Logger = require("../utils/Logger");
 
@@ -8,6 +9,7 @@ const Logger = require("../utils/Logger");
  *
  * Funciona como uma fila FIFO em memória por instância de bot WhatsApp.
  * Aplica delays progressivos conforme a carga aumenta em relação ao rateLimit configurado.
+ * Também aplica delays orgânicos aleatórios e anti-duplicação por hashing (janela 24h).
  *
  * Pesos:
  *   - Mensagem normal (texto, mídia, sticker, etc.): peso 1.0
@@ -20,23 +22,34 @@ const Logger = require("../utils/Logger");
  *   - 75% a 95%: delay 1500ms a 2500ms (linear)
  *   - 95% a 100%: delay = 60000ms / rateLimit (mínimo para honrar o limite)
  *
+ * Delay Orgânico:
+ *   - delayMin e delayMax (em segundos). Padrão 0 a 2 para bots com rateLimit ativo.
+ *   - Gera atraso aleatório entre delayMin e delayMax ms antes de enviar mensagem.
+ *
+ * Anti-Spam / Hashing (Janela de 24 horas):
+ *   - Textos e legendas idênticas nas últimas 24h recebem sufixo "\n> <salt>"
+ *   - Imagens/vídeos sem legenda repetidos recebem caption discreto "> <salt>"
+ *   - Áudios e stickers repetidos recebem 1 byte de padding seguro no final do Buffer.
+ *
  * Descarte:
  *   - Mensagens aguardando na fila por mais de 60 segundos são descartadas.
- *   - Ao descartar, envia alerta via Telegram para o dono
- *     (HEALTH_CHECK_TELEGRAM_BOT_TOKEN / HEALTH_CHECK_TELEGRAM_CHAT_ID).
- *   - O alerta é throttled: no máximo 1 alerta por instância a cada 5 minutos.
+ *   - Ao descartar, envia alerta via Telegram para o dono.
  */
 class MessageThrottler {
 	/**
 	 * @param {string} botId - ID do bot (ex: "ravenavip")
-	 * @param {number} rateLimit - Máximo de mensagens por minuto (0 = desabilitado)
+	 * @param {number} [rateLimit=0] - Máximo de mensagens por minuto (0 = desabilitado)
+	 * @param {number} [delayMin=0] - Delay orgânico mínimo em segundos
+	 * @param {number} [delayMax=0] - Delay orgânico máximo em segundos
 	 */
-	constructor(botId, rateLimit = 0) {
+	constructor(botId, rateLimit = 0, delayMin = 0, delayMax = 0) {
 		this.botId = botId;
 		this.rateLimit = rateLimit;
+		this.delayMin = Number(delayMin) || 0;
+		this.delayMax = Number(delayMax) || 0;
 		this.logger = new Logger(`throttler-${botId}`);
 
-		// Janela deslizante: array de { timestamp (ms), weight }
+		// Janela deslizante de custo: array de { timestamp (ms), weight }
 		this._window = [];
 
 		// Fila FIFO: array de { fn, resolve, reject, weight, enqueuedAt }
@@ -48,6 +61,10 @@ class MessageThrottler {
 		// Controle de alerta de descarte: timestamp do último alerta enviado
 		this._lastDiscardAlertAt = 0;
 		this._discardAlertCooldownMs = 5 * 60 * 1000; // 5 minutos
+
+		// Janela de 24 horas para anti-duplicação: Map de hash -> timestamp (ms)
+		this._sentHashes = new Map();
+		this._hashesTtlMs = 24 * 60 * 60 * 1000; // 24 horas
 
 		// Métricas expostas externamente
 		this.queueSize = 0;
@@ -66,7 +83,7 @@ class MessageThrottler {
 	}
 
 	/**
-	 * Calcula o delay em ms baseado na carga atual (0–100%).
+	 * Calcula o delay de throttling em ms baseado na carga atual (0–100%).
 	 * @param {number} loadPercent - Carga atual em % (0 a 100)
 	 * @returns {number} - Delay em ms
 	 */
@@ -89,15 +106,124 @@ class MessageThrottler {
 	}
 
 	/**
-	 * Enfileira a execução de uma função com throttling progressivo.
-	 * Se rateLimit = 0, executa imediatamente sem fila.
+	 * Calcula delay orgânico aleatório em ms entre delayMin e delayMax.
+	 * @returns {number} - Delay em ms
+	 */
+	_computeOrganicDelay() {
+		if (this.delayMax <= 0 || this.delayMax < this.delayMin) return 0;
+		const minMs = Math.round(this.delayMin * 1000);
+		const maxMs = Math.round(this.delayMax * 1000);
+		return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+	}
+
+	/**
+	 * Limpa hashes expirados da janela de 24 horas.
+	 */
+	_cleanOldHashes() {
+		const cutoff = Date.now() - this._hashesTtlMs;
+		for (const [hash, ts] of this._sentHashes.entries()) {
+			if (ts < cutoff) {
+				this._sentHashes.delete(hash);
+			}
+		}
+	}
+
+	/**
+	 * Evita que mensagens com conteúdo idêntico sejam enviadas na janela de 24h.
+	 * - Textos e legendas: adiciona "\n> <salt>" ao final se o hash já foi visto.
+	 * - Imagens e vídeos sem legenda: adiciona "> <salt>" como caption se repetidos.
+	 * - Áudios e stickers: adiciona 1 byte de padding seguro no final do Buffer.
+	 *
+	 * @param {string} endpoint - Endpoint da API (/send/text, /send/media, /send/sticker, etc.)
+	 * @param {Object} payload - Payload montado para envio
+	 */
+	applyAntiDuplicate(endpoint, payload) {
+		if (!payload || typeof payload !== "object") return;
+		this._cleanOldHashes();
+
+		// 1. Tratamento para texto puro (/send/text, /send/link)
+		if (typeof payload.text === "string" && payload.text.trim()) {
+			const raw = payload.text.trim();
+			const hash = crypto.createHash("sha256").update(raw).digest("hex");
+			if (this._sentHashes.has(hash)) {
+				const salt = crypto.randomBytes(3).toString("hex").slice(0, 5);
+				payload.text += `\n> ${salt}`;
+				const newHash = crypto.createHash("sha256").update(payload.text.trim()).digest("hex");
+				this._sentHashes.set(newHash, Date.now());
+			} else {
+				this._sentHashes.set(hash, Date.now());
+			}
+			return;
+		}
+
+		// 2. Tratamento para mídia com legenda (/send/media)
+		if (typeof payload.caption === "string" && payload.caption.trim()) {
+			const raw = payload.caption.trim();
+			const hash = crypto.createHash("sha256").update(raw).digest("hex");
+			if (this._sentHashes.has(hash)) {
+				const salt = crypto.randomBytes(3).toString("hex").slice(0, 5);
+				payload.caption += `\n> ${salt}`;
+				const newHash = crypto.createHash("sha256").update(payload.caption.trim()).digest("hex");
+				this._sentHashes.set(newHash, Date.now());
+			} else {
+				this._sentHashes.set(hash, Date.now());
+			}
+			return;
+		}
+
+		// 3. Imagens e vídeos sem legenda (/send/media)
+		if (endpoint === "/send/media" && (!payload.caption || !payload.caption.trim())) {
+			const type = payload.type || "";
+			if (type === "image" || type === "video" || type === "gif") {
+				const mediaKey = typeof payload.data === "string"
+					? payload.data.slice(0, 512)
+					: (payload.url || "");
+				if (mediaKey) {
+					const hash = crypto.createHash("sha256").update(`media:${mediaKey}`).digest("hex");
+					if (this._sentHashes.has(hash)) {
+						const salt = crypto.randomBytes(3).toString("hex").slice(0, 5);
+						payload.caption = `> ${salt}`;
+						this._sentHashes.set(hash + ":salted", Date.now());
+					} else {
+						this._sentHashes.set(hash, Date.now());
+					}
+					return;
+				}
+			}
+		}
+
+		// 4. Áudios e stickers (Byte padding no final do Buffer)
+		const isSticker = endpoint === "/send/sticker";
+		const isAudio = payload.type === "audio";
+		if ((isSticker || isAudio) && typeof payload.data === "string" && payload.data.length > 0) {
+			const rawHash = crypto.createHash("sha256").update(payload.data.slice(0, 1024)).digest("hex");
+			if (this._sentHashes.has(rawHash)) {
+				try {
+					const buf = Buffer.from(payload.data, "base64");
+					// Padding seguro de 1 byte aleatório no final
+					const padded = Buffer.concat([buf, crypto.randomBytes(1)]);
+					payload.data = padded.toString("base64");
+					const newHash = crypto.createHash("sha256").update(payload.data.slice(0, 1024)).digest("hex");
+					this._sentHashes.set(newHash, Date.now());
+				} catch (err) {
+					// Fallback silencioso se houver falha de base64
+				}
+			} else {
+				this._sentHashes.set(rawHash, Date.now());
+			}
+		}
+	}
+
+	/**
+	 * Enfileira a execução de uma função com throttling progressivo e delay orgânico.
+	 * Se rateLimit = 0 e delayMax = 0, executa imediatamente sem fila.
 	 *
 	 * @param {Function} fn - Função async a executar
 	 * @param {number} [weight=1.0] - Peso da ação (1.0 = mensagem, 0.333 = reação)
 	 * @returns {Promise<any>}
 	 */
 	enqueue(fn, weight = 1.0) {
-		if (!this.rateLimit || this.rateLimit <= 0) {
+		if ((!this.rateLimit || this.rateLimit <= 0) && (!this.delayMax || this.delayMax <= 0)) {
 			return fn();
 		}
 
@@ -142,16 +268,20 @@ class MessageThrottler {
 				continue;
 			}
 
-			// Calcular carga e delay
+			// Calcular carga e delay de throttling
 			const cost = this._getWindowCost();
-			const loadPercent = Math.min(100, (cost / this.rateLimit) * 100);
-			const delayMs = this._computeDelay(loadPercent);
+			const loadPercent = this.rateLimit > 0 ? Math.min(100, (cost / this.rateLimit) * 100) : 0;
+			const throttleDelayMs = this._computeDelay(loadPercent);
+
+			// Calcular delay orgânico (aplicado apenas a mensagens com peso >= 1.0)
+			const organicDelayMs = item.weight >= 1.0 ? this._computeOrganicDelay() : 0;
+			const totalDelayMs = throttleDelayMs + organicDelayMs;
 
 			this.currentLoadPercent = Math.round(loadPercent);
-			this.currentDelayMs = delayMs;
+			this.currentDelayMs = totalDelayMs;
 
-			if (delayMs > 0) {
-				await new Promise((r) => setTimeout(r, delayMs));
+			if (totalDelayMs > 0) {
+				await new Promise((r) => setTimeout(r, totalDelayMs));
 			}
 
 			// Verificar novamente após o delay
@@ -187,9 +317,9 @@ class MessageThrottler {
 
 		this._processing = false;
 		this.queueSize = 0;
-		this.currentLoadPercent = Math.round(
-			(this._getWindowCost() / (this.rateLimit || 1)) * 100
-		);
+		this.currentLoadPercent = this.rateLimit > 0
+			? Math.round((this._getWindowCost() / this.rateLimit) * 100)
+			: 0;
 		this.currentDelayMs = 0;
 	}
 
@@ -250,7 +380,7 @@ class MessageThrottler {
 
 	/**
 	 * Retorna métricas atuais do throttler para exposição no painel e OS desktop.
-	 * @returns {{ loadPercent: number, delayMs: number, queueSize: number, rateLimit: number, windowCost: number }}
+	 * @returns {{ loadPercent: number, delayMs: number, queueSize: number, rateLimit: number, windowCost: number, delayMin: number, delayMax: number, trackedHashes: number }}
 	 */
 	getMetrics() {
 		const cost = this._getWindowCost();
@@ -263,7 +393,10 @@ class MessageThrottler {
 			delayMs: this.currentDelayMs,
 			queueSize: this.queueSize,
 			rateLimit: this.rateLimit,
-			windowCost: parseFloat(cost.toFixed(2))
+			windowCost: parseFloat(cost.toFixed(2)),
+			delayMin: this.delayMin,
+			delayMax: this.delayMax,
+			trackedHashes: this._sentHashes.size
 		};
 	}
 }

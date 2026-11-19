@@ -194,9 +194,16 @@ class WhatsAppBotGo {
 		this.autoDownloadPV = options.autoDownloadPV ?? false;
 		this.whitelist = options.whitelistPV ?? [];
 		this.ignoreInvites = options.ignoreInvites ?? false;
-		// Rate limiting / throttling de saída
+		// Rate limiting / throttling de saída e delay orgânico
 		this.rateLimit = options.rateLimit ?? 0; // 0 = desabilitado
-		this.throttler = new MessageThrottler(this.id, this.rateLimit);
+		this.delayMin = options.delayMin ?? 0;
+		this.delayMax = options.delayMax ?? (this.privado ? 0 : 2);
+		this.throttler = new MessageThrottler(
+			this.id,
+			this.rateLimit,
+			this.delayMin,
+			this.delayMax
+		);
 		this.grupoLogs = options.grupoLogs ?? process.env.GRUPO_LOGS;
 		this.dossieGroups =
 			options.dossieGroups ??
@@ -4102,6 +4109,11 @@ class WhatsAppBotGo {
 			}
 			if (typeof payload.caption === "string") {
 				payload.caption = this.truncateText(payload.caption, maxChars, maxLines, maxCharRepeats);
+			}
+
+			// Anti-duplicação e hashing (janela de 24h)
+			if (this.throttler) {
+				this.throttler.applyAntiDuplicate(endpoint, payload);
 			}
 
 			let response;

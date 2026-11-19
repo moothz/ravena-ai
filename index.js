@@ -255,6 +255,8 @@ async function main() {
 					pvAI: rBot.pvAI ?? false,
 					ignoreInvites: rBot.ignoreInvites ?? false,
 					rateLimit: rBot.ratelimit ?? 0,
+					delayMin: rBot.delayMin ?? 0,
+					delayMax: rBot.delayMax ?? (rBot.privado ? 0 : 2),
 					managementUser: rBot.managementUser ?? process.env.BOTAPI_USER,
 					managementPW: rBot.managementPW ?? process.env.BOTAPI_PASSWORD,
 

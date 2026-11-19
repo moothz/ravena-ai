@@ -668,6 +668,24 @@ document.addEventListener("DOMContentLoaded", () => {
                             </div>
                         </div>
                         <div class="form-group">
+                            <label>Delay Orgânico Mínimo (delayMin - s)</label>
+                            <input type="number"
+                                   class="form-control field-delay-min"
+                                   value="${bot.delayMin !== undefined && bot.delayMin !== null ? bot.delayMin : 0}"
+                                   min="0" max="5" step="0.5"
+                                   placeholder="0 = sem delay mínimo">
+                            <div class="field-hint">Atraso mínimo em segundos antes de enviar cada mensagem.</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Delay Orgânico Máximo (delayMax - s)</label>
+                            <input type="number"
+                                   class="form-control field-delay-max"
+                                   value="${bot.delayMax !== undefined && bot.delayMax !== null ? bot.delayMax : (bot.privado ? 0 : 2)}"
+                                   min="0" max="5" step="0.5"
+                                   placeholder="0 = sem delay máximo">
+                            <div class="field-hint">Atraso máximo em segundos. Gera atraso aleatório entre min e max. ${bot.privado ? '<br><span style="color: var(--status-green);">✓ Bot privado — delay orgânico zerado por padrão.</span>' : ""}</div>
+                        </div>
+                        <div class="form-group">
                             <label>Intervalo de Limpeza de Mensagens (deleteMessagesInterval)</label>
                             <input type="text" class="form-control field-delete-messages-interval" value="${bot.deleteMessagesInterval !== undefined ? bot.deleteMessagesInterval : "false"}" placeholder="false ou número de dias (ex: 3 ou 7)">
                             <div class="field-hint">false = nunca apaga; 3 = apaga a cada 3 dias; 7 = semanalmente às 03:30 AM via ClearChat.</div>
@@ -1147,13 +1165,29 @@ document.addEventListener("DOMContentLoaded", () => {
 			delete bot.discordToken;
 		}
 
-		// Rate Limit
+		// Rate Limit & Delay Orgânico
 		const rateLimitEl = card.querySelector(".field-ratelimit");
 		if (rateLimitEl) {
 			const rl = parseInt(rateLimitEl.value, 10);
 			bot.ratelimit = !isNaN(rl) && rl > 0 ? Math.min(600, rl) : 0;
 		} else {
 			bot.ratelimit = 0;
+		}
+
+		const delayMinEl = card.querySelector(".field-delay-min");
+		if (delayMinEl) {
+			const dMin = parseFloat(delayMinEl.value);
+			bot.delayMin = !isNaN(dMin) && dMin >= 0 ? Math.min(5, dMin) : 0;
+		} else {
+			bot.delayMin = 0;
+		}
+
+		const delayMaxEl = card.querySelector(".field-delay-max");
+		if (delayMaxEl) {
+			const dMax = parseFloat(delayMaxEl.value);
+			bot.delayMax = !isNaN(dMax) && dMax >= 0 ? Math.min(5, dMax) : (bot.privado ? 0 : 2);
+		} else {
+			bot.delayMax = bot.privado ? 0 : 2;
 		}
 
 		// Extrai o objeto extras reconstruído a partir do DOM

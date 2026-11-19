@@ -983,12 +983,20 @@ function registerInstancesRoutes(api) {
 					liveBot.autoDownloadPV = Boolean(botConfig.autoDownloadPV);
 					liveBot.ignoreInvites = Boolean(botConfig.ignoreInvites);
 					liveBot.pvAI = Boolean(botConfig.pvAI);
-					// Sincronizar rateLimit em tempo real sem reiniciar o bot
+					// Sincronizar rateLimit e delays orgânicos em tempo real sem reiniciar o bot
 					const newRateLimit = typeof botConfig.ratelimit === "number" ? botConfig.ratelimit : 0;
+					const newDelayMin = typeof botConfig.delayMin === "number" ? botConfig.delayMin : 0;
+					const newDelayMax = typeof botConfig.delayMax === "number"
+						? botConfig.delayMax
+						: (liveBot.privado ? 0 : 2);
 					if (liveBot.throttler) {
 						liveBot.throttler.rateLimit = newRateLimit;
+						liveBot.throttler.delayMin = newDelayMin;
+						liveBot.throttler.delayMax = newDelayMax;
 					}
 					liveBot.rateLimit = newRateLimit;
+					liveBot.delayMin = newDelayMin;
+					liveBot.delayMax = newDelayMax;
 					liveBot.updateStatus =
 						botConfig.updateStatus !== undefined ? Boolean(botConfig.updateStatus) : true;
 					liveBot.sendJoinInfo =
