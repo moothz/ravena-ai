@@ -728,14 +728,16 @@ class EconomyAnalyticsService {
 				const changes = Changes.diffParams(prev, got.params);
 				const prevTs = Number(store.getMeta(`params_ts:${r.service}`)) || 0;
 				if (changes.length) {
-					const ts =
-						got.startedAt && got.startedAt > prevTs && got.startedAt <= runTs
-							? got.startedAt
-							: hourNow;
+					// Subida do serviço depois da última leitura = hora exata. Sem isso (reload sem reiniciar,
+					// ravena parada), a mudança aconteceu em algum ponto de (leitura anterior, agora]: marca na
+					// hora cheia, nunca antes da leitura que ainda viu o valor antigo, e guarda o intervalo.
+					const exact = got.startedAt && got.startedAt > prevTs && got.startedAt <= runTs;
+					const ts = exact ? got.startedAt : Math.max(prevTs + 1, hourNow);
 					store.addAnnotation(ts, r.currency, Changes.changeLabel(r.service, changes), "auto", {
 						service: r.service,
 						version: got.version,
-						changes
+						changes,
+						...(exact ? {} : { between: [prevTs || null, runTs] })
 					});
 					logger.info(
 						`[economy] ${r.service}: ${changes.length} parâmetro(s) de balanceamento mudaram; anotação registrada.`
@@ -781,9 +783,12 @@ class EconomyAnalyticsService {
 					store.reasonLabel(src.currency, reason)
 				);
 			}
+			// A moeda vai no rótulo: (ts, rótulo) é a chave, e o mesmo motivo pode existir em duas moedas
+			const nome = { zinthos: "Zinthos", petalitas: "Petalitas", runas: "Runas" }[src.currency];
 			for (const f of found) {
-				if (!store.hasAnnotation(day, f.label)) {
-					store.addAnnotation(day, src.currency, f.label, "possivel", f.detail);
+				const label = `${f.label} (${nome})`;
+				if (!store.hasAnnotation(day, label)) {
+					store.addAnnotation(day, src.currency, label, "possivel", f.detail);
 				}
 			}
 			store.setMeta(key, day);

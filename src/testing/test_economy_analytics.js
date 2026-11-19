@@ -1734,6 +1734,10 @@ async function main() {
 					{ key: "divorce.DIVORCE_PENALTY_RATE", from: 0.05, to: 0.08 }
 				]);
 				assert.strictEqual(w.detail.version, "abc");
+				assert.strictEqual(w.detail.between, undefined); // hora exata (subida do serviço)
+				// Runas: subida antes da leitura anterior → hora cheia e o intervalo em que mudou
+				const rn = anns.find((a) => a.currency === "runas");
+				assert.strictEqual(rn.detail.between[1], pclock);
 				// Sem mudança: nada novo
 				pclock += H;
 				await s._loadParams(st, pclock);
@@ -1774,25 +1778,29 @@ async function main() {
 			const s = new EconomyAnalyticsService({
 				dbPath: path.join(tmpRoot, "poss", "a.db"),
 				publishDir: path.join(tmpRoot, "poss-pub"),
-				sources: ["zinthos", "petalitas"]
+				sources: ["zinthos", "petalitas", "runas"]
 			});
 			const st = s._getStore();
-			const fl = st.db.prepare(
-				"INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, 'creation', ?, 0, ?, 1)"
-			);
-			for (const r of rows) fl.run(r.day + H, r.reason, r.vol, r.n);
-			st.setLedgerStatus("zinthos", true, 0);
+			const fl = st.db.prepare("INSERT INTO flows_hourly VALUES (?, ?, ?, 'creation', ?, 0, ?, 1)");
+			// O mesmo motivo nas duas moedas, no mesmo dia: as duas anotações entram
+			for (const cur of ["zinthos", "runas"]) {
+				for (const r of rows) fl.run(r.day + H, cur, r.reason, r.vol, r.n);
+				st.setLedgerStatus(cur, true, 0);
+			}
 			st.setLedgerStatus("petalitas", false, 0);
 			const runTs = D0 + D + 2 * H;
 			assert.deepStrictEqual(s._detectChanges(st, runTs), {}); // dia ainda não carregado
 			st.recordRun({ ts: 1, source: "zinthos", ok: true, from: 0, to: D0 + D + H, rows: 1 });
-			assert.deepStrictEqual(s._detectChanges(st, runTs), { zinthos: 3 });
+			st.recordRun({ ts: 1, source: "runas", ok: true, from: 0, to: D0 + D + H, rows: 1 });
+			assert.deepStrictEqual(s._detectChanges(st, runTs), { zinthos: 3, runas: 3 });
+			assert.strictEqual(st.listAnnotations().length, 6);
 			assert.ok(st.listAnnotations().every((a) => a.origin === "possivel" && a.ts === D0));
-			st.setAnnotationOrigin(D0, "motivo novo: NEW", "descartada");
+			st.setAnnotationOrigin(D0, "motivo novo: NEW (Zinthos)", "descartada");
 			st.db.prepare("DELETE FROM meta WHERE key = 'detect_day:zinthos'").run();
+			st.db.prepare("DELETE FROM meta WHERE key = 'detect_day:runas'").run();
 			s._detectChanges(st, runTs); // rodar de novo não desfaz o descarte
 			assert.strictEqual(
-				st.listAnnotations().find((a) => a.label === "motivo novo: NEW").origin,
+				st.listAnnotations().find((a) => a.label === "motivo novo: NEW (Zinthos)").origin,
 				"descartada"
 			);
 			assert.deepStrictEqual(s._detectChanges(st, runTs + H), {}); // já olhou esse dia
