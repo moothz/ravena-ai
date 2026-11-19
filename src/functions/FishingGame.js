@@ -790,6 +790,7 @@ async function creditOverflowRunas(userId, effect, excessUnits, itemName, source
 	try {
 		const BankService = require("../services/BankService");
 		const bankData = await BankService.creditRunas(userId, runas, {
+			recordTransaction: true,
 			source: source || `fishing_cap_${effect}`
 		});
 		return { runas, balance: bankData?.runas ?? null };
@@ -4948,6 +4949,7 @@ module.exports = {
 	RARE_FISH,
 	fishingCooldowns,
 	getUserData,
+	saveUserData,
 	getUserBaitsInfo,
 	getMaxBaits,
 	getMaxInventory,
@@ -4962,6 +4964,7 @@ module.exports = {
 	INVENTORY_HARD_CAP,
 	BAITS_HARD_CAP,
 	CAP_OVERFLOW_RUNAS,
+	formatRunas,
 	getLegendaryChanceFactor,
 	isLegendaryBoostActive,
 	getLegendaryBoostStart,

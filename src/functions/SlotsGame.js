@@ -732,13 +732,22 @@ async function slotsCommand(bot, message, args, group) {
 		}
 
 		// Credita iscas de pesca
+		let baitResult = null;
 		if (totalBaitsWon > 0) {
 			const baitMult = GameEventService.getMultiplier("slots", "iscas");
 			if (baitMult > 1) {
 				totalBaitsWon = Math.max(1, Math.round(totalBaitsWon * baitMult));
 			}
-			await FishingGame.addBaits(userId, totalBaitsWon);
-			await savePrize(userId, `${totalBaitsWon} Iscas`, "bom");
+			baitResult = await FishingGame.addBaits(userId, totalBaitsWon, { source: "slots_prize" });
+			if (baitResult?.overflow > 0 && baitResult.added === 0) {
+				await savePrize(
+					userId,
+					`${totalBaitsWon} Iscas (viraram ${baitResult.runas} ᚱ no teto)`,
+					"bom"
+				);
+			} else {
+				await savePrize(userId, `${totalBaitsWon} Iscas`, "bom");
+			}
 		}
 
 		// Credita buffs de pesca
@@ -838,7 +847,21 @@ async function slotsCommand(bot, message, args, group) {
 
 		resultMessage += `🎁 *Resumo dos Prêmios Conquistados:*\n`;
 		if (totalCoinsWon > 0) resultMessage += `• 🪙 *+${totalCoinsWon} Moedinhas do Slots*\n`;
-		if (totalBaitsWon > 0) resultMessage += `• 🎣 *+${totalBaitsWon} Iscas de Pesca*\n`;
+		if (totalBaitsWon > 0) {
+			if (baitResult && baitResult.overflow > 0) {
+				const runasFmt =
+					typeof FishingGame.formatRunas === "function"
+						? FishingGame.formatRunas(baitResult.runas)
+						: `${baitResult.runas} ᚱ`;
+				if (baitResult.added > 0) {
+					resultMessage += `• 🎣 *+${baitResult.added} Iscas de Pesca* _(teto de ${FishingGame.BAITS_HARD_CAP} iscas: ${baitResult.overflow} viraram ${runasFmt} no RavenaBank)_\n`;
+				} else {
+					resultMessage += `• 🎣 *+${totalBaitsWon} Iscas de Pesca* ➔ _Teto de ${FishingGame.BAITS_HARD_CAP} atingido! Convertidas em ${runasFmt} no RavenaBank_\n`;
+				}
+			} else {
+				resultMessage += `• 🎣 *+${totalBaitsWon} Iscas de Pesca*\n`;
+			}
+		}
 		if (totalBuffsWon.length > 0) {
 			resultMessage += `• 🛠️ *Buffs de Pesca (${totalBuffsWon.length}):*\n`;
 			for (const b of totalBuffsWon) {
