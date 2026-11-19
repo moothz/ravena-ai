@@ -111,6 +111,7 @@ class WhatsAppBotGo {
 		}
 		this.webhookHost = wh;
 		this.webhookPort = options.webhookPort ?? process.env.WEBHOOK_PORT_WHATSGO ?? 3000;
+		this._syncedWebhookUrl = null;
 		this.pvAI = options.pvAI;
 		this.version = "WhatsgoGO";
 		this.wwebversion = "0";
@@ -396,16 +397,74 @@ class WhatsAppBotGo {
 		}
 	}
 
+	/**
+	 * URL completa do webhook configurado para esta instância
+	 */
+	get webhookUrl() {
+		return `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`;
+	}
+
+	/**
+	 * Garante que a URL do webhook esteja devidamente sincronizada na WhatsGoAPI
+	 * independente da instância estar conectada ou não.
+	 * @param {boolean} [force=false] - Força a sincronização mesmo se já estiver em cache
+	 */
+	async syncWebhookUrl(force = false) {
+		const targetUrl = this.webhookUrl;
+		if (!force && this._syncedWebhookUrl === targetUrl) {
+			return;
+		}
+
+		try {
+			this.logger.info(`[${this.id}] Sincronizando webhook URL no WhatsGoAPI para: ${targetUrl}`);
+			const connectResponse = await this.apiClient.post(
+				`/instance/connect`,
+				{
+					webhookUrl: targetUrl,
+					phone: this.phoneNumber || undefined,
+					subscribe: WHATSGO_SUBSCRIBED_EVENTS
+				},
+				false
+			);
+
+			if (connectResponse && connectResponse.message === "success") {
+				this._syncedWebhookUrl = targetUrl;
+				this.logger.info(
+					`[${this.id}] Webhook URL sincronizado com sucesso no WhatsGoAPI: ${targetUrl}`
+				);
+				return connectResponse;
+			} else {
+				this.logger.warn(
+					`[${this.id}] Retorno inesperado ao sincronizar webhook no WhatsGoAPI:`,
+					connectResponse
+				);
+			}
+		} catch (err) {
+			if (err?.status === 401) {
+				this.logger.debug(
+					`[${this.id}] Instância ainda não registrada no WhatsGoAPI ao tentar sincronizar webhook.`
+				);
+			} else {
+				this.logger.warn(
+					`[${this.id}] Falha ao sincronizar webhook (${targetUrl}) no WhatsGoAPI:`,
+					err?.message || err
+				);
+			}
+		}
+	}
+
 	async createInstance() {
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`);
 		const payload = {
 			name: this.instanceName,
-			webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
+			webhookUrl: this.webhookUrl,
 			webhookEvents: WHATSGO_SUBSCRIBED_EVENTS
 		};
 
 		this.logger.info(`[createInstance] Creating instance ${this.instanceName}`, payload);
-		return await this.apiClient.post("/instance/create", payload, true);
+		const res = await this.apiClient.post("/instance/create", payload, true);
+		this._syncedWebhookUrl = this.webhookUrl;
+		return res;
 	}
 
 	_normalizeId(id, logger) {
@@ -537,7 +596,7 @@ class WhatsAppBotGo {
 		}
 
 		// 3. Chamar /instance/connect com webhookUrl e subscribe ALL
-		const webhookUrl = `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`;
+		const webhookUrl = this.webhookUrl;
 		try {
 			this.logger.info(
 				`[tryReconnect] Chamando /instance/connect para ${this.instanceName} com webhook ${webhookUrl}...`
@@ -550,6 +609,7 @@ class WhatsAppBotGo {
 				},
 				false
 			);
+			this._syncedWebhookUrl = webhookUrl;
 			results.push({ action: "connect", status: "success", result: connectResult });
 		} catch (err) {
 			this.logger.error(`[tryReconnect] Erro ao conectar instância:`, err);
@@ -2042,7 +2102,7 @@ class WhatsAppBotGo {
 		this.lastMessageReceived = Date.now();
 
 		const webhookPath = `/webhook/${this.instanceName}`;
-		const instanceDesc = `Webhook on ${this.webhookHost}:${this.webhookPort}${webhookPath}`;
+		const instanceDesc = `Webhook on ${this.webhookUrl}`;
 		this.logger.info(
 			`[${this.startupTime}][${this.id}] Init GoAPI bot instance ${this.instanceName}: ${instanceDesc})`
 		); // , { instanceInfo }
@@ -2139,6 +2199,9 @@ class WhatsAppBotGo {
 				extra.lastPasskeyRequest = statusData.lastPasskeyRequest;
 			}
 
+			// Sempre sincroniza o webhookUrl na WhatsGoAPI caso ainda não tenha sido sincronizado nesta sessão ou tenha mudado
+			await this.syncWebhookUrl();
+
 			// Totalmente conectado e logado
 			if (loggedIn) {
 				this._onInstanceConnected();
@@ -2207,7 +2270,7 @@ class WhatsAppBotGo {
 									let connectResponse = await this.apiClient.post(
 										`/instance/connect`,
 										{
-											webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
+											webhookUrl: this.webhookUrl,
 											subscribe: WHATSGO_SUBSCRIBED_EVENTS
 										},
 										false
@@ -2223,7 +2286,7 @@ class WhatsAppBotGo {
 											connectResponse = await this.apiClient.post(
 												`/instance/connect`,
 												{
-													webhookUrl: `${this.webhookHost}:${this.webhookPort}/webhook/${this.instanceName}`,
+													webhookUrl: this.webhookUrl,
 													subscribe: WHATSGO_SUBSCRIBED_EVENTS
 												},
 												false
@@ -2237,6 +2300,8 @@ class WhatsAppBotGo {
 											return;
 										}
 									}
+
+									this._syncedWebhookUrl = this.webhookUrl;
 
 									// Aguarda o WS do WA inicializar antes de pedir pair
 									this.logger.info(
